@@ -167,6 +167,9 @@ type SessionGuardRailMatchedRule struct {
 }
 
 type SessionGuardRailsInfo struct {
+	// ReportID makes agent retries idempotent inside the session's JSON audit
+	// record. It is omitted for legacy/gateway-side guardrail entries.
+	ReportID     string                      `json:"report_id,omitempty"`
 	RuleName     string                      `json:"rule_name"`
 	Rule         SessionGuardRailMatchedRule `json:"rule"`
 	Direction    string                      `json:"direction"`

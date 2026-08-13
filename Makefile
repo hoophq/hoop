@@ -39,7 +39,15 @@ LDFLAGS := "-s -w \
 -X github.com/hoophq/hoop/gateway/analytics.segmentApiKey=${SEGMENT_API_KEY} \
 -X github.com/hoophq/hoop/gateway/analytics.intercomHmacKey=${INTERCOM_HMAC_KEY}"
 
-build-dev-rust:
+# libhoop-ensure, not libhoop-map: agentrs takes a Cargo path dependency on
+# ../libhoop/rdp-guard (the swappable PII guard crate), and an unresolvable
+# path dependency is a hard error rather than a warning, so ./libhoop must
+# exist before any cargo invocation. It must NOT be reset to the stub though:
+# scripts/dev/run.sh symlinks an enterprise libhoop and THEN calls
+# build-dev-rust, and libhoop-map's `rm libhoop` succeeds against a symlink,
+# so depending on it here would silently downgrade every enterprise dev build
+# to the stub.
+build-dev-rust: libhoop-ensure
 	# since we are in osx machine cross needs to be used to build linux binary because some crypto libs does not have cross compilation
 	echo "Building hoop_rs for dev"
 	cd agentrs && cross build --release --target aarch64-unknown-linux-gnu
@@ -73,9 +81,18 @@ build-dev-client:
 build-dev-webapp:
 	./scripts/dev/build-webapp.sh
 
+# Force ./libhoop to the OSS stub. `rm` without -f and guarded by `|| true` is
+# load-bearing: it is a no-op against a non-empty directory, so a CI checkout
+# of hoophq/libhoop wins over the stub with no conditional logic.
 libhoop-map:
 	rm libhoop || true
 	ln -s _libhoop libhoop
+
+# Ensure ./libhoop merely EXISTS, defaulting to the stub. Unlike libhoop-map
+# this never replaces an enterprise checkout or a dev symlink, which is what
+# a Cargo path dependency needs: presence, not a particular flavor.
+libhoop-ensure:
+	@test -e libhoop || ln -s _libhoop libhoop
 
 # Generate WASM module for RDP parser
 generate-wasm: libhoop-map
@@ -88,6 +105,72 @@ test-oss: libhoop-map generate-wasm
 
 test-enterprise: libhoop-map generate-wasm
 	env CGO_ENABLED=0 go test -json -v github.com/hoophq/hoop/...
+
+# Rust tests for the agent and the swappable PII guard crate.
+#
+# agentrs/tests/guard_surface.rs is the important one: it type-checks the
+# in-tree guard seam (agentrs/src/guard.rs) against the hoop-rdp-guard crate
+# resolved through the libhoop symlink. Nothing else compiles the two
+# together, so without this a signature change on either side would only
+# surface when the guard implementation is swapped — in whichever repository
+# the drift was not introduced in.
+#
+# Run it under BOTH flavors. Against _libhoop it proves the OSS stub still
+# satisfies every consumer; against a hoophq/libhoop checkout it proves the
+# enterprise crate does.
+test-rust: libhoop-ensure
+	cd agentrs && cargo test --all-targets
+	cd libhoop/rdp-guard && cargo test
+
+# End-to-end check of the agent's RDP plumbing against a real RDP server.
+#
+# Boots scripts/dev/rdp-testserver (FreeRDP's shadow server with NLA, serving a
+# headless X display of known PII) and drives it with the rdp_caps_probe
+# example, which runs the same IronRDP connect path the agent uses: X.224
+# negotiation -> TLS -> CredSSP -> capability exchange -> update stream.
+#
+# Two things are asserted, and they are the two the PII guard depends on:
+#
+#   1. CONNECTED — NLA works. The agent requests HYBRID|HYBRID_EX and refuses
+#      to downgrade, so a server without NLA (xrdp, for one) cannot be proxied
+#      at all.
+#   2. BITMAP-ONLY — with no codecs advertised the server sends plain Fast-Path
+#      Bitmap updates. That is the only update path the redaction rewriter
+#      handles; SurfaceCommands/RemoteFX bypass it entirely.
+#
+# Needs Docker. Does NOT need the enterprise libhoop, a GPU, OCR or Presidio:
+# this covers transport, not detection. And FreeRDP's NLA is not Microsoft's,
+# so it validates the plumbing rather than Windows-specific CredSSP behavior.
+RDP_TESTSERVER_PORT ?= 33389
+test-rdp-plumbing: libhoop-ensure
+	docker build -q -t hoop-rdp-testserver scripts/dev/rdp-testserver
+	@# One shell for create + run + assert, with the cleanup trap installed BEFORE
+	@# the container exists. Installing it after `docker run` leaks the container
+	@# whenever run itself fails late (a port already bound, for instance): make
+	@# aborts before the trap shell is ever entered.
+	@trap 'docker rm -f hoop-rdp-testserver >/dev/null 2>&1 || true' EXIT INT TERM; \
+	docker rm -f hoop-rdp-testserver >/dev/null 2>&1 || true; \
+	docker run -d --name hoop-rdp-testserver -p $(RDP_TESTSERVER_PORT):3389 hoop-rdp-testserver >/dev/null; \
+	echo "waiting for the RDP test server..."; \
+	ready=0; \
+	for i in $$(seq 1 60); do \
+	  if docker logs hoop-rdp-testserver 2>&1 | grep -q '\[rdp-testserver\] serving'; then ready=1; break; fi; \
+	  sleep 1; \
+	done; \
+	[ "$$ready" = "1" ] || { echo "FAIL: server never announced readiness"; docker logs hoop-rdp-testserver 2>&1 | tail -20; exit 1; }; \
+	out=""; \
+	for attempt in 1 2 3; do \
+	  out=$$(cd agentrs && cargo run --quiet --example rdp_caps_probe -- \
+	          127.0.0.1:$(RDP_TESTSERVER_PORT) hooptest hooptest 6 none 2>&1); \
+	  echo "$$out" | grep -q 'CONNECTED' && break; \
+	  echo "attempt $$attempt did not connect; retrying"; sleep 3; \
+	done; \
+	echo "$$out"; \
+	echo "$$out" | grep -q 'CONNECTED' \
+	  || { echo "FAIL: never completed the RDP connection (NLA/CredSSP path)"; exit 1; }; \
+	echo "$$out" | grep -q 'BITMAP-ONLY OBSERVED' \
+	  || { echo "FAIL: server did not deliver plain Fast-Path Bitmap updates"; exit 1; }; \
+	echo "PASS: NLA connection established and update stream is bitmap-only"
 
 prepare-mssql-jdbc:
 	$(RM) $(MSSQL_JDBC_CLASSPATH_FILE)
@@ -159,17 +242,28 @@ merge-artifacts:
 	./scripts/merge-artifacts.sh
 
 # Build all Darwin Rust binaries (for CI) - uses GOOS/GOARCH
-build-rust-darwin-all:
+build-rust-darwin-all: libhoop-ensure
 	GOOS=darwin GOARCH=amd64 $(MAKE) build-rust-single
 	GOOS=darwin GOARCH=arm64 $(MAKE) build-rust-single
 # Build all Linux Rust binaries (for CI) - uses GOOS/GOARCH
-build-rust-linux-all:
+build-rust-linux-all: libhoop-ensure
 	GOOS=linux GOARCH=amd64 $(MAKE) build-rust-single
 	GOOS=linux GOARCH=arm64 $(MAKE) build-rust-single
 
-# Build single Rust binary using GOOS/GOARCH variables
-build-rust-single: build-empty-folder
-	cd agentrs && cargo build --release --target ${RUST_TARGET} && \
+# Build single Rust binary using GOOS/GOARCH variables.
+#
+# RUST_FEATURES defaults to require-enforcement so a release cannot be built
+# against the OSS guard stub: without a hoophq/libhoop checkout at ./libhoop,
+# libhoop-ensure resolves the guard to the passthrough stub and this build
+# would otherwise succeed and ship an agent that silently never enforces.
+# The failure is a compile error (see agentrs/src/guard.rs).
+#
+# OSS builds that intentionally have no enforcement engine override it:
+#   RUST_FEATURES= make build-rust-single
+RUST_FEATURES ?= require-enforcement
+build-rust-single: build-empty-folder libhoop-ensure
+	cd agentrs && cargo build --release --target ${RUST_TARGET} \
+	  $(if $(RUST_FEATURES),--features $(RUST_FEATURES),) && \
 	cp target/${RUST_TARGET}/release/agentrs ../dist/binaries/${GOOS}_${GOARCH}/hoop_rs
 
 build-empty-folder:
@@ -331,4 +425,4 @@ publish-sentry-sourcemaps:
 	tar -xvf ${DIST_FOLDER}/webapp.tar.gz
 	sentry-cli sourcemaps upload --release=$$(cat ./version.txt) ./public/js/app.js.map --org hoopdev --project webapp
 
-.PHONY: run-dev run-dev-postgres build-dev-webapp test-enterprise test-oss test prepare-mssql-jdbc test-integration test-transport test-gateway test-gateway-pglite test-standalone test-standalone-e2e test-gateway-pglite generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm build-hsh-tunneld build-hsh-tunneld-all build-release-checksums stage-release-scripts
+.PHONY: libhoop-ensure test-rdp-plumbing run-dev run-dev-postgres build-dev-webapp test-enterprise test-oss test-rust test prepare-mssql-jdbc test-integration test-transport test-gateway test-gateway-pglite test-standalone test-standalone-e2e test-gateway-pglite generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm build-hsh-tunneld build-hsh-tunneld-all build-release-checksums stage-release-scripts

@@ -24,6 +24,94 @@ jobs:
       - name: Test
         run: make test-oss
 
+  rust-test-oss:
+    name: Rust Unit Test (OSS stub)
+    runs-on: ubuntu-latest
+
+    # No libhoop checkout: libhoop-map symlinks _libhoop, so agentrs resolves
+    # its hoop-rdp-guard path dependency to the OSS stub. This is the job that
+    # proves an OSS clone still builds a working (unguarded) RDP agent and
+    # that the stub satisfies every consumer of the guard seam.
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Test
+        run: make test-rust
+
+  rdp-plumbing-test:
+    name: RDP Plumbing E2E (FreeRDP shadow)
+    runs-on: ubuntu-latest
+
+    # Drives the agent's real IronRDP connect path against a real RDP server
+    # in a container: X.224 negotiation -> TLS -> CredSSP/NLA -> capability
+    # exchange -> update stream. Asserts the two properties the PII guard
+    # depends on — that NLA completes at all, and that the server delivers
+    # plain Fast-Path Bitmap updates rather than SurfaceCommands.
+    #
+    # Uses the OSS stub, so it covers transport only. Detection needs OCR and
+    # Presidio and is out of scope here. FreeRDP's NLA is also not Microsoft's,
+    # so this is plumbing validation, not Windows conformance.
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: RDP plumbing E2E
+        run: make test-rdp-plumbing
+
+  rust-test-enterprise:
+    name: Rust Unit Test (libhoop)
+    needs: resolve-libhoop
+    runs-on: ubuntu-latest
+
+    # The same suite against the real guard crate. agentrs/tests/guard_surface.rs
+    # is the point: it is the written contract for the guard boundary, and it
+    # only keeps the OSS stub and the enterprise crate from drifting apart if
+    # it runs under BOTH flavors. This job is the enterprise half.
+    #
+    # Also the only PR job that compiles the enterprise crate's own 112 tests,
+    # including the adversarial hold-and-release leak suite.
+    #
+    # As in the integration jobs, libhoop-ensure leaves this checkout alone:
+    # it only creates the stub symlink when ./libhoop does not already exist.
+    steps:
+      - name: Checkout Hoop
+        uses: actions/checkout@v3
+
+      - name: Checkout libhoop
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          path: "./libhoop"
+          token: ${{ secrets.GH_TOKEN }}
+          ref: ${{ needs.resolve-libhoop.outputs.sha }}
+
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Test
+        run: make test-rust
+
+      # Proves the release path: with libhoop present the enforcement engine
+      # must actually be linked. Cheap here, and it means a broken checkout
+      # step is caught on the PR rather than at release time.
+      - name: Assert enforcement engine is linked
+        run: cd agentrs && cargo check --features require-enforcement
+
   resolve-libhoop:
     name: Resolve libhoop Revision
     runs-on: ubuntu-latest

@@ -9,9 +9,14 @@
 The realtime RDP PII guard holds server→client frames, OCRs the changed
 screen regions, runs Presidio over the recognized text, and redacts/kills on
 detection before pixels reach the client. It runs in two places with identical
-semantics: the agent (`agentrs/src/piigate/`, Rust) and the gateway
-(`gateway/rdp/`, Go). The agent path is the one used for capable agents (the
-GPU node); the gateway path is the kill-only fallback.
+semantics: the agent (Rust) and the gateway (`gateway/rdp/`, Go). The agent
+path is the one used for capable agents (the GPU node); the gateway path is
+the kill-only fallback.
+
+> **Note (DEP-102):** the agent guard has since moved out of this repository
+> into libhoop's `rdp-guard` crate (`rdp-guard/src/piigate/`); OSS builds link
+> a passthrough stub. Paths below that read `agentrs/src/piigate/...` refer to
+> its pre-move location and are kept as written for the historical record.
 
 ### Measured cost (GCP T4 node, verified, stable across trials)
 

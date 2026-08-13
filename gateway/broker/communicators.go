@@ -3,10 +3,13 @@ package broker
 import (
 	"io"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
 )
+
+const agentWriteTimeout = 10 * time.Second
 
 type ConnectionCommunicator interface {
 	Send(data []byte) error
@@ -15,17 +18,28 @@ type ConnectionCommunicator interface {
 	WrapToConnection() net.Conn
 }
 
-type agentCommunicator struct{ conn *websocket.Conn }
+type agentCommunicator struct {
+	conn    *websocket.Conn
+	writeMu sync.Mutex
+}
 
 func NewAgentCommunicator(conn *websocket.Conn) ConnectionCommunicator {
 	return &agentCommunicator{conn: conn}
 }
 
 func (a *agentCommunicator) Send(data []byte) error {
+	a.writeMu.Lock()
+	defer a.writeMu.Unlock()
+	if err := a.conn.SetWriteDeadline(time.Now().Add(agentWriteTimeout)); err != nil {
+		return err
+	}
 	return a.conn.WriteMessage(websocket.BinaryMessage, data)
 }
 
 func (a *agentCommunicator) Close() error {
+	if a.conn == nil {
+		return nil
+	}
 	return a.conn.Close()
 }
 

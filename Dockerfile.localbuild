@@ -16,10 +16,36 @@
 # ---- Stage 1: build hoop_rs (agentrs) -------------------------------------
 FROM rust:1-bookworm AS rust-build
 WORKDIR /src
-# agentrs is self-contained (ring-based TLS, no openssl-sys, no build.rs).
+# agentrs is self-contained (ring-based TLS, no openssl-sys, no build.rs)
+# EXCEPT for one Cargo path dependency: ../libhoop/rdp-guard, the swappable
+# RDP PII guard. An unresolvable path dependency is a hard error, so the crate
+# has to be in the build context — a bare `COPY agentrs/` does not build.
+#
+# LIBHOOP_DIR selects the flavor, mirroring what ./libhoop resolves to outside
+# Docker:
+#   _libhoop (default) -> the OSS passthrough stub. RDP is proxied normally
+#                         with no detection or redaction, and the agent
+#                         advertises supports_pii_guard=false, so the gateway
+#                         refuses any session it would have delegated.
+#   libhoop            -> the enterprise guard. Needs a real hoophq/libhoop
+#                         checkout at ./libhoop INSIDE the repo; the usual dev
+#                         symlink points outside the build context and Docker
+#                         cannot follow it.
+#
+# Building the PII demo stack therefore requires:
+#   git clone git@github.com:hoophq/libhoop.git libhoop
+#   docker build -f Dockerfile.localbuild --build-arg LIBHOOP_DIR=libhoop \
+#       --build-arg CARGO_FEATURES=require-enforcement ...
+#
+# CARGO_FEATURES=require-enforcement turns "I meant to build the enterprise
+# agent but got the stub" into a compile error instead of an agent that
+# silently never enforces. Always pass it with LIBHOOP_DIR=libhoop.
+ARG LIBHOOP_DIR=_libhoop
+ARG CARGO_FEATURES=
 COPY agentrs/ ./agentrs/
+COPY ${LIBHOOP_DIR}/rdp-guard/ ./libhoop/rdp-guard/
 WORKDIR /src/agentrs
-RUN cargo build --release && \
+RUN cargo build --release ${CARGO_FEATURES:+--features ${CARGO_FEATURES}} && \
     install -D target/release/agentrs /out/hoop_rs
 
 # ---- Stage 2: build hoop (Go multi-call binary) ---------------------------
@@ -28,10 +54,24 @@ WORKDIR /src
 # The whole workspace is needed (go.work references every module). The RDP
 # parser wasm is committed and embedded via go:embed, so no wasm toolchain is
 # required here.
+ARG LIBHOOP_DIR=_libhoop
 COPY . .
-# Recreate the libhoop import-path symlink the build expects (the repo ships a
-# symlink, but COPY may not preserve it portably).
-RUN rm -f libhoop && ln -s _libhoop libhoop
+# `libhoop` must be a usable import path for the Go build. The context can
+# deliver it in three shapes and all three have to work:
+#   - a symlink (what the repo ships; COPY does not preserve it portably),
+#   - a real directory (an enterprise checkout, which is what the documented
+#     LIBHOOP_DIR=libhoop flow requires for the Rust stage above),
+#   - absent.
+# `rm -f` cannot remove a directory, so the previous unconditional
+# `rm -f libhoop && ln -s _libhoop libhoop` aborted this stage outright for an
+# enterprise checkout — the Go build never ran.
+RUN if [ "${LIBHOOP_DIR}" = "libhoop" ]; then \
+        test -d libhoop || { echo "LIBHOOP_DIR=libhoop but ./libhoop is not a directory in the build context"; exit 1; }; \
+        echo "go stage: using the enterprise libhoop checkout"; \
+    else \
+        rm -rf libhoop && ln -s "${LIBHOOP_DIR}" libhoop; \
+        echo "go stage: using ${LIBHOOP_DIR}"; \
+    fi
 RUN CGO_ENABLED=0 GOOS=linux go build \
         -ldflags "-s -w -X github.com/hoophq/hoop/common/version.version=local" \
         -o /out/hoop github.com/hoophq/hoop/client

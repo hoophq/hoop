@@ -26,7 +26,10 @@
 //! session. Treat the output as a confidence signal, not a guarantee.
 //!
 //! Usage:
-//!   cargo run --example rdp_caps_probe -- <host:port> <user> <password> [seconds]
+//!   cargo run --example rdp_caps_probe -- <host:port> <user> <password> [seconds] [codecs]
+//!
+//! [codecs] is `remotefx` (default, worst case) or `none` (empty codec set,
+//! which is what the guard's capability pinning achieves).
 //!
 //! NOTE: the password is passed as a CLI argument for convenience as a dev
 //! tool; it will be visible in process listings and shell history. Use a
@@ -36,23 +39,27 @@ use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 
+use agentrs::tls;
 use anyhow::Context as _;
 use ironrdp_async::{connect_begin, connect_finalize, mark_as_upgraded};
 use ironrdp_connector::{ClientConnector, Config, Credentials, DesktopSize, ServerName};
 use ironrdp_core::{Decode as _, ReadCursor};
+use ironrdp_pdu::FAST_PATH_HINT;
 use ironrdp_pdu::fast_path::{FastPathHeader, FastPathUpdatePdu, UpdateCode};
 use ironrdp_pdu::gcc::KeyboardType;
 use ironrdp_pdu::rdp::capability_sets::MajorPlatformType;
-use ironrdp_pdu::FAST_PATH_HINT;
-use agentrs::tls;
 use tokio::net::TcpStream;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt().with_max_level(tracing::Level::WARN).init();
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::WARN)
+        .init();
 
     let mut args = std::env::args().skip(1);
-    let addr: String = args.next().context("usage: <host:port> <user> <pass> [secs]")?;
+    let addr: String = args
+        .next()
+        .context("usage: <host:port> <user> <pass> [secs]")?;
     let username = args.next().context("missing <user>")?;
     let password = args.next().context("missing <password>")?;
     let secs: u64 = args.next().map(|s| s.parse().unwrap_or(8)).unwrap_or(8);
@@ -70,7 +77,10 @@ async fn main() -> anyhow::Result<()> {
         rest.split(']').next().unwrap_or(rest).to_string()
     } else if addr.matches(':').count() == 1 {
         // Exactly one colon => host:port.
-        addr.rsplit_once(':').map(|(h, _)| h).unwrap_or(&addr).to_string()
+        addr.rsplit_once(':')
+            .map(|(h, _)| h)
+            .unwrap_or(&addr)
+            .to_string()
     } else if addr.contains(':') {
         // Multiple colons, no brackets => bare IPv6 address.
         addr.clone()
@@ -78,19 +88,49 @@ async fn main() -> anyhow::Result<()> {
         addr.clone()
     };
 
+    // Optional 5th arg selects what the client advertises. Default preserves
+    // the historical worst-case behavior.
+    //
+    //   remotefx (default) — bitmap: None, so the connector falls back to
+    //                        client_codecs_capabilities(&[]) with RemoteFX on.
+    //   none               — advertise an EMPTY codec set, which is what the
+    //                        guard's capability pinning achieves. A server with
+    //                        no codec to negotiate falls back to plain Fast-Path
+    //                        Bitmap updates, the only path the rewriter handles.
+    let codec_mode = std::env::args()
+        .nth(5)
+        .unwrap_or_else(|| "remotefx".to_owned());
+    let bitmap = match codec_mode.as_str() {
+        "remotefx" => None,
+        "none" => Some(ironrdp_connector::BitmapConfig {
+            color_depth: 32,
+            lossy_compression: false,
+            codecs: ironrdp_pdu::rdp::capability_sets::BitmapCodecs(Vec::new()),
+        }),
+        other => anyhow::bail!("unknown codec mode {other:?} (want 'remotefx' or 'none')"),
+    };
+
     println!("== RDP capability probe ==");
     println!("target      : {addr} ({sock})");
     println!("user        : {username}");
-    println!("codec config: bitmap=None  (=> client_codecs_capabilities(&[]), RemoteFX advertised ON)");
+    match codec_mode.as_str() {
+        "none" => println!(
+            "codec config: bitmap=Some(codecs=[])  (=> no codecs advertised, as capability pinning would)"
+        ),
+        _ => println!(
+            "codec config: bitmap=None  (=> client_codecs_capabilities(&[]), RemoteFX advertised ON)"
+        ),
+    }
     println!("listen window: {secs}s\n");
 
-    // Mirror the ironrdp-web client config. `bitmap: None` is the key choice:
-    // it makes create_client_confirm_active fall back to the default codec set
-    // (RemoteFX on), which is the worst case for our bitmap-only rewriter.
+    // Mirror the ironrdp-web client config.
     let config = Config {
-        desktop_size: DesktopSize { width: 1280, height: 800 },
+        desktop_size: DesktopSize {
+            width: 1280,
+            height: 800,
+        },
         desktop_scale_factor: 0,
-        bitmap: None,
+        bitmap,
         enable_tls: true,
         enable_credssp: true,
         credentials: Credentials::UsernamePassword {
@@ -139,7 +179,10 @@ async fn main() -> anyhow::Result<()> {
     let server_public_key = extract_pubkey(&tls_stream)?;
     let mut framed = ironrdp_tokio::TokioFramed::new(tls_stream);
     let upgraded = mark_as_upgraded(should_upgrade, &mut connector);
-    println!("[ok] TLS established; server public key captured ({} bytes)", server_public_key.len());
+    println!(
+        "[ok] TLS established; server public key captured ({} bytes)",
+        server_public_key.len()
+    );
 
     // Phase 3: CredSSP + capability exchange to a fully connected session.
     let result = connect_finalize(
@@ -154,8 +197,10 @@ async fn main() -> anyhow::Result<()> {
     .await
     .context("connect_finalize (CredSSP + activation)")?;
 
-    println!("[ok] CONNECTED. negotiated desktop = {}x{}, io_channel={}",
-        result.desktop_size.width, result.desktop_size.height, result.io_channel_id);
+    println!(
+        "[ok] CONNECTED. negotiated desktop = {}x{}, io_channel={}",
+        result.desktop_size.width, result.desktop_size.height, result.io_channel_id
+    );
     println!("\n-- listening to server update stream for {secs}s --\n");
 
     // Phase 4: classify the update stream.
@@ -225,12 +270,25 @@ fn print_report(counts: &BTreeMap<&'static str, u64>) {
     }
     let total: u64 = counts.values().sum();
     for (k, v) in counts {
-        println!("  {:>8}  {:5.1}%  {}", v, 100.0 * (*v as f64) / total as f64, k);
+        println!(
+            "  {:>8}  {:5.1}%  {}",
+            v,
+            100.0 * (*v as f64) / total as f64,
+            k
+        );
     }
     println!("  -------- total {total}");
 
-    let bitmap = counts.iter().filter(|(k, _)| k.starts_with("Bitmap")).map(|(_, v)| *v).sum::<u64>();
-    let surface = counts.iter().filter(|(k, _)| k.starts_with("SurfaceCommands")).map(|(_, v)| *v).sum::<u64>();
+    let bitmap = counts
+        .iter()
+        .filter(|(k, _)| k.starts_with("Bitmap"))
+        .map(|(_, v)| *v)
+        .sum::<u64>();
+    let surface = counts
+        .iter()
+        .filter(|(k, _)| k.starts_with("SurfaceCommands"))
+        .map(|(_, v)| *v)
+        .sum::<u64>();
     println!("\n== observation (this sample window only) ==");
     if surface > 0 {
         println!("UNSUPPORTED PATH OBSERVED: {surface} SurfaceCommands update(s) in the sample.");
@@ -252,12 +310,10 @@ fn print_report(counts: &BTreeMap<&'static str, u64>) {
 fn extract_pubkey<S>(tls_stream: &tokio_rustls::client::TlsStream<S>) -> anyhow::Result<Vec<u8>> {
     use x509_cert::der::Decode as _;
     let (_, conn) = tls_stream.get_ref();
-    let certs = conn
-        .peer_certificates()
-        .context("no peer certificates")?;
+    let certs = conn.peer_certificates().context("no peer certificates")?;
     let end_entity = certs.first().context("empty certificate chain")?;
-    let cert = x509_cert::Certificate::from_der(end_entity.as_ref())
-        .context("parse X509 certificate")?;
+    let cert =
+        x509_cert::Certificate::from_der(end_entity.as_ref()).context("parse X509 certificate")?;
     let key = cert
         .tbs_certificate
         .subject_public_key_info

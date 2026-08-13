@@ -2,6 +2,7 @@ package broker
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net"
 	"sync"
@@ -14,30 +15,97 @@ import (
 )
 
 type Broker struct {
-	agents   sync.Map // map[string]*Connection
-	sessions sync.Map // map[uuid.UUID]*Session
+	agents      sync.Map // map[string]*Connection
+	sessions    sync.Map // map[uuid.UUID]*Session
+	auditRoutes sync.Map // map[uuid.UUID]*SessionAuditRoute
 }
 
 var BrokerInstance = &Broker{}
 
-// maxQueuedBytes caps how many bytes the agent->client relay queue of a
-// single session may hold. When the client drains slower than the agent
-// produces (WAN browser vs. LAN agent), the producer blocks in ForwardToTCP
-// instead of queueing without bound — backpressure then propagates over the
-// agent websocket's TCP flow control into the protocol's own pacing. Before
-// this cap existed the queue was bounded only in message count (8192 slots),
-// which under RDP-sized frames meant multi-GB of heap and an OOM-killed
-// gateway (July 2026 tryrunops incident).
-//
-// Capacity planning note: this bounds the *queued* bytes. Total in-flight
-// data per session is up to maxQueuedBytes plus up to two messages held
-// outside the queue (one being written to the client, one unread remainder
-// in the conn wrapper) plus whatever the GC has not collected yet — budget
-// roughly 2x this constant per hot session.
+const sessionAuditRouteRetention = 5 * time.Minute
+
+// SessionAuditRoute is the minimal immutable handoff needed to persist a
+// terminal agent report after live relay teardown removed the Session.
+type SessionAuditRoute struct {
+	DatabaseSessionID string
+	OrgID             string
+	AgentInstanceID   uuid.UUID
+
+	mu    sync.Mutex
+	timer *time.Timer
+}
+
+func storeSessionAuditRoute(
+	routeID uuid.UUID,
+	databaseSessionID string,
+	orgID string,
+	agentInstanceID uuid.UUID,
+) {
+	BrokerInstance.auditRoutes.Store(routeID, &SessionAuditRoute{
+		DatabaseSessionID: databaseSessionID,
+		OrgID:             orgID,
+		AgentInstanceID:   agentInstanceID,
+	})
+}
+
+func GetSessionAuditRoute(routeID uuid.UUID) *SessionAuditRoute {
+	value, ok := BrokerInstance.auditRoutes.Load(routeID)
+	if !ok {
+		return nil
+	}
+	route, _ := value.(*SessionAuditRoute)
+	return route
+}
+
+func retainSessionAuditRoute(routeID uuid.UUID) {
+	route := GetSessionAuditRoute(routeID)
+	if route == nil {
+		return
+	}
+	route.mu.Lock()
+	defer route.mu.Unlock()
+	if route.timer != nil {
+		return
+	}
+	route.timer = time.AfterFunc(sessionAuditRouteRetention, func() {
+		BrokerInstance.auditRoutes.CompareAndDelete(routeID, route)
+	})
+}
+
+func deleteSessionAuditRoute(routeID uuid.UUID) {
+	value, ok := BrokerInstance.auditRoutes.LoadAndDelete(routeID)
+	if !ok {
+		return
+	}
+	if route, ok := value.(*SessionAuditRoute); ok {
+		route.mu.Lock()
+		if route.timer != nil {
+			route.timer.Stop()
+		}
+		route.mu.Unlock()
+	}
+}
+
+// maxQueuedBytes caps queued agent->client data for one session. Admission is
+// nonblocking: a slow client terminates only its own session instead of
+// stalling the shared agent WebSocket reader and every other session.
 const maxQueuedBytes = 32 << 20 // 32 MiB
 
+var (
+	ErrSessionClosed         = errors.New("session closed")
+	ErrSessionRelayQueueFull = errors.New("session relay queue full")
+	errReadDeadlineChanged   = errors.New("read deadline changed")
+)
+
 type Session struct {
-	ID                 uuid.UUID
+	ID uuid.UUID
+	// DatabaseSessionID identifies the durable audit/recording row. ID above
+	// is an independent broker wire ID used to route frames through the agent.
+	DatabaseSessionID string
+	// AgentInstanceID binds this SID to the exact WebSocket connection that
+	// accepted it. A stale connection teardown must not close replacement
+	// sessions belonging to a newer connection with the same agent name.
+	AgentInstanceID    uuid.UUID
 	ClientCommunicator ConnectionCommunicator
 	AgentCommunicator  ConnectionCommunicator
 	Protocol           string
@@ -52,12 +120,9 @@ type Session struct {
 	cancel              context.CancelFunc
 	mu                  sync.Mutex
 
-	// agent->client relay queue byte accounting (guarded by mu). spaceFreed
-	// is a capacity-1 wakeup signal: receivers nudge it after crediting
-	// budget back so a producer blocked in ForwardToTCP re-checks.
+	// agent->client relay queue byte accounting, guarded by mu.
 	queuedBytes   int64
 	maxQueueBytes int64
-	spaceFreed    chan struct{}
 }
 
 func (s *Session) AcknowledgeCredentials() {
@@ -68,8 +133,17 @@ func (s *Session) AcknowledgeCredentials() {
 }
 
 func (s *Session) SendToAgent(data []byte) error {
-	err := s.AgentCommunicator.Send(data)
-	if err != nil {
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return ErrSessionClosed
+	}
+	agent := s.AgentCommunicator
+	s.mu.Unlock()
+	if agent == nil {
+		return ErrSessionClosed
+	}
+	if err := agent.Send(data); err != nil {
 		log.Errorf("Error sending to agent: %v", err)
 		return err
 	}
@@ -83,120 +157,101 @@ func (s *Session) ReadFromAgent() (int, []byte, error) {
 
 func (s *Session) Close() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if s.closed {
-		return // Already closed
+		s.mu.Unlock()
+		return
 	}
 	s.closed = true
 	if s.cancel != nil {
 		s.cancel()
 	}
+	client := s.ClientCommunicator
+	s.mu.Unlock()
 
-	// The data channel is deliberately NOT closed: producers may be blocked
-	// in a send racing this close, and closing would turn that race into a
-	// send-on-closed-channel panic. Receivers observe termination through
-	// ctx.Done() instead; the channel itself is garbage collected with the
-	// session.
-
-	// Close consumer connection
-	if s.ClientCommunicator != nil {
-		_ = s.ClientCommunicator.Close()
+	// The data channel is deliberately not closed: producers can race Close,
+	// and receivers observe termination through ctx.Done(). The shared agent
+	// communicator is owned by HandleConnection, not by any one session.
+	if client != nil {
+		_ = client.Close()
 	}
-
-	// Close agent connection
-	if s.AgentCommunicator != nil {
-		_ = s.AgentCommunicator.Close()
-	}
-
-	// Remove from the sessions map
 	BrokerInstance.sessions.Delete(s.ID)
+	retainSessionAuditRoute(s.ID)
 }
 
-// ForwardToTCP relays data from the agent toward the client. The queue is
-// byte-budgeted: when the client is slower than the agent, this call blocks
-// once maxQueueBytes are in flight, propagating backpressure to the agent
-// websocket instead of growing the heap. A message larger than the whole
-// budget is still admitted once the queue is empty, so oversized frames
-// cannot deadlock the relay. Data is never silently dropped mid-stream — for
-// a byte-oriented protocol like RDP-in-TLS that would corrupt the stream;
-// the only discard case is session termination.
-func (s *Session) ForwardToTCP(data []byte) {
+// ForwardToTCP admits one agent->client relay message without blocking. The
+// existing per-session consumer drains dataChannel. A full byte or slot budget
+// is terminal for this session: blocking here would head-of-line block the
+// shared agent WebSocket reader, including other sessions and control frames.
+func (s *Session) ForwardToTCP(data []byte) error {
 	if len(data) == 0 {
-		return
+		return nil
 	}
 
-	// Acquire byte budget.
-	for {
-		s.mu.Lock()
-		if s.closed || s.dataChannel == nil {
-			s.mu.Unlock()
-			return // Session is closed
-		}
-		if s.queuedBytes == 0 || s.queuedBytes+int64(len(data)) <= s.maxQueueBytes {
-			s.queuedBytes += int64(len(data))
-			s.mu.Unlock()
-			break
-		}
+	n := int64(len(data))
+	s.mu.Lock()
+	if s.closed || s.dataChannel == nil {
 		s.mu.Unlock()
+		return ErrSessionClosed
+	}
+	if n > s.maxQueueBytes || s.queuedBytes+n > s.maxQueueBytes {
+		s.mu.Unlock()
+		return ErrSessionRelayQueueFull
+	}
+	s.queuedBytes += n
+	channel := s.dataChannel
+	ctx := s.ctx
+	s.mu.Unlock()
 
-		select {
-		case <-s.spaceFreed:
-			// budget may have been credited back; re-check
-		case <-s.ctx.Done():
-			return // Session is being closed
-		}
+	select {
+	case <-ctx.Done():
+		s.creditQueueBytes(n)
+		return ErrSessionClosed
+	default:
 	}
 
 	select {
-	case s.dataChannel <- data:
-		// Successfully queued
-	case <-s.ctx.Done():
-		// Session closed while waiting for a channel slot; return the
-		// budget so a concurrent producer blocked above can observe it.
-		s.creditQueueBytes(int64(len(data)))
+	case channel <- data:
+		return nil
+	default:
+		s.creditQueueBytes(n)
+		return ErrSessionRelayQueueFull
 	}
 }
 
-// creditQueueBytes returns budget to the queue and wakes one producer that
-// may be waiting for space.
 func (s *Session) creditQueueBytes(n int64) {
 	s.mu.Lock()
 	s.queuedBytes -= n
 	if s.queuedBytes < 0 {
-		// Accounting invariant broken — clamp so admission control keeps
-		// working, but log loudly: a silent underflow would quietly disable
-		// the byte budget.
 		log.Errorf("session %s relay queue accounting underflow (%d), clamping to 0", s.ID, s.queuedBytes)
 		s.queuedBytes = 0
 	}
 	s.mu.Unlock()
-	select {
-	case s.spaceFreed <- struct{}{}:
-	default:
-	}
 }
 
-// receiveData pops the next relay message, crediting its bytes back to the
-// producer budget. It returns io.EOF once the session is closed and ctx.Err()
-// when the caller-supplied context (read deadline) expires first.
-func (s *Session) receiveData(ctx context.Context) ([]byte, error) {
+// receiveData pops the next relay message. The caller credits bytes only as it
+// consumes them, so data retained by sessionConnWrapper remains inside the
+// strict per-session budget. A deadline update wakes the current call so its
+// caller can rebuild the context from the new absolute deadline.
+func (s *Session) receiveData(
+	ctx context.Context,
+	deadlineChanged <-chan struct{},
+) ([]byte, error) {
 	select {
 	case data := <-s.dataChannel:
-		s.creditQueueBytes(int64(len(data)))
 		return data, nil
 	case <-s.ctx.Done():
 		// Serve anything already queued before reporting EOF: the closing
 		// side may have raced messages into the channel.
 		select {
 		case data := <-s.dataChannel:
-			s.creditQueueBytes(int64(len(data)))
 			return data, nil
 		default:
 			return nil, io.EOF
 		}
 	case <-ctx.Done():
 		return nil, ctx.Err()
+	case <-deadlineChanged:
+		return nil, errReadDeadlineChanged
 	}
 }
 
@@ -231,27 +286,29 @@ func (s *Session) ForwardToAgent(data []byte) error {
 			}
 			break
 		}
-
 		if n > 0 {
-			if err = s.SendRawDataToAgent(buffer[:n]); err != nil {
-				log.Infof("Failed to send RDP data to agent: %v", err)
-				break
+			if err := s.SendRawDataToAgent(buffer[:n]); err != nil {
+				return err
 			}
 		}
 	}
 	return nil
 }
 
-// ForwardToClient this will forward data from agent to tcp
+// ForwardToClient forwards queued agent data to the client connection.
 func (s *Session) ForwardToClient() {
 	for {
-		data, err := s.receiveData(context.Background())
+		data, err := s.receiveData(context.Background(), nil)
 		if err != nil {
 			return // session closed
 		}
 
-		// Write directly to TCP connection
-		if err := s.ClientCommunicator.Send(data); err != nil {
+		// Keep the bytes charged while the client write is in flight. This
+		// makes the budget cover channel storage plus the consumer's current
+		// message, not only messages still waiting in the channel.
+		err = s.ClientCommunicator.Send(data)
+		s.creditQueueBytes(int64(len(data)))
+		if err != nil {
 			log.Infof("TCP write error: %v", err)
 			return
 		}
@@ -261,7 +318,10 @@ func (s *Session) ForwardToClient() {
 // ToConn returns a net.Conn that can be used to read and write as a normal go connection
 // Warn: do not use this when calling ForwardToClient()
 func (s *Session) ToConn() net.Conn {
-	return &sessionConnWrapper{session: s}
+	return &sessionConnWrapper{
+		session:         s,
+		deadlineChanged: make(chan struct{}),
+	}
 }
 
 // AgentCapabilityWait bounds how long a caller will wait for an agent's
@@ -309,18 +369,30 @@ func (e *agentEntry) markReady() {
 
 // CreateAgent registers a freshly connected agent and returns an opaque handle
 // (its connection-instance id) that the caller must pass to RemoveAgent on
-// disconnect. Tying removal to this id prevents a late-closing old connection
-// from deleting the entry of a newer connection that reused the same agent
-// name.
+// disconnect. Registration atomically replaces and closes any older
+// same-name connection; closing its socket wakes its HandleConnection owner,
+// which drains that instance's report workers and closes only its sessions.
 func CreateAgent(agentID string, ws *websocket.Conn) (uuid.UUID, error) {
+	return registerAgent(agentID, NewAgentCommunicator(ws)), nil
+}
+
+func registerAgent(agentID string, comm ConnectionCommunicator) uuid.UUID {
 	instanceID := uuid.New()
-	BrokerInstance.agents.Store(agentID, &agentEntry{
+	replacement := &agentEntry{
 		id:           instanceID,
-		comm:         NewAgentCommunicator(ws),
+		comm:         comm,
 		capabilities: map[string]string{},
 		ready:        make(chan struct{}),
-	})
-	return instanceID, nil
+	}
+	previous, replaced := BrokerInstance.agents.Swap(agentID, replacement)
+	if replaced {
+		if entry, ok := previous.(*agentEntry); ok && entry.comm != nil {
+			if err := entry.comm.Close(); err != nil {
+				log.With("agent", agentID).Warnf("failed closing superseded agent connection: %v", err)
+			}
+		}
+	}
+	return instanceID
 }
 
 // RemoveAgent deletes the agent's broker state on disconnect, but only if the
@@ -342,18 +414,44 @@ func getAgentEntry(agentID string) (*agentEntry, bool) {
 	return nil, false
 }
 
-func GetAgent(agentID string) (ConnectionCommunicator, bool) {
+// GetAgent returns the current communicator together with the immutable
+// connection-instance ID that owns any session created through it.
+func GetAgent(agentID string) (ConnectionCommunicator, uuid.UUID, bool) {
 	if e, ok := getAgentEntry(agentID); ok {
+		return e.comm, e.id, true
+	}
+	return nil, uuid.Nil, false
+}
+
+// GetAgentInstance returns the communicator only when it still belongs to the
+// WebSocket connection currently handling a frame.
+func GetAgentInstance(agentID string, instanceID uuid.UUID) (ConnectionCommunicator, bool) {
+	if e, ok := getAgentEntry(agentID); ok && e.id == instanceID {
 		return e.comm, true
 	}
 	return nil, false
 }
 
-// SetAgentCapabilities records capabilities advertised by a specific agent
-// connection and unblocks anyone waiting on the advertisement. It ignores a
-// stale connection whose instance ID no longer matches the live registration.
-// The map is defensively copied so later caller mutation cannot race readers.
-func SetAgentCapabilities(agentID string, instanceID uuid.UUID, capabilities map[string]string) {
+// AgentUsesFrameProtocolV2 reports the negotiated framing mode for one exact
+// connection instance without waiting for its capability advertisement.
+func AgentUsesFrameProtocolV2(agentID string, instanceID uuid.UUID) bool {
+	e, ok := getAgentEntry(agentID)
+	if !ok || e.id != instanceID {
+		return false
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.capabilities[CapabilityFrameProtocol] == FrameProtocolV2
+}
+
+// SetAgentCapabilities records capabilities only when they came from the
+// currently registered WebSocket instance. A stale connection must not mark a
+// replacement connection ready or overwrite its capability set.
+func SetAgentCapabilities(
+	agentID string,
+	instanceID uuid.UUID,
+	capabilities map[string]string,
+) {
 	e, ok := getAgentEntry(agentID)
 	if !ok || e.id != instanceID {
 		return
@@ -410,6 +508,16 @@ func GetSession(sessionId uuid.UUID) *Session {
 	return nil
 }
 
+// GetSessionForAgentInstance returns a live SID only to the exact agent
+// WebSocket connection that accepted it.
+func GetSessionForAgentInstance(sessionID, instanceID uuid.UUID) *Session {
+	session := GetSession(sessionID)
+	if session == nil || session.AgentInstanceID != instanceID {
+		return nil
+	}
+	return session
+}
+
 func GetSessions() map[uuid.UUID]*Session {
 	sessions := map[uuid.UUID]*Session{}
 	BrokerInstance.sessions.Range(func(key, value any) bool {
@@ -423,6 +531,16 @@ func GetSessions() map[uuid.UUID]*Session {
 	return sessions
 }
 
+// CloseAgentInstanceSessions releases only sessions routed through one exact
+// agent WebSocket connection. Same-name replacement connections are isolated.
+func CloseAgentInstanceSessions(instanceID uuid.UUID) {
+	for _, session := range GetSessions() {
+		if session != nil && session.AgentInstanceID == instanceID {
+			session.Close()
+		}
+	}
+}
+
 // RevokeByCredentialID closes all sessions using the given credential ID.
 // This triggers the same cleanup flow as when a credential expires.
 func RevokeByCredentialID(credentialID string) {
@@ -433,63 +551,85 @@ func RevokeByCredentialID(credentialID string) {
 	}
 }
 
-var _ net.Conn = (*sessionConnWrapper)(nil)
-
 // sessionConnWrapper makes Session look like a normal net.Conn. The
 // unconsumed remainder of the last relay message is retained by reference in
-// `pending` and served on subsequent reads — never truncated. (A previous
-// version spilled the remainder into a fixed 16 KiB array, silently dropping
-// whatever exceeded it and corrupting the byte stream for large messages.)
+// `pending` and served on subsequent reads, with its bytes charged against the
+// per-session budget until consumed.
 //
-// Field access is mutex-guarded so deadline updates racing a Read (e.g. from
-// a tls.Conn that assumes net.Conn thread-safety) stay memory-safe. Byte
-// ordering is only meaningful with a single reader goroutine, which is the
-// contract of a byte stream anyway.
+// readMu serializes stream consumption as required to preserve byte order
+// across concurrent net.Conn readers. mu remains separate so SetReadDeadline
+// can wake a blocked Read without waiting for it to return.
 type sessionConnWrapper struct {
-	session  *Session
-	mu       sync.Mutex
-	deadline *time.Time
-	pending  []byte // unread tail of the last message popped from the queue
+	session         *Session
+	readMu          sync.Mutex
+	mu              sync.Mutex
+	readDeadline    time.Time
+	writeDeadline   time.Time
+	deadlineChanged chan struct{}
+	pending         []byte
 }
 
+var _ net.Conn = (*sessionConnWrapper)(nil)
+
 func (s *sessionConnWrapper) Read(b []byte) (n int, err error) {
-	// First, serve any buffered data and snapshot the deadline. The lock is
-	// NOT held while blocking on the queue below.
-	s.mu.Lock()
-	if len(s.pending) > 0 {
-		n := copy(b, s.pending)
-		s.pending = s.pending[n:]
+	if len(b) == 0 {
+		return 0, nil
+	}
+
+	s.readMu.Lock()
+	defer s.readMu.Unlock()
+
+	for {
+		// First, serve any buffered data and snapshot the deadline. The lock is
+		// NOT held while blocking on the queue below.
+		s.mu.Lock()
+		if len(s.pending) > 0 {
+			n := copy(b, s.pending)
+			s.pending = s.pending[n:]
+			s.mu.Unlock()
+			s.session.creditQueueBytes(int64(n))
+			return n, nil
+		}
+		deadline := s.readDeadline
+		deadlineChanged := s.deadlineChanged
 		s.mu.Unlock()
+
+		ctx := context.Background()
+		cancel := func() {}
+		if !deadline.IsZero() {
+			ctx, cancel = context.WithDeadline(ctx, deadline)
+		}
+		data, err := s.session.receiveData(ctx, deadlineChanged)
+		cancel()
+		if errors.Is(err, errReadDeadlineChanged) {
+			continue
+		}
+		if err != nil {
+			return 0, err
+		}
+
+		n = copy(b, data)
+		if n < len(data) {
+			s.mu.Lock()
+			s.pending = data[n:]
+			s.mu.Unlock()
+		}
+		s.session.creditQueueBytes(int64(n))
 		return n, nil
 	}
-	deadline := s.deadline
-	s.deadline = nil
-	s.mu.Unlock()
-
-	ctx := context.Background()
-	cancel := func() {}
-	if deadline != nil {
-		ctx, cancel = context.WithDeadline(ctx, *deadline)
-	}
-	defer cancel()
-
-	data, err := s.session.receiveData(ctx)
-	if err != nil {
-		return 0, err
-	}
-
-	n = copy(b, data)
-	if n < len(data) {
-		s.mu.Lock()
-		s.pending = data[n:]
-		s.mu.Unlock()
-	}
-	return n, nil
 }
 
 func (s *sessionConnWrapper) Write(b []byte) (n int, err error) {
-	err = s.session.SendRawDataToAgent(b)
-	return len(b), err
+	s.mu.Lock()
+	deadline := s.writeDeadline
+	s.mu.Unlock()
+	if !deadline.IsZero() && !time.Now().Before(deadline) {
+		return 0, context.DeadlineExceeded
+	}
+	if err := s.session.SendRawDataToAgent(b); err != nil {
+		return 0, err
+	}
+	return len(b), nil
 }
 
 func (s *sessionConnWrapper) Close() error {
@@ -506,16 +646,24 @@ func (s *sessionConnWrapper) RemoteAddr() net.Addr {
 }
 
 func (s *sessionConnWrapper) SetDeadline(t time.Time) error {
+	if err := s.SetReadDeadline(t); err != nil {
+		return err
+	}
+	return s.SetWriteDeadline(t)
+}
+
+func (s *sessionConnWrapper) SetReadDeadline(t time.Time) error {
 	s.mu.Lock()
-	s.deadline = &t
+	s.readDeadline = t
+	close(s.deadlineChanged)
+	s.deadlineChanged = make(chan struct{})
 	s.mu.Unlock()
 	return nil
 }
 
-func (s *sessionConnWrapper) SetReadDeadline(t time.Time) error {
-	return s.SetDeadline(t)
-}
-
 func (s *sessionConnWrapper) SetWriteDeadline(t time.Time) error {
-	return s.SetDeadline(t)
+	s.mu.Lock()
+	s.writeDeadline = t
+	s.mu.Unlock()
+	return nil
 }

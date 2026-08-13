@@ -40,7 +40,6 @@ func newQueueTestSession(t *testing.T, client ConnectionCommunicator, budget int
 		ctx:                 ctx,
 		cancel:              cancel,
 		maxQueueBytes:       budget,
-		spaceFreed:          make(chan struct{}, 1),
 	}
 	BrokerInstance.sessions.Store(s.ID, s)
 	t.Cleanup(s.Close)
@@ -53,102 +52,53 @@ func (s *Session) queuedBytesNow() int64 {
 	return s.queuedBytes
 }
 
-// TestForwardToTCPByteBudgetBackpressure verifies that a producer pushing
-// against a stalled consumer blocks once the byte budget is reached instead
-// of queueing without bound, and that queued bytes never exceed the budget.
-func TestForwardToTCPByteBudgetBackpressure(t *testing.T) {
+// TestForwardToTCPByteBudgetRejectsWithoutBlocking verifies that a stalled
+// session reaches only its own byte budget and admission returns immediately.
+func TestForwardToTCPByteBudgetRejectsWithoutBlocking(t *testing.T) {
 	const budget = 64 * 1024
 	const msgSize = 16 * 1024
 
-	client := &gatedClientConn{allow: make(chan struct{})}
-	s := newQueueTestSession(t, client, budget)
-
-	go s.ForwardToClient()
-
-	var pushed atomic.Int64
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		for range 32 { // 512 KiB offered, 8x the budget
-			s.ForwardToTCP(make([]byte, msgSize))
-			pushed.Add(1)
+	s := newQueueTestSession(t, &gatedClientConn{allow: make(chan struct{})}, budget)
+	for range budget / msgSize {
+		if err := s.ForwardToTCP(make([]byte, msgSize)); err != nil {
+			t.Fatalf("admit within budget: %v", err)
 		}
-	}()
-
-	// With the consumer fully stalled the producer must stop at the budget.
-	// One message may additionally be parked inside the consumer's Send.
-	time.Sleep(200 * time.Millisecond)
-	if got := s.queuedBytesNow(); got > budget {
-		t.Fatalf("queued bytes exceeded budget: got=%d budget=%d", got, budget)
-	}
-	if p := pushed.Load(); p >= 32 {
-		t.Fatalf("producer was never backpressured: pushed all %d messages against a stalled consumer", p)
 	}
 
-	// Un-stall the consumer; everything must drain and the producer finish.
-	close(client.allow)
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("producer did not finish after consumer drained")
+	start := time.Now()
+	if err := s.ForwardToTCP(make([]byte, msgSize)); err != ErrSessionRelayQueueFull {
+		t.Fatalf("expected ErrSessionRelayQueueFull, got %v", err)
 	}
-
-	// Wait for the consumer to drain the tail.
-	deadline := time.Now().Add(5 * time.Second)
-	for client.received.Load() != 32*msgSize {
-		if time.Now().After(deadline) {
-			t.Fatalf("consumer drained %d bytes, want %d", client.received.Load(), 32*msgSize)
-		}
-		time.Sleep(5 * time.Millisecond)
+	if time.Since(start) > 100*time.Millisecond {
+		t.Fatal("full per-session queue blocked the shared producer")
+	}
+	if got := s.queuedBytesNow(); got != budget {
+		t.Fatalf("queued bytes=%d, want strict budget %d", got, budget)
 	}
 }
 
-// TestForwardToTCPUnblocksOnClose verifies a producer blocked on the byte
-// budget returns promptly when the session closes rather than leaking.
-func TestForwardToTCPUnblocksOnClose(t *testing.T) {
-	client := &gatedClientConn{allow: make(chan struct{})} // consumer never runs
-	s := newQueueTestSession(t, client, 1024)
-
-	s.ForwardToTCP(make([]byte, 1024)) // fills the budget exactly
-
-	blocked := make(chan struct{})
-	go func() {
-		defer close(blocked)
-		s.ForwardToTCP(make([]byte, 512)) // must block: budget full
-	}()
-
-	time.Sleep(50 * time.Millisecond)
-	select {
-	case <-blocked:
-		t.Fatal("producer was not blocked by a full budget")
-	default:
+func TestForwardToTCPRejectsAfterClose(t *testing.T) {
+	s := newQueueTestSession(t, &gatedClientConn{allow: make(chan struct{})}, 1024)
+	if err := s.ForwardToTCP(make([]byte, 1024)); err != nil {
+		t.Fatalf("fill queue: %v", err)
+	}
+	if err := s.ForwardToTCP(make([]byte, 1)); err != ErrSessionRelayQueueFull {
+		t.Fatalf("expected full queue error, got %v", err)
 	}
 
 	s.Close()
-	select {
-	case <-blocked:
-	case <-time.After(2 * time.Second):
-		t.Fatal("producer still blocked after session close")
+	if err := s.ForwardToTCP([]byte("late")); err != ErrSessionClosed {
+		t.Fatalf("expected ErrSessionClosed, got %v", err)
 	}
 }
 
-// TestForwardToTCPOversizedMessage verifies a single message larger than the
-// whole budget is admitted when the queue is empty (no deadlock).
-func TestForwardToTCPOversizedMessage(t *testing.T) {
-	client := &gatedClientConn{allow: make(chan struct{})}
-	close(client.allow)
-	s := newQueueTestSession(t, client, 1024)
-
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		s.ForwardToTCP(make([]byte, 64*1024)) // 64x the budget
-	}()
-
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("oversized message deadlocked the relay")
+func TestForwardToTCPOversizedMessageIsRejected(t *testing.T) {
+	s := newQueueTestSession(t, &gatedClientConn{allow: make(chan struct{})}, 1024)
+	if err := s.ForwardToTCP(make([]byte, 64*1024)); err != ErrSessionRelayQueueFull {
+		t.Fatalf("expected strict budget rejection, got %v", err)
+	}
+	if got := s.queuedBytesNow(); got != 0 {
+		t.Fatalf("oversized rejection consumed budget: %d", got)
 	}
 }
 
@@ -165,7 +115,9 @@ func TestSessionConnWrapperNoDataLoss(t *testing.T) {
 	for i := range payload {
 		payload[i] = byte(i * 31)
 	}
-	go s.ForwardToTCP(bytes.Clone(payload))
+	if err := s.ForwardToTCP(bytes.Clone(payload)); err != nil {
+		t.Fatalf("queue payload: %v", err)
+	}
 
 	got := make([]byte, 0, len(payload))
 	buf := make([]byte, 8*1024)
@@ -183,13 +135,43 @@ func TestSessionConnWrapperNoDataLoss(t *testing.T) {
 	}
 }
 
+func TestSessionConnWrapperKeepsUnreadTailInsideBudget(t *testing.T) {
+	const budget = 16
+	s := newQueueTestSession(t, nil, budget)
+	conn := s.ToConn()
+	if err := s.ForwardToTCP([]byte("0123456789abcdef")); err != nil {
+		t.Fatalf("fill queue: %v", err)
+	}
+
+	buf := make([]byte, 4)
+	if n, err := conn.Read(buf); err != nil || n != len(buf) {
+		t.Fatalf("partial read n=%d err=%v", n, err)
+	}
+	if got := s.queuedBytesNow(); got != 12 {
+		t.Fatalf("charged unread tail=%d, want 12", got)
+	}
+	if err := s.ForwardToTCP([]byte("12345")); err != ErrSessionRelayQueueFull {
+		t.Fatalf("unread tail escaped byte budget: %v", err)
+	}
+
+	rest := make([]byte, 12)
+	if n, err := io.ReadFull(conn, rest); err != nil || n != len(rest) {
+		t.Fatalf("drain tail n=%d err=%v", n, err)
+	}
+	if got := s.queuedBytesNow(); got != 0 {
+		t.Fatalf("queue charge after drain=%d, want 0", got)
+	}
+}
+
 // TestSessionConnWrapperEOFAfterClose verifies reads return io.EOF once the
 // session closes and the queue is drained.
 func TestSessionConnWrapperEOFAfterClose(t *testing.T) {
 	s := newQueueTestSession(t, &gatedClientConn{allow: make(chan struct{})}, maxQueuedBytes)
 	conn := s.ToConn()
 
-	s.ForwardToTCP([]byte("tail"))
+	if err := s.ForwardToTCP([]byte("tail")); err != nil {
+		t.Fatalf("queue tail: %v", err)
+	}
 	s.Close()
 
 	// The queued message is still served after close...
@@ -205,7 +187,8 @@ func TestSessionConnWrapperEOFAfterClose(t *testing.T) {
 	}
 }
 
-// TestSessionConnWrapperDeadline verifies the read deadline still fires.
+// TestSessionConnWrapperDeadline verifies the read deadline fires and remains
+// in force until a caller replaces it, matching net.Conn semantics.
 func TestSessionConnWrapperDeadline(t *testing.T) {
 	s := newQueueTestSession(t, &gatedClientConn{allow: make(chan struct{})}, maxQueuedBytes)
 	conn := s.ToConn()
@@ -219,11 +202,40 @@ func TestSessionConnWrapperDeadline(t *testing.T) {
 	if time.Since(start) > time.Second {
 		t.Fatal("deadline fired too late")
 	}
+
+	start = time.Now()
+	if _, err := conn.Read(make([]byte, 16)); err != context.DeadlineExceeded {
+		t.Fatalf("deadline did not persist across reads: %v", err)
+	}
+	if time.Since(start) > 100*time.Millisecond {
+		t.Fatal("expired deadline was reset after one read")
+	}
 }
 
-// TestForwardToTCPConcurrentClose hammers Close against in-flight producers;
-// under the previous implementation this raced into a send-on-closed-channel
-// panic.
+func TestSessionConnWrapperDeadlineUpdateWakesBlockedRead(t *testing.T) {
+	s := newQueueTestSession(t, &gatedClientConn{allow: make(chan struct{})}, maxQueuedBytes)
+	conn := s.ToConn()
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := conn.Read(make([]byte, 16))
+		errCh <- err
+	}()
+
+	if err := conn.SetReadDeadline(time.Now().Add(25 * time.Millisecond)); err != nil {
+		t.Fatalf("set deadline: %v", err)
+	}
+	select {
+	case err := <-errCh:
+		if err != context.DeadlineExceeded {
+			t.Fatalf("expected DeadlineExceeded, got %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("deadline update did not wake blocked Read")
+	}
+}
+
+// TestForwardToTCPConcurrentClose hammers Close against in-flight producers
+// and verifies admission stays panic-free and nonblocking.
 func TestForwardToTCPConcurrentClose(t *testing.T) {
 	for range 50 {
 		client := &gatedClientConn{allow: make(chan struct{})}
@@ -237,12 +249,114 @@ func TestForwardToTCPConcurrentClose(t *testing.T) {
 			go func() {
 				defer wg.Done()
 				for range 100 {
-					s.ForwardToTCP(make([]byte, 128))
+					_ = s.ForwardToTCP(make([]byte, 128))
 				}
 			}()
 		}
 		time.Sleep(time.Millisecond)
 		s.Close()
 		wg.Wait()
+	}
+}
+
+type sharedAgentConn struct {
+	closes atomic.Int64
+	sends  atomic.Int64
+}
+
+func (c *sharedAgentConn) Send([]byte) error {
+	c.sends.Add(1)
+	return nil
+}
+func (c *sharedAgentConn) Read() (int, []byte, error) { return 0, nil, nil }
+func (c *sharedAgentConn) Close() error {
+	c.closes.Add(1)
+	return nil
+}
+func (c *sharedAgentConn) WrapToConnection() net.Conn { return nil }
+
+func TestSessionCloseDoesNotCloseSharedAgent(t *testing.T) {
+	agent := &sharedAgentConn{}
+	first := newQueueTestSession(t, nil, 1024)
+	second := newQueueTestSession(t, nil, 1024)
+	first.AgentCommunicator = agent
+	second.AgentCommunicator = agent
+
+	first.Close()
+	if got := agent.closes.Load(); got != 0 {
+		t.Fatalf("closing one session closed shared agent %d time(s)", got)
+	}
+	if err := second.SendToAgent([]byte("still-live")); err != nil {
+		t.Fatalf("second session lost shared agent: %v", err)
+	}
+	if got := agent.sends.Load(); got != 1 {
+		t.Fatalf("second session sends=%d, want 1", got)
+	}
+}
+
+func TestRelayBudgetIsSessionIsolated(t *testing.T) {
+	first := newQueueTestSession(t, nil, 4)
+	second := newQueueTestSession(t, nil, 4)
+	if err := first.ForwardToTCP([]byte("full")); err != nil {
+		t.Fatalf("fill first session: %v", err)
+	}
+	if err := first.ForwardToTCP([]byte("x")); err != ErrSessionRelayQueueFull {
+		t.Fatalf("expected first session full, got %v", err)
+	}
+	if err := second.ForwardToTCP([]byte("live")); err != nil {
+		t.Fatalf("first session blocked second: %v", err)
+	}
+}
+
+func TestAgentInstanceRoutingRejectsForeignConnection(t *testing.T) {
+	owner := uuid.New()
+	foreign := uuid.New()
+	session := newQueueTestSession(t, nil, 1024)
+	session.AgentInstanceID = owner
+
+	if got := GetSessionForAgentInstance(session.ID, owner); got != session {
+		t.Fatal("owning agent instance could not route its session")
+	}
+	if got := GetSessionForAgentInstance(session.ID, foreign); got != nil {
+		t.Fatal("foreign agent instance routed another connection's session")
+	}
+}
+
+func TestCloseAgentInstanceSessionsDoesNotCloseReplacementSessions(t *testing.T) {
+	oldInstance := uuid.New()
+	newInstance := uuid.New()
+	oldSession := newQueueTestSession(t, nil, 1024)
+	newSession := newQueueTestSession(t, nil, 1024)
+	oldSession.AgentInstanceID = oldInstance
+	newSession.AgentInstanceID = newInstance
+
+	CloseAgentInstanceSessions(oldInstance)
+
+	if GetSession(oldSession.ID) != nil {
+		t.Fatal("disconnected agent instance retained its session")
+	}
+	if GetSession(newSession.ID) == nil {
+		t.Fatal("stale disconnect closed replacement agent session")
+	}
+}
+
+func TestSessionCloseRetainsTeardownSafeAuditRoute(t *testing.T) {
+	s := newQueueTestSession(t, nil, 1024)
+	s.AgentInstanceID = uuid.New()
+	storeSessionAuditRoute(s.ID, "database-session", "org-id", s.AgentInstanceID)
+	t.Cleanup(func() { deleteSessionAuditRoute(s.ID) })
+
+	s.Close()
+	if live := GetSession(s.ID); live != nil {
+		t.Fatal("closed session remained in live routing map")
+	}
+	route := GetSessionAuditRoute(s.ID)
+	if route == nil {
+		t.Fatal("audit route was deleted with live session")
+	}
+	if route.DatabaseSessionID != "database-session" ||
+		route.OrgID != "org-id" ||
+		route.AgentInstanceID != s.AgentInstanceID {
+		t.Fatalf("unexpected audit route: %#v", route)
 	}
 }

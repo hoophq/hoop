@@ -288,10 +288,7 @@ async fn handle_socket(shared: Shared, socket: WebSocket) {
                                         );
                                     }
                                 } else {
-                                    println!(
-                                        "> No TCP session found for sid: {}",
-                                        header.sid
-                                    );
+                                    println!("> No TCP session found for sid: {}", header.sid);
                                 }
                             }
                         } else {
@@ -420,6 +417,7 @@ async fn handle_tcp_client(
         sid: session_id,
         len: handshake_info.len() as u32,
         data_size: 20,
+        control: false,
     };
 
     let mut handshake_framed = Vec::with_capacity(20 + handshake_info.len());
@@ -482,6 +480,7 @@ async fn handle_tcp_client(
             sid: session_id,
             len: first_rdp_data.len() as u32,
             data_size: 20,
+            control: false,
         };
         let mut framed_data = Vec::with_capacity(20 + first_rdp_data.len());
         framed_data.extend_from_slice(&header.encode());
@@ -520,6 +519,7 @@ async fn handle_tcp_client(
                         sid: session_id,
                         len: rdp_data.len() as u32,
                         data_size: 20,
+                        control: false,
                     };
 
                     // Frame the RDP data with header

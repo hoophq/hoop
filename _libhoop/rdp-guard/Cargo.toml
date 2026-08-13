@@ -1,0 +1,15 @@
+# OSS stub for the Hoop RDP PII guard.
+#
+# The package name and version MUST match the enterprise crate in
+# hoophq/libhoop exactly: a path dependency is recorded in Cargo.lock by name
+# and version, not by content, so any divergence churns agentrs/Cargo.lock
+# every time the build flavor is swapped.
+[package]
+name = "hoop-rdp-guard"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+anyhow = "1.0.0"
+tokio = { version = "1.45.0", features = ["io-util"] }

@@ -17,6 +17,13 @@ set -euo pipefail
 OCR_PORT="${OCR_PORT:-18868}"
 OCR_HEALTH_URL="http://127.0.0.1:${OCR_PORT}/healthz"
 OCR_START_TIMEOUT="${OCR_START_TIMEOUT:-120}"
+WEB_CONCURRENCY="${WEB_CONCURRENCY:-1}"
+case "${WEB_CONCURRENCY}" in
+    ''|*[!0-9]*|0)
+        echo "[entrypoint] WEB_CONCURRENCY must be a positive integer" >&2
+        exit 1
+        ;;
+esac
 
 OCR_PID=""
 AGENT_PID=""
@@ -43,7 +50,8 @@ echo "[entrypoint] starting bundled OCR engine on 127.0.0.1:${OCR_PORT}"
 python3 -m uvicorn server_rapidocr:app \
     --app-dir /opt/ocr \
     --host 127.0.0.1 \
-    --port "${OCR_PORT}" &
+    --port "${OCR_PORT}" \
+    --workers "${WEB_CONCURRENCY}" &
 OCR_PID=$!
 
 echo "[entrypoint] waiting for OCR engine health (timeout ${OCR_START_TIMEOUT}s)"

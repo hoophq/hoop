@@ -190,6 +190,34 @@ func TestSetAgentCapabilities_IgnoresStaleInstance(t *testing.T) {
 	}
 }
 
+func TestRegisterAgentClosesSupersededConnection(t *testing.T) {
+	const name = "agent-replacement-closes-old"
+	first := &sharedAgentConn{}
+	firstID := registerAgent(name, first)
+	defer BrokerInstance.agents.Delete(name)
+
+	second := &sharedAgentConn{}
+	secondID := registerAgent(name, second)
+	if firstID == secondID {
+		t.Fatal("replacement reused the prior instance ID")
+	}
+	if got := first.closes.Load(); got != 1 {
+		t.Fatalf("superseded connection close count=%d, want 1", got)
+	}
+	if got := second.closes.Load(); got != 0 {
+		t.Fatalf("replacement connection was closed %d time(s)", got)
+	}
+	comm, activeID, ok := GetAgent(name)
+	if !ok || comm != second || activeID != secondID {
+		t.Fatalf("replacement is not the active entry: ok=%v id=%s", ok, activeID)
+	}
+
+	RemoveAgent(name, firstID)
+	if _, activeID, ok := GetAgent(name); !ok || activeID != secondID {
+		t.Fatal("stale teardown removed the replacement")
+	}
+}
+
 // Sentinel must stay byte-for-byte identical to the agent constant
 // (ws::control::CONTROL_SENTINEL_SID) and pass header validation.
 func TestControlSentinelSID_StableAndValid(t *testing.T) {
@@ -222,5 +250,36 @@ func TestSetAgentCapabilities_DefensiveCopy(t *testing.T) {
 	value, known := AgentCapability(name, CapabilitySupportsPIIGuard)
 	if !known || !value {
 		t.Fatalf("stored state must be insulated from caller mutation, got value=%v known=%v", value, known)
+	}
+}
+
+func TestSetAgentCapabilities_IgnoresStaleInstance(t *testing.T) {
+	const name = "agent-stale-capabilities"
+	oldID, err := CreateAgent(name, nil)
+	if err != nil {
+		t.Fatalf("CreateAgent old: %v", err)
+	}
+	newID, err := CreateAgent(name, nil)
+	if err != nil {
+		t.Fatalf("CreateAgent new: %v", err)
+	}
+	defer BrokerInstance.agents.Delete(name)
+
+	SetAgentCapabilities(name, oldID, map[string]string{CapabilitySupportsPIIGuard: "true"})
+	entry, ok := getAgentEntry(name)
+	if !ok {
+		t.Fatal("replacement agent missing")
+	}
+	entry.readyMu.Lock()
+	staleMarkedReady := entry.readyClosed
+	entry.readyMu.Unlock()
+	if staleMarkedReady {
+		t.Fatal("stale connection marked replacement capabilities ready")
+	}
+
+	SetAgentCapabilities(name, newID, map[string]string{CapabilitySupportsPIIGuard: "false"})
+	value, known := AgentCapability(name, CapabilitySupportsPIIGuard)
+	if !known || value {
+		t.Fatalf("replacement capability = value:%v known:%v, want false/true", value, known)
 	}
 }

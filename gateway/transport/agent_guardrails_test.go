@@ -3,13 +3,39 @@ package transport
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
+	"github.com/gorilla/websocket"
 	pgtypes "github.com/hoophq/hoop/common/pgtypes"
 	pb "github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/broker"
 	"github.com/hoophq/hoop/gateway/models"
 )
+
+func TestAgentGuardrailsDatabaseSessionID(t *testing.T) {
+	route := &broker.SessionAuditRoute{
+		DatabaseSessionID: "audit-session-id",
+		OrgID:             "org-id",
+	}
+
+	got, ok := agentGuardrailsDatabaseSessionID(route)
+	if !ok {
+		t.Fatal("expected a database session ID")
+	}
+	if got != route.DatabaseSessionID {
+		t.Fatalf("expected database session ID %q, got %q", route.DatabaseSessionID, got)
+	}
+
+	route.DatabaseSessionID = ""
+	if _, ok := agentGuardrailsDatabaseSessionID(route); ok {
+		t.Fatal("missing database session ID must not be accepted")
+	}
+}
 
 func TestBuildLegacyGuardRailErrorMessage(t *testing.T) {
 	tests := []struct {
@@ -266,5 +292,250 @@ func TestRewritePGGuardRailsErrorPacket(t *testing.T) {
 	}
 	if !strings.Contains(frame, "Contact #dba before querying this dataset") {
 		t.Fatalf("expected custom rule message in frame, got frame=%q", frame)
+	}
+}
+
+func TestDecodeAgentGuardrailsViolationBoundsWork(t *testing.T) {
+	valid := []byte(`{"kind":"detection","entity_types":["PERSON"],"detections":[]}`)
+	report, err := decodeAgentGuardrailsViolation(valid)
+	if err != nil {
+		t.Fatalf("decode valid report: %v", err)
+	}
+	if report.Kind != "detection" {
+		t.Fatalf("kind=%q, want detection", report.Kind)
+	}
+
+	if _, err := decodeAgentGuardrailsViolation(make([]byte, maxAgentGuardrailsPayload+1)); err == nil {
+		t.Fatal("oversized report payload was accepted")
+	}
+
+	tooMany := agentGuardrailsViolation{
+		Kind:       "detection",
+		Detections: make([]agentGuardrailsDetection, maxAgentGuardrailsDetections+1),
+	}
+	payload, err := json.Marshal(tooMany)
+	if err != nil {
+		t.Fatalf("marshal oversized detection list: %v", err)
+	}
+	if len(payload) > maxAgentGuardrailsPayload {
+		t.Fatalf("test payload unexpectedly exceeds byte cap: %d", len(payload))
+	}
+	if _, err := decodeAgentGuardrailsViolation(payload); err == nil {
+		t.Fatal("oversized detection list was accepted")
+	}
+}
+
+func TestAgentGuardrailsProcessorRejectsFullQueue(t *testing.T) {
+	processor := &agentGuardrailsProcessor{
+		queue: make(chan agentGuardrailsWork, 1),
+	}
+	if err := processor.submit(agentGuardrailsWork{}); err != nil {
+		t.Fatalf("first admission: %v", err)
+	}
+	if err := processor.submit(agentGuardrailsWork{}); !errors.Is(err, errAgentGuardrailsQueueFull) {
+		t.Fatalf("second admission error=%v, want queue full", err)
+	}
+	close(processor.queue)
+}
+
+func TestHandleWebSocketMessageTreatsLeadingBraceAsRaw(t *testing.T) {
+	sid := uuid.New()
+	payload := []byte{'{', 0xff, 0x00}
+	header := (&broker.Header{SID: sid, Len: uint32(len(payload))}).Encode()
+	frame := append(header, payload...)
+
+	if err := handleWebSocketMessage("agent", uuid.New(), frame, nil); err != nil {
+		t.Fatalf("target-controlled raw bytes closed the shared relay: %v", err)
+	}
+}
+
+func TestDecodeAgentControlFrameSupportsLegacyUntilV2(t *testing.T) {
+	const agentName = "legacy-frame-agent"
+	instanceID, err := broker.CreateAgent(agentName, nil)
+	if err != nil {
+		t.Fatalf("CreateAgent: %v", err)
+	}
+	defer broker.RemoveAgent(agentName, instanceID)
+
+	message := broker.WebSocketMessage{
+		Type:     broker.MessageTypeCapabilities,
+		Metadata: map[string]string{broker.CapabilitySupportsPIIGuard: "false"},
+		Payload:  []byte{},
+	}
+	payload, err := json.Marshal(message)
+	if err != nil {
+		t.Fatalf("marshal legacy envelope: %v", err)
+	}
+	header := &broker.Header{
+		SID: broker.ControlSentinelSID,
+		Len: uint32(len(payload)),
+	}
+
+	decoded, control, err := decodeAgentControlFrame(
+		agentName,
+		instanceID,
+		header,
+		payload,
+	)
+	if err != nil {
+		t.Fatalf("decode legacy envelope: %v", err)
+	}
+	if !control || decoded.Type != broker.MessageTypeCapabilities {
+		t.Fatalf("legacy envelope was not recognized: control=%v msg=%+v", control, decoded)
+	}
+
+	broker.SetAgentCapabilities(agentName, instanceID, map[string]string{
+		broker.CapabilityFrameProtocol: broker.FrameProtocolV2,
+	})
+	_, control, err = decodeAgentControlFrame(agentName, instanceID, header, payload)
+	if err != nil {
+		t.Fatalf("classify post-negotiation frame: %v", err)
+	}
+	if control {
+		t.Fatal("legacy envelope remained enabled after v2 negotiation")
+	}
+}
+
+func TestCapabilityHandshakeAcknowledgesBeforeEnablingV2(t *testing.T) {
+	type upgradeResult struct {
+		conn *websocket.Conn
+		err  error
+	}
+	upgraded := make(chan upgradeResult, 1)
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		upgraded <- upgradeResult{conn: conn, err: err}
+		if err == nil {
+			<-release
+			_ = conn.Close()
+		}
+	}))
+
+	client, _, err := websocket.DefaultDialer.Dial(
+		"ws"+strings.TrimPrefix(server.URL, "http"),
+		nil,
+	)
+	if err != nil {
+		close(release)
+		server.Close()
+		t.Fatalf("dial test WebSocket: %v", err)
+	}
+	result := <-upgraded
+	if result.err != nil {
+		_ = client.Close()
+		close(release)
+		server.Close()
+		t.Fatalf("upgrade test WebSocket: %v", result.err)
+	}
+
+	const agentName = "frame-handshake-agent"
+	instanceID, err := broker.CreateAgent(agentName, result.conn)
+	if err != nil {
+		_ = client.Close()
+		close(release)
+		server.Close()
+		t.Fatalf("CreateAgent: %v", err)
+	}
+	defer func() {
+		broker.RemoveAgent(agentName, instanceID)
+		_ = client.Close()
+		close(release)
+		server.Close()
+	}()
+
+	capabilities := &broker.WebSocketMessage{
+		Type: broker.MessageTypeCapabilities,
+		Metadata: map[string]string{
+			broker.CapabilityFrameProtocol: broker.FrameProtocolV2,
+		},
+		Payload: []byte{},
+	}
+	frame, err := broker.EncodeWebSocketMessage(broker.ControlSentinelSID, capabilities)
+	if err != nil {
+		t.Fatalf("encode capability frame: %v", err)
+	}
+	if err := handleWebSocketMessage(agentName, instanceID, frame, nil); err != nil {
+		t.Fatalf("handle capability frame: %v", err)
+	}
+
+	messageType, ackFrame, err := client.ReadMessage()
+	if err != nil {
+		t.Fatalf("read capability acknowledgement: %v", err)
+	}
+	if messageType != websocket.BinaryMessage {
+		t.Fatalf("acknowledgement message type=%d, want binary", messageType)
+	}
+	sid, ack, err := broker.DecodeWebSocketMessage(ackFrame)
+	if err != nil {
+		t.Fatalf("decode capability acknowledgement: %v", err)
+	}
+	if sid != broker.ControlSentinelSID ||
+		ack.Type != broker.MessageTypeCapabilities ||
+		ack.Metadata[broker.CapabilityFrameProtocol] != broker.FrameProtocolV2 {
+		t.Fatalf("unexpected capability acknowledgement: sid=%s msg=%+v", sid, ack)
+	}
+	if !broker.AgentUsesFrameProtocolV2(agentName, instanceID) {
+		t.Fatal("v2 mode was not published after acknowledgement")
+	}
+}
+
+func TestHandleWebSocketMessageRejectsLengthMismatch(t *testing.T) {
+	sid := uuid.New()
+	payload := []byte{0x03, 0x00}
+	header := (&broker.Header{SID: sid, Len: 1}).Encode()
+	frame := append(header, payload...)
+
+	if err := handleWebSocketMessage("agent", uuid.New(), frame, nil); err == nil {
+		t.Fatal("mismatched declared payload length was accepted")
+	}
+}
+
+func TestHandleWebSocketMessageRejectsOversizedControl(t *testing.T) {
+	sid := uuid.New()
+	payload := make([]byte, maxAgentControlFrameBytes+1)
+	payload[0] = '{'
+	header := (&broker.Header{
+		SID:     sid,
+		Len:     uint32(len(payload)),
+		Control: true,
+	}).Encode()
+	frame := append(header, payload...)
+
+	if err := handleWebSocketMessage("agent", uuid.New(), frame, nil); err == nil {
+		t.Fatal("oversized control frame was accepted")
+	}
+}
+
+func TestAgentWebSocketDoesNotNegotiateCompression(t *testing.T) {
+	serverErr := make(chan error, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			serverErr <- err
+			return
+		}
+		serverErr <- conn.Close()
+	}))
+	defer server.Close()
+
+	dialer := websocket.Dialer{EnableCompression: true}
+	conn, response, err := dialer.Dial(
+		"ws"+strings.TrimPrefix(server.URL, "http"),
+		http.Header{},
+	)
+	if err != nil {
+		t.Fatalf("dial test WebSocket: %v", err)
+	}
+	defer conn.Close()
+
+	if extensions := response.Header.Get("Sec-WebSocket-Extensions"); strings.Contains(
+		strings.ToLower(extensions),
+		"permessage-deflate",
+	) {
+		t.Fatalf("agent relay negotiated compression: %q", extensions)
+	}
+	if err := <-serverErr; err != nil {
+		t.Fatalf("test WebSocket server: %v", err)
 	}
 }

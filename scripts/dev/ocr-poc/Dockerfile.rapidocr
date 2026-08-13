@@ -24,7 +24,7 @@ RUN pip install --no-cache-dir \
     "fastapi>=0.115,<1" \
     "uvicorn>=0.30,<1"
 
-COPY device_policy.py server_rapidocr.py /app/
+COPY device_policy.py bucket_rec.py raw_image.py server_rapidocr.py /app/
 # Parallel inference workers: uvicorn forks $WEB_CONCURRENCY processes,
 # each with its own model instance (the gateway analyzer issues up to 8
 # concurrent chunk requests). 4 matches the benchmarked configuration;

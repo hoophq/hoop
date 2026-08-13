@@ -309,6 +309,7 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 		dba.ID,
 		dba.ExpireAt,
 		ctxDuration,
+		sessionID,
 		agentGuard,
 	)
 

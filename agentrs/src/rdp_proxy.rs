@@ -1,14 +1,14 @@
 use anyhow::{Context as _, Result};
 use ironrdp_pdu::{mcs, nego, x224};
-use serde::Deserialize;
 use std::net::IpAddr;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncWrite};
 use tracing::debug;
 use tracing::info;
 use tracing::instrument;
 use typed_builder::TypedBuilder;
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use ironrdp_tokio::FramedWrite as _;
 
@@ -18,9 +18,9 @@ use crate::proxy::Proxy;
 #[derive(TypedBuilder)]
 pub struct RdpProxy<C, S> {
     config: Arc<conf::Conf>,
-    creds: String,
+    creds: Zeroizing<String>,
     username: String,
-    password: String,
+    password: Zeroizing<String>,
     server_target: String,
     client_address: SocketAddr,
     client_stream: C,
@@ -30,20 +30,12 @@ pub struct RdpProxy<C, S> {
     /// Agent-side PII guard for the post-CredSSP forwarding stage. None = no
     /// guard (transparent forwarding).
     #[builder(default)]
-    guard: Option<crate::piigate::config::GuardConfig>,
+    guard: Option<crate::guard::GuardConfig>,
     #[builder(default = String::new())]
     session_id: String,
     /// Reports guard violations to the gateway. None = no reporting.
     #[builder(default)]
     report: Option<crate::proxy::ViolationReporter>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct AppCredentialMapping {
-    #[serde(rename = "proxy_credential")]
-    pub proxy: AppCredential,
-    #[serde(rename = "target_credential")]
-    pub target: AppCredential,
 }
 
 impl<A, B> RdpProxy<A, B>
@@ -114,8 +106,8 @@ where
     debug!("Created TokioFramed for client and server");
     let credential_mapping = AppCredentialMapping {
         proxy: AppCredential::UsernamePassword {
-            username: creds.to_string(),
-            password: creds.to_string(),
+            username: creds.as_str().to_owned(),
+            password: creds,
         },
         target: AppCredential::UsernamePassword { username, password },
     };
@@ -177,6 +169,9 @@ where
         tokio::join!(client_credssp_fut, server_credssp_fut);
     client_credssp_res.context("CredSSP with client")?;
     server_credssp_res.context("CredSSP with server")?;
+    // CredSSP is complete; credentials are no longer needed for the live RDP
+    // stream. Zeroize them now rather than retaining them for the session.
+    drop(credential_mapping);
 
     // -- Intercept the Connect Confirm PDU, to override the server_security_protocol field -- //
 
@@ -189,37 +184,33 @@ where
 
     // -- Intercept the client's Client Info PDU to force server-side rendering
     //    performance flags (disable wallpaper, full-window drag, menu
-    //    animations, theming). This cuts the volume of bitmap updates the
-    //    server sends, which both reduces bandwidth and — when the PII guard is
-    //    active — shrinks the amount of screen the guard must OCR. Applied to
-    //    every RDP session through the proxy. Best-effort: if the Client Info
-    //    PDU is not seen (unexpected sequence), forwarding continues unmodified.
-    if let Err(e) = intercept_client_info(&mut client_framed, &mut server_framed).await {
-        // Never fail the session on an optimization: log and fall through to
-        // transparent forwarding with the client's original flags.
+    //    animations, theming). For an unguarded session this remains a
+    //    best-effort optimization. A guarded session requires a clean
+    //    activation boundary: after Client Info, both capability PDUs are
+    //    pinned before any graphics bytes can enter the forwarding stage.
+    if let Some(guard_config) = guard.as_ref() {
+        intercept_client_info(&mut client_framed, &mut server_framed)
+            .await
+            .context("guarded RDP activation requires a decodable Client Info PDU")?;
+        intercept_guarded_capabilities(&mut client_framed, &mut server_framed, guard_config)
+            .await
+            .context("pin guarded RDP capability negotiation")?;
+    } else if let Err(e) = intercept_client_info(&mut client_framed, &mut server_framed).await {
         info!("RDP perf-flag injection skipped ({e:#}); forwarding client flags unchanged");
     }
 
-    let (mut client_stream, client_leftover) = client_framed.into_inner();
-    let (mut server_stream, server_leftover) = server_framed.into_inner();
+    let (client_stream, client_leftover) = client_framed.into_inner();
+    let (server_stream, server_leftover) = server_framed.into_inner();
 
-    // -- here we will forwarding -- //
-
-    info!("RDP-TLS forwarding (credential injection)");
-
-    client_stream
-        .write_all(&server_leftover)
-        .await
-        .context("write server leftover to client")?;
-
-    server_stream
-        .write_all(&client_leftover)
-        .await
-        .context("write client leftover to server")?;
+    // `read_pdu` is cancel-safe by retaining read-ahead bytes in TokioFramed.
+    // Preserve those bytes as prefixes for Proxy rather than writing them here:
+    // server read-ahead must pass through the PII gate on guarded sessions.
 
     Proxy::builder()
         .transport_a(client_stream)
         .transport_b(server_stream)
+        .initial_a_to_b(client_leftover)
+        .initial_b_to_a(server_leftover)
         .session_id(session_id)
         .guard(guard)
         .report(report)
@@ -343,10 +334,64 @@ where
     handshake_result
 }
 
-#[derive(Clone, Debug, Deserialize)]
-pub enum AppCredential {
-    UsernamePassword { username: String, password: String },
+#[derive(Zeroize, ZeroizeOnDrop)]
+pub struct AppCredentialMapping {
+    pub proxy: AppCredential,
+    pub target: AppCredential,
 }
+
+#[derive(Zeroize)]
+pub enum AppCredential {
+    UsernamePassword {
+        username: String,
+        password: Zeroizing<String>,
+    },
+}
+
+fn sspi_password(password: &str) -> ironrdp_connector::sspi::Secret<String> {
+    // The allocation moves directly into SSPI's ZeroizeOnDrop wrapper. Never
+    // construct an ordinary connector Credentials value: that type drops its
+    // password String without scrubbing it after cloning into SSPI.
+    ironrdp_connector::sspi::Secret::new(password.to_owned())
+}
+
+const _: fn() = || {
+    fn assert_zeroize_on_drop<T: ZeroizeOnDrop>() {}
+    assert_zeroize_on_drop::<ironrdp_connector::sspi::Secret<String>>();
+    assert_zeroize_on_drop::<ironrdp_connector::sspi::Secret<Vec<u8>>>();
+};
+
+#[derive(Clone, Copy, Debug)]
+struct CredsspTsRequestHint;
+
+impl ironrdp_pdu::PduHint for CredsspTsRequestHint {
+    fn find_size(&self, bytes: &[u8]) -> ironrdp_core::DecodeResult<Option<(bool, usize)>> {
+        match ironrdp_connector::sspi::credssp::TsRequest::read_length(bytes) {
+            Ok(length) => Ok(Some((true, length))),
+            Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => Ok(None),
+            Err(error) => Err(ironrdp_core::other_err!(
+                "CredsspTsRequestHint",
+                source: error
+            )),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct CredsspEarlyUserAuthResultHint;
+
+impl ironrdp_pdu::PduHint for CredsspEarlyUserAuthResultHint {
+    fn find_size(&self, _bytes: &[u8]) -> ironrdp_core::DecodeResult<Option<(bool, usize)>> {
+        Ok(Some((
+            true,
+            ironrdp_connector::sspi::credssp::EARLY_USER_AUTH_RESULT_PDU_SIZE,
+        )))
+    }
+}
+
+const CREDSSP_TS_REQUEST_HINT: CredsspTsRequestHint = CredsspTsRequestHint;
+const CREDSSP_EARLY_USER_AUTH_RESULT_HINT: CredsspEarlyUserAuthResultHint =
+    CredsspEarlyUserAuthResultHint;
 
 async fn perform_credssp_with_server<S>(
     framed: &mut ironrdp_tokio::Framed<S>,
@@ -358,60 +403,81 @@ async fn perform_credssp_with_server<S>(
 where
     S: ironrdp_tokio::FramedRead + ironrdp_tokio::FramedWrite,
 {
+    use ironrdp_connector::sspi;
     use ironrdp_tokio::FramedWrite as _;
 
-    let credentials = match credentials {
-        AppCredential::UsernamePassword { username, password } => {
-            ironrdp_connector::Credentials::UsernamePassword {
-                username: username.clone(),
-                password: password.to_string().to_owned(),
-            }
-        }
-    };
-
-    let (mut sequence, mut ts_request) = ironrdp_connector::credssp::CredsspSequence::init(
-        credentials,
-        None,
-        security_protocol,
-        ironrdp_connector::ServerName::new(server_name),
+    let AppCredential::UsernamePassword { username, password } = credentials;
+    let username = sspi::Username::new(username, None).context("invalid username")?;
+    let credentials = sspi::AuthIdentity {
+        username,
+        password: sspi_password(password.as_str()),
+    }
+    .into();
+    let service_principal_name = format!("TERMSRV/{server_name}");
+    let protocol_config: Box<dyn sspi::negotiate::ProtocolConfig> =
+        Box::<sspi::ntlm::NtlmConfig>::default();
+    let client_mode = sspi::credssp::ClientMode::Negotiate(sspi::NegotiateConfig {
+        protocol_config,
+        package_list: None,
+        client_computer_name: server_name,
+    });
+    let mut client = sspi::credssp::CredSspClient::new(
         server_public_key,
-        None,
-    )?;
-
+        credentials,
+        sspi::credssp::CredSspMode::WithCredentials,
+        client_mode,
+        service_principal_name,
+    )
+    .context("initialize CredSSP client")?;
+    let mut request = sspi::credssp::TsRequest::default();
     let mut buf = ironrdp_pdu::WriteBuf::new();
 
     loop {
-        let mut generator = sequence.process_ts_request(ts_request);
-        let client_state = generator
+        let mut generator = client.process(request);
+        let state = generator
             .resolve_to_result()
             .context("sspi generator resolve")?;
         drop(generator);
 
-        buf.clear();
-        let written = sequence.handle_process_result(client_state, &mut buf)?;
-
-        if let Some(response_len) = written.size() {
-            let response = &buf[..response_len];
-            framed
-                .write_all(response)
-                .await
-                .map_err(|e| ironrdp_connector::custom_err!("write all", e))?;
-        }
-
-        let Some(next_pdu_hint) = sequence.next_pdu_hint() else {
-            break;
+        let (response, final_message) = match state {
+            sspi::credssp::ClientState::ReplyNeeded(response) => (response, false),
+            sspi::credssp::ClientState::FinalMessage(response) => (response, true),
         };
+        buf.clear();
+        let response_len = usize::from(response.buffer_len());
+        response
+            .encode_ts_request(buf.unfilled_to(response_len))
+            .context("encode CredSSP request")?;
+        buf.advance(response_len);
+        framed
+            .write_all(&buf[..response_len])
+            .await
+            .context("write CredSSP request")?;
+
+        if final_message {
+            if !security_protocol.contains(nego::SecurityProtocol::HYBRID_EX) {
+                break;
+            }
+            let pdu = framed
+                .read_by_hint(&CREDSSP_EARLY_USER_AUTH_RESULT_HINT)
+                .await
+                .context("read CredSSP early user authorization result")?;
+            match sspi::credssp::EarlyUserAuthResult::from_buffer(&pdu[..])
+                .context("decode CredSSP early user authorization result")?
+            {
+                sspi::credssp::EarlyUserAuthResult::Success => break,
+                sspi::credssp::EarlyUserAuthResult::AccessDenied => {
+                    anyhow::bail!("CredSSP early user authorization denied")
+                }
+            }
+        }
 
         let pdu = framed
-            .read_by_hint(next_pdu_hint)
+            .read_by_hint(&CREDSSP_TS_REQUEST_HINT)
             .await
-            .context("read frame by hint")?;
-
-        if let Some(next_request) = sequence.decode_server_message(&pdu)? {
-            ts_request = next_request;
-        } else {
-            break;
-        }
+            .context("read CredSSP request")?;
+        request =
+            sspi::credssp::TsRequest::from_buffer(&pdu[..]).context("decode CredSSP request")?;
     }
 
     Ok(())
@@ -482,7 +548,7 @@ where
 
         let identity = ironrdp_connector::sspi::AuthIdentity {
             username,
-            password: password.to_string().to_owned().into(),
+            password: sspi_password(password.as_str()),
         };
 
         let mut sequence = ironrdp_acceptor::credssp::CredsspSequence::init(
@@ -606,7 +672,7 @@ fn forced_performance_flags() -> ironrdp_pdu::rdp::client_info::PerformanceFlags
 /// patched to OR-in [`forced_performance_flags`] and forwarded; every other PDU
 /// is forwarded byte-for-byte unmodified. Returns as soon as the Client Info
 /// PDU has been forwarded, leaving any buffered-ahead bytes in the framed
-/// readers for the caller's leftover flush.
+/// readers for the caller to preserve as forwarding prefixes.
 ///
 /// Safety / cancellation: each PDU is fully read and then forwarded before the
 /// next read, so on any error the streams are left on a clean PDU boundary and
@@ -663,13 +729,86 @@ where
     }
 }
 
+/// Relays the guarded activation sequence until both capability-bearing PDUs
+/// have been losslessly rewritten: server Demand Active and client Confirm
+/// Active. Every post-Client-Info frame must remain valid X224/MCS while this
+/// runs; malformed input, unsupported/lossy capability encoding, or an
+/// unexpected Fast-Path update fails the guarded session closed.
+async fn intercept_guarded_capabilities<C, S>(
+    client_framed: &mut ironrdp_tokio::TokioFramed<C>,
+    server_framed: &mut ironrdp_tokio::TokioFramed<S>,
+    guard: &crate::guard::GuardConfig,
+) -> Result<()>
+where
+    C: AsyncWrite + AsyncRead + Unpin + Send + Sync,
+    S: AsyncWrite + AsyncRead + Unpin + Send + Sync,
+{
+    const MAX_PDUS_PER_DIRECTION: usize = 128;
+
+    let mut server_pinned = false;
+    let mut client_pinned = false;
+    let mut server_seen = 0usize;
+    let mut client_seen = 0usize;
+
+    loop {
+        tokio::select! {
+            biased;
+            server_read = server_framed.read_pdu() => {
+                let (_, frame) =
+                    server_read.context("read server PDU during capability intercept")?;
+                let patched = guard
+                    .pin_server_capability_frame(&frame)
+                    .context("pin Server Demand Active")?;
+                if patched.is_some() {
+                    server_pinned = true;
+                }
+                client_framed
+                    .write_all(patched.as_deref().unwrap_or(frame.as_ref()))
+                    .await
+                    .context("relay server activation PDU to client")?;
+                server_seen += 1;
+                if server_seen > MAX_PDUS_PER_DIRECTION {
+                    anyhow::bail!(
+                        "Server Demand Active not seen within {MAX_PDUS_PER_DIRECTION} server PDUs"
+                    );
+                }
+            }
+            client_read = client_framed.read_pdu() => {
+                let (_, frame) =
+                    client_read.context("read client PDU during capability intercept")?;
+                let patched = guard
+                    .pin_client_capability_frame(&frame)
+                    .context("pin Client Confirm Active")?;
+                if patched.is_some() {
+                    client_pinned = true;
+                }
+                server_framed
+                    .write_all(patched.as_deref().unwrap_or(frame.as_ref()))
+                    .await
+                    .context("relay client activation PDU to server")?;
+                client_seen += 1;
+                if client_seen > MAX_PDUS_PER_DIRECTION {
+                    anyhow::bail!(
+                        "Client Confirm Active not seen within {MAX_PDUS_PER_DIRECTION} client PDUs"
+                    );
+                }
+            }
+        }
+
+        if server_pinned && client_pinned {
+            info!("RDP: guarded capability negotiation pinned to Fast-Path bitmaps");
+            return Ok(());
+        }
+    }
+}
+
 /// If `frame` is an `X224(SendDataRequest)` whose user data is a Client Info
 /// PDU, returns the re-encoded frame with [`forced_performance_flags`] OR-ed
 /// in. Returns `None` for any frame that is not a Client Info PDU (which is
 /// then forwarded verbatim), so a decode mismatch can never corrupt the stream.
 fn patch_client_info_frame(frame: &[u8]) -> Option<Vec<u8>> {
-    use ironrdp_pdu::rdp::client_info::{ExtendedClientOptionalInfo, PerformanceFlags};
     use ironrdp_pdu::rdp::ClientInfoPdu;
+    use ironrdp_pdu::rdp::client_info::{ExtendedClientOptionalInfo, PerformanceFlags};
     use std::borrow::Cow;
 
     // X224 → MCS SendDataRequest (client→server data carrier).
@@ -707,7 +846,9 @@ fn patch_client_info_frame(frame: &[u8]) -> Option<Vec<u8>> {
     let opt = &info.client_info.extra_info.optional_data;
     let timezone = opt.timezone()?.clone();
     let session_id = opt.session_id()?;
-    let current = opt.performance_flags().unwrap_or_else(PerformanceFlags::empty);
+    let current = opt
+        .performance_flags()
+        .unwrap_or_else(PerformanceFlags::empty);
     let updated = current | forced_performance_flags();
 
     let builder = ExtendedClientOptionalInfo::builder()
@@ -772,14 +913,74 @@ impl<S> GetPeerCert for tokio_rustls::server::TlsStream<S> {
 }
 
 #[cfg(test)]
+mod credssp_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn zeroizing_credssp_client_authenticates() {
+        let (client_io, server_io) = tokio::io::duplex(64 * 1024);
+        let mut client_framed = ironrdp_tokio::TokioFramed::new(client_io);
+        let mut server_framed = ironrdp_tokio::TokioFramed::new(server_io);
+        let public_key = vec![0x42; 64];
+        let credentials = AppCredential::UsernamePassword {
+            username: "hooptest".to_owned(),
+            password: Zeroizing::new("secret".to_owned()),
+        };
+
+        let client = perform_credssp_with_server(
+            &mut client_framed,
+            "rdp-target".to_owned(),
+            public_key.clone(),
+            nego::SecurityProtocol::HYBRID,
+            &credentials,
+        );
+        let server = async {
+            let identity = ironrdp_connector::sspi::AuthIdentity {
+                username: ironrdp_connector::sspi::Username::parse("hooptest")
+                    .context("parse test username")?,
+                password: sspi_password("secret"),
+            };
+            let mut sequence = ironrdp_acceptor::credssp::CredsspSequence::init(
+                &identity,
+                ironrdp_connector::ServerName::new("rdp-target".to_owned()),
+                public_key,
+                None,
+            )?;
+            let mut buf = ironrdp_pdu::WriteBuf::new();
+
+            loop {
+                let Some(hint) = sequence.next_pdu_hint()? else {
+                    break;
+                };
+                let pdu = server_framed.read_by_hint(hint).await?;
+                let Some(request) = sequence.decode_client_message(&pdu)? else {
+                    break;
+                };
+                let state = sequence.process_ts_request(request);
+                buf.clear();
+                if let Some(response_len) = sequence.handle_process_result(state, &mut buf)?.size()
+                {
+                    server_framed.write_all(&buf[..response_len]).await?;
+                }
+            }
+            anyhow::Ok(())
+        };
+
+        let (client_result, server_result) = tokio::join!(client, server);
+        client_result.expect("zeroizing CredSSP client failed");
+        server_result.expect("CredSSP server failed");
+    }
+}
+
+#[cfg(test)]
 mod perf_flags_tests {
     use super::*;
+    use ironrdp_pdu::rdp::ClientInfoPdu;
     use ironrdp_pdu::rdp::client_info::{
         ClientInfo, ClientInfoFlags, CompressionType, Credentials, ExtendedClientInfo,
         ExtendedClientOptionalInfo, OptionalSystemTime, PerformanceFlags, TimezoneInfo,
     };
     use ironrdp_pdu::rdp::headers::{BasicSecurityHeader, BasicSecurityHeaderFlags};
-    use ironrdp_pdu::rdp::ClientInfoPdu;
     use std::borrow::Cow;
 
     fn timezone() -> TimezoneInfo {

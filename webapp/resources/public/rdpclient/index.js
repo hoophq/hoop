@@ -49,10 +49,11 @@ async function initializeApp(rdpCredential, requestedDesktopWidth = 0, requested
     //
     // SECURITY CONTRACT: MAX_DESKTOP_DIM must never exceed the PII guard's
     // shadow canvas bound (maxCanvasDim in gateway/rdp/piigate.go and
-    // MAX_CANVAS_DIM in agentrs/src/piigate/canvas.rs, both 4096). Beyond
-    // that bound the guard skips redaction FAIL-OPEN, so oversized displays
-    // are scaled down proportionally instead. Keep the three values in
-    // lockstep.
+    // MAX_CANVAS_DIM in the agent guard's canvas.rs — libhoop's
+    // rdp-guard/src/piigate/canvas.rs, stubbed out of OSS builds — both
+    // 4096). Beyond that bound the guard skips redaction FAIL-OPEN, so
+    // oversized displays are scaled down proportionally instead. Keep the
+    // three values in lockstep.
     //
     // This clamp is best-effort: it bounds the size *requested* by this
     // client, but the server may still negotiate a different desktop size.

@@ -17,7 +17,7 @@ FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
 # (not headless), whose native module links these even for imdecode-only use.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        python3 python3-pip libglib2.0-0 libgl1 libxcb1 libsm6 libxext6 && \
+        python3 python3-pip python3-venv libglib2.0-0 libgl1 libxcb1 libsm6 libxext6 && \
     rm -rf /var/lib/apt/lists/*
 
 # onnxruntime-gpu must be pinned to the CUDA 12 line. 1.27+ moved to CUDA 13
@@ -41,6 +41,7 @@ RUN apt-get update && \
 RUN pip3 install --no-cache-dir \
     "rapidocr==3.8.4" \
     "onnxruntime-gpu==1.20.2" \
+    "cupy-cuda12x==13.6.0" \
     "nvidia-cuda-runtime-cu12==12.9.79" \
     "nvidia-cublas-cu12==12.9.2.10" \
     "nvidia-cudnn-cu12==9.23.2.1" \
@@ -59,7 +60,35 @@ RUN mkdir -p /opt/cuda-libs && \
     test -e /opt/cuda-libs/libcudart.so.12 && test -e /opt/cuda-libs/libcublasLt.so.12
 ENV LD_LIBRARY_PATH="/opt/cuda-libs"
 
-COPY device_policy.py server_rapidocr.py /app/
+# Build both fp16 recognition models required by OCR_GPU_PREPROCESS=1. Keep
+# converter-only dependencies out of the runtime environment.
+RUN python3 -c "\
+from rapidocr import RapidOCR; \
+from rapidocr.utils.typings import LangRec; \
+RapidOCR(params={'Rec.lang_type': LangRec.EN})" && \
+    python3 -m venv /tmp/convert-venv && \
+    /tmp/convert-venv/bin/pip install --no-cache-dir \
+        "onnx==1.17.0" "onnxconverter-common==1.14.0" "numpy==1.26.4" && \
+    mkdir -p /opt/ocr/models && \
+    MODELS_DIR=$(python3 -c "\
+import rapidocr, pathlib; \
+print(pathlib.Path(rapidocr.__file__).parent / 'models')") && \
+    test -s "$MODELS_DIR/ch_PP-OCRv4_rec_mobile.onnx" && \
+    test -s "$MODELS_DIR/en_PP-OCRv4_rec_mobile.onnx" && \
+    /tmp/convert-venv/bin/python -c "\
+import onnx, sys; \
+from onnxconverter_common import float16; \
+models_dir = sys.argv[1]; \
+[onnx.save( \
+    float16.convert_float_to_float16(onnx.load(f'{models_dir}/{src}'), keep_io_types=True), \
+    f'/opt/ocr/models/{dst}') \
+ for src, dst in ( \
+    ('ch_PP-OCRv4_rec_mobile.onnx', 'ch_rec_fp16.onnx'), \
+    ('en_PP-OCRv4_rec_mobile.onnx', 'en_rec_fp16.onnx'))]" "$MODELS_DIR" && \
+    rm -rf /tmp/convert-venv && \
+    test -s /opt/ocr/models/ch_rec_fp16.onnx && test -s /opt/ocr/models/en_rec_fp16.onnx
+
+COPY device_policy.py bucket_rec.py gpu_pipeline.py raw_image.py server_rapidocr.py /app/
 # Parallel inference workers: uvicorn forks $WEB_CONCURRENCY processes, each
 # with its own model instance on the GPU (the gateway analyzer issues up to
 # 8 concurrent chunk requests). 4 matches the benchmarked configuration —

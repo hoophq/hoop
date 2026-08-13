@@ -73,3 +73,24 @@ def resolve_device(cuda_compiled: bool, cuda_devices: int, allow_cpu_fallback: b
         "CPU image instead, or set OCR_ALLOW_CPU_FALLBACK=1 to run "
         "degraded on purpose"
     )
+
+
+def resolve_worker_concurrency(value: str | None, resident_enabled: bool) -> int:
+    """Validates Uvicorn topology before any OCR model is constructed.
+
+    Resident framebuffers are process-local GPU allocations. More than one
+    worker would let sequential POST/DELETE requests land on different stores,
+    leaking VRAM and making successful cleanup responses untrustworthy.
+    """
+    try:
+        workers = int(value if value is not None else "1", 10)
+    except ValueError as exc:
+        raise RuntimeError("WEB_CONCURRENCY must be a positive integer") from exc
+    if workers < 1:
+        raise RuntimeError("WEB_CONCURRENCY must be a positive integer")
+    if resident_enabled and workers != 1:
+        raise RuntimeError(
+            "OCR_GPU_PREPROCESS=1 requires WEB_CONCURRENCY=1 because resident "
+            "GPU framebuffers are process-local"
+        )
+    return workers

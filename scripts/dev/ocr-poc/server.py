@@ -1,7 +1,7 @@
 """GPU OCR PoC server for the RDP PII guard benchmark.
 
 Wraps PaddleOCR (PP-OCR) behind a minimal HTTP API shaped like the
-gateway's tesseract TSV path, so rdpbench can swap engines with a URL:
+gateway's tesseract TSV path, so the external benchmark can swap engines:
 
     POST /ocr   body: image bytes (BMP/PNG)  ->  JSON:
       {

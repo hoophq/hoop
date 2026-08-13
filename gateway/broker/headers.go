@@ -10,8 +10,9 @@ import (
 
 // Header represents the session header for framing
 type Header struct {
-	SID uuid.UUID
-	Len uint32
+	SID     uuid.UUID
+	Len     uint32
+	Control bool
 }
 
 // WebSocketMessage represents a flexible message format for different protocols
@@ -30,6 +31,9 @@ const (
 	// entity metadata only (types, scores, bounding boxes) — no pixels or
 	// recognized text.
 	MessageTypeGuardrailsViolation = "guardrails_violation"
+	// MessageTypeGuardrailsViolationAck is returned only after the gateway
+	// transactionally accepts a report_id.
+	MessageTypeGuardrailsViolationAck = "guardrails_violation_ack"
 	// MessageTypeCapabilities is sent by the agent (agentrs) once, as the
 	// first frame after connecting. It is connection-scoped (no session id):
 	// it advertises what this agent can do so the gateway can decide, at
@@ -48,6 +52,12 @@ const CapabilitySupportsPIIGuard = "supports_pii_guard"
 // regex and deny-list entity types.
 const CapabilitySupportsPIIDataMaskingRules = "supports_pii_data_masking_rules"
 
+// CapabilityFrameProtocol negotiates the multiplexed agent frame format.
+// Version "2" uses Header.Control (the high bit of the length word). Peers
+// remain in bounded legacy-envelope mode until both sides acknowledge it.
+const CapabilityFrameProtocol = "frame_protocol"
+const FrameProtocolV2 = "2"
+
 // ControlSentinelSID is the well-known sid used for connection-scoped control
 // frames (those that describe the agent connection, not a session). The wire
 // format requires a non-nil, versioned UUID in every header, so these frames
@@ -60,16 +70,27 @@ var ControlSentinelSID = uuid.UUID{
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x4c, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
 }
 
-const HeaderSize = 20 // 16 bytes for UUID + 4 bytes for length
+const (
+	HeaderSize        = 20 // 16 bytes for UUID + 4 bytes for length and kind
+	headerControlFlag = uint32(1 << 31)
+	headerLengthMask  = ^headerControlFlag
+)
 
 func (h *Header) Encode() []byte {
 	if h.SID == uuid.Nil {
 		panic("cannot encode nil UUID")
 	}
+	if h.Len > headerLengthMask {
+		panic("frame payload exceeds wire limit")
+	}
+	wireLen := h.Len
+	if h.Control {
+		wireLen |= headerControlFlag
+	}
 
-	buf := make([]byte, HeaderSize) // 16 bytes for UUID + 4 bytes for length
+	buf := make([]byte, HeaderSize)
 	copy(buf[:16], h.SID[:])
-	binary.BigEndian.PutUint32(buf[16:HeaderSize], h.Len)
+	binary.BigEndian.PutUint32(buf[16:HeaderSize], wireLen)
 	return buf
 }
 
@@ -94,16 +115,60 @@ func DecodeHeader(data []byte) (*Header, int, error) {
 		return nil, 0, fmt.Errorf("invalid UUID: version 0 not allowed")
 	}
 
-	len := binary.BigEndian.Uint32(data[16:HeaderSize])
+	wireLen := binary.BigEndian.Uint32(data[16:HeaderSize])
 
 	return &Header{
-		SID: sid,
-		Len: len,
+		SID:     sid,
+		Len:     wireLen & headerLengthMask,
+		Control: wireLen&headerControlFlag != 0,
 	}, HeaderSize, nil
 }
 
-// EncodeWebSocketMessage encodes a WebSocketMessage to bytes with header
+// DecodeFrame validates one complete message and returns its zero-copy payload.
+// Header.Len is part of the wire contract; accepting trailing or truncated
+// bytes would let a frame be classified differently by control and relay
+// decoders.
+func DecodeFrame(data []byte) (*Header, []byte, error) {
+	header, headerLen, err := DecodeHeader(data)
+	if err != nil {
+		return nil, nil, err
+	}
+	payloadLen := len(data) - headerLen
+	if uint64(header.Len) != uint64(payloadLen) {
+		return nil, nil, fmt.Errorf(
+			"payload length mismatch: declared=%d actual=%d",
+			header.Len,
+			payloadLen,
+		)
+	}
+	return header, data[headerLen:], nil
+}
+
+// EncodeWebSocketMessage encodes a v2 control envelope.
 func EncodeWebSocketMessage(sessionID uuid.UUID, msg *WebSocketMessage) ([]byte, error) {
+	return encodeWebSocketMessage(sessionID, msg, true)
+}
+
+// EncodeWebSocketMessageForAgent uses v2 only after the exact connection
+// instance advertised it and received the gateway acknowledgement.
+func EncodeWebSocketMessageForAgent(
+	agentID string,
+	instanceID uuid.UUID,
+	sessionID uuid.UUID,
+	msg *WebSocketMessage,
+) ([]byte, error) {
+	return encodeWebSocketMessage(
+		sessionID,
+		msg,
+		AgentUsesFrameProtocolV2(agentID, instanceID),
+	)
+}
+
+func encodeWebSocketMessage(
+	sessionID uuid.UUID,
+	msg *WebSocketMessage,
+	control bool,
+) ([]byte, error) {
 	jsonData, err := json.Marshal(msg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal WebSocketMessage: %w", err)
@@ -111,8 +176,9 @@ func EncodeWebSocketMessage(sessionID uuid.UUID, msg *WebSocketMessage) ([]byte,
 
 	// Create header
 	header := &Header{
-		SID: sessionID,
-		Len: uint32(len(jsonData)),
+		SID:     sessionID,
+		Len:     uint32(len(jsonData)),
+		Control: control,
 	}
 
 	// Combine header + JSON data
@@ -125,17 +191,14 @@ func EncodeWebSocketMessage(sessionID uuid.UUID, msg *WebSocketMessage) ([]byte,
 
 // DecodeWebSocketMessage decodes bytes to WebSocketMessage
 func DecodeWebSocketMessage(data []byte) (uuid.UUID, *WebSocketMessage, error) {
-	header, headerLen, err := DecodeHeader(data)
+	header, jsonData, err := DecodeFrame(data)
 	if err != nil {
-		return uuid.Nil, nil, fmt.Errorf("failed to decode header: %w", err)
+		return uuid.Nil, nil, fmt.Errorf("failed to decode frame: %w", err)
+	}
+	if !header.Control {
+		return uuid.Nil, nil, fmt.Errorf("expected a control frame")
 	}
 
-	// Extract JSON payload
-	if len(data) < headerLen {
-		return uuid.Nil, nil, fmt.Errorf("insufficient data for payload")
-	}
-
-	jsonData := data[headerLen:]
 	var msg WebSocketMessage
 	if err := json.Unmarshal(jsonData, &msg); err != nil {
 		return uuid.Nil, nil, fmt.Errorf("failed to unmarshal WebSocketMessage: %w", err)
