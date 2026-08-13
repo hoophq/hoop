@@ -32,6 +32,7 @@ func CreateReviewFromAIAnalysis(
 	sessionInput string,
 	inputEnvVars map[string]string,
 	inputClientArgs []string,
+	analysis *models.SessionAIAnalysis,
 ) (*models.Review, error) {
 	if accessRule == nil {
 		return nil, fmt.Errorf("ai analyzer review: access request rule is required")
@@ -83,7 +84,7 @@ func CreateReviewFromAIAnalysis(
 		return nil, fmt.Errorf("ai analyzer review: failed creating review: %w", err)
 	}
 
-	if err := sendSlackMessage(requester, connection, rev, sessionInput); err != nil {
+	if err := sendSlackMessage(requester, connection, rev, sessionInput, analysis); err != nil {
 		log.With("sid", sessionID, "review-id", rev.ID).Errorf("failed sending slack message for ai analyzer review: %v", err)
 		// do not return error if slack message sending fails, as the review is already created and actionable in the webapp
 	}
@@ -91,7 +92,7 @@ func CreateReviewFromAIAnalysis(
 	return rev, nil
 }
 
-func sendSlackMessage(requester AIReviewRequester, connection *models.Connection, rev *models.Review, reviewInput string) error {
+func sendSlackMessage(requester AIReviewRequester, connection *models.Connection, rev *models.Review, reviewInput string, analysis *models.SessionAIAnalysis) error {
 	slackSvc := slack.GetSlackServiceInstance(rev.OrgID)
 	log.With("sid", rev.SessionID).Infof("executing slack on-receive, hasinstance=%v", slackSvc != nil)
 	if slackSvc == nil {
@@ -135,6 +136,12 @@ func sendSlackMessage(requester AIReviewRequester, connection *models.Connection
 		sreq.SessionTime = &ad
 	}
 	sreq.Script = reviewInput
+	if analysis != nil {
+		sreq.AIRiskLevel = analysis.RiskLevel
+		sreq.AITitle = analysis.Title
+		sreq.AISummary = analysis.Summary
+		sreq.AIExplanation = analysis.Explanation
+	}
 
 	if sreq.WebappURL == "" || len(sreq.ApprovalGroups) == 0 || len(sreq.ApprovalGroups) >= slack.SlackMaxButtons {
 		log.With("sid", rev.SessionID).Infof("no review message to process, has-webapp-url=%v, approval-groups=%v/%v",

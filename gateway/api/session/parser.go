@@ -98,11 +98,26 @@ func ToOpenApiSessionAIAnalysis(a *models.SessionAIAnalysis) *openapi.SessionAIA
 		return nil
 	}
 
+	steps := make([]openapi.SessionAIAnalysisStep, 0, len(a.Steps))
+	for _, s := range a.Steps {
+		steps = append(steps, openapi.SessionAIAnalysisStep{
+			Type:       s.Type,
+			Thinking:   s.Thinking,
+			ToolName:   s.ToolName,
+			ToolInput:  s.ToolInput,
+			ToolOutput: s.ToolOutput,
+			IsError:    s.IsError,
+			Timestamp:  s.Timestamp,
+		})
+	}
 	return &openapi.SessionAIAnalysis{
 		RiskLevel:   a.RiskLevel,
 		Title:       a.Title,
 		Explanation: a.Explanation,
 		Action:      a.Action,
+		Summary:     a.Summary,
+		Model:       a.Model,
+		Steps:       steps,
 	}
 }
 

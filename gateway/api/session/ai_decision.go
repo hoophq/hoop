@@ -106,7 +106,7 @@ func ApplyAIAnalysisDecision(
 				UserSlackID: ctx.SlackID,
 				UserGroups:  ctx.UserGroups,
 			},
-			accessRule, string(session.BlobInput), inputEnvVars, inputClientArgs)
+			accessRule, string(session.BlobInput), inputEnvVars, inputClientArgs, analysis)
 		if err != nil {
 			return AIDecisionProceed, nil, fmt.Errorf("failed creating ai-driven review: %w", err)
 		}

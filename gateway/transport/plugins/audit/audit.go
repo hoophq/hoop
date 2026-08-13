@@ -16,6 +16,7 @@ import (
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 	"github.com/hoophq/hoop/common/proto/spectypes"
+	"github.com/hoophq/hoop/gateway/aianalyzer"
 	"github.com/hoophq/hoop/gateway/analytics"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	sessionapi "github.com/hoophq/hoop/gateway/api/session"
@@ -182,7 +183,14 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 			}
 
 			orgID := uuid.MustParse(pctx.OrgID)
-			analyzeRes, aiAccessRule, err := sessionapi.AIAnalyze(pctx.Context, orgID, pctx.ConnectionName, string(pkt.Payload))
+			analyzeRes, aiAccessRule, err := sessionapi.AIAnalyze(pctx.Context, sessionapi.AIAnalyzeInput{
+				OrgID:          orgID,
+				ConnectionName: pctx.ConnectionName,
+				Script:         string(pkt.Payload),
+				UserID:         pctx.UserID,
+				UserGroups:     pctx.UserGroups,
+				Exec:           aianalyzer.AnalyzerExecIdentity{ImpersonateUserSubject: pctx.UserID, UserAgent: "aianalyzer"},
+			})
 			if err != nil {
 				log.With("sid", pctx.SID, "org_id", pctx.OrgID).Errorf("failed analyzing session input with AI, err=%v", err)
 				return nil, plugintypes.InternalErr("failed analyzing session input with AI", err)
@@ -241,7 +249,7 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 							UserSlackID: pctx.UserSlackID,
 							UserGroups:  pctx.UserGroups,
 						},
-						aiAccessRule, string(pkt.Payload), nil, nil)
+						aiAccessRule, string(pkt.Payload), nil, nil, analyzeRes)
 					if err != nil {
 						return nil, plugintypes.InternalErr("failed creating ai-driven review", err)
 					}
