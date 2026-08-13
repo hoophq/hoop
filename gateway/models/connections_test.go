@@ -185,3 +185,106 @@ func TestEnvsMapEqual(t *testing.T) {
 		})
 	}
 }
+
+func TestParseTagSelectorQuery(t *testing.T) {
+	tests := []struct {
+		name     string
+		selector string
+		want     string
+		wantErr  bool
+	}{
+		{
+			name:     "empty selector",
+			selector: "",
+			want:     "[]",
+		},
+		{
+			name:     "single equality",
+			selector: "env=prod",
+			want:     `[{"key":"env","op":"=","val":"prod"}]`,
+		},
+		{
+			name:     "single inequality",
+			selector: "env!=prod",
+			want:     `[{"key":"env","op":"!=","val":"prod"}]`,
+		},
+		{
+			name:     "distinct keys keep their order",
+			selector: "env=prod,team!=infra",
+			want:     `[{"key":"env","op":"=","val":"prod"},{"key":"team","op":"!=","val":"infra"}]`,
+		},
+		{
+			name:     "surrounding spaces are trimmed",
+			selector: " env = prod ",
+			want:     `[{"key":"env","op":"=","val":"prod"}]`,
+		},
+		{
+			name:     "repeated key with opposite operators is not collapsed",
+			selector: "env=prod,env!=prod",
+			want:     `[{"key":"env","op":"=","val":"prod"},{"key":"env","op":"!=","val":"prod"}]`,
+		},
+		{
+			name:     "repeated key with distinct values is not collapsed",
+			selector: "env=prod,env=staging",
+			want:     `[{"key":"env","op":"=","val":"prod"},{"key":"env","op":"=","val":"staging"}]`,
+		},
+		{
+			name:     "value containing an equal sign is preserved",
+			selector: "url=a=b",
+			want:     `[{"key":"url","op":"=","val":"a=b"}]`,
+		},
+		{
+			name:     "missing operator",
+			selector: "env",
+			wantErr:  true,
+		},
+		{
+			name:     "whitespace only selector",
+			selector: "   ",
+			want:     "[]",
+		},
+		{
+			name:     "trailing comma is ignored",
+			selector: "env=prod,",
+			want:     `[{"key":"env","op":"=","val":"prod"}]`,
+		},
+		{
+			name:     "blank segments between constraints are ignored",
+			selector: "env=prod, ,,team!=infra",
+			want:     `[{"key":"env","op":"=","val":"prod"},{"key":"team","op":"!=","val":"infra"}]`,
+		},
+		{
+			name:     "commas only",
+			selector: ",, ,",
+			want:     "[]",
+		},
+		{
+			name:     "empty key with equality",
+			selector: "=prod",
+			wantErr:  true,
+		},
+		{
+			name:     "empty key with inequality",
+			selector: "env=prod, !=infra",
+			wantErr:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ConnectionFilterOption{TagSelector: tt.selector}.ParseTagSelectorQuery()
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("ParseTagSelectorQuery(%q) = %v, want error", tt.selector, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("ParseTagSelectorQuery(%q) returned unexpected error: %v", tt.selector, err)
+			}
+			if got != tt.want {
+				t.Errorf("ParseTagSelectorQuery(%q) = %v, want %v", tt.selector, got, tt.want)
+			}
+		})
+	}
+}

@@ -474,6 +474,8 @@ func GetUserInfo(c *gin.Context) {
 	}
 	if org, err := models.GetOrganizationByNameOrID(ctx.OrgID); err == nil {
 		userInfoData.DefaultProtectionProfile = org.DefaultProtectionProfile
+		// Server-owned, like show_origin_survey. Rides on the org row already loaded.
+		userInfoData.ShowSetupChecklist = ctx.IsAdminUser() && org.OnboardingCompletedAt == nil
 	} else {
 		log.Warnf("failed loading org for default protection profile, err=%v", err)
 	}

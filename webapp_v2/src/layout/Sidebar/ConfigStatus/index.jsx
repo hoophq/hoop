@@ -9,18 +9,27 @@ import { useUIStore } from '@/stores/useUIStore'
 import { useConfigStatusStore } from '@/stores/useConfigStatusStore'
 import { useBridgeStore } from '@/stores/useBridgeStore'
 import { useNativeAccessStore } from '@/stores/useNativeAccessStore'
-import { computeProgress, STEP_DEFS } from './steps'
+import { computeProgress } from './steps'
 import { StepItem } from './StepItem'
 import classes from './ConfigStatus.module.css'
 
-// EVL-98: admin setup checklist. Figma behavior annotations:
-// - only one step open at a time; opening another closes the rest
-// - opening the widget auto-opens the first incomplete step
-// - interacting with anything outside the widget collapses it
+// EVL-98: admin setup checklist.
+// DEP-136: this gate is hook-free on purpose — a hidden checklist must mount no
+// effects. It used to register its listeners before the early-return.
 export function ConfigStatus() {
+  const isAdmin = useUserStore((s) => s.isAdmin)
+  const showSetupChecklist = useUserStore((s) => s.user?.show_setup_checklist)
+  const userId = useUserStore((s) => s.user?.id ?? null)
+  // forUserId guards a snapshot left behind by a previous login in the same tab.
+  const completed = useConfigStatusStore((s) => s.completed && s.forUserId === userId)
+
+  if (!isAdmin || !showSetupChecklist || completed) return null
+  return <ConfigStatusWidget />
+}
+
+function ConfigStatusWidget() {
   const navigate = useNavigate()
   const location = useLocation()
-  const isAdmin = useUserStore((s) => s.isAdmin)
   const user = useUserStore((s) => s.user)
   const setSidebarOpen = useUIStore((s) => s.setSidebarOpen)
   const status = useConfigStatusStore((s) => s.status)
@@ -34,58 +43,30 @@ export function ConfigStatus() {
   const [activeStepId, setActiveStepId] = useState(null)
   const cardRef = useClickOutside(() => setOpened(false))
 
-  // Initial fetch + TTL-respecting refresh when the admin navigates (returning
-  // from "Create a Resource" & friends should update the ring right away).
+  // Returning from "Create a Resource" & friends should update the ring.
   useEffect(() => {
-    if (isAdmin) fetchStatus()
-  }, [isAdmin, location.pathname, fetchStatus])
+    fetchStatus()
+  }, [location.pathname, fetchStatus])
 
-  // Background reactivity: refresh on window focus (actions done via CLI or
-  // another tab) and on a slow poll, so completing a step reflects on the
-  // ring without reopening the widget. Skipped once setup is complete — the
-  // widget is gone at 3/3, so a configured org never polls.
+  // Picks up work done outside this tab. Replaces the old 30s and 10s timers.
   useEffect(() => {
-    if (!isAdmin) return undefined
-    const tick = () => {
-      const state = useConfigStatusStore.getState()
-      if (state.status === 'ready' && computeProgress(state.checks).stepsDone === STEP_DEFS.length) return
-      fetchStatus()
-    }
-    window.addEventListener('focus', tick)
-    const interval = setInterval(tick, 30_000)
-    return () => {
-      window.removeEventListener('focus', tick)
-      clearInterval(interval)
-    }
-  }, [isAdmin, fetchStatus])
+    const onFocus = () => fetchStatus()
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [fetchStatus])
 
-  // Faster feedback while the admin is actually looking at the open checklist.
-  // TTL-respecting on purpose: the 10s tick nudges often, but the store's TTL
-  // caps the real probe rate so an expanded widget never bursts the API.
+  // Emitted by the CLJS web terminal after a successful exec, so "Run your
+  // first session" ticks the moment the query runs.
   useEffect(() => {
-    if (!opened) return undefined
-    const interval = setInterval(() => fetchStatus(), 10_000)
-    return () => clearInterval(interval)
-  }, [opened, fetchStatus])
-
-  // Instant reaction for the step-defining action: the CLJS web terminal
-  // emits this event right after a successful exec (POST /sessions success in
-  // webapp/src/webapp/events/editor_plugin.cljs), so "Run your first session"
-  // checks off the moment the query runs.
-  useEffect(() => {
-    if (!isAdmin) return undefined
     const onSessionExecuted = () => fetchStatus({ force: true })
     window.addEventListener('hoop:session-executed', onSessionExecuted)
     return () => window.removeEventListener('hoop:session-executed', onSessionExecuted)
-  }, [isAdmin, fetchStatus])
+  }, [fetchStatus])
 
-  // Never render for non-admins; stay hidden until the first snapshot
-  // resolves (avoids flashing "3 steps from success" at a fully configured
-  // org) and while the snapshot belongs to a previously logged-in user.
-  if (!isAdmin || status !== 'ready' || forUserId !== (user?.id ?? null)) return null
+  // Avoids flashing "3 steps from success" at an org that is nearly done.
+  if (status !== 'ready' || forUserId !== (user?.id ?? null)) return null
 
   const progress = computeProgress(checks)
-  if (progress.stepsDone === progress.totalSteps) return null
 
   const headerLabel =
     progress.stepsDone === 0
@@ -108,16 +89,12 @@ export function ConfigStatus() {
 
     if (item.action === 'run-first-session') {
       if (execConnectionName) {
-        // The CLJS web terminal pre-selects the connection from ?role=. The
-        // editor only reads it on panel mount, so also nudge an already
-        // mounted/parked editor to re-read the URL.
+        // The editor only reads ?role= on panel mount, so nudge an already
+        // mounted one to re-read the URL.
         navigate(`/client?role=${encodeURIComponent(execConnectionName)}`)
         useBridgeStore.getState().syncPrimaryConnectionFromUrl()
       } else if (firstConnectionName) {
-        // No connection supports the web terminal — offer native access
-        // instead. The drawer is mounted by Layout on every route, so the
-        // detour through /resources (which only existed to give the CLJS modal
-        // a host to render in) is gone.
+        // No web-terminal-capable connection — offer native access instead.
         useNativeAccessStore.getState().openAndConnect(firstConnectionName)
       } else {
         navigate('/resource-catalog')

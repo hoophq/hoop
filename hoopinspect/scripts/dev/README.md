@@ -206,3 +206,46 @@ provisioning that a one-sided test would have scored green.
 
 See `deploy/docker-compose/envoy-stack/mssql/README.md` for the topology, the
 protocol reasoning, and the list of what works and what does not.
+
+---
+
+# Testing the MSSQL lane against SQL Server 2019
+
+A second, smaller stack for the TDS 7.4 case the 2022 one cannot reach.
+
+```bash
+cd hoopinspect/scripts/dev
+
+./mssql2019-stack.sh        # build, start, seed
+./mssql2019-check.sh        # verify: 13 checks
+./mssql2019-stack.sh down   # tear down
+```
+
+Also `./mssql2019-stack.sh --rebuild`, `logs [service]`, and `sql` for a
+sqlcmd session through the relay.
+
+No certificates to mint. The 2022 lane needs a chain because `Encrypt=strict`
+forbids `TrustServerCertificate`; here SQL Server runs with no TLS
+configuration at all, which is the case under test. It mints a self-signed
+certificate at startup and encrypts the login with it regardless.
+
+## What it exists to prove
+
+`ENCRYPT_OFF` means "encrypt the login only", so a 2019 server puts the first
+LOGIN7 packet inside TLS and every statement in the clear. The relay meets a
+raw TLS record where a TDS packet header should be, walks it by TLS record
+framing, and resumes on the byte where plaintext returns.
+
+Envoy is absent from this stack, unlike the 2022 one. TDS 7.x carries its
+handshake inside `0x12` PRELOGIN packets, which Envoy cannot speak, so there
+is nothing for it to terminate and the relay takes the connection directly.
+
+Both negotiated outcomes come from one server:
+
+```
+sqlcmd -No -C   Encrypt=Optional  -> ENCRYPT_OFF -> inspected
+sqlcmd -Nm -C   Encrypt=Mandatory -> ENCRYPT_ON  -> refused, rule stream-unsafe
+```
+
+See `deploy/docker-compose/envoy-stack/mssql2019/README.md` for a capture of
+the handshake and the reasoning behind each check.

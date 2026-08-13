@@ -1,7 +1,7 @@
 //! Presidio analyzer client and the post-OCR analysis stage.
 //!
 //! Port of `gateway/rdp/analyzer/presidio.go` and the `analyzeText` stage of
-//! `gateway/rdp/analyzer/worker.go`: Presidio analysis, denylist filtering,
+//! `gateway/rdp/analyzer/worker.go`: Presidio analysis, entity-policy filtering,
 //! and mapping entity character ranges back to pixel bounding boxes.
 
 use std::collections::HashMap;
@@ -18,6 +18,8 @@ struct AnalyzerRequest<'a> {
     text: &'a str,
     language: &'a str,
     score_threshold: f64,
+    #[serde(skip_serializing_if = "<[String]>::is_empty")]
+    entities: &'a [String],
 }
 
 /// A single PII entity found by Presidio.
@@ -76,24 +78,24 @@ impl PresidioClient {
         })
     }
 
-    /// Sends text to Presidio for PII detection. `score_threshold` is the
-    /// minimum confidence (0 falls back to 0.5, matching the Go client).
+    /// Sends text to Presidio for PII detection.
     pub async fn analyze(
         &self,
         text: &str,
         score_threshold: f64,
+        entity_allowlist: &[String],
     ) -> anyhow::Result<Vec<AnalyzerResult>> {
         if text.is_empty() {
             return Ok(Vec::new());
         }
-        let threshold = if score_threshold > 0.0 { score_threshold } else { 0.5 };
         let resp = self
             .client
             .post(format!("{}/analyze", self.analyzer_url))
             .json(&AnalyzerRequest {
                 text,
                 language: "en",
-                score_threshold: threshold,
+                score_threshold,
+                entities: entity_allowlist,
             })
             .send()
             .await
@@ -111,13 +113,14 @@ impl PresidioClient {
     }
 }
 
-/// Analysis tuning, delivered by the gateway in the session setup (mirrors
-/// the gateway's `AnalysisParams`).
+/// Analysis tuning delivered by the gateway in the session setup.
 #[derive(Debug, Clone)]
 pub struct AnalysisParams {
-    /// Minimum Presidio score (gateway default 0.9).
+    /// Minimum Presidio score.
     pub score_threshold: f64,
-    /// Entity types to exclude (gateway default DATE_TIME, NRP).
+    /// Entity types selected by the resource's DataMaskingRules.
+    pub entity_allowlist: Vec<String>,
+    /// Legacy entity exclusions sent by gateways predating resource allowlists.
     pub entity_denylist: Vec<String>,
     /// Vertical padding around dirty rects AND parallel-chunk overlap.
     pub band_padding: usize,
@@ -128,8 +131,9 @@ pub struct AnalysisParams {
 impl Default for AnalysisParams {
     fn default() -> Self {
         Self {
-            score_threshold: 0.9,
-            entity_denylist: vec!["DATE_TIME".into(), "NRP".into()],
+            score_threshold: 0.5,
+            entity_allowlist: Vec::new(),
+            entity_denylist: Vec::new(),
             band_padding: super::bands::DEFAULT_BAND_PADDING,
             max_ocr_concurrency: 8,
         }
@@ -183,8 +187,16 @@ fn map_entity_to_bbox(entity: &AnalyzerResult, ranges: &[WordRange<'_>]) -> Opti
     bbox.map(|(x, y, x2, y2)| (x, y, x2 - x, y2 - y))
 }
 
-/// The post-OCR stage: Presidio analysis, denylist filtering, and mapping
-/// entity character ranges back to pixel bounding boxes. Word coordinates
+fn entity_is_selected(entity_type: &str, params: &AnalysisParams) -> bool {
+    if params.entity_allowlist.is_empty() {
+        !params.entity_denylist.iter().any(|entity| entity == entity_type)
+    } else {
+        params.entity_allowlist.iter().any(|entity| entity == entity_type)
+    }
+}
+
+/// The post-OCR stage: Presidio entity-policy filtering and mapping entity
+/// character ranges back to pixel bounding boxes. Word coordinates
 /// must already be in full-screen space and `text` must be the words joined
 /// by single spaces (so Presidio character offsets line up with word ranges).
 pub async fn analyze_text(
@@ -193,8 +205,10 @@ pub async fn analyze_text(
     words: &[Word],
     params: &AnalysisParams,
 ) -> anyhow::Result<SnapshotResult> {
-    let mut results = presidio.analyze(text, params.score_threshold).await?;
-    results.retain(|r| !params.entity_denylist.iter().any(|d| d == &r.entity_type));
+    let mut results = presidio
+        .analyze(text, params.score_threshold, &params.entity_allowlist)
+        .await?;
+    results.retain(|result| entity_is_selected(&result.entity_type, params));
 
     let mut res = SnapshotResult::default();
     for r in &results {
@@ -222,6 +236,29 @@ pub async fn analyze_text(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn analyzer_request_includes_allowlist_and_preserves_zero_threshold() {
+        let entities = vec!["DATE_TIME".to_string(), "PERSON".to_string()];
+        let request = AnalyzerRequest {
+            text: "August 12, 2026 Lucas",
+            language: "en",
+            score_threshold: 0.0,
+            entities: &entities,
+        };
+
+        let payload = serde_json::to_value(request).unwrap();
+        assert_eq!(payload["score_threshold"], 0.0);
+        assert_eq!(payload["entities"], serde_json::json!(["DATE_TIME", "PERSON"]));
+    }
+
+    #[test]
+    fn legacy_denylist_filters_when_allowlist_is_absent() {
+        let mut params = AnalysisParams::default();
+        params.entity_denylist = vec!["DATE_TIME".into(), "NRP".into()];
+        assert!(!entity_is_selected("DATE_TIME", &params));
+        assert!(entity_is_selected("PERSON", &params));
+    }
 
     fn word(text: &str, left: usize, top: usize, w: usize, h: usize) -> Word {
         Word {

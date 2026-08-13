@@ -19,7 +19,7 @@ import (
 // registry cannot express: codec/http registers a factory taking no
 // arguments, so every lane in the process shared one zero-value Options and
 // no lane could see a request body. An AI analyzer on an HTTP lane needs the
-// body — "POST /anything" with no body tells a model nothing — so the option
+// body ("POST /anything" with no body tells a model nothing), so the option
 // had to become reachable from the config file.
 //
 // The defaults still expose nothing. Turning capture on is an explicit act,
@@ -74,7 +74,7 @@ func (h *HTTPCodecConfig) validate(lane string) []string {
 // has asked for.
 type AnalyzerConfig struct {
 	// Provider names a registered provider: anthropic, openai, vertex.
-	// Which are available depends on what the binary links.
+	// Availability depends on what the binary links.
 	Provider string `json:"provider"`
 
 	// Model names the model. Provider-specific format.
@@ -229,7 +229,7 @@ func (a *AnalyzerConfig) validate(hasScanner bool) []string {
 
 	// Negative is refused rather than clamped. Every one of these is a cost
 	// or safety bound whose zero value means "off", and a negative reads as
-	// off too — so a typo silently removes the ceiling the operator wrote
+	// off too, so a typo silently removes the ceiling the operator wrote
 	// down. max_calls is the sharp one: it is the last line against a
 	// runaway workload, and -1 would disable it while looking set.
 	if a.MaxCalls < 0 {
@@ -338,8 +338,8 @@ func splitAnalyzerRules(rules []policy.Rule) (local, ai []policy.Rule) {
 // buildAnalyzerEvaluators turns ai_analysis rules into evaluators.
 //
 // Each rule becomes its own Evaluator, so two rules on one lane get their own
-// trigger, action map and denial message while sharing the provider and — via
-// the provider — the credential.
+// trigger, action map and denial message while sharing the provider and,
+// through the provider, the credential.
 func buildAnalyzerEvaluators(
 	rules []policy.Rule,
 	cfg *AnalyzerConfig,
@@ -532,13 +532,24 @@ func httpCodecFactory(proto hoopinspect.Protocol, h *HTTPCodecConfig) func() hoo
 	return newHTTPCodec(*h)
 }
 
-// validateAIRules checks each ai_analysis rule against the analyzer section.
+// validateAIRules checks each ai_analysis rule against the analyzer section
+// and against the lane's OPA settings.
 //
 // Every refusal here is a control that would otherwise load, evaluate and do
-// nothing — the exact failure the pii-entity check exists to prevent, applied
+// nothing: the exact failure the pii-entity check exists to prevent, applied
 // to a feature that also costs money when it does fire.
-func validateAIRules(rules []policy.Rule, cfg *AnalyzerConfig, lane string) []string {
+func validateAIRules(rules []policy.Rule, cfg *AnalyzerConfig, pc PolicyConfig, lane string) []string {
+	gated := pc.OPA.enabled() && pc.OPA.Gate
+
 	if len(rules) == 0 {
+		if gated {
+			// A gate answers "is this worth a model call" for an
+			// analyzer that is not there. It would cost a round trip
+			// per statement and change nothing.
+			return []string{fmt.Sprintf(
+				"%s: policy.opa.gate is on but the lane has no ai_analysis rule, "+
+					"so the extra decision would gate nothing", lane)}
+		}
 		return nil
 	}
 	var problems []string
@@ -549,12 +560,30 @@ func validateAIRules(rules []policy.Rule, cfg *AnalyzerConfig, lane string) []st
 	}
 
 	for _, r := range rules {
-		if r.Trigger.IsZero() {
+		if r.Trigger.IsZero() && !gated {
 			// An empty trigger classifies nothing. Silently accepting
 			// it leaves an operator believing a guardrail is running.
+			//
+			// A gated lane is the exception: there the gate decides
+			// what gets classified, and an empty trigger is how an
+			// operator says so.
 			problems = append(problems, fmt.Sprintf(
 				"%s: ai_analysis rule %q has no trigger, so it would classify nothing; "+
-					"name operations, tables or resources", lane, r.Name))
+					"name operations, tables or resources, or turn on policy.opa.gate "+
+					"and let the policy decide", lane, r.Name))
+		}
+
+		if r.Action != "" {
+			// policy.newRules refuses this, but an ai_analysis rule
+			// never reaches it: splitAnalyzerRules lifts these out
+			// first, so the check there is unreachable from a config
+			// file and the field is read by nobody. Accepting it
+			// leaves an operator believing they deferred a rule that
+			// is still deciding for itself.
+			problems = append(problems, fmt.Sprintf(
+				"%s: ai_analysis rule %q sets action %q, which this rule type ignores; "+
+					"it defers per risk level through high, medium and low",
+				lane, r.Name, r.Action))
 		}
 
 		named := false
@@ -569,8 +598,17 @@ func validateAIRules(rules []policy.Rule, cfg *AnalyzerConfig, lane string) []st
 			if !a.Valid() {
 				problems = append(problems, fmt.Sprintf(
 					"%s: ai_analysis rule %q: unknown action %q for %s risk "+
-						"(allow, warn or block)", lane, r.Name, raw, level))
+						"(allow, warn, block or defer)", lane, r.Name, raw, level))
 				continue
+			}
+			if a == analyzer.ActionDefer && !pc.OPA.enabled() {
+				// Deferring to a decision that does not exist allows
+				// everything. The operator asked for the opposite.
+				problems = append(problems, fmt.Sprintf(
+					"%s: ai_analysis rule %q defers %s risk to a policy decision, "+
+						"and the lane has no policy.opa.url to defer to; "+
+						"set one or use block, warn or allow",
+					lane, r.Name, level))
 			}
 			if a == analyzer.ActionRequireReview {
 				// The action is declared in the enum so the schema is
@@ -579,8 +617,8 @@ func validateAIRules(rules []policy.Rule, cfg *AnalyzerConfig, lane string) []st
 				// for approval and quietly does not.
 				problems = append(problems, fmt.Sprintf(
 					"%s: ai_analysis rule %q asks for %q on %s risk, and this build "+
-						"cannot hold a statement for human approval; use block or warn",
-					lane, r.Name, raw, level))
+						"cannot hold a statement for human approval; use block, warn "+
+						"or defer to an OPA policy", lane, r.Name, raw, level))
 			}
 		}
 		if !named {

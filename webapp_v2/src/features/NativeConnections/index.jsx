@@ -84,7 +84,22 @@ export default function NativeConnectionsDrawer() {
       (role) => role.accessModeConnect === 'enabled' || hasLiveSession(activeByName[role.name])
     )
     const filtered = listable.filter((role) => matchesQuery(role, query))
-    const capped = filtered.slice(0, MAX_RENDERED_ROWS)
+    // Open connections lead, always — a query narrows the set but never reshuffles
+    // this priority. Ordered before the render cap so a live session can never be
+    // truncated away, which would hide the only Disconnect it has. Both halves stay
+    // alphabetical: the store sorts by name and filter preserves order.
+    //
+    // One pass, one hasLiveSession call per role, deliberately: the predicate reads
+    // the clock, so asking twice (open half, then its negation) lets a session that
+    // expires between the two answers land in BOTH — duplicate keys, and two rows
+    // the Accordion expands as one because it keys on the connection name.
+    const open = []
+    const rest = []
+    for (const role of filtered) {
+      if (hasLiveSession(activeByName[role.name])) open.push(role)
+      else rest.push(role)
+    }
+    const capped = [...open, ...rest].slice(0, MAX_RENDERED_ROWS)
     return {
       visible: capped,
       // `total` is every listable role; `matched` is how many the query hit.

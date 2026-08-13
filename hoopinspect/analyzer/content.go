@@ -10,6 +10,7 @@ import (
 
 func init() {
 	RegisterBuilder(SQLBuilder{Protocol_: hoopinspect.Postgres})
+	RegisterBuilder(SQLBuilder{Protocol_: hoopinspect.MSSQL})
 	RegisterBuilder(HTTPBuilder{})
 }
 

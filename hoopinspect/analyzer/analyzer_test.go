@@ -196,6 +196,33 @@ func TestResponsesAreNotClassified(t *testing.T) {
 	}
 }
 
+// Every SQL protocol with a codec must have a content builder, or its lane
+// runs the analyzer and classifies nothing: classify returns before it has a
+// status, so there is no denial, no finding and no annotation to read. An
+// mssql lane shipped that way once, and the only symptom was silence.
+func TestEverySQLProtocolIsClassified(t *testing.T) {
+	for _, proto := range []hoopinspect.Protocol{hoopinspect.Postgres, hoopinspect.MSSQL} {
+		t.Run(string(proto), func(t *testing.T) {
+			p := &stubProvider{level: analyzer.RiskHigh}
+			ev := mustNew(t, analyzer.Config{
+				Rule:     "risky",
+				Provider: p,
+				Trigger:  deleteTrigger(),
+				Actions:  analyzer.ActionMap{analyzer.RiskHigh: analyzer.ActionBlock},
+			})
+
+			stmt := sqlStmt("DELETE FROM customers", hoopinspect.OpDelete, "customers")
+			stmt.Protocol = proto
+			if v := ev.Evaluate(stmt); !v.Denied {
+				t.Errorf("a high-risk %s statement was not denied: %+v", proto, v)
+			}
+			if got := p.calls.Load(); got != 1 {
+				t.Errorf("provider called %d times on %s, want 1", got, proto)
+			}
+		})
+	}
+}
+
 // Two statements differing only in a literal are one shape and must cost one
 // classification. This is the control that makes the analyzer affordable on a
 // lane fronting an ORM.

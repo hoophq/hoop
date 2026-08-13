@@ -68,12 +68,6 @@ func isPersistentExpireAt(t time.Time) bool {
 func CreateConnectionCredentials(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 
-	// Lazy cleanup of expired credential sessions
-	err := models.CloseExpiredCredentialSessions()
-	if err != nil {
-		log.Errorf("failed to close expired credential sessions, err=%v", err)
-	}
-
 	var req openapi.ConnectionCredentialsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.AbortWithStatusJSON(400, gin.H{"message": err.Error()})
@@ -169,8 +163,8 @@ func CreateConnectionCredentials(c *gin.Context) {
 	// connection and would otherwise stay Open forever — per-connection audit
 	// rows are created by the proxy stack on each actual TCP connect. Bounded
 	// and review-required flows keep Open because they have a defined event
-	// that closes them (CloseExpiredCredentialSessions for bounded credentials,
-	// the review/connect flow for review-required ones). Mirrors the
+	// that closes them (the credentialsweeper job for bounded credentials, the
+	// review/connect flow for review-required ones). Mirrors the
 	// machine-identity pattern in gateway/services/credentials.go.
 	sessionStatus := openapi.SessionStatusOpen
 	if !requiresReview && req.AccessDurationSec <= 0 {
@@ -280,8 +274,8 @@ func issueOrRefreshCredential(
 	if existing != nil {
 		// Close the previous audit session (if any) so it doesn't remain
 		// perpetually "open" once the credential row is re-pointed at the new
-		// session. Errors here are non-fatal since the lazy cleanup path in
-		// CloseExpiredCredentialSessions will catch stragglers.
+		// session. Errors here are non-fatal since the credentialsweeper job
+		// will catch stragglers once the old window elapses.
 		if existing.SessionID != "" && existing.SessionID != sessionID {
 			if err := models.UpdateSessionStatus(orgID, existing.SessionID, string(openapi.SessionStatusDone)); err != nil {
 				log.Warnf("failed closing previous audit session %s, err=%v", existing.SessionID, err)
@@ -362,12 +356,6 @@ func issueOrRefreshCredential(
 //	@Router			/connections/{nameOrID}/credentials/{sessionID} [post]
 func ResumeConnectionCredentials(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-
-	// Lazy cleanup of expired credential sessions
-	err := models.CloseExpiredCredentialSessions()
-	if err != nil {
-		log.Errorf("failed to close expired credential sessions, err=%v", err)
-	}
 
 	var req openapi.ConnectionCredentialsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

@@ -1,6 +1,6 @@
 # hoopinspect
 
-> **0.1.0** — the API is settling. Expect the config schema to hold and the Go
+> **0.1.0**: the API is settling. Expect the config schema to hold and the Go
 > interfaces to move.
 
 Turn raw database wire-protocol bytes into structured statements, and
@@ -20,7 +20,7 @@ plaintext over loopback or a unix socket.
 **Zero dependencies.** Standard library only, tests included, no `go.sum`. You
 vendor nothing and get no version skew with whatever links it.
 
-**Go 1.26.5.** Every module here — the root and the five nested ones — declares
+**Go 1.26.5.** Every module here (the root and the five nested ones) declares
 `go 1.26.5`, so an older toolchain refuses the build instead of miscompiling
 it. The repo's `go.work` and the sidecar image pin the same version.
 
@@ -126,7 +126,7 @@ troubleshooting table, read
 
 ## Running the relay yourself
 
-Two ways, same relay.
+Two ways to run the same relay.
 
 **Through the hoop CLI**, which links the same plugins into the binary the
 release pipeline already builds. Nothing extra to compile or ship:
@@ -141,8 +141,8 @@ deployment wants: mount the ConfigMap, set the variable, pass no arguments.
 
 That binary is already in the images you pull: `hoophq/hoopdev` (agent) and
 `hoophq/hoop` (gateway), from **1.126.0** onward. Running the relay out of one
-without building anything — `docker exec` into a live container, extending the
-image and swapping `CMD`, or adding a second container to the agent pod — is
+without building anything (`docker exec` into a live container, extending the
+image and swapping `CMD`, or adding a second container to the agent pod) is
 [QUICKSTART-AGENT-IMAGE.md](./QUICKSTART-AGENT-IMAGE.md).
 
 **As a standalone binary**, when a sidecar container should carry the relay and
@@ -171,7 +171,7 @@ docker build -f deploy/docker-compose/envoy-stack/hoopinspect/Dockerfile \
   -t hoop-inspect:local hoopinspect/
 ```
 
-There are no build tags. Every capability is decided by the config file, so an
+There are no build tags. The config file decides every capability, so an
 operator turning on PII detection does not also have to swap the binary. Omit
 the `pii` section and detection is off, which makes masking unavailable and a
 `pii` policy rule a config error: both are refused at startup rather than
@@ -283,8 +283,8 @@ concurrency.
 
 ### 3. Validate before you deploy
 
-Nothing needs to be running. Here it is against the Envoy stack's own config, from the
-`hoopinspect` directory:
+Nothing needs to be running. Run it against the Envoy stack's own config, from
+the `hoopinspect` directory:
 
 ```bash
 cd cmd && go build -o hoop-inspect . && \
@@ -302,8 +302,8 @@ with an `opa` block reads `+ opa`, and one with `enforce: false` reads
 `observe-only`.
 
 Validation builds every lane, so it catches what a syntax check cannot, and it
-reports every problem in one run rather than one per restart. Four things it
-refuses outright:
+reports every problem in one run rather than one per restart. It refuses these
+outright:
 
 - `mask.enabled` on a protocol whose codec can carry neither masking
   mechanism, naming the lane.
@@ -314,6 +314,10 @@ refuses outright:
 - A bad regex in any lane's rules, naming the lane.
 - An `ai_analysis` rule with no `analyzer` section, no trigger, or no action
   for any risk level. All three would load and classify nothing.
+- An `ai_analysis` rule on a lane whose protocol has no content builder,
+  naming the protocol. That rule classifies nothing and says nothing while
+  doing it: the analyzer returns before it has a status, so there is no
+  finding and no annotation to notice.
 - An `analyzer.provider` the binary does not link, naming what it does link.
 - A credential file readable by group or other, naming its mode.
 - An `http` block on a non-HTTP lane, or `authorization` in its header
@@ -375,6 +379,13 @@ risk it reports. It is the only rule type that leaves the process, costs money
 and can be slow, so three things bound it: a trigger decides what is worth
 asking about, a cache collapses repeated statement shapes onto one verdict,
 and the rule runs LAST in the chain, after the free local rules and OPA.
+
+It runs wherever a content builder renders the statement for a model:
+`postgres` and `mssql` send the statement text with the operation, tables and
+database the codec derived; `http` sends the method, normalized resource and
+body. A lane whose protocol has no builder is refused at startup rather than
+left classifying nothing, which is what a relay-only protocol would otherwise
+get: no statements to render means no verdict, silently.
 
 ```yaml
 pii:
@@ -444,8 +455,54 @@ transmitting their values. A relay whose job is keeping taxpayer ids out of a
 database's query log should not post them to a model vendor. `send: refuse`
 denies locally instead of transmitting, and both need a `pii` section.
 
-**Writing your own prompt.** What counts as risky depends on what you are
-protecting, so the risk guidance is replaceable at two levels.
+**Handing the decision to OPA.** `high: block` is a level→action table with
+three rows, and it sees only the level. Set the action to `defer` where the
+real determination also needs the user, the hour or a break-glass list: the
+analyzer classifies and records the level, and the block/allow choice moves
+into Rego.
+
+```yaml
+policy:
+  opa:
+    url: http://opa:8181/v1/data/hoop/inspect/result
+    fail_open: false
+    gate: true
+  rules:
+    - name: risky-writes
+      type: ai_analysis
+      # no trigger: with the gate on, Rego decides what is worth classifying
+      high: defer
+      medium: defer
+      low: defer
+```
+
+The level then travels to OPA as `input.findings.ai_analysis`, one entry in a
+map every producer on the lane reports into. `defer` is not analyzer-only:
+any rule type takes `action: defer` and reports the same way (see
+[Reporting instead of denying](#reporting-instead-of-denying)), so one
+statement can hand Rego a risk level and a set of PII entity classes at once.
+
+`defer` reorders the chain. A decision that reads the risk level has to run
+after the thing that fills it, so OPA moves from before the analyzer to after
+it, and a statement Rego would have refused for free now costs a model call
+first. `gate: true` buys that back by consulting OPA on both sides: once
+before the analyzer to answer "is this worth a model call", once after to
+answer what the level means. Both calls hit the same URL and carry
+`input.phase`, so a policy that ignores the field answers both identically,
+and turning the gate on costs one round trip rather than a rewrite.
+
+Four configs are refused at startup. `defer` on a lane with no
+`policy.opa.url` defers to a decision that does not exist, which allows
+everything; `gate: true` on a lane with no `ai_analysis` rule is a round trip
+that buys nothing. An `ai_analysis` rule with no `trigger` is also refused,
+except under `gate: true`, where an empty trigger is how you say Rego decides.
+So is `action: defer` on an `ai_analysis` rule: that type defers per level
+through `high`/`medium`/`low`, and a rule saying both would leave two answers
+to one question. [Policy](#policy) covers what the two phases send and what
+the gate may answer.
+
+**Writing your own prompt.** Risk depends on what you are protecting, so the
+risk guidance is replaceable at two levels.
 
 `analyzer.prompt` is **process-wide**: it applies to every `ai_analysis` rule
 on every lane, database and HTTP alike. Put deployment-wide facts there and
@@ -486,7 +543,7 @@ listeners:
             tenant's records, is high risk.
 ```
 
-Setting only `analyzer.prompt` is fine — the built-in guidance it replaces
+Setting only `analyzer.prompt` is fine: the built-in guidance it replaces
 covers both protocols, with separate high-risk examples for SQL and for HTTP,
 for exactly this reason. Overriding it with database-only wording is the easy
 mistake: an HTTP lane then classifies JSON bodies against advice about `DROP`
@@ -495,13 +552,13 @@ and `TRUNCATE`.
 A prompt replaces the **guidance** only. Two instructions are appended after
 whatever you write and cannot be removed:
 
-- Report the verdict by calling exactly one of the three risk tools. This is
-  what makes the risk level an enum rather than a parsing problem — the level
+- Report the verdict by calling exactly one of the three risk tools. The tool
+  choice makes the risk level an enum rather than a parsing problem: the level
   is which tool the model chose, so there is no free text to misread.
 - Never quote a literal value from the statement in the title or explanation.
-  That is a security property, not a style rule: the verdict reaches an audit
-  record, and a title repeating the identifier it objected to has published
-  that identifier.
+  That is a security property: the verdict reaches an audit record, and a
+  title repeating the identifier it objected to has published that
+  identifier.
 
 Changing a prompt invalidates cached verdicts for the rules it applies to, so
 a reworded prompt takes effect on the next statement rather than after the
@@ -518,7 +575,20 @@ curl -s localhost:19000/config | python3 -m json.tool   # what each lane sends
 ```
 
 Verdicts land in the audit trail as `metadata.risk_level`, which rolls up to a
-session's highest risk in `GET /api/sessions` and `GET /api/stats`.
+session's highest risk in `GET /api/sessions` and `GET /api/stats`. Beside it,
+`metadata.ai_status` records what the analyzer did: `ok`, `cached`, `skipped`,
+`budget_exhausted`, `refused` or `error`. It merges most-degraded-wins across
+rules, so a second `ai_analysis` rule that succeeded cannot hide the first
+one's outage. `metadata.ai_rule` names the rule that produced the level and
+merges as a unit with `risk_level`, so the name always belongs to the level
+shown.
+
+`ai_status` and `ai_rule` are the analyzer's OWN audit vocabulary, not the
+finding it publishes to policy. The trail keeps the specific word, because an
+operator tuning `max_calls` and one tuning `send: refuse` are chasing
+different things. The finding maps both onto the generic `unavailable` and
+puts the word in `reason`, so a Rego author never has to learn this package's
+statuses to write a policy.
 
 **Credentials never appear in the config.** `credentials_file` is a path; the
 file must not be readable by group or other; the material is held in a type
@@ -547,14 +617,14 @@ The boundary:
 | | Envoy | hoopinspect |
 |---|---|---|
 | Postgres SQL parse | `postgres_proxy`, best effort | full statement text |
-| Postgres granularity | `table.db` + operation verb | statement, operation, tables |
+| Postgres granularity | `table.db` + operation verb | statement, every effect, and relations split read/write |
 | Postgres **response** | ✗ | result columns, row count, and masking by re-framing |
 | HTTP request | `ext_authz`: method, path, headers, bounded body | same, plus normalized resource |
 | HTTP **response** | ✗, ext_authz decides before the upstream is called | status, headers, body |
 | Deny UX | RBAC/ext_authz drops or returns a bare 403 | operator-authored message |
 
 On HTTP, Envoy's `ext_authz` covers request-side authorization well, and the
-gaps named above are the narrow ones. Envoy is not blind here.
+gaps named above are the narrow ones; Envoy is not blind here.
 
 ## Protocols
 
@@ -582,8 +652,31 @@ boundary, so no heuristic guesses where the ciphertext stops.
 A relay could do no more here. The SSPI blob is a service ticket bound to the
 server's SPN: relayable, and beyond minting, reading or editing.
 `mssql.DetectSSPI` reports that a login is integrated, which serves the audit
-trail and a clear error message. It cannot report who. Under integrated auth
+trail and a clear error message. It cannot report who: under integrated auth
 the username field sits empty, because the name lives inside the ticket.
+
+**The codec passes the encrypted login through and keeps reading.** PRELOGIN's
+`ENCRYPT_OFF` says "encryption off" and means "encrypt the login only": MS-TDS
+3.2.5.3 puts the first LOGIN7 packet inside TLS and leaves every other packet
+in the clear. A SQL Server with TLS administratively disabled still negotiates
+it, minting a self-signed certificate at startup for the credentials, and
+go-mssqldb defaults to it, so every Go client meets this on an ordinary 7.x
+lane.
+
+The handshake rides inside `0x12` packets, which the codec already forwards.
+The bytes after it break the parse: the client inverts the nesting and writes
+TLS records to the socket raw, with no TDS header. A decoder that walks them
+as packets loses its place, and the relay stops seeing the session while the
+socket keeps carrying it: no statements, no policy, no masking, no audit
+trail.
+
+So the codec walks that region by TLS's own record framing, finishes on the
+byte where plaintext resumes, and inspects everything after it. Statements
+from such a session carry `mssql.login_encrypted`, so an operator reading the
+trail sees the window nobody could observe. The pass-through opens once,
+during the login, and stays bounded; the codec answers ciphertext before the
+login, after it, or past the bound with `ErrStreamUnsafe`, because nobody can
+inspect a session that never returns to plaintext.
 
 **The codec refuses one thing outright.** A login response carrying a routing
 ENVCHANGE tells the driver to reconnect elsewhere, and drivers obey without
@@ -632,8 +725,10 @@ type Statement struct {
     Protocol  Protocol          // postgres | http
     Direction Direction         // client | server
     Text      string            // verbatim SQL, or the request line for HTTP
-    Operation Operation         // select | delete | get | post | ...
-    Tables    []string          // SQL relations, or the HTTP resource
+    Operation Operation         // the most consequential effect, not the leading verb
+    Effects   []Operation       // every operation performed anywhere in the statement
+    Relations []Relation        // {name, access}, write dominating read
+    Tables    []string          // Relations flattened, or the HTTP resource
     Database  string            // when the protocol states it
     HTTP      *HTTPDetail       // http only; nil for the wire-database codecs
     Result    *ResultDetail     // response side: columns and row count, never values
@@ -646,9 +741,136 @@ name the column it returned, so "this query came back with a column named ssn"
 is a question no request-side rule can answer. It carries the column names and
 a row count, never the rows.
 
-For SQL, `Operation` comes from a lexer that strips comments and string
-literals first, so `SELECT 'DROP TABLE customers'` classifies as `select`.
-Prefer `MatchOperation` to `MatchDenyWords` for verbs.
+For SQL one scan of the statement text fills four fields, and they are not
+four views of the same fact:
+
+- **`Operation` is the most consequential EFFECT**, not the leading verb.
+  `WITH x AS (DELETE FROM customers RETURNING *) SELECT count(*) FROM x` is a
+  `delete`, because a policy asking "may this run" is asking about the effect
+  and not about the spelling.
+- **`Effects` carries the full set**, every operation performed anywhere in
+  the statement. Read it to tell a statement that only deletes from one that
+  deletes and selects.
+- **The vocabulary is closed**, and wider verbs fold into it. The scanner
+  models `MERGE`, `COPY` and `EXPLAIN`; `Operation` and `Effects` never report
+  them, because `MatchOperation` and the AI trigger compare for equality and a
+  config naming `update` cannot name `merge`. A `MERGE` is an `update`, its
+  `WHEN MATCHED THEN DELETE` branch still adds `delete`; `COPY ... FROM` is an
+  `insert` and `COPY ... TO` a `select`; a plain `EXPLAIN` is a `select`,
+  because it plans and does not execute. Nothing folds onto `other`, which
+  ranks below every real verb and would hide a bulk load.
+- **`Relations` carries `{name, access}`**, deduplicated and lowercased, with
+  write dominating read for a relation that is both.
+  `INSERT INTO staging SELECT * FROM customers` writes `staging` and reads
+  `customers`.
+- **`Tables` is `Relations` with the access dropped**, kept so rules written
+  before the split keep matching. Empty means "could not tell", never
+  "touches nothing".
+- **`Operation == unknown` with `metadata["sql.incomplete"]` is the
+  fail-closed signal.** The scanner met a statement whose effect is decided
+  at runtime and says so instead of guessing; the metadata value is the
+  reason. A rule naming `unknown` refuses those statements, and one that does
+  not name it accepts that risk explicitly.
+
+Comments and string literals are stripped before any of it, so
+`SELECT 'DROP TABLE customers'` is a `select`. Prefer `MatchOperation` to
+`MatchDenyWords` for verbs.
+
+### Why this is not a parser
+
+A SQL grammar is large, dialect-specific and a permanent maintenance burden.
+The question a policy asks is much smaller: which relations does this
+statement write, and which does it read. Verbs and the relation names beside
+them are token-local, so the scanner answers that question without building
+an AST.
+
+It does need a stack. One integer of parenthesis depth says "somewhere inside
+parentheses" but not "inside a CTE body", which is why a data-modifying CTE
+used to read as a plain select. A stack of LABELLED regions costs one byte
+per nesting level, and that one bit of context per level is what made
+`WITH x AS (DELETE FROM t) SELECT` readable.
+
+It models no expressions at all: no precedence table, no operator handling
+past "these bytes end a token". Expression grammar is where most of a real
+parser's cost lives, and none of it answers the question above.
+
+`Dialect` exists because one byte means different things per engine. `[`
+opens a quoted identifier in T-SQL and is an array subscript in PostgreSQL:
+treating it as an identifier everywhere mangles `SELECT tags[1] FROM t`,
+treating it as an operator everywhere loses `[dbo].[customers]`. Only the
+lexical rules differ; the analysis after them is shared.
+
+Those choices buy this, measured through the real Postgres path:
+
+| statement | before | after |
+|---|---|---|
+| `UPDATE audit SET n=E'O\'Brien'; DELETE FROM customers` | `update`, tables `[audit]`, the DELETE invisible | `delete`, audit write + customers write |
+| `WITH a AS (DELETE FROM customers RETURNING *) SELECT count(*) FROM a` | `select` | `delete`, customers write |
+| `WITH x AS (SELECT $$a)b$$) DELETE FROM customers` | `select` | `delete` |
+| `WITH set AS (SELECT 1) SELECT * FROM set` | `set` | `select` |
+| `/* outer /* inner */ DELETE FROM customers */ SELECT 1` | `delete`, tables `[customers]` | `select`, no relations |
+| `MERGE INTO customers USING s ... WHEN MATCHED THEN DELETE` | `unknown` | `delete`, customers write + s read |
+| `COPY customers FROM STDIN` | `other` | `insert`, customers write |
+| `COPY (DELETE FROM customers RETURNING *) TO STDOUT` | `other` | `delete` |
+| `EXPLAIN ANALYZE DELETE FROM customers` | `other` | `delete` |
+| `EXPLAIN DELETE FROM customers` | `other` | `select`, customers READ, because it plans and does not execute |
+| `INSERT INTO staging SELECT * FROM customers` | `insert`, tables `[staging customers]` | staging write, customers read |
+| `DO $$ BEGIN DELETE FROM customers; END $$` | `unknown` by accident | `unknown`, reason "anonymous code block; body is interpreted at runtime" |
+| `CALL purge()` | `call` | `unknown`, reason "stored procedure; body is in the catalog" |
+
+### The ceiling
+
+Three shapes are out of reach for any amount of parsing, this scanner's or
+PostgreSQL's own:
+
+- **`DO $$ ... $$`**, whose body is a string interpreted at runtime.
+- **`CALL proc()` and `EXECUTE p`**, whose body lives in the catalog or whose
+  text was supplied somewhere else entirely.
+- **A function call in a SELECT list.** `SELECT purge()` is the same problem
+  wearing a read's clothes.
+
+The first two set `Complete=false`, surface as `Operation == unknown`, and
+carry the reason in `metadata["sql.incomplete"]`. The third deliberately does
+not. Marking every `SELECT count(*)` incomplete would raise the flag on most
+traffic, and a flag that fires everywhere is one operators learn to ignore,
+which costs more than the blind spot itself. It stays a known, permanent
+blind spot, and the control for it is the database's own grant on the
+function.
+
+`CREATE FUNCTION` is a complete `create` rather than an unknown: defining a
+function performs exactly one effect and the body is data at that moment. The
+unanalyzable event is the INVOCATION, already covered above.
+
+Because the first two are permanent, so is the posture. Fail closed on
+`unknown`:
+
+```yaml
+rules:
+  - name: unreadable-statement
+    type: operation
+    operations: [unknown, other]
+    message: this statement cannot be classified, so it is refused
+```
+
+MSSQL runs the scanner permanently. No credible Go T-SQL parser exists, so
+there is no later version of this where the T-SQL path swaps to a grammar.
+
+### Checked against a real parser
+
+`lexer/conformance/` is a nested module holding a test-only oracle. It runs
+PostgreSQL's own parser and the scanner over the same statements and fails
+when they disagree, because a hand-written scanner nobody checks against a
+real grammar is a pile of assertions about SQL, and SQL does not care what we
+assert. The parser is a wasm build, so the suite runs under `CGO_ENABLED=0`
+rather than only where a C toolchain is configured.
+
+It is never a runtime dependency. It has its own `go.mod`, nothing the root
+ships imports it, and `go test ./...` at the root does not reach it. That is
+what keeps the root module at zero dependencies, test dependencies included:
+
+```bash
+(cd lexer/conformance && go test ./...)
+```
 
 ## HTTP
 
@@ -680,6 +902,9 @@ A policy engine's decision log is a copy of everything you send it, and
 
 Two evaluators, meant to be layered via `policy.Chain{local, opa}` so a
 statement the local rules already forbid costs no network round-trip.
+Anything that defers changes the order: OPA moves after the producers whose
+findings it reads, its call carries `phase: decide`, and `opa.gate: true`
+adds a second call before them. Both phases are below.
 
 **Local rules.** SQL: `deny_words_list`, `pattern_match` (RE2), `operation`,
 `table`. HTTP: `http_resource`, `http_status`. Cross-protocol: `pii` (see
@@ -703,21 +928,47 @@ policy.NewRules([]policy.Rule{
 An HTTP rule never matches a SQL statement and vice versa, so a mixed set
 cannot deny the wrong protocol.
 
+**A `table` rule keys on the access.** `access: write` means "nothing writes
+to customers" and stops firing on
+`INSERT INTO staging SELECT * FROM customers`, which only reads it. The flat
+`Tables` list could not express that difference, so the rule had to be
+written as "nothing mentions customers" and operators widened it until it
+protected nothing. An unset `access` matches either, which is what every rule
+written before the split meant, so deployed rules are unaffected.
+
+```yaml
+rules:
+  - name: no-writes-to-customers
+    type: table
+    tables: [customers]
+    access: write               # unset would also match a plain SELECT
+    require_table_match: true   # deny when the relations could not be determined
+```
+
 **OPA.** Posts to an OPA Data API endpoint. hoopinspect does not own policy;
 it owns the *input document*:
 
 ```json
 {"input": {
-  "protocol": "http",
+  "protocol": "postgres",
   "direction": "client",
   "operation": "delete",
-  "tables": ["/users/*"],
-  "http": {
-    "method": "DELETE",
-    "path": "/users/42",
-    "resource": "/users/*"
-  },
-  "context": {"user": "alice"}
+  "statement": "DELETE FROM customers WHERE cpf = '111'",
+  "tables": ["customers"],
+  "effects": ["delete"],
+  "relations": [{"name": "customers", "access": "write"}],
+  "context": {"principal": "alice@example.com"},
+  "phase": "decide",
+  "findings": {
+    "pii": {"rule": "no-cpf", "status": "ok",
+            "values": {"entities": ["BR_CPF", "EMAIL_ADDRESS"],
+                       "rules": ["no-cpf", "pii-wide"]}},
+    "deny_words_list": {"rule": "no-destructive", "status": "ok",
+                        "values": {"words": ["DELETE"],
+                                   "rules": ["no-destructive"]}},
+    "ai_analysis": {"rule": "risky-writes", "status": "ok",
+                    "values": {"risk_level": "high"}}
+  }
 }}
 ```
 
@@ -725,8 +976,173 @@ A strict superset of what `ext_authz` and `postgres_proxy` metadata provide,
 in one shape for both protocols. Accepts `{"allow": bool}`,
 `{"denied": bool}`, or a bare boolean, with an optional `message` and `rule`.
 
+`effects` and `relations` are what `operation` and `tables` could not
+express, and a new rule belongs on them:
+
+```rego
+result := {"denied": true, "rule": "no-writes-to-customers"} if {
+	some r in input.relations
+	r.access == "write"
+	r.name == "customers"
+}
+```
+
+`operation` stays the worst single effect and `tables` stays the flattened
+names, so a rule written before the split keeps firing.
+
+`phase` and `findings` appear only on a lane that consults OPA after a
+producer (see [Analyzing statements with a
+model](#analyzing-statements-with-a-model) and [Reporting instead of
+denying](#reporting-instead-of-denying)). A single-call lane sends neither, so
+a policy written before any of this existed sees a byte-identical document.
+`phase` is `gate` on the call before the producers and `decide` on the call
+after them.
+
+`findings` rides the decide phase only, and only where something reported. It
+is a map keyed by **source**, the producer that wrote the entry: local rules
+key by rule TYPE (`pii`, `deny_words_list`, `operation`, ...), the analyzer
+keys as `ai_analysis`. Every entry has one shape:
+
+- `status` is always set, and is one of `ok`, `cached`, `skipped`,
+  `unavailable`, `error`. Only `ok` and `cached` mean the source answered.
+- `reason` narrows a non-ok status where the producer has more to say. The
+  analyzer's `unavailable` carries `budget_exhausted` or `refused`.
+- `values` is the producer's own: `risk_level` under `ai_analysis`,
+  `entities` under `pii`, `words` under `deny_words_list`. Read a key only
+  under a source you know writes it.
+- `rule` names the first configured rule that produced the entry.
+
+**A source that ran and could not answer still appears**, carrying a status
+and no values, and that is the whole reason `status` exists. An absent
+`risk_level` on its own means four things at once: nothing triggered, the call
+budget was spent, `send: refuse` stopped the transmission, or the provider
+failed. Keying on the value alone lets
+`findings.ai_analysis.values.risk_level == "low"` pass a statement nobody
+classified. An absent SOURCE is a different fact: no producer of that kind is
+configured on the lane at all. Write the degraded case out:
+
+```rego
+package hoop.inspect
+
+ai := input.findings.ai_analysis
+
+answered if ai.status in {"ok", "cached"}
+
+breakglass if input.context.principal in data.breakglass
+
+# An undefined findings.pii yields no bindings, so this is the empty set on a
+# lane with no deferring pii rule rather than an undefined rule.
+pii_hits := {e | some e in input.findings.pii.values.entities; e in {"BR_CPF", "US_SSN"}}
+
+# A single-call lane sends no phase at all, and an undefined input.phase makes
+# every rule reading it undefined, which fail_open: false reads as a denial of
+# everything. Default it to the phase that decides.
+phase := object.get(input, "phase", "decide")
+
+result := decide if phase == "decide"
+
+# One else-chain, because two complete rules producing different objects for
+# one statement is an eval error rather than a precedence order.
+decide := {"denied": true, "rule": "ai-unavailable", "message": msg} if {
+	# Fail closed on a level nobody produced. A value-only contract cannot
+	# express this case at all. Naming ai.status is the presence check
+	# too: with no analyzer on the lane this branch is undefined, which is
+	# the difference between "could not answer" and "never ran".
+	not answered
+	msg := sprintf("risk analysis is %v", [ai.status])
+} else := {"denied": true, "rule": "ai-high-risk", "message": "blocked by risk analysis"} if {
+	# The determination that used to be `high: block` in hoopinspect's config.
+	ai.values.risk_level == "high"
+	not breakglass
+} else := {"denied": true, "rule": "pii-in-query", "message": msg} if {
+	# A pii rule carrying `action: defer` reports entity classes instead of
+	# denying, so one break-glass list covers both producers.
+	count(pii_hits) > 0
+	not breakglass
+	msg := sprintf("%v may not appear in a query here", [concat(", ", sort(pii_hits))])
+} else := {"allow": true}
+
+# Gate phase: spend a model call only on the tables worth one.
+result := {"allow": true, "request": {"ai_analysis": true}} if {
+	phase == "gate"
+	input.tables[_] in {"customers", "payments"}
+}
+```
+
+`input.context` is whatever the caller attached. The relay fills it from the
+session: `principal`, `session_id`, `connection`, and `subject`, `email`,
+`groups`, `peer_addr`, `upstream`, `correlation_id` where the identity carries
+them. A library caller setting `OPAClient.Context` chooses its own keys.
+
+**Statement content never travels in a finding.** The analyzer's title and
+explanation are the model's own words about a statement it was shown, `pii`
+reports entity classes and not the values behind them, and a `pattern_match`
+rule reports that it matched and never the matched text. OPA's decision log is
+a copy of everything you send it, so only the closed vocabulary above goes.
+
+**The gate answers `request`** beside its allow/deny: a map from source to
+bool. `true` runs a producer its own configuration would have skipped,
+overriding an `ai_analysis` rule's `trigger`; `false` vetoes one that
+configuration would have run; an absent key means no opinion, leaving that
+source in charge of itself. It is read on the gate phase only, so a policy
+that returns it on the decide phase is ignored rather than half-honored.
+
 **Both fail closed.** An unreachable OPA, a 500, or an undefined decision
 denies. Set `FailOpen` to invert that where availability outranks enforcement.
+The gate phase is the exception: an undefined gate decision allows and
+requests nothing even under `fail_open: false`. A gate is an optimization over
+a policy someone already wrote, so making its absence deny would mean turning
+the gate on silently blocks every statement until its author writes a second
+rule they never asked for. The decide phase keeps the normal reading.
+
+### Reporting instead of denying
+
+`action: defer` on a local rule splits matching from determining. The rule
+still matches; instead of denying it records what it saw as a finding and
+evaluation continues, so the decision belongs to whoever reads
+`input.findings`, normally the OPA call on the decide phase.
+
+```yaml
+rules:
+  - name: no-cpf
+    type: pii
+    action: defer         # report BR_CPF, let Rego decide who may send one
+    entities: [BR_CPF]
+  - name: no-drop
+    type: operation       # no action: still denies, and first match wins
+    operations: [drop]
+```
+
+First-match-wins applies to DENIALS only. A deferring rule never ends
+evaluation, so one statement can report several findings and still be denied
+by a hard rule further down. `defer` is the only value `action` takes, and
+anything else is refused at startup rather than read as "deny": a rule whose
+action was mistyped would otherwise enforce the opposite of what it says. So
+is `defer` on a lane with no `policy.opa.url`, which defers to a decision that
+does not exist and therefore allows everything.
+
+**Findings key by rule TYPE, not by rule name.** A policy asks what the PII
+scanner found, not what the rule named `no-cpf` found, so every deferring
+`pii` rule folds into `findings.pii`. `values.rules` is the union of the names
+that matched and list values union too, so two `pii` rules matching different
+entity classes report the union of both. Overwriting would let a second rule
+matching one class hide the first rule's three. `rule` names the first that
+matched.
+
+**Only `pii` tells a policy something new.** `operation`, `table`,
+`http_resource` and `http_status` match on fields Rego already reads off
+`input.operation`, `input.relations` and `input.http`, so their finding carries
+`values.rules` and nothing else: the match itself is the whole message.
+`deny_words_list` adds `values.words`, because which of several configured
+words fired is not recoverable from `input.statement` without reimplementing
+the matcher. `pii` adds `values.entities`, and it is the only type
+contributing a fact the input document does not carry at all: running a
+detector over the statement is not something Rego does.
+
+**A matched pattern's text is never reported.** `pattern_match` says that it
+matched and stops there. The text is content lifted out of the statement, and
+OPA's decision log is a copy of everything sent to it, so a rule written to
+catch a leaked key would file that key in the policy engine's log.
 
 ## Masking and PII
 
@@ -849,7 +1265,7 @@ kind it is.
 
 A TCP listener on 15432 is reachable by anything that can route to the host. A
 NetworkPolicy narrows that; it does not remove it. A unix socket opens no port
-at all, so reachability becomes a filesystem question — which is the point of a
+at all, so reachability becomes a filesystem question, which is the point of a
 sidecar that shares a namespace with exactly one workload.
 
 The cost is coordination: both processes need the same directory, and their
@@ -857,7 +1273,7 @@ uids have to agree. That is cheap in a pod spec and awkward on a laptop, which
 is why the compose stack defaults to TCP and keeps the socket variant in an
 overlay.
 
-### Which one is running
+### Confirming which one is running
 
 Three places say it, and they agree because they read the same resolved config.
 
@@ -868,7 +1284,7 @@ Three places say it, and they agree because they read the same resolved config.
  "listen":"/run/hoop-inspect/pg.sock","protocol":"postgres"}
 ```
 
-**`GET /stats`**, whose `addr` is whatever the listener actually bound:
+**`GET /stats`**, whose `addr` is the address the listener bound:
 
 ```bash
 curl -s localhost:19000/stats | python3 -m json.tool
@@ -881,9 +1297,8 @@ curl -s localhost:19000/stats | python3 -m json.tool
 ]}
 ```
 
-A path means unix. A `host:port` means TCP. This is the post-bind address, not
-the configured string, so it reflects what happened rather than what was asked
-for.
+A path means unix. A `host:port` means TCP. The address is post-bind, so it
+reflects what the listener got rather than what the config asked for.
 
 **The filesystem**, for a socket lane:
 
@@ -923,7 +1338,7 @@ listen unix /run/hoop-inspect/pg.sock: bind: permission denied
 **Connecting to it.** `connect()` on a unix socket requires **write**
 permission on the socket file, not read. Go creates a listening socket at
 `0777 &^ umask`, and the usual 022 clears exactly the group-write bit a peer
-needs. The peer then fails with nothing useful in either log — under Envoy it
+needs. The peer then fails with nothing useful in either log: under Envoy it
 surfaces only as `flags=UF` and an `upstream_cx_connect_fail` counter, while
 the cluster still reports healthy because the endpoint resolved.
 
@@ -1055,11 +1470,16 @@ you need a path with no inspection in it.
 
 Read these before writing a policy against it.
 
-- **`Tables` is best effort.** A lexer produces it, so it hits the same
-  ceiling Envoy's own docs acknowledge for `postgres_proxy`. Empty means
-  "could not determine", **never** "touches nothing". Use
-  `RequireTableMatch: true` on rules protecting something critical, and accept
-  the false positives.
+- **An empty relation list means "could not tell".** `Relations` and `Tables`
+  come from a scanner, and a statement it could not follow reports nothing
+  rather than everything. Empty is **never** "touches nothing". Use
+  `require_table_match: true` on rules protecting something critical, and
+  accept the false positives.
+- **`unknown` is an answer, and it has to deny.** `DO`, `CALL` and `EXECUTE`
+  decide their effect at runtime, so `Operation` is `unknown` with the reason
+  in `metadata["sql.incomplete"]`. A function call in a SELECT list is the
+  same blind spot and deliberately does not raise the flag. See
+  [The ceiling](#the-ceiling).
 - **A response batch can be truncated.** Both shipped codecs inspect and mask
   in each direction, but the Postgres codec stops decoding columns past 1000
   rows in one result set, to keep the relay's memory out of the query's hands.
@@ -1100,6 +1520,7 @@ That covers the root module only. Each nested module has its own `go.mod`, so
 ```bash
 (cd pii/alcatraz && go test ./...)
 (cd store/sqlite && go test ./...)
+(cd lexer/conformance && go test ./...)   # differential, against PostgreSQL's parser
 ```
 
 Each codec runs a split-read matrix: the tests feed the same message in two
