@@ -739,8 +739,11 @@ Non-obvious notes only:
   query, expanded row, and the list of natively-connectable roles. Loads the
   non-paginated `/connections` because the paginated one applies an RBAC join
   that can hide visible rows, and neither can filter on `access_mode_connect`.
-- `useConfigStatusStore` — sidebar setup-checklist snapshot, admin only;
-  refreshes on the `hoop:session-executed` DOM event from the CLJS terminal.
+- `useConfigStatusStore` — sidebar setup-checklist snapshot, admin only. One
+  call to `GET /orgs/onboarding`; never derive the checks client-side. Refreshes
+  on navigation, on window focus and on the `hoop:session-executed` DOM event
+  from the CLJS terminal — no timers. Resets itself on logout (subscribes to
+  `useAuthStore`), and every read is scoped by `forUserId`.
 - `useConnectionsMetadataStore` — loaded once at app start (`App.jsx`); feeds
   credential field schemas + connection icons; `load()` is idempotent.
 
@@ -773,8 +776,12 @@ Non-obvious notes only:
   infinite-scroll dropdowns.
 - `eventRouting.js` — normalizes the backend's snake_case JSON to camelCase at
   the service boundary.
-- `sessions.js` — `list(params)`; `{ limit: 1 }` doubles as a cheap
-  existence/total probe.
+- `sessions.js` — `list(params)`. **`limit` does not make the call cheap**: the
+  gateway always runs an unbounded `COUNT(*)` (joined against reviews) to fill
+  `total` before applying the limit, so `{ limit: 1 }` costs the same as a full
+  page. Never use it as an existence probe.
+- `onboarding.js` — `GET /orgs/onboarding`, admin only. The gateway computes the
+  whole setup checklist in one query; backs `useConfigStatusStore`.
 - `reports.js` — `/reports/sessions` takes `YYYY-MM-DD` dates only and `end_date`
   is **exclusive** (the gateway compares against midnight *starting* that day, so
   send tomorrow to include today). Never send `group_by`.

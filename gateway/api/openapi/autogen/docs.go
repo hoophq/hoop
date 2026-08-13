@@ -5765,6 +5765,32 @@ const docTemplate = `{
                 }
             }
         },
+        "/orgs/onboarding": {
+            "get": {
+                "description": "Get the setup checklist state for the caller's organization. Each step latches the first time it is satisfied, so a check never reverts. Once every check passes, ` + "`" + `show_setup_checklist` + "`" + ` on /userinfo turns false — the signal to stop calling this endpoint.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Management"
+                ],
+                "summary": "Get Organization Onboarding Status",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.OrgOnboardingResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/orgs/protection-profile": {
             "get": {
                 "description": "Get the organization's default protection profile. A null profile means manual configuration.",
@@ -11003,6 +11029,11 @@ const docTemplate = `{
         "openapi.AISessionAnalyzerRule": {
             "type": "object",
             "properties": {
+                "agentic": {
+                    "description": "When true, the analyzer runs an agentic tool-calling loop over past sessions\nand resource metadata before classifying.",
+                    "type": "boolean",
+                    "example": false
+                },
                 "connection_names": {
                     "description": "Connection names this rule applies to",
                     "type": "array",
@@ -11072,6 +11103,11 @@ const docTemplate = `{
                 "risk_evaluation"
             ],
             "properties": {
+                "agentic": {
+                    "description": "When true, the analyzer runs an agentic tool-calling loop over past sessions\nand resource metadata before classifying.",
+                    "type": "boolean",
+                    "example": false
+                },
                 "connection_names": {
                     "description": "Connection names this rule applies to",
                     "type": "array",
@@ -14883,6 +14919,74 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.OrgOnboardingChecks": {
+            "type": "object",
+            "properties": {
+                "agent_deployed": {
+                    "description": "At least one standard agent is currently connected",
+                    "type": "boolean"
+                },
+                "ai_analyzer_enabled": {
+                    "description": "An AI provider is configured for the session analyzer feature",
+                    "type": "boolean"
+                },
+                "data_masking_explored": {
+                    "description": "At least one user-created data masking rule exists (profile-managed rules don't count)",
+                    "type": "boolean"
+                },
+                "groups_created": {
+                    "description": "At least one group beyond the built-in admin group exists",
+                    "type": "boolean"
+                },
+                "guardrails_explored": {
+                    "description": "At least one user-created guardrail rule exists (profile-managed rules don't count)",
+                    "type": "boolean"
+                },
+                "people_assigned": {
+                    "description": "At least one user belongs to a group beyond the built-in admin group",
+                    "type": "boolean"
+                },
+                "protection_level_set": {
+                    "description": "The organization has a default protection profile",
+                    "type": "boolean"
+                },
+                "resource_created": {
+                    "description": "The organization has at least one connection",
+                    "type": "boolean"
+                },
+                "session_ran": {
+                    "description": "The organization has run at least one session",
+                    "type": "boolean"
+                }
+            }
+        },
+        "openapi.OrgOnboardingResponse": {
+            "type": "object",
+            "properties": {
+                "checks": {
+                    "description": "The live state of each checklist item",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.OrgOnboardingChecks"
+                        }
+                    ]
+                },
+                "completed": {
+                    "description": "Whether onboarding is finished. Terminal: stays true even if an\nindividual check later regresses",
+                    "type": "boolean"
+                },
+                "exec_connection_name": {
+                    "description": "First web-terminal capable connection, for the \"Run your first session\"\nshortcut; null when the organization has none",
+                    "type": "string",
+                    "example": "pgdemo"
+                },
+                "first_connection_name": {
+                    "description": "First connection of any kind, the native-access fallback for the same\nshortcut; null when the organization has no connections",
+                    "type": "string",
+                    "example": "pgdemo"
+                }
+            }
+        },
         "openapi.OrgProtectionProfileRequest": {
             "type": "object",
             "required": [
@@ -17972,15 +18076,64 @@ const docTemplate = `{
                     "type": "string",
                     "example": "The script contains queries that may expose sensitive data."
                 },
+                "model": {
+                    "description": "Model is the AI model that produced the analysis. Set by the agentic analyzer.",
+                    "type": "string"
+                },
                 "risk_level": {
                     "description": "RiskLevel is the risk assessment of the session based on the analysis of the script and the session context. Possible values are:",
                     "type": "string",
                     "example": "high"
                 },
+                "steps": {
+                    "description": "Steps is the agentic investigation trace (thinking, tool calls, tool results). Empty for single-shot analysis.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.SessionAIAnalysisStep"
+                    }
+                },
+                "summary": {
+                    "description": "Summary is a reviewer-facing impact summary produced by the agentic analyzer. Empty for single-shot analysis.",
+                    "type": "string"
+                },
                 "title": {
                     "description": "Title is a short description of the identified risk in the session",
                     "type": "string",
                     "example": "Potential Data Leakage"
+                }
+            }
+        },
+        "openapi.SessionAIAnalysisStep": {
+            "type": "object",
+            "properties": {
+                "is_error": {
+                    "description": "IsError indicates the tool result was a failure (set for tool_result).",
+                    "type": "boolean"
+                },
+                "thinking": {
+                    "description": "Thinking is the model's reasoning text (set for type \"thinking\").",
+                    "type": "string"
+                },
+                "timestamp": {
+                    "description": "Timestamp is when the step occurred.",
+                    "type": "string"
+                },
+                "tool_input": {
+                    "description": "ToolInput is the JSON arguments passed to the tool (set for tool_call).",
+                    "type": "string"
+                },
+                "tool_name": {
+                    "description": "ToolName is the investigation tool name (set for tool_call/tool_result).",
+                    "type": "string"
+                },
+                "tool_output": {
+                    "description": "ToolOutput is the tool result content (set for tool_result).",
+                    "type": "string"
+                },
+                "type": {
+                    "description": "Type is one of \"thinking\", \"tool_call\", \"tool_result\".",
+                    "type": "string",
+                    "example": "tool_call"
                 }
             }
         },
@@ -18636,6 +18789,10 @@ const docTemplate = `{
                 },
                 "show_origin_survey": {
                     "description": "Whether the \"How did you hear about Hoop?\" survey should still be offered.\nTrue only while the user has not answered it and is within 7 days of their\nuser record being created. Always false for anonymous users.",
+                    "type": "boolean"
+                },
+                "show_setup_checklist": {
+                    "description": "Whether the sidebar setup checklist should still be offered. True only for\nadministrators of an organization that has not completed onboarding, and\npermanently false once it has.",
                     "type": "boolean"
                 },
                 "slack_id": {

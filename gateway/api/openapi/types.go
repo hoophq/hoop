@@ -147,6 +147,10 @@ type UserInfo struct {
 	// True only while the user has not answered it and is within 7 days of their
 	// user record being created. Always false for anonymous users.
 	ShowOriginSurvey bool `json:"show_origin_survey"`
+	// Whether the sidebar setup checklist should still be offered. True only for
+	// administrators of an organization that has not completed onboarding, and
+	// permanently false once it has.
+	ShowSetupChecklist bool `json:"show_setup_checklist"`
 }
 
 type ServiceAccountStatusType string
@@ -910,6 +914,30 @@ type SessionAIAnalysis struct {
 	// * `allow_execution` - allow the session to execute
 	// * `block_execution` - block the session from executing
 	Action string `json:"action" enums:"allow_execution,block_execution" example:"allow_execution"`
+	// Summary is a reviewer-facing impact summary produced by the agentic analyzer. Empty for single-shot analysis.
+	Summary string `json:"summary,omitempty"`
+	// Model is the AI model that produced the analysis. Set by the agentic analyzer.
+	Model string `json:"model,omitempty"`
+	// Steps is the agentic investigation trace (thinking, tool calls, tool results). Empty for single-shot analysis.
+	Steps []SessionAIAnalysisStep `json:"steps,omitempty"`
+}
+
+// SessionAIAnalysisStep is one step of the agentic analyzer investigation trace.
+type SessionAIAnalysisStep struct {
+	// Type is one of "thinking", "tool_call", "tool_result".
+	Type string `json:"type" example:"tool_call"`
+	// Thinking is the model's reasoning text (set for type "thinking").
+	Thinking string `json:"thinking,omitempty"`
+	// ToolName is the investigation tool name (set for tool_call/tool_result).
+	ToolName string `json:"tool_name,omitempty"`
+	// ToolInput is the JSON arguments passed to the tool (set for tool_call).
+	ToolInput string `json:"tool_input,omitempty"`
+	// ToolOutput is the tool result content (set for tool_result).
+	ToolOutput string `json:"tool_output,omitempty"`
+	// IsError indicates the tool result was a failure (set for tool_result).
+	IsError bool `json:"is_error,omitempty"`
+	// Timestamp is when the step occurred.
+	Timestamp time.Time `json:"timestamp"`
 }
 
 type Session struct {
@@ -1409,6 +1437,43 @@ type OrgProtectionProfileResponse struct {
 	// The Hoop-managed attribute that binds the profile's rules to
 	// connections; null when no profile is active
 	AttributeName *string `json:"attribute_name" example:"hoop_protection_profile-protection_medium"`
+}
+
+// OrgOnboardingChecks is the per-item state of the setup checklist. Every field
+// maps 1:1 to a sub-item of the webapp sidebar widget.
+type OrgOnboardingChecks struct {
+	// At least one standard agent is currently connected
+	AgentDeployed bool `json:"agent_deployed"`
+	// The organization has at least one connection
+	ResourceCreated bool `json:"resource_created"`
+	// The organization has run at least one session
+	SessionRan bool `json:"session_ran"`
+	// At least one group beyond the built-in admin group exists
+	GroupsCreated bool `json:"groups_created"`
+	// At least one user belongs to a group beyond the built-in admin group
+	PeopleAssigned bool `json:"people_assigned"`
+	// At least one user-created guardrail rule exists (profile-managed rules don't count)
+	GuardrailsExplored bool `json:"guardrails_explored"`
+	// At least one user-created data masking rule exists (profile-managed rules don't count)
+	DataMaskingExplored bool `json:"data_masking_explored"`
+	// An AI provider is configured for the session analyzer feature
+	AIAnalyzerEnabled bool `json:"ai_analyzer_enabled"`
+	// The organization has a default protection profile
+	ProtectionLevelSet bool `json:"protection_level_set"`
+}
+
+type OrgOnboardingResponse struct {
+	// Whether onboarding is finished. Terminal: stays true even if an
+	// individual check later regresses
+	Completed bool `json:"completed"`
+	// The live state of each checklist item
+	Checks OrgOnboardingChecks `json:"checks"`
+	// First web-terminal capable connection, for the "Run your first session"
+	// shortcut; null when the organization has none
+	ExecConnectionName *string `json:"exec_connection_name" example:"pgdemo"`
+	// First connection of any kind, the native-access fallback for the same
+	// shortcut; null when the organization has no connections
+	FirstConnectionName *string `json:"first_connection_name" example:"pgdemo"`
 }
 
 var FeatureList = []string{"ask-ai"}
@@ -3516,6 +3581,9 @@ type AISessionAnalyzerRuleRequest struct {
 	RiskEvaluation AISessionAnalyzerRiskEvaluation `json:"risk_evaluation" binding:"required"`
 	// Optional extra instructions appended to the default system prompt
 	CustomPrompt *string `json:"custom_prompt,omitempty" example:"Treat any query that touches the payments schema as high risk."`
+	// When true, the analyzer runs an agentic tool-calling loop over past sessions
+	// and resource metadata before classifying.
+	Agentic bool `json:"agentic" example:"false"`
 }
 
 type AISessionAnalyzerRule struct {
@@ -3531,6 +3599,9 @@ type AISessionAnalyzerRule struct {
 	RiskEvaluation AISessionAnalyzerRiskEvaluation `json:"risk_evaluation"`
 	// Optional extra instructions appended to the default system prompt
 	CustomPrompt *string `json:"custom_prompt,omitempty" example:"Treat any query that touches the payments schema as high risk."`
+	// When true, the analyzer runs an agentic tool-calling loop over past sessions
+	// and resource metadata before classifying.
+	Agentic bool `json:"agentic" example:"false"`
 	// Set to "hoop" when the rule is materialized and lifecycle-managed by a
 	// protection profile; managed rules are read-only through this API
 	ManagedBy *string `json:"managed_by" readonly:"true" example:"hoop"`

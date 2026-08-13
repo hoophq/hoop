@@ -50,9 +50,32 @@ func (c *openaiClient) Chat(ctx context.Context, req ChatRequest) (*ChatResponse
 		case RoleUser:
 			messages = append(messages, openai.UserMessage(m.Content))
 		case RoleAssistant:
-			messages = append(messages, openai.AssistantMessage(m.Content))
+			if len(m.ToolCalls) > 0 {
+				tcs := make([]openai.ChatCompletionMessageToolCallParam, len(m.ToolCalls))
+				for i, tc := range m.ToolCalls {
+					tcs[i] = openai.ChatCompletionMessageToolCallParam{
+						ID:       tc.ID,
+						Function: openai.ChatCompletionMessageToolCallFunctionParam{Name: tc.Name, Arguments: tc.Arguments},
+					}
+				}
+				am := openai.ChatCompletionAssistantMessageParam{ToolCalls: tcs}
+				if m.Content != "" {
+					am.Content = openai.ChatCompletionAssistantMessageParamContentUnion{OfString: openai.String(m.Content)}
+				}
+				messages = append(messages, openai.ChatCompletionMessageParamUnion{OfAssistant: &am})
+			} else {
+				messages = append(messages, openai.AssistantMessage(m.Content))
+			}
 		case RoleSystem:
 			messages = append(messages, openai.SystemMessage(m.Content))
+		case RoleTool:
+			if m.ToolResult != nil {
+				content := m.ToolResult.Content
+				if m.ToolResult.IsError {
+					content = "ERROR: " + content
+				}
+				messages = append(messages, openai.ToolMessage(content, m.ToolResult.ToolCallID))
+			}
 		}
 	}
 

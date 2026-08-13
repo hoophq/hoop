@@ -1,4 +1,4 @@
-import { SUBTYPE_LABELS } from './constants'
+import { DEFAULT_RDP_DESKTOP_SIZE, SUBTYPE_LABELS } from './constants'
 
 /**
  * Collapse SSH variants to "ssh". Local-mode SSH connections carry the subtype
@@ -154,21 +154,27 @@ export function errorMessage(error, fallback) {
 
 /**
  * Opens the browser RDP client. It is a real form POST to /rdpproxy/client with
- * the credential in a hidden field, not a fetch — the gateway responds with an
- * HTML document that has to land in a new tab.
+ * the credential and requested desktop size in hidden fields, not a fetch —
+ * the gateway responds with an HTML document that has to land in a new tab.
  */
-export function openRdpWebClient(username) {
+export function openRdpWebClient(username, desktopSize = DEFAULT_RDP_DESKTOP_SIZE) {
   const form = document.createElement('form')
   form.method = 'POST'
   form.action = '/rdpproxy/client'
   form.target = '_blank'
 
-  const input = document.createElement('input')
-  input.type = 'hidden'
-  input.name = 'credential'
-  input.value = username
+  const credentialInput = document.createElement('input')
+  credentialInput.type = 'hidden'
+  credentialInput.name = 'credential'
+  credentialInput.value = username
+  form.appendChild(credentialInput)
 
-  form.appendChild(input)
+  const desktopSizeInput = document.createElement('input')
+  desktopSizeInput.type = 'hidden'
+  desktopSizeInput.name = 'desktop_size'
+  desktopSizeInput.value = desktopSize
+  form.appendChild(desktopSizeInput)
+
   document.body.appendChild(form)
   form.submit()
   form.remove()

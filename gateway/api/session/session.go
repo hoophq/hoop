@@ -56,41 +56,122 @@ type SessionPostBody struct {
 	CorrelationID  *string                   `json:"correlation_id"`
 }
 
-func AIAnalyze(ctx context.Context, orgID uuid.UUID, connName, script string) (*models.SessionAIAnalysis, *models.AccessRequestRule, error) {
-	aiAnalyzerRule, err := models.GetAISessionAnalyzerRuleByConnection(models.DB, orgID, connName)
+// AIAnalyzeInput carries everything needed to analyze a session's script and
+// resolve the resulting access-request rule. Exec carries the identity used to
+// run investigation metadata queries on the agentic path.
+type AIAnalyzeInput struct {
+	OrgID          uuid.UUID
+	ConnectionName string
+	Script         string
+	UserID         string
+	// UserGroups are the requester's groups. They are load-bearing, not
+	// diagnostic: GetBareConnectionByNameOrID gates the connection lookup on
+	// them (both the access-control list match and the admin/auditor bypass are
+	// derived from group membership), and the past-sessions tool uses the same
+	// derived admin/auditor flag for reviewer visibility. Omitting them makes
+	// group-gated connections invisible even to admins.
+	UserGroups []string
+	Exec       aianalyzer.AnalyzerExecIdentity
+}
+
+func AIAnalyze(ctx context.Context, in AIAnalyzeInput) (*models.SessionAIAnalysis, *models.AccessRequestRule, error) {
+	aiAnalyzerRule, err := models.GetAISessionAnalyzerRuleByConnection(models.DB, in.OrgID, in.ConnectionName)
 	if err != nil && err != gorm.ErrRecordNotFound {
-		return nil, nil, fmt.Errorf("failed obtaining ai session analyzer rule for connection %v, reason: %w", connName, err)
+		return nil, nil, fmt.Errorf("failed obtaining ai session analyzer rule for connection %v, reason: %w", in.ConnectionName, err)
 	}
-	if aiAnalyzerRule == nil || script == "" {
+	if aiAnalyzerRule == nil || in.Script == "" {
 		return nil, nil, nil
 	}
 
-	analyzerRes, err := aianalyzer.AnalyzeSession(ctx, orgID, script, aiAnalyzerRule.CustomPrompt)
+	var analysis *models.SessionAIAnalysis
+	if aiAnalyzerRule.Agentic {
+		analysis, err = analyzeAgentic(ctx, in, aiAnalyzerRule)
+	} else {
+		var res *aianalyzer.SessionAnalysisResult
+		res, err = aianalyzer.AnalyzeSession(ctx, in.OrgID, in.Script, aiAnalyzerRule.CustomPrompt)
+		if err == nil {
+			tier := aiAnalyzerRule.RiskEvaluation.Tier(aianalyzer.RiskLevelKey(res.RiskLevel))
+			analysis = &models.SessionAIAnalysis{
+				RiskLevel:   string(res.RiskLevel),
+				Title:       res.Title,
+				Explanation: res.Explanation,
+				Action:      string(tier.Action),
+			}
+		}
+	}
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed analyzing session, reason: %w", err)
 	}
 
-	tier := aiAnalyzerRule.RiskEvaluation.Tier(aianalyzer.RiskLevelKey(analyzerRes.RiskLevel))
-
-	analysis := &models.SessionAIAnalysis{
-		RiskLevel:   string(analyzerRes.RiskLevel),
-		Title:       analyzerRes.Title,
-		Explanation: analyzerRes.Explanation,
-		Action:      string(tier.Action),
-	}
-
-	if tier.Action != models.RequireAccessRequest {
+	if analysis.Action != string(models.RequireAccessRequest) {
 		return analysis, nil, nil
 	}
 
+	tier := aiAnalyzerRule.RiskEvaluation.Tier(models.RiskLevelKey(analysis.RiskLevel))
 	if tier.AccessRequestRuleName == nil || *tier.AccessRequestRuleName == "" {
-		return analysis, nil, fmt.Errorf("ai analyzer rule %q has require_access_request action without access_request_rule_name for risk %q", aiAnalyzerRule.Name, analyzerRes.RiskLevel)
+		return analysis, nil, fmt.Errorf("ai analyzer rule %q has require_access_request action without access_request_rule_name for risk %q", aiAnalyzerRule.Name, analysis.RiskLevel)
 	}
-	accessRule, err := models.GetAccessRequestRuleByName(models.DB, *tier.AccessRequestRuleName, orgID)
+	accessRule, err := models.GetAccessRequestRuleByName(models.DB, *tier.AccessRequestRuleName, in.OrgID)
 	if err != nil {
 		return analysis, nil, fmt.Errorf("ai analyzer rule %q references access request rule %q that could not be loaded: %w", aiAnalyzerRule.Name, *tier.AccessRequestRuleName, err)
 	}
 	return analysis, accessRule, nil
+}
+
+// analyzeAgentic runs the agentic investigation loop and maps its result into a
+// SessionAIAnalysis, including the persisted step trace.
+func analyzeAgentic(ctx context.Context, in AIAnalyzeInput, rule *models.AISessionAnalyzerRules) (*models.SessionAIAnalysis, error) {
+	connCtx := storagev2.NewContext(in.UserID, in.OrgID.String()).
+		WithUserInfo("", "", "active", "", in.UserGroups)
+	conn, err := models.GetBareConnectionByNameOrID(connCtx, in.ConnectionName, models.DB)
+	if err != nil {
+		return nil, fmt.Errorf("failed loading connection %q for agentic analysis: %w", in.ConnectionName, err)
+	}
+	// GetBareConnectionByNameOrID reports "not found" as (nil, nil).
+	if conn == nil {
+		return nil, fmt.Errorf("connection %q not found or not accessible for agentic analysis", in.ConnectionName)
+	}
+
+	// Admin/auditor status is a pure function of the groups; deriving it here
+	// keeps callers from passing a flag that disagrees with them.
+	sessionDB := aianalyzer.SessionDatabaseFromScript(conn.SubType.String, in.Script)
+	executor := aianalyzer.NewToolExecutor(in.OrgID.String(), conn, in.UserID, connCtx.IsAuditorOrAdminUser(), in.Exec, sessionDB)
+	tools := aianalyzer.InvestigationTools()
+
+	cctx, cancel := context.WithTimeout(ctx, 90*time.Second)
+	defer cancel()
+
+	var customPrompt string
+	if rule.CustomPrompt != nil {
+		customPrompt = *rule.CustomPrompt
+	}
+	res, err := aianalyzer.AnalyzeSessionAgentic(cctx, in.OrgID, in.Script, customPrompt, executor, tools)
+	if err != nil {
+		return nil, err
+	}
+
+	tier := rule.RiskEvaluation.Tier(aianalyzer.RiskLevelKey(res.RiskLevel))
+	steps := make([]models.SessionAIAnalysisStep, 0, len(res.Steps))
+	for _, s := range res.Steps {
+		steps = append(steps, models.SessionAIAnalysisStep{
+			Type:       s.Type,
+			Thinking:   s.Thinking,
+			ToolName:   s.ToolName,
+			ToolInput:  s.ToolInput,
+			ToolOutput: s.ToolOutput,
+			IsError:    s.IsError,
+			Timestamp:  s.Timestamp,
+		})
+	}
+	return &models.SessionAIAnalysis{
+		RiskLevel:   string(res.RiskLevel),
+		Title:       res.Title,
+		Explanation: res.Explanation,
+		Action:      string(tier.Action),
+		Summary:     res.Summary,
+		Model:       res.Model,
+		Steps:       steps,
+	}, nil
 }
 
 func canAccessSession(ctx *storagev2.Context, session *models.Session) bool {
@@ -198,7 +279,14 @@ func Post(c *gin.Context) {
 	}
 
 	orgID := uuid.MustParse(ctx.GetOrgID())
-	analyzeRes, aiAccessRule, err := AIAnalyze(c, orgID, conn.Name, req.Script)
+	analyzeRes, aiAccessRule, err := AIAnalyze(c, AIAnalyzeInput{
+		OrgID:          orgID,
+		ConnectionName: conn.Name,
+		Script:         req.Script,
+		UserID:         ctx.UserID,
+		UserGroups:     ctx.UserGroups,
+		Exec:           aianalyzer.AnalyzerExecIdentity{BearerToken: apiroutes.GetAccessTokenFromRequest(c), UserAgent: "aianalyzer"},
+	})
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed analyzing session")
 		return

@@ -1,9 +1,9 @@
 (ns webapp.shared-ui.sidebar.constants
   (:require
    ["@radix-ui/themes" :refer [Badge Flex Text]]
-   ["lucide-react" :refer [BookMarked Boxes CircleCheckBig GalleryVerticalEnd
+   ["lucide-react" :refer [BookMarked Boxes GalleryVerticalEnd
                            Inbox LayoutDashboard PackageSearch Package Search
-                           ShieldCheck SquareCode UserRoundCheck VenetianMask BookUp2
+                           ShieldCheck SquareCode VenetianMask BookUp2
                            Sparkles KeyRound]]
    [re-frame.core :as rf]
    [webapp.config :as config]
@@ -36,10 +36,6 @@
                      [:> VenetianMask {:size size}])
    "AISessionAnalyzer" (fn [& [{:keys [size] :or {size 24}}]]
                          [:> Sparkles {:size size}])
-   "AccessControl" (fn [& [{:keys [size] :or {size 24}}]]
-                     [:> UserRoundCheck {:size size}])
-   "AccessRequest" (fn [& [{:keys [size] :or {size 24}}]]
-                     [:> CircleCheckBig {:size size}])
    "MachineIdentities" (fn [& [{:keys [size] :or {size 24}}]]
                          [:> KeyRound {:size size}])
    "ResourceDiscovery" (fn [& [{:keys [size] :or {size 24}}]]
@@ -105,14 +101,7 @@
 
 ;; Seção Discover
 (def discover-routes
-  [{:name "AccessRequest"
-    :label "Access Request"
-    :icon (get icons-registry "AccessRequest")
-    :uri (routes/url-for :access-request)
-    :navigate :access-request
-    :admin-only? true
-    :license-feature "access-requests"}
-   {:name "RunbooksSetup"
+  [{:name "RunbooksSetup"
     :label "Runbooks Setup"
     :icon (get icons-registry "RunbooksSetup")
     :uri (routes/url-for :runbooks-setup)
@@ -140,13 +129,6 @@
     :navigate :ai-data-masking
     :admin-only? true
     :license-feature "data-masking"}
-   {:name "AccessControl"
-    :label "Access Control"
-    :icon (get icons-registry "AccessControl")
-    :uri (routes/url-for :access-control)
-    :navigate :access-control
-    :admin-only? true
-    :license-feature "access-control"}
    #_{:name "JustInTimeAccess"
       :label "Just-in-Time Access"
       :icon (fn []

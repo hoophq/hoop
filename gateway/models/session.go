@@ -115,10 +115,24 @@ func NewSessionOption() SessionOption {
 }
 
 type SessionAIAnalysis struct {
-	RiskLevel   string `json:"risk_level"`
-	Title       string `json:"title"`
-	Explanation string `json:"explanation"`
-	Action      string `json:"action"`
+	RiskLevel   string                  `json:"risk_level"`
+	Title       string                  `json:"title"`
+	Explanation string                  `json:"explanation"`
+	Action      string                  `json:"action"`
+	Summary     string                  `json:"summary,omitempty"`
+	Model       string                  `json:"model,omitempty"`
+	Steps       []SessionAIAnalysisStep `json:"steps,omitempty"`
+}
+
+// SessionAIAnalysisStep is one step of the agentic analyzer investigation trace.
+type SessionAIAnalysisStep struct {
+	Type       string    `json:"type"`
+	Thinking   string    `json:"thinking,omitempty"`
+	ToolName   string    `json:"tool_name,omitempty"`
+	ToolInput  string    `json:"tool_input,omitempty"`
+	ToolOutput string    `json:"tool_output,omitempty"`
+	IsError    bool      `json:"is_error,omitempty"`
+	Timestamp  time.Time `json:"timestamp"`
 }
 
 // SessionGuardRailMatchedRule mirrors guardrails.Rule and represents the specific

@@ -17,6 +17,7 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/common/runbooks"
+	"github.com/hoophq/hoop/gateway/aianalyzer"
 	"github.com/hoophq/hoop/gateway/analytics"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/api/httputils"
@@ -567,7 +568,14 @@ func RunbookExec(c *gin.Context) {
 	}
 
 	orgID := uuid.MustParse(ctx.GetOrgID())
-	analyzeRes, aiAccessRule, err := sessionapi.AIAnalyze(c, orgID, connectionName, string(runbook.InputFile))
+	analyzeRes, aiAccessRule, err := sessionapi.AIAnalyze(c, sessionapi.AIAnalyzeInput{
+		OrgID:          orgID,
+		ConnectionName: connectionName,
+		Script:         string(runbook.InputFile),
+		UserID:         ctx.UserID,
+		UserGroups:     ctx.UserGroups,
+		Exec:           aianalyzer.AnalyzerExecIdentity{BearerToken: apiroutes.GetAccessTokenFromRequest(c), UserAgent: "aianalyzer"},
+	})
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed analyzing runbook session")
 		return

@@ -7,6 +7,7 @@
                         :roles []
                         :terminal-banner-index 0
                         :terminal-banner-dismissed? false}
+   :access-request {:rules []}
    :agents {:status :loading, :data []}
    :audit->session-details {:status :loading, :session nil, :session-logs {:status :loading}}
    :audit->session-logs {:status :idle, :data nil}
