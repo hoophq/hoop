@@ -98,11 +98,13 @@ func GetOrgOnboardingStatus(db *gorm.DB, orgID, adminGroupName string) (*OrgOnbo
 				SELECT 1 FROM private.user_groups
 				WHERE org_id = @org_id AND name <> @admin_group AND user_id IS NOT NULL
 			),
-			'guardrails_explored', EXISTS (
+			-- A protection profile materializes both rule kinds, so picking one
+			-- satisfies these two. Profile rules carry managed_by, hence the OR.
+			'guardrails_explored', o.default_protection_profile IS NOT NULL OR EXISTS (
 				SELECT 1 FROM private.guardrail_rules
 				WHERE org_id = @org_id AND managed_by IS NULL
 			),
-			'data_masking_explored', EXISTS (
+			'data_masking_explored', o.default_protection_profile IS NOT NULL OR EXISTS (
 				SELECT 1 FROM private.datamasking_rules
 				WHERE org_id = @org_id AND managed_by IS NULL
 			),

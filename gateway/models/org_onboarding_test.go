@@ -168,6 +168,33 @@ func TestOrgOnboardingStatus(t *testing.T) {
 	}
 }
 
+// Applying a protection profile creates guardrail and masking rules, so picking
+// one completes those steps without any rule of the org's own.
+func TestOrgOnboardingProtectionProfileTicksRuleSteps(t *testing.T) {
+	startTestDB(t)
+
+	profileSteps := []string{
+		models.StepGuardrailsExplored,
+		models.StepDataMaskingExplored,
+		models.StepProtectionLevelSet,
+	}
+	status := onboardingStatus(t)
+	for _, key := range profileSteps {
+		if status.Checks[key] {
+			t.Fatalf("%s must be false before a profile is set: %+v", key, status.Checks)
+		}
+	}
+
+	execSQL(t, `UPDATE private.orgs SET default_protection_profile = 'protection-medium' WHERE id = ?`, testOrgID)
+
+	status = onboardingStatus(t)
+	for _, key := range profileSteps {
+		if !status.Checks[key] {
+			t.Fatalf("%s must be satisfied by a protection profile: %+v", key, status.Checks)
+		}
+	}
+}
+
 // Undoing the thing that satisfied a step must not untick it, otherwise the
 // progress ring runs backwards.
 func TestOrgOnboardingStepsLatch(t *testing.T) {
