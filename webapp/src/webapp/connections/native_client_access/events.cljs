@@ -41,16 +41,21 @@
 
 (rf/reg-fx
  :open-rdp-web-client
- (fn [{:keys [username]}]
+ (fn [{:keys [username desktop-size]}]
    (let [form (.createElement js/document "form")
-         input (.createElement js/document "input")]
+         credential-input (.createElement js/document "input")
+         desktop-size-input (.createElement js/document "input")]
      (set! (.-method form) "POST")
      (set! (.-action form) "/rdpproxy/client")
      (set! (.-target form) "_blank")
-     (set! (.-type input) "hidden")
-     (set! (.-name input) "credential")
-     (set! (.-value input) username)
-     (.appendChild form input)
+     (set! (.-type credential-input) "hidden")
+     (set! (.-name credential-input) "credential")
+     (set! (.-value credential-input) username)
+     (set! (.-type desktop-size-input) "hidden")
+     (set! (.-name desktop-size-input) "desktop_size")
+     (set! (.-value desktop-size-input) desktop-size)
+     (.appendChild form credential-input)
+     (.appendChild form desktop-size-input)
      (.appendChild (.-body js/document) form)
      (.submit form)
      (.remove form))))
@@ -333,8 +338,10 @@
 ;; Event to open RDP web client
 (rf/reg-event-fx
  :native-client-access->open-rdp-web-client
- (fn [_ [_ username]]
-   {:open-rdp-web-client {:username username}}))
+ (fn [_ [_ username desktop-size]]
+   {:open-rdp-web-client
+    {:username username
+     :desktop-size (or desktop-size constants/default-rdp-desktop-size)}}))
 
 ;; Resume credentials request after review approval
 (rf/reg-event-fx

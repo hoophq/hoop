@@ -15,6 +15,18 @@ export const ACCESS_DURATION_OPTIONS = [
 
 export const DEFAULT_ACCESS_DURATION_MINUTES = '30'
 
+export const RDP_DESKTOP_SIZE_OPTIONS = [
+  { label: 'Fit browser window', value: 'fit' },
+  { label: '1280 × 720', value: '1280x720' },
+  { label: '1366 × 768', value: '1366x768' },
+  { label: '1600 × 900', value: '1600x900' },
+  { label: '1920 × 1080', value: '1920x1080' },
+  { label: '2560 × 1440', value: '2560x1440' },
+  { label: '3840 × 2160', value: '3840x2160' },
+]
+
+export const DEFAULT_RDP_DESKTOP_SIZE = 'fit'
+
 // Both halves are identical today. The shape is kept so splitting the copy for
 // admins later is a one-line change rather than a refactor.
 export const ERROR_MESSAGES = {

@@ -56,6 +56,13 @@ func (r *IronRDPGateway) handleClient(c *gin.Context) {
 		c.String(http.StatusBadRequest, "Invalid request")
 		return
 	}
+	desktopSize, ok := rdpDesktopSizeFromPreset(c.PostForm("desktop_size"))
+	if !ok {
+		log.Errorf("invalid RDP desktop size preset")
+		c.String(http.StatusBadRequest, "Invalid request")
+		return
+	}
+
 	secretKeyHash, err := keys.Hash256Key(rdpCredential)
 	if err != nil {
 		log.Errorf("failed hashing rdp secret key, reason=%v", err)
@@ -94,7 +101,7 @@ func (r *IronRDPGateway) handleClient(c *gin.Context) {
 
 	// We don't need to do extended checks now because websocket will do it.
 
-	data := renderWebClientTemplate("RDP Connection", rdpCredential)
+	data := renderWebClientTemplate("RDP Connection", rdpCredential, desktopSize)
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(data))
 }
 

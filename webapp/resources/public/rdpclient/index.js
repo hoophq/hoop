@@ -27,7 +27,7 @@ async function initWasm() {
     }
 }
 
-async function initializeApp(rdpCredential) {
+async function initializeApp(rdpCredential, requestedDesktopWidth = 0, requestedDesktopHeight = 0) {
     console.log('Initializing app...');
     const mod = await initWasm();
     console.log('App initialized.');
@@ -59,20 +59,38 @@ async function initializeApp(rdpCredential) {
     // Authoritative enforcement at the gateway/agent boundary is tracked in
     // DEP-70.
     const MAX_DESKTOP_DIM = 4096;
-    const viewportWidth = Number.isFinite(window.innerWidth)
-        ? Math.max(1, Math.floor(window.innerWidth)) : 1;
-    const viewportHeight = Number.isFinite(window.innerHeight)
-        ? Math.max(1, Math.floor(window.innerHeight)) : 1;
-    const dpr = (Number.isFinite(window.devicePixelRatio) && window.devicePixelRatio > 0)
-        ? window.devicePixelRatio : 1;
-    const scale = Math.min(
-        dpr,
-        MAX_DESKTOP_DIM / viewportWidth,
-        MAX_DESKTOP_DIM / viewportHeight,
-    );
-    console.log(`Window Size: ${viewportWidth} x ${viewportHeight}, DPR: ${dpr}, scale: ${scale}`);
-    rdpCanvas.width = Math.max(1, Math.min(MAX_DESKTOP_DIM, Math.round(viewportWidth * scale)));
-    rdpCanvas.height = Math.max(1, Math.min(MAX_DESKTOP_DIM, Math.round(viewportHeight * scale)));
+    const hasRequestedDesktopSize =
+        Number.isInteger(requestedDesktopWidth) &&
+        Number.isInteger(requestedDesktopHeight) &&
+        requestedDesktopWidth > 0 &&
+        requestedDesktopHeight > 0 &&
+        requestedDesktopWidth <= MAX_DESKTOP_DIM &&
+        requestedDesktopHeight <= MAX_DESKTOP_DIM;
+
+    let desktopWidth;
+    let desktopHeight;
+    if (hasRequestedDesktopSize) {
+        desktopWidth = requestedDesktopWidth;
+        desktopHeight = requestedDesktopHeight;
+        console.log(`Requested desktop size: ${desktopWidth} x ${desktopHeight}`);
+    } else {
+        const viewportWidth = Number.isFinite(window.innerWidth)
+            ? Math.max(1, Math.floor(window.innerWidth)) : 1;
+        const viewportHeight = Number.isFinite(window.innerHeight)
+            ? Math.max(1, Math.floor(window.innerHeight)) : 1;
+        const dpr = (Number.isFinite(window.devicePixelRatio) && window.devicePixelRatio > 0)
+            ? window.devicePixelRatio : 1;
+        const scale = Math.min(
+            dpr,
+            MAX_DESKTOP_DIM / viewportWidth,
+            MAX_DESKTOP_DIM / viewportHeight,
+        );
+        desktopWidth = Math.max(1, Math.min(MAX_DESKTOP_DIM, Math.round(viewportWidth * scale)));
+        desktopHeight = Math.max(1, Math.min(MAX_DESKTOP_DIM, Math.round(viewportHeight * scale)));
+        console.log(`Window Size: ${viewportWidth} x ${viewportHeight}, DPR: ${dpr}, scale: ${scale}`);
+    }
+    rdpCanvas.width = desktopWidth;
+    rdpCanvas.height = desktopHeight;
 
     const RDP = new RemoteDesktopService(rdpCanvas, mod);
     window.RDP = RDP;
