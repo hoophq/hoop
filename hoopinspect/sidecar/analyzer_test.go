@@ -375,6 +375,43 @@ func TestPostgresAIRuleNeedsNoCaptureBody(t *testing.T) {
 	}
 }
 
+// The mssql lane is the case that shipped broken: the rule loaded, the lane
+// enforced its local rules, and the analyzer classified nothing because no
+// content builder was registered for the protocol. Validation must accept it
+// now that one is, and must refuse any protocol that still has none rather
+// than letting the silence recur.
+func TestMSSQLAIRuleIsAccepted(t *testing.T) {
+	cfg := pgLane(aiRule("risky"))
+	cfg.Listeners[0].Protocol = "mssql"
+	cfg.Analyzer = &AnalyzerConfig{Provider: "stub", Model: "m"}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("an mssql ai_analysis rule was refused: %v", err)
+	}
+}
+
+// A protocol whose statements no builder renders can never be classified, so
+// the rule would load and stay silent: the analyzer returns before it has a
+// status, leaving no finding and no annotation to notice.
+//
+// It goes through validateLane rather than Validate because every protocol
+// this build ships has a builder. Validate would refuse the lane earlier, for
+// the unrelated reason that no codec decodes it, and the test would pass
+// without ever reaching the check it is written for.
+func TestAIRuleOnALaneWithNoBuilderIsRefused(t *testing.T) {
+	cfg := pgLane(aiRule("risky"))
+	cfg.Analyzer = &AnalyzerConfig{Provider: "stub", Model: "m"}
+	lc := cfg.Listeners[0]
+	lc.Protocol = "relay-only"
+
+	problems := strings.Join(cfg.validateLane(lc, "relay"), "\n")
+	if !strings.Contains(problems, "content builder") {
+		t.Fatalf("an ai_analysis rule on a lane with no content builder was accepted: %q", problems)
+	}
+	if !strings.Contains(problems, "relay-only") {
+		t.Errorf("the problem does not name the protocol: %q", problems)
+	}
+}
+
 // Every one of these is a cost or safety bound whose zero value means "off".
 // A negative reads as off too, so a typo silently removes the ceiling the
 // operator wrote down. max_calls is the sharp one: it is the last line

@@ -516,6 +516,21 @@ func (c *Config) validateLane(lc ListenerConfig, name string) []string {
 				"block with capture_body: true", name))
 	}
 
+	// A lane whose protocol has no content builder classifies nothing, and
+	// does so more quietly than any other failure here: Evaluator.classify
+	// returns before it has a status, so there is no skipped finding and no
+	// annotation, and an operator watching the trail sees a lane behaving
+	// exactly as if the rule were absent. That is the mssql case this check
+	// exists for, and it covers any protocol that relays without decoding.
+	if p := hoopinspect.Protocol(lc.Protocol); len(aiRules) > 0 && p != "" {
+		if _, ok := analyzer.BuilderFor(p); !ok {
+			problems = append(problems, fmt.Sprintf(
+				"%s: has ai_analysis rule(s) on a listener with protocol %q, and this "+
+					"build has no content builder for it, so every statement would be "+
+					"skipped without leaving a finding", name, p))
+		}
+	}
+
 	// Mask rule SHAPE belongs to the plugin, which checks it when building
 	// the masker. This check covers the one thing knowable here: whether
 	// masking can work on this protocol.

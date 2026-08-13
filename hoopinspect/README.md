@@ -314,6 +314,10 @@ outright:
 - A bad regex in any lane's rules, naming the lane.
 - An `ai_analysis` rule with no `analyzer` section, no trigger, or no action
   for any risk level. All three would load and classify nothing.
+- An `ai_analysis` rule on a lane whose protocol has no content builder,
+  naming the protocol. That rule classifies nothing and says nothing while
+  doing it: the analyzer returns before it has a status, so there is no
+  finding and no annotation to notice.
 - An `analyzer.provider` the binary does not link, naming what it does link.
 - A credential file readable by group or other, naming its mode.
 - An `http` block on a non-HTTP lane, or `authorization` in its header
@@ -375,6 +379,13 @@ risk it reports. It is the only rule type that leaves the process, costs money
 and can be slow, so three things bound it: a trigger decides what is worth
 asking about, a cache collapses repeated statement shapes onto one verdict,
 and the rule runs LAST in the chain, after the free local rules and OPA.
+
+It runs wherever a content builder renders the statement for a model:
+`postgres` and `mssql` send the statement text with the operation, tables and
+database the codec derived; `http` sends the method, normalized resource and
+body. A lane whose protocol has no builder is refused at startup rather than
+left classifying nothing, which is what a relay-only protocol would otherwise
+get: no statements to render means no verdict, silently.
 
 ```yaml
 pii:
