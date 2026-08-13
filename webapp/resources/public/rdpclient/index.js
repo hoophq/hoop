@@ -72,7 +72,6 @@ async function initializeApp(rdpCredential, requestedDesktopWidth = 0, requested
     if (hasRequestedDesktopSize) {
         desktopWidth = requestedDesktopWidth;
         desktopHeight = requestedDesktopHeight;
-        console.log(`Requested desktop size: ${desktopWidth} x ${desktopHeight}`);
     } else {
         const viewportWidth = Number.isFinite(window.innerWidth)
             ? Math.max(1, Math.floor(window.innerWidth)) : 1;

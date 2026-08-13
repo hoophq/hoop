@@ -1,8 +1,14 @@
 package rdp
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"regexp"
+	"strings"
 	"testing"
+
+	"github.com/gin-gonic/gin"
 )
 
 func TestRDPDesktopSizeFromPreset(t *testing.T) {
@@ -31,6 +37,64 @@ func TestRDPDesktopSizeFromPreset(t *testing.T) {
 			}
 			if got != tt.want {
 				t.Fatalf("desktop size = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestInvalidRDPDesktopSizeDimensions(t *testing.T) {
+	tests := []struct {
+		name       string
+		preset     string
+		wantWidth  int
+		wantHeight int
+		wantOK     bool
+	}{
+		{name: "unsupported dimensions", preset: "4096x4096", wantWidth: 4096, wantHeight: 4096, wantOK: true},
+		{name: "unsupported aspect ratio", preset: "1280x800", wantWidth: 1280, wantHeight: 800, wantOK: true},
+		{name: "credential-like value", preset: "xagt-secret", wantOK: false},
+		{name: "multiple separators", preset: "1280x720x32", wantOK: false},
+		{name: "oversized component", preset: "12345x720", wantOK: false},
+		{name: "signed component", preset: "+1x2", wantOK: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			width, height, ok := invalidRDPDesktopSizeDimensions(tt.preset)
+			if ok != tt.wantOK || width != tt.wantWidth || height != tt.wantHeight {
+				t.Fatalf(
+					"dimensions = (%d, %d, %v), want (%d, %d, %v)",
+					width, height, ok, tt.wantWidth, tt.wantHeight, tt.wantOK,
+				)
+			}
+		})
+	}
+}
+
+func TestHandleClientRejectsInvalidDesktopSize(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	tests := []string{"4096x4096", "xagt-secret"}
+
+	for _, desktopSize := range tests {
+		t.Run(desktopSize, func(t *testing.T) {
+			form := url.Values{
+				"credential":   {"test-credential"},
+				"desktop_size": {desktopSize},
+			}
+			request := httptest.NewRequest(
+				http.MethodPost,
+				"/client",
+				strings.NewReader(form.Encode()),
+			)
+			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			response := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(response)
+			ctx.Request = request
+
+			(&IronRDPGateway{}).handleClient(ctx)
+
+			if response.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d", response.Code, http.StatusBadRequest)
 			}
 		})
 	}

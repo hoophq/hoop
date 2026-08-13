@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -49,6 +50,32 @@ func (r *IronRDPGateway) AttachHandlers(router gin.IRouter) {
 	router.Handle(http.MethodPost, "/client", r.handleClient)
 }
 
+func isRDPDesktopDimension(value string) bool {
+	if len(value) == 0 || len(value) > 4 {
+		return false
+	}
+	for i := range len(value) {
+		if value[i] < '0' || value[i] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func invalidRDPDesktopSizeDimensions(preset string) (width, height int, ok bool) {
+	widthText, heightText, found := strings.Cut(preset, "x")
+	if !found || !isRDPDesktopDimension(widthText) || !isRDPDesktopDimension(heightText) {
+		return 0, 0, false
+	}
+
+	width, widthErr := strconv.Atoi(widthText)
+	height, heightErr := strconv.Atoi(heightText)
+	if widthErr != nil || heightErr != nil || width <= 0 || height <= 0 {
+		return 0, 0, false
+	}
+	return width, height, true
+}
+
 func (r *IronRDPGateway) handleClient(c *gin.Context) {
 	rdpCredential := c.PostForm("credential")
 	if rdpCredential == "" {
@@ -56,9 +83,21 @@ func (r *IronRDPGateway) handleClient(c *gin.Context) {
 		c.String(http.StatusBadRequest, "Invalid request")
 		return
 	}
-	desktopSize, ok := rdpDesktopSizeFromPreset(c.PostForm("desktop_size"))
+	desktopSizePreset := c.PostForm("desktop_size")
+	desktopSize, ok := rdpDesktopSizeFromPreset(desktopSizePreset)
 	if !ok {
-		log.Errorf("invalid RDP desktop size preset")
+		if width, height, dimensions := invalidRDPDesktopSizeDimensions(desktopSizePreset); dimensions {
+			log.With(
+				"desktop-size-category", "unsupported-dimensions",
+				"desktop-width", width,
+				"desktop-height", height,
+			).Warnf("invalid RDP desktop size preset")
+		} else {
+			log.With(
+				"desktop-size-category", "invalid-format",
+				"desktop-size-length", len(desktopSizePreset),
+			).Warnf("invalid RDP desktop size preset")
+		}
 		c.String(http.StatusBadRequest, "Invalid request")
 		return
 	}
