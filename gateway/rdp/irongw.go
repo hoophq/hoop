@@ -256,10 +256,9 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 	}
 
 	// When a connection-scoped rule applies, the agent runs the PII gate where
-	// the plaintext already flows. The gateway sends the resource policy while
-	// the agent supplies its local Presidio/OCR endpoints. Masked sessions fail
-	// closed unless the selected agent advertises both capabilities required to
-	// enforce that policy.
+	// the plaintext already flows. The gateway sends the complete resource
+	// policy while the agent supplies its local Presidio/OCR endpoints. Masked
+	// sessions fail closed unless the selected agent can enforce that policy.
 	agentGuard := broker.RDPGuardConfig{Enabled: maskingParams != nil}
 	if agentGuard.Enabled {
 		capable, known := broker.AgentCapability(connectionModel.AgentName, broker.CapabilitySupportsPIIGuard)
@@ -280,12 +279,12 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 			return
 		}
 
-		allowlistCapable, allowlistKnown := broker.AgentCapability(
+		rulesCapable, rulesKnown := broker.AgentCapability(
 			connectionModel.AgentName,
-			broker.CapabilitySupportsPIIEntityAllowlist,
+			broker.CapabilitySupportsPIIDataMaskingRules,
 		)
-		if !allowlistKnown || !allowlistCapable {
-			log.Errorf("refusing RDP session: agent %q does not support connection-scoped PII entity selection",
+		if !rulesKnown || !rulesCapable {
+			log.Errorf("refusing RDP session: agent %q does not support complete connection-scoped Data Masking rules",
 				connectionModel.AgentName)
 			writeRDPClientError(ws, cppVersion,
 				fmt.Sprintf("Connection refused: agent %q must be upgraded to apply this connection's Data Masking rule.",
@@ -295,8 +294,7 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 	}
 
 	if agentGuard.Enabled {
-		agentGuard.ScoreThreshold = maskingParams.ScoreThreshold
-		agentGuard.EntityAllowlist = maskingParams.EntityAllowlist
+		agentGuard.DataMaskingEntityData = maskingParams.DataMaskingEntityData
 		agentGuard.BandPadding = maskingParams.BandPadding
 		agentGuard.Policy = appconfig.Get().RDPPIIGuardPolicy()
 	}
@@ -430,29 +428,11 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 	// pipe all data between WebSocket and TLS connection
 	// We also record all traffic for session recording
 
-	// Realtime PII guard (hold-and-release): when enabled, server->client
-	// bytes are held until OCR+Presidio analysis clears them; on detection
-	// the held frames are dropped and the session is terminated.
-	//
-	// When the agent runs the guard (agentGuard.Enabled), the gateway does
-	// NOT also gate: the agent already cleared/redacted every frame before it
-	// reached the gateway, so a second gate here would only double OCR cost
-	// and latency. The gateway still records — now of clean frames.
-	var gate *PIIGate
-	switch {
-	case maskingParams == nil:
-		// No connection-scoped masking rule: normal passthrough.
-	case agentGuard.Enabled:
-		log.With("sid", sessionID).Infof("piigate: agent-side guard active, gateway gate suppressed")
-	default:
-		gate = newSessionPIIGate(recorderOrgID, sessionID, ws, session, func(err error) {
-			sessionErrMu.Lock()
-			sessionErr = err
-			sessionErrMu.Unlock()
-		})
-		if gate != nil {
-			defer gate.Close()
-		}
+	// Guarded bytes were already held, analyzed, and redacted by the agent
+	// before reaching the gateway. A second gateway-side gate would duplicate
+	// OCR/Presidio work and could diverge from the connection's rule policy.
+	if agentGuard.Enabled {
+		log.With("sid", sessionID).Infof("piigate: agent-side guard active")
 	}
 
 	// Use a done channel to signal when the websocket read goroutine exits
@@ -502,13 +482,6 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 
 		// Record server -> client traffic (bitmap updates, etc.)
 		recorder.RecordOutput(buffer[:n])
-
-		if gate != nil {
-			// Hold-and-release: the gate forwards to the websocket from its
-			// analysis goroutine once the frames are cleared.
-			gate.Ingest(buffer[:n])
-			continue
-		}
 
 		err = ws.WriteMessage(websocket.BinaryMessage, buffer[:n])
 		if err != nil {

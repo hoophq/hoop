@@ -349,14 +349,13 @@ func GetAgent(agentID string) (ConnectionCommunicator, bool) {
 	return nil, false
 }
 
-// SetAgentCapabilities records the connection-scoped capabilities advertised
-// by an agent and unblocks anyone waiting on the advertisement. Called when a
-// Capabilities control frame is received. No-op if the agent is not currently
-// registered. The map is defensively copied so later mutation by the caller
-// cannot race readers of the stored state.
-func SetAgentCapabilities(agentID string, capabilities map[string]string) {
+// SetAgentCapabilities records capabilities advertised by a specific agent
+// connection and unblocks anyone waiting on the advertisement. It ignores a
+// stale connection whose instance ID no longer matches the live registration.
+// The map is defensively copied so later caller mutation cannot race readers.
+func SetAgentCapabilities(agentID string, instanceID uuid.UUID, capabilities map[string]string) {
 	e, ok := getAgentEntry(agentID)
-	if !ok {
+	if !ok || e.id != instanceID {
 		return
 	}
 	cp := make(map[string]string, len(capabilities))

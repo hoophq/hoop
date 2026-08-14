@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/hoophq/hoop/common/dsnkeys"
 	"github.com/hoophq/hoop/common/log"
@@ -92,7 +93,7 @@ func HandleConnection(c *gin.Context) {
 		if messageType != websocket.BinaryMessage {
 			continue
 		}
-		handleWebSocketMessage(agent.Name, data)
+		handleWebSocketMessage(agent.Name, agentInstanceID, data)
 	}
 
 	// Cleanup: remove this connection's broker state (only if it is still the
@@ -189,7 +190,7 @@ func persistAgentGuardrailsViolation(s *broker.Session, payload []byte) {
 	log.With("sid", sessionID).Infof("piigate: agent-side PII guard violation persisted (kind=%s, entities=%v)", report.Kind, report.EntityTypes)
 }
 
-func handleWebSocketMessage(agentName string, data []byte) {
+func handleWebSocketMessage(agentName string, agentInstanceID uuid.UUID, data []byte) {
 	// 1) Try CONTROL frame first (JSON-like)
 	if sid, msg, err := broker.DecodeWebSocketMessage(data); err == nil {
 		// Connection-scoped control frames (sid == ControlSentinelSID) describe
@@ -198,7 +199,7 @@ func handleWebSocketMessage(agentName string, data []byte) {
 		if sid == broker.ControlSentinelSID {
 			switch msg.Type {
 			case broker.MessageTypeCapabilities:
-				broker.SetAgentCapabilities(agentName, msg.Metadata)
+				broker.SetAgentCapabilities(agentName, agentInstanceID, msg.Metadata)
 				log.Debugf("agent=%s advertised capabilities: %v", agentName, msg.Metadata)
 			default:
 				log.Infof("Unhandled connection-scoped control message type=%q for agent=%s", msg.Type, agentName)

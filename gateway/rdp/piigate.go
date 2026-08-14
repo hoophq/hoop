@@ -5,18 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"sort"
 	"sync"
 	"time"
 
-	"github.com/gorilla/websocket"
-	"github.com/hoophq/hoop/common/featureflag"
 	"github.com/hoophq/hoop/common/log"
-	"github.com/hoophq/hoop/gateway/appconfig"
-	"github.com/hoophq/hoop/gateway/broker"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/rdp/analyzer"
-	"github.com/hoophq/hoop/gateway/rdp/ocr"
 	"github.com/hoophq/hoop/gateway/rdp/parser"
 	"github.com/hoophq/hoop/gateway/rdp/rle"
 	"github.com/hoophq/hoop/gateway/services"
@@ -627,9 +621,8 @@ type rdpDataMaskingRule struct {
 }
 
 type rdpDataMaskingParams struct {
-	ScoreThreshold  float64
-	EntityAllowlist []string
-	BandPadding     int
+	DataMaskingEntityData json.RawMessage
+	BandPadding           int
 }
 
 func isCanonicalEntityType(entityType string) bool {
@@ -659,14 +652,9 @@ func parseRDPDataMaskingRules(data []byte) (*rdpDataMaskingParams, error) {
 		return nil, fmt.Errorf("decode data masking rules for RDP connection: %w", err)
 	}
 
-	entitySet := make(map[string]struct{})
-	scoreThreshold := 0.0
-	hasThreshold := false
+	hasEntities := false
 	for _, rule := range rules {
-		if len(rule.CustomEntityTypes) > 0 {
-			return nil, fmt.Errorf("RDP masking does not support custom entity types in rule %q", rule.Name)
-		}
-		hasEntities := false
+		ruleHasEntities := false
 		for _, group := range rule.SupportedEntityTypes {
 			if len(group.EntityTypes) == 0 {
 				return nil, fmt.Errorf("RDP masking rule %q has an empty supported entity group %q", rule.Name, group.Name)
@@ -675,13 +663,25 @@ func parseRDPDataMaskingRules(data []byte) (*rdpDataMaskingParams, error) {
 				if !isCanonicalEntityType(entity) {
 					return nil, fmt.Errorf("RDP masking rule %q has invalid entity type %q", rule.Name, entity)
 				}
-				entitySet[entity] = struct{}{}
-				hasEntities = true
+				ruleHasEntities = true
 			}
 		}
-		if !hasEntities {
+		for _, entity := range rule.CustomEntityTypes {
+			if !isCanonicalEntityType(entity.Name) {
+				return nil, fmt.Errorf("RDP masking rule %q has invalid custom entity type %q", rule.Name, entity.Name)
+			}
+			if entity.Regex == "" && len(entity.DenyList) == 0 {
+				return nil, fmt.Errorf("RDP masking rule %q custom entity type %q has no regex or deny list", rule.Name, entity.Name)
+			}
+			if math.IsNaN(entity.Score) || math.IsInf(entity.Score, 0) || entity.Score < 0 || entity.Score > 1 {
+				return nil, fmt.Errorf("RDP masking rule %q custom entity type %q has invalid score %v", rule.Name, entity.Name, entity.Score)
+			}
+			ruleHasEntities = true
+		}
+		if !ruleHasEntities {
 			continue
 		}
+		hasEntities = true
 
 		threshold := 0.5
 		if rule.ScoreThreshold != nil {
@@ -690,126 +690,15 @@ func parseRDPDataMaskingRules(data []byte) (*rdpDataMaskingParams, error) {
 		if math.IsNaN(threshold) || math.IsInf(threshold, 0) || threshold < 0 || threshold > 1 {
 			return nil, fmt.Errorf("RDP masking rule %q has invalid score threshold %v", rule.Name, threshold)
 		}
-		if !hasThreshold || threshold < scoreThreshold {
-			scoreThreshold = threshold
-			hasThreshold = true
-		}
 	}
-	if len(entitySet) == 0 {
+	if !hasEntities {
 		return nil, nil
 	}
 
-	params := &rdpDataMaskingParams{
-		ScoreThreshold:  scoreThreshold,
-		EntityAllowlist: make([]string, 0, len(entitySet)),
-		BandPadding:     analyzer.DefaultBandPadding,
-	}
-	for entity := range entitySet {
-		params.EntityAllowlist = append(params.EntityAllowlist, entity)
-	}
-	sort.Strings(params.EntityAllowlist)
-	return params, nil
-}
-
-// newSessionPIIGate builds a PIIGate wired to a live IronRDP session: it
-// forwards cleared bytes to the websocket and, on detection, persists the
-// violation and terminates the broker session. Returns nil when the guard is
-// not enabled for the org or its prerequisites (Presidio, an OCR engine) are
-// missing — callers fall back to direct forwarding.
-func newSessionPIIGate(
-	orgID, sessionID string,
-	ws *websocket.Conn,
-	session *broker.Session,
-	setSessionErr func(error),
-) *PIIGate {
-	if !featureflag.IsEnabled(orgID, PIIGateFlagName) {
-		return nil
-	}
-	// Unlike the async job pipeline (analyzer.IsEnabled), the gate does not
-	// depend on the worker pool: it only needs Presidio and an OCR engine.
-	analyzerURL := appconfig.Get().MSPresidioAnalyzerURL()
-	if analyzerURL == "" || !ocr.IsAvailable() {
-		log.With("sid", sessionID).Warnf("piigate: %s is on but presidio/OCR engine are unavailable, session runs UNGUARDED", PIIGateFlagName)
-		return nil
-	}
-
-	gate, err := NewPIIGate(context.Background(), PIIGateConfig{
-		SessionID: sessionID,
-		Presidio:  analyzer.NewPresidioClient(analyzerURL),
-		Params:    analyzer.DefaultAnalysisParams(),
-		Forward: func(data []byte) error {
-			return ws.WriteMessage(websocket.BinaryMessage, data)
-		},
-		OnDetection: func(res *analyzer.SnapshotResult) {
-			setSessionErr(fmt.Errorf("session terminated: PII detected on screen (%s)", formatEntityCounts(res.Counts)))
-			// Tear the session down first; persistence is best-effort and
-			// must not delay enforcement on a slow database. Closing the
-			// websocket too is required: session.Close() only unblocks the
-			// TLS side, and the handler would otherwise stay parked on the
-			// websocket reader until the (idle) browser acts.
-			session.Close()
-			_ = ws.Close()
-			go persistPIIViolation(orgID, sessionID, res)
-		},
-		OnOverload: func(droppedBytes int) {
-			setSessionErr(fmt.Errorf("session terminated: PII analysis backlog exceeded (%d bytes dropped)", droppedBytes))
-			session.Close()
-			_ = ws.Close()
-		},
-	})
-	if err != nil {
-		log.With("sid", sessionID).Warnf("piigate: failed to start, session runs UNGUARDED: %v", err)
-		return nil
-	}
-	log.With("sid", sessionID).Infof("piigate: realtime PII guard active (hold-and-release)")
-	return gate
-}
-
-// persistPIIViolation records the detection as guardrails info on the session
-// and stores the per-entity bounding boxes for the UI. The two writes are
-// deliberately best-effort and non-transactional: enforcement (session kill)
-// has already happened, and partial evidence is better than none.
-func persistPIIViolation(orgID, sessionID string, res *analyzer.SnapshotResult) {
-	info := []models.SessionGuardRailsInfo{{
-		RuleName:     "rdp_pii_guard",
-		Rule:         models.SessionGuardRailMatchedRule{Type: "pii_detection"},
-		Direction:    "server_to_client",
-		MatchedWords: entityTypes(res.Counts),
-	}}
-	if data, err := json.Marshal(info); err == nil {
-		if err := models.UpdateSessionGuardRailsInfo(orgID, sessionID, data); err != nil {
-			log.With("sid", sessionID).Warnf("piigate: failed to persist guardrails info: %v", err)
-		}
-	}
-	if len(res.Detections) > 0 {
-		if err := models.BulkInsertRDPEntityDetections(res.Detections); err != nil {
-			log.With("sid", sessionID).Warnf("piigate: failed to persist entity detections: %v", err)
-		}
-	}
-}
-
-func entityTypes(counts map[string]int64) []string {
-	types := make([]string, 0, len(counts))
-	for entity := range counts {
-		types = append(types, entity)
-	}
-	sort.Strings(types)
-	return types
-}
-
-func formatEntityCounts(counts map[string]int64) string {
-	parts := entityTypes(counts)
-	for i, entity := range parts {
-		parts[i] = fmt.Sprintf("%s x%d", entity, counts[entity])
-	}
-	out := ""
-	for i, p := range parts {
-		if i > 0 {
-			out += ", "
-		}
-		out += p
-	}
-	return out
+	return &rdpDataMaskingParams{
+		DataMaskingEntityData: append(json.RawMessage(nil), data...),
+		BandPadding:           analyzer.DefaultBandPadding,
+	}, nil
 }
 
 // Killed reports whether the gate terminated the session on a detection.

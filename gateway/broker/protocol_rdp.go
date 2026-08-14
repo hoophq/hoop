@@ -34,12 +34,12 @@ func (h *RDPHandler) HandleData(session *Session, msg *WebSocketMessage) error {
 // gateway suppresses its own gate — single enforcement point). The endpoints
 // (Presidio, OCR sidecar) are NOT sent on the wire: the agent reads those
 // from its own environment, keeping customer-network infra out of gateway
-// state. Only the enable decision and analysis policy travel here.
+// state. The enable decision, complete Data Masking policy, and guard tuning
+// travel here.
 type RDPGuardConfig struct {
-	Enabled         bool
-	ScoreThreshold  float64
-	EntityAllowlist []string
-	BandPadding     int
+	Enabled               bool
+	DataMaskingEntityData json.RawMessage
+	BandPadding           int
 	// Policy is "kill", "redact", or "redact_and_kill" (agent default kill
 	// when empty/unrecognized).
 	Policy string
@@ -115,22 +115,17 @@ func CreateRDPSession(
 		"target_address": address,
 		"proxy_user":     extractedCreds, // Use the extracted credentials as proxy_user
 	}
-	// Agent-side PII guard: only signal "guard this session" plus analysis
-	// policy. The agent supplies Presidio/OCR endpoints from its own env.
-	// Absent keys mean "no guard" — an older agent simply ignores them.
+	// Agent-side PII guard: signal "guard this session" and pass the same raw
+	// Data Masking rule payload used by the other protocol redactors. The
+	// agent supplies Presidio/OCR endpoints from its own environment.
 	if guard.Enabled {
 		metadata["pii_guard"] = "enabled"
-		metadata["pii_score_threshold"] = strconv.FormatFloat(guard.ScoreThreshold, 'f', -1, 64)
 		metadata["pii_band_padding"] = strconv.Itoa(guard.BandPadding)
 		if guard.Policy != "" {
 			metadata["pii_policy"] = guard.Policy
 		}
-		if len(guard.EntityAllowlist) > 0 {
-			// JSON array, not a comma-join: entity names are an external
-			// (Presidio) vocabulary and must not rely on being comma-free.
-			if allowlist, err := json.Marshal(guard.EntityAllowlist); err == nil {
-				metadata["pii_entity_allowlist"] = string(allowlist)
-			}
+		if len(guard.DataMaskingEntityData) > 0 {
+			metadata["data_masking_entity_data"] = string(guard.DataMaskingEntityData)
 		}
 	}
 	msg := &WebSocketMessage{
