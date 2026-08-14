@@ -791,7 +791,7 @@ type SessionList struct {
 	// to pay for the precise figure. `null` when the request asked for
 	// `?count=none`, which is distinct from a count of zero: it means the total
 	// was never computed.
-	Total *int64 `json:"total" example:"100"`
+	Total *int64 `json:"total" example:"100" extensions:"x-nullable"`
 	// Reports that `total` is a lower bound rather than the exact number of
 	// matching sessions. Render it as `10000+`. Always false under
 	// `?count=exact`, and for any result set smaller than the cap.

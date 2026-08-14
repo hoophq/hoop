@@ -18244,6 +18244,7 @@ const docTemplate = `{
                 "total": {
                     "description": "The number of sessions matching the filter.\n\nCapped by default: the value is the exact total up to 10000, and beyond\nthat it stops at 10000 with ` + "`" + `total_is_capped` + "`" + ` set. Ask for ` + "`" + `?count=exact` + "`" + `\nto pay for the precise figure. ` + "`" + `null` + "`" + ` when the request asked for\n` + "`" + `?count=none` + "`" + `, which is distinct from a count of zero: it means the total\nwas never computed.",
                     "type": "integer",
+                    "x-nullable": true,
                     "example": 100
                 },
                 "total_is_capped": {
