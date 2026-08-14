@@ -45,25 +45,26 @@
    (let [current-template (get-in db [:jira-templates->submit-template :data])
          template-id (:id current-template)
          cmdb-items (vec (get-in current-template [:cmdb_types :items]))
-         idx (or (first (keep-indexed
-                         (fn [i item] (when (= (:jira_field item) (:jira_field cmdb-item)) i))
-                         cmdb-items))
-                 0)
-         selected-object-id (:object_id (first (filter #(= (:id %) value)
-                                                       (:jira_values cmdb-item))))
-         updated-items (vec (map-indexed
-                             (fn [i item]
-                               (cond
-                                 (= i idx) (assoc item :value value :selected_object_id selected-object-id)
-                                 (> i idx) (dissoc item :value :selected_object_id)
-                                 :else item))
-                             cmdb-items))
-         downstream (subvec updated-items (inc idx))]
-     {:db (assoc-in db [:jira-templates->submit-template :data :cmdb_types :items] updated-items)
-      :fx (vec (mapcat (fn [item]
-                         [[:dispatch [:jira-templates->set-cmdb-search item ""]]
-                          [:dispatch [:jira-templates->get-cmdb-values template-id item 1 ""]]])
-                       downstream))})))
+         idx (first (keep-indexed
+                     (fn [i item] (when (= (:jira_field item) (:jira_field cmdb-item)) i))
+                     cmdb-items))]
+     (if (nil? idx)
+       {:db db}
+       (let [selected-object-id (:object_id (first (filter #(= (:id %) value)
+                                                           (:jira_values cmdb-item))))
+             updated-items (vec (map-indexed
+                                 (fn [i item]
+                                   (cond
+                                     (= i idx) (assoc item :value value :selected_object_id selected-object-id)
+                                     (> i idx) (dissoc item :value :selected_object_id)
+                                     :else item))
+                                 cmdb-items))
+             downstream (subvec updated-items (inc idx))]
+         {:db (assoc-in db [:jira-templates->submit-template :data :cmdb_types :items] updated-items)
+          :fx (vec (mapcat (fn [item]
+                             [[:dispatch [:jira-templates->set-cmdb-search item ""]]
+                              [:dispatch [:jira-templates->get-cmdb-values template-id item 1 ""]]])
+                           downstream))})))))
 
 (rf/reg-event-fx
  :jira-templates->get-cmdb-values

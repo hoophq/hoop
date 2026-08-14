@@ -179,7 +179,10 @@ func GetAssetObjects(c *gin.Context) {
 	}
 	log.Infof("jira assets api response, query=%q, islast=%v, total=%v/%v",
 		query, resp.Last, resp.TotalCount, resp.Total)
-	if len(referenceObjectIDs) > 0 && resp.TotalCount == 0 && len(resp.Values) == 0 {
+	// Fall back to the unfiltered list only for browse requests (no name search):
+	// an empty filtered result then means the Assets schema has no reference links
+	// between the object types, not that a search matched nothing among related objects.
+	if len(referenceObjectIDs) > 0 && c.Query("name") == "" && resp.TotalCount == 0 && len(resp.Values) == 0 {
 		log.Infof("jira assets reference filter returned no results, falling back to unfiltered query, filtered-query=%q", query)
 		query = buildAssetObjectsQuery(objectTypeID, objectSchemaID, c.Query("name"), nil)
 		resp, err = jira.FetchObjectsByAQL(config, limit, offset, query)
@@ -229,7 +232,7 @@ func parseObjectValuesOptions(c *gin.Context) (objectTypeID, objectSchemaID stri
 		if err != nil || refID <= 0 {
 			return "", "", nil, 0, 0, fmt.Errorf("reference_object_id must be a positive integer, got %q", v)
 		}
-		referenceObjectIDs = append(referenceObjectIDs, v)
+		referenceObjectIDs = append(referenceObjectIDs, strconv.Itoa(refID))
 	}
 	limit, _ = strconv.Atoi(c.Query("limit"))
 	if limit == 0 {
