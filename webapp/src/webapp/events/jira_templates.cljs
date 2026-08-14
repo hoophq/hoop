@@ -39,18 +39,31 @@
  (fn [db [_ object-type loading?]]
    (assoc-in db [:jira-templates :cmdb-loading object-type] loading?)))
 
-(rf/reg-event-db
+(rf/reg-event-fx
  :jira-templates->update-cmdb-value
- (fn [db [_ cmdb-item value]]
+ (fn [{:keys [db]} [_ cmdb-item value]]
    (let [current-template (get-in db [:jira-templates->submit-template :data])
-         cmdb-items (get-in current-template [:cmdb_types :items])
-         updated-cmdb-items (map (fn [item]
-                                   (if (= (:jira_field item) (:jira_field cmdb-item))
-                                     (assoc item :value value)
-                                     item))
-                                 cmdb-items)
-         updated-template (assoc-in current-template [:cmdb_types :items] updated-cmdb-items)]
-     (assoc-in db [:jira-templates->submit-template :data] updated-template))))
+         template-id (:id current-template)
+         cmdb-items (vec (get-in current-template [:cmdb_types :items]))
+         idx (or (first (keep-indexed
+                         (fn [i item] (when (= (:jira_field item) (:jira_field cmdb-item)) i))
+                         cmdb-items))
+                 0)
+         selected-object-id (:object_id (first (filter #(= (:id %) value)
+                                                       (:jira_values cmdb-item))))
+         updated-items (vec (map-indexed
+                             (fn [i item]
+                               (cond
+                                 (= i idx) (assoc item :value value :selected_object_id selected-object-id)
+                                 (> i idx) (dissoc item :value :selected_object_id)
+                                 :else item))
+                             cmdb-items))
+         downstream (subvec updated-items (inc idx))]
+     {:db (assoc-in db [:jira-templates->submit-template :data :cmdb_types :items] updated-items)
+      :fx (vec (mapcat (fn [item]
+                         [[:dispatch [:jira-templates->set-cmdb-search item ""]]
+                          [:dispatch [:jira-templates->get-cmdb-values template-id item 1 ""]]])
+                       downstream))})))
 
 (rf/reg-event-fx
  :jira-templates->get-cmdb-values
@@ -58,7 +71,13 @@
    (let [page (or page 1)
          search-term (or search-term "")
          pagination (get-in db [:jira-templates :cmdb-pagination (:jira_object_type cmdb-item)]
-                            {:page page :per-page 50})]
+                            {:page page :per-page 50})
+         items (vec (get-in db [:jira-templates->submit-template :data :cmdb_types :items]))
+         idx (or (first (keep-indexed
+                         (fn [i item] (when (= (:jira_field item) (:jira_field cmdb-item)) i))
+                         items))
+                 0)
+         reference-ids (keep :selected_object_id (subvec items 0 idx))]
      {:fx [[:dispatch [:jira-templates->set-cmdb-loading (:jira_object_type cmdb-item) true]]
            [:dispatch
             [:fetch {:method "GET"
@@ -68,7 +87,8 @@
                                "&offset=" (* (- page 1) (:per-page pagination))
                                "&limit=" (:per-page pagination)
                                (when-not (empty? search-term)
-                                 (str "&name=" (js/encodeURIComponent search-term))))
+                                 (str "&name=" (js/encodeURIComponent search-term)))
+                               (apply str (map #(str "&reference_object_id=" (js/encodeURIComponent %)) reference-ids)))
                      :on-success (fn [response]
                                    (rf/dispatch [:jira-templates->set-cmdb-loading (:jira_object_type cmdb-item) false])
                                    (rf/dispatch [:jira-templates->set-cmdb-pagination

@@ -1786,6 +1786,8 @@ type JiraAssetObjectValue struct {
 	ID string `json:"id" example:"c1ee84ab-76c8-40d9-a956-13a705d4e605:11013"`
 	// Name of the object value
 	Name string `json:"name" example:"mycomputer-asset"`
+	// The local numeric object identifier, usable in AQL objectId conditions
+	ObjectID string `json:"object_id" example:"11013"`
 }
 
 type JiraAssetObjects struct {

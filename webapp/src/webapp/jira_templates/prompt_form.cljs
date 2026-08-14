@@ -55,7 +55,7 @@
                   :value (get-in @form-data [:jira_fields jira_field] "")
                   :on-change on-change}]))
 
-(defn- cmdb-field [cmdb-item template-id form-data]
+(defn- cmdb-field [cmdb-item template-id form-data downstream-fields]
   (let [object-type (:jira_object_type cmdb-item)
         pagination (rf/subscribe [:jira-templates->cmdb-pagination object-type])
         search-term (rf/subscribe [:jira-templates->cmdb-search object-type])
@@ -85,6 +85,8 @@
                                        template-id cmdb-item page @search-term]))
        :on-select (fn [value]
                     (rf/dispatch [:jira-templates->update-cmdb-value cmdb-item value])
+                    (swap! form-data update :jira_fields
+                           #(apply dissoc % downstream-fields))
                     (swap! form-data assoc-in [:jira_fields (:jira_field cmdb-item)] value))}]]))
 
 (defn main [{:keys [prompts on-submit]}]
@@ -127,10 +129,14 @@
                :on-change #(swap! form-data assoc-in [:jira_fields jira_field] (.. % -target -value))}]))
 
          (when (seq @cmdb-items)
-           (doall
-            (for [item @cmdb-items]
-              ^{:key (:jira_field item)}
-              [cmdb-field item @template-id form-data])))]
+           (let [items (vec @cmdb-items)]
+             (doall
+              (map-indexed
+               (fn [idx item]
+                 ^{:key (:jira_field item)}
+                 [cmdb-field item @template-id form-data
+                  (mapv :jira_field (drop (inc idx) items))])
+               items))))]
 
         [:> Flex {:justify "end" :gap "3" :mt "6"}
          [:> Button {:variant "soft"

@@ -3540,6 +3540,11 @@
             "description": "Name of the object value",
             "example": "mycomputer-asset",
             "type": "string"
+          },
+          "object_id": {
+            "description": "The local numeric object identifier, usable in AQL objectId conditions",
+            "example": "11013",
+            "type": "string"
           }
         },
         "type": "object"
@@ -13752,6 +13757,17 @@
             "name": "name",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "description": "Only return objects related (inbound or outbound reference) to these Assets object ids",
+            "in": "query",
+            "name": "reference_object_id",
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             }
           }
         ],

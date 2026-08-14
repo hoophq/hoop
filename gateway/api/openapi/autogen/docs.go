@@ -4240,6 +4240,16 @@ const docTemplate = `{
                         "description": "Specify a name to filter",
                         "name": "name",
                         "in": "query"
+                    },
+                    {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "collectionFormat": "multi",
+                        "description": "Only return objects related (inbound or outbound reference) to these Assets object ids",
+                        "name": "reference_object_id",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -14116,6 +14126,11 @@ const docTemplate = `{
                     "description": "Name of the object value",
                     "type": "string",
                     "example": "mycomputer-asset"
+                },
+                "object_id": {
+                    "description": "The local numeric object identifier, usable in AQL objectId conditions",
+                    "type": "string",
+                    "example": "11013"
                 }
             }
         },

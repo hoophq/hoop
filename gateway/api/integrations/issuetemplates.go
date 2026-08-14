@@ -152,15 +152,16 @@ func GetIssueTemplatesByID(c *gin.Context) {
 //	@Description	Get objects from the Jira Service Management (JSM) Assets API
 //	@Tags			Jira
 //	@Produce		json
-//	@Param			object_type_id		query		string	true	"The Jira object type to filter values for"
-//	@Param			object_schema_id	query		string	false	"The Jira object schema id to fetch values for"
-//	@Param			name				query		string	false	"Specify a name to filter"
+//	@Param			object_type_id		query		string		true	"The Jira object type to filter values for"
+//	@Param			object_schema_id	query		string		false	"The Jira object schema id to fetch values for"
+//	@Param			name				query		string		false	"Specify a name to filter"
+//	@Param			reference_object_id	query		[]string	false	"Only return objects related (inbound or outbound reference) to these Assets object ids"	collectionFormat(multi)
 //	@Success		200					{object}	openapi.JiraAssetObjects
 //	@Failure		400,404,500			{object}	openapi.HTTPError
 //	@Router			/integrations/jira/assets/objects [get]
 func GetAssetObjects(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	objectTypeID, objectSchemaID, limit, offset, err := parseObjectValuesOptions(c)
+	objectTypeID, objectSchemaID, referenceObjectIDs, limit, offset, err := parseObjectValuesOptions(c)
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
@@ -170,12 +171,7 @@ func GetAssetObjects(c *gin.Context) {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed obtaining jira integration configuration: %v", err)
 		return
 	}
-	query := fmt.Sprintf(`objectTypeId = %q AND name LIKE %q`, objectTypeID, c.Query("name"))
-	if objectSchemaID != "" {
-		query = fmt.Sprintf(`objectTypeId = %q AND objectSchemaId = %q AND name LIKE %q`,
-			objectTypeID, objectSchemaID, c.Query("name"))
-	}
-
+	query := buildAssetObjectsQuery(objectTypeID, objectSchemaID, c.Query("name"), referenceObjectIDs)
 	resp, err := jira.FetchObjectsByAQL(config, limit, offset, query)
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching object type values from Jira: %v", err)
@@ -183,12 +179,24 @@ func GetAssetObjects(c *gin.Context) {
 	}
 	log.Infof("jira assets api response, query=%q, islast=%v, total=%v/%v",
 		query, resp.Last, resp.TotalCount, resp.Total)
+	if len(referenceObjectIDs) > 0 && resp.TotalCount == 0 && len(resp.Values) == 0 {
+		log.Infof("jira assets reference filter returned no results, falling back to unfiltered query, filtered-query=%q", query)
+		query = buildAssetObjectsQuery(objectTypeID, objectSchemaID, c.Query("name"), nil)
+		resp, err = jira.FetchObjectsByAQL(config, limit, offset, query)
+		if err != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching object type values from Jira: %v", err)
+			return
+		}
+		log.Infof("jira assets api response, query=%q, islast=%v, total=%v/%v",
+			query, resp.Last, resp.TotalCount, resp.Total)
+	}
 
 	objectValues := []openapi.JiraAssetObjectValue{}
 	for _, val := range resp.Values {
 		objectValues = append(objectValues, openapi.JiraAssetObjectValue{
-			ID:   val.GlobalID,
-			Name: val.Name,
+			ID:       val.GlobalID,
+			ObjectID: val.ID,
+			Name:     val.Name,
 		})
 	}
 	c.JSON(http.StatusOK, openapi.JiraAssetObjects{
@@ -198,15 +206,34 @@ func GetAssetObjects(c *gin.Context) {
 	})
 }
 
-func parseObjectValuesOptions(c *gin.Context) (objectTypeID, objectSchemaID string, limit, offset int, err error) {
+func buildAssetObjectsQuery(objectTypeID, objectSchemaID, name string, referenceObjectIDs []string) string {
+	query := fmt.Sprintf(`objectTypeId = %q AND name LIKE %q`, objectTypeID, name)
+	if objectSchemaID != "" {
+		query = fmt.Sprintf(`objectTypeId = %q AND objectSchemaId = %q AND name LIKE %q`,
+			objectTypeID, objectSchemaID, name)
+	}
+	for _, refID := range referenceObjectIDs {
+		query += fmt.Sprintf(` AND (object HAVING outboundReferences(objectId = %s) OR object HAVING inboundReferences(objectId = %s))`, refID, refID)
+	}
+	return query
+}
+
+func parseObjectValuesOptions(c *gin.Context) (objectTypeID, objectSchemaID string, referenceObjectIDs []string, limit, offset int, err error) {
 	objectTypeID = c.Query("object_type_id")
 	if objectTypeID == "" {
-		return "", "", 0, 0, fmt.Errorf("object_type_id query string is required")
+		return "", "", nil, 0, 0, fmt.Errorf("object_type_id query string is required")
 	}
 	objectSchemaID = c.Query("object_schema_id")
+	for _, v := range c.QueryArray("reference_object_id") {
+		refID, err := strconv.Atoi(v)
+		if err != nil || refID <= 0 {
+			return "", "", nil, 0, 0, fmt.Errorf("reference_object_id must be a positive integer, got %q", v)
+		}
+		referenceObjectIDs = append(referenceObjectIDs, v)
+	}
 	limit, _ = strconv.Atoi(c.Query("limit"))
 	if limit == 0 {
-		return "", "", 0, 0, fmt.Errorf("limit query string is required and must not be 0")
+		return "", "", nil, 0, 0, fmt.Errorf("limit query string is required and must not be 0")
 	}
 	offset, _ = strconv.Atoi(c.Query("offset"))
 	return
