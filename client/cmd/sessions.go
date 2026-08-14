@@ -300,7 +300,10 @@ func displaySessions(resp *sessionsResponse) {
 		if total := formatSessionTotal(resp); total != "" {
 			shown += " of " + total
 		}
-		fmt.Fprintf(os.Stderr, "%s shown. Use --offset %d to see the next page.\n",
+		// Explicitly discarded: a failed write to stderr on a best-effort
+		// pagination hint has no recovery path, and the rest of this command's
+		// output does the same.
+		_, _ = fmt.Fprintf(os.Stderr, "%s shown. Use --offset %d to see the next page.\n",
 			shown, nextOffset)
 	}
 
