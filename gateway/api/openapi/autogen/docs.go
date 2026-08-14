@@ -8913,8 +8913,19 @@ const docTemplate = `{
                     },
                     {
                         "type": "integer",
-                        "description": "Offset to paginate through resources",
+                        "description": "Offset to paginate through resources (max: 10000)",
                         "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "exact",
+                            "capped",
+                            "none"
+                        ],
+                        "type": "string",
+                        "description": "How to compute the total: capped at 10000 (default), exact, or none",
+                        "name": "count",
                         "in": "query"
                     }
                 ],
@@ -8923,6 +8934,12 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/openapi.SessionList"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
                         }
                     },
                     "500": {
@@ -18225,8 +18242,14 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "total": {
+                    "description": "The number of sessions matching the filter.\n\nCapped by default: the value is the exact total up to 10000, and beyond\nthat it stops at 10000 with ` + "`" + `total_is_capped` + "`" + ` set. Ask for ` + "`" + `?count=exact` + "`" + `\nto pay for the precise figure. ` + "`" + `null` + "`" + ` when the request asked for\n` + "`" + `?count=none` + "`" + `, which is distinct from a count of zero: it means the total\nwas never computed.",
                     "type": "integer",
+                    "x-nullable": true,
                     "example": 100
+                },
+                "total_is_capped": {
+                    "description": "Reports that ` + "`" + `total` + "`" + ` is a lower bound rather than the exact number of\nmatching sessions. Render it as ` + "`" + `10000+` + "`" + `. Always false under\n` + "`" + `?count=exact` + "`" + `, and for any result set smaller than the cap.",
+                    "type": "boolean"
                 }
             }
         },

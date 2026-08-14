@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -40,10 +39,9 @@ import (
 )
 
 var (
-	downloadTokenStore         = memory.New()
-	defaultDownloadExpireTime  = time.Minute * 5
-	InternalExitCode           = 254
-	defaultMaxSessionListLimit = 100
+	downloadTokenStore        = memory.New()
+	defaultDownloadExpireTime = time.Minute * 5
+	InternalExitCode          = 254
 )
 
 type SessionPostBody struct {
@@ -439,80 +437,20 @@ func CoerceMetadataFields(metadata map[string]any) error {
 //	@Param			start_date		query		string	false	"Filter starting on this date"	Format(RFC3339)
 //	@Param			end_date		query		string	false	"Filter ending on this date"	Format(RFC3339)
 //	@Param			limit			query		int		false	"Limit the amount of records to return (max: 100)"
-//	@Param			offset			query		int		false	"Offset to paginate through resources"
+//	@Param			offset			query		int		false	"Offset to paginate through resources (max: 10000)"
+//	@Param			count			query		string	false	"How to compute the total: capped at 10000 (default), exact, or none"	Enums(exact, capped, none)
 //	@Success		200				{object}	openapi.SessionList
+//	@Failure		422				{object}	openapi.HTTPError
 //	@Failure		500				{object}	openapi.HTTPError
 //	@Router			/sessions [get]
 func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 
-	option := models.NewSessionOption()
-	for _, optKey := range openapi.AvailableSessionOptions {
-		if queryOptVal, ok := c.GetQuery(string(optKey)); ok {
-			switch optKey {
-			case openapi.SessionOptionUser:
-				option.User = queryOptVal
-			case openapi.SessionOptionConnection:
-				option.ConnectionName = queryOptVal
-			case openapi.SessionOptionType:
-				option.ConnectionType = queryOptVal
-			case openapi.SessionOptionReviewStatus:
-				option.ReviewStatus = queryOptVal
-			case openapi.SessionOptionReviewApproverEmail:
-				option.ReviewApproverEmail = &queryOptVal
-			case openapi.SessionOptionBatchID:
-				option.BatchID = &queryOptVal
-			case openapi.SessionOptionCorrelationID:
-				if queryOptVal != "" {
-					option.CorrelationID = &queryOptVal
-				}
-			case openapi.SessionOptionJiraIssueKey:
-				keys := strings.Split(queryOptVal, ",")
-				for i, k := range keys {
-					keys[i] = strings.ToLower(strings.TrimSpace(k))
-				}
-				option.JiraIssueKey = keys
-			case openapi.SessionOptionStartDate:
-				optTimeVal, err := time.Parse(time.RFC3339, queryOptVal)
-				if err != nil {
-					log.Warnf("failed listing sessions, wrong start_date option value, err=%v", err)
-					c.JSON(http.StatusUnprocessableEntity, gin.H{
-						"message": "failed listing sessions, start_date or end_date in wrong format"})
-					return
-				}
-				option.StartDate = sql.NullString{
-					String: optTimeVal.Format(time.RFC3339),
-					Valid:  true,
-				}
-			case openapi.SessionOptionEndDate:
-				optTimeVal, err := time.Parse(time.RFC3339, queryOptVal)
-				if err != nil {
-					log.Warnf("failed listing sessions, wrong end_date option value, err=%v", err)
-					c.JSON(http.StatusUnprocessableEntity, gin.H{
-						"message": "failed listing sessions, start_date or end_date in wrong format"})
-					return
-				}
-				option.EndDate = sql.NullString{
-					String: optTimeVal.Format(time.RFC3339),
-					Valid:  true,
-				}
-			case openapi.SessionOptionLimit:
-				option.Limit, _ = strconv.Atoi(queryOptVal)
-			case openapi.SessionOptionOffset:
-				option.Offset, _ = strconv.Atoi(queryOptVal)
-			}
-		}
-	}
-
-	if option.Limit > defaultMaxSessionListLimit {
-		option.Limit = defaultMaxSessionListLimit
-	}
-
-	if option.StartDate.Valid && !option.EndDate.Valid {
-		option.EndDate = sql.NullString{
-			String: time.Now().UTC().Format(time.RFC3339),
-			Valid:  true,
-		}
+	option, err := parseSessionListOptions(c.Request.URL.Query())
+	if err != nil {
+		log.Warnf("%v", err)
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
 	}
 
 	sessionList, err := models.ListSessions(ctx.OrgID, ctx.UserID, ctx.IsAuditorOrAdminUser(), option)

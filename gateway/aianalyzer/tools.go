@@ -223,6 +223,10 @@ func (e *gatewayToolExecutor) searchPastSessions(arguments string) (string, bool
 	var failures int
 	for _, name := range connNames {
 		opt := models.NewSessionOption()
+		// Only Items is read below, and this loop runs once per connection in
+		// scope: the default exact count would run an unbounded COUNT over
+		// sessions for each of them and then discard every result.
+		opt.CountMode = models.SessionCountNone
 		opt.User = likeEscaper.Replace(e.userID) // exact match on the current user
 		opt.ConnectionName = name
 		opt.Limit = perConn

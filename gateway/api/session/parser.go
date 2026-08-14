@@ -123,9 +123,10 @@ func ToOpenApiSessionAIAnalysis(a *models.SessionAIAnalysis) *openapi.SessionAIA
 
 func toOpenApiSessionList(s *models.SessionList) *openapi.SessionList {
 	newObj := &openapi.SessionList{
-		Total:       s.Total,
-		HasNextPage: s.HasNextPage,
-		Items:       []openapi.Session{},
+		Total:         s.Total,
+		TotalIsCapped: s.TotalIsCapped,
+		HasNextPage:   s.HasNextPage,
+		Items:         []openapi.Session{},
 	}
 	for _, item := range s.Items {
 		item.BlobInput = "" // not displayed when listing

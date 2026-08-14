@@ -7666,8 +7666,14 @@
             "type": "boolean"
           },
           "total": {
+            "description": "The number of sessions matching the filter.\n\nCapped by default: the value is the exact total up to 10000, and beyond\nthat it stops at 10000 with `total_is_capped` set. Ask for `?count=exact`\nto pay for the precise figure. `null` when the request asked for\n`?count=none`, which is distinct from a count of zero: it means the total\nwas never computed.",
             "example": 100,
+            "nullable": true,
             "type": "integer"
+          },
+          "total_is_capped": {
+            "description": "Reports that `total` is a lower bound rather than the exact number of\nmatching sessions. Render it as `10000+`. Always false under\n`?count=exact`, and for any result set smaller than the cap.",
+            "type": "boolean"
           }
         },
         "type": "object"
@@ -19683,11 +19689,24 @@
             }
           },
           {
-            "description": "Offset to paginate through resources",
+            "description": "Offset to paginate through resources (max: 10000)",
             "in": "query",
             "name": "offset",
             "schema": {
               "type": "integer"
+            }
+          },
+          {
+            "description": "How to compute the total: capped at 10000 (default), exact, or none",
+            "in": "query",
+            "name": "count",
+            "schema": {
+              "enum": [
+                "exact",
+                "capped",
+                "none"
+              ],
+              "type": "string"
             }
           }
         ],
@@ -19701,6 +19720,16 @@
               }
             },
             "description": "OK"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
           },
           "500": {
             "content": {

@@ -15,6 +15,7 @@ import (
 	"github.com/hoophq/hoop/common/httpclient"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/common/version"
+	"github.com/hoophq/hoop/gateway/models"
 	"github.com/spf13/cobra"
 )
 
@@ -36,10 +37,18 @@ var sessionsFlags struct {
 	endDate        string
 	limit          int
 	offset         int
+	count          string
 	fields         string
 	jsonOutput     bool
 	quietOutput    bool
 }
+
+// defaultSessionCount is the count mode the CLI asks for unless told otherwise.
+// "capped" stops the gateway's COUNT at SessionCountCapValue instead of scanning
+// every matching row, which on a large workspace is the difference between a
+// listing that returns immediately and one that takes seconds. Anyone who needs
+// the precise figure can ask for it with --count exact.
+const defaultSessionCount = string(models.SessionCountCapped)
 
 var sessionsCmd = &cobra.Command{
 	Use:   "sessions",
@@ -76,7 +85,13 @@ var sessionsListCmd = &cobra.Command{
   hoop sessions list --role prod-db --quiet | jq '.data[].id'
 
   # List sessions with a review pending approval
-  hoop sessions list --review-status pending`,
+  hoop sessions list --review-status pending
+
+  # Get the precise total instead of the default capped one
+  hoop sessions list --count exact
+
+  # Skip the count entirely — fastest option when you only want the rows
+  hoop sessions list --count none --quiet | jq '.data[].id'`,
 	Run: func(cmd *cobra.Command, args []string) {
 		runSessions()
 	},
@@ -96,6 +111,9 @@ func init() {
 	f.StringVar(&sessionsFlags.endDate, "end-date", "", "Filter until date (RFC3339, e.g. 2024-12-31T23:59:59Z)")
 	f.IntVar(&sessionsFlags.limit, "limit", 0, "Maximum number of records to return (max 100)")
 	f.IntVar(&sessionsFlags.offset, "offset", 0, "Pagination offset")
+	f.StringVar(&sessionsFlags.count, "count", defaultSessionCount,
+		fmt.Sprintf("How to compute the total: %s (precise, slowest), %s (stops at %d), %s (no total)",
+			models.SessionCountExact, models.SessionCountCapped, models.SessionCountCapValue, models.SessionCountNone))
 
 	// Output flags
 	f.StringVar(&sessionsFlags.fields, "fields", defaultSessionFields,
@@ -132,7 +150,10 @@ func init() {
 type sessionsResponse struct {
 	Data        []map[string]any `json:"data"`
 	HasNextPage bool             `json:"has_next_page"`
-	Total       int              `json:"total"`
+	// Total is a pointer because --count none makes the gateway omit the count
+	// and send null. A plain int would decode that as a genuine zero.
+	Total         *int64 `json:"total"`
+	TotalIsCapped bool   `json:"total_is_capped"`
 }
 
 func runSessions() {
@@ -196,6 +217,17 @@ func fetchSessions(config *clientconfig.Config) (*sessionsResponse, error) {
 	if sessionsFlags.offset > 0 {
 		params.Set("offset", fmt.Sprintf("%d", sessionsFlags.offset))
 	}
+	// Passed through unvalidated, like every other server-side filter here: the
+	// gateway owns the list of valid modes and reports an unknown one with a 422.
+	// Always sent, including for an empty value, so what the CLI asks for does
+	// not depend on the gateway's own default: a gateway old enough to predate
+	// this parameter ignores it and still counts exactly, and the default could
+	// change again.
+	countMode := sessionsFlags.count
+	if countMode == "" {
+		countMode = defaultSessionCount
+	}
+	params.Set("count", countMode)
 
 	rawURL := config.ApiURL + "/api/sessions"
 	if len(params) > 0 {
@@ -265,8 +297,15 @@ func displaySessions(resp *sessionsResponse) {
 
 	if resp.HasNextPage {
 		nextOffset := sessionsFlags.offset + len(resp.Data)
-		fmt.Fprintf(os.Stderr, "%d of %d shown. Use --offset %d to see the next page.\n",
-			len(resp.Data), resp.Total, nextOffset)
+		shown := fmt.Sprintf("%d", len(resp.Data))
+		if total := formatSessionTotal(resp); total != "" {
+			shown += " of " + total
+		}
+		// Explicitly discarded: a failed write to stderr on a best-effort
+		// pagination hint has no recovery path, and the rest of this command's
+		// output does the same.
+		_, _ = fmt.Fprintf(os.Stderr, "%s shown. Use --offset %d to see the next page.\n",
+			shown, nextOffset)
 	}
 
 	fmt.Fprintln(os.Stderr, "\nTry also:")
@@ -275,6 +314,20 @@ func displaySessions(resp *sessionsResponse) {
 	fmt.Fprintln(os.Stderr, "  hoop sessions list --role <name>                     # filter by role")
 	fmt.Fprintln(os.Stderr, "  hoop sessions list --review-status pending           # sessions pending approval")
 	fmt.Fprintln(os.Stderr, "  hoop sessions list --quiet | jq '.data[].id'         # pipe IDs to jq")
+}
+
+// formatSessionTotal renders the total for the pagination hint. A capped total
+// is only a lower bound, so it is shown as "10000+"; --count none returns no
+// total at all, and the empty string tells the caller to drop it from the hint
+// rather than print a misleading zero.
+func formatSessionTotal(resp *sessionsResponse) string {
+	if resp.Total == nil {
+		return ""
+	}
+	if resp.TotalIsCapped {
+		return fmt.Sprintf("%d+", *resp.Total)
+	}
+	return fmt.Sprintf("%d", *resp.Total)
 }
 
 // parseSessionFields validates and deduplicates the comma-separated --fields value.

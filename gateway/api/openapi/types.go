@@ -783,9 +783,20 @@ type Runbook struct {
 }
 
 type SessionList struct {
-	Items       []Session `json:"data"`
-	Total       int64     `json:"total" example:"100"`
-	HasNextPage bool      `json:"has_next_page"`
+	Items []Session `json:"data"`
+	// The number of sessions matching the filter.
+	//
+	// Capped by default: the value is the exact total up to 10000, and beyond
+	// that it stops at 10000 with `total_is_capped` set. Ask for `?count=exact`
+	// to pay for the precise figure. `null` when the request asked for
+	// `?count=none`, which is distinct from a count of zero: it means the total
+	// was never computed.
+	Total *int64 `json:"total" example:"100" extensions:"x-nullable"`
+	// Reports that `total` is a lower bound rather than the exact number of
+	// matching sessions. Render it as `10000+`. Always false under
+	// `?count=exact`, and for any result set smaller than the cap.
+	TotalIsCapped bool `json:"total_is_capped"`
+	HasNextPage   bool `json:"has_next_page"`
 }
 
 type (
@@ -846,6 +857,7 @@ const (
 	SessionOptionOffset              SessionOptionKey = "offset"
 	SessionOptionLimit               SessionOptionKey = "limit"
 	SessionOptionJiraIssueKey        SessionOptionKey = "jira_issue_key"
+	SessionOptionCount               SessionOptionKey = "count"
 )
 
 var AvailableSessionOptions = []SessionOptionKey{
@@ -861,6 +873,7 @@ var AvailableSessionOptions = []SessionOptionKey{
 	SessionOptionLimit,
 	SessionOptionOffset,
 	SessionOptionJiraIssueKey,
+	SessionOptionCount,
 }
 
 type SessionStatusType string
