@@ -220,8 +220,9 @@ func fetchSessions(config *clientconfig.Config) (*sessionsResponse, error) {
 	// Passed through unvalidated, like every other server-side filter here: the
 	// gateway owns the list of valid modes and reports an unknown one with a 422.
 	// Always sent, including for an empty value, so what the CLI asks for does
-	// not depend on the gateway's own default: a pre-DEP-137 gateway ignores the
-	// parameter and still counts exactly, and the default could change again.
+	// not depend on the gateway's own default: a gateway old enough to predate
+	// this parameter ignores it and still counts exactly, and the default could
+	// change again.
 	countMode := sessionsFlags.count
 	if countMode == "" {
 		countMode = defaultSessionCount

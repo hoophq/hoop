@@ -1,4 +1,4 @@
--- Indexes for the review side of the session list query (DEP-137).
+-- Indexes for the review side of the session list query.
 --
 -- index_review_groups_review_id
 --   The page query builds each row's review JSON with a correlated jsonb_agg
