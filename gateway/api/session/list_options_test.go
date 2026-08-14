@@ -10,6 +10,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// What a request without ?count= gets is the API contract, so it is asserted
+// against a literal rather than against NewSessionOption() — the table case for
+// "an empty query string yields the defaults" compares to the constructor and
+// would follow it silently wherever it moved.
+func TestParseSessionListOptionsDefaultsToCappedCount(t *testing.T) {
+	got, err := parseSessionListOptions(url.Values{})
+	require.NoError(t, err)
+	assert.Equal(t, models.SessionCountMode("capped"), got.CountMode,
+		"GET /api/sessions without ?count= must not pay for an exact count")
+
+	// And an explicit request for the expensive mode is still honoured.
+	got, err = parseSessionListOptions(url.Values{"count": []string{"exact"}})
+	require.NoError(t, err)
+	assert.Equal(t, models.SessionCountExact, got.CountMode)
+}
+
 func TestParseSessionListOptions(t *testing.T) {
 	for _, tt := range []struct {
 		msg     string

@@ -60,8 +60,8 @@ const (
 type SessionCountMode string
 
 const (
-	// SessionCountExact counts every matching row. The default, and the only
-	// mode that can drive a "page N of M" control.
+	// SessionCountExact counts every matching row. The most expensive mode, and
+	// the only one that can drive a "page N of M" control.
 	SessionCountExact SessionCountMode = "exact"
 	// SessionCountNone skips the count statement entirely and leaves Total nil.
 	// Callers that only need to paginate should use this and rely on
@@ -70,7 +70,30 @@ const (
 	// SessionCountCapped stops counting at sessionCountCapLimit and reports
 	// SessionCountCapValue with TotalIsCapped set.
 	SessionCountCapped SessionCountMode = "capped"
+
+	// DefaultSessionCountMode is what a caller gets when it does not choose one.
+	//
+	// Capped rather than exact: the count statement has no LIMIT, so an exact
+	// count visits every row matching the filter however small the page is, and
+	// on a large tenant that one statement was 98.8% of the endpoint's database
+	// time. Capping is safe as a default because it never reports a wrong
+	// number — below the cap it is the exact total with TotalIsCapped false, and
+	// above it Total is a floor that TotalIsCapped explicitly marks as such. A
+	// caller that needs the precise figure asks for SessionCountExact.
+	DefaultSessionCountMode = SessionCountCapped
 )
+
+// resolveCountMode applies the default to an option that did not choose a mode.
+// NewSessionOption and ListSessions both go through it so a caller that built a
+// SessionOption as a struct literal and one that used the constructor cannot end
+// up on different defaults — an unnoticed exact count is precisely how this cost
+// stayed invisible until it took a gateway down.
+func resolveCountMode(m SessionCountMode) SessionCountMode {
+	if m == "" {
+		return DefaultSessionCountMode
+	}
+	return m
+}
 
 // ParseSessionCountMode validates a count mode coming from an API caller.
 func ParseSessionCountMode(v string) (SessionCountMode, error) {
@@ -110,7 +133,7 @@ func NewSessionOption() SessionOption {
 		ReviewStatus:   "%",
 		Limit:          20,
 		Offset:         0,
-		CountMode:      SessionCountExact,
+		CountMode:      resolveCountMode(""),
 	}
 }
 
@@ -576,11 +599,7 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 	if opt.Offset < 0 || opt.Offset > MaxSessionListOffset {
 		return nil, fmt.Errorf("invalid offset %v, accepted range is 0..%v", opt.Offset, MaxSessionListOffset)
 	}
-	// The zero value predates CountMode and means "the old behaviour".
-	countMode := opt.CountMode
-	if countMode == "" {
-		countMode = SessionCountExact
-	}
+	countMode := resolveCountMode(opt.CountMode)
 	if _, err := ParseSessionCountMode(string(countMode)); err != nil {
 		return nil, err
 	}

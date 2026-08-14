@@ -319,6 +319,25 @@ func TestSessionListShapeIsAlwaysWellFormed(t *testing.T) {
 	}
 }
 
+// The default count mode is part of the HTTP contract: it decides what every
+// caller that does not send ?count= pays for, and what number they get back.
+// Changing it is a breaking API change, so it is pinned here rather than left
+// to whatever the constructor happens to say.
+func TestDefaultCountModeIsCapped(t *testing.T) {
+	assert.Equal(t, SessionCountCapped, DefaultSessionCountMode,
+		"flipping this default changes GET /api/sessions for every existing client")
+
+	// Both ways of building an option must land on the same default; a struct
+	// literal silently keeping the expensive mode is the failure this guards.
+	assert.Equal(t, DefaultSessionCountMode, NewSessionOption().CountMode)
+	assert.Equal(t, DefaultSessionCountMode, resolveCountMode(SessionOption{}.CountMode))
+
+	// An explicit choice always wins over the default.
+	for _, mode := range []SessionCountMode{SessionCountExact, SessionCountNone, SessionCountCapped} {
+		assert.Equal(t, mode, resolveCountMode(mode))
+	}
+}
+
 func TestParseSessionCountMode(t *testing.T) {
 	for _, tt := range []struct {
 		in      string

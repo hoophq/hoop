@@ -786,12 +786,15 @@ type SessionList struct {
 	Items []Session `json:"data"`
 	// The number of sessions matching the filter.
 	//
-	// `null` when the request asked for `?count=none`, which is distinct from a
-	// count of zero: it means the total was never computed. With
-	// `?count=capped` the value stops at 10000 and `total_is_capped` is set.
+	// Capped by default: the value is the exact total up to 10000, and beyond
+	// that it stops at 10000 with `total_is_capped` set. Ask for `?count=exact`
+	// to pay for the precise figure. `null` when the request asked for
+	// `?count=none`, which is distinct from a count of zero: it means the total
+	// was never computed.
 	Total *int64 `json:"total" example:"100"`
 	// Reports that `total` is a lower bound rather than the exact number of
-	// matching sessions. Render it as `10000+`.
+	// matching sessions. Render it as `10000+`. Always false under
+	// `?count=exact`, and for any result set smaller than the cap.
 	TotalIsCapped bool `json:"total_is_capped"`
 	HasNextPage   bool `json:"has_next_page"`
 }

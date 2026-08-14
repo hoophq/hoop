@@ -438,7 +438,7 @@ func CoerceMetadataFields(metadata map[string]any) error {
 //	@Param			end_date		query		string	false	"Filter ending on this date"	Format(RFC3339)
 //	@Param			limit			query		int		false	"Limit the amount of records to return (max: 100)"
 //	@Param			offset			query		int		false	"Offset to paginate through resources (max: 10000)"
-//	@Param			count			query		string	false	"How to compute the total: exact (default), capped at 10000, or none"	Enums(exact, capped, none)
+//	@Param			count			query		string	false	"How to compute the total: capped at 10000 (default), exact, or none"	Enums(exact, capped, none)
 //	@Success		200				{object}	openapi.SessionList
 //	@Failure		422				{object}	openapi.HTTPError
 //	@Failure		500				{object}	openapi.HTTPError
