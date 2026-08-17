@@ -616,8 +616,15 @@ func (c *shadowCanvas) grow(width, height int) {
 type rdpDataMaskingRule struct {
 	Name                 string                             `json:"name"`
 	SupportedEntityTypes []models.SupportedEntityTypesEntry `json:"supported_entity_types"`
-	CustomEntityTypes    []models.CustomEntityTypesEntry    `json:"custom_entity_types"`
+	CustomEntityTypes    []rdpCustomEntityType              `json:"custom_entity_types"`
 	ScoreThreshold       *float64                           `json:"score_threshold"`
+}
+
+type rdpCustomEntityType struct {
+	Name     string   `json:"name"`
+	Regex    string   `json:"regex"`
+	DenyList []string `json:"deny_list"`
+	Score    *float64 `json:"score"`
 }
 
 type rdpDataMaskingParams struct {
@@ -673,8 +680,11 @@ func parseRDPDataMaskingRules(data []byte) (*rdpDataMaskingParams, error) {
 			if entity.Regex == "" && len(entity.DenyList) == 0 {
 				return nil, fmt.Errorf("RDP masking rule %q custom entity type %q has no regex or deny list", rule.Name, entity.Name)
 			}
-			if math.IsNaN(entity.Score) || math.IsInf(entity.Score, 0) || entity.Score < 0 || entity.Score > 1 {
-				return nil, fmt.Errorf("RDP masking rule %q custom entity type %q has invalid score %v", rule.Name, entity.Name, entity.Score)
+			if entity.Score == nil {
+				return nil, fmt.Errorf("RDP masking rule %q custom entity type %q is missing score", rule.Name, entity.Name)
+			}
+			if math.IsNaN(*entity.Score) || math.IsInf(*entity.Score, 0) || *entity.Score < 0 || *entity.Score > 1 {
+				return nil, fmt.Errorf("RDP masking rule %q custom entity type %q has invalid score %v", rule.Name, entity.Name, *entity.Score)
 			}
 			ruleHasEntities = true
 		}

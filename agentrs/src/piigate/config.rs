@@ -38,7 +38,7 @@ struct CustomEntityTypesEntry {
     regex: Option<String>,
     #[serde(default)]
     deny_list: Vec<String>,
-    score: Option<f64>,
+    score: f64,
 }
 
 /// Env var for the Presidio analyzer base URL (shared with the Go agent's
@@ -128,7 +128,7 @@ fn apply_data_masking_rules(
                     custom.name
                 );
             }
-            let score = custom.score.unwrap_or(0.0);
+            let score = custom.score;
             if !(0.0..=1.0).contains(&score) || !score.is_finite() {
                 anyhow::bail!("custom entity {:?} has invalid score {score}", custom.name);
             }
@@ -441,7 +441,7 @@ mod tests {
                                     {"name": "CONTACT_INFORMATION", "entity_types": ["PERSON", "DATE_TIME"]}
                                 ],
                                 "custom_entity_types": [
-                                    {"name": "EMPLOYEE_ID", "regex": "EMP-[0-9]+", "score": 0.83},
+                                    {"name": "EMPLOYEE_ID", "regex": "EMP-[0-9]+", "score": 0.0},
                                     {"name": "VIP_NAME", "deny_list": ["Alice Example"], "score": 0.7}
                                 ],
                                 "score_threshold": 0.4
@@ -465,7 +465,7 @@ mod tests {
                 vec![AdHocRecognizerPattern {
                     name: "EMPLOYEE_ID".into(),
                     regex: "EMP-[0-9]+".into(),
-                    score: 0.83,
+                    score: 0.0,
                 }]
             );
             assert_eq!(
@@ -508,6 +508,8 @@ mod tests {
                 r#"[{"custom_entity_types":[{"name":"EMPLOYEE_ID","score":0.8}]}]"#,
                 r#"[{"custom_entity_types":[{"name":"employee-id","regex":"EMP-[0-9]+","score":0.8}]}]"#,
                 r#"[{"custom_entity_types":[{"name":"EMPLOYEE_ID","regex":"EMP-[0-9]+","score":1.1}]}]"#,
+                r#"[{"custom_entity_types":[{"name":"EMPLOYEE_ID","regex":"EMP-[0-9]+"}]}]"#,
+                r#"[{"custom_entity_types":[{"name":"EMPLOYEE_ID","regex":"EMP-[0-9]+","score":null}]}]"#,
             ] {
                 let err = GuardConfig::resolve(
                     &md(&[

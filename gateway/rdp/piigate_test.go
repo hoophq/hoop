@@ -1003,7 +1003,7 @@ func TestParseRDPDataMaskingRulesSupportsCustomEntities(t *testing.T) {
 			"name": "employee-data",
 			"supported_entity_types": [{"name": "CONTACT_INFORMATION", "entity_types": ["PERSON"]}],
 			"custom_entity_types": [
-				{"name": "EMPLOYEE_ID", "regex": "EMP-[0-9]+", "score": 0.8},
+				{"name": "EMPLOYEE_ID", "regex": "EMP-[0-9]+", "score": 0.0},
 				{"name": "VIP_NAME", "deny_list": ["Alice Example"], "score": 0.9}
 			],
 			"score_threshold": 0.4
@@ -1026,6 +1026,8 @@ func TestParseRDPDataMaskingRulesRejectsInvalidCustomEntities(t *testing.T) {
 		`[{"name":"missing-pattern","custom_entity_types":[{"name":"EMPLOYEE_ID","score":0.8}]}]`,
 		`[{"name":"invalid-name","custom_entity_types":[{"name":"employee-id","regex":"EMP-[0-9]+","score":0.8}]}]`,
 		`[{"name":"invalid-score","custom_entity_types":[{"name":"EMPLOYEE_ID","regex":"EMP-[0-9]+","score":1.1}]}]`,
+		`[{"name":"missing-score","custom_entity_types":[{"name":"EMPLOYEE_ID","regex":"EMP-[0-9]+"}]}]`,
+		`[{"name":"null-score","custom_entity_types":[{"name":"EMPLOYEE_ID","regex":"EMP-[0-9]+","score":null}]}]`,
 	}
 	for _, data := range tests {
 		if params, err := parseRDPDataMaskingRules([]byte(data)); err == nil {
