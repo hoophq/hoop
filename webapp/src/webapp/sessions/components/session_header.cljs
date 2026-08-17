@@ -63,7 +63,7 @@
                             (-> (js/navigator.clipboard.writeText session-url)
                                 (.then #(rf/dispatch [:show-snackbar {:level :success :text "URL copied to clipboard"}]))
                                 (.catch #(js/console.error "Failed to copy:" %))))]
-    [:> Box {:class "sticky top-0 z-10 bg-white pt-5 pb-5 -mt-6"}
+    [:> Box {:class "sticky top-app-header z-10 bg-white pt-5 pb-5 -mt-6"}
      [:> Flex {:justify "between" :align "start"}
       ;; Left side - Title and role
       [:> Heading {:as "h2" :size "5" :weight "bold" :class "text-gray-12"}

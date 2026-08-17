@@ -11,6 +11,9 @@ export const docsUrl = {
     aiSessionAnalyzer: 'https://hoop.dev/docs/learn/features/ai-session-analyzer',
     attributes: 'https://hoop.dev/docs/learn/features/attributes',
     accessControl: 'https://hoop.dev/docs/learn/features/access-control',
+    // Not in config.cljs — the CLJS access request page linked to :reviews
+    // for want of a better key. Don't delete this as mirror drift.
+    accessRequests: 'https://hoop.dev/docs/learn/features/access-requests/action',
     reviews: 'https://hoop.dev/docs/learn/features/reviews/overview',
     jitReviews: 'https://hoop.dev/docs/learn/features/reviews/jit-reviews',
     commandReviews: 'https://hoop.dev/docs/learn/features/reviews/command-reviews',

@@ -71,13 +71,13 @@ func (r Rule) validatePII(hasScanner bool) error {
 // only reaches the policy layer when the codec was configured to capture it,
 // so a body-scanning rule would check less than you assume. Mask the response
 // for body PII.
-func (r Rule) matchesPII(stmt hoopinspect.Statement, s Scanner) (bool, string) {
+func (r Rule) matchesPII(stmt hoopinspect.Statement, s Scanner) (bool, []string) {
 	if s == nil || stmt.Text == "" {
-		return false, ""
+		return false, nil
 	}
 	found := s.ScanText(stmt.Text)
 	if len(found) == 0 {
-		return false, ""
+		return false, nil
 	}
 
 	want := make(map[string]bool, len(r.Entities))
@@ -92,18 +92,20 @@ func (r Rule) matchesPII(stmt hoopinspect.Statement, s Scanner) (bool, string) {
 		}
 	}
 	if len(hit) == 0 {
-		return false, ""
+		return false, nil
 	}
-	// Sorted so the denial message is stable across runs: grep your logs for
-	// one message and you find every occurrence.
+	// Sorted so the denial message is stable across runs (grep your logs
+	// for one message and you find every occurrence) and so a deferred
+	// finding hashes the same for a policy's decision log.
 	sort.Strings(hit)
-	return true, strings.Join(hit, ", ")
+	return true, hit
 }
 
 // piiMessage names the entity classes found without quoting their values.
-func (r Rule) piiMessage(entities string) string {
+func (r Rule) piiMessage(entities []string) string {
 	if r.Message != "" {
 		return r.Message
 	}
-	return fmt.Sprintf("statement carries sensitive data (%s) and was denied by rule %q", entities, r.Name)
+	return fmt.Sprintf("statement carries sensitive data (%s) and was denied by rule %q",
+		strings.Join(entities, ", "), r.Name)
 }

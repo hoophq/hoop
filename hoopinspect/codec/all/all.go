@@ -12,5 +12,6 @@ package all
 
 import (
 	_ "github.com/hoophq/hoopinspect/codec/http"
+	_ "github.com/hoophq/hoopinspect/codec/mssql"
 	_ "github.com/hoophq/hoopinspect/codec/postgres"
 )

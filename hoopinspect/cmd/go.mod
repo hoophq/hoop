@@ -7,7 +7,7 @@
 // it, so `go build ./...` at the root still resolves nothing.
 module github.com/hoophq/hoopinspect/cmd
 
-go 1.24
+go 1.26.5
 
 require (
 	github.com/hoophq/hoopinspect v0.0.0
@@ -16,7 +16,14 @@ require (
 )
 
 require (
-	github.com/hoophq/alcatraz v0.7.0 // indirect
+	cloud.google.com/go/compute/metadata v0.9.0 // indirect
+	golang.org/x/oauth2 v0.32.0 // indirect
+	golang.org/x/sys v0.35.0 // indirect
+)
+
+require (
+	github.com/hoophq/alcatraz v0.16.0 // indirect
+	github.com/hoophq/hoopinspect/analyzer/vertex v0.0.0
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
@@ -25,3 +32,5 @@ replace github.com/hoophq/hoopinspect => ..
 replace github.com/hoophq/hoopinspect/config/yaml => ../config/yaml
 
 replace github.com/hoophq/hoopinspect/pii/alcatraz => ../pii/alcatraz
+
+replace github.com/hoophq/hoopinspect/analyzer/vertex => ../analyzer/vertex

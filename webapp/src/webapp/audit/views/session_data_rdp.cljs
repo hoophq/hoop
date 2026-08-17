@@ -382,6 +382,10 @@
        :reagent-render
        (fn [_ canvas-width canvas-height _ fullscreen? _ _ _]
          [:> Box {:class "rdp-canvas-container relative bg-[--gray-9] rounded-t-lg flex items-center justify-center"
+                  ;; Native Fullscreen API (requestFullscreen below), so the
+                  ;; shell header is not painted at all and 100vh really is the
+                  ;; whole screen — subtracting the offset just shortens the
+                  ;; canvas by 56px.
                   :style (if fullscreen?
                            {:height "calc(100vh - 90px)" :width "100%"}
                            {:height "600px" :width "100%"})}

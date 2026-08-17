@@ -6,8 +6,15 @@
 
 (defmulti markup identity)
 (defmethod markup :open [_ state]
-  [:div.fixed.z-30.inset-0.overflow-y-auto
-   {"aria-modal" true}
+  ;; z-[201] matches components/modal.cljs and the Radix overlay so the three
+  ;; stack predictably against each other. It is not what clears the React
+  ;; shell's header (which is z-index 100, not 200): the Radix theme root used to
+  ;; wrap the whole CLJS tree in a stacking context, and no value here could
+  ;; escape it. Flattening that root is what lets these numbers reach the shell —
+  ;; see webapp/src/css/shell-viewport.css.
+  [:div.fixed.inset-0.overflow-y-auto
+   {"aria-modal" true
+    :class "z-[201]"}
    [:div.fixed.w-full.h-full.inset-0.bg-gray-100.bg-opacity-90.transition
     {"aria-hidden" "true"
      :on-click #(rf/dispatch [:close-dialog])}]

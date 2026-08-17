@@ -599,6 +599,43 @@ func (s *HttpProxyServer) createSession(secretKeyHash, correlationID string) (*h
 	return session, nil
 }
 
+// buildRawRequest serializes an inbound request back into the raw HTTP bytes
+// the agent replays upstream.
+//
+// The Host line has to be re-synthesized. net/http's *server* strips Host out
+// of Request.Header and exposes it only as Request.Host, so ranging over the
+// header map alone produces a request with no Host at all. The byte relay
+// (libhoop/agent/httpproxy) never noticed: it parses with http.ReadRequest,
+// which tolerates a missing Host, and then overwrites req.Host with the
+// upstream hostname anyway. The protocol-aware MCP adapter feeds the bytes to
+// a real http.Server, which enforces RFC 7230 section 5.4 and answers
+// "400 Bad Request: missing required Host header" before the handler runs —
+// so every MCP `initialize` died at the front door.
+//
+// host is the caller-resolved authority (X-Forwarded-Host when present,
+// r.Host otherwise), the same value proxyBaseURL is built from. It is empty
+// only for an HTTP/1.0 client that sent no Host, which is also the one case
+// the strict check exempts, so the line is skipped rather than emitted blank.
+func buildRawRequest(r *http.Request, host string, body []byte) string {
+	var buf strings.Builder
+	buf.Grow(len(body) + 512)
+	fmt.Fprintf(&buf, "%s %s %s\r\n", r.Method, r.URL.RequestURI(), r.Proto)
+	if host != "" {
+		fmt.Fprintf(&buf, "Host: %s\r\n", host)
+	}
+	for key, values := range r.Header {
+		if key == proxyTokenHeader || key == "X-Api-Key" || key == "Host" {
+			continue
+		}
+		for _, value := range values {
+			fmt.Fprintf(&buf, "%s: %s\r\n", key, value)
+		}
+	}
+	buf.WriteString("\r\n")
+	buf.Write(body)
+	return buf.String()
+}
+
 func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Request) {
 	// Early exit if session is already cancelled/closed to avoid spawning goroutines
 	if sess.closed.Load() || sess.ctx.Err() != nil {
@@ -640,19 +677,7 @@ func (sess *httpProxySession) handleRequest(w http.ResponseWriter, r *http.Reque
 	}
 	proxyBaseURL := fmt.Sprintf("%s://%s", scheme, host)
 
-	// Build raw HTTP request to forward
-	rawRequest := fmt.Sprintf("%s %s %s\r\n", r.Method, r.URL.RequestURI(), r.Proto)
-	for key, values := range r.Header {
-		if key == proxyTokenHeader || key == "X-Api-Key" || key == "Host" {
-			continue
-		}
-
-		for _, value := range values {
-			rawRequest += fmt.Sprintf("%s: %s\r\n", key, value)
-		}
-	}
-	rawRequest += "\r\n"
-	rawRequest += string(body)
+	rawRequest := buildRawRequest(r, host, body)
 
 	// Send through gRPC with timeout context tied to the session
 	ctx, cancel := context.WithTimeout(sess.ctx, 30*time.Second)

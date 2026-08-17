@@ -1,14 +1,3 @@
-export function getUserInitials(user) {
-  if (!user) return '?'
-  const name = user.name || user.email || ''
-  return name
-    .split(' ')
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((w) => w[0].toUpperCase())
-    .join('')
-}
-
 export function shouldHide(item, isAdmin, isSelfHosted = false, isFeatureFlagEnabled = null, isLicenseFeatureEnabled = null) {
   if (item.adminOnly && !isAdmin) return true
   if (item.selfhostedOnly && !isSelfHosted) return true

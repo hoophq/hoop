@@ -104,7 +104,13 @@
              (or placeholder "Select an option"))]
           [:> ChevronDown {:size 16 :class (str "transition-transform " (when @open? "rotate-180"))}]]
 
-         ;; Fixed position dropdown content
+         ;; Fixed position dropdown content.
+         ;; 202 is the Radix popper tier (see webapp/src/css/tailwind.css): high
+         ;; enough to clear a dialog this searchbox is opened from, low enough to
+         ;; stay under the React shell's Native Connections drawer. The previous
+         ;; 9999 was arbitrary and harmless only while the Radix theme root
+         ;; capped the whole CLJS tree; with that root flattened it would have
+         ;; painted this full-viewport layer over the shell's header and sidebar.
          (when @open?
            [:div {:class "dropdown-overlay"
                   :style {:position "fixed"
@@ -112,7 +118,7 @@
                           :left 0
                           :right 0
                           :bottom 0
-                          :z-index 9999
+                          :z-index 202
                           :pointer-events "none"}}
             [:div {:class "bg-white shadow-lg border border-gray-6 rounded-md"
                    :ref #(reset! dropdown-ref %)

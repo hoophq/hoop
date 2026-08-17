@@ -33,6 +33,17 @@ import (
 //
 // A bare boolean result also decodes, so `data.hoop.allow` written as a
 // simple rule works without a wrapper object.
+//
+// # Two phases
+//
+// A lane running an expensive producer consults OPA twice, and Phase says
+// which call this is. PhaseGate runs BEFORE the producers and answers "is
+// this worth running them", by returning `request` alongside its decision.
+// PhaseDecide runs AFTER and sees what they established in `input.findings`,
+// so the block/allow choice is Rego's rather than a table in YAML.
+//
+// An empty Phase is the single-call arrangement: one decision, no
+// `input.findings`, exactly what every lane did before producers reported.
 type OPAClient struct {
 	// URL is the full decision endpoint, e.g.
 	// http://opa:8181/v1/data/hoop/inspect
@@ -47,6 +58,14 @@ type OPAClient struct {
 	// hang the connection. Defaults to 2s.
 	Timeout time.Duration
 
+	// Phase identifies this call when a lane consults OPA twice. Empty for
+	// the single-call arrangement.
+	//
+	// It reaches Rego as input.phase, so one endpoint answers both: a
+	// policy that ignores the field behaves identically in either call,
+	// which is what makes the gate opt-in rather than a rewrite.
+	Phase Phase
+
 	// FailOpen allows the statement when OPA cannot be reached or returns a
 	// malformed response. Default false (deny).
 	FailOpen bool
@@ -57,6 +76,18 @@ type OPAClient struct {
 	// and per-statement facts in the Statement itself.
 	Context map[string]string
 }
+
+// Phase names which of a two-phase lane's OPA calls this is. It reaches Rego
+// as input.phase.
+type Phase string
+
+const (
+	// PhaseGate is the pre-analysis decision. It may request analysis.
+	PhaseGate Phase = "gate"
+
+	// PhaseDecide is the post-analysis decision. It reads input.ai.
+	PhaseDecide Phase = "decide"
+)
 
 // opaRequest is the wire body the client posts to OPA.
 type opaRequest struct {
@@ -73,10 +104,39 @@ type opaInput struct {
 	Statement string                  `json:"statement"`
 	Operation string                  `json:"operation"`
 	Tables    []string                `json:"tables,omitempty"`
+
+	// Effects is every operation the statement performs, and Relations
+	// says which objects it writes versus reads.
+	//
+	// They are what `operation` and `tables` could not express. A statement
+	// is one verb only if you read its first word: a data-modifying CTE
+	// both deletes and selects, and a flat name list cannot separate
+	// `INSERT INTO staging SELECT * FROM customers` from
+	// `DELETE FROM customers`. Write new rules against these two:
+	//
+	//	some r in input.relations
+	//	r.access == "write"
+	//	r.name == "customers"
+	//
+	// `operation` remains the worst single effect, so a rule keyed on it
+	// still fires, and `tables` remains the flattened names.
+	Effects   []hoopinspect.Operation `json:"effects,omitempty"`
+	Relations []hoopinspect.Relation  `json:"relations,omitempty"`
 	Database  string                  `json:"database,omitempty"`
 	HTTP      *hoopinspect.HTTPDetail `json:"http,omitempty"`
 	Metadata  map[string]string       `json:"metadata,omitempty"`
 	Context   map[string]string       `json:"context,omitempty"`
+
+	// Phase is "gate", "decide", or absent on a single-call lane.
+	Phase string `json:"phase,omitempty"`
+
+	// Findings is what each producer established, keyed by its source.
+	// Absent on the gate phase and on any lane where nothing reported.
+	//
+	// A source that ran and could NOT answer still appears, carrying a
+	// status and no values, because "no answer" is the case a policy most
+	// needs to see and the case an absent key hides.
+	Findings map[string]Finding `json:"findings,omitempty"`
 }
 
 // opaResponse models OPA's Data API reply. Result is json.RawMessage,
@@ -90,6 +150,11 @@ type opaResultObject struct {
 	Denied  *bool  `json:"denied"`
 	Message string `json:"message"`
 	Rule    string `json:"rule"`
+
+	// Request asks for producers to run, keyed by source. Read only on the
+	// gate phase: true runs one its own configuration would have skipped,
+	// false vetoes one it would have run.
+	Request map[string]bool `json:"request"`
 }
 
 // Evaluate implements Evaluator.
@@ -100,18 +165,79 @@ func (c *OPAClient) Evaluate(stmt hoopinspect.Statement) Verdict {
 	return c.EvaluateContext(context.Background(), stmt)
 }
 
+// EvaluateWith implements ContextualEvaluator.
+//
+// On the decide phase it sends what the producers established as
+// input.findings. On the gate phase it writes ec.Requested from the policy's
+// answer. Both directions travel in-process: a producer has no connection to
+// OPA and OPA has none to any producer.
+func (c *OPAClient) EvaluateWith(stmt hoopinspect.Statement, ec *EvalContext) Verdict {
+	return c.evaluate(context.Background(), stmt, ec)
+}
+
 // EvaluateContext evaluates under a caller-supplied context.
 func (c *OPAClient) EvaluateContext(ctx context.Context, stmt hoopinspect.Statement) Verdict {
+	return c.evaluate(ctx, stmt, nil)
+}
+
+// findingsFor renders the producers' findings for the decide phase.
+//
+// Returns nil on any other phase and on a lane where nothing reported: a lane
+// with no producers must not grow an input.findings field, or every Rego
+// policy has to distinguish "nothing runs here" from "everything failed".
+//
+// A producer that ran and could not answer DOES appear. Whether its values
+// are trustworthy is Status's job, not the caller's, so this copies the map
+// through untouched rather than filtering on status: a producer that sets
+// values beside a degraded status meant to.
+func (c *OPAClient) findingsFor(ec *EvalContext) map[string]Finding {
+	if c.Phase != PhaseDecide || ec == nil || len(ec.Findings) == 0 {
+		return nil
+	}
+	return ec.Findings
+}
+
+// contextFor merges the client's static Context with the per-connection facts
+// the caller seeded on the evaluation context.
+//
+// The seeded facts win. Context on the client is a library caller's fixed
+// deployment labels; the ones on ec name the actor who ran THIS statement,
+// and a policy asking "who is this" means the second.
+//
+// Neither side is copied when the other is empty, which is the common case:
+// this runs once per statement per phase, on the data path.
+func (c *OPAClient) contextFor(ec *EvalContext) map[string]string {
+	if ec == nil || len(ec.Context) == 0 {
+		return c.Context
+	}
+	if len(c.Context) == 0 {
+		return ec.Context
+	}
+	out := make(map[string]string, len(c.Context)+len(ec.Context))
+	for k, v := range c.Context {
+		out[k] = v
+	}
+	for k, v := range ec.Context {
+		out[k] = v
+	}
+	return out
+}
+
+func (c *OPAClient) evaluate(ctx context.Context, stmt hoopinspect.Statement, ec *EvalContext) Verdict {
 	body, err := json.Marshal(opaRequest{Input: opaInput{
 		Protocol:  string(stmt.Protocol),
 		Direction: string(stmt.Direction),
 		Statement: stmt.Text,
 		Operation: string(stmt.Operation),
 		Tables:    stmt.Tables,
+		Effects:   stmt.Effects,
+		Relations: stmt.Relations,
 		Database:  stmt.Database,
 		HTTP:      stmt.HTTP,
 		Metadata:  stmt.Metadata,
-		Context:   c.Context,
+		Context:   c.contextFor(ec),
+		Phase:     string(c.Phase),
+		Findings:  c.findingsFor(ec),
 	}})
 	if err != nil {
 		return c.failure(fmt.Errorf("policy/opa: encoding input: %w", err))
@@ -153,8 +279,15 @@ func (c *OPAClient) EvaluateContext(ctx context.Context, stmt hoopinspect.Statem
 	// An undefined decision (no matching rule) comes back with result absent.
 	// OPA did not fail, yet nothing allowed the statement either, so it
 	// denies unless FailOpen.
+	//
+	// The gate phase is the exception, and it has to be. A gate is an
+	// optional pre-filter over a policy someone already wrote; making its
+	// absence deny would mean adding a two-phase lane silently blocks every
+	// statement until the Rego author writes a second rule they never asked
+	// for. Undefined there means "no opinion": allow, request nothing, and
+	// let the decide phase and the analyzer's own trigger carry on.
 	if len(out.Result) == 0 || string(out.Result) == "null" {
-		if c.FailOpen {
+		if c.FailOpen || c.Phase == PhaseGate {
 			return Allow()
 		}
 		return Deny("opa", "no policy decision matched this statement")
@@ -172,6 +305,20 @@ func (c *OPAClient) EvaluateContext(ctx context.Context, stmt hoopinspect.Statem
 	var obj opaResultObject
 	if err := json.Unmarshal(out.Result, &obj); err != nil {
 		return c.failure(fmt.Errorf("policy/opa: unrecognized result shape: %s", out.Result))
+	}
+
+	// The gate's answer to "is this worth running" travels back through the
+	// chain rather than through the verdict, because it is not a decision
+	// about this statement's fate. It is recorded even when the gate
+	// denies, so a policy that both refuses and requests a producer is not
+	// silently half-honored.
+	if c.Phase == PhaseGate && ec != nil && len(obj.Request) > 0 {
+		if ec.Requested == nil {
+			ec.Requested = make(map[string]bool, len(obj.Request))
+		}
+		for source, want := range obj.Request {
+			ec.Requested[source] = want
+		}
 	}
 
 	// Either polarity decodes, so a Rego policy written as `allow` or as

@@ -31,6 +31,27 @@ const (
 
 func (t ReviewStatusType) Str() string { return string(t) }
 
+// reviewStatusLabels mirrors private.enum_reviews_status. It exists so a caller
+// can tell a real status from arbitrary input before comparing against the enum
+// column: casting a non-label to enum_reviews_status is an error, not an empty
+// result. Keep it in sync when the enum gains a value — an omission only costs
+// the index, never correctness.
+var reviewStatusLabels = map[ReviewStatusType]struct{}{
+	ReviewStatusPending:    {},
+	ReviewStatusApproved:   {},
+	ReviewStatusRejected:   {},
+	ReviewStatusRevoked:    {},
+	ReviewStatusProcessing: {},
+	ReviewStatusExecuted:   {},
+	ReviewStatusUnknown:    {},
+}
+
+// IsValidReviewStatus reports whether v is a label of private.enum_reviews_status.
+func IsValidReviewStatus(v string) bool {
+	_, ok := reviewStatusLabels[ReviewStatusType(v)]
+	return ok
+}
+
 type Review struct {
 	ID                string            `gorm:"column:id"`
 	OrgID             string            `gorm:"column:org_id"`

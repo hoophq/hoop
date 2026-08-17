@@ -587,6 +587,16 @@ func TestPumpStripsAnOfferSplitAcrossReads(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// pgwire has no server greeting: the backend sends nothing until it has
+	// read a startup packet, and the relay likewise waits for one before it
+	// will pump anything. Sending it here is what a real client does first.
+	startup := make([]byte, 8)
+	binary.BigEndian.PutUint32(startup[0:4], 8)
+	binary.BigEndian.PutUint32(startup[4:8], 3<<16) // protocol 3.0
+	if _, err := c.Write(startup); err != nil {
+		t.Fatal(err)
+	}
+
 	// Read the header, then exactly what it declares: a client that cannot
 	// do this is desynchronized, which is the corruption the rewrite must
 	// not cause.

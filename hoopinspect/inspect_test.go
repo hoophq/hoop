@@ -257,7 +257,10 @@ func TestClassifySQL(t *testing.T) {
 		{"ROLLBACK", hoopinspect.OpRollback, nil},
 		{"START TRANSACTION", hoopinspect.OpBegin, nil},
 		{"SHOW TABLES", hoopinspect.OpShow, nil},
-		{"GRANT SELECT ON t TO alice", hoopinspect.OpGrant, nil},
+		// GRANT rewrites the ACL of the named relation, so the relation
+		// is reported now. The old lexer had no introducer for ON and
+		// found nothing here.
+		{"GRANT SELECT ON t TO alice", hoopinspect.OpGrant, []string{"t"}},
 		{"", hoopinspect.OpUnknown, nil},
 		{"   ", hoopinspect.OpUnknown, nil},
 		{"not sql at all", hoopinspect.OpUnknown, nil},

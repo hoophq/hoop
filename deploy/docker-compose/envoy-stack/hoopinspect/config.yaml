@@ -23,7 +23,7 @@ audit:
   query_sessions: 500 # backs /api/sessions
 
 # One detector engine for the process: the union of every entity any lane
-# references below. Required — there is no all-entities default, because
+# references below. Required: there is no all-entities default, because
 # enabling all 45 recognizers rewrites ordinary numeric columns (US_SSN fires
 # on roughly a third of random nine-digit business ids).
 pii:
@@ -33,6 +33,49 @@ pii:
     - CREDIT_CARD
     - BR_CPF
     - IBAN_CODE
+
+# ------------------------------------------------------------------ analyzer
+# Commented out because it needs a credential and spends money per statement.
+# Uncomment, add an ai_analysis rule to a lane below, and the relay classifies
+# what the trigger names.
+#
+# Three things bound the cost, and all three matter on a database lane where
+# an ORM repeats one statement shape thousands of times: the trigger decides
+# what is worth asking about, the cache keys on the statement SHAPE (literals
+# stripped, so `WHERE id = 1` and `WHERE id = 2` are one verdict), and the
+# rule runs after the free local rules, so nothing already refused is paid
+# for. The appdb lane below moves the first of the three into Rego with
+# `policy.opa.gate`, which is the same cost control asked of the policy
+# engine instead of a YAML trigger.
+#
+# analyzer:
+#   provider: vertex            # vertex | anthropic | openai
+#   model: claude-sonnet-4-5@20250929
+#   extra: {project: my-gcp-project, region: global}
+#   # credentials_file omitted -> Application Default Credentials. Under GKE
+#   # Workload Identity there is then NO credential on disk to leak or rotate.
+#   # Elsewhere: credentials_file: /run/secrets/vertex-sa.json, mode 0600.
+#   timeout_sec: 10
+#   # true is the default here and the opposite of every other evaluator: a
+#   # classifier that denies during a provider outage takes appdb down with it.
+#   fail_open: true
+#   # The detector above already runs in this process. A relay whose job is
+#   # keeping taxpayer ids out of the database's query log must not post them
+#   # to a model vendor, so entity VALUES are withheld and only their names go.
+#   send: redacted
+#   max_input_bytes: 8192
+#   cache: {size: 4096, ttl_sec: 900}
+#   max_calls: 500
+#   # PROCESS-WIDE: this reaches every ai_analysis rule on every lane, the
+#   # http one included, so keep it protocol-neutral. Protocol-specific
+#   # wording belongs on a rule's own `prompt:`, which beats this. Neither can
+#   # remove the output contract (call one tool, never quote a literal value
+#   # from the statement); the second keeps an identifier the model objected
+#   # to out of the audit trail.
+#   prompt: |
+#     You are classifying traffic to a production environment holding
+#     customer records. Anything reading or modifying customer data is at
+#     least medium risk.
 
 # ---------------------------------------------------------------- defaults
 # Applies to every lane. Lane rules are evaluated BEFORE these, so a lane's
@@ -87,6 +130,65 @@ listeners:
           type: operation # lexer-derived, so SELECT 'DROP TABLE x' is a select
           operations: [drop, delete, truncate]
           message: destructive statements are not permitted on appdb
+        # ---- PII entities -> Rego (off; needs no credential) ------------
+        # `action: defer` on ANY local rule turns a match into a REPORT
+        # instead of a denial: the rule records what it saw as a finding,
+        # evaluation continues, and the determination lands in
+        # opa/authz.rego. First-match-wins still applies to denials only.
+        #
+        # This one needs the `pii:` section above (already there) and the
+        # `opa:` block below, and nothing else: no model, no credential,
+        # no per-statement cost. It is the cheapest way to see two-phase
+        # evaluation in this stack. Taking it WITHOUT the ai rule means
+        # dropping `gate: true`: a gate with no ai_analysis rule is a round
+        # trip that buys nothing and is refused at startup.
+        #
+        # OPA sees input.findings.pii.values.entities, the entity CLASSES
+        # the detector matched, never the values it matched them on. BR_CPF
+        # is absent because no-cpf-in-query in the defaults already denies
+        # it outright, for free, before OPA is consulted.
+        # - name: sensitive-columns
+        #   type: pii
+        #   action: defer
+        #   entities: [US_SSN, CREDIT_CARD, IBAN_CODE, EMAIL_ADDRESS]
+        # ---- AI verdict -> Rego (off; needs a model credential) ---------
+        # Uncommenting the rest of this block and the analyzer: section
+        # above is the ONLY step needed to turn it on. The Rego is already
+        # in opa/authz.rego and the OPA container is already running, so
+        # nothing else in the stack changes.
+        #
+        # `defer` means the analyzer does not decide. It classifies, and
+        # the level travels to OPA as input.findings.ai_analysis on a
+        # second call carrying phase: decide, where rule `inspect` in
+        # opa/authz.rego blocks or allows. A shop that already reviews Rego
+        # has one place decisions live; a `high: block` line here would be
+        # a second one nobody reviews.
+        #
+        # No trigger, on purpose. `gate: true` below consults OPA BEFORE
+        # the analyzer (phase: gate) and it answers request: {ai_analysis:
+        # true|false}, so Rego decides what is worth a model call. Without
+        # gate: true an ai_analysis rule with no trigger is refused at
+        # startup, and without the gate at all the model runs first: a
+        # statement Rego would have refused for free has already been paid
+        # for.
+        # - name: risky-writes
+        #   type: ai_analysis
+        #   high: defer
+        #   medium: defer
+        #   low: defer
+      # opa:
+      #   # The same OPA container the fat gate uses, a different rule:
+      #   # ext_authz answers Envoy at envoy/authz/result, this answers the
+      #   # sidecar over the Data API. Required by either deferring rule
+      #   # above: `defer` with no OPA endpoint defers to a decision that
+      #   # does not exist, which allows everything, so it is refused at
+      #   # startup.
+      #   url: http://opa:8181/v1/data/envoy/authz/inspect
+      #   # A policy engine outage stops appdb rather than silently
+      #   # disabling enforcement. The gate phase is exempt by design: an
+      #   # undefined gate decision allows and requests nothing.
+      #   fail_open: false
+      #   gate: true
     mask:
       rules:
         # Column rules are only possible where the protocol names its values,
@@ -122,3 +224,18 @@ listeners:
           # this is a question Envoy structurally cannot ask.
           statuses: ["5xx"]
           message: upstream failure suppressed by policy
+        # Needs the http block below: without capture_body the analyzer sees
+        # "POST /anything" and no payload, which tells a model nothing.
+        # - name: risky-payloads
+        #   type: ai_analysis
+        #   trigger: {resources: ["/anything"]}
+        #   high: block
+        #   medium: warn
+    # Off by default: everything captured reaches policy, the audit trail and,
+    # with an analyzer configured, a third party. authorization, cookie and
+    # proxy-authorization cannot be allowlisted, and no header ever reaches
+    # the model.
+    # http:
+    #   capture_body: true
+    #   max_body_bytes: 8192
+    #   headers: [Content-Type]

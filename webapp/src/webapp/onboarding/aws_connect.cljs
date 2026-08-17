@@ -730,7 +730,7 @@
 
         [page-wrapper/main
          {:children
-          [:> Box {:class "min-h-screen bg-gray-1"}
+          [:> Box {:class "bg-gray-1"}
 
            [confirmation-dialog
             {:open? @show-confirm-dialog

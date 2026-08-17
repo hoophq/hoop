@@ -350,6 +350,7 @@ func CreateSessionAnalyzerRule(c *gin.Context) {
 		Description:     req.Description,
 		ConnectionNames: req.ConnectionNames,
 		CustomPrompt:    req.CustomPrompt,
+		Agentic:         req.Agentic,
 		RiskEvaluation: models.AISessionAnalyzerRiskEvaluation{
 			LowRisk:    toModelRiskTier(lowTier),
 			MediumRisk: toModelRiskTier(mediumTier),
@@ -433,6 +434,7 @@ func UpdateSessionAnalyzerRule(c *gin.Context) {
 		Description:     req.Description,
 		ConnectionNames: req.ConnectionNames,
 		CustomPrompt:    req.CustomPrompt,
+		Agentic:         req.Agentic,
 		RiskEvaluation: models.AISessionAnalyzerRiskEvaluation{
 			LowRisk:    toModelRiskTier(lowTier),
 			MediumRisk: toModelRiskTier(mediumTier),
@@ -546,6 +548,7 @@ func toSessionAnalyzerRuleResponse(r *models.AISessionAnalyzerRules) openapi.AIS
 		ConnectionNames: r.ConnectionNames,
 		ManagedBy:       r.ManagedBy,
 		CustomPrompt:    r.CustomPrompt,
+		Agentic:         r.Agentic,
 		RiskEvaluation: openapi.AISessionAnalyzerRiskEvaluation{
 			LowRiskAction:    string(lowTier.Action),
 			MediumRiskAction: string(mediumTier.Action),

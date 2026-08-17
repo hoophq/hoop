@@ -1,6 +1,6 @@
 (ns webapp.connections.native-client-access.main
   (:require
-   ["@radix-ui/themes" :refer [Box Button Callout Flex Heading Spinner Tabs Text]]
+   ["@radix-ui/themes" :refer [Box Button Callout Flex Heading Select Spinner Tabs Text]]
    ["lucide-react" :refer [Info ShieldCheck]]
    [re-frame.core :as rf]
    [reagent.core :as r]
@@ -440,6 +440,7 @@
   "Step 2: Connection established - show credentials"
   [connection-name native-client-access-data minimize-fn disconnect-fn]
   (let [active-tab (r/atom "credentials")
+        rdp-desktop-size (r/atom constants/default-rdp-desktop-size)
         subtype (normalize-subtype (:connection_subtype native-client-access-data))
         has-command? (contains? #{"ssh" "rdp"} subtype)]
 
@@ -514,7 +515,7 @@
           [connect-credentials-tab native-client-access-data])]
 
        ;; Sticky footer
-       [:footer {:class "sticky bottom-0 z-30 bg-white py-4 flex justify-between items-center"}
+       [:footer {:class "sticky bottom-0 z-30 bg-white py-4 flex justify-between items-end"}
         [:> Button
          {:variant "ghost"
           :size "3"
@@ -522,20 +523,36 @@
           :on-click minimize-fn}
          "Minimize"]
 
-        (when (= subtype "rdp")
-          [:> Button
-           {:variant "solid"
-            :size "3"
-            :on-click #(rf/dispatch [:native-client-access->open-rdp-web-client
-                                     (get-in native-client-access-data [:connection_credentials :username])])}
-           "Open web client"])
+        [:> Flex {:align "end" :gap "2"}
+         (when (= subtype "rdp")
+           [:> Box {:class "space-y-1"}
+            [:> Text {:as "div" :size "1" :weight "medium" :class "text-[--gray-11]"}
+             "Desktop resolution"]
+            [:> Select.Root {:value @rdp-desktop-size
+                             :onValueChange #(reset! rdp-desktop-size %)}
+             [:> Select.Trigger {:aria-label "Desktop resolution"
+                                 :variant "surface"
+                                 :style {:min-width "170px"}}]
+             [:> Select.Content
+              (for [{:keys [text value]} constants/rdp-desktop-size-options]
+                ^{:key value}
+                [:> Select.Item {:value value} text])]]])
 
-        [:> Button
-         {:variant "solid"
-          :size "3"
-          :color "red"
-          :on-click disconnect-fn}
-         "Disconnect"]]])))
+         (when (= subtype "rdp")
+           [:> Button
+            {:variant "solid"
+             :size "3"
+             :on-click #(rf/dispatch [:native-client-access->open-rdp-web-client
+                                      (get-in native-client-access-data [:connection_credentials :username])
+                                      @rdp-desktop-size])}
+            "Open web client"])
+
+         [:> Button
+          {:variant "solid"
+           :size "3"
+           :color "red"
+           :on-click disconnect-fn}
+          "Disconnect"]]]])))
 
 (defn- session-expired-view
   "Fallback view for expired sessions"

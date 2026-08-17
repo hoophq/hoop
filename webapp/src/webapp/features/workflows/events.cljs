@@ -24,10 +24,17 @@
    {:db (assoc db :workflows (assoc initial-state
                                     :correlation-id correlation-id
                                     :status :loading))
+    ;; count=exact, unlike the sessions list: this is the one view that reads
+    ;; (:total response). :workflows/set-data derives :truncated? from it and
+    ;; the timeline renders it as "Showing the first N of TOTAL sessions", so a
+    ;; capped total would understate a long workflow and count=none would pin
+    ;; :truncated? to false. Scoped to a single correlation_id, so the count is
+    ;; cheap. Stated explicitly because the gateway default is capped.
     :fx [[:dispatch [:fetch {:method "GET"
                              :uri "/plugins/audit/sessions"
                              :query-params {"correlation_id" correlation-id
-                                            "limit" hard-cap}
+                                            "limit" hard-cap
+                                            "count" "exact"}
                              :on-success #(rf/dispatch [:workflows/set-data %])
                              :on-failure #(rf/dispatch [:workflows/set-error %])}]]]}))
 

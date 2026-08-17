@@ -5,7 +5,7 @@ import { SidebarCollapsed } from './SidebarCollapsed';
 import { SidebarExpanded } from './SidebarExpanded';
 import classes from './Sidebar.module.css';
 
-function Sidebar({ mobile = false }) {
+function Sidebar() {
   const { sidebarCollapsed, toggleSidebarCollapsed } = useUIStore();
 
   // navKey forces a remount of the expanded nav each time the sidebar opens,
@@ -18,19 +18,6 @@ function Sidebar({ mobile = false }) {
     if (!sidebarCollapsed) setNavKey((k) => k + 1);
   }, [sidebarCollapsed]);
 
-  const skipLink = !mobile && (
-    <a
-      href="#main-content"
-      className={classes.skipLink}
-      onClick={(e) => {
-        e.preventDefault();
-        document.getElementById('main-content')?.focus();
-      }}
-    >
-      Skip to main content
-    </a>
-  );
-
   return (
     <Box className={classes.sidebarRoot}>
 
@@ -40,7 +27,7 @@ function Sidebar({ mobile = false }) {
         className={classes.collapsedLayer}
         data-visible={sidebarCollapsed || undefined}
       >
-        <SidebarCollapsed skipLink={skipLink} />
+        <SidebarCollapsed />
       </Box>
 
       {/* ── Expanded layer (full nav) ──────────────────────────────────── */}
@@ -50,7 +37,6 @@ function Sidebar({ mobile = false }) {
         data-visible={!sidebarCollapsed || undefined}
       >
         <SidebarExpanded
-          skipLink={skipLink}
           navKey={navKey}
           onCollapse={toggleSidebarCollapsed}
         />

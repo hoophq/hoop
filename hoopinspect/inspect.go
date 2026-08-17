@@ -58,6 +58,7 @@ type Protocol string
 
 const (
 	Postgres Protocol = "postgres"
+	MSSQL    Protocol = "mssql"
 	HTTP     Protocol = "http"
 )
 
@@ -126,14 +127,35 @@ type Statement struct {
 	// field Envoy's postgres_proxy dynamic metadata does not give you.
 	Text string `json:"text"`
 
-	// Operation is the normalized verb (see Operation constants).
+	// Operation is the most consequential effect the statement has, NOT the
+	// verb the user typed. `WITH x AS (DELETE FROM t) SELECT count(*)` is a
+	// delete, because a policy asking "may this run" is asking about the
+	// effect and not about the spelling.
+	//
+	// OpUnknown means the scanner could not read the statement, and
+	// Metadata["sql.incomplete"] says why. Treat it as "anything could
+	// happen" and fail closed; a rule naming `unknown` does that.
 	Operation Operation `json:"operation"`
 
+	// Effects is every operation the statement performs, in order of
+	// appearance. It exists because one verb cannot describe a statement
+	// that both deletes and selects, and collapsing to the leading one is
+	// what let a data-modifying CTE pass as a read.
+	Effects []Operation `json:"effects,omitempty"`
+
+	// Relations lists what the statement touches and whether it WRITES or
+	// reads, deduplicated, with write dominating.
+	//
+	// This is the field a table rule should key on. Tables cannot separate
+	// `INSERT INTO staging SELECT * FROM customers` from
+	// `DELETE FROM customers`, so a rule meaning "nothing writes customers"
+	// written against Tables fires on both.
+	Relations []Relation `json:"relations,omitempty"`
+
 	// Tables lists the relations the statement references, lowercased and
-	// deduplicated in order of appearance. Best effort: derived from FROM /
-	// INTO / UPDATE / JOIN / TABLE keywords, not a full SQL grammar. Empty
-	// when nothing was recognized. Read empty as "we could not tell", never
-	// as "touches nothing".
+	// deduplicated in order of appearance. It is Relations with the access
+	// dropped, kept for callers that predate the split. Empty means "we
+	// could not tell", never "touches nothing".
 	Tables []string `json:"tables,omitempty"`
 
 	// Database is the target database when the protocol states it explicitly,
@@ -299,6 +321,25 @@ type Codec interface {
 
 // ErrUnsupportedProtocol is returned by New for a protocol with no codec.
 var ErrUnsupportedProtocol = errors.New("hoopinspect: unsupported protocol")
+
+// ErrStreamUnsafe means the codec recognized bytes that would take the
+// connection OUTSIDE the relay's control if forwarded.
+//
+// It is a third category beside "malformed" and "denied by a rule": a
+// well-formed instruction from the upstream that, honored, moves the client
+// to a socket the relay does not hold. MSSQL's routing ENVCHANGE is the
+// motivating case: SQL Server answers a login with "reconnect to this other
+// host", every driver obeys silently, and the next statement never crosses
+// the gate. Policy, masking and the audit trail all end there.
+//
+// A relay MUST treat this as a denial rather than a warning. Forwarding it
+// is a policy BYPASS that leaves no trace of having happened, which is worse
+// than a refused connection: the operator sees a working session and no
+// statements.
+//
+// Wrap it so the cause survives errors.Is while the message names the lane
+// and what it saw.
+var ErrStreamUnsafe = errors.New("hoopinspect: forwarding these bytes would bypass the relay")
 
 // Inspector decodes a byte stream for one connection.
 //

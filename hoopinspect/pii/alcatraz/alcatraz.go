@@ -175,8 +175,8 @@ func newEngine(lang string) *alcatraz.Engine {
 	return analyzer.NewEngine(reg, []string{lang})
 }
 
-// AllEntities returns every entity type this package detects: alcatraz's 45
-// plus AWS_ACCESS_KEY, JWT and PRIVATE_KEY.
+// AllEntities returns every entity type this package detects: alcatraz's
+// built-in set plus AWS_ACCESS_KEY, JWT and PRIVATE_KEY.
 //
 // Prefer naming the types your data contains. This exists so "everything" is
 // an explicit, greppable decision rather than the consequence of leaving a

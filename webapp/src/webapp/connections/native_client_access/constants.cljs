@@ -15,6 +15,17 @@
    {:text "40 hours" :value 2400}
    {:text "48 hours" :value 2880}])
 
+(def rdp-desktop-size-options
+  [{:text "Fit browser window" :value "fit"}
+   {:text "1280 × 720" :value "1280x720"}
+   {:text "1366 × 768" :value "1366x768"}
+   {:text "1600 × 900" :value "1600x900"}
+   {:text "1920 × 1080" :value "1920x1080"}
+   {:text "2560 × 1440" :value "2560x1440"}
+   {:text "3840 × 2160" :value "3840x2160"}])
+
+(def default-rdp-desktop-size "fit")
+
 ;; Convert minutes to seconds for API
 (defn minutes->seconds [minutes]
   (* minutes 60))

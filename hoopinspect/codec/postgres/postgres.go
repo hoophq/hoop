@@ -26,9 +26,11 @@ package postgres
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/hoophq/hoopinspect"
+	"github.com/hoophq/hoopinspect/lexer"
 )
 
 func init() { hoopinspect.Register(func() hoopinspect.Codec { return &Codec{} }) }
@@ -106,6 +108,18 @@ func (c *Codec) Decode(dir hoopinspect.Direction, data []byte) ([]hoopinspect.St
 	pos := 0
 
 	for pos < len(data) {
+		// A GSS-encryption request means everything after the server's 'G' is
+		// ciphertext. Refuse the stream rather than skip the packet and go
+		// quietly blind for the rest of the connection.
+		if isGSSEncRequest(data[pos:]) {
+			return stmts, pos, fmt.Errorf(
+				"%w: the client asked to wrap this session in GSSAPI encryption, "+
+					"which would make every later byte unreadable to policy, masking "+
+					"and the audit trail; refuse it during the handshake instead "+
+					"(libpq sends this by default whenever a Kerberos ticket is present)",
+				hoopinspect.ErrStreamUnsafe)
+		}
+
 		// Untagged handshake packets: int32 length, int32 code.
 		if n, handled := skipHandshake(data[pos:]); handled {
 			if n == 0 {
@@ -180,7 +194,18 @@ func skipHandshake(data []byte) (int, bool) {
 	}
 	code := binary.BigEndian.Uint32(data[4:8])
 	switch code {
-	case sslRequestCode, gssEncRequestCode, cancelRequestCode:
+	case gssEncRequestCode:
+		// A GSS-encrypted session is one this decoder cannot read: every byte
+		// after the server's 'G' is ciphertext, and skipping the request the
+		// way SSLRequest is skipped would mean reporting zero statements
+		// forever while the connection did real work.
+		//
+		// Reaching here means the relay's own negotiation did not refuse it
+		// (see proxy/negotiateDownstream), so something is fronting this
+		// codec that let the request through. Fail CLOSED and say why; the
+		// alternative is a lane that looks healthy and enforces nothing.
+		return 0, false
+	case sslRequestCode, cancelRequestCode:
 		return int(length), true
 	}
 	// Otherwise it is a StartupMessage: high 16 bits are the major protocol
@@ -237,109 +262,43 @@ func indexNUL(b []byte) int {
 // Semicolons inside string literals, quoted identifiers and dollar-quoted
 // bodies are not separators and are skipped.
 func splitSimpleQuery(q string) []string {
-	var out []string
-	start := 0
-
-	for i := 0; i < len(q); {
-		switch q[i] {
-		case '\'':
-			i = skipQuoted(q, i, '\'')
-		case '"':
-			i = skipQuoted(q, i, '"')
-		case '$':
-			// Dollar quoting: $tag$ ... $tag$ (tag may be empty).
-			if end, tag, ok := dollarTag(q, i); ok {
-				if close := strings.Index(q[end:], tag); close >= 0 {
-					i = end + close + len(tag)
-				} else {
-					i = len(q) // unterminated
-				}
-			} else {
-				i++
-			}
-		case '-':
-			if i+1 < len(q) && q[i+1] == '-' {
-				for i < len(q) && q[i] != '\n' {
-					i++
-				}
-			} else {
-				i++
-			}
-		case '/':
-			if i+1 < len(q) && q[i+1] == '*' {
-				i += 2
-				for i+1 < len(q) && !(q[i] == '*' && q[i+1] == '/') {
-					i++
-				}
-				i += 2
-			} else {
-				i++
-			}
-		case ';':
-			if s := strings.TrimSpace(q[start:i]); s != "" {
-				out = append(out, s)
-			}
-			i++
-			start = i
-		default:
-			i++
-		}
-	}
-	if s := strings.TrimSpace(q[start:]); s != "" {
-		out = append(out, s)
-	}
-	return out
-}
-
-// skipQuoted advances past a quoted run starting at i, handling the doubled
-// quote escape. Returns the index just past the closing quote.
-func skipQuoted(q string, i int, quote byte) int {
-	i++ // opening quote
-	for i < len(q) {
-		if q[i] == quote {
-			if i+1 < len(q) && q[i+1] == quote {
-				i += 2
-				continue
-			}
-			return i + 1
-		}
-		i++
-	}
-	return i
-}
-
-// dollarTag recognizes a dollar-quote opener at i and returns the index just
-// past it plus the tag to search for as the closer.
-func dollarTag(q string, i int) (end int, tag string, ok bool) {
-	j := i + 1
-	for j < len(q) {
-		c := q[j]
-		if c == '$' {
-			return j + 1, q[i : j+1], true
-		}
-		isTagChar := c == '_' ||
-			(c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-			(c >= '0' && c <= '9')
-		if !isTagChar {
-			return 0, "", false
-		}
-		j++
-	}
-	return 0, "", false
+	return lexer.Split(q, lexer.Postgres)
 }
 
 func newStatement(text, msgType, stmtName string) hoopinspect.Statement {
-	op, tables := hoopinspect.ClassifySQL(text)
+	a := hoopinspect.AnalyzeSQL(text, hoopinspect.Postgres)
 	md := map[string]string{"pg.message": msgType}
 	if stmtName != "" {
 		md["pg.statement"] = stmtName
+	}
+	if !a.Complete {
+		// The operation is already OpUnknown. The reason travels so an
+		// operator reading the trail can tell a DO block from a
+		// malformed literal, and so a policy can branch on it.
+		md[hoopinspect.MetadataSQLIncomplete] = a.Reason
 	}
 	return hoopinspect.Statement{
 		Protocol:  hoopinspect.Postgres,
 		Direction: hoopinspect.FromClient,
 		Text:      text,
-		Operation: op,
-		Tables:    tables,
+		Operation: a.Operation,
+		Effects:   a.Effects,
+		Relations: a.Relations,
+		Tables:    a.Tables,
 		Metadata:  md,
 	}
+}
+
+// isGSSEncRequest reports whether data begins with a complete GSSENCRequest.
+//
+// Split out from skipHandshake because the two answer different questions:
+// skipHandshake asks "may I step over this?", and the answer for GSS is no at
+// any length. A partial packet returns false so the caller waits rather than
+// refusing a connection on four buffered bytes.
+func isGSSEncRequest(data []byte) bool {
+	if len(data) < 8 || data[0] != 0x00 {
+		return false
+	}
+	return binary.BigEndian.Uint32(data[0:4]) == 8 &&
+		binary.BigEndian.Uint32(data[4:8]) == gssEncRequestCode
 }

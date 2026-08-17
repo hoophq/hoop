@@ -59,6 +59,10 @@ var riskToolSchema = ToolInputSchema{
 			Type:        "string",
 			Description: "In <= 30 words, explain the risk level concretely.",
 		},
+		"summary": {
+			Type:        "string",
+			Description: "2-4 sentence reviewer-facing impact summary of the investigation and verdict. Optional.",
+		},
 	},
 	Required: []string{"title", "explanation"},
 }

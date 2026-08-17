@@ -129,7 +129,7 @@
            only-queries? on-toggle-only-queries
            has-protocol-rows?
            search on-change-search]}]
-  [:> Box {:class (str "sticky top-0 z-10 bg-[--gray-1] "
+  [:> Box {:class (str "sticky top-app-header z-10 bg-[--gray-1] "
                        "border border-[--gray-a4] rounded-t-3 "
                        "px-radix-4 py-radix-3")}
    [:> Flex {:justify "between" :align "center" :wrap "wrap" :gap "3"}

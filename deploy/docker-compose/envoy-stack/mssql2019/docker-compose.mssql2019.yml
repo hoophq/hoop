@@ -1,0 +1,160 @@
+# A TDS 7.4 lane: SQL Server 2019, login-only encryption, no Envoy.
+#
+#   sqlclient ──TDS 7.4, login inside TLS──> hoop-inspect ──plaintext──> mssql2019
+#
+# Run it with ../../../../hoopinspect/scripts/dev/mssql2019-stack.sh, or by
+# hand from THIS directory (the single -f makes this the project directory,
+# which is what the relative paths below assume):
+#
+#   docker compose -f docker-compose.mssql2019.yml up -d
+#
+# WHY ENVOY IS ABSENT, and it is the whole point of this stack.
+#
+# The 2022 lane next door works because TDS 8.0 runs TCP, then TLS, then the
+# protocol: an ordinary TLS-on-connect handshake that Envoy terminates with no
+# TDS awareness. SQL Server 2019 has no TDS 8.0. `Encrypt=strict` needs 2022+,
+# so a 2019 client puts its TLS handshake INSIDE 0x12 PRELOGIN packets, and
+# Envoy cannot speak that. Nothing to terminate means nothing for Envoy to do,
+# so the relay takes the client's connection directly.
+#
+# WHAT THIS STACK DEMONSTRATES.
+#
+# SQL Server encrypts the login packet even with encryption administratively
+# off. With no certificate installed it mints a self-signed one at startup and
+# uses that for credentials, and PRELOGIN reports the result as ENCRYPT_OFF,
+# which means "encrypt the login only" rather than "no TLS". So the relay sees
+# a TLS record where a TDS packet header should be. Before
+# codec/mssql/encrypted.go it misparsed that record, desynchronized, and
+# stopped inspecting the connection for good.
+#
+# Two client flags select the two outcomes against this one server:
+#
+#   sqlcmd -No -C   Encrypt=Optional  -> ENCRYPT_OFF -> login in TLS,
+#                                        statements in the clear, INSPECTED
+#   sqlcmd -Nm -C   Encrypt=Mandatory -> ENCRYPT_ON  -> whole session in TLS,
+#                                        nothing inspectable, REFUSED
+#
+# go-mssqldb sends ENCRYPT_OFF by default (msdsn/conn_str.go:297), so the
+# first row is what an unconfigured Go client does.
+#
+# No Kerberos here. The 2022 overlay carries samba, keytabs and DNS wiring for
+# it, and documents that SQL Server still refuses the AD login. Leaving all of
+# that out keeps one variable under test and takes minutes off the boot.
+
+name: hoop-mssql2019
+
+services:
+
+  # No arm64 image is published for any SQL Server release, so this runs
+  # emulated on Apple Silicon and first boot takes a few minutes. Drop the
+  # platform line on an amd64 host.
+  #
+  # Deliberately NO TLS configuration: no mssql.conf, no certificate, no
+  # forceencryption. That default is the case under test. SQL Server generates
+  # its fallback certificate at startup and encrypts the login with it anyway,
+  # which is what an operator who "turned encryption off" actually gets.
+  #
+  # The tag is overridable because the negotiation under test belongs to TDS
+  # 7.4, not to a release. Running the same checks across versions is what
+  # turns that from a claim into a measurement:
+  #
+  #   MSSQL_TAG=2017-latest ./mssql2019-stack.sh && ./mssql2019-check.sh
+  #
+  # 2019 is the default because it is the version this lane was reported
+  # broken on.
+  mssql2019:
+    image: mcr.microsoft.com/mssql/server:${MSSQL_TAG:-2019-latest}
+    platform: linux/amd64
+    hostname: mssql2019
+    networks: [inspect]
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "Str0ng!Passw0rd"
+      MSSQL_PID: Developer
+    healthcheck:
+      # Port-open rather than query-success: a probing query needs credentials
+      # this healthcheck should not carry. mssql2019-init is the real gate.
+      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/127.0.0.1/1433' || exit 1"]
+      interval: "5s"
+      timeout: "10s"
+      retries: 120
+      start_period: "60s"
+
+  # Reuses the 2022 lane's seed: same customers table, same NVARCHAR(MAX)
+  # column that exercises PLP masking, same appuser login with db_owner. That
+  # last part matters for the guardrail test, because the point is that the
+  # relay refuses a DELETE the DATABASE would happily run.
+  mssql2019-init:
+    image: hoop-sqlclient:local
+    build:
+      context: ../mssql/sqlclient
+    networks: [inspect]
+    volumes:
+      - ../mssql/seed.sql:/seed.sql:ro
+    environment:
+      MSSQL_SA_PASSWORD: "Str0ng!Passw0rd"
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -e
+        # -No -C: Encrypt=Optional, trust the server's self-signed fallback
+        # certificate. This admin hop is not the lane under test; it just has
+        # to get in.
+        for i in $$(seq 1 120); do
+          if sqlcmd -S mssql2019,1433 -U sa -P "$$MSSQL_SA_PASSWORD" -No -C \
+               -Q "SELECT 1" >/dev/null 2>&1; then
+            echo "[init] sql server 2019 is accepting connections"; break
+          fi
+          echo "[init] waiting for sql server ($$i)"; sleep 5
+        done
+        # -b so a failed statement exits non-zero. Without it the stack comes
+        # up green with the objects the checks depend on missing.
+        sqlcmd -S mssql2019,1433 -U sa -P "$$MSSQL_SA_PASSWORD" -No -C -b -i /seed.sql
+        echo "[init] seed complete"
+    depends_on:
+      mssql2019: { condition: service_healthy }
+
+  # The relay, taking the client connection directly on 11433.
+  #
+  # 11433 rather than 1433 so this stack can run beside the 2022 one without
+  # fighting it for a port. sqlclient dials hoop-inspect:11433 over the compose
+  # network; 11433 is published so you can point a laptop client at it too.
+  hoop-inspect:
+    image: hoop-inspect:local
+    build:
+      context: ../../../../hoopinspect
+      dockerfile: ../deploy/docker-compose/envoy-stack/hoopinspect/Dockerfile
+    networks: [inspect]
+    volumes:
+      - ./config-mssql2019.yaml:/etc/hoop-inspect/config.yaml:ro
+    ports:
+      - "11433:11433"  # the TDS lane
+      - "19001:19000"  # admin: /healthz, /stats, /config, /api/sessions
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:19000/healthz || exit 1"]
+      interval: "2s"
+      timeout: "10s"
+      retries: 15
+      start_period: "5s"
+    depends_on:
+      mssql2019: { condition: service_healthy }
+
+  # The developer's workstation. msodbcsql18 is what makes both negotiation
+  # outcomes reachable from one image: -No asks for ENCRYPT_OFF and -Nm asks
+  # for ENCRYPT_ON.
+  sqlclient:
+    image: hoop-sqlclient:local
+    build:
+      context: ../mssql/sqlclient
+    networks: [inspect]
+    entrypoint: ["/bin/bash", "-c"]
+    command: ["exec sleep infinity"]
+    healthcheck:
+      test: ["CMD-SHELL", "command -v sqlcmd"]
+      interval: "3s"
+      timeout: "10s"
+      retries: 30
+      start_period: "5s"
+
+networks:
+  inspect:

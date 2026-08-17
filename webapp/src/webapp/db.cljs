@@ -7,6 +7,7 @@
                         :roles []
                         :terminal-banner-index 0
                         :terminal-banner-dismissed? false}
+   :access-request {:rules []}
    :agents {:status :loading, :data []}
    :audit->session-details {:status :loading, :session nil, :session-logs {:status :loading}}
    :audit->session-logs {:status :idle, :data nil}
@@ -66,11 +67,7 @@
    :editor {}
    :editor-plugin->script []
    :gateway->info {:loading true, :data nil}
-   :guardrails->active-guardrail {:action nil
-                                  :name ""
-                                  :description ""
-                                  :input [{:type "" :rule "" :pattern_regex "" :words [] :message ""}]
-                                  :output [{:type "" :rule "" :pattern_regex "" :words [] :message ""}]}
+   :guardrails->list {:status :idle, :data []}
    :jira-integration->details {:loading true, :data {}}
    :modal-radix {:open? false, :content nil}
    :modal-status :closed
