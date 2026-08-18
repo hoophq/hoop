@@ -265,18 +265,25 @@ __device__ int write_pixel(
     return 1;
 }
 
+__device__ unsigned int pixel_above(
+    const unsigned int* output,
+    int output_pos,
+    int width
+) {
+    return output_pos < width ? 0u : output[output_pos - width];
+}
+
 __device__ int write_fg_bg(
     unsigned int* output,
     int pixel_count,
     int* output_pos,
     int width,
-    int first_line,
     unsigned int mask,
     unsigned int foreground,
     int count
 ) {
     for (int bit = 0; bit < count; ++bit) {
-        unsigned int above = first_line ? 0 : output[*output_pos - width];
+        unsigned int above = pixel_above(output, *output_pos, width);
         unsigned int value = (mask & (1u << bit))
             ? (above ^ foreground)
             : above;
@@ -394,7 +401,7 @@ extern "C" __global__ void decode_rdp_rle(
             }
             int remaining = run_length;
             if (insert_foreground) {
-                unsigned int above = first_line ? 0 : output[output_pos - width];
+                unsigned int above = pixel_above(output, output_pos, width);
                 if (!write_pixel(
                     output,
                     pixel_count,
@@ -407,7 +414,7 @@ extern "C" __global__ void decode_rdp_rle(
                 remaining -= 1;
             }
             for (int index = 0; index < remaining; ++index) {
-                unsigned int above = first_line ? 0 : output[output_pos - width];
+                unsigned int above = pixel_above(output, output_pos, width);
                 if (!write_pixel(output, pixel_count, &output_pos, above)) {
                     result[0] = 3;
                     return;
@@ -442,7 +449,7 @@ extern "C" __global__ void decode_rdp_rle(
                 return;
             }
             for (int index = 0; index < run_length; ++index) {
-                unsigned int above = first_line ? 0 : output[output_pos - width];
+                unsigned int above = pixel_above(output, output_pos, width);
                 if (!write_pixel(
                     output,
                     pixel_count,
@@ -518,7 +525,6 @@ extern "C" __global__ void decode_rdp_rle(
                     pixel_count,
                     &output_pos,
                     width,
-                    first_line,
                     mask,
                     foreground,
                     count
@@ -554,7 +560,6 @@ extern "C" __global__ void decode_rdp_rle(
                 pixel_count,
                 &output_pos,
                 width,
-                first_line,
                 mask,
                 foreground,
                 8
@@ -1159,7 +1164,7 @@ class GpuOcrPipeline:
             crop_h, crop_w = crop.shape[:2]
             if crop_h <= 0 or crop_w <= 0:
                 continue
-            scaled_w = int(round(crop_w * REC_H / float(crop_h)))
+            scaled_w = round(crop_w * REC_H / float(crop_h))
             bucket_w = self.bucket_rec.bucket_for(scaled_w)
             groups[bucket_w].append((index, crop))
 
@@ -1242,8 +1247,8 @@ class GpuOcrPipeline:
                             if outputs:
                                 output = outputs[0]
                                 logits = _cupy_view(output)
-                        except Exception:
-                            pass
+                        except Exception:  # noqa: BLE001 - preserve inference error
+                            output = None
                     if ids_cpu is not None:
                         ids_cpu.fill(0)
                     if confidence_cpu is not None:
@@ -1332,15 +1337,15 @@ class GpuOcrPipeline:
         try:
             for index, box in enumerate(boxes):
                 points = np.ascontiguousarray(box, dtype=np.float32)
-                x0 = max(0, int(math.floor(float(points[:, 0].min()))) - 8)
-                y0 = max(0, int(math.floor(float(points[:, 1].min()))) - 8)
+                x0 = max(0, math.floor(float(points[:, 0].min())) - 8)
+                y0 = max(0, math.floor(float(points[:, 1].min())) - 8)
                 x1 = min(
                     frame_w,
-                    int(math.ceil(float(points[:, 0].max()))) + 9,
+                    math.ceil(float(points[:, 0].max())) + 9,
                 )
                 y1 = min(
                     frame_h,
-                    int(math.ceil(float(points[:, 1].max()))) + 9,
+                    math.ceil(float(points[:, 1].max())) + 9,
                 )
                 if x0 >= x1 or y0 >= y1:
                     continue
@@ -1858,7 +1863,7 @@ class GpuResidentStore:
             cache_misses = 0
             rec_cache_hits = 0
             rec_cache_misses = 0
-            if frame_changed:
+            if frame_changed or request.chunks:
                 for chunk in request.chunks:
                     (
                         chunk_words,

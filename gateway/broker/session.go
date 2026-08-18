@@ -473,12 +473,8 @@ func SetAgentCapabilities(
 //
 // The two booleans are distinct on purpose:
 //   - known=false: the agent has not advertised capabilities within the wait
-//     (old agent, or a degenerate connection). Callers that need a security
-//     guarantee should generally treat this as "cannot" and fail closed —
-//     EXCEPT where availability across mixed-version rollouts outweighs it: the
-//     RDP handler deliberately runs unknown-capability sessions unguarded
-//     rather than 403-ing every connection through a not-yet-upgraded agent
-//     (see gateway/rdp/irongw.go). Choose per call site, consciously.
+//     (old agent, or a degenerate connection). Security-sensitive callers must
+//     treat this as "cannot" and fail closed.
 //   - known=true, value=false: the agent explicitly cannot do this.
 //   - known=true, value=true: the agent can.
 func AgentCapability(agentID, key string) (value bool, known bool) {

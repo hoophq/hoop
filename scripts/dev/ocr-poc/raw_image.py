@@ -5,8 +5,8 @@ patches and OCR chunk geometry so the sidecar can decode and composite them
 directly into its GPU-resident framebuffer.
 """
 
-from dataclasses import dataclass
 import struct
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -27,7 +27,8 @@ RDP_FRAME_CONTENT_TYPE = "application/vnd.hoop.rdp-frame.v2"
 RDP_FRAME_MAGIC = b"HFR2"
 RDP_FRAME_VERSION = 2
 RDP_PATCH_COMPRESSED = 1
-MAX_RDP_FRAME_PATCHES = 4096
+MAX_RDP_FRAME_PATCHES = 256
+MAX_RDP_DECODED_PIXELS = 2 * MAX_DIM * MAX_DIM
 
 
 @dataclass(frozen=True)
@@ -345,6 +346,7 @@ def decode_rdp_frame_request(
     offset = header_size
     patches = []
     patch_header_size = struct.calcsize("<HHHHHHI")
+    decoded_pixels = 0
     for _ in range(patch_count):
         if len(view) - offset < patch_header_size:
             raise RawImageError("truncated RDP patch header")
@@ -362,6 +364,12 @@ def decode_rdp_frame_request(
             raise RawImageError("RDP patch dimensions must be nonzero")
         if x + patch_width > width or y + patch_height > height:
             raise RawImageError("RDP patch lies outside the framebuffer")
+        decoded_pixels += patch_width * patch_height
+        if decoded_pixels > MAX_RDP_DECODED_PIXELS:
+            raise RawImageError(
+                "RDP frame decoded pixel budget exceeds "
+                f"{MAX_RDP_DECODED_PIXELS}"
+            )
         if bits_per_pixel not in (16, 24, 32):
             raise RawImageError(
                 f"unsupported RDP patch depth {bits_per_pixel}"

@@ -28,25 +28,34 @@ Run locally without Docker (CPU):
 """
 
 import asyncio
-from contextlib import asynccontextmanager, suppress
-from concurrent.futures import ThreadPoolExecutor
 import copy
 import logging
 import os
 import pathlib
 import time
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager, suppress
 
 import cv2
 import numpy as np
 import onnxruntime
 import rapidocr
+from bucket_rec import (
+    BUCKET_WIDTHS,
+    MAX_BATCH,
+    REC_H,
+    BucketDet,
+    BucketRec,
+    filter_and_scale_boxes,
+    pad_det_input,
+)
+from device_policy import cuda_device_count, resolve_device, resolve_worker_concurrency
 from fastapi import FastAPI, Request, Response
 from rapidocr import RapidOCR
 from rapidocr.ch_ppocr_rec.typings import TextRecInput
 from rapidocr.inference_engine.onnxruntime.main import OrtInferSession
 from rapidocr.utils.process_img import get_rotate_crop_image
 from rapidocr.utils.typings import LangRec
-
 from raw_image import (
     FRAME_SEQUENCE_HEADER,
     FRAME_SESSION_HEADER,
@@ -65,16 +74,6 @@ from raw_image import (
     validate_rdp_frame_content_type,
 )
 
-from bucket_rec import (
-    BUCKET_WIDTHS,
-    MAX_BATCH,
-    REC_H,
-    BucketDet,
-    BucketRec,
-    filter_and_scale_boxes,
-    pad_det_input,
-)
-from device_policy import cuda_device_count, resolve_device, resolve_worker_concurrency
 
 @asynccontextmanager
 async def _lifespan(_app):

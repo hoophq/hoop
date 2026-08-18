@@ -253,7 +253,7 @@ func TestSetAgentCapabilities_DefensiveCopy(t *testing.T) {
 	}
 }
 
-func TestSetAgentCapabilities_IgnoresStaleInstance(t *testing.T) {
+func TestSetAgentCapabilities_StaleInstanceCannotMarkReady(t *testing.T) {
 	const name = "agent-stale-capabilities"
 	oldID, err := CreateAgent(name, nil)
 	if err != nil {

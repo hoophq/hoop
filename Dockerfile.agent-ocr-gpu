@@ -4,8 +4,8 @@
 # RDP_OCR_SERVER_URL), but installs onnxruntime-gpu and the CUDA runtime
 # libraries so the engine uses the CUDA execution provider. The device is
 # detected at runtime (device_policy.py): with a visible GPU the engine runs
-# on CUDA; without one it REFUSES TO START unless OCR_ALLOW_CPU_FALLBACK=1 —
-# a GPU image silently running on CPU would quietly miss latency targets.
+# on CUDA; without one it REFUSES TO START. Resident GPU mode has no automatic
+# CPU fallback; deployments without CUDA must use Dockerfile.agent-ocr.
 #
 # Requires the nvidia container runtime at deploy time (docker run --gpus all
 # / nvidia-container-toolkit). NOT buildable/validatable on a non-CUDA host;
@@ -141,6 +141,7 @@ ENV RDP_OCR_SERVER_URL="http://127.0.0.1:18868"
 ENV OCR_PORT=18868
 ENV RDP_OCR_TRANSPORT="resident-rdp"
 ENV OCR_GPU_PREPROCESS=1
+ENV OCR_REC_PRECISION="fp16"
 # Resident GPU framebuffers are process-local, so this must remain one:
 # multiple Uvicorn workers cannot safely route a session's POST and DELETE to
 # the same owner. server_rapidocr.py refuses unsafe overrides at startup.
@@ -149,9 +150,9 @@ ENV WEB_CONCURRENCY=1
 #   OCR_REC_LANG:      ch (default) | en — en is faster and more accurate on
 #                      Latin-only screens but CANNOT read CJK text (CJK PII
 #                      would be missed). Per-deployment product decision.
-#   OCR_REC_PRECISION: fp32 (default) | fp16 — fp16 runs recognition through
-#                      fixed-shape bucket sessions, measured 1.8x end-to-end
-#                      on a T4 with byte-identical text output. CUDA only.
+#   OCR_REC_PRECISION: fp16 is required by OCR_GPU_PREPROCESS and is therefore
+#                      the GPU image default. The fp32 stock RapidOCR path is
+#                      available only when GPU preprocessing is disabled.
 # Resource knobs (also see server_rapidocr.py):
 #   OCR_INTRA_OP_THREADS / OCR_INTER_OP_THREADS: 4 / 1 (defaults) — per-session
 #                      ONNX Runtime thread pools. Left unbounded, ORT sizes each

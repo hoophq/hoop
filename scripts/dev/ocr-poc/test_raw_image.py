@@ -3,7 +3,6 @@ import struct
 
 import numpy as np
 import pytest
-
 from raw_image import (
     CONTENT_TYPE,
     FRAME_CONTENT_TYPE,
@@ -13,6 +12,7 @@ from raw_image import (
     HEIGHT_HEADER,
     MAX_DIM,
     MAX_FRAME_PATCHES,
+    MAX_RDP_DECODED_PIXELS,
     MAX_RDP_FRAME_PATCHES,
     RDP_FRAME_CONTENT_TYPE,
     RDP_FRAME_MAGIC,
@@ -407,6 +407,39 @@ def test_decode_rdp_frame_rejects_excess_patch_work():
         match=rf"^RDP frame patch count exceeds {MAX_RDP_FRAME_PATCHES}$",
     ):
         decode_rdp_frame_request(body, 1, 1)
+
+def test_decode_rdp_frame_rejects_compressed_decode_bomb():
+    patch = (
+        struct.pack(
+            "<HHHHHHI",
+            0,
+            0,
+            MAX_DIM,
+            MAX_DIM,
+            16,
+            RDP_PATCH_COMPRESSED,
+            1,
+        )
+        + b"\0"
+    )
+    body = (
+        struct.pack(
+            "<4sHHHH",
+            RDP_FRAME_MAGIC,
+            RDP_FRAME_VERSION,
+            0,
+            3,
+            0,
+        )
+        + patch * 3
+    )
+    assert len(body) < 128
+
+    with pytest.raises(
+        RawImageError,
+        match=rf"^RDP frame decoded pixel budget exceeds {MAX_RDP_DECODED_PIXELS}$",
+    ):
+        decode_rdp_frame_request(body, MAX_DIM, MAX_DIM)
 
 
 @pytest.mark.parametrize(

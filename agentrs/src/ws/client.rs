@@ -353,8 +353,7 @@ impl WebSocket {
 /// constant `broker.CapabilitySupportsPIIGuard`.
 pub const CAPABILITY_SUPPORTS_PII_GUARD: &str = "supports_pii_guard";
 pub const CAPABILITY_SUPPORTS_PII_ENTITY_ALLOWLIST: &str = "supports_pii_entity_allowlist";
-pub const CAPABILITY_SUPPORTS_PII_DATA_MASKING_RULES: &str =
-    "supports_pii_data_masking_rules";
+pub const CAPABILITY_SUPPORTS_PII_DATA_MASKING_RULES: &str = "supports_pii_data_masking_rules";
 
 /// Builds the connection-scoped capability advertisement.
 ///

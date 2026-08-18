@@ -6,15 +6,14 @@ Run inside the CUDA OCR image:
 """
 
 import collections
+import struct
 import threading
 import types
-import struct
-import gpu_pipeline as gpu_pipeline_module
 
 import cupy as cp
+import gpu_pipeline as gpu_pipeline_module
 import numpy as np
 import pytest
-
 from gpu_pipeline import (
     GpuOcrPipeline,
     GpuResidentStore,
@@ -124,7 +123,9 @@ class RdpStubPipeline(StubPipeline):
     scrub_sensitive_scratch = GpuOcrPipeline.scrub_sensitive_scratch
 
 
-def rdp_request(width, height, bits_per_pixel, compressed, pixels):
+def rdp_request(
+    width, height, bits_per_pixel, compressed, pixels, *, chunks=()
+):
     flags = RDP_PATCH_COMPRESSED if compressed else 0
     body = b"".join(
         (
@@ -134,7 +135,7 @@ def rdp_request(width, height, bits_per_pixel, compressed, pixels):
                 RDP_FRAME_VERSION,
                 0,
                 1,
-                0,
+                len(chunks),
             ),
             struct.pack(
                 "<HHHHHHI",
@@ -147,6 +148,16 @@ def rdp_request(width, height, bits_per_pixel, compressed, pixels):
                 len(pixels),
             ),
             pixels,
+            b"".join(
+                struct.pack(
+                    "<HHHH",
+                    chunk.win_y0,
+                    chunk.win_y1,
+                    chunk.own_y0,
+                    chunk.own_y1,
+                )
+                for chunk in chunks
+            ),
         )
     )
     return decode_rdp_frame_request(body, width, height)
@@ -312,6 +323,41 @@ def test_cuda_rdp_background_orders_copy_prior_scanline():
     assert frame[0].tolist() == expected
     assert frame[1].tolist() == expected
 
+@pytest.mark.parametrize(
+    ("stream", "expected_top", "expected_bottom"),
+    [
+        (
+            bytes((0x61,)) + wire24(0xFF0000) + bytes((0xF0, 3, 0)),
+            (0xFF0000, 0),
+            (0xFF0000, 0),
+        ),
+        (
+            bytes((0x61,))
+            + wire24(0xFF0000)
+            + bytes((0xC3,))
+            + wire24(0x0000FF),
+            (0xFF00FF, 0),
+            (0xFF0000, 0x0000FF),
+        ),
+        (
+            bytes((0x61,))
+            + wire24(0xFF0000)
+            + bytes((0xF7, 3, 0))
+            + wire24(0x0000FF)
+            + bytes((0x05,)),
+            (0xFF0000, 0),
+            (0xFF0000, 0x0000FF),
+        ),
+    ],
+)
+def test_cuda_rdp_orders_crossing_scanline_match_canonical_semantics(
+    stream, expected_top, expected_bottom
+):
+    frame, _result = apply_rdp(2, 2, 24, True, stream)
+
+    assert frame[0].tolist() == [rgba24(value) for value in expected_top]
+    assert frame[1].tolist() == [rgba24(value) for value in expected_bottom]
+
 
 def test_cuda_rdp_decoder_rejects_truncated_order_and_drops_frame():
     pipeline = RdpStubPipeline()
@@ -353,6 +399,24 @@ def test_alternating_exact_pixel_state_reuses_ocr_words():
     assert repeated["stages"]["frame_hash_ms"] >= 0.0
 
     store.release("session", 3)
+
+def test_rdp_final_slice_with_chunks_ocrs_even_when_slice_is_identical():
+    pipeline = RdpStubPipeline()
+    store = GpuResidentStore(pipeline, max_cache_entries=4)
+    pixels = bytes((0, 0, 10))
+    initial = rdp_request(1, 1, 24, False, pixels)
+    first = store.process("split-rdp", 0, 1, 1, initial)
+    assert first["frame_changed"]
+    assert first["words"] == []
+
+    chunk = FrameChunk(0, 1, 0, 1)
+    final = rdp_request(1, 1, 24, False, pixels, chunks=(chunk,))
+    result = store.process("split-rdp", 1, 1, 1, final)
+
+    assert not result["frame_changed"]
+    assert [word["text"] for word in result["words"]] == ["10"]
+    assert pipeline.calls == [10]
+    store.release("split-rdp", 2)
 
 
 @pytest.mark.parametrize(

@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -165,6 +166,20 @@ func writeRDPClientError(ws *websocket.Conn, cppVersion uint64, reason string) {
 	if err := ws.WriteMessage(websocket.BinaryMessage, pkt); err != nil {
 		log.Errorf("failed to write RDP error packet to client: %v", err)
 	}
+}
+
+func handshakeAgentTLS(conn net.Conn) (*tls.Conn, error) {
+	tlsClient := tls.Client(conn, &tls.Config{
+		InsecureSkipVerify: true,
+	})
+	if err := tlsClient.Handshake(); err != nil {
+		return nil, err
+	}
+	if err := conn.SetDeadline(time.Time{}); err != nil {
+		_ = tlsClient.Close()
+		return nil, fmt.Errorf("clear handshake deadline: %w", err)
+	}
+	return tlsClient, nil
 }
 
 func (r *IronRDPGateway) handle(c *gin.Context) {
@@ -380,13 +395,7 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 	// Now, agentrs expects a TLS Connection. So we start the handshake here
 	// The IronRDP Web assumes we're already in a TLS connection, so we need to
 	// "unwrap" the connection to it.
-	tlsClient := tls.Client(sessionConn, &tls.Config{
-		InsecureSkipVerify: true,
-	})
-	defer tlsClient.Close() // Tecnically, we don't need to close this
-
-	log.Debugf("Perfoming Handshake")
-	err = tlsClient.Handshake()
+	tlsClient, err := handshakeAgentTLS(sessionConn)
 	if err != nil {
 		log.Errorf("Failed to perform handshake: %v", err)
 		return
