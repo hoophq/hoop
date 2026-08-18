@@ -60,7 +60,7 @@ func lanePolicy(opa *OPAConfig, rules ...policy.Rule) PolicyConfig {
 func TestSinglePhaseChainIsUnchanged(t *testing.T) {
 	pc := lanePolicy(&OPAConfig{URL: "http://opa:8181/v1/data/hoop"}, aiRule("risky"))
 
-	pol, err := buildPolicy(pc, nil, stubDeps())
+	pol, err := buildPolicy(pc, nil, stubDeps(), nil)
 	if err != nil {
 		t.Fatalf("buildPolicy: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestSinglePhaseChainIsUnchanged(t *testing.T) {
 func TestDeferPutsOPAAfterTheAnalyzer(t *testing.T) {
 	pc := lanePolicy(&OPAConfig{URL: "http://opa:8181/v1/data/hoop"}, deferRule("risky"))
 
-	pol, err := buildPolicy(pc, nil, stubDeps())
+	pol, err := buildPolicy(pc, nil, stubDeps(), nil)
 	if err != nil {
 		t.Fatalf("buildPolicy: %v", err)
 	}
@@ -96,7 +96,7 @@ func TestDeferPutsOPAAfterTheAnalyzer(t *testing.T) {
 func TestGateWrapsTheAnalyzer(t *testing.T) {
 	pc := lanePolicy(&OPAConfig{URL: "http://opa:8181/v1/data/hoop", Gate: true}, aiRule("risky"))
 
-	pol, err := buildPolicy(pc, nil, stubDeps())
+	pol, err := buildPolicy(pc, nil, stubDeps(), nil)
 	if err != nil {
 		t.Fatalf("buildPolicy: %v", err)
 	}
@@ -165,9 +165,10 @@ func TestEmptyTriggerIsAllowedOnlyWhenGated(t *testing.T) {
 	}
 }
 
-// require_review still has no backend, and the message must point at the
-// alternative that now exists rather than only at block and warn.
-func TestRequireReviewNamesDeferAsTheAlternative(t *testing.T) {
+// require_review with nothing behind it forwards every statement it was
+// written to hold, which is worse than a startup error: the operator reads
+// their config and believes a person is being asked.
+func TestRequireReviewWithoutAReviewSectionIsRefused(t *testing.T) {
 	r := aiRule("risky")
 	r.HighRisk = "require_review"
 	cfg := pgLane(r)
@@ -175,10 +176,63 @@ func TestRequireReviewNamesDeferAsTheAlternative(t *testing.T) {
 
 	err := cfg.Validate()
 	if err == nil {
-		t.Fatal("require_review was accepted")
+		t.Fatal("require_review was accepted with no review section")
 	}
-	if !strings.Contains(err.Error(), "defer") {
-		t.Errorf("the error does not offer defer: %v", err)
+	if !strings.Contains(err.Error(), "review") {
+		t.Errorf("the error does not name the missing section: %v", err)
+	}
+}
+
+// An approval is scoped to a connection — a sandbox may reach several, and an
+// approval for appdb must not authorize the same SQL against payments-db — so
+// a gated lane that does not name the connection it fronts cannot work.
+func TestRequireReviewNeedsAConnectionName(t *testing.T) {
+	r := aiRule("risky")
+	r.HighRisk = "require_review"
+	cfg := pgLane(r)
+	cfg.Analyzer = &AnalyzerConfig{Provider: "stub", Model: "m"}
+	cfg.Review = &ReviewConfig{APIURL: "https://gw.example", TokenFile: "/dev/null"}
+	cfg.Listeners[0].Connection = ""
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("a gated lane with no connection name was accepted")
+	}
+	if !strings.Contains(err.Error(), "connection") {
+		t.Errorf("the error does not name the missing field: %v", err)
+	}
+}
+
+// A review section nothing gates on reads a credential off disk and never
+// uses it, the same dead control opa.gate over a lane with no ai rule is.
+func TestUnusedReviewSectionIsRefused(t *testing.T) {
+	r := aiRule("risky")
+	r.HighRisk = "block"
+	cfg := pgLane(r)
+	cfg.Analyzer = &AnalyzerConfig{Provider: "stub", Model: "m"}
+	cfg.Review = &ReviewConfig{APIURL: "https://gw.example", TokenFile: "/dev/null"}
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("an unused review section was accepted")
+	}
+	if !strings.Contains(err.Error(), "require_review") {
+		t.Errorf("the error does not say what is missing: %v", err)
+	}
+}
+
+// The happy path: a gated lane with a review section and a connection name
+// validates, and reports itself as gated so -validate says so out loud.
+func TestRequireReviewLaneValidates(t *testing.T) {
+	r := aiRule("risky")
+	r.HighRisk = "require_review"
+	cfg := pgLane(r)
+	cfg.Analyzer = &AnalyzerConfig{Provider: "stub", Model: "m"}
+	cfg.Review = &ReviewConfig{APIURL: "https://gw.example", TokenFile: "/dev/null"}
+	cfg.Listeners[0].Connection = "appdb"
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("a correctly configured review lane was refused: %v", err)
 	}
 }
 
@@ -192,7 +246,7 @@ func TestLocalDeferMakesTheLaneTwoPhase(t *testing.T) {
 		denyWordsRule("no-destructive", policy.ActionDefer),
 	)
 
-	pol, err := buildPolicy(pc, nil, stubDeps())
+	pol, err := buildPolicy(pc, nil, stubDeps(), nil)
 	if err != nil {
 		t.Fatalf("buildPolicy: %v", err)
 	}
@@ -213,7 +267,7 @@ func TestLocalDeferMakesTheLaneTwoPhase(t *testing.T) {
 	// The same lane with the action dropped is the old single-call shape.
 	// Without this arm the assertions above pass on any two-element chain.
 	pc.Rules = []policy.Rule{denyWordsRule("no-destructive", "")}
-	pol, err = buildPolicy(pc, nil, stubDeps())
+	pol, err = buildPolicy(pc, nil, stubDeps(), nil)
 	if err != nil {
 		t.Fatalf("buildPolicy without the action: %v", err)
 	}

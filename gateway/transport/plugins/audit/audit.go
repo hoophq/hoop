@@ -249,7 +249,7 @@ func (p *auditPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 							UserSlackID: pctx.UserSlackID,
 							UserGroups:  pctx.UserGroups,
 						},
-						aiAccessRule, string(pkt.Payload), nil, nil, analyzeRes)
+						aiAccessRule, string(pkt.Payload), nil, nil, analyzeRes, nil)
 					if err != nil {
 						return nil, plugintypes.InternalErr("failed creating ai-driven review", err)
 					}

@@ -610,16 +610,10 @@ func validateAIRules(rules []policy.Rule, cfg *AnalyzerConfig, pc PolicyConfig, 
 						"set one or use block, warn or allow",
 					lane, r.Name, level))
 			}
-			if a == analyzer.ActionRequireReview {
-				// The action is declared in the enum so the schema is
-				// stable when review lands, and refused here so nobody
-				// ships a config that looks like it holds statements
-				// for approval and quietly does not.
-				problems = append(problems, fmt.Sprintf(
-					"%s: ai_analysis rule %q asks for %q on %s risk, and this build "+
-						"cannot hold a statement for human approval; use block, warn "+
-						"or defer to an OPA policy", lane, r.Name, raw, level))
-			}
+			// require_review needs an evaluator after this one, exactly as
+			// defer does. Its refusal lives in validateReviewRules, which
+			// owns the review section; naming it here too would put the
+			// same check in two places.
 		}
 		if !named {
 			problems = append(problems, fmt.Sprintf(

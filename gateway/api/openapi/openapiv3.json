@@ -4972,6 +4972,106 @@
         },
         "type": "object"
       },
+      "openapi.RelayReview": {
+        "properties": {
+          "review_id": {
+            "description": "The review identifier.",
+            "example": "6b1e0a58-1b1f-4a5f-9f2f-6f3f3f3f3f3f",
+            "readOnly": true,
+            "type": "string"
+          },
+          "session_id": {
+            "description": "The session the review is anchored to.",
+            "example": "1b1f4a5f-9f2f-6f3f-3f3f-3f3f6b1e0a58",
+            "readOnly": true,
+            "type": "string"
+          },
+          "status": {
+            "description": "The review status. EXECUTED on a claim means this call consumed it.",
+            "enum": [
+              "PENDING",
+              "APPROVED",
+              "REJECTED",
+              "REVOKED",
+              "EXECUTED"
+            ],
+            "example": "PENDING",
+            "readOnly": true,
+            "type": "string"
+          },
+          "url": {
+            "description": "Where a human answers the review.",
+            "example": "https://use.hoop.dev/sessions/1b1f4a5f-9f2f-6f3f-3f3f-3f3f6b1e0a58",
+            "readOnly": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.RelayReviewClaimRequest": {
+        "properties": {
+          "connection": {
+            "description": "The connection the statement is running against. An approval is scoped\nto it, so an approval for appdb never authorizes payments-db.",
+            "example": "appdb",
+            "type": "string"
+          },
+          "statement_hash": {
+            "description": "SHA-256 (64 lowercase hex chars) of the canonical statement text, as\nthe relay computed it from the bytes on the wire.",
+            "example": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection",
+          "statement_hash"
+        ],
+        "type": "object"
+      },
+      "openapi.RelayReviewRequest": {
+        "properties": {
+          "connection": {
+            "description": "The connection the statement is running against.",
+            "example": "appdb",
+            "type": "string"
+          },
+          "marker": {
+            "description": "An optional caller-supplied correlation handle. A PENDING review\nalready filed under the same marker is returned instead of a new one.\nIt is request identity only and never widens what an approval permits.",
+            "example": "task-42",
+            "type": "string"
+          },
+          "risk_level": {
+            "description": "The risk level the analyzer assigned, shown to the reviewer.",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
+            "example": "high",
+            "type": "string"
+          },
+          "rule": {
+            "description": "The analyzer rule that flagged the statement.",
+            "example": "risky-writes",
+            "type": "string"
+          },
+          "statement": {
+            "description": "The canonical statement text a reviewer will read and approve.",
+            "example": "DELETE FROM users WHERE id = 7",
+            "type": "string"
+          },
+          "statement_hash": {
+            "description": "SHA-256 (64 lowercase hex chars) of the canonical statement text.",
+            "example": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection",
+          "statement",
+          "statement_hash"
+        ],
+        "type": "object"
+      },
       "openapi.ResourcHealthCheckResponse": {
         "properties": {
           "output": {
@@ -16753,6 +16853,261 @@
         "summary": "Get Public Server Info",
         "tags": [
           "Server Management"
+        ]
+      }
+    },
+    "/relay/reviews": {
+      "get": {
+        "description": "Report where the caller's review for one statement stands. Read-only: polling never consumes an approval, which only the relay's claim may do. An APPROVED review wins over a newer one in any other status, because the question being asked is whether the statement may be retried yet.",
+        "parameters": [
+          {
+            "description": "The connection the statement runs against",
+            "in": "query",
+            "name": "connection",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "SHA-256 of the canonical statement text, 64 lowercase hex characters",
+            "in": "query",
+            "name": "statement_hash",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.RelayReview"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Poll a relay review",
+        "tags": [
+          "Relay"
+        ]
+      },
+      "post": {
+        "description": "Find or create a review for one statement. When the request carries a marker and this sandbox already has a PENDING review for the same connection and marker, that review is returned with 200 instead of a duplicate being filed. Otherwise a session and a one-time review are created and 201 is returned.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/openapi.RelayReviewRequest"
+              }
+            }
+          },
+          "description": "The request body resource",
+          "required": true,
+          "x-originalParamName": "request"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.RelayReview"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.RelayReview"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "File a relay review",
+        "tags": [
+          "Relay"
+        ]
+      }
+    },
+    "/relay/reviews/claim": {
+      "post": {
+        "description": "Atomically consume the caller's approved review for one exact statement and report it as EXECUTED. An approval authorizes exactly one execution, so a second call finds nothing. Returns 404 when there is no approved, unconsumed review — which is also the answer for a PENDING, REJECTED or REVOKED one.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/openapi.RelayReviewClaimRequest"
+              }
+            }
+          },
+          "description": "The request body resource",
+          "required": true,
+          "x-originalParamName": "request"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.RelayReview"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Claim a relay review",
+        "tags": [
+          "Relay"
         ]
       }
     },

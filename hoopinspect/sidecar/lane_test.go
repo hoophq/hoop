@@ -160,7 +160,7 @@ func TestResolveListenerCanDisableEnforcementAgainstEnabledDefault(t *testing.T)
 		},
 	}
 
-	lanes, err := buildLanes(cfg, nil, nil)
+	lanes, err := buildLanes(cfg, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("buildLanes: %v", err)
 	}
@@ -204,7 +204,7 @@ func TestBuildLanesGivesEachListenerItsOwnEvaluator(t *testing.T) {
 		},
 	}
 
-	lanes, err := buildLanes(cfg, nil, nil)
+	lanes, err := buildLanes(cfg, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("buildLanes: %v", err)
 	}
@@ -265,7 +265,7 @@ func TestMaskOnHTTPIsAccepted(t *testing.T) {
 		t.Fatalf("mask on http was rejected: %v", err)
 	}
 
-	lanes, err := buildLanes(cfg, stubPlugin{entities: []string{"US_SSN"}}, nil)
+	lanes, err := buildLanes(cfg, stubPlugin{entities: []string{"US_SSN"}}, nil, nil)
 	if err != nil {
 		t.Fatalf("buildLanes: %v", err)
 	}
@@ -289,7 +289,7 @@ func TestPIIRuleNamingUndetectedEntityIsRefused(t *testing.T) {
 	}
 
 	// The detector only knows US_SSN.
-	_, err := buildLanes(cfg, stubPlugin{entities: []string{"US_SSN"}}, nil)
+	_, err := buildLanes(cfg, stubPlugin{entities: []string{"US_SSN"}}, nil, nil)
 	if err == nil {
 		t.Fatal("a pii rule for an undetectable entity was accepted")
 	}
@@ -298,7 +298,7 @@ func TestPIIRuleNamingUndetectedEntityIsRefused(t *testing.T) {
 	}
 
 	// Same rule, detector configured for it: fine.
-	if _, err := buildLanes(cfg, stubPlugin{entities: []string{"BR_CPF"}}, nil); err != nil {
+	if _, err := buildLanes(cfg, stubPlugin{entities: []string{"BR_CPF"}}, nil, nil); err != nil {
 		t.Errorf("a pii rule the detector can serve was rejected: %v", err)
 	}
 }
@@ -320,7 +320,7 @@ func TestBuildLanesReportsEveryBrokenLane(t *testing.T) {
 		},
 	}
 
-	_, err := buildLanes(cfg, stubPlugin{entities: []string{"US_SSN"}}, nil)
+	_, err := buildLanes(cfg, stubPlugin{entities: []string{"US_SSN"}}, nil, nil)
 	if err == nil {
 		t.Fatal("two broken lanes were accepted")
 	}
@@ -342,7 +342,7 @@ func TestGlobalOnlyConfigStillAppliesToEveryLane(t *testing.T) {
 		},
 	}
 
-	lanes, err := buildLanes(cfg, nil, nil)
+	lanes, err := buildLanes(cfg, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("buildLanes: %v", err)
 	}

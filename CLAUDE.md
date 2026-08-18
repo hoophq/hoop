@@ -191,6 +191,14 @@ See `DEV.md` "Feature Flags" section for the full developer guide and file refer
 - Run `make generate-openapi-docs` to regenerate `gateway/api/openapi/autogen/`.
 - OpenAPI specs are served at `/api/openapiv2.json` and `/api/openapiv3.json`.
 
+### The `/api/relay/*` namespace
+**Any endpoint whose behavior is specific to hoop-inspect — the inline enforcement relay that runs outside the gateway process — MUST be registered under `/api/relay/*`.** Handlers live in `gateway/api/relay/` (package `relayapi`); the statement-level human-approval gate (`/api/relay/reviews`, `/api/relay/reviews/claim`) is the first of them, and config distribution, event shipping and instance registration belong there too.
+
+- **Named for the ROLE, not the component.** It was `/api/inspect/*` and moved once already, because naming an endpoint after its caller means renaming the caller moves an API a separately-deployed binary speaks. `relay` describes what the caller *is*; do not reintroduce a component name here.
+- **Auth is on the route GROUP, never per route.** `gateway/api/server.go` applies `r.AuthMiddleware` + `r.OnlyApiKeyAccess` to `relayGroup` once, so every route in the namespace is machine-only (`hpk_` API key or AI agent) by construction rather than by whoever adds the next one remembering. Adding a route here means one line; do not re-attach middleware to it, and do not add a route that a human session should reach.
+- **Authorization comes from the credential, never the request body.** Handlers derive org and owner from the authenticated token and resolve connections through `models.GetConnectionByNameOrID`, which is access-control aware. Nothing a caller writes in a body may widen what it reaches.
+- Do NOT put relay-specific behavior on a general endpoint (`/api/sessions`, `/api/reviews`) behind a flag or a user-agent check. If the behavior only makes sense for the relay, it belongs in this namespace.
+
 ### Product Analytics Events
 Analytics events are business KPIs measured downstream in PostHog/Mixpanel. Dropping or orphaning one fails **silently** — no compile error, no test failure, just a metric that quietly goes to zero. Treat them as a contract, not as incidental code.
 - Event names are constants in `gateway/analytics/events.go`. Emit them either via the `api.TrackRequest(analytics.EventX)` middleware in the route registration (`gateway/api/server.go`) or via `analytics.Track*` inside the handler. Never use a string literal — always the constant.

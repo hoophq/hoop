@@ -74,6 +74,17 @@ type Review struct {
 	ForceApprovalGroups   pq.StringArray `gorm:"column:force_approval_groups;type:text[]"`
 	MinApprovals          *int           `gorm:"column:min_approvals"`
 
+	// StatementHash is the hoop-inspect review gate's AUTHORIZATION key: a
+	// SHA-256 over the exact canonical statement text, computed by the relay
+	// from the bytes on the wire. Nil on every review created by any other
+	// path. See ClaimInspectReview.
+	StatementHash *string `gorm:"column:statement_hash"`
+
+	// RequestMarker is the agent-supplied correlation handle the create path
+	// dedupes on. It is REQUEST identity, never authorization: it decides
+	// how many reviews reach the queue, never what an approval permits.
+	RequestMarker *string `gorm:"column:request_marker"`
+
 	CreatedAt       time.Time         `gorm:"column:created_at"`
 	RevokedAt       *time.Time        `gorm:"column:revoked_at"`
 	TimeWindow      *ReviewTimeWindow `gorm:"column:time_window;serializer:json;"`

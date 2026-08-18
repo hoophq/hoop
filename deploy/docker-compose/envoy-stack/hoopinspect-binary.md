@@ -1,7 +1,7 @@
-# Running `hoop start inspect` from the agent image
+# Running `hoop start proxy` from the agent image
 
 The inspection relay ships **inside the images you already pull**. No separate
-binary, no separate image, no extra registry credential. `hoop start inspect`
+binary, no separate image, no extra registry credential. `hoop start proxy`
 is a subcommand of the same `hoop` binary that runs the agent, so any image at
 **1.126.0 or newer** can run it.
 
@@ -17,7 +17,7 @@ underneath a test you are in the middle of.
 
 ```bash
 docker pull hoophq/hoopdev:1.133.1
-docker run --rm --entrypoint hoop hoophq/hoopdev:1.133.1 start inspect --help
+docker run --rm --entrypoint hoop hoophq/hoopdev:1.133.1 start proxy --help
 ```
 
 Three ways to run it, cheapest first. All three use the same binary and the
@@ -75,7 +75,7 @@ running:
 ```bash
 docker run --rm -v "$PWD/config.yaml:/etc/hoop-inspect/config.yaml:ro" \
   --entrypoint hoop hoophq/hoopdev:1.133.1 \
-  start inspect --config /etc/hoop-inspect/config.yaml --validate
+  start proxy --config /etc/hoop-inspect/config.yaml --validate
 ```
 
 ```
@@ -103,11 +103,11 @@ Good for a first look; the relay dies with the container.
 docker cp config.yaml <agent-container>:/tmp/inspect.yaml
 
 # 2. Check it.
-docker exec <agent-container> hoop start inspect --config /tmp/inspect.yaml --validate
+docker exec <agent-container> hoop start proxy --config /tmp/inspect.yaml --validate
 
 # 3. Start the relay as a second process.
 docker exec -d <agent-container> \
-  sh -c 'hoop start inspect --config /tmp/inspect.yaml > /tmp/inspect.log 2>&1'
+  sh -c 'hoop start proxy --config /tmp/inspect.yaml > /tmp/inspect.log 2>&1'
 
 # 4. Confirm it is up.
 docker exec <agent-container> curl -s localhost:19000/healthz     # ok
@@ -118,9 +118,9 @@ On Kubernetes the same three steps, with `kubectl`:
 
 ```bash
 kubectl cp config.yaml <pod>:/tmp/inspect.yaml -c agent
-kubectl exec <pod> -c agent -- hoop start inspect --config /tmp/inspect.yaml --validate
+kubectl exec <pod> -c agent -- hoop start proxy --config /tmp/inspect.yaml --validate
 kubectl exec <pod> -c agent -- \
-  sh -c 'nohup hoop start inspect --config /tmp/inspect.yaml > /tmp/inspect.log 2>&1 &'
+  sh -c 'nohup hoop start proxy --config /tmp/inspect.yaml > /tmp/inspect.log 2>&1 &'
 ```
 
 Both are ephemeral by construction: a pod restart, a rollout or an OOM kill
@@ -143,7 +143,7 @@ COPY config.yaml /etc/hoop-inspect/config.yaml
 ENV HOOP_INSPECT_CONFIG=/etc/hoop-inspect/config.yaml
 
 # Fail the build, not the pod, when the config is wrong.
-RUN hoop start inspect --config /etc/hoop-inspect/config.yaml --validate
+RUN hoop start proxy --config /etc/hoop-inspect/config.yaml --validate
 
 CMD ["hoop", "start", "inspect"]
 ```

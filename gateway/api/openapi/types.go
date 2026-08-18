@@ -3824,3 +3824,45 @@ type MachineIdentityCredentialInfo struct {
 	Port              string     `json:"port,omitempty"`
 	CreatedAt         *time.Time `json:"created_at" readonly:"true"`
 }
+
+// RelayReviewClaimRequest asks the gateway to consume an approval for one
+// exact statement. Org and sandbox come from the credential, never from here.
+type RelayReviewClaimRequest struct {
+	// The connection the statement is running against. An approval is scoped
+	// to it, so an approval for appdb never authorizes payments-db.
+	Connection string `json:"connection" binding:"required" example:"appdb"`
+	// SHA-256 (64 lowercase hex chars) of the canonical statement text, as
+	// the relay computed it from the bytes on the wire.
+	StatementHash string `json:"statement_hash" binding:"required" example:"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"`
+}
+
+// RelayReviewRequest files a review for one statement, or returns the one
+// already filed under the same marker.
+type RelayReviewRequest struct {
+	// The connection the statement is running against.
+	Connection string `json:"connection" binding:"required" example:"appdb"`
+	// SHA-256 (64 lowercase hex chars) of the canonical statement text.
+	StatementHash string `json:"statement_hash" binding:"required" example:"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"`
+	// The canonical statement text a reviewer will read and approve.
+	Statement string `json:"statement" binding:"required" example:"DELETE FROM users WHERE id = 7"`
+	// An optional caller-supplied correlation handle. A PENDING review
+	// already filed under the same marker is returned instead of a new one.
+	// It is request identity only and never widens what an approval permits.
+	Marker string `json:"marker,omitempty" example:"task-42"`
+	// The risk level the analyzer assigned, shown to the reviewer.
+	RiskLevel string `json:"risk_level,omitempty" enums:"low,medium,high" example:"high"`
+	// The analyzer rule that flagged the statement.
+	Rule string `json:"rule,omitempty" example:"risky-writes"`
+}
+
+// RelayReview is one statement-level review.
+type RelayReview struct {
+	// The review identifier.
+	ReviewID string `json:"review_id" readonly:"true" example:"6b1e0a58-1b1f-4a5f-9f2f-6f3f3f3f3f3f"`
+	// The session the review is anchored to.
+	SessionID string `json:"session_id" readonly:"true" example:"1b1f4a5f-9f2f-6f3f-3f3f-3f3f6b1e0a58"`
+	// The review status. EXECUTED on a claim means this call consumed it.
+	Status string `json:"status" readonly:"true" enums:"PENDING,APPROVED,REJECTED,REVOKED,EXECUTED" example:"PENDING"`
+	// Where a human answers the review.
+	URL string `json:"url" readonly:"true" example:"https://use.hoop.dev/sessions/1b1f4a5f-9f2f-6f3f-3f3f-3f3f6b1e0a58"`
+}

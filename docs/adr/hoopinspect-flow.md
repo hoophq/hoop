@@ -1014,7 +1014,7 @@ query string is refused at startup: that view sits beside a read interface to
 the audit trail, and `laneView.OPA` already publishes a full URL, so the leak
 shape is real rather than hypothetical.
 
-### Actions, including the one that is refused
+### Actions
 
 | Action | Effect |
 |---|---|
@@ -1022,7 +1022,7 @@ shape is real rather than hypothetical.
 | `warn` | forward and record the risk. Observe-only for one tier of one rule |
 | `block` | deny, with the model's title in the protocol's error frame |
 | `defer` | forward and hand the decision to a decide-phase OPA reading `input.findings.ai_analysis.values.risk_level` |
-| `require_review` | **refused at startup** |
+| `require_review` | forward and hand the decision to the review gate, which refuses the statement and files a review a human answers |
 
 An unset level defaults to `allow`, so an operator opts into blocking a tier
 by naming it.
@@ -1034,14 +1034,22 @@ A rule deferring a level on a lane with no `policy.opa.url` is refused at
 startup, because deferring to a decision that does not exist allows everything,
 which is the opposite of what the operator asked for.
 
-`require_review` is declared in the enum and refused by name. Declaring it
-keeps the schema stable for when a review backend lands. Refusing it stops an
-operator from shipping a config that reads as a human-approval gate and
-forwards every statement. The gateway's inline path degrades the equivalent
-action to `warn` with no error, which is the failure this refusal exists to
-avoid. A decide-phase policy can express a review decision today, since Rego
-returns whatever shape its author wants; the missing piece is underneath the
-policy layer, and [Known limits](#known-limits) says what it is.
+`require_review` works the same way, one evaluator further along. The analyzer
+classifies and records the action; the gate that acts on it is
+`hoopinspect/review`, placed around the analyzer in two phases — a claim before
+it, so an approved retry costs no model call, and a decision after everything
+else, so a statement a local rule or a Rego policy already refused never
+troubles a person. It needs a top-level `review:` block naming the gateway and
+a token file, and a `connection` on the lane, because an approval is scoped to
+one connection. Either missing is refused at startup, for the same reason
+`defer` without OPA is: a guardrail that quietly forwards is worse than a
+startup error.
+
+Nothing is held on the wire. A statement with no approval is refused, the
+session ends carrying the review URL, and the caller polls the gateway and
+reconnects. See [Holding a statement for a
+human](../../hoopinspect/README.md#holding-a-statement-for-a-human-require_review)
+for the config, the exact-text key and the marker.
 
 ## Masking, and why postgres needed a second mechanism
 
@@ -1180,7 +1188,9 @@ each one refuses a config that would LOAD, evaluate and not do what it says.
 | An `ai_analysis` rule with no `analyzer` section | refused, naming the lane |
 | An `ai_analysis` rule with no `trigger` | refused: it would classify nothing, unless `policy.opa.gate` is on and the policy decides what gets classified |
 | An `ai_analysis` rule naming no action for any risk level | refused: every verdict would allow |
-| `require_review` as an action | refused: this build cannot hold a statement |
+| `require_review` with no `review` section | refused: the gate would forward every statement it was written to hold |
+| A `review` section no rule gates on | refused: the gateway credential would be read and never used |
+| `require_review` on a lane with no `connection` | refused: an approval is scoped to a connection |
 | `analyzer.provider` the binary does not link | refused, listing what it does link |
 | A credential file readable by group or other | refused, reporting the mode |
 | `send: redacted` or `refuse` with no `pii` section | refused: nothing to detect with |
@@ -1516,12 +1526,18 @@ that function, a Rego policy keyed on `input.context.principal` reads
   which is free, deterministic and immune to a vendor outage.
 - **The analyzer classifies requests only.** A response verdict cannot prevent
   a write that already ran, so read-side exposure stays masking's job.
-- **No human-review action in the relay.** `require_review` is declared and
-  refused at startup. A decide-phase policy can express a review decision today,
-  since Rego returns whatever shape its author wants, so the blocker sits below
-  the policy layer: holding a pgwire connection open while a person reads the
-  statement needs a review backend, a notice channel so psql explains why it is
-  hanging, and cancellation the `policy.Evaluator` interface cannot carry.
+- **A human review costs the caller a reconnect.** `require_review` ships, but
+  it never holds a connection: holding one for a person needs a notice channel
+  so psql explains the wait and a cancellation the `policy.Evaluator` interface
+  cannot carry, and it would burn a connection slot for minutes. The gate
+  refuses instead, and the caller polls the gateway and reconnects. A gated
+  lane therefore drops connections as normal operation, so the caller's pool
+  and backoff settings are part of the deployment contract.
+- **A review-gated statement must be a literal one.** The postgres codec does
+  not decode `Bind` and the mssql codec does not decode `sp_executesql`'s
+  parameters, so on either the gate would see the placeholder and never the
+  value. It refuses rather than granting an approval that would cover every
+  later binding. Decoding those parameters is the fix and is follow-up work.
 - **No SSH lane.** hoopinspect ships no SSH codec. The argument that lane made
   still holds: Envoy ships no SSH filter at any fidelity, so every service
   reached over SSH sits unpoliced by the Envoy and OPA layer.

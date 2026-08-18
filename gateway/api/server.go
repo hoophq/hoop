@@ -48,6 +48,7 @@ import (
 	apiplugins "github.com/hoophq/hoop/gateway/api/plugins"
 	apiproxymanager "github.com/hoophq/hoop/gateway/api/proxymanager"
 	apipublicserverinfo "github.com/hoophq/hoop/gateway/api/publicserverinfo"
+	relayapi "github.com/hoophq/hoop/gateway/api/relay"
 	apireports "github.com/hoophq/hoop/gateway/api/reports"
 	resourcesapi "github.com/hoophq/hoop/gateway/api/resources"
 	reviewapi "github.com/hoophq/hoop/gateway/api/review"
@@ -684,6 +685,29 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		api.TrackRequest(analytics.EventUpdateReview),
 		reviewHandler.ReviewByIdOrSid,
 	)
+
+	// The relay namespace: what an inline enforcement point running outside
+	// this process asks the control plane for. Today that is the
+	// statement-level review gate; config distribution, event shipping and
+	// instance registration would live here too.
+	//
+	// It is named for the ROLE rather than the component, so a relay being
+	// renamed does not move the API a separately-deployed binary speaks.
+	//
+	// Auth is on the GROUP, deliberately. Every route here is machine-only
+	// (an hpk_ API key or AI agent credential), and applying it once means a
+	// route added later cannot be reachable by a human session because
+	// somebody forgot a middleware. No role middleware: each handler derives
+	// org and owner from the token, and the access-control-aware connection
+	// lookup inside is the authorization boundary.
+	relayGroup := r.Group("/relay")
+	relayGroup.Use(r.AuthMiddleware, r.OnlyApiKeyAccess)
+	relayGroup.POST("/reviews/claim", relayapi.Claim)
+	relayGroup.POST("/reviews", relayapi.Create)
+	// Rate limited, and only this one: an agent waiting on a human has
+	// nothing to do but poll, and each poll is a query. Claim and create sit
+	// on the data path, where refusing a request refuses a statement.
+	relayGroup.GET("/reviews", relayapi.RateLimitPollMiddleware, relayapi.Get)
 
 	r.GET("/access-requests/rules",
 		apiroutes.AdminAndAuditorAccessRole,

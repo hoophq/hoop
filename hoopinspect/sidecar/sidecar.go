@@ -46,6 +46,7 @@ import (
 	"github.com/hoophq/hoopinspect/gate"
 	"github.com/hoophq/hoopinspect/policy"
 	"github.com/hoophq/hoopinspect/proxy"
+	"github.com/hoophq/hoopinspect/review"
 	"github.com/hoophq/hoopinspect/session"
 	"github.com/hoophq/hoopinspect/store"
 )
@@ -188,6 +189,11 @@ type LaneInfo struct {
 	// that matters to whoever is reading a validate output: they leave the
 	// process, they cost money, and they can be slow.
 	Analyzed int
+
+	// Review reports that this lane gates some statements on a human
+	// approval, which is worth saying out loud: it is the one mode where a
+	// correctly configured lane routinely closes healthy connections.
+	Review bool
 }
 
 // Summary renders a LaneInfo as the one-line mode description the -validate
@@ -205,6 +211,9 @@ func (l LaneInfo) Summary() string {
 	}
 	if l.Analyzed > 0 {
 		mode += fmt.Sprintf(" + %d ai rule(s)", l.Analyzed)
+	}
+	if l.Review {
+		mode += " + human review"
 	}
 	return mode
 }
@@ -229,7 +238,13 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 	if err := verifyAnalyzer(ac); err != nil {
 		return nil, err
 	}
-	lanes, err := buildLanes(cfg, det, ac)
+	// Reads the token file, so -validate catches a missing or world-readable
+	// credential before a deploy rather than on the first gated statement.
+	rd, err := setupReview(cfg)
+	if err != nil {
+		return nil, err
+	}
+	lanes, err := buildLanes(cfg, det, ac, rd)
 	if err != nil {
 		return nil, err
 	}
@@ -243,6 +258,7 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 			OPA:       ln.opaURL != "",
 			Masking:   ln.masker != nil,
 			Analyzed:  len(ln.analyzed),
+			Review:    ln.reviewGate != nil,
 		})
 	}
 	return out, nil
@@ -304,7 +320,18 @@ func Run(cfg *Config, det Plugin) error {
 			"fail_open", cfg.Analyzer.failOpen())
 	}
 
-	lanes, err := buildLanes(cfg, det, analyzerDeps)
+	reviewDeps, err := setupReview(cfg)
+	if err != nil {
+		return err
+	}
+	if reviewDeps != nil {
+		log.Info("human review gate attached",
+			"gateway", reviewDeps.client.Endpoint(),
+			"require_marker", reviewDeps.cfg.RequireMarker,
+			"pending_cache_sec", reviewDeps.cfg.PollCacheTTLSec)
+	}
+
+	lanes, err := buildLanes(cfg, det, analyzerDeps, reviewDeps)
 	if err != nil {
 		return err
 	}
@@ -411,6 +438,12 @@ type lane struct {
 	// an operator needs to see that a lane is sending statements to a model.
 	analyzed []string
 
+	// reviewGate is the lane's human-approval gate, nil when nothing on the
+	// lane gates on one. Held here so /stats can report how many statements
+	// it refused and how many approvals it consumed, which is the number an
+	// operator watches in the first week of a review-gated lane.
+	reviewGate *review.Gate
+
 	// captureBody reports whether this lane's codec exposes request bodies,
 	// which decides whether HTTP analysis has anything to read.
 	captureBody bool
@@ -421,7 +454,7 @@ type lane struct {
 // Exhaustive rather than fail-fast, matching Validate: a config with three
 // broken lanes reports three problems in one run, so you do not fix a fleet
 // config one error per restart.
-func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
+func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps, rd *reviewDeps) ([]lane, error) {
 	out := make([]lane, 0, len(cfg.Listeners))
 	var problems []string
 
@@ -436,7 +469,12 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 			continue
 		}
 
-		pol, err := buildPolicy(pc, det, ac)
+		reviewGate, err := buildReviewGate(pc, rd)
+		if err != nil {
+			problems = append(problems, name+": "+err.Error())
+			continue
+		}
+		pol, err := buildPolicy(pc, det, ac, reviewGate)
 		if err != nil {
 			problems = append(problems, name+": "+err.Error())
 			continue
@@ -453,6 +491,7 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 			name:         name,
 			policy:       pol,
 			masker:       masker,
+			reviewGate:   reviewGate,
 			codecFactory: httpCodecFactory(proto, lc.HTTP),
 			captureBody:  lc.HTTP != nil && lc.HTTP.CaptureBody,
 		}
@@ -698,6 +737,13 @@ func serveAdmin(
 			Active int64  `json:"active"`
 			Total  int64  `json:"total"`
 			Denied int64  `json:"denied"`
+
+			// Review is the approval gate's own counters, absent on a lane
+			// that has none. A review-gated lane refuses connections as
+			// normal operation, so "denied" alone cannot tell an operator
+			// whether the gate is working or the gateway is down; approvals
+			// against errors is the pair that can.
+			Review *review.Stats `json:"review,omitempty"`
 		}
 		out := make([]stat, 0, len(servers))
 		for i, s := range servers {
@@ -709,10 +755,15 @@ func serveAdmin(
 			// servers and lanes are built in lockstep from cfg.Listeners, so
 			// the index is the join. Each entry carries its lane name so you
 			// can tell which of two postgres listeners denied something.
-			out = append(out, stat{
+			entry := stat{
 				Name: lanes[i].name, Addr: a,
 				Active: active, Total: total, Denied: denied,
-			})
+			}
+			if rg := lanes[i].reviewGate; rg != nil {
+				rs := rg.Stats()
+				entry.Review = &rs
+			}
+			out = append(out, entry)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
@@ -732,10 +783,18 @@ func serveAdmin(
 	// this endpoint already sits beside a read interface to the audit trail.
 	mux.HandleFunc("GET /config", func(w http.ResponseWriter, r *http.Request) {
 		type laneView struct {
-			Name      string   `json:"name"`
-			Protocol  string   `json:"protocol"`
-			Listen    string   `json:"listen"`
-			Upstream  string   `json:"upstream"`
+			Name     string `json:"name"`
+			Protocol string `json:"protocol"`
+			Listen   string `json:"listen"`
+			Upstream string `json:"upstream"`
+
+			// Connection is the operator-facing resource name. It is
+			// reported because it is not cosmetic on a review-gated lane:
+			// an approval is scoped to it, so a lane whose connection does
+			// not match one the gateway knows refuses every gated
+			// statement, and this view is where that is visible.
+			Connection string `json:"connection,omitempty"`
+
 			Enforcing bool     `json:"enforcing"`
 			Rules     []string `json:"rules"`
 			OPA       string   `json:"opa,omitempty"`
@@ -749,6 +808,12 @@ func serveAdmin(
 			// and cannot answer from the config file alone.
 			AIRules     []string `json:"ai_rules,omitempty"`
 			CaptureBody bool     `json:"capture_body,omitempty"`
+
+			// Review renders the gate's settings — gateway HOST, never a
+			// path and never the token, which this process holds as an
+			// unprintable Secret and which the config only ever named by
+			// file path.
+			Review string `json:"review,omitempty"`
 		}
 		out := make([]laneView, 0, len(lanes))
 		for _, ln := range lanes {
@@ -757,12 +822,16 @@ func serveAdmin(
 				Protocol:    ln.cfg.Protocol,
 				Listen:      ln.cfg.Listen,
 				Upstream:    ln.cfg.Upstream,
+				Connection:  ln.cfg.Connection,
 				Enforcing:   ln.policy != nil,
 				Rules:       ln.rules,
 				OPA:         ln.opaURL,
 				Masking:     ln.masker != nil,
 				AIRules:     ln.analyzed,
 				CaptureBody: ln.captureBody,
+			}
+			if ln.reviewGate != nil {
+				v.Review = ln.reviewGate.Describe()
 			}
 			if v.Rules == nil {
 				v.Rules = []string{} // render [] rather than null

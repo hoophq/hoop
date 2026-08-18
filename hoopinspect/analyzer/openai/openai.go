@@ -184,17 +184,13 @@ type response struct {
 	} `json:"error"`
 }
 
-const maxErrorBytes = 4 << 10
-
 // parseResponse turns an HTTP response into a Result.
 //
-// As with Anthropic, a non-2xx body is drained and discarded rather than
-// propagated: these APIs echo the offending request often enough that
-// forwarding the body would copy the statement into the relay's logs.
+// As with Anthropic, a non-2xx becomes an analyzer.ProviderHTTPError carrying
+// a bounded, sanitized prefix of the body.
 func parseResponse(resp *http.Response) (*analyzer.Result, error) {
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		_, _ = io.CopyN(io.Discard, resp.Body, maxErrorBytes)
-		return nil, fmt.Errorf("analyzer/openai: provider returned %s", resp.Status)
+		return nil, analyzer.NewProviderHTTPError("analyzer/openai", resp)
 	}
 
 	var out response

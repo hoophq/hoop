@@ -48,8 +48,14 @@ func (t Trigger) IsZero() bool {
 	return len(t.Operations) == 0 && len(t.Tables) == 0 && len(t.Resources) == 0
 }
 
-// matches reports whether stmt should be classified.
-func (t Trigger) matches(stmt hoopinspect.Statement) bool {
+// Matches reports whether stmt should be classified.
+//
+// Exported because the review gate has to answer the same question one
+// evaluator earlier in the chain: it claims an existing approval BEFORE the
+// analyzer runs, and doing that on every statement would be a gateway
+// round-trip per query. It narrows to the same set with the same triggers, and
+// a second copy of this matcher is how the two would drift apart.
+func (t Trigger) Matches(stmt hoopinspect.Statement) bool {
 	for _, op := range t.Operations {
 		if stmt.Operation == op {
 			return true
@@ -204,12 +210,6 @@ func New(cfg Config) (*Evaluator, error) {
 		if !action.Valid() {
 			return nil, fmt.Errorf("hoopinspect/analyzer: unknown action %q for risk %q", action, level)
 		}
-		if action == ActionRequireReview {
-			return nil, fmt.Errorf(
-				"hoopinspect/analyzer: action %q is not supported by this build: "+
-					"holding a statement for human approval needs a review backend, "+
-					"and this relay has none", ActionRequireReview)
-		}
 	}
 	prompt := BuildSystemPrompt(cfg.Guidance)
 	return &Evaluator{
@@ -254,7 +254,7 @@ func (e *Evaluator) EvaluateWith(stmt hoopinspect.Statement, ec *policy.EvalCont
 		level = res.RiskLevel
 		action = e.cfg.Actions.actionFor(level)
 	}
-	e.report(ec, status, level)
+	e.report(ec, status, level, action)
 
 	switch status {
 	case StatusRefused:
@@ -298,9 +298,11 @@ func (e *Evaluator) EvaluateWith(stmt hoopinspect.Statement, ec *policy.EvalCont
 	notes := e.notes(status, string(level), string(action))
 
 	if action != ActionBlock {
-		// Allow, warn and defer all forward. They differ in the record,
-		// and defer differs in who decides next: the level is in the
-		// finding, so a decide-phase policy sees it and answers.
+		// Allow, warn, defer and require_review all forward from HERE.
+		// They differ in the record, and the last two differ in who
+		// decides next: the level AND the action are on the finding, so a
+		// decide-phase policy or the review gate sees them and answers.
+		// Block is the only action this evaluator enforces itself.
 		return policy.Verdict{Annotations: notes}
 	}
 
@@ -333,7 +335,14 @@ func (e *Evaluator) EvaluateWith(stmt hoopinspect.Statement, ec *policy.EvalCont
 // ANNOTATION is a separate channel that keeps the highest seen; the audit
 // record still shows the high while the policy is told that this source
 // could not finish.
-func (e *Evaluator) report(ec *policy.EvalContext, status string, level RiskLevel) {
+//
+// The action rides along with the level, and breaks a TIE between two equally
+// answered rules at the same level by keeping the stricter one. Without that
+// tie-break the fold is first-writer-wins, so a lane with `high: warn` on one
+// rule and `high: require_review` on another would silently drop the review
+// gate whenever the warn rule happened to run first — enforcement decided by
+// slice order, which is the failure this package refuses everywhere else.
+func (e *Evaluator) report(ec *policy.EvalContext, status string, level RiskLevel, action Action) {
 	if ec == nil {
 		return
 	}
@@ -344,7 +353,10 @@ func (e *Evaluator) report(ec *policy.EvalContext, status string, level RiskLeve
 		Reason: statusReason(status),
 	}
 	if level != "" {
-		f.Values = map[string]any{"risk_level": string(level)}
+		f.Values = map[string]any{
+			FindingRiskLevel: string(level),
+			FindingAction:    string(action),
+		}
 	}
 
 	if prev, ok := ec.Finding(Source); ok {
@@ -352,7 +364,7 @@ func (e *Evaluator) report(ec *policy.EvalContext, status string, level RiskLeve
 		case policy.FindingRank(prev.Status) > policy.FindingRank(f.Status):
 			f = prev
 		case policy.FindingRank(prev.Status) == policy.FindingRank(f.Status):
-			if prevLevel(prev).rank() >= level.rank() {
+			if keepPrevious(prev, level, action) {
 				f = prev
 			}
 		}
@@ -366,9 +378,23 @@ func (e *Evaluator) report(ec *policy.EvalContext, status string, level RiskLeve
 	ec.Findings[Source] = f
 }
 
+// keepPrevious decides which of two equally answered findings survives:
+// highest risk first, then strictest action.
+func keepPrevious(prev policy.Finding, level RiskLevel, action Action) bool {
+	if r := prevLevel(prev).rank(); r != level.rank() {
+		return r > level.rank()
+	}
+	return prevAction(prev).actionRank() >= action.actionRank()
+}
+
 func prevLevel(f policy.Finding) RiskLevel {
-	s, _ := f.Values["risk_level"].(string)
+	s, _ := f.Values[FindingRiskLevel].(string)
 	return RiskLevel(s)
+}
+
+func prevAction(f policy.Finding) Action {
+	s, _ := f.Values[FindingAction].(string)
+	return Action(s)
 }
 
 // notes builds the annotation set for one evaluation.
@@ -400,7 +426,7 @@ func (e *Evaluator) wanted(stmt hoopinspect.Statement, ec *policy.EvalContext) b
 	if want, stated := ec.WantsRun(Source); stated {
 		return want
 	}
-	return e.cfg.Trigger.matches(stmt)
+	return e.cfg.Trigger.Matches(stmt)
 }
 
 // classify runs the trigger, cache, budget and provider for one statement.
