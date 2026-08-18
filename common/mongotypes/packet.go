@@ -49,6 +49,11 @@ func (p *Packet) Encode() []byte {
 
 func (p *Packet) Dump() { fmt.Println(hex.Dump(p.Encode())) }
 
+// MaxMessageSize bounds a single wire-protocol message. MongoDB's own limit
+// for a reply is 48 MB; anything beyond that means the stream desynchronised
+// and the length prefix is garbage, so we refuse rather than allocate it.
+const MaxMessageSize = 48 * 1024 * 1024
+
 func Decode(r io.Reader) (*Packet, error) {
 	var header [16]byte
 	_, err := io.ReadFull(r, header[:])
@@ -62,7 +67,13 @@ func Decode(r io.Reader) (*Packet, error) {
 		ResponseTo:    binary.LittleEndian.Uint32(header[8:12]),
 		OpCode:        binary.LittleEndian.Uint32(header[12:16]),
 	}
-	pktLen := int(p.MessageLength - 16)
+	// MessageLength counts the 16-byte header itself. Validate before
+	// subtracting: an undersized value would underflow the unsigned length
+	// into a multi-gigabyte allocation.
+	if p.MessageLength < 16 || p.MessageLength > MaxMessageSize {
+		return nil, fmt.Errorf("invalid mongodb message length: %d", p.MessageLength)
+	}
+	pktLen := int(p.MessageLength) - 16
 	frame := make([]byte, pktLen)
 	_, err = io.ReadFull(r, frame)
 	if err != nil {
@@ -70,6 +81,29 @@ func Decode(r io.Reader) (*Packet, error) {
 	}
 	p.Frame = frame
 	return &p, nil
+}
+
+// CopyBuffer re-frames the MongoDB stream from src onto dst, issuing exactly
+// one dst.Write per wire-protocol message.
+//
+// dst is a packet-stream writer whose Write boundaries become hoop packet
+// boundaries, so this cannot be an io.Copy: the agent-side proxy decodes one
+// message per write it receives, and arbitrary TCP chunking would desync it.
+//
+// It returns nil when src ends cleanly on a message boundary.
+func CopyBuffer(dst io.Writer, src io.Reader) error {
+	for {
+		pkt, err := Decode(src)
+		if err != nil {
+			if err == io.EOF {
+				return nil
+			}
+			return err
+		}
+		if _, err := dst.Write(pkt.Encode()); err != nil {
+			return err
+		}
+	}
 }
 
 // DecodeOpMsgToJSON with return json content separated by break line for

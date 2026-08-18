@@ -46,6 +46,10 @@ import (
 
 	"github.com/hoophq/hoop/common/grpc"
 	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/common/mongotypes"
+	"github.com/hoophq/hoop/common/mssqltypes"
+	"github.com/hoophq/hoop/common/mysqltypes"
+	"github.com/hoophq/hoop/common/pgtypes"
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
@@ -188,9 +192,25 @@ func runPipe(ctx context.Context, transport pb.ClientTransport, local io.ReadWri
 }
 
 // packetProfile captures how a connection type maps onto the gateway's
-// packet families. TCP-style protocols share one family; httpproxy has
-// its own (the agent routes it to the HTTP-parsing libhoop proxy
-// instead of a raw upstream socket).
+// packet families, and how the client's byte stream must be framed onto
+// them.
+//
+// The choice of family decides who authenticates to the upstream:
+//
+//   - The protocol families (PG/MySQL/MSSQL/MongoDB/Oracle) route to the
+//     agent's libhoop proxy, which terminates the client's authentication
+//     locally and re-authenticates upstream with the connection's stored
+//     secrets. That is what lets a client present the fixed local
+//     noop/noop placeholder (DEP-142) and what makes DLP, guardrails and
+//     query-level audit work.
+//   - The raw TCP family routes to the agent's byte relay, which dials the
+//     upstream and copies verbatim. The client faces the database's own
+//     auth challenge, so it must hold real credentials. Correct for the
+//     `tcp` subtype (an opaque user-defined upstream), wrong for anything
+//     hoop knows the protocol of.
+//
+// httpproxy has its own family (the agent routes it to the HTTP-parsing
+// libhoop proxy instead of a raw upstream socket).
 type packetProfile struct {
 	// agentWrite is the packet type for local -> gateway data.
 	agentWrite pb.PacketType
@@ -198,24 +218,73 @@ type packetProfile struct {
 	clientWrite pb.PacketType
 	// sendTCPOpen indicates the agent needs an explicit "dial your
 	// upstream now" packet (SpecTCPServerConnectKey) before any data.
-	// The httpproxy handler has no such handshake: it lazily builds
-	// the proxy on the first data packet.
+	// Only the raw TCP relay has this handshake; the protocol proxies and
+	// the httpproxy handler build their upstream lazily on first data.
 	sendTCPOpen bool
 	// isHTTPProxy marks sessions whose spec must carry
 	// SpecHttpProxyBaseUrl on every write.
 	isHTTPProxy bool
+	// initWrite, when true, sends one empty data packet right after session
+	// open. The MySQL proxy is server-speaks-first: it must be constructed
+	// before it can emit the server greeting the client waits for.
+	initWrite bool
+	// frame re-frames the local->gateway byte stream into whole protocol
+	// packets, one per gateway packet. Nil means forward raw chunks.
+	//
+	// This matters because the agent's protocol proxies decode one packet
+	// from each write they receive; feeding them arbitrary TCP chunks
+	// desynchronises the decoder. Mirrors what the `hoop connect` local
+	// proxies do (client/proxy).
+	frame func(dst io.Writer, src io.Reader) error
 }
 
 // profileFor returns the packet profile for a hoop connection type, or
 // ok=false when the type is not tunnelable.
 func profileFor(connType string) (packetProfile, bool) {
 	switch pb.ConnectionType(connType) {
-	case pb.ConnectionTypePostgres,
-		pb.ConnectionTypeMySQL,
-		pb.ConnectionTypeMSSQL,
-		pb.ConnectionTypeMongoDB,
-		pb.ConnectionTypeOracleDB,
-		pb.ConnectionTypeTCP:
+	case pb.ConnectionTypePostgres:
+		return packetProfile{
+			agentWrite:  pbagent.PGConnectionWrite,
+			clientWrite: pbclient.PGConnectionWrite,
+			frame: func(dst io.Writer, src io.Reader) error {
+				// The cancel-request hook is for the `hoop connect` proxy,
+				// which multiplexes many client connections over one
+				// session and has to match a cancel to its target backend.
+				// A tunnel pipe is one flow, so there is nothing to match:
+				// forward the cancel request as-is.
+				_, err := pgtypes.CopyBuffer(dst, src, nil)
+				return err
+			},
+		}, true
+	case pb.ConnectionTypeMySQL:
+		return packetProfile{
+			agentWrite:  pbagent.MySQLConnectionWrite,
+			clientWrite: pbclient.MySQLConnectionWrite,
+			initWrite:   true,
+			frame:       mysqltypes.CopyBuffer,
+		}, true
+	case pb.ConnectionTypeMSSQL:
+		return packetProfile{
+			agentWrite:  pbagent.MSSQLConnectionWrite,
+			clientWrite: pbclient.MSSQLConnectionWrite,
+			frame:       mssqltypes.CopyBuffer,
+		}, true
+	case pb.ConnectionTypeMongoDB:
+		return packetProfile{
+			agentWrite:  pbagent.MongoDBConnectionWrite,
+			clientWrite: pbclient.MongoDBConnectionWrite,
+			frame:       mongotypes.CopyBuffer,
+		}, true
+	case pb.ConnectionTypeOracleDB:
+		// The Oracle proxy re-frames TNS packets itself (it buffers partial
+		// packets across writes), so the relay forwards raw chunks.
+		return packetProfile{
+			agentWrite:  pbagent.OracleConnectionWrite,
+			clientWrite: pbclient.OracleConnectionWrite,
+		}, true
+	case pb.ConnectionTypeTCP:
+		// A generic TCP connection has no protocol hoop can parse and no
+		// credentials to inject: the byte relay is the correct handler.
 		return packetProfile{
 			agentWrite:  pbagent.TCPConnectionWrite,
 			clientWrite: pbclient.TCPConnectionWrite,
@@ -324,64 +393,122 @@ func pumpBytes(ctx context.Context, transport pb.ClientTransport, local io.ReadW
 		}
 	}
 
+	if prof.initWrite {
+		// Construct the agent-side proxy before the client says anything.
+		// MySQL is server-speaks-first: the client waits for the server
+		// greeting, which only exists once the proxy has connected
+		// upstream. Without this the flow deadlocks on both sides waiting
+		// to read. Mirrors the `hoop connect` MySQL proxy's initial
+		// zero-length write.
+		if err := transport.Send(&pb.Packet{
+			Type: prof.agentWrite.String(),
+			Spec: spec,
+		}); err != nil {
+			return fmt.Errorf("send %s init: %w", prof.agentWrite, err)
+		}
+	}
+
 	transport.StartKeepAlive()
 
 	// Track who finished first so we know what error (if any) to surface.
 	var (
 		once    sync.Once
 		exitErr error
+		done    = make(chan struct{})
 	)
 	finish := func(err error) {
-		once.Do(func() { exitErr = err })
+		once.Do(func() {
+			exitErr = err
+			close(done)
+		})
 	}
 
 	pumpCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	var wg sync.WaitGroup
-	wg.Add(2)
+	// sendClose tells the agent to tear its upstream down. It must reach the
+	// gateway exactly once on every exit path, including the one where the
+	// gateway side ends first and this function returns before the writer
+	// goroutine has finished — hence the Once rather than a plain call in the
+	// writer. Send is mutex-guarded (common/grpc.mutexClient), so racing
+	// goroutines are safe; if the stream is already gone the Send is a
+	// harmless no-op.
+	var closeOnce sync.Once
+	sendClose := func() {
+		closeOnce.Do(func() {
+			_ = transport.Send(&pb.Packet{
+				Type: pbagent.TCPConnectionClose,
+				Spec: spec,
+			})
+		})
+	}
 
 	// local -> gateway
 	go func() {
-		defer wg.Done()
 		writer := pb.NewStreamWriter(transport, prof.agentWrite, spec)
-		_, err := io.Copy(writer, local)
-		// Tell the agent to close its upstream socket. We send this
-		// regardless of how io.Copy ended (EOF, error, or peer close
-		// canceled our context): the gateway needs a definitive signal
-		// that the client side is done. If the gateway already closed
-		// the stream, the Send is a harmless no-op.
-		_ = transport.Send(&pb.Packet{
-			Type: pbagent.TCPConnectionClose,
-			Spec: spec,
-		})
+		// Protocol families need whole packets per write (see
+		// packetProfile.frame); the raw relay and Oracle take chunks
+		// as they come.
+		var err error
+		if prof.frame != nil {
+			err = prof.frame(writer, local)
+		} else {
+			_, err = io.Copy(writer, local)
+		}
+		// Signal regardless of how the copy ended (EOF, error, or peer close
+		// cancelling our context): the gateway needs a definitive signal that
+		// the client side is done.
+		sendClose()
 		if err != nil && !isClosedConnErr(err) {
 			finish(fmt.Errorf("local->gateway: %w", err))
+			return
 		}
-		cancel()
+		finish(nil)
 	}()
 
 	// gateway -> local
 	go func() {
-		defer wg.Done()
 		err := readFromGateway(pumpCtx, transport, local, prof.clientWrite)
+		// Closing the local conn unblocks the local->gateway copy when the
+		// gateway side died first.
+		_ = local.Close()
 		if err != nil && !errors.Is(err, io.EOF) && !isClosedConnErr(err) {
 			finish(fmt.Errorf("gateway->local: %w", err))
+			return
 		}
-		// Closing the local conn unblocks the local->gateway io.Copy
-		// when the gateway side died first.
-		_ = local.Close()
-		cancel()
+		finish(nil)
 	}()
 
-	wg.Wait()
+	// Return as soon as EITHER direction terminates; do not wait for both.
+	//
+	// The reader is parked in transport.Recv(), which honours neither ctx nor
+	// a half-closed session: the protocol proxies (unlike the raw TCP relay)
+	// do not echo a close packet back to the client when the agent tears their
+	// upstream down, so nothing would ever wake it. The caller's deferred
+	// transport.Close() is what releases it — which cannot happen if we block
+	// here.
+	select {
+	case <-done:
+	case <-ctx.Done():
+		finish(ctx.Err())
+	}
+	// Unblock whichever goroutine is still running and respects pumpCtx, and
+	// make sure the agent heard about the close even if the writer never got
+	// that far.
+	cancel()
+	_ = local.Close()
+	sendClose()
 	return exitErr
 }
 
 // readFromGateway loops on Recv() and writes packet payloads to local.
 // It returns when the stream ends or a non-recoverable packet arrives.
 // dataType is the packet family carrying gateway -> local data for this
-// session (TCP or httpproxy writes).
+// session (the connection's protocol family, raw TCP, or httpproxy writes).
+//
+// TCPConnectionClose is the close signal for every family, protocol proxies
+// included: the agent keys its connection store by sessionID:connectionID
+// regardless of which proxy owns the entry.
 func readFromGateway(ctx context.Context, transport pb.ClientTransport, local io.Writer, dataType pb.PacketType) error {
 	for {
 		if err := ctx.Err(); err != nil {

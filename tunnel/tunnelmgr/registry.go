@@ -57,6 +57,13 @@ func (r *connRegistry) subTypeOf(name string) (string, bool) {
 type ConnInfo struct {
 	Name    string
 	SubType string
+	// Username and Password are the fixed local credentials a native
+	// client presents to reach this connection through the tunnel
+	// (DEP-142). They are placeholders accepted by the agent's protocol
+	// proxy, never the connection's real secrets — see credentials.go.
+	// Both are empty for subtypes that authenticate out of band.
+	Username string
+	Password string
 }
 
 // activeConnections returns a snapshot of the currently-active
@@ -68,9 +75,19 @@ func (r *connRegistry) activeConnections() []ConnInfo {
 	defer r.mu.RUnlock()
 	out := make([]ConnInfo, 0, len(r.entries))
 	for name, e := range r.entries {
-		if e.active {
-			out = append(out, ConnInfo{Name: name, SubType: e.subType})
+		if !e.active {
+			continue
 		}
+		// Credentials are derived from the subtype rather than stored:
+		// they are fixed per protocol, so there is nothing to keep in
+		// sync across refreshes.
+		username, password := credentialsFor(e.subType)
+		out = append(out, ConnInfo{
+			Name:     name,
+			SubType:  e.subType,
+			Username: username,
+			Password: password,
+		})
 	}
 	return out
 }

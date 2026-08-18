@@ -93,6 +93,21 @@ type Connection struct {
 	// connect to (5432 for postgres, etc.). Zero for `tcp` subtype,
 	// which accepts any user-defined upstream port.
 	ExpectedPort uint16 `json:"expected_port"`
+
+	// Username and Password are the fixed credentials a native client
+	// presents to reach this connection through the tunnel.
+	//
+	// They are NOT the connection's real credentials, and not the
+	// gateway's rotating token: the agent's protocol proxy terminates
+	// the client's authentication locally and re-authenticates upstream
+	// with the secrets stored on the connection. These placeholders are
+	// therefore stable, safe to display, and only usable through this
+	// daemon's tunnel.
+	//
+	// Both are empty for subtypes that authenticate out of band (`tcp`,
+	// whose upstream protocol hoop does not parse).
+	Username string `json:"username"`
+	Password string `json:"password"`
 }
 
 // ConnectionsResponse wraps the connection list in an object so we can
