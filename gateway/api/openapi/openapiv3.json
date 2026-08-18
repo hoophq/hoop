@@ -3529,6 +3529,38 @@
           "IdpProviderUnknown"
         ]
       },
+      "openapi.JiraAssetObjectTypeAttributes": {
+        "properties": {
+          "items": {
+            "description": "The object-reference attributes found",
+            "items": {
+              "$ref": "#/components/schemas/openapi.JiraAssetObjectTypeRefAttribute"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.JiraAssetObjectTypeRefAttribute": {
+        "properties": {
+          "attribute_name": {
+            "description": "Name of the reference attribute, usable in AQL clauses",
+            "example": "Product",
+            "type": "string"
+          },
+          "object_type_id": {
+            "description": "The object type owning the reference attribute",
+            "example": "77",
+            "type": "string"
+          },
+          "reference_object_type_id": {
+            "description": "The object type the attribute points at",
+            "example": "76",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "openapi.JiraAssetObjectValue": {
         "properties": {
           "id": {
@@ -13753,6 +13785,14 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "description": "Additional AQL expression to filter values with",
+            "in": "query",
+            "name": "aql",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -13798,6 +13838,68 @@
           }
         },
         "summary": "Get Asset Objects",
+        "tags": [
+          "Jira"
+        ]
+      }
+    },
+    "/integrations/jira/assets/objecttypes/attributes": {
+      "get": {
+        "description": "List the object-reference attributes of Jira Service Management (JSM) Assets object types. These schema edges drive the CMDB dropdown cascade filters.",
+        "parameters": [
+          {
+            "description": "Comma-separated list of object type ids",
+            "in": "query",
+            "name": "object_type_ids",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.JiraAssetObjectTypeAttributes"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get Asset Object Type Reference Attributes",
         "tags": [
           "Jira"
         ]

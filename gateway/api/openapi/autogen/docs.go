@@ -4240,6 +4240,12 @@ const docTemplate = `{
                         "description": "Specify a name to filter",
                         "name": "name",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Additional AQL expression to filter values with",
+                        "name": "aql",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -4247,6 +4253,53 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/openapi.JiraAssetObjects"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/integrations/jira/assets/objecttypes/attributes": {
+            "get": {
+                "description": "List the object-reference attributes of Jira Service Management (JSM) Assets object types. These schema edges drive the CMDB dropdown cascade filters.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Jira"
+                ],
+                "summary": "Get Asset Object Type Reference Attributes",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Comma-separated list of object type ids",
+                        "name": "object_type_ids",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.JiraAssetObjectTypeAttributes"
                         }
                     },
                     "400": {
@@ -14103,6 +14156,38 @@ const docTemplate = `{
                 "IdpProviderJumpCloud",
                 "IdpProviderUnknown"
             ]
+        },
+        "openapi.JiraAssetObjectTypeAttributes": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "description": "The object-reference attributes found",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.JiraAssetObjectTypeRefAttribute"
+                    }
+                }
+            }
+        },
+        "openapi.JiraAssetObjectTypeRefAttribute": {
+            "type": "object",
+            "properties": {
+                "attribute_name": {
+                    "description": "Name of the reference attribute, usable in AQL clauses",
+                    "type": "string",
+                    "example": "Product"
+                },
+                "object_type_id": {
+                    "description": "The object type owning the reference attribute",
+                    "type": "string",
+                    "example": "77"
+                },
+                "reference_object_type_id": {
+                    "description": "The object type the attribute points at",
+                    "type": "string",
+                    "example": "76"
+                }
+            }
         },
         "openapi.JiraAssetObjectValue": {
             "type": "object",
