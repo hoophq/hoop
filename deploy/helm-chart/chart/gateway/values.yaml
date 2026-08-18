@@ -116,6 +116,8 @@ dataMasking:
       requests:
         cpu: 100m
         memory: 64Mi
+    # -- Additional labels to add to the presidio-envoy-proxy pod
+    podLabels: {}
 
 ## Set additional pod labels
 ##
