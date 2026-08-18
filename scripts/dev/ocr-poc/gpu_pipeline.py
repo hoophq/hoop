@@ -1822,6 +1822,11 @@ class GpuResidentStore:
         self.evict_expired()
         full_snapshot = bool(request.flags & FRAME_FULL_SNAPSHOT)
         state = self._sessions.get(session_key)
+        if full_snapshot and state is not None and sequence < state.sequence:
+            # A delayed/replayed snapshot must not replace newer resident
+            # pixels or move the expected sequence backward. An equal/newer
+            # snapshot remains an authoritative resynchronization point.
+            raise ResidentSequenceError(state.sequence)
         if full_snapshot:
             # Preserve the agent's globally monotonic sequence when state
             # moves between Uvicorn workers. Resetting to zero can make stale,

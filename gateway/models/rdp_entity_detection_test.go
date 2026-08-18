@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 )
 
 func TestPersistRDPGuardrailViolationIsAtomicAndIdempotent(t *testing.T) {
@@ -46,8 +47,9 @@ func TestPersistRDPGuardrailViolationIsAtomicAndIdempotent(t *testing.T) {
 	}}
 
 	for attempt := 0; attempt < 2; attempt++ {
-		if err := models.PersistRDPGuardrailViolation(
+		if err := services.PersistRDPGuardrailViolation(
 			context.Background(),
+			models.DB,
 			testOrgID,
 			sessionID,
 			reportID,

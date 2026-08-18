@@ -30,7 +30,7 @@ func NewAgentCommunicator(conn *websocket.Conn) ConnectionCommunicator {
 func (a *agentCommunicator) Send(data []byte) error {
 	a.writeMu.Lock()
 	defer a.writeMu.Unlock()
-	if err := a.conn.SetWriteDeadline(time.Now().Add(agentWriteTimeout)); err != nil {
+	if err := a.conn.SetWriteDeadline(time.Now().UTC().Add(agentWriteTimeout)); err != nil {
 		return err
 	}
 	return a.conn.WriteMessage(websocket.BinaryMessage, data)

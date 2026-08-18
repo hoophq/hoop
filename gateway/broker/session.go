@@ -619,7 +619,7 @@ func (s *sessionConnWrapper) Write(b []byte) (n int, err error) {
 	s.mu.Lock()
 	deadline := s.writeDeadline
 	s.mu.Unlock()
-	if !deadline.IsZero() && !time.Now().Before(deadline) {
+	if !deadline.IsZero() && !time.Now().UTC().Before(deadline) {
 		return 0, context.DeadlineExceeded
 	}
 	if err := s.session.SendRawDataToAgent(b); err != nil {

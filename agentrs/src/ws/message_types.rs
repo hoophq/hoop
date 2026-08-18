@@ -49,11 +49,11 @@ impl FromStr for MessageType {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "session_started" => Ok(MessageType::SessionStarted),
-            "data" => Ok(MessageType::Data),
-            "guardrails_violation" => Ok(MessageType::GuardrailsViolation),
-            "guardrails_violation_ack" => Ok(MessageType::GuardrailsViolationAck),
-            "capabilities" => Ok(MessageType::Capabilities),
+            MESSAGE_TYPE_SESSION_STARTED => Ok(MessageType::SessionStarted),
+            MESSAGE_TYPE_DATA => Ok(MessageType::Data),
+            MESSAGE_TYPE_GUARDRAILS_VIOLATION => Ok(MessageType::GuardrailsViolation),
+            MESSAGE_TYPE_GUARDRAILS_VIOLATION_ACK => Ok(MessageType::GuardrailsViolationAck),
+            MESSAGE_TYPE_CAPABILITIES => Ok(MessageType::Capabilities),
             _ => Err(format!("Unknown message type: {}", s)),
         }
     }

@@ -511,6 +511,20 @@ def test_full_snapshot_discards_prior_cache_entries():
     store.release("session", 3)
 
 
+def test_stale_full_snapshot_preserves_newer_resident_state():
+    pipeline = StubPipeline()
+    store = GpuResidentStore(pipeline, max_cache_entries=4)
+    current = types.SimpleNamespace(sequence=2, last_used=store._clock())
+    store._sessions["session"] = current
+
+    with pytest.raises(ResidentSequenceError) as error:
+        process(store, 0, 30, full_snapshot=True)
+
+    assert error.value.expected == 2
+    assert store._sessions["session"] is current
+    assert pipeline.calls == []
+
+
 def test_cache_bound_must_be_positive():
     with pytest.raises(ValueError, match="cache entries must be positive"):
         GpuResidentStore(StubPipeline(), max_cache_entries=0)

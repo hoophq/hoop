@@ -17,6 +17,7 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/broker"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 )
 
 var upgrader = websocket.Upgrader{
@@ -311,8 +312,9 @@ func persistAgentGuardrailsViolation(
 			Height:     d.Height,
 		})
 	}
-	if err := models.PersistRDPGuardrailViolation(
+	if err := services.PersistRDPGuardrailViolation(
 		ctx,
+		models.DB,
 		route.OrgID,
 		sessionID,
 		reportID,
