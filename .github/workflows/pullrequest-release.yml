@@ -323,8 +323,6 @@ jobs:
     needs: [build-webapp]
     runs-on: ubuntu-latest
     name: Build Linux Amd64
-    outputs:
-      alcatraz_version: ${{ steps.alcatraz.outputs.version }}
 
     steps:
       - name: Checkout Hoop
@@ -342,21 +340,6 @@ jobs:
         with:
           go-version-file: go.work
           cache-dependency-path: "**/go.sum"
-
-      # The model baked into hoophq/hoop-agent-alcatraz has to come from the
-      # same alcatraz version this binary links, or the agent rejects the files
-      # when it loads them. Deriving it here keeps that from becoming a second
-      # pin to hand-sync. Read from libhoop's own module graph (GOWORK=off),
-      # because libhoop is the module that actually requires alcatraz: the
-      # workspace view would answer with the stale "// indirect" requirement in
-      # agent/go.mod if libhoop ever stopped requiring it, silently baking a
-      # mismatched model instead of failing here.
-      - name: Resolve alcatraz version
-        id: alcatraz
-        run: |
-          set -euo pipefail
-          version="$(GOWORK=off go -C libhoop list -m -f '{{.Version}}' github.com/hoophq/alcatraz)"
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       - name: Setup Rust for WASM
         uses: dtolnay/rust-toolchain@stable
@@ -760,12 +743,39 @@ jobs:
     needs:
       # hoophq/hoopdev is the agent image this derives from.
       - docker-publish-hoopagent-multiarch
-      # Only for its alcatraz_version output; already an ancestor through
-      # build-tar-files, so this adds no serialization.
-      - linux-amd64
     steps:
       - name: Checkout
         uses: actions/checkout@v3
+      # Only for its go.mod: the alcatraz version is read from it below.
+      - name: Checkout libhoop
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          path: "./libhoop"
+          token: ${{ secrets.GH_TOKEN }}
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.work
+          cache-dependency-path: "**/go.sum"
+      # The model baked into the image has to come from the same alcatraz
+      # version the agent binary links, or the agent rejects the files when it
+      # loads them. Deriving it keeps that from becoming a second pin to
+      # hand-sync. Read from libhoop's own module graph (GOWORK=off), because
+      # libhoop is the module that actually requires alcatraz: the workspace
+      # view would answer with the stale "// indirect" requirement in
+      # agent/go.mod if libhoop ever stopped requiring it, silently baking a
+      # mismatched model instead of failing here.
+      #
+      # This resolves in the image job, not in the binary build that also has
+      # libhoop checked out: a version this job cannot answer is a reason to
+      # publish no image, never a reason to hold back the preview binaries.
+      - name: Resolve alcatraz version
+        id: alcatraz
+        run: |
+          set -euo pipefail
+          version="$(GOWORK=off go -C libhoop list -m -f '{{.Version}}' github.com/hoophq/alcatraz)"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
       - name: Set up Docker Buildx
@@ -788,7 +798,7 @@ jobs:
           push: true
           build-args: |
             HOOP_IMAGE=hoophq/hoopdev:${{ env.GIT_TAG }}
-            ALCATRAZ_VERSION=${{ needs.linux-amd64.outputs.alcatraz_version }}
+            ALCATRAZ_VERSION=${{ steps.alcatraz.outputs.version }}
           tags: |
             hoophq/hoop-agent-alcatraz:${{ env.GIT_TAG }}
       # The build already verified the model inside the image it produced; this
