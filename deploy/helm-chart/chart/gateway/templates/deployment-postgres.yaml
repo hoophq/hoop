@@ -14,7 +14,7 @@ spec:
     metadata:
       labels:
         app: hoopgateway-pg
-      {{- with .Values.postgres.podLabels }}
+      {{- with omit .Values.postgres.podLabels "app" }}
         {{- toYaml . | nindent 8 }}
       {{- end }}
     spec:

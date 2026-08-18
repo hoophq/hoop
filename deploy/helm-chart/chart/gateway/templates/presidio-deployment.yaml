@@ -25,7 +25,7 @@ spec:
     metadata:
       labels:
         app: presidio-analyzer
-      {{- with .Values.dataMasking.analyzer.podLabels }}
+      {{- with omit .Values.dataMasking.analyzer.podLabels "app" }}
         {{- toYaml . | nindent 8 }}
       {{- end }}
       annotations:
@@ -95,7 +95,7 @@ spec:
     metadata:
       labels:
         app: presidio-anonymizer
-      {{- with .Values.dataMasking.anonymizer.podLabels }}
+      {{- with omit .Values.dataMasking.anonymizer.podLabels "app" }}
         {{- toYaml . | nindent 8 }}
       {{- end }}
       annotations:

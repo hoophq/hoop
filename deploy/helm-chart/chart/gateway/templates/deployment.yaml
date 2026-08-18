@@ -24,7 +24,7 @@ spec:
       {{- end }}
       labels:
         app: hoopgateway
-      {{- with .Values.podLabels }}
+      {{- with omit .Values.podLabels "app" }}
         {{- toYaml . | nindent 8 }}
       {{- end }}
     spec:
