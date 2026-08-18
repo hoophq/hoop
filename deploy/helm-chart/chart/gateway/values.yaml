@@ -35,6 +35,8 @@ postgres:
   # -- Size of PVC
   size: 10Gi
   # annotations: {}
+  # -- Additional labels to add to the postgres pod
+  podLabels: {}
 
 # -- Enable data masking with Presidio
 dataMasking:
@@ -70,6 +72,8 @@ dataMasking:
       requests:
         cpu: 1024m
         memory: 1024Mi
+    # -- Additional labels to add to the presidio-analyzer pod
+    podLabels: {}
 
   anonymizer:
     replicas: 1
@@ -87,6 +91,9 @@ dataMasking:
       preload_app = True
       loglevel = 'debug'
       worker_class = 'gthread'
+
+    # -- Additional labels to add to the presidio-anonymizer pod
+    podLabels: {}
 
     resources:
       limits:
@@ -109,6 +116,10 @@ dataMasking:
       requests:
         cpu: 100m
         memory: 64Mi
+
+## Set additional pod labels
+##
+podLabels: {}
 
 ## Set pod annotations
 ##
