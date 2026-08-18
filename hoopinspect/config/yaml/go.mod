@@ -5,7 +5,9 @@
 // for callers who did not ask for it. Depending on this module is opting in.
 module github.com/hoophq/hoopinspect/config/yaml
 
-go 1.24
+go 1.26.5
+
+toolchain go1.26.5
 
 require (
 	github.com/hoophq/hoopinspect v0.0.0

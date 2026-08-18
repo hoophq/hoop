@@ -9,4 +9,4 @@
 // Test dependencies are held to the same bar: the tests use only `testing`.
 module github.com/hoophq/hoopinspect
 
-go 1.24
+go 1.26.5

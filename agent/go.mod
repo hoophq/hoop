@@ -27,7 +27,7 @@ require (
 	github.com/go-sql-driver/mysql v1.10.0
 	github.com/hoophq/hoop/client v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/common v0.0.0-00010101000000-000000000000
-	github.com/hoophq/mcpproxy v0.1.0
+	github.com/hoophq/mcpproxy v0.1.1
 	github.com/lib/pq v1.12.3
 	github.com/microsoft/go-mssqldb v1.10.0
 	github.com/stretchr/testify v1.11.1
@@ -36,7 +36,7 @@ require (
 	go.mongodb.org/mongo-driver v1.17.9
 	golang.org/x/crypto v0.54.0
 	golang.org/x/oauth2 v0.36.0
-	google.golang.org/grpc v1.81.1
+	google.golang.org/grpc v1.83.0
 	gopkg.in/yaml.v3 v3.0.1
 	libhoop v0.0.0-00010101000000-000000000000
 )

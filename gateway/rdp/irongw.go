@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -22,7 +23,6 @@ import (
 	"github.com/hoophq/hoop/gateway/broker"
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
-	"github.com/hoophq/hoop/gateway/rdp/analyzer"
 	"github.com/hoophq/hoop/gateway/transport/usertoken"
 )
 
@@ -50,6 +50,32 @@ func (r *IronRDPGateway) AttachHandlers(router gin.IRouter) {
 	router.Handle(http.MethodPost, "/client", r.handleClient)
 }
 
+func isRDPDesktopDimension(value string) bool {
+	if len(value) == 0 || len(value) > 4 {
+		return false
+	}
+	for i := range len(value) {
+		if value[i] < '0' || value[i] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func invalidRDPDesktopSizeDimensions(preset string) (width, height int, ok bool) {
+	widthText, heightText, found := strings.Cut(preset, "x")
+	if !found || !isRDPDesktopDimension(widthText) || !isRDPDesktopDimension(heightText) {
+		return 0, 0, false
+	}
+
+	width, widthErr := strconv.Atoi(widthText)
+	height, heightErr := strconv.Atoi(heightText)
+	if widthErr != nil || heightErr != nil || width <= 0 || height <= 0 {
+		return 0, 0, false
+	}
+	return width, height, true
+}
+
 func (r *IronRDPGateway) handleClient(c *gin.Context) {
 	rdpCredential := c.PostForm("credential")
 	if rdpCredential == "" {
@@ -57,6 +83,25 @@ func (r *IronRDPGateway) handleClient(c *gin.Context) {
 		c.String(http.StatusBadRequest, "Invalid request")
 		return
 	}
+	desktopSizePreset := c.PostForm("desktop_size")
+	desktopSize, ok := rdpDesktopSizeFromPreset(desktopSizePreset)
+	if !ok {
+		if width, height, dimensions := invalidRDPDesktopSizeDimensions(desktopSizePreset); dimensions {
+			log.With(
+				"desktop-size-category", "unsupported-dimensions",
+				"desktop-width", width,
+				"desktop-height", height,
+			).Warnf("invalid RDP desktop size preset")
+		} else {
+			log.With(
+				"desktop-size-category", "invalid-format",
+				"desktop-size-length", len(desktopSizePreset),
+			).Warnf("invalid RDP desktop size preset")
+		}
+		c.String(http.StatusBadRequest, "Invalid request")
+		return
+	}
+
 	secretKeyHash, err := keys.Hash256Key(rdpCredential)
 	if err != nil {
 		log.Errorf("failed hashing rdp secret key, reason=%v", err)
@@ -95,7 +140,7 @@ func (r *IronRDPGateway) handleClient(c *gin.Context) {
 
 	// We don't need to do extended checks now because websocket will do it.
 
-	data := renderWebClientTemplate("RDP Connection", rdpCredential)
+	data := renderWebClientTemplate("RDP Connection", rdpCredential, desktopSize)
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(data))
 }
 
@@ -197,68 +242,62 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 		recorderUserEmail = userCtx.UserEmail
 	}
 
-	// When the flag is on, the agent runs the PII gate (analysis happens
-	// where the plaintext already flows, inside the customer network) and the
-	// gateway suppresses its own gate — a single enforcement point. The
-	// analysis policy rides along; the agent supplies Presidio/OCR endpoints
-	// from its own env.
-	// forceUnguarded: the flag is on but we deliberately run this session with
-	// no guard at all (neither agent nor gateway) — set for an older agent that
-	// never advertised guard capability, to avoid bricking its connections.
-	forceUnguarded := false
-	agentGuard := broker.RDPGuardConfig{Enabled: featureflag.IsEnabled(recorderOrgID, PIIGateFlagName)}
+	// The rollout flag enables the RDP guard; the resource's DataMaskingRules
+	// decide whether this connection is masked and supply its entity selection
+	// and confidence threshold.
+	var maskingParams *rdpDataMaskingParams
+	if featureflag.IsEnabled(recorderOrgID, PIIGateFlagName) {
+		maskingParams, err = dataMaskingParamsForConnection(recorderOrgID, connectionModel.Name)
+		if err != nil {
+			log.With("sid", sessionID, "conn", cID).Errorf("failed loading RDP data masking rules: %v", err)
+			writeRDPClientError(ws, cppVersion, "Connection refused: failed to load data masking rules.")
+			return
+		}
+	}
+
+	// When a connection-scoped rule applies, the agent runs the PII gate where
+	// the plaintext already flows. The gateway sends the resource policy while
+	// the agent supplies its local Presidio/OCR endpoints. Masked sessions fail
+	// closed unless the selected agent advertises both capabilities required to
+	// enforce that policy.
+	agentGuard := broker.RDPGuardConfig{Enabled: maskingParams != nil}
 	if agentGuard.Enabled {
-		// Capability gate. Three cases:
-		//   - known + capable    -> delegate the guard (the intended path).
-		//   - known + incapable  -> a guard-capable agent build that explicitly
-		//     advertised it lacks the Presidio/OCR endpoints. Refuse with a
-		//     clear error: it is a misconfiguration of an agent that is supposed
-		//     to guard.
-		//   - unknown            -> the agent never advertised capability (an
-		//     OLDER agent that predates the handshake, or the frame has not
-		//     arrived yet). Run the session UNGUARDED rather than refusing.
-		//
-		// Unknown must NOT 403: enabling the flag would otherwise brick every
-		// RDP connection through any not-yet-upgraded agent, even connections
-		// that were never going to be guarded. An old agent cannot run the
-		// guard anyway, so falling back to a normal proxied session preserves
-		// pre-handshake behavior.
-		//
-		// This is a DELIBERATE availability-over-enforcement choice for the
-		// unknown case, not a race-free guarantee. AgentCapability waits up to
-		// AgentCapabilityWait for an in-flight frame, but a capable NEW agent
-		// that is slow to advertise (cold start, control-frame delay) can still
-		// be seen as unknown and run this one session unguarded. That is
-		// accepted: the alternative (fail closed) bricks every old-agent
-		// connection. NOTE: this intentionally overrides the generic
-		// "treat unknown as cannot / fail closed" guidance on
-		// broker.AgentCapability for this specific handler.
 		capable, known := broker.AgentCapability(connectionModel.AgentName, broker.CapabilitySupportsPIIGuard)
 		switch {
-		case known && !capable:
-			log.Errorf("refusing RDP session: %s is enabled but agent %q advertised it cannot enforce the PII guard (missing MSPRESIDIO_ANALYZER_URL and/or RDP_OCR_SERVER_URL)",
-				PIIGateFlagName, connectionModel.AgentName)
+		case !known:
+			log.Errorf("refusing RDP session: agent %q did not advertise PII guard capability",
+				connectionModel.AgentName)
+			writeRDPClientError(ws, cppVersion,
+				fmt.Sprintf("Connection refused: agent %q must be upgraded to apply this connection's Data Masking rule.",
+					connectionModel.AgentName))
+			return
+		case !capable:
+			log.Errorf("refusing RDP session: agent %q cannot enforce the PII guard (missing MSPRESIDIO_ANALYZER_URL and/or RDP_OCR_SERVER_URL)",
+				connectionModel.AgentName)
 			writeRDPClientError(ws, cppVersion,
 				fmt.Sprintf("Connection refused: PII guard is enabled but agent %q is misconfigured (missing OCR/Presidio endpoints).",
 					connectionModel.AgentName))
 			return
-		case !known:
-			// Older agent (or pre-advertisement): proxy unguarded. Suppress
-			// BOTH the agent guard and the gateway-side gate so this is a plain
-			// passthrough (pre-handshake behavior), not a fallback to the
-			// gateway gate.
-			log.With("sid", sessionID).Warnf("piigate: %s is enabled but agent %q has not advertised guard capability; running this session UNGUARDED (upgrade the agent to enable the guard)",
-				PIIGateFlagName, connectionModel.AgentName)
-			agentGuard.Enabled = false
-			forceUnguarded = true
+		}
+
+		allowlistCapable, allowlistKnown := broker.AgentCapability(
+			connectionModel.AgentName,
+			broker.CapabilitySupportsPIIEntityAllowlist,
+		)
+		if !allowlistKnown || !allowlistCapable {
+			log.Errorf("refusing RDP session: agent %q does not support connection-scoped PII entity selection",
+				connectionModel.AgentName)
+			writeRDPClientError(ws, cppVersion,
+				fmt.Sprintf("Connection refused: agent %q must be upgraded to apply this connection's Data Masking rule.",
+					connectionModel.AgentName))
+			return
 		}
 	}
 
 	if agentGuard.Enabled {
-		params := analyzer.DefaultAnalysisParams()
-		agentGuard.ScoreThreshold = params.ScoreThreshold
-		agentGuard.EntityDenylist = params.EntityDenylist
-		agentGuard.BandPadding = params.BandPadding
+		agentGuard.ScoreThreshold = maskingParams.ScoreThreshold
+		agentGuard.EntityAllowlist = maskingParams.EntityAllowlist
+		agentGuard.BandPadding = maskingParams.BandPadding
 		agentGuard.Policy = appconfig.Get().RDPPIIGuardPolicy()
 	}
 
@@ -401,11 +440,8 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 	// and latency. The gateway still records — now of clean frames.
 	var gate *PIIGate
 	switch {
-	case forceUnguarded:
-		// Flag on, but the agent never advertised guard capability (old agent):
-		// neither guard runs — this is a plain passthrough. Logged distinctly so
-		// audits don't misread it as enforced.
-		log.With("sid", sessionID).Warnf("piigate: session running UNGUARDED (agent has not advertised guard capability)")
+	case maskingParams == nil:
+		// No connection-scoped masking rule: normal passthrough.
 	case agentGuard.Enabled:
 		log.With("sid", sessionID).Infof("piigate: agent-side guard active, gateway gate suppressed")
 	default:

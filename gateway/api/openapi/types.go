@@ -89,6 +89,16 @@ type UserPatchSlackID struct {
 	SlackID string `json:"slack_id" binding:"required" example:"U053ELZHB53"`
 }
 
+// UserSignupOriginRequest carries the answer to the onboarding
+// "How did you hear about Hoop?" survey. A user may answer only once.
+type UserSignupOriginRequest struct {
+	// The acquisition channel the user picked
+	Origin string `json:"origin" binding:"required" enums:"search-engine,ai-discovery,referral,already-in-use-at-company,tech-community,social-media,hoop-free-tools,other" example:"ai-discovery"`
+	// Free text detail. Required when origin is "other", ignored and stored as
+	// null for every other option.
+	OriginOther string `json:"origin_other" example:"Saw it in a conference talk"`
+}
+
 type UserGroup struct {
 	// Name of the user group
 	Name string `json:"name" binding:"required" example:"engineering"`
@@ -133,6 +143,14 @@ type UserInfo struct {
 	// Pending organization invitations for this user. When non-empty, the user can migrate
 	// to one of these organizations. Only populated in multi-tenant environments.
 	PendingOrgInvitations []PendingOrgInvitation `json:"pending_org_invitations,omitempty"`
+	// Whether the "How did you hear about Hoop?" survey should still be offered.
+	// True only while the user has not answered it and is within 7 days of their
+	// user record being created. Always false for anonymous users.
+	ShowOriginSurvey bool `json:"show_origin_survey"`
+	// Whether the sidebar setup checklist should still be offered. True only for
+	// administrators of an organization that has not completed onboarding, and
+	// permanently false once it has.
+	ShowSetupChecklist bool `json:"show_setup_checklist"`
 }
 
 type ServiceAccountStatusType string
@@ -539,6 +557,7 @@ type ConnectionEffectiveFeatures struct {
 // The two types are not interchangeable: "command" gates exec verbs (the web Terminal,
 // runbooks, the CLI) and "jit" gates connect verbs (the native client). A caller must
 // pick the one matching how it will run, not assume either implies the other.
+// A rule of type jit_command sets both flags.
 type ConnectionAccessRequestFeatures struct {
 	// Command is true when an access request rule of type "command" resolves.
 	Command bool `json:"command" example:"true"`
@@ -764,9 +783,20 @@ type Runbook struct {
 }
 
 type SessionList struct {
-	Items       []Session `json:"data"`
-	Total       int64     `json:"total" example:"100"`
-	HasNextPage bool      `json:"has_next_page"`
+	Items []Session `json:"data"`
+	// The number of sessions matching the filter.
+	//
+	// Capped by default: the value is the exact total up to 10000, and beyond
+	// that it stops at 10000 with `total_is_capped` set. Ask for `?count=exact`
+	// to pay for the precise figure. `null` when the request asked for
+	// `?count=none`, which is distinct from a count of zero: it means the total
+	// was never computed.
+	Total *int64 `json:"total" example:"100" extensions:"x-nullable"`
+	// Reports that `total` is a lower bound rather than the exact number of
+	// matching sessions. Render it as `10000+`. Always false under
+	// `?count=exact`, and for any result set smaller than the cap.
+	TotalIsCapped bool `json:"total_is_capped"`
+	HasNextPage   bool `json:"has_next_page"`
 }
 
 type (
@@ -827,6 +857,7 @@ const (
 	SessionOptionOffset              SessionOptionKey = "offset"
 	SessionOptionLimit               SessionOptionKey = "limit"
 	SessionOptionJiraIssueKey        SessionOptionKey = "jira_issue_key"
+	SessionOptionCount               SessionOptionKey = "count"
 )
 
 var AvailableSessionOptions = []SessionOptionKey{
@@ -842,6 +873,7 @@ var AvailableSessionOptions = []SessionOptionKey{
 	SessionOptionLimit,
 	SessionOptionOffset,
 	SessionOptionJiraIssueKey,
+	SessionOptionCount,
 }
 
 type SessionStatusType string
@@ -885,6 +917,30 @@ type SessionAIAnalysis struct {
 	// * `allow_execution` - allow the session to execute
 	// * `block_execution` - block the session from executing
 	Action string `json:"action" enums:"allow_execution,block_execution" example:"allow_execution"`
+	// Summary is a reviewer-facing impact summary produced by the agentic analyzer. Empty for single-shot analysis.
+	Summary string `json:"summary,omitempty"`
+	// Model is the AI model that produced the analysis. Set by the agentic analyzer.
+	Model string `json:"model,omitempty"`
+	// Steps is the agentic investigation trace (thinking, tool calls, tool results). Empty for single-shot analysis.
+	Steps []SessionAIAnalysisStep `json:"steps,omitempty"`
+}
+
+// SessionAIAnalysisStep is one step of the agentic analyzer investigation trace.
+type SessionAIAnalysisStep struct {
+	// Type is one of "thinking", "tool_call", "tool_result".
+	Type string `json:"type" example:"tool_call"`
+	// Thinking is the model's reasoning text (set for type "thinking").
+	Thinking string `json:"thinking,omitempty"`
+	// ToolName is the investigation tool name (set for tool_call/tool_result).
+	ToolName string `json:"tool_name,omitempty"`
+	// ToolInput is the JSON arguments passed to the tool (set for tool_call).
+	ToolInput string `json:"tool_input,omitempty"`
+	// ToolOutput is the tool result content (set for tool_result).
+	ToolOutput string `json:"tool_output,omitempty"`
+	// IsError indicates the tool result was a failure (set for tool_result).
+	IsError bool `json:"is_error,omitempty"`
+	// Timestamp is when the step occurred.
+	Timestamp time.Time `json:"timestamp"`
 }
 
 type Session struct {
@@ -1384,6 +1440,43 @@ type OrgProtectionProfileResponse struct {
 	// The Hoop-managed attribute that binds the profile's rules to
 	// connections; null when no profile is active
 	AttributeName *string `json:"attribute_name" example:"hoop_protection_profile-protection_medium"`
+}
+
+// OrgOnboardingChecks is the per-item state of the setup checklist. Every field
+// maps 1:1 to a sub-item of the webapp sidebar widget.
+type OrgOnboardingChecks struct {
+	// At least one standard agent is currently connected
+	AgentDeployed bool `json:"agent_deployed"`
+	// The organization has at least one connection
+	ResourceCreated bool `json:"resource_created"`
+	// The organization has run at least one session
+	SessionRan bool `json:"session_ran"`
+	// At least one group beyond the built-in admin group exists
+	GroupsCreated bool `json:"groups_created"`
+	// At least one user belongs to a group beyond the built-in admin group
+	PeopleAssigned bool `json:"people_assigned"`
+	// At least one user-created guardrail rule exists (profile-managed rules don't count)
+	GuardrailsExplored bool `json:"guardrails_explored"`
+	// At least one user-created data masking rule exists (profile-managed rules don't count)
+	DataMaskingExplored bool `json:"data_masking_explored"`
+	// An AI provider is configured for the session analyzer feature
+	AIAnalyzerEnabled bool `json:"ai_analyzer_enabled"`
+	// The organization has a default protection profile
+	ProtectionLevelSet bool `json:"protection_level_set"`
+}
+
+type OrgOnboardingResponse struct {
+	// Whether onboarding is finished. Terminal: stays true even if an
+	// individual check later regresses
+	Completed bool `json:"completed"`
+	// The live state of each checklist item
+	Checks OrgOnboardingChecks `json:"checks"`
+	// First web-terminal capable connection, for the "Run your first session"
+	// shortcut; null when the organization has none
+	ExecConnectionName *string `json:"exec_connection_name" example:"pgdemo"`
+	// First connection of any kind, the native-access fallback for the same
+	// shortcut; null when the organization has no connections
+	FirstConnectionName *string `json:"first_connection_name" example:"pgdemo"`
 }
 
 var FeatureList = []string{"ask-ai"}
@@ -2690,6 +2783,38 @@ type ConnectionCredentialsResponse struct {
 	CreatedAt time.Time `json:"created_at" example:"2025-08-25T12:00:00Z"`
 }
 
+// ConnectionCredentialsListItem is a secret-less summary of one active credential
+// owned by the caller. It deliberately omits the connection_credentials payload
+// returned by GET /connections/{nameOrID}/credentials (hostnames, usernames,
+// passwords, proxy tokens, connection strings): this list exists to render
+// active-session state in the UI, never to connect with. Fetch the per-connection
+// endpoint when the user actually needs the secret.
+type ConnectionCredentialsListItem struct {
+	// The unique identifier of the credential
+	ID string `json:"id" format:"uuid" readonly:"true" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// Unique ID of the connection this credential belongs to
+	ConnectionID string `json:"connection_id" format:"uuid" example:"5364ec99-653b-41ba-8165-67236e894990"`
+	// The name of the connection
+	ConnectionName string `json:"connection_name" example:"pgdemo"`
+	// Connection type
+	ConnectionType string `json:"connection_type" example:"database"`
+	// The connection subtype
+	ConnectionSubType string `json:"connection_subtype" example:"postgres"`
+	// The audit session currently linked to this credential. Empty when the user
+	// closed the session but kept the credential.
+	SessionID string `json:"session_id" example:"2CBC8DB5-FBF8-4293-8E35-59A6EEA40207"`
+	// When the credential expires. Null when the credential is persistent
+	// (issued without access_duration_seconds).
+	ExpireAt *time.Time `json:"expire_at" example:"2025-08-25T13:00:00Z"`
+	// When the credential was issued
+	CreatedAt time.Time `json:"created_at" example:"2025-08-25T12:00:00Z"`
+}
+
+// ConnectionCredentialsList is the envelope for the caller's active credentials.
+type ConnectionCredentialsList struct {
+	Items []ConnectionCredentialsListItem `json:"items"`
+}
+
 type RDPConnectionInfo struct {
 	// The hostname to access the rdp server pinstance
 	Hostname string `json:"hostname" example:"example.com/198.22.2.2"`
@@ -3335,7 +3460,7 @@ type AccessRequestRule struct {
 	// The description of the access request rule
 	Description *string `json:"description" example:"Access control rule for production databases"`
 	// The access type
-	AccessType string `json:"access_type" enums:"jit,command" example:"command"`
+	AccessType string `json:"access_type" enums:"jit,command,jit_command" example:"command"`
 	// Connection names that this rule applies to
 	ConnectionNames []string `json:"connection_names" example:"pgdemo,mysql-prod"`
 	// Attributes associated with this access request rule
@@ -3348,6 +3473,9 @@ type AccessRequestRule struct {
 	ReviewersGroups []string `json:"reviewers_groups" example:"sre,dba"`
 	// Groups that can force approve sessions
 	ForceApprovalGroups []string `json:"force_approval_groups" example:"admin"`
+	// Groups whose members skip the approval review. Only honored when
+	// approval_required_groups is empty
+	SkipReviewGroups []string `json:"skip_review_groups" example:"sre"`
 	// Maximum access duration in seconds
 	AccessMaxDuration *int `json:"access_max_duration" example:"3600"`
 	// Minimum number of approvals required
@@ -3368,7 +3496,7 @@ type AccessRequestRuleRequest struct {
 	// The description of the access request rule
 	Description *string `json:"description" example:"Access request rule for production databases"`
 	// The access type
-	AccessType string `json:"access_type" binding:"required" enums:"jit,command" example:"command"`
+	AccessType string `json:"access_type" binding:"required" enums:"jit,command,jit_command" example:"command"`
 	// Connection names that this rule applies to
 	ConnectionNames []string `json:"connection_names" binding:"required" example:"pgdemo,mysql-prod"`
 	// Attributes associated with this access request rule
@@ -3382,6 +3510,9 @@ type AccessRequestRuleRequest struct {
 	ReviewersGroups []string `json:"reviewers_groups" binding:"required" example:"sre,dba"`
 	// Groups that can force approve sessions
 	ForceApprovalGroups []string `json:"force_approval_groups" binding:"required" example:"admin"`
+	// Groups whose members skip the approval review. Only allowed when
+	// approval_required_groups is empty
+	SkipReviewGroups []string `json:"skip_review_groups,omitempty" example:"sre"`
 	// Maximum access duration in seconds
 	AccessMaxDuration *int `json:"access_max_duration,omitempty" example:"3600"`
 	// Minimum number of approvals required
@@ -3455,6 +3586,9 @@ type AISessionAnalyzerRuleRequest struct {
 	RiskEvaluation AISessionAnalyzerRiskEvaluation `json:"risk_evaluation" binding:"required"`
 	// Optional extra instructions appended to the default system prompt
 	CustomPrompt *string `json:"custom_prompt,omitempty" example:"Treat any query that touches the payments schema as high risk."`
+	// When true, the analyzer runs an agentic tool-calling loop over past sessions
+	// and resource metadata before classifying.
+	Agentic bool `json:"agentic" example:"false"`
 }
 
 type AISessionAnalyzerRule struct {
@@ -3470,6 +3604,9 @@ type AISessionAnalyzerRule struct {
 	RiskEvaluation AISessionAnalyzerRiskEvaluation `json:"risk_evaluation"`
 	// Optional extra instructions appended to the default system prompt
 	CustomPrompt *string `json:"custom_prompt,omitempty" example:"Treat any query that touches the payments schema as high risk."`
+	// When true, the analyzer runs an agentic tool-calling loop over past sessions
+	// and resource metadata before classifying.
+	Agentic bool `json:"agentic" example:"false"`
 	// Set to "hoop" when the rule is materialized and lifecycle-managed by a
 	// protection profile; managed rules are read-only through this API
 	ManagedBy *string `json:"managed_by" readonly:"true" example:"hoop"`

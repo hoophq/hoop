@@ -1,6 +1,7 @@
 package openapi
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -74,5 +75,18 @@ func toV3(v2Spec []byte) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed encoding v3 spec to json: %v", err)
 	}
-	return doc3JSON, nil
+	formattedJSON, err := formatJSON(doc3JSON)
+	if err != nil {
+		return nil, fmt.Errorf("failed formatting v3 spec to json: %v", err)
+	}
+	return formattedJSON, nil
+}
+
+func formatJSON(jsonBytes []byte) ([]byte, error) {
+	var formattedJSON bytes.Buffer
+	err := json.Indent(&formattedJSON, jsonBytes, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed formatting JSON: %v", err)
+	}
+	return formattedJSON.Bytes(), nil
 }

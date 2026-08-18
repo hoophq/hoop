@@ -42,6 +42,12 @@
    [webapp.features.ai-session-analyzer.views.ai-analyzer-card :refer [ai-analyzer-card]]
    [webapp.features.ai-session-analyzer.views.ai-block-card :refer [ai-block-card]]))
 
+(defn- react-shell?
+  "True when the React shell hosts this page. Under the shell, AppShell.Main
+   already provides the #main-content landmark."
+  []
+  (boolean (.getItem js/localStorage "react-shell")))
+
 (defn discover-connection-type [connection]
   (cond
     (not (cs/blank? (:subtype connection))) (:subtype connection)
@@ -53,16 +59,33 @@
         object (js->clj (.parse js/JSON item))]
     (or (get object "code") "")))
 
-(def ^:private code-saved-status (r/atom :saved)) ; :edited | :saved
+(def ^:private code-saved-status (r/atom :saved)) ; :edited | :saved | :not-saved | :save-failed
 (def ^:private is-typing (r/atom false))
 (def ^:private typing-timer (r/atom nil))
 
-(defn- save-code-to-localstorage [code-string]
-  (let [code-tmp-db {:date (.now js/Date)
-                     :code code-string}
-        code-tmp-db-json (.stringify js/JSON (clj->js code-tmp-db))]
-    (.setItem js/localStorage :code-tmp-db code-tmp-db-json)
-    (reset! code-saved-status :saved)))
+(defn- quota-exceeded?
+  "Whether a storage write failed because the store is full, as opposed to
+  storage being unavailable. Older Firefox still reports the legacy name."
+  [e]
+  (and (instance? js/DOMException e)
+       (contains? #{"QuotaExceededError" "NS_ERROR_DOM_QUOTA_REACHED"} (.-name e))))
+
+(defn- save-code-to-localstorage
+  "Persists the editor draft.
+
+  Above ~5MB `setItem` throws QuotaExceededError; the uncaught throw used to
+  skip the status reset and leave the footer spinner running forever (EVL-121).
+  The write is atomic, so a rejected one leaves the previous draft in place —
+  we keep it and report the failure rather than discard the user's work."
+  [code-string]
+  (try
+    (let [code-tmp-db {:date (.now js/Date)
+                       :code code-string}]
+      (.setItem js/localStorage :code-tmp-db (.stringify js/JSON (clj->js code-tmp-db))))
+    (reset! code-saved-status :saved)
+    (catch :default e
+      (js/console.warn "failed persisting the editor draft to localStorage:" e)
+      (reset! code-saved-status (if (quota-exceeded? e) :not-saved :save-failed)))))
 
 
 (defmulti ^:private saved-status-el identity)
@@ -83,6 +106,24 @@
     [:> Spinner {:size "1" :color "gray"}]
     [:span {:class "text-xs italic"}
      "Edited"]]])
+(defn- draft-not-saved-el [tooltip]
+  [:> Tooltip {:content tooltip}
+   [:div {:class "flex flex-row-reverse text-gray-11"
+          :role "status"
+          :aria-live "polite"}
+    [:div {:class "flex items-center gap-small"}
+     [:> hero-solid-icon/ExclamationTriangleIcon {:class "h-4 w-4 shrink-0 text-warning-9"
+                                                  :aria-hidden "true"}]
+     [:span {:class "text-xs"}
+      "Draft not saved"]]]])
+(defmethod ^:private saved-status-el :not-saved [_]
+  [draft-not-saved-el (str "This script is too large for browser storage. It runs "
+                           "normally, but reloading the page restores your last "
+                           "saved draft instead.")])
+(defmethod ^:private saved-status-el :save-failed [_]
+  [draft-not-saved-el (str "This draft could not be saved to browser storage. It runs "
+                           "normally, but reloading the page restores your last "
+                           "saved draft instead.")])
 
 (def current-sql-parser (r/atom nil))
 
@@ -335,13 +376,20 @@
 
           :else
           [:<>
-           [:> Box {:as "main"
-                    :id "main-content"
-                    :tabIndex "-1"
-                    :class (str "h-full bg-gray-2 overflow-hidden "
-                                (when @dark-mode?
-                                  "dark"))
-                    :aria-label "Terminal"}
+           ;; Under the React shell this would be a second <main> nested inside
+           ;; AppShell.Main, with a duplicate id — invalid, and it makes the
+           ;; sidebar's "Skip to main content" resolve to the outer element.
+           ;; Standalone CLJS keeps the landmark, since nothing else provides one.
+           [:> Box (cond-> {:as (if (react-shell?) "section" "main")
+                            :tabIndex "-1"
+                            ;; Flex column: the toolbar keeps its natural height
+                            ;; and the splitter takes whatever is left. No
+                            ;; constant to subtract, so the two cannot drift.
+                            :class (str "h-full bg-gray-2 overflow-hidden flex flex-col "
+                                        (when @dark-mode?
+                                          "dark"))
+                            :aria-label "Terminal"}
+                     (not (react-shell?)) (assoc :id "main-content"))
             [connection-dialog/connection-dialog]
             [parallel-mode-modal/parallel-mode-modal]
             [execution-summary/execution-summary-modal]
@@ -352,7 +400,7 @@
 
             [with-panel
              (boolean @active-panel)
-             [:> Box {:class "flex h-terminal-content overflow-hidden"}
+             [:> Box {:class "flex h-full overflow-hidden"}
               [:> Allotment {:key (str "compact-allotment-" @db-schema-collapsed?)
                              :separator false}
 
@@ -433,7 +481,7 @@
                    @parallel-mode-active?
                    @dark-mode?]
 
-                  [:div {:class "bg-gray-1"}
+                  [:div {:class "bg-gray-2"}
                    ;; Screen reader announcements for execution status
                    [:div {:class "sr-only"
                           :role "status"

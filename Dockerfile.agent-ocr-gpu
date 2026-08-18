@@ -148,6 +148,19 @@ ENV WEB_CONCURRENCY=4
 #   OCR_REC_PRECISION: fp32 (default) | fp16 — fp16 runs recognition through
 #                      fixed-shape bucket sessions, measured 1.8x end-to-end
 #                      on a T4 with byte-identical text output. CUDA only.
+# Resource knobs (also see server_rapidocr.py):
+#   OCR_INTRA_OP_THREADS / OCR_INTER_OP_THREADS: 4 / 1 (defaults) — per-session
+#                      ONNX Runtime thread pools. Left unbounded, ORT sizes each
+#                      of the many sessions per worker to the host core count,
+#                      which on a high-core host exhausts the process/thread
+#                      limit and the sidecar dies during warmup
+#                      (pthread_create EAGAIN). Raise only if the GPU is
+#                      demonstrably starved by CPU-side preprocessing.
+#   OCR_CUDA_ARENA_STRATEGY: kNextPowerOfTwo (default) | kSameAsRequested —
+#                      CUDA arena growth. The default is fast but over-allocates
+#                      (~4.8GB/worker on an 80GB card), capping how many workers
+#                      fit; kSameAsRequested trades allocation frequency for a
+#                      smaller footprint on VRAM-constrained GPUs.
 # Defaults preserve the exact behavior of previous image releases.
 
 ENTRYPOINT ["tini", "--", "/opt/ocr/entrypoint-embedded.sh"]

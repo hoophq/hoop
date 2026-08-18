@@ -5,7 +5,7 @@
    ["lucide-react" :refer [ArrowUpRight Database FastForward FileLock2
                            Laptop ListCheck ListTodo Lock MonitorCheck
                            SearchCode Settings2 ShieldCheck
-                           Sparkles TextSearch UserRoundCheck]]
+                           Sparkles UserRoundCheck]]
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.config :as config]))
@@ -113,82 +113,10 @@
                :class "w-full h-full object-cover"}]
         [:> Box {:class "w-full h-full min-h-[28rem]"}])]]))
 
-(defn access-control-promotion
-  "Specific component for Access Control"
-  [{:keys [mode installed?]}]
-  [feature-promotion
-   {:feature-name "Access Control"
-    :mode mode
-    :image "access-control-promotion.png"
-    :description "Transform your data management from unstructured to controlled with powerful permission rules."
-    :feature-items [{:icon [:> ListCheck {:size 20}]
-                     :title "Role-Based Access Control (RBAC)"
-                     :description "Granular permission management for resources with flexible role assignments and group management."}
-                    {:icon [:> Settings2 {:size 20}]
-                     :title "Connection-Level Permissions"
-                     :description "Group-based access management with customizable access levels per connection."}
-                    {:icon [:> UserRoundCheck {:size 20}]
-                     :title "Dynamic Access Management"
-                     :description "Real-time access updates and modifications with seamless integration with identity providers."}]
-    :on-primary-click (if (= mode :empty-state)
-                        (if installed?
-                          #(rf/dispatch [:navigate :access-control-new])
-                          #(rf/dispatch
-                            [:dialog->open
-                             {:title "Activate Access Control"
-                              :text "By activating this feature users will have their accesses blocked until a connection permission is set."
-                              :text-action-button "Confirm"
-                              :action-button? true
-                              :type :info
-                              :on-success (fn []
-                                            (rf/dispatch [:plugins->create-plugin {:name "access_control"
-                                                                                   :connections []}])
-                                            (js/setTimeout
-                                             (fn [] (rf/dispatch [:plugins->get-plugin-by-name "access_control"]))
-                                             1000))}]))
-                        request-demo)
-    :primary-text (if (= mode :empty-state)
-                    "Activate Access Control"
-                    "Request demo")}])
-
-(defn guardrails-promotion
-  "Specific component for Guardrails.
-
-   When dlp-available? is explicitly false, renders the 'DLP provider required'
-   variant: a documentation link and an explanation instead of the create CTA.
-   This mirrors how Live Data Masking presents its screen when no DLP provider
-   is configured — guardrails are enforced through a DLP provider (GCP or
-   Microsoft Presidio), so without one the feature cannot be set up (EVL-62)."
-  [{:keys [mode installed? dlp-available?]}]
-  (let [empty-state? (= mode :empty-state)
-        dlp-missing? (false? dlp-available?)]
-    [feature-promotion
-     (merge
-      {:feature-name "Guardrails"
-       :mode mode
-       :image "guardrails-promotion.png"
-       :description "Create custom rules to guide and protect usage within your resource roles."
-       :feature-items [{:icon [:> ListCheck {:size 20}]
-                        :title "Automated Policy Enforcement"
-                        :description "Real-time monitoring of access policies, automatic detection and prevention of risky operations with customizable rules based on your organization's security requirements."}
-                       {:icon [:> ShieldCheck {:size 20}]
-                        :title "Smart Command Filtering"
-                        :description "Block potentially dangerous commands before execution and prevent accidental data modifications or deletions."}
-                       {:icon [:> TextSearch {:size 20}]
-                        :title "Context-Aware Access"
-                        :description "Evaluate access requests based on user context, consider factors like time, location, and previous activity and create an adaptive security measurement based on risk assessment."}]}
-      (if dlp-missing?
-        {:extra-information (str "Guardrails require a DLP provider (Microsoft Presidio or "
-                                "Google Cloud DLP) to be enforced. Configure a DLP provider "
-                                "to create and manage guardrails.")
-         :link-button-href [:features :guardrails]
-         :link-button-text "Go to Guardrails documentation"}
-        {:on-primary-click (if empty-state?
-                             #(rf/dispatch [:navigate :create-guardrail])
-                             request-demo)
-         :primary-text (if empty-state?
-                         "Create new Guardrails"
-                         "Request demo")}))]))
+;; The Guardrails, Access Control and Access Request promotions live in the
+;; React app (webapp_v2 pages/Guardrails/components/GuardrailsPromotion.jsx,
+;; pages/Features/AccessControl, pages/Features/AccessRequest) — the CLJS
+;; components were removed with the CLJS pages that were their only consumers.
 
 (defn runbooks-promotion
   "Specific component for Runbooks"
@@ -257,29 +185,6 @@
                      :description "Add intelligent security gates with real-time command reviews and just-in-time approvals."}]
     :on-primary-click #(rf/dispatch [:users/mark-promotion-seen])
     :primary-text "Get Started"}])
-
-(defn access-request-promotion
-  "Specific component for Access Request"
-  [{:keys [mode on-promotion-seen]}]
-  [feature-promotion
-   {:feature-name "Access Request"
-    :mode mode
-    :image "access-request-promotion.png"
-    :description "Streamline secure access with time-based approvals and automated workflows for your critical resources."
-    :feature-items [{:icon [:> ListTodo {:size 20}]
-                     :title "Just-in-Time Access Control"
-                     :description "Request temporary access to resources for specific time periods. Automatically manage access when the time expires, reducing security exposure."}
-                    {:icon [:> ListCheck {:size 20}]
-                     :title "Multi-Level Approval Workflows"
-                     :description "Configure approval chains with multiple reviewer groups to match your compliance requirements. Commands execute only after all designated approvers grant permission."}
-                    {:icon [:> Settings2 {:size 20}]
-                     :title "Integrated Notifications & Audit"
-                     :description "Receive real-time notifications through Slack and other channels when approvals are needed. Maintain complete audit logs for compliance."}]
-    :on-primary-click (fn []
-                        (when on-promotion-seen
-                          (on-promotion-seen))
-                        (rf/dispatch [:navigate :access-request-new]))
-    :primary-text "Create new Access Request rule"}])
 
 (defn ai-session-analyzer-promotion
   "Specific component for AI Session Analyzer"

@@ -889,3 +889,125 @@ func TestPIIGate_FragmentedUpdateHeldUntilReassembly(t *testing.T) {
 		t.Fatal("LEAK: fragments without Last rendered the signature")
 	}
 }
+
+func TestParseRDPDataMaskingRulesUsesResourceEntitiesAndThreshold(t *testing.T) {
+	params, err := parseRDPDataMaskingRules([]byte(`[
+		{
+			"supported_entity_types": [
+				{"name": "CONTACT_INFORMATION", "entity_types": ["PERSON", "EMAIL_ADDRESS"]},
+				{"name": "TIME_DATA", "entity_types": ["DATE_TIME", "PERSON"]}
+			],
+			"score_threshold": 0.85
+		},
+		{
+			"supported_entity_types": [
+				{"name": "US_DOCUMENTS", "entity_types": ["US_SSN"]}
+			],
+			"score_threshold": 0.6
+		}
+	]`))
+	if err != nil {
+		t.Fatalf("parse rules: %v", err)
+	}
+	if params == nil {
+		t.Fatal("rules with supported entities must enable masking")
+	}
+	if got, want := fmt.Sprint(params.EntityAllowlist), "[DATE_TIME EMAIL_ADDRESS PERSON US_SSN]"; got != want {
+		t.Fatalf("entity allowlist = %s, want %s", got, want)
+	}
+	if params.ScoreThreshold != 0.6 {
+		t.Fatalf("score threshold = %v, want 0.6", params.ScoreThreshold)
+	}
+
+	none, err := parseRDPDataMaskingRules([]byte(`[]`))
+	if err != nil {
+		t.Fatalf("parse empty rules: %v", err)
+	}
+	if none != nil {
+		t.Fatal("connection without data masking rules must remain unguarded")
+	}
+}
+
+func TestParseRDPDataMaskingRulesRejectsNonCanonicalEntities(t *testing.T) {
+	tests := []struct {
+		name string
+		data string
+	}{
+		{
+			name: "empty entity group",
+			data: `[{"name":"invalid","supported_entity_types":[{"name":"CUSTOM_SELECTION","entity_types":[]}]}]`,
+		},
+		{
+			name: "empty entity",
+			data: `[{"name":"invalid","supported_entity_types":[{"name":"CUSTOM_SELECTION","entity_types":[""]}]}]`,
+		},
+		{
+			name: "whitespace",
+			data: `[{"name":"invalid","supported_entity_types":[{"name":"CUSTOM_SELECTION","entity_types":[" PERSON "]}]}]`,
+		},
+		{
+			name: "lowercase",
+			data: `[{"name":"invalid","supported_entity_types":[{"name":"CUSTOM_SELECTION","entity_types":["person"]}]}]`,
+		},
+		{
+			name: "punctuation",
+			data: `[{"name":"invalid","supported_entity_types":[{"name":"CUSTOM_SELECTION","entity_types":["PERSON-NAME"]}]}]`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			params, err := parseRDPDataMaskingRules([]byte(tt.data))
+			if err == nil {
+				t.Fatalf("invalid entity configuration returned params %#v; want an error", params)
+			}
+		})
+	}
+}
+
+func TestParseRDPDataMaskingRulesPreservesZeroThreshold(t *testing.T) {
+	params, err := parseRDPDataMaskingRules([]byte(`[
+		{
+			"name": "all-confidence",
+			"supported_entity_types": [{"name": "TIME_DATA", "entity_types": ["DATE_TIME"]}],
+			"score_threshold": 0
+		}
+	]`))
+	if err != nil {
+		t.Fatalf("parse rules: %v", err)
+	}
+	if params == nil || params.ScoreThreshold != 0 {
+		t.Fatalf("score threshold = %#v, want 0", params)
+	}
+}
+
+func TestParseRDPDataMaskingRulesRejectsInvalidThresholds(t *testing.T) {
+	for _, threshold := range []float64{-0.1, 1.1} {
+		t.Run(fmt.Sprint(threshold), func(t *testing.T) {
+			data := fmt.Sprintf(`[
+				{
+					"name": "invalid-threshold",
+					"supported_entity_types": [{"name": "TIME_DATA", "entity_types": ["DATE_TIME"]}],
+					"score_threshold": %v
+				}
+			]`, threshold)
+			params, err := parseRDPDataMaskingRules([]byte(data))
+			if err == nil {
+				t.Fatalf("invalid score threshold returned params %#v; want an error", params)
+			}
+		})
+	}
+}
+
+func TestParseRDPDataMaskingRulesRejectsCustomEntities(t *testing.T) {
+	params, err := parseRDPDataMaskingRules([]byte(`[
+		{
+			"name": "employee-id",
+			"supported_entity_types": [{"name": "CONTACT_INFORMATION", "entity_types": ["PERSON"]}],
+			"custom_entity_types": [{"name": "EMPLOYEE_ID", "regex": "EMP-[0-9]+", "score": 1}]
+		}
+	]`))
+	if err == nil {
+		t.Fatalf("custom entity rule returned params %#v; want an unsupported-rule error", params)
+	}
+}

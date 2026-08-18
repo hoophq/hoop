@@ -30,6 +30,20 @@ image: {}
   # loaded, see the note under config: before sizing the pod.
   #   repository: hoophq/hoop-agent-alcatraz
   #   tag: <release>
+  #
+  # hoophq/hoopagent ships the `hoop` binary and nothing else — no database
+  # clients, no shell tooling, no Rust agent — and runs as uid 10001. It carries
+  # no AGPL/SSPL component. Use it when the agent only serves connection types it
+  # handles in-process (tcp, postgres, mysql, mssql, mongodb, httpproxy, ssh,
+  # ssm). Custom/command-line connections and RDP are NOT supported; those need
+  # hoophq/hoopdev above. There is no unsuffixed tag and no `latest` — always
+  # name a flavour and a release:
+  #   # Ubuntu 24.04 LTS base; keeps a shell for `kubectl exec` debugging:
+  #   repository: hoophq/hoopagent
+  #   tag: <release>-minimal
+  #   # distroless base; no OS packages and no shell at all (smallest surface):
+  #   repository: hoophq/hoopagent
+  #   tag: <release>-distroless
 
 config: {}
   # HOOP_KEY: '<AUTH_KEY>'
@@ -51,10 +65,10 @@ config: {}
   # "alcatraz models download --dest <dir>" writes into — mounted from a
   # volume. Leave this unset if you use the hoophq/hoop-agent-alcatraz image
   # above, which bakes the model in and sets the variable itself. Without
-  # either, sessions requesting those entity types are refused.
-  # The model costs ~260MB of resident memory: it
-  # loads lazily on the first session that needs it and is not released until
-  # the pod restarts, so size the agent pod accordingly.
+  # either, sessions requesting those entity types are refused. The model
+  # costs ~260MB of resident memory: it loads lazily on the first session that
+  # needs it and is not released until the pod restarts, so size the agent pod
+  # accordingly.
   # ALCATRAZ_NER_MODEL_PATH: ''
   #
   # HashiCorp Vault secrets-manager integration (agent-side). Set VAULT_ADDR

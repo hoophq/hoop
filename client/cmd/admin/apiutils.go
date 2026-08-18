@@ -15,6 +15,7 @@ import (
 	clientconfig "github.com/hoophq/hoop/client/config"
 	"github.com/hoophq/hoop/common/httpclient"
 	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/models"
 	"golang.org/x/text/runes"
 	"golang.org/x/text/transform"
 	"golang.org/x/text/unicode/norm"
@@ -104,6 +105,12 @@ func parseResourceOrDie(args []string, method, outputFlag string) *apiResource {
 		}()
 		apir.resourceList = true
 		apir.suffixEndpoint = path.Join("/api/sessions", apir.name)
+		if apir.name == "" {
+			// Nothing below renders the total, so an exact count is pure cost on a
+			// large workspace. Seeded as a default rather than forced: --query
+			// count=exact is applied after this and takes precedence.
+			apir.queryAttributes.Set("count", string(models.SessionCountCapped))
+		}
 	case "users":
 		apir.resourceUpdate = true
 		apir.resourceCreate = true

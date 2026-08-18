@@ -20,12 +20,22 @@ const (
 	RoleUser      Role = "user"
 	RoleAssistant Role = "assistant"
 	RoleSystem    Role = "system"
+	RoleTool      Role = "tool"
 )
 
 // Message is a single turn in a conversation.
 type Message struct {
-	Role    Role
-	Content string
+	Role       Role
+	Content    string
+	ToolCalls  []ToolCall  // set on assistant turns that requested tools
+	ToolResult *ToolResult // set on RoleTool turns (one message per tool result)
+}
+
+// ToolResult carries the output of an executed tool back to the model.
+type ToolResult struct {
+	ToolCallID string
+	Content    string
+	IsError    bool
 }
 
 // ToolProperty describes a single property within a tool's input JSON Schema.

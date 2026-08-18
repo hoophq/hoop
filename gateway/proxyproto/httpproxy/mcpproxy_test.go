@@ -1,7 +1,16 @@
 package httpproxy
 
 import (
+	"bufio"
+	"bytes"
+	"fmt"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	pb "github.com/hoophq/hoop/common/proto"
 	pbagent "github.com/hoophq/hoop/common/proto/agent"
@@ -96,3 +105,99 @@ func TestMcpProxyConnectionTypeResolution(t *testing.T) {
 		}
 	}
 }
+
+// The forwarded bytes must carry a Host line.
+//
+// net/http's server moves Host out of Request.Header into Request.Host, so
+// rebuilding the request from the header map alone drops it. The agent's MCP
+// adapter parses those bytes with a real http.Server, which rejects an
+// HTTP/1.1 request without Host at the connection layer — the handler never
+// runs and the client sees "400 Bad Request: missing required Host header"
+// on `initialize`.
+func TestBuildRawRequestPreservesHost(t *testing.T) {
+	r := httptest.NewRequest("POST", "http://gw.example.com/mcp", strings.NewReader(`{"jsonrpc":"2.0"}`))
+	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set(proxyTokenHeader, "Bearer secret")
+
+	raw := buildRawRequest(r, r.Host, []byte(`{"jsonrpc":"2.0"}`))
+
+	parsed, err := http.ReadRequest(bufio.NewReader(strings.NewReader(raw)))
+	if err != nil {
+		t.Fatalf("forwarded bytes do not parse: %v", err)
+	}
+	if parsed.Host != "gw.example.com" {
+		t.Fatalf("forwarded Host = %q, want gw.example.com", parsed.Host)
+	}
+	// The proxy credential must never reach the upstream server.
+	if got := parsed.Header.Get(proxyTokenHeader); got != "" {
+		t.Fatalf("proxy token leaked upstream: %q", got)
+	}
+}
+
+// End-to-end on the strict parser: feed the forwarded bytes to an http.Server
+// exactly as libhoop's mcpadapter does (in-memory pipe, real net/http). Only
+// this reproduces the 400, since http.ReadRequest tolerates a missing Host.
+func TestForwardedRequestIsAcceptedByStrictHTTPServer(t *testing.T) {
+	r := httptest.NewRequest("POST", "http://gw.example.com/mcp", strings.NewReader(`{"jsonrpc":"2.0"}`))
+	r.Header.Set("Content-Type", "application/json")
+	raw := buildRawRequest(r, r.Host, []byte(`{"jsonrpc":"2.0"}`))
+
+	clientSide, serverSide := net.Pipe()
+	defer clientSide.Close()
+
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		fmt.Fprintf(w, "handled %s", req.Host)
+	})}
+	go srv.Serve(newSingleConnListener(serverSide))
+	defer srv.Close()
+
+	_ = clientSide.SetDeadline(time.Now().Add(5 * time.Second))
+	if _, err := clientSide.Write([]byte(raw)); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	resp, err := http.ReadResponse(bufio.NewReader(clientSide), nil)
+	if err != nil {
+		t.Fatalf("read response: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		var body bytes.Buffer
+		_, _ = body.ReadFrom(resp.Body)
+		t.Fatalf("strict server rejected forwarded request: %s %s", resp.Status, body.String())
+	}
+}
+
+// singleConnListener hands http.Server exactly one connection, mirroring
+// libhoop/agent/mcpadapter's pipeListener.
+type singleConnListener struct {
+	conns  chan net.Conn
+	closed chan struct{}
+	once   sync.Once
+}
+
+func newSingleConnListener(c net.Conn) *singleConnListener {
+	l := &singleConnListener{conns: make(chan net.Conn, 1), closed: make(chan struct{})}
+	l.conns <- c
+	return l
+}
+
+func (l *singleConnListener) Accept() (net.Conn, error) {
+	select {
+	case c := <-l.conns:
+		return c, nil
+	case <-l.closed:
+		return nil, net.ErrClosed
+	}
+}
+
+func (l *singleConnListener) Close() error {
+	l.once.Do(func() { close(l.closed) })
+	return nil
+}
+
+func (l *singleConnListener) Addr() net.Addr { return pipeAddr{} }
+
+type pipeAddr struct{}
+
+func (pipeAddr) Network() string { return "pipe" }
+func (pipeAddr) String() string  { return "mcpadapter-test" }
