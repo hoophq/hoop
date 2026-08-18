@@ -10,36 +10,39 @@
 ;; CMDB
 
 ;; Estado adicional para paginação e busca de CMDB
+;; All per-row CMDB state (pagination, search, loading, request ids) is keyed
+;; by the row's jira_field: object types are not unique across rows, and two
+;; rows sharing a type may carry different field-config AQL filters.
 (rf/reg-event-db
  :jira-templates->set-cmdb-pagination
  (fn [db [_ cmdb-item pagination]]
-   (assoc-in db [:jira-templates :cmdb-pagination (:jira_object_type cmdb-item)] pagination)))
+   (assoc-in db [:jira-templates :cmdb-pagination (:jira_field cmdb-item)] pagination)))
 
 (rf/reg-event-db
  :jira-templates->set-cmdb-search
  (fn [db [_ cmdb-item search-term]]
-   (assoc-in db [:jira-templates :cmdb-search (:jira_object_type cmdb-item)] search-term)))
+   (assoc-in db [:jira-templates :cmdb-search (:jira_field cmdb-item)] search-term)))
 
 (rf/reg-sub
  :jira-templates->cmdb-pagination
- (fn [db [_ object-type]]
-   (get-in db [:jira-templates :cmdb-pagination object-type]
+ (fn [db [_ jira-field]]
+   (get-in db [:jira-templates :cmdb-pagination jira-field]
            {:page 1 :per-page 50 :total-items 0})))
 
 (rf/reg-sub
  :jira-templates->cmdb-search
- (fn [db [_ object-type]]
-   (get-in db [:jira-templates :cmdb-search object-type] "")))
+ (fn [db [_ jira-field]]
+   (get-in db [:jira-templates :cmdb-search jira-field] "")))
 
 (rf/reg-sub
  :jira-templates->cmdb-loading?
- (fn [db [_ object-type]]
-   (get-in db [:jira-templates :cmdb-loading object-type] false)))
+ (fn [db [_ jira-field]]
+   (get-in db [:jira-templates :cmdb-loading jira-field] false)))
 
 (rf/reg-event-db
  :jira-templates->set-cmdb-loading
- (fn [db [_ object-type loading?]]
-   (assoc-in db [:jira-templates :cmdb-loading object-type] loading?)))
+ (fn [db [_ jira-field loading?]]
+   (assoc-in db [:jira-templates :cmdb-loading jira-field] loading?)))
 
 ;; The AQL configuration of each row's Assets custom field (the same filters
 ;; Jira's portal applies) drives the dropdown cascade. Fetched once per prompt.
@@ -97,10 +100,13 @@
                                      (= (:jira_field item) (:jira_field cmdb-item))
                                      (assoc item :value value :selected-name selected-name)
 
-                                     ;; A row filtered by this selection loses its
-                                     ;; current pick and gets refetched below.
+                                     ;; A row filtered by this selection loses
+                                     ;; its current pick AND its loaded options:
+                                     ;; they belong to the previous upstream
+                                     ;; selection, and must not stay selectable
+                                     ;; if the refetch below fails.
                                      (contains? dependent-fields (:jira_field item))
-                                     (assoc item :value nil :selected-name nil)
+                                     (assoc item :value nil :selected-name nil :jira_values [])
 
                                      :else item))
                                  cmdb-items)
@@ -121,7 +127,8 @@
    (let [page (or page 1)
          search-term (or search-term "")
          object-type (:jira_object_type cmdb-item)
-         pagination (get-in db [:jira-templates :cmdb-pagination object-type]
+         field (:jira_field cmdb-item)
+         pagination (get-in db [:jira-templates :cmdb-pagination field]
                             {:page page :per-page 50})
          ;; Resolve against the freshest row state: the component may hand us
          ;; an item captured before the latest sibling selection.
@@ -133,23 +140,23 @@
          ;; The field configuration owns the scope when present: its AQL
          ;; replaces the template's object type and its schema wins too.
          schema-id (or (:object-schema-id field-filter) (:jira_object_schema_id cmdb-item))
-         ;; Monotonic id per object type: only the latest in-flight fetch may
-         ;; update the dropdown, so a slower older response cannot overwrite
-         ;; AQL-filtered options with unfiltered ones. Bumped for the pending
-         ;; case too, to invalidate anything already in flight.
-         request-id (inc (get-in db [:jira-templates :cmdb-request-id object-type] 0))
-         db (assoc-in db [:jira-templates :cmdb-request-id object-type] request-id)]
+         ;; Monotonic id per row (jira_field): only the latest in-flight fetch
+         ;; may update the dropdown, so a slower older response cannot
+         ;; overwrite AQL-filtered options with unfiltered ones. Bumped for
+         ;; the pending case too, to invalidate anything already in flight.
+         request-id (inc (get-in db [:jira-templates :cmdb-request-id field] 0))
+         db (assoc-in db [:jira-templates :cmdb-request-id field] request-id)]
      (if (= :pending field-filter)
        ;; Configured, but the dependent-field filter has no upstream
        ;; selection yet: the field accepts nothing, so offer nothing.
        {:db db
-        :fx [[:dispatch [:jira-templates->set-cmdb-loading object-type false]]
+        :fx [[:dispatch [:jira-templates->set-cmdb-loading field false]]
              [:dispatch [:jira-templates->set-cmdb-pagination
                          cmdb-item
                          {:page 1 :per-page (:per-page pagination) :total-items 0}]]
              [:dispatch [:jira-templates->merge-cmdb-values cmdb-item []]]]}
        {:db db
-        :fx [[:dispatch [:jira-templates->set-cmdb-loading object-type true]]
+        :fx [[:dispatch [:jira-templates->set-cmdb-loading field true]]
              [:dispatch
               [:fetch {:method "GET"
                        :uri (str "/integrations/jira/assets/objects?"
@@ -172,10 +179,10 @@
 (rf/reg-event-fx
  :jira-templates->cmdb-values-success
  (fn [{:keys [db]} [_ cmdb-item request-id {:keys [page per-page response]}]]
-   (let [object-type (:jira_object_type cmdb-item)]
-     (if (not= request-id (get-in db [:jira-templates :cmdb-request-id object-type]))
-       {} ;; stale: a newer fetch for this object type is in flight
-       {:fx [[:dispatch [:jira-templates->set-cmdb-loading object-type false]]
+   (let [field (:jira_field cmdb-item)]
+     (if (not= request-id (get-in db [:jira-templates :cmdb-request-id field]))
+       {} ;; stale: a newer fetch for this row is in flight
+       {:fx [[:dispatch [:jira-templates->set-cmdb-loading field false]]
              [:dispatch [:jira-templates->set-cmdb-pagination
                          cmdb-item
                          {:page page
@@ -186,19 +193,20 @@
 (rf/reg-event-fx
  :jira-templates->cmdb-values-failure
  (fn [{:keys [db]} [_ cmdb-item request-id cascade?]]
-   (let [object-type (:jira_object_type cmdb-item)]
+   (let [field (:jira_field cmdb-item)]
      (cond
-       (not= request-id (get-in db [:jira-templates :cmdb-request-id object-type]))
-       {} ;; stale: a newer fetch for this object type is in flight
+       (not= request-id (get-in db [:jira-templates :cmdb-request-id field]))
+       {} ;; stale: a newer fetch for this row is in flight
 
-       ;; A failed cascade refetch degrades to the options already loaded
-       ;; instead of escalating to the retry modal, which would remount the
-       ;; form and discard everything the user already typed.
+       ;; A failed cascade refetch degrades to whatever the row currently
+       ;; offers (dependents were already emptied at invalidation) instead of
+       ;; escalating to the retry modal, which would remount the form and
+       ;; discard everything the user already typed.
        cascade?
-       {:fx [[:dispatch [:jira-templates->set-cmdb-loading object-type false]]]}
+       {:fx [[:dispatch [:jira-templates->set-cmdb-loading field false]]]}
 
        :else
-       {:fx [[:dispatch [:jira-templates->set-cmdb-loading object-type false]]
+       {:fx [[:dispatch [:jira-templates->set-cmdb-loading field false]]
              [:dispatch [:jira-templates->merge-cmdb-values cmdb-item nil]]]}))))
 
 (rf/reg-event-fx
@@ -210,7 +218,7 @@
          failed-request? (nil? value)
          ;; Update items
          updated-cmdb-items (map (fn [item]
-                                   (if (= (:jira_object_type item) (:jira_object_type cmdb-item))
+                                   (if (= (:jira_field item) (:jira_field cmdb-item))
                                      (-> item
                                          (assoc :request-failed failed-request?)
                                          (assoc :jira_values (merge value)))
@@ -321,7 +329,7 @@
                                             (rf/dispatch [:jira-templates->set-submit-template template])
                                             (rf/dispatch [:jira-templates->get-cmdb-fieldconfigs (get-in template [:cmdb_types :items])])
                                             (doseq [cmdb-item (get-in template [:cmdb_types :items])]
-                                              (rf/dispatch [:jira-templates->set-cmdb-loading (:jira_object_type cmdb-item) true])
+                                              (rf/dispatch [:jira-templates->set-cmdb-loading (:jira_field cmdb-item) true])
                                               (rf/dispatch [:jira-templates->get-cmdb-values id cmdb-item 1 ""])))
                               :on-failure #(rf/dispatch [:jira-templates->set-submit-template nil])}]}]]}))
 
@@ -338,7 +346,7 @@
                                             (rf/dispatch [:jira-templates->set-submit-template-re-run template])
                                             (rf/dispatch [:jira-templates->get-cmdb-fieldconfigs (get-in template [:cmdb_types :items])])
                                             (doseq [cmdb-item (get-in template [:cmdb_types :items])]
-                                              (rf/dispatch [:jira-templates->set-cmdb-loading (:jira_object_type cmdb-item) true])
+                                              (rf/dispatch [:jira-templates->set-cmdb-loading (:jira_field cmdb-item) true])
                                               (rf/dispatch [:jira-templates->get-cmdb-values id cmdb-item 1 ""])))
                               :on-failure #(rf/dispatch [:jira-templates->set-submit-template-re-run nil])}]}]]}))
 

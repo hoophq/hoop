@@ -117,7 +117,11 @@ func fetchAssetsJSON(ctx context.Context, config *models.JiraIntegration, apiURL
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body)
+		body, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			return fmt.Errorf("unable to fetch %s, api-url=%v, status=%v (failed reading response body: %v)",
+				resource, apiURL, resp.StatusCode, readErr)
+		}
 		return fmt.Errorf("unable to fetch %s, api-url=%v, status=%v, body=%v",
 			resource, apiURL, resp.StatusCode, string(body))
 	}

@@ -4237,18 +4237,6 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.JiraAssetFieldConfigs"
                         }
                     },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
                     "422": {
                         "description": "Unprocessable Entity",
                         "schema": {
@@ -4306,18 +4294,6 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/openapi.JiraAssetObjects"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
                         }
                     },
                     "422": {

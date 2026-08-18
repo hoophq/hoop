@@ -13787,26 +13787,6 @@
             },
             "description": "OK"
           },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/openapi.HTTPError"
-                }
-              }
-            },
-            "description": "Bad Request"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/openapi.HTTPError"
-                }
-              }
-            },
-            "description": "Not Found"
-          },
           "422": {
             "content": {
               "application/json": {
@@ -13882,26 +13862,6 @@
               }
             },
             "description": "OK"
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/openapi.HTTPError"
-                }
-              }
-            },
-            "description": "Bad Request"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/openapi.HTTPError"
-                }
-              }
-            },
-            "description": "Not Found"
           },
           "422": {
             "content": {

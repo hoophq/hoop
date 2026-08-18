@@ -57,10 +57,10 @@
                   :on-change on-change}]))
 
 (defn- cmdb-field [cmdb-item all-items fieldconfigs template-id form-data]
-  (let [object-type (:jira_object_type cmdb-item)
-        pagination (rf/subscribe [:jira-templates->cmdb-pagination object-type])
-        search-term (rf/subscribe [:jira-templates->cmdb-search object-type])
-        loading? (rf/subscribe [:jira-templates->cmdb-loading? object-type])
+  (let [field (:jira_field cmdb-item)
+        pagination (rf/subscribe [:jira-templates->cmdb-pagination field])
+        search-term (rf/subscribe [:jira-templates->cmdb-search field])
+        loading? (rf/subscribe [:jira-templates->cmdb-loading? field])
         options (create-cmdb-select-options (:jira_values cmdb-item))]
 
     [:div.mb-4

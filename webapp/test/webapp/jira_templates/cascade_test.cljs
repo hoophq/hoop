@@ -46,7 +46,14 @@
 (deftest unresolved-placeholder-is-pending-not-unfiltered
   (testing "a configured field must not fall back to the template scope"
     (let [unselected (dissoc product :value :selected-name)]
-      (is (= :pending (cascade/filter-for service [unselected service] fieldconfigs))))))
+      (is (= :pending (cascade/filter-for service [unselected service] fieldconfigs)))))
+  (testing "an unresolved dependency wins over a static object filter"
+    (let [unselected (dissoc product :value :selected-name)
+          cfgs (cascade/index-configs
+                [{:jira_field "customfield_10092"
+                  :object_filter_query "objectType = \"Serviço\""
+                  :issue_scope_filter_query "Produto = ${customfield_10091.label}"}])]
+      (is (= :pending (cascade/filter-for service [unselected service] cfgs))))))
 
 (deftest unconfigured-fields-keep-the-template-scope
   (testing "plain text fields have no config entry"

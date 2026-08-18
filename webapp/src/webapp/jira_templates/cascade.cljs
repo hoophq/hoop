@@ -88,14 +88,16 @@
                   (substitute-placeholders issue-scope items))
           clauses (remove cs/blank? [object-filter scope])]
       (cond
+        ;; An unresolved dependent filter wins over any static scope: Jira
+        ;; enforces BOTH filters on the field, so options matching only the
+        ;; object filter could be invalid for the final selection.
+        (and (not (cs/blank? issue-scope)) (nil? scope)) :pending
+
         (seq clauses)
         {:aql (if (= 1 (count clauses))
                 (first clauses)
                 (cs/join " AND " (map #(str "(" % ")") clauses)))
          :object-schema-id object-schema-id}
-
-        ;; configured with an unresolved dependency only
-        (not (cs/blank? issue-scope)) :pending
 
         ;; configured with nothing to filter by
         :else nil))))
