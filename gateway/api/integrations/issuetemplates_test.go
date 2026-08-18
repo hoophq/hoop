@@ -1,6 +1,9 @@
 package apijiraintegration
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 func TestBuildAssetObjectsQuery(t *testing.T) {
 	for _, tt := range []struct {
@@ -49,6 +52,37 @@ func TestBuildAssetObjectsQuery(t *testing.T) {
 			got := buildAssetObjectsQuery(tt.objectTypeID, tt.objectSchemaID, tt.name, tt.aql)
 			if got != tt.want {
 				t.Errorf("got  %s\nwant %s", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseObjectTypeIDs(t *testing.T) {
+	for _, tt := range []struct {
+		msg     string
+		raw     string
+		want    []string
+		wantErr string
+	}{
+		{msg: "single id", raw: "76", want: []string{"76"}},
+		{msg: "trims and drops blanks", raw: " 76 , ,77,", want: []string{"76", "77"}},
+		{msg: "dedupes repeated ids", raw: "77,77,76,77", want: []string{"77", "76"}},
+		{msg: "empty is rejected", raw: "", wantErr: "object_type_ids query string is required"},
+		{msg: "blanks only is rejected", raw: " , ,", wantErr: "object_type_ids query string is required"},
+	} {
+		t.Run(tt.msg, func(t *testing.T) {
+			got, err := parseObjectTypeIDs(tt.raw)
+			if tt.wantErr != "" {
+				if err == nil || err.Error() != tt.wantErr {
+					t.Fatalf("got err %v, want %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if fmt.Sprint(got) != fmt.Sprint(tt.want) {
+				t.Errorf("got  %v\nwant %v", got, tt.want)
 			}
 		})
 	}

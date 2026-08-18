@@ -17,8 +17,13 @@
       (:name (first (filter #(= (:id %) value) jira_values)))
       (when-not (cs/blank? value) value)))
 
-(defn- quote-aql [s]
-  (str "\"" (cs/replace s "\"" "\\\"") "\""))
+(defn- quote-aql
+  "AQL string literal: backslashes escaped before quotes so a trailing
+   backslash cannot swallow the closing quote."
+  [s]
+  (str "\"" (-> s
+                (cs/replace "\\" "\\\\")
+                (cs/replace "\"" "\\\"")) "\""))
 
 (defn dependents-of
   "Rows whose object type has a reference attribute pointing at the
@@ -33,18 +38,39 @@
                   (contains? dependent-types (:jira_object_type %)))
             items)))
 
+(defn all-dependents
+  "Transitive closure of dependents-of, breadth-first: a cleared row clears
+   its own dependents in turn (A -> B -> C), so a chain never keeps a pick
+   that was filtered by a now-cleared upstream. The seen set makes cyclic
+   schema references terminate."
+  [changed-item items relations]
+  (loop [frontier [changed-item]
+         seen #{(:jira_field changed-item)}
+         acc []]
+    (if-let [item (first frontier)]
+      (let [deps (remove #(contains? seen (:jira_field %))
+                         (dependents-of item items relations))]
+        (recur (into (vec (rest frontier)) deps)
+               (into seen (map :jira_field deps))
+               (into acc deps)))
+      acc)))
+
 (defn aql-for
   "AQL filter for item derived from the Assets schema: one
    \"Attribute\" = \"Selected name\" clause per reference attribute of the
-   item's object type whose target type has a selected sibling row. Returns
-   nil when nothing applies, so callers fall back to the unfiltered fetch."
+   item's object type whose target type has a selected sibling row. When
+   several rows share the referenced type, the first row with a selection
+   wins. Returns nil when nothing applies, so callers fall back to the
+   unfiltered fetch."
   [item items relations]
   (let [clauses (keep (fn [{:keys [attribute_name reference_object_type_id]}]
-                        (let [upstream (first (filter #(and (not= (:jira_field %) (:jira_field item))
-                                                            (= (:jira_object_type %) reference_object_type_id))
-                                                      items))
-                              nm (some-> upstream selected-name)]
-                          (when-not (cs/blank? nm)
+                        (let [nm (->> items
+                                      (filter #(and (not= (:jira_field %) (:jira_field item))
+                                                    (= (:jira_object_type %) reference_object_type_id)))
+                                      (keep selected-name)
+                                      (remove cs/blank?)
+                                      first)]
+                          (when nm
                             (str (quote-aql attribute_name) " = " (quote-aql nm)))))
                       (filter #(= (:object_type_id %) (:jira_object_type item)) relations))]
     (when (seq clauses)

@@ -157,7 +157,7 @@ func GetIssueTemplatesByID(c *gin.Context) {
 //	@Param			name				query		string	false	"Specify a name to filter"
 //	@Param			aql					query		string	false	"Additional AQL expression to filter values with"
 //	@Success		200					{object}	openapi.JiraAssetObjects
-//	@Failure		400,404,500			{object}	openapi.HTTPError
+//	@Failure		400,404,422,500		{object}	openapi.HTTPError
 //	@Router			/integrations/jira/assets/objects [get]
 func GetAssetObjects(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -203,18 +203,13 @@ func GetAssetObjects(c *gin.Context) {
 //	@Produce		json
 //	@Param			object_type_ids	query		string	true	"Comma-separated list of object type ids"
 //	@Success		200				{object}	openapi.JiraAssetObjectTypeAttributes
-//	@Failure		400,404,500		{object}	openapi.HTTPError
+//	@Failure		400,404,422,500	{object}	openapi.HTTPError
 //	@Router			/integrations/jira/assets/objecttypes/attributes [get]
 func GetAssetObjectTypeAttributes(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	var objectTypeIDs []string
-	for _, id := range strings.Split(c.Query("object_type_ids"), ",") {
-		if id = strings.TrimSpace(id); id != "" {
-			objectTypeIDs = append(objectTypeIDs, id)
-		}
-	}
-	if len(objectTypeIDs) == 0 {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "object_type_ids query string is required"})
+	objectTypeIDs, err := parseObjectTypeIDs(c.Query("object_type_ids"))
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
 	config, err := models.GetJiraIntegration(ctx.OrgID)
@@ -236,6 +231,23 @@ func GetAssetObjectTypeAttributes(c *gin.Context) {
 		})
 	}
 	c.JSON(http.StatusOK, openapi.JiraAssetObjectTypeAttributes{Items: items})
+}
+
+// parseObjectTypeIDs splits a comma-separated id list, trimming blanks and
+// dropping duplicates so repeated ids cannot multiply upstream requests.
+func parseObjectTypeIDs(raw string) ([]string, error) {
+	seen := map[string]bool{}
+	var ids []string
+	for _, id := range strings.Split(raw, ",") {
+		if id = strings.TrimSpace(id); id != "" && !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return nil, fmt.Errorf("object_type_ids query string is required")
+	}
+	return ids, nil
 }
 
 // buildAssetObjectsQuery composes the AQL expression used to list asset

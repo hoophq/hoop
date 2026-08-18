@@ -91,7 +91,7 @@
                     ;; cleared and refetched (db side handled by
                     ;; update-cmdb-value); drop their stale picks from the
                     ;; local form state too.
-                    (doseq [dep (cascade/dependents-of cmdb-item all-items relations)]
+                    (doseq [dep (cascade/all-dependents cmdb-item all-items relations)]
                       (swap! form-data update :jira_fields dissoc (:jira_field dep))))}]]))
 
 (defn main [{:keys [prompts on-submit]}]
