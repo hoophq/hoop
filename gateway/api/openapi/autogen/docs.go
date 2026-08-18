@@ -4211,6 +4211,59 @@ const docTemplate = `{
                 }
             }
         },
+        "/integrations/jira/assets/fieldconfigs": {
+            "get": {
+                "description": "Get the AQL configuration of Jira Service Management (JSM) Assets custom fields. These are the object scope and dependent-field (issue scope) filters Jira's own portal applies; they drive the CMDB dropdown cascade. Fields without any configured filter are omitted.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Jira"
+                ],
+                "summary": "Get Asset Field Configurations",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Comma-separated list of Jira custom field ids (e.g. customfield_10092)",
+                        "name": "jira_fields",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.JiraAssetFieldConfigs"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/integrations/jira/assets/objects": {
             "get": {
                 "description": "Get objects from the Jira Service Management (JSM) Assets API",
@@ -4243,7 +4296,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Additional AQL expression to filter values with",
+                        "description": "AQL expression scoping the values; replaces the object_type_id filter when set",
                         "name": "aql",
                         "in": "query"
                     }
@@ -4253,59 +4306,6 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/openapi.JiraAssetObjects"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "422": {
-                        "description": "Unprocessable Entity",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    }
-                }
-            }
-        },
-        "/integrations/jira/assets/objecttypes/attributes": {
-            "get": {
-                "description": "List the object-reference attributes of Jira Service Management (JSM) Assets object types. These schema edges drive the CMDB dropdown cascade filters.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Jira"
-                ],
-                "summary": "Get Asset Object Type Reference Attributes",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Comma-separated list of object type ids",
-                        "name": "object_type_ids",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.JiraAssetObjectTypeAttributes"
                         }
                     },
                     "400": {
@@ -14169,35 +14169,40 @@ const docTemplate = `{
                 "IdpProviderUnknown"
             ]
         },
-        "openapi.JiraAssetObjectTypeAttributes": {
+        "openapi.JiraAssetFieldConfig": {
             "type": "object",
             "properties": {
-                "items": {
-                    "description": "The object-reference attributes found",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/openapi.JiraAssetObjectTypeRefAttribute"
-                    }
+                "issue_scope_filter_query": {
+                    "description": "Dependent-field AQL; may reference sibling fields with ${customfield_x.label} placeholders",
+                    "type": "string",
+                    "example": "\"Product\" = ${customfield_10091.label}"
+                },
+                "jira_field": {
+                    "description": "The Jira custom field id",
+                    "type": "string",
+                    "example": "customfield_10092"
+                },
+                "object_filter_query": {
+                    "description": "AQL scoping every fetch of the field's options",
+                    "type": "string",
+                    "example": "objectType = \"Product\""
+                },
+                "object_schema_id": {
+                    "description": "The Assets object schema the field is bound to",
+                    "type": "string",
+                    "example": "2"
                 }
             }
         },
-        "openapi.JiraAssetObjectTypeRefAttribute": {
+        "openapi.JiraAssetFieldConfigs": {
             "type": "object",
             "properties": {
-                "attribute_name": {
-                    "description": "Name of the reference attribute, usable in AQL clauses",
-                    "type": "string",
-                    "example": "Product"
-                },
-                "object_type_id": {
-                    "description": "The object type owning the reference attribute",
-                    "type": "string",
-                    "example": "77"
-                },
-                "reference_object_type_id": {
-                    "description": "The object type the attribute points at",
-                    "type": "string",
-                    "example": "76"
+                "items": {
+                    "description": "The field configurations found; fields without any filter are omitted",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.JiraAssetFieldConfig"
+                    }
                 }
             }
         },

@@ -134,18 +134,31 @@ type ObjectType struct {
 	ObjectSchemaID string `json:"objectSchemaId"`
 }
 
-// objectTypeAttribute is the Assets API attribute payload; type 1 marks an
-// object reference attribute.
-type objectTypeAttribute struct {
-	Name                  string `json:"name"`
-	Type                  int    `json:"type"`
-	ReferenceObjectTypeID string `json:"referenceObjectTypeId"`
+// fieldContexts is the Jira field context page; the context id addresses the
+// Assets custom field configuration.
+type fieldContexts struct {
+	Values []struct {
+		ID              string `json:"id"`
+		IsGlobalContext bool   `json:"isGlobalContext"`
+	} `json:"values"`
 }
 
-// ObjectTypeReferenceAttribute is an edge of the Assets schema: the attribute
-// of ObjectTypeID whose values reference objects of ReferenceObjectTypeID.
-type ObjectTypeReferenceAttribute struct {
-	ObjectTypeID          string
-	Name                  string
-	ReferenceObjectTypeID string
+// assetFieldConfig is the JSM Assets custom field configuration payload.
+// Non-Assets fields return the payload with both queries empty.
+type assetFieldConfig struct {
+	ObjectSchemaID        string `json:"objectSchemaId"`
+	ObjectFilterQuery     string `json:"objectFilterQuery"`
+	IssueScopeFilterQuery string `json:"issueScopeFilterQuery"`
+}
+
+// AssetFieldConfig is the AQL configuration of an Assets custom field:
+// ObjectFilterQuery scopes every fetch, IssueScopeFilterQuery may reference
+// sibling fields with ${customfield_x.label} placeholders (Jira's native
+// dependent-field mechanism). ObjectSchemaID is the schema the field is
+// bound to.
+type AssetFieldConfig struct {
+	JiraField             string
+	ObjectSchemaID        string
+	ObjectFilterQuery     string
+	IssueScopeFilterQuery string
 }

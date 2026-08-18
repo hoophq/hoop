@@ -1797,18 +1797,20 @@ type JiraAssetObjects struct {
 	HasNextPage bool `json:"has_next_page"`
 }
 
-type JiraAssetObjectTypeRefAttribute struct {
-	// The object type owning the reference attribute
-	ObjectTypeID string `json:"object_type_id" example:"77"`
-	// Name of the reference attribute, usable in AQL clauses
-	AttributeName string `json:"attribute_name" example:"Product"`
-	// The object type the attribute points at
-	ReferenceObjectTypeID string `json:"reference_object_type_id" example:"76"`
+type JiraAssetFieldConfig struct {
+	// The Jira custom field id
+	JiraField string `json:"jira_field" example:"customfield_10092"`
+	// The Assets object schema the field is bound to
+	ObjectSchemaID string `json:"object_schema_id" example:"2"`
+	// AQL scoping every fetch of the field's options
+	ObjectFilterQuery string `json:"object_filter_query" example:"objectType = \"Product\""`
+	// Dependent-field AQL; may reference sibling fields with ${customfield_x.label} placeholders
+	IssueScopeFilterQuery string `json:"issue_scope_filter_query" example:"\"Product\" = ${customfield_10091.label}"`
 }
 
-type JiraAssetObjectTypeAttributes struct {
-	// The object-reference attributes found
-	Items []JiraAssetObjectTypeRefAttribute `json:"items"`
+type JiraAssetFieldConfigs struct {
+	// The field configurations found; fields without any filter are omitted
+	Items []JiraAssetFieldConfig `json:"items"`
 }
 
 type GuardRailRuleRequest struct {

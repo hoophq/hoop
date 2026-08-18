@@ -44,67 +44,87 @@ func FetchObjectsByAQL(config *models.JiraIntegration, limit, offset int, query 
 	return fetchObjectsByAQL(config, vals, query)
 }
 
-// FetchObjectTypeReferenceAttributes lists the object-reference attributes of
-// the given Assets object types. These edges of the schema drive the CMDB
-// dropdown cascade: an object type is filtered by the selection of any type
-// one of its reference attributes points at.
-// https://developer.atlassian.com/cloud/assets/rest/api-group-objecttype/#api-objecttype-id-attributes-get
-func FetchObjectTypeReferenceAttributes(config *models.JiraIntegration, objectTypeIDs []string) ([]ObjectTypeReferenceAttribute, error) {
+// FetchAssetFieldConfigs resolves the Assets configuration of each Jira
+// custom field: field -> context id -> JSM cmdb fieldconfig. The returned
+// AQL queries are the same ones Jira's portal applies to the field's own
+// dropdown; fields without any query (including non-Assets fields) are
+// omitted. The fieldconfig route is served by Jira Service Management but is
+// not part of the documented public API.
+func FetchAssetFieldConfigs(config *models.JiraIntegration, fieldIDs []string) ([]AssetFieldConfig, error) {
 	ctx, cancelFn := context.WithTimeoutCause(context.Background(), defaultRequestTimeout, &ErrTimeoutReached{})
 	defer cancelFn()
-	workspaceID, err := fetchWorkspaceID(ctx, config)
-	if err != nil {
-		return nil, err
-	}
-	refs := []ObjectTypeReferenceAttribute{}
-	for _, objectTypeID := range objectTypeIDs {
-		attributes, err := fetchObjectTypeAttributes(ctx, config, workspaceID, objectTypeID)
+	configs := []AssetFieldConfig{}
+	for _, fieldID := range fieldIDs {
+		contextID, err := fetchFieldContextID(ctx, config, fieldID)
 		if err != nil {
 			return nil, err
 		}
-		for _, attr := range attributes {
-			// type 1 is an object reference attribute
-			if attr.Type != 1 || attr.ReferenceObjectTypeID == "" {
-				continue
-			}
-			refs = append(refs, ObjectTypeReferenceAttribute{
-				ObjectTypeID:          objectTypeID,
-				Name:                  attr.Name,
-				ReferenceObjectTypeID: attr.ReferenceObjectTypeID,
-			})
+		if contextID == "" {
+			continue
 		}
+		var fieldConfig assetFieldConfig
+		apiURL := fmt.Sprintf("%s/rest/servicedesk/cmdb/latest/fieldconfig/%s", config.URL, url.PathEscape(contextID))
+		if err := fetchAssetsJSON(ctx, config, apiURL, "cmdb-fieldconfig", &fieldConfig); err != nil {
+			return nil, err
+		}
+		if fieldConfig.ObjectFilterQuery == "" && fieldConfig.IssueScopeFilterQuery == "" {
+			continue
+		}
+		configs = append(configs, AssetFieldConfig{
+			JiraField:             fieldID,
+			ObjectSchemaID:        fieldConfig.ObjectSchemaID,
+			ObjectFilterQuery:     fieldConfig.ObjectFilterQuery,
+			IssueScopeFilterQuery: fieldConfig.IssueScopeFilterQuery,
+		})
 	}
-	return refs, nil
+	return configs, nil
 }
 
-func fetchObjectTypeAttributes(ctx context.Context, config *models.JiraIntegration, workspaceID, objectTypeID string) ([]objectTypeAttribute, error) {
-	apiURL := fmt.Sprintf("%s/%s/v1/objecttype/%s/attributes", baseAssetsAPI, workspaceID, url.PathEscape(objectTypeID))
+// fetchFieldContextID returns the field's global context id, falling back to
+// the first context. Fields without contexts resolve to "".
+func fetchFieldContextID(ctx context.Context, config *models.JiraIntegration, fieldID string) (string, error) {
+	var contexts fieldContexts
+	apiURL := fmt.Sprintf("%s/rest/api/2/field/%s/context", config.URL, url.PathEscape(fieldID))
+	if err := fetchAssetsJSON(ctx, config, apiURL, "field-contexts", &contexts); err != nil {
+		return "", err
+	}
+	if len(contexts.Values) == 0 {
+		return "", nil
+	}
+	for _, c := range contexts.Values {
+		if c.IsGlobalContext {
+			return c.ID, nil
+		}
+	}
+	return contexts.Values[0].ID, nil
+}
+
+func fetchAssetsJSON(ctx context.Context, config *models.JiraIntegration, apiURL, resource string, out any) error {
 	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed creating object type attributes request, reason=%v", err)
+		return fmt.Errorf("failed creating %s request, reason=%v", resource, err)
 	}
 	req.Header.Set("Accept", "application/json")
 	req.SetBasicAuth(config.User, config.APIToken)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		if errCtx, ok := context.Cause(ctx).(*ErrTimeoutReached); ok {
-			errCtx.apiResource = "objecttype-attributes"
-			errCtx.query = objectTypeID
-			return nil, errCtx
+			errCtx.apiResource = resource
+			errCtx.query = apiURL
+			return errCtx
 		}
-		return nil, fmt.Errorf("failed fetching object type attributes, object-type=%v, reason=%v", objectTypeID, err)
+		return fmt.Errorf("failed fetching %s, api-url=%v, reason=%v", resource, apiURL, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("unable to fetch object type attributes, api-url=%v, status=%v, body=%v",
-			apiURL, resp.StatusCode, string(body))
+		return fmt.Errorf("unable to fetch %s, api-url=%v, status=%v, body=%v",
+			resource, apiURL, resp.StatusCode, string(body))
 	}
-	var attributes []objectTypeAttribute
-	if err := json.NewDecoder(resp.Body).Decode(&attributes); err != nil {
-		return nil, fmt.Errorf("failed decoding object type attributes response, reason=%v", err)
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		return fmt.Errorf("failed decoding %s response, reason=%v", resource, err)
 	}
-	return attributes, nil
+	return nil
 }
 
 // https://developer.atlassian.com/cloud/assets/rest/api-group-object/#api-object-aql-post

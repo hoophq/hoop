@@ -155,7 +155,7 @@ func GetIssueTemplatesByID(c *gin.Context) {
 //	@Param			object_type_id		query		string	true	"The Jira object type to filter values for"
 //	@Param			object_schema_id	query		string	false	"The Jira object schema id to fetch values for"
 //	@Param			name				query		string	false	"Specify a name to filter"
-//	@Param			aql					query		string	false	"Additional AQL expression to filter values with"
+//	@Param			aql					query		string	false	"AQL expression scoping the values; replaces the object_type_id filter when set"
 //	@Success		200					{object}	openapi.JiraAssetObjects
 //	@Failure		400,404,422,500		{object}	openapi.HTTPError
 //	@Router			/integrations/jira/assets/objects [get]
@@ -195,19 +195,19 @@ func GetAssetObjects(c *gin.Context) {
 	})
 }
 
-// GetAssetObjectTypeAttributes
+// GetAssetFieldConfigs
 //
-//	@Summary		Get Asset Object Type Reference Attributes
-//	@Description	List the object-reference attributes of Jira Service Management (JSM) Assets object types. These schema edges drive the CMDB dropdown cascade filters.
+//	@Summary		Get Asset Field Configurations
+//	@Description	Get the AQL configuration of Jira Service Management (JSM) Assets custom fields. These are the object scope and dependent-field (issue scope) filters Jira's own portal applies; they drive the CMDB dropdown cascade. Fields without any configured filter are omitted.
 //	@Tags			Jira
 //	@Produce		json
-//	@Param			object_type_ids	query		string	true	"Comma-separated list of object type ids"
-//	@Success		200				{object}	openapi.JiraAssetObjectTypeAttributes
+//	@Param			jira_fields	query		string	true	"Comma-separated list of Jira custom field ids (e.g. customfield_10092)"
+//	@Success		200			{object}	openapi.JiraAssetFieldConfigs
 //	@Failure		400,404,422,500	{object}	openapi.HTTPError
-//	@Router			/integrations/jira/assets/objecttypes/attributes [get]
-func GetAssetObjectTypeAttributes(c *gin.Context) {
+//	@Router			/integrations/jira/assets/fieldconfigs [get]
+func GetAssetFieldConfigs(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	objectTypeIDs, err := parseObjectTypeIDs(c.Query("object_type_ids"))
+	fieldIDs, err := parseIDListParam(c.Query("jira_fields"), "jira_fields")
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
@@ -217,25 +217,26 @@ func GetAssetObjectTypeAttributes(c *gin.Context) {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed obtaining jira integration configuration: %v", err)
 		return
 	}
-	refs, err := jira.FetchObjectTypeReferenceAttributes(config, objectTypeIDs)
+	fieldConfigs, err := jira.FetchAssetFieldConfigs(config, fieldIDs)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching object type attributes from Jira: %v", err)
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching asset field configurations from Jira: %v", err)
 		return
 	}
-	items := []openapi.JiraAssetObjectTypeRefAttribute{}
-	for _, ref := range refs {
-		items = append(items, openapi.JiraAssetObjectTypeRefAttribute{
-			ObjectTypeID:          ref.ObjectTypeID,
-			AttributeName:         ref.Name,
-			ReferenceObjectTypeID: ref.ReferenceObjectTypeID,
+	items := []openapi.JiraAssetFieldConfig{}
+	for _, fc := range fieldConfigs {
+		items = append(items, openapi.JiraAssetFieldConfig{
+			JiraField:             fc.JiraField,
+			ObjectSchemaID:        fc.ObjectSchemaID,
+			ObjectFilterQuery:     fc.ObjectFilterQuery,
+			IssueScopeFilterQuery: fc.IssueScopeFilterQuery,
 		})
 	}
-	c.JSON(http.StatusOK, openapi.JiraAssetObjectTypeAttributes{Items: items})
+	c.JSON(http.StatusOK, openapi.JiraAssetFieldConfigs{Items: items})
 }
 
-// parseObjectTypeIDs splits a comma-separated id list, trimming blanks and
+// parseIDListParam splits a comma-separated id list, trimming blanks and
 // dropping duplicates so repeated ids cannot multiply upstream requests.
-func parseObjectTypeIDs(raw string) ([]string, error) {
+func parseIDListParam(raw, param string) ([]string, error) {
 	seen := map[string]bool{}
 	var ids []string
 	for _, id := range strings.Split(raw, ",") {
@@ -245,24 +246,29 @@ func parseObjectTypeIDs(raw string) ([]string, error) {
 		}
 	}
 	if len(ids) == 0 {
-		return nil, fmt.Errorf("object_type_ids query string is required")
+		return nil, fmt.Errorf("%s query string is required", param)
 	}
 	return ids, nil
 }
 
 // buildAssetObjectsQuery composes the AQL expression used to list asset
-// objects. A template-defined aql expression is AND-composed (parenthesized)
-// with the base objectTypeId/objectSchemaId/name filters.
+// objects.
+//
+// Without an aql expression the objects are scoped by the template's
+// objectTypeId. An aql expression comes from the Assets field configuration
+// in Jira, which already defines every object the field accepts, so it
+// replaces the objectTypeId scope instead of narrowing it — exactly what
+// Jira's own picker does. AND-ing both would return nothing whenever the
+// template's object type disagrees with the field configuration.
 func buildAssetObjectsQuery(objectTypeID, objectSchemaID, name, aql string) string {
-	query := fmt.Sprintf(`objectTypeId = %q AND name LIKE %q`, objectTypeID, name)
-	if objectSchemaID != "" {
-		query = fmt.Sprintf(`objectTypeId = %q AND objectSchemaId = %q AND name LIKE %q`,
-			objectTypeID, objectSchemaID, name)
-	}
+	scope := fmt.Sprintf(`objectTypeId = %q`, objectTypeID)
 	if aql != "" {
-		query = fmt.Sprintf(`(%s) AND %s`, aql, query)
+		scope = fmt.Sprintf(`(%s)`, aql)
 	}
-	return query
+	if objectSchemaID != "" {
+		scope = fmt.Sprintf(`%s AND objectSchemaId = %q`, scope, objectSchemaID)
+	}
+	return fmt.Sprintf(`%s AND name LIKE %q`, scope, name)
 }
 
 func parseObjectValuesOptions(c *gin.Context) (objectTypeID, objectSchemaID string, limit, offset int, err error) {

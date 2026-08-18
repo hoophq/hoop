@@ -56,7 +56,7 @@
                   :value (get-in @form-data [:jira_fields jira_field] "")
                   :on-change on-change}]))
 
-(defn- cmdb-field [cmdb-item all-items relations template-id form-data]
+(defn- cmdb-field [cmdb-item all-items fieldconfigs template-id form-data]
   (let [object-type (:jira_object_type cmdb-item)
         pagination (rf/subscribe [:jira-templates->cmdb-pagination object-type])
         search-term (rf/subscribe [:jira-templates->cmdb-search object-type])
@@ -91,12 +91,12 @@
                     ;; cleared and refetched (db side handled by
                     ;; update-cmdb-value); drop their stale picks from the
                     ;; local form state too.
-                    (doseq [dep (cascade/all-dependents cmdb-item all-items relations)]
+                    (doseq [dep (cascade/all-dependents cmdb-item all-items fieldconfigs)]
                       (swap! form-data update :jira_fields dissoc (:jira_field dep))))}]]))
 
 (defn main [{:keys [prompts on-submit]}]
   (let [cmdb-items (rf/subscribe [:jira-templates->submit-template-cmdb-items])
-        relations (rf/subscribe [:jira-templates->cmdb-relations])
+        fieldconfigs (rf/subscribe [:jira-templates->cmdb-fieldconfigs])
         template-id (rf/subscribe [:jira-templates->submit-template-id])
         form-data (r/atom (init-form-data @cmdb-items))]
     (fn []
@@ -138,7 +138,7 @@
            (doall
             (for [item @cmdb-items]
               ^{:key (:jira_field item)}
-              [cmdb-field item @cmdb-items @relations @template-id form-data])))]
+              [cmdb-field item @cmdb-items @fieldconfigs @template-id form-data])))]
 
         [:> Flex {:justify "end" :gap "3" :mt "6"}
          [:> Button {:variant "soft"

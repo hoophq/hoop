@@ -28,19 +28,19 @@ func TestBuildAssetObjectsQuery(t *testing.T) {
 			want:           `objectTypeId = "1" AND objectSchemaId = "9" AND name LIKE "srv"`,
 		},
 		{
-			msg:          "with aql only",
+			msg:          "aql replaces the object type scope",
 			objectTypeID: "1",
 			name:         "srv",
-			aql:          `"Status" = "Active"`,
-			want:         `("Status" = "Active") AND objectTypeId = "1" AND name LIKE "srv"`,
+			aql:          `objectType = "Service"`,
+			want:         `(objectType = "Service") AND name LIKE "srv"`,
 		},
 		{
-			msg:            "with schema and aql",
+			msg:            "aql keeps the schema scope",
 			objectTypeID:   "1",
 			objectSchemaID: "9",
 			name:           "srv",
-			aql:            `"Status" = "Active"`,
-			want:           `("Status" = "Active") AND objectTypeId = "1" AND objectSchemaId = "9" AND name LIKE "srv"`,
+			aql:            `objectType = "Service" AND Product = "Git"`,
+			want:           `(objectType = "Service" AND Product = "Git") AND objectSchemaId = "9" AND name LIKE "srv"`,
 		},
 		{
 			msg:          "empty name keeps LIKE filter",
@@ -57,21 +57,21 @@ func TestBuildAssetObjectsQuery(t *testing.T) {
 	}
 }
 
-func TestParseObjectTypeIDs(t *testing.T) {
+func TestParseIDListParam(t *testing.T) {
 	for _, tt := range []struct {
 		msg     string
 		raw     string
 		want    []string
 		wantErr string
 	}{
-		{msg: "single id", raw: "76", want: []string{"76"}},
-		{msg: "trims and drops blanks", raw: " 76 , ,77,", want: []string{"76", "77"}},
-		{msg: "dedupes repeated ids", raw: "77,77,76,77", want: []string{"77", "76"}},
-		{msg: "empty is rejected", raw: "", wantErr: "object_type_ids query string is required"},
-		{msg: "blanks only is rejected", raw: " , ,", wantErr: "object_type_ids query string is required"},
+		{msg: "single id", raw: "customfield_10092", want: []string{"customfield_10092"}},
+		{msg: "trims and drops blanks", raw: " a , ,b,", want: []string{"a", "b"}},
+		{msg: "dedupes repeated ids", raw: "b,b,a,b", want: []string{"b", "a"}},
+		{msg: "empty is rejected", raw: "", wantErr: "jira_fields query string is required"},
+		{msg: "blanks only is rejected", raw: " , ,", wantErr: "jira_fields query string is required"},
 	} {
 		t.Run(tt.msg, func(t *testing.T) {
-			got, err := parseObjectTypeIDs(tt.raw)
+			got, err := parseIDListParam(tt.raw, "jira_fields")
 			if tt.wantErr != "" {
 				if err == nil || err.Error() != tt.wantErr {
 					t.Fatalf("got err %v, want %q", err, tt.wantErr)
