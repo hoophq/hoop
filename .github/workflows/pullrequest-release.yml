@@ -323,6 +323,8 @@ jobs:
     needs: [build-webapp]
     runs-on: ubuntu-latest
     name: Build Linux Amd64
+    outputs:
+      alcatraz_version: ${{ steps.alcatraz.outputs.version }}
 
     steps:
       - name: Checkout Hoop
@@ -340,6 +342,21 @@ jobs:
         with:
           go-version: ">=1.26.0"
           cache-dependency-path: "**/go.sum"
+
+      # The model baked into hoophq/hoop-agent-alcatraz has to come from the
+      # same alcatraz version this binary links, or the agent rejects the files
+      # when it loads them. Deriving it here keeps that from becoming a second
+      # pin to hand-sync. Read from libhoop's own module graph (GOWORK=off),
+      # because libhoop is the module that actually requires alcatraz: the
+      # workspace view would answer with the stale "// indirect" requirement in
+      # agent/go.mod if libhoop ever stopped requiring it, silently baking a
+      # mismatched model instead of failing here.
+      - name: Resolve alcatraz version
+        id: alcatraz
+        run: |
+          set -euo pipefail
+          version="$(GOWORK=off go -C libhoop list -m -f '{{.Version}}' github.com/hoophq/alcatraz)"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       - name: Setup Rust for WASM
         uses: dtolnay/rust-toolchain@stable
@@ -728,6 +745,64 @@ jobs:
             --amend hoophq/hoopdev:${{ github.sha }}-amd64 \
             --amend hoophq/hoopdev:${{ github.sha }}-arm64
           docker manifest push hoophq/hoopdev:${{ env.GIT_TAG }}
+
+  # Agent image with the alcatraz NER model baked in, derived from the hoopdev
+  # image published above. The release workflow publishes it too; it is built
+  # on PRs as well because the image itself is what gets validated -- there is
+  # no way to check that the model is present and loadable other than pulling
+  # the artifact.
+  docker-publish-hoopagent-alcatraz:
+    runs-on: ubuntu-latest
+    name: Publish Agent Alcatraz Image
+    # Fork PRs cannot push to Docker Hub, and the base image this derives from
+    # is only published for same-repo PRs.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    needs:
+      # hoophq/hoopdev is the agent image this derives from.
+      - docker-publish-hoopagent-multiarch
+      # Only for its alcatraz_version output; already an ancestor through
+      # build-tar-files, so this adds no serialization.
+      - linux-amd64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_LOGIN }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-g$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
+      - name: Build and push (multiarch)
+        uses: docker/build-push-action@v4
+        with:
+          file: ./Dockerfile.agent-alcatraz
+          context: '.'
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          sbom: false
+          push: true
+          build-args: |
+            HOOP_IMAGE=hoophq/hoopdev:${{ env.GIT_TAG }}
+            ALCATRAZ_VERSION=${{ needs.linux-amd64.outputs.alcatraz_version }}
+          tags: |
+            hoophq/hoop-agent-alcatraz:${{ env.GIT_TAG }}
+      # The build already verified the model inside the image it produced; this
+      # re-checks the artifact that actually landed in the registry, and does it
+      # per-architecture, which a single-platform build stage cannot.
+      - name: Verify published image
+        run: |
+          for platform in linux/amd64 linux/arm64; do
+            echo "verifying $platform"
+            docker run --rm --platform "$platform" \
+              --entrypoint alcatraz \
+              hoophq/hoop-agent-alcatraz:${{ env.GIT_TAG }} \
+              models verify -dir /opt/alcatraz/models
+          done
 
   publish-release:
     runs-on: ubuntu-latest
