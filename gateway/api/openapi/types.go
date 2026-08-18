@@ -1797,6 +1797,20 @@ type JiraAssetObjects struct {
 	HasNextPage bool `json:"has_next_page"`
 }
 
+type JiraAssetObjectTypeRefAttribute struct {
+	// The object type owning the reference attribute
+	ObjectTypeID string `json:"object_type_id" example:"77"`
+	// Name of the reference attribute, usable in AQL clauses
+	AttributeName string `json:"attribute_name" example:"Product"`
+	// The object type the attribute points at
+	ReferenceObjectTypeID string `json:"reference_object_type_id" example:"76"`
+}
+
+type JiraAssetObjectTypeAttributes struct {
+	// The object-reference attributes found
+	Items []JiraAssetObjectTypeRefAttribute `json:"items"`
+}
+
 type GuardRailRuleRequest struct {
 	// Unique name for the rule
 	Name string `json:"name" binding:"required" example:"my-strict-rule"`

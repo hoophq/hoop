@@ -155,6 +155,7 @@ func GetIssueTemplatesByID(c *gin.Context) {
 //	@Param			object_type_id		query		string	true	"The Jira object type to filter values for"
 //	@Param			object_schema_id	query		string	false	"The Jira object schema id to fetch values for"
 //	@Param			name				query		string	false	"Specify a name to filter"
+//	@Param			aql					query		string	false	"Additional AQL expression to filter values with"
 //	@Success		200					{object}	openapi.JiraAssetObjects
 //	@Failure		400,404,500			{object}	openapi.HTTPError
 //	@Router			/integrations/jira/assets/objects [get]
@@ -170,11 +171,7 @@ func GetAssetObjects(c *gin.Context) {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed obtaining jira integration configuration: %v", err)
 		return
 	}
-	query := fmt.Sprintf(`objectTypeId = %q AND name LIKE %q`, objectTypeID, c.Query("name"))
-	if objectSchemaID != "" {
-		query = fmt.Sprintf(`objectTypeId = %q AND objectSchemaId = %q AND name LIKE %q`,
-			objectTypeID, objectSchemaID, c.Query("name"))
-	}
+	query := buildAssetObjectsQuery(objectTypeID, objectSchemaID, c.Query("name"), c.Query("aql"))
 
 	resp, err := jira.FetchObjectsByAQL(config, limit, offset, query)
 	if err != nil {
@@ -196,6 +193,64 @@ func GetAssetObjects(c *gin.Context) {
 		HasNextPage: !resp.Last,
 		Values:      objectValues,
 	})
+}
+
+// GetAssetObjectTypeAttributes
+//
+//	@Summary		Get Asset Object Type Reference Attributes
+//	@Description	List the object-reference attributes of Jira Service Management (JSM) Assets object types. These schema edges drive the CMDB dropdown cascade filters.
+//	@Tags			Jira
+//	@Produce		json
+//	@Param			object_type_ids	query		string	true	"Comma-separated list of object type ids"
+//	@Success		200				{object}	openapi.JiraAssetObjectTypeAttributes
+//	@Failure		400,404,500		{object}	openapi.HTTPError
+//	@Router			/integrations/jira/assets/objecttypes/attributes [get]
+func GetAssetObjectTypeAttributes(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	var objectTypeIDs []string
+	for _, id := range strings.Split(c.Query("object_type_ids"), ",") {
+		if id = strings.TrimSpace(id); id != "" {
+			objectTypeIDs = append(objectTypeIDs, id)
+		}
+	}
+	if len(objectTypeIDs) == 0 {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "object_type_ids query string is required"})
+		return
+	}
+	config, err := models.GetJiraIntegration(ctx.OrgID)
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed obtaining jira integration configuration: %v", err)
+		return
+	}
+	refs, err := jira.FetchObjectTypeReferenceAttributes(config, objectTypeIDs)
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching object type attributes from Jira: %v", err)
+		return
+	}
+	items := []openapi.JiraAssetObjectTypeRefAttribute{}
+	for _, ref := range refs {
+		items = append(items, openapi.JiraAssetObjectTypeRefAttribute{
+			ObjectTypeID:          ref.ObjectTypeID,
+			AttributeName:         ref.Name,
+			ReferenceObjectTypeID: ref.ReferenceObjectTypeID,
+		})
+	}
+	c.JSON(http.StatusOK, openapi.JiraAssetObjectTypeAttributes{Items: items})
+}
+
+// buildAssetObjectsQuery composes the AQL expression used to list asset
+// objects. A template-defined aql expression is AND-composed (parenthesized)
+// with the base objectTypeId/objectSchemaId/name filters.
+func buildAssetObjectsQuery(objectTypeID, objectSchemaID, name, aql string) string {
+	query := fmt.Sprintf(`objectTypeId = %q AND name LIKE %q`, objectTypeID, name)
+	if objectSchemaID != "" {
+		query = fmt.Sprintf(`objectTypeId = %q AND objectSchemaId = %q AND name LIKE %q`,
+			objectTypeID, objectSchemaID, name)
+	}
+	if aql != "" {
+		query = fmt.Sprintf(`(%s) AND %s`, aql, query)
+	}
+	return query
 }
 
 func parseObjectValuesOptions(c *gin.Context) (objectTypeID, objectSchemaID string, limit, offset int, err error) {

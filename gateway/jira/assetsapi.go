@@ -44,6 +44,69 @@ func FetchObjectsByAQL(config *models.JiraIntegration, limit, offset int, query 
 	return fetchObjectsByAQL(config, vals, query)
 }
 
+// FetchObjectTypeReferenceAttributes lists the object-reference attributes of
+// the given Assets object types. These edges of the schema drive the CMDB
+// dropdown cascade: an object type is filtered by the selection of any type
+// one of its reference attributes points at.
+// https://developer.atlassian.com/cloud/assets/rest/api-group-objecttype/#api-objecttype-id-attributes-get
+func FetchObjectTypeReferenceAttributes(config *models.JiraIntegration, objectTypeIDs []string) ([]ObjectTypeReferenceAttribute, error) {
+	ctx, cancelFn := context.WithTimeoutCause(context.Background(), defaultRequestTimeout, &ErrTimeoutReached{})
+	defer cancelFn()
+	workspaceID, err := fetchWorkspaceID(ctx, config)
+	if err != nil {
+		return nil, err
+	}
+	refs := []ObjectTypeReferenceAttribute{}
+	for _, objectTypeID := range objectTypeIDs {
+		attributes, err := fetchObjectTypeAttributes(ctx, config, workspaceID, objectTypeID)
+		if err != nil {
+			return nil, err
+		}
+		for _, attr := range attributes {
+			// type 1 is an object reference attribute
+			if attr.Type != 1 || attr.ReferenceObjectTypeID == "" {
+				continue
+			}
+			refs = append(refs, ObjectTypeReferenceAttribute{
+				ObjectTypeID:          objectTypeID,
+				Name:                  attr.Name,
+				ReferenceObjectTypeID: attr.ReferenceObjectTypeID,
+			})
+		}
+	}
+	return refs, nil
+}
+
+func fetchObjectTypeAttributes(ctx context.Context, config *models.JiraIntegration, workspaceID, objectTypeID string) ([]objectTypeAttribute, error) {
+	apiURL := fmt.Sprintf("%s/%s/v1/objecttype/%s/attributes", baseAssetsAPI, workspaceID, url.PathEscape(objectTypeID))
+	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed creating object type attributes request, reason=%v", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.SetBasicAuth(config.User, config.APIToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		if errCtx, ok := context.Cause(ctx).(*ErrTimeoutReached); ok {
+			errCtx.apiResource = "objecttype-attributes"
+			errCtx.query = objectTypeID
+			return nil, errCtx
+		}
+		return nil, fmt.Errorf("failed fetching object type attributes, object-type=%v, reason=%v", objectTypeID, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unable to fetch object type attributes, api-url=%v, status=%v, body=%v",
+			apiURL, resp.StatusCode, string(body))
+	}
+	var attributes []objectTypeAttribute
+	if err := json.NewDecoder(resp.Body).Decode(&attributes); err != nil {
+		return nil, fmt.Errorf("failed decoding object type attributes response, reason=%v", err)
+	}
+	return attributes, nil
+}
+
 // https://developer.atlassian.com/cloud/assets/rest/api-group-object/#api-object-aql-post
 func fetchObjectsByAQL(config *models.JiraIntegration, queryVals url.Values, query string) (*AqlResponse, error) {
 	ctx, cancelFn := context.WithTimeoutCause(context.Background(), defaultRequestTimeout, &ErrTimeoutReached{})

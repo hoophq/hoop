@@ -1054,6 +1054,11 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		apijiraintegration.GetAssetObjects)
 
+	r.GET("/integrations/jira/assets/objecttypes/attributes",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		apijiraintegration.GetAssetObjectTypeAttributes)
+
 	// AWS routes
 	r.GET("/integrations/aws/iam/userinfo",
 		apiroutes.AdminAndAuditorAccessRole,

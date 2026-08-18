@@ -133,3 +133,19 @@ type ObjectType struct {
 	Description    string `json:"description"`
 	ObjectSchemaID string `json:"objectSchemaId"`
 }
+
+// objectTypeAttribute is the Assets API attribute payload; type 1 marks an
+// object reference attribute.
+type objectTypeAttribute struct {
+	Name                  string `json:"name"`
+	Type                  int    `json:"type"`
+	ReferenceObjectTypeID string `json:"referenceObjectTypeId"`
+}
+
+// ObjectTypeReferenceAttribute is an edge of the Assets schema: the attribute
+// of ObjectTypeID whose values reference objects of ReferenceObjectTypeID.
+type ObjectTypeReferenceAttribute struct {
+	ObjectTypeID          string
+	Name                  string
+	ReferenceObjectTypeID string
+}

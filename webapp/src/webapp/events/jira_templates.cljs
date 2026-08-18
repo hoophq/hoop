@@ -1,6 +1,8 @@
 (ns webapp.events.jira-templates
   (:require
+   [clojure.string :as cs]
    [re-frame.core :as rf]
+   [webapp.jira-templates.cascade :as cascade]
    [webapp.jira-templates.prompt-form :as prompt-form]
    [webapp.jira-templates.loading-jira-templates :as loading-jira-templates]
    [webapp.jira-templates.cmdb-error :as cmdb-error]))
@@ -39,18 +41,63 @@
  (fn [db [_ object-type loading?]]
    (assoc-in db [:jira-templates :cmdb-loading object-type] loading?)))
 
+;; The Assets schema edges (object-reference attributes between the template's
+;; object types) that drive the dropdown cascade. Fetched once per prompt.
+(rf/reg-event-fx
+ :jira-templates->get-cmdb-relations
+ (fn [{:keys [db]} [_ cmdb-items]]
+   (let [type-ids (distinct (keep :jira_object_type cmdb-items))]
+     (if (< (count type-ids) 2)
+       {:db (assoc-in db [:jira-templates :cmdb-relations] [])}
+       {:db (assoc-in db [:jira-templates :cmdb-relations] [])
+        :fx [[:dispatch
+              [:fetch {:method "GET"
+                       :uri (str "/integrations/jira/assets/objecttypes/attributes?object_type_ids="
+                                 (js/encodeURIComponent (cs/join "," type-ids)))
+                       :on-success #(rf/dispatch [:jira-templates->set-cmdb-relations (:items %)])
+                       ;; No cascade is better than a broken prompt: fall back
+                       ;; to unfiltered dropdowns when the schema lookup fails.
+                       :on-failure #(rf/dispatch [:jira-templates->set-cmdb-relations []])}]]]}))))
+
 (rf/reg-event-db
+ :jira-templates->set-cmdb-relations
+ (fn [db [_ relations]]
+   (assoc-in db [:jira-templates :cmdb-relations] (vec relations))))
+
+(rf/reg-sub
+ :jira-templates->cmdb-relations
+ (fn [db _]
+   (get-in db [:jira-templates :cmdb-relations] [])))
+
+(rf/reg-event-fx
  :jira-templates->update-cmdb-value
- (fn [db [_ cmdb-item value]]
+ (fn [{:keys [db]} [_ cmdb-item value]]
    (let [current-template (get-in db [:jira-templates->submit-template :data])
          cmdb-items (get-in current-template [:cmdb_types :items])
+         ;; The searchbox hands us the selected object id; keep the matching
+         ;; name so sibling rows can substitute it into their AQL filters.
+         selected-name (:name (first (filter #(= (:id %) value)
+                                             (:jira_values cmdb-item))))
+         relations (get-in db [:jira-templates :cmdb-relations] [])
+         dependents (cascade/dependents-of cmdb-item cmdb-items relations)
+         dependent-fields (set (map :jira_field dependents))
          updated-cmdb-items (map (fn [item]
-                                   (if (= (:jira_field item) (:jira_field cmdb-item))
-                                     (assoc item :value value)
-                                     item))
+                                   (cond
+                                     (= (:jira_field item) (:jira_field cmdb-item))
+                                     (assoc item :value value :selected-name selected-name)
+
+                                     ;; A row filtered by this selection loses its
+                                     ;; current pick and gets refetched below.
+                                     (contains? dependent-fields (:jira_field item))
+                                     (assoc item :value nil :selected-name nil)
+
+                                     :else item))
                                  cmdb-items)
-         updated-template (assoc-in current-template [:cmdb_types :items] updated-cmdb-items)]
-     (assoc-in db [:jira-templates->submit-template :data] updated-template))))
+         updated-template (assoc-in current-template [:cmdb_types :items] updated-cmdb-items)
+         template-id (:id current-template)]
+     {:db (assoc-in db [:jira-templates->submit-template :data] updated-template)
+      :fx (vec (for [dep dependents]
+                 [:dispatch [:jira-templates->get-cmdb-values template-id dep]]))})))
 
 (rf/reg-event-fx
  :jira-templates->get-cmdb-values
@@ -58,7 +105,14 @@
    (let [page (or page 1)
          search-term (or search-term "")
          pagination (get-in db [:jira-templates :cmdb-pagination (:jira_object_type cmdb-item)]
-                            {:page page :per-page 50})]
+                            {:page page :per-page 50})
+         ;; Resolve against the freshest row state: the component may hand us
+         ;; an item captured before the latest sibling selection.
+         cmdb-items (get-in db [:jira-templates->submit-template :data :cmdb_types :items])
+         current-item (or (first (filter #(= (:jira_field %) (:jira_field cmdb-item)) cmdb-items))
+                          cmdb-item)
+         relations (get-in db [:jira-templates :cmdb-relations] [])
+         aql (cascade/aql-for current-item cmdb-items relations)]
      {:fx [[:dispatch [:jira-templates->set-cmdb-loading (:jira_object_type cmdb-item) true]]
            [:dispatch
             [:fetch {:method "GET"
@@ -68,7 +122,9 @@
                                "&offset=" (* (- page 1) (:per-page pagination))
                                "&limit=" (:per-page pagination)
                                (when-not (empty? search-term)
-                                 (str "&name=" (js/encodeURIComponent search-term))))
+                                 (str "&name=" (js/encodeURIComponent search-term)))
+                               (when-not (empty? aql)
+                                 (str "&aql=" (js/encodeURIComponent aql))))
                      :on-success (fn [response]
                                    (rf/dispatch [:jira-templates->set-cmdb-loading (:jira_object_type cmdb-item) false])
                                    (rf/dispatch [:jira-templates->set-cmdb-pagination
@@ -199,6 +255,7 @@
                               :uri (str "/integrations/jira/issuetemplates/" id)
                               :on-success (fn [template]
                                             (rf/dispatch [:jira-templates->set-submit-template template])
+                                            (rf/dispatch [:jira-templates->get-cmdb-relations (get-in template [:cmdb_types :items])])
                                             (doseq [cmdb-item (get-in template [:cmdb_types :items])]
                                               (rf/dispatch [:jira-templates->set-cmdb-loading (:jira_object_type cmdb-item) true])
                                               (rf/dispatch [:jira-templates->get-cmdb-values id cmdb-item 1 ""])))
@@ -215,6 +272,7 @@
                               :uri (str "/integrations/jira/issuetemplates/" id)
                               :on-success (fn [template]
                                             (rf/dispatch [:jira-templates->set-submit-template-re-run template])
+                                            (rf/dispatch [:jira-templates->get-cmdb-relations (get-in template [:cmdb_types :items])])
                                             (doseq [cmdb-item (get-in template [:cmdb_types :items])]
                                               (rf/dispatch [:jira-templates->set-cmdb-loading (:jira_object_type cmdb-item) true])
                                               (rf/dispatch [:jira-templates->get-cmdb-values id cmdb-item 1 ""])))
