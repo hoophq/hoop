@@ -2,9 +2,7 @@ import { Combine, FolderLock, SlidersHorizontal } from 'lucide-react'
 import FeaturePromotion from '@/components/FeaturePromotion'
 import { docsUrl } from '@/utils/docsUrl'
 
-// Empty-state behavior is gated by the org's effective DLP `redact_provider`
-// (/serverinfo already resolves the experimental.alcatraz_dlp override, so
-// this is the provider sessions actually mask with):
+// Empty-state behavior is gated by the server's DLP `redact_provider`:
 //   - mspresidio / alcatraz → "Configure" CTA into the create flow, since
 //     both drive masking from data-masking rules.
 //   - gcp → docs link + deprecated-provider warning, no create path.

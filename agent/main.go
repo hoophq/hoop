@@ -14,7 +14,6 @@ import (
 
 	agentconfig "github.com/hoophq/hoop/agent/config"
 	"github.com/hoophq/hoop/agent/controller"
-	"github.com/hoophq/hoop/agent/controller/featureflagstate"
 	"github.com/hoophq/hoop/common/backoff"
 	"github.com/hoophq/hoop/common/clientconfig"
 	"github.com/hoophq/hoop/common/grpc"
@@ -27,10 +26,6 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// alcatrazNerFlagName gates NER model loading per organization; the gateway
-// pushes its value to the agent over the FeatureFlagUpdate packet.
-const alcatrazNerFlagName = "experimental.alcatraz_ner"
-
 var (
 	defaultUserAgent       = fmt.Sprintf("hoopagent/%v", version.Get().Version)
 	vi                     = version.Get()
@@ -42,23 +37,21 @@ var (
 )
 
 // configureAlcatrazNer registers the in-process NER backend for the alcatraz
-// DLP provider. Registration is cheap: whether the ONNX model may load is
-// decided per session by the experimental.alcatraz_ner feature flag (pushed
-// by the gateway after connect), and the load itself happens lazily, on the
-// first session whose data-masking rules request a statistical entity type
-// (PERSON, LOCATION, NRP), and is shared by every session after that. With
-// the flag off, such sessions fail closed. ALCATRAZ_NER_MODEL_PATH points at
-// a local model directory for air-gapped agents; when unset the default
-// model is downloaded on first use.
+// DLP provider, which serves data-masking rules that request a statistical
+// entity type (PERSON, LOCATION, NRP). Registration is cheap: the ONNX model
+// loads lazily, on the first session that asks for one of those types, and
+// every session after that shares it.
+//
+// The model is never fetched at runtime, so the files on disk are what
+// decides whether NER is available: ALCATRAZ_NER_MODEL_PATH is the models
+// directory (the parent that holds one subdirectory per model id — what
+// "alcatraz models download --dest <dir>" writes into), and an agent whose
+// image does not carry one refuses those sessions with an error naming the
+// missing file. Loading costs a few hundred MB of resident memory that is
+// not released until the process restarts.
 func configureAlcatrazNer() {
 	configureAlcatrazNerOnce.Do(func() {
-		nerProvider := alcatraznlp.Provider(os.Getenv("ALCATRAZ_NER_MODEL_PATH"))
-		redactoralcatraz.SetNlpProvider(func() (redactoralcatraz.NlpBackend, error) {
-			if !featureflagstate.IsEnabled(alcatrazNerFlagName) {
-				return nil, fmt.Errorf("the NER module is disabled (enable the %s feature flag)", alcatrazNerFlagName)
-			}
-			return nerProvider()
-		})
+		redactoralcatraz.SetNlpProvider(alcatraznlp.Provider(os.Getenv("ALCATRAZ_NER_MODEL_PATH")))
 	})
 }
 

@@ -468,7 +468,7 @@ func getAISessionAnalyzerParams(pctx *plugintypes.Context) (*pb.AISessionAnalyze
 func (s *Server) processClientPacket(stream *streamclient.ProxyStream, pkt *pb.Packet, pctx plugintypes.Context) error {
 	switch pb.PacketType(pkt.Type) {
 	case pbagent.SessionOpen:
-		dlpProvider := services.DLPProviderForOrg(pctx.OrgID)
+		dlpProvider := s.AppConfig.DlpProvider()
 		spec := map[string][]byte{
 			pb.SpecGatewaySessionID: []byte(pctx.SID),
 			pb.SpecConnectionType:   pb.ToConnectionType(pctx.ConnectionType, pctx.ConnectionSubType).Bytes(),

@@ -22,7 +22,7 @@ import (
 
 // staticServerInfo holds the fields that derive purely from process-wide
 // environment and never vary per request. Everything organization-scoped
-// (redact provider, feature flags, license, ...) is filled in on a copy of
+// (feature flags, license, analytics mode, ...) is filled in on a copy of
 // this value inside Get, so concurrent requests from different orgs cannot
 // observe each other's data.
 var (
@@ -103,12 +103,8 @@ func Get(c *gin.Context) {
 	serverInfoData.GrpcURL = ctx.GrpcURL
 	serverInfoData.ApiURL = appc.ApiURL()
 	serverInfoData.HasAskiAICredentials = appc.IsAskAIAvailable()
-	// Report the provider the organization actually masks with, not the raw
-	// DLP_PROVIDER env: experimental.alcatraz_dlp overrides it per org, and
-	// the transport already routes sessions by the effective value. Reporting
-	// the env here would make the UI gate on a provider that is not in use.
-	serverInfoData.RedactProvider = services.DLPProviderForOrg(ctx.OrgID)
-	serverInfoData.HasRedactCredentials = services.CheckRedactProviderForOrg(ctx.OrgID) == nil
+	serverInfoData.RedactProvider = appc.DlpProvider()
+	serverInfoData.HasRedactCredentials = services.CheckRedactProvider() == nil
 	serverInfoData.HasSSHClientHostKey = appc.SSHClientHostKey() != ""
 	serverInfoData.PostgresProxyEnabled = miscConf != nil &&
 		miscConf.PostgresServerConfig != nil &&

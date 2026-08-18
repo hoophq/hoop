@@ -151,7 +151,8 @@ config:
   # 'gcp' (requires GOOGLE_APPLICATION_CREDENTIALS_JSON) or 'alcatraz'
   # (in-process pattern engine on the agent, no extra services or
   # credentials; statistical entity types such as PERSON/LOCATION also
-  # need the experimental.alcatraz_ner feature flag — see the agent chart).
+  # need the NER model on the agent — see ALCATRAZ_NER_MODEL_PATH in the
+  # agent chart).
   # DLP_PROVIDER: ''
   # DLP_MODE: 'best-effort|strict'
   # GOOGLE_APPLICATION_CREDENTIALS_JSON: ''

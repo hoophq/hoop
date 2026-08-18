@@ -35,14 +35,15 @@ config: {}
   # DLP_MODE: 'strict|best-effort'
   #
   # NER module for the gateway's DLP_PROVIDER=alcatraz: detects statistical
-  # entity types (PERSON, LOCATION, NRP) with an in-process ONNX model.
-  # Enablement is controlled per organization by the experimental.alcatraz_ner
-  # feature flag (admin UI / API), not by an env var. The model (~260MB
-  # resident memory) loads lazily on the first session that requests one of
-  # those types — size the agent pod accordingly. Point
-  # ALCATRAZ_NER_MODEL_PATH at a directory baked into the image or mounted
-  # from a volume (model.onnx, tokenizer.json, config.json) for air-gapped
-  # clusters; when unset the default model is downloaded on first use.
+  # entity types (PERSON, LOCATION, NRP) with an in-process ONNX model. The
+  # model is never fetched at runtime, so having it on disk is what enables
+  # the module: point ALCATRAZ_NER_MODEL_PATH at the models directory — the
+  # parent that holds one subdirectory per model id, which is what
+  # "alcatraz models download --dest <dir>" writes into — baked into the
+  # image or mounted from a volume. Without it, sessions requesting those
+  # entity types are refused. The model costs ~260MB of resident memory: it
+  # loads lazily on the first session that needs it and is not released until
+  # the pod restarts, so size the agent pod accordingly.
   # ALCATRAZ_NER_MODEL_PATH: ''
   #
   # HashiCorp Vault secrets-manager integration (agent-side). Set VAULT_ADDR
