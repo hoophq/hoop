@@ -746,36 +746,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
-      # Only for its go.mod: the alcatraz version is read from it below.
-      - name: Checkout libhoop
-        uses: actions/checkout@v3
-        with:
-          repository: hoophq/libhoop
-          path: "./libhoop"
-          token: ${{ secrets.GH_TOKEN }}
-      - name: Setup Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: go.work
-          cache-dependency-path: "**/go.sum"
-      # The model baked into the image has to come from the same alcatraz
-      # version the agent binary links, or the agent rejects the files when it
-      # loads them. Deriving it keeps that from becoming a second pin to
-      # hand-sync. Read from libhoop's own module graph (GOWORK=off), because
-      # libhoop is the module that actually requires alcatraz: the workspace
-      # view would answer with the stale "// indirect" requirement in
-      # agent/go.mod if libhoop ever stopped requiring it, silently baking a
-      # mismatched model instead of failing here.
-      #
-      # This resolves in the image job, not in the binary build that also has
-      # libhoop checked out: a version this job cannot answer is a reason to
-      # publish no image, never a reason to hold back the preview binaries.
-      - name: Resolve alcatraz version
-        id: alcatraz
-        run: |
-          set -euo pipefail
-          version="$(GOWORK=off go -C libhoop list -m -f '{{.Version}}' github.com/hoophq/alcatraz)"
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
       - name: Set up Docker Buildx
@@ -798,20 +768,21 @@ jobs:
           push: true
           build-args: |
             HOOP_IMAGE=hoophq/hoopdev:${{ env.GIT_TAG }}
-            ALCATRAZ_VERSION=${{ steps.alcatraz.outputs.version }}
           tags: |
             hoophq/hoop-agent-alcatraz:${{ env.GIT_TAG }}
       # The build already verified the model inside the image it produced; this
       # re-checks the artifact that actually landed in the registry, and does it
-      # per-architecture, which a single-platform build stage cannot.
+      # per-architecture, which a single-platform build stage cannot. The
+      # manifest ships inside the image, so this needs nothing installed beyond
+      # the coreutils the base already has.
       - name: Verify published image
         run: |
           for platform in linux/amd64 linux/arm64; do
             echo "verifying $platform"
             docker run --rm --platform "$platform" \
-              --entrypoint alcatraz \
+              --entrypoint sh \
               hoophq/hoop-agent-alcatraz:${{ env.GIT_TAG }} \
-              models verify -dir /opt/alcatraz/models
+              -c 'cd /opt/alcatraz/models && sha256sum -c checksums.txt'
           done
 
   # Preview build of hoophq/hoopagent, both slim flavours (see Dockerfile.agent).
