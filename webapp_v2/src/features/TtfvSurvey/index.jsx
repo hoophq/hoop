@@ -23,9 +23,10 @@ import {
  * cooldown has passed.
  *
  * Visibility is owned entirely by the gateway: /userinfo returns
- * show_ttfv_survey, which already accounts for the caller being an admin, the
- * feature flag, the terminal Yes and the cooldown. Nothing about that policy is
- * re-implemented here, so it can be re-tuned without a frontend deploy — and a
+ * show_ttfv_survey, which already accounts for the caller being an admin,
+ * whether the organization is eligible to be asked at all, the terminal Yes and
+ * the cooldown. Nothing about that policy is re-implemented here — not even the
+ * names of its clauses — so it can be re-tuned without a frontend deploy, and a
  * gateway that does not know the field yet leaves it undefined, which reads as
  * "do not ask".
  *

@@ -818,7 +818,7 @@ Non-obvious notes only:
 - `originSurvey.js` / `ttfvSurvey.js` — the in-app surveys. Both are write-only:
   there is no GET, because whether to ask is a boolean on `/userinfo`
   (`show_origin_survey`, `show_ttfv_survey`) and the whole policy — admin check,
-  feature flag, cooldown, already-answered — lives in the gateway. Both POST
+  org eligibility, cooldown, already-answered — lives in the gateway. Both POST
   return 204, and 409 on a repeat answer, so callers fire and forget rather than
   surfacing an error the user can't act on. On `ttfvSurvey.answer`, `activity` is
   only read when `reachedValue` is true and `activityOther` only when `activity`
