@@ -1558,9 +1558,11 @@ type ServerInfo struct {
 	GoDebug string `json:"go_debug" example:"http2debug=2"`
 	// Auth method used by the server
 	AuthMethod string `json:"auth_method" enums:"oidc,local" example:"local"`
-	// Redact Provider used by the server
-	RedactProvider string `json:"redact_provider" enums:"gcp,mspresidio" example:"gcp"`
-	// Report if GOOGLE_APPLICATION_CREDENTIALS_JSON or MSPRESIDIO is set
+	// Redact Provider configured for the server via the DLP_PROVIDER env
+	RedactProvider string `json:"redact_provider" enums:"gcp,mspresidio,alcatraz" example:"gcp"`
+	// Report if the server can enforce data masking: the credentials of the
+	// configured provider are set (GOOGLE_APPLICATION_CREDENTIALS_JSON or
+	// MSPRESIDIO), or the provider is alcatraz, which needs none
 	HasRedactCredentials bool `json:"has_redact_credentials"`
 	// Report if WEBHOOK_APPKEY is set
 	HasWebhookAppKey bool `json:"has_webhook_app_key"`

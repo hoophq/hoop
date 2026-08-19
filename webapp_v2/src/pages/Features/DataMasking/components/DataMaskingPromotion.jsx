@@ -2,9 +2,11 @@ import { Combine, FolderLock, SlidersHorizontal } from 'lucide-react'
 import FeaturePromotion from '@/components/FeaturePromotion'
 import { docsUrl } from '@/utils/docsUrl'
 
-// Empty-state behavior is gated by the gateway's DLP `redact_provider`:
-//   - mspresidio → "Configure" CTA into the create flow.
-//   - gcp / unset → docs link + deprecated-provider warning, no create path.
+// Empty-state behavior is gated by the server's DLP `redact_provider`:
+//   - mspresidio / alcatraz → "Configure" CTA into the create flow, since
+//     both drive masking from data-masking rules.
+//   - gcp → docs link + deprecated-provider warning, no create path.
+//   - unset → docs link only; there is no provider to call deprecated.
 const FEATURE_ITEMS = [
   {
     icon: <FolderLock size={20} />,
@@ -29,18 +31,22 @@ const FEATURE_ITEMS = [
 const DEPRECATED_GCP_INFO =
   'Your organization has a deprecated Google Cloud DLP configuration. Check our Microsoft Presidio documentation to enable an upgraded version of Live Data Masking setup in your environment.'
 
+// Providers whose masking is driven by data-masking rules, so the org can be
+// sent straight into the create flow.
+const RULE_DRIVEN_PROVIDERS = ['mspresidio', 'alcatraz']
+
 export default function DataMaskingPromotion({ redactProvider, onConfigure }) {
-  const providerProps =
-    redactProvider === 'mspresidio'
-      ? {
-          onPrimaryClick: onConfigure,
-          primaryText: 'Configure Live Data Masking',
-        }
-      : {
-          docsHref: docsUrl.features.aiDatamasking,
-          docsText: 'Go to Live Data Masking Docs',
-          extraInformation: DEPRECATED_GCP_INFO,
-        }
+  const providerProps = RULE_DRIVEN_PROVIDERS.includes(redactProvider)
+    ? {
+        onPrimaryClick: onConfigure,
+        primaryText: 'Configure Live Data Masking',
+      }
+    : {
+        docsHref: docsUrl.features.aiDatamasking,
+        docsText: 'Go to Live Data Masking Docs',
+        extraInformation:
+          redactProvider === 'gcp' ? DEPRECATED_GCP_INFO : undefined,
+      }
 
   return (
     <FeaturePromotion

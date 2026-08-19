@@ -17,6 +17,7 @@ import (
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
@@ -29,7 +30,6 @@ var (
 		Commit:                  vinfo.GitCommit,
 		LogLevel:                os.Getenv("LOG_LEVEL"),
 		GoDebug:                 os.Getenv("GODEBUG"),
-		RedactProvider:          os.Getenv("DLP_PROVIDER"),
 		HasWebhookAppKey:        isEnvSet("WEBHOOK_APPKEY"),
 		HasIDPAudience:          isEnvSet("IDP_AUDIENCE"),
 		HasIDPCustomScopes:      isEnvSet("IDP_CUSTOM_SCOPES"),
@@ -99,7 +99,8 @@ func Get(c *gin.Context) {
 	serverInfoData.GrpcURL = ctx.GrpcURL
 	serverInfoData.ApiURL = appc.ApiURL()
 	serverInfoData.HasAskiAICredentials = appc.IsAskAIAvailable()
-	serverInfoData.HasRedactCredentials = appc.HasRedactCredentials()
+	serverInfoData.RedactProvider = appc.DlpProvider()
+	serverInfoData.HasRedactCredentials = services.CheckRedactProvider() == nil
 	serverInfoData.HasSSHClientHostKey = appc.SSHClientHostKey() != ""
 	serverInfoData.PostgresProxyEnabled = miscConf != nil &&
 		miscConf.PostgresServerConfig != nil &&

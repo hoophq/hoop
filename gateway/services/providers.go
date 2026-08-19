@@ -21,11 +21,15 @@ import (
 var ErrRedactProviderMissing = errors.New(
 	"no data masking provider is configured: data masking requires a DLP provider " +
 		"(set DLP_PROVIDER=mspresidio with MSPRESIDIO_ANALYZER_URL and MSPRESIDIO_ANONYMIZER_URL, " +
-		"or DLP_PROVIDER=gcp with GOOGLE_APPLICATION_CREDENTIALS_JSON); " +
+		"DLP_PROVIDER=gcp with GOOGLE_APPLICATION_CREDENTIALS_JSON, " +
+		"or DLP_PROVIDER=alcatraz which needs no credentials); " +
 		"rules configured without one are not enforced")
 
 // CheckRedactProvider returns ErrRedactProviderMissing when the server has
-// no DLP provider configured (Presidio or GCP both qualify for masking).
+// no DLP provider configured. Presidio, GCP and alcatraz all qualify for
+// masking; alcatraz runs in-process on the agent and needs no credentials or
+// service URLs, so DLP_PROVIDER=alcatraz satisfies this on its own (see
+// appconfig.hasRedactCredentials).
 func CheckRedactProvider() error {
 	if appconfig.Get().HasRedactCredentials() {
 		return nil
