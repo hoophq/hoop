@@ -261,10 +261,11 @@ Examples:
 - Update `CLAUDE.md`, fix a GitHub Actions workflow, rename a variable → `skip-release`
 
 ### Writing Style
-Applies to commit messages, PR descriptions, and code comments.
+Applies to commit messages, PR descriptions, code comments, and ticket comments.
 
 - Write the least possible amount of words. More than 2 lines is too long.
 - Use ASD-STE100 Simplified Technical English.
+- Reference a ticket by its ID (`DEP-147`), never by URL. The repos are public — a Linear URL leaks the workspace and the ticket slug.
 
 ## Merge Conflict Resolution
 When merging `main` into a feature branch:
