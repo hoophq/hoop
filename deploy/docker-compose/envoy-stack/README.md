@@ -397,16 +397,16 @@ Nothing here uses the compose stack in this directory. The checklist:
 |---|---|---|---|
 | 1 | **A hoop gateway you can reach** | It holds the review and the reviewer logs into it | `make run-dev` gives you one on `http://127.0.0.1:8009`, which these steps assume |
 | 2 | **An admin token for it** | Creates the connection and the rule in step 3, and approves in step 8 | Webapp devtools, or `POST /api/localauth/login` — the token comes back in a `Token` **header**, not the body |
-| 3 | **An `hpk_` API key** | The relay authenticates with it, and it OWNS the reviews it files | An AI agent or API key on the gateway — step 2. Its **groups decide which connections it can reach**, so it must reach the ones in step 3 |
+| 3 | **An `hpk_` API key** | The relay authenticates with it, and it OWNS the reviews it files | An AI agent or API key on the gateway — step 2. Give it a **non-admin** group: an admin credential can approve its own reviews, which defeats the gate |
 | 4 | **A model credential** | `require_review` is an `ai_analysis` action; something has to classify before there is anything to review | Google AI Studio, Anthropic, OpenAI or Vertex — step 1 |
-| 5 | **A database to front** | Postgres, SQL Server, or both | Any instance. The relay sits in front; it needs no schema and creates nothing |
+| 5 | **Something to front** | Postgres, SQL Server, an HTTP service, or any mix | Any instance. The relay sits in front; it needs no schema and creates nothing |
 | 6 | **The `hoop` binary** | `hoop start inspect` runs the relay | This repo: `make build-dev-client`, or any release build |
 
 Both credential files must be **`chmod 600`** — the relay refuses one that
 group or other can read, and reports the mode when it does.
 
-Two ports must be free for the lanes (`15432` and `11433` below) plus `19000`
-for the relay's admin endpoint.
+Three ports must be free for the lanes (`15432`, `11433` and `18080` below)
+plus `19000` for the relay's admin endpoint.
 
 ---
 
@@ -450,7 +450,7 @@ ADMIN_TOKEN=…      # see below
 
 curl -sS -X POST "$API/ai-agents" \
   -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
-  -d '{"name":"inspect-relay","groups":["admin"]}' | python3 -m json.tool
+  -d '{"name":"inspect-relay","groups":["hoop-inspect"]}' | python3 -m json.tool
 ```
 
 The response carries `"key": "hpk_…"`. **It is shown exactly once.** Save it
@@ -475,9 +475,13 @@ curl -sS -D - -o /dev/null -X POST "$API/localauth/login" \
 ```
 </details>
 
-The `groups` you give it matter: they decide which connections it can reach.
-`admin` reaches everything, which is right for a walkthrough and wrong for a
-real sandbox — scope it to a group that only reaches the connection it fronts.
+**Do not give this credential the `admin` group.** The groups decide which
+connections it can reach, so `admin` is tempting — but `admin` also lets it
+**approve its own reviews**: `validateReviewStatusTransition` waives the
+self-approval check for admins, so the same credential that files a review can
+settle it, and the control is worth nothing. Any non-admin group works; with
+no access-control plugin configured, group membership does not restrict which
+connections it reaches anyway.
 
 ### Step 3 — tell the gateway what it is reviewing
 
@@ -493,7 +497,7 @@ the data path.
 AGENT_ID=$(curl -sS -H "Authorization: Bearer $ADMIN_TOKEN" "$API/agents" \
   | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["id"])')
 
-for pair in pgdemo:postgres mssqldemo:mssql; do
+for pair in pgdemo:postgres mssqldemo:mssql httpdemo:httpproxy; do
   curl -sS -X POST "$API/connections" \
     -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
     -d "{\"name\":\"${pair%%:*}\",\"type\":\"database\",\"subtype\":\"${pair##*:}\",
@@ -513,7 +517,7 @@ refusing:
 curl -sS -X POST "$API/access-requests/rules" \
   -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
   -d '{"name":"statement-review","access_type":"command",
-       "connection_names":["pgdemo","mssqldemo"],"approval_required_groups":[],
+       "connection_names":["pgdemo","mssqldemo","httpdemo"],"approval_required_groups":[],
        "reviewers_groups":["admin"],"force_approval_groups":["admin"],
        "all_groups_must_approve":false,"min_approvals":1}'
 ```
@@ -574,8 +578,31 @@ review:
   # revocation that cannot be honored.
   poll_cache_ttl_sec: 5
 
-# Top level, so both lanes inherit them. A lane may add its own; they
-# concatenate, lane rules first.
+# An anchor, not a config field: keys beginning `x-` are ignored, so one rule
+# block can be written once and referenced by both database lanes.
+x-sql-gate: &sql-gate
+  - name: risky-writes
+    type: ai_analysis
+    # `unknown` is not optional on a gated lane. DO, CALL, EXEC and EXECUTE
+    # decide their effect at runtime, so the lexer reports `unknown` rather
+    # than guessing. Name only [delete, update] and a caller walks past the
+    # gate in two statements: PREPARE ... AS DELETE is gated, and the EXECUTE
+    # that actually deletes the row is not. It matters more on SQL Server,
+    # where stored procedures are idiomatic.
+    trigger: {operations: [delete, update, unknown]}
+    high: require_review
+    medium: require_review
+    low: warn                    # still recorded, with its level
+    prompt: |
+      You are classifying statements against a production customer
+      database. Treat any statement that deletes or modifies customer
+      rows as at least medium risk. A statement scoped to a single row
+      by primary key is medium; anything unscoped is high.
+
+# Top level, so every lane inherits it. Only the FREE rule lives here: an
+# ai_analysis rule at this level would reach the http lane too, where its
+# trigger never matches, leaving that lane carrying two ai rules of which one
+# is always uninterested. Keep ai rules on the lanes they belong to.
 policy:
   enforce: true
   rules:
@@ -587,24 +614,6 @@ policy:
       operations: [drop, truncate]
       message: destructive DDL is not permitted here, approved or not
 
-    - name: risky-writes
-      type: ai_analysis
-      # `unknown` is not optional on a gated lane. DO, CALL, EXEC and EXECUTE
-      # decide their effect at runtime, so the lexer reports `unknown` rather
-      # than guessing. Name only [delete, update] and a caller walks past the
-      # gate in two statements: PREPARE ... AS DELETE is gated, and the
-      # EXECUTE that actually deletes the row is not. It matters more on SQL
-      # Server, where stored procedures are idiomatic.
-      trigger: {operations: [delete, update, unknown]}
-      high: require_review
-      medium: require_review
-      low: warn                    # still recorded, with its level
-      prompt: |
-        You are classifying statements against a production customer
-        database. Treat any statement that deletes or modifies customer
-        rows as at least medium risk. A statement scoped to a single row
-        by primary key is medium; anything unscoped is high.
-
 listeners:
   # `connection:` is REQUIRED on a gated lane and must match a connection the
   # gateway knows and your hpk_ token can reach — it is what an approval is
@@ -614,15 +623,41 @@ listeners:
     listen: 127.0.0.1:15432
     upstream: 127.0.0.1:5432
     connection: pgdemo
+    policy:
+      rules: *sql-gate
 
   - name: mssqldemo
     protocol: mssql
     listen: 127.0.0.1:11433
     upstream: 127.0.0.1:1433
     connection: mssqldemo
+    policy:
+      rules: *sql-gate
+
+  - name: httpdemo
+    protocol: http
+    listen: 127.0.0.1:18080
+    upstream: 127.0.0.1:8080
+    connection: httpdemo
+    # REQUIRED for a gated http lane. Without it the codec leaves Body empty,
+    # the analyzer sees "POST /anything" and no payload, and every request is
+    # skipped — so the config is refused at startup rather than running a
+    # guardrail that never fires. A body larger than max_body_bytes is
+    # truncated, and a truncated body is refused rather than gated.
+    http: {capture_body: true, max_body_bytes: 8192}
+    policy:
+      rules:
+        # HTTP triggers on the NORMALIZED resource: /anything/users/12345/orders
+        # collapses to /anything/users/*/orders, so one glob covers every id.
+        - name: risky-payloads
+          type: ai_analysis
+          trigger: {resources: ["/anything/**"]}
+          high: require_review
+          medium: require_review
+          low: warn
 ```
 
-Drop either listener if you are only testing one. Check it before running
+Drop the listeners you are not testing — one lane is a complete walkthrough. Check it before running
 anything — this parses the config, resolves each lane and reads both
 credential files, permissions included:
 
@@ -631,9 +666,10 @@ hoop start inspect --config ~/.hoop/inspect/config.yaml --validate
 ```
 
 ```
-config OK: 2 listener(s)
+config OK: 3 listener(s)
   pgdemo           postgres  enforcing 1 rule(s) + 1 ai rule(s) + human review
   mssqldemo        mssql     enforcing 1 rule(s) + 1 ai rule(s) + human review
+  httpdemo         http      enforcing 1 rule(s) + 1 ai rule(s) + human review
 ```
 
 `+ human review` is the gate. If it is missing on a lane, that lane is not
@@ -661,14 +697,14 @@ curl -s localhost:19000/config | python3 -m json.tool
 
 ### Step 6 — issue a statement and watch it refused
 
-Connect **through the relay**, not to your database directly — port `15432`
-for postgres, `11433` for SQL Server.
+Go **through the relay**, not to the upstream directly — port `15432` for
+postgres, `11433` for SQL Server, `18080` for HTTP.
 
 **Postgres:**
 
 ```bash
 psql -h 127.0.0.1 -p 15432 -U youruser yourdb \
-  -c '-- hoopdev:correlation_id=task-1
+  -c '-- x-hoop-correlation-id=task-1
 DELETE FROM customers WHERE 1 = 0;'
 ```
 
@@ -703,7 +739,7 @@ H=6f77928a…      # copy it from the message
 
 ```bash
 sqlcmd -S 127.0.0.1,11433 -U youruser -P yourpass -d yourdb \
-  -Q "-- hoopdev:correlation_id=task-1
+  -Q "-- x-hoop-correlation-id=task-1
 DELETE FROM customers WHERE 1 = 0;"
 ```
 
@@ -711,9 +747,70 @@ The refusal arrives as a TDS `ERROR` token carrying the same message, then the
 connection closes — the protocol differs, the behaviour does not.
 
 The rest of the walkthrough is identical for both; the steps below use the
-postgres lane. Swap `connection=pgdemo` for `connection=mssqldemo` in the poll
-URL when you are testing that one, and recompute the hash against the SQL Server
-statement text.
+postgres lane. For another, swap `connection=pgdemo` for `connection=mssqldemo`
+or `connection=httpdemo` in the poll URL and recompute the hash against that
+lane's statement.
+
+**HTTP**, on the third lane:
+
+```bash
+curl -i -X POST http://127.0.0.1:18080/anything/users/12345/orders \
+  -H 'X-Hoop-Correlation-Id: task-1' \
+  -H 'Content-Type: application/json' -d '{"action":"purge"}'
+```
+
+```
+HTTP/1.1 403 Forbidden
+Connection: close
+
+this statement needs human approval before it can run; review it at
+http://127.0.0.1:8009/sessions/<id> …
+```
+
+The key covers the **method, the request URI and the body** — so the same path
+with a different payload is a different approval, exactly as `WHERE id = 1` and
+`WHERE id = 999` are on a database lane. Compute it the same way:
+
+```bash
+printf '%s' 'POST /anything/users/12345/orders
+
+{"action":"purge"}' | shasum -a 256
+```
+
+(That is the method and URI, a blank line, then the body verbatim.)
+
+#### What is different about HTTP
+
+**The marker is a header, not a comment.** A `--` comment has nowhere to live
+in an HTTP request, so the correlation id travels in `X-Hoop-Correlation-Id`,
+as in the request above. It does exactly what the SQL comment does — it names
+the unit of work, so a retry joins the review it already filed instead of
+queuing a second one — and it works with `require_marker: true`. Without it,
+every attempt files a new review.
+
+The header is **not** part of the hash. The key still covers only the method,
+URI and body, so changing the correlation id does not invalidate an approval,
+and two agents cannot use different ids to get two approvals for the same
+request. Same value charset as the SQL marker (letters, digits and
+`. _ - : @ / +`, up to 128 bytes); anything else is ignored rather than
+truncated, which shows up as a review that does not dedupe.
+
+Hyphens, not underscores. `HOOP_CORRELATION_ID` is dropped by nginx by default
+and may be dropped by Envoy, silently — the request still works, it just stops
+deduping. Do not add the header to `http.headers`: it is captured
+automatically, and listing it is refused at startup so it never reaches a
+policy rule, an audit record or a model prompt as request content.
+
+**A truncated body is refused, not gated.** If a request exceeds
+`max_body_bytes` the relay saw only a prefix, and an approval could not cover
+what will actually be sent. Size that limit above your real payloads.
+
+**Keep ai rules off the top level.** HTTP methods are operations too, so a
+database rule with `operations: [delete]` also fires on `DELETE /users/1` —
+and, worse, a top-level ai rule reaches the http lane even when its trigger
+never matches there. That leaves the lane with two ai rules, one of which is
+always uninterested, which is why the config above puts each ai rule on the
+lane it belongs to.
 
 #### What is different about SQL Server
 
@@ -755,7 +852,19 @@ fill the queue with copies of one question.
 
 ### Step 8 — approve it, as a reviewer
 
-Open the URL from step 6 in the webapp, or answer it over the API:
+**This must be a different identity from the one that filed the review**, and
+it must belong to one of the rule's `reviewers_groups` (`admin`, from step 3).
+The `hpk_` token cannot do it — that is the point of the feature, not a
+limitation of the walkthrough:
+
+| Approving as | Result |
+|---|---|
+| the admin from step 2's login — a different person | `APPROVED` |
+| the `hpk_` token that filed it | `400 unable to self approve review` |
+| any other token outside `reviewers_groups` | `400 not eligible for review` |
+
+Open the URL from step 6 in the webapp and approve it there, or over the API
+with the **admin** token:
 
 ```bash
 RID=$(curl -sS -H "Authorization: Bearer $SANDBOX" \
@@ -773,7 +882,7 @@ Poll again and it reads `APPROVED`.
 
 ```bash
 psql -h 127.0.0.1 -p 15432 -U youruser yourdb \
-  -c '-- hoopdev:correlation_id=task-1
+  -c '-- x-hoop-correlation-id=task-1
 DELETE FROM customers WHERE 1 = 0;'
 ```
 
@@ -833,7 +942,11 @@ above work from the command line and a driver on the same lane would not.
 | `gateway returned 404: connection not found` | The lane's `connection:` is not a connection the gateway has, or the `hpk_` token's groups cannot reach it (step 3) |
 | `gateway returned 422` | That connection has no access request rule — nobody to review it (step 3) |
 | `risk analysis unavailable; denying` | The analyzer could not answer. With `fail_open: false` that refuses, which is correct for a gated lane. The relay log names the status; set `log_level: debug` to see the provider's own response body |
-| `this lane requires a hoopdev:correlation_id marker` when you sent one | psql stripped it. Use `-c` |
+| `requires a correlation marker … prefix the statement with "-- x-hoop-correlation-id=<id>"` when you sent one | psql stripped it. Use `-c` |
+| `requires a correlation marker … send it in the X-Hoop-Correlation-Id request header` | The HTTP lane has `require_marker: true` and the header was absent — or was spelled with underscores and a proxy dropped it |
+| `400 unable to self approve review` on step 8 | You are approving with the credential that filed the review. Use the admin login (step 2), not the `hpk_` token |
+| `400 not eligible for review` on step 8 | The approving token is in none of the rule's `reviewers_groups` (step 3) |
+| Step 8 returns `200` but the review stays `PENDING` | The approver was neither eligible nor an admin, and the status only advances once `min_approvals` groups have approved. Check the token's groups against `reviewers_groups` |
 | Nothing is gated at all | The trigger did not match. Compare the audit line's `operation` against the rule's `trigger` |
 
 Reference: [ADR-0005](../../../docs/adr/0005-hoopinspect-review-gate.md) and

@@ -9,7 +9,6 @@ import (
 
 	"github.com/hoophq/hoopinspect"
 	"github.com/hoophq/hoopinspect/analyzer"
-
 	"github.com/hoophq/hoopinspect/policy"
 )
 
@@ -53,6 +52,18 @@ func (h *HTTPCodecConfig) validate(lane string) []string {
 	var problems []string
 	for _, name := range h.Headers {
 		lower := strings.ToLower(strings.TrimSpace(name))
+		// Not a security refusal like the ones below — a correction. The
+		// header is already captured, into a field the review gate reads;
+		// listing it here would additionally publish it as request content
+		// to policy, audit and the model. Saying so beats silently ignoring
+		// the line.
+		if lower == strings.ToLower(hoopinspect.CorrelationHeader) {
+			problems = append(problems, fmt.Sprintf(
+				"listener %q: header %q is captured automatically as the review "+
+					"correlation id and is not exposed as request content; remove it "+
+					"from http.headers", lane, name))
+			continue
+		}
 		for _, bad := range forbiddenHeaders {
 			if lower == bad {
 				problems = append(problems, fmt.Sprintf(

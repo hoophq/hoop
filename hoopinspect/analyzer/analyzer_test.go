@@ -803,3 +803,70 @@ func TestConcurrentEvaluateIsRaceFree(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+// A rule whose trigger did not match must not erase a rule that classified.
+//
+// This is the shape a lane gets whenever it carries a top-level ai_analysis
+// rule and a lane-specific one: on any given statement, one of them is not
+// interested. Folding "skipped" over "ok" made the finding come back empty, so
+// the review gate saw nothing to act on and forwarded a statement the other
+// rule had just rated high — silently, because the risk_level annotation was
+// still in the audit line.
+func TestSkippedRuleDoesNotEraseAClassification(t *testing.T) {
+	stmt := hoopinspect.Statement{
+		Protocol: hoopinspect.HTTP, Direction: hoopinspect.FromClient,
+		Text: "POST /anything/users/12345/orders", Operation: hoopinspect.OpPost,
+		HTTP: &hoopinspect.HTTPDetail{Method: "POST", Path: "/anything/users/12345/orders",
+			Resource: "/anything/users/*/orders", Body: `{"action":"purge"}`},
+	}
+	matches := mustNew(t, analyzer.Config{
+		Rule: "risky-payloads", Provider: &stubProvider{level: analyzer.RiskHigh},
+		Trigger: analyzer.Trigger{Resources: []string{"/anything/**"}},
+		Actions: analyzer.ActionMap{analyzer.RiskHigh: analyzer.ActionRequireReview},
+	})
+	doesNot := mustNew(t, analyzer.Config{
+		Rule: "risky-writes", Provider: &stubProvider{level: analyzer.RiskHigh},
+		Trigger: analyzer.Trigger{Operations: []hoopinspect.Operation{hoopinspect.OpDelete}},
+		Actions: analyzer.ActionMap{analyzer.RiskHigh: analyzer.ActionRequireReview},
+	})
+
+	// Either order: enforcement must not depend on which rule ran first.
+	for _, order := range [][]*analyzer.Evaluator{{matches, doesNot}, {doesNot, matches}} {
+		ec := &policy.EvalContext{}
+		for _, ev := range order {
+			ev.EvaluateWith(stmt, ec)
+		}
+		f, _ := ec.Finding(analyzer.Source)
+		if !f.Answered() {
+			t.Errorf("%s ran first: finding is %q, want an answered one",
+				order[0].Rule(), f.Status)
+			continue
+		}
+		if got := f.Values[analyzer.FindingAction]; got != string(analyzer.ActionRequireReview) {
+			t.Errorf("%s ran first: action = %v, want require_review", order[0].Rule(), got)
+		}
+	}
+}
+
+// The fold still lets a real failure win, which is what it was for: a rule
+// that succeeded must not report healthy through another rule's outage.
+func TestProviderErrorStillOutranksAClassification(t *testing.T) {
+	stmt := sqlStmt("DELETE FROM t", hoopinspect.OpDelete, "t")
+	ok := mustNew(t, analyzer.Config{
+		Rule: "ok", Provider: &stubProvider{level: analyzer.RiskLow}, Trigger: deleteTrigger(),
+		Actions: analyzer.ActionMap{analyzer.RiskLow: analyzer.ActionWarn}, FailOpen: true,
+	})
+	broken := mustNew(t, analyzer.Config{
+		Rule: "broken", Provider: &stubProvider{err: errors.New("provider down")},
+		Trigger: deleteTrigger(), FailOpen: true,
+	})
+
+	ec := &policy.EvalContext{}
+	ok.EvaluateWith(stmt, ec)
+	broken.EvaluateWith(stmt, ec)
+
+	f, _ := ec.Finding(analyzer.Source)
+	if f.Answered() {
+		t.Errorf("finding is %q; an outage must not be hidden by a rule that succeeded", f.Status)
+	}
+}

@@ -217,7 +217,7 @@ sequenceDiagram
     participant G as hoop gateway
     participant H as human reviewer
 
-    A->>E: statement, carrying a hoopdev:correlation_id marker comment
+    A->>E: statement, carrying an x-hoop-correlation-id marker comment
     E->>I: plaintext bytes
     I->>I: Inspect → local rules → OPA
     I->>AI: classify (trigger matched)

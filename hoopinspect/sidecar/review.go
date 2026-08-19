@@ -41,7 +41,7 @@ type ReviewConfig struct {
 	TimeoutSec int `json:"timeout_sec,omitempty"`
 
 	// RequireMarker refuses a gated statement carrying no
-	// hoopdev:correlation_id marker, instead of filing a review for it.
+	// x-hoop-correlation-id marker, instead of filing a review for it.
 	//
 	// Off by default. Turn it on for a busy lane: the create path dedupes on
 	// the marker, so without one every attempt is a new request and a

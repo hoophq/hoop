@@ -662,7 +662,7 @@ a second attempt is refused.
 looking does not file a duplicate:  
 
 ```sql
--- hoopdev:correlation_id=task-42
+-- x-hoop-correlation-id=task-42
 DELETE FROM users WHERE id = 7;
 ```
 
@@ -671,9 +671,36 @@ characters. Anything else is treated as ordinary SQL and stays in the hash. A
 marker only decides how many reviews reach the queue — never what an approval
 permits — so an agent cannot widen its own access by choosing one.
 
+**On HTTP it is a header**, since a `--` comment has nowhere to live in a
+request:
+
+```http
+X-Hoop-Correlation-Id: task-42
+```
+
+One name, two carriers — the SQL comment is that header lowercased, and a test
+keeps them in step. The header is matched case-insensitively (net/http
+canonicalizes header names); the SQL comment is not, because a comment is bytes
+in a statement and two accepted spellings would leave two different residues
+behind, which is how an approval becomes unmatchable. Same value charset and
+128-byte bound either way.
+
+Hyphens, never underscores. `HOOP_CORRELATION_ID` is dropped by nginx by
+default and may be dropped by Envoy, and the failure is silent: the request
+still runs, it just stops deduping.
+
+The header is **not** part of the hash — the HTTP key covers method, URI and
+body only. So changing the correlation id never invalidates an approval, and
+two agents cannot use different ids to obtain two approvals for one request.
+It is captured automatically and is never exposed as request content, so it
+reaches no policy rule, audit record or model prompt; listing it in
+`http.headers` is refused at startup rather than silently ignored.
+
 The relay also accepts a marker from `session.CorrelationID`, but that is a
 library seam for an embedder to fill: **the shipped sidecar never sets it**, so
-in a sidecar deployment the in-statement marker is the only one there is.
+in a sidecar deployment the marker on the statement — comment or header — is
+the only one there is. Where both exist, the per-statement one wins: one
+keep-alive connection carries many requests.
 
 > **psql deletes the marker before it reaches the wire.** Not hoop — psql's own
 > lexer discards a comment that precedes the first token of a statement, so the
@@ -684,11 +711,11 @@ in a sidecar deployment the in-statement marker is the only one there is.
 > |---|---|
 > | `psql <<'EOF'` … marker on its own line | `DELETE FROM t WHERE id = 7;` — **marker gone** |
 > | `psql -f file.sql`, marker on its own line | `DELETE FROM t WHERE id = 7;` — **marker gone** |
-> | `psql -c '-- hoopdev:correlation_id=x⏎DELETE …'` | `-- hoopdev:correlation_id=x⏎DELETE FROM t WHERE id = 7;` — intact |
-> | trailing `DELETE …; -- hoopdev:correlation_id=x` | `DELETE FROM t WHERE id = 7;` — dropped, and not leading anyway |
+> | `psql -c '-- x-hoop-correlation-id=x⏎DELETE …'` | `-- x-hoop-correlation-id=x⏎DELETE FROM t WHERE id = 7;` — intact |
+> | trailing `DELETE …; -- x-hoop-correlation-id=x` | `DELETE FROM t WHERE id = 7;` — dropped, and not leading anyway |
 >
 > Use `-c` from psql. A driver sends the string it is given, so this is a psql
-> problem rather than something an agent hits: `cur.execute("-- hoopdev:correlation_id=…\nDELETE …")`
+> problem rather than something an agent hits: `cur.execute("-- x-hoop-correlation-id=…\nDELETE …")`
 > arrives whole.
 
 **Only a literal statement can be gated.** A statement whose parameter values
@@ -787,7 +814,7 @@ refuses anyway.
 #### 2. Issue a flagged statement
 
 ```bash
-psql -c "-- hoopdev:correlation_id=demo-1
+psql -c "-- x-hoop-correlation-id=demo-1
 DELETE FROM $TABLE WHERE 1 = 0;"
 ```
 
@@ -834,14 +861,14 @@ review.
 
 ```bash
 gw "$API/reviews" | python3 -c 'import json,sys; print(sum(1 for r in json.load(sys.stdin) if r["status"]=="PENDING"))'
-psql -c "-- hoopdev:correlation_id=demo-1
+psql -c "-- x-hoop-correlation-id=demo-1
 DELETE FROM $TABLE WHERE 1 = 0;"
 gw "$API/reviews" | python3 -c 'import json,sys; print(sum(1 for r in json.load(sys.stdin) if r["status"]=="PENDING"))'
 ```
 
 The count must not change. The claim filters on `APPROVED`, so a retry never
 sees its own pending review; the create path dedupes on the **marker**
-instead. Drop the `-- hoopdev:correlation_id=` line and repeat, and you should see the
+instead. Drop the `-- x-hoop-correlation-id=` line and repeat, and you should see the
 count go up by one each time — which is what `require_marker: true` exists to
 prevent on a busy lane.
 
@@ -857,7 +884,7 @@ sandbox "$API/inspect/reviews?connection=$CONN&statement_hash=$H"   # APPROVED
 ```
 
 ```bash
-psql -c "-- hoopdev:correlation_id=demo-1
+psql -c "-- x-hoop-correlation-id=demo-1
 DELETE FROM $TABLE WHERE 1 = 0;"
 ```
 
@@ -883,7 +910,7 @@ for e in json.load(sys.stdin)["events"]:
 #### 6. Single use
 
 ```bash
-psql -c "-- hoopdev:correlation_id=demo-1
+psql -c "-- x-hoop-correlation-id=demo-1
 DELETE FROM $TABLE WHERE 1 = 0;"
 ```
 
@@ -896,14 +923,14 @@ permission. `sandbox .../inspect/reviews?...` now reports `EXECUTED`.
 `WHERE 2 = 0`, then issue `WHERE 1 = 0`:
 
 ```bash
-psql -c "-- hoopdev:correlation_id=demo-2
+psql -c "-- x-hoop-correlation-id=demo-2
 DELETE FROM $TABLE WHERE 2 = 0;"        # refused, files a review
 H2=$(printf '%s' "DELETE FROM $TABLE WHERE 2 = 0" | shasum -a 256 | cut -d' ' -f1)
 RID2=$(sandbox "$API/inspect/reviews?connection=$CONN&statement_hash=$H2" \
        | python3 -c 'import json,sys; print(json.load(sys.stdin)["review_id"])')
 gw -X PUT "$API/reviews/$RID2" -d '{"status":"APPROVED"}'
 
-psql -c "-- hoopdev:correlation_id=demo-3
+psql -c "-- x-hoop-correlation-id=demo-3
 DELETE FROM $TABLE WHERE 1 = 0;"        # MUST be refused
 ```
 
@@ -915,7 +942,7 @@ most important check here.
 outstanding, issue the same SQL under a *different* marker:
 
 ```bash
-psql -c "-- hoopdev:correlation_id=totally-different
+psql -c "-- x-hoop-correlation-id=totally-different
 DELETE FROM $TABLE WHERE 2 = 0;"
 ```
 
@@ -972,7 +999,8 @@ for r in json.load(sys.stdin):
 | `gateway returned 404: connection not found` | The lane's `connection:` names something the gateway does not have, or your `hpk_` token's groups cannot reach it |
 | `gateway returned 422` | That connection has no access request rule, so there is nobody to review the statement |
 | `risk analysis unavailable; denying` | The analyzer could not answer. With `fail_open: false` that refuses, which is correct for a gated lane — check the provider error in the log |
-| `this lane requires a hoopdev:correlation_id marker` when you sent one | psql stripped it. A leading comment never leaves psql unless you use `-c` — see the table above |
+| `requires a correlation marker … prefix the statement with "-- x-hoop-correlation-id=<id>"` when you sent one | psql stripped it. A leading comment never leaves psql unless you use `-c` — see the table above |
+| `requires a correlation marker … send it in the X-Hoop-Correlation-Id request header` | An HTTP lane with `require_marker: true` and no header. Same name as the SQL comment; hyphens, never underscores |
 | Nothing is gated at all | The trigger does not match. Compare the audit line's `operation` against the rule's `trigger`; `EXECUTE` and `CALL` report `unknown` |
 | A statement runs that should have been held | Check step 7 first. Then check `ai_status` in the trail: `skipped` means the trigger missed it, `error` means the analyzer failed open |
 

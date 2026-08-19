@@ -1,6 +1,7 @@
 package review
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -326,7 +327,7 @@ func TestRequireMarkerRefusesAnUnmarkedStatement(t *testing.T) {
 		t.Errorf("creates = %d, want 0", n)
 	}
 
-	marked := del("-- hoopdev:correlation_id=task-42\nDELETE FROM users WHERE id = 7")
+	marked := del("-- x-hoop-correlation-id=task-42\nDELETE FROM users WHERE id = 7")
 	if v := rg.Decide().EvaluateWith(marked, gatedCtx()); v.Annotations[AnnotationStatus] != StatusPending {
 		t.Errorf("a marked statement was refused: %+v", v)
 	}
@@ -460,5 +461,98 @@ func TestChainEndToEnd(t *testing.T) {
 	}
 	if n := g.creates.Load(); n != 1 {
 		t.Errorf("creates = %d, want 1: the approved retry filed a second review", n)
+	}
+}
+
+// The regression a live HTTP lane hit: a top-level ai rule that does not match
+// plus a lane rule that does, and the gate forwarded the request. The finding
+// is the gate's only input, so a fold that dropped the classification made it
+// allow a statement the analyzer had just rated high.
+//
+// Driven through REAL analyzer evaluators rather than hand-built findings,
+// because the bug was in how the analyzer folds its own rules.
+func TestGatedWhenAnotherRuleWasSkipped(t *testing.T) {
+	g := newFakeGateway(t)
+	rg := g.gate(t, Options{Triggers: []analyzer.Trigger{{Resources: []string{"/anything/**"}}}})
+
+	stmt := hoopinspect.Statement{
+		Protocol: hoopinspect.HTTP, Direction: hoopinspect.FromClient,
+		Text: "POST /anything/users/12345/orders",
+		HTTP: &hoopinspect.HTTPDetail{Method: "POST", Path: "/anything/users/12345/orders",
+			Resource: "/anything/users/*/orders", Body: `{"action":"purge"}`},
+	}
+
+	mk := func(rule string, trig analyzer.Trigger) *analyzer.Evaluator {
+		ev, err := analyzer.New(analyzer.Config{
+			Rule: rule, Provider: highRiskProvider{}, Trigger: trig,
+			Actions: analyzer.ActionMap{analyzer.RiskHigh: analyzer.ActionRequireReview},
+		})
+		if err != nil {
+			t.Fatalf("analyzer.New: %v", err)
+		}
+		return ev
+	}
+	matches := mk("risky-payloads", analyzer.Trigger{Resources: []string{"/anything/**"}})
+	doesNot := mk("risky-writes", analyzer.Trigger{Operations: []hoopinspect.Operation{hoopinspect.OpDelete}})
+
+	// Either order: enforcement must not depend on which rule ran first.
+	for _, order := range [][]*analyzer.Evaluator{{matches, doesNot}, {doesNot, matches}} {
+		ec := newCtx()
+		for _, ev := range order {
+			ev.EvaluateWith(stmt, ec)
+		}
+		if v := rg.Decide().EvaluateWith(stmt, ec); !v.Denied {
+			t.Errorf("%s ran first: request forwarded; finding was %+v",
+				order[0].Rule(), ec.Findings[analyzer.Source])
+		}
+	}
+}
+
+// highRiskProvider rates everything high without leaving the process.
+type highRiskProvider struct{}
+
+func (highRiskProvider) Name() string { return "stub" }
+func (highRiskProvider) Classify(context.Context, string, string) (*analyzer.Result, error) {
+	return &analyzer.Result{RiskLevel: analyzer.RiskHigh, Title: "dangerous"}, nil
+}
+
+// The refusal a caller reads has to describe a mechanism their protocol has.
+// This is the exact 403 body an HTTP client gets, which is where a SQL-shaped
+// instruction was reaching people who could not act on it.
+func TestRequireMarkerRefusalIsProtocolAppropriate(t *testing.T) {
+	g := newFakeGateway(t)
+	rg := g.gate(t, Options{RequireMarker: true})
+
+	httpStmt := hoopinspect.Statement{
+		Protocol:  hoopinspect.HTTP,
+		Direction: hoopinspect.FromClient,
+		Text:      "POST /anything/users/12345/orders",
+		HTTP:      &hoopinspect.HTTPDetail{Body: `{"action":"purge"}`},
+	}
+	v := rg.Decide().EvaluateWith(httpStmt, gatedCtx())
+	if !v.Denied {
+		t.Fatal("an unmarked HTTP request was forwarded")
+	}
+	t.Logf("HTTP caller reads: %s", v.Message)
+	if strings.Contains(v.Message, "--") {
+		t.Errorf("HTTP refusal tells the caller to use a SQL comment:\n  %s", v.Message)
+	}
+	if !strings.Contains(v.Message, hoopinspect.CorrelationHeader) {
+		t.Errorf("HTTP refusal does not name the header:\n  %s", v.Message)
+	}
+
+	// The SQL lane keeps its own advice.
+	sqlVerdict := rg.Decide().EvaluateWith(del("DELETE FROM users WHERE id = 7"), gatedCtx())
+	t.Logf("SQL caller reads: %s", sqlVerdict.Message)
+	if !strings.Contains(sqlVerdict.Message, "-- x-hoop-correlation-id=") {
+		t.Errorf("SQL refusal lost the comment form:\n  %s", sqlVerdict.Message)
+	}
+
+	// And the header actually satisfies require_marker, rather than the
+	// lane being unusable with it on.
+	httpStmt.HTTP.CorrelationID = "task-1"
+	if v := rg.Decide().EvaluateWith(httpStmt, gatedCtx()); v.Annotations[AnnotationStatus] != StatusPending {
+		t.Errorf("a marked HTTP request was refused: status=%q reason=%s",
+			v.Annotations[AnnotationStatus], v.Message)
 	}
 }

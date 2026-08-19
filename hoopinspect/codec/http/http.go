@@ -95,7 +95,17 @@ func New(opts Options) *Inspector {
 	}
 	h := make(map[string]bool, len(opts.Headers))
 	for _, name := range opts.Headers {
-		h[strings.ToLower(name)] = true
+		lower := strings.ToLower(name)
+		// The correlation header is captured into its own field and is
+		// never content. Allowlisting it would put it in Headers as well,
+		// where it would reach policy rules, audit records and model
+		// prompts — so the allowlist cannot take it, whatever the config
+		// says. The sidecar refuses it at startup with an explanation;
+		// this is the library-level guarantee behind that.
+		if lower == strings.ToLower(hoopinspect.CorrelationHeader) {
+			continue
+		}
+		h[lower] = true
 	}
 	return &Inspector{opts: opts, headers: h}
 }
@@ -127,6 +137,8 @@ func (i *Inspector) inspectRequest(r *http.Request, b drained) hoopinspect.State
 		Resource:    NormalizePath(path),
 		ContentType: contentType(r.Header),
 		Headers:     i.pickHeaders(r.Header),
+		// Always read, never allowlisted: see HTTPDetail.CorrelationID.
+		CorrelationID: strings.TrimSpace(r.Header.Get(hoopinspect.CorrelationHeader)),
 	}
 	if q := r.URL.Query(); len(q) > 0 {
 		d.Query = q

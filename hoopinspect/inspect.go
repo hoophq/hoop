@@ -245,6 +245,24 @@ type Column struct {
 //   - A stable resource identity. /users/12345/orders and /users/67890/orders
 //     are the same resource with different ids; a policy keyed on the raw
 //     path needs a regex per endpoint.
+//
+// CorrelationHeader is the request header a client uses to name the unit of
+// work a request belongs to, populating HTTPDetail.CorrelationID.
+//
+// It lives here rather than in codec/http because two packages need to agree
+// on it — the codec that reads it and the review gate that tells a caller to
+// send it — and the gate deliberately links no codec. Both already depend on
+// this package, so this is the one place neither has to duplicate.
+//
+// Hyphenated on purpose. An underscore spelling (HOOP_CORRELATION_ID) is
+// dropped by nginx by default and may be dropped or rejected by Envoy
+// depending on headers_with_underscores_action, and the failure is SILENT:
+// the header simply is not there, so a retry looks like a new request and
+// files a second review instead of joining the first. Go canonicalizes
+// request header names and net/http lookups are case-insensitive, so a client
+// may send any casing.
+const CorrelationHeader = "X-Hoop-Correlation-Id"
+
 type HTTPDetail struct {
 	// Method is the request method, uppercased. Empty on a response.
 	Method string `json:"method,omitempty"`
@@ -281,6 +299,25 @@ type HTTPDetail struct {
 	// expose, because forwarding every header to a policy engine is how
 	// Authorization tokens end up in decision logs.
 	Headers map[string]string `json:"headers,omitempty"`
+
+	// CorrelationID is the client-supplied request correlation id, read from
+	// the X-Hoop-Correlation-Id request header. Empty on a response, and
+	// empty when the client sent none.
+	//
+	// It is captured unconditionally rather than through the Headers
+	// allowlist, because it is hoop's own control-plane metadata rather than
+	// something the upstream said: an operator should not have to opt in to
+	// a header they did not choose the name of. For the same reason it does
+	// NOT appear in Headers, so it never reaches a policy rule, a decision
+	// log or a model prompt as request content.
+	//
+	// Verbatim, and unvalidated here. A codec reports what was on the wire;
+	// deciding whether a value is an acceptable correlation id belongs to
+	// the consumer that has a rule about it (see review.MaxMarkerLen). The
+	// value is attacker-controlled in the sense that any client can set it,
+	// which is fine: it selects which review request a retry joins, never
+	// what an approval permits.
+	CorrelationID string `json:"correlation_id,omitempty"`
 
 	// Body is the request or response body, truncated to the codec's
 	// MaxBodyBytes. Empty when the codec was configured not to capture it.

@@ -381,8 +381,8 @@ func (g *Gate) decide(stmt hoopinspect.Statement, ec *policy.EvalContext) policy
 		return g.refuse("the statement is empty once hoop's own marker is removed")
 	}
 	if g.requireMarker && id.Marker == "" {
-		return g.refuse("this lane requires a hoopdev:correlation_id marker on a statement that needs review; " +
-			"prefix it with \"" + markerPrefix + "<id>\" on its own line")
+		return g.refuse("this lane requires a correlation marker on a statement that needs review; " +
+			markerHowTo(stmt.Protocol))
 	}
 
 	if ticket, held := g.cachedPending(connection, id.Hash); held {

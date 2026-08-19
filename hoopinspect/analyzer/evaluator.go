@@ -361,9 +361,9 @@ func (e *Evaluator) report(ec *policy.EvalContext, status string, level RiskLeve
 
 	if prev, ok := ec.Finding(Source); ok {
 		switch {
-		case policy.FindingRank(prev.Status) > policy.FindingRank(f.Status):
+		case foldRank(prev.Status) > foldRank(f.Status):
 			f = prev
-		case policy.FindingRank(prev.Status) == policy.FindingRank(f.Status):
+		case foldRank(prev.Status) == foldRank(f.Status):
 			if keepPrevious(prev, level, action) {
 				f = prev
 			}
@@ -376,6 +376,35 @@ func (e *Evaluator) report(ec *policy.EvalContext, status string, level RiskLeve
 		ec.Findings = make(map[string]policy.Finding, 1)
 	}
 	ec.Findings[Source] = f
+}
+
+// foldRank orders statuses for folding THIS producer's own rules together.
+//
+// It differs from policy.FindingRank in one place, and the difference is the
+// whole point: SKIPPED ranks BELOW answered here, where FindingRank puts it
+// above.
+//
+// FindingRank orders by "how little the producer established", which is right
+// for describing one finding, and policy.Finding.Merge deliberately keeps that
+// ordering — its tests assert that a skip survives a later answer. This fold
+// asks a different question. A rule whose trigger did not match has not failed,
+// it did not APPLY, and letting it displace a rule that classified means a lane
+// carrying two ai_analysis rules reports nothing whenever one of them is not
+// interested.
+//
+// That failure is silent and it is why this exists: the statement is
+// forwarded, the audit line still shows the risk level from the annotations,
+// and only the finding — the channel the review gate and a decide-phase Rego
+// read — comes back empty. A live HTTP lane hit exactly this.
+//
+// error and unavailable still outrank answered, so a rule that succeeded
+// cannot hide another rule's outage. That was always what this fold was for;
+// "did not apply" was never part of it.
+func foldRank(status string) int {
+	if status == policy.FindingSkipped {
+		return 0
+	}
+	return policy.FindingRank(status)
 }
 
 // keepPrevious decides which of two equally answered findings survives:

@@ -14,12 +14,12 @@ import (
 // function and this test.
 func TestCreateAndClaimAgreeOnTheKey(t *testing.T) {
 	// What the agent sends first: marked, so a review can be deduped.
-	first := "-- hoopdev:correlation_id=task-42\nDELETE FROM users WHERE id = 7;"
+	first := "-- x-hoop-correlation-id=task-42\nDELETE FROM users WHERE id = 7;"
 	// What it re-sends after approval. Same statement, and it may or may not
 	// still carry the marker: the marker is stripped either way.
 	retries := []string{
-		"-- hoopdev:correlation_id=task-42\nDELETE FROM users WHERE id = 7;",
-		"-- hoopdev:correlation_id=task-99\nDELETE FROM users WHERE id = 7;",
+		"-- x-hoop-correlation-id=task-42\nDELETE FROM users WHERE id = 7;",
+		"-- x-hoop-correlation-id=task-99\nDELETE FROM users WHERE id = 7;",
 		"DELETE FROM users WHERE id = 7;",
 		"  DELETE FROM users WHERE id = 7;  ",
 	}
@@ -59,7 +59,7 @@ func TestDifferentStatementsNeverShareAKey(t *testing.T) {
 		{"SELECT /*! SQL_NO_CACHE */ * FROM t", "SELECT * FROM t"},
 		// A second marker-looking comment is content, not metadata: only a
 		// leading one is stripped.
-		{"SELECT 1\n-- hoopdev:correlation_id=x", "SELECT 1"},
+		{"SELECT 1\n-- x-hoop-correlation-id=x", "SELECT 1"},
 	}
 
 	for _, p := range pairs {
@@ -76,15 +76,16 @@ func TestDifferentStatementsNeverShareAKey(t *testing.T) {
 // leave different residue depending on which almost-right spelling it used.
 func TestNonConformingMarkersAreLeftInPlace(t *testing.T) {
 	cases := []string{
-		"--hoopdev:correlation_id=x\nSELECT 1",                                            // no space
-		"-- Hoop:corr=x\nSELECT 1",                                                        // wrong case
-		"-- hoopdev:correlation_id =x\nSELECT 1",                                          // space before =
-		" -- hoopdev:correlation_id=x\nSELECT 1",                                          // not anchored at byte 0
-		"/* hoopdev:correlation_id=x */\nSELECT 1",                                        // block comment
-		"-- hoopdev:correlation_id=\nSELECT 1",                                            // empty value
-		"-- hoopdev:correlation_id=a b\nSELECT 1",                                         // space in the value
-		"-- hoopdev:correlation_id=a\tb\nSELECT 1",                                        // tab in the value
-		"-- hoopdev:correlation_id=" + strings.Repeat("a", MaxMarkerLen+1) + "\nSELECT 1", // too long
+		"--x-hoop-correlation-id=x\nSELECT 1",                                            // no space
+		"-- X-Hoop-Correlation-Id=x\nSELECT 1",                                           // wrong case: the SQL form is lowercase
+		"-- hoopdev:correlation_id=x\nSELECT 1",                                          // the superseded spelling
+		"-- x-hoop-correlation-id =x\nSELECT 1",                                          // space before =
+		" -- x-hoop-correlation-id=x\nSELECT 1",                                          // not anchored at byte 0
+		"/* x-hoop-correlation-id=x */\nSELECT 1",                                        // block comment
+		"-- x-hoop-correlation-id=\nSELECT 1",                                            // empty value
+		"-- x-hoop-correlation-id=a b\nSELECT 1",                                         // space in the value
+		"-- x-hoop-correlation-id=a\tb\nSELECT 1",                                        // tab in the value
+		"-- x-hoop-correlation-id=" + strings.Repeat("a", MaxMarkerLen+1) + "\nSELECT 1", // too long
 	}
 
 	for _, in := range cases {
@@ -101,12 +102,12 @@ func TestNonConformingMarkersAreLeftInPlace(t *testing.T) {
 
 func TestConformingMarkerShapes(t *testing.T) {
 	cases := map[string]struct{ marker, canonical string }{
-		"-- hoopdev:correlation_id=task-42\nSELECT 1":     {"task-42", "SELECT 1"},
-		"-- hoopdev:correlation_id=a/b:c@d+e._-1\nDROP t": {"a/b:c@d+e._-1", "DROP t"},
-		"-- hoopdev:correlation_id=x   \nSELECT 1":        {"x", "SELECT 1"}, // trailing blanks trimmed
-		"-- hoopdev:correlation_id=x\r\nSELECT 1":         {"x", "SELECT 1"}, // CRLF
-		"-- hoopdev:correlation_id=x":                     {"x", ""},         // marker and nothing else
-		"-- hoopdev:correlation_id=x\n\n\n  SELECT 1  \n": {"x", "SELECT 1"}, // surrounding blanks trimmed
+		"-- x-hoop-correlation-id=task-42\nSELECT 1":     {"task-42", "SELECT 1"},
+		"-- x-hoop-correlation-id=a/b:c@d+e._-1\nDROP t": {"a/b:c@d+e._-1", "DROP t"},
+		"-- x-hoop-correlation-id=x   \nSELECT 1":        {"x", "SELECT 1"}, // trailing blanks trimmed
+		"-- x-hoop-correlation-id=x\r\nSELECT 1":         {"x", "SELECT 1"}, // CRLF
+		"-- x-hoop-correlation-id=x":                     {"x", ""},         // marker and nothing else
+		"-- x-hoop-correlation-id=x\n\n\n  SELECT 1  \n": {"x", "SELECT 1"}, // surrounding blanks trimmed
 	}
 
 	for in, want := range cases {
@@ -221,8 +222,153 @@ func TestSessionCorrelationIDIsTheFallbackMarker(t *testing.T) {
 
 	// The statement's own marker is per-statement and wins: an agent whose
 	// task 3 and task 9 run byte-identical SQL has to be able to say so.
-	stmt.Text = "-- hoopdev:correlation_id=task-9\nDELETE FROM t"
+	stmt.Text = "-- x-hoop-correlation-id=task-9\nDELETE FROM t"
 	if got := identify(stmt, "ci-run-9").Marker; got != "task-9" {
 		t.Errorf("marker = %q, want the statement's own", got)
+	}
+}
+
+// httpStmt builds a decoded HTTP request statement carrying a correlation id.
+func httpStmt(text, body, corr string) hoopinspect.Statement {
+	return hoopinspect.Statement{
+		Protocol:  hoopinspect.HTTP,
+		Direction: hoopinspect.FromClient,
+		Text:      text,
+		HTTP:      &hoopinspect.HTTPDetail{Body: body, CorrelationID: corr},
+	}
+}
+
+// The header names the unit of work. It must NOT reach the authorization key:
+// if it did, a retry under a new correlation id would hash differently and an
+// existing approval would stop covering the identical request.
+func TestHTTPCorrelationHeaderIsAMarkerAndNotPartOfTheHash(t *testing.T) {
+	const text, body = "POST /anything/users/12345/orders", `{"action":"purge"}`
+
+	a := identify(httpStmt(text, body, "task-3"), "")
+	b := identify(httpStmt(text, body, "task-9"), "")
+	bare := identify(httpStmt(text, body, ""), "")
+
+	if a.Marker != "task-3" || b.Marker != "task-9" {
+		t.Errorf("markers = %q, %q; want the header values", a.Marker, b.Marker)
+	}
+	if a.Hash != b.Hash || a.Hash != bare.Hash {
+		t.Errorf("hash changed with the correlation header:\n  task-3 %s\n  task-9 %s\n  none   %s",
+			a.Hash, b.Hash, bare.Hash)
+	}
+	if a.Canonical != bare.Canonical {
+		t.Errorf("canonical text changed with the header:\n  %q\n  %q", a.Canonical, bare.Canonical)
+	}
+}
+
+// Per-request beats per-connection: one keep-alive connection carries many
+// requests, and each has to be able to name its own unit of work.
+func TestHTTPHeaderBeatsTheSessionMarker(t *testing.T) {
+	if got := identify(httpStmt("GET /x", "", "task-9"), "ci-run-9").Marker; got != "task-9" {
+		t.Errorf("marker = %q, want the request's own header", got)
+	}
+	if got := identify(httpStmt("GET /x", "", ""), "ci-run-9").Marker; got != "ci-run-9" {
+		t.Errorf("marker = %q, want the session fallback", got)
+	}
+}
+
+// A header value that could not be used as a lookup key yields NO marker,
+// rather than a truncated or sanitized one: a marker that quietly became a
+// different string would join a retry to the wrong review request.
+func TestUnusableHTTPCorrelationHeaderIsDropped(t *testing.T) {
+	for _, tc := range []struct{ name, value string }{
+		{"newline", "task\n9"},
+		{"space", "task 9"},
+		{"quote", `task"9`},
+		{"nul", "task\x009"},
+		{"too long", strings.Repeat("a", MaxMarkerLen+1)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			id := identify(httpStmt("GET /x", "", tc.value), "")
+			if id.Marker != "" {
+				t.Errorf("marker = %q, want none", id.Marker)
+			}
+			// It still falls back, and the statement stays observable:
+			// an unusable header is a dedupe problem, never a refusal to gate.
+			if got := identify(httpStmt("GET /x", "", tc.value), "ci-run-9").Marker; got != "ci-run-9" {
+				t.Errorf("fallback marker = %q, want the session id", got)
+			}
+			if !id.Observable {
+				t.Error("statement became unobservable; a bad header must not stop the gate")
+			}
+		})
+	}
+
+	// The boundary itself is accepted.
+	max := strings.Repeat("a", MaxMarkerLen)
+	if got := identify(httpStmt("GET /x", "", max), "").Marker; got != max {
+		t.Errorf("a %d-byte marker was rejected", MaxMarkerLen)
+	}
+}
+
+// Every protocol the gate can gate must be able to say how to supply a
+// marker. A refusal telling an HTTP caller to "prefix it with a -- comment"
+// describes something they cannot do, which reads as a broken gate rather
+// than a configured one.
+//
+// This walks the protocols canonicalFor accepts. A new codec that becomes
+// gateable without an entry in markerHowTo fails here.
+func TestEveryGateableProtocolSaysHowToSupplyAMarker(t *testing.T) {
+	gateable := []struct {
+		protocol hoopinspect.Protocol
+		stmt     hoopinspect.Statement
+	}{
+		{hoopinspect.HTTP, httpStmt("GET /x", "", "")},
+		{hoopinspect.Postgres, hoopinspect.Statement{
+			Protocol: hoopinspect.Postgres, Text: "DELETE FROM t",
+			Metadata: map[string]string{"pg.message": "Query"}}},
+		{hoopinspect.MSSQL, hoopinspect.Statement{
+			Protocol: hoopinspect.MSSQL, Text: "DELETE FROM t",
+			Metadata: map[string]string{"mssql.message": "SQLBatch"}}},
+	}
+
+	const generic = "this protocol has no supported way to carry one"
+	for _, tc := range gateable {
+		t.Run(string(tc.protocol), func(t *testing.T) {
+			if !identify(tc.stmt, "").Observable {
+				t.Fatalf("test is stale: canonicalFor no longer accepts %s", tc.protocol)
+			}
+			advice := markerHowTo(tc.protocol)
+			if advice == generic {
+				t.Errorf("%s can be gated but markerHowTo has no entry for it", tc.protocol)
+			}
+			// The advice must not send a caller after the wrong mechanism.
+			switch tc.protocol {
+			case hoopinspect.HTTP:
+				if strings.Contains(advice, markerPrefix) {
+					t.Errorf("HTTP advice tells the caller to use a SQL comment: %q", advice)
+				}
+				if !strings.Contains(advice, hoopinspect.CorrelationHeader) {
+					t.Errorf("HTTP advice does not name the header: %q", advice)
+				}
+			default:
+				if !strings.Contains(advice, markerPrefix) {
+					t.Errorf("%s advice does not name the comment form: %q", tc.protocol, advice)
+				}
+			}
+		})
+	}
+
+	// A protocol the gate refuses gets the generic line rather than advice
+	// for a mechanism it does not have.
+	if got := markerHowTo(hoopinspect.Protocol("mongodb")); got != generic {
+		t.Errorf("unknown protocol advice = %q, want the generic line", got)
+	}
+}
+
+// One name across protocols is the point of the rename: a header on HTTP, the
+// same name as a comment on SQL. If either side moves without the other, a
+// caller reading the HTTP docs writes a SQL marker that silently does not
+// conform — it stays in the statement, lands in the hash, and the review never
+// matches.
+func TestSQLMarkerAndHTTPHeaderAreTheSameName(t *testing.T) {
+	want := "-- " + strings.ToLower(hoopinspect.CorrelationHeader) + "="
+	if markerPrefix != want {
+		t.Errorf("markerPrefix = %q, want %q (lowercased %s)",
+			markerPrefix, want, hoopinspect.CorrelationHeader)
 	}
 }

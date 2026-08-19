@@ -8,14 +8,26 @@ import (
 	"github.com/hoophq/hoopinspect"
 )
 
-// markerPrefix is the ONE accepted spelling of the hoop correlation marker.
+// markerPrefix is the ONE accepted spelling of the hoop correlation marker in
+// a SQL statement.
+//
+// It is hoopinspect.CorrelationHeader lowercased, so the same name identifies
+// a unit of work whichever protocol carries it: a header on HTTP, this comment
+// on SQL. A test asserts the two stay in step, because the whole value of one
+// name is lost the moment they drift.
 //
 // Rigid on purpose. "Strip the marker" has to mean exactly one thing on both
 // the create path and the claim path, or the same logical statement leaves
 // different residue in each and an approval becomes unmatchable. Leading
 // position, single occurrence, fixed syntax; anything that does not conform is
 // left in place rather than hunted for.
-const markerPrefix = "-- hoopdev:correlation_id="
+//
+// Case-SENSITIVE, unlike the HTTP header, and that asymmetry is the protocols'
+// rather than a choice: net/http canonicalizes header names, while a SQL
+// comment is bytes in a statement, and matching it case-insensitively would
+// mean two spellings of the marker producing two different residues — exactly
+// the unmatchable-approval failure the rigidity above exists to prevent.
+const markerPrefix = "-- x-hoop-correlation-id="
 
 // MaxMarkerLen bounds the marker value.
 //
@@ -104,6 +116,41 @@ func validMarker(v string) bool {
 	return true
 }
 
+// headerMarker returns v when it is an acceptable marker, and "" otherwise.
+//
+// Unlike the SQL path there is no "leave it in place" option — a header is
+// metadata or it is nothing — so a value that is too long or carries a
+// character outside the allowlist yields no marker at all. That degrades to
+// the session marker, or to no marker, and a lane with require_marker on then
+// refuses the statement outright. Both are visible; neither is a wrong match.
+func headerMarker(v string) string {
+	if !validMarker(v) {
+		return ""
+	}
+	return v
+}
+
+// markerHowTo says how to supply a correlation marker on this protocol.
+//
+// It exists because "prefix it with a -- comment" is advice a caller on an
+// HTTP lane cannot act on, and a refusal that tells someone to do the
+// impossible reads as a broken gate rather than a configured one.
+//
+// Kept adjacent to canonicalFor, and covered by a test that walks every
+// protocol canonicalFor accepts: a new codec that can be gated but has no
+// advice here fails that test rather than shipping SQL instructions to a
+// protocol with no comment syntax.
+func markerHowTo(protocol hoopinspect.Protocol) string {
+	switch protocol {
+	case hoopinspect.HTTP:
+		return "send it in the " + hoopinspect.CorrelationHeader + " request header"
+	case hoopinspect.Postgres, hoopinspect.MSSQL:
+		return "prefix the statement with \"" + markerPrefix + "<id>\" on its own line"
+	default:
+		return "this protocol has no supported way to carry one"
+	}
+}
+
 // execKey is the AUTHORIZATION key: SHA-256 over the canonical statement text.
 //
 // It is EXACT, and that is the whole point of it.
@@ -155,10 +202,16 @@ type statementIdentity struct {
 // identify derives the two keys for one statement.
 //
 // sessionMarker is the connection-level correlation id (session.CorrelationID,
-// reaching us through policy.EvalContext). A marker inside the statement wins,
-// because it is per-statement and the session's is per-connection: an agent
-// whose task 3 and task 9 run byte-identical SQL needs to say so per
-// statement, and a protocol with nowhere to put a comment still gets a handle.
+// reaching us through policy.EvalContext). A marker carried by the statement
+// itself wins, because it is per-statement and the session's is per-
+// connection: an agent whose task 3 and task 9 run byte-identical SQL needs to
+// say so per statement, and one HTTP connection carries many requests.
+//
+// Each protocol supplies that per-statement marker the way it can. SQL uses
+// the leading -- x-hoop-correlation-id= comment; HTTP uses the
+// X-Hoop-Correlation-Id header, since it has no comment syntax to prepend
+// one to. Both land here as the same string and are treated identically from
+// this point on.
 func identify(stmt hoopinspect.Statement, sessionMarker string) statementIdentity {
 	canonical, marker, ok, why := canonicalFor(stmt)
 	if marker == "" {
@@ -213,7 +266,20 @@ func canonicalFor(stmt hoopinspect.Statement) (canonical, marker string, ok bool
 		// of what the upstream will act on. Resource is deliberately NOT
 		// used here even though policy rules key on it — it collapses ids,
 		// which is the shape-vs-exact mistake this package exists to avoid.
-		return strings.TrimSpace(stmt.Text + "\n\n" + d.Body), "", true, ""
+		//
+		// Headers are NOT part of the canonical text, which is what makes
+		// the correlation header safe to accept: it names the unit of work
+		// a request belongs to without perturbing the key that authorizes
+		// it. Two requests differing only in their correlation id hash the
+		// same and are the same authorization question — as they should be.
+		//
+		// An unusable value is dropped rather than carried, so it falls
+		// back to the session marker. Note the asymmetry with SQL, and that
+		// it is the right way round: a non-conforming SQL marker stays in
+		// the text and lands in the hash, because there it is indisputably
+		// statement content. A header is never content, so ignoring it
+		// costs nothing but dedupe.
+		return strings.TrimSpace(stmt.Text + "\n\n" + d.Body), headerMarker(d.CorrelationID), true, ""
 
 	case hoopinspect.Postgres:
 		// Simple Query only. The codec decodes Query and Parse and never
