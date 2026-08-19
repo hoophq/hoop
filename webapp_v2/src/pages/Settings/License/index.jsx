@@ -20,10 +20,12 @@ import authService from '@/services/auth'
 import { docsUrl } from '@/utils/docsUrl'
 import { LICENSE_STATUS, daysUntilExpiration, formatLicenseDate } from '@/utils/license'
 import { showSnackbar } from '@/utils/snackbar'
+import { openSupport } from '@/utils/support'
 
 // Wider than the global banner's 30 days: this page is where renewal happens,
 // so a heads-up here is useful long before it is worth interrupting the app.
 const EXPIRATION_WARNING_DAYS = 90
+const SUPPORT_MESSAGE = 'I want to renew my hoop license'
 
 function licenseTypeLabel(type) {
   if (type === 'enterprise') return 'Enterprise License'
@@ -40,14 +42,14 @@ function expirationNotice(licenseInfo, isAdmin) {
   if (status === LICENSE_STATUS.EXPIRED) {
     return {
       color: 'red',
-      message: `Your organization's license expired on ${formatLicenseDate(expireAt)}. New sessions are blocked until a valid license is installed — paste a new license key below, or contact us.`,
+      message: `Your license expired on ${formatLicenseDate(expireAt)}. New sessions are blocked.`,
     }
   }
   if (status === LICENSE_STATUS.INVALID) {
     const reason = verifyError ? `: ${verifyError}` : ''
     return {
       color: 'red',
-      message: `Your organization's license could not be verified${reason}. New sessions are blocked until a valid license is installed.`,
+      message: `Your license could not be verified${reason}. New sessions are blocked.`,
     }
   }
 
@@ -56,12 +58,12 @@ function expirationNotice(licenseInfo, isAdmin) {
   if (daysLeft === null || daysLeft > EXPIRATION_WARNING_DAYS) return null
   return {
     color: 'amber',
-    message: `Your organization's license expires on ${formatLicenseDate(expireAt)}. Please contact us to avoid interruption.`,
+    message: `Your license expires on ${formatLicenseDate(expireAt)}. Renew it to avoid interruption.`,
   }
 }
 
 function SettingsLicense() {
-  const { isAdmin, setServerInfo } = useUserStore()
+  const { isAdmin, setServerInfo, analyticsTracking } = useUserStore()
   const [licenseInfo, setLicenseInfo] = useState(null)
   const [licenseKey, setLicenseKey] = useState('')
   const [loading, setLoading] = useState(true)
@@ -137,7 +139,21 @@ function SettingsLicense() {
 
       {notice && (
         <Alert icon={<AlertCircle size={16} />} color={notice.color} mb="xl">
-          {notice.message}
+          <Group gap="xs" align="center" wrap="wrap">
+            <Text size="sm" component="span">
+              {notice.message}
+            </Text>
+            <Anchor
+              component="button"
+              type="button"
+              onClick={() => openSupport(analyticsTracking, SUPPORT_MESSAGE)}
+              c={notice.color}
+              fw={500}
+              size="sm"
+            >
+              {'Contact support ↗'}
+            </Anchor>
+          </Group>
         </Alert>
       )}
 
