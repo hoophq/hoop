@@ -83,7 +83,7 @@ This is a Go workspace for the hoop gateway, agent, and CLI. The codebase follow
 ### hoopinspect (`hoopinspect/`)
 - Standalone wire-inspection library plus the `hoop-inspect` relay binary: raw database bytes to statements, statements to allow/deny verdicts, masked responses and an audit trail. Own module (`github.com/hoophq/hoopinspect`); nothing in `gateway/`, `agent/` or `client/` imports it.
 - **Zero dependencies, stdlib only, test dependencies included.** Anything needing a dependency gets its own `go.mod`, which is why `cmd/`, `config/yaml/`, `pii/alcatraz/`, `store/sqlite/`, `analyzer/vertex/` and `lexer/conformance/` are nested modules.
-- Not covered by CI: `make test-oss` runs `go test github.com/hoophq/hoop/...`, which does not match this module, and no workflow references it. Root `go test ./...` also reaches no nested module.
+- Covered by CI through `make test-hoopinspect`, which `make test-oss` depends on: `go test github.com/hoophq/hoop/...` does not match this module, and a root `go test ./...` reaches no nested module either, so the target walks every `go.mod` under `hoopinspect/` instead.
 - **Read `hoopinspect/CLAUDE.md` before changing anything under it.** It carries the dependency checks, the per-module test loop, and why a `lexer/` change is unverified until `lexer/conformance` passes.
 
 ## Transport Plugin System
@@ -133,7 +133,8 @@ Protocol-specific proxy servers configured via `server_misc_config`:
 | Run frontend dev (both) | `cd webapp_v2 && npm run dev:full` | Starts Vite (:5173) + shadow-cljs (:8280) together. CLJS edits require a browser hard-reload — Vite proxies the bundle and can't HMR it. |
 | Run React dev only | `cd webapp_v2 && npm run dev` | Vite on :5173. CLJS routes are blank until shadow-cljs is started separately. |
 | Build Rust agent (dev) | `make build-dev-rust` | Cross-compiles for Linux from macOS |
-| Run tests | `make test-oss` | Auto-links `libhoop` and generates WASM first |
+| Run tests | `make test-oss` | Auto-links `libhoop`, generates WASM, and runs `test-hoopinspect` first |
+| Run `hoopinspect` tests only | `make test-hoopinspect` | Walks every `go.mod` under `hoopinspect/`, nested modules included |
 | Regenerate OpenAPI | `make generate-openapi-docs` | After any API route/schema change |
 | Format Swagger annotations | `swag fmt` | Run in `gateway/` |
 | Create new SQL migration | `migrate create -ext sql -dir gateway/migrations -seq name` | |
@@ -190,7 +191,7 @@ See `DEV.md` "Feature Flags" section for the full developer guide and file refer
 ### Testing
 - Run with `make test-oss` (sets `CGO_ENABLED=0`, outputs JSON).
 - Tests live alongside source files (`_test.go` suffix).
-- The `libhoop-map` and `generate-wasm` steps are prerequisites — the Makefile handles them automatically.
+- The `libhoop-map`, `generate-wasm` and `test-hoopinspect` steps are prerequisites, and the Makefile handles them automatically.
 
 ### API Changes
 - Add Swagger annotations (swag comments) on new/modified handlers.

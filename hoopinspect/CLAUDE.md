@@ -44,7 +44,9 @@ do without.
 
 ## Commands
 
-`hoopinspect` has no Makefile and is not covered by the repo's `make` targets.
+`make test-hoopinspect` at the repo root runs every module below, and
+`make test-oss` depends on it, so CI runs them too. The commands are here
+because the target is a loop over them and you will want one at a time.
 
 ```bash
 # root module
@@ -69,11 +71,12 @@ done
   files are what keeps the root at zero dependencies, and the cost is that
   every nested module needs its own invocation. See the loop above.
 
-- **CI never runs any of this.** `make test-oss` runs
+- **CI reaches this only through `test-hoopinspect`.** `make test-oss` runs
   `go test github.com/hoophq/hoop/...`, which does not match module
-  `github.com/hoophq/hoopinspect`, and no workflow in `.github/workflows/`
-  references it. Tests here pass or fail on your machine only. Run them
-  before opening a PR, because nothing else will.
+  `github.com/hoophq/hoopinspect`, so the Makefile carries a second target
+  that walks every `go.mod` under `hoopinspect/` and `test-oss` depends on
+  it. Break that dependency and these tests stop running everywhere except
+  on your machine.
 
 - **A `lexer/` change is not verified until the conformance suite passes.**
   `lexer/conformance/` runs PostgreSQL's own parser and the scanner over the
