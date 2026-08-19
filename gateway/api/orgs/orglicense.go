@@ -56,8 +56,6 @@ type SignRequest struct {
 	ExpireAt     string   `json:"expire_at"`
 	// Features enabled by the license. Empty means all features are enabled.
 	Features []string `json:"features"`
-	// Optional, not part of the signed payload: it only feeds the analytics event.
-	CustomerEmail string `json:"customer_email" binding:"omitempty,email"`
 }
 
 // SignLicense
@@ -107,14 +105,24 @@ func SignLicense(c *gin.Context) {
 		return
 	}
 
-	// Signed licenses are never stored here, so this event is the only record of
-	// what was issued and to whom. Route is restricted to the signing org.
+	// Signed licenses are never stored, so this event and the log line above are
+	// the only record of what was issued. Route is restricted to the signing org.
+	trackClient := analytics.New()
+	defer trackClient.Close()
+	trackClient.Track(ctx.UserID, analytics.EventLicenseSigned, signedLicenseProperties(ctx.OrgID, req, l))
+
+	c.JSON(http.StatusOK, l)
+}
+
+// signedLicenseProperties builds the analytics payload for a signed license. It
+// carries no PII: `description` is what identifies the customer we issued to.
+func signedLicenseProperties(orgID string, req SignRequest, l *license.License) map[string]any {
 	features := l.Payload.Features
 	if features == nil {
 		features = []string{}
 	}
-	properties := map[string]any{
-		"org-id":        ctx.OrgID,
+	return map[string]any{
+		"org-id":        orgID,
 		"license-type":  l.Payload.Type,
 		"description":   l.Payload.Description,
 		"allowed-hosts": l.Payload.AllowedHosts,
@@ -124,13 +132,4 @@ func SignLicense(c *gin.Context) {
 		"expire-at":     time.Unix(l.Payload.ExpireAt, 0).UTC().Format(time.RFC3339),
 		"valid-for":     req.ExpireAt,
 	}
-	// Omitted rather than empty, so "customer-email is set" filters stay honest.
-	if req.CustomerEmail != "" {
-		properties["customer-email"] = req.CustomerEmail
-	}
-	trackClient := analytics.New()
-	defer trackClient.Close()
-	trackClient.Track(ctx.UserID, analytics.EventLicenseSigned, properties)
-
-	c.JSON(http.StatusOK, l)
 }

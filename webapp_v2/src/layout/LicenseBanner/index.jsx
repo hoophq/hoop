@@ -18,7 +18,7 @@ const DISMISS_KEY = 'license-expiration-dismissed-for'
 
 // Admin-only: renewing is their task. Non-admins get license.ErrNotValid on the
 // blocked session instead.
-function licenseNotice({ licenseInfo, isAdmin, dismissedFor }) {
+function licenseNotice({ licenseInfo, isAdmin, userId, dismissedFor }) {
   if (!isAdmin || !licenseInfo) return null
   const { status, type, expire_at: expireAt, verify_error: verifyError } = licenseInfo
 
@@ -44,10 +44,10 @@ function licenseNotice({ licenseInfo, isAdmin, dismissedFor }) {
   const daysLeft = daysUntilExpiration(expireAt)
   if (daysLeft === null || daysLeft > WARN_DAYS) return null
 
-  // findLast picks the tightest step, and the key carries the expiration so
-  // renewing re-arms the warning.
+  // findLast picks the tightest step. The key carries the expiration so renewing
+  // re-arms the warning, and the user so one admin cannot silence another.
   const step = daysLeft > LOCKED_DAYS ? DISMISS_STEPS.findLast((d) => daysLeft <= d) : null
-  const dismissKey = step ? `${expireAt}:${step}` : null
+  const dismissKey = step ? `${userId}:${expireAt}:${step}` : null
   if (dismissKey && dismissedFor === dismissKey) return null
 
   const when = daysLeft <= 0 ? 'today' : daysLeft === 1 ? 'tomorrow' : `in ${daysLeft} days`
@@ -63,11 +63,11 @@ function licenseNotice({ licenseInfo, isAdmin, dismissedFor }) {
 export default function LicenseBanner() {
   const licenseInfo = useUserStore((state) => state.licenseInfo)
   const isAdmin = useUserStore((state) => state.isAdmin)
-  const analyticsTracking = useUserStore((state) => state.analyticsTracking)
+  const userId = useUserStore((state) => state.user?.id)
   const { pathname } = useLocation()
   const [dismissedFor, setDismissedFor] = useState(() => localStorage.getItem(DISMISS_KEY))
 
-  const notice = licenseNotice({ licenseInfo, isAdmin, dismissedFor })
+  const notice = licenseNotice({ licenseInfo, isAdmin, userId, dismissedFor })
   // The license page states the same thing next to the field that fixes it.
   if (!notice || pathname === LICENSE_PAGE) return null
 
@@ -100,7 +100,7 @@ export default function LicenseBanner() {
           <Anchor
             component="button"
             type="button"
-            onClick={() => openSupport(analyticsTracking, SUPPORT_MESSAGE)}
+            onClick={() => openSupport(SUPPORT_MESSAGE)}
             c={notice.color}
             fw={500}
             size="sm"

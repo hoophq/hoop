@@ -1,37 +1,59 @@
 package apiorgs
 
 import (
-	"net/http/httptest"
-	"strings"
+	"slices"
 	"testing"
 
-	"github.com/gin-gonic/gin"
+	"github.com/hoophq/hoop/common/license"
 )
 
-// customer_email is optional: the CLI always sends the key, empty when the flag
-// is not set, and older clients omit it entirely. Both must bind.
-func TestSignRequestCustomerEmailIsOptional(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	for _, tt := range []struct {
-		name    string
-		body    string
-		wantErr bool
-	}{
-		{"field absent", `{"license_type":"enterprise"}`, false},
-		{"field empty", `{"license_type":"enterprise","customer_email":""}`, false},
-		{"valid address", `{"license_type":"enterprise","customer_email":"user@hoop.dev"}`, false},
-		{"malformed address", `{"license_type":"enterprise","customer_email":"not-an-email"}`, true},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			c, _ := gin.CreateTestContext(httptest.NewRecorder())
-			c.Request = httptest.NewRequest("POST", "/", strings.NewReader(tt.body))
-			c.Request.Header.Set("Content-Type", "application/json")
+// The event is the only durable record of what we issued, so a dropped or
+// renamed property silently breaks the dashboards built on it.
+func TestSignedLicenseProperties(t *testing.T) {
+	l := &license.License{
+		Payload: license.Payload{
+			Type:         license.EnterpriseType,
+			Description:  "acme corp",
+			AllowedHosts: []string{"*"},
+			IssuedAt:     1755561600,
+			ExpireAt:     1758153600,
+		},
+		KeyID: "key-id",
+	}
 
-			var req SignRequest
-			err := c.ShouldBindJSON(&req)
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("ShouldBindJSON() error = %v, wantErr %v", err, tt.wantErr)
+	props := signedLicenseProperties("org-1", SignRequest{ExpireAt: "720h"}, l)
+
+	want := map[string]any{
+		"org-id":        "org-1",
+		"license-type":  license.EnterpriseType,
+		"description":   "acme corp",
+		"allowed-hosts": []string{"*"},
+		"features":      []string{},
+		"key-id":        "key-id",
+		"issued-at":     "2025-08-19T00:00:00Z",
+		"expire-at":     "2025-09-18T00:00:00Z",
+		"valid-for":     "720h",
+	}
+	for key, wantValue := range want {
+		got, ok := props[key]
+		if !ok {
+			t.Errorf("missing property %q", key)
+			continue
+		}
+		if gotSlice, isSlice := got.([]string); isSlice {
+			if !slices.Equal(gotSlice, wantValue.([]string)) {
+				t.Errorf("property %q = %v, want %v", key, got, wantValue)
 			}
-		})
+			continue
+		}
+		if got != wantValue {
+			t.Errorf("property %q = %v, want %v", key, got, wantValue)
+		}
+	}
+
+	// The signing org is ours, but the licensee is a third party: nothing that
+	// identifies a person belongs in this event.
+	if _, ok := props["customer-email"]; ok {
+		t.Error("customer-email must not be sent")
 	}
 }

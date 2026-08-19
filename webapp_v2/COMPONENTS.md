@@ -847,12 +847,13 @@ Opens the same destination as "Contact support" in the header user menu.
 ```js
 import { openSupport, GITHUB_DISCUSSIONS_URL } from '@/utils/support'
 
-openSupport(analyticsTracking, 'I want to renew my hoop license')
+openSupport('I want to renew my hoop license')
 ```
-Intercom is only booted when analytics is on, so `openSupport` falls back to the
-public GitHub discussions board otherwise. Use it for any support entry point
-outside the user menu — that one already has Intercom's launcher listener bound
-to its `#intercom-support-trigger` id and only needs the fallback.
+Delegates to `useUserStore.showIntercomMessage`, which boots Intercom when the
+app-boot init was skipped or shut down, and falls back to the public GitHub
+discussions board when it is unavailable (analytics off, widget blocked). Use it
+for any support entry point outside the user menu — that one already has
+Intercom's launcher listener bound to its `#intercom-support-trigger` id.
 
 ---
 

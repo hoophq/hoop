@@ -63,7 +63,7 @@ function expirationNotice(licenseInfo, isAdmin) {
 }
 
 function SettingsLicense() {
-  const { isAdmin, setServerInfo, analyticsTracking } = useUserStore()
+  const { isAdmin, setServerInfo } = useUserStore()
   const [licenseInfo, setLicenseInfo] = useState(null)
   const [licenseKey, setLicenseKey] = useState('')
   const [loading, setLoading] = useState(true)
@@ -146,7 +146,7 @@ function SettingsLicense() {
             <Anchor
               component="button"
               type="button"
-              onClick={() => openSupport(analyticsTracking, SUPPORT_MESSAGE)}
+              onClick={() => openSupport(SUPPORT_MESSAGE)}
               c={notice.color}
               fw={500}
               size="sm"
