@@ -1495,15 +1495,11 @@ type WebhooksDashboardResponse struct {
 	URL string `json:"url" example:"https://app.svix.com/app_3ZT4NrDlps0Pjp6Af8L6pJMMh3/endpoints"`
 }
 
-// License states reported by the /serverinfo endpoint.
+// Values for the license_info.status field returned by /serverinfo; each state
+// is documented on ServerLicenseInfo.Status below.
 const (
-	// LicenseStatusValid means the license verified against the embedded public
-	// key, is inside its validity window and is allowed on this host.
-	LicenseStatusValid = "valid"
-	// LicenseStatusExpired means the license is authentic but past expire_at.
+	LicenseStatusValid   = "valid"
 	LicenseStatusExpired = "expired"
-	// LicenseStatusInvalid covers every other verification failure: bad
-	// signature, host not allowed, malformed or missing attributes.
 	LicenseStatusInvalid = "invalid"
 )
 
