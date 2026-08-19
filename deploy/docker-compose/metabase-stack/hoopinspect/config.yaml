@@ -1,0 +1,106 @@
+# hoop-inspect in front of the database Metabase reports on.
+#
+#   metabase --pgwire--> :15432 lane "appdb" --pgwire+TLS--> appdb:5432
+#
+# One lane, because there is one thing to protect. Metabase's own application
+# database is H2 in its container and must not come here: a read-only rule
+# would brick the product on its first write.
+#
+# Validate without starting anything:
+#   cd hoopinspect/cmd && go run . -validate \
+#     -config ../../deploy/docker-compose/metabase-stack/hoopinspect/config.yaml
+
+log_level: info
+
+admin:
+  listen: 0.0.0.0:19000
+
+audit:
+  file: "-" # stdout, for the container log pipeline
+  memory_buffer: 256
+  async_queue_size: 1024 # a slow disk must not block a dashboard load
+  query_sessions: 500 # backs /api/sessions
+
+# The union of every entity the lane uses below. Required, and there is no
+# all-entities default: enabling all 45 recognizers rewrites ordinary numeric
+# columns, since US_SSN fires on roughly a third of random nine-digit ids and
+# this schema has an amount_cents column that would qualify.
+pii:
+  entities:
+    - EMAIL_ADDRESS
+    - US_SSN
+    - CREDIT_CARD
+    - BR_CPF
+    - IBAN_CODE
+
+mask:
+  enabled: true
+
+listeners:
+  - name: appdb
+    protocol: postgres
+    listen: 0.0.0.0:15432
+    upstream: appdb:5432
+    connection: metabase # the name audit rows key on
+
+    # Headroom, not a measurement: this stack peaks at 6 connections. Size a
+    # real one at or above MB_JDBC_DATA_WAREHOUSE_MAX_CONNECTION_POOL_SIZE,
+    # which Metabase holds per database and runs syncs against concurrently. A
+    # lane at its cap refuses rather than queues, and Metabase reports the
+    # refusal as a table that silently never finished syncing.
+    max_conns: 64
+
+    # idle_timeout_sec unset on purpose. c3p0 keeps connections open between
+    # dashboard loads, and closing them under it turns the next query into a
+    # reconnect or an error the analyst sees.
+
+    # hoop-inspect is the TLS CLIENT on this hop, so it decrypts on read and
+    # the rules below still see plaintext. ca_file rather than
+    # insecure_skip_verify: a relay that accepts any certificate on the path
+    # it exists to protect is the wrong default to demonstrate.
+    upstream_tls:
+      ca_file: /etc/hoop-inspect/certs/appdb.crt
+      server_name: appdb
+
+    policy:
+      enforce: true
+      rules:
+        # BI is a read. Unlike a GRANT, this refusal carries a message the
+        # analyst can read. type: operation is lexer-derived, so it keys on
+        # the effect and not the leading verb: a DELETE inside a CTE is
+        # refused, and SELECT 'DROP TABLE customers' is not.
+        - name: read-only-lane
+          type: operation
+          operations: [insert, update, delete, drop, truncate]
+          message: this Metabase connection is read-only; writes are not permitted
+
+        # `unknown` and `other` are NOT denied here, against hoopinspect's
+        # usual fail-closed guidance. A first boot, a full sync and a complete
+        # ./demo.sh produce 70 client statements on this lane and zero of
+        # either, but that covers this demo rather than models, pulses,
+        # actions or pgjdbc autosave (SAVEPOINT classifies as `other`). Turn
+        # it on for a real deployment and watch a sync:
+        #
+        #   - name: unreadable-statement
+        #     type: operation
+        #     operations: [unknown, other]
+        #     message: this statement cannot be classified, so it is refused
+
+    mask:
+      # This block REPLACES the default rather than extending it, so every
+      # rule the lane needs is listed here.
+      rules:
+        # ssn carries both kinds of rule because they fail in opposite
+        # directions. A column rule keys on the name in RowDescription, so it
+        # catches the two fixture-shaped SSNs alcatraz rejects, and an alias
+        # defeats it. An entity rule keys on the value, so it survives any
+        # alias, and reshaping the value defeats it. README "Known gaps" has
+        # the hole the pair still leaves.
+        - {name: ssn-column, columns: [ssn], strategy: partial, keep_last: 4}
+        - {name: ssn-entity, entity: US_SSN, strategy: partial, keep_last: 4}
+        # Entity rules for the rest: the same value turns up under names
+        # nobody enumerates in advance (email, actor_email, whatever a join
+        # calls them).
+        - {name: emails, entity: EMAIL_ADDRESS, strategy: redact}
+        - {name: cpf, entity: BR_CPF, strategy: redact}
+        - {name: iban, entity: IBAN_CODE, strategy: partial, keep_last: 4}
