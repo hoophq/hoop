@@ -774,7 +774,7 @@ above work from the command line and a driver on the same lane would not.
 | No `+ human review` in `--validate`, but it passed | The lane genuinely has no gate. All three mismatches above are refusals, so a clean validate without that suffix means no rule asked for review |
 | `gateway returned 404: connection not found` | The lane's `connection:` is not a connection the gateway has, or the `hpk_` token's groups cannot reach it (step 3) |
 | `gateway returned 422` | That connection has no access request rule — nobody to review it (step 3) |
-| `risk analysis unavailable; denying` | The analyzer could not answer. With `fail_open: false` that refuses, which is correct for a gated lane. The provider's own reason is in the relay log |
+| `risk analysis unavailable; denying` | The analyzer could not answer. With `fail_open: false` that refuses, which is correct for a gated lane. The relay log names the status; set `log_level: debug` to see the provider's own response body |
 | `this lane requires a hoopdev:correlation_id marker` when you sent one | psql stripped it. Use `-c` |
 | Nothing is gated at all | The trigger did not match. Compare the audit line's `operation` against the rule's `trigger` |
 

@@ -3,12 +3,24 @@ package analyzer_test
 import (
 	"bytes"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"testing"
 
 	"github.com/hoophq/hoopinspect/analyzer"
 )
+
+// atLevel installs a default logger at lv for one test and restores the
+// previous one. The gate reads slog.Default(), so this exercises the real
+// mechanism rather than a test seam. Not parallel-safe, deliberately:
+// slog.SetDefault is process-wide.
+func atLevel(t *testing.T, lv slog.Level) {
+	t.Helper()
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: lv})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+}
 
 func failedResponse(status int, statusText, body string) *http.Response {
 	return &http.Response{
@@ -22,7 +34,8 @@ func failedResponse(status int, statusText, body string) *http.Response {
 // The case this exists for. A bare "provider returned 404 Not Found" cannot
 // tell a wrong model id from a model that is not enabled from a bad region,
 // and the one sentence that can is in the body.
-func TestProviderErrorQuotesTheBody(t *testing.T) {
+func TestProviderErrorQuotesTheBodyAtDebug(t *testing.T) {
+	atLevel(t, slog.LevelDebug)
 	body := `{"error":{"code":404,"message":"Publisher Model ` +
 		`projects/x/locations/global/publishers/anthropic/models/claude-sonnet-4-5@20250929 was not found",` +
 		`"status":"NOT_FOUND"}}`
@@ -47,6 +60,7 @@ func TestProviderErrorQuotesTheBody(t *testing.T) {
 // complete short body from a cut one chases the wrong half of a JSON
 // document.
 func TestProviderErrorMarksTruncation(t *testing.T) {
+	atLevel(t, slog.LevelDebug)
 	body := `{"error":"` + strings.Repeat("x", analyzer.MaxErrorBodyBytes*2) + `"}`
 	err := analyzer.NewProviderHTTPError("analyzer/openai", failedResponse(400, "400 Bad Request", body))
 
@@ -82,6 +96,7 @@ func TestProviderErrorExactlyAtTheCapIsNotTruncated(t *testing.T) {
 // else forges a log record and an escape sequence is how they repaint the
 // reader's terminal.
 func TestProviderErrorSanitizesTheBody(t *testing.T) {
+	atLevel(t, slog.LevelDebug)
 	body := "line one\nline two\r\n\ttabbed   spaced\x1b[31mred\x00nul"
 	err := analyzer.NewProviderHTTPError("analyzer/vertex", failedResponse(403, "403 Forbidden", body))
 
@@ -172,4 +187,60 @@ func utf8Valid(s string) bool {
 		}
 	}
 	return true
+}
+
+// The default. An operator sees the status, learns a body exists, and is told
+// the one config line that reveals it — without statement text reaching a log
+// that audit.redact_statements does not cover.
+func TestProviderErrorWithholdsTheBodyBelowDebug(t *testing.T) {
+	atLevel(t, slog.LevelInfo)
+	body := `{"error":{"code":404,"message":"Publisher model gemini-3.5-flash was not found"}}`
+
+	err := analyzer.NewProviderHTTPError("analyzer/vertex", failedResponse(404, "404 Not Found", body))
+
+	if err.Body == "" {
+		t.Error("the body was not CAPTURED; the gate is on rendering, not on reading")
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "Publisher model") {
+		t.Errorf("the body leaked below debug:\n%s", msg)
+	}
+	for _, want := range []string{"404 Not Found", "withheld", "log_level: debug"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("message is missing %q:\n%s", want, msg)
+		}
+	}
+}
+
+// Same error, both levels: the only difference is what Error() renders.
+func TestProviderErrorSameCaptureEitherWay(t *testing.T) {
+	body := `{"error":{"message":"nope"}}`
+
+	atLevel(t, slog.LevelInfo)
+	quiet := analyzer.NewProviderHTTPError("analyzer/openai", failedResponse(403, "403 Forbidden", body))
+	atLevel(t, slog.LevelDebug)
+	loud := analyzer.NewProviderHTTPError("analyzer/openai", failedResponse(403, "403 Forbidden", body))
+
+	if quiet.Body != loud.Body {
+		t.Errorf("capture differs by log level: %q vs %q", quiet.Body, loud.Body)
+	}
+	if !strings.Contains(loud.Error(), "nope") {
+		t.Errorf("debug did not render the body: %s", loud.Error())
+	}
+}
+
+// Below 400 the client stopped following redirects and the body is a redirect
+// page, not a diagnosis. Nothing to capture, and no offer to show it.
+func TestProviderErrorSkipsTheBodyUnder400(t *testing.T) {
+	atLevel(t, slog.LevelDebug)
+	err := analyzer.NewProviderHTTPError("analyzer/openai",
+		failedResponse(302, "302 Found", "<html>go here instead</html>"))
+
+	if err.Body != "" {
+		t.Errorf("captured a body for a %d: %q", err.StatusCode, err.Body)
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "go here") || strings.Contains(msg, "withheld") {
+		t.Errorf("unexpected body handling for a 3xx: %s", msg)
+	}
 }

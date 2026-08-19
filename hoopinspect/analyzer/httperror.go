@@ -2,43 +2,41 @@ package analyzer
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"unicode"
 )
 
-// MaxErrorBodyBytes bounds how much of a provider's failed response is quoted
-// back in the error.
+// MaxErrorBodyBytes bounds how much of a provider's failed response is kept.
 //
-// One knob, because the error it builds reaches a log line, an errors.Join
-// chain and eventually a ticket somebody pastes it into. Raising it makes a
-// provider outage noisier by exactly this much per failed statement.
+// One knob, because the body it captures can reach a log line, an errors.Join
+// chain and eventually a ticket somebody pastes it into.
 const MaxErrorBodyBytes = 4 << 10
 
 // ProviderHTTPError is a non-2xx from a model provider.
 //
-// # This body reaches the relay's logs
+// # The body is captured, and shown only at debug
 //
 // An LLM 4xx frequently echoes the request that caused it, and the request is
-// the statement. So a provider's validation error can copy statement text —
-// and whatever the statement contained — into stdout, which is a channel
-// audit.SinkOptions redaction does not reach: a deployment running
-// `redact_statements: true` keeps query text out of its audit trail and would
-// now find fragments of it here.
+// the statement. Rendering that unconditionally would copy statement text into
+// stdout — a channel audit.SinkOptions redaction does not reach, so a
+// deployment running `redact_statements: true` to keep query text out of its
+// audit trail would find fragments of it in the process log.
 //
-// The only thing bounding that today is this function: the body is truncated
-// to MaxErrorBodyBytes and stripped of anything unprintable. `send: redacted`
-// does NOT help, whatever its name suggests — see sidecar.redactorFor, which
-// appends a note naming the entity classes and transmits the values anyway.
+// So Error() renders the body only when the process is logging at debug, and
+// says so when it is not. The default is an operator who can see that a
+// detail exists and one config line away from reading it; turning debug on is
+// then an explicit, reviewable act rather than a default nobody chose.
 //
-// It is quoted anyway because the alternative was worse in practice: a wrong
-// model id, a model that is not enabled, a bad region and a malformed request
-// all arrive as the same bare "provider returned 404 Not Found", and the one
-// sentence explaining which was discarded microseconds before it would have
-// been useful. If that trade is wrong for a deployment, the fix is a config
-// switch here rather than going back to a status line nobody can act on.
+// Do NOT reach for `send: redacted` as a mitigation. Despite the name it does
+// not withhold values — see sidecar.redactorFor, which appends a note naming
+// the entity classes and transmits the statement unchanged. Only
+// `send: refuse` keeps a statement carrying a detected entity out of the
+// request in the first place.
 type ProviderHTTPError struct {
 	// Provider names the caller: "analyzer/vertex", not "analyzer/anthropic",
 	// even though Vertex reuses the Anthropic parser. Without it a Vertex
@@ -52,9 +50,16 @@ type ProviderHTTPError struct {
 	StatusCode int
 	Status     string
 
-	// Body is the response body, truncated to MaxErrorBodyBytes and
-	// sanitized: collapsed whitespace, no control characters. Empty when the
-	// provider sent none.
+	// Body is the response payload, sanitized and truncated to
+	// MaxErrorBodyBytes.
+	//
+	// Captured only for StatusCode >= 400, which is where a provider explains
+	// itself. A 3xx reaching here means the client stopped following
+	// redirects, and its body is a redirect page rather than a diagnosis.
+	//
+	// Populated regardless of log level: the gate is on RENDERING, in
+	// Error(). A caller that wants the payload programmatically reads this
+	// field and takes responsibility for where it puts it.
 	Body string
 
 	// Truncated reports that Body is a prefix. Always stated in the message
@@ -84,14 +89,16 @@ func NewProviderHTTPError(provider string, resp *http.Response) *ProviderHTTPErr
 		e.Status = fmt.Sprintf("%d", resp.StatusCode)
 	}
 
-	// One byte past the limit, so truncation is DETECTED rather than inferred
-	// from a body that happens to land exactly on it.
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, MaxErrorBodyBytes+1))
-	if len(raw) > MaxErrorBodyBytes {
-		raw = raw[:MaxErrorBodyBytes]
-		e.Truncated = true
+	if resp.StatusCode >= 400 {
+		// One byte past the limit, so truncation is DETECTED rather than
+		// inferred from a body that happens to land exactly on it.
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, MaxErrorBodyBytes+1))
+		if len(raw) > MaxErrorBodyBytes {
+			raw = raw[:MaxErrorBodyBytes]
+			e.Truncated = true
+		}
+		e.Body = sanitizeErrorBody(raw)
 	}
-	e.Body = sanitizeErrorBody(raw)
 
 	// Drain a bounded remainder so the connection can go back to the pool. A
 	// body larger than this leaves the connection to be closed instead, which
@@ -101,13 +108,28 @@ func NewProviderHTTPError(provider string, resp *http.Response) *ProviderHTTPErr
 }
 
 // Error implements error.
+//
+// The body is included only at debug. Everything else — provider, status, and
+// the fact that a body exists — is always present, so the message is
+// actionable at any level and names the switch that reveals the rest.
 func (e *ProviderHTTPError) Error() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s: provider returned %s", e.Provider, e.Status)
-	if e.Body == "" {
+
+	if e.StatusCode >= 400 && e.Body == "" {
 		b.WriteString(" with an empty response body")
 		return b.String()
 	}
+	if e.Body == "" {
+		return b.String()
+	}
+
+	if !debugEnabled() {
+		fmt.Fprintf(&b, " (%d-byte response body withheld; set log_level: debug to see it)",
+			len(e.Body))
+		return b.String()
+	}
+
 	b.WriteString(": ")
 	b.WriteString(e.Body)
 	switch {
@@ -117,6 +139,18 @@ func (e *ProviderHTTPError) Error() string {
 		fmt.Fprintf(&b, " [truncated to %d bytes]", MaxErrorBodyBytes)
 	}
 	return b.String()
+}
+
+// debugEnabled reports whether this process is logging at debug.
+//
+// It asks the default slog logger rather than taking a config field, so there
+// is ONE source of truth: sidecar.newLogger builds the handler from
+// `log_level` and installs it with slog.SetDefault, and proxy.Config already
+// falls back to slog.Default() for the same reason. A separate
+// `verbose_errors` switch would be a second thing to set and a second thing to
+// forget.
+func debugEnabled() bool {
+	return slog.Default().Enabled(context.Background(), slog.LevelDebug)
 }
 
 // sanitizeErrorBody makes a remote string safe to put in a log line.
