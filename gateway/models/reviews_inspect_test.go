@@ -295,3 +295,115 @@ func TestCloseInspectSessionIsIdempotent(t *testing.T) {
 		t.Errorf("ended_at moved on a second close: %s -> %s", was, first.EndedAt)
 	}
 }
+
+// seedOpenSession inserts a session the way the inspect create endpoint would,
+// including the input blob UpsertSession writes alongside it.
+func seedOpenSession(t *testing.T, status string, ended bool) string {
+	t.Helper()
+	sid := uuid.NewString()
+	blobID := uuid.NewSHA1(uuid.NameSpaceURL, []byte("blobinput:"+sid)).String()
+
+	err := models.DB.Exec(`
+		INSERT INTO private.blobs (id, org_id, type, blob_stream)
+		VALUES (?, ?, 'session-input', '["DELETE FROM t"]'::jsonb)`, blobID, testOrgID).Error
+	if err != nil {
+		t.Fatalf("seed blob: %v", err)
+	}
+
+	endedAt := "NULL"
+	if ended {
+		endedAt = "NOW()"
+	}
+	err = models.DB.Exec(`
+		INSERT INTO private.sessions
+			(id, org_id, connection, connection_type, verb, status, user_id, user_email,
+			 blob_input_id, created_at, ended_at)
+		VALUES (?, ?, 'appdb', 'database', 'exec', ?, ?, 'sandbox@a', ?, NOW(), `+endedAt+`)`,
+		sid, testOrgID, status, inspectOwner, blobID).Error
+	if err != nil {
+		t.Fatalf("seed session: %v", err)
+	}
+	return sid
+}
+
+func sessionExists(t *testing.T, sid string) bool {
+	t.Helper()
+	var n int64
+	if err := models.DB.Raw(`SELECT count(1) FROM private.sessions WHERE id = ?`, sid).
+		Scan(&n).Error; err != nil {
+		t.Fatalf("count sessions: %v", err)
+	}
+	return n > 0
+}
+
+func blobExists(t *testing.T, sid string) bool {
+	t.Helper()
+	blobID := uuid.NewSHA1(uuid.NameSpaceURL, []byte("blobinput:"+sid)).String()
+	var n int64
+	if err := models.DB.Raw(`SELECT count(1) FROM private.blobs WHERE id = ?`, blobID).
+		Scan(&n).Error; err != nil {
+		t.Fatalf("count blobs: %v", err)
+	}
+	return n > 0
+}
+
+// A session persisted to anchor a review that then failed to be created has no
+// reason to exist. Removing it must take the input blob with it, or the leak
+// is only half fixed.
+func TestDeleteSessionWithInputRemovesBothRows(t *testing.T) {
+	startTestDB(t)
+	sid := seedOpenSession(t, "open", false)
+
+	if err := models.DeleteSessionWithInput(testOrgID, sid); err != nil {
+		t.Fatalf("DeleteSessionWithInput: %v", err)
+	}
+	if sessionExists(t, sid) {
+		t.Error("the session survived")
+	}
+	if blobExists(t, sid) {
+		t.Error("the input blob was orphaned")
+	}
+}
+
+// Compensation that could delete a session which actually ran is worse than
+// the leak it fixes. Anything but an open, unfinished session is left alone.
+func TestDeleteSessionWithInputRefusesASessionThatRan(t *testing.T) {
+	startTestDB(t)
+	for _, tc := range []struct {
+		name   string
+		status string
+		ended  bool
+	}{
+		{"already finished", "done", true},
+		{"open but ended", "open", true},
+		{"ready for execution", "ready", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sid := seedOpenSession(t, tc.status, tc.ended)
+			err := models.DeleteSessionWithInput(testOrgID, sid)
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				t.Fatalf("err = %v, want ErrRecordNotFound (a no-op)", err)
+			}
+			if !sessionExists(t, sid) {
+				t.Error("a session that ran was deleted")
+			}
+			if !blobExists(t, sid) {
+				t.Error("its input blob was deleted")
+			}
+		})
+	}
+}
+
+// Scoped by org, like everything else on this path.
+func TestDeleteSessionWithInputIsOrgScoped(t *testing.T) {
+	startTestDB(t)
+	sid := seedOpenSession(t, "open", false)
+	other := uuid.NewString()
+
+	if err := models.DeleteSessionWithInput(other, sid); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("err = %v, want ErrRecordNotFound", err)
+	}
+	if !sessionExists(t, sid) {
+		t.Fatal("another org deleted this session")
+	}
+}

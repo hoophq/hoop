@@ -833,6 +833,43 @@ func UpsertSession(sess Session) error {
 	})
 }
 
+// DeleteSessionWithInput removes a session and the input blob UpsertSession
+// wrote alongside it.
+//
+// Narrow on purpose: it is compensation for a session that was persisted to
+// anchor something which then failed to be created, so the row has no reason
+// to exist and nothing else references it yet. It is NOT a general "delete a
+// session" — a session that ran carries recordings, events and possibly a
+// review, none of which this touches.
+//
+// Both rows go in one transaction. Deleting the session alone would leave the
+// blob orphaned, which is the same class of leak this function exists to clean
+// up. The blob id is recomputed with the same deterministic derivation
+// UpsertSession uses rather than read back, so this cannot delete a blob
+// belonging to a different session.
+//
+// Guarded so it can only remove a session that never started: a row with an
+// ended_at, or in any status other than open, is left alone and reported as a
+// no-op via ErrRecordNotFound. Compensation that could delete a real session
+// is worse than the leak it fixes.
+func DeleteSessionWithInput(orgID, sessionID string) error {
+	blobInputID := uuid.NewSHA1(uuid.NameSpaceURL, fmt.Appendf(nil, "blobinput:%s", sessionID)).String()
+	return DB.Transaction(func(tx *gorm.DB) error {
+		res := tx.Exec(`
+		DELETE FROM private.sessions
+		 WHERE org_id = ? AND id = ? AND status = 'open' AND ended_at IS NULL`,
+			orgID, sessionID)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return tx.Exec(`DELETE FROM private.blobs WHERE org_id = ? AND id = ?`,
+			orgID, blobInputID).Error
+	})
+}
+
 // UpdateSessionStatus updates only the status of a session
 func UpdateSessionStatus(orgID, sessionID, status string) error {
 	return DB.Table("private.sessions").

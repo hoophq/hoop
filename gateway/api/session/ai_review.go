@@ -2,6 +2,7 @@ package sessionapi
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -36,6 +37,36 @@ type ReviewStatementKeys struct {
 	RequestMarker string
 }
 
+// ErrNoReviewersConfigured means the access rule that would govern a review
+// names no groups to review it.
+//
+// A CONFIG gap rather than a runtime failure: nobody could ever answer the
+// review, so filing one would strand it. Callers that persist a session to
+// anchor a review should check this BEFORE writing anything, since discovering
+// it afterwards leaves an open session with no review attached to it.
+var ErrNoReviewersConfigured = errors.New("access request rule has no reviewers_groups configured")
+
+// ValidateAccessRuleForReview reports whether a review can be created against
+// this access rule at all.
+//
+// Exported so a caller can check the same preconditions BEFORE it persists
+// anything, and used by CreateReviewFromAIAnalysis itself so the two cannot
+// drift: a rule that passes here is one CreateReviewFromAIAnalysis will not
+// reject for the same reason.
+//
+// It validates only what is knowable without touching the database. A caller
+// that passes still has to handle a creation failure — this narrows the
+// window, it does not remove it.
+func ValidateAccessRuleForReview(accessRule *models.AccessRequestRule) error {
+	if accessRule == nil {
+		return errors.New("access request rule is required")
+	}
+	if len(accessRule.ReviewersGroups) == 0 {
+		return fmt.Errorf("%w: rule %q", ErrNoReviewersConfigured, accessRule.Name)
+	}
+	return nil
+}
+
 func CreateReviewFromAIAnalysis(
 	orgID uuid.UUID,
 	sessionID string,
@@ -48,11 +79,8 @@ func CreateReviewFromAIAnalysis(
 	analysis *models.SessionAIAnalysis,
 	keys *ReviewStatementKeys,
 ) (*models.Review, error) {
-	if accessRule == nil {
-		return nil, fmt.Errorf("ai analyzer review: access request rule is required")
-	}
-	if len(accessRule.ReviewersGroups) == 0 {
-		return nil, fmt.Errorf("ai analyzer review: access request rule %q has no reviewers_groups configured", accessRule.Name)
+	if err := ValidateAccessRuleForReview(accessRule); err != nil {
+		return nil, fmt.Errorf("ai analyzer review: %w", err)
 	}
 
 	reviewGroups := make([]models.ReviewGroups, 0, len(accessRule.ReviewersGroups))

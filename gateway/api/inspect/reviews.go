@@ -200,6 +200,19 @@ func Create(c *gin.Context) {
 			"connection %q has no access request rule, so there is nobody to review this statement", conn.Name)})
 		return
 	}
+	// Checked HERE, before anything is written. The same precondition is
+	// enforced inside CreateReviewFromAIAnalysis, but reaching it there would
+	// mean the session below already exists — an open session anchoring a
+	// review that was never filed, stranded in the session list forever.
+	//
+	// It is also a 422 rather than a 500: a rule with no reviewers_groups is
+	// the same class of config gap as no rule at all, and the caller can act
+	// on it.
+	if err := sessionapi.ValidateAccessRuleForReview(accessRule); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": fmt.Sprintf(
+			"connection %q cannot be reviewed: %v", conn.Name, err)})
+		return
+	}
 
 	// One session per review: private.reviews carries UNIQUE(org_id,
 	// session_id), and the session is what a reviewer opens to read the
@@ -251,6 +264,18 @@ func Create(c *gin.Context) {
 		})
 	if err != nil {
 		log.With("org", ctx.OrgID, "sid", sessionID).Errorf("failed creating inspect review: %v", err)
+		// The session exists only to anchor this review. With no review to
+		// anchor it is an open row nobody will ever close, so it is removed
+		// rather than left behind.
+		//
+		// Best effort: the failure above is usually the database being
+		// unhealthy, in which case this fails too. Logged and swallowed,
+		// because the caller's answer is the same either way and a cleanup
+		// failure must not turn one 500 into a different one.
+		if delErr := models.DeleteSessionWithInput(ctx.OrgID, sessionID); delErr != nil {
+			log.With("org", ctx.OrgID, "sid", sessionID).
+				Warnf("failed removing the session of a review that was never created: %v", delErr)
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating review"})
 		return
 	}
