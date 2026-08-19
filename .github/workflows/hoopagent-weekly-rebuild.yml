@@ -1,0 +1,264 @@
+# Weekly base-OS re-patch of the slim agent image (hoophq/hoopagent).
+# Closes DEP-91 point 4: "weekly base-OS patches".
+#
+# hoophq/hoopagent is the low-CVE agent image, but Dockerfile.agent pins its
+# base (ARG UBUNTU_IMAGE=ubuntu:noble-<date>) so builds stay reproducible.
+# A plain rebuild would therefore reproduce the same bytes and patch nothing.
+#
+# Instead this job rebuilds against the CURRENT noble base by overriding the
+# UBUNTU_IMAGE build-arg, and republishes only if the result is free of fixable
+# CRITICAL/HIGH vulnerabilities. The pinned default in Dockerfile.agent is left
+# untouched — bumping it stays a deliberate PR, per the policy in that file.
+# This fills the gap BETWEEN releases so the flavour tags do not accrue
+# unpatched OS CVEs for weeks.
+#
+# Only the `minimal` flavour is rebuilt. The `distroless` flavour installs no OS
+# packages at all (it is distroless/static + the binary), so there is nothing
+# for an OS re-patch to fix; its base moves only when the pinned digest is
+# bumped in a PR.
+#
+# The release binaries are not in the repo, so the job downloads the latest
+# published release tarballs and stages them under dist/binaries/ exactly as
+# the release build does. Those archives are a release input to a
+# customer-facing image, so they are authenticated before they are unpacked:
+# scripts/ci/fetch-release-binaries.py verifies each one against the SHA-256
+# GitHub records for the release asset, or against a reviewed pin for releases
+# that predate those uploads, and fails the run when a release has neither. The
+# CVE gates below cannot substitute for this — they detect known-vulnerable
+# packages, not a substituted binary.
+#
+# Published tags:
+#   hoophq/hoopagent:latest-minimal              — moving, always the latest patches
+#   hoophq/hoopagent:<release>-minimal-<YYYYMMDD> — immutable patched snapshot.
+#     Never overwritten: a second run on the same UTC date appends its run id
+#     rather than repointing a tag a deployment may already be pinning.
+# The immutable release tag hoophq/hoopagent:<release>-minimal is left untouched
+# so a pinned deployment never changes underneath it. Pin by digest
+# (hoophq/hoopagent@sha256:...) whenever immutable bytes matter.
+name: Slim Agent Weekly Rebuild
+
+on:
+  schedule:
+    # Mondays 04:17 UTC — off the hour to avoid the top-of-hour runner rush.
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hoopagent-weekly-rebuild
+  cancel-in-progress: false
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    name: Re-patch and publish hoophq/hoopagent
+    environment: production
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      # Resolve the release to rebuild, download its archives and verify them
+      # against an independent digest before anything unpacks them. The helper
+      # writes them under the hoop_*_Linux_${TARGETARCH}.tar.gz names
+      # Dockerfile.agent globs, and exits non-zero — before the build, and long
+      # before the Docker Hub login below — on any mismatch or missing anchor.
+      # The version currently behind latest-minimal. Passed as a floor below so
+      # a rebuild can only ever move that tag forward: an image whose release
+      # label cannot be read (or does not exist yet) simply imposes no floor.
+      - name: Read currently published release
+        id: published
+        run: |
+          set -euo pipefail
+          current="$(docker buildx imagetools inspect \
+            --format '{{ json .Image }}' hoophq/hoopagent:latest-minimal 2>/dev/null \
+            | jq -r 'if type == "object" and has("config") then .config.Labels["dev.hoop.release.version"]
+                     else (to_entries | map(.value.config.Labels["dev.hoop.release.version"]) | map(select(. != null)) | first)
+                     end // empty' 2>/dev/null || true)"
+          if [ -n "${current:-}" ] && [ "${current}" != "null" ]; then
+            echo "current published release: ${current}"
+            echo "version=${current}" >> "$GITHUB_OUTPUT"
+          else
+            echo "no readable release label on latest-minimal; no rollback floor applied"
+            echo "version=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Resolve, verify and stage release binaries
+        id: rel
+        env:
+          # Reads public release metadata only; the token just lifts the
+          # unauthenticated API rate limit on busy runners.
+          GH_TOKEN: ${{ github.token }}
+          FLOOR: ${{ steps.published.outputs.version }}
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/fetch-release-binaries.py \
+            --dest dist/binaries \
+            --provenance-out dist/release-provenance.json \
+            ${FLOOR:+--not-older-than "$FLOOR"}
+          version="$(jq -r '.version' dist/release-provenance.json)"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          for arch in amd64 arm64; do
+            sha="$(jq -r --arg a "$arch" \
+              '.archives[] | select(.path | endswith("_" + $a + ".tar.gz")) | .sha256' \
+              dist/release-provenance.json)"
+            test -n "$sha" && test "$sha" != "null"
+            echo "${arch}_sha256=${sha}" >> "$GITHUB_OUTPUT"
+          done
+          ls -la dist/binaries/
+
+      # Record what was verified alongside the images this run publishes, so a
+      # published tag can be traced back to the exact release bytes it carries.
+      - name: Summarize verified release inputs
+        run: |
+          {
+            echo "### Verified release inputs"
+            echo ""
+            echo '```json'
+            cat dist/release-provenance.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Resolve the current noble tag so the rebuild actually picks up new OS
+      # packages instead of reproducing the pinned base byte for byte.
+      - name: Resolve current Ubuntu noble base
+        id: base
+        run: |
+          set -euo pipefail
+          docker pull --quiet ubuntu:noble >/dev/null
+          digest="$(docker image inspect --format '{{index .RepoDigests 0}}' ubuntu:noble)"
+          echo "image=${digest}" >> "$GITHUB_OUTPUT"
+          echo "rebuilding against ${digest}"
+
+      - name: Build (amd64, load for gates)
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          file: ./Dockerfile.agent
+          context: '.'
+          target: minimal
+          platforms: linux/amd64
+          provenance: false
+          sbom: false
+          load: true
+          push: false
+          build-args: |
+            UBUNTU_IMAGE=${{ steps.base.outputs.image }}
+          # The verified release the image carries, recorded on the image so a
+          # published weekly tag can be traced back to the authenticated bytes.
+          labels: |
+            dev.hoop.release.version=${{ steps.rel.outputs.version }}
+            dev.hoop.release.archive.sha256=${{ steps.rel.outputs.amd64_sha256 }}
+          tags: hoophq/hoopagent:cand-amd64
+
+      # The image must run as the unprivileged 'hoop' user (uid 10001). The USER
+      # directive is arch-independent, so assert it once on the amd64 candidate.
+      - name: Verify runtime user is unprivileged
+        run: |
+          uid="$(docker run --rm --entrypoint id hoophq/hoopagent:cand-amd64 -u)"
+          echo "runtime uid: ${uid}"
+          test "${uid}" = "10001"
+
+      - name: Gate on fixable CRITICAL/HIGH (amd64 OS layer, enforcing)
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f image \
+            --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed \
+            --exit-code 1 --no-progress \
+            hoophq/hoopagent:cand-amd64
+
+      - name: Build (arm64, load for gate)
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          file: ./Dockerfile.agent
+          context: '.'
+          target: minimal
+          platforms: linux/arm64
+          provenance: false
+          sbom: false
+          load: true
+          push: false
+          build-args: |
+            UBUNTU_IMAGE=${{ steps.base.outputs.image }}
+          labels: |
+            dev.hoop.release.version=${{ steps.rel.outputs.version }}
+            dev.hoop.release.archive.sha256=${{ steps.rel.outputs.arm64_sha256 }}
+          tags: hoophq/hoopagent:cand-arm64
+
+      - name: Gate on fixable CRITICAL/HIGH (arm64 OS layer, enforcing)
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f image \
+            --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed \
+            --exit-code 1 --no-progress \
+            hoophq/hoopagent:cand-arm64
+
+      # REPORT-ONLY: the shipped Go binary's fixable CVEs are fixed by a release
+      # (dependency bumps + the govulncheck gate), not by this OS rebuild.
+      - name: Report shipped-binary vulnerabilities (non-blocking)
+        run: |
+          if ! docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f image \
+            --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed \
+            --quiet --format json \
+            hoophq/hoopagent:cand-amd64 > go-vuln.json; then
+            echo "::warning::Go-layer vulnerability report unavailable"; exit 0
+          fi
+          n=$(jq '[.Results[]?.Vulnerabilities // []] | add | length' go-vuln.json 2>/dev/null || echo "?")
+          {
+            echo "### hoophq/hoopagent ${{ steps.rel.outputs.version }} — shipped-binary fixable CRITICAL/HIGH: ${n} (report-only)"
+            echo ""
+            echo "Fixed by cutting a release (dependency bumps + govulncheck gate), not by this OS rebuild."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Only now, with both arches gated, publish. Building per-arch candidates
+      # first means a vulnerable arch can never promote a partial manifest.
+      - name: Login to Docker Hub
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          username: ${{ secrets.DOCKER_LOGIN }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Push gated candidates and update manifests
+        id: publish
+        run: |
+          set -euo pipefail
+          repo="hoophq/hoopagent"
+          version="${{ steps.rel.outputs.version }}"
+          dated="${version}-minimal-$(date -u +%Y%m%d)"
+          candidate="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          amd64_ref="${repo}:weekly-${candidate}-amd64"
+          arm64_ref="${repo}:weekly-${candidate}-arm64"
+
+          docker tag "${repo}:cand-amd64" "${amd64_ref}"
+          docker tag "${repo}:cand-arm64" "${arm64_ref}"
+          docker push "${amd64_ref}"
+          docker push "${arm64_ref}"
+
+          # The dated tag is published as an immutable snapshot, so it is only
+          # ever created once. A second run on the same UTC date — a retry, a
+          # manual dispatch after the scheduled run, a re-release — would
+          # otherwise silently repoint a tag customers were told they could pin.
+          # Suffix the run instead of overwriting, so both snapshots exist and
+          # each keeps the bytes it was gated with.
+          if docker buildx imagetools inspect "${repo}:${dated}" >/dev/null 2>&1; then
+            dated="${dated}.${GITHUB_RUN_ID}"
+            echo "::notice::a snapshot already exists for today; publishing ${dated} instead of overwriting it"
+          fi
+
+          # latest-minimal is the only tag that moves.
+          for target in "${repo}:latest-minimal" "${repo}:${dated}"; do
+            docker buildx imagetools create -t "${target}" "${amd64_ref}" "${arm64_ref}"
+            echo "published ${target}"
+          done
+          echo "snapshot=${dated}" >> "$GITHUB_OUTPUT"
