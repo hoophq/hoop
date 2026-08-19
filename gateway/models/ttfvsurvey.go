@@ -34,8 +34,8 @@ type TTFVMeasurement struct {
 
 // ShouldShowTTFVSurvey reports whether the organization is in a state where the
 // TTFV survey may still be asked: it collects analytics at all, it has a
-// creation timestamp to measure from, it never confirmed value, and it has not
-// declined within the cooldown.
+// creation timestamp to measure from, it has actually used the product, it
+// never confirmed value, and it has not declined within the cooldown.
 //
 // The window is evaluated by Postgres on purpose, exactly like the signup
 // origin survey. orgs.created_at and ttfv_survey_responses.created_at are
@@ -67,9 +67,26 @@ func ShouldShowTTFVSurvey(db *gorm.DB, orgID string, cooldownDays int) (bool, er
 	// prompting an organization that just opted out — stale in the one direction
 	// that matters, which is consent. This row is already being selected, so the
 	// authoritative value is free.
+	//
+	// The sessions clause is what keeps the first ask from being wasted. Without
+	// it the only precondition is the organization existing, so a brand-new admin
+	// can be asked minutes after signup — before anything has been run, when the
+	// question has no referent. That answer is a "no" about not having started
+	// yet, not about value, and it lands in the same column as a real one while
+	// also buying a cooldown. One session is the first moment the product did
+	// something for them, which is the earliest point the question means
+	// anything. Creating a connection is not enough: that is configuration.
+	//
+	// It is EXISTS rather than a count so Postgres stops at the first row, and
+	// index_sessions_org_created_at (migration 000109) leads on org_id, so this
+	// stays an index scan on a table that grows without bound. Sessions are never
+	// pruned, so the clause is monotonic — once an organization qualifies it
+	// cannot stop qualifying and silently re-suppress the survey.
 	res := db.Raw(`
 		SELECT o.analytics_mode <> 'disabled'
 		   AND o.created_at IS NOT NULL
+		   AND EXISTS (
+		       SELECT 1 FROM private.sessions s WHERE s.org_id = o.id)
 		   AND NOT EXISTS (
 		       SELECT 1 FROM private.ttfv_survey_responses r
 		       WHERE r.org_id = o.id AND r.reached_value)

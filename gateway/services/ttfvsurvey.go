@@ -28,9 +28,10 @@ type TTFVSurveyAnswer struct {
 // metric is defined by.
 //
 // There is no feature flag. The survey is on for every organization and closes
-// itself the first time an admin confirms value; the organization's own
-// analytics mode is the only thing that suppresses it, and that is checked in
-// SQL alongside the rest of the policy — see models.ShouldShowTTFVSurvey.
+// itself the first time an admin confirms value; the organization's analytics
+// mode and whether it has run anything at all are the only things that suppress
+// it, and both are checked in SQL alongside the rest of the policy — see
+// models.ShouldShowTTFVSurvey.
 //
 // Propagates gorm.ErrRecordNotFound when the organization does not exist.
 func ShouldShowTTFVSurvey(db *gorm.DB, orgID string, isAdmin, isAnonymous bool) (bool, error) {

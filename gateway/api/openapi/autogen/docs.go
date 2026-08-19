@@ -18890,7 +18890,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "show_ttfv_survey": {
-                    "description": "Whether the \"Did you get done what you came here to do?\" survey should\nstill be offered. On by default for every organization, so it is true for\nadministrators of an organization that collects analytics, never confirmed\nvalue, and has not declined within the last 7 days. Permanently false once\nvalue is confirmed, and always false for anonymous users and for an\norganization whose analytics mode is disabled.",
+                    "description": "Whether the \"Did you get done what you came here to do?\" survey should\nstill be offered. On by default for every organization, so it is true for\nadministrators of an organization that collects analytics, has run at\nleast one session, never confirmed value, and has not declined within the\nlast 7 days. Permanently false once value is confirmed, and always false\nfor anonymous users, for an organization whose analytics mode is disabled,\nand for one that has never used the product.",
                     "type": "boolean"
                 },
                 "slack_id": {

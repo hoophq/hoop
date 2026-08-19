@@ -27,6 +27,22 @@ func seedTTFVOrg(t *testing.T, orgID, name string, createdDaysAgo float64) {
 	}
 }
 
+// seedTTFVActiveOrg creates an organization that has run at least one session,
+// which is what an ordinary organization eligible for the survey looks like.
+// Use seedTTFVOrg directly only to build one that has never used the product.
+func seedTTFVActiveOrg(t *testing.T, orgID, name string, createdDaysAgo float64) {
+	t.Helper()
+	seedTTFVOrg(t, orgID, name, createdDaysAgo)
+	// Only the existence of a session matters to the query, so the row carries
+	// the minimum the schema requires.
+	err := models.DB.Exec(`
+		INSERT INTO private.sessions (org_id, connection, connection_type, verb, status)
+		VALUES (?, 'pgdemo', 'postgres', 'exec', 'done')`, orgID).Error
+	if err != nil {
+		t.Fatalf("seed session for org %s: %v", orgID, err)
+	}
+}
+
 // setTTFVAnalyticsMode moves an organization off the 'identified' default.
 // Applied after seeding rather than as a seedTTFVOrg argument so that every
 // other case keeps exercising the default an ordinary organization really has.
@@ -67,35 +83,41 @@ func TestShouldShowTTFVSurvey(t *testing.T) {
 		orgNoCreatedAt        = "00000000-0000-0000-0000-0000000000b5"
 		orgAnalyticsDisabled  = "00000000-0000-0000-0000-0000000000b6"
 		orgAnalyticsAnonymous = "00000000-0000-0000-0000-0000000000b7"
+		orgNoSessions         = "00000000-0000-0000-0000-0000000000b8"
 	)
 
 	// Seeded without an analytics_mode, so it takes the 'identified' column
 	// default. That is the point: there is no feature flag any more, so an
 	// ordinary organization with nothing configured must be asked.
-	seedTTFVOrg(t, orgNeverAnswered, "ttfv-never-answered", 30)
+	seedTTFVActiveOrg(t, orgNeverAnswered, "ttfv-never-answered", 30)
+
+	// Signed up but never ran anything, so "did you get done what you came here
+	// to do?" has nothing to refer to. Old enough that no age threshold would
+	// have caught it — the precondition is activity, not the calendar.
+	seedTTFVOrg(t, orgNoSessions, "ttfv-no-sessions", 30)
 
 	// An organization that turned analytics off already asked not to be
 	// measured, and analytics.Track would drop the event, so the question is not
 	// put on screen at all.
-	seedTTFVOrg(t, orgAnalyticsDisabled, "ttfv-analytics-disabled", 30)
+	seedTTFVActiveOrg(t, orgAnalyticsDisabled, "ttfv-analytics-disabled", 30)
 	setTTFVAnalyticsMode(t, orgAnalyticsDisabled, "disabled")
 
 	// 'anonymous' still collects, it only strips the identity, so it is asked.
 	// Only 'disabled' suppresses the survey.
-	seedTTFVOrg(t, orgAnalyticsAnonymous, "ttfv-analytics-anonymous", 30)
+	seedTTFVActiveOrg(t, orgAnalyticsAnonymous, "ttfv-analytics-anonymous", 30)
 	setTTFVAnalyticsMode(t, orgAnalyticsAnonymous, "anonymous")
 
 	// Bracket the cooldown boundary from both sides without landing on it, so
 	// the assertions cannot flake on clock resolution.
-	seedTTFVOrg(t, orgDeclinedNow, "ttfv-declined-now", 30)
+	seedTTFVActiveOrg(t, orgDeclinedNow, "ttfv-declined-now", 30)
 	seedTTFVResponse(t, orgDeclinedNow, false, 6.95)
 
-	seedTTFVOrg(t, orgDeclinedOld, "ttfv-declined-old", 30)
+	seedTTFVActiveOrg(t, orgDeclinedOld, "ttfv-declined-old", 30)
 	seedTTFVResponse(t, orgDeclinedOld, false, 7.05)
 
 	// Two declines then a yes: the yes is terminal regardless of the older rows,
 	// including the one that has already aged out of the cooldown.
-	seedTTFVOrg(t, orgAnsweredYes, "ttfv-answered-yes", 30)
+	seedTTFVActiveOrg(t, orgAnsweredYes, "ttfv-answered-yes", 30)
 	seedTTFVResponse(t, orgAnsweredYes, false, 20)
 	seedTTFVResponse(t, orgAnsweredYes, false, 10)
 	seedTTFVResponse(t, orgAnsweredYes, true, 1)
@@ -107,6 +129,13 @@ func TestShouldShowTTFVSurvey(t *testing.T) {
 		`INSERT INTO private.orgs (id, name, created_at) VALUES (?, 'ttfv-no-created-at', NULL)`,
 		orgNoCreatedAt).Error; err != nil {
 		t.Fatalf("seed org without created_at: %v", err)
+	}
+	// Given a session so the missing timestamp is the only reason it is not
+	// asked; otherwise the case would pass even if that clause were dropped.
+	if err := models.DB.Exec(`
+		INSERT INTO private.sessions (org_id, connection, connection_type, verb, status)
+		VALUES (?, 'pgdemo', 'postgres', 'exec', 'done')`, orgNoCreatedAt).Error; err != nil {
+		t.Fatalf("seed session for org without created_at: %v", err)
 	}
 
 	tests := []struct {
@@ -121,6 +150,7 @@ func TestShouldShowTTFVSurvey(t *testing.T) {
 		{name: "organization without a creation timestamp", orgID: orgNoCreatedAt, want: false},
 		{name: "analytics disabled", orgID: orgAnalyticsDisabled, want: false},
 		{name: "analytics anonymous", orgID: orgAnalyticsAnonymous, want: true},
+		{name: "never ran a session", orgID: orgNoSessions, want: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -148,7 +178,9 @@ func TestCreateTTFVSurveyResponse(t *testing.T) {
 	t.Run("measures the duration since the organization was created", func(t *testing.T) {
 		const orgID = "00000000-0000-0000-0000-0000000000c1"
 		// 10 days old, so the returned duration has a value worth asserting.
-		seedTTFVOrg(t, orgID, "ttfv-create", 10)
+		// Active, so that the assertion below — that the stored yes is what
+		// closes the survey — cannot pass merely because it was never eligible.
+		seedTTFVActiveOrg(t, orgID, "ttfv-create", 10)
 
 		activity := "connected-infra-resource"
 		detail := "Configured SSO"
