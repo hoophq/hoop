@@ -240,16 +240,19 @@ and its columns stay unfingerprinted.
 full schema sync and a complete `./demo.sh` produce, on this lane:
 
 ```
-  94 statements recorded (39 set, 36 select, 9 show, 6 begin, 2 rollback, 2 delete)
-  88 allowed, 6 denied, 36 result sets
+  99 statements recorded (41 set, 37 select, 10 show, 6 begin, 2 rollback, 2 delete)
+  92 allowed, 7 denied, 38 result sets
   10034 values masked across 23 result sets (EMAIL_ADDRESS, BR_CPF, IBAN_CODE, column:ssn, US_SSN)
-  verified: no masked value appears in the audit trail
+  verified: none of the 13 seeded values appears in the audit trail
 ```
 
 That last line is an assertion too. Recording, in the clear, a value that
-masking removed would have un-masked it.
+masking removed would have un-masked it. The 13 are read out of
+[`upstream/seed.sql`](upstream/seed.sql) at runtime rather than listed in the
+script, so a row added to the seed is covered without anyone remembering to
+add it here.
 
-One of those six denials is nobody's query. Metabase's sync fingerprints
+One of those seven denials is nobody's query. Metabase's sync fingerprints
 `payroll` on its own initiative and the lane refuses it:
 
 ```
@@ -257,7 +260,7 @@ One of those six denials is nobody's query. Metabase's sync fingerprints
         rule=payroll-off-limits  payroll is not exposed to reporting
 ```
 
-It carries no `userID` comment because no human asked for it. The other five
+It carries no `userID` comment because no human asked for it. The other six
 name the analyst.
 
 Those counts are from the **first** `./demo.sh` after a fresh `./run.sh`. The
@@ -286,7 +289,7 @@ cost time to rediscover:
   them. If that distinction is the requirement, it is a `GRANT`.
 - **`require_table_match: true` also denies statements whose relations could
   not be resolved.** That includes `SET`, `SHOW`, `BEGIN` and `ROLLBACK`,
-  which are 56 of the 94 statements above, so it refuses most of what a BI
+  which are 59 of the 99 statements above, so it refuses most of what a BI
   tool sends before it ever runs a query. It reads like the safe setting and
   it is not. To fail closed on unclassifiable statements, use the `operation`
   rule with `unknown` and `other` that is written out and commented in the
@@ -352,9 +355,9 @@ concurrently with whatever dashboards are loading. A lane at its cap
 **refuses rather than queues** (`proxy/proxy.go`,
 `TestMaxConnsRefusesRatherThanQueues`), and Metabase surfaces that refusal as
 a table that silently never finished syncing. Set the lane at or above the
-pool. This stack sets 64 as headroom; it actually opens 10 connections in
+pool. This stack sets 64 as headroom; it actually opens 11 connections in
 total across a first boot and a full `./demo.sh`, which you can read off
-`/stats`. The demo's six denials account for most of that growth: a refusal
+`/stats`. The demo's seven denials account for most of that growth: a refusal
 closes the connection and c3p0 opens a fresh one at the next checkout, so a
 lane that refuses often opens more connections than its query rate suggests.
 

@@ -111,7 +111,7 @@ listeners:
         # `require_table_match: true` on a table rule ALSO denies statements
         # whose relations could not be resolved. It reads like the safe
         # choice and it would break this lane: SET, SHOW, BEGIN and ROLLBACK
-        # carry no relations, and they are 56 of the 94 statements Metabase
+        # carry no relations, and they are 59 of the 99 statements Metabase
         # sends here. Reach for the operation rule below instead, which
         # denies unclassifiable statements without touching session setup.
 
