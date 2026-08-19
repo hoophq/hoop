@@ -1,8 +1,9 @@
 # ADR-0005: Human-in-the-loop review gate for hoop-inspect
 
-- **Status:** Accepted — build order steps 1–4 implemented (2026-08-16/17);
-  step 5 (`Bind` decoding, which lifts D4) outstanding. The demo lane is
-  `deploy/docker-compose/envoy-stack` with `./run.sh --review`.
+- **Status:** Accepted — build order steps 1–4 implemented; step 5 (`Bind`
+  decoding, which lifts D4) outstanding. Step 4 is a runbook rather than a
+  scripted lane: see
+  [envoy-stack/README.md](../../deploy/docker-compose/envoy-stack/README.md#tier-2d-a-human-approves-the-statement).
 - **Date:** 2026-08-14
 - **Related:** [`hoopinspect/analyzer`](../../hoopinspect/analyzer) (`ActionRequireReview`, refused at startup), [`hoopinspect/proxy/deny.go`](../../hoopinspect/proxy/deny.go) (terminal denials), [`gateway/api/session/ai_review.go`](../../gateway/api/session/ai_review.go) (out-of-band review creation), [`gateway/api/apiroutes/auth.go`](../../gateway/api/apiroutes/auth.go) (`hpk_` agent identity), [ADR: How a request flows through hoop-inspect](hoopinspect-flow.md)
 
@@ -736,8 +737,13 @@ polling agent will hammer the path; `APPROVED` is never cached.
    no relay changes, no new module.
 2. Gateway: migration `000111`, the three endpoints, the atomic claim.
 3. Lift the config refusal; add the `review:` block and its startup validation.
-4. Envoy-stack demo lane, so the flow is exercised end to end like every other
-   lane in [hoopinspect-flow.md](hoopinspect-flow.md).
+4. A step-by-step runbook, so the flow can be walked end to end. It is a
+   runbook rather than a scripted lane like the others in
+   [hoopinspect-flow.md](hoopinspect-flow.md): every other lane there comes up
+   with no control plane at all, and this one needs a gateway and a human, so
+   automating it would mean bolting both onto a stack whose whole argument is
+   that it needs neither. See
+   [envoy-stack/README.md](../../deploy/docker-compose/envoy-stack/README.md#tier-2d-a-human-approves-the-statement).
 5. Follow-up: `Bind` decoding in the postgres codec, which lifts D4.
 
 > **What step 4 turned up (2026-08-17).** Two things the design did not

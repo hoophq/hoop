@@ -37,22 +37,15 @@ Two lanes, decreasing Envoy visibility:
 ./demo.sh             # walks every lane and prints the audit trail
 ./run.sh --rebuild    # rebuild the sidecar image, then up
 ./run.sh down         # tear down, including volumes
-
-./run.sh --review     # + a hoop gateway and the human-approval gate
-./demo-review.sh      # walks a statement from refusal to approval to execution
 ```
 
 Needs `docker`, `curl`, `openssl`, `python3`. No local Go: the sidecar image
 compiles in `golang:1.26.5-alpine`, matching the `go 1.26.5` every module in
 `hoopinspect/` declares.
 
-`--review` is the exception on both counts. It needs local Go (it
-cross-compiles the gateway from this repo) and an `ANTHROPIC_API_KEY`.
-
-**For the approval gate, read [Tier 2d](#tier-2d-a-human-approves-the-statement)
-first and run it by hand.** Nine steps against a proxy on your machine and a
-gateway you already have — no compose, no script. The two commands above
-automate the same thing once you have seen each part answer for itself.
+The human-approval gate is the one tier this stack does not bring up, because
+it needs a control plane and this stack deliberately has none. It is a
+step-by-step runbook instead: [Tier 2d](#tier-2d-a-human-approves-the-statement).
 
 Ports: `8443` HTTPS, `5433` postgres, `19000` sidecar admin, `9901` Envoy
 admin. Inside the compose network the postgres listener is `envoy:5432`; 5433
@@ -337,11 +330,11 @@ reference in [`hoopinspect/README.md`](../../../hoopinspect/README.md) and
 Every tier above decides on its own. This one does not: it stops the statement
 and asks a person.
 
-The walkthrough below is deliberately manual — nine steps you run yourself,
-against a proxy on your machine and a hoop gateway you already have. No
-compose profile and no script, because the point is to see each moving part
-answer for itself. (`./run.sh --review` and `./demo-review.sh` automate the
-same thing once you have seen it work.)
+Nine steps you run yourself, against a relay on your machine and a hoop
+gateway you already have. There is no compose profile and no script for this
+one, deliberately: the gate needs a control plane and a human, and the rest of
+this stack exists to show what works without either. Every other tier here
+comes up with `./run.sh`; this one you drive.
 
 ### Nothing is held
 
@@ -398,12 +391,22 @@ they are different people.
 
 ### What you need first
 
-- **A hoop gateway you can reach**, with an admin login. The dev one from
-  `make run-dev` on `http://127.0.0.1:8009` is what these steps assume.
-- **A postgres to point at.** Any database; the proxy sits in front of it.
-- **Three credentials**, obtained in steps 1–2.
+Nothing here uses the compose stack in this directory. The checklist:
 
-Nothing here needs the compose stack in this directory.
+| | What | Why | Where it comes from |
+|---|---|---|---|
+| 1 | **A hoop gateway you can reach** | It holds the review and the reviewer logs into it | `make run-dev` gives you one on `http://127.0.0.1:8009`, which these steps assume |
+| 2 | **An admin token for it** | Creates the connection and the rule in step 3, and approves in step 8 | Webapp devtools, or `POST /api/localauth/login` — the token comes back in a `Token` **header**, not the body |
+| 3 | **An `hpk_` API key** | The relay authenticates with it, and it OWNS the reviews it files | An AI agent or API key on the gateway — step 2. Its **groups decide which connections it can reach**, so it must reach the ones in step 3 |
+| 4 | **A model credential** | `require_review` is an `ai_analysis` action; something has to classify before there is anything to review | Google AI Studio, Anthropic, OpenAI or Vertex — step 1 |
+| 5 | **A database to front** | Postgres, SQL Server, or both | Any instance. The relay sits in front; it needs no schema and creates nothing |
+| 6 | **The `hoop` binary** | `hoop start inspect` runs the relay | This repo: `make build-dev-client`, or any release build |
+
+Both credential files must be **`chmod 600`** — the relay refuses one that
+group or other can read, and reports the mode when it does.
+
+Two ports must be free for the lanes (`15432` and `11433` below) plus `19000`
+for the relay's admin endpoint.
 
 ---
 
@@ -447,7 +450,7 @@ ADMIN_TOKEN=…      # see below
 
 curl -sS -X POST "$API/ai-agents" \
   -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
-  -d '{"name":"pghoop-relay","groups":["admin"]}' | python3 -m json.tool
+  -d '{"name":"inspect-relay","groups":["admin"]}' | python3 -m json.tool
 ```
 
 The response carries `"key": "hpk_…"`. **It is shown exactly once.** Save it
@@ -478,24 +481,29 @@ real sandbox — scope it to a group that only reaches the connection it fronts.
 
 ### Step 3 — tell the gateway what it is reviewing
 
-Two objects, both on the gateway, both one-time.
+Two kinds of object, both on the gateway, both one-time.
 
-**A connection** whose name matches the lane's `connection:`. An approval is
-scoped to it, so one for `pghoop` cannot authorize the same SQL against
-`payments-db`. It needs an agent to hang off, and any existing one will do —
-no hoop session is ever opened against it, because the proxy is the data path.
+**A connection per lane**, whose name matches that lane's `connection:`. An
+approval is scoped to it, so one for `pgdemo` cannot authorize the same SQL
+against `mssqldemo`. Each needs an agent to hang off, and any existing one
+will do — no hoop session is ever opened against these, because the relay is
+the data path.
 
 ```bash
 AGENT_ID=$(curl -sS -H "Authorization: Bearer $ADMIN_TOKEN" "$API/agents" \
   | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["id"])')
 
-curl -sS -X POST "$API/connections" \
-  -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
-  -d "{\"name\":\"pghoop\",\"type\":\"database\",\"subtype\":\"postgres\",
-       \"agent_id\":\"$AGENT_ID\",\"command\":[],\"secret\":{},
-       \"access_mode_runbooks\":\"disabled\",\"access_mode_exec\":\"disabled\",
-       \"access_mode_connect\":\"disabled\",\"access_schema\":\"disabled\"}"
+for pair in pgdemo:postgres mssqldemo:mssql; do
+  curl -sS -X POST "$API/connections" \
+    -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
+    -d "{\"name\":\"${pair%%:*}\",\"type\":\"database\",\"subtype\":\"${pair##*:}\",
+         \"agent_id\":\"$AGENT_ID\",\"command\":[],\"secret\":{},
+         \"access_mode_runbooks\":\"disabled\",\"access_mode_exec\":\"disabled\",
+         \"access_mode_connect\":\"disabled\",\"access_schema\":\"disabled\"}"
+done
 ```
+
+Drop whichever you are not testing — one lane is a complete walkthrough.
 
 **An access request rule** naming who reviews. Without it the gateway answers
 `422` — there is nobody to ask, and inventing a reviewer would be worse than
@@ -504,8 +512,8 @@ refusing:
 ```bash
 curl -sS -X POST "$API/access-requests/rules" \
   -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
-  -d '{"name":"pghoop-statement-review","access_type":"command",
-       "connection_names":["pghoop"],"approval_required_groups":[],
+  -d '{"name":"statement-review","access_type":"command",
+       "connection_names":["pgdemo","mssqldemo"],"approval_required_groups":[],
        "reviewers_groups":["admin"],"force_approval_groups":["admin"],
        "all_groups_must_approve":false,"min_approvals":1}'
 ```
@@ -514,9 +522,10 @@ This is the org's existing review apparatus — groups, `min_approvals`,
 force-approval, Slack, the webapp. No second approval system was built for
 this.
 
-### Step 4 — write the proxy config
+### Step 4 — write the config
 
-One lane, one gate. Save as `~/.hoop/inspect/config.yaml`:
+One process, one lane per protocol, one gate. Save as
+`~/.hoop/inspect/config.yaml` and replace the two absolute credential paths.
 
 ```yaml
 log_level: info
@@ -565,58 +574,71 @@ review:
   # revocation that cannot be honored.
   poll_cache_ttl_sec: 5
 
+# Top level, so both lanes inherit them. A lane may add its own; they
+# concatenate, lane rules first.
 policy:
   enforce: true
+  rules:
+    # Ahead of the gate on purpose. A statement a free local rule already
+    # refuses never reaches a model and never troubles a person: DROP and
+    # TRUNCATE are not "ask a human", they are "no".
+    - name: no-destructive-ddl
+      type: operation
+      operations: [drop, truncate]
+      message: destructive DDL is not permitted here, approved or not
+
+    - name: risky-writes
+      type: ai_analysis
+      # `unknown` is not optional on a gated lane. DO, CALL, EXEC and EXECUTE
+      # decide their effect at runtime, so the lexer reports `unknown` rather
+      # than guessing. Name only [delete, update] and a caller walks past the
+      # gate in two statements: PREPARE ... AS DELETE is gated, and the
+      # EXECUTE that actually deletes the row is not. It matters more on SQL
+      # Server, where stored procedures are idiomatic.
+      trigger: {operations: [delete, update, unknown]}
+      high: require_review
+      medium: require_review
+      low: warn                    # still recorded, with its level
+      prompt: |
+        You are classifying statements against a production customer
+        database. Treat any statement that deletes or modifies customer
+        rows as at least medium risk. A statement scoped to a single row
+        by primary key is medium; anything unscoped is high.
 
 listeners:
-  - name: pghoop
+  # `connection:` is REQUIRED on a gated lane and must match a connection the
+  # gateway knows and your hpk_ token can reach — it is what an approval is
+  # scoped to.
+  - name: pgdemo
     protocol: postgres
     listen: 127.0.0.1:15432
-    upstream: 127.0.0.1:5432           # your database
-    connection: pghoop                 # REQUIRED: what an approval is scoped to
-    policy:
-      rules:
-        # Ahead of the gate on purpose. A statement a free local rule already
-        # refuses never reaches a model and never troubles a person: DROP and
-        # TRUNCATE are not "ask a human", they are "no".
-        - name: no-destructive-ddl
-          type: operation
-          operations: [drop, truncate]
-          message: destructive DDL is not permitted on pghoop, approved or not
+    upstream: 127.0.0.1:5432
+    connection: pgdemo
 
-        - name: risky-writes
-          type: ai_analysis
-          # `unknown` is not optional on a gated lane. DO, CALL and EXECUTE
-          # decide their effect at runtime, so the lexer reports `unknown`
-          # rather than guessing. Name only [delete, update] and a caller walks
-          # past the gate in two statements: PREPARE ... AS DELETE is gated,
-          # and the EXECUTE that actually deletes the row is not.
-          trigger: {operations: [delete, update, unknown]}
-          high: require_review
-          medium: require_review
-          low: warn                    # still recorded, with its level
-          prompt: |
-            You are classifying statements against a production customer
-            database. Treat any statement that deletes or modifies customer
-            rows as at least medium risk. A statement scoped to a single row
-            by primary key is medium; anything unscoped is high.
+  - name: mssqldemo
+    protocol: mssql
+    listen: 127.0.0.1:11433
+    upstream: 127.0.0.1:1433
+    connection: mssqldemo
 ```
 
-Check it before running anything. This parses the config, resolves each lane
-and reads both credential files — including their permissions:
+Drop either listener if you are only testing one. Check it before running
+anything — this parses the config, resolves each lane and reads both
+credential files, permissions included:
 
 ```bash
 hoop start inspect --config ~/.hoop/inspect/config.yaml --validate
 ```
 
 ```
-config OK: 1 listener(s)
-  pghoop           postgres  enforcing 1 rule(s) + 1 ai rule(s) + human review
+config OK: 2 listener(s)
+  pgdemo           postgres  enforcing 1 rule(s) + 1 ai rule(s) + human review
+  mssqldemo        mssql     enforcing 1 rule(s) + 1 ai rule(s) + human review
 ```
 
-`+ human review` is the gate. If it is missing, the lane is not gated —
-check that a risk level maps to `require_review` and that the `review:` block
-is present.
+`+ human review` is the gate. If it is missing on a lane, that lane is not
+gated — check that a risk level maps to `require_review` and that the
+`review:` block is present.
 
 ### Step 5 — start it
 
@@ -632,14 +654,17 @@ curl -s localhost:19000/config | python3 -m json.tool
 ```
 
 ```json
-"lanes": [{ "name": "pghoop", "listen": "127.0.0.1:15432",
-            "connection": "pghoop", "ai_rules": ["risky-writes"],
+"lanes": [{ "name": "pgdemo", "listen": "127.0.0.1:15432",
+            "connection": "pgdemo", "ai_rules": ["risky-writes"],
             "review": "gateway=127.0.0.1:8009 require_marker=false pending_ttl=5s" }]
 ```
 
 ### Step 6 — issue a statement and watch it refused
 
-Connect **through the proxy** (port 15432), not to your database directly:
+Connect **through the relay**, not to your database directly — port `15432`
+for postgres, `11433` for SQL Server.
+
+**Postgres:**
 
 ```bash
 psql -h 127.0.0.1 -p 15432 -U youruser yourdb \
@@ -670,7 +695,40 @@ H=6f77928a…      # copy it from the message
 > **Use `-c`.** psql's own lexer discards a comment that precedes the first
 > token of a statement, so a marker sent through a heredoc or `-f file.sql`
 > never reaches the wire and `require_marker: true` refuses it. A driver sends
-> what you give it, so this is a psql problem rather than an agent one.
+> what you give it, so this is a psql problem rather than an agent one. If you
+> use a different client, check the marker survives before trusting
+> `require_marker`.
+
+**SQL Server**, the same statement on the other lane:
+
+```bash
+sqlcmd -S 127.0.0.1,11433 -U youruser -P yourpass -d yourdb \
+  -Q "-- hoopdev:correlation_id=task-1
+DELETE FROM customers WHERE 1 = 0;"
+```
+
+The refusal arrives as a TDS `ERROR` token carrying the same message, then the
+connection closes — the protocol differs, the behaviour does not.
+
+The rest of the walkthrough is identical for both; the steps below use the
+postgres lane. Swap `connection=pgdemo` for `connection=mssqldemo` in the poll
+URL when you are testing that one, and recompute the hash against the SQL Server
+statement text.
+
+#### What is different about SQL Server
+
+**Only a `SQLBatch` can be gated.** An `RPCRequest` — which is how
+`sp_executesql` arrives, and how **every .NET and JDBC driver sends
+parameterized SQL by default** — is refused rather than gated, because the
+codec does not decode the parameters that follow the statement text. The relay
+would see `WHERE id = @p1` and never the value, so one approval would cover
+every later binding. `sqlcmd` sends batches, which is why the command above
+works; an application on the same lane would be refused.
+
+**Stored procedures are a blind spot.** `EXEC sp_do_thing` classifies as
+`unknown` — the lexer will not guess what a procedure does. With `unknown` in
+the trigger it *is* held for review, but the model sees only the call, not the
+body, so the reviewer is the one who has to know what the procedure does.
 
 ### Step 7 — poll, as the caller
 
@@ -680,7 +738,7 @@ relay's token and you are doing exactly what it does:
 ```bash
 SANDBOX=$(cat ~/.hoop/inspect/api-key)
 curl -sS -H "Authorization: Bearer $SANDBOX" \
-  "$API/inspect/reviews?connection=pghoop&statement_hash=$H" | python3 -m json.tool
+  "$API/inspect/reviews?connection=pgdemo&statement_hash=$H" | python3 -m json.tool
 ```
 
 ```json
@@ -701,7 +759,7 @@ Open the URL from step 6 in the webapp, or answer it over the API:
 
 ```bash
 RID=$(curl -sS -H "Authorization: Bearer $SANDBOX" \
-  "$API/inspect/reviews?connection=pghoop&statement_hash=$H" \
+  "$API/inspect/reviews?connection=pgdemo&statement_hash=$H" \
   | python3 -c 'import json,sys; print(json.load(sys.stdin)["review_id"])')
 
 curl -sS -X PUT "$API/reviews/$RID" \
@@ -781,17 +839,6 @@ above work from the command line and a driver on the same lane would not.
 Reference: [ADR-0005](../../../docs/adr/0005-hoopinspect-review-gate.md) and
 [`hoopinspect/README.md`](../../../hoopinspect/README.md#holding-a-statement-for-a-human-require_review).
 
-### Doing all of that in one command
-
-Once you have seen it work, the compose profile in this directory does the
-same setup automatically — gateway, database, connection, rule and token — and
-walks the flow:
-
-```bash
-export ANTHROPIC_API_KEY=sk-ant-…    # the automated path uses Anthropic
-./run.sh --review
-./demo-review.sh
-```
 ## Identity
 
 Every session in this stack records `principal: anonymous`, and that is honest

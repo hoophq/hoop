@@ -96,19 +96,9 @@ services:
       dockerfile: ../deploy/docker-compose/envoy-stack/hoopinspect/Dockerfile
     networks: [inspect]
     volumes:
-      # INSPECT_CONFIG selects the lane set. The default file needs no
-      # credential and no control plane; ./run.sh --review swaps in
-      # config.review.yaml, which adds the analyzer and the approval gate.
-      - ./hoopinspect/${INSPECT_CONFIG:-config.yaml}:/etc/hoop-inspect/config.yaml:ro
+      - ./hoopinspect/config.yaml:/etc/hoop-inspect/config.yaml:ro
       # appdb's self-signed cert, used as the CA that verifies it.
       - ./upstream/certs/server.crt:/etc/hoop-inspect/certs/appdb.crt:ro
-      # Written by review-bootstrap, empty in the default stack. A named
-      # volume rather than a bind mount because the sidecar runs as uid 10001
-      # and refuses a credential file anything else can read, which a host
-      # bind mount cannot promise on every platform.
-      - review-secrets:/etc/hoop-inspect/secrets:ro
-      # The model credential, when there is one. Same reason.
-      - analyzer-secrets:/etc/hoop-inspect/analyzer:ro
     ports:
       # Admin only: /healthz, /stats, /config and the audit query API. The
       # data-path listeners are reached over the compose network by Envoy,
@@ -175,97 +165,5 @@ services:
       opa: { condition: service_healthy }
       hoop-inspect: { condition: service_healthy }
 
-  # ------------------------------------------------------- review lane only
-  #
-  # Everything below carries `profiles: [review]`, so a plain `docker compose
-  # up` never starts it and the default stack keeps its defining property: no
-  # control-plane database, no API calls, one YAML file.
-  #
-  # The approval gate is the one feature that cannot work that way. A human
-  # has to see the statement and answer it, which needs somewhere for the
-  # review to live and someone to log in as.
-
-  gateway-db:
-    image: postgres:17.6
-    attach: false
-    profiles: [review]
-    networks: [inspect]
-    environment:
-      POSTGRES_USER: hoop
-      POSTGRES_PASSWORD: hoop
-      POSTGRES_DB: hoopgw
-      PGUSER: hoop
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready", "-U", "hoop", "-d", "hoopgw"]
-      interval: "2s"
-      timeout: "30s"
-      retries: 10
-      start_period: "20s"
-
-  # The hoop gateway: the control plane the sidecar files reviews with, and
-  # the API a reviewer answers them on.
-  #
-  # Note what it is NOT doing. No agent connects to it, no session streams
-  # through it, and the appdb connection it holds is never opened. The data
-  # path is Envoy -> hoop-inspect -> appdb, exactly as in every other lane;
-  # the gateway only ever sees three HTTPS calls about a statement.
-  hoop-gateway:
-    image: hoop-gateway:local
-    profiles: [review]
-    build:
-      context: ./gateway
-    networks: [inspect]
-    environment:
-      - GIN_MODE=release
-      - LOG_LEVEL=info
-      - POSTGRES_DB_URI=postgres://hoop:hoop@gateway-db:5432/hoopgw?sslmode=disable
-      - API_URL=http://hoop-gateway:8009
-      - GRPC_URL=grpc://hoop-gateway:8010
-      - AUTH_METHOD=local
-    command: ["start", "gateway"]
-    ports:
-      # Published so demo-review.sh (and you) can approve from the host.
-      - "8009:8009"
-    depends_on:
-      gateway-db: { condition: service_healthy }
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8009/api/healthz || exit 1"]
-      interval: "2s"
-      timeout: "30s"
-      retries: 30
-      start_period: "20s"
-
-  # One-shot: registers the admin, creates the connection and the review rule,
-  # mints the sandbox's hpk_ token and writes it where hoop-inspect will read
-  # it. Exits 0. ./run.sh runs it between bringing up the gateway and bringing
-  # up the sidecar, because the sidecar refuses to start without the token.
-  review-bootstrap:
-    image: alpine:3.20
-    # A profile of its OWN, not [review], so `up --profile review` never
-    # starts it. It must run BETWEEN the gateway coming up and the sidecar
-    # starting, and `docker compose run` enables a target service's profile
-    # automatically, so run.sh drives it explicitly. Left in the review
-    # profile it would also race the sidecar on every `up`.
-    profiles: [review-bootstrap]
-    networks: [inspect]
-    volumes:
-      - ./gateway/bootstrap.sh:/bootstrap.sh:ro
-      # Both secret volumes are declared HERE rather than passed with a `-v`
-      # on the command line. `docker compose run -v analyzer-secrets:/x`
-      # does not resolve to the project's volume — it creates a bare one of
-      # that name — so the file lands somewhere nothing else mounts and the
-      # sidecar starts to a missing credential.
-      - review-secrets:/secrets
-      - analyzer-secrets:/analyzer
-    entrypoint: ["/bin/sh", "/bootstrap.sh"]
-    depends_on:
-      hoop-gateway: { condition: service_healthy }
-
 networks:
   inspect:
-
-volumes:
-  # Written by review-bootstrap (as uid 10001), read by hoop-inspect.
-  review-secrets:
-  # Written by ./run.sh --review from ANTHROPIC_API_KEY / OPENAI_API_KEY.
-  analyzer-secrets:
