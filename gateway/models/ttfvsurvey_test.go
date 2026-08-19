@@ -27,6 +27,18 @@ func seedTTFVOrg(t *testing.T, orgID, name string, createdDaysAgo float64) {
 	}
 }
 
+// setTTFVAnalyticsMode moves an organization off the 'identified' default.
+// Applied after seeding rather than as a seedTTFVOrg argument so that every
+// other case keeps exercising the default an ordinary organization really has.
+func setTTFVAnalyticsMode(t *testing.T, orgID, mode string) {
+	t.Helper()
+	err := models.DB.Exec(
+		`UPDATE private.orgs SET analytics_mode = ? WHERE id = ?`, mode, orgID).Error
+	if err != nil {
+		t.Fatalf("set analytics_mode=%s on org %s: %v", mode, orgID, err)
+	}
+}
+
 // seedTTFVResponse writes one answer createdDaysAgo days in the past.
 func seedTTFVResponse(t *testing.T, orgID string, reachedValue bool, createdDaysAgo float64) {
 	t.Helper()
@@ -48,14 +60,30 @@ func TestShouldShowTTFVSurvey(t *testing.T) {
 	startTestDB(t)
 
 	const (
-		orgNeverAnswered = "00000000-0000-0000-0000-0000000000b1"
-		orgDeclinedNow   = "00000000-0000-0000-0000-0000000000b2"
-		orgDeclinedOld   = "00000000-0000-0000-0000-0000000000b3"
-		orgAnsweredYes   = "00000000-0000-0000-0000-0000000000b4"
-		orgNoCreatedAt   = "00000000-0000-0000-0000-0000000000b5"
+		orgNeverAnswered      = "00000000-0000-0000-0000-0000000000b1"
+		orgDeclinedNow        = "00000000-0000-0000-0000-0000000000b2"
+		orgDeclinedOld        = "00000000-0000-0000-0000-0000000000b3"
+		orgAnsweredYes        = "00000000-0000-0000-0000-0000000000b4"
+		orgNoCreatedAt        = "00000000-0000-0000-0000-0000000000b5"
+		orgAnalyticsDisabled  = "00000000-0000-0000-0000-0000000000b6"
+		orgAnalyticsAnonymous = "00000000-0000-0000-0000-0000000000b7"
 	)
 
+	// Seeded without an analytics_mode, so it takes the 'identified' column
+	// default. That is the point: there is no feature flag any more, so an
+	// ordinary organization with nothing configured must be asked.
 	seedTTFVOrg(t, orgNeverAnswered, "ttfv-never-answered", 30)
+
+	// An organization that turned analytics off already asked not to be
+	// measured, and analytics.Track would drop the event, so the question is not
+	// put on screen at all.
+	seedTTFVOrg(t, orgAnalyticsDisabled, "ttfv-analytics-disabled", 30)
+	setTTFVAnalyticsMode(t, orgAnalyticsDisabled, "disabled")
+
+	// 'anonymous' still collects, it only strips the identity, so it is asked.
+	// Only 'disabled' suppresses the survey.
+	seedTTFVOrg(t, orgAnalyticsAnonymous, "ttfv-analytics-anonymous", 30)
+	setTTFVAnalyticsMode(t, orgAnalyticsAnonymous, "anonymous")
 
 	// Bracket the cooldown boundary from both sides without landing on it, so
 	// the assertions cannot flake on clock resolution.
@@ -86,11 +114,13 @@ func TestShouldShowTTFVSurvey(t *testing.T) {
 		orgID string
 		want  bool
 	}{
-		{name: "never answered", orgID: orgNeverAnswered, want: true},
+		{name: "never answered, nothing configured", orgID: orgNeverAnswered, want: true},
 		{name: "declined inside the cooldown", orgID: orgDeclinedNow, want: false},
 		{name: "declined outside the cooldown", orgID: orgDeclinedOld, want: true},
 		{name: "a yes is terminal", orgID: orgAnsweredYes, want: false},
 		{name: "organization without a creation timestamp", orgID: orgNoCreatedAt, want: false},
+		{name: "analytics disabled", orgID: orgAnalyticsDisabled, want: false},
+		{name: "analytics anonymous", orgID: orgAnalyticsAnonymous, want: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

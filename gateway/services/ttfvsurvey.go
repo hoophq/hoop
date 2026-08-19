@@ -1,15 +1,9 @@
 package services
 
 import (
-	"github.com/hoophq/hoop/common/featureflag"
 	"github.com/hoophq/hoop/gateway/models"
 	"gorm.io/gorm"
 )
-
-// TTFVSurveyFlagName gates the whole survey. Because the frontend derives its
-// entire visibility from show_ttfv_survey, flipping this off is a real kill
-// switch: no widget renders anywhere, with no frontend deploy.
-const TTFVSurveyFlagName = "experimental.ttfv_survey"
 
 // ttfvSurveyCooldownDays is how long a "no" suppresses the survey. A "no" is
 // not terminal — TTFV is the moment an admin *first* says yes, so declining is
@@ -33,9 +27,14 @@ type TTFVSurveyAnswer struct {
 // row in private.users and are not the administrator whose confirmation the
 // metric is defined by.
 //
+// There is no feature flag. The survey is on for every organization and closes
+// itself the first time an admin confirms value; the organization's own
+// analytics mode is the only thing that suppresses it, and that is checked in
+// SQL alongside the rest of the policy — see models.ShouldShowTTFVSurvey.
+//
 // Propagates gorm.ErrRecordNotFound when the organization does not exist.
 func ShouldShowTTFVSurvey(db *gorm.DB, orgID string, isAdmin, isAnonymous bool) (bool, error) {
-	if !isAdmin || isAnonymous || !featureflag.IsEnabled(orgID, TTFVSurveyFlagName) {
+	if !isAdmin || isAnonymous {
 		return false, nil
 	}
 	return models.ShouldShowTTFVSurvey(db, orgID, ttfvSurveyCooldownDays)

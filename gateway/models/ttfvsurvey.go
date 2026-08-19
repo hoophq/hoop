@@ -33,8 +33,9 @@ type TTFVMeasurement struct {
 }
 
 // ShouldShowTTFVSurvey reports whether the organization is in a state where the
-// TTFV survey may still be asked: it has a creation timestamp to measure from,
-// it never confirmed value, and it has not declined within the cooldown.
+// TTFV survey may still be asked: it collects analytics at all, it has a
+// creation timestamp to measure from, it never confirmed value, and it has not
+// declined within the cooldown.
 //
 // The window is evaluated by Postgres on purpose, exactly like the signup
 // origin survey. orgs.created_at and ttfv_survey_responses.created_at are
@@ -42,16 +43,33 @@ type TTFVMeasurement struct {
 // gateway's clock would drift by the database's UTC offset. Both sides of this
 // comparison come from the same clock instead.
 //
-// The caller-dependent half of the policy — administrator, not anonymous,
-// feature flag — is not here; see services.ShouldShowTTFVSurvey.
+// The caller-dependent half of the policy — administrator, not anonymous — is
+// not here; see services.ShouldShowTTFVSurvey.
 //
 // Propagates gorm.ErrRecordNotFound when no such organization exists.
 func ShouldShowTTFVSurvey(db *gorm.DB, orgID string, cooldownDays int) (bool, error) {
 	var showSurvey bool
-	// Every clause is an IS NOT NULL or a NOT EXISTS, neither of which can
-	// evaluate to NULL, so the result always scans into a plain bool.
+	// Every clause is an IS NOT NULL, a NOT EXISTS or a comparison against a
+	// NOT NULL column, none of which can evaluate to NULL, so the result always
+	// scans into a plain bool.
+	//
+	// The analytics_mode clause is what the survey is gated on, in place of a
+	// feature flag: the survey ships on for everyone, because a default-off flag
+	// would measure TTFV only for the organizations somebody remembered to
+	// enable — a biased sample of exactly the population being measured. An
+	// organization on 'disabled' already asked not to be measured, and
+	// analytics.Track drops the event for it, so asking would put a question on
+	// screen whose answer can never leave the deployment.
+	//
+	// It is read here rather than through analytics.GetMode because that is a
+	// process-local cache updated only on the node that served
+	// PUT /orgs/analytics-mode. A gateway that missed the write would keep
+	// prompting an organization that just opted out — stale in the one direction
+	// that matters, which is consent. This row is already being selected, so the
+	// authoritative value is free.
 	res := db.Raw(`
-		SELECT o.created_at IS NOT NULL
+		SELECT o.analytics_mode <> 'disabled'
+		   AND o.created_at IS NOT NULL
 		   AND NOT EXISTS (
 		       SELECT 1 FROM private.ttfv_survey_responses r
 		       WHERE r.org_id = o.id AND r.reached_value)

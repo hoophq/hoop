@@ -152,10 +152,11 @@ type UserInfo struct {
 	// permanently false once it has.
 	ShowSetupChecklist bool `json:"show_setup_checklist"`
 	// Whether the "Did you get done what you came here to do?" survey should
-	// still be offered. True only for administrators of an organization that
-	// never confirmed value and has not declined within the last 7 days, and
-	// only while the experimental.ttfv_survey feature flag is on. Always false
-	// for anonymous users.
+	// still be offered. On by default for every organization, so it is true for
+	// administrators of an organization that collects analytics, never confirmed
+	// value, and has not declined within the last 7 days. Permanently false once
+	// value is confirmed, and always false for anonymous users and for an
+	// organization whose analytics mode is disabled.
 	ShowTtfvSurvey bool `json:"show_ttfv_survey"`
 }
 

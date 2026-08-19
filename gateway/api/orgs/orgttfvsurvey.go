@@ -92,13 +92,14 @@ func validateTTFVAnswer(req openapi.TTFVSurveyRequest) (services.TTFVSurveyAnswe
 //	@Failure		400,403,404,409,500	{object}	openapi.HTTPError
 //	@Router			/orgs/ttfv-survey [post]
 func PostOrgTTFVSurvey(c *gin.Context) {
-	// experimental.ttfv_survey is deliberately not re-checked here. It gates
-	// visibility, and an answer only exists because the widget was rendered, so
-	// refusing it would discard a real data point rather than prevent one. It
-	// would also lose answers routinely: the flag cache is warmed once per
-	// process at startup and updated only on the node that served the admin's
-	// write, so a gateway serving this POST can still believe the flag is off
-	// while the one that served /userinfo knows it is on.
+	// The organization's analytics mode is deliberately not re-checked here. It
+	// gates whether the question is asked, and an answer only exists because the
+	// widget was rendered, so refusing it would discard a real data point rather
+	// than prevent one — an admin who answered and then opted out in another tab
+	// would lose the answer they had already given. Consent is still honoured
+	// where it counts: analytics.Track drops the event for a disabled
+	// organization, so the answer stays in that deployment's own database and
+	// never leaves it.
 	ctx := storagev2.ParseContext(c)
 	// Anonymous users are not the administrator whose confirmation defines
 	// TTFV, and have no record to attribute the answer to.

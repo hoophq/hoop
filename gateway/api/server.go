@@ -782,7 +782,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiorgs.GetOrgOnboarding)
 
 	// Administrator-only, and it must stay in agreement with the role that
-	// gates show_ttfv_survey on /userinfo: the flag is what makes the widget
+	// gates show_ttfv_survey on /userinfo: that boolean is what makes the widget
 	// render, so widening one without the other either offers a survey nobody
 	// can answer or accepts answers from users never asked. TTFV is defined as
 	// the moment an administrator confirms value, so this is the role.
