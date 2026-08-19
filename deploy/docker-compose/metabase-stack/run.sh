@@ -35,24 +35,36 @@ REBUILD=""
 [[ "${1:-}" == "--rebuild" ]] && REBUILD=1
 
 need() { command -v "$1" >/dev/null || die "missing required tool: $1"; }
-need docker; need curl; need openssl; need python3
+need docker; need curl; need python3
 
 # --------------------------------------------------------------- 0. TLS cert
 # One hop is encrypted: sidecar -> appdb. Metabase -> sidecar is plaintext on a
 # container network, the shape a sidecar deployment actually has.
 #
-# The key is chmodded rather than left to the host umask, because postgres
-# refuses to start unless it is 0600.
+# Minted INSIDE the postgres image, not on the host. Postgres reads the key at
+# startup and refuses it unless it is 0600 AND owned by the database user or
+# root. A key written by the host user is owned by neither: Docker Desktop
+# hides that by remapping ownership on the bind mount, plain Linux does not,
+# and there appdb never becomes healthy. Minting it in the image that will read
+# the key also takes the uid from that image, instead of a 999 written down
+# here. The directory is made on the host first, so `./run.sh down` can still
+# delete the root-owned files inside it.
 c_step "TLS certificate for appdb"
 if [[ ! -f upstream/certs/server.crt ]]; then
+    # Read, not repeated: the tag in the compose file is pinned deliberately
+    # and this must not drift from it.
+    PG_IMAGE=$(docker compose config --format json \
+        | python3 -c 'import json,sys; print(json.load(sys.stdin)["services"]["appdb"]["image"])')
     mkdir -p upstream/certs
-    openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
-        -keyout upstream/certs/server.key -out upstream/certs/server.crt \
-        -subj "/CN=appdb" \
-        -addext "subjectAltName=DNS:appdb" \
-        2>/dev/null
-    chmod 600 upstream/certs/server.key
-    c_ok "generated upstream/certs/server.crt (CN=appdb)"
+    docker run --rm -v "$PWD/upstream/certs:/certs" "$PG_IMAGE" sh -euc '
+        openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
+            -keyout /certs/server.key -out /certs/server.crt \
+            -subj "/CN=appdb" -addext "subjectAltName=DNS:appdb" 2>/dev/null
+        chown postgres:postgres /certs/server.key
+        chmod 600 /certs/server.key
+        chmod 644 /certs/server.crt
+    '
+    c_ok "generated upstream/certs/server.crt (CN=appdb), key owned by postgres"
 else
     c_ok "reusing upstream/certs/server.crt"
 fi

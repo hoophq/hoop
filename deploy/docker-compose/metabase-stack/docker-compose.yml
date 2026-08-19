@@ -36,6 +36,8 @@ services:
     volumes:
       - ./upstream/seed.sql:/docker-entrypoint-initdb.d/seed.sql:ro
       # 0600 and owned by the postgres uid, or the server refuses to start.
+      # Mounted read-only, so the container cannot fix that itself: ./run.sh
+      # mints the pair inside this image for exactly that reason.
       - ./upstream/certs/server.crt:/etc/postgresql/certs/server.crt:ro
       - ./upstream/certs/server.key:/etc/postgresql/certs/server.key:ro
     healthcheck:
