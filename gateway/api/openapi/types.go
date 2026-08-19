@@ -151,6 +151,12 @@ type UserInfo struct {
 	// administrators of an organization that has not completed onboarding, and
 	// permanently false once it has.
 	ShowSetupChecklist bool `json:"show_setup_checklist"`
+	// Whether the "Did you get done what you came here to do?" survey should
+	// still be offered. True only for administrators of an organization that
+	// never confirmed value and has not declined within the last 7 days, and
+	// only while the experimental.ttfv_survey feature flag is on. Always false
+	// for anonymous users.
+	ShowTtfvSurvey bool `json:"show_ttfv_survey"`
 }
 
 type ServiceAccountStatusType string
@@ -1477,6 +1483,21 @@ type OrgOnboardingResponse struct {
 	// First connection of any kind, the native-access fallback for the same
 	// shortcut; null when the organization has no connections
 	FirstConnectionName *string `json:"first_connection_name" example:"pgdemo"`
+}
+
+// TTFVSurveyRequest is one answer to the TTFV survey. Dismissing the widget is
+// not an answer and must not be submitted. Whether the survey should be offered
+// at all is read from show_ttfv_survey on the /userinfo payload.
+type TTFVSurveyRequest struct {
+	// Whether the user got done what they came to do. Required; a pointer so
+	// that an explicit false is told apart from an omitted field
+	ReachedValue *bool `json:"reached_value" binding:"required" example:"true"`
+	// The activity that delivered the value. Required when reached_value is
+	// true, ignored and stored as null otherwise
+	Activity string `json:"activity" enums:"connected-infra-resource,approved-or-denied-access-request,reviewed-recorded-session,created-or-activated-policy,opened-ai-analyzed-session-report,set-up-data-masking-rule,other" example:"connected-infra-resource"`
+	// Free text detail, at most 255 characters. Required when activity is
+	// "other", ignored and stored as null otherwise
+	ActivityOther string `json:"activity_other" example:"Configured SSO"`
 }
 
 var FeatureList = []string{"ask-ai"}

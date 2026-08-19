@@ -5873,6 +5873,67 @@ const docTemplate = `{
                 }
             }
         },
+        "/orgs/ttfv-survey": {
+            "post": {
+                "description": "Record whether an administrator got done what they came to do, and measure the time since the organization was created. A confirmed value is terminal — the organization is never asked again and a second attempt returns 409 — while a decline is recorded and followed by another ask after a cooldown. Dismissing the widget is not an answer and must not be submitted.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Management"
+                ],
+                "summary": "Answer TTFV Survey",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.TTFVSurveyRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Answer recorded"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/plugins": {
             "get": {
                 "description": "List all Plugin resources",
@@ -18581,6 +18642,38 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.TTFVSurveyRequest": {
+            "type": "object",
+            "required": [
+                "reached_value"
+            ],
+            "properties": {
+                "activity": {
+                    "description": "The activity that delivered the value. Required when reached_value is\ntrue, ignored and stored as null otherwise",
+                    "type": "string",
+                    "enum": [
+                        "connected-infra-resource",
+                        "approved-or-denied-access-request",
+                        "reviewed-recorded-session",
+                        "created-or-activated-policy",
+                        "opened-ai-analyzed-session-report",
+                        "set-up-data-masking-rule",
+                        "other"
+                    ],
+                    "example": "connected-infra-resource"
+                },
+                "activity_other": {
+                    "description": "Free text detail, at most 255 characters. Required when activity is\n\"other\", ignored and stored as null otherwise",
+                    "type": "string",
+                    "example": "Configured SSO"
+                },
+                "reached_value": {
+                    "description": "Whether the user got done what they came to do. Required; a pointer so\nthat an explicit false is told apart from an omitted field",
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
         "openapi.TablesResponse": {
             "type": "object",
             "properties": {
@@ -18794,6 +18887,10 @@ const docTemplate = `{
                 },
                 "show_setup_checklist": {
                     "description": "Whether the sidebar setup checklist should still be offered. True only for\nadministrators of an organization that has not completed onboarding, and\npermanently false once it has.",
+                    "type": "boolean"
+                },
+                "show_ttfv_survey": {
+                    "description": "Whether the \"Did you get done what you came here to do?\" survey should\nstill be offered. True only for administrators of an organization that\nnever confirmed value and has not declined within the last 7 days, and\nonly while the experimental.ttfv_survey feature flag is on. Always false\nfor anonymous users.",
                     "type": "boolean"
                 },
                 "slack_id": {
