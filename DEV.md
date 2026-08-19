@@ -257,15 +257,36 @@ docker buildx build \
 ### Two image trains (AGPL/SSPL, DEP-66)
 
 `Dockerfile.tools` builds two trains, selected by the `INCLUDE_LEGACY_MONGO`
-build arg:
+and `INCLUDE_BUILD_HEADERS` build args:
 
-- **legacy** (`INCLUDE_LEGACY_MONGO=true`, the default) — includes the legacy
-  MongoDB 5.0 shell, which is **SSPL-licensed**. Published as
-  `hoophq/agent-tools:noble-<date>-<sha>` and consumed by `hoophq/hoopdev`.
-- **clean** (`INCLUDE_LEGACY_MONGO=false`) — drops the SSPL shell and relies on
-  `mongosh` (Apache-2.0). Published with a `-clean` tag suffix and consumed by
-  the clean image line (`hoophq/hoop-ng` / `hoophq/hoopdev-ng`, see the helm
-  `hoop-ng` / `hoopagent-ng` charts).
+- **legacy** (both args default) — includes the legacy MongoDB 5.0 shell, which
+  is **SSPL-licensed**, and the Python/unixODBC/kernel build headers. Published
+  as `hoophq/agent-tools:noble-<date>-<sha>` and consumed by `hoophq/hoopdev`.
+- **clean** (`INCLUDE_LEGACY_MONGO=false`, `INCLUDE_BUILD_HEADERS=false`) —
+  drops the SSPL shell and relies on `mongosh` (Apache-2.0), drops the build
+  headers, and takes newer pins for the bundled CLIs (see the `clean_build_args`
+  block in `.github/workflows/agent-tools-build.yml`). Published with a
+  `-clean` tag suffix and consumed by the clean image line
+  (`hoophq/hoop-ng` / `hoophq/hoopdev-ng`, see the helm `hoop-ng` /
+  `hoopagent-ng` charts).
+
+The trains are **not** interchangeable beyond the licence difference. Switching
+an image to the clean train also means:
+
+- No `python3-dev`, `unixodbc-dev`, `alien`, `elfutils` or `libelf-dev`. An
+  image built `FROM` the clean train that `pip install`s a native extension
+  (`pyodbc`, `pymssql`, …) must either install its own build dependencies or
+  restrict itself to prebuilt wheels — otherwise any source build fails.
+- Newer kubectl / sqlcmd / Node / mongosh / gcloud / AWS CLI versions.
+
+`INCLUDE_BUILD_HEADERS=true` on the legacy train is a **compatibility
+guarantee**, not an accident: those headers are the single largest CVE
+contributor in the image, and they are kept only because published
+`hoophq/hoopdev` descendants compile native extensions against them today.
+Removing them from the legacy default is a breaking change for those consumers.
+Before flipping or deleting that default, an owner must inventory the derived
+images that need them, announce the change with a stated migration window, and
+name the release it takes effect in. Until that is done, the default stays.
 
 The CI license gate is two-layered: Trivy scans the apt/language layer, and
 `scripts/ci/check-manual-binaries.py` covers hand-installed (curl/tarball/zip)
