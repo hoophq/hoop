@@ -98,11 +98,20 @@ printf '%s\n' "$BACKSTOP"
 GENERIC=$(printf '%s\n' "$BACKSTOP" | grep -c 'read-only')
 expect "$GENERIC" 1 "the backstop answered for the table nobody listed"
 note ""
+note "A schema change is a write too, and there is no GRANT underneath to"
+note "catch it: appuser owns this database."
+DDL=$($MB sql 'CREATE TABLE zzz_probe (id int)' 2>&1)
+printf '%s\n' "$DDL"
+NODDL=$(printf '%s\n' "$DDL" | grep -c 'read-only')
+expect "$NODDL" 1 "CREATE is refused, with alter, grant, revoke and call"
+note ""
 note "Row counts read directly from appdb:"
 COUNT=$($PG_DIRECT -tAc 'SELECT count(*) FROM customers;' 2>&1 | tr -d ' \r')
 expect "$COUNT" 3 "customers still has 3 rows"
 EVENTS=$($PG_DIRECT -tAc 'SELECT count(*) FROM events;' 2>&1 | tr -d ' \r')
 expect "$EVENTS" 5000 "events still has 5000 rows"
+PROBE=$($PG_DIRECT -tAc "SELECT count(*) FROM pg_tables WHERE tablename = 'zzz_probe';" 2>&1 | tr -d ' \r')
+expect "$PROBE" 0 "no zzz_probe table exists, so the statement never landed"
 
 # ---------------------------------------------------------------- table scope
 h "TABLE SCOPE / a table reporting cannot read at all"

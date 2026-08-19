@@ -96,9 +96,16 @@ listeners:
         # added next month. type: operation is lexer-derived, so it keys on
         # the effect and not the leading verb: a DELETE inside a CTE is
         # refused, and SELECT 'DROP TABLE customers' is not.
+        #
+        # Matching is exact per operation, so "read-only" has to be spelled
+        # out in full. appuser owns this database, so anything left off this
+        # list has the upstream privilege to succeed: create, alter, grant and
+        # revoke change the warehouse as surely as insert does, and call runs
+        # a procedure body no rule here can read.
         - name: read-only-lane
           type: operation
-          operations: [insert, update, delete, drop, truncate]
+          operations: [insert, update, delete, truncate,
+                       create, drop, alter, grant, revoke, call]
           message: this Metabase connection is read-only; writes are not permitted
 
         # `require_table_match: true` on a table rule ALSO denies statements

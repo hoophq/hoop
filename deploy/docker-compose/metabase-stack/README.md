@@ -194,13 +194,22 @@ sentence depends on the table:
 
   WITH gone AS (DELETE FROM events RETURNING *) SELECT count(*) FROM gone
   Metabase reports: FATAL: this Metabase connection is read-only; writes are not permitted
+
+  CREATE TABLE zzz_probe (id int)
+  Metabase reports: FATAL: this Metabase connection is read-only; writes are not permitted
 ```
 
 `customers` has a rule naming its owner; `events` has none and falls to the
 lane-wide backstop, which is the rule that still covers the table somebody
 adds next month. The second statement also shows classification by effect
-rather than by leading verb: it reads as a `SELECT` and it is a delete. The
-demo then reads both row counts directly from `appdb` to show nothing moved.
+rather than by leading verb: it reads as a `SELECT` and it is a delete.
+
+The third is the one to copy carefully. An `operation` rule matches exact
+operations, so a lane called read-only has to name `create`, `alter`, `grant`,
+`revoke` and `call` as well as the four everyone thinks of first. `appuser`
+owns this database, so any operation left off that list has the privilege to
+succeed. The demo then reads both row counts directly from `appdb`, and asks
+`pg_tables` for the table that was never created.
 
 The severity is `FATAL` and the SQLSTATE is `42501` because a denial closes
 the connection; `ERROR` would leave the client waiting for a `ReadyForQuery`
