@@ -39,11 +39,17 @@
 
 /* Grows upward from just above the launcher, sharing its right edge. The cap
    keeps the top of the card on screen on short viewports; the space above the
-   launcher is the anchor minus its own half-height and the gap. */
+   launcher is the anchor minus its own half-height and the gap.
+
+   xxlAlt, not xxl: theme.js adds the 4/8/16/24/32/48/64 scale under *Alt keys
+   and leaves Mantine's own xs–xl defaults in place, so there is no
+   --mantine-spacing-xxl. Referencing it made the whole calc() invalid, which
+   dropped max-height entirely and let the card run off the top of short
+   viewports instead of scrolling. */
 .card {
   position: absolute;
   right: 0;
   bottom: calc(100% + var(--mantine-spacing-sm));
-  max-height: calc(var(--survey-anchor) - var(--mantine-spacing-xxl));
+  max-height: calc(var(--survey-anchor) - var(--mantine-spacing-xxlAlt));
   overflow-y: auto;
 }
