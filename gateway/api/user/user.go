@@ -20,6 +20,7 @@ import (
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"golang.org/x/crypto/bcrypt"
@@ -501,6 +502,20 @@ func GetUserInfo(c *gin.Context) {
 		case !errors.Is(err, gorm.ErrRecordNotFound):
 			log.Warnf("failed resolving the signup origin survey state, err=%v", err)
 		}
+	}
+
+	// Outside the anonymous branch because the service owns that part of the
+	// policy and short-circuits before it reaches the database. Same degradation
+	// as the origin survey: a failure here only means the survey is not offered
+	// on this request, it must never fail the response the whole webapp boots
+	// from. Not found is silent — an organization can disappear between the
+	// token being issued and this lookup.
+	showTTFVSurvey, err := services.ShouldShowTTFVSurvey(models.DB, ctx.OrgID, ctx.IsAdminUser(), ctx.IsAnonymous())
+	switch {
+	case err == nil:
+		userInfoData.ShowTtfvSurvey = showTTFVSurvey
+	case !errors.Is(err, gorm.ErrRecordNotFound):
+		log.Warnf("failed resolving the ttfv survey state, err=%v", err)
 	}
 
 	if isOrgMultiTenant && !ctx.IsAnonymous() {

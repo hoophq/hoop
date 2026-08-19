@@ -8054,6 +8054,37 @@
         },
         "type": "object"
       },
+      "openapi.TTFVSurveyRequest": {
+        "properties": {
+          "activity": {
+            "description": "The activity that delivered the value. Required when reached_value is\ntrue, ignored and stored as null otherwise. Every option names something\nthe administrator perceived, never something they configured",
+            "enum": [
+              "saw-guardrail-applied",
+              "saw-data-masked",
+              "approved-or-denied-access-request",
+              "reviewed-recorded-session",
+              "opened-ai-analyzed-session-report",
+              "other"
+            ],
+            "example": "saw-guardrail-applied",
+            "type": "string"
+          },
+          "activity_other": {
+            "description": "Free text detail, at most 255 characters. Required when activity is\n\"other\", ignored and stored as null otherwise",
+            "example": "Watched a query get masked in a live session",
+            "type": "string"
+          },
+          "reached_value": {
+            "description": "Whether the user has gotten what they needed yet. Required; a pointer so\nthat an explicit false is told apart from an omitted field",
+            "example": true,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "reached_value"
+        ],
+        "type": "object"
+      },
       "openapi.TablesResponse": {
         "properties": {
           "schemas": {
@@ -8263,6 +8294,10 @@
           },
           "show_setup_checklist": {
             "description": "Whether the sidebar setup checklist should still be offered. True only for\nadministrators of an organization that has not completed onboarding, and\npermanently false once it has.",
+            "type": "boolean"
+          },
+          "show_ttfv_survey": {
+            "description": "Whether the \"Have you gotten what you needed yet?\" survey should\nstill be offered. On by default for every organization, so it is true for\nadministrators of an organization that collects analytics, has run at\nleast one session, never confirmed value, and has not declined within the\nlast 3 days. Permanently false once value is confirmed, and always false\nfor anonymous users, for an organization whose analytics mode is disabled,\nand for one that has never used the product.",
             "type": "boolean"
           },
           "slack_id": {
@@ -15910,6 +15945,82 @@
           }
         },
         "summary": "Update Organization Protection Profile",
+        "tags": [
+          "Server Management"
+        ]
+      }
+    },
+    "/orgs/ttfv-survey": {
+      "post": {
+        "description": "Record whether an administrator has gotten what they needed yet, and measure the time since the organization was created. The question is cumulative rather than scoped to the current visit. A confirmed value is terminal — the organization is never asked again and a second attempt returns 409 — while a decline is recorded and followed by another ask after a cooldown. Dismissing the widget is not an answer and must not be submitted.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/openapi.TTFVSurveyRequest"
+              }
+            }
+          },
+          "description": "The request body resource",
+          "required": true,
+          "x-originalParamName": "request"
+        },
+        "responses": {
+          "204": {
+            "description": "Answer recorded"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Answer TTFV Survey",
         "tags": [
           "Server Management"
         ]

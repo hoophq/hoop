@@ -77,6 +77,11 @@ const (
 	// onboarding
 	EventOnboardingOriginAnswered = "hoop-onboarding-origin-answered"
 
+	// ttfv
+	// Emitted server-side only: a browser-side call would be blocked by the
+	// same ad blockers that ruled out measuring this through Intercom.
+	EventTTFVSurveyAnswered = "hoop-ttfv-survey-answered"
+
 	// search api
 	EventSearch = "hoop-search"
 

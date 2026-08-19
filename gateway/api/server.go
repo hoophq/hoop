@@ -781,6 +781,20 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		apiorgs.GetOrgOnboarding)
 
+	// Administrator-only, and it must stay in agreement with the role that
+	// gates show_ttfv_survey on /userinfo: that boolean is what makes the widget
+	// render, so widening one without the other either offers a survey nobody
+	// can answer or accepts answers from users never asked. TTFV is defined as
+	// the moment an administrator confirms value, so this is the role.
+	//
+	// EventTTFVSurveyAnswered is emitted from the handler rather than through
+	// TrackRequest, which runs before the body is validated and could carry
+	// neither the answer nor the measured duration.
+	r.POST("/orgs/ttfv-survey",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiorgs.PostOrgTTFVSurvey)
+
 	r.GET("/orgs/protection-profile",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,

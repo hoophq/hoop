@@ -151,6 +151,14 @@ type UserInfo struct {
 	// administrators of an organization that has not completed onboarding, and
 	// permanently false once it has.
 	ShowSetupChecklist bool `json:"show_setup_checklist"`
+	// Whether the "Have you gotten what you needed yet?" survey should
+	// still be offered. On by default for every organization, so it is true for
+	// administrators of an organization that collects analytics, has run at
+	// least one session, never confirmed value, and has not declined within the
+	// last 3 days. Permanently false once value is confirmed, and always false
+	// for anonymous users, for an organization whose analytics mode is disabled,
+	// and for one that has never used the product.
+	ShowTtfvSurvey bool `json:"show_ttfv_survey"`
 }
 
 type ServiceAccountStatusType string
@@ -1477,6 +1485,22 @@ type OrgOnboardingResponse struct {
 	// First connection of any kind, the native-access fallback for the same
 	// shortcut; null when the organization has no connections
 	FirstConnectionName *string `json:"first_connection_name" example:"pgdemo"`
+}
+
+// TTFVSurveyRequest is one answer to the TTFV survey. Dismissing the widget is
+// not an answer and must not be submitted. Whether the survey should be offered
+// at all is read from show_ttfv_survey on the /userinfo payload.
+type TTFVSurveyRequest struct {
+	// Whether the user has gotten what they needed yet. Required; a pointer so
+	// that an explicit false is told apart from an omitted field
+	ReachedValue *bool `json:"reached_value" binding:"required" example:"true"`
+	// The activity that delivered the value. Required when reached_value is
+	// true, ignored and stored as null otherwise. Every option names something
+	// the administrator perceived, never something they configured
+	Activity string `json:"activity" enums:"saw-guardrail-applied,saw-data-masked,approved-or-denied-access-request,reviewed-recorded-session,opened-ai-analyzed-session-report,other" example:"saw-guardrail-applied"`
+	// Free text detail, at most 255 characters. Required when activity is
+	// "other", ignored and stored as null otherwise
+	ActivityOther string `json:"activity_other" example:"Watched a query get masked in a live session"`
 }
 
 var FeatureList = []string{"ask-ai"}
