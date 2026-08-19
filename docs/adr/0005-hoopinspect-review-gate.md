@@ -171,7 +171,7 @@ flowchart LR
 
     subgraph dataplane["data path — wire protocol over a socket"]
         E["Envoy<br/>unix socket or TCP"]
-        I["hoop-inspect<br/>lane &quot;appdb&quot;<br/>inspect → rules → OPA<br/>→ analyzer → review gate"]
+        I["hoop-inspect<br/>lane appdb<br/>inspect → rules → OPA<br/>→ analyzer → review gate"]
         U[("upstream<br/>postgres")]
     end
 
