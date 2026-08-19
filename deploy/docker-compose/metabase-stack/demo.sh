@@ -15,7 +15,7 @@
 # Prereqs: ./run.sh
 
 # No `-e`: an assertion that fails should record the failure and let the rest
-# of the demo run, so one broken beat does not hide the other four.
+# of the demo run, so one broken beat does not hide the rest.
 set -uo pipefail
 cd "$(dirname "$0")" || exit 1
 
@@ -84,14 +84,52 @@ expect "$LEAKED"   0    "0 addresses survived the export"
 # ------------------------------------------------------------------ guardrail
 h "GUARDRAIL / a write from the SQL editor never reaches the database"
 note "Read-only by policy, not by GRANT, so the message is one an operator wrote."
-$MB sql 'DELETE FROM customers WHERE id = 1'
+note "Two rules answer here: customers has an owner named in its own rule,"
+note "events has nobody, so the lane-wide backstop takes it."
+WRITE=$($MB sql 'DELETE FROM customers WHERE id = 1' 2>&1)
+printf '%s\n' "$WRITE"
+OWNED=$(printf '%s\n' "$WRITE" | grep -c 'written by the CRM sync')
+expect "$OWNED" 1 "the customers rule answered, not the backstop"
 note ""
-note "A delete by effect, not by leading verb:"
-$MB sql 'WITH gone AS (DELETE FROM customers RETURNING *) SELECT count(*) FROM gone'
+note "events has no rule of its own, and this is a delete by effect rather"
+note "than by leading verb:"
+BACKSTOP=$($MB sql 'WITH gone AS (DELETE FROM events RETURNING *) SELECT count(*) FROM gone' 2>&1)
+printf '%s\n' "$BACKSTOP"
+GENERIC=$(printf '%s\n' "$BACKSTOP" | grep -c 'read-only')
+expect "$GENERIC" 1 "the backstop answered for the table nobody listed"
 note ""
-note "Row count read directly from appdb:"
+note "Row counts read directly from appdb:"
 COUNT=$($PG_DIRECT -tAc 'SELECT count(*) FROM customers;' 2>&1 | tr -d ' \r')
 expect "$COUNT" 3 "customers still has 3 rows"
+EVENTS=$($PG_DIRECT -tAc 'SELECT count(*) FROM events;' 2>&1 | tr -d ' \r')
+expect "$EVENTS" 5000 "events still has 5000 rows"
+
+# ---------------------------------------------------------------- table scope
+h "TABLE SCOPE / a table reporting cannot read at all"
+note "payroll is refused rather than masked. Masking answers who may see a"
+note "value; a table rule answers whether the table can be reached."
+note ""
+note "It exists and it has rows. Read directly from appdb:"
+$PG_DIRECT -c 'SELECT employee, salary_cents, bank_iban FROM payroll;' 2>&1 | head -8
+note ""
+note "Through Metabase, from the SQL editor:"
+DENIED=$($MB sql 'SELECT employee, salary_cents FROM payroll ORDER BY id' 2>&1)
+printf '%s\n' "$DENIED"
+HIT=$(printf '%s\n' "$DENIED" | grep -c 'payroll is not exposed to reporting')
+expect "$HIT" 1 "payroll refused with the message its own rule carries"
+note ""
+note "And through a join, where payroll is not the first table named:"
+JOINED=$($MB sql 'SELECT c.name, p.salary_cents FROM customers c JOIN payroll p ON p.employee = c.name' 2>&1)
+printf '%s\n' "$JOINED"
+HITJ=$(printf '%s\n' "$JOINED" | grep -c 'payroll is not exposed to reporting')
+expect "$HITJ" 1 "the join is refused too, because the rule reads every relation"
+note ""
+note "Metabase still lists the table: sync reads pg_catalog, which no rule"
+note "covers. Clicking it returns the refusal instead of rows."
+BUILDER=$($MB table payroll 5 2>&1)
+printf '%s\n' "$BUILDER"
+HITB=$(printf '%s\n' "$BUILDER" | grep -c 'payroll is not exposed to reporting')
+expect "$HITB" 1 "the query builder path is refused as well"
 
 # ---------------------------------------------------------------------- audit
 h "AUDIT / every statement Metabase ran, including its own"
@@ -108,6 +146,10 @@ cat <<'EOF'
   Masked in the query builder, the native SQL editor and a 5,000-row CSV,
   before Metabase received the bytes. Audited per statement, with no agent
   in Metabase and no plugin.
+
+  Policy is per table: payroll is refused outright, customers refuses
+  writes and names its owner, and every other table falls to the read-only
+  backstop. Masking is not per table; a mask rule covers the whole lane.
 
   The control is on the WAREHOUSE, so the same lane also covers dbt,
   DBeaver, notebooks and psql. Metabase is the client under test here,

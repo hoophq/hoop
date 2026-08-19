@@ -89,7 +89,7 @@ and will not provision a per-tool user.
 
 ```bash
 ./run.sh              # cert → build sidecar → up → provision Metabase
-./demo.sh             # five beats, every query issued by Metabase itself
+./demo.sh             # seven beats, every query issued by Metabase itself
 ./run.sh --rebuild    # rebuild the sidecar image, then up
 ./run.sh down         # tear down, including volumes and the minted cert
 ```
@@ -185,16 +185,22 @@ flushes what it holds *masked* and keeps going, so exceeding the buffer
 changes the batching granularity and nothing else.
 
 **5. Guardrail.** The lane is read-only by policy, not by `GRANT`, so the
-analyst gets a sentence an operator wrote instead of a permission error:
+analyst gets a sentence an operator wrote instead of a permission error. Which
+sentence depends on the table:
 
 ```
+  DELETE FROM customers WHERE id = 1
+  Metabase reports: FATAL: customers is written by the CRM sync; change it there
+
+  WITH gone AS (DELETE FROM events RETURNING *) SELECT count(*) FROM gone
   Metabase reports: FATAL: this Metabase connection is read-only; writes are not permitted
 ```
 
-Classified by effect rather than leading verb. The demo also sends
-`WITH gone AS (DELETE FROM customers RETURNING *) SELECT count(*) FROM gone`,
-which is a delete and is refused, and then reads the row count directly from
-`appdb` to show nothing moved.
+`customers` has a rule naming its owner; `events` has none and falls to the
+lane-wide backstop, which is the rule that still covers the table somebody
+adds next month. The second statement also shows classification by effect
+rather than by leading verb: it reads as a `SELECT` and it is a delete. The
+demo then reads both row counts directly from `appdb` to show nothing moved.
 
 The severity is `FATAL` and the SQLSTATE is `42501` because a denial closes
 the connection; `ERROR` would leave the client waiting for a `ReadyForQuery`
@@ -202,18 +208,48 @@ that never comes, and a hang is a worse answer than a sentence
 (`proxy/deny.go`). For a pooled client that means a refused query costs one
 pooled connection, which c3p0 replaces on the next checkout.
 
-**6. Audit.** Metabase was not configured to log anything. A first boot, a
+**6. A table reporting cannot read.** `payroll` is refused rather than masked.
+Masking answers *who may see this value*; a table rule answers *may this table
+be reached at all*. Every path gets the rule's own message:
+
+```
+  SELECT employee, salary_cents FROM payroll ORDER BY id
+  Metabase reports: FATAL: payroll is not exposed to reporting
+
+  SELECT c.name, p.salary_cents FROM customers c JOIN payroll p ON p.employee = c.name
+  Metabase reports: FATAL: payroll is not exposed to reporting
+```
+
+The join is the part worth watching. A `type: table` rule reads every relation
+the statement touches rather than the first one named, so the table cannot be
+reached through a join, a subquery or a CTE. Metabase still lists `payroll` in
+its data browser, because a schema sync reads `pg_catalog` and no rule here
+covers the catalogue; clicking the table returns the refusal instead of rows,
+and its columns stay unfingerprinted.
+
+**7. Audit.** Metabase was not configured to log anything. A first boot, a
 full schema sync and a complete `./demo.sh` produce, on this lane:
 
 ```
-  70 statements recorded (31 set, 26 select, 5 show, 5 begin, 2 delete, 1 rollback)
-  68 allowed, 2 denied, 26 result sets
+  94 statements recorded (39 set, 36 select, 9 show, 6 begin, 2 rollback, 2 delete)
+  88 allowed, 6 denied, 36 result sets
   10034 values masked across 23 result sets (EMAIL_ADDRESS, BR_CPF, IBAN_CODE, column:ssn, US_SSN)
   verified: no masked value appears in the audit trail
 ```
 
 That last line is an assertion too. Recording, in the clear, a value that
 masking removed would have un-masked it.
+
+One of those six denials is nobody's query. Metabase's sync fingerprints
+`payroll` on its own initiative and the lane refuses it:
+
+```
+  DENY  SELECT SUBSTRING("public"."payroll"."employee", 1, 1234) AS "sub
+        rule=payroll-off-limits  payroll is not exposed to reporting
+```
+
+It carries no `userID` comment because no human asked for it. The other five
+name the analyst.
 
 Those counts are from the **first** `./demo.sh` after a fresh `./run.sh`. The
 summary reads a 180-second log window, wide enough to catch the schema sync,
@@ -224,6 +260,33 @@ curl -s localhost:19000/api/sessions | python3 -m json.tool
 curl -s localhost:19000/stats        | python3 -m json.tool
 docker compose logs hoop-inspect | ./hoopinspect/read-audit.py
 ```
+
+## Adapting the rules to your schema
+
+[`hoopinspect/config.yaml`](hoopinspect/config.yaml) exists to be copied and
+edited. Four things about `policy.rules` that the file repeats inline and that
+cost time to rediscover:
+
+- **First match wins, in slice order.** Narrow rules first, the lane-wide
+  backstop last. Reversed, every refusal carries the generic message.
+- **`access:` narrows a table rule to one direction.** `access: write` on
+  `customers` leaves reads working, masked. Omit it, as `payroll` does, and
+  the table is unreachable in both directions.
+- **A bare table name matches any schema qualification.** `tables: [payroll]`
+  also matches `public.payroll` and `hr.payroll`, and a rule cannot separate
+  them. If that distinction is the requirement, it is a `GRANT`.
+- **`require_table_match: true` also denies statements whose relations could
+  not be resolved.** That includes `SET`, `SHOW`, `BEGIN` and `ROLLBACK`,
+  which are 56 of the 94 statements above, so it refuses most of what a BI
+  tool sends before it ever runs a query. It reads like the safe setting and
+  it is not. To fail closed on unclassifiable statements, use the `operation`
+  rule with `unknown` and `other` that is written out and commented in the
+  file.
+
+Masking has no equivalent. A mask rule has no `tables:` field: it keys on the
+result-set column name or on the detected entity and applies to every result
+set on the lane, so the `iban` rule covers `customers.iban` and
+`payroll.bank_iban` alike. One lane, one masking policy.
 
 ## Identity
 
@@ -280,9 +343,11 @@ concurrently with whatever dashboards are loading. A lane at its cap
 **refuses rather than queues** (`proxy/proxy.go`,
 `TestMaxConnsRefusesRatherThanQueues`), and Metabase surfaces that refusal as
 a table that silently never finished syncing. Set the lane at or above the
-pool. This stack sets 64 as headroom; it actually opens 6 connections in
+pool. This stack sets 64 as headroom; it actually opens 10 connections in
 total across a first boot and a full `./demo.sh`, which you can read off
-`/stats`.
+`/stats`. The demo's six denials account for most of that growth: a refusal
+closes the connection and c3p0 opens a fresh one at the next checkout, so a
+lane that refuses often opens more connections than its query rate suggests.
 
 **Leave `idle_timeout_sec` unset for BI.** c3p0 keeps connections open and
 idle between dashboard loads. Closing them underneath it turns the next query
@@ -328,6 +393,15 @@ Metabase publishes for Cloud.
   both. If that matters more than the editor does, deny the operation instead
   of masking the response: policy runs on the request, where there is nothing
   to reshape.
+
+- **Masking is per lane; policy is per table.** A `type: table` policy rule
+  scopes to the tables it names. A mask rule cannot: there is no `tables:`
+  field on one, so it applies to every result set the lane carries. Masking a
+  column in one table and leaving the same column readable in another needs a
+  second lane, not a second rule. The table OID is on the wire in
+  `RowDescription` and the codec reads past it, so this is a gap rather than a
+  wall, but resolving an OID to a table name needs a `pg_class` lookup and a
+  cache that does not exist today.
 
 - **Bind parameters are invisible to request-side rules.** The postgres codec
   reads `'Q'` Query and `'P'` Parse; it does not decode `'B'` Bind. A query

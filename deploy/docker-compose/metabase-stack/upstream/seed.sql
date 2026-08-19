@@ -1,10 +1,12 @@
--- The database Metabase reports on. Two tables, two jobs.
+-- The database Metabase reports on. Three tables, three jobs.
 --
 -- `customers` is three rows, so a masked column is obvious on one screen.
 -- `events` is 5,000 rows, to outrun maxDecodedRows (1,000, in
 -- codec/postgres/response.go). That constant bounds audit decoding only, and
 -- ./demo.sh exports all 5,000 rows to prove masking does not stop with it.
 -- See ./README.md, "Masking does not stop at row 1000".
+-- `payroll` is the table reporting must not read, so the `type: table` rule in
+-- ../hoopinspect/config.yaml has something real to scope to.
 
 CREATE TABLE customers (
     id      serial PRIMARY KEY,
@@ -47,3 +49,20 @@ SELECT
     (ARRAY['login', 'export', 'query', 'share'])[1 + (n % 4)],
     (n * 37) % 100000
 FROM generate_series(1, 5000) AS n;
+
+-- Not masked, denied. Masking answers "who may see this value"; a table rule
+-- answers "may this table be reached at all", and payroll is the second
+-- question. Metabase still discovers it during sync and still tries to
+-- fingerprint it, which is the interesting part: see ./README.md, "A table
+-- reporting cannot read".
+CREATE TABLE payroll (
+    id           serial PRIMARY KEY,
+    employee     text NOT NULL,
+    salary_cents integer NOT NULL,
+    bank_iban    text NOT NULL
+);
+
+INSERT INTO payroll (employee, salary_cents, bank_iban) VALUES
+    ('Ada Lovelace', 21500000, 'GB82WEST12345698765432'),
+    ('Grace Hopper', 23800000, 'DE89370400440532013000'),
+    ('Alan Turing',  20900000, 'FR1420041010050500013M02606');
