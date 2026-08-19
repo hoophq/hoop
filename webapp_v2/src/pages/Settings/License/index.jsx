@@ -18,16 +18,12 @@ import Table from '@/components/Table'
 import licenseService from '@/services/license'
 import authService from '@/services/auth'
 import { docsUrl } from '@/utils/docsUrl'
+import { LICENSE_STATUS, daysUntilExpiration, formatLicenseDate } from '@/utils/license'
 import { showSnackbar } from '@/utils/snackbar'
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-
-function formatDate(timestamp) {
-  if (!timestamp) return '—'
-  const date = new Date(timestamp * 1000)
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${date.getFullYear()}/${MONTHS[date.getMonth()]}/${day}`
-}
+// Wider than the global banner's 30 days: this page is where renewal happens,
+// so a heads-up here is useful long before it is worth interrupting the app.
+const EXPIRATION_WARNING_DAYS = 90
 
 function licenseTypeLabel(type) {
   if (type === 'enterprise') return 'Enterprise License'
@@ -35,15 +31,33 @@ function licenseTypeLabel(type) {
   return '—'
 }
 
-function shouldShowExpirationWarning(licenseInfo, isAdmin) {
-  if (!isAdmin) return false
-  if (licenseInfo?.type !== 'enterprise') return false
-  if (!licenseInfo?.is_valid) return false
-  if (!licenseInfo?.expire_at) return false
-  const now = Date.now()
-  const expireMs = licenseInfo.expire_at * 1000
-  const ninetyDaysMs = 90 * 24 * 60 * 60 * 1000
-  return now >= expireMs - ninetyDaysMs
+// Alert to render above the license table, or null. Also covers an already
+// expired license, which is exactly when the admin needs to be told.
+function expirationNotice(licenseInfo, isAdmin) {
+  if (!isAdmin || !licenseInfo) return null
+  const { status, type, expire_at: expireAt, verify_error: verifyError } = licenseInfo
+
+  if (status === LICENSE_STATUS.EXPIRED) {
+    return {
+      color: 'red',
+      message: `Your organization's license expired on ${formatLicenseDate(expireAt)}. New sessions are blocked until a valid license is installed — paste a new license key below, or contact us.`,
+    }
+  }
+  if (status === LICENSE_STATUS.INVALID) {
+    const reason = verifyError ? `: ${verifyError}` : ''
+    return {
+      color: 'red',
+      message: `Your organization's license could not be verified${reason}. New sessions are blocked until a valid license is installed.`,
+    }
+  }
+
+  if (type !== 'enterprise') return null
+  const daysLeft = daysUntilExpiration(expireAt)
+  if (daysLeft === null || daysLeft > EXPIRATION_WARNING_DAYS) return null
+  return {
+    color: 'amber',
+    message: `Your organization's license expires on ${formatLicenseDate(expireAt)}. Please contact us to avoid interruption.`,
+  }
 }
 
 function SettingsLicense() {
@@ -57,6 +71,7 @@ function SettingsLicense() {
 
   const disableInput = licenseInfo?.is_valid && licenseInfo?.type === 'enterprise'
   const disableSave = disableInput || !licenseKey.trim()
+  const notice = expirationNotice(licenseInfo, isAdmin)
 
   useEffect(() => {
     licenseService
@@ -120,9 +135,9 @@ function SettingsLicense() {
         </Group>
       </Group>
 
-      {shouldShowExpirationWarning(licenseInfo, isAdmin) && (
-        <Alert icon={<AlertCircle size={16} />} color="yellow" mb="xl">
-          Your organization's license is expiring soon. Please contact us to avoid interruption.
+      {notice && (
+        <Alert icon={<AlertCircle size={16} />} color={notice.color} mb="xl">
+          {notice.message}
         </Alert>
       )}
 
@@ -138,12 +153,12 @@ function SettingsLicense() {
           <Table.Tbody>
             <Table.Tr>
               <Table.Td>{licenseTypeLabel(licenseInfo?.type)}</Table.Td>
-              <Table.Td>{formatDate(licenseInfo?.issued_at)}</Table.Td>
+              <Table.Td>{formatLicenseDate(licenseInfo?.issued_at)}</Table.Td>
               <Table.Td>
                 {licenseInfo?.type === 'oss' ? (
                   <Text size="xs" c="dimmed">N/A</Text>
                 ) : (
-                  formatDate(licenseInfo?.expire_at)
+                  formatLicenseDate(licenseInfo?.expire_at)
                 )}
               </Table.Td>
             </Table.Tr>

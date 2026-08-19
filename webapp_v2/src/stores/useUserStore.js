@@ -31,6 +31,9 @@ export const useUserStore = create((set, get) => ({
   // Only meaningful once serverInfoLoaded is true — gating fails closed
   // while /serverinfo hasn't been fetched successfully.
   licenseFeatures: null,
+  // Raw /serverinfo license_info. Null until serverinfo resolves, which is why
+  // LicenseBanner renders nothing rather than guessing a state.
+  licenseInfo: null,
   serverInfoLoaded: false,
   apiUrl: null,
   hasRedactCredentials: false,
@@ -60,6 +63,7 @@ export const useUserStore = create((set, get) => ({
       redactProvider, 
       apiUrl,
       licenseFeatures,
+      licenseInfo: license || null,
       serverInfoLoaded: true,
       hasRedactCredentials: !!serverInfo?.has_redact_credentials,
       postgresProxyEnabled: !!serverInfo?.postgres_proxy_enabled
@@ -86,8 +90,9 @@ export const useUserStore = create((set, get) => ({
       analyticsMode: 'anonymous', 
       disableClipboard: false, 
       gatewayVersion: null, 
-      featureFlags: {}, 
+      featureFlags: {},
       licenseFeatures: null,
+      licenseInfo: null,
       serverInfoLoaded: false,
       redactProvider: null, 
       apiUrl: null,
