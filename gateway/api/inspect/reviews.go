@@ -55,7 +55,6 @@ import (
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
-	"gorm.io/gorm"
 )
 
 // maxStatementBytes bounds the statement text a review can carry.
@@ -100,10 +99,10 @@ func Claim(c *gin.Context) {
 		return
 	}
 
-	rev, err := models.ClaimInspectReview(models.DB, ctx.OrgID, ctx.UserID, conn.ID, req.StatementHash)
+	rev, err := services.ClaimInspectReview(ctx.OrgID, ctx.UserID, conn.ID, req.StatementHash)
 	switch {
-	case errors.Is(err, gorm.ErrRecordNotFound):
-		c.JSON(http.StatusNotFound, gin.H{"message": "no approved review for this statement"})
+	case errors.Is(err, services.ErrNoApprovedReview):
+		c.JSON(http.StatusNotFound, gin.H{"message": services.ErrNoApprovedReview.Error()})
 		return
 	case err != nil:
 		log.With("org", ctx.OrgID, "owner", ctx.UserID, "conn", conn.Name).
@@ -114,13 +113,6 @@ func Claim(c *gin.Context) {
 
 	log.With("org", ctx.OrgID, "owner", ctx.UserID, "conn", conn.Name,
 		"review-id", rev.ID, "sid", rev.SessionID).Infof("inspect review claimed")
-
-	// Best effort, and it must stay that way. The approval is already
-	// consumed; failing the request now would make the relay refuse a
-	// statement it was authorized to run AND cost a human a second approval.
-	if err := models.CloseInspectSession(models.DB, ctx.OrgID, rev.SessionID); err != nil {
-		log.With("sid", rev.SessionID).Warnf("failed closing session for claimed review: %v", err)
-	}
 
 	c.JSON(http.StatusOK, toOpenAPI(rev))
 }
@@ -180,18 +172,16 @@ func Create(c *gin.Context) {
 	// Keyed on the MARKER rather than the hash, because only the marker knows
 	// the caller's intent: an agent whose task 3 and task 9 run byte-identical
 	// SQL is making two requests, and each still needs its own human.
-	if req.Marker != "" {
-		existing, err := models.GetPendingInspectReviewByMarker(models.DB, ctx.OrgID, ctx.UserID, conn.ID, req.Marker)
-		switch {
-		case err == nil:
-			c.JSON(http.StatusOK, toOpenAPI(existing))
-			return
-		case !errors.Is(err, gorm.ErrRecordNotFound):
-			log.With("org", ctx.OrgID, "conn", conn.Name).
-				Errorf("failed looking up pending inspect review: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed looking up review"})
-			return
-		}
+	existing, err := services.FindPendingInspectReviewByMarker(ctx.OrgID, ctx.UserID, conn.ID, req.Marker)
+	switch {
+	case err == nil:
+		c.JSON(http.StatusOK, toOpenAPI(existing))
+		return
+	case !errors.Is(err, services.ErrNoApprovedReview):
+		log.With("org", ctx.OrgID, "conn", conn.Name).
+			Errorf("failed looking up pending inspect review: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed looking up review"})
+		return
 	}
 
 	// Who reviews this is the org's existing access-request configuration,
@@ -299,9 +289,9 @@ func Get(c *gin.Context) {
 		return
 	}
 
-	rev, err := models.GetInspectReviewStatus(models.DB, ctx.OrgID, ctx.UserID, conn.ID, statementHash)
+	rev, err := services.GetInspectReviewStatus(ctx.OrgID, ctx.UserID, conn.ID, statementHash)
 	switch {
-	case errors.Is(err, gorm.ErrRecordNotFound):
+	case errors.Is(err, services.ErrNoApprovedReview):
 		c.JSON(http.StatusNotFound, gin.H{"message": "no review for this statement"})
 		return
 	case err != nil:
