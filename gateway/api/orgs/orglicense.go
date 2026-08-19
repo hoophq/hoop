@@ -105,8 +105,7 @@ func SignLicense(c *gin.Context) {
 		return
 	}
 
-	// Signed licenses are never stored, so this event and the log line above are
-	// the only record of what was issued. Route is restricted to the signing org.
+	// Signed licenses are never stored, so this is the record of what was issued.
 	trackClient := analytics.New()
 	defer trackClient.Close()
 	trackClient.Track(ctx.UserID, analytics.EventLicenseSigned, signedLicenseProperties(ctx.OrgID, req, l))
@@ -114,8 +113,6 @@ func SignLicense(c *gin.Context) {
 	c.JSON(http.StatusOK, l)
 }
 
-// signedLicenseProperties builds the analytics payload for a signed license. It
-// carries no PII: `description` is what identifies the customer we issued to.
 func signedLicenseProperties(orgID string, req SignRequest, l *license.License) map[string]any {
 	features := l.Payload.Features
 	if features == nil {

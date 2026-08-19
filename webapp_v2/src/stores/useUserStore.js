@@ -31,8 +31,7 @@ export const useUserStore = create((set, get) => ({
   // Only meaningful once serverInfoLoaded is true — gating fails closed
   // while /serverinfo hasn't been fetched successfully.
   licenseFeatures: null,
-  // Raw /serverinfo license_info. Null until serverinfo resolves, which is why
-  // LicenseBanner renders nothing rather than guessing a state.
+  // Null until /serverinfo resolves, so consumers must not guess a state.
   licenseInfo: null,
   serverInfoLoaded: false,
   apiUrl: null,

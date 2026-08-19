@@ -1,5 +1,4 @@
-// `license_info.status` from /serverinfo. Decided by the gateway clock, so
-// never re-derive "expired" from expire_at here.
+// Set by the gateway clock — never re-derive "expired" from expire_at here.
 export const LICENSE_STATUS = {
   VALID: 'valid',
   EXPIRED: 'expired',

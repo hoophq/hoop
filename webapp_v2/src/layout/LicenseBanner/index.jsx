@@ -10,14 +10,12 @@ import { openSupport } from '@/utils/support'
 const LICENSE_PAGE = '/settings/license'
 const SUPPORT_MESSAGE = 'I want to renew my hoop license'
 const WARN_DAYS = 30
-// Dismissing silences one step only, so ignoring it at 30 days does not stay
-// silent at 14. Inside the last week there is no close button at all.
+// Dismissing silences one step only; inside LOCKED_DAYS there is no close button.
 const DISMISS_STEPS = [30, 14]
 const LOCKED_DAYS = 7
 const DISMISS_KEY = 'license-expiration-dismissed-for'
 
-// Admin-only: renewing is their task. Non-admins get license.ErrNotValid on the
-// blocked session instead.
+// Admin-only: renewing is their task.
 function licenseNotice({ licenseInfo, isAdmin, userId, dismissedFor }) {
   if (!isAdmin || !licenseInfo) return null
   const { status, type, expire_at: expireAt, verify_error: verifyError } = licenseInfo
@@ -44,8 +42,8 @@ function licenseNotice({ licenseInfo, isAdmin, userId, dismissedFor }) {
   const daysLeft = daysUntilExpiration(expireAt)
   if (daysLeft === null || daysLeft > WARN_DAYS) return null
 
-  // findLast picks the tightest step. The key carries the expiration so renewing
-  // re-arms the warning, and the user so one admin cannot silence another.
+  // Keyed by expiration so renewing re-arms it, and by user so one admin cannot
+  // silence another.
   const step = daysLeft > LOCKED_DAYS ? DISMISS_STEPS.findLast((d) => daysLeft <= d) : null
   const dismissKey = step ? `${userId}:${expireAt}:${step}` : null
   if (dismissKey && dismissedFor === dismissKey) return null

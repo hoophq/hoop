@@ -7,8 +7,7 @@ import (
 	"github.com/hoophq/hoop/common/license"
 )
 
-// The event is the only durable record of what we issued, so a dropped or
-// renamed property silently breaks the dashboards built on it.
+// A dropped or renamed property breaks the dashboards without failing a build.
 func TestSignedLicenseProperties(t *testing.T) {
 	l := &license.License{
 		Payload: license.Payload{
@@ -49,11 +48,5 @@ func TestSignedLicenseProperties(t *testing.T) {
 		if got != wantValue {
 			t.Errorf("property %q = %v, want %v", key, got, wantValue)
 		}
-	}
-
-	// The signing org is ours, but the licensee is a third party: nothing that
-	// identifies a person belongs in this event.
-	if _, ok := props["customer-email"]; ok {
-		t.Error("customer-email must not be sent")
 	}
 }

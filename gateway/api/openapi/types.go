@@ -1495,8 +1495,7 @@ type WebhooksDashboardResponse struct {
 	URL string `json:"url" example:"https://app.svix.com/app_3ZT4NrDlps0Pjp6Af8L6pJMMh3/endpoints"`
 }
 
-// Values for the license_info.status field returned by /serverinfo; each state
-// is documented on ServerLicenseInfo.Status below.
+// Values for ServerLicenseInfo.Status.
 const (
 	LicenseStatusValid   = "valid"
 	LicenseStatusExpired = "expired"

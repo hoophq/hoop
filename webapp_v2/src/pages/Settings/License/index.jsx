@@ -22,8 +22,7 @@ import { LICENSE_STATUS, daysUntilExpiration, formatLicenseDate } from '@/utils/
 import { showSnackbar } from '@/utils/snackbar'
 import { openSupport } from '@/utils/support'
 
-// Wider than the global banner's 30 days: this page is where renewal happens,
-// so a heads-up here is useful long before it is worth interrupting the app.
+// Wider than the global banner's 30 days: renewal happens here.
 const EXPIRATION_WARNING_DAYS = 90
 const SUPPORT_MESSAGE = 'I want to renew my hoop license'
 
@@ -33,8 +32,7 @@ function licenseTypeLabel(type) {
   return '—'
 }
 
-// Alert to render above the license table, or null. Also covers an already
-// expired license, which is exactly when the admin needs to be told.
+// Covers an already expired license too, which the old check suppressed.
 function expirationNotice(licenseInfo, isAdmin) {
   if (!isAdmin || !licenseInfo) return null
   const { status, type, expire_at: expireAt, verify_error: verifyError } = licenseInfo

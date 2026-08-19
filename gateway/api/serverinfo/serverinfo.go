@@ -23,8 +23,7 @@ import (
 var (
 	isOrgMultiTenant = os.Getenv("ORG_MULTI_TENANT") == "true"
 	vinfo            = version.Get()
-	// Process-wide attributes only. Requests copy it before adding org fields;
-	// mutating in place raced and leaked licenses across tenants.
+	// Process-wide attributes only — requests copy it before adding org fields.
 	baseServerInfo = openapi.ServerInfo{
 		Version:                 vinfo.Version,
 		Commit:                  vinfo.GitCommit,
@@ -70,8 +69,7 @@ func Get(c *gin.Context) {
 
 	appc := appconfig.Get()
 	apiHostname := appc.ApiHostname()
-	// Separate from err, which still carries the tolerated models.ErrNotFound
-	// above; reusing it reported a perfectly good license as invalid.
+	// Separate from err, which still carries the tolerated models.ErrNotFound above.
 	l, licenseErr := defaultOSSLicense(), error(nil)
 	if org.LicenseData != nil {
 		l, licenseErr = license.Parse(org.LicenseData, apiHostname)
@@ -116,7 +114,7 @@ func Get(c *gin.Context) {
 		serverInfoData.LicenseInfo.VerifyError = licenseErr.Error()
 	}
 	// Parse returns the payload even when verification fails, so an expired
-	// license still reports expire_at. nil means it could not be decoded.
+	// license still reports expire_at.
 	if l != nil {
 		serverInfoData.LicenseInfo.KeyID = l.KeyID
 		serverInfoData.LicenseInfo.AllowedHosts = l.Payload.AllowedHosts
@@ -134,8 +132,7 @@ func Get(c *gin.Context) {
 	c.JSON(http.StatusOK, serverInfoData)
 }
 
-// licenseStatus maps a verification error to the state the webapp renders. Expiry
-// is decided here, on the same clock the gRPC connect gate uses, not in the browser.
+// Expiry is decided on the same clock the gRPC connect gate uses, not in the browser.
 func licenseStatus(err error) string {
 	switch {
 	case err == nil:
