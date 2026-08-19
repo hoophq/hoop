@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-This is a Go workspace for the hoop gateway, agent, and CLI. The codebase follows a monorepo-style structure using `go.work`, with six modules: `gateway/`, `agent/`, `client/`, `common/`, `libhoop/`, and `tunnel/`. There is also a Rust companion binary (`agentrs/`) for RDP/TLS proxy workloads, a legacy ClojureScript SPA (`webapp/`) - see `webapp/CLAUDE.md` for its own conventions, and a new React frontend (`webapp_v2/`) that is actively replacing it.
+This is a Go workspace for the hoop gateway, agent, and CLI. The codebase follows a monorepo-style structure using `go.work`, with six modules for the product itself: `gateway/`, `agent/`, `client/`, `common/`, `libhoop/`, and `tunnel/`. A seventh, `hoopinspect/`, is a standalone wire-inspection library that contributes six further nested modules to `go.work` and follows different rules - see `hoopinspect/CLAUDE.md` before changing anything under it. There is also a Rust companion binary (`agentrs/`) for RDP/TLS proxy workloads, a legacy ClojureScript SPA (`webapp/`) - see `webapp/CLAUDE.md` for its own conventions, and a new React frontend (`webapp_v2/`) that is actively replacing it.
 
  `_libhoop/` is a symlink target; the build uses `ln -s _libhoop libhoop` (`make libhoop-map`) so Go sees the `libhoop` import path.
 
@@ -79,6 +79,12 @@ This is a Go workspace for the hoop gateway, agent, and CLI. The codebase follow
 - Own Go module (`github.com/hoophq/hoop/tunnel`); entrypoint `tunnel/cmd/hsh-tunneld/`.
 - Per TCP flow it opens a fresh gRPC `Transport.Connect` stream to the existing gateway — **no new gateway protocol/endpoint**; the gateway sees ordinary client sessions.
 - Shipped with the unprivileged `hsh` CLI (separate `hoophq/hsh` repo).
+
+### hoopinspect (`hoopinspect/`)
+- Standalone wire-inspection library plus the `hoop-inspect` relay binary: raw database bytes to statements, statements to allow/deny verdicts, masked responses and an audit trail. Own module (`github.com/hoophq/hoopinspect`); nothing in `gateway/`, `agent/` or `client/` imports it.
+- **Zero dependencies, stdlib only, test dependencies included.** Anything needing a dependency gets its own `go.mod`, which is why `cmd/`, `config/yaml/`, `pii/alcatraz/`, `store/sqlite/`, `analyzer/vertex/` and `lexer/conformance/` are nested modules.
+- Not covered by CI: `make test-oss` runs `go test github.com/hoophq/hoop/...`, which does not match this module, and no workflow references it. Root `go test ./...` also reaches no nested module.
+- **Read `hoopinspect/CLAUDE.md` before changing anything under it.** It carries the dependency checks, the per-module test loop, and why a `lexer/` change is unverified until `lexer/conformance` passes.
 
 ## Transport Plugin System
 Plugins are registered in `gateway/main.go` in a **fixed, intentional order** — do not reorder casually:
@@ -257,6 +263,7 @@ When merging `main` into a feature branch:
 | Webapp entry (React shell) | `webapp_v2/src/main.jsx` |
 | Frontend migration context | `webapp_v2/CONTEXT_MIGRATION.md` |
 | Frontend coding rules | `webapp_v2/CLAUDE.md` |
+| Wire-inspection library rules | `hoopinspect/CLAUDE.md` |
 
 ## Coding
 
