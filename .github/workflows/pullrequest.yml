@@ -10,6 +10,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
+      - name: Test CI helpers
+        # Discovery keeps every scripts/ci test in the gate, so adding one does
+        # not require touching this workflow.
+        run: python3 -m unittest discover -s scripts/ci -p 'test_*.py' -v
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
@@ -314,7 +318,9 @@ jobs:
 
     steps:
       - name: Checkout Hoop
-        uses: actions/checkout@v3
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       # DEP-91: source-level Go vulnerability gate. This is the counterpart to
       # the Trivy image gate on hoophq/hoopagent: the slim-image PR smoke
@@ -323,15 +329,16 @@ jobs:
       # govulncheck must compile the workspace, which imports the enterprise
       # libhoop; check it out at ./libhoop like the integration jobs.
       - name: Checkout libhoop
-        uses: actions/checkout@v3
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          persist-credentials: false
           repository: hoophq/libhoop
           path: "./libhoop"
           token: ${{ secrets.GH_TOKEN }}
           ref: ${{ needs.resolve-libhoop.outputs.sha }}
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: '>=1.26.0'
 
@@ -345,4 +352,10 @@ jobs:
       # the shipped code, catching regressions an image scan would miss.
       - name: govulncheck (shipped hoop binary)
         working-directory: client
+        run: '"$(go env GOPATH)/bin/govulncheck" ./...'
+
+      # hsh-tunneld is a separately shipped binary from its own Go module, so
+      # it is not reachable from the client module's package graph.
+      - name: govulncheck (hsh-tunneld)
+        working-directory: tunnel
         run: '"$(go env GOPATH)/bin/govulncheck" ./...'

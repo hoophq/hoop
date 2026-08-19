@@ -17,12 +17,12 @@ and one combined release-manifest.json recording, per image, the tag's index
 digest and a per-platform entry (child digest, base OS, component count, Trivy
 CRITICAL/HIGH counts, SBOM filenames).
 
-Trivy pulls the images from the registry directly (respecting --platform), so it
-authenticates via TRIVY_USERNAME/TRIVY_PASSWORD when set (forwarded from the
-job's Docker Hub credentials) to avoid anonymous rate limits. Images published
-by continue-on-error jobs (e.g. hoophq/hoopagent) may lag or be absent;
-visibility is retried, then the image is skipped with a warning rather than
-failing.
+Trivy scans exact child digests with an immutable, digest-pinned scanner image.
+The SBOM job intentionally has no Docker Hub credentials: all release images
+are public, so a scanner compromise cannot expose a production push token.
+Every documented image is required; visibility or
+platform gaps fail the job. The additive hoophq/hoopagent image may lag
+or be absent and is skipped with a warning after bounded visibility retries.
 
 Usage: generate-sbom-manifest.py <tag> <outdir>
 """
@@ -31,13 +31,12 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import re
 import subprocess
 import sys
 import time
 from datetime import datetime, timezone
 
-TRIVY_IMAGE = "aquasec/trivy:0.72.0"
+TRIVY_IMAGE = "aquasec/trivy@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f"
 
 # Core published line documented per release, as (repo, tag suffix) pairs. The
 # -ng clean-line images are a separate train / mirror and are intentionally out
@@ -53,21 +52,29 @@ IMAGE_REPOS = [
     ("hoophq/hoopagent", "-distroless"),
 ]
 
-# Bundled CLI versions recorded in the manifest for the fat agent image, per
-# issue #1643 ("bundled tool versions"). Sourced from Dockerfile.tools' ARG
-# defaults — the legacy-train pins hoophq/hoopdev is built from. The
-# CycloneDX/SPDX SBOMs remain the complete component inventory; this is a
-# convenience summary of the CLIs the ticket calls out.
-TOOLS_DOCKERFILE = os.path.join(os.path.dirname(__file__), "..", "..", "Dockerfile.tools")
-BUNDLED_TOOL_ARGS = {
-    "KUBECTL_VERSION": "kubectl",
-    "SQLCMD_VERSION": "sqlcmd",
-    "MONGOSH_VERSION": "mongosh",
-    "MONGODB_TOOLS_VERSION": "mongodb-tools",
-    "NODE_VERSION": "node",
-    "AWS_CLI_VERSION": "aws-cli",
-    "GCLOUD_VERSION": "gcloud",
-    "GCLOUD_GKE_AUTHN_PLUGIN_VERSION": "gke-gcloud-auth-plugin",
+# Every image in IMAGE_REPOS is a release requirement, on both platforms. The
+# slim agent used to be optional here because it published on an independent
+# line that could lag; the SBOM job now depends on that publish job, so an
+# absent slim image means the publish genuinely failed and the release must not
+# claim evidence it does not have. There is no optional entry any more: every
+# image in IMAGE_REPOS must resolve, on both platforms, or the run fails.
+REQUIRED_IMAGE_REPOS = {repo for repo, _ in IMAGE_REPOS}
+REQUIRED_PLATFORMS = {"linux/amd64", "linux/arm64"}
+
+# Bundled CLI versions are OCI labels on each exact hoophq/hoopdev child image.
+# New agent-tools bases provide inherited labels; the release workflow probes
+# older pinned bases by immutable child digest and attaches the same schema.
+# Never read versions from the checked-out Dockerfile.tools recipe: it can
+# legitimately be newer than the agent-tools bytes Dockerfile.dev consumes.
+BUNDLED_TOOL_LABELS = {
+    "dev.hoop.agent-tools.kubectl.version": "kubectl",
+    "dev.hoop.agent-tools.sqlcmd.version": "sqlcmd",
+    "dev.hoop.agent-tools.mongosh.version": "mongosh",
+    "dev.hoop.agent-tools.mongodb-tools.version": "mongodb-tools",
+    "dev.hoop.agent-tools.node.version": "node",
+    "dev.hoop.agent-tools.aws-cli.version": "aws-cli",
+    "dev.hoop.agent-tools.gcloud.version": "gcloud",
+    "dev.hoop.agent-tools.gke-gcloud-auth-plugin.version": "gke-gcloud-auth-plugin",
 }
 # Only the fat agent bundles those CLIs; the gateway and slim agent do not.
 BUNDLED_TOOL_IMAGES = {"hoophq/hoopdev"}
@@ -78,8 +85,13 @@ VISIBILITY_RETRIES = 5
 VISIBILITY_DELAY_S = 10
 
 
-def _run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
-    return subprocess.run(cmd, **kw)
+def _run(
+    cmd: list[str],
+    *,
+    check: bool = False,
+    **kw,
+) -> subprocess.CompletedProcess:
+    return subprocess.run(cmd, check=check, **kw)
 
 
 def resolve_image(ref: str):
@@ -145,7 +157,6 @@ def trivy(cache: str, outdir: str, *args: str) -> None:
     _run(
         [
             "docker", "run", "--rm",
-            "-e", "TRIVY_USERNAME", "-e", "TRIVY_PASSWORD",
             "-v", f"{cache}:/root/.cache/trivy",
             "-v", f"{outdir}:/out",
             TRIVY_IMAGE, *args,
@@ -179,33 +190,38 @@ def component_count(cdx_path: str) -> int:
         return len(json.load(f).get("components", []) or [])
 
 
-def bundled_tools() -> dict:
-    """Read bundled-CLI versions from Dockerfile.tools' ARG defaults.
 
-    Best-effort: an ARG that is renamed or removed is simply omitted (the SBOMs
-    still carry the full component inventory), so this never fails the release.
-    """
-    try:
-        with open(TOOLS_DOCKERFILE) as f:
-            text = f.read()
-    except OSError:
+
+def bundled_tools_from_image(ref: str) -> dict[str, str]:
+    """Read bundled-tool provenance labels from an exact image digest."""
+    cp = _run(
+        ["docker", "buildx", "imagetools", "inspect", ref,
+         "--format", "{{json .Image.Config.Labels}}"],
+        capture_output=True, text=True,
+    )
+    if cp.returncode != 0 or not cp.stdout.strip():
         return {}
-    out: dict[str, str] = {}
-    for arg, name in BUNDLED_TOOL_ARGS.items():
-        m = re.search(rf"^ARG {arg}=(.+)$", text, re.MULTILINE)
-        if m:
-            out[name] = m.group(1).strip()
-    return out
+    try:
+        labels = json.loads(cp.stdout)
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(labels, dict):
+        return {}
+    return {
+        name: str(labels[label])
+        for label, name in BUNDLED_TOOL_LABELS.items()
+        if labels.get(label)
+    }
 
 
 def scan_platform(cache: str, outdir: str, scan_ref: str, short: str,
                   platform: str, use_platform: bool) -> dict:
     """Generate per-platform SBOMs + vuln summary; return the manifest entry.
 
-    scan_ref is an immutable digest reference (repo@sha256:...) for a resolved
-    multi-arch child, so the SBOM describes exactly the bytes recorded in the
-    manifest even if the tag moves between resolve and scan. Only the non-index
-    fallback scans by tag, pinning the arch with --platform.
+    scan_ref is normally an immutable digest reference (repo@sha256:...), so
+    the SBOM describes exactly the bytes recorded in the manifest even if the
+    release tag moves. use_platform is only a defensive fallback for malformed
+    index metadata that lacks a child digest.
     """
     arch = platform.split("/")[-1]
     base = f"{short}-{arch}"
@@ -255,30 +271,37 @@ def main() -> int:
     }
 
     produced = False
-    tools = bundled_tools()
+    missing_required: list[str] = []
     for repo, suffix in IMAGE_REPOS:
         ref = f"{repo}:{tag}{suffix}"
         short = repo.split("/")[-1] + suffix
         resolved = resolve_image(ref)
         if resolved is None:
-            print(f"::warning::{ref} not visible after retries; skipping SBOM/manifest entry")
+            print(f"::error::{ref} not visible after retries; required release SBOM is incomplete")
+            missing_required.append(ref)
             continue
         index_digest, children = resolved
+        available = {platform for platform, digest in children.items() if digest}
+        missing_platforms = sorted(REQUIRED_PLATFORMS - available)
+        if missing_platforms:
+            print(f"::error::{ref} is missing required platforms: {', '.join(missing_platforms)}")
+            missing_required.append(ref)
+            continue
         # A published tag is normally a multi-arch index. If it is instead a
         # single manifest, resolve its real platform (never assume one) and scan
         # it by its own digest (== index_digest); skip if the platform is unknown.
         if children:
             platforms = children
         else:
-            plat = single_platform(ref)
+            plat = single_platform(f"{repo}@{index_digest}")
             if not plat:
-                print(f"::warning::{ref} is a single manifest of unknown platform; skipping SBOM/manifest entry")
+                print(f"::error::{ref} is a single manifest of unknown platform; cannot record which platform it covers")
+                missing_required.append(ref)
                 continue
             platforms = {plat: index_digest}
 
         entry = {"index_digest": index_digest, "platforms": {}}
-        if repo in BUNDLED_TOOL_IMAGES and tools:
-            entry["bundled_tools"] = tools
+        platform_tools: list[dict[str, str]] = []
         for platform, child_digest in sorted(platforms.items()):
             print(f"Generating SBOMs for {ref} ({platform})")
             # Scan the immutable child digest so the SBOM matches the manifest.
@@ -287,10 +310,31 @@ def main() -> int:
             else:
                 scan_ref, use_platform = ref, True
             plat_entry = scan_platform(cache, outdir, scan_ref, short, platform, use_platform)
+            if repo in BUNDLED_TOOL_IMAGES:
+                tools = bundled_tools_from_image(scan_ref)
+                if tools:
+                    plat_entry["bundled_tools"] = tools
+                    platform_tools.append(tools)
+                else:
+                    print(f"::error::{scan_ref} lacks bundled-tool provenance labels")
+                    missing_required.append(f"{ref} ({platform}) bundled-tool labels")
             plat_entry["digest"] = child_digest
             entry["platforms"][platform] = plat_entry
+        if platform_tools and len(platform_tools) == len(platforms):
+            if all(tools == platform_tools[0] for tools in platform_tools[1:]):
+                entry["bundled_tools"] = platform_tools[0]
+            else:
+                print(f"::warning::{ref} bundled-tool versions differ by platform; see platform entries")
         manifest["images"][ref] = entry
         produced = True
+
+    if missing_required:
+        print(
+            "::error::required release artifacts incomplete: "
+            + ", ".join(sorted(set(missing_required))),
+            file=sys.stderr,
+        )
+        return 1
 
     if not produced:
         print("::warning::no images resolved; nothing to attach", file=sys.stderr)

@@ -27,6 +27,9 @@ on:
     paths:
       - Dockerfile.tools
       - licenses/manual-binaries.toml
+      - licenses/agent-tools-checksums.sha256
+      - scripts/ci/verify-manual-download.py
+      - scripts/ci/check-download-verification.py
       - scripts/ci/check-manual-binaries.py
       - scripts/ci/check-forbidden-licenses.py
       - .github/workflows/agent-tools-build.yml
@@ -35,6 +38,9 @@ on:
     paths:
       - Dockerfile.tools
       - licenses/manual-binaries.toml
+      - licenses/agent-tools-checksums.sha256
+      - scripts/ci/verify-manual-download.py
+      - scripts/ci/check-download-verification.py
       - scripts/ci/check-manual-binaries.py
       - scripts/ci/check-forbidden-licenses.py
       - .github/workflows/agent-tools-build.yml
@@ -97,6 +103,18 @@ jobs:
             exit 1
           fi
 
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      # Static gate on the recipe itself, before any build: every hand-installed
+      # download must be checksum-verified in the same RUN that fetches it, and
+      # none may come from a mutable "latest" path. Cheap, and it fails the PR
+      # that introduces the gap rather than the image scan weeks later.
+      - name: Gate on unverified downloads
+        run: python3 scripts/ci/check-download-verification.py Dockerfile.tools
+
   build-amd64:
     runs-on: ubuntu-latest
     name: Build ${{ matrix.train }} (amd64)
@@ -108,9 +126,11 @@ jobs:
         train: [legacy, clean]
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - name: Compute train build parameters
         id: p
         run: |
@@ -120,7 +140,7 @@ jobs:
             echo "tag=${{ needs.meta.outputs.tag }}-amd64" >> "$GITHUB_OUTPUT"
           fi
       - name: Build image
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           file: ./Dockerfile.tools
           context: '.'
@@ -174,7 +194,7 @@ jobs:
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -v /tmp/license-scan:/scan \
-            aquasec/trivy:0.72.0 image \
+            aquasec/trivy@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f image \
             --scanners license \
             --format json \
             --quiet \
@@ -210,7 +230,7 @@ jobs:
         run: |
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
-            aquasec/trivy:0.72.0 image \
+            aquasec/trivy@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f image \
             --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed \
             --quiet --format json \
             "hoophq/agent-tools:${{ steps.p.outputs.tag }}" > trivy-vuln.json || true
@@ -226,7 +246,7 @@ jobs:
 
       - name: Login to Docker Hub
         if: needs.meta.outputs.publish == 'true'
-        uses: docker/login-action@v2
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           username: ${{ secrets.DOCKER_LOGIN }}
           password: ${{ secrets.DOCKER_PASSWORD }}
@@ -248,15 +268,11 @@ jobs:
         train: [legacy, clean]
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-      - name: Login to Docker Hub
-        if: needs.meta.outputs.publish == 'true'
-        uses: docker/login-action@v2
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          username: ${{ secrets.DOCKER_LOGIN }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          persist-credentials: false
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - name: Compute train build parameters
         id: p
         run: |
@@ -266,7 +282,7 @@ jobs:
             echo "tag=${{ needs.meta.outputs.tag }}-arm64" >> "$GITHUB_OUTPUT"
           fi
       - name: Build image
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           file: ./Dockerfile.tools
           context: '.'
@@ -315,7 +331,7 @@ jobs:
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
             -v /tmp/license-scan:/scan \
-            aquasec/trivy:0.72.0 image \
+            aquasec/trivy@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f image \
             --scanners license \
             --format json \
             --quiet \
@@ -345,7 +361,7 @@ jobs:
         run: |
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
-            aquasec/trivy:0.72.0 image \
+            aquasec/trivy@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f image \
             --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed \
             --quiet --format json \
             "hoophq/agent-tools:${{ steps.p.outputs.tag }}" > trivy-vuln.json || true
@@ -359,6 +375,12 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Login to Docker Hub
+        if: needs.meta.outputs.publish == 'true'
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          username: ${{ secrets.DOCKER_LOGIN }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
       - name: Push
         if: needs.meta.outputs.publish == 'true'
         run: docker push "hoophq/agent-tools:${{ steps.p.outputs.tag }}"
@@ -373,7 +395,7 @@ jobs:
         train: [legacy, clean]
     steps:
       - name: Login to Docker Hub
-        uses: docker/login-action@v2
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           username: ${{ secrets.DOCKER_LOGIN }}
           password: ${{ secrets.DOCKER_PASSWORD }}
@@ -400,7 +422,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           token: ${{ secrets.GH_TOKEN }}
       - name: Bump base references and open PR

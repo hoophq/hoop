@@ -1,0 +1,39 @@
+# Reviewed SHA-256 pins for every archive Dockerfile.tools installs by hand.
+# Sources: Kubernetes release checksums, AWS CLI versioned archives,
+# microsoft/go-sqlcmd GitHub Release assets, the AWS Session Manager plugin,
+# MongoDB's published archive digests, and Oracle Instant Client. A version
+# bump must update both architectures here before either agent-tools train can
+# build or publish.
+#
+# Anything fetched with curl/wget and then installed or executed belongs here:
+# apt has its own signature chain, but these downloads have none, and several
+# run code at build time (dpkg maintainer scripts, sqlplus -V).
+3473e14c7b024a6e5403c6401b273b3faff8e5b1fed022d633815eb3168e4516  kubectl-v1.29.15-linux-amd64
+a41984dc0ff34ee05f1283ebd9b3121c003b3469b97214738246faa5b6788f7c  kubectl-v1.29.15-linux-arm64
+ebbd080e7c2e275093b55915722043257eb24004363e20acb3c4d71919f88336  kubectl-v1.36.3-linux-amd64
+3d86f24401c41ae5a46ac50eef8865fe891d3647d324a0836f6c63757a126e62  kubectl-v1.36.3-linux-arm64
+bd9094f7ca6a4e8c9e39c67c2d5bfa32111cc82adc3e0a9584578d2bf3b336e6  awscli-exe-linux-x86_64-2.28.6.zip
+3833ff8891fe1416150b19e4bc1776b3dbad47898f85c3a6e52e37539bbe60a9  awscli-exe-linux-aarch64-2.28.6.zip
+43b34875482244039716cc3725d1f60e7d47ef3cfb2a19e114759a46db24dc30  awscli-exe-linux-x86_64-2.36.14.zip
+61e2fb72b36dc0ad98912b3a7b7469c886b90ea703f1096428a152ab09babd8a  awscli-exe-linux-aarch64-2.36.14.zip
+ee0a9b2d55d57a41b2225cf1392642a683d2be05c8511aeeb45f9108e9d945b8  sqlcmd-linux-amd64-v1.8.2.tar.bz2
+17e3dc449c178d73d9e644459c4cf16c29ea77afbb7f1f226db32ff83240ac3c  sqlcmd-linux-arm64-v1.8.2.tar.bz2
+92516d98c63d99b0994de5b61350c91f6915f9b76f139a59039fbcb225c2e987  sqlcmd-linux-amd64-v1.10.0.tar.bz2
+9faaa981f9c374f319ac796dedb4678499b8596c87d5b6c512e9b0e7a3b74f8e  sqlcmd-linux-arm64-v1.10.0.tar.bz2
+# AWS Session Manager plugin. Pinned to a version path: the plugin/latest/
+# prefix is mutable, so it can neither be reviewed nor pinned, and `dpkg -i`
+# runs this package's maintainer scripts as root at build time.
+7c6dcad12518571cc7959a713e6a8ae1bdf6ed66fd9bee37dc189e39ca58ae03  session-manager-plugin-1.2.835.0-ubuntu_64bit.deb
+0add94c4c8b6ca63f26e44fd655d662b0f6455a268b5b9ebebee0f462214e928  session-manager-plugin-1.2.835.0-ubuntu_arm64.deb
+# Legacy MongoDB 5.0 shell (SSPL, legacy train only). Digests confirmed against
+# the .sha256 sidecars MongoDB publishes next to each archive.
+42c4d75352b2560abf50188186da98eb07290d136060266e12fc3989f8e363d4  mongodb-linux-x86_64-ubuntu2004-5.0.31.tgz
+6cd7ece06cd5ab248cf8a049e4edc68b6ed6573307fc3f5606a7d9e3076e5b73  mongodb-linux-aarch64-ubuntu2004-5.0.31.tgz
+# Oracle Instant Client + SQL*Plus, one version per arch. amd64 stays on the
+# 23.9 it has always been pinned to; arm64 pins the 23.26.1 that its previously
+# unversioned "current" URL serves today. Pinning both to 23.9 would have
+# downgraded arm64 agents, so the versions are deliberately not converged here.
+1ec48d4b3fc25d67de5426c0a77563dcb7698dc9ea9542c9e4530827c518a85d  instantclient-basic-linux.x64-23.9.0.25.07.zip
+0c9cd295409a715c8983a9622d5a2448687f6893f7e010418fb6b746ef71a020  instantclient-sqlplus-linux.x64-23.9.0.25.07.zip
+1acbebf8b7e708171fefc6612a6a668455e7e89ec7565a2a723a6cf754060af2  instantclient-basic-linux.arm64-23.26.1.0.0.zip
+2f182c7eb2f2f77858f5dcef9dee881375c6338774dd4164a2cfc416ff7aeb8a  instantclient-sqlplus-linux.arm64-23.26.1.0.0.zip

@@ -68,7 +68,32 @@ spec:
         - containerPort: 12222
           name: ssh
       {{- if .Values.defaultAgent.enabled }}
-      - image: '{{ .Values.defaultAgent.imageRepository | default "hoophq/hoopdev" }}:{{ .Values.defaultAgent.imageTag | default "latest" }}'
+      {{- $agentRepo := .Values.defaultAgent.imageRepository | default "hoophq/hoopdev" }}
+      {{- $agentTag := .Values.defaultAgent.imageTag | default "latest" }}
+      {{- /*
+        DEP-91: this sidecar runs hoop-default-agent.sh, which needs a shell and
+        psql. The slim hoophq/hoopagent flavours ship the hoop binary alone, so
+        pointing defaultAgent at one produces a container that crash-loops at
+        startup with no obvious cause. Fail the render instead, and say what to
+        use: a standalone agent Deployment (the hoopagent chart) is the right
+        place for a slim image.
+
+        Deliberately narrow. It matches only the official Docker Hub spellings
+        of that one repository, never a suffix: a private registry is free to
+        host a perfectly capable image at <registry>/hoophq/hoopagent, and
+        refusing to render someone's working sidecar is worse than the failure
+        this prevents. Mirrors of the real slim image are not caught, and that
+        is the intended trade.
+
+        The tag is read with any "@sha256:..." pin removed, so a digest-pinned
+        slim flavour is still recognised.
+      */}}
+      {{- $slimRepo := has $agentRepo (list "hoophq/hoopagent" "docker.io/hoophq/hoopagent" "index.docker.io/hoophq/hoopagent" "registry-1.docker.io/hoophq/hoopagent") }}
+      {{- $bareTag := (splitList "@" $agentTag) | first }}
+      {{- if and $slimRepo (or (hasSuffix "-minimal" $bareTag) (hasSuffix "-distroless" $bareTag)) }}
+      {{- fail (printf "defaultAgent image %s:%s is a slim hoopagent flavour, which cannot run the default-agent sidecar: it has no shell or psql. Use a hoophq/hoopdev tag here, or deploy the slim image as a standalone agent with the hoopagent chart." $agentRepo $agentTag) }}
+      {{- end }}
+      - image: '{{ $agentRepo }}:{{ $agentTag }}'
         name: defaultagent
         args:
         - hoop-default-agent.sh
