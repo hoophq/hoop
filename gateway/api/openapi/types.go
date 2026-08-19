@@ -155,7 +155,7 @@ type UserInfo struct {
 	// still be offered. On by default for every organization, so it is true for
 	// administrators of an organization that collects analytics, has run at
 	// least one session, never confirmed value, and has not declined within the
-	// last 7 days. Permanently false once value is confirmed, and always false
+	// last 3 days. Permanently false once value is confirmed, and always false
 	// for anonymous users, for an organization whose analytics mode is disabled,
 	// and for one that has never used the product.
 	ShowTtfvSurvey bool `json:"show_ttfv_survey"`

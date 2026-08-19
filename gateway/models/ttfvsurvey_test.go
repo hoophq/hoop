@@ -11,7 +11,7 @@ import (
 // ttfvCooldownDays mirrors the window services.ShouldShowTTFVSurvey passes in.
 // It is restated rather than imported so this file exercises the SQL at the
 // real width without the models package depending on the services package.
-const ttfvCooldownDays = 7
+const ttfvCooldownDays = 3
 
 // seedTTFVOrg creates an organization whose created_at is createdDaysAgo days
 // in the past, so a TTFV duration can be asserted without waiting.
@@ -110,10 +110,10 @@ func TestShouldShowTTFVSurvey(t *testing.T) {
 	// Bracket the cooldown boundary from both sides without landing on it, so
 	// the assertions cannot flake on clock resolution.
 	seedTTFVActiveOrg(t, orgDeclinedNow, "ttfv-declined-now", 30)
-	seedTTFVResponse(t, orgDeclinedNow, false, 6.95)
+	seedTTFVResponse(t, orgDeclinedNow, false, 2.95)
 
 	seedTTFVActiveOrg(t, orgDeclinedOld, "ttfv-declined-old", 30)
-	seedTTFVResponse(t, orgDeclinedOld, false, 7.05)
+	seedTTFVResponse(t, orgDeclinedOld, false, 3.05)
 
 	// Two declines then a yes: the yes is terminal regardless of the older rows,
 	// including the one that has already aged out of the cooldown.

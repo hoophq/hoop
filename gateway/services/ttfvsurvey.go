@@ -8,7 +8,14 @@ import (
 // ttfvSurveyCooldownDays is how long a "no" suppresses the survey. A "no" is
 // not terminal — TTFV is the moment an admin *first* says yes, so declining is
 // a data point that has to be recorded and then followed by another ask later.
-const ttfvSurveyCooldownDays = 7
+//
+// The window is also the resolution of the metric. Value is reached somewhere
+// between the last decline and the yes, but only the yes carries a timestamp,
+// so every measurement is inflated by up to one cooldown. Three days keeps that
+// error small without putting the question in front of a daily administrator
+// more than about twice a week; at one day anyone who does not log in daily
+// would meet it on essentially every visit.
+const ttfvSurveyCooldownDays = 3
 
 // TTFVSurveyAnswer is one validated survey submission. Activity is set only
 // when ReachedValue is true, and ActivityOther only alongside the "other"
