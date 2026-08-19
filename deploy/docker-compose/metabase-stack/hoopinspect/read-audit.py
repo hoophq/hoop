@@ -10,12 +10,67 @@ counts them and shows only the interesting rows.
 """
 
 import json
+import re
 import sys
 from collections import Counter
+from pathlib import Path
 
-# Values that exist in upstream/seed.sql and must never appear here. The audit
-# trail recording, in the clear, a value that masking removed would un-mask it.
-FORBIDDEN = ("ada@example.com", "user00001@example.com", "555-12-3456")
+# No value that masking removed may appear here in the clear: an audit trail
+# that records one un-masks it.
+#
+# The values are read out of the seed rather than written down, because a list
+# copied from another file goes stale the first time somebody adds a row, and
+# this check exists to catch exactly the value nobody remembered.
+SEED = Path(__file__).resolve().parent.parent / "upstream" / "seed.sql"
+
+# Columns ../hoopinspect/config.yaml masks, by name (ssn) or by the entity
+# their values carry (EMAIL_ADDRESS, US_SSN, BR_CPF, IBAN_CODE).
+PII_COLUMNS = {"email", "ssn", "cpf", "iban", "bank_iban", "actor_email"}
+
+# events is filled by a SELECT rather than by literal tuples, so the parser
+# below never sees its addresses. One of the generated series stands in for all
+# 5,000; ./demo.sh asserts the other 4,999 against the CSV export.
+GENERATED = ("user00001@example.com",)
+
+_INSERT = re.compile(r"INSERT\s+INTO\s+(\w+)\s*\(([^)]*)\)\s*VALUES(.*?);", re.I | re.S)
+_TUPLE = re.compile(r"\(([^()]*)\)")
+# A field is a quoted literal, doubled quotes included, or a bare token. The
+# quoted branch runs first, so a comma inside a value does not split a row.
+_FIELD = re.compile(r"'((?:[^']|'')*)'|([^,\s][^,]*)")
+
+
+def seeded_secrets(path):
+    """Every literal in seed.sql that sits in a column this lane masks."""
+    try:
+        body = path.read_text()
+    except OSError as err:
+        raise SystemExit(f"cannot read {path}: {err}")
+
+    found = set()
+    for stmt in _INSERT.finditer(body):
+        table, columns, values = stmt.group(1), stmt.group(2), stmt.group(3)
+        names = [c.strip().lower() for c in columns.split(",")]
+        for tup in _TUPLE.findall(values):
+            row = [
+                (m.group(1) if m.group(1) is not None else m.group(2)).replace("''", "'").strip()
+                for m in _FIELD.finditer(tup)
+            ]
+            # Fail loudly. A row this parser reads wrong is a row it stops
+            # covering, and a leak check that covers nothing still passes.
+            if len(row) != len(names):
+                raise SystemExit(
+                    f"{path}: cannot parse a row of {table}: "
+                    f"{len(row)} fields against {len(names)} columns"
+                )
+            found.update(
+                value
+                for name, value in zip(names, row)
+                if name in PII_COLUMNS and value and value.upper() != "NULL"
+            )
+
+    if not found:
+        raise SystemExit(f"{path}: found no maskable values, so the leak check proves nothing")
+    return found
 
 
 def readable(sql):
@@ -102,13 +157,16 @@ def main() -> int:
             print(f"        metabase {actor}")
 
     # The audit trail must never contain a value that masking removed.
+    forbidden = seeded_secrets(SEED) | set(GENERATED)
     blob = json.dumps(events)
-    leaks = [v for v in FORBIDDEN if v in blob]
+    leaks = sorted(v for v in forbidden if v in blob)
     print()
     if leaks:
-        print(f"  LEAK: masked values present in the audit trail: {leaks}")
+        print(f"  LEAK: {len(leaks)} masked values present in the audit trail:")
+        for value in leaks:
+            print(f"        {value}")
         return 1
-    print("  verified: no masked value appears in the audit trail")
+    print(f"  verified: none of the {len(forbidden)} seeded values appears in the audit trail")
     return 0
 
 
