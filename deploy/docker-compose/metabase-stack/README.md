@@ -442,10 +442,20 @@ Metabase publishes for Cloud.
 - **One shared credential.** See [Identity](#identity). The per-human signal
   is Metabase's own comment, which is attribution rather than authentication.
 
-- **Postgres only, in this stack.** hoopinspect ships postgres, http and
-  mssql codecs. Metabase's other warehouses (BigQuery, Snowflake, Redshift,
-  MySQL) need a codec for their wire protocol; that is a new `codec/<name>`
-  package and nothing else, but it does not exist today.
+- **Postgres only, in this stack.** hoopinspect ships postgres, http and mssql
+  codecs. What Metabase's other warehouses need depends on how their drivers
+  talk, and it is not one answer:
+
+  - **Redshift** speaks the PostgreSQL wire protocol on 5439, so the existing
+    postgres codec is the starting point, not a new package. Untested here:
+    Metabase uses the Amazon JDBC driver, which takes only `jdbc:redshift://`
+    and can negotiate lz4 compression on the wire, so the work is validating
+    that combination.
+  - **MySQL and MariaDB** are a real codec gap: a different wire protocol, so
+    a new `codec/mysql`.
+  - **Snowflake and BigQuery** are not a database wire protocol at all. Both
+    drivers are HTTPS clients against a vendor REST API, so the problem is
+    reading a vendor's JSON payload rather than framing a socket.
 
 - **The Metabase image is pinned** (`v0.63.13`). `provision.py` drives a real
   API that carries no stability guarantee. Bump it deliberately and re-run
