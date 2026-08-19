@@ -113,20 +113,24 @@ func SignLicense(c *gin.Context) {
 	if features == nil {
 		features = []string{}
 	}
+	properties := map[string]any{
+		"org-id":        ctx.OrgID,
+		"license-type":  l.Payload.Type,
+		"description":   l.Payload.Description,
+		"allowed-hosts": l.Payload.AllowedHosts,
+		"features":      features,
+		"key-id":        l.KeyID,
+		"issued-at":     time.Unix(l.Payload.IssuedAt, 0).UTC().Format(time.RFC3339),
+		"expire-at":     time.Unix(l.Payload.ExpireAt, 0).UTC().Format(time.RFC3339),
+		"valid-for":     req.ExpireAt,
+	}
+	// Omitted rather than empty, so "customer-email is set" filters stay honest.
+	if req.CustomerEmail != "" {
+		properties["customer-email"] = req.CustomerEmail
+	}
 	trackClient := analytics.New()
 	defer trackClient.Close()
-	trackClient.Track(ctx.UserID, analytics.EventLicenseSigned, map[string]any{
-		"org-id":         ctx.OrgID,
-		"customer-email": req.CustomerEmail,
-		"license-type":   l.Payload.Type,
-		"description":    l.Payload.Description,
-		"allowed-hosts":  l.Payload.AllowedHosts,
-		"features":       features,
-		"key-id":         l.KeyID,
-		"issued-at":      time.Unix(l.Payload.IssuedAt, 0).UTC().Format(time.RFC3339),
-		"expire-at":      time.Unix(l.Payload.ExpireAt, 0).UTC().Format(time.RFC3339),
-		"valid-for":      req.ExpireAt,
-	})
+	trackClient.Track(ctx.UserID, analytics.EventLicenseSigned, properties)
 
 	c.JSON(http.StatusOK, l)
 }

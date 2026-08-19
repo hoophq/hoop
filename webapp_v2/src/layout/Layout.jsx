@@ -92,8 +92,6 @@ function Layout({ children }) {
         </AppShell.Navbar>
 
         <AppShell.Main id="main-content" tabIndex={-1}>
-          {/* Above the page body and outside PageLayout's padding, so the
-              warning spans the content area on React and CLJS routes alike. */}
           <LicenseBanner />
           {children}
         </AppShell.Main>
