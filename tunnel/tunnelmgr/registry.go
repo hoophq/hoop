@@ -59,7 +59,7 @@ type ConnInfo struct {
 	SubType string
 	// Username and Password are the fixed local credentials a native
 	// client presents to reach this connection through the tunnel
-	// (DEP-142). They are placeholders accepted by the agent's protocol
+	// They are placeholders accepted by the agent's protocol
 	// proxy, never the connection's real secrets — see credentials.go.
 	// Both are empty for subtypes that authenticate out of band.
 	Username string

@@ -15,7 +15,8 @@ import (
 	pbclient "github.com/hoophq/hoop/common/proto/client"
 )
 
-// TestTunnelRawTCPRejectsPlaceholderCredentials pins the defect behind DEP-142.
+// TestTunnelRawTCPRejectsPlaceholderCredentials pins the defect this change
+// fixes.
 //
 // The tunnel (tunnel/client/pipe.go) relays every TCP-style connection —
 // postgres included — as pbagent.TCPConnectionWrite. That packet family lands

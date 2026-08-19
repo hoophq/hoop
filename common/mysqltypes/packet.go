@@ -83,8 +83,16 @@ func CopyBuffer(dst io.Writer, src io.Reader) error {
 			}
 			return err
 		}
-		if _, err := dst.Write(pkt.Encode()); err != nil {
+		encoded := pkt.Encode()
+		n, err := dst.Write(encoded)
+		if err != nil {
 			return err
+		}
+		// io.Writer permits a short write with a nil error. Forwarding a
+		// truncated packet would desynchronise the peer's decoder, which
+		// frames on the length prefix we just cut in half.
+		if n != len(encoded) {
+			return io.ErrShortWrite
 		}
 	}
 }

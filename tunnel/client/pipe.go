@@ -201,7 +201,7 @@ func runPipe(ctx context.Context, transport pb.ClientTransport, local io.ReadWri
 //     agent's libhoop proxy, which terminates the client's authentication
 //     locally and re-authenticates upstream with the connection's stored
 //     secrets. That is what lets a client present the fixed local
-//     noop/noop placeholder (DEP-142) and what makes DLP, guardrails and
+//     noop/noop placeholder, and what makes DLP, guardrails and
 //     query-level audit work.
 //   - The raw TCP family routes to the agent's byte relay, which dials the
 //     upstream and copies verbatim. The client faces the database's own
@@ -410,17 +410,14 @@ func pumpBytes(ctx context.Context, transport pb.ClientTransport, local io.ReadW
 
 	transport.StartKeepAlive()
 
-	// Track who finished first so we know what error (if any) to surface.
+	// Record the first terminating outcome; later ones are ignored so the
+	// surfaced error is the one that actually ended the pipe.
 	var (
 		once    sync.Once
 		exitErr error
-		done    = make(chan struct{})
 	)
 	finish := func(err error) {
-		once.Do(func() {
-			exitErr = err
-			close(done)
-		})
+		once.Do(func() { exitErr = err })
 	}
 
 	pumpCtx, cancel := context.WithCancel(ctx)
@@ -444,6 +441,11 @@ func pumpBytes(ctx context.Context, transport pb.ClientTransport, local io.ReadW
 	}
 
 	// local -> gateway
+	//
+	// A clean end here is a TCP half-close: the client shut its write side
+	// after sending a request and is still waiting to read the answer. It is
+	// therefore NOT a reason to end the pipe — only a hard write error is.
+	writeErr := make(chan error, 1)
 	go func() {
 		writer := pb.NewStreamWriter(transport, prof.agentWrite, spec)
 		// Protocol families need whole packets per write (see
@@ -457,41 +459,63 @@ func pumpBytes(ctx context.Context, transport pb.ClientTransport, local io.ReadW
 		}
 		// Signal regardless of how the copy ended (EOF, error, or peer close
 		// cancelling our context): the gateway needs a definitive signal that
-		// the client side is done.
+		// the client side is done sending.
 		sendClose()
 		if err != nil && !isClosedConnErr(err) {
-			finish(fmt.Errorf("local->gateway: %w", err))
+			writeErr <- fmt.Errorf("local->gateway: %w", err)
 			return
 		}
-		finish(nil)
+		writeErr <- nil
 	}()
 
 	// gateway -> local
+	//
+	// The reader owns termination: it returns when the gateway ends the
+	// exchange (TCPConnectionClose / SessionClose / stream EOF), which is the
+	// only signal that no more response bytes are coming.
+	readDone := make(chan error, 1)
 	go func() {
 		err := readFromGateway(pumpCtx, transport, local, prof.clientWrite)
 		// Closing the local conn unblocks the local->gateway copy when the
 		// gateway side died first.
 		_ = local.Close()
 		if err != nil && !errors.Is(err, io.EOF) && !isClosedConnErr(err) {
-			finish(fmt.Errorf("gateway->local: %w", err))
+			readDone <- fmt.Errorf("gateway->local: %w", err)
 			return
 		}
-		finish(nil)
+		readDone <- nil
 	}()
 
-	// Return as soon as EITHER direction terminates; do not wait for both.
+	// Wait for the reader, a hard write error, or cancellation.
 	//
-	// The reader is parked in transport.Recv(), which honours neither ctx nor
-	// a half-closed session: the protocol proxies (unlike the raw TCP relay)
-	// do not echo a close packet back to the client when the agent tears their
-	// upstream down, so nothing would ever wake it. The caller's deferred
-	// transport.Close() is what releases it — which cannot happen if we block
-	// here.
+	// We deliberately do NOT wait for the writer's clean finish: that is the
+	// half-close above, and returning on it would close the socket while the
+	// gateway's response is still in flight.
+	//
+	// We also do not wait for BOTH goroutines. The reader parks in
+	// transport.Recv(), which honours neither ctx nor a half-closed session,
+	// so on the cancellation path the caller's deferred transport.Close() is
+	// what releases it — and that cannot happen while we block here.
 	select {
-	case <-done:
+	case err := <-readDone:
+		finish(err)
+	case err := <-writeErr:
+		if err != nil {
+			finish(err)
+			break
+		}
+		// Clean half-close: keep draining until the gateway is done, the
+		// caller cancels, or the reader fails.
+		select {
+		case rerr := <-readDone:
+			finish(rerr)
+		case <-ctx.Done():
+			finish(ctx.Err())
+		}
 	case <-ctx.Done():
 		finish(ctx.Err())
 	}
+
 	// Unblock whichever goroutine is still running and respects pumpCtx, and
 	// make sure the agent heard about the close even if the writer never got
 	// that far.

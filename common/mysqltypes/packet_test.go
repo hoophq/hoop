@@ -185,3 +185,23 @@ func (r *oneByteReader) Read(p []byte) (int, error) {
 	r.pos++
 	return 1, nil
 }
+
+// shortWriter accepts only the first n bytes of every write and reports no
+// error, which io.Writer explicitly permits. A relay that ignored the count
+// would forward a truncated packet and desync the peer's decoder.
+type shortWriter struct{ accept int }
+
+func (w shortWriter) Write(p []byte) (int, error) {
+	if len(p) > w.accept {
+		return w.accept, nil
+	}
+	return len(p), nil
+}
+
+func TestCopyBufferRejectsShortWrite(t *testing.T) {
+	stream := encode(0, bytes.Repeat([]byte("x"), 128))
+	err := CopyBuffer(shortWriter{accept: 4}, bytes.NewReader(stream))
+	if !errors.Is(err, io.ErrShortWrite) {
+		t.Fatalf("want io.ErrShortWrite for a truncated forward, got %v", err)
+	}
+}

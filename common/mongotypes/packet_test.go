@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
+	"io"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -172,3 +174,23 @@ func TestCopyBufferTruncatedMessageErrors(t *testing.T) {
 type writerFunc func(p []byte) (int, error)
 
 func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
+
+// shortWriter accepts only the first n bytes of every write and reports no
+// error, which io.Writer explicitly permits. A relay that ignored the count
+// would forward a truncated message and desync the peer's decoder.
+type shortWriter struct{ accept int }
+
+func (w shortWriter) Write(p []byte) (int, error) {
+	if len(p) > w.accept {
+		return w.accept, nil
+	}
+	return len(p), nil
+}
+
+func TestCopyBufferRejectsShortWrite(t *testing.T) {
+	msg := newRawPacket(16+128, bytes.Repeat([]byte("x"), 128))
+	err := CopyBuffer(shortWriter{accept: 4}, bytes.NewReader(msg))
+	if !errors.Is(err, io.ErrShortWrite) {
+		t.Fatalf("want io.ErrShortWrite for a truncated forward, got %v", err)
+	}
+}

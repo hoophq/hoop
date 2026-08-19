@@ -169,7 +169,7 @@ func waitForSent(t *testing.T, ft *fakeTransport, n int, within time.Duration) [
 
 // --- tests ---
 
-// TestRunPipe_HappyPath_PostgresProtocolFamily pins the DEP-142 contract: a
+// TestRunPipe_HappyPath_PostgresProtocolFamily pins the core contract: a
 // postgres flow rides the PG protocol family, not the raw TCP relay.
 //
 // That routing is what makes the tunnel's fixed local credentials work. The

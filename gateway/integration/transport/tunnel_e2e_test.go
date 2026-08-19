@@ -29,7 +29,8 @@ const (
 	tunnelPassword = "noop"
 )
 
-// TestTunnelAcceptsFixedCredentials is the DEP-142 acceptance test.
+// TestTunnelAcceptsFixedCredentials is the acceptance test for the tunnel's
+// fixed credentials.
 //
 // It is the whole stack, unmocked: a real `lib/pq` client speaks the
 // PostgreSQL wire protocol to a local listener, every accepted flow is handed
@@ -40,7 +41,7 @@ const (
 // The client authenticates with the fixed noop/noop placeholders that
 // `hsh tunnel ls` advertises, and never sees the database's real
 // credentials. If the tunnel routed this flow onto the raw TCP relay (the
-// pre-DEP-142 behaviour) the client would be handed the backend's own SASL
+// behaviour this replaced) the client would be handed the backend's own SASL
 // challenge and the query would fail.
 func TestTunnelAcceptsFixedCredentials(t *testing.T) {
 	for _, c := range transports() {
@@ -97,8 +98,8 @@ func TestTunnelAcceptsFixedCredentials(t *testing.T) {
 //
 // Guardrails are evaluated by the agent's protocol proxy, which has to parse
 // the query to apply them. The raw TCP relay cannot: it copies bytes verbatim,
-// which is why agent/controller/tcp.go refuses guarded sessions outright
-// (DEP-48). Before this change every tunnelled database flow took that relay,
+// which is why agent/controller/tcp.go refuses guarded sessions outright.
+// Before this change every tunnelled database flow took that relay,
 // so a guarded connection was simply unusable over the tunnel.
 //
 // Now the flow reaches the real proxy, so the rule is enforced: a denied query
