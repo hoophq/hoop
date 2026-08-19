@@ -91,8 +91,8 @@ func TestShouldShowTTFVSurvey(t *testing.T) {
 	// ordinary organization with nothing configured must be asked.
 	seedTTFVActiveOrg(t, orgNeverAnswered, "ttfv-never-answered", 30)
 
-	// Signed up but never ran anything, so "did you get done what you came here
-	// to do?" has nothing to refer to. Old enough that no age threshold would
+	// Signed up but never ran anything, so "have you gotten what you needed
+	// yet?" has nothing to refer to. Old enough that no age threshold would
 	// have caught it — the precondition is activity, not the calendar.
 	seedTTFVOrg(t, orgNoSessions, "ttfv-no-sessions", 30)
 
@@ -182,7 +182,7 @@ func TestCreateTTFVSurveyResponse(t *testing.T) {
 		// closes the survey — cannot pass merely because it was never eligible.
 		seedTTFVActiveOrg(t, orgID, "ttfv-create", 10)
 
-		activity := "connected-infra-resource"
+		activity := "saw-guardrail-applied"
 		detail := "Configured SSO"
 		measurement, err := models.CreateTTFVSurveyResponse(models.DB, &models.TTFVSurveyResponse{
 			OrgID:         orgID,

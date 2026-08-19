@@ -151,7 +151,7 @@ type UserInfo struct {
 	// administrators of an organization that has not completed onboarding, and
 	// permanently false once it has.
 	ShowSetupChecklist bool `json:"show_setup_checklist"`
-	// Whether the "Did you get done what you came here to do?" survey should
+	// Whether the "Have you gotten what you needed yet?" survey should
 	// still be offered. On by default for every organization, so it is true for
 	// administrators of an organization that collects analytics, has run at
 	// least one session, never confirmed value, and has not declined within the
@@ -1491,15 +1491,16 @@ type OrgOnboardingResponse struct {
 // not an answer and must not be submitted. Whether the survey should be offered
 // at all is read from show_ttfv_survey on the /userinfo payload.
 type TTFVSurveyRequest struct {
-	// Whether the user got done what they came to do. Required; a pointer so
+	// Whether the user has gotten what they needed yet. Required; a pointer so
 	// that an explicit false is told apart from an omitted field
 	ReachedValue *bool `json:"reached_value" binding:"required" example:"true"`
 	// The activity that delivered the value. Required when reached_value is
-	// true, ignored and stored as null otherwise
-	Activity string `json:"activity" enums:"connected-infra-resource,approved-or-denied-access-request,reviewed-recorded-session,created-or-activated-policy,opened-ai-analyzed-session-report,set-up-data-masking-rule,other" example:"connected-infra-resource"`
+	// true, ignored and stored as null otherwise. Every option names something
+	// the administrator perceived, never something they configured
+	Activity string `json:"activity" enums:"saw-guardrail-applied,saw-data-masked,approved-or-denied-access-request,reviewed-recorded-session,opened-ai-analyzed-session-report,other" example:"saw-guardrail-applied"`
 	// Free text detail, at most 255 characters. Required when activity is
 	// "other", ignored and stored as null otherwise
-	ActivityOther string `json:"activity_other" example:"Configured SSO"`
+	ActivityOther string `json:"activity_other" example:"Watched a query get masked in a live session"`
 }
 
 var FeatureList = []string{"ask-ai"}

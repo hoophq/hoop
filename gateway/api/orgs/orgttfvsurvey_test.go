@@ -2,6 +2,8 @@ package apiorgs
 
 import (
 	"net/http/httptest"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -26,9 +28,9 @@ func TestValidateTTFVAnswer(t *testing.T) {
 			name: "a confirmed value keeps its activity",
 			req: openapi.TTFVSurveyRequest{
 				ReachedValue: ptr(true),
-				Activity:     "connected-infra-resource",
+				Activity:     "saw-guardrail-applied",
 			},
-			wantActivity: ptr("connected-infra-resource"),
+			wantActivity: ptr("saw-guardrail-applied"),
 		},
 		{
 			// A decline is the answer that has to keep working: it is what
@@ -146,12 +148,12 @@ func TestTTFVEventProperties(t *testing.T) {
 	t.Run("a confirmed value reports the activity and the duration", func(t *testing.T) {
 		props := ttfvEventProperties("org-1", services.TTFVSurveyAnswer{
 			ReachedValue: true,
-			Activity:     ptr("connected-infra-resource"),
+			Activity:     ptr("saw-guardrail-applied"),
 		}, measured)
 
 		assertProp(t, props, "org-id", "org-1")
 		assertProp(t, props, "reached-value", true)
-		assertProp(t, props, "activity", "connected-infra-resource")
+		assertProp(t, props, "activity", "saw-guardrail-applied")
 		assertProp(t, props, "org-created-at", "2026-07-01T12:00:00Z")
 		assertProp(t, props, "ttfv-seconds", int64(864000))
 	})
@@ -234,6 +236,38 @@ func assertProp(t *testing.T, props map[string]any, key string, want any) {
 // survives binding. A plain bool would make false indistinguishable from an
 // omitted field, and required would then reject every decline — the survey
 // would become terminal on the first one, which is the opposite of the policy.
+// The activity identifiers exist in three places: this validator, the enums tag
+// on openapi.TTFVSurveyRequest that publishes them, and constants.js in the
+// webapp that renders them. Nothing links the three, and every way they can
+// drift is silent — an option the widget offers but the API rejects is a 400 the
+// user sees as a broken form, and one the API accepts but no report knows about
+// is a row nobody counts. So the list is pinned literally here, and the tag is
+// asserted to agree with it. Changing an identifier should mean changing this
+// test, the webapp, and saying so on the ticket.
+func TestTTFVActivityContract(t *testing.T) {
+	want := []string{
+		"saw-guardrail-applied",
+		"saw-data-masked",
+		"approved-or-denied-access-request",
+		"reviewed-recorded-session",
+		"opened-ai-analyzed-session-report",
+		"other",
+	}
+	if !slices.Equal(validTTFVActivities, want) {
+		t.Errorf("validTTFVActivities = %v, want %v", validTTFVActivities, want)
+	}
+
+	// The published contract is the struct tag, not the slice: the frontend
+	// reads the generated OpenAPI, so a tag that disagrees is a documented lie.
+	field, ok := reflect.TypeOf(openapi.TTFVSurveyRequest{}).FieldByName("Activity")
+	if !ok {
+		t.Fatal("openapi.TTFVSurveyRequest has no Activity field")
+	}
+	if got := strings.Split(field.Tag.Get("enums"), ","); !slices.Equal(got, want) {
+		t.Errorf("enums tag = %v, want %v", got, want)
+	}
+}
+
 func TestTTFVSurveyRequestBinding(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	for _, tc := range []struct {

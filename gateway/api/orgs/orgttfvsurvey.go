@@ -21,18 +21,25 @@ import (
 // ttfvActivityOther is the single option that also carries free text.
 const ttfvActivityOther = "other"
 
-// validTTFVActivities are the accepted answers to "what did you get done?".
-// These identifiers are the analytics contract and are duplicated in
+// validTTFVActivities are the accepted answers to "what have you gotten done so
+// far?". These identifiers are the analytics contract and are duplicated in
 // webapp_v2/src/features/TtfvSurvey/constants.js: renaming one breaks the TTFV
 // reports and the widget at the same time, so add new options instead of
 // repurposing existing ones. The user-facing labels live in the webapp.
+//
+// Every option names a moment the administrator *perceived* something, never a
+// moment they configured something. That is the bar a new option has to clear.
+// Connecting a resource, creating a policy and setting up a masking rule were
+// all removed or reworded for failing it: value backed by one of those would
+// stamp TTFV at the instant setup finished, which is the very thing this metric
+// exists to distinguish itself from. Hence "saw-guardrail-applied" rather than
+// the rule being created.
 var validTTFVActivities = []string{
-	"connected-infra-resource",
+	"saw-guardrail-applied",
+	"saw-data-masked",
 	"approved-or-denied-access-request",
 	"reviewed-recorded-session",
-	"created-or-activated-policy",
 	"opened-ai-analyzed-session-report",
-	"set-up-data-masking-rule",
 	ttfvActivityOther,
 }
 
@@ -83,7 +90,7 @@ func validateTTFVAnswer(req openapi.TTFVSurveyRequest) (services.TTFVSurveyAnswe
 // PostOrgTTFVSurvey
 //
 //	@Summary		Answer TTFV Survey
-//	@Description	Record whether an administrator got done what they came to do, and measure the time since the organization was created. A confirmed value is terminal — the organization is never asked again and a second attempt returns 409 — while a decline is recorded and followed by another ask after a cooldown. Dismissing the widget is not an answer and must not be submitted.
+//	@Description	Record whether an administrator has gotten what they needed yet, and measure the time since the organization was created. The question is cumulative rather than scoped to the current visit. A confirmed value is terminal — the organization is never asked again and a second attempt returns 409 — while a decline is recorded and followed by another ask after a cooldown. Dismissing the widget is not an answer and must not be submitted.
 //	@Tags			Server Management
 //	@Accept			json
 //	@Produce		json
