@@ -1495,6 +1495,18 @@ type WebhooksDashboardResponse struct {
 	URL string `json:"url" example:"https://app.svix.com/app_3ZT4NrDlps0Pjp6Af8L6pJMMh3/endpoints"`
 }
 
+// License states reported by the /serverinfo endpoint.
+const (
+	// LicenseStatusValid means the license verified against the embedded public
+	// key, is inside its validity window and is allowed on this host.
+	LicenseStatusValid = "valid"
+	// LicenseStatusExpired means the license is authentic but past expire_at.
+	LicenseStatusExpired = "expired"
+	// LicenseStatusInvalid covers every other verification failure: bad
+	// signature, host not allowed, malformed or missing attributes.
+	LicenseStatusInvalid = "invalid"
+)
+
 type ServerLicenseInfo struct {
 	// Public Key identifier of who signed the license
 	KeyID string `json:"key_id" example:"f2fb0c3143822b08be26f8fc5b703e0a6689e675"`
@@ -1508,6 +1520,12 @@ type ServerLicenseInfo struct {
 	ExpireAt int64 `json:"expire_at" example:"1722261422"`
 	// Report if the license is valid
 	IsValid bool `json:"is_valid"`
+	// Why the license is not valid, decided against the gateway clock. Clients
+	// should branch on this instead of comparing expire_at locally
+	// * valid - the license verified successfully
+	// * expired - the license is authentic but past its expiration date
+	// * invalid - the license could not be verified
+	Status string `json:"status" enums:"valid,expired,invalid" example:"valid"`
 	// The error returned when verifying the license
 	VerifyError string `json:"verify_error" example:"unable to verify license"`
 	// The verified host (API_URL env)

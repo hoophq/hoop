@@ -7081,6 +7081,16 @@
             "example": "f2fb0c3143822b08be26f8fc5b703e0a6689e675",
             "type": "string"
           },
+          "status": {
+            "description": "Why the license is not valid, decided against the gateway clock. Clients\nshould branch on this instead of comparing expire_at locally\n* valid - the license verified successfully\n* expired - the license is authentic but past its expiration date\n* invalid - the license could not be verified",
+            "enum": [
+              "valid",
+              "expired",
+              "invalid"
+            ],
+            "example": "valid",
+            "type": "string"
+          },
           "type": {
             "description": "The type of license",
             "enum": [

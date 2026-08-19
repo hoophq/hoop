@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/license"
 	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/analytics"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
@@ -55,6 +56,8 @@ type SignRequest struct {
 	ExpireAt     string   `json:"expire_at"`
 	// Features enabled by the license. Empty means all features are enabled.
 	Features []string `json:"features"`
+	// Optional, not part of the signed payload: it only feeds the analytics event.
+	CustomerEmail string `json:"customer_email" binding:"omitempty,email"`
 }
 
 // SignLicense
@@ -103,5 +106,27 @@ func SignLicense(c *gin.Context) {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed verifying license: %v", err)
 		return
 	}
+
+	// Signed licenses are never stored here, so this event is the only record of
+	// what was issued and to whom. Route is restricted to the signing org.
+	features := l.Payload.Features
+	if features == nil {
+		features = []string{}
+	}
+	trackClient := analytics.New()
+	defer trackClient.Close()
+	trackClient.Track(ctx.UserID, analytics.EventLicenseSigned, map[string]any{
+		"org-id":         ctx.OrgID,
+		"customer-email": req.CustomerEmail,
+		"license-type":   l.Payload.Type,
+		"description":    l.Payload.Description,
+		"allowed-hosts":  l.Payload.AllowedHosts,
+		"features":       features,
+		"key-id":         l.KeyID,
+		"issued-at":      time.Unix(l.Payload.IssuedAt, 0).UTC().Format(time.RFC3339),
+		"expire-at":      time.Unix(l.Payload.ExpireAt, 0).UTC().Format(time.RFC3339),
+		"valid-for":      req.ExpireAt,
+	})
+
 	c.JSON(http.StatusOK, l)
 }

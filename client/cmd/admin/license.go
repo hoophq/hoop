@@ -10,11 +10,12 @@ import (
 )
 
 var (
-	licenseFileFlag             string
-	licenseSignAllowedHostsFlag []string
-	licenseSignDescFlag         string
-	licenseSignExpireAtFlag     string
-	licenseSignFeaturesFlag     []string
+	licenseFileFlag              string
+	licenseSignAllowedHostsFlag  []string
+	licenseSignDescFlag          string
+	licenseSignExpireAtFlag      string
+	licenseSignFeaturesFlag      []string
+	licenseSignCustomerEmailFlag string
 )
 
 const (
@@ -29,6 +30,7 @@ func init() {
 	licenseSignCmd.Flags().StringVar(&licenseSignDescFlag, "description", "", "A description why this license was issued")
 	licenseSignCmd.Flags().StringVar(&licenseSignExpireAtFlag, "expire-at", "8640h", "The license expiration time")
 	licenseSignCmd.Flags().StringSliceVar(&licenseSignFeaturesFlag, "features", nil, "The features enabled by this license. Empty enables all features")
+	licenseSignCmd.Flags().StringVar(&licenseSignCustomerEmailFlag, "customer-email", "", "The email of the customer this license is issued to. Recorded in analytics only, not in the license itself")
 
 	licenseCmd.AddCommand(licenseSignCmd)
 	licenseCmd.AddCommand(licenseInstallCmd)
@@ -56,11 +58,12 @@ var licenseSignCmd = &cobra.Command{
 
 		apir := parseResourceOrDie([]string{"orglicense"}, "POST", "json")
 		req := map[string]any{
-			"license_type":  args[0],
-			"allowed_hosts": licenseSignAllowedHostsFlag,
-			"description":   licenseSignDescFlag,
-			"expire_at":     licenseSignExpireAtFlag,
-			"features":      licenseSignFeaturesFlag,
+			"license_type":   args[0],
+			"allowed_hosts":  licenseSignAllowedHostsFlag,
+			"description":    licenseSignDescFlag,
+			"expire_at":      licenseSignExpireAtFlag,
+			"features":       licenseSignFeaturesFlag,
+			"customer_email": licenseSignCustomerEmailFlag,
 		}
 		resp, err := httpBodyRequest(apir, "POST", req)
 		if err != nil {

@@ -17657,6 +17657,16 @@ const docTemplate = `{
                     "type": "string",
                     "example": "f2fb0c3143822b08be26f8fc5b703e0a6689e675"
                 },
+                "status": {
+                    "description": "Why the license is not valid, decided against the gateway clock. Clients\nshould branch on this instead of comparing expire_at locally\n* valid - the license verified successfully\n* expired - the license is authentic but past its expiration date\n* invalid - the license could not be verified",
+                    "type": "string",
+                    "enum": [
+                        "valid",
+                        "expired",
+                        "invalid"
+                    ],
+                    "example": "valid"
+                },
                 "type": {
                     "description": "The type of license",
                     "type": "string",
