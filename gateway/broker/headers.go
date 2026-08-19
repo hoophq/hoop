@@ -43,9 +43,10 @@ const (
 // and OCR sidecar endpoints configured).
 const CapabilitySupportsPIIGuard = "supports_pii_guard"
 
-// CapabilitySupportsPIIEntityAllowlist distinguishes agents that understand
-// the connection-scoped entity-selection metadata from legacy guard agents.
-const CapabilitySupportsPIIEntityAllowlist = "supports_pii_entity_allowlist"
+// CapabilitySupportsPIIDataMaskingRules distinguishes agents that consume the
+// complete connection-scoped Data Masking rule payload, including custom
+// regex and deny-list entity types.
+const CapabilitySupportsPIIDataMaskingRules = "supports_pii_data_masking_rules"
 
 // ControlSentinelSID is the well-known sid used for connection-scoped control
 // frames (those that describe the agent connection, not a session). The wire

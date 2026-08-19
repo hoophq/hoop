@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { useUIStore } from '@/stores/useUIStore';
 import Sidebar from './Sidebar';
 import AppHeader from './Header';
+import LicenseBanner from './LicenseBanner';
 import { SkipLink } from './SkipLink';
 import NativeConnectionsDrawer from '@/features/NativeConnections';
 
@@ -91,6 +92,7 @@ function Layout({ children }) {
         </AppShell.Navbar>
 
         <AppShell.Main id="main-content" tabIndex={-1}>
+          <LicenseBanner />
           {children}
         </AppShell.Main>
       </AppShell>

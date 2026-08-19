@@ -3529,6 +3529,43 @@
           "IdpProviderUnknown"
         ]
       },
+      "openapi.JiraAssetFieldConfig": {
+        "properties": {
+          "issue_scope_filter_query": {
+            "description": "Dependent-field AQL; may reference sibling fields with ${customfield_x.label} placeholders",
+            "example": "\"Product\" = ${customfield_10091.label}",
+            "type": "string"
+          },
+          "jira_field": {
+            "description": "The Jira custom field id",
+            "example": "customfield_10092",
+            "type": "string"
+          },
+          "object_filter_query": {
+            "description": "AQL scoping every fetch of the field's options",
+            "example": "objectType = \"Product\"",
+            "type": "string"
+          },
+          "object_schema_id": {
+            "description": "The Assets object schema the field is bound to",
+            "example": "2",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.JiraAssetFieldConfigs": {
+        "properties": {
+          "items": {
+            "description": "The field configurations found; fields without any filter are omitted",
+            "items": {
+              "$ref": "#/components/schemas/openapi.JiraAssetFieldConfig"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "openapi.JiraAssetObjectValue": {
         "properties": {
           "id": {
@@ -7080,6 +7117,16 @@
           "key_id": {
             "description": "Public Key identifier of who signed the license",
             "example": "f2fb0c3143822b08be26f8fc5b703e0a6689e675",
+            "type": "string"
+          },
+          "status": {
+            "description": "Why the license is not valid, decided against the gateway clock. Clients\nshould branch on this instead of comparing expire_at locally\n* valid - the license verified successfully\n* expired - the license is authentic but past its expiration date\n* invalid - the license could not be verified",
+            "enum": [
+              "valid",
+              "expired",
+              "invalid"
+            ],
+            "example": "valid",
             "type": "string"
           },
           "type": {
@@ -13726,6 +13773,58 @@
         ]
       }
     },
+    "/integrations/jira/assets/fieldconfigs": {
+      "get": {
+        "description": "Get the AQL configuration of Jira Service Management (JSM) Assets custom fields. These are the object scope and dependent-field (issue scope) filters Jira's own portal applies; they drive the CMDB dropdown cascade. Fields without any configured filter are omitted.",
+        "parameters": [
+          {
+            "description": "Comma-separated list of Jira custom field ids (e.g. customfield_10092)",
+            "in": "query",
+            "name": "jira_fields",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.JiraAssetFieldConfigs"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get Asset Field Configurations",
+        "tags": [
+          "Jira"
+        ]
+      }
+    },
     "/integrations/jira/assets/objects": {
       "get": {
         "description": "Get objects from the Jira Service Management (JSM) Assets API",
@@ -13754,6 +13853,14 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "description": "AQL expression scoping the values; replaces the object_type_id filter when set",
+            "in": "query",
+            "name": "aql",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -13767,7 +13874,7 @@
             },
             "description": "OK"
           },
-          "400": {
+          "422": {
             "content": {
               "application/json": {
                 "schema": {
@@ -13775,17 +13882,7 @@
                 }
               }
             },
-            "description": "Bad Request"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/openapi.HTTPError"
-                }
-              }
-            },
-            "description": "Not Found"
+            "description": "Unprocessable Entity"
           },
           "500": {
             "content": {
