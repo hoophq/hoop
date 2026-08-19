@@ -48,6 +48,7 @@ import (
 	apiplugins "github.com/hoophq/hoop/gateway/api/plugins"
 	apiproxymanager "github.com/hoophq/hoop/gateway/api/proxymanager"
 	apipublicserverinfo "github.com/hoophq/hoop/gateway/api/publicserverinfo"
+	inspectapi "github.com/hoophq/hoop/gateway/api/inspect"
 	apireports "github.com/hoophq/hoop/gateway/api/reports"
 	resourcesapi "github.com/hoophq/hoop/gateway/api/resources"
 	reviewapi "github.com/hoophq/hoop/gateway/api/review"
@@ -684,6 +685,25 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		api.TrackRequest(analytics.EventUpdateReview),
 		reviewHandler.ReviewByIdOrSid,
 	)
+
+	// hoop-inspect's control plane: what the relay, running outside this
+	// process, asks the gateway for. Today that is the statement-level review
+	// gate; config distribution and event shipping would live here too.
+	//
+	// Auth is on the GROUP, deliberately. Every route here is machine-only
+	// (an hpk_ API key or AI agent credential), and applying it once means a
+	// route added later cannot be reachable by a human session because
+	// somebody forgot a middleware. No role middleware: each handler derives
+	// org and owner from the token, and the access-control-aware connection
+	// lookup inside is the authorization boundary.
+	inspectGroup := r.Group("/inspect")
+	inspectGroup.Use(r.AuthMiddleware, r.OnlyApiKeyAccess)
+	inspectGroup.POST("/reviews/claim", inspectapi.Claim)
+	inspectGroup.POST("/reviews", inspectapi.Create)
+	// Rate limited, and only this one: an agent waiting on a human has
+	// nothing to do but poll, and each poll is a query. Claim and create sit
+	// on the data path, where refusing a request refuses a statement.
+	inspectGroup.GET("/reviews", inspectapi.RateLimitPollMiddleware, inspectapi.Get)
 
 	r.GET("/access-requests/rules",
 		apiroutes.AdminAndAuditorAccessRole,

@@ -175,7 +175,7 @@ func TestEnforceDefaultsOff(t *testing.T) {
 		},
 	}
 	pc, _ := cfg.resolve(cfg.Listeners[0])
-	pol, err := buildPolicy(pc, nil, nil)
+	pol, err := buildPolicy(pc, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("buildPolicy: %v", err)
 	}
@@ -193,7 +193,7 @@ func TestBuildPolicyChainsLocalRulesThenOPA(t *testing.T) {
 		}},
 		OPA: &OPAConfig{URL: "http://opa:8181/v1/data/hoop"},
 	}
-	pol, err := buildPolicy(pc, nil, nil)
+	pol, err := buildPolicy(pc, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("buildPolicy: %v", err)
 	}

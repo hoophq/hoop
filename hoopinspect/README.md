@@ -134,6 +134,10 @@ release pipeline already builds. Nothing extra to compile or ship:
 ```bash
 hoop start inspect --config config.yaml --validate   # check the config and exit
 hoop start inspect --config config.yaml              # run
+
+# `hoop start inspect` is the former spelling. It still works and prints a
+# deprecation notice; the config path also still reads $HOOP_INSPECT_CONFIG
+# when $HOOP_INSPECT_CONFIG is unset.
 ```
 
 `--config` also reads `HOOP_INSPECT_CONFIG`, which is the shape a Kubernetes
@@ -601,6 +605,404 @@ to the audit trail.
 account and refreshed automatically, so `-validate` mints one token to prove
 the credential, the `roles/aiplatform.user` binding and the host clock before
 anything serves traffic. Prefer Workload Identity and omit `credentials_file`.
+
+### Holding a statement for a human: `require_review`
+
+A fourth action on an `ai_analysis` rule gates the statement on a human
+approval held by the hoop gateway. Nothing is held on the wire — see below.
+
+```yaml
+review:
+  api_url: https://gateway.hoop.internal   # the gateway root, not /api
+  token_file: /var/run/secrets/hoop/token  # an hpk_ credential, 0600
+  timeout_sec: 5
+  require_marker: false     # true refuses a gated statement carrying no marker,
+                            # so a busy lane cannot accumulate duplicates
+  poll_cache_ttl_sec: 5     # negative cache for PENDING only; 0 disables
+
+listeners:
+  - name: appdb
+    protocol: postgres
+    connection: appdb       # REQUIRED on a gated lane: approvals are scoped to it
+    listen: 0.0.0.0:15432
+    upstream: appdb:5432
+    policy:
+      rules:
+        - name: risky-writes
+          type: ai_analysis
+          trigger: {operations: [update, delete, drop, truncate]}
+          high: require_review
+          medium: warn
+```
+
+**The relay never holds a connection.** A statement with no approval is
+refused and the database session ENDS — a `FATAL` for postgres, `403` with
+`Connection: close` for http — carrying the review URL. The caller polls
+`GET /api/inspect/reviews?connection=&statement_hash=` with its own `hpk_`
+token, waits for `APPROVED`, then **reconnects and re-issues the same
+statement**. Holding would burn a connection slot, trip `idle_timeout_sec` and
+be killed by driver-side statement timeouts anyway.
+
+That makes the caller's client configuration part of the deployment contract.
+A gated lane drops connections as normal operation, so a pool that treats a
+`FATAL` as a host-level failure and evicts the target, or an aggressive
+reconnect backoff, will misbehave in ways that look like an outage.
+
+**An approval covers one execution of one exact statement.** The key is a
+SHA-256 over the statement text with hoop's own marker removed and the ends
+trimmed — nothing else. No case folding, no whitespace collapsing, no comment
+stripping: each of those would merge two statements a person approved
+separately. So `WHERE id=1` and `WHERE id = 1` are different reviews, which is
+correct for a human gate and mostly bites when someone retypes something by
+hand. The claim consumes the approval in the same statement that finds it, so
+a second attempt is refused.
+
+**The marker is not the key.** Prefix a statement with a marker line to say
+"this is the same request as before", so a retry issued while a human is still
+looking does not file a duplicate:  
+
+```sql
+-- x-hoop-correlation-id=task-42
+DELETE FROM users WHERE id = 7;
+```
+
+Exactly that form: at the very start, one line, `[A-Za-z0-9._:@/+-]` up to 128
+characters. Anything else is treated as ordinary SQL and stays in the hash. A
+marker only decides how many reviews reach the queue — never what an approval
+permits — so an agent cannot widen its own access by choosing one.
+
+**On HTTP it is a header**, since a `--` comment has nowhere to live in a
+request:
+
+```http
+X-Hoop-Correlation-Id: task-42
+```
+
+One name, two carriers — the SQL comment is that header lowercased, and a test
+keeps them in step. The header is matched case-insensitively (net/http
+canonicalizes header names); the SQL comment is not, because a comment is bytes
+in a statement and two accepted spellings would leave two different residues
+behind, which is how an approval becomes unmatchable. Same value charset and
+128-byte bound either way.
+
+Hyphens, never underscores. `HOOP_CORRELATION_ID` is dropped by nginx by
+default and may be dropped by Envoy, and the failure is silent: the request
+still runs, it just stops deduping.
+
+The header is **not** part of the hash — the HTTP key covers method, URI and
+body only. So changing the correlation id never invalidates an approval, and
+two agents cannot use different ids to obtain two approvals for one request.
+It is captured automatically and is never exposed as request content, so it
+reaches no policy rule, audit record or model prompt; listing it in
+`http.headers` is refused at startup rather than silently ignored.
+
+The relay also accepts a marker from `session.CorrelationID`, but that is a
+library seam for an embedder to fill: **the shipped sidecar never sets it**, so
+in a sidecar deployment the marker on the statement — comment or header — is
+the only one there is. Where both exist, the per-statement one wins: one
+keep-alive connection carries many requests.
+
+> **psql deletes the marker before it reaches the wire.** Not hoop — psql's own
+> lexer discards a comment that precedes the first token of a statement, so the
+> relay sees a statement with no marker and `require_marker: true` refuses it.
+> Verified against a server with `log_statement=all`:
+>
+> | How you send it | What the server receives |
+> |---|---|
+> | `psql <<'EOF'` … marker on its own line | `DELETE FROM t WHERE id = 7;` — **marker gone** |
+> | `psql -f file.sql`, marker on its own line | `DELETE FROM t WHERE id = 7;` — **marker gone** |
+> | `psql -c '-- x-hoop-correlation-id=x⏎DELETE …'` | `-- x-hoop-correlation-id=x⏎DELETE FROM t WHERE id = 7;` — intact |
+> | trailing `DELETE …; -- x-hoop-correlation-id=x` | `DELETE FROM t WHERE id = 7;` — dropped, and not leading anyway |
+>
+> Use `-c` from psql. A driver sends the string it is given, so this is a psql
+> problem rather than something an agent hits: `cur.execute("-- x-hoop-correlation-id=…\nDELETE …")`
+> arrives whole.
+
+**Only a literal statement can be gated.** A statement whose parameter values
+the relay cannot read is REFUSED, not gated, because one approval would
+otherwise cover every later binding:
+
+| Protocol | Gated | Refused |
+|---|---|---|
+| postgres | simple `Query` | `Parse` — the codec does not read `Bind` |
+| mssql | `SQLBatch` | `RPCRequest` — `sp_executesql`'s parameters are not decoded |
+| http | a fully captured request | a body the codec truncated |
+
+The rule is an allowlist of message kinds, so a codec that grows a new one
+falls through to a refusal rather than being gated on a shape.
+
+A gated lane must also set `connection`, and a `require_review` rule with no
+`review:` block — or a `review:` block no rule uses — is refused at startup.
+
+Outcomes land in the trail as `metadata.review_status`: `approved` (an
+approval was found and consumed, which is also why `ai_status` reads `skipped`
+on that statement — an approved retry is not reclassified), `pending`,
+`refused` or `unavailable`. `metadata.review_id` joins the statement to the
+review a human answered. `/stats` reports the gate's own counters per lane.
+
+### Verifying the gate by hand
+
+A runbook for a relay and a gateway you already have running and authenticated
+against. Every statement below is a no-op `DELETE ... WHERE 1 = 0`, so nothing
+is removed; it does file reviews, and the last step closes them.
+
+The checks are ordered so each one builds on the last, and they are the ones
+worth doing: the properties whose failure would be a **silent bypass** rather
+than a visible error.
+
+#### 0. Set up the shell
+
+```bash
+ADMIN=http://127.0.0.1:19000                  # the relay's admin listener
+API=http://127.0.0.1:8009/api                 # the hoop gateway
+SANDBOX=$(cat dist/hoop-inspect-api-key)      # the hpk_ in your review.token_file
+ADMIN_TOKEN=...                               # a gateway admin token
+TABLE=customers
+
+sandbox() { curl -sS -H "Authorization: Bearer $SANDBOX" "$@"; }
+gw()      { curl -sS -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' "$@"; }
+```
+
+Read the lane's port and connection name off the relay rather than off your
+config file — `/config` reports what the lane actually resolved to:
+
+```bash
+curl -s $ADMIN/config | python3 -m json.tool
+```
+
+```json
+"lanes": [{ "name": "pghoop", "listen": "0.0.0.0:15432",
+            "connection": "pghoop", "ai_rules": ["risky-writes"],
+            "review": "gateway=127.0.0.1:8009 require_marker=false pending_ttl=5s" }]
+```
+
+`review:` present is what says the gate is on. `connection` is what scopes an
+approval, and it must name a connection the gateway knows and your `hpk_`
+token's groups can reach.
+
+```bash
+PGPORT=15432 PGHOST=127.0.0.1 PGDATABASE=... PGUSER=... PGPASSWORD=...
+export PGPORT PGHOST PGDATABASE PGUSER PGPASSWORD PGSSLMODE=disable
+CONN=pghoop
+```
+
+#### 1. Confirm what is *not* gated
+
+```bash
+curl -s $ADMIN/stats | python3 -m json.tool | grep -A6 review    # note "claims"
+psql -c "SELECT 1 FROM $TABLE LIMIT 1;"
+curl -s $ADMIN/stats | python3 -m json.tool | grep -A6 review    # unchanged
+```
+
+`claims` must not move. The claim phase narrows to the analyzer's trigger, so
+ordinary reads cost neither a model call nor a gateway round trip — that is
+what makes the gate affordable on a real lane.
+
+If your lane has a destructive-DDL rule, check that it still short-circuits:
+
+```bash
+psql -c "DROP TABLE $TABLE;"
+```
+
+```
+FATAL:  destructive DDL is not permitted on pghoop, with or without approval
+```
+
+No review should be filed. A person must not be asked to approve what policy
+refuses anyway.
+
+#### 2. Issue a flagged statement
+
+```bash
+psql -c "-- x-hoop-correlation-id=demo-1
+DELETE FROM $TABLE WHERE 1 = 0;"
+```
+
+```
+FATAL:  this statement needs human approval before it can run; review it at
+        http://127.0.0.1:8009/sessions/<id>. The session is closed: once it is
+        approved, reconnect and re-issue the same statement
+        (poll statement_hash=6f77928a...).
+server closed the connection unexpectedly
+```
+
+Three things to notice. The severity is `FATAL` and the session really is
+gone — nothing is held open. The message names where a human answers it. And
+it hands you the `statement_hash`, so you never have to reproduce the
+canonicalization yourself:
+
+```bash
+H=6f77928a502c3b0838c47c75deeb32e9347cdd8d6a713f41086ab227e3f48106
+```
+
+To compute one for a statement you have not issued yet — the marker removed,
+ends trimmed, and **no trailing semicolon**, because the codec's splitter
+already consumed it:
+
+```bash
+printf '%s' "DELETE FROM $TABLE WHERE 1 = 0" | shasum -a 256   # or sha256sum
+```
+
+#### 3. Poll it, as the sandbox
+
+```bash
+sandbox "$API/inspect/reviews?connection=$CONN&statement_hash=$H"
+```
+
+```json
+{"review_id":"...","session_id":"...","status":"PENDING","url":"http://.../sessions/..."}
+```
+
+This is the endpoint the agent in the sandbox polls. It is read-only: run it
+twice and the status stays `PENDING`. Only the relay's claim may settle a
+review.
+
+#### 4. Retry before anyone has looked
+
+```bash
+gw "$API/reviews" | python3 -c 'import json,sys; print(sum(1 for r in json.load(sys.stdin) if r["status"]=="PENDING"))'
+psql -c "-- x-hoop-correlation-id=demo-1
+DELETE FROM $TABLE WHERE 1 = 0;"
+gw "$API/reviews" | python3 -c 'import json,sys; print(sum(1 for r in json.load(sys.stdin) if r["status"]=="PENDING"))'
+```
+
+The count must not change. The claim filters on `APPROVED`, so a retry never
+sees its own pending review; the create path dedupes on the **marker**
+instead. Drop the `-- x-hoop-correlation-id=` line and repeat, and you should see the
+count go up by one each time — which is what `require_marker: true` exists to
+prevent on a busy lane.
+
+#### 5. Approve, then re-issue
+
+Open the URL from step 2 in the webapp, or:
+
+```bash
+RID=$(sandbox "$API/inspect/reviews?connection=$CONN&statement_hash=$H" \
+      | python3 -c 'import json,sys; print(json.load(sys.stdin)["review_id"])')
+gw -X PUT "$API/reviews/$RID" -d '{"status":"APPROVED"}'
+sandbox "$API/inspect/reviews?connection=$CONN&statement_hash=$H"   # APPROVED
+```
+
+```bash
+psql -c "-- x-hoop-correlation-id=demo-1
+DELETE FROM $TABLE WHERE 1 = 0;"
+```
+
+```
+DELETE 0
+```
+
+It ran. Check the trail — `ai_status` reads `skipped` on this one, because an
+approved retry is not reclassified and costs no model call:
+
+```bash
+curl -s $ADMIN/events | python3 -c '
+import json,sys
+for e in json.load(sys.stdin)["events"]:
+    md = e.get("metadata") or {}
+    if "review_status" in md or "ai_status" in md:
+        print("%-5s review=%-11s ai=%-8s %s" % (
+            "ALLOW" if e.get("allowed") else "DENY",
+            md.get("review_status","-"), md.get("ai_status","-"),
+            (e.get("statement") or "")[:48].replace("\n"," ")))'
+```
+
+#### 6. Single use
+
+```bash
+psql -c "-- x-hoop-correlation-id=demo-1
+DELETE FROM $TABLE WHERE 1 = 0;"
+```
+
+Refused again. A human approved one execution of that statement, not standing
+permission. `sandbox .../inspect/reviews?...` now reports `EXECUTED`.
+
+#### 7. The three properties that matter most
+
+**An approval never covers a different statement.** File and approve one for
+`WHERE 2 = 0`, then issue `WHERE 1 = 0`:
+
+```bash
+psql -c "-- x-hoop-correlation-id=demo-2
+DELETE FROM $TABLE WHERE 2 = 0;"        # refused, files a review
+H2=$(printf '%s' "DELETE FROM $TABLE WHERE 2 = 0" | shasum -a 256 | cut -d' ' -f1)
+RID2=$(sandbox "$API/inspect/reviews?connection=$CONN&statement_hash=$H2" \
+       | python3 -c 'import json,sys; print(json.load(sys.stdin)["review_id"])')
+gw -X PUT "$API/reviews/$RID2" -d '{"status":"APPROVED"}'
+
+psql -c "-- x-hoop-correlation-id=demo-3
+DELETE FROM $TABLE WHERE 1 = 0;"        # MUST be refused
+```
+
+If that runs, the key is hashing the statement's shape rather than its text,
+and every approval is a blank cheque for its whole shape. This is the single
+most important check here.
+
+**The marker is not the key.** With the `WHERE 2 = 0` approval still
+outstanding, issue the same SQL under a *different* marker:
+
+```bash
+psql -c "-- x-hoop-correlation-id=totally-different
+DELETE FROM $TABLE WHERE 2 = 0;"
+```
+
+```
+DELETE 0
+```
+
+It claims the approval. The marker decides how many reviews reach the queue,
+never what an approval permits — so an agent cannot widen its own access by
+choosing one.
+
+**Whitespace is not normalized away.**
+
+```bash
+printf '%s' "DELETE FROM $TABLE WHERE 1 = 0" | shasum -a 256
+printf '%s' "DELETE FROM $TABLE WHERE 1=0"   | shasum -a 256    # different
+psql -c "DELETE FROM $TABLE WHERE 1=0;"                          # needs its own approval
+```
+
+Two different hashes, two reviews. Collapsing interior whitespace would merge
+statements a person approved separately — `note = 'a  b'` is not
+`note = 'a b'`.
+
+#### 8. Counters, and cleaning up
+
+```bash
+curl -s $ADMIN/stats | python3 -m json.tool
+```
+
+`approvals` counts statements the gate let through, `filed` counts reviews put
+in front of a person, `refusals` counts statements refused without filing
+anything, and `errors` should be `0` — a non-zero `errors` with everything
+else working means the gateway is intermittent, and every one of those was a
+refused statement.
+
+Reject whatever the walkthrough left open:
+
+```bash
+gw "$API/reviews" | python3 -c '
+import json,sys
+for r in json.load(sys.stdin):
+    if r["status"] in ("PENDING","APPROVED"): print(r["id"])' \
+| while read -r id; do
+    gw -o /dev/null -X PUT "$API/reviews/$id" \
+       -d '{"status":"REJECTED","rejection_reason":"runbook cleanup"}'
+  done
+```
+
+#### If a step does not do what it says
+
+| Symptom | Cause |
+|---|---|
+| `no such file or directory` on startup | `token_file` or `credentials_file` path is wrong, or the file is group/world readable |
+| `gateway returned 404: connection not found` | The lane's `connection:` names something the gateway does not have, or your `hpk_` token's groups cannot reach it |
+| `gateway returned 422` | That connection has no access request rule, so there is nobody to review the statement |
+| `risk analysis unavailable; denying` | The analyzer could not answer. With `fail_open: false` that refuses, which is correct for a gated lane — check the provider error in the log |
+| `requires a correlation marker … prefix the statement with "-- x-hoop-correlation-id=<id>"` when you sent one | psql stripped it. A leading comment never leaves psql unless you use `-c` — see the table above |
+| `requires a correlation marker … send it in the X-Hoop-Correlation-Id request header` | An HTTP lane with `require_marker: true` and no header. Same name as the SQL comment; hyphens, never underscores |
+| Nothing is gated at all | The trigger does not match. Compare the audit line's `operation` against the rule's `trigger`; `EXECUTE` and `CALL` report `unknown` |
+| A statement runs that should have been held | Check step 7 first. Then check `ai_status` in the trail: `skipped` means the trigger missed it, `error` means the analyzer failed open |
 
 ## Overlap with Envoy
 
@@ -1506,6 +1908,13 @@ Read these before writing a policy against it.
   originates it and still inspects. See [Upstream TLS](#upstream-tls).
 - **Statements are not transactions.** The gate evaluates each one
   independently, with no cross-statement session state.
+- **A human review costs the caller a reconnect, and a literal statement.**
+  The gate never holds a connection: a statement with no approval is refused
+  and the session ends, so the caller polls the gateway and reconnects. And a
+  statement whose parameter values the relay cannot read — a postgres `Parse`,
+  an mssql `sp_executesql` — is refused rather than gated, because the relay
+  would see `WHERE id = $1` and never the value. See
+  [`require_review`](#holding-a-statement-for-a-human-require_review).
 
 ## Testing
 

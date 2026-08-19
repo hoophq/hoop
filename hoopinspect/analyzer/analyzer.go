@@ -86,6 +86,26 @@ const (
 	MetadataAIStatus = "ai_status"
 )
 
+// Keys inside this producer's Finding.Values, as
+// `input.findings.ai_analysis.values.*` in a policy's input document.
+//
+// They are a PUBLIC contract in the same way the input document's field names
+// are: renaming one breaks somebody's Rego, and breaks the review gate, which
+// reads the action from here rather than keeping a second copy of the
+// operator's risk-to-action mapping.
+const (
+	// FindingRiskLevel is the model's verdict: low, medium or high. Present
+	// only on an answered finding.
+	FindingRiskLevel = "risk_level"
+
+	// FindingAction is what the rule's configuration mapped that level to.
+	//
+	// It travels as a PAIR with FindingRiskLevel, for the same reason the
+	// annotations do: an action beside no level, or beside a different
+	// rule's level, describes a mapping nothing performed.
+	FindingAction = "action"
+)
+
 // Source is the key this producer's findings appear under in a policy's
 // input document, as `input.findings.ai_analysis`.
 //
@@ -176,15 +196,41 @@ const (
 	// than shipping a guardrail that quietly does nothing.
 	ActionDefer Action = "defer"
 
-	// ActionRequireReview holds the statement for human approval.
+	// ActionRequireReview gates the statement on a human approval held by
+	// the hoop gateway.
 	//
-	// Declared but not implemented. The config layer refuses it by name so
-	// the enum is stable when review lands: an operator who writes it today
-	// gets a startup error explaining that this build cannot hold a
-	// statement, rather than a config that silently downgrades to warn and
-	// looks like a working guardrail.
+	// Nothing is HELD: the relay dials the upstream on accept and a
+	// synchronous gate cannot park a connection for minutes, so a statement
+	// with no approval is refused and the database session ends. The agent
+	// polls the gateway and reconnects. See hoopinspect/review.
+	//
+	// Like ActionDefer, this action does not decide anything here. The
+	// analyzer classifies, records the action on its Finding and FORWARDS;
+	// the gate that acts on it is a separate evaluator placed after this one
+	// in the chain. A level mapped to require_review with no such evaluator
+	// behind it therefore allows, which is why sidecar/config.go refuses
+	// that combination at startup — the same refusal defer gets when a lane
+	// has no OPA to defer to.
 	ActionRequireReview Action = "require_review"
 )
+
+// actionRank orders actions by how much they restrict, for a fold that has to
+// keep the strictest of two.
+//
+// Block is absent because it never reaches a fold: a blocking verdict denies
+// and policy.Chain stops there. An unrecognized action ranks zero so it never
+// displaces a real one.
+func (a Action) actionRank() int {
+	switch a {
+	case ActionRequireReview:
+		return 3
+	case ActionDefer:
+		return 2
+	case ActionWarn:
+		return 1
+	}
+	return 0
+}
 
 // Valid reports whether a is a known action.
 func (a Action) Valid() bool {

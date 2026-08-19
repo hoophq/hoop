@@ -226,9 +226,6 @@ type contentBlock struct {
 	Input json.RawMessage `json:"input"`
 }
 
-// maxErrorBytes bounds how much of a failed response is read.
-const maxErrorBytes = 4 << 10
-
 // ParseResponse turns an HTTP response into a Result.
 //
 // Exported so analyzer/vertex reuses it: Vertex returns the same document.
@@ -237,16 +234,12 @@ const maxErrorBytes = 4 << 10
 // "analyzer/anthropic: provider returned 403" goes looking for an anthropic
 // block in a config that has none.
 //
-// A non-2xx never surfaces the provider's body. An LLM 4xx frequently echoes
-// the request that caused it, so propagating that body would copy the
-// statement — and whatever it contained — into the relay's logs and into the
-// error an operator pastes into a ticket.
+// A non-2xx becomes an analyzer.ProviderHTTPError, which quotes a bounded,
+// sanitized prefix of the body. See that type for what that means for a lane
+// running send: raw.
 func ParseResponse(provider string, resp *http.Response) (*analyzer.Result, error) {
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		// Drain a bounded amount so the connection can be reused, and
-		// discard it.
-		_, _ = io.CopyN(io.Discard, resp.Body, maxErrorBytes)
-		return nil, fmt.Errorf("%s: provider returned %s", provider, resp.Status)
+		return nil, analyzer.NewProviderHTTPError(provider, resp)
 	}
 
 	var out response

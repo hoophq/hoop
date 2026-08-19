@@ -362,3 +362,92 @@ func TestStatementBodyIsNotReadFromRequest(t *testing.T) {
 		t.Errorf("request body was consumed: got %q, want %q", buf.String(), body)
 	}
 }
+
+// The correlation header is hoop's own metadata, not something the upstream
+// said, so it is read with no allowlist entry — an operator should not have to
+// opt in to a header whose name they did not choose. A zero Options is the
+// case that matters: it is what a lane that configured nothing has.
+func TestCorrelationHeaderIsReadWithoutAnAllowlist(t *testing.T) {
+	r := req(t, "POST", "/anything/users/12345/orders", `{"action":"purge"}`)
+	r.Header.Set(hoopinspect.CorrelationHeader, "mytask-01")
+
+	s := hi.New(hi.Options{}).InspectRequest(r, nil)
+	if got := s.HTTP.CorrelationID; got != "mytask-01" {
+		t.Errorf("CorrelationID = %q, want mytask-01", got)
+	}
+}
+
+// Reading it must not mean exposing it. Headers is what reaches policy rules,
+// audit records and model prompts; the correlation id belongs to the review
+// gate alone and has no business in any of them.
+func TestCorrelationHeaderNeverEntersTheExposedHeaders(t *testing.T) {
+	r := req(t, "POST", "/x", "")
+	r.Header.Set(hoopinspect.CorrelationHeader, "mytask-01")
+
+	// Even when the operator explicitly allowlists it, it is not content.
+	s := hi.New(hi.Options{Headers: []string{hoopinspect.CorrelationHeader}}).InspectRequest(r, nil)
+	for name, v := range s.HTTP.Headers {
+		if strings.EqualFold(name, hoopinspect.CorrelationHeader) {
+			t.Errorf("correlation id leaked into Headers as %q = %q", name, v)
+		}
+	}
+	if s.HTTP.CorrelationID != "mytask-01" {
+		t.Errorf("CorrelationID = %q, want it still captured", s.HTTP.CorrelationID)
+	}
+}
+
+// net/http canonicalizes request header names, so a client may send any
+// casing. The documented spelling is hyphenated for a reason — see
+// CorrelationHeader — but curl -H is not case-sensitive and neither is this.
+func TestCorrelationHeaderCasingAndTrimming(t *testing.T) {
+	for _, name := range []string{"x-hoop-correlation-id", "X-HOOP-CORRELATION-ID", hoopinspect.CorrelationHeader} {
+		r := req(t, "GET", "/x", "")
+		r.Header.Set(name, "  mytask-01  ")
+		if got := hi.New(hi.Options{}).InspectRequest(r, nil).HTTP.CorrelationID; got != "mytask-01" {
+			t.Errorf("%s: CorrelationID = %q, want mytask-01 trimmed", name, got)
+		}
+	}
+}
+
+// A response has no correlation id: the field names a REQUEST, and a response
+// statement carrying one would give the gate a second, unrelated identity for
+// the same exchange.
+func TestResponsesCarryNoCorrelationID(t *testing.T) {
+	r := req(t, "GET", "/x", "")
+	r.Header.Set(hoopinspect.CorrelationHeader, "mytask-01")
+	resp := &http.Response{
+		StatusCode: 200,
+		Header:     http.Header{hoopinspect.CorrelationHeader: []string{"mytask-01"}},
+		Request:    r,
+	}
+	s := hi.New(hi.Options{}).InspectResponse(resp, r, nil)
+	if got := s.HTTP.CorrelationID; got != "" {
+		t.Errorf("response CorrelationID = %q, want empty", got)
+	}
+}
+
+// The sidecar proxies bytes and calls Decode, not InspectRequest. The header
+// has to survive that path too, or the feature works only in unit tests.
+func TestCorrelationHeaderSurvivesStreamDecode(t *testing.T) {
+	raw := "POST /anything/users/12345/orders HTTP/1.1\r\n" +
+		"Host: api.example.com\r\n" +
+		"X-Hoop-Correlation-Id: mytask-01\r\n" +
+		"Content-Type: application/json\r\n" +
+		"Content-Length: 18\r\n\r\n" +
+		`{"action":"purge"}`
+
+	stmts, n, err := hi.New(hi.Options{CaptureBody: true}).
+		Decode(hoopinspect.FromClient, []byte(raw))
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	if n != len(raw) || len(stmts) != 1 {
+		t.Fatalf("consumed %d/%d, %d stmts", n, len(raw), len(stmts))
+	}
+	if got := stmts[0].HTTP.CorrelationID; got != "mytask-01" {
+		t.Errorf("CorrelationID = %q, want mytask-01", got)
+	}
+	if !strings.Contains(stmts[0].HTTP.Body, "purge") {
+		t.Errorf("body = %q", stmts[0].HTTP.Body)
+	}
+}

@@ -14,6 +14,7 @@ import (
 	"github.com/hoophq/hoopinspect/analyzer"
 	"github.com/hoophq/hoopinspect/gate"
 	"github.com/hoophq/hoopinspect/policy"
+	"github.com/hoophq/hoopinspect/review"
 )
 
 // Config is the on-disk configuration.
@@ -60,6 +61,16 @@ type Config struct {
 	// holds. A provider needing a dependency (Vertex needs GCP OAuth2)
 	// stays out via the analyzer registry, not via an opaque section.
 	Analyzer *AnalyzerConfig `json:"analyzer,omitempty"`
+
+	// Review configures the optional human-approval gate: where the hoop
+	// gateway is and which credential reaches it.
+	//
+	// Interpreted here for the same reason the analyzer section is: the
+	// shape is small, the credential is a path this package reads rather
+	// than material it holds, and there is exactly one implementation behind
+	// it. Present with no rule using it is a config error, the same way
+	// opa.gate over a lane with no ai_analysis rule is.
+	Review *ReviewConfig `json:"review,omitempty"`
 
 	// LogLevel is debug, info, warn or error. Default info.
 	LogLevel string `json:"log_level"`
@@ -403,6 +414,18 @@ func (c *Config) Validate() error {
 	// package refuses everywhere else. setupAnalyzer keeps its own call for
 	// a caller that builds a Config by hand and never passes through here.
 	problems = append(problems, c.Analyzer.validate(len(c.PII) > 0)...)
+	problems = append(problems, c.Review.validate()...)
+
+	// A review section nothing gates on reads a credential off disk at
+	// startup and then does nothing with it, which is the same dead control
+	// opa.gate-over-no-ai-rules is refused for.
+	if c.Review != nil && !c.anyReviewRule() {
+		problems = append(problems, fmt.Sprintf(
+			"review: the config has a \"review\" section but no rule gates on %q, "+
+				"so the gateway credential would be read and never used",
+			analyzer.ActionRequireReview))
+	}
+
 	seen := map[string]bool{}
 	for i, l := range c.Listeners {
 		name := l.displayName(i)
@@ -474,6 +497,7 @@ func (c *Config) validateLane(lc ListenerConfig, name string) []string {
 		}
 	}
 	problems = append(problems, validateAIRules(aiRules, c.Analyzer, pc, name)...)
+	problems = append(problems, validateReviewRules(pc, lc, c.Review, name)...)
 	for _, r := range localRules {
 		if r.Action == policy.ActionDefer && !pc.OPA.enabled() {
 			// A finding nobody reads is a rule that matches and then
@@ -592,10 +616,23 @@ type Plugin interface {
 // both sides: once to decide whether to spend, once to decide what the
 // answer means.
 //
+// A lane that gates on human approval gets the review evaluator TWICE, around
+// the analyzer, the same shape the OPA client already uses for its two phases:
+//
+//	local rules → [opa gate] → review claim → analyzer → [opa decide] → review decide
+//
+// Claim runs before the analyzer so an approved retry costs one gateway
+// round-trip and no model call — a successful claim vetoes the classification
+// outright. Decide runs last so a statement a local rule, a Rego policy or a
+// hard analyzer action already refused never files a review and never troubles
+// a human.
+//
 // Returns nil in observe-only mode. det may be nil, and a lane with pii rules
 // then fails to build by design: a guardrail that cannot see must not
 // start.
-func buildPolicy(pc PolicyConfig, det Plugin, ac *analyzerDeps) (policy.Evaluator, error) {
+// rg is the lane's review gate, already built by buildReviewGate, or nil when
+// the lane does not gate on approval.
+func buildPolicy(pc PolicyConfig, det Plugin, ac *analyzerDeps, rg *review.Gate) (policy.Evaluator, error) {
 	if !pc.enforcing() {
 		return nil, nil
 	}
@@ -638,6 +675,21 @@ func buildPolicy(pc PolicyConfig, det Plugin, ac *analyzerDeps) (policy.Evaluato
 		chain = append(chain, pc.OPA.client(policy.PhaseGate))
 	}
 
+	// The claim goes here: after every free evaluator, so a statement a local
+	// rule or a Rego policy already refuses never consumes an approval, and
+	// before the analyzer, so an approved retry is not reclassified. It sits
+	// after the OPA gate specifically because it reads the same
+	// EvalContext.Requested the gate writes, and must narrow to whatever the
+	// policy asked for rather than to the YAML trigger the policy overrode.
+	if _, wantsReview := reviewRules(pc.Rules); wantsReview {
+		if rg == nil {
+			return nil, fmt.Errorf(
+				"a rule gates on %q but no review gate was built for this lane",
+				analyzer.ActionRequireReview)
+		}
+		chain = append(chain, rg.Claim())
+	}
+
 	if len(aiRules) > 0 {
 		var cfg *AnalyzerConfig
 		var provider analyzer.Provider
@@ -656,6 +708,15 @@ func buildPolicy(pc PolicyConfig, det Plugin, ac *analyzerDeps) (policy.Evaluato
 
 	if twoPhase {
 		chain = append(chain, pc.OPA.client(policy.PhaseDecide))
+	}
+
+	// Last, so a statement anything else already refused never files a
+	// review. Filing has a side effect nothing else in the chain has: it puts
+	// a question in front of a person, and asking a human to approve a
+	// statement a policy would refuse anyway wastes their attention and
+	// teaches them to rubber-stamp.
+	if rg != nil {
+		chain = append(chain, rg.Decide())
 	}
 
 	if len(chain) == 0 {

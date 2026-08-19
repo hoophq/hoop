@@ -67,6 +67,17 @@ func (b SQLBuilder) Build(stmt hoopinspect.Statement, maxBytes int) (Content, bo
 // operation it reported. What remains still contains literals in the raw
 // text, so they are stripped here too: `WHERE id = 1` and `WHERE id = 2` are
 // one shape, and classifying both is money spent to learn the same thing.
+//
+// # Never use this as an authorization key
+//
+// It is safe for a CACHE precisely because a cache never turns a block into
+// an allow — it only reuses a verdict for an identical shape. An
+// authorization key inverts that guarantee: approve
+// `DELETE FROM users WHERE id = 1` and a shape-keyed lookup would authorize
+// `DELETE FROM users WHERE id = 999`.
+//
+// The review gate's key is review.execKey, an EXACT hash in another package.
+// The two exist for opposite reasons and must never be swapped.
 func sqlCacheKey(stmt hoopinspect.Statement) string {
 	shape := stripSQLLiterals(strings.ToLower(normalizeSpace(stmt.Text)))
 	h := sha256.New()

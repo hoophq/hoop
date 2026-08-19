@@ -209,7 +209,7 @@ func execHandler(ctx context.Context, _ *mcp.CallToolRequest, args execInput) (*
 				UserSlackID: sc.SlackID,
 				UserGroups:  sc.UserGroups,
 			},
-			aiAccessRule, args.Input, args.EnvVars, args.Args, analyzeRes)
+			aiAccessRule, args.Input, args.EnvVars, args.Args, analyzeRes, nil)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed creating ai-driven review: %v", err)
 		}

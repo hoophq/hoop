@@ -23,6 +23,19 @@ type AIReviewRequester struct {
 	UserGroups  []string
 }
 
+// ReviewStatementKeys ties a review to one exact statement, for the
+// hoop-inspect approval gate. Nil for every other caller, which is every
+// review whose unit is a whole session rather than a single statement.
+//
+// The two are not interchangeable. StatementHash is the AUTHORIZATION key and
+// is computed by the relay from the bytes on the wire; RequestMarker is
+// caller-supplied and only decides whether an incoming request is a retry of
+// one already filed.
+type ReviewStatementKeys struct {
+	StatementHash string
+	RequestMarker string
+}
+
 func CreateReviewFromAIAnalysis(
 	orgID uuid.UUID,
 	sessionID string,
@@ -33,6 +46,7 @@ func CreateReviewFromAIAnalysis(
 	inputEnvVars map[string]string,
 	inputClientArgs []string,
 	analysis *models.SessionAIAnalysis,
+	keys *ReviewStatementKeys,
 ) (*models.Review, error) {
 	if accessRule == nil {
 		return nil, fmt.Errorf("ai analyzer review: access request rule is required")
@@ -75,6 +89,15 @@ func CreateReviewFromAIAnalysis(
 		AccessRequestRuleName: &accessRule.Name,
 		MinApprovals:          &minApprovals,
 		CreatedAt:             time.Now().UTC(),
+	}
+	if keys != nil {
+		rev.StatementHash = &keys.StatementHash
+		if keys.RequestMarker != "" {
+			// Left NULL rather than empty when absent, so the dedupe index
+			// holds only rows a marker lookup can actually match: an agent
+			// that supplies no marker means every attempt is a new request.
+			rev.RequestMarker = &keys.RequestMarker
+		}
 	}
 
 	log.With("sid", sessionID, "review-id", rev.ID, "rule", accessRule.Name, "org", orgID).

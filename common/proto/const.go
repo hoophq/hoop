@@ -137,7 +137,14 @@ const (
 	SessionOriginRunbooks     = "runbooks"
 	SessionOriginProxyManager = "proxymanager"
 	SessionOriginAgent        = "agent"
-	SessionOriginUnknown      = "unknown"
+
+	// SessionOriginInspect marks a session created by the hoop-inspect
+	// relay's human-approval gate. It has no transport origin to derive
+	// from: hoop-inspect never opens a gRPC stream, it calls /api/inspect to
+	// file a review and the session exists only to anchor that review.
+	SessionOriginInspect = "inspect"
+
+	SessionOriginUnknown = "unknown"
 
 	SessionPhaseClientConnect       = "client-connect"
 	SessionPhaseClientConnected     = "client-connected"

@@ -358,20 +358,69 @@ func TestTimeoutBoundsTheProvider(t *testing.T) {
 	}
 }
 
-// require_review is declared in the enum so the schema is stable when review
-// lands, and refused at construction so nobody ships a config that looks like
-// it holds statements for approval and quietly does not.
-func TestRequireReviewIsRefused(t *testing.T) {
-	_, err := analyzer.New(analyzer.Config{
-		Provider: &stubProvider{},
+// require_review forwards from HERE and hands the decision to the review
+// gate, the same way defer hands it to a decide-phase policy. The analyzer
+// must not deny on it: the evaluator that does is a separate one, later in the
+// chain, and denying here would refuse the statement before a review could
+// ever be filed for it.
+func TestRequireReviewForwardsAndReportsTheAction(t *testing.T) {
+	ev := mustNew(t, analyzer.Config{
+		Rule:     "risky",
+		Provider: &stubProvider{level: analyzer.RiskHigh},
 		Trigger:  deleteTrigger(),
 		Actions:  analyzer.ActionMap{analyzer.RiskHigh: analyzer.ActionRequireReview},
 	})
-	if err == nil {
-		t.Fatal("require_review was accepted by a build that cannot hold a statement")
+
+	ec := &policy.EvalContext{}
+	v := ev.EvaluateWith(sqlStmt("DELETE FROM t", hoopinspect.OpDelete, "t"), ec)
+	if v.Denied {
+		t.Fatalf("require_review denied in the analyzer: %q", v.Message)
 	}
-	if !strings.Contains(err.Error(), "require_review") {
-		t.Errorf("error does not name the action: %v", err)
+
+	// The ACTION has to reach the finding, not just the annotations: the
+	// review gate reads it from there rather than keeping a second copy of
+	// the operator's risk-to-action mapping.
+	f, ok := ec.Finding(analyzer.Source)
+	if !ok || !f.Answered() {
+		t.Fatalf("no answered finding: %+v", f)
+	}
+	if got := f.Values[analyzer.FindingAction]; got != string(analyzer.ActionRequireReview) {
+		t.Errorf("finding action = %v, want %v", got, analyzer.ActionRequireReview)
+	}
+	if got := f.Values[analyzer.FindingRiskLevel]; got != string(analyzer.RiskHigh) {
+		t.Errorf("finding risk level = %v, want high", got)
+	}
+}
+
+// Two rules answering the same level must not let slice order decide
+// enforcement. The stricter action survives the fold, or a lane with
+// `high: warn` on one rule and `high: require_review` on another silently
+// drops the review gate whenever the warn rule happens to run first.
+func TestStricterActionSurvivesTheFold(t *testing.T) {
+	stmt := sqlStmt("DELETE FROM t", hoopinspect.OpDelete, "t")
+	warn := mustNew(t, analyzer.Config{
+		Rule:     "watch",
+		Provider: &stubProvider{level: analyzer.RiskHigh},
+		Trigger:  deleteTrigger(),
+		Actions:  analyzer.ActionMap{analyzer.RiskHigh: analyzer.ActionWarn},
+	})
+	gated := mustNew(t, analyzer.Config{
+		Rule:     "gated",
+		Provider: &stubProvider{level: analyzer.RiskHigh},
+		Trigger:  deleteTrigger(),
+		Actions:  analyzer.ActionMap{analyzer.RiskHigh: analyzer.ActionRequireReview},
+	})
+
+	for _, order := range [][]*analyzer.Evaluator{{warn, gated}, {gated, warn}} {
+		ec := &policy.EvalContext{}
+		for _, ev := range order {
+			ev.EvaluateWith(stmt, ec)
+		}
+		f, _ := ec.Finding(analyzer.Source)
+		if got := f.Values[analyzer.FindingAction]; got != string(analyzer.ActionRequireReview) {
+			t.Errorf("action = %v after running %s first, want require_review",
+				got, order[0].Rule())
+		}
 	}
 }
 
@@ -753,4 +802,71 @@ func TestConcurrentEvaluateIsRaceFree(t *testing.T) {
 		}(g)
 	}
 	wg.Wait()
+}
+
+// A rule whose trigger did not match must not erase a rule that classified.
+//
+// This is the shape a lane gets whenever it carries a top-level ai_analysis
+// rule and a lane-specific one: on any given statement, one of them is not
+// interested. Folding "skipped" over "ok" made the finding come back empty, so
+// the review gate saw nothing to act on and forwarded a statement the other
+// rule had just rated high — silently, because the risk_level annotation was
+// still in the audit line.
+func TestSkippedRuleDoesNotEraseAClassification(t *testing.T) {
+	stmt := hoopinspect.Statement{
+		Protocol: hoopinspect.HTTP, Direction: hoopinspect.FromClient,
+		Text: "POST /anything/users/12345/orders", Operation: hoopinspect.OpPost,
+		HTTP: &hoopinspect.HTTPDetail{Method: "POST", Path: "/anything/users/12345/orders",
+			Resource: "/anything/users/*/orders", Body: `{"action":"purge"}`},
+	}
+	matches := mustNew(t, analyzer.Config{
+		Rule: "risky-payloads", Provider: &stubProvider{level: analyzer.RiskHigh},
+		Trigger: analyzer.Trigger{Resources: []string{"/anything/**"}},
+		Actions: analyzer.ActionMap{analyzer.RiskHigh: analyzer.ActionRequireReview},
+	})
+	doesNot := mustNew(t, analyzer.Config{
+		Rule: "risky-writes", Provider: &stubProvider{level: analyzer.RiskHigh},
+		Trigger: analyzer.Trigger{Operations: []hoopinspect.Operation{hoopinspect.OpDelete}},
+		Actions: analyzer.ActionMap{analyzer.RiskHigh: analyzer.ActionRequireReview},
+	})
+
+	// Either order: enforcement must not depend on which rule ran first.
+	for _, order := range [][]*analyzer.Evaluator{{matches, doesNot}, {doesNot, matches}} {
+		ec := &policy.EvalContext{}
+		for _, ev := range order {
+			ev.EvaluateWith(stmt, ec)
+		}
+		f, _ := ec.Finding(analyzer.Source)
+		if !f.Answered() {
+			t.Errorf("%s ran first: finding is %q, want an answered one",
+				order[0].Rule(), f.Status)
+			continue
+		}
+		if got := f.Values[analyzer.FindingAction]; got != string(analyzer.ActionRequireReview) {
+			t.Errorf("%s ran first: action = %v, want require_review", order[0].Rule(), got)
+		}
+	}
+}
+
+// The fold still lets a real failure win, which is what it was for: a rule
+// that succeeded must not report healthy through another rule's outage.
+func TestProviderErrorStillOutranksAClassification(t *testing.T) {
+	stmt := sqlStmt("DELETE FROM t", hoopinspect.OpDelete, "t")
+	ok := mustNew(t, analyzer.Config{
+		Rule: "ok", Provider: &stubProvider{level: analyzer.RiskLow}, Trigger: deleteTrigger(),
+		Actions: analyzer.ActionMap{analyzer.RiskLow: analyzer.ActionWarn}, FailOpen: true,
+	})
+	broken := mustNew(t, analyzer.Config{
+		Rule: "broken", Provider: &stubProvider{err: errors.New("provider down")},
+		Trigger: deleteTrigger(), FailOpen: true,
+	})
+
+	ec := &policy.EvalContext{}
+	ok.EvaluateWith(stmt, ec)
+	broken.EvaluateWith(stmt, ec)
+
+	f, _ := ec.Finding(analyzer.Source)
+	if f.Answered() {
+		t.Errorf("finding is %q; an outage must not be hidden by a rule that succeeded", f.Status)
+	}
 }

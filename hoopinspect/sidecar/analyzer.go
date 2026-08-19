@@ -9,7 +9,6 @@ import (
 
 	"github.com/hoophq/hoopinspect"
 	"github.com/hoophq/hoopinspect/analyzer"
-
 	"github.com/hoophq/hoopinspect/policy"
 )
 
@@ -53,6 +52,18 @@ func (h *HTTPCodecConfig) validate(lane string) []string {
 	var problems []string
 	for _, name := range h.Headers {
 		lower := strings.ToLower(strings.TrimSpace(name))
+		// Not a security refusal like the ones below — a correction. The
+		// header is already captured, into a field the review gate reads;
+		// listing it here would additionally publish it as request content
+		// to policy, audit and the model. Saying so beats silently ignoring
+		// the line.
+		if lower == strings.ToLower(hoopinspect.CorrelationHeader) {
+			problems = append(problems, fmt.Sprintf(
+				"listener %q: header %q is captured automatically as the review "+
+					"correlation id and is not exposed as request content; remove it "+
+					"from http.headers", lane, name))
+			continue
+		}
 		for _, bad := range forbiddenHeaders {
 			if lower == bad {
 				problems = append(problems, fmt.Sprintf(
@@ -610,16 +621,10 @@ func validateAIRules(rules []policy.Rule, cfg *AnalyzerConfig, pc PolicyConfig, 
 						"set one or use block, warn or allow",
 					lane, r.Name, level))
 			}
-			if a == analyzer.ActionRequireReview {
-				// The action is declared in the enum so the schema is
-				// stable when review lands, and refused here so nobody
-				// ships a config that looks like it holds statements
-				// for approval and quietly does not.
-				problems = append(problems, fmt.Sprintf(
-					"%s: ai_analysis rule %q asks for %q on %s risk, and this build "+
-						"cannot hold a statement for human approval; use block, warn "+
-						"or defer to an OPA policy", lane, r.Name, raw, level))
-			}
+			// require_review needs an evaluator after this one, exactly as
+			// defer does. Its refusal lives in validateReviewRules, which
+			// owns the review section; naming it here too would put the
+			// same check in two places.
 		}
 		if !named {
 			problems = append(problems, fmt.Sprintf(
