@@ -425,7 +425,7 @@ func (g *Gate) decide(stmt hoopinspect.Statement, ec *policy.EvalContext) policy
 // It carries two things the caller cannot get anywhere else. The URL, so a
 // person driving psql through this lane reads where to go before their session
 // drops. And the statement hash, so an AGENT can poll
-// GET /relay/reviews?statement_hash= without reproducing this package's
+// GET /inspect/reviews?statement_hash= without reproducing this package's
 // canonicalization — which it would otherwise have to guess at, down to
 // whether the codec's splitter kept the trailing semicolon. The hash is a
 // digest of a statement the caller itself wrote, so telling it back leaks

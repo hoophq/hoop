@@ -146,7 +146,7 @@ KEY=""
 if [ -s /secrets/review-token ]; then
     CANDIDATE=$(cat /secrets/review-token)
     CODE=$(curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $CANDIDATE" \
-        "$API/relay/reviews?connection=$CONNECTION&statement_hash=$(printf 0%.0s $(seq 64))")
+        "$API/inspect/reviews?connection=$CONNECTION&statement_hash=$(printf 0%.0s $(seq 64))")
     # 404 is the healthy answer here: authenticated, authorized for this
     # connection, and no review for a hash of all zeros. 401/403 means the
     # credential is gone.

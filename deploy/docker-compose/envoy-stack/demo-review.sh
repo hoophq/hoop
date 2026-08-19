@@ -67,7 +67,7 @@ HASH=$(printf '%s' "$STMT" | shasum -a 256 2>/dev/null | cut -d' ' -f1)
 
 sandbox() { curl -sS -H "Authorization: Bearer $SANDBOX_TOKEN" "$@"; }
 admin()   { curl -sS -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' "$@"; }
-poll()    { sandbox "$GW/relay/reviews?connection=appdb&statement_hash=$HASH"; }
+poll()    { sandbox "$GW/inspect/reviews?connection=appdb&statement_hash=$HASH"; }
 
 # ---------------------------------------------------------------- 0. baseline
 h "0 / an ordinary read is untouched"
@@ -86,7 +86,7 @@ $PG -c "$MARKED" 2>&1 | sed 's/^/  /'
 
 # ------------------------------------------------------------------ 2. status
 h "2 / the agent polls the control plane"
-note "GET /api/relay/reviews with its own hpk_ token. Read-only: polling can"
+note "GET /api/inspect/reviews with its own hpk_ token. Read-only: polling can"
 note "never consume an approval, which only the relay's claim may do."
 echo
 poll | python3 -m json.tool 2>/dev/null | sed 's/^/  /' || poll | sed 's/^/  /'

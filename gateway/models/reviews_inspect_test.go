@@ -19,17 +19,17 @@ import (
 // than one execution.
 
 const (
-	relayConnA = "00000000-0000-0000-0000-00000000c0a1"
-	relayConnB = "00000000-0000-0000-0000-00000000c0b2"
-	relayOwner = "sandbox-a"
-	relayHash  = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+	inspectConnA = "00000000-0000-0000-0000-00000000c0a1"
+	inspectConnB = "00000000-0000-0000-0000-00000000c0b2"
+	inspectOwner = "sandbox-a"
+	inspectHash  = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
 	otherHash    = "0000000000000000000000000000000000000000000000000000000000000000"
 )
 
-// seedRelayReview inserts one review the way the create endpoint would, and
+// seedInspectReview inserts one review the way the create endpoint would, and
 // returns its id. minutesAgo backdates created_at so ordering is testable
 // without sleeping.
-func seedRelayReview(t *testing.T, owner, connID, hash, marker, status string, minutesAgo int) string {
+func seedInspectReview(t *testing.T, owner, connID, hash, marker, status string, minutesAgo int) string {
 	t.Helper()
 	id := uuid.NewString()
 	var markerArg any
@@ -64,11 +64,11 @@ func statusOf(t *testing.T, reviewID string) string {
 // An approval authorizes exactly one execution. The claim consumes it in the
 // same statement that selects it, so the second attempt finds nothing and the
 // relay takes the denial path.
-func TestClaimRelayReviewIsSingleUse(t *testing.T) {
+func TestClaimInspectReviewIsSingleUse(t *testing.T) {
 	startTestDB(t)
-	id := seedRelayReview(t, relayOwner, relayConnA, relayHash, "", "APPROVED", 0)
+	id := seedInspectReview(t, inspectOwner, inspectConnA, inspectHash, "", "APPROVED", 0)
 
-	got, err := models.ClaimRelayReview(models.DB, testOrgID, relayOwner, relayConnA, relayHash)
+	got, err := models.ClaimInspectReview(models.DB, testOrgID, inspectOwner, inspectConnA, inspectHash)
 	if err != nil {
 		t.Fatalf("first claim: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestClaimRelayReviewIsSingleUse(t *testing.T) {
 		t.Errorf("status after claim = %s, want EXECUTED", s)
 	}
 
-	_, err = models.ClaimRelayReview(models.DB, testOrgID, relayOwner, relayConnA, relayHash)
+	_, err = models.ClaimInspectReview(models.DB, testOrgID, inspectOwner, inspectConnA, inspectHash)
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("second claim: err = %v, want ErrRecordNotFound — an approval was reused", err)
 	}
@@ -87,14 +87,14 @@ func TestClaimRelayReviewIsSingleUse(t *testing.T) {
 
 // Every status other than APPROVED denies, and denies without mutating
 // anything: a claim must never move a review a human rejected.
-func TestClaimRelayReviewOnlyMatchesApproved(t *testing.T) {
+func TestClaimInspectReviewOnlyMatchesApproved(t *testing.T) {
 	startTestDB(t)
 
 	for _, status := range []string{"PENDING", "REJECTED", "REVOKED", "EXECUTED", "PROCESSING"} {
 		hash := strings.Repeat("a", 63) + string(rune('0'+len(status)%10))
-		id := seedRelayReview(t, relayOwner, relayConnA, hash, "", status, 0)
+		id := seedInspectReview(t, inspectOwner, inspectConnA, hash, "", status, 0)
 
-		_, err := models.ClaimRelayReview(models.DB, testOrgID, relayOwner, relayConnA, hash)
+		_, err := models.ClaimInspectReview(models.DB, testOrgID, inspectOwner, inspectConnA, hash)
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			t.Errorf("%s was claimable: err = %v", status, err)
 		}
@@ -108,9 +108,9 @@ func TestClaimRelayReviewOnlyMatchesApproved(t *testing.T) {
 // statement hash. Each of these is a real bypass if it does not hold — the
 // connection one especially: a sandbox may reach several, and an approval for
 // appdb must not authorize the same SQL against payments-db.
-func TestClaimRelayReviewIsScoped(t *testing.T) {
+func TestClaimInspectReviewIsScoped(t *testing.T) {
 	startTestDB(t)
-	seedRelayReview(t, relayOwner, relayConnA, relayHash, "", "APPROVED", 0)
+	seedInspectReview(t, inspectOwner, inspectConnA, inspectHash, "", "APPROVED", 0)
 
 	otherOrg := "00000000-0000-0000-0000-0000000000b2"
 	if err := models.DB.Exec(
@@ -119,19 +119,19 @@ func TestClaimRelayReviewIsScoped(t *testing.T) {
 	}
 
 	for name, args := range map[string][4]string{
-		"another sandbox":    {testOrgID, "sandbox-b", relayConnA, relayHash},
-		"another connection": {testOrgID, relayOwner, relayConnB, relayHash},
-		"another org":        {otherOrg, relayOwner, relayConnA, relayHash},
-		"another statement":  {testOrgID, relayOwner, relayConnA, otherHash},
+		"another sandbox":    {testOrgID, "sandbox-b", inspectConnA, inspectHash},
+		"another connection": {testOrgID, inspectOwner, inspectConnB, inspectHash},
+		"another org":        {otherOrg, inspectOwner, inspectConnA, inspectHash},
+		"another statement":  {testOrgID, inspectOwner, inspectConnA, otherHash},
 	} {
-		_, err := models.ClaimRelayReview(models.DB, args[0], args[1], args[2], args[3])
+		_, err := models.ClaimInspectReview(models.DB, args[0], args[1], args[2], args[3])
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			t.Errorf("%s claimed an approval that is not its own: err = %v", name, err)
 		}
 	}
 
 	// The rightful caller still gets it.
-	if _, err := models.ClaimRelayReview(models.DB, testOrgID, relayOwner, relayConnA, relayHash); err != nil {
+	if _, err := models.ClaimInspectReview(models.DB, testOrgID, inspectOwner, inspectConnA, inspectHash); err != nil {
 		t.Fatalf("the owning sandbox was refused its own approval: %v", err)
 	}
 }
@@ -140,19 +140,19 @@ func TestClaimRelayReviewIsScoped(t *testing.T) {
 // reviews, and more than one can be APPROVED at once. Without ORDER BY the
 // choice is nondeterministic, which makes "which approval did this consume" an
 // unanswerable question in an audit.
-func TestClaimRelayReviewTakesTheOldestApproval(t *testing.T) {
+func TestClaimInspectReviewTakesTheOldestApproval(t *testing.T) {
 	startTestDB(t)
-	oldest := seedRelayReview(t, relayOwner, relayConnA, relayHash, "", "APPROVED", 30)
-	newest := seedRelayReview(t, relayOwner, relayConnA, relayHash, "", "APPROVED", 5)
+	oldest := seedInspectReview(t, inspectOwner, inspectConnA, inspectHash, "", "APPROVED", 30)
+	newest := seedInspectReview(t, inspectOwner, inspectConnA, inspectHash, "", "APPROVED", 5)
 
-	first, err := models.ClaimRelayReview(models.DB, testOrgID, relayOwner, relayConnA, relayHash)
+	first, err := models.ClaimInspectReview(models.DB, testOrgID, inspectOwner, inspectConnA, inspectHash)
 	if err != nil {
 		t.Fatalf("claim: %v", err)
 	}
 	if first.ID != oldest {
 		t.Fatalf("claimed %s, want the oldest approval %s", first.ID, oldest)
 	}
-	second, err := models.ClaimRelayReview(models.DB, testOrgID, relayOwner, relayConnA, relayHash)
+	second, err := models.ClaimInspectReview(models.DB, testOrgID, inspectOwner, inspectConnA, inspectHash)
 	if err != nil {
 		t.Fatalf("second claim: %v", err)
 	}
@@ -169,9 +169,9 @@ func TestClaimRelayReviewTakesTheOldestApproval(t *testing.T) {
 // that can be wrong in the query — the conditional UPDATE, which is what makes
 // the grant single-use — while the row lock it also relies on is only
 // exercised under a real pool.
-func TestClaimRelayReviewYieldsOneWinner(t *testing.T) {
+func TestClaimInspectReviewYieldsOneWinner(t *testing.T) {
 	startTestDB(t)
-	seedRelayReview(t, relayOwner, relayConnA, relayHash, "", "APPROVED", 0)
+	seedInspectReview(t, inspectOwner, inspectConnA, inspectHash, "", "APPROVED", 0)
 
 	const racers = 8
 	var (
@@ -183,7 +183,7 @@ func TestClaimRelayReviewYieldsOneWinner(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			got, err := models.ClaimRelayReview(models.DB, testOrgID, relayOwner, relayConnA, relayHash)
+			got, err := models.ClaimInspectReview(models.DB, testOrgID, inspectOwner, inspectConnA, inspectHash)
 			if err != nil {
 				return
 			}
@@ -202,11 +202,11 @@ func TestClaimRelayReviewYieldsOneWinner(t *testing.T) {
 // The create path dedupes on the marker, because the claim filters on APPROVED
 // and a retry issued before a human looked at the queue would otherwise never
 // see its own PENDING review.
-func TestPendingRelayReviewLookupByMarker(t *testing.T) {
+func TestPendingInspectReviewLookupByMarker(t *testing.T) {
 	startTestDB(t)
-	pending := seedRelayReview(t, relayOwner, relayConnA, relayHash, "task-42", "PENDING", 0)
+	pending := seedInspectReview(t, inspectOwner, inspectConnA, inspectHash, "task-42", "PENDING", 0)
 
-	got, err := models.GetPendingRelayReviewByMarker(models.DB, testOrgID, relayOwner, relayConnA, "task-42")
+	got, err := models.GetPendingInspectReviewByMarker(models.DB, testOrgID, inspectOwner, inspectConnA, "task-42")
 	if err != nil {
 		t.Fatalf("lookup: %v", err)
 	}
@@ -216,28 +216,28 @@ func TestPendingRelayReviewLookupByMarker(t *testing.T) {
 
 	// A different marker is a different request, even for identical SQL:
 	// that is the whole reason the marker exists.
-	if _, err := models.GetPendingRelayReviewByMarker(
-		models.DB, testOrgID, relayOwner, relayConnA, "task-99"); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if _, err := models.GetPendingInspectReviewByMarker(
+		models.DB, testOrgID, inspectOwner, inspectConnA, "task-99"); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Errorf("a different marker matched: %v", err)
 	}
 
 	// An answered review does not suppress a later ask. Each request is
 	// answered on its own merits.
-	seedRelayReview(t, relayOwner, relayConnA, relayHash, "task-7", "REJECTED", 0)
-	if _, err := models.GetPendingRelayReviewByMarker(
-		models.DB, testOrgID, relayOwner, relayConnA, "task-7"); !errors.Is(err, gorm.ErrRecordNotFound) {
+	seedInspectReview(t, inspectOwner, inspectConnA, inspectHash, "task-7", "REJECTED", 0)
+	if _, err := models.GetPendingInspectReviewByMarker(
+		models.DB, testOrgID, inspectOwner, inspectConnA, "task-7"); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Errorf("a rejected review was returned as pending: %v", err)
 	}
 }
 
 // The poll answers "may I retry yet", so an approval outranks a newer review
 // in any other state, and polling never consumes anything.
-func TestRelayReviewStatusPrefersApproved(t *testing.T) {
+func TestInspectReviewStatusPrefersApproved(t *testing.T) {
 	startTestDB(t)
-	approved := seedRelayReview(t, relayOwner, relayConnA, relayHash, "", "APPROVED", 30)
-	seedRelayReview(t, relayOwner, relayConnA, relayHash, "", "PENDING", 1)
+	approved := seedInspectReview(t, inspectOwner, inspectConnA, inspectHash, "", "APPROVED", 30)
+	seedInspectReview(t, inspectOwner, inspectConnA, inspectHash, "", "PENDING", 1)
 
-	got, err := models.GetRelayReviewStatus(models.DB, testOrgID, relayOwner, relayConnA, relayHash)
+	got, err := models.GetInspectReviewStatus(models.DB, testOrgID, inspectOwner, inspectConnA, inspectHash)
 	if err != nil {
 		t.Fatalf("status: %v", err)
 	}
@@ -248,15 +248,15 @@ func TestRelayReviewStatusPrefersApproved(t *testing.T) {
 		t.Errorf("polling consumed the approval: status = %s", s)
 	}
 
-	if _, err := models.GetRelayReviewStatus(
-		models.DB, testOrgID, relayOwner, relayConnA, otherHash); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if _, err := models.GetInspectReviewStatus(
+		models.DB, testOrgID, inspectOwner, inspectConnA, otherHash); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Errorf("an unknown statement returned a review: %v", err)
 	}
 }
 
 // The session behind a claimed review is closed once and stays closed: a
 // re-run must not move the timestamp.
-func TestCloseRelaySessionIsIdempotent(t *testing.T) {
+func TestCloseInspectSessionIsIdempotent(t *testing.T) {
 	startTestDB(t)
 	sid := uuid.NewString()
 	err := models.DB.Exec(`
@@ -266,7 +266,7 @@ func TestCloseRelaySessionIsIdempotent(t *testing.T) {
 		t.Fatalf("seed session: %v", err)
 	}
 
-	if err := models.CloseRelaySession(models.DB, testOrgID, sid); err != nil {
+	if err := models.CloseInspectSession(models.DB, testOrgID, sid); err != nil {
 		t.Fatalf("close: %v", err)
 	}
 	var first struct {
@@ -287,7 +287,7 @@ func TestCloseRelaySessionIsIdempotent(t *testing.T) {
 	}
 	was := first.EndedAt
 
-	if err := models.CloseRelaySession(models.DB, testOrgID, sid); err != nil {
+	if err := models.CloseInspectSession(models.DB, testOrgID, sid); err != nil {
 		t.Fatalf("second close: %v", err)
 	}
 	read()

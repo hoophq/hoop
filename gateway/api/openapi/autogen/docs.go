@@ -3883,6 +3883,198 @@ const docTemplate = `{
                 }
             }
         },
+        "/inspect/reviews": {
+            "get": {
+                "description": "Report where the caller's review for one statement stands. Read-only: polling never consumes an approval, which only the relay's claim may do. An APPROVED review wins over a newer one in any other status, because the question being asked is whether the statement may be retried yet.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Inspect"
+                ],
+                "summary": "Poll an inspect review",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The connection the statement runs against",
+                        "name": "connection",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "SHA-256 of the canonical statement text, 64 lowercase hex characters",
+                        "name": "statement_hash",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.InspectReview"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Find or create a review for one statement. When the request carries a marker and this sandbox already has a PENDING review for the same connection and marker, that review is returned with 200 instead of a duplicate being filed. Otherwise a session and a one-time review are created and 201 is returned.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Inspect"
+                ],
+                "summary": "File an inspect review",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.InspectReviewRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.InspectReview"
+                        }
+                    },
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.InspectReview"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/inspect/reviews/claim": {
+            "post": {
+                "description": "Atomically consume the caller's approved review for one exact statement and report it as EXECUTED. An approval authorizes exactly one execution, so a second call finds nothing. Returns 404 when there is no approved, unconsumed review — which is also the answer for a PENDING, REJECTED or REVOKED one.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Inspect"
+                ],
+                "summary": "Claim an inspect review",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.InspectReviewClaimRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.InspectReview"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/integrations/aws/iam/accesskeys": {
             "put": {
                 "description": "Update IAM Access Key or set a region when using IAM instance role",
@@ -6596,198 +6788,6 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/openapi.PublicServerInfo"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    }
-                }
-            }
-        },
-        "/relay/reviews": {
-            "get": {
-                "description": "Report where the caller's review for one statement stands. Read-only: polling never consumes an approval, which only the relay's claim may do. An APPROVED review wins over a newer one in any other status, because the question being asked is whether the statement may be retried yet.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Relay"
-                ],
-                "summary": "Poll a relay review",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "The connection the statement runs against",
-                        "name": "connection",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "SHA-256 of the canonical statement text, 64 lowercase hex characters",
-                        "name": "statement_hash",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.RelayReview"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "429": {
-                        "description": "Too Many Requests",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    }
-                }
-            },
-            "post": {
-                "description": "Find or create a review for one statement. When the request carries a marker and this sandbox already has a PENDING review for the same connection and marker, that review is returned with 200 instead of a duplicate being filed. Otherwise a session and a one-time review are created and 201 is returned.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Relay"
-                ],
-                "summary": "File a relay review",
-                "parameters": [
-                    {
-                        "description": "The request body resource",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/openapi.RelayReviewRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.RelayReview"
-                        }
-                    },
-                    "201": {
-                        "description": "Created",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.RelayReview"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "422": {
-                        "description": "Unprocessable Entity",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    }
-                }
-            }
-        },
-        "/relay/reviews/claim": {
-            "post": {
-                "description": "Atomically consume the caller's approved review for one exact statement and report it as EXECUTED. An approval authorizes exactly one execution, so a second call finds nothing. Returns 404 when there is no approved, unconsumed review — which is also the answer for a PENDING, REJECTED or REVOKED one.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Relay"
-                ],
-                "summary": "Claim a relay review",
-                "parameters": [
-                    {
-                        "description": "The request body resource",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/openapi.RelayReviewClaimRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.RelayReview"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
                         }
                     },
                     "500": {
@@ -14296,6 +14296,106 @@ const docTemplate = `{
                 "IdpProviderUnknown"
             ]
         },
+        "openapi.InspectReview": {
+            "type": "object",
+            "properties": {
+                "review_id": {
+                    "description": "The review identifier.",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "6b1e0a58-1b1f-4a5f-9f2f-6f3f3f3f3f3f"
+                },
+                "session_id": {
+                    "description": "The session the review is anchored to.",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "1b1f4a5f-9f2f-6f3f-3f3f-3f3f6b1e0a58"
+                },
+                "status": {
+                    "description": "The review status. EXECUTED on a claim means this call consumed it.",
+                    "type": "string",
+                    "enum": [
+                        "PENDING",
+                        "APPROVED",
+                        "REJECTED",
+                        "REVOKED",
+                        "EXECUTED"
+                    ],
+                    "readOnly": true,
+                    "example": "PENDING"
+                },
+                "url": {
+                    "description": "Where a human answers the review.",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "https://use.hoop.dev/sessions/1b1f4a5f-9f2f-6f3f-3f3f-3f3f6b1e0a58"
+                }
+            }
+        },
+        "openapi.InspectReviewClaimRequest": {
+            "type": "object",
+            "required": [
+                "connection",
+                "statement_hash"
+            ],
+            "properties": {
+                "connection": {
+                    "description": "The connection the statement is running against. An approval is scoped\nto it, so an approval for appdb never authorizes payments-db.",
+                    "type": "string",
+                    "example": "appdb"
+                },
+                "statement_hash": {
+                    "description": "SHA-256 (64 lowercase hex chars) of the canonical statement text, as\nthe relay computed it from the bytes on the wire.",
+                    "type": "string",
+                    "example": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+                }
+            }
+        },
+        "openapi.InspectReviewRequest": {
+            "type": "object",
+            "required": [
+                "connection",
+                "statement",
+                "statement_hash"
+            ],
+            "properties": {
+                "connection": {
+                    "description": "The connection the statement is running against.",
+                    "type": "string",
+                    "example": "appdb"
+                },
+                "marker": {
+                    "description": "An optional caller-supplied correlation handle. A PENDING review\nalready filed under the same marker is returned instead of a new one.\nIt is request identity only and never widens what an approval permits.",
+                    "type": "string",
+                    "example": "task-42"
+                },
+                "risk_level": {
+                    "description": "The risk level the analyzer assigned, shown to the reviewer.",
+                    "type": "string",
+                    "enum": [
+                        "low",
+                        "medium",
+                        "high"
+                    ],
+                    "example": "high"
+                },
+                "rule": {
+                    "description": "The analyzer rule that flagged the statement.",
+                    "type": "string",
+                    "example": "risky-writes"
+                },
+                "statement": {
+                    "description": "The canonical statement text a reviewer will read and approve.",
+                    "type": "string",
+                    "example": "DELETE FROM users WHERE id = 7"
+                },
+                "statement_hash": {
+                    "description": "SHA-256 (64 lowercase hex chars) of the canonical statement text.",
+                    "type": "string",
+                    "example": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+                }
+            }
+        },
         "openapi.JiraAssetObjectValue": {
             "type": "object",
             "properties": {
@@ -15736,106 +15836,6 @@ const docTemplate = `{
                     "description": "The listen address to run the RDP server proxy",
                     "type": "string",
                     "example": "0.0.0.0:3389"
-                }
-            }
-        },
-        "openapi.RelayReview": {
-            "type": "object",
-            "properties": {
-                "review_id": {
-                    "description": "The review identifier.",
-                    "type": "string",
-                    "readOnly": true,
-                    "example": "6b1e0a58-1b1f-4a5f-9f2f-6f3f3f3f3f3f"
-                },
-                "session_id": {
-                    "description": "The session the review is anchored to.",
-                    "type": "string",
-                    "readOnly": true,
-                    "example": "1b1f4a5f-9f2f-6f3f-3f3f-3f3f6b1e0a58"
-                },
-                "status": {
-                    "description": "The review status. EXECUTED on a claim means this call consumed it.",
-                    "type": "string",
-                    "enum": [
-                        "PENDING",
-                        "APPROVED",
-                        "REJECTED",
-                        "REVOKED",
-                        "EXECUTED"
-                    ],
-                    "readOnly": true,
-                    "example": "PENDING"
-                },
-                "url": {
-                    "description": "Where a human answers the review.",
-                    "type": "string",
-                    "readOnly": true,
-                    "example": "https://use.hoop.dev/sessions/1b1f4a5f-9f2f-6f3f-3f3f-3f3f6b1e0a58"
-                }
-            }
-        },
-        "openapi.RelayReviewClaimRequest": {
-            "type": "object",
-            "required": [
-                "connection",
-                "statement_hash"
-            ],
-            "properties": {
-                "connection": {
-                    "description": "The connection the statement is running against. An approval is scoped\nto it, so an approval for appdb never authorizes payments-db.",
-                    "type": "string",
-                    "example": "appdb"
-                },
-                "statement_hash": {
-                    "description": "SHA-256 (64 lowercase hex chars) of the canonical statement text, as\nthe relay computed it from the bytes on the wire.",
-                    "type": "string",
-                    "example": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
-                }
-            }
-        },
-        "openapi.RelayReviewRequest": {
-            "type": "object",
-            "required": [
-                "connection",
-                "statement",
-                "statement_hash"
-            ],
-            "properties": {
-                "connection": {
-                    "description": "The connection the statement is running against.",
-                    "type": "string",
-                    "example": "appdb"
-                },
-                "marker": {
-                    "description": "An optional caller-supplied correlation handle. A PENDING review\nalready filed under the same marker is returned instead of a new one.\nIt is request identity only and never widens what an approval permits.",
-                    "type": "string",
-                    "example": "task-42"
-                },
-                "risk_level": {
-                    "description": "The risk level the analyzer assigned, shown to the reviewer.",
-                    "type": "string",
-                    "enum": [
-                        "low",
-                        "medium",
-                        "high"
-                    ],
-                    "example": "high"
-                },
-                "rule": {
-                    "description": "The analyzer rule that flagged the statement.",
-                    "type": "string",
-                    "example": "risky-writes"
-                },
-                "statement": {
-                    "description": "The canonical statement text a reviewer will read and approve.",
-                    "type": "string",
-                    "example": "DELETE FROM users WHERE id = 7"
-                },
-                "statement_hash": {
-                    "description": "SHA-256 (64 lowercase hex chars) of the canonical statement text.",
-                    "type": "string",
-                    "example": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
                 }
             }
         },

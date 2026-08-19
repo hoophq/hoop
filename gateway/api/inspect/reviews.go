@@ -1,11 +1,8 @@
-// Package relayapi is the control plane for an inline enforcement relay
-// running outside this process.
+// Package inspectapi is hoop-inspect's control plane: what the relay, running
+// outside this process, asks the gateway for.
 //
-// The namespace is named for that ROLE rather than for the component filling
-// it, so renaming the relay does not move the API a separately-deployed binary
-// speaks. Today it holds one feature — the statement-level human-approval gate
-// — and it is where config distribution, event shipping and instance
-// registration would go.
+// Today it holds one feature — the statement-level human-approval gate — and
+// it is where config distribution and event shipping would go.
 //
 // Every route is machine-only, and the middleware that enforces that is on the
 // GROUP in gateway/api/server.go rather than on each route. A route added here
@@ -15,12 +12,12 @@
 // Three endpoints, all reached with an hpk_ credential — an API key or an AI
 // agent, both of which resolve to a context carrying groups:
 //
-//   - POST /relay/reviews/claim — the relay's AUTHORIZATION step, on the
+//   - POST /inspect/reviews/claim — the relay's AUTHORIZATION step, on the
 //     data path. Atomically consumes an approved review for one exact
 //     statement.
-//   - POST /relay/reviews — the relay's find-or-create, also on the data
+//   - POST /inspect/reviews — the relay's find-or-create, also on the data
 //     path. Files the review a human answers.
-//   - GET  /relay/reviews — the sandbox agent's status poll, off the data
+//   - GET  /inspect/reviews — the sandbox agent's status poll, off the data
 //     path.
 //
 // # Scoping comes from the credential, never from the body
@@ -38,7 +35,7 @@
 // against — two sandboxes hold different credentials with no access to each
 // other's reviews — which leaves exactly one threat for the statement hash to
 // address: a sandbox reusing its OWN approval behind different SQL.
-package relayapi
+package inspectapi
 
 import (
 	"errors"
@@ -77,19 +74,19 @@ const maxMarkerLen = 128
 
 // Claim
 //
-//	@Summary		Claim a relay review
+//	@Summary		Claim an inspect review
 //	@Description	Atomically consume the caller's approved review for one exact statement and report it as EXECUTED. An approval authorizes exactly one execution, so a second call finds nothing. Returns 404 when there is no approved, unconsumed review — which is also the answer for a PENDING, REJECTED or REVOKED one.
-//	@Tags				Relay
+//	@Tags				Inspect
 //	@Accept			json
 //	@Produce		json
-//	@Param			request			body		openapi.RelayReviewClaimRequest	true	"The request body resource"
-//	@Success		200				{object}	openapi.RelayReview
+//	@Param			request			body		openapi.InspectReviewClaimRequest	true	"The request body resource"
+//	@Success		200				{object}	openapi.InspectReview
 //	@Failure		400,401,404,500	{object}	openapi.HTTPError
-//	@Router			/relay/reviews/claim [post]
+//	@Router			/inspect/reviews/claim [post]
 func Claim(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 
-	var req openapi.RelayReviewClaimRequest
+	var req openapi.InspectReviewClaimRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
@@ -103,25 +100,25 @@ func Claim(c *gin.Context) {
 		return
 	}
 
-	rev, err := models.ClaimRelayReview(models.DB, ctx.OrgID, ctx.UserID, conn.ID, req.StatementHash)
+	rev, err := models.ClaimInspectReview(models.DB, ctx.OrgID, ctx.UserID, conn.ID, req.StatementHash)
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"message": "no approved review for this statement"})
 		return
 	case err != nil:
 		log.With("org", ctx.OrgID, "owner", ctx.UserID, "conn", conn.Name).
-			Errorf("failed claiming relay review: %v", err)
+			Errorf("failed claiming inspect review: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed claiming review"})
 		return
 	}
 
 	log.With("org", ctx.OrgID, "owner", ctx.UserID, "conn", conn.Name,
-		"review-id", rev.ID, "sid", rev.SessionID).Infof("relay review claimed")
+		"review-id", rev.ID, "sid", rev.SessionID).Infof("inspect review claimed")
 
 	// Best effort, and it must stay that way. The approval is already
 	// consumed; failing the request now would make the relay refuse a
 	// statement it was authorized to run AND cost a human a second approval.
-	if err := models.CloseRelaySession(models.DB, ctx.OrgID, rev.SessionID); err != nil {
+	if err := models.CloseInspectSession(models.DB, ctx.OrgID, rev.SessionID); err != nil {
 		log.With("sid", rev.SessionID).Warnf("failed closing session for claimed review: %v", err)
 	}
 
@@ -130,19 +127,19 @@ func Claim(c *gin.Context) {
 
 // Create
 //
-//	@Summary		File a relay review
+//	@Summary		File an inspect review
 //	@Description	Find or create a review for one statement. When the request carries a marker and this sandbox already has a PENDING review for the same connection and marker, that review is returned with 200 instead of a duplicate being filed. Otherwise a session and a one-time review are created and 201 is returned.
-//	@Tags				Relay
+//	@Tags				Inspect
 //	@Accept			json
 //	@Produce		json
-//	@Param			request					body		openapi.RelayReviewRequest	true	"The request body resource"
-//	@Success		200,201					{object}	openapi.RelayReview
+//	@Param			request					body		openapi.InspectReviewRequest	true	"The request body resource"
+//	@Success		200,201					{object}	openapi.InspectReview
 //	@Failure		400,401,404,422,500		{object}	openapi.HTTPError
-//	@Router			/relay/reviews [post]
+//	@Router			/inspect/reviews [post]
 func Create(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 
-	var req openapi.RelayReviewRequest
+	var req openapi.InspectReviewRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
@@ -184,14 +181,14 @@ func Create(c *gin.Context) {
 	// the caller's intent: an agent whose task 3 and task 9 run byte-identical
 	// SQL is making two requests, and each still needs its own human.
 	if req.Marker != "" {
-		existing, err := models.GetPendingRelayReviewByMarker(models.DB, ctx.OrgID, ctx.UserID, conn.ID, req.Marker)
+		existing, err := models.GetPendingInspectReviewByMarker(models.DB, ctx.OrgID, ctx.UserID, conn.ID, req.Marker)
 		switch {
 		case err == nil:
 			c.JSON(http.StatusOK, toOpenAPI(existing))
 			return
 		case !errors.Is(err, gorm.ErrRecordNotFound):
 			log.With("org", ctx.OrgID, "conn", conn.Name).
-				Errorf("failed looking up pending relay review: %v", err)
+				Errorf("failed looking up pending inspect review: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"message": "failed looking up review"})
 			return
 		}
@@ -227,7 +224,7 @@ func Create(c *gin.Context) {
 		ConnectionType:    conn.Type,
 		ConnectionSubtype: conn.SubType.String,
 		Verb:              pb.ClientVerbExec,
-		Origin:            pb.SessionOriginRelay,
+		Origin:            pb.SessionOriginInspect,
 		IdentityType:      "machine",
 		UserID:            ctx.UserID,
 		UserName:          ctx.UserName,
@@ -244,7 +241,7 @@ func Create(c *gin.Context) {
 		session.CorrelationID = &req.Marker
 	}
 	if err := models.UpsertSession(session); err != nil {
-		log.With("org", ctx.OrgID, "sid", sessionID).Errorf("failed persisting session for a relay review: %v", err)
+		log.With("org", ctx.OrgID, "sid", sessionID).Errorf("failed persisting session for an inspect review: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating review session"})
 		return
 	}
@@ -263,14 +260,14 @@ func Create(c *gin.Context) {
 			RequestMarker: req.Marker,
 		})
 	if err != nil {
-		log.With("org", ctx.OrgID, "sid", sessionID).Errorf("failed creating relay review: %v", err)
+		log.With("org", ctx.OrgID, "sid", sessionID).Errorf("failed creating inspect review: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating review"})
 		return
 	}
 
 	events.DeriveFromSessionStart(ctx.OrgID, &session, conn)
 
-	c.JSON(http.StatusCreated, openapi.RelayReview{
+	c.JSON(http.StatusCreated, openapi.InspectReview{
 		ReviewID:  rev.ID,
 		SessionID: rev.SessionID,
 		Status:    string(rev.Status),
@@ -280,15 +277,15 @@ func Create(c *gin.Context) {
 
 // Get
 //
-//	@Summary		Poll a relay review
+//	@Summary		Poll an inspect review
 //	@Description	Report where the caller's review for one statement stands. Read-only: polling never consumes an approval, which only the relay's claim may do. An APPROVED review wins over a newer one in any other status, because the question being asked is whether the statement may be retried yet.
-//	@Tags				Relay
+//	@Tags				Inspect
 //	@Produce		json
 //	@Param			connection		query		string	true	"The connection the statement runs against"
 //	@Param			statement_hash	query		string	true	"SHA-256 of the canonical statement text, 64 lowercase hex characters"
-//	@Success		200				{object}	openapi.RelayReview
+//	@Success		200				{object}	openapi.InspectReview
 //	@Failure		400,401,404,429,500	{object}	openapi.HTTPError
-//	@Router			/relay/reviews [get]
+//	@Router			/inspect/reviews [get]
 func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 
@@ -302,13 +299,13 @@ func Get(c *gin.Context) {
 		return
 	}
 
-	rev, err := models.GetRelayReviewStatus(models.DB, ctx.OrgID, ctx.UserID, conn.ID, statementHash)
+	rev, err := models.GetInspectReviewStatus(models.DB, ctx.OrgID, ctx.UserID, conn.ID, statementHash)
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"message": "no review for this statement"})
 		return
 	case err != nil:
-		log.With("org", ctx.OrgID, "conn", conn.Name).Errorf("failed reading relay review: %v", err)
+		log.With("org", ctx.OrgID, "conn", conn.Name).Errorf("failed reading inspect review: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed reading review"})
 		return
 	}
@@ -345,7 +342,7 @@ func resolveConnection(c *gin.Context, ctx *storagev2.Context, nameOrID string) 
 // Classifications only. The relay never sends the model's prose, because a
 // model that quotes the statement back would publish its literals into a
 // notification channel.
-func analysisFor(req openapi.RelayReviewRequest) *models.SessionAIAnalysis {
+func analysisFor(req openapi.InspectReviewRequest) *models.SessionAIAnalysis {
 	if req.RiskLevel == "" && req.Rule == "" {
 		return nil
 	}
@@ -360,8 +357,8 @@ func analysisFor(req openapi.RelayReviewRequest) *models.SessionAIAnalysis {
 	}
 }
 
-func toOpenAPI(r *models.RelayReview) openapi.RelayReview {
-	return openapi.RelayReview{
+func toOpenAPI(r *models.InspectReview) openapi.InspectReview {
+	return openapi.InspectReview{
 		ReviewID:  r.ID,
 		SessionID: r.SessionID,
 		Status:    string(r.Status),

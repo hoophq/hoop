@@ -17,8 +17,8 @@ import (
 // gateway root rather than its API prefix, because that is the URL an operator
 // already has written down for everything else hoop.
 const (
-	claimPath  = "/api/relay/reviews/claim"
-	createPath = "/api/relay/reviews"
+	claimPath  = "/api/inspect/reviews/claim"
+	createPath = "/api/inspect/reviews"
 )
 
 // DefaultTimeout bounds one gateway call.

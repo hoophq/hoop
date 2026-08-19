@@ -346,7 +346,7 @@ same thing once you have seen it work.)
 ### Nothing is held
 
 ```
-caller ──sql──> hoop proxy ──> postgres        (data path)
+caller ──sql──> hoop-inspect ──> postgres      (data path)
   │                 │
   │                 └──HTTPS──> hoop gateway   (claim / file)
   └──HTTPS poll ──────────────> hoop gateway
@@ -388,7 +388,7 @@ Three roles are in play, and they are worth keeping straight:
 | Role | Holds | Does |
 |---|---|---|
 | **caller** | nothing special | issues SQL through the proxy. May be an agent, a script, or a person at a psql prompt |
-| **relay** (hoop proxy) | the `hpk_` token, via `token_file` | classifies, files the review, refuses, and later claims the approval |
+| **relay** (hoop-inspect) | the `hpk_` token, via `token_file` | classifies, files the review, refuses, and later claims the approval |
 | **reviewer** | a gateway login in the `reviewers_groups` | answers the review in the webapp or over the API |
 
 The poll in step 7 uses the relay's `hpk_` token, because the review belongs to
@@ -423,9 +423,9 @@ URL, which is what that provider already sends.
    file that group or other can read**, and reports the mode when it does:
 
 ```bash
-mkdir -p ~/.hoop/proxy
-printf '%s' 'AIza…' > ~/.hoop/proxy/analyzer-key
-chmod 600 ~/.hoop/proxy/analyzer-key
+mkdir -p ~/.hoop/inspect
+printf '%s' 'AIza…' > ~/.hoop/inspect/analyzer-key
+chmod 600 ~/.hoop/inspect/analyzer-key
 ```
 
 > Vertex AI works too, with `provider: vertex`, `extra: {project, region}` and
@@ -454,8 +454,8 @@ The response carries `"key": "hpk_…"`. **It is shown exactly once.** Save it
 with the same permissions as above:
 
 ```bash
-printf '%s' 'hpk_…' > ~/.hoop/proxy/api-key
-chmod 600 ~/.hoop/proxy/api-key
+printf '%s' 'hpk_…' > ~/.hoop/inspect/api-key
+chmod 600 ~/.hoop/inspect/api-key
 ```
 
 <details>
@@ -516,7 +516,7 @@ this.
 
 ### Step 4 — write the proxy config
 
-One lane, one gate. Save as `~/.hoop/proxy/config.yaml`:
+One lane, one gate. Save as `~/.hoop/inspect/config.yaml`:
 
 ```yaml
 log_level: info
@@ -537,7 +537,7 @@ analyzer:
   provider: openai
   endpoint: https://generativelanguage.googleapis.com/v1beta/openai/chat/completions
   model: gemini-2.5-flash
-  credentials_file: /Users/you/.hoop/proxy/analyzer-key
+  credentials_file: /Users/you/.hoop/inspect/analyzer-key
   timeout_sec: 20
   # FALSE, inverting the analyzer's usual default, and the one setting worth
   # arguing about. The gate fires on the analyzer's FINDING, so a
@@ -556,7 +556,7 @@ analyzer:
 review:
   api_url: http://127.0.0.1:8009        # gateway ROOT, not /api
   # A PATH, never the material.
-  token_file: /Users/you/.hoop/proxy/api-key
+  token_file: /Users/you/.hoop/inspect/api-key
   timeout_sec: 5
   require_marker: false
   # A refusal is remembered this long, so a caller polling in a tight loop
@@ -606,7 +606,7 @@ Check it before running anything. This parses the config, resolves each lane
 and reads both credential files — including their permissions:
 
 ```bash
-hoop start proxy --config ~/.hoop/proxy/config.yaml --validate
+hoop start inspect --config ~/.hoop/inspect/config.yaml --validate
 ```
 
 ```
@@ -621,7 +621,7 @@ is present.
 ### Step 5 — start it
 
 ```bash
-hoop start proxy --config ~/.hoop/proxy/config.yaml
+hoop start inspect --config ~/.hoop/inspect/config.yaml
 ```
 
 Then confirm what the lane actually resolved to, which is not the same
@@ -678,9 +678,9 @@ This is the step an autonomous agent loops on. Run it yourself with the
 relay's token and you are doing exactly what it does:
 
 ```bash
-SANDBOX=$(cat ~/.hoop/proxy/api-key)
+SANDBOX=$(cat ~/.hoop/inspect/api-key)
 curl -sS -H "Authorization: Bearer $SANDBOX" \
-  "$API/relay/reviews?connection=pghoop&statement_hash=$H" | python3 -m json.tool
+  "$API/inspect/reviews?connection=pghoop&statement_hash=$H" | python3 -m json.tool
 ```
 
 ```json
@@ -701,7 +701,7 @@ Open the URL from step 6 in the webapp, or answer it over the API:
 
 ```bash
 RID=$(curl -sS -H "Authorization: Bearer $SANDBOX" \
-  "$API/relay/reviews?connection=pghoop&statement_hash=$H" \
+  "$API/inspect/reviews?connection=pghoop&statement_hash=$H" \
   | python3 -c 'import json,sys; print(json.load(sys.stdin)["review_id"])')
 
 curl -sS -X PUT "$API/reviews/$RID" \

@@ -3825,9 +3825,9 @@ type MachineIdentityCredentialInfo struct {
 	CreatedAt         *time.Time `json:"created_at" readonly:"true"`
 }
 
-// RelayReviewClaimRequest asks the gateway to consume an approval for one
+// InspectReviewClaimRequest asks the gateway to consume an approval for one
 // exact statement. Org and sandbox come from the credential, never from here.
-type RelayReviewClaimRequest struct {
+type InspectReviewClaimRequest struct {
 	// The connection the statement is running against. An approval is scoped
 	// to it, so an approval for appdb never authorizes payments-db.
 	Connection string `json:"connection" binding:"required" example:"appdb"`
@@ -3836,9 +3836,9 @@ type RelayReviewClaimRequest struct {
 	StatementHash string `json:"statement_hash" binding:"required" example:"9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"`
 }
 
-// RelayReviewRequest files a review for one statement, or returns the one
+// InspectReviewRequest files a review for one statement, or returns the one
 // already filed under the same marker.
-type RelayReviewRequest struct {
+type InspectReviewRequest struct {
 	// The connection the statement is running against.
 	Connection string `json:"connection" binding:"required" example:"appdb"`
 	// SHA-256 (64 lowercase hex chars) of the canonical statement text.
@@ -3855,8 +3855,8 @@ type RelayReviewRequest struct {
 	Rule string `json:"rule,omitempty" example:"risky-writes"`
 }
 
-// RelayReview is one statement-level review.
-type RelayReview struct {
+// InspectReview is one statement-level review.
+type InspectReview struct {
 	// The review identifier.
 	ReviewID string `json:"review_id" readonly:"true" example:"6b1e0a58-1b1f-4a5f-9f2f-6f3f3f3f3f3f"`
 	// The session the review is anchored to.

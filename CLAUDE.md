@@ -37,7 +37,7 @@ This is a Go workspace for the hoop gateway, agent, and CLI. The codebase follow
 
 ### Gateway (`gateway/`)
 - Entrypoint: `gateway/main.go` → `Run()`.
-- **Startup order**: load config (`appconfig.Load`) → run DB migrations (`modelsbootstrap.MigrateDB` + `RunGolangMigrations`) → bootstrap org/auth → register transport plugins → start proxy servers → start gRPC (`:8010`) + HTTP API (`:8009`).
+- **Startup order**: load config (`appconfig.Load`) → run DB migrations (`modelsbootstrap.MigrateDB` + `RunGolangMigrations`) → bootstrap org/auth → register transport plugins → start inspect servers → start gRPC (`:8010`) + HTTP API (`:8009`).
 - gRPC server: `gateway/transport/server.go` — implements `PreConnect`, bidirectional `Connect`, `HealthCheck`.
 - HTTP API: `gateway/api/server.go` — Gin framework, serves static UI at `/` and REST API at `/api/*`.
 - Route registration: `r.<METHOD>(path, [RoleMiddleware], r.AuthMiddleware, [api.AuditMiddleware()], [analytics tracking], handler)
@@ -191,11 +191,10 @@ See `DEV.md` "Feature Flags" section for the full developer guide and file refer
 - Run `make generate-openapi-docs` to regenerate `gateway/api/openapi/autogen/`.
 - OpenAPI specs are served at `/api/openapiv2.json` and `/api/openapiv3.json`.
 
-### The `/api/relay/*` namespace
-**Any endpoint whose behavior is specific to hoop-inspect — the inline enforcement relay that runs outside the gateway process — MUST be registered under `/api/relay/*`.** Handlers live in `gateway/api/relay/` (package `relayapi`); the statement-level human-approval gate (`/api/relay/reviews`, `/api/relay/reviews/claim`) is the first of them, and config distribution, event shipping and instance registration belong there too.
+### The `/api/inspect/*` namespace
+**Any endpoint whose behavior is specific to hoop-inspect — the inspecting relay that runs outside the gateway process — MUST be registered under `/api/inspect/*`.** Handlers live in `gateway/api/inspect/` (package `inspectapi`); the statement-level human-approval gate (`/api/inspect/reviews`, `/api/inspect/reviews/claim`) is the first of them, and config distribution and event shipping belong there too.
 
-- **Named for the ROLE, not the component.** It was `/api/inspect/*` and moved once already, because naming an endpoint after its caller means renaming the caller moves an API a separately-deployed binary speaks. `relay` describes what the caller *is*; do not reintroduce a component name here.
-- **Auth is on the route GROUP, never per route.** `gateway/api/server.go` applies `r.AuthMiddleware` + `r.OnlyApiKeyAccess` to `relayGroup` once, so every route in the namespace is machine-only (`hpk_` API key or AI agent) by construction rather than by whoever adds the next one remembering. Adding a route here means one line; do not re-attach middleware to it, and do not add a route that a human session should reach.
+- **Auth is on the route GROUP, never per route.** `gateway/api/server.go` applies `r.AuthMiddleware` + `r.OnlyApiKeyAccess` to `inspectGroup` once, so every route in the namespace is machine-only (`hpk_` API key or AI agent) by construction rather than by whoever adds the next one remembering. Adding a route here means one line; do not re-attach middleware to it, and do not add a route that a human session should reach.
 - **Authorization comes from the credential, never the request body.** Handlers derive org and owner from the authenticated token and resolve connections through `models.GetConnectionByNameOrID`, which is access-control aware. Nothing a caller writes in a body may widen what it reaches.
 - Do NOT put relay-specific behavior on a general endpoint (`/api/sessions`, `/api/reviews`) behind a flag or a user-agent check. If the behavior only makes sense for the relay, it belongs in this namespace.
 

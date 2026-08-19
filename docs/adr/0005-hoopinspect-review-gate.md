@@ -113,7 +113,7 @@ More than expected. The seam was cut for this feature and left unfilled.
   dependency, so the zero-dependency rule does not force an interface or a
   nested module on a gateway client. This is the precedent D5 follows.
 
-- **The sidecar is already a hoop CLI subcommand.** `hoop start proxy`
+- **The sidecar is already a hoop CLI subcommand.** `hoop start inspect`
   (`client/cmd/startinspect.go`) links `sidecar`, `config/yaml`,
   `pii/alcatraz` and all three analyzer providers, and its doc string states the
   governing rule: "Every capability is decided by the config file, so turning on
@@ -175,7 +175,7 @@ flowchart LR
     end
 
     subgraph control["control path — HTTPS"]
-        G["hoop gateway API<br/>POST /relay/reviews/claim<br/>POST /relay/reviews<br/>GET /relay/reviews?hash"]
+        G["hoop gateway API<br/>POST /inspect/reviews/claim<br/>POST /inspect/reviews<br/>GET /inspect/reviews?hash"]
     end
 
     H["human reviewer<br/>webapp / Slack"]
@@ -222,9 +222,9 @@ sequenceDiagram
     I->>AI: classify (trigger matched)
     AI-->>I: risk=high, action=require_review
     I->>I: canonicalize, statement_hash = SHA-256(text)
-    I->>G: POST /relay/reviews/claim {connection, statement_hash}
+    I->>G: POST /inspect/reviews/claim {connection, statement_hash}
     G-->>I: 404 no approved review
-    I->>G: POST /relay/reviews {connection, hash, statement, marker}
+    I->>G: POST /inspect/reviews {connection, hash, statement, marker}
     G->>G: no PENDING for this marker: UpsertSession + CreateReview
     G->>H: Slack / webapp notification
     G-->>I: 201 {review_id, session_id, status: PENDING, url}
@@ -247,12 +247,12 @@ sequenceDiagram
     participant U as upstream
 
     H->>G: PUT /reviews/{id} APPROVED
-    A->>G: GET /relay/reviews?connection&statement_hash
+    A->>G: GET /inspect/reviews?connection&statement_hash
     G-->>A: {status: APPROVED}
     A->>I: open a NEW connection
     A->>I: re-issue the SAME statement
     I->>I: recompute statement_hash from the bytes on the wire
-    I->>G: POST /relay/reviews/claim {connection, statement_hash}
+    I->>G: POST /inspect/reviews/claim {connection, statement_hash}
     G->>G: UPDATE ... status='APPROVED' ORDER BY created_at LIMIT 1 RETURNING
     G-->>I: 200 claimed, now EXECUTED — single use
     I->>U: forward the statement
@@ -471,7 +471,7 @@ scoped as follow-up work, not a prerequisite.
 ### D5: One package, one concrete HTTP client, no broker interface
 
 There is **no `Broker` interface and no nested module.** The hoop CLI runs the
-sidecar (`hoop start proxy`) as a process beside Envoy, and everything it needs
+sidecar (`hoop start inspect`) as a process beside Envoy, and everything it needs
 from the control plane it gets over the gateway's HTTPS API. One deployment
 shape, one transport, one implementation — an interface with a single
 implementation is indirection that has to be read through and buys nothing.
@@ -516,7 +516,7 @@ already provides it: tests stand up an in-process server and assert against
 real request bodies, which is a better test than a hand-rolled fake because it
 also covers the encoding.
 
-`hoop start proxy` needs **no new import** — the package is in the root module
+`hoop start inspect` needs **no new import** — the package is in the root module
 and the sidecar constructs it from the `review:` config block, exactly as it
 constructs the analyzer. The standalone `hoopinspect/cmd` binary picks it up for
 free too.
@@ -548,21 +548,16 @@ Every endpoint derives org and sandbox from the `hpk_` credential. Neither is
 ever read from the request body, and the caller can only reach its own reviews
 and the connections it has access to.
 
-> **As built (2026-08-17):** the namespace is `/api/relay/`, not
-> `/api/inspect/`. Naming it after the component meant renaming the component
-> moved the API a separately-deployed binary speaks; `relay` names the ROLE —
-> an inline enforcement point running outside the gateway — and is where
-> config distribution, event shipping and instance registration would also go.
->
-> The two middlewares are on the route GROUP rather than on each route, so
-> every endpoint in the namespace is machine-only (`hpk_` API key or AI agent)
-> by construction rather than by whoever adds the next one remembering.
+> **As built:** the two middlewares are on the route GROUP rather than on
+> each route, so every endpoint under `/api/inspect/` is machine-only (`hpk_`
+> API key or AI agent) by construction rather than by whoever adds the next
+> one remembering.
 
 | Endpoint | Called by | Does |
 |---|---|---|
-| `POST /relay/reviews/claim` | the gate, data path | **atomically** moves the caller's matching `APPROVED` review to `EXECUTED` and returns it; `404` when there is none |
-| `POST /relay/reviews` | the gate, data path | find-or-create: `200` with the existing `PENDING` review for this marker, or `201` with a new one |
-| `GET /relay/reviews?connection=&statement_hash=` | the agent, control path | read-only status poll (step 6) |
+| `POST /inspect/reviews/claim` | the gate, data path | **atomically** moves the caller's matching `APPROVED` review to `EXECUTED` and returns it; `404` when there is none |
+| `POST /inspect/reviews` | the gate, data path | find-or-create: `200` with the existing `PENDING` review for this marker, or `201` with a new one |
+| `GET /inspect/reviews?connection=&statement_hash=` | the agent, control path | read-only status poll (step 6) |
 
 #### Claim, not look-up-then-settle
 
@@ -690,7 +685,7 @@ credential is already handled — the config only ever names a path.
 - The root module stays dependency-free — stdlib `net/http` only — so the "audit
   it in an afternoon, vendor it without a supply-chain review" pitch survives,
   and it costs no new module, no registry and no interface to get there.
-- **One deployment shape.** `hoop start proxy` beside Envoy, config file
+- **One deployment shape.** `hoop start inspect` beside Envoy, config file
   decides everything, all control-plane traffic over the gateway's HTTPS API.
   Nothing new to operate.
 - Approved retries skip the model call, so the gate does not multiply AI spend

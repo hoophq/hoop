@@ -132,12 +132,12 @@ Two ways to run the same relay.
 release pipeline already builds. Nothing extra to compile or ship:
 
 ```bash
-hoop start proxy --config config.yaml --validate   # check the config and exit
-hoop start proxy --config config.yaml              # run
+hoop start inspect --config config.yaml --validate   # check the config and exit
+hoop start inspect --config config.yaml              # run
 
 # `hoop start inspect` is the former spelling. It still works and prints a
 # deprecation notice; the config path also still reads $HOOP_INSPECT_CONFIG
-# when $HOOP_PROXY_CONFIG is unset.
+# when $HOOP_INSPECT_CONFIG is unset.
 ```
 
 `--config` also reads `HOOP_INSPECT_CONFIG`, which is the shape a Kubernetes
@@ -182,7 +182,7 @@ the `pii` section and detection is off, which makes masking unavailable and a
 silently skipped.
 
 To embed the relay in your own process, call `sidecar.Setup` to load the config
-and build the detector, then `sidecar.Run`. That is all `hoop start proxy`
+and build the detector, then `sidecar.Run`. That is all `hoop start inspect`
 does; read `client/cmd/startinspect.go` for the whole of it.
 
 ## Configuring it: config.yaml
@@ -638,7 +638,7 @@ listeners:
 **The relay never holds a connection.** A statement with no approval is
 refused and the database session ENDS — a `FATAL` for postgres, `403` with
 `Connection: close` for http — carrying the review URL. The caller polls
-`GET /api/relay/reviews?connection=&statement_hash=` with its own `hpk_`
+`GET /api/inspect/reviews?connection=&statement_hash=` with its own `hpk_`
 token, waits for `APPROVED`, then **reconnects and re-issues the same
 statement**. Holding would burn a connection slot, trip `idle_timeout_sec` and
 be killed by driver-side statement timeouts anyway.
@@ -819,7 +819,7 @@ printf '%s' "DELETE FROM $TABLE WHERE 1 = 0" | shasum -a 256   # or sha256sum
 #### 3. Poll it, as the sandbox
 
 ```bash
-sandbox "$API/relay/reviews?connection=$CONN&statement_hash=$H"
+sandbox "$API/inspect/reviews?connection=$CONN&statement_hash=$H"
 ```
 
 ```json
@@ -850,10 +850,10 @@ prevent on a busy lane.
 Open the URL from step 2 in the webapp, or:
 
 ```bash
-RID=$(sandbox "$API/relay/reviews?connection=$CONN&statement_hash=$H" \
+RID=$(sandbox "$API/inspect/reviews?connection=$CONN&statement_hash=$H" \
       | python3 -c 'import json,sys; print(json.load(sys.stdin)["review_id"])')
 gw -X PUT "$API/reviews/$RID" -d '{"status":"APPROVED"}'
-sandbox "$API/relay/reviews?connection=$CONN&statement_hash=$H"   # APPROVED
+sandbox "$API/inspect/reviews?connection=$CONN&statement_hash=$H"   # APPROVED
 ```
 
 ```bash
@@ -888,7 +888,7 @@ DELETE FROM $TABLE WHERE 1 = 0;"
 ```
 
 Refused again. A human approved one execution of that statement, not standing
-permission. `sandbox .../relay/reviews?...` now reports `EXECUTED`.
+permission. `sandbox .../inspect/reviews?...` now reports `EXECUTED`.
 
 #### 7. The three properties that matter most
 
@@ -899,7 +899,7 @@ permission. `sandbox .../relay/reviews?...` now reports `EXECUTED`.
 psql -c "-- hoopdev:correlation_id=demo-2
 DELETE FROM $TABLE WHERE 2 = 0;"        # refused, files a review
 H2=$(printf '%s' "DELETE FROM $TABLE WHERE 2 = 0" | shasum -a 256 | cut -d' ' -f1)
-RID2=$(sandbox "$API/relay/reviews?connection=$CONN&statement_hash=$H2" \
+RID2=$(sandbox "$API/inspect/reviews?connection=$CONN&statement_hash=$H2" \
        | python3 -c 'import json,sys; print(json.load(sys.stdin)["review_id"])')
 gw -X PUT "$API/reviews/$RID2" -d '{"status":"APPROVED"}'
 

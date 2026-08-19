@@ -138,12 +138,11 @@ const (
 	SessionOriginProxyManager = "proxymanager"
 	SessionOriginAgent        = "agent"
 
-	// SessionOriginRelay marks a session created by an inline enforcement
-	// relay running outside this process — today, hoop-inspect's
-	// human-approval gate. It has no transport origin to derive from: the
-	// relay never opens a gRPC stream, it calls /api/relay to file a review,
-	// and the session exists only to anchor that review.
-	SessionOriginRelay = "relay"
+	// SessionOriginInspect marks a session created by the hoop-inspect
+	// relay's human-approval gate. It has no transport origin to derive
+	// from: hoop-inspect never opens a gRPC stream, it calls /api/inspect to
+	// file a review and the session exists only to anchor that review.
+	SessionOriginInspect = "inspect"
 
 	SessionOriginUnknown = "unknown"
 

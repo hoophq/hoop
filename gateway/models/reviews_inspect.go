@@ -4,18 +4,18 @@ import (
 	"gorm.io/gorm"
 )
 
-// RelayReview is the slice of a review the hoop-inspect gate and the sandbox
+// InspectReview is the slice of a review the hoop-inspect gate and the sandbox
 // agent read back. It is deliberately narrow: these endpoints are reachable by
 // a machine credential on the data path, and the full review row carries
 // reviewer identities and the input blob, none of which the caller needs to
 // decide whether its own statement may run.
-type RelayReview struct {
+type InspectReview struct {
 	ID        string           `gorm:"column:id"`
 	SessionID string           `gorm:"column:session_id"`
 	Status    ReviewStatusType `gorm:"column:status"`
 }
 
-// ClaimRelayReview atomically consumes the caller's oldest approved review
+// ClaimInspectReview atomically consumes the caller's oldest approved review
 // for this exact statement, moving it to EXECUTED, and returns it.
 //
 // It is the AUTHORIZATION step, not a read. Selecting and settling in one
@@ -43,8 +43,8 @@ type RelayReview struct {
 // nondeterministic. FOR UPDATE SKIP LOCKED keeps two concurrent claims from
 // blocking on each other — the loser finds no row and is denied, which is the
 // correct answer for a single-use grant.
-func ClaimRelayReview(db *gorm.DB, orgID, ownerID, connectionID, statementHash string) (*RelayReview, error) {
-	var out RelayReview
+func ClaimInspectReview(db *gorm.DB, orgID, ownerID, connectionID, statementHash string) (*InspectReview, error) {
+	var out InspectReview
 	err := db.Raw(`
 	UPDATE private.reviews SET status = ?
 	 WHERE id = (
@@ -70,7 +70,7 @@ func ClaimRelayReview(db *gorm.DB, orgID, ownerID, connectionID, statementHash s
 	return &out, nil
 }
 
-// GetPendingRelayReviewByMarker finds the review this sandbox already filed
+// GetPendingInspectReviewByMarker finds the review this sandbox already filed
 // for this connection under this marker and that is still waiting on a human.
 //
 // It is the create path's dedupe, and it matches on the MARKER rather than the
@@ -87,8 +87,8 @@ func ClaimRelayReview(db *gorm.DB, orgID, ownerID, connectionID, statementHash s
 // create. A caller with an empty marker must not call this: no marker means
 // every attempt is a new request, which is the safe default and the reason
 // require_marker exists.
-func GetPendingRelayReviewByMarker(db *gorm.DB, orgID, ownerID, connectionID, marker string) (*RelayReview, error) {
-	var out RelayReview
+func GetPendingInspectReviewByMarker(db *gorm.DB, orgID, ownerID, connectionID, marker string) (*InspectReview, error) {
+	var out InspectReview
 	err := db.Raw(`
 	SELECT id, session_id, status
 	  FROM private.reviews
@@ -109,7 +109,7 @@ func GetPendingRelayReviewByMarker(db *gorm.DB, orgID, ownerID, connectionID, ma
 	return &out, nil
 }
 
-// CloseRelaySession marks the session behind a claimed review finished.
+// CloseInspectSession marks the session behind a claimed review finished.
 //
 // The session exists to anchor the review and give a reviewer something to
 // open; no execution is ever streamed into it, because hoop-inspect forwards
@@ -119,14 +119,14 @@ func GetPendingRelayReviewByMarker(db *gorm.DB, orgID, ownerID, connectionID, ma
 // genuinely does not know.
 //
 // Guarded on ended_at IS NULL so a re-run cannot move the timestamp.
-func CloseRelaySession(db *gorm.DB, orgID, sessionID string) error {
+func CloseInspectSession(db *gorm.DB, orgID, sessionID string) error {
 	return db.Exec(`
 	UPDATE private.sessions
 	   SET status = 'done', ended_at = NOW()
 	 WHERE org_id = ? AND id = ? AND ended_at IS NULL`, orgID, sessionID).Error
 }
 
-// GetRelayReviewStatus reports where the caller's review for this statement
+// GetInspectReviewStatus reports where the caller's review for this statement
 // stands, for the agent's poll loop. Read-only: it settles nothing, so polling
 // can never consume an approval that the relay is the only thing allowed to
 // consume.
@@ -134,8 +134,8 @@ func CloseRelaySession(db *gorm.DB, orgID, sessionID string) error {
 // An APPROVED row wins over a newer row in any other status, because the
 // question the agent is asking is "may I retry yet". Among rows in the same
 // state the newest answers.
-func GetRelayReviewStatus(db *gorm.DB, orgID, ownerID, connectionID, statementHash string) (*RelayReview, error) {
-	var out RelayReview
+func GetInspectReviewStatus(db *gorm.DB, orgID, ownerID, connectionID, statementHash string) (*InspectReview, error) {
+	var out InspectReview
 	err := db.Raw(`
 	SELECT id, session_id, status
 	  FROM private.reviews
