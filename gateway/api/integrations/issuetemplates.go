@@ -155,8 +155,9 @@ func GetIssueTemplatesByID(c *gin.Context) {
 //	@Param			object_type_id		query		string	true	"The Jira object type to filter values for"
 //	@Param			object_schema_id	query		string	false	"The Jira object schema id to fetch values for"
 //	@Param			name				query		string	false	"Specify a name to filter"
+//	@Param			aql					query		string	false	"AQL expression scoping the values; replaces the object_type_id filter when set"
 //	@Success		200					{object}	openapi.JiraAssetObjects
-//	@Failure		400,404,500			{object}	openapi.HTTPError
+//	@Failure		422,500				{object}	openapi.HTTPError
 //	@Router			/integrations/jira/assets/objects [get]
 func GetAssetObjects(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -170,11 +171,7 @@ func GetAssetObjects(c *gin.Context) {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed obtaining jira integration configuration: %v", err)
 		return
 	}
-	query := fmt.Sprintf(`objectTypeId = %q AND name LIKE %q`, objectTypeID, c.Query("name"))
-	if objectSchemaID != "" {
-		query = fmt.Sprintf(`objectTypeId = %q AND objectSchemaId = %q AND name LIKE %q`,
-			objectTypeID, objectSchemaID, c.Query("name"))
-	}
+	query := buildAssetObjectsQuery(objectTypeID, objectSchemaID, c.Query("name"), c.Query("aql"))
 
 	resp, err := jira.FetchObjectsByAQL(config, limit, offset, query)
 	if err != nil {
@@ -196,6 +193,82 @@ func GetAssetObjects(c *gin.Context) {
 		HasNextPage: !resp.Last,
 		Values:      objectValues,
 	})
+}
+
+// GetAssetFieldConfigs
+//
+//	@Summary		Get Asset Field Configurations
+//	@Description	Get the AQL configuration of Jira Service Management (JSM) Assets custom fields. These are the object scope and dependent-field (issue scope) filters Jira's own portal applies; they drive the CMDB dropdown cascade. Fields without any configured filter are omitted.
+//	@Tags			Jira
+//	@Produce		json
+//	@Param			jira_fields	query		string	true	"Comma-separated list of Jira custom field ids (e.g. customfield_10092)"
+//	@Success		200			{object}	openapi.JiraAssetFieldConfigs
+//	@Failure		422,500		{object}	openapi.HTTPError
+//	@Router			/integrations/jira/assets/fieldconfigs [get]
+func GetAssetFieldConfigs(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	fieldIDs, err := parseIDListParam(c.Query("jira_fields"), "jira_fields")
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
+	}
+	config, err := models.GetJiraIntegration(ctx.OrgID)
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed obtaining jira integration configuration: %v", err)
+		return
+	}
+	fieldConfigs, err := jira.FetchAssetFieldConfigs(config, fieldIDs)
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching asset field configurations from Jira: %v", err)
+		return
+	}
+	items := []openapi.JiraAssetFieldConfig{}
+	for _, fc := range fieldConfigs {
+		items = append(items, openapi.JiraAssetFieldConfig{
+			JiraField:             fc.JiraField,
+			ObjectSchemaID:        fc.ObjectSchemaID,
+			ObjectFilterQuery:     fc.ObjectFilterQuery,
+			IssueScopeFilterQuery: fc.IssueScopeFilterQuery,
+		})
+	}
+	c.JSON(http.StatusOK, openapi.JiraAssetFieldConfigs{Items: items})
+}
+
+// parseIDListParam splits a comma-separated id list, trimming blanks and
+// dropping duplicates so repeated ids cannot multiply upstream requests.
+func parseIDListParam(raw, param string) ([]string, error) {
+	seen := map[string]bool{}
+	var ids []string
+	for _, id := range strings.Split(raw, ",") {
+		if id = strings.TrimSpace(id); id != "" && !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return nil, fmt.Errorf("%s query string is required", param)
+	}
+	return ids, nil
+}
+
+// buildAssetObjectsQuery composes the AQL expression used to list asset
+// objects.
+//
+// Without an aql expression the objects are scoped by the template's
+// objectTypeId. An aql expression comes from the Assets field configuration
+// in Jira, which already defines every object the field accepts, so it
+// replaces the objectTypeId scope instead of narrowing it — exactly what
+// Jira's own picker does. AND-ing both would return nothing whenever the
+// template's object type disagrees with the field configuration.
+func buildAssetObjectsQuery(objectTypeID, objectSchemaID, name, aql string) string {
+	scope := fmt.Sprintf(`objectTypeId = %q`, objectTypeID)
+	if aql != "" {
+		scope = fmt.Sprintf(`(%s)`, aql)
+	}
+	if objectSchemaID != "" {
+		scope = fmt.Sprintf(`%s AND objectSchemaId = %q`, scope, objectSchemaID)
+	}
+	return fmt.Sprintf(`%s AND name LIKE %q`, scope, name)
 }
 
 func parseObjectValuesOptions(c *gin.Context) (objectTypeID, objectSchemaID string, limit, offset int, err error) {

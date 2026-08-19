@@ -4,6 +4,7 @@
    [re-frame.core :as rf]
    [reagent.core :as r]
    [webapp.components.forms :as forms]
+   [webapp.jira-templates.cascade :as cascade]
    [webapp.components.paginated-searchbox :as paginated-searchbox]))
 
 (defn- create-cmdb-select-options [jira-values]
@@ -55,11 +56,11 @@
                   :value (get-in @form-data [:jira_fields jira_field] "")
                   :on-change on-change}]))
 
-(defn- cmdb-field [cmdb-item template-id form-data]
-  (let [object-type (:jira_object_type cmdb-item)
-        pagination (rf/subscribe [:jira-templates->cmdb-pagination object-type])
-        search-term (rf/subscribe [:jira-templates->cmdb-search object-type])
-        loading? (rf/subscribe [:jira-templates->cmdb-loading? object-type])
+(defn- cmdb-field [cmdb-item all-items fieldconfigs template-id form-data]
+  (let [field (:jira_field cmdb-item)
+        pagination (rf/subscribe [:jira-templates->cmdb-pagination field])
+        search-term (rf/subscribe [:jira-templates->cmdb-search field])
+        loading? (rf/subscribe [:jira-templates->cmdb-loading? field])
         options (create-cmdb-select-options (:jira_values cmdb-item))]
 
     [:div.mb-4
@@ -85,10 +86,17 @@
                                        template-id cmdb-item page @search-term]))
        :on-select (fn [value]
                     (rf/dispatch [:jira-templates->update-cmdb-value cmdb-item value])
-                    (swap! form-data assoc-in [:jira_fields (:jira_field cmdb-item)] value))}]]))
+                    (swap! form-data assoc-in [:jira_fields (:jira_field cmdb-item)] value)
+                    ;; Rows the Assets schema filters by this selection are
+                    ;; cleared and refetched (db side handled by
+                    ;; update-cmdb-value); drop their stale picks from the
+                    ;; local form state too.
+                    (doseq [dep (cascade/all-dependents cmdb-item all-items fieldconfigs)]
+                      (swap! form-data update :jira_fields dissoc (:jira_field dep))))}]]))
 
 (defn main [{:keys [prompts on-submit]}]
   (let [cmdb-items (rf/subscribe [:jira-templates->submit-template-cmdb-items])
+        fieldconfigs (rf/subscribe [:jira-templates->cmdb-fieldconfigs])
         template-id (rf/subscribe [:jira-templates->submit-template-id])
         form-data (r/atom (init-form-data @cmdb-items))]
     (fn []
@@ -130,7 +138,7 @@
            (doall
             (for [item @cmdb-items]
               ^{:key (:jira_field item)}
-              [cmdb-field item @template-id form-data])))]
+              [cmdb-field item @cmdb-items @fieldconfigs @template-id form-data])))]
 
         [:> Flex {:justify "end" :gap "3" :mt "6"}
          [:> Button {:variant "soft"

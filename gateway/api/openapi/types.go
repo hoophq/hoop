@@ -1810,6 +1810,22 @@ type JiraAssetObjects struct {
 	HasNextPage bool `json:"has_next_page"`
 }
 
+type JiraAssetFieldConfig struct {
+	// The Jira custom field id
+	JiraField string `json:"jira_field" example:"customfield_10092"`
+	// The Assets object schema the field is bound to
+	ObjectSchemaID string `json:"object_schema_id" example:"2"`
+	// AQL scoping every fetch of the field's options
+	ObjectFilterQuery string `json:"object_filter_query" example:"objectType = \"Product\""`
+	// Dependent-field AQL; may reference sibling fields with ${customfield_x.label} placeholders
+	IssueScopeFilterQuery string `json:"issue_scope_filter_query" example:"\"Product\" = ${customfield_10091.label}"`
+}
+
+type JiraAssetFieldConfigs struct {
+	// The field configurations found; fields without any filter are omitted
+	Items []JiraAssetFieldConfig `json:"items"`
+}
+
 type GuardRailRuleRequest struct {
 	// Unique name for the rule
 	Name string `json:"name" binding:"required" example:"my-strict-rule"`
