@@ -175,9 +175,9 @@ When implementing a new feature, behavior change, or non-trivial code path, **as
 
 1. **Register the flag** — add one entry to `catalog` in `common/featureflag/featureflag.go`:
    - Name: `<stability>.<snake_case_name>` (e.g. `experimental.ssh_multiplex`, `beta.new_proxy`).
-   - `Default: false` for a new flag, `Stability: StabilityExperimental` (or `StabilityBeta`).
+   - `Default`: see step 3. `Stability: StabilityExperimental` (or `StabilityBeta`).
    - `Components`: list which binaries use it (`ComponentGateway`, `ComponentAgent`, `ComponentClient`).
-   - No migrations or frontend changes are needed — the flag appears automatically in the admin UI.
+   - No migrations or frontend changes are needed — the flag appears automatically at Settings → Experimental.
 
 2. **Gate every code path** — wrap the new behavior so it only runs when the flag is on:
    - **Gateway**: `featureflag.IsEnabled(orgID, "experimental.my_feature")` (import `common/featureflag`).
@@ -185,20 +185,29 @@ When implementing a new feature, behavior change, or non-trivial code path, **as
    - **Webapp**: check `feature_flags` from the `/serverinfo` response.
    - Always preserve the existing behavior in the `else` branch.
 
-3. **No ungated experimental code on `main`** — every PR that adds experimental behavior must gate it. A new flag defaults to `false`; some shipped flags in the catalog now default to `true` after they proved out.
+3. **Pick the default by blast radius** — a feature that only adds a new code path is born `Default: true`. A feature that changes existing behavior is born `false`, then flipped once it proves out. `experimental.rulepacks` and `beta.oracle_native` both did this.
+
+4. **The flag is a kill switch, not a hiding place** — a customer who hits a problem turns the feature off at **Settings → Experimental** (`/settings/experimental`, admin only). It is not a way to ship unfinished work; see "No Hacks" test 3.
 
 See `DEV.md` "Feature Flags" section for the full developer guide and file reference.
 
 ## Coding Conventions
 
 ### No Hacks
-Code quality comes before immediate results.
+"Hack" is not a useful word — one reader's workaround is another's correct error handling. Use these four tests instead. Each one has a visible failure mode, so a reviewer can point at the code and say which test it fails.
 
-- Do not add a hack, workaround, monkey patch, or partial solution.
-- Do not commit code that can break later.
-- If the only way to ship a feature is a hack, stop. Either fix the cause in a robust, production-ready way, or say the request needs support the repository does not have.
+**1. Compatibility shims are allowed.** An external defect (upstream library bug, driver quirk, protocol violation by a client) often has no fix but a shim. Land it when all three hold:
+   - It is isolated — one function or file, not spread through the call path.
+   - A comment names the upstream cause and the version it applies to.
+   - A test fails when upstream fixes the defect, so the shim gets deleted instead of outliving its reason.
 
-"I could not do X because the repository has no support for Y" is a good answer. Adding the missing support correctly is a better one. A workaround that breaks things later is the worst one.
+**2. Do not depend on a condition the repo does not enforce.** A required call order, an unversioned upstream behavior, or an assumed data shape must be held up by a type, a guard, or a test. A comment describing the assumption does not enforce it. If you cannot enforce it, the code does not land.
+
+**3. Incomplete work is fine when the incomplete path fails loudly.** Return an error, refuse to start, or fail a test. No empty struct, zero value, or `nil, nil` standing in for a path you did not implement. A log line is not loud enough — the caller must be unable to continue as if the work happened.
+
+**4. Do not expand scope to reach a fix.** If the correct fix needs a module the request did not name, stop and report what is missing. Do not widen the change to get there.
+
+"I could not do X because the repository has no support for Y" is a good answer. Adding the missing support correctly is a better one.
 
 ### Go
 - Prefer env-based configuration; add new config fields to `gateway/appconfig/appconfig.go`.
