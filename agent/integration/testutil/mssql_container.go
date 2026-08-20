@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -61,16 +62,23 @@ var (
 	sharedServer testcontainers.Container
 )
 
-// ShutdownSharedContainers terminates the shared SQL Server. No-op when no test
-// booted one, and safe to call more than once.
+// ShutdownSharedContainers terminates the shared SQL Server. Bounded because it
+// runs inside TestMain, where a stuck Terminate would burn the go test timeout.
 func ShutdownSharedContainers() {
 	sharedMu.Lock()
 	c := sharedServer
 	sharedServer = nil
 	sharedMu.Unlock()
 
-	if c != nil {
-		_ = c.Terminate(context.Background())
+	if c == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	if err := c.Terminate(ctx); err != nil {
+		// No *testing.T here: m.Run has already returned. A leaked container
+		// is worth reporting, and stderr is what go test surfaces.
+		fmt.Fprintf(os.Stderr, "mssql: failed terminating shared container: %v\n", err)
 	}
 }
 
