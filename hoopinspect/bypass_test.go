@@ -281,6 +281,56 @@ func TestFoldedVerbsReachTheRuleThatNamesThem(t *testing.T) {
 	}
 }
 
+// The false positive that took a read-only lane down, through the real wire
+// path. A reserved word is a legal column alias when AS is written, and the
+// scanner read `... AS delete` as a statement head, so a catalog SELECT was
+// denied as a delete.
+//
+// The statement is Metabase's, trimmed: its schema sync asks which privileges
+// it holds and names each column after the privilege it tested. It ran on
+// every table, so the sync failed outright and the product reported an empty
+// database. Any BI tool introspecting privileges writes some version of it.
+//
+// This belongs beside the bypasses rather than in lexer_test because the
+// consequence is a policy verdict, and a verdict is what an operator sees.
+func TestPrivilegeIntrospectionIsNotAWrite(t *testing.T) {
+	readOnly := rulesFor(t, "no-writes",
+		hoopinspect.OpInsert, hoopinspect.OpUpdate, hoopinspect.OpDelete)
+
+	const sql = `with table_privileges as (
+  select
+    t.schemaname as schema,
+    t.objectname as table,
+    pg_catalog.has_any_column_privilege(current_user, t.objectname, 'update') as update,
+    pg_catalog.has_any_column_privilege(current_user, t.objectname, 'select') as select,
+    pg_catalog.has_any_column_privilege(current_user, t.objectname, 'insert') as insert,
+    pg_catalog.has_table_privilege(current_user, t.objectname, 'delete') as delete
+  from (
+    select schemaname, tablename as objectname from pg_catalog.pg_tables
+    union
+    select schemaname, viewname as objectname from pg_catalog.pg_views
+  ) t
+  where t.schemaname !~ '^pg_'
+)
+select t.* from table_privileges t`
+
+	stmts := inspectOne(t, sql)
+	if len(stmts) == 0 {
+		t.Fatal("no statements produced")
+	}
+	for _, s := range stmts {
+		if v := readOnly.Evaluate(s); v.Denied {
+			t.Errorf("a catalog read was denied as %q by %q", s.Operation, v.Rule)
+		}
+		if s.Operation != hoopinspect.OpSelect {
+			t.Errorf("Operation = %q, want select", s.Operation)
+		}
+	}
+	if writesTo(stmts, "pg_tables") || writesTo(stmts, "pg_views") {
+		t.Errorf("catalog relations reported as written: %+v", stmts)
+	}
+}
+
 // rulesFor builds a single MatchOperation deny rule.
 func rulesFor(t *testing.T, name string, ops ...hoopinspect.Operation) *policy.Rules {
 	t.Helper()

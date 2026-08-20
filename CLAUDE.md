@@ -86,7 +86,8 @@ A Go workspace (`go.work`) for the hoop gateway, agent, and CLI.
 ### hoopinspect (`hoopinspect/`)
 - Pure function over bytes: turns database wire-protocol bytes into statements, and statements into allow/deny verdicts. Opens no socket, terminates no TLS.
 - Root module has zero dependencies (stdlib only). Six nested modules isolate everything else: `analyzer/vertex`, `cmd` (the `hoop-inspect` relay binary), `config/yaml`, `lexer/conformance`, `pii/alcatraz`, `store/sqlite`.
-- See `hoopinspect/README.md` for the API and the relay/sidecar deployment.
+- CI reaches it through `make test-hoopinspect`, which `make test-oss` depends on: `go test github.com/hoophq/hoop/...` matches no module here, so the target walks every `go.mod` under `hoopinspect/` instead.
+- Read `hoopinspect/CLAUDE.md` before changing anything under it; `hoopinspect/README.md` has the API and the relay/sidecar deployment.
 
 ## Transport Plugin System
 Plugins are registered in `gateway/main.go` in a **fixed, intentional order** — do not reorder casually:
@@ -147,8 +148,9 @@ Protocol-specific proxy servers configured through `models.ServerMiscConfig` (st
 | Run frontend dev (both) | `cd webapp_v2 && npm run dev:full` | Starts Vite (:5173) + shadow-cljs (:8280) together. CLJS edits require a browser hard-reload — Vite proxies the bundle and can't HMR it. |
 | Run React dev only | `cd webapp_v2 && npm run dev` | Vite on :5173. CLJS routes are blank until shadow-cljs is started separately. |
 | Build Rust agent (dev) | `make build-dev-rust` | Cross-compiles for Linux from macOS |
-| Run tests (OSS) | `make test-oss` | Auto-links `libhoop` and generates WASM first |
+| Run tests (OSS) | `make test-oss` | Auto-links `libhoop`, generates WASM, and runs `test-hoopinspect` first |
 | Run tests (enterprise) | `make test-enterprise` | `make test` runs both |
+| Run `hoopinspect` tests only | `make test-hoopinspect` | Walks every `go.mod` under `hoopinspect/`, nested modules included |
 | Regenerate OpenAPI | `make generate-openapi-docs` | After any API route/schema change |
 | Format Swagger annotations | `make swag-fmt` | |
 | Create new SQL migration | `migrate create -ext sql -dir gateway/migrations -seq name` | |
@@ -224,7 +226,7 @@ See `DEV.md` "Feature Flags" section for the full developer guide and file refer
 ### Testing
 - Run with `make test-oss` (sets `CGO_ENABLED=0`, outputs JSON).
 - Tests live alongside source files (`_test.go` suffix).
-- The `libhoop-map` and `generate-wasm` steps are prerequisites — the Makefile handles them automatically.
+- The `libhoop-map`, `generate-wasm` and `test-hoopinspect` steps are prerequisites, and the Makefile handles them automatically.
 
 ### API Changes
 - Add Swagger annotations (swag comments) on new/modified handlers.
@@ -305,6 +307,7 @@ When merging `main` into a feature branch:
 | Webapp entry (React shell) | `webapp_v2/src/main.jsx` |
 | Frontend migration context | `webapp_v2/CONTEXT_MIGRATION.md` |
 | Frontend coding rules | `webapp_v2/CLAUDE.md` |
+| Wire-inspection library rules | `hoopinspect/CLAUDE.md` |
 
 ## Frontend Migration in Progress
 

@@ -385,6 +385,18 @@ func corpus() []stmtCase {
 		`INSERT INTO staging SELECT * FROM customers`,
 		`DO $$ BEGIN DELETE FROM customers; END $$`,
 		`CALL purge()`,
+		// A reserved word is a legal column label after AS, so these are
+		// selects that write nothing. The scanner read the label as a
+		// statement head and reported a write, which a read-only lane
+		// refused. The last one is Metabase's schema sync, trimmed: it asks
+		// the catalog which privileges it holds and names each column after
+		// the privilege it tested, so the refusal hit every table.
+		`SELECT 1 AS delete`,
+		`SELECT 1 AS update, 2 AS insert, 3 AS drop`,
+		`WITH p AS (SELECT 1 AS delete) SELECT * FROM p`,
+		`SELECT has_table_privilege(current_user, t.tablename, 'delete') AS delete,
+		        has_table_privilege(current_user, t.tablename, 'update') AS update
+		   FROM pg_catalog.pg_tables t`,
 	)
 
 	add("cte",

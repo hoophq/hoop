@@ -133,12 +133,12 @@ type analyzer struct {
 	// explainSeen / analyzeSeen implement the one case where a wrapper
 	// changes whether effects happen at all: EXPLAIN plans, EXPLAIN ANALYZE
 	// executes.
-	explainSeen  bool
-	analyzeSeen  bool
+	explainSeen bool
+	analyzeSeen bool
 
 	// wrapper is true between EXPLAIN and the statement it wraps, so head
 	// position survives the option list.
-	wrapper bool
+	wrapper      bool
 	sawStatement bool
 
 	incomplete string
@@ -275,12 +275,40 @@ func (a *analyzer) walk() {
 			continue
 		}
 
-		atHead = headAfter[t.Text]
+		atHead = a.headFollows(t.Text)
 	}
 
 	if len(a.stack) != 1 {
 		a.fail("unbalanced parentheses")
 	}
+}
+
+// headFollows reports whether a statement verb may begin after this keyword.
+//
+// Every entry in headAfter is unconditional except AS, which is one keyword in
+// two unrelated roles. It introduces a statement in `CREATE TABLE x AS SELECT`
+// and `PREPARE p AS SELECT`, and it introduces a COLUMN OR TABLE ALIAS
+// everywhere else — and PostgreSQL allows a reserved word as an alias exactly
+// when AS is written, so `SELECT 1 AS delete` is a legal select. Treating that
+// `delete` as a statement head made the select a delete for every policy.
+//
+// Not hypothetical. Metabase's schema sync asks the catalog which privileges
+// it holds and names each column after the privilege it tested:
+//
+//	select ... has_table_privilege(..., 'delete') as delete from pg_tables
+//
+// Against a read-only lane that was refused, and the sync failed on every
+// table. Any BI tool introspecting privileges writes some version of it.
+//
+// The role is decided by the statement the AS sits in: only a DDL head takes a
+// statement after AS. A CTE body needs nothing here — its opening parenthesis
+// is labelled regCTE by push, and that is what restores head position inside
+// it.
+func (a *analyzer) headFollows(word string) bool {
+	if word == "as" {
+		return ddlVerb(a.top().verb)
+	}
+	return headAfter[word]
 }
 
 // push opens a region, labelling it from the token before the parenthesis.

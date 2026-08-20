@@ -90,6 +90,65 @@ func TestCTENameDoesNotHijackTheVerb(t *testing.T) {
 	}
 }
 
+// A reserved word used as an ALIAS is not a statement verb. PostgreSQL allows
+// one exactly when AS is written, and `SELECT 1 AS delete` is a select.
+//
+// The false positive was found in production traffic, not in review: Metabase
+// asks the catalog which privileges it holds and names each column after the
+// privilege it tested, so its schema sync was refused by a read-only lane on
+// every table. Any BI tool introspecting privileges writes some version of it.
+func TestReservedWordAliasIsNotAStatementHead(t *testing.T) {
+	for _, sql := range []string{
+		`SELECT 1 AS delete`,
+		`SELECT 1 AS update, 2 AS insert, 3 AS drop`,
+		`SELECT x FROM t AS delete`,
+		`WITH p AS (SELECT 1 AS delete) SELECT * FROM p`,
+		// Trimmed from the statement Metabase's sync actually sends.
+		`WITH table_privileges AS (
+		   SELECT has_table_privilege(current_user, t.tablename, 'delete') AS delete,
+		          has_table_privilege(current_user, t.tablename, 'update') AS update
+		   FROM pg_catalog.pg_tables t
+		 ) SELECT tp.* FROM table_privileges tp`,
+	} {
+		a := lexer.Analyze(sql, lexer.Postgres)
+		if got := a.Severity(); got != lexer.Select {
+			t.Errorf("Severity() = %q, want select: %s", got, sql)
+		}
+		if a.Writes() {
+			t.Errorf("Writes() = true for a read: %v: %s", a.Effects, sql)
+		}
+	}
+}
+
+// The other half of that fix: AS still heads a statement where it genuinely
+// does. Suppressing it everywhere would hide the SELECT inside a CTAS, which
+// is a real read of a real table.
+func TestASStillHeadsAStatementUnderDDL(t *testing.T) {
+	for _, tc := range []struct {
+		sql  string
+		want lexer.Verb
+	}{
+		{`CREATE TABLE snapshot AS SELECT * FROM customers`, lexer.Select},
+		{`CREATE VIEW v AS SELECT * FROM customers`, lexer.Select},
+		{`CREATE MATERIALIZED VIEW m AS SELECT * FROM customers`, lexer.Select},
+		{`PREPARE p AS SELECT * FROM customers`, lexer.Select},
+	} {
+		a := lexer.Analyze(tc.sql, lexer.Postgres)
+		if !slices.Contains(a.Effects, tc.want) {
+			t.Errorf("effects = %v, want to contain %q: %s", a.Effects, tc.want, tc.sql)
+		}
+		if !slices.Contains(reads(a), "customers") {
+			t.Errorf("reads = %v, want to contain customers: %s", reads(a), tc.sql)
+		}
+	}
+	// A CTE body is head position because of the parenthesis that opens it,
+	// not because of the AS in front of it, so the fix must not touch it.
+	a := lexer.Analyze(`WITH doomed AS (DELETE FROM customers RETURNING *) SELECT 1`, lexer.Postgres)
+	if got := a.Severity(); got != lexer.Delete {
+		t.Errorf("Severity() = %q, want delete", got)
+	}
+}
+
 // E'' honours backslash escapes in every server configuration, so a scanner
 // that stops at the backslash-quote swallows the semicolon and loses the
 // whole statement that follows. This is the worst of the bypasses because it
@@ -188,8 +247,8 @@ func TestQuotedIdentifiersAreNotKeywords(t *testing.T) {
 // The read/write split, which no amount of verb classification provides.
 func TestReadWriteAttribution(t *testing.T) {
 	for _, tc := range []struct {
-		sql          string
-		write, read  []string
+		sql         string
+		write, read []string
 	}{
 		{`INSERT INTO staging SELECT * FROM customers`, []string{"staging"}, []string{"customers"}},
 		{`DELETE FROM sessions WHERE uid IN (SELECT id FROM customers)`, []string{"sessions"}, []string{"customers"}},
