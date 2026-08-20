@@ -914,6 +914,10 @@ jobs:
           password: ${{ secrets.DOCKER_PASSWORD }}
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+      # hoophq/hoopdev was pushed by the job in `needs`, which can land ahead
+      # of the registry serving it to this runner.
+      - name: Wait for base image
+        run: scripts/ci/wait-for-image.sh hoophq/hoopdev:${{ env.GIT_TAG }}
       - name: Build and push (multiarch)
         uses: docker/build-push-action@v4
         with:
@@ -933,6 +937,7 @@ jobs:
       # architecture, which a single-platform build stage cannot.
       - name: Verify published image
         run: |
+          scripts/ci/wait-for-image.sh hoophq/hoop-agent-alcatraz:${{ env.GIT_TAG }}
           scripts/ci/verify-alcatraz-image.sh \
             hoophq/hoop-agent-alcatraz:${{ env.GIT_TAG }}
 
@@ -1042,6 +1047,13 @@ jobs:
           password: ${{ secrets.DOCKER_PASSWORD }}
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+      # The base flavours were pushed by the job in `needs`, which can land
+      # ahead of the registry serving them to this runner.
+      - name: Wait for base flavours
+        run: |
+          scripts/ci/wait-for-image.sh \
+            hoophq/hoopagent:${{ env.GIT_TAG }}-minimal \
+            hoophq/hoopagent:${{ env.GIT_TAG }}-distroless
       - name: Build and push (minimal-alcatraz)
         uses: docker/build-push-action@v4
         with:
@@ -1073,6 +1085,9 @@ jobs:
       # has no shell to run sha256sum in.
       - name: Verify published images
         run: |
+          scripts/ci/wait-for-image.sh \
+            hoophq/hoopagent:${{ env.GIT_TAG }}-minimal-alcatraz \
+            hoophq/hoopagent:${{ env.GIT_TAG }}-distroless-alcatraz
           scripts/ci/verify-alcatraz-image.sh \
             hoophq/hoopagent:${{ env.GIT_TAG }}-minimal-alcatraz \
             hoophq/hoopagent:${{ env.GIT_TAG }}-distroless-alcatraz

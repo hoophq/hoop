@@ -24,6 +24,25 @@ if [ "$#" -eq 0 ]; then
   exit 2
 fi
 
+# Every failure below is expected in normal CI use (a missing or corrupt model
+# is what this script hunts for), and errexit turns each one into an immediate
+# exit, so the container and the export directory are released from a trap
+# rather than from the happy path.
+cid=""
+workdir=""
+
+cleanup() {
+  if [ -n "$cid" ]; then
+    docker rm -f "$cid" >/dev/null 2>&1 || true
+    cid=""
+  fi
+  if [ -n "$workdir" ]; then
+    rm -rf "$workdir"
+    workdir=""
+  fi
+}
+trap cleanup EXIT
+
 for image in "$@"; do
   for platform in "${PLATFORMS[@]}"; do
     echo "verifying ${image} (${platform})"
@@ -37,7 +56,8 @@ for image in "$@"; do
     # failure this step exists to catch: an image built without the model.
     docker export "$cid" | tar -x -C "$workdir" "$MODELS_DIR"
     docker rm -f "$cid" >/dev/null
+    cid=""
     (cd "${workdir}/${MODELS_DIR}" && sha256sum -c checksums.txt)
-    rm -rf "$workdir"
+    cleanup
   done
 done
