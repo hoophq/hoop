@@ -223,3 +223,72 @@ func TestPollLimiterIsRaceFree(t *testing.T) {
 		t.Fatalf("buckets = %d, cap is %d", len(l.buckets), pollBucketCap)
 	}
 }
+
+// The attack this exists to stop: submit benign text for a human to read and
+// the hash of something else as the key. A person approves what they saw, and
+// the claim — which presents the hash of the bytes actually on the wire —
+// finds an approval waiting for a statement nobody reviewed.
+//
+// Format validation cannot catch it. sha256("DROP TABLE users") is a perfectly
+// well-formed hash; the question is what it is a hash OF.
+func TestStatementHashMustBeTheHashOfTheDisplayedStatement(t *testing.T) {
+	const shown = "SELECT 1"
+	const actual = "DROP TABLE users"
+
+	forged := hashOf(actual)
+	if !validStatementHash(forged) {
+		t.Fatal("premise check: the forged hash is well-formed, which is the whole problem")
+	}
+	if statementHashMatches(shown, forged) {
+		t.Fatal("a hash of different SQL was accepted for the displayed statement")
+	}
+	if !statementHashMatches(shown, hashOf(shown)) {
+		t.Error("an honest request was refused")
+	}
+
+	// Byte-exact, because the claim is. Anything the gate does not treat as
+	// the same statement must not pass as the same statement here either.
+	for _, tampered := range []string{
+		shown + " ",
+		" " + shown,
+		"select 1",
+		shown + ";",
+		shown + "\n",
+	} {
+		if statementHashMatches(tampered, hashOf(shown)) {
+			t.Errorf("%q passed as the preimage of %q", tampered, shown)
+		}
+	}
+}
+
+// The gateway has to agree with the relay about what the hash covers, or an
+// honest relay gets 400s. This pins the exact construction: lowercase hex
+// SHA-256 over the canonical text, with no length prefix, no salt and no
+// normalization of any kind.
+func TestHashOfMatchesTheRelayConstruction(t *testing.T) {
+	// Pinned against an external reference, not against ourselves:
+	//   printf '%s' 'SELECT 1' | shasum -a 256
+	// A round-trip test would pass even if the construction changed on both
+	// sides at once, which is exactly the drift that would silently stop the
+	// relay's hashes from matching the gateway's.
+	const want = "e004ebd5b5532a4b85984a62f8ad48a81aa3460c1ca07701f386135d72cdecf5"
+	got := hashOf("SELECT 1")
+
+	if got != want {
+		t.Fatalf("hashOf(%q) = %q, want %q — the construction drifted from plain SHA-256",
+			"SELECT 1", got, want)
+	}
+	if got != strings.ToLower(got) {
+		t.Errorf("hash is not lowercase: %q", got)
+	}
+	if !validStatementHash(got) {
+		t.Errorf("our own hash fails our own shape check: %q", got)
+	}
+	// An HTTP statement is method+URI, a blank line, then the body — the
+	// relay's canonical form for that protocol. Nothing here may special-case
+	// it; it is just text.
+	httpCanonical := "POST /anything/users/12345/orders\n\n{\"action\":\"purge\"}"
+	if !statementHashMatches(httpCanonical, hashOf(httpCanonical)) {
+		t.Error("an HTTP canonical statement did not round-trip")
+	}
+}

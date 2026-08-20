@@ -182,9 +182,18 @@ type statementIdentity struct {
 	// what an approval will authorize.
 	Canonical string
 
-	// Hash is the authorization key. Server-computed in the sense that
+	// Hash is the authorization key. Relay-computed in the sense that
 	// matters: it comes from the bytes on the wire, never from a field the
 	// agent chose.
+	//
+	// It reaches the gateway in a request body, though, so from THAT side it
+	// is caller-supplied like anything else. The gateway does not take it on
+	// trust: it refuses a create whose hash is not the SHA-256 of the
+	// statement sent with it, which is the same statement a reviewer is
+	// shown. That is what closes the chain — the hash covers the displayed
+	// text, and the claim presents the hash of the wire bytes, so an approval
+	// covers exactly what the reviewer read. Neither half is sufficient
+	// alone.
 	Hash string
 
 	// Marker is the REQUEST identity — "is this a new request, or a retry of

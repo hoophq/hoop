@@ -372,3 +372,39 @@ func TestSQLMarkerAndHTTPHeaderAreTheSameName(t *testing.T) {
 			markerPrefix, want, hoopinspect.CorrelationHeader)
 	}
 }
+
+// The gateway now refuses a create whose hash is not the SHA-256 of the
+// statement sent with it. That makes the relay's execKey and the gateway's
+// hashOf one contract across two modules: if they ever disagree, every honest
+// request becomes a 400.
+//
+// Pinned against the same external reference the gateway test uses:
+//
+//	printf '%s' 'SELECT 1' | shasum -a 256
+func TestExecKeyMatchesTheGatewayConstruction(t *testing.T) {
+	const want = "e004ebd5b5532a4b85984a62f8ad48a81aa3460c1ca07701f386135d72cdecf5"
+	if got := execKey("SELECT 1"); got != want {
+		t.Fatalf("execKey = %q, want %q", got, want)
+	}
+}
+
+// And the request the gate actually builds must satisfy it: Statement is the
+// preimage of StatementHash for every protocol the gate can gate.
+func TestIdentifySendsTheHashOfWhatItSends(t *testing.T) {
+	stmts := []hoopinspect.Statement{
+		httpStmt("POST /anything/users/1/orders", `{"a":1}`, ""),
+		{Protocol: hoopinspect.Postgres, Text: "DELETE FROM t",
+			Metadata: map[string]string{"pg.message": "Query"}},
+		{Protocol: hoopinspect.MSSQL, Text: "DELETE FROM t",
+			Metadata: map[string]string{"mssql.message": "SQLBatch"}},
+	}
+	for _, stmt := range stmts {
+		id := identify(stmt, "")
+		if !id.Observable {
+			t.Fatalf("%s: test is stale, canonicalFor no longer accepts it", stmt.Protocol)
+		}
+		if id.Hash != execKey(id.Canonical) {
+			t.Errorf("%s: the hash sent is not the hash of the statement sent", stmt.Protocol)
+		}
+	}
+}

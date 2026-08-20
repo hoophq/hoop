@@ -38,6 +38,8 @@
 package inspectapi
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
@@ -121,7 +123,7 @@ func Claim(c *gin.Context) {
 // Create
 //
 //	@Summary		File an inspect review
-//	@Description	Find or create a review for one statement. When the request carries a marker and this sandbox already has a PENDING review for the same connection and marker, that review is returned with 200 instead of a duplicate being filed. A unique index enforces that, so two concurrent requests under one marker also collapse to one review and the loser receives it with 200. Otherwise a session and a one-time review are created and 201 is returned.
+//	@Description	Find or create a review for one statement. statement_hash MUST be the SHA-256 of statement, lowercase hex; the request is refused otherwise, because the reviewer is shown the statement and the approval authorizes the hash. When the request carries a marker and this sandbox already has a PENDING review for the same connection and marker, that review is returned with 200 instead of a duplicate being filed. A unique index enforces that, so two concurrent requests under one marker also collapse to one review and the loser receives it with 200. Otherwise a session and a one-time review are created and 201 is returned.
 //	@Tags				Inspect
 //	@Accept			json
 //	@Produce		json
@@ -153,6 +155,14 @@ func Create(c *gin.Context) {
 	if len(req.Marker) > maxMarkerLen {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"message": fmt.Sprintf("marker is longer than %d characters", maxMarkerLen)})
+		return
+	}
+	// The reviewer reads req.Statement; the claim authorizes req.StatementHash.
+	// Requiring one to be the hash of the other is what makes "an approval
+	// covers exactly what the reviewer saw" a property rather than a promise.
+	if !statementHashMatches(req.Statement, req.StatementHash) {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "statement_hash is not the SHA-256 of statement; " +
+			"an approval has to cover exactly the text the reviewer is shown"})
 		return
 	}
 
@@ -419,12 +429,57 @@ func sessionURL(sessionID string) string {
 	return fmt.Sprintf("%s/sessions/%s", appconfig.Get().FullApiURL(), sessionID)
 }
 
-// validStatementHash enforces the exact shape the relay produces.
+// hashOf returns the lowercase hex SHA-256 of the statement, in the exact
+// form the relay's execKey produces.
+func hashOf(statement string) string {
+	sum := sha256.Sum256([]byte(statement))
+	return hex.EncodeToString(sum[:])
+}
+
+// statementHashMatches reports whether the hash a caller supplied is really the
+// hash of the statement it supplied alongside it.
+//
+// This is the hinge the whole feature turns on, so it is worth being explicit
+// about why it cannot be skipped. The two fields reach different consumers: the
+// statement becomes the session input a HUMAN reads, and the hash becomes the
+// key ClaimInspectReview later authorizes and consumes. Format-checking the
+// hash proves only that it is a hash — not that it is a hash OF the text the
+// reviewer was shown. Without this check a caller may submit benign text with
+// the hash of something else, have a person approve what they read, and then
+// claim the approval for what they did not.
+//
+// The gateway can prove this itself rather than trust the caller, because the
+// relay sends the exact preimage: Statement is the canonical text and
+// StatementHash is execKey over that same canonical text. So equality here is
+// a property of an honest request, not a coincidence.
+//
+// It is a body-vs-body consistency check, which is why it belongs here and not
+// with the credential-derived scoping. It also catches something no attacker is
+// needed for: if the relay's canonicalization ever drifts from what it
+// displays, this fails loudly at create time instead of quietly authorizing
+// text nobody reviewed.
+//
+// Constant-time comparison is deliberately NOT used. Both operands come from
+// the same request body and neither is a secret; there is nothing to leak by
+// timing, and reaching for subtle.ConstantTimeCompare would imply otherwise.
+func statementHashMatches(statement, suppliedHash string) bool {
+	return hashOf(statement) == suppliedHash
+}
+
+// validStatementHash enforces the exact SHAPE the relay produces, and nothing
+// more.
 //
 // Lowercase hex of a fixed length, so a caller cannot smuggle a wildcard, a
 // SQL fragment or an unbounded string into an indexed lookup column, and so a
 // key that does not match is a visible 400 rather than a silent miss that
 // looks like "no approval".
+//
+// Shape is NOT provenance. Passing this says the value is a hash, never that it
+// is the hash of anything in particular — see statementHashMatches, which is
+// what ties the key to the text a reviewer is shown. This function is the right
+// and only check on the claim and poll paths, where the caller presents a hash
+// with no statement to compare it against; on the create path it is necessary
+// and insufficient.
 func validStatementHash(v string) bool {
 	if len(v) != 64 {
 		return false

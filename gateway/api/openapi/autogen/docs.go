@@ -3949,7 +3949,7 @@ const docTemplate = `{
                 }
             },
             "post": {
-                "description": "Find or create a review for one statement. When the request carries a marker and this sandbox already has a PENDING review for the same connection and marker, that review is returned with 200 instead of a duplicate being filed. A unique index enforces that, so two concurrent requests under one marker also collapse to one review and the loser receives it with 200. Otherwise a session and a one-time review are created and 201 is returned.",
+                "description": "Find or create a review for one statement. statement_hash MUST be the SHA-256 of statement, lowercase hex; the request is refused otherwise, because the reviewer is shown the statement and the approval authorizes the hash. When the request carries a marker and this sandbox already has a PENDING review for the same connection and marker, that review is returned with 200 instead of a duplicate being filed. A unique index enforces that, so two concurrent requests under one marker also collapse to one review and the loser receives it with 200. Otherwise a session and a one-time review are created and 201 is returned.",
                 "consumes": [
                     "application/json"
                 ],
