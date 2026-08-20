@@ -64,21 +64,37 @@ fi
 # that asks for a statistical entity type (PERSON, LOCATION, NRP). The backend
 # never fetches at runtime, so the files have to be on disk before the first
 # such session: the published hoophq/hoopagent `-alcatraz` tags bake them in,
-# and the dev container mounts them from the host instead. Seed the directory
-# once (~250MB), with the alcatraz version libhoop links:
+# and the dev container mounts them from the host instead.
 #
-#   go install github.com/hoophq/alcatraz/cmd/alcatraz@$(GOWORK=off go -C libhoop list -m -f '{{.Version}}' github.com/hoophq/alcatraz)
-#   alcatraz models download -dest $HOME/.hoop/dev/alcatraz-models
+# Selecting the provider in .env is the whole setup — the cache fills itself on
+# the next run (~250MB once, checksums only after that) and the container gets
+# ALCATRAZ_NER_MODEL_PATH pointed at the mount, overriding whatever .env says.
+# Force it either way with ALCATRAZ_MODELS_DOWNLOAD=1 or =0; point somewhere
+# else with ALCATRAZ_MODELS_DIR. A directory seeded by hand is mounted as-is.
 #
-# and set ALCATRAZ_NER_MODEL_PATH=/opt/alcatraz/models in .env. Without the
-# directory the mount is skipped and the rest of the provider still works —
-# only the statistical types are refused. Read-only because the agent only
-# reads it, and alcatraz checks every file against a pinned sha256 on load.
+# Read-only because the agent only reads it, and alcatraz checks every file
+# against the manifest's sha256 on load.
 ALCATRAZ_MODELS_DIR="${ALCATRAZ_MODELS_DIR:-$HOME/.hoop/dev/alcatraz-models}"
+if [[ -z ${ALCATRAZ_MODELS_DOWNLOAD:-} ]]; then
+  if grep -qE '^[[:space:]]*DLP_PROVIDER=alcatraz[[:space:]]*$' .env; then
+    ALCATRAZ_MODELS_DOWNLOAD=1
+  else
+    ALCATRAZ_MODELS_DOWNLOAD=0
+  fi
+fi
+
+if [[ $ALCATRAZ_MODELS_DOWNLOAD == "1" ]]; then
+  echo "--> CACHING ALCATRAZ MODELS IN $ALCATRAZ_MODELS_DIR"
+  ./scripts/dev/alcatraz-models.sh "$ALCATRAZ_MODELS_DIR"
+fi
+
 ALCATRAZ_MOUNT=()
 if [[ -d $ALCATRAZ_MODELS_DIR ]]; then
   echo "--> MOUNTING ALCATRAZ MODELS FROM $ALCATRAZ_MODELS_DIR"
-  ALCATRAZ_MOUNT=(-v "$ALCATRAZ_MODELS_DIR:/opt/alcatraz/models:ro")
+  ALCATRAZ_MOUNT=(
+    -v "$ALCATRAZ_MODELS_DIR:/opt/alcatraz/models:ro"
+    -e ALCATRAZ_NER_MODEL_PATH=/opt/alcatraz/models
+  )
 fi
 
 VERSION="${VERSION:-unknown}"
