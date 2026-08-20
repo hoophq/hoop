@@ -1,0 +1,20 @@
+/* Export renders the report alone. The rules are scoped to the
+   `compliance-printing` body class, which the page toggles only during its
+   export flow — a bare Cmd+P on any other route (or even on this page) must
+   keep printing normally, and this stylesheet ships in the main bundle. */
+@media print {
+  body.compliance-printing * {
+    visibility: hidden;
+  }
+  body.compliance-printing #compliance-report-root,
+  body.compliance-printing #compliance-report-root * {
+    visibility: visible;
+  }
+  body.compliance-printing #compliance-report-root {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    padding: 0;
+  }
+}

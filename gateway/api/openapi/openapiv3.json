@@ -1547,6 +1547,14 @@
       },
       "openapi.ComplianceCheckResult": {
         "properties": {
+          "action": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/openapi.ComplianceControlAction"
+              }
+            ],
+            "description": "Action is the remediation action for this check, when one exists"
+          },
           "category": {
             "description": "Category groups checks by security domain",
             "enum": [
@@ -1592,6 +1600,14 @@
       },
       "openapi.ComplianceControl": {
         "properties": {
+          "action": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/openapi.ComplianceControlAction"
+              }
+            ],
+            "description": "Action is the remediation action for this control, when one exists"
+          },
           "category": {
             "description": "Category groups the control by security domain",
             "type": "string"
@@ -1628,6 +1644,30 @@
           },
           "title": {
             "description": "Title is the control name",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.ComplianceControlAction": {
+        "properties": {
+          "label": {
+            "description": "Label is the display text of the action",
+            "example": "Go to Resources ↗",
+            "type": "string"
+          },
+          "target": {
+            "description": "Target is the in-app route or docs path; empty for external actions",
+            "example": "/resources",
+            "type": "string"
+          },
+          "type": {
+            "description": "Type classifies the action target",
+            "enum": [
+              "app",
+              "docs",
+              "external"
+            ],
             "type": "string"
           }
         },

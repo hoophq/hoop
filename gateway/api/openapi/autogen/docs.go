@@ -12149,6 +12149,14 @@ const docTemplate = `{
         "openapi.ComplianceCheckResult": {
             "type": "object",
             "properties": {
+                "action": {
+                    "description": "Action is the remediation action for this check, when one exists",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.ComplianceControlAction"
+                        }
+                    ]
+                },
                 "category": {
                     "description": "Category groups checks by security domain",
                     "type": "string",
@@ -12194,6 +12202,14 @@ const docTemplate = `{
         "openapi.ComplianceControl": {
             "type": "object",
             "properties": {
+                "action": {
+                    "description": "Action is the remediation action for this control, when one exists",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.ComplianceControlAction"
+                        }
+                    ]
+                },
                 "category": {
                     "description": "Category groups the control by security domain",
                     "type": "string"
@@ -12231,6 +12247,30 @@ const docTemplate = `{
                 "title": {
                     "description": "Title is the control name",
                     "type": "string"
+                }
+            }
+        },
+        "openapi.ComplianceControlAction": {
+            "type": "object",
+            "properties": {
+                "label": {
+                    "description": "Label is the display text of the action",
+                    "type": "string",
+                    "example": "Go to Resources ↗"
+                },
+                "target": {
+                    "description": "Target is the in-app route or docs path; empty for external actions",
+                    "type": "string",
+                    "example": "/resources"
+                },
+                "type": {
+                    "description": "Type classifies the action target",
+                    "type": "string",
+                    "enum": [
+                        "app",
+                        "docs",
+                        "external"
+                    ]
                 }
             }
         },

@@ -1,5 +1,6 @@
 import {
   Package,
+  FileCheck,
   LayoutDashboard,
   SquareCode,
   BookUp2,
@@ -27,6 +28,7 @@ import {
 export const MAIN_ITEMS = [
   { label: 'Resources', path: '/resources', icon: Package, adminOnly: false },
   { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, adminOnly: true },
+  { label: 'Compliance Report', path: '/compliance-report', icon: FileCheck, adminOnly: true },
   { label: 'Terminal', path: '/client', icon: SquareCode, adminOnly: false },
   { label: 'Runbooks', path: '/runbooks', icon: BookUp2, adminOnly: false, licenseFeature: 'runbooks' },
   { label: 'Sessions', path: '/sessions', icon: GalleryVerticalEnd, adminOnly: false }

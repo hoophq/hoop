@@ -1,5 +1,7 @@
 package apireports
 
+import "github.com/hoophq/hoop/gateway/api/openapi"
+
 // Category identifiers and display titles, in fixed report order.
 const (
 	categoryIdentity           = "identity"
@@ -89,13 +91,23 @@ var complianceCheckByID = func() map[string]complianceCheckDef {
 	return m
 }()
 
-// complianceAction is internal remediation metadata. It is not exposed in the
-// API payload; its Type drives the action-required filter (app/docs are
-// actionable in-product, external/none are not).
+// complianceAction is the remediation metadata of a control. Its Type drives
+// the action-required filter (app/docs are actionable in-product,
+// external/none are not) and, except for "none", it is exposed in the API
+// payload so the frontend can render the remediation link.
 type complianceAction struct {
 	Label  string
 	Type   string // app, docs, external, none
 	Target string
+}
+
+// payload converts the action to its API representation; "none" actions are
+// omitted from the payload entirely.
+func (a complianceAction) payload() *openapi.ComplianceControlAction {
+	if a.Type == "" || a.Type == "none" {
+		return nil
+	}
+	return &openapi.ComplianceControlAction{Label: a.Label, Type: a.Type, Target: a.Target}
 }
 
 type complianceControlDef struct {

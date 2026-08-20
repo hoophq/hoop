@@ -3839,6 +3839,19 @@ const (
 	ComplianceStatusInformational ComplianceStatusType = "informational"
 )
 
+// ComplianceControlAction is the remediation action attached to a control.
+// Type "app" targets an in-app route, "docs" a documentation path, and
+// "external" a system outside Hoop (empty target). Controls with no action
+// omit the field.
+type ComplianceControlAction struct {
+	// Label is the display text of the action
+	Label string `json:"label" example:"Go to Resources ↗"`
+	// Type classifies the action target
+	Type string `json:"type" enums:"app,docs,external"`
+	// Target is the in-app route or docs path; empty for external actions
+	Target string `json:"target" example:"/resources"`
+}
+
 type ComplianceCheckResult struct {
 	// ID is the stable evaluator id of the check
 	ID string `json:"id" example:"sso_enabled"`
@@ -3852,6 +3865,8 @@ type ComplianceCheckResult struct {
 	Message string `json:"message" example:"SSO is enabled via OIDC provider"`
 	// Evidence is the data supporting the evaluated status
 	Evidence string `json:"evidence" example:"Authentication method: OIDC"`
+	// Action is the remediation action for this check, when one exists
+	Action *ComplianceControlAction `json:"action,omitempty"`
 }
 
 type ComplianceControl struct {
@@ -3871,6 +3886,8 @@ type ComplianceControl struct {
 	Message string `json:"message"`
 	// Evidence is the data supporting the evaluated status
 	Evidence string `json:"evidence"`
+	// Action is the remediation action for this control, when one exists
+	Action *ComplianceControlAction `json:"action,omitempty"`
 }
 
 type ComplianceControlGroup struct {

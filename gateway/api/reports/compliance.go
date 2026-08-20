@@ -194,6 +194,7 @@ func buildComplianceReport(snap *complianceSnapshot) openapi.ComplianceReport {
 					Status:      res.Status,
 					Message:     res.Message,
 					Evidence:    res.Evidence,
+					Action:      ctrlDef.Action.payload(),
 				})
 				if _, ok := firstActionByCheckID[ctrlDef.CheckID]; !ok {
 					firstActionByCheckID[ctrlDef.CheckID] = ctrlDef.Action
@@ -283,6 +284,7 @@ func buildComplianceReport(snap *complianceSnapshot) openapi.ComplianceReport {
 			Status:   res.Status,
 			Message:  res.Message,
 			Evidence: res.Evidence,
+			Action:   action.payload(),
 		})
 	}
 	// non_compliant first, then warning; stable to preserve catalog order.
