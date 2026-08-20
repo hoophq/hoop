@@ -828,6 +828,33 @@ isFreeFormCustomSubtype(subtype) // free-form credentials editor
   `GET /connection-credentials`, which is secret-less; `get()` is the only call
   that returns a plaintext secret, so it runs on demand when a row is expanded.
 
+### `license.js`
+Shared by the shell's `LicenseBanner` and the license settings page.
+```js
+import { LICENSE_STATUS, formatLicenseDate, daysUntilExpiration } from '@/utils/license'
+
+LICENSE_STATUS.VALID | .EXPIRED | .INVALID  // /serverinfo license_info.status
+formatLicenseDate(1785333321)               // "Jul 29, 2026"
+daysUntilExpiration(1785333321)             // whole days left, negative once past
+```
+Branch on `license_info.status`, never on a local `expire_at` comparison — the
+gateway decides expiry against its own clock, which is the clock that actually
+blocks sessions. `daysUntilExpiration` is only for the "expires in N days"
+countdown while the status is still `valid`.
+
+### `support.js`
+Opens the same destination as "Contact support" in the header user menu.
+```js
+import { openSupport, GITHUB_DISCUSSIONS_URL } from '@/utils/support'
+
+openSupport('I want to renew my hoop license')
+```
+Delegates to `useUserStore.showIntercomMessage`, which boots Intercom when the
+app-boot init was skipped or shut down, and falls back to the public GitHub
+discussions board when it is unavailable (analytics off, widget blocked). Use it
+for any support entry point outside the user menu — that one already has
+Intercom's launcher listener bound to its `#intercom-support-trigger` id.
+
 ---
 
 ## Notifications — `showSnackbar`

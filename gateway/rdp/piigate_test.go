@@ -890,8 +890,8 @@ func TestPIIGate_FragmentedUpdateHeldUntilReassembly(t *testing.T) {
 	}
 }
 
-func TestParseRDPDataMaskingRulesUsesResourceEntitiesAndThreshold(t *testing.T) {
-	params, err := parseRDPDataMaskingRules([]byte(`[
+func TestParseRDPDataMaskingRulesPreservesCompleteResourcePolicy(t *testing.T) {
+	data := []byte(`[
 		{
 			"supported_entity_types": [
 				{"name": "CONTACT_INFORMATION", "entity_types": ["PERSON", "EMAIL_ADDRESS"]},
@@ -905,18 +905,16 @@ func TestParseRDPDataMaskingRulesUsesResourceEntitiesAndThreshold(t *testing.T) 
 			],
 			"score_threshold": 0.6
 		}
-	]`))
+	]`)
+	params, err := parseRDPDataMaskingRules(data)
 	if err != nil {
 		t.Fatalf("parse rules: %v", err)
 	}
 	if params == nil {
 		t.Fatal("rules with supported entities must enable masking")
 	}
-	if got, want := fmt.Sprint(params.EntityAllowlist), "[DATE_TIME EMAIL_ADDRESS PERSON US_SSN]"; got != want {
-		t.Fatalf("entity allowlist = %s, want %s", got, want)
-	}
-	if params.ScoreThreshold != 0.6 {
-		t.Fatalf("score threshold = %v, want 0.6", params.ScoreThreshold)
+	if !bytes.Equal(params.DataMaskingEntityData, data) {
+		t.Fatal("complete Data Masking rule payload was not preserved for the RDP agent")
 	}
 
 	none, err := parseRDPDataMaskingRules([]byte(`[]`))
@@ -965,7 +963,7 @@ func TestParseRDPDataMaskingRulesRejectsNonCanonicalEntities(t *testing.T) {
 	}
 }
 
-func TestParseRDPDataMaskingRulesPreservesZeroThreshold(t *testing.T) {
+func TestParseRDPDataMaskingRulesAcceptsZeroThreshold(t *testing.T) {
 	params, err := parseRDPDataMaskingRules([]byte(`[
 		{
 			"name": "all-confidence",
@@ -976,8 +974,8 @@ func TestParseRDPDataMaskingRulesPreservesZeroThreshold(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse rules: %v", err)
 	}
-	if params == nil || params.ScoreThreshold != 0 {
-		t.Fatalf("score threshold = %#v, want 0", params)
+	if params == nil {
+		t.Fatal("zero threshold must remain a valid guarded policy")
 	}
 }
 
@@ -999,15 +997,41 @@ func TestParseRDPDataMaskingRulesRejectsInvalidThresholds(t *testing.T) {
 	}
 }
 
-func TestParseRDPDataMaskingRulesRejectsCustomEntities(t *testing.T) {
-	params, err := parseRDPDataMaskingRules([]byte(`[
+func TestParseRDPDataMaskingRulesSupportsCustomEntities(t *testing.T) {
+	data := []byte(`[
 		{
-			"name": "employee-id",
+			"name": "employee-data",
 			"supported_entity_types": [{"name": "CONTACT_INFORMATION", "entity_types": ["PERSON"]}],
-			"custom_entity_types": [{"name": "EMPLOYEE_ID", "regex": "EMP-[0-9]+", "score": 1}]
+			"custom_entity_types": [
+				{"name": "EMPLOYEE_ID", "regex": "EMP-[0-9]+", "score": 0.0},
+				{"name": "VIP_NAME", "deny_list": ["Alice Example"], "score": 0.9}
+			],
+			"score_threshold": 0.4
 		}
-	]`))
-	if err == nil {
-		t.Fatalf("custom entity rule returned params %#v; want an unsupported-rule error", params)
+	]`)
+	params, err := parseRDPDataMaskingRules(data)
+	if err != nil {
+		t.Fatalf("parse custom entity rules: %v", err)
+	}
+	if params == nil {
+		t.Fatal("custom entity rules must enable masking")
+	}
+	if !bytes.Equal(params.DataMaskingEntityData, data) {
+		t.Fatal("complete Data Masking rule payload was not preserved for the RDP agent")
+	}
+}
+
+func TestParseRDPDataMaskingRulesRejectsInvalidCustomEntities(t *testing.T) {
+	tests := []string{
+		`[{"name":"missing-pattern","custom_entity_types":[{"name":"EMPLOYEE_ID","score":0.8}]}]`,
+		`[{"name":"invalid-name","custom_entity_types":[{"name":"employee-id","regex":"EMP-[0-9]+","score":0.8}]}]`,
+		`[{"name":"invalid-score","custom_entity_types":[{"name":"EMPLOYEE_ID","regex":"EMP-[0-9]+","score":1.1}]}]`,
+		`[{"name":"missing-score","custom_entity_types":[{"name":"EMPLOYEE_ID","regex":"EMP-[0-9]+"}]}]`,
+		`[{"name":"null-score","custom_entity_types":[{"name":"EMPLOYEE_ID","regex":"EMP-[0-9]+","score":null}]}]`,
+	}
+	for _, data := range tests {
+		if params, err := parseRDPDataMaskingRules([]byte(data)); err == nil {
+			t.Fatalf("invalid custom entity rule returned params %#v; want an error", params)
+		}
 	}
 }

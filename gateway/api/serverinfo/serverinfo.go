@@ -1,6 +1,7 @@
 package apiserverinfo
 
 import (
+	"errors"
 	"net/http"
 	"net/url"
 	"os"
@@ -16,18 +17,19 @@ import (
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
 var (
 	isOrgMultiTenant = os.Getenv("ORG_MULTI_TENANT") == "true"
 	vinfo            = version.Get()
-	serverInfoData   = openapi.ServerInfo{
+	// Process-wide attributes only — requests copy it before adding org fields.
+	baseServerInfo = openapi.ServerInfo{
 		Version:                 vinfo.Version,
 		Commit:                  vinfo.GitCommit,
 		LogLevel:                os.Getenv("LOG_LEVEL"),
 		GoDebug:                 os.Getenv("GODEBUG"),
-		RedactProvider:          os.Getenv("DLP_PROVIDER"),
 		HasWebhookAppKey:        isEnvSet("WEBHOOK_APPKEY"),
 		HasIDPAudience:          isEnvSet("IDP_AUDIENCE"),
 		HasIDPCustomScopes:      isEnvSet("IDP_CUSTOM_SCOPES"),
@@ -67,18 +69,18 @@ func Get(c *gin.Context) {
 
 	appc := appconfig.Get()
 	apiHostname := appc.ApiHostname()
-	l, licenseVerifyErr := defaultOSSLicense(), ""
+	// Separate from err, which still carries the tolerated models.ErrNotFound above.
+	l, licenseErr := defaultOSSLicense(), error(nil)
 	if org.LicenseData != nil {
-		l, err = license.Parse(org.LicenseData, apiHostname)
-		if err != nil {
-			licenseVerifyErr = err.Error()
-		}
+		l, licenseErr = license.Parse(org.LicenseData, apiHostname)
 	}
 
 	analyticsMode := org.AnalyticsMode
 	if !models.IsValidAnalyticsMode(analyticsMode) {
 		analyticsMode = models.AnalyticsModeAnonymous
 	}
+
+	serverInfoData := baseServerInfo
 	serverInfoData.AnalyticsMode = openapi.AnalyticsModeType(analyticsMode)
 	if analyticsMode == models.AnalyticsModeDisabled {
 		serverInfoData.AnalyticsTracking = string(openapi.AnalyticsTrackingDisabled)
@@ -97,17 +99,23 @@ func Get(c *gin.Context) {
 	serverInfoData.GrpcURL = ctx.GrpcURL
 	serverInfoData.ApiURL = appc.ApiURL()
 	serverInfoData.HasAskiAICredentials = appc.IsAskAIAvailable()
-	serverInfoData.HasRedactCredentials = appc.HasRedactCredentials()
+	serverInfoData.RedactProvider = appc.DlpProvider()
+	serverInfoData.HasRedactCredentials = services.CheckRedactProvider() == nil
 	serverInfoData.HasSSHClientHostKey = appc.SSHClientHostKey() != ""
 	serverInfoData.PostgresProxyEnabled = miscConf != nil &&
 		miscConf.PostgresServerConfig != nil &&
 		miscConf.PostgresServerConfig.ListenAddress != ""
 	serverInfoData.FeatureFlags = featureflag.SnapshotForOrg(ctx.OrgID)
 	serverInfoData.LicenseInfo = &openapi.ServerLicenseInfo{
-		IsValid:      err == nil,
-		VerifyError:  licenseVerifyErr,
+		Status:       licenseStatus(licenseErr),
+		IsValid:      licenseErr == nil,
 		VerifiedHost: apiHostname,
 	}
+	if licenseErr != nil {
+		serverInfoData.LicenseInfo.VerifyError = licenseErr.Error()
+	}
+	// Parse returns the payload even when verification fails, so an expired
+	// license still reports expire_at.
 	if l != nil {
 		serverInfoData.LicenseInfo.KeyID = l.KeyID
 		serverInfoData.LicenseInfo.AllowedHosts = l.Payload.AllowedHosts
@@ -123,6 +131,18 @@ func Get(c *gin.Context) {
 		}
 	}
 	c.JSON(http.StatusOK, serverInfoData)
+}
+
+// Expiry is decided on the same clock the gRPC connect gate uses, not in the browser.
+func licenseStatus(err error) string {
+	switch {
+	case err == nil:
+		return openapi.LicenseStatusValid
+	case errors.Is(err, license.ErrExpired):
+		return openapi.LicenseStatusExpired
+	default:
+		return openapi.LicenseStatusInvalid
+	}
 }
 
 func defaultOSSLicense() *license.License {

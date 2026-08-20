@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/common/license"
 	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/analytics"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
@@ -103,5 +104,29 @@ func SignLicense(c *gin.Context) {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed verifying license: %v", err)
 		return
 	}
+
+	// Signed licenses are never stored, so this is the record of what was issued.
+	trackClient := analytics.New()
+	defer trackClient.Close()
+	trackClient.Track(ctx.UserID, analytics.EventLicenseSigned, signedLicenseProperties(ctx.OrgID, req, l))
+
 	c.JSON(http.StatusOK, l)
+}
+
+func signedLicenseProperties(orgID string, req SignRequest, l *license.License) map[string]any {
+	features := l.Payload.Features
+	if features == nil {
+		features = []string{}
+	}
+	return map[string]any{
+		"org-id":        orgID,
+		"license-type":  l.Payload.Type,
+		"description":   l.Payload.Description,
+		"allowed-hosts": l.Payload.AllowedHosts,
+		"features":      features,
+		"key-id":        l.KeyID,
+		"issued-at":     time.Unix(l.Payload.IssuedAt, 0).UTC().Format(time.RFC3339),
+		"expire-at":     time.Unix(l.Payload.ExpireAt, 0).UTC().Format(time.RFC3339),
+		"valid-for":     req.ExpireAt,
+	}
 }

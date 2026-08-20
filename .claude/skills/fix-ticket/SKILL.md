@@ -51,7 +51,7 @@ Open with `gh pr create --draft`. Title: `<ID>: <summary>`. Body must contain:
 
 ```
 ## Ticket
-<Linear URL>
+<ticket ID only, e.g. DEP-147 — never a Linear URL>
 
 ## What & why
 <2-6 lines>

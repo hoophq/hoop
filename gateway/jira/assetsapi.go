@@ -44,6 +44,93 @@ func FetchObjectsByAQL(config *models.JiraIntegration, limit, offset int, query 
 	return fetchObjectsByAQL(config, vals, query)
 }
 
+// FetchAssetFieldConfigs resolves the Assets configuration of each Jira
+// custom field: field -> context id -> JSM cmdb fieldconfig. The returned
+// AQL queries are the same ones Jira's portal applies to the field's own
+// dropdown; fields without any query (including non-Assets fields) are
+// omitted. The fieldconfig route is served by Jira Service Management but is
+// not part of the documented public API.
+func FetchAssetFieldConfigs(config *models.JiraIntegration, fieldIDs []string) ([]AssetFieldConfig, error) {
+	ctx, cancelFn := context.WithTimeoutCause(context.Background(), defaultRequestTimeout, &ErrTimeoutReached{})
+	defer cancelFn()
+	configs := []AssetFieldConfig{}
+	for _, fieldID := range fieldIDs {
+		contextID, err := fetchFieldContextID(ctx, config, fieldID)
+		if err != nil {
+			return nil, err
+		}
+		if contextID == "" {
+			continue
+		}
+		var fieldConfig assetFieldConfig
+		apiURL := fmt.Sprintf("%s/rest/servicedesk/cmdb/latest/fieldconfig/%s", config.URL, url.PathEscape(contextID))
+		if err := fetchAssetsJSON(ctx, config, apiURL, "cmdb-fieldconfig", &fieldConfig); err != nil {
+			return nil, err
+		}
+		if fieldConfig.ObjectFilterQuery == "" && fieldConfig.IssueScopeFilterQuery == "" {
+			continue
+		}
+		configs = append(configs, AssetFieldConfig{
+			JiraField:             fieldID,
+			ObjectSchemaID:        fieldConfig.ObjectSchemaID,
+			ObjectFilterQuery:     fieldConfig.ObjectFilterQuery,
+			IssueScopeFilterQuery: fieldConfig.IssueScopeFilterQuery,
+		})
+	}
+	return configs, nil
+}
+
+// fetchFieldContextID returns the field's global context id, falling back to
+// the first context. Fields without contexts resolve to "".
+func fetchFieldContextID(ctx context.Context, config *models.JiraIntegration, fieldID string) (string, error) {
+	var contexts fieldContexts
+	apiURL := fmt.Sprintf("%s/rest/api/2/field/%s/context", config.URL, url.PathEscape(fieldID))
+	if err := fetchAssetsJSON(ctx, config, apiURL, "field-contexts", &contexts); err != nil {
+		return "", err
+	}
+	if len(contexts.Values) == 0 {
+		return "", nil
+	}
+	for _, c := range contexts.Values {
+		if c.IsGlobalContext {
+			return c.ID, nil
+		}
+	}
+	return contexts.Values[0].ID, nil
+}
+
+func fetchAssetsJSON(ctx context.Context, config *models.JiraIntegration, apiURL, resource string, out any) error {
+	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
+	if err != nil {
+		return fmt.Errorf("failed creating %s request, reason=%v", resource, err)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.SetBasicAuth(config.User, config.APIToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		if errCtx, ok := context.Cause(ctx).(*ErrTimeoutReached); ok {
+			errCtx.apiResource = resource
+			errCtx.query = apiURL
+			return errCtx
+		}
+		return fmt.Errorf("failed fetching %s, api-url=%v, reason=%v", resource, apiURL, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		body, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			return fmt.Errorf("unable to fetch %s, api-url=%v, status=%v (failed reading response body: %v)",
+				resource, apiURL, resp.StatusCode, readErr)
+		}
+		return fmt.Errorf("unable to fetch %s, api-url=%v, status=%v, body=%v",
+			resource, apiURL, resp.StatusCode, string(body))
+	}
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+		return fmt.Errorf("failed decoding %s response, reason=%v", resource, err)
+	}
+	return nil
+}
+
 // https://developer.atlassian.com/cloud/assets/rest/api-group-object/#api-object-aql-post
 func fetchObjectsByAQL(config *models.JiraIntegration, queryVals url.Values, query string) (*AqlResponse, error) {
 	ctx, cancelFn := context.WithTimeoutCause(context.Background(), defaultRequestTimeout, &ErrTimeoutReached{})

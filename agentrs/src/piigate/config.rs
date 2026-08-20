@@ -1,19 +1,45 @@
 //! Resolving the agent-side PII guard configuration for a session.
 //!
-//! The enable decision, resource entity allowlist, score threshold, and band
-//! padding are sent by the gateway in SessionStarted metadata. Endpoints
+//! The enable decision, complete connection-scoped Data Masking rule payload,
+//! and band padding are sent by the gateway in SessionStarted metadata. Endpoints
 //! (Presidio analyzer, OCR sidecar) come from the agent's own environment —
 //! the sidecar and analyzer live in the customer network next to the agent,
 //! so their addresses are deliberately NOT carried on the wire or held in
 //! gateway state. This mirrors the Go agent's terminal-DLP precedent, where
 //! the agent reads MSPRESIDIO_ANALYZER_URL from its environment.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
+use serde::Deserialize;
 use tracing::warn;
 
-use super::presidio::AnalysisParams;
+use super::presidio::{AdHocRecognizer, AdHocRecognizerPattern, AnalysisParams};
 use super::GatePolicy;
+
+#[derive(Debug, Deserialize)]
+struct DataMaskingRule {
+    #[serde(default)]
+    supported_entity_types: Vec<SupportedEntityTypesEntry>,
+    #[serde(default)]
+    custom_entity_types: Vec<CustomEntityTypesEntry>,
+    score_threshold: Option<f64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SupportedEntityTypesEntry {
+    name: String,
+    #[serde(default)]
+    entity_types: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CustomEntityTypesEntry {
+    name: String,
+    regex: Option<String>,
+    #[serde(default)]
+    deny_list: Vec<String>,
+    score: f64,
+}
 
 /// Env var for the Presidio analyzer base URL (shared with the Go agent's
 /// DLP override convention).
@@ -53,6 +79,96 @@ pub fn guard_requested(metadata: &HashMap<String, String>) -> bool {
 /// `resolve`.
 pub fn supports_pii_guard() -> bool {
     env_url(PRESIDIO_ANALYZER_URL_ENV).is_some() && env_url(OCR_SERVER_URL_ENV).is_some()
+}
+
+fn is_canonical_entity_type(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .bytes()
+            .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == b'_')
+}
+
+fn apply_data_masking_rules(
+    params: &mut AnalysisParams,
+    raw_rules: &str,
+) -> anyhow::Result<()> {
+    let rules: Vec<DataMaskingRule> =
+        serde_json::from_str(raw_rules).map_err(|e| anyhow::anyhow!("invalid JSON: {e}"))?;
+    if rules.is_empty() {
+        anyhow::bail!("rule list is empty");
+    }
+
+    let mut entity_allowlist = BTreeSet::new();
+    let mut ad_hoc_recognizers = Vec::new();
+    let mut score_threshold: Option<f64> = None;
+    for rule in rules {
+        let mut rule_has_entities = false;
+
+        for group in &rule.supported_entity_types {
+            if group.entity_types.is_empty() {
+                anyhow::bail!("supported entity group {:?} is empty", group.name);
+            }
+            for entity in &group.entity_types {
+                if !is_canonical_entity_type(entity) {
+                    anyhow::bail!("invalid entity type {entity:?}");
+                }
+                entity_allowlist.insert(entity.clone());
+                rule_has_entities = true;
+            }
+        }
+
+        for custom in rule.custom_entity_types {
+            if !is_canonical_entity_type(&custom.name) {
+                anyhow::bail!("invalid custom entity name {:?}", custom.name);
+            }
+            let regex = custom.regex.unwrap_or_default();
+            if regex.is_empty() && custom.deny_list.is_empty() {
+                anyhow::bail!(
+                    "custom entity {:?} requires regex or deny_list",
+                    custom.name
+                );
+            }
+            let score = custom.score;
+            if !(0.0..=1.0).contains(&score) || !score.is_finite() {
+                anyhow::bail!("custom entity {:?} has invalid score {score}", custom.name);
+            }
+            entity_allowlist.insert(custom.name.clone());
+            rule_has_entities = true;
+            let patterns = if regex.is_empty() {
+                Vec::new()
+            } else {
+                vec![AdHocRecognizerPattern {
+                    name: custom.name.clone(),
+                    regex,
+                    score,
+                }]
+            };
+            ad_hoc_recognizers.push(AdHocRecognizer {
+                name: custom.name.clone(),
+                supported_language: "en".into(),
+                supported_entity: custom.name,
+                deny_list: custom.deny_list,
+                patterns,
+            });
+        }
+        if rule_has_entities {
+            let score = rule.score_threshold.unwrap_or(0.5);
+            if !(0.0..=1.0).contains(&score) || !score.is_finite() {
+                anyhow::bail!("invalid score threshold {score}");
+            }
+            score_threshold = Some(score_threshold.map_or(score, |current| current.min(score)));
+        }
+    }
+    if entity_allowlist.is_empty() {
+        anyhow::bail!("rules contain no entity types");
+    }
+
+    params.entity_allowlist = entity_allowlist.into_iter().collect();
+    params.ad_hoc_recognizers = ad_hoc_recognizers;
+    if let Some(score) = score_threshold {
+        params.score_threshold = score;
+    }
+    Ok(())
 }
 
 impl GuardConfig {
@@ -95,16 +211,19 @@ impl GuardConfig {
         if let Some(v) = metadata.get("pii_band_padding").and_then(|s| s.parse().ok()) {
             params.band_padding = v;
         }
-        if let Some(list) = metadata.get("pii_entity_allowlist") {
-            // JSON array: entity names use Presidio's external vocabulary and
-            // must not rely on being comma-free.
+        if let Some(rules) = metadata.get("data_masking_entity_data") {
+            apply_data_masking_rules(&mut params, rules)
+                .map_err(|e| anyhow::anyhow!("invalid data_masking_entity_data: {e}"))?;
+        } else if let Some(list) = metadata.get("pii_entity_allowlist") {
+            // Compatibility with gateways predating complete Data Masking
+            // policy metadata. The full rule payload takes precedence.
             match serde_json::from_str::<Vec<String>>(list) {
                 Ok(entities) => params.entity_allowlist = entities,
                 Err(e) => warn!(%sid, "piigate: ignoring malformed pii_entity_allowlist: {e}"),
             }
         } else if let Some(list) = metadata.get("pii_entity_denylist") {
             // Compatibility with gateways predating connection-scoped
-            // allowlists. The v2 allowlist takes precedence when both exist.
+            // allowlists.
             match serde_json::from_str::<Vec<String>>(list) {
                 Ok(entities) => params.entity_denylist = entities,
                 Err(e) => warn!(%sid, "piigate: ignoring malformed pii_entity_denylist: {e}"),
@@ -307,4 +426,122 @@ mod tests {
             });
         }
     }
+    #[test]
+    fn resolves_complete_data_masking_rules() {
+        with_endpoints(Some("http://p"), Some("http://o"), || {
+            let cfg = GuardConfig::resolve(
+                &md(&[
+                    ("pii_guard", "enabled"),
+                    ("pii_score_threshold", "0.9"),
+                    (
+                        "data_masking_entity_data",
+                        r#"[
+                            {
+                                "supported_entity_types": [
+                                    {"name": "CONTACT_INFORMATION", "entity_types": ["PERSON", "DATE_TIME"]}
+                                ],
+                                "custom_entity_types": [
+                                    {"name": "EMPLOYEE_ID", "regex": "EMP-[0-9]+", "score": 0.0},
+                                    {"name": "VIP_NAME", "deny_list": ["Alice Example"], "score": 0.7}
+                                ],
+                                "score_threshold": 0.4
+                            }
+                        ]"#,
+                    ),
+                ]),
+                "sid",
+            )
+            .unwrap()
+            .unwrap();
+
+            assert_eq!(cfg.params.score_threshold, 0.4);
+            assert_eq!(
+                cfg.params.entity_allowlist,
+                vec!["DATE_TIME", "EMPLOYEE_ID", "PERSON", "VIP_NAME"]
+            );
+            assert_eq!(cfg.params.ad_hoc_recognizers.len(), 2);
+            assert_eq!(
+                cfg.params.ad_hoc_recognizers[0].patterns,
+                vec![AdHocRecognizerPattern {
+                    name: "EMPLOYEE_ID".into(),
+                    regex: "EMP-[0-9]+".into(),
+                    score: 0.0,
+                }]
+            );
+            assert_eq!(
+                cfg.params.ad_hoc_recognizers[1].deny_list,
+                vec!["Alice Example"]
+            );
+        });
+    }
+
+    #[test]
+    fn complete_data_masking_rules_take_precedence_over_legacy_keys() {
+        with_endpoints(Some("http://p"), Some("http://o"), || {
+            let cfg = GuardConfig::resolve(
+                &md(&[
+                    ("pii_guard", "enabled"),
+                    ("pii_score_threshold", "0.9"),
+                    ("pii_entity_allowlist", r#"["US_SSN"]"#),
+                    (
+                        "data_masking_entity_data",
+                        r#"[{"supported_entity_types":[{"name":"TIME_DATA","entity_types":["DATE_TIME"]}],"score_threshold":0}]"#,
+                    ),
+                ]),
+                "sid",
+            )
+            .unwrap()
+            .unwrap();
+
+            assert_eq!(cfg.params.score_threshold, 0.0);
+            assert_eq!(cfg.params.entity_allowlist, vec!["DATE_TIME"]);
+        });
+    }
+
+    #[test]
+    fn invalid_complete_data_masking_rules_fail_closed() {
+        with_endpoints(Some("http://p"), Some("http://o"), || {
+            for rules in [
+                "not-json",
+                "[]",
+                r#"[{"supported_entity_types":[{"name":"UNKNOWN"}]}]"#,
+                r#"[{"custom_entity_types":[{"name":"EMPLOYEE_ID","score":0.8}]}]"#,
+                r#"[{"custom_entity_types":[{"name":"employee-id","regex":"EMP-[0-9]+","score":0.8}]}]"#,
+                r#"[{"custom_entity_types":[{"name":"EMPLOYEE_ID","regex":"EMP-[0-9]+","score":1.1}]}]"#,
+                r#"[{"custom_entity_types":[{"name":"EMPLOYEE_ID","regex":"EMP-[0-9]+"}]}]"#,
+                r#"[{"custom_entity_types":[{"name":"EMPLOYEE_ID","regex":"EMP-[0-9]+","score":null}]}]"#,
+            ] {
+                let err = GuardConfig::resolve(
+                    &md(&[
+                        ("pii_guard", "enabled"),
+                        ("data_masking_entity_data", rules),
+                    ]),
+                    "sid",
+                )
+                .unwrap_err();
+                assert!(
+                    err.to_string().contains("invalid data_masking_entity_data"),
+                    "unexpected error for {rules}: {err}"
+                );
+            }
+        });
+    }
+
+    #[test]
+    fn threshold_matches_gateway_rule_combination() {
+        let mut params = AnalysisParams::default();
+        apply_data_masking_rules(
+            &mut params,
+            r#"[
+                {"score_threshold":0.1},
+                {"supported_entity_types":[{"name":"TIME_DATA","entity_types":["DATE_TIME"]}]},
+                {"supported_entity_types":[{"name":"CONTACT_INFORMATION","entity_types":["PERSON"]}],"score_threshold":0.9}
+            ]"#,
+        )
+        .unwrap();
+
+        assert_eq!(params.score_threshold, 0.5);
+        assert_eq!(params.entity_allowlist, vec!["DATE_TIME", "PERSON"]);
+    }
+
 }

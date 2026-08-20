@@ -12,6 +12,25 @@ use serde::{Deserialize, Serialize};
 
 use super::ocr::Word;
 
+/// One request-scoped Presidio regex recognizer generated from a custom
+/// Data Masking entity type. It is carried inline so the analyzer does not
+/// need persistent recognizer registration.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct AdHocRecognizer {
+    pub name: String,
+    pub supported_language: String,
+    pub supported_entity: String,
+    pub deny_list: Vec<String>,
+    pub patterns: Vec<AdHocRecognizerPattern>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct AdHocRecognizerPattern {
+    pub name: String,
+    pub regex: String,
+    pub score: f64,
+}
+
 /// Request payload for Presidio's /analyze endpoint.
 #[derive(Debug, Serialize)]
 struct AnalyzerRequest<'a> {
@@ -20,6 +39,8 @@ struct AnalyzerRequest<'a> {
     score_threshold: f64,
     #[serde(skip_serializing_if = "<[String]>::is_empty")]
     entities: &'a [String],
+    #[serde(skip_serializing_if = "<[AdHocRecognizer]>::is_empty")]
+    ad_hoc_recognizers: &'a [AdHocRecognizer],
 }
 
 /// A single PII entity found by Presidio.
@@ -84,6 +105,7 @@ impl PresidioClient {
         text: &str,
         score_threshold: f64,
         entity_allowlist: &[String],
+        ad_hoc_recognizers: &[AdHocRecognizer],
     ) -> anyhow::Result<Vec<AnalyzerResult>> {
         if text.is_empty() {
             return Ok(Vec::new());
@@ -96,6 +118,7 @@ impl PresidioClient {
                 language: "en",
                 score_threshold,
                 entities: entity_allowlist,
+                ad_hoc_recognizers,
             })
             .send()
             .await
@@ -120,6 +143,9 @@ pub struct AnalysisParams {
     pub score_threshold: f64,
     /// Entity types selected by the resource's DataMaskingRules.
     pub entity_allowlist: Vec<String>,
+    /// Request-scoped Presidio recognizers built from custom Data Masking
+    /// entity types.
+    pub ad_hoc_recognizers: Vec<AdHocRecognizer>,
     /// Legacy entity exclusions sent by gateways predating resource allowlists.
     pub entity_denylist: Vec<String>,
     /// Vertical padding around dirty rects AND parallel-chunk overlap.
@@ -133,6 +159,7 @@ impl Default for AnalysisParams {
         Self {
             score_threshold: 0.5,
             entity_allowlist: Vec::new(),
+            ad_hoc_recognizers: Vec::new(),
             entity_denylist: Vec::new(),
             band_padding: super::bands::DEFAULT_BAND_PADDING,
             max_ocr_concurrency: 8,
@@ -206,7 +233,12 @@ pub async fn analyze_text(
     params: &AnalysisParams,
 ) -> anyhow::Result<SnapshotResult> {
     let mut results = presidio
-        .analyze(text, params.score_threshold, &params.entity_allowlist)
+        .analyze(
+            text,
+            params.score_threshold,
+            &params.entity_allowlist,
+            &params.ad_hoc_recognizers,
+        )
         .await?;
     results.retain(|result| entity_is_selected(&result.entity_type, params));
 
@@ -245,11 +277,43 @@ mod tests {
             language: "en",
             score_threshold: 0.0,
             entities: &entities,
+            ad_hoc_recognizers: &[
+                AdHocRecognizer {
+                    name: "EMPLOYEE_ID".into(),
+                    supported_language: "en".into(),
+                    supported_entity: "EMPLOYEE_ID".into(),
+                    deny_list: Vec::new(),
+                    patterns: vec![AdHocRecognizerPattern {
+                        name: "EMPLOYEE_ID".into(),
+                        regex: "EMP-[0-9]+".into(),
+                        score: 0.83,
+                    }],
+                },
+                AdHocRecognizer {
+                    name: "VIP_NAME".into(),
+                    supported_language: "en".into(),
+                    supported_entity: "VIP_NAME".into(),
+                    deny_list: vec!["Alice Example".into()],
+                    patterns: Vec::new(),
+                },
+            ],
         };
 
         let payload = serde_json::to_value(request).unwrap();
         assert_eq!(payload["score_threshold"], 0.0);
         assert_eq!(payload["entities"], serde_json::json!(["DATE_TIME", "PERSON"]));
+        assert_eq!(
+            payload["ad_hoc_recognizers"][0]["supported_entity"],
+            "EMPLOYEE_ID"
+        );
+        assert_eq!(
+            payload["ad_hoc_recognizers"][0]["patterns"][0]["regex"],
+            "EMP-[0-9]+"
+        );
+        assert_eq!(
+            payload["ad_hoc_recognizers"][1]["deny_list"][0],
+            "Alice Example"
+        );
     }
 
     #[test]

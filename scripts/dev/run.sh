@@ -60,6 +60,27 @@ if [[ $HOOP_RS_BUILD == "1" ]]; then
 fi
 
 
+# Alcatraz NER model, for testing DLP_PROVIDER=alcatraz with a masking rule
+# that asks for a statistical entity type (PERSON, LOCATION, NRP). The backend
+# never fetches at runtime, so the files have to be on disk before the first
+# such session: the published hoophq/hoop-agent-alcatraz image bakes them in,
+# and the dev container mounts them from the host instead. Seed the directory
+# once (~250MB), with the alcatraz version libhoop links:
+#
+#   go install github.com/hoophq/alcatraz/cmd/alcatraz@$(GOWORK=off go -C libhoop list -m -f '{{.Version}}' github.com/hoophq/alcatraz)
+#   alcatraz models download -dest $HOME/.hoop/dev/alcatraz-models
+#
+# and set ALCATRAZ_NER_MODEL_PATH=/opt/alcatraz/models in .env. Without the
+# directory the mount is skipped and the rest of the provider still works —
+# only the statistical types are refused. Read-only because the agent only
+# reads it, and alcatraz checks every file against a pinned sha256 on load.
+ALCATRAZ_MODELS_DIR="${ALCATRAZ_MODELS_DIR:-$HOME/.hoop/dev/alcatraz-models}"
+ALCATRAZ_MOUNT=()
+if [[ -d $ALCATRAZ_MODELS_DIR ]]; then
+  echo "--> MOUNTING ALCATRAZ MODELS FROM $ALCATRAZ_MODELS_DIR"
+  ALCATRAZ_MOUNT=(-v "$ALCATRAZ_MODELS_DIR:/opt/alcatraz/models:ro")
+fi
+
 VERSION="${VERSION:-unknown}"
 CGO_ENABLED=0 GOOS=linux go build \
   -ldflags "-s -w -X github.com/hoophq/hoop/common/version.version=${VERSION} -X github.com/hoophq/hoop/client/proxy.defaultListenAddrValue=0.0.0.0" \
@@ -83,4 +104,5 @@ docker run --rm --name hoopdev \
   -v ./dist/dev/bin/:/app/bin/ \
   -v ./dist/dev/root/.ssh:/root/.ssh \
   -v ./dist/dev/resources/:/app/ui/ \
+  "${ALCATRAZ_MOUNT[@]}" \
   -it hoopdev /app/bin/entrypoint.sh

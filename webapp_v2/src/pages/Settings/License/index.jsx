@@ -18,16 +18,13 @@ import Table from '@/components/Table'
 import licenseService from '@/services/license'
 import authService from '@/services/auth'
 import { docsUrl } from '@/utils/docsUrl'
+import { LICENSE_STATUS, daysUntilExpiration, formatLicenseDate } from '@/utils/license'
 import { showSnackbar } from '@/utils/snackbar'
+import { openSupport } from '@/utils/support'
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-
-function formatDate(timestamp) {
-  if (!timestamp) return '—'
-  const date = new Date(timestamp * 1000)
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${date.getFullYear()}/${MONTHS[date.getMonth()]}/${day}`
-}
+// Wider than the global banner's 30 days: renewal happens here.
+const EXPIRATION_WARNING_DAYS = 90
+const SUPPORT_MESSAGE = 'I want to renew my hoop license'
 
 function licenseTypeLabel(type) {
   if (type === 'enterprise') return 'Enterprise License'
@@ -35,15 +32,32 @@ function licenseTypeLabel(type) {
   return '—'
 }
 
-function shouldShowExpirationWarning(licenseInfo, isAdmin) {
-  if (!isAdmin) return false
-  if (licenseInfo?.type !== 'enterprise') return false
-  if (!licenseInfo?.is_valid) return false
-  if (!licenseInfo?.expire_at) return false
-  const now = Date.now()
-  const expireMs = licenseInfo.expire_at * 1000
-  const ninetyDaysMs = 90 * 24 * 60 * 60 * 1000
-  return now >= expireMs - ninetyDaysMs
+// Covers an already expired license too, which the old check suppressed.
+function expirationNotice(licenseInfo, isAdmin) {
+  if (!isAdmin || !licenseInfo) return null
+  const { status, type, expire_at: expireAt, verify_error: verifyError } = licenseInfo
+
+  if (status === LICENSE_STATUS.EXPIRED) {
+    return {
+      color: 'red',
+      message: `Your license expired on ${formatLicenseDate(expireAt)}. New sessions are blocked.`,
+    }
+  }
+  if (status === LICENSE_STATUS.INVALID) {
+    const reason = verifyError ? `: ${verifyError}` : ''
+    return {
+      color: 'red',
+      message: `Your license could not be verified${reason}. New sessions are blocked.`,
+    }
+  }
+
+  if (type !== 'enterprise') return null
+  const daysLeft = daysUntilExpiration(expireAt)
+  if (daysLeft === null || daysLeft > EXPIRATION_WARNING_DAYS) return null
+  return {
+    color: 'amber',
+    message: `Your license expires on ${formatLicenseDate(expireAt)}. Renew it to avoid interruption.`,
+  }
 }
 
 function SettingsLicense() {
@@ -57,6 +71,7 @@ function SettingsLicense() {
 
   const disableInput = licenseInfo?.is_valid && licenseInfo?.type === 'enterprise'
   const disableSave = disableInput || !licenseKey.trim()
+  const notice = expirationNotice(licenseInfo, isAdmin)
 
   useEffect(() => {
     licenseService
@@ -120,9 +135,23 @@ function SettingsLicense() {
         </Group>
       </Group>
 
-      {shouldShowExpirationWarning(licenseInfo, isAdmin) && (
-        <Alert icon={<AlertCircle size={16} />} color="yellow" mb="xl">
-          Your organization's license is expiring soon. Please contact us to avoid interruption.
+      {notice && (
+        <Alert icon={<AlertCircle size={16} />} color={notice.color} mb="xl">
+          <Group gap="xs" align="center" wrap="wrap">
+            <Text size="sm" component="span">
+              {notice.message}
+            </Text>
+            <Anchor
+              component="button"
+              type="button"
+              onClick={() => openSupport(SUPPORT_MESSAGE)}
+              c={notice.color}
+              fw={500}
+              size="sm"
+            >
+              {'Contact support ↗'}
+            </Anchor>
+          </Group>
         </Alert>
       )}
 
@@ -138,12 +167,12 @@ function SettingsLicense() {
           <Table.Tbody>
             <Table.Tr>
               <Table.Td>{licenseTypeLabel(licenseInfo?.type)}</Table.Td>
-              <Table.Td>{formatDate(licenseInfo?.issued_at)}</Table.Td>
+              <Table.Td>{formatLicenseDate(licenseInfo?.issued_at)}</Table.Td>
               <Table.Td>
                 {licenseInfo?.type === 'oss' ? (
                   <Text size="xs" c="dimmed">N/A</Text>
                 ) : (
-                  formatDate(licenseInfo?.expire_at)
+                  formatLicenseDate(licenseInfo?.expire_at)
                 )}
               </Table.Td>
             </Table.Tr>

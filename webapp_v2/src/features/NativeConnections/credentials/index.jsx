@@ -44,7 +44,7 @@ const RENDERER_RULES = [
   },
   {
     name: 'mcp',
-    matches: (s) => s === 'mcp',
+    matches: (s) => s === 'mcp' || s === 'mcpproxy',
     tabs: [{ value: 'credentials', label: 'Credentials', render: McpCredentials }],
   },
   {
