@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sync"
 	"time"
 
 	_ "github.com/microsoft/go-mssqldb"
@@ -35,15 +36,34 @@ type MSSQLContainer struct {
 const (
 	mssqlSAUser     = "sa"
 	mssqlSAPassword = "hoopTest!2024"
-	mssqlDatabase   = "testdb"
 )
 
-// StartMSSQL boots a SQL Server 2022 container, waits until it accepts
-// authenticated connections, then creates the test database. The wait
-// strategy combines the readiness log line with a real authenticated ping
-// because SQL Server logs "ready for client connections" slightly before
-// the sa login is actually usable.
+// StartMSSQL returns a handle to the shared SQL Server with a private
+// database created for this test.
+//
+// The server boots once per package (see shared_container.go). SQL Server
+// is the slowest container in the suite at ~14s to boot, and the suite has
+// 16 MSSQL tests — booting one each was the single largest contributor to
+// the ENG-511 timeout.
 func StartMSSQL(t T) *MSSQLContainer {
+	t.Helper()
+	base, err := bootMSSQL()
+	if err != nil {
+		t.Fatalf("failed to start mssql container: %v", err)
+	}
+	return base.forkDatabase(t)
+}
+
+// bootMSSQL boots the shared server on first call. sync.OnceValues also
+// caches a failure, so a broken Docker daemon costs one startup timeout
+// instead of one per test.
+var bootMSSQL = sync.OnceValues(bootMSSQLContainer)
+
+// bootMSSQLContainer boots SQL Server 2022 and waits until it accepts
+// authenticated connections. The wait strategy combines the readiness log
+// line with a real authenticated ping because SQL Server logs "ready for
+// client connections" slightly before the sa login is actually usable.
+func bootMSSQLContainer() (*MSSQLContainer, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	defer cancel()
 
@@ -68,21 +88,18 @@ func StartMSSQL(t T) *MSSQLContainer {
 		Started: true,
 	})
 	if err != nil {
-		t.Fatalf("failed to start mssql container: %v", err)
+		return nil, err
 	}
-
-	t.Cleanup(func() {
-		_ = container.Terminate(context.Background())
-	})
+	terminateAtPackageEnd(container)
 
 	mappedPort, err := container.MappedPort(ctx, "1433/tcp")
 	if err != nil {
-		t.Fatalf("failed to get mapped mssql port: %v", err)
+		return nil, fmt.Errorf("failed to get mapped mssql port: %w", err)
 	}
 
 	host, err := ContainerHost(ctx, container)
 	if err != nil {
-		t.Fatalf("failed to get mssql container host: %v", err)
+		return nil, fmt.Errorf("failed to get mssql container host: %w", err)
 	}
 
 	c := &MSSQLContainer{
@@ -94,12 +111,25 @@ func StartMSSQL(t T) *MSSQLContainer {
 		Container: container,
 	}
 
-	// Block until sa can actually authenticate, then create the test DB.
-	c.waitForReady(t)
-	c.createDatabase(t)
-	c.Database = mssqlDatabase
+	// Block until sa can actually authenticate. Per-test databases are
+	// created later by forkDatabase.
+	if err := c.waitForReady(); err != nil {
+		return nil, err
+	}
 
-	return c
+	return c, nil
+}
+
+// forkDatabase creates a private database on the shared server and returns
+// a handle scoped to it. The handle keeps pointing at master for admin
+// work, so the next fork always has a connection target.
+func (c *MSSQLContainer) forkDatabase(t T) *MSSQLContainer {
+	t.Helper()
+
+	forked := *c
+	forked.Database = nextDatabaseName()
+	forked.createDatabase(t)
+	return &forked
 }
 
 // adminConnString returns a go-mssqldb DSN that connects directly to the
@@ -117,16 +147,16 @@ func (c *MSSQLContainer) ConnString() string {
 	return c.adminConnString(c.Database)
 }
 
-func (c *MSSQLContainer) waitForReady(t T) {
+func (c *MSSQLContainer) waitForReady() error {
 	deadline := time.Now().Add(120 * time.Second)
 	var lastErr error
 	for time.Now().Before(deadline) {
 		if lastErr = c.ping("master"); lastErr == nil {
-			return
+			return nil
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
-	t.Fatalf("mssql container never became ready within 120s: %v", lastErr)
+	return fmt.Errorf("mssql container never became ready within 120s: %w", lastErr)
 }
 
 // ping opens a short-lived direct connection to the container and runs a
@@ -143,9 +173,9 @@ func (c *MSSQLContainer) ping(database string) error {
 	return db.PingContext(ctx)
 }
 
-// createDatabase creates the test database on the freshly booted server.
-// CREATE DATABASE cannot run inside a transaction, so it goes through a
-// plain Exec on the master database.
+// createDatabase creates c.Database on the shared server. CREATE DATABASE
+// cannot run inside a transaction, so it goes through a plain Exec on the
+// master database.
 func (c *MSSQLContainer) createDatabase(t T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -157,9 +187,9 @@ func (c *MSSQLContainer) createDatabase(t T) {
 	defer db.Close()
 
 	stmt := fmt.Sprintf(
-		"IF DB_ID('%s') IS NULL CREATE DATABASE [%s]", mssqlDatabase, mssqlDatabase)
+		"IF DB_ID('%s') IS NULL CREATE DATABASE [%s]", c.Database, c.Database)
 	if _, err := db.ExecContext(ctx, stmt); err != nil {
-		t.Fatalf("mssql: failed creating test database: %v", err)
+		t.Fatalf("mssql: failed creating database %s: %v", c.Database, err)
 	}
 }
 

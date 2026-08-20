@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sync"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -33,7 +34,24 @@ type MySQLContainer struct {
 // MariaDB's entrypoint starts a throwaway server for initialization
 // before the real one, so matching the second "ready" log line plus the
 // listening port avoids connecting to the init server.
+// It returns a handle to the shared server with a private database created
+// for this test; the server boots once per package (see
+// shared_container.go).
 func StartMySQL(t T) *MySQLContainer {
+	t.Helper()
+	base, err := bootMySQL()
+	if err != nil {
+		t.Fatalf("failed to start mariadb container: %v", err)
+	}
+	return base.forkDatabase(t)
+}
+
+// bootMySQL boots the shared server on first call. sync.OnceValues also
+// caches a failure, so a broken Docker daemon costs one startup timeout
+// instead of one per test.
+var bootMySQL = sync.OnceValues(bootMySQLContainer)
+
+func bootMySQLContainer() (*MySQLContainer, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
@@ -61,21 +79,18 @@ func StartMySQL(t T) *MySQLContainer {
 		Started: true,
 	})
 	if err != nil {
-		t.Fatalf("failed to start mariadb container: %v", err)
+		return nil, err
 	}
-
-	t.Cleanup(func() {
-		_ = container.Terminate(context.Background())
-	})
+	terminateAtPackageEnd(container)
 
 	mappedPort, err := container.MappedPort(ctx, "3306/tcp")
 	if err != nil {
-		t.Fatalf("failed to get mapped mysql port: %v", err)
+		return nil, fmt.Errorf("failed to get mapped mysql port: %w", err)
 	}
 
 	host, err := ContainerHost(ctx, container)
 	if err != nil {
-		t.Fatalf("failed to get mysql container host: %v", err)
+		return nil, fmt.Errorf("failed to get mysql container host: %w", err)
 	}
 
 	c := &MySQLContainer{
@@ -89,21 +104,46 @@ func StartMySQL(t T) *MySQLContainer {
 
 	// MariaDB accepts TCP a moment before it can actually authenticate;
 	// poll a real handshake to be sure before returning.
-	c.waitForReady(t)
+	if err := c.waitForReady(); err != nil {
+		return nil, err
+	}
 
-	return c
+	return c, nil
 }
 
-func (c *MySQLContainer) waitForReady(t T) {
+func (c *MySQLContainer) waitForReady() error {
 	deadline := time.Now().Add(60 * time.Second)
 	var lastErr error
 	for time.Now().Before(deadline) {
 		if lastErr = c.ping(); lastErr == nil {
-			return
+			return nil
 		}
 		time.Sleep(300 * time.Millisecond)
 	}
-	t.Fatalf("mariadb container never became ready within 60s: %v", lastErr)
+	return fmt.Errorf("mariadb container never became ready within 60s: %w", lastErr)
+}
+
+// forkDatabase creates a private database on the shared server and returns
+// a handle scoped to it. The bootstrap database stays untouched so it can
+// always serve as the connection target for the next CREATE DATABASE.
+func (c *MySQLContainer) forkDatabase(t T) *MySQLContainer {
+	t.Helper()
+
+	db, err := sql.Open("mysql", c.ConnString())
+	if err != nil {
+		t.Fatalf("mysql: failed to open admin connection: %v", err)
+	}
+	defer db.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	forked := *c
+	forked.Database = nextDatabaseName()
+	if _, err := db.ExecContext(ctx, "CREATE DATABASE "+forked.Database); err != nil {
+		t.Fatalf("mysql: failed creating database %s: %v", forked.Database, err)
+	}
+	return &forked
 }
 
 // ConnString returns a go-sql-driver/mysql DSN that connects directly to

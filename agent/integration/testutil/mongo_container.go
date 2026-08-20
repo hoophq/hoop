@@ -5,6 +5,7 @@ package testutil
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/testcontainers/testcontainers-go"
@@ -30,30 +31,47 @@ type MongoContainer struct {
 const (
 	mongoRootUser = "root"
 	mongoRootPass = "testpass"
-	mongoDatabase = "testdb"
 )
 
-// StartMongoDB boots a MongoDB 7 container with a fixed root user, waits
-// until it accepts authenticated connections, and returns a handle. The
-// wait strategy combines the readiness log line with a real authenticated
-// ping because mongod logs "waiting for connections" slightly before the
-// root user (created from the MONGO_INITDB env vars) is usable.
+// StartMongoDB returns a handle to the shared MongoDB 7 server with a
+// private database name for this test. The server boots once per package
+// (see shared_container.go); Mongo creates databases lazily on first
+// write, so no setup statement is needed.
 func StartMongoDB(t T) *MongoContainer {
-	return startMongoDB(t)
+	t.Helper()
+	base, err := bootMongoDB()
+	if err != nil {
+		t.Fatalf("failed to start mongodb container: %v", err)
+	}
+	return base.forkDatabase()
 }
 
-// StartMongoDBWithTestCommands boots the same container as StartMongoDB
-// but with --setParameter enableTestCommands=1, unlocking server test
-// commands such as `sleep`, which tests use as a deterministic stand-in
-// for a long-running operation (unlike cursor reads, it is never aborted
-// by a client disconnect — only killOp stops it).
+// StartMongoDBWithTestCommands returns the same shared server as
+// StartMongoDB. The shared mongod always runs with
+// --setParameter enableTestCommands=1, which unlocks server test commands
+// such as `sleep` — a deterministic stand-in for a long-running operation
+// because, unlike a cursor read, it is never aborted by a client
+// disconnect and only killOp stops it.
+//
+// Enabling the parameter for every test rather than for a second container
+// costs a ~9.5s boot; it only adds commands, so tests that do not use them
+// are unaffected.
 func StartMongoDBWithTestCommands(t T) *MongoContainer {
-	return startMongoDB(t, "--setParameter", "enableTestCommands=1")
+	t.Helper()
+	return StartMongoDB(t)
 }
 
-// startMongoDB boots the MongoDB container, passing any extra args to
-// mongod (the image entrypoint forwards container args to the daemon).
-func startMongoDB(t T, mongodArgs ...string) *MongoContainer {
+// bootMongoDB boots the shared server on first call. sync.OnceValues also
+// caches a failure, so a broken Docker daemon costs one startup timeout
+// instead of one per test.
+var bootMongoDB = sync.OnceValues(bootMongoDBContainer)
+
+// bootMongoDBContainer boots MongoDB with a fixed root user and waits until
+// it accepts authenticated connections. The wait strategy combines the
+// readiness log line with a real authenticated ping because mongod logs
+// "waiting for connections" slightly before the root user (created from
+// the MONGO_INITDB env vars) is usable.
+func bootMongoDBContainer() (*MongoContainer, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
@@ -61,7 +79,7 @@ func startMongoDB(t T, mongodArgs ...string) *MongoContainer {
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image:        "mongo:7",
 			ExposedPorts: []string{"27017/tcp"},
-			Cmd:          mongodArgs,
+			Cmd:          []string{"--setParameter", "enableTestCommands=1"},
 			Env: map[string]string{
 				"MONGO_INITDB_ROOT_USERNAME": mongoRootUser,
 				"MONGO_INITDB_ROOT_PASSWORD": mongoRootPass,
@@ -75,21 +93,18 @@ func startMongoDB(t T, mongodArgs ...string) *MongoContainer {
 		Started: true,
 	})
 	if err != nil {
-		t.Fatalf("failed to start mongodb container: %v", err)
+		return nil, err
 	}
-
-	t.Cleanup(func() {
-		_ = container.Terminate(context.Background())
-	})
+	terminateAtPackageEnd(container)
 
 	mappedPort, err := container.MappedPort(ctx, "27017/tcp")
 	if err != nil {
-		t.Fatalf("failed to get mapped mongodb port: %v", err)
+		return nil, fmt.Errorf("failed to get mapped mongodb port: %w", err)
 	}
 
 	host, err := ContainerHost(ctx, container)
 	if err != nil {
-		t.Fatalf("failed to get mongodb container host: %v", err)
+		return nil, fmt.Errorf("failed to get mongodb container host: %w", err)
 	}
 
 	c := &MongoContainer{
@@ -97,12 +112,22 @@ func startMongoDB(t T, mongodArgs ...string) *MongoContainer {
 		Port:      mappedPort.Port(),
 		User:      mongoRootUser,
 		Password:  mongoRootPass,
-		Database:  mongoDatabase,
+		Database:  "testdb",
 		Container: container,
 	}
 
-	c.waitForReady(t)
-	return c
+	if err := c.waitForReady(); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+// forkDatabase returns a handle scoped to a private database name. Mongo
+// creates a database on first write, so there is nothing to execute here.
+func (c *MongoContainer) forkDatabase() *MongoContainer {
+	forked := *c
+	forked.Database = nextDatabaseName()
+	return &forked
 }
 
 // UpstreamConnString returns the direct mongodb:// URI to the container
@@ -114,7 +139,7 @@ func (c *MongoContainer) UpstreamConnString() string {
 		c.User, c.Password, c.Host, c.Port, c.Database)
 }
 
-func (c *MongoContainer) waitForReady(t T) {
+func (c *MongoContainer) waitForReady() error {
 	// 120s matches the container-start context above. mongod's first boot
 	// (storage engine init + root user creation from MONGO_INITDB) can
 	// exceed a minute on a loaded CI runner even after the wait strategy's
@@ -124,11 +149,11 @@ func (c *MongoContainer) waitForReady(t T) {
 	var lastErr error
 	for time.Now().Before(deadline) {
 		if lastErr = c.ping(); lastErr == nil {
-			return
+			return nil
 		}
 		time.Sleep(300 * time.Millisecond)
 	}
-	t.Fatalf("mongodb container never became ready within %v: %v", readyDeadline, lastErr)
+	return fmt.Errorf("mongodb container never became ready within %v: %w", readyDeadline, lastErr)
 }
 
 // directClient opens a short-lived direct connection to the container
