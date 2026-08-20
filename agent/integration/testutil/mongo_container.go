@@ -79,7 +79,16 @@ func bootMongoDBContainer() (*MongoContainer, error) {
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image:        "mongo:7",
 			ExposedPorts: []string{"27017/tcp"},
-			Cmd:          []string{"--setParameter", "enableTestCommands=1"},
+			// wiredTigerCacheSizeGB is set explicitly because mongod's
+			// default sizes the cache from *total host RAM*, not from what
+			// this container may use. That was harmless when the container
+			// lived for one test; now it stays resident beside SQL Server,
+			// MariaDB, Postgres and a -race test binary, so an unbounded
+			// cache starves the rest of the suite (ENG-511).
+			Cmd: []string{
+				"--setParameter", "enableTestCommands=1",
+				"--wiredTigerCacheSizeGB", "0.5",
+			},
 			Env: map[string]string{
 				"MONGO_INITDB_ROOT_USERNAME": mongoRootUser,
 				"MONGO_INITDB_ROOT_PASSWORD": mongoRootPass,

@@ -78,6 +78,11 @@ func bootMSSQLContainer() (*MSSQLContainer, error) {
 				// it speaks the identical TDS wire protocol libhoop's
 				// MSSQL proxy targets.
 				"MSSQL_PID": "Express",
+				// Express caps its buffer pool at 1410MB, but the server
+				// now stays resident for the whole package instead of one
+				// test. Bound it below that cap so it shares the runner
+				// with the other three servers (ENG-511).
+				"MSSQL_MEMORY_LIMIT_MB": "1024",
 			},
 			WaitingFor: wait.ForAll(
 				wait.ForLog("SQL Server is now ready for client connections").
