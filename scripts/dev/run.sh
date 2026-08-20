@@ -7,8 +7,13 @@ if ! [[ -f .env ]]; then
   exit 1
 fi
 
+# Only these entries are exported into the host shell, because the `go build`
+# below consumes them: LIBHOOP selects the libhoop source tree, and
+# SEGMENT_API_KEY is baked into the binary through -ldflags (the gateway reads
+# it from a build-time variable, not from the environment). Every other entry
+# reaches the gateway through --env-file at container start.
 while read -r LINE; do
-  if [[ $LINE == "LIBHOOP"* ]]; then
+  if [[ $LINE == "LIBHOOP"* || $LINE == "SEGMENT_API_KEY="* ]]; then
     ENV_VAR=$(echo $LINE | envsubst)
     eval export $(echo $ENV_VAR)
   fi
@@ -82,8 +87,11 @@ if [[ -d $ALCATRAZ_MODELS_DIR ]]; then
 fi
 
 VERSION="${VERSION:-unknown}"
+if [[ -n "$SEGMENT_API_KEY" ]]; then
+  echo "--> SEGMENT ANALYTICS ENABLED (events are tagged with the API_URL hostname)"
+fi
 CGO_ENABLED=0 GOOS=linux go build \
-  -ldflags "-s -w -X github.com/hoophq/hoop/common/version.version=${VERSION} -X github.com/hoophq/hoop/client/proxy.defaultListenAddrValue=0.0.0.0" \
+  -ldflags "-s -w -X github.com/hoophq/hoop/common/version.version=${VERSION} -X github.com/hoophq/hoop/client/proxy.defaultListenAddrValue=0.0.0.0 -X github.com/hoophq/hoop/gateway/analytics.segmentApiKey=${SEGMENT_API_KEY}" \
   -o ./dist/dev/bin/hooplinux github.com/hoophq/hoop/client
 docker stop hoopdev &> /dev/null || true
 docker rm hoopdev &> /dev/null || true

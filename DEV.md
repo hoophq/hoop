@@ -45,6 +45,31 @@ To build the Webapp into the gateway
 make build-dev-webapp
 ```
 
+#### Segment Analytics
+
+The Segment write key is not an environment variable. It is a build-time
+variable (`gateway/analytics.segmentApiKey`) injected through `-ldflags`, so a
+gateway built without it never creates a Segment client and drops every event
+silently. To emit events from a local run, add the key to `.env`:
+
+```sh
+SEGMENT_API_KEY=<write key of the Go source>
+```
+
+`make run-dev` exports that entry into the build step and prints
+`--> SEGMENT ANALYTICS ENABLED` when the key is present. Leave the entry out to
+keep local runs offline.
+
+Use the write key of a Segment source dedicated to development. Events carry
+`environment` and `api-hostname` taken from `API_URL`, so a local run against
+the production source writes rows with `localhost` into production analytics.
+The webapp key (`SEGMENT_WRITE_KEY`, see `webapp_v2/README.md`) belongs to a
+different source and is unrelated to this one.
+
+Two more conditions gate delivery: the org's `analytics_mode` must not be
+`disabled` (default is `identified`), and `TrackRequest` skips requests with no
+authenticated user, so events only appear once you are logged in.
+
 ### Build Dev Client
 
 By default versioned clients are builded to strict connect via TLS. In order to build a client that permits connecting to remote hosts without TLS, execute the instruction below:
