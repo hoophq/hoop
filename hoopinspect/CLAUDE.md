@@ -14,12 +14,13 @@ the whole thing).
 ## The invariant: zero dependencies
 
 `github.com/hoophq/hoopinspect` depends on the standard library and nothing
-else. Test dependencies included. The reason is in `go.mod`: the library
-exists to be vendored without a supply-chain review, read end to end in an
-afternoon, and compiled to `wasip1` for an Envoy filter. A dependency is a
+else. Test dependencies included. The library exists to be vendored without a
+supply-chain review and read end to end in an afternoon. A dependency is a
 breaking change to the product pitch, not a convenience.
 
-Two checks, both cheap:
+Three checks, all cheap. The third is a canary rather than a build target: a
+stdlib-only module compiles for a platform with no operating system, and one
+that has picked up a dependency usually will not.
 
 ```bash
 GOWORK=off go list -m all        # must print exactly one line: the module itself
@@ -27,8 +28,10 @@ ls go.sum                        # must not exist
 GOOS=wasip1 GOARCH=wasm go build ./...
 ```
 
-**Anything that needs a dependency gets its own `go.mod`.** That is why these
-exist as nested modules rather than packages:
+**Each optional component is its own module, so it can be plugged in or
+dropped without touching anything else.** SQLite is the clean case: removing
+it is removing a directory. The root staying at zero dependencies falls out of
+that rather than causing it.
 
 | Module | Carries |
 |---|---|
@@ -135,7 +138,9 @@ done
 
 Two compose stacks exercise the relay end to end, both outside this directory:
 
-- `deploy/docker-compose/envoy-stack/` : Envoy plus OPA plus the sidecar.
+- `deploy/docker-compose/envoy-stack/` : Envoy plus OPA plus the sidecar. It
+  carries more than the Envoy demo, and the parts that do not need Envoy
+  cannot be run on their own today. Splitting it is open work.
 - `deploy/docker-compose/metabase-stack/` : Metabase against a masked
   warehouse, with an asserting `./demo.sh`.
 
