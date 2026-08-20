@@ -2,63 +2,117 @@ package apiconnections
 
 import (
 	"fmt"
+	"regexp"
 
 	pb "github.com/hoophq/hoop/common/proto"
 )
 
+// schemaIdentifierRe matches identifiers that are safe to interpolate into
+// generated schema scripts. It rejects quotes, backticks, whitespace, and
+// statement separators, so a matching value cannot break out of the quoting
+// context it is placed in (backtick/bracket-quoted identifiers or
+// single-quoted SQL literals).
+var schemaIdentifierRe = regexp.MustCompile(`^[a-zA-Z0-9_\-\.]{1,128}$`)
+
+// validateSchemaIdentifier returns an error when value cannot be safely
+// interpolated into a generated schema script.
+func validateSchemaIdentifier(kind, value string) error {
+	if !schemaIdentifierRe.MatchString(value) {
+		return fmt.Errorf("invalid %s: only alphanumeric characters, underscore, hyphen and dot are allowed, with length between 1 and 128 characters", kind)
+	}
+	return nil
+}
+
 // TablesQueryFor returns the backing query for listing tables on the given
-// connection type, or an empty string when the type is unsupported.
-// Exported for reuse by the MCP schema tools.
-func TablesQueryFor(connType pb.ConnectionType, dbName string) string {
+// connection type, or an empty string when the type is unsupported. It
+// returns an error when an identifier interpolated into the script fails
+// validation. Exported for reuse by the MCP schema tools.
+func TablesQueryFor(connType pb.ConnectionType, dbName string) (string, error) {
 	return getTablesQuery(connType, dbName)
 }
 
 // ColumnsQueryFor returns the backing query for listing columns of a specific
-// table on the given connection type, or an empty string when unsupported.
-// Exported for reuse by the MCP schema tools.
-func ColumnsQueryFor(connType pb.ConnectionType, dbName, tableName, schemaName string) string {
+// table on the given connection type, or an empty string when unsupported. It
+// returns an error when an identifier interpolated into the script fails
+// validation. Exported for reuse by the MCP schema tools.
+func ColumnsQueryFor(connType pb.ConnectionType, dbName, tableName, schemaName string) (string, error) {
 	return getColumnsQuery(connType, dbName, tableName, schemaName)
 }
 
-// getTablesQuery returns the query to list only the tables of a database
-func getTablesQuery(connType pb.ConnectionType, dbName string) string {
+// getTablesQuery returns the query to list only the tables of a database.
+// Every identifier interpolated into the script is validated first.
+func getTablesQuery(connType pb.ConnectionType, dbName string) (string, error) {
 	switch connType {
 	case pb.ConnectionTypeDynamoDB:
-		return getDynamoDBTablesQuery() // DynamoDB tables are listed as databases
+		return getDynamoDBTablesQuery(), nil // DynamoDB tables are listed as databases
 	case pb.ConnectionTypeCloudWatch:
-		return getCloudWatchTablesQuery()
-	case pb.ConnectionTypePostgres:
-		return getPostgresTablesQuery(dbName)
-	case pb.ConnectionTypeMSSQL:
-		return getMSSQLTablesQuery(dbName)
-	case pb.ConnectionTypeMySQL:
-		return getMySQLTablesQuery(dbName)
+		return getCloudWatchTablesQuery(), nil
 	case pb.ConnectionTypeOracleDB:
-		return getOracleDBTablesQuery()
-	case pb.ConnectionTypeMongoDB:
-		return getMongoDBTablesQuery(dbName)
+		return getOracleDBTablesQuery(), nil
+	case pb.ConnectionTypePostgres, pb.ConnectionTypeMSSQL, pb.ConnectionTypeMySQL, pb.ConnectionTypeMongoDB:
+		if err := validateSchemaIdentifier("database name", dbName); err != nil {
+			return "", err
+		}
+		switch connType {
+		case pb.ConnectionTypePostgres:
+			return getPostgresTablesQuery(dbName), nil
+		case pb.ConnectionTypeMSSQL:
+			return getMSSQLTablesQuery(dbName), nil
+		case pb.ConnectionTypeMySQL:
+			return getMySQLTablesQuery(dbName), nil
+		default:
+			return getMongoDBTablesQuery(dbName), nil
+		}
 	default:
-		return ""
+		return "", nil
 	}
 }
 
-// getColumnsQuery returns the query to get the columns of a specific table
-func getColumnsQuery(connType pb.ConnectionType, dbName, tableName, schemaName string) string {
+// getColumnsQuery returns the query to get the columns of a specific table.
+// Every identifier interpolated into the script is validated first.
+func getColumnsQuery(connType pb.ConnectionType, dbName, tableName, schemaName string) (string, error) {
 	switch connType {
 	case pb.ConnectionTypeDynamoDB:
-		return getDynamoDBColumnsQuery(tableName)
-	case pb.ConnectionTypePostgres:
-		return getPostgresColumnsQuery(dbName, tableName, schemaName)
-	case pb.ConnectionTypeMSSQL:
-		return getMSSQLColumnsQuery(dbName, tableName, schemaName)
-	case pb.ConnectionTypeMySQL:
-		return getMySQLColumnsQuery(dbName, tableName, schemaName)
+		if err := validateSchemaIdentifier("table name", tableName); err != nil {
+			return "", err
+		}
+		return getDynamoDBColumnsQuery(tableName), nil
+	case pb.ConnectionTypePostgres, pb.ConnectionTypeMSSQL, pb.ConnectionTypeMySQL:
+		if err := validateSchemaIdentifier("database name", dbName); err != nil {
+			return "", err
+		}
+		if err := validateSchemaIdentifier("table name", tableName); err != nil {
+			return "", err
+		}
+		if err := validateSchemaIdentifier("schema name", schemaName); err != nil {
+			return "", err
+		}
+		switch connType {
+		case pb.ConnectionTypePostgres:
+			return getPostgresColumnsQuery(dbName, tableName, schemaName), nil
+		case pb.ConnectionTypeMSSQL:
+			return getMSSQLColumnsQuery(dbName, tableName, schemaName), nil
+		default:
+			return getMySQLColumnsQuery(dbName, tableName, schemaName), nil
+		}
 	case pb.ConnectionTypeOracleDB:
-		return getOracleDBColumnsQuery(tableName, schemaName)
+		if err := validateSchemaIdentifier("table name", tableName); err != nil {
+			return "", err
+		}
+		if err := validateSchemaIdentifier("schema name", schemaName); err != nil {
+			return "", err
+		}
+		return getOracleDBColumnsQuery(tableName, schemaName), nil
 	case pb.ConnectionTypeMongoDB:
-		return getMongoDBColumnsQuery(dbName, tableName)
+		if err := validateSchemaIdentifier("database name", dbName); err != nil {
+			return "", err
+		}
+		if err := validateSchemaIdentifier("table name", tableName); err != nil {
+			return "", err
+		}
+		return getMongoDBColumnsQuery(dbName, tableName), nil
 	default:
-		return ""
+		return "", nil
 	}
 }
 
@@ -237,8 +291,9 @@ ORDER BY c.column_id;`, dbName, schemaName, tableName)
 
 func getMySQLColumnsQuery(dbName, tableName, schemaName string) string {
 	// The database identifier must be backtick-quoted: names with hyphens or
-	// dots (allowed by validateDatabaseName) are invalid as bare identifiers.
-	// validateDatabaseName rejects backticks, so quoting here is injection-safe.
+	// dots (allowed by validateSchemaIdentifier) are invalid as bare
+	// identifiers. getColumnsQuery validates every identifier before this
+	// builder runs, so no backtick or quote can reach the script.
 	quotedDBName := "`" + dbName + "`"
 	return fmt.Sprintf(`
 USE %s;
