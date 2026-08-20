@@ -902,8 +902,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+      # No QEMU: this build runs no command on the target platform. The model
+      # download stage is pinned to BUILDPLATFORM and the final stage is a COPY
+      # plus an ENV, so both architectures build natively.
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
       - name: Login to Docker Hub
@@ -927,20 +928,13 @@ jobs:
           tags: |
             hoophq/hoop-agent-alcatraz:${{ env.GIT_TAG }}
             hoophq/hoop-agent-alcatraz:latest
-      # The build already verified the model inside the image it produced; this
-      # re-checks the artifact that actually landed in the registry, and does it
-      # per-architecture, which a single-platform build stage cannot. The
-      # manifest ships inside the image, so this needs nothing installed beyond
-      # the coreutils the base already has.
+      # The build checksummed the weights before they were copied in; this
+      # re-checks the artifact that actually landed in the registry, per
+      # architecture, which a single-platform build stage cannot.
       - name: Verify published image
         run: |
-          for platform in linux/amd64 linux/arm64; do
-            echo "verifying $platform"
-            docker run --rm --platform "$platform" \
-              --entrypoint sh \
-              hoophq/hoop-agent-alcatraz:${{ env.GIT_TAG }} \
-              -c 'cd /opt/alcatraz/models && sha256sum -c checksums.txt'
-          done
+          scripts/ci/verify-alcatraz-image.sh \
+            hoophq/hoop-agent-alcatraz:${{ env.GIT_TAG }}
 
   # hoophq/hoopagent — slim agent images, built from the two targets of
   # Dockerfile.agent (see that file for what each ships):
@@ -1009,6 +1003,79 @@ jobs:
           push: true
           tags: |
             hoophq/hoopagent:${{ env.GIT_TAG }}-distroless
+
+  # The same two flavours with the alcatraz NER model baked in, built on the
+  # tags the job above just pushed (see Dockerfile.agent-alcatraz):
+  #
+  #   :<version>-minimal-alcatraz      minimal + the model
+  #   :<version>-distroless-alcatraz   distroless + the model
+  #
+  # For agents serving DLP_PROVIDER=alcatraz masking rules that ask for
+  # PERSON/LOCATION/NRP: the model is never fetched at runtime, so an agent
+  # without it on disk refuses those sessions. Everything else — invocation
+  # contract, user, what the image can serve — is the base flavour's.
+  #
+  # The model is weights only and carries no AGPL/SSPL component, so these tags
+  # stay inside the hoophq/hoopagent bright line. Read the note in
+  # Dockerfile.agent before adding anything else here.
+  #
+  # A separate job from the one above so a flaky 250MB model download retries on
+  # its own instead of re-pushing the base flavours. It needs no release
+  # artifact: each build is a published flavour plus one COPY.
+  docker-publish-hoopagent-alcatraz-flavours:
+    runs-on: ubuntu-latest
+    name: Publish Agent Alcatraz Images (hoopagent)
+    environment: production
+    needs:
+      # The two flavours these derive from.
+      - docker-publish-hoopagent
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      # No QEMU: see the note in docker-publish-hoopagent-alcatraz above.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_LOGIN }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+      - name: Build and push (minimal-alcatraz)
+        uses: docker/build-push-action@v4
+        with:
+          file: ./Dockerfile.agent-alcatraz
+          context: '.'
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          sbom: false
+          push: true
+          build-args: |
+            HOOP_IMAGE=hoophq/hoopagent:${{ env.GIT_TAG }}-minimal
+          tags: |
+            hoophq/hoopagent:${{ env.GIT_TAG }}-minimal-alcatraz
+      - name: Build and push (distroless-alcatraz)
+        uses: docker/build-push-action@v4
+        with:
+          file: ./Dockerfile.agent-alcatraz
+          context: '.'
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          sbom: false
+          push: true
+          build-args: |
+            HOOP_IMAGE=hoophq/hoopagent:${{ env.GIT_TAG }}-distroless
+          tags: |
+            hoophq/hoopagent:${{ env.GIT_TAG }}-distroless-alcatraz
+      # Reads the model out of the published image by exporting the container
+      # filesystem, which is the only way to check the distroless flavour: it
+      # has no shell to run sha256sum in.
+      - name: Verify published images
+        run: |
+          scripts/ci/verify-alcatraz-image.sh \
+            hoophq/hoopagent:${{ env.GIT_TAG }}-minimal-alcatraz \
+            hoophq/hoopagent:${{ env.GIT_TAG }}-distroless-alcatraz
 
   # --- Clean image line (DEP-66): hoophq/hoop-ng + hoophq/hoopdev-ng ----------
   # Bright-line, clean-only repos (no dirty history) that the hoop-ng helm chart

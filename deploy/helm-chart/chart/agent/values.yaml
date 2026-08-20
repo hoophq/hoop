@@ -44,6 +44,13 @@ image: {}
   #   # distroless base; no OS packages and no shell at all (smallest surface):
   #   repository: hoophq/hoopagent
   #   tag: <release>-distroless
+  #   # either flavour with the alcatraz NER model baked in, for the statistical
+  #   # entity types (PERSON, LOCATION, NRP) below — the same image plus ~250MB
+  #   # of weights, setting ALCATRAZ_NER_MODEL_PATH itself:
+  #   repository: hoophq/hoopagent
+  #   tag: <release>-minimal-alcatraz
+  #   # or
+  #   tag: <release>-distroless-alcatraz
 
 config: {}
   # HOOP_KEY: '<AUTH_KEY>'
@@ -63,9 +70,10 @@ config: {}
   # the module: point ALCATRAZ_NER_MODEL_PATH at the models directory — the
   # parent that holds one subdirectory per model id, which is what
   # "alcatraz models download --dest <dir>" writes into — mounted from a
-  # volume. Leave this unset if you use the hoophq/hoop-agent-alcatraz image
-  # above, which bakes the model in and sets the variable itself. Without
-  # either, sessions requesting those entity types are refused. The model
+  # volume. Leave this unset if you run an image that bakes the model in
+  # (hoophq/hoop-agent-alcatraz, or a hoophq/hoopagent `-alcatraz` tag): it
+  # sets the variable itself. With neither the image nor the volume, sessions
+  # requesting those entity types are refused. The model
   # costs ~260MB of resident memory: it loads lazily on the first session that
   # needs it and is not released until the pod restarts, so size the agent pod
   # accordingly.

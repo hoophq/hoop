@@ -12,6 +12,11 @@
 # `docker build -f Dockerfile.agent` with no --target produces the more
 # conservative of the two rather than the more restrictive one.
 #
+# Both flavours are also published with the alcatraz NER model baked in, as
+# :<version>-minimal-alcatraz and :<version>-distroless-alcatraz. Those are
+# built by Dockerfile.agent-alcatraz FROM the tags above — it adds the weights
+# and one env var, and nothing about them belongs in this file.
+#
 # ---------------------------------------------------------------------------
 # LICENSE BRIGHT LINE — read before adding a stage
 #

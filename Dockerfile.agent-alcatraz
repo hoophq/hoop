@@ -10,14 +10,26 @@
 # go.mod. The manifest names the files and their layout, so no model id,
 # revision, digest or alcatraz version appears in this repository.
 #
+# One file, one added layer, three published tags — the base decides which:
+#
+#   HOOP_IMAGE=hoophq/hoopdev:<tag>              -> hoophq/hoop-agent-alcatraz:<tag>
+#   HOOP_IMAGE=hoophq/hoopagent:<tag>-minimal    -> hoophq/hoopagent:<tag>-minimal-alcatraz
+#   HOOP_IMAGE=hoophq/hoopagent:<tag>-distroless -> hoophq/hoopagent:<tag>-distroless-alcatraz
+#
 #   docker build -f Dockerfile.agent-alcatraz \
 #     --build-arg HOOP_IMAGE=hoophq/hoopdev:<tag> -t hoophq/hoop-agent-alcatraz:<tag> .
+#
+# The two hoopagent tags land in a clean-only repository (see the bright-line
+# note in Dockerfile.agent): what this file adds is model weights served by
+# hoop's mirror, carrying no AGPL- or SSPL-licensed component, so they stay on
+# the clean side of that line.
 
 # The agent image to build on. No default: an unpinned base makes derived
 # builds non-reproducible. Any agent flavour works, because this file only adds
-# files and leaves the base's user, ENTRYPOINT and CMD alone. Two exceptions:
-# the distroless flavour has no shell for the verify below, and hoophq/hoop is
-# the gateway base and would not start an agent.
+# files and leaves the base's user, ENTRYPOINT and CMD alone — including the
+# distroless flavour, which has neither a shell nor a package manager. The one
+# image that does not belong here is hoophq/hoop: that is the gateway base and
+# would not start an agent.
 ARG HOOP_IMAGE
 ARG CURL_IMAGE=curlimages/curl:8.11.1
 
@@ -66,12 +78,12 @@ COPY --from=models /opt/alcatraz/models /opt/alcatraz/models
 # the model's own directory.
 ENV ALCATRAZ_NER_MODEL_PATH=/opt/alcatraz/models
 
-# Fails the build if the files did not survive the COPY. The manifest ships
-# with the model, so the same command answers "is this intact" on a running
-# container, and CI re-runs it per architecture against the published image.
-#
-# cd, not WORKDIR: the manifest's paths are relative, and a WORKDIR would
-# follow the image into the base's ENTRYPOINT.
-RUN cd "${ALCATRAZ_NER_MODEL_PATH}" && sha256sum -c checksums.txt
+# No verification step here: distroless has no shell to run one in, and the
+# only build this could catch is one where COPY --from lost bytes the models
+# stage had just checksummed. The check that matters runs in CI against the
+# artifact that landed in the registry, per architecture, by exporting the
+# container filesystem — see scripts/ci/verify-alcatraz-image.sh. The manifest
+# ships with the model, so that same command answers "is this intact" for any
+# copy of the image, running or not.
 
 # ENTRYPOINT and CMD are inherited from HOOP_IMAGE on purpose.
