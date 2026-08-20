@@ -620,6 +620,39 @@ Props: `onAdd()`, `selectMode`, `onToggleSelectMode()`, `allSelected`, `onToggle
 
 ---
 
+### `SurveyWidget`
+The shell every in-app survey is rendered in: a floating launcher pinned to the right edge of the viewport that expands into a non-blocking card, plus the "Answer received" acknowledgement that replaces the question and retires the widget. It owns presentation and the collapsed/open/closed lifecycle only — the survey feature owns visibility (`due`) and submission (`answered`).
+```jsx
+import SurveyWidget from '@/components/SurveyWidget'
+import { EMPTY_CHOICE_ANSWER } from '@/components/SurveyWidget/constants'
+
+const due = useUserStore((state) => !!state.user?.show_origin_survey)
+const [answer, setAnswer] = useState(EMPTY_CHOICE_ANSWER)
+const [answered, setAnswered] = useState(false)
+
+<SurveyWidget label={QUESTION} due={due} answered={answered}>
+  <SurveyWidget.ChoiceQuestion
+    question={QUESTION}
+    options={OPTIONS}
+    answer={answer}
+    onAnswerChange={setAnswer}
+    otherValue="other"
+    otherMaxLength={255}
+    otherLabel="Specify how you heard about Hoop"
+    onSubmit={handleSubmit}
+  />
+</SurveyWidget>
+```
+Props: `label` (announced on both launcher and card — keep it stable across a multi-step survey), `due`, `answered`, `children`.
+
+`SurveyWidget.ChoiceQuestion` is a single-choice question with a free-text follow-up on one designated option plus its Submit button; Submit stays disabled until the free text is filled in for that option. It is **controlled** — the card unmounts when the user collapses it, so the `{ value, otherText }` answer must live in the feature, which stays mounted. Seed it with `EMPTY_CHOICE_ANSWER`.
+
+Two rules when adding a survey:
+- Mount it through `features/Surveys`, never in `App.jsx` directly — every survey anchors to the same spot, so only one may be on screen at a time and that coordinator is what picks.
+- Read visibility from a `/userinfo` boolean (`show_origin_survey`, `show_ttfv_survey`). A gateway that doesn't know the field yet leaves it undefined, which reads as "don't ask" — the widget fails closed.
+
+---
+
 ### `FullBleed` (`src/layout/FullBleed/`)
 Lets a page render edge-to-edge and exactly one viewport tall **inside** the padded `PageLayout` — cancels the page padding (single-sourced from `PageLayout`'s `PAGE_PADDING`) and fills the `AppShell.Main` height. Use for hero/promotion panels.
 ```jsx
@@ -782,6 +815,14 @@ Non-obvious notes only:
   page. Never use it as an existence probe.
 - `onboarding.js` — `GET /orgs/onboarding`, admin only. The gateway computes the
   whole setup checklist in one query; backs `useConfigStatusStore`.
+- `originSurvey.js` / `ttfvSurvey.js` — the in-app surveys. Both are write-only:
+  there is no GET, because whether to ask is a boolean on `/userinfo`
+  (`show_origin_survey`, `show_ttfv_survey`) and the whole policy — admin check,
+  org eligibility, cooldown, already-answered — lives in the gateway. Both POST
+  return 204, and 409 on a repeat answer, so callers fire and forget rather than
+  surfacing an error the user can't act on. On `ttfvSurvey.answer`, `activity` is
+  only read when `reachedValue` is true and `activityOther` only when `activity`
+  is `'other'`.
 - `reports.js` — `/reports/sessions` takes `YYYY-MM-DD` dates only and `end_date`
   is **exclusive** (the gateway compares against midnight *starting* that day, so
   send tomorrow to include today). Never send `group_by`.

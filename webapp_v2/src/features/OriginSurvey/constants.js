@@ -1,3 +1,5 @@
+export const ORIGIN_QUESTION = 'How did you hear about Hoop?'
+
 // Answers of the onboarding "How did you hear about Hoop?" survey. The `value`
 // of each entry is the analytics contract shared with the gateway
 // (validSignupOrigins in gateway/api/user/originsurvey.go) — keep both lists in

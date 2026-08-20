@@ -292,8 +292,12 @@ CSS Modules are allowed **only** for complex selectors that Mantine props cannot
 Available Mantine CSS variables (set by the theme in `src/theme.js`):
 
 ```css
-/* Spacing — xs=4px sm=8px md=16px lg=24px xl=32px xxl=48px xxxl=64px */
-var(--mantine-spacing-xs | sm | md | lg | xl | xxl | xxxl)
+/* Spacing — TWO scales live side by side, and the `*Alt` suffix is part of the
+   variable name. `theme.js` only overrides the *Alt keys; Mantine deep-merges
+   them with its own defaults, which stay untouched. There is NO
+   --mantine-spacing-xxl / -xxxl — those exist only with the Alt suffix. */
+var(--mantine-spacing-xs | sm | md | lg | xl)                     /* Mantine: 10 12 16 20 32px */
+var(--mantine-spacing-xsAlt | smAlt | mdAlt | lgAlt | xlAlt | xxlAlt | xxxlAlt)  /* ours: 4 8 16 24 32 48 64px */
 
 /* Font sizes — xs=12px sm=14px md=16px lg=18px xl=20px */
 var(--mantine-font-size-xs | sm | md | lg | xl)
@@ -318,6 +322,14 @@ var(--mantine-color-{name}-light-color)  /* light variant text */
 /* ✅ Correct — always reference the theme */
 .label { font-size: var(--mantine-font-size-xs); margin-bottom: var(--mantine-spacing-sm); color: var(--mantine-color-indigo-8); }
 ```
+
+**A misspelled variable fails silently — check the name against the list above.**
+An undefined custom property doesn't fall back to the default, it invalidates the
+whole declaration, so the property is simply dropped. Inside a `calc()` this is
+especially quiet: `max-height: calc(50vh - var(--mantine-spacing-xxl))` had no
+`max-height` at all in the shipped origin survey, and the card ran off the top of
+short viewports instead of scrolling. If a rule looks like it isn't applying,
+inspect it in DevTools — an invalid declaration shows struck through.
 
 ## Text color — use Mantine tokens, not raw names
 
