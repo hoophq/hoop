@@ -84,7 +84,7 @@ func ShutdownSharedContainers() {
 
 // bootMSSQLContainer boots SQL Server 2022. The readiness log line fires
 // slightly before the sa login works, so waitForReady also pings.
-func bootMSSQLContainer() (*MSSQLContainer, error) {
+func bootMSSQLContainer() (_ *MSSQLContainer, err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	defer cancel()
 
@@ -116,6 +116,14 @@ func bootMSSQLContainer() (*MSSQLContainer, error) {
 	sharedMu.Lock()
 	sharedServer = container
 	sharedMu.Unlock()
+
+	// Every step below can still fail. SQL Server is the heaviest container in
+	// the suite, so do not leave it idling until package end.
+	defer func() {
+		if err != nil {
+			ShutdownSharedContainers()
+		}
+	}()
 
 	mappedPort, err := container.MappedPort(ctx, "1433/tcp")
 	if err != nil {
