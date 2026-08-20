@@ -28,32 +28,7 @@ NOTE_CONTENT=$(cat $NOTE_FILE)
 cat - >$NOTE_FILE <<EOF
 $NOTE_CONTENT
 
-## Assets
-
-- [hoop-darwin-arm64](https://releases.hoop.dev/release/${GIT_TAG}/hoop_${GIT_TAG}_Darwin_arm64.tar.gz)
-- [hoop-darwin-amd64](https://releases.hoop.dev/release/${GIT_TAG}/hoop_${GIT_TAG}_Darwin_x86_64.tar.gz)
-- [hoop-linux-arm64](https://releases.hoop.dev/release/${GIT_TAG}/hoop_${GIT_TAG}_Linux_arm64.tar.gz)
-- [hoop-linux-amd64](https://releases.hoop.dev/release/${GIT_TAG}/hoop_${GIT_TAG}_Linux_x86_64.tar.gz)
-- [hoop-windows-arm64](https://releases.hoop.dev/release/${GIT_TAG}/hoop_${GIT_TAG}_Windows_arm64.tar.gz)
-- [hoop-windows-amd64](https://releases.hoop.dev/release/${GIT_TAG}/hoop_${GIT_TAG}_Windows_x86_64.tar.gz)
-- [checksums.txt](https://releases.hoop.dev/release/${GIT_TAG}/checksums.txt)
-
-## Docker Images
-
-- [hoophq/hoop:latest](https://hub.docker.com/repository/docker/hoophq/hoop)
-- [hoophq/hoop:${GIT_TAG}](https://hub.docker.com/repository/docker/hoophq/hoop)
-
-## Helm Chart
-
-- [hoop-chart-${GIT_TAG}](https://releases.hoop.dev/release/${GIT_TAG}/hoop-chart-${GIT_TAG}.tgz)
-- [hoopagent-chart-${GIT_TAG}](https://releases.hoop.dev/release/${GIT_TAG}/hoopagent-chart-${GIT_TAG}.tgz)
-
-# Bundles
-
-- [hoop-gateway-bundle-amd64](https://releases.hoop.dev/release/${GIT_TAG}/hoopgateway_${GIT_TAG}-Linux_amd64.tar.gz)
-- [hoop-gateway-bundle-arm64](https://releases.hoop.dev/release/${GIT_TAG}/hoopgateway_${GIT_TAG}-Linux_arm64.tar.gz)
-- [webapp-bundle](https://releases.hoop.dev/release/${GIT_TAG}/hoop-chart-${GIT_TAG}.tgz)
-
+$("$(dirname "$0")/release-notes.sh" "$GIT_TAG")
 EOF
 
 cat - <<EOF

@@ -889,12 +889,23 @@ jobs:
           docker manifest push hoophq/hoopdev:${{ env.GIT_TAG }}
           docker manifest push hoophq/hoopdev:latest
 
-  # Agent image with the alcatraz NER model baked in, derived from the hoopdev
-  # image published above. Needed by orgs running the gateway with
-  # DLP_PROVIDER=alcatraz and masking rules that ask for PERSON/LOCATION/NRP.
-  docker-publish-hoopagent-alcatraz:
+  # The tools agent with the alcatraz NER model baked in, built on the tag the
+  # job above just pushed (see Dockerfile.agent-alcatraz):
+  #
+  #   :<version>-alcatraz   hoopdev + the model
+  #
+  # For deployments that need the bundled database clients or RDP and serve
+  # DLP_PROVIDER=alcatraz masking rules asking for PERSON/LOCATION/NRP. The slim
+  # equivalents live in hoophq/hoopagent; this one carries the same AGPL/SSPL
+  # tooling as its hoopdev base, which is why it is not published there.
+  #
+  # No :latest — the model is a deployment decision, so the tag names a release.
+  #
+  # A separate job from the manifest above so a flaky 250MB model download
+  # retries on its own instead of re-pushing hoopdev.
+  docker-publish-hoopdev-alcatraz:
     runs-on: ubuntu-latest
-    name: Publish Agent Alcatraz Image
+    name: Publish Agent Alcatraz Image (hoopdev)
     environment: production
     needs:
       # hoophq/hoopdev is the agent image this derives from.
@@ -918,7 +929,7 @@ jobs:
       # of the registry serving it to this runner.
       - name: Wait for base image
         run: scripts/ci/wait-for-image.sh hoophq/hoopdev:${{ env.GIT_TAG }}
-      - name: Build and push (multiarch)
+      - name: Build and push (alcatraz)
         uses: docker/build-push-action@v4
         with:
           file: ./Dockerfile.agent-alcatraz
@@ -930,16 +941,14 @@ jobs:
           build-args: |
             HOOP_IMAGE=hoophq/hoopdev:${{ env.GIT_TAG }}
           tags: |
-            hoophq/hoop-agent-alcatraz:${{ env.GIT_TAG }}
-            hoophq/hoop-agent-alcatraz:latest
-      # The build checksummed the weights before they were copied in; this
-      # re-checks the artifact that actually landed in the registry, per
-      # architecture, which a single-platform build stage cannot.
+            hoophq/hoopdev:${{ env.GIT_TAG }}-alcatraz
+      # Reads the model out of the published image by exporting the container
+      # filesystem, per architecture, which a single-platform build stage cannot.
       - name: Verify published image
         run: |
-          scripts/ci/wait-for-image.sh hoophq/hoop-agent-alcatraz:${{ env.GIT_TAG }}
+          scripts/ci/wait-for-image.sh hoophq/hoopdev:${{ env.GIT_TAG }}-alcatraz
           scripts/ci/verify-alcatraz-image.sh \
-            hoophq/hoop-agent-alcatraz:${{ env.GIT_TAG }}
+            hoophq/hoopdev:${{ env.GIT_TAG }}-alcatraz
 
   # hoophq/hoopagent — slim agent images, built from the two targets of
   # Dockerfile.agent (see that file for what each ships):
@@ -1037,7 +1046,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
-      # No QEMU: see the note in docker-publish-hoopagent-alcatraz above.
+      # No QEMU: this build runs no command on the target platform. The model
+      # download stage is pinned to BUILDPLATFORM and the final stage is a COPY
+      # plus an ENV, so both architectures build natively.
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
       - name: Login to Docker Hub
