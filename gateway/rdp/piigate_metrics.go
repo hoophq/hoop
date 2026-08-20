@@ -17,7 +17,7 @@ import (
 // without the spam.
 //
 // Note: the gateway-side gate is KILL-ONLY (it has no redaction path —
-// redaction is an agent-side policy, see agentrs/src/piigate). There is
+// redaction is an agent-side policy, in libhoop's rdp-guard crate). There is
 // therefore deliberately no redact stage here; redact latency is attributed
 // only in the agentrs aggregator. The agentrs summary line carries an extra
 // redact[...] field for that reason.

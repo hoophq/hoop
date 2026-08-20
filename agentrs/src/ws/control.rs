@@ -23,6 +23,13 @@ pub const CONTROL_SENTINEL_SID: Uuid = Uuid::from_bytes([
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x4c, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
 ]);
 
+/// Capability-negotiated header framing. Version 2 uses the high bit of the
+/// 32-bit length word to distinguish JSON control envelopes from raw relay
+/// bytes. A new agent remains legacy-compatible until the gateway echoes this
+/// value in its connection-scoped capability response.
+pub const CAPABILITY_FRAME_PROTOCOL: &str = "frame_protocol";
+pub const FRAME_PROTOCOL_V2: &str = "2";
+
 #[cfg(test)]
 mod tests {
     use super::*;

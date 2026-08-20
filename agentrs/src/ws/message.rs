@@ -62,6 +62,7 @@ impl WebSocketMessage {
             sid,
             len: json_data.len() as u32,
             data_size: DATA_SIZE_HEADER,
+            control: true,
         };
 
         // Combine header + JSON data
@@ -77,15 +78,55 @@ impl WebSocketMessage {
     ) -> Result<(Uuid, Self), Box<dyn std::error::Error + Send + Sync>> {
         // Decode header
         let header = Header::decode(data).ok_or("Failed to decode header")?;
-
-        // Extract JSON payload
-        if data.len() < header.data_size {
-            return Err("Insufficient data for payload".into());
+        if !header.control {
+            return Err("Expected a control frame".into());
         }
 
+        // Header::decode already proved the payload is present at the exact
+        // declared length.
         let json_data = &data[header.data_size..];
         let message: WebSocketMessage = serde_json::from_slice(json_data)?;
 
         Ok((header.sid, message))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn control_decoder_rejects_wrong_lengths_and_raw_frames() {
+        let sid = Uuid::new_v4();
+        let message = WebSocketMessage::new(MessageType::Data, HashMap::new(), b"payload".to_vec());
+        let frame = message
+            .encode_with_header(sid)
+            .expect("encode control frame");
+        let (decoded_sid, decoded) =
+            WebSocketMessage::decode_with_header(&frame).expect("decode control frame");
+        assert_eq!(decoded_sid, sid);
+        assert_eq!(decoded.payload, b"payload");
+
+        let wire_len = u32::from_be_bytes(frame[16..20].try_into().unwrap());
+        assert_ne!(wire_len & (1 << 31), 0, "control flag missing");
+
+        let mut declared_short = frame.clone();
+        declared_short[16..20].copy_from_slice(&(wire_len - 1).to_be_bytes());
+        assert!(WebSocketMessage::decode_with_header(&declared_short).is_err());
+
+        let mut trailing = frame.clone();
+        trailing.push(0);
+        assert!(WebSocketMessage::decode_with_header(&trailing).is_err());
+
+        let json = serde_json::to_vec(&message).unwrap();
+        let raw_header = Header {
+            sid,
+            len: json.len() as u32,
+            data_size: DATA_SIZE_HEADER,
+            control: false,
+        };
+        let mut raw_frame = raw_header.encode();
+        raw_frame.extend_from_slice(&json);
+        assert!(WebSocketMessage::decode_with_header(&raw_frame).is_err());
     }
 }

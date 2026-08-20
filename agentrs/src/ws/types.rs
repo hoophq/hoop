@@ -1,14 +1,11 @@
 use crate::ws::session::SessionInfo;
 use futures::stream::SplitSink;
 use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::RwLock;
-use tokio::sync::mpsc::{Receiver, Sender};
+use std::sync::{Arc, Mutex as StdMutex};
+use tokio::sync::{Mutex, RwLock, mpsc};
 use tokio_tungstenite::WebSocketStream;
-use uuid::Uuid;
-
-use tokio::sync::Mutex;
 use tokio_tungstenite::tungstenite::protocol::Message;
+use uuid::Uuid;
 
 //define some nested types for readability
 pub type WsWriter = Arc<
@@ -22,4 +19,5 @@ pub type WsWriter = Arc<
 
 pub type SessionMap = Arc<RwLock<HashMap<Uuid, SessionInfo>>>;
 pub type ProxyMap = Arc<RwLock<HashMap<Uuid, tokio::task::JoinHandle<()>>>>;
-pub type ChannelMap = Arc<RwLock<HashMap<Uuid, (Sender<Vec<u8>>, Arc<Mutex<Receiver<Vec<u8>>>>)>>>;
+pub type ChannelMap = Arc<RwLock<HashMap<Uuid, mpsc::Sender<Vec<u8>>>>>;
+pub type ViolationAckMap = Arc<StdMutex<HashMap<Uuid, tokio::sync::oneshot::Sender<()>>>>;

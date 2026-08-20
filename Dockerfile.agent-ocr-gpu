@@ -4,8 +4,8 @@
 # RDP_OCR_SERVER_URL), but installs onnxruntime-gpu and the CUDA runtime
 # libraries so the engine uses the CUDA execution provider. The device is
 # detected at runtime (device_policy.py): with a visible GPU the engine runs
-# on CUDA; without one it REFUSES TO START unless OCR_ALLOW_CPU_FALLBACK=1 —
-# a GPU image silently running on CPU would quietly miss latency targets.
+# on CUDA; without one it REFUSES TO START. Resident GPU mode has no automatic
+# CPU fallback; deployments without CUDA must use Dockerfile.agent-ocr.
 #
 # Requires the nvidia container runtime at deploy time (docker run --gpus all
 # / nvidia-container-toolkit). NOT buildable/validatable on a non-CUDA host;
@@ -64,6 +64,7 @@ RUN python3 -m venv /opt/ocr-venv && \
     /opt/ocr-venv/bin/pip install --no-cache-dir \
         "rapidocr==3.8.4" \
         "onnxruntime-gpu==1.20.2" \
+        "cupy-cuda12x==13.6.0" \
         "nvidia-cuda-runtime-cu12==12.9.79" \
         "nvidia-cublas-cu12==12.9.2.10" \
         "nvidia-cudnn-cu12==9.23.2.1" \
@@ -124,6 +125,8 @@ models_dir = sys.argv[1]; \
 
 COPY scripts/dev/ocr-poc/device_policy.py /opt/ocr/device_policy.py
 COPY scripts/dev/ocr-poc/bucket_rec.py /opt/ocr/bucket_rec.py
+COPY scripts/dev/ocr-poc/raw_image.py /opt/ocr/raw_image.py
+COPY scripts/dev/ocr-poc/gpu_pipeline.py /opt/ocr/gpu_pipeline.py
 COPY scripts/dev/ocr-poc/server_rapidocr.py /opt/ocr/server_rapidocr.py
 COPY scripts/dev/ocr-poc/entrypoint-embedded.sh /opt/ocr/entrypoint-embedded.sh
 RUN chmod 755 /opt/ocr/entrypoint-embedded.sh
@@ -136,18 +139,20 @@ USER hoop
 
 ENV RDP_OCR_SERVER_URL="http://127.0.0.1:18868"
 ENV OCR_PORT=18868
-# Each worker holds its own copy of the models in VRAM; tune to the GPU
-# memory budget with `docker run -e WEB_CONCURRENCY=N`. With
-# OCR_REC_PRECISION=fp16 each worker additionally holds one fixed-shape
-# recognition session per width bucket (~600MB/worker measured on a T4).
-ENV WEB_CONCURRENCY=4
+ENV RDP_OCR_TRANSPORT="resident-rdp"
+ENV OCR_GPU_PREPROCESS=1
+ENV OCR_REC_PRECISION="fp16"
+# Resident GPU framebuffers are process-local, so this must remain one:
+# multiple Uvicorn workers cannot safely route a session's POST and DELETE to
+# the same owner. server_rapidocr.py refuses unsafe overrides at startup.
+ENV WEB_CONCURRENCY=1
 # Recognition runtime knobs (see server_rapidocr.py for the full rationale):
 #   OCR_REC_LANG:      ch (default) | en — en is faster and more accurate on
 #                      Latin-only screens but CANNOT read CJK text (CJK PII
 #                      would be missed). Per-deployment product decision.
-#   OCR_REC_PRECISION: fp32 (default) | fp16 — fp16 runs recognition through
-#                      fixed-shape bucket sessions, measured 1.8x end-to-end
-#                      on a T4 with byte-identical text output. CUDA only.
+#   OCR_REC_PRECISION: fp16 is required by OCR_GPU_PREPROCESS and is therefore
+#                      the GPU image default. The fp32 stock RapidOCR path is
+#                      available only when GPU preprocessing is disabled.
 # Resource knobs (also see server_rapidocr.py):
 #   OCR_INTRA_OP_THREADS / OCR_INTER_OP_THREADS: 4 / 1 (defaults) — per-session
 #                      ONNX Runtime thread pools. Left unbounded, ORT sizes each
@@ -161,7 +166,14 @@ ENV WEB_CONCURRENCY=4
 #                      (~4.8GB/worker on an 80GB card), capping how many workers
 #                      fit; kSameAsRequested trades allocation frequency for a
 #                      smaller footprint on VRAM-constrained GPUs.
-# Defaults preserve the exact behavior of previous image releases.
+#   OCR_GPU_PREPROCESS: 1 enables pinned raw-RGBA upload, CUDA preprocessing,
+#                       ORT I/O binding, and GPU CTC reduction. Pair with
+#                       RDP_OCR_TRANSPORT=raw-rgba on the agent.
+#   OCR_GPU_PREPROCESS: 1 enables persistent pinned/device framebuffer
+#                       storage, CUDA detector preprocessing, ORT I/O binding,
+#                       GPU CTC reduction, and device-side repaint checks.
+#                       Pair with RDP_OCR_TRANSPORT=resident-rdp.
+# The GPU image defaults to the resident RDP path; deployments may override it.
 
 ENTRYPOINT ["tini", "--", "/opt/ocr/entrypoint-embedded.sh"]
 CMD ["/usr/local/bin/hoop-default-agent.sh"]

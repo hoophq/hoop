@@ -1,11 +1,11 @@
 use crate::{
     conf, tls,
     ws::{
-        control::CONTROL_SENTINEL_SID,
+        control::{CAPABILITY_FRAME_PROTOCOL, CONTROL_SENTINEL_SID, FRAME_PROTOCOL_V2},
         message::WebSocketMessage,
         message_types::MessageType,
         rdp_message_processor::MessageProcessor,
-        types::{ChannelMap, ProxyMap, SessionMap, WsWriter},
+        types::{ChannelMap, ProxyMap, SessionMap, ViolationAckMap, WsWriter},
     },
 };
 use anyhow::Context;
@@ -53,6 +53,41 @@ fn build_websocket_url() -> String {
 
     let gateway_url = gateway_url.trim_end_matches('/');
     gateway_url.to_string()
+}
+
+/// Runs the two connection-owned tasks and joins the loser before returning.
+/// Dropping a Tokio JoinHandle detaches its task, so abort without await is not
+/// sufficient for reconnect isolation.
+async fn run_connection_tasks(
+    mut processor_task: tokio::task::JoinHandle<anyhow::Result<()>>,
+    mut heartbeat_task: tokio::task::JoinHandle<()>,
+) -> anyhow::Result<()> {
+    tokio::select! {
+        result = &mut processor_task => {
+            heartbeat_task.abort();
+            let _ = heartbeat_task.await;
+            match result {
+                Ok(Ok(())) => {
+                    info!("> Message processor completed normally");
+                    Ok(())
+                }
+                Ok(Err(error)) => {
+                    error!("> Message processor error: {error}");
+                    Err(error)
+                }
+                Err(error) => {
+                    error!("> Message processor task panicked: {error}");
+                    Err(anyhow::anyhow!("Message processor task panicked: {error}"))
+                }
+            }
+        }
+        _ = &mut heartbeat_task => {
+            processor_task.abort();
+            let _ = processor_task.await;
+            debug!("> Heartbeat task completed - connection likely lost");
+            Err(anyhow::anyhow!("Heartbeat task completed - connection lost"))
+        }
+    }
 }
 
 impl WebSocket {
@@ -194,18 +229,15 @@ impl WebSocket {
     /// sid, not a session id — the gateway dispatches it by message type at
     /// the connection level.
     async fn send_capabilities(ws_sender: &WsWriter) -> anyhow::Result<()> {
-        let mut metadata = HashMap::new();
-        let supports_guard = crate::piigate::config::supports_pii_guard();
-        metadata.insert(
-            "supports_pii_guard".to_string(),
-            supports_guard.to_string(),
-        );
-        // Retained for gateways predating complete rule metadata support.
-        metadata.insert("supports_pii_entity_allowlist".to_string(), "true".to_string());
-        metadata.insert(
-            "supports_pii_data_masking_rules".to_string(),
-            "true".to_string(),
-        );
+        let metadata = capabilities_metadata();
+        let advertised = metadata
+            .get(CAPABILITY_SUPPORTS_PII_GUARD)
+            .cloned()
+            .unwrap_or_default();
+        let supports_rules = metadata
+            .get(CAPABILITY_SUPPORTS_PII_DATA_MASKING_RULES)
+            .cloned()
+            .unwrap_or_default();
         let msg = WebSocketMessage::new(MessageType::Capabilities, metadata, Vec::new());
         let framed = msg
             .encode_with_header(CONTROL_SENTINEL_SID)
@@ -217,7 +249,7 @@ impl WebSocket {
             .context("sending capabilities frame")?;
         info!(
             "> Advertised capabilities to gateway \
-             (supports_pii_guard={supports_guard}, supports_pii_data_masking_rules=true)"
+             (supports_pii_guard={advertised}, supports_pii_data_masking_rules={supports_rules})"
         );
         Ok(())
     }
@@ -240,48 +272,24 @@ impl WebSocket {
         // Store active RDP proxy tasks per session
         let active_proxies: ProxyMap = Arc::new(RwLock::new(HashMap::new()));
         let session_channels: ChannelMap = Arc::new(RwLock::new(HashMap::new()));
+        let violation_acks: ViolationAckMap = Arc::new(std::sync::Mutex::new(HashMap::new()));
 
         let message_processor = MessageProcessor {
             ws_sender: ws_sender.clone(),
             sessions: sessions.clone(),
             active_proxies: active_proxies.clone(),
             session_channels: session_channels.clone(),
+            violation_acks: violation_acks.clone(),
             config_manager: self.config_manager.clone(),
         };
 
         let processor_task =
             tokio::spawn(async move { message_processor.process_messages(ws_receiver).await });
 
-        // Start heartbeat task in case connection stucked or deadlock
+        // Start heartbeat task in case the connection is stuck or deadlocked.
         let heartbeat_task = self.spawn_heartbeat_task(ws_sender.clone());
-
-        let result = tokio::select! {
-            result = processor_task => {
-                match result {
-                    Ok(Ok(())) => {
-                        info!("> Message processor completed normally");
-                        // This is a graceful closure, return Ok to exit reconnection loop
-                        Ok(())
-                    }
-                    Ok(Err(e)) => {
-                        error!("> Message processor error: {}", e);
-                        // This is a connection error, return it to trigger reconnection
-                        Err(anyhow::anyhow!(e))
-                    }
-                    Err(e) => {
-                        error!("> Message processor task panicked: {}", e);
-                        // Task panic indicates connection issues, return error to trigger reconnection
-                        Err(anyhow::anyhow!("Message processor task panicked: {}", e))
-                    }
-                }
-            }
-            _ = heartbeat_task => {
-                debug!("> Heartbeat task completed - connection likely lost");
-                // Heartbeat task completion indicates connection loss, return error to trigger reconnection
-                Err(anyhow::anyhow!("Heartbeat task completed - connection lost"))
-            }
-        };
-        self.cleanup_resources(sessions, active_proxies, session_channels)
+        let result = run_connection_tasks(processor_task, heartbeat_task).await;
+        self.cleanup_resources(sessions, active_proxies, session_channels, violation_acks)
             .await;
         result
     }
@@ -307,20 +315,212 @@ impl WebSocket {
         sessions: SessionMap,
         active_proxies: ProxyMap,
         session_channels: ChannelMap,
+        violation_acks: ViolationAckMap,
     ) {
         debug!("> Cleaning up resources...");
 
-        // Cancel all active proxy tasks
+        // Match per-session teardown's lock order so reconnect cleanup cannot
+        // deadlock a proxy finishing concurrently. Drain ownership under the
+        // locks, then release every map before aborting and joining tasks that
+        // may themselves run finalization.
         let mut proxies = active_proxies.write().await;
-        for (sid, handle) in proxies.drain() {
+        let mut sessions = sessions.write().await;
+        let mut channels = session_channels.write().await;
+        let handles: Vec<_> = proxies.drain().collect();
+        sessions.clear();
+        channels.clear();
+        drop(channels);
+        drop(sessions);
+        drop(proxies);
+
+        for (_, handle) in &handles {
             handle.abort();
-            debug!("> Cancelled proxy task for session {}", sid);
+        }
+        for (sid, handle) in handles {
+            let _ = handle.await;
+            debug!("> Cancelled and joined proxy task for session {sid}");
         }
 
-        // Clear sessions and channels
-        sessions.write().await.clear();
-        session_channels.write().await.clear();
-
+        violation_acks
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clear();
         debug!("> Resource cleanup complete");
+    }
+}
+
+/// Wire key for the PII-guard capability. Must stay identical to the gateway
+/// constant `broker.CapabilitySupportsPIIGuard`.
+pub const CAPABILITY_SUPPORTS_PII_GUARD: &str = "supports_pii_guard";
+pub const CAPABILITY_SUPPORTS_PII_ENTITY_ALLOWLIST: &str = "supports_pii_entity_allowlist";
+pub const CAPABILITY_SUPPORTS_PII_DATA_MASKING_RULES: &str = "supports_pii_data_masking_rules";
+
+/// Builds the connection-scoped capability advertisement.
+///
+/// Split out from `send_capabilities` so the value that actually reaches the
+/// gateway is testable without a live socket. That matters more than it
+/// looks: an OSS build links the guard stub and MUST advertise `false` here,
+/// because that is what makes the gateway refuse a session it would otherwise
+/// delegate to an agent that cannot enforce. Advertising `true` from a build
+/// with no enforcement engine would be a silent bypass.
+fn capabilities_metadata() -> HashMap<String, String> {
+    let mut metadata = HashMap::new();
+    metadata.insert(
+        CAPABILITY_SUPPORTS_PII_GUARD.to_string(),
+        crate::guard::supports_pii_guard().to_string(),
+    );
+    metadata.insert(
+        CAPABILITY_SUPPORTS_PII_ENTITY_ALLOWLIST.to_string(),
+        crate::guard::ENFORCEMENT_AVAILABLE.to_string(),
+    );
+    metadata.insert(
+        CAPABILITY_SUPPORTS_PII_DATA_MASKING_RULES.to_string(),
+        crate::guard::ENFORCEMENT_AVAILABLE.to_string(),
+    );
+    metadata.insert(
+        CAPABILITY_FRAME_PROTOCOL.to_string(),
+        FRAME_PROTOCOL_V2.to_string(),
+    );
+    metadata
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The advertised value must be exactly what the guard reports — never a
+    /// hardcoded optimistic default. The gateway's refusal of guarded sessions
+    /// against an incapable agent hinges on this one string.
+    #[test]
+    fn advertises_the_guard_capability_verbatim() {
+        let metadata = capabilities_metadata();
+        assert_eq!(
+            metadata
+                .get(CAPABILITY_SUPPORTS_PII_GUARD)
+                .map(String::as_str),
+            Some(crate::guard::supports_pii_guard().to_string().as_str()),
+        );
+    }
+
+    #[test]
+    fn advertises_entity_allowlist_support_for_guard_build() {
+        assert_eq!(
+            capabilities_metadata()
+                .get(CAPABILITY_SUPPORTS_PII_ENTITY_ALLOWLIST)
+                .cloned(),
+            Some(crate::guard::ENFORCEMENT_AVAILABLE.to_string()),
+        );
+    }
+
+    #[test]
+    fn advertises_complete_data_masking_rule_support_for_guard_build() {
+        assert_eq!(
+            capabilities_metadata()
+                .get(CAPABILITY_SUPPORTS_PII_DATA_MASKING_RULES)
+                .cloned(),
+            Some(crate::guard::ENFORCEMENT_AVAILABLE.to_string()),
+        );
+    }
+
+    #[test]
+    fn advertises_typed_frame_protocol() {
+        assert_eq!(
+            capabilities_metadata()
+                .get(CAPABILITY_FRAME_PROTOCOL)
+                .map(String::as_str),
+            Some(FRAME_PROTOCOL_V2),
+        );
+    }
+
+    /// The gateway parses this with strconv.ParseBool, so it has to be one of
+    /// the forms that accepts — and "true"/"false" are what it stores.
+    #[test]
+    fn capability_value_is_a_go_parseable_bool() {
+        let metadata = capabilities_metadata();
+        let value = metadata
+            .get(CAPABILITY_SUPPORTS_PII_GUARD)
+            .expect("the capability key must always be present");
+        assert!(
+            value == "true" || value == "false",
+            "capability value {value:?} is not a bool the gateway can parse"
+        );
+    }
+
+    /// An OSS build has no enforcement engine, so it must advertise false.
+    /// This is the property that keeps a stub-linked agent from being handed
+    /// guarded sessions it would forward in the clear.
+    #[test]
+    fn a_build_without_an_engine_advertises_false() {
+        if crate::guard::ENFORCEMENT_AVAILABLE {
+            return; // enterprise build: capability depends on runtime endpoints
+        }
+        assert_eq!(
+            capabilities_metadata()
+                .get(CAPABILITY_SUPPORTS_PII_GUARD)
+                .map(String::as_str),
+            Some("false"),
+            "a build linked against the guard stub must never advertise capability"
+        );
+        assert_eq!(
+            capabilities_metadata()
+                .get(CAPABILITY_SUPPORTS_PII_ENTITY_ALLOWLIST)
+                .map(String::as_str),
+            Some("false"),
+            "a build linked against the guard stub must not advertise entity-policy support"
+        );
+        assert_eq!(
+            capabilities_metadata()
+                .get(CAPABILITY_SUPPORTS_PII_DATA_MASKING_RULES)
+                .map(String::as_str),
+            Some("false"),
+            "a build linked against the guard stub must not advertise complete-policy support"
+        );
+    }
+
+    struct DropFlag(std::sync::Arc<std::sync::atomic::AtomicBool>);
+
+    impl Drop for DropFlag {
+        fn drop(&mut self) {
+            self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+
+    #[tokio::test]
+    async fn processor_completion_joins_heartbeat_task() {
+        let dropped = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let guard = DropFlag(dropped.clone());
+        let processor = tokio::spawn(async { Ok(()) });
+        let heartbeat = tokio::spawn(async move {
+            let _guard = guard;
+            std::future::pending::<()>().await;
+        });
+
+        run_connection_tasks(processor, heartbeat)
+            .await
+            .expect("processor completion");
+        assert!(
+            dropped.load(std::sync::atomic::Ordering::SeqCst),
+            "heartbeat task was detached"
+        );
+    }
+
+    #[tokio::test]
+    async fn heartbeat_completion_joins_processor_task() {
+        let dropped = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let guard = DropFlag(dropped.clone());
+        let processor = tokio::spawn(async move {
+            let _guard = guard;
+            std::future::pending::<anyhow::Result<()>>().await
+        });
+        let heartbeat = tokio::spawn(async {});
+
+        let error = run_connection_tasks(processor, heartbeat)
+            .await
+            .expect_err("heartbeat completion must reconnect");
+        assert!(error.to_string().contains("connection lost"));
+        assert!(
+            dropped.load(std::sync::atomic::Ordering::SeqCst),
+            "message processor task was detached"
+        );
     }
 }

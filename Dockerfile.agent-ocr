@@ -42,6 +42,8 @@ ENV PATH="/opt/ocr-venv/bin:${PATH}"
 
 # The engine + its device policy + the loopback launcher.
 COPY scripts/dev/ocr-poc/device_policy.py /opt/ocr/device_policy.py
+COPY scripts/dev/ocr-poc/bucket_rec.py /opt/ocr/bucket_rec.py
+COPY scripts/dev/ocr-poc/raw_image.py /opt/ocr/raw_image.py
 COPY scripts/dev/ocr-poc/server_rapidocr.py /opt/ocr/server_rapidocr.py
 COPY scripts/dev/ocr-poc/entrypoint-embedded.sh /opt/ocr/entrypoint-embedded.sh
 RUN chmod 755 /opt/ocr/entrypoint-embedded.sh
@@ -56,6 +58,9 @@ USER hoop
 # need to set MSPRESIDIO_ANALYZER_URL to enable guarding — no extra container.
 ENV RDP_OCR_SERVER_URL="http://127.0.0.1:18868"
 ENV OCR_PORT=18868
+# The CPU compatibility image opts into the legacy transport explicitly; the
+# guard defaults to the production GPU-resident RDP path.
+ENV RDP_OCR_TRANSPORT="bmp"
 # Parallel inference workers (uvicorn forks; each holds its own models).
 ENV WEB_CONCURRENCY=4
 

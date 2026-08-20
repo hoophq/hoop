@@ -43,6 +43,19 @@ jobs:
       - name: Checkout Hoop
         uses: actions/checkout@v3
 
+      # REQUIRED, not optional. agentrs takes a Cargo path dependency on
+      # ../libhoop/rdp-guard for the RDP PII guard. Without this checkout
+      # libhoop-ensure resolves it to the OSS passthrough stub and the release
+      # would ship an agent that silently never enforces. build-rust-single
+      # passes --features require-enforcement so that becomes a compile error
+      # rather than a quiet downgrade, but the fix is to check libhoop out.
+      - name: Checkout libhoop
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          path: "./libhoop"
+          token: ${{ secrets.GH_TOKEN }}
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -78,6 +91,19 @@ jobs:
       - name: Checkout Hoop
         uses: actions/checkout@v3
 
+      # REQUIRED, not optional. agentrs takes a Cargo path dependency on
+      # ../libhoop/rdp-guard for the RDP PII guard. Without this checkout
+      # libhoop-ensure resolves it to the OSS passthrough stub and the release
+      # would ship an agent that silently never enforces. build-rust-single
+      # passes --features require-enforcement so that becomes a compile error
+      # rather than a quiet downgrade, but the fix is to check libhoop out.
+      - name: Checkout libhoop
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          path: "./libhoop"
+          token: ${{ secrets.GH_TOKEN }}
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -111,6 +137,19 @@ jobs:
     steps:
       - name: Checkout Hoop
         uses: actions/checkout@v3
+
+      # REQUIRED, not optional. agentrs takes a Cargo path dependency on
+      # ../libhoop/rdp-guard for the RDP PII guard. Without this checkout
+      # libhoop-ensure resolves it to the OSS passthrough stub and the release
+      # would ship an agent that silently never enforces. build-rust-single
+      # passes --features require-enforcement so that becomes a compile error
+      # rather than a quiet downgrade, but the fix is to check libhoop out.
+      - name: Checkout libhoop
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          path: "./libhoop"
+          token: ${{ secrets.GH_TOKEN }}
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable

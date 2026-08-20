@@ -33,18 +33,13 @@ import logging
 import os
 import pathlib
 import time
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager, suppress
 
 import cv2
 import numpy as np
 import onnxruntime
 import rapidocr
-from fastapi import FastAPI, Request, Response
-from rapidocr import RapidOCR
-from rapidocr.ch_ppocr_rec.typings import TextRecInput
-from rapidocr.inference_engine.onnxruntime.main import OrtInferSession
-from rapidocr.utils.process_img import get_rotate_crop_image
-from rapidocr.utils.typings import LangRec
-
 from bucket_rec import (
     BUCKET_WIDTHS,
     MAX_BATCH,
@@ -54,9 +49,49 @@ from bucket_rec import (
     filter_and_scale_boxes,
     pad_det_input,
 )
-from device_policy import cuda_device_count, resolve_device
+from device_policy import cuda_device_count, resolve_device, resolve_worker_concurrency
+from fastapi import FastAPI, Request, Response
+from rapidocr import RapidOCR
+from rapidocr.ch_ppocr_rec.typings import TextRecInput
+from rapidocr.inference_engine.onnxruntime.main import OrtInferSession
+from rapidocr.utils.process_img import get_rotate_crop_image
+from rapidocr.utils.typings import LangRec
+from raw_image import (
+    FRAME_SEQUENCE_HEADER,
+    FRAME_SESSION_HEADER,
+    HEIGHT_HEADER,
+    WIDTH_HEADER,
+    RawImageError,
+    decode_frame_request,
+    decode_rdp_frame_request,
+    decode_rgba,
+    parse_geometry,
+    read_bounded_request_body,
+    read_exact_request_body,
+    rgba_body_length,
+    validate_content_type,
+    validate_frame_content_type,
+    validate_rdp_frame_content_type,
+)
 
-app = FastAPI()
+
+@asynccontextmanager
+async def _lifespan(_app):
+    reaper = None
+    if RESIDENT_STORE is not None:
+        reaper = asyncio.create_task(
+            _reap_resident_frames(), name="resident-frame-reaper"
+        )
+    try:
+        yield
+    finally:
+        if reaper is not None:
+            reaper.cancel()
+            with suppress(asyncio.CancelledError):
+                await reaper
+
+
+app = FastAPI(lifespan=_lifespan)
 logger = logging.getLogger("uvicorn.error")
 
 DEVICE = resolve_device(
@@ -65,6 +100,8 @@ DEVICE = resolve_device(
     allow_cpu_fallback=os.environ.get("OCR_ALLOW_CPU_FALLBACK", "") == "1",
 )
 USE_CUDA = DEVICE == "onnxruntime-cuda"
+GPU_PREPROCESS = os.environ.get("OCR_GPU_PREPROCESS", "") == "1"
+resolve_worker_concurrency(os.environ.get("WEB_CONCURRENCY"), GPU_PREPROCESS)
 
 # Recognition language. The default ch model reads Chinese+English with a
 # 6,625-class output head; the en model reads Latin/digits only with a ~96
@@ -282,9 +319,9 @@ def _det_boxes_downscaled(img):
 # See bucket_rec.py for the full rationale (cuDNN-FE single-shape conv cache,
 # why HEURISTIC is not an option, padding semantics matching the stock path).
 #
-# VRAM: the rec model is ~5MB in fp16; len(BUCKET_WIDTHS) sessions per worker
-# plus per-shape arenas measure ~600MB per uvicorn worker on a T4. Size
-# WEB_CONCURRENCY accordingly.
+# VRAM: the rec model is ~5MB in fp16; len(BUCKET_WIDTHS) sessions plus
+# per-shape arenas measure ~600MB per process on a T4. Resident preprocessing
+# enforces one process; nonresident deployments must budget each worker copy.
 def _build_bucket_rec(model_path: str) -> BucketRec:
     if not os.path.exists(model_path):
         raise RuntimeError(
@@ -334,6 +371,87 @@ BUCKET_DET = (
     else None
 )
 
+if GPU_PREPROCESS:
+    if not USE_CUDA or REC_PRECISION != "fp16":
+        raise RuntimeError(
+            "OCR_GPU_PREPROCESS=1 requires CUDA and OCR_REC_PRECISION=fp16"
+        )
+    from gpu_pipeline import (
+        GpuOcrPipeline,
+        GpuResidentStore,
+        ResidentCapacityError,
+        ResidentSequenceError,
+        UnsupportedGpuShape,
+    )
+
+    GPU_PIPELINE = GpuOcrPipeline(
+        ENGINE.text_det,
+        BUCKET_DET,
+        BUCKET_REC,
+        DET_DOWNSCALE,
+        DET_MIN_SIDE,
+    )
+else:
+    GPU_PIPELINE = None
+
+
+def _positive_int_env(name, default):
+    try:
+        value = int(os.environ.get(name, str(default)), 10)
+    except ValueError as exc:
+        raise RuntimeError(f"{name} must be a positive integer") from exc
+    if value < 1:
+        raise RuntimeError(f"{name} must be a positive integer")
+    return value
+
+
+def _positive_float_env(name, default):
+    try:
+        value = float(os.environ.get(name, str(default)))
+    except ValueError as exc:
+        raise RuntimeError(f"{name} must be positive") from exc
+    if value <= 0:
+        raise RuntimeError(f"{name} must be positive")
+    return value
+
+
+if GPU_PIPELINE is not None:
+    RESIDENT_STORE = GpuResidentStore(
+        GPU_PIPELINE,
+        max_sessions=_positive_int_env("OCR_RESIDENT_MAX_SESSIONS", 32),
+        max_bytes=_positive_int_env("OCR_RESIDENT_VRAM_MB", 2048) << 20,
+        ttl_seconds=_positive_float_env("OCR_RESIDENT_TTL_SECONDS", 300),
+        max_cache_entries=_positive_int_env("OCR_RESIDENT_CACHE_ENTRIES", 128),
+        max_recognition_cache_entries=_positive_int_env(
+            "OCR_RESIDENT_RECOGNITION_CACHE_ENTRIES", 512
+        ),
+    )
+else:
+    RESIDENT_STORE = None
+
+# Resident framebuffers are process-local, so GPU preprocessing enforces one
+# Uvicorn worker. This makes POST/DELETE ownership deterministic and prevents a
+# non-owner from falsely acknowledging cleanup while another process retains
+# pixels in VRAM. Serialize requests inside that worker as well so bursts
+# cannot multiply pinned host/device allocations in its executor.
+RAW_OCR_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="raw-ocr")
+RAW_OCR_ADMISSION = asyncio.Semaphore(1)
+
+async def _reap_resident_frames():
+    interval = min(30.0, max(0.1, RESIDENT_STORE.ttl_seconds / 2))
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            async with RAW_OCR_ADMISSION:
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(
+                    RAW_OCR_EXECUTOR, RESIDENT_STORE.evict_expired
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("resident framebuffer expiry failed")
+
 
 @app.get("/healthz")
 def healthz():
@@ -342,6 +460,17 @@ def healthz():
         "device": DEVICE,
         "rec_lang": REC_LANG,
         "rec_precision": REC_PRECISION,
+        "raw_rgba": True,
+        "gpu_preprocess": GPU_PIPELINE is not None,
+        "resident_rgba": RESIDENT_STORE is not None,
+        "resident_cache_max_entries": (
+            RESIDENT_STORE.max_cache_entries if RESIDENT_STORE is not None else 0
+        ),
+        "resident_recognition_cache_max_entries": (
+            RESIDENT_STORE.max_recognition_cache_entries
+            if RESIDENT_STORE is not None
+            else 0
+        ),
     }
 
 
@@ -405,15 +534,239 @@ def _run_ocr(img) -> dict:
     return {"duration_ms": duration_ms, "words": words}
 
 
+async def _run_in_executor(img, request_started: float, decode_started: float):
+    decode_ms = (time.perf_counter() - decode_started) * 1000.0
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(None, _run_ocr, img)
+    result["request_ms"] = (time.perf_counter() - request_started) * 1000.0
+    result["stages"] = {"transport_decode_ms": decode_ms}
+    return result
+
+def _run_raw_ocr(rgba):
+    if GPU_PIPELINE is not None:
+        try:
+            return GPU_PIPELINE(rgba)
+        except UnsupportedGpuShape as exc:
+            # The fixed bucket grid covers normal RDP bands and 1080p frames.
+            # Preserve correctness for larger desktops while Phase 2 defines
+            # the resident-framebuffer shape policy.
+            img = cv2.cvtColor(rgba, cv2.COLOR_RGBA2BGR)
+            result = _run_ocr(img)
+            result["gpu_fallback"] = str(exc)
+            return result
+    return _run_ocr(cv2.cvtColor(rgba, cv2.COLOR_RGBA2BGR))
+
+
+async def _run_raw_in_executor(rgba, request_started: float, decode_started: float):
+    decode_ms = (time.perf_counter() - decode_started) * 1000.0
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(RAW_OCR_EXECUTOR, _run_raw_ocr, rgba)
+    result["request_ms"] = (time.perf_counter() - request_started) * 1000.0
+    result.setdefault("stages", {})["transport_decode_ms"] = decode_ms
+    return result
+
+
 @app.post("/ocr")
 async def ocr(request: Request):
+    request_started = time.perf_counter()
     body = await request.body()
+    decode_started = time.perf_counter()
     img = cv2.imdecode(np.frombuffer(body, dtype=np.uint8), cv2.IMREAD_COLOR)
     if img is None:
         return Response(status_code=400, content="undecodable image")
+    return await _run_in_executor(img, request_started, decode_started)
 
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, _run_ocr, img)
+
+@app.post("/ocr/rgba")
+async def ocr_rgba(request: Request):
+    """Lower-copy OCR boundary: exact top-down RGBA8, no image codec."""
+    request_started = time.perf_counter()
+    try:
+        validate_content_type(request.headers.get("content-type"))
+    except RawImageError as exc:
+        return Response(status_code=415, content=str(exc))
+
+    width_header = request.headers.get(WIDTH_HEADER)
+    height_header = request.headers.get(HEIGHT_HEADER)
+    try:
+        width, height = parse_geometry(width_header, height_header)
+    except RawImageError as exc:
+        return Response(status_code=400, content=str(exc))
+
+    # Admit before collecting the body. Waiting requests therefore retain no
+    # 64 MiB framebuffer allocation and cannot queue work inside the executor.
+    async with RAW_OCR_ADMISSION:
+        try:
+            body = await read_exact_request_body(
+                request, rgba_body_length(width, height)
+            )
+            decode_started = time.perf_counter()
+            rgba = decode_rgba(body, width_header, height_header)
+        except RawImageError as exc:
+            return Response(status_code=400, content=str(exc))
+        return await _run_raw_in_executor(rgba, request_started, decode_started)
+
+
+def _resident_session(value):
+    if (
+        value is None
+        or not 2 <= len(value) <= 512
+        or len(value) % 2 != 0
+        or any(char not in "0123456789abcdef" for char in value)
+    ):
+        raise RawImageError("invalid resident frame session header")
+    return value
+
+
+def _resident_sequence(value):
+    if value is None:
+        raise RawImageError("missing resident frame sequence header")
+    try:
+        sequence = int(value, 10)
+    except ValueError as exc:
+        raise RawImageError("invalid resident frame sequence header") from exc
+    if not 0 <= sequence <= (1 << 64) - 1:
+        raise RawImageError("invalid resident frame sequence header")
+    return sequence
+
+
+def _sequence_conflict(exc):
+    return Response(
+        status_code=409,
+        content=str(exc),
+        headers={FRAME_SEQUENCE_HEADER: str(exc.expected)},
+    )
+
+
+@app.post("/ocr/frame/rgba")
+async def ocr_frame_rgba(request: Request):
+    """Composites decoded patches into a per-session GPU framebuffer."""
+    request_started = time.perf_counter()
+    if RESIDENT_STORE is None:
+        return Response(
+            status_code=503,
+            content="resident RGBA requires CUDA GPU preprocessing",
+        )
+    try:
+        validate_frame_content_type(request.headers.get("content-type"))
+    except RawImageError as exc:
+        return Response(status_code=415, content=str(exc))
+    try:
+        width, height = parse_geometry(
+            request.headers.get(WIDTH_HEADER),
+            request.headers.get(HEIGHT_HEADER),
+        )
+        session_key = _resident_session(request.headers.get(FRAME_SESSION_HEADER))
+        sequence = _resident_sequence(request.headers.get(FRAME_SEQUENCE_HEADER))
+    except RawImageError as exc:
+        return Response(status_code=400, content=str(exc))
+
+    async with RAW_OCR_ADMISSION:
+        try:
+            body = await read_bounded_request_body(request)
+            decode_started = time.perf_counter()
+            frame_request = decode_frame_request(body, width, height)
+        except RawImageError as exc:
+            return Response(status_code=400, content=str(exc))
+        decode_ms = (time.perf_counter() - decode_started) * 1000.0
+        loop = asyncio.get_running_loop()
+        try:
+            result = await loop.run_in_executor(
+                RAW_OCR_EXECUTOR,
+                RESIDENT_STORE.process,
+                session_key,
+                sequence,
+                width,
+                height,
+                frame_request,
+            )
+        except ResidentSequenceError as exc:
+            return _sequence_conflict(exc)
+        except ResidentCapacityError as exc:
+            return Response(status_code=507, content=str(exc))
+        except (ValueError, OverflowError) as exc:
+            return Response(status_code=400, content=str(exc))
+        result["request_ms"] = (time.perf_counter() - request_started) * 1000.0
+        result.setdefault("stages", {})["transport_decode_ms"] = decode_ms
+        return result
+
+
+@app.post("/ocr/frame/rdp")
+async def ocr_frame_rdp(request: Request):
+    """Decodes RDP bitmap orders directly into a resident GPU framebuffer."""
+    request_started = time.perf_counter()
+    if RESIDENT_STORE is None:
+        return Response(
+            status_code=503,
+            content="resident RDP frames require CUDA GPU preprocessing",
+        )
+    try:
+        validate_rdp_frame_content_type(request.headers.get("content-type"))
+    except RawImageError as exc:
+        return Response(status_code=415, content=str(exc))
+    try:
+        width, height = parse_geometry(
+            request.headers.get(WIDTH_HEADER),
+            request.headers.get(HEIGHT_HEADER),
+        )
+        session_key = _resident_session(request.headers.get(FRAME_SESSION_HEADER))
+        sequence = _resident_sequence(request.headers.get(FRAME_SEQUENCE_HEADER))
+    except RawImageError as exc:
+        return Response(status_code=400, content=str(exc))
+
+    async with RAW_OCR_ADMISSION:
+        try:
+            body = await read_bounded_request_body(request)
+            decode_started = time.perf_counter()
+            frame_request = decode_rdp_frame_request(body, width, height)
+        except RawImageError as exc:
+            return Response(status_code=400, content=str(exc))
+        decode_ms = (time.perf_counter() - decode_started) * 1000.0
+        loop = asyncio.get_running_loop()
+        try:
+            result = await loop.run_in_executor(
+                RAW_OCR_EXECUTOR,
+                RESIDENT_STORE.process,
+                session_key,
+                sequence,
+                width,
+                height,
+                frame_request,
+            )
+        except ResidentSequenceError as exc:
+            return _sequence_conflict(exc)
+        except ResidentCapacityError as exc:
+            return Response(status_code=507, content=str(exc))
+        except (ValueError, OverflowError) as exc:
+            return Response(status_code=400, content=str(exc))
+        result["request_ms"] = (time.perf_counter() - request_started) * 1000.0
+        result.setdefault("stages", {})["transport_decode_ms"] = decode_ms
+        return result
+
+
+@app.delete("/ocr/frame/rgba")
+@app.delete("/ocr/frame/rdp")
+async def release_ocr_frame(request: Request):
+    """Idempotently releases one worker-local resident framebuffer."""
+    if RESIDENT_STORE is None:
+        return Response(status_code=204)
+    try:
+        session_key = _resident_session(request.headers.get(FRAME_SESSION_HEADER))
+        sequence = _resident_sequence(request.headers.get(FRAME_SEQUENCE_HEADER))
+    except RawImageError as exc:
+        return Response(status_code=400, content=str(exc))
+    async with RAW_OCR_ADMISSION:
+        loop = asyncio.get_running_loop()
+        try:
+            await loop.run_in_executor(
+                RAW_OCR_EXECUTOR,
+                RESIDENT_STORE.release,
+                session_key,
+                sequence,
+            )
+        except ResidentSequenceError as exc:
+            return _sequence_conflict(exc)
+    return Response(status_code=204)
 
 
 def warmup() -> None:
@@ -456,6 +809,14 @@ def warmup() -> None:
                 "det bucket sessions tuned in %.0fms (%d sessions)",
                 (time.perf_counter() - start) * 1000.0,
                 len(BUCKET_DET._dets),
+            )
+        if GPU_PIPELINE is not None:
+            rgba = cv2.cvtColor(warm, cv2.COLOR_BGR2RGBA)
+            result = RAW_OCR_EXECUTOR.submit(GPU_PIPELINE, rgba).result()
+            logger.info(
+                "GPU preprocessing warmed in %.0fms (%d words)",
+                result["duration_ms"],
+                len(result["words"]),
             )
     except Exception:
         logger.exception("RapidOCR warmup failed on %s", DEVICE)

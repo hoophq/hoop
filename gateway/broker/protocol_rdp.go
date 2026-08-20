@@ -24,8 +24,7 @@ func (h *RDPHandler) HandleSessionStarted(session *Session, msg *WebSocketMessag
 }
 
 func (h *RDPHandler) HandleData(session *Session, msg *WebSocketMessage) error {
-	session.ForwardToTCP(msg.Payload)
-	return nil
+	return session.ForwardToTCP(msg.Payload)
 }
 
 // RDPGuardConfig carries the agent-side PII guard decision and tuning into
@@ -55,6 +54,7 @@ func CreateRDPSession(
 	credentialID string,
 	expireAt time.Time,
 	ctxDuration time.Duration,
+	databaseSessionID string,
 	guard RDPGuardConfig,
 ) (*Session, error) {
 
@@ -64,22 +64,23 @@ func CreateRDPSession(
 		fmt.Errorf("connection access expired (%v)",
 			expireAt.Format(time.RFC3339)))
 
-	client, _ := GetAgent(connectionInfo.AgentName)
-	if client == nil {
+	client, agentInstanceID, ok := GetAgent(connectionInfo.AgentName)
+	if !ok || client == nil {
 		timeoutCancelFn()
 		return nil, fmt.Errorf("agent not found: %s", connectionInfo.AgentName)
 	}
 
-	// Slot count only decouples producer and consumer scheduling; the real
-	// bound on queued data is the byte budget (maxQueuedBytes) enforced by
-	// ForwardToTCP.
+	// Slot count decouples producer and consumer scheduling; ForwardToTCP also
+	// enforces the strict byte budget without blocking the shared agent reader.
 	dataChannel := make(chan []byte, 1024)
 	credentialsReceived := make(chan bool, 1)
 
 	session := &Session{
 		ID:                  sessionID,
+		DatabaseSessionID:   databaseSessionID,
 		ClientCommunicator:  connTcp,
 		AgentCommunicator:   client,
+		AgentInstanceID:     agentInstanceID,
 		Connection:          connectionInfo,
 		CredentialID:        credentialID,
 		clientAddr:          clientAddr,
@@ -89,12 +90,12 @@ func CreateRDPSession(
 		ctx:                 ctx,
 		cancel:              timeoutCancelFn,
 		maxQueueBytes:       maxQueuedBytes,
-		spaceFreed:          make(chan struct{}, 1),
 	}
 
 	// Store session immediately so it can be found by WebSocket handler
 	BrokerInstance.sessions.Store(sessionID, session)
 
+	storeSessionAuditRoute(sessionID, databaseSessionID, connectionInfo.OrgID, agentInstanceID)
 	// Decode base64 env variables for RDP
 	secrets := map[string]string{}
 	for k, v := range connectionInfo.Envs {
@@ -134,18 +135,20 @@ func CreateRDPSession(
 		Payload:  []byte{}, // Empty payload since session ID is in header
 	}
 
-	// abort releases the session's context (unblocking any relay producer
-	// already racing data in) and deregisters it. It deliberately does NOT
-	// call session.Close(): that would close the AgentCommunicator, which is
-	// the agent's shared websocket — killing every other session on that
-	// agent over a single failed session setup. The client TCP connection is
-	// owned and closed by the caller on error.
+	// abort releases startup state. The shared AgentCommunicator belongs to
+	// the agent connection and must not be closed by one failed session.
 	abort := func() {
 		timeoutCancelFn()
 		BrokerInstance.sessions.Delete(sessionID)
+		deleteSessionAuditRoute(sessionID)
 	}
 
-	framedData, err := EncodeWebSocketMessage(sessionID, msg)
+	framedData, err := EncodeWebSocketMessageForAgent(
+		connectionInfo.AgentName,
+		agentInstanceID,
+		sessionID,
+		msg,
+	)
 	if err != nil {
 		abort()
 		return nil, err

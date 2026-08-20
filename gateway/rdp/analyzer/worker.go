@@ -307,7 +307,7 @@ func getCanvasDimensions(session *models.Session) (int, int) {
 // RDP routinely resends byte-identical tiles (idle repaints, unchanged
 // backgrounds); a paint that changes nothing has no new content to analyze, so
 // the realtime gate uses the return value to skip marking that region dirty.
-// Callers that don't care (full-frame analysis, rdpbench) simply ignore it.
+// Callers that don't care (full-frame analysis, external benchmarks) ignore it.
 //
 // Contract: framebuffer must be RGBA (4 bytes/pixel, top-down) with
 // len >= fbWidth*fbHeight*4, and patch must be RGBA with len >= patchW*patchH*4
@@ -370,8 +370,8 @@ func SampleFramebuffer(fb []byte, width, height int) []byte {
 }
 
 // SnapshotResult is the outcome of analyzing a single framebuffer snapshot,
-// including per-stage timings so callers (job worker, realtime analyzer,
-// rdpbench) can report where the time is spent.
+// including per-stage timings so production and benchmark callers can report
+// where the time is spent.
 type SnapshotResult struct {
 	Detections []models.RDPEntityDetection
 	Counts     map[string]int64
@@ -389,7 +389,7 @@ type SnapshotResult struct {
 // The params control score threshold and entity denylist filtering.
 //
 // This is the single analysis entrypoint shared by the async job worker, the
-// realtime analyzer, and the rdpbench benchmarking tool — keep it free of any
+// realtime analyzer, and the external benchmark harness — keep it free of any
 // job/session lifecycle concerns.
 func AnalyzeFramebuffer(
 	ctx context.Context,

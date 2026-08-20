@@ -10,13 +10,62 @@ on:
       - '.env.sample'
 
 jobs:
+  resolve-libhoop:
+    name: Resolve libhoop Revision
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+
+    steps:
+      - name: Checkout libhoop default branch
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          token: ${{ secrets.GH_TOKEN }}
+
+      # Cross-repository changes use the same branch name in Hoop and libhoop.
+      # Pin the paired branch when present; unrelated PRs use the default branch.
+      - name: Resolve paired libhoop revision
+        id: resolve
+        env:
+          HOOP_HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          set +e
+          paired_ref="$(git ls-remote --exit-code --heads origin "refs/heads/${HOOP_HEAD_REF}")"
+          status=$?
+          set -e
+
+          case "${status}" in
+            0)
+              sha="${paired_ref%%[[:space:]]*}"
+              ;;
+            2)
+              sha="$(git rev-parse HEAD)"
+              ;;
+            *)
+              exit "${status}"
+              ;;
+          esac
+
+          echo "sha=${sha}" >> "${GITHUB_OUTPUT}"
+
   build-rust-binaries-darwin:
+    needs: resolve-libhoop
     runs-on: macos-latest
     name: Build Darwin Rust Binaries
 
     steps:
       - name: Checkout Hoop
         uses: actions/checkout@v3
+
+      - name: Checkout libhoop
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          path: "./libhoop"
+          token: ${{ secrets.GH_TOKEN }}
+          ref: ${{ needs.resolve-libhoop.outputs.sha }}
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -44,12 +93,21 @@ jobs:
           path: dist/
 
   build-rust-binary-linux-amd64:
+    needs: resolve-libhoop
     runs-on: ubuntu-latest
     name: Build Linux Rust Binaries Amd64
 
     steps:
       - name: Checkout Hoop
         uses: actions/checkout@v3
+
+      - name: Checkout libhoop
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          path: "./libhoop"
+          token: ${{ secrets.GH_TOKEN }}
+          ref: ${{ needs.resolve-libhoop.outputs.sha }}
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -76,12 +134,21 @@ jobs:
           path: dist/
 
   build-rust-binary-linux-arm64:
+    needs: resolve-libhoop
     runs-on: ubuntu-24.04-arm
     name: Build Linux Rust Binaries Arm64
 
     steps:
       - name: Checkout Hoop
         uses: actions/checkout@v3
+
+      - name: Checkout libhoop
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          path: "./libhoop"
+          token: ${{ secrets.GH_TOKEN }}
+          ref: ${{ needs.resolve-libhoop.outputs.sha }}
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable

@@ -3,15 +3,28 @@ name = "agentrs"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+# Fail the BUILD if the linked guard crate is the OSS stub. Release jobs pass
+# this so a missing libhoop checkout cannot silently ship an agent that never
+# enforces. See the assertion in src/guard.rs.
+require-enforcement = []
+
 [dependencies]
+# The swappable RDP PII guard. `make libhoop-ensure` symlinks
+# `libhoop -> _libhoop`, so this resolves to the OSS passthrough stub; a
+# checkout of hoophq/libhoop at ./libhoop resolves it to the enterprise crate.
+# Both expose an identical surface, asserted by tests/guard_surface.rs.
+#
+# An unresolvable Cargo path dependency is a hard error, so every Makefile
+# target that runs cargo depends on libhoop-ensure.
+hoop-rdp-guard = { path = "../libhoop/rdp-guard" }
 futures-core = "0.3.0"
 futures-sink = "0.3.0"
 tokio = { version = "1.45.0", features = ["signal", "net", "io-util", "time", "rt", "rt-multi-thread", "sync", "macros", "parking_lot", "fs"] }
+tokio-util = "0.7.0"
 tokio-rustls = { version = "0.26.0", default-features = false, features = ["logging", "tls12", "ring"] }
 typed-builder = "0.21.0"
-async-trait = "0.1.0"
 tower = { version = "0.5.0", features = ["timeout"] }
-parking_lot = "0.12.0"
 pin-project-lite = "0.2.0"
 
 hyper = "1.6.0"
@@ -49,11 +62,9 @@ ironrdp-acceptor = { version = "0.5.0" }
 ironrdp-pdu = { version = "0.5.0", features = ["std"] }
 ironrdp-core = { version = "0.1.0", features = ["std"] }
 ironrdp-tokio = "0.5.0"
-ironrdp-graphics = "0.4.1"
 
-# PII gate: HTTP clients for the OCR sidecar and Presidio analyzer.
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
-tokio-util = { version = "0.7", default-features = false }
+# reqwest, tokio-util, parking_lot, async-trait and ironrdp-graphics moved to
+# hoop-rdp-guard with the PII gate; the transport does not use them.
 rustls = "0.22.0"
 rcgen = "0.12.0"
 
@@ -66,6 +77,7 @@ tap = "1.0.0"
 tracing = "0.1.0"
 tracing-subscriber = "0.3.0"
 toml = "0.8.0"
+
 
 [[example]]
 name = "rdp_caps_probe"

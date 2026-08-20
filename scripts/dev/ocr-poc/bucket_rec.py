@@ -117,10 +117,14 @@ class BucketDet:
         self._lock = threading.Lock()
         self._grid = {(bh, bw) for bh in DET_H_BUCKETS for bw in DET_W_BUCKETS}
 
-    def __call__(self, det_input):
-        key = det_input.shape[:2]
+    def detector_for_shape(self, shape):
+        """Returns the cached detector for an in-grid shape, or the base
+        detector for an out-of-grid shape. GPU preprocessing uses the same
+        raw ORT session and postprocess object without invoking CPU image
+        preprocessing."""
+        key = tuple(shape)
         if key not in self._grid:
-            return self._base(det_input)
+            return self._base
         det = self._dets.get(key)
         if det is None:
             with self._lock:
@@ -128,7 +132,10 @@ class BucketDet:
                 if det is None:
                     det = self._factory()
                     self._dets[key] = det
-        return det(det_input)
+        return det
+
+    def __call__(self, det_input):
+        return self.detector_for_shape(det_input.shape[:2])(det_input)
 
 
 class BucketRec:

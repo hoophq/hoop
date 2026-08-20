@@ -52,15 +52,30 @@ services:
       # supports_pii_guard capability is true only when BOTH this and the
       # baked-in RDP_OCR_SERVER_URL are set.
       - MSPRESIDIO_ANALYZER_URL=http://presidio-analyzer:3000
-      # OCR workers; each holds its own model copy in the T4's VRAM. 4 fits
-      # comfortably in 16GB. Tune down if you see VRAM pressure.
-      - WEB_CONCURRENCY=${WEB_CONCURRENCY:-4}
+      # Resident GPU framebuffer ownership requires one Uvicorn process.
+      # Warm T4 load: 156 states/s for one full replay; four concurrent replays
+      # held 146 states/s aggregate at p95 <=55ms with zero errors. Budget one
+      # 107.6-state/s capture-equivalent active stream per agent and shard more.
+      - WEB_CONCURRENCY=${WEB_CONCURRENCY:-1}
       # Recognition runtime (see server_rapidocr.py). fp16 bucket sessions:
       # measured 1.8x end-to-end on this T4 with byte-identical text. The en
       # model reads Latin/digits only — correct for this deployment's en-US
       # desktops; switch to ch (and drop fp16 if VRAM-tight) for CJK.
       - OCR_REC_PRECISION=${OCR_REC_PRECISION:-fp16}
       - OCR_REC_LANG=${OCR_REC_LANG:-en}
+      # Keep RDP bitmap decode, compositing, and OCR preprocessing on the GPU.
+      - RDP_OCR_TRANSPORT=${RDP_OCR_TRANSPORT:-resident-rdp}
+      - OCR_GPU_PREPROCESS=${OCR_GPU_PREPROCESS:-1}
+      # State-retention capacity, not parallel OCR lanes.
+      - OCR_RESIDENT_MAX_SESSIONS=${OCR_RESIDENT_MAX_SESSIONS:-32}
+      - OCR_RESIDENT_VRAM_MB=${OCR_RESIDENT_VRAM_MB:-2048}
+      # Idle unredacted pixels and cached OCR text are scrubbed after this TTL.
+      - OCR_RESIDENT_TTL_SECONDS=${OCR_RESIDENT_TTL_SECONDS:-300}
+      # Per-session exact-pixel OCR result LRU. Entries hold only OCR words;
+      # frame pixels remain in the separately bounded resident VRAM store.
+      - OCR_RESIDENT_CACHE_ENTRIES=${OCR_RESIDENT_CACHE_ENTRIES:-128}
+      # Detected-line pixel fingerprints retain text/confidence separately.
+      - OCR_RESIDENT_RECOGNITION_CACHE_ENTRIES=${OCR_RESIDENT_RECOGNITION_CACHE_ENTRIES:-512}
     # Give the bundled engine GPUs via the nvidia container runtime.
     deploy:
       resources:

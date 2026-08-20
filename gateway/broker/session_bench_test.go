@@ -78,20 +78,15 @@ func newBenchSession(client ConnectionCommunicator) (*Session, context.CancelFun
 		ctx:                 ctx,
 		cancel:              cancel,
 		maxQueueBytes:       maxQueuedBytes,
-		spaceFreed:          make(chan struct{}, 1),
 	}
 	BrokerInstance.sessions.Store(s.ID, s)
 	return s, cancel
 }
 
 // BenchmarkAgentToClientRelay reproduces the OOM scenario: the agent-side
-// websocket reader pushes frames through ForwardToTCP at memory speed while
-// the client drains slower. It reports the peak heap held by the queue
-// (peak_MB) alongside throughput.
-//
-// Workload per iteration: 2048 messages x 64 KiB = 128 MiB offered.
-// Consumer pace: 100us per message (~640 MB/s drain ceiling, but the producer
-// is faster still, so queue growth is bounded only by the relay's policy).
+// reader offers frames faster than the client drains. Admission is nonblocking,
+// so excess work is rejected per-session at the byte cap rather than stalling
+// every stream on the shared agent connection.
 func BenchmarkAgentToClientRelay(b *testing.B) {
 	const (
 		msgSize  = 64 * 1024

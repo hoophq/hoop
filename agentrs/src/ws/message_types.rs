@@ -10,6 +10,9 @@ pub enum MessageType {
     /// payload carries entity metadata for persistence/audit; no pixels or
     /// recognized text are ever sent.
     GuardrailsViolation,
+    /// Gateway -> agent: acknowledges that one violation report was accepted
+    /// transactionally. The report UUID is echoed in message metadata.
+    GuardrailsViolationAck,
     /// Agent -> gateway: connection-scoped capability advertisement, sent once
     /// as the first frame after the WebSocket connects. Lets the gateway know,
     /// at session-creation time, whether this agent can honor a delegated PII
@@ -24,6 +27,7 @@ pub enum MessageType {
 pub const MESSAGE_TYPE_SESSION_STARTED: &str = "session_started";
 pub const MESSAGE_TYPE_DATA: &str = "data";
 pub const MESSAGE_TYPE_GUARDRAILS_VIOLATION: &str = "guardrails_violation";
+pub const MESSAGE_TYPE_GUARDRAILS_VIOLATION_ACK: &str = "guardrails_violation_ack";
 pub const MESSAGE_TYPE_CAPABILITIES: &str = "capabilities";
 impl ToString for MessageType {
     fn to_string(&self) -> String {
@@ -31,6 +35,9 @@ impl ToString for MessageType {
             MessageType::SessionStarted => MESSAGE_TYPE_SESSION_STARTED.to_string(),
             MessageType::Data => MESSAGE_TYPE_DATA.to_string(),
             MessageType::GuardrailsViolation => MESSAGE_TYPE_GUARDRAILS_VIOLATION.to_string(),
+            MessageType::GuardrailsViolationAck => {
+                MESSAGE_TYPE_GUARDRAILS_VIOLATION_ACK.to_string()
+            }
             MessageType::Capabilities => MESSAGE_TYPE_CAPABILITIES.to_string(),
             MessageType::Unknown => "unknown".to_string(),
         }
@@ -42,10 +49,11 @@ impl FromStr for MessageType {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "session_started" => Ok(MessageType::SessionStarted),
-            "data" => Ok(MessageType::Data),
-            "guardrails_violation" => Ok(MessageType::GuardrailsViolation),
-            "capabilities" => Ok(MessageType::Capabilities),
+            MESSAGE_TYPE_SESSION_STARTED => Ok(MessageType::SessionStarted),
+            MESSAGE_TYPE_DATA => Ok(MessageType::Data),
+            MESSAGE_TYPE_GUARDRAILS_VIOLATION => Ok(MessageType::GuardrailsViolation),
+            MESSAGE_TYPE_GUARDRAILS_VIOLATION_ACK => Ok(MessageType::GuardrailsViolationAck),
+            MESSAGE_TYPE_CAPABILITIES => Ok(MessageType::Capabilities),
             _ => Err(format!("Unknown message type: {}", s)),
         }
     }
