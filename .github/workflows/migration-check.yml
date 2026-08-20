@@ -11,7 +11,7 @@ jobs:
       pull-requests: write
     steps:
       - name: Checkout PR
-        uses: actions/checkout@v7
+        uses: actions/checkout@v3
         with:
           fetch-depth: 0
 

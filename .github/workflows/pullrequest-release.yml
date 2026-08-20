@@ -16,7 +16,7 @@ jobs:
 
     steps:
       - name: Checkout Hoop
-        uses: actions/checkout@v7
+        uses: actions/checkout@v3
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -38,7 +38,7 @@ jobs:
           GIT_TAG: ${{ env.GIT_TAG }}
         run: make build-rust-darwin-all
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v4
         with:
           name: dist-artifacts-${{ github.job }}
           path: dist/
@@ -49,7 +49,7 @@ jobs:
 
     steps:
       - name: Checkout Hoop
-        uses: actions/checkout@v7
+        uses: actions/checkout@v3
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -70,7 +70,7 @@ jobs:
           GIT_TAG: ${{ env.GIT_TAG }}
         run: GOOS=linux GOARCH=amd64 make build-rust-single
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v4
         with:
           name: dist-artifacts-${{ github.job }}
           path: dist/
@@ -81,7 +81,7 @@ jobs:
 
     steps:
       - name: Checkout Hoop
-        uses: actions/checkout@v7
+        uses: actions/checkout@v3
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -102,7 +102,7 @@ jobs:
           GIT_TAG: ${{ env.GIT_TAG }}
         run: GOOS=linux GOARCH=arm64 make build-rust-single
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v4
         with:
           name: dist-artifacts-${{ github.job }}
           path: dist/
@@ -114,17 +114,17 @@ jobs:
 
     steps:
       - name: Checkout Hoop
-        uses: actions/checkout@v7
+        uses: actions/checkout@v3
 
       - name: Checkout libhoop
-        uses: actions/checkout@v7
+        uses: actions/checkout@v3
         with:
           repository: hoophq/libhoop
           path: "./libhoop"
           token: ${{ secrets.GH_TOKEN }}
 
       - name: Setup Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.work
           cache-dependency-path: "**/go.sum"
@@ -139,7 +139,7 @@ jobs:
         run: make generate-wasm
 
       - name: Download Webapp
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           name: dist-artifacts-build-webapp
           path: dist/
@@ -155,7 +155,7 @@ jobs:
           GIT_TAG: ${{ env.GIT_TAG }}
         run: GOOS=darwin GOARCH=amd64 make build-go
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v4
         with:
           name: dist-artifacts-${{ github.job }}
           path: dist/
@@ -167,17 +167,17 @@ jobs:
 
     steps:
       - name: Checkout Hoop
-        uses: actions/checkout@v7
+        uses: actions/checkout@v3
 
       - name: Checkout libhoop
-        uses: actions/checkout@v7
+        uses: actions/checkout@v3
         with:
           repository: hoophq/libhoop
           path: "./libhoop"
           token: ${{ secrets.GH_TOKEN }}
 
       - name: Setup Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.work
           cache-dependency-path: "**/go.sum"
@@ -192,7 +192,7 @@ jobs:
         run: make generate-wasm
 
       - name: Download Webapp
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           name: dist-artifacts-build-webapp
           path: dist/
@@ -208,7 +208,7 @@ jobs:
           GIT_TAG: ${{ env.GIT_TAG }}
         run: GOOS=darwin GOARCH=arm64 make build-go
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v4
         with:
           name: dist-artifacts-${{ github.job }}
           path: dist/
@@ -220,17 +220,17 @@ jobs:
 
     steps:
       - name: Checkout Hoop
-        uses: actions/checkout@v7
+        uses: actions/checkout@v3
 
       - name: Checkout libhoop
-        uses: actions/checkout@v7
+        uses: actions/checkout@v3
         with:
           repository: hoophq/libhoop
           path: "./libhoop"
           token: ${{ secrets.GH_TOKEN }}
 
       - name: Setup Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.work
           cache-dependency-path: "**/go.sum"
@@ -245,7 +245,7 @@ jobs:
         run: make generate-wasm
 
       - name: Download Webapp
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           name: dist-artifacts-build-webapp
           path: dist/
@@ -261,7 +261,7 @@ jobs:
           GIT_TAG: ${{ env.GIT_TAG }}
         run: GOOS=windows GOARCH=amd64 make build-go
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v4
         with:
           name: dist-artifacts-${{ github.job }}
           path: dist/
@@ -273,17 +273,17 @@ jobs:
 
     steps:
       - name: Checkout Hoop
-        uses: actions/checkout@v7
+        uses: actions/checkout@v3
 
       - name: Checkout libhoop
-        uses: actions/checkout@v7
+        uses: actions/checkout@v3
         with:
           repository: hoophq/libhoop
           path: "./libhoop"
           token: ${{ secrets.GH_TOKEN }}
 
       - name: Setup Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.work
           cache-dependency-path: "**/go.sum"
@@ -298,7 +298,7 @@ jobs:
         run: make generate-wasm
 
       - name: Download Webapp
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           name: dist-artifacts-build-webapp
           path: dist/
@@ -314,7 +314,7 @@ jobs:
           GIT_TAG: ${{ env.GIT_TAG }}
         run: GOOS=windows GOARCH=arm64 make build-go
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v4
         with:
           name: dist-artifacts-${{ github.job }}
           path: dist/
@@ -326,17 +326,17 @@ jobs:
 
     steps:
       - name: Checkout Hoop
-        uses: actions/checkout@v7
+        uses: actions/checkout@v3
 
       - name: Checkout libhoop
-        uses: actions/checkout@v7
+        uses: actions/checkout@v3
         with:
           repository: hoophq/libhoop
           path: "./libhoop"
           token: ${{ secrets.GH_TOKEN }}
 
       - name: Setup Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.work
           cache-dependency-path: "**/go.sum"
@@ -351,7 +351,7 @@ jobs:
         run: make generate-wasm
 
       - name: Download Webapp
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           name: dist-artifacts-build-webapp
           path: dist/
@@ -371,7 +371,7 @@ jobs:
           INTERCOM_HMAC_KEY: ${{ secrets.INTERCOM_HMAC_KEY }}
         run: GOOS=linux GOARCH=amd64 make build-go
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v4
         with:
           name: dist-artifacts-${{ github.job }}
           path: dist/
@@ -383,17 +383,17 @@ jobs:
 
     steps:
       - name: Checkout Hoop
-        uses: actions/checkout@v7
+        uses: actions/checkout@v3
 
       - name: Checkout libhoop
-        uses: actions/checkout@v7
+        uses: actions/checkout@v3
         with:
           repository: hoophq/libhoop
           path: "./libhoop"
           token: ${{ secrets.GH_TOKEN }}
 
       - name: Setup Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.work
           cache-dependency-path: "**/go.sum"
@@ -408,7 +408,7 @@ jobs:
         run: make generate-wasm
 
       - name: Download Webapp
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           name: dist-artifacts-build-webapp
           path: dist/
@@ -428,7 +428,7 @@ jobs:
           INTERCOM_HMAC_KEY: ${{ secrets.INTERCOM_HMAC_KEY }}
         run: GOOS=linux GOARCH=arm64 make build-go
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v4
         with:
           name: dist-artifacts-${{ github.job }}
           path: dist/
@@ -440,25 +440,25 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v3
       - name: Setup Java
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v3
         with:
           distribution: "zulu"
           java-version: "21"
       - name: Install clojure tools
-        uses: DeLaGuardo/setup-clojure@13.6.1
+        uses: DeLaGuardo/setup-clojure@12.5
         with:
           cli: 1.12.0.1479 # releases: https://clojure.org/releases/tools
       - name: Setup Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: "npm"
           cache-dependency-path: webapp/package-lock.json
       - name: Build
         run: make build-webapp
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v4
         with:
           name: dist-artifacts-${{ github.job }}
           path: dist/
@@ -479,10 +479,10 @@ jobs:
       - build-rust-binary-linux-arm64
     steps:
       - name: Checkout Hoop
-        uses: actions/checkout@v7
+        uses: actions/checkout@v3
         
       - name: Download Artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
           pattern: dist-artifacts-*
           merge-archive: true
@@ -507,7 +507,7 @@ jobs:
           GOOS=linux GOARCH=amd64 make build-tar-files
           GOOS=linux GOARCH=arm64 make build-tar-files
         
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v4
         with:
           name: dist-artifacts-${{ github.job }}
           path: dist/
@@ -519,20 +519,20 @@ jobs:
       - build-tar-files
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v3
       - name: Docker meta
         id: meta
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@v4
         with:
           images: hoophq/hoop
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@v2
       - name: Login to Docker Hub
-        uses: docker/login-action@v4
+        uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKER_LOGIN }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@v4
         with:
           pattern: dist-artifacts-*
           merge-multiple: true
@@ -540,7 +540,7 @@ jobs:
       - name: Extract Webapp
         run: make extract-webapp
       - name: Build and Push
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@v4
         with:
           file: ./Dockerfile
           context: '.'
@@ -558,20 +558,20 @@ jobs:
       - build-tar-files
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v3
       - name: Docker meta
         id: meta
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@v4
         with:
           images: hoophq/hoop
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@v2
       - name: Login to Docker Hub
-        uses: docker/login-action@v4
+        uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKER_LOGIN }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@v4
         with:
           pattern: dist-artifacts-*
           merge-multiple: true
@@ -579,7 +579,7 @@ jobs:
       - name: Extract Webapp
         run: make extract-webapp
       - name: Build and push
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@v4
         with:
           file: ./Dockerfile
           context: '.'
@@ -598,16 +598,16 @@ jobs:
       - docker-publish-hoopgateway-arm64
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v3
       - name: Docker meta
         id: meta
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@v4
         with:
           images: hoophq/hoop
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@v2
       - name: Login to Docker Hub
-        uses: docker/login-action@v4
+        uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKER_LOGIN }}
           password: ${{ secrets.DOCKER_PASSWORD }}
@@ -630,26 +630,26 @@ jobs:
       - build-tar-files
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v3
       - name: Docker meta
         id: meta
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@v4
         with:
           images: hoophq/hoopdev
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@v2
       - name: Login to Docker Hub
-        uses: docker/login-action@v4
+        uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKER_LOGIN }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@v4
         with:
           pattern: dist-artifacts-*
           merge-multiple: true
           path: dist/
       - name: Build and Push
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@v4
         with:
           file: ./Dockerfile.dev
           context: '.'
@@ -667,26 +667,26 @@ jobs:
       - build-tar-files
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v3
       - name: Docker meta
         id: meta
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@v4
         with:
           images: hoophq/hoopdev
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@v2
       - name: Login to Docker Hub
-        uses: docker/login-action@v4
+        uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKER_LOGIN }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@v4
         with:
           pattern: dist-artifacts-*
           merge-multiple: true
           path: dist/
       - name: Build and push
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@v4
         with:
           file: ./Dockerfile.dev
           context: '.'
@@ -705,16 +705,16 @@ jobs:
       - docker-publish-hoopagent-arm64
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v3
       - name: Docker meta
         id: meta
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@v4
         with:
           images: hoophq/hoopdev
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@v2
       - name: Login to Docker Hub
-        uses: docker/login-action@v4
+        uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKER_LOGIN }}
           password: ${{ secrets.DOCKER_PASSWORD }}
@@ -745,20 +745,20 @@ jobs:
       - docker-publish-hoopagent-multiarch
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v3
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
+        uses: docker/setup-qemu-action@v3
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@v2
       - name: Login to Docker Hub
-        uses: docker/login-action@v4
+        uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKER_LOGIN }}
           password: ${{ secrets.DOCKER_PASSWORD }}
       - name: Set Git Tag
         run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-g$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
       - name: Build and push (multiarch)
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@v4
         with:
           file: ./Dockerfile.agent-alcatraz
           context: '.'
@@ -795,17 +795,17 @@ jobs:
       - build-tar-files
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v3
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
+        uses: docker/setup-qemu-action@v3
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@v2
       - name: Login to Docker Hub
-        uses: docker/login-action@v4
+        uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKER_LOGIN }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@v4
         with:
           pattern: dist-artifacts-*
           merge-multiple: true
@@ -813,7 +813,7 @@ jobs:
       - name: Set Git Tag
         run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-g$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
       - name: Build and push (minimal)
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@v4
         with:
           file: ./Dockerfile.agent
           context: '.'
@@ -825,7 +825,7 @@ jobs:
           tags: |
             hoophq/hoopagent:${{ env.GIT_TAG }}-minimal
       - name: Build and push (distroless)
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@v4
         with:
           file: ./Dockerfile.agent
           context: '.'
@@ -846,9 +846,9 @@ jobs:
 
     steps:
       - name: Checkout Hoop
-        uses: actions/checkout@v7
+        uses: actions/checkout@v3
 
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@v4
         id: download
         with:
           pattern: dist-artifacts-*
@@ -932,7 +932,7 @@ jobs:
           done
 
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
       - name: Check for forbidden licenses
         id: check
