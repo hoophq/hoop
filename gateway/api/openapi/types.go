@@ -3834,6 +3834,9 @@ const (
 	ComplianceStatusNotApplicable  ComplianceStatusType = "not_applicable"
 	ComplianceStatusUnableToVerify ComplianceStatusType = "unable_to_verify"
 	ComplianceStatusIdpDependent   ComplianceStatusType = "idp_dependent"
+	// ComplianceStatusInformational marks discovery-style checks that are never
+	// pass/fail and are excluded from scoring and applicable totals.
+	ComplianceStatusInformational ComplianceStatusType = "informational"
 )
 
 type ComplianceCheckResult struct {
@@ -3886,6 +3889,7 @@ type ComplianceStatusBreakdown struct {
 	NotApplicable  int `json:"not_applicable"`
 	UnableToVerify int `json:"unable_to_verify"`
 	IdpDependent   int `json:"idp_dependent"`
+	Informational  int `json:"informational"`
 }
 
 type ComplianceFramework struct {
@@ -3899,7 +3903,7 @@ type ComplianceFramework struct {
 	Level string `json:"level" enums:"low,moderate,strong"`
 	// Compliant is the number of compliant controls
 	Compliant int `json:"compliant"`
-	// TotalApplicable is the number of controls excluding not_applicable and unable_to_verify
+	// TotalApplicable is the number of controls excluding not_applicable, unable_to_verify and informational
 	TotalApplicable int `json:"total_applicable"`
 	// Breakdown counts controls by status
 	Breakdown ComplianceStatusBreakdown `json:"breakdown"`
@@ -3914,7 +3918,7 @@ type ComplianceCategorySummary struct {
 	Title string `json:"title" example:"Identity"`
 	// Compliant is the number of compliant checks in this category
 	Compliant int `json:"compliant"`
-	// Total is the number of applicable checks (excludes not_applicable and unable_to_verify)
+	// Total is the number of applicable checks (excludes not_applicable, unable_to_verify and informational)
 	Total int `json:"total"`
 }
 
@@ -3925,7 +3929,7 @@ type ComplianceOverall struct {
 	Level string `json:"level" enums:"low,moderate,strong"`
 	// Compliant is the number of compliant control rows across all frameworks
 	Compliant int `json:"compliant"`
-	// TotalApplicable is the number of control rows excluding not_applicable and unable_to_verify
+	// TotalApplicable is the number of control rows excluding not_applicable, unable_to_verify and informational
 	TotalApplicable int `json:"total_applicable"`
 }
 

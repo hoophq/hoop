@@ -19,17 +19,19 @@ import (
 
 // complianceSnapshot is the point-in-time input for all check evaluators.
 type complianceSnapshot struct {
-	AuthMethod        string // idptypes.ProviderType as string: "local","oidc","idp","saml"
-	Connections       []models.Connection
-	GroupNames        []string // distinct group names
-	Users             []models.User
-	Agents            []models.Agent
-	GuardrailCount    int
-	PendingReviews    int
-	ServiceAccounts   []models.ServiceAccount
-	WebhookConfigured bool
-	SessionMetrics    *models.SessionMetricsAggregatedResult // last 30 days
-	GatewayVersion    string
+	AuthMethod          string // idptypes.ProviderType as string: "local","oidc","idp","saml"
+	Connections         []models.Connection
+	GroupNames          []string // distinct group names
+	Users               []models.User
+	Agents              []models.Agent
+	GuardrailCount      int
+	PendingReviews      int
+	StalePendingReviews int // pending longer than reviewResponseSLAWindow
+	ServiceAccounts     []models.ServiceAccount
+	WebhookConfigured   bool
+	SampleSession       *models.Session                        // latest session, nil when none recorded
+	SessionMetrics      *models.SessionMetricsAggregatedResult // last 30 days
+	GatewayVersion      string
 }
 
 func collectComplianceSnapshot(ctx *storagev2.Context) (*complianceSnapshot, error) {
@@ -75,11 +77,16 @@ func collectComplianceSnapshot(ctx *storagev2.Context) (*complianceSnapshot, err
 	if err != nil {
 		return nil, fmt.Errorf("failed listing reviews: %v", err)
 	}
-	pendingReviews := 0
+	pendingReviews, stalePendingReviews := 0, 0
 	if reviews != nil {
+		now := time.Now().UTC()
 		for _, rev := range *reviews {
-			if rev.Status == models.ReviewStatusPending {
-				pendingReviews++
+			if rev.Status != models.ReviewStatusPending {
+				continue
+			}
+			pendingReviews++
+			if now.Sub(rev.CreatedAt) > reviewResponseSLAWindow {
+				stalePendingReviews++
 			}
 		}
 	}
@@ -98,17 +105,33 @@ func collectComplianceSnapshot(ctx *storagev2.Context) (*complianceSnapshot, err
 		return nil, fmt.Errorf("failed aggregating session metrics: %v", err)
 	}
 
+	sessionOpt := models.NewSessionOption()
+	sessionOpt.Limit = 1
+	sessionOpt.CountMode = models.SessionCountNone
+	sessionList, err := models.ListSessions(ctx.OrgID, ctx.UserID, true, sessionOpt)
+	if err != nil {
+		return nil, fmt.Errorf("failed sampling latest session: %v", err)
+	}
+	var sampleSession *models.Session
+	if sessionList != nil && len(sessionList.Items) > 0 {
+		sampleSession = &sessionList.Items[0]
+	}
+
 	conf := appconfig.Get()
 	return &complianceSnapshot{
-		AuthMethod:        string(providerType),
-		Connections:       connections,
-		GroupNames:        groupNames,
-		Users:             users,
-		Agents:            agents,
-		GuardrailCount:    len(guardrails),
-		PendingReviews:    pendingReviews,
-		ServiceAccounts:   serviceAccounts,
-		WebhookConfigured: conf.WebhookAppKey() != "" || conf.WebhookAppURL() != nil,
+		AuthMethod:          string(providerType),
+		Connections:         connections,
+		GroupNames:          groupNames,
+		Users:               users,
+		Agents:              agents,
+		GuardrailCount:      len(guardrails),
+		PendingReviews:      pendingReviews,
+		StalePendingReviews: stalePendingReviews,
+		ServiceAccounts:     serviceAccounts,
+		// The webhook sender only initializes with an app key; a bare
+		// WEBHOOK_APPURL forwards no events and does not count as configured.
+		WebhookConfigured: conf.WebhookAppKey() != "",
+		SampleSession:     sampleSession,
 		SessionMetrics:    sessionMetrics,
 		GatewayVersion:    version.Get().Version,
 	}, nil
@@ -124,7 +147,7 @@ func statusWeight(s openapi.ComplianceStatusType) (weight float64, applicable bo
 		return 0.5, true
 	case openapi.ComplianceStatusNonCompliant:
 		return 0, true
-	default: // not_applicable, unable_to_verify
+	default: // not_applicable, unable_to_verify, informational
 		return 0, false
 	}
 }
@@ -189,6 +212,8 @@ func buildComplianceReport(snap *complianceSnapshot) openapi.ComplianceReport {
 					fw.Breakdown.UnableToVerify++
 				case openapi.ComplianceStatusIdpDependent:
 					fw.Breakdown.IdpDependent++
+				case openapi.ComplianceStatusInformational:
+					fw.Breakdown.Informational++
 				}
 				w, isApplicable := statusWeight(res.Status)
 				if isApplicable {
@@ -228,7 +253,9 @@ func buildComplianceReport(snap *complianceSnapshot) openapi.ComplianceReport {
 				continue
 			}
 			status := results[check.ID].Status
-			if status == openapi.ComplianceStatusNotApplicable || status == openapi.ComplianceStatusUnableToVerify {
+			if status == openapi.ComplianceStatusNotApplicable ||
+				status == openapi.ComplianceStatusUnableToVerify ||
+				status == openapi.ComplianceStatusInformational {
 				continue
 			}
 			summary.Total++

@@ -12141,7 +12141,7 @@ const docTemplate = `{
                     "example": "Identity"
                 },
                 "total": {
-                    "description": "Total is the number of applicable checks (excludes not_applicable and unable_to_verify)",
+                    "description": "Total is the number of applicable checks (excludes not_applicable, unable_to_verify and informational)",
                     "type": "integer"
                 }
             }
@@ -12309,7 +12309,7 @@ const docTemplate = `{
                     "example": 85
                 },
                 "total_applicable": {
-                    "description": "TotalApplicable is the number of controls excluding not_applicable and unable_to_verify",
+                    "description": "TotalApplicable is the number of controls excluding not_applicable, unable_to_verify and informational",
                     "type": "integer"
                 }
             }
@@ -12336,7 +12336,7 @@ const docTemplate = `{
                     "example": 812
                 },
                 "total_applicable": {
-                    "description": "TotalApplicable is the number of control rows excluding not_applicable and unable_to_verify",
+                    "description": "TotalApplicable is the number of control rows excluding not_applicable, unable_to_verify and informational",
                     "type": "integer"
                 }
             }
@@ -12388,6 +12388,9 @@ const docTemplate = `{
                 "idp_dependent": {
                     "type": "integer"
                 },
+                "informational": {
+                    "type": "integer"
+                },
                 "non_compliant": {
                     "type": "integer"
                 },
@@ -12410,7 +12413,8 @@ const docTemplate = `{
                 "non_compliant",
                 "not_applicable",
                 "unable_to_verify",
-                "idp_dependent"
+                "idp_dependent",
+                "informational"
             ],
             "x-enum-varnames": [
                 "ComplianceStatusCompliant",
@@ -12418,7 +12422,8 @@ const docTemplate = `{
                 "ComplianceStatusNonCompliant",
                 "ComplianceStatusNotApplicable",
                 "ComplianceStatusUnableToVerify",
-                "ComplianceStatusIdpDependent"
+                "ComplianceStatusIdpDependent",
+                "ComplianceStatusInformational"
             ]
         },
         "openapi.Connection": {

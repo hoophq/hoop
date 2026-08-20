@@ -1,8 +1,11 @@
 package apireports
 
 import (
+	"fmt"
 	"math"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
@@ -20,6 +23,18 @@ func dbConn(name string, masked bool, redactTypes ...string) models.Connection {
 	return models.Connection{Name: name, Type: "database", RedactEnabled: masked, RedactTypes: redactTypes}
 }
 
+// dbConns builds masked+unmasked database connections for boundary cases.
+func dbConns(masked, unmasked int) []models.Connection {
+	var conns []models.Connection
+	for i := range masked {
+		conns = append(conns, dbConn(fmt.Sprintf("m%d", i), true))
+	}
+	for i := range unmasked {
+		conns = append(conns, dbConn(fmt.Sprintf("u%d", i), false))
+	}
+	return conns
+}
+
 func TestMaskingCoverageThresholds(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -34,6 +49,8 @@ func TestMaskingCoverageThresholds(t *testing.T) {
 		{"60 percent coverage", []models.Connection{
 			dbConn("a", true), dbConn("b", true), dbConn("c", true), dbConn("d", false), dbConn("e", false),
 		}, openapi.ComplianceStatusNonCompliant},
+		{"199 of 200 masked stays warning", dbConns(199, 1), openapi.ComplianceStatusWarning},
+		{"79.9 percent coverage is non_compliant", dbConns(799, 201), openapi.ComplianceStatusNonCompliant},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -102,6 +119,24 @@ func TestJitReviewsThresholds(t *testing.T) {
 			t.Fatalf("jit_reviews = %v, want non_compliant", got.Status)
 		}
 	})
+	t.Run("49.5 percent floors to non_compliant", func(t *testing.T) {
+		// 99/200 reviewed: rounding would report 50 (warning); flooring
+		// must report 49 (non_compliant).
+		snap := baseSnapshot()
+		conns := make([]models.Connection, 0, 200)
+		for i := range 200 {
+			c := models.Connection{Name: fmt.Sprintf("prod-%d", i), Type: "database"}
+			if i < 99 {
+				c.Reviewers = []string{"admin"}
+			}
+			conns = append(conns, c)
+		}
+		snap.Connections = conns
+		got := evalComplianceChecks(snap)["jit_reviews"]
+		if got.Status != openapi.ComplianceStatusNonCompliant {
+			t.Fatalf("jit_reviews at 49.5%% = %v, want non_compliant", got.Status)
+		}
+	})
 	t.Run("prod detected via connection tag", func(t *testing.T) {
 		snap := baseSnapshot()
 		snap.Connections = []models.Connection{{
@@ -118,6 +153,16 @@ func TestJitReviewsThresholds(t *testing.T) {
 
 func TestAgentHealthThresholds(t *testing.T) {
 	agent := func(status string) models.Agent { return models.Agent{Status: status} }
+	agents := func(connectedN, disconnectedN int) []models.Agent {
+		var out []models.Agent
+		for range connectedN {
+			out = append(out, models.Agent{Status: string(models.AgentStatusConnected)})
+		}
+		for range disconnectedN {
+			out = append(out, models.Agent{Status: string(models.AgentStatusDisconnected)})
+		}
+		return out
+	}
 	connected := string(models.AgentStatusConnected)
 	disconnected := string(models.AgentStatusDisconnected)
 
@@ -133,6 +178,8 @@ func TestAgentHealthThresholds(t *testing.T) {
 			agent(connected), agent(connected), agent(connected), agent(connected), agent(disconnected),
 		}, openapi.ComplianceStatusWarning},
 		{"half connected", []models.Agent{agent(connected), agent(disconnected)}, openapi.ComplianceStatusNonCompliant},
+		{"995 of 1000 connected stays warning", agents(995, 5), openapi.ComplianceStatusWarning},
+		{"89.9 percent connected is non_compliant", agents(899, 101), openapi.ComplianceStatusNonCompliant},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -195,9 +242,9 @@ func TestChdMaskingTypes(t *testing.T) {
 
 func TestCatalogIntegrity(t *testing.T) {
 	// 4 identity + 6 access_control + 7 data_protection + 6 audit_trail +
-	// 5 monitoring_response + 5 infrastructure = 33 checks.
-	if len(complianceChecks) != 33 {
-		t.Fatalf("expected 33 checks in catalog, got %d", len(complianceChecks))
+	// 7 monitoring_response + 5 infrastructure = 35 checks.
+	if len(complianceChecks) != 35 {
+		t.Fatalf("expected 35 checks in catalog, got %d", len(complianceChecks))
 	}
 	seen := map[string]bool{}
 	for _, check := range complianceChecks {
@@ -334,15 +381,13 @@ func TestReportScoring(t *testing.T) {
 				continue
 			}
 			switch results[check.ID].Status {
-			case openapi.ComplianceStatusNotApplicable, openapi.ComplianceStatusUnableToVerify:
+			case openapi.ComplianceStatusNotApplicable, openapi.ComplianceStatusUnableToVerify,
+				openapi.ComplianceStatusInformational:
 				continue
 			case openapi.ComplianceStatusCompliant:
 				compliant++
 			}
-			if results[check.ID].Status != openapi.ComplianceStatusNotApplicable &&
-				results[check.ID].Status != openapi.ComplianceStatusUnableToVerify {
-				total++
-			}
+			total++
 		}
 		if cat.Total != total || cat.Compliant != compliant {
 			t.Errorf("category %s = %d/%d, want %d/%d", cat.ID, cat.Compliant, cat.Total, compliant, total)
@@ -386,5 +431,150 @@ func TestActionRequired(t *testing.T) {
 	}
 	if !found {
 		t.Error("expected sso_enabled in action_required for local auth")
+	}
+}
+
+func TestRoleBasedAccessIgnoresGuardrails(t *testing.T) {
+	snap := baseSnapshot()
+	snap.GroupNames = []string{"admin"}
+	snap.Connections = []models.Connection{
+		{Name: "db", Type: "database", GuardRailRules: []string{"r1"}},
+	}
+	got := evalComplianceChecks(snap)["role_based_access"]
+	if got.Status != openapi.ComplianceStatusWarning {
+		t.Fatalf("role_based_access with guardrails-only connection = %v, want warning", got.Status)
+	}
+
+	snap.Connections[0].Reviewers = []string{"admin"}
+	got = evalComplianceChecks(snap)["role_based_access"]
+	if got.Status != openapi.ComplianceStatusCompliant {
+		t.Fatalf("role_based_access with reviewers = %v, want compliant", got.Status)
+	}
+}
+
+func TestAuditLogDetailsSampling(t *testing.T) {
+	t.Run("no sessions yet", func(t *testing.T) {
+		got := evalComplianceChecks(baseSnapshot())["audit_log_details"]
+		if got.Status != openapi.ComplianceStatusCompliant {
+			t.Fatalf("audit_log_details without sample = %v, want compliant", got.Status)
+		}
+	})
+	t.Run("complete sample", func(t *testing.T) {
+		snap := baseSnapshot()
+		snap.SampleSession = &models.Session{
+			UserEmail: "a@a.com", Verb: "exec", Status: "done",
+			Connection: "pg", ConnectionSubtype: "postgres", CreatedAt: time.Now(),
+		}
+		got := evalComplianceChecks(snap)["audit_log_details"]
+		if got.Status != openapi.ComplianceStatusCompliant {
+			t.Fatalf("audit_log_details with complete sample = %v, want compliant (msg=%q)", got.Status, got.Message)
+		}
+	})
+	t.Run("missing subtype falls back to connection type", func(t *testing.T) {
+		snap := baseSnapshot()
+		snap.SampleSession = &models.Session{
+			UserEmail: "a@a.com", Verb: "exec", Status: "done",
+			Connection: "bash", ConnectionType: "custom", CreatedAt: time.Now(),
+		}
+		got := evalComplianceChecks(snap)["audit_log_details"]
+		if got.Status != openapi.ComplianceStatusCompliant {
+			t.Fatalf("audit_log_details with subtype-less custom connection = %v, want compliant (msg=%q)", got.Status, got.Message)
+		}
+	})
+	t.Run("missing fields degrade to warning", func(t *testing.T) {
+		snap := baseSnapshot()
+		snap.SampleSession = &models.Session{Verb: "exec", CreatedAt: time.Now()}
+		got := evalComplianceChecks(snap)["audit_log_details"]
+		if got.Status != openapi.ComplianceStatusWarning {
+			t.Fatalf("audit_log_details with missing fields = %v, want warning", got.Status)
+		}
+		for _, field := range []string{"user_identification", "success_failure", "origination", "identity_of_data"} {
+			if !strings.Contains(got.Message, field) {
+				t.Errorf("audit_log_details message %q misses field %s", got.Message, field)
+			}
+		}
+	})
+}
+
+func TestReviewResponseSLA(t *testing.T) {
+	tests := []struct {
+		name           string
+		pending, stale int
+		wantStatus     openapi.ComplianceStatusType
+	}{
+		{"no pending reviews", 0, 0, openapi.ComplianceStatusCompliant},
+		{"pending within window", 3, 0, openapi.ComplianceStatusCompliant},
+		{"stale pending reviews", 3, 1, openapi.ComplianceStatusWarning},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			snap := baseSnapshot()
+			snap.PendingReviews = tt.pending
+			snap.StalePendingReviews = tt.stale
+			got := evalComplianceChecks(snap)["review_response_sla"]
+			if got.Status != tt.wantStatus {
+				t.Fatalf("review_response_sla = %v, want %v", got.Status, tt.wantStatus)
+			}
+		})
+	}
+}
+
+func TestActivityReview(t *testing.T) {
+	tests := []struct {
+		name       string
+		sessions   int64
+		webhook    bool
+		wantStatus openapi.ComplianceStatusType
+	}{
+		{"sessions with SIEM", 10, true, openapi.ComplianceStatusCompliant},
+		{"sessions without SIEM", 10, false, openapi.ComplianceStatusWarning},
+		{"no activity", 0, false, openapi.ComplianceStatusCompliant},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			snap := baseSnapshot()
+			snap.SessionMetrics = &models.SessionMetricsAggregatedResult{TotalSessions: tt.sessions}
+			snap.WebhookConfigured = tt.webhook
+			got := evalComplianceChecks(snap)["activity_review"]
+			if got.Status != tt.wantStatus {
+				t.Fatalf("activity_review = %v, want %v", got.Status, tt.wantStatus)
+			}
+		})
+	}
+}
+
+func TestSensitiveDataDiscoveryIsInformational(t *testing.T) {
+	snap := baseSnapshot()
+	snap.SessionMetrics = &models.SessionMetricsAggregatedResult{TotalSessions: 5, UniqueInfoTypes: 4}
+	results := evalComplianceChecks(snap)
+	got := results["sensitive_data_discovery"]
+	if got.Status != openapi.ComplianceStatusInformational {
+		t.Fatalf("sensitive_data_discovery = %v, want informational", got.Status)
+	}
+
+	// Informational never scores and never appears in action_required.
+	if w, applicable := statusWeight(openapi.ComplianceStatusInformational); w != 0 || applicable {
+		t.Fatalf("statusWeight(informational) = (%v,%v), want (0,false)", w, applicable)
+	}
+	report := buildComplianceReport(snap)
+	for _, item := range report.ActionRequired {
+		if item.ID == "sensitive_data_discovery" {
+			t.Error("sensitive_data_discovery must not appear in action_required")
+		}
+	}
+	for _, fw := range report.Frameworks {
+		if fw.ID != "gdpr" {
+			continue
+		}
+		if fw.Breakdown.Informational == 0 {
+			t.Error("gdpr breakdown should count the informational Art 30(1)(d) control")
+		}
+	}
+
+	// Zero info types stays informational, not a failure.
+	snap.SessionMetrics = &models.SessionMetricsAggregatedResult{}
+	got = evalComplianceChecks(snap)["sensitive_data_discovery"]
+	if got.Status != openapi.ComplianceStatusInformational {
+		t.Fatalf("sensitive_data_discovery with no data = %v, want informational", got.Status)
 	}
 }

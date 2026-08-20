@@ -1539,7 +1539,7 @@
             "type": "string"
           },
           "total": {
-            "description": "Total is the number of applicable checks (excludes not_applicable and unable_to_verify)",
+            "description": "Total is the number of applicable checks (excludes not_applicable, unable_to_verify and informational)",
             "type": "integer"
           }
         },
@@ -1707,7 +1707,7 @@
             "type": "integer"
           },
           "total_applicable": {
-            "description": "TotalApplicable is the number of controls excluding not_applicable and unable_to_verify",
+            "description": "TotalApplicable is the number of controls excluding not_applicable, unable_to_verify and informational",
             "type": "integer"
           }
         },
@@ -1734,7 +1734,7 @@
             "type": "integer"
           },
           "total_applicable": {
-            "description": "TotalApplicable is the number of control rows excluding not_applicable and unable_to_verify",
+            "description": "TotalApplicable is the number of control rows excluding not_applicable, unable_to_verify and informational",
             "type": "integer"
           }
         },
@@ -1786,6 +1786,9 @@
           "idp_dependent": {
             "type": "integer"
           },
+          "informational": {
+            "type": "integer"
+          },
           "non_compliant": {
             "type": "integer"
           },
@@ -1808,7 +1811,8 @@
           "non_compliant",
           "not_applicable",
           "unable_to_verify",
-          "idp_dependent"
+          "idp_dependent",
+          "informational"
         ],
         "type": "string",
         "x-enum-varnames": [
@@ -1817,7 +1821,8 @@
           "ComplianceStatusNonCompliant",
           "ComplianceStatusNotApplicable",
           "ComplianceStatusUnableToVerify",
-          "ComplianceStatusIdpDependent"
+          "ComplianceStatusIdpDependent",
+          "ComplianceStatusInformational"
         ]
       },
       "openapi.Connection": {

@@ -36,7 +36,7 @@ type complianceCheckDef struct {
 	Category string
 }
 
-// complianceChecks is the ordered catalog of the 33 evaluated checks.
+// complianceChecks is the ordered catalog of the 35 evaluated checks.
 var complianceChecks = []complianceCheckDef{
 	// identity
 	{"sso_enabled", "Single Sign-On Enabled", categoryIdentity},
@@ -71,6 +71,8 @@ var complianceChecks = []complianceCheckDef{
 	{"activity_monitoring", "Activity Monitoring", categoryMonitoringResponse},
 	{"security_event_alerts", "Security Event Alerts", categoryMonitoringResponse},
 	{"review_response_sla", "Review Response SLA", categoryMonitoringResponse},
+	{"activity_review", "Information System Activity Review", categoryMonitoringResponse},
+	{"sensitive_data_discovery", "Sensitive Data Discovery", categoryMonitoringResponse},
 	// infrastructure
 	{"agents_online", "Agents Online", categoryInfrastructure},
 	{"agent_health", "Agent Health", categoryInfrastructure},
@@ -175,7 +177,7 @@ var complianceFrameworks = []complianceFrameworkDef{
 				ID:    "P4",
 				Title: "Privacy: Disclosure and Consent",
 				Controls: []complianceControlDef{
-					{"P4.1", "PII Protection Notice", "AI Data Masking automatically detects and redacts personally identifiable information", "masking_enabled", actionAppResources},
+					{"P4.1", "PII Protection Notice", "AI Data Masking automatically detects and redacts personally identifiable information", "masking_coverage", actionAppResources},
 					{"P4.2", "Data Masking Transparency", "Users can see when data masking is applied, ensuring transparency in data handling", "sensitive_types_configured", actionDocsDataMaskingLearn},
 				},
 			},
@@ -191,7 +193,7 @@ var complianceFrameworks = []complianceFrameworkDef{
 				Controls: []complianceControlDef{
 					{"Art 5(1)(c)", "Data Minimization", "Role-based access ensures users only access the data necessary for their job function", "data_minimization", actionAppResources},
 					{"Art 5(1)(d)", "Data Accuracy", "Direct connection model ensures real-time data access without stale copies", "transmission_encryption", actionDocsArchitecture},
-					{"Art 5(1)(f)", "Integrity & Confidentiality", "AI Data Masking and TLS encryption protect data integrity and confidentiality", "masking_enabled", actionAppResources},
+					{"Art 5(1)(f)", "Integrity & Confidentiality", "AI Data Masking and TLS encryption protect data integrity and confidentiality", "masking_coverage", actionAppResources},
 					{"Art 5(2)", "Accountability", "Complete audit logs of all sessions provide accountability for data processing activities", "session_recording", actionAppSessions},
 				},
 			},
@@ -208,7 +210,7 @@ var complianceFrameworks = []complianceFrameworkDef{
 				Title: "Records of Processing Activities",
 				Controls: []complianceControlDef{
 					{"Art 30(1)", "Processing Records", "All data access sessions are automatically recorded and stored for compliance", "session_recording", actionDocsSessionRecording},
-					{"Art 30(1)(d)", "Data Categories", "Sensitive data types are detected and categorized during each session", "activity_monitoring", actionAppSessions},
+					{"Art 30(1)(d)", "Data Categories", "Sensitive data types are detected and categorized during each session", "sensitive_data_discovery", actionAppSessions},
 				},
 			},
 			{
@@ -362,7 +364,7 @@ var complianceFrameworks = []complianceFrameworkDef{
 				ID:    "308",
 				Title: "§164.308 Administrative Safeguards",
 				Controls: []complianceControlDef{
-					{"§308(a)(1)(ii)(D)", "Activity Review", "Session monitoring and SIEM integration enable regular information system activity review", "activity_monitoring", actionAppWebhooks},
+					{"§308(a)(1)(ii)(D)", "Activity Review", "Session monitoring and SIEM integration enable regular information system activity review", "activity_review", actionAppWebhooks},
 					{"§308(a)(3)", "Workforce Security", "User management tracks workforce members with access to ePHI", "user_access_reviews", actionAppUsers},
 					{"§308(a)(4)", "Access Management", "Role-based access via user groups manages information access authorizations", "least_privilege", actionAppResources},
 					{"§308(a)(5)(ii)(C)", "Login Monitoring", "All user logins are recorded in session tracking for security awareness", "user_activity_logged", actionAppSessions},
@@ -410,7 +412,7 @@ var complianceFrameworks = []complianceFrameworkDef{
 				Controls: []complianceControlDef{
 					{"BP-MR-01", "Active Monitoring", "Sessions are being recorded, indicating active usage monitoring", "activity_monitoring", actionAppSessions},
 					{"BP-MR-02", "Review Response SLA", "Pending access reviews are responded to within acceptable timeframes", "review_response_sla", actionAppReviews},
-					{"BP-MR-03", "Data Discovery", "Sensitive data types detected during sessions are tracked for discovery purposes", "activity_monitoring", actionAppSessions},
+					{"BP-MR-03", "Data Discovery", "Sensitive data types detected during sessions are tracked for discovery purposes", "sensitive_data_discovery", actionAppSessions},
 				},
 			},
 		},

@@ -2,8 +2,8 @@ package apireports
 
 import (
 	"fmt"
-	"math"
 	"strings"
+	"time"
 
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
@@ -23,6 +23,10 @@ var cardTypes = map[string]bool{
 	"PAN":                true,
 }
 
+// reviewResponseSLAWindow is the acceptable response window for a pending
+// access review before the review_response_sla check degrades to warning.
+const reviewResponseSLAWindow = 24 * time.Hour
+
 const prodEnvironmentTagKey = "hoop.dev/infrastructure.environment"
 
 func isProdConnection(c models.Connection) bool {
@@ -37,14 +41,17 @@ func isProdConnection(c models.Connection) bool {
 	return strings.Contains(strings.ToLower(c.Name), "prod")
 }
 
+// percentOf returns the integer floor of 100*part/total. Flooring (rather than
+// rounding) keeps threshold boundaries exact: 199/200 masked databases must
+// not report 100%, and 79.9% coverage must not report 80%.
 func percentOf(part, total int) int {
 	if total == 0 {
 		return 0
 	}
-	return int(math.Round(100 * float64(part) / float64(total)))
+	return 100 * part / total
 }
 
-// evalComplianceChecks evaluates the 33 checks of the catalog against the
+// evalComplianceChecks evaluates the 35 checks of the catalog against the
 // snapshot. The returned map is keyed by check ID and always contains one
 // entry per catalog check plus the pseudo-checks.
 func evalComplianceChecks(snap *complianceSnapshot) map[string]checkResult {
@@ -89,19 +96,20 @@ func evalComplianceChecks(snap *complianceSnapshot) map[string]checkResult {
 			"No user groups defined. Access cannot be restricted by role.", groupsEvidence}
 	}
 
-	restrictedConns := 0
+	// Access restrictions are connection review requirements. Guardrail rules
+	// are command filters (data protection), not access restrictions, and do
+	// not count here. Access-control plugin group membership would also
+	// qualify per the spec, but it is not carried on models.Connection; V1
+	// intentionally counts reviewers only.
 	reviewedConns := 0
 	for _, c := range snap.Connections {
-		if len(c.Reviewers) > 0 || len(c.GuardRailRules) > 0 {
-			restrictedConns++
-		}
 		if len(c.Reviewers) > 0 {
 			reviewedConns++
 		}
 	}
-	rbaEvidence := fmt.Sprintf("%d groups, %d connections with access restrictions", groups, restrictedConns)
+	rbaEvidence := fmt.Sprintf("%d groups, %d connections with review requirements", groups, reviewedConns)
 	switch {
-	case groups > 0 && restrictedConns > 0:
+	case groups > 0 && reviewedConns > 0:
 		out["role_based_access"] = checkResult{openapi.ComplianceStatusCompliant,
 			"User groups and connection-level access restrictions are configured", rbaEvidence}
 	case groups > 0:
@@ -129,7 +137,7 @@ func evalComplianceChecks(snap *complianceSnapshot) map[string]checkResult {
 		jitEvidence := fmt.Sprintf("%d/%d production connections protected", prodCovered, prodConns)
 		coverage := percentOf(prodCovered, prodConns)
 		switch {
-		case coverage == 100:
+		case prodCovered == prodConns:
 			out["jit_reviews"] = checkResult{openapi.ComplianceStatusCompliant,
 				"All production connections require just-in-time review approval", jitEvidence}
 		case coverage >= 50:
@@ -223,7 +231,7 @@ func evalComplianceChecks(snap *complianceSnapshot) map[string]checkResult {
 	case databases == 0:
 		out["masking_coverage"] = checkResult{openapi.ComplianceStatusNotApplicable,
 			"No database connections configured", "0 database connections"}
-	case dbCoverage == 100:
+	case maskedDBs == databases:
 		out["masking_coverage"] = checkResult{openapi.ComplianceStatusCompliant,
 			fmt.Sprintf("All %d database connections have data masking enabled", databases), dbEvidence}
 	case dbCoverage >= 80:
@@ -253,10 +261,10 @@ func evalComplianceChecks(snap *complianceSnapshot) map[string]checkResult {
 	case databases == 0:
 		out["chd_masking_types"] = checkResult{openapi.ComplianceStatusNotApplicable,
 			"No database connections configured", "0 database connections"}
-	case dbCoverage == 100 && hasCardTypes:
+	case maskedDBs == databases && hasCardTypes:
 		out["chd_masking_types"] = checkResult{openapi.ComplianceStatusCompliant,
 			"All databases are masked with card-specific info types configured", dbEvidence}
-	case dbCoverage == 100:
+	case maskedDBs == databases:
 		out["chd_masking_types"] = checkResult{openapi.ComplianceStatusWarning,
 			"Masking enabled but card-specific info types not confirmed", dbEvidence}
 	default:
@@ -302,9 +310,48 @@ func evalComplianceChecks(snap *complianceSnapshot) map[string]checkResult {
 	out["session_recording"] = checkResult{openapi.ComplianceStatusCompliant,
 		"All sessions are automatically recorded with full audit trail",
 		"Session recording: Enabled (default)"}
-	out["audit_log_details"] = checkResult{openapi.ComplianceStatusCompliant,
-		"Audit logs capture complete session details",
-		"Captured: user identity, event type, timestamp, status, connection, subtype"}
+	if snap.SampleSession == nil {
+		out["audit_log_details"] = checkResult{openapi.ComplianceStatusCompliant,
+			"Audit logging enabled. No sessions recorded yet to sample.",
+			"Session recording: Enabled (architectural)"}
+	} else {
+		// Subtype is optional on custom-type connections; fall back to the
+		// connection type so a legitimately subtype-less latest session does
+		// not flap this control into a false warning.
+		s := snap.SampleSession
+		sampleTimestamp := ""
+		if !s.CreatedAt.IsZero() {
+			sampleTimestamp = s.CreatedAt.Format(time.RFC3339)
+		}
+		identityOfData := s.ConnectionSubtype
+		if identityOfData == "" {
+			identityOfData = s.ConnectionType
+		}
+		requiredFields := []struct{ name, value string }{
+			{"user_identification", s.UserEmail},
+			{"event_type", s.Verb},
+			{"timestamp", sampleTimestamp},
+			{"success_failure", s.Status},
+			{"origination", s.Connection},
+			{"identity_of_data", identityOfData},
+		}
+		var missing []string
+		for _, f := range requiredFields {
+			if f.value == "" {
+				missing = append(missing, f.name)
+			}
+		}
+		if len(missing) == 0 {
+			out["audit_log_details"] = checkResult{openapi.ComplianceStatusCompliant,
+				"Audit logs capture all required details",
+				"Captured: user identity, event type, timestamp, status, connection, subtype (sampled from latest session)"}
+		} else {
+			out["audit_log_details"] = checkResult{openapi.ComplianceStatusWarning,
+				fmt.Sprintf("Some required audit fields may be missing: %s", strings.Join(missing, ", ")),
+				fmt.Sprintf("Sampled latest session: %d/%d required fields present",
+					len(requiredFields)-len(missing), len(requiredFields))}
+		}
+	}
 
 	var totalSessions int64
 	if snap.SessionMetrics != nil {
@@ -356,13 +403,48 @@ func evalComplianceChecks(snap *complianceSnapshot) map[string]checkResult {
 			"0 sessions in the last 30 days"}
 	}
 
-	if snap.PendingReviews == 0 {
+	switch {
+	case totalSessions > 0 && snap.WebhookConfigured:
+		out["activity_review"] = checkResult{openapi.ComplianceStatusCompliant,
+			"System activity is recorded and forwarded for review via SIEM integration",
+			fmt.Sprintf("%d sessions in the last 30 days, SIEM webhook active", totalSessions)}
+	case totalSessions > 0:
+		out["activity_review"] = checkResult{openapi.ComplianceStatusWarning,
+			"Activity recorded but manual review required. SIEM integration recommended.",
+			fmt.Sprintf("%d sessions available for review (last 30 days)", totalSessions)}
+	default:
+		out["activity_review"] = checkResult{openapi.ComplianceStatusCompliant,
+			"Activity review capability in place. No recent activity to review.",
+			"Session recording: Enabled"}
+	}
+
+	// Discovery-style check: never pass/fail, excluded from scoring.
+	var uniqueInfoTypes int64
+	if snap.SessionMetrics != nil {
+		uniqueInfoTypes = snap.SessionMetrics.UniqueInfoTypes
+	}
+	if uniqueInfoTypes > 0 {
+		out["sensitive_data_discovery"] = checkResult{openapi.ComplianceStatusInformational,
+			fmt.Sprintf("%d sensitive data types detected and masked in recent sessions", uniqueInfoTypes),
+			fmt.Sprintf("%d distinct info types detected in the last 30 days", uniqueInfoTypes)}
+	} else {
+		out["sensitive_data_discovery"] = checkResult{openapi.ComplianceStatusInformational,
+			"No sensitive data detected in recent sessions",
+			"0 info types recorded in the last 30 days; masking may not be configured or no sensitive data was accessed"}
+	}
+
+	switch {
+	case snap.PendingReviews == 0:
 		out["review_response_sla"] = checkResult{openapi.ComplianceStatusCompliant,
 			"No pending access reviews", "0 pending reviews"}
-	} else {
+	case snap.StalePendingReviews == 0:
+		out["review_response_sla"] = checkResult{openapi.ComplianceStatusCompliant,
+			fmt.Sprintf("All %d pending access reviews are within the 24-hour response window", snap.PendingReviews),
+			fmt.Sprintf("%d pending reviews, none older than 24h", snap.PendingReviews)}
+	default:
 		out["review_response_sla"] = checkResult{openapi.ComplianceStatusWarning,
-			fmt.Sprintf("%d access reviews pending response", snap.PendingReviews),
-			fmt.Sprintf("%d pending reviews", snap.PendingReviews)}
+			fmt.Sprintf("%d access reviews pending for more than 24 hours", snap.StalePendingReviews),
+			fmt.Sprintf("%d/%d pending reviews older than 24h", snap.StalePendingReviews, snap.PendingReviews)}
 	}
 
 	// ---- infrastructure ----
@@ -381,7 +463,7 @@ func evalComplianceChecks(snap *complianceSnapshot) map[string]checkResult {
 		agentCoverage := percentOf(connectedAgents, totalAgents)
 		disconnected := totalAgents - connectedAgents
 		switch {
-		case agentCoverage == 100:
+		case connectedAgents == totalAgents:
 			agentHealth = checkResult{openapi.ComplianceStatusCompliant,
 				fmt.Sprintf("All %d agents connected and healthy", totalAgents), agentEvidence}
 		case agentCoverage >= 90:
