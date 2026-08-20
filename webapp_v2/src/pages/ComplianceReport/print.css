@@ -17,4 +17,11 @@
     width: 100%;
     padding: 0;
   }
+  /* Progress bars, badges and icon tints are plain background-colors, which
+     browsers strip when printing unless told otherwise; without this the
+     exported PDF loses every Progress bar. */
+  body.compliance-printing #compliance-report-root * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
 }

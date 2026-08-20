@@ -22,10 +22,11 @@ import {
   UnstyledButton,
 } from '@mantine/core'
 import { Carousel } from '@mantine/carousel'
-import { AlertCircle, ChevronLeft, ChevronRight, Share, SquareArrowOutUpRight } from 'lucide-react'
+import { AlertCircle, CalendarDays, ChevronLeft, ChevronRight, Share, SquareArrowOutUpRight } from 'lucide-react'
 import { reportsService } from '@/services/reports'
 import { showSnackbar } from '@/utils/snackbar'
 import FrameworkPanel from './components/FrameworkPanel'
+import PrintFrameworkSection from './components/PrintFrameworkSection'
 import { StatusIndicator } from './components/ControlBits'
 import {
   CATEGORY_COLORS,
@@ -67,12 +68,25 @@ function ReportSkeleton() {
   )
 }
 
-function ScoreCard({ overall }) {
+function ScoreCard({ overall, withTimeframe = false }) {
   const level = LEVEL_META[overall.level] ?? LEVEL_META.low
   return (
     <Card withBorder p="md" h="100%">
       <Stack gap="sm" h="100%">
-        <Text size="lg" fw={600}>Compliance Score</Text>
+        <Group justify="space-between" align="flex-start">
+          <Text size="lg" fw={600}>Compliance Score</Text>
+          {withTimeframe && (
+            <Badge
+              variant="outline"
+              color="green"
+              size="md"
+              radius="sm"
+              leftSection={<CalendarDays size={12} />}
+            >
+              Last 12 months
+            </Badge>
+          )}
+        </Group>
         <Center style={{ flex: 1 }}>
           <RingProgress
             size={220}
@@ -297,112 +311,105 @@ function ComplianceReport() {
         <Stack gap="xs">
           <Title order={1}>Compliance Report</Title>
           <Text size="lg" c="dimmed">
-            Framework-aligned view of your security posture across SOC 2, GDPR, PCI DSS and HIPAA.
+            A compliance visibility across industry frameworks
           </Text>
         </Stack>
-        <Button
-          leftSection={<Share size={16} />}
-          onClick={() => setPrinting(true)}
-        >
-          Export
-        </Button>
+        {!printing && (
+          <Button leftSection={<Share size={16} />} onClick={() => setPrinting(true)}>
+            Export
+          </Button>
+        )}
       </Group>
 
-      {/* The overview row stretches both columns to the same height: the
-          score card fills the left cell, and the category grid divides the
-          right cell into two equal rows (gridAutoRows: 1fr). */}
-      <Grid gutter="md">
-        <Grid.Col span={{ base: 12, md: 4 }}>
-          <ScoreCard overall={overall} />
-        </Grid.Col>
-        <Grid.Col span={{ base: 12, md: 8 }}>
-          <SimpleGrid
-            cols={{ base: 1, sm: 2, lg: 3 }}
-            spacing="md"
-            h="100%"
-            style={{ gridAutoRows: '1fr' }}
-          >
+      {printing ? (
+        /* Export layout (design reference): full-width score card with
+           timeframe chip, fixed 3-column category grid, then per-framework
+           score + flat control sections. No Action Required section. */
+        <>
+          <ScoreCard overall={overall} withTimeframe />
+          <SimpleGrid cols={3} spacing="md">
             {orderedCategories.map((category) => (
               <CategoryCard key={category.id} category={category} />
             ))}
           </SimpleGrid>
-        </Grid.Col>
-      </Grid>
+          {frameworks.map((framework) => (
+            <PrintFrameworkSection key={framework.id} framework={framework} />
+          ))}
+        </>
+      ) : (
+        <>
+          {/* The overview row stretches both columns to the same height: the
+              score card fills the left cell, and the category grid divides the
+              right cell into two equal rows (gridAutoRows: 1fr). */}
+          <Grid gutter="md">
+            <Grid.Col span={{ base: 12, md: 4 }}>
+              <ScoreCard overall={overall} />
+            </Grid.Col>
+            <Grid.Col span={{ base: 12, md: 8 }}>
+              <SimpleGrid
+                cols={{ base: 1, sm: 2, lg: 3 }}
+                spacing="md"
+                h="100%"
+                style={{ gridAutoRows: '1fr' }}
+              >
+                {orderedCategories.map((category) => (
+                  <CategoryCard key={category.id} category={category} />
+                ))}
+              </SimpleGrid>
+            </Grid.Col>
+          </Grid>
+        </>
+      )}
 
-      {actionRequired.length > 0 && (
+      {!printing && actionRequired.length > 0 && (
         <Stack gap="xs">
           <Group justify="space-between" align="center">
             <Title order={4}>Action Required ({actionRequired.length})</Title>
-            {!printing && (
-              <Group gap="xs">
-                <ActionIcon
-                  variant="default"
-                  size="xs"
-                  radius="sm"
-                  aria-label="Previous actions"
-                  disabled={!canScroll.prev}
-                  onClick={() => embla?.scrollPrev()}
-                >
-                  <ChevronLeft size={16} />
-                </ActionIcon>
-                <ActionIcon
-                  variant="default"
-                  size="xs"
-                  radius="sm"
-                  aria-label="Next actions"
-                  disabled={!canScroll.next}
-                  onClick={() => embla?.scrollNext()}
-                >
-                  <ChevronRight size={16} />
-                </ActionIcon>
-              </Group>
-            )}
+            <Group gap="xs">
+              <ActionIcon
+                variant="default"
+                size="xs"
+                radius="sm"
+                aria-label="Previous actions"
+                disabled={!canScroll.prev}
+                onClick={() => embla?.scrollPrev()}
+              >
+                <ChevronLeft size={16} />
+              </ActionIcon>
+              <ActionIcon
+                variant="default"
+                size="xs"
+                radius="sm"
+                aria-label="Next actions"
+                disabled={!canScroll.next}
+                onClick={() => embla?.scrollNext()}
+              >
+                <ChevronRight size={16} />
+              </ActionIcon>
+            </Group>
           </Group>
-          {printing ? (
-            // Horizontal scrollers do not print; the export stacks the cards.
-            <Stack gap="sm">
-              {actionRequired.map((item) => (
+          <Carousel
+            withControls={false}
+            getEmblaApi={setEmbla}
+            slideSize={{ base: '100%', sm: '50%', lg: '33.333333%' }}
+            slideGap="md"
+            emblaOptions={{ align: 'start', slidesToScroll: 1, containScroll: 'trimSnaps' }}
+            styles={{ slide: { display: 'flex' } }}
+          >
+            {actionRequired.map((item) => (
+              <Carousel.Slide key={item.id}>
                 <ActionRequiredItem
-                  key={item.id}
                   item={item}
                   categoryTitle={categoryTitles[item.category]}
                   onNavigate={handleAction}
                 />
-              ))}
-            </Stack>
-          ) : (
-            <Carousel
-              withControls={false}
-              getEmblaApi={setEmbla}
-              slideSize={{ base: '100%', sm: '50%', lg: '33.333333%' }}
-              slideGap="md"
-              emblaOptions={{ align: 'start', slidesToScroll: 1, containScroll: 'trimSnaps' }}
-              styles={{ slide: { display: 'flex' } }}
-            >
-              {actionRequired.map((item) => (
-                <Carousel.Slide key={item.id}>
-                  <ActionRequiredItem
-                    item={item}
-                    categoryTitle={categoryTitles[item.category]}
-                    onNavigate={handleAction}
-                  />
-                </Carousel.Slide>
-              ))}
-            </Carousel>
-          )}
+              </Carousel.Slide>
+            ))}
+          </Carousel>
         </Stack>
       )}
 
-      {printing ? (
-        <Stack gap="xxlAlt">
-          {frameworks.map((framework) => (
-            <Stack key={framework.id} gap="lgAlt">
-              <Title order={2}>{framework.name}</Title>
-              <FrameworkPanel framework={framework} showDetails />
-            </Stack>
-          ))}
-        </Stack>
-      ) : (
+      {!printing && (
         <Tabs value={activeTab} onChange={setActiveTab} keepMounted={false}>
           <Tabs.List mb="lgAlt">
             {frameworks.map((framework) => (

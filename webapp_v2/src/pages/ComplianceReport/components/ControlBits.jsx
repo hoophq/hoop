@@ -80,12 +80,8 @@ export function ActionLink({ action }) {
   )
 }
 
-/**
- * One control requirement row: status, ID, name, description, action.
- * `showDetails` additionally inlines the evaluated message and evidence
- * (normally tooltip-only) — used by the print export.
- */
-export function ControlRow({ control, showDetails = false }) {
+/** One control requirement row: status, ID, name, description, action. */
+export function ControlRow({ control }) {
   return (
     <Group justify="space-between" align="flex-start" wrap="nowrap" gap="md">
       <Group align="flex-start" wrap="nowrap" gap="sm">
@@ -106,14 +102,6 @@ export function ControlRow({ control, showDetails = false }) {
           <Text size="sm" c="dimmed">
             {control.description}
           </Text>
-          {showDetails && control.message && (
-            <Text size="xs">{control.message}</Text>
-          )}
-          {showDetails && control.evidence && (
-            <Text size="xs" c="dimmed">
-              Evidence: {control.evidence}
-            </Text>
-          )}
         </Stack>
       </Group>
       <ActionLink action={control.action} />
