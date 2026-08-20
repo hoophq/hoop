@@ -53,7 +53,6 @@ cat - <<EOF
 For \`DLP_PROVIDER=alcatraz\` masking rules that ask for PERSON, LOCATION or NRP.
 The model ships in the image and is never fetched at runtime.
 
-- [hoophq/hoopdev:${VERSION}-alcatraz]($(hub hoopdev "${VERSION}-alcatraz")) — the full agent plus the model
 - [hoophq/hoopagent:${VERSION}-minimal-alcatraz]($(hub hoopagent "${VERSION}-minimal-alcatraz")) — minimal plus the model
 - [hoophq/hoopagent:${VERSION}-distroless-alcatraz]($(hub hoopagent "${VERSION}-distroless-alcatraz")) — distroless plus the model
 

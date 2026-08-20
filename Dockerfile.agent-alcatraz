@@ -10,21 +10,20 @@
 # go.mod. The manifest names the files and their layout, so no model id,
 # revision, digest or alcatraz version appears in this repository.
 #
-# One file, one added layer, three published tags — the base decides which:
+# One file, one added layer, two published tags — the base decides which:
 #
-#   HOOP_IMAGE=hoophq/hoopdev:<tag>              -> hoophq/hoopdev:<tag>-alcatraz
 #   HOOP_IMAGE=hoophq/hoopagent:<tag>-minimal    -> hoophq/hoopagent:<tag>-minimal-alcatraz
 #   HOOP_IMAGE=hoophq/hoopagent:<tag>-distroless -> hoophq/hoopagent:<tag>-distroless-alcatraz
 #
 #   docker build -f Dockerfile.agent-alcatraz \
-#     --build-arg HOOP_IMAGE=hoophq/hoopdev:<tag> -t hoophq/hoopdev:<tag>-alcatraz .
+#     --build-arg HOOP_IMAGE=hoophq/hoopagent:<tag>-minimal \
+#     -t hoophq/hoopagent:<tag>-minimal-alcatraz .
 #
-# The two hoopagent tags land in a clean-only repository (see the bright-line
-# note in Dockerfile.agent): what this file adds is model weights served by
-# hoop's mirror, carrying no AGPL- or SSPL-licensed component, so they stay on
-# the clean side of that line. The hoopdev tag inherits its base's tooling and
-# that base's licences, which is why the tools flavour is published there and
-# never under hoophq/hoopagent.
+# Both tags land in a clean-only repository (see the bright-line note in
+# Dockerfile.agent): what this file adds is model weights served by hoop's
+# mirror, carrying no AGPL- or SSPL-licensed component, so they stay on the
+# clean side of that line. Nothing is published on a hoopdev base: an agent that
+# needs the bundled tooling mounts the model and sets ALCATRAZ_NER_MODEL_PATH.
 
 # The agent image to build on. No default: an unpinned base makes derived
 # builds non-reproducible. Any agent flavour works, because this file only adds

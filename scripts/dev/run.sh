@@ -63,8 +63,8 @@ fi
 # Alcatraz NER model, for testing DLP_PROVIDER=alcatraz with a masking rule
 # that asks for a statistical entity type (PERSON, LOCATION, NRP). The backend
 # never fetches at runtime, so the files have to be on disk before the first
-# such session: the published `-alcatraz` image tags bake them in, and the
-# dev container mounts them from the host instead. Seed the directory
+# such session: the published hoophq/hoopagent `-alcatraz` tags bake them in,
+# and the dev container mounts them from the host instead. Seed the directory
 # once (~250MB), with the alcatraz version libhoop links:
 #
 #   go install github.com/hoophq/alcatraz/cmd/alcatraz@$(GOWORK=off go -C libhoop list -m -f '{{.Version}}' github.com/hoophq/alcatraz)
