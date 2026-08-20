@@ -17,7 +17,7 @@
 
 set -euo pipefail
 
-ORIGIN="${ALCATRAZ_MODEL_ORIGIN:-https://d3pullut164aif.cloudfront.net/current}"
+ORIGIN="${ALCATRAZ_MODEL_ORIGIN:-https://hoopartifacts.s3.us-east-1.amazonaws.com/alcatraz/current}"
 DEST="${1:-$HOME/.hoop/dev/alcatraz-models}"
 
 # macOS ships shasum, Linux ships sha256sum, and neither ships the other.
@@ -52,8 +52,9 @@ while read -r want path; do
   curl -fsSL "${ORIGIN}/${path}" -o "$file"
   got=$(sha256 "$file")
   if [ "$got" != "$want" ]; then
-    # Not transient. The one benign cause is landing in the origin's 300s cache
-    # window just after the model changed — rerun, never soften this.
+    # Not transient. The one benign cause is reading the manifest mid-publish,
+    # between the new checksums.txt and the weights it names — rerun, never
+    # soften this.
     echo "    checksum mismatch for ${path}: expected ${want}, got ${got}" >&2
     rm -f "$file"
     exit 1

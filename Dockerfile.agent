@@ -94,13 +94,16 @@ ARG UBUNTU_IMAGE=ubuntu:noble-20260730.1
 ARG DISTROLESS_IMAGE=gcr.io/distroless/static-debian12:nonroot
 ARG CURL_IMAGE=curlimages/curl:8.11.1
 
-# Hoop's mirror of the model files. Public-read, so the -alcatraz targets build
-# outside CI too. An ARG so an air-gapped build can swap in its own.
+# Hoop's mirror of the model files, served straight from the bucket. The
+# objects are public-read (the bucket does not grant ListBucket, so the keys
+# have to be known — the manifest below is what names them), which is what lets
+# the -alcatraz targets build outside CI. An ARG so an air-gapped build can swap
+# in its own.
 #
 # A moving alias, not a revision: rebuilding an old tag may pick up a newer
 # model, and model/binary skew is caught when the agent loads. In exchange
 # nothing here can drift out of sync with alcatraz's pin table.
-ARG ALCATRAZ_MODEL_ORIGIN=https://d3pullut164aif.cloudfront.net/current
+ARG ALCATRAZ_MODEL_ORIGIN=https://hoopartifacts.s3.us-east-1.amazonaws.com/alcatraz/current
 
 # --- Stage: unpack the release tarball ---------------------------------------
 # A separate stage so the ~200MB of release tarballs in dist/binaries/ never
@@ -141,9 +144,9 @@ WORKDIR /opt/alcatraz/models
 # exist yet. a+rX: the runtime user is unprivileged and has to traverse the
 # directories.
 #
-# A digest mismatch is not transient. The one benign cause is a build landing
-# in the origin's 300s cache window just after the model changed — retry it,
-# never soften this step.
+# A digest mismatch is not transient. The one benign cause is a build reading
+# the manifest mid-publish, between the new checksums.txt and the weights it
+# names — retry it, never soften this step.
 RUN set -eu; \
     curl -fsSL "${ALCATRAZ_MODEL_ORIGIN}/checksums.txt" -o checksums.txt; \
     while read -r _ path; do \
