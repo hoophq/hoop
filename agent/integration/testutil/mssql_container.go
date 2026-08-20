@@ -15,14 +15,8 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
-// MSSQLContainer wraps a Microsoft SQL Server container for integration
-// tests. SQL Server runs natively on Linux from the official
-// mcr.microsoft.com image, so no Windows host is needed. Credentials are
-// fixed so test code can reference them directly.
-//
-// SQL Server has no concept of a "create this database on boot" env var
-// (unlike Postgres/MySQL), so StartMSSQL creates the test database itself
-// after the server is ready.
+// MSSQLContainer is a handle to one database on a SQL Server container.
+// Credentials are fixed so test code can reference them directly.
 type MSSQLContainer struct {
 	Host      string
 	Port      string
@@ -39,25 +33,8 @@ const (
 	mssqlSAPassword = "hoopTest!2024"
 )
 
-// StartMSSQL returns a handle to the shared SQL Server with a private
-// database created for this test.
-//
-// SQL Server is by far the slowest container in the suite at ~14s to boot,
-// and 16 tests use it. Booting one per test spent ~224s of the package's
-// 571s and is what pushed the suite past `go test -timeout 10m` (ENG-511).
-// It is the only container shared this way; the others boot fast enough
-// that per-test isolation is worth more than the seconds it would save.
-//
-// Isolation holds because each test gets a private database rather than a
-// private server, and that is the boundary countSessionsOn already filters
-// on. So "exactly 0 upstream sessions remain after SessionClose" stays
-// exact instead of counting a neighbouring test's traffic. Test tables are
-// already uniquely named, so nothing depends on an empty schema.
-//
-// Forked databases are not dropped. The server dies at package end, and
-// dropping a database with live sessions needs an
-// ALTER ... SET SINGLE_USER WITH ROLLBACK IMMEDIATE dance that buys
-// nothing here.
+// StartMSSQL returns a handle to the shared SQL Server with a private database
+// for this test. One container per test cost ~224s of the suite's 571s (ENG-511).
 func StartMSSQL(t T) *MSSQLContainer {
 	t.Helper()
 	base, err := bootMSSQL()
@@ -67,15 +44,12 @@ func StartMSSQL(t T) *MSSQLContainer {
 	return base.forkDatabase(t)
 }
 
-// bootMSSQL boots the shared server on first call. sync.OnceValues also
-// caches a failure, so a broken Docker daemon costs one startup timeout
-// instead of one per test.
+// bootMSSQL boots the shared server once. OnceValues caches the failure too, so
+// a broken Docker daemon costs one startup timeout instead of one per test.
 var bootMSSQL = sync.OnceValues(bootMSSQLContainer)
 
-// databaseSeq names forked databases. A counter rather than a timestamp so
-// a failure message points at a database you can locate by test order in
-// the -v log. It is the only producer of forked database names, which is
-// what makes it safe to interpolate straight into a CREATE DATABASE.
+// databaseSeq is the only producer of forked database names, which is what makes
+// them safe to interpolate straight into a CREATE DATABASE.
 var databaseSeq atomic.Uint64
 
 func nextDatabaseName() string {
@@ -87,10 +61,8 @@ var (
 	sharedServer testcontainers.Container
 )
 
-// ShutdownSharedContainers terminates the shared SQL Server if a test
-// booted it. TestMain calls it after m.Run, because t.Cleanup would tear
-// the server down after the first test that used it. It is a no-op when no
-// test needed SQL Server, and safe to call more than once.
+// ShutdownSharedContainers terminates the shared SQL Server. No-op when no test
+// booted one, and safe to call more than once.
 func ShutdownSharedContainers() {
 	sharedMu.Lock()
 	c := sharedServer
@@ -102,10 +74,8 @@ func ShutdownSharedContainers() {
 	}
 }
 
-// bootMSSQLContainer boots SQL Server 2022 and waits until it accepts
-// authenticated connections. The wait strategy combines the readiness log
-// line with a real authenticated ping because SQL Server logs "ready for
-// client connections" slightly before the sa login is actually usable.
+// bootMSSQLContainer boots SQL Server 2022. The readiness log line fires
+// slightly before the sa login works, so waitForReady also pings.
 func bootMSSQLContainer() (*MSSQLContainer, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	defer cancel()
@@ -117,15 +87,11 @@ func bootMSSQLContainer() (*MSSQLContainer, error) {
 			Env: map[string]string{
 				"ACCEPT_EULA":       "Y",
 				"MSSQL_SA_PASSWORD": mssqlSAPassword,
-				// Express avoids the eval-edition nag and boots quickly;
-				// it speaks the identical TDS wire protocol libhoop's
-				// MSSQL proxy targets.
+				// Express boots fast and speaks the same TDS wire
+				// protocol libhoop's MSSQL proxy targets.
 				"MSSQL_PID": "Express",
-				// The server now stays resident for the whole package
-				// instead of one test, so it sits alongside whichever
-				// container the current test booted. Express caps its
-				// buffer pool at 1410MB; bound it below that so the
-				// overlap stays affordable (ENG-511).
+				// Resident for the whole package now, so it overlaps every
+				// other container. Express caps its pool at 1410MB anyway.
 				"MSSQL_MEMORY_LIMIT_MB": "1024",
 			},
 			WaitingFor: wait.ForAll(
@@ -162,8 +128,7 @@ func bootMSSQLContainer() (*MSSQLContainer, error) {
 		Container: container,
 	}
 
-	// Block until sa can actually authenticate. Per-test databases are
-	// created later by forkDatabase.
+	// Block until sa can actually authenticate.
 	if err := c.waitForReady(); err != nil {
 		return nil, err
 	}
@@ -171,9 +136,8 @@ func bootMSSQLContainer() (*MSSQLContainer, error) {
 	return c, nil
 }
 
-// forkDatabase creates a private database on the shared server and returns
-// a handle scoped to it. The handle keeps pointing at master for admin
-// work, so the next fork always has a connection target.
+// forkDatabase gives the test a private database instead of a private server.
+// countSessionsOn filters on DB_ID, so that is the boundary its assertions need.
 func (c *MSSQLContainer) forkDatabase(t T) *MSSQLContainer {
 	t.Helper()
 
@@ -183,10 +147,8 @@ func (c *MSSQLContainer) forkDatabase(t T) *MSSQLContainer {
 	return &forked
 }
 
-// adminConnString returns a go-mssqldb DSN that connects directly to the
-// container against the given database, bypassing the agent. TLS is
-// disabled because the bridged-proxy path the tests exercise also runs
-// without client-side encryption.
+// adminConnString returns a DSN straight to the container, bypassing the agent.
+// TLS is off because the bridged-proxy path under test also runs unencrypted.
 func (c *MSSQLContainer) adminConnString(database string) string {
 	return fmt.Sprintf("sqlserver://%s:%s@%s:%s?database=%s&encrypt=disable",
 		c.User, c.Password, c.Host, c.Port, database)
@@ -224,9 +186,8 @@ func (c *MSSQLContainer) ping(database string) error {
 	return db.PingContext(ctx)
 }
 
-// createDatabase creates c.Database on the shared server. CREATE DATABASE
-// cannot run inside a transaction, so it goes through a plain Exec on the
-// master database.
+// createDatabase creates c.Database. CREATE DATABASE cannot run inside a
+// transaction, so it goes through a plain Exec on master.
 func (c *MSSQLContainer) createDatabase(t T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -244,16 +205,8 @@ func (c *MSSQLContainer) createDatabase(t T) {
 	}
 }
 
-// countSessionsOn returns the number of sessions on the test database
-// visible to the given admin connection, excluding that connection's own
-// session (@@SPID). Filtering on DB_ID keeps system sessions for other
-// databases out of the count.
-//
-// The admin connection must be a single, pinned *sql.DB (MaxOpenConns=1):
-// SQL Server does not reap a session the instant its TCP connection closes,
-// so a fresh admin connection per poll would race its own
-// just-disconnected predecessor and intermittently count it. Reusing one
-// pinned connection keeps @@SPID stable and self-exclusion exact.
+// countSessionsOn counts sessions on c.Database, excluding db's own (@@SPID).
+// db must come from openPinnedAdmin or the count races its own predecessor.
 func (c *MSSQLContainer) countSessionsOn(ctx context.Context, db *sql.DB) (int, error) {
 	var count int
 	row := db.QueryRowContext(ctx, `
@@ -265,10 +218,8 @@ func (c *MSSQLContainer) countSessionsOn(ctx context.Context, db *sql.DB) (int, 
 	return count, nil
 }
 
-// ConnectionCount opens a single pinned sidecar admin connection and returns
-// the number of sessions connected to the test database, excluding the
-// sidecar's own session. Used by concurrency tests to assert how many
-// upstream connections the agent established.
+// ConnectionCount returns the session count on the test database, excluding the
+// sidecar's own. Concurrency tests assert the agent's upstream connections.
 func (c *MSSQLContainer) ConnectionCount(t T) int {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -303,14 +254,8 @@ func (c *MSSQLContainer) openPinnedAdmin() (*sql.DB, error) {
 	return db, nil
 }
 
-// WaitForConnectionCount polls until the session count on the test database
-// equals want or the timeout elapses. It holds a single pinned admin
-// connection for the entire poll: opening a new admin connection per
-// iteration would race SQL Server's lazy session reaping and count the
-// previous iteration's just-closed admin session, so the poll could never
-// observe 0. SQL Server also reaps the agent's session lazily after its TCP
-// connection drops mid-query, which is why a poll (not a single snapshot) is
-// needed.
+// WaitForConnectionCount polls until the session count equals want. SQL Server
+// reaps sessions lazily, so a single snapshot after SessionClose still sees 1.
 func (c *MSSQLContainer) WaitForConnectionCount(t T, want int, timeout time.Duration) {
 	t.Helper()
 
