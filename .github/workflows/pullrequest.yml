@@ -174,11 +174,11 @@ jobs:
           workspaces: gateway/rdp/wasm
 
       # Pull the upstream images before the suite runs. testcontainers pulls
-      # lazily inside whichever test needs an image first, which charged
-      # ~40s of registry latency against `go test -timeout 10m` and made a
-      # slow registry day look like a test hang (ENG-511). This does not cut
-      # job wall-clock; it moves that time out of the test budget and turns
-      # a pull failure into a readable step failure.
+      # lazily inside whichever test needs an image first, which charged the
+      # pull against `go test -timeout 10m` and made a slow registry day look
+      # like a test hang (ENG-511). Measured at 48s. This does not cut job
+      # wall-clock; it moves that time out of the test budget and turns a
+      # pull failure into a readable step failure.
       #
       # Keep in sync with the Image: fields in agent/integration/testutil/.
       - name: Pre-pull upstream test images
