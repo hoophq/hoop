@@ -9,15 +9,12 @@ import (
 	"github.com/hoophq/hoop/agent/integration/testutil"
 )
 
-// TestMain owns the lifetime of the shared upstream containers. They are
-// booted lazily by the first test that needs one and must be terminated
-// here, because the per-test t.Cleanup that used to do it is exactly what
-// made the suite boot a container per test (ENG-511).
+// TestMain owns the lifetime of the shared SQL Server. It is booted lazily
+// by the first test that needs it, so teardown cannot live in t.Cleanup:
+// that is what made the suite boot a container per test (ENG-511).
 //
-// The deferred-cleanup shape is deliberate: os.Exit skips deferred calls,
-// so m.Run's code is captured and the exit happens after teardown. Leaving
-// containers behind would strand them until testcontainers' reaper
-// collects them, well after the job has moved on.
+// m.Run's code is held in a variable because os.Exit must be the last call
+// and it would otherwise skip the teardown.
 func TestMain(m *testing.M) {
 	code := m.Run()
 	testutil.ShutdownSharedContainers()

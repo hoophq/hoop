@@ -4,12 +4,9 @@ package testutil
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
-	"sync"
 	"time"
 
-	_ "github.com/lib/pq"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
@@ -41,24 +38,7 @@ type PGContainer struct {
 	Container testcontainers.Container
 }
 
-// StartPostgres returns a handle to the shared Postgres server with a
-// private database created for this test. The server boots once per
-// package; see shared_container.go for why and for how isolation is kept.
 func StartPostgres(t T) *PGContainer {
-	t.Helper()
-	base, err := bootPostgres()
-	if err != nil {
-		t.Fatalf("failed to start postgres container: %v", err)
-	}
-	return base.forkDatabase(t)
-}
-
-// bootPostgres boots the shared server on first call. sync.OnceValues also
-// caches a failure, so a broken Docker daemon costs one startup timeout
-// instead of one per test.
-var bootPostgres = sync.OnceValues(bootPostgresContainer)
-
-func bootPostgresContainer() (*PGContainer, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -83,18 +63,21 @@ func bootPostgresContainer() (*PGContainer, error) {
 		Started: true,
 	})
 	if err != nil {
-		return nil, err
+		t.Fatalf("failed to start postgres container: %v", err)
 	}
-	terminateAtPackageEnd(container)
+
+	t.Cleanup(func() {
+		_ = container.Terminate(context.Background())
+	})
 
 	mappedPort, err := container.MappedPort(ctx, "5432/tcp")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get mapped port: %w", err)
+		t.Fatalf("failed to get mapped port: %v", err)
 	}
 
 	host, err := ContainerHost(ctx, container)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get container host: %w", err)
+		t.Fatalf("failed to get container host: %v", err)
 	}
 
 	return &PGContainer{
@@ -104,30 +87,7 @@ func bootPostgresContainer() (*PGContainer, error) {
 		Password:  password,
 		Database:  database,
 		Container: container,
-	}, nil
-}
-
-// forkDatabase creates a private database on the shared server and returns
-// a handle scoped to it. The bootstrap database stays untouched so it can
-// always serve as the connection target for the next CREATE DATABASE.
-func (pg *PGContainer) forkDatabase(t T) *PGContainer {
-	t.Helper()
-
-	db, err := sql.Open("postgres", pg.ConnString())
-	if err != nil {
-		t.Fatalf("postgres: failed to open admin connection: %v", err)
 	}
-	defer db.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	forked := *pg
-	forked.Database = nextDatabaseName()
-	if _, err := db.ExecContext(ctx, "CREATE DATABASE "+forked.Database); err != nil {
-		t.Fatalf("postgres: failed creating database %s: %v", forked.Database, err)
-	}
-	return &forked
 }
 
 func (pg *PGContainer) ConnString() string {

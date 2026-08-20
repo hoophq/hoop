@@ -449,7 +449,11 @@ func (p *PipedSSHClient) sendPacket(payload []byte) {
 // sshd container; the in-pipe handshake just needs to complete.
 func defaultSSHServerConfig(t *testing.T) *ssh.ServerConfig {
 	t.Helper()
-	signer, err := pipedSSHHostKey()
+	hostKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("piped-ssh: failed to generate host key: %v", err)
+	}
+	signer, err := ssh.NewSignerFromKey(hostKey)
 	if err != nil {
 		t.Fatalf("piped-ssh: failed to build host key signer: %v", err)
 	}
@@ -459,19 +463,6 @@ func defaultSSHServerConfig(t *testing.T) *ssh.ServerConfig {
 	cfg.AddHostKey(signer)
 	return cfg
 }
-
-// pipedSSHHostKey generates the in-pipe host key once for the whole
-// package. The key never leaves the process and is never verified — the
-// client side uses ssh.InsecureIgnoreHostKey and real authentication
-// happens out at the sshd container — so a fresh RSA-2048 key per dial
-// bought nothing but CPU, which -race multiplies (ENG-511).
-var pipedSSHHostKey = sync.OnceValues(func() (ssh.Signer, error) {
-	hostKey, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		return nil, fmt.Errorf("generate host key: %w", err)
-	}
-	return ssh.NewSignerFromKey(hostKey)
-})
 
 // noopT is a minimal T implementation used internally by the bridge
 // goroutines that call testutil helpers (which expect a T for

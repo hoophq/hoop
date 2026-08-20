@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	_ "github.com/microsoft/go-mssqldb"
@@ -41,10 +42,22 @@ const (
 // StartMSSQL returns a handle to the shared SQL Server with a private
 // database created for this test.
 //
-// The server boots once per package (see shared_container.go). SQL Server
-// is the slowest container in the suite at ~14s to boot, and the suite has
-// 16 MSSQL tests — booting one each was the single largest contributor to
-// the ENG-511 timeout.
+// SQL Server is by far the slowest container in the suite at ~14s to boot,
+// and 16 tests use it. Booting one per test spent ~224s of the package's
+// 571s and is what pushed the suite past `go test -timeout 10m` (ENG-511).
+// It is the only container shared this way; the others boot fast enough
+// that per-test isolation is worth more than the seconds it would save.
+//
+// Isolation holds because each test gets a private database rather than a
+// private server, and that is the boundary countSessionsOn already filters
+// on. So "exactly 0 upstream sessions remain after SessionClose" stays
+// exact instead of counting a neighbouring test's traffic. Test tables are
+// already uniquely named, so nothing depends on an empty schema.
+//
+// Forked databases are not dropped. The server dies at package end, and
+// dropping a database with live sessions needs an
+// ALTER ... SET SINGLE_USER WITH ROLLBACK IMMEDIATE dance that buys
+// nothing here.
 func StartMSSQL(t T) *MSSQLContainer {
 	t.Helper()
 	base, err := bootMSSQL()
@@ -58,6 +71,36 @@ func StartMSSQL(t T) *MSSQLContainer {
 // caches a failure, so a broken Docker daemon costs one startup timeout
 // instead of one per test.
 var bootMSSQL = sync.OnceValues(bootMSSQLContainer)
+
+// databaseSeq names forked databases. A counter rather than a timestamp so
+// a failure message points at a database you can locate by test order in
+// the -v log. It is the only producer of forked database names, which is
+// what makes it safe to interpolate straight into a CREATE DATABASE.
+var databaseSeq atomic.Uint64
+
+func nextDatabaseName() string {
+	return fmt.Sprintf("testdb_%d", databaseSeq.Add(1))
+}
+
+var (
+	sharedMu     sync.Mutex
+	sharedServer testcontainers.Container
+)
+
+// ShutdownSharedContainers terminates the shared SQL Server if a test
+// booted it. TestMain calls it after m.Run, because t.Cleanup would tear
+// the server down after the first test that used it. It is a no-op when no
+// test needed SQL Server, and safe to call more than once.
+func ShutdownSharedContainers() {
+	sharedMu.Lock()
+	c := sharedServer
+	sharedServer = nil
+	sharedMu.Unlock()
+
+	if c != nil {
+		_ = c.Terminate(context.Background())
+	}
+}
 
 // bootMSSQLContainer boots SQL Server 2022 and waits until it accepts
 // authenticated connections. The wait strategy combines the readiness log
@@ -78,10 +121,11 @@ func bootMSSQLContainer() (*MSSQLContainer, error) {
 				// it speaks the identical TDS wire protocol libhoop's
 				// MSSQL proxy targets.
 				"MSSQL_PID": "Express",
-				// Express caps its buffer pool at 1410MB, but the server
-				// now stays resident for the whole package instead of one
-				// test. Bound it below that cap so it shares the runner
-				// with the other three servers (ENG-511).
+				// The server now stays resident for the whole package
+				// instead of one test, so it sits alongside whichever
+				// container the current test booted. Express caps its
+				// buffer pool at 1410MB; bound it below that so the
+				// overlap stays affordable (ENG-511).
 				"MSSQL_MEMORY_LIMIT_MB": "1024",
 			},
 			WaitingFor: wait.ForAll(
@@ -95,7 +139,9 @@ func bootMSSQLContainer() (*MSSQLContainer, error) {
 	if err != nil {
 		return nil, err
 	}
-	terminateAtPackageEnd(container)
+	sharedMu.Lock()
+	sharedServer = container
+	sharedMu.Unlock()
 
 	mappedPort, err := container.MappedPort(ctx, "1433/tcp")
 	if err != nil {
