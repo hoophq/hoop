@@ -158,6 +158,10 @@ where
                         break;
                     }
                 }
+                // Best-effort half-close: the client's leg has already ended,
+                // so a shutdown failure means the server socket is gone too.
+                // There is nothing left to salvage and no data at risk — the
+                // gated server->client direction reports its own errors.
                 let _ = server_wr.shutdown().await;
             };
 

@@ -3,6 +3,7 @@ package broker
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -256,6 +257,11 @@ func (s *Session) receiveData(
 }
 
 func (s *Session) SendRawDataToAgent(data []byte) error {
+	// Reject an oversized frame here rather than letting Header.Encode panic:
+	// this is the one framing path whose payload length comes from a peer read.
+	if uint64(len(data)) > uint64(headerLengthMask) {
+		return fmt.Errorf("frame payload %d exceeds wire limit %d", len(data), headerLengthMask)
+	}
 	header := &Header{
 		SID: s.ID,
 		Len: uint32(len(data)),

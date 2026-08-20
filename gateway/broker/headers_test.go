@@ -3,6 +3,7 @@ package broker
 import (
 	"bytes"
 	"encoding/binary"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -118,5 +119,25 @@ func TestAgentControlEncodingNegotiatesFromLegacyToV2(t *testing.T) {
 	}
 	if !typedHeader.Control {
 		t.Fatal("negotiated peer did not receive a v2 control frame")
+	}
+}
+
+// An oversized payload must fail the affected send, not take the gateway
+// process down. Header.Encode still panics on a length it cannot represent,
+// so SendRawDataToAgent — the one framing path whose length comes from a peer
+// read — must reject the frame before reaching it.
+func TestSendRawDataToAgentRejectsOversizedFrameWithoutPanicking(t *testing.T) {
+	oversized := uint64(headerLengthMask) + 1
+	if uint64(int(^uint(0)>>1)) < oversized {
+		t.Skip("platform int cannot express an oversized frame")
+	}
+
+	session := &Session{ID: uuid.New()}
+	err := session.SendRawDataToAgent(make([]byte, oversized))
+	if err == nil {
+		t.Fatal("oversized frame was accepted; expected a wire-limit error")
+	}
+	if !strings.Contains(err.Error(), "exceeds wire limit") {
+		t.Fatalf("expected a wire-limit error, got: %v", err)
 	}
 }
