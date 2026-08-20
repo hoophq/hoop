@@ -2,6 +2,7 @@ package inspectapi
 
 import (
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -78,6 +79,146 @@ func TestPollLimiterEvicts(t *testing.T) {
 	for i := range pollBucketCap + 50 {
 		l.allow(string(rune(i))+"\x00k", now)
 	}
+	if len(l.buckets) > pollBucketCap {
+		t.Fatalf("buckets = %d, cap is %d", len(l.buckets), pollBucketCap)
+	}
+}
+
+// The regression this policy exists for: a flood of new credentials must not
+// hand active callers back their spent budget.
+//
+// The map used to be cleared once an idle sweep freed nothing, so one caller
+// arriving at the cap reset every other caller — and an abuser cycling
+// credentials could pull that lever on demand.
+//
+// Measured as polls GRANTED to already-throttled callers, because that is the
+// budget leak itself. Both policies earn the same natural refill from the
+// clock advancing; anything beyond it came from an eviction.
+func TestPollLimiterDoesNotHandBackBudgetWhenTheMapFills(t *testing.T) {
+	l := &pollLimiter{buckets: make(map[string]*pollBucket)}
+	base := time.Now()
+
+	const callers = 50
+	key := func(c int) string { return "caller" + string(rune(c)) + "\x00s" }
+
+	for c := range callers {
+		for range int(pollBurst) {
+			l.allow(key(c), base)
+		}
+		if l.allow(key(c), base) {
+			t.Fatalf("precondition: caller %d should be out of tokens", c)
+		}
+	}
+
+	// The callers keep retrying throughout, which is what a caller waiting on
+	// a human does. Each retry is refused but keeps the bucket active.
+	const floodSize = pollBucketCap + 2000
+	granted := 0
+	for i := range floodSize {
+		at := base.Add(time.Duration(i) * time.Millisecond)
+		l.allow("flood"+string(rune(i))+"\x00s", at)
+		if i%50 == 0 {
+			for c := range callers {
+				if l.allow(key(c), at) {
+					granted++
+				}
+			}
+		}
+	}
+
+	// What the clock alone owes them: the flood spans floodSize ms, refilling
+	// at pollRatePerSec, capped at a full burst.
+	refill := float64(floodSize) / 1000 * pollRatePerSec
+	if refill > pollBurst {
+		refill = pollBurst
+	}
+	natural := int(refill) * callers
+	// Slack for rounding across 50 independent buckets. A global reset costs
+	// a full burst per caller per clear, which is far outside this.
+	limit := natural + callers
+	if granted > limit {
+		t.Errorf("throttled callers were granted %d polls; the clock owes them about %d "+
+			"(limit %d) — the rest was budget handed back by eviction",
+			granted, natural, limit)
+	}
+}
+
+// Bounded, and bounded by evicting rather than by refusing to serve: a new
+// credential still works when the map is at the cap.
+func TestPollLimiterStaysBoundedAndStillServesNewCallers(t *testing.T) {
+	l := &pollLimiter{buckets: make(map[string]*pollBucket)}
+	now := time.Now()
+
+	for i := range pollBucketCap + 200 {
+		if !l.allow("k"+string(rune(i))+"\x00s", now) {
+			t.Fatalf("a new credential was refused at request %d; eviction should have made room", i)
+		}
+	}
+	if len(l.buckets) > pollBucketCap {
+		t.Fatalf("buckets = %d, cap is %d", len(l.buckets), pollBucketCap)
+	}
+}
+
+// An idle bucket has refilled to full, so dropping it loses nothing. The sweep
+// is what keeps the map from reaching the cap on ordinary churn.
+func TestPollLimiterSweepsIdleBuckets(t *testing.T) {
+	l := &pollLimiter{buckets: make(map[string]*pollBucket)}
+	now := time.Now()
+
+	for i := range pollBucketCap {
+		l.allow("old"+string(rune(i))+"\x00s", now)
+	}
+	// Long enough that every bucket above is idle, and past the sweep
+	// throttle so the pass actually runs.
+	later := now.Add(pollBucketIdle * 2)
+	l.allow("fresh\x00s", later)
+
+	if len(l.buckets) > 2 {
+		t.Errorf("buckets = %d; the idle ones were not swept", len(l.buckets))
+	}
+}
+
+// The sweep is throttled, so the work done per allocation stays bounded when
+// the map sits at the cap. Eviction is what makes room in between.
+func TestPollLimiterSweepIsThrottled(t *testing.T) {
+	l := &pollLimiter{buckets: make(map[string]*pollBucket)}
+	now := time.Now()
+
+	l.allow("a\x00s", now)
+	first := l.lastSweep
+
+	// A second allocation moments later must not trigger another pass.
+	for i := range pollBucketCap + 10 {
+		l.allow("b"+string(rune(i))+"\x00s", now.Add(time.Second))
+	}
+	if !l.lastSweep.Equal(first) && l.lastSweep.Sub(first) < pollBucketIdle {
+		t.Errorf("swept again after %v, throttle is %v", l.lastSweep.Sub(first), pollBucketIdle)
+	}
+	if len(l.buckets) > pollBucketCap {
+		t.Fatalf("buckets = %d, cap is %d — eviction did not cover the throttled sweep",
+			len(l.buckets), pollBucketCap)
+	}
+}
+
+// The limiter is shared across every in-flight poll on the replica.
+func TestPollLimiterIsRaceFree(t *testing.T) {
+	l := &pollLimiter{buckets: make(map[string]*pollBucket)}
+	now := time.Now()
+
+	var wg sync.WaitGroup
+	for w := range 16 {
+		wg.Add(1)
+		go func(w int) {
+			defer wg.Done()
+			for i := range 500 {
+				// A mix of repeat callers and fresh keys, so allocation,
+				// eviction and the sweep all run under contention.
+				l.allow("w"+string(rune(w))+"\x00"+string(rune(i%64)), now.Add(time.Duration(i)*time.Second))
+			}
+		}(w)
+	}
+	wg.Wait()
+
 	if len(l.buckets) > pollBucketCap {
 		t.Fatalf("buckets = %d, cap is %d", len(l.buckets), pollBucketCap)
 	}

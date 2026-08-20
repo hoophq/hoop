@@ -58,10 +58,17 @@ func newFakeGateway(t *testing.T) *fakeGateway {
 			_ = json.NewEncoder(w).Encode(map[string]string{"message": "no approval"})
 		case createPath:
 			g.creates.Add(1)
+			// A distinct review per request, keyed on the marker, as the real
+			// create path does. Unmarked requests keep the plain ids so the
+			// assertions elsewhere in this file read unchanged.
+			id, sid := "rev-pending", "s2"
+			if m := body["marker"]; m != "" {
+				id, sid = "rev-"+m, "s-"+m
+			}
 			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(Ticket{
-				ReviewID: "rev-pending", SessionID: "s2", Status: "PENDING",
-				URL: "https://gw/sessions/s2",
+				ReviewID: id, SessionID: sid, Status: "PENDING",
+				URL: "https://gw/sessions/" + sid,
 			})
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -390,7 +397,7 @@ func TestPendingIsCachedButApprovedIsNot(t *testing.T) {
 
 	// An approval landing later must still be honoured once the negative
 	// entry expires — the cache holds refusals only, never approvals.
-	rg.forgetPending("appdb", identify(stmt, "").Hash)
+	rg.forgetPending("appdb", identify(stmt, "").Hash, identify(stmt, "").Marker)
 	g.approved.Store(identify(stmt, "").Hash)
 	ec := newCtx()
 	rg.Claim().EvaluateWith(stmt, ec)
@@ -554,5 +561,66 @@ func TestRequireMarkerRefusalIsProtocolAppropriate(t *testing.T) {
 	if v := rg.Decide().EvaluateWith(httpStmt, gatedCtx()); v.Annotations[AnnotationStatus] != StatusPending {
 		t.Errorf("a marked HTTP request was refused: status=%q reason=%s",
 			v.Annotations[AnnotationStatus], v.Message)
+	}
+}
+
+// Two tasks running byte-identical SQL are two requests, each needing its own
+// human — which is why the gateway dedupes on the marker rather than on the
+// statement. The sidecar's negative cache must not collapse them back
+// together: a hash-only key handed the second task the first one's ticket,
+// pointed it at a review it never filed, and filed none of its own until the
+// entry expired.
+func TestPendingCacheDoesNotCollapseDistinctMarkers(t *testing.T) {
+	g := newFakeGateway(t)
+	rg := g.gate(t, Options{PendingTTL: time.Minute})
+
+	const sql = "DELETE FROM users WHERE id = 7"
+	first := rg.Decide().EvaluateWith(del("-- x-hoop-correlation-id=task-3\n"+sql), gatedCtx())
+	second := rg.Decide().EvaluateWith(del("-- x-hoop-correlation-id=task-9\n"+sql), gatedCtx())
+
+	if n := g.creates.Load(); n != 2 {
+		t.Fatalf("creates = %d, want 2 — the second task's review was never filed", n)
+	}
+	if !first.Denied || !second.Denied {
+		t.Fatal("a gated statement was forwarded")
+	}
+
+	firstID := first.Annotations[AnnotationID]
+	secondID := second.Annotations[AnnotationID]
+	if firstID == secondID {
+		t.Errorf("both tasks were given review %q; the second was handed the first's ticket", firstID)
+	}
+	if secondID != "rev-task-9" {
+		t.Errorf("second task got review %q, want its own (rev-task-9)", secondID)
+	}
+	if !strings.Contains(second.Message, "s-task-9") {
+		t.Errorf("the second task was pointed at the wrong review:\n  %s", second.Message)
+	}
+}
+
+// The cache still has to do its job. A genuine retry — the same marker, the
+// same statement — is what it exists to absorb, and an unmarked caller has to
+// keep collapsing onto one entry: with no marker the gateway files a review
+// per attempt, so this cache is all that stands between a hot retry loop and a
+// queue full of duplicates.
+func TestPendingCacheStillAbsorbsRetries(t *testing.T) {
+	for _, tc := range []struct{ name, prefix string }{
+		{"same marker", "-- x-hoop-correlation-id=task-3\n"},
+		{"no marker", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g := newFakeGateway(t)
+			rg := g.gate(t, Options{PendingTTL: time.Minute})
+			stmt := del(tc.prefix + "DELETE FROM users WHERE id = 7")
+
+			for range 5 {
+				if v := rg.Decide().EvaluateWith(stmt, gatedCtx()); !v.Denied {
+					t.Fatal("a gated statement was forwarded")
+				}
+			}
+			if n := g.creates.Load(); n != 1 {
+				t.Errorf("creates = %d, want 1 — the cache stopped absorbing retries", n)
+			}
+		})
 	}
 }

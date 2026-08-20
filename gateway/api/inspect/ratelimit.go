@@ -48,6 +48,11 @@ const (
 type pollLimiter struct {
 	mu      sync.Mutex
 	buckets map[string]*pollBucket
+
+	// lastSweep throttles the full idle pass. Without it, a map held at the
+	// cap would walk every entry on every new key, under this mutex, which
+	// is exactly the workload a stream of distinct credentials produces.
+	lastSweep time.Time
 }
 
 type pollBucket struct {
@@ -67,6 +72,12 @@ func (l *pollLimiter) allow(key string, now time.Time) bool {
 		if len(l.buckets) >= pollBucketCap {
 			l.sweepLocked(now)
 		}
+		// Sweeping frees only buckets that are genuinely idle. If the map is
+		// still full every entry is an active caller, so one has to go —
+		// exactly one, chosen among a bounded sample.
+		if len(l.buckets) >= pollBucketCap {
+			l.evictOneLocked()
+		}
 		l.buckets[key] = &pollBucket{tokens: pollBurst - 1, last: now}
 		return true
 	}
@@ -83,20 +94,62 @@ func (l *pollLimiter) allow(key string, now time.Time) bool {
 	return true
 }
 
-// sweepLocked drops idle buckets, and clears the map when that frees nothing.
+// sweepLocked drops buckets that have been idle long enough to have refilled.
 //
-// Clearing is safe here in a way it would not be for a security control:
-// every bucket lost is a caller handed a full burst, which is a rate-limit
-// reset rather than a bypass, and reaching the cap at all means something
-// pathological is already happening.
+// Dropping those costs nothing: a bucket idle for pollBucketIdle is already
+// back at pollBurst, so re-creating it produces the same state.
+//
+// It does NOT clear the map when that frees nothing. Clearing would hand every
+// active caller a full burst because one unrelated caller happened to arrive
+// at the cap — a global rate-limit reset triggered by whoever showed up, and a
+// lever an abuser cycling credentials could pull deliberately. Rate-limit
+// state for an active credential survives anything another caller does.
+//
+// Throttled to one pass per pollBucketIdle. A pass is O(len(buckets)) under
+// the mutex, and running it on every new key while the map sits at the cap
+// would make the limiter the bottleneck instead of the thing it protects.
 func (l *pollLimiter) sweepLocked(now time.Time) {
+	if now.Sub(l.lastSweep) < pollBucketIdle {
+		return
+	}
+	l.lastSweep = now
 	for k, b := range l.buckets {
 		if now.Sub(b.last) > pollBucketIdle {
 			delete(l.buckets, k)
 		}
 	}
-	if len(l.buckets) >= pollBucketCap {
-		clear(l.buckets)
+}
+
+// evictOneLocked frees exactly one slot, dropping the least recently used
+// bucket among a bounded random sample.
+//
+// One victim rather than all of them, and the cheapest possible one: a bucket
+// is chosen by how long it has been idle, and idle time is what refills it, so
+// the bucket evicted is the one closest to being full. What that caller loses
+// is the fraction of a burst it had not yet earned back.
+//
+// The sample is bounded, so the work per allocation is constant no matter how
+// large the map is. Go randomizes map iteration order, which is what makes the
+// first few entries a sample rather than a scan of the same corner every time.
+// This is approximate LRU on purpose — an exact one needs a heap or an
+// intrusive list to maintain on the hot path, to pick a marginally better
+// victim from a set that is entirely active callers anyway.
+func (l *pollLimiter) evictOneLocked() {
+	const sample = 8
+
+	var victim string
+	var oldest time.Time
+	seen := 0
+	for k, b := range l.buckets {
+		if seen == 0 || b.last.Before(oldest) {
+			victim, oldest = k, b.last
+		}
+		if seen++; seen == sample {
+			break
+		}
+	}
+	if seen > 0 {
+		delete(l.buckets, victim)
 	}
 }
 

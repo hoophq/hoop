@@ -306,7 +306,7 @@ func (g *Gate) claim(stmt hoopinspect.Statement, ec *policy.EvalContext) policy.
 		// a round trip with a known answer.
 		return policy.Verdict{}
 	}
-	if _, held := g.cachedPending(connection, id.Hash); held {
+	if _, held := g.cachedPending(connection, id.Hash, id.Marker); held {
 		// A refusal filed moments ago. The answer cannot have become
 		// APPROVED and been missed in any way that matters: the worst case
 		// is that an approval landing inside the TTL takes effect up to
@@ -336,7 +336,7 @@ func (g *Gate) claim(stmt hoopinspect.Statement, ec *policy.EvalContext) policy.
 	// false entry vetoes a run the producer's own configuration would have
 	// made — so no new channel is needed to say it.
 	g.approvals.Add(1)
-	g.forgetPending(connection, id.Hash)
+	g.forgetPending(connection, id.Hash, id.Marker)
 	if ec.Requested == nil {
 		ec.Requested = make(map[string]bool, 1)
 	}
@@ -385,7 +385,7 @@ func (g *Gate) decide(stmt hoopinspect.Statement, ec *policy.EvalContext) policy
 			markerHowTo(stmt.Protocol))
 	}
 
-	if ticket, held := g.cachedPending(connection, id.Hash); held {
+	if ticket, held := g.cachedPending(connection, id.Hash, id.Marker); held {
 		return g.pendingVerdict(ticket, id.Hash)
 	}
 
@@ -416,7 +416,7 @@ func (g *Gate) decide(stmt hoopinspect.Statement, ec *policy.EvalContext) policy
 			},
 		}
 	}
-	g.rememberPending(connection, id.Hash, *ticket)
+	g.rememberPending(connection, id.Hash, id.Marker, *ticket)
 	return g.pendingVerdict(*ticket, id.Hash)
 }
 
@@ -525,22 +525,38 @@ func markerOf(ec *policy.EvalContext) string {
 	return v
 }
 
-func pendingKey(connection, hash string) string { return connection + "\x00" + hash }
+// pendingKey identifies a cached refusal.
+//
+// The MARKER is part of the key, not just the hash. The marker is request
+// identity: two tasks running byte-identical SQL are two requests and each
+// needs its own human, which is the whole reason the gateway's create path
+// dedupes on the marker rather than on the statement. A hash-only key here
+// would collapse them back together on this side of the wire — the second
+// task would be handed the first one's ticket, be pointed at a review it did
+// not file, and have none of its own filed until the entry expired.
+//
+// A caller that sends NO marker still collapses onto one entry, and that is
+// correct rather than a leftover: with no marker the gateway files a new
+// review per attempt, so this cache is the only thing standing between a hot
+// retry loop and a queue full of duplicates.
+func pendingKey(connection, hash, marker string) string {
+	return connection + "\x00" + hash + "\x00" + marker
+}
 
-func (g *Gate) cachedPending(connection, hash string) (Ticket, bool) {
+func (g *Gate) cachedPending(connection, hash, marker string) (Ticket, bool) {
 	if g.pendingTTL <= 0 {
 		return Ticket{}, false
 	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	e, ok := g.pending[pendingKey(connection, hash)]
+	e, ok := g.pending[pendingKey(connection, hash, marker)]
 	if !ok || time.Now().After(e.expires) {
 		return Ticket{}, false
 	}
 	return e.ticket, true
 }
 
-func (g *Gate) rememberPending(connection, hash string, t Ticket) {
+func (g *Gate) rememberPending(connection, hash, marker string, t Ticket) {
 	if g.pendingTTL <= 0 {
 		return
 	}
@@ -550,19 +566,26 @@ func (g *Gate) rememberPending(connection, hash string, t Ticket) {
 	if len(g.pending) >= maxPendingEntries {
 		g.evictLocked(now)
 	}
-	g.pending[pendingKey(connection, hash)] = pendingEntry{
+	g.pending[pendingKey(connection, hash, marker)] = pendingEntry{
 		ticket:  t,
 		expires: now.Add(g.pendingTTL),
 	}
 }
 
-func (g *Gate) forgetPending(connection, hash string) {
+// forgetPending drops the cached refusal for THIS request only.
+//
+// Marker-scoped deliberately. A claim consumes one approval for the statement
+// — authorization is by hash, so it cannot say which request the approval
+// belonged to — but the other markers' reviews are still genuinely pending on
+// their own merits, and their cached refusals are still accurate. Clearing
+// them would only turn correct refusals into gateway round trips.
+func (g *Gate) forgetPending(connection, hash, marker string) {
 	if g.pendingTTL <= 0 {
 		return
 	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	delete(g.pending, pendingKey(connection, hash))
+	delete(g.pending, pendingKey(connection, hash, marker))
 }
 
 // evictLocked drops expired entries, and if that frees nothing, clears the map.
