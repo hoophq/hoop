@@ -3949,7 +3949,7 @@ const docTemplate = `{
                 }
             },
             "post": {
-                "description": "Find or create a review for one statement. When the request carries a marker and this sandbox already has a PENDING review for the same connection and marker, that review is returned with 200 instead of a duplicate being filed. Otherwise a session and a one-time review are created and 201 is returned.",
+                "description": "Find or create a review for one statement. When the request carries a marker and this sandbox already has a PENDING review for the same connection and marker, that review is returned with 200 instead of a duplicate being filed. A unique index enforces that, so two concurrent requests under one marker also collapse to one review and the loser receives it with 200. Otherwise a session and a one-time review are created and 201 is returned.",
                 "consumes": [
                     "application/json"
                 ],
@@ -3998,6 +3998,12 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }

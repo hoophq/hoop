@@ -45,10 +45,35 @@ CREATE INDEX IF NOT EXISTS idx_reviews_claim
     ON reviews (org_id, owner_id, connection_id, statement_hash, status, created_at)
     WHERE statement_hash IS NOT NULL;
 
--- Serves the find-or-create dedupe: "is there already a PENDING review this
--- sandbox filed for this connection under this marker".
-CREATE INDEX IF NOT EXISTS idx_reviews_request_marker
-    ON reviews (org_id, owner_id, connection_id, request_marker, status)
-    WHERE request_marker IS NOT NULL;
+-- Serves the find-or-create dedupe -- "is there already a PENDING review this
+-- sandbox filed for this connection under this marker" -- and ENFORCES it.
+--
+-- UNIQUE, and that is the point. The dedupe is a lookup followed by two
+-- separate inserting transactions, so two concurrent retries under one marker
+-- can both find nothing and both file a review. Nothing in Go can prevent
+-- that: the gateway runs multiple replicas, so a mutex or a singleflight
+-- serializes one process and not the request. The database is the only thing
+-- both replicas share, so it is the only thing that can referee. The loser
+-- gets a unique violation and re-reads the winner's row.
+--
+-- It matters because each approval authorizes one execution. Two duplicates
+-- approved by a reviewer who thought they were one request authorize two runs
+-- of the statement.
+--
+-- Partial on status = 'PENDING' so it constrains exactly what the dedupe
+-- claims and nothing more. An answered review leaves the index, which is the
+-- documented behaviour: a rejected or revoked answer does not suppress a later
+-- request under the same marker. Rows with no marker are excluded, so no other
+-- review path is affected -- every review created by any other caller has
+-- request_marker NULL.
+--
+-- This replaces the non-unique index it grew out of. That one carried status
+-- in the key and covered every status, and nothing queries reviews by marker
+-- across statuses; keeping both would pay two index writes per review to serve
+-- one query. A happy consequence: with at most one PENDING row per marker, the
+-- lookup's ORDER BY ... LIMIT 1 can no longer be picking between siblings.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_reviews_request_marker_pending
+    ON reviews (org_id, owner_id, connection_id, request_marker)
+    WHERE request_marker IS NOT NULL AND status = 'PENDING';
 
 COMMIT;

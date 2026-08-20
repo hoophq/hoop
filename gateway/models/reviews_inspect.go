@@ -87,6 +87,14 @@ func ClaimInspectReview(db *gorm.DB, orgID, ownerID, connectionID, statementHash
 // create. A caller with an empty marker must not call this: no marker means
 // every attempt is a new request, which is the safe default and the reason
 // require_marker exists.
+//
+// This lookup ALONE does not make the dedupe hold. It is a read, so two
+// concurrent callers can both miss and both go on to insert; the unique
+// partial index uq_reviews_request_marker_pending is what makes exactly one of
+// them win, and the loser re-reads through here. That index also means there
+// is now at most one row to find, so the ORDER BY below breaks no ties — it is
+// kept because the index constrains only PENDING rows and this query's
+// correctness should not depend on that predicate staying in place.
 func GetPendingInspectReviewByMarker(db *gorm.DB, orgID, ownerID, connectionID, marker string) (*InspectReview, error) {
 	var out InspectReview
 	err := db.Raw(`

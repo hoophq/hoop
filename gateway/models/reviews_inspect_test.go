@@ -407,3 +407,100 @@ func TestDeleteSessionWithInputIsOrgScoped(t *testing.T) {
 		t.Fatal("another org deleted this session")
 	}
 }
+
+// insertMarkedReview inserts a review directly, returning the error so a
+// constraint violation is observable rather than fatal.
+func insertMarkedReview(owner, connID, marker, status string) error {
+	var markerArg any
+	if marker != "" {
+		markerArg = marker
+	}
+	return models.DB.Exec(`
+		INSERT INTO private.reviews
+			(id, org_id, session_id, connection_id, connection_name, type, status,
+			 owner_id, owner_email, statement_hash, request_marker, created_at)
+		VALUES (?, ?, ?, ?, 'appdb', 'onetime', ?::private.enum_reviews_status,
+			 ?, ?, ?, ?, NOW())`,
+		uuid.NewString(), testOrgID, uuid.NewString(), connID, status,
+		owner, owner+"@sandbox", inspectHash, markerArg).Error
+}
+
+// The dedupe is a read followed by two separate inserting transactions, so two
+// concurrent retries under one marker can both find nothing and both file.
+// Nothing in Go can stop that — the gateway runs multiple replicas — so the
+// database has to be the referee.
+//
+// It matters because each approval authorizes one execution: two duplicates
+// approved by a reviewer who thought they were one request authorize two runs.
+func TestOnePendingReviewPerMarker(t *testing.T) {
+	startTestDB(t)
+
+	if err := insertMarkedReview(inspectOwner, inspectConnA, "task-1", "PENDING"); err != nil {
+		t.Fatalf("first insert: %v", err)
+	}
+	err := insertMarkedReview(inspectOwner, inspectConnA, "task-1", "PENDING")
+	if err == nil {
+		t.Fatal("a second PENDING review under the same marker was accepted; " +
+			"concurrent retries can still file duplicates")
+	}
+	if !errors.Is(err, gorm.ErrDuplicatedKey) {
+		t.Fatalf("err = %v, want gorm.ErrDuplicatedKey — the handler branches on it", err)
+	}
+}
+
+// The constraint has to bind exactly what the dedupe claims and nothing more.
+func TestPendingMarkerUniquenessIsNarrow(t *testing.T) {
+	startTestDB(t)
+
+	t.Run("a different marker is its own request", func(t *testing.T) {
+		if err := insertMarkedReview(inspectOwner, inspectConnA, "task-a", "PENDING"); err != nil {
+			t.Fatalf("first: %v", err)
+		}
+		if err := insertMarkedReview(inspectOwner, inspectConnA, "task-b", "PENDING"); err != nil {
+			t.Errorf("two markers collided: %v", err)
+		}
+	})
+
+	t.Run("a different connection is its own scope", func(t *testing.T) {
+		if err := insertMarkedReview(inspectOwner, inspectConnA, "task-c", "PENDING"); err != nil {
+			t.Fatalf("first: %v", err)
+		}
+		if err := insertMarkedReview(inspectOwner, inspectConnB, "task-c", "PENDING"); err != nil {
+			t.Errorf("an approval scope leaked across connections: %v", err)
+		}
+	})
+
+	t.Run("a different sandbox is its own scope", func(t *testing.T) {
+		if err := insertMarkedReview("sandbox-x", inspectConnA, "task-d", "PENDING"); err != nil {
+			t.Fatalf("first: %v", err)
+		}
+		if err := insertMarkedReview("sandbox-y", inspectConnA, "task-d", "PENDING"); err != nil {
+			t.Errorf("two sandboxes collided on one marker: %v", err)
+		}
+	})
+
+	// An answered review leaves the partial index, which is the documented
+	// behaviour: a rejected or revoked answer must not suppress a later
+	// request under the same marker.
+	for _, answered := range []string{"APPROVED", "REJECTED", "EXECUTED"} {
+		t.Run("an "+answered+" review does not block the next request", func(t *testing.T) {
+			marker := "task-" + answered
+			if err := insertMarkedReview(inspectOwner, inspectConnA, marker, answered); err != nil {
+				t.Fatalf("seed %s: %v", answered, err)
+			}
+			if err := insertMarkedReview(inspectOwner, inspectConnA, marker, "PENDING"); err != nil {
+				t.Errorf("an answered review suppressed a later request: %v", err)
+			}
+		})
+	}
+
+	// Every review created by any other path has a NULL marker, and there are
+	// many of them. The index must not constrain those at all.
+	t.Run("unmarked reviews are unconstrained", func(t *testing.T) {
+		for i := range 3 {
+			if err := insertMarkedReview(inspectOwner, inspectConnA, "", "PENDING"); err != nil {
+				t.Fatalf("unmarked review %d was rejected: %v", i+1, err)
+			}
+		}
+	})
+}

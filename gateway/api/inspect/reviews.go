@@ -55,6 +55,7 @@ import (
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
+	"gorm.io/gorm"
 )
 
 // maxStatementBytes bounds the statement text a review can carry.
@@ -120,13 +121,13 @@ func Claim(c *gin.Context) {
 // Create
 //
 //	@Summary		File an inspect review
-//	@Description	Find or create a review for one statement. When the request carries a marker and this sandbox already has a PENDING review for the same connection and marker, that review is returned with 200 instead of a duplicate being filed. Otherwise a session and a one-time review are created and 201 is returned.
+//	@Description	Find or create a review for one statement. When the request carries a marker and this sandbox already has a PENDING review for the same connection and marker, that review is returned with 200 instead of a duplicate being filed. A unique index enforces that, so two concurrent requests under one marker also collapse to one review and the loser receives it with 200. Otherwise a session and a one-time review are created and 201 is returned.
 //	@Tags				Inspect
 //	@Accept			json
 //	@Produce		json
 //	@Param			request					body		openapi.InspectReviewRequest	true	"The request body resource"
 //	@Success		200,201					{object}	openapi.InspectReview
-//	@Failure		400,401,404,422,500		{object}	openapi.HTTPError
+//	@Failure		400,401,404,409,422,500	{object}	openapi.HTTPError
 //	@Router			/inspect/reviews [post]
 func Create(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -263,19 +264,52 @@ func Create(c *gin.Context) {
 			RequestMarker: req.Marker,
 		})
 	if err != nil {
-		log.With("org", ctx.OrgID, "sid", sessionID).Errorf("failed creating inspect review: %v", err)
 		// The session exists only to anchor this review. With no review to
 		// anchor it is an open row nobody will ever close, so it is removed
-		// rather than left behind.
+		// rather than left behind — on the losing-race path below just as
+		// much as on a genuine failure.
 		//
-		// Best effort: the failure above is usually the database being
+		// Best effort: a genuine failure here is usually the database being
 		// unhealthy, in which case this fails too. Logged and swallowed,
 		// because the caller's answer is the same either way and a cleanup
-		// failure must not turn one 500 into a different one.
-		if delErr := models.DeleteSessionWithInput(ctx.OrgID, sessionID); delErr != nil {
-			log.With("org", ctx.OrgID, "sid", sessionID).
-				Warnf("failed removing the session of a review that was never created: %v", delErr)
+		// failure must not turn one response into a different one.
+		cleanup := func() {
+			if delErr := models.DeleteSessionWithInput(ctx.OrgID, sessionID); delErr != nil {
+				log.With("org", ctx.OrgID, "sid", sessionID).
+					Warnf("failed removing the session of a review that was never created: %v", delErr)
+			}
 		}
+
+		// Lost the dedupe race. Two concurrent retries under one marker can
+		// both find no PENDING review and both try to file one; the unique
+		// partial index on (org, owner, connection, request_marker) lets
+		// exactly one win. This is the loser, and the right answer is the
+		// winner's review — the same 200 a sequential retry would have got.
+		//
+		// Not an error path in any sense the caller cares about: the caller
+		// asked for a review of this request and there is one.
+		if errors.Is(err, gorm.ErrDuplicatedKey) {
+			cleanup()
+			existing, lookupErr := services.FindPendingInspectReviewByMarker(
+				ctx.OrgID, ctx.UserID, conn.ID, req.Marker)
+			if lookupErr == nil {
+				log.With("org", ctx.OrgID, "conn", conn.Name, "marker", req.Marker,
+					"review-id", existing.ID).Infof("lost the inspect review dedupe race; returning the winner")
+				c.JSON(http.StatusOK, toOpenAPI(existing))
+				return
+			}
+			// The winner was answered and left the partial index between the
+			// insert and this read. Rare, and the caller should just retry:
+			// the next attempt files cleanly.
+			log.With("org", ctx.OrgID, "conn", conn.Name, "marker", req.Marker).
+				Warnf("lost the inspect review dedupe race and the winner was gone: %v", lookupErr)
+			c.JSON(http.StatusConflict, gin.H{
+				"message": "a review for this marker was filed concurrently and has already been answered; retry"})
+			return
+		}
+
+		log.With("org", ctx.OrgID, "sid", sessionID).Errorf("failed creating inspect review: %v", err)
+		cleanup()
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "failed creating review"})
 		return
 	}
