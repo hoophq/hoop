@@ -1,34 +1,37 @@
-# hoophq/hoopagent — the hoop agent image, in two slim flavours.
+# hoophq/hoopagent — the hoop agent image, in two slim flavours, each also
+# published with the alcatraz NER model baked in.
 #
-# One Dockerfile, two final stages selected with `docker build --target`.
-# They share the `unpack` stage so the release-tarball handling exists in
-# exactly one place:
+# One Dockerfile, four final stages selected with `docker build --target`. They
+# share the `unpack` stage, so release-tarball handling exists in exactly one
+# place, and the `models` stage, so one model download serves both -alcatraz
+# targets:
 #
-#   --target minimal     -> hoophq/hoopagent:<version>-minimal
-#   --target distroless  -> hoophq/hoopagent:<version>-distroless
+#   --target minimal              -> hoophq/hoopagent:<version>-minimal
+#   --target distroless           -> hoophq/hoopagent:<version>-distroless
+#   --target minimal-alcatraz     -> hoophq/hoopagent:<version>-minimal-alcatraz
+#   --target distroless-alcatraz  -> hoophq/hoopagent:<version>-distroless-alcatraz
 #
 # There is deliberately no unsuffixed tag and no `:latest` — every deployment
-# names the flavour it wants explicitly. `minimal` is declared LAST so a bare
-# `docker build -f Dockerfile.agent` with no --target produces the more
-# conservative of the two rather than the more restrictive one.
-#
-# Both flavours are also published with the alcatraz NER model baked in, as
-# :<version>-minimal-alcatraz and :<version>-distroless-alcatraz. Those are
-# built by Dockerfile.agent-alcatraz FROM the tags above — it adds the weights
-# and one env var, and nothing about them belongs in this file.
+# names the flavour it wants explicitly, and CI always passes --target. A bare
+# `docker build -f Dockerfile.agent` with no --target builds the stage declared
+# LAST, `minimal-alcatraz`: it keeps a shell and is a superset of the other
+# three, so an accidental default is never the restrictive one.
 #
 # ---------------------------------------------------------------------------
 # LICENSE BRIGHT LINE — read before adding a stage
 #
 # hoophq/hoopagent is a clean-only image repository: no layer published under it
 # may carry an AGPL- or SSPL-licensed component, so that the repository has no
-# such component anywhere in its history. Both flavours here are built from a
-# stock Ubuntu or distroless rootfs plus the `hoop` binary, and carry none.
+# such component anywhere in its history. Every flavour here is built from a
+# stock Ubuntu or distroless rootfs plus the `hoop` binary, and carries none.
+# The model weights the -alcatraz stages add are served by hoop's own mirror and
+# carry no such component either.
 #
-# This is why neither flavour is built FROM hoophq/agent-tools. That base bundles
+# This is why no flavour is built FROM hoophq/agent-tools. That base bundles
 # third-party database clients including an SSPL-licensed MongoDB shell, and
 # deriving from it would put those layers into this repository permanently. Agent
-# deployments that need the bundled tooling or RDP use hoophq/hoopdev instead.
+# deployments that need the bundled tooling or RDP use hoophq/hoopdev instead —
+# with the model mounted from a volume, since no hoopdev flavour bakes it in.
 #
 # Do NOT add a stage here that derives from agent-tools, or that installs
 # database clients, without first checking the license policy in
@@ -52,23 +55,52 @@
 # debuggability matters, distroless when the smallest possible surface does.
 #
 # ---------------------------------------------------------------------------
-# Invocation contract — IDENTICAL across both flavours, so a deployment can
+# The -alcatraz flavours
+#
+# DLP_PROVIDER=alcatraz serves PERSON, LOCATION and NRP from an ONNX model that
+# runs in-process on the agent. The NER backend is Offline: it never fetches at
+# runtime, so the model has to be on disk already, and these stages are that
+# disk. Each adds ~250MB of weights and one env var to the flavour it derives
+# from — binary, user, CMD and invocation contract are untouched, so a
+# deployment moves between `-minimal` and `-minimal-alcatraz` by editing the tag.
+#
+# Nothing here installs or links alcatraz: that dependency lives in libhoop's
+# go.mod. The manifest names the files and their layout, so no model id,
+# revision, digest or alcatraz version appears in this repository.
+#
+# Deriving in-graph rather than FROM a published tag is what makes the four
+# builds one job: the -alcatraz tags share their base layers with the plain tags
+# byte for byte, the model is fetched once for both, and no build waits on a
+# registry that has not caught up with the push before it.
+#
+# ---------------------------------------------------------------------------
+# Invocation contract — IDENTICAL across all four flavours, so a deployment can
 # switch tags without touching its manifest:
 #
 #   - no ENTRYPOINT; the command is `CMD ["hoop", "start", "agent"]` resolved
 #     through /app on PATH.
 #   - override with `command: ["hoop", "start", "agent", ...]`, never with a
-#     bare `args:` — the latter replaces CMD entirely on both flavours.
+#     bare `args:` — the latter replaces CMD entirely on every flavour.
 #
 # ---------------------------------------------------------------------------
 # Build (from the repo root, with release tarballs in dist/binaries/):
 #   GOOS=linux GOARCH=arm64 make build-go build-tar-files
 #   docker build -f Dockerfile.agent --target minimal -t hoophq/hoopagent:dev-minimal .
+#   docker build -f Dockerfile.agent --target minimal-alcatraz -t hoophq/hoopagent:dev-minimal-alcatraz .
 
 # Ubuntu 24.04 LTS (noble). Pinned deliberately, same policy as ./Dockerfile,
 # so builds are reproducible; bump it in a dedicated PR.
 ARG UBUNTU_IMAGE=ubuntu:noble-20260730.1
 ARG DISTROLESS_IMAGE=gcr.io/distroless/static-debian12:nonroot
+ARG CURL_IMAGE=curlimages/curl:8.11.1
+
+# Hoop's mirror of the model files. Public-read, so the -alcatraz targets build
+# outside CI too. An ARG so an air-gapped build can swap in its own.
+#
+# A moving alias, not a revision: rebuilding an old tag may pick up a newer
+# model, and model/binary skew is caught when the agent loads. In exchange
+# nothing here can drift out of sync with alcatraz's pin table.
+ARG ALCATRAZ_MODEL_ORIGIN=https://d3pullut164aif.cloudfront.net/current
 
 # --- Stage: unpack the release tarball ---------------------------------------
 # A separate stage so the ~200MB of release tarballs in dist/binaries/ never
@@ -93,6 +125,34 @@ RUN mkdir -p /out && \
     chown root:root /out/hoop && \
     chmod 755 /out/hoop
 
+# --- Stage: fetch the alcatraz model -----------------------------------------
+# BUILDPLATFORM: the weights are architecture-independent, so a multiarch build
+# fetches them once instead of twice under QEMU, and the registry stores one
+# layer. Only the -alcatraz targets depend on this stage; `--target minimal`
+# never runs it.
+FROM --platform=${BUILDPLATFORM} ${CURL_IMAGE} AS models
+ARG ALCATRAZ_MODEL_ORIGIN
+# curlimages/curl cannot write under /opt. Throwaway stage only.
+USER root
+WORKDIR /opt/alcatraz/models
+
+# -f: an origin answering 404 must fail the build, not save the error page as a
+# model file. --create-dirs: the manifest names a subdirectory that does not
+# exist yet. a+rX: the runtime user is unprivileged and has to traverse the
+# directories.
+#
+# A digest mismatch is not transient. The one benign cause is a build landing
+# in the origin's 300s cache window just after the model changed — retry it,
+# never soften this step.
+RUN set -eu; \
+    curl -fsSL "${ALCATRAZ_MODEL_ORIGIN}/checksums.txt" -o checksums.txt; \
+    while read -r _ path; do \
+      [ -n "$path" ] || continue; \
+      curl -fsSL "${ALCATRAZ_MODEL_ORIGIN}/${path}" --create-dirs -o "$path"; \
+    done < checksums.txt; \
+    sha256sum -c checksums.txt; \
+    chmod -R a+rX /opt/alcatraz/models
+
 # --- Flavour: distroless -----------------------------------------------------
 # The static rootfs already ships the CA bundle the agent needs for grpcs://,
 # so nothing is installed here. uid 10001 is set numerically: distroless has no
@@ -105,6 +165,14 @@ USER 10001:10001
 # No init shim: the agent is PID 1 and handles SIGINT/SIGTERM itself
 # (agent.handleOsInterrupt). It forks no children in this flavour.
 CMD ["hoop", "start", "agent"]
+
+# --- Flavour: distroless + alcatraz model ------------------------------------
+# COPY lands root-owned and a+rX from the models stage, so uid 10001 can read it
+# without a USER dance. The models directory is the parent holding one
+# subdirectory per model id, not the model's own directory.
+FROM distroless AS distroless-alcatraz
+COPY --from=models /opt/alcatraz/models /opt/alcatraz/models
+ENV ALCATRAZ_NER_MODEL_PATH=/opt/alcatraz/models
 
 # --- Flavour: minimal (Ubuntu 24.04 LTS) -------------------------------------
 FROM ${UBUNTU_IMAGE} AS minimal
@@ -127,3 +195,17 @@ ENV PATH="/app:${PATH}"
 USER hoop
 # No init shim (tini is not installed) — see the distroless note above.
 CMD ["hoop", "start", "agent"]
+
+# --- Flavour: minimal + alcatraz model ---------------------------------------
+# Declared last on purpose: see the note about a bare build at the top.
+#
+# No verification step here: distroless has no shell to run one in, and the only
+# build this could catch is one where COPY --from lost bytes the models stage
+# had just checksummed. The check that matters runs in CI against the artifact
+# that landed in the registry, per architecture, by exporting the container
+# filesystem — see scripts/ci/verify-alcatraz-image.sh. The manifest ships with
+# the model, so that same command answers "is this intact" for any copy of the
+# image, running or not.
+FROM minimal AS minimal-alcatraz
+COPY --from=models /opt/alcatraz/models /opt/alcatraz/models
+ENV ALCATRAZ_NER_MODEL_PATH=/opt/alcatraz/models
