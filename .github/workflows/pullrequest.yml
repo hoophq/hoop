@@ -9,20 +9,24 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.work
           # This is a go.work workspace with no root go.mod, so setup-go
           # cannot find a manifest on its own and silently caches nothing.
           cache-dependency-path: "**/go.sum"
       - name: Setup Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-          target: wasm32-unknown-unknown
-          override: true
+          targets: wasm32-unknown-unknown
+      # Every Rust job here runs `make generate-wasm`, which is a release-mode
+      # cargo build of gateway/rdp/wasm. Nothing else in the job builds Rust.
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: gateway/rdp/wasm
 
       - name: Test
         run: make test-oss
@@ -37,7 +41,7 @@ jobs:
 
     steps:
       - name: Checkout libhoop default branch
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
         with:
           repository: hoophq/libhoop
           token: ${{ secrets.GH_TOKEN }}
@@ -133,7 +137,7 @@ jobs:
 
     steps:
       - name: Checkout Hoop
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
 
       # Integration tests drive the real controller.Agent against real upstream
       # containers via libhoop. The OSS _libhoop stub returns "missing protocol
@@ -143,7 +147,7 @@ jobs:
       # no-op against a non-empty directory — the checkout wins. Matches the
       # build jobs in pullrequest-release.yml.
       - name: Checkout libhoop
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
         with:
           repository: hoophq/libhoop
           path: "./libhoop"
@@ -151,25 +155,29 @@ jobs:
           ref: ${{ needs.resolve-libhoop.outputs.sha }}
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.work
           # This is a go.work workspace with no root go.mod, so setup-go
           # cannot find a manifest on its own and silently caches nothing.
           cache-dependency-path: "**/go.sum"
       - name: Setup Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
           cache: maven
           cache-dependency-path: agent/integration/testdata/mssql-jdbc/pom.xml
       - name: Setup Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-          target: wasm32-unknown-unknown
-          override: true
+          targets: wasm32-unknown-unknown
+      # Every Rust job here runs `make generate-wasm`, which is a release-mode
+      # cargo build of gateway/rdp/wasm. Nothing else in the job builds Rust.
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: gateway/rdp/wasm
 
       # testcontainers-go manages container lifecycle itself via the Docker
       # daemon. ubuntu-latest runners have Docker pre-installed and running,
@@ -186,7 +194,7 @@ jobs:
 
     steps:
       - name: Checkout Hoop
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
 
       # The transport harness drives the real gateway gRPC transport end to end
       # (real agent controller + real Postgres). Its PostgreSQL protocol
@@ -199,7 +207,7 @@ jobs:
       # Postgres containers do not contend on one runner with the heavy agent
       # suite's containers, which caused timeouts when the two ran in parallel.
       - name: Checkout libhoop
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
         with:
           repository: hoophq/libhoop
           path: "./libhoop"
@@ -207,18 +215,22 @@ jobs:
           ref: ${{ needs.resolve-libhoop.outputs.sha }}
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.work
           # This is a go.work workspace with no root go.mod, so setup-go
           # cannot find a manifest on its own and silently caches nothing.
           cache-dependency-path: "**/go.sum"
       - name: Setup Rust
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-          target: wasm32-unknown-unknown
-          override: true
+          targets: wasm32-unknown-unknown
+      # Every Rust job here runs `make generate-wasm`, which is a release-mode
+      # cargo build of gateway/rdp/wasm. Nothing else in the job builds Rust.
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: gateway/rdp/wasm
 
       - name: Transport Integration Test
         run: make test-transport
@@ -230,7 +242,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
 
       # Gateway smoke tests exercise only the HTTP API, auth, RBAC and the
       # model/migration layer — no protocol proxying — so the OSS _libhoop
@@ -239,7 +251,7 @@ jobs:
       # rdp_parser.wasm is embedded via go:embed, so make test-gateway does
       # not regenerate it.
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.work
           # This is a go.work workspace with no root go.mod, so setup-go
@@ -258,7 +270,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
 
       # Same smoke suite as gateway-smoke-test, but the state store is the
       # embedded PGlite (wasm) database — the standalone-mode regression net.
@@ -267,7 +279,7 @@ jobs:
       # regular PostgreSQL. Runs entirely in-process: no Docker, no
       # testcontainers.
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.work
           # This is a go.work workspace with no root go.mod, so setup-go
@@ -284,7 +296,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
 
       # Standalone-mode lifecycle suite (DEP-38): gateway on the embedded
       # PGlite database + the dedicated standalone agent provisioned through
@@ -292,7 +304,7 @@ jobs:
       # real agent controller. Runs entirely in-process: no Docker, no
       # enterprise libhoop, no Rust toolchain.
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.work
           # This is a go.work workspace with no root go.mod, so setup-go
@@ -309,7 +321,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
 
       # Builds the real hoop CLI and runs `hoop start standalone` as a
       # subprocess: first boot (embedded PGlite initdb + migrations + agent
@@ -317,7 +329,7 @@ jobs:
       # credentials). The only job that tests the shipped artifact itself —
       # go:embed assets, CLI wiring, and the single-process composition.
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.work
           # This is a go.work workspace with no root go.mod, so setup-go
