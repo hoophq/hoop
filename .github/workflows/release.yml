@@ -889,24 +889,35 @@ jobs:
           docker manifest push hoophq/hoopdev:${{ env.GIT_TAG }}
           docker manifest push hoophq/hoopdev:latest
 
-  # hoophq/hoopagent — slim agent images, built from the two targets of
+  # hoophq/hoopagent — slim agent images, built from the four targets of
   # Dockerfile.agent (see that file for what each ships):
   #
-  #   :<version>-minimal      Ubuntu 24.04 LTS + the binary only
-  #   :<version>-distroless   distroless static + the binary only
+  #   :<version>-minimal               Ubuntu 24.04 LTS + the binary only
+  #   :<version>-distroless            distroless static + the binary only
+  #   :<version>-minimal-alcatraz      minimal + the alcatraz NER model
+  #   :<version>-distroless-alcatraz   distroless + the alcatraz NER model
+  #
+  # The -alcatraz pair is for agents serving DLP_PROVIDER=alcatraz masking rules
+  # that ask for PERSON/LOCATION/NRP: the model is never fetched at runtime, so
+  # an agent without it on disk refuses those sessions. Everything else —
+  # invocation contract, user, what the image can serve — is the base flavour's.
   #
   # hoophq/hoopagent is a clean-only repository: nothing published under it may
   # carry an AGPL/SSPL component, so that the repository has none in its history.
-  # That is why there is no tooling flavour here and nothing built FROM
-  # hoophq/agent-tools — agents needing bundled clients or RDP use hoophq/hoopdev.
-  # Do not add a tag here without reading the bright-line note in Dockerfile.agent.
+  # The model is weights only and carries none. That is why there is no tooling
+  # flavour here and nothing built FROM hoophq/agent-tools — agents needing
+  # bundled clients or RDP use hoophq/hoopdev, with the model mounted. Do not add
+  # a tag here without reading the bright-line note in Dockerfile.agent.
   #
   # No unsuffixed tag and no :latest — every deployment names its flavour.
   #
-  # One job, one multiarch build per flavour. Each build is a tar extraction plus
+  # One job, one multiarch build per target. Each build is a tar extraction plus
   # (for minimal) a single apt package, so emulating the non-native arch is cheap
   # and does not justify the per-arch runner + manifest dance that the hoopdev
-  # image uses. Sharing a job also means the release artifacts are pulled once.
+  # image uses. Sharing a job also means the release artifacts are pulled once,
+  # the model is downloaded once, and each -alcatraz tag reuses the base stage
+  # its plain sibling was pushed from instead of pulling it back from the
+  # registry — no wait for a tag the previous step just pushed.
   docker-publish-hoopagent:
     runs-on: ubuntu-latest
     name: Publish Agent Image (hoopagent)
@@ -956,6 +967,42 @@ jobs:
           push: true
           tags: |
             hoophq/hoopagent:${{ env.GIT_TAG }}-distroless
+      - name: Build and push (minimal-alcatraz)
+        uses: docker/build-push-action@v4
+        with:
+          file: ./Dockerfile.agent
+          context: '.'
+          target: minimal-alcatraz
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          sbom: false
+          push: true
+          tags: |
+            hoophq/hoopagent:${{ env.GIT_TAG }}-minimal-alcatraz
+      - name: Build and push (distroless-alcatraz)
+        uses: docker/build-push-action@v4
+        with:
+          file: ./Dockerfile.agent
+          context: '.'
+          target: distroless-alcatraz
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          sbom: false
+          push: true
+          tags: |
+            hoophq/hoopagent:${{ env.GIT_TAG }}-distroless-alcatraz
+      # Reads the model out of the published images by exporting the container
+      # filesystem, which is the only way to check the distroless flavour: it
+      # has no shell to run sha256sum in. The wait is for the push above, not
+      # for a base image: Docker Hub can serve a manifest list a beat late.
+      - name: Verify published alcatraz images
+        run: |
+          scripts/ci/wait-for-image.sh \
+            hoophq/hoopagent:${{ env.GIT_TAG }}-minimal-alcatraz \
+            hoophq/hoopagent:${{ env.GIT_TAG }}-distroless-alcatraz
+          scripts/ci/verify-alcatraz-image.sh \
+            hoophq/hoopagent:${{ env.GIT_TAG }}-minimal-alcatraz \
+            hoophq/hoopagent:${{ env.GIT_TAG }}-distroless-alcatraz
 
   # --- Clean image line (DEP-66): hoophq/hoop-ng + hoophq/hoopdev-ng ----------
   # Bright-line, clean-only repos (no dirty history) that the hoop-ng helm chart

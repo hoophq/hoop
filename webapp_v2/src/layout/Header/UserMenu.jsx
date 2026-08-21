@@ -5,10 +5,9 @@ import ActionMenu from '@/components/ActionMenu'
 import { useAuthStore } from '@/stores/useAuthStore'
 import { useUserStore } from '@/stores/useUserStore'
 import { getUserDisplayName } from '@/utils/user'
+import { GITHUB_DISCUSSIONS_URL } from '@/utils/support'
 import { UserAvatar } from './UserAvatar'
 import classes from './Header.module.css'
-
-const GITHUB_DISCUSSIONS_URL = 'https://github.com/hoophq/hoop/discussions'
 
 export function UserMenu() {
   const navigate = useNavigate()

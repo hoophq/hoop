@@ -79,51 +79,51 @@ func (v Verb) severity() int {
 // does not begin a statement, which is what lets the analysis tell a real
 // statement head from a keyword appearing mid-clause.
 var statementVerb = map[string]Verb{
-	"select":   Select,
-	"table":    Select, // TABLE t is shorthand for SELECT * FROM t
-	"values":   Select,
-	"insert":   Insert,
-	"update":   Update,
-	"delete":   Delete,
-	"merge":    Merge,
-	"create":   Create,
-	"drop":     Drop,
-	"alter":    Alter,
-	"truncate": Truncate,
-	"grant":    Grant,
-	"revoke":   Revoke,
-	"call":     Call,
-	"do":       Call,
-	"execute":  Call,
-	"exec":     Call,
-	"copy":     Copy,
-	"show":     Show,
-	"set":      Set,
-	"reset":    Set,
-	"begin":    Begin,
-	"start":    Begin,
-	"commit":   Commit,
-	"end":      Commit,
-	"rollback": Rollback,
-	"abort":    Rollback,
+	"select":    Select,
+	"table":     Select, // TABLE t is shorthand for SELECT * FROM t
+	"values":    Select,
+	"insert":    Insert,
+	"update":    Update,
+	"delete":    Delete,
+	"merge":     Merge,
+	"create":    Create,
+	"drop":      Drop,
+	"alter":     Alter,
+	"truncate":  Truncate,
+	"grant":     Grant,
+	"revoke":    Revoke,
+	"call":      Call,
+	"do":        Call,
+	"execute":   Call,
+	"exec":      Call,
+	"copy":      Copy,
+	"show":      Show,
+	"set":       Set,
+	"reset":     Set,
+	"begin":     Begin,
+	"start":     Begin,
+	"commit":    Commit,
+	"end":       Commit,
+	"rollback":  Rollback,
+	"abort":     Rollback,
 	"savepoint": Other,
-	"explain":  Explain,
-	"analyze":  Other,
-	"vacuum":   Other,
-	"comment":  Other,
-	"prepare":  Other,
-	"declare":  Other,
-	"fetch":    Other,
-	"close":    Other,
-	"listen":   Other,
-	"notify":   Other,
-	"lock":     Other,
-	"refresh":  Other,
-	"reindex":  Other,
-	"cluster":  Other,
-	"discard":  Other,
-	"use":      Other,
-	"with":     Other, // resolved by the CTE walk, never left as-is
+	"explain":   Explain,
+	"analyze":   Other,
+	"vacuum":    Other,
+	"comment":   Other,
+	"prepare":   Other,
+	"declare":   Other,
+	"fetch":     Other,
+	"close":     Other,
+	"listen":    Other,
+	"notify":    Other,
+	"lock":      Other,
+	"refresh":   Other,
+	"reindex":   Other,
+	"cluster":   Other,
+	"discard":   Other,
+	"use":       Other,
+	"with":      Other, // resolved by the CTE walk, never left as-is
 }
 
 // opaque marks statement forms whose effect is decided at runtime, from a
@@ -210,20 +210,20 @@ var notARelation = map[string]bool{
 
 // relSkip are keywords that may sit between an introducer and the name.
 var relSkip = map[string]bool{
-	"only":     true,
-	"if":       true,
-	"exists":   true,
-	"not":      true,
-	"table":    true,
-	"tables":   true,
-	"lateral":  true,
-	"outer":    true,
-	"inner":    true,
-	"left":     true,
-	"right":    true,
-	"full":     true,
-	"cross":    true,
-	"natural":  true,
+	"only":         true,
+	"if":           true,
+	"exists":       true,
+	"not":          true,
+	"table":        true,
+	"tables":       true,
+	"lateral":      true,
+	"outer":        true,
+	"inner":        true,
+	"left":         true,
+	"right":        true,
+	"full":         true,
+	"cross":        true,
+	"natural":      true,
 	"concurrently": true,
 	"materialized": true,
 	"recursive":    true,
@@ -234,11 +234,16 @@ var relSkip = map[string]bool{
 	"local":        true,
 }
 
-// headAfter are keywords after which a statement verb may begin. They are how
-// a nested statement is recognised without a grammar: `CREATE TABLE x AS
-// SELECT`, `WHEN MATCHED THEN DELETE`, `SELECT ... UNION SELECT`.
+// headAfter are keywords after which a statement verb may begin, and after
+// which one may begin UNCONDITIONALLY. They are how a nested statement is
+// recognised without a grammar: `WHEN MATCHED THEN DELETE`, `SELECT ... UNION
+// SELECT`.
+//
+// AS is not here. It heads a statement in `CREATE TABLE x AS SELECT` and names
+// an alias in `SELECT 1 AS delete`, and only the surrounding statement tells
+// the two apart; analyzer.headFollows decides it.
 var headAfter = map[string]bool{
-	"as":        true,
+	"as":        false, // conditional; see analyzer.headFollows
 	"then":      true,
 	"else":      true,
 	"union":     true,

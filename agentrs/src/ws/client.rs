@@ -189,17 +189,23 @@ impl WebSocket {
     }
 
     /// Sends the connection-scoped capability advertisement. Carries the
-    /// agent's PII guard endpoint readiness and entity-policy support. The
-    /// frame is addressed with the well-known control sentinel sid, not a
-    /// session id — the gateway dispatches it by message type at the
-    /// connection level.
+    /// agent's PII guard endpoint readiness and complete Data Masking rule
+    /// support. The frame is addressed with the well-known control sentinel
+    /// sid, not a session id — the gateway dispatches it by message type at
+    /// the connection level.
     async fn send_capabilities(ws_sender: &WsWriter) -> anyhow::Result<()> {
         let mut metadata = HashMap::new();
+        let supports_guard = crate::piigate::config::supports_pii_guard();
         metadata.insert(
             "supports_pii_guard".to_string(),
-            crate::piigate::config::supports_pii_guard().to_string(),
+            supports_guard.to_string(),
         );
+        // Retained for gateways predating complete rule metadata support.
         metadata.insert("supports_pii_entity_allowlist".to_string(), "true".to_string());
+        metadata.insert(
+            "supports_pii_data_masking_rules".to_string(),
+            "true".to_string(),
+        );
         let msg = WebSocketMessage::new(MessageType::Capabilities, metadata, Vec::new());
         let framed = msg
             .encode_with_header(CONTROL_SENTINEL_SID)
@@ -210,8 +216,8 @@ impl WebSocket {
             .await
             .context("sending capabilities frame")?;
         info!(
-            "> Advertised capabilities to gateway (supports_pii_guard={})",
-            crate::piigate::config::supports_pii_guard()
+            "> Advertised capabilities to gateway \
+             (supports_pii_guard={supports_guard}, supports_pii_data_masking_rules=true)"
         );
         Ok(())
     }

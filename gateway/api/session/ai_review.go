@@ -93,7 +93,7 @@ func CreateReviewFromAIAnalysis(
 }
 
 func sendSlackMessage(requester AIReviewRequester, connection *models.Connection, rev *models.Review, reviewInput string, analysis *models.SessionAIAnalysis) error {
-	slackSvc := slack.GetSlackServiceInstance(rev.OrgID)
+	slackSvc := slackModel.GetServiceInstance(rev.OrgID)
 	log.With("sid", rev.SessionID).Infof("executing slack on-receive, hasinstance=%v", slackSvc != nil)
 	if slackSvc == nil {
 		return nil

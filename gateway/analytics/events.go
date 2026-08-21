@@ -71,6 +71,9 @@ const (
 	EventUpdateOrgAnalyticsMode    = "hoop-update-org-analytics-mode"
 	EventProtectionProfileSelected = "hoop-protection-profile-selected"
 
+	// license
+	EventLicenseSigned = "hoop-license-signed"
+
 	// onboarding
 	EventOnboardingOriginAnswered = "hoop-onboarding-origin-answered"
 

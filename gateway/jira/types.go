@@ -133,3 +133,32 @@ type ObjectType struct {
 	Description    string `json:"description"`
 	ObjectSchemaID string `json:"objectSchemaId"`
 }
+
+// fieldContexts is the Jira field context page; the context id addresses the
+// Assets custom field configuration.
+type fieldContexts struct {
+	Values []struct {
+		ID              string `json:"id"`
+		IsGlobalContext bool   `json:"isGlobalContext"`
+	} `json:"values"`
+}
+
+// assetFieldConfig is the JSM Assets custom field configuration payload.
+// Non-Assets fields return the payload with both queries empty.
+type assetFieldConfig struct {
+	ObjectSchemaID        string `json:"objectSchemaId"`
+	ObjectFilterQuery     string `json:"objectFilterQuery"`
+	IssueScopeFilterQuery string `json:"issueScopeFilterQuery"`
+}
+
+// AssetFieldConfig is the AQL configuration of an Assets custom field:
+// ObjectFilterQuery scopes every fetch, IssueScopeFilterQuery may reference
+// sibling fields with ${customfield_x.label} placeholders (Jira's native
+// dependent-field mechanism). ObjectSchemaID is the schema the field is
+// bound to.
+type AssetFieldConfig struct {
+	JiraField             string
+	ObjectSchemaID        string
+	ObjectFilterQuery     string
+	IssueScopeFilterQuery string
+}

@@ -4211,6 +4211,47 @@ const docTemplate = `{
                 }
             }
         },
+        "/integrations/jira/assets/fieldconfigs": {
+            "get": {
+                "description": "Get the AQL configuration of Jira Service Management (JSM) Assets custom fields. These are the object scope and dependent-field (issue scope) filters Jira's own portal applies; they drive the CMDB dropdown cascade. Fields without any configured filter are omitted.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Jira"
+                ],
+                "summary": "Get Asset Field Configurations",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Comma-separated list of Jira custom field ids (e.g. customfield_10092)",
+                        "name": "jira_fields",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.JiraAssetFieldConfigs"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/integrations/jira/assets/objects": {
             "get": {
                 "description": "Get objects from the Jira Service Management (JSM) Assets API",
@@ -4240,6 +4281,12 @@ const docTemplate = `{
                         "description": "Specify a name to filter",
                         "name": "name",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "AQL expression scoping the values; replaces the object_type_id filter when set",
+                        "name": "aql",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -4249,14 +4296,8 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.JiraAssetObjects"
                         }
                     },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
+                    "422": {
+                        "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -14473,6 +14514,43 @@ const docTemplate = `{
                 "IdpProviderUnknown"
             ]
         },
+        "openapi.JiraAssetFieldConfig": {
+            "type": "object",
+            "properties": {
+                "issue_scope_filter_query": {
+                    "description": "Dependent-field AQL; may reference sibling fields with ${customfield_x.label} placeholders",
+                    "type": "string",
+                    "example": "\"Product\" = ${customfield_10091.label}"
+                },
+                "jira_field": {
+                    "description": "The Jira custom field id",
+                    "type": "string",
+                    "example": "customfield_10092"
+                },
+                "object_filter_query": {
+                    "description": "AQL scoping every fetch of the field's options",
+                    "type": "string",
+                    "example": "objectType = \"Product\""
+                },
+                "object_schema_id": {
+                    "description": "The Assets object schema the field is bound to",
+                    "type": "string",
+                    "example": "2"
+                }
+            }
+        },
+        "openapi.JiraAssetFieldConfigs": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "description": "The field configurations found; fields without any filter are omitted",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.JiraAssetFieldConfig"
+                    }
+                }
+            }
+        },
         "openapi.JiraAssetObjectValue": {
             "type": "object",
             "properties": {
@@ -17916,7 +17994,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "has_redact_credentials": {
-                    "description": "Report if GOOGLE_APPLICATION_CREDENTIALS_JSON or MSPRESIDIO is set",
+                    "description": "Report if the server can enforce data masking: the credentials of the\nconfigured provider are set (GOOGLE_APPLICATION_CREDENTIALS_JSON or\nMSPRESIDIO), or the provider is alcatraz, which needs none",
                     "type": "boolean"
                 },
                 "has_ssh_client_host_key": {
@@ -17959,11 +18037,12 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "redact_provider": {
-                    "description": "Redact Provider used by the server",
+                    "description": "Redact Provider configured for the server via the DLP_PROVIDER env",
                     "type": "string",
                     "enum": [
                         "gcp",
-                        "mspresidio"
+                        "mspresidio",
+                        "alcatraz"
                     ],
                     "example": "gcp"
                 },
@@ -18025,6 +18104,16 @@ const docTemplate = `{
                     "description": "Public Key identifier of who signed the license",
                     "type": "string",
                     "example": "f2fb0c3143822b08be26f8fc5b703e0a6689e675"
+                },
+                "status": {
+                    "description": "Why the license is not valid, decided against the gateway clock. Clients\nshould branch on this instead of comparing expire_at locally\n* valid - the license verified successfully\n* expired - the license is authentic but past its expiration date\n* invalid - the license could not be verified",
+                    "type": "string",
+                    "enum": [
+                        "valid",
+                        "expired",
+                        "invalid"
+                    ],
+                    "example": "valid"
                 },
                 "type": {
                     "description": "The type of license",

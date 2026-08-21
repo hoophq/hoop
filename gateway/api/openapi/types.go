@@ -1495,6 +1495,13 @@ type WebhooksDashboardResponse struct {
 	URL string `json:"url" example:"https://app.svix.com/app_3ZT4NrDlps0Pjp6Af8L6pJMMh3/endpoints"`
 }
 
+// Values for ServerLicenseInfo.Status.
+const (
+	LicenseStatusValid   = "valid"
+	LicenseStatusExpired = "expired"
+	LicenseStatusInvalid = "invalid"
+)
+
 type ServerLicenseInfo struct {
 	// Public Key identifier of who signed the license
 	KeyID string `json:"key_id" example:"f2fb0c3143822b08be26f8fc5b703e0a6689e675"`
@@ -1508,6 +1515,12 @@ type ServerLicenseInfo struct {
 	ExpireAt int64 `json:"expire_at" example:"1722261422"`
 	// Report if the license is valid
 	IsValid bool `json:"is_valid"`
+	// Why the license is not valid, decided against the gateway clock. Clients
+	// should branch on this instead of comparing expire_at locally
+	// * valid - the license verified successfully
+	// * expired - the license is authentic but past its expiration date
+	// * invalid - the license could not be verified
+	Status string `json:"status" enums:"valid,expired,invalid" example:"valid"`
 	// The error returned when verifying the license
 	VerifyError string `json:"verify_error" example:"unable to verify license"`
 	// The verified host (API_URL env)
@@ -1545,9 +1558,11 @@ type ServerInfo struct {
 	GoDebug string `json:"go_debug" example:"http2debug=2"`
 	// Auth method used by the server
 	AuthMethod string `json:"auth_method" enums:"oidc,local" example:"local"`
-	// Redact Provider used by the server
-	RedactProvider string `json:"redact_provider" enums:"gcp,mspresidio" example:"gcp"`
-	// Report if GOOGLE_APPLICATION_CREDENTIALS_JSON or MSPRESIDIO is set
+	// Redact Provider configured for the server via the DLP_PROVIDER env
+	RedactProvider string `json:"redact_provider" enums:"gcp,mspresidio,alcatraz" example:"gcp"`
+	// Report if the server can enforce data masking: the credentials of the
+	// configured provider are set (GOOGLE_APPLICATION_CREDENTIALS_JSON or
+	// MSPRESIDIO), or the provider is alcatraz, which needs none
 	HasRedactCredentials bool `json:"has_redact_credentials"`
 	// Report if WEBHOOK_APPKEY is set
 	HasWebhookAppKey bool `json:"has_webhook_app_key"`
@@ -1795,6 +1810,22 @@ type JiraAssetObjects struct {
 	Total int64 `json:"total" example:"22"`
 	// Indicate if it has more items
 	HasNextPage bool `json:"has_next_page"`
+}
+
+type JiraAssetFieldConfig struct {
+	// The Jira custom field id
+	JiraField string `json:"jira_field" example:"customfield_10092"`
+	// The Assets object schema the field is bound to
+	ObjectSchemaID string `json:"object_schema_id" example:"2"`
+	// AQL scoping every fetch of the field's options
+	ObjectFilterQuery string `json:"object_filter_query" example:"objectType = \"Product\""`
+	// Dependent-field AQL; may reference sibling fields with ${customfield_x.label} placeholders
+	IssueScopeFilterQuery string `json:"issue_scope_filter_query" example:"\"Product\" = ${customfield_10091.label}"`
+}
+
+type JiraAssetFieldConfigs struct {
+	// The field configurations found; fields without any filter are omitted
+	Items []JiraAssetFieldConfig `json:"items"`
 }
 
 type GuardRailRuleRequest struct {

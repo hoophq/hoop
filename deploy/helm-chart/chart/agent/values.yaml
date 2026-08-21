@@ -22,6 +22,13 @@ image: {}
   #   repository: hoophq/hoop-agent-ocr
   #   tag: <release>-gpu
   #
+  # Live Data Masking with the gateway's DLP_PROVIDER=alcatraz: to serve the
+  # statistical entity types (PERSON, LOCATION, NRP), the model has to be on
+  # disk. The images that bake it in are the hoophq/hoopagent `-alcatraz` tags
+  # below, which set ALCATRAZ_NER_MODEL_PATH themselves; with hoophq/hoopdev,
+  # mount the model and set that variable under config:. Either way the model is
+  # resident memory once loaded — check the note there before sizing the pod.
+  #
   # hoophq/hoopagent ships the `hoop` binary and nothing else — no database
   # clients, no shell tooling, no Rust agent — and runs as uid 10001. It carries
   # no AGPL/SSPL component. Use it when the agent only serves connection types it
@@ -35,6 +42,13 @@ image: {}
   #   # distroless base; no OS packages and no shell at all (smallest surface):
   #   repository: hoophq/hoopagent
   #   tag: <release>-distroless
+  #   # either flavour with the alcatraz NER model baked in, for the statistical
+  #   # entity types (PERSON, LOCATION, NRP) below — the same image plus ~250MB
+  #   # of weights, setting ALCATRAZ_NER_MODEL_PATH itself:
+  #   repository: hoophq/hoopagent
+  #   tag: <release>-minimal-alcatraz
+  #   # or
+  #   tag: <release>-distroless-alcatraz
 
 config: {}
   # HOOP_KEY: '<AUTH_KEY>'
@@ -47,6 +61,20 @@ config: {}
   # MSPRESIDIO_ANALYZER_URL: ''
   # MSPRESIDIO_ANONYMIZER_URL: ''
   # DLP_MODE: 'strict|best-effort'
+  #
+  # NER module for the gateway's DLP_PROVIDER=alcatraz: detects statistical
+  # entity types (PERSON, LOCATION, NRP) with an in-process ONNX model. The
+  # model is never fetched at runtime, so having it on disk is what enables
+  # the module: point ALCATRAZ_NER_MODEL_PATH at the models directory — the
+  # parent that holds one subdirectory per model id, which is what
+  # "alcatraz models download --dest <dir>" writes into — mounted from a
+  # volume. Leave this unset if you run an image that bakes the model in (a
+  # hoophq/hoopagent `-alcatraz` tag): it sets the variable itself. With
+  # neither the image nor the volume, sessions requesting those entity types
+  # are refused. The model costs ~260MB of resident memory: it loads lazily on
+  # the first session that needs it and is not released until the pod restarts,
+  # so size the agent pod accordingly.
+  # ALCATRAZ_NER_MODEL_PATH: ''
   #
   # HashiCorp Vault secrets-manager integration (agent-side). Set VAULT_ADDR
   # plus either a static token (VAULT_TOKEN) or AppRole credentials

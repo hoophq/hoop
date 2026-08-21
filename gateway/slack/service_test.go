@@ -1,9 +1,15 @@
 package slack
 
 import (
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
+
+	"github.com/slack-go/slack"
 )
 
 // The AI analysis text is model output derived from the user's script. Escaping
@@ -64,5 +70,160 @@ func TestTruncateRunesKeepsValidUTF8(t *testing.T) {
 	}
 	if got := truncateRunes("anything", -5); got != "" {
 		t.Errorf("negative max must yield empty, got %q", got)
+	}
+}
+
+// The block id format "<review-id>:<group-name>:<index>" is the only link
+// between a review group and its action block; group names may contain colons.
+func TestReviewGroupFromBlockID(t *testing.T) {
+	const revID = "8a4f4c5e-9f1d-4a89-b0f3-1c2d3e4f5a6b"
+	for _, tc := range []struct{ blockID, want string }{
+		{revID + ":admin:0", "admin"},
+		{revID + ":sre:eu:west:2", "sre:eu:west"},
+		{"other-review:admin:0", ""},
+		{revID + ":admin", "admin"},
+	} {
+		if got := reviewGroupFromBlockID(tc.blockID, revID); got != tc.want {
+			t.Errorf("reviewGroupFromBlockID(%q) = %q, want %q", tc.blockID, got, tc.want)
+		}
+	}
+}
+
+// A review resolved via API/webapp must rewrite only the reviewed groups'
+// action blocks, keep pending groups actionable, and never mutate the
+// originally posted block set shared across channels.
+func TestRebuildReviewBlocks(t *testing.T) {
+	const revID = "rev-1"
+	label := func(group string) *slack.SectionBlock {
+		return slack.NewSectionBlock(&slack.TextBlockObject{
+			Type: slack.MarkdownType, Text: "*Approver groups:* " + group,
+		}, nil, nil)
+	}
+	original := []slack.Block{
+		slack.NewHeaderBlock(&slack.TextBlockObject{Type: slack.PlainTextType, Text: "Hoop Review"}),
+		label("admin"),
+		slack.NewActionBlock(revID + ":admin:0"),
+		label("sre"),
+		slack.NewActionBlock(revID + ":sre:1"),
+	}
+	m := &sentReviewMessage{eventKind: EventKindOneTime, blocks: original}
+	reviewedAt := time.Date(2026, 8, 13, 10, 0, 0, 0, time.UTC)
+	reviewed := map[string]ReviewedGroup{
+		"admin": {Name: "admin", Status: "APPROVED", ReviewerEmail: "a@a.com", ReviewedAt: reviewedAt},
+	}
+
+	// partial approval: admin replaced, sre still actionable, progress context appended
+	req := &UpdateReviewMessageRequest{ReviewID: revID, ReviewedGroups: []ReviewedGroup{reviewed["admin"]}, TotalGroups: 2}
+	blocks := rebuildReviewBlocks(m, req, reviewed)
+	if len(blocks) != 6 {
+		t.Fatalf("partial: got %d blocks, want 6", len(blocks))
+	}
+	sec, ok := blocks[2].(*slack.SectionBlock)
+	if !ok {
+		t.Fatalf("partial: reviewed group block not replaced, got %T", blocks[2])
+	}
+	if !strings.Contains(sec.Text.Text, "a@a.com") || !strings.Contains(sec.Text.Text, "`approved`") {
+		t.Errorf("partial: unexpected outcome text: %s", sec.Text.Text)
+	}
+	if _, ok := blocks[4].(*slack.ActionBlock); !ok {
+		t.Errorf("partial: pending group must keep its buttons, got %T", blocks[4])
+	}
+	if _, ok := blocks[5].(*slack.ContextBlock); !ok {
+		t.Errorf("partial: missing progress context block, got %T", blocks[5])
+	}
+
+	// terminal approval (e.g. min_approvals reached): unreviewed sre button AND
+	// its label are dropped, ready divider+section replaces the progress context
+	req.IsApproved = true
+	blocks = rebuildReviewBlocks(m, req, reviewed)
+	if len(blocks) != 5 {
+		t.Fatalf("approved: got %d blocks, want 5", len(blocks))
+	}
+	for _, b := range blocks {
+		if _, ok := b.(*slack.ActionBlock); ok {
+			t.Errorf("approved: terminal message must not keep buttons")
+		}
+		if sec, ok := b.(*slack.SectionBlock); ok && strings.Contains(sec.Text.Text, "sre") {
+			t.Errorf("approved: orphaned label for dropped sre button: %s", sec.Text.Text)
+		}
+	}
+	ready, ok := blocks[4].(*slack.SectionBlock)
+	if !ok || !strings.Contains(ready.Text.Text, "Session ready") {
+		t.Errorf("approved: missing ready section, got %T", blocks[4])
+	}
+
+	// terminal rejection appends nothing and drops remaining buttons + labels
+	req.IsApproved = false
+	req.IsRejected = true
+	if blocks = rebuildReviewBlocks(m, req, reviewed); len(blocks) != 3 {
+		t.Errorf("rejected: got %d blocks, want 3", len(blocks))
+	}
+
+	// synthetic reviewed group (admin/owner rejection, forced approval) matches
+	// no action block: its outcome must still be rendered, never a silent drop
+	synthetic := ReviewedGroup{Name: "owner-veto", Status: "REJECTED", ReviewerEmail: "b@b.com", ReviewedAt: reviewedAt}
+	sreq := &UpdateReviewMessageRequest{ReviewID: revID, IsRejected: true,
+		ReviewedGroups: []ReviewedGroup{synthetic}, TotalGroups: 2}
+	blocks = rebuildReviewBlocks(m, sreq, map[string]ReviewedGroup{synthetic.Name: synthetic})
+	var foundOutcome bool
+	for _, b := range blocks {
+		if _, ok := b.(*slack.ActionBlock); ok {
+			t.Errorf("synthetic rejection: buttons must be dropped")
+		}
+		if sec, ok := b.(*slack.SectionBlock); ok && strings.Contains(sec.Text.Text, "b@b.com") && strings.Contains(sec.Text.Text, "`rejected`") {
+			foundOutcome = true
+		}
+	}
+	if !foundOutcome {
+		t.Errorf("synthetic rejection: outcome section missing, blocks=%d", len(blocks))
+	}
+
+	// original blocks are shared across channels and must stay intact
+	if _, ok := original[2].(*slack.ActionBlock); !ok {
+		t.Errorf("original block set mutated: %T", original[2])
+	}
+}
+
+// Terminal updates must consume the tracked entry (no stale rewrites) and
+// untracked reviews must be a silent no-op even without an api client.
+func TestUpdateReviewMessageTracking(t *testing.T) {
+	s := &SlackService{sentReviewItems: make(map[string][]sentReviewMessage)}
+
+	// untracked review: no-op, no network
+	if err := s.UpdateReviewMessage(&UpdateReviewMessageRequest{ReviewID: "unknown", IsApproved: true}); err != nil {
+		t.Fatalf("untracked review must be a no-op, got %v", err)
+	}
+
+	// terminal update rewrites the message once and consumes the tracked entry
+	var updateCalls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		updateCalls++
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"ok":true,"channel":"C1","ts":"1.0"}`)
+	}))
+	defer srv.Close()
+	s.apiClient = slack.New("xoxb-test", slack.OptionAPIURL(srv.URL+"/"))
+
+	s.sentReviewItems["rev-1"] = []sentReviewMessage{{channelID: "C1", timestamp: "1.0"}}
+	req := &UpdateReviewMessageRequest{ReviewID: "rev-1", IsApproved: true}
+	if err := s.UpdateReviewMessage(req); err != nil {
+		t.Fatalf("tracked terminal update failed: %v", err)
+	}
+	if updateCalls != 1 {
+		t.Fatalf("chat.update called %d times, want 1", updateCalls)
+	}
+	if err := s.UpdateReviewMessage(req); err != nil || updateCalls != 1 {
+		t.Fatalf("consumed entry must not be rewritten again, calls=%d err=%v", updateCalls, err)
+	}
+
+	// eviction drops entries older than the retention window on new sends
+	stale := time.Now().UTC().Add(-sentReviewRetention - time.Hour)
+	s.sentReviewItems["rev-old"] = []sentReviewMessage{{channelID: "C1", timestamp: "1.0", sentAt: stale}}
+	s.trackSentReviewMessages("rev-new", []sentReviewMessage{{channelID: "C2", timestamp: "2.0", sentAt: time.Now().UTC()}})
+	if _, ok := s.sentReviewItems["rev-old"]; ok {
+		t.Errorf("expired entry survived eviction")
+	}
+	if _, ok := s.sentReviewItems["rev-new"]; !ok {
+		t.Errorf("fresh entry was not tracked")
 	}
 }

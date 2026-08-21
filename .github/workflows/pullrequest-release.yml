@@ -729,9 +729,13 @@ jobs:
             --amend hoophq/hoopdev:${{ github.sha }}-arm64
           docker manifest push hoophq/hoopdev:${{ env.GIT_TAG }}
 
-  # Preview build of hoophq/hoopagent, both slim flavours (see Dockerfile.agent).
+  # Preview build of hoophq/hoopagent, all four targets of Dockerfile.agent: the
+  # two slim flavours and the same two with the alcatraz NER model baked in.
   # Mirrors the release workflow. hoophq/hoopagent is a clean-only repository —
   # see the bright-line note in Dockerfile.agent before adding a tag here.
+  #
+  # The -alcatraz targets are built on PRs because the image is what gets
+  # validated: nothing short of pulling the artifact says the model is there.
   docker-publish-hoopagent:
     runs-on: ubuntu-latest
     name: Publish Agent Image (hoopagent)
@@ -780,6 +784,42 @@ jobs:
           push: true
           tags: |
             hoophq/hoopagent:${{ env.GIT_TAG }}-distroless
+      - name: Build and push (minimal-alcatraz)
+        uses: docker/build-push-action@v4
+        with:
+          file: ./Dockerfile.agent
+          context: '.'
+          target: minimal-alcatraz
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          sbom: false
+          push: true
+          tags: |
+            hoophq/hoopagent:${{ env.GIT_TAG }}-minimal-alcatraz
+      - name: Build and push (distroless-alcatraz)
+        uses: docker/build-push-action@v4
+        with:
+          file: ./Dockerfile.agent
+          context: '.'
+          target: distroless-alcatraz
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          sbom: false
+          push: true
+          tags: |
+            hoophq/hoopagent:${{ env.GIT_TAG }}-distroless-alcatraz
+      # Reads the model out of the published images by exporting the container
+      # filesystem, which is the only way to check the distroless flavour: it
+      # has no shell to run sha256sum in. The wait is for the push above, not
+      # for a base image: Docker Hub can serve a manifest list a beat late.
+      - name: Verify published alcatraz images
+        run: |
+          scripts/ci/wait-for-image.sh \
+            hoophq/hoopagent:${{ env.GIT_TAG }}-minimal-alcatraz \
+            hoophq/hoopagent:${{ env.GIT_TAG }}-distroless-alcatraz
+          scripts/ci/verify-alcatraz-image.sh \
+            hoophq/hoopagent:${{ env.GIT_TAG }}-minimal-alcatraz \
+            hoophq/hoopagent:${{ env.GIT_TAG }}-distroless-alcatraz
 
   publish-release:
     runs-on: ubuntu-latest

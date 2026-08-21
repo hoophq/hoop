@@ -18,6 +18,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/events"
 	"github.com/hoophq/hoop/gateway/models"
+	slackservice "github.com/hoophq/hoop/gateway/slack"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"github.com/hoophq/hoop/gateway/utils"
@@ -198,6 +199,48 @@ func (h *handler) ReviewByIdOrSid(c *gin.Context) {
 //	@Router					/sessions/{session_id}/review [put]
 func (h *handler) ReviewBySid(c *gin.Context) { h.ReviewByIdOrSid(c) }
 
+// UpdateSlackMessage synchronizes the Slack review messages with the review
+// state after it changed outside of a Slack interaction (API, webapp or MCP
+// review). Reviews resolved from Slack itself are additionally updated via the
+// interaction callback in the slack transport plugin. Best effort: messages
+// posted by another gateway instance or before a restart are not tracked and
+// are silently skipped.
+func UpdateSlackMessage(rev *models.Review) error {
+	slackSvc := slackservice.GetServiceInstance(rev.OrgID)
+	if slackSvc == nil {
+		return nil
+	}
+
+	switch rev.Status {
+	case models.ReviewStatusPending, models.ReviewStatusApproved, models.ReviewStatusRejected:
+	default:
+		return nil
+	}
+
+	req := &slackservice.UpdateReviewMessageRequest{
+		ReviewID:    rev.ID,
+		IsApproved:  rev.Status == models.ReviewStatusApproved,
+		IsRejected:  rev.Status == models.ReviewStatusRejected,
+		TotalGroups: len(rev.ReviewGroups),
+	}
+	for _, rg := range rev.ReviewGroups {
+		if rg.Status == models.ReviewStatusPending {
+			continue
+		}
+		reviewedAt := time.Now().UTC()
+		if rg.ReviewedAt != nil {
+			reviewedAt = *rg.ReviewedAt
+		}
+		req.ReviewedGroups = append(req.ReviewedGroups, slackservice.ReviewedGroup{
+			Name:          rg.GroupName,
+			Status:        rg.Status.Str(),
+			ReviewerEmail: ptr.ToString(rg.OwnerEmail),
+			ReviewedAt:    reviewedAt,
+		})
+	}
+	return slackSvc.UpdateReviewMessage(req)
+}
+
 // DoReview updates the status of a review identified by reviewIdOrSid. The hasForced parameter
 // indicates whether the review status change was forced by an administrator or privileged user,
 // bypassing normal review validation rules or approval workflows. When the resulting status is
@@ -243,6 +286,11 @@ func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.Review
 
 	if err := models.UpdateReview(rev); err != nil {
 		return nil, fmt.Errorf("failed updating review state, reason=%v", err)
+	}
+
+	err = UpdateSlackMessage(rev)
+	if err != nil {
+		log.Warnf("failed updating slack review, err=%v", err)
 	}
 
 	if rev.Status == models.ReviewStatusApproved || rev.Status == models.ReviewStatusRejected {

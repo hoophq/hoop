@@ -83,11 +83,22 @@ generate-wasm: libhoop-map
 
 test: test-oss test-enterprise
 
-test-oss: libhoop-map generate-wasm
+test-oss: libhoop-map generate-wasm test-hoopinspect
 	env CGO_ENABLED=0 go test -json -v github.com/hoophq/hoop/...
 
 test-enterprise: libhoop-map generate-wasm
 	env CGO_ENABLED=0 go test -json -v github.com/hoophq/hoop/...
+
+# hoopinspect is a separate module tree, so the line above does not reach it:
+# `github.com/hoophq/hoop/...` does not match `github.com/hoophq/hoopinspect`.
+# Each nested module needs its own invocation, because one go.mod per
+# dependency is what keeps the root module at zero dependencies. The list is
+# discovered rather than written down, so a nested module added later is
+# covered on the day it is added.
+test-hoopinspect:
+	@set -e; for m in $$(find hoopinspect -name go.mod -exec dirname {} \;); do \
+		(cd $$m && env CGO_ENABLED=0 go test -json -v ./...); \
+	done
 
 prepare-mssql-jdbc:
 	$(RM) $(MSSQL_JDBC_CLASSPATH_FILE)
