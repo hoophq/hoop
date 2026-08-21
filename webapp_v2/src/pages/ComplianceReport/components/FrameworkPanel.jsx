@@ -1,12 +1,13 @@
 import { Accordion, Card, Divider, Group, Progress, Stack, Text, Title } from '@mantine/core'
 import { LEVEL_META } from '../constants'
+import styles from '../ComplianceReport.module.css'
 import { ControlRow } from './ControlBits'
 
 /** Framework score header card, shared by the tab view and the export. */
 export function FrameworkScoreCard({ framework }) {
   const level = LEVEL_META[framework.level] ?? LEVEL_META.low
   return (
-    <Card withBorder p="lgAlt" style={{ breakInside: 'avoid' }}>
+    <Card withBorder p="lgAlt" className={styles.avoidBreak}>
       <Stack gap="sm">
         <Group justify="space-between" align="flex-start" wrap="nowrap">
           <Stack gap={2}>

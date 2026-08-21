@@ -26,10 +26,16 @@ var complianceCategories = []struct {
 
 // Pseudo-check IDs used only by framework control rows. They yield constant
 // results and are excluded from category summaries and action-required lists.
+// Each kind is declared once per security domain so that every control row —
+// evaluated or not — reports a real category.
 const (
-	pseudoCheckIdpDelegated   = "idp_delegated"
-	pseudoCheckInfraDelegated = "infra_delegated"
-	pseudoCheckGapNone        = "gap_none"
+	pseudoCheckIdpDelegatedIdentity = "idp_delegated_identity"
+	pseudoCheckIdpDelegatedAudit    = "idp_delegated_audit_trail"
+	pseudoCheckInfraDelegatedInfra  = "infra_delegated_infrastructure"
+	pseudoCheckInfraDelegatedData   = "infra_delegated_data_protection"
+	pseudoCheckGapNoneData          = "gap_none_data_protection"
+	pseudoCheckGapNoneAudit         = "gap_none_audit_trail"
+	pseudoCheckGapNoneMonitoring    = "gap_none_monitoring_response"
 )
 
 type complianceCheckDef struct {
@@ -83,9 +89,31 @@ var complianceChecks = []complianceCheckDef{
 	{"system_availability", "System Availability", categoryInfrastructure},
 }
 
+// The pseudo-checks, grouped by the constant result they share. Kept out of
+// complianceChecks: they carry no evidence and must not move any score.
+var (
+	pseudoIdpDelegatedIDs   = []string{pseudoCheckIdpDelegatedIdentity, pseudoCheckIdpDelegatedAudit}
+	pseudoInfraDelegatedIDs = []string{pseudoCheckInfraDelegatedInfra, pseudoCheckInfraDelegatedData}
+	pseudoGapNoneIDs        = []string{pseudoCheckGapNoneData, pseudoCheckGapNoneAudit, pseudoCheckGapNoneMonitoring}
+)
+
+var compliancePseudoChecks = []complianceCheckDef{
+	{pseudoCheckIdpDelegatedIdentity, "Delegated to Identity Provider", categoryIdentity},
+	{pseudoCheckIdpDelegatedAudit, "Delegated to Identity Provider", categoryAuditTrail},
+	{pseudoCheckInfraDelegatedInfra, "Delegated to Infrastructure", categoryInfrastructure},
+	{pseudoCheckInfraDelegatedData, "Delegated to Infrastructure", categoryDataProtection},
+	{pseudoCheckGapNoneData, "Not Covered by Hoop", categoryDataProtection},
+	{pseudoCheckGapNoneAudit, "Not Covered by Hoop", categoryAuditTrail},
+	{pseudoCheckGapNoneMonitoring, "Not Covered by Hoop", categoryMonitoringResponse},
+}
+
+// Every check ID a control may reference, evaluated or pseudo.
 var complianceCheckByID = func() map[string]complianceCheckDef {
-	m := make(map[string]complianceCheckDef, len(complianceChecks))
+	m := make(map[string]complianceCheckDef, len(complianceChecks)+len(compliancePseudoChecks))
 	for _, c := range complianceChecks {
+		m[c.ID] = c
+	}
+	for _, c := range compliancePseudoChecks {
 		m[c.ID] = c
 	}
 	return m
@@ -130,15 +158,17 @@ type complianceFrameworkDef struct {
 	Groups []complianceGroupDef
 }
 
-// Shared remediation actions.
+// Shared remediation actions. Docs targets are the canonical hoop.dev slugs —
+// short aliases such as "/docs/data-masking" redirect to the docs landing page
+// instead of the intended article.
 var (
-	actionDocsIdentityProviders = complianceAction{Label: "Go to Docs ↗", Type: "docs", Target: "/docs/identity-providers"}
-	actionDocsSessionRecording  = complianceAction{Label: "Learn more ↗", Type: "docs", Target: "/docs/session-recording"}
-	actionDocsArchitecture      = complianceAction{Label: "Learn more ↗", Type: "docs", Target: "/docs/architecture"}
-	actionDocsDataMasking       = complianceAction{Label: "Go to Docs ↗", Type: "docs", Target: "/docs/data-masking"}
-	actionDocsDataMaskingLearn  = complianceAction{Label: "Learn more ↗", Type: "docs", Target: "/docs/data-masking"}
-	actionDocsAccessControl     = complianceAction{Label: "Go to Docs ↗", Type: "docs", Target: "/docs/access-control"}
-	actionDocsAgent             = complianceAction{Label: "Go to Docs ↗", Type: "docs", Target: "/docs/agent"}
+	actionDocsIdentityProviders = complianceAction{Label: "Go to Docs ↗", Type: "docs", Target: "/docs/setup/configuration/idp/get-started"}
+	actionDocsSessionRecording  = complianceAction{Label: "Learn more ↗", Type: "docs", Target: "/docs/learn/features/session-recording"}
+	actionDocsArchitecture      = complianceAction{Label: "Learn more ↗", Type: "docs", Target: "/docs/setup/architecture"}
+	actionDocsDataMasking       = complianceAction{Label: "Go to Docs ↗", Type: "docs", Target: "/docs/learn/features/live-data-masking"}
+	actionDocsDataMaskingLearn  = complianceAction{Label: "Learn more ↗", Type: "docs", Target: "/docs/learn/features/live-data-masking"}
+	actionDocsAccessControl     = complianceAction{Label: "Go to Docs ↗", Type: "docs", Target: "/docs/learn/features/access-control"}
+	actionDocsAgent             = complianceAction{Label: "Go to Docs ↗", Type: "docs", Target: "/docs/concepts/agents"}
 	actionAppUsers              = complianceAction{Label: "Go to Users ↗", Type: "app", Target: "/organization/users"}
 	actionAppResources          = complianceAction{Label: "Go to Resources ↗", Type: "app", Target: "/resources"}
 	actionAppSessions           = complianceAction{Label: "Go to Sessions ↗", Type: "app", Target: "/sessions"}
@@ -232,7 +262,7 @@ var complianceFrameworks = []complianceFrameworkDef{
 					{"Art 32(1)(a)", "Pseudonymisation", "AI Data Masking pseudonymises sensitive data, with redaction counts tracked per session", "masking_coverage", actionAppResources},
 					{"Art 32(1)(b)", "Ongoing Confidentiality", "TLS encryption and access control groups maintain ongoing data confidentiality", "role_based_access", actionDocsAccessControl},
 					{"Art 32(1)(c)", "Availability", "Agent connectivity is monitored to ensure system availability and resilience", "agents_online", actionAppAgents},
-					{"Art 32(1)(d)", "Regular Testing", "Regular security testing is not currently available as a built-in feature", pseudoCheckGapNone, actionNone},
+					{"Art 32(1)(d)", "Regular Testing", "Regular security testing is not currently available as a built-in feature", pseudoCheckGapNoneMonitoring, actionNone},
 				},
 			},
 			{
@@ -272,8 +302,8 @@ var complianceFrameworks = []complianceFrameworkDef{
 				Title: "Cryptography During Transmission",
 				Controls: []complianceControlDef{
 					{"4.2.1", "Transmission Encryption", "All data transmission is secured with TLS encryption via gRPC tunnels", "transmission_encryption", actionDocsArchitecture},
-					{"4.2.1.1", "Certificate Validity", "TLS certificate validity monitoring requires infrastructure-level verification", pseudoCheckInfraDelegated, actionExternalInfra},
-					{"4.2.2", "End-User Messaging", "Not applicable - Hoop.dev uses direct connections, not end-user messaging", pseudoCheckGapNone, actionNone},
+					{"4.2.1.1", "Certificate Validity", "TLS certificate validity monitoring requires infrastructure-level verification", pseudoCheckInfraDelegatedInfra, actionExternalInfra},
+					{"4.2.2", "End-User Messaging", "Not applicable - Hoop.dev uses direct connections, not end-user messaging", pseudoCheckGapNoneData, actionNone},
 				},
 			},
 			{
@@ -295,7 +325,7 @@ var complianceFrameworks = []complianceFrameworkDef{
 					{"8.2.1", "Unique User IDs", "SSO integration ensures every user has a unique identifier before system access", "unique_user_ids", actionDocsIdentityProviders},
 					{"8.2.2", "No Shared Accounts", "Individual authentication via Identity Provider eliminates shared account usage", "unique_user_ids", actionDocsIdentityProviders},
 					{"8.3.1", "User Authentication", "All user access requires authentication through your configured Identity Provider", "auth_method_strength", actionDocsIdentityProviders},
-					{"8.3.4", "Login Attempt Limits", "Invalid login attempt lockout is managed by your Identity Provider", pseudoCheckIdpDelegated, actionExternalIdP},
+					{"8.3.4", "Login Attempt Limits", "Invalid login attempt lockout is managed by your Identity Provider", pseudoCheckIdpDelegatedIdentity, actionExternalIdP},
 					{"8.3.6", "Multi-Factor Authentication", "MFA enforcement is configured in your Identity Provider settings", "mfa_status", actionExternalIdP},
 					{"8.6.1", "System Account Management", "Service accounts are managed with least privilege principles", "service_accounts_managed", actionAppServiceAccounts},
 				},
@@ -308,9 +338,9 @@ var complianceFrameworks = []complianceFrameworkDef{
 					{"10.2.1", "Audit Logs Enabled", "Every session is automatically logged with complete audit trail information", "session_recording", actionDocsSessionRecording},
 					{"10.2.1.1", "User Access Logging", "Individual user access to cardholder data is logged with email and resource role", "user_activity_logged", actionAppSessions},
 					{"10.2.1.2", "Admin Action Logging", "All administrative and privileged actions are recorded in session logs", "admin_actions_logged", actionAppSessions},
-					{"10.2.1.3", "Audit Log Access", "Access to audit logs themselves is not currently tracked", pseudoCheckGapNone, actionNone},
+					{"10.2.1.3", "Audit Log Access", "Access to audit logs themselves is not currently tracked", pseudoCheckGapNoneAudit, actionNone},
 					{"10.2.1.4", "Failed Access Logging", "Failed and invalid access attempts are captured in session status tracking", "audit_log_details", actionAppSessions},
-					{"10.2.1.5", "Credential Change Logging", "Authentication credential changes are logged by your Identity Provider", pseudoCheckIdpDelegated, actionExternalIdP},
+					{"10.2.1.5", "Credential Change Logging", "Authentication credential changes are logged by your Identity Provider", pseudoCheckIdpDelegatedAudit, actionExternalIdP},
 					{"10.2.2", "Required Log Details", "Sessions capture user email, timestamp, resource role, and action type", "audit_log_details", actionDocsSessionRecording},
 					{"10.3.1", "Log Capture Failures", "Agent health monitoring detects and alerts on logging infrastructure failures", "agent_health", actionAppAgents},
 					{"10.4.1", "Daily Log Review", "Session review tools enable daily audit log review and investigation", "activity_monitoring", actionAppSessions},
@@ -405,7 +435,7 @@ var complianceFrameworks = []complianceFrameworkDef{
 					{"BP-DP-01", "Database Masking", "AI Data Masking is enabled on all database resource roles to protect sensitive data", "masking_coverage", actionAppResources},
 					{"BP-DP-02", "High-Risk PII Types", "Core sensitive data types (EMAIL, SSN, credit card) are configured for detection", "sensitive_types_configured", actionDocsDataMasking},
 					{"BP-DP-03", "Production Guardrails", "Guardrail rules are applied to filter dangerous commands on production resources", "guardrails_active", actionAppGuardrails},
-					{"BP-DP-04", "DLP Provider", "Data Loss Prevention provider is configured and operational", pseudoCheckInfraDelegated, actionExternalInfra},
+					{"BP-DP-04", "DLP Provider", "Data Loss Prevention provider is configured and operational", pseudoCheckInfraDelegatedData, actionExternalInfra},
 				},
 			},
 			{

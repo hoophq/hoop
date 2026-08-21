@@ -1,0 +1,59 @@
+/* Layout rules Mantine props cannot express, plus the export print rules.
+   Everything is a hashed module class: nothing here leaks to other routes. */
+
+/* Category grid splits its cell into equal rows so both rows of cards match
+   the height of the score card next to them. */
+.equalRows {
+  grid-auto-rows: 1fr;
+}
+
+/* Icons sitting beside wrapping text must not be squeezed by the flex row. */
+.staticIcon {
+  flex-shrink: 0;
+}
+
+/* Export control rows: same, plus the optical nudge onto the text baseline. */
+.rowIcon {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+/* Framework score cards are the section headers of the export — never split
+   one across two printed pages. */
+.avoidBreak {
+  break-inside: avoid;
+}
+
+/* Export renders the report alone. The rules only apply while the page's
+   export flow puts `.printing` on <body> — a bare Cmd+P on any other route
+   (or even on this page) must keep printing normally. */
+@media print {
+  body.printing * {
+    visibility: hidden;
+  }
+
+  body.printing .reportRoot,
+  body.printing .reportRoot * {
+    visibility: visible;
+  }
+
+  body.printing .reportRoot {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    padding: 0;
+  }
+
+  /* Progress bars, badges and icon tints are plain background-colors, which
+     browsers strip when printing unless told otherwise; without this the
+     exported PDF loses every Progress bar. */
+  body.printing .reportRoot * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}

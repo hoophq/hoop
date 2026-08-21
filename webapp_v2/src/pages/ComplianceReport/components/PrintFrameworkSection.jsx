@@ -1,5 +1,6 @@
 import { Badge, Card, Group, Stack, Text, Title } from '@mantine/core'
 import { STATUS_META } from '../constants'
+import styles from '../ComplianceReport.module.css'
 import { FrameworkScoreCard } from './FrameworkPanel'
 
 /**
@@ -15,7 +16,7 @@ function PrintControlRow({ control }) {
       <Icon
         size={18}
         color={`var(--mantine-color-${meta.color}-6)`}
-        style={{ flexShrink: 0, marginTop: 2 }}
+        className={styles.rowIcon}
         aria-label={meta.label}
       />
       <Stack gap={2}>
@@ -40,9 +41,7 @@ export default function PrintFrameworkSection({ framework }) {
       <FrameworkScoreCard framework={framework} />
       {(framework.groups ?? []).map((group) => (
         <Stack key={group.id} gap="sm">
-          <Title order={4}>
-            {group.id}: {group.title}
-          </Title>
+          <Title order={4}>{`${group.id}: ${group.title}`}</Title>
           <Card withBorder p="lgAlt">
             <Stack gap="md">
               {group.controls.map((control) => (

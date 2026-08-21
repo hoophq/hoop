@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { Badge, Button, Group, Stack, Text, ThemeIcon, Tooltip } from '@mantine/core'
 import { STATUS_META, catalogDocsUrl } from '../constants'
+import styles from '../ComplianceReport.module.css'
 
 /**
  * Status icon with the evaluated message + evidence in a tooltip. The row
@@ -74,7 +75,7 @@ export function ActionLink({ action }) {
     )
   }
   return (
-    <Text size="sm" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
+    <Text size="sm" c="dimmed" className={styles.nowrap}>
       {action.label}
     </Text>
   )

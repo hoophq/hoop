@@ -22,7 +22,7 @@ import {
   UnstyledButton,
 } from '@mantine/core'
 import { Carousel } from '@mantine/carousel'
-import { AlertCircle, CalendarDays, ChevronLeft, ChevronRight, Share, SquareArrowOutUpRight } from 'lucide-react'
+import { AlertCircle, ChevronLeft, ChevronRight, Share, SquareArrowOutUpRight } from 'lucide-react'
 import { reportsService } from '@/services/reports'
 import { showSnackbar } from '@/utils/snackbar'
 import FrameworkPanel from './components/FrameworkPanel'
@@ -36,7 +36,7 @@ import {
   LEVEL_META,
   catalogDocsUrl,
 } from './constants'
-import './print.css'
+import styles from './ComplianceReport.module.css'
 
 // Mirrors the final layout so data resolving does not shift content (spec:
 // skeleton state). Kept coarse on purpose — placeholders, not a wireframe.
@@ -68,26 +68,13 @@ function ReportSkeleton() {
   )
 }
 
-function ScoreCard({ overall, withTimeframe = false }) {
+function ScoreCard({ overall }) {
   const level = LEVEL_META[overall.level] ?? LEVEL_META.low
   return (
     <Card withBorder p="md" h="100%">
       <Stack gap="sm" h="100%">
-        <Group justify="space-between" align="flex-start">
-          <Text size="lg" fw={600}>Compliance Score</Text>
-          {withTimeframe && (
-            <Badge
-              variant="outline"
-              color="green"
-              size="md"
-              radius="sm"
-              leftSection={<CalendarDays size={12} />}
-            >
-              Last 12 months
-            </Badge>
-          )}
-        </Group>
-        <Center style={{ flex: 1 }}>
+        <Text size="lg" fw={600}>Compliance Score</Text>
+        <Center flex={1}>
           <RingProgress
             size={220}
             thickness={14}
@@ -174,7 +161,7 @@ function ActionRequiredItem({ item, categoryTitle, onNavigate }) {
             <SquareArrowOutUpRight
               size={16}
               color="var(--mantine-color-dimmed)"
-              style={{ flexShrink: 0 }}
+              className={styles.staticIcon}
             />
           )}
         </Group>
@@ -240,14 +227,14 @@ function ComplianceReport() {
   // "single continuous layout"), print, restore.
   useEffect(() => {
     if (!printing) return undefined
-    document.body.classList.add('compliance-printing')
+    document.body.classList.add(styles.printing)
     const done = () => setPrinting(false)
     window.addEventListener('afterprint', done)
     const timer = setTimeout(() => window.print(), 100)
     return () => {
       clearTimeout(timer)
       window.removeEventListener('afterprint', done)
-      document.body.classList.remove('compliance-printing')
+      document.body.classList.remove(styles.printing)
     }
   }, [printing])
 
@@ -306,7 +293,7 @@ function ComplianceReport() {
   })
 
   return (
-    <Stack gap="xxlAlt" id="compliance-report-root">
+    <Stack gap="xxlAlt" className={styles.reportRoot}>
       <Group justify="space-between" align="flex-start">
         <Stack gap="xs">
           <Title order={1}>Compliance Report</Title>
@@ -322,11 +309,11 @@ function ComplianceReport() {
       </Group>
 
       {printing ? (
-        /* Export layout (design reference): full-width score card with
-           timeframe chip, fixed 3-column category grid, then per-framework
-           score + flat control sections. No Action Required section. */
+        /* Export layout (design reference): full-width score card, fixed
+           3-column category grid, then per-framework score + flat control
+           sections. No Action Required section. */
         <>
-          <ScoreCard overall={overall} withTimeframe />
+          <ScoreCard overall={overall} />
           <SimpleGrid cols={3} spacing="md">
             {orderedCategories.map((category) => (
               <CategoryCard key={category.id} category={category} />
@@ -350,7 +337,7 @@ function ComplianceReport() {
                 cols={{ base: 1, sm: 2, lg: 3 }}
                 spacing="md"
                 h="100%"
-                style={{ gridAutoRows: '1fr' }}
+                className={styles.equalRows}
               >
                 {orderedCategories.map((category) => (
                   <CategoryCard key={category.id} category={category} />
@@ -364,7 +351,7 @@ function ComplianceReport() {
       {!printing && actionRequired.length > 0 && (
         <Stack gap="xs">
           <Group justify="space-between" align="center">
-            <Title order={4}>Action Required ({actionRequired.length})</Title>
+            <Title order={4}>{`Action Required (${actionRequired.length})`}</Title>
             <Group gap="xs">
               <ActionIcon
                 variant="default"
@@ -394,7 +381,7 @@ function ComplianceReport() {
             slideSize={{ base: '100%', sm: '50%', lg: '33.333333%' }}
             slideGap="md"
             emblaOptions={{ align: 'start', slidesToScroll: 1, containScroll: 'trimSnaps' }}
-            styles={{ slide: { display: 'flex' } }}
+            display="flex"
           >
             {actionRequired.map((item) => (
               <Carousel.Slide key={item.id}>

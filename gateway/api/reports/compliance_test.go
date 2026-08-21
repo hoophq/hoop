@@ -259,15 +259,23 @@ func TestCatalogIntegrity(t *testing.T) {
 			t.Errorf("check %q has no evaluator result", check.ID)
 		}
 	}
-	pseudo := map[string]bool{pseudoCheckIdpDelegated: true, pseudoCheckInfraDelegated: true, pseudoCheckGapNone: true}
+	for _, check := range compliancePseudoChecks {
+		if _, ok := results[check.ID]; !ok {
+			t.Errorf("pseudo-check %q has no evaluator result", check.ID)
+		}
+	}
 	frameworkIDs := map[string]bool{}
 	for _, fw := range complianceFrameworks {
 		frameworkIDs[fw.ID] = true
 		for _, group := range fw.Groups {
 			for _, ctrl := range group.Controls {
-				_, isCheck := complianceCheckByID[ctrl.CheckID]
-				if !isCheck && !pseudo[ctrl.CheckID] {
+				check, isKnown := complianceCheckByID[ctrl.CheckID]
+				if !isKnown {
 					t.Errorf("framework %s control %s references unknown check %q", fw.ID, ctrl.ID, ctrl.CheckID)
+				}
+				// Pseudo-checks included: every control row carries a category.
+				if check.Category == "" {
+					t.Errorf("framework %s control %s has no category", fw.ID, ctrl.ID)
 				}
 				switch ctrl.Action.Type {
 				case "app", "docs":

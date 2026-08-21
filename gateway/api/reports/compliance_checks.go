@@ -55,7 +55,7 @@ func percentOf(part, total int) int {
 // snapshot. The returned map is keyed by check ID and always contains one
 // entry per catalog check plus the pseudo-checks.
 func evalComplianceChecks(snap *complianceSnapshot) map[string]checkResult {
-	out := make(map[string]checkResult, len(complianceChecks)+3)
+	out := make(map[string]checkResult, len(complianceChecks)+len(compliancePseudoChecks))
 	ssoEnabled := snap.AuthMethod != "local"
 	authEvidence := fmt.Sprintf("Authentication method: %s", strings.ToUpper(snap.AuthMethod))
 	authMethodUpper := strings.ToUpper(snap.AuthMethod)
@@ -522,14 +522,21 @@ func evalComplianceChecks(snap *complianceSnapshot) map[string]checkResult {
 	}
 
 	// ---- pseudo-checks (framework-only rows) ----
-	out[pseudoCheckIdpDelegated] = checkResult{openapi.ComplianceStatusIdpDependent,
-		"Delegated to your Identity Provider. Verify this setting in your IdP admin console.",
-		fmt.Sprintf("Auth method: %s", authMethodUpper)}
-	out[pseudoCheckInfraDelegated] = checkResult{openapi.ComplianceStatusUnableToVerify,
-		"Depends on your deployment configuration. Verify in your infrastructure.",
-		"Not verifiable from gateway data"}
-	out[pseudoCheckGapNone] = checkResult{openapi.ComplianceStatusNotApplicable,
-		"Not covered by Hoop in this version.", ""}
+	// One constant result per kind, replicated across that kind's per-domain ids.
+	for _, id := range pseudoIdpDelegatedIDs {
+		out[id] = checkResult{openapi.ComplianceStatusIdpDependent,
+			"Delegated to your Identity Provider. Verify this setting in your IdP admin console.",
+			fmt.Sprintf("Auth method: %s", authMethodUpper)}
+	}
+	for _, id := range pseudoInfraDelegatedIDs {
+		out[id] = checkResult{openapi.ComplianceStatusUnableToVerify,
+			"Depends on your deployment configuration. Verify in your infrastructure.",
+			"Not verifiable from gateway data"}
+	}
+	for _, id := range pseudoGapNoneIDs {
+		out[id] = checkResult{openapi.ComplianceStatusNotApplicable,
+			"Not covered by Hoop in this version.", ""}
+	}
 
 	return out
 }
