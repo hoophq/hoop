@@ -8,6 +8,11 @@ import (
 	"io"
 )
 
+// headerSize is the fixed TDS packet header:
+// [type(1), status(1), length(2), spid(2), id(1), window(1)].
+// The length field counts this header, so it can never be smaller.
+const headerSize = 8
+
 // Packet represents a TDS Packet
 type Packet struct {
 	// [type(1), status(1), length(2), spid(2), id(1), window(1)]
@@ -41,7 +46,7 @@ func NewHeader(packetType PacketType, dataSize int) (header [8]byte) {
 	// status (hard-coded)
 	header[1] = 0x01
 	// length
-	binary.BigEndian.PutUint16(header[2:4], uint16(dataSize)+8)
+	binary.BigEndian.PutUint16(header[2:4], uint16(dataSize)+headerSize)
 
 	// spid (hard-coded)
 	header[4] = 0x00
@@ -78,8 +83,14 @@ func Decode(data io.Reader) (*Packet, error) {
 	if _, ok := packetTypeMap[PacketType(p.header[0])]; !ok {
 		return nil, fmt.Errorf("decoded an unknown packet type [%X]", p.header[0])
 	}
-	pktLen := p.Length() - 8
-	p.Frame = make([]byte, pktLen)
+	// Length counts the 8-byte header itself. Validate before subtracting:
+	// an undersized value would underflow the unsigned length and make the
+	// reader block for ~64 KiB of payload that will never arrive.
+	total := p.Length()
+	if total < headerSize {
+		return nil, fmt.Errorf("invalid TDS packet length: %d", total)
+	}
+	p.Frame = make([]byte, total-headerSize)
 	_, err = io.ReadFull(data, p.Frame)
 	return p, err
 }
@@ -105,4 +116,40 @@ func DecodeFull(p []byte, maxPacketSize int) ([]*Packet, error) {
 		return nil, fmt.Errorf("unable to decode packets")
 	}
 	return packets, nil
+}
+
+// CopyBuffer re-frames the TDS stream from src onto dst, issuing exactly one
+// dst.Write per TDS packet.
+//
+// dst is a packet-stream writer whose Write boundaries become hoop packet
+// boundaries, so this cannot be an io.Copy: the agent-side proxy decodes
+// packets from the buffer it is handed, and arbitrary TCP chunking would
+// desync it.
+//
+// Unlike DecodeFull, which slices a buffer by a caller-supplied maximum packet
+// size, this honours each packet's own length header — the only framing the
+// sender actually guarantees.
+//
+// It returns nil when src ends cleanly on a packet boundary.
+func CopyBuffer(dst io.Writer, src io.Reader) error {
+	for {
+		pkt, err := Decode(src)
+		if err != nil {
+			if err == io.EOF {
+				return nil
+			}
+			return err
+		}
+		encoded := pkt.Encode()
+		n, err := dst.Write(encoded)
+		if err != nil {
+			return err
+		}
+		// io.Writer permits a short write with a nil error. Forwarding a
+		// truncated packet would desynchronise the peer's decoder, which
+		// frames on the length prefix we just cut in half.
+		if n != len(encoded) {
+			return io.ErrShortWrite
+		}
+	}
 }

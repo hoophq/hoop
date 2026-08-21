@@ -43,7 +43,21 @@ type FetchConnectionsOptions struct {
 	// the gateway's response carries an X-New-Access-Token header. See
 	// token.go for the rotation contract.
 	OnNewToken func(newToken string)
+
+	// FeatureFlags is the gateway's flag map from GET /api/serverinfo.
+	//
+	// Some subtypes are tunnelable only when their flag is on: the agent
+	// refuses the session otherwise, so listing them would advertise a
+	// resource that can never connect. Nil means "no flags known", which
+	// filters out every gated subtype rather than guessing.
+	FeatureFlags map[string]bool
 }
+
+// oracleNativeFlag gates native Oracle (TNS) access. The agent's Oracle
+// handler checks it and closes the session immediately when it is off, and
+// the `hoop connect` CLI checks it before starting its Oracle listener
+// (client/cmd/connect.go), so the tunnel must apply the same gate.
+const oracleNativeFlag = "beta.oracle_native"
 
 // FetchConnections returns the list of connections available to the
 // current user that are tunnelable (TCP-style protocols plus
@@ -52,6 +66,9 @@ type FetchConnectionsOptions struct {
 // (SSH, command-line, kubernetes, RDP, SSM, etc.) are silently
 // filtered out — they need a protocol-specific client, not a
 // transparent IP tunnel.
+//
+// Feature-gated subtypes are also filtered out when their flag is off,
+// so the listing never offers a connection the agent would refuse.
 func FetchConnections(ctx context.Context, opts FetchConnectionsOptions) ([]Connection, error) {
 	if opts.APIBaseURL == "" {
 		return nil, errors.New("client.FetchConnections: APIBaseURL is required")
@@ -111,7 +128,7 @@ func FetchConnections(ctx context.Context, opts FetchConnectionsOptions) ([]Conn
 		if r.Name == "" {
 			continue
 		}
-		if !isTunnelableSubType(r.SubType) {
+		if !isTunnelableSubType(r.SubType, opts.FeatureFlags) {
 			continue
 		}
 		out = append(out, Connection{Name: r.Name, SubType: r.SubType})
@@ -120,17 +137,19 @@ func FetchConnections(ctx context.Context, opts FetchConnectionsOptions) ([]Conn
 }
 
 // isTunnelableSubType mirrors pipe.go's profileFor but works on the
-// raw openapi subtype field.
-func isTunnelableSubType(subtype string) bool {
+// raw openapi subtype field, and additionally applies the feature gates
+// the agent enforces at session-open time.
+func isTunnelableSubType(subtype string, flags map[string]bool) bool {
 	switch pb.ConnectionType(subtype) {
 	case pb.ConnectionTypePostgres,
 		pb.ConnectionTypeMySQL,
 		pb.ConnectionTypeMSSQL,
 		pb.ConnectionTypeMongoDB,
-		pb.ConnectionTypeOracleDB,
 		pb.ConnectionTypeTCP,
 		pb.ConnectionTypeHttpProxy:
 		return true
+	case pb.ConnectionTypeOracleDB:
+		return flags[oracleNativeFlag]
 	}
 	return false
 }

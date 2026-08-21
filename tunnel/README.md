@@ -122,7 +122,7 @@ hsh-tunneld After that:  psql -h pg-prod.hoop ...   (or any *.hoop host)
 dig @fd5a:1b2c:3d4e::1 pg-prod.hoop AAAA
 
 # Direct connection — IP from the dig output:
-psql -h fd5a:1b2c:3d4e::a1b2:c3d4 -U noop
+PGPASSWORD=noop psql -h fd5a:1b2c:3d4e::a1b2:c3d4 -U noop
 ```
 
 ### 5. Verify (with host DNS routing)
@@ -145,7 +145,7 @@ pg-prod.hoop`:
 sudo resolvectl dns tun0 fd5a:1b2c:3d4e::1
 sudo resolvectl domain tun0 '~hoop'
 
-psql -h pg-prod.hoop -U noop
+PGPASSWORD=noop psql -h pg-prod.hoop -U noop
 ```
 
 Both go through the existing gateway. Watch the gateway logs to see
@@ -166,6 +166,54 @@ the bytes cross the agent in cleartext, guardrails and DLP inspection
 apply exactly as they do for `hoop connect`. `https://<name>.hoop` can
 never work — the tunnel has no certificate for `*.hoop` — so port 443
 is rejected at the SYN.
+
+## Credentials (`noop`/`noop`)
+
+Database connections are reached with the fixed local credentials
+`noop`/`noop`, the same placeholders `hoop connect` prints. They are not
+the connection's real credentials and not the gateway's rotating token:
+each flow is carried on its protocol's packet family, so the agent's
+libhoop proxy terminates the client's authentication locally and
+re-authenticates upstream with the secrets stored on the connection.
+
+`hsh tunnel ls` lists them per connection along with a ready-to-paste
+command. The canonical source is `tunnelmgr/credentials.go`.
+
+```bash
+PGPASSWORD=noop psql -h pg-prod.hoop -U noop
+mysql -h mysql-stg.hoop -u noop -pnoop
+```
+
+Two subtypes are exceptions and report no credentials:
+
+- **tcp** — an opaque user-defined upstream. Hoop cannot parse the
+  protocol, so the flow is relayed verbatim and the client faces the
+  upstream's own authentication with its own credentials.
+- **httpproxy** — authentication rides headers the agent injects.
+
+### Trust model: the tunnel is single-user
+
+The placeholders are not an access control — the tunnel session is. The
+daemon runs as root and installs host-wide routes, and it authorises a
+flow purely by destination address and port; it does not identify the
+calling OS user. Any local process that can reach `<name>.hoop`
+therefore acts with the authority of whoever ran `hsh tunnel login`.
+
+This is a property of the tunnel itself, not of these credentials:
+`tcp` and `httpproxy` connections already reach their upstreams over the
+same routes with no credentials at all, and `hoop connect` likewise
+serves `noop`/`noop` on a loopback port to every local process. Routing
+databases over their protocol proxies extends the same model to them.
+
+The consequence: **treat a machine running the tunnel as belonging to a
+single principal.** On a shared host, every local account inherits the
+logged-in user's access to every tunnelled resource. Per-user isolation
+(a per-user daemon, network namespace, or UID-based policy on the TUN)
+is not implemented — tracked in DEP-144.
+
+Gateway-side controls are unaffected: every flow is a normal gateway
+session, so audit, review, guardrails, and DLP apply as they do for
+`hoop connect`.
 
 ## Addressing (dual-stack)
 

@@ -319,6 +319,8 @@ func (s *daemonService) Connections(context.Context) ([]ipc.Connection, error) {
 			SubType:      c.SubType,
 			VirtualIP:    ip.String(),
 			ExpectedPort: port,
+			Username:     c.Username,
+			Password:     c.Password,
 		}
 		if ipv4, ok := snap.Allocator.LookupNameV4(c.Name); ok {
 			conn.VirtualIPV4 = ipv4.String()

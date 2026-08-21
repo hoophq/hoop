@@ -67,7 +67,7 @@ components:
 
     Connection:
       type: object
-      required: [name, subtype, virtual_ip, expected_port]
+      required: [name, subtype, virtual_ip, virtual_ip_v4, expected_port, username, password]
       properties:
         name:
           type: string
@@ -78,10 +78,30 @@ components:
         virtual_ip:
           type: string
           description: ULA IPv6 address inside the tunnel /48.
+        virtual_ip_v4:
+          type: string
+          description: >
+            CGNAT (100.64.0.0/10) IPv4 address that also resolves to this
+            connection. macOS clients use it because getaddrinfo suppresses
+            AAAA without global IPv6.
         expected_port:
           type: integer
           format: uint16
           description: Canonical TCP port for the protocol; 0 for `tcp` subtype.
+        username:
+          type: string
+          description: >
+            Fixed username a native client presents to reach this connection
+            through the tunnel. NOT the connection's real credential: the
+            agent's protocol proxy accepts it locally and re-authenticates
+            upstream with the connection's stored secrets. Empty for subtypes
+            that authenticate out of band (`tcp`).
+        password:
+          type: string
+          description: >
+            Fixed password paired with `username`. Same semantics: a local
+            placeholder, stable and safe to display, usable only through this
+            daemon's tunnel.
 
     ConnectionsResponse:
       type: object
