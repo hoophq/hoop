@@ -24,6 +24,9 @@ spec:
       {{- end }}
       labels:
         app: hoopgateway
+      {{- with omit .Values.podLabels "app" }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
     spec:
       {{- if .Values.serviceAccount.create }}
       serviceAccountName: hoopgateway
