@@ -101,6 +101,25 @@ func TestTokenBoundToClient(t *testing.T) {
 		assert.True(t, tokenBoundToClient(claims, []string{clientID}))
 	})
 
+	// JumpCloud-style (RFC 9068 §2.2): aud is empty, azp is absent, and the
+	// requesting client surfaces only through the client_id claim.
+	t.Run("client id in client_id with empty aud", func(t *testing.T) {
+		claims := jwt.MapClaims{
+			"aud":       []any{},
+			"client_id": clientID,
+		}
+		assert.True(t, tokenBoundToClient(claims, []string{clientID}))
+	})
+
+	t.Run("unrelated client_id rejected", func(t *testing.T) {
+		claims := jwt.MapClaims{"aud": []any{}, "client_id": "other-client"}
+		assert.False(t, tokenBoundToClient(claims, []string{clientID}))
+	})
+
+	t.Run("client_id is case-sensitive exact", func(t *testing.T) {
+		assert.False(t, tokenBoundToClient(jwt.MapClaims{"client_id": "HOOP-mcp-client"}, []string{clientID}))
+	})
+
 	t.Run("unrelated client rejected", func(t *testing.T) {
 		claims := jwt.MapClaims{"aud": "something-else", "azp": "web-app-client"}
 		assert.False(t, tokenBoundToClient(claims, []string{clientID}))
@@ -125,7 +144,7 @@ func TestTokenBoundToClient(t *testing.T) {
 	})
 
 	t.Run("empty client ids never match", func(t *testing.T) {
-		assert.False(t, tokenBoundToClient(jwt.MapClaims{"aud": "", "azp": ""}, []string{""}))
+		assert.False(t, tokenBoundToClient(jwt.MapClaims{"aud": "", "azp": "", "client_id": ""}, []string{""}))
 		assert.False(t, tokenBoundToClient(jwt.MapClaims{"azp": clientID}, nil))
 	})
 
