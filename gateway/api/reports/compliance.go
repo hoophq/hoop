@@ -73,22 +73,10 @@ func collectComplianceSnapshot(ctx *storagev2.Context) (*complianceSnapshot, err
 		return nil, fmt.Errorf("failed listing guardrail rules: %v", err)
 	}
 
-	reviews, err := models.ListReviews(ctx.OrgID)
+	now := time.Now().UTC()
+	pendingReviews, stalePendingReviews, err := models.CountPendingReviews(ctx.OrgID, now.Add(-reviewResponseSLAWindow))
 	if err != nil {
-		return nil, fmt.Errorf("failed listing reviews: %v", err)
-	}
-	pendingReviews, stalePendingReviews := 0, 0
-	if reviews != nil {
-		now := time.Now().UTC()
-		for _, rev := range *reviews {
-			if rev.Status != models.ReviewStatusPending {
-				continue
-			}
-			pendingReviews++
-			if now.Sub(rev.CreatedAt) > reviewResponseSLAWindow {
-				stalePendingReviews++
-			}
-		}
+		return nil, fmt.Errorf("failed counting pending reviews: %v", err)
 	}
 
 	serviceAccounts, err := models.ListServiceAccounts(ctx.OrgID)
@@ -96,7 +84,7 @@ func collectComplianceSnapshot(ctx *storagev2.Context) (*complianceSnapshot, err
 		return nil, fmt.Errorf("failed listing service accounts: %v", err)
 	}
 
-	thirtyDaysAgo := time.Now().UTC().AddDate(0, 0, -30)
+	thirtyDaysAgo := now.AddDate(0, 0, -30)
 	sessionMetrics, err := models.GetSessionMetricsAggregated(ctx.OrgID, models.SessionMetricsFilter{
 		StartDate:           &thirtyDaysAgo,
 		IncludeOpenSessions: true,
