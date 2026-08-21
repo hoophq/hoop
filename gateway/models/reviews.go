@@ -190,6 +190,26 @@ func GetReviewByIdOrSid(orgID, id string) (*Review, error) {
 	return &review, err
 }
 
+// CountPendingReviews returns the number of pending reviews and the number that
+// have been pending longer than staleBefore without loading the reviews themselves.
+func CountPendingReviews(orgID string, staleBefore time.Time) (int, int, error) {
+	var counts struct {
+		Pending int64 `gorm:"column:pending_count"`
+		Stale   int64 `gorm:"column:stale_count"`
+	}
+	err := DB.Raw(`
+		SELECT
+			COUNT(*) FILTER (WHERE status = ?) AS pending_count,
+			COUNT(*) FILTER (WHERE status = ? AND created_at < ?) AS stale_count
+		FROM private.reviews
+		WHERE org_id = ?`, ReviewStatusPending, ReviewStatusPending, staleBefore, orgID).
+		Scan(&counts).Error
+	if err != nil {
+		return 0, 0, err
+	}
+	return int(counts.Pending), int(counts.Stale), nil
+}
+
 func ListReviews(orgID string) (*[]Review, error) {
 	var reviews []Review
 	err := DB.Raw(`
