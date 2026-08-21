@@ -3855,3 +3855,141 @@ type MachineIdentityCredentialInfo struct {
 	Port              string     `json:"port,omitempty"`
 	CreatedAt         *time.Time `json:"created_at" readonly:"true"`
 }
+
+type ComplianceStatusType string
+
+const (
+	ComplianceStatusCompliant      ComplianceStatusType = "compliant"
+	ComplianceStatusWarning        ComplianceStatusType = "warning"
+	ComplianceStatusNonCompliant   ComplianceStatusType = "non_compliant"
+	ComplianceStatusNotApplicable  ComplianceStatusType = "not_applicable"
+	ComplianceStatusUnableToVerify ComplianceStatusType = "unable_to_verify"
+	ComplianceStatusIdpDependent   ComplianceStatusType = "idp_dependent"
+	// ComplianceStatusInformational marks discovery-style checks that are never
+	// pass/fail and are excluded from scoring and applicable totals.
+	ComplianceStatusInformational ComplianceStatusType = "informational"
+)
+
+// ComplianceControlAction is the remediation action attached to a control.
+// Type "app" targets an in-app route, "docs" a documentation path, and
+// "external" a system outside Hoop (empty target). Controls with no action
+// omit the field.
+type ComplianceControlAction struct {
+	// Label is the display text of the action
+	Label string `json:"label" example:"Go to Resources ↗"`
+	// Type classifies the action target
+	Type string `json:"type" enums:"app,docs,external"`
+	// Target is the in-app route or docs path; empty for external actions
+	Target string `json:"target" example:"/resources"`
+}
+
+type ComplianceCheckResult struct {
+	// ID is the stable evaluator id of the check
+	ID string `json:"id" example:"sso_enabled"`
+	// Title is the human readable name of the check
+	Title string `json:"title" example:"Single Sign-On Enabled"`
+	// Category groups checks by security domain
+	Category string `json:"category" enums:"identity,access_control,data_protection,audit_trail,monitoring_response,infrastructure"`
+	// Status is the evaluated compliance status
+	Status ComplianceStatusType `json:"status"`
+	// Message describes the evaluated result
+	Message string `json:"message" example:"SSO is enabled via OIDC provider"`
+	// Evidence is the data supporting the evaluated status
+	Evidence string `json:"evidence" example:"Authentication method: OIDC"`
+	// Action is the remediation action for this check, when one exists
+	Action *ComplianceControlAction `json:"action,omitempty"`
+}
+
+type ComplianceControl struct {
+	// ID is the framework control identifier
+	ID string `json:"id" example:"CC6.1"`
+	// Title is the control name
+	Title string `json:"title"`
+	// Description explains how the product satisfies the control
+	Description string `json:"description"`
+	// CheckID references the check that evaluates this control
+	CheckID string `json:"check_id" example:"sso_enabled"`
+	// Category groups the control by security domain
+	Category string `json:"category"`
+	// Status is the evaluated compliance status
+	Status ComplianceStatusType `json:"status"`
+	// Message describes the evaluated result
+	Message string `json:"message"`
+	// Evidence is the data supporting the evaluated status
+	Evidence string `json:"evidence"`
+	// Action is the remediation action for this control, when one exists
+	Action *ComplianceControlAction `json:"action,omitempty"`
+}
+
+type ComplianceControlGroup struct {
+	// ID is the control group identifier
+	ID string `json:"id" example:"CC6"`
+	// Title is the control group name
+	Title string `json:"title" example:"Logical and Physical Access Controls"`
+	// Controls are the evaluated controls of this group
+	Controls []ComplianceControl `json:"controls"`
+}
+
+type ComplianceStatusBreakdown struct {
+	Compliant      int `json:"compliant"`
+	Warning        int `json:"warning"`
+	NonCompliant   int `json:"non_compliant"`
+	NotApplicable  int `json:"not_applicable"`
+	UnableToVerify int `json:"unable_to_verify"`
+	IdpDependent   int `json:"idp_dependent"`
+	Informational  int `json:"informational"`
+}
+
+type ComplianceFramework struct {
+	// ID is the framework identifier
+	ID string `json:"id" enums:"soc2,gdpr,pci_dss,hipaa,best_practices"`
+	// Name is the framework display name
+	Name string `json:"name" example:"SOC 2 Type II"`
+	// ScorePercent is the weighted compliance score in the 0-100 range
+	ScorePercent int `json:"score_percent" example:"85"`
+	// Level classifies the score: low (0-39), moderate (40-69), strong (70-100)
+	Level string `json:"level" enums:"low,moderate,strong"`
+	// Compliant is the number of compliant controls
+	Compliant int `json:"compliant"`
+	// TotalApplicable is the number of controls excluding not_applicable, unable_to_verify and informational
+	TotalApplicable int `json:"total_applicable"`
+	// Breakdown counts controls by status
+	Breakdown ComplianceStatusBreakdown `json:"breakdown"`
+	// Groups are the framework control groups
+	Groups []ComplianceControlGroup `json:"groups"`
+}
+
+type ComplianceCategorySummary struct {
+	// ID is the category identifier
+	ID string `json:"id" example:"identity"`
+	// Title is the category display name
+	Title string `json:"title" example:"Identity"`
+	// Compliant is the number of compliant checks in this category
+	Compliant int `json:"compliant"`
+	// Total is the number of applicable checks (excludes not_applicable, unable_to_verify and informational)
+	Total int `json:"total"`
+}
+
+type ComplianceOverall struct {
+	// Score is the weighted compliance score in the 0-1000 range
+	Score int `json:"score" example:"812"`
+	// Level classifies the score: low (0-499), moderate (500-749), strong (750-1000)
+	Level string `json:"level" enums:"low,moderate,strong"`
+	// Compliant is the number of compliant control rows across all frameworks
+	Compliant int `json:"compliant"`
+	// TotalApplicable is the number of control rows excluding not_applicable, unable_to_verify and informational
+	TotalApplicable int `json:"total_applicable"`
+}
+
+type ComplianceReport struct {
+	// GeneratedAt is the UTC timestamp when the report was computed
+	GeneratedAt time.Time `json:"generated_at"`
+	// Overall is the aggregated compliance score
+	Overall ComplianceOverall `json:"overall"`
+	// Categories summarize the checks by security domain
+	Categories []ComplianceCategorySummary `json:"categories"`
+	// ActionRequired lists actionable checks with warning or non_compliant status
+	ActionRequired []ComplianceCheckResult `json:"action_required"`
+	// Frameworks are the per-framework control evaluations
+	Frameworks []ComplianceFramework `json:"frameworks"`
+}
