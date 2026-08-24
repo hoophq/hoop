@@ -433,18 +433,11 @@ func NewUserInfoTokenVerifierProvider() (UserInfoTokenVerifier, idptypes.ServerC
 	// set server configuration falling back to appconfig
 	appc := appconfig.Get()
 	var orgLicenseData json.RawMessage
-
-	// legacy api key organization id
-	orgID := strings.Split(appc.ApiKey(), "|")[0]
-	// fallback loading from the server auth config in case it's set
 	if serverAuthConfig != nil {
-		if serverAuthConfig.OrgID != "" {
-			orgID = serverAuthConfig.OrgID
-		}
 		orgLicenseData = serverAuthConfig.OrgLicenseData
 	}
 	serverConfig := idptypes.ServerConfig{
-		OrgID:          orgID,
+		OrgID:          resolveServerOrgID(appc.ApiKey(), serverAuthConfig),
 		OrgLicenseData: orgLicenseData,
 		AuthMethod:     providerType,
 		ApiKey:         appc.ApiKey(),
@@ -452,7 +445,6 @@ func NewUserInfoTokenVerifierProvider() (UserInfoTokenVerifier, idptypes.ServerC
 	}
 
 	if serverAuthConfig != nil {
-		serverConfig.OrgID = serverAuthConfig.OrgID
 		if serverAuthConfig.ApiKey != nil {
 			serverConfig.ApiKey = *serverAuthConfig.ApiKey
 		}
@@ -465,6 +457,21 @@ func NewUserInfoTokenVerifierProvider() (UserInfoTokenVerifier, idptypes.ServerC
 
 	singletonStore.Set(singletonStoreKey, &wrapper)
 	return wrapper, wrapper.serverConfig, nil
+}
+
+// resolveServerOrgID resolves the organization of the server configuration. The legacy
+// `orgID|key` API_KEY carries it in its prefix, and the server auth config overrides it.
+//
+// The override must be guarded. GetServerAuthConfig full outer joins private.authconfig
+// with private.serverconfig, so it returns a record with an empty OrgID while the
+// authconfig row does not exist. An empty value that overrides the legacy organization
+// makes every consumer of ServerConfig.OrgID unable to find the organization: the grpc
+// auth interceptor then rejects a valid API_KEY with `invalid authentication`.
+func resolveServerOrgID(apiKey string, serverAuthConfig *models.ServerAuthConfig) string {
+	if serverAuthConfig != nil && serverAuthConfig.OrgID != "" {
+		return serverAuthConfig.OrgID
+	}
+	return strings.Split(apiKey, "|")[0]
 }
 
 func NewTokenVerifierProvider() (TokenVerifier, idptypes.ServerConfig, error) {

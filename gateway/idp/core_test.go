@@ -350,3 +350,49 @@ func TestUserInfoTokenVerifier_hasServerConfigChanged(t *testing.T) {
 		})
 	})
 }
+
+func TestResolveServerOrgID(t *testing.T) {
+	const legacyOrgID = "ebbc9916-6654-4079-bd44-e9e8cb789818"
+
+	for _, tt := range []struct {
+		msg              string
+		apiKey           string
+		serverAuthConfig *models.ServerAuthConfig
+		want             string
+	}{
+		{
+			msg:              "it should keep the legacy org id when the authconfig row does not exist",
+			apiKey:           legacyOrgID + "|secret",
+			serverAuthConfig: &models.ServerAuthConfig{OrgID: ""},
+			want:             legacyOrgID,
+		},
+		{
+			msg:              "it should keep the legacy org id when there is no server auth config",
+			apiKey:           legacyOrgID + "|secret",
+			serverAuthConfig: nil,
+			want:             legacyOrgID,
+		},
+		{
+			msg:              "it should prefer the server auth config org id",
+			apiKey:           legacyOrgID + "|secret",
+			serverAuthConfig: &models.ServerAuthConfig{OrgID: "6b1d1f7e-0000-4000-8000-000000000001"},
+			want:             "6b1d1f7e-0000-4000-8000-000000000001",
+		},
+		{
+			msg:              "it should use the server auth config org id for xapi keys",
+			apiKey:           "xapi-Zm9vYmFy",
+			serverAuthConfig: &models.ServerAuthConfig{OrgID: legacyOrgID},
+			want:             legacyOrgID,
+		},
+		{
+			msg:              "it should be empty when the api key is not set and there is no org id",
+			apiKey:           "",
+			serverAuthConfig: &models.ServerAuthConfig{OrgID: ""},
+			want:             "",
+		},
+	} {
+		t.Run(tt.msg, func(t *testing.T) {
+			assert.Equal(t, tt.want, resolveServerOrgID(tt.apiKey, tt.serverAuthConfig))
+		})
+	}
+}

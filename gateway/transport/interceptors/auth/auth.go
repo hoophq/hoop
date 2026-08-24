@@ -208,6 +208,8 @@ func (i *interceptor) StreamServerInterceptor(srv any, ss grpc.ServerStream, inf
 			deterministicUuid := uuid.NewSHA1(uuid.NameSpaceURL, []byte(`API_KEY`))
 			org, err := models.GetOrganizationByNameOrID(serverConfig.OrgID)
 			if err != nil {
+				log.Errorf("failed fetching the organization of the server api key, org=%q, err=%v",
+					serverConfig.OrgID, err)
 				return status.Errorf(codes.Unauthenticated, "invalid authentication")
 			}
 			ctx := &models.Context{
