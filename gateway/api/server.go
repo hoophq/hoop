@@ -693,6 +693,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.POST("/access-requests/rules",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		accessrequestsapi.CreateAccessRequestRule,
 	)
 	r.GET("/access-requests/rules/:name",
@@ -703,11 +704,13 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.PUT("/access-requests/rules/:name",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		accessrequestsapi.UpdateAccessRequestRule,
 	)
 	r.DELETE("/access-requests/rules/:name",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		accessrequestsapi.DeleteAccessRequestRule,
 	)
 
@@ -1116,10 +1119,12 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.POST("/ai/session-analyzer/providers",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		apiai.UpsertSessionAnalyzerProvider)
 	r.DELETE("/ai/session-analyzer/providers",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		apiai.DeleteSessionAnalyzerProvider)
 
 	r.GET("/ai/session-analyzer/rules",
@@ -1129,6 +1134,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.POST("/ai/session-analyzer/rules",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		apiai.CreateSessionAnalyzerRule)
 	r.GET("/ai/session-analyzer/rules/:name",
 		apiroutes.AdminAndAuditorAccessRole,
@@ -1137,10 +1143,12 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.PUT("/ai/session-analyzer/rules/:name",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		apiai.UpdateSessionAnalyzerRule)
 	r.DELETE("/ai/session-analyzer/rules/:name",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		apiai.DeleteSessionAnalyzerRule)
 	r.GET("/ai/session-analyzer/system-prompt",
 		apiroutes.AdminAndAuditorAccessRole,

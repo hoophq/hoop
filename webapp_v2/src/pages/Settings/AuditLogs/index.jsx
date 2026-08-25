@@ -22,11 +22,21 @@ function formatTimestamp(ts) {
   return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
 }
 
+function formatResourceType(resourceType) {
+  return resourceType
+    .split(/[_-]/)
+    .map((word) => {
+      if (word == 'ai') return 'AI'
+      return word.charAt(0).toUpperCase() + word.slice(1)
+    })
+    .join(' ')
+}
+
 function formatOperation(action, resourceType, resourceName) {
   const actionText =
-    { create: 'Created', update: 'Updated', delete: 'Deleted', revoke: 'Revoke' }[action] ??
+    { create: 'Created', update: 'Updated', delete: 'Deleted', revoke: 'Revoked' }[action] ??
     (action ? action.charAt(0).toUpperCase() + action.slice(1) : '')
-  const resourceText = resourceName || (resourceType ? resourceType.charAt(0).toUpperCase() + resourceType.slice(1) : 'Resource')
+  const resourceText = resourceName || (resourceType ? formatResourceType(resourceType) : 'Resource')
   return `${actionText} ${resourceText}`
 }
 

@@ -17,6 +17,9 @@ var root = buildRoutes([]struct {
 	resource ResourceType
 }{
 	{[]string{"users", "groups"}, ResourceUserGroup},
+	{[]string{"access-requests", "rules"}, ResourceAccessRequestRule},
+	{[]string{"ai", "session-analyzer", "rules"}, ResourceAISessionAnalyzerRule},
+	{[]string{"ai", "session-analyzer", "providers"}, ResourceAISessionAnalyzerProvider},
 	{[]string{"users"}, ResourceUser},
 	{[]string{"connections"}, ResourceConnection},
 	{[]string{"agents"}, ResourceAgent},
