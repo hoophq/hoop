@@ -24,6 +24,7 @@ var root = buildRoutes([]struct {
 	{[]string{"orgs", "features"}, ResourceOrgFeature},
 	{[]string{"users"}, ResourceUser},
 	{[]string{"connections"}, ResourceConnection},
+	{[]string{"connections", "datamasking-rules"}, ResourceDataMasking},
 	{[]string{"agents"}, ResourceAgent},
 	{[]string{"resources"}, ResourceResource},
 	{[]string{"guardrails"}, ResourceGuardrails},
