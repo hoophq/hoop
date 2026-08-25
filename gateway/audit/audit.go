@@ -176,8 +176,8 @@ func LogFromMiddleware(
 	if len(requestBody) > 0 {
 		if err := json.Unmarshal(requestBody, &payload); err != nil {
 			log.Warnf("failed to unmarshal request body for audit log: %v", err)
-			// Store as raw string if unmarshal fails
-			payload = map[string]any{"_raw": string(requestBody)}
+			// Do not persist an unparsed body: it may contain credentials.
+			payload = nil
 		}
 	}
 
