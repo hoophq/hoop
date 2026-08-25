@@ -144,7 +144,7 @@ and prints a notice naming the new one.
 mount the ConfigMap, set the variable, pass no arguments.
 
 That binary is already in the images you pull: `hoophq/hoopdev` (agent) and
-`hoophq/hoop` (gateway), from **1.126.0** onward. Running the relay out of one
+`hoophq/hoop` (gateway), starting with the release containing the `sidecar` rename. Older images use `start inspect`. Running the relay out of one
 without building anything (`docker exec` into a live container, extending the
 image and swapping `CMD`, or adding a second container to the agent pod) is
 [QUICKSTART-AGENT-IMAGE.md](./QUICKSTART-AGENT-IMAGE.md).

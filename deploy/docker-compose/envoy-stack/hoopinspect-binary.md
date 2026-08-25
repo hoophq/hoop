@@ -2,13 +2,14 @@
 
 The inspection relay ships **inside the images you already pull**. No separate
 binary, no separate image, no extra registry credential. `hoop start sidecar`
-is a subcommand of the same `hoop` binary that runs the agent, so any image at
-**1.126.0 or newer** can run it.
+is a subcommand of the same `hoop` binary that runs the agent. It is available
+starting with the release containing this rename; older images use
+`hoop start inspect`.
 
 The command was named `hoop start inspect`, and `HOOP_SIDECAR_CONFIG` was
-`HOOP_INSPECT_CONFIG`. Both old names still work, so an image or manifest
-written before the rename needs no change. The command prints a notice naming
-the new one.
+`HOOP_INSPECT_CONFIG`. Both names work in rename-capable images, so an image
+or manifest written before the rename can continue using the old names. The
+command prints a notice naming the new one.
 
 | Image | Where it lives | Tag to pull |
 |---|---|---|
@@ -22,7 +23,7 @@ underneath a test you are in the middle of.
 
 ```bash
 docker pull hoophq/hoopdev:1.133.1
-docker run --rm --entrypoint hoop hoophq/hoopdev:1.133.1 start sidecar --help
+docker run --rm --entrypoint hoop hoophq/hoopdev:1.133.1 start inspect --help
 ```
 
 Three ways to run it, cheapest first. All three use the same binary and the
@@ -80,7 +81,7 @@ running:
 ```bash
 docker run --rm -v "$PWD/config.yaml:/etc/hoop-inspect/config.yaml:ro" \
   --entrypoint hoop hoophq/hoopdev:1.133.1 \
-  start sidecar --config /etc/hoop-inspect/config.yaml --validate
+  start inspect --config /etc/hoop-inspect/config.yaml --validate
 ```
 
 ```
@@ -145,12 +146,12 @@ ARG HOOP_TAG=1.133.1
 FROM hoophq/hoopdev:${HOOP_TAG}
 
 COPY config.yaml /etc/hoop-inspect/config.yaml
-ENV HOOP_SIDECAR_CONFIG=/etc/hoop-inspect/config.yaml
+ENV HOOP_INSPECT_CONFIG=/etc/hoop-inspect/config.yaml
 
 # Fail the build, not the pod, when the config is wrong.
-RUN hoop start sidecar --config /etc/hoop-inspect/config.yaml --validate
+RUN hoop start inspect --config /etc/hoop-inspect/config.yaml --validate
 
-CMD ["hoop", "start", "sidecar"]
+CMD ["hoop", "start", "inspect"]
 ```
 
 ```bash
@@ -185,9 +186,9 @@ containers:
 
   - name: hoop-inspect
     image: hoophq/hoopdev:1.133.1        # the very same image
-    command: ["hoop", "start", "sidecar"]
+    command: ["hoop", "start", "inspect"]
     env:
-      - name: HOOP_SIDECAR_CONFIG
+      - name: HOOP_INSPECT_CONFIG
         value: /etc/hoop-inspect/config.yaml
     ports:
       - {containerPort: 15432, name: pg}
