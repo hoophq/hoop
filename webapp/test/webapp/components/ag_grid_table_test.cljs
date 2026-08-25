@@ -1,6 +1,5 @@
 (ns webapp.components.ag-grid-table-test
-  "Command output is ragged — a value holding a tab makes a row wider than the
-  header — so these transforms carry the normalization the grid needs."
+  "Command output is ragged: a value holding a tab widens its row."
   (:require
    [cljs.test :refer-macros [deftest testing is]]
    [webapp.components.ag-grid-table :as ag-grid-table]))

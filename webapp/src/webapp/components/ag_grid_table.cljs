@@ -57,11 +57,7 @@
     out))
 
 (defn ag-grid
-  "Renders AG Grid over JS column definitions and row objects.
-
-   - columns: JS array of column defs
-   - rows: JS array of row objects
-   - options: :height, :pagination?, :page-size, :auto-size-columns?"
+  "Renders AG Grid over JS column definitions and row objects."
   [{:keys [columns rows options dark-mode?]}]
   (let [{:keys [height pagination? page-size auto-size-columns?]}
         (merge {:height "400px" :pagination? false :auto-size-columns? true}

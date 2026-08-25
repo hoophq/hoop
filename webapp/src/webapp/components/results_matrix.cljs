@@ -3,7 +3,10 @@
   writers consume. Memoized: it used to re-parse on every render (EVL-121)."
   (:require ["papaparse" :as papa]))
 
-(defonce ^:private cache (atom nil))
+(defn new-cache
+  "One per component, so the matrix is released on unmount."
+  []
+  (atom nil))
 
 (defn- parse [response]
   (when (some? response)
@@ -15,7 +18,7 @@
 (defn parse-results
   "Returns {:matrix :heads :body} of JS arrays for `response`, or nil.
   Reference stable, so Reagent can skip re-rendering the grid."
-  [response]
+  [cache response]
   (let [cached @cache]
     (if (and cached (= (:key cached) response))
       (:parsed cached)
@@ -23,8 +26,15 @@
         (reset! cache {:key response :parsed parsed})
         parsed))))
 
+(defn release-stale!
+  "Drops a matrix parsed for an older response. Returns nil."
+  [cache response]
+  (when-let [cached @cache]
+    (when-not (= (:key cached) response)
+      (reset! cache nil)))
+  nil)
+
 (defn rows?
-  "Whether the output has rows below the header, without parsing it.
-  papaparse emits one row per line, so this is just a second line."
+  "Whether the output has rows below the header, without parsing it."
   [response]
   (boolean (and response (.includes response "\n"))))

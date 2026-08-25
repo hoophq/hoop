@@ -10,9 +10,10 @@
    [webapp.components.tabs :as tabs]))
 
 (defn- parse-results
-  [results connection-type]
+  [cache results connection-type]
   (when (some? results)
     (results-matrix/parse-results
+     cache
      (if (= connection-type "oracledb")
        (string/join "\n" (drop 1 (string/split results #"\n")))
        results))))
@@ -59,11 +60,12 @@
     [logs/virtualized-container {:status status :logs results :classes classes}]]])
 
 (defn main []
-  (let [log-view (r/atom "Plain text")]
+  (let [log-view (r/atom "Plain text")
+        matrix-cache (results-matrix/new-cache)]
 
     (fn [connection-subtype {:keys [results results-status fixed-height? classes
                                     session-id connection-name has-large-payload?]}]
-      (let [parsed (parse-results results connection-subtype)
+      (let [parsed (parse-results matrix-cache results connection-subtype)
             results-heads (:heads parsed)
             results-body (:body parsed)
             sql-subtypes #{"mysql-csv" "mysql" "postgres" "sql-server" "mssql"

@@ -39,7 +39,8 @@
     :else response))
 
 (defn main [_]
-  (let [script-response (rf/subscribe [:editor-plugin->script])]
+  (let [script-response (rf/subscribe [:editor-plugin->script])
+        matrix-cache (results-matrix/new-cache)]
     (fn [connection-type parallel-mode-active? dark-mode?]
       (let [response (sanitize-response (:output (:data @script-response)) connection-type)
             logs-content {:status (:status @script-response)
@@ -59,15 +60,16 @@
             tabular-loading? (= tabular-status :loading)
             connection-type-database? (some (partial = connection-type)
                                             ["mysql" "postgres" "sql-server" "oracledb" "mssql" "database"])
-            ;; Above the threshold downloads go to the backend, so the matrix
-            ;; only feeds the Tabular tab.
+            ;; Above the threshold downloads go to the backend, so only
+            ;; Tabular needs the matrix.
             build-matrix? (boolean
                            (and connection-type-database?
                                 (or (= @selected-tab "Tabular")
                                     (<= (count response)
                                         download-menu/client-side-threshold))))
-            parsed (when build-matrix?
-                     (results-matrix/parse-results response))
+            parsed (if build-matrix?
+                     (results-matrix/parse-results matrix-cache response)
+                     (results-matrix/release-stale! matrix-cache response))
             results-heads (:heads parsed)
             results-body (:body parsed)
             available-tabs (merge
