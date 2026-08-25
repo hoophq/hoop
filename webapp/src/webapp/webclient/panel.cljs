@@ -216,7 +216,8 @@
         :height "100%"
         :className "h-full text-sm"
         :theme theme
-        :basicSetup #js{:defaultKeymap false}
+        :basicSetup #js{:defaultKeymap false
+                        :highlightSelectionMatches false}
         :onChange on-change
         :extensions (clj->js extensions)}])}))
 

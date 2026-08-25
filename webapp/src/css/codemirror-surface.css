@@ -21,7 +21,10 @@
   border-right: none;
 }
 
-.cm-editor.cm-editor .cm-activeLine,
+.cm-editor.cm-editor .cm-activeLine {
+  background-color: rgb(0 0 20 / 4%);
+}
+
 .cm-editor.cm-editor .cm-activeLineGutter {
   background-color: var(--gray-5);
 }
@@ -34,7 +37,10 @@
   background-color: #2e3235;
 }
 
-.dark .cm-editor.cm-editor .cm-activeLine,
+.dark .cm-editor.cm-editor .cm-activeLine {
+  background-color: rgb(255 255 255 / 6%);
+}
+
 .dark .cm-editor.cm-editor .cm-activeLineGutter {
   background-color: #3a3f43;
 }
