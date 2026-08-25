@@ -10218,7 +10218,7 @@ const docTemplate = `{
         },
         "/users/groups": {
             "get": {
-                "description": "List all groups from all users",
+                "description": "List every group name known to the organization: the ones bound to users, service accounts, API keys and AI agents, plus the ones referenced by the access_control plugin. Sorted alphabetically.",
                 "produces": [
                     "application/json"
                 ],

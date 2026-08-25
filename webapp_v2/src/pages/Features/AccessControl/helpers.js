@@ -34,10 +34,11 @@ export function groupsWithPermissions(connections) {
   return byGroup
 }
 
-// Groups come from two places that can disagree: /users/groups (the identity
-// side) and the plugin config (the permission side). A group removed from the
-// IDP but still referenced by a connection has to stay visible, otherwise its
-// permissions become unreachable and silently keep applying.
+// /users/groups already unions the identity side with the plugin config
+// (EVL-217), so this second union is not what makes an IDP-dropped group
+// visible any more. It stays because this page rewrites the plugin config
+// without refetching /users/groups: a group attached in the current session
+// would otherwise disappear from the list until a reload.
 export function allGroups(userGroups, connections) {
   const names = new Set(userGroups ?? [])
   for (const connection of connections ?? []) {

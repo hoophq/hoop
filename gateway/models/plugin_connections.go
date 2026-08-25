@@ -3,6 +3,7 @@ package models
 import (
 	"time"
 
+	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
@@ -55,6 +56,33 @@ func UpsertPluginConnection(orgID, pluginName, connID string, config pq.StringAr
 		}
 		return nil
 	})
+}
+
+// ListAccessControlGroupNames returns the distinct group names referenced by the
+// access_control plugin configuration.
+//
+// These are permission-side names. A group that the IDP stopped emitting loses
+// its private.user_groups rows on the next login of its members, but keeps the
+// plugin association, so it has to stay listable: otherwise its permissions are
+// unreachable in the UI while they keep applying at connection time.
+func ListAccessControlGroupNames(db *gorm.DB, orgID string) ([]string, error) {
+	var rows []struct{ Name string }
+	err := db.Raw(`
+		SELECT DISTINCT unnest(pc.config) AS name
+		FROM private.plugin_connections pc
+		INNER JOIN private.plugins p ON p.id = pc.plugin_id
+		WHERE pc.org_id = ? AND p.name = ? AND pc.enabled = 't'`,
+		orgID, plugintypes.PluginAccessControlName).
+		Scan(&rows).
+		Error
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(rows))
+	for _, r := range rows {
+		names = append(names, r.Name)
+	}
+	return names, nil
 }
 
 func GetPluginConnection(orgID, pluginName, connID string) (*PluginConnection, error) {
