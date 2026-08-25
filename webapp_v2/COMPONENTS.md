@@ -787,8 +787,10 @@ Non-obvious notes only:
   send tomorrow to include today). Never send `group_by`.
 - `reviews.js` — `/reviews` returns a bare array, accepts **no query params** and
   is unbounded; fetch it once and filter client-side.
-- `userGroups.js` — `list()` returns a bare string array, and `null` (not
-  `[]`) when the organization has no groups; callers must coalesce.
+- `userGroups.js` — `list()` returns a bare string array, sorted, unioning the
+  identity side (users, service accounts, API keys, AI agents) with the
+  `access_control` plugin config. Empty organizations get `[]`; gateways older
+  than EVL-217 answer `null`, so callers still coalesce.
 
 ---
 
