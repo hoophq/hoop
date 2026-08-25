@@ -24,11 +24,6 @@ func seedPluginConnection(t *testing.T, pluginName, connName string, enabled boo
 		testOrgID, enabled, pq.StringArray(config), testOrgID, pluginName, testOrgID, connName)
 }
 
-// The access_control config is the permission side of a group. A group the IDP
-// stopped emitting loses every private.user_groups row on the next login of its
-// members but keeps this association, so /users/groups has to read it or the
-// group vanishes from every picker while its permissions keep applying
-// (EVL-217).
 func TestListAccessControlGroupNames(t *testing.T) {
 	startTestDB(t)
 

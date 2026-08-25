@@ -61,28 +61,21 @@ func UpsertPluginConnection(orgID, pluginName, connID string, config pq.StringAr
 // ListAccessControlGroupNames returns the distinct group names referenced by the
 // access_control plugin configuration.
 //
-// These are permission-side names. A group that the IDP stopped emitting loses
-// its private.user_groups rows on the next login of its members, but keeps the
-// plugin association, so it has to stay listable: otherwise its permissions are
-// unreachable in the UI while they keep applying at connection time.
+// This is the permission half of a group. A group the IDP stops emitting loses
+// its private.user_groups rows on the next login of its members but keeps this
+// association, so it has to stay listable: otherwise its permissions are
+// unreachable in the UI while they keep applying at connection time (EVL-217).
 func ListAccessControlGroupNames(db *gorm.DB, orgID string) ([]string, error) {
-	var rows []struct{ Name string }
+	var names []string
 	err := db.Raw(`
 		SELECT DISTINCT unnest(pc.config) AS name
 		FROM private.plugin_connections pc
 		INNER JOIN private.plugins p ON p.id = pc.plugin_id
 		WHERE pc.org_id = ? AND p.name = ? AND pc.enabled = 't'`,
 		orgID, plugintypes.PluginAccessControlName).
-		Scan(&rows).
+		Scan(&names).
 		Error
-	if err != nil {
-		return nil, err
-	}
-	names := make([]string, 0, len(rows))
-	for _, r := range rows {
-		names = append(names, r.Name)
-	}
-	return names, nil
+	return names, err
 }
 
 func GetPluginConnection(orgID, pluginName, connID string) (*PluginConnection, error) {

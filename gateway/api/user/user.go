@@ -672,10 +672,8 @@ func ListAllGroups(c *gin.Context) {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing groups")
 		return
 	}
-	// private.user_groups is a membership table, so it only knows a group while
-	// something is bound to it. A group the IDP stopped emitting keeps its
-	// access_control association but loses its rows, which used to hide it from
-	// every group picker while its permissions kept applying.
+	// user_groups only knows a group while a membership row exists; the plugin
+	// config is the other half (EVL-217).
 	pluginGroups, err := models.ListAccessControlGroupNames(models.DB, ctx.OrgID)
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing groups")
