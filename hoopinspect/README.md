@@ -132,12 +132,16 @@ Two ways to run the same relay.
 release pipeline already builds. Nothing extra to compile or ship:
 
 ```bash
-hoop start inspect --config config.yaml --validate   # check the config and exit
-hoop start inspect --config config.yaml              # run
+hoop start sidecar --config config.yaml --validate   # check the config and exit
+hoop start sidecar --config config.yaml              # run
 ```
 
-`--config` also reads `HOOP_INSPECT_CONFIG`, which is the shape a Kubernetes
-deployment wants: mount the ConfigMap, set the variable, pass no arguments.
+The command was named `inspect`. That name still works as a deprecated alias
+and prints a notice naming the new one.
+
+`--config` also reads `HOOP_SIDECAR_CONFIG` (or the older
+`HOOP_INSPECT_CONFIG`), which is the shape a Kubernetes deployment wants:
+mount the ConfigMap, set the variable, pass no arguments.
 
 That binary is already in the images you pull: `hoophq/hoopdev` (agent) and
 `hoophq/hoop` (gateway), from **1.126.0** onward. Running the relay out of one
@@ -178,8 +182,8 @@ the `pii` section and detection is off, which makes masking unavailable and a
 silently skipped.
 
 To embed the relay in your own process, call `sidecar.Setup` to load the config
-and build the detector, then `sidecar.Run`. That is all `hoop start inspect`
-does; read `client/cmd/startinspect.go` for the whole of it.
+and build the detector, then `sidecar.Run`. That is all `hoop start sidecar`
+does; read `client/cmd/startsidecar.go` for the whole of it.
 
 ## Configuring it: config.yaml
 

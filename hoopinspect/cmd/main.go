@@ -15,7 +15,7 @@
 // YAML config front end -- and a main in the root could not import those
 // without putting their dependencies in the root's go.mod.
 //
-// The same relay is reachable as `hoop start inspect`, which links the same
+// The same relay is reachable as `hoop start sidecar`, which links the same
 // two plugins into the hoop CLI. Prefer this binary for a sidecar container
 // that should carry nothing else.
 //

@@ -1,9 +1,14 @@
-# Running `hoop start inspect` from the agent image
+# Running `hoop start sidecar` from the agent image
 
 The inspection relay ships **inside the images you already pull**. No separate
-binary, no separate image, no extra registry credential. `hoop start inspect`
+binary, no separate image, no extra registry credential. `hoop start sidecar`
 is a subcommand of the same `hoop` binary that runs the agent, so any image at
 **1.126.0 or newer** can run it.
+
+The command was named `hoop start inspect`, and `HOOP_SIDECAR_CONFIG` was
+`HOOP_INSPECT_CONFIG`. Both old names still work, so an image or manifest
+written before the rename needs no change. The command prints a notice naming
+the new one.
 
 | Image | Where it lives | Tag to pull |
 |---|---|---|
@@ -17,7 +22,7 @@ underneath a test you are in the middle of.
 
 ```bash
 docker pull hoophq/hoopdev:1.133.1
-docker run --rm --entrypoint hoop hoophq/hoopdev:1.133.1 start inspect --help
+docker run --rm --entrypoint hoop hoophq/hoopdev:1.133.1 start sidecar --help
 ```
 
 Three ways to run it, cheapest first. All three use the same binary and the
@@ -75,7 +80,7 @@ running:
 ```bash
 docker run --rm -v "$PWD/config.yaml:/etc/hoop-inspect/config.yaml:ro" \
   --entrypoint hoop hoophq/hoopdev:1.133.1 \
-  start inspect --config /etc/hoop-inspect/config.yaml --validate
+  start sidecar --config /etc/hoop-inspect/config.yaml --validate
 ```
 
 ```
@@ -103,11 +108,11 @@ Good for a first look; the relay dies with the container.
 docker cp config.yaml <agent-container>:/tmp/inspect.yaml
 
 # 2. Check it.
-docker exec <agent-container> hoop start inspect --config /tmp/inspect.yaml --validate
+docker exec <agent-container> hoop start sidecar --config /tmp/inspect.yaml --validate
 
 # 3. Start the relay as a second process.
 docker exec -d <agent-container> \
-  sh -c 'hoop start inspect --config /tmp/inspect.yaml > /tmp/inspect.log 2>&1'
+  sh -c 'hoop start sidecar --config /tmp/inspect.yaml > /tmp/inspect.log 2>&1'
 
 # 4. Confirm it is up.
 docker exec <agent-container> curl -s localhost:19000/healthz     # ok
@@ -118,9 +123,9 @@ On Kubernetes the same three steps, with `kubectl`:
 
 ```bash
 kubectl cp config.yaml <pod>:/tmp/inspect.yaml -c agent
-kubectl exec <pod> -c agent -- hoop start inspect --config /tmp/inspect.yaml --validate
+kubectl exec <pod> -c agent -- hoop start sidecar --config /tmp/inspect.yaml --validate
 kubectl exec <pod> -c agent -- \
-  sh -c 'nohup hoop start inspect --config /tmp/inspect.yaml > /tmp/inspect.log 2>&1 &'
+  sh -c 'nohup hoop start sidecar --config /tmp/inspect.yaml > /tmp/inspect.log 2>&1 &'
 ```
 
 Both are ephemeral by construction: a pod restart, a rollout or an OOM kill
@@ -140,12 +145,12 @@ ARG HOOP_TAG=1.133.1
 FROM hoophq/hoopdev:${HOOP_TAG}
 
 COPY config.yaml /etc/hoop-inspect/config.yaml
-ENV HOOP_INSPECT_CONFIG=/etc/hoop-inspect/config.yaml
+ENV HOOP_SIDECAR_CONFIG=/etc/hoop-inspect/config.yaml
 
 # Fail the build, not the pod, when the config is wrong.
-RUN hoop start inspect --config /etc/hoop-inspect/config.yaml --validate
+RUN hoop start sidecar --config /etc/hoop-inspect/config.yaml --validate
 
-CMD ["hoop", "start", "inspect"]
+CMD ["hoop", "start", "sidecar"]
 ```
 
 ```bash
@@ -153,7 +158,7 @@ docker build -t my-hoop-inspect:1.133.1 .
 docker run -d --name inspect -p 15432:15432 -p 19000:19000 my-hoop-inspect:1.133.1
 ```
 
-`--config` also reads `HOOP_INSPECT_CONFIG`, which is why the `CMD` carries no
+`--config` also reads `HOOP_SIDECAR_CONFIG`, which is why the `CMD` carries no
 flags. Setting the variable is what a Kubernetes deployment wants anyway: mount
 the ConfigMap, set the variable, pass no arguments.
 
@@ -180,9 +185,9 @@ containers:
 
   - name: hoop-inspect
     image: hoophq/hoopdev:1.133.1        # the very same image
-    command: ["hoop", "start", "inspect"]
+    command: ["hoop", "start", "sidecar"]
     env:
-      - name: HOOP_INSPECT_CONFIG
+      - name: HOOP_SIDECAR_CONFIG
         value: /etc/hoop-inspect/config.yaml
     ports:
       - {containerPort: 15432, name: pg}
