@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hoophq/hoopinspect/policy"
+	"github.com/hoophq/hoop/hoopinspect/policy"
 )
 
 // stubDeps supplies buildPolicy with an analyzer that needs no credential

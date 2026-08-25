@@ -9,12 +9,12 @@
 // the root stays vendorable without supply-chain review.
 //
 // A binary that does not import this module links no GCP code at all.
-module github.com/hoophq/hoopinspect/analyzer/vertex
+module github.com/hoophq/hoop/hoopinspect/analyzer/vertex
 
 go 1.26.5
 
 require (
-	github.com/hoophq/hoopinspect v0.0.0
+	github.com/hoophq/hoop/hoopinspect v0.0.0
 	golang.org/x/oauth2 v0.32.0
 )
 
@@ -23,4 +23,4 @@ require (
 	golang.org/x/sys v0.35.0 // indirect
 )
 
-replace github.com/hoophq/hoopinspect => ../..
+replace github.com/hoophq/hoop/hoopinspect => ../..

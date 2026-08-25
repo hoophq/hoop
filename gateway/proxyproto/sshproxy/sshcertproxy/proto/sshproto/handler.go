@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	sshtypes "libhoop/proxy/ssh/types"
+	sshtypes "github.com/hoophq/libhoop/v2/proxy/ssh/types"
 
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"

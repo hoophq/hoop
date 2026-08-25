@@ -9,7 +9,7 @@
 //
 // # The binary's home
 //
-// The relay itself is assembled by github.com/hoophq/hoopinspect/sidecar, in
+// The relay itself is assembled by github.com/hoophq/hoop/hoopinspect/sidecar, in
 // the dependency-free root module. This main sits in its own nested module
 // because it links the optional plugins -- alcatraz PII detection and the
 // YAML config front end -- and a main in the root could not import those
@@ -72,12 +72,12 @@ import (
 	// states: an operator turning on Vertex does not also have to swap the
 	// binary. Only vertex costs a dependency, and it is confined to its own
 	// module so the root stays dependency-free.
-	_ "github.com/hoophq/hoopinspect/analyzer/anthropic"
-	_ "github.com/hoophq/hoopinspect/analyzer/openai"
-	_ "github.com/hoophq/hoopinspect/analyzer/vertex"
-	configyaml "github.com/hoophq/hoopinspect/config/yaml"
-	"github.com/hoophq/hoopinspect/pii/alcatraz"
-	"github.com/hoophq/hoopinspect/sidecar"
+	_ "github.com/hoophq/hoop/hoopinspect/analyzer/anthropic"
+	_ "github.com/hoophq/hoop/hoopinspect/analyzer/openai"
+	_ "github.com/hoophq/hoop/hoopinspect/analyzer/vertex"
+	configyaml "github.com/hoophq/hoop/hoopinspect/config/yaml"
+	"github.com/hoophq/hoop/hoopinspect/pii/alcatraz"
+	"github.com/hoophq/hoop/hoopinspect/sidecar"
 )
 
 // version is the release this binary reports at -version and on the admin

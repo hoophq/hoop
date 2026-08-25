@@ -32,8 +32,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/hoophq/hoopinspect/analyzer"
-	"github.com/hoophq/hoopinspect/analyzer/anthropic"
+	"github.com/hoophq/hoop/hoopinspect/analyzer"
+	"github.com/hoophq/hoop/hoopinspect/analyzer/anthropic"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 )

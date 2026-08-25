@@ -5,7 +5,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/hoophq/hoopinspect"
+	"github.com/hoophq/hoop/hoopinspect"
 )
 
 // Providers and builders register themselves the way codecs do, and for the

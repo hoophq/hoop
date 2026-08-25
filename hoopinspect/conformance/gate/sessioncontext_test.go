@@ -1,4 +1,4 @@
-package gate_test
+package conformance
 
 import (
 	"context"
@@ -7,9 +7,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/hoophq/hoopinspect"
-	"github.com/hoophq/hoopinspect/gate"
-	"github.com/hoophq/hoopinspect/policy"
+	"github.com/hoophq/hoop/hoopinspect"
+	"github.com/hoophq/hoop/hoopinspect/gate"
+	"github.com/hoophq/hoop/hoopinspect/policy"
 )
 
 // echoOPA allows everything and records the input document it was handed.

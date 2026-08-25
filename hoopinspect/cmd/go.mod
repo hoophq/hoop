@@ -5,14 +5,15 @@
 // module is where the optional plugins get linked together, so it is the one
 // place that carries their dependencies. Nothing in the root module imports
 // it, so `go build ./...` at the root still resolves nothing.
-module github.com/hoophq/hoopinspect/cmd
+module github.com/hoophq/hoop/hoopinspect/cmd
 
 go 1.26.5
 
 require (
-	github.com/hoophq/hoopinspect v0.0.0
-	github.com/hoophq/hoopinspect/config/yaml v0.0.0
-	github.com/hoophq/hoopinspect/pii/alcatraz v0.0.0
+	github.com/hoophq/hoop/hoopinspect v0.0.0
+	github.com/hoophq/hoop/hoopinspect/config/yaml v0.0.0
+	github.com/hoophq/hoop/hoopinspect/pii/alcatraz v0.0.0
+	github.com/hoophq/hoop/hoopinspect/sidecar v0.0.0
 )
 
 require (
@@ -23,14 +24,16 @@ require (
 
 require (
 	github.com/hoophq/alcatraz v0.16.0 // indirect
-	github.com/hoophq/hoopinspect/analyzer/vertex v0.0.0
+	github.com/hoophq/hoop/hoopinspect/analyzer/vertex v0.0.0
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/hoophq/hoopinspect => ..
+replace github.com/hoophq/hoop/hoopinspect => ..
 
-replace github.com/hoophq/hoopinspect/config/yaml => ../config/yaml
+replace github.com/hoophq/hoop/hoopinspect/config/yaml => ../config/yaml
 
-replace github.com/hoophq/hoopinspect/pii/alcatraz => ../pii/alcatraz
+replace github.com/hoophq/hoop/hoopinspect/pii/alcatraz => ../pii/alcatraz
 
-replace github.com/hoophq/hoopinspect/analyzer/vertex => ../analyzer/vertex
+replace github.com/hoophq/hoop/hoopinspect/sidecar => ../sidecar
+
+replace github.com/hoophq/hoop/hoopinspect/analyzer/vertex => ../analyzer/vertex

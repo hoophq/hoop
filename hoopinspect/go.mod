@@ -7,6 +7,6 @@
 // network filter. Adding a dependency here is a breaking change to the pitch.
 //
 // Test dependencies are held to the same bar: the tests use only `testing`.
-module github.com/hoophq/hoopinspect
+module github.com/hoophq/hoop/hoopinspect
 
 go 1.26.5

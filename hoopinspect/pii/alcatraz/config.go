@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/hoophq/hoopinspect/gate"
+	"github.com/hoophq/hoop/hoopinspect/gate"
 )
 
 // Plugin is the detection interface the sidecar consumes, declared here so a

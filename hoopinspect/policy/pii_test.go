@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hoophq/hoopinspect"
-	"github.com/hoophq/hoopinspect/policy"
+	"github.com/hoophq/hoop/hoopinspect"
+	"github.com/hoophq/hoop/hoopinspect/policy"
 )
 
 // fakeScanner reports an entity when its literal appears in the text.

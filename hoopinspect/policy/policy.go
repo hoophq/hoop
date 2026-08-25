@@ -32,7 +32,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/hoophq/hoopinspect"
+	"github.com/hoophq/hoop/hoopinspect"
 )
 
 // Verdict is the outcome of evaluating one statement.

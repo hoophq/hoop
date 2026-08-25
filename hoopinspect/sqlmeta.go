@@ -4,7 +4,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/hoophq/hoopinspect/lexer"
+	"github.com/hoophq/hoop/hoopinspect/lexer"
 )
 
 // This file adapts the lexer package to the types a Statement carries.

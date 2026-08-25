@@ -12,7 +12,6 @@ replace github.com/hoophq/hoop/common => ../common
 // on merge. The module cycle is fine: no package imports form one.
 replace github.com/hoophq/hoop/client => ../client
 
-replace libhoop => ../libhoop
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.41.5
@@ -38,7 +37,7 @@ require (
 	golang.org/x/oauth2 v0.36.0
 	google.golang.org/grpc v1.83.0
 	gopkg.in/yaml.v3 v3.0.1
-	libhoop v0.0.0-00010101000000-000000000000
+	github.com/hoophq/libhoop/v2 v2.0.0
 )
 
 require (

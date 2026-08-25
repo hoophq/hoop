@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hoophq/hoopinspect"
-	"github.com/hoophq/hoopinspect/audit"
-	"github.com/hoophq/hoopinspect/session"
-	"github.com/hoophq/hoopinspect/store"
-	sqlitestore "github.com/hoophq/hoopinspect/store/sqlite"
+	"github.com/hoophq/hoop/hoopinspect"
+	"github.com/hoophq/hoop/hoopinspect/audit"
+	"github.com/hoophq/hoop/hoopinspect/session"
+	"github.com/hoophq/hoop/hoopinspect/store"
+	sqlitestore "github.com/hoophq/hoop/hoopinspect/store/sqlite"
 )
 
 // base is a fixed wall clock so ordering assertions do not depend on how fast

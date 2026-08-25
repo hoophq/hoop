@@ -3,7 +3,7 @@
 package testutil
 
 import (
-	sshtypes "libhoop/proxy/ssh/types"
+	sshtypes "github.com/hoophq/libhoop/v2/proxy/ssh/types"
 	"time"
 
 	"github.com/google/uuid"

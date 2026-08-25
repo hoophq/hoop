@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"libhoop/redactor"
+	"github.com/hoophq/libhoop/v2/redactor"
 
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/apiutils"

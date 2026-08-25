@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/hoophq/hoopinspect"
-	"github.com/hoophq/hoopinspect/policy"
+	"github.com/hoophq/hoop/hoopinspect"
+	"github.com/hoophq/hoop/hoopinspect/policy"
 )
 
 func httpStmt(d *hoopinspect.HTTPDetail) hoopinspect.Statement {

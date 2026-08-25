@@ -1,11 +1,11 @@
-package hoopinspect_test
+package conformance
 
 import (
 	"testing"
 
-	"github.com/hoophq/hoopinspect"
-	_ "github.com/hoophq/hoopinspect/codec/all"
-	"github.com/hoophq/hoopinspect/policy"
+	"github.com/hoophq/hoop/hoopinspect"
+	"github.com/hoophq/hoop/hoopinspect/policy"
+	_ "github.com/hoophq/libhoop/v2/codec/all"
 )
 
 // Every case here defeated the previous classifier through the REAL wire

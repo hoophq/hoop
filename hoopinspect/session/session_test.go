@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hoophq/hoopinspect"
-	"github.com/hoophq/hoopinspect/session"
+	"github.com/hoophq/hoop/hoopinspect"
+	"github.com/hoophq/hoop/hoopinspect/session"
 )
 
 // Session ids appear in audit records that get correlated across systems. A

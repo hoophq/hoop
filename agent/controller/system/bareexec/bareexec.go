@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"libhoop"
+	"github.com/hoophq/libhoop/v2"
 	"sync"
 	"text/template"
 	"time"

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"libhoop"
+	"github.com/hoophq/libhoop/v2"
 	"strings"
 
 	"github.com/hoophq/hoop/agent/controller/featureflagstate"

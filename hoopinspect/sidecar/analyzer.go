@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hoophq/hoopinspect"
-	"github.com/hoophq/hoopinspect/analyzer"
+	"github.com/hoophq/hoop/hoopinspect"
+	"github.com/hoophq/hoop/hoopinspect/analyzer"
 
-	"github.com/hoophq/hoopinspect/policy"
+	"github.com/hoophq/hoop/hoopinspect/policy"
 )
 
 // HTTPCodecConfig controls what a lane's HTTP codec exposes to policy.

@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hoophq/hoopinspect"
-	"github.com/hoophq/hoopinspect/analyzer"
-	"github.com/hoophq/hoopinspect/policy"
+	"github.com/hoophq/hoop/hoopinspect"
+	"github.com/hoophq/hoop/hoopinspect/analyzer"
+	"github.com/hoophq/hoop/hoopinspect/policy"
 )
 
 func aiRule(name string) policy.Rule {

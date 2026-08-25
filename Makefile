@@ -73,28 +73,41 @@ build-dev-client:
 build-dev-webapp:
 	./scripts/dev/build-webapp.sh
 
-libhoop-map:
-	rm libhoop || true
-	ln -s _libhoop libhoop
+# Enterprise development against a local libhoop clone at ./libhoop: point the
+# workspace at the checkout instead of the proxy copy. `go work use` is not
+# enough — the consumers pin a released v2.x.y and Go resolves that version
+# first, so a checkout before the first tag fails outright. A replace
+# short-circuits resolution.
+#
+# Not needed to build or test (the module resolves from the proxy) and
+# deliberately not a prerequisite of any target, so a dirty go.work is always
+# something you opted into. Undo with:
+#   go work edit -dropreplace github.com/hoophq/libhoop/v2
+libhoop-dev:
+	go work edit -replace github.com/hoophq/libhoop/v2=./libhoop
 
 # Generate WASM module for RDP parser
-generate-wasm: libhoop-map
+generate-wasm:
 	cd gateway/rdp/parser && go generate
 
 test: test-oss test-enterprise
 
-test-oss: libhoop-map generate-wasm test-hoopinspect
+test-oss: generate-wasm test-hoopinspect
 	env CGO_ENABLED=0 go test -json -v github.com/hoophq/hoop/...
 
-test-enterprise: libhoop-map generate-wasm
+test-enterprise: generate-wasm
 	env CGO_ENABLED=0 go test -json -v github.com/hoophq/hoop/...
 
-# hoopinspect is a separate module tree, so the line above does not reach it:
-# `github.com/hoophq/hoop/...` does not match `github.com/hoophq/hoopinspect`.
-# Each nested module needs its own invocation, because one go.mod per
-# dependency is what keeps the root module at zero dependencies. The list is
-# discovered rather than written down, so a nested module added later is
-# covered on the day it is added.
+# `github.com/hoophq/hoop/...` now matches hoopinspect too, since the module
+# was renamed to sit under the repository path. What it does NOT do is prove
+# each nested module builds on its own: in workspace mode every module
+# resolves against the union of the workspace, so a go.mod missing a require
+# still passes. This target enters each module directory, which is the only
+# way to catch that before the proxy does. One go.mod per dependency is what
+# keeps the root module at zero dependencies, and this is what defends it.
+#
+# The list is discovered rather than written down, so a nested module added
+# later is covered on the day it is added.
 test-hoopinspect:
 	@set -e; for m in $$(find hoopinspect -name go.mod -exec dirname {} \;); do \
 		(cd $$m && env CGO_ENABLED=0 go test -json -v ./...); \
@@ -105,28 +118,31 @@ prepare-mssql-jdbc:
 	mvn -q -f $(MSSQL_JDBC_FIXTURE)/pom.xml dependency:build-classpath -DincludeScope=runtime -Dmdep.outputFile=$(MSSQL_JDBC_CLASSPATH_FILE)
 
 # Integration tests drive the real controller.Agent against upstream
-# containers via libhoop. Needs the enterprise libhoop (the OSS _libhoop stub
-# returns "missing protocol hoop library" for every protocol) — the CI job
-# checks it out at ./libhoop.
-test-integration: libhoop-map generate-wasm prepare-mssql-jdbc
+# containers via libhoop. Protocol proxying lives in the private
+# github.com/hoophq/libhoop/v2 module, resolved from the module proxy; a build
+# without credentials for it fails outright rather than degrading to no-op
+# protocol handling.
+test-integration: generate-wasm prepare-mssql-jdbc
 	env CGO_ENABLED=1 MSSQL_JDBC_CLASSPATH_FILE="$(MSSQL_JDBC_CLASSPATH_FILE)" go test -tags integration -race -v -timeout 10m -count=1 ./agent/integration/...
 
 # Agent↔gateway transport harness. Runs against the real gateway gRPC
-# transport; the PG round-trip needs the enterprise libhoop proxy (skips on
-# the OSS stub), so the rest still run locally. Kept a separate target/CI job
-# from test-integration so its Postgres containers don't contend with the
-# heavy agent suite on a shared runner.
-test-transport: libhoop-map generate-wasm
+# transport; the PG round-trip goes through the proxy implementation in the
+# private github.com/hoophq/libhoop/v2 module, so a build without credentials
+# for it fails outright. Kept a separate target/CI job from test-integration
+# so its Postgres containers don't contend with the heavy agent suite on a
+# shared runner.
+test-transport: generate-wasm
 	env CGO_ENABLED=1 go test -tags integration -race -v -timeout 8m -count=1 ./gateway/integration/transport/...
 
 # Gateway smoke tests only exercise the HTTP API / model / auth layers. They
-# need libhoop-map (OSS _libhoop stub satisfies the imports) but not a fresh
-# WASM build: gateway/rdp/parser embeds the committed rdp_parser.wasm via
-# go:embed, so the artifact already exists at build time. Skipping
-# generate-wasm keeps this target independent of the Rust toolchain. The path
-# is non-recursive on purpose: the transport suite (a subdir) needs the
-# enterprise libhoop and runs under test-transport instead.
-test-gateway: libhoop-map
+# still link the private github.com/hoophq/libhoop/v2 module — resolved from
+# the module proxy, so the build fails outright without credentials for it —
+# but not a fresh WASM build: gateway/rdp/parser embeds the committed
+# rdp_parser.wasm via go:embed, so the artifact already exists at build time.
+# Skipping generate-wasm keeps this target independent of the Rust toolchain.
+# The path is non-recursive on purpose: the transport suite (a subdir) drives
+# protocol proxying and runs under test-transport instead.
+test-gateway:
 	env CGO_ENABLED=0 go test -tags integration -v -timeout 8m -count=1 ./gateway/integration/
 
 # Same smoke suite, but the gateway state store is the embedded PGlite (wasm)
@@ -134,17 +150,19 @@ test-gateway: libhoop-map
 # net. It fails on SQL the embedded backend cannot run and on code that
 # deadlocks the pool capped at one connection, both invisible on regular
 # PostgreSQL. No Docker required.
-test-gateway-pglite: libhoop-map
+test-gateway-pglite:
 	env CGO_ENABLED=0 GATEWAY_TEST_DB=pglite go test -tags integration -v -timeout 8m -count=1 ./gateway/integration/
 
 # Standalone-mode lifecycle suite (DEP-38): boots the gateway on the embedded
 # PGlite database with the full transport stack, provisions the dedicated
 # `standalone` agent through the same services code path `hoop start
 # standalone` runs, and asserts a real agent controller connects with the
-# provisioned DSN. The OSS _libhoop stub suffices (no protocol proxying) and
-# the committed rdp_parser.wasm is embedded, so neither the enterprise libhoop
-# nor the Rust toolchain is required. No Docker either.
-test-standalone: libhoop-map
+# provisioned DSN. Nothing here proxies a protocol and the committed
+# rdp_parser.wasm is embedded, so neither a WASM rebuild nor the Rust
+# toolchain is required. No Docker either. The build still links the private
+# github.com/hoophq/libhoop/v2 module and fails outright without credentials
+# for the proxy fetch.
+test-standalone:
 	env CGO_ENABLED=0 go test -tags integration -v -timeout 8m -count=1 ./gateway/integration/standalone/
 
 # True single-binary end-to-end (DEP-38): builds the hoop CLI and runs
@@ -153,10 +171,10 @@ test-standalone: libhoop-map
 # boot (cluster resume + persisted credentials). The only test layer that
 # exercises the shipped artifact itself: go:embed assets, CLI wiring, and
 # the gateway+agent single-process composition.
-test-standalone-e2e: libhoop-map
+test-standalone-e2e:
 	./scripts/standalone-e2e.sh
 
-generate-openapi-docs: libhoop-map
+generate-openapi-docs:
 	cd ./gateway/ && go run github.com/swaggo/swag/cmd/swag@v1.16.3 init -g api/server.go -o api/openapi/autogen --outputTypes go --markdownFiles api/openapi/docs/ --parseDependency
 	go run gateway/cmd/openapi-gen/main.go
 

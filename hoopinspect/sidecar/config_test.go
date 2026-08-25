@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hoophq/hoopinspect"
-	"github.com/hoophq/hoopinspect/policy"
+	"github.com/hoophq/hoop/hoopinspect"
+	"github.com/hoophq/hoop/hoopinspect/policy"
 )
 
 func writeConfig(t *testing.T, body string) string {

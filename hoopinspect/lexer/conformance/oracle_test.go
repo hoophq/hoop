@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hoophq/hoopinspect/lexer"
+	"github.com/hoophq/hoop/hoopinspect/lexer"
 	pg "github.com/pganalyze/pg_query_go/v6"
 	pgquery "github.com/wasilibs/go-pgquery"
 	"google.golang.org/protobuf/proto"

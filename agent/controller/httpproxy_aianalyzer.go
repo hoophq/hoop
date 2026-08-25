@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync/atomic"
 
-	libhoopaianalyzer "libhoop/aianalyzer"
+	libhoopaianalyzer "github.com/hoophq/libhoop/v2/aianalyzer"
 
 	aianalyzer "github.com/hoophq/hoop/common/aianalyzer"
 	"github.com/hoophq/hoop/common/log"

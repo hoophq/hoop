@@ -47,7 +47,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/hoophq/hoopinspect/sidecar"
+	"github.com/hoophq/hoop/hoopinspect/sidecar"
 	yamlv3 "gopkg.in/yaml.v3"
 )
 

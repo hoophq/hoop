@@ -20,7 +20,7 @@ import (
 	"encoding/hex"
 	"time"
 
-	"github.com/hoophq/hoopinspect"
+	"github.com/hoophq/hoop/hoopinspect"
 )
 
 // ID is a session identifier. It is opaque; callers must not parse it.

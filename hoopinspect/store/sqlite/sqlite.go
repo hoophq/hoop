@@ -27,10 +27,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hoophq/hoopinspect"
-	"github.com/hoophq/hoopinspect/audit"
-	"github.com/hoophq/hoopinspect/session"
-	"github.com/hoophq/hoopinspect/store"
+	"github.com/hoophq/hoop/hoopinspect"
+	"github.com/hoophq/hoop/hoopinspect/audit"
+	"github.com/hoophq/hoop/hoopinspect/session"
+	"github.com/hoophq/hoop/hoopinspect/store"
 
 	_ "modernc.org/sqlite"
 )

@@ -13,7 +13,7 @@ the whole thing).
 
 ## The invariant: zero dependencies
 
-`github.com/hoophq/hoopinspect` depends on the standard library and nothing
+`github.com/hoophq/hoop/hoopinspect` depends on the standard library and nothing
 else. Test dependencies included. The library exists to be vendored without a
 supply-chain review and read end to end in an afternoon. A dependency is a
 breaking change to the product pitch, not a convenience.
@@ -76,7 +76,7 @@ done
 
 - **CI reaches this only through `test-hoopinspect`.** `make test-oss` runs
   `go test github.com/hoophq/hoop/...`, which does not match module
-  `github.com/hoophq/hoopinspect`, so the Makefile carries a second target
+  `github.com/hoophq/hoop/hoopinspect`, so the Makefile carries a second target
   that walks every `go.mod` under `hoopinspect/` and `test-oss` depends on
   it. Break that dependency and these tests stop running everywhere except
   on your machine.
@@ -101,9 +101,18 @@ done
   `Register` panics on a duplicate protocol, because import order deciding a
   winner is worse than a build failure.
 
-- **The root package imports no codec.** `codec/postgres` imports the root for
-  its types, never the reverse. A binary links only the protocols it imports,
+- **The root package imports no codec, and no longer ships one.** The codecs
+  live in `github.com/hoophq/libhoop/v2/codec/*`, a private module; they import
+  the root for its types, never the reverse. That one-way edge is what keeps
+  the root at zero dependencies and stops the two repos from becoming a
+  lockstep release train. A binary links only the protocols it imports,
   usually through `codec/all` or one specific package.
+
+- **Anything here that needs a codec belongs in a nested module.** `sidecar/`
+  (the wiring layer) and `conformance/` (the tests that drive real wire bytes)
+  each carry their own `go.mod` with the libhoop dependency. Putting either
+  import in the root would make `go test github.com/hoophq/hoop/hoopinspect`
+  fail for anyone without access to the private module.
 
 ## Layout
 
@@ -111,12 +120,12 @@ done
 |---|---|
 | `inspect.go`, `registry.go`, `sqlmeta.go` | the root package: bytes to statements, codec registry |
 | `lexer/` | SQL text to an effect and a relation list, without a grammar |
-| `codec/{postgres,mssql,http}` | wire decode and response rewrite, one package per protocol |
+| `conformance/` | nested module: the suite that needs real codecs and real wire bytes |
 | `policy/` | statement to verdict; local rules, then OPA |
 | `analyzer/` | the model-backed evaluator, third in the policy chain |
 | `gate/` | orders inspection, policy, audit and masking into one decision |
 | `proxy/` | TCP relay that pumps both directions through a Gate |
-| `sidecar/` | assembles the relay from config: sinks, evaluators, listeners |
+| `sidecar/` | nested module: assembles the relay from config — sinks, evaluators, listeners |
 | `session/` | one inspected connection and the identity behind it |
 | `audit/` | the write side of the trail |
 | `store/` | the read side |

@@ -716,12 +716,14 @@ MySQL and MongoDB codecs are **not shipped**. The `Codec` interface and the
 shared SQL classifier are protocol-agnostic, so adding one takes a new
 `codec/<name>` package and no other change.
 
-Import only what you need. A listener that speaks Postgres imports
-`codec/postgres` and never links the HTTP machinery:
+The codecs ship in `github.com/hoophq/libhoop/v2`, a separate module, and
+register themselves with this one through `Register`. Import only what you
+need: a listener that speaks Postgres imports `codec/postgres` and never links
+the HTTP machinery.
 
 ```go
-import _ "github.com/hoophq/hoopinspect/codec/postgres" // postgres only
-import _ "github.com/hoophq/hoopinspect/codec/all"      // postgres + mssql + http
+import _ "github.com/hoophq/libhoop/v2/codec/postgres" // postgres only
+import _ "github.com/hoophq/libhoop/v2/codec/all"      // postgres + mssql + http
 ```
 
 ## The Statement

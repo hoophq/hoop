@@ -25,7 +25,7 @@ require (
 	golang.org/x/mod v0.37.0
 	google.golang.org/grpc v1.83.0
 	gopkg.in/yaml.v3 v3.0.1
-	libhoop v0.0.0-00010101000000-000000000000
+	github.com/hoophq/libhoop/v2 v2.0.0
 	mvdan.cc/sh/v3 v3.13.1
 )
 
@@ -261,10 +261,10 @@ require (
 require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/fatih/color v1.19.0 // indirect
-	github.com/hoophq/hoopinspect v0.0.0
-	github.com/hoophq/hoopinspect/analyzer/vertex v0.0.0
-	github.com/hoophq/hoopinspect/config/yaml v0.0.0
-	github.com/hoophq/hoopinspect/pii/alcatraz v0.0.0
+	github.com/hoophq/hoop/hoopinspect v0.0.0
+	github.com/hoophq/hoop/hoopinspect/analyzer/vertex v0.0.0
+	github.com/hoophq/hoop/hoopinspect/config/yaml v0.0.0
+	github.com/hoophq/hoop/hoopinspect/pii/alcatraz v0.0.0
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.21 // indirect
@@ -282,17 +282,16 @@ replace github.com/hoophq/hoop/gateway => ../gateway
 
 replace github.com/hoophq/hoop/agent => ../agent
 
-replace libhoop => ../libhoop
 
 // TEMPORARY until https://github.com/wazero/wazero/pull/2507 ships in a release:
 // fork allows fd_renumber onto stdio fds (required by the embedded PGlite
 // database, gateway/pglite). Drop the replace and bump wazero afterwards.
 replace github.com/tetratelabs/wazero => github.com/racerxdl/wazero v1.12.1-0.20260610204201-d1e18e798de6
 
-replace github.com/hoophq/hoopinspect => ../hoopinspect
+replace github.com/hoophq/hoop/hoopinspect => ../hoopinspect
 
-replace github.com/hoophq/hoopinspect/config/yaml => ../hoopinspect/config/yaml
+replace github.com/hoophq/hoop/hoopinspect/config/yaml => ../hoopinspect/config/yaml
 
-replace github.com/hoophq/hoopinspect/pii/alcatraz => ../hoopinspect/pii/alcatraz
+replace github.com/hoophq/hoop/hoopinspect/pii/alcatraz => ../hoopinspect/pii/alcatraz
 
-replace github.com/hoophq/hoopinspect/analyzer/vertex => ../hoopinspect/analyzer/vertex
+replace github.com/hoophq/hoop/hoopinspect/analyzer/vertex => ../hoopinspect/analyzer/vertex

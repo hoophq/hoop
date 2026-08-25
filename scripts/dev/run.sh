@@ -7,12 +7,11 @@ if ! [[ -f .env ]]; then
   exit 1
 fi
 
-while read -r LINE; do
-  if [[ $LINE == "LIBHOOP"* ]]; then
-    ENV_VAR=$(echo $LINE | envsubst)
-    eval export $(echo $ENV_VAR)
-  fi
-done < .env
+# libhoop used to be selected here: LIBHOOP in .env named a directory or a git
+# remote, and the block below symlinked or cloned it into ./libhoop. It is now
+# the module github.com/hoophq/libhoop/v2, resolved from the proxy like any
+# other dependency. Export GOPRIVATE=github.com/hoophq/libhoop and have git
+# credentials for it; to build against a local clone, run `make libhoop-dev`.
 
 trap ctrl_c INT
 
@@ -21,22 +20,7 @@ function ctrl_c() {
     exit 130
 }
 
-LIBHOOP="${LIBHOOP:-_libhoop}"
-
-mkdir -p $HOME/.hoop/dev
-
-# remove symbolic link
-rm libhoop || true 2>/dev/null
-if [[ $LIBHOOP == "git@"* ]]; then
-  rm -rf $HOME/.hoop/dev/libhoop
-  git clone $LIBHOOP $HOME/.hoop/dev/libhoop
-  rm -rf $HOME/.hoop/dev/libhoop/.git
-  ln -s $HOME/.hoop/dev/libhoop libhoop
-else
-  ln -s $LIBHOOP libhoop
-fi
-
-cd libhoop && go mod tidy && cd ../
+mkdir -p "$HOME/.hoop/dev"
 
 WEBAPP_BUILD="${WEBAPP_BUILD:-0}"
 if [[ $WEBAPP_BUILD == "1" ]]; then

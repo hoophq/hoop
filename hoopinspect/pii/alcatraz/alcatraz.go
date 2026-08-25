@@ -59,7 +59,7 @@ import (
 	"github.com/hoophq/alcatraz/analyzer"
 	"github.com/hoophq/alcatraz/entities"
 	"github.com/hoophq/alcatraz/recognizers"
-	"github.com/hoophq/hoopinspect/policy"
+	"github.com/hoophq/hoop/hoopinspect/policy"
 )
 
 // DefaultThreshold drops detections scoring below it. 0.4 is alcatraz's own

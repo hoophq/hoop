@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"libhoop"
-	redactortypes "libhoop/redactor/types"
+	"github.com/hoophq/libhoop/v2"
+	redactortypes "github.com/hoophq/libhoop/v2/redactor/types"
 	"strings"
 
 	"github.com/hoophq/hoop/agent/controller/featureflagstate"

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hoophq/hoopinspect/lexer"
+	"github.com/hoophq/hoop/hoopinspect/lexer"
 	pgquery "github.com/wasilibs/go-pgquery"
 )
 

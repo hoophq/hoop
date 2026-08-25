@@ -10,10 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hoophq/hoopinspect"
-	"github.com/hoophq/hoopinspect/analyzer"
-	_ "github.com/hoophq/hoopinspect/codec/all"
-	"github.com/hoophq/hoopinspect/policy"
+	"github.com/hoophq/hoop/hoopinspect"
+	"github.com/hoophq/hoop/hoopinspect/analyzer"
+	"github.com/hoophq/hoop/hoopinspect/policy"
 )
 
 // stubProvider records what it was asked and answers with a fixed verdict.

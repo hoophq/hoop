@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hoophq/hoopinspect/lexer"
+	"github.com/hoophq/hoop/hoopinspect/lexer"
 )
 
 // writes reports the relations the analysis says are changed.

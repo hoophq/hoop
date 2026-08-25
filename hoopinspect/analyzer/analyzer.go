@@ -22,8 +22,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/hoophq/hoopinspect"
-	"github.com/hoophq/hoopinspect/policy"
+	"github.com/hoophq/hoop/hoopinspect"
+	"github.com/hoophq/hoop/hoopinspect/policy"
 )
 
 // RiskLevel is the model's classification of one statement.
