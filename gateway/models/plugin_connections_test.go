@@ -9,7 +9,8 @@ import (
 )
 
 // seedPluginConnection wires a connection to a plugin with the given group
-// config, creating both if they do not exist yet.
+// config. The plugin is reused when it already exists; connName must be unique,
+// because seedConnection has no conflict clause.
 func seedPluginConnection(t *testing.T, pluginName, connName string, enabled bool, config []string) {
 	t.Helper()
 	execSQL(t, `
@@ -32,8 +33,9 @@ func TestListAccessControlGroupNames(t *testing.T) {
 	// Same group on a second connection: the result is deduped.
 	seedPluginConnection(t, "access_control", "ac-conn-two", true,
 		[]string{"CG-Hoop-BANKING-PF", "sre"})
-	// A disabled association is invisible to GetPluginByName, so it must be
-	// invisible here too, or the two disagree.
+	// enabled = false must still be listed. GetConnectionByNameOrID and
+	// GetResourceByName join plugin_connections without reading this column, so
+	// the group keeps granting access; hiding it here would recreate EVL-217.
 	seedPluginConnection(t, "access_control", "ac-conn-disabled", false,
 		[]string{"CG-Hoop-DISABLED"})
 	// Another plugin's config is not a group list.
@@ -47,16 +49,19 @@ func TestListAccessControlGroupNames(t *testing.T) {
 	}
 	slices.Sort(names)
 
-	want := []string{"CG-Hoop-BANKING-PF", "CG-Hoop-BANKING-PJ", "sre"}
+	want := []string{"CG-Hoop-BANKING-PF", "CG-Hoop-BANKING-PJ", "CG-Hoop-DISABLED", "sre"}
 	if !slices.Equal(names, want) {
 		t.Errorf("group names: want %v, got %v", want, names)
 	}
 }
 
-// An org with no access_control plugin at all is the common case and must not
-// error: it simply contributes nothing to the group listing.
+// An org with no access_control plugin contributes nothing. The audit row makes
+// the plugin-name filter load-bearing: without it the assertion would pass for
+// an implementation that reads every plugin's config.
 func TestListAccessControlGroupNamesWithoutPlugin(t *testing.T) {
 	startTestDB(t)
+
+	seedPluginConnection(t, "audit", "audit-conn", true, []string{"not-a-group"})
 
 	names, err := models.ListAccessControlGroupNames(models.DB, testOrgID)
 	if err != nil {

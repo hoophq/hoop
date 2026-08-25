@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/gateway/models"
@@ -61,6 +62,13 @@ func usergroupsListHandler(ctx context.Context, _ *mcp.CallToolRequest, _ usergr
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed listing user groups: %w", err)
 	}
+	// Same union as GET /users/groups, or an agent cannot see a group that only
+	// exists as an access_control permission and calls usergroups_create on a
+	// name that already grants access (EVL-217).
+	pluginGroups, err := models.ListAccessControlGroupNames(models.DB, sc.GetOrgID())
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed listing user groups: %w", err)
+	}
 
 	// Deduplicate group names
 	seen := make(map[string]bool)
@@ -71,6 +79,13 @@ func usergroupsListHandler(ctx context.Context, _ *mcp.CallToolRequest, _ usergr
 			names = append(names, g.Name)
 		}
 	}
+	for _, name := range pluginGroups {
+		if !seen[name] {
+			seen[name] = true
+			names = append(names, name)
+		}
+	}
+	slices.Sort(names)
 
 	return jsonResult(names)
 }

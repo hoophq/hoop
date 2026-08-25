@@ -37,10 +37,13 @@ export default function ReviewSection({ kind = 'command' }) {
 
   const handleReviewToggle = (enabled) => {
     if (enabled) {
-      // Surfacing the toggle without any approval groups would be invalid
-      // — seed with the first available group so the section is usable.
+      // Surfacing the toggle without any approval groups would be invalid, so
+      // seed one. Prefer admin: /users/groups is sorted since EVL-217, so
+      // position 0 is now whichever group sorts first and would hand approval
+      // to an arbitrary customer group if the user saves without editing.
       if (drafts.reviewers.length === 0 && userGroupsList.length > 0) {
-        setDraft({ reviewers: [userGroupsList[0]] })
+        const seed = userGroupsList.includes('admin') ? 'admin' : userGroupsList[0]
+        setDraft({ reviewers: [seed] })
       }
     } else {
       setDraft({
