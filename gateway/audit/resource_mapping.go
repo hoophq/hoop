@@ -20,6 +20,8 @@ var root = buildRoutes([]struct {
 	{[]string{"access-requests", "rules"}, ResourceAccessRequestRule},
 	{[]string{"ai", "session-analyzer", "rules"}, ResourceAISessionAnalyzerRule},
 	{[]string{"ai", "session-analyzer", "providers"}, ResourceAISessionAnalyzerProvider},
+	{[]string{"attributes"}, ResourceAttribute},
+	{[]string{"orgs", "features"}, ResourceOrgFeature},
 	{[]string{"users"}, ResourceUser},
 	{[]string{"connections"}, ResourceConnection},
 	{[]string{"agents"}, ResourceAgent},

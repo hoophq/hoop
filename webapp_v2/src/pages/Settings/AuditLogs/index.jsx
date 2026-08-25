@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Box, Button, Group, Popover, Stack, Text, Title } from '@mantine/core'
 import Code from '@/components/Code'
-import { Network, CircleAlert, ChevronDown, ChevronRight, User, BadgeCheck } from 'lucide-react'
+import { Network, CircleAlert, ChevronDown, ChevronRight, User, BadgeCheck, Link } from 'lucide-react'
 import { useMinDelay } from '@/hooks/useMinDelay'
 import PageLoader from '@/components/PageLoader'
 import EmptyState from '@/layout/EmptyState'
@@ -57,6 +57,12 @@ function ExpandedRow({ log }) {
           <Network size={16} />
           <Text size="sm" c="dimmed">IP Address:</Text>
           <Text size="sm" fw={500}>{log.client_ip ?? 'N/A'}</Text>
+        </Group>
+
+        <Group gap="xs">
+          <Link size={16} />
+          <Text size="sm" c="dimmed">Path:</Text>
+          <Text size="sm" fw={500}>{log.http_path ?? 'N/A'}</Text>
         </Group>
 
         <Group gap="xs">

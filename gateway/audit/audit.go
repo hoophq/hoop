@@ -32,6 +32,8 @@ const (
 	ResourceAccessRequestRule         ResourceType = "access_request_rules"
 	ResourceAISessionAnalyzerRule     ResourceType = "ai_session_analyzer_rules"
 	ResourceAISessionAnalyzerProvider ResourceType = "ai_session_analyzer_providers"
+	ResourceAttribute                 ResourceType = "attributes"
+	ResourceOrgFeature                ResourceType = "org_features"
 )
 
 // Action is the operation performed.

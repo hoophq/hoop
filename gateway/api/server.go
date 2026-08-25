@@ -541,6 +541,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.PUT("/connections/:nameOrID/datamasking-rules",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		apiconnections.UpdateDataMaskingRuleConnection)
 
 	// IAM Federation: per-connection config (admin-only). The credentials
@@ -797,6 +798,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.PUT("/orgs/features",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		api.TrackRequest(analytics.EventOrgFeatureUpdate),
 		apifeatures.FeatureUpdate)
 
@@ -1401,14 +1403,17 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.POST("/attributes",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		apiattributes.Post)
 	r.PUT("/attributes/:name",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		apiattributes.Put)
 	r.DELETE("/attributes/:name",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		apiattributes.Delete)
 
 	r.GET("/rulepacks",
