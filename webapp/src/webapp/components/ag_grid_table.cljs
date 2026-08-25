@@ -22,71 +22,65 @@
       (.withPart colorSchemeDarkBlue)
       (.withPart icon-overrides)))
 
-(defn normalize-row-data
-  "Normalizes rows data to ensure consistency with the number of header columns,
-   removing empty cells when there are excess columns."
+(defn- field-name [header]
+  (if (string? header) header (str header)))
+
+(defn- row-source
+  "Wide rows drop their empty cells first, so ragged output still lines up."
+  [row column-count]
+  (if (> (.-length row) column-count)
+    (.filter row (fn [cell] (and (some? cell) (not= cell ""))))
+    row))
+
+(defn headers->col-defs [headers]
+  (let [out (array)]
+    (dotimes [i (.-length headers)]
+      (let [field (field-name (aget headers i))]
+        (.push out #js {:field field
+                        :cellEditor "agTextCellEditor"
+                        :headerName field})))
+    out))
+
+(defn rows->row-data
+  "Normalizes each row to the header count and keys it by column name."
   [headers rows]
-  (mapv (fn [row]
-          (let [header-count (count headers)
-                row-count (count row)]
-            (cond
-              ;; If there are more columns than needed, remove empty cells
-              (> row-count header-count)
-              (let [;; Filter non-empty cells
-                    non-empty-cells (filterv #(and (not (nil? %))
-                                                   (or (not (string? %))
-                                                       (not (empty? %))))
-                                             row)
-                    ;; Number of non-empty cells
-                    non-empty-count (count non-empty-cells)]
-                ;; If we have enough non-empty cells, use only them
-                ;; Otherwise, fill with empty cells up to the required number
-                (if (>= non-empty-count header-count)
-                  (subvec non-empty-cells 0 header-count)  ;; Still need to truncate if there are more non-empty cells than expected
-                  (into non-empty-cells (repeat (- header-count non-empty-count) ""))))
-
-              ;; If there are fewer columns than needed, add empty cells
-              (< row-count header-count)
-              (into row (repeat (- header-count row-count) ""))
-
-              ;; If the number of columns is exact, keep the row as is
-              :else row)))
-        rows))
+  (let [column-count (.-length headers)
+        fields (.map headers (fn [header] (field-name header)))
+        out (array)]
+    (dotimes [i (.-length rows)]
+      (let [src (row-source (aget rows i) column-count)
+            obj #js {}]
+        (dotimes [j column-count]
+          (let [cell (aget src j)]
+            (aset obj (aget fields j) (if (nil? cell) "" cell))))
+        (.push out obj)))
+    out))
 
 (defn ag-grid
-  "An efficient table component using AG Grid to display SQL query results.
+  "Renders AG Grid over JS column definitions and row objects.
 
-   Parameters:
-   - columns: vector of column definitions in the format [{:field 'field_name' :headerName 'Title' ...}]
-   - rows: vector of row data as maps
-   - options: map of additional options for the AG Grid
-     - :theme - theme to use (default, alpine, balham, material)
-     - :height - table height (default 400px)
-     - :pagination? - enable pagination (default false)
-     - :auto-size-columns? - automatically adjust columns (default true)"
-  [{:keys [columns rows options]}]
-  (let [default-options {:height "400px"
-                         :pagination? false
-                         :auto-size-columns? true}
-        merged-options (merge default-options options)]
-
-    (fn [{:keys [dark-mode?]}]
-      [:section {:style {:height (:height merged-options)
-                         :width "100%"}
-                 :aria-label "Query results table"}
-       [:> AgGridReact {:theme (if dark-mode? alpine-dark alpine-light)
-                        :columnDefs (clj->js columns)
-                        :rowData (clj->js rows)
-                        :defaultColDef (clj->js {:resizable true
-                                                 :sortable true
-                                                 :filter true
-                                                 :editable true})
-                        :pagination (boolean (:pagination? merged-options))
-                        :paginationPageSize (or (:page-size merged-options) 20)
-                        :onGridReady (fn [params]
-                                       (when (and (:auto-size-columns? merged-options)
-                                                  (aget params "columnApi"))
-                                         (.autoSizeAllColumns (aget params "columnApi"))))}]])))
+   - columns: JS array of column defs
+   - rows: JS array of row objects
+   - options: :height, :pagination?, :page-size, :auto-size-columns?"
+  [{:keys [columns rows options dark-mode?]}]
+  (let [{:keys [height pagination? page-size auto-size-columns?]}
+        (merge {:height "400px" :pagination? false :auto-size-columns? true}
+               options)]
+    [:section {:style {:height height :width "100%"}
+               :aria-label "Query results table"}
+     [:> AgGridReact {:theme (if dark-mode? alpine-dark alpine-light)
+                      :columnDefs columns
+                      :rowData rows
+                      :defaultColDef #js {:resizable true
+                                          :sortable true
+                                          :filter true
+                                          :editable true}
+                      :pagination (boolean pagination?)
+                      :paginationPageSize (or page-size 20)
+                      :onGridReady (fn [params]
+                                     (when (and auto-size-columns?
+                                                (aget params "columnApi"))
+                                       (.autoSizeAllColumns (aget params "columnApi"))))}]]))
 
 (defn error-message
   "Component to display error message with malformed data"
@@ -102,12 +96,15 @@
    [:p {:class "mt-4 text-sm text-center text-gray-500"}
     "Check if the data contains tab characters (\\t) within values or if there are inconsistencies in the format."]])
 
+(defn- empty-js-array? [a]
+  (or (nil? a) (zero? (.-length a))))
+
 (defn main
   "Main component to display an AG Grid table with SQL query results.
 
    Parameters:
-   - headers: vector of column headers as strings ['Column1', 'Column2', ...]
-   - rows: vector of vectors with the data of the rows [['val1', 'val2'], ['val3', 'val4']]
+   - headers: JS array of column headers
+   - rows: JS array of JS arrays with the row data
    - loading?: boolean flag indicating if the data is loading
    - options: additional options to pass to ag-grid"
   [headers rows loading? dark-mode? & [options]]
@@ -118,36 +115,17 @@
                         :size 24
                         :color (if dark-mode? "white" "gray")}]]]
 
-    (let [empty-data? (or (nil? headers) (empty? headers) (nil? rows) (empty? rows))]
-      (if empty-data?
-        [:div {:class "flex justify-center items-center h-full text-gray-500"}
-         "No results available"]
+    (if (or (empty-js-array? headers) (empty-js-array? rows))
+      [:div {:class "flex justify-center items-center h-full text-gray-500"}
+       "No results available"]
 
-        (try
-          ;; Process data with normalization and render the grid
-          (let [normalized-rows (normalize-row-data headers rows)
-                columns (mapv (fn [header]
-                                (let [field-name (if (string? header) header (str header))]
-                                  {:field field-name
-                                   :cellEditor "agTextCellEditor"
-                                   :headerName field-name}))
-                              headers)
-                row-data (mapv (fn [row]
-                                 (reduce (fn [acc [idx val]]
-                                           (let [field-name (if (string? (nth headers idx))
-                                                              (nth headers idx)
-                                                              (str (nth headers idx)))]
-                                             (assoc acc field-name val)))
-                                         {}
-                                         (map-indexed vector row)))
-                               normalized-rows)]
-            [ag-grid {:columns columns
-                      :rows row-data
-                      :options options
-                      :dark-mode? dark-mode?}])
+      (try
+        [ag-grid {:columns (headers->col-defs headers)
+                  :rows (rows->row-data headers rows)
+                  :options options
+                  :dark-mode? dark-mode?}]
 
-          ;; Catch any unexpected errors during processing
-          (catch :default e
-            (let [error-msg (str "Error processing data: " (.-message e))]
-              (.error js/console error-msg e)
-              [error-message error-msg dark-mode?])))))))
+        (catch :default e
+          (let [error-msg (str "Error processing data: " (.-message e))]
+            (.error js/console error-msg e)
+            [error-message error-msg dark-mode?]))))))

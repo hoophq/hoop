@@ -7,7 +7,7 @@
    [clojure.string :as cs]
    [re-frame.core :as rf]))
 
-(def ^:private client-side-threshold (* 2 1024 1024))
+(def client-side-threshold (* 2 1024 1024))
 
 (defn- pad2 [n] (if (< n 10) (str "0" n) (str n)))
 
@@ -40,20 +40,22 @@
     (js/setTimeout #(js/URL.revokeObjectURL url) 0)))
 
 (defn- matrix->csv [matrix]
-  (papa/unparse (clj->js matrix)))
+  (papa/unparse matrix))
 
-(defn- matrix->json [heads body]
-  (let [head-keys (vec (map-indexed
-                        (fn [idx h]
-                          (if (or (nil? h) (cs/blank? h))
-                            (str "column_" (inc idx))
-                            h))
-                        heads))
-        rows (mapv (fn [row]
-                     (into {}
-                           (map vector head-keys row)))
-                   body)]
-    (.stringify js/JSON (clj->js rows) nil 2)))
+(defn- matrix->json [matrix]
+  (let [heads (aget matrix 0)
+        head-keys (.map heads (fn [h idx]
+                                (if (or (nil? h) (cs/blank? h))
+                                  (str "column_" (inc idx))
+                                  h)))
+        out (array)]
+    (dotimes [i (dec (.-length matrix))]
+      (let [row (aget matrix (inc i))
+            obj #js {}]
+        (dotimes [j (min (.-length head-keys) (.-length row))]
+          (aset obj (aget head-keys j) (aget row j)))
+        (.push out obj)))
+    (.stringify js/JSON out nil 2)))
 
 (defn- use-backend? [{:keys [has-large-payload? results session-id]}]
   (and session-id
@@ -68,10 +70,8 @@
                            (matrix->csv matrix)
                            results)]
              (trigger-download! (build-filename filename-meta "csv") "text/csv" content))
-      :json (let [heads (first matrix)
-                  body (next matrix)
-                  content (matrix->json heads body)]
-              (trigger-download! (build-filename filename-meta "json") "application/json" content)))))
+      :json (trigger-download! (build-filename filename-meta "json") "application/json"
+                               (matrix->json matrix)))))
 
 (defn- handle-download [{:keys [session-id] :as props} format]
   (if (use-backend? props)

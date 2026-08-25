@@ -1,21 +1,21 @@
 (ns webapp.audit.views.results-container
   (:require
    ["@radix-ui/themes" :refer [Box Flex]]
-   ["papaparse" :as papa]
    [clojure.string :as string]
    [reagent.core :as r]
    [webapp.components.ag-grid-table :as ag-grid-table]
    [webapp.components.logs-container :as logs]
    [webapp.components.results-download-menu :as download-menu]
+   [webapp.components.results-matrix :as results-matrix]
    [webapp.components.tabs :as tabs]))
 
-(defn- transform-results->matrix
+(defn- parse-results
   [results connection-type]
-  (let [res (if (= connection-type "oracledb")
-              (string/join "\n" (drop 1 (string/split results #"\n")))
-              results)]
-    (when-not (nil? results)
-      (get (js->clj (papa/parse res (clj->js {"delimiter" "\t"}))) "data"))))
+  (when (some? results)
+    (results-matrix/parse-results
+     (if (= connection-type "oracledb")
+       (string/join "\n" (drop 1 (string/split results #"\n")))
+       results))))
 
 (defn tab-container
   [{:keys [results-heads results-body log-view download-props]}
@@ -34,7 +34,8 @@
       "Table" [ag-grid-table/main results-heads results-body false true
                {:height "100%"
                 :theme "alpine"
-                :pagination? (> (count results-body) 100)
+                :pagination? (boolean (and results-body
+                                           (> (.-length results-body) 100)))
                 :auto-size-columns? true}])]])
 
 (defmulti results-view identity)
@@ -62,18 +63,19 @@
 
     (fn [connection-subtype {:keys [results results-status fixed-height? classes
                                     session-id connection-name has-large-payload?]}]
-      (let [results-transformed (transform-results->matrix results connection-subtype)
-            results-heads (first results-transformed)
-            results-body (next results-transformed)
+      (let [parsed (parse-results results connection-subtype)
+            results-heads (:heads parsed)
+            results-body (:body parsed)
             sql-subtypes #{"mysql-csv" "mysql" "postgres" "sql-server" "mssql"
                            "postgres-csv" "sql-server-csv" "oracledb" "database"}
             is-sql? (contains? sql-subtypes connection-subtype)
-            tabular? (and is-sql?
-                          (seq results-heads)
-                          (seq results-body))
+            tabular? (boolean (and is-sql?
+                                   results-heads results-body
+                                   (pos? (.-length results-heads))
+                                   (pos? (.-length results-body))))
             download-props (when (= results-status :success)
                              {:results results
-                              :matrix results-transformed
+                              :matrix (:matrix parsed)
                               :tabular? tabular?
                               :session-id session-id
                               :connection-name connection-name
