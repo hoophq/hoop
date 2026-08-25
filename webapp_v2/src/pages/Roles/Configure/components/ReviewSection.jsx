@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { Stack, Anchor } from '@mantine/core'
 import { ArrowUpRight, Star } from 'lucide-react'
 import Alert from '@/components/Alert'
@@ -42,8 +43,8 @@ export default function ReviewSection({ kind = 'command' }) {
       // position 0 is now whichever group sorts first and would hand approval
       // to an arbitrary customer group if the user saves without editing.
       if (drafts.reviewers.length === 0 && userGroupsList.length > 0) {
-        const seed = userGroupsList.includes('admin') ? 'admin' : userGroupsList[0]
-        setDraft({ reviewers: [seed] })
+        const seed = userGroupsList.includes('admin') ? 'admin' : null
+        if (seed) setDraft({ reviewers: [seed] })
       }
     } else {
       setDraft({
