@@ -9,6 +9,7 @@ import { useMinDelay } from '@/hooks/useMinDelay'
 import FullBleed from '@/layout/FullBleed'
 import { useUserStore } from '@/stores/useUserStore'
 import { useAiSessionAnalyzerStore } from './store'
+import { FREE_LICENSE_LIMIT_MESSAGE } from './helpers'
 import RulesTab from './RulesTab'
 import ConfigureTab from './ConfigureTab'
 import AiSessionAnalyzerPromotion from './components/AiSessionAnalyzerPromotion'
@@ -16,9 +17,6 @@ import AiSessionAnalyzerPromotion from './components/AiSessionAnalyzerPromotion'
 // The CLJS activation journey writes the same key, so both stacks agree on
 // what "seen" means.
 const PROMOTION_SEEN_STORAGE_KEY = 'ai-session-analyzer-promotion-seen'
-
-const FREE_LICENSE_LIMIT_MESSAGE =
-  'Your organization has reached AI Session Analyzer free usage limits. Upgrade to Enterprise to keep your sensitive data protected.'
 
 export default function AiSessionAnalyzer() {
   const navigate = useNavigate()

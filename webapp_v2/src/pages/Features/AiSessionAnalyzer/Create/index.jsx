@@ -7,6 +7,7 @@ import Alert from '@/components/Alert'
 import Button from '@/components/Button'
 import ConnectionNamesMultiSelect from '@/components/ConnectionNamesMultiSelect'
 import EnterpriseBanner from '@/components/EnterpriseBanner'
+import FreeLicenseCallout from '@/components/FreeLicenseCallout'
 import Modal from '@/components/Modal'
 import PageLoader from '@/components/PageLoader'
 import Switch from '@/components/Switch'
@@ -16,7 +17,12 @@ import { PAGE_PADDING } from '@/layout/PageLayout'
 import { useUserStore } from '@/stores/useUserStore'
 import { showSnackbar } from '@/utils/snackbar'
 import { useAiSessionAnalyzerStore } from '../store'
-import { formToPayload, hasIncompleteTier, riskFromRule } from '../helpers'
+import {
+  FREE_LICENSE_LIMIT_MESSAGE,
+  formToPayload,
+  hasIncompleteTier,
+  riskFromRule,
+} from '../helpers'
 import { findAiAnalyzerTemplate } from '../templates'
 import SectionRow from '../components/SectionRow'
 import RiskEvaluation from './sections/RiskEvaluation'
@@ -35,7 +41,11 @@ function RuleFormFields({ rule, ruleName, isEdit }) {
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
 
   const submitting = useAiSessionAnalyzerStore((s) => s.submitting)
+  const list = useAiSessionAnalyzerStore((s) => s.list)
   const accessRequestRules = useAiSessionAnalyzerStore((s) => s.accessRequestRules)
+  const accessRequestRulesStatus = useAiSessionAnalyzerStore(
+    (s) => s.accessRequestRulesStatus,
+  )
   const createRule = useAiSessionAnalyzerStore((s) => s.createRule)
   const updateRule = useAiSessionAnalyzerStore((s) => s.updateRule)
   const deleteRule = useAiSessionAnalyzerStore((s) => s.deleteRule)
@@ -52,10 +62,15 @@ function RuleFormFields({ rule, ruleName, isEdit }) {
   const setField = (patch) => setForm((f) => ({ ...f, ...patch }))
   const setTier = (levelKey, tier) => setRisk((r) => ({ ...r, [levelKey]: tier }))
 
+  // The free plan allows one rule. Editing the one that exists is fine; a
+  // second one is not, and the route is reachable by deep link.
+  const blockedByLicense = !isEdit && isFreeLicense && list.length >= 1
+
   // An approval gate pointing at no rule would silently never resolve, so the
   // save is blocked until every require_access_request tier names one.
   const incompleteTier = hasIncompleteTier(risk)
-  const canSubmit = form.name.trim().length > 0 && !incompleteTier && !submitting
+  const canSubmit =
+    form.name.trim().length > 0 && !incompleteTier && !blockedByLicense && !submitting
 
   const handleSave = async () => {
     if (!canSubmit) return
@@ -113,12 +128,18 @@ function RuleFormFields({ rule, ruleName, isEdit }) {
         </Button>
       </Box>
 
-      <div ref={sentinelRef} aria-hidden="true" />
+      {/* Pulled up by the header's height: useInViewport takes no rootMargin. */}
+      <Box
+        ref={sentinelRef}
+        aria-hidden="true"
+        pos="relative"
+        top="calc(-1 * var(--app-shell-header-offset, 0rem))"
+      />
       <Group
         justify="space-between"
         align="center"
         pos="sticky"
-        top={0}
+        top="var(--app-shell-header-offset, 0rem)"
         bg="var(--mantine-color-body)"
         py="md"
         mb="xl"
@@ -150,6 +171,12 @@ function RuleFormFields({ rule, ruleName, isEdit }) {
       {isFreeLicense && (
         <Box mb="xl">
           <EnterpriseBanner />
+        </Box>
+      )}
+
+      {blockedByLicense && (
+        <Box mb="xl">
+          <FreeLicenseCallout message={FREE_LICENSE_LIMIT_MESSAGE} variant="limit" />
         </Box>
       )}
 
@@ -232,6 +259,7 @@ function RuleFormFields({ rule, ruleName, isEdit }) {
           risk={risk}
           onTierChange={setTier}
           accessRequestRules={accessRequestRules}
+          rulesFailed={accessRequestRulesStatus === 'error'}
         />
       </Stack>
 
@@ -276,6 +304,7 @@ export default function AiSessionAnalyzerRuleForm() {
   const fetchAccessRequestRules = useAiSessionAnalyzerStore(
     (s) => s.fetchAccessRequestRules,
   )
+  const fetchList = useAiSessionAnalyzerStore((s) => s.fetchList)
 
   // Without this the post-save redirect lands on the promotion splash instead
   // of the rule just created.
@@ -286,12 +315,13 @@ export default function AiSessionAnalyzerRuleForm() {
   }, [template])
 
   // ConnectionNamesMultiSelect loads/paginates its own options, so no
-  // connections fetch here.
+  // connections fetch here. The rule list backs the free-plan limit check.
   useEffect(() => {
     fetchAccessRequestRules()
+    fetchList()
     if (isEdit) fetchActive(ruleName)
     return () => clearActive()
-  }, [isEdit, ruleName, fetchAccessRequestRules, fetchActive, clearActive])
+  }, [isEdit, ruleName, fetchAccessRequestRules, fetchList, fetchActive, clearActive])
 
   if (isEdit && (activeStatus === 'loading' || activeStatus === 'idle')) {
     return <PageLoader h={400} />

@@ -8,6 +8,7 @@ export const useAiSessionAnalyzerStore = create((set, get) => ({
 
   active: null,
   activeStatus: 'idle',
+  activeRequestedName: null,
 
   provider: null,
   providerStatus: 'idle',
@@ -31,17 +32,22 @@ export const useAiSessionAnalyzerStore = create((set, get) => ({
     }
   },
 
+  // Committing a response for a rule that is no longer the one being edited
+  // would pair its values with another rule's update path.
   fetchActive: async (name) => {
-    set({ active: null, activeStatus: 'loading' })
+    set({ active: null, activeStatus: 'loading', activeRequestedName: name })
     try {
       const { data } = await aiSessionAnalyzerService.getRule(name)
+      if (get().activeRequestedName !== name) return
       set({ active: data, activeStatus: 'success' })
     } catch {
+      if (get().activeRequestedName !== name) return
       set({ activeStatus: 'error' })
     }
   },
 
-  clearActive: () => set({ active: null, activeStatus: 'idle' }),
+  clearActive: () =>
+    set({ active: null, activeStatus: 'idle', activeRequestedName: null }),
 
   // A 404 means "never configured", not a failure. Callers read
   // `Boolean(provider)`, never the status.

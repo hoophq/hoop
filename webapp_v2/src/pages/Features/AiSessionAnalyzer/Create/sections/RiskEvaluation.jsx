@@ -35,7 +35,7 @@ const RECOMMENDED_BADGE = (
   </Badge>
 )
 
-function RiskLevelSection({ level, tier, onChange, accessRequestRules }) {
+function RiskLevelSection({ level, tier, onChange, accessRequestRules, rulesFailed }) {
   const ruleOptions = accessRequestRules.map((rule) => ({
     value: rule.name,
     label: rule.name,
@@ -63,14 +63,18 @@ function RiskLevelSection({ level, tier, onChange, accessRequestRules }) {
           />
         ))}
 
-        {tier.action === REQUIRE_ACCESS_REQUEST && (
-          <Box pl="md">
-            {ruleOptions.length === 0 ? (
-              <Alert color="yellow" variant="light" icon={<Info size={16} />} radius="md">
-                No access request rules are configured. Create one in Access Control
-                before selecting this action.
-              </Alert>
-            ) : (
+        {tier.action === REQUIRE_ACCESS_REQUEST &&
+          (rulesFailed ? (
+            <Alert color="red" variant="light" icon={<Info size={16} />} radius="md">
+              Failed to load access request rules. Refresh and try again.
+            </Alert>
+          ) : ruleOptions.length === 0 ? (
+            <Alert color="yellow" variant="light" icon={<Info size={16} />} radius="md">
+              No access request rules are configured. Create one in Access Control
+              before selecting this action.
+            </Alert>
+          ) : (
+            <Box pl="md">
               <Select
                 label="Access request rule"
                 placeholder="Select an access request rule"
@@ -79,9 +83,8 @@ function RiskLevelSection({ level, tier, onChange, accessRequestRules }) {
                 onChange={(value) => onChange({ action: tier.action, ruleName: value })}
                 required
               />
-            )}
-          </Box>
-        )}
+            </Box>
+          ))}
       </Stack>
     </SectionRow>
   )
@@ -89,7 +92,12 @@ function RiskLevelSection({ level, tier, onChange, accessRequestRules }) {
 
 // The three tiers the analyzer grades a session into, each mapped to the action
 // taken at session time.
-export default function RiskEvaluation({ risk, onTierChange, accessRequestRules }) {
+export default function RiskEvaluation({
+  risk,
+  onTierChange,
+  accessRequestRules,
+  rulesFailed,
+}) {
   return (
     <Stack gap="xxlAlt">
       {/* The section heading spans the full width — unlike the rest of the
@@ -114,6 +122,7 @@ export default function RiskEvaluation({ risk, onTierChange, accessRequestRules 
           tier={risk[level.key]}
           onChange={(tier) => onTierChange(level.key, tier)}
           accessRequestRules={accessRequestRules}
+          rulesFailed={rulesFailed}
         />
       ))}
     </Stack>
