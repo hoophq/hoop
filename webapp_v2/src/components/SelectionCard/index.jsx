@@ -1,4 +1,4 @@
-import { Group, Image, Stack, Text, ThemeIcon, UnstyledButton } from '@mantine/core'
+import { Box, Group, Image, Stack, Text, ThemeIcon, UnstyledButton } from '@mantine/core'
 import classes from './SelectionCard.module.css'
 
 /**
@@ -6,7 +6,7 @@ import classes from './SelectionCard.module.css'
  *
  * - icon:  lucide component at 20px (mutually exclusive with `image`)
  * - image: logo `src` for the same slot
- * - badge: node next to the title, e.g. a "Recommended" pill
+ * - badge: node pinned to the trailing edge, e.g. a "Recommended" pill
  */
 function SelectionCard({
   icon: Icon,
@@ -27,42 +27,42 @@ function SelectionCard({
       data-selected={selected || undefined}
       aria-pressed={!!selected}
     >
-      <Group gap="md" align="center" wrap="nowrap">
-        {(image || Icon) && (
-          <ThemeIcon
-            size="lg"
-            radius="md"
-            variant="light"
-            color="gray"
-            className={classes.icon}
-          >
-            {image ? (
-              <Image
-                src={image}
-                alt=""
-                w={20}
-                h={20}
-                fit="contain"
-                className={classes.logo}
-              />
-            ) : (
-              <Icon size={20} aria-hidden="true" />
-            )}
-          </ThemeIcon>
-        )}
-        <Stack gap={2} align="flex-start">
-          <Group gap="xs" align="center" wrap="nowrap">
+      <Group justify="space-between" align="center" wrap="nowrap" gap="md">
+        <Group gap="md" align="center" wrap="nowrap">
+          {(image || Icon) && (
+            <ThemeIcon
+              size="lg"
+              radius="md"
+              variant="light"
+              color="gray"
+              className={classes.icon}
+            >
+              {image ? (
+                <Image
+                  src={image}
+                  alt=""
+                  w={20}
+                  h={20}
+                  fit="contain"
+                  className={classes.logo}
+                />
+              ) : (
+                <Icon size={20} aria-hidden="true" />
+              )}
+            </ThemeIcon>
+          )}
+          <Stack gap={2} align="flex-start">
             <Text size="sm" fw={500} c={selected ? 'white' : undefined}>
               {title}
             </Text>
-            {badge}
-          </Group>
-          {description && (
-            <Text size="xs" ta="left" c={selected ? 'rgba(255,255,255,0.7)' : 'dimmed'}>
-              {description}
-            </Text>
-          )}
-        </Stack>
+            {description && (
+              <Text size="xs" ta="left" c={selected ? 'rgba(255,255,255,0.7)' : 'dimmed'}>
+                {description}
+              </Text>
+            )}
+          </Stack>
+        </Group>
+        {badge && <Box className={classes.badge}>{badge}</Box>}
       </Group>
     </UnstyledButton>
   )
