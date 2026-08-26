@@ -120,7 +120,7 @@ export default function AiSessionAnalyzer() {
             onGoConfigure={() => setTab('configure')}
           />
         </Tabs.Panel>
-        <Tabs.Panel value="configure" pt="md">
+        <Tabs.Panel value="configure" pt="xl">
           <ConfigureTab onSaved={() => setTab('rules')} />
         </Tabs.Panel>
       </Tabs>
