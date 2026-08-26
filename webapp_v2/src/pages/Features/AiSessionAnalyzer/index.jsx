@@ -13,9 +13,8 @@ import RulesTab from './RulesTab'
 import ConfigureTab from './ConfigureTab'
 import AiSessionAnalyzerPromotion from './components/AiSessionAnalyzerPromotion'
 
-// Shared with the CLJS activation journey, which writes the same key when the
-// feature card is dismissed there — the two stacks must agree on what "seen"
-// means while both are live.
+// The CLJS activation journey writes the same key, so both stacks agree on
+// what "seen" means.
 const PROMOTION_SEEN_STORAGE_KEY = 'ai-session-analyzer-promotion-seen'
 
 const FREE_LICENSE_LIMIT_MESSAGE =
@@ -68,9 +67,8 @@ export default function AiSessionAnalyzer() {
     return <PageLoader error h={300} message="Failed to load AI Session Analyzer." />
   }
 
-  // The promotion replaces the whole page, not just the empty state: until it
-  // has been acknowledged once, an admin sees it even with rules already
-  // configured. Its primary action persists the flag and opens Configure.
+  // The promotion replaces the whole page, not just the empty state — an admin
+  // sees it even with rules already configured.
   if (!promotionSeen) {
     return (
       <FullBleed>

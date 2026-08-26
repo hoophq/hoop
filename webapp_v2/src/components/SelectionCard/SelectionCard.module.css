@@ -1,4 +1,3 @@
-/* Opaque surface, like the Radix `Card variant="surface"` this ports. */
 .card {
   width: 100%;
   border: 1px solid var(--mantine-color-default-border);
@@ -36,8 +35,8 @@
   background-color: var(--brand-navy);
 }
 
-/* The gray palette is calibrated for light backgrounds, so contrast on the
-   navy selected surface is painted with rgba white instead. */
+/* Dark-on-dark exception: Mantine's gray palette is calibrated for light
+   backgrounds, so we paint icon contrast with rgba white. */
 .card[data-selected] .icon {
   background-color: rgba(255, 255, 255, 0.1);
   color: rgba(255, 255, 255, 0.9);

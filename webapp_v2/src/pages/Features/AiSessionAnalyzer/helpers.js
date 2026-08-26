@@ -1,6 +1,5 @@
-// The three risk tiers the analyzer grades every session into, in the order the
-// form renders them. `recommended` is the action pre-selected on a new rule and
-// the one that carries the "Recommended" badge.
+// The three risk tiers, in render order. `recommended` is pre-selected on a new
+// rule and carries the "Recommended" badge.
 export const RISK_LEVELS = [
   {
     key: 'low',
@@ -33,9 +32,8 @@ export const RISK_LEVELS = [
 
 export const REQUIRE_ACCESS_REQUEST = 'require_access_request'
 
-// Reads one tier out of a rule's risk_evaluation. The API still returns the
-// deprecated flat `<tier>_risk_action` alongside the nested `<tier>_risk`
-// object, so both are accepted, newest shape first, then the tier default.
+// The API still returns the deprecated flat `<tier>_risk_action` alongside the
+// nested `<tier>_risk`, so both are read, newest shape first.
 export function tierFromRisk(riskEvaluation, level) {
   const tier = riskEvaluation?.[level.field]
   return {

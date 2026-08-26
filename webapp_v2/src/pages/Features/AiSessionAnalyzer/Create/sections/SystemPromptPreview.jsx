@@ -5,9 +5,8 @@ import Badge from '@/components/Badge'
 import CodeSnippet from '@/components/CodeSnippet'
 import { useAiSessionAnalyzerStore } from '../../store'
 
-// Read-only view of the prompt Hoop prepends to every custom prompt. It is what
-// makes the analyzer return a structured low/medium/high grade, so admins need
-// to be able to read it while writing their own instructions.
+// Read-only view of the prompt Hoop prepends, so admins can see it while
+// writing their own.
 export default function SystemPromptPreview() {
   const [expanded, setExpanded] = useState(false)
 

@@ -43,10 +43,8 @@ export const useAiSessionAnalyzerStore = create((set, get) => ({
 
   clearActive: () => set({ active: null, activeStatus: 'idle' }),
 
-  // A 404 means the org never configured a provider — an expected state, not a
-  // failure — so it settles as a successful load of nothing. Callers therefore
-  // read "is it configured?" off the value (`Boolean(provider)`), never off the
-  // status, which only says whether the fetch itself resolved.
+  // A 404 means "never configured", not a failure. Callers read
+  // `Boolean(provider)`, never the status.
   fetchProvider: async () => {
     set({ providerStatus: 'loading' })
     try {

@@ -258,12 +258,8 @@ export default function AiSessionAnalyzerRuleForm() {
   const { ruleName } = useParams()
   const isEdit = Boolean(ruleName)
 
-  // Activation-journey deep link:
-  // /features/ai-session-analyzer/rules/new?template=<name>&connections=<names>
-  // pre-applies a recommended rule. An unknown or stale template name falls
-  // back to the regular blank form. The URL is the source of truth, so a
-  // browser refresh re-seeds the same template. Note the analyzer journey
-  // carries connection **names**, unlike Guardrails, which carries ids.
+  // Activation-journey deep link `?template=&connections=` seeds the form; an
+  // unknown template falls back to blank. Carries connection names, not ids.
   const [searchParams] = useSearchParams()
   const template = isEdit ? null : findAiAnalyzerTemplate(searchParams.get('template'))
   const templateConnectionNames = (searchParams.get('connections') ?? '')
@@ -281,10 +277,8 @@ export default function AiSessionAnalyzerRuleForm() {
     (s) => s.fetchAccessRequestRules,
   )
 
-  // Arriving through a template deep link means the feature pitch has already
-  // been seen; without this the post-save redirect would land on the promotion
-  // splash instead of the rule that was just created. The CLJS journey writes
-  // the same key for the same reason.
+  // Without this the post-save redirect lands on the promotion splash instead
+  // of the rule just created.
   useEffect(() => {
     if (template) {
       localStorage.setItem('ai-session-analyzer-promotion-seen', 'true')
