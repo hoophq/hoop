@@ -1,4 +1,4 @@
-package conformance
+package gate_test
 
 import (
 	"context"

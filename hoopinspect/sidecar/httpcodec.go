@@ -2,7 +2,7 @@ package sidecar
 
 import (
 	"github.com/hoophq/hoop/hoopinspect"
-	codechttp "github.com/hoophq/libhoop/v2/codec/http"
+	codechttp "github.com/hoophq/hoop/hoopinspect/codec/http"
 )
 
 // newHTTPCodec returns a factory producing HTTP codecs with the lane's

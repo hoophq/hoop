@@ -1,4 +1,4 @@
-package conformance
+package gate_test
 
 import (
 	"bytes"
@@ -12,10 +12,10 @@ import (
 
 	"github.com/hoophq/hoop/hoopinspect"
 	"github.com/hoophq/hoop/hoopinspect/audit"
+	_ "github.com/hoophq/hoop/hoopinspect/codec/all"
 	"github.com/hoophq/hoop/hoopinspect/gate"
 	"github.com/hoophq/hoop/hoopinspect/policy"
 	"github.com/hoophq/hoop/hoopinspect/session"
-	_ "github.com/hoophq/libhoop/v2/codec/all"
 )
 
 // pgQuery builds a Postgres simple-query message.

@@ -70,6 +70,7 @@ A Go workspace (`go.work`) for the hoop gateway, agent, and CLI.
 ### libhoop (`github.com/hoophq/libhoop`, private)
 - One module. Protocol proxies (`agent/{postgres,mssql,mysql,mongodb,oracle}`, `proxy/ssh`), redactors and recorder at the root; the wire codecs under `v2/codec/{postgres,mssql,http}`.
 - `v2/` is a plain directory, not a second module and not a major version. The import path reads `github.com/hoophq/libhoop/v2/codec/postgres` because that is where the files sit.
+- libhoop is a **leaf**: it imports nothing from this repository. The wire vocabulary (`Statement`, `Operation`, `Column`, ...) is DEFINED in `v2/codec/types` and aliased by hoopinspect, so a codec satisfies `hoopinspect.Codec` structurally without naming it. The SQL classifier and lexer stay in hoopinspect and are injected into the codecs as func values.
 - The codecs implement `hoopinspect`'s `Codec` interface and register through `hoopinspect.Register`, so the module depends on `github.com/hoophq/hoop/hoopinspect`. That edge is one-way: hoopinspect's root never imports libhoop.
 - Otherwise it **must not import from the main project** — bridge via stdlib types only.
 - One build path: the proxy, in CI and locally. No stub, no symlink, no checkout step.
@@ -88,7 +89,7 @@ A Go workspace (`go.work`) for the hoop gateway, agent, and CLI.
 
 ### hoopinspect (`hoopinspect/`)
 - Pure function over bytes: turns database wire-protocol bytes into statements, and statements into allow/deny verdicts. Opens no socket, terminates no TLS.
-- Root module has zero dependencies (stdlib only). Six nested modules isolate everything else: `analyzer/vertex`, `cmd` (the `hoop-inspect` relay binary), `config/yaml`, `lexer/conformance`, `pii/alcatraz`, `store/sqlite`.
+- Root module depends on `github.com/hoophq/libhoop` (private) and nothing else. Six nested modules isolate the heavier dependencies: `analyzer/vertex`, `cmd` (the `hoop-inspect` relay binary), `config/yaml`, `lexer/conformance`, `pii/alcatraz`, `store/sqlite`.
 - CI reaches it through `make test-hoopinspect`, which `make test-oss` depends on: `go test github.com/hoophq/hoop/...` matches no module here, so the target walks every `go.mod` under `hoopinspect/` instead.
 - Read `hoopinspect/CLAUDE.md` before changing anything under it; `hoopinspect/README.md` has the API and the relay/sidecar deployment.
 
@@ -236,7 +237,7 @@ this codebase.
 - Model functions in `gateway/` should take `*gorm.DB` as a parameter. Both patterns exist: ~126 functions take it, 44 files still read the `models.DB` global. Use the parameter in new code.
 - Model functions in `gateway/` must propagate `gorm.ErrRecordNotFound`. Callers decide how to handle not-found. Older helpers in `gateway/models/connections.go` return `nil, nil` — do not copy that.
 - `libhoop` must stay independent — no imports from `gateway/`, `agent/`, `client/`, or `common/`.
-- Nothing in `hoopinspect/` outside `sidecar/` and `conformance/` may import `github.com/hoophq/libhoop`. Those two are nested modules; the root module has zero dependencies and must keep them, test dependencies included.
+- The hoopinspect <-> libhoop edge runs ONE way. libhoop must never import `github.com/hoophq/hoop/...`; if a codec needs behaviour from hoopinspect (the SQL classifier, the lexer), inject it as a func value through the codec's `Options` rather than adding an import. `hoopinspect/codec/*` is the registration seam that does the injecting.
 - Services layer: Business logic lives in `gateway/services/` — keep models focused on data, services on business logic.
 
 ### Testing

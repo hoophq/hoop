@@ -21,3 +21,4 @@ require (
 )
 
 replace github.com/hoophq/hoop/hoopinspect => ../..
+

@@ -1,4 +1,4 @@
-package conformance
+package hoopinspect_test
 
 import (
 	"bytes"
@@ -6,8 +6,8 @@ import (
 	"fmt"
 
 	"github.com/hoophq/hoop/hoopinspect"
+	_ "github.com/hoophq/hoop/hoopinspect/codec/postgres"
 	"github.com/hoophq/hoop/hoopinspect/policy"
-	_ "github.com/hoophq/libhoop/v2/codec/postgres"
 )
 
 // pgQuery builds a Postgres simple-query message, standing in for bytes read

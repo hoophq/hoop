@@ -12,6 +12,7 @@ import (
 
 	"github.com/hoophq/hoop/hoopinspect"
 	"github.com/hoophq/hoop/hoopinspect/analyzer"
+	_ "github.com/hoophq/hoop/hoopinspect/codec/all"
 	"github.com/hoophq/hoop/hoopinspect/policy"
 )
 

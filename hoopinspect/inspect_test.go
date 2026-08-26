@@ -1,11 +1,11 @@
-package conformance
+package hoopinspect_test
 
 import (
 	"errors"
 	"testing"
 
 	"github.com/hoophq/hoop/hoopinspect"
-	_ "github.com/hoophq/libhoop/v2/codec/all"
+	_ "github.com/hoophq/hoop/hoopinspect/codec/all"
 )
 
 func TestNewUnsupportedProtocol(t *testing.T) {

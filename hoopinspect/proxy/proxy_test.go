@@ -1,4 +1,4 @@
-package conformance
+package proxy_test
 
 import (
 	"bytes"
@@ -16,10 +16,10 @@ import (
 
 	"github.com/hoophq/hoop/hoopinspect"
 	"github.com/hoophq/hoop/hoopinspect/audit"
+	_ "github.com/hoophq/hoop/hoopinspect/codec/all"
 	"github.com/hoophq/hoop/hoopinspect/policy"
 	"github.com/hoophq/hoop/hoopinspect/proxy"
 	"github.com/hoophq/hoop/hoopinspect/session"
-	_ "github.com/hoophq/libhoop/v2/codec/all"
 )
 
 func pgQuery(sql string) []byte {

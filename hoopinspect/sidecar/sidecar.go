@@ -42,12 +42,12 @@ import (
 
 	"github.com/hoophq/hoop/hoopinspect"
 	"github.com/hoophq/hoop/hoopinspect/audit"
+	_ "github.com/hoophq/hoop/hoopinspect/codec/all"
 	"github.com/hoophq/hoop/hoopinspect/gate"
 	"github.com/hoophq/hoop/hoopinspect/policy"
 	"github.com/hoophq/hoop/hoopinspect/proxy"
 	"github.com/hoophq/hoop/hoopinspect/session"
 	"github.com/hoophq/hoop/hoopinspect/store"
-	_ "github.com/hoophq/libhoop/v2/codec/all"
 )
 
 // Version is the library release, reported by the admin /stats endpoint and

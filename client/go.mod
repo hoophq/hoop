@@ -293,4 +293,5 @@ replace github.com/hoophq/hoop/hoopinspect/config/yaml => ../hoopinspect/config/
 
 replace github.com/hoophq/hoop/hoopinspect/pii/alcatraz => ../hoopinspect/pii/alcatraz
 
+
 replace github.com/hoophq/hoop/hoopinspect/analyzer/vertex => ../hoopinspect/analyzer/vertex

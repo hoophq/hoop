@@ -11,10 +11,8 @@ use (
 	./hoopinspect/analyzer/vertex
 	./hoopinspect/cmd
 	./hoopinspect/config/yaml
-	./hoopinspect/conformance
 	./hoopinspect/lexer/conformance
 	./hoopinspect/pii/alcatraz
-	./hoopinspect/sidecar
 	./hoopinspect/store/sqlite
 	./tunnel
 )

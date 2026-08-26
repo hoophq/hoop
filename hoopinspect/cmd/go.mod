@@ -13,7 +13,6 @@ require (
 	github.com/hoophq/hoop/hoopinspect v0.0.0
 	github.com/hoophq/hoop/hoopinspect/config/yaml v0.0.0
 	github.com/hoophq/hoop/hoopinspect/pii/alcatraz v0.0.0
-	github.com/hoophq/hoop/hoopinspect/sidecar v0.0.0
 )
 
 require (
@@ -34,6 +33,5 @@ replace github.com/hoophq/hoop/hoopinspect/config/yaml => ../config/yaml
 
 replace github.com/hoophq/hoop/hoopinspect/pii/alcatraz => ../pii/alcatraz
 
-replace github.com/hoophq/hoop/hoopinspect/sidecar => ../sidecar
 
 replace github.com/hoophq/hoop/hoopinspect/analyzer/vertex => ../analyzer/vertex
