@@ -16,5 +16,6 @@ use (
 	./hoopinspect/pii/alcatraz
 	./hoopinspect/sidecar
 	./hoopinspect/store/sqlite
+	./libhoop
 	./tunnel
 )

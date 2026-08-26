@@ -25,7 +25,7 @@ require (
 	golang.org/x/mod v0.37.0
 	google.golang.org/grpc v1.83.0
 	gopkg.in/yaml.v3 v3.0.1
-	github.com/hoophq/libhoop/v2 v2.0.0
+	libhoop v0.0.0-00010101000000-000000000000
 	mvdan.cc/sh/v3 v3.13.1
 )
 
@@ -282,6 +282,7 @@ replace github.com/hoophq/hoop/gateway => ../gateway
 
 replace github.com/hoophq/hoop/agent => ../agent
 
+replace libhoop => ../libhoop
 
 // TEMPORARY until https://github.com/wazero/wazero/pull/2507 ships in a release:
 // fork allows fd_renumber onto stdio fds (required by the embedded PGlite

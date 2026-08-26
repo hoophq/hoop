@@ -14,7 +14,7 @@ import (
 	"syscall"
 	"time"
 
-	sshtypes "github.com/hoophq/libhoop/v2/proxy/ssh/types"
+	sshtypes "libhoop/proxy/ssh/types"
 
 	charmlog "github.com/charmbracelet/log"
 	"github.com/creack/pty"

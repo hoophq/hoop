@@ -35,8 +35,8 @@ import (
 	mcpconfig "github.com/hoophq/mcpproxy/config"
 	mcpgateway "github.com/hoophq/mcpproxy/gateway"
 	"github.com/hoophq/mcpproxy/inspect"
-	"github.com/hoophq/libhoop/v2"
-	"github.com/hoophq/libhoop/v2/agent/mcpadapter"
+	"libhoop"
+	"libhoop/agent/mcpadapter"
 )
 
 // mcpResponseChunkSize bounds each gRPC packet carrying a response back to the

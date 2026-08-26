@@ -17,7 +17,7 @@ import (
 	"time"
 
 	pb "github.com/hoophq/hoop/common/proto"
-	sshtypes "github.com/hoophq/libhoop/v2/proxy/ssh/types"
+	sshtypes "libhoop/proxy/ssh/types"
 
 	"golang.org/x/crypto/ssh"
 )

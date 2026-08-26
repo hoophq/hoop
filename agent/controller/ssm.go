@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"github.com/hoophq/libhoop/v2"
+	"libhoop"
 
 	"github.com/aws/session-manager-plugin/src/service"
 	"github.com/hoophq/hoop/common/log"

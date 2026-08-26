@@ -4,9 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"github.com/hoophq/libhoop/v2"
-	"github.com/hoophq/libhoop/v2/agent/dbexec"
-	redactortypes "github.com/hoophq/libhoop/v2/redactor/types"
+	"libhoop"
+	"libhoop/agent/dbexec"
+	redactortypes "libhoop/redactor/types"
 	"strconv"
 	"strings"
 

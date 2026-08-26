@@ -12,6 +12,7 @@ replace github.com/hoophq/hoop/agent => ../agent
 // placeholder version agent pins.
 replace github.com/hoophq/hoop/client => ../client
 
+replace libhoop => ../libhoop
 
 require (
 	github.com/MicahParks/keyfunc/v2 v2.1.0
@@ -68,7 +69,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/driver/postgres v1.6.0
 	gorm.io/gorm v1.31.1
-	github.com/hoophq/libhoop/v2 v2.0.0
+	libhoop v0.0.0-00010101000000-000000000000
 )
 
 require (

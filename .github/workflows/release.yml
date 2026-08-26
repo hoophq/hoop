@@ -23,13 +23,21 @@ jobs:
       - name: Checkout Hoop
         uses: actions/checkout@v3
 
+      - name: Checkout libhoop
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          path: "./libhoop"
+          token: ${{ secrets.GH_TOKEN }}
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
           go-version-file: go.work
-      # libhoop is a private module fetched from the proxy. GOPRIVATE keeps it
-      # off proxy.golang.org and sum.golang.org; the credential rewrite lets
-      # the direct fetch authenticate as the token.
+      # hoopinspect's sidecar/ and conformance/ modules pull the codecs from
+      # github.com/hoophq/libhoop/v2, a private module fetched from the proxy.
+      # GOPRIVATE keeps it off proxy.golang.org and sum.golang.org; the
+      # credential rewrite lets the direct fetch authenticate as the token.
+      # The ./libhoop checkout above covers the ROOT libhoop module only.
       - name: Authenticate private modules
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
@@ -157,22 +165,30 @@ jobs:
       - name: Checkout Hoop
         uses: actions/checkout@v3
 
+      - name: Checkout libhoop
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          path: "./libhoop"
+          token: ${{ secrets.GH_TOKEN }}
+
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
           go-version-file: go.work
           cache-dependency-path: "**/go.sum"
 
-      # libhoop is a private module fetched from the proxy. GOPRIVATE keeps it
-      # off proxy.golang.org and sum.golang.org; the credential rewrite lets
-      # the direct fetch authenticate as the token.
+      # hoopinspect's sidecar/ and conformance/ modules pull the codecs from
+      # github.com/hoophq/libhoop/v2, a private module fetched from the proxy.
+      # GOPRIVATE keeps it off proxy.golang.org and sum.golang.org; the
+      # credential rewrite lets the direct fetch authenticate as the token.
+      # The ./libhoop checkout above covers the ROOT libhoop module only.
       - name: Authenticate private modules
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
-
       - name: Setup Rust for WASM
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -219,22 +235,30 @@ jobs:
       - name: Checkout Hoop
         uses: actions/checkout@v3
 
+      - name: Checkout libhoop
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          path: "./libhoop"
+          token: ${{ secrets.GH_TOKEN }}
+
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
           go-version-file: go.work
           cache-dependency-path: "**/go.sum"
 
-      # libhoop is a private module fetched from the proxy. GOPRIVATE keeps it
-      # off proxy.golang.org and sum.golang.org; the credential rewrite lets
-      # the direct fetch authenticate as the token.
+      # hoopinspect's sidecar/ and conformance/ modules pull the codecs from
+      # github.com/hoophq/libhoop/v2, a private module fetched from the proxy.
+      # GOPRIVATE keeps it off proxy.golang.org and sum.golang.org; the
+      # credential rewrite lets the direct fetch authenticate as the token.
+      # The ./libhoop checkout above covers the ROOT libhoop module only.
       - name: Authenticate private modules
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
-
       - name: Setup Rust for WASM
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -281,22 +305,30 @@ jobs:
       - name: Checkout Hoop
         uses: actions/checkout@v3
 
+      - name: Checkout libhoop
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          path: "./libhoop"
+          token: ${{ secrets.GH_TOKEN }}
+
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
           go-version-file: go.work
           cache-dependency-path: "**/go.sum"
 
-      # libhoop is a private module fetched from the proxy. GOPRIVATE keeps it
-      # off proxy.golang.org and sum.golang.org; the credential rewrite lets
-      # the direct fetch authenticate as the token.
+      # hoopinspect's sidecar/ and conformance/ modules pull the codecs from
+      # github.com/hoophq/libhoop/v2, a private module fetched from the proxy.
+      # GOPRIVATE keeps it off proxy.golang.org and sum.golang.org; the
+      # credential rewrite lets the direct fetch authenticate as the token.
+      # The ./libhoop checkout above covers the ROOT libhoop module only.
       - name: Authenticate private modules
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
-
       - name: Setup Rust for WASM
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -343,22 +375,30 @@ jobs:
       - name: Checkout Hoop
         uses: actions/checkout@v3
 
+      - name: Checkout libhoop
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          path: "./libhoop"
+          token: ${{ secrets.GH_TOKEN }}
+
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
           go-version-file: go.work
           cache-dependency-path: "**/go.sum"
 
-      # libhoop is a private module fetched from the proxy. GOPRIVATE keeps it
-      # off proxy.golang.org and sum.golang.org; the credential rewrite lets
-      # the direct fetch authenticate as the token.
+      # hoopinspect's sidecar/ and conformance/ modules pull the codecs from
+      # github.com/hoophq/libhoop/v2, a private module fetched from the proxy.
+      # GOPRIVATE keeps it off proxy.golang.org and sum.golang.org; the
+      # credential rewrite lets the direct fetch authenticate as the token.
+      # The ./libhoop checkout above covers the ROOT libhoop module only.
       - name: Authenticate private modules
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
-
       - name: Setup Rust for WASM
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -405,22 +445,30 @@ jobs:
       - name: Checkout Hoop
         uses: actions/checkout@v3
 
+      - name: Checkout libhoop
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          path: "./libhoop"
+          token: ${{ secrets.GH_TOKEN }}
+
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
           go-version-file: go.work
           cache-dependency-path: "**/go.sum"
 
-      # libhoop is a private module fetched from the proxy. GOPRIVATE keeps it
-      # off proxy.golang.org and sum.golang.org; the credential rewrite lets
-      # the direct fetch authenticate as the token.
+      # hoopinspect's sidecar/ and conformance/ modules pull the codecs from
+      # github.com/hoophq/libhoop/v2, a private module fetched from the proxy.
+      # GOPRIVATE keeps it off proxy.golang.org and sum.golang.org; the
+      # credential rewrite lets the direct fetch authenticate as the token.
+      # The ./libhoop checkout above covers the ROOT libhoop module only.
       - name: Authenticate private modules
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
-
       - name: Setup Rust for WASM
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -475,22 +523,30 @@ jobs:
       - name: Checkout Hoop
         uses: actions/checkout@v3
 
+      - name: Checkout libhoop
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          path: "./libhoop"
+          token: ${{ secrets.GH_TOKEN }}
+
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
           go-version-file: go.work
           cache-dependency-path: "**/go.sum"
 
-      # libhoop is a private module fetched from the proxy. GOPRIVATE keeps it
-      # off proxy.golang.org and sum.golang.org; the credential rewrite lets
-      # the direct fetch authenticate as the token.
+      # hoopinspect's sidecar/ and conformance/ modules pull the codecs from
+      # github.com/hoophq/libhoop/v2, a private module fetched from the proxy.
+      # GOPRIVATE keeps it off proxy.golang.org and sum.golang.org; the
+      # credential rewrite lets the direct fetch authenticate as the token.
+      # The ./libhoop checkout above covers the ROOT libhoop module only.
       - name: Authenticate private modules
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
-
       - name: Setup Rust for WASM
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -1333,6 +1389,20 @@ jobs:
         run: make publish-sentry-sourcemaps
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+
+      - name: Tag libhoop with release tag
+        uses: actions/checkout@v3
+        with:
+          repository: hoophq/libhoop
+          path: "./libhoop"
+          token: ${{ secrets.GH_TOKEN }}
+      - name: Push tag
+        working-directory: ./libhoop
+        env:
+          GIT_TAG: ${{ github.ref_name }}
+        run: |
+          git tag "$GIT_TAG" 2>/dev/null || true
+          git push origin "$GIT_TAG"
 
   # Create a Linear release once the version has actually shipped. This job runs
   # only after `publish-release` succeeds, so a Linear release is never created
