@@ -1,3 +1,6 @@
+;; The AI Session Analyzer pages live in React (webapp_v2
+;; pages/Features/AiSessionAnalyzer). What survives here is the read path the
+;; webclient, the runbooks runner and the activation journey still dispatch.
 (ns webapp.features.ai-session-analyzer.events
   (:require
    [re-frame.core :as rf]))
@@ -25,7 +28,7 @@
                          (:status-code error)
                          (get-in error [:response :status])
                          (get-in error [:response :status-code]))]
-     (if (= status-code 404) 
+     (if (= status-code 404)
        {:db (assoc-in db [:ai-session-analyzer :provider] {:status :idle :data nil :error nil})}
        (let [error-message (or (:message error) (str error))]
          {:db (update-in db [:ai-session-analyzer :provider] merge {:status :error :error error})
@@ -33,59 +36,6 @@
                            {:level :error
                             :text "Failed to load AI provider configuration"
                             :details error-message}]]]})))))
-
-(rf/reg-event-fx
- :ai-session-analyzer/upsert-provider
- (fn [{:keys [db]} [_ provider-data on-success on-failure]]
-   {:db (assoc-in db [:ai-session-analyzer :provider :status] :loading)
-    :fx [[:dispatch [:fetch {:method "POST"
-                             :uri "/ai/session-analyzer/providers"
-                             :body provider-data
-                             :on-success #(do
-                                            (rf/dispatch [:ai-session-analyzer/upsert-provider-success %])
-                                            (when on-success (on-success)))
-                             :on-failure #(do
-                                            (rf/dispatch [:ai-session-analyzer/upsert-provider-failure %])
-                                            (when on-failure (on-failure %)))}]]]}))
-
-(rf/reg-event-db
- :ai-session-analyzer/upsert-provider-success
- (fn [db [_ data]]
-   (update-in db [:ai-session-analyzer :provider] merge {:status :success :data data})))
-
-(rf/reg-event-fx
- :ai-session-analyzer/upsert-provider-failure
- (fn [{:keys [db]} [_ error]]
-   (let [error-message (or (:message error) (str error))]
-     {:db (update-in db [:ai-session-analyzer :provider] merge {:status :error :error error})
-      :fx [[:dispatch [:show-snackbar
-                       {:level :error
-                        :text "Failed to save provider configuration"
-                        :details error-message}]]]})))
-
-(rf/reg-event-fx
- :ai-session-analyzer/delete-provider
- (fn [{:keys [db]} _]
-   {:db (assoc-in db [:ai-session-analyzer :provider :status] :loading)
-    :fx [[:dispatch [:fetch {:method "DELETE"
-                             :uri "/ai/session-analyzer/providers"
-                             :on-success #(rf/dispatch [:ai-session-analyzer/delete-provider-success])
-                             :on-failure #(rf/dispatch [:ai-session-analyzer/delete-provider-failure %])}]]]}))
-
-(rf/reg-event-db
- :ai-session-analyzer/delete-provider-success
- (fn [db _]
-   (assoc-in db [:ai-session-analyzer :provider] {:status :idle :data nil :error nil})))
-
-(rf/reg-event-fx
- :ai-session-analyzer/delete-provider-failure
- (fn [{:keys [db]} [_ error]]
-   (let [error-message (or (:message error) (str error))]
-     {:db (update-in db [:ai-session-analyzer :provider] merge {:status :error :error error})
-      :fx [[:dispatch [:show-snackbar
-                       {:level :error
-                        :text "Failed to delete provider configuration"
-                        :details error-message}]]]})))
 
 (rf/reg-event-fx
  :ai-session-analyzer/get-role-rule
@@ -156,149 +106,3 @@
                        {:level :error
                         :text "Failed to load AI Session Analyzer rules"
                         :details error-message}]]]})))
-
-(rf/reg-event-fx
- :ai-session-analyzer/get-rule-by-name
- (fn [{:keys [db]} [_ rule-name]]
-   {:db (assoc-in db [:ai-session-analyzer :active-rule :status] :loading)
-    :fx [[:dispatch [:fetch {:method "GET"
-                             :uri (str "/ai/session-analyzer/rules/" rule-name)
-                             :on-success #(rf/dispatch [:ai-session-analyzer/get-rule-by-name-success %])
-                             :on-failure #(rf/dispatch [:ai-session-analyzer/get-rule-by-name-failure %])}]]]}))
-
-(rf/reg-event-db
- :ai-session-analyzer/get-rule-by-name-success
- (fn [db [_ data]]
-   (update-in db [:ai-session-analyzer :active-rule] merge {:status :success :data data})))
-
-(rf/reg-event-fx
- :ai-session-analyzer/get-rule-by-name-failure
- (fn [{:keys [db]} [_ error]]
-   (let [error-message (or (:message error) (str error))]
-     {:db (update-in db [:ai-session-analyzer :active-rule] merge {:status :error :error error})
-      :fx [[:dispatch [:show-snackbar
-                       {:level :error
-                        :text "Failed to load rule"
-                        :details error-message}]]]})))
-
-(rf/reg-event-fx
- :ai-session-analyzer/create-rule
- (fn [{:keys [db]} [_ rule-data]]
-   {:db (assoc-in db [:ai-session-analyzer :rule :status] :loading)
-    :fx [[:dispatch [:fetch {:method "POST"
-                             :uri "/ai/session-analyzer/rules"
-                             :body rule-data
-                             :on-success #(rf/dispatch [:ai-session-analyzer/create-rule-success %])
-                             :on-failure #(rf/dispatch [:ai-session-analyzer/create-rule-failure %])}]]]}))
-
-(rf/reg-event-fx
- :ai-session-analyzer/create-rule-success
- (fn [{:keys [db]} _]
-   {:db (assoc-in db [:ai-session-analyzer :rule :status] :success)
-    :fx [[:dispatch [:navigate :ai-session-analyzer]]
-         [:dispatch [:show-snackbar
-                     {:level :success
-                      :text "Rule created successfully!"}]]]}))
-
-(rf/reg-event-fx
- :ai-session-analyzer/create-rule-failure
- (fn [{:keys [db]} [_ error]]
-   {:db (assoc-in db [:ai-session-analyzer :rule :status] :error)
-    :fx [[:dispatch [:show-snackbar
-                     {:level :error
-                      :text "Failed to create rule"
-                      :details error}]]]}))
-
-(rf/reg-event-fx
- :ai-session-analyzer/update-rule
- (fn [{:keys [db]} [_ rule-name rule-data]]
-   {:db (assoc-in db [:ai-session-analyzer :rule :status] :loading)
-    :fx [[:dispatch [:fetch {:method "PUT"
-                             :uri (str "/ai/session-analyzer/rules/" rule-name)
-                             :body rule-data
-                             :on-success #(rf/dispatch [:ai-session-analyzer/update-rule-success %])
-                             :on-failure #(rf/dispatch [:ai-session-analyzer/update-rule-failure %])}]]]}))
-
-(rf/reg-event-fx
- :ai-session-analyzer/update-rule-success
- (fn [{:keys [db]} _]
-   {:db (assoc-in db [:ai-session-analyzer :rule :status] :success)
-    :fx [[:dispatch [:navigate :ai-session-analyzer]]
-         [:dispatch [:show-snackbar
-                     {:level :success
-                      :text "Rule updated successfully!"}]]]}))
-
-(rf/reg-event-fx
- :ai-session-analyzer/update-rule-failure
- (fn [{:keys [db]} [_ error]]
-   (let [error-message (or (:message error) (str error))]
-     {:db (assoc-in db [:ai-session-analyzer :rule :status] :error)
-      :fx [[:dispatch [:show-snackbar
-                       {:level :error
-                        :text "Failed to update rule"
-                        :details error-message}]]]})))
-
-(rf/reg-event-db
- :ai-session-analyzer/clear-active-rule
- (fn [db _]
-   (assoc-in db [:ai-session-analyzer :active-rule] {:status :idle :data nil :error nil})))
-
-;; Seeds the create form with a full rule map (mirrors what
-;; :ai-session-analyzer/get-rule-by-name-success does for the edit flow).
-;; Used by the activation journey to pre-apply a recommended template.
-(rf/reg-event-db
- :ai-session-analyzer/set-active-rule
- (fn [db [_ rule]]
-   (assoc-in db [:ai-session-analyzer :active-rule]
-             {:status :success :data rule :error nil})))
-
-(rf/reg-event-fx
- :ai-session-analyzer/delete-rule
- (fn [{:keys [db]} [_ rule-name]]
-   {:db db
-    :fx [[:dispatch [:fetch {:method "DELETE"
-                             :uri (str "/ai/session-analyzer/rules/" rule-name)
-                             :on-success #(rf/dispatch [:ai-session-analyzer/delete-rule-success rule-name])
-                             :on-failure #(rf/dispatch [:ai-session-analyzer/delete-rule-failure %])}]]]}))
-
-(rf/reg-event-fx
- :ai-session-analyzer/delete-rule-success
- (fn [{:keys [db]} _]
-   {:db db
-    :fx [[:dispatch [:navigate :ai-session-analyzer]]
-         [:dispatch [:show-snackbar
-                     {:level :success
-                      :text "Rule deleted successfully!"}]]]}))
-
-(rf/reg-event-fx
- :ai-session-analyzer/delete-rule-failure
- (fn [{:keys [db]} [_ error]]
-   (let [error-message (or (:message error) (str error))]
-     {:db db
-      :fx [[:dispatch [:show-snackbar
-                       {:level :error
-                        :text "Failed to delete rule"
-                        :details error-message}]]]})))
-
-(rf/reg-event-fx
- :ai-session-analyzer/get-system-prompt
- (fn [{:keys [db]} _]
-   (if (seq (get-in db [:ai-session-analyzer :system-prompt :data]))
-     {:db db}
-     {:db (assoc-in db [:ai-session-analyzer :system-prompt :status] :loading)
-      :fx [[:dispatch [:fetch {:method "GET"
-                               :uri "/ai/session-analyzer/system-prompt"
-                               :on-success #(rf/dispatch [:ai-session-analyzer/get-system-prompt-success %])
-                               :on-failure #(rf/dispatch [:ai-session-analyzer/get-system-prompt-failure %])}]]]})))
-
-(rf/reg-event-db
- :ai-session-analyzer/get-system-prompt-success
- (fn [db [_ data]]
-   (assoc-in db [:ai-session-analyzer :system-prompt]
-             {:status :success :data (:prompt data) :error nil})))
-
-(rf/reg-event-fx
- :ai-session-analyzer/get-system-prompt-failure
- (fn [{:keys [db]} [_ error]]
-   {:db (assoc-in db [:ai-session-analyzer :system-prompt]
-                  {:status :error :data nil :error error})}))

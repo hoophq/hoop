@@ -75,8 +75,6 @@
    [webapp.events.tracking]
    [webapp.events.users]
    [webapp.shared-ui.cmdk.events.command-palette]
-   [webapp.features.access-request.events]
-   [webapp.features.access-request.subs]
    [webapp.features.machine-identities.events]
    [webapp.features.machine-identities.main :as machine-identities]
    [webapp.features.machine-identities.subs]
@@ -84,10 +82,10 @@
    [webapp.features.machine-identities.views.identity-roles :as identity-roles]
    [webapp.features.activation-journey.events]
    [webapp.features.activation-journey.subs]
+   ;; Required for their registration side effects: the webclient, the runbooks
+   ;; runner and the activation journey still read this feature's state.
    [webapp.features.ai-session-analyzer.events]
-   [webapp.features.ai-session-analyzer.main :as ai-session-analyzer]
    [webapp.features.ai-session-analyzer.subs]
-   [webapp.features.ai-session-analyzer.views.rule-form :as ai-session-analyzer-rule-form]
    [webapp.features.attributes.events]
    [webapp.features.attributes.main :as attributes-main]
    [webapp.features.attributes.subs]
@@ -631,38 +629,6 @@
       [routes/wrap-license-feature "runbooks"
        [routes/wrap-admin-only
         [runbook-rule-form/main :edit {:rule-id rule-id}]]]]]))
-
-(defmethod routes/panels :ai-session-analyzer-panel []
-  (rf/dispatch [:destroy-page-loader])
-  [layout :application-hoop
-   [routes/wrap-license-feature "ai-session-analyzer"
-    [routes/wrap-admin-only
-     [ai-session-analyzer/main]]]])
-
-(defmethod routes/panels :create-ai-session-analyzer-rule-panel []
-  (rf/dispatch [:destroy-page-loader])
-  (let [params (js/URLSearchParams. (.. js/window -location -search))
-        template-id (.get params "template")]
-    (if template-id
-      (rf/dispatch [:activation-journey/seed-ai-analyzer-template
-                    template-id (.get params "connections")])
-      (rf/dispatch [:ai-session-analyzer/clear-active-rule])))
-  [layout :application-hoop
-   [:div {:class "bg-gray-1 min-h-full h-max relative"}
-    [routes/wrap-license-feature "ai-session-analyzer"
-     [routes/wrap-admin-only
-      [ai-session-analyzer-rule-form/main :create]]]]])
-
-(defmethod routes/panels :edit-ai-session-analyzer-rule-panel []
-  (let [pathname (.. js/window -location -pathname)
-        current-route (bidi/match-route @routes/routes pathname)
-        rule-name (:rule-name (:route-params current-route))]
-    (rf/dispatch [:destroy-page-loader])
-    [layout :application-hoop
-     [:div {:class "bg-gray-1 min-h-full h-max relative"}
-      [routes/wrap-license-feature "ai-session-analyzer"
-       [routes/wrap-admin-only
-        [ai-session-analyzer-rule-form/main :edit {:rule-name rule-name}]]]]]))
 
 (defmethod routes/panels :settings-attributes-panel []
   (rf/dispatch [:destroy-page-loader])
