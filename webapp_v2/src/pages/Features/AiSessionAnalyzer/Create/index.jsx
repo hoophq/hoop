@@ -9,6 +9,7 @@ import ConnectionNamesMultiSelect from '@/components/ConnectionNamesMultiSelect'
 import EnterpriseBanner from '@/components/EnterpriseBanner'
 import Modal from '@/components/Modal'
 import PageLoader from '@/components/PageLoader'
+import Switch from '@/components/Switch'
 import Textarea from '@/components/Textarea'
 import TextInput from '@/components/TextInput'
 import { PAGE_PADDING } from '@/layout/PageLayout'
@@ -44,6 +45,7 @@ function RuleFormFields({ rule, ruleName, isEdit }) {
     description: rule?.description ?? '',
     connectionNames: rule?.connection_names ?? [],
     customPrompt: rule?.custom_prompt ?? '',
+    agentic: rule?.agentic ?? false,
   }))
   const [risk, setRisk] = useState(() => riskFromRule(rule))
 
@@ -207,6 +209,22 @@ function RuleFormFields({ rule, ruleName, isEdit }) {
               keeps the actions above reliable.
             </Alert>
             <SystemPromptPreview />
+          </Stack>
+        </SectionRow>
+
+        <SectionRow
+          title="Agentic analysis"
+          description="Let the analyzer investigate before grading."
+        >
+          <Stack gap="sm">
+            <Switch
+              checked={form.agentic}
+              onChange={(e) => setField({ agentic: e.currentTarget.checked })}
+              label="Agentic analysis (investigate past sessions & resource metadata before classifying)"
+            />
+            <Alert color="blue" variant="light" icon={<Info size={16} />} radius="md">
+              {"When enabled, the analyzer runs a tool-calling loop over the user's past sessions and read-only database metadata (query plans, table size, index usage) before assigning a risk level. This is slower but produces a richer, reviewer-facing analysis."}
+            </Alert>
           </Stack>
         </SectionRow>
 

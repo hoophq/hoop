@@ -68,7 +68,14 @@ export function hasIncompleteTier(risk) {
   })
 }
 
-export function formToPayload({ name, description, connectionNames, customPrompt, risk }) {
+export function formToPayload({
+  name,
+  description,
+  connectionNames,
+  customPrompt,
+  agentic,
+  risk,
+}) {
   const prompt = customPrompt.trim()
   return {
     name: name.trim(),
@@ -80,5 +87,6 @@ export function formToPayload({ name, description, connectionNames, customPrompt
       RISK_LEVELS.map((level) => [level.field, buildTier(risk[level.key])]),
     ),
     custom_prompt: prompt || null,
+    agentic,
   }
 }
