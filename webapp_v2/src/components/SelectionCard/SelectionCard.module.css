@@ -2,7 +2,7 @@
   width: 100%;
   border: 1px solid var(--mantine-color-default-border);
   border-radius: var(--mantine-radius-lg);
-  background-color: transparent;
+  background-color: var(--hoop-surface-raised);
   cursor: pointer;
   transition: background-color 120ms ease, border-color 120ms ease;
 }
@@ -28,7 +28,7 @@
 }
 
 .card:disabled:hover {
-  background-color: transparent;
+  background-color: var(--hoop-surface-raised);
 }
 
 .card[data-selected]:disabled:hover {
@@ -40,5 +40,19 @@
 .card[data-selected] .icon {
   background-color: rgba(255, 255, 255, 0.1);
   color: rgba(255, 255, 255, 0.9);
-  border-color: transparent;
+}
+
+/* Logos are full-colour artwork — flatten them to white when selected. */
+.card[data-selected] .logo {
+  filter: brightness(0) invert(1);
+}
+
+/* Mantine writes --badge-bg inline, which no ancestor rule can outrank. */
+.badge {
+  display: contents;
+}
+
+.card[data-selected] .badge > * {
+  background-color: rgba(255, 255, 255, 0.14);
+  color: #fff;
 }

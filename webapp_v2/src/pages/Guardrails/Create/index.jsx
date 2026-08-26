@@ -198,7 +198,7 @@ function GuardrailFormFields({ guardrail, id, isEdit }) {
         </Box>
       )}
 
-      <Stack gap="xxlAlt" className={classes.form}>
+      <Stack gap="xxlAlt">
         <SectionRow
           title="Set Guardrail information"
           description="Used to identify your Guardrail in your resource roles."

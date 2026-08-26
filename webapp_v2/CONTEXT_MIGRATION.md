@@ -112,6 +112,9 @@ Gateway backend (port 8009)
 | `/features/access-request` | React | Done |
 | `/features/access-request/new` | React | Done |
 | `/features/access-request/edit/:ruleName` | React | Done — rule name stays a path segment, the legacy URL shape |
+| `/features/ai-session-analyzer` | React | Done — `?tab=configure` opens the provider tab |
+| `/features/ai-session-analyzer/rules/new` | React | Done — `?template=<name>&connections=<names-csv>` seeds a rule; note the analyzer journey carries connection **names**, unlike Guardrails, which carries ids |
+| `/features/ai-session-analyzer/rules/edit/:ruleName` | React | Done — the rule name is a clean path segment, as in the legacy CLJS route |
 | `/plugins/manage/jira` | React (redirect) | Done — legacy URL → `/jira-templates?tab=configuration` |
 | `/plugins/manage/slack` | React (redirect) | Done — legacy URL → `/integrations/slack` |
 | `/plugins/manage/webhooks` | React (redirect) | Done — legacy URL → `/integrations/webhooks` |
@@ -140,7 +143,6 @@ Gateway backend (port 8009)
 /provisioning
 /features/machine-identities/*   (decision gate vs React /ai-agents-identities)
 /features/runbooks/setup, /features/runbooks/rules/*
-/features/ai-session-analyzer/*
 /plugins/*  (jira manage + review details only — slack/webhooks moved to React at /integrations/*)
 /integrations/authentication
 /integrations/aws-connect/*
@@ -157,8 +159,9 @@ Dead bidi entries (route exists, panel deleted — cleanup planned in
 `/features/runbooks/edit/:connection-id`.
 
 Shadowed bidi entries (route + panel still exist but React matches first, so
-the CLJS page is unreachable): none left in the Guardrails / Access Control /
-Access Request families — all three were cleaned up.
+the CLJS page is unreachable): `/features/ai-session-analyzer/*`, added by
+B3.2 (EVL-148). The Guardrails / Access Control / Access Request families were
+already cleaned up.
 
 `/guardrails/*` lost its CLJS pages in EVL-147; `/features/access-control/*`
 and `/features/access-request/*` lost theirs in EVL-184. The two families were
@@ -179,8 +182,10 @@ cleaned up differently, and the difference matters:
 (`:access-request/list-rules`, `:access-request/set-rules`, the
 `:access-request/rules` sub), because
 `features/ai_session_analyzer/views/rule_form.cljs` still dispatches and
-subscribes to them to fill its approval-rule picker. Those last two files go
-once B3.2 (EVL-148) migrates the AI Session Analyzer.
+subscribes to them to fill its approval-rule picker. EVL-148 shadowed that form
+rather than deleting it, so those two files are now reachable by nothing the
+user can open; they go with the analyzer page files in the same Track A cleanup
+(React reads `services/accessRequests.js` instead).
 
 Kept bidi entries whose panel was deleted because CLJS code still navigates to
 them: `/guardrails` (`:guardrails`) and `/guardrails/new` (`:create-guardrail`)
@@ -189,6 +194,24 @@ tab and the activation-journey feature cards still `url-for`/`:navigate` them.
 `events/guardrails.cljs` also stays, trimmed to `:guardrails->get-all` /
 `:guardrails->set-all` / the `:guardrails->list` sub, which resource
 setup/configure and the activation journey still consume.
+
+`features/ai_session_analyzer/` only partly falls into that cleanup. Its page
+files — `main.cljs` and `views/{rule_form,rule_list,configuration_view,empty_state}.cljs`
+— are now unreachable and can go. Its `events.cljs`, `subs.cljs` and
+`views/{ai_analyzer_card,ai_block_card,session_analysis}.cljs` must **stay**:
+the webclient (`webclient/panel.cljs`, `webclient/events/primary_connection.cljs`),
+the runbooks runner (`features/runbooks/runner/{main,events}.cljs`), session
+details (`audit/views/session_details.cljs`) and the activation journey all
+still dispatch `:ai-session-analyzer/*` and render those cards. The two
+`app.cljs` requires that exist purely for their registration side effects
+therefore stay too.
+
+Deleting the analyzer bidi entries is **not** part of that cleanup either:
+`routes/url-for` is `bidi/path-for` over the live route table, and
+`shared_ui/sidebar/constants.cljs`, `features/activation_journey/templates.cljs`
+and `features/promotion.cljs` all build analyzer URLs from
+`:ai-session-analyzer` / `:create-ai-session-analyzer-rule`. The entries have to
+outlive the panels until those callers move to React.
 
 ### Global Components in CLJS (need React equivalents before removal)
 

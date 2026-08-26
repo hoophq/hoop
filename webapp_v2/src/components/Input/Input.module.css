@@ -12,3 +12,9 @@
 .wrapper[data-variant='default']:not([data-error]) {
   --input-bd: var(--mantine-color-gray-2);
 }
+
+/* Mantine's --input-bg is theme.white (#FCFCFD) — the page background.
+   Not error-scoped: the surface is the same in the error state. */
+.wrapper[data-variant='default'] {
+  --input-bg: var(--hoop-surface-raised);
+}
