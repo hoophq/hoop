@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Box, Button, Group, Popover, Stack, Text, Title } from '@mantine/core'
+import { Network, CircleAlert, ChevronDown, ChevronRight, User, BadgeCheck, Link } from 'lucide-react'
 import Code from '@/components/Code'
-import { Network, CircleAlert, ChevronDown, ChevronRight, User, BadgeCheck } from 'lucide-react'
 import { useMinDelay } from '@/hooks/useMinDelay'
 import PageLoader from '@/components/PageLoader'
 import EmptyState from '@/layout/EmptyState'
@@ -22,11 +22,21 @@ function formatTimestamp(ts) {
   return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
 }
 
+function formatResourceType(resourceType) {
+  return resourceType
+    .split(/[_-]/)
+    .map((word) => {
+      if (word == 'ai') return 'AI'
+      return word.charAt(0).toUpperCase() + word.slice(1)
+    })
+    .join(' ')
+}
+
 function formatOperation(action, resourceType, resourceName) {
   const actionText =
-    { create: 'Created', update: 'Updated', delete: 'Deleted', revoke: 'Revoke' }[action] ??
+    { create: 'Created', update: 'Updated', delete: 'Deleted', revoke: 'Revoked' }[action] ??
     (action ? action.charAt(0).toUpperCase() + action.slice(1) : '')
-  const resourceText = resourceName || (resourceType ? resourceType.charAt(0).toUpperCase() + resourceType.slice(1) : 'Resource')
+  const resourceText = resourceName || (resourceType ? formatResourceType(resourceType) : 'Resource')
   return `${actionText} ${resourceText}`
 }
 
@@ -47,6 +57,12 @@ function ExpandedRow({ log }) {
           <Network size={16} />
           <Text size="sm" c="dimmed">IP Address:</Text>
           <Text size="sm" fw={500}>{log.client_ip ?? 'N/A'}</Text>
+        </Group>
+
+        <Group gap="xs">
+          <Link size={16} />
+          <Text size="sm" c="dimmed">Path:</Text>
+          <Text size="sm" fw={500}>{log.http_path ?? 'N/A'}</Text>
         </Group>
 
         <Group gap="xs">

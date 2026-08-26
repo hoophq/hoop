@@ -541,6 +541,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.PUT("/connections/:nameOrID/datamasking-rules",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		apiconnections.UpdateDataMaskingRuleConnection)
 
 	// IAM Federation: per-connection config (admin-only). The credentials
@@ -693,6 +694,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.POST("/access-requests/rules",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		accessrequestsapi.CreateAccessRequestRule,
 	)
 	r.GET("/access-requests/rules/:name",
@@ -703,11 +705,13 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.PUT("/access-requests/rules/:name",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		accessrequestsapi.UpdateAccessRequestRule,
 	)
 	r.DELETE("/access-requests/rules/:name",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		accessrequestsapi.DeleteAccessRequestRule,
 	)
 
@@ -794,6 +798,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.PUT("/orgs/features",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		api.TrackRequest(analytics.EventOrgFeatureUpdate),
 		apifeatures.FeatureUpdate)
 
@@ -1116,10 +1121,12 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.POST("/ai/session-analyzer/providers",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		apiai.UpsertSessionAnalyzerProvider)
 	r.DELETE("/ai/session-analyzer/providers",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		apiai.DeleteSessionAnalyzerProvider)
 
 	r.GET("/ai/session-analyzer/rules",
@@ -1129,6 +1136,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.POST("/ai/session-analyzer/rules",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		apiai.CreateSessionAnalyzerRule)
 	r.GET("/ai/session-analyzer/rules/:name",
 		apiroutes.AdminAndAuditorAccessRole,
@@ -1137,10 +1145,12 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.PUT("/ai/session-analyzer/rules/:name",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		apiai.UpdateSessionAnalyzerRule)
 	r.DELETE("/ai/session-analyzer/rules/:name",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		apiai.DeleteSessionAnalyzerRule)
 	r.GET("/ai/session-analyzer/system-prompt",
 		apiroutes.AdminAndAuditorAccessRole,
@@ -1393,14 +1403,17 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 	r.POST("/attributes",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		apiattributes.Post)
 	r.PUT("/attributes/:name",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		apiattributes.Put)
 	r.DELETE("/attributes/:name",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		api.AuditMiddleware(),
 		apiattributes.Delete)
 
 	r.GET("/rulepacks",
