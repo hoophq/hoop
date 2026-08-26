@@ -3,7 +3,7 @@
   width: 100%;
   border: 1px solid var(--mantine-color-default-border);
   border-radius: var(--mantine-radius-lg);
-  background-color: var(--mantine-color-white);
+  background-color: var(--hoop-surface-raised);
   cursor: pointer;
   transition: background-color 120ms ease, border-color 120ms ease;
 }
@@ -29,7 +29,7 @@
 }
 
 .card:disabled:hover {
-  background-color: var(--mantine-color-white);
+  background-color: var(--hoop-surface-raised);
 }
 
 .card[data-selected]:disabled:hover {

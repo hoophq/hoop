@@ -36,6 +36,11 @@ export function cssVariablesResolver(theme) {
       // enterprise banner. Not tied to the sidebar, which uses the gray scale.
       '--brand-navy': '#1F2D5C',
 
+      // Pure white, for surfaces that must read as raised above the page.
+      // `theme.white` is #FCFCFD — the same value as --mantine-color-body, so
+      // it cannot separate a card from its background.
+      '--hoop-surface-raised': '#ffffff',
+
       // Control height scale — the single source of truth for Button,
       // ActionIcon, and every Input-based component. md is the app-wide
       // default (no size prop at call sites); xs/sm/lg are the variants.
