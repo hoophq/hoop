@@ -12,8 +12,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-const defaultMaxSessionListLimit = 100
-
 type sessionsListInput struct {
 	User         string `json:"user,omitempty" jsonschema:"filter by user email"`
 	Connection   string `json:"connection,omitempty" jsonschema:"filter by connection name"`
@@ -22,7 +20,7 @@ type sessionsListInput struct {
 	StartDate    string `json:"start_date,omitempty" jsonschema:"start of date range in RFC3339 format"`
 	EndDate      string `json:"end_date,omitempty" jsonschema:"end of date range in RFC3339 format"`
 	Limit        int    `json:"limit,omitempty" jsonschema:"max results (default 20, max 100)"`
-	Offset       int    `json:"offset,omitempty" jsonschema:"pagination offset (default 0)"`
+	Offset       int    `json:"offset,omitempty" jsonschema:"pagination offset (default 0, max 10000; narrow the filters instead of paginating deeper)"`
 }
 
 type sessionsGetInput struct {
@@ -48,8 +46,12 @@ func registerSessionTools(server *mcp.Server) {
 	openWorld := false
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "sessions_list",
-		Description: "List sessions with optional filters (user, connection, date range, status). Returns metadata only, not session content. Max 100 results per request",
+		Name: "sessions_list",
+		Description: fmt.Sprintf("List sessions with optional filters (user, connection, date range, status). "+
+			"Returns metadata only, not session content. Max 100 results per request. "+
+			"The total is capped for performance: when total_is_capped is true the real number of "+
+			"matching sessions is at least total, not exactly total. Report it as \"%d+\" and "+
+			"narrow the filters if an exact figure matters.", models.SessionCountCapValue),
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: &openWorld},
 	}, sessionsListHandler)
 
@@ -90,6 +92,11 @@ func sessionsListHandler(ctx context.Context, _ *mcp.CallToolRequest, args sessi
 	}
 
 	option := models.NewSessionOption()
+	// An exact count scans every matching row, and an agent working through a
+	// large workspace calls this tool repeatedly. The precise figure carries no
+	// information the model can act on that "at least 10,000" does not, so the
+	// cap is applied unconditionally and reported through total_is_capped.
+	option.CountMode = models.SessionCountCapped
 
 	if args.User != "" {
 		option.User = args.User
@@ -103,10 +110,24 @@ func sessionsListHandler(ctx context.Context, _ *mcp.CallToolRequest, args sessi
 	if args.ReviewStatus != "" {
 		option.ReviewStatus = args.ReviewStatus
 	}
-	if args.Limit > 0 {
-		option.Limit = args.Limit
+	// Zero means "not supplied" for both, so the option defaults stand.
+	if args.Limit != 0 {
+		if args.Limit < 0 {
+			return errResult("invalid limit, must be at least 1"), nil, nil
+		}
+		option.Limit = min(args.Limit, models.MaxSessionListLimit)
 	}
-	if args.Offset > 0 {
+	if args.Offset != 0 {
+		if args.Offset < 0 {
+			return errResult("invalid offset, must not be negative"), nil, nil
+		}
+		// Rejected rather than clamped: clamping would silently return a
+		// different page than the one asked for.
+		if args.Offset > models.MaxSessionListOffset {
+			return errResult(fmt.Sprintf(
+				"invalid offset, must not be greater than %d; narrow the filters instead of paginating deeper",
+				models.MaxSessionListOffset)), nil, nil
+		}
 		option.Offset = args.Offset
 	}
 
@@ -123,10 +144,6 @@ func sessionsListHandler(ctx context.Context, _ *mcp.CallToolRequest, args sessi
 			return errResult("invalid end_date format, expected RFC3339 (e.g. 2024-12-31T23:59:59Z)"), nil, nil
 		}
 		option.EndDate = sql.NullString{String: t.Format(time.RFC3339), Valid: true}
-	}
-
-	if option.Limit > defaultMaxSessionListLimit {
-		option.Limit = defaultMaxSessionListLimit
 	}
 
 	// If start_date is set but end_date is not, default to now
@@ -148,9 +165,10 @@ func sessionsListHandler(ctx context.Context, _ *mcp.CallToolRequest, args sessi
 	}
 
 	result := map[string]any{
-		"total":         sessionList.Total,
-		"has_next_page": sessionList.HasNextPage,
-		"items":         items,
+		"total":           sessionList.Total,
+		"total_is_capped": sessionList.TotalIsCapped,
+		"has_next_page":   sessionList.HasNextPage,
+		"items":           items,
 	}
 	return jsonResult(result)
 }

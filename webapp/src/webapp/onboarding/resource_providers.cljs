@@ -53,7 +53,7 @@
     [:> ChevronRight {:size 18 :class "text-gray-6 group-hover:text-[--gray-1]"}]]])
 
 (defn resource-providers-content []
-  [:> Flex {:direction "column" :align "center" :justify "center" :class "h-screen"}
+  [:> Flex {:direction "column" :align "center" :justify "center" :class "flex-1"}
    [:> Box {:class "absolute top-0 right-0 p-radix-5"}
     [:> Button {:variant "ghost"
                 :size "2"

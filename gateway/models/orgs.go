@@ -32,6 +32,7 @@ type Organization struct {
 	AnalyticsMode            string          `gorm:"column:analytics_mode"`
 	HideRoleInfo             bool            `gorm:"column:hide_role_info"`
 	DefaultProtectionProfile *string         `gorm:"column:default_protection_profile"`
+	OnboardingCompletedAt    *time.Time      `gorm:"column:onboarding_completed_at"`
 	TotalUsers               int64           `gorm:"column:total_users;->"`
 }
 
@@ -45,6 +46,7 @@ func GetOrganizationByNameOrID(nameOrID string) (*Organization, error) {
 	var org Organization
 	err := DB.Raw(`
 	SELECT o.id, o.name, license_data, analytics_mode, hide_role_info, default_protection_profile,
+	o.onboarding_completed_at,
 	(SELECT count(*) FROM private.users u WHERE u.org_id = o.id) AS total_users
 	FROM private.orgs o
 	WHERE (o.id::TEXT = ? OR o.name = ?)`, nameOrID, nameOrID).

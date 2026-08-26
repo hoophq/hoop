@@ -2,14 +2,19 @@
 
 ## Project Overview
 
-This is a Go workspace for the hoop gateway, agent, and CLI. The codebase follows a monorepo-style structure using `go.work`, with six modules: `gateway/`, `agent/`, `client/`, `common/`, `libhoop/`, and `tunnel/`. There is also a Rust companion binary (`agentrs/`) for RDP/TLS proxy workloads, a legacy ClojureScript SPA (`webapp/`) - see `webapp/CLAUDE.md` for its own conventions, and a new React frontend (`webapp_v2/`) that is actively replacing it.
+A Go workspace (`go.work`) for the hoop gateway, agent, and CLI.
 
- `_libhoop/` is a symlink target; the build uses `ln -s _libhoop libhoop` (`make libhoop-map`) so Go sees the `libhoop` import path.
+- Product modules: `gateway/`, `agent/`, `client/`, `common/`, `libhoop/`, `tunnel/`.
+- `hoopinspect/` adds seven more workspace entries.
+- `agentrs/` — Rust companion binary for RDP/TLS proxy workloads.
+- `webapp/` — legacy ClojureScript SPA; see `webapp/CLAUDE.md` for its own conventions.
+- `webapp_v2/` — React frontend that is replacing it.
+- `_libhoop/` is a symlink target. The build runs `ln -s _libhoop libhoop` (`make libhoop-map`) so Go sees the `libhoop` import path.
 
 ## Toolchain & Prerequisites
 
-- Go >= 1.24, Rust + `cross` (for cross-compiled `agentrs`), Docker, Node/npm, Clojure/Java.
-- PostgreSQL is **mandatory** for the gateway (`POSTGRES_DB_URI`).
+- Go >= 1.26, Rust + `cross` (for cross-compiled `agentrs`), Docker, Node/npm, Clojure/Java.
+- PostgreSQL is the default state store (`POSTGRES_DB_URI`). `POSTGRES_DB_URI=pglite:///<data-dir>` starts the embedded PGlite instead (`gateway/pglite`).
 - `golang-migrate` CLI for creating new SQL migration files.
 - `swag` (v1.16.3) for regenerating OpenAPI docs.
 - See `DEV.md` for full setup walkthrough.
@@ -39,39 +44,37 @@ This is a Go workspace for the hoop gateway, agent, and CLI. The codebase follow
 - Entrypoint: `gateway/main.go` → `Run()`.
 - **Startup order**: load config (`appconfig.Load`) → run DB migrations (`modelsbootstrap.MigrateDB` + `RunGolangMigrations`) → bootstrap org/auth → register transport plugins → start proxy servers → start gRPC (`:8010`) + HTTP API (`:8009`).
 - gRPC server: `gateway/transport/server.go` — implements `PreConnect`, bidirectional `Connect`, `HealthCheck`.
-- HTTP API: `gateway/api/server.go` — Gin framework, serves static UI at `/` and REST API at `/api/*`.
+- HTTP API: `gateway/api/server.go` — Gin framework, serves static UI and the REST API under the `API_URL` path (default `/` and `/api/*`).
 - Route registration: `r.<METHOD>(path, [RoleMiddleware], r.AuthMiddleware, [api.AuditMiddleware()], [analytics tracking], handler)
-- Role middleware: `AdminOnlyAccessRole`, `ReadOnlyAccessRole`, or none (standard). See `gateway/api/apiroutes/roles.go`.
+- Role middleware: `AdminOnlyAccessRole`, `AdminAndAuditorAccessRole`, `ReadOnlyAccessRole`, or none (standard). See `gateway/api/apiroutes/roles.go`.
 - Auth middleware: `gateway/api/apiroutes/auth.go`.
 - Audit middleware: `gateway/api/middleware.go`.
 - Database: `gateway/models/` (GORM-based, one file per entity).
-- Storage v2: `gateway/storagev2/` — newer abstraction with typed client state.
-
+- `gateway/storagev2/` — despite the name, not storage: the request-scoped `Context` (`APIContext` + Segment) that handlers read with `ParseContext(c)`, plus `clientstate/`.
 - Services: `gateway/services/` — business logic layer.
 
 ### Agent (`agent/`)
 - Entrypoint: `agent/main.go` → `Run()` or `RunV2()` (embedded/DSN mode).
 - Pre-connect loop (`PreConnect` RPC) then long-lived `Connect` stream with exponential backoff/reconnect.
 - Packet dispatch: **type-driven** in `agent/controller/agent.go` → `processPacket()` switch statement.
-- Protocol handlers: `postgres.go`, `mysql.go`, `mssql.go`, `mongodb.go`, `ssh.go`, `tcp.go`, `httpproxy.go`, `ssm.go`, `terminal.go`, `terminal-exec.go`.
+- Protocol handlers: `postgres.go`, `mysql.go`, `mssql.go`, `mongodb.go`, `oracle.go`, `ssh.go`, `tcp.go`, `httpproxy.go`, `mcpproxy.go`, `mcpstdio.go`, `ssm.go`, `terminal.go`, `terminal-exec.go`.
 - System operations: `agent/controller/system/dbprovisioner/`, `agent/controller/system/runbookhook/`.
 
 ### Shared Commons (`common/`)
 - Wire contract: `common/proto/transport.proto` — defines `PreConnect`, `Connect`, `HealthCheck`, `Packet{type, spec, payload}`.
 - Generated code: `common/proto/transport.pb.go`, `transport_grpc.pb.go`.
 - Protocol constants: `common/proto/agent/`, `common/proto/client/`, `common/proto/gateway/`, `common/proto/system/` — **always extend these constants rather than using string literals**.
-- Shared utilities: `backoff/`, `grpc/`, `log/`, `memory/`, `envloader/`, `version/`, `license/`, `monitoring/`, `keys/`, `dsnkeys/`, `clientconfig/`.
+- Shared utilities: `backoff/`, `grpc/`, `log/`, `memory/`, `envloader/`, `version/`, `license/`, `monitoring/`, `keys/`, `dsnkeys/`, `clientconfig/`, `featureflag/`, `agentcontroller/`, `aianalyzer/`, `apiutils/`, `appruntime/`, `httpclient/`, `runbooks/`.
 - DB wire types: `pgtypes/`, `mssqltypes/`, `mongotypes/`.
 
 ### libhoop (`libhoop/` / `_libhoop/`)
-- Standalone library; **must not import from the main project** — bridge via stdlib types only.
-- Contains: `agent/` (agent-side logic), `proxy/` (SSH proxy), `redactor/` (data masking types), `recorder/` (session recording), `llog/`, `lerrors/`, `lmemory/`.
-- Rust FFI modules: `libhoop/rust_modules/`.
+- Standalone Go module (`module libhoop`); **must not import from the main project** — bridge via stdlib types only.
+- `_libhoop/` in this repo is the OSS stub: `agent/`, `proxy/`, `redactor/`, `aianalyzer/`, `llog/`, plus `libhoop.go` no-op cores. The enterprise checkout supplies the real implementations.
 - Build produces WASM module for RDP parsing: `make generate-wasm`.
 
 ### Agent Rust (`agentrs/`)
 - Rust binary for RDP proxy, TLS termination, WebSocket proxying.
-- Source: `agentrs/src/` — `main.rs`, `proxy.rs`, `rdp_proxy.rs`, `session.rs`, `tls.rs`, `ws/`.
+- Source: `agentrs/src/` — `main.rs`, `lib.rs`, `run.rs`, `conf.rs`, `proxy.rs`, `rdp_proxy.rs`, `session.rs`, `tls.rs`, `x509.rs`, `piigate/` (PII masking), `ws/`.
 - Cross-compile for dev: `make build-dev-rust` (uses `cross` for Linux targets from macOS).
 
 ### Tunnel (`tunnel/`)
@@ -79,6 +82,12 @@ This is a Go workspace for the hoop gateway, agent, and CLI. The codebase follow
 - Own Go module (`github.com/hoophq/hoop/tunnel`); entrypoint `tunnel/cmd/hsh-tunneld/`.
 - Per TCP flow it opens a fresh gRPC `Transport.Connect` stream to the existing gateway — **no new gateway protocol/endpoint**; the gateway sees ordinary client sessions.
 - Shipped with the unprivileged `hsh` CLI (separate `hoophq/hsh` repo).
+
+### hoopinspect (`hoopinspect/`)
+- Pure function over bytes: turns database wire-protocol bytes into statements, and statements into allow/deny verdicts. Opens no socket, terminates no TLS.
+- Root module has zero dependencies (stdlib only). Six nested modules isolate everything else: `analyzer/vertex`, `cmd` (the `hoop-inspect` relay binary), `config/yaml`, `lexer/conformance`, `pii/alcatraz`, `store/sqlite`.
+- CI reaches it through `make test-hoopinspect`, which `make test-oss` depends on: `go test github.com/hoophq/hoop/...` matches no module here, so the target walks every `go.mod` under `hoopinspect/` instead.
+- Read `hoopinspect/CLAUDE.md` before changing anything under it; `hoopinspect/README.md` has the API and the relay/sidecar deployment.
 
 ## Transport Plugin System
 Plugins are registered in `gateway/main.go` in a **fixed, intentional order** — do not reorder casually:
@@ -90,10 +99,21 @@ Plugins are registered in `gateway/main.go` in a **fixed, intentional order** �
 6. `slack` (`gateway/transport/plugins/slack/`)
 
 Plugin interface: `gateway/transport/plugins/types/` — each plugin implements `OnStartup`, `Name`, and lifecycle hooks.
-gRPC interceptors (ordered): `sessionuuid` → `auth` → `tracing` → `accessrequest` — see `gateway/transport/interceptors/`.
+gRPC stream interceptors, in order (`gateway/transport/server.go` → `NewGRPCServer()`): `sessionuuid` → `auth` → `tracing`. `accessrequest` is not an interceptor; it runs during packet handling in `gateway/transport/client.go`.
+
+## Gateway ↔ Agent Compatibility
+
+Gateways auto-deploy. Agents run on customer infrastructure and can stay old for a long time.
+
+- Never make a breaking change to the gateway ↔ agent contract: `common/proto/transport.proto`, packet types, packet spec keys, and payload formats.
+- Assume the peer is an older agent. New fields must be optional, with a safe default when absent.
+- Add new packet types or spec keys instead of changing the meaning of existing ones. Keep the old path working.
+- Never remove or rename a packet type, spec key, or payload field that a released agent sends or reads.
+- Gate new behavior on an agent capability (`supports_*` keys in `gateway/broker/headers.go`) or on `pb.SpecAgentVersion`. Fail closed when the capability is absent.
+- A change that an old agent cannot process is a `major` change. Call it out in the PR description.
 
 ## Gateway Proxy Servers
-Protocol-specific proxy servers configured via `server_misc_config`:
+Protocol-specific proxy servers configured through `models.ServerMiscConfig` (stored in `private.serverconfig`, edited via `/api/serverconfig/misc`):
 - **PostgreSQL proxy**: `gateway/proxyproto/postgresproxy/`
 - **SSH proxy**: `gateway/proxyproto/sshproxy/`
 - **HTTP proxy**: `gateway/proxyproto/httpproxy/`
@@ -103,18 +123,19 @@ Protocol-specific proxy servers configured via `server_misc_config`:
 - **TLS termination**: `gateway/proxyproto/tlstermination/`
 
 ## Configuration
-- **Env-first** via `gateway/appconfig/appconfig.go` — startup fails fast on invalid envs.
+- **Env-first** via `gateway/appconfig/appconfig.go`. A malformed `API_URL`, Postgres URI, `AUTH_METHOD`, GCP credential JSON, TLS, SPIFFE, or `RDP_PII_GUARD_POLICY` stops startup.
+- `RDP_PII_SNAPSHOT_INTERVAL`, `RDP_PII_SCORE_THRESHOLD`, and `EVENT_ROUTING_WORKERS` fall back to a default instead.
 - Key env vars: `POSTGRES_DB_URI`, `API_URL`, `GRPC_URL`, `AUTH_METHOD`, `DLP_PROVIDER`, `DLP_MODE`, `GIN_MODE`.
-- DLP providers: Presidio (`MS_PRESIDIO_ANALYZER_URL`, `MS_PRESIDIO_ANONYMIZER_URL`) or GCP (`GCP_DLP_JSON_CREDENTIALS`).
+- DLP providers: Presidio (`MSPRESIDIO_ANALYZER_URL`, `MSPRESIDIO_ANONYMIZER_URL`) or GCP (`GOOGLE_APPLICATION_CREDENTIALS_JSON`).
 - Auth provider resolution: dynamic (`gateway/idp/core.go`): DB `server_auth_config` overrides env; providers are `local`, `oidc`, `saml` with 30-minute cached verifier instances.
 
 ## Database & Migrations
-- SQL migrations live in `gateway/migrations/` and are embedded into the gateway binary (`go:embed` + golang-migrate iofs); deployments never read them from disk.
+- SQL migrations live in `gateway/migrations/` and are embedded into the gateway binary (`go:embed` + golang-migrate iofs). `MIGRATION_PATH_FILES` is the only way to read them from disk.
 - File-based migrations run first via `golang-migrate`, then Go-coded migrations run via `modelsbootstrap.RunGolangMigrations()`.
 - Create new migrations: `migrate create -ext sql -dir gateway/migrations -seq <description>`.
 - Always provide both `.up.sql` and `.down.sql`; test rollback with `migrate ... down 1`.
-
-- **IMPORTANT**: Migration numbering must to be sequential. Check existing migrations before creating new ones to avoid conflicts. If a migration with the same number already exists in `origin/main`, it migration needs to be renamed to a higher number during merge conflict resolution.
+- **IMPORTANT**: Use the next free number, read from the directory listing — not from a count. The sequence has gaps (no `000074`-`000076`) and unpaired files (`000084` down-only, `000085` up-only).
+- If `origin/main` took your number, rename yours higher during merge conflict resolution.
 
 ## Critical Dev Workflows
 | Task | Command | Notes |
@@ -122,22 +143,24 @@ Protocol-specific proxy servers configured via `server_misc_config`:
 | Start Postgres | `make run-dev-postgres` | Uses `scripts/dev/run-postgres.sh`; skip if you have your own PG |
 | Start Presidio (DLP) | `make run-dev-presidio` | Optional, for data masking dev |
 | Run gateway + agent | `make run-dev` | Uses `scripts/dev/run.sh`; reads `.env` (copy `.env.sample` first) |
-| Build dev CLI | `make build-dev-client` | Output: `$HOME/.hoop/dev/hoop` (plaintext-friendly; the `bin/` sibling is reserved for `hoop versions`' active symlink) |
+| Build dev CLI | `make build-dev-client` | Output: `$HOME/.hoop/bin/hoop` |
 | Build webapp into gateway | `make build-dev-webapp` | Then rerun `make run-dev` |
 | Run frontend dev (both) | `cd webapp_v2 && npm run dev:full` | Starts Vite (:5173) + shadow-cljs (:8280) together. CLJS edits require a browser hard-reload — Vite proxies the bundle and can't HMR it. |
 | Run React dev only | `cd webapp_v2 && npm run dev` | Vite on :5173. CLJS routes are blank until shadow-cljs is started separately. |
 | Build Rust agent (dev) | `make build-dev-rust` | Cross-compiles for Linux from macOS |
-| Run tests | `make test-oss` | Auto-links `libhoop` and generates WASM first |
+| Run tests (OSS) | `make test-oss` | Auto-links `libhoop`, generates WASM, and runs `test-hoopinspect` first |
+| Run tests (enterprise) | `make test-enterprise` | `make test` runs both |
+| Run `hoopinspect` tests only | `make test-hoopinspect` | Walks every `go.mod` under `hoopinspect/`, nested modules included |
 | Regenerate OpenAPI | `make generate-openapi-docs` | After any API route/schema change |
-| Format Swagger annotations | `swag fmt` | Run in `gateway/` |
+| Format Swagger annotations | `make swag-fmt` | |
 | Create new SQL migration | `migrate create -ext sql -dir gateway/migrations -seq name` | |
 | Publish release | `make publish` | Requires GitHub CLI (`gh`) |
 
 ## External Integrations
-- **PostgreSQL**: Mandatory state store for gateway.
+- **PostgreSQL**: Default state store for the gateway; embedded PGlite is the alternative.
 - **DLP**: Presidio or GCP; configured via env, consumed in agent terminal execution (`agent/controller/terminal.go`).
 - **Review/Approval**: Slack (`gateway/slack/service.go`), Jira (`gateway/jira/`, `gateway/api/integrations/`).
-- **AI Clients**: OpenAI + Anthropic for session analysis (`gateway/aiclients/`).
+- **AI Clients**: OpenAI-compatible (`openai`, `azure-openai`, `custom`) + Anthropic for session analysis (`gateway/aianalyzer/`).
 - **Monitoring**: Sentry (error tracking), Honeycomb, Segment (analytics), Intercom.
 - **Webhooks**: `gateway/transport/plugins/webhooks/`, configurable via API (`gateway/api/webhooks/`).
 
@@ -146,6 +169,7 @@ Protocol-specific proxy servers configured via `server_misc_config`:
 - Helm charts: `deploy/helm-chart/chart/agent/`, `deploy/helm-chart/chart/gateway/`.
 - AWS CloudFormation templates: `deploy/aws/`.
 - Docker images: `Dockerfile` (production), `Dockerfile.dev` (dev), `Dockerfile.tools` (agent tools).
+- Adding or renaming an env var? See "Environment variables" under Coding Conventions — the chart must change in the same PR.
 
 ## Feature Flags & Experimental Code
 
@@ -153,9 +177,9 @@ When implementing a new feature, behavior change, or non-trivial code path, **as
 
 1. **Register the flag** — add one entry to `catalog` in `common/featureflag/featureflag.go`:
    - Name: `<stability>.<snake_case_name>` (e.g. `experimental.ssh_multiplex`, `beta.new_proxy`).
-   - `Default: false`, `Stability: StabilityExperimental` (or `StabilityBeta`).
+   - `Default`: see step 3. `Stability: StabilityExperimental` (or `StabilityBeta`).
    - `Components`: list which binaries use it (`ComponentGateway`, `ComponentAgent`, `ComponentClient`).
-   - No migrations or frontend changes are needed — the flag appears automatically in the admin UI.
+   - No migrations or frontend changes are needed — the flag appears automatically at Settings → Experimental.
 
 2. **Gate every code path** — wrap the new behavior so it only runs when the flag is on:
    - **Gateway**: `featureflag.IsEnabled(orgID, "experimental.my_feature")` (import `common/featureflag`).
@@ -163,11 +187,41 @@ When implementing a new feature, behavior change, or non-trivial code path, **as
    - **Webapp**: check `feature_flags` from the `/serverinfo` response.
    - Always preserve the existing behavior in the `else` branch.
 
-3. **No ungated experimental code on `main`** — every PR that adds experimental behavior must gate it. Default is always `false`, so a fresh deployment has everything off.
+3. **Pick the default by blast radius** — a feature that only adds a new code path is born `Default: true`. A feature that changes existing behavior is born `false`, then flipped once it proves out. `experimental.rulepacks` and `beta.oracle_native` both did this.
+
+4. **The flag is a kill switch, not a hiding place** — a customer who hits a problem turns the feature off at **Settings → Experimental** (`/settings/experimental`, admin only). It is not a way to ship unfinished work; see "No Hacks" test 3.
 
 See `DEV.md` "Feature Flags" section for the full developer guide and file reference.
 
+## Architecture Decision Records
+
+Before a structural change — one that spans modules, is expensive to
+reverse, changes the gateway↔agent wire contract, or picks between real
+alternatives — check whether it needs an ADR under `docs/adr/`. Most
+changes don't: a new protocol handler that follows the existing
+`agent/controller/` pattern, a routine schema change, or a bug fix are
+not ADR material.
+
+See `docs/adr/README.md` for the full policy and worked examples from
+this codebase.
+
 ## Coding Conventions
+
+### No Hacks
+"Hack" is not a useful word — one reader's workaround is another's correct error handling. Use these four tests instead. Each one has a visible failure mode, so a reviewer can point at the code and say which test it fails.
+
+**1. Compatibility shims are allowed.** An external defect (upstream library bug, driver quirk, protocol violation by a client) often has no fix but a shim. Land it when all three hold:
+   - It is isolated — one function or file, not spread through the call path.
+   - A comment names the upstream cause and the version it applies to.
+   - A test fails when upstream fixes the defect, so the shim gets deleted instead of outliving its reason.
+
+**2. Do not depend on a condition the repo does not enforce.** A required call order, an unversioned upstream behavior, or an assumed data shape must be held up by a type, a guard, or a test. A comment describing the assumption does not enforce it. If you cannot enforce it, the code does not land.
+
+**3. Incomplete work is fine when the incomplete path fails loudly.** Return an error, refuse to start, or fail a test. No empty struct, zero value, or `nil, nil` standing in for a path you did not implement. A log line is not loud enough — the caller must be unable to continue as if the work happened.
+
+**4. Do not expand scope to reach a fix.** If the correct fix needs a module the request did not name, stop and report what is missing. Do not widen the change to get there.
+
+"I could not do X because the repository has no support for Y" is a good answer. Adding the missing support correctly is a better one.
 
 ### Go
 - Prefer env-based configuration; add new config fields to `gateway/appconfig/appconfig.go`.
@@ -176,15 +230,15 @@ See `DEV.md` "Feature Flags" section for the full developer guide and file refer
 - Agent controller handlers follow one-file-per-protocol in `agent/controller/`.
 - Gateway API handlers follow one-package-per-domain in `gateway/api/` (e.g., `gateway/api/connections/`, `gateway/api/session/`).
 - Models use GORM; each entity gets its own file in `gateway/models/`.
-- Model functions in `gateway/` must receive `*gorm.DB` as a parameter — never use a global DB variable.
-- Model functions in `gateway/` must propagate `gorm.ErrRecordNotFound` to the caller — never swallow it by returning `nil, nil`. Let callers decide how to handle not-found cases.
+- Model functions in `gateway/` should take `*gorm.DB` as a parameter. Both patterns exist: ~126 functions take it, 44 files still read the `models.DB` global. Use the parameter in new code.
+- Model functions in `gateway/` must propagate `gorm.ErrRecordNotFound`. Callers decide how to handle not-found. Older helpers in `gateway/models/connections.go` return `nil, nil` — do not copy that.
 - `libhoop` must stay independent — no imports from `gateway/`, `agent/`, `client/`, or `common/`.
 - Services layer: Business logic lives in `gateway/services/` — keep models focused on data, services on business logic.
 
 ### Testing
 - Run with `make test-oss` (sets `CGO_ENABLED=0`, outputs JSON).
 - Tests live alongside source files (`_test.go` suffix).
-- The `libhoop-map` and `generate-wasm` steps are prerequisites — the Makefile handles them automatically.
+- The `libhoop-map`, `generate-wasm` and `test-hoopinspect` steps are prerequisites, and the Makefile handles them automatically.
 
 ### API Changes
 - Add Swagger annotations (swag comments) on new/modified handlers.
@@ -192,11 +246,12 @@ See `DEV.md` "Feature Flags" section for the full developer guide and file refer
 - OpenAPI specs are served at `/api/openapiv2.json` and `/api/openapiv3.json`.
 
 ### Product Analytics Events
-Analytics events are business KPIs measured downstream in PostHog/Mixpanel. Dropping or orphaning one fails **silently** — no compile error, no test failure, just a metric that quietly goes to zero. Treat them as a contract, not as incidental code.
-- Event names are constants in `gateway/analytics/events.go`. Emit them either via the `api.TrackRequest(analytics.EventX)` middleware in the route registration (`gateway/api/server.go`) or via `analytics.Track*` inside the handler. Never use a string literal — always the constant.
-- **When you add, duplicate, or supersede a route that performs an already-tracked action** (exec, session create, connect, resource CRUD), carry the same tracking onto the new route. A new path that replaces a tracked one MUST emit the same event (or a documented successor) — otherwise the metric silently dies on the old path. This is exactly how `hoop-exec-runbook` was lost: the V2 `POST /runbooks/exec` route superseded the tracked `POST /plugins/runbooks/connections/:name/exec` without `TrackRequest`.
-- **Never remove or rename an `Event*` constant, or delete its only emission site, without calling it out explicitly in the PR description** — state which metric/dashboard is affected and the successor event, if any. Event removal must be a deliberate, reviewed decision, never a side effect of a refactor.
-- When reviewing or refactoring routes/handlers that emit events, verify the `TrackRequest`/`Track*` call is preserved.
+Events are business KPIs read in PostHog/Mixpanel. A dropped event fails silently — no compile error, no test failure, the metric just goes to zero. Treat them as a contract.
+- Names are constants in `gateway/analytics/events.go`. Never a string literal.
+- Emit via `api.TrackRequest(analytics.EventX)` in the route registration, or `analytics.Track*` in the handler.
+- A new route that supersedes a tracked one MUST emit the same event. `hoop-exec-runbook` was lost this way: `POST /runbooks/exec` replaced the tracked `POST /plugins/runbooks/connections/:name/exec` without `TrackRequest`.
+- Removing or renaming an `Event*` constant, or its last emission site, MUST be called out in the PR description with the affected dashboard and the successor event.
+- When refactoring a route that emits an event, verify the `TrackRequest`/`Track*` call survives.
 
 ### Environment variables
 - Whenever a new env var is added, removed, or renamed in `gateway/appconfig/appconfig.go` (or anywhere read via `os.Getenv` in the gateway), **update the helm chart in the same PR**:
@@ -210,7 +265,7 @@ Analytics events are business KPIs measured downstream in PostHog/Mixpanel. Drop
 ### Versioning
 - Semantic versioning: `MAJOR.MINOR.PATCH`.
 - Version is injected at build time via `-ldflags` into `common/version`.
-- PR preview builds are tagged `{PR_NUMBER}.0.1-{SHORT_SHA}`.
+- PR preview builds are tagged `{PR_NUMBER}.0.0-g{SHORT_SHA}` (`.github/workflows/pullrequest-release.yml`).
 
 ### PR Labels
 Every PR **must** have exactly one release label. Choose based on the nature of the change:
@@ -227,6 +282,13 @@ Examples:
 - Fix a crash or incorrect behavior → `patch`
 - Remove a public API or change wire format → `major`
 - Update `CLAUDE.md`, fix a GitHub Actions workflow, rename a variable → `skip-release`
+
+### Writing Style
+Applies to commit messages, PR descriptions, code comments, and ticket comments.
+
+- Write the least possible amount of words. More than 2 lines is too long.
+- Use ASD-STE100 Simplified Technical English.
+- Reference a ticket by its ID (`DEP-147`), never by URL. The repos are public — a Linear URL leaks the workspace and the ticket slug.
 
 ## Merge Conflict Resolution
 When merging `main` into a feature branch:
@@ -251,22 +313,14 @@ When merging `main` into a feature branch:
 | Role definitions | `gateway/api/apiroutes/roles.go` |
 | Plugin registration | `gateway/main.go` (search `RegisteredPlugins`) |
 | SQL migrations | `gateway/migrations/` |
+| ADR policy & index | `docs/adr/README.md` |
 | Dev run script | `scripts/dev/run.sh` |
 | Env sample | `.env.sample` |
 | Webapp entry (legacy CLJS) | `webapp/src/webapp/core.cljs` |
 | Webapp entry (React shell) | `webapp_v2/src/main.jsx` |
 | Frontend migration context | `webapp_v2/CONTEXT_MIGRATION.md` |
 | Frontend coding rules | `webapp_v2/CLAUDE.md` |
-
-## Coding
-
-NO HACKS. The user is EXTREMELY concerted about code quality much more than immediate results. If they ask you to build something and, while doing so, you hit a wall, and realize that the only way to ship the requested feature is to introduce a local hack, workaround, monkey patch, duct tap - STOP IMMEDIATLY. Either fix the underlying flaw that blocked you ina ROBUST, WELL DESIGNED, PRODUCTION READY manner, or be honest that the prompt can't be completed without hacks.
-
-- DO NOT INTRODUCE HACKS IN THE CODE BASE
-- DO NOT COMMIT CODE THAT COULD BREAK THINGS LATER
-- DO NOT COMMIT PARTIAL SOLUTIONS OR WORKAROUNDS.
-
-The author appreciates honestly and he WILL be glad and thankful if you respond a request with "I couldn't complete your request because the repository lacked support for X". He will be even happier if you go ahead and update the repo to provide necessary support in a well designed and robust way. But he will be VERY ANGRY if, while attempting to implement a feature, you introduce a workaround that will potentially break things latter.
+| Wire-inspection library rules | `hoopinspect/CLAUDE.md` |
 
 ## Frontend Migration in Progress
 

@@ -25,12 +25,13 @@ func TestAgentCapability_UnknownWhenUnregistered(t *testing.T) {
 
 func TestAgentCapability_KnownIncapable(t *testing.T) {
 	const name = "agent-incapable"
-	if _, err := CreateAgent(name, nil); err != nil {
+	instanceID, err := CreateAgent(name, nil)
+	if err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
 	defer BrokerInstance.agents.Delete(name)
 
-	SetAgentCapabilities(name, map[string]string{CapabilitySupportsPIIGuard: "false"})
+	SetAgentCapabilities(name, instanceID, map[string]string{CapabilitySupportsPIIGuard: "false"})
 
 	value, known := AgentCapability(name, CapabilitySupportsPIIGuard)
 	if !known {
@@ -43,12 +44,13 @@ func TestAgentCapability_KnownIncapable(t *testing.T) {
 
 func TestAgentCapability_KnownCapable(t *testing.T) {
 	const name = "agent-capable"
-	if _, err := CreateAgent(name, nil); err != nil {
+	instanceID, err := CreateAgent(name, nil)
+	if err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
 	defer BrokerInstance.agents.Delete(name)
 
-	SetAgentCapabilities(name, map[string]string{CapabilitySupportsPIIGuard: "true"})
+	SetAgentCapabilities(name, instanceID, map[string]string{CapabilitySupportsPIIGuard: "true"})
 
 	value, known := AgentCapability(name, CapabilitySupportsPIIGuard)
 	if !known {
@@ -63,12 +65,13 @@ func TestAgentCapability_KnownCapable(t *testing.T) {
 // "unknown": the agent advertised, it just doesn't have this capability.
 func TestAgentCapability_KnownButKeyAbsent(t *testing.T) {
 	const name = "agent-other-caps"
-	if _, err := CreateAgent(name, nil); err != nil {
+	instanceID, err := CreateAgent(name, nil)
+	if err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
 	defer BrokerInstance.agents.Delete(name)
 
-	SetAgentCapabilities(name, map[string]string{"some_other_capability": "true"})
+	SetAgentCapabilities(name, instanceID, map[string]string{"some_other_capability": "true"})
 
 	value, known := AgentCapability(name, CapabilitySupportsPIIGuard)
 	if !known {
@@ -82,7 +85,7 @@ func TestAgentCapability_KnownButKeyAbsent(t *testing.T) {
 // SetAgentCapabilities on an unregistered agent must be a harmless no-op
 // (the agent may have disconnected between connect and frame handling).
 func TestSetAgentCapabilities_UnregisteredNoop(t *testing.T) {
-	SetAgentCapabilities("ghost-agent", map[string]string{CapabilitySupportsPIIGuard: "true"})
+	SetAgentCapabilities("ghost-agent", uuid.New(), map[string]string{CapabilitySupportsPIIGuard: "true"})
 	if _, known := AgentCapability("ghost-agent", CapabilitySupportsPIIGuard); known {
 		t.Fatalf("setting caps on an unregistered agent must not create state")
 	}
@@ -113,14 +116,15 @@ func TestAgentCapability_UnknownAfterWaitWhenNeverAdvertised(t *testing.T) {
 // starts waiting must still be observed (not raced into a false "unknown").
 func TestAgentCapability_ObservesLateAdvertisement(t *testing.T) {
 	const name = "agent-late"
-	if _, err := CreateAgent(name, nil); err != nil {
+	instanceID, err := CreateAgent(name, nil)
+	if err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
 	defer BrokerInstance.agents.Delete(name)
 
 	go func() {
 		time.Sleep(100 * time.Millisecond)
-		SetAgentCapabilities(name, map[string]string{CapabilitySupportsPIIGuard: "true"})
+		SetAgentCapabilities(name, instanceID, map[string]string{CapabilitySupportsPIIGuard: "true"})
 	}()
 
 	value, known := AgentCapability(name, CapabilitySupportsPIIGuard)
@@ -162,6 +166,30 @@ func TestRemoveAgent_OnlyRemovesMatchingInstance(t *testing.T) {
 	}
 }
 
+// A capability frame belongs to the WebSocket connection that delivered it.
+// A late frame from a replaced connection must not overwrite the live
+// connection's capabilities.
+func TestSetAgentCapabilities_IgnoresStaleInstance(t *testing.T) {
+	const name = "agent-stale-capabilities"
+	oldID, err := CreateAgent(name, nil)
+	if err != nil {
+		t.Fatalf("CreateAgent old: %v", err)
+	}
+	newID, err := CreateAgent(name, nil)
+	if err != nil {
+		t.Fatalf("CreateAgent new: %v", err)
+	}
+	defer BrokerInstance.agents.Delete(name)
+
+	SetAgentCapabilities(name, newID, map[string]string{CapabilitySupportsPIIGuard: "false"})
+	SetAgentCapabilities(name, oldID, map[string]string{CapabilitySupportsPIIGuard: "true"})
+
+	value, known := AgentCapability(name, CapabilitySupportsPIIGuard)
+	if !known || value {
+		t.Fatalf("stale advertisement changed live capabilities, got value=%v known=%v", value, known)
+	}
+}
+
 // Sentinel must stay byte-for-byte identical to the agent constant
 // (ws::control::CONTROL_SENTINEL_SID) and pass header validation.
 func TestControlSentinelSID_StableAndValid(t *testing.T) {
@@ -181,13 +209,14 @@ func TestControlSentinelSID_StableAndValid(t *testing.T) {
 // returns must not affect stored state.
 func TestSetAgentCapabilities_DefensiveCopy(t *testing.T) {
 	const name = "agent-mutate"
-	if _, err := CreateAgent(name, nil); err != nil {
+	instanceID, err := CreateAgent(name, nil)
+	if err != nil {
 		t.Fatalf("CreateAgent: %v", err)
 	}
 	defer BrokerInstance.agents.Delete(name)
 
 	m := map[string]string{CapabilitySupportsPIIGuard: "true"}
-	SetAgentCapabilities(name, m)
+	SetAgentCapabilities(name, instanceID, m)
 	m[CapabilitySupportsPIIGuard] = "false" // mutate after store
 
 	value, known := AgentCapability(name, CapabilitySupportsPIIGuard)

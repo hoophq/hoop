@@ -106,6 +106,7 @@ type AISessionAnalyzerRules struct {
 	ConnectionNames pq.StringArray                  `gorm:"column:connection_names;type:text[]"`
 	RiskEvaluation  AISessionAnalyzerRiskEvaluation `gorm:"column:risk_evaluation;type:jsonb;serializer:json"`
 	CustomPrompt    *string                         `gorm:"column:custom_prompt"`
+	Agentic         bool                            `gorm:"column:agentic"`
 	ManagedBy       *string                         `gorm:"column:managed_by"`
 
 	RuleAttributes []AISessionAnalyzerRuleAttribute `gorm:"foreignKey:OrgID,AnalyzerRuleName;references:OrgID,Name"`
@@ -240,6 +241,7 @@ func UpdateAISessionAnalyzerRule(rule *AISessionAnalyzerRules) error {
 			"connection_names": rule.ConnectionNames,
 			"risk_evaluation":  rule.RiskEvaluation,
 			"custom_prompt":    rule.CustomPrompt,
+			"agentic":          rule.Agentic,
 		})
 	if result.Error != nil {
 		return result.Error

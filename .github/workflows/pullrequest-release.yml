@@ -9,6 +9,14 @@ on:
       - 'LICENSE'
       - '.env.sample'
 
+# proxy.golang.org intermittently resets HTTP/2 streams mid-download
+# ("stream error: stream ID N; INTERNAL_ERROR; received from peer"). cmd/go
+# turns that into a hard build failure after a ~60s stall: it does not retry,
+# and the `direct` GOPROXY fallback only covers 404/410. Frame-level resets
+# are HTTP/2-only, so fetch modules over HTTP/1.1.
+env:
+  GODEBUG: http2client=0
+
 jobs:
   build-rust-binaries-darwin:
     runs-on: macos-latest
@@ -126,7 +134,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
-          go-version: ">=1.26.0"
+          go-version-file: go.work
           cache-dependency-path: "**/go.sum"
 
       - name: Setup Rust for WASM
@@ -179,7 +187,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
-          go-version: ">=1.26.0"
+          go-version-file: go.work
           cache-dependency-path: "**/go.sum"
 
       - name: Setup Rust for WASM
@@ -232,7 +240,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
-          go-version: ">=1.26.0"
+          go-version-file: go.work
           cache-dependency-path: "**/go.sum"
 
       - name: Setup Rust for WASM
@@ -285,7 +293,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
-          go-version: ">=1.26.0"
+          go-version-file: go.work
           cache-dependency-path: "**/go.sum"
 
       - name: Setup Rust for WASM
@@ -338,7 +346,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
-          go-version: ">=1.26.0"
+          go-version-file: go.work
           cache-dependency-path: "**/go.sum"
 
       - name: Setup Rust for WASM
@@ -395,7 +403,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
-          go-version: ">=1.26.0"
+          go-version-file: go.work
           cache-dependency-path: "**/go.sum"
 
       - name: Setup Rust for WASM
@@ -728,6 +736,98 @@ jobs:
             --amend hoophq/hoopdev:${{ github.sha }}-amd64 \
             --amend hoophq/hoopdev:${{ github.sha }}-arm64
           docker manifest push hoophq/hoopdev:${{ env.GIT_TAG }}
+
+  # Preview build of hoophq/hoopagent, all four targets of Dockerfile.agent: the
+  # two slim flavours and the same two with the alcatraz NER model baked in.
+  # Mirrors the release workflow. hoophq/hoopagent is a clean-only repository —
+  # see the bright-line note in Dockerfile.agent before adding a tag here.
+  #
+  # The -alcatraz targets are built on PRs because the image is what gets
+  # validated: nothing short of pulling the artifact says the model is there.
+  docker-publish-hoopagent:
+    runs-on: ubuntu-latest
+    name: Publish Agent Image (hoopagent)
+    needs:
+      - build-tar-files
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_LOGIN }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-artifacts-*
+          merge-multiple: true
+          path: dist/
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-g$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
+      - name: Build and push (minimal)
+        uses: docker/build-push-action@v4
+        with:
+          file: ./Dockerfile.agent
+          context: '.'
+          target: minimal
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          sbom: false
+          push: true
+          tags: |
+            hoophq/hoopagent:${{ env.GIT_TAG }}-minimal
+      - name: Build and push (distroless)
+        uses: docker/build-push-action@v4
+        with:
+          file: ./Dockerfile.agent
+          context: '.'
+          target: distroless
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          sbom: false
+          push: true
+          tags: |
+            hoophq/hoopagent:${{ env.GIT_TAG }}-distroless
+      - name: Build and push (minimal-alcatraz)
+        uses: docker/build-push-action@v4
+        with:
+          file: ./Dockerfile.agent
+          context: '.'
+          target: minimal-alcatraz
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          sbom: false
+          push: true
+          tags: |
+            hoophq/hoopagent:${{ env.GIT_TAG }}-minimal-alcatraz
+      - name: Build and push (distroless-alcatraz)
+        uses: docker/build-push-action@v4
+        with:
+          file: ./Dockerfile.agent
+          context: '.'
+          target: distroless-alcatraz
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          sbom: false
+          push: true
+          tags: |
+            hoophq/hoopagent:${{ env.GIT_TAG }}-distroless-alcatraz
+      # Reads the model out of the published images by exporting the container
+      # filesystem, which is the only way to check the distroless flavour: it
+      # has no shell to run sha256sum in. The wait is for the push above, not
+      # for a base image: Docker Hub can serve a manifest list a beat late.
+      - name: Verify published alcatraz images
+        run: |
+          scripts/ci/wait-for-image.sh \
+            hoophq/hoopagent:${{ env.GIT_TAG }}-minimal-alcatraz \
+            hoophq/hoopagent:${{ env.GIT_TAG }}-distroless-alcatraz
+          scripts/ci/verify-alcatraz-image.sh \
+            hoophq/hoopagent:${{ env.GIT_TAG }}-minimal-alcatraz \
+            hoophq/hoopagent:${{ env.GIT_TAG }}-distroless-alcatraz
 
   publish-release:
     runs-on: ubuntu-latest

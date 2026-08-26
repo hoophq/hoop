@@ -551,6 +551,17 @@
                                            (rf/dispatch [:native-client-access->reopen-connect-modal connection-name]))}
                     "View Credentials"]]
 
+                  ;; Session already closed — Disconnect sets it to "done"
+                  ;; (CloseConnectionCredentials), and resuming a done session
+                  ;; answers 410 "credentials have expired", which is both a
+                  ;; dead end and a misleading message: nothing expired, the
+                  ;; session was ended. Connecting again means a new session,
+                  ;; which starts from the Native Connections drawer.
+                  (= (:status session) "done")
+                  [:> Flex {:align "center" :justify "end" :gap "4"}
+                   [:> Text {:size "2" :class "text-[--gray-11]"}
+                    "This session has ended. Use Native Connections to connect again."]]
+
                   ;; No credentials in local store — allow requesting / rotating
                   :else
                   [:> Flex {:align "center" :justify "end" :gap "4"}

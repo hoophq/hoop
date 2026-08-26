@@ -3,7 +3,6 @@ package slack
 import (
 	"encoding/base64"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/hoophq/hoop/common/log"
@@ -30,30 +29,7 @@ type (
 	}
 )
 
-var instances map[string]*slack.SlackService
-var mu sync.RWMutex
-
-func GetSlackServiceInstance(orgID string) *slack.SlackService {
-	mu.Lock()
-	defer mu.Unlock()
-	return instances[orgID]
-}
-
-func removeSlackServiceInstance(orgID string) {
-	mu.Lock()
-	defer mu.Unlock()
-	delete(instances, orgID)
-}
-
-func addSlackServiceInstance(orgID string, slackSvc *slack.SlackService) {
-	mu.Lock()
-	defer mu.Unlock()
-	instances[orgID] = slackSvc
-}
-
 func New(releaseConnFn reviewapi.TransportReleaseConnectionFunc) *slackPlugin {
-	instances = map[string]*slack.SlackService{}
-	mu = sync.RWMutex{}
 	return &slackPlugin{
 		TransportReleaseConnection: releaseConnFn,
 		apiURL:                     appconfig.Get().ApiURL(),
@@ -74,7 +50,7 @@ func (p *slackPlugin) startSlackServiceInstance(orgID string, slackConfig *slack
 	if err != nil {
 		return fmt.Errorf("failed starting slack service, err=%v", err)
 	}
-	addSlackServiceInstance(orgID, ss)
+	slack.SetServiceInstance(orgID, ss)
 	reviewRespCh := make(chan *slack.MessageReviewResponse)
 	go func() {
 		defer close(reviewRespCh)
@@ -84,7 +60,7 @@ func (p *slackPlugin) startSlackServiceInstance(orgID string, slackConfig *slack
 		}
 		log.Infof("done processing events for org %v", orgID)
 		ss.Close()
-		removeSlackServiceInstance(orgID)
+		slack.RemoveServiceInstance(orgID)
 	}()
 
 	// response channel
@@ -130,7 +106,7 @@ func (p *slackPlugin) OnStartup(_ plugintypes.Context) error {
 }
 
 func (p *slackPlugin) OnUpdate(oldState, newState plugintypes.PluginResource) error {
-	slackInstance := GetSlackServiceInstance(newState.GetOrgID())
+	slackInstance := slack.GetServiceInstance(newState.GetOrgID())
 	if slackInstance == nil {
 		slackInstance = &slack.SlackService{}
 	}
@@ -171,7 +147,7 @@ func (p *slackPlugin) OnUpdate(oldState, newState plugintypes.PluginResource) er
 				if slackInstance != nil {
 					slackInstance.Close()
 				}
-				removeSlackServiceInstance(newState.GetOrgID())
+				slack.RemoveServiceInstance(newState.GetOrgID())
 				err := p.startSlackServiceInstance(newState.GetOrgID(), newSlackConfig)
 				if err == nil {
 					return nil
@@ -190,7 +166,7 @@ func (p *slackPlugin) OnUpdate(oldState, newState plugintypes.PluginResource) er
 
 // SendApprovedMessage sends a message informing the session is ready
 func SendApprovedMessage(orgID, slackID, sid, apiURL string) {
-	if slacksvc := GetSlackServiceInstance(orgID); slacksvc != nil {
+	if slacksvc := slack.GetServiceInstance(orgID); slacksvc != nil {
 		msg := fmt.Sprintf("Your session is ready.\nFollow this link to see the details: %s/sessions/%s",
 			apiURL, sid)
 		_ = slacksvc.PostMessage(slackID, msg)
@@ -202,7 +178,7 @@ func (p *slackPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 	if pkt.Type != pbagent.SessionOpen {
 		return nil, nil
 	}
-	slackSvc := GetSlackServiceInstance(pctx.OrgID)
+	slackSvc := slack.GetServiceInstance(pctx.OrgID)
 	log.With("sid", pctx.SID).Infof("executing slack on-receive, hasinstance=%v", slackSvc != nil)
 	if slackSvc == nil {
 		return nil, nil
@@ -238,6 +214,20 @@ func (p *slackPlugin) OnReceive(pctx plugintypes.Context, pkt *pb.Packet) (*plug
 			sreq.SessionTime = &ad
 		}
 		sreq.Script = reviewInput
+
+		session, serr := models.GetSessionByID(pctx.OrgID, pctx.SID)
+		switch {
+		case serr != nil:
+			// Best-effort: the review message must still go out without the
+			// analysis block, but a load failure is not the same as "no
+			// analysis" and should be visible when debugging a missing block.
+			log.With("sid", pctx.SID).Warnf("failed loading session for slack ai analysis block, reason=%v", serr)
+		case session != nil && session.AIAnalysis != nil:
+			sreq.AIRiskLevel = session.AIAnalysis.RiskLevel
+			sreq.AITitle = session.AIAnalysis.Title
+			sreq.AISummary = session.AIAnalysis.Summary
+			sreq.AIExplanation = session.AIAnalysis.Explanation
+		}
 	}
 
 	if sreq.WebappURL == "" || len(sreq.ApprovalGroups) == 0 || len(sreq.ApprovalGroups) >= SlackMaxButtons {

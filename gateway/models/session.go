@@ -36,6 +36,79 @@ func (b *BlobInputType) Scan(value any) error {
 	return nil
 }
 
+const (
+	// MaxSessionListLimit is the largest page the session list will serve.
+	MaxSessionListLimit = 100
+	// MaxSessionListOffset bounds how deep a caller may paginate. At the
+	// maximum limit that is still 100 pages; anything beyond it should be
+	// expressed as a date or connection filter instead, because the cost of an
+	// offset grows with its depth no matter how the query is written.
+	MaxSessionListOffset = 10000
+	// SessionCountCapValue is the total reported by SessionCountCapped once the
+	// real total is known to exceed it, i.e. "10000+".
+	SessionCountCapValue = 10000
+	// sessionCountCapLimit is where the capped count stops scanning. One more
+	// than the reported value, so reaching it proves there is at least one row
+	// beyond SessionCountCapValue.
+	sessionCountCapLimit = SessionCountCapValue + 1
+)
+
+// SessionCountMode selects how expensive a total the caller is willing to pay
+// for. The count is a separate statement from the page and, on a large tenant,
+// costs about as much as the page itself: it has no LIMIT, so it visits every
+// row matching the filter regardless of the page size.
+type SessionCountMode string
+
+const (
+	// SessionCountExact counts every matching row. The most expensive mode, and
+	// the only one that can drive a "page N of M" control.
+	SessionCountExact SessionCountMode = "exact"
+	// SessionCountNone skips the count statement entirely and leaves Total nil.
+	// Callers that only need to paginate should use this and rely on
+	// HasNextPage.
+	SessionCountNone SessionCountMode = "none"
+	// SessionCountCapped stops counting at sessionCountCapLimit and reports
+	// SessionCountCapValue with TotalIsCapped set.
+	SessionCountCapped SessionCountMode = "capped"
+
+	// DefaultSessionCountMode is what a caller gets when it does not choose one.
+	//
+	// Capped rather than exact: the count statement has no LIMIT, so an exact
+	// count visits every row matching the filter however small the page is, and
+	// on a large tenant that one statement was 98.8% of the endpoint's database
+	// time. Capping is safe as a default because it never reports a wrong
+	// number — below the cap it is the exact total with TotalIsCapped false, and
+	// above it Total is a floor that TotalIsCapped explicitly marks as such. A
+	// caller that needs the precise figure asks for SessionCountExact.
+	DefaultSessionCountMode = SessionCountCapped
+)
+
+// resolveCountMode applies the default to an option that did not choose a mode.
+// NewSessionOption and ListSessions both go through it so a caller that built a
+// SessionOption as a struct literal and one that used the constructor cannot end
+// up on different defaults — an unnoticed exact count is precisely how this cost
+// stayed invisible until it took a gateway down.
+func resolveCountMode(m SessionCountMode) SessionCountMode {
+	if m == "" {
+		return DefaultSessionCountMode
+	}
+	return m
+}
+
+// ParseSessionCountMode validates a count mode coming from an API caller.
+func ParseSessionCountMode(v string) (SessionCountMode, error) {
+	switch SessionCountMode(v) {
+	case SessionCountExact:
+		return SessionCountExact, nil
+	case SessionCountNone:
+		return SessionCountNone, nil
+	case SessionCountCapped:
+		return SessionCountCapped, nil
+	}
+	return "", fmt.Errorf("invalid count value %q, expected one of %v", v,
+		[]SessionCountMode{SessionCountExact, SessionCountNone, SessionCountCapped})
+}
+
 type SessionOption struct {
 	User                string
 	ConnectionType      string
@@ -49,6 +122,7 @@ type SessionOption struct {
 	EndDate             sql.NullString
 	Offset              int
 	Limit               int
+	CountMode           SessionCountMode
 }
 
 func NewSessionOption() SessionOption {
@@ -59,14 +133,29 @@ func NewSessionOption() SessionOption {
 		ReviewStatus:   "%",
 		Limit:          20,
 		Offset:         0,
+		CountMode:      resolveCountMode(""),
 	}
 }
 
 type SessionAIAnalysis struct {
-	RiskLevel   string `json:"risk_level"`
-	Title       string `json:"title"`
-	Explanation string `json:"explanation"`
-	Action      string `json:"action"`
+	RiskLevel   string                  `json:"risk_level"`
+	Title       string                  `json:"title"`
+	Explanation string                  `json:"explanation"`
+	Action      string                  `json:"action"`
+	Summary     string                  `json:"summary,omitempty"`
+	Model       string                  `json:"model,omitempty"`
+	Steps       []SessionAIAnalysisStep `json:"steps,omitempty"`
+}
+
+// SessionAIAnalysisStep is one step of the agentic analyzer investigation trace.
+type SessionAIAnalysisStep struct {
+	Type       string    `json:"type"`
+	Thinking   string    `json:"thinking,omitempty"`
+	ToolName   string    `json:"tool_name,omitempty"`
+	ToolInput  string    `json:"tool_input,omitempty"`
+	ToolOutput string    `json:"tool_output,omitempty"`
+	IsError    bool      `json:"is_error,omitempty"`
+	Timestamp  time.Time `json:"timestamp"`
 }
 
 // SessionGuardRailMatchedRule mirrors guardrails.Rule and represents the specific
@@ -135,9 +224,14 @@ type SessionDone struct {
 }
 
 type SessionList struct {
-	Total       int64
-	HasNextPage bool
-	Items       []Session
+	// Total is nil when the caller asked for SessionCountNone, i.e. the count
+	// was never computed. That is deliberately distinct from a total of zero.
+	Total *int64
+	// TotalIsCapped reports that Total is a floor (SessionCountCapValue), not
+	// the real number of matching rows.
+	TotalIsCapped bool
+	HasNextPage   bool
+	Items         []Session
 }
 
 type Blob struct {
@@ -284,7 +378,232 @@ func GetSessionByID(orgID, sid string) (*Session, error) {
 	return session, nil
 }
 
+// The fragments below compose the row set that the count and the page queries
+// in ListSessions share. Both MUST be built from the same sessionListShape so
+// the reported total always describes the rows the page returns.
+//
+// They are fragments rather than one constant because the reviews join is not
+// always wanted, and the planner cannot work that out for itself: the gateway
+// sends bind parameters, so predicates like `(@review_approver_email) IS NOT
+// NULL` are opaque at plan time and every `rv` reference survives into the
+// plan. The join can only be dropped by emitting different SQL.
+
+// The session-level predicates, each emitted only when the corresponding filter
+// is actually set. They reference only `s` (private.sessions).
+//
+// Emitting an unset filter as a tautology — `... LIKE '%'`, or a CASE that
+// collapses to `ELSE true` — is not free, because a bind parameter hides the
+// tautology from the planner. It has to assume the LIKE is selective, concludes
+// it must examine far more rows than the query asks for, and abandons the index.
+// That is what turned the capped COUNT into a parallel sequential scan of
+// private.sessions: 470 buffers instead of 75, and under concurrency enough heap
+// churn to evict the index pages the page query needs. Dropping the predicate
+// entirely is the only way to tell the planner it is not there.
+const (
+	sessionListUserCondition           = `COALESCE(s.user_id::text, '') LIKE @filter_user_id`
+	sessionListConnectionCondition     = `COALESCE(s.connection::text, '') LIKE @connection`
+	sessionListConnectionTypeCondition = `COALESCE(s.connection_type::text, '')::TEXT LIKE @connection_type`
+	sessionListBatchIDCondition        = `s.session_batch_id = @batch_id`
+	sessionListCorrelationIDCondition  = `s.correlation_id = @correlation_id`
+	sessionListJiraCondition           = `LOWER(s.integrations_metadata->>'jira_issue_key') = ANY((@jira_issue_keys)::text[])`
+	sessionListDateRangeCondition      = `s.created_at BETWEEN @start_date AND @end_date`
+)
+
+// sessionListVisibilityCondition restricts a non-admin to their own sessions
+// plus the ones they are a reviewer of. References `rv`.
+//
+// Kept as a CASE rather than folded into `EXISTS(...) OR s.user_id = @user_id`:
+// s.user_id is nullable, so `s.user_id != @user_id` is NULL for an ownerless
+// session and the CASE falls through to ELSE true. The OR form would evaluate
+// to NULL instead and hide those sessions. Only the @is_auditor_or_admin leg is
+// dropped, because this fragment is emitted solely when it is false.
+const sessionListVisibilityCondition = `
+			CASE WHEN s.user_id != @user_id
+				THEN
+					EXISTS (
+						SELECT 1 FROM private.users u
+						INNER JOIN private.user_groups ug ON ug.user_id = u.id
+						INNER JOIN private.review_groups rg ON rg.group_name = ug.name
+						WHERE rg.review_id = rv.id AND u.subject = @user_id
+					)
+				ELSE true
+			END`
+
+// sessionListReviewStatusCondition is the LEFT JOIN form: `rv` may be absent,
+// and a session with no review matches whenever the pattern matches ”.
+const sessionListReviewStatusCondition = `
+			COALESCE(rv.status::text, '')::TEXT LIKE @review_status`
+
+// sessionListReviewStatusConditionExact compares against the enum column so
+// index_reviews_org_status applies. A LIKE against a bind parameter has no
+// known prefix and can never use an index, and `status::text = @x` cannot
+// either, because an enum-to-text cast is only STABLE and so cannot be indexed.
+//
+// Only emit this for a value that IsValidReviewStatus accepts: casting anything
+// else to the enum raises "invalid input value for enum" and would turn today's
+// empty page into a 500.
+const sessionListReviewStatusConditionExact = `
+			rv.status = (@review_status)::private.enum_reviews_status`
+
+// sessionListReviewApproverCondition references `rv`. Emitted only when an
+// approver is actually set, so the IS NOT NULL guard is gone with it.
+const sessionListReviewApproverCondition = `
+			EXISTS (
+				SELECT 1 FROM private.users u
+				INNER JOIN private.user_groups ug ON ug.user_id = u.id
+				INNER JOIN private.review_groups rg ON rg.group_name = ug.name
+				WHERE rg.review_id = rv.id AND u.email = @review_approver_email
+			)`
+
+// sessionListShape records which SQL the filters in a SessionOption require.
+// Both the count and the page derive their FROM and WHERE from one of these,
+// which is what keeps `total` consistent with `data`.
+type sessionListShape struct {
+	// isAdmin skips the visibility subtree, which is a tautology for admins
+	// and auditors.
+	isAdmin bool
+	// reviewStatusActive is false for the "%" sentinel, where the predicate is
+	// a tautology (COALESCE never yields NULL, and everything is LIKE '%').
+	reviewStatusActive bool
+	// approverActive reports whether an approver email was supplied.
+	approverActive bool
+	// needsReviews is false when nothing left in the query references `rv`, so
+	// the reviews join can be dropped altogether.
+	needsReviews bool
+	// reviewsDriven resolves the row set from private.reviews INNER JOIN
+	// sessions instead of scanning sessions in created_at order. Only valid
+	// when a session with no review cannot possibly match.
+	reviewsDriven bool
+	// reviewStatusExact selects the indexable equality form of the status
+	// predicate.
+	reviewStatusExact bool
+	// sessionConditions are the `s`-only predicates whose filters are set. An
+	// unset filter contributes nothing rather than a tautology.
+	sessionConditions []string
+}
+
+func newSessionListShape(isAuditorOrAdmin bool, opt SessionOption) sessionListShape {
+	sh := sessionListShape{
+		isAdmin: isAuditorOrAdmin,
+		// "%" is the unset sentinel, not "". An explicit empty review.status is
+		// a real filter that selects sessions with no review at all.
+		reviewStatusActive: opt.ReviewStatus != "%",
+		approverActive:     opt.ReviewApproverEmail != nil,
+	}
+
+	// Same "%"-is-unset rule as review.status: ?user= is a real filter that
+	// selects sessions with no user, so only the sentinel may be dropped.
+	if opt.User != "%" {
+		sh.sessionConditions = append(sh.sessionConditions, sessionListUserCondition)
+	}
+	if opt.ConnectionName != "%" {
+		sh.sessionConditions = append(sh.sessionConditions, sessionListConnectionCondition)
+	}
+	if opt.ConnectionType != "%" {
+		sh.sessionConditions = append(sh.sessionConditions, sessionListConnectionTypeCondition)
+	}
+	// These mirror the CASE guards they replace exactly: the guard tested the
+	// bind parameter for NULL, which is precisely "the caller set this filter".
+	if opt.BatchID != nil {
+		sh.sessionConditions = append(sh.sessionConditions, sessionListBatchIDCondition)
+	}
+	if opt.CorrelationID != nil {
+		sh.sessionConditions = append(sh.sessionConditions, sessionListCorrelationIDCondition)
+	}
+	// The old guard also required array_length > 0, which for a non-empty slice
+	// is always true.
+	if len(opt.JiraIssueKey) > 0 {
+		sh.sessionConditions = append(sh.sessionConditions, sessionListJiraCondition)
+	}
+	// The guard keyed off start_date alone; end_date is defaulted to now by the
+	// caller whenever start_date is set.
+	if opt.StartDate.Valid {
+		sh.sessionConditions = append(sh.sessionConditions, sessionListDateRangeCondition)
+	}
+	sh.needsReviews = !sh.isAdmin || sh.reviewStatusActive || sh.approverActive
+
+	// A session with no review still matches when the pattern matches the
+	// empty string, because the LEFT JOIN form coalesces a missing status to
+	// ''. A pattern made only of '%' does that; anything else cannot. An
+	// approver filter always requires a review to exist, so it implies the
+	// same thing on its own.
+	statusExcludesReviewless := sh.reviewStatusActive && strings.Trim(opt.ReviewStatus, "%") != ""
+	sh.reviewsDriven = sh.approverActive || statusExcludesReviewless
+
+	// Equality is only equivalent to the LIKE for a pattern free of the three
+	// LIKE metacharacters, and it is only safe to express against the enum for
+	// a value that is actually one of its labels. An unrecognised status falls
+	// back to the text form, which still returns an empty page — just without
+	// the index.
+	sh.reviewStatusExact = sh.reviewsDriven && sh.reviewStatusActive &&
+		!strings.ContainsAny(opt.ReviewStatus, `%_\`) &&
+		IsValidReviewStatus(opt.ReviewStatus)
+	return sh
+}
+
+// from builds the FROM/JOIN clause for the shared row set.
+func (sh sessionListShape) from() string {
+	switch {
+	case sh.reviewsDriven:
+		// Leading with reviews turns a scan of every session in the org into a
+		// scan of the reviews that match, which for a rare or absent status is
+		// the difference between reading a million index entries and reading
+		// none. UNIQUE(org_id, session_id) on reviews guarantees the inner join
+		// cannot duplicate a session.
+		return `
+		FROM private.reviews AS rv
+		INNER JOIN private.sessions s ON s.org_id = rv.org_id AND s.id = rv.session_id`
+	case sh.needsReviews:
+		return `
+		FROM private.sessions s
+		LEFT JOIN private.reviews AS rv ON rv.org_id = s.org_id AND rv.session_id = s.id`
+	default:
+		return `
+		FROM private.sessions s`
+	}
+}
+
+// where builds the WHERE clause for the shared row set.
+func (sh sessionListShape) where() string {
+	conditions := []string{`s.org_id = @org_id`}
+	if sh.reviewsDriven {
+		// Constrain the driving table directly so the org_id index on reviews
+		// is usable; the planner will not infer it from s.org_id.
+		conditions = append(conditions, `rv.org_id = @org_id`)
+	}
+	if !sh.isAdmin {
+		conditions = append(conditions, sessionListVisibilityCondition)
+	}
+	if sh.reviewStatusActive {
+		if sh.reviewStatusExact {
+			conditions = append(conditions, sessionListReviewStatusConditionExact)
+		} else {
+			conditions = append(conditions, sessionListReviewStatusCondition)
+		}
+	}
+	if sh.approverActive {
+		conditions = append(conditions, sessionListReviewApproverCondition)
+	}
+	conditions = append(conditions, sh.sessionConditions...)
+	return "\n\t\t" + strings.Join(conditions, " AND\n\t\t") + "\n"
+}
+
 func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt SessionOption) (*SessionList, error) {
+	// Bounds are enforced here rather than only at the API edge so no caller
+	// can reach the pathological plans, and so HasNextPage cannot be derived
+	// from a nonsense page size. A limit of 0 used to return an empty page
+	// while reporting has_next_page=true forever.
+	if opt.Limit < 1 || opt.Limit > MaxSessionListLimit {
+		return nil, fmt.Errorf("invalid limit %v, accepted range is 1..%v", opt.Limit, MaxSessionListLimit)
+	}
+	if opt.Offset < 0 || opt.Offset > MaxSessionListOffset {
+		return nil, fmt.Errorf("invalid offset %v, accepted range is 0..%v", opt.Offset, MaxSessionListOffset)
+	}
+	countMode := resolveCountMode(opt.CountMode)
+	if _, err := ParseSessionCountMode(string(countMode)); err != nil {
+		return nil, err
+	}
+
 	sessionList := &SessionList{Items: []Session{}}
 	// Prepare lowercase jira issue keys array
 	var jiraIssueKeysLower pq.StringArray
@@ -294,73 +613,89 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 			jiraIssueKeysLower[i] = strings.ToLower(key)
 		}
 	}
-	return sessionList, DB.Transaction(func(tx *gorm.DB) error {
-		err := tx.Raw(`
-		SELECT COUNT(s.id)
-		FROM private.sessions s
-		LEFT JOIN private.reviews AS rv ON rv.session_id = s.id
-		WHERE s.org_id = @org_id AND
-		CASE WHEN (@is_auditor_or_admin) = false AND s.user_id != @user_id
-				THEN
-					EXISTS (
-						SELECT 1 FROM private.users u
-						INNER JOIN private.user_groups ug ON ug.user_id = u.id
-						INNER JOIN private.review_groups rg ON rg.group_name = ug.name
-						WHERE rg.review_id = rv.id AND u.subject = @user_id
-					)
-				ELSE true
-		END AND
-		(
-			COALESCE(s.user_id::text, '') LIKE @filter_user_id AND
-			COALESCE(s.connection::text, '') LIKE @connection AND
-			COALESCE(s.connection_type::text, '')::TEXT LIKE @connection_type AND
-			COALESCE(rv.status::text, '')::TEXT LIKE @review_status AND
-			CASE WHEN (@review_approver_email)::TEXT IS NOT NULL
-				THEN
-					EXISTS (
-						SELECT 1 FROM private.users u
-						INNER JOIN private.user_groups ug ON ug.user_id = u.id
-						INNER JOIN private.review_groups rg ON rg.group_name = ug.name
-						WHERE rg.review_id = rv.id AND u.email = @review_approver_email
-					)
-				ELSE true
-			END AND
-			CASE WHEN (@batch_id)::TEXT IS NOT NULL
-				THEN s.session_batch_id = @batch_id
-				ELSE true
-			END AND
-			CASE WHEN (@correlation_id)::TEXT IS NOT NULL
-				THEN s.correlation_id = @correlation_id
-				ELSE true
-			END AND
-			CASE WHEN (@jira_issue_keys)::text[] IS NOT NULL AND array_length((@jira_issue_keys)::text[], 1) > 0
-				THEN LOWER(s.integrations_metadata->>'jira_issue_key') = ANY((@jira_issue_keys)::text[])
-				ELSE true
-			END AND
-			CASE WHEN (@start_date)::text IS NOT NULL
-				THEN s.created_at BETWEEN @start_date AND @end_date
-				ELSE true
-			END
-		)`, map[string]any{
-			"org_id":                orgID,
-			"filter_user_id":        opt.User,
-			"connection":            opt.ConnectionName,
-			"connection_type":       opt.ConnectionType,
-			"review_status":         opt.ReviewStatus,
-			"review_approver_email": opt.ReviewApproverEmail,
-			"batch_id":              opt.BatchID,
-			"correlation_id":        opt.CorrelationID,
-			"jira_issue_keys":       jiraIssueKeysLower,
-			"start_date":            opt.StartDate,
-			"end_date":              opt.EndDate,
-			"is_auditor_or_admin":   isAuditorOrAdmin,
-			"user_id":               userId,
-		}).First(&sessionList.Total).Error
-		if err != nil {
+	// GORM's named-parameter binder scans the SQL for @name and ignores map
+	// keys the statement does not mention, so one set of attributes serves
+	// every shape the builder can emit.
+	queryAttrs := map[string]any{
+		"org_id":                orgID,
+		"filter_user_id":        opt.User,
+		"connection":            opt.ConnectionName,
+		"connection_type":       opt.ConnectionType,
+		"review_status":         opt.ReviewStatus,
+		"review_approver_email": opt.ReviewApproverEmail,
+		"batch_id":              opt.BatchID,
+		"correlation_id":        opt.CorrelationID,
+		"jira_issue_keys":       jiraIssueKeysLower,
+		"start_date":            opt.StartDate,
+		"end_date":              opt.EndDate,
+		"user_id":               userId,
+		// One more row than the caller asked for: its presence is what proves
+		// there is a next page, without a second query and without relying on
+		// the total.
+		"page_limit": opt.Limit + 1,
+		"offset":     opt.Offset,
+		"count_cap":  sessionCountCapLimit,
+	}
+
+	shape := newSessionListShape(isAuditorOrAdmin, opt)
+	from, where := shape.from(), shape.where()
+
+	countSessions := func(tx *gorm.DB) error {
+		var stmt string
+		switch countMode {
+		case SessionCountCapped:
+			// Stops at sessionCountCapLimit rows instead of counting every
+			// matching session. The subquery projects a constant and has no
+			// ORDER BY so the scan can stop as soon as the LIMIT is satisfied.
+			//
+			// Do not add an ORDER BY to make the cap "the first N in page
+			// order": measured under a generic plan, that turns an index-only
+			// scan that touches 75 buffers into a full parallel sequential scan
+			// plus a top-N heapsort over every matching row — 214 ms against
+			// 2.5 ms. The cap is a floor on the total, not a page, so the order
+			// it counts in carries no meaning.
+			stmt = `
+		SELECT COUNT(*) FROM (
+			SELECT 1` + from + `
+			WHERE` + where + `
+			LIMIT @count_cap
+		) capped`
+		default:
+			stmt = `
+		SELECT COUNT(s.id)` + from + `
+		WHERE` + where
+		}
+		var total int64
+		if err := tx.Raw(stmt, queryAttrs).First(&total).Error; err != nil {
 			return fmt.Errorf("unable to obtain total count of sessions, reason=%v", err)
 		}
+		if countMode == SessionCountCapped && total >= sessionCountCapLimit {
+			total = SessionCountCapValue
+			sessionList.TotalIsCapped = true
+		}
+		sessionList.Total = &total
+		return nil
+	}
 
-		err = tx.Raw(`
+	listPage := func(tx *gorm.DB) error {
+		// Resolve the page of session ids first over sessions + reviews only,
+		// then join the heavy parts (connections, blobs, review JSON) against
+		// that page. The expensive projections — detoasting the input blob for
+		// octet_length and building the review jsonb with its correlated
+		// review_groups aggregate — therefore run for at most @page_limit rows
+		// instead of every session matching the filter.
+		//
+		// The org_id predicates on the blobs/reviews joins are required for
+		// index use: neither table has an index on its id/session_id column
+		// alone, only UNIQUE(org_id, ...) composite ones.
+		err := tx.Raw(`
+		WITH page AS (
+			SELECT s.id`+from+`
+			WHERE`+where+`
+			ORDER BY s.created_at DESC, s.id DESC
+			LIMIT @page_limit
+			OFFSET @offset
+		)
 		SELECT
 			s.id, s.org_id, s.connection, s.connection_type, s.connection_subtype, s.connection_tags, s.verb, s.labels, s.exit_code,
 			s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics, s.session_batch_id,
@@ -398,78 +733,43 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 				)
 			END AS review,
 			s.created_at, s.ended_at
-		FROM private.sessions s
+		FROM page
+		INNER JOIN private.sessions s ON s.id = page.id
 		LEFT JOIN private.connections c ON c.org_id = s.org_id AND c.name = s.connection
-		LEFT JOIN private.blobs b ON b.id = s.blob_input_id
-		LEFT JOIN private.reviews AS rv ON rv.session_id = s.id
-		WHERE s.org_id = @org_id AND
-		CASE WHEN (@is_auditor_or_admin) = false AND s.user_id != @user_id
-				THEN
-					EXISTS (
-						SELECT 1 FROM private.users u
-						INNER JOIN private.user_groups ug ON ug.user_id = u.id
-						INNER JOIN private.review_groups rg ON rg.group_name = ug.name
-						WHERE rg.review_id = rv.id AND u.subject = @user_id
-					)
-				ELSE true
-		END AND
-		(
-			COALESCE(s.user_id::text, '') LIKE @filter_user_id AND
-			COALESCE(s.connection::text, '') LIKE @connection AND
-			COALESCE(s.connection_type::text, '')::TEXT LIKE @connection_type AND
-			COALESCE(rv.status::text, '')::TEXT LIKE @review_status AND
-			CASE WHEN (@review_approver_email)::TEXT IS NOT NULL
-				THEN
-					EXISTS (
-						SELECT 1 FROM private.users u
-						INNER JOIN private.user_groups ug ON ug.user_id = u.id
-						INNER JOIN private.review_groups rg ON rg.group_name = ug.name
-						WHERE rg.review_id = rv.id AND u.email = @review_approver_email
-					)
-				ELSE true
-			END AND
-			CASE WHEN (@batch_id)::TEXT IS NOT NULL
-				THEN s.session_batch_id = @batch_id
-				ELSE true
-			END AND
-			CASE WHEN (@correlation_id)::TEXT IS NOT NULL
-				THEN s.correlation_id = @correlation_id
-				ELSE true
-			END AND
-			CASE WHEN (@jira_issue_keys)::text[] IS NOT NULL AND array_length((@jira_issue_keys)::text[], 1) > 0
-				THEN LOWER(s.integrations_metadata->>'jira_issue_key') = ANY((@jira_issue_keys)::text[])
-				ELSE true
-			END AND
-			CASE WHEN (@start_date)::text IS NOT NULL
-				THEN s.created_at BETWEEN @start_date AND @end_date
-				ELSE true
-			END
-		)
-		ORDER BY s.created_at DESC
-		LIMIT @limit
-		OFFSET @offset
-		`, map[string]any{
-			"org_id":                orgID,
-			"filter_user_id":        opt.User,
-			"connection":            opt.ConnectionName,
-			"connection_type":       opt.ConnectionType,
-			"review_status":         opt.ReviewStatus,
-			"review_approver_email": opt.ReviewApproverEmail,
-			"batch_id":              opt.BatchID,
-			"correlation_id":        opt.CorrelationID,
-			"jira_issue_keys":       jiraIssueKeysLower,
-			"start_date":            opt.StartDate,
-			"end_date":              opt.EndDate,
-			"limit":                 opt.Limit,
-			"offset":                opt.Offset,
-			"is_auditor_or_admin":   isAuditorOrAdmin,
-			"user_id":               userId,
-		}).Find(&sessionList.Items).Error
-		if err == nil {
-			sessionList.HasNextPage = len(sessionList.Items) == opt.Limit
+		LEFT JOIN private.blobs b ON b.org_id = s.org_id AND b.id = s.blob_input_id
+		LEFT JOIN private.reviews AS rv ON rv.org_id = s.org_id AND rv.session_id = s.id
+		ORDER BY s.created_at DESC, s.id DESC
+		`, queryAttrs).Find(&sessionList.Items).Error
+		if err != nil {
+			return err
 		}
-		return err
-	})
+		// The extra row is a probe, not part of the page. Discard it after the
+		// ORDER BY so the row dropped is genuinely the first of the next page.
+		sessionList.HasNextPage = len(sessionList.Items) > opt.Limit
+		if sessionList.HasNextPage {
+			sessionList.Items = sessionList.Items[:opt.Limit]
+		}
+		return nil
+	}
+
+	// Without a count there is nothing for the page to be consistent with, so
+	// the transaction would only add round trips to the statement whose whole
+	// purpose is to be cheap.
+	if countMode == SessionCountNone {
+		return sessionList, listPage(DB)
+	}
+	// REPEATABLE READ is what actually makes the two statements share a
+	// snapshot. Under the default READ COMMITTED every statement takes a fresh
+	// one, so a session inserted between the count and the page would be
+	// visible to only one of them and `total` could disagree with `data`.
+	// Read-only is declared for the same reason it is true: neither statement
+	// writes, and it lets PostgreSQL skip assigning a transaction id.
+	return sessionList, DB.Transaction(func(tx *gorm.DB) error {
+		if err := countSessions(tx); err != nil {
+			return err
+		}
+		return listPage(tx)
+	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
 }
 
 // UpsertSession updates or create all attributes of a session with exception of

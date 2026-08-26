@@ -21,6 +21,21 @@
   background-color: var(--brand-navy);
 }
 
+/* A disabled card still shows which option is active — it just can't be
+   changed — so the selected surface is preserved and only dimmed. */
+.card:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.card:disabled:hover {
+  background-color: var(--mantine-color-white);
+}
+
+.card[data-selected]:disabled:hover {
+  background-color: var(--brand-navy);
+}
+
 /* The gray palette is calibrated for light backgrounds, so contrast on the
    navy selected surface is painted with rgba white instead. */
 .card[data-selected] .icon {

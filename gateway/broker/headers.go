@@ -43,6 +43,11 @@ const (
 // and OCR sidecar endpoints configured).
 const CapabilitySupportsPIIGuard = "supports_pii_guard"
 
+// CapabilitySupportsPIIDataMaskingRules distinguishes agents that consume the
+// complete connection-scoped Data Masking rule payload, including custom
+// regex and deny-list entity types.
+const CapabilitySupportsPIIDataMaskingRules = "supports_pii_data_masking_rules"
+
 // ControlSentinelSID is the well-known sid used for connection-scoped control
 // frames (those that describe the agent connection, not a session). The wire
 // format requires a non-nil, versioned UUID in every header, so these frames

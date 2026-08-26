@@ -3,10 +3,14 @@ package agent
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
+	"sync"
 	"time"
 
 	llog "libhoop/llog"
+	redactoralcatraz "libhoop/redactor/alcatraz"
+	alcatraznlp "libhoop/redactor/alcatraz/nlp"
 
 	agentconfig "github.com/hoophq/hoop/agent/config"
 	"github.com/hoophq/hoop/agent/controller"
@@ -28,11 +32,33 @@ var (
 	agentStore             = memory.New()
 	agentInstanceKey       = "instance"
 	defaultBackoffResetSec = 60 // 1min
+
+	configureAlcatrazNerOnce sync.Once
 )
+
+// configureAlcatrazNer registers the in-process NER backend for the alcatraz
+// DLP provider, which serves data-masking rules that request a statistical
+// entity type (PERSON, LOCATION, NRP). Registration is cheap: the ONNX model
+// loads lazily, on the first session that asks for one of those types, and
+// every session after that shares it.
+//
+// The model is never fetched at runtime, so the files on disk are what
+// decides whether NER is available: ALCATRAZ_NER_MODEL_PATH is the models
+// directory (the parent that holds one subdirectory per model id — what
+// "alcatraz models download --dest <dir>" writes into), and an agent whose
+// image does not carry one refuses those sessions with an error naming the
+// missing file. Loading costs a few hundred MB of resident memory that is
+// not released until the process restarts.
+func configureAlcatrazNer() {
+	configureAlcatrazNerOnce.Do(func() {
+		redactoralcatraz.SetNlpProvider(alcatraznlp.Provider(os.Getenv("ALCATRAZ_NER_MODEL_PATH")))
+	})
+}
 
 func Run() {
 	// Reinitialize libhoop logger to use the same log format configured in client
 	llog.ReinitializeLogger()
+	configureAlcatrazNer()
 
 	_, _ = monitoring.StartSentry("agent.null")
 	config, err := agentconfig.Load()
@@ -54,6 +80,7 @@ func Run() {
 // RunV2 should supersedes agent modes, instead of relying in two distincts modes of execution
 // this method should deprecate old behaviors.
 func RunV2(req *pb.PreConnectRequest, runtimeEnvs map[string]string, commandArgs []string) {
+	configureAlcatrazNer()
 	if runtimeEnvs == nil {
 		runtimeEnvs = map[string]string{}
 	}

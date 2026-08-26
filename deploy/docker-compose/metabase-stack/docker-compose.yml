@@ -1,0 +1,123 @@
+# Metabase reporting on a database it cannot see in the clear.
+#
+#   metabase :3000 ──pgwire──> hoop-inspect :15432 ──pgwire+TLS──> appdb :5432
+#        │                     policy · masking · audit
+#        └── H2 app database, inside the container, NOT proxied
+#
+#   client ─────────────────────────────────────────────────────> appdb :5432
+#        direct, bypassing the proxy: the unmasked ground truth
+#
+# No plugin, driver or Metabase-side code anywhere in this stack. Why each
+# choice below is what it is: see ./README.md.
+#
+# Bring up:  ./run.sh
+
+name: hoop-metabase-stack
+
+services:
+  # TLS on, so the hop from the sidecar is encrypted. hoop-inspect is the TLS
+  # client there, so it still reads and masks plaintext.
+  appdb:
+    image: postgres:17.6
+    attach: false
+    networks: [metabase]
+    environment:
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: apppass
+      POSTGRES_DB: appdb
+      PGUSER: appuser
+    command:
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/etc/postgresql/certs/server.crt
+      - -c
+      - ssl_key_file=/etc/postgresql/certs/server.key
+    volumes:
+      - ./upstream/seed.sql:/docker-entrypoint-initdb.d/seed.sql:ro
+      # 0600 and owned by the postgres uid, or the server refuses to start.
+      # Mounted read-only, so the container cannot fix that itself: ./run.sh
+      # mints the pair inside this image for exactly that reason.
+      - ./upstream/certs/server.crt:/etc/postgresql/certs/server.crt:ro
+      - ./upstream/certs/server.key:/etc/postgresql/certs/server.key:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready", "-U", "appuser", "-d", "appdb"]
+      interval: "2s"
+      timeout: "30s"
+      retries: 10
+      start_period: "20s"
+
+  # The hoopinspect library as a process, and the only thing between Metabase
+  # and the database. Same image and Dockerfile as ../envoy-stack, not a copy,
+  # so the two stacks cannot drift.
+  hoop-inspect:
+    image: hoop-inspect:local
+    build:
+      context: ../../../hoopinspect
+      dockerfile: ../deploy/docker-compose/envoy-stack/hoopinspect/Dockerfile
+    networks: [metabase]
+    volumes:
+      - ./hoopinspect/config.yaml:/etc/hoop-inspect/config.yaml:ro
+      # appdb's self-signed cert, used as the CA that verifies it.
+      - ./upstream/certs/server.crt:/etc/hoop-inspect/certs/appdb.crt:ro
+    ports:
+      # Admin: /healthz, /stats, /config and the audit query API.
+      - "19000:19000"
+      # Published so your own Metabase, DBeaver or psql can point at the lane
+      # without editing this file.
+      - "15432:15432"
+    depends_on:
+      appdb: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:19000/healthz || exit 1"]
+      interval: "2s"
+      timeout: "10s"
+      retries: 15
+      start_period: "5s"
+
+  # OSS, where row and column security does not exist at any configuration.
+  # Every redaction in the UI therefore came from the sidecar.
+  #
+  # Pinned because ./metabase/provision.py drives POST /api/setup, which has
+  # no stability guarantee. Bump deliberately, then re-run ./run.sh.
+  metabase:
+    image: metabase/metabase:v0.63.13
+    networks: [metabase]
+    ports:
+      - "3000:3000"
+    environment:
+      # No MB_DB_*, so the application database is H2 in the container and
+      # dies with `./run.sh down`. Metabase's own state never reaches the
+      # sidecar; only the analytics database does.
+      MB_ANON_TRACKING_ENABLED: "false"
+      # The bundled dashboards read Metabase's sample database, which does not
+      # go through the proxy. Unmasked columns beside ours would muddy it.
+      MB_LOAD_SAMPLE_CONTENT: "false"
+    depends_on:
+      hoop-inspect: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:3000/api/health || exit 1"]
+      interval: "5s"
+      timeout: "10s"
+      retries: 40
+      # First boot migrates an empty H2 database and takes about a minute.
+      start_period: "90s"
+
+  # Reaches appdb directly, bypassing the sidecar. Exists to prove a negative:
+  # masked output means nothing unless you can see what is actually stored.
+  client:
+    image: alpine:3.20
+    networks: [metabase]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - apk add --no-cache postgresql16-client >/dev/null
+        && exec sleep infinity
+    healthcheck:
+      test: ["CMD-SHELL", "command -v psql"]
+      interval: "3s"
+      timeout: "10s"
+      retries: 20
+      start_period: "10s"
+
+networks:
+  metabase:

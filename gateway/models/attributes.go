@@ -278,7 +278,7 @@ func GetConnectionRequestRulesByConnectionAttributes(db *gorm.DB, orgID uuid.UUI
 		Where("org_id = ? AND attribute_name IN (?)", orgID, attributeNamesSubQuery)
 
 	result := db.Model(&AccessRequestRule{}).
-		Where("org_id = ? AND access_type = ?", orgID, accessType).
+		Where("org_id = ? AND access_type IN ?", orgID, expandAccessTypes(accessType)).
 		Where("name IN (?)", ruleNamesSubQuery).
 		First(&accessRequestRule)
 	if result.Error != nil {

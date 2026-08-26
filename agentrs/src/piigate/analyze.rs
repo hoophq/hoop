@@ -557,7 +557,9 @@ mod tests {
             presidio_url: base.to_string(),
             params: AnalysisParams {
                 score_threshold: 0.5,
-                entity_denylist: vec![],
+                entity_allowlist: vec!["US_SSN".into()],
+                ad_hoc_recognizers: Vec::new(),
+                entity_denylist: Vec::new(),
                 band_padding: 8,
                 max_ocr_concurrency: 4,
             },

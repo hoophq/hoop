@@ -3,6 +3,34 @@
 @import "asciinema-player/dist/bundle/asciinema-player.css";
 @import "./highlight.css";
 @import "./cmdk.css";
+/* Unlayered and after the Tailwind directives below, so it outranks the style
+   module CodeMirror prepends to <head>. */
+@import "./codemirror-surface.css";
+/* Must come after the Radix Themes import above — it overrides one of its
+   rules. */
+@import "./shell-viewport.css";
+
+/* Preflight is imported by hand, into its own cascade layer, instead of coming
+   from `@tailwind base` (disabled via corePlugins.preflight in
+   tailwind.config.js).
+
+   Why: under the React shell (webapp_v2) this stylesheet is live on every CLJS
+   route, side by side with Mantine, which ships its component CSS inside
+   `@layer mantine`. Unlayered declarations beat every layer regardless of
+   specificity, so an unlayered preflight silently wins over Mantine — a filled
+   Mantine Button renders transparent (`button { background-color: transparent }`)
+   and every bordered component loses its border (`* { border-width: 0 }`).
+   Putting preflight in `legacy-reset`, which webapp_v2/src/layers.css orders
+   below `mantine`, restores the intended precedence.
+
+   Only preflight moves. The project's own `@layer base` rules (the :root theme
+   variables and the `body` background/color) and Tailwind's `--tw-*` defaults
+   stay unlayered below, so nothing about how CLJS pages render changes.
+
+   Standalone CLJS (shadow-cljs on :8280, no React shell) is unaffected: there is
+   no unlayered CSS competing with it, so a layered preflight applies as before. */
+@import "tailwindcss/lib/css/preflight.css" layer(legacy-reset);
+@import "./legacy-border-default.css" layer(legacy-reset);
 
 @tailwind base;
 @tailwind components;
@@ -103,9 +131,15 @@
 }
 
 @layer base {
-  * {
-    @apply border-border;
-  }
+  /* The `* { @apply border-border }` that used to live here moved to
+     legacy-border-default.css, imported into the legacy-reset layer — see the
+     comment there. `body` stays unlayered on purpose: below `mantine` it would
+     hand the page background and text colour over to Mantine's own body rule,
+     repainting every ClojureScript page.
+
+     The --chart-* variables that used to sit above were removed on main when
+     the dashboard moved to React and @mantine/charts; nothing in webapp/src
+     references them any more. */
 
   body {
     @apply bg-background text-foreground;

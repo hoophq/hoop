@@ -7,16 +7,25 @@
    badge-color is a background utility class and defaults to red.
    radius is passed through to the underlying IconButton; omit it to inherit
    the theme default. It also decides where the dot sits, since a circular
-   button's edge is not at the corner of its box."
-  [{:keys [icon on-click active? has-notification? disabled? aria-label aria-expanded badge-color radius]}]
-  [:> Box {:class "relative"}
+   button's edge is not at the corner of its box.
+   size and variant let a 40px toolbar use the small ghost scale without
+   changing callers that want the defaults."
+  [{:keys [icon on-click active? has-notification? disabled? aria-label aria-expanded
+           badge-color radius size variant]
+    :or {size "2" variant "soft"}}]
+  ;; inline-flex so the wrapper shrink-wraps the button. The ghost variant has
+  ;; no fixed box — Radix sizes it from padding and pulls it back with negative
+  ;; margins — so a block wrapper kept its own larger box and the icon drifted
+  ;; out of line with the sibling buttons. It also puts the notification dot on
+  ;; the button's real corner rather than the wrapper's.
+  [:> Box {:class "relative inline-flex"}
    [:> IconButton
     (merge
      {:class (str (when active? "bg-gray-8 text-gray-12 ")
                   (when disabled? "cursor-not-allowed "))
-      :size "2"
+      :size size
       :color "gray"
-      :variant "soft"
+      :variant variant
       :highContrast true
       :disabled disabled?
       :on-click on-click}

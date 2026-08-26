@@ -1,20 +1,15 @@
 (ns webapp.webclient.log-area.main
-  (:require ["papaparse" :as papa]
-            ["@radix-ui/themes" :refer [Box Flex]]
+  (:require ["@radix-ui/themes" :refer [Box Flex]]
             [clojure.string :as cs]
             [re-frame.core :as rf]
             [reagent.core :as r]
             [webapp.audit.views.session-details :as session-details]
             [webapp.components.ag-grid-table :as ag-grid-table]
             [webapp.components.results-download-menu :as download-menu]
+            [webapp.components.results-matrix :as results-matrix]
             [webapp.features.activation-journey.views.terminal-banner :as terminal-banner]
             [webapp.webclient.log-area.output-tabs :refer [tabs]]
             [webapp.webclient.log-area.logs :as logs]))
-
-(defn- transform-results->matrix
-  [results connection-type]
-  (when-not (nil? results)
-    (get (js->clj (papa/parse results (clj->js {"delimiter" "\t"}))) "data")))
 
 (def selected-tab (r/atom (or (.getItem js/localStorage "webclient-selected-tab")
                               "Logs")))
@@ -44,7 +39,8 @@
     :else response))
 
 (defn main [_]
-  (let [script-response (rf/subscribe [:editor-plugin->script])]
+  (let [script-response (rf/subscribe [:editor-plugin->script])
+        matrix-cache (results-matrix/new-cache)]
     (fn [connection-type parallel-mode-active? dark-mode?]
       (let [response (sanitize-response (:output (:data @script-response)) connection-type)
             logs-content {:status (:status @script-response)
@@ -62,19 +58,31 @@
                           :classes "h-full"}
             tabular-status (:status @script-response)
             tabular-loading? (= tabular-status :loading)
-            results-transformed (transform-results->matrix response connection-type)
-            results-heads (first results-transformed)
-            results-body (next results-transformed)
             connection-type-database? (some (partial = connection-type)
                                             ["mysql" "postgres" "sql-server" "oracledb" "mssql" "database"])
+            ;; Above the threshold downloads go to the backend, so only
+            ;; Tabular needs the matrix.
+            build-matrix? (boolean
+                           (and connection-type-database?
+                                (or (= @selected-tab "Tabular")
+                                    (<= (count response)
+                                        download-menu/client-side-threshold))))
+            parsed (if build-matrix?
+                     (results-matrix/parse-results matrix-cache response)
+                     (results-matrix/release-stale! matrix-cache response))
+            results-heads (:heads parsed)
+            results-body (:body parsed)
             available-tabs (merge
                             {:logs "Logs"}
                             (when (and connection-type-database?
                                        (not parallel-mode-active?))
                               {:tabular "Tabular"}))
             tabular-data? (and connection-type-database?
-                               (seq results-heads)
-                               (seq results-body))
+                               (if build-matrix?
+                                 (boolean (and results-heads results-body
+                                               (pos? (.-length results-heads))
+                                               (pos? (.-length results-body))))
+                                 (results-matrix/rows? response)))
             session-id (:session_id (:data @script-response))
             on-view-session-details (when session-id
                                       #(rf/dispatch
@@ -85,7 +93,7 @@
                                                     {:id session-id :verb "exec"}]}]))
             menu-props (when session-id
                          {:results response
-                          :matrix results-transformed
+                          :matrix (:matrix parsed)
                           :tabular? (boolean (and (= tabular-status :success)
                                                   tabular-data?))
                           :session-id session-id
@@ -98,7 +106,7 @@
           (reset! selected-tab (first (vals available-tabs))))
 
         [:> Box {:class "flex-1 min-h-0 flex flex-col overflow-hidden"}
-         [:> Box {:class "h-full flex flex-col bg-gray-1 border-b border-gray-3"}
+         [:> Box {:class "h-full flex flex-col bg-gray-2 border-b border-gray-3"}
           [:> Flex {:justify "between" :align "center" :gap "4" :class "pr-small"}
            [:> Box {:class "flex-1 min-w-0"}
             [tabs {:on-click (fn [_ value]
@@ -123,7 +131,8 @@
            (case @selected-tab
              "Tabular" [ag-grid-table/main results-heads results-body tabular-loading? dark-mode?
                         {:height "100%"
-                         :pagination? (> (count results-body) 100)
+                         :pagination? (boolean (and results-body
+                                                    (> (.-length results-body) 100)))
                          :auto-size-columns? true}]
              "Logs" [logs/main :logs logs-content]
              :else [logs/main logs-content])]]]))))

@@ -38,6 +38,8 @@ import DataMasking from '@/pages/Features/DataMasking'
 import DataMaskingForm from '@/pages/Features/DataMasking/Create'
 import AccessControl from '@/pages/Features/AccessControl'
 import AccessControlForm from '@/pages/Features/AccessControl/Create'
+import AccessRequest from '@/pages/Features/AccessRequest'
+import AccessRequestForm from '@/pages/Features/AccessRequest/Create'
 import AiSessionAnalyzer from '@/pages/Features/AiSessionAnalyzer'
 import AiSessionAnalyzerRuleForm from '@/pages/Features/AiSessionAnalyzer/Create'
 import Guardrails from '@/pages/Guardrails'
@@ -471,6 +473,45 @@ function Router() {
             <Layout>
               <PageLayout>
                 <AccessControlForm />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Access Request. The edit route keeps the legacy CLJS shape, with the
+          rule name as a path segment, so existing links still resolve. */}
+      <Route
+        path="/features/access-request"
+        element={
+          <ProtectedRoute adminOnly licenseFeature="access-requests">
+            <Layout>
+              <PageLayout>
+                <AccessRequest />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/features/access-request/new"
+        element={
+          <ProtectedRoute adminOnly licenseFeature="access-requests">
+            <Layout>
+              <PageLayout>
+                <AccessRequestForm />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/features/access-request/edit/:ruleName"
+        element={
+          <ProtectedRoute adminOnly licenseFeature="access-requests">
+            <Layout>
+              <PageLayout>
+                <AccessRequestForm />
               </PageLayout>
             </Layout>
           </ProtectedRoute>

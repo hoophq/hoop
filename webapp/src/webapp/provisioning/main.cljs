@@ -88,7 +88,7 @@
      #js [])
 
     [:> Box {:class "flex flex-col bg-gray-1 px-10 pb-10 pt-10"
-             :style {:height "100vh" :box-sizing "border-box" :overflow "hidden"}}
+             :style {:height "calc(100vh - var(--app-shell-header-offset, 0rem))" :box-sizing "border-box" :overflow "hidden"}}
 
      ;; this controls the internal flow
      ;; most of the state is lifted up here in the parent component since it's shared across multiple child screens,

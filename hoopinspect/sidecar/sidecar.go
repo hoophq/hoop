@@ -182,6 +182,12 @@ type LaneInfo struct {
 	Rules     int
 	OPA       bool
 	Masking   bool
+
+	// Analyzed counts the ai_analysis rules on this lane. They are
+	// reported apart from Rules because they behave differently in the way
+	// that matters to whoever is reading a validate output: they leave the
+	// process, they cost money, and they can be slow.
+	Analyzed int
 }
 
 // Summary renders a LaneInfo as the one-line mode description the -validate
@@ -197,6 +203,9 @@ func (l LaneInfo) Summary() string {
 	if l.Masking {
 		mode += " + masking"
 	}
+	if l.Analyzed > 0 {
+		mode += fmt.Sprintf(" + %d ai rule(s)", l.Analyzed)
+	}
 	return mode
 }
 
@@ -210,7 +219,17 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 	if err := checkPIIPlugin(cfg, det); err != nil {
 		return nil, err
 	}
-	lanes, err := buildLanes(cfg, det)
+	ac, err := setupAnalyzer(cfg, det)
+	if err != nil {
+		return nil, err
+	}
+	// Prove the credential before reporting the config OK. Without this the
+	// first sign of a bad key, a clock skew or a missing IAM binding is a
+	// denied statement in production, which is the worst moment to learn it.
+	if err := verifyAnalyzer(ac); err != nil {
+		return nil, err
+	}
+	lanes, err := buildLanes(cfg, det, ac)
 	if err != nil {
 		return nil, err
 	}
@@ -223,6 +242,7 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 			Rules:     len(ln.rules),
 			OPA:       ln.opaURL != "",
 			Masking:   ln.masker != nil,
+			Analyzed:  len(ln.analyzed),
 		})
 	}
 	return out, nil
@@ -269,7 +289,22 @@ func Run(cfg *Config, det Plugin) error {
 		log.Info("detection plugin attached")
 	}
 
-	lanes, err := buildLanes(cfg, det)
+	analyzerDeps, err := setupAnalyzer(cfg, det)
+	if err != nil {
+		return err
+	}
+	if err := verifyAnalyzer(analyzerDeps); err != nil {
+		return err
+	}
+	if analyzerDeps != nil {
+		log.Info("risk analyzer attached",
+			"provider", cfg.Analyzer.Provider,
+			"model", cfg.Analyzer.Model,
+			"send", sendModeOrDefault(cfg.Analyzer.Send),
+			"fail_open", cfg.Analyzer.failOpen())
+	}
+
+	lanes, err := buildLanes(cfg, det, analyzerDeps)
 	if err != nil {
 		return err
 	}
@@ -305,7 +340,7 @@ func Run(cfg *Config, det Plugin) error {
 	}
 
 	if cfg.Admin.Listen != "" {
-		go serveAdmin(ctx, cfg.Admin.Listen, servers, lanes, ac, log)
+		go serveAdmin(ctx, cfg.Admin.Listen, servers, lanes, ac, cfg.Analyzer, log)
 	}
 
 	var wg sync.WaitGroup
@@ -361,11 +396,24 @@ type lane struct {
 	policy policy.Evaluator
 	masker gate.Masker
 
+	// codecFactory overrides the registry for this lane. Nil means the
+	// registry default, which is every lane that did not configure capture.
+	codecFactory func() hoopinspect.Codec
+
 	// rules and opaURL are the resolved facts the startup log and the
 	// /config endpoint report. They sit alongside the built evaluator because
 	// a policy.Chain cannot report what went into it.
 	rules  []string
 	opaURL string
+
+	// analyzed names the ai_analysis rules on this lane, reported the same
+	// way and for the same reason: the Chain cannot say what is in it, and
+	// an operator needs to see that a lane is sending statements to a model.
+	analyzed []string
+
+	// captureBody reports whether this lane's codec exposes request bodies,
+	// which decides whether HTTP analysis has anything to read.
+	captureBody bool
 }
 
 // buildLanes resolves and builds every listener's stack.
@@ -373,7 +421,7 @@ type lane struct {
 // Exhaustive rather than fail-fast, matching Validate: a config with three
 // broken lanes reports three problems in one run, so you do not fix a fleet
 // config one error per restart.
-func buildLanes(cfg *Config, det Plugin) ([]lane, error) {
+func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 	out := make([]lane, 0, len(cfg.Listeners))
 	var problems []string
 
@@ -388,7 +436,7 @@ func buildLanes(cfg *Config, det Plugin) ([]lane, error) {
 			continue
 		}
 
-		pol, err := buildPolicy(pc, det)
+		pol, err := buildPolicy(pc, det, ac)
 		if err != nil {
 			problems = append(problems, name+": "+err.Error())
 			continue
@@ -399,10 +447,22 @@ func buildLanes(cfg *Config, det Plugin) ([]lane, error) {
 			continue
 		}
 
-		ln := lane{cfg: lc, name: name, policy: pol, masker: masker}
+		proto := hoopinspect.Protocol(lc.Protocol)
+		ln := lane{
+			cfg:          lc,
+			name:         name,
+			policy:       pol,
+			masker:       masker,
+			codecFactory: httpCodecFactory(proto, lc.HTTP),
+			captureBody:  lc.HTTP != nil && lc.HTTP.CaptureBody,
+		}
 		if pol != nil {
 			ln.rules = make([]string, 0, len(pc.Rules))
 			for _, r := range pc.Rules {
+				if r.Type == policy.MatchAIAnalysis {
+					ln.analyzed = append(ln.analyzed, r.Name)
+					continue
+				}
 				ln.rules = append(ln.rules, r.Name)
 			}
 			if pc.OPA != nil {
@@ -475,6 +535,16 @@ func buildServer(
 			"listener", ln.name, "upstream", lc.Upstream)
 	}
 
+	downstreamTLS, err := lc.DownstreamTLS.BuildDownstreamTLS()
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", ln.name, err)
+	}
+	if downstreamTLS != nil {
+		log.Info("terminating the client's TLS on this lane",
+			"listener", ln.name,
+			"reason", "pgwire negotiates TLS in-band, so nothing in front can")
+	}
+
 	var identityFn func(net.Conn) session.Identity
 	if lc.IdentityHeader != "" {
 		identityFn = headerIdentity(lc.IdentityHeader)
@@ -485,6 +555,7 @@ func buildServer(
 		Network:          lc.Network,
 		Upstream:         lc.Upstream,
 		UpstreamTLS:      upstreamTLS,
+		DownstreamTLS:    downstreamTLS,
 		Protocol:         hoopinspect.Protocol(lc.Protocol),
 		Connection:       lc.Connection,
 		Policy:           ln.policy,
@@ -493,6 +564,7 @@ func buildServer(
 		FailOnAuditError: ac.FailClosed,
 		DenyWriter:       proxy.ProtocolDenyWriter{},
 		IdentityFn:       identityFn,
+		CodecFactory:     ln.codecFactory,
 		IdleTimeout:      time.Duration(lc.IdleTimeoutSec) * time.Second,
 		MaxConns:         lc.MaxConns,
 		Logger:           log.With("listener", ln.name),
@@ -609,6 +681,7 @@ func serveAdmin(
 	servers []*proxy.Server,
 	lanes []lane,
 	ac auditChain,
+	analyzerCfg *AnalyzerConfig,
 	log *slog.Logger,
 ) {
 	mux := http.NewServeMux()
@@ -668,18 +741,28 @@ func serveAdmin(
 			OPA       string   `json:"opa,omitempty"`
 			Masking   bool     `json:"masking"`
 			MaskNote  string   `json:"mask_note,omitempty"`
+
+			// AIRules names the ai_analysis rules and CaptureBody says
+			// whether this lane's codec exposes request bodies. Both
+			// are here because they answer "what leaves this process",
+			// which is the question an operator has about an analyzer
+			// and cannot answer from the config file alone.
+			AIRules     []string `json:"ai_rules,omitempty"`
+			CaptureBody bool     `json:"capture_body,omitempty"`
 		}
 		out := make([]laneView, 0, len(lanes))
 		for _, ln := range lanes {
 			v := laneView{
-				Name:      ln.name,
-				Protocol:  ln.cfg.Protocol,
-				Listen:    ln.cfg.Listen,
-				Upstream:  ln.cfg.Upstream,
-				Enforcing: ln.policy != nil,
-				Rules:     ln.rules,
-				OPA:       ln.opaURL,
-				Masking:   ln.masker != nil,
+				Name:        ln.name,
+				Protocol:    ln.cfg.Protocol,
+				Listen:      ln.cfg.Listen,
+				Upstream:    ln.cfg.Upstream,
+				Enforcing:   ln.policy != nil,
+				Rules:       ln.rules,
+				OPA:         ln.opaURL,
+				Masking:     ln.masker != nil,
+				AIRules:     ln.analyzed,
+				CaptureBody: ln.captureBody,
 			}
 			if v.Rules == nil {
 				v.Rules = []string{} // render [] rather than null
@@ -689,11 +772,31 @@ func serveAdmin(
 			}
 			out = append(out, v)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
+		resp := map[string]any{
 			"version": Version,
 			"lanes":   out,
-		})
+		}
+		// The analyzer view names the provider, the model and the HOST it
+		// talks to — never the path, never a query string, and never the
+		// credential, which this process holds as an unprintable Secret
+		// and which the config only ever named by file path.
+		if analyzerCfg != nil {
+			resp["analyzer"] = map[string]any{
+				"provider":      analyzerCfg.Provider,
+				"model":         analyzerCfg.Model,
+				"endpoint_host": analyzerCfg.endpointHost(),
+				"send":          sendModeOrDefault(analyzerCfg.Send),
+				"fail_open":     analyzerCfg.failOpen(),
+				// Whether a custom prompt is in effect, never its text: a
+				// prompt describes what a deployment considers risky, which
+				// is business logic, and this endpoint sits beside a read
+				// interface to the audit trail. Same rule as reporting rule
+				// NAMES rather than their pattern_regex.
+				"custom_prompt": analyzerCfg.Prompt != "",
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
 	})
 
 	if ac.mem != nil {

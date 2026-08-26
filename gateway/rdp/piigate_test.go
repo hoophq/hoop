@@ -889,3 +889,149 @@ func TestPIIGate_FragmentedUpdateHeldUntilReassembly(t *testing.T) {
 		t.Fatal("LEAK: fragments without Last rendered the signature")
 	}
 }
+
+func TestParseRDPDataMaskingRulesPreservesCompleteResourcePolicy(t *testing.T) {
+	data := []byte(`[
+		{
+			"supported_entity_types": [
+				{"name": "CONTACT_INFORMATION", "entity_types": ["PERSON", "EMAIL_ADDRESS"]},
+				{"name": "TIME_DATA", "entity_types": ["DATE_TIME", "PERSON"]}
+			],
+			"score_threshold": 0.85
+		},
+		{
+			"supported_entity_types": [
+				{"name": "US_DOCUMENTS", "entity_types": ["US_SSN"]}
+			],
+			"score_threshold": 0.6
+		}
+	]`)
+	params, err := parseRDPDataMaskingRules(data)
+	if err != nil {
+		t.Fatalf("parse rules: %v", err)
+	}
+	if params == nil {
+		t.Fatal("rules with supported entities must enable masking")
+	}
+	if !bytes.Equal(params.DataMaskingEntityData, data) {
+		t.Fatal("complete Data Masking rule payload was not preserved for the RDP agent")
+	}
+
+	none, err := parseRDPDataMaskingRules([]byte(`[]`))
+	if err != nil {
+		t.Fatalf("parse empty rules: %v", err)
+	}
+	if none != nil {
+		t.Fatal("connection without data masking rules must remain unguarded")
+	}
+}
+
+func TestParseRDPDataMaskingRulesRejectsNonCanonicalEntities(t *testing.T) {
+	tests := []struct {
+		name string
+		data string
+	}{
+		{
+			name: "empty entity group",
+			data: `[{"name":"invalid","supported_entity_types":[{"name":"CUSTOM_SELECTION","entity_types":[]}]}]`,
+		},
+		{
+			name: "empty entity",
+			data: `[{"name":"invalid","supported_entity_types":[{"name":"CUSTOM_SELECTION","entity_types":[""]}]}]`,
+		},
+		{
+			name: "whitespace",
+			data: `[{"name":"invalid","supported_entity_types":[{"name":"CUSTOM_SELECTION","entity_types":[" PERSON "]}]}]`,
+		},
+		{
+			name: "lowercase",
+			data: `[{"name":"invalid","supported_entity_types":[{"name":"CUSTOM_SELECTION","entity_types":["person"]}]}]`,
+		},
+		{
+			name: "punctuation",
+			data: `[{"name":"invalid","supported_entity_types":[{"name":"CUSTOM_SELECTION","entity_types":["PERSON-NAME"]}]}]`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			params, err := parseRDPDataMaskingRules([]byte(tt.data))
+			if err == nil {
+				t.Fatalf("invalid entity configuration returned params %#v; want an error", params)
+			}
+		})
+	}
+}
+
+func TestParseRDPDataMaskingRulesAcceptsZeroThreshold(t *testing.T) {
+	params, err := parseRDPDataMaskingRules([]byte(`[
+		{
+			"name": "all-confidence",
+			"supported_entity_types": [{"name": "TIME_DATA", "entity_types": ["DATE_TIME"]}],
+			"score_threshold": 0
+		}
+	]`))
+	if err != nil {
+		t.Fatalf("parse rules: %v", err)
+	}
+	if params == nil {
+		t.Fatal("zero threshold must remain a valid guarded policy")
+	}
+}
+
+func TestParseRDPDataMaskingRulesRejectsInvalidThresholds(t *testing.T) {
+	for _, threshold := range []float64{-0.1, 1.1} {
+		t.Run(fmt.Sprint(threshold), func(t *testing.T) {
+			data := fmt.Sprintf(`[
+				{
+					"name": "invalid-threshold",
+					"supported_entity_types": [{"name": "TIME_DATA", "entity_types": ["DATE_TIME"]}],
+					"score_threshold": %v
+				}
+			]`, threshold)
+			params, err := parseRDPDataMaskingRules([]byte(data))
+			if err == nil {
+				t.Fatalf("invalid score threshold returned params %#v; want an error", params)
+			}
+		})
+	}
+}
+
+func TestParseRDPDataMaskingRulesSupportsCustomEntities(t *testing.T) {
+	data := []byte(`[
+		{
+			"name": "employee-data",
+			"supported_entity_types": [{"name": "CONTACT_INFORMATION", "entity_types": ["PERSON"]}],
+			"custom_entity_types": [
+				{"name": "EMPLOYEE_ID", "regex": "EMP-[0-9]+", "score": 0.0},
+				{"name": "VIP_NAME", "deny_list": ["Alice Example"], "score": 0.9}
+			],
+			"score_threshold": 0.4
+		}
+	]`)
+	params, err := parseRDPDataMaskingRules(data)
+	if err != nil {
+		t.Fatalf("parse custom entity rules: %v", err)
+	}
+	if params == nil {
+		t.Fatal("custom entity rules must enable masking")
+	}
+	if !bytes.Equal(params.DataMaskingEntityData, data) {
+		t.Fatal("complete Data Masking rule payload was not preserved for the RDP agent")
+	}
+}
+
+func TestParseRDPDataMaskingRulesRejectsInvalidCustomEntities(t *testing.T) {
+	tests := []string{
+		`[{"name":"missing-pattern","custom_entity_types":[{"name":"EMPLOYEE_ID","score":0.8}]}]`,
+		`[{"name":"invalid-name","custom_entity_types":[{"name":"employee-id","regex":"EMP-[0-9]+","score":0.8}]}]`,
+		`[{"name":"invalid-score","custom_entity_types":[{"name":"EMPLOYEE_ID","regex":"EMP-[0-9]+","score":1.1}]}]`,
+		`[{"name":"missing-score","custom_entity_types":[{"name":"EMPLOYEE_ID","regex":"EMP-[0-9]+"}]}]`,
+		`[{"name":"null-score","custom_entity_types":[{"name":"EMPLOYEE_ID","regex":"EMP-[0-9]+","score":null}]}]`,
+	}
+	for _, data := range tests {
+		if params, err := parseRDPDataMaskingRules([]byte(data)); err == nil {
+			t.Fatalf("invalid custom entity rule returned params %#v; want an error", params)
+		}
+	}
+}

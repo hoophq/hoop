@@ -18,6 +18,14 @@ concurrency:
   group: openapi-docs-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
+# proxy.golang.org intermittently resets HTTP/2 streams mid-download
+# ("stream error: stream ID N; INTERNAL_ERROR; received from peer"). cmd/go
+# turns that into a hard build failure after a ~60s stall: it does not retry,
+# and the `direct` GOPROXY fallback only covers 404/410. Frame-level resets
+# are HTTP/2-only, so fetch modules over HTTP/1.1.
+env:
+  GODEBUG: http2client=0
+
 jobs:
   regen-and-diff:
     runs-on: ubuntu-latest
@@ -37,7 +45,7 @@ jobs:
       - name: setup Go
         uses: actions/setup-go@v6
         with:
-          go-version: '>=1.26.0'
+          go-version-file: go.work
           cache-dependency-path: '**/go.sum'
 
       - name: regenerate OpenAPI docs

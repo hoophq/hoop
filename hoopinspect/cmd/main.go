@@ -15,7 +15,7 @@
 // YAML config front end -- and a main in the root could not import those
 // without putting their dependencies in the root's go.mod.
 //
-// The same relay is reachable as `hoop start inspect`, which links the same
+// The same relay is reachable as `hoop start sidecar`, which links the same
 // two plugins into the hoop CLI. Prefer this binary for a sidecar container
 // that should carry nothing else.
 //
@@ -67,6 +67,14 @@ import (
 	"fmt"
 	"os"
 
+	// Analyzer providers register themselves on import. Linking all three
+	// keeps the "one binary, the config decides" rule the package doc
+	// states: an operator turning on Vertex does not also have to swap the
+	// binary. Only vertex costs a dependency, and it is confined to its own
+	// module so the root stays dependency-free.
+	_ "github.com/hoophq/hoopinspect/analyzer/anthropic"
+	_ "github.com/hoophq/hoopinspect/analyzer/openai"
+	_ "github.com/hoophq/hoopinspect/analyzer/vertex"
 	configyaml "github.com/hoophq/hoopinspect/config/yaml"
 	"github.com/hoophq/hoopinspect/pii/alcatraz"
 	"github.com/hoophq/hoopinspect/sidecar"

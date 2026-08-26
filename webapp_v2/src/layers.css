@@ -1,1 +1,18 @@
-@layer mantine, app;
+/* Cascade layer order — lowest priority first.
+ *
+ * legacy-reset  Tailwind preflight from the legacy CLJS stylesheet
+ *               (webapp/src/css/tailwind.css). It is live on every CLJS route
+ *               and its element resets (`button { background-color: transparent }`,
+ *               `* { border-width: 0 }`, `svg { display: block }`,
+ *               `h1..h6 { font-size: inherit }`) would otherwise clobber Mantine:
+ *               unlayered declarations beat every layer regardless of specificity.
+ *               Ordering it below `mantine` restores the intended precedence.
+ * mantine       Mantine's built-in component CSS (imported as styles.layer.css).
+ * app           Declared but intentionally empty — CSS Modules stay OUTSIDE any
+ *               layer, which keeps them at the top of the cascade.
+ *
+ * The legacy stylesheet's own rules (theme variables, the body background/color,
+ * Tailwind utilities) are NOT in a layer — only preflight is — so CLJS pages
+ * render exactly as before.
+ */
+@layer legacy-reset, mantine, app;

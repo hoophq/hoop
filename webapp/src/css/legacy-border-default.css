@@ -1,0 +1,15 @@
+/* Tailwind's default border colour for the `border-*` utilities — the resolved
+ * form of `@apply border-border`.
+ *
+ * It lives in its own file so tailwind.css can import it into the
+ * `legacy-reset` cascade layer. As an unlayered `* { }` rule it outranked
+ * Mantine, repainting the nominally transparent 1px border that Mantine gives
+ * its controls: every subtle ActionIcon, Button and input rendered with a grey
+ * outline on ClojureScript routes.
+ *
+ * Below `mantine` it still does its job — nothing in the Mantine layer matches
+ * a ClojureScript element — while Mantine keeps control of its own borders.
+ */
+* {
+  border-color: hsl(var(--border));
+}

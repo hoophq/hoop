@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/aianalyzer"
 	"github.com/hoophq/hoop/gateway/analytics"
 	apiconnections "github.com/hoophq/hoop/gateway/api/connections"
 	"github.com/hoophq/hoop/gateway/api/openapi"
@@ -121,7 +122,14 @@ func execHandler(ctx context.Context, _ *mcp.CallToolRequest, args execInput) (*
 
 	orgID := uuid.MustParse(sc.GetOrgID())
 	needsAiReview := false
-	analyzeRes, aiAccessRule, err := sessionapi.AIAnalyze(ctx, orgID, conn.Name, args.Input)
+	analyzeRes, aiAccessRule, err := sessionapi.AIAnalyze(ctx, sessionapi.AIAnalyzeInput{
+		OrgID:          orgID,
+		ConnectionName: conn.Name,
+		Script:         args.Input,
+		UserID:         sc.UserID,
+		UserGroups:     sc.UserGroups,
+		Exec:           aianalyzer.AnalyzerExecIdentity{BearerToken: token, UserAgent: "mcp.aianalyzer"},
+	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed analyzing session: %v", err)
 	}
@@ -201,14 +209,14 @@ func execHandler(ctx context.Context, _ *mcp.CallToolRequest, args execInput) (*
 				UserSlackID: sc.SlackID,
 				UserGroups:  sc.UserGroups,
 			},
-			aiAccessRule, args.Input, args.EnvVars, args.Args)
+			aiAccessRule, args.Input, args.EnvVars, args.Args, analyzeRes)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed creating ai-driven review: %v", err)
 		}
 		events.DeriveFromSessionStart(sc.OrgID, &newSession, conn)
 		return execResponseToEnvelope(&clientexec.Response{
 			HasReview:  true,
-			Output:     fmt.Sprintf("%s/sessions/%s", appconfig.Get().FullApiURL(), review.ID),
+			Output:     fmt.Sprintf("%s/sessions/%s", appconfig.Get().FullApiURL(), review.SessionID),
 			SessionID:  sessionID,
 			AIAnalysis: sessionapi.ToOpenApiSessionAIAnalysis(analyzeRes),
 		}, sessionID)

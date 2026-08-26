@@ -8,11 +8,21 @@ import classes from './SelectionCard.module.css'
  * - image: logo `src` for the same slot
  * - badge: node next to the title, e.g. a "Recommended" pill
  */
-function SelectionCard({ icon: Icon, image, badge, title, description, selected, onClick }) {
+function SelectionCard({
+  icon: Icon,
+  image,
+  badge,
+  title,
+  description,
+  selected,
+  disabled,
+  onClick,
+}) {
   return (
     <UnstyledButton
       p="md"
       onClick={onClick}
+      disabled={disabled}
       className={classes.card}
       data-selected={selected || undefined}
       aria-pressed={!!selected}

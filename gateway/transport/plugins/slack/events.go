@@ -81,6 +81,13 @@ func (p *slackPlugin) processEventResponse(ev *event) {
 }
 
 func (p *slackPlugin) performReview(ev *event, ctx *storagev2.Context, status models.ReviewStatusType) {
+	// DoReview rewrites every tracked review message (all channels, all
+	// reviewed groups) via UpdateSlackMessage. Capture trackedness before it
+	// consumes the entry on terminal states; the callback-based update below
+	// is only a fallback for untracked messages (e.g. posted before a gateway
+	// restart), otherwise its click-time blocks would overwrite the rewrite
+	// with a stale version where only the clicked block changed.
+	tracked := ev.ss.HasTrackedReviewMessages(ev.msg.ID)
 	rev, err := reviewapi.DoReview(ctx, ev.msg.ID, status, nil, false, ev.msg.RejectionReason)
 	var msg string
 	switch err {
@@ -96,7 +103,11 @@ func (p *slackPlugin) performReview(ev *event, ctx *storagev2.Context, status mo
 		isApproved := rev.Status == models.ReviewStatusApproved
 		isStillPending := rev.Status == models.ReviewStatusPending
 
-		if isStillPending {
+		switch {
+		case tracked:
+			log.With("sid", ev.msg.SessionID).Infof("review id=%s, status=%v, skipping callback update, message rewrite delegated to DoReview",
+				ev.msg.ID, rev.Status)
+		case isStillPending:
 			// Count how many groups have approved
 			approvedCount := 0
 			for _, rg := range rev.ReviewGroups {
@@ -109,7 +120,7 @@ func (p *slackPlugin) performReview(ev *event, ctx *storagev2.Context, status mo
 			err = ev.ss.UpdateMessagePartialApproval(ev.msg, approvedCount, len(rev.ReviewGroups))
 			log.With("sid", ev.msg.SessionID).Infof("review id=%s, partial approval, approved=%d/%d, update-msg-err=%v",
 				ev.msg.ID, approvedCount, len(rev.ReviewGroups), err)
-		} else {
+		default:
 			// Full approval or rejection
 			err = ev.ss.UpdateMessage(ev.msg, isApproved)
 			log.With("sid", ev.msg.SessionID).Infof("review id=%s, isapproved=%v, status=%v, update-msg-err=%v",

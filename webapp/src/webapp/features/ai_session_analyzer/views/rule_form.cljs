@@ -1,6 +1,6 @@
 (ns webapp.features.ai-session-analyzer.views.rule-form
   (:require
-   ["@radix-ui/themes" :refer [Avatar Badge Box Button Callout Card Flex Grid Heading IconButton Text Tooltip]]
+   ["@radix-ui/themes" :refer [Avatar Badge Box Button Callout Card Flex Grid Heading IconButton Switch Text Tooltip]]
    ["lucide-react" :refer [ArrowLeft Check ChevronDown ChevronUp Copy Info ShieldCheck Sparkles X]]
    [re-frame.core :as rf]
    [reagent.core :as r]
@@ -125,6 +125,7 @@
      :description (r/atom (or (:description rule) ""))
      :connection-names (r/atom (or (:connection_names rule) []))
      :custom-prompt (r/atom (or (:custom_prompt rule) ""))
+     :agentic (r/atom (or (:agentic rule) false))
      :low-risk-action (r/atom low-action)
      :low-risk-rule (r/atom low-rule)
      :medium-risk-action (r/atom medium-action)
@@ -239,7 +240,8 @@
                                                :risk_evaluation {:low_risk low-tier
                                                                  :medium_risk medium-tier
                                                                  :high_risk high-tier}
-                                               :custom_prompt (when (seq trimmed-prompt) trimmed-prompt)}]
+                                               :custom_prompt (when (seq trimmed-prompt) trimmed-prompt)
+                                               :agentic @(:agentic state)}]
                                   (if (= :edit form-type)
                                     (rf/dispatch [:ai-session-analyzer/update-rule @(:name state) payload])
                                     (rf/dispatch [:ai-session-analyzer/create-rule payload])))))}
@@ -253,7 +255,7 @@
                         :on-click #(rf/dispatch [:navigate :ai-session-analyzer])}
              [:> ArrowLeft {:size 16}]
              "Back"]]
-           [:> Box {:class (str "sticky top-0 z-50 bg-gray-1 px-7 py-7 "
+           [:> Box {:class (str "sticky top-app-header z-50 bg-gray-1 px-7 py-7 "
                                 (when (>= @scroll-pos 30)
                                   "border-b border-[--gray-a6]"))}
             [:> Flex {:justify "between" :align "center"}
@@ -346,6 +348,23 @@
               [:> Callout.Text
                "Hoop prepends a fixed system prompt before your instructions so the analyzer always returns a structured low/medium/high grade. This is what keeps the actions above reliable."]]
              [system-prompt-preview]]]
+
+           [:> Grid {:columns "7" :gap "7"}
+            [:> Box {:grid-column "span 2 / span 2"}
+             [:> Heading {:as "h3" :size "4"} "Agentic analysis"]
+             [:> Text {:size "3" :class "text-[--gray-11]"}
+              "Let the analyzer investigate before grading."]]
+            [:> Box {:grid-column "span 5 / span 5" :class "space-y-radix-3"}
+             [:> Flex {:align "center" :gap "3"}
+              [:> Switch {:checked @(:agentic state)
+                          :on-checked-change #(reset! (:agentic state) %)}]
+              [:> Text {:size "2" :class "text-[--gray-12]"}
+               "Agentic analysis (investigate past sessions & resource metadata before classifying)"]]
+             [:> Callout.Root {:size "1" :color "blue" :variant "soft"}
+              [:> Callout.Icon
+               [:> Info {:size 16}]]
+              [:> Callout.Text
+               "When enabled, the analyzer runs a tool-calling loop over the user's past sessions and read-only database metadata (query plans, table size, index usage) before assigning a risk level. This is slower but produces a richer, reviewer-facing analysis."]]]]
 
            [:> Box {:class "space-y-radix-7"}
             [:> Grid {:columns "7" :gap "7"}

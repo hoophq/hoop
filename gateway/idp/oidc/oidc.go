@@ -397,8 +397,8 @@ func (p *Provider) VerifyAccessTokenForResource(accessToken, expectedResource st
 	}
 
 	if !audienceContains(claims["aud"], expectedResource) && !tokenBoundToClient(claims, staticClientIDs) {
-		return uinfo, nil, fmt.Errorf("audience mismatch, got aud=%v azp=%v, want %q or a static client of %v",
-			claims["aud"], claims["azp"], expectedResource, staticClientIDs)
+		return uinfo, nil, fmt.Errorf("audience mismatch, got aud=%v azp=%v client_id=%v, want %q or a static client of %v",
+			claims["aud"], claims["azp"], claims["client_id"], expectedResource, staticClientIDs)
 	}
 
 	uinfo = p.parseUserInfo(claims)
@@ -456,17 +456,19 @@ func audienceContains(claim any, expected string) bool {
 
 // tokenBoundToClient reports whether the token is bound to one of the
 // statically pre-registered client IDs, either through the `aud` claim (IdPs
-// that mint the client ID as audience) or the `azp` authorized-party claim
+// that mint the client ID as audience), the `azp` authorized-party claim
 // (OIDC Core §3.1.3.7 — IdPs that keep their own default `aud` and record the
-// requesting client in `azp`). Client IDs are compared exactly and
-// case-sensitively; empty entries are ignored.
+// requesting client in `azp`), or the `client_id` claim (RFC 9068 §2.2 —
+// IdPs such as JumpCloud that leave `aud` empty and omit `azp`). Client IDs
+// are compared exactly and case-sensitively; empty entries are ignored.
 func tokenBoundToClient(claims jwt.MapClaims, clientIDs []string) bool {
 	azp, _ := claims["azp"].(string)
+	tokenClientID, _ := claims["client_id"].(string)
 	for _, clientID := range clientIDs {
 		if clientID == "" {
 			continue
 		}
-		if azp == clientID || audienceContainsExact(claims["aud"], clientID) {
+		if azp == clientID || tokenClientID == clientID || audienceContainsExact(claims["aud"], clientID) {
 			return true
 		}
 	}

@@ -1,0 +1,149 @@
+/* Light-blue badge on the drawer title — indigo-0 fill, indigo-4 glyph. */
+.drawerIcon {
+  background-color: var(--mantine-color-indigo-0);
+  color: var(--mantine-color-indigo-4);
+}
+
+/* The list is a bordered, rounded card — the container the Figma draws around
+   the rows. Overflow clips the first/last row corners to the radius. */
+.accordionRoot {
+  border: 1px solid var(--mantine-color-gray-2);
+  border-radius: var(--mantine-radius-md);
+  overflow: hidden;
+}
+
+/* The header is a flex row so the action button can be a SIBLING of
+   Accordion.Control rather than a child: the control renders a <button>, and a
+   button inside a button is invalid HTML.
+
+   This wrapper — not the control — owns the row's surface, so the button sits
+   on the same background as the rest of the header instead of on a strip of its
+   own. In the Figma the avatar, the text and the button are all children of one
+   padded row frame; splitting them across two boxes is only a DOM concession. */
+.rowHeader {
+  display: flex;
+  align-items: center;
+}
+
+/* Only the HEADER of the open row is tinted, never the panel. Mantine's
+   `filled` variant would wash the whole item, credential content included.
+   Hover is scoped to rows that actually have a control: a row with nothing to
+   expand into is not clickable and must not look like it is. */
+.rowHeader:has(.rowControl):hover,
+.rowHeader:has([data-active]) {
+  background-color: var(--mantine-color-gray-0);
+}
+
+/* Row metrics measured off the Figma accordion component: 76px rows and 16px
+   of padding on every side. The control keeps its padding so the click target
+   still covers the whole left side of the row; its own background is dropped so
+   the wrapper above is the single painted surface. */
+.rowControl {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+  padding-inline: var(--mantine-spacing-md);
+  padding-block: var(--mantine-spacing-md);
+}
+
+.rowControl,
+.rowControl:hover,
+.rowControl[data-active] {
+  background-color: transparent;
+}
+
+/* Mantine's label slot adds 8px of its own padding-block on top of the
+   control's 16px, which made a row with a control 24px taller than the static
+   row next to it. The control already owns the row's padding. */
+.rowLabel {
+  padding-block: 0;
+}
+
+/* Same box as .rowControl, for rows that have nothing to expand into and so are
+   not rendered as a control at all. */
+.rowStatic {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-inline: var(--mantine-spacing-md);
+  padding-block: var(--mantine-spacing-md);
+}
+
+/* Sits where the chevron would be — the two are mutually exclusive, since a row
+   with a live session has no action and a row with an action has no panel. The
+   16px gap to its left comes from the control's own end padding. */
+.rowAction {
+  flex-shrink: 0;
+  padding-inline-end: var(--mantine-spacing-md);
+}
+
+/* The chevron is its own Accordion.Control slot, sitting flush against the end
+   of the label — which put it right up against the status indicator. The Figma
+   leaves ~20px between the two. */
+.rowChevron {
+  margin-inline-start: var(--mantine-spacing-lg);
+}
+
+/* Countdown pill, off the Figma badge: gray-0 fill with no border, gray-9 12px
+   medium text, 6px radius, 24px tall, 6px between the icon and the digits.
+   Mantine's Badge presets are much smaller (10px text on an 18px box) and the
+   `inactive` semantic is an outline, so none of it comes for free. */
+.timerBadge {
+  height: 24px;
+  padding-inline: var(--mantine-spacing-sm);
+  background-color: var(--mantine-color-gray-0);
+  color: var(--mantine-color-gray-9);
+  border: none;
+  text-transform: none;
+}
+
+.timerBadgeSection {
+  margin-inline-end: 6px;
+}
+
+/* Mantine's `light` variant paints amber text with --mantine-color-amber-light-color,
+   which lands around 2:1 on the tint — a WCAG 1.4.3 failure. amber-8 (#926c00)
+   is ~5.5:1 on the same surface and is the step Toast.module.css already uses
+   for amber foregrounds. */
+.amberText {
+  color: var(--mantine-color-amber-8);
+}
+
+/* Connected indicator: 24px circle, green-1 on green-6. */
+.activeIndicator {
+  background-color: var(--mantine-color-green-1);
+  color: var(--mantine-color-green-6);
+}
+
+.accordionItem {
+  border-bottom: 1px solid var(--mantine-color-gray-2);
+}
+
+.accordionItem:last-of-type {
+  border-bottom: none;
+}
+
+/* 40px rounded square holding the connection icon. The tint is the Figma's
+   Neutral Alpha 2 (rgba(0,0,85,0.02)) — an alpha overlay rather than a flat
+   colour, so it darkens slightly against the gray-0 of an expanded header and
+   keeps its contrast there. Sampled off the Figma render: #f9f9fb on a white
+   row, #eaeaef on the expanded one. Mantine exposes no alpha-tint variable. */
+.rowAvatar {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--mantine-radius-md);
+  background-color: rgba(0, 0, 85, 0.02);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.accordionPanelContent {
+  padding: var(--mantine-spacing-md);
+}
+
+/* Credential content scrolls inside the row instead of pushing every other
+   role off screen; the disconnect footer stays put below it. */
+.sessionScroll {
+  max-height: min(380px, 45vh);
+}

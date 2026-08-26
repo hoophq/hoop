@@ -5,6 +5,14 @@ on:
     tags:
       - "*.*.*"
 
+# proxy.golang.org intermittently resets HTTP/2 streams mid-download
+# ("stream error: stream ID N; INTERNAL_ERROR; received from peer"). cmd/go
+# turns that into a hard build failure after a ~60s stall: it does not retry,
+# and the `direct` GOPROXY fallback only covers 404/410. Frame-level resets
+# are HTTP/2-only, so fetch modules over HTTP/1.1.
+env:
+  GODEBUG: http2client=0
+
 jobs:
   test:
     name: Test
@@ -22,9 +30,9 @@ jobs:
           path: "./libhoop"
           token: ${{ secrets.GH_TOKEN }}
       - name: Setup Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v6
         with:
-          go-version: ">=1.26.0"
+          go-version-file: go.work
       - name: Setup Rust for WASM
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -156,7 +164,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
-          go-version: ">=1.26.0"
+          go-version-file: go.work
           cache-dependency-path: "**/go.sum"
 
       - name: Setup Rust for WASM
@@ -215,7 +223,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
-          go-version: ">=1.26.0"
+          go-version-file: go.work
           cache-dependency-path: "**/go.sum"
 
       - name: Setup Rust for WASM
@@ -274,7 +282,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
-          go-version: ">=1.26.0"
+          go-version-file: go.work
           cache-dependency-path: "**/go.sum"
 
       - name: Setup Rust for WASM
@@ -333,7 +341,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
-          go-version: ">=1.26.0"
+          go-version-file: go.work
           cache-dependency-path: "**/go.sum"
 
       - name: Setup Rust for WASM
@@ -392,7 +400,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
-          go-version: ">=1.26.0"
+          go-version-file: go.work
           cache-dependency-path: "**/go.sum"
 
       - name: Setup Rust for WASM
@@ -459,7 +467,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
-          go-version: ">=1.26.0"
+          go-version-file: go.work
           cache-dependency-path: "**/go.sum"
 
       - name: Setup Rust for WASM
@@ -888,6 +896,121 @@ jobs:
             --amend hoophq/hoopdev:${{ github.sha }}-arm64
           docker manifest push hoophq/hoopdev:${{ env.GIT_TAG }}
           docker manifest push hoophq/hoopdev:latest
+
+  # hoophq/hoopagent — slim agent images, built from the four targets of
+  # Dockerfile.agent (see that file for what each ships):
+  #
+  #   :<version>-minimal               Ubuntu 24.04 LTS + the binary only
+  #   :<version>-distroless            distroless static + the binary only
+  #   :<version>-minimal-alcatraz      minimal + the alcatraz NER model
+  #   :<version>-distroless-alcatraz   distroless + the alcatraz NER model
+  #
+  # The -alcatraz pair is for agents serving DLP_PROVIDER=alcatraz masking rules
+  # that ask for PERSON/LOCATION/NRP: the model is never fetched at runtime, so
+  # an agent without it on disk refuses those sessions. Everything else —
+  # invocation contract, user, what the image can serve — is the base flavour's.
+  #
+  # hoophq/hoopagent is a clean-only repository: nothing published under it may
+  # carry an AGPL/SSPL component, so that the repository has none in its history.
+  # The model is weights only and carries none. That is why there is no tooling
+  # flavour here and nothing built FROM hoophq/agent-tools — agents needing
+  # bundled clients or RDP use hoophq/hoopdev, with the model mounted. Do not add
+  # a tag here without reading the bright-line note in Dockerfile.agent.
+  #
+  # No unsuffixed tag and no :latest — every deployment names its flavour.
+  #
+  # One job, one multiarch build per target. Each build is a tar extraction plus
+  # (for minimal) a single apt package, so emulating the non-native arch is cheap
+  # and does not justify the per-arch runner + manifest dance that the hoopdev
+  # image uses. Sharing a job also means the release artifacts are pulled once,
+  # the model is downloaded once, and each -alcatraz tag reuses the base stage
+  # its plain sibling was pushed from instead of pulling it back from the
+  # registry — no wait for a tag the previous step just pushed.
+  docker-publish-hoopagent:
+    runs-on: ubuntu-latest
+    name: Publish Agent Image (hoopagent)
+    environment: production
+    needs:
+      - build-tar-files
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_LOGIN }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-artifacts-*
+          merge-multiple: true
+          path: dist/
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+      - name: Build and push (minimal)
+        uses: docker/build-push-action@v4
+        with:
+          file: ./Dockerfile.agent
+          context: '.'
+          target: minimal
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          sbom: false
+          push: true
+          tags: |
+            hoophq/hoopagent:${{ env.GIT_TAG }}-minimal
+      - name: Build and push (distroless)
+        uses: docker/build-push-action@v4
+        with:
+          file: ./Dockerfile.agent
+          context: '.'
+          target: distroless
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          sbom: false
+          push: true
+          tags: |
+            hoophq/hoopagent:${{ env.GIT_TAG }}-distroless
+      - name: Build and push (minimal-alcatraz)
+        uses: docker/build-push-action@v4
+        with:
+          file: ./Dockerfile.agent
+          context: '.'
+          target: minimal-alcatraz
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          sbom: false
+          push: true
+          tags: |
+            hoophq/hoopagent:${{ env.GIT_TAG }}-minimal-alcatraz
+      - name: Build and push (distroless-alcatraz)
+        uses: docker/build-push-action@v4
+        with:
+          file: ./Dockerfile.agent
+          context: '.'
+          target: distroless-alcatraz
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          sbom: false
+          push: true
+          tags: |
+            hoophq/hoopagent:${{ env.GIT_TAG }}-distroless-alcatraz
+      # Reads the model out of the published images by exporting the container
+      # filesystem, which is the only way to check the distroless flavour: it
+      # has no shell to run sha256sum in. The wait is for the push above, not
+      # for a base image: Docker Hub can serve a manifest list a beat late.
+      - name: Verify published alcatraz images
+        run: |
+          scripts/ci/wait-for-image.sh \
+            hoophq/hoopagent:${{ env.GIT_TAG }}-minimal-alcatraz \
+            hoophq/hoopagent:${{ env.GIT_TAG }}-distroless-alcatraz
+          scripts/ci/verify-alcatraz-image.sh \
+            hoophq/hoopagent:${{ env.GIT_TAG }}-minimal-alcatraz \
+            hoophq/hoopagent:${{ env.GIT_TAG }}-distroless-alcatraz
 
   # --- Clean image line (DEP-66): hoophq/hoop-ng + hoophq/hoopdev-ng ----------
   # Bright-line, clean-only repos (no dirty history) that the hoop-ng helm chart

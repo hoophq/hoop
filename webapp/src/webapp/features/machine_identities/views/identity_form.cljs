@@ -67,7 +67,7 @@
            [:> Flex {:p "5" :gap "2"}
             [button/HeaderBack]]
 
-           [:> Box {:class "sticky top-0 z-50 bg-gray-1 px-7 py-7"}
+           [:> Box {:class "sticky top-app-header z-50 bg-gray-1 px-7 py-7"}
             [:> Flex {:justify "between" :align "center"}
              [:> Heading {:as "h2" :size "8"}
               (if (= form-type :create)
