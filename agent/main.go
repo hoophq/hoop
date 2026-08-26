@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
-	llog "libhoop/llog"
-	redactoralcatraz "libhoop/redactor/alcatraz"
-	alcatraznlp "libhoop/redactor/alcatraz/nlp"
+	llog "github.com/hoophq/libhoop/llog"
+	redactoralcatraz "github.com/hoophq/libhoop/redactor/alcatraz"
+	alcatraznlp "github.com/hoophq/libhoop/redactor/alcatraz/nlp"
 
 	agentconfig "github.com/hoophq/hoop/agent/config"
 	"github.com/hoophq/hoop/agent/controller"

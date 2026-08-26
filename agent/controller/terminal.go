@@ -2,7 +2,7 @@ package controller
 
 import (
 	"fmt"
-	"libhoop"
+	"github.com/hoophq/libhoop"
 	"strconv"
 	"strings"
 

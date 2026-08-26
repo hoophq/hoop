@@ -25,11 +25,9 @@ jobs:
           # This is a go.work workspace with no root go.mod, so setup-go
           # cannot find a manifest on its own and silently caches nothing.
           cache-dependency-path: "**/go.sum"
-      # hoopinspect's sidecar/ and conformance/ modules pull the codecs from
-      # github.com/hoophq/libhoop/v2, a private module fetched from the proxy.
-      # GOPRIVATE keeps it off proxy.golang.org and sum.golang.org; the
-      # credential rewrite lets the direct fetch authenticate as the token.
-      # The ./libhoop checkout above covers the ROOT libhoop module only.
+      # libhoop is a private module fetched from the proxy. GOPRIVATE keeps it
+      # off proxy.golang.org and sum.golang.org; the credential rewrite lets
+      # the direct fetch authenticate as the token.
       - name: Authenticate private modules
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
@@ -50,107 +48,8 @@ jobs:
       - name: Test
         run: make test-oss
 
-  resolve-libhoop:
-    name: Resolve libhoop Revision
-    runs-on: ubuntu-latest
-    outputs:
-      sha: ${{ steps.resolve.outputs.sha }}
-      paired: ${{ steps.resolve.outputs.paired }}
-      base: ${{ steps.resolve.outputs.base }}
-
-    steps:
-      - name: Checkout libhoop default branch
-        uses: actions/checkout@v7
-        with:
-          repository: hoophq/libhoop
-          token: ${{ secrets.GH_TOKEN }}
-
-      # Cross-repository changes use the same branch name in Hoop and libhoop.
-      # Pin its current commit once for every dependent job. A missing paired
-      # branch falls back to the default branch checked out above; remote
-      # failures remain fatal rather than silently testing the wrong revision.
-      - name: Resolve paired libhoop revision
-        id: resolve
-        env:
-          HOOP_HEAD_REF: ${{ github.head_ref }}
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-        run: |
-          set -euo pipefail
-          base="$(gh api repos/hoophq/libhoop --jq .default_branch)"
-          set +e
-          paired_ref="$(git ls-remote --exit-code --heads origin "refs/heads/${HOOP_HEAD_REF}")"
-          status=$?
-          set -e
-
-          case "${status}" in
-            0)
-              sha="${paired_ref%%[[:space:]]*}"
-              paired=true
-              ;;
-            2)
-              sha="$(git rev-parse HEAD)"
-              paired=false
-              ;;
-            *)
-              exit "${status}"
-              ;;
-          esac
-
-          {
-            echo "sha=${sha}"
-            echo "paired=${paired}"
-            echo "base=${base}"
-          } >> "${GITHUB_OUTPUT}"
-
-  libhoop-dependency:
-    name: Libhoop Dependency Merge
-    needs: resolve-libhoop
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Require paired libhoop revision to be merged
-        env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-          HOOP_HEAD_REF: ${{ github.head_ref }}
-          LIBHOOP_PAIRED: ${{ needs.resolve-libhoop.outputs.paired }}
-          LIBHOOP_SHA: ${{ needs.resolve-libhoop.outputs.sha }}
-          LIBHOOP_BASE: ${{ needs.resolve-libhoop.outputs.base }}
-        run: |
-          set -euo pipefail
-
-          if [[ "${LIBHOOP_PAIRED}" != "true" ]]; then
-            echo "No paired libhoop branch; testing its default branch."
-            exit 0
-          fi
-
-          pulls="$(
-            gh api --method GET "repos/hoophq/libhoop/commits/${LIBHOOP_SHA}/pulls" \
-              -H "Accept: application/vnd.github+json" \
-              -F per_page=100
-          )"
-          merged_pr_url="$(
-            jq -r --arg base "${LIBHOOP_BASE}" \
-              '[.[] | select(.base.ref == $base and .merged_at != null) | .html_url][0] // empty' \
-              <<<"${pulls}"
-          )"
-
-          if [[ -n "${merged_pr_url}" ]]; then
-            echo "Paired libhoop revision is merged: ${merged_pr_url}"
-            exit 0
-          fi
-
-          dependency_pr_url="$(
-            jq -r --arg base "${LIBHOOP_BASE}" \
-              '[.[] | select(.base.ref == $base) | .html_url][0] // empty' \
-              <<<"${pulls}"
-          )"
-          dependency_target="${dependency_pr_url:-https://github.com/hoophq/libhoop/tree/${HOOP_HEAD_REF}}"
-          echo "::error title=Unmerged libhoop dependency::Merge ${dependency_target} before this Hoop pull request."
-          exit 1
-
   integration-test:
     name: Integration Test
-    needs: resolve-libhoop
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -159,20 +58,11 @@ jobs:
         uses: actions/checkout@v7
 
       # Integration tests drive the real controller.Agent against real upstream
-      # containers via libhoop. The OSS _libhoop stub returns "missing protocol
-      # hoop library for X" for every protocol, so we need the enterprise
-      # libhoop checked out at ./libhoop. The Makefile's libhoop-map target
-      # tries to overwrite this with a symlink, but `rm libhoop || true` is a
-      # no-op against a non-empty directory — the checkout wins. Matches the
-      # build jobs in pullrequest-release.yml.
-      - name: Checkout libhoop
-        uses: actions/checkout@v7
-        with:
-          repository: hoophq/libhoop
-          path: "./libhoop"
-          token: ${{ secrets.GH_TOKEN }}
-          ref: ${{ needs.resolve-libhoop.outputs.sha }}
-
+      # containers via libhoop. Protocol proxying lives in the private
+      # github.com/hoophq/libhoop module, which the Authenticate step below
+      # makes fetchable; without those credentials the build fails outright
+      # rather than degrading to no-op protocol handling. Matches the build
+      # jobs in pullrequest-release.yml.
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
@@ -180,11 +70,9 @@ jobs:
           # This is a go.work workspace with no root go.mod, so setup-go
           # cannot find a manifest on its own and silently caches nothing.
           cache-dependency-path: "**/go.sum"
-      # hoopinspect's sidecar/ and conformance/ modules pull the codecs from
-      # github.com/hoophq/libhoop/v2, a private module fetched from the proxy.
-      # GOPRIVATE keeps it off proxy.golang.org and sum.golang.org; the
-      # credential rewrite lets the direct fetch authenticate as the token.
-      # The ./libhoop checkout above covers the ROOT libhoop module only.
+      # libhoop is a private module fetched from the proxy. GOPRIVATE keeps it
+      # off proxy.golang.org and sum.golang.org; the credential rewrite lets
+      # the direct fetch authenticate as the token.
       - name: Authenticate private modules
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
@@ -218,7 +106,6 @@ jobs:
 
   transport-test:
     name: Transport Integration Test
-    needs: resolve-libhoop
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -228,22 +115,14 @@ jobs:
 
       # The transport harness drives the real gateway gRPC transport end to end
       # (real agent controller + real Postgres). Its PostgreSQL protocol
-      # round-trip needs the enterprise libhoop proxy — the OSS _libhoop stub
-      # returns "missing protocol hoop library" and that one test skips. Same
-      # ./libhoop checkout trick as the Integration Test job (libhoop-map's
-      # `rm libhoop || true` is a no-op against this non-empty directory).
+      # round-trip needs the enterprise proxy from the private
+      # github.com/hoophq/libhoop module, which the Authenticate step below
+      # makes fetchable; without those credentials the build fails outright
+      # rather than degrading to no-op protocol handling.
       #
       # This runs as its own job (not folded into Integration Test) so its
       # Postgres containers do not contend on one runner with the heavy agent
       # suite's containers, which caused timeouts when the two ran in parallel.
-      - name: Checkout libhoop
-        uses: actions/checkout@v7
-        with:
-          repository: hoophq/libhoop
-          path: "./libhoop"
-          token: ${{ secrets.GH_TOKEN }}
-          ref: ${{ needs.resolve-libhoop.outputs.sha }}
-
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
@@ -251,11 +130,9 @@ jobs:
           # This is a go.work workspace with no root go.mod, so setup-go
           # cannot find a manifest on its own and silently caches nothing.
           cache-dependency-path: "**/go.sum"
-      # hoopinspect's sidecar/ and conformance/ modules pull the codecs from
-      # github.com/hoophq/libhoop/v2, a private module fetched from the proxy.
-      # GOPRIVATE keeps it off proxy.golang.org and sum.golang.org; the
-      # credential rewrite lets the direct fetch authenticate as the token.
-      # The ./libhoop checkout above covers the ROOT libhoop module only.
+      # libhoop is a private module fetched from the proxy. GOPRIVATE keeps it
+      # off proxy.golang.org and sum.golang.org; the credential rewrite lets
+      # the direct fetch authenticate as the token.
       - name: Authenticate private modules
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
@@ -286,9 +163,9 @@ jobs:
         uses: actions/checkout@v7
 
       # Gateway smoke tests exercise only the HTTP API, auth, RBAC and the
-      # model/migration layer — no protocol proxying — so the OSS _libhoop
-      # stub (wired by libhoop-map) is sufficient. No libhoop checkout and no
-      # GH_TOKEN are required. No Rust toolchain either: the committed
+      # model/migration layer — no protocol proxying — but the gateway still
+      # links the private github.com/hoophq/libhoop module, so the build
+      # needs credentials for it. No Rust toolchain either: the committed
       # rdp_parser.wasm is embedded via go:embed, so make test-gateway does
       # not regenerate it.
       - name: Setup Go
@@ -299,19 +176,18 @@ jobs:
           # cannot find a manifest on its own and silently caches nothing.
           cache-dependency-path: "**/go.sum"
 
-      # Boots a throwaway postgres:17.6 via testcontainers; ubuntu-latest
-      # runners have Docker pre-installed, so no services: block is needed.
-      # hoopinspect's sidecar/ and conformance/ modules pull the codecs from
-      # github.com/hoophq/libhoop/v2, a private module fetched from the proxy.
-      # GOPRIVATE keeps it off proxy.golang.org and sum.golang.org; the
-      # credential rewrite lets the direct fetch authenticate as the token.
-      # The ./libhoop checkout above covers the ROOT libhoop module only.
+      # libhoop is a private module fetched from the proxy. GOPRIVATE keeps it
+      # off proxy.golang.org and sum.golang.org; the credential rewrite lets
+      # the direct fetch authenticate as the token.
       - name: Authenticate private modules
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+
+      # Boots a throwaway postgres:17.6 via testcontainers; ubuntu-latest
+      # runners have Docker pre-installed, so no services: block is needed.
       - name: Gateway Smoke Test
         run: make test-gateway
 
@@ -338,17 +214,16 @@ jobs:
           # cannot find a manifest on its own and silently caches nothing.
           cache-dependency-path: "**/go.sum"
 
-      # hoopinspect's sidecar/ and conformance/ modules pull the codecs from
-      # github.com/hoophq/libhoop/v2, a private module fetched from the proxy.
-      # GOPRIVATE keeps it off proxy.golang.org and sum.golang.org; the
-      # credential rewrite lets the direct fetch authenticate as the token.
-      # The ./libhoop checkout above covers the ROOT libhoop module only.
+      # libhoop is a private module fetched from the proxy. GOPRIVATE keeps it
+      # off proxy.golang.org and sum.golang.org; the credential rewrite lets
+      # the direct fetch authenticate as the token.
       - name: Authenticate private modules
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+
       - name: Gateway Smoke Test (pglite)
         run: make test-gateway-pglite
 
@@ -365,7 +240,8 @@ jobs:
       # PGlite database + the dedicated standalone agent provisioned through
       # the same code path `hoop start standalone` runs, connected via a
       # real agent controller. Runs entirely in-process: no Docker, no
-      # enterprise libhoop, no Rust toolchain.
+      # protocol proxying, no Rust toolchain. The build still links the
+      # private github.com/hoophq/libhoop module, so it needs credentials.
       - name: Setup Go
         uses: actions/setup-go@v7
         with:
@@ -374,17 +250,16 @@ jobs:
           # cannot find a manifest on its own and silently caches nothing.
           cache-dependency-path: "**/go.sum"
 
-      # hoopinspect's sidecar/ and conformance/ modules pull the codecs from
-      # github.com/hoophq/libhoop/v2, a private module fetched from the proxy.
-      # GOPRIVATE keeps it off proxy.golang.org and sum.golang.org; the
-      # credential rewrite lets the direct fetch authenticate as the token.
-      # The ./libhoop checkout above covers the ROOT libhoop module only.
+      # libhoop is a private module fetched from the proxy. GOPRIVATE keeps it
+      # off proxy.golang.org and sum.golang.org; the credential rewrite lets
+      # the direct fetch authenticate as the token.
       - name: Authenticate private modules
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+
       - name: Standalone Mode Test
         run: make test-standalone
 
@@ -410,16 +285,15 @@ jobs:
           # cannot find a manifest on its own and silently caches nothing.
           cache-dependency-path: "**/go.sum"
 
-      # hoopinspect's sidecar/ and conformance/ modules pull the codecs from
-      # github.com/hoophq/libhoop/v2, a private module fetched from the proxy.
-      # GOPRIVATE keeps it off proxy.golang.org and sum.golang.org; the
-      # credential rewrite lets the direct fetch authenticate as the token.
-      # The ./libhoop checkout above covers the ROOT libhoop module only.
+      # libhoop is a private module fetched from the proxy. GOPRIVATE keeps it
+      # off proxy.golang.org and sum.golang.org; the credential rewrite lets
+      # the direct fetch authenticate as the token.
       - name: Authenticate private modules
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
         run: |
           echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+
       - name: Standalone Single-Binary E2E
         run: make test-standalone-e2e

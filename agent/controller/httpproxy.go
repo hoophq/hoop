@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"libhoop"
-	libhoopaianalyzer "libhoop/aianalyzer"
-	redactortypes "libhoop/redactor/types"
+	"github.com/hoophq/libhoop"
+	libhoopaianalyzer "github.com/hoophq/libhoop/aianalyzer"
+	redactortypes "github.com/hoophq/libhoop/redactor/types"
 	"strings"
 
 	"github.com/hoophq/hoop/agent/controller/featureflagstate"

@@ -20,12 +20,12 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/hoophq/hoop/agent v0.0.0-20260730225053-339623147f24
 	github.com/hoophq/hoop/gateway v0.0.0-20260414143915-f3c4a85dcd3b
+	github.com/hoophq/libhoop v1.100.0
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/crypto v0.54.0
 	golang.org/x/mod v0.37.0
 	google.golang.org/grpc v1.83.0
 	gopkg.in/yaml.v3 v3.0.1
-	libhoop v0.0.0-00010101000000-000000000000
 	mvdan.cc/sh/v3 v3.13.1
 )
 
@@ -281,8 +281,6 @@ replace github.com/hoophq/hoop/common => ../common
 replace github.com/hoophq/hoop/gateway => ../gateway
 
 replace github.com/hoophq/hoop/agent => ../agent
-
-replace libhoop => ../libhoop
 
 // TEMPORARY until https://github.com/wazero/wazero/pull/2507 ships in a release:
 // fork allows fd_renumber onto stdio fds (required by the embedded PGlite

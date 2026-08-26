@@ -29,9 +29,11 @@ WORKDIR /src
 # parser wasm is committed and embedded via go:embed, so no wasm toolchain is
 # required here.
 COPY . .
-# Recreate the libhoop import-path symlink the build expects (the repo ships a
-# symlink, but COPY may not preserve it portably).
-RUN rm -f libhoop && ln -s _libhoop libhoop
+# libhoop is a private Go module fetched from the module proxy, no longer a
+# symlinked stub in the tree. This stage therefore needs
+# GOPRIVATE=github.com/hoophq/libhoop and git credentials for that repo in the
+# build environment (pass them as a build secret or a pre-seeded ~/.netrc);
+# without them the go build below fails outright.
 RUN CGO_ENABLED=0 GOOS=linux go build \
         -ldflags "-s -w -X github.com/hoophq/hoop/common/version.version=local" \
         -o /out/hoop github.com/hoophq/hoop/client

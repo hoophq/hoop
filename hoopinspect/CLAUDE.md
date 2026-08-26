@@ -102,11 +102,12 @@ done
   winner is worse than a build failure.
 
 - **The root package imports no codec, and no longer ships one.** The codecs
-  live in `github.com/hoophq/libhoop/v2/codec/*`, a private module; they import
-  the root for its types, never the reverse. That one-way edge is what keeps
-  the root at zero dependencies and stops the two repos from becoming a
-  lockstep release train. A binary links only the protocols it imports,
-  usually through `codec/all` or one specific package.
+  live in `github.com/hoophq/libhoop`, a private module, under its
+  `v2/codec/*` directory — `v2` there is a folder name, not a major version.
+  They import the root for its types, never the reverse. That one-way edge is
+  what keeps the root at zero dependencies and stops the two repos from
+  becoming a lockstep release train. A binary links only the protocols it
+  imports, usually through `codec/all` or one specific package.
 
 - **Anything here that needs a codec belongs in a nested module.** `sidecar/`
   (the wiring layer) and `conformance/` (the tests that drive real wire bytes)

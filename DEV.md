@@ -167,7 +167,7 @@ End-to-end tests under `agent/integration/` that drive the real `controller.Agen
 Requirements:
 
 - **Docker daemon** running on the host — [testcontainers-go](https://golang.testcontainers.org/) manages the upstream container lifecycle.
-- **Enterprise `libhoop`** checked out as a sibling directory (`../libhoop`, matching the `replace libhoop => ../libhoop` directive in `agent/go.mod` and `gateway/go.mod`). The OSS stub at `_libhoop/libhoop.go` returns "missing protocol hoop library for X" and integration tests will fail at handshake. CI clones `hoophq/libhoop` into `./libhoop` via `secrets.GH_TOKEN` (same as the build jobs).
+- **Enterprise `libhoop`.** The integration suite drives real protocol proxying, which lives in the private module `github.com/hoophq/libhoop`. Set `GOPRIVATE=github.com/hoophq/libhoop` and give git credentials for the repo; without them the build fails outright rather than degrading to no-op handlers. To run against a local clone at `./libhoop`, use `make libhoop-dev`. CI authenticates with `secrets.GH_TOKEN` in its `Authenticate private modules` step.
 
 CI runs integration tests on every PR via the `Integration Test` job in `.github/workflows/pullrequest.yml`.
 

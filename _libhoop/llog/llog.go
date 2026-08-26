@@ -1,4 +1,0 @@
-package llog
-
-func ReinitializeLogger() {
-}

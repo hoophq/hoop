@@ -4,12 +4,12 @@
 
 A Go workspace (`go.work`) for the hoop gateway, agent, and CLI.
 
-- Product modules: `gateway/`, `agent/`, `client/`, `common/`, `libhoop/`, `tunnel/`.
+- Product modules: `gateway/`, `agent/`, `client/`, `common/`, `tunnel/`.
 - `hoopinspect/` adds nine more workspace entries.
 - `agentrs/` — Rust companion binary for RDP/TLS proxy workloads.
 - `webapp/` — legacy ClojureScript SPA; see `webapp/CLAUDE.md` for its own conventions.
 - `webapp_v2/` — React frontend that is replacing it.
-- `_libhoop/` is a symlink target. The build runs `ln -s _libhoop libhoop` (`make libhoop-map`) so Go sees the `libhoop` import path.
+- `libhoop` is not in this repo. It is one private module, `github.com/hoophq/libhoop`, resolved from the module proxy like any other dependency. Builds need `GOPRIVATE=github.com/hoophq/libhoop` and credentials for it. To work against a local clone, `make libhoop-dev`.
 
 ## Toolchain & Prerequisites
 
@@ -67,11 +67,13 @@ A Go workspace (`go.work`) for the hoop gateway, agent, and CLI.
 - Shared utilities: `backoff/`, `grpc/`, `log/`, `memory/`, `envloader/`, `version/`, `license/`, `monitoring/`, `keys/`, `dsnkeys/`, `clientconfig/`, `featureflag/`, `agentcontroller/`, `aianalyzer/`, `apiutils/`, `appruntime/`, `httpclient/`, `runbooks/`.
 - DB wire types: `pgtypes/`, `mssqltypes/`, `mongotypes/`.
 
-### libhoop (`libhoop/` / `_libhoop/`)
-- Standalone Go module (`module libhoop`); **must not import from the main project** — bridge via stdlib types only.
-- `_libhoop/` in this repo is the OSS stub: `agent/`, `proxy/`, `redactor/`, `aianalyzer/`, `llog/`, plus `libhoop.go` no-op cores. The enterprise checkout supplies the real implementations.
+### libhoop (`github.com/hoophq/libhoop`, private)
+- One module. Protocol proxies (`agent/{postgres,mssql,mysql,mongodb,oracle}`, `proxy/ssh`), redactors and recorder at the root; the wire codecs under `v2/codec/{postgres,mssql,http}`.
+- `v2/` is a plain directory, not a second module and not a major version. The import path reads `github.com/hoophq/libhoop/v2/codec/postgres` because that is where the files sit.
+- The codecs implement `hoopinspect`'s `Codec` interface and register through `hoopinspect.Register`, so the module depends on `github.com/hoophq/hoop/hoopinspect`. That edge is one-way: hoopinspect's root never imports libhoop.
+- Otherwise it **must not import from the main project** — bridge via stdlib types only.
+- One build path: the proxy, in CI and locally. No stub, no symlink, no checkout step.
 - Build produces WASM module for RDP parsing: `make generate-wasm`.
-- `libhoop/v2/` is a **separate module** in the same private repo, published as `github.com/hoophq/libhoop/v2`. It holds only the protocol codecs (`codec/{postgres,mssql,http}`), which implement `hoopinspect`'s `Codec` interface. Unlike the root, it has a real fetchable path: hoopinspect requires it by version from the proxy, so it needs `GOPRIVATE=github.com/hoophq/libhoop` rather than the `_libhoop` symlink.
 
 ### Agent Rust (`agentrs/`)
 - Rust binary for RDP proxy, TLS termination, WebSocket proxying.
@@ -149,7 +151,7 @@ Protocol-specific proxy servers configured through `models.ServerMiscConfig` (st
 | Run frontend dev (both) | `cd webapp_v2 && npm run dev:full` | Starts Vite (:5173) + shadow-cljs (:8280) together. CLJS edits require a browser hard-reload — Vite proxies the bundle and can't HMR it. |
 | Run React dev only | `cd webapp_v2 && npm run dev` | Vite on :5173. CLJS routes are blank until shadow-cljs is started separately. |
 | Build Rust agent (dev) | `make build-dev-rust` | Cross-compiles for Linux from macOS |
-| Run tests (OSS) | `make test-oss` | Auto-links `libhoop`, generates WASM, and runs `test-hoopinspect` first |
+| Run tests (OSS) | `make test-oss` | Generates WASM and runs `test-hoopinspect` first |
 | Run tests (enterprise) | `make test-enterprise` | `make test` runs both |
 | Run `hoopinspect` tests only | `make test-hoopinspect` | Walks every `go.mod` under `hoopinspect/`, nested modules included |
 | Regenerate OpenAPI | `make generate-openapi-docs` | After any API route/schema change |
@@ -234,13 +236,13 @@ this codebase.
 - Model functions in `gateway/` should take `*gorm.DB` as a parameter. Both patterns exist: ~126 functions take it, 44 files still read the `models.DB` global. Use the parameter in new code.
 - Model functions in `gateway/` must propagate `gorm.ErrRecordNotFound`. Callers decide how to handle not-found. Older helpers in `gateway/models/connections.go` return `nil, nil` — do not copy that.
 - `libhoop` must stay independent — no imports from `gateway/`, `agent/`, `client/`, or `common/`.
-- Nothing in `hoopinspect/` outside `sidecar/` and `conformance/` may import `github.com/hoophq/libhoop/v2`. Those two are nested modules; the root module has zero dependencies and must keep them, test dependencies included.
+- Nothing in `hoopinspect/` outside `sidecar/` and `conformance/` may import `github.com/hoophq/libhoop`. Those two are nested modules; the root module has zero dependencies and must keep them, test dependencies included.
 - Services layer: Business logic lives in `gateway/services/` — keep models focused on data, services on business logic.
 
 ### Testing
 - Run with `make test-oss` (sets `CGO_ENABLED=0`, outputs JSON).
 - Tests live alongside source files (`_test.go` suffix).
-- The `libhoop-map`, `generate-wasm` and `test-hoopinspect` steps are prerequisites, and the Makefile handles them automatically.
+- The `generate-wasm` and `test-hoopinspect` steps are prerequisites, and the Makefile handles them automatically.
 
 ### API Changes
 - Add Swagger annotations (swag comments) on new/modified handlers.

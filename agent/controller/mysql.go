@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"libhoop"
+	"github.com/hoophq/libhoop"
 
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"

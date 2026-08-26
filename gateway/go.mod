@@ -12,8 +12,6 @@ replace github.com/hoophq/hoop/agent => ../agent
 // placeholder version agent pins.
 replace github.com/hoophq/hoop/client => ../client
 
-replace libhoop => ../libhoop
-
 require (
 	github.com/MicahParks/keyfunc/v2 v2.1.0
 	github.com/aws/aws-sdk-go-v2 v1.41.5
@@ -41,6 +39,7 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/hoophq/hoop/agent v0.0.0-20260730225053-339623147f24
 	github.com/hoophq/hoop/common v0.0.0-00010101000000-000000000000
+	github.com/hoophq/libhoop v1.100.0
 	github.com/hoophq/mcpproxy v0.1.1
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/lib/pq v1.12.3
@@ -69,7 +68,6 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/driver/postgres v1.6.0
 	gorm.io/gorm v1.31.1
-	libhoop v0.0.0-00010101000000-000000000000
 )
 
 require (
