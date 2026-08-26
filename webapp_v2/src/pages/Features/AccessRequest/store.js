@@ -54,7 +54,7 @@ export const useAccessRequestStore = create((set) => ({
   fetchUserGroups: async () => {
     set({ userGroupsStatus: 'loading' })
     try {
-      // The gateway answers `null` — not `[]` — when there are no groups.
+      // Gateways older than EVL-217 answer `null` instead of `[]`.
       const { data } = await userGroupsService.list()
       set({ userGroups: data ?? [], userGroupsStatus: 'success' })
     } catch {

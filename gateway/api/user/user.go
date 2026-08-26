@@ -659,7 +659,7 @@ func PatchSlackID(c *gin.Context) {
 // ListUserGroups
 //
 //	@Summary		List User Groups
-//	@Description	List all groups from all users
+//	@Description	List every group name known to the organization: the ones bound to users, service accounts, API keys and AI agents, plus the ones referenced by the access_control plugin. Sorted alphabetically.
 //	@Tags			User Management
 //	@Produce		json
 //	@Success		200	{array}		string				"Array of group names"
@@ -672,14 +672,28 @@ func ListAllGroups(c *gin.Context) {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing groups")
 		return
 	}
-	dedupeGroups := map[string]string{}
-	for _, ug := range userGroups {
-		dedupeGroups[ug.Name] = ug.Name
+	// user_groups only knows a group while a membership row exists; the plugin
+	// config is the other half (EVL-217).
+	pluginGroups, err := models.ListAccessControlGroupNames(models.DB, ctx.OrgID)
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing groups")
+		return
 	}
-	var groupsList []string
+
+	dedupeGroups := map[string]any{}
+	for _, ug := range userGroups {
+		dedupeGroups[ug.Name] = nil
+	}
+	for _, groupName := range pluginGroups {
+		dedupeGroups[groupName] = nil
+	}
+	groupsList := make([]string, 0, len(dedupeGroups))
 	for groupName := range dedupeGroups {
 		groupsList = append(groupsList, groupName)
 	}
+	// Map iteration is randomized, so without this the picker reshuffles on
+	// every page load.
+	slices.Sort(groupsList)
 	c.JSON(http.StatusOK, groupsList)
 }
 

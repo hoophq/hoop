@@ -31,16 +31,25 @@ export default function ReviewSection({ kind = 'command' }) {
   const setDraft = useConfigureRoleStore((s) => s.setDraft)
   const userGroupsList = useConfigureRoleStore((s) => s.userGroupsList)
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
+  const currentUser = useUserStore((s) => s.user)
 
   const groupOptions = (userGroupsList || []).map((g) => ({ value: g, label: g }))
   const reviewEnabled = drafts.reviewers.length > 0
 
   const handleReviewToggle = (enabled) => {
     if (enabled) {
-      // Surfacing the toggle without any approval groups would be invalid
-      // — seed with the first available group so the section is usable.
+      // Surfacing the toggle without any approval groups would be invalid, so
+      // seed one, and seed a group the operator is actually in. /users/groups
+      // is sorted and now lists access_control-only groups (EVL-217), so
+      // position 0 can be a group with no members that nobody could approve
+      // with. This route is admin-only, so the current user's groups always
+      // include the admin group. 'admin' is a preference, not an assumption:
+      // the gateway allows renaming it (ADMIN_USERNAME / admin_role_name) and
+      // does not expose the configured name to the webapp.
       if (drafts.reviewers.length === 0 && userGroupsList.length > 0) {
-        setDraft({ reviewers: [userGroupsList[0]] })
+        const ownGroups = (currentUser?.groups ?? []).filter((g) => userGroupsList.includes(g))
+        const seed = ownGroups.includes('admin') ? 'admin' : (ownGroups[0] ?? userGroupsList[0])
+        setDraft({ reviewers: [seed] })
       }
     } else {
       setDraft({
