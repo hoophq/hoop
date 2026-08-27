@@ -43,8 +43,8 @@ import (
 // Schema is the Postgres schema every control plane table lives in.
 //
 // Separate from the gateway's "private" schema on purpose. The two products
-// share a database during the 2.0 transition, and a shared schema means a
-// migration in one can collide with a table name in the other.
+// can share a database, and a shared schema means a migration in one can
+// collide with a table name in the other.
 const Schema = "controlplane"
 
 // PingTimeout bounds a connectivity check at startup.

@@ -251,7 +251,7 @@ build-hsh-tunneld-all:
 	GOOS=windows GOARCH=amd64 $(MAKE) build-hsh-tunneld
 	GOOS=windows GOARCH=arm64 $(MAKE) build-hsh-tunneld
 
-# Control plane (hoop 2.0).
+# Control plane.
 #
 # Its own LDFLAGS rather than the shared one: the control plane does not import
 # common/version, so every -X in LDFLAGS would name a symbol this binary does

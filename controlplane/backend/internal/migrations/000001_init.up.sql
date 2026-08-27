@@ -1,9 +1,8 @@
 -- The control plane owns its own Postgres schema.
 --
--- It shares a database with the gateway for the whole of the 2.0 transition.
--- A shared schema would mean a migration here can collide with a table name
--- there, and the collision surfaces as a failed deploy rather than a review
--- comment.
+-- It can share a database with the gateway. A shared schema would mean a
+-- migration here can collide with a table name there, and the collision
+-- surfaces as a failed deploy rather than a review comment.
 --
 -- No tables yet, on purpose. Each is created by the migration belonging to
 -- the component that owns it, so a component can be reverted without

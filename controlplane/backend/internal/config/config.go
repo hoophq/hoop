@@ -76,8 +76,8 @@ func Load() (Config, error) {
 	var cfg Config
 
 	// 8020 rather than 8009. The gateway owns 8009 and the two run side by
-	// side for the whole of the 2.0 transition, so a colliding default would
-	// break every existing development machine on the first run.
+	// side on a development machine, so a colliding default would break every
+	// existing one on the first run.
 	cfg.ListenAddr = envOr("CONTROLPLANE_LISTEN_ADDR", defaultListenAddr)
 
 	postgresURI, err := postgresURIFromEnv()

@@ -1,6 +1,6 @@
-// The control plane backend is its own module so hoop 2.0 does not inherit
-// the gateway's dependency graph. That graph is the thing this product exists
-// to shed: gateway/go.mod reaches the Anthropic SDK, the OpenAI SDK,
+// The control plane backend is its own module so it does not inherit the
+// gateway's dependency graph. That graph is the thing this product exists to
+// avoid: gateway/go.mod reaches the Anthropic SDK, the OpenAI SDK,
 // k8s.io/api and go-git, none of which a config distributor needs.
 //
 // The rule that keeps it that way: a dependency added here needs a reason

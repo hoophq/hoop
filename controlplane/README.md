@@ -3,8 +3,6 @@
 Manages a fleet of `hoopinspect` sidecars. An operator decides a config once,
 here, and it is distributed everywhere.
 
-This is hoop 2.0. The control plane plus the sidecar replaces the gateway.
-
 ```
         ┌──────────────────────┐
         │  Admin UI (frontend) │

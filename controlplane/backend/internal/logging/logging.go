@@ -17,7 +17,7 @@
 //
 // hoopinspect, the process on the other end of this control plane's socket,
 // already threads *slog.Logger through sidecar and proxy. Matching it means
-// the two halves of hoop 2.0 log the same way.
+// both ends of the socket log the same way.
 package logging
 
 import (

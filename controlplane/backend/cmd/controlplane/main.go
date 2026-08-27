@@ -1,4 +1,4 @@
-// Command controlplane is the hoop 2.0 control plane server.
+// Command controlplane is the control plane server for hoopinspect sidecars.
 //
 // It stores what should be running on each hoopinspect sidecar, tracks what
 // actually is, and pushes the difference over a WebSocket that the sidecar

@@ -4,23 +4,22 @@ Where an operator manages a fleet of `hoopinspect` sidecars. Config decided
 once and distributed everywhere, sidecars registered and identified.
 
 This file governs `controlplane/backend`. `controlplane/frontend` carries its
-own. The root `CLAUDE.md` does not govern here: it describes the hoop 1.0
-gateway, and several of its conventions are ones this product exists to drop.
-Where the two disagree, the disagreement is deliberate and the reason is
-written down below.
+own. The root `CLAUDE.md` does not govern here: it describes the gateway, and
+several of its conventions are ones this product exists to drop. Where the two
+disagree, the disagreement is deliberate and the reason is written down below.
 
 One file on purpose. Split it per component once the components exist in code
 and the split earns itself.
 
-## This is hoop 2.0
+## Relationship to the gateway
 
-The control plane plus the sidecar **replaces** the gateway. `gateway/`,
-`agent/` and `client/` are maintenance and bug fix only.
+Separate products with separate constraints. `gateway/`, `agent/` and
+`client/` are not part of this one, and nothing here imports them.
 
-**Reuse ideas from the old code, not blocks of it.** Those packages carry
+**Reuse ideas from that code, not blocks of it.** Those packages carry
 patterns this product exists to drop: an agent that dials a bidirectional gRPC
 stream, end users who authenticate with us, a dependency tree grown over four
-years. Copying a block brings the pattern with it. Read the old
+years. Copying a block brings the pattern with it. Read the existing
 implementation, understand what it solved, then write the version this product
 wants.
 
@@ -244,9 +243,9 @@ on a first run with an empty database the operator creates the first admin,
 that admin signs in and out, and no unauthenticated request reaches
 `desiredstate` or `inventory`.
 
-**Administration only, never end users.** In hoop 2.0 the end user does not
-authenticate with us at all: they connect to their database the way they
-already do and the sidecar is transparent on the path. A requirement starting
+**Administration only, never end users.** The end user does not authenticate
+with us at all: they connect to their database the way they already do and the
+sidecar is transparent on the path. A requirement starting
 with "when the end user logs in" is in the wrong product.
 
 Two populations, never one mechanism. Admins get sessions lasting hours, tied
@@ -264,7 +263,8 @@ this separation exists to prevent.
   therefore a race: it needs a constraint the database enforces, not a check
   the handler performs.
 - **No roles yet.** One admin role. Auditor and read-only were a gateway
-  concept and should be re-derived from what 2.0 needs, not inherited.
+  concept and should be re-derived from what this product needs, not
+  inherited.
 - **Sessions do not live in memory** even though inventory does, or every
   restart signs every admin out mid-task.
 - `gateway/idp/` is worth reading for provider resolution and cached
@@ -388,8 +388,9 @@ Its own `go.mod`, in `go.work`. This was the open question in the draft; it is
 now decided, for two reasons that turned out to be the same reason.
 
 The gateway's module pulls in the Anthropic and OpenAI SDKs, the Mongo driver,
-`k8s.io/api`, go-git, Sentry and Honeycomb. Getting off that tree is most of
-the point of 2.0, and sharing a module makes it impossible by construction.
+`k8s.io/api`, go-git, Sentry and Honeycomb. Staying off that tree is most of
+the point of a separate module, and sharing one makes it impossible by
+construction.
 
 **This module deliberately does not depend on `github.com/hoophq/hoop/common`,
 and must not start.** Not because `common` is bad, but because importing one

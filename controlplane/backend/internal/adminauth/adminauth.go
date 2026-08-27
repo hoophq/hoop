@@ -7,9 +7,9 @@
 // Four constraints an implementer will otherwise rediscover the hard way.
 // controlplane/CLAUDE.md carries the reasoning.
 //
-//  1. Administration only. In hoop 2.0 the end user does not authenticate
-//     with us at all. A requirement beginning "when the end user logs in" is
-//     in the wrong product.
+//  1. Administration only. The end user does not authenticate with us at
+//     all. A requirement beginning "when the end user logs in" is in the
+//     wrong product.
 //  2. Two populations, never one mechanism. Admin sessions and sidecar
 //     credentials are different token types. Sidecar credentials live in
 //     package sidecarauth and stay there.
@@ -20,10 +20,10 @@
 //     restart signs every admin out mid-task.
 //
 // One admin role. Auditor and read-only were a gateway concept and should be
-// re-derived from what 2.0 needs. gateway/idp is worth reading for provider
-// resolution and cached verifiers, and is wired to gateway models, gateway
-// request context and gateway role middleware, none of which exist here.
-// Read it, do not copy it.
+// re-derived from what this product needs. gateway/idp is worth reading for
+// provider resolution and cached verifiers, and is wired to gateway models,
+// gateway request context and gateway role middleware, none of which exist
+// here. Read it, do not copy it.
 package adminauth
 
 import (
