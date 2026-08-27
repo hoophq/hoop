@@ -46,7 +46,7 @@ This plus the sidecar is hoop 2.0, and together they replace the gateway.
 | `desiredstate/` | ready to build, simple CRUD plus a generation number |
 | `inventory/` | ready to build, in-memory fleet view |
 | `adminauth/` | ready to build, first admin plus signin |
-| `sidecarauth/` | discovery, produces a recommendation before any code |
+| `sidecarauth/` | most open questions, decides the trust anchor then builds |
 
 Out of the MVP on purpose: audit and telemetry ingestion, approvals, staged
 config rollout, and anything that starts a sidecar. Each is noted where it

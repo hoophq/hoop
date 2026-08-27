@@ -2,9 +2,10 @@
 
 How a sidecar proves who it is, and how it knows the control plane is genuine.
 
-**This is a discovery task, not a build task.** The output of the first pass is
-a written recommendation, not an implementation. Read this whole file before
-proposing anything, because the question as it is usually asked has no answer.
+**This component has more open questions than the other four, so it answers
+them before it writes code.** It still ends in shipped code. Read this whole
+file before proposing anything, because the question as it is usually asked
+has no answer.
 
 Read `../CLAUDE.md` and `../transport/CLAUDE.md` first.
 
@@ -75,22 +76,28 @@ anything new:
 Matheus has this flow in their head already and is the first conversation, not
 the last.
 
-## What unblocks the MVP right now
+## What to ship, in order
 
-The other four components need a sidecar to connect so they can be built and
-demoed. They do not need the final answer.
+**1. The written decision.** Which anchor, who issues it, the rotation story,
+what happens when a credential expires while a sidecar is connected, and how a
+sidecar is revoked. Revocation is the one usually forgotten, and it is the
+first thing a security review asks about.
 
-Ship a **named development credential**: a single static shared token, behind
-an interface, so the real mechanism swaps in without touching callers.
+This picks between real alternatives and is expensive to reverse, which is
+what `docs/adr/README.md` describes. Check that policy and land the decision
+as an ADR if it fits.
 
-It must be explicit about what it is. A flag or config key that says
-`dev_token`, a startup log line at warn level, and a refusal to run when the
-deployment is marked production. Not a silent default that quietly becomes the
-shipping behaviour, which is how a placeholder turns into a CVE.
+**2. The credential path, with a named development anchor.** The other
+components need a sidecar that connects so they can be built and demoed. They
+do not need the final answer.
 
-## Deliverable of the discovery pass
+A single static shared token, behind the interface the real anchor will
+implement, so it swaps in without touching callers. Plus `hello` presenting
+the credential and `hello.reject` carrying a reason.
 
-A short written recommendation covering: which anchor, who issues it, the
-rotation story, what happens when a credential expires while a sidecar is
-connected, and how a sidecar is revoked. Revocation is the one usually
-forgotten, and it is the first thing a security review asks about.
+The development anchor must be explicit about what it is. A flag or config key
+that says `dev_token`, a startup log line at warn level, and a refusal to run
+when the deployment is marked production. Not a silent default that quietly
+becomes the shipping behaviour, which is how a placeholder turns into a CVE.
+
+**3. The real anchor.** After the decision is signed off, as its own change.

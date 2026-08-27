@@ -68,11 +68,11 @@ From the architecture session, 2026-08-26.
 
 ## Open
 
-- **Sidecar identity bootstrap.** The murkiest part of the design and the
-  reason `sidecarauth/` is a discovery task rather than a build task. It
-  blocks nothing else in the MVP: a named development token is enough to get
-  the other four components talking. Read `sidecarauth/CLAUDE.md` before
-  proposing anything.
+- **Sidecar identity bootstrap.** The murkiest part of the design, so
+  `sidecarauth/` answers the questions before it writes the code. It still
+  ends in shipped code. It blocks nothing else in the MVP: a named development
+  token is enough to get the other four components talking. Read
+  `sidecarauth/CLAUDE.md` before proposing anything.
 - **Whether this folder becomes its own Go module.** A separate `go.mod` added
   to `go.work` keeps the new product off the gateway's dependency tree, which
   is most of the point of 2.0. The cost is a second module to keep in sync.
@@ -92,7 +92,7 @@ From the architecture session, 2026-08-26.
 | `transport/` | the WebSocket channel and the message contract every other component speaks |
 | `desiredstate/` | what config each sidecar should run, and the generation number |
 | `inventory/` | what is actually running: version, applied generation, last check-in |
-| `sidecarauth/` | how a sidecar proves who it is (discovery phase) |
+| `sidecarauth/` | how a sidecar proves who it is, and how it knows we are genuine |
 | `adminauth/` | admin signup and signin, humans only |
 
 `transport/` is the contract. Read it before starting any of the other four,
