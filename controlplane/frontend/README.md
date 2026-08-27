@@ -21,8 +21,9 @@ everything under `/images`, `/icons` and `/data` is served from `public/`.
 | Script | |
 |---|---|
 | `npm run dev` | Vite dev server |
-| `npm run build` | Production build into `dist/` |
+| `npm run build` | Checks assets, then builds into `dist/` |
 | `npm run lint` | ESLint |
+| `npm run check:assets` | Verifies every referenced image exists in `public/` |
 | `npm run preview` | Serve the production build |
 
 ## Environment

@@ -195,8 +195,20 @@ Do not switch to `styles.css` without `.layer`; that reintroduces the cascade ra
 ## Assets
 
 Everything referenced by `/images`, `/icons` or `/data` must exist in `public/`. There
-is no asset proxy. Adding a provider logo or an illustration means adding the file in
-the same change — a missing one renders as a broken image, silently.
+is no asset proxy, and a missing file renders as a broken image with no error.
+
+`npm run build` runs `scripts/check-assets.mjs` first, which fails the build and names
+the file that referenced the missing asset. It understands the three reference styles:
+
+| Style | Resolved from |
+|---|---|
+| `"/images/foo.svg"` in JS/JSX/CSS | the literal |
+| `` `/icons/connections/${iconName}-default.svg` `` | the `icon-name` field of every entry in `public/data/connections-metadata.json` |
+| `<FeaturePromotion image="x-promotion.png" />` | the prop at each call site |
+
+Two of those are built at runtime and cannot be found by grepping for literals — which
+is how they were missed during the extraction. **Adding a reference of a new shape means
+teaching `check-assets.mjs` about it**, otherwise the guarantee quietly narrows.
 
 ## Authentication
 

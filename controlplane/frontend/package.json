@@ -5,9 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "npm run check:assets && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "check:assets": "node scripts/check-assets.mjs"
   },
   "dependencies": {
     "@mantine/core": "^8.3.18",
