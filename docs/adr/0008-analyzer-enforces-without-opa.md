@@ -4,7 +4,7 @@
 - **Date:** 2026-08-27
 - **Author:** @matheusfrancisco
 - **Code:** [`sidecar/analyzer/`](../../sidecar/analyzer), [`sidecar/daemon/config.go`](../../sidecar/daemon/config.go), [`sidecar/daemon/analyzer.go`](../../sidecar/daemon/analyzer.go), [`sidecar/policy/`](../../sidecar/policy)
-- **Related:** [ADR-0005](0005-sidecar-flow.md) (request flow, current state), [ADR-0006](0006-sidecar-config-defaults-and-overrides.md) (the refusal table this ADR explains the other half of), [ADR-0007](0007-native-decision-engine.md) (proposes a second decider for the `defer` case)
+- **Related:** [ADR-0005](0005-sidecar-flow.md) (request flow, current state), [ADR-0006](0006-sidecar-config-defaults-and-overrides.md) (the refusal table this ADR explains the other half of), [ADR-0009](0009-guardrails-and-masking-architecture.md) (the enforcement points this chain sits in)
 - **Supersedes / Superseded by:** —
 
 ## Context
@@ -113,10 +113,10 @@ policy:
 
 **Two cost controls exist and only one is OPA-free.** `trigger:` is local;
 `opa.gate` is a round trip per statement and needs an endpoint. An operator who
-wants the gate's expressiveness without the service has nothing today — that is
-the hole the native decision engine proposed in
-[ADR-0007](0007-native-decision-engine.md) fills with its `decision.gate`, and
-until that lands the honest answer is "widen or narrow the trigger".
+wants the gate's expressiveness without the service has nothing today, and the
+honest answer is "widen or narrow the trigger". Closing that hole means an
+in-process decider reading `input.findings`, which is unwritten and needs its
+own ADR.
 
 **Without OPA, a provider outage allows by default.** `fail_open` defaults true
 and is per process, so a lane that must not forward an unclassified statement

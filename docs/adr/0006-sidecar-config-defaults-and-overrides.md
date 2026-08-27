@@ -4,7 +4,7 @@
 - **Date:** 2026-08-27
 - **Author:** @matheusfrancisco
 - **Code:** [`sidecar/daemon/config.go`](../../sidecar/daemon/config.go), [`sidecar/policy/`](../../sidecar/policy)
-- **Related:** [ADR-0005](0005-sidecar-flow.md) (request flow, current state), [ADR-0007](0007-native-decision-engine.md) (removes the OPA dependency this ADR records), [ADR-0008](0008-analyzer-enforces-without-opa.md) (why everything else in the analyzer is OPA-free)
+- **Related:** [ADR-0005](0005-sidecar-flow.md) (request flow, current state), [ADR-0008](0008-analyzer-enforces-without-opa.md) (why everything else in the analyzer is OPA-free), [ADR-0009](0009-guardrails-and-masking-architecture.md) (where the rules these defaults resolve are evaluated)
 - **Supersedes / Superseded by:** —
 
 ## Context
@@ -119,8 +119,9 @@ lane's specific message. For the LOCAL rules that is the whole of it:
 a `Finding` and continues, so reordering the global block changes which rule
 name and message a user reads and nothing about allow versus deny. That is the
 invariant that makes the concatenation safe to reason about, and it is scoped
-to the local set. See ADR-0007: adding a terminal `allow` action breaks it,
-deliberately, and has to be paid for with a startup warning.
+to the local set. No rule type allows today; adding a terminal `allow` would
+break the invariant, since a lane rule runs first and could shadow a reviewed
+global deny.
 
 **`ai_analysis` rules order differently, because they do not all deny.** Each
 becomes its own `analyzer.Evaluator`, appended after the local set in
@@ -153,9 +154,9 @@ another through a shared backing array. Covered by
 **`defer` costs you an OPA deployment.** A team that wants two-phase
 evaluation — report several matches, then rule on the combination — must run
 OPA on the data path with `fail_open: false`, or accept that an outage
-disables enforcement. That price is what ADR-0007 proposes to remove; nothing
-in this ADR's merge semantics changes if it lands, because a native decider is
-one more evaluator behind the same resolved config.
+disables enforcement. ADR-0008 removed that price for the analyzer's own
+risk levels, which decide in-process; it stands for a local rule's
+`action: defer`, whose finding still has no reader but a Rego policy.
 
 **We are committed to reporting every problem at once.** Validation collects
 rather than fails fast, and each message names its lane and its rule. A config
