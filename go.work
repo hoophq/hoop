@@ -16,3 +16,5 @@ use (
 	./hoopinspect/store/sqlite
 	./tunnel
 )
+
+replace github.com/hoophq/libhoop => ./libhoop

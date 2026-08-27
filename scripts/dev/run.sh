@@ -8,10 +8,27 @@ if ! [[ -f .env ]]; then
 fi
 
 # libhoop used to be selected here: LIBHOOP in .env named a directory or a git
-# remote, and the block below symlinked or cloned it into ./libhoop. It is now
-# the module github.com/hoophq/libhoop/v2, resolved from the proxy like any
-# other dependency. Export GOPRIVATE=github.com/hoophq/libhoop and have git
-# credentials for it; to build against a local clone, run `make libhoop-dev`.
+# remote, and a block below symlinked or cloned it into ./libhoop. It is now
+# the module github.com/hoophq/libhoop, resolved from the proxy like any other
+# dependency.
+#
+# Check it before building anything. Unresolved, it fails a hundred lines
+# later as one "unknown revision" per import, none of which say what to do.
+if [[ -z "$(go list -m -f '{{.Dir}}' github.com/hoophq/libhoop 2>/dev/null)" ]]; then
+  echo "libhoop does not resolve; the gateway and agent cannot build." >&2
+  if [[ -d ./libhoop ]]; then
+    echo >&2
+    echo "  You have a clone at ./libhoop. Point the workspace at it:" >&2
+    echo "      make libhoop-dev" >&2
+  else
+    echo >&2
+    echo "  It is a private module. Either clone it to ./libhoop and run" >&2
+    echo "  'make libhoop-dev', or give Go credentials for it:" >&2
+    echo "      export GOPRIVATE=github.com/hoophq/libhoop" >&2
+    echo "      git config --global url.\"https://<token>@github.com/hoophq/\".insteadOf \"https://github.com/hoophq/\"" >&2
+  fi
+  exit 1
+fi
 
 trap ctrl_c INT
 
