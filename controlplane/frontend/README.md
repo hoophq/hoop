@@ -44,7 +44,6 @@ drawer (nobody reaches a resource through this app), the onboarding checklist, a
 every page outside the control plane's scope.
 
 `webapp_v2` is frozen and serves the gateway until it is retired. The two diverge on
-purpose; there is no shared package and no imports across the boundary.
-
-The reasoning behind the split is recorded in
-[`docs/adr/0006-control-plane-frontend.md`](../../docs/adr/0006-control-plane-frontend.md).
+purpose; there is no shared package and no imports across the boundary. The duplication
+is only acceptable while `webapp_v2` is in end-of-life — if the gateway is not retired,
+the answer is to promote a shared package, not to let the copies drift for years.
