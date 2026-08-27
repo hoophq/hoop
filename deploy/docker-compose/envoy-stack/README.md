@@ -19,7 +19,7 @@ client ──TLS──> envoy ──ext_authz(gRPC)──> opa      tier 1: fat 
 ```
 
 There is no hoop gateway and no hoop agent in this stack. The sidecar is the
-whole tier-2 story: the [`hoopinspect`](../../../hoopinspect) library running
+whole tier-2 story: the [`sidecar`](../../../sidecar) library running
 as a process, parsing the wire protocol, enforcing policy per statement,
 writing an audit trail and masking responses.
 
@@ -41,7 +41,7 @@ Two lanes, decreasing Envoy visibility:
 
 Needs `docker`, `curl`, `openssl`, `python3`. No local Go: the sidecar image
 compiles in `golang:1.26.5-alpine`, matching the `go 1.26.5` every module in
-`hoopinspect/` declares.
+`sidecar/` declares.
 
 Ports: `8443` HTTPS, `5433` postgres, `19000` sidecar admin, `9901` Envoy
 admin. Inside the compose network the postgres listener is `envoy:5432`; 5433
@@ -79,9 +79,9 @@ or `"network":"unix"` per lane.
 
 For the code path behind these commands, a per-command runbook and a
 troubleshooting table, read
-[docs/adr/hoopinspect-flow.md](../../../docs/adr/hoopinspect-flow.md).
+[docs/adr/0005-sidecar-flow.md](../../../docs/adr/0005-sidecar-flow.md).
 
-`run.sh` builds `hoop-inspect:local` from `../../../hoopinspect` on first run
+`run.sh` builds `hoop-inspect:local` from `../../../sidecar` on first run
 and reuses it afterwards. After a library change:
 
 ```bash
@@ -91,17 +91,17 @@ and reuses it afterwards. After a library change:
 The image builds `hoop-inspect` with
 [alcatraz](https://github.com/hoophq/alcatraz) PII detection linked in, so the
 demo can mask Brazilian CPFs and IBANs and deny a query that embeds one. The
-`pii` section of `hoopinspect/config.yaml` names which of the 45 entity types
+`pii` section of `sidecar/config.yaml` names which of the 45 entity types
 are active, five here. The section is required rather than defaulted: turning
 on every recognizer rewrites ordinary numeric columns, because `US_SSN` fires
 on roughly a third of random nine-digit business ids.
 
-Sidecar knobs live in `hoopinspect/config.yaml`; validate a change without
+Sidecar knobs live in `sidecar/config.yaml`; validate a change without
 starting anything:
 
 ```bash
-cd ../../../hoopinspect/cmd && go run . -validate \
-  -config ../../deploy/docker-compose/envoy-stack/hoopinspect/config.yaml
+cd ../../../sidecar/cmd && go run . -validate \
+  -config ../../deploy/docker-compose/envoy-stack/sidecar/config.yaml
 ```
 
 That one runs on the host, so it needs Go 1.26.5 or newer. An older toolchain
@@ -162,7 +162,7 @@ The same lane rewrites the result set on the way back:
 The codec rebuilds the frames around the new values rather than substituting
 bytes. A pgwire `DataRow` length-prefixes every row and every column, so
 rewriting bytes in place desynchronizes psql on the next message
-(`hoopinspect/codec/postgres/rewrite.go`).
+(`sidecar/codec/postgres/rewrite.go`).
 
 A **column rule** masks the `ssn` column by position rather than by detection.
 The seeded value `123-45-6789` is one alcatraz refuses, because it rejects
@@ -179,7 +179,7 @@ otherwise loses a technical review. `ext_authz` sees method, path, headers and
 a bounded body slice. It structurally cannot see a **response**: it decides
 before the upstream is called.
 
-`hoopinspect/config.yaml` carries two rules that make the difference concrete:
+`sidecar/config.yaml` carries two rules that make the difference concrete:
 
 - `no-internal-ids` denies `/anything/users/*/orders/*` with one rule for
   every id, because the codec normalizes the path to a stable resource rather
@@ -199,7 +199,7 @@ listener:
 ```bash
 curl -s localhost:19000/api/sessions | python3 -m json.tool
 curl -s localhost:19000/stats        | python3 -m json.tool
-docker compose logs hoop-inspect | ./hoopinspect/read-audit.py
+docker compose logs hoop-inspect | ./sidecar/read-audit.py
 ```
 
 `read-audit.py` also asserts the trail contains no value that masking removed;
@@ -212,7 +212,7 @@ Tiers 2a and 2b deny locally. This one splits a decision in half: a
 means. hoop-inspect calls what a producer reports a **finding**, and
 `action: defer` on a rule is how you say "report it, do not deny it".
 
-Two producers sit commented out in `hoopinspect/config.yaml`:
+Two producers sit commented out in `sidecar/config.yaml`:
 
 - **`pii`**: a `type: pii` rule carrying `action: defer`. No credential, no
   per-statement cost: the detector in the `pii:` section is already running
@@ -318,8 +318,8 @@ curl -s localhost:19000/config    | python3 -m json.tool   # ai_rules per lane
 This evaluator **fails open** by default. It depends on a third-party API, and
 refusing every statement during a vendor outage is a larger incident than the
 one it guards against. OPA and the local rules still fail closed. Full
-reference in [`hoopinspect/README.md`](../../../hoopinspect/README.md) and
-[`docs/adr/hoopinspect-flow.md`](../../../docs/adr/hoopinspect-flow.md#risk-analysis-the-ai-session-analyzer).
+reference in [`sidecar/README.md`](../../../sidecar/README.md) and
+[`docs/adr/0005-sidecar-flow.md`](../../../docs/adr/0005-sidecar-flow.md#risk-analysis-the-ai-session-analyzer).
 
 ## Identity
 
@@ -327,11 +327,11 @@ Every session in this stack records `principal: anonymous`, and that is honest
 rather than broken. `session.Identity` carries a Subject, and
 `proxy.Config.IdentityFn` is the seam a deployment fills from a verified JWT,
 an mTLS peer cert or a credential token
-(`hoopinspect/proxy/proxy.go:86-93`). The sidecar exposes it as
+(`sidecar/proxy/proxy.go:86-93`). The sidecar exposes it as
 `identity_header` on a listener, but the current implementation contributes
 only the peer address: extracting a header there would mean buffering ahead of
 the relay, and identity for HTTP belongs in the gate where the request is
-already parsed (`hoopinspect/sidecar/sidecar.go:650-667`).
+already parsed (`sidecar/daemon/daemon.go:650-667`).
 
 So the actor column is wired end to end and unpopulated. Filling it takes one
 function rather than an architecture change, and `X-Hoop-User` already rides
@@ -364,7 +364,7 @@ on every request that reaches the sidecar.
   `input.attributes.metadataContext.filterMetadata` populated by Envoy's
   `jwt_authn` filter (same Rego shape, no compose-level IdP).
 - **No SSH lane.** hoop's gateway terminates SSH and records both directions;
-  hoopinspect has no SSH codec, so that lane is not in this stack. The point
+  sidecar has no SSH codec, so that lane is not in this stack. The point
   stands: Envoy ships **no SSH filter at any fidelity**, so every service
   reached over SSH is unpoliced by the Envoy+OPA layer.
 

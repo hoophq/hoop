@@ -103,9 +103,9 @@ Untested and worth knowing:
 ## Run it
 
 ```bash
-hoopinspect/scripts/dev/mssql2019-stack.sh          # build, start, seed
-hoopinspect/scripts/dev/mssql2019-check.sh          # verify
-hoopinspect/scripts/dev/mssql2019-stack.sh down     # tear down
+sidecar/scripts/dev/mssql2019-stack.sh          # build, start, seed
+sidecar/scripts/dev/mssql2019-check.sh          # verify
+sidecar/scripts/dev/mssql2019-stack.sh down     # tear down
 ```
 
 No certificates to mint, unlike the 2022 lane: running SQL Server with no TLS

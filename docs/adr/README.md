@@ -73,7 +73,7 @@ an already-decided pattern doesn't need one just because of its size.
 | Where the RDP PII guard's OCR cache lives and at what granularity | Yes — [ADR-0002](0002-rdp-pii-guard-line-ocr-cache.md) | Followed a profiling exercise across multiple placements; the measured numbers and rejected options are the reusable part. |
 | Adding `agent/controller/oracle.go` alongside the existing `postgres.go`, `mysql.go`, `mssql.go` handlers | No | Same packet-dispatch pattern, new instance. The "one file per protocol, dispatched by packet type" decision doesn't need re-litigating per protocol. |
 | Extending token validation to check `client_id` in the audience claim | No | Tightens an existing rule inside the current auth model; no new option was chosen between. |
-| A living document like `docs/adr/hoopinspect-flow.md` or `webapp_v2/CONTEXT_MIGRATION.md` | No, and it's not an ADR to begin with | These describe *current-state* architecture or migration progress and get edited as things change. An ADR is a record of *one point-in-time decision* — it doesn't get rewritten when reality moves on; it gets superseded or amended. Don't conflate the two doc types. |
+| A living document like `docs/adr/0005-sidecar-flow.md` or `webapp_v2/CONTEXT_MIGRATION.md` | No, and it's not an ADR to begin with | These describe *current-state* architecture or migration progress and get edited as things change. An ADR is a record of *one point-in-time decision* — it doesn't get rewritten when reality moves on; it gets superseded or amended. Don't conflate the two doc types. |
 
 ## Process
 

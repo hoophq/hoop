@@ -81,7 +81,7 @@ services:
       retries: 20
       start_period: "10s"
 
-  # The hoop-inspect sidecar: the hoopinspect library as a process.
+  # The hoop-inspect sidecar: the sidecar library as a process.
   #
   # Envoy forwards to it instead of straight to the upstream. It decodes the
   # wire protocol, evaluates policy, writes an audit trail, and masks
@@ -92,9 +92,9 @@ services:
   hoop-inspect:
     image: hoop-inspect:local
     build:
-      context: ../../../hoopinspect
-      dockerfile: ../deploy/docker-compose/envoy-stack/hoopinspect/Dockerfile
-      # hoopinspect's codecs live in libhoop, a private module. This stack
+      context: ../../../sidecar
+      dockerfile: ../deploy/docker-compose/envoy-stack/sidecar/Dockerfile
+      # sidecar's codecs live in libhoop, a private module. This stack
       # builds from the local tree rather than the proxy, so libhoop comes
       # from the local checkout too. A second context keeps the main one
       # small instead of shipping the whole repo to the daemon.
@@ -102,7 +102,7 @@ services:
         libhoop: ../../../libhoop
     networks: [inspect]
     volumes:
-      - ./hoopinspect/config.yaml:/etc/hoop-inspect/config.yaml:ro
+      - ./sidecar/config.yaml:/etc/hoop-inspect/config.yaml:ro
       # appdb's self-signed cert, used as the CA that verifies it.
       - ./upstream/certs/server.crt:/etc/hoop-inspect/certs/appdb.crt:ro
     ports:

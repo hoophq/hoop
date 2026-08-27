@@ -145,7 +145,7 @@ h "AUDIT / every statement Metabase ran, including its own"
 note "Nothing in Metabase was configured to log this. The 180s window covers"
 note "./run.sh's sync, so counts match the README on the first run only."
 sleep 1
-docker compose logs hoop-inspect --since 180s 2>/dev/null | ./hoopinspect/read-audit.py || FAILED=1
+docker compose logs hoop-inspect --since 180s 2>/dev/null | ./sidecar/read-audit.py || FAILED=1
 
 h "SIDECAR / counters"
 curl -s http://localhost:19000/stats | python3 -m json.tool 2>/dev/null | sed 's/^/  /'

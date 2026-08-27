@@ -1,6 +1,6 @@
 # Overlay: a Postgres lane where the client authenticates with Kerberos.
 #
-#   ../../../../hoopinspect/scripts/dev/pg-stack.sh
+#   ../../../../sidecar/scripts/dev/pg-stack.sh
 #
 # The same realm and the same relay as the mssql overlay, without SQL Server.
 # That is the point of it: SQL Server publishes no arm64 image, so on Apple

@@ -12,12 +12,12 @@ import (
 	// standalone hoop-inspect binary. Linking all three keeps the
 	// config-decides-everything rule: turning on Vertex must not require a
 	// different binary.
-	_ "github.com/hoophq/hoop/hoopinspect/analyzer/anthropic"
-	_ "github.com/hoophq/hoop/hoopinspect/analyzer/openai"
-	_ "github.com/hoophq/hoop/hoopinspect/analyzer/vertex"
-	configyaml "github.com/hoophq/hoop/hoopinspect/config/yaml"
-	"github.com/hoophq/hoop/hoopinspect/pii/alcatraz"
-	"github.com/hoophq/hoop/hoopinspect/sidecar"
+	_ "github.com/hoophq/hoop/sidecar/analyzer/anthropic"
+	_ "github.com/hoophq/hoop/sidecar/analyzer/openai"
+	_ "github.com/hoophq/hoop/sidecar/analyzer/vertex"
+	configyaml "github.com/hoophq/hoop/sidecar/config/yaml"
+	"github.com/hoophq/hoop/sidecar/daemon"
+	"github.com/hoophq/hoop/sidecar/pii/alcatraz"
 	"github.com/spf13/cobra"
 )
 
@@ -65,13 +65,13 @@ alias.`,
 			return fmt.Errorf("--config is required (or set HOOP_SIDECAR_CONFIG)")
 		}
 
-		cfg, det, err := sidecar.Setup(sidecarConfigFlag, configyaml.Load, buildSidecarPlugin)
+		cfg, det, err := daemon.Setup(sidecarConfigFlag, configyaml.Load, buildSidecarPlugin)
 		if err != nil {
 			return err
 		}
 
 		if sidecarValidateFlag {
-			lanes, err := sidecar.Validate(cfg, det)
+			lanes, err := daemon.Validate(cfg, det)
 			if err != nil {
 				return err
 			}
@@ -83,7 +83,7 @@ alias.`,
 		}
 
 		// Run blocks until SIGINT or SIGTERM and installs its own handler.
-		return sidecar.Run(cfg, det)
+		return daemon.Run(cfg, det)
 	},
 }
 
@@ -117,10 +117,10 @@ func sidecarConfigFromEnv() string {
 // buildSidecarPlugin constructs the PII detector from the config's "pii"
 // section.
 //
-// A nil alcatraz.Plugin converts to a nil sidecar.Plugin, so an absent section
+// A nil alcatraz.Plugin converts to a nil daemon.Plugin, so an absent section
 // stays nil rather than becoming a non-nil interface holding a nil pointer,
 // which the sidecar would call through.
-func buildSidecarPlugin(raw json.RawMessage) (sidecar.Plugin, error) {
+func buildSidecarPlugin(raw json.RawMessage) (daemon.Plugin, error) {
 	return alcatraz.PluginFromConfig(raw)
 }
 
@@ -128,7 +128,7 @@ func init() {
 	// The sidecar reports this at /stats and in its startup log, so an
 	// operator reading either sees the hoop version that produced the binary
 	// rather than the library's "dev" default.
-	sidecar.Version = version.Get().Version
+	daemon.Version = version.Get().Version
 
 	startSidecarCmd.Flags().StringVar(&sidecarConfigFlag, "config", sidecarConfigFromEnv(),
 		"Path to the inspection config file (YAML or JSON)")
