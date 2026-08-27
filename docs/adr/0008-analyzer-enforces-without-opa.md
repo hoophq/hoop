@@ -1,4 +1,4 @@
-# ADR-0008: The AI analyzer decides for itself; OPA is the opt-in second decider
+# ADR-0007: The AI analyzer decides for itself; OPA is the opt-in second decider
 
 - **Status:** Accepted
 - **Date:** 2026-08-27
