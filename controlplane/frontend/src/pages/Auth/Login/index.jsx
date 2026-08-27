@@ -64,7 +64,7 @@ function Login() {
       if (redirectUrl) {
         window.location.href = redirectUrl
       } else {
-        navigate('/client')
+        navigate('/')
       }
     }
   }, [isAuthenticated, navigate, getAndClearRedirectUrl])
@@ -136,7 +136,7 @@ function Login() {
         return
       }
 
-      navigate('/client')
+      navigate('/')
     } catch (err) {
       setError(err.response?.data?.message || 'Invalid email or password')
     } finally {

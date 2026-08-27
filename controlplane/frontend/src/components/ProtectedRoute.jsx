@@ -3,7 +3,6 @@ import { Navigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '@/stores/useAuthStore'
 import { useUserStore } from '@/stores/useUserStore'
 import { authService } from '@/services/auth'
-import { connectionsService } from '@/services/connections'
 import { featureFlagsService } from '@/services/featureFlags'
 import AuthPageLoader from '@/components/AuthPageLoader'
 
@@ -15,8 +14,6 @@ function ProtectedRoute({ children, adminOnly = false, licenseFeature = null }) 
   const [initializing, setInitializing] = useState(true)
   const [redirectTo, setRedirectTo] = useState(null)
   const initialized = useRef(false)
-
-  const isOnboardingRoute = location.pathname.startsWith('/onboarding')
 
   useEffect(() => {
     // Run only once per component instance — prevents StrictMode double-fire
@@ -72,26 +69,12 @@ function ProtectedRoute({ children, adminOnly = false, licenseFeature = null }) 
         const featureFlags = Object.fromEntries(featureFlagsData.map(flag => [flag.name, flag.enabled]))
         setFeatureFlags(featureFlags)
 
-        // Check onboarding: admin with no connections must go through onboarding.
-        // Skip if already on onboarding routes to avoid a redirect loop.
-        if (currentUser.is_admin && !isOnboardingRoute) {
-          try {
-            const { pages } = await connectionsService.getConnectionsPaginated({ pageSize: 1 })
-            if ((pages?.total ?? 0) === 0) {
-              // Protection rules come first: until a profile has been applied
-              // (default_protection_profile is null for both "never chose" and
-              // "manual"), onboarding starts at the protection-rules step.
-              setRedirectTo(
-                currentUser.default_protection_profile
-                  ? '/onboarding/setup'
-                  : '/onboarding/protection-rules'
-              )
-              return
-            }
-          } catch {
-            // On API error, let the user through rather than blocking access.
-          }
-        }
+        // No onboarding gate. The gateway sent an admin with zero connections into a
+        // setup wizard; the control plane has no equivalent — its first-run journey
+        // belongs to the One Command Start and Admin Authentication projects. Until
+        // then a fresh organization lands on /sidecars, whose empty state already says
+        // the first step is connecting a sidecar. Redirecting to a route this app does
+        // not have would strand exactly the user we most need to get through.
       } catch (error) {
         console.error('[ProtectedRoute] initialization failed:', error)
         saveRedirectUrl(window.location.href)
@@ -105,9 +88,9 @@ function ProtectedRoute({ children, adminOnly = false, licenseFeature = null }) 
     initialize()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // React Router reuses this ProtectedRoute instance when navigating between
-  // Route entries whose element tree starts with <ProtectedRoute> (both /* and
-  // /onboarding/*). That means redirectTo state survives the navigation it
+  // React Router reuses this ProtectedRoute instance when navigating between Route
+  // entries whose element tree starts with <ProtectedRoute>. That means redirectTo
+  // state survives the navigation it
   // triggered, and on the next render — with the new pathname — we'd return
   // <Navigate> again, firing history.replace in a loop until the browser
   // throttles. Clear redirectTo once we've arrived at the target.

@@ -32,7 +32,7 @@ function Register() {
 
   useEffect(() => {
     if (isAuthenticated) {
-      navigate('/client')
+      navigate('/')
       return
     }
 
@@ -71,7 +71,7 @@ function Register() {
     try {
       const { token } = await authService.registerLocal(email, password, fullName)
       setToken(token)
-      navigate('/client')
+      navigate('/')
     } catch (err) {
       setError(err.response?.data?.message || 'Registration failed. Please try again.')
     } finally {

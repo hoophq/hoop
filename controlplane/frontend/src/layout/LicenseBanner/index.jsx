@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import { Anchor, Group, Text } from '@mantine/core'
-import { Link, useLocation } from 'react-router-dom'
 import { TriangleAlert } from 'lucide-react'
 import Alert from '@/components/Alert'
 import { useUserStore } from '@/stores/useUserStore'
 import { LICENSE_STATUS, daysUntilExpiration, formatLicenseDate } from '@/utils/license'
 import { openSupport } from '@/utils/support'
 
-const LICENSE_PAGE = '/settings/license'
+// Every notice routes to support. The gateway offered a self-serve /settings/license
+// page for expired and unverifiable licenses; the control plane has no such page, so
+// contacting us is the only remediation that actually exists.
 const SUPPORT_MESSAGE = 'I want to renew my hoop license'
 const WARN_DAYS = 30
 // Dismissing silences one step only; inside LOCKED_DAYS there is no close button.
@@ -24,7 +25,7 @@ function licenseNotice({ licenseInfo, isAdmin, userId, dismissedFor }) {
     return {
       color: 'red',
       message: `Your hoop license expired on ${formatLicenseDate(expireAt)}. New sessions are blocked until a valid license is installed.`,
-      action: 'update',
+      action: 'support',
     }
   }
 
@@ -33,7 +34,7 @@ function licenseNotice({ licenseInfo, isAdmin, userId, dismissedFor }) {
     return {
       color: 'red',
       message: `Your hoop license could not be verified${reason}. New sessions are blocked until a valid license is installed.`,
-      action: 'update',
+      action: 'support',
     }
   }
 
@@ -62,12 +63,12 @@ export default function LicenseBanner() {
   const licenseInfo = useUserStore((state) => state.licenseInfo)
   const isAdmin = useUserStore((state) => state.isAdmin)
   const userId = useUserStore((state) => state.user?.id)
-  const { pathname } = useLocation()
   const [dismissedFor, setDismissedFor] = useState(() => localStorage.getItem(DISMISS_KEY))
 
+  // webapp_v2 also hid the banner on /settings/license, where the same message sat next
+  // to the field that fixed it. There is no such page here, so the banner always shows.
   const notice = licenseNotice({ licenseInfo, isAdmin, userId, dismissedFor })
-  // The license page states the same thing next to the field that fixes it.
-  if (!notice || pathname === LICENSE_PAGE) return null
+  if (!notice) return null
 
   const dismiss = () => {
     localStorage.setItem(DISMISS_KEY, notice.dismissKey)
@@ -89,11 +90,6 @@ export default function LicenseBanner() {
         <Text size="sm" component="span">
           {notice.message}
         </Text>
-        {notice.action === 'update' && (
-          <Anchor component={Link} to={LICENSE_PAGE} c={notice.color} fw={500} size="sm">
-            Update license
-          </Anchor>
-        )}
         {notice.action === 'support' && (
           <Anchor
             component="button"

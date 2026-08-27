@@ -134,7 +134,7 @@ function Setup() {
     try {
       const { token } = await authService.registerLocal(email, password, fullName)
       setToken(token)
-      navigate('/onboarding/setup', { replace: true })
+      navigate('/', { replace: true })
     } catch (err) {
       setError(
         err.response?.data?.message || 'Something went wrong. Please try again.'

@@ -156,9 +156,6 @@ export default function DataMasking() {
               onConfigure={(id) =>
                 navigate(`/features/data-masking/edit/${id}`)
               }
-              onConfigureConnection={(name) =>
-                navigate(`/resources/configure/${encodeURIComponent(name)}`)
-              }
             />
           ))}
         </Box>

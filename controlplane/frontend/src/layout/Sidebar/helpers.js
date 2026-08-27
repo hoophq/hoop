@@ -8,7 +8,9 @@ export function shouldHide(item, isAdmin, isSelfHosted = false, isFeatureFlagEna
 
 export function isActive(path, pathname, search = '') {
   if (!path) return false
-  if (path === '/dashboard') return pathname === '/dashboard' || pathname === '/'
+  // The start page redirects to Sidecars, so highlight it while "/" is on screen.
+  // In webapp_v2 this special case named /dashboard, which does not exist here.
+  if (path === '/sidecars') return pathname === '/sidecars' || pathname === '/'
   // Items may target a query state of a page (e.g. /jira-templates?tab=configuration).
   // Match the pathname against the base path, then require every query param the
   // item declares to be present in the current URL.

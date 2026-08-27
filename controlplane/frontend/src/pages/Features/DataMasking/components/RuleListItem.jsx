@@ -67,13 +67,17 @@ function ConnectionsPanel({ connections, loading, onConfigureConnection }) {
                     {connection.name}
                   </Text>
                 </Group>
-                <Button
-                  size="sm"
-                  variant="default"
-                  onClick={() => onConfigureConnection(connection.name)}
-                >
-                  Configure
-                </Button>
+                {/* Optional: the control plane has no resource configuration page,
+                    so the row is informational there rather than actionable. */}
+                {onConfigureConnection && (
+                  <Button
+                    size="sm"
+                    variant="default"
+                    onClick={() => onConfigureConnection(connection.name)}
+                  >
+                    Configure
+                  </Button>
+                )}
               </Flex>
             ))
           )}

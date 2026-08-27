@@ -31,12 +31,27 @@ const STATUS_OPTIONS = [
   { value: 'reviewing', label: 'Reviewing' },
 ]
 
+// The gateway activates a local user with this password immediately and never forces a
+// change, so it is the account's real credential. webapp_v2 built it from three
+// eight-word lists with Math.random — 512 possibilities, and because the value lived in
+// component state of a modal that never unmounts, every user invited before a page
+// reload got the SAME one.
+//
+// Readability still matters, since an admin copies this into a message by hand: four
+// words from a larger list plus digits, drawn from crypto.getRandomValues.
+const WORDS = [
+  'amber', 'anchor', 'atlas', 'beacon', 'bridge', 'canyon', 'cedar', 'cobalt',
+  'compass', 'copper', 'coral', 'delta', 'ember', 'falcon', 'forest', 'granite',
+  'harbor', 'indigo', 'ivory', 'jasper', 'juniper', 'lantern', 'marble', 'meadow',
+  'mercury', 'nimbus', 'onyx', 'orbit', 'pepper', 'quartz', 'quiver', 'ridge',
+  'river', 'saffron', 'sierra', 'silver', 'summit', 'thunder', 'timber', 'tundra',
+  'velvet', 'walnut', 'willow', 'zephyr',
+]
+
 function generatePassword() {
-  const adjectives = ['Fast', 'Blue', 'Happy', 'Strong', 'Bright', 'Silent', 'Quick', 'Dark']
-  const colors = ['Red', 'Green', 'Gold', 'Cyan', 'Pink', 'Gray', 'Teal', 'Lime']
-  const animals = ['Tiger', 'Eagle', 'Shark', 'Panda', 'Wolf', 'Bear', 'Hawk', 'Fox']
-  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)]
-  return `${pick(adjectives)}-${pick(colors)}-${pick(animals)}`
+  const bytes = crypto.getRandomValues(new Uint32Array(5))
+  const words = Array.from(bytes.slice(0, 4), (n) => WORDS[n % WORDS.length])
+  return `${words.join('-')}-${String(bytes[4] % 10000).padStart(4, '0')}`
 }
 
 const CREATE_PREFIX = '__new__:'
@@ -216,6 +231,11 @@ export default function Users() {
   const [selectedUser, setSelectedUser] = useState(null)
   const [formType, setFormType] = useState('create')
   const [opened, { open, close }] = useDisclosure(false)
+  // Bumped on every open so UserFormModal remounts. The modal stays mounted with only
+  // `opened` toggling, so without this its initial state — including the generated
+  // password — is computed once for the lifetime of the page.
+  const [formKey, setFormKey] = useState(0)
+  const openForm = () => { setFormKey((n) => n + 1); open() }
 
   const showLoader = useMinDelay(loading)
 
@@ -243,13 +263,13 @@ export default function Users() {
   function handleAdd() {
     setSelectedUser(null)
     setFormType('create')
-    open()
+    openForm()
   }
 
   function handleEdit(user) {
     setSelectedUser(user)
     setFormType('update')
-    open()
+    openForm()
   }
 
   if (showLoader) return <PageLoader />
@@ -337,6 +357,7 @@ export default function Users() {
       </Stack>
 
       <UserFormModal
+        key={opened ? formKey : 'closed'}
         opened={opened}
         onClose={close}
         formType={formType}

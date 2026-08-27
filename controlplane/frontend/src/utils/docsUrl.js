@@ -7,7 +7,7 @@ export const docsUrl = {
   features: {
     runbooks: 'https://hoop.dev/docs/learn/features/runbooks',
     sessionRecording: 'https://hoop.dev/docs/learn/features/session-recording',
-    aiDatamasking: 'https://hoop.dev/docs/learn/features/ai-data-masking',
+    aiDatamasking: 'https://hoop.dev/docs/features/data-masking',
     aiSessionAnalyzer: 'https://hoop.dev/docs/learn/features/ai-session-analyzer',
     attributes: 'https://hoop.dev/docs/learn/features/attributes',
     accessControl: 'https://hoop.dev/docs/learn/features/access-control',
@@ -58,8 +58,8 @@ export const docsUrl = {
     webApp: {
       overview: 'https://hoop.dev/docs/clients/webapp/overview',
       creatingConnection: 'https://hoop.dev/docs/clients/webapp/creating-connection',
-      managingAccess: 'https://hoop.dev/docs/clients/webapp/managing-accesss',
-      userManagement: 'https://hoop.dev/docs/clients/webapp/managing-accesss',
+      managingAccess: 'https://hoop.dev/docs/clients/webapp/managing-access',
+      userManagement: 'https://hoop.dev/docs/clients/webapp/managing-access',
       monitoringSessions: 'https://hoop.dev/docs/clients/webapp/monitoring-sessions',
     },
     commandLine: {

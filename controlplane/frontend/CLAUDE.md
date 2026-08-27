@@ -49,6 +49,16 @@ Adding a route means adding it to `Router.jsx`, `layout/Sidebar/constants.js` an
 `features/CommandPalette/constants.js`. The last two navigate, so an entry pointing at
 an unclaimed path sends the user to the 404 page.
 
+`npm run build` runs `scripts/check-routes.mjs`, which fails when a literal
+`navigate()`, `to=` or `href=` target is not claimed by `Router.jsx`. This is the check
+that catches the leftovers of removing a route — `navigate('/client')` after a
+successful login was one, and nothing else would have found it.
+
+**It only sees literal paths.** A destination held in a variable or built from one is
+invisible to it: `const LICENSE_PAGE = '/settings/license'` and a `setRedirectTo(...)`
+into `<Navigate to={redirectTo}>` both slipped through and had to be found by review.
+Prefer literals — `` navigate(`/reviews/${id}`) `` is checked against `/reviews/:id`.
+
 ## Architecture
 
 ### Stores (Zustand)
