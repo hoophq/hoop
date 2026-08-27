@@ -1,0 +1,12 @@
+/* The header sticks to the top of the scroll area and grows a separator once
+   it detaches from the sentinel rendered above it. The border is declared
+   transparent up front so the header never shifts by a pixel when it appears.
+   Mantine has no style prop for either z-index or a conditional border. */
+.stickyHeader {
+  z-index: 10;
+  border-bottom: 1px solid transparent;
+}
+
+.stickyHeader[data-scrolled] {
+  border-bottom-color: var(--mantine-color-default-border);
+}

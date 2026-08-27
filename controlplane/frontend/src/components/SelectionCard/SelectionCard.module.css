@@ -1,0 +1,58 @@
+.card {
+  width: 100%;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-lg);
+  background-color: var(--hoop-surface-raised);
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.card:hover {
+  background-color: var(--mantine-color-gray-1);
+}
+
+.card[data-selected] {
+  background-color: var(--brand-navy);
+  border-color: var(--brand-navy);
+}
+
+.card[data-selected]:hover {
+  background-color: var(--brand-navy);
+}
+
+/* A disabled card still shows which option is active — it just can't be
+   changed — so the selected surface is preserved and only dimmed. */
+.card:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.card:disabled:hover {
+  background-color: var(--hoop-surface-raised);
+}
+
+.card[data-selected]:disabled:hover {
+  background-color: var(--brand-navy);
+}
+
+/* Dark-on-dark exception: Mantine's gray palette is calibrated for light
+   backgrounds, so we paint icon contrast with rgba white. */
+.card[data-selected] .icon {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+/* Logos are full-colour artwork — flatten them to white when selected. */
+.card[data-selected] .logo {
+  filter: brightness(0) invert(1);
+}
+
+/* Mantine writes --badge-bg inline, which no ancestor rule can outrank. */
+.badge {
+  display: contents;
+}
+
+.card[data-selected] .badge > * {
+  background-color: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}

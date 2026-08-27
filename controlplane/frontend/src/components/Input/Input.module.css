@@ -1,0 +1,20 @@
+/* Mantine defines --input-bd per variant directly on the input wrapper
+   ([data-mantine-color-scheme='light'] .m_xxx[data-variant='default']),
+   so a :root override from cssVariablesResolver never reaches it — the
+   element-level declaration wins over inheritance. This rule targets the
+   same element and, being outside @layer mantine, takes precedence.
+
+   Scoped to the default variant without error on purpose:
+   - filled/unstyled variants keep their transparent border
+   - error state keeps var(--mantine-color-error)
+   - the focus swap (--input-bd: var(--input-bd-focus)) is declared on the
+     inner input element, not the wrapper, so it is unaffected either way */
+.wrapper[data-variant='default']:not([data-error]) {
+  --input-bd: var(--mantine-color-default-border);
+}
+
+/* Mantine's --input-bg is theme.white (#FCFCFD) — the page background.
+   Not error-scoped: the surface is the same in the error state. */
+.wrapper[data-variant='default'] {
+  --input-bg: var(--hoop-surface-raised);
+}

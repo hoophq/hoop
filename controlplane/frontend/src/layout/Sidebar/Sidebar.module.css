@@ -1,0 +1,309 @@
+/* ── Nav link ──────────────────────────────────────────────── */
+
+.navLink {
+  border-radius: var(--mantine-radius-sm);
+  color: var(--mantine-color-dimmed);
+}
+
+.navLinkLabel {
+  color: inherit;
+  font-weight: 500;
+}
+
+.navLinkSection {
+  color: inherit;
+}
+
+.navLinkChevron {
+  color: inherit;
+}
+
+/*
+ * Hover/active backgrounds use Figma's alpha-overlay tokens (Neutral Alpha /
+ * Black Alpha) as rgba literals — Mantine exposes no alpha-tint variables,
+ * and an opaque gray would render two different perceived hovers over the
+ * gray-0 sidebar vs the white Config Status card. Same precedent as
+ * src/components/Pill/theme.js.
+ */
+.navLink:hover {
+  background-color: rgba(0, 0, 51, 0.06);
+  color: var(--mantine-color-text);
+}
+
+.navLink:hover * {
+  color: inherit;
+}
+
+/* Active state — override Mantine's --nl-bg / --nl-color */
+.navLink[data-active],
+.navLink[aria-current='page'] {
+  background-color: rgba(0, 0, 0, 0.05);
+  color: var(--mantine-color-text);
+  --nl-bg: rgba(0, 0, 0, 0.05);
+  --nl-color: var(--mantine-color-text);
+}
+
+.navLink[data-active] *,
+.navLink[aria-current='page'] * {
+  color: inherit;
+}
+
+.navLink[data-active] .navLinkLabel,
+.navLink[aria-current='page'] .navLinkLabel {
+  font-weight: 700;
+}
+
+.navLink[data-active]:hover,
+.navLink[aria-current='page']:hover {
+  background-color: rgba(0, 0, 0, 0.08) !important;
+}
+
+/* Filled badges (NEW/BETA) keep their own label color — the `color: inherit`
+   rules above would otherwise paint them near-black on the colored badge
+   background when the item is hovered or active. */
+.navLink:hover .badgeFilled,
+.navLink[data-active] .badgeFilled,
+.navLink[aria-current='page'] .badgeFilled {
+  color: var(--mantine-color-white);
+}
+
+.navLink:focus-visible {
+  outline: 2px solid var(--mantine-color-indigo-5);
+  outline-offset: 1px;
+}
+
+/* ── Collapsed icon button ─────────────────────────────────── */
+
+.iconBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--mantine-radius-sm);
+  color: var(--mantine-color-dimmed);
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  padding: 0;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.iconBtn:hover {
+  background-color: rgba(0, 0, 51, 0.06);
+  color: var(--mantine-color-text);
+}
+
+.iconBtn:focus-visible {
+  outline: 2px solid var(--mantine-color-indigo-5);
+  outline-offset: 1px;
+}
+
+.iconBtnActive {
+  background-color: rgba(0, 0, 0, 0.05);
+  color: var(--mantine-color-text);
+}
+
+/* ── Collapse button (full-width footer, right-aligned, border-top) ── */
+
+.collapseBtn {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--mantine-spacing-sm);
+  width: 100%;
+  height: 40px;
+  padding: 0 var(--mantine-spacing-lg);
+  border: none;
+  border-top: 1px solid var(--mantine-color-gray-2);
+  background: transparent;
+  color: var(--mantine-color-dimmed);
+  cursor: pointer;
+  font-size: var(--mantine-font-size-sm);
+  font-weight: 600;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.collapseBtn:hover {
+  background-color: rgba(0, 0, 51, 0.06);
+  color: var(--mantine-color-text);
+}
+
+.collapseBtn:focus-visible {
+  outline: 2px solid var(--mantine-color-indigo-5);
+  outline-offset: -2px;
+}
+
+/* ── Screen-reader-only text ──────────────────────────────── */
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* ── Sidebar root ─────────────────────────────────────────── */
+
+.sidebarRoot {
+  position: relative;
+  height: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* ── Layer transitions ────────────────────────────────────── */
+
+.collapsedLayer {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 100ms ease;
+  pointer-events: none;
+}
+
+.collapsedLayer[data-visible] {
+  opacity: 1;
+  transition: opacity 150ms ease;
+  pointer-events: auto;
+}
+
+.expandedLayer {
+  position: absolute;
+  inset: 0;
+  /* minWidth prevents text-wrap reflow inside overflow:hidden while narrow */
+  min-width: 310px;
+  opacity: 0;
+  transition: opacity 100ms ease;
+  pointer-events: none;
+}
+
+.expandedLayer[data-visible] {
+  /* Delayed fade-in so content appears after the container has grown */
+  opacity: 1;
+  transition: opacity 150ms ease 150ms;
+  pointer-events: auto;
+}
+
+/* ── Collapsed nav internals ──────────────────────────────── */
+
+.collapsedNav {
+  height: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.collapsedScrollArea {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  padding-top: var(--mantine-spacing-sm);
+}
+
+/* Mantine's ScrollArea viewport wraps its children in a display:table div,
+   which cannot stretch a child to the bottom. Turning it into a full-height
+   flex column lets .profileFooter push itself down with margin-top:auto —
+   bottom-docked while the nav list is short, scrolling normally once it is
+   long enough to overflow. */
+.scrollFill > div {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.scrollContent {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.profileFooter {
+  margin-top: auto;
+  flex-shrink: 0;
+  width: 100%;
+}
+
+.collapsedFooter {
+  flex-shrink: 0;
+  border-top: 1px solid var(--mantine-color-gray-2);
+  width: 100%;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ── Expanded nav internals ───────────────────────────────── */
+
+.logoCollapsed {
+  flex-shrink: 0;
+}
+
+.logoExpanded {
+  flex-shrink: 0;
+  padding: 0 var(--mantine-spacing-lg);
+}
+
+.expandedScrollArea {
+  flex: 1;
+  min-height: 0;
+}
+
+.navList {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.listItem {
+  list-style: none;
+}
+
+/* Section heading ("Discover", "Organization").
+ *
+ * Mantine's NavLink pads its root by --mantine-spacing-sm, and its left
+ * section has no width of its own, so an item icon's *box* starts exactly at
+ * that padding. Matching the padding alone still reads misaligned, because
+ * neither shape paints at the edge of its box: measured at 18px, the lucide
+ * icons ink 1.5px in from theirs, and the bold 12px heading inks ~1.0px in
+ * from its own. The 1px pull-back lands the glyph on the NavLink's content
+ * edge instead of 1px past it — an optical correction, not a layout value,
+ * which is why it is a literal and not a spacing token.
+ */
+.sectionLabel {
+  padding-left: calc(var(--mantine-spacing-sm) - 1px);
+}
+
+/* Keeps vertical rhythm in the collapsed view while hiding section text */
+.sectionHidden {
+  visibility: hidden;
+}
+
+/* ── Badge / shortcut in nav item right section ───────────── */
+
+.badgeFilled {
+  border-width: 1px;
+  border-style: solid;
+  border-color: transparent;
+  flex-shrink: 0;
+}
+
+.navLinkChildren {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mantine-spacing-xsAlt);
+  padding-top: var(--mantine-spacing-xs);
+}
+
+.shortcutText {
+  color: var(--mantine-color-dimmed);
+  font-size: 11px;
+}
+

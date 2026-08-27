@@ -1,0 +1,8 @@
+.itemDanger {
+  color: var(--mantine-color-red-8);
+}
+
+.itemDanger:hover {
+  background-color: var(--mantine-color-red-1);
+  color: var(--mantine-color-red-8);
+}

@@ -1,0 +1,2698 @@
+{
+  "connections": [
+    {
+      "resourceConfiguration": {
+        "type": "custom",
+        "subtype": "cassandra",
+        "command": [
+          "cqlsh",
+          "-k",
+          "$CQLSH_KEYSPACE",
+          "-u",
+          "$CQLSH_USER",
+          "-p",
+          "$CQLSH_PASSWD",
+          "$CQLSH_HOST",
+          "$CQLSH_PORT"
+        ],
+        "credentials": [
+          {
+            "name": "CQLSH_KEYSPACE",
+            "type": "env-var",
+            "required": true,
+            "description": "The keyspace target",
+            "placeholder": "my_keyspace"
+          },
+          {
+            "name": "CQLSH_HOST",
+            "type": "env-var",
+            "required": true,
+            "description": "The host of the Cassandra cluster",
+            "placeholder": "localhost"
+          },
+          {
+            "name": "CQLSH_PORT",
+            "type": "env-var",
+            "required": false,
+            "description": "The port of the Cassandra cluster. Defaults to 9042",
+            "placeholder": "9042"
+          },
+          {
+            "name": "CQLSH_USER",
+            "type": "env-var",
+            "required": false,
+            "description": "The user can connect in the Cassandra cluster.",
+            "placeholder": "cassandra"
+          },
+          {
+            "name": "CQLSH_PASSWD",
+            "type": "env-var",
+            "required": false,
+            "description": "The password to connect in the Cassandra cluster.",
+            "placeholder": "cassandra"
+          }
+        ]
+      },
+      "id": "apache-cassandra",
+      "name": "Apache Cassandra",
+      "description": "A highly scalable, distributed NoSQL database designed for handling large amounts of data across many servers.",
+      "category": "databases",
+      "icon-name": "cassandra",
+      "tags": [
+        "database",
+        "nosql"
+      ],
+      "overview": {
+        "description": "Access your Cassandra clusters securely through Hoop.dev with comprehensive audit trails, AI-powered data masking for sensitive information, and granular access controls. Execute CQL queries with confidence knowing all interactions are monitored and protected."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": true,
+          "cli": false,
+          "runbooks": true
+        }
+      },
+      "documentationConfig": {
+        "path": "quickstart/databases/apache-cassandra"
+      },
+      "features": {
+        "tlsTerminationProxy": {
+          "native": false,
+          "oneOff": true
+        },
+        "audit": {
+          "native": false,
+          "oneOff": true
+        },
+        "dataMaskingGoogleDLP": {
+          "native": false,
+          "oneOff": true
+        },
+        "dataMaskingMSPresidio": {
+          "native": false,
+          "oneOff": true
+        },
+        "guardrails": {
+          "native": false,
+          "oneOff": true
+        },
+        "credentialsOffload": {
+          "native": false,
+          "oneOff": true
+        },
+        "interactiveAccess": {
+          "native": false,
+          "oneOff": true
+        }
+      }
+    },
+    {
+      "resourceConfiguration": {
+        "type": "custom",
+        "subtype": "aws-cli",
+        "command": [
+          "bash"
+        ],
+        "credentials": [
+          {
+            "name": "AWS_ACCESS_KEY_ID",
+            "type": "env-var",
+            "required": true,
+            "description": "The access key credential",
+            "placeholder": "AKIAIOSFODNN7EXAMPLE"
+          },
+          {
+            "name": "AWS_SECRET_ACCESS_KEY",
+            "type": "env-var",
+            "required": true,
+            "description": "The secret key credential",
+            "placeholder": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+          },
+          {
+            "name": "AWS_REGION",
+            "type": "env-var",
+            "required": true,
+            "description": "The AWS region",
+            "placeholder": "us-east-1"
+          }
+        ]
+      },
+      "name": "AWS CLI",
+      "requirements": {
+        "description": "Use an IAM credential with reduced scope to only create secrets and/or listing ECS services."
+      },
+      "id": "aws-cli",
+      "description": "The AWS Command Line Interface (CLI) is a unified tool to manage your AWS services from the command line.",
+      "category": "cloud-services",
+      "icon-name": "aws",
+      "tags": [
+        "aws",
+        "cli",
+        "automation"
+      ],
+      "overview": {
+        "description": "Access your AWS resources securely through Hoop.dev with comprehensive command auditing, intelligent cost monitoring, and automated credential management. Execute AWS CLI commands with built-in compliance tracking and session recording for complete infrastructure governance."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": true,
+          "cli": false,
+          "runbooks": true
+        }
+      },
+      "documentationConfig": {
+        "path": "quickstart/cloud-services/aws/aws-cli"
+      },
+      "features": {
+        "tlsTerminationProxy": {
+          "native": false,
+          "oneOff": true
+        },
+        "audit": {
+          "native": false,
+          "oneOff": true
+        },
+        "dataMaskingGoogleDLP": {
+          "native": false,
+          "oneOff": true
+        },
+        "dataMaskingMSPresidio": {
+          "native": false,
+          "oneOff": true
+        },
+        "guardrails": {
+          "native": false,
+          "oneOff": true
+        },
+        "credentialsOffload": {
+          "native": false,
+          "oneOff": true
+        },
+        "interactiveAccess": {
+          "native": false,
+          "oneOff": false
+        }
+      }
+    },
+    {
+      "id": "aws-cloudwatch",
+      "name": "AWS CloudWatch",
+      "description": "A monitoring and observability service that provides data and actionable insights for AWS, hybrid, and on-premises applications and infrastructure resources.",
+      "category": "cloud-services",
+      "icon-name": "aws-cloudwatch",
+      "tags": [
+        "aws"
+      ],
+      "overview": {
+        "description": "Access AWS CloudWatch logs securely through Hoop.dev with intelligent log analysis, automated data classification, and comprehensive audit trails. Monitor your AWS infrastructure with built-in cost controls and session recording for complete observability governance."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": true,
+          "cli": false,
+          "runbooks": true
+        }
+      },
+      "features": {
+        "tlsTerminationProxy": {
+          "native": false,
+          "oneOff": true
+        },
+        "audit": {
+          "native": false,
+          "oneOff": true
+        },
+        "dataMaskingGoogleDLP": {
+          "native": false,
+          "oneOff": true
+        },
+        "dataMaskingMSPresidio": {
+          "native": false,
+          "oneOff": true
+        },
+        "guardrails": {
+          "native": false,
+          "oneOff": true
+        },
+        "credentialsOffload": {
+          "native": false,
+          "oneOff": true
+        },
+        "interactiveAccess": {
+          "native": false,
+          "oneOff": false
+        }
+      },
+      "requirements": {
+        "description": "The AWS credentials require the minimal set of IAM permissions to work:",
+        "items": [
+          "logs:DescribeLogGroups",
+          "logs:GetLogEvents",
+          "logs:FilterLogEvents"
+        ]
+      },
+      "resourceConfiguration": {
+        "type": "custom",
+        "subtype": "aws-cloudwatch",
+        "command": [
+          "bash"
+        ],
+        "credentials": [
+          {
+            "name": "AWS_ACCESS_KEY_ID",
+            "type": "env-var",
+            "required": true,
+            "description": "The AWS access key ID for CloudWatch Logs access",
+            "placeholder": "AKIAIOSFODNN7EXAMPLE"
+          },
+          {
+            "name": "AWS_SECRET_ACCESS_KEY",
+            "type": "env-var",
+            "required": true,
+            "description": "The AWS secret access key for CloudWatch Logs access",
+            "placeholder": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+          },
+          {
+            "name": "AWS_REGION",
+            "type": "env-var",
+            "required": true,
+            "description": "The AWS region where your CloudWatch log groups are located (e.g., us-east-1, eu-west-1)",
+            "placeholder": "us-east-1"
+          }
+        ]
+      },
+      "documentationConfig": {
+        "path": "quickstart/cloud-services/aws/aws-cloudwatch"
+      }
+    },
+    {
+      "id": "aws-ecs",
+      "name": "AWS ECS",
+      "description": "Amazon Elastic Container Service (ECS) is a fully managed container orchestration service that helps you easily deploy, manage, and scale containerized applications.",
+      "category": "cloud-services",
+      "icon-name": "aws",
+      "tags": [
+        "aws",
+        "containers"
+      ],
+      "overview": {
+        "description": "Execute commands in your ECS containers securely through Hoop.dev with comprehensive session recording, intelligent resource monitoring, and automated access controls. Run one-off tasks and debug containerized applications with complete audit trails and built-in security guardrails."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": true,
+          "cli": true,
+          "runbooks": true
+        }
+      },
+      "features": {
+        "tlsTerminationProxy": {
+          "native": false,
+          "oneOff": true
+        },
+        "audit": {
+          "native": false,
+          "oneOff": true
+        },
+        "dataMaskingGoogleDLP": {
+          "native": false,
+          "oneOff": true
+        },
+        "dataMaskingMSPresidio": {
+          "native": false,
+          "oneOff": true
+        },
+        "guardrails": {
+          "native": false,
+          "oneOff": true
+        },
+        "credentialsOffload": {
+          "native": false,
+          "oneOff": true
+        },
+        "interactiveAccess": {
+          "native": true,
+          "oneOff": true
+        }
+      },
+      "requirements": {
+        "description": "This connection uses a wrapper script available in the hoophq/hoopdev image called ecs-exec.sh. This script requires the following permissions to work:",
+        "items": [
+          "ecs:ListTasks",
+          "ecs:DescribeTasks",
+          "ecs:ExecuteCommand"
+        ]
+      },
+      "resourceConfiguration": {
+        "type": "custom",
+        "subtype": "aws-ecs",
+        "command": [
+          "ecs-exec.sh",
+          "--cluster=$CLUSTER_NAME",
+          "--service-name=$SERVICE_NAME",
+          "--container=$CONTAINER"
+        ],
+        "credentials": [
+          {
+            "name": "CLUSTER_NAME",
+            "type": "env-var",
+            "required": true,
+            "description": "The name or arn of the ECS Cluster",
+            "placeholder": "my-cluster"
+          },
+          {
+            "name": "SERVICE_NAME",
+            "type": "env-var",
+            "required": true,
+            "description": "The name of the service on ECS",
+            "placeholder": "my-service"
+          },
+          {
+            "name": "CONTAINER",
+            "type": "env-var",
+            "required": true,
+            "description": "The name of the container defaults to the first one.",
+            "placeholder": "web"
+          },
+          {
+            "name": "AWS_ACCESS_KEY_ID",
+            "type": "env-var",
+            "required": true,
+            "description": "The access key credential",
+            "placeholder": "AKIAIOSFODNN7EXAMPLE"
+          },
+          {
+            "name": "AWS_SECRET_ACCESS_KEY",
+            "type": "env-var",
+            "required": true,
+            "description": "The secret key credential",
+            "placeholder": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+          },
+          {
+            "name": "AWS_DEFAULT_REGION",
+            "type": "env-var",
+            "required": true,
+            "description": "The AWS region",
+            "placeholder": "us-east-1"
+          }
+        ]
+      },
+      "documentationConfig": {
+        "path": "quickstart/cloud-services/aws/aws-ecs"
+      }
+    },
+    {
+      "id": "aws-ssm-script",
+      "name": "AWS SSM",
+      "description": "AWS SSM script permits managing EC2 instances using AWS SSM via Hoop",
+      "category": "cloud-services",
+      "icon-name": "aws",
+      "tags": [
+        "aws"
+      ],
+      "overview": {
+        "description": "AWS SSM script permits executing ad-hoc commands or creating interactive sessions with any EC2 instance in your AWS account."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": true,
+          "cli": true,
+          "runbooks": true
+        }
+      },
+      "resourceConfiguration": {
+        "credentials": [
+          {
+            "type": "env-var",
+            "required": false,
+            "name": "AWS_ACCESS_KEY_ID",
+            "description": "The AWS access key id value",
+            "placeholder": "AKIAIOSFODNN7EXAMPLE"
+          },
+          {
+            "type": "env-var",
+            "required": false,
+            "name": "AWS_SECRET_ACCESS_KEY",
+            "description": "The AWS secret access key value"
+          },
+          {
+            "type": "env-var",
+            "required": false,
+            "name": "AWS_REGION",
+            "description": "The AWS region to issue commands",
+            "placeholder": "us-east-1"
+          },
+          {
+            "type": "env-var",
+            "required": false,
+            "name": "PIPE_EXEC",
+            "description": "The runtime command to be executed when running ad-hoc commands via Web Console. It defaults to /bin/bash",
+            "placeholder": "/bin/bash"
+          },
+          {
+            "type": "env-var",
+            "required": false,
+            "name": "INSTANCE_ID",
+            "description": "The EC2 instance id to use when starting an interactive shell session. Add this value if you want to prevent users from specifying which instance to connect to.",
+            "placeholder": "i-0d1a333276d48ec0d"
+          }
+        ],
+        "type": "custom",
+        "subtype": "aws-ssm",
+        "command": [
+          "aws-ssm.sh"
+        ]
+      },
+      "features": {
+        "tlsTerminationProxy": {
+          "native": true,
+          "oneOff": true
+        },
+        "audit": {
+          "native": true,
+          "oneOff": true
+        },
+        "dataMaskingGoogleDLP": {
+          "native": true,
+          "oneOff": true
+        },
+        "dataMaskingMSPresidio": {
+          "native": true,
+          "oneOff": true
+        },
+        "guardrails": {
+          "native": false,
+          "oneOff": true
+        },
+        "credentialsOffload": {
+          "native": true,
+          "oneOff": true
+        },
+        "interactiveAccess": {
+          "native": true,
+          "oneOff": true
+        }
+      },
+      "documentationConfig": {
+        "path": "quickstart/cloud-services/aws/aws-ssm"
+      }
+    },
+    {
+      "id": "bigquery",
+      "name": "BigQuery",
+      "description": "A fully managed, serverless data warehouse that enables super-fast SQL queries using Google's infrastructure.",
+      "category": "databases",
+      "icon-name": "google-bigquery",
+      "tags": [
+        "database",
+        "analytics",
+        "google-cloud",
+        "sql"
+      ],
+      "features": {
+        "tlsTerminationProxy": {
+          "native": false,
+          "oneOff": true
+        },
+        "audit": {
+          "native": false,
+          "oneOff": true
+        },
+        "dataMaskingGoogleDLP": {
+          "native": false,
+          "oneOff": true
+        },
+        "dataMaskingMSPresidio": {
+          "native": false,
+          "oneOff": true
+        },
+        "guardrails": {
+          "native": false,
+          "oneOff": true
+        },
+        "credentialsOffload": {
+          "native": false,
+          "oneOff": true
+        },
+        "interactiveAccess": {
+          "native": false,
+          "oneOff": false
+        }
+      },
+      "requirements": {
+        "description": "The Google Service Account Credentials must have the following permissions:",
+        "items": [
+          "BigQuery User",
+          "BigQuery Data Viewer"
+        ]
+      },
+      "overview": {
+        "description": "Connect to BigQuery through Hoop.dev for secure analytics access with automated data classification, query monitoring, and intelligent cost controls. Execute petabyte-scale queries while protecting sensitive datasets with zero-config data masking."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": true,
+          "cli": false,
+          "runbooks": true
+        }
+      },
+      "resourceConfiguration": {
+        "type": "custom",
+        "subtype": "bigquery",
+        "command": [
+          "bq",
+          "query",
+          "--use_legacy_sql=false",
+          "--format=prettyjson",
+          "--project_id=$CLOUDSDK_CORE_PROJECT"
+        ],
+        "credentials": [
+          {
+            "name": "GOOGLE_APPLICATION_CREDENTIALS",
+            "type": "filesystem",
+            "required": true,
+            "description": "The service account credentials file in JSON format",
+            "placeholder": "file content of service-account.json"
+          },
+          {
+            "name": "CLOUDSDK_CORE_PROJECT",
+            "type": "env-var",
+            "required": true,
+            "description": "The project id to use for request",
+            "placeholder": "my-project-id"
+          }
+        ]
+      },
+      "documentationConfig": {
+        "path": "quickstart/databases/bigquery"
+      }
+    },
+    {
+      "id": "claude-code",
+      "name": "Claude Code",
+      "description": "Proxy Claude Code to ensure sensitive data won’t leak.",
+      "category": "ai-and-llms",
+      "icon-name": "claude",
+      "coverImage": "/images/quickstarts/claude-code.png",
+      "coverImageAlt": "Claude Code Resource type at hoop.dev",
+      "tags": [
+        "ai",
+        "llm",
+        "security",
+        "proxy"
+      ],
+      "overview": {
+        "description": "Claude Code has never been safer. Use all Hoop features in front of Claude Code and gain the safety of ensuring sensitive data won’t be leaked to LLMs. Create Guardrails and Data Masking rules on top of a centralized API Key and distribute it to everyone in your organization through Hoop."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": false,
+          "cli": false,
+          "native": true,
+          "runbooks": false
+        }
+      },
+      "resourceConfiguration": {
+        "type": "httpproxy",
+        "subtype": "claude-code"
+      },
+      "features": {
+        "tlsTerminationProxy": {
+          "native": true,
+          "oneOff": false
+        },
+        "audit": {
+          "native": true,
+          "oneOff": false
+        },
+        "dataMaskingGoogleDLP": {
+          "native": false,
+          "oneOff": false
+        },
+        "dataMaskingMSPresidio": {
+          "native": true,
+          "oneOff": false
+        },
+        "guardrails": {
+          "native": true,
+          "oneOff": false
+        },
+        "credentialsOffload": {
+          "native": true,
+          "oneOff": false
+        },
+        "interactiveAccess": {
+          "native": false,
+          "oneOff": false
+        }
+      },
+      "documentationConfig": {
+        "path": "quickstart/ai-and-llms/claude-code"
+      },
+      "customMarkupContent": "Once a coding assistant has API connectivity, it is no longer making suggestions. It is reading production data, ingesting environment variables, and operating inside the same execution path as your engineers.\n\nThe default response has been to restrict access to a sandbox, remove production context, and accept reduced usefulness.\n\nThat tradeoff is no longer necessary.\n\nThe Claude Code connection type routes Claude Code's API traffic through hoop.dev before it reaches your infrastructure. With it, you can give Claude Code production access while maintaining the controls your security and compliance teams require:\n\n- Sensitive data is masked before Claude Code sees it. PII, credentials, and secrets in query results are redacted in real time. The model works with the schema and structure, not the raw values.\n- Credentials are never handed to the model. Claude Code authenticates through hoop.dev's SSO integration. Database credentials are retrieved just-in-time and never exposed to the model or its context window.\n- Every query is logged at the command level. More granular than session-level access records, with hoop.dev every individual query is logged, with full context, in a structured and searchable audit trail.\n- Guardrails can block or gate actions outside approved patterns. Queries or commands that fall outside policy can be blocked outright or routed through an approval workflow, without changing how Claude Code is invoked.\n\nThe result is that Claude Code interrogates real schemas, surfaces actual data anomalies, and generates migration scripts against live table structures without your credentials or PII leaving the controlled environment."
+    },
+    {
+      "id": "clojure",
+      "name": "Clojure",
+      "description": "A dynamic, general-purpose programming language that combines interactive development with efficient infrastructure for multithreaded programming.",
+      "category": "development-environments",
+      "icon-name": "clojure",
+      "tags": [
+        "development",
+        "interactive"
+      ],
+      "features": {
+        "tlsTerminationProxy": {
+          "native": false,
+          "oneOff": true
+        },
+        "audit": {
+          "native": false,
+          "oneOff": true
+        },
+        "dataMaskingGoogleDLP": {
+          "native": false,
+          "oneOff": true
+        },
+        "dataMaskingMSPresidio": {
+          "native": false,
+          "oneOff": true
+        },
+        "guardrails": {
+          "native": false,
+          "oneOff": true
+        },
+        "credentialsOffload": {
+          "native": false,
+          "oneOff": true
+        },
+        "interactiveAccess": {
+          "native": true,
+          "oneOff": true
+        }
+      },
+      "overview": {
+        "description": "Access your Clojure REPL environments securely through Hoop.dev with comprehensive session recording, intelligent code execution monitoring, and automated dependency management. Execute Clojure expressions with built-in safeguards, audit trails, and seamless JVM integration."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": true,
+          "cli": true,
+          "runbooks": true
+        }
+      },
+      "resourceConfiguration": {
+        "type": "custom",
+        "subtype": "clojure",
+        "command": [
+          "clj"
+        ]
+      },
+      "documentationConfig": {
+        "path": "quickstart/development-environments/clojure"
+      }
+    },
+    {
+      "id": "django",
+      "name": "Django",
+      "description": "A high-level Python web framework that encourages rapid development and clean, pragmatic design with built-in admin interface.",
+      "category": "development-environments",
+      "icon-name": "django",
+      "tags": [
+        "python",
+        "web",
+        "development"
+      ],
+      "features": {
+        "tlsTerminationProxy": {
+          "native": false,
+          "oneOff": true
+        },
+        "audit": {
+          "native": false,
+          "oneOff": true
+        },
+        "dataMaskingGoogleDLP": {
+          "native": false,
+          "oneOff": true
+        },
+        "dataMaskingMSPresidio": {
+          "native": false,
+          "oneOff": true
+        },
+        "guardrails": {
+          "native": false,
+          "oneOff": true
+        },
+        "credentialsOffload": {
+          "native": false,
+          "oneOff": true
+        },
+        "interactiveAccess": {
+          "native": true,
+          "oneOff": true
+        }
+      },
+      "overview": {
+        "description": "Access your Django management console securely through Hoop.dev with comprehensive command logging, automated database migration tracking, and intelligent access controls. Execute manage.py commands with full audit trails and built-in security safeguards."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": true,
+          "cli": true,
+          "runbooks": true
+        }
+      },
+      "resourceConfiguration": {
+        "type": "custom",
+        "subtype": "django",
+        "command": [
+          "python",
+          "manage.py",
+          "shell"
+        ]
+      },
+      "documentationConfig": {
+        "path": "quickstart/development-environments/python/django-admin"
+      }
+    },
+    {
+      "id": "dynamodb",
+      "name": "DynamoDB",
+      "description": "Amazon DynamoDB is a fully managed NoSQL database service that provides fast and predictable performance with seamless scalability.",
+      "category": "databases",
+      "icon-name": "aws-dynamodb",
+      "tags": [
+        "database",
+        "nosql",
+        "aws"
+      ],
+      "features": {
+        "tlsTerminationProxy": {
+          "native": false,
+          "oneOff": true
+        },
+        "audit": {
+          "native": false,
+          "oneOff": true
+        },
+        "dataMaskingGoogleDLP": {
+          "native": false,
+          "oneOff": true
+        },
+        "dataMaskingMSPresidio": {
+          "native": false,
+          "oneOff": true
+        },
+        "guardrails": {
+          "native": false,
+          "oneOff": true
+        },
+        "credentialsOffload": {
+          "native": false,
+          "oneOff": true
+        },
+        "interactiveAccess": {
+          "native": false,
+          "oneOff": true
+        }
+      },
+      "requirements": {
+        "description": "The AWS credentials require the minimal set of IAM permissions to work",
+        "items": [
+          "dynamodb:Query",
+          "dynamodb:DescribeTable",
+          "dynamodb:ListTables"
+        ]
+      },
+      "overview": {
+        "description": "Amazon DynamoDB is a fully managed NoSQL database service that provides fast and predictable performance with seamless scalability."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": true,
+          "cli": false,
+          "runbooks": true
+        }
+      },
+      "resourceConfiguration": {
+        "type": "custom",
+        "subtype": "dynamodb",
+        "command": [
+          "bash"
+        ],
+        "credentials": [
+          {
+            "name": "AWS_ACCESS_KEY_ID",
+            "type": "env-var",
+            "required": true,
+            "description": "The AWS access key ID for DynamoDB access",
+            "placeholder": "AKIAIOSFODNN7EXAMPLE"
+          },
+          {
+            "name": "AWS_SECRET_ACCESS_KEY",
+            "type": "env-var",
+            "required": true,
+            "description": "The AWS secret access key for DynamoDB access",
+            "placeholder": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+          },
+          {
+            "name": "AWS_REGION",
+            "type": "env-var",
+            "required": true,
+            "description": "The AWS region where your DynamoDB tables are located (e.g., us-east-1, eu-west-1)",
+            "placeholder": "us-east-1"
+          }
+        ]
+      },
+      "documentationConfig": {
+        "path": "quickstart/databases/dynamodb"
+      }
+    },
+    {
+      "id": "elixir-IEx",
+      "name": "Elixir IEx",
+      "description": "A dynamic, functional language designed for building maintainable and scalable applications, running on the Erlang Virtual Machine.",
+      "category": "development-environments",
+      "icon-name": "elixir",
+      "tags": [
+        "development",
+        "interactive"
+      ],
+      "features": {
+        "tlsTerminationProxy": {
+          "native": false,
+          "oneOff": true
+        },
+        "audit": {
+          "native": false,
+          "oneOff": true
+        },
+        "dataMaskingGoogleDLP": {
+          "native": false,
+          "oneOff": true
+        },
+        "dataMaskingMSPresidio": {
+          "native": false,
+          "oneOff": true
+        },
+        "guardrails": {
+          "native": false,
+          "oneOff": true
+        },
+        "credentialsOffload": {
+          "native": false,
+          "oneOff": true
+        },
+        "interactiveAccess": {
+          "native": true,
+          "oneOff": true
+        }
+      },
+      "overview": {
+        "description": "Access your Elixir IEx console securely through Hoop.dev with comprehensive interactive session recording, intelligent process monitoring, and automated OTP supervision. Execute Elixir code with built-in concurrency safeguards and complete audit trails for distributed systems development."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": true,
+          "cli": false,
+          "runbooks": true
+        }
+      },
+      "resourceConfiguration": {
+        "type": "custom",
+        "subtype": "elixir",
+        "command": [
+          "iex",
+          "-S",
+          "mix"
+        ]
+      },
+      "documentationConfig": {
+        "path": "quickstart/development-environments/elixir-IEx"
+      }
+    },
+    {
+      "id": "git",
+      "name": "Git",
+      "description": "Access git servers securely through Hoop using SSH. This integration enables secure git operations, repository management, and git server resource access through the Hoop proxy with complete audit trails and access controls. Works with GitHub, GitLab, Gitea, Forgejo, and any SSH-based git server.",
+      "category": "infrastructure-access",
+      "icon-name": "git",
+      "tags": [
+        "git",
+        "scm",
+        "security",
+        "cli"
+      ],
+      "overview": {
+        "description": "Access git servers securely through Hoop using SSH. This integration enables secure git operations, repository management, and git server resource access through the Hoop proxy with complete audit trails and access controls. Works with GitHub, GitLab, Gitea, Forgejo, and any SSH-based git server."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": false,
+          "cli": true,
+          "native": true,
+          "runbooks": false
+        }
+      },
+      "resourceConfiguration": {
+        "type": "application",
+        "subtype": "git",
+        "credentials": [
+          {
+            "name": "HOST",
+            "type": "env-var",
+            "required": true,
+            "description": "The git server SSH host address (e.g., github.com, gitlab.com, gitea.example.com)",
+            "placeholder": "github.com"
+          },
+          {
+            "name": "USER",
+            "type": "env-var",
+            "required": true,
+            "description": "The git server SSH user (typically 'git' for most servers)",
+            "placeholder": "git"
+          },
+          {
+            "name": "AUTHORIZED_SERVER_KEYS",
+            "type": "env-var",
+            "required": true,
+            "description": "The private SSH key for authenticating with the git server. Must be registered with your git server account.",
+            "placeholder": "Enter your git server SSH private key"
+          }
+        ]
+      },
+      "documentationConfig": {
+        "path": "quickstart/cloud-services/git"
+      },
+      "features": {
+        "tlsTerminationProxy": {
+          "native": true,
+          "oneOff": false
+        },
+        "audit": {
+          "native": true,
+          "oneOff": false
+        },
+        "dataMaskingGoogleDLP": {
+          "native": false,
+          "oneOff": false
+        },
+        "dataMaskingMSPresidio": {
+          "native": false,
+          "oneOff": false
+        },
+        "guardrails": {
+          "native": false,
+          "oneOff": true
+        },
+        "credentialsOffload": {
+          "native": true,
+          "oneOff": false
+        },
+        "interactiveAccess": {
+          "native": true,
+          "oneOff": false
+        }
+      }
+    },
+    {
+      "id": "github",
+      "name": "GitHub",
+      "description": "Access GitHub resources securely through Hoop using SSH. This integration enables secure git operations, repository management, and GitHub resource access through the Hoop proxy with complete audit trails and access controls.",
+      "category": "infrastructure-access",
+      "icon-name": "github",
+      "tags": [
+        "git",
+        "github",
+        "scm",
+        "security",
+        "cli"
+      ],
+      "overview": {
+        "description": "Access GitHub resources securely through Hoop using SSH. This integration enables secure git operations, repository management, and GitHub resource access through the Hoop proxy with complete audit trails and access controls."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": false,
+          "cli": true,
+          "native": true,
+          "runbooks": false
+        }
+      },
+      "resourceConfiguration": {
+        "type": "application",
+        "subtype": "github",
+        "credentials": [
+          {
+            "name": "HOST",
+            "type": "env-var",
+            "required": true,
+            "description": "The GitHub SSH host address",
+            "placeholder": "github.com"
+          },
+          {
+            "name": "USER",
+            "type": "env-var",
+            "required": true,
+            "description": "The GitHub SSH user (typically 'git')",
+            "placeholder": "git"
+          },
+          {
+            "name": "AUTHORIZED_SERVER_KEYS",
+            "type": "env-var",
+            "required": true,
+            "description": "The private SSH key for authenticating with GitHub. Must be registered with your GitHub account.",
+            "placeholder": "Enter your GitHub SSH private key"
+          }
+        ]
+      },
+      "documentationConfig": {
+        "path": "quickstart/cloud-services/github"
+      },
+      "features": {
+        "tlsTerminationProxy": {
+          "native": true,
+          "oneOff": false
+        },
+        "audit": {
+          "native": true,
+          "oneOff": false
+        },
+        "dataMaskingGoogleDLP": {
+          "native": false,
+          "oneOff": false
+        },
+        "dataMaskingMSPresidio": {
+          "native": false,
+          "oneOff": false
+        },
+        "guardrails": {
+          "native": false,
+          "oneOff": true
+        },
+        "credentialsOffload": {
+          "native": true,
+          "oneOff": false
+        },
+        "interactiveAccess": {
+          "native": true,
+          "oneOff": false
+        }
+      }
+    },
+    {
+      "id": "grafana",
+      "name": "Grafana",
+      "description": "Access your Grafana monitoring and visualization platform securely through Hoop.dev with comprehensive audit trails, session recording, and intelligent traffic monitoring.",
+      "category": "web-applications",
+      "icon-name": "grafana",
+      "tags": [
+        "monitoring",
+        "visualization",
+        "web"
+      ],
+      "overview": {
+        "description": "Access your Grafana dashboards and monitoring interfaces securely through Hoop.dev with intelligent traffic monitoring, automated request/response logging, and comprehensive access controls. Proxy Grafana connections with built-in data masking, session recording, and advanced security guardrails for complete API governance."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": false,
+          "cli": true,
+          "native": true,
+          "runbooks": false
+        }
+      },
+      "resourceConfiguration": {
+        "type": "httpproxy",
+        "subtype": "grafana",
+        "credentials": [
+          {
+            "name": "REMOTE_URL",
+            "type": "env-var",
+            "required": true,
+            "description": "The target Grafana instance URL",
+            "placeholder": "https://grafana.example.com"
+          }
+        ]
+      },
+      "features": {
+        "tlsTerminationProxy": {
+          "native": true,
+          "oneOff": false
+        },
+        "audit": {
+          "native": true,
+          "oneOff": false
+        },
+        "dataMaskingGoogleDLP": {
+          "native": false,
+          "oneOff": false
+        },
+        "dataMaskingMSPresidio": {
+          "native": true,
+          "oneOff": false
+        },
+        "guardrails": {
+          "native": false,
+          "oneOff": false
+        },
+        "credentialsOffload": {
+          "native": true,
+          "oneOff": false
+        },
+        "interactiveAccess": {
+          "native": false,
+          "oneOff": false
+        }
+      },
+      "documentationConfig": {
+        "path": "quickstart/web-applications/grafana-proxy"
+      }
+    },
+    {
+      "id": "httpproxy",
+      "name": "HTTP Proxy",
+      "description": "Access HTTP/HTTPS endpoints securely through Hoop.dev with intelligent traffic monitoring, automated request/response logging, and comprehensive access controls.",
+      "category": "web-applications",
+      "icon-name": "httpproxy",
+      "tags": [
+        "web",
+        "security"
+      ],
+      "features": {
+        "tlsTerminationProxy": {
+          "native": true,
+          "oneOff": false
+        },
+        "audit": {
+          "native": true,
+          "oneOff": false
+        },
+        "dataMaskingGoogleDLP": {
+          "native": false,
+          "oneOff": false
+        },
+        "dataMaskingMSPresidio": {
+          "native": true,
+          "oneOff": false
+        },
+        "guardrails": {
+          "native": false,
+          "oneOff": false
+        },
+        "credentialsOffload": {
+          "native": true,
+          "oneOff": false
+        },
+        "interactiveAccess": {
+          "native": false,
+          "oneOff": false
+        }
+      },
+      "overview": {
+        "description": "Access your HTTP/HTTPS services securely through Hoop.dev with intelligent traffic monitoring, automated request/response logging, and comprehensive access controls. Proxy HTTP connections with built-in data masking, session recording, and advanced security guardrails for complete API governance."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": false,
+          "cli": true,
+          "native": true,
+          "runbooks": false
+        }
+      },
+      "resourceConfiguration": {
+        "type": "httpproxy",
+        "subtype": "web-application",
+        "credentials": [
+          {
+            "name": "REMOTE_URL",
+            "type": "env-var",
+            "required": true,
+            "description": "The target HTTP/HTTPS URL to proxy requests to",
+            "placeholder": "https://example.com"
+          }
+        ]
+      },
+      "documentationConfig": {
+        "path": "quickstart/web-applications/http-proxy"
+      }
+    },
+    {
+      "id": "kibana",
+      "name": "Kibana",
+      "description": "Access your Kibana analytics and visualization platform securely through Hoop.dev with comprehensive audit trails, session recording, and intelligent traffic monitoring.",
+      "category": "web-applications",
+      "icon-name": "kibana",
+      "tags": [
+        "monitoring",
+        "visualization",
+        "web",
+        "elasticsearch"
+      ],
+      "overview": {
+        "description": "Access your Kibana dashboards and analytics interfaces securely through Hoop.dev with intelligent traffic monitoring, automated request/response logging, and comprehensive access controls. Proxy Kibana connections with built-in data masking, session recording, and advanced security guardrails for complete API governance."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": false,
+          "cli": true,
+          "native": true,
+          "runbooks": false
+        }
+      },
+      "resourceConfiguration": {
+        "type": "httpproxy",
+        "subtype": "kibana",
+        "credentials": [
+          {
+            "name": "REMOTE_URL",
+            "type": "env-var",
+            "required": true,
+            "description": "The target Kibana instance URL",
+            "placeholder": "https://kibana.example.com"
+          }
+        ]
+      },
+      "features": {
+        "tlsTerminationProxy": {
+          "native": true,
+          "oneOff": false
+        },
+        "audit": {
+          "native": true,
+          "oneOff": false
+        },
+        "dataMaskingGoogleDLP": {
+          "native": false,
+          "oneOff": false
+        },
+        "dataMaskingMSPresidio": {
+          "native": true,
+          "oneOff": false
+        },
+        "guardrails": {
+          "native": false,
+          "oneOff": false
+        },
+        "credentialsOffload": {
+          "native": true,
+          "oneOff": false
+        },
+        "interactiveAccess": {
+          "native": false,
+          "oneOff": false
+        }
+      },
+      "documentationConfig": {
+        "path": "quickstart/web-applications/kibana-proxy"
+      }
+    },
+    {
+      "id": "kubernetes-token",
+      "name": "Kubernetes",
+      "description": "Manage Kubernetes resources through kubectl commands or native API access. This integration supports both CLI-based workflows and direct interaction with the Kubernetes API for full cluster control.",
+      "category": "cloud-services",
+      "icon-name": "kubernetes",
+      "tags": [
+        "containers",
+        "cli"
+      ],
+      "overview": {
+        "description": "Manage Kubernetes resources through kubectl commands or native API access. This integration supports both CLI-based workflows and direct interaction with the Kubernetes API for full cluster control."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": true,
+          "cli": true,
+          "runbooks": true
+        }
+      },
+      "resourceConfiguration": {
+        "credentials": [
+          {
+            "type": "env-var",
+            "required": false,
+            "name": "KUBERNETES_CLUSTER_URL",
+            "description": "The Kubernetes API Server URL. Defaults to in cluster value\nhttps://kubernetes.default.svc.cluster.local",
+            "placeholder": "https://kubernetes.default.svc.cluster.local"
+          },
+          {
+            "type": "env-var",
+            "required": false,
+            "name": "KUBERNETES_INSECURE_SKIP_VERIFY",
+            "description": "Controls whether a client verifies the server's certificate chain and host name. If is true, it accepts any certificate presented by the server and any host name in that certificate. Defaults to false if no value is provided.",
+            "placeholder": "true"
+          },
+          {
+            "type": "env-var",
+            "required": false,
+            "name": "KUBERNETES_BEARER_TOKEN",
+            "description": "The bearer token to authenticate with Kubernetes. It defaults reading the token from the service account when running inside the Kubernetes cluster.",
+            "placeholder": "Bearer <k8s-bearer-token>"
+          }
+        ],
+        "type": "custom",
+        "subtype": "kubernetes",
+        "command": [
+          "bash"
+        ]
+      },
+      "features": {
+        "tlsTerminationProxy": {
+          "native": true,
+          "oneOff": true
+        },
+        "audit": {
+          "native": true,
+          "oneOff": true
+        },
+        "dataMaskingGoogleDLP": {
+          "native": false,
+          "oneOff": false
+        },
+        "dataMaskingMSPresidio": {
+          "native": true,
+          "oneOff": true
+        },
+        "guardrails": {
+          "native": true,
+          "oneOff": true
+        },
+        "credentialsOffload": {
+          "native": true,
+          "oneOff": true
+        },
+        "interactiveAccess": {
+          "native": true,
+          "oneOff": true
+        }
+      },
+      "documentationConfig": {
+        "path": "quickstart/cloud-services/kubernetes/kubernetes"
+      }
+    },
+    {
+      "id": "kubernetes-eks",
+      "name": "Kubernetes EKS",
+      "description": "Manage Kubernetes resources through kubectl commands or native API access. This integration supports both CLI-based workflows and direct interaction with the Kubernetes API for full cluster control.",
+      "category": "cloud-services",
+      "icon-name": "kubernetes",
+      "tags": [
+        "containers",
+        "cli",
+        "aws"
+      ],
+      "overview": {
+        "description": "Manage Kubernetes resources through kubectl commands or native API access. This integration supports both CLI-based workflows and direct interaction with the Kubernetes API for full cluster control."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": true,
+          "cli": true,
+          "runbooks": true
+        }
+      },
+      "resourceConfiguration": {
+        "credentials": [
+          {
+            "type": "env-var",
+            "required": false,
+            "name": "KUBERNETES_CLUSTER_URL",
+            "description": "The Kubernetes API Server URL. Defaults to in cluster value\nhttps://kubernetes.default.svc.cluster.local",
+            "placeholder": "e.g.: https://kubernetes.default.svc.cluster.local"
+          },
+          {
+            "type": "env-var",
+            "required": false,
+            "name": "KUBERNETES_INSECURE_SKIP_VERIFY",
+            "description": "Controls whether a client verifies the server's certificate chain\nand host name. If is true, it accepts any certificate presented by the\nserver and any host name in that certificate. Defaults to false.",
+            "placeholder": "false"
+          },
+          {
+            "type": "env-var",
+            "required": true,
+            "name": "EKS_CLUSTER",
+            "description": "The name of the EKS cluster",
+            "placeholder": "my-eks-cluster"
+          },
+          {
+            "type": "env-var",
+            "required": false,
+            "name": "EKS_AWS_REGION",
+            "description": "The AWS Region associated with the cluster. If none is provided, \nread the env AWS_REGION from the agent.",
+            "placeholder": "us-east-1"
+          },
+          {
+            "type": "env-var",
+            "required": "required",
+            "name": "EKS_ROLE_ARN",
+            "description": "The ARN of the role to assume when connecting to the EKS cluster. If\nnone is provided, the agent's IAM role will be used.",
+            "placeholder": "arn:aws:iam::123456789012:role/MyEKSRole"
+          },
+          {
+            "type": "env-var",
+            "required": false,
+            "name": "EKS_BINDING_USER_ROLE",
+            "description": "The name assigned to the session when assuming a role. Use this field to dynamically map Kubernetes role bindings by specifying it as a subject in RoleBinding or ClusterRoleBinding resources.",
+            "placeholder": "developer-group or"
+          }
+        ],
+        "type": "custom",
+        "subtype": "kubernetes-eks",
+        "command": [
+          "bash"
+        ]
+      },
+      "features": {
+        "tlsTerminationProxy": {
+          "native": true,
+          "oneOff": true
+        },
+        "audit": {
+          "native": true,
+          "oneOff": true
+        },
+        "dataMaskingGoogleDLP": {
+          "native": false,
+          "oneOff": false
+        },
+        "dataMaskingMSPresidio": {
+          "native": true,
+          "oneOff": true
+        },
+        "guardrails": {
+          "native": true,
+          "oneOff": true
+        },
+        "credentialsOffload": {
+          "native": true,
+          "oneOff": true
+        },
+        "interactiveAccess": {
+          "native": true,
+          "oneOff": true
+        }
+      },
+      "documentationConfig": {
+        "path": "quickstart/cloud-services/kubernetes/kubernetes-eks"
+      }
+    },
+    {
+      "id": "mcp",
+      "name": "MCP",
+      "description": "Proxy MCP to ensure sensitive data won't leak.",
+      "category": "ai-and-llms",
+      "icon-name": "mcp",
+      "tags": [
+        "ai",
+        "llm",
+        "security",
+        "proxy",
+        "mcp"
+      ],
+      "overview": {
+        "description": "MCP has never been safer. Use all Hoop features in front of MCP and gain the safety of ensuring sensitive data won’t be leaked to LLMs. Create Guardrails and Data Masking rules on top of a centralized API Key and distribute it to everyone in your organization through Hoop."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": false,
+          "cli": false,
+          "native": true,
+          "runbooks": false
+        }
+      },
+      "resourceConfiguration": {
+        "type": "httpproxy",
+        "subtype": "mcp"
+      },
+      "features": {
+        "tlsTerminationProxy": {
+          "native": true,
+          "oneOff": false
+        },
+        "audit": {
+          "native": true,
+          "oneOff": false
+        },
+        "dataMaskingGoogleDLP": {
+          "native": false,
+          "oneOff": false
+        },
+        "dataMaskingMSPresidio": {
+          "native": true,
+          "oneOff": false
+        },
+        "guardrails": {
+          "native": true,
+          "oneOff": false
+        },
+        "credentialsOffload": {
+          "native": true,
+          "oneOff": false
+        },
+        "interactiveAccess": {
+          "native": false,
+          "oneOff": false
+        }
+      },
+      "documentationConfig": {
+        "path": "quickstart/ai-and-llms/mcp"
+      },
+      "customMarkupContent": "Once an AI model connects through MCP, it is no longer making suggestions. It is reading production data, calling live tools, and operating inside the same execution path as your engineers.\n\nThe default response has been to restrict MCP servers to a sandbox, strip out production context, and accept reduced usefulness.\n\nThat tradeoff is no longer necessary.\n\nThe MCP connection type routes Model Context Protocol traffic through hoop.dev before it reaches your infrastructure. With it, you can give any MCP client production access while maintaining the controls your security and compliance teams require:\n\n- Sensitive data is masked before the model sees it. PII, credentials, and secrets in tool results are redacted in real time. The model works with the schema and structure, not the raw values.\n- Credentials are never handed to the model. MCP clients authenticate through hoop.dev's SSO integration, and backend credentials are retrieved just-in-time so they never reach the model or its context window.\n- Every call is logged at the command level. More granular than session-level access records, hoop.dev captures each individual tool call with full context in a structured, searchable audit trail.\n- Guardrails block or gate actions outside approved patterns. Calls that fall outside policy can be blocked outright or routed through an approval workflow, without changing how the MCP client is invoked.\n\nThe result is that connected models interrogate real schemas, surface actual data anomalies, and act against live infrastructure without your credentials or PII leaving the controlled environment."
+    },
+    {
+      "id": "mcpproxy",
+      "name": "MCP Gateway",
+      "description": "Protocol-aware MCP proxy with tool-level policy and audit.",
+      "category": "ai-and-llms",
+      "icon-name": "mcp",
+      "tags": [
+        "ai",
+        "llm",
+        "security",
+        "proxy",
+        "mcp"
+      ],
+      "overview": {
+        "description": "Hoop parses every JSON-RPC message, so you control the tool call instead of the byte stream. Allow or deny individual tools, hold sensitive calls for review, catch a server that rewrites a tool description mid-session, and read an audit trail that names the tool instead of dumping an HTTP blob."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": false,
+          "cli": false,
+          "native": true,
+          "runbooks": false
+        }
+      },
+      "resourceConfiguration": {
+        "type": "httpproxy",
+        "subtype": "mcpproxy"
+      },
+      "features": {
+        "tlsTerminationProxy": {
+          "native": true,
+          "oneOff": false
+        },
+        "audit": {
+          "native": true,
+          "oneOff": false
+        },
+        "dataMaskingGoogleDLP": {
+          "native": false,
+          "oneOff": false
+        },
+        "dataMaskingMSPresidio": {
+          "native": true,
+          "oneOff": false
+        },
+        "guardrails": {
+          "native": true,
+          "oneOff": false
+        },
+        "credentialsOffload": {
+          "native": true,
+          "oneOff": false
+        },
+        "interactiveAccess": {
+          "native": false,
+          "oneOff": false
+        }
+      },
+      "documentationConfig": {
+        "path": "quickstart/ai-and-llms/mcp-gateway"
+      },
+      "customMarkupContent": "The `mcp` connection type relays Model Context Protocol traffic as opaque HTTP. That covers data masking in transit. It cannot tell a model calling `delete_issue` from the same words appearing inside a tool result.\n\nThe MCP Gateway parses every JSON-RPC message in both directions, which makes a class of controls expressible that a byte relay cannot offer:\n\n- **Tool-level allow and deny lists.** Hoop strips denied tools from `tools/list` before the model sees them, so it never attempts a call you would have blocked.\n- **Approval holds on individual tool calls.** A matched `tools/call` parks for human review while the rest of the session keeps working.\n- **Rug-pull detection.** Hoop fingerprints each tool's name, description and input schema, then kills or flags the session when a server rewrites one mid-conversation.\n- **Sampling and elicitation gating.** Hoop denies both by default, so a compromised server cannot drive your LLM or phish your users through its own dialogs.\n- **Budgets.** Cap calls per session, per-tool rates, and result size.\n- **Structured audit.** Session review names the tool that ran, its argument digest, how long it took and which rule blocked it, in place of request and response blobs.\n\nGuardrails and data masking still apply, and they now run on the free-text fields MCP has: tool-call arguments, tool descriptions and result text leaves. Masking cannot corrupt the JSON-RPC envelope, and guardrails no longer match against protocol framing, which removes a common source of false positives.\n\nHoop proxies remote MCP servers and local `stdio` servers. A stdio server runs either on the agent, so you can offer an `npx`-style server as a shared connection without hosting it yourself, or on each user's own machine, for servers that need their working tree and their credentials."
+    },
+    {
+      "id": "mssql",
+      "name": "Microsoft SQL Server",
+      "description": "A relational database management system developed by Microsoft, offering comprehensive data management and business intelligence capabilities.",
+      "category": "databases",
+      "icon-name": "mssql",
+      "tags": [
+        "database",
+        "sql"
+      ],
+      "features": {
+        "tlsTerminationProxy": {
+          "native": true,
+          "oneOff": true
+        },
+        "audit": {
+          "native": true,
+          "oneOff": true
+        },
+        "dataMaskingGoogleDLP": {
+          "native": false,
+          "oneOff": true
+        },
+        "dataMaskingMSPresidio": {
+          "native": false,
+          "oneOff": true
+        },
+        "guardrails": {
+          "native": false,
+          "oneOff": true
+        },
+        "credentialsOffload": {
+          "native": true,
+          "oneOff": true
+        },
+        "interactiveAccess": {
+          "native": true,
+          "oneOff": true
+        }
+      },
+      "overview": {
+        "description": "Connect to your SQL Server databases through Hoop.dev with enterprise-grade security, automated compliance logging, and real-time data protection. Execute T-SQL queries with advanced access controls and intelligent masking of sensitive business data."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": true,
+          "cli": true,
+          "runbooks": true
+        }
+      },
+      "resourceConfiguration": {
+        "type": "database",
+        "subtype": "mssql",
+        "credentials": [
+          {
+            "name": "HOST",
+            "type": "env-var",
+            "required": true,
+            "description": "The IP or Host of the SQL Server",
+            "placeholder": "localhost"
+          },
+          {
+            "name": "USER",
+            "type": "env-var",
+            "required": true,
+            "description": "The user with access to the instance",
+            "placeholder": "sa"
+          },
+          {
+            "name": "PASS",
+            "type": "env-var",
+            "required": true,
+            "description": "The password with access to the instance",
+            "placeholder": "password"
+          },
+          {
+            "name": "PORT",
+            "type": "env-var",
+            "required": true,
+            "description": "The port of the SQL server",
+            "placeholder": "1433"
+          },
+          {
+            "name": "DB",
+            "type": "env-var",
+            "required": true,
+            "description": "The name of the database to connect (Required when using the connection via the command line).",
+            "placeholder": "mydb"
+          },
+          {
+            "name": "INSECURE",
+            "type": "env-var",
+            "required": false,
+            "description": "If the connection will ignore the chain of certificates presented by the server. The connection will be subject to man-in-the-middle attacks if the network is not reliable. By default, this option is set to false.",
+            "placeholder": "false"
+          }
+        ]
+      },
+      "documentationConfig": {
+        "path": "quickstart/databases/mssql"
+      }
+    },
+    {
+      "id": "mongodb",
+      "name": "MongoDB",
+      "description": "A NoSQL document-oriented database that provides high scalability and flexibility for modern applications.",
+      "category": "databases",
+      "icon-name": "mongodb",
+      "tags": [
+        "database",
+        "nosql",
+        "development"
+      ],
+      "overview": {
+        "description": "Connect to your MongoDB instances through Hoop.dev's secure access gateway with automated data protection, comprehensive query auditing, and intelligent access controls. Execute database operations with real-time masking of sensitive document fields."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": true,
+          "cli": true,
+          "runbooks": true
+        }
+      },
+      "documentationConfig": {
+        "path": "quickstart/databases/mongodb"
+      },
+      "features": {
+        "tlsTerminationProxy": {
+          "native": true,
+          "oneOff": true
+        },
+        "audit": {
+          "native": true,
+          "oneOff": true
+        },
+        "dataMaskingGoogleDLP": {
+          "native": true,
+          "oneOff": true
+        },
+        "dataMaskingMSPresidio": {
+          "native": true,
+          "oneOff": true
+        },
+        "guardrails": {
+          "native": false,
+          "oneOff": true
+        },
+        "credentialsOffload": {
+          "native": true,
+          "oneOff": true
+        },
+        "interactiveAccess": {
+          "native": true,
+          "oneOff": true
+        }
+      },
+      "resourceConfiguration": {
+        "type": "database",
+        "subtype": "mongodb",
+        "credentials": [
+          {
+            "name": "CONNECTION_STRING",
+            "type": "env-var",
+            "required": true,
+            "description": "The MongoDB connection string. See [MongoDB connection string](https://www.mongodb.com/docs/manual/reference/connection-string/) for more details about the proper format.",
+            "placeholder": "mongodb://localhost:27017/mydb"
+          }
+        ]
+      }
+    },
+    {
+      "id": "mysql",
+      "name": "MySQL",
+      "description": "The world's most popular open-source relational database, offering proven performance, reliability, and ease-of-use.",
+      "category": "databases",
+      "icon-name": "mysql",
+      "tags": [
+        "database",
+        "sql",
+        "development"
+      ],
+      "features": {
+        "tlsTerminationProxy": {
+          "native": true,
+          "oneOff": true,
+          "note": "Partial support"
+        },
+        "audit": {
+          "native": true,
+          "oneOff": true
+        },
+        "dataMaskingGoogleDLP": {
+          "native": false,
+          "oneOff": true
+        },
+        "dataMaskingMSPresidio": {
+          "native": true,
+          "oneOff": true
+        },
+        "guardrails": {
+          "native": false,
+          "oneOff": true
+        },
+        "credentialsOffload": {
+          "native": true,
+          "oneOff": true
+        },
+        "interactiveAccess": {
+          "native": true,
+          "oneOff": true
+        }
+      },
+      "overview": {
+        "description": "Access your MySQL databases securely through Hoop.dev with comprehensive audit logging, real-time data protection, and streamlined access management. Execute queries with built-in guardrails that prevent risky operations while maintaining developer productivity."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": true,
+          "cli": true,
+          "runbooks": true
+        }
+      },
+      "resourceConfiguration": {
+        "type": "database",
+        "subtype": "mysql",
+        "credentials": [
+          {
+            "name": "HOST",
+            "type": "env-var",
+            "required": true,
+            "description": "The IP or Host of the MySQL server",
+            "placeholder": "localhost"
+          },
+          {
+            "name": "USER",
+            "type": "env-var",
+            "required": true,
+            "description": "The user to connect in the MySQL server",
+            "placeholder": "root"
+          },
+          {
+            "name": "PASS",
+            "type": "env-var",
+            "required": true,
+            "description": "The password to connect to the MySQL server",
+            "placeholder": "password"
+          },
+          {
+            "name": "PORT",
+            "type": "env-var",
+            "required": true,
+            "description": "The port of the MySQL server",
+            "placeholder": "3306"
+          },
+          {
+            "name": "DB",
+            "type": "env-var",
+            "required": true,
+            "description": "The name of the database to connect (Required when using the connection via the command line).",
+            "placeholder": "mydb"
+          },
+          {
+            "name": "PRE_SQL_SCRIPT_FILE",
+            "type": "filesystem",
+            "required": false,
+            "description": "Append a custom SQL script at the beginning of the execution.",
+            "placeholder": "file content of script.sql"
+          }
+        ]
+      },
+      "documentationConfig": {
+        "path": "quickstart/databases/mysql"
+      }
+    },
+    {
+      "id": "nodejs",
+      "name": "Node.js",
+      "description": "A JavaScript runtime built on Chrome's V8 engine, enabling server-side JavaScript development with high performance.",
+      "category": "development-environments",
+      "icon-name": "node",
+      "tags": [
+        "development"
+      ],
+      "features": {
+        "tlsTerminationProxy": {
+          "native": false,
+          "oneOff": true
+        },
+        "audit": {
+          "native": false,
+          "oneOff": true
+        },
+        "dataMaskingGoogleDLP": {
+          "native": false,
+          "oneOff": true
+        },
+        "dataMaskingMSPresidio": {
+          "native": false,
+          "oneOff": true
+        },
+        "guardrails": {
+          "native": false,
+          "oneOff": true
+        },
+        "credentialsOffload": {
+          "native": false,
+          "oneOff": true
+        },
+        "interactiveAccess": {
+          "native": true,
+          "oneOff": true
+        }
+      },
+      "overview": {
+        "description": "Access your Node.js development environments securely through Hoop.dev with comprehensive session recording, intelligent script execution monitoring, and automated secret management. Execute JavaScript code and manage npm packages with built-in safeguards and audit trails."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": true,
+          "cli": false,
+          "runbooks": true
+        }
+      },
+      "resourceConfiguration": {
+        "type": "custom",
+        "subtype": "nodejs",
+        "command": [
+          "node"
+        ]
+      },
+      "documentationConfig": {
+        "path": "quickstart/development-environments/nodejs"
+      }
+    },
+    {
+      "id": "oracledb",
+      "name": "Oracle",
+      "description": "A multi-model database management system designed for enterprise grid computing and high-performance applications.",
+      "category": "databases",
+      "icon-name": "oracle",
+      "tags": [
+        "database",
+        "sql"
+      ],
+      "features": {
+        "tlsTerminationProxy": {
+          "native": false,
+          "oneOff": true
+        },
+        "audit": {
+          "native": false,
+          "oneOff": true
+        },
+        "dataMaskingGoogleDLP": {
+          "native": false,
+          "oneOff": true
+        },
+        "dataMaskingMSPresidio": {
+          "native": false,
+          "oneOff": true
+        },
+        "guardrails": {
+          "native": false,
+          "oneOff": true
+        },
+        "credentialsOffload": {
+          "native": false,
+          "oneOff": true
+        },
+        "interactiveAccess": {
+          "native": false,
+          "oneOff": true
+        }
+      },
+      "overview": {
+        "description": "Access your Oracle databases through Hoop.dev with enterprise-level security and compliance features, comprehensive audit trails, and automated data protection. Execute SQL operations with granular access controls and intelligent masking for sensitive enterprise data."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": true,
+          "cli": false,
+          "runbooks": true
+        }
+      },
+      "resourceConfiguration": {
+        "type": "database",
+        "subtype": "oracledb",
+        "credentials": [
+          {
+            "name": "HOST",
+            "type": "env-var",
+            "required": true,
+            "description": "The IP or Host of the Oracle server",
+            "placeholder": "localhost"
+          },
+          {
+            "name": "USER",
+            "type": "env-var",
+            "required": true,
+            "description": "The user to connect in the Oracle server",
+            "placeholder": "user"
+          },
+          {
+            "name": "PASS",
+            "type": "env-var",
+            "required": true,
+            "description": "The password to connect to the Oracle server. Make sure to URL encode the password if it contains any special characters.",
+            "placeholder": "password"
+          },
+          {
+            "name": "PORT",
+            "type": "env-var",
+            "required": true,
+            "description": "The port of the Oracle server",
+            "placeholder": "1521"
+          },
+          {
+            "name": "SID",
+            "type": "env-var",
+            "required": true,
+            "description": "The service name or SID (System identifier) to identify the database service.",
+            "placeholder": "SID or Service name"
+          }
+        ]
+      },
+      "documentationConfig": {
+        "path": "quickstart/databases/oracle"
+      }
+    },
+    {
+      "id": "php-artisan",
+      "name": "PHP Artisan",
+      "description": "Laravel Artisan is the command-line interface included with Laravel, providing helpful commands for application development.",
+      "category": "development-environments",
+      "icon-name": "laravel",
+      "tags": [
+        "web",
+        "development"
+      ],
+      "features": {
+        "tlsTerminationProxy": {
+          "native": false,
+          "oneOff": true
+        },
+        "audit": {
+          "native": false,
+          "oneOff": true
+        },
+        "dataMaskingGoogleDLP": {
+          "native": false,
+          "oneOff": true
+        },
+        "dataMaskingMSPresidio": {
+          "native": false,
+          "oneOff": true
+        },
+        "guardrails": {
+          "native": false,
+          "oneOff": true
+        },
+        "credentialsOffload": {
+          "native": false,
+          "oneOff": true
+        },
+        "interactiveAccess": {
+          "native": true,
+          "oneOff": true
+        }
+      },
+      "overview": {
+        "description": "Access your Laravel Artisan console securely through Hoop.dev with comprehensive command monitoring, database migration tracking, and intelligent access controls. Execute PHP artisan commands with complete audit logging and built-in security guardrails."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": true,
+          "cli": false,
+          "runbooks": true
+        }
+      },
+      "resourceConfiguration": {
+        "type": "custom",
+        "subtype": "php-artisan",
+        "command": [
+          "php",
+          "artisan",
+          "tinker"
+        ]
+      },
+      "documentationConfig": {
+        "path": "quickstart/development-environments/php-artisan"
+      }
+    },
+    {
+      "id": "postgres",
+      "name": "PostgreSQL",
+      "description": "A powerful, open-source relational database system known for reliability, feature robustness, and performance.",
+      "category": "databases",
+      "icon-name": "postgres",
+      "tags": [
+        "database",
+        "sql",
+        "development"
+      ],
+      "features": {
+        "tlsTerminationProxy": {
+          "native": true,
+          "oneOff": true
+        },
+        "audit": {
+          "native": true,
+          "oneOff": true
+        },
+        "dataMaskingGoogleDLP": {
+          "native": true,
+          "oneOff": true
+        },
+        "dataMaskingMSPresidio": {
+          "native": true,
+          "oneOff": true
+        },
+        "guardrails": {
+          "native": true,
+          "oneOff": true
+        },
+        "credentialsOffload": {
+          "native": true,
+          "oneOff": true
+        },
+        "interactiveAccess": {
+          "native": true,
+          "oneOff": true
+        }
+      },
+      "overview": {
+        "description": "Connect to your PostgreSQL databases through Hoop.dev's secure gateway with zero-config AI data masking, comprehensive session recording, and intelligent access controls. Execute SQL queries while automatically protecting sensitive data like PII and credentials without complex rule setup."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": true,
+          "cli": true,
+          "native": true,
+          "runbooks": true
+        }
+      },
+      "resourceConfiguration": {
+        "type": "database",
+        "subtype": "postgres",
+        "credentials": [
+          {
+            "name": "HOST",
+            "type": "env-var",
+            "required": true,
+            "description": "The IP or hostname of the PostgreSQL server",
+            "placeholder": "localhost"
+          },
+          {
+            "name": "USER",
+            "type": "env-var",
+            "required": true,
+            "description": "The username to connect to PostgreSQL",
+            "placeholder": "postgres"
+          },
+          {
+            "name": "PASS",
+            "type": "env-var",
+            "required": true,
+            "description": "The password to connect to the Postgres server. Make sure to URL encode the password if it contains any special characters.",
+            "placeholder": "password"
+          },
+          {
+            "name": "PORT",
+            "type": "env-var",
+            "required": true,
+            "description": "The port of the Postgres server",
+            "placeholder": "5432"
+          },
+          {
+            "name": "DB",
+            "type": "env-var",
+            "required": true,
+            "description": "The name of the database to connect (Required when using the connection via the command line).",
+            "placeholder": "mydb"
+          },
+          {
+            "name": "SSLMODE",
+            "type": "env-var",
+            "required": false,
+            "description": "How to connect via tls with the remote host, it defaults to prefer. See [PostgreSQL SSL documentation](https://www.postgresql.org/docs/current/libpq-ssl.html#LIBPQ-SSL-PROTECTION) for more information. Available options are disable, prefer, require, and verify-full",
+            "placeholder": "prefer"
+          }
+        ]
+      },
+      "documentationConfig": {
+        "path": "quickstart/databases/postgres"
+      }
+    },
+    {
+      "id": "python-scripts",
+      "name": "Python Scripts",
+      "description": "A versatile, high-level programming language perfect for scripting, automation, data analysis, and application development.",
+      "category": "development-environments",
+      "icon-name": "python",
+      "tags": [
+        "python",
+        "development",
+        "automation"
+      ],
+      "features": {
+        "tlsTerminationProxy": {
+          "native": false,
+          "oneOff": true
+        },
+        "audit": {
+          "native": false,
+          "oneOff": true
+        },
+        "dataMaskingGoogleDLP": {
+          "native": false,
+          "oneOff": true
+        },
+        "dataMaskingMSPresidio": {
+          "native": false,
+          "oneOff": true
+        },
+        "guardrails": {
+          "native": false,
+          "oneOff": true
+        },
+        "credentialsOffload": {
+          "native": false,
+          "oneOff": true
+        },
+        "interactiveAccess": {
+          "native": true,
+          "oneOff": true
+        }
+      },
+      "overview": {
+        "description": "Execute Python scripts securely through Hoop.dev with comprehensive logging, automated dependency management, and intelligent code execution controls. Run data analysis, automation tasks, and development workflows with built-in security guardrails and session recording."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": true,
+          "cli": false,
+          "runbooks": true
+        }
+      },
+      "resourceConfiguration": {
+        "type": "custom",
+        "subtype": "python",
+        "command": [
+          "python3",
+          "-"
+        ]
+      },
+      "documentationConfig": {
+        "path": "quickstart/development-environments/python/python-scripts"
+      }
+    },
+    {
+      "id": "redis",
+      "name": "Redis",
+      "description": "An in-memory data structure store, used as a database, cache, and message broker with support for various data types.",
+      "category": "databases",
+      "icon-name": "redis",
+      "tags": [
+        "database",
+        "cache",
+        "nosql"
+      ],
+      "features": {
+        "tlsTerminationProxy": {
+          "native": true,
+          "oneOff": true
+        },
+        "audit": {
+          "native": true,
+          "oneOff": true
+        },
+        "dataMaskingGoogleDLP": {
+          "native": false,
+          "oneOff": true
+        },
+        "dataMaskingMSPresidio": {
+          "native": false,
+          "oneOff": true
+        },
+        "guardrails": {
+          "native": false,
+          "oneOff": true
+        },
+        "credentialsOffload": {
+          "native": false,
+          "oneOff": false
+        },
+        "interactiveAccess": {
+          "native": true,
+          "oneOff": true
+        }
+      },
+      "overview": {
+        "description": "Access your Redis instances securely through Hoop.dev with high-performance connection management, session recording, and intelligent data protection. Execute Redis commands with built-in safeguards and comprehensive audit trails for cache operations and data queries."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": true,
+          "cli": false,
+          "runbooks": true
+        }
+      },
+      "resourceConfiguration": {
+        "type": "custom",
+        "subtype": "redis",
+        "command": [
+          "redis-cli",
+          "-h",
+          "$HOST",
+          "-p",
+          "$PORT",
+          "-n",
+          "$DB_NUMBER"
+        ],
+        "credentials": [
+          {
+            "name": "HOST",
+            "type": "env-var",
+            "required": true,
+            "description": "The host of the Redis server",
+            "placeholder": "localhost"
+          },
+          {
+            "name": "PORT",
+            "type": "env-var",
+            "required": true,
+            "description": "The port of the Redis server",
+            "placeholder": "6379"
+          },
+          {
+            "name": "DB_NUMBER",
+            "type": "env-var",
+            "required": true,
+            "description": "The database number to select (0-15)",
+            "placeholder": "0"
+          }
+        ]
+      },
+      "documentationConfig": {
+        "path": "quickstart/databases/redis"
+      }
+    },
+    {
+      "id": "remote-desktop",
+      "name": "Remote Desktop (RDP)",
+      "description": "Remote Desktop Protocol (RDP) allows accessing securely remote Windows instances via RDP protocol.",
+      "category": "infrastructure-access",
+      "icon-name": "tcp",
+      "tags": [
+        "remote",
+        "desktop",
+        "security"
+      ],
+      "overview": {
+        "description": "Remote Desktop Protocol (RDP) allows accessing securely remote Windows instances via RDP protocol."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": true,
+          "native": true,
+          "cli": false,
+          "runbooks": false
+        }
+      },
+      "resourceConfiguration": {
+        "type": "custom",
+        "subtype": "rdp",
+        "command": [],
+        "credentials": [
+          {
+            "name": "HOST",
+            "type": "env-var",
+            "required": true,
+            "description": "The host of the remote desktop server",
+            "placeholder": "localhost"
+          },
+          {
+            "name": "USER",
+            "type": "env-var",
+            "required": true,
+            "description": "The username of the remote desktop server",
+            "placeholder": "ubuntu"
+          },
+          {
+            "name": "PASS",
+            "type": "env-var",
+            "required": true,
+            "description": "The password of the remote desktop server",
+            "placeholder": "password"
+          },
+          {
+            "name": "PORT",
+            "type": "env-var",
+            "required": true,
+            "description": "The port of the remote desktop server",
+            "placeholder": "3389"
+          }
+        ]
+      },
+      "features": {
+        "tlsTerminationProxy": {
+          "native": true,
+          "oneOff": false
+        },
+        "audit": {
+          "native": false,
+          "oneOff": false
+        },
+        "dataMaskingGoogleDLP": {
+          "native": false,
+          "oneOff": false
+        },
+        "dataMaskingMSPresidio": {
+          "native": false,
+          "oneOff": false
+        },
+        "credentialsOffload": {
+          "native": true,
+          "oneOff": false
+        },
+        "interactiveAccess": {
+          "native": true,
+          "oneOff": false
+        }
+      },
+      "documentationConfig": {
+        "path": "quickstart/remote-desktop"
+      }
+    },
+    {
+      "id": "ruby-on-rails",
+      "name": "Ruby on Rails",
+      "description": "A web application framework written in Ruby that follows the MVC pattern, providing tools for rapid web development.",
+      "category": "development-environments",
+      "icon-name": "rails",
+      "tags": [
+        "web",
+        "development"
+      ],
+      "features": {
+        "tlsTerminationProxy": {
+          "native": false,
+          "oneOff": true
+        },
+        "audit": {
+          "native": false,
+          "oneOff": true
+        },
+        "dataMaskingGoogleDLP": {
+          "native": false,
+          "oneOff": true
+        },
+        "dataMaskingMSPresidio": {
+          "native": false,
+          "oneOff": true
+        },
+        "guardrails": {
+          "native": false,
+          "oneOff": true
+        },
+        "credentialsOffload": {
+          "native": false,
+          "oneOff": true
+        },
+        "interactiveAccess": {
+          "native": true,
+          "oneOff": true
+        }
+      },
+      "overview": {
+        "description": "Access your Rails console securely through Hoop.dev with comprehensive audit logging, automated secret management, and intelligent access controls. Execute Rails commands and interact with your application models with full session recording and data protection."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": true,
+          "cli": false,
+          "runbooks": true
+        }
+      },
+      "resourceConfiguration": {
+        "type": "custom",
+        "subtype": "ruby-on-rails",
+        "command": [
+          "rails",
+          "runner",
+          "-"
+        ]
+      },
+      "documentationConfig": {
+        "path": "quickstart/development-environments/ruby-on-rails"
+      }
+    },
+    {
+      "resourceConfiguration": {
+        "type": "application",
+        "subtype": "ssh",
+        "credentials": [
+          {
+            "name": "HOST",
+            "type": "env-var",
+            "required": true,
+            "description": "The IP or hostname of the SSH server",
+            "placeholder": "localhost"
+          },
+          {
+            "name": "PORT",
+            "type": "env-var",
+            "required": false,
+            "description": "The port of the SSH server, default to 22",
+            "placeholder": "22"
+          },
+          {
+            "name": "USER",
+            "type": "env-var",
+            "required": true,
+            "description": "The username of the Linux server",
+            "placeholder": "ubuntu"
+          },
+          {
+            "name": "PASS",
+            "type": "env-var",
+            "required": false,
+            "description": "The credentials of the username if password authentication is enabled in the SSH server.",
+            "placeholder": "password"
+          },
+          {
+            "name": "AUTHORIZED_SERVER_KEYS",
+            "type": "env-var",
+            "required": false,
+            "description": "The private key of the user that corresponds to the public key at $HOME/<user>/.ssh/authorized_keys",
+            "placeholder": "Enter your private key"
+          }
+        ]
+      },
+      "id": "ssh",
+      "name": "Secure Shell (SSH)",
+      "description": "A cryptographic network protocol for operating network services securely over an unsecured network, commonly used for remote command-line login.",
+      "category": "infrastructure-access",
+      "icon-name": "ssh",
+      "tags": [
+        "security",
+        "interactive",
+        "cli"
+      ],
+      "overview": {
+        "description": "Access your servers securely through Hoop.dev with comprehensive SSH session recording, intelligent command monitoring, and automated access controls. Connect to remote hosts with complete audit trails, data masking capabilities, and built-in security guardrails that eliminate the need for traditional VPN access."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": false,
+          "cli": false,
+          "native": true,
+          "runbooks": false
+        }
+      },
+      "documentationConfig": {
+        "path": "quickstart/ssh"
+      },
+      "features": {
+        "tlsTerminationProxy": {
+          "native": true,
+          "oneOff": false
+        },
+        "audit": {
+          "native": false,
+          "oneOff": false
+        },
+        "dataMaskingGoogleDLP": {
+          "native": false,
+          "oneOff": false
+        },
+        "dataMaskingMSPresidio": {
+          "native": false,
+          "oneOff": false
+        },
+        "guardrails": {
+          "native": false,
+          "oneOff": true
+        },
+        "credentialsOffload": {
+          "native": true,
+          "oneOff": false
+        },
+        "interactiveAccess": {
+          "native": true,
+          "oneOff": false
+        }
+      }
+    },
+    {
+      "id": "webapps-and-apis",
+      "name": "Web Applications and APIs",
+      "description": "Web applications and APIs that provide HTTP/HTTPS endpoints for various services, applications, and data access interfaces.",
+      "category": "web-applications",
+      "icon-name": "tcp",
+      "tags": [
+        "web"
+      ],
+      "overview": {
+        "description": "Access your web applications and APIs securely through Hoop.dev with intelligent traffic monitoring, automated request/response logging, and comprehensive access controls. Tunnel HTTP/HTTPS connections with built-in data masking and session recording for complete API governance."
+      },
+      "setupGuide": {
+        "accessMethods": {
+          "webapp": false,
+          "cli": true,
+          "runbooks": false
+        }
+      },
+      "features": {
+        "tlsTerminationProxy": {
+          "native": true,
+          "oneOff": false
+        },
+        "audit": {
+          "native": true,
+          "oneOff": false
+        },
+        "dataMaskingGoogleDLP": {
+          "native": false,
+          "oneOff": false
+        },
+        "dataMaskingMSPresidio": {
+          "native": false,
+          "oneOff": false
+        },
+        "guardrails": {
+          "native": false,
+          "oneOff": true
+        },
+        "credentialsOffload": {
+          "native": true,
+          "oneOff": false
+        },
+        "interactiveAccess": {
+          "native": false,
+          "oneOff": false
+        }
+      },
+      "resourceConfiguration": {
+        "type": "application",
+        "subtype": "tcp",
+        "credentials": [
+          {
+            "name": "HOST",
+            "type": "env-var",
+            "required": true,
+            "description": "The IP or hostname of the service",
+            "placeholder": "localhost"
+          },
+          {
+            "name": "PORT",
+            "type": "env-var",
+            "required": true,
+            "description": "The port of the service",
+            "placeholder": "8080"
+          }
+        ]
+      },
+      "documentationConfig": {
+        "path": "quickstart/web-applications/webapps-and-apis"
+      }
+    }
+  ]
+}
