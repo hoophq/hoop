@@ -7,9 +7,9 @@ import (
 	"testing"
 
 	alcz "github.com/hoophq/alcatraz/entities"
-	"github.com/hoophq/hoopinspect"
-	"github.com/hoophq/hoopinspect/pii/alcatraz"
-	"github.com/hoophq/hoopinspect/policy"
+	"github.com/hoophq/hoop/hoopinspect"
+	"github.com/hoophq/hoop/hoopinspect/pii/alcatraz"
+	"github.com/hoophq/hoop/hoopinspect/policy"
 )
 
 // --- the seams -------------------------------------------------------------

@@ -14,12 +14,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hoophq/hoopinspect"
-	"github.com/hoophq/hoopinspect/audit"
-	_ "github.com/hoophq/hoopinspect/codec/all"
-	"github.com/hoophq/hoopinspect/policy"
-	"github.com/hoophq/hoopinspect/proxy"
-	"github.com/hoophq/hoopinspect/session"
+	"github.com/hoophq/hoop/hoopinspect"
+	"github.com/hoophq/hoop/hoopinspect/audit"
+	_ "github.com/hoophq/hoop/hoopinspect/codec/all"
+	"github.com/hoophq/hoop/hoopinspect/policy"
+	"github.com/hoophq/hoop/hoopinspect/proxy"
+	"github.com/hoophq/hoop/hoopinspect/session"
 )
 
 func pgQuery(sql string) []byte {

@@ -13,7 +13,7 @@ import (
 
 	"github.com/hoophq/alcatraz"
 	"github.com/hoophq/alcatraz/anonymizer"
-	"github.com/hoophq/hoopinspect/gate"
+	"github.com/hoophq/hoop/hoopinspect/gate"
 )
 
 // Strategy says how a detected span is rewritten.

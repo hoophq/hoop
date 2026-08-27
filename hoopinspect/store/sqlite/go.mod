@@ -1,21 +1,21 @@
 // store/sqlite is a NESTED module on purpose.
 //
-// The root github.com/hoophq/hoopinspect module has zero dependencies and
-// must keep them: it is meant to be vendored without a supply-chain review
+// The root github.com/hoophq/hoop/hoopinspect module carries libhoop alone and
+// must keep it that way: it is meant to be vendored without a supply-chain review
 // and compiled to wasip1. A SQLite backend needs a driver, so the driver
 // lives here, behind its own go.mod. A deployment that only wants JSONL
 // never resolves it.
 //
 // modernc.org/sqlite rather than mattn/go-sqlite3 because it is pure Go: the
 // sidecar ships as a static binary and a cgo dependency breaks that build.
-module github.com/hoophq/hoopinspect/store/sqlite
+module github.com/hoophq/hoop/hoopinspect/store/sqlite
 
 go 1.26.5
 
 toolchain go1.26.5
 
 require (
-	github.com/hoophq/hoopinspect v0.0.0
+	github.com/hoophq/hoop/hoopinspect v0.0.0
 	modernc.org/sqlite v1.49.1
 )
 
@@ -33,4 +33,4 @@ require (
 )
 
 // The parent is developed in-tree and not yet tagged.
-replace github.com/hoophq/hoopinspect => ../..
+replace github.com/hoophq/hoop/hoopinspect => ../..

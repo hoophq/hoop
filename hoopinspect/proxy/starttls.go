@@ -8,7 +8,7 @@ import (
 	"io"
 	"net"
 
-	"github.com/hoophq/hoopinspect"
+	"github.com/hoophq/hoop/hoopinspect"
 )
 
 // Postgres negotiates TLS in-band rather than by connecting to a TLS port.

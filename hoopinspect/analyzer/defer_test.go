@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hoophq/hoopinspect"
-	"github.com/hoophq/hoopinspect/analyzer"
-	"github.com/hoophq/hoopinspect/policy"
+	"github.com/hoophq/hoop/hoopinspect"
+	"github.com/hoophq/hoop/hoopinspect/analyzer"
+	"github.com/hoophq/hoop/hoopinspect/policy"
 )
 
 // defer forwards the statement and leaves the level behind for whatever
@@ -518,7 +518,10 @@ func TestFindingFoldIsOrderIndependent(t *testing.T) {
 	}
 	stmt := sqlStmt("DELETE FROM customers", hoopinspect.OpDelete, "customers")
 
-	for _, tc := range []struct{ name string; errFirst bool }{
+	for _, tc := range []struct {
+		name     string
+		errFirst bool
+	}{
 		{"error then success", true},
 		{"success then error", false},
 	} {

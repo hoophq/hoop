@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hoophq/hoopinspect"
+	"github.com/hoophq/hoop/hoopinspect"
 )
 
 // readOnce reads a single chunk, treating a deadline expiry or a clean EOF as

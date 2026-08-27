@@ -36,7 +36,10 @@ relay_sql() {
 
 # ---------------------------------------------------------------- 1. codec
 c_step "1. Codec unit tests"
-CODEC_OUT="$(cd "$HERE/../.." && go test ./codec/mssql/ -count=1 -v 2>&1)"
+# The codec moved to libhoop; hoopinspect/codec/mssql only registers it.
+# GOWORK=off because libhoop is not a member of the repo workspace.
+CODEC_DIR="$HERE/../../../libhoop"
+CODEC_OUT="$(cd "$CODEC_DIR" 2>/dev/null && GOWORK=off go test ./v2/codec/mssql/ -count=1 -v 2>&1)"
 if grep -q '^ok\|^PASS' <<<"$CODEC_OUT"; then
     ok "codec/mssql tests green"
     note "$(grep -c '^--- PASS' <<<"$CODEC_OUT") test cases"
@@ -246,14 +249,23 @@ fi
 
 # --------------------------------------------------- 6. the bypass guard
 c_step "6. The routing-redirect guard"
-GUARD_OUT="$(cd "$HERE/../.." && go test ./codec/mssql/ -run Routing -count=1 -v 2>&1)"
-if grep -q '^--- PASS: TestRoutingRedirectIsRefused' <<<"$GUARD_OUT" \
-   && grep -q '^--- PASS: TestRoutingRedirectSplitAcrossReadsIsStillRefused' <<<"$GUARD_OUT"; then
-    ok "a routing ENVCHANGE is refused rather than forwarded"
-    note "forwarding it would move the client to a socket the relay does not"
-    note "hold: no policy, no audit, and no trace of having stopped watching"
+# The guard lives with the codec, which is in libhoop now; hoopinspect/codec
+# only registers it. GOWORK=off because libhoop is not a workspace member.
+GUARD_DIR="$HERE/../../../libhoop"
+if [[ ! -d "$GUARD_DIR" ]]; then
+    note "skipped: no libhoop checkout at ./libhoop, where the codec lives"
+    note "the guard is exercised by libhoop's own CI"
 else
-    bad "the routing-redirect guard is not holding"
+    GUARD_OUT="$(cd "$GUARD_DIR" && GOWORK=off go test ./v2/codec/mssql/ -run Routing -count=1 -v 2>&1)"
+    if grep -q '^--- PASS: TestRoutingRedirectIsRefused' <<<"$GUARD_OUT" \
+       && grep -q '^--- PASS: TestRoutingRedirectSplitAcrossReadsIsStillRefused' <<<"$GUARD_OUT"; then
+        ok "a routing ENVCHANGE is refused rather than forwarded"
+        note "forwarding it would move the client to a socket the relay does not"
+        note "hold: no policy, no audit, and no trace of having stopped watching"
+    else
+        bad "the routing-redirect guard is not holding"
+        note "$(tail -3 <<<"$GUARD_OUT")"
+    fi
 fi
 
 # ------------------------------------------------------------------ verdict

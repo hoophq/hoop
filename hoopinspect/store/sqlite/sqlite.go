@@ -10,7 +10,7 @@
 //
 // # The nested module
 //
-// The root hoopinspect module has zero dependencies and must keep them. This
+// The root hoopinspect module carries libhoop alone and must keep it that way. This
 // package needs a driver, so it lives behind its own go.mod. See go.mod.
 package sqlite
 
@@ -27,10 +27,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hoophq/hoopinspect"
-	"github.com/hoophq/hoopinspect/audit"
-	"github.com/hoophq/hoopinspect/session"
-	"github.com/hoophq/hoopinspect/store"
+	"github.com/hoophq/hoop/hoopinspect"
+	"github.com/hoophq/hoop/hoopinspect/audit"
+	"github.com/hoophq/hoop/hoopinspect/session"
+	"github.com/hoophq/hoop/hoopinspect/store"
 
 	_ "modernc.org/sqlite"
 )

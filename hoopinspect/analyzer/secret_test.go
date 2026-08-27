@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hoophq/hoopinspect/analyzer"
+	"github.com/hoophq/hoop/hoopinspect/analyzer"
 )
 
 const material = "sk-super-secret-key-value"

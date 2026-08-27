@@ -18,7 +18,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/hoophq/hoopinspect/analyzer"
+	"github.com/hoophq/hoop/hoopinspect/analyzer"
 )
 
 // Name is the config value that selects this provider.

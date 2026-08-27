@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/hoophq/hoopinspect"
+	"github.com/hoophq/hoop/hoopinspect"
 )
 
 // MatchPII denies when the statement carries any of Entities, as reported by

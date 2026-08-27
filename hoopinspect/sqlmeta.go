@@ -4,7 +4,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/hoophq/hoopinspect/lexer"
+	"github.com/hoophq/hoop/hoopinspect/lexer"
 )
 
 // This file adapts the lexer package to the types a Statement carries.
@@ -30,54 +30,6 @@ import (
 // Metadata["sql.incomplete"]. That is deliberate and it is the fail-closed
 // path: a rule naming `unknown` refuses what the scanner could not read,
 // and one that does not name it accepts that risk explicitly.
-
-// Access says whether a statement reads a relation or changes it.
-type Access string
-
-const (
-	AccessRead  Access = "read"
-	AccessWrite Access = "write"
-)
-
-// Relation is one relation a statement touches, and how.
-//
-// It is what Tables should have been. A flat name list cannot express the
-// difference between `INSERT INTO staging SELECT * FROM customers` and
-// `DELETE FROM customers`, so a rule meaning "nothing writes to customers"
-// had to be written as "nothing mentions customers" and fired on both.
-type Relation struct {
-	Name   string `json:"name"`
-	Access Access `json:"access"`
-}
-
-// MetadataSQLIncomplete names the metadata key carrying why a scan could not
-// finish. Present only when Operation is OpUnknown for that reason.
-const MetadataSQLIncomplete = "sql.incomplete"
-
-// SQLAnalysis is what one statement does.
-type SQLAnalysis struct {
-	// Operation is the most consequential effect, or OpUnknown when the
-	// scan did not understand the statement.
-	Operation Operation
-
-	// Effects is every operation performed anywhere in the statement.
-	Effects []Operation
-
-	// Relations lists what is touched and how, deduplicated, with write
-	// dominating read.
-	Relations []Relation
-
-	// Tables is Relations flattened to names, for callers predating the
-	// access split.
-	Tables []string
-
-	// Complete reports whether the scan understood the whole statement.
-	// False MUST fail closed.
-	Complete bool
-
-	// Reason names what defeated the scan. Empty when Complete.
-	Reason string
-}
 
 // AnalyzeSQL classifies a statement for the dialect the protocol implies.
 //

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/hoophq/hoopinspect"
+	"github.com/hoophq/hoop/hoopinspect"
 )
 
 // HTTP-specific rule types. They sit apart from the SQL matchers because the

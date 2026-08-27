@@ -124,6 +124,10 @@ services:
     build:
       context: ../../../../hoopinspect
       dockerfile: ../deploy/docker-compose/envoy-stack/hoopinspect/Dockerfile
+      # The codecs live in libhoop, a private module the proxy cannot serve.
+      # Same local-tree build as the parent stack.
+      additional_contexts:
+        libhoop: ../../../../libhoop
     networks: [inspect]
     volumes:
       - ./config-mssql2019.yaml:/etc/hoop-inspect/config.yaml:ro

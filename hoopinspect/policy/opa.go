@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/hoophq/hoopinspect"
+	"github.com/hoophq/hoop/hoopinspect"
 )
 
 // OPAClient evaluates statements against an Open Policy Agent Data API

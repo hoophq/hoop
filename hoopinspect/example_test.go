@@ -5,9 +5,9 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/hoophq/hoopinspect"
-	_ "github.com/hoophq/hoopinspect/codec/postgres"
-	"github.com/hoophq/hoopinspect/policy"
+	"github.com/hoophq/hoop/hoopinspect"
+	_ "github.com/hoophq/hoop/hoopinspect/codec/postgres"
+	"github.com/hoophq/hoop/hoopinspect/policy"
 )
 
 // pgQuery builds a Postgres simple-query message, standing in for bytes read

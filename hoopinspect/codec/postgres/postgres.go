@@ -1,304 +1,56 @@
-// Package postgres decodes the PostgreSQL v3 frontend/backend protocol far
-// enough to recover the SQL a client sent.
+// Package postgres registers the Postgres codec with hoopinspect.
 //
-// Wire format reference:
-// https://www.postgresql.org/docs/current/protocol-message-formats.html
+// The codec itself lives in github.com/hoophq/libhoop/v2/codec/postgres. This
+// package is the seam between the two: libhoop may not import hoopinspect, so
+// it cannot register itself, and it cannot reach the SQL classifier either.
+// Both of those happen here.
 //
-// A frontend message after the startup phase is:
+// Import it for its side effect when a binary should speak Postgres:
 //
-//	byte1   message type tag
-//	int32   length, INCLUDING these 4 bytes but NOT the tag
-//	...     payload
+//	import _ "github.com/hoophq/hoop/hoopinspect/codec/postgres"
 //
-// Two message types carry SQL:
-//
-//	'Q' Query  simple query: a NUL-terminated string, possibly several
-//	           statements separated by semicolons.
-//	'P' Parse  extended query: prepared-statement name (NUL-terminated,
-//	           empty for the unnamed statement), then the query string
-//	           (NUL-terminated), then parameter type OIDs.
-//
-// Everything else is skipped by length. The startup packet (which has no type
-// tag) and the SSLRequest sentinel are recognized so the decoder stays in sync
-// from the first byte of the connection.
+// Importing this one alone rather than codec/all is what keeps the MSSQL and
+// HTTP machinery out of a binary that only fronts a Postgres upstream.
 package postgres
 
 import (
-	"encoding/binary"
-	"errors"
-	"fmt"
-	"strings"
-
-	"github.com/hoophq/hoopinspect"
-	"github.com/hoophq/hoopinspect/lexer"
+	"github.com/hoophq/hoop/hoopinspect"
+	"github.com/hoophq/hoop/hoopinspect/lexer"
+	codecpg "github.com/hoophq/libhoop/v2/codec/postgres"
+	codectypes "github.com/hoophq/libhoop/v2/codec/types"
 )
 
-func init() { hoopinspect.Register(func() hoopinspect.Codec { return &Codec{} }) }
-
-// Codec implements hoopinspect.Codec for PostgreSQL.
+// New builds a Postgres codec wired to hoopinspect's classifier and lexer.
 //
-// It is stateful on the response side: a RowDescription describes every
-// DataRow that follows it, and those messages routinely land in different
-// TCP reads. Use one Codec per connection; the registry hands out a factory
-// for exactly this reason.
-type Codec struct {
-	// rowDesc is the column layout of the result set currently streaming,
-	// nil between result sets.
-	rowDesc *rowDescription
-
-	// rowCount and truncated accumulate across reads until a terminator.
-	rowCount  int
-	truncated bool
-
-	// Rewrite state. Separate from the decode state above because the two
-	// run on independent copies of the stream: Decode inspects, Rewrite
-	// rebuilds, and a caller may use either alone.
-	//
-	// held buffers complete DataRow messages awaiting masking; pending holds
-	// a trailing partial message until its remainder arrives; maskCols is the
-	// current column layout the masker is shown.
-	held     []byte
-	pending  []byte
-	maskCols []string
+// A codec built without them decodes the wire but reports every statement as
+// OpUnknown, which fails closed rather than waving traffic through. Nothing
+// should construct the libhoop codec directly for production use; go through
+// here so the classifier is always attached.
+func New() hoopinspect.Codec {
+	return codecpg.New(codecpg.Options{
+		Analyze: hoopinspect.AnalyzeSQL,
+		Split:   split,
+	})
 }
 
-func (*Codec) Protocol() hoopinspect.Protocol { return hoopinspect.Postgres }
-
-// Message type tags we care about. The rest are skipped generically.
-const (
-	tagQuery = 'Q'
-	tagParse = 'P'
-)
-
-// sslRequestCode and cancelRequestCode occupy the "protocol version" field of
-// an untagged startup-shaped packet. Recognizing them keeps the decoder from
-// treating a handshake as a malformed message.
-const (
-	sslRequestCode    uint32 = 80877103
-	cancelRequestCode uint32 = 80877102
-	gssEncRequestCode uint32 = 80877104
-)
-
-// maxMessageLen rejects a length field that could only come from garbage or a
-// hostile peer. Postgres itself caps a message at 1 GB; we refuse anything
-// above 64 MiB because evaluating a statement that large inline would stall
-// the policy engine.
-const maxMessageLen = 64 << 20
-
-// ErrMalformed means the byte stream is not valid Postgres v3. The connection
-// cannot be resynchronized.
-var ErrMalformed = errors.New("hoopinspect/postgres: malformed message")
-
-// Decode implements hoopinspect.Codec.
+// split adapts lexer.Split to the injection point.
 //
-// Metadata keys set on returned statements:
+// It is not a direct assignment: lexer speaks Dialect, an internal uint8, and
+// the codec speaks Protocol. Keeping the lexer's own vocabulary out of the
+// injected signature is deliberate — libhoop would otherwise need to name a
+// hoopinspect type to describe its own option.
 //
-//	"pg.message"    "Query", "Parse" or "ErrorResponse"
-//	"pg.statement"  prepared-statement name, only for a named Parse
-//
-// Server → client messages yield one statement per completed result set,
-// carrying Statement.Result: the column names the server described and the
-// row count. See response.go.
-func (c *Codec) Decode(dir hoopinspect.Direction, data []byte) ([]hoopinspect.Statement, int, error) {
-	if dir == hoopinspect.FromServer {
-		return c.decodeResponse(data)
+// The dialect is not cosmetic: '[' opens a quoted identifier in T-SQL and is
+// an array subscript in PostgreSQL, so one set of lexical rules cannot serve
+// both without mangling one of them.
+func split(sql string, proto codectypes.Protocol) []string {
+	d := lexer.Postgres
+	if proto == codectypes.MSSQL {
+		d = lexer.MSSQL
 	}
-
-	var stmts []hoopinspect.Statement
-	pos := 0
-
-	for pos < len(data) {
-		// A GSS-encryption request means everything after the server's 'G' is
-		// ciphertext. Refuse the stream rather than skip the packet and go
-		// quietly blind for the rest of the connection.
-		if isGSSEncRequest(data[pos:]) {
-			return stmts, pos, fmt.Errorf(
-				"%w: the client asked to wrap this session in GSSAPI encryption, "+
-					"which would make every later byte unreadable to policy, masking "+
-					"and the audit trail; refuse it during the handshake instead "+
-					"(libpq sends this by default whenever a Kerberos ticket is present)",
-				hoopinspect.ErrStreamUnsafe)
-		}
-
-		// Untagged handshake packets: int32 length, int32 code.
-		if n, handled := skipHandshake(data[pos:]); handled {
-			if n == 0 {
-				return stmts, pos, nil // incomplete, wait for more
-			}
-			pos += n
-			continue
-		}
-
-		// Need tag + length before anything can be decided.
-		if len(data)-pos < 5 {
-			return stmts, pos, nil
-		}
-
-		tag := data[pos]
-		msgLen := binary.BigEndian.Uint32(data[pos+1 : pos+5])
-
-		// Length counts itself (4) but not the tag, so the smallest legal
-		// value is 4. Anything below that cannot be resynchronized.
-		if msgLen < 4 || msgLen > maxMessageLen {
-			return stmts, pos, ErrMalformed
-		}
-
-		total := 1 + int(msgLen) // tag + declared length
-		if len(data)-pos < total {
-			return stmts, pos, nil // partial message, retain it
-		}
-
-		payload := data[pos+5 : pos+total]
-
-		switch tag {
-		case tagQuery:
-			for _, s := range splitSimpleQuery(cstring(payload)) {
-				stmts = append(stmts, newStatement(s, "Query", ""))
-			}
-		case tagParse:
-			name, query, ok := parseMessage(payload)
-			if ok && strings.TrimSpace(query) != "" {
-				stmts = append(stmts, newStatement(query, "Parse", name))
-			}
-		}
-
-		pos += total
-	}
-
-	return stmts, pos, nil
+	return lexer.Split(sql, d)
 }
 
-// skipHandshake recognizes the untagged packets that precede normal message
-// flow: StartupMessage, SSLRequest, GSSENCRequest and CancelRequest. It
-// returns the byte count to skip and whether the packet was one of these.
-//
-// A returned (0, true) means the packet is a handshake but is not fully
-// buffered yet, so the caller must wait for more bytes.
-//
-// Disambiguation: a real message tag is a printable ASCII letter, so a first
-// byte of 0x00 can only be the high byte of a startup packet's int32 length
-// (any startup packet is far smaller than 16 MiB).
-func skipHandshake(data []byte) (int, bool) {
-	if len(data) == 0 || data[0] != 0x00 {
-		return 0, false
-	}
-	if len(data) < 8 {
-		return 0, true // a handshake, not yet complete
-	}
-	length := binary.BigEndian.Uint32(data[0:4])
-	if length < 8 || length > maxMessageLen {
-		return 0, false // not a shape we recognize; let the caller error
-	}
-	if len(data) < int(length) {
-		return 0, true
-	}
-	code := binary.BigEndian.Uint32(data[4:8])
-	switch code {
-	case gssEncRequestCode:
-		// A GSS-encrypted session is one this decoder cannot read: every byte
-		// after the server's 'G' is ciphertext, and skipping the request the
-		// way SSLRequest is skipped would mean reporting zero statements
-		// forever while the connection did real work.
-		//
-		// Reaching here means the relay's own negotiation did not refuse it
-		// (see proxy/negotiateDownstream), so something is fronting this
-		// codec that let the request through. Fail CLOSED and say why; the
-		// alternative is a lane that looks healthy and enforces nothing.
-		return 0, false
-	case sslRequestCode, cancelRequestCode:
-		return int(length), true
-	}
-	// Otherwise it is a StartupMessage: high 16 bits are the major protocol
-	// version, which is 3 for every server since 7.4.
-	if code>>16 == 3 {
-		return int(length), true
-	}
-	return 0, false
-}
-
-// parseMessage splits a Parse payload into the prepared-statement name and the
-// query text. Both are NUL-terminated; the name is empty for the unnamed
-// statement. Returns ok=false when the payload is truncated.
-func parseMessage(payload []byte) (name, query string, ok bool) {
-	i := indexNUL(payload)
-	if i < 0 {
-		return "", "", false
-	}
-	name = string(payload[:i])
-
-	rest := payload[i+1:]
-	j := indexNUL(rest)
-	if j < 0 {
-		return "", "", false
-	}
-	return name, string(rest[:j]), true
-}
-
-// cstring returns the bytes up to the first NUL, or the whole slice when
-// unterminated (a server would reject that, but we still want the text).
-func cstring(b []byte) string {
-	if i := indexNUL(b); i >= 0 {
-		return string(b[:i])
-	}
-	return string(b)
-}
-
-func indexNUL(b []byte) int {
-	for i := range b {
-		if b[i] == 0 {
-			return i
-		}
-	}
-	return -1
-}
-
-// splitSimpleQuery breaks a simple-query payload on top-level semicolons.
-//
-// Policy depends on the split: `SELECT 1; DROP TABLE users` is ONE 'Q'
-// message, and a decoder classifying it by its leading verb alone would
-// report a harmless select and wave the DROP through. Splitting gives every
-// statement its own verdict.
-//
-// Semicolons inside string literals, quoted identifiers and dollar-quoted
-// bodies are not separators and are skipped.
-func splitSimpleQuery(q string) []string {
-	return lexer.Split(q, lexer.Postgres)
-}
-
-func newStatement(text, msgType, stmtName string) hoopinspect.Statement {
-	a := hoopinspect.AnalyzeSQL(text, hoopinspect.Postgres)
-	md := map[string]string{"pg.message": msgType}
-	if stmtName != "" {
-		md["pg.statement"] = stmtName
-	}
-	if !a.Complete {
-		// The operation is already OpUnknown. The reason travels so an
-		// operator reading the trail can tell a DO block from a
-		// malformed literal, and so a policy can branch on it.
-		md[hoopinspect.MetadataSQLIncomplete] = a.Reason
-	}
-	return hoopinspect.Statement{
-		Protocol:  hoopinspect.Postgres,
-		Direction: hoopinspect.FromClient,
-		Text:      text,
-		Operation: a.Operation,
-		Effects:   a.Effects,
-		Relations: a.Relations,
-		Tables:    a.Tables,
-		Metadata:  md,
-	}
-}
-
-// isGSSEncRequest reports whether data begins with a complete GSSENCRequest.
-//
-// Split out from skipHandshake because the two answer different questions:
-// skipHandshake asks "may I step over this?", and the answer for GSS is no at
-// any length. A partial packet returns false so the caller waits rather than
-// refusing a connection on four buffered bytes.
-func isGSSEncRequest(data []byte) bool {
-	if len(data) < 8 || data[0] != 0x00 {
-		return false
-	}
-	return binary.BigEndian.Uint32(data[0:4]) == 8 &&
-		binary.BigEndian.Uint32(data[4:8]) == gssEncRequestCode
+func init() {
+	hoopinspect.Register(func() hoopinspect.Codec { return New() })
 }

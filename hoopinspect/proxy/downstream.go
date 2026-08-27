@@ -11,7 +11,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/hoophq/hoopinspect"
+	"github.com/hoophq/hoop/hoopinspect"
 )
 
 // Postgres sends three untagged packets before normal message flow, each an

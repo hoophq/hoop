@@ -10,12 +10,12 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/hoophq/hoopinspect"
-	"github.com/hoophq/hoopinspect/audit"
-	_ "github.com/hoophq/hoopinspect/codec/all"
-	"github.com/hoophq/hoopinspect/gate"
-	"github.com/hoophq/hoopinspect/policy"
-	"github.com/hoophq/hoopinspect/session"
+	"github.com/hoophq/hoop/hoopinspect"
+	"github.com/hoophq/hoop/hoopinspect/audit"
+	_ "github.com/hoophq/hoop/hoopinspect/codec/all"
+	"github.com/hoophq/hoop/hoopinspect/gate"
+	"github.com/hoophq/hoop/hoopinspect/policy"
+	"github.com/hoophq/hoop/hoopinspect/session"
 )
 
 // pgQuery builds a Postgres simple-query message.

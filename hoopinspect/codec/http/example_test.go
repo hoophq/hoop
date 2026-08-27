@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"strings"
 
-	hi "github.com/hoophq/hoopinspect/codec/http"
-	"github.com/hoophq/hoopinspect/policy"
+	"github.com/hoophq/hoop/hoopinspect/policy"
+	hi "github.com/hoophq/libhoop/v2/codec/http"
 )
 
 func Example_resourceNormalization() {

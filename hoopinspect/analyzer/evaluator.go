@@ -8,8 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/hoophq/hoopinspect"
-	"github.com/hoophq/hoopinspect/policy"
+	"github.com/hoophq/hoop/hoopinspect"
+	"github.com/hoophq/hoop/hoopinspect/policy"
 )
 
 // DefaultTimeout bounds one classification. It is deliberately short: the

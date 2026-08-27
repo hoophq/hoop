@@ -4,7 +4,7 @@
 // The scanner is not a parser and never will be. That is a defensible choice
 // only while somebody keeps checking it, so PostgreSQL's real parser is the
 // oracle and it runs on every `go test` here. It lives in a separate module
-// because the root ships with zero dependencies.
+// because the root carries libhoop and nothing else.
 package conformance
 
 import (
@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hoophq/hoopinspect/lexer"
+	"github.com/hoophq/hoop/hoopinspect/lexer"
 	pg "github.com/pganalyze/pg_query_go/v6"
 	pgquery "github.com/wasilibs/go-pgquery"
 	"google.golang.org/protobuf/proto"

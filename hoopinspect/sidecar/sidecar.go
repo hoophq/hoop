@@ -40,14 +40,14 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/hoophq/hoopinspect"
-	"github.com/hoophq/hoopinspect/audit"
-	_ "github.com/hoophq/hoopinspect/codec/all"
-	"github.com/hoophq/hoopinspect/gate"
-	"github.com/hoophq/hoopinspect/policy"
-	"github.com/hoophq/hoopinspect/proxy"
-	"github.com/hoophq/hoopinspect/session"
-	"github.com/hoophq/hoopinspect/store"
+	"github.com/hoophq/hoop/hoopinspect"
+	"github.com/hoophq/hoop/hoopinspect/audit"
+	_ "github.com/hoophq/hoop/hoopinspect/codec/all"
+	"github.com/hoophq/hoop/hoopinspect/gate"
+	"github.com/hoophq/hoop/hoopinspect/policy"
+	"github.com/hoophq/hoop/hoopinspect/proxy"
+	"github.com/hoophq/hoop/hoopinspect/session"
+	"github.com/hoophq/hoop/hoopinspect/store"
 )
 
 // Version is the library release, reported by the admin /stats endpoint and
@@ -57,7 +57,7 @@ var Version = "0.1.0"
 
 // Loader reads and validates a config file. It lets a build accept YAML
 // without the root module linking a YAML parser: pass
-// github.com/hoophq/hoopinspect/config/yaml's Load, or nil for JSON only.
+// github.com/hoophq/hoop/hoopinspect/config/yaml's Load, or nil for JSON only.
 type Loader func(path string) (*Config, error)
 
 // PluginBuilder constructs the detection plugin from a config's "pii"
@@ -255,7 +255,7 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 func checkPIIPlugin(cfg *Config, det Plugin) error {
 	if len(cfg.PII) > 0 && det == nil {
 		return errors.New("config has a \"pii\" section but this build has no PII " +
-			"detector; build github.com/hoophq/hoopinspect/cmd, or pass a detector, " +
+			"detector; build github.com/hoophq/hoop/hoopinspect/cmd, or pass a detector, " +
 			"or remove the section")
 	}
 	return nil

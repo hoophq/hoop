@@ -94,6 +94,12 @@ services:
     build:
       context: ../../../hoopinspect
       dockerfile: ../deploy/docker-compose/envoy-stack/hoopinspect/Dockerfile
+      # hoopinspect's codecs live in libhoop, a private module. This stack
+      # builds from the local tree rather than the proxy, so libhoop comes
+      # from the local checkout too. A second context keeps the main one
+      # small instead of shipping the whole repo to the daemon.
+      additional_contexts:
+        libhoop: ../../../libhoop
     networks: [inspect]
     volumes:
       - ./hoopinspect/config.yaml:/etc/hoop-inspect/config.yaml:ro

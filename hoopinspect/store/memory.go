@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hoophq/hoopinspect/audit"
-	"github.com/hoophq/hoopinspect/session"
+	"github.com/hoophq/hoop/hoopinspect/audit"
+	"github.com/hoophq/hoop/hoopinspect/session"
 )
 
 // MemoryStore is an in-process Store.

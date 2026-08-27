@@ -11,27 +11,40 @@ rules. This file governs everything under `hoopinspect/`.
 Full documentation is `README.md` here (68 KB, read the section you need, not
 the whole thing).
 
-## The invariant: zero dependencies
+## The invariant: exactly one dependency
 
-`github.com/hoophq/hoopinspect` depends on the standard library and nothing
-else. Test dependencies included. The library exists to be vendored without a
-supply-chain review and read end to end in an afternoon. A dependency is a
-breaking change to the product pitch, not a convenience.
+`github.com/hoophq/hoop/hoopinspect` depends on `github.com/hoophq/libhoop`
+and nothing else. It used to depend on nothing at all, and that was the
+product pitch — vendorable without a supply-chain review, readable end to end
+in an afternoon, compilable to `wasip1`. The protocol codecs moving to libhoop
+ended it: this module cannot describe its own inputs without naming the types
+the decoders produce.
 
-Three checks, all cheap. The third is a canary rather than a build target: a
-stdlib-only module compiles for a platform with no operating system, and one
-that has picked up a dependency usually will not.
+libhoop is PRIVATE, so building or testing here needs
+`GOPRIVATE=github.com/hoophq/libhoop` and credentials for that repository.
+
+**The edge runs one way and must stay that way.** libhoop imports nothing from
+this repository. Two mechanisms hold that:
+
+- **Types are aliased, not copied.** `wiretypes.go` declares
+  `type Statement = codectypes.Statement` and so on. Same type, not a
+  conversion — which is why a libhoop codec satisfies the `Codec` interface
+  here structurally, without importing this package, and why there is one
+  definition of the document a policy evaluates rather than two that drift.
+- **Behaviour is injected, not imported.** The SQL classifier (`AnalyzeSQL`)
+  and the lexer stay here, because they are the most safety-critical code in
+  the system and there must be one auditable copy. `hoopinspect/codec/*` hands
+  them to each decoder through its `Options`.
+
+Check it:
 
 ```bash
-GOWORK=off go list -m all        # must print exactly one line: the module itself
-ls go.sum                        # must not exist
-GOOS=wasip1 GOARCH=wasm go build ./...
+cd ../libhoop && grep -rn '"github.com/hoophq/hoop' --include='*.go' .   # must be empty
 ```
 
 **Each optional component is its own module, so it can be plugged in or
 dropped without touching anything else.** SQLite is the clean case: removing
-it is removing a directory. The root staying at zero dependencies falls out of
-that rather than causing it.
+it is removing a directory.
 
 | Module | Carries |
 |---|---|
@@ -42,7 +55,7 @@ that rather than causing it.
 | `analyzer/vertex/` | `golang.org/x/oauth2`, the only analyzer provider needing one |
 | `lexer/conformance/` | PostgreSQL's real parser, test-only |
 
-Adding a dependency to the root is never the answer. Add a nested module, or
+Adding a dependency to the root still needs a reason. Add a nested module, or
 do without.
 
 ## Commands
@@ -71,12 +84,12 @@ done
 ## Gotchas
 
 - **`go test ./...` at the root reaches no nested module.** Separate `go.mod`
-  files are what keeps the root at zero dependencies, and the cost is that
+  files are what keeps optional dependencies out of the root, and the cost is that
   every nested module needs its own invocation. See the loop above.
 
 - **CI reaches this only through `test-hoopinspect`.** `make test-oss` runs
   `go test github.com/hoophq/hoop/...`, which does not match module
-  `github.com/hoophq/hoopinspect`, so the Makefile carries a second target
+  `github.com/hoophq/hoop/hoopinspect`, so the Makefile carries a second target
   that walks every `go.mod` under `hoopinspect/` and `test-oss` depends on
   it. Break that dependency and these tests stop running everywhere except
   on your machine.
@@ -101,9 +114,22 @@ done
   `Register` panics on a duplicate protocol, because import order deciding a
   winner is worse than a build failure.
 
-- **The root package imports no codec.** `codec/postgres` imports the root for
-  its types, never the reverse. A binary links only the protocols it imports,
-  usually through `codec/all` or one specific package.
+- **The root package imports no codec, and no longer ships one.** The decoders
+  live in `github.com/hoophq/libhoop`, a private module, under its
+  `v2/codec/*` directory — `v2` there is a folder name, not a major version.
+  libhoop imports NOTHING from this repository; the types it returns are
+  defined there and aliased here, so its codecs satisfy `Codec` structurally.
+
+- **`hoopinspect/codec/*` is the registration seam, not a decoder.** libhoop
+  cannot call `Register`, so these thin packages do it, and they are also
+  where `AnalyzeSQL` and the lexer get injected into a decoder. Import
+  `codec/all` for every protocol, or one package for one protocol so a binary
+  fronting Postgres never links the TDS and HTTP machinery.
+
+- **Construct codecs through the seam, never libhoop directly.** A decoder
+  built with the zero `Options` has no classifier: it reports statement text
+  with `OpUnknown`. That fails closed, but it means a policy naming `select`
+  matches nothing.
 
 ## Layout
 
@@ -111,12 +137,12 @@ done
 |---|---|
 | `inspect.go`, `registry.go`, `sqlmeta.go` | the root package: bytes to statements, codec registry |
 | `lexer/` | SQL text to an effect and a relation list, without a grammar |
-| `codec/{postgres,mssql,http}` | wire decode and response rewrite, one package per protocol |
+| `codec/` | registration seam: wires libhoop's decoders to the classifier |
 | `policy/` | statement to verdict; local rules, then OPA |
 | `analyzer/` | the model-backed evaluator, third in the policy chain |
 | `gate/` | orders inspection, policy, audit and masking into one decision |
 | `proxy/` | TCP relay that pumps both directions through a Gate |
-| `sidecar/` | assembles the relay from config: sinks, evaluators, listeners |
+| `sidecar/` | assembles the relay from config — sinks, evaluators, listeners |
 | `session/` | one inspected connection and the identity behind it |
 | `audit/` | the write side of the trail |
 | `store/` | the read side |

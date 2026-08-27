@@ -1,22 +1,27 @@
 # hoop-inspect sidecar image.
 #
-# The relay is assembled by the hoopinspect root module, which has zero
-# dependencies. The binary lives in the nested cmd module because it links the
-# optional plugins, so the build needs exactly two module downloads:
-# github.com/hoophq/alcatraz, itself dependency-free, and gopkg.in/yaml.v3.
-# One edge deep, no vendor directory, no transitive tree to review.
+# The relay is assembled by the hoopinspect root module. Its protocol codecs
+# live in github.com/hoophq/libhoop, a PRIVATE module, so the build cannot
+# reach them from the proxy without a credential. This stack already builds
+# hoopinspect from the local tree, so it takes libhoop from the local checkout
+# the same way, through a second build context.
 #
-# Build from the repo root:
-#   docker build -f deploy/docker-compose/envoy-stack/hoopinspect/Dockerfile \
-#     -t hoop-inspect:local hoopinspect/
+# That means ./libhoop must exist beside the repo. It is gitignored, so a
+# clone without it cannot build this image — which is the same constraint as
+# building hoopinspect at all now that the codecs are private.
+#
+# Build via compose, which supplies both contexts:
+#   docker compose build hoop-inspect
 
 FROM golang:1.26-alpine AS build
 WORKDIR /src
 COPY . .
+COPY --from=libhoop . /libhoop
 # The nested cmd module declares the plugin dependencies; the root module and
 # the other nested modules are pulled in beside it by replace directives.
+# libhoop needs one too: the version its consumers pin is not published.
 WORKDIR /src/cmd
-RUN go mod download
+RUN go mod edit -replace github.com/hoophq/libhoop=/libhoop && go mod tidy
 # CGO off and a static build so the runtime stage can be distroless-thin.
 # The version matches hoopinspect/cmd/main.go; bump both together.
 RUN CGO_ENABLED=0 go build \

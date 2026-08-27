@@ -52,6 +52,7 @@ go.work.sum
 .env
 
 .DS_Store
+# an optional local clone of the private libhoop module, for `make libhoop-dev`
 libhoop
 .terraform*
 

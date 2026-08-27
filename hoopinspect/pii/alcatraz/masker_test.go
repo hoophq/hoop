@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	alcz "github.com/hoophq/alcatraz/entities"
-	"github.com/hoophq/hoopinspect/gate"
-	"github.com/hoophq/hoopinspect/pii/alcatraz"
+	"github.com/hoophq/hoop/hoopinspect/gate"
+	"github.com/hoophq/hoop/hoopinspect/pii/alcatraz"
 )
 
 // --- strategies ------------------------------------------------------------

@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hoophq/hoopinspect"
-	"github.com/hoophq/hoopinspect/gate"
-	"github.com/hoophq/hoopinspect/policy"
+	"github.com/hoophq/hoop/hoopinspect"
+	"github.com/hoophq/hoop/hoopinspect/gate"
+	"github.com/hoophq/hoop/hoopinspect/policy"
 )
 
 // stubPlugin is a detection plugin that finds whatever literal it is told to.

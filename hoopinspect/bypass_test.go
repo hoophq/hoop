@@ -3,9 +3,9 @@ package hoopinspect_test
 import (
 	"testing"
 
-	"github.com/hoophq/hoopinspect"
-	_ "github.com/hoophq/hoopinspect/codec/all"
-	"github.com/hoophq/hoopinspect/policy"
+	"github.com/hoophq/hoop/hoopinspect"
+	_ "github.com/hoophq/hoop/hoopinspect/codec/all"
+	"github.com/hoophq/hoop/hoopinspect/policy"
 )
 
 // Every case here defeated the previous classifier through the REAL wire

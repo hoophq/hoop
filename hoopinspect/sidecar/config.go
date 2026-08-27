@@ -10,17 +10,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hoophq/hoopinspect"
-	"github.com/hoophq/hoopinspect/analyzer"
-	"github.com/hoophq/hoopinspect/gate"
-	"github.com/hoophq/hoopinspect/policy"
+	"github.com/hoophq/hoop/hoopinspect"
+	"github.com/hoophq/hoop/hoopinspect/analyzer"
+	"github.com/hoophq/hoop/hoopinspect/gate"
+	"github.com/hoophq/hoop/hoopinspect/policy"
 )
 
 // Config is the on-disk configuration.
 //
-// JSON is the native syntax because the module ships zero dependencies and
-// the stdlib has no YAML parser. YAML arrives through the nested module
-// github.com/hoophq/hoopinspect/config/yaml, which transcodes to JSON and
+// JSON is the native syntax because the stdlib has no YAML parser and the
+// module takes no dependency it can avoid. YAML arrives through the nested module
+// github.com/hoophq/hoop/hoopinspect/config/yaml, which transcodes to JSON and
 // hands the bytes to LoadConfigBytes. One schema, two syntaxes, and the
 // dependency stays out of anything that does not ask for it.
 type Config struct {
@@ -286,9 +286,9 @@ type AuditConfig struct {
 	// the drop count so a reader can tell the window is partial.
 	//
 	// In-memory by design. A durable, queryable backend lives in the nested
-	// module github.com/hoophq/hoopinspect/store/sqlite, which this binary
+	// module github.com/hoophq/hoop/hoopinspect/store/sqlite, which this binary
 	// does NOT import: linking a database driver here would give the sidecar
-	// a dependency tree, and a dependency-free sidecar is an auditable one. A
+	// a database driver to audit, and a thin sidecar is an auditable one. A
 	// deployment that wants durable queries embeds the library and supplies
 	// the SQLite store itself.
 	//
@@ -326,7 +326,7 @@ func LoadConfig(path string) (*Config, error) {
 //
 // It is exported so config from somewhere other than a file (a ConfigMap, a
 // secret manager, or the YAML transcoder in the nested module
-// github.com/hoophq/hoopinspect/config/yaml) gets the same strict decode and
+// github.com/hoophq/hoop/hoopinspect/config/yaml) gets the same strict decode and
 // the same validation as the file path.
 func LoadConfigBytes(data []byte) (*Config, error) {
 	var cfg Config
@@ -552,12 +552,12 @@ func (c *Config) validateLane(lc ListenerConfig, name string) []string {
 // Plugin is the optional detection engine: it scans statements for the PII
 // policy rule, and builds the response masker from the "mask" config section.
 //
-// It is declared here rather than imported so this package stays
-// dependency-free. An engine worth having carries recognizers for dozens of
-// national identifier formats, and linking one in would give the root module
-// a dependency tree, the same reasoning that keeps store/sqlite out (see
+// It is declared here rather than imported so this package does not link a
+// detector. An engine worth having carries recognizers for dozens of national
+// identifier formats, and linking one in would give the root module a
+// dependency tree, the same reasoning that keeps store/sqlite out (see
 // AuditConfig.QuerySessions). The nested module
-// github.com/hoophq/hoopinspect/pii/alcatraz supplies an implementation.
+// github.com/hoophq/hoop/hoopinspect/pii/alcatraz supplies an implementation.
 //
 // Nil means no detection: pii policy rules are a config error and masking is
 // unavailable. Both are refusals, never silent downgrades.

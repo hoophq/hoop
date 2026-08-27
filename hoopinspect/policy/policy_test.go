@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hoophq/hoopinspect"
-	"github.com/hoophq/hoopinspect/policy"
+	"github.com/hoophq/hoop/hoopinspect"
+	"github.com/hoophq/hoop/hoopinspect/policy"
 )
 
 func stmt(text string, op hoopinspect.Operation, tables ...string) hoopinspect.Statement {

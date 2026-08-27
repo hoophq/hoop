@@ -12,12 +12,12 @@ import (
 	// standalone hoop-inspect binary. Linking all three keeps the
 	// config-decides-everything rule: turning on Vertex must not require a
 	// different binary.
-	_ "github.com/hoophq/hoopinspect/analyzer/anthropic"
-	_ "github.com/hoophq/hoopinspect/analyzer/openai"
-	_ "github.com/hoophq/hoopinspect/analyzer/vertex"
-	configyaml "github.com/hoophq/hoopinspect/config/yaml"
-	"github.com/hoophq/hoopinspect/pii/alcatraz"
-	"github.com/hoophq/hoopinspect/sidecar"
+	_ "github.com/hoophq/hoop/hoopinspect/analyzer/anthropic"
+	_ "github.com/hoophq/hoop/hoopinspect/analyzer/openai"
+	_ "github.com/hoophq/hoop/hoopinspect/analyzer/vertex"
+	configyaml "github.com/hoophq/hoop/hoopinspect/config/yaml"
+	"github.com/hoophq/hoop/hoopinspect/pii/alcatraz"
+	"github.com/hoophq/hoop/hoopinspect/sidecar"
 	"github.com/spf13/cobra"
 )
 

@@ -42,7 +42,9 @@ direct_sql() {
 
 # ------------------------------------------------------------ 1. unit tests
 c_step "1. Codec unit tests"
-CODEC_OUT="$(cd "$HERE/../.." && go test ./codec/mssql/ -count=1 -v 2>&1)"
+# The codec moved to libhoop; hoopinspect/codec/mssql only registers it.
+# GOWORK=off because libhoop is not a member of the repo workspace.
+CODEC_OUT="$(cd "$HERE/../../../libhoop" 2>/dev/null && GOWORK=off go test ./v2/codec/mssql/ -count=1 -v 2>&1)"
 if grep -q '^ok\|^PASS' <<<"$CODEC_OUT"; then
     ok "codec/mssql tests green"
     note "$(grep -c '^    --- PASS\|^--- PASS' <<<"$CODEC_OUT") test cases"

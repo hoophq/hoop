@@ -13,7 +13,7 @@ import (
 
 	"github.com/hoophq/hoop/agent/config"
 	pb "github.com/hoophq/hoop/common/proto"
-	"libhoop/agent/mcpadapter"
+	"github.com/hoophq/libhoop/agent/mcpadapter"
 )
 
 // recordingMCPServer is a remote MCP server that answers initialize and

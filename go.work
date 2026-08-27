@@ -14,6 +14,5 @@ use (
 	./hoopinspect/lexer/conformance
 	./hoopinspect/pii/alcatraz
 	./hoopinspect/store/sqlite
-	./libhoop
 	./tunnel
 )

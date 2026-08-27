@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/hoophq/hoopinspect"
-	_ "github.com/hoophq/hoopinspect/codec/all"
+	"github.com/hoophq/hoop/hoopinspect"
+	_ "github.com/hoophq/hoop/hoopinspect/codec/all"
 )
 
 func TestNewUnsupportedProtocol(t *testing.T) {

@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hoophq/hoopinspect"
+	"github.com/hoophq/hoop/hoopinspect"
 )
 
 // pgSASLOffer builds an AuthenticationSASL message offering the named

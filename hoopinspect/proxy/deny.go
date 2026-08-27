@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"unicode/utf16"
 
-	"github.com/hoophq/hoopinspect"
+	"github.com/hoophq/hoop/hoopinspect"
 )
 
 // ProtocolDenyWriter renders a denial in each protocol's native error frame.

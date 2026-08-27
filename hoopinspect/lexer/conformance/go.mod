@@ -1,6 +1,6 @@
 // lexer/conformance is a NESTED module holding a test-only oracle.
 //
-// The root github.com/hoophq/hoopinspect module has zero dependencies and
+// The root github.com/hoophq/hoop/hoopinspect module carries libhoop alone and
 // must keep them, test dependencies included. But a hand-written SQL scanner
 // that nobody checks against a real grammar is a pile of assertions about
 // SQL, and SQL does not care what we assert. So PostgreSQL's own parser lives
@@ -16,12 +16,12 @@
 // pganalyze is still a direct require: it owns the generated protobuf node
 // types the walk switches on, and those are pure Go. Its cgo entry points
 // sit behind `//go:build cgo` and are never reached from here.
-module github.com/hoophq/hoopinspect/lexer/conformance
+module github.com/hoophq/hoop/hoopinspect/lexer/conformance
 
 go 1.26.5
 
 require (
-	github.com/hoophq/hoopinspect v0.0.0
+	github.com/hoophq/hoop/hoopinspect v0.0.0
 	github.com/pganalyze/pg_query_go/v6 v6.2.2
 	github.com/wasilibs/go-pgquery v0.0.0-20260728010200-155ebad2880e
 	google.golang.org/protobuf v1.36.11
@@ -34,4 +34,4 @@ require (
 )
 
 // The parent is developed in-tree and not yet tagged.
-replace github.com/hoophq/hoopinspect => ../..
+replace github.com/hoophq/hoop/hoopinspect => ../..
