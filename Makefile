@@ -251,6 +251,30 @@ build-hsh-tunneld-all:
 	GOOS=windows GOARCH=amd64 $(MAKE) build-hsh-tunneld
 	GOOS=windows GOARCH=arm64 $(MAKE) build-hsh-tunneld
 
+# Control plane (hoop 2.0).
+#
+# Its own LDFLAGS rather than the shared one: the control plane does not import
+# common/version, so every -X in LDFLAGS would name a symbol this binary does
+# not contain. The linker accepts that silently, which means a typo in the
+# shared list would never be caught here.
+#
+# Output goes to release-binaries/, the same place as hsh-tunneld and for the
+# same reason: build-tar-files packs everything in binaries/${GOOS}_${GOARCH}/
+# into the hoop CLI archive and then deletes the folder. A control plane
+# binary left there ships inside the CLI tarball and disappears afterwards.
+#
+# GOOS defaults to linux/amd64 for every target in this file. Building for the
+# machine you are sitting at needs the override, e.g.
+# GOOS=darwin GOARCH=arm64 make build-controlplane.
+CONTROLPLANE_LDFLAGS := "-s -w -X main.version=${VERSION}"
+
+build-controlplane:
+	mkdir -p ${DIST_FOLDER}/release-binaries
+	cd controlplane/backend && env CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} \
+		go build -ldflags ${CONTROLPLANE_LDFLAGS} \
+		-o ../../${DIST_FOLDER}/release-binaries/controlplane-${GOOS}-${GOARCH} \
+		./cmd/controlplane
+
 # Stage the user-facing install/uninstall scripts (RD-226) into the
 # release-binaries directory so they get uploaded as Release assets
 # alongside the daemon binaries. Each per-platform archive consumer
@@ -365,4 +389,4 @@ publish-sentry-sourcemaps:
 	tar -xvf ${DIST_FOLDER}/webapp.tar.gz
 	sentry-cli sourcemaps upload --release=$$(cat ./version.txt) ./public/js/app.js.map --org hoopdev --project webapp
 
-.PHONY: run-dev run-dev-postgres build-dev-webapp test-enterprise test-oss test prepare-mssql-jdbc test-integration test-transport test-gateway test-gateway-pglite test-standalone test-standalone-e2e test-gateway-pglite generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm build-hsh-tunneld build-hsh-tunneld-all build-release-checksums stage-release-scripts
+.PHONY: run-dev run-dev-postgres build-dev-webapp test-enterprise test-oss test prepare-mssql-jdbc test-integration test-transport test-gateway test-gateway-pglite test-standalone test-standalone-e2e test-gateway-pglite generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm build-hsh-tunneld build-hsh-tunneld-all build-controlplane build-release-checksums stage-release-scripts

@@ -23,7 +23,10 @@ RUN cargo build --release && \
     install -D target/release/agentrs /out/hoop_rs
 
 # ---- Stage 2: build hoop (Go multi-call binary) ---------------------------
-FROM golang:1.26-bookworm AS go-build
+# Must be >= the go directive in go.work, which this stage copies in below.
+# A lower image makes the build download a toolchain on every run, or fail
+# outright where that is disabled.
+FROM golang:1.27-bookworm AS go-build
 WORKDIR /src
 # The whole workspace is needed (go.work references every module). The RDP
 # parser wasm is committed and embedded via go:embed, so no wasm toolchain is

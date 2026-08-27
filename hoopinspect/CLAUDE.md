@@ -87,12 +87,17 @@ done
   files are what keeps optional dependencies out of the root, and the cost is that
   every nested module needs its own invocation. See the loop above.
 
-- **CI reaches this only through `test-hoopinspect`.** `make test-oss` runs
-  `go test github.com/hoophq/hoop/...`, which does not match module
-  `github.com/hoophq/hoop/hoopinspect`, so the Makefile carries a second target
-  that walks every `go.mod` under `hoopinspect/` and `test-oss` depends on
-  it. Break that dependency and these tests stop running everywhere except
-  on your machine.
+- **`test-hoopinspect` is what proves each nested module builds alone.** An
+  earlier version of this file claimed `go test github.com/hoophq/hoop/...`
+  did not match `github.com/hoophq/hoop/hoopinspect`. It does, nested modules
+  included, since the module was renamed to sit under the repository path. So
+  `make test-oss` does run these tests.
+  What it does not do is prove each nested module resolves on its own: in
+  workspace mode every module builds against the union of the workspace, so a
+  `go.mod` missing a `require` still passes. `test-hoopinspect` enters each
+  module directory, which is the only way to catch that before the proxy does.
+  `test-oss` depends on it. Break that dependency and one go.mod per optional
+  dependency stops being defended by anything.
 
 - **A `lexer/` change is not verified until the conformance suite passes.**
   `lexer/conformance/` runs PostgreSQL's own parser and the scanner over the

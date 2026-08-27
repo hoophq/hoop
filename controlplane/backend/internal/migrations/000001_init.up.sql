@@ -1,0 +1,19 @@
+-- The control plane owns its own Postgres schema.
+--
+-- It shares a database with the gateway for the whole of the 2.0 transition.
+-- A shared schema would mean a migration here can collide with a table name
+-- there, and the collision surfaces as a failed deploy rather than a review
+-- comment.
+--
+-- No tables yet, on purpose. Each is created by the migration belonging to
+-- the component that owns it, so a component can be reverted without
+-- dragging the others' schema with it:
+--
+--   desiredstate  (EVL-231) sidecar configs and the generation counter
+--   adminauth     (EVL-233) admin accounts and sessions
+--   sidecarauth   (EVL-234) sidecar credentials and revocations
+--
+-- inventory (EVL-232) is deliberately absent. It is in-memory by design, so
+-- a table for it here would be the first step of quietly reversing that
+-- decision.
+CREATE SCHEMA IF NOT EXISTS controlplane;
