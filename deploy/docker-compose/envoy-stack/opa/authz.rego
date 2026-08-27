@@ -92,7 +92,7 @@ result["body"] := body
 # Everything above answers Envoy over ext_authz gRPC. Everything below answers
 # hoop-inspect over the Data API at /v1/data/envoy/authz/inspect, which is
 # where the sidecar's policy.opa.url points once the marked block in
-# hoopinspect/config.yaml is uncommented. One package because compose loads
+# sidecar/config.yaml is uncommented. One package because compose loads
 # one policy file, and a second rule name is cheaper than a second mount.
 #
 # `input` here is a parsed statement (protocol, operation, tables, statement
@@ -163,7 +163,7 @@ inspect_ai_answered if inspect_ai.status in {"ok", "cached"}
 inspect_ai_level := object.get(inspect_ai, ["values", "risk_level"], "")
 
 # The pii producer, published by the commented `sensitive-columns` rule in
-# hoopinspect/config.yaml. Its values.entities is the one thing in
+# sidecar/config.yaml. Its values.entities is the one thing in
 # input.findings that Rego could not have read off input itself: the text is
 # in input.statement, but running a detector over it is not something Rego
 # does. The matched VALUES never travel, only the entity classes.

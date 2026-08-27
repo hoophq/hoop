@@ -6,7 +6,7 @@
 -- ./demo.sh exports all 5,000 rows to prove masking does not stop with it.
 -- See ./README.md, "Masking does not stop at row 1000".
 -- `payroll` is the table reporting must not read, so the `type: table` rule in
--- ../hoopinspect/config.yaml has something real to scope to.
+-- ../sidecar/config.yaml has something real to scope to.
 
 CREATE TABLE customers (
     id      serial PRIMARY KEY,
@@ -24,7 +24,7 @@ CREATE TABLE customers (
 -- and 987-65-4321 are the sequential and descending runs every fixture uses,
 -- and alcatraz rejects both as placeholders, so an entity rule alone would
 -- leave two of the three in the clear. Hence the column rule beside it in
--- ../hoopinspect/config.yaml.
+-- ../sidecar/config.yaml.
 INSERT INTO customers (name, email, ssn, cpf, iban) VALUES
     ('Ada Lovelace', 'ada@example.com',   '123-45-6789', '111.444.777-35', 'GB82WEST12345698765432'),
     ('Grace Hopper', 'grace@example.com', '987-65-4321', '529.982.247-25', 'DE89370400440532013000'),

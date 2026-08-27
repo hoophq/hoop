@@ -8,8 +8,8 @@
 // Three constraints an implementer will otherwise rediscover the hard way.
 // controlplane/CLAUDE.md carries the reasoning.
 //
-//  1. The document is a hoopinspect sidecar config. Do not define a second
-//     schema. hoopinspect/sidecar/config.go already defines and validates it.
+//  1. The document is a sidecar config. Do not define a second schema.
+//     sidecar/daemon/config.go already defines and validates it.
 //  2. Config.Validate is not pure. It reads certificate files from disk
 //     through BuildDownstreamTLS, and those paths only resolve on the
 //     sidecar. Deciding what the control plane can honestly check at write

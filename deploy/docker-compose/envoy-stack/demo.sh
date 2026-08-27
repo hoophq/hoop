@@ -4,7 +4,7 @@
 #
 #   client -> Envoy (TLS, OPA fat gate) -> hoop-inspect -> upstream
 #
-# hoop-inspect is the hoopinspect library as a process: it decodes the wire
+# hoop-inspect is the sidecar library as a process: it decodes the wire
 # protocol, evaluates policy per statement, writes an audit trail naming the
 # human, and masks sensitive values on the way back. Envoy keeps TLS and
 # routing.
@@ -12,7 +12,7 @@
 # Prereqs: ./run.sh
 #
 # Each section below is explained, with the code path behind it, in
-# docs/hoopinspect-flow.md. Run the steps one at a time from the runbook there
+# docs/sidecar-flow.md. Run the steps one at a time from the runbook there
 # when you want to watch a single lane instead of the whole walk.
 #
 # Note the ports. The client container reaches Envoy on the compose network,
@@ -120,7 +120,7 @@ note "Same table, same user. The pii rule denied one and allowed the other."
 h "AUDIT / what hoop-inspect recorded"
 sleep 1
 docker compose logs hoop-inspect --since 60s 2>/dev/null \
-  | ./hoopinspect/read-audit.py
+  | ./sidecar/read-audit.py
 
 h "SIDECAR / counters"
 curl -s http://localhost:19000/stats | python3 -m json.tool 2>/dev/null | sed 's/^/  /'
@@ -137,6 +137,6 @@ cat <<'EOF'
 
   Every session above records principal=anonymous: the actor column is
   wired (proxy.Config.IdentityFn) and not yet filled from X-Hoop-User.
-  See the Identity section of the README, or docs/hoopinspect-flow.md for
+  See the Identity section of the README, or docs/sidecar-flow.md for
   the full flow and a per-command runbook.
 EOF

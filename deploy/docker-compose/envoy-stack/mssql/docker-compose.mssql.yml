@@ -1,6 +1,6 @@
 # Overlay: an MSSQL lane where the client authenticates with Kerberos.
 #
-# Bring it up with ../../../../hoopinspect/scripts/dev/mssql-stack.sh, which
+# Bring it up with ../../../../sidecar/scripts/dev/mssql-stack.sh, which
 # mints the certificates this file expects and then runs:
 #
 #   docker compose -f docker-compose.yml -f mssql/docker-compose.mssql.yml up -d

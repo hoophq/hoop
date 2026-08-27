@@ -189,20 +189,20 @@ type ConfigApplyPayload struct {
 	// Generation is monotonic per sidecar and never reused.
 	//
 	// It lives here, in the envelope's payload, and NOT inside Config. That
-	// is not a style choice. hoopinspect's LoadConfigBytes calls
-	// json.Decoder.DisallowUnknownFields (hoopinspect/sidecar/config.go:334)
+	// is not a style choice. The sidecar's LoadConfigBytes calls
+	// json.Decoder.DisallowUnknownFields (sidecar/daemon/config.go:334)
 	// so that a typo cannot silently disable a control. Any key the sidecar
 	// does not recognise makes the whole document fail to parse, which means
 	// adding "generation" to the config would break every push.
 	Generation int64 `json:"generation"`
 
-	// Config is a whole hoopinspect sidecar config document, as JSON.
+	// Config is a whole sidecar config document, as JSON.
 	//
 	// Whole, never a delta. A delta stream needs both ends to agree on the
 	// base, and after a reconnect they do not.
 	//
 	// Raw rather than a typed field because importing
-	// hoopinspect/sidecar would make this module depend on hoopinspect,
+	// sidecar/daemon would make this module depend on the sidecar module,
 	// which depends on the private libhoop, which would mean the control
 	// plane cannot be built without credentials for another repository. The
 	// component that owns validation (EVL-231) decides whether to pay that

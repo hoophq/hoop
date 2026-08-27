@@ -75,7 +75,7 @@ build-dev-webapp:
 
 # Development against a local libhoop clone at ./libhoop. One module,
 # github.com/hoophq/libhoop: the protocol proxies and redactors at its root,
-# and the codecs hoopinspect plugs in under ./v2/codec. That is a plain
+# and the codecs the sidecar plugs in under ./v2/codec. That is a plain
 # directory, not a second module — the `v2` in the import path names a folder,
 # not a major version.
 #
@@ -96,13 +96,13 @@ generate-wasm:
 
 test: test-oss test-enterprise
 
-test-oss: generate-wasm test-hoopinspect
+test-oss: generate-wasm test-sidecar
 	env CGO_ENABLED=0 go test -json -v github.com/hoophq/hoop/...
 
 test-enterprise: generate-wasm
 	env CGO_ENABLED=0 go test -json -v github.com/hoophq/hoop/...
 
-# `github.com/hoophq/hoop/...` now matches hoopinspect too, since the module
+# `github.com/hoophq/hoop/...` now matches the sidecar module too, since it
 # was renamed to sit under the repository path. What it does NOT do is prove
 # each nested module builds on its own: in workspace mode every module
 # resolves against the union of the workspace, so a go.mod missing a require
@@ -113,8 +113,8 @@ test-enterprise: generate-wasm
 #
 # The list is discovered rather than written down, so a nested module added
 # later is covered on the day it is added.
-test-hoopinspect:
-	@set -e; for m in $$(find hoopinspect -name go.mod -exec dirname {} \;); do \
+test-sidecar:
+	@set -e; for m in $$(find sidecar -name go.mod -exec dirname {} \;); do \
 		(cd $$m && env CGO_ENABLED=0 go test -json -v ./...); \
 	done
 

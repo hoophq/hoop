@@ -5,7 +5,7 @@
 A Go workspace (`go.work`) for the hoop gateway, agent, and CLI.
 
 - Product modules: `gateway/`, `agent/`, `client/`, `common/`, `tunnel/`.
-- `hoopinspect/` adds nine more workspace entries.
+- `sidecar/` adds seven more workspace entries (the module plus six nested ones). It was `hoopinspect/` until the CLI command became `hoop start sidecar`.
 - `agentrs/` — Rust companion binary for RDP/TLS proxy workloads.
 - `webapp/` — legacy ClojureScript SPA; see `webapp/CLAUDE.md` for its own conventions.
 - `webapp_v2/` — React frontend that is replacing it.
@@ -70,8 +70,8 @@ A Go workspace (`go.work`) for the hoop gateway, agent, and CLI.
 ### libhoop (`github.com/hoophq/libhoop`, private)
 - One module. Protocol proxies (`agent/{postgres,mssql,mysql,mongodb,oracle}`, `proxy/ssh`), redactors and recorder at the root; the wire codecs under `v2/codec/{postgres,mssql,http}`.
 - `v2/` is a plain directory, not a second module and not a major version. The import path reads `github.com/hoophq/libhoop/v2/codec/postgres` because that is where the files sit.
-- libhoop is a **leaf**: it imports nothing from this repository. The wire vocabulary (`Statement`, `Operation`, `Column`, ...) is DEFINED in `v2/codec/types` and aliased by hoopinspect, so a codec satisfies `hoopinspect.Codec` structurally without naming it. The SQL classifier and lexer stay in hoopinspect and are injected into the codecs as func values.
-- The codecs implement `hoopinspect`'s `Codec` interface and register through `hoopinspect.Register`, so the module depends on `github.com/hoophq/hoop/hoopinspect`. That edge is one-way: hoopinspect's root never imports libhoop.
+- libhoop is a **leaf**: it imports nothing from this repository. The wire vocabulary (`Statement`, `Operation`, `Column`, ...) is DEFINED in `v2/codec/types` and aliased by `sidecar/inspect`, so a codec satisfies `inspect.Codec` structurally without naming it. The SQL classifier and lexer stay in `sidecar/` and are injected into the codecs as func values.
+- The codecs implement `sidecar/inspect`'s `Codec` interface and register through `inspect.Register`, so the module depends on `github.com/hoophq/hoop/sidecar`. That edge is one-way: nothing under `sidecar/` is imported by libhoop.
 - Otherwise it **must not import from the main project** — bridge via stdlib types only.
 - One build path: the proxy, in CI and locally. No stub, no symlink, no checkout step.
 - Build produces WASM module for RDP parsing: `make generate-wasm`.
@@ -87,11 +87,12 @@ A Go workspace (`go.work`) for the hoop gateway, agent, and CLI.
 - Per TCP flow it opens a fresh gRPC `Transport.Connect` stream to the existing gateway — **no new gateway protocol/endpoint**; the gateway sees ordinary client sessions.
 - Shipped with the unprivileged `hsh` CLI (separate `hoophq/hsh` repo).
 
-### hoopinspect (`hoopinspect/`)
+### sidecar (`sidecar/`)
 - Pure function over bytes: turns database wire-protocol bytes into statements, and statements into allow/deny verdicts. Opens no socket, terminates no TLS.
+- The module root holds no Go files. `inspect/` is the core (bytes to statements, codec registry) and `daemon/` assembles the relay from config and carries the CLI entry point.
 - Root module depends on `github.com/hoophq/libhoop` (private) and nothing else. Six nested modules isolate the heavier dependencies: `analyzer/vertex`, `cmd` (the `hoop-inspect` relay binary), `config/yaml`, `lexer/conformance`, `pii/alcatraz`, `store/sqlite`.
-- CI reaches it through `make test-hoopinspect`, which `make test-oss` depends on: `go test github.com/hoophq/hoop/...` matches no module here, so the target walks every `go.mod` under `hoopinspect/` instead.
-- Read `hoopinspect/CLAUDE.md` before changing anything under it; `hoopinspect/README.md` has the API and the relay/sidecar deployment.
+- CI reaches it through `make test-sidecar`, which `make test-oss` depends on: `go test github.com/hoophq/hoop/...` matches no module here, so the target walks every `go.mod` under `sidecar/` instead.
+- Read `sidecar/CLAUDE.md` before changing anything under it; `sidecar/README.md` has the API and the relay/sidecar deployment.
 
 ## Transport Plugin System
 Plugins are registered in `gateway/main.go` in a **fixed, intentional order** — do not reorder casually:
@@ -152,9 +153,9 @@ Protocol-specific proxy servers configured through `models.ServerMiscConfig` (st
 | Run frontend dev (both) | `cd webapp_v2 && npm run dev:full` | Starts Vite (:5173) + shadow-cljs (:8280) together. CLJS edits require a browser hard-reload — Vite proxies the bundle and can't HMR it. |
 | Run React dev only | `cd webapp_v2 && npm run dev` | Vite on :5173. CLJS routes are blank until shadow-cljs is started separately. |
 | Build Rust agent (dev) | `make build-dev-rust` | Cross-compiles for Linux from macOS |
-| Run tests (OSS) | `make test-oss` | Generates WASM and runs `test-hoopinspect` first |
+| Run tests (OSS) | `make test-oss` | Generates WASM and runs `test-sidecar` first |
 | Run tests (enterprise) | `make test-enterprise` | `make test` runs both |
-| Run `hoopinspect` tests only | `make test-hoopinspect` | Walks every `go.mod` under `hoopinspect/`, nested modules included |
+| Run `sidecar` tests only | `make test-sidecar` | Walks every `go.mod` under `sidecar/`, nested modules included |
 | Regenerate OpenAPI | `make generate-openapi-docs` | After any API route/schema change |
 | Format Swagger annotations | `make swag-fmt` | |
 | Create new SQL migration | `migrate create -ext sql -dir gateway/migrations -seq name` | |
@@ -237,13 +238,13 @@ this codebase.
 - Model functions in `gateway/` should take `*gorm.DB` as a parameter. Both patterns exist: ~126 functions take it, 44 files still read the `models.DB` global. Use the parameter in new code.
 - Model functions in `gateway/` must propagate `gorm.ErrRecordNotFound`. Callers decide how to handle not-found. Older helpers in `gateway/models/connections.go` return `nil, nil` — do not copy that.
 - `libhoop` must stay independent — no imports from `gateway/`, `agent/`, `client/`, or `common/`.
-- The hoopinspect <-> libhoop edge runs ONE way. libhoop must never import `github.com/hoophq/hoop/...`; if a codec needs behaviour from hoopinspect (the SQL classifier, the lexer), inject it as a func value through the codec's `Options` rather than adding an import. `hoopinspect/codec/*` is the registration seam that does the injecting.
+- The sidecar <-> libhoop edge runs ONE way. libhoop must never import `github.com/hoophq/hoop/...`; if a codec needs behaviour from `sidecar/` (the SQL classifier, the lexer), inject it as a func value through the codec's `Options` rather than adding an import. `sidecar/codec/*` is the registration seam that does the injecting.
 - Services layer: Business logic lives in `gateway/services/` — keep models focused on data, services on business logic.
 
 ### Testing
 - Run with `make test-oss` (sets `CGO_ENABLED=0`, outputs JSON).
 - Tests live alongside source files (`_test.go` suffix).
-- The `generate-wasm` and `test-hoopinspect` steps are prerequisites, and the Makefile handles them automatically.
+- The `generate-wasm` and `test-sidecar` steps are prerequisites, and the Makefile handles them automatically.
 
 ### API Changes
 - Add Swagger annotations (swag comments) on new/modified handlers.
@@ -325,7 +326,7 @@ When merging `main` into a feature branch:
 | Webapp entry (React shell) | `webapp_v2/src/main.jsx` |
 | Frontend migration context | `webapp_v2/CONTEXT_MIGRATION.md` |
 | Frontend coding rules | `webapp_v2/CLAUDE.md` |
-| Wire-inspection library rules | `hoopinspect/CLAUDE.md` |
+| Wire-inspection library rules | `sidecar/CLAUDE.md` |
 
 ## Frontend Migration in Progress
 

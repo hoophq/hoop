@@ -20,10 +20,10 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/hoophq/hoop/agent v0.0.0-20260730225053-339623147f24
 	github.com/hoophq/hoop/gateway v0.0.0-00010101000000-000000000000
-	github.com/hoophq/hoop/hoopinspect v0.0.0
-	github.com/hoophq/hoop/hoopinspect/analyzer/vertex v0.0.0-00010101000000-000000000000
-	github.com/hoophq/hoop/hoopinspect/config/yaml v0.0.0-00010101000000-000000000000
-	github.com/hoophq/hoop/hoopinspect/pii/alcatraz v0.0.0-00010101000000-000000000000
+	github.com/hoophq/hoop/sidecar v0.0.0
+	github.com/hoophq/hoop/sidecar/analyzer/vertex v0.0.0-00010101000000-000000000000
+	github.com/hoophq/hoop/sidecar/config/yaml v0.0.0-00010101000000-000000000000
+	github.com/hoophq/hoop/sidecar/pii/alcatraz v0.0.0-00010101000000-000000000000
 	github.com/hoophq/libhoop v0.0.0-20260827130908-d96eb386cba0
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/crypto v0.54.0
@@ -302,10 +302,10 @@ replace github.com/hoophq/hoop/agent => ../agent
 // database, gateway/pglite). Drop the replace and bump wazero afterwards.
 replace github.com/tetratelabs/wazero => github.com/racerxdl/wazero v1.12.1-0.20260610204201-d1e18e798de6
 
-replace github.com/hoophq/hoop/hoopinspect => ../hoopinspect
+replace github.com/hoophq/hoop/sidecar => ../sidecar
 
-replace github.com/hoophq/hoop/hoopinspect/config/yaml => ../hoopinspect/config/yaml
+replace github.com/hoophq/hoop/sidecar/config/yaml => ../sidecar/config/yaml
 
-replace github.com/hoophq/hoop/hoopinspect/pii/alcatraz => ../hoopinspect/pii/alcatraz
+replace github.com/hoophq/hoop/sidecar/pii/alcatraz => ../sidecar/pii/alcatraz
 
-replace github.com/hoophq/hoop/hoopinspect/analyzer/vertex => ../hoopinspect/analyzer/vertex
+replace github.com/hoophq/hoop/sidecar/analyzer/vertex => ../sidecar/analyzer/vertex

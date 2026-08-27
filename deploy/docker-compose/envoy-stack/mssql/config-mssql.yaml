@@ -8,8 +8,8 @@
 # overrides them; the resolved result is served at :19000/config.
 #
 # Validate without starting anything:
-#   cd hoopinspect/cmd && go run . -validate \
-#     -config ../../deploy/docker-compose/envoy-stack/hoopinspect/config.yaml
+#   cd sidecar/cmd && go run . -validate \
+#     -config ../../deploy/docker-compose/envoy-stack/sidecar/config.yaml
 
 log_level: info
 

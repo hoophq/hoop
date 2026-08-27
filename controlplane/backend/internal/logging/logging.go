@@ -15,9 +15,9 @@
 // specifically to escape the gateway's dependency tree should not re-import
 // it for a logger.
 //
-// hoopinspect, the process on the other end of this control plane's socket,
-// already threads *slog.Logger through sidecar and proxy. Matching it means
-// both ends of the socket log the same way.
+// The sidecar, the process on the other end of this control plane's socket,
+// already threads *slog.Logger through sidecar/daemon and sidecar/proxy.
+// Matching it means both ends of the socket log the same way.
 package logging
 
 import (

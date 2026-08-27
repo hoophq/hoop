@@ -2,7 +2,7 @@
 #
 #   sqlclient ──TDS 7.4, login inside TLS──> hoop-inspect ──plaintext──> mssql2019
 #
-# Run it with ../../../../hoopinspect/scripts/dev/mssql2019-stack.sh, or by
+# Run it with ../../../../sidecar/scripts/dev/mssql2019-stack.sh, or by
 # hand from THIS directory (the single -f makes this the project directory,
 # which is what the relative paths below assume):
 #
@@ -122,8 +122,8 @@ services:
   hoop-inspect:
     image: hoop-inspect:local
     build:
-      context: ../../../../hoopinspect
-      dockerfile: ../deploy/docker-compose/envoy-stack/hoopinspect/Dockerfile
+      context: ../../../../sidecar
+      dockerfile: ../deploy/docker-compose/envoy-stack/sidecar/Dockerfile
       # The codecs live in libhoop, a private module the proxy cannot serve.
       # Same local-tree build as the parent stack.
       additional_contexts:

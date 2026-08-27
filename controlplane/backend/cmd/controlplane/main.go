@@ -1,6 +1,6 @@
-// Command controlplane is the control plane server for hoopinspect sidecars.
+// Command controlplane is the control plane server for hoop sidecars.
 //
-// It stores what should be running on each hoopinspect sidecar, tracks what
+// It stores what should be running on each sidecar, tracks what
 // actually is, and pushes the difference over a WebSocket that the sidecar
 // dials out to. It terminates no database traffic itself: when this process
 // is down, sidecars keep enforcing the last config they accepted.

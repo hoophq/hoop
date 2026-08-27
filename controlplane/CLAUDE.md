@@ -1,7 +1,8 @@
 # CLAUDE.md: controlplane
 
-Where an operator manages a fleet of `hoopinspect` sidecars. Config decided
-once and distributed everywhere, sidecars registered and identified.
+Where an operator manages a fleet of hoop sidecars, the `sidecar/` module in
+this repository. Config decided once and distributed everywhere, sidecars
+registered and identified.
 
 This file governs `controlplane/backend`. `controlplane/frontend` carries its
 own. The root `CLAUDE.md` does not govern here: it describes the gateway, and
@@ -45,13 +46,13 @@ sidecar caches the last known control plane config and keeps enforcing that.
 The file on disk is bootstrap only, forever.
 
 **4. The sidecar's dependency invariant is not ours to break.**
-`github.com/hoophq/hoop/hoopinspect` at the root has **exactly one**
-dependency, `github.com/hoophq/libhoop`, and that is a deliberate ceiling, not
-a starting point. It used to have none. The heavier dependencies live in six
-nested modules (`config/yaml`, `store/sqlite`, `pii/alcatraz`,
-`analyzer/vertex`, `cmd`, `lexer/conformance`) so that nothing links a YAML
-parser or a sqlite driver unless it asks for one. Anything the sidecar must
-link to talk to us goes in a nested module, the same way. Never in the root.
+`github.com/hoophq/hoop/sidecar` at the root has **exactly one** dependency,
+`github.com/hoophq/libhoop`, and that is a deliberate ceiling, not a starting
+point. It used to have none. The heavier dependencies live in six nested
+modules (`config/yaml`, `store/sqlite`, `pii/alcatraz`, `analyzer/vertex`,
+`cmd`, `lexer/conformance`) so that nothing links a YAML parser or a sqlite
+driver unless it asks for one. Anything the sidecar must link to talk to us
+goes in a nested module, the same way. Never in the root.
 
 Two corrections to what an earlier draft of this file claimed, because both
 would send you looking for something that is not there:
@@ -59,12 +60,12 @@ would send you looking for something that is not there:
 - The root module is **not** stdlib-only and **does** have a `go.sum`. It
   gained libhoop when the protocol codecs moved there.
 - **No test enforces the ceiling.** The boundary is the `go.mod` file and
-  human review. `make test-hoopinspect` walks each nested module in its own
+  human review. `make test-sidecar` walks each nested module in its own
   directory, which catches a missing `require`, not a new dependency someone
   added on purpose. If you want the invariant enforced, write that test; do
   not assume it exists.
 
-libhoop is private, so building or testing anything that imports hoopinspect
+libhoop is private, so building or testing anything that imports `sidecar/`
 needs `GOPRIVATE=github.com/hoophq/libhoop` and credentials for that
 repository. This is why the control plane does not import it. See
 "Module boundary".
@@ -154,7 +155,7 @@ Rules:
   differs. Do not queue missed messages.
 - **Generation travels in the envelope, never inside the config document.**
   `LoadConfigBytes` calls `DisallowUnknownFields`
-  (`hoopinspect/sidecar/config.go:334`) so a typo cannot silently disable a
+  (`sidecar/daemon/config.go:334`) so a typo cannot silently disable a
   control. One extra key therefore fails the whole document. Nobody had
   written this down; `wire.ConfigApplyPayload` now encodes it and
   `wire/envelope_test.go` fails if it regresses.
@@ -178,8 +179,8 @@ What **should** be running. Done means: an admin creates and edits a config
 for a named sidecar, the sidecar receives it, and the store knows which
 generation each sidecar was last sent.
 
-- **The document is `hoopinspect/sidecar.Config`.** Do not invent a schema. It
-  already exists in `hoopinspect/sidecar/config.go` and already validates
+- **The document is `sidecar/daemon.Config`.** Do not invent a schema. It
+  already exists in `sidecar/daemon/config.go` and already validates
   exhaustively rather than fail-fast. A second definition means two validators
   that disagree, and the disagreement surfaces as a sidecar refusing a config
   the UI accepted.
@@ -193,8 +194,8 @@ generation each sidecar was last sent.
   validation cannot be a straight call to it. Working out what the control
   plane can honestly check is part of EVL-231, not an afterthought.
 - **Ship JSON.** JSON is native to the sidecar at zero dependency cost. YAML
-  arrives through the nested `hoopinspect/config/yaml` module specifically to
-  keep the parser out of anything that does not ask for it.
+  arrives through the nested `sidecar/config/yaml` module specifically to keep
+  the parser out of anything that does not ask for it.
 - **Generation is monotonic per sidecar.** Bump on every change, never reuse.
 - MVP is one config per sidecar, direct mapping. Groups, labels, inheritance
   and staged rollout are later.
@@ -398,7 +399,7 @@ package from it drags the whole module's requirements in, and that is the tree
 we just left. If you need something from `common`, copy the twenty lines or
 write the ten you actually use.
 
-It also does not depend on `hoopinspect`, which would transitively require
+It also does not depend on `sidecar/`, which would transitively require
 private libhoop credentials to build the control plane. `wire.ConfigApplyPayload.Config`
 is `json.RawMessage` for exactly this reason. EVL-231 owns validation and may
 decide to pay that cost; the envelope does not have to.
@@ -419,13 +420,13 @@ Stdlib `log/slog`, and no wrapper package. `internal/logging` builds a
 
 **This is a deliberate deviation from the root convention of `common/log`.**
 `common/log` is zap inside `common`, so importing it re-imports the dependency
-tree this module exists to avoid. hoopinspect passes `*slog.Logger` around, so
+tree this module exists to avoid. `sidecar/` passes `*slog.Logger` around, so
 slog is also what the sidecar side speaks.
 
 An earlier draft of this file wrapped slog and claimed `tunnel/` as precedent.
 The wrapper is gone, and so is the claim: `tunnel/` imports
 `github.com/hoophq/hoop/common/log`, the zap one. Do not go looking for a slog
-precedent in this repository, because there is not one outside hoopinspect.
+precedent in this repository, because there is not one outside `sidecar/`.
 
 **The logger is a parameter, never a package-level variable.** Every
 constructor that logs takes `*slog.Logger`. A package-level logger is a global
@@ -595,6 +596,6 @@ There is no helm chart for this service yet; when one lands, the root
 - Tests live beside the source. A behaviour an operator can see needs a test
   that fails without it.
 - Comments say why. Where the reasoning is not recoverable from the code, say
-  it at length; `hoopinspect` sets the register to match.
+  it at length; `sidecar/CLAUDE.md` sets the register to match.
 - Reference a ticket by its ID (`EVL-231`), never by URL. This repo is public
   and a Linear URL leaks the workspace and the ticket slug.

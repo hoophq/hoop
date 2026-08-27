@@ -1,7 +1,7 @@
 # hoop control plane
 
-Manages a fleet of `hoopinspect` sidecars. An operator decides a config once,
-here, and it is distributed everywhere.
+Manages a fleet of hoop sidecars, the `sidecar/` module in this repository.
+An operator decides a config once, here, and it is distributed everywhere.
 
 ```
         ┌──────────────────────┐
@@ -21,7 +21,7 @@ here, and it is distributed everywhere.
       ┌────────────┼────────────┐
       │            │            │
  ┌────┴────┐  ┌────┴────┐  ┌────┴────┐
- │ sidecar │  │ sidecar │  │ sidecar │   hoopinspect, on customer infra
+ │ sidecar │  │ sidecar │  │ sidecar │   sidecar/, on customer infra
  └────┬────┘  └────┬────┘  └────┬────┘
       │            │            │
    database     database     database    traffic never passes through us
