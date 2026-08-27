@@ -176,17 +176,7 @@ func serve(logger *slog.Logger, cfg config.Config) error {
 			logger.Warn("failed closing database pool", "error", err)
 		}
 	}()
-
-	// Fail at boot if the database is unreachable, rather than at the first
-	// request. A process that reports healthy and then 500s every call is
-	// worse than one that refuses to start.
-	pingCtx, cancelPing := context.WithTimeout(context.Background(), database.PingTimeout)
-	err = database.Ping(pingCtx, db)
-	cancelPing()
-	if err != nil {
-		return err
-	}
-	logger.Info("database connection established", "schema", database.Schema)
+	logger.Info("database pool opened", "schema", database.Schema)
 
 	signalCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

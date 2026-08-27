@@ -28,9 +28,10 @@ func newHealth(db *gorm.DB, version string) *health {
 
 // probeTimeout bounds the readiness database check.
 //
-// Shorter than database.PingTimeout on purpose. A readiness probe that blocks
-// longer than the probe interval stacks up connections against a database
-// that is already struggling, which is the failure it exists to report.
+// Two seconds, comfortably inside a typical probe interval. A readiness
+// probe that blocks longer than the interval stacks up connections against a
+// database that is already struggling, which is the failure it exists to
+// report.
 const probeTimeout = 2 * time.Second
 
 // Live reports that the process is running. It touches nothing.
@@ -55,10 +56,15 @@ func (h *health) Ready(c *gin.Context) {
 		// this service being broken, and the distinction is what tells an
 		// orchestrator to wait rather than to restart.
 		//
+		// "did not answer" rather than "not reachable": the same failure
+		// fires when the database is merely slow or the pool is saturated,
+		// and a reason naming the wrong cause sends the operator to check
+		// the network.
+		//
 		// Not the apierr shape. This body answers kubectl, not the frontend.
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"status": "unavailable",
-			"reason": "database is not reachable",
+			"reason": "database did not answer",
 		})
 		return
 	}

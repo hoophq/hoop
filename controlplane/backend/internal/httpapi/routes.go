@@ -11,13 +11,13 @@ import (
 
 // Route paths that are reachable without an admin session.
 //
-// Exported as data, not written down in prose, because the test that asserts
+// Held as data, not written down in prose, because the test that asserts
 // every other route is closed derives its list from engine.Routes() minus
 // this set. A route added outside the protected group therefore fails the
 // test instead of quietly joining the open set.
 //
 // Keys are "METHOD /path" exactly as gin reports them.
-var UnauthenticatedRoutes = map[string]bool{
+var unauthenticatedRoutes = map[string]bool{
 	// Probes. An orchestrator cannot hold a credential, and a readiness probe
 	// that returns 401 reads to it as a service that is down.
 	"GET /healthz": true,

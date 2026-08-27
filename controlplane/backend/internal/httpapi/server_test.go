@@ -42,7 +42,7 @@ func do(t *testing.T, engine *gin.Engine, method, path string, headers map[strin
 	return rec
 }
 
-// The most important test in the module, and the reason UnauthenticatedRoutes
+// The most important test in the module, and the reason unauthenticatedRoutes
 // is a map rather than a paragraph.
 //
 // It walks what the router actually registered instead of a list written down
@@ -53,7 +53,7 @@ func TestEveryRouteNotOnTheOpenListIsClosed(t *testing.T) {
 
 	checked := 0
 	for _, r := range engine.Routes() {
-		if UnauthenticatedRoutes[r.Method+" "+r.Path] {
+		if unauthenticatedRoutes[r.Method+" "+r.Path] {
 			continue
 		}
 		checked++
@@ -75,7 +75,7 @@ func TestEveryRouteNotOnTheOpenListIsClosed(t *testing.T) {
 	}
 
 	if checked == 0 {
-		t.Fatal("no protected routes were checked; either the router is empty or UnauthenticatedRoutes covers everything")
+		t.Fatal("no protected routes were checked; either the router is empty or unauthenticatedRoutes covers everything")
 	}
 }
 
@@ -88,7 +88,7 @@ func TestOpenRoutesAreReachable(t *testing.T) {
 	for _, r := range engine.Routes() {
 		registered[r.Method+" "+r.Path] = true
 	}
-	for route := range UnauthenticatedRoutes {
+	for route := range unauthenticatedRoutes {
 		if !registered[route] {
 			t.Errorf("%s is on the open list but is not registered; the list has drifted from the router", route)
 		}

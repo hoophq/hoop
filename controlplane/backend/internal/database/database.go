@@ -47,14 +47,6 @@ import (
 // collide with a table name in the other.
 const Schema = "controlplane"
 
-// PingTimeout bounds a connectivity check at startup.
-//
-// Longer than the readiness probe's own bound on purpose. At boot the
-// database may still be starting alongside this process, so a little patience
-// avoids a crash loop. Once serving, a slow database is a reason to shed
-// traffic quickly rather than to wait, so the probe keeps its own shorter one.
-const PingTimeout = 5 * time.Second
-
 // ParseURI parses a Postgres connection URI and rejects anything the driver
 // cannot use. It is the only place in this module that parses one.
 //
@@ -117,9 +109,10 @@ func Open(dsn string, maxOpenConns int) (*gorm.DB, error) {
 
 // Ping verifies the connection is usable, not merely configured.
 //
-// sql.Open never contacts the server, so a control plane with a wrong host
-// starts cleanly and fails on the first request instead. Startup calls this
-// so the failure lands where the operator is looking.
+// sql.Open never contacts the server, so a pool built with a wrong host
+// opens cleanly and fails on first use. The readiness probe calls this so an
+// unreachable database reads as "not ready" and traffic is shed, rather than
+// surfacing as a 500 on whichever request arrives first.
 func Ping(ctx context.Context, db *gorm.DB) error {
 	sqlDB, err := db.DB()
 	if err != nil {

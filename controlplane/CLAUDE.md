@@ -510,8 +510,8 @@ delete the call. Do not leave it behind a flag.
   logger and recovery alongside ours.
 - All routes in one `routes` method, read top to bottom. The gateway does the
   same at roughly 1250 lines; this stays readable much longer.
-- **A route is closed unless it is in `httpapi.UnauthenticatedRoutes`.** That
-  set is exported data, not prose, because the test that asserts every other
+- **A route is closed unless it is in `httpapi`'s `unauthenticatedRoutes`.**
+  That set is data, not prose, because the test that asserts every other
   route is closed derives its list from `engine.Routes()` minus this set. A
   route registered outside the protected group therefore fails a test instead
   of quietly joining the open set.
