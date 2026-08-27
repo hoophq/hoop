@@ -4,7 +4,7 @@
 - **Date:** 2026-08-27
 - **Author:** @matheusfrancisco
 - **Code:** [`libhoop/agent/`](../../libhoop/agent), [`libhoop/redactor/`](../../libhoop/redactor), [`sidecar/policy/`](../../sidecar/policy), [`sidecar/gate/`](../../sidecar/gate), [`sidecar/pii/alcatraz/`](../../sidecar/pii/alcatraz), [`sidecar/lexer/`](../../sidecar/lexer)
-- **Related:** [ADR-0005](0005-sidecar-flow.md) (one request through the relay, current state), [ADR-0006](0006-sidecar-config-defaults-and-overrides.md) (how a lane resolves its rules), [ADR-0008](0008-analyzer-enforces-without-opa.md) (the AI evaluator's half of the same chain)
+- **Related:** [ADR-0005](0005-sidecar-flow.md) (one request through the relay, current state), [ADR-0006](0006-sidecar-config-defaults-and-overrides.md) (how a lane resolves its rules), [ADR-0008](0008-analyzer-enforces-without-opa.md) (the AI evaluator's half of the same chain), [ADR-0010](0010-local-sql-rule-set.md) (the local rule set this decision's rule 7 feeds)
 - **Supersedes / Superseded by:** —
 
 ## Context
