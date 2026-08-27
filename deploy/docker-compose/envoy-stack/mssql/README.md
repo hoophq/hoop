@@ -89,9 +89,9 @@ the second one nor the contrib image.
 ## Run it
 
 ```bash
-hoopinspect/scripts/dev/mssql-stack.sh          # mint certs, build, start, seed
-hoopinspect/scripts/dev/mssql-kerberos-check.sh # verify
-hoopinspect/scripts/dev/mssql-stack.sh down     # tear down, including volumes
+sidecar/scripts/dev/mssql-stack.sh          # mint certs, build, start, seed
+sidecar/scripts/dev/mssql-kerberos-check.sh # verify
+sidecar/scripts/dev/mssql-stack.sh down     # tear down, including volumes
 ```
 
 Microsoft publishes no arm64 image for SQL Server, so on Apple Silicon it runs

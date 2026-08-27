@@ -1,7 +1,7 @@
 # hoop-inspect for the TDS 7.4 lane. One listener, one upstream, no Envoy.
 #
 # Validate without starting anything:
-#   cd hoopinspect/cmd && go run . -validate \
+#   cd sidecar/cmd && go run . -validate \
 #     -config ../../deploy/docker-compose/envoy-stack/mssql2019/config-mssql2019.yaml
 
 log_level: info

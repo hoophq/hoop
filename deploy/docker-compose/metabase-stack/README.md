@@ -19,7 +19,7 @@ client ────────────────────────�
 ```
 
 There is no Envoy and no OPA here, unlike [`../envoy-stack`](../envoy-stack).
-The sidecar is the whole story: the [`hoopinspect`](../../../hoopinspect)
+The sidecar is the whole story: the [`sidecar`](../../../sidecar)
 library running as a process, parsing pgwire, enforcing policy per statement,
 writing an audit trail and rewriting result rows on the way back.
 
@@ -114,12 +114,12 @@ directly would be a hack that breaks on the next schema migration. The setup
 API is the supported path on OSS, which is why `metabase/provision.py` exists
 and why the image tag is pinned rather than `:latest`.
 
-Sidecar knobs live in [`hoopinspect/config.yaml`](hoopinspect/config.yaml).
+Sidecar knobs live in [`sidecar/config.yaml`](sidecar/config.yaml).
 Validate a change without starting anything:
 
 ```bash
-cd ../../../hoopinspect/cmd && go run . -validate \
-  -config ../../deploy/docker-compose/metabase-stack/hoopinspect/config.yaml
+cd ../../../sidecar/cmd && go run . -validate \
+  -config ../../deploy/docker-compose/metabase-stack/sidecar/config.yaml
 ```
 
 ## What `./demo.sh` shows
@@ -270,12 +270,12 @@ so a second run inside three minutes is summarized together with the first.
 ```bash
 curl -s localhost:19000/api/sessions | python3 -m json.tool
 curl -s localhost:19000/stats        | python3 -m json.tool
-docker compose logs hoop-inspect | ./hoopinspect/read-audit.py
+docker compose logs hoop-inspect | ./sidecar/read-audit.py
 ```
 
 ## Adapting the rules to your schema
 
-[`hoopinspect/config.yaml`](hoopinspect/config.yaml) exists to be copied and
+[`sidecar/config.yaml`](sidecar/config.yaml) exists to be copied and
 edited. Four things about `policy.rules` that the file repeats inline and that
 cost time to rediscover:
 
@@ -313,7 +313,7 @@ comment naming the human:
 SELECT id, name, email, ssn FROM customers
 ```
 
-`hoopinspect/read-audit.py` lifts it out and prints it beside each denial, so
+`sidecar/read-audit.py` lifts it out and prints it beside each denial, so
 "who ran this" is answerable from the wire without Metabase being configured
 to log anything and without an agent inside it. It is an attribution signal,
 not an authentication one. Metabase writes that comment, so it is exactly as
@@ -338,7 +338,7 @@ Metabase probes SSL before it falls back, so a plaintext lane logs
 `Failed to connect to Database: The server does not support SSL.` once and
 then connects. It is noise, and the way to remove it is to terminate TLS at
 the sidecar. See `downstream_tls` in
-[`hoopinspect/README.md`](../../../hoopinspect/README.md). Postgres is the
+[`sidecar/README.md`](../../../sidecar/README.md). Postgres is the
 only protocol that accepts it, and it is refused at startup on any other.
 
 **Never proxy Metabase's application database.** The `MB_DB_*` connection
@@ -365,14 +365,14 @@ lane that refuses often opens more connections than its query rate suggests.
 idle between dashboard loads. Closing them underneath it turns the next query
 into a reconnect, or into an error the user sees.
 
-**Decide about `unknown` and `other` by watching a sync.** hoopinspect's
+**Decide about `unknown` and `other` by watching a sync.** sidecar's
 guidance is to fail closed on unclassifiable statements, because `DO`, `CALL`
 and `EXECUTE` decide their effect at runtime. The catalogue above shows zero
 of either across setup, sync and this demo, but that covers this demo, not
 every Metabase feature. Models, pulses, actions, CSV uploads (which write to
 the warehouse and a read-only lane will refuse) and a pgjdbc configured with
 autosave (`SAVEPOINT` classifies as `other`) were not exercised. The rule is
-written out and commented in `hoopinspect/config.yaml`; turn it on against
+written out and commented in `sidecar/config.yaml`; turn it on against
 your own traffic rather than on trust.
 
 **Metabase Cloud is the case this fits best.** Metabase's
@@ -445,7 +445,7 @@ Metabase publishes for Cloud.
 - **One shared credential.** See [Identity](#identity). The per-human signal
   is Metabase's own comment, which is attribution rather than authentication.
 
-- **Postgres only, in this stack.** hoopinspect ships postgres, http and mssql
+- **Postgres only, in this stack.** sidecar ships postgres, http and mssql
   codecs. What Metabase's other warehouses need depends on how their drivers
   talk, and it is not one answer:
 

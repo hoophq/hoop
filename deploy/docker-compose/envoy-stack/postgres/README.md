@@ -22,9 +22,9 @@ it is the lane where a Kerberos login succeeds end to end.
 ## Run it
 
 ```bash
-hoopinspect/scripts/dev/pg-stack.sh           # build, start, wait
-hoopinspect/scripts/dev/pg-kerberos-check.sh  # verify
-hoopinspect/scripts/dev/pg-stack.sh down      # tear down, including volumes
+sidecar/scripts/dev/pg-stack.sh           # build, start, wait
+sidecar/scripts/dev/pg-kerberos-check.sh  # verify
+sidecar/scripts/dev/pg-stack.sh down      # tear down, including volumes
 ```
 
 Two shortcuts:

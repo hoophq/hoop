@@ -1,11 +1,11 @@
 # hoop-inspect listening on unix sockets instead of TCP ports.
 #
-# Identical to ../hoopinspect/config.yaml except for the two `network`/`listen`
+# Identical to ../sidecar/config.yaml except for the two `network`/`listen`
 # pairs. Policy, masking, audit and upstream TLS are untouched: the transport
 # under the relay does not change what the relay does.
 #
 # Validate without starting anything:
-#   cd hoopinspect/cmd && go run . -validate \
+#   cd sidecar/cmd && go run . -validate \
 #     -config ../../deploy/docker-compose/envoy-stack/uds/config-uds.yaml
 
 log_level: info

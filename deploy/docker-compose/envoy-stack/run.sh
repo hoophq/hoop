@@ -3,7 +3,7 @@
 # Brings up the stack:
 #
 #   1. mint a self-signed cert for Envoy
-#   2. build the hoop-inspect sidecar image from the local hoopinspect tree
+#   2. build the hoop-inspect sidecar image from the local sidecar tree
 #   3. compose up
 #
 # There is no hoop gateway, no agent and no control-plane database here. The
@@ -74,13 +74,13 @@ else
 fi
 
 # ------------------------------------------------------------ 1. build sidecar
-# The image is built from ../../../hoopinspect, so a library change is one
+# The image is built from ../../../sidecar, so a library change is one
 # rebuild away from running. Skipped when the image already exists unless
 # --rebuild says otherwise.
 c_step "hoop-inspect image"
 if [[ -n "$REBUILD" ]] || ! docker image inspect hoop-inspect:local >/dev/null 2>&1; then
     docker compose build hoop-inspect
-    c_ok "built hoop-inspect:local from ../../../hoopinspect"
+    c_ok "built hoop-inspect:local from ../../../sidecar"
 else
     c_ok "reusing hoop-inspect:local (./run.sh --rebuild to rebuild)"
 fi

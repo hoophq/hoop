@@ -47,17 +47,17 @@ services:
       retries: 10
       start_period: "20s"
 
-  # The hoopinspect library as a process, and the only thing between Metabase
+  # The sidecar library as a process, and the only thing between Metabase
   # and the database. Same image and Dockerfile as ../envoy-stack, not a copy,
   # so the two stacks cannot drift.
   hoop-inspect:
     image: hoop-inspect:local
     build:
-      context: ../../../hoopinspect
-      dockerfile: ../deploy/docker-compose/envoy-stack/hoopinspect/Dockerfile
+      context: ../../../sidecar
+      dockerfile: ../deploy/docker-compose/envoy-stack/sidecar/Dockerfile
     networks: [metabase]
     volumes:
-      - ./hoopinspect/config.yaml:/etc/hoop-inspect/config.yaml:ro
+      - ./sidecar/config.yaml:/etc/hoop-inspect/config.yaml:ro
       # appdb's self-signed cert, used as the CA that verifies it.
       - ./upstream/certs/server.crt:/etc/hoop-inspect/certs/appdb.crt:ro
     ports:

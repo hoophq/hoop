@@ -3,7 +3,7 @@
 # Brings up the stack:
 #
 #   1. mint a self-signed cert for appdb
-#   2. build the hoop-inspect sidecar image from the local hoopinspect tree
+#   2. build the hoop-inspect sidecar image from the local sidecar tree
 #   3. compose up
 #   4. drive Metabase's setup API and register the database THROUGH the sidecar
 #
@@ -75,7 +75,7 @@ fi
 c_step "hoop-inspect image"
 if [[ -n "$REBUILD" ]] || ! docker image inspect hoop-inspect:local >/dev/null 2>&1; then
     docker compose build hoop-inspect
-    c_ok "built hoop-inspect:local from ../../../hoopinspect"
+    c_ok "built hoop-inspect:local from ../../../sidecar"
 else
     c_ok "reusing hoop-inspect:local (./run.sh --rebuild to rebuild)"
 fi
