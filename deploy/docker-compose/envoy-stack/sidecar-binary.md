@@ -105,7 +105,7 @@ catches what a syntax check cannot: a key typo, a bad regex, a `pii` rule
 naming an entity that `pii.entities` never enabled.
 
 Full config reference, every rule type and every masking strategy:
-[`sidecar/README.md`](./README.md).
+[`sidecar/README.md`](../../../sidecar/README.md).
 
 ---
 
@@ -257,7 +257,7 @@ The row is still there. The statement never reached the database.
 downstream TLS at the relay, so a client that negotiates TLS end-to-end leaves
 no plaintext to parse and inspection is impossible. The hop from the relay to
 the database is encrypted separately, and independently: see
-[Upstream TLS](./README.md#upstream-tls).
+[Upstream TLS](../../../sidecar/README.md#upstream-tls).
 
 ### Read the evidence
 
@@ -506,8 +506,8 @@ statement text is there either way.
 
 ## Where to go next
 
-- [`sidecar/README.md`](./README.md) — full config reference, every rule
-  type, masking strategies, unix sockets, upstream TLS, OPA.
+- [`sidecar/README.md`](../../../sidecar/README.md) — full config reference,
+  every rule type, masking strategies, unix sockets, upstream TLS, OPA.
 - [`deploy/docker-compose/envoy-stack`](../deploy/docker-compose/envoy-stack) —
   a runnable stack: Envoy terminating TLS, OPA answering reachability, the
   relay behind it, Postgres and an HTTP service behind that. `./run.sh` then

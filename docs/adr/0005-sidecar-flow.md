@@ -492,7 +492,7 @@ that governs relation attribution inside it, so
 delete and select, `Relations` of `{customers, write}`, and an `Operation` of
 `delete`. `Operation` is the most consequential effect rather than the leading
 verb, because a policy asking "may this run" is asking about the effect
-(`sidecar/sqlmeta.go:18-21`).
+(`sidecar/inspect/sqlmeta.go:18-21`).
 
 That same pass sets `Complete`, which reports whether it understood the whole
 statement. A false one arrives as `Operation: unknown` with the reason in
