@@ -1,4 +1,4 @@
-# ADR-0007: The AI analyzer decides for itself; OPA is the opt-in second decider
+# ADR-0008: The AI analyzer decides for itself; OPA is the opt-in second decider
 
 - **Status:** Accepted
 - **Date:** 2026-08-27
@@ -114,8 +114,9 @@ policy:
 **Two cost controls exist and only one is OPA-free.** `trigger:` is local;
 `opa.gate` is a round trip per statement and needs an endpoint. An operator who
 wants the gate's expressiveness without the service has nothing today — that is
-the hole ADR-0007's `decision.gate` fills, and until it lands the honest answer
-is "widen or narrow the trigger".
+the hole the native decision engine proposed in
+[ADR-0007](0007-native-decision-engine.md) fills with its `decision.gate`, and
+until that lands the honest answer is "widen or narrow the trigger".
 
 **Without OPA, a provider outage allows by default.** `fail_open` defaults true
 and is per process, so a lane that must not forward an unclassified statement
@@ -129,7 +130,7 @@ lane's. There is no third mode, and adding one is not on the table: the
 **and** writes to `customers`" cannot say it in the action map, and the
 pressure will be to widen the trigger until the model sees everything, which is
 a bill rather than a control. Watch for that shape in configs; it is the signal
-that ADR-0007's phase 1 matters more than its phase 3.
+that the native engine's phase 1 matters more than its phase 3.
 
 **We are committed to the analyzer never needing an evaluator behind it.** Any
 action added to the enum states which decider it requires and is refused at
@@ -138,11 +139,11 @@ startup when that decider is absent, per level, per rule, with the lane named.
 `policy.opa.url` is refused for the same reason: deferring to a decision that
 does not exist allows everything.
 
-**If ADR-0007 lands, one row changes.** `defer` becomes legal against
-`decision.rules` as well as `policy.opa.url`. Nothing else in this ADR moves,
-because a native decider is one more consumer of the same `Finding` the
-analyzer already writes — which is the test of whether the seam was drawn in
-the right place.
+**If the native decision engine lands, one row changes.** `defer` becomes
+legal against `decision.rules` as well as `policy.opa.url`. Nothing else in
+this ADR moves, because a native decider is one more consumer of the same
+`Finding` the analyzer already writes — which is the test of whether the seam
+was drawn in the right place.
 
 ### How this was verified
 

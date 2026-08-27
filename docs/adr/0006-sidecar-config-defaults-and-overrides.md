@@ -66,7 +66,7 @@ We resolve one lane's stack from the defaults and its own block in
 
 | Field | Global → lane | Why |
 |---|---|---|
-| `policy.rules` | **concatenate**, lane's first | Every rule type denies and the first match wins, so concatenation is monotonic in the allow/deny outcome. Order picks only which name and message the user reads, and lane-first lets a specific message beat a generic one. |
+| `policy.rules` | **concatenate**, lane's first | The concatenated list splits in two before anything runs: `splitAnalyzerRules` lifts the `ai_analysis` rules out into their own evaluators, and what is left is the local rule set. Every local rule either denies or defers, and the first match wins, so concatenating them is monotonic in the allow/deny outcome. Order picks only which name and message the user reads, and lane-first lets a specific message beat a generic one. `ai_analysis` rules do not share that invariant; the order consequence below says what their position does and does not decide. |
 | `policy.opa` | **replace** when the lane sets it | One lane has one decision endpoint. Two do not merge into one. |
 | `policy.enforce` | **replace** when set (`*bool`) | A lane must be able to say observe-only against an enforcing default. |
 | `mask.enabled` | **replace** when set (`*bool`) | Same, in the other direction: a protocol whose frames cannot be rewritten says false against a global true. |
@@ -114,11 +114,32 @@ not.
 
 **Rule ORDER within a lane is now load-bearing across two files.** A lane's
 rules run before the defaults, so a generic global backstop can never shadow a
-lane's specific message. Reordering the global block cannot change any
-allow/deny outcome, which is what makes the concatenation safe to reason about
-— and that invariant holds only while every rule denies. See ADR-0007: adding a
-terminal `allow` action breaks it, deliberately, and has to be paid for with a
-startup warning.
+lane's specific message. For the LOCAL rules that is the whole of it:
+`Rules.EvaluateWith` walks them in order and each one either denies or records
+a `Finding` and continues, so reordering the global block changes which rule
+name and message a user reads and nothing about allow versus deny. That is the
+invariant that makes the concatenation safe to reason about, and it is scoped
+to the local set. See ADR-0007: adding a terminal `allow` action breaks it,
+deliberately, and has to be paid for with a startup warning.
+
+**`ai_analysis` rules order differently, because they do not all deny.** Each
+becomes its own `analyzer.Evaluator`, appended after the local set in
+concatenation order, and its verdict is whatever its `high`/`medium`/`low` map
+says: `allow`, `warn` and `defer` all forward, and only `block` denies. So
+position decides two things. It decides whose message lands on a block, the
+same way it does for locals. It also decides which analyzer rules run at all,
+because a denial stops the Chain: a lane rule that blocks means the global
+rules behind it never call a provider and never report a status, so an outage
+they would have recorded is missing from a record that already says denied.
+
+What position does NOT decide is what a policy reads. The `ai_analysis`
+`Finding` is folded by `Evaluator.report` most-degraded-status first and then
+highest risk, and the `risk_level` annotation merges highest-wins as a pair
+with `risk_action` in `mergeAnnotations`. A rule rating a statement low cannot
+erase one that rated it high, and a rule that answered cannot hide one that
+could not, in either order and from either file. Each rule also holds its own
+trigger, cache and `MaxCalls` budget, so moving one between the global and
+lane blocks moves no spend between them.
 
 **Slices are copied, not appended in place.** `resolve` builds a fresh slice
 per lane; appending onto the shared default would let one lane's rules land in
@@ -145,6 +166,12 @@ produce.
 
 - `go test ./daemon/ -run TestResolve -v` — five cases covering concatenation
   order, aliasing, OPA replacement, enforce replacement, mask replacement.
+- `TestSplitAnalyzerRulesPreservesLocalOrder` for the split that leaves the
+  local set first-match, and `TestFindingFoldIsOrderIndependent`,
+  `TestFindingFoldKeepsTheMostDegradedStatus`,
+  `TestFindingFoldKeepsTheHighestLevel` plus `TestChainKeepsHighestRisk` and
+  `TestChainKeepsRiskPairConsistent` for the half of analyzer ordering that
+  concatenation cannot change.
 - Two http lanes over one upstream, one inheriting and one overriding `mask`,
   compared byte for byte (above).
 - `GET :19000/config` on a two-lane process: `["lane-no-delete",

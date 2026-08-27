@@ -1,4 +1,4 @@
-# ADR-0007: Use Postgres row-level security for tenant isolation
+# ADR-NNNN: Use Postgres row-level security for tenant isolation
 
 - **Status:** Accepted
 - **Date:** 2026-08-25
