@@ -1,5 +1,12 @@
-// Curated guardrail templates for the product activation journey, indexed by
-// connection subtype.
+// Curated guardrail templates, indexed by connection subtype.
+//
+// NOTHING IN THIS APP LINKS TO THEM YET. They are reached only through the
+// `?template=<name>` deep link on /guardrails/new, which the gateway's activation
+// journey produced and the control plane has no equivalent of. Kept because the
+// Feature Configuration Across the Fleet project asks for exactly this — "pre-populated
+// rule sets, so an admin gets a working configuration from one action" — and this is
+// curated content, not scaffolding. That project surfaces them; until then the deep
+// link works if you build the URL by hand.
 //
 // Source of truth: default-guardrails.json (Feature Specs | Product Activation
 // Journey / EVL-69). Ported 1:1 from
@@ -16,7 +23,7 @@
 //   feed apiRulesToRows() directly to seed the create form.
 // - Regexes are Python syntax, evaluated by the gateway — never "fix" one to
 //   satisfy a JavaScript reader.
-export const GUARDRAIL_TEMPLATES_BY_SUBTYPE = {
+const GUARDRAIL_TEMPLATES_BY_SUBTYPE = {
   'postgres': [
     {
       title: 'Reinforce WHERE clause',

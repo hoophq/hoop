@@ -1,5 +1,7 @@
-// Curated AI Session Analyzer rule templates for the product activation
-// journey, indexed by connection subtype.
+// Curated AI Session Analyzer rule templates, indexed by connection subtype.
+//
+// Reached only through the `?template=` deep link and not linked from anywhere in
+// this app — see the same note in pages/Guardrails/templates.js for why they stay.
 //
 // Source of truth: ai-session-analyzer-templates.json (Feature Specs | Product
 // Activation Journey / EVL-69). Ported 1:1 from
@@ -18,7 +20,7 @@
 //   link's ?connections= list — note the AI analyzer journey sends connection
 //   **names**, unlike Guardrails, which sends ids.
 
-export const AI_ANALYZER_TEMPLATES_BY_SUBTYPE = {
+const AI_ANALYZER_TEMPLATES_BY_SUBTYPE = {
   postgres: [
     {
       title: 'Block destructive DDL',

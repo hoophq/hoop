@@ -6,67 +6,6 @@
 // JSON metadata sees the whole set in one place. Adding a new policy
 // flag? Add it here, not scattered across page components.
 
-// Connection method indicator. Derived from the raw secret values since
-// the gateway doesn't store an explicit "method" field. See
-// secretsCodec.js for the value-prefix-based detection.
-export const CONNECTION_METHODS = {
-  MANUAL: 'manual',
-  SECRETS_MANAGER: 'secrets_manager',
-  AWS_IAM: 'aws_iam',
-}
-
-// Subtypes that route to the free-form custom editor regardless of
-// whether the JSON catalog has a credentials entry for them. Mirrors
-// the CLJS exclusion set at
-// webapp/src/webapp/resources/configure_role/credentials_tab.cljs:17.
-// "tcp" / "ssh" sit in the metadata catalog with HOST/PORT credentials,
-// but the CLJS chose free-form for the custom + tcp/ssh combination
-// because those are generic shell-style wrappers; honour that decision.
-const FREE_FORM_CUSTOM_SUBTYPES = new Set([
-  'tcp',
-  'httpproxy',
-  'ssh',
-  'linux-vm',
-  'claude-code',
-])
-export function isFreeFormCustomSubtype(subtype) {
-  return Boolean(subtype) && FREE_FORM_CUSTOM_SUBTYPES.has(subtype)
-}
-
-// Which subtypes can authenticate via AWS IAM Role. CLJS limits this to
-// MySQL and Postgres because those are the only RDS auth backends the
-// gateway/agent currently support
-// (webapp/.../setup/connection_method.cljs:92).
-const AWS_IAM_ROLE_SUBTYPES = new Set(['postgres', 'mysql'])
-export function supportsAwsIam(subtype) {
-  return AWS_IAM_ROLE_SUBTYPES.has(subtype)
-}
-
-// Whether the connection is eligible for the Test Connection action.
-// Mirrors the CLJS can-test-connection? predicate. Databases and
-// applications are universally testable; a few subtype-specific
-// connections (AWS shell paths) also are.
-const TESTABLE_TYPES = new Set(['database', 'application'])
-const TESTABLE_SUBTYPES = new Set([
-  'postgres',
-  'mysql',
-  'mssql',
-  'oracledb',
-  'mongodb',
-  'dynamodb',
-  // Keep the legacy and current AWS resource subtypes. The Test
-  // Connection action drives a server-side probe by connection name,
-  // not by credential shape, so honouring both spellings here doesn't
-  // collide with the metadata-driven catalog (which uses the prefixed
-  // names only).
-  'cloudwatch',
-  'aws-cloudwatch',
-])
-export function canTestConnection({ type, subtype } = {}) {
-  if (TESTABLE_SUBTYPES.has(subtype)) return true
-  return TESTABLE_TYPES.has(type)
-}
-
 // Every subtype the gateway proxies over HTTP. Mirrors the CLJS
 // http-proxy-subtypes set at
 // webapp/src/webapp/resources/constants.cljs:24.
@@ -123,7 +62,7 @@ const NATIVE_CLIENT_KUBERNETES_SUBTYPES = new Set([
  * to false so a failed /serverinfo hides those roles rather than offering an
  * action the gateway would reject.
  */
-export function isNativeCapableSubtype(connection, { postgresProxyEnabled = false } = {}) {
+function isNativeCapableSubtype(connection, { postgresProxyEnabled = false } = {}) {
   if (!connection) return false
   const { subtype, type } = connection
   const isNativeSubtype =

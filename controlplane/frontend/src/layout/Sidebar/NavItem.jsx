@@ -1,38 +1,18 @@
 import { Link, useLocation } from 'react-router-dom'
-import { useEffect } from 'react'
 import { useUIStore } from '@/stores/useUIStore'
 import { useUserStore } from '@/stores/useUserStore'
 import { ItemBadge } from './ItemBadge'
 import { SidebarNavLink } from './SidebarNavLink'
 import { shouldHide, isActive } from './helpers'
 
-// ─── Collapsible nav item (Integrations / Settings) ───────────────────────
-// Separate component so useEffect can run on mount to clear pendingOpenSection.
-
-export function CollapsibleNavItem({ item, isAdmin, isSelfHosted, defaultOpened, onMount }) {
-  useEffect(() => {
-    onMount?.()
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  return (
-    <SidebarNavLink
-      label={item.label}
-      aria-label={item.label}
-      leftSection={<item.icon size={18} aria-hidden="true" />}
-      defaultOpened={defaultOpened}
-    >
-      {item.children.map((child) => (
-        <NavItem key={child.path} item={child} isAdmin={isAdmin} isSelfHosted={isSelfHosted} />
-      ))}
-    </SidebarNavLink>
-  )
-}
-
-// ─── Single expanded nav item ──────────────────────────────────────────────
+// The gateway sidebar also supported items with `children`, rendered as a
+// collapsible group (Integrations, Settings). The control plane navigation is flat,
+// so that path is gone along with the pendingOpenSection state it needed. Bring it
+// back with the page that needs sub-navigation, not before.
 
 export function NavItem({ item, isAdmin, isSelfHosted }) {
   const location = useLocation()
-  const { setSidebarOpen, pendingOpenSection, clearPendingOpenSection } = useUIStore()
+  const setSidebarOpen = useUIStore((s) => s.setSidebarOpen)
   const isFeatureFlagEnabled = useUserStore((s) => s.isFeatureFlagEnabled)
   const isLicenseFeatureEnabled = useUserStore((s) => s.isLicenseFeatureEnabled)
 
@@ -40,19 +20,6 @@ export function NavItem({ item, isAdmin, isSelfHosted }) {
 
   const active = item.path ? isActive(item.path, location.pathname, location.search) : false
   const closeMobile = () => setSidebarOpen(false)
-
-  if (item.children) {
-    const shouldOpen = pendingOpenSection === item.label
-    return (
-      <CollapsibleNavItem
-        item={item}
-        isAdmin={isAdmin}
-        isSelfHosted={isSelfHosted}
-        defaultOpened={shouldOpen}
-        onMount={shouldOpen ? clearPendingOpenSection : undefined}
-      />
-    )
-  }
 
   if (item.action) {
     return (

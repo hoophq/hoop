@@ -61,7 +61,7 @@ function sameWords(a, b) {
 // ["password"], but block-password stores four words, so every saved preset
 // came back as a custom rule. Comparing against the preset definition keeps
 // presets round-tripping through save/edit.
-export function identifyPreset(type, patternRegex, words) {
+function identifyPreset(type, patternRegex, words) {
   if (type === 'pattern_match' && patternRegex) {
     const match = Object.entries(PRESETS).find(
       ([, preset]) => preset.pattern_regex === patternRegex

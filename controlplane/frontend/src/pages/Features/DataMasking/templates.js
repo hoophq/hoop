@@ -1,4 +1,7 @@
-// Recommended Live Data Masking templates for the product activation journey.
+// Recommended Live Data Masking templates.
+//
+// Reached only through the `?template=` deep link and not linked from anywhere in
+// this app — see the same note in pages/Guardrails/templates.js for why they stay.
 //
 // Source of truth: live-data-masking-templates.json (Feature Specs | Product
 // Activation Journey / EVL-69), ordered by recommendation: developer access
@@ -27,7 +30,7 @@
 // - The JSON's `attributes` tags (production, pii, ...) are omitted: the
 //   Attributes field is populated from org-defined attributes, which may
 //   not exist in the target org.
-export const MASKING_TEMPLATES = [
+const MASKING_TEMPLATES = [
   {
     id: 'prod-mask-pii-developer-access',
     title: 'Mask PII for developer access',

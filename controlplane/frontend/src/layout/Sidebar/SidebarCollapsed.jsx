@@ -15,7 +15,7 @@ const SECTIONS = [
 import classes from './Sidebar.module.css'
 
 export function SidebarCollapsed() {
-  const { toggleSidebarCollapsed, setPendingOpenSection } = useUIStore()
+  const toggleSidebarCollapsed = useUIStore((s) => s.toggleSidebarCollapsed)
   const { isAdmin, isSelfHosted } = useUserStore()
   const isFeatureFlagEnabled = useUserStore((s) => s.isFeatureFlagEnabled)
   const isLicenseFeatureEnabled = useUserStore((s) => s.isLicenseFeatureEnabled)
@@ -59,24 +59,11 @@ export function SidebarCollapsed() {
           <Box key={id} mt="xxl" w="100%">
             <Text size="xs" fw={600} mb="xs" className={classes.sectionHidden}>{label}</Text>
             <Stack gap="xsAlt" align="center" role="list" aria-label={label}>
-              {items.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled)).map((item) =>
-                item.children ? (
-                  <Box component="li" key={item.label} className={classes.listItem}>
-                    <IconBtn
-                      icon={item.icon}
-                      label={item.label}
-                      onClick={() => {
-                        setPendingOpenSection(item.label)
-                        toggleSidebarCollapsed()
-                      }}
-                    />
-                  </Box>
-                ) : (
-                  <Box component="li" key={item.path} className={classes.listItem}>
-                    <IconBtn {...item} />
-                  </Box>
-                )
-              )}
+              {items.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled)).map((item) => (
+                <Box component="li" key={item.path} className={classes.listItem}>
+                  <IconBtn {...item} />
+                </Box>
+              ))}
             </Stack>
           </Box>
         ))}

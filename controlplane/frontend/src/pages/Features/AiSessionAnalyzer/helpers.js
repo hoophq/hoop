@@ -37,7 +37,7 @@ export const FREE_LICENSE_LIMIT_MESSAGE =
 
 // The API still returns the deprecated flat `<tier>_risk_action` alongside the
 // nested `<tier>_risk`, so both are read, newest shape first.
-export function tierFromRisk(riskEvaluation, level) {
+function tierFromRisk(riskEvaluation, level) {
   const tier = riskEvaluation?.[level.field]
   return {
     action: tier?.action ?? riskEvaluation?.[level.legacyField] ?? level.recommended,
