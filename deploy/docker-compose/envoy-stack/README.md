@@ -161,8 +161,10 @@ The same lane rewrites the result set on the way back:
 
 The codec rebuilds the frames around the new values rather than substituting
 bytes. A pgwire `DataRow` length-prefixes every row and every column, so
-rewriting bytes in place desynchronizes psql on the next message
-(`sidecar/codec/postgres/rewrite.go`).
+rewriting bytes in place desynchronizes psql on the next message. That
+reframing lives in the codec itself, in the private
+`github.com/hoophq/libhoop/v2/codec/postgres`; `sidecar/codec/postgres`
+registers it with the inspector.
 
 A **column rule** masks the `ssn` column by position rather than by detection.
 The seeded value `123-45-6789` is one alcatraz refuses, because it rejects

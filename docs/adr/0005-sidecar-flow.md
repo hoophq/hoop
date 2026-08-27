@@ -1098,9 +1098,11 @@ the old count and stops mid-document, which looks like a corrupt upstream.
 Postgres length-prefixes every row and every column. Substituting
 `ada@example.com` (15 bytes) with `[REDACTED:EMAIL_ADDRESS]` (24 bytes)
 desynchronizes psql on the next message, and the user sees "lost synchronization
-with server". The postgres codec implements `Reframer` and rebuilds the
-`DataRow` frames around the masked values instead
-(`sidecar/codec/postgres/rewrite.go`).
+with server". The postgres codec implements `Reframer` (`sidecar/gate/gate.go:76`) and
+rebuilds the `DataRow` frames around the masked values instead. The codec is
+in the private `github.com/hoophq/libhoop/v2/codec/postgres`, so that
+implementation is not readable in this tree; `sidecar/codec/postgres` is the
+seam that registers it and injects the SQL classifier.
 
 `gate.MaskSupported` asks the codec whether it can carry masking rather than
 listing protocols by name. A codec offering neither mechanism gets its `mask`
