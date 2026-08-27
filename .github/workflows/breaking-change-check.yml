@@ -48,6 +48,18 @@ jobs:
           go-version-file: go.work
           cache-dependency-path: '**/go.sum'
 
+      # The gateway's Go sources now import github.com/hoophq/libhoop, a
+      # private module, so swag cannot parse them without credentials. Without
+      # this the failure is indirect and misleading: the fetch fails, swag
+      # carries on, and the error it prints is "cannot find type definition:
+      # orgtypes.AccountStatus" — a type that is perfectly fine.
+      - name: Authenticate private modules
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
+
       - name: regenerate OpenAPI docs
         run: make generate-openapi-docs
 
