@@ -14,18 +14,18 @@ This plus the sidecar is hoop 2.0, and together they replace the gateway.
 ## How it fits together
 
 ```
-                        Admin UI (terminal, web)
+                        Admin UI (frontend/)
                                   |
                  read state       |      write intent
              +--------------------+--------------------+
              |                    |                    |
-        inventory/          desiredstate/         adminauth/
+         inventory           desired state         admin auth
         what is running     what should run       who may edit
              ^                    |
              |                    v
-             +------- transport/ (one WebSocket per sidecar) -------+
-                                  ^                         sidecarauth/
-                                  |                         who may connect
+             +---- the wire: one WebSocket per sidecar ----+
+                                  ^                      sidecar auth
+                                  |                    who may connect
           sidecars dial out, nothing dials in
              +--------------------+--------------------+
              |                    |                    |
@@ -34,25 +34,22 @@ This plus the sidecar is hoop 2.0, and together they replace the gateway.
 
 ## Start here
 
-1. `CLAUDE.md` in this folder. Five non-negotiables, what is decided, what is
-   open.
-2. `transport/CLAUDE.md`. The message contract. Every component crosses it, so
-   read it even if you are not building it.
-3. The `CLAUDE.md` in whichever component you picked up.
+- **`CLAUDE.md`** governs the backend: five non-negotiables, what is decided,
+  what is open, the wire contract, and the scope of each component. Read the
+  wire contract even if you are not building it, because everything crosses
+  it.
+- **`frontend/CLAUDE.md`** governs the admin UI. Nothing is built and the
+  stack is not chosen.
 
-| Component | State |
-|---|---|
-| `transport/` | contract written, needs sign-off |
-| `desiredstate/` | ready to build, simple CRUD plus a generation number |
-| `inventory/` | ready to build, in-memory fleet view |
-| `adminauth/` | ready to build, first admin plus signin |
-| `sidecarauth/` | most open questions, decides the trust anchor then builds |
+Two files by design. They get split per component once there is code to split
+and the split earns itself.
+
+## MVP
+
+Desired state (CRUD plus a generation number), inventory and health, admin
+signup and signin, and sidecar auth. Sidecar auth carries the most open
+questions, so it decides the trust anchor before it writes code.
 
 Out of the MVP on purpose: audit and telemetry ingestion, approvals, staged
-config rollout, and anything that starts a sidecar. Each is noted where it
-would otherwise get invented by accident.
-
-## Conventions
-
-The root `CLAUDE.md` does not govern this directory, the same way
-`hoopinspect/` does not. Rules for this product live here.
+config rollout, and anything that starts a sidecar. Each is noted in
+`CLAUDE.md` where it would otherwise get invented by accident.
