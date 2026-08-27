@@ -25,7 +25,7 @@ require (
 	github.com/go-sql-driver/mysql v1.10.0
 	github.com/hoophq/hoop/client v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/common v0.0.0-00010101000000-000000000000
-	github.com/hoophq/libhoop v1.100.0
+	github.com/hoophq/libhoop v0.0.0-20260827130908-d96eb386cba0
 	github.com/hoophq/mcpproxy v0.1.1
 	github.com/lib/pq v1.12.3
 	github.com/microsoft/go-mssqldb v1.10.0
@@ -105,8 +105,8 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
 	github.com/honeycombio/honeycomb-opentelemetry-go v0.11.0 // indirect
 	github.com/honeycombio/otel-config-go v1.17.0 // indirect
-	github.com/hoophq/alcatraz v0.14.1 // indirect
-	github.com/hoophq/alcatraz/ner v0.14.1 // indirect
+	github.com/hoophq/alcatraz v0.19.0 // indirect
+	github.com/hoophq/alcatraz/ner v0.19.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/pgx/v5 v5.9.2 // indirect

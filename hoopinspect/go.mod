@@ -21,4 +21,4 @@ module github.com/hoophq/hoop/hoopinspect
 
 go 1.26.5
 
-require github.com/hoophq/libhoop v1.100.0
+require github.com/hoophq/libhoop v0.0.0-20260827130908-d96eb386cba0

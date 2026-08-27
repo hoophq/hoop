@@ -19,11 +19,15 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
 	github.com/hoophq/hoop/agent v0.0.0-20260730225053-339623147f24
-	github.com/hoophq/hoop/gateway v0.0.0-20260414143915-f3c4a85dcd3b
-	github.com/hoophq/libhoop v1.100.0
+	github.com/hoophq/hoop/gateway v0.0.0-00010101000000-000000000000
+	github.com/hoophq/hoop/hoopinspect v0.0.0
+	github.com/hoophq/hoop/hoopinspect/analyzer/vertex v0.0.0-00010101000000-000000000000
+	github.com/hoophq/hoop/hoopinspect/config/yaml v0.0.0-00010101000000-000000000000
+	github.com/hoophq/hoop/hoopinspect/pii/alcatraz v0.0.0-00010101000000-000000000000
+	github.com/hoophq/libhoop v0.0.0-20260827130908-d96eb386cba0
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/crypto v0.54.0
-	golang.org/x/mod v0.37.0
+	golang.org/x/mod v0.38.0
 	google.golang.org/grpc v1.83.0
 	gopkg.in/yaml.v3 v3.0.1
 	mvdan.cc/sh/v3 v3.13.1
@@ -80,6 +84,7 @@ require (
 	github.com/cloudwego/base64x v0.1.6 // indirect
 	github.com/coreos/go-oidc/v3 v3.20.0 // indirect
 	github.com/cyphar/filepath-securejoin v0.6.1 // indirect
+	github.com/daulet/tokenizers v1.27.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/ebitengine/purego v0.10.0 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
@@ -92,12 +97,13 @@ require (
 	github.com/gin-contrib/static v1.1.6 // indirect
 	github.com/gin-contrib/zap v1.1.7 // indirect
 	github.com/gin-gonic/gin v1.12.0 // indirect
+	github.com/go-errors/errors v1.5.1 // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
 	github.com/go-git/go-billy/v5 v5.9.0 // indirect
 	github.com/go-git/go-git/v5 v5.19.2 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/go-logfmt/logfmt v0.6.1 // indirect
-	github.com/go-logr/logr v1.4.3 // indirect
+	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/go-openapi/jsonpointer v0.22.5 // indirect
@@ -116,12 +122,19 @@ require (
 	github.com/go-sql-driver/mysql v1.10.0 // indirect
 	github.com/goccy/go-json v0.10.6 // indirect
 	github.com/goccy/go-yaml v1.19.2 // indirect
+	github.com/gofrs/flock v0.13.0 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/golang-migrate/migrate/v4 v4.19.1 // indirect
 	github.com/golang-sql/civil v0.0.0-20220223132316-b832511892a9 // indirect
 	github.com/golang-sql/sqlexp v0.1.0 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/golang/snappy v1.0.0 // indirect
+	github.com/gomlx/compute v0.1.2 // indirect
+	github.com/gomlx/exceptions v0.0.3 // indirect
+	github.com/gomlx/go-huggingface v0.4.1 // indirect
+	github.com/gomlx/go-xla v0.4.1 // indirect
+	github.com/gomlx/gomlx v0.28.2 // indirect
+	github.com/gomlx/onnx-gomlx v0.5.2 // indirect
 	github.com/google/jsonschema-go v0.4.2 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.16 // indirect
@@ -130,7 +143,8 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
 	github.com/honeycombio/honeycomb-opentelemetry-go v0.11.0 // indirect
 	github.com/honeycombio/otel-config-go v1.17.0 // indirect
-	github.com/hoophq/alcatraz v0.16.0 // indirect
+	github.com/hoophq/alcatraz v0.19.0 // indirect
+	github.com/hoophq/alcatraz/ner v0.19.0 // indirect
 	github.com/hoophq/mcpproxy v0.1.1 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
@@ -144,6 +158,8 @@ require (
 	github.com/kevinburke/ssh_config v1.6.0 // indirect
 	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
+	github.com/knights-analytics/hugot v0.7.7 // indirect
+	github.com/knights-analytics/ortgenai v0.3.2 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/lib/pq v1.12.3 // indirect
 	github.com/lucasb-eyer/go-colorful v1.4.0 // indirect
@@ -193,6 +209,7 @@ require (
 	github.com/tklauser/numcpus v0.11.0 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.3.1 // indirect
+	github.com/viant/afs v1.30.0 // indirect
 	github.com/vmihailenco/msgpack/v5 v5.4.1 // indirect
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
@@ -201,6 +218,7 @@ require (
 	github.com/xdg-go/scram v1.2.0 // indirect
 	github.com/xdg-go/stringprep v1.0.4 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
+	github.com/yalue/onnxruntime_go v1.32.0 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
@@ -235,11 +253,12 @@ require (
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/arch v0.26.0 // indirect
-	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f // indirect
+	golang.org/x/exp v0.0.0-20260727155853-b88d891fe743 // indirect
+	golang.org/x/image v0.44.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
-	golang.org/x/tools v0.47.0 // indirect
+	golang.org/x/tools v0.48.0 // indirect
 	google.golang.org/api v0.283.0 // indirect
 	google.golang.org/genproto v0.0.0-20260610212136-7ab31c22f7ad // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260610212136-7ab31c22f7ad // indirect
@@ -261,10 +280,6 @@ require (
 require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/fatih/color v1.19.0 // indirect
-	github.com/hoophq/hoop/hoopinspect v0.0.0
-	github.com/hoophq/hoop/hoopinspect/analyzer/vertex v0.0.0
-	github.com/hoophq/hoop/hoopinspect/config/yaml v0.0.0
-	github.com/hoophq/hoop/hoopinspect/pii/alcatraz v0.0.0
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.21 // indirect
@@ -292,6 +307,5 @@ replace github.com/hoophq/hoop/hoopinspect => ../hoopinspect
 replace github.com/hoophq/hoop/hoopinspect/config/yaml => ../hoopinspect/config/yaml
 
 replace github.com/hoophq/hoop/hoopinspect/pii/alcatraz => ../hoopinspect/pii/alcatraz
-
 
 replace github.com/hoophq/hoop/hoopinspect/analyzer/vertex => ../hoopinspect/analyzer/vertex
