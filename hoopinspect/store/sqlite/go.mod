@@ -1,7 +1,7 @@
 // store/sqlite is a NESTED module on purpose.
 //
-// The root github.com/hoophq/hoop/hoopinspect module has zero dependencies and
-// must keep them: it is meant to be vendored without a supply-chain review
+// The root github.com/hoophq/hoop/hoopinspect module carries libhoop alone and
+// must keep it that way: it is meant to be vendored without a supply-chain review
 // and compiled to wasip1. A SQLite backend needs a driver, so the driver
 // lives here, behind its own go.mod. A deployment that only wants JSONL
 // never resolves it.

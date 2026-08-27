@@ -2,7 +2,7 @@
 //
 // # The separate module
 //
-// The hoopinspect root module has zero dependencies, and the stdlib has no
+// The hoopinspect root module carries libhoop and nothing else, and the stdlib has no
 // YAML parser. Adding one to the root would put a dependency edge on every
 // consumer of the library, including the ones that hand it JSON from a
 // ConfigMap and have no use for another syntax. So it lives here, behind the

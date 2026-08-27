@@ -3,9 +3,9 @@ package hoopinspect
 import "sync"
 
 // The registry lets codec packages plug themselves in without hoopinspect
-// importing them, which keeps the root package dependency-free in both
-// directions: `codec/postgres` imports `hoopinspect` for the types, and
-// `hoopinspect` imports nothing.
+// importing them, which is what keeps the dependency edge one-way. The
+// decoders live in libhoop and may not name this package at all; the shims
+// under codec/ register them on their behalf.
 //
 // The payoff: you link only the protocols you speak. A sidecar fronting
 // Postgres imports `codec/postgres`, and the HTTP machinery never enters the

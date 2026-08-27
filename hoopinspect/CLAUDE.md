@@ -84,7 +84,7 @@ done
 ## Gotchas
 
 - **`go test ./...` at the root reaches no nested module.** Separate `go.mod`
-  files are what keeps the root at zero dependencies, and the cost is that
+  files are what keeps optional dependencies out of the root, and the cost is that
   every nested module needs its own invocation. See the loop above.
 
 - **CI reaches this only through `test-hoopinspect`.** `make test-oss` runs

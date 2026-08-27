@@ -4,7 +4,7 @@
 // Anthropic and OpenAI authenticate with a static string in a header, so they
 // live in the root against net/http alone. Vertex needs GCP OAuth2: signed
 // JWT assertion, token exchange, and refresh before expiry. Reimplementing
-// that to preserve a zero-dependency root would be trading a well-tested
+// that to keep one more dependency out of the root would be trading a well-tested
 // library for a subtle one, so the module boundary takes the cost instead and
 // the root stays vendorable without supply-chain review.
 //

@@ -10,7 +10,7 @@
 // # The binary's home
 //
 // The relay itself is assembled by github.com/hoophq/hoop/hoopinspect/sidecar, in
-// the dependency-free root module. This main sits in its own nested module
+// the root module, whose only dependency is libhoop. This main sits in its own nested module
 // because it links the optional plugins -- alcatraz PII detection and the
 // YAML config front end -- and a main in the root could not import those
 // without putting their dependencies in the root's go.mod.
@@ -71,7 +71,7 @@ import (
 	// keeps the "one binary, the config decides" rule the package doc
 	// states: an operator turning on Vertex does not also have to swap the
 	// binary. Only vertex costs a dependency, and it is confined to its own
-	// module so the root stays dependency-free.
+	// module so the root does not carry it.
 	_ "github.com/hoophq/hoop/hoopinspect/analyzer/anthropic"
 	_ "github.com/hoophq/hoop/hoopinspect/analyzer/openai"
 	_ "github.com/hoophq/hoop/hoopinspect/analyzer/vertex"

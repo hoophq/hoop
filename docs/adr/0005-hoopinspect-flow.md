@@ -500,13 +500,38 @@ A literal's content never reaches a token, so `SELECT 'DROP TABLE customers'`
 classifies as `select`. Prefer `type: operation` over `deny_words_list` for that
 reason: the word list denies the harmless one.
 
+## The dependency the root does carry
+
+The root module was dependency-free, and that was a product requirement rather
+than an accident: a stdlib-only module can be read end to end in an afternoon,
+vendored without a supply-chain review, and compiled to `wasip1` for an Envoy
+network filter.
+
+That ended when the protocol decoders moved to `github.com/hoophq/libhoop`.
+They produce the `Statement` a policy evaluates, so this module cannot describe
+its own inputs without naming their types. `wiretypes.go` ALIASES them rather
+than redeclaring them — `type Statement = codectypes.Statement` is the same
+type, not a copy — which is what lets a libhoop decoder satisfy `Codec`
+structurally without importing this package, and leaves exactly one definition
+of the document a policy reasons about.
+
+The alternative, keeping local structs and converting at the boundary, costs an
+allocation per decoded statement on the proxied-query hot path and two
+definitions that drift. A field that drifts between them is a policy that
+silently stops matching, which is the failure mode this whole document exists
+to prevent.
+
+What survives is the direction and the shape: the edge runs one way, libhoop
+imports nothing from this repository, and every OPTIONAL dependency still lives
+behind its own nested module. libhoop is private, so building or testing the
+root now needs `GOPRIVATE=github.com/hoophq/libhoop` and credentials for it.
+
 ## Checking the scanner against PostgreSQL
 
 `hoopinspect/lexer/conformance/` is a separate Go module that parses every
 fixture with PostgreSQL's own grammar and compares. It is separate because the
-root module ships zero dependencies, test dependencies included:
-`cd hoopinspect && go build ./... && cat go.mod` still shows no requires and no
-`go.sum`, and nothing the root builds can import the harness. It reaches
+root module carries `github.com/hoophq/libhoop` and nothing else, test
+dependencies included, and nothing the root builds can import the harness. It reaches
 libpg_query through `wasilibs/go-pgquery` rather than `pganalyze/pg_query_go`
 directly, because the pganalyze module is cgo, and a conformance suite that runs
 only where a C toolchain is configured is a suite that stops running. wasilibs
@@ -971,7 +996,7 @@ analyzer that never fires rather than as an error.
 ### Providers
 
 Providers register themselves the way codecs do, and for the same reason: the
-root module has zero dependencies, and one provider needs one.
+root module carries libhoop alone, and one provider needs more.
 
 ```
 analyzer            (0 deps)  contract + registry, declares Provider
@@ -1080,9 +1105,9 @@ failure that ends with an unmasked SSN in a screenshot.
 
 ## Where alcatraz plugs in
 
-The root module ships zero dependencies. A detection engine worth having carries
-recognizers for dozens of national identifier formats, so it lives in a nested
-module behind two interfaces the root already declares.
+The root module carries libhoop and nothing else. A detection engine worth
+having carries recognizers for dozens of national identifier formats, so it
+lives in a nested module behind two interfaces the root already declares.
 
 ```
                   ┌─ mask.Detector    { Entities(), Find(entity, data) }
@@ -1099,9 +1124,8 @@ cmd                         ──> sidecar.Main(version, det, yaml.Load)
 ```
 
 One binary ships: `hoop-inspect`, built from the nested `cmd` module, which is
-the only place the plugin dependencies are linked. The zero-dependency claim
-covers the library, and anyone embedding `hoopinspect` in their own process
-still pays no dependency cost.
+the only place the plugin dependencies are linked, so anyone embedding
+`hoopinspect` in their own process pays for libhoop and nothing beyond it.
 
 `ScanText` returns entity names and never values. A denial travels into an audit
 record, and a message quoting the identifier it denied has published that

@@ -2,7 +2,7 @@
 // provider.
 //
 // It is hand-rolled against net/http rather than built on the official SDK,
-// because the root module carries zero dependencies and the request this
+// because the root module takes no dependency it can avoid and the request this
 // package makes is one JSON POST. The SDK's value is breadth — streaming,
 // files, batches — and none of it applies to a single tool-calling
 // classification.

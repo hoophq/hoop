@@ -1,6 +1,6 @@
 // lexer/conformance is a NESTED module holding a test-only oracle.
 //
-// The root github.com/hoophq/hoop/hoopinspect module has zero dependencies and
+// The root github.com/hoophq/hoop/hoopinspect module carries libhoop alone and
 // must keep them, test dependencies included. But a hand-written SQL scanner
 // that nobody checks against a real grammar is a pile of assertions about
 // SQL, and SQL does not care what we assert. So PostgreSQL's own parser lives

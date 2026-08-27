@@ -10,7 +10,7 @@
 //
 // # The nested module
 //
-// The root hoopinspect module has zero dependencies and must keep them. This
+// The root hoopinspect module carries libhoop alone and must keep it that way. This
 // package needs a driver, so it lives behind its own go.mod. See go.mod.
 package sqlite
 

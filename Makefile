@@ -107,8 +107,9 @@ test-enterprise: generate-wasm
 # each nested module builds on its own: in workspace mode every module
 # resolves against the union of the workspace, so a go.mod missing a require
 # still passes. This target enters each module directory, which is the only
-# way to catch that before the proxy does. One go.mod per dependency is what
-# keeps the root module at zero dependencies, and this is what defends it.
+# way to catch that before the proxy does. One go.mod per optional dependency
+# is what keeps the root's dependency set down to libhoop alone, and this is
+# what defends it.
 #
 # The list is discovered rather than written down, so a nested module added
 # later is covered on the day it is added.

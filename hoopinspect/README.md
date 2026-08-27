@@ -17,8 +17,14 @@ unix socket, your choice per lane (see [Transport](#transport)). It runs behind
 something that already owns TLS and identity, typically Envoy forwarding
 plaintext over loopback or a unix socket.
 
-**Zero dependencies.** Standard library only, tests included, no `go.sum`. You
-vendor nothing and get no version skew with whatever links it.
+**One dependency.** `github.com/hoophq/libhoop`, which carries the protocol
+decoders and defines the wire types this module aliases. Everything else is
+standard library, tests included. libhoop is private, so building this module
+needs `GOPRIVATE=github.com/hoophq/libhoop` and credentials for it.
+
+The root shipped zero dependencies until the decoders moved to libhoop. They
+produce the `Statement` a policy evaluates, so this module cannot describe its
+own inputs without naming their types.
 
 **Go 1.26.5.** Every module here (the root and the five nested ones) declares
 `go 1.26.5`, so an older toolchain refuses the build instead of miscompiling
@@ -153,8 +159,8 @@ image and swapping `CMD`, or adding a second container to the agent pod) is
 
 **As a standalone binary**, when a sidecar container should carry the relay and
 nothing else. It lives in the nested `cmd` module, which is where the optional
-plugins get linked (the YAML front end and alcatraz PII detection) so the root
-module stays dependency-free:
+plugins get linked (the YAML front end and alcatraz PII detection) so they stay
+out of the root's dependency set:
 
 ```bash
 cd cmd
@@ -876,7 +882,7 @@ rather than only where a C toolchain is configured.
 
 It is never a runtime dependency. It has its own `go.mod`, nothing the root
 ships imports it, and `go test ./...` at the root does not reach it. That is
-what keeps the root module at zero dependencies, test dependencies included:
+what keeps its dependencies out of the root, test dependencies included:
 
 ```bash
 (cd lexer/conformance && go test ./...)
@@ -1184,7 +1190,7 @@ Detection and rewriting both come from
 [alcatraz](https://github.com/hoophq/alcatraz): 45 entity types across 12
 countries, 25 of them checksum-verified with Luhn on cards, ISO 7064 mod-97 on
 IBAN, Verhoeff on Aadhaar, mod-11 on the Brazilian schemes. It lives in the
-nested `pii/alcatraz` module, so the root library stays dependency-free.
+nested `pii/alcatraz` module, so the root library never links it.
 
 ```go
 det, _ := alcatraz.NewDetector(alcatraz.Options{

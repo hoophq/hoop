@@ -6,7 +6,7 @@
 // header; Vertex authenticates with a GCP OAuth2 bearer minted from a
 // service-account key and refreshed before it expires. Signed JWT assertion
 // and token exchange are not worth reimplementing to save a go.mod, so this
-// module takes golang.org/x/oauth2 and the root keeps its zero dependencies.
+// module takes golang.org/x/oauth2 and the root never links it.
 //
 // The wire format is the Anthropic Messages API with three changes, all of
 // them transport: the model moves into the URL, the API version moves into

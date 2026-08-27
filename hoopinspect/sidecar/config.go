@@ -18,8 +18,8 @@ import (
 
 // Config is the on-disk configuration.
 //
-// JSON is the native syntax because the module ships zero dependencies and
-// the stdlib has no YAML parser. YAML arrives through the nested module
+// JSON is the native syntax because the stdlib has no YAML parser and the
+// module takes no dependency it can avoid. YAML arrives through the nested module
 // github.com/hoophq/hoop/hoopinspect/config/yaml, which transcodes to JSON and
 // hands the bytes to LoadConfigBytes. One schema, two syntaxes, and the
 // dependency stays out of anything that does not ask for it.
@@ -288,7 +288,7 @@ type AuditConfig struct {
 	// In-memory by design. A durable, queryable backend lives in the nested
 	// module github.com/hoophq/hoop/hoopinspect/store/sqlite, which this binary
 	// does NOT import: linking a database driver here would give the sidecar
-	// a dependency tree, and a dependency-free sidecar is an auditable one. A
+	// a database driver to audit, and a thin sidecar is an auditable one. A
 	// deployment that wants durable queries embeds the library and supplies
 	// the SQLite store itself.
 	//
@@ -552,10 +552,10 @@ func (c *Config) validateLane(lc ListenerConfig, name string) []string {
 // Plugin is the optional detection engine: it scans statements for the PII
 // policy rule, and builds the response masker from the "mask" config section.
 //
-// It is declared here rather than imported so this package stays
-// dependency-free. An engine worth having carries recognizers for dozens of
-// national identifier formats, and linking one in would give the root module
-// a dependency tree, the same reasoning that keeps store/sqlite out (see
+// It is declared here rather than imported so this package does not link a
+// detector. An engine worth having carries recognizers for dozens of national
+// identifier formats, and linking one in would give the root module a
+// dependency tree, the same reasoning that keeps store/sqlite out (see
 // AuditConfig.QuerySessions). The nested module
 // github.com/hoophq/hoop/hoopinspect/pii/alcatraz supplies an implementation.
 //

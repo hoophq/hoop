@@ -10,7 +10,7 @@ wrong for SQL in general, so the trade is defensible exactly as long as
 somebody keeps checking it against a real grammar. This module parses every
 fixture with PostgreSQL 17 and compares.
 
-It is a separate module because the root ships with zero dependencies, test
+It is a separate module because the root carries libhoop alone, test
 dependencies included. Nothing here is importable from anything the root
 builds. `cd hoopinspect && go build ./... && cat go.mod` still shows no
 requires and no `go.sum`.

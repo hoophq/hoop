@@ -3,7 +3,7 @@
 //
 // # A separate module
 //
-// The hoopinspect root module has zero dependencies, so you can audit it
+// The hoopinspect root module carries only libhoop, so you can audit it
 // without a supply-chain review and drop it into a caller without touching
 // their dependency tree. Alcatraz is itself dependency-free, but importing it
 // from the root would add a module edge to every consumer of the library,

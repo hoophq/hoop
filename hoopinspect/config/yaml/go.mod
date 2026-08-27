@@ -1,7 +1,7 @@
 // A YAML front end for the hoop-inspect config.
 //
 // A nested module for the same reason as store/sqlite and pii/alcatraz: the
-// root ships zero dependencies, and a syntax preference must not change that
+// root carries libhoop and nothing else, and a syntax preference must not change that
 // for callers who did not ask for it. Depending on this module is opting in.
 module github.com/hoophq/hoop/hoopinspect/config/yaml
 
