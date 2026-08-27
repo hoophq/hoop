@@ -29,7 +29,7 @@ package adminauth
 import (
 	"github.com/gin-gonic/gin"
 
-	"github.com/hoophq/hoop/controlplane/backend/internal/apierr"
+	"github.com/hoophq/hoop/controlplane/backend/internal/api/apierr"
 )
 
 const ticket = "EVL-233"

@@ -1,12 +1,12 @@
-package httpapi
+package api
 
 import (
 	"github.com/gin-gonic/gin"
 
-	"github.com/hoophq/hoop/controlplane/backend/internal/adminauth"
-	"github.com/hoophq/hoop/controlplane/backend/internal/desiredstate"
-	"github.com/hoophq/hoop/controlplane/backend/internal/inventory"
-	"github.com/hoophq/hoop/controlplane/backend/internal/sidecarauth"
+	"github.com/hoophq/hoop/controlplane/backend/internal/api/adminauth"
+	"github.com/hoophq/hoop/controlplane/backend/internal/api/desiredstate"
+	"github.com/hoophq/hoop/controlplane/backend/internal/api/inventory"
+	"github.com/hoophq/hoop/controlplane/backend/internal/api/sidecarauth"
 )
 
 // Route paths that are reachable without an admin session.
@@ -41,8 +41,8 @@ var unauthenticatedRoutes = map[string]bool{
 // expose, and what guards it" without grepping. Per-feature registration
 // scatters that answer across four packages and makes an accidentally
 // unauthenticated route invisible at review. This is the reason apierr is its
-// own package: the feature packages import apierr, httpapi imports the
-// feature packages, and nothing imports httpapi.
+// own package: the feature packages import apierr, this package imports the
+// feature packages, and no package under api imports this one.
 //
 // Paths are provisional. They are named per component so each of the four
 // workstreams owns a prefix and no two collide, but nothing outside this

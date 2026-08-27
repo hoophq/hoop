@@ -132,12 +132,12 @@ backend/
   internal/database/         pool lifecycle and shared column types
   internal/migrations/       numbered SQL, embedded, plus the runner
   internal/wire/             control plane <-> sidecar message vocabulary
-  internal/httpapi/          Gin engine, middleware, routes, health
-  internal/apierr/           error response shapes
-  internal/desiredstate/     EVL-231
-  internal/inventory/        EVL-232
-  internal/adminauth/        EVL-233
-  internal/sidecarauth/      EVL-234
+  internal/api/              Gin engine, middleware, routes, health
+  internal/api/apierr/       error response shapes
+  internal/api/desiredstate/ EVL-231
+  internal/api/inventory/    EVL-232
+  internal/api/adminauth/    EVL-233
+  internal/api/sidecarauth/  EVL-234
 ```
 
 One package per feature, not per layer. A feature package owns its model, its

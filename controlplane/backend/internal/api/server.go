@@ -1,10 +1,11 @@
-// Package httpapi wires the control plane's HTTP surface.
+// Package api wires the control plane's HTTP surface: engine, middleware,
+// routes and health, with the feature packages as subpackages.
 //
 // Engine is built separately from Run so a test exercises the same middleware
 // chain production does. A test that mounts handlers on a bare gin.New()
 // proves the handlers work and proves nothing about the stack in front of
 // them, which is where auth and CORS live.
-package httpapi
+package api
 
 import (
 	"context"

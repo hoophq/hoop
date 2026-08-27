@@ -27,9 +27,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/hoophq/hoop/controlplane/backend/internal/api"
 	"github.com/hoophq/hoop/controlplane/backend/internal/config"
 	"github.com/hoophq/hoop/controlplane/backend/internal/database"
-	"github.com/hoophq/hoop/controlplane/backend/internal/httpapi"
 	"github.com/hoophq/hoop/controlplane/backend/internal/logging"
 	"github.com/hoophq/hoop/controlplane/backend/internal/migrations"
 )
@@ -192,5 +192,5 @@ func serve(logger *slog.Logger, cfg config.Config) error {
 		stop()
 	}()
 
-	return httpapi.New(cfg, db, logger, version).Run(signalCtx)
+	return api.New(cfg, db, logger, version).Run(signalCtx)
 }

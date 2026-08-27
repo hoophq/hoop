@@ -169,9 +169,9 @@ them. Every handler answers 501 naming its ticket. See "The 501 contract".
 A component package is one directory holding its model, its store and its
 handlers together. Not a `models/` directory, a `services/` directory and an
 `api/` directory that each grow a file per feature. Adding a field to a
-sidecar record touches `internal/inventory` and nothing else, and the compiler
-tells you when a component reaches into another one's internals because it has
-to do it through an exported name.
+sidecar record touches `internal/api/inventory` and nothing else, and the
+compiler tells you when a component reaches into another one's internals
+because it has to do it through an exported name.
 
 ### desiredstate (EVL-231)
 
@@ -350,23 +350,24 @@ controlplane/
     internal/database/              pool lifecycle and shared column types
     internal/migrations/            numbered SQL, go:embed, and the runner
     internal/wire/                  the message vocabulary, no transport
-    internal/httpapi/               engine, middleware, routes, health
-    internal/apierr/                error shapes, own package to avoid a cycle
-    internal/desiredstate/          EVL-231
-    internal/inventory/             EVL-232
-    internal/adminauth/             EVL-233
-    internal/sidecarauth/           EVL-234
+    internal/api/                   engine, middleware, routes, health
+    internal/api/apierr/            error shapes, own package to avoid a cycle
+    internal/api/desiredstate/      EVL-231
+    internal/api/inventory/         EVL-232
+    internal/api/adminauth/         EVL-233
+    internal/api/sidecarauth/       EVL-234
   frontend/                         React app, governed by its own CLAUDE.md
 ```
 
 Two rules hold this shape up.
 
 **Package by feature, not by layer.** A component owns its model, its store
-and its handlers in one directory. The gateway splits the same feature across
-`models/`, `services/` and `api/`, so a field addition is a four-file change
-and every one of those directories grows without bound. The counter-argument
-is that a layer split makes the layers swappable; nobody has ever swapped
-them.
+and its handlers in one directory. `internal/api/` groups the HTTP-surface
+packages, but each package under it is still a whole feature, never a layer
+slice. The gateway splits the same feature across `models/`, `services/` and
+`api/`, so a field addition is a four-file change and every one of those
+directories grows without bound. The counter-argument is that a layer split
+makes the layers swappable; nobody has ever swapped them.
 
 **Everything is under `internal/`.** Nothing outside this module can import
 any of it, and that is the compiler enforcing the boundary rather than a
@@ -510,7 +511,7 @@ delete the call. Do not leave it behind a flag.
   logger and recovery alongside ours.
 - All routes in one `routes` method, read top to bottom. The gateway does the
   same at roughly 1250 lines; this stays readable much longer.
-- **A route is closed unless it is in `httpapi`'s `unauthenticatedRoutes`.**
+- **A route is closed unless it is in `api`'s `unauthenticatedRoutes`.**
   That set is data, not prose, because the test that asserts every other
   route is closed derives its list from `engine.Routes()` minus this set. A
   route registered outside the protected group therefore fails a test instead

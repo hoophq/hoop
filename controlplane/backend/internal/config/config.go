@@ -41,7 +41,7 @@ type Config struct {
 	// Deployment marks how seriously the process should treat itself.
 	Deployment DeploymentType
 	// CORSAllowedOrigins is the exact-match allow list. Empty means no
-	// cross-origin request is allowed. See httpapi.cors for why.
+	// cross-origin request is allowed. See api.cors for why.
 	CORSAllowedOrigins []string
 	// ShutdownGrace bounds how long in-flight requests get on SIGTERM.
 	ShutdownGrace time.Duration

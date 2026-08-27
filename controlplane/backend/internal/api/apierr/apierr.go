@@ -12,7 +12,7 @@
 // kubectl output.
 //
 // It is its own package so the feature packages can use it without importing
-// httpapi, which imports them.
+// the parent api package, which imports them.
 package apierr
 
 import (
