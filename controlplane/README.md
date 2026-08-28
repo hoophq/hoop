@@ -1,36 +1,12 @@
 # hoop control plane
 
-Manages a fleet of hoop sidecars, the `sidecar/` module in this repository.
-An operator decides a config once, here, and it is distributed everywhere.
+Where an operator will manage a fleet of hoop sidecars, the `sidecar/` module
+in this repository.
 
-```
-        ┌──────────────────────┐
-        │  Admin UI (frontend) │
-        └──────────┬───────────┘
-                   │ HTTPS, JSON
-        ┌──────────┴───────────┐
-        │  control plane       │
-        │  (backend)           │
-        │                      │
-        │  desiredstate  what should run
-        │  inventory     what IS running
-        │  adminauth     who may change it
-        │  sidecarauth   who a sidecar is
-        └──────────┬───────────┘
-                   │ HTTPS, always dialled by the sidecar.
-                   │ It asks for its config and reports its
-                   │ status; nothing is pushed to it.
-      ┌────────────┼────────────┐
-      │            │            │
- ┌────┴────┐  ┌────┴────┐  ┌────┴────┐
- │ sidecar │  │ sidecar │  │ sidecar │   sidecar/, on customer infra
- └────┬────┘  └────┬────┘  └────┬────┘
-      │            │            │
-   database     database     database    traffic never passes through us
-```
-
-The control plane is not on the data path. If this process is down, sidecars
-keep enforcing the last config they accepted.
+**Scaffold.** The backend answers a health check and nothing else. Almost every
+question about how the control plane works is still open and under discussion.
+This README records what the code does today. Anything under TBD is undecided,
+so do not infer an answer to it from the scaffold.
 
 ## Layout
 
@@ -38,178 +14,88 @@ Two independent applications, one per directory.
 
 ```
 controlplane/
-  backend/    Go API server, its own module and go.mod
-  frontend/   React admin UI, its own package.json and CLAUDE.md
+  backend/    Go API. Its own module and go.mod. See backend/CLAUDE.md.
+  frontend/   React admin UI. Its own package.json. See frontend/README.md.
 ```
 
-They are deployed separately and neither serves the other. The backend is a
-JSON API with a `default-src 'none'` CSP and no `NoRoute` handler.
+## Backend
 
-## Status
+### Run it
 
-Scaffold. `/healthz` and `/readyz` work; every other endpoint answers
-`501 Not Implemented` and names the behaviour that is missing. The table below
-says who owns each one.
-
-| Component | Ticket | State |
-|---|---|---|
-| `desiredstate` | EVL-231 | stub |
-| `inventory` | EVL-232 | stub |
-| `adminauth` | EVL-233 | stub |
-| `sidecarauth` | EVL-234 | stub, design open |
-
-Every guard is mounted and every guard answers 501, so the whole surface is
-closed rather than open. Test component handlers directly until the guards
-land.
-
-## Endpoints
-
-Two prefixes, two audiences, two kinds of credential. The guard follows from
-the prefix, so a log line or a proxy rule tells you what protects a request
-without looking up which ticket owns the handler.
-
-`/api`, for an admin with a session. Guarded by `RequireAdmin` (EVL-233).
-
-| Route | Owner | Purpose |
-|---|---|---|
-| `POST /api/auth/login` | EVL-233 | sign in. Open |
-| `POST /api/auth/register` | EVL-233 | create the first admin. Open |
-| `POST /api/auth/logout` | EVL-233 | revoke the session |
-| `GET /api/auth/me` | EVL-233 | the signed-in admin |
-| `GET /api/sidecars` | EVL-232 | the fleet |
-| `GET /api/sidecars/:name` | EVL-232 | one sidecar |
-| `DELETE /api/sidecars/:name` | EVL-232 | forget its record |
-| `GET /api/sidecars/:name/config` | EVL-231 | what should run |
-| `PUT /api/sidecars/:name/config` | EVL-231 | set what should run |
-| `GET /api/sidecars/:name/status` | EVL-232 | what does run |
-| `DELETE /api/sidecars/:name/credentials` | EVL-234 | revoke its credential |
-
-`/v1`, for a sidecar with a machine credential. Versioned because a fleet does
-not upgrade in lockstep.
-
-| Route | Owner | Purpose |
-|---|---|---|
-| `POST /v1/enroll` | EVL-234 | exchange a bootstrap credential. Guarded by `RequireBootstrap` |
-| `POST /v1/credentials/rotate` | EVL-234 | renew before expiry |
-| `GET /v1/desiredstate` | EVL-231 | fetch config. `If-None-Match` carries the generation, 304 is the steady state |
-| `POST /v1/status` | EVL-232 | report what is running, roughly every 30s |
-
-Config and status are subresources of a sidecar, the way Kubernetes separates
-spec from status. The two routinely disagree and the disagreement is the
-product.
-
-## Run it
-
-Postgres is the only requirement. From the repository root:
+No database and no external service. It starts with no configuration at all.
 
 ```sh
-make run-dev-postgres                        # or use your own
-POSTGRES_DB_URI=postgres://... go run ./controlplane/backend/cmd/controlplane
+cd controlplane/backend
+go run ./cmd/controlplane
+
+curl -s localhost:8020/healthz
+# {"status":"ok","version":"dev"}
 ```
 
-Migrations run at boot unless `CONTROLPLANE_AUTO_MIGRATE=false`. Then:
+### Commands
 
-```sh
-curl localhost:8020/healthz
-curl localhost:8020/readyz
-```
+| Task | Command | From |
+|---|---|---|
+| Run | `go run ./cmd/controlplane` | `controlplane/backend` |
+| Test | `go test ./...` | `controlplane/backend` |
+| Vet | `go vet ./...` | `controlplane/backend` |
+| Build | `make build-controlplane` | repository root |
 
-## Commands
-
-```
-controlplane serve              start the API server (default)
-controlplane migrate up         apply pending migrations
-controlplane migrate down [n]   roll back n migrations, default 1
-controlplane migrate version    print the applied schema version
-```
-
-`migrate` is a command, not only a boot side effect, so a deploy pipeline can
-run the schema change as its own step and then start replicas with
-`CONTROLPLANE_AUTO_MIGRATE=false`.
-
-## Build
-
-```sh
-make build-controlplane
-```
-
-Output is `dist/release-binaries/controlplane-${GOOS}-${GOARCH}`. Every build
-target in the root Makefile defaults to `linux/amd64`, so building for the
-machine you are sitting at needs the override:
+The build output is `dist/release-binaries/controlplane-${GOOS}-${GOARCH}`.
+Every build target in the root Makefile defaults to `linux/amd64`, so building
+for the machine you are sitting at needs the override:
 
 ```sh
 GOOS=darwin GOARCH=arm64 make build-controlplane
 ```
 
-## Configuration
+The module is listed in `go.work`, so `make test-oss` at the repository root
+runs these tests too.
 
-Environment only. `POSTGRES_DB_URI` is required; everything else has a
-default.
+### Configuration
+
+Environment only. Everything has a default.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `POSTGRES_DB_URI` | *required* | Postgres connection URI. Must be a `postgres://` or `postgresql://` URL. Tables live in the `controlplane` schema. |
 | `CONTROLPLANE_LISTEN_ADDR` | `0.0.0.0:8020` | HTTP listen address. Not 8009: the gateway owns that and the two run side by side. |
-| `CONTROLPLANE_DEPLOYMENT` | `development` | `development` or `production`. Only ever unlocks refusals, so an unset value must not be the permissive one. |
-| `CONTROLPLANE_CORS_ALLOWED_ORIGINS` | empty | Comma-separated exact origins. Empty means no cross-origin request is allowed. Set `http://localhost:5173` for local frontend work. |
-| `CONTROLPLANE_MAX_OPEN_CONNS` | unlimited | Postgres pool ceiling. |
-| `CONTROLPLANE_MIGRATION_PATH_FILES` | embedded | Read migrations from this directory instead of the binary. |
-| `CONTROLPLANE_AUTO_MIGRATE` | `true` | Run pending migrations at boot. Set `false` when a deploy pipeline owns the `migrate` step. |
 | `CONTROLPLANE_SHUTDOWN_GRACE` | `15s` | How long in-flight requests get to finish on SIGTERM. |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error`. `trace` maps to `debug`. |
 | `LOG_FORMAT` | `json` | `json` or `text`. |
 
-There is no helm chart for this service yet.
+A malformed value stops the process at startup.
 
-## Backend layout
+### Layout
 
 ```
 backend/
-  cmd/controlplane/          entrypoint: serve and migrate
-  internal/config/           environment config, fails fast on anything malformed
-  internal/logging/          stdlib slog setup
-  internal/database/         pool lifecycle and shared column types
-  internal/migrations/       numbered SQL, embedded, plus the runner
-  internal/api/              Gin engine, middleware, routes, health
-  internal/api/apierr/       error response shapes
-  internal/api/desiredstate/ EVL-231
-  internal/api/inventory/    EVL-232
-  internal/api/adminauth/    EVL-233
-  internal/api/sidecarauth/  EVL-234
+  cmd/controlplane/    entry point
+  internal/api/        Gin engine, HTTP server, GET /healthz
+  internal/config/     environment loading
+  internal/logging/    *slog.Logger constructor
 ```
 
-One package per feature, not per layer. A feature package owns its model, its
-store and its handlers together, so adding a field touches one directory
-rather than four.
+One direct dependency, `github.com/gin-gonic/gin`. No database, no ORM, no
+migrations. Everything is under `internal/`, so nothing outside this module can
+import it.
 
-Everything is under `internal/`. Nothing outside this module imports it, and
-`internal/` is the compiler enforcing that rather than a convention asking for
-it.
+## TBD
 
-## Develop
+Undecided, and deliberately absent from the code:
 
-```sh
-cd controlplane/backend
-go build ./... && go vet ./... && go test ./...
-```
-
-CI runs these through `make test-oss` from the repository root:
-`go test github.com/hoophq/hoop/...` matches this module because it is in
-`go.work`.
-
-New migration:
-
-```sh
-migrate create -ext sql -dir controlplane/backend/internal/migrations -seq <description>
-```
-
-Read the next sequence number from the directory listing, not from a count,
-and write both the `.up.sql` and the `.down.sql`. A test fails if either is
-missing.
+- Transport between the control plane and sidecars
+- API shape, route prefixes, versioning
+- Datastore, schema, migrations
+- Admin authentication and authorization
+- Sidecar identity, enrollment, credential rotation and revocation
+- Config delivery, and what a sidecar config document is
+- Inventory and status reporting
+- Relationship to `gateway/`, and whether this stays a separate deployment
+- Packaging, helm chart, release
+- Multi-instance and HA
+- Licensing
 
 ## Read before changing anything
 
-`controlplane/backend/CLAUDE.md`. It carries the five non-negotiables, the
-decided and open questions, the sidecar contract, and the API conventions. The
-constraint list for each component lives in that component's package comment.
-`frontend/` has its own.
+`controlplane/backend/CLAUDE.md` for the backend.
+`controlplane/frontend/CLAUDE.md` for the frontend.

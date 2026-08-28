@@ -1,141 +1,60 @@
-package config_test
+package config
 
 import (
-	"strings"
 	"testing"
 	"time"
-
-	"github.com/hoophq/hoop/controlplane/backend/internal/config"
 )
 
-const validURI = "postgres://hoop:hoop@localhost:5432/hoop?sslmode=disable"
-
-// External test package: these cases reach only what a caller can.
+// clearEnv pins every variable Load reads, so the result does not depend on
+// the developer's shell.
+func clearEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("CONTROLPLANE_LISTEN_ADDR", "")
+	t.Setenv("CONTROLPLANE_SHUTDOWN_GRACE", "")
+}
 
 func TestLoadDefaults(t *testing.T) {
-	t.Setenv("POSTGRES_DB_URI", validURI)
+	clearEnv(t)
 
-	cfg, err := config.Load()
+	cfg, err := Load()
 	if err != nil {
-		t.Fatalf("Load returned an error: %v", err)
+		t.Fatalf("Load: %v", err)
 	}
-	if cfg.ListenAddr != "0.0.0.0:8020" {
-		t.Errorf("ListenAddr = %q, want 0.0.0.0:8020", cfg.ListenAddr)
+	if cfg.ListenAddr != defaultListenAddr {
+		t.Errorf("ListenAddr = %q, want %q", cfg.ListenAddr, defaultListenAddr)
 	}
-	if cfg.Deployment != config.DeploymentDevelopment {
-		t.Errorf("Deployment = %q, want development", cfg.Deployment)
-	}
-	if cfg.IsProduction() {
-		t.Error("IsProduction is true with no deployment set; an unset variable must not unlock production behaviour")
-	}
-	if cfg.ShutdownGrace != 15*time.Second {
-		t.Errorf("ShutdownGrace = %s, want 15s", cfg.ShutdownGrace)
-	}
-	if !cfg.AutoMigrate {
-		t.Error("AutoMigrate is false by default; a first run would start against an empty schema")
-	}
-	if len(cfg.CORSAllowedOrigins) != 0 {
-		t.Errorf("CORSAllowedOrigins = %v, want empty so no origin is allowed by default", cfg.CORSAllowedOrigins)
+	if cfg.ShutdownGrace != defaultShutdownGrace {
+		t.Errorf("ShutdownGrace = %v, want %v", cfg.ShutdownGrace, defaultShutdownGrace)
 	}
 }
 
-func TestLoadRequiresPostgresURI(t *testing.T) {
-	t.Setenv("POSTGRES_DB_URI", "")
-	if _, err := config.Load(); err == nil {
-		t.Error("Load succeeded with no POSTGRES_DB_URI")
-	}
-}
+func TestLoadReadsOverrides(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("CONTROLPLANE_LISTEN_ADDR", "127.0.0.1:9999")
+	t.Setenv("CONTROLPLANE_SHUTDOWN_GRACE", "5s")
 
-// url.Parse accepts all of these; the driver's message never names the
-// variable.
-func TestLoadRejectsANonPostgresURI(t *testing.T) {
-	for _, uri := range []string{
-		"postgress://localhost/hoop",
-		"localhost:5432/hoop",
-		"host=localhost user=hoop",
-		"mysql://localhost/hoop",
-	} {
-		t.Run(uri, func(t *testing.T) {
-			t.Setenv("POSTGRES_DB_URI", uri)
-			_, err := config.Load()
-			if err == nil {
-				t.Fatalf("Load accepted %q", uri)
-			}
-			if !strings.Contains(err.Error(), "POSTGRES_DB_URI") {
-				t.Errorf("error does not name the variable: %v", err)
-			}
-		})
-	}
-}
-
-// url.Error stringifies the whole URL unredacted, so an unescaped % in a
-// password would leak into the log of every failed start.
-func TestLoadDoesNotLeakThePasswordOnAParseError(t *testing.T) {
-	t.Setenv("POSTGRES_DB_URI", "postgres://hoop:p%ssw0rd@localhost:5432/hoop")
-
-	_, err := config.Load()
-	if err == nil {
-		t.Fatal("Load accepted a URI with an invalid escape")
-	}
-	if strings.Contains(err.Error(), "ssw0rd") {
-		t.Errorf("the credential reached the error message: %v", err)
-	}
-}
-
-func TestLoadRejectsAnUnknownDeployment(t *testing.T) {
-	t.Setenv("POSTGRES_DB_URI", validURI)
-	t.Setenv("CONTROLPLANE_DEPLOYMENT", "staging")
-	if _, err := config.Load(); err == nil {
-		t.Error("Load accepted an unknown deployment")
-	}
-}
-
-func TestLoadReadsProduction(t *testing.T) {
-	t.Setenv("POSTGRES_DB_URI", validURI)
-	t.Setenv("CONTROLPLANE_DEPLOYMENT", "PRODUCTION")
-
-	cfg, err := config.Load()
+	cfg, err := Load()
 	if err != nil {
-		t.Fatalf("Load returned an error: %v", err)
+		t.Fatalf("Load: %v", err)
 	}
-	if !cfg.IsProduction() {
-		t.Error("IsProduction is false with CONTROLPLANE_DEPLOYMENT=PRODUCTION")
+	if cfg.ListenAddr != "127.0.0.1:9999" {
+		t.Errorf("ListenAddr = %q, want %q", cfg.ListenAddr, "127.0.0.1:9999")
 	}
-}
-
-func TestLoadParsesCORSOrigins(t *testing.T) {
-	t.Setenv("POSTGRES_DB_URI", validURI)
-	t.Setenv("CONTROLPLANE_CORS_ALLOWED_ORIGINS", " http://localhost:5173 , https://admin.example.com ,")
-
-	cfg, err := config.Load()
-	if err != nil {
-		t.Fatalf("Load returned an error: %v", err)
-	}
-	want := []string{"http://localhost:5173", "https://admin.example.com"}
-	if len(cfg.CORSAllowedOrigins) != len(want) {
-		t.Fatalf("CORSAllowedOrigins = %v, want %v", cfg.CORSAllowedOrigins, want)
-	}
-	for i := range want {
-		if cfg.CORSAllowedOrigins[i] != want[i] {
-			t.Errorf("origin %d = %q, want %q", i, cfg.CORSAllowedOrigins[i], want[i])
-		}
+	if cfg.ShutdownGrace != 5*time.Second {
+		t.Errorf("ShutdownGrace = %v, want %v", cfg.ShutdownGrace, 5*time.Second)
 	}
 }
 
-func TestLoadRejectsMalformedNumbersAndDurations(t *testing.T) {
-	cases := map[string][2]string{
-		"negative conns":       {"CONTROLPLANE_MAX_OPEN_CONNS", "-1"},
-		"non-numeric conns":    {"CONTROLPLANE_MAX_OPEN_CONNS", "many"},
-		"zero grace":           {"CONTROLPLANE_SHUTDOWN_GRACE", "0s"},
-		"unparseable grace":    {"CONTROLPLANE_SHUTDOWN_GRACE", "soon"},
-		"non-bool automigrate": {"CONTROLPLANE_AUTO_MIGRATE", "maybe"},
-	}
-	for name, kv := range cases {
-		t.Run(name, func(t *testing.T) {
-			t.Setenv("POSTGRES_DB_URI", validURI)
-			t.Setenv(kv[0], kv[1])
-			if _, err := config.Load(); err == nil {
-				t.Errorf("Load accepted %s=%s", kv[0], kv[1])
+// A malformed value stops the process while an operator is still watching,
+// rather than surfacing as a confusing failure an hour later.
+func TestLoadRejectsBadShutdownGrace(t *testing.T) {
+	for _, v := range []string{"soon", "0s", "-1s"} {
+		t.Run(v, func(t *testing.T) {
+			clearEnv(t)
+			t.Setenv("CONTROLPLANE_SHUTDOWN_GRACE", v)
+
+			if _, err := Load(); err == nil {
+				t.Fatalf("Load() with %q returned no error", v)
 			}
 		})
 	}

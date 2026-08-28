@@ -1,8 +1,7 @@
-// Package api wires the control plane's HTTP surface: engine, middleware,
-// routes and health, with the feature packages as subpackages.
+// Package api serves the control plane's HTTP API.
 //
-// Engine is separate from Run so tests exercise the production middleware
-// chain, not handlers on a bare gin.New().
+// Scaffold. It answers a health check and nothing else. Routes, authentication
+// and everything else are TBD; see controlplane/backend/CLAUDE.md.
 package api
 
 import (
@@ -11,167 +10,115 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"slices"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/hoophq/hoop/controlplane/backend/internal/api/adminauth"
-	"github.com/hoophq/hoop/controlplane/backend/internal/api/desiredstate"
-	"github.com/hoophq/hoop/controlplane/backend/internal/api/inventory"
-	"github.com/hoophq/hoop/controlplane/backend/internal/api/sidecarauth"
 	"github.com/hoophq/hoop/controlplane/backend/internal/config"
 )
 
-// Timeouts live on the http.Server, not only on handlers. Without
-// ReadHeaderTimeout an idle client holds a goroutine and fd forever. All four
-// are set because every request here is short (sidecars poll). A future
-// streaming endpoint must clear its own deadline via
-// http.NewResponseController rather than unset these.
+// Server timeouts.
+//
+// All four are set. Without ReadHeaderTimeout a client that opens a connection
+// and sends nothing holds a goroutine and a file descriptor until the process
+// dies, which is a denial of service costing the caller one connection.
 const (
 	readHeaderTimeout = 10 * time.Second
 	readTimeout       = 30 * time.Second
-	// Longer than handlerTimeout so a slow-but-succeeding response is not
-	// truncated mid-write.
-	writeTimeout = 60 * time.Second
-	idleTimeout  = 120 * time.Second
-
-	// handlerTimeout bounds one /api or /v1 request; probes carry their own
-	// shorter bound.
-	handlerTimeout = 30 * time.Second
+	writeTimeout      = 60 * time.Second
+	idleTimeout       = 120 * time.Second
 )
 
-// Readiness is what /readyz asks before reporting ready. Declared here so
-// gorm stays out of this package; database.Pinger satisfies it and a fake
-// drives the 503 branch in tests.
-type Readiness interface {
-	Ping(ctx context.Context) error
-}
-
-// Deps is everything the HTTP surface needs, constructed by the caller.
-// Handlers are built in main so routing only decides what is mounted where.
-// Guards arrive as gin.HandlerFunc so tests can substitute them.
-type Deps struct {
-	// Process-wide values.
-	Config  config.Config
-	Logger  *slog.Logger
-	Version string
-
-	// Readiness backs /readyz.
-	Readiness Readiness
-
-	// RequireAdmin guards /api; RequireSidecar and RequireBootstrap guard
-	// /v1. Three distinct credential populations. See routes.
-	RequireAdmin     gin.HandlerFunc
-	RequireSidecar   gin.HandlerFunc
-	RequireBootstrap gin.HandlerFunc
-
-	// Component handlers.
-	AdminAuth    *adminauth.Handler
-	DesiredState *desiredstate.Handler
-	Inventory    *inventory.Handler
-	SidecarAuth  *sidecarauth.Handler
-}
-
-// validate refuses a Deps with a hole in it, naming the field; each nil is
-// otherwise a request-time dereference deep in the middleware chain.
-func (d Deps) validate() error {
-	missing := []string{}
-	for name, ok := range map[string]bool{
-		"Logger":           d.Logger != nil,
-		"Readiness":        d.Readiness != nil,
-		"RequireAdmin":     d.RequireAdmin != nil,
-		"RequireSidecar":   d.RequireSidecar != nil,
-		"RequireBootstrap": d.RequireBootstrap != nil,
-		"AdminAuth":        d.AdminAuth != nil,
-		"DesiredState":     d.DesiredState != nil,
-		"Inventory":        d.Inventory != nil,
-		"SidecarAuth":      d.SidecarAuth != nil,
-	} {
-		if !ok {
-			missing = append(missing, name)
-		}
-	}
-	if len(missing) > 0 {
-		slices.Sort(missing) // map order, so sort for a stable message
-		return fmt.Errorf("api.Deps is missing %v", missing)
-	}
-	return nil
-}
-
-// Server owns the HTTP surface and its dependencies. No package-level state,
-// so tests build isolated Servers.
+// Server is the HTTP API.
 type Server struct {
-	deps Deps
+	cfg     config.Config
+	logger  *slog.Logger
+	engine  *gin.Engine
+	version string
 }
 
-// New returns a Server, or an error naming what the caller left out.
-func New(deps Deps) (*Server, error) {
-	if err := deps.validate(); err != nil {
-		return nil, err
-	}
-	return &Server{deps: deps}, nil
-}
-
-// Engine constructs the Gin engine with the full middleware chain.
-func (s *Server) Engine() *gin.Engine {
-	// gin.New, not gin.Default: Default's logger/recovery write unstructured
-	// text alongside our structured output.
+// New builds the server and registers its routes.
+func New(cfg config.Config, logger *slog.Logger, version string) *Server {
+	// gin.New, not gin.Default: Default installs gin's own unstructured logger
+	// and recovery alongside ours.
 	engine := gin.New()
 
-	// Trust no proxy: otherwise gin believes any X-Forwarded-For, letting a
-	// client spoof its source address.
+	// Trust no proxy. Gin's default trusts every X-Forwarded-For, so the first
+	// call to c.ClientIP() would return whatever the client claimed.
 	if err := engine.SetTrustedProxies(nil); err != nil {
-		s.deps.Logger.Warn("failed clearing trusted proxies", "error", err)
+		logger.Warn("failed clearing trusted proxies", "error", err)
 	}
 
-	// Order matters: recovery outermost, logging before CORS so rejected
-	// requests still appear in the log.
-	engine.Use(recovery(s.deps.Logger))
-	engine.Use(requestLogger(s.deps.Logger))
-	engine.Use(securityHeaders())
-	engine.Use(cors(s.deps.Config.CORSAllowedOrigins))
+	engine.Use(gin.Recovery(), requestLogger(logger))
 
-	s.routes(engine)
-	return engine
+	s := &Server{cfg: cfg, logger: logger, engine: engine, version: version}
+	s.routes()
+	return s
 }
 
-// Run serves until ctx is cancelled, then drains in-flight requests within
-// the shutdown grace.
+// routes registers every route, in one place, read top to bottom.
+//
+// There is no NoRoute handler. This binary serves no UI, so an unmatched path
+// is a mistake and must look like one.
+func (s *Server) routes() {
+	h := newHealth(s.version)
+
+	s.engine.GET("/healthz", h.live)
+}
+
+// Handler exposes the router so a test can drive it without a socket.
+func (s *Server) Handler() http.Handler { return s.engine }
+
+// Run serves until ctx is cancelled, then drains for ShutdownGrace.
 func (s *Server) Run(ctx context.Context) error {
-	server := &http.Server{
-		Addr:              s.deps.Config.ListenAddr,
-		Handler:           s.Engine(),
+	srv := &http.Server{
+		Addr:              s.cfg.ListenAddr,
+		Handler:           s.engine,
 		ReadHeaderTimeout: readHeaderTimeout,
 		ReadTimeout:       readTimeout,
 		WriteTimeout:      writeTimeout,
 		IdleTimeout:       idleTimeout,
 	}
 
-	errCh := make(chan error, 1)
+	errc := make(chan error, 1)
 	go func() {
-		s.deps.Logger.Info("control plane api listening", "addr", s.deps.Config.ListenAddr)
-		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			errCh <- err
+		s.logger.Info("http server listening", "addr", s.cfg.ListenAddr, "version", s.version)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errc <- err
 			return
 		}
-		errCh <- nil
+		errc <- nil
 	}()
 
 	select {
-	case err := <-errCh:
+	case err := <-errc:
 		return err
 	case <-ctx.Done():
 	}
 
-	s.deps.Logger.Info("shutting down, draining in-flight requests", "grace", s.deps.Config.ShutdownGrace.String())
-	// Fresh context: ctx is already cancelled and would make Shutdown return
-	// immediately.
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), s.deps.Config.ShutdownGrace)
+	s.logger.Info("shutting down", "grace", s.cfg.ShutdownGrace)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), s.cfg.ShutdownGrace)
 	defer cancel()
-
-	if err := server.Shutdown(shutdownCtx); err != nil {
-		return err
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		return fmt.Errorf("shutdown: %w", err)
 	}
-	return <-errCh
+	return nil
+}
+
+// requestLogger logs one line per request.
+//
+// It logs the matched route, never the raw path, the query string or the body.
+// All three routinely carry credentials in this product, and a log line is the
+// easiest place in a system to retain one forever.
+func requestLogger(logger *slog.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		start := time.Now()
+		c.Next()
+		logger.Info("request",
+			"method", c.Request.Method,
+			"route", c.FullPath(),
+			"status", c.Writer.Status(),
+			"duration", time.Since(start),
+		)
+	}
 }
