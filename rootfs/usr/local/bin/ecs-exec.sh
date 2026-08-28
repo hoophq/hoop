@@ -107,8 +107,45 @@ if [ "$SHELL_INTERACTIVE" == "1" ]; then
   exit $?
 fi
 
+# aws ecs execute-command has no stdin channel to the remote container, so
+# the whole payload must fit inside the --command argument. The Linux kernel
+# caps any single execve() argument at MAX_ARG_STRLEN (128 KiB on 4Ki-page
+# systems), independent of the much larger total ARG_MAX -- confirmed via
+# binary search on the same x86_64/Ubuntu-noble image this script ships in
+# (Dockerfile.tools): a 131071-byte argument execs fine, 131072 fails with
+# "Argument list too long" (exit 126). execve() counts the argument's NUL
+# terminator against MAX_ARG_STRLEN, so usable content tops out one byte
+# short of it.
+#
+# --cli-input-json file://<path> was tried as a way past this: it does avoid
+# the *local* exec limit (the AWS CLI reads the request body from disk, not
+# argv), but it doesn't help -- confirmed empirically against a real running
+# task. AWS's ECS Exec / SSM agent runs the command *inside the container*
+# via the same fork/exec("/bin/sh", ["-c", command]) mechanism, which hits
+# the identical kernel argument limit on the remote side (~131KB, "Failed to
+# start pty: fork/exec /bin/sh: argument list too long"). The bottleneck
+# isn't how the request reaches AWS; it's how ECS Exec runs it once there.
+# There is no way to exceed this via aws ecs execute-command.
+#
+# No preflight size check is done here. One was tried and reverted: checking
+# the fully-built command string works but only catches the problem after
+# base64-encoding the whole payload; checking raw stdin first needs exact
+# base64-inflation math (`<<<` below adds a trailing newline, base64 rounds
+# up to the next multiple of 3 input bytes) to avoid being subtly wrong at the
+# edge. Either is real complexity for a check whose failure mode -- the OS's
+# own "Argument list too long" (exit 126) -- is already unambiguous. Oversized
+# input just hits that native error instead of a custom message.
+
 # unbuffer is required when running one-off tasks
 # https://github.com/aws/amazon-ssm-agent/issues/354#issuecomment-817274498
+#
+# $(...) command substitution silently drops NUL bytes (bash strings are
+# NUL-terminated) -- confirmed via bash's own "command substitution: ignored
+# null byte in input" warning. Any payload containing a NUL byte is already
+# corrupted here, before base64 ever runs. Text/script/SQL input (the --pipe
+# use case) doesn't hit this; arbitrary binary data isn't safe to send
+# through this script. Fixing it would mean capturing stdin some other way
+# (e.g. to a temp file) instead of a bash variable.
 STDIN_INPUT=$(cat -)
 if [ -n "$PIPE_EXEC" ]; then
   STDIN_INPUT="$(base64 -w0 <<< $STDIN_INPUT)"
