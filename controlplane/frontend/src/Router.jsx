@@ -73,9 +73,9 @@ function Router() {
               title="Sidecars"
               project="Connecting Sidecars and Resources"
               missing={[
-                'Token issuance for a sidecar (HOOP_KEY)',
+                'Token issuance for a sidecar (name pending — see PRODUCT_GAP.md)',
                 'Resources derived from sidecar listeners',
-                'Liveness — what an admin sees when a sidecar goes quiet',
+                'Liveness — connected, stale, rejected, disconnected',
               ]}
             />
           </Page>

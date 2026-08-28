@@ -9,6 +9,7 @@ A Go workspace (`go.work`) for the hoop gateway, agent, and CLI.
 - `agentrs/` — Rust companion binary for RDP/TLS proxy workloads.
 - `webapp/` — legacy ClojureScript SPA; see `webapp/CLAUDE.md` for its own conventions.
 - `webapp_v2/` — React frontend that is replacing it.
+- `controlplane/` — the Control Plane, a **separate product** from the gateway: where an operator manages a fleet of sidecars. `frontend/` is a React SPA on `main`; `backend/` is a Go module still on an unmerged branch (EVL-230). Nothing under it imports `gateway/`, `agent/` or `client/`. Its conventions are its own and several of them deliberately contradict this file — `controlplane/CLAUDE.md` and `controlplane/frontend/CLAUDE.md` win there. Start at `controlplane/PRODUCT.md`.
 - `libhoop` is not in this repo. It is one private module, `github.com/hoophq/libhoop`, resolved from the module proxy like any other dependency. Builds need `GOPRIVATE=github.com/hoophq/libhoop` and credentials for it. To work against a local clone, `make libhoop-dev`.
 
 ## Toolchain & Prerequisites
@@ -327,6 +328,8 @@ When merging `main` into a feature branch:
 | Frontend migration context | `webapp_v2/CONTEXT_MIGRATION.md` |
 | Frontend coding rules | `webapp_v2/CLAUDE.md` |
 | Wire-inspection library rules | `sidecar/CLAUDE.md` |
+| Control Plane product model | `controlplane/PRODUCT.md` |
+| Control Plane frontend rules | `controlplane/frontend/CLAUDE.md` |
 
 ## Frontend Migration in Progress
 

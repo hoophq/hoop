@@ -1,5 +1,17 @@
 # Control Plane Frontend — Development Guidelines
 
+## Read first
+
+This file is **how to write the code**. Three others carry what it does not:
+
+| Read | Before |
+|---|---|
+| [`../PRODUCT.md`](../PRODUCT.md) | naming anything, or deciding what a screen is for. The product model, taken from hoop.dev/docs. |
+| [`PRODUCT_GAP.md`](./PRODUCT_GAP.md) | touching a feature page. Which of these screens are the gateway's, and what the Control Plane still has no UI for. |
+| [`COMPONENTS.md`](./COMPONENTS.md) | creating a component. What exists, and which directories under `src/components/` export nothing. |
+
+`../CLAUDE.md` governs `controlplane/backend`, not this app.
+
 ## What this is
 
 The web UI for hoop's control plane: where an admin manages a fleet of sidecars,
@@ -77,9 +89,15 @@ App code never imports a primitive straight from Mantine. It imports from
 one place to change a primitive across the app, and keeps the option of replacing
 Mantine without touching call sites.
 
-1. Check `src/components/` before creating anything.
+1. Check [`COMPONENTS.md`](./COMPONENTS.md) before creating anything. Do not read the
+   `src/components/` directory listing as the catalogue: **six of its 40 directories
+   export nothing you can import by directory name**. `AppShell`, `Input`, `Paper`,
+   `Pill` and `Spotlight` hold only a `theme.js` or a `.module.css` and configure a
+   Mantine primitive globally — import those from `@mantine/core` and the theme applies.
+   `Snackbar` is reached through `showSnackbar`. `import Paper from '@/components/Paper'`
+   gets you nothing.
 2. If it does not exist, create `src/components/[Name]/index.jsx` wrapping the Mantine
-   primitive.
+   primitive, and add its row to `COMPONENTS.md`.
 3. The wrapper owns the styling. Call sites stay clean.
 
 | Where it lives | What it is |
@@ -107,6 +125,41 @@ wraps a generic Mantine component — keep it next to the context it serves.
   ```
 - **Icons**: `lucide-react` only. Note it ships no brand icons — there is no `Slack`
   export, for instance.
+
+## Naming — the product name comes from `../PRODUCT.md`
+
+A new label, route segment, store key or service name uses the noun the product uses.
+`../PRODUCT.md` has the table.
+
+Several existing screens do not, because they were extracted from `webapp_v2/`, which is
+the **gateway's** UI and carries the gateway's vocabulary: `Resource Role`, `Session
+Analyzer`, `Live Data Masking`, `connection`, `plugin`. Every one of those is recorded in
+[`PRODUCT_GAP.md`](./PRODUCT_GAP.md) with what the docs call it instead.
+
+**A recorded divergence is not a rename to do in passing.** The initiative has a naming
+session pending, and half-renaming a noun across routes, the sidebar, the command palette
+and the API leaves the app in a worse state than either end. Change one when the decision
+lands, all at once. Until then, follow the surrounding code and add the row to
+`PRODUCT_GAP.md` if it is missing.
+
+Copying a page or a component from `webapp_v2/` brings the gateway's vocabulary with it.
+Read it, then write the version this product wants.
+
+## Documentation links
+
+`src/utils/docsUrl.js` is the map. A new link comes from the Sidecar / Control Plane
+trunk — the link index at the end of [`../PRODUCT.md`](../PRODUCT.md). Everything under
+`/docs/learn/`, `/docs/clients/` and `/docs/quickstart/` documents the Hoop Gateway,
+which is a different product; link there only when the screen really is the gateway's,
+and say so.
+
+**The docs site has no 404.** A path that does not exist silently serves the docs home
+page, so a link check on the HTTP status passes on a dead link. Check the body:
+
+```bash
+curl -sS -L "https://hoop.dev/docs/<path>.md" | head -8 | grep -q "Runtime control for agents" \
+  && echo DEAD
+```
 
 ## Snackbars — use `showSnackbar`
 
