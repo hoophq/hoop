@@ -113,4 +113,5 @@ other way.
   every replica at once.
 - No `NoRoute` handler. This binary serves no UI, so an unmatched path is a
   mistake and must look like one.
+- Keep code comments short and direct; prefer concise comments over long explanatory blocks.
 - Tests live beside the source.

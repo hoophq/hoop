@@ -1,4 +1,4 @@
-# hoop control plane
+# Hoop Control Plane
 
 Centralizes hoop sidecars and delivers rule sets to all of them. One sidecar
 reads its config from a file; twenty sidecars mean twenty files and twenty
