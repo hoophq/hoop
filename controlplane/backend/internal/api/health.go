@@ -8,12 +8,9 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Liveness and readiness are split because they mean opposite things to an
-// orchestrator. Liveness failing says "restart me". Readiness failing says
-// "keep me running but stop sending traffic". Wiring a database check into
-// liveness is the classic mistake: a database blip then restarts every
-// replica at once, which turns a recoverable dependency failure into an
-// outage of the thing that depends on it.
+// Liveness and readiness are split: liveness failing means "restart me",
+// readiness failing means "stop sending traffic". A database check in
+// liveness would restart every replica on a database blip.
 type health struct {
 	ready   Readiness
 	version string
@@ -23,18 +20,12 @@ func newHealth(ready Readiness, version string) *health {
 	return &health{ready: ready, version: version}
 }
 
-// probeTimeout bounds the readiness database check.
-//
-// Two seconds, comfortably inside a typical probe interval. A readiness
-// probe that blocks longer than the interval stacks up connections against a
-// database that is already struggling, which is the failure it exists to
-// report.
+// probeTimeout bounds the readiness database check; a probe that outlives
+// its interval stacks connections against a struggling database.
 const probeTimeout = 2 * time.Second
 
-// Live reports that the process is running. It touches nothing.
-//
-// version is here so an operator can confirm which binary is actually running
-// without shelling into the container.
+// Live reports that the process is running; it touches nothing. version lets
+// an operator confirm which binary is running.
 func (h *health) Live(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status":  "ok",
@@ -49,16 +40,10 @@ func (h *health) Ready(c *gin.Context) {
 	defer cancel()
 
 	if err := h.ready.Ping(ctx); err != nil {
-		// 503 rather than 500. This is a dependency being unavailable, not
-		// this service being broken, and the distinction is what tells an
-		// orchestrator to wait rather than to restart.
-		//
-		// "did not answer" rather than "not reachable": the same failure
-		// fires when the database is merely slow or the pool is saturated,
-		// and a reason naming the wrong cause sends the operator to check
-		// the network.
-		//
-		// Not the apierr shape. This body answers kubectl, not the frontend.
+		// 503, not 500: a dependency is unavailable, not this service
+		// broken, which tells the orchestrator to wait rather than restart.
+		// "did not answer" covers slow/saturated as well as unreachable.
+		// Not the apierr shape: this body answers kubectl, not the frontend.
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"status": "unavailable",
 			"reason": "database did not answer",

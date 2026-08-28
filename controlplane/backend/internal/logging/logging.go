@@ -1,24 +1,8 @@
-// Package logging builds the control plane's logger. It is a constructor and
-// nothing else.
-//
-// There is no wrapper type, no package-level Info/Warn/Error, and no f
-// variants. Call sites use log/slog directly. A wrapper would have to offer
-// both attribute and printf forms, and the moment it offers both, half the
-// codebase picks one and half picks the other; the printf form then collapses
-// the fields a JSON handler exists to keep separate.
-//
-// Why not github.com/hoophq/hoop/common/log, which is the convention
-// everywhere else in this repository: it is a zap wrapper, and importing it
-// means requiring the whole common module, which reaches the Anthropic SDK,
-// the OpenAI SDK, k8s.io/api and go-git. None of that links into the final
-// binary, but all of it lands in go.mod and go.sum. A module created
-// specifically to escape the gateway's dependency tree should not re-import
-// it for a logger.
-//
-// The sidecar, the process on the other end of this control plane, already
-// threads *slog.Logger through sidecar/daemon and sidecar/proxy. Matching it
-// means both ends of the exchange log the same way, which is what makes an
-// incident readable when the two sets of logs are put side by side.
+// Package logging builds the control plane's logger; a constructor and
+// nothing else. Call sites use log/slog directly — no wrapper, so there is
+// one logging style, and slog matches what the sidecar already threads
+// through. common/log is avoided because importing it drags the whole
+// common module (SDKs, k8s.io/api, go-git) into go.mod.
 package logging
 
 import (
@@ -28,9 +12,8 @@ import (
 	"strings"
 )
 
-// Level and format come from the environment rather than from config.Config.
-// The logger has to exist before config is loaded, or the errors config
-// loading itself produces have nowhere to go.
+// Read from the environment, not config.Config: the logger must exist
+// before config loads so config errors have somewhere to go.
 const (
 	EnvLevel  = "LOG_LEVEL"
 	EnvFormat = "LOG_FORMAT"
@@ -38,13 +21,9 @@ const (
 
 // New builds a logger writing to w.
 //
-// level accepts trace, debug, info, warn, warning or error, case-insensitive,
-// and anything else means info. trace maps to debug: the gateway accepts
-// trace in the same variable, and an operator who copies a working value
-// across should not get a startup failure for it.
-//
-// format accepts json or text; anything else means json. Unparseable logs in
-// production cost more than readable logs in development do.
+// level accepts trace/debug/info/warn/warning/error, case-insensitive;
+// unknown means info and trace maps to debug (gateway compatibility).
+// format accepts json or text; anything else means json.
 func New(w io.Writer, level, format string) *slog.Logger {
 	opts := &slog.HandlerOptions{Level: ParseLevel(level)}
 	if strings.EqualFold(strings.TrimSpace(format), "text") {

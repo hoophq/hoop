@@ -10,8 +10,7 @@ import (
 
 const validURI = "postgres://hoop:hoop@localhost:5432/hoop?sslmode=disable"
 
-// An external test package, so these cases can only reach what a caller can
-// reach. Load returns a value and there is no global to reset between them.
+// External test package: these cases reach only what a caller can.
 
 func TestLoadDefaults(t *testing.T) {
 	t.Setenv("POSTGRES_DB_URI", validURI)
@@ -47,8 +46,8 @@ func TestLoadRequiresPostgresURI(t *testing.T) {
 	}
 }
 
-// url.Parse alone accepts all of these. They then reach the driver and
-// produce a message that never names the variable.
+// url.Parse accepts all of these; the driver's message never names the
+// variable.
 func TestLoadRejectsANonPostgresURI(t *testing.T) {
 	for _, uri := range []string{
 		"postgress://localhost/hoop",
@@ -69,9 +68,8 @@ func TestLoadRejectsANonPostgresURI(t *testing.T) {
 	}
 }
 
-// url.Error stringifies as `parse "<the whole URL>": <cause>` with no
-// redaction, so a password containing an unescaped % ends up in the log of
-// every failed start.
+// url.Error stringifies the whole URL unredacted, so an unescaped % in a
+// password would leak into the log of every failed start.
 func TestLoadDoesNotLeakThePasswordOnAParseError(t *testing.T) {
 	t.Setenv("POSTGRES_DB_URI", "postgres://hoop:p%ssw0rd@localhost:5432/hoop")
 

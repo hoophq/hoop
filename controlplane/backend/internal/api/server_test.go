@@ -31,9 +31,8 @@ func discard() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-// fakePinger is why Readiness is an interface. A *gorm.DB cannot be made to
-// fail a ping without a real database, so before this the 503 branch of
-// /readyz had no test at all.
+// fakePinger drives the 503 branch of /readyz, which a real *gorm.DB cannot
+// do without a database.
 type fakePinger struct{ err error }
 
 func (f fakePinger) Ping(context.Context) error { return f.err }
@@ -80,12 +79,9 @@ func do(t *testing.T, engine *gin.Engine, method, path string, headers map[strin
 // Gin reports route patterns; substitute anything for the parameter.
 func concrete(pattern string) string { return strings.ReplaceAll(pattern, ":name", "example") }
 
-// message decodes the one field every error response has.
-//
-// The tests below compare it whole rather than with strings.Contains. Several
-// of the scaffold's descriptions are prefixes of others, "reading a sidecar"
-// and "reading a sidecar config" among them, and a substring check would pass
-// for a route wired to the wrong one of the two.
+// message decodes the one field every error response has. Tests compare it
+// whole: several descriptions are prefixes of others, so a substring check
+// would pass on a miswired route.
 func message(t *testing.T, rec *httptest.ResponseRecorder) string {
 	t.Helper()
 	var body apierr.Body
@@ -95,14 +91,9 @@ func message(t *testing.T, rec *httptest.ResponseRecorder) string {
 	return body.Message
 }
 
-// guard names the middleware in front of a path, by the description its 501
-// carries.
-//
-// Splitting the surface into /api and /v1 means the guard is derivable from
-// the path, so this is one rule per prefix rather than a list of exceptions.
-// Enrolment is the single exception, and it is the point: it presents a
-// bootstrap credential, so it must not reach the guard that accepts a
-// long-lived one.
+// guard names the middleware in front of a path by the description its 501
+// carries: one rule per prefix, with enrolment (bootstrap credential) the
+// sole exception.
 func guard(path string) string {
 	switch {
 	case path == "/v1/enroll":
@@ -116,11 +107,8 @@ func guard(path string) string {
 	}
 }
 
-// The most important test in the module, and the reason unauthenticatedRoutes
-// is a map rather than a paragraph.
-//
-// It walks what the router actually registered instead of a list written down
-// here, so a route added outside a guarded group fails this test rather than
+// The most important test here: it walks what the router actually
+// registered, so a route added outside a guarded group fails instead of
 // quietly joining the open set.
 func TestEveryRouteNotOnTheOpenListIsClosed(t *testing.T) {
 	engine := newTestServer(t, testDeps(config.Config{}))
@@ -141,9 +129,8 @@ func TestEveryRouteNotOnTheOpenListIsClosed(t *testing.T) {
 			if rec.Code != http.StatusNotImplemented {
 				t.Fatalf("status = %d, want 501; a guarded route answering anything else is either open or half-built", rec.Code)
 			}
-			// The guard runs before the handler, so the description in the
-			// body is the guard's, not the component's. That is what proves
-			// the middleware ran rather than the handler.
+			// The guard runs first, so the guard's description in the body
+			// proves the middleware ran, not the handler.
 			if got := message(t, rec); got != apierr.NotImplementedMessage(want) {
 				t.Errorf("message = %q, want the guard's %q; the request reached the handler without passing it", got, want)
 			}
@@ -155,13 +142,9 @@ func TestEveryRouteNotOnTheOpenListIsClosed(t *testing.T) {
 	}
 }
 
-// With the guards stubbed out, every route has to reach its own component.
-//
-// The test above proves nothing gets past a guard, which means it also cannot
-// see a route wired to the wrong handler: everything answers 501 with the
-// guard's description either way. This one substitutes pass-through guards,
-// which is what Deps carrying the middleware as gin.HandlerFunc buys, and
-// asserts the destination.
+// With pass-through guards substituted, every route has to reach its own
+// component; the test above cannot see a miswired handler because the guard
+// answers 501 either way.
 func TestGuardedRoutesReachTheirOwnComponent(t *testing.T) {
 	want := map[string]string{
 		"POST /api/auth/logout":                  "admin signout",
@@ -179,9 +162,8 @@ func TestGuardedRoutesReachTheirOwnComponent(t *testing.T) {
 		"POST /v1/status":                        "recording a sidecar status report",
 	}
 
-	// Two handlers sharing a description would make a swap between them
-	// invisible to the assertion below, so the distinctness the whole test
-	// rests on is checked rather than assumed.
+	// Two handlers sharing a description would make a swap invisible, so
+	// distinctness is checked rather than assumed.
 	seen := map[string]string{}
 	for route, what := range want {
 		if other, dup := seen[what]; dup {
@@ -220,8 +202,8 @@ func TestGuardedRoutesReachTheirOwnComponent(t *testing.T) {
 	}
 }
 
-// The open routes have to stay reachable, or the test above passes by locking
-// everything including login.
+// The open routes have to stay reachable, or the test above passes by
+// locking everything including login.
 func TestOpenRoutesAreReachable(t *testing.T) {
 	engine := newTestServer(t, testDeps(config.Config{}))
 
@@ -252,9 +234,8 @@ func TestProbesAnswerWithoutAuth(t *testing.T) {
 	}
 }
 
-// Readiness failing must shed traffic without asking to be restarted, and
-// liveness must not notice at all. Getting this backwards turns a database
-// blip into every replica restarting at once.
+// Readiness failing must shed traffic without triggering restarts, and
+// liveness must not notice at all.
 func TestReadyzIs503WhenTheDatabaseDoesNotAnswerAndHealthzIsNot(t *testing.T) {
 	deps := testDeps(config.Config{})
 	deps.Readiness = fakePinger{err: errors.New("connection refused")}
@@ -273,8 +254,8 @@ func TestReadyzIs503WhenTheDatabaseDoesNotAnswerAndHealthzIsNot(t *testing.T) {
 	}
 }
 
-// Every field in Deps is one a nil dereference would otherwise find at request
-// time, in gin's stack, far from the wiring that was wrong.
+// Every missing Deps field would otherwise be a nil dereference at request
+// time, far from the wiring that was wrong.
 func TestNewRefusesIncompleteDeps(t *testing.T) {
 	for name, breakIt := range map[string]func(*Deps){
 		"Logger":           func(d *Deps) { d.Logger = nil },
@@ -342,8 +323,7 @@ func TestCORSAllowsOnlyConfiguredOrigins(t *testing.T) {
 	}
 }
 
-// An empty allow list is the default, and it has to mean nothing is allowed
-// rather than everything.
+// The default empty allow list must mean nothing allowed, not everything.
 func TestCORSDefaultsToClosed(t *testing.T) {
 	engine := newTestServer(t, testDeps(config.Config{}))
 	rec := do(t, engine, http.MethodGet, "/healthz", map[string]string{"Origin": "http://localhost:5173"})
@@ -356,8 +336,8 @@ func TestCORSDefaultsToClosed(t *testing.T) {
 	}
 }
 
-// The gateway pairs Allow-Origin: * with Allow-Credentials: true. Browsers
-// reject that, and it would be unsafe if they did not.
+// Wildcard Allow-Origin alongside Allow-Credentials is rejected by browsers
+// and would be unsafe if it were not.
 func TestCORSNeverSendsAWildcard(t *testing.T) {
 	engine := newTestServer(t, testDeps(config.Config{CORSAllowedOrigins: []string{"http://localhost:5173"}}))
 	rec := do(t, engine, http.MethodGet, "/healthz", map[string]string{"Origin": "http://localhost:5173"})

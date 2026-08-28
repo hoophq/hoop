@@ -1,10 +1,8 @@
 // Command controlplane is the control plane server for hoop sidecars.
 //
-// It stores what should be running on each sidecar and tracks what actually
-// is. Sidecars poll it: they ask for their config and report their status on
-// their own schedule, so nothing here dials out to customer infrastructure. It
-// terminates no database traffic itself, and when this process is down
-// sidecars keep enforcing the last config they accepted.
+// Sidecars poll it for config and report status; it never dials customer
+// infrastructure or terminates database traffic, so sidecars keep enforcing
+// their last accepted config while it is down.
 //
 // Usage:
 //
@@ -13,8 +11,7 @@
 //	controlplane migrate down [n]   roll back n migrations, default 1
 //	controlplane migrate version    print the applied schema version
 //
-// Run it with POSTGRES_DB_URI set. Everything else has a default. See
-// internal/config for the full list.
+// Requires POSTGRES_DB_URI; everything else defaults. See internal/config.
 package main
 
 import (
@@ -40,18 +37,14 @@ import (
 	"github.com/hoophq/hoop/controlplane/backend/internal/migrations"
 )
 
-// version is injected at build time with
-// -ldflags "-X main.version=$(VERSION)". The literal below is what a plain
-// `go build` produces, and it says so rather than pretending to be a release.
+// version is injected at build time via -ldflags "-X main.version=$(VERSION)".
 var version = "devel"
 
 func main() {
-	// The logger is built before config is loaded, because config loading is
-	// the first thing that can fail and its error has to go somewhere. It
-	// reads LOG_LEVEL and LOG_FORMAT directly for the same reason.
+	// Built before config loads so config errors have somewhere to go;
+	// reads LOG_LEVEL/LOG_FORMAT directly for the same reason.
 	logger := logging.FromEnv(os.Stderr)
-	// Anything in a dependency that reaches for slog.Default lands in the
-	// same stream, in the same format, instead of stderr text.
+	// Dependencies using slog.Default land in the same stream and format.
 	slog.SetDefault(logger)
 
 	if err := run(logger, os.Args[1:]); err != nil {
@@ -92,14 +85,8 @@ const usage = `usage: controlplane <command>
   migrate version    print the applied schema version
 `
 
-// migrateCmd exists so a deploy pipeline can run the schema change as its own
-// step, separate from starting the process.
-//
-// The gateway migrates only as a boot side effect, which means a rolling
-// deploy of a schema change has every replica racing to apply it. An advisory
-// lock keeps that from corrupting anything and does not make it a good
-// deployment shape. Here it is a command, and CONTROLPLANE_AUTO_MIGRATE=false
-// turns the boot-time run off once a pipeline owns it.
+// migrateCmd lets a deploy pipeline run schema changes as a separate step;
+// CONTROLPLANE_AUTO_MIGRATE=false disables the boot-time run once it does.
 func migrateCmd(logger *slog.Logger, cfg config.Config, args []string) error {
 	runner := migrations.NewRunner(logger, cfg.PostgresURI, cfg.MigrationPathFiles)
 
@@ -136,13 +123,9 @@ func migrateCmd(logger *slog.Logger, cfg config.Config, args []string) error {
 	}
 }
 
-// serve holds the boot sequence so every failure returns instead of calling
-// os.Exit from deep in the stack, which would skip deferred cleanup.
-//
-// The order is migrate, connect, listen. Migrating before opening the
-// application's own pool means a schema change and the first query cannot
-// interleave, and migrations run on a connection golang-migrate closes when
-// it is done rather than one held out of the pool it is about to hand over.
+// serve returns on every failure instead of calling os.Exit, so deferred
+// cleanup runs. Order is migrate, connect, listen: migrating before opening
+// the pool keeps schema changes and first queries from interleaving.
 func serve(logger *slog.Logger, cfg config.Config) error {
 	logger.Info("configuration loaded",
 		"version", version,
@@ -151,10 +134,8 @@ func serve(logger *slog.Logger, cfg config.Config) error {
 		"auto_migrate", cfg.AutoMigrate,
 	)
 
-	// Gin defaults to debug mode, which prints the whole route table and a
-	// warning on every start. Set here rather than in Engine because
-	// gin.SetMode is process-global and a test that builds an engine must not
-	// change the mode out from under the rest of the suite.
+	// gin.SetMode is process-global; set it here, not in Engine, so tests
+	// that build an engine do not change the mode under the suite.
 	if cfg.IsProduction() {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -165,10 +146,8 @@ func serve(logger *slog.Logger, cfg config.Config) error {
 			return err
 		}
 	}
-	// Checked whether or not this process applied them. Serving against an
-	// older schema means every query touching a new column fails at request
-	// time, one endpoint at a time, which reads as a bug in whichever feature
-	// was unlucky enough to be called first.
+	// Verified even when this process did not migrate: serving against an
+	// older schema fails one endpoint at a time at request time.
 	if err := runner.Verify(); err != nil {
 		return err
 	}
@@ -187,12 +166,9 @@ func serve(logger *slog.Logger, cfg config.Config) error {
 	signalCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// The second signal has to kill the process outright, because an operator
-	// pressing Ctrl-C twice means now. signal.NotifyContext alone does not do
-	// that: its goroutine exits after the first delivery, the registration
-	// stays in place, and every later signal is swallowed. Restoring the
-	// default disposition once the first one arrives is what makes the second
-	// one work.
+	// A second signal must kill the process outright. NotifyContext's
+	// goroutine exits after the first delivery and swallows later signals;
+	// calling stop() restores the default disposition so Ctrl-C twice works.
 	go func() {
 		<-signalCtx.Done()
 		stop()
@@ -205,18 +181,11 @@ func serve(logger *slog.Logger, cfg config.Config) error {
 	return server.Run(signalCtx)
 }
 
-// deps builds the object graph.
-//
-// Constructor injection, assembled here and nowhere else. main is the only
-// place that knows every concrete type, which is what keeps the packages below
-// unaware of each other: internal/api mounts handlers it is given rather than
-// constructing them, so giving desiredstate a store in EVL-231 changes this
-// function and no signature in the routing.
-//
-// No DI framework. A container resolving by reflection moves this list out of
-// the compiler's reach and turns a missing dependency from a build error into a
-// panic on the first request. api.New validates instead, and names what is
-// missing.
+// deps builds the object graph. Constructor injection, assembled only here:
+// main alone knows every concrete type, keeping the packages below unaware
+// of each other. No DI framework — a reflective container turns a missing
+// dependency from a build error into a first-request panic; api.New
+// validates and names what is missing.
 func deps(cfg config.Config, db *gorm.DB, logger *slog.Logger) api.Deps {
 	admin := adminauth.New()
 	sidecars := sidecarauth.New()

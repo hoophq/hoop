@@ -1,17 +1,9 @@
 // Package config loads the control plane's configuration from the
 // environment, once, at startup.
 //
-// Load returns a value. There is no package-level singleton and no Get().
-// The gateway has one, and the cost shows up first in tests: a global has to
-// be reset between cases, and a struct with unexported fields cannot be
-// constructed by the package under test at all. Everything here is exported
-// and a caller threads the value where it is needed, so a test writes
-// config.Config{ListenAddr: ..., CORSAllowedOrigins: ...} and is done.
-//
-// The rule Load enforces is the part worth keeping from the gateway: a
-// malformed value is a hard failure at startup, a missing optional value gets
-// a documented default. Config that is wrong should stop the process while an
-// operator is still watching, not surface as a confusing 500 an hour later.
+// Load returns a value; there is no singleton and no Get(), so tests just
+// construct config.Config{...}. Malformed values fail hard at startup;
+// missing optional values get documented defaults.
 package config
 
 import (
@@ -24,10 +16,8 @@ import (
 	"github.com/hoophq/hoop/controlplane/backend/internal/database"
 )
 
-// Config is the loaded configuration.
-//
-// Copy it freely, but note CORSAllowedOrigins is a slice: a copy shares the
-// backing array. Nothing mutates it after Load, and Server holds it read-only.
+// Config is the loaded configuration. Copy freely; CORSAllowedOrigins shares
+// its backing array, but nothing mutates it after Load.
 type Config struct {
 	// ListenAddr is the HTTP bind address.
 	ListenAddr string
@@ -35,30 +25,26 @@ type Config struct {
 	PostgresURI string
 	// MaxOpenConns caps the connection pool. Zero means unlimited.
 	MaxOpenConns int
-	// MigrationPathFiles reads migrations from disk instead of the embedded
-	// copy. Empty means embedded.
+	// MigrationPathFiles reads migrations from disk; empty means embedded.
 	MigrationPathFiles string
 	// Deployment marks how seriously the process should treat itself.
 	Deployment DeploymentType
 	// CORSAllowedOrigins is the exact-match allow list. Empty means no
-	// cross-origin request is allowed. See api.cors for why.
+	// cross-origin request is allowed.
 	CORSAllowedOrigins []string
 	// ShutdownGrace bounds how long in-flight requests get on SIGTERM.
 	ShutdownGrace time.Duration
-	// AutoMigrate applies pending migrations during `serve`. True by default
-	// so a first run works; set false where a deploy pipeline runs
-	// `controlplane migrate up` as its own step.
+	// AutoMigrate applies pending migrations during `serve`. Default true;
+	// set false when a pipeline runs `controlplane migrate up` itself.
 	AutoMigrate bool
 }
 
 // DeploymentType marks how seriously the process should treat itself.
 //
-// It exists for one reason, named in EVL-234: the development trust anchor
-// for sidecar auth is a static shared token, and a placeholder that quietly
-// becomes the shipping default is how a placeholder turns into a CVE. Code
-// holding a development credential asks IsProduction and refuses to start
-// when it is true. That check is worthless unless the value is explicit, so
-// there is no inference from other settings.
+// The development trust anchor for sidecar auth is a static shared token,
+// and a placeholder that becomes the shipping default is a CVE. Code holding
+// a development credential asks IsProduction and refuses to start when true;
+// the value is explicit, never inferred from other settings.
 type DeploymentType string
 
 const (
@@ -75,9 +61,8 @@ const (
 func Load() (Config, error) {
 	var cfg Config
 
-	// 8020 rather than 8009. The gateway owns 8009 and the two run side by
-	// side on a development machine, so a colliding default would break every
-	// existing one on the first run.
+	// 8020, not 8009: the gateway owns 8009 and both run side by side on a
+	// development machine.
 	cfg.ListenAddr = envOr("CONTROLPLANE_LISTEN_ADDR", defaultListenAddr)
 
 	postgresURI, err := postgresURIFromEnv()
@@ -111,11 +96,8 @@ func Load() (Config, error) {
 // IsProduction reports whether the deployment is marked production.
 func (c Config) IsProduction() bool { return c.Deployment == DeploymentProduction }
 
-// postgresURIFromEnv reads and checks POSTGRES_DB_URI.
-//
-// Checked here, at load, so the failure names the variable. The driver's own
-// message does not, which sends the operator looking in the wrong place.
-// database.ParseURI is what redacts the credential out of the parse error.
+// postgresURIFromEnv reads and checks POSTGRES_DB_URI at load, so the
+// failure names the variable; database.ParseURI redacts the credential.
 func postgresURIFromEnv() (string, error) {
 	const key = "POSTGRES_DB_URI"
 	v := os.Getenv(key)
@@ -132,9 +114,8 @@ func deploymentFromEnv() (DeploymentType, error) {
 	const key = "CONTROLPLANE_DEPLOYMENT"
 	switch d := DeploymentType(strings.ToLower(strings.TrimSpace(os.Getenv(key)))); d {
 	case "":
-		// Defaulting to development is the safe direction: the value only ever
-		// unlocks refusals, so an unset variable must not be the one that
-		// disables them. A production deployment says so.
+		// Development is the safe default: the value only unlocks refusals,
+		// so an unset variable must not disable them.
 		return DeploymentDevelopment, nil
 	case DeploymentDevelopment, DeploymentProduction:
 		return d, nil

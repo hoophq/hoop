@@ -12,10 +12,9 @@ func discard() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-// The gateway migrates the same database with the same tool and the same
-// default table name. Sharing it means whichever product migrates second
-// reads the other's version, concludes it is ahead, and applies nothing.
-// Neither errors, which is why this is a test rather than a comment.
+// The gateway migrates the same database with golang-migrate's default table
+// name; sharing it makes each product misread the other's version and
+// silently apply nothing.
 func TestWithMigrationsTableIsolatesUsFromTheGateway(t *testing.T) {
 	got, err := withMigrationsTable("postgres://hoop:hoop@localhost:5432/hoop?sslmode=disable")
 	if err != nil {
@@ -62,8 +61,8 @@ func TestWithMigrationsTableDoesNotLeakThePassword(t *testing.T) {
 	}
 }
 
-// Latest is what serve compares the applied version against before it accepts
-// traffic, so it has to match what is actually embedded.
+// serve compares Latest against the applied version before accepting traffic,
+// so it must match what is embedded.
 func TestLatestMatchesTheEmbeddedFiles(t *testing.T) {
 	entries, err := FS.ReadDir(".")
 	if err != nil {
@@ -88,8 +87,7 @@ func TestLatestMatchesTheEmbeddedFiles(t *testing.T) {
 	}
 }
 
-// Every up needs a down. A migration whose down was never written cannot be
-// rolled back during an incident.
+// A migration whose down was never written cannot be rolled back.
 func TestEveryMigrationHasBothDirections(t *testing.T) {
 	entries, err := FS.ReadDir(".")
 	if err != nil {
