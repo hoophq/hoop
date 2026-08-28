@@ -156,7 +156,8 @@ The app shell. Not reusable pieces; there is one of each.
 | File | What it is |
 |---|---|
 | `Layout.jsx` | The `AppShell`: Sidebar, Header, main. |
-| `PageLayout.jsx` | The per-page container inside `Layout`. |
+| `AppLayout.jsx` | **The layout route.** Gate + shell + padding + `<Outlet />`. Every signed-in route nests inside it; `/` and the auth routes deliberately do not. |
+| `PageLayout.jsx` | The per-page container inside `Layout`. Publishes `--hoop-page-padding` for anything that has to fill the page. |
 | `FullBleed.jsx` | Escape hatch for a page that must ignore `PageLayout`'s padding. |
 | `SkipLink.jsx` | Skip-to-content, for keyboard users. |
 | `Header/` | `index.jsx`, `HeaderSearch.jsx`, `UserAvatar.jsx`, `UserMenu.jsx`. |

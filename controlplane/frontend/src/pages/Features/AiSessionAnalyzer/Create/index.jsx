@@ -324,13 +324,13 @@ export default function AiSessionAnalyzerRuleForm() {
   }, [isEdit, ruleName, fetchAccessRequestRules, fetchList, fetchActive, clearActive])
 
   if (isEdit && (activeStatus === 'loading' || activeStatus === 'idle')) {
-    return <PageLoader h={400} />
+    return <PageLoader />
   }
 
   // A failed fetch leaves `active` null; rendering the form would present a
   // blank "edit" whose save overwrites the real rule with empty values.
   if (isEdit && activeStatus === 'error') {
-    return <PageLoader error h={400} message="Failed to load rule." />
+    return <PageLoader error message="Failed to load rule." />
   }
 
   return (

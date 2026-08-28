@@ -58,6 +58,34 @@ Adding a route means adding it to `Router.jsx`, `layout/Sidebar/constants.js` an
 `features/CommandPalette/constants.js`. The last two navigate, so an entry pointing at
 an unclaimed path sends the user to the 404 page.
 
+### Every signed-in page nests inside `<AppLayout />`
+
+`layout/AppLayout.jsx` is a **layout route**: the auth and admin gate, the shell, the
+page padding, and the command palette, rendered once with an `<Outlet />`. A page nested
+inside it cannot forget the chrome, and a page that must not have it — `/`, the auth
+routes — is visibly outside the group instead of quietly missing a wrapper.
+
+```jsx
+<Route element={<AppLayout />}>
+  <Route path="/sidecars" element={<Sidecars />} />
+
+  <Route element={<ProtectedRoute licenseFeature="guardrails" />}>
+    <Route path="/guardrails" element={<Guardrails />} />
+    <Route path="/guardrails/new" element={<GuardrailForm />} />
+  </Route>
+</Route>
+```
+
+Every signed-in route is admin-only, so `adminOnly` lives in `AppLayout`. Licence gating
+is not uniform, so it stays a nested `ProtectedRoute` per feature group — declared once
+for the group instead of repeated on each route. `ProtectedRoute` renders `<Outlet />`
+when given no children, which is what makes that work.
+
+**Child paths stay absolute** — `/guardrails`, never `guardrails`. `check-routes.mjs`
+scrapes the path attributes with a regex and has no notion of nesting, so a relative one
+lands in the matcher set without its leading slash and every real navigation to it then
+fails the check.
+
 `npm run build` runs `scripts/check-routes.mjs`, which fails when a literal
 `navigate()`, `to=` or `href=` target is not claimed by `Router.jsx`. This is the check
 that catches the leftovers of removing a route — `navigate('/client')` after a
@@ -67,6 +95,12 @@ successful login was one, and nothing else would have found it.
 invisible to it: `const LICENSE_PAGE = '/settings/license'` and a `setRedirectTo(...)`
 into `<Navigate to={redirectTo}>` both slipped through and had to be found by review.
 Prefer literals — `` navigate(`/reviews/${id}`) `` is checked against `/reviews/:id`.
+
+It strips `/* */` comments from both sides before matching, because it reads files as
+text: a route attribute written as an example in a JSDoc used to join the matcher set and
+silently claim a route that does not exist, and a comment explaining a `<Navigate>` used
+to be read as navigating. `//` comments are left alone — they cannot be removed safely
+while `https://` lives in string literals.
 
 ## Architecture
 
@@ -215,6 +249,25 @@ page, so a link check on the HTTP status passes on a dead link. Check the body:
 curl -sS -L "https://hoop.dev/docs/<path>.md" | head -8 | grep -q "Runtime control for agents" \
   && echo DEAD
 ```
+
+## Loaders — never pass `h`
+
+`PageLoader` replaces the whole page, so it fills the whole page. Its default height
+subtracts the two things above it, both published as CSS variables so they work inside
+the shell and on the bare auth routes alike:
+
+```
+calc(100dvh - var(--app-shell-header-offset, 0rem) - var(--hoop-page-padding, 0rem) * 2)
+```
+
+`--hoop-page-padding` comes from `layout/PageLayout.jsx`, set from the `PAGE_PADDING`
+constant rather than typed twice.
+
+Sixteen call sites used to pass `h={300}` or `h={400}`, copied from each other. Every one
+of them was an early `return` that replaces the entire page, so the result was a spinner
+centred in a short box at the top of an empty screen. **A page whose content has not
+loaded has no size to respect.** Pass `overlay` for a full-screen takeover; otherwise
+pass nothing.
 
 ## Snackbars — use `showSnackbar`
 

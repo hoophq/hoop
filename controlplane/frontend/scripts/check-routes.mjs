@@ -19,9 +19,17 @@ const walk = (dir) =>
     return statSync(p).isDirectory() ? walk(p) : [p]
   })
 
+// Block comments go first. This regex reads the file as text, so a path attribute
+// written as an EXAMPLE in a comment — a JSDoc block explaining the convention, a
+// commented-out route — joins the matcher set and silently claims a route that does
+// not exist, which is the one failure this script must not have. Only `/* */` is
+// stripped: `//` cannot be removed safely while `https://` lives in string literals.
+const stripBlockComments = (src) => src.replace(/\/\*[\s\S]*?\*\//g, '')
+
 // `*` is the 404 route. It is a destination for the router, not for the app — leaving
 // it in the matcher set would make every path "claimed" and the check always pass.
-const routes = [...readFileSync(join(SRC, 'Router.jsx'), 'utf8').matchAll(/path="([^"]+)"/g)]
+const routerSource = stripBlockComments(readFileSync(join(SRC, 'Router.jsx'), 'utf8'))
+const routes = [...routerSource.matchAll(/path="([^"]+)"/g)]
   .map((m) => m[1])
   .filter((p) => p !== '*')
 
@@ -40,7 +48,12 @@ const NAV = /(?:navigate\(|(?:to|href)\s*=\s*\{?\s*|window\.location\.href\s*=\s
 
 const dead = []
 for (const f of walk(SRC).filter((f) => /\.jsx?$/.test(f))) {
-  const text = readFileSync(f, 'utf8')
+  const raw = readFileSync(f, 'utf8')
+  // A comment does not navigate. Without this, a JSDoc explaining why a page
+  // cannot just render `<Navigate to="/somewhere">` is read as a navigation to
+  // /somewhere, and the build fails on prose. Line numbers stay right because
+  // the comment bodies are blanked, not removed.
+  const text = raw.replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, ' '))
   for (const m of text.matchAll(NAV)) {
     // Template placeholders stand in for a route param.
     const path = m[2].replace(/\$\{[^}]*\}/g, 'x').split('?')[0].replace(/\/$/, '') || '/'

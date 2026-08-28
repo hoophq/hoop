@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Navigate, useLocation } from 'react-router-dom'
+import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { useAuthStore } from '@/stores/useAuthStore'
 import { useUserStore } from '@/stores/useUserStore'
 import { authService } from '@/services/auth'
@@ -119,7 +119,10 @@ function ProtectedRoute({ children, adminOnly = false, licenseFeature = null }) 
     return <Navigate to="/" replace />
   }
 
-  return children
+  // Works both ways: wrap a page directly, or sit on a pathless <Route> as a
+  // layout and let the matched child render through the outlet. The second
+  // form is how a whole group of routes shares one gate — see Router.jsx.
+  return children ?? <Outlet />
 }
 
 export default ProtectedRoute

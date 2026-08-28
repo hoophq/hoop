@@ -328,7 +328,7 @@ export default function GuardrailForm() {
   }, [isEdit, id, fetchAttributes, fetchActive, clearActive])
 
   if (isEdit && (activeStatus === 'loading' || activeStatus === 'idle')) {
-    return <PageLoader h={400} />
+    return <PageLoader />
   }
 
   // A failed fetch leaves `active` null; rendering the form would present a

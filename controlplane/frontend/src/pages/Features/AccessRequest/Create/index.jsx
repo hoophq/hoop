@@ -656,7 +656,7 @@ export default function AccessRequestRuleForm() {
     (isEdit && pending(ruleStatus))
 
   if (loading) {
-    return <PageLoader h={300} />
+    return <PageLoader />
   }
 
   // Rendering the form anyway would show empty pickers as if the rule targeted
@@ -667,7 +667,7 @@ export default function AccessRequestRuleForm() {
     userGroupsStatus === 'error' ||
     (isEdit && ruleStatus === 'error')
   ) {
-    return <PageLoader error h={300} message="Failed to load access request rule." />
+    return <PageLoader error message="Failed to load access request rule." />
   }
 
   return (

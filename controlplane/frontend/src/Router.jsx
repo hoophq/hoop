@@ -1,8 +1,7 @@
 import { Routes, Route } from 'react-router-dom'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import NotImplemented from '@/components/NotImplemented'
-import Layout from '@/layout/Layout'
-import PageLayout from '@/layout/PageLayout'
+import AppLayout from '@/layout/AppLayout'
 
 import Home from '@/pages/Home'
 import NotFound from '@/pages/NotFound'
@@ -39,23 +38,28 @@ import OrganizationUsers from '@/pages/Organization/Users'
  *
  * Two routes are placeholders. They hold their place in the IA and name the project
  * that owes the work — see components/NotImplemented.
+ *
+ * ── Shape ──────────────────────────────────────────────────────────────────
+ * Three groups, and which one a route sits in is the whole statement:
+ *
+ *   outside everything   the auth routes and `/`, which must not have the shell
+ *   <AppLayout>          the gate, the shell, the padding, the command palette
+ *   <ProtectedRoute      one licence feature, shared by the routes it wraps
+ *     licenseFeature>
+ *
+ * Child paths are ABSOLUTE, not relative — `/guardrails`, never `guardrails`.
+ * `scripts/check-routes.mjs` scrapes the path attributes out of this file with a
+ * regex to build its matcher set, and a relative one lands in that set without a
+ * leading slash, so every real navigation to it then fails the check.
+ *
+ * That regex reads the whole file, comments included, so do not write an example
+ * path attribute in prose here: it joins the matcher set and quietly claims a
+ * route that does not exist.
  */
-
-// Shorthand for the app chrome every signed-in page shares.
-function Page({ children, ...guards }) {
-  return (
-    <ProtectedRoute {...guards}>
-      <Layout>
-        <PageLayout>{children}</PageLayout>
-      </Layout>
-    </ProtectedRoute>
-  )
-}
-
 function Router() {
   return (
     <Routes>
-      {/* Admin authentication — no Layout, no auth required */}
+      {/* Admin authentication — no shell, no auth required */}
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
       <Route path="/setup" element={<Setup />} />
@@ -63,19 +67,22 @@ function Router() {
       <Route path="/auth/callback" element={<AuthCallback />} />
       <Route path="/signup/callback" element={<SignupCallback />} />
 
+      {/* Deliberately outside AppLayout. An admin is redirected to /sidecars; a
+          non-admin gets a dead end, and a sidebar whose every entry is
+          admin-only would be an empty frame around it. */}
       <Route path="/" element={<ProtectedRoute><Home /></ProtectedRoute>} />
 
-      {/* Sidecars — resources are derived from sidecar listeners, never created here.
-          MOCK: the page renders hard-coded rows and says so. See pages/Sidecars/mock.jsx.
-          Still owed by Connecting Sidecars and Resources: token issuance, and the
-          fleet API itself (GET /api/fleet, EVL-232, answering 501 today). */}
-      <Route path="/sidecars" element={<Page adminOnly><Sidecars /></Page>} />
+      <Route element={<AppLayout />}>
+        {/* Sidecars — resources are derived from sidecar listeners, never created here.
+            MOCK: the page renders hard-coded rows and says so. See pages/Sidecars/mock/.
+            Still owed by Connecting Sidecars and Resources: token issuance, and the
+            fleet API itself (GET /api/fleet, EVL-232, answering 501 today). */}
+        <Route path="/sidecars" element={<Sidecars />} />
 
-      {/* Reviews — the queue, and the detail inside the review session */}
-      <Route
-        path="/reviews"
-        element={
-          <Page adminOnly>
+        {/* Reviews — the queue, and the detail inside the review session */}
+        <Route
+          path="/reviews"
+          element={
             <NotImplemented
               title="Reviews"
               project="Reviews (Human in the Loop)"
@@ -85,82 +92,58 @@ function Router() {
                 'The retry path after approval',
               ]}
             />
-          </Page>
-        }
-      />
-      <Route
-        path="/reviews/:sessionId"
-        element={
-          <Page adminOnly>
+          }
+        />
+        <Route
+          path="/reviews/:sessionId"
+          element={
             <NotImplemented
               title="Review"
               project="Reviews (Human in the Loop)"
               missing={['Review session detail', 'Approve and reject']}
             />
-          </Page>
-        }
-      />
+          }
+        />
 
-      {/* Reviews — approval rules, created by name and referenced from the sidecar */}
-      <Route
-        path="/reviews/rules"
-        element={<Page adminOnly licenseFeature="access-requests"><ReviewRules /></Page>}
-      />
-      <Route
-        path="/reviews/rules/new"
-        element={<Page adminOnly licenseFeature="access-requests"><ReviewRuleForm /></Page>}
-      />
-      <Route
-        path="/reviews/rules/edit/:ruleName"
-        element={<Page adminOnly licenseFeature="access-requests"><ReviewRuleForm /></Page>}
-      />
+        {/* Reviews — Slack, where approvals are delivered. Reused unchanged. */}
+        <Route path="/reviews/slack" element={<ReviewSlack />} />
 
-      {/* Reviews — Slack, where approvals are delivered. Reused unchanged. */}
-      <Route path="/reviews/slack" element={<Page adminOnly><ReviewSlack /></Page>} />
+        {/* Administrators. Admin Authentication owns inviting them. */}
+        <Route path="/organization/users" element={<OrganizationUsers />} />
 
-      {/* Features. Their configuration still lives in the sidecar file at this stage;
-          Feature Configuration Across the Fleet is what distributes it. */}
-      <Route
-        path="/features/ai-session-analyzer"
-        element={<Page adminOnly licenseFeature="ai-session-analyzer"><AiSessionAnalyzer /></Page>}
-      />
-      <Route
-        path="/features/ai-session-analyzer/rules/new"
-        element={<Page adminOnly licenseFeature="ai-session-analyzer"><AiSessionAnalyzerRuleForm /></Page>}
-      />
-      <Route
-        path="/features/ai-session-analyzer/rules/edit/:ruleName"
-        element={<Page adminOnly licenseFeature="ai-session-analyzer"><AiSessionAnalyzerRuleForm /></Page>}
-      />
+        {/* Reviews — approval rules, created by name and referenced from the sidecar */}
+        <Route element={<ProtectedRoute licenseFeature="access-requests" />}>
+          <Route path="/reviews/rules" element={<ReviewRules />} />
+          <Route path="/reviews/rules/new" element={<ReviewRuleForm />} />
+          <Route path="/reviews/rules/edit/:ruleName" element={<ReviewRuleForm />} />
+        </Route>
 
-      <Route
-        path="/guardrails"
-        element={<Page adminOnly licenseFeature="guardrails"><Guardrails /></Page>}
-      />
-      <Route
-        path="/guardrails/new"
-        element={<Page adminOnly licenseFeature="guardrails"><GuardrailForm /></Page>}
-      />
-      <Route
-        path="/guardrails/edit/:id"
-        element={<Page adminOnly licenseFeature="guardrails"><GuardrailForm /></Page>}
-      />
+        {/* Features. Their configuration still lives in the sidecar file at this stage;
+            Feature Configuration Across the Fleet is what distributes it. */}
+        <Route element={<ProtectedRoute licenseFeature="ai-session-analyzer" />}>
+          <Route path="/features/ai-session-analyzer" element={<AiSessionAnalyzer />} />
+          <Route
+            path="/features/ai-session-analyzer/rules/new"
+            element={<AiSessionAnalyzerRuleForm />}
+          />
+          <Route
+            path="/features/ai-session-analyzer/rules/edit/:ruleName"
+            element={<AiSessionAnalyzerRuleForm />}
+          />
+        </Route>
 
-      <Route
-        path="/features/data-masking"
-        element={<Page adminOnly licenseFeature="data-masking"><DataMasking /></Page>}
-      />
-      <Route
-        path="/features/data-masking/new"
-        element={<Page adminOnly licenseFeature="data-masking"><DataMaskingForm /></Page>}
-      />
-      <Route
-        path="/features/data-masking/edit/:id"
-        element={<Page adminOnly licenseFeature="data-masking"><DataMaskingForm /></Page>}
-      />
+        <Route element={<ProtectedRoute licenseFeature="guardrails" />}>
+          <Route path="/guardrails" element={<Guardrails />} />
+          <Route path="/guardrails/new" element={<GuardrailForm />} />
+          <Route path="/guardrails/edit/:id" element={<GuardrailForm />} />
+        </Route>
 
-      {/* Administrators. Admin Authentication owns inviting them. */}
-      <Route path="/organization/users" element={<Page adminOnly><OrganizationUsers /></Page>} />
+        <Route element={<ProtectedRoute licenseFeature="data-masking" />}>
+          <Route path="/features/data-masking" element={<DataMasking />} />
+          <Route path="/features/data-masking/new" element={<DataMaskingForm />} />
+          <Route path="/features/data-masking/edit/:id" element={<DataMaskingForm />} />
+        </Route>
+      </Route>
 
       <Route path="*" element={<NotFound />} />
     </Routes>

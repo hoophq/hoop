@@ -54,13 +54,13 @@ export default function Sidecars() {
   const showLoader = useMinDelay(loading && list.length === 0, 500)
 
   if (showLoader) {
-    return <PageLoader h={300} />
+    return <PageLoader />
   }
 
   // A failed load leaves the list empty, which would otherwise fall through to
   // the empty state and tell an admin their fleet is gone.
   if (listStatus === 'error') {
-    return <PageLoader error h={300} message="Failed to load the fleet." />
+    return <PageLoader error message="Failed to load the fleet." />
   }
 
   return (

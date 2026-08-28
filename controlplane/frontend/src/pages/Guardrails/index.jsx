@@ -75,13 +75,13 @@ export default function Guardrails() {
   const goCreate = () => navigate('/guardrails/new')
 
   if (showLoader) {
-    return <PageLoader h={300} />
+    return <PageLoader />
   }
 
   // A failed load leaves the list empty, which would otherwise fall through to
   // the empty state and tell an admin they have no guardrails configured.
   if (listStatus === 'error') {
-    return <PageLoader error h={300} message="Failed to load guardrails." />
+    return <PageLoader error message="Failed to load guardrails." />
   }
 
   // Without a DLP provider guardrails cannot be enforced, so the requirement

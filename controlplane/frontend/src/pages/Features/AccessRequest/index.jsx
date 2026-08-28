@@ -92,13 +92,13 @@ export default function AccessRequest() {
   }
 
   if (showLoader) {
-    return <PageLoader h={300} />
+    return <PageLoader />
   }
 
   // A failed load leaves the list empty, which would otherwise fall through to
   // the empty state and tell an admin they have no rules configured.
   if (rulesStatus === 'error') {
-    return <PageLoader error h={300} message="Failed to load access request rules." />
+    return <PageLoader error message="Failed to load access request rules." />
   }
 
   if (rules.length === 0 && !promotionSeen) {

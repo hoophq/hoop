@@ -56,13 +56,13 @@ export default function AiSessionAnalyzer() {
   const showLoader = useMinDelay(loading, 500)
 
   if (showLoader) {
-    return <PageLoader h={300} />
+    return <PageLoader />
   }
 
   // A failed load leaves the list empty, which would otherwise fall through to
   // the empty state and tell an admin they have no rules configured.
   if (listStatus === 'error' || providerStatus === 'error') {
-    return <PageLoader error h={300} message="Failed to load AI Session Analyzer." />
+    return <PageLoader error message="Failed to load AI Session Analyzer." />
   }
 
   // The promotion replaces the whole page, not just the empty state — an admin

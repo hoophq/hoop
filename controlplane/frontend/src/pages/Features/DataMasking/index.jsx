@@ -73,14 +73,14 @@ export default function DataMasking() {
   const goCreate = () => navigate('/features/data-masking/new')
 
   if (showLoader) {
-    return <PageLoader h={300} />
+    return <PageLoader />
   }
 
   // A failed load leaves the list empty, which would otherwise fall through to
   // the empty state and tell an admin they have no rules configured.
   if (listStatus === 'error') {
     return (
-      <PageLoader error h={300} message="Failed to load Live Data Masking rules." />
+      <PageLoader error message="Failed to load Live Data Masking rules." />
     )
   }
 
