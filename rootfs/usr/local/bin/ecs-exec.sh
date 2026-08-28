@@ -126,6 +126,9 @@ fi
 # start pty: fork/exec /bin/sh: argument list too long"). The bottleneck
 # isn't how the request reaches AWS; it's how ECS Exec runs it once there.
 # There is no way to exceed this via aws ecs execute-command.
+
+# unbuffer is required when running one-off tasks
+# https://github.com/aws/amazon-ssm-agent/issues/354#issuecomment-817274498
 STDIN_INPUT=$(cat -)
 if [ -n "$PIPE_EXEC" ]; then
   STDIN_INPUT="$(base64 -w0 <<< $STDIN_INPUT)"
