@@ -12,7 +12,7 @@ a component, add its row.
 
 ## Read this first: six directories under `src/components/` are not importable
 
-`src/components/` is not a flat list of components. Six of its 40 directories export no
+`src/components/` is not a flat list of components. Six of its 41 directories export no
 component you can import by directory name. Five hold only a `theme.js` or a
 `.module.css` and configure a Mantine primitive globally; the sixth, `Snackbar/`, holds a
 real component you must never import directly. Reading the directory listing as a
@@ -60,7 +60,8 @@ Its behaviour comes from `Component.extend()` in the matching `theme.js`.
 | Component | Wraps | Own props / defaults |
 |---|---|---|
 | `Badge` | `Badge` | `variant` is **semantic**: `active` (green filled), `inactive` (gray outline), `warning` (yellow filled), `danger` (red filled). Any other value falls through to Mantine. `size="sm" radius="sm"` by default. See the trap below. |
-| `Modal` | `Modal` | `size` defaults `md` |
+| `Modal` | `Modal` | `size` defaults `md`, centered |
+| `Drawer` | `Drawer` | Right-hand side panel. `size` defaults `lg`. Use it for the detail of a row when losing scroll position costs more than a linkable URL buys. |
 | `MultiSelect` | `MultiSelect` | own CSS module for the pill row |
 | `TagsInput` | `TagsInput` | creatable chips, Enter commits |
 | `Textarea` | `Textarea` | autosize between 2 and 6 rows |

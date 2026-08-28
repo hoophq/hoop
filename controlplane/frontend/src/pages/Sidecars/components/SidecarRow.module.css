@@ -18,38 +18,23 @@
   border-bottom-right-radius: var(--mantine-radius-md);
 }
 
-/* The whole header is the hit target, so the chevron is decoration rather than
-   a second control to tab to. */
-.header {
+.row[data-selected] {
+  background-color: var(--mantine-color-default-hover);
+}
+
+/* The whole row is the hit target. Height comes from the padding and the two
+   text lines inside, and nothing may add a third — see SidecarRow.jsx. */
+.hit {
   display: block;
   width: 100%;
   text-align: left;
 }
 
-.header:hover {
+.hit:hover {
   background-color: var(--mantine-color-default-hover);
-}
-
-.chevron {
-  color: var(--mantine-color-dimmed);
-  flex-shrink: 0;
-  transition: transform 150ms ease;
-}
-
-.chevron[data-open] {
-  transform: rotate(90deg);
 }
 
 .warnIcon {
   color: var(--mantine-color-yellow-7);
   flex-shrink: 0;
-}
-
-.reason {
-  color: var(--mantine-color-red-9);
-}
-
-.lanes {
-  border-top: 1px solid var(--mantine-color-default-border);
-  background-color: var(--mantine-color-default);
 }

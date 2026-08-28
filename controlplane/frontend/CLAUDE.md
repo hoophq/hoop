@@ -87,7 +87,7 @@ one place to change a primitive across the app, and keeps the option of replacin
 Mantine without touching call sites.
 
 1. Check [`COMPONENTS.md`](./COMPONENTS.md) before creating anything. Do not read the
-   `src/components/` directory listing as the catalogue: **six of its 40 directories
+   `src/components/` directory listing as the catalogue: **six of its 41 directories
    export nothing you can import by directory name**. `AppShell`, `Input`, `Paper`,
    `Pill` and `Spotlight` hold only a `theme.js` or a `.module.css` and configure a
    Mantine primitive globally — import those from `@mantine/core` and the theme applies.
@@ -158,6 +158,33 @@ the Linear project that owes it.
 A mock is the same lie as an empty table unless the screen admits it. If you add another,
 follow the shape: one directory, the banner inside it, and the components ignorant of
 where the data came from.
+
+## A list that grows keeps a fixed row height
+
+Nothing in this app windows a list today. The only virtualization either frontend ever
+shipped is for **log text**, in the legacy CLJS app. For too many connections the answer
+here was server-side pagination with server-side search — `hooks/usePaginatedConnections`,
+hardened down to request-id invalidation for out-of-order responses.
+
+The fleet is a different problem. Inventory is held **in memory on a single instance**,
+so there is no query to paginate away from, and cursor paging over a list that mutates on
+every heartbeat is unstable. Sending the whole thing and windowing the client is the
+likelier answer, which makes row height the property to protect.
+
+So on any list whose length follows the fleet:
+
+- **Set the row height, do not let the content decide it.** `pages/Sidecars/constants.js`
+  exports `ROW_HEIGHT` and the row applies it. A third line then overflows visibly
+  instead of quietly costing the property, and the windowed container gets its constant.
+- **Every flexible cell truncates.** A long name that wraps is a taller row.
+- **Detail goes in a `Drawer`, never an expansion.** An accordion changes height on
+  interaction, which is the case windowing handles worst — measurement cache, invalidation
+  on every toggle, and the scroll jumping when a row above the viewport resizes.
+- **Row-level exceptions ride a badge or a tooltip.** `pages/Sidecars` puts the NACK
+  reason in the badge tooltip and the full text in the drawer, for exactly this reason.
+
+The seam is the container. `<Box>{rows.map(...)}</Box>` becomes a virtualizer and the row
+component does not change — as long as the height is still a constant.
 
 ## Naming — the product name comes from `../PRODUCT.md`
 

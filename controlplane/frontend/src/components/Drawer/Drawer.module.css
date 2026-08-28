@@ -1,0 +1,11 @@
+.title {
+  font-weight: 700;
+  font-size: var(--mantine-font-size-lg);
+  color: var(--mantine-color-text);
+}
+
+/* Mantine gives the body the panel's padding and no room to breathe under the
+   header. The list of resources sits right against it otherwise. */
+.body {
+  padding-top: var(--mantine-spacing-smAlt);
+}

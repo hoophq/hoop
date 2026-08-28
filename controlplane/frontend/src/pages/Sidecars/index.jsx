@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Box, Group, Stack, Text, Title } from '@mantine/core'
 import { Activity } from 'lucide-react'
+import Drawer from '@/components/Drawer'
 import PageLoader from '@/components/PageLoader'
 import ValueFilter from '@/components/ValueFilter'
 import { useMinDelay } from '@/hooks/useMinDelay'
@@ -8,24 +9,29 @@ import EmptyState from '@/layout/EmptyState'
 import { useSidecarsStore } from './store'
 import { SIDECAR_STATES, STATE_FILTER_VALUES } from './constants'
 import SidecarRow from './components/SidecarRow'
+import SidecarDetail from './components/SidecarDetail'
 // MOCK: delete this import and the <MockBanner /> below. See mock/index.js.
 import MockBanner from './mock/Banner'
 
 /**
  * The fleet.
  *
- * One page, keyed on the sidecar, with its resources under an expansion. That
- * follows what the Control Plane is for: "which Sidecars are running, what each
- * one resolved, and when it last checked in" — one view, three answers.
+ * One page, keyed on the sidecar, detail in a drawer. That follows what the
+ * Control Plane is for: "which Sidecars are running, what each one resolved,
+ * and when it last checked in" — one view, three answers.
  *
- * It is the right shape while a sidecar runs a handful of listeners, which is
- * what the docs describe ("Most deployments run a single listener"). The axis
- * that grows is the number of sidecars, not the number of listeners inside one.
+ * **Rows are a fixed height and must stay that way.** The axis that grows here
+ * is the number of sidecars, and per-user pods put one per engineer, so a few
+ * thousand rows is an ordinary shape. Nothing in this app virtualizes a list
+ * today; when this one needs it, uniform height makes it a container swap
+ * rather than a rewrite. That is the whole reason the detail is a drawer and
+ * not an expansion — an accordion changes row height on interaction, which is
+ * the case windowing handles worst.
  *
- * What it cannot answer is the inverted question — "which sidecars serve appdb?"
- * — because one `connection` is served by many sidecars. That needs a
+ * What this page cannot answer is the inverted question — "which sidecars serve
+ * appdb?" — because one `connection` is served by many sidecars. That needs a
  * fleet-wide resource index keyed on `connection`, and it is an ADDITIVE page,
- * not a rewrite of this one. Which is why there is no resource detail route here.
+ * not a rewrite of this one. Which is why there is no resource detail route.
  */
 export default function Sidecars() {
   const list = useSidecarsStore((s) => s.list)
@@ -33,6 +39,7 @@ export default function Sidecars() {
   const fetchList = useSidecarsStore((s) => s.fetchList)
 
   const [selectedState, setSelectedState] = useState(null)
+  const [active, setActive] = useState(null)
 
   useEffect(() => {
     fetchList()
@@ -98,11 +105,15 @@ export default function Sidecars() {
               description="Try clearing the filter above."
             />
           ) : (
+            // The seam. A windowed list replaces this Box and nothing inside
+            // SidecarRow has to change, because every row is the same height.
             <Box>
               {filtered.map((sidecar, idx) => (
                 <SidecarRow
                   key={sidecar.name}
                   sidecar={sidecar}
+                  selected={active?.name === sidecar.name}
+                  onSelect={setActive}
                   isFirst={idx === 0}
                   isLast={idx === filtered.length - 1}
                 />
@@ -111,6 +122,14 @@ export default function Sidecars() {
           )}
         </>
       )}
+
+      <Drawer
+        opened={Boolean(active)}
+        onClose={() => setActive(null)}
+        title={active?.name}
+      >
+        <SidecarDetail sidecar={active} />
+      </Drawer>
     </Stack>
   )
 }
