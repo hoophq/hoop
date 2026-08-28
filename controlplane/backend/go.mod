@@ -1,12 +1,3 @@
-// The control plane backend is its own module so it does not inherit the
-// gateway's dependency graph. That graph is the thing this product exists to
-// avoid: gateway/go.mod reaches the Anthropic SDK, the OpenAI SDK,
-// k8s.io/api and go-git, none of which a config distributor needs.
-//
-// The rule that keeps it that way: a dependency added here needs a reason
-// written down, the same way the sidecar module guards its own boundary.
-// Notably absent is github.com/hoophq/hoop/common. See internal/logging for
-// why the logger is stdlib instead.
 module github.com/hoophq/hoop/controlplane/backend
 
 go 1.27.0
