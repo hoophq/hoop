@@ -764,6 +764,14 @@ func (c *Config) Validate() error {
 	// Detection is always available now, so the analyzer's redacting send
 	// modes always have a scanner to use.
 	problems = append(problems, c.Analyzer.validate(true)...)
+
+	// The feature caps are checked here and again in buildLanes, for a
+	// sharper version of the same reason: Run and the exported Validate
+	// never call this function at all, so a cap that lived only here would
+	// be skipped by every caller that builds a Config in Go rather than
+	// loading one from a file.
+	problems = append(problems, c.checkLimits()...)
+
 	seen := map[string]bool{}
 	for i, l := range c.Listeners {
 		name := l.displayName(i)
