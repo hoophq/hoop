@@ -6,12 +6,23 @@ import { authService } from '@/services/auth'
 import { featureFlagsService } from '@/services/featureFlags'
 import AuthPageLoader from '@/components/AuthPageLoader'
 
-function ProtectedRoute({ children, adminOnly = false, licenseFeature = null }) {
+function ProtectedRoute({ children, adminOnly = false }) {
   const location = useLocation()
   const { isAuthenticated, saveRedirectUrl, logout } = useAuthStore()
   const { user, isAdmin, setUser, setLoading, setServerInfo, setFeatureFlags, initIntercom, initAnalytics } = useUserStore()
-  const isLicenseFeatureEnabled = useUserStore((s) => s.isLicenseFeatureEnabled)
-  const [initializing, setInitializing] = useState(true)
+  // Only block on the bootstrap when there is nothing to render with yet.
+  //
+  // `initialized` is a ref, so it guards one instance. Two live in the tree —
+  // `/` wraps Home directly, AppLayout wraps everything else — and landing on
+  // `/` as an admin mounts the first, redirects to /sidecars, and mounts the
+  // second. Starting at `true` unconditionally made that second mount show the
+  // dark auth loader again, for the length of a feature-flags round trip, on
+  // the most common path in the app.
+  //
+  // A user already in the store means the session is bootstrapped. The effect
+  // below still runs and still refreshes the flags; it just does not hold the
+  // screen hostage while it does.
+  const [initializing, setInitializing] = useState(() => !useUserStore.getState().user)
   const [redirectTo, setRedirectTo] = useState(null)
   const initialized = useRef(false)
 
@@ -64,10 +75,21 @@ function ProtectedRoute({ children, adminOnly = false, licenseFeature = null }) 
           if (serverInfo) setServerInfo(serverInfo)
         }
 
-        // Get feature flag
-        const { data: featureFlagsData } = await featureFlagsService.list()
-        const featureFlags = Object.fromEntries(featureFlagsData.map(flag => [flag.name, flag.enabled]))
-        setFeatureFlags(featureFlags)
+        // Feature flags, guarded like /serverinfo above and for the same reason.
+        // Everything in this try shares one catch, and that catch logs the user
+        // out — correct for "we cannot say who you are", wrong for "one request
+        // blipped". A flaky /feature-flags used to end the session.
+        //
+        // Skipping it is safe: setServerInfo already seeded featureFlags from
+        // /serverinfo, and isFeatureFlagEnabled fails closed on anything it does
+        // not find. The worst case is a flag reading off, not a logout.
+        const featureFlagsData = await featureFlagsService
+          .list()
+          .then((res) => res.data)
+          .catch(() => null)
+        if (featureFlagsData) {
+          setFeatureFlags(Object.fromEntries(featureFlagsData.map((f) => [f.name, f.enabled])))
+        }
 
         // No onboarding gate. The gateway sent an admin with zero connections into a
         // setup wizard; the control plane has no equivalent — its first-run journey
@@ -112,12 +134,11 @@ function ProtectedRoute({ children, adminOnly = false, licenseFeature = null }) 
     return <Navigate to="/" replace />
   }
 
-  // License gating: fails closed — while /serverinfo is unknown the check
-  // returns false. Once loaded, an empty feature list means everything is
-  // enabled; otherwise the feature key must be present.
-  if (licenseFeature && !isLicenseFeatureEnabled(licenseFeature)) {
-    return <Navigate to="/" replace />
-  }
+  // Licence gating is NOT here. It lives in components/LicenseRoute, because
+  // this component bootstraps the session and a nested second instance would
+  // bootstrap again — the dark auth loader flashing inside the app shell on
+  // every entry into a gated group. One bootstrap, in AppLayout; the licence
+  // check is a synchronous gate below it.
 
   // Works both ways: wrap a page directly, or sit on a pathless <Route> as a
   // layout and let the matched child render through the outlet. The second

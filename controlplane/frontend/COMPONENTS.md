@@ -90,7 +90,8 @@ Its behaviour comes from `Component.extend()` in the matching `theme.js`.
 | `EnterpriseBanner` | Dark upsell banner for free-plan users on a feature page. |
 | `FreeLicenseCallout` | Inline callout on a gated feature page. `message`, `variant`. |
 | `DocsBtnCallOut` | Bordered `text` + `href` link out to the docs. |
-| `ProtectedRoute` | Not a directory — `src/components/ProtectedRoute.jsx`. Route guard: auth, `adminOnly`, `licenseFeature`. |
+| `ProtectedRoute` | Not a directory — `src/components/ProtectedRoute.jsx`. Bootstraps the session (user, serverinfo, feature flags) and gates on auth and `adminOnly`. Shows `AuthPageLoader` while it runs, so there must be exactly one in the tree per view. **No `licenseFeature` prop** — see below. |
+| `LicenseRoute` | `src/components/LicenseRoute.jsx`. Gates a group of routes on one licence feature, as a layout route: `<Route element={<LicenseRoute feature="guardrails" />}>`. A synchronous check and nothing else, which is why it is separate from `ProtectedRoute`. |
 
 ### Traps that do not raise an error
 

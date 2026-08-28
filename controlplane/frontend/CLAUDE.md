@@ -69,7 +69,7 @@ routes — is visibly outside the group instead of quietly missing a wrapper.
 <Route element={<AppLayout />}>
   <Route path="/sidecars" element={<Sidecars />} />
 
-  <Route element={<ProtectedRoute licenseFeature="guardrails" />}>
+  <Route element={<LicenseRoute feature="guardrails" />}>
     <Route path="/guardrails" element={<Guardrails />} />
     <Route path="/guardrails/new" element={<GuardrailForm />} />
   </Route>
@@ -77,9 +77,15 @@ routes — is visibly outside the group instead of quietly missing a wrapper.
 ```
 
 Every signed-in route is admin-only, so `adminOnly` lives in `AppLayout`. Licence gating
-is not uniform, so it stays a nested `ProtectedRoute` per feature group — declared once
-for the group instead of repeated on each route. `ProtectedRoute` renders `<Outlet />`
-when given no children, which is what makes that work.
+is not uniform, so it is a nested `components/LicenseRoute` per feature group — declared
+once for the group instead of repeated on each route.
+
+**`ProtectedRoute` has no `licenseFeature` prop, and must not grow one back.** It
+bootstraps the session — user, serverinfo, feature flags — and shows the dark full-screen
+`AuthPageLoader` while it does. Its once-only guard is a ref, so it is per instance:
+nesting a second one to carry a licence check gives you a second bootstrap and the auth
+screen flashing inside the app shell on every entry into the group. That shipped, and
+`LicenseRoute` — a synchronous check and nothing else — is the fix.
 
 **Child paths stay absolute** — `/guardrails`, never `guardrails`. `check-routes.mjs`
 scrapes the path attributes with a regex and has no notion of nesting, so a relative one

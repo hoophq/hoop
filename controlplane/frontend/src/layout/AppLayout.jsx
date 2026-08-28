@@ -18,8 +18,9 @@ import PageLayout from './PageLayout'
  * than quietly missing a wrapper.
  *
  * Every signed-in route in this app is admin-only, so the check lives here once
- * instead of on each route. Licence gating is not uniform, so it stays a
- * separate nested <ProtectedRoute licenseFeature> per feature group.
+ * instead of on each route. Licence gating is not uniform, so it is a separate
+ * nested components/LicenseRoute per feature group — which is deliberately NOT
+ * another ProtectedRoute, because a second one bootstraps the session again.
  *
  * There is a second reason to express this as one element rather than repeat it
  * per route. React Router reuses a component instance across sibling routes

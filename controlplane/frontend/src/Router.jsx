@@ -1,5 +1,6 @@
 import { Routes, Route } from 'react-router-dom'
 import ProtectedRoute from '@/components/ProtectedRoute'
+import LicenseRoute from '@/components/LicenseRoute'
 import NotImplemented from '@/components/NotImplemented'
 import AppLayout from '@/layout/AppLayout'
 
@@ -44,8 +45,7 @@ import OrganizationUsers from '@/pages/Organization/Users'
  *
  *   outside everything   the auth routes and `/`, which must not have the shell
  *   <AppLayout>          the gate, the shell, the padding, the command palette
- *   <ProtectedRoute      one licence feature, shared by the routes it wraps
- *     licenseFeature>
+ *   <LicenseRoute>       one licence feature, shared by the routes it wraps
  *
  * Child paths are ABSOLUTE, not relative — `/guardrails`, never `guardrails`.
  * `scripts/check-routes.mjs` scrapes the path attributes out of this file with a
@@ -112,7 +112,7 @@ function Router() {
         <Route path="/organization/users" element={<OrganizationUsers />} />
 
         {/* Reviews — approval rules, created by name and referenced from the sidecar */}
-        <Route element={<ProtectedRoute licenseFeature="access-requests" />}>
+        <Route element={<LicenseRoute feature="access-requests" />}>
           <Route path="/reviews/rules" element={<ReviewRules />} />
           <Route path="/reviews/rules/new" element={<ReviewRuleForm />} />
           <Route path="/reviews/rules/edit/:ruleName" element={<ReviewRuleForm />} />
@@ -120,7 +120,7 @@ function Router() {
 
         {/* Features. Their configuration still lives in the sidecar file at this stage;
             Feature Configuration Across the Fleet is what distributes it. */}
-        <Route element={<ProtectedRoute licenseFeature="ai-session-analyzer" />}>
+        <Route element={<LicenseRoute feature="ai-session-analyzer" />}>
           <Route path="/features/ai-session-analyzer" element={<AiSessionAnalyzer />} />
           <Route
             path="/features/ai-session-analyzer/rules/new"
@@ -132,13 +132,13 @@ function Router() {
           />
         </Route>
 
-        <Route element={<ProtectedRoute licenseFeature="guardrails" />}>
+        <Route element={<LicenseRoute feature="guardrails" />}>
           <Route path="/guardrails" element={<Guardrails />} />
           <Route path="/guardrails/new" element={<GuardrailForm />} />
           <Route path="/guardrails/edit/:id" element={<GuardrailForm />} />
         </Route>
 
-        <Route element={<ProtectedRoute licenseFeature="data-masking" />}>
+        <Route element={<LicenseRoute feature="data-masking" />}>
           <Route path="/features/data-masking" element={<DataMasking />} />
           <Route path="/features/data-masking/new" element={<DataMaskingForm />} />
           <Route path="/features/data-masking/edit/:id" element={<DataMaskingForm />} />

@@ -56,7 +56,7 @@ export function SidebarCollapsed() {
         </Stack>
 
         {isAdmin && SECTIONS.map(({ id, label, items }) => (
-          <Box key={id} mt="xxl" w="100%">
+          <Box key={id} mt="xxlAlt" w="100%">
             <Text size="xs" fw={600} mb="xs" className={classes.sectionHidden}>{label}</Text>
             <Stack gap="xsAlt" align="center" role="list" aria-label={label}>
               {items.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled)).map((item) => (

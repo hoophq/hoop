@@ -6,7 +6,7 @@ import { Stack, Text, Button, Image, Anchor } from '@mantine/core'
 // it; there the 50vh block pushes the list controls out of view. Only the
 // vertical space changes — the illustration keeps its size in both.
 const DENSITY = {
-  default: { mih: '50vh', py: 'xxl', gap: 'xl' },
+  default: { mih: '50vh', py: 'xxlAlt', gap: 'xl' },
   compact: { mih: undefined, py: 'xl', gap: 'md' },
 }
 

@@ -336,7 +336,7 @@ export default function Users() {
             </Table>
 
             {users.length === 1 && (
-              <Stack flex={1} mih="30vh" align="center" py="xxl">
+              <Stack flex={1} mih="30vh" align="center" py="xxlAlt">
                 <Stack flex={1} align="center" justify="center" gap="lg">
                   <Text size="sm" c="dimmed" ta="center" maw={400}>
                     Invite users and setup team-based permissions and approval workflows for secure resource access
