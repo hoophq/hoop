@@ -1,0 +1,55 @@
+/* Rows stack into a single bordered block: each draws its own sides and bottom
+   so adjacent borders collapse into one line, and only the outer two carry the
+   top border and the rounded corners. Same construction as GuardrailListItem. */
+.row {
+  border-left: 1px solid var(--mantine-color-default-border);
+  border-right: 1px solid var(--mantine-color-default-border);
+  border-bottom: 1px solid var(--mantine-color-default-border);
+}
+
+.row[data-first] {
+  border-top: 1px solid var(--mantine-color-default-border);
+  border-top-left-radius: var(--mantine-radius-md);
+  border-top-right-radius: var(--mantine-radius-md);
+}
+
+.row[data-last] {
+  border-bottom-left-radius: var(--mantine-radius-md);
+  border-bottom-right-radius: var(--mantine-radius-md);
+}
+
+/* The whole header is the hit target, so the chevron is decoration rather than
+   a second control to tab to. */
+.header {
+  display: block;
+  width: 100%;
+  text-align: left;
+}
+
+.header:hover {
+  background-color: var(--mantine-color-default-hover);
+}
+
+.chevron {
+  color: var(--mantine-color-dimmed);
+  flex-shrink: 0;
+  transition: transform 150ms ease;
+}
+
+.chevron[data-open] {
+  transform: rotate(90deg);
+}
+
+.warnIcon {
+  color: var(--mantine-color-yellow-7);
+  flex-shrink: 0;
+}
+
+.reason {
+  color: var(--mantine-color-red-9);
+}
+
+.lanes {
+  border-top: 1px solid var(--mantine-color-default-border);
+  background-color: var(--mantine-color-default);
+}

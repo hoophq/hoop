@@ -6,6 +6,7 @@ import PageLayout from '@/layout/PageLayout'
 
 import Home from '@/pages/Home'
 import NotFound from '@/pages/NotFound'
+import Sidecars from '@/pages/Sidecars'
 import Login from '@/pages/Auth/Login'
 import Signup from '@/pages/Auth/Signup'
 import Setup from '@/pages/Auth/Setup'
@@ -64,23 +65,11 @@ function Router() {
 
       <Route path="/" element={<ProtectedRoute><Home /></ProtectedRoute>} />
 
-      {/* Sidecars — resources are derived from sidecar listeners, never created here */}
-      <Route
-        path="/sidecars"
-        element={
-          <Page adminOnly>
-            <NotImplemented
-              title="Sidecars"
-              project="Connecting Sidecars and Resources"
-              missing={[
-                'Token issuance for a sidecar',
-                'Resources derived from sidecar listeners',
-                'Liveness — connected, stale, rejected, disconnected',
-              ]}
-            />
-          </Page>
-        }
-      />
+      {/* Sidecars — resources are derived from sidecar listeners, never created here.
+          MOCK: the page renders hard-coded rows and says so. See pages/Sidecars/mock.jsx.
+          Still owed by Connecting Sidecars and Resources: token issuance, and the
+          fleet API itself (GET /api/fleet, EVL-232, answering 501 today). */}
+      <Route path="/sidecars" element={<Page adminOnly><Sidecars /></Page>} />
 
       {/* Reviews — the queue, and the detail inside the review session */}
       <Route

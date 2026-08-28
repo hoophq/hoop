@@ -149,8 +149,15 @@ Two consequences that bite:
   mounted secret. A Sidecar config with an inline `api_key` is rejected as an unknown
   field. Never render a key input for the Sidecar path.
 
-`/sidecars` is the admin landing page (`pages/Home/index.jsx` redirects there) and is a
-`NotImplemented` stub. So is `/reviews`. Both name the Linear project that owes them.
+`/sidecars` is the admin landing page — `pages/Home/index.jsx` redirects there — and it
+renders **mock data**. Every row is hard-coded in `pages/Sidecars/mock/`, the page says so
+in a banner, and deleting that one directory is the whole removal. `GET /api/fleet` is
+EVL-232 and answers 501 today. `/reviews` is still a `NotImplemented` stub, which names
+the Linear project that owes it.
+
+A mock is the same lie as an empty table unless the screen admits it. If you add another,
+follow the shape: one directory, the banner inside it, and the components ignorant of
+where the data came from.
 
 ## Naming — the product name comes from `../PRODUCT.md`
 

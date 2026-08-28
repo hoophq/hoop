@@ -59,6 +59,32 @@ is a recorded fact, not a rename to do in passing — see the naming rule in
 | rule set | `rulepack`, behind `experimental.rulepacks` | `gateway/api/rulepacks/` |
 | review | *Coming soon.* `require_review` is refused at startup | `features/agentic-access` |
 
+## Cardinality, and the key a resource list aggregates on
+
+Two facts that decide the shape of any fleet or resource surface.
+
+**The axis that grows is sidecars, not listeners.** The docs: *"Most deployments run a
+single listener. Add a second when the same workload reaches more than one protected
+resource."* The scale the design anticipates is the other one — `controlplane/CLAUDE.md`
+reasons about *"a thousand per-user pods, fine at fifty."* So the shape is many sidecars
+× a handful of listeners each, never one sidecar × a thousand listeners.
+
+**`connection` is the fleet-wide resource identity, and it is many-to-one with
+sidecars.** `upstream` is the physical `host:port` and may change; `connection` is the
+operator-facing name, and it is what audit and policy key on. Five hundred per-user pods
+fronting the same database all carry `connection: appdb`.
+
+Both together give the rule: a **fleet list keyed on the sidecar** answers *"is everything
+running what I sent?"*, and it is the surface the docs name — *"which Sidecars are
+running, what each one resolved, and when it last checked in"*. It cannot answer *"which
+sidecars serve `appdb`?"*, because that question is keyed on `connection`. A resource
+index answering it is a **second, additive page**, aggregated by `connection` — never a
+flat join, which would render five hundred rows all reading `appdb`.
+
+Consequence for the UI: do not create a resource detail route keyed on
+`(sidecar, listener)`. It contradicts the `connection`-keyed identity and one of the two
+would have to be withdrawn later.
+
 ## Where the docs and the repository disagree
 
 Checked against the tree. **The recorded decision wins over the docs page** — for the
