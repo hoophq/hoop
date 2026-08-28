@@ -48,20 +48,31 @@ func Internal(c *gin.Context, err error, message string) {
 	c.AbortWithStatusJSON(http.StatusInternalServerError, Body{Message: message})
 }
 
-// NotImplemented answers a route that is wired but not built, naming the
-// ticket that owns it.
+// NotImplemented answers a route that is wired but not built.
 //
 // This is the scaffold's contract with the four component workstreams. A
 // route that exists must either work or say plainly that it does not: the
 // alternative, an empty 200 with an empty list, reads to a caller as "there
-// is nothing here" and to an operator as "the fleet is empty". 501 with the
-// owner in the message costs one line and removes a whole class of misleading
-// state, which is what the root CLAUDE.md means by an incomplete path failing
-// loudly.
+// is nothing here" and to an operator as "the fleet is empty". 501 costs one
+// line and removes a whole class of misleading state, which is what the root
+// CLAUDE.md means by an incomplete path failing loudly.
+//
+// what names the missing behaviour, not the route, so the message stays true
+// when the same handler serves a second path.
 //
 // Delete the call, not the route, when the component lands.
-func NotImplemented(c *gin.Context, ticket, what string) {
+func NotImplemented(c *gin.Context, what string) {
 	c.AbortWithStatusJSON(http.StatusNotImplemented, Body{
-		Message: what + " is not implemented yet, owned by " + ticket,
+		Message: NotImplementedMessage(what),
 	})
+}
+
+// NotImplementedMessage is the body NotImplemented writes.
+//
+// Exported so a test can assert the whole message rather than a substring of
+// it. Several of these descriptions are prefixes of each other, "reading a
+// sidecar" and "reading a sidecar config" among them, so a substring check
+// would pass for a route wired to the wrong handler.
+func NotImplementedMessage(what string) string {
+	return what + " is not implemented yet"
 }

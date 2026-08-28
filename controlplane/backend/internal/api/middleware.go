@@ -73,8 +73,10 @@ func recovery(logger *slog.Logger) gin.HandlerFunc {
 
 // requestTimeout bounds one request by putting a deadline on its context.
 //
-// It replaces the http.Server ReadTimeout and WriteTimeout that would
-// otherwise kill the sidecar WebSocket. See the const block in server.go.
+// It is narrower than the server's ReadTimeout and WriteTimeout on purpose:
+// those bound the transfer, this bounds the work. A handler waiting on a
+// database that has stopped answering has read its request and written
+// nothing, so neither server deadline is running.
 //
 // Best effort, and honest about it: this cancels context-aware work, which is
 // every database call, and it does not forcibly cut a handler that ignores

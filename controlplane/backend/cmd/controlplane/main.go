@@ -1,9 +1,10 @@
 // Command controlplane is the control plane server for hoop sidecars.
 //
-// It stores what should be running on each sidecar, tracks what
-// actually is, and pushes the difference over a WebSocket that the sidecar
-// dials out to. It terminates no database traffic itself: when this process
-// is down, sidecars keep enforcing the last config they accepted.
+// It stores what should be running on each sidecar and tracks what actually
+// is. Sidecars poll it: they ask for their config and report their status on
+// their own schedule, so nothing here dials out to customer infrastructure. It
+// terminates no database traffic itself, and when this process is down
+// sidecars keep enforcing the last config they accepted.
 //
 // Usage:
 //
@@ -26,8 +27,13 @@ import (
 	"syscall"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 
 	"github.com/hoophq/hoop/controlplane/backend/internal/api"
+	"github.com/hoophq/hoop/controlplane/backend/internal/api/adminauth"
+	"github.com/hoophq/hoop/controlplane/backend/internal/api/desiredstate"
+	"github.com/hoophq/hoop/controlplane/backend/internal/api/inventory"
+	"github.com/hoophq/hoop/controlplane/backend/internal/api/sidecarauth"
 	"github.com/hoophq/hoop/controlplane/backend/internal/config"
 	"github.com/hoophq/hoop/controlplane/backend/internal/database"
 	"github.com/hoophq/hoop/controlplane/backend/internal/logging"
@@ -192,5 +198,43 @@ func serve(logger *slog.Logger, cfg config.Config) error {
 		stop()
 	}()
 
-	return api.New(cfg, db, logger, version).Run(signalCtx)
+	server, err := api.New(deps(cfg, db, logger))
+	if err != nil {
+		return err
+	}
+	return server.Run(signalCtx)
+}
+
+// deps builds the object graph.
+//
+// Constructor injection, assembled here and nowhere else. main is the only
+// place that knows every concrete type, which is what keeps the packages below
+// unaware of each other: internal/api mounts handlers it is given rather than
+// constructing them, so giving desiredstate a store in EVL-231 changes this
+// function and no signature in the routing.
+//
+// No DI framework. A container resolving by reflection moves this list out of
+// the compiler's reach and turns a missing dependency from a build error into a
+// panic on the first request. api.New validates instead, and names what is
+// missing.
+func deps(cfg config.Config, db *gorm.DB, logger *slog.Logger) api.Deps {
+	admin := adminauth.New()
+	sidecars := sidecarauth.New()
+
+	return api.Deps{
+		Config:  cfg,
+		Logger:  logger,
+		Version: version,
+
+		Readiness: database.NewPinger(db),
+
+		RequireAdmin:     admin.RequireAdmin,
+		RequireSidecar:   sidecars.RequireSidecar,
+		RequireBootstrap: sidecars.RequireBootstrap,
+
+		AdminAuth:    admin,
+		DesiredState: desiredstate.New(),
+		Inventory:    inventory.New(),
+		SidecarAuth:  sidecars,
+	}
 }

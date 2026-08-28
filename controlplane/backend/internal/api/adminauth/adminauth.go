@@ -1,11 +1,10 @@
 // Package adminauth is signup and signin for the humans who administer the
 // control plane.
 //
-// Scaffold only. Every handler answers 501 and names EVL-233, which owns the
-// implementation.
+// Scaffold only. Every handler answers 501. EVL-233 owns the implementation.
 //
 // Four constraints an implementer will otherwise rediscover the hard way.
-// controlplane/CLAUDE.md carries the reasoning.
+// controlplane/backend/CLAUDE.md carries the reasoning.
 //
 //  1. Administration only. The end user does not authenticate with us at
 //     all. A requirement beginning "when the end user logs in" is in the
@@ -31,8 +30,6 @@ import (
 
 	"github.com/hoophq/hoop/controlplane/backend/internal/api/apierr"
 )
-
-const ticket = "EVL-233"
 
 // ctxKey is the type of every value this package puts on a gin.Context.
 //
@@ -84,22 +81,22 @@ func New() *Handler { return &Handler{} }
 
 // Login exchanges credentials for a session.
 func (h *Handler) Login(c *gin.Context) {
-	apierr.NotImplemented(c, ticket, "admin signin")
+	apierr.NotImplemented(c, "admin signin")
 }
 
 // Logout revokes the current session.
 func (h *Handler) Logout(c *gin.Context) {
-	apierr.NotImplemented(c, ticket, "admin signout")
+	apierr.NotImplemented(c, "admin signout")
 }
 
 // Register creates the first admin on an empty deployment.
 func (h *Handler) Register(c *gin.Context) {
-	apierr.NotImplemented(c, ticket, "first-admin registration")
+	apierr.NotImplemented(c, "first-admin registration")
 }
 
-// UserInfo returns the signed-in admin.
-func (h *Handler) UserInfo(c *gin.Context) {
-	apierr.NotImplemented(c, ticket, "reading the current admin")
+// Me returns the signed-in admin.
+func (h *Handler) Me(c *gin.Context) {
+	apierr.NotImplemented(c, "reading the current admin")
 }
 
 // RequireAdmin will reject unauthenticated requests once EVL-233 lands.
@@ -110,5 +107,5 @@ func (h *Handler) UserInfo(c *gin.Context) {
 // simply open. Failing closed means the day someone mounts a real handler
 // behind this, they cannot avoid noticing it is unguarded.
 func (h *Handler) RequireAdmin(c *gin.Context) {
-	apierr.NotImplemented(c, ticket, "admin authentication")
+	apierr.NotImplemented(c, "admin authentication")
 }

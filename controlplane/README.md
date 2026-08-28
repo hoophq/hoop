@@ -17,7 +17,9 @@ An operator decides a config once, here, and it is distributed everywhere.
         │  adminauth     who may change it
         │  sidecarauth   who a sidecar is
         └──────────┬───────────┘
-                   │ WebSocket, always dialled by the sidecar
+                   │ HTTPS, always dialled by the sidecar.
+                   │ It asks for its config and reports its
+                   │ status; nothing is pushed to it.
       ┌────────────┼────────────┐
       │            │            │
  ┌────┴────┐  ┌────┴────┐  ┌────┴────┐
@@ -46,7 +48,8 @@ JSON API with a `default-src 'none'` CSP and no `NoRoute` handler.
 ## Status
 
 Scaffold. `/healthz` and `/readyz` work; every other endpoint answers
-`501 Not Implemented` and names the ticket that owns it.
+`501 Not Implemented` and names the behaviour that is missing. The table below
+says who owns each one.
 
 | Component | Ticket | State |
 |---|---|---|
@@ -55,9 +58,45 @@ Scaffold. `/healthz` and `/readyz` work; every other endpoint answers
 | `adminauth` | EVL-233 | stub |
 | `sidecarauth` | EVL-234 | stub, design open |
 
-`adminauth.RequireAdmin` is mounted and answers 501, so every protected route
-is closed rather than open. Test component handlers directly until EVL-233
-lands.
+Every guard is mounted and every guard answers 501, so the whole surface is
+closed rather than open. Test component handlers directly until the guards
+land.
+
+## Endpoints
+
+Two prefixes, two audiences, two kinds of credential. The guard follows from
+the prefix, so a log line or a proxy rule tells you what protects a request
+without looking up which ticket owns the handler.
+
+`/api`, for an admin with a session. Guarded by `RequireAdmin` (EVL-233).
+
+| Route | Owner | Purpose |
+|---|---|---|
+| `POST /api/auth/login` | EVL-233 | sign in. Open |
+| `POST /api/auth/register` | EVL-233 | create the first admin. Open |
+| `POST /api/auth/logout` | EVL-233 | revoke the session |
+| `GET /api/auth/me` | EVL-233 | the signed-in admin |
+| `GET /api/sidecars` | EVL-232 | the fleet |
+| `GET /api/sidecars/:name` | EVL-232 | one sidecar |
+| `DELETE /api/sidecars/:name` | EVL-232 | forget its record |
+| `GET /api/sidecars/:name/config` | EVL-231 | what should run |
+| `PUT /api/sidecars/:name/config` | EVL-231 | set what should run |
+| `GET /api/sidecars/:name/status` | EVL-232 | what does run |
+| `DELETE /api/sidecars/:name/credentials` | EVL-234 | revoke its credential |
+
+`/v1`, for a sidecar with a machine credential. Versioned because a fleet does
+not upgrade in lockstep.
+
+| Route | Owner | Purpose |
+|---|---|---|
+| `POST /v1/enroll` | EVL-234 | exchange a bootstrap credential. Guarded by `RequireBootstrap` |
+| `POST /v1/credentials/rotate` | EVL-234 | renew before expiry |
+| `GET /v1/desiredstate` | EVL-231 | fetch config. `If-None-Match` carries the generation, 304 is the steady state |
+| `POST /v1/status` | EVL-232 | report what is running, roughly every 30s |
+
+Config and status are subresources of a sidecar, the way Kubernetes separates
+spec from status. The two routinely disagree and the disagreement is the
+product.
 
 ## Run it
 
@@ -131,7 +170,6 @@ backend/
   internal/logging/          stdlib slog setup
   internal/database/         pool lifecycle and shared column types
   internal/migrations/       numbered SQL, embedded, plus the runner
-  internal/wire/             control plane <-> sidecar message vocabulary
   internal/api/              Gin engine, middleware, routes, health
   internal/api/apierr/       error response shapes
   internal/api/desiredstate/ EVL-231
@@ -171,6 +209,7 @@ missing.
 
 ## Read before changing anything
 
-`controlplane/CLAUDE.md`. It carries the five non-negotiables, the decided and
-open questions, the wire contract, and the constraint list for each component.
+`controlplane/backend/CLAUDE.md`. It carries the five non-negotiables, the
+decided and open questions, the sidecar contract, and the API conventions. The
+constraint list for each component lives in that component's package comment.
 `frontend/` has its own.

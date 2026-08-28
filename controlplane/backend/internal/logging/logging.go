@@ -15,9 +15,10 @@
 // specifically to escape the gateway's dependency tree should not re-import
 // it for a logger.
 //
-// The sidecar, the process on the other end of this control plane's socket,
-// already threads *slog.Logger through sidecar/daemon and sidecar/proxy.
-// Matching it means both ends of the socket log the same way.
+// The sidecar, the process on the other end of this control plane, already
+// threads *slog.Logger through sidecar/daemon and sidecar/proxy. Matching it
+// means both ends of the exchange log the same way, which is what makes an
+// incident readable when the two sets of logs are put side by side.
 package logging
 
 import (

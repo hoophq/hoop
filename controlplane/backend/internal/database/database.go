@@ -121,6 +121,22 @@ func Ping(ctx context.Context, db *gorm.DB) error {
 	return sqlDB.PingContext(ctx)
 }
 
+// Pinger adapts a pool to the one-method readiness check the api package
+// wants.
+//
+// It exists so api holds an interface with a single Ping method instead of a
+// *gorm.DB. That keeps gorm out of api's import list, and it is what makes the
+// readiness probe testable: a fake Pinger returns an error on demand, where a
+// *gorm.DB cannot be made to fail a ping without a real database. Before this
+// existed the probe's 503 branch had no unit test at all.
+type Pinger struct{ db *gorm.DB }
+
+// NewPinger wraps db.
+func NewPinger(db *gorm.DB) Pinger { return Pinger{db: db} }
+
+// Ping verifies the connection is usable.
+func (p Pinger) Ping(ctx context.Context) error { return Ping(ctx, p.db) }
+
 // Close drains the pool. Only the owner of the handle calls it.
 func Close(db *gorm.DB) error {
 	sqlDB, err := db.DB()

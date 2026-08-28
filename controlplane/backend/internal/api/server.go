@@ -10,43 +10,129 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 
+	"github.com/hoophq/hoop/controlplane/backend/internal/api/adminauth"
+	"github.com/hoophq/hoop/controlplane/backend/internal/api/desiredstate"
+	"github.com/hoophq/hoop/controlplane/backend/internal/api/inventory"
+	"github.com/hoophq/hoop/controlplane/backend/internal/api/sidecarauth"
 	"github.com/hoophq/hoop/controlplane/backend/internal/config"
 )
 
-// Timeouts on the http.Server, not just on handlers.
+// Timeouts on the http.Server, not only on handlers.
 //
 // Without ReadHeaderTimeout a client that opens a connection and sends
 // nothing holds a goroutine and a file descriptor until the process dies,
-// which is a denial of service costing the caller one socket. The gateway has
-// no timeouts on its API server; tunnel/ipc/server.go does.
+// which is a denial of service costing the caller one connection. The gateway
+// has no timeouts on its API server; tunnel/ipc/server.go does.
 //
-// ReadTimeout and WriteTimeout are deliberately unset, and this is the one
-// place in the file where the default is wrong on purpose.
+// All four are set because every request this service serves has a defined
+// length. Sidecars poll: a config fetch and a status post, both short. An
+// earlier version left ReadTimeout and WriteTimeout unset to protect a
+// long-lived WebSocket per sidecar, since a hijacked connection inherits the
+// deadlines net/http already set on it. There is no socket to protect now, and
+// leaving those two unset without that reason is just a slow-client hole.
 //
-// The transport this product is built around is one long-lived WebSocket per
-// sidecar. A WebSocket handler hijacks the connection, and net/http does not
-// clear the deadlines it already set on that net.Conn. With a 60 second
-// WriteTimeout, every sidecar socket dies at 60 seconds with an i/o timeout
-// that names nothing, and it reads as a flaky reconnect loop rather than as a
-// server setting. Whole-request deadlines belong on the requests that have a
-// defined length, so they live on the /api group instead. See requestTimeout
-// and apiRequestTimeout.
+// If a later endpoint does stream, long-poll or SSE for approvals is the
+// candidate, it must clear its own deadline with http.NewResponseController
+// rather than unset these. Per-handler is the right scope for a per-handler
+// need; server-wide is how one streaming route removes the bound from every
+// other one.
 const (
 	readHeaderTimeout = 10 * time.Second
-	idleTimeout       = 120 * time.Second
+	readTimeout       = 30 * time.Second
+	// Longer than handlerTimeout on purpose. A write deadline shorter than
+	// the handler's own deadline truncates the response of a request that was
+	// about to succeed, and the client sees a broken connection rather than a
+	// timeout it can report.
+	writeTimeout = 60 * time.Second
+	idleTimeout  = 120 * time.Second
 
-	// apiRequestTimeout bounds one /api request. It is not applied to the
-	// probes, which have their own shorter bound, and it must not be applied
-	// to the sidecar socket when EVL-234 mounts it.
-	apiRequestTimeout = 30 * time.Second
+	// handlerTimeout bounds one /api or /v1 request. The probes are outside
+	// it: they carry their own shorter bound.
+	handlerTimeout = 30 * time.Second
 )
+
+// Readiness is what /readyz asks before reporting the process ready.
+//
+// One method, declared here rather than imported, because the consumer defines
+// the interface it needs. database.Pinger satisfies it. Holding this instead
+// of a *gorm.DB keeps gorm out of this package entirely and lets a test drive
+// the 503 branch with a fake that fails on demand.
+type Readiness interface {
+	Ping(ctx context.Context) error
+}
+
+// Deps is everything the HTTP surface needs, constructed by the caller.
+//
+// The component handlers are built in main and handed in, rather than
+// constructed inside routes. Routing then decides only what is mounted where
+// and what guards it, which is the one question this package should answer.
+// When EVL-231 gives desiredstate a store, that store is wired in main and no
+// signature here changes.
+//
+// The two middlewares arrive as gin.HandlerFunc rather than being pulled off
+// the handlers, because a route table's guards are the thing worth being able
+// to substitute in a test.
+type Deps struct {
+	// Config, Logger and Version are the process-wide values.
+	Config  config.Config
+	Logger  *slog.Logger
+	Version string
+
+	// Readiness backs /readyz.
+	Readiness Readiness
+
+	// RequireAdmin guards /api. RequireSidecar and RequireBootstrap guard
+	// /v1. Three, not one, because admins, enrolled sidecars and sidecars
+	// still holding a bootstrap credential are three populations presenting
+	// three different kinds of credential. See routes.
+	RequireAdmin     gin.HandlerFunc
+	RequireSidecar   gin.HandlerFunc
+	RequireBootstrap gin.HandlerFunc
+
+	// The component handlers.
+	AdminAuth    *adminauth.Handler
+	DesiredState *desiredstate.Handler
+	Inventory    *inventory.Handler
+	SidecarAuth  *sidecarauth.Handler
+}
+
+// validate refuses a Deps with a hole in it.
+//
+// Loudly, at construction, naming the field. Every one of these is a nil
+// dereference somewhere in the middleware chain otherwise, on whichever
+// request happens to arrive first, with a stack that names gin rather than the
+// wiring that was wrong.
+func (d Deps) validate() error {
+	missing := []string{}
+	for name, ok := range map[string]bool{
+		"Logger":           d.Logger != nil,
+		"Readiness":        d.Readiness != nil,
+		"RequireAdmin":     d.RequireAdmin != nil,
+		"RequireSidecar":   d.RequireSidecar != nil,
+		"RequireBootstrap": d.RequireBootstrap != nil,
+		"AdminAuth":        d.AdminAuth != nil,
+		"DesiredState":     d.DesiredState != nil,
+		"Inventory":        d.Inventory != nil,
+		"SidecarAuth":      d.SidecarAuth != nil,
+	} {
+		if !ok {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) > 0 {
+		slices.Sort(missing) // map order, so sort for a stable message
+		return fmt.Errorf("api.Deps is missing %v", missing)
+	}
+	return nil
+}
 
 // Server owns the HTTP surface and its dependencies.
 //
@@ -55,15 +141,15 @@ const (
 // builds a Server with exactly the dependencies the case needs and two tests
 // cannot interfere.
 type Server struct {
-	cfg     config.Config
-	db      *gorm.DB
-	logger  *slog.Logger
-	version string
+	deps Deps
 }
 
-// New returns a Server. version is the build string, reported by /healthz.
-func New(cfg config.Config, db *gorm.DB, logger *slog.Logger, version string) *Server {
-	return &Server{cfg: cfg, db: db, logger: logger, version: version}
+// New returns a Server, or an error naming what the caller left out.
+func New(deps Deps) (*Server, error) {
+	if err := deps.validate(); err != nil {
+		return nil, err
+	}
+	return &Server{deps: deps}, nil
 }
 
 // Engine constructs the Gin engine with the full middleware chain.
@@ -78,16 +164,16 @@ func (s *Server) Engine() *gin.Engine {
 	// anything built on top of that address (rate limiting, audit, an allow
 	// list) is decided by the attacker.
 	if err := engine.SetTrustedProxies(nil); err != nil {
-		s.logger.Warn("failed clearing trusted proxies", "error", err)
+		s.deps.Logger.Warn("failed clearing trusted proxies", "error", err)
 	}
 
 	// Order matters. Recovery is outermost so it catches panics from every
 	// later middleware. Logging wraps the rest so a request rejected by CORS
 	// still appears in the log.
-	engine.Use(recovery(s.logger))
-	engine.Use(requestLogger(s.logger))
+	engine.Use(recovery(s.deps.Logger))
+	engine.Use(requestLogger(s.deps.Logger))
 	engine.Use(securityHeaders())
-	engine.Use(cors(s.cfg.CORSAllowedOrigins))
+	engine.Use(cors(s.deps.Config.CORSAllowedOrigins))
 
 	s.routes(engine)
 	return engine
@@ -100,15 +186,17 @@ func (s *Server) Engine() *gin.Engine {
 // the bound on how long that is allowed to take.
 func (s *Server) Run(ctx context.Context) error {
 	server := &http.Server{
-		Addr:              s.cfg.ListenAddr,
+		Addr:              s.deps.Config.ListenAddr,
 		Handler:           s.Engine(),
 		ReadHeaderTimeout: readHeaderTimeout,
+		ReadTimeout:       readTimeout,
+		WriteTimeout:      writeTimeout,
 		IdleTimeout:       idleTimeout,
 	}
 
 	errCh := make(chan error, 1)
 	go func() {
-		s.logger.Info("control plane api listening", "addr", s.cfg.ListenAddr)
+		s.deps.Logger.Info("control plane api listening", "addr", s.deps.Config.ListenAddr)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 			return
@@ -122,10 +210,10 @@ func (s *Server) Run(ctx context.Context) error {
 	case <-ctx.Done():
 	}
 
-	s.logger.Info("shutting down, draining in-flight requests", "grace", s.cfg.ShutdownGrace.String())
+	s.deps.Logger.Info("shutting down, draining in-flight requests", "grace", s.deps.Config.ShutdownGrace.String())
 	// A fresh context: ctx is already cancelled, so passing it would make
 	// Shutdown return immediately and drain nothing.
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), s.cfg.ShutdownGrace)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), s.deps.Config.ShutdownGrace)
 	defer cancel()
 
 	if err := server.Shutdown(shutdownCtx); err != nil {

@@ -6,9 +6,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
-
-	"github.com/hoophq/hoop/controlplane/backend/internal/database"
 )
 
 // Liveness and readiness are split because they mean opposite things to an
@@ -18,12 +15,12 @@ import (
 // replica at once, which turns a recoverable dependency failure into an
 // outage of the thing that depends on it.
 type health struct {
-	db      *gorm.DB
+	ready   Readiness
 	version string
 }
 
-func newHealth(db *gorm.DB, version string) *health {
-	return &health{db: db, version: version}
+func newHealth(ready Readiness, version string) *health {
+	return &health{ready: ready, version: version}
 }
 
 // probeTimeout bounds the readiness database check.
@@ -51,7 +48,7 @@ func (h *health) Ready(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), probeTimeout)
 	defer cancel()
 
-	if err := database.Ping(ctx, h.db); err != nil {
+	if err := h.ready.Ping(ctx); err != nil {
 		// 503 rather than 500. This is a dependency being unavailable, not
 		// this service being broken, and the distinction is what tells an
 		// orchestrator to wait rather than to restart.
