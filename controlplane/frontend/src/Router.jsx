@@ -73,7 +73,7 @@ function Router() {
               title="Sidecars"
               project="Connecting Sidecars and Resources"
               missing={[
-                'Token issuance for a sidecar (name pending — see PRODUCT_GAP.md)',
+                'Token issuance for a sidecar',
                 'Resources derived from sidecar listeners',
                 'Liveness — connected, stale, rejected, disconnected',
               ]}

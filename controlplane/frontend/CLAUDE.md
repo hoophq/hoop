@@ -2,12 +2,9 @@
 
 ## Read first
 
-This file is **how to write the code**. Three others carry what it does not:
-
 | Read | Before |
 |---|---|
-| [`../PRODUCT.md`](../PRODUCT.md) | naming anything, or deciding what a screen is for. The product model, taken from hoop.dev/docs. |
-| [`PRODUCT_GAP.md`](./PRODUCT_GAP.md) | touching a feature page. Which of these screens are the gateway's, and what the Control Plane still has no UI for. |
+| [`../PRODUCT.md`](../PRODUCT.md) | naming anything. The vocabulary join, and where the docs and the repository disagree. |
 | [`COMPONENTS.md`](./COMPONENTS.md) | creating a component. What exists, and which directories under `src/components/` export nothing. |
 
 `../CLAUDE.md` governs `controlplane/backend`, not this app.
@@ -126,32 +123,56 @@ wraps a generic Mantine component — keep it next to the context it serves.
 - **Icons**: `lucide-react` only. Note it ships no brand icons — there is no `Slack`
   export, for instance.
 
+## Three of these screens are the gateway's
+
+The most expensive mistake available here: reading a feature page and concluding that
+**is** the product. It is not. This app was extracted from `webapp_v2/`, the gateway's
+UI, and three pages came with it unchanged.
+
+`docs/adr/0009-guardrails-and-masking-architecture.md` records why — two engines for two
+deployments — and the docs say it from the other side: `features/guardrails` ends with
+*"Looking for guardrails on the Hoop Gateway instead? That is a different
+implementation."* Same note on `features/data-masking`.
+
+| Page | Is | Not |
+|---|---|---|
+| `/guardrails` | the gateway engine, 2 rule types (`src/pages/Guardrails/helpers.js`) | the Sidecar's 8-type ordered deny list |
+| `/features/data-masking` | gateway Live Data Masking: Presidio entity types, score threshold, per-connection | the Sidecar `mask` block, its four strategies, `entity` XOR `columns` |
+| `/features/ai-session-analyzer` | the gateway analyzer, classifying a **session**, with an inline `api_key` | the AI Analyzer, classifying a **statement**, whose credential is a file path at `0600` |
+
+Two consequences that bite:
+
+- `require_access_request` in the analyzer form corresponds to `review`, which the docs
+  mark *Coming soon* and which a Sidecar **refuses at startup**. Do not build on human
+  approval as a live Sidecar path.
+- Any Control Plane → Sidecar analyzer delivery must turn a stored key into a path or a
+  mounted secret. A Sidecar config with an inline `api_key` is rejected as an unknown
+  field. Never render a key input for the Sidecar path.
+
+`/sidecars` is the admin landing page (`pages/Home/index.jsx` redirects there) and is a
+`NotImplemented` stub. So is `/reviews`. Both name the Linear project that owes them.
+
 ## Naming — the product name comes from `../PRODUCT.md`
 
 A new label, route segment, store key or service name uses the noun the product uses.
-`../PRODUCT.md` has the table.
-
-Several existing screens do not, because they were extracted from `webapp_v2/`, which is
-the **gateway's** UI and carries the gateway's vocabulary: `Resource Role`, `Session
-Analyzer`, `Live Data Masking`, `connection`, `plugin`. Every one of those is recorded in
-[`PRODUCT_GAP.md`](./PRODUCT_GAP.md) with what the docs call it instead.
+`../PRODUCT.md` has the table: `Resource Role`, `Session Analyzer`, `Live Data Masking`,
+`connection` and `plugin` are all gateway vocabulary the docs do not use here.
 
 **A recorded divergence is not a rename to do in passing.** The initiative has a naming
 session pending, and half-renaming a noun across routes, the sidebar, the command palette
-and the API leaves the app in a worse state than either end. Change one when the decision
-lands, all at once. Until then, follow the surrounding code and add the row to
-`PRODUCT_GAP.md` if it is missing.
+and the API leaves the app worse than either end. Change one when the decision lands, all
+at once. Until then follow the surrounding code, and add the row to `../PRODUCT.md` if it
+is missing.
 
 Copying a page or a component from `webapp_v2/` brings the gateway's vocabulary with it.
 Read it, then write the version this product wants.
 
 ## Documentation links
 
-`src/utils/docsUrl.js` is the map. A new link comes from the Sidecar / Control Plane
-trunk — the link index at the end of [`../PRODUCT.md`](../PRODUCT.md). Everything under
-`/docs/learn/`, `/docs/clients/` and `/docs/quickstart/` documents the Hoop Gateway,
-which is a different product; link there only when the screen really is the gateway's,
-and say so.
+`src/utils/docsUrl.js` is the map, and the five sections that count are listed in
+[`../PRODUCT.md`](../PRODUCT.md). Everything under `/docs/learn/`, `/docs/clients/` and
+`/docs/quickstart/` documents the Hoop Gateway, a different product — link there only
+when the screen really is the gateway's, and say so in a comment.
 
 **The docs site has no 404.** A path that does not exist silently serves the docs home
 page, so a link check on the HTTP status passes on a dead link. Check the body:

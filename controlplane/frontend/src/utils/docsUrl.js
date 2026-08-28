@@ -4,10 +4,10 @@
 // that file belongs to the gateway's UI, and keeping the two in step would keep pulling
 // gateway vocabulary in here. Add and remove entries as this app needs them.
 //
-// A NEW link comes from the Sidecar / Control Plane trunk — see the link index in
+// A NEW link comes from the Sidecar / Control Plane trunk — the five sections listed in
 // controlplane/PRODUCT.md. Everything under /learn/, /clients/ and /quickstart/
 // documents the Hoop Gateway, a different product; those entries are here because the
-// screens that use them are the gateway's too. See PRODUCT_GAP.md.
+// screens that use them are the gateway's too. See CLAUDE.md.
 //
 // The docs site serves NO 404: an unknown path silently returns the docs home page. So
 // a link check on the HTTP status passes on a dead link. Verify the body instead:

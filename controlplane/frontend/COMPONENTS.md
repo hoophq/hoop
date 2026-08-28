@@ -198,8 +198,8 @@ redirects to `/login`.
 `plugins`, `userGroups`, `users`. Plus `analytics.js`, which exports `identify` rather
 than a service object.
 
-**Every domain service here calls the gateway** — see [PRODUCT_GAP.md](./PRODUCT_GAP.md)
-— with two exceptions: `connectionsMetadata` fetches the static
+**Every domain service here calls the gateway on `:8009`** — there is no Control Plane
+backend on `main` — with two exceptions: `connectionsMetadata` fetches the static
 `/data/connections-metadata.json` with no axios and no auth, and `analytics.js` talks to
 Segment.
 
