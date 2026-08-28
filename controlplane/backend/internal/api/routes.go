@@ -78,7 +78,6 @@ func (s *Server) routes(engine *gin.Engine) {
 	// ---------------------------------------------------------------- /api
 
 	api := engine.Group("/api")
-	api.Use(requestTimeout(handlerTimeout))
 
 	api.POST("/auth/login", d.AdminAuth.Login)
 	api.POST("/auth/register", d.AdminAuth.Register)
@@ -115,7 +114,6 @@ func (s *Server) routes(engine *gin.Engine) {
 	// built a year ago. /api carries no version: the frontend ships with the
 	// backend and there is no old client to keep working.
 	v1 := engine.Group("/v1")
-	v1.Use(requestTimeout(handlerTimeout))
 
 	// Enrollment presents the bootstrap credential, which is precisely the
 	// credential RequireSidecar does not accept. Its own guard, so neither

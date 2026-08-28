@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"log/slog"
 	"net/http"
 	"slices"
@@ -69,26 +68,6 @@ func recovery(logger *slog.Logger) gin.HandlerFunc {
 		// contains a pointer address or a fragment of a query.
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"message": "internal server error"})
 	})
-}
-
-// requestTimeout bounds one request by putting a deadline on its context.
-//
-// It is narrower than the server's ReadTimeout and WriteTimeout on purpose:
-// those bound the transfer, this bounds the work. A handler waiting on a
-// database that has stopped answering has read its request and written
-// nothing, so neither server deadline is running.
-//
-// Best effort, and honest about it: this cancels context-aware work, which is
-// every database call, and it does not forcibly cut a handler that ignores
-// its context. A handler that blocks without consulting ctx will outlive this
-// and is a bug in that handler.
-func requestTimeout(d time.Duration) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		ctx, cancel := context.WithTimeout(c.Request.Context(), d)
-		defer cancel()
-		c.Request = c.Request.WithContext(ctx)
-		c.Next()
-	}
 }
 
 // securityHeaders sets the headers a browser needs to not do something
