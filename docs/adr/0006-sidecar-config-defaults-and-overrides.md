@@ -1,11 +1,19 @@
 # ADR-0006: Global defaults and per-lane overrides in the sidecar config
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR-0011](0011-sidecar-config-schema.md) and [ADR-0012](0012-sidecar-enforcement-defaults.md)
 - **Date:** 2026-08-27
 - **Author:** @matheusfrancisco
 - **Code:** [`sidecar/daemon/config.go`](../../sidecar/daemon/config.go), [`sidecar/policy/`](../../sidecar/policy)
 - **Related:** [ADR-0005](0005-sidecar-flow.md) (request flow, current state), [ADR-0008](0008-analyzer-enforces-without-opa.md) (why everything else in the analyzer is OPA-free), [ADR-0009](0009-guardrails-and-masking-architecture.md) (where the rules these defaults resolve are evaluated)
-- **Supersedes / Superseded by:** —
+- **Supersedes / Superseded by:** Superseded by [ADR-0011](0011-sidecar-config-schema.md) (the schema and the merge table, restated under `guardrails` and `opa`) and [ADR-0012](0012-sidecar-enforcement-defaults.md) (the enforcement defaults and the `defer` refusal)
+
+> **Superseded (2026-08-31):** the merge *mechanics* below are unchanged and
+> still describe the code. Every key name in them has moved: `policy.rules` →
+> `guardrails.rules`, `policy.opa` → `opa`, `policy.enforce` →
+> `guardrails.mode`, and `mask.enabled` is gone. Two rows of the refusal table
+> also changed behaviour rather than spelling. Read ADR-0011 and ADR-0012 for
+> what ships; this file is preserved for the per-field reasoning, which the
+> rename did not invalidate.
 
 ## Context
 
