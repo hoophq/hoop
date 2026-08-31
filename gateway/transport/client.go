@@ -116,7 +116,9 @@ func (s *Server) subscribeClient(stream *streamclient.ProxyStream) (err error) {
 		// but have no IDP-issued user token to poll — skip polling for them.
 		if pctx.IdentityType != plugintypes.IdentityTypeMachine &&
 			pctx.IdentityType != plugintypes.IdentityTypeAPIKey {
-			usertoken.PollingUserToken(pctx.Context, func(cause error) {
+			// pctx.Context is context.Background() here, so a poller started on
+			// it would outlive the session and keep refreshing a departed user.
+			usertoken.PollingUserToken(stream.Context(), func(cause error) {
 				_ = stream.Close(cause)
 			}, tokenVerifier, pctx.UserID)
 		}
