@@ -450,6 +450,14 @@ type AuditConfig struct {
 // failOpen resolves the pointer default. Absent means fail closed.
 func (a AuditConfig) failOpen() bool { return a.FailOpen != nil && *a.FailOpen }
 
+// failOnAuditError is what the Gate is configured with.
+//
+// The inversion lives here rather than as a bare `!` at the call site because
+// this field changed polarity along with its name: `fail_closed: false` and
+// `fail_open: false` mean opposite things, and a flipped sign would hand every
+// lane the reverse of the operator's posture with nothing failing.
+func (a AuditConfig) failOnAuditError() bool { return !a.failOpen() }
+
 // AdminConfig configures the health/stats endpoint.
 type AdminConfig struct {
 	Listen string `json:"listen"`
@@ -692,7 +700,18 @@ func (c *Config) resolve(lc ListenerConfig) (GuardrailsConfig, *OPAConfig, MaskC
 	opa := c.OPA
 
 	if o := lc.Guardrails; o != nil {
-		if len(o.Rules) > 0 {
+		// Presence rather than length, because an explicitly empty list is
+		// how a lane runs no guardrails at all against a top-level set.
+		// Reading `rules: []` as "adds nothing" would be defensible for a
+		// field that concatenates, and it would also leave the lane with no
+		// way to say it. `opa: {}` and `mask: {rules: []}` spell the same
+		// intent for the other two sections; a decoder distinguishes the
+		// empty list from an absent key, so all three can mean it.
+		switch {
+		case o.Rules == nil:
+		case len(o.Rules) == 0:
+			gc.Rules = nil
+		default:
 			// A fresh slice: appending onto the default would let one
 			// listener's rules land in another's through a shared backing
 			// array.

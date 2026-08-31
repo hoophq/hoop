@@ -648,7 +648,7 @@ func buildServer(
 		Policy:           ln.policy,
 		Audit:            sink,
 		Masker:           ln.masker,
-		FailOnAuditError: !ac.failOpen(),
+		FailOnAuditError: ac.failOnAuditError(),
 		DenyWriter:       proxy.ProtocolDenyWriter{},
 		IdentityFn:       identityFn,
 		CodecFactory:     ln.codecFactory,

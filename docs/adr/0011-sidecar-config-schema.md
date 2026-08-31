@@ -149,16 +149,30 @@ section with three.
 
 | Field | Global → lane | Why |
 |---|---|---|
-| `guardrails.rules` | **concatenate**, lane's first | Every local rule denies or defers and the first match wins, so concatenating is monotonic in the allow/deny outcome. Order picks which name and message the user reads. |
+| `guardrails.rules` | **concatenate**, lane's first | Every local rule denies or defers and the first match wins, so concatenating is monotonic in the allow/deny outcome. Order picks which name and message the user reads. `rules: []` opts the lane out entirely. |
 | `guardrails.mode` | **replace** when set | A lane rolling out behind an enforcing default has to be able to say observe. |
 | `opa` | **replace** when set | One lane has one decision endpoint. |
 | `mask.rules` | **replace** when set | A rule owns an entity or a column. Concatenating leaves two rewrites of one value. |
 | `pii`, `analyzer`, `audit`, `admin` | process-wide | One detector engine and one analyzer per process. |
 
-`mask.rules: []` is how a lane opts out of an inherited set. The empty list is
-non-empty as JSON bytes, so `len(o.Rules) > 0` at `daemon/config.go:382` reads
-it as an override rather than as silence. A test pins it, because the
-distinction is invisible in the type.
+Each of the three sections a lane can override also has a spelling for
+wanting none of it, and they are the same shape on purpose:
+
+| Section | Opt out with | Reads as |
+|---|---|---|
+| `guardrails` | `guardrails: {rules: []}` | no rules on this lane |
+| `opa` | `opa: {}` | no decision endpoint on this lane |
+| `mask` | `mask: {rules: []}` | no rewriting on this lane |
+
+All three hang on the decoder distinguishing an empty collection from an absent
+key. `mask.rules` is a `json.RawMessage`, so `[]` arrives as two bytes rather
+than as nil. `guardrails.rules` is a `[]policy.Rule`, and `[]` decodes to a
+non-nil slice of length zero, which is why the merge reads presence rather than
+length: `len(o.Rules) > 0` would read the opt-out as silence and hand the lane
+the defaults it just refused. An empty list meaning "adds nothing" is the other
+defensible reading for a field that concatenates, and it would leave a lane no
+way to say the thing at all. Tests pin each one, because the distinction is
+invisible in the type.
 
 ### Startup refusals, restated
 
@@ -212,12 +226,15 @@ constants rather than from config (`policy/opa.go:86,89`), and
 fills it. No Rego policy needs an edit. `session/session_test.go:108` pins the
 context shape as a public contract and keeps passing.
 
-**A lane still cannot opt out of an inherited `opa`.** `resolve` replaces when
-the listener sets one (`daemon/config.go:369-371`), and `opa: {url: ""}` is
-refused (`:487-489`), so a top-level OPA reaches every lane with no escape.
-`mask` has `rules: []` and `guardrails` has `mode: observe`; `opa` has nothing
-equivalent. We read an explicitly empty `opa: {}` on a listener as "no OPA on
-this lane" and close the gap while the section is being rewritten.
+**Every inheritable section gains an opt-out, which two of them lacked.** A
+top-level `opa` used to reach every lane with no escape: `resolve` replaces only
+when the listener sets one, and `opa: {url: ""}` is refused. `guardrails.rules`
+had the same hole, and `mode: observe` did not fill it, since an observing lane
+still evaluates and evaluating is what costs money on a lane with `ai_analysis`
+rules. Both are closed by the table above, and closing them was cheap while the
+sections were being rewritten anyway. `opa: {}` is read as the opt-out only
+when every field in the block is zero; a block naming a timeout with no url is
+still refused, because that configures a client that cannot be built.
 
 **Deprecated fields stay in the Go structs until a named release removes
 them.** Constraint C from the Context leaves no alternative. The window runs

@@ -489,6 +489,91 @@ func TestEmptyListenersRejected(t *testing.T) {
 	}
 }
 
+// A lane that wants to cost nothing needs a way to say so. Observe still
+// evaluates, and evaluating is what costs money on a lane with ai_analysis
+// rules, so an explicit empty list is the only spelling left.
+func TestEmptyGuardrailRulesOptOutOfAnInheritedSet(t *testing.T) {
+	cfg := &Config{
+		Guardrails: &GuardrailsConfig{Rules: []policy.Rule{{
+			Name: "no-drop", Type: policy.MatchOperation,
+			Operations: []inspect.Operation{inspect.OpDrop},
+		}}},
+		Listeners: []ListenerConfig{
+			{Name: "inherits", Protocol: "postgres", Listen: ":1", Upstream: "h:1"},
+			{Name: "opts-out", Protocol: "postgres", Listen: ":2", Upstream: "h:2",
+				Guardrails: &GuardrailsConfig{Rules: []policy.Rule{}}},
+			{Name: "silent", Protocol: "postgres", Listen: ":3", Upstream: "h:3",
+				Guardrails: &GuardrailsConfig{Mode: ModeEnforce}},
+		},
+	}
+	if gc, _, _ := cfg.resolve(cfg.Listeners[0]); len(gc.Rules) != 1 {
+		t.Errorf("the inheriting lane resolved %d rules, want 1", len(gc.Rules))
+	}
+	if gc, _, _ := cfg.resolve(cfg.Listeners[1]); len(gc.Rules) != 0 {
+		t.Errorf("an empty rule list did not opt out: %d rules", len(gc.Rules))
+	}
+	if gc, _, _ := cfg.resolve(cfg.Listeners[2]); len(gc.Rules) != 1 {
+		t.Errorf("a guardrails block with no rules key opted out; only rules: [] does")
+	}
+
+	lanes, err := buildLanes(cfg, nil, nil)
+	if err != nil {
+		t.Fatalf("buildLanes: %v", err)
+	}
+	if lanes[0].policy == nil {
+		t.Error("the inheriting lane got no evaluator")
+	}
+	if lanes[1].policy != nil {
+		t.Error("the opted-out lane still evaluates, so it still costs what it costs")
+	}
+}
+
+// The empty list has to survive a real decode, which is the only path an
+// operator uses. A nil slice and an empty one are the same length and the
+// merge reads presence, so this is the assertion that keeps them apart.
+func TestEmptyGuardrailRulesSurviveDecoding(t *testing.T) {
+	p := writeConfig(t, `{
+      "guardrails": {"rules":[{"name":"g","type":"operation","operations":["drop"]}]},
+      "listeners": [
+        {"name":"a","protocol":"postgres","listen":":1","upstream":"h:1",
+         "guardrails":{"rules":[]}},
+        {"name":"b","protocol":"postgres","listen":":2","upstream":"h:2",
+         "guardrails":{"mode":"enforce"}}
+      ]
+    }`)
+	cfg, err := LoadConfig(p)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if gc, _, _ := cfg.resolve(cfg.Listeners[0]); len(gc.Rules) != 0 {
+		t.Errorf("rules: [] decoded as absent; lane resolved %d rules", len(gc.Rules))
+	}
+	if gc, _, _ := cfg.resolve(cfg.Listeners[1]); len(gc.Rules) != 1 {
+		t.Errorf("an absent rules key opted the lane out: %d rules", len(gc.Rules))
+	}
+}
+
+// The audit posture reaches the Gate through one inversion, and the field it
+// inverts changed polarity along with its name. A flipped sign here hands
+// every lane the reverse of what its operator asked for.
+func TestAuditFailOnErrorIsTheInverseOfFailOpen(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		cfg  AuditConfig
+		want bool
+	}{
+		{"omitted denies", AuditConfig{}, true},
+		{"fail_open false denies", AuditConfig{FailOpen: new(false)}, true},
+		{"fail_open true allows", AuditConfig{FailOpen: new(true)}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.cfg.failOnAuditError(); got != tc.want {
+				t.Errorf("failOnAuditError() = %t, want %t", got, tc.want)
+			}
+		})
+	}
+}
+
 // ── the deprecation window ────────────────────────────────────────────────
 //
 // Every test below feeds a pre-ADR-0011 config. They exist because the
