@@ -420,7 +420,9 @@ type Rule struct {
 	//
 	// Deferring does not stop the rule set. First match wins applies to
 	// DENIALS; a deferring rule records and evaluation continues, so a
-	// later hard rule still denies and a policy sees every match.
+	// later hard rule still denies and a policy sees every match. The
+	// exception is Rules.DenyDeferred, which turns a deferring match into
+	// a denial and therefore into a stop.
 	//
 	// Not valid on ai_analysis, which expresses the same thing per risk
 	// level through high/medium/low.
@@ -482,6 +484,29 @@ type Rules struct {
 	// FailOpen inverts the error behavior: when a rule cannot be evaluated
 	// (an invalid regex), allow instead of deny. Default false.
 	FailOpen bool
+
+	// DenyDeferred makes a deferring rule DENY instead of recording a
+	// Finding. Default false.
+	//
+	// ActionDefer means: hand this match to a decision-maker. The only
+	// evaluator that can rule on a Finding is a decide-phase OPA client,
+	// which is the one place ec.Findings is read (see
+	// OPAClient.findingsFor). A lane with no OPA therefore has no consumer
+	// for the finding: the rule matches, the match is recorded, nobody
+	// reads it, and the statement is allowed. An operator who wrote
+	// `action: defer` on a rule protecting national identifiers asked for
+	// the opposite of that.
+	//
+	// The sidecar sets this when the lane resolves to no OPA URL, which is
+	// what lets one config file serve a deployment with OPA and a
+	// deployment without it: the same rule defers where there is something
+	// to defer TO, and denies where there is not.
+	//
+	// It changes ordering as well as outcome. A denial stops the rule set,
+	// so with this set the FIRST deferring rule wins rather than the first
+	// hard rule below it, and the same config run with and without OPA can
+	// name a different rule in the audit record.
+	DenyDeferred bool
 }
 
 // NewRules compiles a rule set. It returns an error listing every rule that
@@ -619,7 +644,12 @@ func (r *Rules) EvaluateWith(stmt inspect.Statement, ec *EvalContext) Verdict {
 			if !hit {
 				continue
 			}
-			if rule.Action == ActionDefer {
+			// Fall through to the denial below when nothing will
+			// read the finding. Returning through the same path
+			// keeps the deferred flush above running, so whatever
+			// EARLIER deferring rules recorded still reaches the
+			// context.
+			if rule.Action == ActionDefer && !r.DenyDeferred {
 				deferred = recordMatch(deferred, rule, map[string]any{
 					"entities": entities,
 				})
@@ -643,7 +673,7 @@ func (r *Rules) EvaluateWith(stmt inspect.Statement, ec *EvalContext) Verdict {
 		if !matched {
 			continue
 		}
-		if rule.Action == ActionDefer {
+		if rule.Action == ActionDefer && !r.DenyDeferred {
 			deferred = recordMatch(deferred, rule, rule.findingValues(stmt))
 			continue
 		}
@@ -961,4 +991,90 @@ func (c Chain) EvaluateWith(stmt inspect.Statement, ec *EvalContext) Verdict {
 		errs = errors.Join(errs, v.Err)
 	}
 	return Verdict{Err: errs, Annotations: ec.Annotations}
+}
+
+// --- observe mode --------------------------------------------------------
+
+// AnnotationWouldDeny names the rule that would have refused a statement an
+// Observe wrapper let through.
+//
+// It is the entire output of a dry run. An operator counts a week of these
+// out of the audit trail and reads what enforcement is about to cost before
+// switching a lane to it.
+const AnnotationWouldDeny = "guardrails.would_deny"
+
+// Observe turns a denial from the wrapped Evaluator into an allow that still
+// names the rule that objected.
+//
+// It is what observe mode builds instead of skipping evaluation. The old
+// off-switch configured no evaluator at all, so the gate allowed on its first
+// line and wrote an audit record with an empty rule and an empty message: a
+// week of running that way told an operator nothing about what would have
+// been refused, which is the one question the mode exists to answer. Here the
+// chain runs in full and records the answer, and a dry run therefore costs
+// what enforcement costs.
+//
+// Only the DECISION is reversed. Message, Rule and Err travel through
+// untouched, because audit.StatementEvent takes allowed, rule and message as
+// independent arguments and the gate already passes all three off the
+// verdict. An allowed verdict that names a rule is a complete dry-run record
+// with no change anywhere downstream.
+//
+// Observe switches off nothing else: a stream the codec cannot parse safely
+// still denies, and a failed audit write still denies on a fail-closed sink.
+// Neither is a guardrail verdict, so neither passes through here.
+type Observe struct{ Evaluator Evaluator }
+
+// Evaluate implements Evaluator.
+func (o Observe) Evaluate(stmt inspect.Statement) Verdict {
+	if o.Evaluator == nil {
+		return Allow()
+	}
+	return o.observe(o.Evaluator.Evaluate(stmt))
+}
+
+// EvaluateWith implements ContextualEvaluator, delegating to the inner
+// evaluator's own EvaluateWith wherever it has one.
+//
+// Implementing BOTH methods is load-bearing rather than tidy. Gate.evaluate
+// type-asserts its configured evaluator for ContextualEvaluator and only then
+// seeds the session facts onto the context, and Chain does the same for every
+// evaluator it holds. A wrapper carrying only Evaluate fails that assertion,
+// so wrapping a chain in observe mode would silently empty input.context on
+// every OPA call and drop every Finding a deferring rule recorded. The lane
+// would keep denying nothing, correctly, while its Rego quietly stopped
+// seeing who asked.
+//
+// A nil inner evaluator allows. A lane whose chain resolved to nothing gets a
+// nil Evaluator, and observe is the mode most likely to be set on a lane that
+// has not been given rules yet.
+func (o Observe) EvaluateWith(stmt inspect.Statement, ec *EvalContext) Verdict {
+	if o.Evaluator == nil {
+		return Allow()
+	}
+	if ce, ok := o.Evaluator.(ContextualEvaluator); ok {
+		return o.observe(ce.EvaluateWith(stmt, ec))
+	}
+	return o.observe(o.Evaluator.Evaluate(stmt))
+}
+
+// observe flips a denial and records the rule behind it.
+func (o Observe) observe(v Verdict) Verdict {
+	if !v.Denied {
+		return v
+	}
+	v.Denied = false
+
+	// A fresh map on every denial. The inner evaluator hands back a map it
+	// may still own: Chain returns the EvalContext's own annotation map,
+	// and that map outlives the verdict. Writing the rule name into it
+	// would leak one statement's would_deny onto the audit record of every
+	// statement that followed it through the same context.
+	ann := make(map[string]string, len(v.Annotations)+1)
+	for k, val := range v.Annotations {
+		ann[k] = val
+	}
+	ann[AnnotationWouldDeny] = v.Rule
+	v.Annotations = ann
+	return v
 }

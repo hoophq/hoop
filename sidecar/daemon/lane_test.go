@@ -35,14 +35,19 @@ func (s stubPlugin) BuildMasker(raw []byte) (gate.Masker, error) {
 		return nil, nil
 	}
 	var rules []struct {
-		Entity string `json:"entity"`
+		Entity   string   `json:"entity"`
+		Entities []string `json:"entities"`
 	}
 	if err := json.Unmarshal(raw, &rules); err != nil {
 		return nil, err
 	}
 	for _, r := range rules {
-		if r.Entity != "" && !slices.Contains(s.entities, r.Entity) {
-			return nil, fmt.Errorf("entity %q is not detected", r.Entity)
+		// Both spellings, because the daemon passes plugin-owned rules
+		// through untouched and a deployed config may still use either.
+		for _, e := range append(r.Entities, r.Entity) {
+			if e != "" && !slices.Contains(s.entities, e) {
+				return nil, fmt.Errorf("entity %q is not detected", e)
+			}
 		}
 	}
 	return noopMasker{}, nil
@@ -75,15 +80,15 @@ func names(rules []policy.Rule) []string {
 // only which rule gets reported.
 func TestResolveConcatenatesRulesListenerFirst(t *testing.T) {
 	cfg := &Config{
-		Policy: PolicyConfig{Rules: []policy.Rule{rule("global-a"), rule("global-b")}},
+		Guardrails: &GuardrailsConfig{Rules: []policy.Rule{rule("global-a"), rule("global-b")}},
 		Listeners: []ListenerConfig{{
 			Name: "lane", Protocol: "postgres", Listen: ":1", Upstream: "h:1",
-			Policy: &PolicyConfig{Rules: []policy.Rule{rule("lane-a")}},
+			Guardrails: &GuardrailsConfig{Rules: []policy.Rule{rule("lane-a")}},
 		}},
 	}
 
-	pc, _ := cfg.resolve(cfg.Listeners[0])
-	got := names(pc.Rules)
+	gc, _, _ := cfg.resolve(cfg.Listeners[0])
+	got := names(gc.Rules)
 	want := []string{"lane-a", "global-a", "global-b"}
 
 	if len(got) != len(want) {
@@ -101,26 +106,26 @@ func TestResolveConcatenatesRulesListenerFirst(t *testing.T) {
 func TestResolveDoesNotAliasAcrossListeners(t *testing.T) {
 	cfg := &Config{
 		// Capacity beyond length makes append reuse the array.
-		Policy: PolicyConfig{Rules: append(make([]policy.Rule, 0, 8), rule("global"))},
+		Guardrails: &GuardrailsConfig{Rules: append(make([]policy.Rule, 0, 8), rule("global"))},
 		Listeners: []ListenerConfig{
 			{Name: "a", Protocol: "postgres", Listen: ":1", Upstream: "h:1",
-				Policy: &PolicyConfig{Rules: []policy.Rule{rule("only-a")}}},
+				Guardrails: &GuardrailsConfig{Rules: []policy.Rule{rule("only-a")}}},
 			{Name: "b", Protocol: "postgres", Listen: ":2", Upstream: "h:2",
-				Policy: &PolicyConfig{Rules: []policy.Rule{rule("only-b")}}},
+				Guardrails: &GuardrailsConfig{Rules: []policy.Rule{rule("only-b")}}},
 		},
 	}
 
-	pcA, _ := cfg.resolve(cfg.Listeners[0])
-	pcB, _ := cfg.resolve(cfg.Listeners[1])
+	gcA, _, _ := cfg.resolve(cfg.Listeners[0])
+	gcB, _, _ := cfg.resolve(cfg.Listeners[1])
 
-	for _, n := range names(pcA.Rules) {
+	for _, n := range names(gcA.Rules) {
 		if n == "only-b" {
-			t.Fatalf("lane a saw lane b's rule: %v", names(pcA.Rules))
+			t.Fatalf("lane a saw lane b's rule: %v", names(gcA.Rules))
 		}
 	}
-	for _, n := range names(pcB.Rules) {
+	for _, n := range names(gcB.Rules) {
 		if n == "only-a" {
-			t.Fatalf("lane b saw lane a's rule: %v", names(pcB.Rules))
+			t.Fatalf("lane b saw lane a's rule: %v", names(gcB.Rules))
 		}
 	}
 }
@@ -130,32 +135,34 @@ func TestResolveDoesNotAliasAcrossListeners(t *testing.T) {
 // operator thought they had overridden.
 func TestResolveReplacesOPA(t *testing.T) {
 	cfg := &Config{
-		Policy: PolicyConfig{OPA: &OPAConfig{URL: "http://default/v1/data/x"}},
+		OPA: &OPAConfig{URL: "http://default/v1/data/x"},
 		Listeners: []ListenerConfig{
 			{Name: "override", Protocol: "http", Listen: ":1", Upstream: "h:1",
-				Policy: &PolicyConfig{OPA: &OPAConfig{URL: "http://lane/v1/data/y"}}},
+				OPA: &OPAConfig{URL: "http://lane/v1/data/y"}},
 			{Name: "inherit", Protocol: "http", Listen: ":2", Upstream: "h:2"},
 		},
 	}
 
-	pc, _ := cfg.resolve(cfg.Listeners[0])
-	if pc.OPA.URL != "http://lane/v1/data/y" {
-		t.Errorf("override lane opa = %q, want the listener's", pc.OPA.URL)
+	_, opa, _ := cfg.resolve(cfg.Listeners[0])
+	if opa.URL != "http://lane/v1/data/y" {
+		t.Errorf("override lane opa = %q, want the listener's", opa.URL)
 	}
-	pc, _ = cfg.resolve(cfg.Listeners[1])
-	if pc.OPA.URL != "http://default/v1/data/x" {
-		t.Errorf("inherit lane opa = %q, want the default", pc.OPA.URL)
+	_, opa, _ = cfg.resolve(cfg.Listeners[1])
+	if opa.URL != "http://default/v1/data/x" {
+		t.Errorf("inherit lane opa = %q, want the default", opa.URL)
 	}
 }
 
 // A lane rolling out behind an enforcing default must be able to say
-// observe-only. A plain bool cannot express that, so Enforce is a pointer.
-func TestResolveListenerCanDisableEnforcementAgainstEnabledDefault(t *testing.T) {
+// observe. It still gets an evaluator: the difference from a lane with no
+// rules is that a dry run RUNS them and records what each match would have
+// denied.
+func TestResolveListenerCanObserveAgainstAnEnforcingDefault(t *testing.T) {
 	cfg := &Config{
-		Policy: PolicyConfig{Enforce: ptr(true), Rules: []policy.Rule{rule("global")}},
+		Guardrails: &GuardrailsConfig{Mode: ModeEnforce, Rules: []policy.Rule{rule("global")}},
 		Listeners: []ListenerConfig{
 			{Name: "observing", Protocol: "postgres", Listen: ":1", Upstream: "h:1",
-				Policy: &PolicyConfig{Enforce: ptr(false)}},
+				Guardrails: &GuardrailsConfig{Mode: ModeObserve}},
 			{Name: "enforcing", Protocol: "postgres", Listen: ":2", Upstream: "h:2"},
 		},
 	}
@@ -164,11 +171,25 @@ func TestResolveListenerCanDisableEnforcementAgainstEnabledDefault(t *testing.T)
 	if err != nil {
 		t.Fatalf("buildLanes: %v", err)
 	}
-	if lanes[0].policy != nil {
-		t.Error("listener said enforce:false but got an evaluator")
+	if !lanes[0].observing {
+		t.Error("the listener said observe and the lane did not")
 	}
-	if lanes[1].policy == nil {
-		t.Error("listener inheriting enforce:true got no evaluator")
+	if _, ok := lanes[0].policy.(policy.Observe); !ok {
+		t.Errorf("observing lane policy = %T, want policy.Observe", lanes[0].policy)
+	}
+	drop := inspect.Statement{
+		Protocol: inspect.Postgres, Text: "DROP TABLE t", Operation: inspect.OpDrop,
+	}
+	if v := lanes[0].policy.Evaluate(drop); v.Denied {
+		t.Error("an observing lane denied a statement")
+	} else if v.Annotations[policy.AnnotationWouldDeny] == "" {
+		t.Error("an observing lane recorded nothing about the match")
+	}
+	if lanes[1].observing {
+		t.Error("the inheriting lane picked up observe mode")
+	}
+	if v := lanes[1].policy.Evaluate(drop); !v.Denied {
+		t.Error("the enforcing lane did not deny")
 	}
 }
 
@@ -176,19 +197,19 @@ func TestResolveListenerCanDisableEnforcementAgainstEnabledDefault(t *testing.T)
 // two rules claiming one entity leave slice order to decide the winner.
 func TestResolveReplacesMaskRules(t *testing.T) {
 	cfg := &Config{
-		Mask: MaskConfig{Enabled: ptr(true), Rules: []byte(`[{"entity":"EMAIL_ADDRESS"}]`)},
+		Mask: &MaskConfig{Rules: []byte(`[{"entities":["EMAIL_ADDRESS"]}]`)},
 		Listeners: []ListenerConfig{{
 			Name: "lane", Protocol: "http", Listen: ":1", Upstream: "h:1",
-			Mask: &MaskConfig{Rules: []byte(`[{"entity":"US_SSN"}]`)},
+			Mask: &MaskConfig{Rules: []byte(`[{"entities":["US_SSN"]}]`)},
 		}},
 	}
 
-	_, mc := cfg.resolve(cfg.Listeners[0])
-	if got := string(mc.Rules); got != `[{"entity":"US_SSN"}]` {
+	_, _, mc := cfg.resolve(cfg.Listeners[0])
+	if got := string(mc.Rules); got != `[{"entities":["US_SSN"]}]` {
 		t.Errorf("mask rules = %s, want the listener's list alone", got)
 	}
-	if !mc.on() {
-		t.Error("enabled should be inherited when the listener does not set it")
+	if !mc.hasRules() {
+		t.Error("a non-empty rule list did not switch masking on")
 	}
 }
 
@@ -196,10 +217,10 @@ func TestResolveReplacesMaskRules(t *testing.T) {
 // rules to every lane, the bug this change fixes.
 func TestBuildLanesGivesEachListenerItsOwnEvaluator(t *testing.T) {
 	cfg := &Config{
-		Policy: PolicyConfig{Enforce: ptr(true)},
+		
 		Listeners: []ListenerConfig{
 			{Name: "a", Protocol: "postgres", Listen: ":1", Upstream: "h:1",
-				Policy: &PolicyConfig{Rules: []policy.Rule{rule("deny-on-a")}}},
+				Guardrails: &GuardrailsConfig{Rules: []policy.Rule{rule("deny-on-a")}}},
 			{Name: "b", Protocol: "postgres", Listen: ":2", Upstream: "h:2"},
 		},
 	}
@@ -218,6 +239,9 @@ func TestBuildLanesGivesEachListenerItsOwnEvaluator(t *testing.T) {
 	if lanes[1].policy != nil {
 		t.Error("lane b inherited a rule set it never configured")
 	}
+	if !lanes[1].observing && len(lanes[1].rules) != 0 {
+		t.Errorf("lane b resolved rules = %v, want none", lanes[1].rules)
+	}
 }
 
 // Postgres masking used to be refused because the gate could not re-frame a
@@ -228,12 +252,12 @@ func TestMaskOnPostgresIsAccepted(t *testing.T) {
 	cfg := &Config{
 		Listeners: []ListenerConfig{{
 			Name: "appdb", Protocol: "postgres", Listen: ":1", Upstream: "h:1",
-			Mask: &MaskConfig{Enabled: ptr(true), Rules: []byte(`[{"entity":"US_SSN"}]`)},
+			Mask: &MaskConfig{Rules: []byte(`[{"entities":["US_SSN"]}]`)},
 		}},
 	}
 
 	if err := cfg.Validate(); err != nil {
-		t.Fatalf("mask.enabled on a postgres listener was refused: %v", err)
+		t.Fatalf("mask rules on a postgres listener were refused: %v", err)
 	}
 
 	det := stubPlugin{entities: []string{"US_SSN"}}
@@ -246,7 +270,7 @@ func TestMaskOnPostgresIsAccepted(t *testing.T) {
 // against config that looks active and can never fire.
 func TestMaskOnUnmaskableProtocolIsRefused(t *testing.T) {
 	det := stubPlugin{entities: []string{"US_SSN"}}
-	mc := MaskConfig{Enabled: ptr(true), Rules: []byte(`[{"entity":"US_SSN"}]`)}
+	mc := MaskConfig{Rules: []byte(`[{"entities":["US_SSN"]}]`)}
 
 	if _, err := buildMasker(mc, det, inspect.Protocol("mysql")); err == nil {
 		t.Error("buildMasker accepted a protocol with no codec and no masking path")
@@ -258,7 +282,7 @@ func TestMaskOnHTTPIsAccepted(t *testing.T) {
 	cfg := &Config{
 		Listeners: []ListenerConfig{{
 			Name: "api", Protocol: "http", Listen: ":1", Upstream: "h:1",
-			Mask: &MaskConfig{Enabled: ptr(true), Rules: []byte(`[{"entity":"US_SSN"}]`)},
+			Mask: &MaskConfig{Rules: []byte(`[{"entities":["US_SSN"]}]`)},
 		}},
 	}
 	if err := cfg.Validate(); err != nil {
@@ -279,10 +303,10 @@ func TestMaskOnHTTPIsAccepted(t *testing.T) {
 // was written to deny.
 func TestPIIRuleNamingUndetectedEntityIsRefused(t *testing.T) {
 	cfg := &Config{
-		Policy: PolicyConfig{Enforce: ptr(true)},
+		
 		Listeners: []ListenerConfig{{
 			Name: "appdb", Protocol: "postgres", Listen: ":1", Upstream: "h:1",
-			Policy: &PolicyConfig{Rules: []policy.Rule{{
+			Guardrails: &GuardrailsConfig{Rules: []policy.Rule{{
 				Name: "no-cpf", Type: policy.MatchPII, Entities: []string{"BR_CPF"},
 			}}},
 		}},
@@ -307,16 +331,16 @@ func TestPIIRuleNamingUndetectedEntityIsRefused(t *testing.T) {
 // error per restart.
 func TestBuildLanesReportsEveryBrokenLane(t *testing.T) {
 	cfg := &Config{
-		Policy: PolicyConfig{Enforce: ptr(true)},
+		
 		Listeners: []ListenerConfig{
 			{Name: "bad-regex", Protocol: "postgres", Listen: ":1", Upstream: "h:1",
-				Policy: &PolicyConfig{Rules: []policy.Rule{{
+				Guardrails: &GuardrailsConfig{Rules: []policy.Rule{{
 					Name: "r", Type: policy.MatchPattern, Pattern: "([unclosed",
 				}}}},
 			// An entity the plugin does not detect: still a config error now
 			// that postgres masking itself is valid.
 			{Name: "bad-mask", Protocol: "postgres", Listen: ":2", Upstream: "h:2",
-				Mask: &MaskConfig{Enabled: ptr(true), Rules: []byte(`[{"entity":"NOT_A_THING"}]`)}},
+				Mask: &MaskConfig{Rules: []byte(`[{"entities":["NOT_A_THING"]}]`)}},
 		},
 	}
 
@@ -335,7 +359,7 @@ func TestBuildLanesReportsEveryBrokenLane(t *testing.T) {
 // existed: the top-level policy applies everywhere.
 func TestGlobalOnlyConfigStillAppliesToEveryLane(t *testing.T) {
 	cfg := &Config{
-		Policy: PolicyConfig{Enforce: ptr(true), Rules: []policy.Rule{rule("no-drop")}},
+		Guardrails: &GuardrailsConfig{Rules: []policy.Rule{rule("no-drop")}},
 		Listeners: []ListenerConfig{
 			{Name: "a", Protocol: "postgres", Listen: ":1", Upstream: "h:1"},
 			{Name: "b", Protocol: "http", Listen: ":2", Upstream: "h:2"},

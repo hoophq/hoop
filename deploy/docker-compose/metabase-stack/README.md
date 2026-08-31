@@ -276,8 +276,8 @@ docker compose logs hoop-inspect | ./sidecar/read-audit.py
 ## Adapting the rules to your schema
 
 [`sidecar/config.yaml`](sidecar/config.yaml) exists to be copied and
-edited. Four things about `policy.rules` that the file repeats inline and that
-cost time to rediscover:
+edited. Four things about `guardrails.rules` that the file repeats inline and
+that cost time to rediscover:
 
 - **First match wins, in slice order.** Narrow rules first, the lane-wide
   backstop last. Reversed, every refusal carries the generic message.
@@ -299,6 +299,21 @@ Masking has no equivalent. A mask rule has no `tables:` field: it keys on the
 result-set column name or on the detected entity and applies to every result
 set on the lane, so the `iban` rule covers `customers.iban` and
 `payroll.bank_iban` alike. One lane, one masking policy.
+
+**The lane is called `metabase`.** It used to set `name: appdb` for the
+upstream and `connection: metabase` for the consumer. `listeners[].connection`
+is gone and the audit key follows `name`, so the file keeps the string the
+audit trail should read and drops the other. `/api/sessions`,
+`input.context.connection` in Rego and `sidecar/read-audit.py` all print
+`metabase`. Rows written before the rename carry `appdb`, so a trail spanning
+the upgrade holds both keys.
+
+**Rules live under `guardrails`, OPA under `opa`.** The section used to be
+`policy`, holding both. `guardrails.mode` replaces `policy.enforce` and
+defaults to `enforce`, so this file needs no key to switch enforcement on.
+Set `mode: observe` on the lane to evaluate every rule, allow the statement,
+and read `metadata["guardrails.would_deny"]` out of the audit trail for a week
+before letting it deny for real.
 
 ## Identity
 

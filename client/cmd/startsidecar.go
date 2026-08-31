@@ -28,6 +28,7 @@ const deprecatedSidecarAlias = "inspect"
 var (
 	sidecarConfigFlag   string
 	sidecarValidateFlag bool
+	sidecarStrictFlag   bool
 )
 
 var startSidecarCmd = &cobra.Command{
@@ -50,9 +51,14 @@ does not require a different binary. The file may be YAML or JSON; the
 extension picks the parser.
 
 This command was named "inspect". That name still works as a deprecated
-alias.`,
+alias.
+
+The config schema changed in ADR-0011: "policy" split into "guardrails" and
+"opa", and three fields were dropped. Both spellings load, and the old one
+prints a warning naming its replacement. Use --strict to fail on one.`,
 	Example: `  hoop start sidecar --config /etc/hoop-inspect/config.yaml
-  hoop start sidecar --config config.yaml --validate`,
+  hoop start sidecar --config config.yaml --validate
+  hoop start sidecar --config config.yaml --validate --strict`,
 	// A bad config is not a usage error, and dumping the flag list under one
 	// buries the message that says which field is wrong.
 	SilenceUsage: true,
@@ -70,15 +76,20 @@ alias.`,
 			return err
 		}
 
+		// Same channel as the rename notice above, and for the same reason:
+		// --validate writes a parseable report to stdout.
+		daemon.ReportDeprecations(os.Stderr, cfg.Deprecations)
+		if sidecarStrictFlag && len(cfg.Deprecations) > 0 {
+			return fmt.Errorf("%d deprecated config field(s) in use and --strict is set",
+				len(cfg.Deprecations))
+		}
+
 		if sidecarValidateFlag {
 			lanes, err := daemon.Validate(cfg, det)
 			if err != nil {
 				return err
 			}
-			fmt.Println("config OK:", len(lanes), "listener(s)")
-			for _, ln := range lanes {
-				fmt.Printf("  %-16s %-9s %s\n", ln.Name, ln.Protocol, ln.Summary())
-			}
+			daemon.PrintLanes(os.Stdout, lanes)
 			return nil
 		}
 
@@ -117,8 +128,12 @@ func sidecarConfigFromEnv() string {
 // buildSidecarPlugin constructs the PII detector from the config's "pii"
 // section.
 //
-// A nil alcatraz.Plugin converts to a nil daemon.Plugin, so an absent section
-// stays nil rather than becoming a non-nil interface holding a nil pointer,
+// An absent section no longer disables detection: the plugin builds a
+// detector over every entity type it knows, and the section narrows it. A nil
+// Plugin means only that a build linked no detector, which this one does not.
+//
+// The conversion still matters. A nil alcatraz.Plugin converts to a nil
+// daemon.Plugin rather than to a non-nil interface holding a nil pointer,
 // which the sidecar would call through.
 func buildSidecarPlugin(raw json.RawMessage) (daemon.Plugin, error) {
 	return alcatraz.PluginFromConfig(raw)
@@ -134,6 +149,9 @@ func init() {
 		"Path to the inspection config file (YAML or JSON)")
 	startSidecarCmd.Flags().BoolVar(&sidecarValidateFlag, "validate", false,
 		"Validate the config, report what each listener resolved to, and exit")
+	startSidecarCmd.Flags().BoolVar(&sidecarStrictFlag, "strict", false,
+		"Fail when the config uses a deprecated field, so a pipeline can catch it "+
+			"before the release that removes it")
 
 	startCmd.AddCommand(startSidecarCmd)
 }

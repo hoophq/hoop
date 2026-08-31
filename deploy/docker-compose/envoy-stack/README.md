@@ -91,10 +91,11 @@ and reuses it afterwards. After a library change:
 The image builds `hoop-inspect` with
 [alcatraz](https://github.com/hoophq/alcatraz) PII detection linked in, so the
 demo can mask Brazilian CPFs and IBANs and deny a query that embeds one. The
-`pii` section of `sidecar/config.yaml` names which of the 45 entity types
-are active, five here. The section is required rather than defaulted: turning
-on every recognizer rewrites ordinary numeric columns, because `US_SSN` fires
-on roughly a third of random nine-digit business ids.
+`pii` section of `sidecar/config.yaml` names which of the 54 entity types are
+active, five here. Omitting the section activates all 54, and this file
+narrows on purpose: a mask rule naming `US_SSN` rewrites ordinary numeric
+columns, because that recognizer fires on roughly a third of random
+nine-digit business ids.
 
 Sidecar knobs live in `sidecar/config.yaml`; validate a change without
 starting anything:
@@ -218,7 +219,10 @@ Two producers sit commented out in `sidecar/config.yaml`:
 
 - **`pii`**: a `type: pii` rule carrying `action: defer`. No credential, no
   per-statement cost: the detector in the `pii:` section is already running
-  for masking. Uncomment the rule and the `opa:` block, nothing else.
+  for masking. Uncomment the rule and the `opa:` block together. `defer` on a
+  lane with no `opa.url` denies on a match instead of reporting it, so the
+  rule on its own turns this lane into a hard block on those four entity
+  classes.
 - **`ai_analysis`**: sends a statement to a language model and reports the
   risk it comes back with. Needs a credential and spends money per statement,
   so it also needs the `analyzer:` block.
@@ -242,7 +246,11 @@ analyzer:
 
 listeners:
   - name: appdb
-    policy:
+    opa:                               # its own section, beside guardrails
+      url: http://opa:8181/v1/data/envoy/authz/inspect
+      fail_open: false
+      gate: true                       # ask Rego what is worth a model call
+    guardrails:
       rules:
         - name: sensitive-columns
           type: pii
@@ -253,10 +261,6 @@ listeners:
           high: defer                  # the analyzer classifies; Rego decides
           medium: defer
           low: defer
-      opa:
-        url: http://opa:8181/v1/data/envoy/authz/inspect
-        fail_open: false
-        gate: true                     # ask Rego what is worth a model call
 ```
 
 BR_CPF is missing from that entity list because `no-cpf-in-query` in the

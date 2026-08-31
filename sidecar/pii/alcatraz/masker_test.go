@@ -1,6 +1,7 @@
 package alcatraz_test
 
 import (
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -165,6 +166,135 @@ func TestDuplicateEntityRejected(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "first") {
 		t.Errorf("error should name the rule already holding the entity: %v", err)
+	}
+}
+
+// The plural spelling fans out: one rule over two entities compiles to two
+// rewrites sharing one strategy, which is the whole reason it exists.
+func TestEntitiesFanOutToOneRewriteEach(t *testing.T) {
+	d := newDet(t, alcatraz.Options{Entities: []string{alcz.EmailAddress, alcz.CreditCard}})
+	m := newMask(t, d, alcatraz.Rule{
+		Name:     "contact-details",
+		Entities: []string{alcz.EmailAddress, alcz.CreditCard},
+		Strategy: alcatraz.StrategyHash,
+	})
+
+	want := []string{alcz.CreditCard, alcz.EmailAddress} // sorted
+	if got := m.Entities(); !slices.Equal(got, want) {
+		t.Fatalf("Entities() = %v, want %v", got, want)
+	}
+
+	out, res := m.MaskString("mail ada@example.com card 4111111111111111")
+	if strings.Contains(out, "ada@example.com") || strings.Contains(out, "4111111111111111") {
+		t.Errorf("a listed entity survived masking: %q", out)
+	}
+	if n := strings.Count(out, "sha256:"); n != 2 {
+		t.Errorf("%d hashed spans, want 2: both entities carry the rule's one strategy (%q)", n, out)
+	}
+	if res.Count != 2 {
+		t.Errorf("Count = %d, want 2", res.Count)
+	}
+}
+
+// Both spellings on one rule is refused rather than resolved. Picking a
+// winner silently is how a rename switches off a control the operator
+// believed they had written down.
+func TestEntityAndEntitiesTogetherRefused(t *testing.T) {
+	d := newDet(t, alcatraz.Options{Entities: []string{alcz.USSSN, alcz.CreditCard}})
+
+	_, err := alcatraz.NewMasker(d, []alcatraz.Rule{{
+		Name:     "r",
+		Entity:   alcz.USSSN,
+		Entities: []string{alcz.CreditCard},
+	}})
+	if err == nil {
+		t.Fatal("want an error for a rule setting both entity and entities")
+	}
+	if !strings.Contains(err.Error(), "entities") {
+		t.Errorf("error should name the spelling to keep: %v", err)
+	}
+}
+
+// An entity beside columns is only the audit label for the masked cells, so a
+// LIST of them names nothing a reader could pick between.
+func TestEntitiesWithColumnsRefused(t *testing.T) {
+	d := newDet(t, alcatraz.Options{Entities: []string{alcz.USSSN, alcz.CreditCard}})
+
+	_, err := alcatraz.NewMasker(d, []alcatraz.Rule{{
+		Name:     "r",
+		Entities: []string{alcz.USSSN, alcz.CreditCard},
+		Columns:  []string{"ssn"},
+	}})
+	if err == nil {
+		t.Fatal("want an error for entities combined with columns")
+	}
+	if !strings.Contains(err.Error(), "columns") {
+		t.Errorf("error should name the conflict: %v", err)
+	}
+}
+
+// The singular keeps working beside Columns, which is the one thing it can do
+// that the plural cannot: label the masked cells in the audit trail.
+func TestEntityLabelsAColumnRule(t *testing.T) {
+	d := newDet(t, alcatraz.Options{Entities: []string{alcz.USSSN}})
+	m := newMask(t, d, alcatraz.Rule{
+		Name:     "taxpayer",
+		Entity:   alcz.USSSN,
+		Columns:  []string{"Taxpayer_ID"},
+		Strategy: alcatraz.StrategyRedact,
+	})
+
+	// Contents no detector would flag: the operator named the column, so the
+	// cell goes whatever it holds.
+	out, names, n := m.MaskCell("taxpayer_id", []byte("not-an-ssn-at-all"))
+	if string(out) == "not-an-ssn-at-all" {
+		t.Errorf("the column rule did not fire: %q", out)
+	}
+	if n != 1 || !slices.Equal(names, []string{alcz.USSSN}) {
+		t.Errorf("MaskCell reported %v/%d, want the entity as the audit label", names, n)
+	}
+	if got := m.Entities(); len(got) != 0 {
+		t.Errorf("Entities() = %v, want none: a column rule enables no content detection", got)
+	}
+}
+
+// The duplicate check spans the whole rule set, not one rule, so an entity
+// claimed through the plural still collides with one claimed through the
+// singular. The anonymizer keys operators by entity type and the second would
+// silently replace the first.
+func TestDuplicateEntityAcrossSpellingsRejected(t *testing.T) {
+	d := newDet(t, alcatraz.Options{Entities: []string{alcz.USSSN, alcz.CreditCard}})
+
+	_, err := alcatraz.NewMasker(d, []alcatraz.Rule{
+		{Name: "first", Entity: alcz.USSSN, Strategy: alcatraz.StrategyRedact},
+		{Name: "second", Entities: []string{alcz.CreditCard, alcz.USSSN}, Strategy: alcatraz.StrategyHash},
+	})
+	if err == nil {
+		t.Fatal("want an error for two rules claiming one entity")
+	}
+	if !strings.Contains(err.Error(), "first") {
+		t.Errorf("error should name the rule already holding the entity: %v", err)
+	}
+}
+
+// An unknown entity inside a list is reported for that entry alone, naming
+// it, so a five-entity rule with one typo does not read as five mistakes.
+func TestEntitiesReportsTheOffendingMemberOnly(t *testing.T) {
+	d := newDet(t, alcatraz.Options{Entities: []string{alcz.USSSN}})
+
+	_, err := alcatraz.NewMasker(d, []alcatraz.Rule{{
+		Name:     "r",
+		Entities: []string{alcz.USSSN, alcz.BRCPF},
+	}})
+	if err == nil {
+		t.Fatal("want an error for an entity outside the detector's set")
+	}
+	if !strings.Contains(err.Error(), alcz.BRCPF) {
+		t.Errorf("error should name the entity that failed: %v", err)
+	}
+	if strings.Count(err.Error(), alcz.USSSN) != 1 {
+		// US_SSN appears once, in the "configured:" list, never as a problem.
+		t.Errorf("the valid entity was reported as a problem: %v", err)
 	}
 }
 
@@ -360,6 +490,29 @@ func TestBuildMaskerEmptyRules(t *testing.T) {
 		}
 		if m != nil {
 			t.Errorf("%q: want a nil masker for empty rules", raw)
+		}
+	}
+}
+
+// Both spellings decode. The deprecated key stays declared because decoding
+// is strict, so dropping it would refuse every config already deployed.
+func TestBuildMaskerAcceptsBothEntitySpellings(t *testing.T) {
+	d := newDet(t, alcatraz.Options{Entities: []string{alcz.BRCPF, alcz.EmailAddress}})
+
+	for _, raw := range []string{
+		`[{"entities":["BR_CPF","EMAIL_ADDRESS"],"strategy":"redact"}]`,
+		`[{"entity":"BR_CPF","strategy":"redact"},{"entity":"EMAIL_ADDRESS","strategy":"redact"}]`,
+	} {
+		m, err := d.BuildMasker([]byte(raw))
+		if err != nil {
+			t.Fatalf("%s: BuildMasker: %v", raw, err)
+		}
+		out, names, n := m.Mask([]byte("cpf 111.444.777-35 mail ada@example.com"))
+		if strings.Contains(string(out), "111.444.777-35") || strings.Contains(string(out), "ada@example.com") {
+			t.Errorf("%s: masked output still carries a value: %q", raw, out)
+		}
+		if n != 2 {
+			t.Errorf("%s: masked %d spans, want 2 (%v)", raw, n, names)
 		}
 	}
 }

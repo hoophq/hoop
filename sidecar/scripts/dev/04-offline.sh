@@ -118,14 +118,13 @@ analyzer:
   fail_open: true
   cache: {size: 512, ttl_sec: 300}
   max_calls: 100
-policy: {enforce: true}
+guardrails: {mode: enforce}
 listeners:
   - name: appdb
     protocol: postgres
     listen: "127.0.0.1:${PG_RELAY_PORT}"
     upstream: "127.0.0.1:${PG_UPSTREAM_PORT}"
-    connection: appdb
-    policy:
+    guardrails:
       rules:
         - {name: no-drops, type: operation, operations: [drop, truncate],
            message: schema changes are not permitted on appdb}
@@ -139,9 +138,8 @@ listeners:
     protocol: http
     listen: "127.0.0.1:${HTTP_RELAY_PORT}"
     upstream: "127.0.0.1:${HTTP_UPSTREAM_PORT}"
-    connection: api
     http: {capture_body: true, max_body_bytes: 8192, headers: [Content-Type]}
-    policy:
+    guardrails:
       rules:
         - name: risky-payloads
           type: ai_analysis

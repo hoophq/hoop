@@ -176,13 +176,20 @@ starts denying, which ADR-0012 explains.
 
 ## Consequences
 
-**Two shipped behaviours reverse, and both need release-note prose.** A lane
+**One shipped behaviour reverses, and it needs release-note prose.** A lane
 with `mask.enabled: true` and no `pii` section refuses to start today
 (`daemon/daemon.go:590-592`) and will start and mask, because a detector now
-always exists. A lane with mask rules on MSSQL loads clean today and will
-refuse to start, because the check at `daemon/config.go:537` stops being
-skipped. The second is the dangerous direction: a deployment that boots today
-may not boot after the upgrade.
+always exists.
+
+**No deployment stops booting over masking.** Dropping `mask.enabled` makes the
+protocol check at `daemon/config.go:537` run on every lane that carries rules,
+where the flag used to skip it. That reads like a new way to fail an upgrade
+and is not one: `gate.MaskSupported` asks the codec for a `Reframer` rather
+than listing protocol names (`gate/gate.go:544-554`), and all three shipped
+codecs have one, HTTP through Content-Length re-tagging. Verified by loading a
+config with mask rules on postgres, mssql and http lanes: all three validate
+clean and report `+ masking`. The check earns its place as the guard for a
+future codec that relays without re-framing, not as a migration hazard.
 
 **`analyzer.send: redacted` and `refuse` start working without a `pii`
 section.** The refusal at `daemon/analyzer.go:206-212` tests for a section that
@@ -319,8 +326,9 @@ listeners:
     guardrails: {mode: observe}
     mask: {rules: []}             # the empty list opts out of the inherited set
 
-  # TDS rows are length-prefixed binary frames with no reframer, so a mask
-  # block here is refused at startup. The empty list is required.
+  # MSSQL masks: its codec re-frames, so this lane could carry mask rules.
+  # It opts out to show the spelling, since `rules: []` is the only way a lane
+  # refuses a set the top level configured.
   - name: mssqldb
     protocol: mssql
     listen: "127.0.0.1:1434"
@@ -370,7 +378,7 @@ Resolved:
 |---|---|---|---|---|
 | `appdb` | enforce | 5 inherited | none | 4 rules |
 | `reporting` | observe | 5 inherited, evaluated, none enforced | none | off |
-| `mssqldb` | enforce | 1 own + 5 inherited, own first | none | off |
+| `mssqldb` | enforce | 1 own + 5 inherited, own first | none | off, by `rules: []` |
 | `api` | enforce | 3 own + 5 inherited | gate and decide | 2 rules |
 | `internal-jobs` | enforce | 5 inherited | none | 4 rules |
 
@@ -383,8 +391,10 @@ or without OPA, safe at both ends.
 
 - `hoop-inspect -validate` against all six shipped configs in the deprecated
   spelling (loads, warns) and the new spelling (loads, silent).
-- A config setting both spellings of each of the seven renamed fields, which
-  must produce seven refusals in one run.
+- A config setting both spellings of every field that has two, which must
+  produce every refusal in one run. Four qualify: `policy.rules`,
+  `policy.enforce`, `policy.opa` and `audit.fail_closed`. The other three
+  changes fold with no conflicting pair to write.
 - `make test-sidecar`, which walks every `go.mod` under `sidecar/`.
 - `TestOPAInputDocumentShape` (`policy/policy_test.go:308-351`) and
   `policy/evalcontext_test.go:67-256`, unchanged and passing, proving the Rego

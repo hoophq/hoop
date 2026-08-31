@@ -7,20 +7,21 @@
 // without a supply-chain review and drop it into a caller without touching
 // their dependency tree. Alcatraz is itself dependency-free, but importing it
 // from the root would add a module edge to every consumer of the library,
-// including the ones with no use for 45 national-ID recognizers. So it lives
+// including the ones with no use for 51 national-ID recognizers. So it lives
 // here, behind the two interfaces the root already declares, the same shape
 // as store/sqlite.
 //
 // # Coverage
 //
-// Alcatraz brings 45 entity types across 12 countries, and 25 of them carry a
+// Alcatraz brings 51 entity types across 12 countries, and 25 of them carry a
 // real checksum validator: Luhn, ISO 7064 mod-97 for IBAN, Verhoeff for
 // Aadhaar, the Brazilian mod-11 schemes. For a deployment whose data is not
 // US-shaped, that decides whether masking works at all.
 //
 // It is a PII engine, so it has no recognizer for a credential. secrets.go
 // adds three (AWS_ACCESS_KEY, JWT, PRIVATE_KEY) into the same engine, so a
-// config names them exactly like a built-in alcatraz type.
+// config names them exactly like a built-in alcatraz type. AllEntities()
+// therefore reports 54.
 //
 //	det, err := alcatraz.NewDetector(alcatraz.Options{
 //	    Entities: []string{entities.BRCPF, entities.IBANCode},
@@ -30,15 +31,26 @@
 //
 // One Detector drives both, so a deployment configures its entity list once.
 //
-// # Name the entities you want
+// # An empty entity list means all of them
 //
-// Options.Entities is required and there is no all-entities default. Turning
-// on all 45 recognizers rewrites ordinary numeric columns: nine digits in a
-// legal range is a valid US_SSN as far as any detector can tell, so a row of
-// order ids comes back redacted. Measured on synthetic business ids, US_SSN
-// alone fires on about a third of them. The Noisy map records the worst
-// offenders with their measured rates, and AllEntities() exists for a caller
-// who has read it and still wants everything.
+// Options.Entities is optional, and leaving it empty activates all 54
+// recognizers. That is safe because enabling a recognizer is not the same as
+// scanning for it. Two layers below, somebody names entities, and that name
+// is what decides the scan:
+//
+//   - NewMasker narrows the engine to exactly the entity types its own rules
+//     name (masker.go, opts.Entities = entities). A permissive Detector
+//     driving a two-rule Masker scans a response for two entities.
+//   - A pii guardrail hands its own entity list to ScanTextFor, which
+//     intersects it with the active set. A permissive Detector under a rule
+//     naming CREDIT_CARD scans a statement for CREDIT_CARD.
+//
+// Naming a noisy entity in a MASK RULE is still the mistake the Noisy map
+// warns about, because that IS the act that puts the recognizer on a data
+// path: a US_SSN mask rule redacts about a third of a column of nine-digit
+// order ids no matter how the Detector was built. Options.Ignored is the
+// pairing for the permissive form, subtracting the recognizers this
+// deployment's ordinary data trips.
 //
 // # Pattern core only
 //
@@ -73,8 +85,8 @@ import (
 // nine-digit business ids, US_SSN fires on about a third of them at any
 // threshold.
 //
-// So Options.Entities is required rather than defaulted. See its
-// documentation.
+// The threshold is therefore not what keeps a noisy recognizer off a data
+// path. The rule that names the entity is. See Noisy and Options.Entities.
 const DefaultThreshold = 0.4
 
 // Noisy names the recognizers that fire often on ordinary business data, so a
@@ -110,23 +122,29 @@ type Options struct {
 	// Entities selects the alcatraz entity types to detect, named as the
 	// constants in github.com/hoophq/alcatraz/entities ("US_SSN", "BR_CPF").
 	//
-	// REQUIRED. There is no "all entities" default. Enabling all 45
-	// recognizers on a response path corrupts ordinary data: a row like
+	// Empty means every supported type, all 54 of them. The package
+	// documentation carries the argument for why that is not the trap it
+	// reads as: NewMasker and ScanTextFor both narrow the scan to the
+	// entities their own caller named, so an active recognizer nobody
+	// names costs nothing on either data path.
+	//
+	// The row that the "all entities" default is accused of corrupting,
 	//
 	//	{"order_id":457555462,"customer_id":123456781}
 	//
-	// has both integers rewritten as US_SSN, because nine digits in a legal
-	// range IS a valid SSN as far as any detector can tell. An operator
-	// switches off a masker that mangles a third of the numeric columns
-	// within a day, and then nothing is masked at all.
+	// loses both integers to a US_SSN MASK RULE, because nine digits in a
+	// legal range IS a valid SSN as far as any detector can tell. Writing
+	// that rule is the mistake. Leaving this field empty is not.
 	//
-	// So you name the entity types your data contains. See Noisy for the
-	// ones that cost the most when guessed at, and AllEntities if you want
-	// the full set.
+	// Name the types your data contains when you know them: it documents
+	// the deployment, and it keeps ScanText, the one path that does run
+	// the whole active set, narrow. Use Ignored when you do not.
 	Entities []string
 
 	// Ignored removes types from the active set, applied after Entities.
-	// Chiefly useful with AllEntities.
+	// It is the knob for a permissive Detector: name the seven recognizers
+	// in Noisy that fire on this deployment's ordinary data rather than
+	// enumerating the 47 that do not.
 	Ignored []string
 
 	// Threshold drops detections scoring below it. Zero means
@@ -160,6 +178,11 @@ type Detector struct {
 var (
 	_ policy.Scanner = (*Detector)(nil)
 	_ Plugin         = (*Detector)(nil)
+
+	// The optional narrowing interface. It is optional to implement and
+	// only ever reached through a type assertion, so nothing would fail to
+	// compile if the method drifted out of shape. This line would.
+	_ policy.ScopedScanner = (*Detector)(nil)
 )
 
 // newEngine builds the alcatraz engine this package uses: the full built-in
@@ -175,33 +198,31 @@ func newEngine(lang string) *alcatraz.Engine {
 	return analyzer.NewEngine(reg, []string{lang})
 }
 
-// AllEntities returns every entity type this package detects: alcatraz's
-// built-in set plus AWS_ACCESS_KEY, JWT and PRIVATE_KEY.
+// AllEntities returns every entity type this package detects: alcatraz's 51
+// built-ins plus AWS_ACCESS_KEY, JWT and PRIVATE_KEY, 54 in all.
 //
-// Prefer naming the types your data contains. This exists so "everything" is
-// an explicit, greppable decision rather than the consequence of leaving a
-// config field blank.
+// NewDetector activates the same set for an empty Options.Entities, so this
+// exists for a caller that wants the list itself: to print it at startup, to
+// diff a config against it, or to write "everything" somewhere an empty
+// slice would read as an oversight.
 func AllEntities() []string {
 	return newEngine("en").SupportedEntities("en")
 }
 
-// NewDetector builds a Detector over the named entity types.
+// NewDetector builds a Detector over the named entity types. An empty
+// Options.Entities means every supported type; see that field for why the
+// permissive form is safe.
 //
-// It returns an error when Entities is empty or names a type alcatraz cannot
-// detect. Both are config mistakes that would otherwise surface as "masking
-// silently does nothing", which is the failure mode this package exists to
-// avoid.
+// It returns an error when Entities names a type alcatraz cannot detect, and
+// when Ignored subtracts the last remaining one. Both are config mistakes
+// that would otherwise surface as "masking silently does nothing", which is
+// the failure mode this package exists to avoid.
 func NewDetector(o Options) (*Detector, error) {
 	lang := o.Language
 	if lang == "" {
 		lang = "en"
 	}
 	eng := newEngine(lang)
-
-	if len(o.Entities) == 0 {
-		return nil, fmt.Errorf("alcatraz: Options.Entities is required " +
-			"(there is no safe all-entities default; use AllEntities() to opt in explicitly)")
-	}
 
 	known := make(map[string]bool)
 	for _, e := range eng.SupportedEntities(lang) {
@@ -220,7 +241,14 @@ func NewDetector(o Options) (*Detector, error) {
 			strings.Join(unknown, ", "))
 	}
 
+	// An empty list is the permissive form: every recognizer the engine
+	// registered. The scan is narrowed by whoever names entities, in
+	// NewMasker for a response and in ScanTextFor for a statement, so the
+	// only path that pays for the full set is ScanText.
 	active := o.Entities
+	if len(active) == 0 {
+		active = eng.SupportedEntities(lang)
+	}
 	if len(o.Ignored) > 0 {
 		ignored := o.Ignored
 		skip := make(map[string]bool, len(ignored))
@@ -272,7 +300,7 @@ func (d *Detector) Entities() []string {
 // Find returns the byte spans of one entity type in data.
 //
 // It restricts the engine to the single entity asked for rather than running
-// all 45 recognizers and discarding the rest. The Masker calls this once per
+// the whole active set and discarding the rest. The Masker calls this once per
 // rule, so a three-rule config costs three narrow scans instead of three full
 // ones. Nothing is cached between calls either, which matters because a cache
 // keyed on payloads is a map holding the PII it just found.
@@ -323,6 +351,58 @@ func (d *Detector) ScanText(text string) []string {
 		return nil
 	}
 
+	seen := make(map[string]bool, len(results))
+	out := make([]string, 0, len(results))
+	for _, r := range results {
+		if seen[r.EntityType] {
+			continue
+		}
+		seen[r.EntityType] = true
+		out = append(out, r.EntityType)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// ScanTextFor is ScanText restricted to the entity classes the caller can act
+// on, implementing the root module's optional policy.ScopedScanner.
+//
+// A guardrail rule names its own entity list and throws away every finding
+// outside it, so the recognizers for the rest run for nothing. That is a
+// rounding error when a config names five entities and real work when it
+// names none: a permissive Detector has all 54 active, and paying for 54
+// recognizer passes per statement to keep two answers is the one genuine
+// cost of the permissive default. This is how a caller declines to pay it.
+//
+// entities is intersected with the active set rather than trusted, for the
+// reason Find calls claims: a rule naming a class this Detector does not
+// carry must narrow the scan to nothing, never widen it. An empty argument
+// asks for no narrowing at all and scans the active set, which is what the
+// ScopedScanner contract says it means.
+func (d *Detector) ScanTextFor(entities []string, text string) []string {
+	if text == "" {
+		return nil
+	}
+	opts := d.opts
+	if len(entities) > 0 {
+		scan := make([]string, 0, len(entities))
+		for _, e := range entities {
+			if d.claims(e) {
+				scan = append(scan, e)
+			}
+		}
+		if len(scan) == 0 {
+			// Nothing this Detector could find would survive the caller's
+			// own filter, so the engine call is pure cost.
+			return nil
+		}
+		opts.Entities = scan
+	}
+
+	results := d.eng.Analyze(text, opts)
+	if len(results) == 0 {
+		return nil
+	}
 	seen := make(map[string]bool, len(results))
 	out := make([]string, 0, len(results))
 	for _, r := range results {

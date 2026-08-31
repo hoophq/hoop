@@ -57,23 +57,20 @@ audit:
   file: "-"                 # stdout as JSON lines
   memory_buffer: 256
   query_sessions: 500       # required for GET /api/sessions; omit it and that route 404s
+  fail_open: false          # the default: a statement whose audit write failed is refused
 
-pii:
+pii:                        # optional; omit it and all 54 entity types are active
   entities: [EMAIL_ADDRESS, US_SSN]
 
-policy:
-  enforce: true             # false is observe-only: inspect and audit, deny nothing
-
-mask:
-  enabled: true
+guardrails:                 # Hoop's own rules, inherited by every listener
+  mode: enforce             # the default; observe evaluates and records, denying nothing
 
 listeners:
   - name: appdb
     protocol: postgres
     listen: 0.0.0.0:15432   # what your client connects to
     upstream: appdb:5432    # the real database
-    connection: appdb       # the name audit rows key on
-    policy:
+    guardrails:
       rules:
         - name: no-destructive-sql
           type: operation
@@ -82,7 +79,7 @@ listeners:
     mask:
       rules:
         - {name: ssn-column, columns: [ssn], strategy: partial, keep_last: 4}
-        - {name: emails, entity: EMAIL_ADDRESS, strategy: redact}
+        - {name: emails, entities: [EMAIL_ADDRESS], strategy: redact}
 ```
 
 Check it before you deploy it. This starts no listener and needs nothing
@@ -101,8 +98,9 @@ config OK: 1 listener(s)
 
 That line is the **resolved** lane, so the rule count includes anything it
 inherited from the top-level defaults. Validation builds every lane, which
-catches what a syntax check cannot: a key typo, a bad regex, a `pii` rule
-naming an entity that `pii.entities` never enabled.
+catches what a syntax check cannot: a key typo, a bad regex, mask rules on a
+protocol whose codec cannot mask, and both spellings of a renamed field set at
+one scope.
 
 Full config reference, every rule type and every masking strategy:
 [`sidecar/README.md`](../../../sidecar/README.md).
@@ -310,7 +308,7 @@ analyzer:
 listeners:
   - name: appdb
     # ... as above
-    policy:
+    guardrails:
       rules:
         - name: risky-writes
           type: ai_analysis
@@ -364,7 +362,7 @@ The HTTP codec exposes nothing by default. Without a body the model sees `POST
       capture_body: true
       max_body_bytes: 8192
       headers: [Content-Type]      # authorization is refused at startup
-    policy:
+    guardrails:
       rules:
         - name: risky-payloads
           type: ai_analysis
@@ -478,17 +476,39 @@ log.
 
 ---
 
-## Three things that cost people time
+## What costs people time
 
-**`enforce` defaults to `false`.** A lane with rules and no `enforce: true`
-inspects and audits and denies nothing. It says `observe-only` in the startup
-log and in `/config`. That default is deliberate — a misconfigured rule should
-not take production down on first deploy — but it surprises everyone once.
+**`guardrails.mode` defaults to `enforce`.** A lane with rules denies on the
+first deploy, and there is no third key to remember. The old field was
+`policy.enforce`, it defaulted to `false`, and a lane with rules and no
+`enforce: true` audited everything and denied nothing. Configs upgrading from
+that spelling start denying on the next restart, so run `--validate` and read
+the resolved rule count per lane before you restart.
 
-**A `pii` rule naming an entity absent from `pii.entities` is refused at
-startup.** Without that check the rule would load, evaluate and match nothing,
-so a guardrail would look live while allowing everything it was written to
-stop.
+**`mode: observe` runs every rule and denies nothing.** The lane builds the
+same chain, allows the statement, and writes the rule that would have refused
+it into the audit record. A week of that tells you what
+enforcement would cost:
+
+```bash
+jq -r 'select(.metadata["guardrails.would_deny"]) | .metadata["guardrails.would_deny"]' \
+  audit.jsonl | sort | uniq -c | sort -rn
+    412 customers-is-crm-owned
+      7 no-unbounded-delete
+      1 no-schema-changes
+```
+
+It costs what enforcement costs, because nothing reports what would have been
+denied without evaluating it. A lane that wants the work skipped sets
+`guardrails: {rules: []}`.
+
+**Omitting `pii` activates every entity type.** The section used to be
+required before anything could detect, and it now subtracts from a detector
+holding all 54. A `pii` guardrail rule naming an entity the section never
+listed used to be refused at startup; that check is gone with the requirement
+behind it. Narrow with `pii.ignored` where the noisy recognizers cost you:
+`US_SSN` fires on about a third of random nine-digit business ids, and `URL`
+matches every HTTP response body.
 
 **Masking column rules beat detection.** `{columns: [ssn]}` masks whatever is
 in that column, whatever it looks like. Entity rules depend on the detector

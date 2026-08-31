@@ -1,3 +1,7 @@
+# Deliberately still on the pre-0011 config spelling (policy:, mask.enabled:,
+# connection:). It is the regression test for the deprecation path: this file
+# must keep loading, with warnings, until the fields are removed.
+#
 # hoop-inspect for the TDS 7.4 lane. One listener, one upstream, no Envoy.
 #
 # Validate without starting anything:

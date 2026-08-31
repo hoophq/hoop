@@ -345,6 +345,7 @@ func buildAnalyzerEvaluators(
 	cfg *AnalyzerConfig,
 	provider analyzer.Provider,
 	redact func(string) string,
+	hasOPA bool,
 ) ([]policy.Evaluator, error) {
 	if len(rules) == 0 {
 		return nil, nil
@@ -356,7 +357,7 @@ func buildAnalyzerEvaluators(
 
 	out := make([]policy.Evaluator, 0, len(rules))
 	for _, r := range rules {
-		actions, err := actionMap(r)
+		actions, err := actionMap(r, hasOPA)
 		if err != nil {
 			return nil, err
 		}
@@ -399,7 +400,16 @@ func triggerFrom(t *policy.AITrigger) analyzer.Trigger {
 	}
 }
 
-func actionMap(r policy.Rule) (analyzer.ActionMap, error) {
+// actionMap turns a rule's high/medium/low strings into the analyzer's
+// action vocabulary.
+//
+// hasOPA false degrades `defer` to `block`. Deferring names a decision-maker,
+// and the only evaluator that reads an ai_analysis finding is a decide-phase
+// OPA client. With no OPA the finding would be recorded and read by nobody,
+// which allows the statement: the opposite of what the operator asked for.
+// The lane keeps a startup note saying so, because a config that reads
+// `high: defer` and behaves as `high: block` has to say which one it did.
+func actionMap(r policy.Rule, hasOPA bool) (analyzer.ActionMap, error) {
 	m := analyzer.ActionMap{}
 	for level, raw := range map[analyzer.RiskLevel]string{
 		analyzer.RiskHigh:   r.HighRisk,
@@ -412,6 +422,9 @@ func actionMap(r policy.Rule) (analyzer.ActionMap, error) {
 		a := analyzer.Action(raw)
 		if !a.Valid() {
 			return nil, fmt.Errorf("rule %q: unknown action %q for %s risk", r.Name, raw, level)
+		}
+		if a == analyzer.ActionDefer && !hasOPA {
+			a = analyzer.ActionBlock
 		}
 		m[level] = a
 	}
@@ -538,8 +551,8 @@ func httpCodecFactory(proto inspect.Protocol, h *HTTPCodecConfig) func() inspect
 // Every refusal here is a control that would otherwise load, evaluate and do
 // nothing: the exact failure the pii-entity check exists to prevent, applied
 // to a feature that also costs money when it does fire.
-func validateAIRules(rules []policy.Rule, cfg *AnalyzerConfig, pc PolicyConfig, lane string) []string {
-	gated := pc.OPA.enabled() && pc.OPA.Gate
+func validateAIRules(rules []policy.Rule, cfg *AnalyzerConfig, opa *OPAConfig, lane string) []string {
+	gated := opa.enabled() && opa.Gate
 
 	if len(rules) == 0 {
 		if gated {
@@ -547,7 +560,7 @@ func validateAIRules(rules []policy.Rule, cfg *AnalyzerConfig, pc PolicyConfig, 
 			// analyzer that is not there. It would cost a round trip
 			// per statement and change nothing.
 			return []string{fmt.Sprintf(
-				"%s: policy.opa.gate is on but the lane has no ai_analysis rule, "+
+				"%s: opa.gate is on but the lane has no ai_analysis rule, "+
 					"so the extra decision would gate nothing", lane)}
 		}
 		return nil
@@ -569,7 +582,7 @@ func validateAIRules(rules []policy.Rule, cfg *AnalyzerConfig, pc PolicyConfig, 
 			// operator says so.
 			problems = append(problems, fmt.Sprintf(
 				"%s: ai_analysis rule %q has no trigger, so it would classify nothing; "+
-					"name operations, tables or resources, or turn on policy.opa.gate "+
+					"name operations, tables or resources, or turn on opa.gate "+
 					"and let the policy decide", lane, r.Name))
 		}
 
@@ -601,15 +614,10 @@ func validateAIRules(rules []policy.Rule, cfg *AnalyzerConfig, pc PolicyConfig, 
 						"(allow, warn, block or defer)", lane, r.Name, raw, level))
 				continue
 			}
-			if a == analyzer.ActionDefer && !pc.OPA.enabled() {
-				// Deferring to a decision that does not exist allows
-				// everything. The operator asked for the opposite.
-				problems = append(problems, fmt.Sprintf(
-					"%s: ai_analysis rule %q defers %s risk to a policy decision, "+
-						"and the lane has no policy.opa.url to defer to; "+
-						"set one or use block, warn or allow",
-					lane, r.Name, level))
-			}
+			// `defer` with no OPA is no longer a refusal. actionMap
+			// degrades it to block, so the statement is denied rather
+			// than allowed, and one config file can serve a deployment
+			// with OPA and a deployment without one.
 			if a == analyzer.ActionRequireReview {
 				// The action is declared in the enum so the schema is
 				// stable when review lands, and refused here so nobody

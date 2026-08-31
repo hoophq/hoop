@@ -4,8 +4,8 @@
 #   envoy :5432 --cluster hoop_inspect_pg----> :15432  lane "appdb"
 #
 # Each lane resolves its own rules, its own masking and its own OPA endpoint.
-# The top-level policy/mask blocks are DEFAULTS every lane inherits unless it
-# overrides them; the resolved result is served at :19000/config.
+# The top-level guardrails/mask blocks are DEFAULTS every lane inherits
+# unless it overrides them; the resolved result is served at :19000/config.
 #
 # Validate without starting anything:
 #   cd sidecar/cmd && go run . -validate \
@@ -22,10 +22,12 @@ audit:
   async_queue_size: 1024 # a slow disk must not block a user's query
   query_sessions: 500 # backs /api/sessions
 
-# One detector engine for the process: the union of every entity any lane
-# references below. Required: there is no all-entities default, because
-# enabling all 45 recognizers rewrites ordinary numeric columns (US_SSN fires
-# on roughly a third of random nine-digit business ids).
+# One detector engine for the process. The section is optional now and it
+# NARROWS a permissive default: omit it and all 54 entity types are active.
+# It is kept because the recognizers it leaves out rewrite ordinary numeric
+# columns (US_SSN fires on roughly a third of random nine-digit business
+# ids), and these five are the union of every entity any lane references
+# below.
 pii:
   entities:
     - EMAIL_ADDRESS
@@ -45,8 +47,8 @@ pii:
 # stripped, so `WHERE id = 1` and `WHERE id = 2` are one verdict), and the
 # rule runs after the free local rules, so nothing already refused is paid
 # for. The appdb lane below moves the first of the three into Rego with
-# `policy.opa.gate`, which is the same cost control asked of the policy
-# engine instead of a YAML trigger.
+# `opa.gate`, which is the same cost control asked of the policy engine
+# instead of a YAML trigger.
 #
 # analyzer:
 #   provider: vertex            # vertex | anthropic | openai
@@ -80,8 +82,8 @@ pii:
 # ---------------------------------------------------------------- defaults
 # Applies to every lane. Lane rules are evaluated BEFORE these, so a lane's
 # specific message wins over a generic one for the same statement.
-policy:
-  enforce: true
+guardrails:
+  mode: enforce
   rules:
     # Cross-protocol: a taxpayer id in a statement lands in the database's own
     # query log, slow-query log and EXPLAIN output. Masking the response does
@@ -95,13 +97,12 @@ policy:
 # HTTP by substituting bytes and correcting Content-Length, postgres by
 # rebuilding its length-prefixed row frames around the new values.
 mask:
-  enabled: true
   rules:
-    - {name: emails, entity: EMAIL_ADDRESS, strategy: redact}
-    - {name: ssn, entity: US_SSN, strategy: partial, keep_last: 4}
-    - {name: cards, entity: CREDIT_CARD, strategy: partial, keep_last: 4}
-    - {name: cpf, entity: BR_CPF, strategy: redact}
-    - {name: iban, entity: IBAN_CODE, strategy: partial, keep_last: 4}
+    - {name: emails, entities: [EMAIL_ADDRESS], strategy: redact}
+    - {name: ssn, entities: [US_SSN], strategy: partial, keep_last: 4}
+    - {name: cards, entities: [CREDIT_CARD], strategy: partial, keep_last: 4}
+    - {name: cpf, entities: [BR_CPF], strategy: redact}
+    - {name: iban, entities: [IBAN_CODE], strategy: partial, keep_last: 4}
 
 # ------------------------------------------------------------------- lanes
 listeners:
@@ -109,7 +110,6 @@ listeners:
     protocol: postgres
     listen: 0.0.0.0:15432
     upstream: appdb:5432
-    connection: appdb
     # The hop to the database is encrypted. hoop-inspect speaks the pgwire
     # SSLRequest handshake, then wraps the connection: it is the TLS CLIENT,
     # so it decrypts on read and the gate below still inspects and masks
@@ -122,7 +122,7 @@ listeners:
     upstream_tls:
       ca_file: /etc/hoop-inspect/certs/appdb.crt
       server_name: appdb
-    policy:
+    guardrails:
       rules:
         # Envoy cannot see this: there is no pgwire parser in its filter
         # chain, so OPA is never consulted and never sees the statement.
@@ -176,19 +176,19 @@ listeners:
         #   high: defer
         #   medium: defer
         #   low: defer
-      # opa:
-      #   # The same OPA container the fat gate uses, a different rule:
-      #   # ext_authz answers Envoy at envoy/authz/result, this answers the
-      #   # sidecar over the Data API. Required by either deferring rule
-      #   # above: `defer` with no OPA endpoint defers to a decision that
-      #   # does not exist, which allows everything, so it is refused at
-      #   # startup.
-      #   url: http://opa:8181/v1/data/envoy/authz/inspect
-      #   # A policy engine outage stops appdb rather than silently
-      #   # disabling enforcement. The gate phase is exempt by design: an
-      #   # undefined gate decision allows and requests nothing.
-      #   fail_open: false
-      #   gate: true
+    # opa:
+    #   # The same OPA container the fat gate uses, a different rule:
+    #   # ext_authz answers Envoy at envoy/authz/result, this answers the
+    #   # sidecar over the Data API. Required by either deferring rule
+    #   # above: `defer` with no OPA endpoint defers to a decision that
+    #   # does not exist, which allows everything, so it is refused at
+    #   # startup.
+    #   url: http://opa:8181/v1/data/envoy/authz/inspect
+    #   # A policy engine outage stops appdb rather than silently
+    #   # disabling enforcement. The gate phase is exempt by design: an
+    #   # undefined gate decision allows and requests nothing.
+    #   fail_open: false
+    #   gate: true
     mask:
       rules:
         # Column rules are only possible where the protocol names its values,
@@ -197,16 +197,15 @@ listeners:
         # detector-based ssn rule leaves it in the clear. The column does not
         # care what the value looks like.
         - {name: ssn-column, columns: [ssn], strategy: partial, keep_last: 4}
-        - {name: emails, entity: EMAIL_ADDRESS, strategy: redact}
-        - {name: cpf, entity: BR_CPF, strategy: redact}
-        - {name: iban, entity: IBAN_CODE, strategy: partial, keep_last: 4}
+        - {name: emails, entities: [EMAIL_ADDRESS], strategy: redact}
+        - {name: cpf, entities: [BR_CPF], strategy: redact}
+        - {name: iban, entities: [IBAN_CODE], strategy: partial, keep_last: 4}
 
   - name: httpbin
     protocol: http
     listen: 0.0.0.0:18080
     upstream: httpbin:8080
-    connection: httpbin
-    policy:
+    guardrails:
       rules:
         - name: no-admin-api
           type: http_resource
