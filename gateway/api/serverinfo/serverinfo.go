@@ -35,6 +35,7 @@ var (
 		HasIDPCustomScopes:      isEnvSet("IDP_CUSTOM_SCOPES"),
 		DisableSessionsDownload: os.Getenv("DISABLE_SESSIONS_DOWNLOAD") == "true",
 		DisableClipboardCopyCut: os.Getenv("DISABLE_CLIPBOARD_COPY_CUT") == "true",
+		ApplicationMode:         os.Getenv("APP_MODE"),
 		// AnalyticsTracking:       getAnalyticsTrackingStatus(),
 	}
 )

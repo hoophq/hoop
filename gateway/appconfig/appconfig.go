@@ -20,7 +20,6 @@ import (
 
 // TODO: it should include all runtime configuration
 
-
 type pgCredentials struct {
 	connectionString string
 	username         string
@@ -46,6 +45,7 @@ type Config struct {
 	webhookAppURL                   *url.URL
 	licenseSigningKey               *rsa.PrivateKey
 	licenseSignerOrgID              string
+	appMode                         string
 	orgMultitenant                  bool
 	apiURL                          string
 	grpcURL                         string
@@ -92,6 +92,14 @@ func Load() error {
 	if runtimeConfig.isLoaded {
 		return nil
 	}
+	appMode := os.Getenv("APP_MODE")
+	if appMode == "" {
+		appMode = "gateway"
+	}
+	if appMode != "gateway" && appMode != "control-plane" {
+		return fmt.Errorf("invalid APP_MODE: %v, must be 'gateway' or 'control-plane'", appMode)
+	}
+
 	apiURL := os.Getenv("API_URL")
 	if apiURL == "" {
 		apiURL = "http://127.0.0.1:8009"
@@ -262,6 +270,7 @@ func Load() error {
 	}
 
 	runtimeConfig = Config{
+		appMode:                         appMode,
 		apiKey:                          os.Getenv("API_KEY"),
 		apiURL:                          fmt.Sprintf("%s://%s", apiRawURL.Scheme, apiRawURL.Host),
 		grpcURL:                         grpcURL,
@@ -445,24 +454,26 @@ func (c Config) LicenseSigningKey() (string, *rsa.PrivateKey) {
 func (c Config) FullApiURL() string { return c.apiURL + c.apiURLPath }
 
 // ApiURL is the base URL without any path segment or query strings (scheme://host:port)
-func (c Config) ApiURL() string                        { return c.apiURL }
-func (c Config) GrpcURL() string                       { return c.grpcURL }
+func (c Config) ApiURL() string  { return c.apiURL }
+func (c Config) GrpcURL() string { return c.grpcURL }
+
 // WebappStaticUiPath returns the explicitly configured STATIC_UI_PATH, or
 // empty when unset (the web UI source is then resolved by gateway/webappui).
-func (c Config) WebappStaticUiPath() string            { return c.webappStaticUIPath }
-func (c Config) ApiHostname() string                   { return c.apiHostname }
-func (c Config) ApiHost() string                       { return c.apiHost } // ApiHost host or host:port
-func (c Config) ApiScheme() string                     { return c.apiScheme }
-func (c Config) ApiURLPath() string                    { return c.apiURLPath }
-func (c Config) ApiKey() string                        { return c.apiKey }
-func (c Config) AuthMethod() idptypes.ProviderType     { return c.authMethod }
-func (c Config) ForceUrlTokenExchange() bool           { return c.forceUrlTokenExchange }
-func (c Config) WebhookAppKey() string                 { return c.webhookAppKey }
-func (c Config) WebhookAppURL() *url.URL               { return c.webhookAppURL }
-func (c Config) GcpDLPJsonCredentials() string         { return c.gcpDLPJsonCredentials }
-func (c Config) DlpProvider() string                   { return c.dlpProvider }
-func (c Config) DlpMode() string                       { return c.dlpMode }
-func (c Config) HasRedactCredentials() bool            { return c.hasRedactCredentials }
+func (c Config) WebappStaticUiPath() string        { return c.webappStaticUIPath }
+func (c Config) ApiHostname() string               { return c.apiHostname }
+func (c Config) ApiHost() string                   { return c.apiHost } // ApiHost host or host:port
+func (c Config) ApiScheme() string                 { return c.apiScheme }
+func (c Config) ApiURLPath() string                { return c.apiURLPath }
+func (c Config) ApiKey() string                    { return c.apiKey }
+func (c Config) AuthMethod() idptypes.ProviderType { return c.authMethod }
+func (c Config) ForceUrlTokenExchange() bool       { return c.forceUrlTokenExchange }
+func (c Config) WebhookAppKey() string             { return c.webhookAppKey }
+func (c Config) WebhookAppURL() *url.URL           { return c.webhookAppURL }
+func (c Config) GcpDLPJsonCredentials() string     { return c.gcpDLPJsonCredentials }
+func (c Config) DlpProvider() string               { return c.dlpProvider }
+func (c Config) DlpMode() string                   { return c.dlpMode }
+func (c Config) HasRedactCredentials() bool        { return c.hasRedactCredentials }
+func (c Config) AppMode() string                   { return c.appMode }
 
 // HasGuardrailProvider reports whether the mspresidio provider is fully
 // configured (both analyzer and anonymizer URLs).
@@ -474,10 +485,10 @@ func (c Config) HasRedactCredentials() bool            { return c.hasRedactCrede
 func (c Config) HasGuardrailProvider() bool {
 	return c.dlpProvider == "mspresidio" && c.msPresidioAnalyzerURL != "" && c.msPresidioAnonymizerURL != ""
 }
-func (c Config) MSPresidioAnalyzerURL() string         { return c.msPresidioAnalyzerURL }
-func (c Config) MSPresidioAnomymizerURL() string       { return c.msPresidioAnonymizerURL }
-func (c Config) PgUsername() string                    { return c.pgCred.username }
-func (c Config) PgURI() string                         { return c.pgCred.connectionString }
+func (c Config) MSPresidioAnalyzerURL() string   { return c.msPresidioAnalyzerURL }
+func (c Config) MSPresidioAnomymizerURL() string { return c.msPresidioAnonymizerURL }
+func (c Config) PgUsername() string              { return c.pgCred.username }
+func (c Config) PgURI() string                   { return c.pgCred.connectionString }
 
 // MigrationPathFiles returns the directory to load SQL migration files
 // from when MIGRATION_PATH_FILES is set. Empty means the migrations
@@ -490,7 +501,7 @@ func (c Config) PgliteDataDir() string { return c.pgCred.pgliteDataDir }
 
 // IsPgliteEnabled reports whether the gateway must boot the embedded PGlite
 // database instead of connecting to an external PostgreSQL.
-func (c Config) IsPgliteEnabled() bool { return c.pgCred.pgliteDataDir != "" }
+func (c Config) IsPgliteEnabled() bool                 { return c.pgCred.pgliteDataDir != "" }
 func (c Config) DisableSessionsDownload() bool         { return c.disableSessionsDownload }
 func (c Config) DisableClipboardCopyCut() bool         { return c.disableClipboardCopyCut }
 func (c Config) OrgMultitenant() bool                  { return c.orgMultitenant }
