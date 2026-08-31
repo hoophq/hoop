@@ -23,15 +23,21 @@ CREATE TABLE customers (
 -- The three SSNs disagree on purpose. 555-12-3456 is ordinary. 123-45-6789
 -- and 987-65-4321 are the sequential and descending runs every fixture uses,
 -- and alcatraz rejects both as placeholders, so an entity rule alone would
--- leave two of the three in the clear. Hence the column rule beside it in
--- ../sidecar/config.yaml.
+-- leave two of the three in the clear. That is the argument for the column
+-- rule in ../sidecar/config.yaml, which is commented out there: one mask rule
+-- for the whole process, spent on EMAIL_ADDRESS. These three arrive at
+-- Metabase as stored, and the fixtures are kept so the disagreement is
+-- visible the moment the pair is restored.
 INSERT INTO customers (name, email, ssn, cpf, iban) VALUES
     ('Ada Lovelace', 'ada@example.com',   '123-45-6789', '111.444.777-35', 'GB82WEST12345698765432'),
     ('Grace Hopper', 'grace@example.com', '987-65-4321', '529.982.247-25', 'DE89370400440532013000'),
     ('Alan Turing',  'alan@example.com',  '555-12-3456', '390.533.447-05', 'FR1420041010050500013M02606');
 
--- One maskable value per row, so ./demo.sh can assert exactly: 5,000 rows in,
--- 5,000 redactions out, zero surviving '@'.
+-- One maskable value per row, and it is the value the process's single mask
+-- rule covers, so ./demo.sh can assert exactly: 5,000 rows in, 5,000
+-- redactions out, zero surviving '@'. actor_email rather than email on
+-- purpose: no `columns:` list predicts that name, so the export only passes
+-- with an ENTITY rule, which is why the one rule is one.
 CREATE TABLE events (
     id           serial PRIMARY KEY,
     occurred_at  timestamp NOT NULL,

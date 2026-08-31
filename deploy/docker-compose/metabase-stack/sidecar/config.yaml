@@ -76,6 +76,15 @@ listeners:
         # the cap in force there is nothing left to order. Restore them on a
         # build without it and put them back BEFORE the backstop.
         #
+        # Two things follow from their absence, and ./demo.sh shows both
+        # rather than pretending otherwise. A write to customers is refused
+        # by the backstop's generic sentence, not by one naming the CRM sync.
+        # And payroll is READABLE: an operation rule cannot deny a SELECT, so
+        # reporting reads salaries and bank_iban until payroll-off-limits is
+        # the rule this process spends its budget on. Masking is no
+        # substitute; a mask rule has no `tables:` field, so masking iban
+        # would cover customers.iban too.
+        #
         # payroll-off-limits matches by bare name, and a bare name matches any
         # schema qualification, so it also catches public.payroll and
         # hr.payroll. If you need one schema and not another, that distinction
@@ -117,7 +126,7 @@ listeners:
         # `require_table_match: true` on a table rule ALSO denies statements
         # whose relations could not be resolved. It reads like the safe
         # choice and it would break this lane: SET, SHOW, BEGIN and ROLLBACK
-        # carry no relations, and they are 59 of the 99 statements Metabase
+        # carry no relations, and they are 50 of the 86 statements Metabase
         # sends here. Reach for the operation rule below instead, which
         # denies unclassifiable statements without touching session setup.
 
@@ -146,21 +155,31 @@ listeners:
       # needs a guardrail rule and not a mask rule. To mask a column in one
       # table and leave it clear in another, give each table its own lane.
       rules:
-        # The column rule rather than the entity rule, because a column rule
-        # keys on the name in RowDescription and so catches the two
-        # fixture-shaped SSNs alcatraz rejects. What it loses is an alias:
-        # `SELECT ssn AS employee_code` defeats it, and that is the cost of
-        # having one rule instead of the pair.
-        - {name: ssn-column, columns: [ssn], strategy: partial, keep_last: 4}
-        # ---- over the limit: the pair and the other entities ------------
-        # ssn carries both kinds of rule because they fail in opposite
-        # directions. An entity rule keys on the value, so it survives any
-        # alias, and reshaping the value defeats it. README "Known gaps" has
-        # the hole the pair still leaves.
+        # The entity rule for EMAIL_ADDRESS is the one rule this build allows,
+        # and the 5,000-row CSV export is what it is spent on. That export
+        # reads events.actor_email, a column name no `columns:` list here
+        # predicted, and an entity rule keys on the VALUE, so it covers
+        # customers.email, events.actor_email and whatever a join calls them
+        # without anyone enumerating names in advance. It is also the only
+        # rule that can carry the claim this stack is built to make: masking
+        # does not stop at maxDecodedRows.
+        - {name: emails, entities: [EMAIL_ADDRESS], strategy: redact}
+        # ---- over the limit: the ssn pair and the other entities --------
+        # ssn wants BOTH kinds of rule, because they fail in opposite
+        # directions. A column rule keys on the name in RowDescription, so it
+        # catches the two fixture-shaped SSNs alcatraz rejects (123-45-6789,
+        # 987-65-4321) and is defeated by `SELECT ssn AS employee_code`. An
+        # entity rule keys on the value, so it survives any alias and is
+        # defeated by reshaping the value. README "Known gaps" has the hole
+        # the pair still leaves.
+        #
+        # With one rule live, ssn, cpf and iban reach Metabase as stored.
+        # ./demo.sh prints them that way beside the redacted email rather than
+        # claiming otherwise; swap one of these for `emails` above and that
+        # column changes in the SQL editor beat, while the CSV export beat
+        # stops asserting anything, because events carries no other maskable
+        # column.
+        # - {name: ssn-column, columns: [ssn], strategy: partial, keep_last: 4}
         # - {name: ssn-entity, entities: [US_SSN], strategy: partial, keep_last: 4}
-        # Entity rules for the rest: the same value turns up under names
-        # nobody enumerates in advance (email, actor_email, whatever a join
-        # calls them).
-        # - {name: emails, entities: [EMAIL_ADDRESS], strategy: redact}
         # - {name: cpf, entities: [BR_CPF], strategy: redact}
         # - {name: iban, entities: [IBAN_CODE], strategy: partial, keep_last: 4}
