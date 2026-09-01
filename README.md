@@ -1,300 +1,186 @@
-<h4 align="center">
-<sub><b>NEW</b>  ·  Agent in the loop — Using AI to assess the risk of one-off operations.  <a href="#whats-new"><b>Read more →</b></a></sub>
-</h4>
-<h1 align="center">
-One Gateway Between Your Team and Your Infrastructure.
-</h1>
-<h3 align="center">
-hoop.dev is a layer 7 gateway that masks sensitive data, blocks dangerous commands, approves risky writes, and records every session inline, before anything reaches your infrastructure.
-</h3>
+<h1 align="center">Runtime control for agents</h1>
+
 <p align="center">
-Engineers · AI Agents · MCP Clients · Services · Support/QA
+Data and context make agents useful. Runtime controls make them safe.<br>
+An open-source sidecar. One binary, one config file, MIT.
 </p>
-<p align="center">
-Open-source. Used by NYSE-listed companies. 5,000+ databases protected.
-</p>
+
 <p align="center">
 <a href="https://github.com/hoophq/hoop/releases"><img src="https://img.shields.io/github/v/release/hoophq/hoop?style=flat-square" alt="release"></a>
 <a href="https://github.com/hoophq/hoop/blob/main/LICENSE"><img src="https://img.shields.io/github/license/hoophq/hoop?style=flat-square" alt="license"></a>
 <a href="https://hub.docker.com/r/hoophq/hoop"><img src="https://img.shields.io/docker/pulls/hoophq/hoop?style=flat-square" alt="docker pulls"></a>
 <a href="https://github.com/hoophq/hoop/stargazers"><img src="https://img.shields.io/github/stars/hoophq/hoop?style=flat-square" alt="stars"></a>
 </p>
-<p align="center">
-<a href="#quick-start">Quick start</a> ·
-<a href="#how-it-works">How it works</a> ·
-<a href="https://hoop.dev/docs/quickstart/overview">Connectors</a> ·
-<a href="#vs-alternatives">vs alternatives</a> ·
-<a href="#whats-new">What's new</a> ·
-<a href="https://hoop.dev/docs">Docs</a>
-</p>
 
----
- 
-## What is hoop?
- 
-hoop is an open-source layer 7 gateway that sits between users (engineers, AI agents, service accounts)
-and infrastructure (databases, Kubernetes clusters, servers, APIs). Every query and command
-passes through at the wire protocol level, where the gateway can:
- 
-- **Mask sensitive data in responses** — ML-powered classification, not regex pattern matching, applied before bytes leave the gateway.
-- **Block dangerous commands before they execute** — `DROP TABLE`, `rm -rf`, `DELETE` without `WHERE`, configurable per role and per backend.
-- **Require human approval for risky operations** — Slack or Teams workflow, time-bound, fully logged.
-- **Record every session** — full replay of SQL, shell, kubectl, and HTTP traffic, indexed by user, table, and query.
-No agents on endpoints. No schema discovery. No code changes. Deploy the gateway, connect your identity provider, define your rules.
- 
----
- 
-## Who is hoop for?
- 
-Teams where engineers or AI agents access production infrastructure. If your developers run queries against databases with customer PII, execute commands on production Kubernetes clusters, or use AI coding assistants against real systems, hoop gives you visibility and control over what happens inside those sessions and what data is allowed to leave them.
- 
----
- 
-## The problem, concretely
- 
-An engineer pulls recent payments to investigate a customer report:
- 
-**❌ Without hoop**
- 
-```sql
-SELECT * FROM payments LIMIT 10;
-```
- 
-```
- id    | customer_email          | card_number          | amount | status
--------+-------------------------+----------------------+--------+----------
- 84021 | jane.thompson@gmail.com | 4532-1024-5678-9012  |  49.99 | settled
- 84022 | mreyes@acmecorp.io      | 5412-7510-3344-1182  | 120.00 | settled
- 84023 | k.patel@protonmail.com  | 4716-9923-1144-5577  |  24.99 | refunded
- 84024 | dlin@northwind.co       | 5577-3344-9911-2266  |  89.50 | settled
- 84025 | tyler.s@gmail.com       | 4111-2222-3333-4444  |  15.00 | failed
- ...
-```
- 
-10 rows of real card numbers and emails. Now in `psql` history, in the screenshot the engineer pasted into Slack, and in the CSV they exported to debug locally.
- 
-**✅ With hoop**
- 
-```sql
-SELECT * FROM payments LIMIT 10;
-```
- 
-```
- id    | customer_email        | card_number         | amount | status
--------+-----------------------+---------------------+--------+----------
- 84021 | j****@*****.com       | **-**-****-9012     |  49.99 | settled
- 84022 | m****@*******.io      | **-**-****-1182     | 120.00 | settled
- 84023 | k****@*********.com   | **-**-****-5577     |  24.99 | refunded
- 84024 | d****@*********.co    | **-**-****-2266     |  89.50 | settled
- 84025 | t****@*****.com       | **-**-****-4444     |  15.00 | failed
- ...
-```
- 
-Engineers can still debug using amounts, statuses, and timestamps. PII never leaves the gateway.
- 
----
- 
-An AI agent fixing a bug at 3AM:
- 
-**❌ Without hoop**
- 
-<pre>
-> claude-code: DROP TABLE orders;
-Query OK
-47,291,834 rows affected 💀
-</pre>
- 
-**✅ With hoop**
- 
-<pre>
-> claude-code: DROP TABLE orders;
-⛔ Blocked by guardrail: "Prevent destructive DDL in production"
-Event logged. Security team notified.
-</pre>
- 
-The command never reached the database.
- 
----
- 
-## Quick Start
- 
+## Install
+
 ```bash
-# create a jwt secret for auth
-echo "JWT_SECRET_KEY=$(openssl rand -hex 32)" >> .env
- 
-# download and run
-curl -sL https://hoop.dev/docker-compose.yml > docker-compose.yml && \
-  docker compose up
+brew tap hoophq/brew https://github.com/hoophq/brew.git
+brew install hoop
 ```
- 
-Gateway running on `:8009`. OIDC connected. Masking and guardrails active.
- 
-[Full installation options →](https://hoop.dev/docs/introduction/getting-started)
- 
----
- 
-## How It Works
- 
+
+## Configure
+
+One file. This one redacts emails and refuses destructive SQL.
+
+```yaml
+log_level: info
+
+admin:
+  listen: 127.0.0.1:19000        # /healthz /stats /config /events
+
+pii:
+  entities: [EMAIL_ADDRESS, US_SSN, CREDIT_CARD]
+
+mask:                            # Data Masking
+  enabled: true
+  rules:
+    - {name: emails, entity: EMAIL_ADDRESS, strategy: redact}
+
+policy:                          # Guardrails
+  enforce: true
+  rules:
+    - name: no-destructive-sql
+      type: operation
+      operations: [drop, delete, truncate]
+      message: destructive statements are not permitted
+
+listeners:
+  - name: localdb
+    protocol: postgres           # postgres | mssql | http
+    listen: 127.0.0.1:15432      # where clients connect
+    upstream: 127.0.0.1:5432     # your real resource
+    connection: localdb
 ```
-Engineers / AI Agents / Service Accounts
-              │
-              ▼
-     ┌────────────────┐
-     │   hoop Gateway │  ← Parses wire protocols in real time
-     │                │
-     │  • Masks PII   │  (ML-powered, <5ms latency)
-     │  • Blocks cmds │  (DROP, DELETE, rm -rf)
-     │  • Approvals   │  (Slack / Teams)
-     │  • Records all │  (full session replay)
-     │  • AI controls │  (per-action governance)
-     └────────────────┘
-              │
-              ▼
-    Your Infrastructure
-    (Databases, K8s, SSH, APIs, MCP servers)
-```
- 
-The gateway parses wire protocols natively: PostgreSQL, MySQL, MSSQL, MongoDB, Kubernetes, SSH, HTTP/gRPC, RDP, and more. Your tools connect through the gateway without knowing it's there. No SDKs, no plugins, no browser extensions.
- 
----
- 
-## Key Capabilities
- 
-### Inline controls
- 
-What hoop does in real-time on every connection — for engineers, AI agents, and service accounts equally.
- 
-**Data masking**
- 
-- ML-powered detection of PII, PHI, PCI data, and credentials inside database responses, API payloads, and terminal output. Not regex. The model understands context: `555-1234` in a `phone` column is a phone number, `BUILD-555-1234` in a CI log is a build ID. One rule covers thousands of resources. No schema mapping required.
-**Guardrails**
- 
-- Define dangerous operations and block them at the protocol layer before they reach the target system. `DROP TABLE`, `DELETE` without `WHERE`, `kubectl delete namespace`, `rm -rf`, and any custom pattern. Prevention, not detection.
-**Command approval**
- 
-- Route risky operations (production writes, schema changes, config mutations) for human approval via Slack or Teams. One command, one decision. The operation waits until approved, denied, or scheduled for a maintenance window.
-**SSO**
- 
-- Connect Okta, JumpCloud, Azure AD, Google Workspace, or any OIDC/SAML provider. Included in the open-source license with no separate tier or seat charge. Identity is a security primitive, not a revenue lever.
-### Built for AI agents
- 
-Same policy engine, agent-aware semantics. No parallel stack, no sandbox.
- 
-**AI agent governance**
- 
-- Claude Code, Cursor, and autonomous agents connect to your infrastructure through the gateway. Agents read freely (with masked responses). Agents write with approval. Destructive operations are blocked outright. Every agent action is logged, risk-scored, and replayable.
-**MCP gateway**
- 
-- Not just a proxy. hoop inspects MCP payloads, masks PII in JSON responses before they reach the agent, blocks dangerous operations, and federates identity so developers never touch real credentials. Auto-generates a sensitive data catalog from MCP traffic.
-### Audit & operations
- 
-What you stop building yourself once hoop is in place.
- 
-**Session recording**
- 
-- Full session capture with replay. Every command, every response, every approval and denial. Generates compliance evidence for SOC 2, GDPR, PCI DSS, and HIPAA automatically.
-**Runbooks**
- 
-- Parameterized templates stored in Git. Your team executes common operations with validated inputs. Guardrails, masking, and approval workflows apply automatically to every run.
----
- 
-## vs Alternatives
- 
-hoop gets compared to three different categories of tools. Here's where it overlaps and where it doesn't.
- 
-### vs PAM (Privileged Access Management)
- 
-PAM tools route the connection, broker credentials, and log the session. hoop does that too — and then parses the wire protocol on top. Once a user is connected, PAM is done; hoop is just starting. We mask sensitive fields in database responses, block destructive commands by content (`DROP TABLE`, `rm -rf`), and require approval on risky writes — all inline, before the action reaches the target system.
- 
-If your concern is *who connected*, PAM is enough. If your concern is *what data left the session and what commands ran*, you need both — or you need hoop.
- 
-### vs DLP (Data Loss Prevention)
- 
-DLP inspects data in motion at the network or endpoint layer — usually after a developer has already pulled it onto their laptop, into a Slack message, or into an email. hoop inspects data in motion at the wire-protocol layer — before it reaches the developer at all. Sensitive fields never leave the gateway in the first place.
- 
-DLP catches leaks. hoop prevents them.
- 
-### vs AI Security (LLM guardrails, prompt firewalls)
- 
-AI security tools sit in front of the LLM. They inspect prompts going in and outputs coming out, looking for jailbreaks, prompt injection, and policy violations at the application layer. hoop sits in front of the infrastructure. We inspect what data the agent is allowed to read, what commands it's allowed to run, and what gets returned — at the database, Kubernetes, and MCP layers.
- 
-Different problem. Different layer. Most regulated AI deployments end up with both — application-layer controls on the prompt, infrastructure-layer controls on the data.
- 
----
- 
-## Installation
- 
-### Docker (Recommended)
- 
+
+## Run
+
 ```bash
-touch .env && \
-curl -sL https://hoop.dev/docker-compose.yml > docker-compose.yml && \
-docker compose up
+hoop start sidecar --config config.yaml           # start
+hoop start sidecar --config config.yaml --validate # check the config, then exit
 ```
- 
-[See Docker Compose documentation →](https://hoop.dev/docs/setup/deployment/docker-compose)
- 
-[See Kubernetes deployment documentation →](https://hoop.dev/docs/setup/deployment/kubernetes)
- 
-[See AWS deploy & host documentation →](https://hoop.dev/docs/setup/deployment/AWS)
- 
----
- 
+
+Point your agent at `127.0.0.1:15432` instead of the database. Your agents change one thing: the port in their connection string. The sidecar runs next to your database, not in place of it.
+
+## What Happens to a Query
+
+**The query runs. The sensitive fields stay hidden.**
+
+```
+> pull the customer list for the churn report
+
+● postgres(SELECT name, email FROM customers)
+  ⎿  name           email
+     Ada Lovelace   [REDACTED:EMAIL_ADDRESS]
+     Grace Hopper   [REDACTED:EMAIL_ADDRESS]
+     hoop.dev · emails redacted at the wire
+```
+
+Masking rewrites the response in memory. The request itself is never touched.
+
+**The statement never reaches the database.**
+
+```
+> clean up the old test rows in customers
+
+● postgres(DELETE FROM customers WHERE id = 1)
+  ⎿  FATAL:  destructive statements are not permitted
+     hoop.dev · guardrail: no-destructive-sql
+```
+
+A real pgwire error carrying the message you wrote in the config. The agent reads why it was refused instead of guessing at a dropped connection.
+
+The agent never knows the sidecar exists. No SDK, no prompt changes, no agent-side config.
+
+## The Four Controls
+
+**Data Masking.** Rewrites sensitive values in the response, in memory, before they reach the client. The request itself is never touched.
+
+**Guardrails.** An ordered deny list checked against every statement. Destructive ones never reach the database, and the client reads the reason you wrote.
+
+**Session Analyzer.** An agent scores every action's intent and syntax for risk before it executes. Local rules run first, so a statement a guardrail already refuses never costs a model call.
+
+**Reviews.** Risky operations are escalated to a human for one-off approval.
+
 ## Supported Protocols
- 
-| Category | Protocols |
+
+| Protocol | Masking | Guardrails | Session Analyzer |
+| --- | --- | --- | --- |
+| PostgreSQL | yes | yes | yes |
+| Microsoft SQL Server | yes | yes | yes |
+| HTTP | yes | yes | yes, with `http.capture_body` |
+
+Wire protocols outlive models, frameworks, and MCP. The sidecar works behind whatever interface your agent uses.
+
+## The Control Plane
+
+One sidecar runs from one config file. A fleet needs one place to see them all.
+
+The control plane is the admin surface for that. Connect your sidecars. Set Data Masking, Guardrails, and the Session Analyzer once for all of them. Work the Reviews queue when an operation needs a person. Admins sign in here. Your users never do.
+
+**Status: in development.**
+
+| Surface | State |
 | --- | --- |
-| Databases | PostgreSQL, MySQL, MSSQL, MongoDB |
-| Infrastructure | Kubernetes (exec, port-forward), SSH, RDP |
-| APIs | HTTP, gRPC |
-| AI | Claude Code, Cursor, MCP servers |
-| Runtimes | Rails, Django, Elixir IEx, PHP |
-| Cloud | AWS SSM, custom CLIs |
- 
----
- 
-## What's New
- 
-### June 1, 2026 — Agent in the loop
- 
-When an agent acts on production, hoop uses agents to evaluate the risk of the action in real time. You describe what counts as sensitive, what context matters, and what should escalate. The Session Analyzer reads that prompt and analyzes the live stream of commands flowing through the gateway.
+| Guardrails, Data Masking, Session Analyzer, Review rules | Built. Configuration lives in the control plane. |
+| Slack for review delivery | Built. |
+| Administrators | Built. |
+| Sidecar fleet: token issuance, resources, liveness | Not built |
+| Review queue: approve, reject, retry | Not built |
+| Pushing configuration to the fleet | Not built. Each sidecar still reads its own file. |
 
-It evaluates each session as it happens, against the actual command. When the analyzer deems an action warrants review, it flags it for a human, blocks it, or lets it run.
+The UI lives in [`controlplane/frontend/`](controlplane/frontend/). The backend is not built yet, so it runs against the gateway API:
 
-The dev team's agent and the security team's agent operate at the same speed, on the same model class. No static rule has to anticipate what the dev agent will try next.
- 
-[Read the full breakdown →](https://hoop.dev/blog/this-is-what-agent-on-agent-governance-looks-like)
- 
----
- 
+```bash
+make run-dev                      # gateway on :8009, from the repo root
+cd controlplane/frontend && npm install && npm run dev
+```
+
+Routes with no backend behind them say so and name the work they wait on. You will not find an empty table pretending to be loaded.
+
+## Why This Exists
+
+Nobody runs agents in production because they want agents in production. They do it because agents need context and data to be useful.
+
+That risk moves at machine speed. An agent that drops a table is not smart. It is fast. A static rule cannot judge intent, and a human cannot review at machine speed.
+
+So the control has to be an agent too. One that moves as fast as yours, with a single job: read every statement live and stop the dangerous one before it lands.
+
+**Not a PAM.** PAM decides who connects. Once a user is connected, PAM is done. hoop.dev controls what every statement does and what comes back.
+
+**Not an MCP gateway.** MCP gateways broker one interface. The sidecar sits on the wire underneath, so it covers the protocols an MCP server never speaks.
+
+**Not an agent sandbox.** Sandboxes isolate the agent. The sidecar governs the connection between the agent and the resource it needs.
+
+**Not a platform you migrate to.** Keep your identity stack, keep your sandbox, keep what you run. The sidecar rides next to it.
+
+## What Is in This Repository
+
+hoop.dev began as a gateway for human access to infrastructure. The sidecar and the control plane are where the product is going. Both live here.
+
+| Directory | What it is |
+| --- | --- |
+| `sidecar/` | The inspection core. Wire bytes to statements, statements to verdicts. |
+| `controlplane/frontend/` | The control plane admin UI. |
+| `client/` | The `hoop` CLI, including `hoop start sidecar`. |
+| `gateway/` | The gateway server. REST API on :8009, gRPC on :8010. |
+| `agent/` | The agent that runs on your infrastructure and dials the gateway. |
+| `agentrs/` | Rust binary for the RDP proxy and TLS termination. |
+| `tunnel/` | Client-side tunnel daemon. |
+| `common/` | Shared protocol definitions and utilities. |
+| `webapp/`, `webapp_v2/` | The gateway web UI. Frozen. |
+| `docs/adr/` | Architecture decision records. Start here for the reasoning. |
+
+**The gateway still ships and is still supported.** It covers human access: RBAC, session recording and replay, runbooks, a web terminal, and connectors for Kubernetes, SSH, RDP, and more. If you run it today, nothing changes. [Gateway documentation →](https://hoop.dev/docs)
+
 ## Contributing
- 
-We welcome contributions. Protocol parsers, masking patterns, guardrail rules, runbook templates, integrations, and documentation improvements. Check out our [Development Documentation](https://hoop.dev/docs) to get started.
- 
----
- 
-## Community
- 
-Join our [Discussions](https://github.com/hoophq/hoop/discussions) to ask questions, share ideas, and connect with other users.
 
----
+Policy rule types, masking strategies, protocol coverage, documentation. Start with [the docs](https://hoop.dev/docs), and read [`docs/adr/`](docs/adr/) for how the pieces fit together.
 
-## Star the Repository
+The wire protocol codecs live in a private module (`github.com/hoophq/libhoop`). Building the `sidecar/` module needs `GOPRIVATE=github.com/hoophq/libhoop` and credentials for it. Everything else in this repository builds without them.
 
-If hoop solves a problem for you, give us a star. It helps other teams find the project and tells us what to invest in next.
+Questions and ideas go in [Discussions](https://github.com/hoophq/hoop/discussions).
 
-<p >
-<a href="https://github.com/hoophq/hoop"><img src="https://img.shields.io/github/stars/hoophq/hoop?style=social" alt="Star hoop on GitHub"></a>
-</p>
- 
----
- 
 ## License
- 
-MIT. The code that touches your data is code you can read.
- 
----
- 
-<p align="center">
-<a href="https://hoop.dev">hoop.dev</a> · Data security in transit. One gateway, every protocol.
-</p>
+
+MIT. Anything that reads every query to your data should be code you can read too.
