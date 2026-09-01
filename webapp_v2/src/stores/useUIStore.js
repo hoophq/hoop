@@ -9,24 +9,29 @@ const CONFIG_STATUS_DISMISS_KEY = 'config-status-dismissed'
 const PERMANENT_AT_OR_BELOW = 1
 const SNOOZE_MS = 7 * 24 * 60 * 60 * 1000
 
+// One entry per user id, so two admins sharing a browser each keep their own
+// dismissal. The value is null for permanent, an epoch-ms deadline otherwise.
+//
 // Read once here, never inside a selector: Date.now() in a selector makes the
 // snapshot unstable, and the ConfigStatus gate must stay pure and hook-free
 // (DEP-136). A snooze therefore ends on the next page load, not mid-session.
+// Expired entries are dropped from the returned map and leave storage on the
+// next dismiss, which keeps page load free of storage writes.
 const readConfigStatusDismiss = () => {
+  let saved
   try {
-    const saved = JSON.parse(localStorage.getItem(CONFIG_STATUS_DISMISS_KEY))
-    const { userId, until } = saved ?? {}
-    if (!userId) return null
-    if (until === null) return { userId, until }
-    if (typeof until !== 'number' || until <= Date.now()) {
-      localStorage.removeItem(CONFIG_STATUS_DISMISS_KEY)
-      return null
-    }
-    return { userId, until }
+    saved = JSON.parse(localStorage.getItem(CONFIG_STATUS_DISMISS_KEY))
   } catch {
     // Truncated or hand-edited value — fail toward showing the checklist.
-    return null
+    return {}
   }
+  if (saved === null || typeof saved !== 'object' || Array.isArray(saved)) return {}
+  const now = Date.now()
+  return Object.fromEntries(
+    Object.entries(saved).filter(
+      ([, until]) => until === null || (typeof until === 'number' && until > now)
+    )
+  )
 }
 
 export const useUIStore = create((set) => ({
@@ -50,10 +55,17 @@ export const useUIStore = create((set) => ({
   setPendingOpenSection: (label) => set({ pendingOpenSection: label }),
   clearPendingOpenSection: () => set({ pendingOpenSection: null }),
 
-  dismissConfigStatus: (userId, subItemsLeft) => {
-    const until = subItemsLeft <= PERMANENT_AT_OR_BELOW ? null : Date.now() + SNOOZE_MS
-    const dismiss = { userId, until }
-    localStorage.setItem(CONFIG_STATUS_DISMISS_KEY, JSON.stringify(dismiss))
-    set({ configStatusDismiss: dismiss })
-  },
+  dismissConfigStatus: (userId, subItemsLeft) =>
+    set((state) => {
+      const until = subItemsLeft <= PERMANENT_AT_OR_BELOW ? null : Date.now() + SNOOZE_MS
+      const next = { ...state.configStatusDismiss, [userId]: until }
+      try {
+        localStorage.setItem(CONFIG_STATUS_DISMISS_KEY, JSON.stringify(next))
+      } catch (err) {
+        // Storage blocked or over quota. Hiding it for this session beats a
+        // dismiss button that throws and leaves the card on screen.
+        console.warn('[useUIStore] could not persist the checklist dismissal:', err)
+      }
+      return { configStatusDismiss: next }
+    }),
 }))

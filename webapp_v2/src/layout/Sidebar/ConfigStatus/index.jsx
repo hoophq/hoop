@@ -25,11 +25,10 @@ export function ConfigStatus() {
   const completed = useConfigStatusStore((s) => s.completed && s.forUserId === userId)
   // Read through a selector, not useState(() => localStorage...): the gate must
   // stay effect-free, and a store read matches the three selectors above. The
-  // store already dropped an expired dismiss, so this is a plain comparison.
-  // userId is null before /userinfo resolves and the stored value is null when
-  // never dismissed — compare only once we actually have a user, or null === null
-  // hides the checklist from everyone.
-  const dismissed = useUIStore((s) => userId !== null && s.configStatusDismiss?.userId === userId)
+  // store already dropped expired entries, so presence of the key is the answer.
+  // The userId guard is for the window before /userinfo resolves: no key of the
+  // map may stand in for "no user yet".
+  const dismissed = useUIStore((s) => userId !== null && userId in s.configStatusDismiss)
 
   if (!isAdmin || !showSetupChecklist || completed || dismissed) return null
   return <ConfigStatusWidget />
