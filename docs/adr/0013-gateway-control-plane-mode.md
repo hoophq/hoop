@@ -1,4 +1,4 @@
-# ADR-0011: The control plane is the gateway with a narrowed API surface
+# ADR-0013: The control plane is the gateway with a narrowed API surface
 
 - **Status:** Proposed
 - **Date:** 2026-08-31
