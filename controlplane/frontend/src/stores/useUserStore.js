@@ -39,6 +39,11 @@ export const useUserStore = create((set, get) => ({
   // /serverinfo postgres_proxy_enabled. Fail closed: without a Postgres proxy
   // listen address the gateway cannot serve a native postgres session.
   postgresProxyEnabled: false,
+  // Which API surface the backend serves: 'gateway' or 'control-plane'. Null
+  // until /serverinfo resolves. A backend in gateway mode answers every route,
+  // including the ones a control-plane deployment blocks, so developing
+  // against one hides the gap until production.
+  applicationMode: null,
   loading: false,
 
   setUser: (user) => set({ user, isAdmin: !!user?.is_admin, isSelfHosted: user?.tenancy_type === 'selfhosted' }),
@@ -65,7 +70,8 @@ export const useUserStore = create((set, get) => ({
       licenseInfo: license || null,
       serverInfoLoaded: true,
       hasRedactCredentials: !!serverInfo?.has_redact_credentials,
-      postgresProxyEnabled: !!serverInfo?.postgres_proxy_enabled
+      postgresProxyEnabled: !!serverInfo?.postgres_proxy_enabled,
+      applicationMode: serverInfo?.application_mode || null
     })
   },
   setFeatureFlags: (flags) => set({ featureFlags: flags }),

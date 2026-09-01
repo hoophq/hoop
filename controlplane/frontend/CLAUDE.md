@@ -29,8 +29,28 @@ Zustand · Axios · React Router v7 · lucide-react.
 | Lint | `npm run lint` |
 | Preview | `npm run preview` |
 
-The control plane backend does not exist yet, so the API comes from the gateway. Start
-it with `make run-dev` from the repo root.
+There is no separate control plane backend: the API is the gateway booted into its
+control-plane surface. Put `APP_MODE=control-plane` in the repo-root `.env`, then
+`make run-dev`. It must be in the file: `scripts/dev/run.sh` starts the gateway in a
+container with `--env-file=.env`, so a shell prefix never reaches it.
+
+`APP_MODE` is not optional. Without it the gateway registers all 264 of its routes, so a
+service call to something the control plane blocks succeeds here and 404s in production.
+`buildControlPlaneRoutes` in `gateway/api/server.go` is the whole list of routes this app
+may call — the backend's counterpart to `Router.jsx`. `gateway/api/controlplane_routes_test.go`
+pins that list exactly, so a route added there without a decision fails the build.
+
+Nothing checks the two against each other, though: adding a service call here to a route
+the control plane does not serve compiles, builds and 404s at runtime. Check the list
+before adding one. `layout/ModeBanner` warns on screen, in dev builds, when the backend
+is answering in gateway mode and would hide the mistake.
+
+Two things the control plane deliberately does not expose, so do not add UI that calls
+them: **access-control group management** (`GET /users/groups` is allowed because review
+rules name approvers by group; creating and deleting them is not) and **attributes**
+(blocked entirely — the pickers were removed from Guardrails, Data Masking and Review
+Rules, and each form carries the record's existing value through untouched rather than
+clearing it).
 
 ## Routing
 

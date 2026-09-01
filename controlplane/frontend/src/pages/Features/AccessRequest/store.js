@@ -1,6 +1,5 @@
 import { create } from 'zustand'
 import { accessRequestsService } from '@/services/accessRequests'
-import { attributesService } from '@/services/attributes'
 import { userGroupsService } from '@/services/userGroups'
 
 export const useAccessRequestStore = create((set) => ({
@@ -10,9 +9,6 @@ export const useAccessRequestStore = create((set) => ({
 
   rule: null,
   ruleStatus: 'idle',
-
-  attributes: [],
-  attributesStatus: 'idle',
 
   userGroups: [],
   userGroupsStatus: 'idle',
@@ -41,15 +37,6 @@ export const useAccessRequestStore = create((set) => ({
   },
 
   clearRule: () => set({ rule: null, ruleStatus: 'idle' }),
-
-  fetchAttributes: async () => {
-    set({ attributesStatus: 'loading' })
-    try {
-      set({ attributes: await attributesService.listAll(), attributesStatus: 'success' })
-    } catch {
-      set({ attributesStatus: 'error' })
-    }
-  },
 
   fetchUserGroups: async () => {
     set({ userGroupsStatus: 'loading' })

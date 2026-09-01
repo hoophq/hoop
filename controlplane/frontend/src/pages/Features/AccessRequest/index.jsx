@@ -32,9 +32,7 @@ export default function AccessRequest() {
 
   const rules = useAccessRequestStore((s) => s.rules)
   const rulesStatus = useAccessRequestStore((s) => s.rulesStatus)
-  const attributes = useAccessRequestStore((s) => s.attributes)
   const fetchRules = useAccessRequestStore((s) => s.fetchRules)
-  const fetchAttributes = useAccessRequestStore((s) => s.fetchAttributes)
 
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
 
@@ -44,44 +42,28 @@ export default function AccessRequest() {
     Boolean(localStorage.getItem(PROMOTION_SEEN_STORAGE_KEY)),
   )
   const [selectedRole, setSelectedRole] = useState(null)
-  const [selectedAttribute, setSelectedAttribute] = useState(null)
 
   const roleFilter = usePaginatedConnections({ pageSize: 50 })
 
   useEffect(() => {
     fetchRules()
-    fetchAttributes()
-  }, [fetchRules, fetchAttributes])
-
-  // `/attributes` is the authoritative list, but every rule also carries the
-  // attributes bound to it. The union keeps the filter working when that
-  // request fails — `rulesForAttribute` already falls back to the rule's own
-  // copy, so a failed load costs nothing but the attributes no rule uses,
-  // which match nothing anyway.
-  const attributeFilterValues = useMemo(() => {
-    const names = new Set(attributes.map((a) => a.name))
-    for (const rule of rules) {
-      for (const name of rule.attributes ?? []) names.add(name)
-    }
-    return [...names].sort((a, b) => a.localeCompare(b))
-  }, [attributes, rules])
+  }, [fetchRules])
 
   // Rules reference resource roles by name, so the filter matches on the
   // option's label rather than the connection id it carries.
   const filteredRules = useMemo(
     () =>
       filterRules(rules, {
-        attributes,
+        attributes: [],
         roleName: selectedRole?.label,
-        attributeName: selectedAttribute,
       }),
-    [rules, attributes, selectedRole, selectedAttribute],
+    [rules, selectedRole],
   )
 
   const atFreeLimit = isFreeLicense && rules.length >= 1
   const loading = rulesStatus === 'idle' || rulesStatus === 'loading'
   const showLoader = useMinDelay(loading, 500)
-  const activeFilterCount = (selectedRole ? 1 : 0) + (selectedAttribute ? 1 : 0)
+  const activeFilterCount = selectedRole ? 1 : 0
 
   const goCreate = () => navigate(NEW_PATH)
 
@@ -164,14 +146,6 @@ export default function AccessRequest() {
               searchValue={roleFilter.searchValue}
               onSearchChange={roleFilter.setSearch}
               onOpen={roleFilter.ensureLoaded}
-            />
-            <ValueFilter
-              icon={ListVideo}
-              label="Attribute"
-              values={attributeFilterValues}
-              selected={selectedAttribute}
-              onSelect={setSelectedAttribute}
-              onClear={() => setSelectedAttribute(null)}
             />
           </Group>
 

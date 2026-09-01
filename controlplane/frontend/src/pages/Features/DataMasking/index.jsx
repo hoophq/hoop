@@ -19,36 +19,23 @@ import DataMaskingPromotion from './components/DataMaskingPromotion'
 const FREE_LICENSE_LIMIT_MESSAGE =
   'Your organization has reached Live Data Masking free usage limits. Upgrade to Enterprise to keep your sensitive data protected.'
 
-function uniqueSorted(values) {
-  return [...new Set(values)].sort((a, b) => a.localeCompare(b))
-}
-
 export default function DataMasking() {
   const navigate = useNavigate()
 
   const list = useDataMaskingStore((s) => s.list)
   const listStatus = useDataMaskingStore((s) => s.listStatus)
-  const attributes = useDataMaskingStore((s) => s.attributes)
   const fetchList = useDataMaskingStore((s) => s.fetchList)
-  const fetchAttributes = useDataMaskingStore((s) => s.fetchAttributes)
 
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
   const redactProvider = useUserStore((s) => s.redactProvider)
 
   const [selectedRole, setSelectedRole] = useState(null)
-  const [selectedAttribute, setSelectedAttribute] = useState(null)
 
   const roleFilter = usePaginatedConnections({ pageSize: 50 })
 
   useEffect(() => {
     fetchList()
-    fetchAttributes()
-  }, [fetchList, fetchAttributes])
-
-  const attributeFilterValues = useMemo(
-    () => uniqueSorted(attributes.map((a) => a.name)),
-    [attributes],
-  )
+  }, [fetchList])
 
   const filteredRules = useMemo(() => {
     let rules = list
@@ -57,18 +44,13 @@ export default function DataMasking() {
         (rule.connection_ids ?? []).includes(selectedRole.value),
       )
     }
-    if (selectedAttribute) {
-      rules = rules.filter((rule) =>
-        (rule.attributes ?? []).includes(selectedAttribute),
-      )
-    }
     return rules
-  }, [list, selectedRole, selectedAttribute])
+  }, [list, selectedRole])
 
   const atFreeLimit = isFreeLicense && list.length >= 1
   const loading = listStatus === 'loading'
   const showLoader = useMinDelay(loading && list.length === 0, 500)
-  const activeFilterCount = (selectedRole ? 1 : 0) + (selectedAttribute ? 1 : 0)
+  const activeFilterCount = selectedRole ? 1 : 0
 
   const goCreate = () => navigate('/features/data-masking/new')
 
@@ -128,14 +110,6 @@ export default function DataMasking() {
           searchValue={roleFilter.searchValue}
           onSearchChange={roleFilter.setSearch}
           onOpen={roleFilter.ensureLoaded}
-        />
-        <ValueFilter
-          icon={ListVideo}
-          label="Attribute"
-          values={attributeFilterValues}
-          selected={selectedAttribute}
-          onSelect={setSelectedAttribute}
-          onClear={() => setSelectedAttribute(null)}
         />
       </Group>
 

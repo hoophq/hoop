@@ -5,12 +5,10 @@ export const userGroupsService = {
   // accounts, API keys, AI agents) with the access_control plugin config. Empty
   // organizations return `[]`; older gateways return `null`, so callers still
   // coalesce.
+  //
+  // Read only. create and remove used to live here and were deleted with the
+  // control-plane surface: POST /users/groups and DELETE /users/groups/:name
+  // are not on buildControlPlaneRoutes in gateway/api/server.go, so they answer 404. The read
+  // stays because a review rule names its approvers by group.
   list: () => api.get('/users/groups'),
-  // Only `name` is read from the request body — the handler binds
-  // openapi.UserGroup, which has no other field, so a description would be
-  // accepted and silently dropped. Responds 409 when the group already exists.
-  create: (data) => api.post('/users/groups', data),
-  // 204 on success, 422 for the built-in admin group. Group names are free
-  // text, so the path segment has to be encoded.
-  remove: (name) => api.delete(`/users/groups/${encodeURIComponent(name)}`),
 }

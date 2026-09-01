@@ -1,6 +1,5 @@
 import { create } from 'zustand'
 import { dataMaskingService } from '@/services/dataMasking'
-import { attributesService } from '@/services/attributes'
 
 export const useDataMaskingStore = create((set) => ({
   list: [],
@@ -8,9 +7,6 @@ export const useDataMaskingStore = create((set) => ({
 
   active: null,
   activeStatus: 'idle',
-
-  attributes: [],
-  attributesStatus: 'idle',
 
   submitting: false,
 
@@ -35,17 +31,6 @@ export const useDataMaskingStore = create((set) => ({
   },
 
   clearActive: () => set({ active: null, activeStatus: 'idle' }),
-
-  fetchAttributes: async () => {
-    set({ attributesStatus: 'loading' })
-    try {
-      // /attributes returns a wrapper: { data: [...] }.
-      const { data } = await attributesService.list()
-      set({ attributes: data?.data ?? [], attributesStatus: 'success' })
-    } catch {
-      set({ attributesStatus: 'error' })
-    }
-  },
 
   createRule: async (payload) => {
     set({ submitting: true })

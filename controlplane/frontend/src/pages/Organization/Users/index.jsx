@@ -18,7 +18,6 @@ import Modal from '@/components/Modal'
 import TextInput from '@/components/TextInput'
 import PasswordInput from '@/components/PasswordInput'
 import Select from '@/components/Select'
-import MultiSelect from '@/components/MultiSelect'
 import CopyButton from '@/components/CopyButton'
 import { usersService } from '@/services/users'
 import { authService } from '@/services/auth'
@@ -54,50 +53,29 @@ function generatePassword() {
   return `${words.join('-')}-${String(bytes[4] % 10000).padStart(4, '0')}`
 }
 
-const CREATE_PREFIX = '__new__:'
 
-function UserFormModal({ opened, onClose, formType, user, groups, isLocalAuth, onSaved }) {
+function UserFormModal({ opened, onClose, formType, user, isLocalAuth, onSaved }) {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
-  const [selectedGroups, setSelectedGroups] = useState([])
+  // Read, never edited. The control plane does not expose access-control
+  // groups, so there is no picker and no GET /users/groups call — but they
+  // stay on the user record, and omitting them from the update payload would
+  // clear the ones an operator set on the gateway.
+  const [existingGroups, setExistingGroups] = useState([])
   const [status, setStatus] = useState('active')
   const [slackId, setSlackId] = useState('')
   const [password] = useState(() => generatePassword())
   const [saving, setSaving] = useState(false)
-  const [groupOptions, setGroupOptions] = useState([])
-  const [groupSearch, setGroupSearch] = useState('')
 
   useEffect(() => {
     if (opened) {
       setName(user?.name ?? '')
       setEmail(user?.email ?? '')
-      setSelectedGroups(user?.groups ?? [])
+      setExistingGroups(user?.groups ?? [])
       setStatus(user?.status ?? 'active')
       setSlackId(user?.slack_id ?? '')
-      setGroupOptions(groups.map((g) => ({ value: g.name ?? g, label: g.name ?? g })))
-      setGroupSearch('')
     }
-  }, [opened, user, groups])
-
-  const exactMatch = groupOptions.some((o) => o.value === groupSearch)
-  const creatableGroupData = groupSearch && !exactMatch
-    ? [...groupOptions, { value: `${CREATE_PREFIX}${groupSearch}`, label: `+ Create "${groupSearch}"` }]
-    : groupOptions
-
-  function handleGroupChange(values) {
-    const resolved = []
-    for (const v of values) {
-      if (v.startsWith(CREATE_PREFIX)) {
-        const created = v.slice(CREATE_PREFIX.length)
-        setGroupOptions((prev) => [...prev, { value: created, label: created }])
-        resolved.push(created)
-      } else {
-        resolved.push(v)
-      }
-    }
-    setSelectedGroups(resolved)
-    setGroupSearch('')
-  }
+  }, [opened, user])
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -111,7 +89,7 @@ function UserFormModal({ opened, onClose, formType, user, groups, isLocalAuth, o
     }
     setSaving(true)
     try {
-      const payload = { name, groups: selectedGroups, slack_id: slackId, email }
+      const payload = { name, groups: existingGroups, slack_id: slackId, email }
       if (formType === 'update') {
         payload.id = user.id
         payload.status = status
@@ -150,17 +128,6 @@ function UserFormModal({ opened, onClose, formType, user, groups, isLocalAuth, o
             value={name}
             onChange={(e) => setName(e.currentTarget.value)}
             required
-          />
-          <MultiSelect
-            label="Groups"
-            placeholder="Select groups…"
-            data={creatableGroupData}
-            value={selectedGroups}
-            onChange={handleGroupChange}
-            searchable
-            clearable
-            searchValue={groupSearch}
-            onSearchChange={setGroupSearch}
           />
           {formType === 'create' && (
             <TextInput
@@ -224,7 +191,6 @@ function statusVariant(status) {
 
 export default function Users() {
   const [users, setUsers] = useState([])
-  const [groups, setGroups] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [isLocalAuth, setIsLocalAuth] = useState(false)
@@ -241,13 +207,11 @@ export default function Users() {
 
   async function fetchAll() {
     try {
-      const [usersRes, groupsRes, serverInfo] = await Promise.all([
+      const [usersRes, serverInfo] = await Promise.all([
         usersService.list(),
-        usersService.listGroups(),
         authService.getPublicServerInfo(),
       ])
       setUsers(usersRes.data ?? [])
-      setGroups(groupsRes.data ?? [])
       setIsLocalAuth(serverInfo?.auth_method === 'local')
     } catch {
       setError('Failed to load users.')
@@ -362,7 +326,6 @@ export default function Users() {
         onClose={close}
         formType={formType}
         user={selectedUser}
-        groups={groups}
         isLocalAuth={isLocalAuth}
         onSaved={fetchAll}
       />

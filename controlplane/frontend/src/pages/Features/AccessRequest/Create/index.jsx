@@ -105,7 +105,6 @@ function RuleFormFields({ rule, isEdit }) {
   const [deleteOpened, deleteModal] = useDisclosure(false)
 
   const rules = useAccessRequestStore((s) => s.rules)
-  const attributes = useAccessRequestStore((s) => s.attributes)
   const userGroups = useAccessRequestStore((s) => s.userGroups)
   const submitting = useAccessRequestStore((s) => s.submitting)
   const createRule = useAccessRequestStore((s) => s.createRule)
@@ -131,7 +130,10 @@ function RuleFormFields({ rule, isEdit }) {
   const [connectionNames, setConnectionNames] = useState(
     () => rule?.connection_names ?? [],
   )
-  const [attributeNames, setAttributeNames] = useState(() => rule?.attributes ?? [])
+  // No editor for these in the control plane, but they still seed from the
+  // record and still go back in the payload, so an attribute-targeted rule
+  // authored on the gateway round-trips instead of being silently cleared.
+  const [attributeNames] = useState(() => rule?.attributes ?? [])
   const [approvalRequiredGroups, setApprovalRequiredGroups] = useState(
     () => rule?.approval_required_groups ?? [],
   )
@@ -164,7 +166,6 @@ function RuleFormFields({ rule, isEdit }) {
   }, [ensureLoaded])
 
   const userGroupOptions = userGroups.map((group) => ({ value: group, label: group }))
-  const attributeOptions = attributes.map((a) => ({ value: a.name, label: a.name }))
 
   // The free plan allows a single rule. Editing the one that exists is always
   // allowed; creating a second one is not.
@@ -450,23 +451,6 @@ function RuleFormFields({ rule, isEdit }) {
           </SectionRow>
 
           <SectionRow
-            title="Attribute configuration"
-            description="Select which Attributes to apply this configuration."
-          >
-            <MultiSelect
-              label="Attributes"
-              placeholder="Select attributes..."
-              data={attributeOptions}
-              value={attributeNames}
-              onChange={setAttributeNames}
-              required={!managed && connectionNames.length === 0}
-              disabled={managed || submitting}
-              searchable
-              clearable
-            />
-          </SectionRow>
-
-          <SectionRow
             title="Who needs approval"
             description="Requests from these groups go through review."
           >
@@ -626,11 +610,9 @@ export default function AccessRequestRuleForm() {
   const rule = useAccessRequestStore((s) => s.rule)
   const ruleStatus = useAccessRequestStore((s) => s.ruleStatus)
   const rulesStatus = useAccessRequestStore((s) => s.rulesStatus)
-  const attributesStatus = useAccessRequestStore((s) => s.attributesStatus)
   const userGroupsStatus = useAccessRequestStore((s) => s.userGroupsStatus)
   const fetchRule = useAccessRequestStore((s) => s.fetchRule)
   const fetchRules = useAccessRequestStore((s) => s.fetchRules)
-  const fetchAttributes = useAccessRequestStore((s) => s.fetchAttributes)
   const fetchUserGroups = useAccessRequestStore((s) => s.fetchUserGroups)
   const clearRule = useAccessRequestStore((s) => s.clearRule)
 
@@ -638,9 +620,8 @@ export default function AccessRequestRuleForm() {
     // The rule list is what the free-plan gate counts, so the form needs it
     // even when the admin lands here from a bookmark.
     fetchRules()
-    fetchAttributes()
     fetchUserGroups()
-  }, [fetchRules, fetchAttributes, fetchUserGroups])
+  }, [fetchRules, fetchUserGroups])
 
   useEffect(() => {
     if (!ruleName) return undefined
@@ -651,7 +632,6 @@ export default function AccessRequestRuleForm() {
   const pending = (status) => status === 'idle' || status === 'loading'
   const loading =
     pending(rulesStatus) ||
-    pending(attributesStatus) ||
     pending(userGroupsStatus) ||
     (isEdit && pending(ruleStatus))
 
@@ -663,7 +643,6 @@ export default function AccessRequestRuleForm() {
   // nothing, and saving would then wipe whatever failed to load.
   if (
     rulesStatus === 'error' ||
-    attributesStatus === 'error' ||
     userGroupsStatus === 'error' ||
     (isEdit && ruleStatus === 'error')
   ) {

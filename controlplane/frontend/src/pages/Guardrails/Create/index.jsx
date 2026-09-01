@@ -50,7 +50,6 @@ function GuardrailFormFields({ guardrail, id, isEdit }) {
 
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
 
-  const attributes = useGuardrailsStore((s) => s.attributes)
   const submitting = useGuardrailsStore((s) => s.submitting)
   const createGuardrail = useGuardrailsStore((s) => s.createGuardrail)
   const updateGuardrail = useGuardrailsStore((s) => s.updateGuardrail)
@@ -60,6 +59,8 @@ function GuardrailFormFields({ guardrail, id, isEdit }) {
     name: guardrail?.name ?? '',
     description: guardrail?.description ?? '',
     connectionIds: guardrail?.connection_ids ?? [],
+    // Carried through untouched: the control plane has no attribute editor,
+    // and omitting the field would clear what a gateway operator set.
     attributes: guardrail?.attributes ?? [],
   }))
   const [inputRules, setInputRules] = useState(() => apiRulesToRows(guardrail?.input))
@@ -123,11 +124,6 @@ function GuardrailFormFields({ guardrail, id, isEdit }) {
       })
     }
   }
-
-  const attributeOptions = attributes.map((a) => ({
-    value: a.name,
-    label: a.name,
-  }))
 
   return (
     <Stack gap={0}>
@@ -232,21 +228,6 @@ function GuardrailFormFields({ guardrail, id, isEdit }) {
         </SectionRow>
 
         <SectionRow
-          title="Attribute configuration"
-          description="Select which Attributes to apply this configuration."
-        >
-          <MultiSelect
-            label="Attributes"
-            placeholder="Select attributes..."
-            data={attributeOptions}
-            value={form.attributes}
-            onChange={(values) => setField({ attributes: values })}
-            searchable
-            clearable
-          />
-        </SectionRow>
-
-        <SectionRow
           title="Configure rules"
           badge={
             <Badge variant="active" size="xs">
@@ -318,14 +299,12 @@ export default function GuardrailForm() {
   const activeStatus = useGuardrailsStore((s) => s.activeStatus)
   const fetchActive = useGuardrailsStore((s) => s.fetchActive)
   const clearActive = useGuardrailsStore((s) => s.clearActive)
-  const fetchAttributes = useGuardrailsStore((s) => s.fetchAttributes)
 
   // ConnectionsMultiSelect loads/paginates its own options, so no connections fetch here.
   useEffect(() => {
-    fetchAttributes()
     if (isEdit) fetchActive(id)
     return () => clearActive()
-  }, [isEdit, id, fetchAttributes, fetchActive, clearActive])
+  }, [isEdit, id, fetchActive, clearActive])
 
   if (isEdit && (activeStatus === 'loading' || activeStatus === 'idle')) {
     return <PageLoader h={400} />
