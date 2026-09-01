@@ -1,8 +1,3 @@
-{{- if and (eq (.Values.config.APP_MODE | default "gateway") "control-plane") .Values.defaultAgent.enabled -}}
-{{- if eq (.Values.defaultAgent.grpcHost | default "127.0.0.1:8010") "127.0.0.1:8010" -}}
-{{- fail "defaultAgent.enabled with config.APP_MODE=control-plane targets 127.0.0.1:8010, which control-plane mode never opens. Set defaultAgent.grpcHost to an external gateway, or set defaultAgent.enabled=false." -}}
-{{- end -}}
-{{- end -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:

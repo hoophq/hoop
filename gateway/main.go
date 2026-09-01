@@ -52,12 +52,14 @@ import (
 	"github.com/hoophq/hoop/gateway/transport/streamclient"
 )
 
-func Run() {
+// Run boots the binary as mode. The caller is the subcommand the operator
+// typed, so the deployment picks a component by picking a command line.
+func Run(mode appconfig.AppMode) {
 	bootstrap.Start()
 	ver := version.Get()
 	bootstrap.Header(ver.Version, ver.Platform, ver.GitCommit)
 
-	if err := appconfig.Load(); err != nil {
+	if err := appconfig.Load(mode); err != nil {
 		log.Fatalf("failed loading gateway configuration, reason=%v", err)
 	}
 

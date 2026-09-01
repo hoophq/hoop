@@ -1,0 +1,84 @@
+{{- if not .Values.existingSecret -}}
+{{- fail "existingSecret is required: the control plane reads the gateway's database and API configuration (POSTGRES_DB_URI, API_URL, ...) and this chart renders no Secret of its own." -}}
+{{- end -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hoopcontrolplane
+  {{- with .Values.deploymentAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  replicas: {{ .Values.replicas | default 1 }}
+  selector:
+    matchLabels:
+      app: hoopcontrolplane
+  {{- with .Values.deploymentStrategy }}
+  strategy: {{- toYaml . | trim | nindent 4 }}
+  {{- end }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        app: hoopcontrolplane
+    spec:
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+      - image: '{{ .Values.image.repository | default "hoophq/hoop" }}:{{ .Values.image.tag | default "latest" }}'
+        name: hoopcontrolplane
+        imagePullPolicy: {{ .Values.image.pullPolicy | default "Always" }}
+        {{- with .Values.securityContext }}
+        securityContext:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        # The command is what selects the component. Booting this image as
+        # "hoop start gateway" instead would open the gRPC transport and the
+        # protocol proxies, which a control plane has no agents to serve.
+        args:
+        - hoop
+        - start
+        - control-plane
+        envFrom:
+        - secretRef:
+            name: {{ .Values.existingSecret }}
+        {{- with .Values.resources }}
+        resources:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        # /api/healthz is the only route the control plane serves today. It has
+        # its own handler because the gateway's dials :8010, which this mode
+        # never opens.
+        livenessProbe:
+          httpGet:
+            path: /api/healthz
+            port: 8009
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /api/healthz
+            port: 8009
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        ports:
+        - containerPort: 8009
+          name: api
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

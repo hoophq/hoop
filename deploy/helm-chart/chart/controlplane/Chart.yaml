@@ -1,0 +1,12 @@
+apiVersion: v2
+# Sample chart for the Hoop control plane: the gateway image started with
+# "hoop start control-plane" (ADR-0013). The mode is chosen by the container
+# command, so this chart is separate from hoop-chart rather than a value on it.
+#
+# It is deliberately a skeleton. The control plane serves one route today, so
+# there is no Service, no Ingress and no config Secret here yet. Add each one
+# as the routes behind it are ported.
+name: hoop-controlplane-chart
+description: A Helm chart for the Hoop control plane
+type: application
+version: 0.0.1
