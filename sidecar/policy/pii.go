@@ -42,6 +42,30 @@ type Scanner interface {
 	ScanText(text string) []string
 }
 
+// ScopedScanner is an optional Scanner that can narrow one scan to the entity
+// classes the caller can act on.
+//
+// It exists because a detector's active set and a rule's Entities stopped
+// being the same thing. A config that omits its pii section now gets a
+// detector with every supported entity class active, and ScanText runs the
+// detector's whole set: a rule naming two classes would pay for fifty-odd
+// recognizer passes per statement and then discard all but two in the
+// intersection below.
+//
+// It sits beside Scanner rather than inside it. Widening a one-method
+// interface breaks every implementor, and this buys throughput rather than a
+// capability the policy layer depends on. A scanner that does not implement
+// it stays correct and stays slower.
+type ScopedScanner interface {
+	// ScanTextFor returns the distinct entity names found in text,
+	// restricted to entities. The return contract matches ScanText: names
+	// only, never values or offsets, in any order.
+	//
+	// An implementation MAY over-report, so a caller still filters. An
+	// empty entities slice means the same as ScanText.
+	ScanTextFor(entities []string, text string) []string
+}
+
 // NewRulesWithScanner is NewRules with a Scanner available to MatchPII rules.
 // A nil Scanner behaves as NewRules, so any PII rule then fails validation.
 func NewRulesWithScanner(rules []Rule, s Scanner) (*Rules, error) {
@@ -75,7 +99,16 @@ func (r Rule) matchesPII(stmt inspect.Statement, s Scanner) (bool, []string) {
 	if s == nil || stmt.Text == "" {
 		return false, nil
 	}
-	found := s.ScanText(stmt.Text)
+	// Ask the detector for this rule's classes where it can be asked. The
+	// intersection below still runs and must stay: ScanTextFor is allowed
+	// to over-report, and a plain Scanner arrives here having scanned its
+	// whole active set.
+	var found []string
+	if ss, ok := s.(ScopedScanner); ok {
+		found = ss.ScanTextFor(r.Entities, stmt.Text)
+	} else {
+		found = s.ScanText(stmt.Text)
+	}
 	if len(found) == 0 {
 		return false, nil
 	}

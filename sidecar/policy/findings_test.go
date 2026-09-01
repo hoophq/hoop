@@ -455,6 +455,138 @@ func TestADenialStopsRulesBelowItFromReporting(t *testing.T) {
 	}
 }
 
+// --- deferring with nothing to defer to ----------------------------------
+
+// `action: defer` means "hand this match to a decision-maker". The only
+// evaluator that reads a Finding is a decide-phase OPA client, so on a lane
+// with no OPA the match is recorded, read by nobody, and the statement runs.
+// An operator who wrote defer on a rule asked for the opposite of that, and
+// DenyDeferred is how the daemon says the lane has no consumer.
+func TestDenyDeferredDeniesInsteadOfRecording(t *testing.T) {
+	build := func(denyDeferred bool) *policy.Rules {
+		t.Helper()
+		r, err := policy.NewRules([]policy.Rule{{
+			Name: "watch-deletes", Type: policy.MatchDenyWords,
+			Words: []string{"DELETE"}, Action: policy.ActionDefer,
+			Message: "deletes go through the migration job",
+		}})
+		if err != nil {
+			t.Fatalf("NewRules: %v", err)
+		}
+		r.DenyDeferred = denyDeferred
+		return r
+	}
+
+	s := stmt("DELETE FROM customers", inspect.OpDelete, "customers")
+
+	// With a consumer, the documented behaviour: report and continue.
+	ec := &policy.EvalContext{}
+	if v := build(false).EvaluateWith(s, ec); v.Denied {
+		t.Fatalf("a deferring rule denied on a lane that can consume it: %+v", v)
+	}
+	if _, ok := ec.Finding(string(policy.MatchDenyWords)); !ok {
+		t.Fatalf("the match was not reported: %v", ec.Findings)
+	}
+
+	// Without one, the same rule denies and keeps its own message.
+	ec = &policy.EvalContext{}
+	v := build(true).EvaluateWith(s, ec)
+	if !v.Denied {
+		t.Fatalf("a deferring rule with nothing to defer to allowed the statement: %+v", v)
+	}
+	if v.Rule != "watch-deletes" {
+		t.Errorf("Rule = %q, want the deferring rule", v.Rule)
+	}
+	if v.Message != "deletes go through the migration job" {
+		t.Errorf("Message = %q, want the operator's message", v.Message)
+	}
+	if _, ok := ec.Finding(string(policy.MatchDenyWords)); ok {
+		t.Error("the rule denied AND reported; nothing on this lane reads the finding")
+	}
+}
+
+// The PII branch dispatches separately from every other rule type, so it
+// needs its own proof. The denial must name the entity CLASS and never the
+// value, because a denial message travels into the audit trail.
+func TestDenyDeferredDeniesADeferringPIIRule(t *testing.T) {
+	const cpf = "111.222.333-44"
+	rules, err := policy.NewRulesWithScanner([]policy.Rule{{
+		Name: "no-cpf", Type: policy.MatchPII,
+		Entities: []string{"BR_CPF"}, Action: policy.ActionDefer,
+	}}, fakeScanner{"BR_CPF": cpf})
+	if err != nil {
+		t.Fatalf("NewRulesWithScanner: %v", err)
+	}
+	rules.DenyDeferred = true
+
+	ec := &policy.EvalContext{}
+	v := rules.EvaluateWith(piiStmt("SELECT * FROM t WHERE cpf = '"+cpf+"'"), ec)
+
+	if !v.Denied {
+		t.Fatalf("a deferring pii rule with nothing to defer to allowed the statement: %+v", v)
+	}
+	if v.Rule != "no-cpf" {
+		t.Errorf("Rule = %q, want the deferring rule", v.Rule)
+	}
+	if !strings.Contains(v.Message, "BR_CPF") {
+		t.Errorf("Message = %q, want it to name the entity class", v.Message)
+	}
+	if strings.Contains(v.Message, cpf) {
+		t.Errorf("Message = %q quotes the identifier the rule objected to", v.Message)
+	}
+	if _, ok := ec.Finding("pii"); ok {
+		t.Error("the rule denied AND reported; nothing on this lane reads the finding")
+	}
+}
+
+// A denial stops the rule set, so with DenyDeferred the FIRST deferring rule
+// wins rather than the hard rule below it. The same config run with and
+// without OPA therefore names a different rule in the audit record, which is
+// confusing enough in a trail to be worth pinning.
+func TestDenyDeferredShortCircuitsALaterHardRule(t *testing.T) {
+	build := func(denyDeferred bool) *policy.Rules {
+		t.Helper()
+		r, err := policy.NewRules([]policy.Rule{
+			{Name: "watch-deletes", Type: policy.MatchDenyWords,
+				Words: []string{"DELETE"}, Action: policy.ActionDefer},
+			{Name: "no-writes", Type: policy.MatchOperation,
+				Operations: []inspect.Operation{inspect.OpDelete},
+				Message:    "this credential is read-only"},
+		})
+		if err != nil {
+			t.Fatalf("NewRules: %v", err)
+		}
+		r.DenyDeferred = denyDeferred
+		return r
+	}
+
+	s := stmt("DELETE FROM customers", inspect.OpDelete, "customers")
+
+	if v := build(false).Evaluate(s); v.Rule != "no-writes" {
+		t.Errorf("with a consumer, Rule = %q, want the hard rule below", v.Rule)
+	}
+	if v := build(true).Evaluate(s); v.Rule != "watch-deletes" {
+		t.Errorf("without one, Rule = %q, want the first deferring rule", v.Rule)
+	}
+}
+
+// DenyDeferred changes what a MATCH does, never what matches. A rule nothing
+// hits still allows, or the flag would be a lane-wide kill switch.
+func TestDenyDeferredDoesNotDenyWithoutAMatch(t *testing.T) {
+	rules, err := policy.NewRules([]policy.Rule{{
+		Name: "watch-drops", Type: policy.MatchDenyWords,
+		Words: []string{"DROP"}, Action: policy.ActionDefer,
+	}})
+	if err != nil {
+		t.Fatalf("NewRules: %v", err)
+	}
+	rules.DenyDeferred = true
+
+	if v := rules.Evaluate(stmt("SELECT 1", inspect.OpSelect)); v.Denied {
+		t.Errorf("a statement nothing matched was denied: %+v", v)
+	}
+}
+
 // A table rule meaning "nothing WRITES customers" must not fire on a
 // statement that only reads it. Before the access split the only expressible
 // rule was "nothing mentions customers", which fires on both, and operators

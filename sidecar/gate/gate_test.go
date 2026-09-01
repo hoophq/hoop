@@ -136,6 +136,56 @@ func TestAllowedStatementIsForwardedAndAudited(t *testing.T) {
 	}
 }
 
+// Observe mode is the rollout path, and it is only worth anything if the
+// audit trail says what WOULD have been refused. The verdict carries
+// Denied:false with the rule that matched, and audit.StatementEvent takes
+// allowed, rule and message as independent arguments, so a dry run produces a
+// statement row naming its rule without polluting the violation stream a
+// security team selects on.
+func TestObserveModeForwardsAndRecordsWhatWouldHaveDenied(t *testing.T) {
+	sink := &recordingSink{}
+	g, err := gate.New(newSession(), gate.Config{
+		Protocol: inspect.Postgres,
+		Policy:   policy.Observe{Evaluator: denyDrops(t)},
+		Audit:    sink,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	in := pgQuery("DROP TABLE customers")
+	d := g.Request(context.Background(), in)
+
+	if !d.Allowed {
+		t.Fatalf("observe mode denied a statement: %+v", d)
+	}
+	if !bytes.Equal(d.Payload, in) {
+		t.Error("payload was altered on an observed request")
+	}
+
+	ev := sink.find(audit.KindStatement)
+	if ev == nil {
+		t.Fatal("no statement event recorded")
+	}
+	if !ev.Allowed {
+		t.Error("Allowed = false; a dry run runs the statement")
+	}
+	if ev.Rule != "no-destructive" {
+		t.Errorf("Rule = %q, want the rule that would have denied", ev.Rule)
+	}
+	if ev.Message == "" {
+		t.Error("the operator's message was dropped, so the trail cannot say why")
+	}
+	if got := ev.Metadata[policy.AnnotationWouldDeny]; got != "no-destructive" {
+		t.Errorf("metadata[%s] = %q, want the rule name", policy.AnnotationWouldDeny, got)
+	}
+
+	// The violation stream stays clean, which is what makes it selectable.
+	if v := sink.find(audit.KindViolation); v != nil {
+		t.Errorf("a dry run wrote a violation record: %+v", v)
+	}
+}
+
 // A denial must both block the bytes and produce a violation record a
 // security team can select without scanning every statement.
 func TestDeniedStatementBlocksAndRecordsViolation(t *testing.T) {

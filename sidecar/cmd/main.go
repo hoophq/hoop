@@ -25,15 +25,14 @@
 // the config file, so an operator adding a "pii" section does not also have to
 // swap the binary out:
 //
-//   - "pii" absent: detection is off. Masking is unavailable and a policy rule
-//     of type "pii" is a config error, both refused at startup rather than
-//     silently skipped.
-//   - "pii" present: 45 alcatraz entity types across 12 countries (25
-//     checksum-verified) plus three credential recognizers drive response
-//     masking, where a rule names an entity and a strategy, and policy rules
-//     of type "pii", which deny a statement that embeds a national identifier.
-//     No amount of response masking undoes that once the query is in the
-//     database's own log.
+//   - "pii" absent: the detector covers all 54 entity types it knows, and
+//     costs nothing until a rule asks it for one. A masker scans only for the
+//     entities its own rules name, and a "pii" guardrail intersects the scan
+//     with the entities its own rule names.
+//   - "pii" present: the section NARROWS that set. Name entities to restrict
+//     detection to them, or use "ignored" to drop the recognizers that fire on
+//     ordinary business data. See the pii/alcatraz package documentation for
+//     the measured rates.
 //
 // The config file may be YAML or JSON; the extension picks the parser.
 //
@@ -42,22 +41,26 @@
 //	    "entities": ["BR_CPF", "IBAN_CODE", "CREDIT_CARD"],
 //	    "allow_list": ["4111111111111111"]
 //	  },
-//	  "mask":   {"enabled": true, "rules": [{"entity": "BR_CPF", "strategy": "redact"}]},
-//	  "policy": {"enforce": true, "rules": [
+//	  "mask":       {"rules": [{"entities": ["BR_CPF"], "strategy": "redact"}]},
+//	  "guardrails": {"mode": "enforce", "rules": [
 //	    {"name": "no-cpf-in-query", "type": "pii", "entities": ["BR_CPF"],
 //	     "message": "do not put a national ID in a query"}
 //	  ]}
 //	}
 //
-// pii.entities is required whenever the section is present. There is no
-// all-entities default, because turning on all 45 recognizers rewrites
-// ordinary numeric columns as US_SSN. See the pii/alcatraz package
-// documentation for the measured rates.
+// # The pre-ADR-0011 spelling
+//
+// "policy" used to carry both Hoop's own rules and the OPA client. It split
+// into "guardrails" and "opa", "mask.enabled" and "listeners[].connection"
+// were dropped, and "mask.rules[].entity" became a list named "entities". Both
+// spellings load; the old one prints a warning naming its replacement, and
+// -strict turns that warning into a non-zero exit.
 //
 // Usage:
 //
 //	hoop-inspect -config /etc/hoop-inspect/config.yaml
 //	hoop-inspect -validate -config config.yaml
+//	hoop-inspect -validate -strict -config config.yaml
 //	hoop-inspect -version
 package main
 
@@ -87,9 +90,14 @@ var version = "0.1.0"
 
 func main() {
 	err := daemon.Main(version, configyaml.Load, func(raw json.RawMessage) (daemon.Plugin, error) {
-		// A nil alcatraz.Plugin converts to a nil daemon.Plugin, so "no pii
-		// section" stays nil rather than becoming a non-nil interface holding
-		// a nil pointer, which the sidecar would call through.
+		// An absent "pii" section no longer means no detector: the plugin
+		// builds one over every entity type it knows and the section
+		// narrows it. A nil Plugin now means only that a build linked no
+		// detector at all, which this one does not.
+		//
+		// The conversion still matters. A nil alcatraz.Plugin converts to a
+		// nil daemon.Plugin rather than to a non-nil interface holding a nil
+		// pointer, which the sidecar would call through.
 		return alcatraz.PluginFromConfig(raw)
 	})
 	if err == nil {

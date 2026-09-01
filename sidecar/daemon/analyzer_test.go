@@ -23,10 +23,9 @@ func aiRule(name string) policy.Rule {
 
 func pgLane(rules ...policy.Rule) *Config {
 	return &Config{
-		Policy: PolicyConfig{Enforce: ptr(true)},
 		Listeners: []ListenerConfig{{
 			Name: "appdb", Protocol: "postgres", Listen: ":1", Upstream: "h:1",
-			Policy: &PolicyConfig{Rules: rules},
+			Guardrails: &GuardrailsConfig{Rules: rules},
 		}},
 	}
 }
@@ -241,7 +240,7 @@ func TestFailOpenDefaultsTrue(t *testing.T) {
 	if !(&AnalyzerConfig{}).failOpen() {
 		t.Error("fail_open defaulted to false")
 	}
-	if (&AnalyzerConfig{FailOpen: ptr(false)}).failOpen() {
+	if (&AnalyzerConfig{FailOpen: new(false)}).failOpen() {
 		t.Error("an explicit fail_open=false was ignored")
 	}
 }
@@ -292,7 +291,7 @@ func TestPromptPrecedence(t *testing.T) {
 			r.Prompt = tc.rulePrompt
 			cfg := &AnalyzerConfig{Provider: "stub", Model: "m", Prompt: tc.cfgPrompt}
 
-			evs, err := buildAnalyzerEvaluators([]policy.Rule{r}, cfg, stubAnalyzerProvider{}, nil)
+			evs, err := buildAnalyzerEvaluators([]policy.Rule{r}, cfg, stubAnalyzerProvider{}, nil, true)
 			if err != nil {
 				t.Fatalf("buildAnalyzerEvaluators: %v", err)
 			}
@@ -332,11 +331,10 @@ func TestHTTPAIRuleWithoutCaptureBodyIsRefused(t *testing.T) {
 	mk := func(h *HTTPCodecConfig) *Config {
 		return &Config{
 			Analyzer: &AnalyzerConfig{Provider: "stub", Model: "m"},
-			Policy:   PolicyConfig{Enforce: ptr(true)},
 			Listeners: []ListenerConfig{{
 				Name: "api", Protocol: "http", Listen: ":1", Upstream: "h:1",
 				HTTP:   h,
-				Policy: &PolicyConfig{Rules: []policy.Rule{aiRule("risky")}},
+				Guardrails: &GuardrailsConfig{Rules: []policy.Rule{aiRule("risky")}},
 			}},
 		}
 	}

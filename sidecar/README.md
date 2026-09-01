@@ -1,7 +1,10 @@
 # sidecar
 
-> **0.1.0**: the API is settling. Expect the config schema to hold and the Go
-> interfaces to move.
+> **0.1.0**: the API is settling. The config schema moved in this release.
+> `policy` split into `guardrails` and `opa`, `mask.enabled` went away, and two
+> defaults reversed. [Deprecated fields](#deprecated-fields) carries the
+> migration table and the three behaviour changes that can move traffic. The
+> Go interfaces will keep moving.
 
 Turn raw database wire-protocol bytes into structured statements, and
 structured statements into allow/deny verdicts.
@@ -160,7 +163,7 @@ That binary is already in the images you pull: `hoophq/hoopdev` (agent) and
 onward as `sidecar`. Running the relay out of one
 without building anything (`docker exec` into a live container, extending the
 image and swapping `CMD`, or adding a second container to the agent pod) is
-[QUICKSTART-AGENT-IMAGE.md](./QUICKSTART-AGENT-IMAGE.md).
+[sidecar-binary.md](../deploy/docker-compose/envoy-stack/sidecar-binary.md).
 
 **As a standalone binary**, when a sidecar container should carry the relay and
 nothing else. It lives in the nested `cmd` module, which is where the optional
@@ -190,9 +193,10 @@ docker build -f deploy/docker-compose/envoy-stack/sidecar/Dockerfile \
 
 There are no build tags. The config file decides every capability, so an
 operator turning on PII detection does not also have to swap the binary. Omit
-the `pii` section and detection is off, which makes masking unavailable and a
-`pii` policy rule a config error: both are refused at startup rather than
-silently skipped.
+the `pii` section and the detector still runs, holding all 54 entity types:
+the section narrows that set rather than switching it on. A binary built
+without the alcatraz plugin is the case that refuses a `mask` block at
+startup.
 
 To embed the relay in your own process, call `daemon.Setup` to load the config
 and build the detector, then `daemon.Run`. That is all `hoop start sidecar`
@@ -205,6 +209,68 @@ every listener, and then tells you what it resolved. YAML and JSON both work
 and the extension picks the parser: `.yaml` and `.yml` go through the nested
 `config/yaml` module, anything else is read as JSON. Decoding is strict, so a
 mistyped key fails the startup instead of silently disabling a control.
+
+### Deprecated fields
+
+0.1.0 renamed six keys, removed one, and reversed two defaults. Both
+spellings load for two minor releases and the old one prints a warning.
+Setting both spellings of one field at one scope refuses the config, because
+picking a winner silently would contradict the rule the decoder already
+enforces: a typo in a key must not disable a control. Read this before the
+example below. Every config written against the old reference needs a pass.
+
+| Old | New | While deprecated |
+|---|---|---|
+| `policy.rules` | `guardrails.rules` | works, warns |
+| `policy.enforce: true\|false` | `guardrails.mode: enforce\|observe` | works, warns |
+| `policy.opa.*` | `opa.*` | works, warns |
+| `mask.rules[].entity: X` | `mask.rules[].entities: [X]` | works, warns |
+| `mask.enabled: true` | drop the key; rules present means masking is on | works, warns |
+| `mask.enabled: false` with rules | drop the rules from that scope | stays authoritative, masking stays off, warns |
+| `listeners[].connection` | `listeners[].name` | maps onto `name` when `name` is empty, warns |
+| `audit.fail_closed: <x>` | `audit.fail_open: <the opposite of x>` | works, warns |
+| `pii` omitted | still omitted | the detector gains all 54 entity types |
+
+Three of those move traffic on the upgrade, and each one deserves a read
+before the restart:
+
+- **A config that never set `enforce` starts denying.** `guardrails.mode`
+  defaults to `enforce`, so a rule set nobody validated because it never fired
+  now fires. Run `-validate` first and read the resolved rule count per lane.
+- **A config that never set `audit.fail_closed` starts refusing statements
+  whose audit write failed.** `audit.fail_open` defaults to `false`. The two
+  keys are negations of each other, so the migration reads the old field
+  rather than pattern-matching the new one: a config that wrote
+  `fail_closed: false` resolves to `fail_open: true` and keeps the behaviour
+  it had. Only a config that omitted the field changes.
+- **Mask rules on a protocol that cannot mask stop loading.** `mask.enabled`
+  used to gate that check, so a lane omitting the flag skipped it and booted
+  with rules that could never fire. The check now runs on `mask.rules` alone,
+  and such a lane refuses to start.
+
+`entity` renames the same way beside `columns`, and that pairing is worth a
+second look because the two keys do different jobs on one rule. The columns
+decide which cells are masked; the entity only names them in the audit trail.
+So the list holds at most one entry there:
+
+```yaml
+- {name: taxpayer, entity: US_SSN, columns: [taxpayer_id]}      # old
+- {name: taxpayer, entities: [US_SSN], columns: [taxpayer_id]}  # new, same rows
+```
+
+Both mask every `taxpayer_id` cell whatever it holds, and both record the
+masked cells as `US_SSN`. Two entities beside `columns` is refused: one cell is
+audited under one name and nothing can pick between two. Name none and the
+cells are reported as `column:taxpayer_id` instead. The label is not checked
+against `pii.entities`, because a column rule runs no detector — it is a name
+for an audit row, not a class a recognizer has to produce.
+
+Omitting `pii` reverses direction too, in the safe one. The section used to be
+required before anything could detect, and it now subtracts from a detector
+that already holds every entity type. Nothing that worked stops working.
+
+`hoop-inspect -validate -strict` exits non-zero on any deprecation, so a
+pipeline can fail on the old spelling before the release that removes it does.
 
 ### 1. Write the file
 
@@ -222,13 +288,13 @@ audit:
   async_queue_size: 1024    # a slow sink must not block a user's query
   memory_buffer: 256        # last N events, readable at GET /events
   query_sessions: 500       # backs GET /api/sessions
-  fail_closed: false        # true refuses a statement whose audit write failed
+  fail_open: false          # the default: a statement whose audit write failed is refused
 
-pii:                        # omit the section to disable detection entirely
+pii:                        # omit the section and all 54 entity types are active
   entities: [EMAIL_ADDRESS, US_SSN, CREDIT_CARD, BR_CPF, IBAN_CODE]
 
-policy:                     # inherited by every listener
-  enforce: true             # false is observe-only: inspect and audit, deny nothing
+guardrails:                 # Hoop's own rules, inherited by every listener
+  mode: enforce             # the default; observe evaluates and records, denying nothing
   rules:
     - name: no-cpf-in-query
       type: pii
@@ -236,18 +302,16 @@ policy:                     # inherited by every listener
       message: do not put a taxpayer id in a query; it lands in the database's own logs
 
 mask:                       # inherited by every listener
-  enabled: true
-  rules:
-    - {name: emails, entity: EMAIL_ADDRESS, strategy: redact}
-    - {name: ssn, entity: US_SSN, strategy: partial, keep_last: 4}
+  rules:                    # a non-empty list is the whole switch
+    - {name: emails, entities: [EMAIL_ADDRESS], strategy: redact}
+    - {name: ssn, entities: [US_SSN], strategy: partial, keep_last: 4}
 
 listeners:
-  - name: appdb
+  - name: appdb             # audit rows and input.context.connection key on this
     protocol: postgres
     listen: 0.0.0.0:15432
     upstream: appdb:5432
-    connection: appdb       # the name audit rows and policy key on
-    policy:
+    guardrails:
       rules:
         - name: no-destructive-sql
           type: operation   # classifier-derived, so SELECT 'DROP TABLE x' is a select
@@ -255,18 +319,17 @@ listeners:
           message: destructive statements are not permitted on appdb
     mask:
       rules:                # REPLACES the default list rather than extending it
-        - {name: ssn-column, columns: [ssn], strategy: partial, keep_last: 4}
-        - {name: emails, entity: EMAIL_ADDRESS, strategy: redact}
+        - {name: ssn-column, entities: [US_SSN], columns: [ssn], strategy: partial, keep_last: 4}
+        - {name: emails, entities: [EMAIL_ADDRESS], strategy: redact}
 
   - name: httpbin
     protocol: http
     listen: 0.0.0.0:18080
     upstream: httpbin:8080
-    connection: httpbin
-    policy:
-      opa:
-        url: http://opa:8181/v1/data/hoop/inspect
-        fail_open: false
+    opa:                    # someone else's Rego, its own section beside guardrails
+      url: http://opa:8181/v1/data/hoop/inspect
+      fail_open: false
+    guardrails:
       rules:
         - name: no-admin-api
           type: http_resource
@@ -278,9 +341,13 @@ listeners:
           message: upstream failure suppressed by policy
 ```
 
-Rule types and what each one matches are in [Policy](#policy); masking
-strategies and the entity-versus-column choice are in
-[Masking and PII](#masking-and-pii).
+Rule types and what each one matches are in [Guardrails and
+OPA](#guardrails-and-opa); masking strategies and the entity-versus-column
+choice are in [Masking and PII](#masking-and-pii).
+
+`audit.fail_open` replaced `audit.fail_closed` and inverted with the rename, so
+`fail_closed: false` and `fail_open: false` mean opposite things and only a
+config that wrote neither changes behaviour.
 
 Other listener fields worth knowing: `network: unix` binds a filesystem socket
 instead of a port (see [Transport](#transport)), `upstream_tls` encrypts the
@@ -293,10 +360,11 @@ concurrency.
 
 | Field | Merge | Why |
 |---|---|---|
-| `policy.rules` | concatenate, listener first | Every rule denies and the first match wins, so concatenating cannot change the allow/deny outcome. Order only picks which message the user reads. |
-| `policy.opa` | replace | One lane has one decision endpoint. |
-| `policy.enforce` | replace | A lane rolling out behind an enforcing default has to be able to say observe-only. |
-| `mask` | replace | A rule owns an entity type, and two concatenated lists leave two rules competing for one entity. |
+| `guardrails.rules` | concatenate, listener first | Every local rule denies or defers and the first match wins, so concatenating is monotonic in the allow/deny outcome. Order picks which name and message the user reads. |
+| `guardrails.mode` | replace when set | A lane rolling out behind an enforcing default has to be able to say observe. |
+| `opa` | replace when set | One lane has one decision endpoint. An explicitly empty `opa: {}` on a listener drops an inherited one. |
+| `mask.rules` | replace when set | A rule owns an entity or a column, and two concatenated lists leave two rewrites of one value. `mask.rules: []` is how a lane opts out of an inherited set. |
+| `pii`, `analyzer`, `audit`, `admin` | process-wide | One detector engine and one analyzer per process. |
 
 ### 3. Validate before you deploy
 
@@ -315,18 +383,26 @@ config OK: 2 listener(s)
 ```
 
 Each line is the RESOLVED lane, so the counts include what it inherited. A lane
-with an `opa` block reads `+ opa`, and one with `enforce: false` reads
-`observe-only`.
+with an `opa` block reads `+ opa`, and one with `guardrails.mode: observe`
+reads `observing N rule(s), denying none` with a note under it. Observe is a
+dry run rather than an off switch: the lane builds the same chain, evaluates
+every rule, allows the statement, and files the rule that would have refused
+it under `guardrails.would_deny`. A lane that should skip the work sets
+`guardrails: {rules: []}`.
+
+`-validate` also prints a note where a resolved lane behaves in a way the file
+does not show. A rule carrying `action: defer` on a lane with no `opa.url`
+gets one, because that match denies rather than reporting a finding.
 
 Validation builds every lane, so it catches what a syntax check cannot, and it
 reports every problem in one run rather than one per restart. It refuses these
 outright:
 
-- `mask.enabled` on a protocol whose codec can carry neither masking
-  mechanism, naming the lane.
-- A `pii` rule naming an entity absent from `pii.entities`, naming the entity.
-  Without this check the rule loads, evaluates, and matches nothing, so a
-  guardrail looks live while allowing everything it was written to stop.
+- `mask.rules` on a protocol whose codec can carry neither masking mechanism,
+  naming the lane. This check used to sit behind `mask.enabled`, so a lane
+  omitting the flag skipped it and loaded rules that could never fire.
+- Both spellings of one renamed field at one scope, naming the field. See
+  [Deprecated fields](#deprecated-fields).
 - A key typo, in YAML or JSON.
 - A bad regex in any lane's rules, naming the lane.
 - An `ai_analysis` rule with no `analyzer` section, no trigger, or no action
@@ -377,16 +453,42 @@ x-readonly: &readonly
     operations: [insert, update, delete, drop, truncate]
     message: this credential is read-only
 
-policy:
-  enforce: true   # without this every lane below is observe-only
-
 listeners:
-  - {name: replica-a, protocol: postgres, listen: 0.0.0.0:15432, upstream: a:5432, policy: {rules: *readonly}}
-  - {name: replica-b, protocol: postgres, listen: 0.0.0.0:15433, upstream: b:5432, policy: {rules: *readonly}}
+  - {name: replica-a, protocol: postgres, listen: 0.0.0.0:15432, upstream: a:5432, guardrails: {rules: *readonly}}
+  - {name: replica-b, protocol: postgres, listen: 0.0.0.0:15433, upstream: b:5432, guardrails: {rules: *readonly}}
 ```
 
-`enforce` defaults to false so a misconfigured rule cannot take production down
-on first deploy. A lane running observe-only says so in the startup log and in
+`guardrails.mode` defaults to `enforce`, so both lanes deny on the first
+deploy with no third key to remember. The rollout path is `mode: observe`,
+which evaluates the same chain, allows the statement anyway, and records the
+rule that would have refused it. The audit line stays `kind: statement` with
+`allowed: true`, carries the rule name and message, and adds one annotation:
+
+```json
+{"kind":"statement","allowed":true,"connection":"reporting",
+ "principal":"ana@corp","operation":"update","tables":["customers"],
+ "rule":"customers-is-crm-owned",
+ "message":"customers is owned by the CRM; write through it",
+ "metadata":{"guardrails.would_deny":"customers-is-crm-owned"}}
+```
+
+A week of that answers the question the mode exists for:
+
+```bash
+jq -r 'select(.metadata["guardrails.would_deny"]) | .metadata["guardrails.would_deny"]' \
+  audit.jsonl | sort | uniq -c | sort -rn
+    412 customers-is-crm-owned
+      7 no-unbounded-delete
+      1 no-schema-changes
+```
+
+A dry run costs what enforcement costs, because nothing can report what would
+have been denied without evaluating it. An observe lane with `ai_analysis`
+rules makes model calls and one with OPA makes round trips. Set
+`guardrails: {rules: []}` on a lane that wants the cheap off switch instead.
+Observe switches off nothing else: `ErrStreamUnsafe` still denies, a failed
+audit write still denies while `audit.fail_open` is false, and startup
+validation runs in full. A lane in observe says so in the startup log and in
 `/config`.
 
 ### Analyzing statements with a model
@@ -405,7 +507,7 @@ left classifying nothing, which is what a relay-only protocol would otherwise
 get: no statements to render means no verdict, silently.
 
 ```yaml
-pii:
+pii:                           # optional; omitting it activates all 54 types
   entities: [EMAIL_ADDRESS, US_SSN, BR_CPF]
 
 analyzer:                      # one provider serves every lane
@@ -426,7 +528,7 @@ listeners:
     protocol: postgres
     listen: 0.0.0.0:15432
     upstream: appdb:5432
-    policy:
+    guardrails:
       rules:
         - name: risky-writes
           type: ai_analysis
@@ -444,7 +546,7 @@ listeners:
       capture_body: true
       max_body_bytes: 8192
       headers: [Content-Type]
-    policy:
+    guardrails:
       rules:
         - name: risky-payloads
           type: ai_analysis
@@ -470,7 +572,9 @@ requirement, and accept that a provider outage then stops traffic.
 **`send: redacted` uses the in-process detector** to name entities instead of
 transmitting their values. A relay whose job is keeping taxpayer ids out of a
 database's query log should not post them to a model vendor. `send: refuse`
-denies locally instead of transmitting, and both need a `pii` section.
+denies locally instead of transmitting. Neither one needs a `pii` section any
+more: a detector always exists once the plugin is linked, and the section only
+narrows which entity types it scans for.
 
 **Handing the decision to OPA.** `high: block` is a level→action table with
 three rows, and it sees only the level. Set the action to `defer` where the
@@ -479,11 +583,12 @@ analyzer classifies and records the level, and the block/allow choice moves
 into Rego.
 
 ```yaml
-policy:
-  opa:
-    url: http://opa:8181/v1/data/hoop/inspect/result
-    fail_open: false
-    gate: true
+opa:
+  url: http://opa:8181/v1/data/hoop/inspect/result
+  fail_open: false
+  gate: true
+
+guardrails:
   rules:
     - name: risky-writes
       type: ai_analysis
@@ -508,15 +613,19 @@ answer what the level means. Both calls hit the same URL and carry
 `input.phase`, so a policy that ignores the field answers both identically,
 and turning the gate on costs one round trip rather than a rewrite.
 
-Four configs are refused at startup. `defer` on a lane with no
-`policy.opa.url` defers to a decision that does not exist, which allows
-everything; `gate: true` on a lane with no `ai_analysis` rule is a round trip
-that buys nothing. An `ai_analysis` rule with no `trigger` is also refused,
-except under `gate: true`, where an empty trigger is how you say Rego decides.
-So is `action: defer` on an `ai_analysis` rule: that type defers per level
-through `high`/`medium`/`low`, and a rule saying both would leave two answers
-to one question. [Policy](#policy) covers what the two phases send and what
-the gate may answer.
+Three configs are refused at startup. `gate: true` on a lane with no
+`ai_analysis` rule is a round trip that buys nothing. An `ai_analysis` rule
+with no `trigger` is refused too, except under `gate: true`, where an empty
+trigger is how you say Rego decides. So is `action: defer` on an `ai_analysis`
+rule: that type defers per level through `high`/`medium`/`low`, and a rule
+saying both would leave two answers to one question.
+
+`defer` on a lane with no `opa.url` used to be the fourth refusal. It now
+loads, warns at startup, and DENIES on a match. Deferring to a decision that
+does not exist has to fail closed somewhere, and moving that from startup to
+runtime lets one file serve a deployment with OPA and a deployment without
+one. [Guardrails and OPA](#guardrails-and-opa) covers what the two phases send
+and what the gate may answer.
 
 **Writing your own prompt.** Risk depends on what you are protecting, so the
 risk guidance is replaceable at two levels.
@@ -536,7 +645,7 @@ analyzer:
 
 listeners:
   - name: appdb
-    policy:
+    guardrails:
       rules:
         - name: risky-writes
           type: ai_analysis
@@ -548,7 +657,7 @@ listeners:
             change.
 
   - name: api
-    policy:
+    guardrails:
       rules:
         - name: risky-payloads
           type: ai_analysis
@@ -919,18 +1028,34 @@ keeping segments, so a policy comes out too narrow rather than too broad.
 A policy engine's decision log is a copy of everything you send it, and
 `Options.Headers` is an allowlist with no "capture all" switch.
 
-## Policy
+## Guardrails and OPA
 
-Two evaluators, meant to be layered via `policy.Chain{local, opa}` so a
-statement the local rules already forbid costs no network round-trip.
-Anything that defers changes the order: OPA moves after the producers whose
-findings it reads, its call carries `phase: decide`, and `opa.gate: true`
-adds a second call before them. Both phases are below.
+Two evaluators under two config sections, layered via `policy.Chain{local,
+opa}` so a statement the local rules already forbid costs no network round
+trip. The Go package is still `policy`; the config keys are what split.
 
-**Local rules.** SQL: `deny_words_list`, `pattern_match` (RE2), `operation`,
-`table`. HTTP: `http_resource`, `http_status`. Cross-protocol: `pii` (see
-[Masking and PII](#masking-and-pii)). One ordered set can mix them, so a
-deployment fronting a database and an API needs one evaluator:
+**Guardrails are Hoop's own rules**, written under `guardrails` and evaluated
+in-process against a decoded statement. Eight rule types, all local except the
+`ai_analysis` one, and `guardrails.mode` decides whether a match denies or
+lands in the audit record as `guardrails.would_deny`. Nothing here needs a
+policy engine, a network hop or a second team.
+
+**OPA is someone else's Rego**, wired under `opa`. sidecar owns no policy
+there; it owns the *input document* it posts and the two phases it may post
+on. Anything that defers changes the order: OPA moves after the producers
+whose findings it reads, its call carries `phase: decide`, and
+`opa.gate: true` adds a second call before them. Both phases are below.
+
+A lane can run either half alone. Guardrails with no `opa` block deny locally
+and never leave the process, and an `opa` block with no `guardrails.rules`
+hands every statement to Rego.
+
+**The local rule types.** SQL: `deny_words_list`, `pattern_match` (RE2),
+`operation`, `table`. HTTP: `http_resource`, `http_status`. Cross-protocol:
+`pii` (see [Masking and PII](#masking-and-pii)) and `ai_analysis` (see
+[Analyzing statements with a
+model](#analyzing-statements-with-a-model)). One ordered set can mix them, so
+a deployment fronting a database and an API needs one evaluator:
 
 ```go
 policy.NewRules([]policy.Rule{
@@ -1093,7 +1218,12 @@ result := {"allow": true, "request": {"ai_analysis": true}} if {
 `input.context` is whatever the caller attached. The relay fills it from the
 session: `principal`, `session_id`, `connection`, and `subject`, `email`,
 `groups`, `peer_addr`, `upstream`, `correlation_id` where the identity carries
-them. A library caller setting `OPAClient.Context` chooses its own keys.
+them. `context.connection` keeps its key and changes its source: the
+listener's `name` fills it now that `listeners[].connection` is gone. A
+deployment that set the two fields to different strings sees every Rego rule
+and every audit row key on the new value, so rename the listener before
+upgrading or the audit history splits in two. A library caller setting
+`OPAClient.Context` chooses its own keys.
 
 **Statement content never travels in a finding.** The analyzer's title and
 explanation are the model's own words about a statement it was shown, `pii`
@@ -1134,13 +1264,23 @@ rules:
     operations: [drop]
 ```
 
-First-match-wins applies to DENIALS only. A deferring rule never ends
-evaluation, so one statement can report several findings and still be denied
-by a hard rule further down. `defer` is the only value `action` takes, and
-anything else is refused at startup rather than read as "deny": a rule whose
-action was mistyped would otherwise enforce the opposite of what it says. So
-is `defer` on a lane with no `policy.opa.url`, which defers to a decision that
-does not exist and therefore allows everything.
+First-match-wins applies to DENIALS only. On a lane with OPA a deferring rule
+never ends evaluation, so one statement can report several findings and still
+be denied by a hard rule further down. `defer` is the only value `action`
+takes, and anything else is refused at startup rather than read as "deny": a
+rule whose action was mistyped would otherwise enforce the opposite of what it
+says.
+
+**`defer` on a lane with no `opa.url` denies.** The keyword hands a match to a
+decision-maker, and with no decision-maker the only reading that is not "allow
+everything" is refusal. The lane loads and warns at startup rather than
+refusing the config, so one file serves a deployment with OPA and a deployment
+without one. A denying `defer` also ends the set, so the first deferring rule
+wins there while the same config against OPA records every match and lets a
+later hard rule deny. The same statement can therefore name a different rule
+in the audit record depending on whether OPA is wired up. "No consumer" means
+no OPA and never "no analyzer": the analyzer produces findings and never reads
+them.
 
 **Findings key by rule TYPE, not by rule name.** A policy asks what the PII
 scanner found, not what the rule named `no-cpf` found, so every deferring
@@ -1187,12 +1327,14 @@ rather than by consulting a list of protocol names:
   Substituting bytes there desynchronizes the client, and `psql` reports "lost
   synchronization with server".
 
-A codec offering neither gets its `mask` section refused at startup, because
-accepting a masking config that can never fire is the failure that ends with an
-unmasked SSN in a screenshot.
+A codec offering neither gets its `mask.rules` refused at startup, because
+accepting a masking config that can never fire is the failure that ends with
+an unmasked SSN in a screenshot. That check is unconditional now that
+`mask.enabled` is gone, so a lane that used to load by omitting the flag
+refuses to start.
 
 Detection and rewriting both come from
-[alcatraz](https://github.com/hoophq/alcatraz): 45 entity types across 12
+[alcatraz](https://github.com/hoophq/alcatraz): 51 entity types across 12
 countries, 25 of them checksum-verified with Luhn on cards, ISO 7064 mod-97 on
 IBAN, Verhoeff on Aadhaar, mod-11 on the Brazilian schemes. It lives in the
 nested `pii/alcatraz` module, so the root library never links it.
@@ -1202,8 +1344,8 @@ det, _ := alcatraz.NewDetector(alcatraz.Options{
     Entities: []string{entities.USSSN, entities.CreditCard, entities.BRCPF},
 })
 m, _ := alcatraz.NewMasker(det, []alcatraz.Rule{
-    {Entity: entities.USSSN,      Strategy: alcatraz.StrategyRedact},
-    {Entity: entities.CreditCard, Strategy: alcatraz.StrategyPartial, KeepLast: 4},
+    {Entities: []string{entities.USSSN},      Strategy: alcatraz.StrategyRedact},
+    {Entities: []string{entities.CreditCard}, Strategy: alcatraz.StrategyPartial, KeepLast: 4},
 })
 out, res := m.Mask(responseBytes)   // res names WHAT was masked, never values
 
@@ -1211,6 +1353,10 @@ p, _ := policy.NewRulesWithScanner(rules, det)   // the same det, request side
 ```
 
 Four strategies: `redact`, `mask`, `partial`, `hash`.
+
+`alcatraz.NewDetector` with an empty `Options.Entities` builds over every
+supported type, which is the Go-level shape of an omitted `pii` section.
+`Options.Ignored` subtracts from that set.
 
 **Credentials too.** Alcatraz is a PII engine and carries no recognizer for a
 secret, so `pii/alcatraz/secrets.go` registers three into the same engine:
@@ -1220,7 +1366,7 @@ them in config like any other entity.
 
 ### The guardrail half
 
-One `Detector` drives both paths. The `pii` policy rule answers a different
+One `Detector` drives both paths. The `pii` guardrail rule answers a different
 question than masking: a national ID in a `WHERE` clause lands in the
 database's own query log, slow-query log and `EXPLAIN` output, and response
 masking never undoes that.
@@ -1230,10 +1376,38 @@ masking never undoes that.
  "message": "do not put a taxpayer id in a query"}
 ```
 
-### Name the entity types you want
+### Narrow the entity types
 
-There is no all-entities default, on purpose. Enabling all 45 recognizers
-rewrites ordinary numeric columns:
+Omit `pii` and the detector holds every type it has, 54 counting the three
+credential recognizers. The section subtracts, and `pii.ignored` is the knob
+built for it:
+
+```yaml
+pii:
+  # The seven recognizers that fire on ordinary business data. US_SSN stays
+  # active here because this deployment holds real ones.
+  ignored: [URL, DATE_TIME, ABA_ROUTING, AU_TFN, AU_ACN, US_ITIN]
+```
+
+Every name in both lists is resolved at startup and an unknown one refuses the
+config, naming the key it sits under. `ignored` needs that more than `entities`
+does: a misspelled entry subtracts nothing, so the recognizer you wrote it to
+switch off keeps running and the detector boots looking exactly like one that
+obeyed you. Write `US_SSSN` and the process stops with
+
+```
+pii section: alcatraz: unknown entity type(s) in ignored: US_SSSN (PERSON, ...)
+```
+
+A wide detector costs a wider scan and nothing else. `NewMasker` narrows the
+engine to exactly the entities its own rules name, and a `pii` guardrail rule
+intersects the scan with its own `entities` list before publishing anything.
+Both paths see the classes their config asked about, so a permissive detector
+widens the scan and never widens the result.
+
+What corrupts data is a MASK RULE naming a noisy entity. Write
+`{name: ssn, entities: [US_SSN], strategy: redact}` and ordinary numeric
+columns get rewritten on the way back:
 
 ```
 {"order_id":457555462,"customer_id":123456781}
@@ -1242,22 +1416,32 @@ rewrites ordinary numeric columns:
 
 Nine digits in a legal range *is* a valid SSN as far as any detector can tell:
 SSNs carry no checksum, so nothing rejects them. Measured over random
-nine-digit business ids, `US_SSN` fires on about a third. `alcatraz.Noisy`
-records the offenders with their rates, and `AllEntities()` is there once you
-have read it.
+nine-digit business ids, `US_SSN` fires on about a third, `ABA_ROUTING` on
+2.5%, `AU_TFN` on 2.1%, `AU_ACN` on 2.0% and `US_ITIN` on 1.7%. `URL` matches
+every HTTP response body and `DATE_TIME` every row with a timestamp.
+`alcatraz.Noisy` records those seven with their rates, and it is the list
+`pii.ignored` was written against. Reach for a `columns:` rule where the
+protocol names the value, because a column rule masks what is in the column
+whatever it looks like. Name one entity beside the columns and the audit rows
+read `US_SSN` rather than `column:ssn`; name none and `column:ssn` is what
+they carry. The entity is a label there and nothing else — it enables no
+detection, and two of them are refused because a masked cell gets one name.
 
 The same validation cuts the other way, which will bite you in a demo:
 alcatraz **declines** `123-45-6789` and `987-65-4321`, rejecting sequential
 and descending runs as test fixtures. If you must mask placeholder SSNs, add
 a rule for that shape rather than widening the detector.
 
-A `pii` policy rule records the offending statement in the audit trail, raw
+A `pii` guardrail rule records the offending statement in the audit trail, raw
 literal included. Set `audit.redact_statements` where that is the wrong trade:
 the denial keeps working, and the record keeps a stable fingerprint instead of
 the text.
 
-**Masking requires the plugin.** The gate refuses `mask.enabled` with no
-detection wired in at startup rather than passing traffic through unmasked.
+**Masking needs the plugin linked, not a `pii` section.** A binary built
+without alcatraz refuses a `mask` block at startup rather than passing traffic
+through unmasked. A binary that links it always carries a detector, so
+`mask.rules` on its own is enough, and the config that used to be refused for
+omitting `pii` starts and masks.
 
 ## Transport
 

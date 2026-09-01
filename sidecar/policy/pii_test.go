@@ -1,6 +1,7 @@
 package policy_test
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -208,5 +209,110 @@ func TestPIIMixesWithOtherRuleTypes(t *testing.T) {
 	}
 	if v := rules.Evaluate(piiStmt("SELECT 1")); v.Denied {
 		t.Errorf("clean statement denied in a mixed set: %+v", v)
+	}
+}
+
+// --- scoped scanning -----------------------------------------------------
+
+// scopedScanner answers like fakeScanner and records how it was asked, so a
+// test can tell a narrowed scan from a full one.
+type scopedScanner struct {
+	entities map[string]string // entity -> literal
+	askedFor []string
+	unscoped int
+}
+
+func (s *scopedScanner) ScanText(text string) []string {
+	s.unscoped++
+	return s.scan(nil, text)
+}
+
+func (s *scopedScanner) ScanTextFor(entities []string, text string) []string {
+	s.askedFor = entities
+	return s.scan(entities, text)
+}
+
+func (s *scopedScanner) scan(only []string, text string) []string {
+	var out []string
+	for entity, lit := range s.entities {
+		if len(only) > 0 && !slices.Contains(only, entity) {
+			continue
+		}
+		if strings.Contains(text, lit) {
+			out = append(out, entity)
+		}
+	}
+	return out
+}
+
+// A config that omits its pii section now gets a detector with every entity
+// class active, and ScanText runs the detector's whole set. A rule naming two
+// classes would pay for fifty-odd recognizer passes per statement and discard
+// all but two in the intersection. Where the scanner can be narrowed, it must
+// be asked for the rule's own classes and nothing else.
+func TestPIIRuleAsksAScopedScannerForItsOwnEntities(t *testing.T) {
+	s := &scopedScanner{entities: map[string]string{
+		"US_SSN":        "123-45-6789",
+		"EMAIL_ADDRESS": "ana@corp.example",
+	}}
+	rules, err := policy.NewRulesWithScanner([]policy.Rule{{
+		Name: "no-ssn", Type: policy.MatchPII,
+		Entities: []string{"US_SSN", "BR_CPF"},
+	}}, s)
+	if err != nil {
+		t.Fatalf("NewRulesWithScanner: %v", err)
+	}
+
+	if v := rules.Evaluate(piiStmt("SELECT * FROM t WHERE ssn = '123-45-6789'")); !v.Denied {
+		t.Fatalf("the scoped scan lost the match: %+v", v)
+	}
+	if s.unscoped != 0 {
+		t.Errorf("ScanText ran %d times on a scanner that can be narrowed", s.unscoped)
+	}
+	if want := []string{"US_SSN", "BR_CPF"}; !slices.Equal(s.askedFor, want) {
+		t.Errorf("scanner was asked for %v, want the rule's own entities %v", s.askedFor, want)
+	}
+}
+
+// The intersection after the scan must survive the optimisation. ScanTextFor
+// is allowed to over-report, and a rule that denied on a class it never named
+// would turn a permissive detector back into the false-positive machine the
+// pii section exists to avoid.
+func TestScopedScannerOverReportingIsStillFiltered(t *testing.T) {
+	rules, err := policy.NewRulesWithScanner([]policy.Rule{{
+		Name: "no-ssn", Type: policy.MatchPII, Entities: []string{"US_SSN"},
+	}}, overReportingScanner{})
+	if err != nil {
+		t.Fatalf("NewRulesWithScanner: %v", err)
+	}
+
+	if v := rules.Evaluate(piiStmt("SELECT 1")); v.Denied {
+		t.Errorf("denied on an entity class the rule never named: %+v", v)
+	}
+}
+
+// overReportingScanner ignores the requested entities and always reports one
+// the caller did not ask for.
+type overReportingScanner struct{}
+
+func (overReportingScanner) ScanText(string) []string { return []string{"EMAIL_ADDRESS"} }
+
+func (overReportingScanner) ScanTextFor([]string, string) []string {
+	return []string{"EMAIL_ADDRESS"}
+}
+
+// A scanner with no ScanTextFor stays correct. The optional interface buys
+// throughput, and dropping an implementor that does not have it would be a
+// silent loss of enforcement.
+func TestPlainScannerStillScansUnscoped(t *testing.T) {
+	rules, err := policy.NewRulesWithScanner([]policy.Rule{{
+		Name: "no-ssn", Type: policy.MatchPII, Entities: []string{"US_SSN"},
+	}}, fakeScanner{"US_SSN": "123-45-6789"})
+	if err != nil {
+		t.Fatalf("NewRulesWithScanner: %v", err)
+	}
+
+	if v := rules.Evaluate(piiStmt("SELECT '123-45-6789'")); !v.Denied {
+		t.Errorf("a plain Scanner stopped enforcing: %+v", v)
 	}
 }

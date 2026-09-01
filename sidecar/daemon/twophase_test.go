@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/hoophq/hoop/sidecar/analyzer"
+	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
 )
 
@@ -51,8 +53,20 @@ func denyWordsRule(name, action string) policy.Rule {
 }
 
 // lanePolicy is an enforcing lane policy, whatever produces on it.
-func lanePolicy(opa *OPAConfig, rules ...policy.Rule) PolicyConfig {
-	return PolicyConfig{Enforce: new(true), OPA: opa, Rules: rules}
+// laneStack is the pair buildPolicy takes now that the old policy block is
+// two config sections. Bundling them keeps each test below a single call.
+type laneStack struct {
+	gc  GuardrailsConfig
+	opa *OPAConfig
+}
+
+// lanePolicy is an enforcing lane stack, whatever produces on it.
+func lanePolicy(opa *OPAConfig, rules ...policy.Rule) laneStack {
+	return laneStack{gc: GuardrailsConfig{Rules: rules}, opa: opa}
+}
+
+func buildLane(s laneStack, det Plugin, ac *analyzerDeps) (policy.Evaluator, error) {
+	return buildPolicy(s.gc, s.opa, det, ac)
 }
 
 // A lane with no defer and no gate must build exactly the chain it built
@@ -60,7 +74,7 @@ func lanePolicy(opa *OPAConfig, rules ...policy.Rule) PolicyConfig {
 func TestSinglePhaseChainIsUnchanged(t *testing.T) {
 	pc := lanePolicy(&OPAConfig{URL: "http://opa:8181/v1/data/hoop"}, aiRule("risky"))
 
-	pol, err := buildPolicy(pc, nil, stubDeps())
+	pol, err := buildLane(pc, nil, stubDeps())
 	if err != nil {
 		t.Fatalf("buildPolicy: %v", err)
 	}
@@ -78,7 +92,7 @@ func TestSinglePhaseChainIsUnchanged(t *testing.T) {
 func TestDeferPutsOPAAfterTheAnalyzer(t *testing.T) {
 	pc := lanePolicy(&OPAConfig{URL: "http://opa:8181/v1/data/hoop"}, deferRule("risky"))
 
-	pol, err := buildPolicy(pc, nil, stubDeps())
+	pol, err := buildLane(pc, nil, stubDeps())
 	if err != nil {
 		t.Fatalf("buildPolicy: %v", err)
 	}
@@ -96,7 +110,7 @@ func TestDeferPutsOPAAfterTheAnalyzer(t *testing.T) {
 func TestGateWrapsTheAnalyzer(t *testing.T) {
 	pc := lanePolicy(&OPAConfig{URL: "http://opa:8181/v1/data/hoop", Gate: true}, aiRule("risky"))
 
-	pol, err := buildPolicy(pc, nil, stubDeps())
+	pol, err := buildLane(pc, nil, stubDeps())
 	if err != nil {
 		t.Fatalf("buildPolicy: %v", err)
 	}
@@ -113,18 +127,34 @@ func TestGateWrapsTheAnalyzer(t *testing.T) {
 	}
 }
 
-// Deferring to a decision that does not exist allows everything, which is the
-// opposite of what the operator asked for.
-func TestDeferWithoutOPAIsRefused(t *testing.T) {
+// Deferring to a decision that does not exist would allow everything, which is
+// the opposite of what the operator asked for. The lane loads anyway and
+// blocks instead, so one config file serves a deployment with OPA and a
+// deployment without one.
+func TestAIDeferWithoutOPABlocks(t *testing.T) {
 	cfg := pgLane(deferRule("risky"))
 	cfg.Analyzer = &AnalyzerConfig{Provider: "stub", Model: "m"}
 
-	err := cfg.Validate()
-	if err == nil {
-		t.Fatal("a rule deferring to nothing was accepted")
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("a rule deferring on a lane with no opa was refused: %v", err)
 	}
-	if !strings.Contains(err.Error(), "defer") {
-		t.Errorf("the error does not name the action: %v", err)
+
+	m, err := actionMap(deferRule("risky"), false)
+	if err != nil {
+		t.Fatalf("actionMap: %v", err)
+	}
+	if got := m[analyzer.RiskHigh]; got != analyzer.ActionBlock {
+		t.Errorf("high risk = %q, want %q with no consumer for the finding",
+			got, analyzer.ActionBlock)
+	}
+
+	// With a consumer, the same rule defers as written.
+	m, err = actionMap(deferRule("risky"), true)
+	if err != nil {
+		t.Fatalf("actionMap: %v", err)
+	}
+	if got := m[analyzer.RiskHigh]; got != analyzer.ActionDefer {
+		t.Errorf("high risk = %q, want %q when OPA can rule on it", got, analyzer.ActionDefer)
 	}
 }
 
@@ -132,7 +162,7 @@ func TestDeferWithoutOPAIsRefused(t *testing.T) {
 // there. It would cost a round trip per statement and change nothing.
 func TestGateWithoutAIRulesIsRefused(t *testing.T) {
 	cfg := pgLane()
-	cfg.Listeners[0].Policy.OPA = &OPAConfig{URL: "http://opa:8181/v1/data/hoop", Gate: true}
+	cfg.Listeners[0].OPA = &OPAConfig{URL: "http://opa:8181/v1/data/hoop", Gate: true}
 
 	err := cfg.Validate()
 	if err == nil {
@@ -151,7 +181,7 @@ func TestEmptyTriggerIsAllowedOnlyWhenGated(t *testing.T) {
 		r.Trigger = nil
 		cfg := pgLane(r)
 		cfg.Analyzer = &AnalyzerConfig{Provider: "stub", Model: "m"}
-		cfg.Listeners[0].Policy.OPA = &OPAConfig{
+		cfg.Listeners[0].OPA = &OPAConfig{
 			URL: "http://opa:8181/v1/data/hoop", Gate: gate,
 		}
 		return cfg.Validate()
@@ -192,7 +222,7 @@ func TestLocalDeferMakesTheLaneTwoPhase(t *testing.T) {
 		denyWordsRule("no-destructive", policy.ActionDefer),
 	)
 
-	pol, err := buildPolicy(pc, nil, stubDeps())
+	pol, err := buildLane(pc, nil, stubDeps())
 	if err != nil {
 		t.Fatalf("buildPolicy: %v", err)
 	}
@@ -212,8 +242,8 @@ func TestLocalDeferMakesTheLaneTwoPhase(t *testing.T) {
 
 	// The same lane with the action dropped is the old single-call shape.
 	// Without this arm the assertions above pass on any two-element chain.
-	pc.Rules = []policy.Rule{denyWordsRule("no-destructive", "")}
-	pol, err = buildPolicy(pc, nil, stubDeps())
+	pc.gc.Rules = []policy.Rule{denyWordsRule("no-destructive", "")}
+	pol, err = buildLane(pc, nil, stubDeps())
 	if err != nil {
 		t.Fatalf("buildPolicy without the action: %v", err)
 	}
@@ -222,16 +252,40 @@ func TestLocalDeferMakesTheLaneTwoPhase(t *testing.T) {
 	}
 }
 
-// Deferring a local match to a lane with no policy.opa.url writes a finding
-// nobody reads: the rule matches, allows, and looks like enforcement.
-func TestLocalDeferWithoutOPAIsRefused(t *testing.T) {
-	err := pgLane(denyWordsRule("no-destructive", policy.ActionDefer)).Validate()
-	if err == nil {
-		t.Fatal("a local rule deferring to nothing was accepted")
+// Deferring a local match on a lane with no opa.url would write a finding
+// nobody reads: the rule matches, allows, and looks like enforcement. The lane
+// loads and the rule denies instead, so one config file serves a deployment
+// with OPA and a deployment without one.
+func TestLocalDeferWithoutOPADenies(t *testing.T) {
+	cfg := pgLane(denyWordsRule("no-destructive", policy.ActionDefer))
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("a local rule deferring on a lane with no opa was refused: %v", err)
 	}
-	if !strings.Contains(err.Error(), "no-destructive") ||
-		!strings.Contains(err.Error(), "policy.opa.url") {
-		t.Errorf("the error does not name the rule and what it lacks: %v", err)
+
+	lanes, err := buildLanes(cfg, nil, nil)
+	if err != nil {
+		t.Fatalf("buildLanes: %v", err)
+	}
+	v := lanes[0].policy.Evaluate(inspect.Statement{
+		Protocol: inspect.Postgres, Text: "DELETE FROM t", Operation: inspect.OpDelete,
+	})
+	if !v.Denied {
+		t.Fatal("a deferring rule allowed on a lane with nothing to defer to")
+	}
+	if v.Rule != "no-destructive" {
+		t.Errorf("verdict rule = %q", v.Rule)
+	}
+
+	// The operator is told, because a config that reads `defer` and denies
+	// has to say which one it did.
+	var found bool
+	for _, n := range lanes[0].notes {
+		if strings.Contains(n, "defer") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("no lane note explains the degradation: %v", lanes[0].notes)
 	}
 }
 
@@ -257,7 +311,7 @@ func TestActionOnAIRuleIsRefused(t *testing.T) {
 	r.Action = policy.ActionDefer
 	cfg := pgLane(r)
 	cfg.Analyzer = &AnalyzerConfig{Provider: "stub", Model: "m"}
-	cfg.Listeners[0].Policy.OPA = &OPAConfig{URL: "http://opa:8181/v1/data/x"}
+	cfg.Listeners[0].OPA = &OPAConfig{URL: "http://opa:8181/v1/data/x"}
 
 	err := cfg.Validate()
 	if err == nil {

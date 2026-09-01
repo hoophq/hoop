@@ -37,6 +37,9 @@ func newMask(t *testing.T, d *alcatraz.Detector, rules ...alcatraz.Rule) *alcatr
 func TestSatisfiesPolicyScanner(t *testing.T) {
 	d := newDet(t, alcatraz.Options{Entities: []string{alcz.USSSN}})
 	var _ policy.Scanner = d
+	// The optional narrowing interface, reached through a type assertion in
+	// matchesPII, so only a compile-time check catches a drifted signature.
+	var _ policy.ScopedScanner = d
 }
 
 // Checksum-verified national identifiers, the reason this module exists.
@@ -84,17 +87,105 @@ func TestChecksumRejectsLookalikes(t *testing.T) {
 
 // --- entity set resolution -------------------------------------------------
 
-func TestEntitiesIsRequired(t *testing.T) {
-	_, err := alcatraz.NewDetector(alcatraz.Options{})
-	if err == nil {
-		t.Fatal("want an error: an all-entities default rewrites ordinary numeric columns")
-	}
-	if !strings.Contains(err.Error(), "Entities") {
-		t.Errorf("error should name the missing field: %v", err)
+// An empty Entities is the permissive form rather than a mistake. Enabling a
+// recognizer is not the same as scanning for it: NewMasker narrows a response
+// scan to the entities its rules name, and ScanTextFor narrows a statement
+// scan to the entities a guardrail rule names.
+func TestEmptyEntitiesMeansEveryEntity(t *testing.T) {
+	d := newDet(t, alcatraz.Options{})
+
+	want := alcatraz.AllEntities()
+	slices.Sort(want)
+	if got := d.Entities(); !slices.Equal(got, want) {
+		t.Errorf("Entities() = %v, want the full set %v", got, want)
 	}
 }
 
-// The full set is available, but only by asking for it by name.
+// Ignored is the knob that pairs with the permissive form: subtract the
+// recognizers this deployment's ordinary data trips instead of enumerating
+// the several dozen it does not.
+func TestIgnoredSubtractsFromThePermissiveSet(t *testing.T) {
+	d := newDet(t, alcatraz.Options{Ignored: []string{alcz.USSSN, alcz.URL}})
+
+	got := d.Entities()
+	if len(got) != len(alcatraz.AllEntities())-2 {
+		t.Errorf("Entities() has %d types, want the full set less two", len(got))
+	}
+	for _, gone := range []string{alcz.USSSN, alcz.URL} {
+		if slices.Contains(got, gone) {
+			t.Errorf("%s was ignored and must not be active", gone)
+		}
+	}
+}
+
+// A misspelled Ignored entry is refused. It subtracts nothing, so the
+// recognizer the operator wrote it to disable keeps running: the permissive
+// default hands back a detector that looks correct and behaves as though the
+// section were never written. This is the one config mistake that gets LOUDER
+// the more careful the operator was, because writing the section at all means
+// they wanted something switched off.
+func TestUnknownIgnoredEntityRejected(t *testing.T) {
+	// No Entities: the permissive form, where the typo is invisible.
+	_, err := alcatraz.NewDetector(alcatraz.Options{Ignored: []string{"US_SSSN"}})
+	if err == nil {
+		t.Fatal("want an error: US_SSSN ignores nothing and US_SSN stays active")
+	}
+	if !strings.Contains(err.Error(), "US_SSSN") {
+		t.Errorf("error should name the unresolved entry: %v", err)
+	}
+	if !strings.Contains(err.Error(), "ignored") {
+		t.Errorf("error should name the list holding it: %v", err)
+	}
+}
+
+// One restart per typo is how a rollout takes three rounds. Both lists are
+// checked before either is applied, and each unresolved name is attributed to
+// the key it was written under.
+func TestUnknownEntitiesAndIgnoredReportedTogether(t *testing.T) {
+	_, err := alcatraz.NewDetector(alcatraz.Options{
+		Entities: []string{alcz.USSSN, "BR_CPFF"},
+		Ignored:  []string{"URLL"},
+	})
+	if err == nil {
+		t.Fatal("want an error for both unresolved names")
+	}
+	for _, want := range []string{"entities: BR_CPFF", "ignored: URLL"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error missing %q: %v", want, err)
+		}
+	}
+}
+
+// A name that resolves is not reported just because it appears in both lists.
+// Naming a type in Entities and Ignored is how "everything is subtracted"
+// gets written, and that already has its own error.
+func TestKnownEntityInBothListsIsNotAnUnknownName(t *testing.T) {
+	_, err := alcatraz.NewDetector(alcatraz.Options{
+		Entities: []string{alcz.USSSN},
+		Ignored:  []string{alcz.USSSN},
+	})
+	if err == nil {
+		t.Fatal("want an error: nothing is left to detect")
+	}
+	if strings.Contains(err.Error(), "unknown") {
+		t.Errorf("US_SSN resolves in both lists; the error should be the empty set: %v", err)
+	}
+}
+
+// Ignoring everything leaves a detector that detects nothing, which is a
+// config mistake wearing the costume of a working one.
+func TestIgnoringEveryEntityRejected(t *testing.T) {
+	_, err := alcatraz.NewDetector(alcatraz.Options{
+		Entities: []string{alcz.USSSN},
+		Ignored:  []string{alcz.USSSN},
+	})
+	if err == nil {
+		t.Fatal("want an error: nothing is left to detect")
+	}
+}
+
+// AllEntities is the same set an empty Options.Entities activates, and it
+// must exclude the NER classes this package does not wire.
 func TestAllEntitiesOptIn(t *testing.T) {
 	all := alcatraz.AllEntities()
 	if len(all) < 40 {
@@ -262,6 +353,49 @@ func TestScanTextCleanAndEmpty(t *testing.T) {
 	}
 	if got := d.ScanText("SELECT name FROM customers WHERE id = 1"); len(got) != 0 {
 		t.Errorf("clean SQL reported entities: %v", got)
+	}
+}
+
+// ScanTextFor is the cheap path under a permissive detector: the scan itself
+// narrows to the classes the caller can act on, instead of running every
+// recognizer and throwing all but two answers away in the caller's filter.
+func TestScanTextForRestrictsTheScan(t *testing.T) {
+	d := newDet(t, alcatraz.Options{}) // permissive: every class active
+	const text = "mail ada@example.com card 4111111111111111"
+
+	all := d.ScanText(text)
+	if !slices.Contains(all, alcz.EmailAddress) || !slices.Contains(all, alcz.CreditCard) {
+		t.Fatalf("ScanText = %v, want both classes present to make the narrowing visible", all)
+	}
+
+	want := []string{alcz.CreditCard}
+	if got := d.ScanTextFor(want, text); !slices.Equal(got, want) {
+		t.Errorf("ScanTextFor = %v, want %v: the email must not be scanned for", got, want)
+	}
+}
+
+// A rule naming a class the detector does not carry narrows the scan to
+// nothing. Widening it back to the active set would report classes the caller
+// never asked about, which is the intersection ScanTextFor exists to skip.
+func TestScanTextForOutsideTheActiveSetFindsNothing(t *testing.T) {
+	d := newDet(t, alcatraz.Options{Entities: []string{alcz.CreditCard}})
+
+	got := d.ScanTextFor([]string{alcz.EmailAddress}, "mail ada@example.com card 4111111111111111")
+	if got != nil {
+		t.Errorf("ScanTextFor = %v, want nil", got)
+	}
+}
+
+// The ScopedScanner contract: an empty list asks for no narrowing at all.
+func TestScanTextForEmptyListMatchesScanText(t *testing.T) {
+	d := newDet(t, alcatraz.Options{Entities: []string{alcz.CreditCard, alcz.EmailAddress}})
+	const text = "mail ada@example.com card 4111111111111111"
+
+	if got, want := d.ScanTextFor(nil, text), d.ScanText(text); !slices.Equal(got, want) {
+		t.Errorf("ScanTextFor(nil) = %v, want ScanText's answer %v", got, want)
+	}
+	if got := d.ScanTextFor([]string{alcz.CreditCard}, ""); got != nil {
+		t.Errorf("ScanTextFor over empty text = %v", got)
 	}
 }
 

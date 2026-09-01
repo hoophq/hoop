@@ -59,16 +59,15 @@ ${cred_line}
   cache: {size: 1024, ttl_sec: 900}
   max_calls: 50             # a ceiling for a test run, not a production number
 
-policy:
-  enforce: true
+guardrails:
+  mode: enforce
 
 listeners:
   - name: appdb
     protocol: postgres
     listen: 127.0.0.1:${PG_RELAY_PORT}
     upstream: 127.0.0.1:${PG_UPSTREAM_PORT}
-    connection: appdb
-    policy:
+    guardrails:
       rules:
         # Free, deterministic, and first in the chain: a DROP never reaches a
         # model, because Chain short-circuits on the first denial.
@@ -94,7 +93,6 @@ listeners:
     protocol: http
     listen: 127.0.0.1:${HTTP_RELAY_PORT}
     upstream: 127.0.0.1:${HTTP_UPSTREAM_PORT}
-    connection: api
     # Required. Without it the codec captures no body, the analyzer sees
     # "POST /anything" and nothing else, and every request is skipped. The
     # relay refuses this config at startup when it is missing.
@@ -102,7 +100,7 @@ listeners:
       capture_body: true
       max_body_bytes: 8192
       headers: [Content-Type]
-    policy:
+    guardrails:
       rules:
         - name: risky-payloads
           type: ai_analysis

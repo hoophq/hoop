@@ -10,7 +10,7 @@ import (
 
 // Entity names for the credential recognizers this package adds.
 //
-// Alcatraz is a PII engine: it detects who someone is, across 45 identifier
+// Alcatraz is a PII engine: it detects who someone is, across 51 identifier
 // formats and 12 countries. It has no recognizer for a credential, and that
 // gap is correct, because an AWS key is not personal data. But a response
 // body carrying one is a worse leak than the same body carrying a phone

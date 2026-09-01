@@ -1,6 +1,6 @@
 # hoop-inspect in front of the database Metabase reports on.
 #
-#   metabase --pgwire--> :15432 lane "appdb" --pgwire+TLS--> appdb:5432
+#   metabase --pgwire--> :15432 lane "metabase" --pgwire+TLS--> appdb:5432
 #
 # One lane, because there is one thing to protect. Metabase's own application
 # database is H2 in its container and must not come here: a read-only rule
@@ -21,10 +21,11 @@ audit:
   async_queue_size: 1024 # a slow disk must not block a dashboard load
   query_sessions: 500 # backs /api/sessions
 
-# The union of every entity the lane uses below. Required, and there is no
-# all-entities default: enabling all 45 recognizers rewrites ordinary numeric
-# columns, since US_SSN fires on roughly a third of random nine-digit ids and
-# this schema has an amount_cents column that would qualify.
+# The union of every entity the lane uses below. The section is optional now
+# and it NARROWS a permissive default: omit it and all 54 entity types are
+# active. It is kept because the recognizers it leaves out rewrite ordinary
+# numeric columns, since US_SSN fires on roughly a third of random nine-digit
+# ids and this schema has an amount_cents column that would qualify.
 pii:
   entities:
     - EMAIL_ADDRESS
@@ -33,15 +34,11 @@ pii:
     - BR_CPF
     - IBAN_CODE
 
-mask:
-  enabled: true
-
 listeners:
-  - name: appdb
+  - name: metabase # the name audit rows key on
     protocol: postgres
     listen: 0.0.0.0:15432
     upstream: appdb:5432
-    connection: metabase # the name audit rows key on
 
     # Headroom, not a measurement: this stack peaks at 6 connections. Size a
     # real one at or above MB_JDBC_DATA_WAREHOUSE_MAX_CONNECTION_POOL_SIZE,
@@ -62,8 +59,8 @@ listeners:
       ca_file: /etc/hoop-inspect/certs/appdb.crt
       server_name: appdb
 
-    policy:
-      enforce: true
+    guardrails:
+      mode: enforce
 
       # ORDER MATTERS. First match wins, so the narrow rules come first and
       # the lane-wide backstop comes last. Reverse them and every refusal
@@ -128,15 +125,16 @@ listeners:
         #     message: this statement cannot be classified, so it is refused
 
     mask:
-      # This block REPLACES the default rather than extending it, so every
-      # rule the lane needs is listed here.
+      # There is no top-level mask block, so every rule the lane needs is
+      # listed here. A lane block REPLACES an inherited set rather than
+      # extending it, which is what would happen if one were added.
       #
-      # Mask rules have no table scoping, unlike the policy rules above.
+      # Mask rules have no table scoping, unlike the guardrail rules above.
       # There is no `tables:` field on a mask rule: it keys on the column
       # name in RowDescription or on the detected entity, and it applies to
       # every result set on the lane. `iban` below therefore covers
       # customers.iban and payroll.bank_iban alike, which is why payroll
-      # needs a policy rule and not a mask rule. To mask a column in one
+      # needs a guardrail rule and not a mask rule. To mask a column in one
       # table and leave it clear in another, give each table its own lane.
       rules:
         # ssn carries both kinds of rule because they fail in opposite
@@ -146,10 +144,10 @@ listeners:
         # alias, and reshaping the value defeats it. README "Known gaps" has
         # the hole the pair still leaves.
         - {name: ssn-column, columns: [ssn], strategy: partial, keep_last: 4}
-        - {name: ssn-entity, entity: US_SSN, strategy: partial, keep_last: 4}
+        - {name: ssn-entity, entities: [US_SSN], strategy: partial, keep_last: 4}
         # Entity rules for the rest: the same value turns up under names
         # nobody enumerates in advance (email, actor_email, whatever a join
         # calls them).
-        - {name: emails, entity: EMAIL_ADDRESS, strategy: redact}
-        - {name: cpf, entity: BR_CPF, strategy: redact}
-        - {name: iban, entity: IBAN_CODE, strategy: partial, keep_last: 4}
+        - {name: emails, entities: [EMAIL_ADDRESS], strategy: redact}
+        - {name: cpf, entities: [BR_CPF], strategy: redact}
+        - {name: iban, entities: [IBAN_CODE], strategy: partial, keep_last: 4}

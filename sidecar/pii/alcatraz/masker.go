@@ -62,8 +62,15 @@ const DefaultMaskChar = '*'
 // A rule matches EITHER by detected entity type or by column name. Both are
 // useful and they answer different questions:
 //
-//	{"entity": "US_SSN", "strategy": "partial"}   // wherever an SSN appears
-//	{"columns": ["ssn"], "strategy": "redact"}    // whatever is in that column
+//	{"entities": ["US_SSN"], "strategy": "partial"}   // wherever an SSN appears
+//	{"columns": ["ssn"], "strategy": "redact"}        // whatever is in that column
+//
+// Naming both is the third shape, and it is still a column rule:
+//
+//	{"entities": ["US_SSN"], "columns": ["ssn"]}      // that column, audited as US_SSN
+//
+// Columns decide what is rewritten; the one entity beside them decides only
+// what the audit trail calls the masked cells.
 //
 // The column form is available only where the protocol names its values (a
 // database result set) and it is stronger there. It is deterministic rather
@@ -75,13 +82,31 @@ type Rule struct {
 	// "rule[<index>]".
 	Name string `json:"name,omitempty"`
 
-	// Entity is the alcatraz entity type this rule rewrites, named as the
-	// constants in github.com/hoophq/alcatraz/entities ("US_SSN", "BR_CPF")
-	// or one of AWSAccessKey / JWT / PrivateKey.
+	// Entities lists the alcatraz entity types this rule rewrites, named as
+	// the constants in github.com/hoophq/alcatraz/entities ("US_SSN",
+	// "BR_CPF") or one of AWSAccessKey / JWT / PrivateKey. Three entities
+	// in one rule compile to three rewrites sharing one strategy, which is
+	// the whole reason the plural exists: a contact-details rule covers an
+	// email and a phone number without saying "redact" twice.
 	//
-	// Required unless Columns is set. When both are set the rule masks the
-	// named columns and reports them under this entity name, which is how a
-	// column rule gets a meaningful label in the audit trail.
+	// Required unless Columns is set. Beside Columns it takes at most ONE
+	// entity, and that entity is a label for the audit trail rather than
+	// something to detect: a masked cell is reported under one name, and a
+	// second name gives the reader nothing to pick between. That
+	// one-element form is the canonical spelling of the deprecated Entity
+	// beside Columns.
+	Entities []string `json:"entities,omitempty"`
+
+	// Entity is the one-entity spelling of Entities.
+	//
+	// Deprecated: use Entities. The field stays declared because
+	// BuildMasker decodes with DisallowUnknownFields, so deleting it would
+	// refuse every config already deployed instead of migrating it.
+	// Setting both spellings on one rule is an error rather than a silent
+	// winner. Every use of it renames to a one-element Entities without
+	// changing what the rule does, Columns included: {"entity": "US_SSN",
+	// "columns": ["ssn"]} becomes {"entities": ["US_SSN"], "columns":
+	// ["ssn"]} and keeps the same audit label.
 	Entity string `json:"entity,omitempty"`
 
 	// Columns names result-set columns to mask outright, compared
@@ -107,15 +132,19 @@ type Rule struct {
 	MaskChar rune `json:"mask_char,omitempty"`
 }
 
-// entityName is the label a rule's matches are reported under.
-func (r Rule) entityName() string {
-	if r.Entity != "" {
-		return r.Entity
+// columnLabel is the label a column rule's masked cells are reported under.
+//
+// ents is the rule's entities after both spellings have been folded into one
+// list, and it holds at most one entry here: NewMasker refuses a longer one
+// before calling this, because two labels for one cell cannot be resolved.
+func columnLabel(ents, columns []string) string {
+	if len(ents) > 0 {
+		return ents[0]
 	}
 	// A column-only rule still needs a name in the audit trail. "column:ssn"
 	// says both what happened and why, without inventing an entity type that
 	// no detector produces.
-	return "column:" + strings.ToLower(strings.Join(r.Columns, ","))
+	return "column:" + strings.ToLower(strings.Join(columns, ","))
 }
 
 // Result reports what a Mask call rewrote.
@@ -192,10 +221,40 @@ func NewMasker(d *Detector, rules []Rule) (*Masker, error) {
 			continue
 		}
 
+		// One spelling from here down. The deprecated singular survives so
+		// a config written before the rename still loads, and setting both
+		// is refused rather than resolved: picking a winner silently is
+		// how a rename disables the control an operator thought they kept.
+		ents := r.Entities
+		if r.Entity != "" {
+			if len(ents) > 0 {
+				problems = append(problems, name+
+					": set entities, not both entity and entities")
+				continue
+			}
+			ents = []string{r.Entity}
+		}
+
 		// A column rule needs no detector: the operator has already decided
 		// the column is sensitive, so there is nothing to detect.
 		if len(r.Columns) > 0 {
-			label := r.entityName()
+			// An entity named beside columns is a LABEL for the masked
+			// cells and nothing else: the columns already decided what
+			// gets rewritten. One label, because a cell is reported under
+			// one name and a second has no meaning to pick between. Both
+			// spellings reach here through ents, so the deprecated
+			// singular renames to a one-element list and behaves the same.
+			//
+			// The label is not checked against the detector's set. No
+			// detector runs on a column rule, so the name is free text in
+			// an audit row rather than a class anything has to recognize.
+			if len(ents) > 1 {
+				problems = append(problems, fmt.Sprintf(
+					"%s: %d entities beside columns; a column rule labels its cells "+
+						"with ONE entity, so name one or none", name, len(ents)))
+				continue
+			}
+			label := columnLabel(ents, r.Columns)
 			for _, col := range r.Columns {
 				key := strings.ToLower(strings.TrimSpace(col))
 				if key == "" {
@@ -214,31 +273,38 @@ func NewMasker(d *Detector, rules []Rule) (*Masker, error) {
 			continue
 		}
 
-		switch {
-		case r.Entity == "":
+		if len(ents) == 0 {
 			// Without either, the rule matches nothing and the audit event
 			// could not say what was masked.
 			problems = append(problems, name+": no entity or columns")
 			continue
-		case !claims[r.Entity]:
-			problems = append(problems, fmt.Sprintf(
-				"%s: entity %q is not in the detector's set (configured: %s)",
-				name, r.Entity, strings.Join(d.active, ", ")))
-			continue
 		}
 
-		// Two rules for one entity is ambiguous: the anonymizer keys
-		// operators by entity type, so the second would silently replace the
-		// first.
-		if prev, dup := seen[r.Entity]; dup {
-			problems = append(problems, fmt.Sprintf(
-				"%s: entity %q already rewritten by %s", name, r.Entity, prev))
-			continue
-		}
+		// One rule over three entities is three rewrites sharing one
+		// operator. Every check below runs per entity and against the maps
+		// the whole set shares, so a rule that names an entity another rule
+		// already claimed still collides, and a rule that repeats an entity
+		// collides with itself.
+		for _, e := range ents {
+			if !claims[e] {
+				problems = append(problems, fmt.Sprintf(
+					"%s: entity %q is not in the detector's set (configured: %s)",
+					name, e, strings.Join(d.active, ", ")))
+				continue
+			}
+			// Two rules for one entity is ambiguous: the anonymizer keys
+			// operators by entity type, so the second would silently replace
+			// the first.
+			if prev, dup := seen[e]; dup {
+				problems = append(problems, fmt.Sprintf(
+					"%s: entity %q already rewritten by %s", name, e, prev))
+				continue
+			}
 
-		seen[r.Entity] = name
-		perEntity[r.Entity] = op
-		entities = append(entities, r.Entity)
+			seen[e] = name
+			perEntity[e] = op
+			entities = append(entities, e)
+		}
 	}
 
 	if len(problems) > 0 {

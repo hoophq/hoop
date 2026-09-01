@@ -1,8 +1,8 @@
 # hoop-inspect listening on unix sockets instead of TCP ports.
 #
 # Identical to ../sidecar/config.yaml except for the two `network`/`listen`
-# pairs. Policy, masking, audit and upstream TLS are untouched: the transport
-# under the relay does not change what the relay does.
+# pairs. Guardrails, masking, audit and upstream TLS are untouched: the
+# transport under the relay does not change what the relay does.
 #
 # Validate without starting anything:
 #   cd sidecar/cmd && go run . -validate \
@@ -29,8 +29,8 @@ pii:
     - BR_CPF
     - IBAN_CODE
 
-policy:
-  enforce: true
+guardrails:
+  mode: enforce
   rules:
     - name: no-cpf-in-query
       type: pii
@@ -38,13 +38,12 @@ policy:
       message: do not put a taxpayer id in a query; it lands in the database's own logs
 
 mask:
-  enabled: true
   rules:
-    - {name: emails, entity: EMAIL_ADDRESS, strategy: redact}
-    - {name: ssn, entity: US_SSN, strategy: partial, keep_last: 4}
-    - {name: cards, entity: CREDIT_CARD, strategy: partial, keep_last: 4}
-    - {name: cpf, entity: BR_CPF, strategy: redact}
-    - {name: iban, entity: IBAN_CODE, strategy: partial, keep_last: 4}
+    - {name: emails, entities: [EMAIL_ADDRESS], strategy: redact}
+    - {name: ssn, entities: [US_SSN], strategy: partial, keep_last: 4}
+    - {name: cards, entities: [CREDIT_CARD], strategy: partial, keep_last: 4}
+    - {name: cpf, entities: [BR_CPF], strategy: redact}
+    - {name: iban, entities: [IBAN_CODE], strategy: partial, keep_last: 4}
 
 listeners:
   - name: appdb
@@ -55,11 +54,10 @@ listeners:
     network: unix
     listen: /run/hoop-inspect/pg.sock
     upstream: appdb:5432
-    connection: appdb
     upstream_tls:
       ca_file: /etc/hoop-inspect/certs/appdb.crt
       server_name: appdb
-    policy:
+    guardrails:
       rules:
         - name: no-destructive-sql
           type: operation
@@ -68,17 +66,16 @@ listeners:
     mask:
       rules:
         - {name: ssn-column, columns: [ssn], strategy: partial, keep_last: 4}
-        - {name: emails, entity: EMAIL_ADDRESS, strategy: redact}
-        - {name: cpf, entity: BR_CPF, strategy: redact}
-        - {name: iban, entity: IBAN_CODE, strategy: partial, keep_last: 4}
+        - {name: emails, entities: [EMAIL_ADDRESS], strategy: redact}
+        - {name: cpf, entities: [BR_CPF], strategy: redact}
+        - {name: iban, entities: [IBAN_CODE], strategy: partial, keep_last: 4}
 
   - name: httpbin
     protocol: http
     network: unix
     listen: /run/hoop-inspect/http.sock
     upstream: httpbin:8080
-    connection: httpbin
-    policy:
+    guardrails:
       rules:
         - name: no-admin-api
           type: http_resource

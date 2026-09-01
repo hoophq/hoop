@@ -1,6 +1,7 @@
 # ADR-0011: Splitting `policy` into `guardrails` and `opa` in the sidecar config
 
-- **Status:** Proposed
+
+- **Status:** Accepted
 - **Date:** 2026-08-31
 - **Author:** @matheusfrancisco
 - **Code:** [`sidecar/daemon/config.go`](../../sidecar/daemon/config.go), [`sidecar/pii/alcatraz/`](../../sidecar/pii/alcatraz), [`sidecar/config/yaml/`](../../sidecar/config/yaml)
@@ -149,16 +150,30 @@ section with three.
 
 | Field | Global → lane | Why |
 |---|---|---|
-| `guardrails.rules` | **concatenate**, lane's first | Every local rule denies or defers and the first match wins, so concatenating is monotonic in the allow/deny outcome. Order picks which name and message the user reads. |
+| `guardrails.rules` | **concatenate**, lane's first | Every local rule denies or defers and the first match wins, so concatenating is monotonic in the allow/deny outcome. Order picks which name and message the user reads. `rules: []` opts the lane out entirely. |
 | `guardrails.mode` | **replace** when set | A lane rolling out behind an enforcing default has to be able to say observe. |
 | `opa` | **replace** when set | One lane has one decision endpoint. |
 | `mask.rules` | **replace** when set | A rule owns an entity or a column. Concatenating leaves two rewrites of one value. |
 | `pii`, `analyzer`, `audit`, `admin` | process-wide | One detector engine and one analyzer per process. |
 
-`mask.rules: []` is how a lane opts out of an inherited set. The empty list is
-non-empty as JSON bytes, so `len(o.Rules) > 0` at `daemon/config.go:382` reads
-it as an override rather than as silence. A test pins it, because the
-distinction is invisible in the type.
+Each of the three sections a lane can override also has a spelling for
+wanting none of it, and they are the same shape on purpose:
+
+| Section | Opt out with | Reads as |
+|---|---|---|
+| `guardrails` | `guardrails: {rules: []}` | no rules on this lane |
+| `opa` | `opa: {}` | no decision endpoint on this lane |
+| `mask` | `mask: {rules: []}` | no rewriting on this lane |
+
+All three hang on the decoder distinguishing an empty collection from an absent
+key. `mask.rules` is a `json.RawMessage`, so `[]` arrives as two bytes rather
+than as nil. `guardrails.rules` is a `[]policy.Rule`, and `[]` decodes to a
+non-nil slice of length zero, which is why the merge reads presence rather than
+length: `len(o.Rules) > 0` would read the opt-out as silence and hand the lane
+the defaults it just refused. An empty list meaning "adds nothing" is the other
+defensible reading for a field that concatenates, and it would leave a lane no
+way to say the thing at all. Tests pin each one, because the distinction is
+invisible in the type.
 
 ### Startup refusals, restated
 
@@ -176,13 +191,20 @@ starts denying, which ADR-0012 explains.
 
 ## Consequences
 
-**Two shipped behaviours reverse, and both need release-note prose.** A lane
+**One shipped behaviour reverses, and it needs release-note prose.** A lane
 with `mask.enabled: true` and no `pii` section refuses to start today
 (`daemon/daemon.go:590-592`) and will start and mask, because a detector now
-always exists. A lane with mask rules on MSSQL loads clean today and will
-refuse to start, because the check at `daemon/config.go:537` stops being
-skipped. The second is the dangerous direction: a deployment that boots today
-may not boot after the upgrade.
+always exists.
+
+**No deployment stops booting over masking.** Dropping `mask.enabled` makes the
+protocol check at `daemon/config.go:537` run on every lane that carries rules,
+where the flag used to skip it. That reads like a new way to fail an upgrade
+and is not one: `gate.MaskSupported` asks the codec for a `Reframer` rather
+than listing protocol names (`gate/gate.go:544-554`), and all three shipped
+codecs have one, HTTP through Content-Length re-tagging. Verified by loading a
+config with mask rules on postgres, mssql and http lanes: all three validate
+clean and report `+ masking`. The check earns its place as the guard for a
+future codec that relays without re-framing, not as a migration hazard.
 
 **`analyzer.send: redacted` and `refuse` start working without a `pii`
 section.** The refusal at `daemon/analyzer.go:206-212` tests for a section that
@@ -205,12 +227,15 @@ constants rather than from config (`policy/opa.go:86,89`), and
 fills it. No Rego policy needs an edit. `session/session_test.go:108` pins the
 context shape as a public contract and keeps passing.
 
-**A lane still cannot opt out of an inherited `opa`.** `resolve` replaces when
-the listener sets one (`daemon/config.go:369-371`), and `opa: {url: ""}` is
-refused (`:487-489`), so a top-level OPA reaches every lane with no escape.
-`mask` has `rules: []` and `guardrails` has `mode: observe`; `opa` has nothing
-equivalent. We read an explicitly empty `opa: {}` on a listener as "no OPA on
-this lane" and close the gap while the section is being rewritten.
+**Every inheritable section gains an opt-out, which two of them lacked.** A
+top-level `opa` used to reach every lane with no escape: `resolve` replaces only
+when the listener sets one, and `opa: {url: ""}` is refused. `guardrails.rules`
+had the same hole, and `mode: observe` did not fill it, since an observing lane
+still evaluates and evaluating is what costs money on a lane with `ai_analysis`
+rules. Both are closed by the table above, and closing them was cheap while the
+sections were being rewritten anyway. `opa: {}` is read as the opt-out only
+when every field in the block is zero; a block naming a timeout with no url is
+still refused, because that configures a client that cannot be built.
 
 **Deprecated fields stay in the Go structs until a named release removes
 them.** Constraint C from the Context leaves no alternative. The window runs
@@ -319,8 +344,9 @@ listeners:
     guardrails: {mode: observe}
     mask: {rules: []}             # the empty list opts out of the inherited set
 
-  # TDS rows are length-prefixed binary frames with no reframer, so a mask
-  # block here is refused at startup. The empty list is required.
+  # MSSQL masks: its codec re-frames, so this lane could carry mask rules.
+  # It opts out to show the spelling, since `rules: []` is the only way a lane
+  # refuses a set the top level configured.
   - name: mssqldb
     protocol: mssql
     listen: "127.0.0.1:1434"
@@ -370,7 +396,7 @@ Resolved:
 |---|---|---|---|---|
 | `appdb` | enforce | 5 inherited | none | 4 rules |
 | `reporting` | observe | 5 inherited, evaluated, none enforced | none | off |
-| `mssqldb` | enforce | 1 own + 5 inherited, own first | none | off |
+| `mssqldb` | enforce | 1 own + 5 inherited, own first | none | off, by `rules: []` |
 | `api` | enforce | 3 own + 5 inherited | gate and decide | 2 rules |
 | `internal-jobs` | enforce | 5 inherited | none | 4 rules |
 
@@ -383,8 +409,10 @@ or without OPA, safe at both ends.
 
 - `hoop-inspect -validate` against all six shipped configs in the deprecated
   spelling (loads, warns) and the new spelling (loads, silent).
-- A config setting both spellings of each of the seven renamed fields, which
-  must produce seven refusals in one run.
+- A config setting both spellings of every field that has two, which must
+  produce every refusal in one run. Four qualify: `policy.rules`,
+  `policy.enforce`, `policy.opa` and `audit.fail_closed`. The other three
+  changes fold with no conflicting pair to write.
 - `make test-sidecar`, which walks every `go.mod` under `sidecar/`.
 - `TestOPAInputDocumentShape` (`policy/policy_test.go:308-351`) and
   `policy/evalcontext_test.go:67-256`, unchanged and passing, proving the Rego

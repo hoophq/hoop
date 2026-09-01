@@ -30,6 +30,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -130,6 +131,7 @@ func Main(version string, load Loader, build PluginBuilder) error {
 	var (
 		configPath = fs.String("config", "", "path to the config file ("+syntax+")")
 		validate   = fs.Bool("validate", false, "validate the config and exit")
+		strict     = fs.Bool("strict", false, "treat a deprecated config field as an error")
 		showVer    = fs.Bool("version", false, "print the version and exit")
 	)
 	if err := fs.Parse(os.Args[1:]); err != nil {
@@ -154,20 +156,53 @@ func Main(version string, load Loader, build PluginBuilder) error {
 	if err != nil {
 		return err
 	}
+	ReportDeprecations(os.Stderr, cfg.Deprecations)
+	if *strict && len(cfg.Deprecations) > 0 {
+		return fmt.Errorf("%d deprecated config field(s) in use and -strict is set",
+			len(cfg.Deprecations))
+	}
 
 	if *validate {
 		lanes, err := Validate(cfg, det)
 		if err != nil {
 			return err
 		}
-		fmt.Println("config OK:", len(lanes), "listener(s)")
-		for _, ln := range lanes {
-			fmt.Printf("  %-16s %-9s %s\n", ln.Name, ln.Protocol, ln.Summary())
-		}
+		PrintLanes(os.Stdout, lanes)
 		return nil
 	}
 
 	return Run(cfg, det)
+}
+
+// ReportDeprecations writes each deprecation notice to w, one per line.
+//
+// It goes to STDERR at every call site. -validate writes a report to stdout
+// that an operator may parse, and a warning must not land in it. Same rule the
+// CLI's rename notice follows.
+func ReportDeprecations(w io.Writer, notes []string) {
+	for _, n := range notes {
+		fmt.Fprintln(w, "warn: deprecated config:", n)
+	}
+	if len(notes) > 0 {
+		fmt.Fprintln(w, "warn: these fields keep working for now and are removed in a "+
+			"future release. See docs/adr/0011-sidecar-config-schema.md")
+	}
+}
+
+// PrintLanes renders what -validate concluded, one line per lane plus any
+// notes the resolved stack produced.
+//
+// Shared by both entry points so `hoop start sidecar --validate` and
+// `hoop-inspect -validate` cannot drift into reporting different things about
+// one config.
+func PrintLanes(w io.Writer, lanes []LaneInfo) {
+	fmt.Fprintln(w, "config OK:", len(lanes), "listener(s)")
+	for _, ln := range lanes {
+		fmt.Fprintf(w, "  %-16s %-9s %s\n", ln.Name, ln.Protocol, ln.Summary())
+		for _, n := range ln.Notes {
+			fmt.Fprintf(w, "  %-16s %-9s   note: %s\n", "", "", n)
+		}
+	}
 }
 
 // LaneInfo is one resolved listener, as Validate reports it.
@@ -183,6 +218,16 @@ type LaneInfo struct {
 	OPA       bool
 	Masking   bool
 
+	// Observing is true when the lane evaluates every rule and denies
+	// nothing. Distinct from Enforcing being false, which now means the lane
+	// resolved no rules at all: a dry run runs its rules, and an operator
+	// reading this has to be able to tell the two apart.
+	Observing bool
+
+	// Notes are the facts about the resolved stack that no config file
+	// shows. See lane.notes.
+	Notes []string
+
 	// Analyzed counts the ai_analysis rules on this lane. They are
 	// reported apart from Rules because they behave differently in the way
 	// that matters to whoever is reading a validate output: they leave the
@@ -193,9 +238,14 @@ type LaneInfo struct {
 // Summary renders a LaneInfo as the one-line mode description the -validate
 // output and the CLI both print.
 func (l LaneInfo) Summary() string {
-	mode := "observe-only"
-	if l.Enforcing {
+	var mode string
+	switch {
+	case l.Observing:
+		mode = fmt.Sprintf("observing %d rule(s), denying none", l.Rules)
+	case l.Enforcing:
 		mode = fmt.Sprintf("enforcing %d rule(s)", l.Rules)
+	default:
+		mode = "no rules to enforce"
 	}
 	if l.OPA {
 		mode += " + opa"
@@ -238,11 +288,13 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 		out = append(out, LaneInfo{
 			Name:      ln.name,
 			Protocol:  ln.cfg.Protocol,
-			Enforcing: ln.policy != nil,
+			Enforcing: ln.policy != nil && !ln.observing,
+			Observing: ln.observing,
 			Rules:     len(ln.rules),
 			OPA:       ln.opaURL != "",
 			Masking:   ln.masker != nil,
 			Analyzed:  len(ln.analyzed),
+			Notes:     ln.notes,
 		})
 	}
 	return out, nil
@@ -329,13 +381,21 @@ func Run(cfg *Config, det Plugin) error {
 			"listener", ln.name,
 			"protocol", ln.cfg.Protocol,
 			"upstream", ln.cfg.Upstream,
-			"enforcing", ln.policy != nil,
+			"enforcing", ln.policy != nil && !ln.observing,
+			"observing", ln.observing,
 			"rules", len(ln.rules),
 			"opa", ln.opaURL,
 			"masking", ln.masker != nil)
+		for _, n := range ln.notes {
+			log.Warn(n, "listener", ln.name)
+		}
 		if ln.policy == nil {
-			log.Warn("lane is observe-only; no statement will be denied",
-				"listener", ln.name, "hint", "set policy.enforce=true on this listener or at the top level")
+			// Not a misconfiguration on its own: a lane may exist to audit
+			// and mask. It is worth one line, because a lane that resolved
+			// no rules looks identical to one whose rules failed to reach it.
+			log.Warn("lane resolved no rules and consults no policy; nothing will be denied",
+				"listener", ln.name,
+				"hint", "add guardrails.rules at the top level or on this listener")
 		}
 	}
 
@@ -374,12 +434,14 @@ func Run(cfg *Config, det Plugin) error {
 	return nil
 }
 
+// displayName is the lane's operator-facing name: what logs, audit rows,
+// validation errors and input.context.connection all key on.
+//
+// normalize folds the deprecated `connection` field onto Name before anything
+// calls this, so there is one name per lane rather than two that can disagree.
 func (l ListenerConfig) displayName(i int) string {
-	switch {
-	case l.Name != "":
+	if l.Name != "" {
 		return l.Name
-	case l.Connection != "":
-		return l.Connection
 	}
 	return fmt.Sprintf("listener[%d]", i)
 }
@@ -414,6 +476,18 @@ type lane struct {
 	// captureBody reports whether this lane's codec exposes request bodies,
 	// which decides whether HTTP analysis has anything to read.
 	captureBody bool
+
+	// observing is true when the lane evaluates everything and denies
+	// nothing. Reported apart from policy != nil because a dry-run lane HAS
+	// an evaluator: it is the one case where rules run and no denial can
+	// reach the client.
+	observing bool
+
+	// notes are per-lane facts an operator has to know at startup and that
+	// no config file shows, because they are consequences of the resolved
+	// stack rather than of anything written down. A rule that defers on a
+	// lane with no OPA is the case this exists for.
+	notes []string
 }
 
 // buildLanes resolves and builds every listener's stack.
@@ -427,16 +501,16 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 
 	for i, lc := range cfg.Listeners {
 		name := lc.displayName(i)
-		pc, mc := cfg.resolve(lc)
+		gc, opa, mc := cfg.resolve(lc)
 
-		if errs := checkPIIEntities(pc, det); len(errs) > 0 {
+		if errs := checkPIIEntities(gc.Rules, det); len(errs) > 0 {
 			for _, e := range errs {
 				problems = append(problems, name+": "+e)
 			}
 			continue
 		}
 
-		pol, err := buildPolicy(pc, det, ac)
+		pol, err := buildPolicy(gc, opa, det, ac)
 		if err != nil {
 			problems = append(problems, name+": "+err.Error())
 			continue
@@ -455,19 +529,31 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 			masker:       masker,
 			codecFactory: httpCodecFactory(proto, lc.HTTP),
 			captureBody:  lc.HTTP != nil && lc.HTTP.CaptureBody,
+			observing:    gc.observing(),
 		}
-		if pol != nil {
-			ln.rules = make([]string, 0, len(pc.Rules))
-			for _, r := range pc.Rules {
-				if r.Type == policy.MatchAIAnalysis {
-					ln.analyzed = append(ln.analyzed, r.Name)
-					continue
-				}
-				ln.rules = append(ln.rules, r.Name)
+		// Reported whether or not the lane enforces. An observing lane runs
+		// every one of these, and a reader of the startup log needs to see
+		// which rules a dry run is exercising.
+		ln.rules = make([]string, 0, len(gc.Rules))
+		for _, r := range gc.Rules {
+			if r.Type == policy.MatchAIAnalysis {
+				ln.analyzed = append(ln.analyzed, r.Name)
+				continue
 			}
-			if pc.OPA != nil {
-				ln.opaURL = pc.OPA.URL
-			}
+			ln.rules = append(ln.rules, r.Name)
+		}
+		if opa.enabled() {
+			ln.opaURL = opa.URL
+		}
+		if gc.observing() {
+			ln.notes = append(ln.notes,
+				"observe mode: every rule is evaluated and nothing is denied. "+
+					"Matches are recorded on the audit line as "+policy.AnnotationWouldDeny)
+		}
+		if !opa.enabled() && anyDeferred(gc.Rules) {
+			ln.notes = append(ln.notes,
+				"rule(s) defer to a decision this lane has no opa.url for, so a match "+
+					"denies instead of reporting a finding")
 		}
 		out = append(out, ln)
 	}
@@ -486,14 +572,14 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 // engine never looks for never appears, and the rule silently allows every
 // statement it was written to deny. The operator sees a guardrail that is
 // doing nothing.
-func checkPIIEntities(pc PolicyConfig, det Plugin) []string {
+func checkPIIEntities(rules []policy.Rule, det Plugin) []string {
 	if det == nil {
 		return nil // buildPolicy already refuses pii rules with no scanner
 	}
 	var known map[string]bool
 	var problems []string
 
-	for _, r := range pc.Rules {
+	for _, r := range rules {
 		if r.Type != policy.MatchPII {
 			continue
 		}
@@ -508,7 +594,8 @@ func checkPIIEntities(pc PolicyConfig, det Plugin) []string {
 			if !known[want] {
 				problems = append(problems, fmt.Sprintf(
 					"rule %q names entity %q, which the detector is not configured to find; "+
-						"add it to pii.entities or the rule will never match",
+						"drop it from pii.ignored, or fix the spelling, or the rule will "+
+						"never match",
 					r.Name, want))
 			}
 		}
@@ -557,11 +644,11 @@ func buildServer(
 		UpstreamTLS:      upstreamTLS,
 		DownstreamTLS:    downstreamTLS,
 		Protocol:         inspect.Protocol(lc.Protocol),
-		Connection:       lc.Connection,
+		Connection:       ln.name,
 		Policy:           ln.policy,
 		Audit:            sink,
 		Masker:           ln.masker,
-		FailOnAuditError: ac.FailClosed,
+		FailOnAuditError: ac.failOnAuditError(),
 		DenyWriter:       proxy.ProtocolDenyWriter{},
 		IdentityFn:       identityFn,
 		CodecFactory:     ln.codecFactory,
@@ -577,21 +664,28 @@ func buildServer(
 // failures the same way: by finding an unmasked SSN in a screenshot.
 //
 //   - No plugin. Masking needs a detection engine and this package links
-//     none, so an enabled mask section without one cannot work.
+//     none, so a mask section without one cannot work.
 //   - A protocol whose framing cannot survive substitution. The rules would
 //     load, validate, and never fire.
+//
+// A non-empty rule list is the whole of the switch. The separate `enabled`
+// flag it replaced used to skip these checks along with the masking, so a
+// lane could carry rules for a protocol that cannot mask and still load
+// clean.
 //
 // Validate reports both at startup; these checks cover a caller reaching Run
 // without going through LoadConfig.
 func buildMasker(mc MaskConfig, det Plugin, proto inspect.Protocol) (gate.Masker, error) {
-	if !mc.on() {
+	if !mc.hasRules() {
 		return nil, nil
 	}
 	if det == nil {
-		return nil, fmt.Errorf("mask.enabled is true but this build has no detection plugin")
+		return nil, fmt.Errorf("mask.rules is set but this build has no detection plugin")
 	}
 	if !gate.MaskSupported(proto) {
-		return nil, fmt.Errorf("mask.enabled is true but masking is not supported on %s", proto)
+		return nil, fmt.Errorf(
+			"mask.rules is set but masking is not supported on %s; remove the rules from "+
+				"this lane, or set mask: {rules: []} on it", proto)
 	}
 	return det.BuildMasker(mc.Rules)
 }
@@ -742,6 +836,17 @@ func serveAdmin(
 			Masking   bool     `json:"masking"`
 			MaskNote  string   `json:"mask_note,omitempty"`
 
+			// Observing, Guardrails and OPAURL are the ADR-0011
+			// vocabulary. They sit BESIDE the four fields above rather
+			// than replacing them, so a control plane reading
+			// "enforcing" keeps working while it migrates. The
+			// response names the old set in deprecated_fields.
+			Observing  bool     `json:"observing"`
+			Guardrails string   `json:"guardrails"`
+			OPAURL     string   `json:"opa_url,omitempty"`
+			OPAGate    bool     `json:"opa_gate,omitempty"`
+			Notes      []string `json:"notes,omitempty"`
+
 			// AIRules names the ai_analysis rules and CaptureBody says
 			// whether this lane's codec exposes request bodies. Both
 			// are here because they answer "what leaves this process",
@@ -752,17 +857,25 @@ func serveAdmin(
 		}
 		out := make([]laneView, 0, len(lanes))
 		for _, ln := range lanes {
+			mode := ModeEnforce
+			if ln.observing {
+				mode = ModeObserve
+			}
 			v := laneView{
 				Name:        ln.name,
 				Protocol:    ln.cfg.Protocol,
 				Listen:      ln.cfg.Listen,
 				Upstream:    ln.cfg.Upstream,
-				Enforcing:   ln.policy != nil,
+				Enforcing:   ln.policy != nil && !ln.observing,
 				Rules:       ln.rules,
 				OPA:         ln.opaURL,
 				Masking:     ln.masker != nil,
 				AIRules:     ln.analyzed,
 				CaptureBody: ln.captureBody,
+				Observing:   ln.observing,
+				Guardrails:  mode,
+				OPAURL:      ln.opaURL,
+				Notes:       ln.notes,
 			}
 			if v.Rules == nil {
 				v.Rules = []string{} // render [] rather than null
@@ -775,6 +888,10 @@ func serveAdmin(
 		resp := map[string]any{
 			"version": Version,
 			"lanes":   out,
+			// Named in the payload rather than only in the README, so a
+			// control plane can warn its own developers without reading
+			// prose. These keys still carry correct values.
+			"deprecated_fields": []string{"enforcing", "rules", "opa", "masking"},
 		}
 		// The analyzer view names the provider, the model and the HOST it
 		// talks to — never the path, never a query string, and never the
