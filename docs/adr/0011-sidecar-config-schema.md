@@ -1,5 +1,6 @@
 # ADR-0011: Splitting `policy` into `guardrails` and `opa` in the sidecar config
 
+
 - **Status:** Accepted
 - **Date:** 2026-08-31
 - **Author:** @matheusfrancisco
