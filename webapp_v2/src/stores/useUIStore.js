@@ -7,7 +7,7 @@ const CONFIG_STATUS_DISMISS_KEY = 'config-status-dismissed'
 // One task left is a decision, not a postponement: the admin read the last item
 // and does not want it. Most reports are orgs stuck on "Set Protection Level".
 const PERMANENT_AT_OR_BELOW = 1
-const SNOOZE_MS = 30 * 24 * 60 * 60 * 1000
+const SNOOZE_MS = 7 * 24 * 60 * 60 * 1000
 
 // Read once here, never inside a selector: Date.now() in a selector makes the
 // snapshot unstable, and the ConfigStatus gate must stay pure and hook-free
