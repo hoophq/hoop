@@ -1,11 +1,18 @@
 # ADR-0010: One ordered rule list, six matchers, first denial wins
 
-- **Status:** Accepted
+- **Status:** Accepted (amended 2026-08-31 — observe mode; see "Amendment" below)
 - **Date:** 2026-08-27
 - **Author:** @matheusfrancisco
 - **Code:** [`sidecar/policy/policy.go`](../../sidecar/policy/policy.go), [`sidecar/policy/pii.go`](../../sidecar/policy/pii.go), [`sidecar/lexer/`](../../sidecar/lexer), [`sidecar/inspect/sqlmeta.go`](../../sidecar/inspect/sqlmeta.go)
 - **Related:** [ADR-0005](0005-sidecar-flow.md) (the flow this sits in), [ADR-0006](0006-sidecar-config-defaults-and-overrides.md) (how a lane's list is assembled from global + lane), [ADR-0008](0008-analyzer-enforces-without-opa.md) (the `ai_analysis` rule, which this set deliberately does not evaluate), [ADR-0009](0009-guardrails-and-masking-architecture.md) (where enforcement runs at all)
 - **Supersedes / Superseded by:** —
+
+> **Amendment (2026-08-31):** the section "`enforce: false` is not a dry
+> run" below described the code correctly and is fixed by
+> [ADR-0012](0012-sidecar-enforcement-defaults.md). The field is now
+> `guardrails.mode`, and `observe` evaluates every rule, denies nothing, and
+> records `guardrails.would_deny` on the audit line. The rest of this ADR,
+> including the `require_table_match` defect, is unchanged.
 
 ## Context
 
@@ -177,7 +184,7 @@ to the client direction. Until that lands, treat `require_table_match` as
 unusable on a postgres lane. It is recorded here rather than fixed quietly
 because it changes what an existing config does.
 
-### `enforce: false` is not a dry run
+### `enforce: false` is not a dry run (fixed by ADR-0012)
 
 `buildPolicy` returns nil for a non-enforcing lane, so no rule is evaluated at
 all. The trail then carries `statement` rows and no `violation` rows, even for

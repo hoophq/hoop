@@ -1,11 +1,22 @@
 # ADR-0009: Where guardrails and masking run, and the deny/mask split
 
-- **Status:** Accepted
+- **Status:** Accepted (amended 2026-08-31 — permissive `pii` default; see "Amendment" below)
 - **Date:** 2026-08-27
 - **Author:** @matheusfrancisco
 - **Code:** [`libhoop/agent/`](../../libhoop/agent), [`libhoop/redactor/`](../../libhoop/redactor), [`sidecar/policy/`](../../sidecar/policy), [`sidecar/gate/`](../../sidecar/gate), [`sidecar/pii/alcatraz/`](../../sidecar/pii/alcatraz), [`sidecar/lexer/`](../../sidecar/lexer)
 - **Related:** [ADR-0005](0005-sidecar-flow.md) (one request through the relay, current state), [ADR-0006](0006-sidecar-config-defaults-and-overrides.md) (how a lane resolves its rules), [ADR-0008](0008-analyzer-enforces-without-opa.md) (the AI evaluator's half of the same chain), [ADR-0010](0010-local-sql-rule-set.md) (the local rule set this decision's rule 7 feeds)
 - **Supersedes / Superseded by:** —
+
+> **Amendment (2026-08-31):** [ADR-0011](0011-sidecar-config-schema.md)
+> reverses the `pii.entities` requirement recorded below. Omitting the `pii`
+> section now enables all 54 entity types instead of disabling detection. The
+> measured false-positive rates in this ADR stand and are still the reason not
+> to write a `US_SSN` mask rule casually; ADR-0011 shows why they do not reach
+> the omitted case, since `NewMasker` narrows the engine to the entities its
+> own rules name. Everything else here, including the two-engine split and the
+> decision not to federate the gateway and sidecar rule vocabularies, is
+> unchanged. ADR-0011 does rename the sidecar's config key to `guardrails`
+> while keeping the engines separate.
 
 ## Context
 
