@@ -128,7 +128,6 @@ func TestControlPlaneRoutes(t *testing.T) {
 		"PUT /api/guardrails/:id",
 		"PUT /api/plugins/:name",
 		"PUT /api/plugins/:name/config",
-		"PUT /api/reviews/:id",
 		"PUT /api/users/:emailOrID",
 	}
 	if len(got) != len(want) {

@@ -45,7 +45,16 @@ the control plane does not serve compiles, builds and 404s at runtime. Check the
 before adding one. `layout/ModeBanner` warns on screen, in dev builds, when the backend
 is answering in gateway mode and would hide the mistake.
 
-Two things the control plane deliberately does not expose, so do not add UI that calls
+Two features are only partly there, and the UI must not imply otherwise:
+
+- **Reviews are read only.** `GET /reviews` and `GET /reviews/:id` are served; approving
+  is not. `PUT /reviews/:id` releases the gRPC stream waiting on the verdict, and this
+  mode runs no transport. A sidecar review is a different entity anyway (ADR-0009).
+- **Slack stores configuration and runs nothing.** The plugin runtime is registered in
+  `runGateway`, so nothing starts here — no listener, no notifications. The config is
+  kept for when a control-plane notification path exists.
+
+Two things it deliberately does not expose, so do not add UI that calls
 them: **access-control group management** (`GET /users/groups` is allowed because review
 rules name approvers by group; creating and deleting them is not) and **attributes**
 (blocked entirely — the pickers were removed from Guardrails, Data Masking and Review

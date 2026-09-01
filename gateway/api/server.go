@@ -283,7 +283,15 @@ func (a *Api) StartAPI() {
 // AWS load balancer template and the docker-compose healthcheck all probe
 // /api/healthz, so a control plane without it never passes its health check.
 func (api *Api) buildControlPlaneRoutes(r *apiroutes.Router) {
-	reviewHandler := reviewapi.NewHandler(api.ReleaseConnectionFn)
+	// runControlPlane builds Api without a ReleaseConnectionFn because this
+	// mode runs no gRPC transport. Only reviewapi.ReviewByIdOrSid calls it, and
+	// that route is not registered below — this stub is here so that adding it
+	// back fails with a named error instead of a nil dereference after the
+	// review has already been written.
+	reviewHandler := reviewapi.NewHandler(func(orgID, sid, _, _, _, _ string) {
+		log.With("org", orgID, "sid", sid).
+			Error("control plane: asked to release a gRPC connection, but this mode runs no transport")
+	})
 	loginOidcApiHandler := loginoidcapi.New()
 	loginSamlApiHandler := loginsamlapi.New()
 
@@ -473,8 +481,18 @@ func (api *Api) buildControlPlaneRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		apiai.GetConnectionAnalyzerRule)
 
-	// Reviews. PUT /reviews/:id takes an id OR a sid (ReviewByIdOrSid), which is
-	// why PUT /sessions/:session_id/review is absent: same operation, second way.
+	// Reviews, READ ONLY.
+	//
+	// PUT /reviews/:id is deliberately absent. Approving or rejecting calls
+	// TransportReleaseConnection to free the gRPC stream waiting on the
+	// verdict, and this mode starts no transport — so the callback is nil and
+	// the call panics *after* DoReview has already committed, which a recovered
+	// 500 hides from the client. There is nothing to release here either way:
+	// a sidecar pulls its configuration over HTTP and holds no stream.
+	//
+	// Reviews raised by a sidecar are a different entity from the gateway
+	// session reviews these two routes list (see ADR-0009). Approving belongs
+	// with that entity, not with a nil-guard on this one.
 	r.GET("/reviews",
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
@@ -486,11 +504,6 @@ func (api *Api) buildControlPlaneRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventFetchReviews),
 		reviewHandler.GetByIdOrSid,
-	)
-	r.PUT("/reviews/:id",
-		r.AuthMiddleware,
-		api.TrackRequest(analytics.EventUpdateReview),
-		reviewHandler.ReviewByIdOrSid,
 	)
 
 	// Review rules.
@@ -538,9 +551,21 @@ func (api *Api) buildControlPlaneRoutes(r *apiroutes.Router) {
 		r.AuthMiddleware,
 		sessionapi.PatchMetadata)
 
-	// Slack, where review approvals are delivered. /plugins is one route for every
-	// plugin and the name arrives in the body, so gateway/api/plugins narrows it
-	// to slack in the handler - a route list cannot express that.
+	// Slack. /plugins is one route for every plugin and the name arrives in the
+	// body, so gateway/api/plugins narrows it to slack in the handler — a route
+	// list cannot express that.
+	//
+	// LIMITATION, and it is visible to an admin: these routes persist Slack
+	// configuration and nothing more. plugintypes.RegisteredPlugins is
+	// populated in runGateway, so in this mode processOnUpdatePluginPhase
+	// iterates an empty list and no Slack runtime starts — no event listener,
+	// no notifications. Nothing is lost: the configuration is read when a
+	// runtime does start. But an admin who configures Slack here will not
+	// receive anything, and there is no review to notify about yet either,
+	// since PUT /reviews/:id is not on this surface.
+	//
+	// Keep the routes or drop them, but do not add a Slack-shaped feature on
+	// top of them until a control-plane notification path exists.
 	r.POST("/plugins",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
