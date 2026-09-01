@@ -1,67 +1,18 @@
 ## Default values for the Hoop control plane.
 ## This is a YAML-formatted file.
 
-# -- Define a custom image configuration. The control plane runs the same
-# image as the gateway; only the container command differs.
-image: {}
-  # repository: hoophq/hoop
-  # pullPolicy: Always
-  # tag: latest
+# -- Image to run. The control plane is the gateway image started with a
+# different container command.
+image:
+  repository: hoophq/hoop
+  tag: latest
+  pullPolicy: Always
 
-# There is no "config:" block here on purpose.
-#
-# The control plane has no settings of its own, and the component it runs as is
-# decided by the container command ("hoop start control-plane"), not by an
-# environment variable. What it does still need is the gateway's database and
-# API configuration: at minimum POSTGRES_DB_URI and API_URL. Those are
-# credentials, so put them in a Secret and name it below rather than in values.
-# Without them the pod exits at startup naming the variable it could not read.
-#
 # -- Name of an existing Secret loaded into the container as environment
-# variables. Required until the control plane has a config surface of its own.
+# variables. Required: the control plane reads the gateway's database and API
+# configuration (POSTGRES_DB_URI, API_URL, ...) and this chart renders no
+# Secret of its own.
 existingSecret: ''
 
-# -- Number of control plane replicas.
+# -- Number of replicas.
 replicas: 1
-
-# -- Deployment strategy. RollingUpdate with maxUnavailable 0 means the new pod
-# must report ready on /api/healthz before the old one is torn down, so an
-# upgrade serves the API throughout. The gateway chart defaults to Recreate
-# because it holds long-lived gRPC streams; the control plane holds none.
-deploymentStrategy:
-  type: RollingUpdate
-  rollingUpdate:
-    maxUnavailable: 0
-    maxSurge: 1
-
-# -- CPU/Memory resource requests/limits
-resources: {}
-  # limits:
-  #   cpu: 1024m
-  #   memory: 1Gi
-  # requests:
-  #   cpu: 500m
-  #   memory: 512Mi
-
-# -- Pod-level security context
-podSecurityContext: {}
-
-# -- Container-level security context
-securityContext: {}
-
-# -- Node labels for pod assignment
-nodeSelector: {}
-
-# -- Toleration labels for pod assignment
-tolerations: []
-
-# -- Affinity settings for pod assignment
-affinity: {}
-
-## Set pod annotations
-##
-podAnnotations: {}
-
-## Set deployment annotations
-##
-deploymentAnnotations: {}
