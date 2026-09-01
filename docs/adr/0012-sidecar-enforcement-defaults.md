@@ -1,6 +1,6 @@
 # ADR-0012: Deny by default, fail closed without OPA, and observe as a dry run
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-31
 - **Author:** @matheusfrancisco
 - **Code:** [`sidecar/daemon/config.go`](../../sidecar/daemon/config.go), [`sidecar/policy/`](../../sidecar/policy), [`sidecar/gate/gate.go`](../../sidecar/gate/gate.go), [`sidecar/audit/`](../../sidecar/audit)

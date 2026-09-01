@@ -1,6 +1,6 @@
 # ADR-0011: Splitting `policy` into `guardrails` and `opa` in the sidecar config
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-31
 - **Author:** @matheusfrancisco
 - **Code:** [`sidecar/daemon/config.go`](../../sidecar/daemon/config.go), [`sidecar/pii/alcatraz/`](../../sidecar/pii/alcatraz), [`sidecar/config/yaml/`](../../sidecar/config/yaml)
