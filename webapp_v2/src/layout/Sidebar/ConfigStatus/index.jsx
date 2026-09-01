@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Box, Collapse, Text, UnstyledButton } from '@mantine/core'
 import { useClickOutside } from '@mantine/hooks'
-import { ChevronDown, ChevronUp } from 'lucide-react'
+import { ChevronDown, ChevronUp, X } from 'lucide-react'
+import ActionIcon from '@/components/ActionIcon'
 import RingProgress from '@/components/RingProgress'
 import { useUserStore } from '@/stores/useUserStore'
 import { useUIStore } from '@/stores/useUIStore'
@@ -22,8 +23,15 @@ export function ConfigStatus() {
   const userId = useUserStore((s) => s.user?.id ?? null)
   // forUserId guards a snapshot left behind by a previous login in the same tab.
   const completed = useConfigStatusStore((s) => s.completed && s.forUserId === userId)
+  // Read through a selector, not useState(() => localStorage...): the gate must
+  // stay effect-free, and a store read matches the three selectors above. The
+  // store already dropped an expired dismiss, so this is a plain comparison.
+  // userId is null before /userinfo resolves and the stored value is null when
+  // never dismissed — compare only once we actually have a user, or null === null
+  // hides the checklist from everyone.
+  const dismissed = useUIStore((s) => userId !== null && s.configStatusDismiss?.userId === userId)
 
-  if (!isAdmin || !showSetupChecklist || completed) return null
+  if (!isAdmin || !showSetupChecklist || completed || dismissed) return null
   return <ConfigStatusWidget />
 }
 
@@ -32,6 +40,7 @@ function ConfigStatusWidget() {
   const location = useLocation()
   const user = useUserStore((s) => s.user)
   const setSidebarOpen = useUIStore((s) => s.setSidebarOpen)
+  const dismissConfigStatus = useUIStore((s) => s.dismissConfigStatus)
   const status = useConfigStatusStore((s) => s.status)
   const forUserId = useConfigStatusStore((s) => s.forUserId)
   const checks = useConfigStatusStore((s) => s.checks)
@@ -83,6 +92,14 @@ function ConfigStatusWidget() {
     setOpened(true)
   }
 
+  // Per user, per browser. How long it lasts depends on how much is left — see
+  // useUIStore. Every destination below stays reachable from the sidebar nav,
+  // so nothing becomes unreachable.
+  const handleDismiss = () => {
+    setOpened(false)
+    dismissConfigStatus(user.id, progress.subItemsLeft)
+  }
+
   const handleNavigate = (item) => {
     setOpened(false)
     setSidebarOpen(false) // close the mobile drawer when open; no-op on desktop
@@ -107,17 +124,32 @@ function ConfigStatusWidget() {
 
   return (
     <Box ref={cardRef} className={classes.card} mb="lg">
-      <UnstyledButton className={classes.headerBtn} aria-expanded={opened} onClick={toggleOpened}>
-        <RingProgress value={progress.percent} />
-        <Text component="span" className={classes.headerLabel}>
-          {headerLabel}
-        </Text>
-        {opened ? (
-          <ChevronUp size={16} aria-hidden="true" className={classes.chevron} />
-        ) : (
-          <ChevronDown size={16} aria-hidden="true" className={classes.chevron} />
-        )}
-      </UnstyledButton>
+      {/* The dismiss control is a sibling, never nested in the toggle: a button
+          inside a button is invalid and swallows the inner click target. */}
+      <Box className={classes.header}>
+        <UnstyledButton className={classes.headerBtn} aria-expanded={opened} onClick={toggleOpened}>
+          <RingProgress value={progress.percent} />
+          <Text component="span" className={classes.headerLabel}>
+            {headerLabel}
+          </Text>
+          {opened ? (
+            <ChevronUp size={16} aria-hidden="true" className={classes.chevron} />
+          ) : (
+            <ChevronDown size={16} aria-hidden="true" className={classes.chevron} />
+          )}
+        </UnstyledButton>
+
+        <ActionIcon
+          variant="subtle"
+          color="gray"
+          size="sm"
+          className={classes.closeBtn}
+          aria-label="Dismiss setup checklist"
+          onClick={handleDismiss}
+        >
+          <X size={14} aria-hidden="true" />
+        </ActionIcon>
+      </Box>
 
       <Collapse in={opened}>
         <Box className={classes.body}>

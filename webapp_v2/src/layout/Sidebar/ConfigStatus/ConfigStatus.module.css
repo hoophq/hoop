@@ -9,11 +9,24 @@
 
 /* ── Widget header (always visible) ────────────────────────── */
 
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-xsAlt);
+  width: 100%;
+}
+
 .headerBtn {
   display: flex;
   align-items: center;
   gap: var(--mantine-spacing-sm);
-  width: 100%;
+  flex: 1;
+  min-width: 0;
+}
+
+.closeBtn {
+  flex-shrink: 0;
+  color: var(--mantine-color-dimmed);
 }
 
 .headerLabel {
