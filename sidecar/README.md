@@ -210,6 +210,33 @@ and the extension picks the parser: `.yaml` and `.yml` go through the nested
 `config/yaml` module, anything else is read as JSON. Decoding is strict, so a
 mistyped key fails the startup instead of silently disabling a control.
 
+### What this build limits
+
+One guardrail rule and one data masking rule, for the whole process. The count
+is what the file AUTHORS, not what each lane resolves: a rule in the top-level
+`guardrails` block is one rule however many listeners inherit it, and a lane
+that overrides `mask.rules` with `[]` spends nothing. `ai_analysis` rules are
+counted apart and are not capped, because their controls are the trigger and
+`analyzer.max_calls` rather than a number of rules.
+
+A config over either cap is refused at startup, naming every block that
+authored rules and how many each holds, so the message reads as a map of what
+to merge:
+
+```
+hoop-inspect: invalid config:
+  - 2 guardrail rules are configured (guardrails: 1, appdb: 1) and this build
+    enforces at most 1; merge them into one rule, or contact our support at
+    https://help.hoop.dev. ai_analysis rules are counted separately and are
+    not limited
+```
+
+The numbers are constants in `sidecar/daemon/limits.go` rather than config
+keys, because a cap the file it limits can raise is documentation. They mirror
+the control plane's free tier, which caps the same two things per
+organization. `-validate` prints them, `/config` serves them under `limits`,
+and lifting them is a build without that file.
+
 ### Deprecated fields
 
 0.1.0 renamed six keys, removed one, and reversed two defaults. Both
@@ -341,6 +368,14 @@ listeners:
           message: upstream failure suppressed by policy
 ```
 
+That file is over both caps and this build refuses it as written: four
+guardrail rules and four mask rules, where one of each is allowed. It stays
+whole because a config holding one rule per section cannot show a listener
+overriding a default at all, and inheritance is what the section is teaching.
+The stack config in `deploy/docker-compose/envoy-stack/sidecar/config.yaml` is
+the version that loads: same shape, the rest commented out and marked. See
+[What this build limits](#what-this-build-limits).
+
 Rule types and what each one matches are in [Guardrails and
 OPA](#guardrails-and-opa); masking strategies and the entity-versus-column
 choice are in [Masking and PII](#masking-and-pii).
@@ -378,8 +413,9 @@ cd cmd && go build -o hoop-inspect . && \
 
 ```
 config OK: 2 listener(s)
-  appdb            postgres  enforcing 2 rule(s) + masking
-  httpbin          http      enforcing 4 rule(s) + masking
+  limits: 1 guardrail rule(s), 1 data masking rule(s)
+  appdb            postgres  enforcing 1 rule(s) + masking
+  httpbin          http      enforcing 1 rule(s) + masking
 ```
 
 Each line is the RESOLVED lane, so the counts include what it inherited. A lane
@@ -398,6 +434,9 @@ Validation builds every lane, so it catches what a syntax check cannot, and it
 reports every problem in one run rather than one per restart. It refuses these
 outright:
 
+- More guardrail rules or more mask rules than this build allows, naming every
+  block that authored one. See [What this build
+  limits](#what-this-build-limits).
 - `mask.rules` on a protocol whose codec can carry neither masking mechanism,
   naming the lane. This check used to sit behind `mask.enabled`, so a lane
   omitting the flag skipped it and loaded rules that could never fire.
@@ -429,16 +468,19 @@ curl -s localhost:19000/config | python3 -m json.tool
 ```json
 {"lanes": [
   {"name": "appdb", "protocol": "postgres", "enforcing": true,
-   "rules": ["no-destructive-sql", "no-cpf-in-query"], "masking": true},
+   "rules": ["no-cpf-in-query"], "masking": true},
   {"name": "httpbin", "protocol": "http", "enforcing": true,
-   "rules": ["no-admin-api", "no-internal-ids", "no-upstream-5xx",
-             "no-cpf-in-query"], "masking": true}
-]}
+   "rules": ["no-cpf-in-query"], "masking": true}
+ ],
+ "limits": {"guardrail_rules": 1, "mask_rules": 1}}
 ```
 
-Both lanes inherited `no-cpf-in-query`, and neither inherited the other's
-rules. Rule names only: a `pattern_regex` can encode business logic, and this
-endpoint already sits beside a read interface to the audit trail.
+Both lanes resolved the same rule, because the process's one guardrail rule is
+a top-level default and neither lane authors its own. Rule names only: a
+`pattern_regex` can encode business logic, and this endpoint already sits
+beside a read interface to the audit trail. `limits` is what this build
+refuses to exceed, served here so an operator asking why a second rule will
+not load reads the answer from the endpoint that told them what did.
 
 ### Sharing a rule block between lanes
 

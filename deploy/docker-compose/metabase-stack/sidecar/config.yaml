@@ -9,6 +9,11 @@
 # Validate without starting anything:
 #   cd sidecar/cmd && go run . -validate \
 #     -config ../../deploy/docker-compose/metabase-stack/sidecar/config.yaml
+#
+# This build enforces ONE guardrail rule and ONE data masking rule for the
+# whole process. This file is written to that limit: the rest of what the demo
+# used to enforce is present as commented blocks, each marked "over the
+# limit", so uncommenting is the only step on a build without the limit.
 
 log_level: info
 
@@ -66,29 +71,42 @@ listeners:
       # the lane-wide backstop comes last. Reverse them and every refusal
       # carries the generic message instead of the useful one.
       rules:
-        # ---- per-table ------------------------------------------------
-        # Reporting has no business here at all, in either direction. No
-        # `access`, so this covers reads as well as writes.
+        # ---- over the limit: two per-table rules ----------------------
+        # These are what the ordering note above was written for, and with
+        # the cap in force there is nothing left to order. Restore them on a
+        # build without it and put them back BEFORE the backstop.
         #
-        # Matching is by bare name and a bare name matches any schema
-        # qualification, so this also catches public.payroll and hr.payroll.
-        # If you need one schema and not another, that distinction does not
-        # exist in a table rule; use a GRANT.
-        - name: payroll-off-limits
-          type: table
-          tables: [payroll]
-          message: payroll is not exposed to reporting
-
+        # Two things follow from their absence, and ./demo.sh shows both
+        # rather than pretending otherwise. A write to customers is refused
+        # by the backstop's generic sentence, not by one naming the CRM sync.
+        # And payroll is READABLE: an operation rule cannot deny a SELECT, so
+        # reporting reads salaries and bank_iban until payroll-off-limits is
+        # the rule this process spends its budget on. Masking is no
+        # substitute; a mask rule has no `tables:` field, so masking iban
+        # would cover customers.iban too.
+        #
+        # payroll-off-limits matches by bare name, and a bare name matches any
+        # schema qualification, so it also catches public.payroll and
+        # hr.payroll. If you need one schema and not another, that distinction
+        # does not exist in a table rule; use a GRANT.
+        # - name: payroll-off-limits
+        #   type: table
+        #   tables: [payroll]
+        #   message: payroll is not exposed to reporting
+        #
         # `access: write` narrows the same rule type to one direction, which
         # is how a table gets a refusal that names its owner instead of the
         # generic one below. Reads of customers still pass, masked.
-        - name: customers-is-crm-owned
-          type: table
-          tables: [customers]
-          access: write
-          message: customers is written by the CRM sync; change it there
+        # - name: customers-is-crm-owned
+        #   type: table
+        #   tables: [customers]
+        #   access: write
+        #   message: customers is written by the CRM sync; change it there
 
         # ---- lane-wide backstop ---------------------------------------
+        # The one rule this build allows, and the right one to spend it on:
+        # it catches every table nobody wrote a rule for, the two above
+        # included.
         # Catches every table nobody wrote a rule for, including the one
         # added next month. type: operation is lexer-derived, so it keys on
         # the effect and not the leading verb: a DELETE inside a CTE is
@@ -108,7 +126,7 @@ listeners:
         # `require_table_match: true` on a table rule ALSO denies statements
         # whose relations could not be resolved. It reads like the safe
         # choice and it would break this lane: SET, SHOW, BEGIN and ROLLBACK
-        # carry no relations, and they are 59 of the 99 statements Metabase
+        # carry no relations, and they are 50 of the 86 statements Metabase
         # sends here. Reach for the operation rule below instead, which
         # denies unclassifiable statements without touching session setup.
 
@@ -137,17 +155,31 @@ listeners:
       # needs a guardrail rule and not a mask rule. To mask a column in one
       # table and leave it clear in another, give each table its own lane.
       rules:
-        # ssn carries both kinds of rule because they fail in opposite
-        # directions. A column rule keys on the name in RowDescription, so it
-        # catches the two fixture-shaped SSNs alcatraz rejects, and an alias
-        # defeats it. An entity rule keys on the value, so it survives any
-        # alias, and reshaping the value defeats it. README "Known gaps" has
-        # the hole the pair still leaves.
-        - {name: ssn-column, columns: [ssn], strategy: partial, keep_last: 4}
-        - {name: ssn-entity, entities: [US_SSN], strategy: partial, keep_last: 4}
-        # Entity rules for the rest: the same value turns up under names
-        # nobody enumerates in advance (email, actor_email, whatever a join
-        # calls them).
+        # The entity rule for EMAIL_ADDRESS is the one rule this build allows,
+        # and the 5,000-row CSV export is what it is spent on. That export
+        # reads events.actor_email, a column name no `columns:` list here
+        # predicted, and an entity rule keys on the VALUE, so it covers
+        # customers.email, events.actor_email and whatever a join calls them
+        # without anyone enumerating names in advance. It is also the only
+        # rule that can carry the claim this stack is built to make: masking
+        # does not stop at maxDecodedRows.
         - {name: emails, entities: [EMAIL_ADDRESS], strategy: redact}
-        - {name: cpf, entities: [BR_CPF], strategy: redact}
-        - {name: iban, entities: [IBAN_CODE], strategy: partial, keep_last: 4}
+        # ---- over the limit: the ssn pair and the other entities --------
+        # ssn wants BOTH kinds of rule, because they fail in opposite
+        # directions. A column rule keys on the name in RowDescription, so it
+        # catches the two fixture-shaped SSNs alcatraz rejects (123-45-6789,
+        # 987-65-4321) and is defeated by `SELECT ssn AS employee_code`. An
+        # entity rule keys on the value, so it survives any alias and is
+        # defeated by reshaping the value. README "Known gaps" has the hole
+        # the pair still leaves.
+        #
+        # With one rule live, ssn, cpf and iban reach Metabase as stored.
+        # ./demo.sh prints them that way beside the redacted email rather than
+        # claiming otherwise; swap one of these for `emails` above and that
+        # column changes in the SQL editor beat, while the CSV export beat
+        # stops asserting anything, because events carries no other maskable
+        # column.
+        # - {name: ssn-column, columns: [ssn], strategy: partial, keep_last: 4}
+        # - {name: ssn-entity, entities: [US_SSN], strategy: partial, keep_last: 4}
+        # - {name: cpf, entities: [BR_CPF], strategy: redact}
+        # - {name: iban, entities: [IBAN_CODE], strategy: partial, keep_last: 4}

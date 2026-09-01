@@ -90,12 +90,12 @@ and reuses it afterwards. After a library change:
 
 The image builds `hoop-inspect` with
 [alcatraz](https://github.com/hoophq/alcatraz) PII detection linked in, so the
-demo can mask Brazilian CPFs and IBANs and deny a query that embeds one. The
-`pii` section of `sidecar/config.yaml` names which of the 54 entity types are
-active, five here. Omitting the section activates all 54, and this file
-narrows on purpose: a mask rule naming `US_SSN` rewrites ordinary numeric
-columns, because that recognizer fires on roughly a third of random
-nine-digit business ids.
+demo can deny a query that embeds a Brazilian CPF and redact email addresses
+out of a response. The `pii` section of `sidecar/config.yaml` names which of
+the 54 entity types are active, five here. Omitting the section activates all
+54, and this file narrows on purpose: a mask rule naming `US_SSN` rewrites
+ordinary numeric columns, because that recognizer fires on roughly a third of
+random nine-digit business ids.
 
 Sidecar knobs live in `sidecar/config.yaml`; validate a change without
 starting anything:
@@ -135,8 +135,8 @@ owning identity. The one header the Rego does pass on is
 Both statements below cross the *same* Envoy TCP listener on the same port:
 
 ```sql
-SELECT name, email FROM customers;   -- fine
-DELETE FROM customers WHERE id = 1;  -- destructive
+SELECT name, email FROM customers;                    -- fine
+DELETE FROM customers WHERE cpf = '111.444.777-35';   -- refused
 ```
 
 Envoy cannot tell them apart. There is no pgwire parser in its filter chain, so
@@ -148,17 +148,34 @@ it in psql rather than watching a socket drop.
 ```bash
 docker compose exec -T client env PGPASSWORD=apppass PGSSLMODE=disable \
   psql -h envoy -p 5432 -U appuser -d appdb \
-       -c 'DELETE FROM customers WHERE id = 1;'
+       -c "DELETE FROM customers WHERE cpf = '111.444.777-35';"
 ```
+
+The rule that refuses it is `no-cpf-in-query`, and it is the **only** guardrail
+this stack runs: the sidecar build enforces one guardrail rule and one data
+masking rule for the whole process, so that DELETE is denied for the taxpayer
+id it carries rather than for being a DELETE. `no-destructive-sql`
+(`operations: [drop, delete, truncate]`) is the rule that refuses any
+destructive statement on its own, and `sidecar/config.yaml` carries it
+commented out beside the appdb lane. Spend the budget there instead, by
+restoring it and commenting out `no-cpf-in-query`, and a plain
+`DELETE FROM customers WHERE id = 1` is refused too. As shipped, that plain
+DELETE reaches the database.
 
 The same lane rewrites the result set on the way back:
 
 ```
-     name     |          email           |     ssn     |          iban
---------------+--------------------------+-------------+------------------------
- Ada Lovelace | [REDACTED:EMAIL_ADDRESS] | ***-**-6789 | ******************5432
- Grace Hopper | [REDACTED:EMAIL_ADDRESS] | ***-**-4321 | ******************3000
+     name     |          email           |     ssn     |            iban
+--------------+--------------------------+-------------+-----------------------------
+ Ada Lovelace | [REDACTED:EMAIL_ADDRESS] | 123-45-6789 | GB82WEST12345698765432
+ Grace Hopper | [REDACTED:EMAIL_ADDRESS] | 987-65-4321 | DE89370400440532013000
+ Alan Turing  | [REDACTED:EMAIL_ADDRESS] | 555-12-3456 | FR1420041010050500013M02606
 ```
+
+One column rewritten, because one rule. The limit that leaves this stack a
+single guardrail leaves it a single mask rule, and `emails` holds it, so `ssn`
+and `iban` come back in the clear. `sidecar/config.yaml` carries a rule for
+each of them commented out under the `mask:` block, beside `cards` and `cpf`.
 
 The codec rebuilds the frames around the new values rather than substituting
 bytes. A pgwire `DataRow` length-prefixes every row and every column, so
@@ -167,13 +184,14 @@ reframing lives in the codec itself, in the private
 `github.com/hoophq/libhoop/v2/codec/postgres`; `sidecar/codec/postgres`
 registers it with the inspector.
 
-A **column rule** masks the `ssn` column by position rather than by detection.
-The seeded value `123-45-6789` is one alcatraz refuses, because it rejects
-sequential digit runs as test fixtures, so the entity rule skips it and
-`columns: [ssn]` catches it anyway. A column rule works wherever the protocol
-names its values, and it does not care what the value looks like. The same
-placeholder posted to the HTTP lane survives unmasked, and `./demo.sh` shows
-that contrast.
+A **column rule** is the other way to mask, and where the protocol names its
+values it beats detection outright. `columns: [ssn]` masks by position, so it
+does not care what the value looks like: it catches the seeded `123-45-6789`
+and `987-65-4321`, which alcatraz refuses because it rejects sequential and
+descending digit runs as test fixtures. No detector-based rule reaches those
+two, at any budget. The appdb lane carries such a rule commented out in
+`sidecar/config.yaml`, where it doubles as the worked example of a lane
+override REPLACING the default `mask.rules` rather than extending them.
 
 ### Tier 2b: the HTTP response
 
@@ -182,17 +200,38 @@ otherwise loses a technical review. `ext_authz` sees method, path, headers and
 a bounded body slice. It structurally cannot see a **response**: it decides
 before the upstream is called.
 
-`sidecar/config.yaml` carries two rules that make the difference concrete:
+`sidecar/config.yaml` carries two rules that make the difference concrete, and
+**this build runs neither**: one guardrail rule for the whole process, and
+`no-cpf-in-query` in the defaults holds it. Both sit commented out beside the
+httpbin lane, and `./demo.sh` sends a request for each, printing the status it
+actually got next to the rule that would have refused it:
 
 - `no-internal-ids` denies `/anything/users/*/orders/*` with one rule for
   every id, because the codec normalizes the path to a stable resource rather
   than matching raw strings.
 - `no-upstream-5xx` suppresses a 5xx on the way back. There is no ext_authz
-  shape that does this.
+  shape that does this, which makes it the one to restore first here.
 
-Masking runs here too, by the simpler mechanism: `./demo.sh` posts a body with
-an email, an SSN, a card, a CPF and an IBAN, and reads back five rewritten
-values with `Content-Length` corrected to match.
+What the lane does enforce is the default it inherits. `no-cpf-in-query` scans
+the request line, so a taxpayer id in a path or a query string is refused with
+a 403 before httpbin is called:
+
+```bash
+curl -k 'https://localhost:8443/anything/customers?cpf=111.444.777-35' \
+  -H 'X-Hoop-User: alice'
+# do not put a taxpayer id in a query; it lands in the database's own logs
+```
+
+That is the same rule, and the same message, that refuses the pgwire DELETE in
+tier 2a: a top-level default hands both lanes its wording along with its
+verdict. Per-lane wording costs a second rule.
+
+Masking runs here too, by the simpler mechanism, and it spends no guardrail
+budget: `./demo.sh` posts a body with an email, an SSN, a card, a CPF and an
+IBAN, and reads back one value rewritten. The email returns as
+`[REDACTED:EMAIL_ADDRESS]` with `Content-Length` corrected to match. The other
+four return exactly as posted, each printed beside the commented rule that
+would have rewritten it.
 
 ### Check the recorded evidence
 
@@ -301,8 +340,8 @@ prose never travels, because OPA's decision log copies everything sent to it.
 Three things keep the model affordable. The **gate** excludes everything
 outside `inspect_sensitive`, so an ORM's traffic against other tables costs
 nothing. The **cache** keys on the statement shape, so `WHERE id = 1` and
-`WHERE id = 2` are one verdict. The analyzer runs after `no-destructive-sql`,
-so anything a free rule already refused never reaches a model.
+`WHERE id = 2` are one verdict. The analyzer runs after the free local
+rules, so anything they already refused never reaches a model.
 
 On the httpbin lane it also needs an `http:` block with `capture_body: true`.
 Without a body the model sees `POST /anything` and nothing else, and a request

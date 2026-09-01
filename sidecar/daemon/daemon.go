@@ -197,6 +197,7 @@ func ReportDeprecations(w io.Writer, notes []string) {
 // one config.
 func PrintLanes(w io.Writer, lanes []LaneInfo) {
 	fmt.Fprintln(w, "config OK:", len(lanes), "listener(s)")
+	fmt.Fprintf(w, "  %s\n", LimitsSummary())
 	for _, ln := range lanes {
 		fmt.Fprintf(w, "  %-16s %-9s %s\n", ln.Name, ln.Protocol, ln.Summary())
 		for _, n := range ln.Notes {
@@ -323,6 +324,9 @@ func Run(cfg *Config, det Plugin) error {
 		return err
 	}
 	log := newLogger(cfg.LogLevel)
+	log.Info("rule limits",
+		"guardrail_rules", maxGuardrailRules,
+		"mask_rules", maxMaskRules)
 
 	ac, err := buildAudit(cfg.Audit)
 	if err != nil {
@@ -498,6 +502,12 @@ type lane struct {
 func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 	out := make([]lane, 0, len(cfg.Listeners))
 	var problems []string
+
+	// Here rather than only in (*Config).Validate because this is the one
+	// function Main, Run and the exported Validate all reach. An embedder
+	// assembling a Config in Go and calling Run never passes through the
+	// file validator, and a cap with a documented way around it is not one.
+	problems = append(problems, cfg.checkLimits()...)
 
 	for i, lc := range cfg.Listeners {
 		name := lc.displayName(i)
@@ -892,6 +902,13 @@ func serveAdmin(
 			// control plane can warn its own developers without reading
 			// prose. These keys still carry correct values.
 			"deprecated_fields": []string{"enforcing", "rules", "opa", "masking"},
+			// What this build refuses to exceed. An operator asking why a
+			// second rule will not load gets the answer from the same
+			// endpoint that tells them what did load.
+			"limits": map[string]int{
+				"guardrail_rules": maxGuardrailRules,
+				"mask_rules":      maxMaskRules,
+			},
 		}
 		// The analyzer view names the provider, the model and the HOST it
 		// talks to — never the path, never a query string, and never the

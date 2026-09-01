@@ -138,22 +138,27 @@ column security also covers, on Pro, and not on the container running here.
 
 **3. Native SQL editor.** The path column security answers by being switched
 off. Here the editor stays on, the analyst writes whatever they like, and the
-response comes back rewritten:
+address comes back rewritten:
 
 ```
-  id  name          email                     ssn          cpf                 iban
-  1   Ada Lovelace  [REDACTED:EMAIL_ADDRESS]  ***-**-6789  [REDACTED:BR_CPF]   ******************5432
+  id  name          email                     ssn          cpf             iban
+  1   Ada Lovelace  [REDACTED:EMAIL_ADDRESS]  123-45-6789  111.444.777-35  GB82WEST12345698765432
 ```
 
-`ssn` carries **both** a column rule and an entity rule, because the two kinds
-fail in opposite directions and neither is sufficient alone.
+One mask rule for the whole process, spent on the `EMAIL_ADDRESS` entity, so
+`ssn`, `cpf` and `iban` arrive as stored. [`sidecar/config.yaml`](sidecar/config.yaml)
+carries a rule for each of them commented out beside the live one, and the
+demo prints the row above rather than a version of it nothing produces.
 
-A **column rule** keys on the output column name in `RowDescription` and does
-not care what the value looks like, which is what catches the two SSNs
-[alcatraz](https://github.com/hoophq/alcatraz) rejects as obvious test
-fixtures (`123-45-6789`, `987-65-4321`). An **entity rule** keys on the value,
-so it survives an alias, a join, or a CTE that surfaces the column under a
-name no config predicted. Measured against this stack:
+The budget goes to an entity rule because an entity rule keys on the **value**:
+it covers `customers.email` and `events.actor_email` without anyone
+enumerating column names, which is what the 5,000-row export below needs. A
+**column rule** keys on the output column name in `RowDescription` and does
+not care what the value looks like, which is the only thing that catches the
+two SSNs [alcatraz](https://github.com/hoophq/alcatraz) rejects as obvious
+test fixtures (`123-45-6789`, `987-65-4321`). Neither kind is sufficient
+alone, which is why `ssn` wants both. Measured against this stack with the
+pair restored:
 
 | Query | masked |
 |---|---|
@@ -162,9 +167,9 @@ name no config predicted. Measured against this stack:
 | `SELECT ssn AS whatever FROM customers` | 1/3 |
 | `SELECT substring(email,1,6) FROM customers` | 0/3 |
 
-[Known gaps](#known-gaps) explains the last two rows. `cpf`, `iban` and the
-emails are entity-only, because the same class of value turns up under names
-nobody enumerates in advance.
+As shipped, the three `ssn` rows all read 0/3: that pair is over the limit.
+The last row holds either way, and [Known gaps](#known-gaps) explains it along
+with the third.
 
 **4. CSV export, 5,000 rows.** A download is where masking usually fails: the
 rows are already inside the BI tool and whatever it writes to disk is out of
@@ -185,12 +190,13 @@ flushes what it holds *masked* and keeps going, so exceeding the buffer
 changes the batching granularity and nothing else.
 
 **5. Guardrail.** The lane is read-only by policy, not by `GRANT`, so the
-analyst gets a sentence an operator wrote instead of a permission error. Which
-sentence depends on the table:
+analyst gets a sentence an operator wrote instead of a permission error. One
+guardrail rule for the whole process, and it is the lane-wide backstop, so
+every table gets the same sentence:
 
 ```
   DELETE FROM customers WHERE id = 1
-  Metabase reports: FATAL: customers is written by the CRM sync; change it there
+  Metabase reports: FATAL: this Metabase connection is read-only; writes are not permitted
 
   WITH gone AS (DELETE FROM events RETURNING *) SELECT count(*) FROM gone
   Metabase reports: FATAL: this Metabase connection is read-only; writes are not permitted
@@ -199,10 +205,13 @@ sentence depends on the table:
   Metabase reports: FATAL: this Metabase connection is read-only; writes are not permitted
 ```
 
-`customers` has a rule naming its owner; `events` has none and falls to the
-lane-wide backstop, which is the rule that still covers the table somebody
-adds next month. The second statement also shows classification by effect
-rather than by leading verb: it reads as a `SELECT` and it is a delete.
+The backstop is the right rule to spend a single-rule budget on: it covers
+every table nobody wrote a rule for, including the one added next month.
+`customers` has a rule naming the CRM sync as its owner, and it is commented
+out in `sidecar/config.yaml`; restore it on a build without the cap and put it
+BEFORE the backstop, because first match wins and a reversed order gives every
+refusal the generic message. The second statement shows classification by
+effect rather than by leading verb: it reads as a `SELECT` and it is a delete.
 
 The third is the one to copy carefully. An `operation` rule matches exact
 operations, so a lane called read-only has to name `create`, `alter`, `grant`,
@@ -217,51 +226,58 @@ that never comes, and a hang is a worse answer than a sentence
 (`proxy/deny.go`). For a pooled client that means a refused query costs one
 pooled connection, which c3p0 replaces on the next checkout.
 
-**6. A table reporting cannot read.** `payroll` is refused rather than masked.
-Masking answers *who may see this value*; a table rule answers *may this table
-be reached at all*. Every path gets the rule's own message:
+**6. The table reporting can still read.** `payroll` is the case an operation
+rule cannot answer. Masking says *who may see this value*, a `type: table`
+rule says *may this table be reached at all*, and
+`operations: [insert, update, ...]` says neither about a `SELECT`. With
+`payroll-off-limits` over the limit and commented out, reporting reads
+salaries:
 
 ```
-  SELECT employee, salary_cents FROM payroll ORDER BY id
-  Metabase reports: FATAL: payroll is not exposed to reporting
-
-  SELECT c.name, p.salary_cents FROM customers c JOIN payroll p ON p.employee = c.name
-  Metabase reports: FATAL: payroll is not exposed to reporting
+  SELECT employee, salary_cents, bank_iban FROM payroll ORDER BY id
+  Ada Lovelace  21500000  GB82WEST12345698765432
+  Grace Hopper  23800000  DE89370400440532013000
+  Alan Turing   20900000  FR1420041010050500013M02606
 ```
 
-The join is the part worth watching. A `type: table` rule reads every relation
-the statement touches rather than the first one named, so the table cannot be
-reached through a join, a subquery or a CTE. Metabase still lists `payroll` in
-its data browser, because a schema sync reads `pg_catalog` and no rule here
-covers the catalogue; clicking the table returns the refusal instead of rows,
-and its columns stay unfingerprinted.
+`./demo.sh` prints those rows and asserts that they arrive, so the beat fails
+loudly the day somebody restores the rule and forgets this section.
+`bank_iban` is in the clear for the same reason one level down: the `iban`
+mask rule is over the limit too.
+
+Restore `payroll-off-limits` and every path gets the rule's own message,
+including a join where `payroll` is not the first table named, because a
+`type: table` rule reads every relation the statement touches rather than the
+first one. Metabase lists `payroll` in its data browser either way, since a
+schema sync reads `pg_catalog` and no rule here covers the catalogue; with the
+rule in force, clicking the table returns the refusal instead of rows and its
+columns stay unfingerprinted.
 
 **7. Audit.** Metabase was not configured to log anything. A first boot, a
 full schema sync and a complete `./demo.sh` produce, on this lane:
 
 ```
-  99 statements recorded (41 set, 37 select, 10 show, 6 begin, 2 rollback, 2 delete)
-  92 allowed, 7 denied, 38 result sets
-  10034 values masked across 23 result sets (EMAIL_ADDRESS, BR_CPF, IBAN_CODE, column:ssn, US_SSN)
-  verified: none of the 13 seeded values appears in the audit trail
+  86 statements recorded (37 set, 33 select, 6 show, 6 begin, 2 delete, 1 rollback)
+  83 allowed, 3 denied, 34 result sets
+  10009 values masked across 23 result sets (EMAIL_ADDRESS)
+  verified: none of the 4 seeded values appears in the audit trail
 ```
 
 That last line is an assertion too. Recording, in the clear, a value that
-masking removed would have un-masked it. The 13 are read out of
-[`upstream/seed.sql`](upstream/seed.sql) at runtime rather than listed in the
-script, so a row added to the seed is covered without anyone remembering to
-add it here.
+masking removed would have un-masked it. The 4 are the three seeded addresses
+and one generated one, read out of [`upstream/seed.sql`](upstream/seed.sql) at
+runtime rather than listed in the script, so a row added to the seed is
+covered without anyone remembering to add it here. The list tracks the LIVE
+mask rules: `ssn`, `cpf` and `iban` are absent because nothing masks them in
+this build, and a trail that records them is correct rather than leaking.
+Restore a mask rule and widen `PII_COLUMNS` in
+[`sidecar/read-audit.py`](sidecar/read-audit.py) in the same edit.
 
-One of those seven denials is nobody's query. Metabase's sync fingerprints
-`payroll` on its own initiative and the lane refuses it:
-
-```
-  DENY  SELECT SUBSTRING("public"."payroll"."employee", 1, 1234) AS "sub
-        rule=payroll-off-limits  payroll is not exposed to reporting
-```
-
-It carries no `userID` comment because no human asked for it. The other six
-name the analyst.
+All three denials name the analyst, and all three carry the same rule. On a
+build without the cap, a fourth appears that nobody asked for: Metabase's sync
+fingerprints `payroll` on its own initiative, `payroll-off-limits` refuses it,
+and the row carries no `userID` comment because no human ran it. Here the sync
+reads the table and the count is three.
 
 Those counts are from the **first** `./demo.sh` after a fresh `./run.sh`. The
 summary reads a 180-second log window, wide enough to catch the schema sync,
@@ -282,14 +298,15 @@ that cost time to rediscover:
 - **First match wins, in slice order.** Narrow rules first, the lane-wide
   backstop last. Reversed, every refusal carries the generic message.
 - **`access:` narrows a table rule to one direction.** `access: write` on
-  `customers` leaves reads working, masked. Omit it, as `payroll` does, and
-  the table is unreachable in both directions.
+  `customers` leaves reads working. Omit it, as the `payroll` rule does, and
+  the table is unreachable in both directions. Both rules are commented out
+  here, under the one-guardrail cap.
 - **A bare table name matches any schema qualification.** `tables: [payroll]`
   also matches `public.payroll` and `hr.payroll`, and a rule cannot separate
   them. If that distinction is the requirement, it is a `GRANT`.
 - **`require_table_match: true` also denies statements whose relations could
   not be resolved.** That includes `SET`, `SHOW`, `BEGIN` and `ROLLBACK`,
-  which are 59 of the 99 statements above, so it refuses most of what a BI
+  which are 50 of the 86 statements above, so it refuses most of what a BI
   tool sends before it ever runs a query. It reads like the safe setting and
   it is not. To fail closed on unclassifiable statements, use the `operation`
   rule with `unknown` and `other` that is written out and commented in the
@@ -297,7 +314,7 @@ that cost time to rediscover:
 
 Masking has no equivalent. A mask rule has no `tables:` field: it keys on the
 result-set column name or on the detected entity and applies to every result
-set on the lane, so the `iban` rule covers `customers.iban` and
+set on the lane, so the commented `iban` rule would cover `customers.iban` and
 `payroll.bank_iban` alike. One lane, one masking policy.
 
 **The lane is called `metabase`.** It used to set `name: appdb` for the
@@ -372,7 +389,7 @@ concurrently with whatever dashboards are loading. A lane at its cap
 a table that silently never finished syncing. Set the lane at or above the
 pool. This stack sets 64 as headroom; it actually opens 11 connections in
 total across a first boot and a full `./demo.sh`, which you can read off
-`/stats`. The demo's seven denials account for most of that growth: a refusal
+`/stats`. The demo's three denials account for part of that growth: a refusal
 closes the connection and c3p0 opens a fresh one at the next checkout, so a
 lane that refuses often opens more connections than its query rate suggests.
 
@@ -413,9 +430,10 @@ Metabase publishes for Cloud.
     recognises, and alcatraz deliberately rejects fixture-shaped values like
     `123-45-6789`.
 
-  So `SELECT ssn AS whatever FROM customers` returns 1 of 3 rows masked here:
-  the one real-shaped SSN, caught by the entity rule; the two fixtures, missed
-  by both. Enumerate the columns you know about *and* run the detector, and
+  So `SELECT ssn AS whatever FROM customers` returns 1 of 3 rows masked with
+  both rules live: the one real-shaped SSN, caught by the entity rule; the two
+  fixtures, missed by both. In this build it returns 0 of 3, because neither
+  `ssn` rule fits under the one-mask-rule cap. Enumerate the columns you know about *and* run the detector, and
   accept that an analyst with a native SQL editor can reshape a value out of
   both. If that matters more than the editor does, deny the operation instead
   of masking the response: policy runs on the request, where there is nothing
@@ -434,13 +452,15 @@ Metabase publishes for Cloud.
   reads `'Q'` Query and `'P'` Parse; it does not decode `'B'` Bind. A query
   builder filter arrives as `WHERE "customers"."ssn" = $1` with the value in
   a later message, so a rule that denies on statement content never sees it.
-  Verified against this stack: filtering `ssn` for `123-45-6789` in the query
-  builder records the `$1` shape and the literal appears nowhere in the audit
-  trail.
+  Verified against this stack: filtering `customers` on `email` in the query
+  builder records the `$1` shape and the address appears nowhere in the audit
+  trail, even though it is the value the lane masks.
 
   Two consequences, opposite in sign. **Response masking is unaffected**,
-  because that same filtered query came back `***-**-6789`: masking works on
-  the result set and does not care how the request was framed. But a
+  because masking works on the result set and does not care how the request
+  was framed. Filtering `customers` on `email` in the query builder records
+  `WHERE "public"."customers"."email" = $1`, the address appears nowhere in
+  the trail, and the row still comes back `[REDACTED:EMAIL_ADDRESS]`. But a
   `type: pii` rule that refuses a national id typed into the SQL editor will
   not refuse the same id entered into a query-builder filter box.
 
