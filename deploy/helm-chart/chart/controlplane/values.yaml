@@ -24,9 +24,15 @@ existingSecret: ''
 # -- Number of control plane replicas.
 replicas: 1
 
-# -- Deployment strategy
+# -- Deployment strategy. RollingUpdate with maxUnavailable 0 means the new pod
+# must report ready on /api/healthz before the old one is torn down, so an
+# upgrade serves the API throughout. The gateway chart defaults to Recreate
+# because it holds long-lived gRPC streams; the control plane holds none.
 deploymentStrategy:
-  type: Recreate
+  type: RollingUpdate
+  rollingUpdate:
+    maxUnavailable: 0
+    maxSurge: 1
 
 # -- CPU/Memory resource requests/limits
 resources: {}
