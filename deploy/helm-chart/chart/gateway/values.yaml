@@ -129,6 +129,10 @@ securityContext: {}
 
 # hoop gateway configuration. Please refer to https://hoop.dev/docs/self-hosting
 config:
+  # Which component this deployment runs as: 'gateway' (default) serves
+  # agents and clients; 'control-plane' administers a fleet of sidecars and
+  # starts no gRPC transport and no protocol proxies.
+  APP_MODE: 'gateway'
   # postgres://user:pass@host:5432/dbname — external PostgreSQL (recommended).
   # pglite:///path/to/data-dir — embedded PostgreSQL (single-node/standalone
   # only; requires a persistent volume mounted at the data directory).

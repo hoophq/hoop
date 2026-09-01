@@ -6956,6 +6956,15 @@
             "example": "https://api.johnwick.org",
             "type": "string"
           },
+          "application_mode": {
+            "description": "Which component this process runs as",
+            "enum": [
+              "gateway",
+              "control-plane"
+            ],
+            "example": "gateway",
+            "type": "string"
+          },
           "auth_method": {
             "description": "Auth method used by the server",
             "enum": [

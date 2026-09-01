@@ -136,19 +136,16 @@ type Api struct {
 // It performs no network I/O, so StartAPI and the integration/smoke tests
 // share the exact same handler — tests exercise the production middleware
 // chain and validators rather than a stripped-down router.
+//
+// In control-plane mode it returns the much smaller engine described in
+// buildControlPlaneEngine.
 func (a *Api) BuildEngine() *gin.Engine {
-	zaplogger := log.NewDefaultLogger(nil)
-	route := gin.New()
-	route.Use(ginzap.RecoveryWithZap(zaplogger, false))
-	if os.Getenv("GIN_MODE") == "debug" {
-		route.Use(ginzap.Ginzap(zaplogger, time.RFC3339, true))
-	}
-	a.logger = zaplogger
-	// https://pkg.go.dev/github.com/gin-gonic/gin#readme-don-t-trust-all-proxies
-	route.SetTrustedProxies(nil)
-	route.Use(SecurityHeaderMiddleware())
-	route.Use(CORSMiddleware())
+	route := a.newEngine()
 	baseURL := appconfig.Get().ApiURLPath()
+
+	if appconfig.Get().IsControlPlane() {
+		return a.buildControlPlaneEngine(route, baseURL)
+	}
 
 	// UI: assets resolved from STATIC_UI_PATH, the default disk path or the
 	// build embedded in the binary; index.html and js/app.js are
@@ -205,15 +202,46 @@ func (a *Api) BuildEngine() *gin.Engine {
 	ironRdpInstance := rdp.GetIronServerInstance()
 	ironRdpInstance.AttachHandlers(ironRdpGroup)
 
+	a.buildRoutes(a.newAPIRouter(route, baseURL))
+	openapi.RegisterGinValidators()
+
+	return route
+}
+
+// newEngine builds the gin engine with the middleware every mode needs:
+// panic recovery, the debug request log, the proxy policy, security headers
+// and CORS.
+func (a *Api) newEngine() *gin.Engine {
+	zaplogger := log.NewDefaultLogger(nil)
+	route := gin.New()
+	route.Use(ginzap.RecoveryWithZap(zaplogger, false))
+	if os.Getenv("GIN_MODE") == "debug" {
+		route.Use(ginzap.Ginzap(zaplogger, time.RFC3339, true))
+	}
+	a.logger = zaplogger
+	// https://pkg.go.dev/github.com/gin-gonic/gin#readme-don-t-trust-all-proxies
+	route.SetTrustedProxies(nil)
+	route.Use(SecurityHeaderMiddleware())
+	route.Use(CORSMiddleware())
+	return route
+}
+
+// newAPIRouter creates the /api group with its Sentry middleware.
+func (a *Api) newAPIRouter(route *gin.Engine, baseURL string) *apiroutes.Router {
 	rg := route.Group(baseURL + "/api")
 	rg.Use(sentrygin.New(sentrygin.Options{Repanic: true}))
 	rg.Use(sentryCatchAll5xxMiddleware)
+	return apiroutes.New(rg)
+}
 
-	router := apiroutes.New(rg)
-
-	a.buildRoutes(router)
+// buildControlPlaneEngine wires the control plane's HTTP surface. It shares
+// the middleware chain with the gateway and stops there: no static UI and no
+// SPA fallback (the gateway's web app calls routes the control plane does not
+// serve), no MCP well-known handlers, no SSM and no RDP proxy group — those
+// belong to the traffic path the control plane does not have.
+func (a *Api) buildControlPlaneEngine(route *gin.Engine, baseURL string) *gin.Engine {
+	a.buildControlPlaneRoutes(a.newAPIRouter(route, baseURL))
 	openapi.RegisterGinValidators()
-
 	return route
 }
 
@@ -244,6 +272,18 @@ func (a *Api) StartAPI() {
 	if err := route.Run(); err != nil {
 		log.Fatalf("Failed to start HTTP server, err=%v", err)
 	}
+}
+
+// buildControlPlaneRoutes registers the control plane's API surface. It is
+// deliberately near-empty: the gateway's routes are being ported one at a
+// time, and a route answers here only after it has been reviewed for a
+// deployment that has no agents, no connections and no sessions of its own.
+//
+// /healthz is the exception, and not an optional one: the helm service, the
+// AWS load balancer template and the docker-compose healthcheck all probe
+// /api/healthz, so a control plane without it never passes its health check.
+func (api *Api) buildControlPlaneRoutes(r *apiroutes.Router) {
+	r.GET("/healthz", apihealthz.ControlPlaneLivenessHandler())
 }
 
 func (api *Api) buildRoutes(r *apiroutes.Router) {
