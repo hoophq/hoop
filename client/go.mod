@@ -135,7 +135,7 @@ require (
 	github.com/gomlx/go-xla v0.4.1 // indirect
 	github.com/gomlx/gomlx v0.28.2 // indirect
 	github.com/gomlx/onnx-gomlx v0.5.2 // indirect
-	github.com/google/jsonschema-go v0.4.2 // indirect
+	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.16 // indirect
 	github.com/googleapis/gax-go/v2 v2.22.0 // indirect
@@ -167,7 +167,7 @@ require (
 	github.com/mattermost/xml-roundtrip-validator v0.1.0 // indirect
 	github.com/mattn/go-runewidth v0.0.23 // indirect
 	github.com/microsoft/go-mssqldb v1.10.0 // indirect
-	github.com/modelcontextprotocol/go-sdk v1.5.0 // indirect
+	github.com/modelcontextprotocol/go-sdk v1.7.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee // indirect
 	github.com/montanaflynn/stats v0.7.1 // indirect

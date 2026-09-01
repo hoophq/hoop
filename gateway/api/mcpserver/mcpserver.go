@@ -33,7 +33,7 @@ import (
 const mcpSessionTimeout = 30 * time.Minute
 
 type MCPServer struct {
-	handler *mcp.StreamableHTTPHandler
+	handler http.Handler
 }
 
 func New(releaseConnFn reviewapi.TransportReleaseConnectionFunc) *MCPServer {
@@ -58,10 +58,12 @@ func New(releaseConnFn reviewapi.TransportReleaseConnectionFunc) *MCPServer {
 	registerAttributeTools(server)
 	registerAccessControlTools(server)
 
-	handler := mcp.NewStreamableHTTPHandler(
+	mcpHandler := mcp.NewStreamableHTTPHandler(
 		func(r *http.Request) *mcp.Server { return server },
 		&mcp.StreamableHTTPOptions{SessionTimeout: mcpSessionTimeout},
 	)
+
+	handler := http.NewCrossOriginProtection().Handler(mcpHandler)
 
 	return &MCPServer{handler: handler}
 }
