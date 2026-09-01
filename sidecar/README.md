@@ -1389,6 +1389,16 @@ pii:
   ignored: [URL, DATE_TIME, ABA_ROUTING, AU_TFN, AU_ACN, US_ITIN]
 ```
 
+Every name in both lists is resolved at startup and an unknown one refuses the
+config, naming the key it sits under. `ignored` needs that more than `entities`
+does: a misspelled entry subtracts nothing, so the recognizer you wrote it to
+switch off keeps running and the detector boots looking exactly like one that
+obeyed you. Write `US_SSSN` and the process stops with
+
+```
+pii section: alcatraz: unknown entity type(s) in ignored: US_SSSN (PERSON, ...)
+```
+
 A wide detector costs a wider scan and nothing else. `NewMasker` narrows the
 engine to exactly the entities its own rules name, and a `pii` guardrail rule
 intersects the scan with its own `entities` list before publishing anything.

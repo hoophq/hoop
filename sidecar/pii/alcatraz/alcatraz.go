@@ -64,6 +64,7 @@ package alcatraz
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -145,6 +146,11 @@ type Options struct {
 	// It is the knob for a permissive Detector: name the seven recognizers
 	// in Noisy that fire on this deployment's ordinary data rather than
 	// enumerating the 47 that do not.
+	//
+	// A name alcatraz does not know is refused here exactly as it is in
+	// Entities. Subtraction fails silent: a misspelled entry removes
+	// nothing, leaves the recognizer it was written to disable running,
+	// and the deployment learns about it from a masked production column.
 	Ignored []string
 
 	// Threshold drops detections scoring below it. Zero means
@@ -213,10 +219,12 @@ func AllEntities() []string {
 // Options.Entities means every supported type; see that field for why the
 // permissive form is safe.
 //
-// It returns an error when Entities names a type alcatraz cannot detect, and
-// when Ignored subtracts the last remaining one. Both are config mistakes
-// that would otherwise surface as "masking silently does nothing", which is
-// the failure mode this package exists to avoid.
+// It returns an error when Entities or Ignored names a type alcatraz cannot
+// detect, and when Ignored subtracts the last remaining one. All three are
+// config mistakes that would otherwise surface as masking doing something
+// other than what the config says, which is the failure mode this package
+// exists to avoid. The two spelling checks report together, so an operator
+// who mistyped in both lists fixes both on one restart.
 func NewDetector(o Options) (*Detector, error) {
 	lang := o.Language
 	if lang == "" {
@@ -228,17 +236,27 @@ func NewDetector(o Options) (*Detector, error) {
 	for _, e := range eng.SupportedEntities(lang) {
 		known[e] = true
 	}
-	var unknown []string
-	for _, e := range o.Entities {
-		if !known[e] {
-			unknown = append(unknown, e)
-		}
+	// Both lists are checked, and Ignored is the one that needs it more.
+	// A bad name in Entities narrows the set to something the operator did
+	// not ask for; a bad name in Ignored subtracts NOTHING and leaves the
+	// recognizer it was written to disable running over every response.
+	// Neither failure is visible from the outside, and the permissive
+	// default makes the second the likelier of the two: the whole reason
+	// to write the section is to take a recognizer away.
+	//
+	// Both are reported at once, and each names the list it came from, so
+	// the operator edits the right key rather than grepping for the name.
+	var problems []string
+	if bad := unknownIn(known, o.Entities); len(bad) > 0 {
+		problems = append(problems, "entities: "+strings.Join(bad, ", "))
 	}
-	if len(unknown) > 0 {
-		sort.Strings(unknown)
-		return nil, fmt.Errorf("alcatraz: unknown entity type(s) %s "+
+	if bad := unknownIn(known, o.Ignored); len(bad) > 0 {
+		problems = append(problems, "ignored: "+strings.Join(bad, ", "))
+	}
+	if len(problems) > 0 {
+		return nil, fmt.Errorf("alcatraz: unknown entity type(s) in %s "+
 			"(PERSON, LOCATION and NRP need the alcatraz/ner module, which this package does not wire)",
-			strings.Join(unknown, ", "))
+			strings.Join(problems, "; "))
 	}
 
 	// An empty list is the permissive form: every recognizer the engine
@@ -289,6 +307,23 @@ func NewDetector(o Options) (*Detector, error) {
 		d.opts.Threshold = &threshold
 	}
 	return d, nil
+}
+
+// unknownIn returns the names in want that the engine does not recognize,
+// sorted and deduplicated so one typo written twice reads as one mistake.
+// Nil when every name resolves, which is the case it is called in.
+func unknownIn(known map[string]bool, want []string) []string {
+	var bad []string
+	for _, e := range want {
+		if !known[e] {
+			bad = append(bad, e)
+		}
+	}
+	if len(bad) == 0 {
+		return nil
+	}
+	sort.Strings(bad)
+	return slices.Compact(bad)
 }
 
 // Entities returns the active entity types. The returned slice is a copy: a caller

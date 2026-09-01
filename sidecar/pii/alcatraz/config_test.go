@@ -117,6 +117,9 @@ func TestPluginFromConfigInvalidSection(t *testing.T) {
 		{"malformed json", `{"entities":`},
 		{"wrong type", `{"entities":"US_SSN"}`},
 		{"unknown entity", `{"entities":["US_SSSN"]}`},
+		// The permissive form: without this check the section decodes,
+		// the detector starts, and US_SSN keeps firing.
+		{"unknown ignored entity", `{"ignored":["US_SSSN"]}`},
 		{"ignored everything", `{"entities":["US_SSN"],"ignored":["US_SSN"]}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

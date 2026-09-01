@@ -118,6 +118,60 @@ func TestIgnoredSubtractsFromThePermissiveSet(t *testing.T) {
 	}
 }
 
+// A misspelled Ignored entry is refused. It subtracts nothing, so the
+// recognizer the operator wrote it to disable keeps running: the permissive
+// default hands back a detector that looks correct and behaves as though the
+// section were never written. This is the one config mistake that gets LOUDER
+// the more careful the operator was, because writing the section at all means
+// they wanted something switched off.
+func TestUnknownIgnoredEntityRejected(t *testing.T) {
+	// No Entities: the permissive form, where the typo is invisible.
+	_, err := alcatraz.NewDetector(alcatraz.Options{Ignored: []string{"US_SSSN"}})
+	if err == nil {
+		t.Fatal("want an error: US_SSSN ignores nothing and US_SSN stays active")
+	}
+	if !strings.Contains(err.Error(), "US_SSSN") {
+		t.Errorf("error should name the unresolved entry: %v", err)
+	}
+	if !strings.Contains(err.Error(), "ignored") {
+		t.Errorf("error should name the list holding it: %v", err)
+	}
+}
+
+// One restart per typo is how a rollout takes three rounds. Both lists are
+// checked before either is applied, and each unresolved name is attributed to
+// the key it was written under.
+func TestUnknownEntitiesAndIgnoredReportedTogether(t *testing.T) {
+	_, err := alcatraz.NewDetector(alcatraz.Options{
+		Entities: []string{alcz.USSSN, "BR_CPFF"},
+		Ignored:  []string{"URLL"},
+	})
+	if err == nil {
+		t.Fatal("want an error for both unresolved names")
+	}
+	for _, want := range []string{"entities: BR_CPFF", "ignored: URLL"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error missing %q: %v", want, err)
+		}
+	}
+}
+
+// A name that resolves is not reported just because it appears in both lists.
+// Naming a type in Entities and Ignored is how "everything is subtracted"
+// gets written, and that already has its own error.
+func TestKnownEntityInBothListsIsNotAnUnknownName(t *testing.T) {
+	_, err := alcatraz.NewDetector(alcatraz.Options{
+		Entities: []string{alcz.USSSN},
+		Ignored:  []string{alcz.USSSN},
+	})
+	if err == nil {
+		t.Fatal("want an error: nothing is left to detect")
+	}
+	if strings.Contains(err.Error(), "unknown") {
+		t.Errorf("US_SSN resolves in both lists; the error should be the empty set: %v", err)
+	}
+}
+
 // Ignoring everything leaves a detector that detects nothing, which is a
 // config mistake wearing the costume of a working one.
 func TestIgnoringEveryEntityRejected(t *testing.T) {
