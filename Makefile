@@ -53,6 +53,11 @@ install-rust:
 run-dev:
 	./scripts/dev/run.sh
 
+# Runs on the host, not in the run-dev container: that container starts an
+# agent, and the control plane opens no gRPC transport for it to reach.
+run-dev-control-plane:
+	./scripts/dev/run-control-plane.sh
+
 run-dev-postgres:
 	./scripts/dev/run-postgres.sh
 
@@ -365,4 +370,4 @@ publish-sentry-sourcemaps:
 	tar -xvf ${DIST_FOLDER}/webapp.tar.gz
 	sentry-cli sourcemaps upload --release=$$(cat ./version.txt) ./public/js/app.js.map --org hoopdev --project webapp
 
-.PHONY: run-dev run-dev-postgres build-dev-webapp test-enterprise test-oss test prepare-mssql-jdbc test-integration test-transport test-gateway test-gateway-pglite test-standalone test-standalone-e2e test-gateway-pglite generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm build-hsh-tunneld build-hsh-tunneld-all build-release-checksums stage-release-scripts
+.PHONY: run-dev run-dev-control-plane run-dev-postgres build-dev-webapp test-enterprise test-oss test prepare-mssql-jdbc test-integration test-transport test-gateway test-gateway-pglite test-standalone test-standalone-e2e test-gateway-pglite generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm build-hsh-tunneld build-hsh-tunneld-all build-release-checksums stage-release-scripts
