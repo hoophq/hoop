@@ -248,6 +248,23 @@ before the restart:
   with rules that could never fire. The check now runs on `mask.rules` alone,
   and such a lane refuses to start.
 
+`entity` renames the same way beside `columns`, and that pairing is worth a
+second look because the two keys do different jobs on one rule. The columns
+decide which cells are masked; the entity only names them in the audit trail.
+So the list holds at most one entry there:
+
+```yaml
+- {name: taxpayer, entity: US_SSN, columns: [taxpayer_id]}      # old
+- {name: taxpayer, entities: [US_SSN], columns: [taxpayer_id]}  # new, same rows
+```
+
+Both mask every `taxpayer_id` cell whatever it holds, and both record the
+masked cells as `US_SSN`. Two entities beside `columns` is refused: one cell is
+audited under one name and nothing can pick between two. Name none and the
+cells are reported as `column:taxpayer_id` instead. The label is not checked
+against `pii.entities`, because a column rule runs no detector — it is a name
+for an audit row, not a class a recognizer has to produce.
+
 Omitting `pii` reverses direction too, in the safe one. The section used to be
 required before anything could detect, and it now subtracts from a detector
 that already holds every entity type. Nothing that worked stops working.
@@ -302,7 +319,7 @@ listeners:
           message: destructive statements are not permitted on appdb
     mask:
       rules:                # REPLACES the default list rather than extending it
-        - {name: ssn-column, columns: [ssn], strategy: partial, keep_last: 4}
+        - {name: ssn-column, entities: [US_SSN], columns: [ssn], strategy: partial, keep_last: 4}
         - {name: emails, entities: [EMAIL_ADDRESS], strategy: redact}
 
   - name: httpbin
@@ -1395,7 +1412,10 @@ every HTTP response body and `DATE_TIME` every row with a timestamp.
 `alcatraz.Noisy` records those seven with their rates, and it is the list
 `pii.ignored` was written against. Reach for a `columns:` rule where the
 protocol names the value, because a column rule masks what is in the column
-whatever it looks like.
+whatever it looks like. Name one entity beside the columns and the audit rows
+read `US_SSN` rather than `column:ssn`; name none and `column:ssn` is what
+they carry. The entity is a label there and nothing else — it enables no
+detection, and two of them are refused because a masked cell gets one name.
 
 The same validation cuts the other way, which will bite you in a demo:
 alcatraz **declines** `123-45-6789` and `987-65-4321`, rejecting sequential

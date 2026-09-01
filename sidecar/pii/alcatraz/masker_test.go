@@ -215,9 +215,9 @@ func TestEntityAndEntitiesTogetherRefused(t *testing.T) {
 	}
 }
 
-// An entity beside columns is only the audit label for the masked cells, so a
-// LIST of them names nothing a reader could pick between.
-func TestEntitiesWithColumnsRefused(t *testing.T) {
+// An entity beside columns is the audit label for the masked cells, so TWO of
+// them name nothing a reader could pick between. One is the whole point.
+func TestTwoEntitiesWithColumnsRefused(t *testing.T) {
 	d := newDet(t, alcatraz.Options{Entities: []string{alcz.USSSN, alcz.CreditCard}})
 
 	_, err := alcatraz.NewMasker(d, []alcatraz.Rule{{
@@ -226,35 +226,67 @@ func TestEntitiesWithColumnsRefused(t *testing.T) {
 		Columns:  []string{"ssn"},
 	}})
 	if err == nil {
-		t.Fatal("want an error for entities combined with columns")
+		t.Fatal("want an error for two entity labels on one column rule")
 	}
 	if !strings.Contains(err.Error(), "columns") {
 		t.Errorf("error should name the conflict: %v", err)
 	}
 }
 
-// The singular keeps working beside Columns, which is the one thing it can do
-// that the plural cannot: label the masked cells in the audit trail.
-func TestEntityLabelsAColumnRule(t *testing.T) {
+// Both spellings label a column rule identically, which is what makes the
+// documented rename mechanical: a deployed {entity: X, columns: [...]} becomes
+// {entities: [X], columns: [...]} and masks the same cells under the same
+// audit label. Without this the singular would have no canonical replacement
+// and could never be removed.
+func TestEitherSpellingLabelsAColumnRule(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		rule alcatraz.Rule
+	}{
+		{"deprecated singular", alcatraz.Rule{
+			Name: "taxpayer", Entity: alcz.USSSN,
+			Columns: []string{"Taxpayer_ID"}, Strategy: alcatraz.StrategyRedact,
+		}},
+		{"canonical one-element list", alcatraz.Rule{
+			Name: "taxpayer", Entities: []string{alcz.USSSN},
+			Columns: []string{"Taxpayer_ID"}, Strategy: alcatraz.StrategyRedact,
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := newDet(t, alcatraz.Options{Entities: []string{alcz.USSSN}})
+			m := newMask(t, d, tc.rule)
+
+			// Contents no detector would flag: the operator named the
+			// column, so the cell goes whatever it holds.
+			out, names, n := m.MaskCell("taxpayer_id", []byte("not-an-ssn-at-all"))
+			if string(out) != "[REDACTED:"+alcz.USSSN+"]" {
+				t.Errorf("MaskCell = %q, want the cell redacted under the entity", out)
+			}
+			if n != 1 || !slices.Equal(names, []string{alcz.USSSN}) {
+				t.Errorf("MaskCell reported %v/%d, want the entity as the audit label", names, n)
+			}
+			if got := m.Entities(); len(got) != 0 {
+				t.Errorf("Entities() = %v, want none: a column rule enables no content detection", got)
+			}
+		})
+	}
+}
+
+// A column rule runs no detector, so its label is a name for an audit row
+// rather than a class anything has to recognize. Checking it against the
+// detector's set would refuse configs the deprecated singular accepts and
+// break the rename this package promises.
+func TestColumnLabelNeedsNoRecognizer(t *testing.T) {
 	d := newDet(t, alcatraz.Options{Entities: []string{alcz.USSSN}})
 	m := newMask(t, d, alcatraz.Rule{
-		Name:     "taxpayer",
-		Entity:   alcz.USSSN,
-		Columns:  []string{"Taxpayer_ID"},
-		Strategy: alcatraz.StrategyRedact,
+		Name:     "risk",
+		Entities: []string{"INTERNAL_RISK_SCORE"},
+		Columns:  []string{"risk_score"},
 	})
 
-	// Contents no detector would flag: the operator named the column, so the
-	// cell goes whatever it holds.
-	out, names, n := m.MaskCell("taxpayer_id", []byte("not-an-ssn-at-all"))
-	if string(out) == "not-an-ssn-at-all" {
-		t.Errorf("the column rule did not fire: %q", out)
-	}
-	if n != 1 || !slices.Equal(names, []string{alcz.USSSN}) {
-		t.Errorf("MaskCell reported %v/%d, want the entity as the audit label", names, n)
-	}
-	if got := m.Entities(); len(got) != 0 {
-		t.Errorf("Entities() = %v, want none: a column rule enables no content detection", got)
+	_, names, n := m.MaskCell("risk_score", []byte("0.97"))
+	if n != 1 || !slices.Equal(names, []string{"INTERNAL_RISK_SCORE"}) {
+		t.Errorf("MaskCell reported %v/%d, want the rule's own label", names, n)
 	}
 }
 

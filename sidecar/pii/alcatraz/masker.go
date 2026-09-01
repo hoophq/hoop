@@ -65,6 +65,13 @@ const DefaultMaskChar = '*'
 //	{"entities": ["US_SSN"], "strategy": "partial"}   // wherever an SSN appears
 //	{"columns": ["ssn"], "strategy": "redact"}        // whatever is in that column
 //
+// Naming both is the third shape, and it is still a column rule:
+//
+//	{"entities": ["US_SSN"], "columns": ["ssn"]}      // that column, audited as US_SSN
+//
+// Columns decide what is rewritten; the one entity beside them decides only
+// what the audit trail calls the masked cells.
+//
 // The column form is available only where the protocol names its values (a
 // database result set) and it is stronger there. It is deterministic rather
 // than probabilistic, it protects a column whose contents no detector
@@ -82,9 +89,12 @@ type Rule struct {
 	// the whole reason the plural exists: a contact-details rule covers an
 	// email and a phone number without saying "redact" twice.
 	//
-	// Required unless Columns is set, and it cannot be combined with
-	// Columns. An entity named beside columns is only a label for the
-	// audit trail, and a list of labels names nothing.
+	// Required unless Columns is set. Beside Columns it takes at most ONE
+	// entity, and that entity is a label for the audit trail rather than
+	// something to detect: a masked cell is reported under one name, and a
+	// second name gives the reader nothing to pick between. That
+	// one-element form is the canonical spelling of the deprecated Entity
+	// beside Columns.
 	Entities []string `json:"entities,omitempty"`
 
 	// Entity is the one-entity spelling of Entities.
@@ -93,8 +103,10 @@ type Rule struct {
 	// BuildMasker decodes with DisallowUnknownFields, so deleting it would
 	// refuse every config already deployed instead of migrating it.
 	// Setting both spellings on one rule is an error rather than a silent
-	// winner. Unlike Entities it may still be combined with Columns, where
-	// it supplies the audit label for the masked cells.
+	// winner. Every use of it renames to a one-element Entities without
+	// changing what the rule does, Columns included: {"entity": "US_SSN",
+	// "columns": ["ssn"]} becomes {"entities": ["US_SSN"], "columns":
+	// ["ssn"]} and keeps the same audit label.
 	Entity string `json:"entity,omitempty"`
 
 	// Columns names result-set columns to mask outright, compared
@@ -120,17 +132,19 @@ type Rule struct {
 	MaskChar rune `json:"mask_char,omitempty"`
 }
 
-// entityName is the label a column rule's masked cells are reported under.
-// Only the deprecated singular reaches it, because Entities and Columns
-// cannot appear on one rule, so there is never a list to choose from here.
-func (r Rule) entityName() string {
-	if r.Entity != "" {
-		return r.Entity
+// columnLabel is the label a column rule's masked cells are reported under.
+//
+// ents is the rule's entities after both spellings have been folded into one
+// list, and it holds at most one entry here: NewMasker refuses a longer one
+// before calling this, because two labels for one cell cannot be resolved.
+func columnLabel(ents, columns []string) string {
+	if len(ents) > 0 {
+		return ents[0]
 	}
 	// A column-only rule still needs a name in the audit trail. "column:ssn"
 	// says both what happened and why, without inventing an entity type that
 	// no detector produces.
-	return "column:" + strings.ToLower(strings.Join(r.Columns, ","))
+	return "column:" + strings.ToLower(strings.Join(columns, ","))
 }
 
 // Result reports what a Mask call rewrote.
@@ -225,16 +239,22 @@ func NewMasker(d *Detector, rules []Rule) (*Masker, error) {
 		// the column is sensitive, so there is nothing to detect.
 		if len(r.Columns) > 0 {
 			// An entity named beside columns is a LABEL for the masked
-			// cells and nothing else, so a LIST of them says nothing: two
-			// labels for one cell has no meaning to pick between. The
-			// singular keeps working here for the configs that already
-			// pair the two.
-			if len(r.Entities) > 0 {
-				problems = append(problems, name+
-					": entities cannot be combined with columns (entity names the audit label for a column rule)")
+			// cells and nothing else: the columns already decided what
+			// gets rewritten. One label, because a cell is reported under
+			// one name and a second has no meaning to pick between. Both
+			// spellings reach here through ents, so the deprecated
+			// singular renames to a one-element list and behaves the same.
+			//
+			// The label is not checked against the detector's set. No
+			// detector runs on a column rule, so the name is free text in
+			// an audit row rather than a class anything has to recognize.
+			if len(ents) > 1 {
+				problems = append(problems, fmt.Sprintf(
+					"%s: %d entities beside columns; a column rule labels its cells "+
+						"with ONE entity, so name one or none", name, len(ents)))
 				continue
 			}
-			label := r.entityName()
+			label := columnLabel(ents, r.Columns)
 			for _, col := range r.Columns {
 				key := strings.ToLower(strings.TrimSpace(col))
 				if key == "" {
