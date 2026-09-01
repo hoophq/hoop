@@ -31,6 +31,19 @@ func LivenessHandler() func(_ *gin.Context) {
 	}
 }
 
+// ControlPlaneLivenessHandler answers the same /healthz route as
+// LivenessHandler when the process runs as the control plane. It carries no
+// swagger annotation because the route is already documented above.
+//
+// The control plane runs no gRPC server, so liveness cannot depend on the
+// transport port LivenessHandler probes — that check would fail every time
+// and the deployment would never become healthy.
+func ControlPlaneLivenessHandler() func(_ *gin.Context) {
+	return func(c *gin.Context) {
+		c.JSON(http.StatusOK, openapi.LivenessCheck{Liveness: "OK"})
+	}
+}
+
 func checkAddrLiveness(addr string) error {
 	timeout := time.Second * 3
 	conn, err := net.DialTimeout("tcp", addr, timeout)

@@ -20,6 +20,31 @@ import (
 
 // TODO: it should include all runtime configuration
 
+// AppMode selects which component the gateway binary runs as.
+type AppMode string
+
+const (
+	// AppModeGateway is the default: the full gateway, serving agents over
+	// gRPC, protocol proxies and the complete HTTP API.
+	AppModeGateway AppMode = "gateway"
+	// AppModeControlPlane runs the HTTP API only, to administer a fleet of
+	// sidecars. It serves no agents and no clients.
+	AppModeControlPlane AppMode = "control-plane"
+)
+
+// parseAppMode resolves the APP_MODE value. An empty value keeps the gateway
+// behaviour, so an existing deployment that never heard of APP_MODE is
+// unaffected.
+func parseAppMode(v string) (AppMode, error) {
+	switch mode := AppMode(strings.ToLower(strings.TrimSpace(v))); mode {
+	case "":
+		return AppModeGateway, nil
+	case AppModeGateway, AppModeControlPlane:
+		return mode, nil
+	default:
+		return "", fmt.Errorf("invalid APP_MODE %q (want %s|%s)", v, AppModeGateway, AppModeControlPlane)
+	}
+}
 
 type pgCredentials struct {
 	connectionString string
@@ -31,6 +56,7 @@ type pgCredentials struct {
 	pgliteDataDir string
 }
 type Config struct {
+	appMode                         AppMode
 	apiKey                          string
 	askAICredentials                *url.URL
 	authMethod                      idptypes.ProviderType
@@ -91,6 +117,10 @@ var runtimeConfig Config
 func Load() error {
 	if runtimeConfig.isLoaded {
 		return nil
+	}
+	appMode, err := parseAppMode(os.Getenv("APP_MODE"))
+	if err != nil {
+		return err
 	}
 	apiURL := os.Getenv("API_URL")
 	if apiURL == "" {
@@ -262,6 +292,7 @@ func Load() error {
 	}
 
 	runtimeConfig = Config{
+		appMode:                         appMode,
 		apiKey:                          os.Getenv("API_KEY"),
 		apiURL:                          fmt.Sprintf("%s://%s", apiRawURL.Scheme, apiRawURL.Host),
 		grpcURL:                         grpcURL,
@@ -445,24 +476,37 @@ func (c Config) LicenseSigningKey() (string, *rsa.PrivateKey) {
 func (c Config) FullApiURL() string { return c.apiURL + c.apiURLPath }
 
 // ApiURL is the base URL without any path segment or query strings (scheme://host:port)
-func (c Config) ApiURL() string                        { return c.apiURL }
-func (c Config) GrpcURL() string                       { return c.grpcURL }
+func (c Config) ApiURL() string  { return c.apiURL }
+func (c Config) GrpcURL() string { return c.grpcURL }
+
+// AppMode reports which component this process runs as. An unloaded config
+// reads as the gateway, so the mode is never the empty string.
+func (c Config) AppMode() AppMode {
+	if c.appMode == "" {
+		return AppModeGateway
+	}
+	return c.appMode
+}
+
+// IsControlPlane reports whether this process runs as the control plane.
+func (c Config) IsControlPlane() bool { return c.AppMode() == AppModeControlPlane }
+
 // WebappStaticUiPath returns the explicitly configured STATIC_UI_PATH, or
 // empty when unset (the web UI source is then resolved by gateway/webappui).
-func (c Config) WebappStaticUiPath() string            { return c.webappStaticUIPath }
-func (c Config) ApiHostname() string                   { return c.apiHostname }
-func (c Config) ApiHost() string                       { return c.apiHost } // ApiHost host or host:port
-func (c Config) ApiScheme() string                     { return c.apiScheme }
-func (c Config) ApiURLPath() string                    { return c.apiURLPath }
-func (c Config) ApiKey() string                        { return c.apiKey }
-func (c Config) AuthMethod() idptypes.ProviderType     { return c.authMethod }
-func (c Config) ForceUrlTokenExchange() bool           { return c.forceUrlTokenExchange }
-func (c Config) WebhookAppKey() string                 { return c.webhookAppKey }
-func (c Config) WebhookAppURL() *url.URL               { return c.webhookAppURL }
-func (c Config) GcpDLPJsonCredentials() string         { return c.gcpDLPJsonCredentials }
-func (c Config) DlpProvider() string                   { return c.dlpProvider }
-func (c Config) DlpMode() string                       { return c.dlpMode }
-func (c Config) HasRedactCredentials() bool            { return c.hasRedactCredentials }
+func (c Config) WebappStaticUiPath() string        { return c.webappStaticUIPath }
+func (c Config) ApiHostname() string               { return c.apiHostname }
+func (c Config) ApiHost() string                   { return c.apiHost } // ApiHost host or host:port
+func (c Config) ApiScheme() string                 { return c.apiScheme }
+func (c Config) ApiURLPath() string                { return c.apiURLPath }
+func (c Config) ApiKey() string                    { return c.apiKey }
+func (c Config) AuthMethod() idptypes.ProviderType { return c.authMethod }
+func (c Config) ForceUrlTokenExchange() bool       { return c.forceUrlTokenExchange }
+func (c Config) WebhookAppKey() string             { return c.webhookAppKey }
+func (c Config) WebhookAppURL() *url.URL           { return c.webhookAppURL }
+func (c Config) GcpDLPJsonCredentials() string     { return c.gcpDLPJsonCredentials }
+func (c Config) DlpProvider() string               { return c.dlpProvider }
+func (c Config) DlpMode() string                   { return c.dlpMode }
+func (c Config) HasRedactCredentials() bool        { return c.hasRedactCredentials }
 
 // HasGuardrailProvider reports whether the mspresidio provider is fully
 // configured (both analyzer and anonymizer URLs).
@@ -474,10 +518,10 @@ func (c Config) HasRedactCredentials() bool            { return c.hasRedactCrede
 func (c Config) HasGuardrailProvider() bool {
 	return c.dlpProvider == "mspresidio" && c.msPresidioAnalyzerURL != "" && c.msPresidioAnonymizerURL != ""
 }
-func (c Config) MSPresidioAnalyzerURL() string         { return c.msPresidioAnalyzerURL }
-func (c Config) MSPresidioAnomymizerURL() string       { return c.msPresidioAnonymizerURL }
-func (c Config) PgUsername() string                    { return c.pgCred.username }
-func (c Config) PgURI() string                         { return c.pgCred.connectionString }
+func (c Config) MSPresidioAnalyzerURL() string   { return c.msPresidioAnalyzerURL }
+func (c Config) MSPresidioAnomymizerURL() string { return c.msPresidioAnonymizerURL }
+func (c Config) PgUsername() string              { return c.pgCred.username }
+func (c Config) PgURI() string                   { return c.pgCred.connectionString }
 
 // MigrationPathFiles returns the directory to load SQL migration files
 // from when MIGRATION_PATH_FILES is set. Empty means the migrations
@@ -490,7 +534,7 @@ func (c Config) PgliteDataDir() string { return c.pgCred.pgliteDataDir }
 
 // IsPgliteEnabled reports whether the gateway must boot the embedded PGlite
 // database instead of connecting to an external PostgreSQL.
-func (c Config) IsPgliteEnabled() bool { return c.pgCred.pgliteDataDir != "" }
+func (c Config) IsPgliteEnabled() bool                 { return c.pgCred.pgliteDataDir != "" }
 func (c Config) DisableSessionsDownload() bool         { return c.disableSessionsDownload }
 func (c Config) DisableClipboardCopyCut() bool         { return c.disableClipboardCopyCut }
 func (c Config) OrgMultitenant() bool                  { return c.orgMultitenant }

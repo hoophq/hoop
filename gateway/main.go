@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"os"
 
@@ -175,6 +176,36 @@ func Run() {
 		log.Infof("failed adding default runbooks, reason=%v", err)
 	}
 
+	_, _ = monitoring.StartSentry(appconfig.Get().ApiHostname())
+
+	if appconfig.Get().IsControlPlane() {
+		runControlPlane(tlsConfig)
+		return
+	}
+	runGateway(tlsConfig, apiURL, defaultOrgID, isOrgMultiTenant)
+}
+
+// runControlPlane serves the control plane: the HTTP API and nothing else.
+// It administers a fleet of sidecars, so it accepts no agent or client
+// connection — the gRPC transport, the protocol proxies and the transport
+// plugins never start. The API surface is still being ported route by route
+// (see Api.buildControlPlaneRoutes), so today it answers /api/healthz only.
+func runControlPlane(tlsConfig *tls.Config) {
+	a := &api.Api{TLSConfig: tlsConfig}
+
+	bootstrap.Phase("Starting API")
+	apiStep := bootstrap.Step("HTTP API")
+	apiStep.OK(fmt.Sprintf("%s mode=%s", appconfig.Get().ApiURL(), appconfig.AppModeControlPlane))
+
+	bootstrap.Ready(map[string]string{"Control Plane": appconfig.Get().ApiURL()})
+
+	a.StartAPI()
+}
+
+// runGateway serves the gateway: everything that carries agent and client
+// traffic — the transport plugins, the protocol proxies, the gRPC server —
+// plus the full HTTP API.
+func runGateway(tlsConfig *tls.Config, apiURL, defaultOrgID string, isOrgMultiTenant bool) {
 	g := &transport.Server{
 		TLSConfig:   tlsConfig,
 		ApiHostname: appconfig.Get().ApiHostname(),
@@ -201,7 +232,6 @@ func Run() {
 		}
 	}
 
-	_, _ = monitoring.StartSentry(appconfig.Get().ApiHostname())
 	if isOrgMultiTenant {
 		// grpc url from env is used for multi tenant setups
 		if err := agentcontroller.Run(os.Getenv("GRPC_URL")); err != nil {

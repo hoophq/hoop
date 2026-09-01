@@ -1604,6 +1604,8 @@ type ServerInfo struct {
 	AnalyticsMode AnalyticsModeType `json:"analytics_mode" enums:"identified,anonymous,disabled" example:"identified"`
 	// Effective feature flags for the caller's organization
 	FeatureFlags map[string]bool `json:"feature_flags,omitempty"`
+	// Which component this process runs as
+	ApplicationMode string `json:"application_mode" enums:"gateway,control-plane" example:"gateway"`
 }
 
 // ServerLogEntry is one runtime log record from the gateway process or a
