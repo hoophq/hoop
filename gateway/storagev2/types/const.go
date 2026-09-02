@@ -25,17 +25,12 @@ var (
 		}
 		return auditor
 	}()
-
-	// GroupApprover is the control plane's second role: it reviews and
-	// administers nothing.
-	GroupApprover = func() string {
-		approver := os.Getenv("APPROVER_USERNAME")
-		if approver == "" {
-			return "approver"
-		}
-		return approver
-	}()
 )
+
+// GroupApprover is the control plane's second role: it reviews and administers
+// nothing. Fixed, unlike GroupAdmin and GroupAuditor, whose env vars exist to
+// map pre-existing gateway IdP group names.
+const GroupApprover = "approver"
 
 const (
 	UserStatusActive    UserStatusType = "active"
