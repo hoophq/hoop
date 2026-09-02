@@ -29,9 +29,9 @@
   {:terminal [:editor :connections :selected]
    :runbook [:runbooks :selected-connection]})
 
-(def source->label
-  {:terminal "Open in your terminal"
-   :runbook "Open in your runbook"})
+(def source->badge-label
+  {:terminal "From terminal"
+   :runbook "From runbook"})
 
 ;; ---- Selection Helpers ----
 

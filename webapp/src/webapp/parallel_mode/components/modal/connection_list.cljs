@@ -9,9 +9,9 @@
    [webapp.parallel-mode.helpers :as helpers]))
 
 (defn connection-item
-  "Single connection item with checkbox. `pinned?` marks the resource role the
-   host page already has open, which parallel mode pre-selects."
-  [connection selected? pinned?]
+  "Single connection row. `host-label` is set only on the resource role the host
+   page already has open, and names that page."
+  [connection selected? host-label]
   ;; No :keywords. The gateway does the matching now, and cmdk's scorer used to
   ;; read them: the literal "connection" on every row made any subsequence of
   ;; that word match the whole list. EVL-243.
@@ -21,7 +21,7 @@
     ;; cmdk owns aria-selected on the row and uses it for the keyboard
     ;; highlight, so the checked state has to be spelled out here instead.
     :aria-label (str (:name connection)
-                     (when (and pinned? selected?) ", pre-selected")
+                     (when host-label (str ", " (cs/lower-case host-label)))
                      (if selected? ", checked" ", not checked"))
     :class (str "mb-2 last:mb-0 " (when selected? "bg-gray-2"))}
    [:> Flex {:align "center" :gap "3" :class "w-full"}
@@ -34,11 +34,9 @@
      [:> Text {:size "2" :weight "medium" :class "text-gray-12"}
       (:name connection)]]
 
-    ;; Only while it is still checked. The group heading keeps saying where the
-    ;; role came from after the user unchecks it.
-    (when (and pinned? selected?)
+    (when host-label
       [:> Badge {:color "indigo" :variant "soft" :size "1" :aria-hidden "true"}
-       "Pre-selected"])
+       host-label])
 
     ;; Decorative: the row is the control. Left in the tab order the checkbox
     ;; would flip its own state on Space without dispatching anything.
@@ -49,11 +47,21 @@
       :tabIndex -1
       :aria-hidden "true"}]]])
 
+(defn- empty-state
+  "`all-selected?` means the page did come back with roles and every one of them
+   is already sitting in the Selected group above."
+  [active-search all-selected?]
+  [:div {:class "py-6 text-center text-sm text-gray-11" :role "status"}
+   (cond
+     all-selected? "Every resource role here is already selected"
+     (cs/blank? active-search) "No resource roles found"
+     :else (str "No resource role matches \"" active-search "\""))])
+
 (defn main []
   (let [valid-connections (rf/subscribe [:parallel-mode/valid-connections])
-        pinned-connection (rf/subscribe [:parallel-mode/pinned-connection])
-        source (rf/subscribe [:parallel-mode/source])
         selected-connections (rf/subscribe [:parallel-mode/selected-connections])
+        host-connection (rf/subscribe [:parallel-mode/host-connection])
+        source (rf/subscribe [:parallel-mode/source])
         connections-pagination (rf/subscribe [:connections->pagination])]
     (fn []
       ;; :loading is a boolean, not a keyword. The old (= :loading ...) never
@@ -61,25 +69,28 @@
       (let [connections-loading? (boolean (:loading @connections-pagination))
             active-search (:active-search @connections-pagination)
             searching? (not (cs/blank? active-search))
-            selected? (fn [connection]
-                        (boolean (some #(= (:name %) (:name connection))
-                                       @selected-connections)))
-            ;; While a search is running the pinned row is dropped rather than
-            ;; matched here: repeating the gateway's predicate in CLJS would be
-            ;; a second source of truth. The role still shows up in the results
-            ;; with its badge if the gateway returns it.
-            pinned-name (:name @pinned-connection)
-            pinned (when-not searching? @pinned-connection)
-            rows (if pinned
-                   (filterv #(not= (:name %) (:name pinned)) @valid-connections)
-                   @valid-connections)]
+            selected @selected-connections
+            selected-names (set (map :name selected))
+            host-name (:name @host-connection)
+            host-label (helpers/source->badge-label @source)
+            label-for (fn [connection]
+                        (when (= (:name connection) host-name) host-label))
+            ;; Selected roles are rendered from app-db, not from the fetched
+            ;; page, so they stay reachable while a search hides them and while
+            ;; the user pages past them.
+            rows (filterv #(not (contains? selected-names (:name %)))
+                          @valid-connections)]
         [:<>
-         (when pinned
-           [:> CommandGroup {:heading (helpers/source->label @source)}
-            [connection-item pinned (selected? pinned) true]])
+         (when (seq selected)
+           [:> CommandGroup {:heading (str "Selected (" (count selected) ")")
+                             :class "space-y-2 max-h-52 overflow-y-auto"}
+            (doall
+             (for [connection selected]
+               ^{:key (str "selected-" (:name connection))}
+               [connection-item connection true (label-for connection)]))])
 
          [:> CommandGroup (cond-> {:class "space-y-2 mb-12"}
-                            pinned (assoc :heading "All resource roles"))
+                            (seq selected) (assoc :heading "All resource roles"))
           [infinite-scroll
            {:on-load-more (fn []
                             (when (not connections-loading?)
@@ -92,10 +103,13 @@
             :has-more? (:has-more? @connections-pagination)
             :loading? connections-loading?}
 
-           (doall
-            (for [connection rows]
-              ^{:key (:name connection)}
-              [connection-item
-               connection
-               (selected? connection)
-               (= (:name connection) pinned-name)]))]]]))))
+           ;; has-more? guards the flash: with an empty page and more to fetch,
+           ;; infinite-scroll is already loading the next one.
+           (if (and (empty? rows)
+                    (not connections-loading?)
+                    (not (:has-more? @connections-pagination)))
+             [empty-state active-search (seq @valid-connections)]
+             (doall
+              (for [connection rows]
+                ^{:key (:name connection)}
+                [connection-item connection false (label-for connection)])))]]]))))

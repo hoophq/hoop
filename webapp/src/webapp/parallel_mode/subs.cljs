@@ -56,10 +56,10 @@
      (helpers/filter-valid-connections all-connections))))
 
 ;; The role the host page has open, which the modal pre-selects. Read straight
-;; from app-db and not looked up in the fetched page, so it stays visible even
-;; when it sorts past the first 50 rows. EVL-244.
+;; from app-db and not looked up in the fetched page, so the badge is right even
+;; when the role sorts past the first 50 rows. EVL-244.
 (rf/reg-sub
- :parallel-mode/pinned-connection
+ :parallel-mode/host-connection
  (fn [db _]
    (let [path (helpers/source->connection-path (get-in db [:parallel-mode :modal :source]))
          connection (when path (get-in db path))]

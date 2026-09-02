@@ -1,9 +1,7 @@
 (ns webapp.parallel-mode.components.modal.main
   (:require
-   ["cmdk" :refer [CommandEmpty]]
    ["@radix-ui/themes" :refer [Box Badge Flex Text]]
    ["lucide-react" :refer [FastForward]]
-   [clojure.string :as cs]
    [re-frame.core :as rf]
    [webapp.components.command-dialog :as command-dialog]
    [webapp.parallel-mode.components.modal.connection-list :as connection-list]
@@ -77,16 +75,11 @@
                  (when (not= 1 @selected-count) "s") 
                  " selected")]
            
-           ;; Scrollable list
+           ;; Scrollable list. The empty state lives in connection-list, which is
+           ;; the only place that knows whether the Selected group is holding
+           ;; rows that the search does not match. cmdk's CommandEmpty counts
+           ;; every mounted item, so it would stay hidden in that case.
            [:> Box {:class "flex-1 overflow-y-auto"}
-            [connection-list/main]
-
-            [:> CommandEmpty
-             [:> Flex {:direction "column" :align "center" :gap "2" :class "py-8"
-                       :role "status"}
-              [:> Text {:size "2" :color "gray"}
-               (if (cs/blank? @search-term)
-                 "No resource roles found"
-                 (str "No resource role matches \"" @search-term "\""))]]]]
+            [connection-list/main]]
 
            [footer/main]]}]))))
