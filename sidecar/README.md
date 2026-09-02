@@ -542,11 +542,11 @@ asking about, a cache collapses repeated statement shapes onto one verdict,
 and the rule runs LAST in the chain, after the free local rules and OPA.
 
 It runs wherever a content builder renders the statement for a model:
-`postgres` and `mssql` send the statement text with the operation, tables and
-database the codec derived; `http` sends the method, normalized resource and
-body. A lane whose protocol has no builder is refused at startup rather than
-left classifying nothing, which is what a relay-only protocol would otherwise
-get: no statements to render means no verdict, silently.
+`postgres`, `mysql` and `mssql` send the statement text with the operation,
+tables and database the codec derived; `http` sends the method, normalized
+resource and body. A lane whose protocol has no builder is refused at startup
+rather than left classifying nothing, which is what a relay-only protocol
+would otherwise get: no statements to render means no verdict, silently.
 
 ```yaml
 pii:                           # optional; omitting it activates all 54 types
@@ -799,6 +799,7 @@ gaps named above are the narrow ones; Envoy is not blind here.
 | Protocol | Request messages | Response messages | Stateful |
 |---|---|---|---|
 | `postgres` | `Query` ('Q'), `Parse` ('P'); handshake skipped | `RowDescription` ('T'), `DataRow` ('D'), and the three terminators that end a result set | yes |
+| `mysql` | `COM_QUERY` (0x03), `COM_STMT_PREPARE` (0x16) and the prepared-statement commands (0x17, 0x19, 0x1a, 0x1c); handshake read for the negotiated capabilities, not skipped | column definitions and both row encodings, text and binary, for masking; the terminator that ends a result set | yes |
 | `mssql` | `SQLBatch` (0x01) and `RPCRequest` (0x03), reassembled across packets; login forwarded untouched | `COLMETADATA` (0x81), `ROW` (0xD1), `NBCROW` (0xD2) for masking; login replies scanned for a routing redirect | yes |
 | `http` | HTTP/1.x requests | HTTP/1.x responses | no |
 
@@ -807,6 +808,75 @@ The Postgres codec is stateful because one `RowDescription` describes every
 registry hands out a factory rather than an instance: two connections sharing
 one codec would corrupt each other's reassembly, and one tenant's SQL would
 surface in another tenant's audit trail. Give every connection its own.
+
+### MySQL, and the three ways a session goes dark
+
+MySQL is stateful for a harder reason than Postgres. A pgwire message is
+self-describing on the first byte of the connection and on the last: the tag
+says what it is, the length says where it ends. MySQL bytes mean different
+things depending on what the handshake negotiated and on what the client last
+asked for. `CLIENT_DEPRECATE_EOF` decides whether a result set ends with an
+EOF packet (0xFE) or an OK packet beginning with the same 0xFE byte. A `0x00`
+first byte opens an OK packet after a `COM_QUERY` and a column count after
+nothing at all. So the codec reads the handshake rather than skipping it, and
+tracks the command in flight — one codec per connection, from the factory the
+registry hands out.
+
+**A message is not a packet.** A payload of exactly 16 MiB − 1 means "there is
+more", and the reader concatenates until a payload comes in short — which may
+be an EMPTY packet when the message length is an exact multiple. A decoder
+that treats every packet as a message reads the second half of a large
+statement as a command byte followed by SQL, which is how a spliced
+`DROP TABLE` gets past a classifier.
+
+**One `COM_QUERY` can be several statements.** `CLIENT_MULTI_STATEMENTS` is
+negotiated by Connector/J and most ORMs by default, so
+`SELECT 1; DROP TABLE users` arrives as a single command. The seam injects
+`lexer.Split` for exactly this: without it the codec classifies the payload by
+its leading verb and the drop reaches the server having been evaluated as a
+select. Splitting is the lexer's job rather than the codec's because getting
+it right needs MySQL's quoting rules — a naive split on `;` cuts inside a
+string literal.
+
+**`COM_STMT_EXECUTE` does not carry its SQL.** It names a statement by the
+numeric id the server assigned in reply to an earlier `COM_STMT_PREPARE`, so
+the codec keeps the prepare's text against that id and attributes the execute
+to it. A prepare the codec never saw — a connection adopted mid-flight — makes
+the execute an `unknown` operation, which a rule naming `unknown` refuses.
+That is the fail-closed direction.
+
+**Three negotiated features are refused rather than forwarded**, each with
+`ErrStreamUnsafe`, which the gate turns into a denial regardless of policy:
+
+- **`CLIENT_COMPRESS`** replaces the packet framing itself from the first byte
+  after the handshake response, so nothing after it is readable.
+- **A client-initiated TLS upgrade.** The client sends the first 32 bytes of a
+  handshake response and starts a TLS handshake on the same socket. This one
+  is a deployment fault with a fix, and the message says so: terminate the TLS
+  in front of the relay, and the codec is handed plaintext and never sees the
+  flag.
+- **`LOAD DATA LOCAL INFILE`.** The server answers with a filename and the
+  client streams that file back as raw packets carrying no command byte. It is
+  also the long-standing attack — a malicious server can send the request in
+  reply to any query — so refusing it is a control and not only a parsing
+  convenience. The statement that provoked it is already in the audit trail;
+  the transfer never starts.
+
+**MySQL masks its responses** by the same re-framing mechanism Postgres uses.
+Every value in a text row is length-prefixed and so is the packet holding it,
+so a changed row is rebuilt with both recomputed; patching in place leaves the
+client reading a declared length that no longer matches and dropping the
+connection. Rebuilt rows keep their original sequence ids, because MySQL
+requires them consecutive within a command and renumbering one would mean
+renumbering every packet after it.
+
+Binary rows — what a prepared statement returns — mask only where the wire
+encoding is already a length-encoded string. An `INT` column is four
+little-endian bytes, and writing a redaction token there is not a long
+integer, it is a client desynchronized for the rest of the connection. Every
+other column is measured so the walk stays aligned and forwarded unchanged. A
+number carrying a secret is a real gap, and the honest one: the alternative is
+a protocol error the user reads as an outage.
 
 ### MSSQL, and the Kerberos login
 
@@ -874,9 +944,24 @@ A worked deployment, with Envoy terminating TDS 8.0, a Kerberos client and an
 AD domain controller, lives in
 [`deploy/docker-compose/envoy-stack/mssql`](../deploy/docker-compose/envoy-stack/mssql).
 
-MySQL and MongoDB codecs are **not shipped**. The `Codec` interface and the
-shared SQL classifier are protocol-agnostic, so adding one takes a new
-`codec/<name>` package and no other change.
+No MongoDB codec is shipped. Adding a protocol is **not** the one-package
+change this section used to claim: the `Codec` interface and the SQL
+classifier are protocol-agnostic, but everything a lane needs around the
+decoder is keyed by protocol and each piece fails quietly on its own. MySQL
+was added as a full lane and touched all of it:
+
+| Add | Where | Symptom if you skip it |
+|---|---|---|
+| the decoder | `libhoop/v2/codec/<name>` | nothing to register |
+| a `Protocol` constant | `libhoop/v2/codec/types`, aliased in `inspect/wiretypes.go` | callers spell the protocol as a string literal |
+| the registration seam | `sidecar/codec/<name>`, and its import in `codec/all` | `inspect.New` refuses the protocol, so the lane will not start |
+| a lexer `Dialect` | `lexer/`, selected in `inspect.AnalyzeSQL` | the statement is scanned by Postgres rules: a mis-lexed identifier reads as a different operation |
+| a deny frame | `proxy/deny.go` | a denial closes the socket with no message, and the driver reports a lost connection |
+| an analyzer content builder | `analyzer/content.go` | `ai_analysis` rules on the lane classify nothing; startup refuses the lane rather than let it run silent |
+
+Masking needs no registration: the gate asks the codec for a `Reframer`, so a
+decoder that can rebuild its rows masks, and one that cannot has its
+`mask.rules` refused at startup.
 
 The decoders ship in `github.com/hoophq/libhoop`, a separate private module
 that imports nothing from here. The packages under `sidecar/codec/` are
@@ -887,14 +972,14 @@ the HTTP machinery.
 
 ```go
 import _ "github.com/hoophq/hoop/sidecar/codec/postgres" // postgres only
-import _ "github.com/hoophq/hoop/sidecar/codec/all"      // postgres + mssql + http
+import _ "github.com/hoophq/hoop/sidecar/codec/all"      // postgres + mysql + mssql + http
 ```
 
 ## The Statement
 
 ```go
 type Statement struct {
-    Protocol  Protocol          // postgres | http
+    Protocol  Protocol          // postgres | mysql | mssql | http
     Direction Direction         // client | server
     Text      string            // verbatim SQL, or the request line for HTTP
     Operation Operation         // the most consequential effect, not the leading verb
@@ -972,6 +1057,17 @@ treating it as an identifier everywhere mangles `SELECT tags[1] FROM t`,
 treating it as an operator everywhere loses `[dbo].[customers]`. Only the
 lexical rules differ; the analysis after them is shared.
 
+MySQL diverges in five places, and each one is a statement that would
+otherwise execute unseen rather than a matter of taste:
+
+| Rule | MySQL | Elsewhere | Cost of using the wrong one |
+|---|---|---|---|
+| `` `name` `` | quoted identifier | not a delimiter | ``DELETE FROM `select` `` loses its relation |
+| `#` to end of line | comment | live operator (PostgreSQL spells XOR with it) | `SELECT 1 # DROP TABLE t` reports a drop nobody ran |
+| `--` | needs whitespace after it | opens a comment either way | `SELECT 1--2; DELETE FROM t` hides the delete inside a comment |
+| `\` in `'...'` | an escape, unless `NO_BACKSLASH_ESCAPES` | an ordinary character | `SELECT 'O\'Brien'; DELETE FROM t` swallows the semicolon and the delete |
+| `/* /* */` | does not nest | nests in PostgreSQL and T-SQL | the two engines read opposite halves of the text as live SQL |
+
 Those choices buy this, measured through the real Postgres path:
 
 | statement | before | after |
@@ -1024,8 +1120,10 @@ rules:
     message: this statement cannot be classified, so it is refused
 ```
 
-MSSQL runs the scanner permanently. No credible Go T-SQL parser exists, so
-there is no later version of this where the T-SQL path swaps to a grammar.
+MSSQL and MySQL run the scanner permanently. No credible Go parser exists for
+T-SQL, and none for MySQL's dialect either, so there is no later version of
+this where those paths swap to a grammar. The oracle below judges only the
+PostgreSQL dialect; the other two are held by the unit corpus.
 
 ### Checked against a real parser
 
@@ -1365,9 +1463,12 @@ rather than by consulting a list of protocol names:
   rewrite. Leave it stale and the client reads the old count and stops
   mid-document, which reads as a corrupt upstream rather than a masking bug.
 - **Re-framing**, where every row and column carries its own length prefix.
-  Postgres, whose codec rebuilds each changed `DataRow` around the new values.
-  Substituting bytes there desynchronizes the client, and `psql` reports "lost
-  synchronization with server".
+  Postgres, MySQL and MSSQL, whose codecs rebuild each changed row around the
+  new values. Substituting bytes there desynchronizes the client, and `psql`
+  reports "lost synchronization with server". MySQL's binary rows are the one
+  partial case: a value that is not already a length-encoded string is
+  measured and forwarded unchanged, because a redaction token written over a
+  four-byte integer is a protocol error rather than a mask.
 
 A codec offering neither gets its `mask.rules` refused at startup, because
 accepting a masking config that can never fire is the failure that ends with
@@ -1622,6 +1723,15 @@ Compare MSSQL. TDS 8.0 is TLS-on-connect, so an ordinary
 `DownstreamTlsContext` terminates it with no protocol awareness, and that lane
 needs none of this.
 
+MySQL negotiates in-band too and is still refused this field, because the
+relay does not speak that exchange: the server greets first there, and the
+client asks to encrypt by sending a truncated handshake response rather than a
+self-describing 8-byte packet, so none of the pgwire negotiation applies.
+Something in front must terminate it. The consequence is not silent — the
+codec refuses a session it sees the client upgrade, naming the fix — but the
+deployment is what has to change, so terminate the TLS ahead of the relay and
+the codec is handed plaintext.
+
 ```yaml
 listeners:
   - name: appdb
@@ -1769,6 +1879,16 @@ That covers the root module only (`inspect/`, `lexer/`, `codec/`, `policy/`,
 (cd pii/alcatraz && go test ./...)
 (cd store/sqlite && go test ./...)
 (cd lexer/conformance && go test ./...)   # differential, against PostgreSQL's parser
+```
+
+End to end, against a real server: `make test-sidecar-e2e` at the repo root
+boots a `mysql:8` container and runs the `hoop-inspect` binary as a subprocess
+in front of it. It needs Docker, is behind the `integration` build tag, and is
+not part of `make test-oss`. Running it by hand needs `GOWORK=off`, because
+`e2e/` is deliberately not a `go.work` member:
+
+```bash
+(cd e2e && GOWORK=off go test -tags integration -count=1 ./...)
 ```
 
 Each codec runs a split-read matrix: the tests feed the same message in two

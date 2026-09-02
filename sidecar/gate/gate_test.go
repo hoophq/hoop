@@ -10,10 +10,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/audit"
 	_ "github.com/hoophq/hoop/sidecar/codec/all"
 	"github.com/hoophq/hoop/sidecar/gate"
+	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
 	"github.com/hoophq/hoop/sidecar/session"
 )
@@ -575,6 +575,90 @@ func TestNewRejectsBadConfig(t *testing.T) {
 	}
 }
 
+// A Duplex codec drives BOTH directions from one instance.
+//
+// Found end-to-end against a real MySQL server, not by unit test. MySQL is
+// the first protocol whose server decoding depends on client-side state: the
+// negotiated capabilities, the command in flight, and the SQL behind a
+// prepared-statement id all arrive on the request path. With one codec per
+// direction the server half saw none of it — every reply was attributed to
+// command 0x00, no column was ever named, and masking silently did nothing
+// while continuing to look configured.
+func TestDuplexCodecIsSharedAcrossDirections(t *testing.T) {
+	var built []inspect.Codec
+	g, err := gate.New(newSession(), gate.Config{
+		Protocol: inspect.Postgres,
+		CodecFactory: func() inspect.Codec {
+			c := &duplexCodec{}
+			built = append(built, c)
+			return c
+		},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if len(built) != 1 {
+		t.Fatalf("built %d codecs for a duplex protocol, want 1", len(built))
+	}
+
+	ctx := context.Background()
+	g.Request(ctx, []byte("req"))
+	g.Response(ctx, []byte("resp"))
+
+	c := built[0].(*duplexCodec)
+	if c.client == 0 || c.server == 0 {
+		t.Fatalf("one instance did not see both directions: client=%d server=%d",
+			c.client, c.server)
+	}
+}
+
+// A codec that is NOT Duplex keeps one instance per direction, so their
+// reassembly buffers cannot mix.
+func TestNonDuplexCodecIsPerDirection(t *testing.T) {
+	var built int
+	_, err := gate.New(newSession(), gate.Config{
+		Protocol: inspect.Postgres,
+		CodecFactory: func() inspect.Codec {
+			built++
+			return &plainCodec{}
+		},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if built != 2 {
+		t.Fatalf("built %d codecs for a non-duplex protocol, want 2", built)
+	}
+}
+
+// duplexCodec counts the directions it decodes and declares itself Duplex.
+type duplexCodec struct {
+	mu             sync.Mutex
+	client, server int
+}
+
+func (*duplexCodec) Protocol() inspect.Protocol { return inspect.Postgres }
+func (*duplexCodec) Duplex()                    {}
+
+func (c *duplexCodec) Decode(dir inspect.Direction, data []byte) ([]inspect.Statement, int, error) {
+	// Guarded like the real MySQL codec: both directions share one instance.
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if dir == inspect.FromClient {
+		c.client++
+	} else {
+		c.server++
+	}
+	return nil, len(data), nil
+}
+
+type plainCodec struct{}
+
+func (*plainCodec) Protocol() inspect.Protocol { return inspect.Postgres }
+func (*plainCodec) Decode(_ inspect.Direction, data []byte) ([]inspect.Statement, int, error) {
+	return nil, len(data), nil
+}
+
 // The gate must carry session identity into the policy input, or a Rego rule
 // cannot reference the actor.
 func TestPolicyContextCarriesIdentity(t *testing.T) {
@@ -764,4 +848,86 @@ func TestMaskingStillAppliesWhenHeaderAndBodyArriveTogether(t *testing.T) {
 	if declared != len(body) {
 		t.Errorf("declared %d but body is %d bytes: %q", declared, len(body), d.Payload)
 	}
+}
+
+// The two directions of a Duplex codec run concurrently, so the shared
+// instance must be safe under -race.
+//
+// A reviewer flagged this as an unsynchronized race: the proxy pumps the two
+// directions in separate goroutines (proxy.go handle), and Duplex hands both
+// the same codec. It is safe because the codec guards its own state — but
+// "safe because I read the code" is not evidence, so this drives the real
+// gate from two goroutines the way the proxy does and lets the race detector
+// answer.
+func TestDuplexCodecIsRaceFreeAcrossDirections(t *testing.T) {
+	g, err := gate.New(newSession(), gate.Config{
+		Protocol:     inspect.Postgres,
+		CodecFactory: func() inspect.Codec { return &duplexCodec{} },
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	ctx := context.Background()
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		for range 200 {
+			g.Request(ctx, []byte("req"))
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for range 200 {
+			g.Response(ctx, []byte("resp"))
+			g.FlushResponse()
+		}
+	}()
+	wg.Wait()
+}
+
+// A message too large to reassemble must be DENIED, not forwarded.
+//
+// The gate's honest default for a decode error is to forward and let the
+// upstream's own parser judge. ErrBufferOverflow is not that case: it means
+// one logical message never completed inside the reassembly budget, so the
+// codec produced no statement at all and policy saw nothing. Forwarding the
+// chunks runs the statement unevaluated.
+//
+// MySQL is what makes it reachable. A single logical message is legal up to
+// 16 MiB there, against a default 8 MiB budget, so a destructive statement
+// padded past the limit would pass a lane configured to refuse it.
+func TestBufferOverflowIsDenied(t *testing.T) {
+	g, err := gate.New(newSession(), gate.Config{
+		Protocol:     inspect.Postgres,
+		CodecFactory: func() inspect.Codec { return &neverCompletesCodec{} },
+		MaxBuffer:    1024,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	// Feed past the budget without ever completing a message.
+	var d gate.Decision
+	for range 3 {
+		d = g.Request(context.Background(), make([]byte, 512))
+	}
+
+	if d.Allowed {
+		t.Fatal("a message that never completed was allowed: it reaches the " +
+			"server with policy having seen no statement")
+	}
+	if d.Rule != "stream-unsafe" {
+		t.Errorf("rule = %q, want stream-unsafe", d.Rule)
+	}
+}
+
+// neverCompletesCodec consumes nothing, modelling a logical message larger
+// than the reassembly budget.
+type neverCompletesCodec struct{}
+
+func (*neverCompletesCodec) Protocol() inspect.Protocol { return inspect.Postgres }
+func (*neverCompletesCodec) Decode(inspect.Direction, []byte) ([]inspect.Statement, int, error) {
+	return nil, 0, nil
 }

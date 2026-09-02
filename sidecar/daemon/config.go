@@ -124,7 +124,7 @@ type ListenerConfig struct {
 	// which is a fallback rather than a name anyone should rely on.
 	Name string `json:"name"`
 
-	// Protocol selects the codec: postgres, mssql or http.
+	// Protocol selects the codec: postgres, mysql, mssql or http.
 	Protocol string `json:"protocol"`
 
 	// Listen is the bind address, or a filesystem path when Network is
@@ -146,12 +146,19 @@ type ListenerConfig struct {
 	// Requires cert_file and key_file; the other TLSConfig fields describe an
 	// outbound connection and are ignored here.
 	//
-	// Only `postgres` supports it, and only because pgwire leaves nobody else
-	// able to: its TLS is negotiated in-band with an 8-byte SSLRequest, so a
-	// plain TLS listener in front cannot terminate it. Envoy's own postgres
-	// filter can, but it is contrib-only, marked work-in-progress, and gives
-	// up permanently the moment a client asks for GSS encryption, which is
-	// what psql does by default whenever a Kerberos ticket is present.
+	// Only `postgres` supports it. pgwire negotiates TLS in-band with an
+	// 8-byte SSLRequest, so a plain TLS listener in front cannot terminate
+	// it. Envoy's own postgres filter can, but it is contrib-only, marked
+	// work-in-progress, and gives up permanently the moment a client asks
+	// for GSS encryption, which is what psql does by default whenever a
+	// Kerberos ticket is present.
+	//
+	// MySQL negotiates in-band too and is still refused, because the relay
+	// does not speak that exchange: the server greets first there, and the
+	// client's SSLRequest is a truncated HandshakeResponse41 rather than a
+	// self-describing 8-byte packet, so none of negotiateDownstream applies.
+	// Accepting the field would bind a certificate nothing ever offers and
+	// report the lane healthy.
 	//
 	// Omitting it keeps the documented posture: the relay terminates no
 	// downstream TLS and whatever fronts it owns that leg.

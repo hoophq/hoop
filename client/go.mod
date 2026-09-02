@@ -24,7 +24,7 @@ require (
 	github.com/hoophq/hoop/sidecar/analyzer/vertex v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/sidecar/config/yaml v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/sidecar/pii/alcatraz v0.0.0-00010101000000-000000000000
-	github.com/hoophq/libhoop v0.0.0-20260827130908-d96eb386cba0
+	github.com/hoophq/libhoop v0.0.0-20260902174454-48fcbe3f45c5
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/crypto v0.54.0
 	golang.org/x/mod v0.38.0
