@@ -11,6 +11,7 @@ import (
 func init() {
 	RegisterBuilder(SQLBuilder{Protocol_: inspect.Postgres})
 	RegisterBuilder(SQLBuilder{Protocol_: inspect.MSSQL})
+	RegisterBuilder(SQLBuilder{Protocol_: inspect.MySQL})
 	RegisterBuilder(HTTPBuilder{})
 }
 

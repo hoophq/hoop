@@ -150,7 +150,51 @@ type analyzer struct {
 // Complete=false and a Reason, because a caller on a data path needs a
 // verdict rather than an error to log.
 func Analyze(sql string, d Dialect) Analysis {
-	toks, bad := scan(sql, d)
+	if d == MySQL {
+		return analyzeMySQL(sql)
+	}
+	return analyzeWith(sql, d.rules(), d)
+}
+
+// analyzeMySQL reads the statement under BOTH backslash conventions and
+// merges the results.
+//
+// Whether `\` escapes inside '...' is a per-session setting: it is on by
+// default and off under NO_BACKSLASH_ESCAPES, which any client may set for
+// itself with one statement. The two readings disagree about where a literal
+// ENDS, and therefore about how many statements the payload contains:
+//
+//	SET sql_mode='NO_BACKSLASH_ESCAPES';
+//	SELECT 'a\'; DELETE FROM orders; -- '
+//
+// With escapes on, that is one SELECT whose literal swallows the delete.
+// With them off, the literal ends at the first quote and the DELETE RUNS —
+// verified against MySQL 8.4, where the row count dropped.
+//
+// The classifier cannot know the mode: it is handed a statement and a
+// protocol, not a connection, and the mode can change mid-session. Picking
+// either reading alone is a coin flip that fails open half the time. So both
+// are scanned and their effects and relations UNIONED, which is the
+// pessimistic answer: a statement is refused if EITHER reading finds
+// something a rule refuses.
+//
+// The cost is a possible false denial on a statement that is harmless under
+// the mode actually in force. That is the survivable direction, and it only
+// arises for a literal containing a backslash immediately before a quote —
+// rare outside a deliberate bypass.
+func analyzeMySQL(sql string) Analysis {
+	escaped := MySQL.rules()
+	literal := escaped
+	literal.backslashInPlainString = false
+
+	a := analyzeWith(sql, escaped, MySQL)
+	b := analyzeWith(sql, literal, MySQL)
+	return mergeAnalyses(a, b)
+}
+
+// analyzeWith runs one pass with an explicit rule set.
+func analyzeWith(sql string, rules lexRules, d Dialect) Analysis {
+	toks, bad := scanWith(sql, rules)
 	a := &analyzer{
 		toks:       toks,
 		d:          d,
@@ -160,6 +204,46 @@ func Analyze(sql string, d Dialect) Analysis {
 	}
 	a.walk()
 	return a.result()
+}
+
+// mergeAnalyses unions two readings of the same statement, pessimistically.
+//
+// Verb and completeness come from the PRIMARY reading — the one the server
+// uses unless the session changed its mode. Every effect and relation the
+// alternate reading found is added, because those are what a rule matches
+// on and missing one is a bypass.
+//
+// The alternate's INCOMPLETENESS is deliberately not propagated. That
+// reading is speculative: it exists to reveal statements the primary one
+// would swallow, and it routinely ends mid-literal on input the primary
+// reads cleanly — `SELECT 'a\'; DELETE FROM t; -- '` leaves a dangling
+// quote under the no-escape rules. Treating that as ambiguity would report
+// almost every backslash literal as unreadable and deny it, which is a
+// different failure from the one this guards against and a far more common
+// one. What survives is the DELETE it found, which is the point.
+func mergeAnalyses(primary, alt Analysis) Analysis {
+	out := primary
+
+	for _, e := range alt.Effects {
+		if !slices.Contains(out.Effects, e) {
+			out.Effects = append(out.Effects, e)
+		}
+	}
+
+	for _, r := range alt.Relations {
+		i := slices.IndexFunc(out.Relations, func(x Relation) bool {
+			return x.Name == r.Name
+		})
+		switch {
+		case i < 0:
+			out.Relations = append(out.Relations, r)
+		case r.Access == Write:
+			// Write dominates: a relation read under one reading and
+			// written under the other is written.
+			out.Relations[i].Access = Write
+		}
+	}
+	return out
 }
 
 func (a *analyzer) top() *region { return &a.stack[len(a.stack)-1] }

@@ -10,10 +10,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/audit"
 	_ "github.com/hoophq/hoop/sidecar/codec/all"
 	"github.com/hoophq/hoop/sidecar/gate"
+	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
 	"github.com/hoophq/hoop/sidecar/session"
 )
@@ -573,6 +573,86 @@ func TestNewRejectsBadConfig(t *testing.T) {
 	if _, err := gate.New(newSession(), gate.Config{Protocol: "oracle"}); err == nil {
 		t.Error("unsupported protocol accepted")
 	}
+}
+
+// A Duplex codec drives BOTH directions from one instance.
+//
+// Found end-to-end against a real MySQL server, not by unit test. MySQL is
+// the first protocol whose server decoding depends on client-side state: the
+// negotiated capabilities, the command in flight, and the SQL behind a
+// prepared-statement id all arrive on the request path. With one codec per
+// direction the server half saw none of it — every reply was attributed to
+// command 0x00, no column was ever named, and masking silently did nothing
+// while continuing to look configured.
+func TestDuplexCodecIsSharedAcrossDirections(t *testing.T) {
+	var built []inspect.Codec
+	g, err := gate.New(newSession(), gate.Config{
+		Protocol: inspect.Postgres,
+		CodecFactory: func() inspect.Codec {
+			c := &duplexCodec{}
+			built = append(built, c)
+			return c
+		},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if len(built) != 1 {
+		t.Fatalf("built %d codecs for a duplex protocol, want 1", len(built))
+	}
+
+	ctx := context.Background()
+	g.Request(ctx, []byte("req"))
+	g.Response(ctx, []byte("resp"))
+
+	c := built[0].(*duplexCodec)
+	if c.client == 0 || c.server == 0 {
+		t.Fatalf("one instance did not see both directions: client=%d server=%d",
+			c.client, c.server)
+	}
+}
+
+// A codec that is NOT Duplex keeps one instance per direction, so their
+// reassembly buffers cannot mix.
+func TestNonDuplexCodecIsPerDirection(t *testing.T) {
+	var built int
+	_, err := gate.New(newSession(), gate.Config{
+		Protocol: inspect.Postgres,
+		CodecFactory: func() inspect.Codec {
+			built++
+			return &plainCodec{}
+		},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if built != 2 {
+		t.Fatalf("built %d codecs for a non-duplex protocol, want 2", built)
+	}
+}
+
+// duplexCodec counts the directions it decodes and declares itself Duplex.
+type duplexCodec struct {
+	client, server int
+}
+
+func (*duplexCodec) Protocol() inspect.Protocol { return inspect.Postgres }
+func (*duplexCodec) Duplex()                    {}
+
+func (c *duplexCodec) Decode(dir inspect.Direction, data []byte) ([]inspect.Statement, int, error) {
+	if dir == inspect.FromClient {
+		c.client++
+	} else {
+		c.server++
+	}
+	return nil, len(data), nil
+}
+
+type plainCodec struct{}
+
+func (*plainCodec) Protocol() inspect.Protocol { return inspect.Postgres }
+func (*plainCodec) Decode(_ inspect.Direction, data []byte) ([]inspect.Statement, int, error) {
+	return nil, len(data), nil
 }
 
 // The gate must carry session identity into the policy input, or a Rego rule

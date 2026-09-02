@@ -13,6 +13,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/audit"
@@ -481,6 +482,65 @@ func TestPostgresErrorFrame(t *testing.T) {
 	}
 }
 
+// The byte layout is asserted field by field rather than against a golden
+// blob: a driver rejects the packet outright if the declared length is off by
+// one, and a golden comparison would report "bytes differ" instead of naming
+// which field drifted.
+func TestMySQLErrorFrame(t *testing.T) {
+	frame := proxy.MySQLError("nope")
+
+	// Header: 3-byte little-endian payload length, then the sequence id.
+	declared := int(frame[0]) | int(frame[1])<<8 | int(frame[2])<<16
+	if declared != len(frame)-4 {
+		t.Errorf("declared payload length %d does not match %d bytes of payload", declared, len(frame)-4)
+	}
+	// Sequence 1: the client's command was 0, and a reply numbered anything
+	// else makes the driver report "commands out of sync" and drop the
+	// message unread.
+	if frame[3] != 1 {
+		t.Errorf("sequence id = %d, want 1", frame[3])
+	}
+	if frame[4] != 0xFF {
+		t.Errorf("payload marker = %#x, want 0xFF", frame[4])
+	}
+	// 1142 ER_TABLEACCESS_DENIED_ERROR, not 1045: 1045 is the handshake
+	// failure and pools treat it as bad credentials.
+	if code := binary.LittleEndian.Uint16(frame[5:7]); code != 1142 {
+		t.Errorf("error code = %d, want 1142", code)
+	}
+	// The '#' marker and the SQLSTATE behind it exist only under
+	// CLIENT_PROTOCOL_41, which every driver since MySQL 4.1 negotiates.
+	if frame[7] != '#' {
+		t.Errorf("sqlstate marker = %q, want '#'", frame[7])
+	}
+	if got := string(frame[8:13]); got != "42000" {
+		t.Errorf("sqlstate = %q, want %q", got, "42000")
+	}
+	// The message runs to the end of the packet with no terminator.
+	if got := string(frame[13:]); got != "nope" {
+		t.Errorf("message = %q, want %q", got, "nope")
+	}
+}
+
+// A message long enough to be cut must still be valid UTF-8. Cutting mid-rune
+// puts a broken byte sequence on the wire and the CLI prints a replacement
+// character where the operator's explanation should be.
+func TestMySQLErrorTruncatesOnARuneBoundary(t *testing.T) {
+	frame := proxy.MySQLError(strings.Repeat("é", 4000))
+
+	msg := string(frame[13:])
+	if utf8.RuneCountInString(msg) >= 4000 {
+		t.Fatalf("message was not truncated: %d runes", utf8.RuneCountInString(msg))
+	}
+	if !utf8.ValidString(msg) {
+		t.Error("truncation split a rune and produced invalid UTF-8")
+	}
+	declared := int(frame[0]) | int(frame[1])<<8 | int(frame[2])<<16
+	if declared != len(frame)-4 {
+		t.Errorf("declared payload length %d does not match %d bytes of payload", declared, len(frame)-4)
+	}
+}
+
 func TestHTTPForbiddenFrame(t *testing.T) {
 	frame := string(proxy.HTTPForbidden("nope"))
 
@@ -503,7 +563,7 @@ func TestHTTPForbiddenFrame(t *testing.T) {
 func TestDenyWriterDispatch(t *testing.T) {
 	w := proxy.ProtocolDenyWriter{}
 	for _, proto := range []inspect.Protocol{
-		inspect.Postgres, inspect.HTTP,
+		inspect.Postgres, inspect.MySQL, inspect.HTTP,
 	} {
 		if len(w.Deny(proto, inspect.FromClient, "x")) == 0 {
 			t.Errorf("%s produced no deny frame", proto)

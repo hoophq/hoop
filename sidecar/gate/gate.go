@@ -78,6 +78,30 @@ type Reframer interface {
 	Flush(mask func(column string, value []byte) []byte) []byte
 }
 
+// Duplex marks a codec whose two directions decode against ONE shared state.
+//
+// Most codecs are per-direction: a Postgres request decoder needs nothing the
+// response decoder knows, so giving each direction its own instance keeps
+// their reassembly buffers apart and costs nothing.
+//
+// MySQL is not like that, and the difference is not cosmetic. What a server
+// packet MEANS depends on state that only ever appears on the client side:
+// the capability flags latched from the handshake response decide whether a
+// result set ends with EOF or OK, the command in flight decides whether a
+// leading 0x00 opens an OK packet or a column count, and a COM_STMT_EXECUTE
+// carries an id whose SQL text arrived in an earlier COM_STMT_PREPARE.
+//
+// Split across two instances, each one sees half a conversation: the server
+// decoder reports every reply against command 0x00, never learns the
+// negotiated capabilities, and cannot name the columns a masking rule
+// matches — so masking silently does nothing. That failure is invisible from
+// the outside, which is why this is an interface the gate honours rather
+// than a convention a codec is trusted to document.
+type Duplex interface {
+	// Duplex reports that both directions must share one codec instance.
+	Duplex()
+}
+
 // Config assembles a Gate.
 type Config struct {
 	// Protocol selects the codec. Required.
@@ -201,6 +225,12 @@ type Gate struct {
 // New creates two inspectors, one per direction: a codec reassembles messages
 // across reads, and interleaving both halves of a duplex stream into one
 // reassembly buffer would corrupt both.
+//
+// A codec implementing Duplex is the exception. It gets ONE instance driving
+// both inspectors, because its two directions are not independent — see
+// Duplex. The reassembly buffers still do not mix: those live on the
+// Inspector, one per direction, and only the codec's protocol state is
+// shared.
 func New(sess *session.Session, cfg Config) (*Gate, error) {
 	if sess == nil {
 		return nil, errors.New("sidecar/gate: nil session")
@@ -212,9 +242,13 @@ func New(sess *session.Session, cfg Config) (*Gate, error) {
 		return nil, errors.New("sidecar/gate: no protocol configured")
 	}
 
-	newInspector := func() (*inspect.Inspector, error) {
+	newCodec := func() (inspect.Codec, error) {
 		if cfg.CodecFactory == nil {
-			return inspect.New(cfg.Protocol)
+			insp, err := inspect.New(cfg.Protocol)
+			if err != nil {
+				return nil, err
+			}
+			return insp.Codec(), nil
 		}
 		c := cfg.CodecFactory()
 		if c == nil {
@@ -224,17 +258,22 @@ func New(sess *session.Session, cfg Config) (*Gate, error) {
 			return nil, fmt.Errorf("sidecar/gate: CodecFactory returned a %q codec for a %q lane",
 				got, cfg.Protocol)
 		}
-		return inspect.NewWithCodec(c), nil
+		return c, nil
 	}
 
-	client, err := newInspector()
+	clientCodec, err := newCodec()
 	if err != nil {
 		return nil, fmt.Errorf("sidecar/gate: %w", err)
 	}
-	server, err := newInspector()
-	if err != nil {
-		return nil, fmt.Errorf("sidecar/gate: %w", err)
+	serverCodec := clientCodec
+	if _, duplex := clientCodec.(Duplex); !duplex {
+		if serverCodec, err = newCodec(); err != nil {
+			return nil, fmt.Errorf("sidecar/gate: %w", err)
+		}
 	}
+
+	client := inspect.NewWithCodec(clientCodec)
+	server := inspect.NewWithCodec(serverCodec)
 	if cfg.MaxBuffer > 0 {
 		client.SetMaxBuffer(cfg.MaxBuffer)
 		server.SetMaxBuffer(cfg.MaxBuffer)

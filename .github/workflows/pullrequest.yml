@@ -297,3 +297,47 @@ jobs:
 
       - name: Standalone Single-Binary E2E
         run: make test-standalone-e2e
+
+  sidecar-e2e:
+    name: Sidecar E2E Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # The only job that puts a real database behind a real sidecar: it boots
+      # mysql:8 and runs the shipped hoop-inspect binary as a subprocess in
+      # front of it. The unit suites exercise the codec in isolation and that
+      # is not enough — two DEP-170 bugs, masking silently applying nothing and
+      # an intermittent client hang during caching_sha2_password auth, passed
+      # every unit test and only reproduced against a real server. That is what
+      # this job costs its minutes for. The sidecar links the private
+      # github.com/hoophq/libhoop module, so the build needs credentials for
+      # it. No Rust or Java toolchain: this job does not run generate-wasm and
+      # does not touch the MSSQL JDBC fixtures.
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.work
+          # This is a go.work workspace with no root go.mod, so setup-go
+          # cannot find a manifest on its own and silently caches nothing.
+          cache-dependency-path: "**/go.sum"
+
+      # libhoop is a private module fetched from the proxy. GOPRIVATE keeps it
+      # off proxy.golang.org and sum.golang.org; the credential rewrite lets
+      # the direct fetch authenticate as the token.
+      - name: Authenticate private modules
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
+
+      # testcontainers-go manages container lifecycle itself via the Docker
+      # daemon. ubuntu-latest runners have Docker pre-installed and running,
+      # so no services: block is required. See:
+      # https://golang.testcontainers.org/system_requirements/
+      - name: Sidecar E2E Test
+        run: make test-sidecar-e2e
