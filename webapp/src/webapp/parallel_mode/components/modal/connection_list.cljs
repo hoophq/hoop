@@ -77,19 +77,22 @@
                         (when (= (:name connection) host-name) host-label))
             ;; Selected roles are rendered from app-db, not from the fetched
             ;; page, so they stay reachable while a search hides them and while
-            ;; the user pages past them.
+            ;; the user pages past them. One scroll for the whole list: nesting
+            ;; a second one inside this group read badly.
             rows (filterv #(not (contains? selected-names (:name %)))
                           @valid-connections)]
         [:<>
          (when (seq selected)
            [:> CommandGroup {:heading (str "Selected (" (count selected) ")")
-                             :class "space-y-2 max-h-52 overflow-y-auto"}
+                             :class "space-y-2"}
             (doall
              (for [connection selected]
                ^{:key (str "selected-" (:name connection))}
                [connection-item connection true (label-for connection)]))])
 
-         [:> CommandGroup (cond-> {:class "space-y-2 mb-12"}
+         ;; mb-16 clears the absolutely positioned footer (py-3 + a size-2
+         ;; button + the top border is 57px; mb-12 left the last row clipped).
+         [:> CommandGroup (cond-> {:class "space-y-2 mb-16"}
                             (seq selected) (assoc :heading "All resource roles"))
           [infinite-scroll
            {:on-load-more (fn []

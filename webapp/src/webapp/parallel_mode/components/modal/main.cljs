@@ -27,9 +27,12 @@
                               (rf/dispatch [:parallel-mode/open-modal @source])
                               (rf/dispatch [:parallel-mode/cancel-selection])))
           :title "Parallel Mode"
-          :max-width "max-w-[640px]"
+          :max-width "max-w-[720px]"
           :height "auto"
-          :class-name "h-[480px]"
+          ;; Taller than the other pickers: this one lists the selection and the
+          ;; results at the same time. 10vh top + 78vh box leaves 12vh below.
+          :offset-top "pt-[10vh]"
+          :class-name "h-[78vh] min-h-[480px] max-h-[820px]"
           ;; The gateway does the matching. cmdk's own filter is a fuzzy
           ;; subsequence scorer and only sees the page already fetched. EVL-243.
           :should-filter? false
