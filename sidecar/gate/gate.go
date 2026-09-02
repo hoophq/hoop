@@ -32,8 +32,8 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/audit"
+	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
 	"github.com/hoophq/hoop/sidecar/session"
 )

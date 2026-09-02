@@ -80,6 +80,18 @@ which has neither Docker nor the minutes for a container boot — and has its
 own CI job instead. `e2e/` is outside `go.work`, so it only builds under
 `GOWORK=off`; the make target sets that for you. See the gotcha below.
 
+`SIDECAR_E2E_GOWORK` overrides the workspace the harness builds
+`hoop-inspect` against. Unset — which is what CI does, and what you want —
+the binary resolves through the repository's own `go.work` and therefore the
+PUBLISHED libhoop pin, which is the thing under test. Point it at a
+workspace with a local `use` directive to run the suite against an unmerged
+codec before it lands:
+
+    SIDECAR_E2E_GOWORK=/path/to/dev/go.work make test-sidecar-e2e
+
+It is not in `.env.sample`: that file configures the gateway at runtime, and
+this is a test-only override read by one harness.
+
 ```bash
 # root module (inspect/, lexer/, codec/, policy/, gate/, proxy/, daemon/, ...)
 go test ./...

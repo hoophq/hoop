@@ -633,6 +633,7 @@ func TestNonDuplexCodecIsPerDirection(t *testing.T) {
 
 // duplexCodec counts the directions it decodes and declares itself Duplex.
 type duplexCodec struct {
+	mu             sync.Mutex
 	client, server int
 }
 
@@ -640,6 +641,9 @@ func (*duplexCodec) Protocol() inspect.Protocol { return inspect.Postgres }
 func (*duplexCodec) Duplex()                    {}
 
 func (c *duplexCodec) Decode(dir inspect.Direction, data []byte) ([]inspect.Statement, int, error) {
+	// Guarded like the real MySQL codec: both directions share one instance.
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if dir == inspect.FromClient {
 		c.client++
 	} else {
@@ -844,4 +848,41 @@ func TestMaskingStillAppliesWhenHeaderAndBodyArriveTogether(t *testing.T) {
 	if declared != len(body) {
 		t.Errorf("declared %d but body is %d bytes: %q", declared, len(body), d.Payload)
 	}
+}
+
+// The two directions of a Duplex codec run concurrently, so the shared
+// instance must be safe under -race.
+//
+// A reviewer flagged this as an unsynchronized race: the proxy pumps the two
+// directions in separate goroutines (proxy.go handle), and Duplex hands both
+// the same codec. It is safe because the codec guards its own state — but
+// "safe because I read the code" is not evidence, so this drives the real
+// gate from two goroutines the way the proxy does and lets the race detector
+// answer.
+func TestDuplexCodecIsRaceFreeAcrossDirections(t *testing.T) {
+	g, err := gate.New(newSession(), gate.Config{
+		Protocol:     inspect.Postgres,
+		CodecFactory: func() inspect.Codec { return &duplexCodec{} },
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	ctx := context.Background()
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		for range 200 {
+			g.Request(ctx, []byte("req"))
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for range 200 {
+			g.Response(ctx, []byte("resp"))
+			g.FlushResponse()
+		}
+	}()
+	wg.Wait()
 }

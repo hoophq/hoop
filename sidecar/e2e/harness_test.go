@@ -72,7 +72,15 @@ func startMySQL(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("start mysql: %v", err)
 	}
-	t.Cleanup(func() { _ = testcontainers.TerminateContainer(c) })
+	t.Cleanup(func() {
+		// Reported, not discarded: a container this suite failed to remove
+		// stays on the runner holding a port, and the next job to want that
+		// port fails somewhere unrelated. t.Errorf rather than Fatalf —
+		// the test itself already finished, and its verdict should stand.
+		if err := testcontainers.TerminateContainer(c); err != nil {
+			t.Errorf("leaked mysql container: %v", err)
+		}
+	})
 
 	host, err := c.Host(ctx)
 	if err != nil {
@@ -238,8 +246,17 @@ func startSidecar(t *testing.T, upstream, config string) *sidecar {
 
 	t.Cleanup(func() {
 		cancel()
-		_ = cmd.Wait()
+		err := cmd.Wait()
 		<-done
+
+		// cancel() kills the process, so a "signal: killed" style error is
+		// the expected shutdown and says nothing. Anything else means the
+		// relay exited on its own before the test finished with it —
+		// a panic or a config refusal — which would otherwise surface only
+		// as a confusing connection error in whichever test ran next.
+		if err != nil && ctx.Err() == nil {
+			t.Errorf("sidecar exited before teardown: %v", err)
+		}
 	})
 
 	waitForListener(t, listen)

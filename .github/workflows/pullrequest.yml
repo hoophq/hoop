@@ -301,7 +301,13 @@ jobs:
   sidecar-e2e:
     name: Sidecar E2E Test
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 25, against the suite's own 10m `go test -timeout`. The gap is
+    # deliberate headroom: module download, building hoop-inspect, pulling
+    # mysql:8 and tearing containers down all happen inside the job budget
+    # but outside Go's. Too small a gap and a slow runner is cancelled by
+    # the workflow before Go can name the test that hung and print its
+    # stack — that diagnostic is the whole point of the suite.
+    timeout-minutes: 25
 
     steps:
       - name: Checkout
