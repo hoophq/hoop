@@ -25,6 +25,16 @@ var (
 		}
 		return auditor
 	}()
+
+	// GroupApprover is the control plane's second role: it reviews and
+	// administers nothing.
+	GroupApprover = func() string {
+		approver := os.Getenv("APPROVER_USERNAME")
+		if approver == "" {
+			return "approver"
+		}
+		return approver
+	}()
 )
 
 const (

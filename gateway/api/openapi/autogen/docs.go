@@ -18735,10 +18735,11 @@ const docTemplate = `{
                     "example": ""
                 },
                 "role": {
-                    "description": "Permission related to the user\n* admin - Has super privileges and has access to any resource in the system\n* standard - Grant access to standard routes.\n* unregistered - Grant access to unregistered routes. It's a transient state where the user is authenticated but is not registered.\nThis state is only available for multi tenant environments",
+                    "description": "Permission related to the user\n* admin - Has super privileges and has access to any resource in the system\n* approver - Grant access to review routes. Control plane only.\n* standard - Grant access to standard routes.\n* unregistered - Grant access to unregistered routes. It's a transient state where the user is authenticated but is not registered.\nThis state is only available for multi tenant environments",
                     "type": "string",
                     "enum": [
                         "admin",
+                        "approver",
                         "standard",
                         "unregistered"
                     ],
@@ -18876,10 +18877,11 @@ const docTemplate = `{
                     "example": ""
                 },
                 "role": {
-                    "description": "Permission related to the user\n* admin - Has super privileges and has access to any resource in the system\n* standard - Grant access to standard routes.\n* unregistered - Grant access to unregistered routes. It's a transient state where the user is authenticated but is not registered.\nThis state is only available for multi tenant environments",
+                    "description": "Permission related to the user\n* admin - Has super privileges and has access to any resource in the system\n* approver - Grant access to review routes. Control plane only.\n* standard - Grant access to standard routes.\n* unregistered - Grant access to unregistered routes. It's a transient state where the user is authenticated but is not registered.\nThis state is only available for multi tenant environments",
                     "type": "string",
                     "enum": [
                         "admin",
+                        "approver",
                         "standard",
                         "unregistered"
                     ],

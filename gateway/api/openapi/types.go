@@ -51,6 +51,8 @@ const (
 	RoleAdminType RoleType = "admin"
 	// RoleAuditorType grants read-only access to all routes
 	RoleAuditorType RoleType = "auditor"
+	// RoleApproverType grants access to reviews and nothing else. Control plane only.
+	RoleApproverType RoleType = "approver"
 	// RoleStandardType will grant access to standard routes
 	RoleStandardType RoleType = "standard"
 	// RoleUnregisteredType will grant access to unregistered routes only
@@ -71,10 +73,11 @@ type User struct {
 	Verified bool `json:"verified" readonly:"true"`
 	// Permission related to the user
 	// * admin - Has super privileges and has access to any resource in the system
+	// * approver - Grant access to review routes. Control plane only.
 	// * standard - Grant access to standard routes.
 	// * unregistered - Grant access to unregistered routes. It's a transient state where the user is authenticated but is not registered.
 	// This state is only available for multi tenant environments
-	Role string `json:"role" enums:"admin,standard,unregistered" readonly:"true" example:"standard"`
+	Role string `json:"role" enums:"admin,approver,standard,unregistered" readonly:"true" example:"standard"`
 	// The identifier of slack to send messages to users
 	SlackID string `json:"slack_id" example:"U053ELZHB53"`
 	// The profile picture url to display

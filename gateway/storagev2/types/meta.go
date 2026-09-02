@@ -35,8 +35,9 @@ func (c *APIContext) GetLicenseType() string {
 	return l.Payload.Type
 }
 
-func (c *APIContext) IsAdminUser() bool   { return pb.IsInList(GroupAdmin, c.UserGroups) }
-func (c *APIContext) IsAuditorUser() bool { return pb.IsInList(GroupAuditor, c.UserGroups) }
+func (c *APIContext) IsAdminUser() bool    { return pb.IsInList(GroupAdmin, c.UserGroups) }
+func (c *APIContext) IsAuditorUser() bool  { return pb.IsInList(GroupAuditor, c.UserGroups) }
+func (c *APIContext) IsApproverUser() bool { return pb.IsInList(GroupApprover, c.UserGroups) }
 func (c *APIContext) IsAuditorOrAdminUser() bool {
 	if c.IsAdminUser() || c.IsAuditorUser() {
 		return true

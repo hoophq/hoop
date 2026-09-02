@@ -69,6 +69,42 @@ func TestIsGroupAllowed(t *testing.T) {
 			routeRoles: []openapi.RoleType{openapi.RoleAdminType, openapi.RoleAuditorType},
 			want:       false,
 		},
+		{
+			msg:        "it should allow approver on admin-and-approver routes",
+			groups:     []string{types.GroupApprover},
+			routeRoles: []openapi.RoleType{openapi.RoleAdminType, openapi.RoleApproverType},
+			want:       true,
+		},
+		{
+			msg:        "it should allow approver on read-only routes",
+			groups:     []string{types.GroupApprover},
+			routeRoles: []openapi.RoleType{openapi.RoleStandardType, openapi.RoleAuditorType, openapi.RoleApproverType},
+			want:       true,
+		},
+		{
+			msg:        "it should deny approver on admin-only routes",
+			groups:     []string{types.GroupApprover},
+			routeRoles: []openapi.RoleType{openapi.RoleAdminType},
+			want:       false,
+		},
+		{
+			msg:        "it should deny approver on standard routes with no roles",
+			groups:     []string{types.GroupApprover},
+			routeRoles: []openapi.RoleType{},
+			want:       false,
+		},
+		{
+			msg:        "it should allow an auditor and approver user on an approver route",
+			groups:     []string{types.GroupAuditor, types.GroupApprover},
+			routeRoles: []openapi.RoleType{openapi.RoleApproverType},
+			want:       true,
+		},
+		{
+			msg:        "it should allow an auditor and approver user on an auditor route",
+			groups:     []string{types.GroupAuditor, types.GroupApprover},
+			routeRoles: []openapi.RoleType{openapi.RoleAuditorType},
+			want:       true,
+		},
 	} {
 		t.Run(tt.msg, func(t *testing.T) {
 			got := isGroupAllowed(tt.groups, tt.routeRoles...)
