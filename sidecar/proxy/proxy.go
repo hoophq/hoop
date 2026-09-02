@@ -29,9 +29,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/audit"
 	"github.com/hoophq/hoop/sidecar/gate"
+	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
 	"github.com/hoophq/hoop/sidecar/session"
 )
@@ -48,6 +48,13 @@ import (
 type DenyWriter interface {
 	// Deny renders message for the given protocol and direction.
 	Deny(proto inspect.Protocol, dir inspect.Direction, message string) []byte
+}
+
+// statementDenyWriter renders protocols whose native error must be correlated
+// with the denied request. Kept optional so existing DenyWriter implementations
+// remain source-compatible.
+type statementDenyWriter interface {
+	DenyStatement(statement inspect.Statement, message string) []byte
 }
 
 // Config configures a Server.
@@ -562,7 +569,16 @@ func (s *Server) pump(
 					if dir == inspect.FromClient {
 						target = src // the client is the source of a request
 					}
-					if frame := s.cfg.DenyWriter.Deny(s.cfg.Protocol, dir, d.Message); len(frame) > 0 {
+					var frame []byte
+					if d.DeniedStatement != nil {
+						if writer, ok := s.cfg.DenyWriter.(statementDenyWriter); ok {
+							frame = writer.DenyStatement(*d.DeniedStatement, d.Message)
+						}
+					}
+					if len(frame) == 0 {
+						frame = s.cfg.DenyWriter.Deny(s.cfg.Protocol, dir, d.Message)
+					}
+					if len(frame) > 0 {
 						_ = target.SetWriteDeadline(time.Now().Add(5 * time.Second))
 						_, _ = target.Write(frame)
 					}

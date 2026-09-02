@@ -3,6 +3,8 @@ package analyzer
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"sort"
 	"strings"
 
 	"github.com/hoophq/hoop/sidecar/inspect"
@@ -12,6 +14,7 @@ func init() {
 	RegisterBuilder(SQLBuilder{Protocol_: inspect.Postgres})
 	RegisterBuilder(SQLBuilder{Protocol_: inspect.MSSQL})
 	RegisterBuilder(SQLBuilder{Protocol_: inspect.MySQL})
+	RegisterBuilder(MongoDBBuilder{})
 	RegisterBuilder(HTTPBuilder{})
 }
 
@@ -123,6 +126,121 @@ func stripSQLLiterals(s string) string {
 		}
 	}
 	return out.String()
+}
+
+// MongoDBBuilder renders a MongoDB command for classification.
+type MongoDBBuilder struct{}
+
+// Protocol implements Builder.
+func (MongoDBBuilder) Protocol() inspect.Protocol { return inspect.MongoDB }
+
+// Build prefixes Extended JSON with the command facts the wire codec derived.
+func (MongoDBBuilder) Build(stmt inspect.Statement, maxBytes int) (Content, bool) {
+	text := strings.TrimSpace(stmt.Text)
+	if text == "" {
+		return Content{}, false
+	}
+
+	var sb strings.Builder
+	sb.WriteString("Protocol: mongodb")
+	if command := stmt.Metadata["mongodb.command"]; command != "" {
+		sb.WriteString("\nCommand: ")
+		sb.WriteString(command)
+	}
+	sb.WriteString("\nOperation: ")
+	sb.WriteString(string(stmt.Operation))
+	if len(stmt.Tables) > 0 {
+		sb.WriteString("\nCollections: ")
+		sb.WriteString(strings.Join(stmt.Tables, ", "))
+	}
+	if stmt.Database != "" {
+		sb.WriteString("\nDatabase: ")
+		sb.WriteString(stmt.Database)
+	}
+	sb.WriteString("\n\n")
+	sb.WriteString(Truncate(text, maxBytes))
+
+	return Content{
+		Text:     sb.String(),
+		CacheKey: mongodbCacheKey(stmt),
+	}, true
+}
+
+// mongodbCacheKey hashes command structure rather than values. Two find
+// commands that differ only in a filter literal need one model call, while
+// different field names, commands and collections remain distinct.
+func mongodbCacheKey(stmt inspect.Statement) string {
+	h := sha256.New()
+	h.Write([]byte(stmt.Protocol))
+	h.Write([]byte{0})
+	h.Write([]byte(stmt.Metadata["mongodb.command"]))
+	h.Write([]byte{0})
+	h.Write([]byte(stmt.Operation))
+	h.Write([]byte{0})
+	h.Write([]byte(stmt.Database))
+	for _, table := range stmt.Tables {
+		h.Write([]byte{0})
+		h.Write([]byte(table))
+	}
+	h.Write([]byte{0})
+	h.Write([]byte(mongodbShape(stmt.Text)))
+	return hex.EncodeToString(h.Sum(nil)[:16])
+}
+
+func mongodbShape(text string) string {
+	decoder := json.NewDecoder(strings.NewReader(text))
+	decoder.UseNumber()
+	var value any
+	if err := decoder.Decode(&value); err != nil {
+		return normalizeSpace(text)
+	}
+	shaped := mongodbShapeValue(value)
+	encoded, err := json.Marshal(shaped)
+	if err != nil {
+		return normalizeSpace(text)
+	}
+	return string(encoded)
+}
+
+func mongodbShapeValue(value any) any {
+	switch value := value.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(value))
+		for key, item := range value {
+			out[key] = mongodbShapeValue(item)
+		}
+		return out
+	case []any:
+		// Array length does not change command structure. Keep each distinct
+		// element shape once so insertMany batches of different sizes share a
+		// verdict without hiding fields present in only one document.
+		unique := make(map[string]any, len(value))
+		for _, item := range value {
+			shape := mongodbShapeValue(item)
+			encoded, _ := json.Marshal(shape)
+			unique[string(encoded)] = shape
+		}
+		keys := make([]string, 0, len(unique))
+		for key := range unique {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		out := make([]any, 0, len(keys))
+		for _, key := range keys {
+			out = append(out, unique[key])
+		}
+		return out
+	case string:
+		return "$string"
+	case json.Number:
+		return "$number"
+	case bool:
+		return "$bool"
+	case nil:
+		return nil
+	default:
+		return "$value"
+	}
 }
 
 // HTTPBuilder renders an HTTP request for classification.

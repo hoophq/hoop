@@ -210,6 +210,9 @@ func TestDeniedStatementBlocksAndRecordsViolation(t *testing.T) {
 	if d.Rule != "no-destructive" {
 		t.Errorf("Rule = %q", d.Rule)
 	}
+	if d.DeniedStatement == nil || d.DeniedStatement.Text != "DROP TABLE customers" {
+		t.Errorf("DeniedStatement = %#v; want the statement that triggered policy", d.DeniedStatement)
+	}
 
 	ev := sink.find(audit.KindViolation)
 	if ev == nil {
@@ -650,6 +653,39 @@ func (c *duplexCodec) Decode(dir inspect.Direction, data []byte) ([]inspect.Stat
 		c.server++
 	}
 	return nil, len(data), nil
+}
+
+type activatingCodec struct {
+	enabled bool
+}
+
+func (*activatingCodec) Protocol() inspect.Protocol { return inspect.MongoDB }
+func (*activatingCodec) Duplex()                    {}
+func (c *activatingCodec) EnableRewrite()           { c.enabled = true }
+func (*activatingCodec) Decode(_ inspect.Direction, data []byte) ([]inspect.Statement, int, error) {
+	return nil, len(data), nil
+}
+func (*activatingCodec) Rewrite(
+	data []byte,
+	_ func(string, []byte) []byte,
+) ([]byte, inspect.ReframeResult, error) {
+	return data, inspect.ReframeResult{}, nil
+}
+func (*activatingCodec) Flush(func(string, []byte) []byte) []byte { return nil }
+
+func TestGateEnablesStatefulRewriteBeforeTraffic(t *testing.T) {
+	codec := &activatingCodec{}
+	_, err := gate.New(newSession(), gate.Config{
+		Protocol:     inspect.MongoDB,
+		Masker:       stubMasker{find: "secret", replace: "[REDACTED]"},
+		CodecFactory: func() inspect.Codec { return codec },
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if !codec.enabled {
+		t.Fatal("stateful response rewrite was not enabled during Gate construction")
+	}
 }
 
 type plainCodec struct{}

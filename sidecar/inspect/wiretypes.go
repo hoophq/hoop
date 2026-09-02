@@ -39,6 +39,7 @@ const (
 	Postgres = codectypes.Postgres
 	MSSQL    = codectypes.MSSQL
 	MySQL    = codectypes.MySQL
+	MongoDB  = codectypes.MongoDB
 	HTTP     = codectypes.HTTP
 
 	FromClient = codectypes.FromClient

@@ -940,6 +940,7 @@ gaps named above are the narrow ones; Envoy is not blind here.
 |---|---|---|---|
 | `postgres` | `Query` ('Q'), `Parse` ('P'); handshake skipped | `RowDescription` ('T'), `DataRow` ('D'), and the three terminators that end a result set | yes |
 | `mysql` | `COM_QUERY` (0x03), `COM_STMT_PREPARE` (0x16) and the prepared-statement commands (0x17, 0x19, 0x1a, 0x1c); handshake read for the negotiated capabilities, not skipped | column definitions and both row encodings, text and binary, for masking; the terminator that ends a result set | yes |
+| `mongodb` | `OP_MSG` commands and the legacy `OP_QUERY` hello; document-sequence sections are reassembled into the command | cursor `firstBatch`/`nextBatch`, `findAndModify.value`, distinct values and inline map-reduce results for masking | yes |
 | `mssql` | `SQLBatch` (0x01) and `RPCRequest` (0x03), reassembled across packets; login forwarded untouched | `COLMETADATA` (0x81), `ROW` (0xD1), `NBCROW` (0xD2) for masking; login replies scanned for a routing redirect | yes |
 | `http` | HTTP/1.x requests | HTTP/1.x responses | no |
 
@@ -1018,6 +1019,50 @@ other column is measured so the walk stays aligned and forwarded unchanged. A
 number carrying a secret is a real gap, and the honest one: the alternative is
 a protocol error the user reads as an outage.
 
+### MongoDB, correlated commands and topology
+
+MongoDB multiplexes requests on one socket. A response names the request it
+answers through `responseTo`, so one codec instance sees both directions and
+keeps the command against its request id. That state tells the response path
+whether a BSON array is a cursor batch, a distinct result or ordinary command
+metadata. A policy denial uses the same request id in a native OP_MSG command
+error (`code: 13`, `Unauthorized`); without it the driver discards the reply as
+unrelated and reports a lost connection instead of the operator's message.
+Correlation is bounded to 1,024 outstanding requests and 32 MiB of retained
+command metadata per connection. Exceeding either limit closes the session
+fail-closed instead of turning pipelining into unbounded relay memory.
+
+Modern drivers send commands as `OP_MSG`. Bulk inserts, updates and deletes
+carry their documents in kind-1 document-sequence sections rather than the body
+document, so the codec joins those sections before classification and audit.
+`explain` is unwrapped to the command it can execute, and `applyOps` is expanded
+into each embedded mutation so a delete or drop rule cannot be bypassed.
+`OP_QUERY`/`OP_REPLY` hello remains supported because current servers still
+permit that one removed opcode; every other legacy write opcode is refused.
+SCRAM and heartbeat commands are parsed for framing and correlation but never
+written into statement audit records.
+
+MongoDB responses are BSON, so changing a string requires rebuilding the BSON
+document and the enclosing 16-byte message header. If OP_MSG carries a CRC-32C
+checksum, the codec recomputes it over the rebuilt message. Masking walks string
+values in cursor `firstBatch` and `nextBatch`, `findAndModify.value`, distinct
+values and inline map-reduce results. A column rule matches the BSON field name,
+including nested fields. Nulls, numbers, ObjectIDs, dates, binary values and
+every other typed BSON value remain unchanged; replacing one with a redaction
+string would silently change the application's data model.
+
+`OP_COMPRESSED`, unknown OP_MSG flags and removed write opcodes return
+`ErrStreamUnsafe`. Forwarding any of them would run commands or return values
+the relay cannot inspect. Disable MongoDB compressors in the client rather than
+allowing the lane to go dark.
+
+Clients must use `directConnection=true`, or a topology whose advertised member
+addresses route back through the sidecar. A replica-set client is expected to
+follow the `hosts` and `primary` addresses from the server's hello response;
+when those addresses point at MongoDB directly, the next socket bypasses this
+relay. The sidecar cannot infer or rewrite its externally reachable address, so
+the connection option is part of this deployment contract.
+
 ### MSSQL, and the Kerberos login
 
 TDS gives the SSPI exchange its own packet type, and that fact alone lets
@@ -1084,19 +1129,17 @@ A worked deployment, with Envoy terminating TDS 8.0, a Kerberos client and an
 AD domain controller, lives in
 [`deploy/docker-compose/envoy-stack/mssql`](../deploy/docker-compose/envoy-stack/mssql).
 
-No MongoDB codec is shipped. Adding a protocol is **not** the one-package
-change this section used to claim: the `Codec` interface and the SQL
-classifier are protocol-agnostic, but everything a lane needs around the
-decoder is keyed by protocol and each piece fails quietly on its own. MySQL
-was added as a full lane and touched all of it:
+Adding another protocol is **not** a one-package change. The `Codec` interface
+and policy vocabulary are protocol-agnostic, but everything a lane needs around
+the decoder is keyed by protocol and each omitted piece fails differently:
 
 | Add | Where | Symptom if you skip it |
 |---|---|---|
 | the decoder | `libhoop/v2/codec/<name>` | nothing to register |
 | a `Protocol` constant | `libhoop/v2/codec/types`, aliased in `inspect/wiretypes.go` | callers spell the protocol as a string literal |
 | the registration seam | `sidecar/codec/<name>`, and its import in `codec/all` | `inspect.New` refuses the protocol, so the lane will not start |
-| a lexer `Dialect` | `lexer/`, selected in `inspect.AnalyzeSQL` | the statement is scanned by Postgres rules: a mis-lexed identifier reads as a different operation |
-| a deny frame | `proxy/deny.go` | a denial closes the socket with no message, and the driver reports a lost connection |
+| classification | a SQL `lexer.Dialect` selected by `inspect.AnalyzeSQL`, or the wire codec's native command classifier | operations and relations stay `unknown` |
+| a deny frame | `proxy/deny.go`; include request correlation when the protocol requires it | a denial closes the socket with no useful message |
 | an analyzer content builder | `analyzer/content.go` | `ai_analysis` rules on the lane classify nothing; startup refuses the lane rather than let it run silent |
 
 Masking needs no registration: the gate asks the codec for a `Reframer`, so a
@@ -1104,24 +1147,23 @@ decoder that can rebuild its rows masks, and one that cannot has its
 `mask.rules` refused at startup.
 
 The decoders ship in `github.com/hoophq/libhoop`, a separate private module
-that imports nothing from here. The packages under `sidecar/codec/` are
-the seam: they register each decoder through `Register` and hand it the SQL
-classifier. Import those, not libhoop directly. Import only what you
-need: a listener that speaks Postgres imports `codec/postgres` and never links
-the HTTP machinery.
+that imports nothing from here. The packages under `sidecar/codec/` are the
+seam: they register each decoder and attach any classifier the codec cannot own.
+Import those, not libhoop directly. Import only what you need: a listener that
+speaks Postgres imports `codec/postgres` and never links the other protocols.
 
 ```go
 import _ "github.com/hoophq/hoop/sidecar/codec/postgres" // postgres only
-import _ "github.com/hoophq/hoop/sidecar/codec/all"      // postgres + mysql + mssql + http
+import _ "github.com/hoophq/hoop/sidecar/codec/all"      // every shipped protocol
 ```
 
 ## The Statement
 
 ```go
 type Statement struct {
-    Protocol  Protocol          // postgres | mysql | mssql | http
+    Protocol  Protocol          // postgres | mysql | mongodb | mssql | http
     Direction Direction         // client | server
-    Text      string            // verbatim SQL, or the request line for HTTP
+    Text      string            // SQL, MongoDB Extended JSON, or an HTTP request line
     Operation Operation         // the most consequential effect, not the leading verb
     Effects   []Operation       // every operation performed anywhere in the statement
     Relations []Relation        // {name, access}, write dominating read
@@ -1133,10 +1175,15 @@ type Statement struct {
 }
 ```
 
-`Result` is what makes a response-side SQL rule possible: `SELECT *` does not
-name the column it returned, so "this query came back with a column named ssn"
-is a question no request-side rule can answer. It carries the column names and
-a row count, never the rows.
+`Result` is what makes a response-side database rule possible: `SELECT *` or a
+MongoDB `find` request does not name every field it returns, so "this result
+contained a column named ssn" is a question no request-side rule can answer. It
+carries field or column names and a row count, never the values.
+
+MongoDB fills `Operation`, `Effects` and `Relations` directly from the command
+document. `Text` is deterministic Extended JSON with every document-sequence
+section restored, so a bulk write is audited and analyzed as the complete
+command the server executes rather than only its small body section.
 
 For SQL one scan of the statement text fills four fields, and they are not
 four views of the same fact:
