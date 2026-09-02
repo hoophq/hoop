@@ -57,6 +57,10 @@ func Post(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
+	if err := validateSidecarAssignment(ctx.OrgID, req.SidecarID, req.Type, req.SubType); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
+	}
 	existingConn, err := models.GetConnectionByNameOrID(ctx, req.Name)
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching existing connection: %v", err)
@@ -87,6 +91,7 @@ func Post(c *gin.Context) {
 		OrgID:                   ctx.OrgID,
 		ResourceName:            req.ResourceName,
 		AgentID:                 sql.NullString{String: req.AgentId, Valid: true},
+		SidecarID:               nullStringFromPtr(req.SidecarID),
 		Name:                    req.Name,
 		Command:                 req.Command,
 		Type:                    req.Type,
@@ -175,6 +180,16 @@ func Put(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
+	if err := validateSidecarAssignment(ctx.OrgID, req.SidecarID, req.Type, req.SubType); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
+	}
+	// Absent means "leave as is": a client that does not know about sidecars
+	// must not clear the assignment on every save.
+	sidecarID := conn.SidecarID
+	if req.SidecarID != nil {
+		sidecarID = nullStringFromPtr(req.SidecarID)
+	}
 	setConnectionDefaults(&req)
 
 	// immutable fields
@@ -208,6 +223,7 @@ func Put(c *gin.Context) {
 		OrgID:                   conn.OrgID,
 		ResourceName:            req.ResourceName,
 		AgentID:                 sql.NullString{String: req.AgentId, Valid: true},
+		SidecarID:               sidecarID,
 		Name:                    conn.Name,
 		Command:                 req.Command,
 		Type:                    req.Type,
@@ -327,6 +343,14 @@ func Patch(c *gin.Context) {
 	}
 	if req.AgentId != nil {
 		conn.AgentID = sql.NullString{String: *req.AgentId, Valid: *req.AgentId != ""}
+	}
+	if req.SidecarID != nil {
+		// Validated against the patched type, not the stored one.
+		if err := validateSidecarAssignment(ctx.OrgID, req.SidecarID, conn.Type, conn.SubType.String); err != nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+			return
+		}
+		conn.SidecarID = nullStringFromPtr(req.SidecarID)
 	}
 	if req.Reviewers != nil {
 		conn.Reviewers = *req.Reviewers
@@ -721,6 +745,7 @@ func ToOpenApi(conn *models.Connection, hideRoleInfo bool) openapi.Connection {
 		Secrets:                 publicEnvs,
 		DefaultDatabase:         string(defaultDB),
 		AgentId:                 conn.AgentID.String,
+		SidecarID:               sidecarIDPtr(conn.SidecarID),
 		Status:                  conn.Status,
 		Reviewers:               conn.Reviewers,
 		RedactEnabled:           conn.RedactEnabled,

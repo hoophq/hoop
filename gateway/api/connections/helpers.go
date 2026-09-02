@@ -1,6 +1,7 @@
 package apiconnections
 
 import (
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -14,6 +15,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
@@ -702,4 +704,41 @@ func getConnectionCommandOverride(currentConnectionType pb.ConnectionType, conne
 func upsertConnectionAttributes(ctx *storagev2.Context, connectionName string, attributeNames []string) error {
 	orgID := uuid.MustParse(ctx.OrgID)
 	return models.UpsertConnectionAttributes(models.DB, orgID, connectionName, attributeNames)
+}
+
+// sidecarIDPtr maps the nullable column onto the optional API field: nil when
+// the connection is not assigned to a sidecar.
+func sidecarIDPtr(v sql.NullString) *string {
+	if !v.Valid || v.String == "" {
+		return nil
+	}
+	s := v.String
+	return &s
+}
+
+// nullStringFromPtr treats a nil or empty pointer as "no value".
+func nullStringFromPtr(v *string) sql.NullString {
+	if v == nil || *v == "" {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: *v, Valid: true}
+}
+
+// validateSidecarAssignment refuses an assignment the sidecar could never
+// serve, so the operator finds out here instead of when the sidecar fetches
+// its configuration. A nil or empty value is not an assignment.
+func validateSidecarAssignment(orgID string, sidecarID *string, connType, subType string) error {
+	if sidecarID == nil || *sidecarID == "" {
+		return nil
+	}
+	if _, err := services.SidecarProtocol(connType, subType); err != nil {
+		return err
+	}
+	if _, err := models.GetSidecarByNameOrID(models.DB, orgID, *sidecarID); err != nil {
+		if errors.Is(err, models.ErrNotFound) {
+			return fmt.Errorf("sidecar %q not found", *sidecarID)
+		}
+		return err
+	}
+	return nil
 }

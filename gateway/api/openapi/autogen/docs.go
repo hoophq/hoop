@@ -9861,6 +9861,266 @@ const docTemplate = `{
                 }
             }
         },
+        "/sidecars": {
+            "get": {
+                "description": "List all sidecars for the organization",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sidecars"
+                ],
+                "summary": "List Sidecars",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/openapi.SidecarResponse"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Register a sidecar. The token is returned only once in this response and cannot be recovered.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sidecars"
+                ],
+                "summary": "Create Sidecar",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SidecarRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SidecarCreateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/sidecars/configuration": {
+            "get": {
+                "description": "Authenticated with the hoop-sidecar-token header. Returns the configuration the sidecar must serve, built from the connections assigned to it.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sidecars"
+                ],
+                "summary": "Sidecar Configuration",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/sidecars/handshake": {
+            "post": {
+                "description": "Authenticated with the hoop-sidecar-token header. Records the reported version and returns the configuration the sidecar must serve.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sidecars"
+                ],
+                "summary": "Sidecar Handshake",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SidecarHandshakeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/sidecars/{nameOrID}": {
+            "get": {
+                "description": "Get a sidecar by name or ID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sidecars"
+                ],
+                "summary": "Get Sidecar",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the sidecar",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SidecarResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Delete a sidecar. The token stops working immediately and the connections assigned to it are unassigned.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sidecars"
+                ],
+                "summary": "Delete Sidecar",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the sidecar",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/signup": {
             "post": {
                 "description": "Signup anonymous authenticated user. This endpoint is only used for multi tenant setups.",
@@ -12371,6 +12631,12 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": "2025-01-15T10:30:00Z"
                 },
+                "sidecar_id": {
+                    "description": "The sidecar that fronts this connection. Only \"postgres\", \"mssql\" and\n\"httpproxy\" connections may be assigned to one. Absent leaves the\ncurrent assignment untouched, an empty string unassigns it.",
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "1837453e-01fc-46f3-9e4c-dcf22d395393"
+                },
                 "status": {
                     "description": "Status is a read only field that informs if the connection is available for interaction\n* online - The agent is connected and alive\n* offline - The agent is not connected",
                     "type": "string",
@@ -12828,6 +13094,12 @@ const docTemplate = `{
                     "description": "Secrets are environment variables that are going to be exposed\nin the runtime of the connection:\n* { envvar:[env-key]: [base64-val] } - Expose the value as environment variable\n* { filesystem:[env-key]: [base64-val] } - Expose the value as a temporary file path creating the value in the filesystem\n\nThe value could also represent an integration with a external provider:\n* { envvar:[env-key]: _aws:[secret-name]:[secret-key] } - Obtain the value dynamically in the AWS secrets manager and expose as environment variable\n* { envvar:[env-key]: _envjson:[json-env-name]:[json-env-key] } - Obtain the value dynamically from a JSON env in the agent runtime. Example: MYENV={\"KEY\": \"val\"}",
                     "type": "object",
                     "additionalProperties": {}
+                },
+                "sidecar_id": {
+                    "description": "The sidecar that fronts this connection. Only \"postgres\", \"mssql\" and\n\"httpproxy\" connections may be assigned to one. An empty string unassigns it.",
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "1837453e-01fc-46f3-9e4c-dcf22d395393"
                 },
                 "subtype": {
                     "description": "Sub Type is the underline implementation of the connection:\n* postgres - Implements Postgres protocol\n* mysql - Implements MySQL protocol\n* mongodb - Implements MongoDB Wire Protocol\n* mssql - Implements Microsoft SQL Server Protocol\n* oracledb - Implements Oracle Database Protocol\n* tcp - Forwards a TCP connection\n* ssh - Forwards a SSH connection\n* httpproxy - Forwards a HTTP connection\n* dynamodb - AWS DynamoDB experimental integration\n* cloudwatch - AWS CloudWatch experimental integration",
@@ -18613,6 +18885,135 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.SidecarCreateResponse": {
+            "type": "object",
+            "properties": {
+                "connections": {
+                    "description": "Names of the connections this sidecar fronts",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "pg-prod"
+                    ]
+                },
+                "created_at": {
+                    "description": "Creation timestamp",
+                    "type": "string"
+                },
+                "created_by": {
+                    "description": "Subject of the admin who created it",
+                    "type": "string"
+                },
+                "id": {
+                    "description": "Unique identifier",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true
+                },
+                "last_seen_at": {
+                    "description": "Last time this gateway process saw the sidecar. Same lifetime as Version.",
+                    "type": "string"
+                },
+                "name": {
+                    "description": "Human-readable name",
+                    "type": "string",
+                    "example": "payments-sidecar"
+                },
+                "org_id": {
+                    "description": "Organization ID",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true
+                },
+                "token": {
+                    "description": "The generated token, sent in the hoop-sidecar-token header. This is the\nonly time it is shown; it is stored hashed and cannot be recovered.",
+                    "type": "string",
+                    "example": "hsc_Ab3fX9kL..."
+                },
+                "version": {
+                    "description": "Version reported at the last handshake. Held in gateway memory, not\nstored, so it is empty until the sidecar calls and again after a\ngateway restart.",
+                    "type": "string",
+                    "example": "1.0.0"
+                }
+            }
+        },
+        "openapi.SidecarHandshakeRequest": {
+            "type": "object",
+            "required": [
+                "version"
+            ],
+            "properties": {
+                "version": {
+                    "description": "Version of the sidecar binary",
+                    "type": "string",
+                    "example": "1.0.0"
+                }
+            }
+        },
+        "openapi.SidecarRequest": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "name": {
+                    "description": "Unique name of the resource",
+                    "type": "string",
+                    "example": "payments-sidecar"
+                }
+            }
+        },
+        "openapi.SidecarResponse": {
+            "type": "object",
+            "properties": {
+                "connections": {
+                    "description": "Names of the connections this sidecar fronts",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "pg-prod"
+                    ]
+                },
+                "created_at": {
+                    "description": "Creation timestamp",
+                    "type": "string"
+                },
+                "created_by": {
+                    "description": "Subject of the admin who created it",
+                    "type": "string"
+                },
+                "id": {
+                    "description": "Unique identifier",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true
+                },
+                "last_seen_at": {
+                    "description": "Last time this gateway process saw the sidecar. Same lifetime as Version.",
+                    "type": "string"
+                },
+                "name": {
+                    "description": "Human-readable name",
+                    "type": "string",
+                    "example": "payments-sidecar"
+                },
+                "org_id": {
+                    "description": "Organization ID",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true
+                },
+                "version": {
+                    "description": "Version reported at the last handshake. Held in gateway memory, not\nstored, so it is empty until the sidecar calls and again after a\ngateway restart.",
+                    "type": "string",
+                    "example": "1.0.0"
+                }
+            }
+        },
         "openapi.SignupRequest": {
             "type": "object",
             "required": [
@@ -19165,6 +19566,9 @@ const docTemplate = `{
         },
         {
             "name": "Agents"
+        },
+        {
+            "name": "Sidecars"
         },
         {
             "name": "Runbooks"
