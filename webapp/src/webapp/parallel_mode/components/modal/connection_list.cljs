@@ -2,7 +2,9 @@
   (:require
    ["cmdk" :refer [CommandGroup CommandItem]]
    ["@radix-ui/themes" :refer [Badge Checkbox Flex Text]]
+   ["lucide-react" :refer [ChevronRight]]
    [clojure.string :as cs]
+   [reagent.core :as r]
    [re-frame.core :as rf]
    [webapp.connections.constants :as connection-constants]
    [webapp.components.infinite-scroll :refer [infinite-scroll]]
@@ -47,6 +49,26 @@
       :tabIndex -1
       :aria-hidden "true"}]]])
 
+(defn- section-heading
+  "Disclosure for one section of the list. Rendered as a sibling of the
+   CommandGroup, not through cmdk's :heading prop: cmdk puts that heading in an
+   aria-hidden div, which would hide this control from screen readers and leave
+   a focusable element inside aria-hidden. role=presentation on the wrapper
+   mirrors what cmdk does for its own group divs, since the parent is a listbox."
+  [{:keys [label expanded? on-toggle class]}]
+  [:div {:role "presentation" :class class}
+   [:button
+    {:type "button"
+     :aria-expanded (if expanded? "true" "false")
+     :on-click on-toggle
+     :class (str "flex items-center gap-1 w-full px-1 py-1 mb-2 rounded "
+                 "text-xs text-gray-11 hover:text-gray-12 hover:bg-gray-2 "
+                 "transition-colors cursor-pointer")}
+    [:> ChevronRight {:size 14
+                      :aria-hidden "true"
+                      :class (str "transition-transform " (when expanded? "rotate-90"))}]
+    label]])
+
 (defn- empty-state
   "`all-selected?` means the page did come back with roles and every one of them
    is already sitting in the Selected group above."
@@ -62,7 +84,10 @@
         selected-connections (rf/subscribe [:parallel-mode/selected-connections])
         host-connection (rf/subscribe [:parallel-mode/host-connection])
         source (rf/subscribe [:parallel-mode/source])
-        connections-pagination (rf/subscribe [:connections->pagination])]
+        connections-pagination (rf/subscribe [:connections->pagination])
+        ;; View state only, and only while the dialog is mounted - command-dialog
+        ;; keys the tree on :open?, so both sections reopen on every open.
+        expanded (r/atom {:selected true :all true})]
     (fn []
       ;; :loading is a boolean, not a keyword. The old (= :loading ...) never
       ;; matched, so nothing guarded the next-page request.
@@ -77,42 +102,57 @@
                         (when (= (:name connection) host-name) host-label))
             ;; Selected roles are rendered from app-db, not from the fetched
             ;; page, so they stay reachable while a search hides them and while
-            ;; the user pages past them. One scroll for the whole list: nesting
-            ;; a second one inside this group read badly.
+            ;; the user pages past them.
             rows (filterv #(not (contains? selected-names (:name %)))
-                          @valid-connections)]
-        [:<>
-         (when (seq selected)
-           [:> CommandGroup {:heading (str "Selected (" (count selected) ")")
-                             :class "space-y-2"}
+                          @valid-connections)
+            ;; One section means nothing to collapse against, so no disclosures.
+            two-sections? (boolean (seq selected))
+            selected-open? (:selected @expanded)
+            all-open? (or (not two-sections?) (:all @expanded))]
+        ;; One scroll for the whole thing - collapsing a section is what makes
+        ;; room, not a nested scrollbar. mb-16 clears the absolutely positioned
+        ;; footer (py-3 + a size-2 button + the top border is 57px); it sits on
+        ;; the wrapper, not on a group, so it survives either section closing.
+        [:div {:role "presentation" :class "mb-16"}
+         (when two-sections?
+           [section-heading {:label (str "Selected (" (count selected) ")")
+                             :expanded? selected-open?
+                             :on-toggle #(swap! expanded update :selected not)}])
+
+         (when (and two-sections? selected-open?)
+           [:> CommandGroup {:class "space-y-2"}
             (doall
              (for [connection selected]
                ^{:key (str "selected-" (:name connection))}
                [connection-item connection true (label-for connection)]))])
 
-         ;; mb-16 clears the absolutely positioned footer (py-3 + a size-2
-         ;; button + the top border is 57px; mb-12 left the last row clipped).
-         [:> CommandGroup (cond-> {:class "space-y-2 mb-16"}
-                            (seq selected) (assoc :heading "All resource roles"))
-          [infinite-scroll
-           {:on-load-more (fn []
-                            (when (not connections-loading?)
-                              (let [current-page (:current-page @connections-pagination 1)
-                                    next-page (inc current-page)
-                                    next-request (cond-> {:page next-page
-                                                          :force-refresh? false}
-                                                   searching? (assoc :search active-search))]
-                                (rf/dispatch [:connections/get-connections-paginated next-request]))))
-            :has-more? (:has-more? @connections-pagination)
-            :loading? connections-loading?}
+         (when two-sections?
+           [section-heading {:label "All resource roles"
+                             :expanded? all-open?
+                             :on-toggle #(swap! expanded update :all not)
+                             :class "mt-3"}])
 
-           ;; has-more? guards the flash: with an empty page and more to fetch,
-           ;; infinite-scroll is already loading the next one.
-           (if (and (empty? rows)
-                    (not connections-loading?)
-                    (not (:has-more? @connections-pagination)))
-             [empty-state active-search (seq @valid-connections)]
-             (doall
-              (for [connection rows]
-                ^{:key (:name connection)}
-                [connection-item connection false (label-for connection)])))]]]))))
+         (when all-open?
+           [:> CommandGroup {:class "space-y-2"}
+            [infinite-scroll
+             {:on-load-more (fn []
+                              (when (not connections-loading?)
+                                (let [current-page (:current-page @connections-pagination 1)
+                                      next-page (inc current-page)
+                                      next-request (cond-> {:page next-page
+                                                            :force-refresh? false}
+                                                     searching? (assoc :search active-search))]
+                                  (rf/dispatch [:connections/get-connections-paginated next-request]))))
+              :has-more? (:has-more? @connections-pagination)
+              :loading? connections-loading?}
+
+             ;; has-more? guards the flash: with an empty page and more to fetch,
+             ;; infinite-scroll is already loading the next one.
+             (if (and (empty? rows)
+                      (not connections-loading?)
+                      (not (:has-more? @connections-pagination)))
+               [empty-state active-search (seq @valid-connections)]
+               (doall
+                (for [connection rows]
+                  ^{:key (:name connection)}
+                  [connection-item connection false (label-for connection)])))]])]))))
