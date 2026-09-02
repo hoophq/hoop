@@ -494,13 +494,13 @@ func (api *Api) buildControlPlaneRoutes(r *apiroutes.Router) {
 	// session reviews these two routes list (see ADR-0009). Approving belongs
 	// with that entity, not with a nil-guard on this one.
 	r.GET("/reviews",
-		apiroutes.ReadOnlyAccessRole,
+		apiroutes.AdminAndApproverAccessRole,
 		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventFetchReviews),
 		reviewHandler.List,
 	)
 	r.GET("/reviews/:id",
-		apiroutes.ReadOnlyAccessRole,
+		apiroutes.AdminAndApproverAccessRole,
 		r.AuthMiddleware,
 		api.TrackRequest(analytics.EventFetchReviews),
 		reviewHandler.GetByIdOrSid,

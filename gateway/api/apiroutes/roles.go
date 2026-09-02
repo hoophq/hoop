@@ -19,12 +19,6 @@ func rolesFromContext(c *gin.Context) []openapi.RoleType {
 	return roles
 }
 
-// privilegedRoles maps a reserved group name to the route role it satisfies.
-var privilegedRoles = map[string]openapi.RoleType{
-	types.GroupAuditor:  openapi.RoleAuditorType,
-	types.GroupApprover: openapi.RoleApproverType,
-}
-
 // isGroupAllowed validates if the groups of a user is allowed to access a route
 func isGroupAllowed(userGroups []string, roleNames ...openapi.RoleType) (valid bool) {
 	if slices.Contains(userGroups, types.GroupAdmin) {
@@ -32,21 +26,20 @@ func isGroupAllowed(userGroups []string, roleNames ...openapi.RoleType) (valid b
 		return true
 	}
 
-	// A user in both auditor and approver must pass a route naming either.
-	var isPrivileged bool
-	for _, groupName := range userGroups {
-		role, ok := privilegedRoles[groupName]
-		if !ok {
-			continue
-		}
-		isPrivileged = true
-		if slices.Contains(roleNames, role) {
-			return true
-		}
+	// Additive: a gateway org may already have a group named approver.
+	if slices.Contains(userGroups, types.GroupApprover) &&
+		slices.Contains(roleNames, openapi.RoleApproverType) {
+		return true
 	}
-	// A privileged group does not also inherit standard access.
-	if isPrivileged {
-		return false
+
+	// it performs validation of route based roles
+	// in case the group exists it must match against a route role
+	for _, groupName := range userGroups {
+		switch groupName {
+		case types.GroupAuditor:
+			// auditor can access only assigned route roles
+			return slices.Contains(roleNames, openapi.RoleAuditorType)
+		}
 	}
 
 	// this condition matches against a privileged access
@@ -75,12 +68,11 @@ func AdminAndApproverAccessRole(c *gin.Context) {
 	c.Next()
 }
 
-// ReadOnlyAccessRole allows standard, admin, auditor and approver roles to access it
+// ReadOnlyAccessRole allows standard, admin and auditor roles to access it
 func ReadOnlyAccessRole(c *gin.Context) {
 	c.Set(roleContextKey, []openapi.RoleType{
 		openapi.RoleStandardType,
 		openapi.RoleAuditorType,
-		openapi.RoleApproverType,
 	})
 	c.Next()
 }

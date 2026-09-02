@@ -16,7 +16,6 @@ import (
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
-	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/events"
 	"github.com/hoophq/hoop/gateway/models"
 	slackservice "github.com/hoophq/hoop/gateway/slack"
@@ -401,18 +400,10 @@ func doIndividualReview(ctx *storagev2.Context, rev *models.Review, connection *
 		reviewsCountNeeded = min(reviewsCountNeeded, *connection.MinReviewApprovals)
 	}
 
-	// Otherwise an org whose only user is its admin raises reviews nobody can resolve.
-	adminApproves := appconfig.Get().IsControlPlane() && ctx.IsAdmin()
-
 	var isEligibleReviewer bool
 	for i, r := range rev.ReviewGroups {
 		// if it contains any group name, it's eligible
-		eligible := slices.Contains(ctx.UserGroups, r.GroupName)
-		// An admin stands in for one pending group, not for all of them.
-		if !eligible && adminApproves && !isEligibleReviewer && r.Status == models.ReviewStatusPending {
-			eligible = true
-		}
-		if eligible {
+		if slices.Contains(ctx.UserGroups, r.GroupName) {
 			isEligibleReviewer = true
 
 			rev.ReviewGroups[i].Status = status

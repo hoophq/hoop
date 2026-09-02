@@ -78,7 +78,7 @@ func TestIsGroupAllowed(t *testing.T) {
 		{
 			msg:        "it should allow approver on read-only routes",
 			groups:     []string{types.GroupApprover},
-			routeRoles: []openapi.RoleType{openapi.RoleStandardType, openapi.RoleAuditorType, openapi.RoleApproverType},
+			routeRoles: []openapi.RoleType{openapi.RoleStandardType, openapi.RoleAuditorType},
 			want:       true,
 		},
 		{
@@ -88,9 +88,21 @@ func TestIsGroupAllowed(t *testing.T) {
 			want:       false,
 		},
 		{
-			msg:        "it should deny approver on standard routes with no roles",
+			msg:        "it should keep standard access for an approver on a route with no roles",
 			groups:     []string{types.GroupApprover},
 			routeRoles: []openapi.RoleType{},
+			want:       true,
+		},
+		{
+			msg:        "it should keep standard access for an approver on a standard route",
+			groups:     []string{types.GroupApprover},
+			routeRoles: []openapi.RoleType{openapi.RoleStandardType},
+			want:       true,
+		},
+		{
+			msg:        "it should deny an auditor and approver user on admin-only routes",
+			groups:     []string{types.GroupAuditor, types.GroupApprover},
+			routeRoles: []openapi.RoleType{openapi.RoleAdminType},
 			want:       false,
 		},
 		{
