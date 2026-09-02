@@ -4,6 +4,7 @@ import { useUIStore } from '@/stores/useUIStore';
 import Sidebar from './Sidebar';
 import AppHeader from './Header';
 import LicenseBanner from './LicenseBanner';
+import ModeBanner from './ModeBanner';
 import { SkipLink } from './SkipLink';
 
 const HEADER_HEIGHT = 56;
@@ -91,6 +92,7 @@ function Layout({ children }) {
         </AppShell.Navbar>
 
         <AppShell.Main id="main-content" tabIndex={-1}>
+          <ModeBanner />
           <LicenseBanner />
           {children}
         </AppShell.Main>

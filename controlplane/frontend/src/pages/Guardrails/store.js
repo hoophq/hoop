@@ -1,6 +1,5 @@
 import { create } from 'zustand'
 import { guardrailsService } from '@/services/guardrails'
-import { attributesService } from '@/services/attributes'
 
 export const useGuardrailsStore = create((set) => ({
   list: [],
@@ -8,9 +7,6 @@ export const useGuardrailsStore = create((set) => ({
 
   active: null,
   activeStatus: 'idle',
-
-  attributes: [],
-  attributesStatus: 'idle',
 
   submitting: false,
 
@@ -35,17 +31,6 @@ export const useGuardrailsStore = create((set) => ({
   },
 
   clearActive: () => set({ active: null, activeStatus: 'idle' }),
-
-  fetchAttributes: async () => {
-    set({ attributesStatus: 'loading' })
-    try {
-      // /attributes returns a wrapper: { data: [...] }.
-      const { data } = await attributesService.list()
-      set({ attributes: data?.data ?? [], attributesStatus: 'success' })
-    } catch {
-      set({ attributesStatus: 'error' })
-    }
-  },
 
   createGuardrail: async (payload) => {
     set({ submitting: true })

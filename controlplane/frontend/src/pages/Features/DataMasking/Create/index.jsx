@@ -47,7 +47,6 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
 
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
 
-  const attributes = useDataMaskingStore((s) => s.attributes)
   const submitting = useDataMaskingStore((s) => s.submitting)
   const createRule = useDataMaskingStore((s) => s.createRule)
   const updateRule = useDataMaskingStore((s) => s.updateRule)
@@ -63,6 +62,8 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
     // slips past the page-level error gate.
     scoreThreshold: !isEdit && !rule ? 85 : scoreToPercent(rule?.score_threshold),
     connectionIds: rule?.connection_ids ?? [],
+    // Carried through untouched: the control plane has no attribute editor,
+    // and omitting the field would clear what a gateway operator set.
     attributes: rule?.attributes ?? [],
   }))
   const [rules, setRules] = useState(() =>
@@ -109,11 +110,6 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
       })
     }
   }
-
-  const attributeOptions = attributes.map((a) => ({
-    value: a.name,
-    label: a.name,
-  }))
 
   return (
     <Stack gap={0}>
@@ -231,21 +227,6 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
           />
         </SectionRow>
 
-        <SectionRow
-          title="Attribute configuration"
-          description="Select which Attributes to apply this configuration."
-        >
-          <MultiSelect
-            label="Attributes"
-            placeholder="Select attributes..."
-            data={attributeOptions}
-            value={form.attributes}
-            onChange={(values) => setField({ attributes: values })}
-            searchable
-            clearable
-          />
-        </SectionRow>
-
         <Stack gap="md">
           <Title order={4} fw={500}>
             Output rules
@@ -309,14 +290,12 @@ export default function DataMaskingForm() {
   const activeStatus = useDataMaskingStore((s) => s.activeStatus)
   const fetchActive = useDataMaskingStore((s) => s.fetchActive)
   const clearActive = useDataMaskingStore((s) => s.clearActive)
-  const fetchAttributes = useDataMaskingStore((s) => s.fetchAttributes)
 
   // ConnectionsMultiSelect loads/paginates its own options, so no connections fetch here.
   useEffect(() => {
-    fetchAttributes()
     if (isEdit) fetchActive(id)
     return () => clearActive()
-  }, [isEdit, id, fetchAttributes, fetchActive, clearActive])
+  }, [isEdit, id, fetchActive, clearActive])
 
   if (isEdit && (activeStatus === 'loading' || activeStatus === 'idle')) {
     return <PageLoader h={400} />

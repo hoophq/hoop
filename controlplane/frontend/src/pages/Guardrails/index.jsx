@@ -19,18 +19,12 @@ import GuardrailsPromotion from './components/GuardrailsPromotion'
 const FREE_LICENSE_LIMIT_MESSAGE =
   'Your organization has reached Guardrails free usage limits. Upgrade to Enterprise to keep your sensitive data protected.'
 
-function uniqueSorted(values) {
-  return [...new Set(values)].sort((a, b) => a.localeCompare(b))
-}
-
 export default function Guardrails() {
   const navigate = useNavigate()
 
   const list = useGuardrailsStore((s) => s.list)
   const listStatus = useGuardrailsStore((s) => s.listStatus)
-  const attributes = useGuardrailsStore((s) => s.attributes)
   const fetchList = useGuardrailsStore((s) => s.fetchList)
-  const fetchAttributes = useGuardrailsStore((s) => s.fetchAttributes)
 
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
   // A DLP provider (gcp or mspresidio) is required to enforce guardrails;
@@ -38,19 +32,12 @@ export default function Guardrails() {
   const hasRedactCredentials = useUserStore((s) => s.hasRedactCredentials)
 
   const [selectedRole, setSelectedRole] = useState(null)
-  const [selectedAttribute, setSelectedAttribute] = useState(null)
 
   const roleFilter = usePaginatedConnections({ pageSize: 50 })
 
   useEffect(() => {
     fetchList()
-    fetchAttributes()
-  }, [fetchList, fetchAttributes])
-
-  const attributeFilterValues = useMemo(
-    () => uniqueSorted(attributes.map((a) => a.name)),
-    [attributes],
-  )
+  }, [fetchList])
 
   const filteredGuardrails = useMemo(() => {
     let guardrails = list
@@ -59,18 +46,13 @@ export default function Guardrails() {
         (guardrail.connection_ids ?? []).includes(selectedRole.value),
       )
     }
-    if (selectedAttribute) {
-      guardrails = guardrails.filter((guardrail) =>
-        (guardrail.attributes ?? []).includes(selectedAttribute),
-      )
-    }
     return guardrails
-  }, [list, selectedRole, selectedAttribute])
+  }, [list, selectedRole])
 
   const atFreeLimit = isFreeLicense && list.length >= 1
   const loading = listStatus === 'loading'
   const showLoader = useMinDelay(loading && list.length === 0, 500)
-  const activeFilterCount = (selectedRole ? 1 : 0) + (selectedAttribute ? 1 : 0)
+  const activeFilterCount = selectedRole ? 1 : 0
 
   const goCreate = () => navigate('/guardrails/new')
 
@@ -135,14 +117,6 @@ export default function Guardrails() {
           searchValue={roleFilter.searchValue}
           onSearchChange={roleFilter.setSearch}
           onOpen={roleFilter.ensureLoaded}
-        />
-        <ValueFilter
-          icon={ListVideo}
-          label="Attribute"
-          values={attributeFilterValues}
-          selected={selectedAttribute}
-          onSelect={setSelectedAttribute}
-          onClear={() => setSelectedAttribute(null)}
         />
       </Group>
 
