@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"strconv"
 	"strings"
@@ -38,6 +39,11 @@ const (
 // ErrSidecarNoConnections reports a sidecar nothing is assigned to. A config
 // with no listeners is a silent outage, not an empty success.
 var ErrSidecarNoConnections = errors.New("no connections are assigned to this sidecar")
+
+// ErrSidecarLookup wraps a database failure. The caller answers 422 for an
+// operator mistake and 500 for this: a sidecar that retries a 422 never
+// recovers, and the driver text must not reach it.
+var ErrSidecarLookup = errors.New("failed loading sidecar configuration")
 
 // SidecarProtocol maps a hoop connection type/subtype onto a sidecar codec.
 // It returns an error naming the connection type when no codec speaks it.
@@ -84,7 +90,7 @@ type dataMaskingRule struct {
 func BuildSidecarConfig(db *gorm.DB, orgID, sidecarID string) (*daemon.Config, error) {
 	conns, err := models.ListConnectionsBySidecarID(db, orgID, sidecarID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", ErrSidecarLookup, err)
 	}
 	if len(conns) == 0 {
 		return nil, ErrSidecarNoConnections
@@ -100,7 +106,7 @@ func BuildSidecarConfig(db *gorm.DB, orgID, sidecarID string) (*daemon.Config, e
 		}
 		rules, err := GetGuardRailRulesForConnection(orgID, conn.Name)
 		if err != nil {
-			return nil, fmt.Errorf("failed fetching guardrail rules for connection %q: %w", conn.Name, err)
+			return nil, fmt.Errorf("%w: guardrail rules for connection %q: %v", ErrSidecarLookup, conn.Name, err)
 		}
 		if rules != nil {
 			item.guardRailInputRules = json.RawMessage(rules.GuardRailInputRules)
@@ -108,7 +114,7 @@ func BuildSidecarConfig(db *gorm.DB, orgID, sidecarID string) (*daemon.Config, e
 		}
 		maskRules, err := GetDataMaskingRulesForConnection(orgID, conn.Name)
 		if err != nil {
-			return nil, fmt.Errorf("failed fetching data masking rules for connection %q: %w", conn.Name, err)
+			return nil, fmt.Errorf("%w: data masking rules for connection %q: %v", ErrSidecarLookup, conn.Name, err)
 		}
 		item.dataMaskingRules = maskRules
 		items = append(items, item)
@@ -206,12 +212,15 @@ func buildConfig(conns []sidecarConnection) (*daemon.Config, error) {
 // downstream needs reconfiguring.
 func sidecarUpstream(conn sidecarConnection, protocol string) (upstream, port string, err error) {
 	if protocol == string(inspect.HTTP) {
-		remoteURL := decodeEnv(conn.envs, "REMOTE_URL")
+		remoteURL, err := decodeEnv(conn.envs, "REMOTE_URL")
+		if err != nil {
+			return "", "", fmt.Errorf("connection %q has an unreadable REMOTE_URL: %v", conn.name, err)
+		}
 		if remoteURL == "" {
 			return "", "", fmt.Errorf("connection %q has no REMOTE_URL configured", conn.name)
 		}
 		u, err := url.Parse(remoteURL)
-		if err != nil || u.Host == "" {
+		if err != nil || u.Hostname() == "" {
 			return "", "", fmt.Errorf("connection %q has an invalid REMOTE_URL configured", conn.name)
 		}
 		port = u.Port()
@@ -221,35 +230,70 @@ func sidecarUpstream(conn sidecarConnection, protocol string) (upstream, port st
 				port = "443"
 			}
 		}
-		return u.Hostname() + ":" + port, port, nil
+		if !isValidPort(port) {
+			return "", "", fmt.Errorf("connection %q has an invalid port in REMOTE_URL", conn.name)
+		}
+		host := u.Hostname()
+		if strings.Contains(host, ":") {
+			host = "[" + host + "]" // IPv6 literal
+		}
+		return host + ":" + port, port, nil
 	}
 
-	host := decodeEnv(conn.envs, "HOST")
+	host, err := decodeEnv(conn.envs, "HOST")
+	if err != nil {
+		return "", "", fmt.Errorf("connection %q has an unreadable HOST: %v", conn.name, err)
+	}
 	if host == "" {
 		return "", "", fmt.Errorf("connection %q has no HOST configured", conn.name)
 	}
-	port = decodeEnv(conn.envs, "PORT")
+	// The upstream is joined as HOST:PORT, so a HOST that already carries a
+	// port, or a bare IPv6 literal, would build an address nothing can dial.
+	// daemon.Validate only checks that the field is non-empty, so the dial
+	// would fail at the first client connection instead of here.
+	if _, _, splitErr := net.SplitHostPort(host); splitErr == nil {
+		return "", "", fmt.Errorf("connection %q has a HOST that already carries a port (%q); set HOST and PORT separately", conn.name, host)
+	}
+	if strings.Contains(host, ":") {
+		host = "[" + host + "]" // IPv6 literal
+	}
+	port, err = decodeEnv(conn.envs, "PORT")
+	if err != nil {
+		return "", "", fmt.Errorf("connection %q has an unreadable PORT: %v", conn.name, err)
+	}
 	if port == "" {
 		return "", "", fmt.Errorf("connection %q has no PORT configured", conn.name)
 	}
-	if _, err := strconv.Atoi(port); err != nil {
-		return "", "", fmt.Errorf("connection %q has an invalid PORT configured", conn.name)
+	if !isValidPort(port) {
+		return "", "", fmt.Errorf("connection %q has an invalid PORT %q", conn.name, port)
 	}
 	return host + ":" + port, port, nil
 }
 
+// isValidPort rejects what strconv.Atoi accepts but a listener cannot bind:
+// zero, negatives, a leading sign, and anything above the 16-bit range.
+func isValidPort(port string) bool {
+	n, err := strconv.Atoi(port)
+	if err != nil || n < 1 || n > 65535 {
+		return false
+	}
+	return strconv.Itoa(n) == port
+}
+
 // decodeEnv reads a connection env-var secret, stored base64-encoded under
-// the "envvar:NAME" key.
-func decodeEnv(envs map[string]string, name string) string {
+// the "envvar:NAME" key. An absent key returns an empty value; a key that is
+// present but undecodable is an error, so the caller does not report a
+// corrupt value as a missing one.
+func decodeEnv(envs map[string]string, name string) (string, error) {
 	enc := envs["envvar:"+name]
 	if enc == "" {
-		return ""
+		return "", nil
 	}
 	decoded, err := base64.StdEncoding.DecodeString(enc)
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("value is not valid base64")
 	}
-	return string(decoded)
+	return string(decoded), nil
 }
 
 func sidecarGuardrails(conn sidecarConnection) ([]policy.Rule, error) {

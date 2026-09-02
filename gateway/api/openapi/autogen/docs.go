@@ -9956,6 +9956,15 @@ const docTemplate = `{
                     "Sidecars"
                 ],
                 "summary": "Sidecar Configuration",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The token returned when the sidecar was created",
+                        "name": "hoop-sidecar-token",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -9999,6 +10008,13 @@ const docTemplate = `{
                 ],
                 "summary": "Sidecar Handshake",
                 "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The token returned when the sidecar was created",
+                        "name": "hoop-sidecar-token",
+                        "in": "header",
+                        "required": true
+                    },
                     {
                         "description": "The request body resource",
                         "name": "request",

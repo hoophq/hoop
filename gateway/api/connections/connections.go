@@ -57,7 +57,8 @@ func Post(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
-	if err := validateSidecarAssignment(ctx.OrgID, req.SidecarID, req.Type, req.SubType); err != nil {
+	sidecarID, err := resolveSidecarAssignment(ctx.OrgID, req.SidecarID, req.Type, req.SubType)
+	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
@@ -91,7 +92,7 @@ func Post(c *gin.Context) {
 		OrgID:                   ctx.OrgID,
 		ResourceName:            req.ResourceName,
 		AgentID:                 sql.NullString{String: req.AgentId, Valid: true},
-		SidecarID:               nullStringFromPtr(req.SidecarID),
+		SidecarID:               sidecarID,
 		Name:                    req.Name,
 		Command:                 req.Command,
 		Type:                    req.Type,
@@ -180,15 +181,20 @@ func Put(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
-	if err := validateSidecarAssignment(ctx.OrgID, req.SidecarID, req.Type, req.SubType); err != nil {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
-		return
-	}
 	// Absent means "leave as is": a client that does not know about sidecars
-	// must not clear the assignment on every save.
+	// must not clear the assignment on every save. The kept assignment is
+	// still checked against the new type.
 	sidecarID := conn.SidecarID
 	if req.SidecarID != nil {
-		sidecarID = nullStringFromPtr(req.SidecarID)
+		resolved, err := resolveSidecarAssignment(ctx.OrgID, req.SidecarID, req.Type, req.SubType)
+		if err != nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+			return
+		}
+		sidecarID = resolved
+	} else if err := revalidateSidecarAssignment(sidecarID, req.Type, req.SubType); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
 	}
 	setConnectionDefaults(&req)
 
@@ -344,13 +350,19 @@ func Patch(c *gin.Context) {
 	if req.AgentId != nil {
 		conn.AgentID = sql.NullString{String: *req.AgentId, Valid: *req.AgentId != ""}
 	}
+	// Checked against the patched type, not the stored one. An untouched
+	// assignment is checked too: a bare subtype change must not strand a
+	// sidecar with a lane it cannot serve.
 	if req.SidecarID != nil {
-		// Validated against the patched type, not the stored one.
-		if err := validateSidecarAssignment(ctx.OrgID, req.SidecarID, conn.Type, conn.SubType.String); err != nil {
+		resolved, err := resolveSidecarAssignment(ctx.OrgID, req.SidecarID, conn.Type, conn.SubType.String)
+		if err != nil {
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 			return
 		}
-		conn.SidecarID = nullStringFromPtr(req.SidecarID)
+		conn.SidecarID = resolved
+	} else if err := revalidateSidecarAssignment(conn.SidecarID, conn.Type, conn.SubType.String); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
 	}
 	if req.Reviewers != nil {
 		conn.Reviewers = *req.Reviewers

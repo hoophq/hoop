@@ -21275,6 +21275,17 @@
     "/sidecars/configuration": {
       "get": {
         "description": "Authenticated with the hoop-sidecar-token header. Returns the configuration the sidecar must serve, built from the connections assigned to it.",
+        "parameters": [
+          {
+            "description": "The token returned when the sidecar was created",
+            "in": "header",
+            "name": "hoop-sidecar-token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -21327,6 +21338,17 @@
     "/sidecars/handshake": {
       "post": {
         "description": "Authenticated with the hoop-sidecar-token header. Records the reported version and returns the configuration the sidecar must serve.",
+        "parameters": [
+          {
+            "description": "The token returned when the sidecar was created",
+            "in": "header",
+            "name": "hoop-sidecar-token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {

@@ -716,29 +716,38 @@ func sidecarIDPtr(v sql.NullString) *string {
 	return &s
 }
 
-// nullStringFromPtr treats a nil or empty pointer as "no value".
-func nullStringFromPtr(v *string) sql.NullString {
-	if v == nil || *v == "" {
-		return sql.NullString{}
-	}
-	return sql.NullString{String: *v, Valid: true}
-}
-
-// validateSidecarAssignment refuses an assignment the sidecar could never
+// resolveSidecarAssignment refuses an assignment the sidecar could never
 // serve, so the operator finds out here instead of when the sidecar fetches
 // its configuration. A nil or empty value is not an assignment.
-func validateSidecarAssignment(orgID string, sidecarID *string, connType, subType string) error {
+//
+// It returns the value to store. The request may name the sidecar by name or
+// by id, but the column is a uuid, so the resolved id is what goes to the
+// database.
+func resolveSidecarAssignment(orgID string, sidecarID *string, connType, subType string) (sql.NullString, error) {
 	if sidecarID == nil || *sidecarID == "" {
-		return nil
+		return sql.NullString{}, nil
 	}
 	if _, err := services.SidecarProtocol(connType, subType); err != nil {
-		return err
+		return sql.NullString{}, err
 	}
-	if _, err := models.GetSidecarByNameOrID(models.DB, orgID, *sidecarID); err != nil {
+	sidecar, err := models.GetSidecarByNameOrID(models.DB, orgID, *sidecarID)
+	if err != nil {
 		if errors.Is(err, models.ErrNotFound) {
-			return fmt.Errorf("sidecar %q not found", *sidecarID)
+			return sql.NullString{}, fmt.Errorf("sidecar %q not found", *sidecarID)
 		}
-		return err
+		return sql.NullString{}, err
 	}
-	return nil
+	return sql.NullString{String: sidecar.ID, Valid: true}, nil
+}
+
+// revalidateSidecarAssignment guards the assignment a request does NOT
+// mention. A request that only changes the connection type must not leave a
+// sidecar holding a lane it cannot serve: the whole configuration fetch fails
+// then, taking every other connection on that sidecar down with it.
+func revalidateSidecarAssignment(current sql.NullString, connType, subType string) error {
+	if !current.Valid || current.String == "" {
+		return nil
+	}
+	_, err := services.SidecarProtocol(connType, subType)
+	return err
 }
