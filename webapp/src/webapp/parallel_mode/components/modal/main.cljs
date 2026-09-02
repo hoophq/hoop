@@ -13,6 +13,7 @@
   (let [open? (rf/subscribe [:parallel-mode/modal-open?])
         search-term (rf/subscribe [:parallel-mode/search-term])
         selected-count (rf/subscribe [:parallel-mode/selected-count])
+        source (rf/subscribe [:parallel-mode/source])
         connections (rf/subscribe [:connections->pagination])]
     (fn []
       ;; Spinner only while there is nothing to show. command-dialog swaps the
@@ -25,7 +26,7 @@
          {:open? @open?
           :on-open-change (fn [should-open?]
                             (if should-open?
-                              (rf/dispatch [:parallel-mode/open-modal])
+                              (rf/dispatch [:parallel-mode/open-modal @source])
                               (rf/dispatch [:parallel-mode/cancel-selection])))
           :title "Parallel Mode"
           :max-width "max-w-[640px]"

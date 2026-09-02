@@ -144,7 +144,7 @@
                :aria-expanded (= @active-panel :metadata)}]]]
 
            ;; New Parallel Mode Button
-           [parallel-mode-button/parallel-mode-button {:size "1" :variant "ghost"}]
+           [parallel-mode-button/parallel-mode-button {:size "1" :variant "ghost" :source :terminal}]
 
            [:> Tooltip {:content (if (= os :mac) "cmd + Enter" "ctrl + Enter")}
             [:> Button

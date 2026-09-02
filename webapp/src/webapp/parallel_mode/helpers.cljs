@@ -20,6 +20,19 @@
   [connections]
   (filterv valid-for-parallel? connections))
 
+;; ---- Host ----
+;; The Parallel Mode button renders in two toolbars and each keeps its resource
+;; role somewhere else. The host says which one it is, so the seed and the
+;; pinned row read the same place. EVL-244.
+
+(def source->connection-path
+  {:terminal [:editor :connections :selected]
+   :runbook [:runbooks :selected-connection]})
+
+(def source->label
+  {:terminal "Open in your terminal"
+   :runbook "Open in your runbook"})
+
 ;; ---- Selection Helpers ----
 
 (defn connection-selected?
