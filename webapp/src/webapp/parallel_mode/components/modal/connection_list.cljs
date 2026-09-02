@@ -23,9 +23,7 @@
     :aria-label (str (:name connection)
                      (when (and pinned? selected?) ", pre-selected")
                      (if selected? ", checked" ", not checked"))
-    ;; A ring, not a background: [cmdk-item]:hover paints the same --gray-2
-    ;; this used to use, so the marker was invisible.
-    :class (str "mb-2 last:mb-0 " (when selected? "ring-1 ring-primary-8"))}
+    :class (str "mb-2 last:mb-0 " (when selected? "bg-gray-2"))}
    [:> Flex {:align "center" :gap "3" :class "w-full"}
     [:img {:src (connection-constants/get-connection-icon connection)
            :class "w-4"
