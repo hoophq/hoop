@@ -29,8 +29,6 @@ log_level: info
 admin:
   listen: 127.0.0.1:19000        # /healthz /stats /config /events
 
-pii:
-  entities: [EMAIL_ADDRESS, US_SSN, CREDIT_CARD]
 
 mask:                            # Data Masking
   enabled: true
