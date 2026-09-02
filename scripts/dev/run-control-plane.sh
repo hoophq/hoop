@@ -12,7 +12,9 @@ set -eo pipefail
 # Override PORT, POSTGRES_DB_URI or ENV_FILE from your shell; everything else
 # comes from the env file.
 
-PORT="${PORT:-8019}"
+# The env file is read below and .env.sample sets PORT=8009. Capture the port
+# chosen here so the shell override and the 8019 default survive the loop.
+PORT_SELECTED="${PORT:-8019}"
 ENV_FILE="${ENV_FILE:-.env}"
 DB_URI_OVERRIDE="${POSTGRES_DB_URI:-}"
 
@@ -41,6 +43,7 @@ export POSTGRES_DB_URI
 
 # The gateway container may already hold 8009, so serve elsewhere and keep
 # API_URL pointing at the port we actually listen on.
+PORT="$PORT_SELECTED"
 export PORT
 export API_URL="http://localhost:${PORT}"
 
