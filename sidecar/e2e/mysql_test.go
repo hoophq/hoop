@@ -558,10 +558,23 @@ func assertPolicyError(t *testing.T, err error) {
 	}
 }
 
+// countRows reads the fixture row count, tolerating one stale connection.
+//
+// Every caller runs it straight after a denial, and a denial ends with the
+// relay closing the socket (see execAllowed). The pool may hand back that
+// dead connection: database/sql retries internally, but only while it has
+// another pooled connection to try, so on a warm pool this surfaces as
+// `invalid connection` instead. Observed as a 1-in-6 flake before this.
+//
+// A SECOND failure is a real one and still fails the test.
 func countRows(t *testing.T, db *sql.DB) int {
 	t.Helper()
 	var n int
-	if err := db.QueryRow("SELECT COUNT(*) FROM customers").Scan(&n); err != nil {
+	err := db.QueryRow("SELECT COUNT(*) FROM customers").Scan(&n)
+	if err != nil && isStaleConn(err) {
+		err = db.QueryRow("SELECT COUNT(*) FROM customers").Scan(&n)
+	}
+	if err != nil {
 		t.Fatalf("count: %v", err)
 	}
 	return n
