@@ -2,13 +2,8 @@ import { Navigate } from 'react-router-dom'
 import { Stack, Text, Title } from '@mantine/core'
 import { useUserStore } from '@/stores/useUserStore'
 
-/**
- * Start page. Sends each role to the first surface it can reach.
- *
- * The dead end below cannot be a redirect: ProtectedRoute answers a denied route
- * with <Navigate to="/">, so a user with neither role would bounce between the
- * two until the browser throttles it.
- */
+// The dead end is not a redirect: ProtectedRoute denies with <Navigate to="/">,
+// so a user with neither role would bounce between the two.
 export default function Home() {
   const { isAdmin, isApprover } = useUserStore()
 

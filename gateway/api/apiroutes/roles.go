@@ -32,8 +32,7 @@ func isGroupAllowed(userGroups []string, roleNames ...openapi.RoleType) (valid b
 		return true
 	}
 
-	// Weighs every privileged group: a user who is both auditor and approver
-	// must pass a route that names either.
+	// A user in both auditor and approver must pass a route naming either.
 	var isPrivileged bool
 	for _, groupName := range userGroups {
 		role, ok := privilegedRoles[groupName]

@@ -10,33 +10,11 @@ import (
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
-	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
-	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"github.com/hoophq/hoop/gateway/utils"
 	"gorm.io/gorm"
 )
-
-// validateControlPlaneGroups narrows a rule's group lists to admin and approver.
-// Any other group would save and then never find a reviewer.
-func validateControlPlaneGroups(req *openapi.AccessRequestRuleRequest) error {
-	if !appconfig.Get().IsControlPlane() {
-		return nil
-	}
-	for _, groups := range [][]string{
-		req.ReviewersGroups, req.ApprovalRequiredGroups,
-		req.ForceApprovalGroups, req.SkipReviewGroups,
-	} {
-		for _, g := range groups {
-			if g != types.GroupAdmin && g != types.GroupApprover {
-				return fmt.Errorf("group %q is not available in control plane mode, accepted values are %q and %q",
-					g, types.GroupAdmin, types.GroupApprover)
-			}
-		}
-	}
-	return nil
-}
 
 func validateAccessRequestRuleBody(orgID uuid.UUID, req *openapi.AccessRequestRuleRequest, foundRule *models.AccessRequestRule) error {
 	if foundRule != nil {
@@ -94,11 +72,6 @@ func CreateAccessRequestRule(c *gin.Context) {
 	var req openapi.AccessRequestRuleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
-		return
-	}
-
-	if err := validateControlPlaneGroups(&req); err != nil {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
 
@@ -313,11 +286,6 @@ func UpdateAccessRequestRule(c *gin.Context) {
 	var req openapi.AccessRequestRuleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
-		return
-	}
-
-	if err := validateControlPlaneGroups(&req); err != nil {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
 

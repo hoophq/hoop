@@ -52,11 +52,6 @@ func Create(c *gin.Context) {
 		return
 	}
 
-	if err := validateControlPlaneGroups(newUser.Groups); err != nil {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
-		return
-	}
-
 	existingUser, err := models.GetUserByEmailAndOrg(newUser.Email, ctx.OrgID)
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching existing user")
@@ -186,11 +181,6 @@ func Update(c *gin.Context) {
 	var req openapi.User
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
-		return
-	}
-
-	if err := validateControlPlaneGroups(req.Groups); err != nil {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
 
@@ -792,19 +782,4 @@ func toRole(user openapi.User) string {
 		return string(openapi.RoleApproverType)
 	}
 	return string(openapi.RoleStandardType)
-}
-
-// validateControlPlaneGroups refuses any group other than admin and approver.
-// The gateway keeps accepting free-form names.
-func validateControlPlaneGroups(groups []string) error {
-	if !appconfig.Get().IsControlPlane() {
-		return nil
-	}
-	for _, g := range groups {
-		if g != types.GroupAdmin && g != types.GroupApprover {
-			return fmt.Errorf("group %q is not available in control plane mode, accepted values are %q and %q",
-				g, types.GroupAdmin, types.GroupApprover)
-		}
-	}
-	return nil
 }

@@ -23,7 +23,7 @@ import { usersService } from '@/services/users'
 import { authService } from '@/services/auth'
 import { docsUrl } from '@/utils/docsUrl'
 import { showSnackbar } from '@/utils/snackbar'
-import { ROLE_ADMIN, ROLE_OPTIONS } from '@/utils/roles'
+import { ROLE_ADMIN, ROLE_APPROVER, ROLE_OPTIONS, roleLabel } from '@/utils/roles'
 
 const STATUS_OPTIONS = [
   { value: 'active', label: 'Active' },
@@ -58,8 +58,9 @@ function generatePassword() {
 function UserFormModal({ opened, onClose, formType, user, isLocalAuth, onSaved }) {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
-  // The role is the whole group list — the control plane accepts nothing else.
   const [role, setRole] = useState(ROLE_ADMIN)
+  // Round-tripped so an IdP-synced group survives an edit here.
+  const [otherGroups, setOtherGroups] = useState([])
   const [status, setStatus] = useState('active')
   const [slackId, setSlackId] = useState('')
   const [password] = useState(() => generatePassword())
@@ -70,6 +71,7 @@ function UserFormModal({ opened, onClose, formType, user, isLocalAuth, onSaved }
       setName(user?.name ?? '')
       setEmail(user?.email ?? '')
       setRole(user?.role ?? ROLE_ADMIN)
+      setOtherGroups((user?.groups ?? []).filter((g) => g !== ROLE_ADMIN && g !== ROLE_APPROVER))
       setStatus(user?.status ?? 'active')
       setSlackId(user?.slack_id ?? '')
     }
@@ -87,7 +89,7 @@ function UserFormModal({ opened, onClose, formType, user, isLocalAuth, onSaved }
     }
     setSaving(true)
     try {
-      const payload = { name, groups: [role], slack_id: slackId, email }
+      const payload = { name, groups: [role, ...otherGroups], slack_id: slackId, email }
       if (formType === 'update') {
         payload.id = user.id
         payload.status = status
@@ -186,10 +188,6 @@ function UserFormModal({ opened, onClose, formType, user, isLocalAuth, onSaved }
       </form>
     </Modal>
   )
-}
-
-function roleLabel(role) {
-  return ROLE_OPTIONS.find((r) => r.value === role)?.label ?? '—'
 }
 
 function statusVariant(status) {
