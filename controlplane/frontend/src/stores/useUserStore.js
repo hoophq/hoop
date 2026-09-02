@@ -47,6 +47,8 @@ export const useUserStore = create((set, get) => ({
   // including the ones a control-plane deployment blocks, so developing
   // against one hides the gap until production.
   applicationMode: null,
+  adminRoleName: ROLE_ADMIN,
+  approverRoleName: ROLE_APPROVER,
   loading: false,
 
   setUser: (user) => {
@@ -83,7 +85,9 @@ export const useUserStore = create((set, get) => ({
       serverInfoLoaded: true,
       hasRedactCredentials: !!serverInfo?.has_redact_credentials,
       postgresProxyEnabled: !!serverInfo?.postgres_proxy_enabled,
-      applicationMode: serverInfo?.application_mode || null
+      applicationMode: serverInfo?.application_mode || null,
+      adminRoleName: serverInfo?.admin_role_name || ROLE_ADMIN,
+      approverRoleName: serverInfo?.approver_role_name || ROLE_APPROVER
     })
   },
   setFeatureFlags: (flags) => set({ featureFlags: flags }),

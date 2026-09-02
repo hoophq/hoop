@@ -23,7 +23,8 @@ import { usersService } from '@/services/users'
 import { authService } from '@/services/auth'
 import { docsUrl } from '@/utils/docsUrl'
 import { showSnackbar } from '@/utils/snackbar'
-import { ROLE_ADMIN, ROLE_APPROVER, ROLE_OPTIONS, roleLabel } from '@/utils/roles'
+import { ROLE_ADMIN, ROLE_OPTIONS, roleLabel, roleToGroups } from '@/utils/roles'
+import { useUserStore } from '@/stores/useUserStore'
 
 const STATUS_OPTIONS = [
   { value: 'active', label: 'Active' },
@@ -58,6 +59,8 @@ function generatePassword() {
 function UserFormModal({ opened, onClose, formType, user, isLocalAuth, onSaved }) {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
+  const adminRoleName = useUserStore((s) => s.adminRoleName)
+  const approverRoleName = useUserStore((s) => s.approverRoleName)
   const [role, setRole] = useState(ROLE_ADMIN)
   // Round-tripped so an IdP-synced group survives an edit here.
   const [otherGroups, setOtherGroups] = useState([])
@@ -71,11 +74,11 @@ function UserFormModal({ opened, onClose, formType, user, isLocalAuth, onSaved }
       setName(user?.name ?? '')
       setEmail(user?.email ?? '')
       setRole(user?.role ?? ROLE_ADMIN)
-      setOtherGroups((user?.groups ?? []).filter((g) => g !== ROLE_ADMIN && g !== ROLE_APPROVER))
+      setOtherGroups((user?.groups ?? []).filter((g) => g !== adminRoleName && g !== approverRoleName))
       setStatus(user?.status ?? 'active')
       setSlackId(user?.slack_id ?? '')
     }
-  }, [opened, user])
+  }, [opened, user, adminRoleName, approverRoleName])
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -89,7 +92,8 @@ function UserFormModal({ opened, onClose, formType, user, isLocalAuth, onSaved }
     }
     setSaving(true)
     try {
-      const payload = { name, groups: [role, ...otherGroups], slack_id: slackId, email }
+      const groups = [...roleToGroups(role, adminRoleName, approverRoleName), ...otherGroups]
+      const payload = { name, groups, slack_id: slackId, email }
       if (formType === 'update') {
         payload.id = user.id
         payload.status = status

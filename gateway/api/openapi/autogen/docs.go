@@ -17545,6 +17545,11 @@ const docTemplate = `{
         "openapi.ServerInfo": {
             "type": "object",
             "properties": {
+                "admin_role_name": {
+                    "description": "Group name that carries the admin role, renamed by ADMIN_USERNAME or the auth server config",
+                    "type": "string",
+                    "example": "admin"
+                },
                 "analytics_mode": {
                     "description": "The analytics privacy mode for the caller's organization",
                     "enum": [
@@ -17581,6 +17586,11 @@ const docTemplate = `{
                         "control-plane"
                     ],
                     "example": "gateway"
+                },
+                "approver_role_name": {
+                    "description": "Group name that carries the approver role",
+                    "type": "string",
+                    "example": "approver"
                 },
                 "auth_method": {
                     "description": "Auth method used by the server",

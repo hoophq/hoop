@@ -443,10 +443,12 @@ func GetUserInfo(c *gin.Context) {
 		roleName = openapi.RoleUnregisteredType
 	case ctx.IsAdminUser():
 		roleName = openapi.RoleAdminType
-	case ctx.IsAuditorUser():
-		roleName = openapi.RoleAuditorType
+	// Before auditor: isGroupAllowed grants an auditor+approver user the approver
+	// routes, and reporting auditor here would hide them in the UI.
 	case ctx.IsApproverUser():
 		roleName = openapi.RoleApproverType
+	case ctx.IsAuditorUser():
+		roleName = openapi.RoleAuditorType
 	}
 
 	intercomUserHash, err := analytics.GenerateIntercomHmacDigest(ctx.UserEmail)

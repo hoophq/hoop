@@ -1581,6 +1581,10 @@ type ServerInfo struct {
 	PostgresProxyEnabled bool `json:"postgres_proxy_enabled"`
 	// API_URL advertise to clients
 	ApiURL string `json:"api_url" example:"https://api.johnwick.org"`
+	// Group name that carries the admin role, renamed by ADMIN_USERNAME or the auth server config
+	AdminRoleName string `json:"admin_role_name" example:"admin"`
+	// Group name that carries the approver role
+	ApproverRoleName string `json:"approver_role_name" example:"approver"`
 	// The GRPC_URL advertise to clients
 	GrpcURL string `json:"grpc_url" example:"127.0.0.1:8009"`
 	// The tenancy type

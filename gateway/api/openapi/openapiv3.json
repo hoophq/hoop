@@ -6928,6 +6928,11 @@
       },
       "openapi.ServerInfo": {
         "properties": {
+          "admin_role_name": {
+            "description": "Group name that carries the admin role, renamed by ADMIN_USERNAME or the auth server config",
+            "example": "admin",
+            "type": "string"
+          },
           "analytics_mode": {
             "allOf": [
               {
@@ -6963,6 +6968,11 @@
               "control-plane"
             ],
             "example": "gateway",
+            "type": "string"
+          },
+          "approver_role_name": {
+            "description": "Group name that carries the approver role",
+            "example": "approver",
             "type": "string"
           },
           "auth_method": {

@@ -19,6 +19,7 @@ import (
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
 
 var (
@@ -99,6 +100,8 @@ func Get(c *gin.Context) {
 	serverInfoData.AuthMethod = string(ctx.ProviderType)
 	serverInfoData.GrpcURL = ctx.GrpcURL
 	serverInfoData.ApiURL = appc.ApiURL()
+	serverInfoData.AdminRoleName = types.GroupAdmin
+	serverInfoData.ApproverRoleName = types.GroupApprover
 	serverInfoData.HasAskiAICredentials = appc.IsAskAIAvailable()
 	serverInfoData.RedactProvider = appc.DlpProvider()
 	serverInfoData.HasRedactCredentials = services.CheckRedactProvider() == nil
