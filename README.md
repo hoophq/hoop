@@ -134,8 +134,6 @@ The control plane is the admin surface for that. Connect your sidecars. Set Data
 The UI lives in [`controlplane/frontend/`](controlplane/frontend/). The backend is not built yet, so it runs against the gateway API:
 
 ```bash
-make run-dev                      # gateway on :8009, from the repo root
-cd controlplane/frontend && npm install && npm run dev
 ```
 
 Routes with no backend behind them say so and name the work they wait on. You will not find an empty table pretending to be loaded.
