@@ -886,3 +886,48 @@ func TestDuplexCodecIsRaceFreeAcrossDirections(t *testing.T) {
 	}()
 	wg.Wait()
 }
+
+// A message too large to reassemble must be DENIED, not forwarded.
+//
+// The gate's honest default for a decode error is to forward and let the
+// upstream's own parser judge. ErrBufferOverflow is not that case: it means
+// one logical message never completed inside the reassembly budget, so the
+// codec produced no statement at all and policy saw nothing. Forwarding the
+// chunks runs the statement unevaluated.
+//
+// MySQL is what makes it reachable. A single logical message is legal up to
+// 16 MiB there, against a default 8 MiB budget, so a destructive statement
+// padded past the limit would pass a lane configured to refuse it.
+func TestBufferOverflowIsDenied(t *testing.T) {
+	g, err := gate.New(newSession(), gate.Config{
+		Protocol:     inspect.Postgres,
+		CodecFactory: func() inspect.Codec { return &neverCompletesCodec{} },
+		MaxBuffer:    1024,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	// Feed past the budget without ever completing a message.
+	var d gate.Decision
+	for range 3 {
+		d = g.Request(context.Background(), make([]byte, 512))
+	}
+
+	if d.Allowed {
+		t.Fatal("a message that never completed was allowed: it reaches the " +
+			"server with policy having seen no statement")
+	}
+	if d.Rule != "stream-unsafe" {
+		t.Errorf("rule = %q, want stream-unsafe", d.Rule)
+	}
+}
+
+// neverCompletesCodec consumes nothing, modelling a logical message larger
+// than the reassembly budget.
+type neverCompletesCodec struct{}
+
+func (*neverCompletesCodec) Protocol() inspect.Protocol { return inspect.Postgres }
+func (*neverCompletesCodec) Decode(inspect.Direction, []byte) ([]inspect.Statement, int, error) {
+	return nil, 0, nil
+}

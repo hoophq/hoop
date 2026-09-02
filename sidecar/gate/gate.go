@@ -396,7 +396,17 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 		// forwarding would hand the client a redirect and lose the session,
 		// so this denies REGARDLESS of policy: no rule configured it, and
 		// none can switch it off.
-		if errors.Is(err, inspect.ErrStreamUnsafe) {
+		//
+		// ErrBufferOverflow denies for the same reason. It means one
+		// message exceeded the reassembly budget without ever completing,
+		// so the codec never produced a statement for it — forwarding the
+		// chunks would run that statement with policy having seen nothing.
+		// MySQL is what makes it reachable: a single logical message is
+		// legal up to 16 MiB there against a default 8 MiB budget, so a
+		// destructive statement padded past the limit would otherwise pass
+		// a lane configured to refuse it.
+		if errors.Is(err, inspect.ErrStreamUnsafe) ||
+			errors.Is(err, inspect.ErrBufferOverflow) {
 			d.Allowed = false
 			d.Rule = "stream-unsafe"
 			d.Message = err.Error()
