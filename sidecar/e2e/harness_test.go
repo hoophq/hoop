@@ -199,9 +199,9 @@ func startSidecar(t *testing.T, upstream, config string) *sidecar {
 		t.Fatalf("%v", err)
 	}
 
-	listen := freePort(t)
+	bind, dial := freePort(t)
 	body := strings.NewReplacer(
-		"{{listen}}", listen,
+		"{{listen}}", bind,
 		"{{upstream}}", upstream,
 	).Replace(config)
 
@@ -223,7 +223,7 @@ func startSidecar(t *testing.T, upstream, config string) *sidecar {
 		t.Fatalf("start sidecar: %v", err)
 	}
 
-	s := &sidecar{addr: listen}
+	s := &sidecar{addr: dial}
 
 	// The audit trail goes to stdout as JSONL (audit.file: "-"). Draining it
 	// on a goroutine doubles as backpressure relief: a full pipe buffer would
@@ -259,7 +259,7 @@ func startSidecar(t *testing.T, upstream, config string) *sidecar {
 		}
 	})
 
-	waitForListener(t, listen)
+	waitForListener(t, dial)
 	return s
 }
 
@@ -353,22 +353,37 @@ func openDSN(t *testing.T, d string) *sql.DB {
 	}
 }
 
-// freePort asks the OS for an unused port and returns it as host:port.
+// freePort reserves an unused port and returns the address the RELAY should
+// bind, plus the address a test should dial.
+//
+// The relay binds 0.0.0.0, not loopback. `runCLI` reaches it from inside a
+// container through `host.docker.internal`, which resolves to the host's
+// bridge address — a loopback-only listener is invisible from there. On
+// Docker Desktop it happens to work because the VM proxies loopback; on a
+// Linux CI runner it does not, and the CLI tests failed there with an empty
+// error while every driver-based test passed.
+//
+// Binding wider is safe for a test fixture on an ephemeral port, and it is
+// the only way one relay serves both the in-process driver and the
+// containerised client.
 //
 // There is an unavoidable window between closing this listener and the relay
 // binding it. Hardcoding ports instead would trade a rare race for a certain
 // collision whenever two of these run on one runner.
-func freePort(t *testing.T) string {
+func freePort(t *testing.T) (bind, dial string) {
 	t.Helper()
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("reserve port: %v", err)
 	}
-	addr := l.Addr().String()
+	_, port, err := net.SplitHostPort(l.Addr().String())
+	if err != nil {
+		t.Fatalf("split reserved address: %v", err)
+	}
 	if err := l.Close(); err != nil {
 		t.Fatalf("release port: %v", err)
 	}
-	return addr
+	return net.JoinHostPort("0.0.0.0", port), net.JoinHostPort("127.0.0.1", port)
 }
 
 func waitForListener(t *testing.T, addr string) {
