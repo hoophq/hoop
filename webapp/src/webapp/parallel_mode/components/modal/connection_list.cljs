@@ -21,7 +21,7 @@
     ;; cmdk owns aria-selected on the row and uses it for the keyboard
     ;; highlight, so the checked state has to be spelled out here instead.
     :aria-label (str (:name connection)
-                     (when pinned? ", pre-selected")
+                     (when (and pinned? selected?) ", pre-selected")
                      (if selected? ", checked" ", not checked"))
     ;; A ring, not a background: [cmdk-item]:hover paints the same --gray-2
     ;; this used to use, so the marker was invisible.
@@ -36,7 +36,9 @@
      [:> Text {:size "2" :weight "medium" :class "text-gray-12"}
       (:name connection)]]
 
-    (when pinned?
+    ;; Only while it is still checked. The group heading keeps saying where the
+    ;; role came from after the user unchecks it.
+    (when (and pinned? selected?)
       [:> Badge {:color "indigo" :variant "soft" :size "1" :aria-hidden "true"}
        "Pre-selected"])
 
@@ -68,6 +70,7 @@
             ;; matched here: repeating the gateway's predicate in CLJS would be
             ;; a second source of truth. The role still shows up in the results
             ;; with its badge if the gateway returns it.
+            pinned-name (:name @pinned-connection)
             pinned (when-not searching? @pinned-connection)
             rows (if pinned
                    (filterv #(not= (:name %) (:name pinned)) @valid-connections)
@@ -97,4 +100,4 @@
               [connection-item
                connection
                (selected? connection)
-               (= (:name connection) (:name @pinned-connection))]))]]]))))
+               (= (:name connection) pinned-name)]))]]]))))
