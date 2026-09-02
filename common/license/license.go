@@ -108,6 +108,18 @@ func validateFeatures(features []string) error {
 	return nil
 }
 
+// PublicKeyID is the sha256 of the public key this build trusts, hex
+// encoded. sidecar/license keeps its own copy of the key, and
+// client/licensecompat asserts the two ids match: rotate one and not the
+// other and every sidecar loses the features its customer pays for.
+func PublicKeyID() (string, error) {
+	pubkey, err := parsePublicKey()
+	if err != nil {
+		return "", err
+	}
+	return pubkeyChecksum(pubkey)
+}
+
 func Sign(privKey *rsa.PrivateKey, licenseType, description string, allowedHosts, features []string, expireAt time.Duration) (*License, error) {
 	clockTolerance := -time.Hour
 	issuedAt := time.Now().UTC().Add(clockTolerance)

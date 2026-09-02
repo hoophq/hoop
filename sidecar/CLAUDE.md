@@ -139,6 +139,14 @@ done
   with `OpUnknown`. That fails closed, but it means a policy naming `select`
   matches nothing.
 
+- **The license verifier exists twice, on purpose.** `sidecar/license`
+  reimplements `common/license` over the stdlib: same key, same RSA-PSS
+  signature over the same bytes, same JSON. Importing the gateway's module
+  would end the one-dependency invariant, so the copy is the price. Drift
+  locks paying customers out of features they bought and neither module can
+  see it, so `client/licensecompat` pins the two. Touch the key or the
+  signing data on one side and you MUST touch the other.
+
 ## Layout
 
 The module root holds no Go files: `go.mod`, this file and `README.md` only.
@@ -149,6 +157,7 @@ The module root holds no Go files: `go.mod`, this file and `README.md` only.
 | `lexer/` | SQL text to an effect and a relation list, without a grammar |
 | `codec/` | registration seam: wires libhoop's decoders to the classifier |
 | `policy/` | statement to verdict; local rules, then OPA |
+| `license/` | verifies the signed license that lifts the rule caps; a stdlib twin of `common/license` |
 | `analyzer/` | the model-backed evaluator, third in the policy chain |
 | `gate/` | orders inspection, policy, audit and masking into one decision |
 | `proxy/` | TCP relay that pumps both directions through a Gate |

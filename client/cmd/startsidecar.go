@@ -17,6 +17,7 @@ import (
 	_ "github.com/hoophq/hoop/sidecar/analyzer/vertex"
 	configyaml "github.com/hoophq/hoop/sidecar/config/yaml"
 	"github.com/hoophq/hoop/sidecar/daemon"
+	"github.com/hoophq/hoop/sidecar/license"
 	"github.com/hoophq/hoop/sidecar/pii/alcatraz"
 	"github.com/spf13/cobra"
 )
@@ -27,6 +28,7 @@ const deprecatedSidecarAlias = "inspect"
 
 var (
 	sidecarConfigFlag   string
+	sidecarLicenseFlag  string
 	sidecarValidateFlag bool
 	sidecarStrictFlag   bool
 )
@@ -55,8 +57,14 @@ alias.
 
 The config schema changed in ADR-0011: "policy" split into "guardrails" and
 "opa", and three fields were dropped. Both spellings load, and the old one
-prints a warning naming its replacement. Use --strict to fail on one.`,
+prints a warning naming its replacement. Use --strict to fail on one.
+
+Without a license the process caps guardrail and data masking rules at one
+each and says so at startup. A license lifts the caps for the features it
+names. It may be a path or the document itself, and --license outranks
+HOOP_LICENSE, which outranks the "license" key in the config file.`,
 	Example: `  hoop start sidecar --config /etc/hoop-inspect/config.yaml
+  hoop start sidecar --config config.yaml --license /etc/hoop-inspect/license.json
   hoop start sidecar --config config.yaml --validate
   hoop start sidecar --config config.yaml --validate --strict`,
 	// A bad config is not a usage error, and dumping the flag list under one
@@ -71,7 +79,8 @@ prints a warning naming its replacement. Use --strict to fail on one.`,
 			return fmt.Errorf("--config is required (or set HOOP_SIDECAR_CONFIG)")
 		}
 
-		cfg, det, err := daemon.Setup(sidecarConfigFlag, configyaml.Load, buildSidecarPlugin)
+		cfg, det, err := daemon.Setup(sidecarConfigFlag, configyaml.Load, buildSidecarPlugin,
+			sidecarLicenseFlag)
 		if err != nil {
 			return err
 		}
@@ -89,7 +98,7 @@ prints a warning naming its replacement. Use --strict to fail on one.`,
 			if err != nil {
 				return err
 			}
-			daemon.PrintLanes(os.Stdout, lanes)
+			daemon.PrintLanes(os.Stdout, cfg.Licensing(), lanes)
 			return nil
 		}
 
@@ -147,6 +156,12 @@ func init() {
 
 	startSidecarCmd.Flags().StringVar(&sidecarConfigFlag, "config", sidecarConfigFromEnv(),
 		"Path to the inspection config file (YAML or JSON)")
+	// No default from the environment, unlike --config. daemon.Setup reads
+	// HOOP_LICENSE when this is empty, which holds the precedence in one
+	// place and keeps a customer's license out of --help.
+	startSidecarCmd.Flags().StringVar(&sidecarLicenseFlag, "license", "",
+		"Path to the license file, or the license document itself. Overrides "+
+			license.EnvVar+" and the config file's \"license\" key")
 	startSidecarCmd.Flags().BoolVar(&sidecarValidateFlag, "validate", false,
 		"Validate the config, report what each listener resolved to, and exit")
 	startSidecarCmd.Flags().BoolVar(&sidecarStrictFlag, "strict", false,
