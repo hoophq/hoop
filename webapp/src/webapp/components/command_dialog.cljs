@@ -29,14 +29,11 @@
 (defn command-dialog
   "Reusable command dialog component"
   [{:keys [open? on-open-change title max-width height class-name breadcrumb-component
-           search-config breadcrumb-config content children loading? should-filter? offset-top]
+           search-config breadcrumb-config content children loading? should-filter?]
     :or {title "Command Dialog"
          max-width "max-w-2xl"
          height "h-96"
          class-name ""
-         ;; How far down the viewport the dialog sits. A taller dialog needs a
-         ;; smaller offset or it runs off the bottom.
-         offset-top "pt-[20vh]"
          should-filter? false}}]
   [:> CommandDialog
    (merge
@@ -47,7 +44,7 @@
      :open open?
      :label title
      :onOpenChange on-open-change
-     :className (str "fixed inset-0 z-[201] flex items-start justify-center " offset-top)})
+     :className "fixed inset-0 z-[201] flex items-start justify-center pt-[20vh]"})
    [theme-provider
     [:<>
      ;; Manual overlay for click outside with blur effect
