@@ -183,4 +183,4 @@ Questions and ideas go in [Discussions](https://github.com/hoophq/hoop/discussio
 
 ## License
 
-MIT. Anything that reads every query to your data should be code you can read too.
+MIT Licensed.
