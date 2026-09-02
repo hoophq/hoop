@@ -54,10 +54,13 @@
 (rf/reg-event-fx
  :parallel-mode/close-modal
  (fn [{:keys [db]} _]
-   (let [searched? (not (cs/blank? (get-in db [:parallel-mode :modal :search-term])))]
+   ;; Read the shared slice, not this modal's input. Clearing the box schedules
+   ;; a debounced reset that closing then cancels, so the input can be empty
+   ;; while the slice is still filtered.
+   (let [filtered? (not (cs/blank? (get-in db [:connections->pagination :active-search])))]
      (cond-> {:db (update-in db [:parallel-mode :modal] merge {:open? false :search-term ""})
               :parallel-mode/cancel-connections-search true}
-       searched?
+       filtered?
        (assoc :fx [[:dispatch [:connections/get-connections-paginated
                                {:page 1 :force-refresh? true}]]])))))
 
