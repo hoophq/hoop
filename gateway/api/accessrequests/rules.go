@@ -18,14 +18,11 @@ import (
 	"gorm.io/gorm"
 )
 
-// applyControlPlaneGroupDefaults narrows a rule's group lists to admin and
-// approver. Any other group would save and then never find a reviewer.
-func applyControlPlaneGroupDefaults(req *openapi.AccessRequestRuleRequest) error {
+// validateControlPlaneGroups narrows a rule's group lists to admin and approver.
+// Any other group would save and then never find a reviewer.
+func validateControlPlaneGroups(req *openapi.AccessRequestRuleRequest) error {
 	if !appconfig.Get().IsControlPlane() {
 		return nil
-	}
-	if len(req.ReviewersGroups) == 0 {
-		req.ReviewersGroups = []string{types.GroupApprover}
 	}
 	for _, groups := range [][]string{
 		req.ReviewersGroups, req.ApprovalRequiredGroups,
@@ -100,7 +97,7 @@ func CreateAccessRequestRule(c *gin.Context) {
 		return
 	}
 
-	if err := applyControlPlaneGroupDefaults(&req); err != nil {
+	if err := validateControlPlaneGroups(&req); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
@@ -319,7 +316,7 @@ func UpdateAccessRequestRule(c *gin.Context) {
 		return
 	}
 
-	if err := applyControlPlaneGroupDefaults(&req); err != nil {
+	if err := validateControlPlaneGroups(&req); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}

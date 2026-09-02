@@ -149,6 +149,7 @@ func Create(c *gin.Context) {
 		trackClient.Close()
 	}()
 
+	newUser.Role = toRole(newUser)
 	c.JSON(http.StatusCreated, newUser)
 }
 
