@@ -2,6 +2,7 @@
   (:require
    ["cmdk" :refer [CommandGroup CommandItem]]
    ["@radix-ui/themes" :refer [Checkbox Flex Text]]
+   [clojure.string :as cs]
    [re-frame.core :as rf]
    [webapp.connections.constants :as connection-constants]
    [webapp.components.infinite-scroll :refer [infinite-scroll]]))
@@ -9,9 +10,11 @@
 (defn connection-item
   "Single connection item with checkbox"
   [connection selected?]
+  ;; No :keywords. The gateway does the matching now, and cmdk's scorer used to
+  ;; read them: the literal "connection" on every row made any subsequence of
+  ;; that word match the whole list. EVL-243.
   [:> CommandItem
    {:value (:name connection)
-    :keywords [(:type connection) (:subtype connection) (:name connection) "connection"]
     :onSelect #(rf/dispatch [:parallel-mode/toggle-connection connection])
     :class (str "mb-2 last:mb-0 " (when selected? "bg-gray-2"))}
    [:> Flex {:align "center" :gap "3" :class "w-full"}
@@ -33,15 +36,20 @@
         selected-connections (rf/subscribe [:parallel-mode/selected-connections])
         connections-pagination (rf/subscribe [:connections->pagination])]
     (fn []
-      (let [connections-loading? (= :loading (:loading @connections-pagination))]
+      ;; :loading is a boolean, not a keyword. The old (= :loading ...) never
+      ;; matched, so nothing guarded the next-page request.
+      (let [connections-loading? (boolean (:loading @connections-pagination))]
         [:> CommandGroup {:class "space-y-2 mb-12"}
          [infinite-scroll
           {:on-load-more (fn []
                            (when (not connections-loading?)
                              (let [current-page (:current-page @connections-pagination 1)
                                    next-page (inc current-page)
-                                   next-request {:page next-page
-                                                 :force-refresh? false}]
+                                   active-search (:active-search @connections-pagination)
+                                   next-request (cond-> {:page next-page
+                                                         :force-refresh? false}
+                                                  (not (cs/blank? active-search))
+                                                  (assoc :search active-search))]
                                (rf/dispatch [:connections/get-connections-paginated next-request]))))
            :has-more? (:has-more? @connections-pagination)
            :loading? connections-loading?}

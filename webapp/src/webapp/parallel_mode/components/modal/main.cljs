@@ -3,6 +3,7 @@
    ["cmdk" :refer [CommandEmpty]]
    ["@radix-ui/themes" :refer [Box Badge Flex Text]]
    ["lucide-react" :refer [FastForward]]
+   [clojure.string :as cs]
    [re-frame.core :as rf]
    [webapp.components.command-dialog :as command-dialog]
    [webapp.parallel-mode.components.modal.connection-list :as connection-list]
@@ -14,7 +15,11 @@
         selected-count (rf/subscribe [:parallel-mode/selected-count])
         connections (rf/subscribe [:connections->pagination])]
     (fn []
-      (let [loading? (= :loading (:loading @connections))]
+      ;; Spinner only while there is nothing to show. command-dialog swaps the
+      ;; whole list for it, so gating on :loading alone would blank the list on
+      ;; every search and every infinite-scroll append.
+      (let [loading? (and (:loading @connections)
+                          (empty? (:data @connections)))]
 
         [command-dialog/command-dialog
          {:open? @open?
@@ -26,7 +31,9 @@
           :max-width "max-w-[640px]"
           :height "auto"
           :class-name "h-[480px]"
-          :should-filter? true
+          ;; The gateway does the matching. cmdk's own filter is a fuzzy
+          ;; subsequence scorer and only sees the page already fetched. EVL-243.
+          :should-filter? false
           :loading? loading?
 
           :search-config {:show-search-icon true
@@ -74,7 +81,11 @@
             [connection-list/main]
 
             [:> CommandEmpty
-             [:> Flex {:direction "column" :align "center" :gap "2" :class "py-8"}
-              [:> Text {:size "2" :color "gray"} "No resource roles found"]]]]
+             [:> Flex {:direction "column" :align "center" :gap "2" :class "py-8"
+                       :role "status"}
+              [:> Text {:size "2" :color "gray"}
+               (if (cs/blank? @search-term)
+                 "No resource roles found"
+                 (str "No resource role matches \"" @search-term "\""))]]]]
 
            [footer/main]]}]))))
