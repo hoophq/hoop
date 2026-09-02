@@ -121,7 +121,6 @@ One sidecar runs from one config file. A fleet needs one place to see them all.
 
 The control plane is the admin surface for that. Connect your sidecars. Set Data Masking, Guardrails, and the Session Analyzer once for all of them. Work the Reviews queue when an operation needs a person. Admins sign in here.
 
-**Status: in development.**
 
 | Surface | State |
 | --- | --- |
