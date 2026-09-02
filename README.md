@@ -43,6 +43,11 @@ policy:                          # Guardrails
     - name: no-destructive-sql
       type: operation
       operations: [drop, delete, truncate]
+guardails:
+  rules:
+    - name: no-destructive-sql
+      type: operation
+      operations: [drop, delete, truncate]
       message: destructive statements are not permitted
 
 listeners:
