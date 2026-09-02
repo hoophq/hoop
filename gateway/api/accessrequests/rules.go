@@ -18,9 +18,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// applyControlPlaneGroupDefaults narrows a rule's group lists to the control
-// plane's vocabulary. Approver is its only reviewer role, so a rule naming any
-// other group would save and then never find a reviewer.
+// applyControlPlaneGroupDefaults narrows a rule's group lists to admin and
+// approver. Any other group would save and then never find a reviewer.
 func applyControlPlaneGroupDefaults(req *openapi.AccessRequestRuleRequest) error {
 	if !appconfig.Get().IsControlPlane() {
 		return nil

@@ -27,9 +27,6 @@ var (
 	}()
 )
 
-// GroupApprover is the control plane's second role: it reviews and administers
-// nothing. Fixed, unlike GroupAdmin and GroupAuditor, whose env vars exist to
-// map pre-existing gateway IdP group names.
 const GroupApprover = "approver"
 
 const (

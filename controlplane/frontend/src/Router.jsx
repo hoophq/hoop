@@ -83,8 +83,7 @@ function Router() {
         }
       />
 
-      {/* Reviews — the queue, and the detail inside the review session.
-          The only surface an approver reaches. */}
+      {/* Reviews — the queue and the detail. The only surface an approver reaches. */}
       <Route
         path="/reviews"
         element={

@@ -5,13 +5,9 @@ import { useUserStore } from '@/stores/useUserStore'
 /**
  * Start page. Sends each role to the first surface it can reach.
  *
- * It cannot redirect unconditionally: ProtectedRoute answers a denied route with
- * <Navigate to="/">, so a user with neither role would bounce between the two
- * until the browser throttles it.
- *
- * The dead end is the honest answer for that user. The control plane is an
- * administration surface — an end user does not authenticate with us at all,
- * they reach their resource through the sidecar.
+ * The dead end below cannot be a redirect: ProtectedRoute answers a denied route
+ * with <Navigate to="/">, so a user with neither role would bounce between the
+ * two until the browser throttles it.
  */
 export default function Home() {
   const { isAdmin, isApprover } = useUserStore()

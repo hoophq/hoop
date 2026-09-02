@@ -32,8 +32,8 @@ func isGroupAllowed(userGroups []string, roleNames ...openapi.RoleType) (valid b
 		return true
 	}
 
-	// Every privileged group is weighed, not just the first one: a user who is
-	// both auditor and approver must pass a route that names either.
+	// Weighs every privileged group: a user who is both auditor and approver
+	// must pass a route that names either.
 	var isPrivileged bool
 	for _, groupName := range userGroups {
 		role, ok := privilegedRoles[groupName]
@@ -76,8 +76,7 @@ func AdminAndApproverAccessRole(c *gin.Context) {
 	c.Next()
 }
 
-// ReadOnlyAccessRole allows standard, admin, auditor and approver roles to access it.
-// It guards /userinfo, /serverinfo and /feature-flags, which every session needs to boot.
+// ReadOnlyAccessRole allows standard, admin, auditor and approver roles to access it
 func ReadOnlyAccessRole(c *gin.Context) {
 	c.Set(roleContextKey, []openapi.RoleType{
 		openapi.RoleStandardType,

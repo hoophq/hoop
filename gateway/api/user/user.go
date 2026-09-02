@@ -793,9 +793,8 @@ func toRole(user openapi.User) string {
 	return string(openapi.RoleStandardType)
 }
 
-// validateControlPlaneGroups refuses any group the control plane does not define.
-// Admin and approver are its whole vocabulary; the gateway keeps accepting
-// free-form names.
+// validateControlPlaneGroups refuses any group other than admin and approver.
+// The gateway keeps accepting free-form names.
 func validateControlPlaneGroups(groups []string) error {
 	if !appconfig.Get().IsControlPlane() {
 		return nil

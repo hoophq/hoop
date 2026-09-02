@@ -58,8 +58,7 @@ function generatePassword() {
 function UserFormModal({ opened, onClose, formType, user, isLocalAuth, onSaved }) {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
-  // The role IS the group list: the control plane accepts admin and approver and
-  // nothing else, so there are no other groups to carry through.
+  // The role is the whole group list — the control plane accepts nothing else.
   const [role, setRole] = useState(ROLE_ADMIN)
   const [status, setStatus] = useState('active')
   const [slackId, setSlackId] = useState('')

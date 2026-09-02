@@ -401,9 +401,9 @@ func doIndividualReview(ctx *storagev2.Context, rev *models.Review, connection *
 		reviewsCountNeeded = min(reviewsCountNeeded, *connection.MinReviewApprovals)
 	}
 
-	// In control plane mode an admin approves: an organization whose only user is
-	// its admin would otherwise raise reviews nobody can resolve. Not applied in
-	// gateway mode, where widening this would change a shipped permission.
+	// An organization whose only user is its admin would otherwise raise reviews
+	// nobody can resolve. Not applied in gateway mode: widening it there would
+	// change a shipped permission.
 	adminApproves := appconfig.Get().IsControlPlane() && ctx.IsAdmin()
 
 	var isEligibleReviewer bool
