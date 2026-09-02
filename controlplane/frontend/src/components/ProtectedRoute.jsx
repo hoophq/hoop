@@ -5,11 +5,12 @@ import { useUserStore } from '@/stores/useUserStore'
 import { authService } from '@/services/auth'
 import { featureFlagsService } from '@/services/featureFlags'
 import AuthPageLoader from '@/components/AuthPageLoader'
+import { hasRole } from '@/utils/roles'
 
-function ProtectedRoute({ children, adminOnly = false, allowApprover = false, licenseFeature = null }) {
+function ProtectedRoute({ children, role = null, licenseFeature = null }) {
   const location = useLocation()
   const { isAuthenticated, saveRedirectUrl, logout } = useAuthStore()
-  const { user, isAdmin, isApprover, setUser, setLoading, setServerInfo, setFeatureFlags, initIntercom, initAnalytics } = useUserStore()
+  const { user, role: userRole, setUser, setLoading, setServerInfo, setFeatureFlags, initIntercom, initAnalytics } = useUserStore()
   const isLicenseFeatureEnabled = useUserStore((s) => s.isLicenseFeatureEnabled)
   const [initializing, setInitializing] = useState(true)
   const [redirectTo, setRedirectTo] = useState(null)
@@ -108,7 +109,7 @@ function ProtectedRoute({ children, adminOnly = false, allowApprover = false, li
     return <AuthPageLoader message="Verifying authentication..." />
   }
 
-  if (adminOnly && !isAdmin && !(allowApprover && isApprover)) {
+  if (!hasRole(userRole, role)) {
     return <Navigate to="/" replace />
   }
 

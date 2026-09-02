@@ -16,7 +16,7 @@ import classes from './Sidebar.module.css'
 
 export function SidebarCollapsed() {
   const toggleSidebarCollapsed = useUIStore((s) => s.toggleSidebarCollapsed)
-  const { isAdmin, isApprover, isSelfHosted } = useUserStore()
+  const { isAdmin, role, isSelfHosted } = useUserStore()
   const isFeatureFlagEnabled = useUserStore((s) => s.isFeatureFlagEnabled)
   const isLicenseFeatureEnabled = useUserStore((s) => s.isLicenseFeatureEnabled)
 
@@ -48,7 +48,7 @@ export function SidebarCollapsed() {
         classNames={{ root: classes.collapsedScrollArea, viewport: classes.scrollFill }}
       >
         <Stack gap={2} align="center" role="list" aria-label="Main navigation">
-          {MAIN_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled, isApprover)).map((item) => (
+          {MAIN_ITEMS.filter((i) => !shouldHide(i, role, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled)).map((item) => (
             <Box component="li" key={item.path || item.label} className={classes.listItem}>
               <IconBtn {...item} />
             </Box>
@@ -59,7 +59,7 @@ export function SidebarCollapsed() {
           <Box key={id} mt="xxl" w="100%">
             <Text size="xs" fw={600} mb="xs" className={classes.sectionHidden}>{label}</Text>
             <Stack gap="xsAlt" align="center" role="list" aria-label={label}>
-              {items.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled, isApprover)).map((item) => (
+              {items.filter((i) => !shouldHide(i, role, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled)).map((item) => (
                 <Box component="li" key={item.path} className={classes.listItem}>
                   <IconBtn {...item} />
                 </Box>
