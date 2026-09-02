@@ -10,13 +10,13 @@ import { shouldHide, isActive } from './helpers'
 // so that path is gone along with the pendingOpenSection state it needed. Bring it
 // back with the page that needs sub-navigation, not before.
 
-export function NavItem({ item, role, isSelfHosted }) {
+export function NavItem({ item, isAdmin, isApprover, isSelfHosted }) {
   const location = useLocation()
   const setSidebarOpen = useUIStore((s) => s.setSidebarOpen)
   const isFeatureFlagEnabled = useUserStore((s) => s.isFeatureFlagEnabled)
   const isLicenseFeatureEnabled = useUserStore((s) => s.isLicenseFeatureEnabled)
 
-  if (shouldHide(item, role, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled)) return null
+  if (shouldHide(item, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled, isApprover)) return null
 
   const active = item.path ? isActive(item.path, location.pathname, location.search) : false
   const closeMobile = () => setSidebarOpen(false)

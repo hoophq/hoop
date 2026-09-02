@@ -16,12 +16,12 @@ const matches = (item, q) =>
   (item.description || '').toLowerCase().includes(q)
 
 export default function MainPage({ query, onNavigate }) {
-  const { role, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled } = useUserStore()
+  const { isAdmin, isApprover, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled } = useUserStore()
   const q = query.trim().toLowerCase()
 
   const visible = (items) =>
     items
-      .filter((i) => !shouldHide(i, role, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled))
+      .filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled, isApprover))
       .filter((i) => matches(i, q))
 
   const suggestions = visible(SUGGESTION_ITEMS)

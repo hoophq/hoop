@@ -22,7 +22,6 @@ import GuardrailForm from '@/pages/Guardrails/Create'
 import DataMasking from '@/pages/Features/DataMasking'
 import DataMaskingForm from '@/pages/Features/DataMasking/Create'
 import OrganizationUsers from '@/pages/Organization/Users'
-import { ROLE_ADMIN, ROLE_APPROVER } from '@/utils/roles'
 
 /**
  * The control plane information architecture.
@@ -69,7 +68,7 @@ function Router() {
       <Route
         path="/sidecars"
         element={
-          <Page role={ROLE_ADMIN}>
+          <Page adminOnly>
             <NotImplemented
               title="Sidecars"
               project="Connecting Sidecars and Resources"
@@ -87,7 +86,7 @@ function Router() {
       <Route
         path="/reviews"
         element={
-          <Page role={ROLE_APPROVER}>
+          <Page adminOnly allowApprover>
             <NotImplemented
               title="Reviews"
               project="Reviews (Human in the Loop)"
@@ -103,7 +102,7 @@ function Router() {
       <Route
         path="/reviews/:sessionId"
         element={
-          <Page role={ROLE_APPROVER}>
+          <Page adminOnly allowApprover>
             <NotImplemented
               title="Review"
               project="Reviews (Human in the Loop)"
@@ -116,63 +115,63 @@ function Router() {
       {/* Reviews — approval rules, created by name and referenced from the sidecar */}
       <Route
         path="/reviews/rules"
-        element={<Page role={ROLE_ADMIN} licenseFeature="access-requests"><ReviewRules /></Page>}
+        element={<Page adminOnly licenseFeature="access-requests"><ReviewRules /></Page>}
       />
       <Route
         path="/reviews/rules/new"
-        element={<Page role={ROLE_ADMIN} licenseFeature="access-requests"><ReviewRuleForm /></Page>}
+        element={<Page adminOnly licenseFeature="access-requests"><ReviewRuleForm /></Page>}
       />
       <Route
         path="/reviews/rules/edit/:ruleName"
-        element={<Page role={ROLE_ADMIN} licenseFeature="access-requests"><ReviewRuleForm /></Page>}
+        element={<Page adminOnly licenseFeature="access-requests"><ReviewRuleForm /></Page>}
       />
 
       {/* Reviews — Slack, where approvals are delivered. Reused unchanged. */}
-      <Route path="/reviews/slack" element={<Page role={ROLE_ADMIN}><ReviewSlack /></Page>} />
+      <Route path="/reviews/slack" element={<Page adminOnly><ReviewSlack /></Page>} />
 
       {/* Features. Their configuration still lives in the sidecar file at this stage;
           Feature Configuration Across the Fleet is what distributes it. */}
       <Route
         path="/features/ai-session-analyzer"
-        element={<Page role={ROLE_ADMIN} licenseFeature="ai-session-analyzer"><AiSessionAnalyzer /></Page>}
+        element={<Page adminOnly licenseFeature="ai-session-analyzer"><AiSessionAnalyzer /></Page>}
       />
       <Route
         path="/features/ai-session-analyzer/rules/new"
-        element={<Page role={ROLE_ADMIN} licenseFeature="ai-session-analyzer"><AiSessionAnalyzerRuleForm /></Page>}
+        element={<Page adminOnly licenseFeature="ai-session-analyzer"><AiSessionAnalyzerRuleForm /></Page>}
       />
       <Route
         path="/features/ai-session-analyzer/rules/edit/:ruleName"
-        element={<Page role={ROLE_ADMIN} licenseFeature="ai-session-analyzer"><AiSessionAnalyzerRuleForm /></Page>}
+        element={<Page adminOnly licenseFeature="ai-session-analyzer"><AiSessionAnalyzerRuleForm /></Page>}
       />
 
       <Route
         path="/guardrails"
-        element={<Page role={ROLE_ADMIN} licenseFeature="guardrails"><Guardrails /></Page>}
+        element={<Page adminOnly licenseFeature="guardrails"><Guardrails /></Page>}
       />
       <Route
         path="/guardrails/new"
-        element={<Page role={ROLE_ADMIN} licenseFeature="guardrails"><GuardrailForm /></Page>}
+        element={<Page adminOnly licenseFeature="guardrails"><GuardrailForm /></Page>}
       />
       <Route
         path="/guardrails/edit/:id"
-        element={<Page role={ROLE_ADMIN} licenseFeature="guardrails"><GuardrailForm /></Page>}
+        element={<Page adminOnly licenseFeature="guardrails"><GuardrailForm /></Page>}
       />
 
       <Route
         path="/features/data-masking"
-        element={<Page role={ROLE_ADMIN} licenseFeature="data-masking"><DataMasking /></Page>}
+        element={<Page adminOnly licenseFeature="data-masking"><DataMasking /></Page>}
       />
       <Route
         path="/features/data-masking/new"
-        element={<Page role={ROLE_ADMIN} licenseFeature="data-masking"><DataMaskingForm /></Page>}
+        element={<Page adminOnly licenseFeature="data-masking"><DataMaskingForm /></Page>}
       />
       <Route
         path="/features/data-masking/edit/:id"
-        element={<Page role={ROLE_ADMIN} licenseFeature="data-masking"><DataMaskingForm /></Page>}
+        element={<Page adminOnly licenseFeature="data-masking"><DataMaskingForm /></Page>}
       />
 
       {/* Administrators. Admin Authentication owns inviting them. */}
-      <Route path="/organization/users" element={<Page role={ROLE_ADMIN}><OrganizationUsers /></Page>} />
+      <Route path="/organization/users" element={<Page adminOnly><OrganizationUsers /></Page>} />
 
       <Route path="*" element={<NotFound />} />
     </Routes>

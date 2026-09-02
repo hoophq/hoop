@@ -12,10 +12,3 @@ export function roleLabel(role) {
   if (role === ROLE_STANDARD) return 'Standard'
   return ROLE_OPTIONS.find((r) => r.value === role)?.label ?? '—'
 }
-
-// Admin passes every route an approver passes, as in gateway/api/apiroutes/roles.go.
-export function hasRole(userRole, requiredRole) {
-  if (!requiredRole) return true
-  if (userRole === ROLE_ADMIN) return true
-  return userRole === requiredRole
-}

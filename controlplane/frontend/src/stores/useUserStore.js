@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { identify as analyticsIdentify } from '@/services/analytics'
-import { ROLE_ADMIN, ROLE_APPROVER, ROLE_STANDARD } from '@/utils/roles'
+import { ROLE_APPROVER } from '@/utils/roles'
 
 const INTERCOM_APP_ID = 'ryuapdmp'
 
@@ -19,7 +19,6 @@ function loadIntercomScript() {
 
 export const useUserStore = create((set, get) => ({
   user: null,
-  role: ROLE_STANDARD,
   isAdmin: false,
   isApprover: false,
   isSelfHosted: false,
@@ -49,16 +48,12 @@ export const useUserStore = create((set, get) => ({
   applicationMode: null,
   loading: false,
 
-  setUser: (user) => {
-    const role = user?.role || ROLE_STANDARD
-    set({
-      user,
-      role,
-      isAdmin: role === ROLE_ADMIN,
-      isApprover: role === ROLE_APPROVER,
-      isSelfHosted: user?.tenancy_type === 'selfhosted'
-    })
-  },
+  setUser: (user) => set({
+    user,
+    isAdmin: !!user?.is_admin,
+    isApprover: user?.role === ROLE_APPROVER,
+    isSelfHosted: user?.tenancy_type === 'selfhosted'
+  }),
   setServerInfo: (serverInfo) => {
     const license = serverInfo?.license_info
     const isFreeLicense = !(license?.is_valid && license?.type === 'enterprise')
@@ -100,7 +95,6 @@ export const useUserStore = create((set, get) => ({
     if (window.Intercom) window.Intercom('shutdown')
     set({ 
       user: null,
-      role: ROLE_STANDARD,
       isAdmin: false,
       isApprover: false,
       isSelfHosted: false,

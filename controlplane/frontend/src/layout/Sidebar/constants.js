@@ -8,7 +8,6 @@ import {
   VenetianMask,
   Users
 } from 'lucide-react';
-import { ROLE_ADMIN, ROLE_APPROVER } from '@/utils/roles'
 
 // The control plane navigation.
 //
@@ -17,8 +16,8 @@ import { ROLE_ADMIN, ROLE_APPROVER } from '@/utils/roles'
 // mirrored in features/CommandPalette/constants.js; keep both in sync.
 
 export const MAIN_ITEMS = [
-  { label: 'Sidecars', path: '/sidecars', icon: Container, role: ROLE_ADMIN },
-  { label: 'Reviews', path: '/reviews', icon: Signature, role: ROLE_APPROVER }
+  { label: 'Sidecars', path: '/sidecars', icon: Container, adminOnly: true },
+  { label: 'Reviews', path: '/reviews', icon: Signature, adminOnly: true, allowApprover: true }
 ]
 
 // Slack sits under Reviews because that is where an approval is delivered — a
@@ -28,10 +27,10 @@ export const REVIEW_ITEMS = [
     label: 'Rules',
     path: '/reviews/rules',
     icon: CircleCheckBig,
-    role: ROLE_ADMIN,
+    adminOnly: true,
     licenseFeature: 'access-requests'
   },
-  { label: 'Slack', path: '/reviews/slack', icon: MessageSquare, role: ROLE_ADMIN }
+  { label: 'Slack', path: '/reviews/slack', icon: MessageSquare, adminOnly: true }
 ]
 
 // Configured here, distributed to the fleet by Feature Configuration Across the Fleet.
@@ -42,25 +41,25 @@ export const FEATURE_ITEMS = [
     label: 'Session Analyzer',
     path: '/features/ai-session-analyzer',
     icon: Sparkles,
-    role: ROLE_ADMIN,
+    adminOnly: true,
     licenseFeature: 'ai-session-analyzer'
   },
   {
     label: 'Guardrails',
     path: '/guardrails',
     icon: ShieldCheck,
-    role: ROLE_ADMIN,
+    adminOnly: true,
     licenseFeature: 'guardrails'
   },
   {
     label: 'Live Data Masking',
     path: '/features/data-masking',
     icon: VenetianMask,
-    role: ROLE_ADMIN,
+    adminOnly: true,
     licenseFeature: 'data-masking'
   }
 ]
 
 export const ORGANIZATION_ITEMS = [
-  { label: 'Users', path: '/organization/users', icon: Users, role: ROLE_ADMIN }
+  { label: 'Users', path: '/organization/users', icon: Users, adminOnly: true }
 ]

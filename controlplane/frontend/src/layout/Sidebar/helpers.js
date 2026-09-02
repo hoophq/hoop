@@ -1,7 +1,5 @@
-import { hasRole } from '@/utils/roles'
-
-export function shouldHide(item, userRole, isSelfHosted = false, isFeatureFlagEnabled = null, isLicenseFeatureEnabled = null) {
-  if (!hasRole(userRole, item.role)) return true
+export function shouldHide(item, isAdmin, isSelfHosted = false, isFeatureFlagEnabled = null, isLicenseFeatureEnabled = null, isApprover = false) {
+  if (item.adminOnly && !isAdmin && !(item.allowApprover && isApprover)) return true
   if (item.selfhostedOnly && !isSelfHosted) return true
   if (item.featureFlag && isFeatureFlagEnabled && !isFeatureFlagEnabled(item.featureFlag)) return true
   if (item.licenseFeature && isLicenseFeatureEnabled && !isLicenseFeatureEnabled(item.licenseFeature)) return true
