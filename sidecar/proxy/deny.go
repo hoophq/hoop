@@ -36,6 +36,8 @@ func (ProtocolDenyWriter) Deny(proto inspect.Protocol, dir inspect.Direction, ms
 		return PostgresError(msg)
 	case inspect.MSSQL:
 		return MSSQLError(msg)
+	case inspect.MySQL:
+		return MySQLError(msg)
 	case inspect.HTTP:
 		return HTTPForbidden(msg)
 	}
@@ -168,6 +170,92 @@ func PostgresError(msg string) []byte {
 	out = binary.BigEndian.AppendUint32(out, uint32(len(body)+4))
 	return append(out, body...)
 }
+
+// MySQL ERR_Packet constants for a synthesized server error.
+// https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_basic_err_packet.html
+const (
+	// mysqlErrPacketMarker is the first payload byte of an ERR_Packet. It
+	// is what tells the client this is not an OK or a result set.
+	mysqlErrPacketMarker byte = 0xFF
+
+	// mysqlDenySeq is the sequence id of the reply.
+	//
+	// Sequence ids restart at 0 for every command, and the client's
+	// COM_QUERY (or COM_STMT_EXECUTE) that we are refusing WAS that 0. A
+	// reply must therefore be 1, or the driver reports "commands out of
+	// sync" and discards the packet — the developer would see a protocol
+	// error instead of the operator's message, which is the whole point of
+	// synthesizing a frame rather than dropping the socket.
+	mysqlDenySeq byte = 1
+
+	// mysqlDenyErrno 1142 is ER_TABLEACCESS_DENIED_ERROR, "command denied
+	// to user".
+	//
+	// Not 1045 (ER_ACCESS_DENIED_ERROR), which is tempting because it reads
+	// as "access denied": 1045 is the HANDSHAKE failure, and drivers and
+	// connection pools special-case it as bad credentials. A pool that sees
+	// it mid-session evicts the connection and re-dials, and some CLIs
+	// re-prompt for a password. 1142 is the per-statement authorization
+	// failure, which is exactly what a policy denial is, and it leaves the
+	// session usable for the next statement.
+	mysqlDenyErrno uint16 = 1142
+
+	// mysqlDenySQLState 42000 is syntax_error_or_access_rule_violation, the
+	// state MySQL itself pairs with 1142. It is the same family as the
+	// 42501 the Postgres path sends, so a client-side handler keyed on the
+	// SQLSTATE class behaves alike on both.
+	mysqlDenySQLState = "42000"
+
+	// maxMySQLMessageChars bounds the message.
+	//
+	// The packet header declares its payload length in THREE bytes, so a
+	// payload over 16 MiB-1 cannot be described and the server would have
+	// to split it across frames. An operator-authored rule message must
+	// never reach that: at 4 bytes per rune this caps the payload near 8
+	// KiB, three orders of magnitude below the limit, so the length field
+	// is always exact and no continuation frame is ever needed.
+	maxMySQLMessageChars = 2000
+)
+
+// MySQLError builds an ERR_Packet: the same frame a real server sends when it
+// refuses a statement, so the developer reads the operator's message in the
+// mysql CLI as
+//
+//	ERROR 1142 (42000): destructive statements are not permitted on appdb
+//
+// rather than "Lost connection to MySQL server during query", which names
+// nothing they can act on and looks like an outage worth paging about.
+//
+// The '#' marker and the five-byte SQLSTATE that follows it are only present
+// when the client negotiated CLIENT_PROTOCOL_41. We always send them: every
+// driver from MySQL 4.1 onward sets that flag, and the sidecar never
+// completes a handshake with one that does not.
+//
+// The message is truncated on a RUNE boundary so a multi-byte character
+// cannot be split into invalid UTF-8 mid-packet.
+func MySQLError(msg string) []byte {
+	text := truncateChars(msg, maxMySQLMessageChars)
+
+	// Payload: marker(1) errno(2) '#'(1) sqlstate(5) message.
+	payload := make([]byte, 0, 9+len(text))
+	payload = append(payload, mysqlErrPacketMarker)
+	payload = binary.LittleEndian.AppendUint16(payload, mysqlDenyErrno)
+	payload = append(payload, '#')
+	payload = append(payload, mysqlDenySQLState...)
+	// No terminator: the message runs to the end of the packet, and its
+	// length is the declared payload length minus the fixed prefix.
+	payload = append(payload, text...)
+
+	out := make([]byte, 0, mysqlHeaderLen+len(payload))
+	n := uint32(len(payload))
+	out = append(out, byte(n), byte(n>>8), byte(n>>16))
+	out = append(out, mysqlDenySeq)
+	return append(out, payload...)
+}
+
+// mysqlHeaderLen is the fixed size of a MySQL packet header: a three-byte
+// little-endian payload length and a one-byte sequence id.
+const mysqlHeaderLen = 4
 
 // HTTPForbidden builds a 403 response.
 //

@@ -148,6 +148,7 @@ release pipeline already builds. Nothing extra to compile or ship:
 ```bash
 hoop start sidecar --config config.yaml --validate   # check the config and exit
 hoop start sidecar --config config.yaml              # run
+hoop start sidecar --config config.yaml --license /etc/hoop-inspect/license.json
 ```
 
 The command was named `inspect`. On 1.149.0 and newer that name still works as
@@ -176,6 +177,7 @@ go build -o hoop-inspect .
 
 ./hoop-inspect -validate -config config.yaml
 ./hoop-inspect -config config.yaml
+./hoop-inspect -config config.yaml -license /etc/hoop-inspect/license.json
 ./hoop-inspect -version
 ```
 
@@ -202,6 +204,21 @@ To embed the relay in your own process, call `daemon.Setup` to load the config
 and build the detector, then `daemon.Run`. That is all `hoop start sidecar`
 does; read `client/cmd/startsidecar.go` for the whole of it.
 
+`Setup` takes the same three arguments it always has. It resolves a license
+from `HOOP_LICENSE` and from the config file's `license` key on its own, so an
+embedder that mounts one needs no code change. A caller with its own license
+flag reaches for `daemon.SetupWith`, which is the same function plus options:
+
+```go
+cfg, det, err := daemon.SetupWith(path, configyaml.Load, buildPlugin,
+    daemon.WithLicense(licenseFlag))
+```
+
+Startup facts arrive as new `Option` values rather than new arguments, so
+neither signature moves again. `daemon.Setup` briefly took the license as a
+fourth argument, which broke every embedder that upgraded; that is what the
+split is for.
+
 ## Configuring it: config.yaml
 
 One file is the whole configuration. The process reads it at startup, resolves
@@ -209,6 +226,143 @@ every listener, and then tells you what it resolved. YAML and JSON both work
 and the extension picks the parser: `.yaml` and `.yml` go through the nested
 `config/yaml` module, anything else is read as JSON. Decoding is strict, so a
 mistyped key fails the startup instead of silently disabling a control.
+
+### What this build limits, and the license that lifts it
+
+Unlicensed, one guardrail rule and one data masking rule, for the whole
+process. The count is what the file AUTHORS, not what each lane resolves: a
+rule in the top-level `guardrails` block is one rule however many listeners
+inherit it, and a lane that overrides `mask.rules` with `[]` spends nothing.
+`ai_analysis` rules are counted apart and are not capped, because their
+controls are the trigger and `analyzer.max_calls` rather than a number of
+rules.
+
+A config over either cap is refused at startup, naming every block that
+authored rules and how many each holds, so the message reads as a map of what
+to merge:
+
+```
+hoop-inspect: invalid config:
+  - 2 guardrail rules are configured (guardrails: 1, appdb: 1) and this
+    process enforces at most 1; merge them into one rule. A license lifts this
+    cap: add one with the license flag, the HOOP_LICENSE environment variable,
+    or the "license" key in the config file. Contact our support at
+    https://help.hoop.dev. ai_analysis rules are counted separately and are
+    not limited
+```
+
+The free-tier numbers are constants in `sidecar/daemon/limits.go` rather than
+config keys, because a cap the file it limits can raise is documentation. They
+mirror the control plane's free tier, which caps the same two things per
+organization.
+
+A license Hoop signed lifts them, per feature. Three places carry one, and the
+first that holds anything decides:
+
+| Source | Spelling |
+|---|---|
+| Command line | `hoop-inspect -license …`, `hoop start sidecar --license …` |
+| Environment | `HOOP_LICENSE` |
+| Config file | `license: …` |
+
+The value is a path to the document Hoop issued, or the document itself: a
+value starting with `{` is read as the license, anything else as a filename.
+That is one field for a mounted secret and for a Helm value, so moving a
+license between the two is not also a rename.
+
+```yaml
+license: /etc/hoop-inspect/license.json
+```
+
+First wins, not first valid. A `HOOP_LICENSE` that points at nothing is an
+error rather than a reason to fall through to the config file, because a
+process that quietly ignored your environment variable will surprise you on
+the restart after the file changes. The control plane will be added above the
+flag when the sidecar starts receiving a license on connection, and it will
+outrank all three.
+
+The license names the features it covers, and each one lifts its own cap:
+`guardrails` and `data-masking` are the two this process reads. A license
+naming neither field covers everything; one naming only `data-masking` leaves
+the guardrail cap exactly where it was. An `oss` license verifies and grants
+nothing, which is what the control plane does with the same value.
+
+What the process concluded is the first line of its startup output, and
+`-validate` prints it too:
+
+```
+license: valid. enterprise "Acme Corp", expires 2027-01-30, features: all (from HOOP_LICENSE)
+license: expired. "Acme Corp" expired on 2026-05-01, running the free tier. Renew it at https://help.hoop.dev (from the license flag)
+license: missing, running the free tier. Add one with the license flag, the HOOP_LICENSE environment variable, or the "license" key in the config file
+```
+
+Missing and expired are states, not failures: the process starts, the caps
+stay in force, and an expired one logs at WARN so the reason a config that
+loaded last month stops loading is the first thing in the log. A license that
+cannot be READ is different and stops startup, naming the source and what a
+good value looks like: a process that drops to the free tier over a typo in
+a path is the silent downgrade this build refuses everywhere else.
+
+`/config` serves the same verdict under `license`, without the signature, and
+the caps under `limits`, where a `null` means the license lifted one.
+
+#### When a term ends under a running process
+
+The verdict is a function of the clock, not a flag set at startup. A relay
+that has been up for months re-reads its own term, so `/config` and the caps
+flip to the free tier the second the license lapses. Nothing has to reload.
+
+What happens next depends on whether the config needs the license:
+
+- **Inside the free tier**, nothing. The process keeps serving, reports
+  `expired`, and an operator renews whenever they get to it. Expiry took
+  nothing away, so taking the relay down would be an outage with no revenue
+  behind it.
+- **Over the free tier**, the relay stops. It logs the expiry, drains open
+  connections, flushes the audit trail and exits non-zero. The supervisor
+  restarts it, and startup then refuses the config by name until somebody
+  renews or removes rules.
+
+The stop is deliberate and the alternative is worse. Lanes are built once and
+hold their rules for the life of the process, so re-applying the caps to a
+running relay would mean deleting rules: dropping a guardrail lets through
+statements it was refusing, and dropping a mask rule leaks the values it was
+hiding. A billing event must never widen what a proxy allows.
+
+To keep it from being a surprise, the log counts down once a day through the
+last fortnight of a term:
+
+```
+WARN license expires soon, and this config needs it: the relay stops when the term ends days_left=6 expires=2026-05-01T00:00:00Z renew=https://help.hoop.dev
+WARN license: expired. "Acme Corp" expired on 2026-05-01, running the free tier. Renew it at https://help.hoop.dev
+WARN stopping: the license term ended and this config needs more rules than the free tier allows free_tier="1 guardrail rule(s), 1 data masking rule(s)"
+```
+
+The clock is polled once a minute rather than slept on with one long timer,
+so an NTP correction or a host that suspended through the expiry is still
+caught. Expect the stop within a minute of the term ending.
+
+The verifier is `sidecar/license`, a standard-library reimplementation of
+`common/license`: same key, same signature, same JSON, because this module
+cannot import the gateway's without inheriting its dependency tree. The two
+are pinned together by `client/licensecompat`, the only module that can see
+both. `allowed_hosts` is the one thing the sidecar does not check, since the
+address it could offer is a scheduler-generated pod name.
+
+A verdict cannot be handed to the daemon, only earned. The flag that says a
+license verified is unexported and `license.Load` is the only thing that sets
+it, after checking the signature, so a `license.Status` built by hand reports
+`invalid` and lifts nothing. `Config.UseLicense` takes a reference rather than
+a verdict for the same reason: when the control plane starts sending licenses,
+it will send the document Hoop signed and the sidecar will check that
+signature itself, instead of trusting whoever is on the connection.
+
+That leaves a test no way to run a licensed daemon, which
+`sidecar/license/licensetest` fixes honestly. It generates a keypair, points
+the trust root at it for the duration of one `*testing.T`, and signs documents
+that go through the same `Load`. Every function there takes a `*testing.T`,
+which is the guard: production code calling one would have to import
+`testing`.
 
 ### Deprecated fields
 
@@ -280,6 +434,10 @@ inherits those defaults unless it overrides them.
 ```yaml
 log_level: info
 
+# A path to the license Hoop issued, or the document itself. The license flag
+# and HOOP_LICENSE both outrank this. Omit it to run the free tier.
+license: /etc/hoop-inspect/license.json
+
 admin:
   listen: 127.0.0.1:19000   # /healthz /stats /config /events /api/*
 
@@ -341,6 +499,15 @@ listeners:
           message: upstream failure suppressed by policy
 ```
 
+That file is over both caps and this build refuses it as written: four
+guardrail rules and four mask rules, where one of each is allowed. It stays
+whole because a config holding one rule per section cannot show a listener
+overriding a default at all, and inheritance is what the section is teaching.
+The stack config in `deploy/docker-compose/envoy-stack/sidecar/config.yaml` is
+the version that loads: same shape, the rest commented out and marked. See
+[What this build limits, and the license that lifts
+it](#what-this-build-limits-and-the-license-that-lifts-it).
+
 Rule types and what each one matches are in [Guardrails and
 OPA](#guardrails-and-opa); masking strategies and the entity-versus-column
 choice are in [Masking and PII](#masking-and-pii).
@@ -378,8 +545,10 @@ cd cmd && go build -o hoop-inspect . && \
 
 ```
 config OK: 2 listener(s)
-  appdb            postgres  enforcing 2 rule(s) + masking
-  httpbin          http      enforcing 4 rule(s) + masking
+  license: missing, running the free tier. Add one with the license flag, the HOOP_LICENSE environment variable, or the "license" key in the config file
+  limits: 1 guardrail rule(s), 1 data masking rule(s)
+  appdb            postgres  enforcing 1 rule(s) + masking
+  httpbin          http      enforcing 1 rule(s) + masking
 ```
 
 Each line is the RESOLVED lane, so the counts include what it inherited. A lane
@@ -398,6 +567,12 @@ Validation builds every lane, so it catches what a syntax check cannot, and it
 reports every problem in one run rather than one per restart. It refuses these
 outright:
 
+- More guardrail rules or more mask rules than this process allows, naming
+  every block that authored one. See [What this build limits, and the license
+  that lifts it](#what-this-build-limits-and-the-license-that-lifts-it).
+- A license that cannot be read or was not issued by Hoop, naming the source
+  it came from. An expired one is a warning instead: the caps come back and
+  the process runs.
 - `mask.rules` on a protocol whose codec can carry neither masking mechanism,
   naming the lane. This check used to sit behind `mask.enabled`, so a lane
   omitting the flag skipped it and loaded rules that could never fire.
@@ -429,16 +604,23 @@ curl -s localhost:19000/config | python3 -m json.tool
 ```json
 {"lanes": [
   {"name": "appdb", "protocol": "postgres", "enforcing": true,
-   "rules": ["no-destructive-sql", "no-cpf-in-query"], "masking": true},
+   "rules": ["no-cpf-in-query"], "masking": true},
   {"name": "httpbin", "protocol": "http", "enforcing": true,
-   "rules": ["no-admin-api", "no-internal-ids", "no-upstream-5xx",
-             "no-cpf-in-query"], "masking": true}
-]}
+   "rules": ["no-cpf-in-query"], "masking": true}
+ ],
+ "license": {"state": "missing"},
+ "limits": {"guardrail_rules": 1, "mask_rules": 1}}
 ```
 
-Both lanes inherited `no-cpf-in-query`, and neither inherited the other's
-rules. Rule names only: a `pattern_regex` can encode business logic, and this
-endpoint already sits beside a read interface to the audit trail.
+Both lanes resolved the same rule, because the process's one guardrail rule is
+a top-level default and neither lane authors its own. Rule names only: a
+`pattern_regex` can encode business logic, and this endpoint already sits
+beside a read interface to the audit trail. `limits` is what this process
+refuses to exceed, served here so an operator asking why a second rule will
+not load reads the answer from the endpoint that told them what did, and a
+`null` there means a license lifted that cap. `license` is the verdict behind
+those numbers: the type, the customer, the term, the features and the source,
+never the signature.
 
 ### Sharing a rule block between lanes
 
@@ -500,11 +682,11 @@ asking about, a cache collapses repeated statement shapes onto one verdict,
 and the rule runs LAST in the chain, after the free local rules and OPA.
 
 It runs wherever a content builder renders the statement for a model:
-`postgres` and `mssql` send the statement text with the operation, tables and
-database the codec derived; `http` sends the method, normalized resource and
-body. A lane whose protocol has no builder is refused at startup rather than
-left classifying nothing, which is what a relay-only protocol would otherwise
-get: no statements to render means no verdict, silently.
+`postgres`, `mysql` and `mssql` send the statement text with the operation,
+tables and database the codec derived; `http` sends the method, normalized
+resource and body. A lane whose protocol has no builder is refused at startup
+rather than left classifying nothing, which is what a relay-only protocol
+would otherwise get: no statements to render means no verdict, silently.
 
 ```yaml
 pii:                           # optional; omitting it activates all 54 types
@@ -757,6 +939,7 @@ gaps named above are the narrow ones; Envoy is not blind here.
 | Protocol | Request messages | Response messages | Stateful |
 |---|---|---|---|
 | `postgres` | `Query` ('Q'), `Parse` ('P'); handshake skipped | `RowDescription` ('T'), `DataRow` ('D'), and the three terminators that end a result set | yes |
+| `mysql` | `COM_QUERY` (0x03), `COM_STMT_PREPARE` (0x16) and the prepared-statement commands (0x17, 0x19, 0x1a, 0x1c); handshake read for the negotiated capabilities, not skipped | column definitions and both row encodings, text and binary, for masking; the terminator that ends a result set | yes |
 | `mssql` | `SQLBatch` (0x01) and `RPCRequest` (0x03), reassembled across packets; login forwarded untouched | `COLMETADATA` (0x81), `ROW` (0xD1), `NBCROW` (0xD2) for masking; login replies scanned for a routing redirect | yes |
 | `http` | HTTP/1.x requests | HTTP/1.x responses | no |
 
@@ -765,6 +948,75 @@ The Postgres codec is stateful because one `RowDescription` describes every
 registry hands out a factory rather than an instance: two connections sharing
 one codec would corrupt each other's reassembly, and one tenant's SQL would
 surface in another tenant's audit trail. Give every connection its own.
+
+### MySQL, and the three ways a session goes dark
+
+MySQL is stateful for a harder reason than Postgres. A pgwire message is
+self-describing on the first byte of the connection and on the last: the tag
+says what it is, the length says where it ends. MySQL bytes mean different
+things depending on what the handshake negotiated and on what the client last
+asked for. `CLIENT_DEPRECATE_EOF` decides whether a result set ends with an
+EOF packet (0xFE) or an OK packet beginning with the same 0xFE byte. A `0x00`
+first byte opens an OK packet after a `COM_QUERY` and a column count after
+nothing at all. So the codec reads the handshake rather than skipping it, and
+tracks the command in flight — one codec per connection, from the factory the
+registry hands out.
+
+**A message is not a packet.** A payload of exactly 16 MiB − 1 means "there is
+more", and the reader concatenates until a payload comes in short — which may
+be an EMPTY packet when the message length is an exact multiple. A decoder
+that treats every packet as a message reads the second half of a large
+statement as a command byte followed by SQL, which is how a spliced
+`DROP TABLE` gets past a classifier.
+
+**One `COM_QUERY` can be several statements.** `CLIENT_MULTI_STATEMENTS` is
+negotiated by Connector/J and most ORMs by default, so
+`SELECT 1; DROP TABLE users` arrives as a single command. The seam injects
+`lexer.Split` for exactly this: without it the codec classifies the payload by
+its leading verb and the drop reaches the server having been evaluated as a
+select. Splitting is the lexer's job rather than the codec's because getting
+it right needs MySQL's quoting rules — a naive split on `;` cuts inside a
+string literal.
+
+**`COM_STMT_EXECUTE` does not carry its SQL.** It names a statement by the
+numeric id the server assigned in reply to an earlier `COM_STMT_PREPARE`, so
+the codec keeps the prepare's text against that id and attributes the execute
+to it. A prepare the codec never saw — a connection adopted mid-flight — makes
+the execute an `unknown` operation, which a rule naming `unknown` refuses.
+That is the fail-closed direction.
+
+**Three negotiated features are refused rather than forwarded**, each with
+`ErrStreamUnsafe`, which the gate turns into a denial regardless of policy:
+
+- **`CLIENT_COMPRESS`** replaces the packet framing itself from the first byte
+  after the handshake response, so nothing after it is readable.
+- **A client-initiated TLS upgrade.** The client sends the first 32 bytes of a
+  handshake response and starts a TLS handshake on the same socket. This one
+  is a deployment fault with a fix, and the message says so: terminate the TLS
+  in front of the relay, and the codec is handed plaintext and never sees the
+  flag.
+- **`LOAD DATA LOCAL INFILE`.** The server answers with a filename and the
+  client streams that file back as raw packets carrying no command byte. It is
+  also the long-standing attack — a malicious server can send the request in
+  reply to any query — so refusing it is a control and not only a parsing
+  convenience. The statement that provoked it is already in the audit trail;
+  the transfer never starts.
+
+**MySQL masks its responses** by the same re-framing mechanism Postgres uses.
+Every value in a text row is length-prefixed and so is the packet holding it,
+so a changed row is rebuilt with both recomputed; patching in place leaves the
+client reading a declared length that no longer matches and dropping the
+connection. Rebuilt rows keep their original sequence ids, because MySQL
+requires them consecutive within a command and renumbering one would mean
+renumbering every packet after it.
+
+Binary rows — what a prepared statement returns — mask only where the wire
+encoding is already a length-encoded string. An `INT` column is four
+little-endian bytes, and writing a redaction token there is not a long
+integer, it is a client desynchronized for the rest of the connection. Every
+other column is measured so the walk stays aligned and forwarded unchanged. A
+number carrying a secret is a real gap, and the honest one: the alternative is
+a protocol error the user reads as an outage.
 
 ### MSSQL, and the Kerberos login
 
@@ -832,9 +1084,24 @@ A worked deployment, with Envoy terminating TDS 8.0, a Kerberos client and an
 AD domain controller, lives in
 [`deploy/docker-compose/envoy-stack/mssql`](../deploy/docker-compose/envoy-stack/mssql).
 
-MySQL and MongoDB codecs are **not shipped**. The `Codec` interface and the
-shared SQL classifier are protocol-agnostic, so adding one takes a new
-`codec/<name>` package and no other change.
+No MongoDB codec is shipped. Adding a protocol is **not** the one-package
+change this section used to claim: the `Codec` interface and the SQL
+classifier are protocol-agnostic, but everything a lane needs around the
+decoder is keyed by protocol and each piece fails quietly on its own. MySQL
+was added as a full lane and touched all of it:
+
+| Add | Where | Symptom if you skip it |
+|---|---|---|
+| the decoder | `libhoop/v2/codec/<name>` | nothing to register |
+| a `Protocol` constant | `libhoop/v2/codec/types`, aliased in `inspect/wiretypes.go` | callers spell the protocol as a string literal |
+| the registration seam | `sidecar/codec/<name>`, and its import in `codec/all` | `inspect.New` refuses the protocol, so the lane will not start |
+| a lexer `Dialect` | `lexer/`, selected in `inspect.AnalyzeSQL` | the statement is scanned by Postgres rules: a mis-lexed identifier reads as a different operation |
+| a deny frame | `proxy/deny.go` | a denial closes the socket with no message, and the driver reports a lost connection |
+| an analyzer content builder | `analyzer/content.go` | `ai_analysis` rules on the lane classify nothing; startup refuses the lane rather than let it run silent |
+
+Masking needs no registration: the gate asks the codec for a `Reframer`, so a
+decoder that can rebuild its rows masks, and one that cannot has its
+`mask.rules` refused at startup.
 
 The decoders ship in `github.com/hoophq/libhoop`, a separate private module
 that imports nothing from here. The packages under `sidecar/codec/` are
@@ -845,14 +1112,14 @@ the HTTP machinery.
 
 ```go
 import _ "github.com/hoophq/hoop/sidecar/codec/postgres" // postgres only
-import _ "github.com/hoophq/hoop/sidecar/codec/all"      // postgres + mssql + http
+import _ "github.com/hoophq/hoop/sidecar/codec/all"      // postgres + mysql + mssql + http
 ```
 
 ## The Statement
 
 ```go
 type Statement struct {
-    Protocol  Protocol          // postgres | http
+    Protocol  Protocol          // postgres | mysql | mssql | http
     Direction Direction         // client | server
     Text      string            // verbatim SQL, or the request line for HTTP
     Operation Operation         // the most consequential effect, not the leading verb
@@ -930,6 +1197,17 @@ treating it as an identifier everywhere mangles `SELECT tags[1] FROM t`,
 treating it as an operator everywhere loses `[dbo].[customers]`. Only the
 lexical rules differ; the analysis after them is shared.
 
+MySQL diverges in five places, and each one is a statement that would
+otherwise execute unseen rather than a matter of taste:
+
+| Rule | MySQL | Elsewhere | Cost of using the wrong one |
+|---|---|---|---|
+| `` `name` `` | quoted identifier | not a delimiter | ``DELETE FROM `select` `` loses its relation |
+| `#` to end of line | comment | live operator (PostgreSQL spells XOR with it) | `SELECT 1 # DROP TABLE t` reports a drop nobody ran |
+| `--` | needs whitespace after it | opens a comment either way | `SELECT 1--2; DELETE FROM t` hides the delete inside a comment |
+| `\` in `'...'` | an escape, unless `NO_BACKSLASH_ESCAPES` | an ordinary character | `SELECT 'O\'Brien'; DELETE FROM t` swallows the semicolon and the delete |
+| `/* /* */` | does not nest | nests in PostgreSQL and T-SQL | the two engines read opposite halves of the text as live SQL |
+
 Those choices buy this, measured through the real Postgres path:
 
 | statement | before | after |
@@ -982,8 +1260,10 @@ rules:
     message: this statement cannot be classified, so it is refused
 ```
 
-MSSQL runs the scanner permanently. No credible Go T-SQL parser exists, so
-there is no later version of this where the T-SQL path swaps to a grammar.
+MSSQL and MySQL run the scanner permanently. No credible Go parser exists for
+T-SQL, and none for MySQL's dialect either, so there is no later version of
+this where those paths swap to a grammar. The oracle below judges only the
+PostgreSQL dialect; the other two are held by the unit corpus.
 
 ### Checked against a real parser
 
@@ -1323,9 +1603,12 @@ rather than by consulting a list of protocol names:
   rewrite. Leave it stale and the client reads the old count and stops
   mid-document, which reads as a corrupt upstream rather than a masking bug.
 - **Re-framing**, where every row and column carries its own length prefix.
-  Postgres, whose codec rebuilds each changed `DataRow` around the new values.
-  Substituting bytes there desynchronizes the client, and `psql` reports "lost
-  synchronization with server".
+  Postgres, MySQL and MSSQL, whose codecs rebuild each changed row around the
+  new values. Substituting bytes there desynchronizes the client, and `psql`
+  reports "lost synchronization with server". MySQL's binary rows are the one
+  partial case: a value that is not already a length-encoded string is
+  measured and forwarded unchanged, because a redaction token written over a
+  four-byte integer is a protocol error rather than a mask.
 
 A codec offering neither gets its `mask.rules` refused at startup, because
 accepting a masking config that can never fire is the failure that ends with
@@ -1580,6 +1863,15 @@ Compare MSSQL. TDS 8.0 is TLS-on-connect, so an ordinary
 `DownstreamTlsContext` terminates it with no protocol awareness, and that lane
 needs none of this.
 
+MySQL negotiates in-band too and is still refused this field, because the
+relay does not speak that exchange: the server greets first there, and the
+client asks to encrypt by sending a truncated handshake response rather than a
+self-describing 8-byte packet, so none of the pgwire negotiation applies.
+Something in front must terminate it. The consequence is not silent — the
+codec refuses a session it sees the client upgrade, naming the fix — but the
+deployment is what has to change, so terminate the TLS ahead of the relay and
+the codec is handed plaintext.
+
 ```yaml
 listeners:
   - name: appdb
@@ -1727,6 +2019,16 @@ That covers the root module only (`inspect/`, `lexer/`, `codec/`, `policy/`,
 (cd pii/alcatraz && go test ./...)
 (cd store/sqlite && go test ./...)
 (cd lexer/conformance && go test ./...)   # differential, against PostgreSQL's parser
+```
+
+End to end, against a real server: `make test-sidecar-e2e` at the repo root
+boots a `mysql:8` container and runs the `hoop-inspect` binary as a subprocess
+in front of it. It needs Docker, is behind the `integration` build tag, and is
+not part of `make test-oss`. Running it by hand needs `GOWORK=off`, because
+`e2e/` is deliberately not a `go.work` member:
+
+```bash
+(cd e2e && GOWORK=off go test -tags integration -count=1 ./...)
 ```
 
 Each codec runs a split-read matrix: the tests feed the same message in two

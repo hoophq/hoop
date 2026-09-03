@@ -7,13 +7,30 @@ Coding rules, styling hierarchy and the colour-scheme rule: [CLAUDE.md](./CLAUDE
 
 ## Running it
 
-The control plane backend does not exist yet, so the API comes from the gateway.
+There is no separate control plane backend: the API is the gateway, booted into
+its control-plane surface.
+
+Add this to the repo-root `.env` **before** starting the gateway:
+
+```
+APP_MODE=control-plane
+```
+
+It has to go in the file, not on the command line — `scripts/dev/run.sh` runs
+the gateway in a container with `--env-file=.env`, so a shell prefix never
+reaches it.
 
 ```bash
 make run-dev          # gateway on :8009, from the repo root
 npm install
 npm run dev           # Vite on :5173
 ```
+
+Without `APP_MODE` the gateway registers all 264 of its routes, so a call to
+something the control plane blocks works here and 404s in production. The
+routes the control plane serves are listed in
+`buildControlPlaneRoutes` in `gateway/api/server.go`, and an amber banner appears at the top of
+every page (dev builds only) when the backend is answering in gateway mode.
 
 Only `/api` is proxied. There is no ClojureScript dev server and no asset proxy —
 everything under `/images`, `/icons` and `/data` is served from `public/`.

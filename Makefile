@@ -117,11 +117,39 @@ test-enterprise: generate-wasm
 # what defends it.
 #
 # The list is discovered rather than written down, so a nested module added
-# later is covered on the day it is added.
+# later is covered on the day it is added. It is then filtered to the modules
+# go.work actually lists: `go test` refuses to run in a directory the active
+# workspace does not contain ("directory prefix . does not contain modules
+# listed in go.work"), which under set -e aborts the loop and takes test-oss
+# with it. sidecar/e2e is out of the workspace on purpose and is the module
+# this skips today; see test-sidecar-e2e, which is how that one runs.
 test-sidecar:
 	@set -e; for m in $$(find sidecar -name go.mod -exec dirname {} \;); do \
+		grep -q "^[[:space:]]*\./$$m$$" go.work || continue; \
 		(cd $$m && env CGO_ENABLED=0 go test -json -v ./...); \
 	done
+
+# End-to-end sidecar suite (DEP-170): boots a real mysql:8 container through
+# testcontainers-go and drives the shipped hoop-inspect binary (sidecar/cmd)
+# as a subprocess in front of it, so masking and the auth handshake are proven
+# over the wire instead of against a decoder in isolation. `sidecar/e2e` is a
+# nested module, and `./sidecar/e2e/...` from here matches nothing for the
+# reason above, so the target enters the directory. No -race: the work is in
+# the container and the binary under test is a separate process anyway.
+#
+# GOWORK=off is required, not tidiness: this module is absent from go.work on
+# purpose — a testcontainers/docker dependency tree has no business in the
+# workspace every other module resolves against — and a workspace that does
+# not list it refuses the build outright ("directory prefix . does not contain
+# modules listed in go.work"). The harness re-derives the setting for the
+# sidecar/cmd build it shells out to, which must keep the workspace.
+#
+# NOT a dependency of test-oss or test-sidecar, and must not become one. Those
+# run in the unit-test job, which has no Docker guarantee and no budget for a
+# container pull plus boot plus binary build on every unit run. This target has
+# its own CI job (sidecar-e2e in .github/workflows/pullrequest.yml).
+test-sidecar-e2e:
+	cd sidecar/e2e && env GOWORK=off CGO_ENABLED=0 go test -tags integration -v -timeout 10m -count=1 ./...
 
 prepare-mssql-jdbc:
 	$(RM) $(MSSQL_JDBC_CLASSPATH_FILE)

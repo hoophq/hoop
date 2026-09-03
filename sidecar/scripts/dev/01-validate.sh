@@ -11,6 +11,11 @@
 # fires is the failure this whole config surface exists to prevent. Each
 # negative case below is a config that would otherwise look fine.
 #
+# The last two are the free-tier caps rather than a misconfiguration: an
+# unlicensed process enforces one guardrail rule and one data masking rule,
+# and a cap nobody tests is a cap that stops firing. This script runs without
+# a license on purpose; pass -license to see both refusals disappear.
+#
 # Usage:
 #   HOOP_PROJECT=my-project ./01-validate.sh
 #
@@ -156,6 +161,19 @@ elif edit == "bad-provider":
     s = s.replace("  provider: vertex", "  provider: bedrock")
 elif edit == "auth-header":
     s = s.replace("      headers: [Content-Type]", "      headers: [Content-Type, Authorization]")
+elif edit == "second-guardrail":
+    s = s.replace("        - name: no-drops\n",
+                  "        - name: no-deletes\n"
+                  "          type: operation\n"
+                  "          operations: [delete]\n"
+                  "          message: deletes are not permitted on appdb\n"
+                  "        - name: no-drops\n")
+elif edit == "two-mask-rules":
+    s = s.replace("guardrails:\n  mode: enforce\n",
+                  "guardrails:\n  mode: enforce\n\n"
+                  "mask:\n  rules:\n"
+                  "    - {name: ssn, entities: [US_SSN], strategy: redact}\n"
+                  "    - {name: cpf, entities: [BR_CPF], strategy: redact}\n")
 open(dst, "w").write(s)
 PY
     local got
@@ -176,6 +194,8 @@ refuse "negative max_calls"                     "max_calls is negative"     nega
 refuse "require_review, which this build cannot honor" "require_review"     review
 refuse "a provider the binary does not link"    "not linked"                bad-provider
 refuse "Authorization in the header allowlist"  "may not be exposed"        auth-header
+refuse "a second guardrail rule"                "2 guardrail rules"         second-guardrail
+refuse "a second data masking rule"             "2 data masking rules"      two-mask-rules
 rm -f "$WORKDIR/bad.yaml"
 
 [[ $FAILED -eq 0 ]] || die "a refusal did not fire. The config surface is not doing its job."

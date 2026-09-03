@@ -13,6 +13,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/gate"
 	"github.com/hoophq/hoop/sidecar/inspect"
+	"github.com/hoophq/hoop/sidecar/license"
 	"github.com/hoophq/hoop/sidecar/policy"
 )
 
@@ -99,6 +100,12 @@ type Config struct {
 	// LogLevel is debug, info, warn or error. Default info.
 	LogLevel string `json:"log_level"`
 
+	// License is a path to the document Hoop issued, or the document
+	// itself: a value starting with "{" is the document, so moving one
+	// between a mounted file and a secret is not also a rename. Lowest
+	// precedence of the three sources; ResolveLicense holds the order.
+	License string `json:"license,omitempty"`
+
 	// Policy is the DEPRECATED pre-ADR-0011 spelling of Guardrails and OPA
 	// combined. normalize empties it.
 	Policy *PolicyConfig `json:"policy,omitempty"`
@@ -111,6 +118,33 @@ type Config struct {
 	// from LoadConfigBytes because three entry points load a config and all
 	// three have to report the same thing.
 	Deprecations []string `json:"-"`
+
+	// lic is the VERIFIED license ResolveLicense reached. Setup fills it,
+	// UseLicense sets it for a caller assembling a Config in Go. Not a
+	// config key: the file names a license and does not carry a verdict.
+	// The zero value is missing, so an embedder who skips it keeps the caps.
+	lic license.Status
+}
+
+// Licensing reports the license this config runs under. The zero value is a
+// missing license, so this always has something to say.
+func (c *Config) Licensing() license.Status { return c.lic }
+
+// UseLicense verifies a license and adopts it, replacing whatever Setup
+// resolved. It is the seam a control-plane license arrives through: the plane
+// sends the document Hoop signed, the sidecar checks that signature itself
+// and every cap moves with the result.
+//
+// It takes a REFERENCE and not a Status, so no caller can hand the daemon a
+// verdict it reached on its own. Trusting the sender would make the caps a
+// matter of who is on the other end of a connection.
+func (c *Config) UseLicense(ref license.Ref) error {
+	s := license.Load(ref)
+	if s.State() == license.StateInvalid {
+		return s.Err
+	}
+	c.lic = s
+	return nil
 }
 
 // ListenerConfig is one protocol endpoint: one Envoy cluster's worth of
@@ -124,7 +158,7 @@ type ListenerConfig struct {
 	// which is a fallback rather than a name anyone should rely on.
 	Name string `json:"name"`
 
-	// Protocol selects the codec: postgres, mssql or http.
+	// Protocol selects the codec: postgres, mysql, mssql or http.
 	Protocol string `json:"protocol"`
 
 	// Listen is the bind address, or a filesystem path when Network is
@@ -146,12 +180,19 @@ type ListenerConfig struct {
 	// Requires cert_file and key_file; the other TLSConfig fields describe an
 	// outbound connection and are ignored here.
 	//
-	// Only `postgres` supports it, and only because pgwire leaves nobody else
-	// able to: its TLS is negotiated in-band with an 8-byte SSLRequest, so a
-	// plain TLS listener in front cannot terminate it. Envoy's own postgres
-	// filter can, but it is contrib-only, marked work-in-progress, and gives
-	// up permanently the moment a client asks for GSS encryption, which is
-	// what psql does by default whenever a Kerberos ticket is present.
+	// Only `postgres` supports it. pgwire negotiates TLS in-band with an
+	// 8-byte SSLRequest, so a plain TLS listener in front cannot terminate
+	// it. Envoy's own postgres filter can, but it is contrib-only, marked
+	// work-in-progress, and gives up permanently the moment a client asks
+	// for GSS encryption, which is what psql does by default whenever a
+	// Kerberos ticket is present.
+	//
+	// MySQL negotiates in-band too and is still refused, because the relay
+	// does not speak that exchange: the server greets first there, and the
+	// client's SSLRequest is a truncated HandshakeResponse41 rather than a
+	// self-describing 8-byte packet, so none of negotiateDownstream applies.
+	// Accepting the field would bind a certificate nothing ever offers and
+	// report the lane healthy.
 	//
 	// Omitting it keeps the documented posture: the relay terminates no
 	// downstream TLS and whatever fronts it owns that leg.
@@ -764,6 +805,12 @@ func (c *Config) Validate() error {
 	// Detection is always available now, so the analyzer's redacting send
 	// modes always have a scanner to use.
 	problems = append(problems, c.Analyzer.validate(true)...)
+
+	// The feature caps are NOT checked here. This runs inside
+	// LoadConfigBytes, before Setup has seen the license flag or
+	// HOOP_LICENSE, so a cap here would refuse a licensed config for a
+	// limit its license lifts. buildLanes is the single site instead.
+
 	seen := map[string]bool{}
 	for i, l := range c.Listeners {
 		name := l.displayName(i)

@@ -206,6 +206,8 @@ github.com/hoophq/alcatraz/ner v0.19.0 h1:tqufWj75FzCLkBgZAA59yPMz9GYcjeEw0evq1R
 github.com/hoophq/alcatraz/ner v0.19.0/go.mod h1:SRDruyn/1IFso83RuTnMgcxl7xbI25fcfn2p+quQWfY=
 github.com/hoophq/libhoop v0.0.0-20260827130908-d96eb386cba0 h1:3FJ2kGyOt0DUIkIB1CMW/CT/1AUuUX+oJmiaN7vZTwA=
 github.com/hoophq/libhoop v0.0.0-20260827130908-d96eb386cba0/go.mod h1:gDuPtytFeFWFCXmk34dpC/oJj1/NWk6XOHPx0fTg6rs=
+github.com/hoophq/libhoop v0.0.0-20260902174454-48fcbe3f45c5 h1:ouvhJ9FTD0NvUZonVwGnU0TOw37X1fnxo2TKMJoT8uE=
+github.com/hoophq/libhoop v0.0.0-20260902174454-48fcbe3f45c5/go.mod h1:gDuPtytFeFWFCXmk34dpC/oJj1/NWk6XOHPx0fTg6rs=
 github.com/hoophq/mcpproxy v0.1.1 h1:Zj9/vOMAKSOTuGuuSLl/v01iKdQ1+yiYZLNNz2T1npQ=
 github.com/hoophq/mcpproxy v0.1.1/go.mod h1:Wi7Z5bo0hJRwKa/gFaC9vRAWFCy3dxcYS2n28/TTphc=
 github.com/jackc/pgpassfile v1.0.0 h1:/6Hmqy13Ss2zCq62VdNG8tM1wchn8zjSGOBJ6icpsIM=

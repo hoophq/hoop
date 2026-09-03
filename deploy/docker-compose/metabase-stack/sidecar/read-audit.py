@@ -23,9 +23,16 @@ from pathlib import Path
 # this check exists to catch exactly the value nobody remembered.
 SEED = Path(__file__).resolve().parent.parent / "upstream" / "seed.sql"
 
-# Columns ../sidecar/config.yaml masks, by name (ssn) or by the entity
-# their values carry (EMAIL_ADDRESS, US_SSN, BR_CPF, IBAN_CODE).
-PII_COLUMNS = {"email", "ssn", "cpf", "iban", "bank_iban", "actor_email"}
+# Columns ../sidecar/config.yaml masks. One mask rule for the whole process,
+# spent on the EMAIL_ADDRESS entity, so these two columns and nothing else.
+#
+# ssn, cpf, iban and bank_iban are NOT listed, and leaving them in would be a
+# check for a property this build does not have: their rules are commented out
+# over the limit, the values reach Metabase as stored, and the audit trail
+# recording them is then correct rather than a leak. Restore a mask rule and
+# add its columns back here in the same edit; the check is only worth its
+# runtime while the two lists agree.
+PII_COLUMNS = {"email", "actor_email"}
 
 # events is filled by a SELECT rather than by literal tuples, so the parser
 # below never sees its addresses. One of the generated series stands in for all

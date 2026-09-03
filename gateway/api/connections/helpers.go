@@ -684,6 +684,8 @@ func parseCloudWatchTables(output string) (openapi.TablesResponse, error) {
 func getConnectionCommandOverride(currentConnectionType pb.ConnectionType, connectionCmd []string) []string {
 	var cmd []string
 	switch currentConnectionType {
+	case pb.ConnectionTypeMySQL:
+		return []string{"mysql", "-h$HOST", "-u$USER", "--port=$PORT", "-D$DB"}
 	case pb.ConnectionTypeCloudWatch, pb.ConnectionTypeDynamoDB:
 		return []string{"bash"}
 	case pb.ConnectionTypeMongoDB:

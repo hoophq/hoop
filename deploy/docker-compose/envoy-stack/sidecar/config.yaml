@@ -10,6 +10,11 @@
 # Validate without starting anything:
 #   cd sidecar/cmd && go run . -validate \
 #     -config ../../deploy/docker-compose/envoy-stack/sidecar/config.yaml
+#
+# This build enforces ONE guardrail rule and ONE data masking rule for the
+# whole process. This file is written to that limit: the rest of what the demo
+# used to enforce is present as commented blocks, each marked "over the
+# limit", so uncommenting is the only step on a build without the limit.
 
 log_level: info
 
@@ -96,13 +101,33 @@ guardrails:
 # Masking is response-side, and both lanes get it by two different mechanisms:
 # HTTP by substituting bytes and correcting Content-Length, postgres by
 # rebuilding its length-prefixed row frames around the new values.
+#
+# One rule, and it is the whole process's one rule: both lanes inherit it,
+# because neither overrides the block. EMAIL_ADDRESS is the entity that
+# demonstrates both mechanisms, since httpbin returns it in a JSON body and
+# appdb returns it in a pgwire DataRow.
 mask:
   rules:
     - {name: emails, entities: [EMAIL_ADDRESS], strategy: redact}
-    - {name: ssn, entities: [US_SSN], strategy: partial, keep_last: 4}
-    - {name: cards, entities: [CREDIT_CARD], strategy: partial, keep_last: 4}
-    - {name: cpf, entities: [BR_CPF], strategy: redact}
-    - {name: iban, entities: [IBAN_CODE], strategy: partial, keep_last: 4}
+    # ---- over the limit: four more entities this demo used to mask -------
+    # The pii.entities list above still names all five, so uncommenting any
+    # of these needs no other change.
+    #
+    # ./demo.sh is written to that state and prints the gap rather than
+    # hiding it. Its MASKING beat POSTs all five values and gets one back
+    # rewritten: [REDACTED:EMAIL_ADDRESS] for the email, ssn, card, cpf and
+    # iban echoed exactly as sent, each printed beside the name of the rule
+    # below that would rewrite it. The POSTGRES / masked beat is the same
+    # story on the other mechanism: redacted emails in the DataRow, cleartext
+    # ssn and iban.
+    #
+    # Swap the live rule for one of these and both beats flip for that entity
+    # with no other edit. sidecar/read-audit.py asserts the audit trail holds
+    # no value the live rule removed, so a swap wants that list widened too.
+    # - {name: ssn, entities: [US_SSN], strategy: partial, keep_last: 4}
+    # - {name: cards, entities: [CREDIT_CARD], strategy: partial, keep_last: 4}
+    # - {name: cpf, entities: [BR_CPF], strategy: redact}
+    # - {name: iban, entities: [IBAN_CODE], strategy: partial, keep_last: 4}
 
 # ------------------------------------------------------------------- lanes
 listeners:
@@ -124,12 +149,27 @@ listeners:
       server_name: appdb
     guardrails:
       rules:
-        # Envoy cannot see this: there is no pgwire parser in its filter
-        # chain, so OPA is never consulted and never sees the statement.
-        - name: no-destructive-sql
-          type: operation # lexer-derived, so SELECT 'DROP TABLE x' is a select
-          operations: [drop, delete, truncate]
-          message: destructive statements are not permitted on appdb
+        # ---- over the limit: the lane's own guardrail ------------------
+        # This lane is NOT unguarded. The one rule this build allows is
+        # no-cpf-in-query in the defaults above, and it applies here.
+        #
+        # Envoy cannot see the rule below: there is no pgwire parser in its
+        # filter chain, so OPA is never consulted and never sees the
+        # statement. That is the claim this stack exists to demonstrate, and
+        # it costs the free tier's single rule to show. no-cpf-in-query shows
+        # the same claim on the same lane, which is why it keeps the budget:
+        # it is also the only rule the httpbin lane has left.
+        #
+        # ./demo.sh is written to that choice. Its destructive statement is
+        # `DELETE FROM customers WHERE cpf = '111.444.777-35'`, refused by
+        # whichever of the two rules this process spends its budget on, so
+        # restoring the rule below and commenting out no-cpf-in-query leaves
+        # the demo correct and the row count at 3 either way. A plain
+        # `DELETE ... WHERE id = 1` reaches the database as this file ships.
+        # - name: no-destructive-sql
+        #   type: operation # lexer-derived, so SELECT 'DROP TABLE x' is a select
+        #   operations: [drop, delete, truncate]
+        #   message: destructive statements are not permitted on appdb
         # ---- PII entities -> Rego (off; needs no credential) ------------
         # `action: defer` on ANY local rule turns a match into a REPORT
         # instead of a denial: the rule records what it saw as a finding,
@@ -189,17 +229,29 @@ listeners:
     #   # undefined gate decision allows and requests nothing.
     #   fail_open: false
     #   gate: true
-    mask:
-      rules:
-        # Column rules are only possible where the protocol names its values,
-        # and there they beat detection outright. alcatraz REFUSES
-        # 123-45-6789 as an obvious fixture (sequential digits), so the
-        # detector-based ssn rule leaves it in the clear. The column does not
-        # care what the value looks like.
-        - {name: ssn-column, columns: [ssn], strategy: partial, keep_last: 4}
-        - {name: emails, entities: [EMAIL_ADDRESS], strategy: redact}
-        - {name: cpf, entities: [BR_CPF], strategy: redact}
-        - {name: iban, entities: [IBAN_CODE], strategy: partial, keep_last: 4}
+    # ---- over the limit: this lane's mask override --------------------
+    # Four rules where the process allows one. It is kept whole anyway,
+    # because the shape is what it exists to show.
+    #
+    # With this block commented out the lane inherits the default one, which
+    # is the point of the defaults. It is also the worked example of
+    # `mask.rules` REPLACING rather than extending: the block has to restate
+    # `emails` to keep it, since a lane that overrides the block inherits
+    # nothing from it. Delete that one line and appdb stops redacting email
+    # addresses while httpbin, which overrides nothing, keeps redacting them.
+    #
+    # Column rules are only possible where the protocol names its values, and
+    # there they beat detection outright. alcatraz REFUSES 123-45-6789 as an
+    # obvious fixture (sequential digits) and 987-65-4321 as its descending
+    # twin, which is two of the three seeded ssn values, so no detector-based
+    # ssn rule reaches them - not the commented one in the defaults either.
+    # The column does not care what the value looks like.
+    # mask:
+    #   rules:
+    #     - {name: ssn-column, columns: [ssn], strategy: partial, keep_last: 4}
+    #     - {name: emails, entities: [EMAIL_ADDRESS], strategy: redact}
+    #     - {name: cpf, entities: [BR_CPF], strategy: redact}
+    #     - {name: iban, entities: [IBAN_CODE], strategy: partial, keep_last: 4}
 
   - name: httpbin
     protocol: http
@@ -207,22 +259,33 @@ listeners:
     upstream: httpbin:8080
     guardrails:
       rules:
-        - name: no-admin-api
-          type: http_resource
-          resources: ["/admin/**"]
-          message: the admin API is not reachable through this proxy
-        - name: no-internal-ids
-          type: http_resource
-          # Matched against the NORMALIZED resource, so one rule covers every
-          # id: /anything/users/12345/orders/98765 collapses to this shape.
-          resources: ["/anything/users/*/orders/*"]
-          message: direct id access is not permitted; use the search endpoint
-        - name: no-upstream-5xx
-          type: http_status
-          # Response-side. ext_authz decides before the upstream is called, so
-          # this is a question Envoy structurally cannot ask.
-          statuses: ["5xx"]
-          message: upstream failure suppressed by policy
+        # ---- over the limit: this lane's own guardrails ----------------
+        # As on appdb, the lane still inherits no-cpf-in-query from the
+        # defaults. http_status is the one below worth restoring first: it is
+        # response-side, and ext_authz decides before the upstream is called,
+        # so it is a question Envoy structurally cannot ask.
+        #
+        # ./demo.sh is written to that state. It denies a request the
+        # inherited rule catches (`?cpf=111.444.777-35`, scanned in the
+        # request line), then sends one request per rule below and prints the
+        # status it actually got beside the rule that would have refused it.
+        # Uncomment a rule here, comment out no-cpf-in-query in the defaults,
+        # and the matching demo line flips from allowed to 403 with no other
+        # edit.
+        # - name: no-admin-api
+        #   type: http_resource
+        #   resources: ["/admin/**"]
+        #   message: the admin API is not reachable through this proxy
+        # - name: no-internal-ids
+        #   type: http_resource
+        #   # Matched against the NORMALIZED resource, so one rule covers every
+        #   # id: /anything/users/12345/orders/98765 collapses to this shape.
+        #   resources: ["/anything/users/*/orders/*"]
+        #   message: direct id access is not permitted; use the search endpoint
+        # - name: no-upstream-5xx
+        #   type: http_status
+        #   statuses: ["5xx"]
+        #   message: upstream failure suppressed by policy
         # Needs the http block below: without capture_body the analyzer sees
         # "POST /anything" and no payload, which tells a model nothing.
         # - name: risky-payloads

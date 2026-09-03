@@ -267,12 +267,14 @@ func TestMaskOnPostgresIsAccepted(t *testing.T) {
 }
 
 // A protocol with neither mechanism must still be refused. This guards
-// against config that looks active and can never fire.
+// against config that looks active and can never fire. The example is a
+// protocol this build ships no codec for: every protocol it does ship can
+// mask, so naming one of those would pin nothing.
 func TestMaskOnUnmaskableProtocolIsRefused(t *testing.T) {
 	det := stubPlugin{entities: []string{"US_SSN"}}
 	mc := MaskConfig{Rules: []byte(`[{"entities":["US_SSN"]}]`)}
 
-	if _, err := buildMasker(mc, det, inspect.Protocol("mysql")); err == nil {
+	if _, err := buildMasker(mc, det, inspect.Protocol("cassandra")); err == nil {
 		t.Error("buildMasker accepted a protocol with no codec and no masking path")
 	}
 }
@@ -295,6 +297,31 @@ func TestMaskOnHTTPIsAccepted(t *testing.T) {
 	}
 	if lanes[0].masker == nil {
 		t.Error("http lane got no masker")
+	}
+}
+
+// A mysql lane must reach a masker the same way a postgres one does. The
+// protocol was refused here until it had a codec, and the two checks that
+// stood in the way are independent: Validate consults gate.MaskSupported,
+// buildLanes consults the registry. A codec registered but not re-framing, or
+// re-framing but not registered, passes one and fails the other.
+func TestMaskOnMySQLIsAccepted(t *testing.T) {
+	cfg := &Config{
+		Listeners: []ListenerConfig{{
+			Name: "appdb", Protocol: "mysql", Listen: ":1", Upstream: "h:3306",
+			Mask: &MaskConfig{Rules: []byte(`[{"entities":["US_SSN"]}]`)},
+		}},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("mask rules on a mysql listener were refused: %v", err)
+	}
+
+	lanes, err := buildLanes(cfg, stubPlugin{entities: []string{"US_SSN"}}, nil)
+	if err != nil {
+		t.Fatalf("buildLanes: %v", err)
+	}
+	if lanes[0].masker == nil {
+		t.Error("mysql lane got no masker")
 	}
 }
 

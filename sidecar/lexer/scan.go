@@ -64,6 +64,11 @@ type scanner struct {
 	pos   int
 	rules lexRules
 
+	// execDepth counts open `/*! ... */` executable comments. Their bodies
+	// are live SQL, so the scanner stays inside the statement and only owes
+	// the closing delimiter; see skipComment.
+	execDepth int
+
 	// incomplete records the first construct the scanner could not finish.
 	// It travels to Analysis.Complete, and a caller fails closed on it.
 	incomplete string
@@ -72,12 +77,30 @@ type scanner struct {
 // scan tokenizes src. The second result is empty when the whole input was
 // understood, and otherwise names what defeated it.
 func scan(src string, d Dialect) ([]Token, string) {
-	s := &scanner{src: src, rules: d.rules()}
+	return scanWith(src, d.rules())
+}
+
+// scanWith tokenizes src under an explicit rule set.
+//
+// Split out from scan because MySQL is read twice, once per backslash
+// convention: the mode is a per-session setting the classifier cannot see,
+// and the two readings disagree about where a literal ends. See
+// analyzeMySQL.
+func scanWith(src string, rules lexRules) ([]Token, string) {
+	s := &scanner{src: src, rules: rules}
 	// One token per ~6 bytes is close for SQL and avoids most regrowth.
 	out := make([]Token, 0, len(src)/6+8)
 	for {
 		tok, ok := s.next()
 		if !ok {
+			// An executable comment left open ran off the end of the
+			// input. Its body was scanned as live SQL, so the tokens are
+			// real, but the statement is truncated and what follows the
+			// missing close is unknown. Fail closed rather than report a
+			// clean scan of half a statement.
+			if s.execDepth > 0 {
+				s.fail("unterminated executable comment")
+			}
 			return out, s.incomplete
 		}
 		out = append(out, tok)
@@ -133,6 +156,14 @@ func (s *scanner) next() (Token, bool) {
 	case s.rules.bracketIdent && c == '[':
 		return s.delimitedIdent('[', ']'), true
 
+	// Gated, and it has to be: a backtick is not punctuation the other
+	// engines merely dislike, it is a byte they reject, so opening an
+	// identifier on it anywhere else would turn a syntax error into a
+	// confident relation name. delimitedIdent already honours the
+	// doubled-close escape, which is exactly MySQL's ``a``b`` spelling.
+	case s.rules.backtickIdent && c == '`':
+		return s.delimitedIdent('`', '`'), true
+
 	case s.rules.dollarQuote && c == '$':
 		if tok, ok := s.dollarString(); ok {
 			return tok, true
@@ -166,19 +197,71 @@ func (s *scanner) skipSpace() {
 
 // skipComment consumes one comment and reports whether it did.
 func (s *scanner) skipComment() bool {
-	if s.peek(0) == '-' && s.peek(1) == '-' {
+	// MySQL requires whitespace or a control character after the second
+	// dash; `1--2` is one minus applied twice, not a comment. Applying the
+	// Postgres rule there hides everything after it on the line, so
+	// `SELECT 1--2; DELETE FROM t` would come back as a lone select with
+	// the second statement never analyzed.
+	if s.peek(0) == '-' && s.peek(1) == '-' && (!s.rules.dashCommentNeedsSpace || s.dashOpensComment()) {
 		for s.pos < len(s.src) && s.src[s.pos] != '\n' {
 			s.pos++
 		}
 		return true
 	}
+	// MySQL's other line comment. Gated because '#' is a live operator
+	// elsewhere — PostgreSQL spells XOR and several geometric operators
+	// with it — so consuming to end of line there would delete real SQL.
+	if s.rules.hashComment && s.peek(0) == '#' {
+		for s.pos < len(s.src) && s.src[s.pos] != '\n' {
+			s.pos++
+		}
+		return true
+	}
+
+	// The close of an executable comment opened below. Consumed as
+	// whitespace, because its BODY was live SQL and the tokens are already
+	// emitted; leaving it would surface as stray '*' and '/' punctuation.
+	if s.execDepth > 0 && s.peek(0) == '*' && s.peek(1) == '/' {
+		s.pos += 2
+		s.execDepth--
+		return true
+	}
+
 	if s.peek(0) != '/' || s.peek(1) != '*' {
 		return false
 	}
-	// Both supported engines NEST block comments, unlike the standard. A
+
+	// `/*! ... */` is MySQL's executable comment, and its contents RUN.
+	// `/*! DROP TABLE t */` drops the table; a scanner discarding it as a
+	// comment reports no verb, so a rule refusing `drop` matches nothing
+	// and the statement is forwarded. Verified against MySQL 8.4: the
+	// table disappeared through a relay configured to refuse it.
+	//
+	// `/*!50000 ... */` runs only on a server at or above that version.
+	// This scanner does not know the server's version and must not guess:
+	// treating the body as live SQL costs a false denial on an older
+	// server, treating it as a comment costs a silent bypass on a current
+	// one. Only one of those is survivable.
+	//
+	// The body is scanned in place rather than recursively: the tokens
+	// belong to the surrounding statement, which is exactly why they
+	// matter. execDepth records that a close is still owed.
+	if s.rules.executableComment && s.peek(2) == '!' {
+		s.pos += 3
+		// An optional 5- or 6-digit version prefix, which is part of the
+		// marker and not of the statement.
+		for s.pos < len(s.src) && s.src[s.pos] >= '0' && s.src[s.pos] <= '9' {
+			s.pos++
+		}
+		s.execDepth++
+		return true
+	}
+	// PostgreSQL and T-SQL NEST block comments, unlike the standard. A
 	// scanner stopping at the first close reads the tail of an outer
 	// comment as live SQL: `/* a /* b */ DELETE FROM t */` is entirely
-	// comment, and stopping early reports a delete.
+	// comment there, and stopping early reports a delete. MySQL does not
+	// nest, where the same text ends at the first close and the delete is
+	// real; nestedBlockComment picks the reading per engine.
 	depth := 0
 	for s.pos < len(s.src) {
 		switch {
@@ -203,7 +286,19 @@ func (s *scanner) skipComment() bool {
 	return true
 }
 
-// plainString consumes '...' with the doubled '' escape.
+// dashOpensComment reports whether the `--` at the cursor is MySQL's line
+// comment rather than two minus signs. The server's test is a whitespace or
+// control character after the second dash; end of input also ends the line,
+// so nothing can follow the dashes there either.
+func (s *scanner) dashOpensComment() bool {
+	if s.pos+2 >= len(s.src) {
+		return true
+	}
+	c := s.src[s.pos+2]
+	return c <= ' '
+}
+
+// plainString consumes '...' with the doubled ” escape.
 func (s *scanner) plainString() Token {
 	s.pos++ // opening quote
 	for s.pos < len(s.src) {
@@ -350,7 +445,39 @@ func isTagByte(c byte) bool {
 // A semicolon inside a literal, a comment, a quoted identifier or a
 // dollar-quoted body is not a separator. Empty statements are dropped.
 func Split(sql string, d Dialect) []string {
-	s := &scanner{src: sql, rules: d.rules()}
+	if d == MySQL {
+		return splitMySQL(sql)
+	}
+	return splitWith(sql, d.rules())
+}
+
+// splitMySQL returns the FINER of the two backslash readings.
+//
+// Whether `\` escapes inside '...' decides where a literal ends, and so
+// where a statement ends. Under NO_BACKSLASH_ESCAPES,
+// `SELECT 'a\'; DELETE FROM orders; -- '` is two statements and the DELETE
+// runs; under the default it is one, and the delete is literal text.
+//
+// The session mode is invisible here, so the split that yields MORE
+// statements wins. Every fragment then reaches the classifier and the
+// policy: a DELETE hidden by the other reading is evaluated rather than
+// swallowed. The cost of being wrong is a harmless fragment classified
+// separately, which denies nothing on its own.
+func splitMySQL(sql string) []string {
+	escaped := MySQL.rules()
+	literal := escaped
+	literal.backslashInPlainString = false
+
+	a := splitWith(sql, escaped)
+	if b := splitWith(sql, literal); len(b) > len(a) {
+		return b
+	}
+	return a
+}
+
+// splitWith breaks sql on top-level semicolons under an explicit rule set.
+func splitWith(sql string, rules lexRules) []string {
+	s := &scanner{src: sql, rules: rules}
 	var out []string
 	start := 0
 	for {

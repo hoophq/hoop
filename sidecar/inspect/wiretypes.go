@@ -38,6 +38,7 @@ type (
 const (
 	Postgres = codectypes.Postgres
 	MSSQL    = codectypes.MSSQL
+	MySQL    = codectypes.MySQL
 	HTTP     = codectypes.HTTP
 
 	FromClient = codectypes.FromClient
