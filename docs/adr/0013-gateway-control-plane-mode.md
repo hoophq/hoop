@@ -1,6 +1,6 @@
 # ADR-0013: The control plane is a second boot path in the gateway binary
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-09-03
 - **Author:** @p3rotto
 - **Linear:** EVL-237, EVL-245
