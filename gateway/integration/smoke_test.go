@@ -544,6 +544,144 @@ func TestServerLogsStream(t *testing.T) {
 	}
 }
 
+// T15 — compliance report: admin and auditor get the full aggregated payload;
+// a standard-group key is rejected by the admin+auditor role gate.
+func TestComplianceReport(t *testing.T) {
+	token := adminToken(t)
+
+	resp := testServer.Get(t, "/reports/compliance", token)
+	defer resp.Body.Close()
+	testutil.RequireStatus(t, resp, http.StatusOK)
+
+	var report openapi.ComplianceReport
+	testutil.DecodeJSON(t, resp, &report)
+
+	if report.Overall.Score < 0 || report.Overall.Score > 1000 {
+		t.Errorf("overall.score out of range: %d", report.Overall.Score)
+	}
+	if report.Overall.Level == "" {
+		t.Error("overall.level is empty")
+	}
+	if len(report.Categories) != 6 {
+		t.Errorf("expected 6 categories, got %d", len(report.Categories))
+	}
+	wantFrameworks := []string{"soc2", "gdpr", "pci_dss", "hipaa", "best_practices"}
+	if len(report.Frameworks) != len(wantFrameworks) {
+		t.Fatalf("expected %d frameworks, got %d", len(wantFrameworks), len(report.Frameworks))
+	}
+	for i, fw := range report.Frameworks {
+		if fw.ID != wantFrameworks[i] {
+			t.Errorf("frameworks[%d].id = %q, want %q", i, fw.ID, wantFrameworks[i])
+		}
+		if len(fw.Groups) == 0 {
+			t.Errorf("framework %s has no groups", fw.ID)
+		}
+		for _, group := range fw.Groups {
+			if len(group.Controls) == 0 {
+				t.Errorf("framework %s group %s has no controls", fw.ID, group.ID)
+			}
+			for _, ctrl := range group.Controls {
+				if ctrl.Status == "" || ctrl.Message == "" {
+					t.Errorf("framework %s control %s missing status or message", fw.ID, ctrl.ID)
+				}
+			}
+		}
+	}
+
+	// The harness authenticates locally, so sso_enabled must be an actionable
+	// warning and appear in action_required; non_compliant entries sort first.
+	foundSSO := false
+	seenWarning := false
+	for _, item := range report.ActionRequired {
+		if item.ID == "sso_enabled" {
+			foundSSO = true
+			if item.Status != openapi.ComplianceStatusWarning {
+				t.Errorf("sso_enabled status = %v, want warning under local auth", item.Status)
+			}
+		}
+		switch item.Status {
+		case openapi.ComplianceStatusWarning:
+			seenWarning = true
+		case openapi.ComplianceStatusNonCompliant:
+			if seenWarning {
+				t.Errorf("action_required: non_compliant item %s after a warning item", item.ID)
+			}
+		default:
+			t.Errorf("action_required contains %s with status %v", item.ID, item.Status)
+		}
+	}
+	if !foundSSO {
+		t.Error("expected sso_enabled in action_required under local auth")
+	}
+
+	// Auditor is allowed by the role gate.
+	auditorKey := testutil.CreateHPKApiKey(t, testServer, token, "smoke-key-compliance-auditor", []string{"auditor"})
+	defer func() {
+		resp := testServer.Delete(t, "/api-keys/smoke-key-compliance-auditor", token)
+		resp.Body.Close()
+	}()
+	auditorResp := testServer.Get(t, "/reports/compliance", auditorKey)
+	defer auditorResp.Body.Close()
+	testutil.RequireStatus(t, auditorResp, http.StatusOK)
+
+	// A standard (non-admin, non-auditor) key is rejected.
+	standardKey := testutil.CreateHPKApiKey(t, testServer, token, "smoke-key-compliance-standard", []string{"engineering"})
+	defer func() {
+		resp := testServer.Delete(t, "/api-keys/smoke-key-compliance-standard", token)
+		resp.Body.Close()
+	}()
+	deniedResp := testServer.Get(t, "/reports/compliance", standardKey)
+	defer deniedResp.Body.Close()
+	if deniedResp.StatusCode != http.StatusForbidden {
+		t.Errorf("standard key on /reports/compliance: expected 403, got %d", deniedResp.StatusCode)
+	}
+
+	// Behavior check: an unmasked database connection degrades masking
+	// coverage and strictly lowers the overall score.
+	agentID := createAgentReturningID(t, token, "compliance-agent")
+	defer deleteAgent(t, token, "compliance-agent")
+	const connName = "smoke-compliance-db"
+	created := testServer.Post(t, "/connections", token, openapi.Connection{
+		Name:               connName,
+		Type:               "database",
+		SubType:            "postgres",
+		AgentId:            agentID,
+		Command:            []string{"psql"},
+		AccessModeRunbooks: "enabled",
+		AccessModeExec:     "enabled",
+		AccessModeConnect:  "enabled",
+		AccessSchema:       "enabled",
+	})
+	defer created.Body.Close()
+	testutil.RequireStatus(t, created, http.StatusCreated)
+	defer func() {
+		resp := testServer.Delete(t, "/connections/"+connName, token)
+		resp.Body.Close()
+	}()
+
+	after := testServer.Get(t, "/reports/compliance", token)
+	defer after.Body.Close()
+	testutil.RequireStatus(t, after, http.StatusOK)
+	var degraded openapi.ComplianceReport
+	testutil.DecodeJSON(t, after, &degraded)
+	if degraded.Overall.Score >= report.Overall.Score {
+		t.Errorf("overall score should drop after adding an unmasked database: before=%d after=%d",
+			report.Overall.Score, degraded.Overall.Score)
+	}
+	foundCoverage := false
+	for _, item := range degraded.ActionRequired {
+		if item.ID == "masking_coverage" {
+			foundCoverage = true
+			if item.Status != openapi.ComplianceStatusNonCompliant && item.Status != openapi.ComplianceStatusWarning {
+				t.Errorf("masking_coverage status = %v, want warning or non_compliant", item.Status)
+			}
+		}
+	}
+	if !foundCoverage {
+		t.Error("expected masking_coverage in action_required after adding an unmasked database")
+	}
+}
+
 // --- helpers ---
 
 // createAgentReturningID creates an agent and returns its UUID by reading the

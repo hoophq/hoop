@@ -226,6 +226,29 @@ func ListReviews(orgID string) (*[]Review, error) {
 	return &reviews, nil
 }
 
+// CountPendingReviews returns how many reviews of an org are still awaiting a
+// decision, and how many of those were created before staleBefore. Callers
+// that only need the figures must use this instead of ListReviews, which reads
+// every review row of the org along with its review groups.
+func CountPendingReviews(orgID string, staleBefore time.Time) (pending, stale int, err error) {
+	var counts struct {
+		Pending int `gorm:"column:pending"`
+		Stale   int `gorm:"column:stale"`
+	}
+	err = DB.Raw(`
+	SELECT
+		COUNT(*) AS pending,
+		COUNT(*) FILTER (WHERE created_at < ?) AS stale
+	FROM private.reviews
+	WHERE org_id = ? AND status = ?`, staleBefore, orgID, ReviewStatusPending).
+		Scan(&counts).
+		Error
+	if err != nil {
+		return 0, 0, err
+	}
+	return counts.Pending, counts.Stale, nil
+}
+
 // Create the review object, when input is not empty it generates a blob id
 // and save the input as well.
 func CreateReview(rev *Review, input string) error {
