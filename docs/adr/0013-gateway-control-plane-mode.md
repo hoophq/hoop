@@ -159,10 +159,11 @@ builds both engines in one process and checks, in both directions, that the
 gateway's routes minus the web UI are the control plane's routes. A test that
 pins a hand-written list is what this replaces.
 
-**The control plane frontend's own docs are now wrong.** `controlplane/frontend`'s
-`README.md` and `CLAUDE.md` describe an allowlist and an `APP_MODE` variable,
-and its `ModeBanner` warns about routes the control plane blocks. None of that
-is true any more. Fixing them is out of EVL-245's scope and owed a follow-up.
+**Part of the control plane frontend still describes the allowlist.** PR #1785
+updates `controlplane/frontend`'s `README.md` and `CLAUDE.md`. Its `ModeBanner`
+still warns about routes the control plane blocks, and two service comments
+still say the group and attribute routes answer 404. Neither is true any more;
+both are owed a follow-up.
 
 **The served OpenAPI spec describes what is served.** It is generated from the
 handlers' swagger annotations, which know nothing about the mode; with one
