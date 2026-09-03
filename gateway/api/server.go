@@ -137,11 +137,11 @@ type Api struct {
 // share the exact same handler — tests exercise the production middleware
 // chain and validators rather than a stripped-down router.
 //
-// The control plane gets the same engine minus the web UI (ADR-0013). It
-// has its own frontend, controlplane/frontend, and the routes it does not
-// need are cheaper to leave in than to list: a route added to the gateway
-// reaches the control plane by construction. A route that needs the gRPC
-// transport that mode never starts fails per request instead.
+// The control plane gets the same engine (ADR-0013): every route, the web
+// UI included. The routes it does not need are cheaper to leave in than to
+// list, so a route added to the gateway reaches the control plane by
+// construction; one that needs the gRPC transport that mode never starts
+// fails per request instead. The one handler that differs is /healthz.
 func (a *Api) BuildEngine() *gin.Engine {
 	return a.buildEngine(appconfig.Get().AppMode())
 }
@@ -152,9 +152,7 @@ func (a *Api) buildEngine(mode appconfig.AppMode) *gin.Engine {
 	route := a.newEngine()
 	baseURL := appconfig.Get().ApiURLPath()
 
-	if mode != appconfig.AppModeControlPlane {
-		serveWebUI(route, baseURL)
-	}
+	serveWebUI(route, baseURL)
 
 	route.GET("/.well-known/oauth-protected-resource", apimcpauth.MetadataHandler)
 	route.GET("/.well-known/oauth-protected-resource"+apimcpauth.McpResourcePath(), apimcpauth.MetadataHandler)

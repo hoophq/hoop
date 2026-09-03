@@ -37,9 +37,11 @@ too: both modes answer the same routes.
 
 The control plane serves every route the gateway serves (ADR-0013). `buildRoutes` in
 `gateway/api/server.go` is the whole list, and `gateway/api/controlplane_routes_test.go`
-fails if the two modes drift apart. What it does not start is the data plane: no gRPC
-transport, no protocol proxies, no transport plugins and no web UI. A route that needs
-one of those is still registered and fails per request, so do not call one from here:
+fails if the two modes drift apart. It also serves the gateway's web UI (`webapp_v2`) at
+`/`; this app is separate and is not embedded in the binary. What it does not start is
+the data plane: no gRPC transport, no protocol proxies and no transport plugins. A route
+that needs one of those is still registered and fails per request, so do not call one
+from here:
 session creation and exec, schema browsing (`/connections/:id/{databases,tables,columns,test}`),
 runbook execution, the proxy manager, resource plan/apply/health and `/dbroles/jobs`.
 

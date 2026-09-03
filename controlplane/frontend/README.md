@@ -9,8 +9,9 @@ Coding rules, styling hierarchy and the colour-scheme rule: [CLAUDE.md](./CLAUDE
 
 There is no separate control plane backend: the API is the gateway binary
 started with `hoop start control-plane`. It serves every route the gateway
-serves and starts none of the data plane: no gRPC transport, no protocol
-proxies, no transport plugins and no web UI (ADR-0013).
+serves, the gateway's web UI at `/` included, and starts none of the data
+plane: no gRPC transport, no protocol proxies and no transport plugins
+(ADR-0013). This app is not that web UI; it runs on its own through Vite.
 
 ```bash
 make run-dev-postgres        # once, from the repo root
