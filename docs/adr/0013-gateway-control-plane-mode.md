@@ -69,8 +69,8 @@ keys, IdP integration and license management all work that way with no port.
 
 We will run the control plane as **the gateway binary started with
 `hoop start control-plane`**, split at two seams: the process boot path and the
-engine builder. The boot seam removes the data plane. The engine seam removes
-the web UI and nothing else.
+engine builder. The boot seam removes the data plane. The engine is the same
+in both modes; one handler, `/healthz`, differs.
 
 **The subcommand picks the mode, not the environment.** `gateway.Run` takes an
 `appconfig.AppMode` and hands it to `appconfig.Load`. There is no variable to
@@ -93,12 +93,13 @@ addition there is off in control-plane mode by construction, without anyone
 remembering this ADR.
 
 **The engine seam is in `BuildEngine()`.** Both modes build one engine from one
-route tree. Control-plane mode skips `serveWebUI`, the embedded web app and its
-SPA fallback, because the control plane has its own frontend. Everything else
-is registered in both modes: the `/api` tree, the MCP well-known handlers,
-`/ssm` and `/rdpproxy`. Both modes share one middleware chain through
-`newEngine` and `newAPIRouter`, so the control plane gets the same recovery,
-proxy policy, security headers, CORS and Sentry wiring the gateway gets.
+route tree: the `/api` tree, the MCP well-known handlers, `/ssm`, `/rdpproxy`,
+and the gateway's web app with its SPA fallback. Both modes share one middleware
+chain through `newEngine` and `newAPIRouter`, so the control plane gets the
+same recovery, proxy policy, security headers, CORS and Sentry wiring the
+gateway gets. The web app served at `/` is the gateway's; `controlplane/frontend`
+is a separate app that is not embedded in the binary, and which of the two a
+browser reaches is a deployment question this ADR does not settle.
 
 `buildRoutes` reads the mode for one route. The gateway's `/healthz` dials
 `127.0.0.1:8010` and returns 400 when the port is closed; control-plane mode
@@ -113,12 +114,11 @@ should not expose a gateway feature hides it in the UI, not in the handler.
 
 | | gateway (default) | control-plane |
 |---|---|---|
-| HTTP routes | 389 | 389, minus `index.html` and `js/app.js` when a web UI build resolves |
+| HTTP routes | 389 | 389 |
 | `/api/healthz` | probes the gRPC port | answers 200 without dialing |
 | gRPC `:8010` | open | closed |
 | Protocol proxies, transport plugins, agent controller | started | not started |
-| Static UI, SPA fallback | served | absent |
-| `/.well-known/*`, `/ssm`, `/rdpproxy` | served | served |
+| Static UI, SPA fallback, `/.well-known/*`, `/ssm`, `/rdpproxy` | served | served |
 | Bootstrap: migrations, default org, auth | runs | runs |
 
 **What does not work, and how it fails.** 23 of the 271 distinct routes (389
@@ -156,8 +156,8 @@ accepted.
 
 **`gateway/api/controlplane_routes_test.go` asserts parity, not a list.** It
 builds both engines in one process and checks, in both directions, that the
-gateway's routes minus the web UI are the control plane's routes. A test that
-pins a hand-written list is what this replaces.
+two modes register the same routes. A test that pins a hand-written list is
+what this replaces.
 
 **Part of the control plane frontend still describes the allowlist.** PR #1785
 updates `controlplane/frontend`'s `README.md` and `CLAUDE.md`. Its `ModeBanner`
@@ -199,12 +199,13 @@ and diffs them; `make test-oss` passes with no failures.
 Both modes booted from one binary against embedded PGlite with
 `GIN_MODE=debug`, counting unique `METHOD /path` pairs from gin's registration
 log. Both register 389 (271 without the `HEAD` twins) and a `diff` of the two
-lists is empty. The dev binary embeds no web UI build, so the two UI routes
-appear in neither.
+lists is empty. The dev binary embeds no web UI build; with `STATIC_UI_PATH`
+pointing at a directory holding an `index.html`, both modes register
+`GET /index.html` and serve it at `/`.
 
 `hoop start control-plane`: `GET /api/healthz` → `200 {"liveness":"OK"}`;
 `/api/publicserverinfo` → 200; `/api/serverinfo` and `/api/users` → 401
-without a token; `/` and `/index.html` → 404; TCP `127.0.0.1:8010` closed.
+without a token; `/` → 404 without a UI build; TCP `127.0.0.1:8010` closed.
 After `POST /api/localauth/register` and a login, `GET /api/users`,
 `/api/serverinfo`, `/api/plugins` (every plugin, not only slack),
 `/api/api-keys`, `/api/audit/logs`, `/api/server-logs`, `/api/agents` and
