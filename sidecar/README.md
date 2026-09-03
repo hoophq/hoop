@@ -204,6 +204,21 @@ To embed the relay in your own process, call `daemon.Setup` to load the config
 and build the detector, then `daemon.Run`. That is all `hoop start sidecar`
 does; read `client/cmd/startsidecar.go` for the whole of it.
 
+`Setup` takes the same three arguments it always has. It resolves a license
+from `HOOP_LICENSE` and from the config file's `license` key on its own, so an
+embedder that mounts one needs no code change. A caller with its own license
+flag reaches for `daemon.SetupWith`, which is the same function plus options:
+
+```go
+cfg, det, err := daemon.SetupWith(path, configyaml.Load, buildPlugin,
+    daemon.WithLicense(licenseFlag))
+```
+
+Startup facts arrive as new `Option` values rather than new arguments, so
+neither signature moves again. `daemon.Setup` briefly took the license as a
+fourth argument, which broke every embedder that upgraded; that is what the
+split is for.
+
 ## Configuring it: config.yaml
 
 One file is the whole configuration. The process reads it at startup, resolves

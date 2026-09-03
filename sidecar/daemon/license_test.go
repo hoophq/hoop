@@ -25,7 +25,7 @@ const minimalConfig = `{"listeners":[{"protocol":"postgres","listen":":1","upstr
 
 func setupWith(t *testing.T, cfgJSON, licenseFlag string) (*Config, error) {
 	t.Helper()
-	cfg, _, err := Setup(writeConfig(t, cfgJSON), nil, nil, licenseFlag)
+	cfg, _, err := SetupWith(writeConfig(t, cfgJSON), nil, nil, WithLicense(licenseFlag))
 	return cfg, err
 }
 

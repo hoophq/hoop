@@ -71,11 +71,51 @@ type Loader func(path string) (*Config, error)
 // a nil Plugin for an absent section. Pass nil to disable detection outright.
 type PluginBuilder func(rawPII json.RawMessage) (Plugin, error)
 
+// Option adjusts what Setup learns outside the config file.
+//
+// Variadic because the license arrived as a fourth PARAMETER once, and that
+// broke every embedder at compile time. This module's README tells people to
+// call Setup, so its signature is a contract: a new startup fact becomes a
+// new Option, never a new argument and never a second Setup.
+type Option func(*setupOptions)
+
+type setupOptions struct {
+	licenseFlag string
+}
+
+// WithLicense supplies a license from the command line, which outranks
+// HOOP_LICENSE and the config file's `license` key.
+//
+// Only a caller with such a flag needs it. Setup reads the other two sources
+// on its own, so an embedder that mounts a license file and names it in the
+// config gets it from a plain three-argument call.
+func WithLicense(ref string) Option {
+	return func(o *setupOptions) { o.licenseFlag = ref }
+}
+
 // Setup loads a config file, resolves the license and builds the detection
-// plugin. licenseFlag outranks the environment and the file; pass "" when
-// the caller has no flag. An UNREADABLE license stops startup and an expired
-// one does not, since killing a data-path proxy over billing is an outage.
-func Setup(path string, load Loader, build PluginBuilder, licenseFlag string) (*Config, Plugin, error) {
+// plugin.
+//
+// Three parameters, exactly as before licensing existed. This module's README
+// tells embedders to call it, so the signature is a contract: adding the
+// license as a fourth argument broke every one of them, and a variadic would
+// still break a caller holding it in a typed variable. SetupWith is the same
+// function with options.
+func Setup(path string, load Loader, build PluginBuilder) (*Config, Plugin, error) {
+	return SetupWith(path, load, build)
+}
+
+// SetupWith is Setup plus the facts an entry point learned outside the config
+// file. A new startup fact becomes a new Option, never another parameter and
+// never a third Setup.
+//
+// An UNREADABLE license stops startup and an expired one does not, since
+// killing a data-path proxy over billing is an outage.
+func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*Config, Plugin, error) {
+	var o setupOptions
+	for _, apply := range opts {
+		apply(&o)
+	}
 	if load == nil {
 		load = LoadConfig
 	}
@@ -83,7 +123,7 @@ func Setup(path string, load Loader, build PluginBuilder, licenseFlag string) (*
 	if err != nil {
 		return nil, nil, err
 	}
-	cfg.lic = ResolveLicense(licenseFlag, cfg.License)
+	cfg.lic = ResolveLicense(o.licenseFlag, cfg.License)
 	if cfg.lic.State() == license.StateInvalid {
 		return nil, nil, cfg.lic.Err
 	}
@@ -171,7 +211,7 @@ func Main(version string, load Loader, build PluginBuilder) error {
 		return fmt.Errorf("%w: -config is required", ErrUsage)
 	}
 
-	cfg, det, err := Setup(*configPath, load, build, *licenseRef)
+	cfg, det, err := SetupWith(*configPath, load, build, WithLicense(*licenseRef))
 	if err != nil {
 		return err
 	}

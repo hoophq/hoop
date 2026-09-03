@@ -79,8 +79,8 @@ HOOP_LICENSE, which outranks the "license" key in the config file.`,
 			return fmt.Errorf("--config is required (or set HOOP_SIDECAR_CONFIG)")
 		}
 
-		cfg, det, err := daemon.Setup(sidecarConfigFlag, configyaml.Load, buildSidecarPlugin,
-			sidecarLicenseFlag)
+		cfg, det, err := daemon.SetupWith(sidecarConfigFlag, configyaml.Load, buildSidecarPlugin,
+			daemon.WithLicense(sidecarLicenseFlag))
 		if err != nil {
 			return err
 		}
