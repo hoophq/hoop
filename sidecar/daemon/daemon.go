@@ -41,10 +41,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/audit"
 	_ "github.com/hoophq/hoop/sidecar/codec/all"
 	"github.com/hoophq/hoop/sidecar/gate"
+	"github.com/hoophq/hoop/sidecar/inspect"
+	"github.com/hoophq/hoop/sidecar/license"
 	"github.com/hoophq/hoop/sidecar/policy"
 	"github.com/hoophq/hoop/sidecar/proxy"
 	"github.com/hoophq/hoop/sidecar/session"
@@ -70,19 +71,61 @@ type Loader func(path string) (*Config, error)
 // a nil Plugin for an absent section. Pass nil to disable detection outright.
 type PluginBuilder func(rawPII json.RawMessage) (Plugin, error)
 
-// Setup loads a config file and builds its detection plugin.
+// Option adjusts what Setup learns outside the config file.
 //
-// This is the whole startup sequence short of binding a port, so a caller
-// embedding the relay reaches Validate or Run with two lines and no
-// opportunity to wire the two halves together differently than the shipped
-// binary does.
+// Variadic because the license arrived as a fourth PARAMETER once, and that
+// broke every embedder at compile time. This module's README tells people to
+// call Setup, so its signature is a contract: a new startup fact becomes a
+// new Option, never a new argument and never a second Setup.
+type Option func(*setupOptions)
+
+type setupOptions struct {
+	licenseFlag string
+}
+
+// WithLicense supplies a license from the command line, which outranks
+// HOOP_LICENSE and the config file's `license` key.
+//
+// Only a caller with such a flag needs it. Setup reads the other two sources
+// on its own, so an embedder that mounts a license file and names it in the
+// config gets it from a plain three-argument call.
+func WithLicense(ref string) Option {
+	return func(o *setupOptions) { o.licenseFlag = ref }
+}
+
+// Setup loads a config file, resolves the license and builds the detection
+// plugin.
+//
+// Three parameters, exactly as before licensing existed. This module's README
+// tells embedders to call it, so the signature is a contract: adding the
+// license as a fourth argument broke every one of them, and a variadic would
+// still break a caller holding it in a typed variable. SetupWith is the same
+// function with options.
 func Setup(path string, load Loader, build PluginBuilder) (*Config, Plugin, error) {
+	return SetupWith(path, load, build)
+}
+
+// SetupWith is Setup plus the facts an entry point learned outside the config
+// file. A new startup fact becomes a new Option, never another parameter and
+// never a third Setup.
+//
+// An UNREADABLE license stops startup and an expired one does not, since
+// killing a data-path proxy over billing is an outage.
+func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*Config, Plugin, error) {
+	var o setupOptions
+	for _, apply := range opts {
+		apply(&o)
+	}
 	if load == nil {
 		load = LoadConfig
 	}
 	cfg, err := load(path)
 	if err != nil {
 		return nil, nil, err
+	}
+	cfg.lic = ResolveLicense(o.licenseFlag, cfg.License)
+	if cfg.lic.State() == license.StateInvalid {
+		return nil, nil, cfg.lic.Err
 	}
 	if build == nil {
 		return cfg, nil, nil
@@ -92,6 +135,18 @@ func Setup(path string, load Loader, build PluginBuilder) (*Config, Plugin, erro
 		return nil, nil, err
 	}
 	return cfg, det, nil
+}
+
+// ResolveLicense picks the license a process runs under, highest precedence
+// first: the command line, then HOOP_LICENSE, then the config file's
+// `license` key. Licensing a fleet must not mean editing every file in it.
+// The control plane goes above all three once it sends one on connection.
+func ResolveLicense(flagValue, fileValue string) license.Status {
+	return license.Resolve(
+		license.Ref{Value: flagValue, Source: "the license flag"},
+		license.Ref{Value: os.Getenv(license.EnvVar), Source: license.EnvVar},
+		license.Ref{Value: fileValue, Source: `the "license" config key`},
+	)
 }
 
 // ErrUsage marks a command-line misuse: a missing or unparseable flag, as
@@ -114,6 +169,7 @@ var ErrUsage = errors.New("usage")
 // Usage:
 //
 //	hoop-inspect -config /etc/hoop-inspect/config.yaml
+//	hoop-inspect -config config.yaml -license /etc/hoop-inspect/license.json
 //	hoop-inspect -validate -config config.yaml   # check and exit
 //	hoop-inspect -version
 func Main(version string, load Loader, build PluginBuilder) error {
@@ -130,9 +186,12 @@ func Main(version string, load Loader, build PluginBuilder) error {
 	fs := flag.NewFlagSet("hoop-inspect", flag.ContinueOnError)
 	var (
 		configPath = fs.String("config", "", "path to the config file ("+syntax+")")
-		validate   = fs.Bool("validate", false, "validate the config and exit")
-		strict     = fs.Bool("strict", false, "treat a deprecated config field as an error")
-		showVer    = fs.Bool("version", false, "print the version and exit")
+		licenseRef = fs.String("license", "", "path to the license file, or the license "+
+			"document itself; overrides "+license.EnvVar+" and the config file's "+
+			`"license" key`)
+		validate = fs.Bool("validate", false, "validate the config and exit")
+		strict   = fs.Bool("strict", false, "treat a deprecated config field as an error")
+		showVer  = fs.Bool("version", false, "print the version and exit")
 	)
 	if err := fs.Parse(os.Args[1:]); err != nil {
 		// -h is a request, not a mistake. ContinueOnError has already
@@ -152,7 +211,7 @@ func Main(version string, load Loader, build PluginBuilder) error {
 		return fmt.Errorf("%w: -config is required", ErrUsage)
 	}
 
-	cfg, det, err := Setup(*configPath, load, build)
+	cfg, det, err := SetupWith(*configPath, load, build, WithLicense(*licenseRef))
 	if err != nil {
 		return err
 	}
@@ -167,8 +226,7 @@ func Main(version string, load Loader, build PluginBuilder) error {
 		if err != nil {
 			return err
 		}
-		PrintLanes(os.Stdout, lanes)
-		return nil
+		return PrintLanes(os.Stdout, cfg.lic, lanes)
 	}
 
 	return Run(cfg, det)
@@ -179,6 +237,11 @@ func Main(version string, load Loader, build PluginBuilder) error {
 // It goes to STDERR at every call site. -validate writes a report to stdout
 // that an operator may parse, and a warning must not land in it. Same rule the
 // CLI's rename notice follows.
+//
+// The write errors are DROPPED, and that is the whole difference from
+// PrintLanes. A warning nobody could deliver must not turn a good config into
+// a non-zero exit: the config is still valid, and failing the run would
+// punish an operator for a broken stderr rather than for anything they wrote.
 func ReportDeprecations(w io.Writer, notes []string) {
 	for _, n := range notes {
 		fmt.Fprintln(w, "warn: deprecated config:", n)
@@ -189,21 +252,44 @@ func ReportDeprecations(w io.Writer, notes []string) {
 	}
 }
 
-// PrintLanes renders what -validate concluded, one line per lane plus any
-// notes the resolved stack produced.
+// PrintLanes renders what -validate concluded: the license, the caps it
+// leaves in force, one line per lane and the notes the resolved stack
+// produced. The license goes to stdout, since an expired one is the likeliest
+// reason a config stops loading and stdout is where "config OK" goes.
 //
-// Shared by both entry points so `hoop start sidecar --validate` and
-// `hoop-inspect -validate` cannot drift into reporting different things about
-// one config.
-func PrintLanes(w io.Writer, lanes []LaneInfo) {
-	fmt.Fprintln(w, "config OK:", len(lanes), "listener(s)")
-	fmt.Fprintf(w, "  %s\n", LimitsSummary())
+// It returns the write error, and both entry points exit non-zero on it. This
+// report is what a pipeline reads to decide whether a config ships, so a run
+// that could not deliver it must not also claim success: `hoop-inspect
+// -validate > report.txt` on a full disk has produced no report, and an exit
+// code of zero would say it produced a clean one.
+//
+// The body renders into a strings.Builder first. Builder.Write never fails,
+// which is what makes the fmt calls below safe to ignore, and it leaves one
+// write to check instead of one per line.
+func PrintLanes(w io.Writer, lic license.Status, lanes []LaneInfo) error {
+	var b strings.Builder
+	fmt.Fprintln(&b, "config OK:", len(lanes), "listener(s)")
+	fmt.Fprintf(&b, "  %s\n", lic.Line())
+	fmt.Fprintf(&b, "  %s\n", LimitsSummary(lic))
 	for _, ln := range lanes {
-		fmt.Fprintf(w, "  %-16s %-9s %s\n", ln.Name, ln.Protocol, ln.Summary())
+		fmt.Fprintf(&b, "  %-16s %-9s %s\n", ln.Name, ln.Protocol, ln.Summary())
 		for _, n := range ln.Notes {
-			fmt.Fprintf(w, "  %-16s %-9s   note: %s\n", "", "", n)
+			fmt.Fprintf(&b, "  %-16s %-9s   note: %s\n", "", "", n)
 		}
 	}
+	// The length check is not paranoia: io.WriteString hands back whatever
+	// the Writer returned, so a Writer that reports a short count with a nil
+	// error truncates the report and nothing notices. Half a report is worse
+	// than none, because the half that arrived looks whole.
+	out := b.String()
+	n, err := io.WriteString(w, out)
+	if err == nil && n != len(out) {
+		err = io.ErrShortWrite
+	}
+	if err != nil {
+		return fmt.Errorf("writing the validation report: %w", err)
+	}
+	return nil
 }
 
 // LaneInfo is one resolved listener, as Validate reports it.
@@ -314,19 +400,108 @@ func checkPIIPlugin(cfg *Config, det Plugin) error {
 	return nil
 }
 
+// reportLicense logs the state the process starts in, at the level it
+// deserves. Expired warns: the process keeps serving under the free-tier
+// caps and the operator has to see why a config that loaded last month now
+// refuses a rule. Missing is information. Invalid never reaches here.
+func reportLicense(log *slog.Logger, lic license.Status) {
+	if lic.State() == license.StateExpired {
+		log.Warn(lic.Line())
+		return
+	}
+	log.Info(lic.Line())
+}
+
+// How often the run loop re-reads the clock against the license term, and how
+// long before the term ends the log starts asking for a renewal.
+//
+// Polling beats one long timer: a timer set for a year misses an NTP
+// correction and a host that slept through the expiry, and the cost here is
+// one comparison a minute.
+const (
+	licenseCheckEvery = time.Minute
+	licenseNotice     = 14 * 24 * time.Hour
+)
+
+// watchLicense stops the relay when the license term ends, and closes the
+// returned channel to say so.
+//
+// Lanes are built once and hold their rules for the process lifetime, so the
+// caps cannot be re-applied to a running relay. Dropping rules to fit the
+// free tier would be worse than the problem it solves: removing a guardrail
+// lets through statements it was refusing, and removing a mask rule leaks the
+// values it was hiding. A billing event must never widen what a proxy allows.
+//
+// So the transition is a controlled stop. Run drains, flushes the audit trail
+// and returns an error, the supervisor restarts, and buildLanes then refuses
+// the config by name until somebody renews or removes rules. Callers start
+// this only for a config that exceeds the free tier, because a process
+// already inside the caps has nothing to take away.
+func watchLicense(ctx context.Context, lic license.Status, every time.Duration, log *slog.Logger) <-chan struct{} {
+	expired := make(chan struct{})
+	go func() {
+		tick := time.NewTicker(every)
+		defer tick.Stop()
+		notified := -1
+		for {
+			if lic.StateAt(time.Now().UTC()) == license.StateExpired {
+				log.Warn(lic.Line())
+				close(expired)
+				return
+			}
+			notified = noticeLicenseExpiry(lic, notified, log)
+			select {
+			case <-ctx.Done():
+				return
+			case <-tick.C:
+			}
+		}
+	}()
+	return expired
+}
+
+// noticeLicenseExpiry warns once a day through the last fortnight of a term,
+// and returns the day count it last warned about.
+//
+// The stop at expiry is abrupt by design, so the notice is what keeps it from
+// being a surprise. An operator who reads one line a day for two weeks and
+// still lets the term lapse has made a decision.
+func noticeLicenseExpiry(lic license.Status, lastNotified int, log *slog.Logger) int {
+	left := time.Until(lic.ExpiresAt())
+	if left <= 0 || left > licenseNotice {
+		return lastNotified
+	}
+	days := int(left.Hours() / 24)
+	if days == lastNotified {
+		return lastNotified
+	}
+	log.Warn("license expires soon, and this config needs it: the relay stops when the "+
+		"term ends",
+		"days_left", days,
+		"expires", lic.ExpiresAt().Format(time.RFC3339),
+		"renew", license.Support)
+	return days
+}
+
 // Run starts the sidecar and blocks until the process is signalled.
 //
 // det is the optional detection plugin. Passing nil disables masking and
 // rejects any pii policy rule. Call Run to embed the relay in your own
 // binary; the shipped one goes through Main.
+//
+// The license comes from the Config, where Setup left it. A Config assembled
+// in Go carries the zero Status, so an embedder who never calls UseLicense
+// gets the caps rather than a bypass.
 func Run(cfg *Config, det Plugin) error {
 	if err := checkPIIPlugin(cfg, det); err != nil {
 		return err
 	}
 	log := newLogger(cfg.LogLevel)
+	reportLicense(log, cfg.lic)
+	limit := capsFor(cfg.lic)
 	log.Info("rule limits",
-		"guardrail_rules", maxGuardrailRules,
-		"mask_rules", maxMaskRules)
+		"guardrail_rules", capText(limit.guardrails),
+		"mask_rules", capText(limit.mask))
 
 	ac, err := buildAudit(cfg.Audit)
 	if err != nil {
@@ -368,6 +543,16 @@ func Run(cfg *Config, det Plugin) error {
 	ctx, stop := signal.NotifyContext(context.Background(),
 		os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// Only a config the free tier would refuse is worth watching. One inside
+	// the caps keeps serving when its term ends, because expiry takes
+	// nothing away from it.
+	var licenseExpired <-chan struct{}
+	if cfg.dependsOnLicense() {
+		licenseExpired = watchLicense(ctx, cfg.lic, licenseCheckEvery, log)
+	}
 
 	servers := make([]*proxy.Server, 0, len(lanes))
 	for _, ln := range lanes {
@@ -404,7 +589,7 @@ func Run(cfg *Config, det Plugin) error {
 	}
 
 	if cfg.Admin.Listen != "" {
-		go serveAdmin(ctx, cfg.Admin.Listen, servers, lanes, ac, cfg.Analyzer, log)
+		go serveAdmin(ctx, cfg.Admin.Listen, servers, lanes, ac, cfg.Analyzer, cfg.lic, log)
 	}
 
 	var wg sync.WaitGroup
@@ -420,8 +605,18 @@ func Run(cfg *Config, det Plugin) error {
 		}(srv, lanes[i].name)
 	}
 
-	<-ctx.Done()
-	log.Info("shutting down")
+	var stoppedByLicense bool
+	select {
+	case <-ctx.Done():
+		log.Info("shutting down")
+	case <-licenseExpired:
+		stoppedByLicense = true
+		log.Warn("stopping: the license term ended and this config needs more rules than "+
+			"the free tier allows",
+			"free_tier", limitsText(license.Status{}),
+			"renew", license.Support)
+		cancel()
+	}
 	for _, srv := range servers {
 		_ = srv.Close()
 	}
@@ -434,6 +629,15 @@ func Run(cfg *Config, det Plugin) error {
 		if e != nil {
 			return e
 		}
+	}
+	if stoppedByLicense {
+		// A non-nil error exits non-zero, so a supervisor restarts and
+		// buildLanes refuses the config by name. That loop is the point:
+		// the operator renews or removes rules, and nothing in between
+		// keeps serving licensed capacity for free.
+		return fmt.Errorf("the license term ended and the free tier allows %s. "+
+			"Renew at %s, or reduce the config and restart", limitsText(license.Status{}),
+			license.Support)
 	}
 	return nil
 }
@@ -503,11 +707,11 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 	out := make([]lane, 0, len(cfg.Listeners))
 	var problems []string
 
-	// Here rather than only in (*Config).Validate because this is the one
-	// function Main, Run and the exported Validate all reach. An embedder
-	// assembling a Config in Go and calling Run never passes through the
-	// file validator, and a cap with a documented way around it is not one.
-	problems = append(problems, cfg.checkLimits()...)
+	// The one place the caps are enforced. (*Config).Validate cannot: it
+	// runs inside LoadConfigBytes, before Setup resolves the license flag
+	// or HOOP_LICENSE, so it would refuse a config for a limit its license
+	// lifts. Every caller that runs or validates a sidecar reaches this.
+	problems = append(problems, cfg.checkLimits(cfg.lic)...)
 
 	for i, lc := range cfg.Listeners {
 		name := lc.displayName(i)
@@ -786,6 +990,7 @@ func serveAdmin(
 	lanes []lane,
 	ac auditChain,
 	analyzerCfg *AnalyzerConfig,
+	lic license.Status,
 	log *slog.Logger,
 ) {
 	mux := http.NewServeMux()
@@ -895,6 +1100,7 @@ func serveAdmin(
 			}
 			out = append(out, v)
 		}
+		limit := capsFor(lic)
 		resp := map[string]any{
 			"version": Version,
 			"lanes":   out,
@@ -902,13 +1108,18 @@ func serveAdmin(
 			// control plane can warn its own developers without reading
 			// prose. These keys still carry correct values.
 			"deprecated_fields": []string{"enforcing", "rules", "opa", "masking"},
-			// What this build refuses to exceed. An operator asking why a
+			// What this process refuses to exceed. An operator asking why a
 			// second rule will not load gets the answer from the same
-			// endpoint that tells them what did load.
-			"limits": map[string]int{
-				"guardrail_rules": maxGuardrailRules,
-				"mask_rules":      maxMaskRules,
+			// endpoint that tells them what did load, and a null says the
+			// license lifted the cap rather than that the cap is zero.
+			"limits": map[string]any{
+				"guardrail_rules": capJSON(limit.guardrails),
+				"mask_rules":      capJSON(limit.mask),
 			},
+			// Beside the limits because it is the reason for them. Never
+			// the signature: an endpoint handing out a complete, reusable
+			// license is a licensing hole with an HTTP interface.
+			"license": lic.Report(),
 		}
 		// The analyzer view names the provider, the model and the HOST it
 		// talks to — never the path, never a query string, and never the

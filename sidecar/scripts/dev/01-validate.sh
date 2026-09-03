@@ -11,9 +11,10 @@
 # fires is the failure this whole config surface exists to prevent. Each
 # negative case below is a config that would otherwise look fine.
 #
-# The last two are the free-tier caps rather than a misconfiguration: this
-# build enforces one guardrail rule and one data masking rule per process, and
-# a cap nobody tests is a cap that stops firing.
+# The last two are the free-tier caps rather than a misconfiguration: an
+# unlicensed process enforces one guardrail rule and one data masking rule,
+# and a cap nobody tests is a cap that stops firing. This script runs without
+# a license on purpose; pass -license to see both refusals disappear.
 #
 # Usage:
 #   HOOP_PROJECT=my-project ./01-validate.sh

@@ -13,6 +13,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/gate"
 	"github.com/hoophq/hoop/sidecar/inspect"
+	"github.com/hoophq/hoop/sidecar/license"
 	"github.com/hoophq/hoop/sidecar/policy"
 )
 
@@ -99,6 +100,12 @@ type Config struct {
 	// LogLevel is debug, info, warn or error. Default info.
 	LogLevel string `json:"log_level"`
 
+	// License is a path to the document Hoop issued, or the document
+	// itself: a value starting with "{" is the document, so moving one
+	// between a mounted file and a secret is not also a rename. Lowest
+	// precedence of the three sources; ResolveLicense holds the order.
+	License string `json:"license,omitempty"`
+
 	// Policy is the DEPRECATED pre-ADR-0011 spelling of Guardrails and OPA
 	// combined. normalize empties it.
 	Policy *PolicyConfig `json:"policy,omitempty"`
@@ -111,6 +118,33 @@ type Config struct {
 	// from LoadConfigBytes because three entry points load a config and all
 	// three have to report the same thing.
 	Deprecations []string `json:"-"`
+
+	// lic is the VERIFIED license ResolveLicense reached. Setup fills it,
+	// UseLicense sets it for a caller assembling a Config in Go. Not a
+	// config key: the file names a license and does not carry a verdict.
+	// The zero value is missing, so an embedder who skips it keeps the caps.
+	lic license.Status
+}
+
+// Licensing reports the license this config runs under. The zero value is a
+// missing license, so this always has something to say.
+func (c *Config) Licensing() license.Status { return c.lic }
+
+// UseLicense verifies a license and adopts it, replacing whatever Setup
+// resolved. It is the seam a control-plane license arrives through: the plane
+// sends the document Hoop signed, the sidecar checks that signature itself
+// and every cap moves with the result.
+//
+// It takes a REFERENCE and not a Status, so no caller can hand the daemon a
+// verdict it reached on its own. Trusting the sender would make the caps a
+// matter of who is on the other end of a connection.
+func (c *Config) UseLicense(ref license.Ref) error {
+	s := license.Load(ref)
+	if s.State() == license.StateInvalid {
+		return s.Err
+	}
+	c.lic = s
+	return nil
 }
 
 // ListenerConfig is one protocol endpoint: one Envoy cluster's worth of
@@ -772,12 +806,10 @@ func (c *Config) Validate() error {
 	// modes always have a scanner to use.
 	problems = append(problems, c.Analyzer.validate(true)...)
 
-	// The feature caps are checked here and again in buildLanes, for a
-	// sharper version of the same reason: Run and the exported Validate
-	// never call this function at all, so a cap that lived only here would
-	// be skipped by every caller that builds a Config in Go rather than
-	// loading one from a file.
-	problems = append(problems, c.checkLimits()...)
+	// The feature caps are NOT checked here. This runs inside
+	// LoadConfigBytes, before Setup has seen the license flag or
+	// HOOP_LICENSE, so a cap here would refuse a licensed config for a
+	// limit its license lifts. buildLanes is the single site instead.
 
 	seen := map[string]bool{}
 	for i, l := range c.Listeners {

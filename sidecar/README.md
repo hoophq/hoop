@@ -148,6 +148,7 @@ release pipeline already builds. Nothing extra to compile or ship:
 ```bash
 hoop start sidecar --config config.yaml --validate   # check the config and exit
 hoop start sidecar --config config.yaml              # run
+hoop start sidecar --config config.yaml --license /etc/hoop-inspect/license.json
 ```
 
 The command was named `inspect`. On 1.149.0 and newer that name still works as
@@ -176,6 +177,7 @@ go build -o hoop-inspect .
 
 ./hoop-inspect -validate -config config.yaml
 ./hoop-inspect -config config.yaml
+./hoop-inspect -config config.yaml -license /etc/hoop-inspect/license.json
 ./hoop-inspect -version
 ```
 
@@ -202,6 +204,21 @@ To embed the relay in your own process, call `daemon.Setup` to load the config
 and build the detector, then `daemon.Run`. That is all `hoop start sidecar`
 does; read `client/cmd/startsidecar.go` for the whole of it.
 
+`Setup` takes the same three arguments it always has. It resolves a license
+from `HOOP_LICENSE` and from the config file's `license` key on its own, so an
+embedder that mounts one needs no code change. A caller with its own license
+flag reaches for `daemon.SetupWith`, which is the same function plus options:
+
+```go
+cfg, det, err := daemon.SetupWith(path, configyaml.Load, buildPlugin,
+    daemon.WithLicense(licenseFlag))
+```
+
+Startup facts arrive as new `Option` values rather than new arguments, so
+neither signature moves again. `daemon.Setup` briefly took the license as a
+fourth argument, which broke every embedder that upgraded; that is what the
+split is for.
+
 ## Configuring it: config.yaml
 
 One file is the whole configuration. The process reads it at startup, resolves
@@ -210,14 +227,15 @@ and the extension picks the parser: `.yaml` and `.yml` go through the nested
 `config/yaml` module, anything else is read as JSON. Decoding is strict, so a
 mistyped key fails the startup instead of silently disabling a control.
 
-### What this build limits
+### What this build limits, and the license that lifts it
 
-One guardrail rule and one data masking rule, for the whole process. The count
-is what the file AUTHORS, not what each lane resolves: a rule in the top-level
-`guardrails` block is one rule however many listeners inherit it, and a lane
-that overrides `mask.rules` with `[]` spends nothing. `ai_analysis` rules are
-counted apart and are not capped, because their controls are the trigger and
-`analyzer.max_calls` rather than a number of rules.
+Unlicensed, one guardrail rule and one data masking rule, for the whole
+process. The count is what the file AUTHORS, not what each lane resolves: a
+rule in the top-level `guardrails` block is one rule however many listeners
+inherit it, and a lane that overrides `mask.rules` with `[]` spends nothing.
+`ai_analysis` rules are counted apart and are not capped, because their
+controls are the trigger and `analyzer.max_calls` rather than a number of
+rules.
 
 A config over either cap is refused at startup, naming every block that
 authored rules and how many each holds, so the message reads as a map of what
@@ -225,17 +243,126 @@ to merge:
 
 ```
 hoop-inspect: invalid config:
-  - 2 guardrail rules are configured (guardrails: 1, appdb: 1) and this build
-    enforces at most 1; merge them into one rule, or contact our support at
+  - 2 guardrail rules are configured (guardrails: 1, appdb: 1) and this
+    process enforces at most 1; merge them into one rule. A license lifts this
+    cap: add one with the license flag, the HOOP_LICENSE environment variable,
+    or the "license" key in the config file. Contact our support at
     https://help.hoop.dev. ai_analysis rules are counted separately and are
     not limited
 ```
 
-The numbers are constants in `sidecar/daemon/limits.go` rather than config
-keys, because a cap the file it limits can raise is documentation. They mirror
-the control plane's free tier, which caps the same two things per
-organization. `-validate` prints them, `/config` serves them under `limits`,
-and lifting them is a build without that file.
+The free-tier numbers are constants in `sidecar/daemon/limits.go` rather than
+config keys, because a cap the file it limits can raise is documentation. They
+mirror the control plane's free tier, which caps the same two things per
+organization.
+
+A license Hoop signed lifts them, per feature. Three places carry one, and the
+first that holds anything decides:
+
+| Source | Spelling |
+|---|---|
+| Command line | `hoop-inspect -license …`, `hoop start sidecar --license …` |
+| Environment | `HOOP_LICENSE` |
+| Config file | `license: …` |
+
+The value is a path to the document Hoop issued, or the document itself: a
+value starting with `{` is read as the license, anything else as a filename.
+That is one field for a mounted secret and for a Helm value, so moving a
+license between the two is not also a rename.
+
+```yaml
+license: /etc/hoop-inspect/license.json
+```
+
+First wins, not first valid. A `HOOP_LICENSE` that points at nothing is an
+error rather than a reason to fall through to the config file, because a
+process that quietly ignored your environment variable will surprise you on
+the restart after the file changes. The control plane will be added above the
+flag when the sidecar starts receiving a license on connection, and it will
+outrank all three.
+
+The license names the features it covers, and each one lifts its own cap:
+`guardrails` and `data-masking` are the two this process reads. A license
+naming neither field covers everything; one naming only `data-masking` leaves
+the guardrail cap exactly where it was. An `oss` license verifies and grants
+nothing, which is what the control plane does with the same value.
+
+What the process concluded is the first line of its startup output, and
+`-validate` prints it too:
+
+```
+license: valid. enterprise "Acme Corp", expires 2027-01-30, features: all (from HOOP_LICENSE)
+license: expired. "Acme Corp" expired on 2026-05-01, running the free tier. Renew it at https://help.hoop.dev (from the license flag)
+license: missing, running the free tier. Add one with the license flag, the HOOP_LICENSE environment variable, or the "license" key in the config file
+```
+
+Missing and expired are states, not failures: the process starts, the caps
+stay in force, and an expired one logs at WARN so the reason a config that
+loaded last month stops loading is the first thing in the log. A license that
+cannot be READ is different and stops startup, naming the source and what a
+good value looks like: a process that drops to the free tier over a typo in
+a path is the silent downgrade this build refuses everywhere else.
+
+`/config` serves the same verdict under `license`, without the signature, and
+the caps under `limits`, where a `null` means the license lifted one.
+
+#### When a term ends under a running process
+
+The verdict is a function of the clock, not a flag set at startup. A relay
+that has been up for months re-reads its own term, so `/config` and the caps
+flip to the free tier the second the license lapses. Nothing has to reload.
+
+What happens next depends on whether the config needs the license:
+
+- **Inside the free tier**, nothing. The process keeps serving, reports
+  `expired`, and an operator renews whenever they get to it. Expiry took
+  nothing away, so taking the relay down would be an outage with no revenue
+  behind it.
+- **Over the free tier**, the relay stops. It logs the expiry, drains open
+  connections, flushes the audit trail and exits non-zero. The supervisor
+  restarts it, and startup then refuses the config by name until somebody
+  renews or removes rules.
+
+The stop is deliberate and the alternative is worse. Lanes are built once and
+hold their rules for the life of the process, so re-applying the caps to a
+running relay would mean deleting rules: dropping a guardrail lets through
+statements it was refusing, and dropping a mask rule leaks the values it was
+hiding. A billing event must never widen what a proxy allows.
+
+To keep it from being a surprise, the log counts down once a day through the
+last fortnight of a term:
+
+```
+WARN license expires soon, and this config needs it: the relay stops when the term ends days_left=6 expires=2026-05-01T00:00:00Z renew=https://help.hoop.dev
+WARN license: expired. "Acme Corp" expired on 2026-05-01, running the free tier. Renew it at https://help.hoop.dev
+WARN stopping: the license term ended and this config needs more rules than the free tier allows free_tier="1 guardrail rule(s), 1 data masking rule(s)"
+```
+
+The clock is polled once a minute rather than slept on with one long timer,
+so an NTP correction or a host that suspended through the expiry is still
+caught. Expect the stop within a minute of the term ending.
+
+The verifier is `sidecar/license`, a standard-library reimplementation of
+`common/license`: same key, same signature, same JSON, because this module
+cannot import the gateway's without inheriting its dependency tree. The two
+are pinned together by `client/licensecompat`, the only module that can see
+both. `allowed_hosts` is the one thing the sidecar does not check, since the
+address it could offer is a scheduler-generated pod name.
+
+A verdict cannot be handed to the daemon, only earned. The flag that says a
+license verified is unexported and `license.Load` is the only thing that sets
+it, after checking the signature, so a `license.Status` built by hand reports
+`invalid` and lifts nothing. `Config.UseLicense` takes a reference rather than
+a verdict for the same reason: when the control plane starts sending licenses,
+it will send the document Hoop signed and the sidecar will check that
+signature itself, instead of trusting whoever is on the connection.
+
+That leaves a test no way to run a licensed daemon, which
+`sidecar/license/licensetest` fixes honestly. It generates a keypair, points
+the trust root at it for the duration of one `*testing.T`, and signs documents
+that go through the same `Load`. Every function there takes a `*testing.T`,
+which is the guard: production code calling one would have to import
+`testing`.
 
 ### Deprecated fields
 
@@ -307,6 +434,10 @@ inherits those defaults unless it overrides them.
 ```yaml
 log_level: info
 
+# A path to the license Hoop issued, or the document itself. The license flag
+# and HOOP_LICENSE both outrank this. Omit it to run the free tier.
+license: /etc/hoop-inspect/license.json
+
 admin:
   listen: 127.0.0.1:19000   # /healthz /stats /config /events /api/*
 
@@ -374,7 +505,8 @@ whole because a config holding one rule per section cannot show a listener
 overriding a default at all, and inheritance is what the section is teaching.
 The stack config in `deploy/docker-compose/envoy-stack/sidecar/config.yaml` is
 the version that loads: same shape, the rest commented out and marked. See
-[What this build limits](#what-this-build-limits).
+[What this build limits, and the license that lifts
+it](#what-this-build-limits-and-the-license-that-lifts-it).
 
 Rule types and what each one matches are in [Guardrails and
 OPA](#guardrails-and-opa); masking strategies and the entity-versus-column
@@ -413,6 +545,7 @@ cd cmd && go build -o hoop-inspect . && \
 
 ```
 config OK: 2 listener(s)
+  license: missing, running the free tier. Add one with the license flag, the HOOP_LICENSE environment variable, or the "license" key in the config file
   limits: 1 guardrail rule(s), 1 data masking rule(s)
   appdb            postgres  enforcing 1 rule(s) + masking
   httpbin          http      enforcing 1 rule(s) + masking
@@ -434,9 +567,12 @@ Validation builds every lane, so it catches what a syntax check cannot, and it
 reports every problem in one run rather than one per restart. It refuses these
 outright:
 
-- More guardrail rules or more mask rules than this build allows, naming every
-  block that authored one. See [What this build
-  limits](#what-this-build-limits).
+- More guardrail rules or more mask rules than this process allows, naming
+  every block that authored one. See [What this build limits, and the license
+  that lifts it](#what-this-build-limits-and-the-license-that-lifts-it).
+- A license that cannot be read or was not issued by Hoop, naming the source
+  it came from. An expired one is a warning instead: the caps come back and
+  the process runs.
 - `mask.rules` on a protocol whose codec can carry neither masking mechanism,
   naming the lane. This check used to sit behind `mask.enabled`, so a lane
   omitting the flag skipped it and loaded rules that could never fire.
@@ -472,15 +608,19 @@ curl -s localhost:19000/config | python3 -m json.tool
   {"name": "httpbin", "protocol": "http", "enforcing": true,
    "rules": ["no-cpf-in-query"], "masking": true}
  ],
+ "license": {"state": "missing"},
  "limits": {"guardrail_rules": 1, "mask_rules": 1}}
 ```
 
 Both lanes resolved the same rule, because the process's one guardrail rule is
 a top-level default and neither lane authors its own. Rule names only: a
 `pattern_regex` can encode business logic, and this endpoint already sits
-beside a read interface to the audit trail. `limits` is what this build
+beside a read interface to the audit trail. `limits` is what this process
 refuses to exceed, served here so an operator asking why a second rule will
-not load reads the answer from the endpoint that told them what did.
+not load reads the answer from the endpoint that told them what did, and a
+`null` there means a license lifted that cap. `license` is the verdict behind
+those numbers: the type, the customer, the term, the features and the source,
+never the signature.
 
 ### Sharing a rule block between lanes
 
