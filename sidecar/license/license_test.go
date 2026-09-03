@@ -77,8 +77,8 @@ func TestValidEnterpriseLicenseGrantsItsFeatures(t *testing.T) {
 
 	s := Load(Ref{Value: document(t, l), Source: "the test"})
 
-	if s.State != StateValid {
-		t.Fatalf("state = %q, err = %v", s.State, s.Err)
+	if s.State() != StateValid {
+		t.Fatalf("state = %q, err = %v", s.State(), s.Err)
 	}
 	if !s.Allows(FeatureGuardrails) || !s.Allows(FeatureDataMasking) {
 		t.Error("a license with no feature list did not grant every feature")
@@ -96,8 +96,8 @@ func TestAFeatureListRestrictsWhatIsGranted(t *testing.T) {
 	p.Features = []string{FeatureDataMasking}
 	s := Load(Ref{Value: document(t, issue(t, key, p))})
 
-	if s.State != StateValid {
-		t.Fatalf("state = %q, err = %v", s.State, s.Err)
+	if s.State() != StateValid {
+		t.Fatalf("state = %q, err = %v", s.State(), s.Err)
 	}
 	if !s.Allows(FeatureDataMasking) {
 		t.Error("the feature the license names was not granted")
@@ -115,8 +115,8 @@ func TestAnOSSLicenseGrantsNothing(t *testing.T) {
 	p.Type = OSSType
 	s := Load(Ref{Value: document(t, issue(t, key, p))})
 
-	if s.State != StateValid {
-		t.Fatalf("state = %q, err = %v", s.State, s.Err)
+	if s.State() != StateValid {
+		t.Fatalf("state = %q, err = %v", s.State(), s.Err)
 	}
 	if s.Allows(FeatureGuardrails) || s.Allows(FeatureDataMasking) {
 		t.Error("an oss license lifted a cap")
@@ -135,8 +135,8 @@ func TestAnExpiredLicenseIsExpiredAndGrantsNothing(t *testing.T) {
 	p.ExpireAt = time.Now().Add(-24 * time.Hour).Unix()
 	s := Load(Ref{Value: document(t, issue(t, key, p)), Source: "the test"})
 
-	if s.State != StateExpired {
-		t.Fatalf("state = %q, err = %v", s.State, s.Err)
+	if s.State() != StateExpired {
+		t.Fatalf("state = %q, err = %v", s.State(), s.Err)
 	}
 	if s.Allows(FeatureGuardrails) {
 		t.Error("an expired license lifted a cap")
@@ -160,8 +160,8 @@ func TestATamperedPayloadIsInvalid(t *testing.T) {
 
 	s := Load(Ref{Value: document(t, l), Source: "the test"})
 
-	if s.State != StateInvalid {
-		t.Fatalf("a rewritten payload verified: state = %q", s.State)
+	if s.State() != StateInvalid {
+		t.Fatalf("a rewritten payload verified: state = %q", s.State())
 	}
 	if s.Allows(FeatureGuardrails) {
 		t.Error("a tampered license lifted a cap")
@@ -181,8 +181,8 @@ func TestALicenseFromAnotherKeyIsInvalid(t *testing.T) {
 	}
 	s := Load(Ref{Value: document(t, issue(t, other, enterprise())), Source: "the test"})
 
-	if s.State != StateInvalid {
-		t.Fatalf("a license signed with an untrusted key verified: state = %q", s.State)
+	if s.State() != StateInvalid {
+		t.Fatalf("a license signed with an untrusted key verified: state = %q", s.State())
 	}
 }
 
@@ -197,8 +197,8 @@ func TestALicenseFromTheFutureBlamesTheClock(t *testing.T) {
 
 	s := Load(Ref{Value: document(t, issue(t, key, p)), Source: "the test"})
 
-	if s.State != StateInvalid {
-		t.Fatalf("state = %q", s.State)
+	if s.State() != StateInvalid {
+		t.Fatalf("state = %q", s.State())
 	}
 	if !strings.Contains(s.Err.Error(), "clock") {
 		t.Errorf("the message does not mention the clock: %v", s.Err)
@@ -218,10 +218,10 @@ func TestAPathAndTheDocumentItselfAgree(t *testing.T) {
 	fromFile := Load(Ref{Value: path, Source: "a file"})
 	fromInline := Load(Ref{Value: doc, Source: "a string"})
 
-	if fromFile.State != StateValid {
+	if fromFile.State() != StateValid {
 		t.Fatalf("the file did not verify: %v", fromFile.Err)
 	}
-	if fromInline.State != StateValid {
+	if fromInline.State() != StateValid {
 		t.Fatalf("the inline document did not verify: %v", fromInline.Err)
 	}
 	if !fromFile.Allows(FeatureGuardrails) || !fromInline.Allows(FeatureGuardrails) {
@@ -235,8 +235,8 @@ func TestAnIndentedDocumentIsStillADocument(t *testing.T) {
 	key := signingKey(t)
 	doc := "\n  " + document(t, issue(t, key, enterprise())) + "\n"
 
-	if s := Load(Ref{Value: doc}); s.State != StateValid {
-		t.Fatalf("state = %q, err = %v", s.State, s.Err)
+	if s := Load(Ref{Value: doc}); s.State() != StateValid {
+		t.Fatalf("state = %q, err = %v", s.State(), s.Err)
 	}
 }
 
@@ -246,8 +246,8 @@ func TestAnIndentedDocumentIsStillADocument(t *testing.T) {
 func TestAMissingFileNamesTheSourceAndTheFix(t *testing.T) {
 	s := Load(Ref{Value: "/nonexistent/license.json", Source: "HOOP_LICENSE"})
 
-	if s.State != StateInvalid {
-		t.Fatalf("state = %q", s.State)
+	if s.State() != StateInvalid {
+		t.Fatalf("state = %q", s.State())
 	}
 	msg := s.Err.Error()
 	for _, want := range []string{"HOOP_LICENSE", "/nonexistent/license.json", "paste the document"} {
@@ -263,8 +263,8 @@ func TestAMissingFileNamesTheSourceAndTheFix(t *testing.T) {
 func TestGarbageIsRefusedWithAdvice(t *testing.T) {
 	s := Load(Ref{Value: "{not json at all", Source: "the license config key"})
 
-	if s.State != StateInvalid {
-		t.Fatalf("state = %q", s.State)
+	if s.State() != StateInvalid {
+		t.Fatalf("state = %q", s.State())
 	}
 	if !strings.Contains(s.Err.Error(), "the license config key") {
 		t.Errorf("the message does not name the source: %v", s.Err)
@@ -293,8 +293,8 @@ func TestIncompleteDocumentsNameTheMissingField(t *testing.T) {
 			p := enterprise()
 			tc.edit(&p)
 			s := Load(Ref{Value: document(t, issue(t, key, p))})
-			if s.State != StateInvalid {
-				t.Fatalf("state = %q", s.State)
+			if s.State() != StateInvalid {
+				t.Fatalf("state = %q", s.State())
 			}
 			if !strings.Contains(s.Err.Error(), tc.wants) {
 				t.Errorf("the message does not name the field: %v", s.Err)
@@ -311,8 +311,8 @@ func TestAnUnsignedDocumentIsRefused(t *testing.T) {
 
 	s := Load(Ref{Value: document(t, l)})
 
-	if s.State != StateInvalid {
-		t.Fatalf("an unsigned license verified: state = %q", s.State)
+	if s.State() != StateInvalid {
+		t.Fatalf("an unsigned license verified: state = %q", s.State())
 	}
 	if !strings.Contains(s.Err.Error(), "signature") {
 		t.Errorf("the message does not mention the signature: %v", s.Err)
@@ -334,8 +334,8 @@ func TestResolveTakesTheFirstSourceThatSuppliedSomething(t *testing.T) {
 		Ref{Value: document(t, issue(t, key, second)), Source: "the license config key"},
 	)
 
-	if s.State != StateValid {
-		t.Fatalf("state = %q, err = %v", s.State, s.Err)
+	if s.State() != StateValid {
+		t.Fatalf("state = %q, err = %v", s.State(), s.Err)
 	}
 	if s.License.Payload.Description != "the winner" {
 		t.Errorf("resolved %q", s.License.Payload.Description)
@@ -355,8 +355,8 @@ func TestABrokenHigherSourceIsNotSkipped(t *testing.T) {
 		Ref{Value: document(t, issue(t, key, enterprise())), Source: "the license config key"},
 	)
 
-	if s.State != StateInvalid {
-		t.Fatalf("a broken license fell through to a working one: state = %q", s.State)
+	if s.State() != StateInvalid {
+		t.Fatalf("a broken license fell through to a working one: state = %q", s.State())
 	}
 	if s.Source != EnvVar {
 		t.Errorf("source = %q, want %q", s.Source, EnvVar)
@@ -366,8 +366,8 @@ func TestABrokenHigherSourceIsNotSkipped(t *testing.T) {
 func TestNoSourceIsMissingRatherThanAnError(t *testing.T) {
 	s := Resolve(Ref{Source: "a flag"}, Ref{Value: "\n\t ", Source: EnvVar})
 
-	if s.State != StateMissing {
-		t.Fatalf("state = %q", s.State)
+	if s.State() != StateMissing {
+		t.Fatalf("state = %q", s.State())
 	}
 	if s.Err != nil {
 		t.Errorf("an absent license produced an error: %v", s.Err)
@@ -387,8 +387,8 @@ func TestNoSourceIsMissingRatherThanAnError(t *testing.T) {
 // has to be the free tier, not a bypass.
 func TestTheZeroStatusIsTheFreeTier(t *testing.T) {
 	var s Status
-	if s.State != StateMissing {
-		t.Errorf("state = %q", s.State)
+	if s.State() != StateMissing {
+		t.Errorf("state = %q", s.State())
 	}
 	if s.Allows(FeatureGuardrails) || s.Allows(FeatureDataMasking) {
 		t.Error("the zero value granted a feature")

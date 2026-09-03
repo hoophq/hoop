@@ -84,7 +84,7 @@ func Setup(path string, load Loader, build PluginBuilder, licenseFlag string) (*
 		return nil, nil, err
 	}
 	cfg.lic = ResolveLicense(licenseFlag, cfg.License)
-	if cfg.lic.State == license.StateInvalid {
+	if cfg.lic.State() == license.StateInvalid {
 		return nil, nil, cfg.lic.Err
 	}
 	if build == nil {
@@ -337,11 +337,82 @@ func checkPIIPlugin(cfg *Config, det Plugin) error {
 // caps and the operator has to see why a config that loaded last month now
 // refuses a rule. Missing is information. Invalid never reaches here.
 func reportLicense(log *slog.Logger, lic license.Status) {
-	if lic.State == license.StateExpired {
+	if lic.State() == license.StateExpired {
 		log.Warn(lic.Line())
 		return
 	}
 	log.Info(lic.Line())
+}
+
+// How often the run loop re-reads the clock against the license term, and how
+// long before the term ends the log starts asking for a renewal.
+//
+// Polling beats one long timer: a timer set for a year misses an NTP
+// correction and a host that slept through the expiry, and the cost here is
+// one comparison a minute.
+const (
+	licenseCheckEvery = time.Minute
+	licenseNotice     = 14 * 24 * time.Hour
+)
+
+// watchLicense stops the relay when the license term ends, and closes the
+// returned channel to say so.
+//
+// Lanes are built once and hold their rules for the process lifetime, so the
+// caps cannot be re-applied to a running relay. Dropping rules to fit the
+// free tier would be worse than the problem it solves: removing a guardrail
+// lets through statements it was refusing, and removing a mask rule leaks the
+// values it was hiding. A billing event must never widen what a proxy allows.
+//
+// So the transition is a controlled stop. Run drains, flushes the audit trail
+// and returns an error, the supervisor restarts, and buildLanes then refuses
+// the config by name until somebody renews or removes rules. Callers start
+// this only for a config that exceeds the free tier, because a process
+// already inside the caps has nothing to take away.
+func watchLicense(ctx context.Context, lic license.Status, every time.Duration, log *slog.Logger) <-chan struct{} {
+	expired := make(chan struct{})
+	go func() {
+		tick := time.NewTicker(every)
+		defer tick.Stop()
+		notified := -1
+		for {
+			if lic.StateAt(time.Now().UTC()) == license.StateExpired {
+				log.Warn(lic.Line())
+				close(expired)
+				return
+			}
+			notified = noticeLicenseExpiry(lic, notified, log)
+			select {
+			case <-ctx.Done():
+				return
+			case <-tick.C:
+			}
+		}
+	}()
+	return expired
+}
+
+// noticeLicenseExpiry warns once a day through the last fortnight of a term,
+// and returns the day count it last warned about.
+//
+// The stop at expiry is abrupt by design, so the notice is what keeps it from
+// being a surprise. An operator who reads one line a day for two weeks and
+// still lets the term lapse has made a decision.
+func noticeLicenseExpiry(lic license.Status, lastNotified int, log *slog.Logger) int {
+	left := time.Until(lic.ExpiresAt())
+	if left <= 0 || left > licenseNotice {
+		return lastNotified
+	}
+	days := int(left.Hours() / 24)
+	if days == lastNotified {
+		return lastNotified
+	}
+	log.Warn("license expires soon, and this config needs it: the relay stops when the "+
+		"term ends",
+		"days_left", days,
+		"expires", lic.ExpiresAt().Format(time.RFC3339),
+		"renew", license.Support)
+	return days
 }
 
 // Run starts the sidecar and blocks until the process is signalled.
@@ -404,6 +475,16 @@ func Run(cfg *Config, det Plugin) error {
 	ctx, stop := signal.NotifyContext(context.Background(),
 		os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// Only a config the free tier would refuse is worth watching. One inside
+	// the caps keeps serving when its term ends, because expiry takes
+	// nothing away from it.
+	var licenseExpired <-chan struct{}
+	if cfg.dependsOnLicense() {
+		licenseExpired = watchLicense(ctx, cfg.lic, licenseCheckEvery, log)
+	}
 
 	servers := make([]*proxy.Server, 0, len(lanes))
 	for _, ln := range lanes {
@@ -456,8 +537,18 @@ func Run(cfg *Config, det Plugin) error {
 		}(srv, lanes[i].name)
 	}
 
-	<-ctx.Done()
-	log.Info("shutting down")
+	var stoppedByLicense bool
+	select {
+	case <-ctx.Done():
+		log.Info("shutting down")
+	case <-licenseExpired:
+		stoppedByLicense = true
+		log.Warn("stopping: the license term ended and this config needs more rules than "+
+			"the free tier allows",
+			"free_tier", limitsText(license.Status{}),
+			"renew", license.Support)
+		cancel()
+	}
 	for _, srv := range servers {
 		_ = srv.Close()
 	}
@@ -470,6 +561,15 @@ func Run(cfg *Config, det Plugin) error {
 		if e != nil {
 			return e
 		}
+	}
+	if stoppedByLicense {
+		// A non-nil error exits non-zero, so a supervisor restarts and
+		// buildLanes refuses the config by name. That loop is the point:
+		// the operator renews or removes rules, and nothing in between
+		// keeps serving licensed capacity for free.
+		return fmt.Errorf("the license term ended and the free tier allows %s. "+
+			"Renew at %s, or reduce the config and restart", limitsText(license.Status{}),
+			license.Support)
 	}
 	return nil
 }

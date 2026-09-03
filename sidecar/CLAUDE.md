@@ -147,6 +147,14 @@ done
   see it, so `client/licensecompat` pins the two. Touch the key or the
   signing data on one side and you MUST touch the other.
 
+- **The license verdict is a function of the clock.** `license.Status` stores
+  "the signature checked out" and derives everything else from the term, so a
+  relay that has been up for months loses the caps the second its license
+  lapses. Never cache `State()` in a field or a lane: that cache is the bug
+  this design exists to prevent. `Run` watches the term and stops a process
+  whose config the free tier would refuse, because re-applying the caps live
+  would mean deleting guardrail and mask rules from a running proxy.
+
 ## Layout
 
 The module root holds no Go files: `go.mod`, this file and `README.md` only.

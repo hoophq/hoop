@@ -34,7 +34,7 @@ func TestSetupWithoutALicenseRunsTheFreeTier(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Setup: %v", err)
 	}
-	if got := cfg.Licensing().State; got != license.StateMissing {
+	if got := cfg.Licensing().State(); got != license.StateMissing {
 		t.Errorf("state = %q, want missing", got)
 	}
 	if !strings.Contains(LimitsSummary(cfg.Licensing()), "1 guardrail rule(s)") {
@@ -146,8 +146,7 @@ func TestPrintLanesSaysWhenThereIsNoLicense(t *testing.T) {
 // An expired license reports as a warning and a valid one as information,
 // because only one of them is something an operator has to act on.
 func TestReportLicenseWarnsOnlyWhenSomethingIsWrong(t *testing.T) {
-	expired := licenseStatus(license.StateExpired, license.EnterpriseType, nil,
-		time.Now().Add(-time.Hour))
+	expired := licenseStatus(license.EnterpriseType, nil, time.Now().Add(-time.Hour))
 	cases := []struct {
 		name     string
 		lic      license.Status

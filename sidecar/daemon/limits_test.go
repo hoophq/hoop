@@ -22,34 +22,29 @@ func overCap() *Config {
 	}
 }
 
-// licenseStatus builds the verdict a daemon runs under. Assembled rather
-// than signed, because the daemon consumes a verdict and never a document.
-// sidecar/license owns a key it can sign with and settles signatures there;
-// forging one here would test that package twice and this one not at all.
-func licenseStatus(state license.State, typ string, features []string, expires time.Time) license.Status {
-	return license.Status{
-		State:  state,
-		Source: "the test",
-		License: &license.License{
-			Payload: license.Payload{
-				Type:         typ,
-				IssuedAt:     time.Now().Add(-time.Hour).Unix(),
-				ExpireAt:     expires.Unix(),
-				AllowedHosts: []string{"*"},
-				Description:  "Acme Corp",
-				Features:     features,
-			},
-			KeyID:     "test-key",
-			Signature: "test-signature",
+// licenseStatus builds the verdict a daemon runs under. Verdict rather than a
+// signed document, because the daemon consumes a verdict and never checks a
+// signature: sidecar/license owns a key it can sign with and settles that
+// there. The term still applies, so an expired date reports expired.
+func licenseStatus(typ string, features []string, expires time.Time) license.Status {
+	return license.Verdict(&license.License{
+		Payload: license.Payload{
+			Type:         typ,
+			IssuedAt:     time.Now().Add(-time.Hour).Unix(),
+			ExpireAt:     expires.Unix(),
+			AllowedHosts: []string{"*"},
+			Description:  "Acme Corp",
+			Features:     features,
 		},
-	}
+		KeyID:     "test-key",
+		Signature: "test-signature",
+	}, "the test")
 }
 
 // licensed is a current enterprise license. No features named means every
 // feature, which is what most licenses carry.
 func licensed(features ...string) license.Status {
-	return licenseStatus(license.StateValid, license.EnterpriseType, features,
-		time.Now().Add(720*time.Hour))
+	return licenseStatus(license.EnterpriseType, features, time.Now().Add(720*time.Hour))
 }
 
 // limitsLane is a minimal valid listener, so a limits test fails on the limit
@@ -267,8 +262,7 @@ func TestALicenseLiftsOnlyTheFeaturesItNames(t *testing.T) {
 // verifying license as enterprise would hand the paid caps to the free tier.
 func TestAnOSSLicenseLeavesTheCapsInForce(t *testing.T) {
 	cfg := overCap()
-	cfg.UseLicense(licenseStatus(license.StateValid, license.OSSType, nil,
-		time.Now().Add(720*time.Hour)))
+	cfg.UseLicense(licenseStatus(license.OSSType, nil, time.Now().Add(720*time.Hour)))
 
 	if problems := cfg.checkLimits(cfg.Licensing()); len(problems) != 2 {
 		t.Errorf("an oss license changed the caps: %v", problems)
@@ -280,8 +274,7 @@ func TestAnOSSLicenseLeavesTheCapsInForce(t *testing.T) {
 // sends an operator to read their rules instead of their expiry date.
 func TestAnExpiredLicenseRestoresTheCapsAndSaysWhy(t *testing.T) {
 	cfg := overCap()
-	cfg.UseLicense(licenseStatus(license.StateExpired, license.EnterpriseType, nil,
-		time.Now().Add(-24*time.Hour)))
+	cfg.UseLicense(licenseStatus(license.EnterpriseType, nil, time.Now().Add(-24*time.Hour)))
 
 	problems := cfg.checkLimits(cfg.Licensing())
 	if len(problems) != 2 {

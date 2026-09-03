@@ -291,6 +291,42 @@ a path is the silent downgrade this build refuses everywhere else.
 `/config` serves the same verdict under `license`, without the signature, and
 the caps under `limits`, where a `null` means the license lifted one.
 
+#### When a term ends under a running process
+
+The verdict is a function of the clock, not a flag set at startup. A relay
+that has been up for months re-reads its own term, so `/config` and the caps
+flip to the free tier the second the license lapses. Nothing has to reload.
+
+What happens next depends on whether the config needs the license:
+
+- **Inside the free tier**, nothing. The process keeps serving, reports
+  `expired`, and an operator renews whenever they get to it. Expiry took
+  nothing away, so taking the relay down would be an outage with no revenue
+  behind it.
+- **Over the free tier**, the relay stops. It logs the expiry, drains open
+  connections, flushes the audit trail and exits non-zero. The supervisor
+  restarts it, and startup then refuses the config by name until somebody
+  renews or removes rules.
+
+The stop is deliberate and the alternative is worse. Lanes are built once and
+hold their rules for the life of the process, so re-applying the caps to a
+running relay would mean deleting rules: dropping a guardrail lets through
+statements it was refusing, and dropping a mask rule leaks the values it was
+hiding. A billing event must never widen what a proxy allows.
+
+To keep it from being a surprise, the log counts down once a day through the
+last fortnight of a term:
+
+```
+WARN license expires soon, and this config needs it: the relay stops when the term ends days_left=6 expires=2026-05-01T00:00:00Z renew=https://help.hoop.dev
+WARN license: expired. "Acme Corp" expired on 2026-05-01, running the free tier. Renew it at https://help.hoop.dev
+WARN stopping: the license term ended and this config needs more rules than the free tier allows free_tier="1 guardrail rule(s), 1 data masking rule(s)"
+```
+
+The clock is polled once a minute rather than slept on with one long timer,
+so an NTP correction or a host that suspended through the expiry is still
+caught. Expect the stop within a minute of the term ending.
+
 The verifier is `sidecar/license`, a standard-library reimplementation of
 `common/license`: same key, same signature, same JSON, because this module
 cannot import the gateway's without inheriting its dependency tree. The two

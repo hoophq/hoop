@@ -217,15 +217,71 @@ type Ref struct {
 // The zero value is a missing license, so an embedder who forgets to set one
 // keeps the caps rather than losing them.
 type Status struct {
-	State State
+	// verified records that the signature checked out when the document
+	// was read. The TERM is deliberately not recorded with it: State
+	// recomputes that against the clock on every call, so a process
+	// outliving ExpireAt loses what the license bought.
+	verified bool
 	// Source names the Ref that supplied the document, empty when none did.
 	Source string
 	// License is the parsed document, non-nil whenever the JSON decoded.
 	// An expired or forged one still names the customer and the date.
 	License *License
-	// Err says what is wrong and what to do, as one sentence. A failed
-	// startup prints it.
+	// Err is what went wrong at load, as one sentence. Nil for a license
+	// that loaded and expired later; ask Reason for that one.
 	Err error
+}
+
+// Verdict wraps a document whose signature the caller has already checked.
+//
+// The control-plane path lands here: the plane verifies, the sidecar stores.
+// The term still applies, so a document past ExpireAt reports expired
+// however it arrived and whatever the caller believes.
+func Verdict(l *License, source string) Status {
+	return Status{verified: true, License: l, Source: source}
+}
+
+// State is the verdict NOW.
+//
+// Derived rather than stored, which is the whole point: a license that
+// verified at startup reports expired the moment its term ends, so a process
+// running for months cannot hold caps it stopped paying for.
+func (s Status) State() State { return s.StateAt(time.Now().UTC()) }
+
+// StateAt is the verdict at an instant. A caller schedules on it, and a test
+// moves the clock without waiting for one.
+func (s Status) StateAt(now time.Time) State {
+	switch {
+	case s.License == nil && s.Err == nil:
+		return StateMissing
+	case !s.verified:
+		return StateInvalid
+	case now.After(s.ExpiresAt()):
+		return StateExpired
+	}
+	return StateValid
+}
+
+// ExpiresAt is the instant the term ends, zero when no document arrived.
+func (s Status) ExpiresAt() time.Time {
+	if s.License == nil {
+		return time.Time{}
+	}
+	return time.Unix(s.License.Payload.ExpireAt, 0).UTC()
+}
+
+// Reason says what is wrong with the license now, empty when nothing is. A
+// license that expired after it loaded carries no Err, so the sentence comes
+// from the term instead.
+func (s Status) Reason() string {
+	if s.Err != nil {
+		return s.Err.Error()
+	}
+	if s.State() == StateExpired {
+		return fmt.Sprintf("the license from %s expired on %s. Renew it at %s",
+			sourceName(s.Source), expiryDate(*s.License), Support)
+	}
+	return ""
 }
 
 // Resolve picks the license the process runs under from the candidates, in
@@ -239,17 +295,17 @@ func Resolve(candidates ...Ref) Status {
 		}
 		return Load(c)
 	}
-	return Status{State: StateMissing}
+	return Status{}
 }
 
 // Load reads and verifies one reference. The value is the document when it
 // starts with "{" and a path otherwise: a JSON document has one first
 // character, and no path begins with it.
 func Load(ref Ref) Status {
-	s := Status{Source: ref.Source, State: StateInvalid}
+	s := Status{Source: ref.Source}
 	raw := strings.TrimSpace(ref.Value)
 	if raw == "" {
-		return Status{State: StateMissing}
+		return Status{}
 	}
 
 	data := []byte(raw)
@@ -273,11 +329,12 @@ func Load(ref Ref) Status {
 
 	switch err := l.Verify(); {
 	case err == nil:
-		s.State = StateValid
+		s.verified = true
 	case errors.Is(err, ErrExpired):
-		s.State = StateExpired
-		s.Err = fmt.Errorf("the license from %s expired on %s. Renew it at %s",
-			ref.Source, expiryDate(l), Support)
+		// The signature is good and only the term ran out, so this is a
+		// verified license. StateAt reads the same term and reaches
+		// StateExpired without the verdict being stored anywhere.
+		s.verified = true
 	default:
 		s.Err = fmt.Errorf("the license from %s is not valid: %v. Ask for a replacement at %s",
 			ref.Source, err, Support)
@@ -285,21 +342,25 @@ func Load(ref Ref) Status {
 	return s
 }
 
-// Allows reports whether the license grants a feature: it verified, it is an
-// enterprise license, and its feature list names the feature or is empty. An
-// oss license grants nothing, matching the control plane.
-func (s Status) Allows(feature string) bool {
-	return s.State == StateValid &&
-		s.License != nil &&
+// Allows reports whether the license grants a feature right now.
+func (s Status) Allows(feature string) bool { return s.AllowsAt(time.Now().UTC(), feature) }
+
+// AllowsAt reports whether the license grants a feature at an instant: it
+// verified, its term covers that instant, it is an enterprise license, and
+// its feature list names the feature or is empty. An oss license grants
+// nothing, matching the control plane.
+func (s Status) AllowsAt(now time.Time, feature string) bool {
+	return s.StateAt(now) == StateValid &&
 		s.License.Payload.Type == EnterpriseType &&
 		s.License.IsFeatureEnabled(feature)
 }
 
-// Line renders the one line the sidecar prints at startup. Every state gets
-// one, the missing state included: an operator who cannot tell "unlicensed"
-// from "the license did not load" reads the wrong config file for an hour.
+// Line renders the one line the sidecar prints at startup and again when the
+// term ends. Every state gets one, the missing state included: an operator
+// who cannot tell "unlicensed" from "the license did not load" reads the
+// wrong config file for an hour.
 func (s Status) Line() string {
-	switch s.State {
+	switch s.State() {
 	case StateValid:
 		l := s.License
 		body := fmt.Sprintf("license: valid. %s %q, expires %s, features: %s",
@@ -327,12 +388,12 @@ func (s Status) Line() string {
 // endpoint handing out a complete, reusable license is a licensing hole with
 // an HTTP interface.
 func (s Status) Report() map[string]any {
-	out := map[string]any{"state": s.State.String()}
+	out := map[string]any{"state": s.State().String()}
 	if s.Source != "" {
 		out["source"] = s.Source
 	}
-	if s.Err != nil {
-		out["problem"] = s.Err.Error()
+	if reason := s.Reason(); reason != "" {
+		out["problem"] = reason
 	}
 	if l := s.License; l != nil {
 		out["type"] = l.Payload.Type
@@ -409,4 +470,12 @@ func errText(err error) string {
 		return "no reason given"
 	}
 	return err.Error()
+}
+
+// sourceName names a source in a sentence when one is known.
+func sourceName(source string) string {
+	if source == "" {
+		return "this process"
+	}
+	return source
 }

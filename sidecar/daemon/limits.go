@@ -48,6 +48,14 @@ func capsFor(lic license.Status) caps {
 	return c
 }
 
+// dependsOnLicense reports whether this config needs a license to run at all,
+// meaning the free-tier caps refuse it. Run watches the term only for these:
+// a config inside the caps loses nothing when a license expires, and taking
+// it down would be an outage with no revenue behind it.
+func (c *Config) dependsOnLicense() bool {
+	return len(c.checkLimits(license.Status{})) > 0
+}
+
 // exceeds reports whether n is over a cap. An unlimited cap is over nothing.
 func exceeds(n, limit int) bool { return limit != unlimited && n > limit }
 
@@ -73,9 +81,13 @@ func capJSON(n int) *int {
 // because both entry points report a validated config and neither should
 // learn the numbers by hand: sidecar/cmd through Main, the CLI through
 // `hoop start sidecar --validate`.
-func LimitsSummary(lic license.Status) string {
+func LimitsSummary(lic license.Status) string { return "limits: " + limitsText(lic) }
+
+// limitsText is the same pair without the label, for a sentence that supplies
+// its own. "needs more than limits: 1 guardrail rule(s)" reads like a bug.
+func limitsText(lic license.Status) string {
 	c := capsFor(lic)
-	return fmt.Sprintf("limits: %s guardrail rule(s), %s data masking rule(s)",
+	return fmt.Sprintf("%s guardrail rule(s), %s data masking rule(s)",
 		capText(c.guardrails), capText(c.mask))
 }
 
@@ -124,7 +136,7 @@ func (c *Config) checkLimits(lic license.Status) []string {
 // operator looks straight at the limit, and "contact our support" wastes it
 // when the reason is a license that expired last week.
 func licenseAdvice(lic license.Status) string {
-	switch lic.State {
+	switch lic.State() {
 	case license.StateExpired:
 		return " " + licenseName(lic) + " expired, so the free tier caps are back in " +
 			"force; renew it at " + license.Support + "."
