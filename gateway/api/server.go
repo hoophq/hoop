@@ -654,7 +654,6 @@ func (api *Api) buildSidecarRoutes(r *apiroutes.Router) {
 	// obvious ones to a reader. Post also refuses these two as resource
 	// names, so no sidecar can be shadowed by them.
 	r.POST("/sidecars/handshake", r.SidecarAuthMiddleware, apisidecar.Handshake)
-	r.GET("/sidecars/configuration", r.SidecarAuthMiddleware, apisidecar.GetConfiguration)
 
 	r.GET("/sidecars/:nameOrID",
 		apiroutes.ReadOnlyAccessRole,

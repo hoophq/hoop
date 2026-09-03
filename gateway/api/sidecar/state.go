@@ -22,17 +22,6 @@ func recordRuntime(sidecarID, version string) {
 	runtimeStore.Set(sidecarID, runtimeState{Version: version, LastSeen: time.Now().UTC()})
 }
 
-// touchRuntime bumps LastSeen, keeping the reported version. A sidecar that
-// polls /sidecars/configuration without re-handshaking is still alive.
-func touchRuntime(sidecarID string) {
-	state := runtimeState{}
-	if current := loadRuntime(sidecarID); current != nil {
-		state.Version = current.Version
-	}
-	state.LastSeen = time.Now().UTC()
-	runtimeStore.Set(sidecarID, state)
-}
-
 // loadRuntime returns nil when the sidecar has not called this process.
 func loadRuntime(sidecarID string) *runtimeState {
 	obj := runtimeStore.Get(sidecarID)

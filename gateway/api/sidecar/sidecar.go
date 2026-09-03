@@ -167,26 +167,6 @@ func Handshake(c *gin.Context) {
 	respondConfig(c, sidecar)
 }
 
-// Sidecar Configuration
-//
-//	@Summary		Sidecar Configuration
-//	@Description	Authenticated with the hoop-sidecar-token header. Returns the configuration the sidecar must serve, built from the connections assigned to it.
-//	@Tags			Sidecars
-//	@Produce		json
-//	@Param			hoop-sidecar-token	header	string	true	"The token returned when the sidecar was created"
-//	@Success		200				{object}	map[string]interface{}
-//	@Failure		401,422,500		{object}	openapi.HTTPError
-//	@Router			/sidecars/configuration [get]
-func GetConfiguration(c *gin.Context) {
-	sidecar := apiroutes.SidecarFromContext(c)
-	if sidecar == nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"message": "access denied"})
-		return
-	}
-	touchRuntime(sidecar.ID)
-	respondConfig(c, sidecar)
-}
-
 // respondConfig is shared so the handshake and the poll can never drift.
 func respondConfig(c *gin.Context, sidecar *models.Sidecar) {
 	cfg, err := services.BuildSidecarConfig(models.DB, sidecar.OrgID, sidecar.ID)
