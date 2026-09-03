@@ -45,11 +45,10 @@
  (fn [{:keys [db]} _]
    (let [selected-connections (get-in db [:parallel-mode :selection :connections] [])]
      (if (helpers/has-minimum-connections? selected-connections)
-       {:db (-> db
-                (assoc-in [:parallel-mode :modal :open?] false)
-                ;; Clear draft state on confirm
-                (assoc-in [:parallel-mode :selection :draft-connections] nil))
-        :fx [[:dispatch [:parallel-mode/persist]]]}
+       ;; Clear draft state on confirm
+       {:db (assoc-in db [:parallel-mode :selection :draft-connections] nil)
+        :fx [[:dispatch [:parallel-mode/persist]]
+             [:dispatch [:parallel-mode/close-modal]]]}
        {:fx [[:dispatch [:show-snackbar {:level :warning
                                          :text (str "Please select at least "
                                                     db/min-connections
@@ -59,22 +58,26 @@
  :parallel-mode/cancel-selection
  (fn [{:keys [db]} _]
    (let [draft-connections (get-in db [:parallel-mode :selection :draft-connections])]
-     {:db
-      (-> db
-          (assoc-in [:parallel-mode :modal :open?] false)
-          (update-in [:parallel-mode :selection] merge {:connections (or draft-connections [])
-                                                        :draft-connections nil}))})))
+     {:db (update-in db [:parallel-mode :selection] merge
+                     {:connections (or draft-connections [])
+                      :draft-connections nil})
+      :fx [[:dispatch [:parallel-mode/close-modal]]]})))
 
-;; ---- Seed from Primary Connection ----
+;; ---- Seed from the Host's Connection ----
 
 (rf/reg-event-fx
- :parallel-mode/seed-from-primary
- (fn [{:keys [db]} _]
-   (let [primary-connection (get-in db [:editor :connections :selected])
+ :parallel-mode/seed-from-host
+ (fn [{:keys [db]} [_ source]]
+   (let [path (helpers/source->connection-path source)
+         host-connection (when path (get-in db path))
          current-connections (get-in db [:parallel-mode :selection :connections] [])]
-     (if (and primary-connection
-              (not (helpers/connection-selected? primary-connection current-connections)))
-       {:db (update-in db [:parallel-mode :selection :connections] conj primary-connection)}
+     ;; Only seed something the list can show and parallel mode can run. An
+     ;; offline or exec-disabled role used to be counted in the badge while no
+     ;; checkbox was ticked, and submit still executed it. EVL-244.
+     (if (and host-connection
+              (helpers/valid-for-parallel? host-connection)
+              (not (helpers/connection-selected? host-connection current-connections)))
+       {:db (update-in db [:parallel-mode :selection :connections] conj host-connection)}
        {}))))
 
 ;; ---- Persistence ----

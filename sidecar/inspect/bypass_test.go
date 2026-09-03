@@ -1,6 +1,7 @@
 package inspect_test
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/hoophq/hoop/sidecar/inspect"
@@ -431,5 +432,37 @@ func TestStatementSplitSurvivesQuoting(t *testing.T) {
 		if !writesTo(stmts, "customers") {
 			t.Errorf("the trailing delete was lost: %s", tc.sql)
 		}
+	}
+}
+
+// AnalyzeSQL must hand the lexer the dialect the protocol implies. Passing
+// mysql traffic through the Postgres rules is not a cosmetic mismatch: each
+// case below is a statement the wrong dialect reads as something SAFER than
+// it is, which is a denial that never fires.
+func TestMySQLIsAnalyzedWithTheMySQLDialect(t *testing.T) {
+	for _, tc := range []struct {
+		sql  string
+		why  string
+		want inspect.Operation
+	}{
+		// MySQL reads `--` glued to a token as two minus signs, so the
+		// delete is a second live statement. The Postgres rule comments
+		// it out and the delete is never analyzed at all.
+		{`SELECT 1--2; DELETE FROM customers`, "glued dash comment", inspect.OpDelete},
+		// Block comments do not nest in MySQL, so the comment ends at the
+		// first `*/` and the delete is live SQL.
+		{`/* a /* b */ DELETE FROM customers */`, "non-nesting block comment", inspect.OpDelete},
+	} {
+		if got := inspect.AnalyzeSQL(tc.sql, inspect.MySQL).Operation; got != tc.want {
+			t.Errorf("%s: op = %q, want %q: %s", tc.why, got, tc.want, tc.sql)
+		}
+	}
+
+	// Backticks are MySQL's only quoted identifier. Scanned as stray
+	// punctuation the delete is reported with no target, and a rule naming
+	// that table never matches.
+	a := inspect.AnalyzeSQL("DELETE FROM `orders`", inspect.MySQL)
+	if a.Operation != inspect.OpDelete || !slices.Contains(a.Tables, "orders") {
+		t.Errorf("backtick identifier: op = %q, tables = %v", a.Operation, a.Tables)
 	}
 }

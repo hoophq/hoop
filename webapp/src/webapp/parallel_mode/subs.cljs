@@ -16,6 +16,11 @@
  (fn [db _]
    (get-in db [:parallel-mode :modal :search-term] "")))
 
+(rf/reg-sub
+ :parallel-mode/source
+ (fn [db _]
+   (get-in db [:parallel-mode :modal :source])))
+
 ;; ---- Selection Subscriptions ----
 
 (rf/reg-sub
@@ -49,6 +54,17 @@
  (fn [connections _]
    (let [all-connections (or (:data connections) [])]
      (helpers/filter-valid-connections all-connections))))
+
+;; The role the host page has open, which the modal pre-selects. Read straight
+;; from app-db and not looked up in the fetched page, so the badge is right even
+;; when the role sorts past the first 50 rows. EVL-244.
+(rf/reg-sub
+ :parallel-mode/host-connection
+ (fn [db _]
+   (let [path (helpers/source->connection-path (get-in db [:parallel-mode :modal :source]))
+         connection (when path (get-in db path))]
+     (when (and connection (helpers/valid-for-parallel? connection))
+       connection))))
 
 ;; ---- Execution Summary Subscriptions ----
 

@@ -38,8 +38,11 @@ import (
 // both without mangling one of them.
 func AnalyzeSQL(sql string, proto Protocol) SQLAnalysis {
 	d := lexer.Postgres
-	if proto == MSSQL {
+	switch proto {
+	case MSSQL:
 		d = lexer.MSSQL
+	case MySQL:
+		d = lexer.MySQL
 	}
 	a := lexer.Analyze(sql, d)
 

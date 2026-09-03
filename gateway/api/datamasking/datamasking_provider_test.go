@@ -21,7 +21,7 @@ func loadNoProviderConfig(t *testing.T) {
 	t.Setenv("MSPRESIDIO_ANALYZER_URL", "")
 	t.Setenv("MSPRESIDIO_ANONYMIZER_URL", "")
 	t.Setenv("GOOGLE_APPLICATION_CREDENTIALS_JSON", "")
-	if err := appconfig.Load(); err != nil {
+	if err := appconfig.Load(appconfig.AppModeGateway); err != nil {
 		t.Fatalf("appconfig.Load: %v", err)
 	}
 	if appconfig.Get().HasRedactCredentials() {

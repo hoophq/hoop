@@ -149,7 +149,7 @@ func TestASStillHeadsAStatementUnderDDL(t *testing.T) {
 	}
 }
 
-// E'' honours backslash escapes in every server configuration, so a scanner
+// E” honours backslash escapes in every server configuration, so a scanner
 // that stops at the backslash-quote swallows the semicolon and loses the
 // whole statement that follows. This is the worst of the bypasses because it
 // hides a statement rather than mislabelling one.
@@ -432,12 +432,14 @@ func TestVerbStringsAreStable(t *testing.T) {
 func TestAnalyzeDoesNotPanic(t *testing.T) {
 	for _, sql := range []string{
 		"", " ", ";", "(", ")", "'", `"`, "$", "$$", "--", "/*", "*/",
+		"`", "``", "#", "-", `'a\`, "`a``",
 		"with", "with as", "with x as", "select from", "delete from",
 		strings.Repeat("(", 200), strings.Repeat(")", 200),
 		strings.Repeat("with x as (", 50),
 	} {
-		for _, d := range []lexer.Dialect{lexer.Postgres, lexer.MSSQL} {
+		for _, d := range []lexer.Dialect{lexer.Postgres, lexer.MSSQL, lexer.MySQL} {
 			lexer.Analyze(sql, d)
+			lexer.Split(sql, d)
 		}
 	}
 }
@@ -558,5 +560,274 @@ func TestObjectCreatingForms(t *testing.T) {
 		if got := reads(a); !slices.Equal(got, []string{tc.read}) {
 			t.Errorf("reads = %v, want [%s]: %s", got, tc.read, tc.sql)
 		}
+	}
+}
+
+// The backtick is MySQL's only out-of-the-box identifier quote, so a scanner
+// without it loses every relation a client bothered to quote — and clients
+// quote exactly the names that collide with keywords, which is the set most
+// worth naming in a rule.
+func TestMySQLBacktickIdentifiers(t *testing.T) {
+	for _, tc := range []struct {
+		sql  string
+		want []string
+	}{
+		// A relation spelled as a reserved word. The quoting must not
+		// fold into a bare word, or the keyword filter drops it and the
+		// delete is reported with no target at all.
+		{"DELETE FROM `select`", []string{"select"}},
+		// The doubled-close escape, which delimitedIdent already
+		// implements for "" and ]]. Truncating at the inner pair names
+		// a different table than the one being emptied.
+		{"DELETE FROM `cust``omers`", []string{"cust`omers"}},
+		// Schema qualification survives the quoting on both halves.
+		{"DELETE FROM `app`.`orders`", []string{"app.orders"}},
+	} {
+		a := lexer.Analyze(tc.sql, lexer.MySQL)
+		if got := writes(a); !slices.Equal(got, tc.want) {
+			t.Errorf("writes = %v, want %v: %s", got, tc.want, tc.sql)
+		}
+		if !a.Complete {
+			t.Errorf("Complete = false (%s): %s", a.Reason, tc.sql)
+		}
+	}
+}
+
+// '#' comments to end of line in MySQL. Reading the tail as live SQL puts a
+// table nobody touched into the relation list of a plain select, and a rule
+// naming that table then fires on a statement that never went near it.
+func TestMySQLHashComment(t *testing.T) {
+	a := lexer.Analyze("SELECT 1 # DROP TABLE t", lexer.MySQL)
+	if a.Writes() {
+		t.Errorf("commented-out SQL was executed as live: effects=%v rels=%v", a.Effects, a.Relations)
+	}
+	if got := a.Severity(); got != lexer.Select {
+		t.Errorf("Severity() = %q, want select", got)
+	}
+	if len(a.Relations) != 0 {
+		t.Errorf("relations = %v, want none; the commented tail named a phantom table", a.Relations)
+	}
+
+	// A semicolon inside the comment is not a separator, so the whole
+	// line is one statement and the DROP after it stays commented out.
+	// Splitting there hands the codec a fragment it would analyze as a
+	// live drop.
+	if got := lexer.Split("SELECT 1 # ; DROP TABLE t", lexer.MySQL); len(got) != 1 {
+		t.Errorf("Split = %q, want one statement; a commented ';' was read as a separator", got)
+	}
+
+	// Only to end of LINE. A '#' comment running to end of INPUT would
+	// hide every statement after it in a multi-statement query, which is
+	// the delete this package exists to see.
+	multi := lexer.Analyze("SELECT 1 # note\n; DELETE FROM customers", lexer.MySQL)
+	if got := writes(multi); !slices.Equal(got, []string{"customers"}) {
+		t.Errorf("writes = %v, want [customers]; the comment ate the next line", got)
+	}
+}
+
+// The load-bearing one. MySQL honours backslash escapes in an ordinary '...'
+// literal unless NO_BACKSLASH_ESCAPES is set, so the quote after the
+// backslash does not close the string and the semicolon after it is a real
+// separator. A scanner using the Postgres rule runs the literal to end of
+// input, splits nothing, and the DELETE is never analyzed.
+func TestMySQLBackslashEscapeDoesNotSwallowTheNextStatement(t *testing.T) {
+	const sql = `SELECT 'O\'Brien'; DELETE FROM t`
+
+	got := lexer.Split(sql, lexer.MySQL)
+	if len(got) != 2 {
+		t.Fatalf("Split = %q, want two statements; the literal swallowed the separator", got)
+	}
+	if !strings.Contains(got[1], "DELETE") {
+		t.Errorf("Split[1] = %q, want the DELETE", got[1])
+	}
+
+	a := lexer.Analyze(sql, lexer.MySQL)
+	if !slices.Contains(a.Effects, lexer.Delete) {
+		t.Errorf("the DELETE was swallowed by the literal: effects=%v", a.Effects)
+	}
+	if w := writes(a); !slices.Equal(w, []string{"t"}) {
+		t.Errorf("writes = %v, want [t]", w)
+	}
+	if !a.Complete {
+		t.Errorf("Complete = false (%s); MySQL's default reading is unambiguous", a.Reason)
+	}
+
+	// The same bytes under Postgres are genuinely ambiguous — it depends
+	// on standard_conforming_strings, which this package cannot see — so
+	// the honest answer there stays Complete=false, not a confident split.
+	if pg := lexer.Analyze(sql, lexer.Postgres); pg.Complete {
+		t.Errorf("postgres Complete = true on an ambiguous backslash literal: %+v", pg)
+	}
+}
+
+// MySQL follows the standard and does NOT nest block comments, so the first
+// close ends it and the tail is live SQL. Postgres nests, where the same
+// bytes are entirely comment. Both readings are correct for their engine and
+// each is a misread for the other, which is the whole reason nestedBlockComment
+// is a per-dialect row rather than a constant.
+func TestBlockCommentNestingIsPerDialect(t *testing.T) {
+	const sql = `/* a /* b */ DELETE FROM t */`
+
+	my := lexer.Analyze(sql, lexer.MySQL)
+	if got := writes(my); !slices.Equal(got, []string{"t"}) {
+		t.Errorf("mysql writes = %v, want [t]; the first */ closes and the DELETE runs", got)
+	}
+
+	pg := lexer.Analyze(sql, lexer.Postgres)
+	if pg.Writes() {
+		t.Errorf("postgres executed commented-out SQL: effects=%v rels=%v", pg.Effects, pg.Relations)
+	}
+}
+
+// Bytes that delimit something in another dialect must stay inert here.
+// Borrowing T-SQL's brackets would invent a relation out of `SELECT [a]`, and
+// borrowing PostgreSQL's dollar quote would hide a real statement inside what
+// MySQL reads as two user-variable references.
+func TestMySQLDoesNotBorrowOtherDialectsQuoting(t *testing.T) {
+	br := lexer.Analyze(`SELECT * FROM [dbo].[customers]`, lexer.MySQL)
+	if len(br.Relations) != 0 {
+		t.Errorf("relations = %v, want none; '[' is not an identifier quote in MySQL", br.Relations)
+	}
+
+	dq := lexer.Analyze(`SELECT $$ DELETE FROM t $$`, lexer.MySQL)
+	if got := reads(dq); !slices.Equal(got, []string{"t"}) {
+		t.Errorf("reads = %v, want [t]; $$ is not a dollar quote in MySQL, so the FROM is live", got)
+	}
+	if dq.Writes() {
+		t.Errorf("a bare DELETE keyword became a write: effects=%v", dq.Effects)
+	}
+}
+
+// MySQL needs whitespace after `--`; glued to a token it is two minus signs.
+// Applying the Postgres rule comments out the rest of the line, and any
+// statement after the semicolon on it is never analyzed.
+func TestMySQLDashCommentNeedsWhitespace(t *testing.T) {
+	const glued = `SELECT 1--2; DELETE FROM t`
+
+	if got := lexer.Split(glued, lexer.MySQL); len(got) != 2 {
+		t.Fatalf("Split = %q, want two statements; `--2` was read as a comment", got)
+	}
+	if got := writes(lexer.Analyze(glued, lexer.MySQL)); !slices.Equal(got, []string{"t"}) {
+		t.Errorf("writes = %v, want [t]", got)
+	}
+
+	// Spaced, it is a comment in MySQL too, and must still hide its tail.
+	spaced := lexer.Analyze("SELECT 1 -- DROP TABLE t", lexer.MySQL)
+	if spaced.Writes() {
+		t.Errorf("a spaced -- comment was read as live SQL: %v", spaced.Effects)
+	}
+
+	// Postgres has no such requirement: `--2` is a comment there, and this
+	// must not have been made a global rule.
+	if got := lexer.Split(glued, lexer.Postgres); len(got) != 1 {
+		t.Errorf("postgres Split = %q, want one statement; `--` comments unconditionally there", got)
+	}
+}
+
+// The negative controls. MySQL's bytes must mean in the other dialects
+// exactly what they meant before this dialect existed.
+func TestMySQLQuotingDoesNotLeakIntoOtherDialects(t *testing.T) {
+	for _, d := range []lexer.Dialect{lexer.Postgres, lexer.MSSQL} {
+		// A backtick is not an identifier delimiter in either engine, so
+		// the name must NOT be recovered. Recovering it would mean the
+		// scanner is inventing relations out of invalid syntax.
+		bt := lexer.Analyze("DELETE FROM `select`", d)
+		if len(bt.Relations) != 0 {
+			t.Errorf("%s: relations = %v, want none; a backtick named a relation", d, bt.Relations)
+		}
+
+		// '#' is a live operator in PostgreSQL, not a comment. Treating
+		// it as one would swallow the rest of the line — here, the FROM
+		// clause that names the table being read.
+		h := lexer.Analyze("SELECT 1 # DROP TABLE t", d)
+		if got := reads(h); !slices.Equal(got, []string{"t"}) {
+			t.Errorf("%s: reads = %v, want [t]; '#' swallowed the rest of the line", d, got)
+		}
+	}
+}
+
+// MySQL EXECUTES the body of `/*! ... */`, so the classifier must read it.
+//
+// Found against a live MySQL 8.4 relay, not by unit test: `/*! DROP TABLE
+// orders */` was forwarded by a lane configured to refuse `drop`, and the
+// table was gone. A scanner discarding the body as a comment reports no verb
+// at all, so the rule matches nothing and the statement passes.
+func TestMySQLExecutableCommentIsLiveSQL(t *testing.T) {
+	for _, sql := range []string{
+		"/*! DROP TABLE customers */",
+		"/*!50000 DROP TABLE customers */",
+		"SELECT 1 /*! ; DROP TABLE customers */",
+	} {
+		t.Run(sql, func(t *testing.T) {
+			a := lexer.Analyze(sql, lexer.MySQL)
+			if !slices.Contains(a.Effects, lexer.Drop) {
+				t.Fatalf("the DROP was read as a comment: effects=%v", a.Effects)
+			}
+			if w := writes(a); !slices.Contains(w, "customers") {
+				t.Errorf("writes = %v, want customers", w)
+			}
+		})
+	}
+}
+
+// The other dialects have no executable comment, so the same bytes there are
+// ordinary commentary and must not invent a verb.
+func TestExecutableCommentIsInertOutsideMySQL(t *testing.T) {
+	const sql = "SELECT 1 /*! DROP TABLE customers */"
+	for _, d := range []lexer.Dialect{lexer.Postgres, lexer.MSSQL} {
+		t.Run(d.String(), func(t *testing.T) {
+			a := lexer.Analyze(sql, d)
+			if slices.Contains(a.Effects, lexer.Drop) {
+				t.Errorf("%s invented a DROP out of a comment: effects=%v",
+					d, a.Effects)
+			}
+		})
+	}
+}
+
+// An executable comment left open truncates the statement, so the scan must
+// fail closed rather than report a clean read of half of it.
+func TestMySQLUnterminatedExecutableCommentFailsClosed(t *testing.T) {
+	a := lexer.Analyze("SELECT 1 /*! DROP TABLE customers", lexer.MySQL)
+	if a.Complete {
+		t.Error("Complete = true on an unterminated executable comment")
+	}
+}
+
+// NO_BACKSLASH_ESCAPES changes where a literal ends, and the classifier
+// cannot see the session mode.
+//
+// Verified server-side on MySQL 8.4: under that mode the literal ends at the
+// first quote and the DELETE runs — the row count dropped. Under the default
+// the same bytes are one SELECT. Reading only the default hides a live
+// DELETE, so both readings are scanned and their effects unioned.
+func TestMySQLDeleteHiddenByBackslashModeIsStillFound(t *testing.T) {
+	const sql = `SELECT 'a\'; DELETE FROM orders; -- '`
+
+	a := lexer.Analyze(sql, lexer.MySQL)
+	if !slices.Contains(a.Effects, lexer.Delete) {
+		t.Fatalf("the DELETE is invisible under the default reading and was "+
+			"not recovered: effects=%v", a.Effects)
+	}
+	if w := writes(a); !slices.Contains(w, "orders") {
+		t.Errorf("writes = %v, want orders", w)
+	}
+
+	// Split must surface it too, or the statement never reaches policy.
+	parts := lexer.Split(sql, lexer.MySQL)
+	if len(parts) < 2 {
+		t.Fatalf("Split returned %d statement(s): %q", len(parts), parts)
+	}
+}
+
+// The dual reading must not invent effects on ordinary statements: a
+// backslash in a literal is common and must stay literal.
+func TestMySQLBackslashLiteralStaysLiteral(t *testing.T) {
+	a := lexer.Analyze(`SELECT 'C:\path\to\file' FROM customers`, lexer.MySQL)
+	if len(a.Effects) != 1 || a.Effects[0] != lexer.Select {
+		t.Errorf("effects = %v, want [select]", a.Effects)
+	}
+	if !a.Complete {
+		t.Errorf("Complete = false (%s) on an ordinary backslash literal", a.Reason)
 	}
 }

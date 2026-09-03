@@ -119,7 +119,7 @@
                  :aria-expanded metadata-open?}]]]
 
              ;; Parallel Mode Button
-             [parallel-mode-button/parallel-mode-button {:size "1" :variant "ghost"}]
+             [parallel-mode-button/parallel-mode-button {:size "1" :variant "ghost" :source :runbook}]
 
              [:> Tooltip {:content (if (= os :mac) "cmd + Enter" "ctrl + Enter")}
               [:> Button

@@ -162,19 +162,20 @@ func TestUnknownGuardrailModeIsRejected(t *testing.T) {
 // still load clean.
 //
 // Every protocol this build ships masks: gate.MaskSupported asks the codec for
-// a Reframer rather than listing names, and postgres, mssql and http all have
-// one. So the refusal is exercised at the buildMasker seam, which is where a
-// future non-reframing codec would hit it.
+// a Reframer rather than listing names, and postgres, mssql, mysql and http
+// all have one. So the refusal is exercised at the buildMasker seam against a
+// protocol this build has no codec for, which is where a future non-reframing
+// codec would hit it too.
 func TestMaskRulesOnUnmaskableProtocolAreRefused(t *testing.T) {
 	mc := MaskConfig{Rules: []byte(`[{"entities":["US_SSN"],"strategy":"redact"}]`)}
 	det := stubPlugin{entities: []string{"US_SSN"}}
 
-	for _, p := range []inspect.Protocol{inspect.Postgres, inspect.MSSQL, inspect.HTTP} {
+	for _, p := range []inspect.Protocol{inspect.Postgres, inspect.MSSQL, inspect.MySQL, inspect.HTTP} {
 		if _, err := buildMasker(mc, det, p); err != nil {
 			t.Errorf("buildMasker refused %s, which can re-frame or re-tag: %v", p, err)
 		}
 	}
-	if _, err := buildMasker(mc, det, inspect.Protocol("mysql")); err == nil {
+	if _, err := buildMasker(mc, det, inspect.Protocol("cassandra")); err == nil {
 		t.Error("buildMasker accepted a protocol with neither masking mechanism")
 	}
 }

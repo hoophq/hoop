@@ -17,5 +17,6 @@ package all
 import (
 	_ "github.com/hoophq/hoop/sidecar/codec/http"
 	_ "github.com/hoophq/hoop/sidecar/codec/mssql"
+	_ "github.com/hoophq/hoop/sidecar/codec/mysql"
 	_ "github.com/hoophq/hoop/sidecar/codec/postgres"
 )
