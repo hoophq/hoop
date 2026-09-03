@@ -3,6 +3,7 @@ package daemon
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"strings"
 	"testing"
@@ -122,7 +123,9 @@ func TestAnInlineDocumentIsReadAsADocument(t *testing.T) {
 // belongs in its report rather than only in the run log.
 func TestPrintLanesReportsTheLicenseAndTheCaps(t *testing.T) {
 	var buf bytes.Buffer
-	PrintLanes(&buf, licensed(t), []LaneInfo{{Name: "appdb", Protocol: "postgres"}})
+	if err := PrintLanes(&buf, licensed(t), []LaneInfo{{Name: "appdb", Protocol: "postgres"}}); err != nil {
+		t.Fatalf("PrintLanes: %v", err)
+	}
 
 	out := buf.String()
 	for _, want := range []string{"license: valid", "Acme Corp", "unlimited guardrail rule(s)", "appdb"} {
@@ -134,7 +137,9 @@ func TestPrintLanesReportsTheLicenseAndTheCaps(t *testing.T) {
 
 func TestPrintLanesSaysWhenThereIsNoLicense(t *testing.T) {
 	var buf bytes.Buffer
-	PrintLanes(&buf, license.Status{}, nil)
+	if err := PrintLanes(&buf, license.Status{}, nil); err != nil {
+		t.Fatalf("PrintLanes: %v", err)
+	}
 
 	out := buf.String()
 	for _, want := range []string{"license: missing", license.EnvVar, "1 guardrail rule(s)"} {
@@ -142,6 +147,51 @@ func TestPrintLanesSaysWhenThereIsNoLicense(t *testing.T) {
 			t.Errorf("the report is missing %q:\n%s", want, out)
 		}
 	}
+}
+
+// failingWriter is a stdout that has run out of disk.
+type failingWriter struct{ err error }
+
+func (f failingWriter) Write([]byte) (int, error) { return 0, f.err }
+
+// A -validate run that could not write its report must not exit zero. The
+// report is what a pipeline reads to decide whether a config ships, and an
+// exit code claiming success over an empty file says the config was checked
+// when nobody ever saw the answer.
+func TestPrintLanesReturnsTheWriteError(t *testing.T) {
+	want := errors.New("no space left on device")
+
+	err := PrintLanes(failingWriter{want}, licensed(t), []LaneInfo{{Name: "appdb"}})
+
+	if err == nil {
+		t.Fatal("a failed write was reported as a clean report")
+	}
+	if !errors.Is(err, want) {
+		t.Errorf("the cause was dropped: %v", err)
+	}
+	if !strings.Contains(err.Error(), "validation report") {
+		t.Errorf("the error does not say what failed to write: %v", err)
+	}
+}
+
+// A short write is a failure even when the writer reports no error, which is
+// what io.WriteString turns into ErrShortWrite. Losing half a report is worse
+// than losing all of it: the half that arrived looks complete.
+func TestPrintLanesCatchesAShortWrite(t *testing.T) {
+	if err := PrintLanes(shortWriter{}, license.Status{}, nil); err == nil {
+		t.Fatal("a truncated report was reported as a clean one")
+	}
+}
+
+// shortWriter accepts one byte at a time and claims success, which is the
+// contract violation io.WriteString detects.
+type shortWriter struct{}
+
+func (shortWriter) Write(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	return 1, nil
 }
 
 // An expired license reports as a warning and a valid one as information,

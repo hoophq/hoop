@@ -186,8 +186,7 @@ func Main(version string, load Loader, build PluginBuilder) error {
 		if err != nil {
 			return err
 		}
-		PrintLanes(os.Stdout, cfg.lic, lanes)
-		return nil
+		return PrintLanes(os.Stdout, cfg.lic, lanes)
 	}
 
 	return Run(cfg, det)
@@ -198,6 +197,11 @@ func Main(version string, load Loader, build PluginBuilder) error {
 // It goes to STDERR at every call site. -validate writes a report to stdout
 // that an operator may parse, and a warning must not land in it. Same rule the
 // CLI's rename notice follows.
+//
+// The write errors are DROPPED, and that is the whole difference from
+// PrintLanes. A warning nobody could deliver must not turn a good config into
+// a non-zero exit: the config is still valid, and failing the run would
+// punish an operator for a broken stderr rather than for anything they wrote.
 func ReportDeprecations(w io.Writer, notes []string) {
 	for _, n := range notes {
 		fmt.Fprintln(w, "warn: deprecated config:", n)
@@ -212,16 +216,40 @@ func ReportDeprecations(w io.Writer, notes []string) {
 // leaves in force, one line per lane and the notes the resolved stack
 // produced. The license goes to stdout, since an expired one is the likeliest
 // reason a config stops loading and stdout is where "config OK" goes.
-func PrintLanes(w io.Writer, lic license.Status, lanes []LaneInfo) {
-	fmt.Fprintln(w, "config OK:", len(lanes), "listener(s)")
-	fmt.Fprintf(w, "  %s\n", lic.Line())
-	fmt.Fprintf(w, "  %s\n", LimitsSummary(lic))
+//
+// It returns the write error, and both entry points exit non-zero on it. This
+// report is what a pipeline reads to decide whether a config ships, so a run
+// that could not deliver it must not also claim success: `hoop-inspect
+// -validate > report.txt` on a full disk has produced no report, and an exit
+// code of zero would say it produced a clean one.
+//
+// The body renders into a strings.Builder first. Builder.Write never fails,
+// which is what makes the fmt calls below safe to ignore, and it leaves one
+// write to check instead of one per line.
+func PrintLanes(w io.Writer, lic license.Status, lanes []LaneInfo) error {
+	var b strings.Builder
+	fmt.Fprintln(&b, "config OK:", len(lanes), "listener(s)")
+	fmt.Fprintf(&b, "  %s\n", lic.Line())
+	fmt.Fprintf(&b, "  %s\n", LimitsSummary(lic))
 	for _, ln := range lanes {
-		fmt.Fprintf(w, "  %-16s %-9s %s\n", ln.Name, ln.Protocol, ln.Summary())
+		fmt.Fprintf(&b, "  %-16s %-9s %s\n", ln.Name, ln.Protocol, ln.Summary())
 		for _, n := range ln.Notes {
-			fmt.Fprintf(w, "  %-16s %-9s   note: %s\n", "", "", n)
+			fmt.Fprintf(&b, "  %-16s %-9s   note: %s\n", "", "", n)
 		}
 	}
+	// The length check is not paranoia: io.WriteString hands back whatever
+	// the Writer returned, so a Writer that reports a short count with a nil
+	// error truncates the report and nothing notices. Half a report is worse
+	// than none, because the half that arrived looks whole.
+	out := b.String()
+	n, err := io.WriteString(w, out)
+	if err == nil && n != len(out) {
+		err = io.ErrShortWrite
+	}
+	if err != nil {
+		return fmt.Errorf("writing the validation report: %w", err)
+	}
+	return nil
 }
 
 // LaneInfo is one resolved listener, as Validate reports it.

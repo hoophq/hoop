@@ -98,8 +98,7 @@ HOOP_LICENSE, which outranks the "license" key in the config file.`,
 			if err != nil {
 				return err
 			}
-			daemon.PrintLanes(os.Stdout, cfg.Licensing(), lanes)
-			return nil
+			return daemon.PrintLanes(os.Stdout, cfg.Licensing(), lanes)
 		}
 
 		// Run blocks until SIGINT or SIGTERM and installs its own handler.
