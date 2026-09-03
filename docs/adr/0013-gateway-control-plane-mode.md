@@ -159,10 +159,9 @@ builds both engines in one process and checks, in both directions, that the
 two modes register the same routes. A test that pins a hand-written list is
 what this replaces.
 
-**Part of the control plane frontend still describes the allowlist.** PR #1785
-updates `controlplane/frontend`'s `README.md`, `CLAUDE.md` and `ModeBanner`.
-Comments in its services and user store still say the group and attribute
-routes answer 404, which is no longer true; they are owed a follow-up.
+**The control plane frontend's docs follow.** PR #1785 updates
+`controlplane/frontend`'s `README.md`, `CLAUDE.md`, `ModeBanner` and the
+service and store comments that described the allowlist.
 
 **The served OpenAPI spec describes what is served.** It is generated from the
 handlers' swagger annotations, which know nothing about the mode; with one
