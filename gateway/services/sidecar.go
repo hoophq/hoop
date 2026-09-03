@@ -149,7 +149,7 @@ func buildConfig(conns []sidecarConnection) (*daemon.Config, error) {
 		if err != nil {
 			return nil, err
 		}
-		upstream, port, err := sidecarUpstream(conn, protocol)
+		upstream, port, upstreamTLS, err := sidecarUpstream(conn, protocol)
 		if err != nil {
 			return nil, err
 		}
@@ -159,6 +159,12 @@ func buildConfig(conns []sidecarConnection) (*daemon.Config, error) {
 			Protocol: protocol,
 			Listen:   "0.0.0.0:" + port,
 			Upstream: upstream,
+		}
+		// An empty, non-nil TLSConfig turns on upstream TLS with normal
+		// certificate verification; startTLS derives the SNI server name from
+		// the upstream address.
+		if upstreamTLS {
+			listener.UpstreamTLS = &daemon.TLSConfig{}
 		}
 
 		rules, err := sidecarGuardrails(conn)
@@ -221,18 +227,18 @@ func buildConfig(conns []sidecarConnection) (*daemon.Config, error) {
 // sidecarUpstream resolves the backend address and the port the sidecar binds
 // on: it takes over the address the application already dials, so nothing
 // downstream needs reconfiguring.
-func sidecarUpstream(conn sidecarConnection, protocol string) (upstream, port string, err error) {
+func sidecarUpstream(conn sidecarConnection, protocol string) (upstream, port string, upstreamTLS bool, err error) {
 	if protocol == string(inspect.HTTP) {
 		remoteURL, err := decodeEnv(conn.envs, "REMOTE_URL")
 		if err != nil {
-			return "", "", fmt.Errorf("connection %q has an unreadable REMOTE_URL: %v", conn.name, err)
+			return "", "", false, fmt.Errorf("connection %q has an unreadable REMOTE_URL: %v", conn.name, err)
 		}
 		if remoteURL == "" {
-			return "", "", fmt.Errorf("connection %q has no REMOTE_URL configured", conn.name)
+			return "", "", false, fmt.Errorf("connection %q has no REMOTE_URL configured", conn.name)
 		}
 		u, err := url.Parse(remoteURL)
 		if err != nil || u.Hostname() == "" {
-			return "", "", fmt.Errorf("connection %q has an invalid REMOTE_URL configured", conn.name)
+			return "", "", false, fmt.Errorf("connection %q has an invalid REMOTE_URL configured", conn.name)
 		}
 		port = u.Port()
 		if port == "" {
@@ -242,43 +248,43 @@ func sidecarUpstream(conn sidecarConnection, protocol string) (upstream, port st
 			}
 		}
 		if !isValidPort(port) {
-			return "", "", fmt.Errorf("connection %q has an invalid port in REMOTE_URL", conn.name)
+			return "", "", false, fmt.Errorf("connection %q has an invalid port in REMOTE_URL", conn.name)
 		}
 		host := u.Hostname()
 		if strings.Contains(host, ":") {
 			host = "[" + host + "]" // IPv6 literal
 		}
-		return host + ":" + port, port, nil
+		return host + ":" + port, port, u.Scheme == "https", nil
 	}
 
 	host, err := decodeEnv(conn.envs, "HOST")
 	if err != nil {
-		return "", "", fmt.Errorf("connection %q has an unreadable HOST: %v", conn.name, err)
+		return "", "", false, fmt.Errorf("connection %q has an unreadable HOST: %v", conn.name, err)
 	}
 	if host == "" {
-		return "", "", fmt.Errorf("connection %q has no HOST configured", conn.name)
+		return "", "", false, fmt.Errorf("connection %q has no HOST configured", conn.name)
 	}
 	// The upstream is joined as HOST:PORT, so a HOST that already carries a
 	// port, or a bare IPv6 literal, would build an address nothing can dial.
 	// daemon.Validate only checks that the field is non-empty, so the dial
 	// would fail at the first client connection instead of here.
 	if _, _, splitErr := net.SplitHostPort(host); splitErr == nil {
-		return "", "", fmt.Errorf("connection %q has a HOST that already carries a port (%q); set HOST and PORT separately", conn.name, host)
+		return "", "", false, fmt.Errorf("connection %q has a HOST that already carries a port (%q); set HOST and PORT separately", conn.name, host)
 	}
 	if strings.Contains(host, ":") {
 		host = "[" + host + "]" // IPv6 literal
 	}
 	port, err = decodeEnv(conn.envs, "PORT")
 	if err != nil {
-		return "", "", fmt.Errorf("connection %q has an unreadable PORT: %v", conn.name, err)
+		return "", "", false, fmt.Errorf("connection %q has an unreadable PORT: %v", conn.name, err)
 	}
 	if port == "" {
-		return "", "", fmt.Errorf("connection %q has no PORT configured", conn.name)
+		return "", "", false, fmt.Errorf("connection %q has no PORT configured", conn.name)
 	}
 	if !isValidPort(port) {
-		return "", "", fmt.Errorf("connection %q has an invalid PORT %q", conn.name, port)
+		return "", "", false, fmt.Errorf("connection %q has an invalid PORT %q", conn.name, port)
 	}
-	return host + ":" + port, port, nil
+	return host + ":" + port, port, false, nil
 }
 
 // isValidPort rejects what strconv.Atoi accepts but a listener cannot bind:

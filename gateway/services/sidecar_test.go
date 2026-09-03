@@ -140,10 +140,13 @@ func httpConn(name, remoteURL string) sidecarConnection {
 }
 
 func TestBuildConfigHTTPUpstream(t *testing.T) {
-	for _, tc := range []struct{ name, url, upstream, listen string }{
-		{"explicit port", "https://api.example.com:8443/v1", "api.example.com:8443", "0.0.0.0:8443"},
-		{"https default", "https://api.example.com/v1", "api.example.com:443", "0.0.0.0:443"},
-		{"http default", "http://api.example.com/v1", "api.example.com:80", "0.0.0.0:80"},
+	for _, tc := range []struct {
+		name, url, upstream, listen string
+		tls                         bool
+	}{
+		{"explicit port", "https://api.example.com:8443/v1", "api.example.com:8443", "0.0.0.0:8443", true},
+		{"https default", "https://api.example.com/v1", "api.example.com:443", "0.0.0.0:443", true},
+		{"http default", "http://api.example.com/v1", "api.example.com:80", "0.0.0.0:80", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg, err := buildConfig([]sidecarConnection{httpConn("api", tc.url)})
@@ -159,6 +162,12 @@ func TestBuildConfigHTTPUpstream(t *testing.T) {
 			}
 			if l.Listen != tc.listen {
 				t.Errorf("listen: want %q, got %q", tc.listen, l.Listen)
+			}
+			if tc.tls && l.UpstreamTLS == nil {
+				t.Errorf("upstream_tls: want enabled for %q, got nil", tc.url)
+			}
+			if !tc.tls && l.UpstreamTLS != nil {
+				t.Errorf("upstream_tls: want nil for %q, got %+v", tc.url, l.UpstreamTLS)
 			}
 		})
 	}
