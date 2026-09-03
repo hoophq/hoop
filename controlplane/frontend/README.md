@@ -7,30 +7,22 @@ Coding rules, styling hierarchy and the colour-scheme rule: [CLAUDE.md](./CLAUDE
 
 ## Running it
 
-There is no separate control plane backend: the API is the gateway, booted into
-its control-plane surface.
-
-Add this to the repo-root `.env` **before** starting the gateway:
-
-```
-APP_MODE=control-plane
-```
-
-It has to go in the file, not on the command line — `scripts/dev/run.sh` runs
-the gateway in a container with `--env-file=.env`, so a shell prefix never
-reaches it.
+There is no separate control plane backend: the API is the gateway binary
+started with `hoop start control-plane`. It serves every route the gateway
+serves, the gateway's web UI at `/` included, and starts none of the data
+plane: no gRPC transport, no protocol proxies and no transport plugins
+(ADR-0013). This app is not that web UI; it runs on its own through Vite.
 
 ```bash
-make run-dev          # gateway on :8009, from the repo root
+make run-dev-postgres        # once, from the repo root
+make run-dev-control-plane   # control plane on :8019, reads the repo-root .env
 npm install
-npm run dev           # Vite on :5173
+API_URL=http://localhost:8019 npm run dev   # Vite on :5173
 ```
 
-Without `APP_MODE` the gateway registers all 264 of its routes, so a call to
-something the control plane blocks works here and 404s in production. The
-routes the control plane serves are listed in
-`buildControlPlaneRoutes` in `gateway/api/server.go`, and an amber banner appears at the top of
-every page (dev builds only) when the backend is answering in gateway mode.
+`make run-dev`, the gateway on :8009 and the default proxy target, works as a
+backend too: both modes answer the same routes. `/api/serverinfo` reports
+which one is answering as `application_mode`.
 
 Only `/api` is proxied. There is no ClojureScript dev server and no asset proxy —
 everything under `/images`, `/icons` and `/data` is served from `public/`.
