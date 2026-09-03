@@ -1,11 +1,11 @@
 # ADR-0013: The control plane is a second boot path in the gateway binary
 
 - **Status:** Proposed
-- **Date:** 2026-09-01
+- **Date:** 2026-09-03
 - **Author:** @p3rotto
-- **Linear:** EVL-237
-- **Code:** [`client/cmd/start.go`](../../client/cmd/start.go), [`gateway/main.go`](../../gateway/main.go), [`gateway/api/server.go`](../../gateway/api/server.go), [`gateway/appconfig/appconfig.go`](../../gateway/appconfig/appconfig.go), [`gateway/api/healthz/healthz.go`](../../gateway/api/healthz/healthz.go)
-- **Related:** PR #1754 (the control plane frontend), PR #1773 (implements the two boot paths), PR #1772 (open draft proposing the route-allowlist mechanism this ADR's option 3 records)
+- **Linear:** EVL-237, EVL-245
+- **Code:** [`client/cmd/start.go`](../../client/cmd/start.go), [`gateway/main.go`](../../gateway/main.go), [`gateway/api/server.go`](../../gateway/api/server.go), [`gateway/appconfig/appconfig.go`](../../gateway/appconfig/appconfig.go), [`gateway/api/healthz/healthz.go`](../../gateway/api/healthz/healthz.go), [`gateway/api/controlplane_routes_test.go`](../../gateway/api/controlplane_routes_test.go)
+- **Related:** PR #1754 (the control plane frontend), PR #1773 (the two boot paths), PR #1775 (`hoop start control-plane`), PR #1770 (the 66-route allowlist this ADR retires), PR #1772 (closed draft of a registration-time allowlist), PR #1785 (one route tree for both modes)
 - **Supersedes / Superseded by:** —
 
 ## Context
@@ -19,12 +19,10 @@ sidecar is a library that turns database wire bytes into verdicts; it opens no
 gRPC stream to a gateway and registers nothing. So a deployment that exists to
 manage sidecars needs none of the machinery the gateway exists to run.
 
-Booted today, it would get all of it: **389** HTTP routes, the gRPC transport on
-`:8010` accepting agent and client streams, the Postgres, SSH, RDP and HTTP
-protocol proxies, the six transport plugins, the agent controller and the
-connection-status conciliation loop. Runbook execution, agent registration, API
-keys and webhooks are all reachable with an admin token in a product that cannot
-use them.
+Booted as a gateway, it would get all of it: the gRPC transport on `:8010`
+accepting agent and client streams, the Postgres, SSH, RDP and HTTP protocol
+proxies, the six transport plugins, the agent controller and the
+connection-status conciliation loop.
 
 Three constraints shape the answer. The gateway ships to customers and its
 behaviour must not change. Agents run on customer infrastructure and stay old
@@ -33,9 +31,12 @@ reason to stay inside the gateway binary at all is reuse: auth, users, reviews,
 guardrails, masking and the analyzer already exist here with their tables and
 migrations.
 
-One thing we do not know is which routes the control plane will need. The
-frontend's information architecture is new and still moving, and no route has
-yet been reviewed against a deployment that has no agents and no sessions.
+The HTTP surface was the open question. PR #1773 started it near-empty and
+PR #1770 grew it to the 66 routes the shipped frontend calls. The EVL-245
+discussion settled it the other way: a feature the gateway already has should
+work in the control plane from the first version, and the UI hides what the
+product does not expose. Users, audit logs, server logs, analytics mode, API
+keys, IdP integration and license management all work that way with no port.
 
 ## Options considered
 
@@ -50,19 +51,26 @@ yet been reviewed against a deployment that has no agents and no sessions.
    not something a browser toggles.
 3. **One route tree, narrowed by an allowlist.** A `"METHOD /path"` list
    consulted at registration, with `apiroutes.Router` changed so the compiler
-   refuses a registration that skips the list — the design in the open draft
-   #1772. Its central property is real: one route tree, and a test can diff the
-   two surfaces in both directions. It loses as the *first* step for two
-   reasons. It presumes we know the control plane's route list, and we do not.
-   And it narrows only the HTTP surface, leaving the gRPC transport, the proxies
-   and the plugins running in a deployment that has no agents to serve.
-4. **Two boot paths, starting from a near-empty route set.** Chosen.
+   refuses a registration that skips the list: the design in the closed draft
+   #1772. It loses because it presumes we know the control plane's route list,
+   and because it narrows only the HTTP surface, leaving the gRPC transport, the
+   proxies and the plugins running in a deployment that has no agents to serve.
+4. **Two boot paths, starting from a near-empty route set.** What PR #1773 and
+   PR #1770 shipped: `buildControlPlaneRoutes` listed each route by hand, a test
+   pinned the list, and `gateway/api/plugins` hid every plugin but Slack. It
+   loses under EVL-245. Every route was a decision to make, a test to edit and a
+   frontend change to coordinate, and what it prevented, a route answering in a
+   deployment that cannot use it, turned out cheaper to accept than to prevent:
+   23 of the gateway's 271 routes need the transport, and each of them fails
+   with an error rather than silently.
+5. **Two boot paths, one route tree.** Chosen.
 
 ## Decision
 
 We will run the control plane as **the gateway binary started with
 `hoop start control-plane`**, split at two seams: the process boot path and the
-engine builder.
+engine builder. The boot seam removes the data plane. The engine seam removes
+the web UI and nothing else.
 
 **The subcommand picks the mode, not the environment.** `gateway.Run` takes an
 `appconfig.AppMode` and hands it to `appconfig.Load`. There is no variable to
@@ -72,117 +80,142 @@ container command. An unrecognised mode stops startup rather than guessing, and
 the zero value reads as the gateway, so a caller that leaves it unset keeps the
 shipping behaviour.
 
-PR #1773 first shipped this as an `APP_MODE` environment variable. The
-follow-up removed it in favour of the subcommand, because a second way to say
-the same thing is a second way to get it wrong.
+PR #1773 first shipped this as an `APP_MODE` environment variable. PR #1775
+removed it in favour of the subcommand, because a second way to say the same
+thing is a second way to get it wrong.
 
-**The boot seam is in `Run()`.** Shared bootstrap runs first — config, TLS,
-migrations, the default organization, auth, Sentry — then `Run` dispatches to
+**The boot seam is in `Run()`.** Shared bootstrap runs first: config, TLS,
+migrations, the default organization, auth, Sentry. Then `Run` dispatches to
 `runControlPlane()` or `runGateway()`. Everything that carries agent or client
 traffic lives in `runGateway`: the transport plugin chain, the agent controller,
 the protocol proxies, connection-status conciliation, the gRPC server. A future
 addition there is off in control-plane mode by construction, without anyone
 remembering this ADR.
 
-**The engine seam is in `BuildEngine()`.** Control-plane mode returns early into
-`buildControlPlaneEngine` before the static UI, the SPA fallback, the MCP
-well-known handlers, `/ssm` and `/rdpproxy`. Both modes share one middleware
-chain through `newEngine` and `newAPIRouter`, so the control plane gets the same
-recovery, proxy policy, security headers, CORS and Sentry wiring the gateway
-gets.
+**The engine seam is in `BuildEngine()`.** Both modes build one engine from one
+route tree. Control-plane mode skips `serveWebUI`, the embedded web app and its
+SPA fallback, because the control plane has its own frontend. Everything else
+is registered in both modes: the `/api` tree, the MCP well-known handlers,
+`/ssm` and `/rdpproxy`. Both modes share one middleware chain through
+`newEngine` and `newAPIRouter`, so the control plane gets the same recovery,
+proxy policy, security headers, CORS and Sentry wiring the gateway gets.
 
-**The route surface starts near-empty and grows.** `buildControlPlaneRoutes`
-registers `/healthz` and nothing else. Each route is added only after it has
-been reviewed against a deployment with no agents, no connections and no
-sessions.
+`buildRoutes` reads the mode for one route. The gateway's `/healthz` dials
+`127.0.0.1:8010` and returns 400 when the port is closed; control-plane mode
+never opens it, so its handler answers without dialing. `/api/healthz` is what
+the helm service, the AWS load balancer template and the docker-compose
+healthcheck all probe, so a control plane with the gateway's handler would never
+become healthy.
+
+**No handler hides a feature by mode.** PR #1770 answered 404 for every plugin
+but Slack inside `gateway/api/plugins`; that is gone. A control plane that
+should not expose a gateway feature hides it in the UI, not in the handler.
 
 | | gateway (default) | control-plane |
 |---|---|---|
-| HTTP routes | 389 | 2 (`GET`/`HEAD /api/healthz`) |
+| HTTP routes | 389 | 389, minus `index.html` and `js/app.js` when a web UI build resolves |
+| `/api/healthz` | probes the gRPC port | answers 200 without dialing |
 | gRPC `:8010` | open | closed |
 | Protocol proxies, transport plugins, agent controller | started | not started |
-| Static UI, SPA fallback, `/.well-known/*`, `/ssm`, `/rdpproxy` | served | absent |
+| Static UI, SPA fallback | served | absent |
+| `/.well-known/*`, `/ssm`, `/rdpproxy` | served | served |
 | Bootstrap: migrations, default org, auth | runs | runs |
 
-`/healthz` gets its own handler rather than a shared one. The gateway's
-`LivenessHandler` dials `127.0.0.1:8010` and returns 400 when the port is
-closed; control-plane mode never opens it, so reusing that handler would fail
-every health check — and `/api/healthz` is what the helm service, the AWS load
-balancer template and the docker-compose healthcheck all probe.
+**What does not work, and how it fails.** 23 of the 271 distinct routes (389
+counting the `HEAD` twin gin registers for every `GET`) need the transport this
+mode never starts. Each fails per request with an HTTP error; none panics.
+
+| Group | Routes | Failure |
+|---|---|---|
+| Exec and schema browsing | `POST /sessions`, `POST /sessions/:id/exec`, `POST /runbooks/exec`, `POST /plugins/runbooks/connections/:name/exec`, `GET /connections/:id/{test,databases,tables,columns}`, `POST /federation/test` | `clientexec` dials `127.0.0.1:8010`, which is closed |
+| Resource plan, apply and health; `POST /dbroles/jobs` | 7 | no agent stream is connected |
+| `POST /proxymanager/{connect,disconnect}` | 2 | no client stream is connected |
+| `/ssm/*`, `/rdpproxy/*` | 5 | proxy to the transport |
+
+`/mcp` answers; three of its tools (exec, schema exec, review execute) fail the
+same way. `PUT /serverconfig/misc` succeeds and starts native proxy listeners
+inside the control plane process; any session through them fails at the gRPC
+dial. Connection and resource writes report `offline`, and a feature-flag update
+pushes to zero agents.
+
+`PUT /reviews/:id` and `PUT /sessions/:id/review` work. Approving a review
+releases the gRPC stream waiting on the verdict; `runControlPlane` passes a
+no-op release callback because this mode holds no stream, so the verdict is
+complete once written.
 
 `/serverinfo` reports `application_mode`, so a client can tell which product it
-is talking to without inferring it from a 404.
+is talking to.
 
 ## Consequences
 
-**The default is now fail-closed, and that is the property worth keeping.** A
-new proxy, plugin or route added to `runGateway` or `buildRoutes` does not
-appear in control-plane mode unless someone puts it there. The alternative
-designs all default the other way: they start from everything and subtract.
+**HTTP is fail-open and the process is fail-closed.** A route added to
+`buildRoutes` appears in the control plane without anyone deciding so; a
+subsystem added to `runGateway` does not. Whoever adds a route that needs the
+transport gets a control plane that answers it with an error, and that is
+accepted.
 
-**The route set is a migration ledger that grows.** This is the inverse of
-#1772, whose list shrinks as domains leave the gateway. Both describe the same
-transition from opposite ends, and they are not compatible mechanisms — if the
-control plane ends up serving most of the gateway's routes, the allowlist
-becomes the better tool and this ADR should be amended rather than quietly
-worked around.
+**`gateway/api/controlplane_routes_test.go` asserts parity, not a list.** It
+builds both engines in one process and checks, in both directions, that the
+gateway's routes minus the web UI are the control plane's routes. A test that
+pins a hand-written list is what this replaces.
 
-**The control plane frontend has no backend until routes are ported.** PR #1754
-shipped a UI that calls the gateway; in control-plane mode it now reaches a
-process that answers `/api/healthz`. That is deliberate and it is a real gap,
-not a soft launch. Nothing should be pointed at this mode in production until
-its routes exist.
+**The control plane frontend's own docs are now wrong.** `controlplane/frontend`'s
+`README.md` and `CLAUDE.md` describe an allowlist and an `APP_MODE` variable,
+and its `ModeBanner` warns about routes the control plane blocks. None of that
+is true any more. Fixing them is out of EVL-245's scope and owed a follow-up.
 
-**`gateway/api/controlplane_routes_test.go` asserts the exact route list.** A
-route added to `buildControlPlaneRoutes` without being listed in the test fails
-the build. The test is the review gate, not a description of one.
-
-**The served OpenAPI spec still describes all 389 routes in control-plane
-mode.** It is generated from swagger annotations on the handlers, which know
-nothing about the mode. Filtering it needs its own change.
+**The served OpenAPI spec describes what is served.** It is generated from the
+handlers' swagger annotations, which know nothing about the mode; with one
+route tree that is accurate, including the 23 routes that fail.
 
 **The bootstrap/`runGateway` boundary is not obviously in the right place.**
 Migrations, the default organization, default runbooks and rulepack seeding all
 still run in control-plane mode. `ProvisionOrgAgentKey` and the default
 connection tags are agent- and connection-shaped and arguably belong on the
 gateway side of the split. Left as-is because provisioning an unused key is
-harmless and moving it is a behaviour change; revisit when the first real
-control-plane route lands.
+harmless and moving it is a behaviour change.
 
-**The control plane ships its own chart.** `deploy/helm-chart/chart/controlplane`
-is a skeleton: one Deployment whose container `args` are `hoop start
-control-plane`, and no Service, Ingress or config Secret, because the mode
-serves one route. The gateway chart is untouched, so no value on it can produce
-a control plane and no combination of its values needs a guard. Two products in
-one chart would have meant asking that question of every value that assumes a
-data plane; two charts do not.
+**The control plane has no chart.** PR #1775 added a skeleton chart and removed
+it in the same PR; `make run-dev-control-plane` runs the mode on the host
+against the dev database. A chart is owed before anything points at this mode
+in production. The gateway chart is untouched, so no value on it can produce a
+control plane.
 
 **No agent sees any of this.** No packet type, spec key or payload changed, so
 the gateway↔agent contract is untouched and an old agent is unaffected. This is
 a deployment-topology decision, not a wire one.
 
 **Revisit if the gateway is not retired.** Two products in one binary told apart
-by an env var is cheap for a transition and expensive as a permanent condition.
-If the transition stalls, the answer is to finish option 1, not to keep growing
-the second boot path.
+by a subcommand is cheap for a transition and expensive as a permanent
+condition. If the transition stalls, the answer is to finish option 1, not to
+keep growing the second boot path.
 
 ### How this was verified
 
-Both modes booted against embedded PGlite with `GIN_MODE=debug`, counting
-unique `METHOD /path` pairs from gin's registration log.
+`gateway/api/controlplane_routes_test.go` builds both engines in one process
+and diffs them; `make test-oss` passes with no failures.
 
-`hoop start control-plane`: 2 routes, `GET` and `HEAD /api/healthz`. `GET
-/api/healthz` → `200 {"liveness":"OK"}`; `/api/serverinfo` and `/` → 404; TCP
-`127.0.0.1:8010` closed.
+Both modes booted from one binary against embedded PGlite with
+`GIN_MODE=debug`, counting unique `METHOD /path` pairs from gin's registration
+log. Both register 389 (271 without the `HEAD` twins) and a `diff` of the two
+lists is empty. The dev binary embeds no web UI build, so the two UI routes
+appear in neither.
 
-`hoop start gateway`, with `APP_MODE=control-plane` deliberately still set in
-the environment to prove it is ignored: 389 routes; `/api/healthz` → 200;
-`/api/publicserverinfo` → 200; `/api/serverinfo` → 401; TCP `127.0.0.1:8010`
-open.
+`hoop start control-plane`: `GET /api/healthz` → `200 {"liveness":"OK"}`;
+`/api/publicserverinfo` → 200; `/api/serverinfo` and `/api/users` → 401
+without a token; `/` and `/index.html` → 404; TCP `127.0.0.1:8010` closed.
+After `POST /api/localauth/register` and a login, `GET /api/users`,
+`/api/serverinfo`, `/api/plugins` (every plugin, not only slack),
+`/api/api-keys`, `/api/audit/logs`, `/api/server-logs`, `/api/agents` and
+`/api/serverconfig/auth` answer 200. With an agent and a connection created
+through the API, `POST /api/sessions` and `GET /api/connections/:name/databases`
+answer 500 from `clientexec` (on a macOS host it fails preparing `/opt/hoop`
+before the dial), `POST /api/proxymanager/connect` answers 400
+`proxy manager state ... not found`, `PUT /api/reviews/:id` answers
+`review not found`, and the process stays up with no panic logged.
+
+`hoop start gateway`, with `PLUGIN_AUDIT_PATH` pointed at a writable directory:
+389 routes; `/api/healthz` → 200; TCP `127.0.0.1:8010` open.
 
 `gateway/appconfig/appmode_test.go` covers the mode table, including that an
-unrecognised value errors and a zero-value `Config` reads as the gateway. The
-gateway chart and `.env.sample` are byte-identical to their state before #1773
-(`git diff` against `10f45d22^` is empty). The control plane chart was rendered
-with helm 3.16.2: it produces the expected Deployment and refuses to render
-without `existingSecret`. `make test-oss` passes.
+unrecognised value errors and a zero-value `Config` reads as the gateway.
