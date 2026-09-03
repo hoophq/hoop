@@ -194,7 +194,7 @@ func mongodbShape(text string) string {
 	if err := decoder.Decode(&value); err != nil {
 		return normalizeSpace(text)
 	}
-	shaped := mongodbShapeValue(value)
+	shaped := mongodbShapeValue(value, "")
 	encoded, err := json.Marshal(shaped)
 	if err != nil {
 		return normalizeSpace(text)
@@ -202,21 +202,46 @@ func mongodbShape(text string) string {
 	return string(encoded)
 }
 
-func mongodbShapeValue(value any) any {
+// batchFields name the arrays whose ORDER and LENGTH carry no meaning a
+// policy could read: a write batch is a bag of documents, and an
+// insertMany of three or of three hundred asks the same question about the
+// same shape. Folding them to their distinct element shapes is what lets one
+// model verdict serve every batch size.
+//
+// Every other array keeps its order and multiplicity, because for most of
+// them the sequence IS the meaning. An aggregation pipeline is the sharp
+// case: `[{$match}, {$limit}]` and `[{$limit}, {$match}]` read the same
+// documents in a different order and can differ in what they expose, so
+// collapsing them to one cache key would hand the second command the first
+// one's verdict.
+var batchFields = map[string]bool{
+	"documents": true,
+	"updates":   true,
+	"deletes":   true,
+	"ops":       true,
+}
+
+// mongodbShapeValue reduces a command to its structure. field is the key the
+// value was found under, empty at the root and for array elements, and it
+// decides only whether this value is a write batch.
+func mongodbShapeValue(value any, field string) any {
 	switch value := value.(type) {
 	case map[string]any:
 		out := make(map[string]any, len(value))
 		for key, item := range value {
-			out[key] = mongodbShapeValue(item)
+			out[key] = mongodbShapeValue(item, key)
 		}
 		return out
 	case []any:
-		// Array length does not change command structure. Keep each distinct
-		// element shape once so insertMany batches of different sizes share a
-		// verdict without hiding fields present in only one document.
-		unique := make(map[string]any, len(value))
+		out := make([]any, 0, len(value))
 		for _, item := range value {
-			shape := mongodbShapeValue(item)
+			out = append(out, mongodbShapeValue(item, ""))
+		}
+		if !batchFields[field] {
+			return out
+		}
+		unique := make(map[string]any, len(out))
+		for _, shape := range out {
 			encoded, _ := json.Marshal(shape)
 			unique[string(encoded)] = shape
 		}
@@ -225,11 +250,11 @@ func mongodbShapeValue(value any) any {
 			keys = append(keys, key)
 		}
 		sort.Strings(keys)
-		out := make([]any, 0, len(keys))
+		folded := make([]any, 0, len(keys))
 		for _, key := range keys {
-			out = append(out, unique[key])
+			folded = append(folded, unique[key])
 		}
-		return out
+		return folded
 	case string:
 		return "$string"
 	case json.Number:
