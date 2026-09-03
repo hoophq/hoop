@@ -159,23 +159,30 @@
 (rf/reg-event-fx
  :connections/set-connections-paginated
  (fn
-   [{:keys [db]} [_ {:keys [response force-refresh?]}]]
-   (let [connections-data (get response :data [])
-         pages-info (get response :pages {})
-         page-number (get pages-info :page 1)
-         page-size (get pages-info :size 50)
-         total (get pages-info :total 0)
-         existing-connections (get-in db [:connections->pagination :data] [])
-         final-connections (if force-refresh? connections-data (vec (concat existing-connections connections-data)))
-         has-more? (< (* page-number page-size) total)]
-     {:db (-> db
-              (update-in [:connections->pagination] merge
-                         {:data final-connections
-                          :loading false
-                          :has-more? has-more?
-                          :current-page page-number
-                          :page-size page-size
-                          :total total}))})))
+   [{:keys [db]} [_ {:keys [response force-refresh? search]}]]
+   ;; Searches are debounced, not serialized, so a slower earlier request can
+   ;; land after a newer one and overwrite it. :active-search is written when
+   ;; the request goes out, so a response carrying a different term belongs to
+   ;; a superseded query. Drop it: the request that owns :active-search is
+   ;; still in flight and will clear :loading.
+   (if (not= (or search "") (or (get-in db [:connections->pagination :active-search]) ""))
+     {}
+     (let [connections-data (get response :data [])
+           pages-info (get response :pages {})
+           page-number (get pages-info :page 1)
+           page-size (get pages-info :size 50)
+           total (get pages-info :total 0)
+           existing-connections (get-in db [:connections->pagination :data] [])
+           final-connections (if force-refresh? connections-data (vec (concat existing-connections connections-data)))
+           has-more? (< (* page-number page-size) total)]
+       {:db (-> db
+                (update-in [:connections->pagination] merge
+                           {:data final-connections
+                            :loading false
+                            :has-more? has-more?
+                            :current-page page-number
+                            :page-size page-size
+                            :total total}))}))))
 
 
 (rf/reg-event-fx
