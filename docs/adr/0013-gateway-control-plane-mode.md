@@ -121,22 +121,30 @@ should not expose a gateway feature hides it in the UI, not in the handler.
 | Static UI, SPA fallback, `/.well-known/*`, `/ssm`, `/rdpproxy` | served | served |
 | Bootstrap: migrations, default org, auth | runs | runs |
 
-**What does not work, and how it fails.** 23 of the 271 distinct routes (389
-counting the `HEAD` twin gin registers for every `GET`) need the transport this
-mode never starts. Each fails per request with an HTTP error; none panics.
+**What does not work, and how it fails.** 21 of the 271 distinct routes (389
+counting the `HEAD` twin gin registers for every `GET`) need the gRPC transport
+this mode never starts. Each fails per request with an HTTP error; none panics.
 
 | Group | Routes | Failure |
 |---|---|---|
 | Exec and schema browsing | `POST /sessions`, `POST /sessions/:id/exec`, `POST /runbooks/exec`, `POST /plugins/runbooks/connections/:name/exec`, `GET /connections/:id/{test,databases,tables,columns}`, `POST /federation/test` | `clientexec` dials `127.0.0.1:8010`, which is closed |
 | Resource plan, apply and health; `POST /dbroles/jobs` | 7 | no agent stream is connected |
 | `POST /proxymanager/{connect,disconnect}` | 2 | no client stream is connected |
-| `/ssm/*`, `/rdpproxy/*` | 5 | proxy to the transport |
+| `/ssm/*` | 3 | dials `127.0.0.1:8010` per session |
 
 `/mcp` answers; three of its tools (exec, schema exec, review execute) fail the
 same way. `PUT /serverconfig/misc` succeeds and starts native proxy listeners
 inside the control plane process; any session through them fails at the gRPC
 dial. Connection and resource writes report `offline`, and a feature-flag update
 pushes to zero agents.
+
+**Two routes are a transport of their own and work without gRPC.**
+`GET /api/ws` authenticates an agent by its key, upgrades the connection and
+registers the agent in the in-process broker; `/rdpproxy/*` relays RDP through
+such an agent. Neither needs the gRPC port or a proxy listener, so an agent
+that connects over WebSocket turns a control plane into an RDP data plane.
+EVL-245 gates nothing, so this is recorded rather than prevented; a deployment
+that must carry no traffic must not expose `/api/ws`.
 
 `PUT /reviews/:id` and `PUT /sessions/:id/review` work. Approving a review
 releases the gRPC stream waiting on the verdict; `runControlPlane` passes a
