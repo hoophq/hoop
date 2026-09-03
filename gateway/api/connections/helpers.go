@@ -1,6 +1,7 @@
 package apiconnections
 
 import (
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -14,6 +15,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
 
@@ -702,4 +704,50 @@ func getConnectionCommandOverride(currentConnectionType pb.ConnectionType, conne
 func upsertConnectionAttributes(ctx *storagev2.Context, connectionName string, attributeNames []string) error {
 	orgID := uuid.MustParse(ctx.OrgID)
 	return models.UpsertConnectionAttributes(models.DB, orgID, connectionName, attributeNames)
+}
+
+// sidecarIDPtr maps the nullable column onto the optional API field: nil when
+// the connection is not assigned to a sidecar.
+func sidecarIDPtr(v sql.NullString) *string {
+	if !v.Valid || v.String == "" {
+		return nil
+	}
+	s := v.String
+	return &s
+}
+
+// resolveSidecarAssignment refuses an assignment the sidecar could never
+// serve, so the operator finds out here instead of when the sidecar fetches
+// its configuration. A nil or empty value is not an assignment.
+//
+// It returns the value to store. The request may name the sidecar by name or
+// by id, but the column is a uuid, so the resolved id is what goes to the
+// database.
+func resolveSidecarAssignment(orgID string, sidecarID *string, connType, subType string) (sql.NullString, error) {
+	if sidecarID == nil || *sidecarID == "" {
+		return sql.NullString{}, nil
+	}
+	if _, err := services.SidecarProtocol(connType, subType); err != nil {
+		return sql.NullString{}, err
+	}
+	sidecar, err := models.GetSidecarByNameOrID(models.DB, orgID, *sidecarID)
+	if err != nil {
+		if errors.Is(err, models.ErrNotFound) {
+			return sql.NullString{}, fmt.Errorf("sidecar %q not found", *sidecarID)
+		}
+		return sql.NullString{}, err
+	}
+	return sql.NullString{String: sidecar.ID, Valid: true}, nil
+}
+
+// revalidateSidecarAssignment guards the assignment a request does NOT
+// mention. A request that only changes the connection type must not leave a
+// sidecar holding a lane it cannot serve: the whole configuration fetch fails
+// then, taking every other connection on that sidecar down with it.
+func revalidateSidecarAssignment(current sql.NullString, connType, subType string) error {
+	if !current.Valid || current.String == "" {
+		return nil
+	}
+	_, err := services.SidecarProtocol(connType, subType)
+	return err
 }

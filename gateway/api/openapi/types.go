@@ -280,6 +280,44 @@ type AIAgentResponse struct {
 	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
 }
 
+type SidecarRequest struct {
+	// Unique name of the resource
+	Name string `json:"name" binding:"required" example:"payments-sidecar"`
+}
+
+type SidecarResponse struct {
+	// Unique identifier
+	ID string `json:"id" readonly:"true" format:"uuid"`
+	// Organization ID
+	OrgID string `json:"org_id" readonly:"true" format:"uuid"`
+	// Human-readable name
+	Name string `json:"name" example:"payments-sidecar"`
+	// Names of the connections this sidecar fronts
+	Connections []string `json:"connections" example:"pg-prod"`
+	// Subject of the admin who created it
+	CreatedBy string `json:"created_by"`
+	// Creation timestamp
+	CreatedAt time.Time `json:"created_at"`
+	// Version reported at the last handshake. Held in gateway memory, not
+	// stored, so it is empty until the sidecar calls and again after a
+	// gateway restart.
+	Version string `json:"version,omitempty" example:"1.0.0"`
+	// Last time this gateway process saw the sidecar. Same lifetime as Version.
+	LastSeenAt *time.Time `json:"last_seen_at,omitempty"`
+}
+
+type SidecarCreateResponse struct {
+	SidecarResponse
+	// The generated token, sent in the hoop-sidecar-token header. This is the
+	// only time it is shown; it is stored hashed and cannot be recovered.
+	Token string `json:"token" example:"hsc_Ab3fX9kL..."`
+}
+
+type SidecarHandshakeRequest struct {
+	// Version of the sidecar binary
+	Version string `json:"version" binding:"required" example:"1.0.0"`
+}
+
 // AgentSPIFFEMapping ties a SPIFFE identity (exact ID or prefix) to a Hoop
 // agent plus a set of groups that feed into RBAC on authentication.
 //
@@ -404,6 +442,10 @@ type Connection struct {
 	DefaultDatabase string `json:"default_database"`
 	// The agent associated with this connection
 	AgentId string `json:"agent_id" binding:"required" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
+	// The sidecar that fronts this connection. Only "postgres", "mssql" and
+	// "httpproxy" connections may be assigned to one. Absent leaves the
+	// current assignment untouched, an empty string unassigns it.
+	SidecarID *string `json:"sidecar_id,omitempty" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
 	// Status is a read only field that informs if the connection is available for interaction
 	// * online - The agent is connected and alive
 	// * offline - The agent is not connected
@@ -601,6 +643,9 @@ type ConnectionPatch struct {
 	Secrets *map[string]any `json:"secret"`
 	// The agent associated with this connection
 	AgentId *string `json:"agent_id" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
+	// The sidecar that fronts this connection. Only "postgres", "mssql" and
+	// "httpproxy" connections may be assigned to one. An empty string unassigns it.
+	SidecarID *string `json:"sidecar_id" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
 	// Reviewers is a list of groups that will review the connection before the user could execute it
 	Reviewers *[]string `json:"reviewers" example:"dba-group"`
 	// Redact Types is a list of info types that will used to redact the output of the connection.
