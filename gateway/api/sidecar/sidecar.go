@@ -46,7 +46,11 @@ func Post(c *gin.Context) {
 		return
 	}
 
-	rawKey := models.GenerateSidecarKey()
+	rawKey, err := services.GenerateSidecarKey()
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating sidecar")
+		return
+	}
 	sidecar := &models.Sidecar{
 		OrgID:       ctx.OrgID,
 		Name:        req.Name,

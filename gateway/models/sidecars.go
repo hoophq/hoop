@@ -1,8 +1,6 @@
 package models
 
 import (
-	"crypto/rand"
-	"encoding/base64"
 	"errors"
 	"time"
 
@@ -21,16 +19,6 @@ type Sidecar struct {
 	// Connections is derived, not stored: the names of the connections whose
 	// sidecar_id points here.
 	Connections pq.StringArray `gorm:"column:connections;type:text[];->"`
-}
-
-// GenerateSidecarKey returns the token a sidecar authenticates with. The
-// "hsc_" prefix keeps it out of the "hpk_" branch of the API auth middleware.
-func GenerateSidecarKey() string {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		panic("failed to generate random key: " + err.Error())
-	}
-	return "hsc_" + base64.RawURLEncoding.EncodeToString(b)
 }
 
 const sidecarColumns = `

@@ -1,6 +1,7 @@
 package services
 
 import (
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -44,6 +45,16 @@ var ErrSidecarNoConnections = errors.New("no connections are assigned to this si
 // operator mistake and 500 for this: a sidecar that retries a 422 never
 // recovers, and the driver text must not reach it.
 var ErrSidecarLookup = errors.New("failed loading sidecar configuration")
+
+// GenerateSidecarKey returns the token a sidecar authenticates with. The
+// "hsc_" prefix keeps it out of the "hpk_" branch of the API auth middleware.
+func GenerateSidecarKey() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("failed to generate random key: %w", err)
+	}
+	return "hsc_" + base64.RawURLEncoding.EncodeToString(b), nil
+}
 
 // SidecarProtocol maps a hoop connection type/subtype onto a sidecar codec.
 // It returns an error naming the connection type when no codec speaks it.
