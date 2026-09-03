@@ -6,7 +6,8 @@ import {
   Sparkles,
   ShieldCheck,
   VenetianMask,
-  Users
+  Users,
+  KeyRound
 } from 'lucide-react';
 
 // The control plane navigation.
@@ -60,6 +61,9 @@ export const FEATURE_ITEMS = [
   }
 ]
 
+// License sits with the organization: it is an attribute of the org
+// (PUT /orgs/license), and the control plane has no Settings group.
 export const ORGANIZATION_ITEMS = [
-  { label: 'Administrators', path: '/organization/users', icon: Users, adminOnly: true }
+  { label: 'Administrators', path: '/organization/users', icon: Users, adminOnly: true },
+  { label: 'License', path: '/settings/license', icon: KeyRound, adminOnly: true }
 ]

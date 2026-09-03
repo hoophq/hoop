@@ -15,4 +15,10 @@ export const useUIStore = create((set) => ({
       localStorage.setItem('sidebar', next ? 'closed' : 'opened')
       return { sidebarCollapsed: next }
     }),
+
+  // The single AddLicenseModal is mounted once in layout/Layout.jsx. Every
+  // surface opens it through here, so no page owns a copy of the dialog.
+  licenseModalOpened: false,
+  openLicenseModal: () => set({ licenseModalOpened: true }),
+  closeLicenseModal: () => set({ licenseModalOpened: false }),
 }))

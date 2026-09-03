@@ -62,6 +62,23 @@ limit) and **attributes** (the pickers were removed from Guardrails, Data Maskin
 Review Rules, and each form carries the record's existing value through untouched rather
 than clearing it).
 
+## License
+
+The control plane is Enterprise-only, and an unlicensed install can still open every
+page. What it cannot do is create rules: Guardrails, Live Data Masking, AI Session
+Analyzer and Review rules block creation on the client whenever
+`useUserStore.isFreeLicense` is true (zero rules, not one). Editing and deleting the
+rules that exist stay open in every state. The gateway still accepts one rule per
+feature in OSS, so the API is looser than the UI until the backend caps move.
+
+`utils/license.js#licenseState()` is the only place that interprets `license_info`
+(`unknown | free | active | expired | invalid`). Every "Add license" or "Update license"
+action is `components/AddLicenseCta`, which opens the single `AddLicenseModal` mounted
+in `layout/Layout.jsx` through `useUIStore.openLicenseModal()`. Saving goes through
+`features/License/useLicenseUpdate`, and `useUserStore.refreshServerInfo()` is the one
+way to re-read `/serverinfo` after it. `/settings/license` is the one Settings page the
+control plane keeps; it carries no `licenseFeature` guard on purpose.
+
 ## Routing
 
 `src/Router.jsx` is the whole information architecture, and there is **no catch-all**.

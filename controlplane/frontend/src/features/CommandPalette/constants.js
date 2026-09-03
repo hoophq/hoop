@@ -7,6 +7,7 @@ import {
   ShieldCheck,
   VenetianMask,
   Users,
+  KeyRound,
 } from 'lucide-react'
 
 // Navigation targets for the palette. Gating flags (adminOnly / selfhostedOnly /
@@ -29,4 +30,5 @@ export const QUICK_ACCESS_ITEMS = [
   { id: 'guardrails', label: 'Guardrails', description: 'Configure guardrails', icon: ShieldCheck, path: '/guardrails', adminOnly: true, licenseFeature: 'guardrails' },
   { id: 'data-masking', label: 'Live Data Masking', description: 'Configure live data masking', icon: VenetianMask, path: '/features/data-masking', adminOnly: true, licenseFeature: 'data-masking' },
   { id: 'users', label: 'Administrators', description: 'Invite and manage administrators', icon: Users, path: '/organization/users', adminOnly: true },
+  { id: 'license', label: 'License', description: 'License management', icon: KeyRound, path: '/settings/license', adminOnly: true },
 ]

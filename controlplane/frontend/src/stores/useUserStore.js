@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { identify as analyticsIdentify } from '@/services/analytics'
+import { authService } from '@/services/auth'
 
 const INTERCOM_APP_ID = 'ryuapdmp'
 
@@ -34,6 +35,9 @@ export const useUserStore = create((set, get) => ({
   // Null until /serverinfo resolves, so consumers must not guess a state.
   licenseInfo: null,
   serverInfoLoaded: false,
+  // Wall-clock of the last successful /serverinfo read. hooks/useServerInfoRefresh
+  // throttles the focus refetch on it.
+  serverInfoFetchedAt: 0,
   apiUrl: null,
   hasRedactCredentials: false,
   // /serverinfo postgres_proxy_enabled. Fail closed: without a Postgres proxy
@@ -68,10 +72,24 @@ export const useUserStore = create((set, get) => ({
       licenseFeatures,
       licenseInfo: license || null,
       serverInfoLoaded: true,
+      serverInfoFetchedAt: Date.now(),
       hasRedactCredentials: !!serverInfo?.has_redact_credentials,
       postgresProxyEnabled: !!serverInfo?.postgres_proxy_enabled,
       applicationMode: serverInfo?.application_mode || null
     })
+  },
+  // The one way to re-read /serverinfo after the initial load: after a license
+  // is installed, from the "Check again" action, and from the focus refetch.
+  // A failure keeps the current state. Resolving to false instead of throwing
+  // lets callers report "installed, reload to see it" rather than an error.
+  refreshServerInfo: async () => {
+    try {
+      const serverInfo = await authService.getServerInfo()
+      get().setServerInfo(serverInfo)
+      return true
+    } catch {
+      return false
+    }
   },
   setFeatureFlags: (flags) => set({ featureFlags: flags }),
   isFeatureFlagEnabled: (name) => !!get().featureFlags?.[name],
@@ -98,7 +116,8 @@ export const useUserStore = create((set, get) => ({
       licenseFeatures: null,
       licenseInfo: null,
       serverInfoLoaded: false,
-      redactProvider: null, 
+      serverInfoFetchedAt: 0,
+      redactProvider: null,
       apiUrl: null,
       hasRedactCredentials: false,
       postgresProxyEnabled: false,

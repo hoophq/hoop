@@ -22,6 +22,8 @@ import GuardrailForm from '@/pages/Guardrails/Create'
 import DataMasking from '@/pages/Features/DataMasking'
 import DataMaskingForm from '@/pages/Features/DataMasking/Create'
 import OrganizationUsers from '@/pages/Organization/Users'
+import SettingsLicense from '@/pages/Settings/License'
+import Sidecars from '@/pages/Sidecars'
 
 /**
  * The control plane information architecture.
@@ -64,23 +66,9 @@ function Router() {
 
       <Route path="/" element={<ProtectedRoute><Home /></ProtectedRoute>} />
 
-      {/* Sidecars — resources are derived from sidecar listeners, never created here */}
-      <Route
-        path="/sidecars"
-        element={
-          <Page adminOnly>
-            <NotImplemented
-              title="Sidecars"
-              project="Connecting Sidecars and Resources"
-              missing={[
-                'Token issuance for a sidecar (HOOP_KEY)',
-                'Resources derived from sidecar listeners',
-                'Liveness — what an admin sees when a sidecar goes quiet',
-              ]}
-            />
-          </Page>
-        }
-      />
+      {/* Sidecars — resources are derived from sidecar listeners, never created here.
+          The page carries the Enterprise-only notice above the placeholder. */}
+      <Route path="/sidecars" element={<Page adminOnly><Sidecars /></Page>} />
 
       {/* Reviews — the queue, and the detail inside the review session */}
       <Route
@@ -172,6 +160,10 @@ function Router() {
 
       {/* Administrators. Admin Authentication owns inviting them. */}
       <Route path="/organization/users" element={<Page adminOnly><OrganizationUsers /></Page>} />
+
+      {/* License. adminOnly and deliberately not licenseFeature-gated: this is the page
+          that installs the license, so it must open when the license is missing or invalid. */}
+      <Route path="/settings/license" element={<Page adminOnly><SettingsLicense /></Page>} />
 
       <Route path="*" element={<NotFound />} />
     </Routes>

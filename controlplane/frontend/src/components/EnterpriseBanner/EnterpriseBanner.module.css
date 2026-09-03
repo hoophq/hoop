@@ -35,3 +35,15 @@
   background-color: var(--mantine-color-indigo-2);
   color: var(--brand-navy);
 }
+
+/* Secondary action on the navy surface: white text, a faint white wash on
+   hover. The gray scale is calibrated for light backgrounds, so white
+   colour-mix tones are the rule here. */
+.secondary {
+  color: var(--mantine-color-white);
+}
+
+.secondary:hover {
+  background-color: color-mix(in srgb, var(--mantine-color-white) 12%, transparent);
+  color: var(--mantine-color-white);
+}

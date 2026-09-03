@@ -1,32 +1,36 @@
 import { Anchor, Group, Text } from '@mantine/core'
 import { AlertCircle, Info } from 'lucide-react'
+import AddLicenseCta from '@/components/AddLicenseCta'
 import Alert from '@/components/Alert'
+import { RENEW_MESSAGE } from '@/features/License/constants'
 import { useUserStore } from '@/stores/useUserStore'
-
-const SALES_URL = 'https://hoop.dev/meet'
-const INTERCOM_MESSAGE = 'I want to upgrade my current plan'
+import { needsLicenseRenewal } from '@/utils/license'
+import { openSales, openSupport } from '@/utils/support'
 
 /**
- * Free-license callout shown on gated feature pages.
+ * License callout shown on gated feature pages.
  *
  * Props:
- * - message:  Body copy describing the limit for this feature.
- * - variant:  'info' (default — blue exploration callout) or 'limit' (red wall).
+ * - message:  Body copy describing what the license unlocks or blocks.
+ * - variant:  'info' (blue) or 'limit' (red). When omitted it follows the
+ *             license state: red for an expired or unverifiable license the
+ *             organization already holds, blue for the free tier.
  *
- * Mirrors `webapp.shared-ui.free-license-banner` from the legacy CLJS app:
- * if analytics tracking is enabled, opens Intercom; otherwise opens the sales
- * page in a new tab.
+ * Actions: "Add license" / "Update license" opens the shared modal. The second
+ * link is "Talk to sales" on the free tier and "Contact support" for a customer
+ * whose license needs renewal.
  */
-export default function FreeLicenseCallout({ message, variant = 'info' }) {
-  const showIntercomMessage = useUserStore((state) => state.showIntercomMessage)
-  const limit = variant === 'limit'
+export default function FreeLicenseCallout({ message, variant }) {
+  const licenseInfo = useUserStore((state) => state.licenseInfo)
+  const renewal = needsLicenseRenewal(licenseInfo)
+  const limit = (variant ?? (renewal ? 'limit' : 'info')) === 'limit'
   const color = limit ? 'red' : 'blue'
   const Icon = limit ? AlertCircle : Info
 
-  const handleClick = (event) => {
+  const handleSecondary = (event) => {
     event.preventDefault()
-    if (showIntercomMessage(INTERCOM_MESSAGE)) return
-    window.open(SALES_URL, '_blank', 'noopener,noreferrer')
+    if (renewal) openSupport(RENEW_MESSAGE)
+    else openSales()
   }
 
   return (
@@ -40,14 +44,16 @@ export default function FreeLicenseCallout({ message, variant = 'info' }) {
         <Text size="sm" component="span">
           {message}
         </Text>
+        <AddLicenseCta variant="anchor" c={color} />
         <Anchor
-          href={SALES_URL}
-          onClick={handleClick}
+          component="button"
+          type="button"
+          onClick={handleSecondary}
           c={color}
           fw={500}
           size="sm"
         >
-          {'Contact our Sales team ↗'}
+          {renewal ? 'Contact support ↗' : 'Talk to sales ↗'}
         </Anchor>
       </Group>
     </Alert>
