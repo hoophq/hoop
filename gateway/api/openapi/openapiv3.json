@@ -21272,69 +21272,6 @@
         ]
       }
     },
-    "/sidecars/configuration": {
-      "get": {
-        "description": "Authenticated with the hoop-sidecar-token header. Returns the configuration the sidecar must serve, built from the connections assigned to it.",
-        "parameters": [
-          {
-            "description": "The token returned when the sidecar was created",
-            "in": "header",
-            "name": "hoop-sidecar-token",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "type": "object"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/openapi.HTTPError"
-                }
-              }
-            },
-            "description": "Unauthorized"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/openapi.HTTPError"
-                }
-              }
-            },
-            "description": "Unprocessable Entity"
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/openapi.HTTPError"
-                }
-              }
-            },
-            "description": "Internal Server Error"
-          }
-        },
-        "summary": "Sidecar Configuration",
-        "tags": [
-          "Sidecars"
-        ]
-      }
-    },
     "/sidecars/handshake": {
       "post": {
         "description": "Authenticated with the hoop-sidecar-token header. Records the reported version and returns the configuration the sidecar must serve.",
