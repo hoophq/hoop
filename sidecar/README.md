@@ -1032,6 +1032,14 @@ Correlation is bounded to 1,024 outstanding requests and 32 MiB of retained
 command metadata per connection. Exceeding either limit closes the session
 fail-closed instead of turning pipelining into unbounded relay memory.
 
+An exhaust stream chains, and the streaming `hello` every driver runs on its
+monitoring socket is one: the client sets `exhaustAllowed`, and each reply
+after the first answers the PREVIOUS REPLY's id rather than the client's
+request. The codec follows that chain, so a stream costs one outstanding slot
+however long it runs, and an idle connection is not torn down between
+heartbeats. A request id that collides with a live chain is refused, because
+`responseTo` carries nothing else to tell the two apart.
+
 Modern drivers send commands as `OP_MSG`. Bulk inserts, updates and deletes
 carry their documents in kind-1 document-sequence sections rather than the body
 document, so the codec joins those sections before classification and audit.
