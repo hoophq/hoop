@@ -246,8 +246,12 @@ func (a *Api) buildControlPlaneEngine(route *gin.Engine, baseURL string) *gin.En
 }
 
 func (a *Api) StartAPI() {
-	if os.Getenv("PORT") == "" {
-		os.Setenv("PORT", "8009")
+	// Gin's route.Run() resolves its address from PORT, so the default is
+	// written back to the environment for the non-TLS path below.
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8009"
+		os.Setenv("PORT", port)
 	}
 	route := a.BuildEngine()
 	// BuildEngine always assigns a.logger; guard the defer so a future
@@ -259,7 +263,7 @@ func (a *Api) StartAPI() {
 
 	if a.TLSConfig != nil {
 		server := http.Server{
-			Addr:      "0.0.0.0:8009",
+			Addr:      "0.0.0.0:" + port,
 			Handler:   route,
 			TLSConfig: a.TLSConfig,
 			ErrorLog:  log.NewStdHttpLogger(),

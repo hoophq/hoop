@@ -10,6 +10,7 @@ import (
 	"github.com/hoophq/hoop/agent"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/services"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"github.com/spf13/cobra"
@@ -21,8 +22,8 @@ const (
 )
 
 var startStandaloneCmd = &cobra.Command{
-	Use:          "standalone",
-	Short:        "Runs the gateway and a local agent in a single process",
+	Use:   "standalone",
+	Short: "Runs the gateway and a local agent in a single process",
 	Long: `Runs the gateway and a local agent in a single process, suitable for
 single-node deployments. When POSTGRES_DB_URI is not set, an embedded
 PostgreSQL (pglite) is used with data stored under $HOME/.hoop/standalone.`,
@@ -49,7 +50,7 @@ func runStandalone() error {
 	// The gateway blocks forever serving the HTTP API; it fatals on its own
 	// if the bootstrap fails, taking the whole process down (standalone has
 	// no use for an agent without a gateway).
-	go gateway.Run()
+	go gateway.Run(appconfig.AppModeGateway)
 
 	apiURL := envOrDefault("API_URL", standaloneDefaultAPIURL)
 	if err := waitGatewayHealthy(apiURL, 120*time.Second); err != nil {

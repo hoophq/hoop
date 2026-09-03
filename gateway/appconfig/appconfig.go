@@ -20,29 +20,33 @@ import (
 
 // TODO: it should include all runtime configuration
 
-// AppMode selects which component the gateway binary runs as.
+// AppMode selects which component the gateway binary runs as. It is chosen by
+// the subcommand that started the process, not by the environment: a
+// deployment picks a mode by picking a command line.
 type AppMode string
 
 const (
 	// AppModeGateway is the default: the full gateway, serving agents over
-	// gRPC, protocol proxies and the complete HTTP API.
+	// gRPC, protocol proxies and the complete HTTP API. Started by
+	// "hoop start gateway".
 	AppModeGateway AppMode = "gateway"
 	// AppModeControlPlane runs the HTTP API only, to administer a fleet of
-	// sidecars. It serves no agents and no clients.
+	// sidecars. It serves no agents and no clients. Started by
+	// "hoop start control-plane".
 	AppModeControlPlane AppMode = "control-plane"
 )
 
-// parseAppMode resolves the APP_MODE value. An empty value keeps the gateway
-// behaviour, so an existing deployment that never heard of APP_MODE is
-// unaffected.
-func parseAppMode(v string) (AppMode, error) {
-	switch mode := AppMode(strings.ToLower(strings.TrimSpace(v))); mode {
+// resolveAppMode guards the mode handed to Load. The zero value reads as the
+// gateway so a caller that leaves it unset keeps the shipping behaviour, and
+// anything else unrecognised stops startup rather than guessing.
+func resolveAppMode(mode AppMode) (AppMode, error) {
+	switch mode {
 	case "":
 		return AppModeGateway, nil
 	case AppModeGateway, AppModeControlPlane:
 		return mode, nil
 	default:
-		return "", fmt.Errorf("invalid APP_MODE %q (want %s|%s)", v, AppModeGateway, AppModeControlPlane)
+		return "", fmt.Errorf("invalid app mode %q (want %s|%s)", mode, AppModeGateway, AppModeControlPlane)
 	}
 }
 
@@ -113,12 +117,14 @@ type Config struct {
 
 var runtimeConfig Config
 
-// Load validate for any errors and set the RuntimeConfig var
-func Load() error {
+// Load validate for any errors and set the RuntimeConfig var. mode names the
+// component this process runs as and comes from the subcommand that started
+// it; the zero value means the gateway.
+func Load(mode AppMode) error {
 	if runtimeConfig.isLoaded {
 		return nil
 	}
-	appMode, err := parseAppMode(os.Getenv("APP_MODE"))
+	appMode, err := resolveAppMode(mode)
 	if err != nil {
 		return err
 	}

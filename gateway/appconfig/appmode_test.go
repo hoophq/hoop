@@ -2,34 +2,35 @@ package appconfig
 
 import "testing"
 
-func TestParseAppMode(t *testing.T) {
+func TestResolveAppMode(t *testing.T) {
 	for _, tt := range []struct {
-		env     string
+		name    string
+		mode    AppMode
 		want    AppMode
 		wantErr bool
 	}{
-		{env: "", want: AppModeGateway},
-		{env: "gateway", want: AppModeGateway},
-		{env: "control-plane", want: AppModeControlPlane},
-		{env: "CONTROL-PLANE", want: AppModeControlPlane},
-		{env: " control-plane ", want: AppModeControlPlane},
-		{env: "control_plane", wantErr: true},
-		{env: "controlplane", wantErr: true},
-		{env: "agent", wantErr: true},
+		{name: "zero value", mode: "", want: AppModeGateway},
+		{name: "gateway", mode: AppModeGateway, want: AppModeGateway},
+		{name: "control-plane", mode: AppModeControlPlane, want: AppModeControlPlane},
+		// The mode is a typed constant chosen by a subcommand, so anything
+		// else is a programming error and must stop startup.
+		{name: "unknown", mode: AppMode("agent"), wantErr: true},
+		{name: "wrong spelling", mode: AppMode("controlplane"), wantErr: true},
+		{name: "wrong case", mode: AppMode("Control-Plane"), wantErr: true},
 	} {
-		t.Run(tt.env, func(t *testing.T) {
-			got, err := parseAppMode(tt.env)
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := resolveAppMode(tt.mode)
 			if tt.wantErr {
 				if err == nil {
-					t.Fatalf("APP_MODE=%q: want error, got mode %q", tt.env, got)
+					t.Fatalf("mode %q: want error, got mode %q", tt.mode, got)
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("APP_MODE=%q: unexpected error: %v", tt.env, err)
+				t.Fatalf("mode %q: unexpected error: %v", tt.mode, err)
 			}
 			if got != tt.want {
-				t.Errorf("APP_MODE=%q: got %q, want %q", tt.env, got, tt.want)
+				t.Errorf("mode %q: got %q, want %q", tt.mode, got, tt.want)
 			}
 		})
 	}
