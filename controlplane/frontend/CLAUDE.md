@@ -29,37 +29,36 @@ Zustand · Axios · React Router v7 · lucide-react.
 | Lint | `npm run lint` |
 | Preview | `npm run preview` |
 
-There is no separate control plane backend: the API is the gateway booted into its
-control-plane surface. Put `APP_MODE=control-plane` in the repo-root `.env`, then
-`make run-dev`. It must be in the file: `scripts/dev/run.sh` starts the gateway in a
-container with `--env-file=.env`, so a shell prefix never reaches it.
+There is no separate control plane backend: the API is the gateway binary started with
+`hoop start control-plane`. From the repo root: `make run-dev-postgres` once, then
+`make run-dev-control-plane` (port 8019, reads `.env`); here,
+`API_URL=http://localhost:8019 npm run dev`. `make run-dev`, the gateway on :8009, works
+too: both modes answer the same routes.
 
-`APP_MODE` is not optional. Without it the gateway registers all 264 of its routes, so a
-service call to something the control plane blocks succeeds here and 404s in production.
-`buildControlPlaneRoutes` in `gateway/api/server.go` is the whole list of routes this app
-may call — the backend's counterpart to `Router.jsx`. `gateway/api/controlplane_routes_test.go`
-pins that list exactly, so a route added there without a decision fails the build.
-
-Nothing checks the two against each other, though: adding a service call here to a route
-the control plane does not serve compiles, builds and 404s at runtime. Check the list
-before adding one. `layout/ModeBanner` warns on screen, in dev builds, when the backend
-is answering in gateway mode and would hide the mistake.
+The control plane serves every route the gateway serves (ADR-0013). `buildRoutes` in
+`gateway/api/server.go` is the whole list, and `gateway/api/controlplane_routes_test.go`
+fails if the two modes drift apart. What it does not start is the data plane: no gRPC
+transport, no protocol proxies, no transport plugins and no web UI. A route that needs
+one of those is still registered and fails per request, so do not call one from here:
+session creation and exec, schema browsing (`/connections/:id/{databases,tables,columns,test}`),
+runbook execution, the proxy manager, resource plan/apply/health and `/dbroles/jobs`.
 
 Two features are only partly there, and the UI must not imply otherwise:
 
-- **Reviews are read only.** `GET /reviews` and `GET /reviews/:id` are served; approving
-  is not. `PUT /reviews/:id` releases the gRPC stream waiting on the verdict, and this
-  mode runs no transport. A sidecar review is a different entity anyway (ADR-0009).
+- **Reviews.** `PUT /reviews/:id` writes the verdict, but this process holds no session
+  stream to release: a session waiting on a gateway is not signalled from here, and
+  nothing creates a review here, since sessions only run on the gateway. A sidecar
+  review is a different entity anyway (ADR-0009).
 - **Slack stores configuration and runs nothing.** The plugin runtime is registered in
-  `runGateway`, so nothing starts here — no listener, no notifications. The config is
+  `runGateway`, so nothing starts here: no listener, no notifications. The config is
   kept for when a control-plane notification path exists.
 
-Two things it deliberately does not expose, so do not add UI that calls
-them: **access-control group management** (`GET /users/groups` is allowed because review
-rules name approvers by group; creating and deleting them is not) and **attributes**
-(blocked entirely — the pickers were removed from Guardrails, Data Masking and Review
-Rules, and each form carries the record's existing value through untouched rather than
-clearing it).
+Two things it deliberately does not expose, so do not add UI that calls them:
+**access-control group management** (`GET /users/groups` is used because review rules
+name approvers by group; creating and deleting them is a product decision, not a backend
+limit) and **attributes** (the pickers were removed from Guardrails, Data Masking and
+Review Rules, and each form carries the record's existing value through untouched rather
+than clearing it).
 
 ## Routing
 
