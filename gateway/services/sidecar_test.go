@@ -120,9 +120,26 @@ func TestBuildConfigRefusesCustomMaskingEntities(t *testing.T) {
 	}
 }
 
-func TestBuildConfigRefusesUnsupportedProtocol(t *testing.T) {
+func TestBuildConfigMySQLListener(t *testing.T) {
 	conn := pgConn("mysql-prod", "db.internal", "3306")
 	conn.subType = "mysql"
+
+	cfg, err := buildConfig([]sidecarConnection{conn})
+	if err != nil {
+		t.Fatalf("buildConfig: %v", err)
+	}
+	l := cfg.Listeners[0]
+	if l.Protocol != "mysql" {
+		t.Errorf("protocol: want mysql, got %q", l.Protocol)
+	}
+	if l.Upstream != "db.internal:3306" {
+		t.Errorf("upstream: want db.internal:3306, got %q", l.Upstream)
+	}
+}
+
+func TestBuildConfigRefusesUnsupportedProtocol(t *testing.T) {
+	conn := pgConn("oracle-prod", "db.internal", "1521")
+	conn.subType = "oracledb"
 
 	_, err := buildConfig([]sidecarConnection{conn})
 	if err == nil || !strings.Contains(err.Error(), "cannot be served by a sidecar") {

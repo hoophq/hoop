@@ -62,12 +62,14 @@ func SidecarProtocol(connType, subType string) (string, error) {
 	switch pb.ToConnectionType(connType, subType) {
 	case pb.ConnectionTypePostgres:
 		return string(inspect.Postgres), nil
+	case pb.ConnectionTypeMySQL:
+		return string(inspect.MySQL), nil
 	case pb.ConnectionTypeMSSQL:
 		return string(inspect.MSSQL), nil
 	case pb.ConnectionTypeHttpProxy:
 		return string(inspect.HTTP), nil
 	}
-	return "", fmt.Errorf("connection type %q cannot be served by a sidecar; supported: postgres, mssql, httpproxy",
+	return "", fmt.Errorf("connection type %q cannot be served by a sidecar; supported: postgres, mysql, mssql, httpproxy",
 		strings.TrimSpace(connType+"/"+subType))
 }
 
