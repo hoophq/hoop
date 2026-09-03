@@ -174,6 +174,76 @@ Both deployments share the `guardrails` and `mask` blocks, because both
 produce the same statements. Each file below holds one guardrail rule and one
 mask rule, so it loads under the build caps (`daemon/limits.go:37-40`).
 
+### The schema behind these examples
+
+Every example fronts this service, and `billing.pb` is its compiled form:
+
+```proto
+syntax = "proto3";
+package billing.v1;
+
+service Invoices {
+  rpc GetInvoice   (GetInvoiceRequest)   returns (Invoice);
+  rpc ListInvoices (ListInvoicesRequest) returns (ListInvoicesResponse);
+  rpc ExportAll    (ExportRequest)       returns (stream Invoice);
+}
+
+message GetInvoiceRequest   { string invoice_id = 1; }
+message ExportRequest       { string since = 1; }
+message ListInvoicesRequest { string customer_id = 1; int32 page_size = 2; }
+message ListInvoicesResponse {
+  repeated Invoice invoices = 1;
+  string next_page_token    = 2;
+}
+
+message Customer {
+  string id        = 1;
+  string full_name = 2;
+  string email     = 3;
+  string tax_id    = 4;
+}
+
+message Invoice {
+  string   id           = 1;
+  Customer customer     = 2;
+  int64    amount_cents = 3;
+  string   card_last4   = 4;
+  map<string, string> labels = 5;
+}
+```
+
+The operator compiles it in the CI job that builds the service:
+
+```bash
+protoc --include_imports --descriptor_set_out=billing.pb billing.proto
+buf build -o billing.pb        # equivalent; includes imports by default
+```
+
+`--include_imports` is load-bearing. Without it the set omits transitive
+dependencies and the lane refuses to start with
+`could not resolve import "google/protobuf/timestamp.proto": not found`,
+which beats degrading to a schema-less walk whose `columns:` rules can no
+longer fire.
+
+`-validate` prints the field paths the set makes maskable, so a typo in a
+`columns:` value is a diff instead of a rule that never fires:
+
+```
+/billing.v1.Invoices/GetInvoice
+    request  billing.v1.GetInvoiceRequest
+    response billing.v1.Invoice
+    maskable response fields: amount_cents (int64), card_last4 (string),
+      customer.email (string), customer.full_name (string),
+      customer.id (string), customer.tax_id (string), id (string), labels.value
+/billing.v1.Invoices/ListInvoices
+    response billing.v1.ListInvoicesResponse
+    maskable response fields: invoices.amount_cents (int64), ...,
+      invoices.customer.tax_id (string), next_page_token (string)
+/billing.v1.Invoices/ExportAll
+    response billing.v1.Invoice           (stream)
+```
+
+
 ### Without Envoy
 
 ```
@@ -307,6 +377,105 @@ both application sockets and calls the sidecar as a processing service. When
 it lands, the `guardrails` and `mask` blocks above move over unchanged; the
 listener block swaps `listen`/`upstream` for the address the ext_proc service
 binds.
+
+### The fuller rule surface, against this schema
+
+The deployment examples stay at one rule each to load under the build caps.
+This block shows the combinations the schema supports; like the README's own
+worked config, it exceeds the caps as written and exists to teach the axes.
+
+```yaml
+listeners:
+  - name: billing
+    protocol: grpc
+    listen: 127.0.0.1:18443
+    upstream: billing:50051
+    upstream_tls: {}
+    grpc:
+      descriptors: /etc/hoop/descriptors/billing.pb
+      capture_payload: true       # required by the pii rule below; off, and
+      max_payload_bytes: 65536    # masking still works while policy sees no payload
+      metadata: [x-tenant-id]
+
+    guardrails:
+      rules:
+        # Method identity, glob. One rule covers ExportAll and any Export*
+        # added later.
+        - name: no-bulk-export
+          type: http_resource
+          resources: ["/billing.v1.Invoices/Export*"]
+          message: bulk export is not permitted through this proxy
+
+        # Service identity, exact. Tables carries billing.v1.invoices the way
+        # resourceTables carries the HTTP resource, so a table rule fences a
+        # whole service.
+        - name: invoices-only
+          type: table
+          tables: [billing.v1.invoices]
+          require_table_match: true
+          message: only the Invoices service crosses this lane
+
+        # Payload content. Scans Text, which holds the rendered payload only
+        # under capture_payload: true; without capture this rule loads and
+        # matches nothing.
+        - name: no-taxpayer-ids-in-requests
+          type: pii
+          entities: [US_SSN]
+          message: do not send a taxpayer id; it lands in the upstream's logs
+
+        # Outcome, from the trailers. grpc-status is the RPC's result;
+        # :status is 200 on every live RPC. defer records a finding for OPA
+        # and the audit trail instead of denying.
+        - name: authz-failures-are-findings
+          type: grpc_status
+          statuses: [permission_denied, unauthenticated]
+          action: defer
+
+    mask:
+      rules:
+        # Schema-declared, exact: the operator names the field, the whole
+        # value is rewritten, the one entity is the audit label. Needs
+        # grpc.descriptors; refused at startup without it. Paths anchor at
+        # the response message root, so the ListInvoices response names the
+        # same field through its repeated element.
+        - {name: taxpayer, entities: [US_SSN],
+           columns: [customer.tax_id, invoices.customer.tax_id],
+           strategy: partial, keep_last: 4}      # 123-45-6789 -> ***-**-6789
+
+        # A field no detector recognizes. Detecting a person's name takes
+        # NER, which this module does not wire; naming the column is the only
+        # way to protect it. The label is free-form because a column rule
+        # runs no detector.
+        - {name: names, entities: [PERSON_NAME], columns: [customer.full_name],
+           strategy: redact}                     # -> [REDACTED:PERSON_NAME]
+
+        # Stable pseudonym: hash keeps the value joinable across responses
+        # without revealing it.
+        - {name: customer-ids, entities: [CUSTOMER_ID], columns: [customer.id],
+           strategy: hash}                       # -> sha256:9f86d081884c7d65
+
+        # Map values, keys preserved. The .value suffix is the whole map
+        # convention.
+        - {name: label-values, entities: [INTERNAL_LABEL], columns: [labels.value],
+           strategy: mask}                       # -> ********
+
+        # Content-discovered, no schema needed: the detector scans every
+        # string value, so the card number pasted into a label or a field
+        # added next sprint is caught without a rule change.
+        - {name: cards, entities: [CREDIT_CARD], strategy: redact}
+```
+
+Paths anchor at the root of each method's response message, which is the
+shape `-validate` prints: `customer.tax_id` covers `GetInvoice` and
+`ExportAll`, and `invoices.customer.tax_id` covers `ListInvoices`, with
+repeated fields addressed through the element. Anchoring at the message type
+instead (one path covering `billing.v1.Customer.tax_id` everywhere it
+appears) would halve the rule; it also breaks the moment the operator wants
+the field masked in one method and visible in another, so root anchoring is
+the recorded choice. The last rule needs no path at all: it fires wherever a
+detector matches a value, which is the half of the product no field
+enumeration replaces.
+
 
 ## Consequences
 
