@@ -146,10 +146,11 @@ that connects over WebSocket turns a control plane into an RDP data plane.
 EVL-245 gates nothing, so this is recorded rather than prevented; a deployment
 that must carry no traffic must not expose `/api/ws`.
 
-`PUT /reviews/:id` and `PUT /sessions/:id/review` work. Approving a review
-releases the gRPC stream waiting on the verdict; `runControlPlane` passes a
-no-op release callback because this mode holds no stream, so the verdict is
-complete once written.
+`PUT /reviews/:id` and `PUT /sessions/:id/review` run the gateway's code.
+Approving a review calls `ReleaseConnectionOnReview`, which `runControlPlane`
+wires from a transport server it builds and never starts; with no stream in
+this process the call only logs, so a session waiting on another gateway is
+not signalled by a verdict written here.
 
 `/serverinfo` reports `application_mode`, so a client can tell which product it
 is talking to.
