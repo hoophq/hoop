@@ -9946,54 +9946,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/sidecars/configuration": {
-            "get": {
-                "description": "Authenticated with the hoop-sidecar-token header. Returns the configuration the sidecar must serve, built from the connections assigned to it.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Sidecars"
-                ],
-                "summary": "Sidecar Configuration",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "The token returned when the sidecar was created",
-                        "name": "hoop-sidecar-token",
-                        "in": "header",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    },
-                    "401": {
-                        "description": "Unauthorized",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "422": {
-                        "description": "Unprocessable Entity",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    }
-                }
-            }
-        },
         "/sidecars/handshake": {
             "post": {
                 "description": "Authenticated with the hoop-sidecar-token header. Records the reported version and returns the configuration the sidecar must serve.",
