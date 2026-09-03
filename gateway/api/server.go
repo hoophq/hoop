@@ -59,6 +59,7 @@ import (
 	serverlogsapi "github.com/hoophq/hoop/gateway/api/serverlogs"
 	serviceaccountapi "github.com/hoophq/hoop/gateway/api/serviceaccount"
 	sessionapi "github.com/hoophq/hoop/gateway/api/session"
+	apisidecar "github.com/hoophq/hoop/gateway/api/sidecar"
 	signupapi "github.com/hoophq/hoop/gateway/api/signup"
 	spiffemappingsapi "github.com/hoophq/hoop/gateway/api/spiffemappings"
 	userapi "github.com/hoophq/hoop/gateway/api/user"
@@ -106,6 +107,8 @@ type Api struct {
 //	@tag.name	Connections
 
 //	@tag.name	Agents
+
+//	@tag.name	Sidecars
 
 //	@tag.name	Runbooks
 
@@ -276,6 +279,38 @@ func (a *Api) StartAPI() {
 	if err := route.Run(); err != nil {
 		log.Fatalf("Failed to start HTTP server, err=%v", err)
 	}
+}
+
+// buildSidecarRoutes registers the sidecar surface. Administering a fleet of
+// sidecars is the control plane's whole job, and the gateway serves the same
+// routes because that is where an operator's connections already live.
+func (api *Api) buildSidecarRoutes(r *apiroutes.Router) {
+	r.POST("/sidecars",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		api.TrackRequest(analytics.EventCreateSidecar),
+		apisidecar.Post)
+	r.GET("/sidecars",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		apisidecar.List)
+
+	// Registered before the :nameOrID routes so the static paths are the
+	// obvious ones to a reader. Post also refuses these two as resource
+	// names, so no sidecar can be shadowed by them.
+	r.POST("/sidecars/handshake", r.SidecarAuthMiddleware, apisidecar.Handshake)
+
+	r.GET("/sidecars/:nameOrID",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		apisidecar.Get)
+	r.DELETE("/sidecars/:nameOrID",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		api.TrackRequest(analytics.EventDeleteSidecar),
+		apisidecar.Delete)
 }
 
 func (api *Api) buildRoutes(r *apiroutes.Router, mode appconfig.AppMode) {
@@ -774,6 +809,8 @@ func (api *Api) buildRoutes(r *apiroutes.Router, mode appconfig.AppMode) {
 		api.AuditMiddleware(),
 		api.TrackRequest(analytics.EventDeleteAgent),
 		apiagents.Delete)
+
+	api.buildSidecarRoutes(r)
 
 	r.POST("/orgs/keys",
 		apiroutes.AdminOnlyAccessRole,
