@@ -188,10 +188,10 @@ func Run(mode appconfig.AppMode) {
 }
 
 // runControlPlane serves the control plane: the HTTP API and nothing else.
-// It administers a fleet of sidecars, so it accepts no agent or client
-// connection — the gRPC transport, the protocol proxies and the transport
-// plugins never start. The HTTP API is the gateway's (see Api.BuildEngine);
-// a route that needs the transport fails per request.
+// The gRPC transport, the protocol proxies and the transport plugins never
+// start. The HTTP API is the gateway's (see Api.BuildEngine): a route that
+// needs the gRPC transport fails per request, while /api/ws still accepts an
+// agent over WebSocket and /rdpproxy relays through it (ADR-0013).
 func runControlPlane(tlsConfig *tls.Config) {
 	a := &api.Api{
 		// A review verdict releases the gRPC stream that waits on it. This
