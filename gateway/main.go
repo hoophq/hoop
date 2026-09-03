@@ -193,10 +193,15 @@ func Run(mode appconfig.AppMode) {
 // needs the gRPC transport fails per request, while /api/ws still accepts an
 // agent over WebSocket and /rdpproxy relays through it (ADR-0013).
 func runControlPlane(tlsConfig *tls.Config) {
+	// Same wiring as runGateway. The transport server exists for its review
+	// callback and is never started, so the handlers run the gateway's code.
+	g := &transport.Server{
+		TLSConfig:   tlsConfig,
+		ApiHostname: appconfig.Get().ApiHostname(),
+		AppConfig:   appconfig.Get(),
+	}
 	a := &api.Api{
-		// A review verdict releases the gRPC stream that waits on it. This
-		// mode holds no stream, so the verdict is complete once written.
-		ReleaseConnectionFn: func(_, _, _, _, _, _ string) {},
+		ReleaseConnectionFn: g.ReleaseConnectionOnReview,
 		TLSConfig:           tlsConfig,
 	}
 
