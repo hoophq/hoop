@@ -6,20 +6,21 @@ import (
 	"time"
 )
 
-// term builds a verdict whose signature a caller already checked, so these
-// tests can put the boundary wherever they need it.
-func term(from, to time.Time) Status {
-	return Verdict(&License{
-		Payload: Payload{
-			Type:         EnterpriseType,
-			IssuedAt:     from.Unix(),
-			ExpireAt:     to.Unix(),
-			AllowedHosts: []string{"*"},
-			Description:  "Acme Corp",
-		},
-		KeyID:     "test-key",
-		Signature: "test-signature",
-	}, "the test")
+// term signs a license with the boundary these tests need and puts it
+// through the real Load, so the verdict under test is one a customer could
+// hold. Nothing here can shortcut the signature: there is no constructor for
+// that, which is the property the tests below lean on.
+func term(t *testing.T, from, to time.Time) Status {
+	t.Helper()
+	key := signingKey(t)
+	l := issue(t, key, Payload{
+		Type:         EnterpriseType,
+		IssuedAt:     from.Unix(),
+		ExpireAt:     to.Unix(),
+		AllowedHosts: []string{"*"},
+		Description:  "Acme Corp",
+	})
+	return Load(Ref{Value: document(t, l), Source: "the test"})
 }
 
 // The bug this file exists for. A process that verified a license at startup
@@ -28,7 +29,7 @@ func term(from, to time.Time) Status {
 // answer differently.
 func TestAVerdictExpiresWithoutBeingReloaded(t *testing.T) {
 	start := time.Now().UTC()
-	s := term(start.Add(-time.Hour), start.Add(time.Hour))
+	s := term(t, start.Add(-time.Hour), start.Add(time.Hour))
 
 	if got := s.StateAt(start); got != StateValid {
 		t.Fatalf("inside the term: state = %q", got)
@@ -50,7 +51,7 @@ func TestAVerdictExpiresWithoutBeingReloaded(t *testing.T) {
 // verdict taken exactly on it still grants and one a second later does not.
 func TestTheBoundaryIsExpireAt(t *testing.T) {
 	end := time.Now().UTC().Truncate(time.Second).Add(time.Hour)
-	s := term(end.Add(-24*time.Hour), end)
+	s := term(t, end.Add(-24*time.Hour), end)
 
 	if !s.AllowsAt(end, FeatureGuardrails) {
 		t.Error("the license stopped granting at the last second of its term")
@@ -64,10 +65,10 @@ func TestTheBoundaryIsExpireAt(t *testing.T) {
 // gets an aging verdict. This is what the daemon calls.
 func TestAllowsReadsTheClock(t *testing.T) {
 	now := time.Now().UTC()
-	if live := term(now.Add(-time.Hour), now.Add(time.Hour)); !live.Allows(FeatureGuardrails) {
+	if live := term(t, now.Add(-time.Hour), now.Add(time.Hour)); !live.Allows(FeatureGuardrails) {
 		t.Error("a current license granted nothing")
 	}
-	if dead := term(now.Add(-48*time.Hour), now.Add(-time.Hour)); dead.Allows(FeatureGuardrails) {
+	if dead := term(t, now.Add(-48*time.Hour), now.Add(-time.Hour)); dead.Allows(FeatureGuardrails) {
 		t.Error("a license whose term ended an hour ago still granted a feature")
 	}
 }
@@ -76,7 +77,7 @@ func TestAllowsReadsTheClock(t *testing.T) {
 // line and the admin report are derived, so they move with the verdict.
 func TestTheReportAndTheLineFollowTheVerdict(t *testing.T) {
 	now := time.Now().UTC()
-	s := term(now.Add(-48*time.Hour), now.Add(-time.Hour))
+	s := term(t, now.Add(-48*time.Hour), now.Add(-time.Hour))
 
 	if got := s.Report()["state"]; got != "expired" {
 		t.Errorf("report state = %v, want expired", got)
@@ -100,11 +101,11 @@ func TestTheReportAndTheLineFollowTheVerdict(t *testing.T) {
 	}
 }
 
-// Verdict is the control-plane seam and a licensing bypass by construction.
-// It must not also bypass the term.
-func TestVerdictCannotSkipTheTerm(t *testing.T) {
+// A license that verified and then ran out grants nothing, whatever the
+// verdict said when it loaded.
+func TestALoadedLicenseCannotSkipTheTerm(t *testing.T) {
 	past := time.Now().UTC().Add(-time.Hour)
-	s := term(past.Add(-24*time.Hour), past)
+	s := term(t, past.Add(-24*time.Hour), past)
 
 	if s.State() != StateExpired {
 		t.Errorf("state = %q, want expired", s.State())

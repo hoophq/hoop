@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/hoophq/hoop/sidecar/license"
+	"github.com/hoophq/hoop/sidecar/license/licensetest"
 	"github.com/hoophq/hoop/sidecar/policy"
 )
 
@@ -22,29 +23,31 @@ func overCap() *Config {
 	}
 }
 
-// licenseStatus builds the verdict a daemon runs under. Verdict rather than a
-// signed document, because the daemon consumes a verdict and never checks a
-// signature: sidecar/license owns a key it can sign with and settles that
-// there. The term still applies, so an expired date reports expired.
-func licenseStatus(typ string, features []string, expires time.Time) license.Status {
-	return license.Verdict(&license.License{
-		Payload: license.Payload{
-			Type:         typ,
-			IssuedAt:     time.Now().Add(-time.Hour).Unix(),
-			ExpireAt:     expires.Unix(),
-			AllowedHosts: []string{"*"},
-			Description:  "Acme Corp",
-			Features:     features,
-		},
-		KeyID:     "test-key",
-		Signature: "test-signature",
-	}, "the test")
+// licensed is a license this process genuinely verifies: licensetest signs it
+// and points the trust root at the signing key for the test. Assembling a
+// Status by hand is impossible on purpose, so these tests exercise the same
+// path a customer's license takes.
+func licensed(t *testing.T, features ...string) license.Status {
+	t.Helper()
+	return licensetest.Status(t, licensetest.Enterprise(features...))
 }
 
-// licensed is a current enterprise license. No features named means every
-// feature, which is what most licenses carry.
-func licensed(features ...string) license.Status {
-	return licenseStatus(license.EnterpriseType, features, time.Now().Add(720*time.Hour))
+// licenseFor shapes a payload the caller cares about: an oss type, a term
+// that has already ended, a narrower feature list.
+func licenseFor(shape func(*license.Payload)) license.Payload {
+	p := licensetest.Enterprise()
+	shape(&p)
+	return p
+}
+
+// useLicense hands the config a signed reference the way a control plane
+// would, so every licensing test exercises the verification too. There is no
+// way to skip it, which is the point of UseLicense taking a Ref.
+func useLicense(t *testing.T, cfg *Config, p license.Payload) {
+	t.Helper()
+	if err := cfg.UseLicense(licensetest.Ref(t, p)); err != nil {
+		t.Fatalf("UseLicense: %v", err)
+	}
 }
 
 // limitsLane is a minimal valid listener, so a limits test fails on the limit
@@ -233,7 +236,7 @@ func TestLimitsSummaryNamesBothCaps(t *testing.T) {
 // the config that was refused a moment ago builds.
 func TestALicenseLiftsBothCaps(t *testing.T) {
 	cfg := overCap()
-	cfg.UseLicense(licensed())
+	useLicense(t, cfg, licensetest.Enterprise())
 
 	if problems := cfg.checkLimits(cfg.Licensing()); len(problems) != 0 {
 		t.Errorf("a licensed config was capped: %v", problems)
@@ -244,7 +247,7 @@ func TestALicenseLiftsBothCaps(t *testing.T) {
 // guardrail cap where it was, or a one-feature license pays for two.
 func TestALicenseLiftsOnlyTheFeaturesItNames(t *testing.T) {
 	cfg := overCap()
-	cfg.UseLicense(licensed(license.FeatureDataMasking))
+	useLicense(t, cfg, licensetest.Enterprise(license.FeatureDataMasking))
 
 	problems := cfg.checkLimits(cfg.Licensing())
 	if len(problems) != 1 {
@@ -262,7 +265,7 @@ func TestALicenseLiftsOnlyTheFeaturesItNames(t *testing.T) {
 // verifying license as enterprise would hand the paid caps to the free tier.
 func TestAnOSSLicenseLeavesTheCapsInForce(t *testing.T) {
 	cfg := overCap()
-	cfg.UseLicense(licenseStatus(license.OSSType, nil, time.Now().Add(720*time.Hour)))
+	useLicense(t, cfg, licenseFor(func(p *license.Payload) { p.Type = license.OSSType }))
 
 	if problems := cfg.checkLimits(cfg.Licensing()); len(problems) != 2 {
 		t.Errorf("an oss license changed the caps: %v", problems)
@@ -274,7 +277,9 @@ func TestAnOSSLicenseLeavesTheCapsInForce(t *testing.T) {
 // sends an operator to read their rules instead of their expiry date.
 func TestAnExpiredLicenseRestoresTheCapsAndSaysWhy(t *testing.T) {
 	cfg := overCap()
-	cfg.UseLicense(licenseStatus(license.EnterpriseType, nil, time.Now().Add(-24*time.Hour)))
+	useLicense(t, cfg, licenseFor(func(p *license.Payload) {
+		p.ExpireAt = time.Now().Add(-24 * time.Hour).Unix()
+	}))
 
 	problems := cfg.checkLimits(cfg.Licensing())
 	if len(problems) != 2 {
@@ -305,7 +310,7 @@ func TestAnUncappedMessageNamesEveryLicenseSource(t *testing.T) {
 // licensed process saying "1 guardrail rule(s)" while enforcing none is worse
 // than printing nothing.
 func TestLimitsSummaryReportsUnlimitedWhenLicensed(t *testing.T) {
-	got := LimitsSummary(licensed())
+	got := LimitsSummary(licensed(t))
 	for _, want := range []string{"unlimited guardrail rule(s)", "unlimited data masking rule(s)"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("LimitsSummary() = %q, missing %q", got, want)

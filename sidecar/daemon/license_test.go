@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/hoophq/hoop/sidecar/license"
+	"github.com/hoophq/hoop/sidecar/license/licensetest"
 )
 
 // newTestLogger captures what Run would print, at a level that keeps both
@@ -121,7 +122,7 @@ func TestAnInlineDocumentIsReadAsADocument(t *testing.T) {
 // belongs in its report rather than only in the run log.
 func TestPrintLanesReportsTheLicenseAndTheCaps(t *testing.T) {
 	var buf bytes.Buffer
-	PrintLanes(&buf, licensed(), []LaneInfo{{Name: "appdb", Protocol: "postgres"}})
+	PrintLanes(&buf, licensed(t), []LaneInfo{{Name: "appdb", Protocol: "postgres"}})
 
 	out := buf.String()
 	for _, want := range []string{"license: valid", "Acme Corp", "unlimited guardrail rule(s)", "appdb"} {
@@ -146,13 +147,13 @@ func TestPrintLanesSaysWhenThereIsNoLicense(t *testing.T) {
 // An expired license reports as a warning and a valid one as information,
 // because only one of them is something an operator has to act on.
 func TestReportLicenseWarnsOnlyWhenSomethingIsWrong(t *testing.T) {
-	expired := licenseStatus(license.EnterpriseType, nil, time.Now().Add(-time.Hour))
+	expired := licensetest.Status(t, licensetest.Expiring(-time.Hour))
 	cases := []struct {
 		name     string
 		lic      license.Status
 		wantWarn bool
 	}{
-		{"valid", licensed(), false},
+		{"valid", licensed(t), false},
 		{"missing", license.Status{}, false},
 		{"expired", expired, true},
 	}

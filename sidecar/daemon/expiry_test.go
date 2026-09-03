@@ -8,12 +8,15 @@ import (
 	"time"
 
 	"github.com/hoophq/hoop/sidecar/license"
+	"github.com/hoophq/hoop/sidecar/license/licensetest"
 	"github.com/hoophq/hoop/sidecar/policy"
 )
 
-// expiredIn builds a licensed verdict whose term ends after d.
-func expiredIn(d time.Duration) license.Status {
-	return licenseStatus(license.EnterpriseType, nil, time.Now().Add(d))
+// expiredIn signs a license whose term ends after d and puts it through the
+// real verifier, so these tests age a verdict a customer could hold.
+func expiredIn(t *testing.T, d time.Duration) license.Status {
+	t.Helper()
+	return licensetest.Status(t, licensetest.Expiring(d))
 }
 
 // The caps read the license live, so the same Status that lifted them gives
@@ -22,12 +25,12 @@ func expiredIn(d time.Duration) license.Status {
 func TestTheCapsComeBackWhenTheTermEnds(t *testing.T) {
 	cfg := overCap()
 
-	cfg.UseLicense(expiredIn(time.Hour))
+	useLicense(t, cfg, licensetest.Expiring(time.Hour))
 	if problems := cfg.checkLimits(cfg.Licensing()); len(problems) != 0 {
 		t.Fatalf("a current license did not lift the caps: %v", problems)
 	}
 
-	cfg.UseLicense(expiredIn(-time.Hour))
+	useLicense(t, cfg, licensetest.Expiring(-time.Hour))
 	problems := cfg.checkLimits(cfg.Licensing())
 	if len(problems) != 2 {
 		t.Fatalf("an expired license kept the caps lifted: %v", problems)
@@ -43,16 +46,16 @@ func TestTheCapsComeBackWhenTheTermEnds(t *testing.T) {
 // so an operator reading either after expiry sees the free tier rather than
 // the "unlimited" the process started with.
 func TestTheReportedCapsFollowTheTerm(t *testing.T) {
-	if got := LimitsSummary(expiredIn(time.Hour)); !strings.Contains(got, "unlimited") {
+	if got := LimitsSummary(expiredIn(t, time.Hour)); !strings.Contains(got, "unlimited") {
 		t.Errorf("a current license did not report unlimited: %q", got)
 	}
-	got := LimitsSummary(expiredIn(-time.Hour))
+	got := LimitsSummary(expiredIn(t, -time.Hour))
 	for _, want := range []string{"1 guardrail rule(s)", "1 data masking rule(s)"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("an expired license did not report the free tier: %q", got)
 		}
 	}
-	if c := capsFor(expiredIn(-time.Hour)); capJSON(c.guardrails) == nil {
+	if c := capsFor(expiredIn(t, -time.Hour)); capJSON(c.guardrails) == nil {
 		t.Error("/config would still serve null, meaning no cap, after expiry")
 	}
 }
@@ -80,7 +83,7 @@ func TestTheWatchdogFiresWhenTheTermEnds(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	expired := watchLicense(ctx, expiredIn(-time.Second), time.Millisecond, log)
+	expired := watchLicense(ctx, expiredIn(t, -time.Second), time.Millisecond, log)
 
 	select {
 	case <-expired:
@@ -99,7 +102,7 @@ func TestTheWatchdogWaitsWhileTheTermRuns(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	expired := watchLicense(ctx, expiredIn(time.Hour), time.Millisecond, newTestLogger(&bytes.Buffer{}))
+	expired := watchLicense(ctx, expiredIn(t, time.Hour), time.Millisecond, newTestLogger(&bytes.Buffer{}))
 
 	select {
 	case <-expired:
@@ -112,7 +115,7 @@ func TestTheWatchdogWaitsWhileTheTermRuns(t *testing.T) {
 // context ends, so Run reports a signal as a signal and exits zero.
 func TestTheWatchdogIsSilentOnShutdown(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	expired := watchLicense(ctx, expiredIn(time.Hour), time.Hour, newTestLogger(&bytes.Buffer{}))
+	expired := watchLicense(ctx, expiredIn(t, time.Hour), time.Hour, newTestLogger(&bytes.Buffer{}))
 	cancel()
 
 	select {
@@ -127,7 +130,7 @@ func TestTheWatchdogIsSilentOnShutdown(t *testing.T) {
 func TestExpiryIsAnnouncedBeforeItHappens(t *testing.T) {
 	var buf bytes.Buffer
 	log := newTestLogger(&buf)
-	lic := expiredIn(3 * 24 * time.Hour)
+	lic := expiredIn(t, 3*24*time.Hour)
 
 	day := noticeLicenseExpiry(lic, -1, log)
 	if day != 2 && day != 3 {
@@ -151,7 +154,7 @@ func TestExpiryIsAnnouncedBeforeItHappens(t *testing.T) {
 // years is a line nobody reads.
 func TestALongTermIsNotAnnounced(t *testing.T) {
 	var buf bytes.Buffer
-	noticeLicenseExpiry(expiredIn(365*24*time.Hour), -1, newTestLogger(&buf))
+	noticeLicenseExpiry(expiredIn(t, 365*24*time.Hour), -1, newTestLogger(&buf))
 	if buf.Len() != 0 {
 		t.Errorf("a term with a year left was announced: %s", buf.String())
 	}

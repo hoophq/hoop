@@ -334,6 +334,21 @@ are pinned together by `client/licensecompat`, the only module that can see
 both. `allowed_hosts` is the one thing the sidecar does not check, since the
 address it could offer is a scheduler-generated pod name.
 
+A verdict cannot be handed to the daemon, only earned. The flag that says a
+license verified is unexported and `license.Load` is the only thing that sets
+it, after checking the signature, so a `license.Status` built by hand reports
+`invalid` and lifts nothing. `Config.UseLicense` takes a reference rather than
+a verdict for the same reason: when the control plane starts sending licenses,
+it will send the document Hoop signed and the sidecar will check that
+signature itself, instead of trusting whoever is on the connection.
+
+That leaves a test no way to run a licensed daemon, which
+`sidecar/license/licensetest` fixes honestly. It generates a keypair, points
+the trust root at it for the duration of one `*testing.T`, and signs documents
+that go through the same `Load`. Every function there takes a `*testing.T`,
+which is the guard: production code calling one would have to import
+`testing`.
+
 ### Deprecated fields
 
 0.1.0 renamed six keys, removed one, and reversed two defaults. Both

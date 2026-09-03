@@ -155,6 +155,16 @@ done
   whose config the free tier would refuse, because re-applying the caps live
   would mean deleting guardrail and mask rules from a running proxy.
 
+- **A verdict cannot be assembled, only earned.** `Status.verified` is
+  unexported and `license.Load` is the only thing that sets it, after checking
+  the signature. Build a `Status` literal anywhere else and it reports invalid
+  and grants nothing. `Config.UseLicense` therefore takes a `license.Ref` and
+  never a `Status`: the control plane sends a document and the sidecar checks
+  it, rather than believing whoever is on the connection. NEVER add a
+  constructor that skips `Verify`, and NEVER export the trust root; a test that
+  needs a licensed process uses `license/licensetest`, which signs for real
+  under a key it installs for the duration of one `*testing.T`.
+
 ## Layout
 
 The module root holds no Go files: `go.mod`, this file and `README.md` only.
@@ -165,7 +175,7 @@ The module root holds no Go files: `go.mod`, this file and `README.md` only.
 | `lexer/` | SQL text to an effect and a relation list, without a grammar |
 | `codec/` | registration seam: wires libhoop's decoders to the classifier |
 | `policy/` | statement to verdict; local rules, then OPA |
-| `license/` | verifies the signed license that lifts the rule caps; a stdlib twin of `common/license` |
+| `license/` | verifies the signed license that lifts the rule caps; a stdlib twin of `common/license`. `internal/trust` owns the key, `licensetest` signs for tests |
 | `analyzer/` | the model-backed evaluator, third in the policy chain |
 | `gate/` | orders inspection, policy, audit and masking into one decision |
 | `proxy/` | TCP relay that pumps both directions through a Gate |

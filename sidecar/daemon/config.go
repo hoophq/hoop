@@ -130,11 +130,22 @@ type Config struct {
 // missing license, so this always has something to say.
 func (c *Config) Licensing() license.Status { return c.lic }
 
-// UseLicense sets the license this config runs under, replacing whatever
-// Setup resolved. It is the seam a control-plane license arrives through:
-// the sidecar gets one on connection, calls this, and every cap moves with
-// it. Verify it first, since this stores a verdict and does not reach one.
-func (c *Config) UseLicense(s license.Status) { c.lic = s }
+// UseLicense verifies a license and adopts it, replacing whatever Setup
+// resolved. It is the seam a control-plane license arrives through: the plane
+// sends the document Hoop signed, the sidecar checks that signature itself
+// and every cap moves with the result.
+//
+// It takes a REFERENCE and not a Status, so no caller can hand the daemon a
+// verdict it reached on its own. Trusting the sender would make the caps a
+// matter of who is on the other end of a connection.
+func (c *Config) UseLicense(ref license.Ref) error {
+	s := license.Load(ref)
+	if s.State() == license.StateInvalid {
+		return s.Err
+	}
+	c.lic = s
+	return nil
+}
 
 // ListenerConfig is one protocol endpoint: one Envoy cluster's worth of
 // traffic, with its own enforcement stack.

@@ -20,6 +20,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/hoophq/hoop/sidecar/license/internal/trust"
 )
 
 // EnvVar names the environment variable a license may arrive in.
@@ -46,21 +48,8 @@ const (
 	FeatureDataMasking = "data-masking"
 )
 
-// trustedKeyPEM is the public key a license must carry a signature from,
-// from `openssl rsa -in ./license.key -pubout`. A var so the round-trip test
-// can sign with a generated key. Assign it outside a test and the build
-// honours licenses Hoop never issued.
-var trustedKeyPEM = []byte(`
------BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuMaf59LDDC5t06jYtXJB
-xDM3+e1POErhDzV1KcATYN0PS39yeqZ4VYxOr/0b8iqoPmYfReoj1GBiXKkMrO5D
-BOCCFwSUGnEAPVBUsGhcbtPmEW8iJvMCdiG35GpWgBbn8Q5TAMdEweGQSBo0CPRz
-xaOLeCgMv5qx10KpnP/8SRaDmM0vvOksRwJAMmwMaSkQEKOrs97jkDgnBY1mz1TI
-zmo40K3nFT6WHgqETIrl3t/fC1Fv25MDrPLE4M3htqBKLKDR99pPHX0gxB3dvwi6
-p8mG+hifq6xb6bTDH7ilIhFf30v+jjSfLyZUl56xitSiqF92uJTOZ5Q9xqISo7Sq
-yQIDAQAB
------END PUBLIC KEY-----
-`)
+// The trusted key lives in internal/trust, which is the only place that can
+// change it and is reachable only from this package and licensetest.
 
 // ErrExpired reports a license that verified and whose term has ended. The
 // sidecar drops to the free tier on this one and refuses to start on the
@@ -214,6 +203,10 @@ type Ref struct {
 
 // Status is the resolved license, and the only thing the daemon reads.
 //
+// It cannot be forged. verified is unexported and only Load sets it, and Load
+// sets it only after checking the signature against the key this build
+// trusts, so a Status assembled anywhere else grants nothing.
+//
 // The zero value is a missing license, so an embedder who forgets to set one
 // keeps the caps rather than losing them.
 type Status struct {
@@ -232,14 +225,10 @@ type Status struct {
 	Err error
 }
 
-// Verdict wraps a document whose signature the caller has already checked.
-//
-// The control-plane path lands here: the plane verifies, the sidecar stores.
-// The term still applies, so a document past ExpireAt reports expired
-// however it arrived and whatever the caller believes.
-func Verdict(l *License, source string) Status {
-	return Status{verified: true, License: l, Source: source}
-}
+// Load is the ONLY way to reach a Status that grants anything: verified is
+// unexported and nothing else sets it. A caller outside this package can
+// build a Status literal, and it will report invalid and grant nothing,
+// which is the point. There is no "trust me" constructor.
 
 // State is the verdict NOW.
 //
@@ -430,7 +419,7 @@ func PublicKeyID() (string, error) {
 }
 
 func parsePublicKey() (*rsa.PublicKey, error) {
-	block, _ := pem.Decode(trustedKeyPEM)
+	block, _ := pem.Decode(trust.Key())
 	if block == nil || block.Type != "PUBLIC KEY" {
 		return nil, errors.New("this build carries no usable license key")
 	}

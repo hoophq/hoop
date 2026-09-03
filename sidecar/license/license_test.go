@@ -15,12 +15,14 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/hoophq/hoop/sidecar/license/internal/trust"
 )
 
 // signingKey generates a key and points the verifier at it for one test.
-// Without a signer these tests could only assert that real licenses fail.
-// client/licensecompat covers the other direction: the shipped key and the
-// signing format are the gateway's.
+// internal/trust is the only place that can move the trust root, and this and
+// licensetest are the only callers. client/licensecompat covers the other
+// direction: the shipped key and the signing format are the gateway's.
 func signingKey(t *testing.T) *rsa.PrivateKey {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -31,9 +33,7 @@ func signingKey(t *testing.T) *rsa.PrivateKey {
 	if err != nil {
 		t.Fatalf("marshal public key: %v", err)
 	}
-	prev := trustedKeyPEM
-	trustedKeyPEM = pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der})
-	t.Cleanup(func() { trustedKeyPEM = prev })
+	t.Cleanup(trust.Swap(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der})))
 	return key
 }
 

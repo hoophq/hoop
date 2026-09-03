@@ -37,6 +37,11 @@ type caps struct {
 // bought data masking does not get unlimited guardrails with it. Status
 // grants nothing unless the license verified and is an enterprise one, so an
 // oss license and an expired one both land here as the free tier.
+//
+// It trusts Allows completely, and can: license.Status carries an unexported
+// verified flag that only license.Load sets, and only after checking the
+// signature. A Status assembled anywhere else answers false to everything
+// here, so there is no path from a hand-built value to a lifted cap.
 func capsFor(lic license.Status) caps {
 	c := caps{guardrails: maxGuardrailRules, mask: maxMaskRules}
 	if lic.Allows(license.FeatureGuardrails) {
