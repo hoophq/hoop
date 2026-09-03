@@ -51,6 +51,7 @@ import JiraTemplates from '@/pages/JiraTemplates'
 import JiraTemplateForm from '@/pages/JiraTemplates/Form'
 import IntegrationsSlack from '@/pages/Integrations/Slack'
 import IntegrationsWebhooks from '@/pages/Integrations/Webhooks'
+import ComplianceReport from '@/pages/ComplianceReport'
 
 // The only lazily-loaded page. Every other route is imported eagerly, but the
 // Dashboard pulls in recharts + d3 (~150KB gzipped) and is reachable by admins
@@ -96,6 +97,18 @@ function Router() {
                 <Suspense fallback={<PageLoader h={400} />}>
                   <Dashboard />
                 </Suspense>
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/compliance-report"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <ComplianceReport />
               </PageLayout>
             </Layout>
           </ProtectedRoute>

@@ -1302,6 +1302,10 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
 		apireports.SessionReport)
+	r.GET("/reports/compliance",
+		apiroutes.AdminAndAuditorAccessRole,
+		r.AuthMiddleware,
+		apireports.ComplianceReport)
 
 	r.GET("/plugins/runbooks/connections/:name/templates",
 		apiroutes.ReadOnlyAccessRole,
