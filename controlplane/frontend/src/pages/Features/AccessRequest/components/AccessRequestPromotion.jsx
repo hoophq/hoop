@@ -22,10 +22,25 @@ const FEATURE_ITEMS = [
   },
 ]
 
+const LICENSE_REQUIRED_INFO =
+  'Creating review rules needs an Enterprise license. Add your license, or talk to sales from the dialog.'
+
 // Shown once, before the organization has any rule. Dismissing it is what the
 // primary click does — the admin lands on the create form and never sees this
 // screen again, even if they abandon the form.
-export default function AccessRequestPromotion({ onCreate }) {
+//
+// `onAddLicense` set means creation is blocked by the license: the primary
+// action installs one instead of opening a form whose Save is disabled, and
+// the screen is not dismissed.
+export default function AccessRequestPromotion({ onCreate, onAddLicense }) {
+  const primaryProps = onAddLicense
+    ? {
+        onPrimaryClick: onAddLicense,
+        primaryText: 'Add your license',
+        extraInformation: LICENSE_REQUIRED_INFO,
+      }
+    : { onPrimaryClick: onCreate, primaryText: 'Create new Access Request rule' }
+
   return (
     <FeaturePromotion
       featureName="Access Request"
@@ -33,8 +48,7 @@ export default function AccessRequestPromotion({ onCreate }) {
       image="access-request-promotion.png"
       description="Streamline secure access with time-based approvals and automated workflows for your critical resources."
       featureItems={FEATURE_ITEMS}
-      onPrimaryClick={onCreate}
-      primaryText="Create new Access Request rule"
+      {...primaryProps}
     />
   )
 }

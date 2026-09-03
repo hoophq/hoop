@@ -29,9 +29,23 @@ const FEATURE_ITEMS = [
 const DLP_REQUIRED_INFO =
   'Guardrails require a DLP provider (Microsoft Presidio or Google Cloud DLP) to be enforced. Configure a DLP provider to create and manage guardrails.'
 
-export default function GuardrailsPromotion({ dlpAvailable, onCreate }) {
+const LICENSE_REQUIRED_INFO =
+  'Creating guardrails needs an Enterprise license. Add your license, or talk to sales from the dialog.'
+
+// `onAddLicense` set means creation is blocked by the license: the primary
+// action installs one instead of opening a form whose Save is disabled. The
+// DLP requirement still comes first, since no license changes it.
+export default function GuardrailsPromotion({ dlpAvailable, onCreate, onAddLicense }) {
+  const createProps = onAddLicense
+    ? {
+        onPrimaryClick: onAddLicense,
+        primaryText: 'Add your license',
+        extraInformation: LICENSE_REQUIRED_INFO,
+      }
+    : { onPrimaryClick: onCreate, primaryText: 'Create new Guardrails' }
+
   const providerProps = dlpAvailable
-    ? { onPrimaryClick: onCreate, primaryText: 'Create new Guardrails' }
+    ? createProps
     : {
         docsHref: docsUrl.features.guardrails,
         docsText: 'Go to Guardrails documentation',

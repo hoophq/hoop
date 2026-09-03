@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Box, Group, Stack, Text, Title } from '@mantine/core'
 import { ListVideo, Rotate3d } from 'lucide-react'
+import { useUIStore } from '@/stores/useUIStore'
 import { useUserStore } from '@/stores/useUserStore'
 import { useMinDelay } from '@/hooks/useMinDelay'
 import { usePaginatedConnections } from '@/hooks/usePaginatedConnections'
@@ -12,12 +13,10 @@ import Button from '@/components/Button'
 import ValueFilter from '@/components/ValueFilter'
 import AsyncValueFilter from '@/components/AsyncValueFilter'
 import FreeLicenseCallout from '@/components/FreeLicenseCallout'
+import { LICENSE_FEATURE_LABELS, licenseRequiredMessage, licenseState } from '@/utils/license'
 import { useDataMaskingStore } from './store'
 import RuleListItem from './components/RuleListItem'
 import DataMaskingPromotion from './components/DataMaskingPromotion'
-
-const FREE_LICENSE_LIMIT_MESSAGE =
-  'Your organization has reached Live Data Masking free usage limits. Upgrade to Enterprise to keep your sensitive data protected.'
 
 export default function DataMasking() {
   const navigate = useNavigate()
@@ -26,7 +25,11 @@ export default function DataMasking() {
   const listStatus = useDataMaskingStore((s) => s.listStatus)
   const fetchList = useDataMaskingStore((s) => s.fetchList)
 
+  // Creating a rule needs a valid Enterprise license (hard zero on the client).
+  // Editing and deleting the rules that exist stay open in every state.
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
+  const licenseInfo = useUserStore((s) => s.licenseInfo)
+  const openLicenseModal = useUIStore((s) => s.openLicenseModal)
   const redactProvider = useUserStore((s) => s.redactProvider)
 
   const [selectedRole, setSelectedRole] = useState(null)
@@ -47,7 +50,11 @@ export default function DataMasking() {
     return rules
   }, [list, selectedRole])
 
-  const atFreeLimit = isFreeLicense && list.length >= 1
+  const createBlocked = isFreeLicense
+  const licenseMessage = licenseRequiredMessage(
+    LICENSE_FEATURE_LABELS['data-masking'],
+    licenseState(licenseInfo),
+  )
   const loading = listStatus === 'loading'
   const showLoader = useMinDelay(loading && list.length === 0, 500)
   const activeFilterCount = selectedRole ? 1 : 0
@@ -72,6 +79,7 @@ export default function DataMasking() {
         <DataMaskingPromotion
           redactProvider={redactProvider}
           onConfigure={goCreate}
+          onAddLicense={createBlocked ? openLicenseModal : undefined}
         />
       </FullBleed>
     )
@@ -86,14 +94,12 @@ export default function DataMasking() {
             Automatically mask sensitive data in real-time at the protocol layer
           </Text>
         </Stack>
-        <Button onClick={goCreate} disabled={atFreeLimit}>
+        <Button onClick={goCreate} disabled={createBlocked}>
           Create new
         </Button>
       </Group>
 
-      {atFreeLimit && (
-        <FreeLicenseCallout message={FREE_LICENSE_LIMIT_MESSAGE} variant="limit" />
-      )}
+      {createBlocked && <FreeLicenseCallout message={licenseMessage} />}
 
       <Group gap="sm">
         <AsyncValueFilter

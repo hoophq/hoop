@@ -11,13 +11,12 @@ import { useMinDelay } from '@/hooks/useMinDelay'
 import { usePaginatedConnections } from '@/hooks/usePaginatedConnections'
 import EmptyState from '@/layout/EmptyState'
 import FullBleed from '@/layout/FullBleed'
+import { useUIStore } from '@/stores/useUIStore'
 import { useUserStore } from '@/stores/useUserStore'
+import { LICENSE_FEATURE_LABELS, licenseRequiredMessage, licenseState } from '@/utils/license'
 import { useGuardrailsStore } from './store'
 import GuardrailListItem from './components/GuardrailListItem'
 import GuardrailsPromotion from './components/GuardrailsPromotion'
-
-const FREE_LICENSE_LIMIT_MESSAGE =
-  'Your organization has reached Guardrails free usage limits. Upgrade to Enterprise to keep your sensitive data protected.'
 
 export default function Guardrails() {
   const navigate = useNavigate()
@@ -26,7 +25,11 @@ export default function Guardrails() {
   const listStatus = useGuardrailsStore((s) => s.listStatus)
   const fetchList = useGuardrailsStore((s) => s.fetchList)
 
+  // Creating a rule needs a valid Enterprise license (hard zero on the client).
+  // Editing and deleting the rules that exist stay open in every state.
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
+  const licenseInfo = useUserStore((s) => s.licenseInfo)
+  const openLicenseModal = useUIStore((s) => s.openLicenseModal)
   // A DLP provider (gcp or mspresidio) is required to enforce guardrails;
   // has_redact_credentials is true only when one of those is configured.
   const hasRedactCredentials = useUserStore((s) => s.hasRedactCredentials)
@@ -49,7 +52,11 @@ export default function Guardrails() {
     return guardrails
   }, [list, selectedRole])
 
-  const atFreeLimit = isFreeLicense && list.length >= 1
+  const createBlocked = isFreeLicense
+  const licenseMessage = licenseRequiredMessage(
+    LICENSE_FEATURE_LABELS.guardrails,
+    licenseState(licenseInfo),
+  )
   const loading = listStatus === 'loading'
   const showLoader = useMinDelay(loading && list.length === 0, 500)
   const activeFilterCount = selectedRole ? 1 : 0
@@ -79,7 +86,11 @@ export default function Guardrails() {
   if (list.length === 0) {
     return (
       <FullBleed>
-        <GuardrailsPromotion dlpAvailable onCreate={goCreate} />
+        <GuardrailsPromotion
+          dlpAvailable
+          onCreate={goCreate}
+          onAddLicense={createBlocked ? openLicenseModal : undefined}
+        />
       </FullBleed>
     )
   }
@@ -93,14 +104,12 @@ export default function Guardrails() {
             Create custom rules to guide and protect usage within your resource roles
           </Text>
         </Stack>
-        <Button onClick={goCreate} disabled={atFreeLimit}>
+        <Button onClick={goCreate} disabled={createBlocked}>
           Create a new Guardrail
         </Button>
       </Group>
 
-      {atFreeLimit && (
-        <FreeLicenseCallout message={FREE_LICENSE_LIMIT_MESSAGE} variant="limit" />
-      )}
+      {createBlocked && <FreeLicenseCallout message={licenseMessage} />}
 
       <Group gap="sm">
         <AsyncValueFilter

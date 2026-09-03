@@ -7,12 +7,14 @@ import Badge from '@/components/Badge'
 import Button from '@/components/Button'
 import ConnectionsMultiSelect from '@/components/ConnectionsMultiSelect'
 import EnterpriseBanner from '@/components/EnterpriseBanner'
+import FreeLicenseCallout from '@/components/FreeLicenseCallout'
 import Modal from '@/components/Modal'
 import MultiSelect from '@/components/MultiSelect'
 import PageLoader from '@/components/PageLoader'
 import TextInput from '@/components/TextInput'
 import { PAGE_PADDING } from '@/layout/PageLayout'
 import { useUserStore } from '@/stores/useUserStore'
+import { LICENSE_FEATURE_LABELS, licenseRequiredMessage, licenseState } from '@/utils/license'
 import { showSnackbar } from '@/utils/snackbar'
 import { useGuardrailsStore } from '../store'
 import { apiRulesToRows, formToPayload, orphanMessageError } from '../helpers'
@@ -48,7 +50,16 @@ function GuardrailFormFields({ guardrail, id, isEdit }) {
   const { ref: sentinelRef, inViewport: headerInView } = useInViewport()
   const [deleteOpened, deleteModal] = useDisclosure(false)
 
+  // Creating a rule needs a valid Enterprise license (hard zero on the client).
+  // Editing and deleting the rules that exist stay open in every state, so a
+  // deep link to the create route shows the form with Save disabled, not a 403.
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
+  const licenseInfo = useUserStore((s) => s.licenseInfo)
+  const blockedByLicense = !isEdit && isFreeLicense
+  const licenseMessage = licenseRequiredMessage(
+    LICENSE_FEATURE_LABELS.guardrails,
+    licenseState(licenseInfo),
+  )
 
   const submitting = useGuardrailsStore((s) => s.submitting)
   const createGuardrail = useGuardrailsStore((s) => s.createGuardrail)
@@ -70,7 +81,7 @@ function GuardrailFormFields({ guardrail, id, isEdit }) {
 
   const setField = (patch) => setForm((f) => ({ ...f, ...patch }))
 
-  const canSubmit = form.name.trim().length > 0 && !submitting
+  const canSubmit = form.name.trim().length > 0 && !submitting && !blockedByLicense
 
   const handleSave = async () => {
     if (!canSubmit) return
@@ -191,6 +202,12 @@ function GuardrailFormFields({ guardrail, id, isEdit }) {
       {isFreeLicense && (
         <Box mb="xl">
           <EnterpriseBanner />
+        </Box>
+      )}
+
+      {blockedByLicense && (
+        <Box mb="xl">
+          <FreeLicenseCallout message={licenseMessage} />
         </Box>
       )}
 

@@ -31,16 +31,30 @@ const FEATURE_ITEMS = [
 const DEPRECATED_GCP_INFO =
   'Your organization has a deprecated Google Cloud DLP configuration. Check our Microsoft Presidio documentation to enable an upgraded version of Live Data Masking setup in your environment.'
 
+const LICENSE_REQUIRED_INFO =
+  'Creating masking rules needs an Enterprise license. Add your license, or talk to sales from the dialog.'
+
 // Providers whose masking is driven by data-masking rules, so the org can be
 // sent straight into the create flow.
 const RULE_DRIVEN_PROVIDERS = ['mspresidio', 'alcatraz']
 
-export default function DataMaskingPromotion({ redactProvider, onConfigure }) {
-  const providerProps = RULE_DRIVEN_PROVIDERS.includes(redactProvider)
+// `onAddLicense` set means creation is blocked by the license: the primary
+// action installs one instead of opening a form whose Save is disabled. The
+// provider requirement still comes first, since no license changes it.
+export default function DataMaskingPromotion({ redactProvider, onConfigure, onAddLicense }) {
+  const createProps = onAddLicense
     ? {
+        onPrimaryClick: onAddLicense,
+        primaryText: 'Add your license',
+        extraInformation: LICENSE_REQUIRED_INFO,
+      }
+    : {
         onPrimaryClick: onConfigure,
         primaryText: 'Configure Live Data Masking',
       }
+
+  const providerProps = RULE_DRIVEN_PROVIDERS.includes(redactProvider)
+    ? createProps
     : {
         docsHref: docsUrl.features.aiDatamasking,
         docsText: 'Go to Live Data Masking Docs',
