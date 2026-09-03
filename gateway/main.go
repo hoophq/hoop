@@ -190,10 +190,15 @@ func Run(mode appconfig.AppMode) {
 // runControlPlane serves the control plane: the HTTP API and nothing else.
 // It administers a fleet of sidecars, so it accepts no agent or client
 // connection — the gRPC transport, the protocol proxies and the transport
-// plugins never start. The API surface is still being ported route by route
-// (see Api.buildControlPlaneRoutes), so today it answers /api/healthz only.
+// plugins never start. The HTTP API is the gateway's (see Api.BuildEngine);
+// a route that needs the transport fails per request.
 func runControlPlane(tlsConfig *tls.Config) {
-	a := &api.Api{TLSConfig: tlsConfig}
+	a := &api.Api{
+		// A review verdict releases the gRPC stream that waits on it. This
+		// mode holds no stream, so the verdict is complete once written.
+		ReleaseConnectionFn: func(_, _, _, _, _, _ string) {},
+		TLSConfig:           tlsConfig,
+	}
 
 	bootstrap.Phase("Starting API")
 	apiStep := bootstrap.Step("HTTP API")

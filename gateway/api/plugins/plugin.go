@@ -11,7 +11,6 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
-	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
@@ -32,27 +31,6 @@ type PluginRequest struct {
 	Config      *types.PluginConfig        `json:"config"`
 }
 
-// controlPlanePlugin is the only plugin the control plane administers. Slack is
-// where review approvals are delivered; the rest (dlp, review, audit,
-// access_control, webhooks, runbooks, indexer) configure the gateway's session
-// pipeline, which a control plane does not run.
-const controlPlanePlugin = "slack"
-
-// hiddenOnControlPlane answers 404 for any plugin other than slack when the
-// process serves the control-plane surface.
-//
-// The route allow-list in gateway/api/apiroutes/controlplane.go cannot express this:
-// /plugins is one route for every plugin, and the name arrives in the body or a
-// path param. This is the case the APP_MODE flag exists for. The response
-// matches a blocked route exactly, so the two are indistinguishable to a caller.
-func hiddenOnControlPlane(c *gin.Context, pluginName string) bool {
-	if !appconfig.Get().IsControlPlane() || pluginName == controlPlanePlugin {
-		return false
-	}
-	c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
-	return true
-}
-
 // CreatePlugin
 //
 //	@Summary		Create Plugin
@@ -71,10 +49,6 @@ func Post(c *gin.Context) {
 	var req PluginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
-		return
-	}
-
-	if hiddenOnControlPlane(c, req.Name) {
 		return
 	}
 
@@ -140,10 +114,6 @@ func Put(c *gin.Context) {
 		return
 	}
 
-	if hiddenOnControlPlane(c, req.Name) {
-		return
-	}
-
 	existingPlugin, err := models.GetPluginByName(models.DB, ctx.OrgID, req.Name)
 	switch err {
 	case models.ErrNotFound:
@@ -180,9 +150,6 @@ func Put(c *gin.Context) {
 func PutConfig(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	pluginName := c.Param("name")
-	if hiddenOnControlPlane(c, pluginName) {
-		return
-	}
 	var envVars map[string]string
 	if err := c.ShouldBindJSON(&envVars); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
@@ -239,9 +206,6 @@ func PutConfig(c *gin.Context) {
 func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 	name := c.Param("name")
-	if hiddenOnControlPlane(c, name) {
-		return
-	}
 	obj, err := models.GetPluginByName(models.DB, ctx.OrgID, name)
 	switch err {
 	case models.ErrNotFound:
@@ -271,15 +235,8 @@ func List(c *gin.Context) {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing plugins: %v", err)
 		return
 	}
-	isControlPlane := appconfig.Get().IsControlPlane()
 	var out []*openapi.Plugin
 	for _, p := range itemList {
-		// Listing has no name in the request, so the filter is applied to the
-		// result instead of refused up front. Without it a control-plane admin
-		// sees every gateway plugin and can read which are enabled.
-		if isControlPlane && p.Name != controlPlanePlugin {
-			continue
-		}
 		plugin := toOpenApi(&p)
 		if config := plugin.Config; config != nil {
 			for key := range config.EnvVars {
