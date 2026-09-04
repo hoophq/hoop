@@ -23,7 +23,7 @@ import { usersService } from '@/services/users'
 import { authService } from '@/services/auth'
 import { docsUrl } from '@/utils/docsUrl'
 import { showSnackbar } from '@/utils/snackbar'
-import { ROLE_ADMIN, ROLE_OPTIONS, roleLabel, roleToGroups } from '@/utils/roles'
+import { ROLE_ADMIN, roleLabel, roleOptions, roleToGroups } from '@/utils/roles'
 import { useUserStore } from '@/stores/useUserStore'
 
 const STATUS_OPTIONS = [
@@ -145,7 +145,7 @@ function UserFormModal({ opened, onClose, formType, user, isLocalAuth, onSaved }
           )}
           <Select
             label="Role"
-            data={ROLE_OPTIONS}
+            data={roleOptions(role)}
             value={role}
             onChange={setRole}
             required

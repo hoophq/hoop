@@ -183,6 +183,12 @@ func (r *Router) AuthMiddleware(c *gin.Context) {
 
 	// it's an unregistered user, validate it via user info
 	routeType := routeTypeFromContext(c)
+
+	if routeType != routeUserInfoType && !hasControlPlaneRole(ctx) {
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"message": "access denied"})
+		return
+	}
+
 	if routeType == routeUserInfoType && ctx.IsEmpty() {
 		uinfo, err := r.validateTokenWithUserInfo(tokenVerifier, c)
 		if err != nil {
@@ -433,4 +439,12 @@ func GetAccessTokenFromRequest(c *gin.Context) string {
 		return tokenParts[1]
 	}
 	return ""
+}
+
+func hasControlPlaneRole(ctx *models.Context) bool {
+	if !appconfig.Get().IsControlPlane() ||
+		!featureflag.IsEnabled(ctx.OrgID, "experimental.controlplane_require_role") {
+		return true
+	}
+	return ctx.IsAdmin() || ctx.IsApprover()
 }
