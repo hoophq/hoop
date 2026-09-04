@@ -783,5 +783,8 @@ func toRole(user openapi.User) string {
 	if slices.Contains(user.Groups, types.GroupApprover) {
 		return string(openapi.RoleApproverType)
 	}
+	if slices.Contains(user.Groups, types.GroupAuditor) {
+		return string(openapi.RoleAuditorType)
+	}
 	return string(openapi.RoleStandardType)
 }
