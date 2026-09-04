@@ -53,15 +53,17 @@ claim: hoop-inspect is an ordinary upstream. To close the last port and have
 Envoy reach it over a unix socket instead, add the overlay in
 [`uds/`](uds/README.md): same lanes, same policy, no data port open at all.
 
-[`grpc/`](grpc/README.md) adds a third protocol twice over: a gRPC lane
-behind a new Envoy `:8444` listener (TLS, ALPN h2, the same OPA fat gate)
-and the same lane published directly on `:18443` as the without-Envoy
-path. It ships a dummy `demo.v1.Ledger` upstream hand-rolled over stdlib
-h2c — no gRPC library, so the protocol intelligence demonstrably stays in
-the sidecar — and a `grpcurl` client service, so the host needs nothing
-installed. The lane adds no rules: it inherits the process's one guardrail
-and one mask rule, refusing a taxpayer id inside a protobuf field and
-redacting an email out of a response by re-encoding the frame.
+[`grpc/`](grpc/README.md) adds a third protocol three ways: a gRPC lane
+behind a new Envoy `:8444` listener (TLS, ALPN h2, the same OPA fat gate),
+the same lane published directly on `:18443` as the without-Envoy h2c
+path, and a self-contained standalone compose where the lane terminates
+the client's TLS itself and the demo asserts the masking. It ships a dummy
+`demo.v1.Ledger` upstream hand-rolled over stdlib h2c — no gRPC library,
+so the protocol intelligence demonstrably stays in the sidecar — and a
+`grpcurl` client service, so the host needs nothing installed. The lane
+adds no rules: it inherits the process's one guardrail and one mask rule,
+refusing a taxpayer id inside a protobuf field and redacting an email out
+of a response by re-encoding the frame.
 
 Two more overlays add an MSSQL lane, and what separates them is who terminates
 the client's TLS. [`mssql/`](mssql/README.md) runs SQL Server 2022 over TDS

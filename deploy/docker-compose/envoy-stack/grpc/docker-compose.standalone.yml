@@ -1,0 +1,112 @@
+# Standalone: hoop-inspect is the front door. No Envoy, no OPA.
+#
+#   docker compose -f docker-compose.standalone.yml up -d --wait --build
+#   ./demo-standalone.sh
+#
+# Run it from this directory, with the envoy stack DOWN: both publish
+# 18443 and 19000 on the host. This is NOT an overlay -- it is a complete
+# three-service stack (plus two init jobs) demonstrating ADR-0013's
+# standalone mode: the gRPC lane terminates the client's TLS itself
+# (downstream_tls in config-standalone.yaml), applies the same guardrail
+# and masking, and forwards h2c to the ledger upstream.
+#
+#   grpcurl ──TLS──> hoop-inspect:18443 ──h2c──> ledger:9000
+#
+# Contrast with docker-compose.grpc.yml, the first without-Envoy way:
+# there the lane listens for cleartext h2c and the hop is trusted because
+# it never leaves the pod. Here there is nothing to trust: the hop is
+# encrypted by the lane itself, and a -plaintext client cannot even
+# complete a handshake.
+
+name: hoop-grpc-standalone
+
+services:
+  ledger:
+    image: hoop-grpc-ledger:local
+    build: ./app
+    networks: [inspect]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9000/healthz"]
+      interval: "2s"
+      timeout: "5s"
+      retries: 10
+      start_period: "5s"
+
+  # Same init as the overlay: publish the FileDescriptorSet the image
+  # compiled from ledger.proto, readable by the sidecar's uid 10001.
+  grpc-descriptors:
+    image: hoop-grpc-ledger:local
+    build: ./app
+    user: "0"
+    entrypoint: ["/bin/sh", "-c", "cp /srv/ledger.pb /descriptors/ledger.pb && chmod 444 /descriptors/ledger.pb"]
+    volumes:
+      - grpc-descriptors:/descriptors
+
+  # Mints the lane's self-signed TLS pair once, into a volume. Root,
+  # because the volume arrives root-owned; the key ends up owned by the
+  # sidecar's uid 10001 at 0400, the cert world-readable. Idempotent, so
+  # a restart does not rotate the cert under a running lane.
+  lane-certs:
+    image: alpine:3.20
+    networks: [inspect]
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        [ -f /certs/lane.crt ] && exit 0
+        apk add --no-cache openssl >/dev/null
+        openssl req -x509 -newkey rsa:2048 -nodes -days 30 \
+          -keyout /certs/lane.key -out /certs/lane.crt \
+          -subj "/CN=hoop-inspect" \
+          -addext "subjectAltName=DNS:hoop-inspect,DNS:localhost,IP:127.0.0.1"
+        chown 10001:10001 /certs/lane.key /certs/lane.crt
+        chmod 0400 /certs/lane.key
+        chmod 0444 /certs/lane.crt
+    volumes:
+      - lane-certs:/certs
+
+  hoop-inspect:
+    image: hoop-inspect:local
+    # The same image the envoy stack builds; contexts re-rooted because
+    # this file lives two directories deeper.
+    build:
+      context: ../../../../sidecar
+      dockerfile: ../deploy/docker-compose/envoy-stack/sidecar/Dockerfile
+      additional_contexts:
+        libhoop: ../../../../libhoop
+    networks: [inspect]
+    volumes:
+      - ./config-standalone.yaml:/etc/hoop-inspect/config.yaml:ro
+      - grpc-descriptors:/etc/hoop-inspect/descriptors:ro
+      - lane-certs:/etc/hoop-inspect/certs:ro
+    ports:
+      - "18443:18443"   # the TLS gRPC lane -- the front door
+      - "19000:19000"   # admin: /healthz, /stats, /api/sessions
+    depends_on:
+      grpc-descriptors: { condition: service_completed_successfully }
+      lane-certs: { condition: service_completed_successfully }
+      ledger: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:19000/healthz || exit 1"]
+      interval: "2s"
+      timeout: "10s"
+      retries: 15
+      start_period: "5s"
+
+  # On-demand client: docker compose -f docker-compose.standalone.yml \
+  #   run --rm grpcurl -insecure -protoset /descriptors/ledger.pb \
+  #   -d '{"id":"INV-1001"}' hoop-inspect:18443 demo.v1.Ledger/GetInvoice
+  grpcurl:
+    image: fullstorydev/grpcurl:latest
+    profiles: [cli]
+    networks: [inspect]
+    volumes:
+      - grpc-descriptors:/descriptors:ro
+
+networks:
+  inspect:
+
+volumes:
+  grpc-descriptors:
+  lane-certs:

@@ -1,0 +1,77 @@
+# hoop-inspect standing alone: no Envoy, no OPA, one gRPC lane that owns
+# the client's TLS (ADR-0013's standalone mode).
+#
+#   grpcurl ──TLS──> hoop-inspect:18443 ──h2c──> ledger:9000
+#
+# This is the second way to run the lane without Envoy. The first, in
+# config-grpc.yaml, listens for cleartext HTTP/2 and relies on the hop
+# staying inside the pod; this one terminates TLS itself via
+# downstream_tls, so the client dials a normal TLS endpoint and no
+# -plaintext opt-in exists. ./demo-standalone.sh proves both directions:
+# the TLS call masks, the plaintext call cannot even handshake.
+#
+# What is deliberately ABSENT:
+#   - identity_header. It is a proxy-trust contract, and there is no proxy:
+#     nothing authenticated the caller, so honoring a header would let
+#     anyone assert any identity. Sessions record principal=anonymous.
+#     The authenticated alternative on a standalone lane is client
+#     certificates (downstream_tls.ca_file + cert verification), where the
+#     verified certificate's URI SAN or subject CN names the caller.
+#   - opa. The fat gate was Envoy's tier; the lane's own guardrails and
+#     masking are the whole story here.
+#
+# The policy budget is the same one the whole stack lives under: one
+# guardrail rule, one mask rule, both below, both inherited by the lane.
+#
+# Validate without starting anything (the descriptor caveat from
+# config-grpc.yaml applies here too: -validate opens both the descriptor
+# set and the TLS key, which are container paths).
+
+log_level: info
+
+admin:
+  listen: 0.0.0.0:19000
+
+audit:
+  file: "-"
+  memory_buffer: 256
+  async_queue_size: 1024
+  query_sessions: 500
+
+# Narrowed to what this compose demonstrates: the mask rule reads
+# EMAIL_ADDRESS, the guardrail reads BR_CPF. Omitting the section entirely
+# would activate all 54 entity types; see ../sidecar/config.yaml for why
+# the stack narrows on purpose.
+pii:
+  entities:
+    - EMAIL_ADDRESS
+    - BR_CPF
+
+guardrails:
+  mode: enforce
+  rules:
+    - name: no-cpf-in-query
+      type: pii
+      entities: [BR_CPF]
+      message: do not put a taxpayer id in a query; it lands in the database's own logs
+
+mask:
+  rules:
+    - {name: emails, entities: [EMAIL_ADDRESS], strategy: redact}
+
+listeners:
+  - name: ledger
+    protocol: grpc
+    listen: 0.0.0.0:18443
+    upstream: ledger:9000
+    # The lane is the TLS server. The cert is self-signed by the
+    # lane-certs init service (SANs: hoop-inspect, localhost), so demo
+    # clients pass -insecure; a real deployment mounts a real pair and
+    # clients verify normally. ALPN is handled by the lane: it offers h2
+    # and a gRPC client negotiates it or hangs up.
+    downstream_tls:
+      cert_file: /etc/hoop-inspect/certs/lane.crt
+      key_file: /etc/hoop-inspect/certs/lane.key
+    grpc:
+      descriptors: /etc/hoop-inspect/descriptors/ledger.pb
+      capture_payload: true

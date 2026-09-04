@@ -102,15 +102,46 @@ and drops the header.
 left on TLS defaults fails the direct dial. That is the protocol working
 as designed — opt into plaintext, or terminate TLS at the lane.
 
+## Standalone: the lane owns TLS (the second way without Envoy)
+
+The overlay's direct `:18443` path is cleartext h2c, trusted because the
+hop stays inside the pod. `docker-compose.standalone.yml` is the other
+without-Envoy shape, and it is not an overlay — a complete stack of its
+own where the lane terminates the client's TLS itself:
+
+```
+grpcurl ──TLS──> hoop-inspect:18443 ──h2c──> ledger:9000
+```
+
+```bash
+# from this directory, with the envoy stack down (same host ports)
+docker compose -f docker-compose.standalone.yml up -d --wait --build
+./demo-standalone.sh
+```
+
+`config-standalone.yaml` gives the lane `downstream_tls` (a self-signed
+pair minted once by the `lane-certs` init service) and drops
+`identity_header` — there is no proxy to trust, so sessions record
+`principal=anonymous`; client certificates are the standalone way to name
+a caller. Policy and masking are the stack's same two rules, and the demo
+ASSERTS the mask: it exits non-zero unless `customer_email` comes back as
+`[REDACTED:EMAIL_ADDRESS]` and the clear value never reaches the client.
+It also shows the flip side of TLS ownership: the `-plaintext` dial that
+is the overlay's direct path fails here at the handshake, before gRPC
+exists.
+
 ## Files
 
 | File | Role |
 |---|---|
 | `docker-compose.grpc.yml` | the overlay: ledger, descriptors volume, envoy + sidecar swaps, grpcurl |
-| `config-grpc.yaml` | base lanes verbatim plus the `ledger` grpc lane |
+| `config-grpc.yaml` | base lanes verbatim plus the `ledger` grpc lane (h2c) |
 | `envoy-grpc.yaml` | base Envoy config plus the `:8444` gRPC listener and h2 cluster |
+| `docker-compose.standalone.yml` | self-contained no-Envoy stack: the lane terminates TLS |
+| `config-standalone.yaml` | one TLS lane, no identity header, same two rules |
 | `app/` | proto, hand-rolled server, image build (binary + descriptor set) |
-| `demo-grpc.sh` | the walk |
+| `demo-grpc.sh` | the overlay walk (through Envoy, and direct h2c) |
+| `demo-standalone.sh` | the standalone walk; asserts the masking |
 
 The OPA policy is shared with the base stack; `opa/authz.rego` keys the
 service on the listener port (`:8443` → httpbin, `:8444` → ledger), so one
