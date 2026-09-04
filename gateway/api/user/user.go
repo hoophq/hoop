@@ -144,6 +144,7 @@ func Create(c *gin.Context) {
 		trackClient.Close()
 	}()
 
+	newUser.Role = toRole(newUser)
 	c.JSON(http.StatusCreated, newUser)
 }
 
@@ -442,6 +443,8 @@ func GetUserInfo(c *gin.Context) {
 		roleName = openapi.RoleUnregisteredType
 	case ctx.IsAdminUser():
 		roleName = openapi.RoleAdminType
+	case ctx.IsApproverUser():
+		roleName = openapi.RoleApproverType
 	case ctx.IsAuditorUser():
 		roleName = openapi.RoleAuditorType
 	}
@@ -774,6 +777,9 @@ func isValidMailAddress(email string) bool {
 func toRole(user openapi.User) string {
 	if slices.Contains(user.Groups, types.GroupAdmin) {
 		return string(openapi.RoleAdminType)
+	}
+	if slices.Contains(user.Groups, types.GroupApprover) {
+		return string(openapi.RoleApproverType)
 	}
 	return string(openapi.RoleStandardType)
 }

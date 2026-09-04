@@ -136,6 +136,8 @@ func (c *Context) GroupRoleName() string {
 			return "admin"
 		case types.GroupAuditor:
 			return "auditor"
+		case types.GroupApprover:
+			return "approver"
 		}
 	}
 	return "regular"

@@ -8,6 +8,7 @@ import {
   VenetianMask,
   Users
 } from 'lucide-react';
+import { ROLE_ADMIN, ROLE_APPROVER } from '@/utils/roles'
 
 // The control plane navigation.
 //
@@ -16,8 +17,8 @@ import {
 // mirrored in features/CommandPalette/constants.js; keep both in sync.
 
 export const MAIN_ITEMS = [
-  { label: 'Sidecars', path: '/sidecars', icon: Container, adminOnly: true },
-  { label: 'Reviews', path: '/reviews', icon: Signature, adminOnly: true }
+  { label: 'Sidecars', path: '/sidecars', icon: Container, role: ROLE_ADMIN },
+  { label: 'Reviews', path: '/reviews', icon: Signature, role: ROLE_APPROVER }
 ]
 
 // Slack sits under Reviews because that is where an approval is delivered — a
@@ -27,10 +28,10 @@ export const REVIEW_ITEMS = [
     label: 'Rules',
     path: '/reviews/rules',
     icon: CircleCheckBig,
-    adminOnly: true,
+    role: ROLE_ADMIN,
     licenseFeature: 'access-requests'
   },
-  { label: 'Slack', path: '/reviews/slack', icon: MessageSquare, adminOnly: true }
+  { label: 'Slack', path: '/reviews/slack', icon: MessageSquare, role: ROLE_ADMIN }
 ]
 
 // Configured here, distributed to the fleet by Feature Configuration Across the Fleet.
@@ -41,25 +42,25 @@ export const FEATURE_ITEMS = [
     label: 'Session Analyzer',
     path: '/features/ai-session-analyzer',
     icon: Sparkles,
-    adminOnly: true,
+    role: ROLE_ADMIN,
     licenseFeature: 'ai-session-analyzer'
   },
   {
     label: 'Guardrails',
     path: '/guardrails',
     icon: ShieldCheck,
-    adminOnly: true,
+    role: ROLE_ADMIN,
     licenseFeature: 'guardrails'
   },
   {
     label: 'Live Data Masking',
     path: '/features/data-masking',
     icon: VenetianMask,
-    adminOnly: true,
+    role: ROLE_ADMIN,
     licenseFeature: 'data-masking'
   }
 ]
 
 export const ORGANIZATION_ITEMS = [
-  { label: 'Administrators', path: '/organization/users', icon: Users, adminOnly: true }
+  { label: 'Users', path: '/organization/users', icon: Users, role: ROLE_ADMIN }
 ]

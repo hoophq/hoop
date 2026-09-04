@@ -252,12 +252,34 @@ teaching `check-assets.mjs` about it**, otherwise the guarantee quietly narrows.
 
 ## Authentication
 
-Admin only. Local auth (email/password) and OAuth/IDP, auto-detected from the gateway.
-Token in `localStorage.jwt-token`. No refresh token: a 401 saves the current URL, clears
-the token and redirects to `/login`.
+Local auth (email/password) and OAuth/IDP, auto-detected from the gateway. Token in
+`localStorage.jwt-token`. No refresh token: a 401 saves the current URL, clears the
+token and redirects to `/login`.
 
-Key files: `stores/useAuthStore.js`, `services/auth.js`, `services/api.js`,
-`components/ProtectedRoute.jsx`, `pages/Auth/`.
+Two roles, read from the `role` field of `/userinfo`: **admin** reaches every page,
+**approver** reaches Reviews. Anything else lands on the dead-end `pages/Home`. A role
+is a reserved group name in `private.user_groups` — `standard` is the absence of one and
+is never stored as a group. `ADMIN_USERNAME` and the auth server config rename the admin
+group, so the group names come from `/serverinfo` (`admin_role_name`,
+`approver_role_name`), never a literal.
+
+Gate a route with `<Page role={ROLE_ADMIN}>`, a nav entry with `role:` in
+`layout/Sidebar/constants.js` and `features/CommandPalette/constants.js`. `hasRole` in
+`utils/roles.js` is the single decision, and admin passes every gate.
+
+**This gates pages, not data.** The backend serves the same routes in both modes
+(ADR-0013) and treats the approver group as unreserved, so an approver has the standard
+user's API access — every read-only route answers them. Do not treat a role gate as
+authorization for what a route returns; the route's own middleware in
+`gateway/api/server.go` is the authority.
+
+That is the ADR's choice, not an oversight: `/healthz` is the only mode-aware handler,
+and "no handler hides a feature by mode — the UI hides what the product does not
+expose". Refusing a role-less user in the auth middleware was tried and reverted. A
+route that must not answer an approver needs a route role, not a mode check.
+
+Key files: `utils/roles.js`, `stores/useAuthStore.js`, `stores/useUserStore.js`,
+`services/auth.js`, `services/api.js`, `components/ProtectedRoute.jsx`, `pages/Auth/`.
 
 ## Symptom — "my CSS Module does nothing on a Mantine component"
 
