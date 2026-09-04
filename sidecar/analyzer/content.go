@@ -3,6 +3,8 @@ package analyzer
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"sort"
 	"strings"
 
 	"github.com/hoophq/hoop/sidecar/inspect"
@@ -12,6 +14,7 @@ func init() {
 	RegisterBuilder(SQLBuilder{Protocol_: inspect.Postgres})
 	RegisterBuilder(SQLBuilder{Protocol_: inspect.MSSQL})
 	RegisterBuilder(SQLBuilder{Protocol_: inspect.MySQL})
+	RegisterBuilder(MongoDBBuilder{})
 	RegisterBuilder(HTTPBuilder{})
 }
 
@@ -123,6 +126,146 @@ func stripSQLLiterals(s string) string {
 		}
 	}
 	return out.String()
+}
+
+// MongoDBBuilder renders a MongoDB command for classification.
+type MongoDBBuilder struct{}
+
+// Protocol implements Builder.
+func (MongoDBBuilder) Protocol() inspect.Protocol { return inspect.MongoDB }
+
+// Build prefixes Extended JSON with the command facts the wire codec derived.
+func (MongoDBBuilder) Build(stmt inspect.Statement, maxBytes int) (Content, bool) {
+	text := strings.TrimSpace(stmt.Text)
+	if text == "" {
+		return Content{}, false
+	}
+
+	var sb strings.Builder
+	sb.WriteString("Protocol: mongodb")
+	if command := stmt.Metadata["mongodb.command"]; command != "" {
+		sb.WriteString("\nCommand: ")
+		sb.WriteString(command)
+	}
+	sb.WriteString("\nOperation: ")
+	sb.WriteString(string(stmt.Operation))
+	if len(stmt.Tables) > 0 {
+		sb.WriteString("\nCollections: ")
+		sb.WriteString(strings.Join(stmt.Tables, ", "))
+	}
+	if stmt.Database != "" {
+		sb.WriteString("\nDatabase: ")
+		sb.WriteString(stmt.Database)
+	}
+	sb.WriteString("\n\n")
+	sb.WriteString(Truncate(text, maxBytes))
+
+	return Content{
+		Text:     sb.String(),
+		CacheKey: mongodbCacheKey(stmt),
+	}, true
+}
+
+// mongodbCacheKey hashes command structure rather than values. Two find
+// commands that differ only in a filter literal need one model call, while
+// different field names, commands and collections remain distinct.
+func mongodbCacheKey(stmt inspect.Statement) string {
+	h := sha256.New()
+	h.Write([]byte(stmt.Protocol))
+	h.Write([]byte{0})
+	h.Write([]byte(stmt.Metadata["mongodb.command"]))
+	h.Write([]byte{0})
+	h.Write([]byte(stmt.Operation))
+	h.Write([]byte{0})
+	h.Write([]byte(stmt.Database))
+	for _, table := range stmt.Tables {
+		h.Write([]byte{0})
+		h.Write([]byte(table))
+	}
+	h.Write([]byte{0})
+	h.Write([]byte(mongodbShape(stmt.Text)))
+	return hex.EncodeToString(h.Sum(nil)[:16])
+}
+
+func mongodbShape(text string) string {
+	decoder := json.NewDecoder(strings.NewReader(text))
+	decoder.UseNumber()
+	var value any
+	if err := decoder.Decode(&value); err != nil {
+		return normalizeSpace(text)
+	}
+	shaped := mongodbShapeValue(value, "")
+	encoded, err := json.Marshal(shaped)
+	if err != nil {
+		return normalizeSpace(text)
+	}
+	return string(encoded)
+}
+
+// batchFields name the arrays whose ORDER and LENGTH carry no meaning a
+// policy could read: a write batch is a bag of documents, and an
+// insertMany of three or of three hundred asks the same question about the
+// same shape. Folding them to their distinct element shapes is what lets one
+// model verdict serve every batch size.
+//
+// Every other array keeps its order and multiplicity, because for most of
+// them the sequence IS the meaning. An aggregation pipeline is the sharp
+// case: `[{$match}, {$limit}]` and `[{$limit}, {$match}]` read the same
+// documents in a different order and can differ in what they expose, so
+// collapsing them to one cache key would hand the second command the first
+// one's verdict.
+var batchFields = map[string]bool{
+	"documents": true,
+	"updates":   true,
+	"deletes":   true,
+	"ops":       true,
+}
+
+// mongodbShapeValue reduces a command to its structure. field is the key the
+// value was found under, empty at the root and for array elements, and it
+// decides only whether this value is a write batch.
+func mongodbShapeValue(value any, field string) any {
+	switch value := value.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(value))
+		for key, item := range value {
+			out[key] = mongodbShapeValue(item, key)
+		}
+		return out
+	case []any:
+		out := make([]any, 0, len(value))
+		for _, item := range value {
+			out = append(out, mongodbShapeValue(item, ""))
+		}
+		if !batchFields[field] {
+			return out
+		}
+		unique := make(map[string]any, len(out))
+		for _, shape := range out {
+			encoded, _ := json.Marshal(shape)
+			unique[string(encoded)] = shape
+		}
+		keys := make([]string, 0, len(unique))
+		for key := range unique {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		folded := make([]any, 0, len(keys))
+		for _, key := range keys {
+			folded = append(folded, unique[key])
+		}
+		return folded
+	case string:
+		return "$string"
+	case json.Number:
+		return "$number"
+	case bool:
+		return "$bool"
+	case nil:
+		return nil
+	default:
+		return "$value"
+	}
 }
 
 // HTTPBuilder renders an HTTP request for classification.

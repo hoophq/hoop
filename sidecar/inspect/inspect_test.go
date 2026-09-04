@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/hoophq/hoop/sidecar/inspect"
 	_ "github.com/hoophq/hoop/sidecar/codec/all"
+	"github.com/hoophq/hoop/sidecar/inspect"
 )
 
 func TestNewUnsupportedProtocol(t *testing.T) {
@@ -21,7 +21,7 @@ func TestRegisteredCoversAllShippedProtocols(t *testing.T) {
 		got[p] = true
 	}
 	for _, want := range []inspect.Protocol{
-		inspect.Postgres, inspect.HTTP,
+		inspect.Postgres, inspect.MSSQL, inspect.MySQL, inspect.MongoDB, inspect.HTTP,
 	} {
 		if !got[want] {
 			t.Errorf("protocol %q is not registered by codec/all", want)
