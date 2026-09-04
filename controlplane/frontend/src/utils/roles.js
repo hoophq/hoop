@@ -1,18 +1,14 @@
 export const ROLE_ADMIN = 'admin'
 export const ROLE_APPROVER = 'approver'
-export const ROLE_AUDITOR = 'auditor'
 export const ROLE_STANDARD = 'standard'
 
-// The control plane has two roles, so those are the two the picker offers.
 export const ROLE_OPTIONS = [
   { value: ROLE_ADMIN, label: 'Administrator', description: 'Full access to the control plane' },
   { value: ROLE_APPROVER, label: 'Approver', description: 'Reviews only' }
 ]
 
-// auditor and standard are observed, never assigned: an IdP group sync or a
-// gateway-era user produces them and this app has no page for either.
+// standard is observed, never assigned: it is the absence of a reserved group.
 const OBSERVED_ROLES = [
-  { value: ROLE_AUDITOR, label: 'Auditor', description: 'Set by your identity provider', disabled: true },
   { value: ROLE_STANDARD, label: 'Standard', description: 'No role in this app', disabled: true }
 ]
 
@@ -20,8 +16,7 @@ export function roleLabel(role) {
   return [...ROLE_OPTIONS, ...OBSERVED_ROLES].find((r) => r.value === role)?.label ?? '—'
 }
 
-// An observed role still has to appear while it is the edited user's own: a Select
-// whose value is missing from its data renders empty.
+// A Select whose value is missing from its data renders empty.
 export function roleOptions(currentRole) {
   const observed = OBSERVED_ROLES.find((r) => r.value === currentRole)
   return observed ? [...ROLE_OPTIONS, observed] : ROLE_OPTIONS
