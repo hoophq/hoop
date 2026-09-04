@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strconv"
 	"time"
 
@@ -23,20 +22,28 @@ import (
 	"github.com/hoophq/hoop/gateway/appconfig"
 	grpckey "github.com/hoophq/hoop/gateway/proxyproto/grpckey"
 	sessionwal "github.com/hoophq/hoop/gateway/session/wal"
-	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"github.com/tidwall/wal"
 )
 
 var (
-	walLogPath       = filepath.Join(plugintypes.AuditPath, "clientexec")
-	walFolderTmpl    = `%s/%s-%s-wal`
 	maxResponseBytes = sessionwal.DefaultMaxRead
 
 	// PlainExecSecretKey is a key to execute plain executions in the gateway securely by this package
 	PlainExecSecretKey string = generateSecureRandomKeyOrDie()
 )
 
-func init() { _ = os.MkdirAll(walLogPath, 0755) }
+func openClientExecWAL() (*wal.Log, string, error) {
+	folderName, err := os.MkdirTemp("", "hoop-clientexec-*")
+	if err != nil {
+		return nil, "", fmt.Errorf("create client execution WAL directory: %w", err)
+	}
+	wlog, err := wal.Open(folderName, wal.DefaultOptions)
+	if err != nil {
+		_ = os.RemoveAll(folderName)
+		return nil, "", fmt.Errorf("open client execution WAL: %w", err)
+	}
+	return wlog, folderName, nil
+}
 
 const nilExitCode int = -2
 
@@ -134,8 +141,7 @@ func New(opts *Options) (*clientExec, error) {
 		}
 	}
 
-	folderName := fmt.Sprintf(walFolderTmpl, walLogPath, opts.OrgID, opts.SessionID)
-	wlog, err := wal.Open(folderName, wal.DefaultOptions)
+	wlog, folderName, err := openClientExecWAL()
 	if err != nil {
 		return nil, err
 	}
@@ -176,6 +182,7 @@ func New(opts *Options) (*clientExec, error) {
 
 	if err != nil {
 		_ = wlog.Close()
+		_ = os.RemoveAll(folderName)
 		return nil, err
 	}
 	ctx, cancelFn := context.WithCancel(context.Background())
