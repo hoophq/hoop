@@ -68,7 +68,13 @@ runs:
           exit 0
         fi
 
-        matches=$(gh api "repos/hoophq/libhoop/pulls?state=open&head=hoophq:${BRANCH}" --jq 'length')
+        # -f parameters are URL-encoded by gh, which matters because a
+        # branch name may legally contain query delimiters (?, &, #).
+        # -f flips gh api to POST, so the method is pinned back to GET.
+        matches=$(gh api -X GET \
+          -f state=open \
+          -f head="hoophq:${BRANCH}" \
+          repos/hoophq/libhoop/pulls --jq 'length')
         if [ "$matches" -eq 0 ]; then
           echo "no open hoophq/libhoop PR from branch '${BRANCH}'; building with the pinned libhoop"
           exit 0
