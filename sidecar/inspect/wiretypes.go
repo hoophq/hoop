@@ -40,10 +40,10 @@ const (
 	MSSQL    = codectypes.MSSQL
 	MySQL    = codectypes.MySQL
 	HTTP     = codectypes.HTTP
-	// GRPC has no codec to register. Spell its stable wire value as the
-	// shared Protocol type so this repository can merge before the
-	// corresponding private libhoop release is pinned here.
-	GRPC = codectypes.Protocol("grpc")
+	// GRPC is canonical in libhoop like every other protocol, but unlike
+	// them it has no codec to register: the lane terminates HTTP/2 and
+	// enters at parsed statements (ADR-0013).
+	GRPC = codectypes.GRPC
 
 	FromClient = codectypes.FromClient
 	FromServer = codectypes.FromServer

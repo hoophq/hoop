@@ -38,3 +38,22 @@ func TestGRPCHasNoByteCodec(t *testing.T) {
 		t.Fatal("grpc unexpectedly registered a byte-stream codec")
 	}
 }
+
+// A gRPC statement carries protobuf renderings, not SQL, and the analyzer
+// must say so rather than silently running the PostgreSQL lexer over
+// protojson and reporting whatever relations it hallucinates.
+func TestAnalyzeSQLFailsClosedForGRPC(t *testing.T) {
+	got := inspect.AnalyzeSQL(`{"note":"DELETE FROM customers"}`, inspect.GRPC)
+	if got.Complete {
+		t.Fatal("grpc analysis reported a complete scan")
+	}
+	if got.Operation != inspect.OpUnknown {
+		t.Fatalf("operation = %q, want unknown", got.Operation)
+	}
+	if got.Reason == "" {
+		t.Fatal("fail-closed result carries no reason")
+	}
+	if len(got.Relations) != 0 || len(got.Tables) != 0 {
+		t.Fatalf("grpc analysis invented relations: %+v", got)
+	}
+}

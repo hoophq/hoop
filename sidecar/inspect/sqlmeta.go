@@ -43,6 +43,18 @@ func AnalyzeSQL(sql string, proto Protocol) SQLAnalysis {
 		d = lexer.MSSQL
 	case MySQL:
 		d = lexer.MySQL
+	case GRPC:
+		// gRPC statements carry protobuf renderings, not SQL. Falling
+		// through to the PostgreSQL lexer would "analyze" protojson and
+		// report whatever relations it hallucinates; an explicit
+		// incomplete result fails closed instead, the same way an
+		// unreadable SQL statement does (a rule naming `unknown` refuses
+		// it, everything else declines to match).
+		return SQLAnalysis{
+			Operation: OpUnknown,
+			Complete:  false,
+			Reason:    "grpc statements carry no SQL to analyze",
+		}
 	}
 	a := lexer.Analyze(sql, d)
 

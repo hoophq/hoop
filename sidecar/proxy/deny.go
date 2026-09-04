@@ -40,6 +40,13 @@ func (ProtocolDenyWriter) Deny(proto inspect.Protocol, dir inspect.Direction, ms
 		return MySQLError(msg)
 	case inspect.HTTP:
 		return HTTPForbidden(msg)
+	case inspect.GRPC:
+		// Deliberately no frame. A gRPC denial is a trailers-only
+		// response with grpc-status and the operator's message, written
+		// by the lane that terminates HTTP/2 (ADR-0013); this relay
+		// never carries a grpc lane, and a frame injected into a
+		// multiplexed HTTP/2 connection mid-stream would corrupt it.
+		return nil
 	}
 	return nil
 }

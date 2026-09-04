@@ -439,6 +439,36 @@ func TestGRPCServerInspectsBodyWhenStatusIsInInitialHeaders(t *testing.T) {
 	}
 }
 
+func TestSplitGRPCMethod(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		path    string
+		service string
+		method  string
+		ok      bool
+	}{
+		{name: "fully qualified", path: "/billing.v1.Invoices/GetInvoice",
+			service: "billing.v1.Invoices", method: "GetInvoice", ok: true},
+		{name: "no package", path: "/Echo/Say", service: "Echo", method: "Say", ok: true},
+		{name: "single char halves", path: "/a/b", service: "a", method: "b", ok: true},
+		{name: "missing leading slash", path: "billing.v1.Invoices/GetInvoice"},
+		{name: "empty", path: ""},
+		{name: "root only", path: "/"},
+		{name: "service only", path: "/billing.v1.Invoices"},
+		{name: "trailing slash no method", path: "/billing.v1.Invoices/"},
+		{name: "empty service", path: "//GetInvoice"},
+		{name: "extra path component", path: "/billing.v1.Invoices/GetInvoice/extra"},
+		{name: "trailing slash after method", path: "/svc/m/"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			service, method, ok := splitGRPCMethod(tt.path)
+			if service != tt.service || method != tt.method || ok != tt.ok {
+				t.Fatalf("splitGRPCMethod(%q) = (%q, %q, %v), want (%q, %q, %v)",
+					tt.path, service, method, ok, tt.service, tt.method, tt.ok)
+			}
+		})
+	}
+}
 func TestGRPCServerEmitsUnknownStatusWhenUpstreamOmitsIt(t *testing.T) {
 	upstreamAddr, stopUpstream := startGRPCTestH2C(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// A broken server or an intermediary that ate the trailers: the

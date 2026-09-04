@@ -569,6 +569,13 @@ func TestDenyWriterDispatch(t *testing.T) {
 			t.Errorf("%s produced no deny frame", proto)
 		}
 	}
+	// gRPC is handled EXPLICITLY and still gets no frame: its denial is a
+	// trailers-only response written by the lane that terminates HTTP/2
+	// (ADR-0013), and injecting bytes into a multiplexed connection
+	// mid-stream would corrupt it.
+	if w.Deny(inspect.GRPC, inspect.FromClient, "x") != nil {
+		t.Error("grpc produced a relay deny frame")
+	}
 	// A protocol with no shipped codec gets no frame: without a decoder
 	// there is no statement to explain a denial about, and emitting bytes a
 	// driver misparses is worse than closing.
