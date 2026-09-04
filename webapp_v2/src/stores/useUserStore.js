@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { identify as analyticsIdentify } from '@/services/analytics'
+import { authService } from '@/services/auth'
 
 const INTERCOM_APP_ID = 'ryuapdmp'
 
@@ -39,6 +40,13 @@ export const useUserStore = create((set, get) => ({
   // /serverinfo postgres_proxy_enabled. Fail closed: without a Postgres proxy
   // listen address the gateway cannot serve a native postgres session.
   postgresProxyEnabled: false,
+  // Which product this bundle renders as: 'gateway' or 'control-plane'. A
+  // property of the deployment, not of the user, so clear() leaves it alone.
+  // 'gateway' until /publicserverinfo says otherwise, which keeps an old gateway
+  // that does not send application_mode behaving exactly as before. Consumers
+  // read it through src/modes (useModeConfig), never directly.
+  appMode: 'gateway',
+  appModeLoaded: false,
   loading: false,
 
   setUser: (user) => set({ user, isAdmin: !!user?.is_admin, isSelfHosted: user?.tenancy_type === 'selfhosted' }),
@@ -65,8 +73,18 @@ export const useUserStore = create((set, get) => ({
       licenseInfo: license || null,
       serverInfoLoaded: true,
       hasRedactCredentials: !!serverInfo?.has_redact_credentials,
-      postgresProxyEnabled: !!serverInfo?.postgres_proxy_enabled
+      postgresProxyEnabled: !!serverInfo?.postgres_proxy_enabled,
+      // The authenticated answer wins over the boot-time /publicserverinfo one.
+      ...(serverInfo?.application_mode && { appMode: serverInfo.application_mode }),
     })
+  },
+  // Boot fetch, called once at module level from main.jsx so StrictMode's
+  // double-invoked effects cannot fire it twice. A failed request keeps the
+  // gateway default.
+  loadAppMode: async () => {
+    if (get().appModeLoaded) return
+    const info = await authService.getPublicServerInfo().catch(() => null)
+    set({ appMode: info?.application_mode || get().appMode, appModeLoaded: true })
   },
   setFeatureFlags: (flags) => set({ featureFlags: flags }),
   isFeatureFlagEnabled: (name) => !!get().featureFlags?.[name],

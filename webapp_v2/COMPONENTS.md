@@ -263,7 +263,19 @@ import StepAccordion from '@/components/StepAccordion'
 Route guard — checks auth, fetches user, handles onboarding redirect. Already wrapping all routes in `Router.jsx`. Do not add another instance.
 
 ### `ClojureApp`
-Bridge component that mounts the CLJS bundle for un-migrated routes. Only used in `Router.jsx` as the `/*` catch-all. Do not use elsewhere.
+Bridge component that mounts the CLJS bundle for un-migrated routes. Rendered by `modes/ModeHome` and `modes/ModeCatchAll` (gateway mode) and by the `/onboarding/*` route in `Router.jsx`. Do not use elsewhere.
+
+### `NotImplemented`
+A route that exists in the information architecture but has no backend yet. Names the project that owes the work and lists what is missing; renders nothing that looks like loaded data.
+```jsx
+<NotImplemented title="Reviews" project="Reviews (Human in the Loop)" missing={['Approve and reject']} />
+```
+
+### `useModeConfig` / `getModeConfig` (`src/modes/`)
+The current application mode's manifest (gateway or control plane): `nav`, `palette`, `home`, `catchAll`, `shell`, `theme`, `postLoginPath`, `postSetupPath`. Hook in components, getter in callbacks. Pages do not use either — see `CLAUDE.md`, "Application modes".
+
+### `ModeThemeProvider` (`src/modes/`)
+The app's `MantineProvider`, fed by the mode's `theme` slot. Mounted once in `main.jsx`.
 
 ### `Input` (theme-level, no wrapper)
 Global resting border color **and height scale** for every Input-based component (`TextInput`, `Select`, `Textarea`, `MultiSelect`, `DatePickerInput`, …) via `Input.extend()` in `src/components/Input/theme.js` (registered in `src/theme.js`). Fields default to `size="md"` = 40px with xs=24 / sm=32 / lg=48 variants — see "Control size scale" above. The border is `--input-bd`, which Mantine declares per variant directly on the input wrapper element — a `:root` override from `cssVariablesResolver` never reaches it, so the extension applies a co-located CSS Module rule on the wrapper instead. Scoped to `[data-variant='default']:not([data-error])` so filled/unstyled variants, the error state, and the focus swap keep Mantine's behavior. To change the app-wide input border, edit `src/components/Input/Input.module.css` — do not add border variables to `cssVariablesResolver`.

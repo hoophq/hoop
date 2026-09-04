@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/useAuthStore'
 import AuthPageLoader from '@/components/AuthPageLoader'
+import { getModeConfig } from '@/modes'
 
 function AuthCallback() {
   const navigate = useNavigate()
@@ -34,7 +35,7 @@ function AuthCallback() {
           if (redirectUrl) {
             window.location.href = redirectUrl
           } else {
-            navigate('/client')
+            navigate(getModeConfig().postLoginPath)
           }
         }, 1500)
       } catch (err) {

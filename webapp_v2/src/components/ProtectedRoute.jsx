@@ -5,6 +5,7 @@ import { useUserStore } from '@/stores/useUserStore'
 import { authService } from '@/services/auth'
 import { connectionsService } from '@/services/connections'
 import { featureFlagsService } from '@/services/featureFlags'
+import { getModeConfig } from '@/modes'
 import AuthPageLoader from '@/components/AuthPageLoader'
 
 function ProtectedRoute({ children, adminOnly = false, licenseFeature = null }) {
@@ -73,8 +74,12 @@ function ProtectedRoute({ children, adminOnly = false, licenseFeature = null }) 
         setFeatureFlags(featureFlags)
 
         // Check onboarding: admin with no connections must go through onboarding.
-        // Skip if already on onboarding routes to avoid a redirect loop.
-        if (currentUser.is_admin && !isOnboardingRoute) {
+        // Skip if already on onboarding routes to avoid a redirect loop. Read
+        // after setServerInfo(): /serverinfo carries application_mode, so the
+        // authenticated answer wins over the boot-time /publicserverinfo default.
+        // The control plane has no onboarding to send anyone to.
+        const { shell } = getModeConfig()
+        if (shell.onboardingRedirect && currentUser.is_admin && !isOnboardingRoute) {
           try {
             const { pages } = await connectionsService.getConnectionsPaginated({ pageSize: 1 })
             if ((pages?.total ?? 0) === 0) {

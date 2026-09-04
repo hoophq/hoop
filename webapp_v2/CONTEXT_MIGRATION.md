@@ -56,10 +56,22 @@ Gateway backend (port 8009)
 | `hoop:native-access-open` (DOM CustomEvent on `window`) | Emitted by `native_client_access/events.cljs` when `window.__hoopReactShellPresent` is set, so CLJS entry points (`/resources`, session details, the CLJS palette) open the React Native Connections drawer. Detail: `{connectionName, reopen?}`. Outlives the CLJS native-access code — those pages stay CLJS past B4.0 |
 | `hoop:native-access-resume` (DOM CustomEvent on `window`) | Same bridge for the post-review resume. Detail: `{connectionName, sessionId, accessDurationSec}` — the duration travels in the event because it comes from the CLJS session-details payload |
 
+### Application modes
+
+The same bundle is the gateway UI and the control plane UI. `useUserStore.appMode`
+(`'gateway'` | `'control-plane'`, from `/publicserverinfo` and `/serverinfo`) selects a
+manifest in `src/modes/` that owns the sidebar sections, the palette items, the landing
+route, the catch-all and the gateway-only chrome (Native Connections, ConfigStatus,
+the onboarding redirect). Routes are not gated by mode. See `CLAUDE.md`, "Application
+modes".
+
 ### Routing Split (Router.jsx)
 
 | Route | Handler | Status |
 |-------|---------|--------|
+| `/` | React (`modes/ModeHome`) | Done — gateway: the CLJS app; control plane: admins → `/sidecars`, others an "Administrators only" dead end |
+| `/sidecars` | React | Placeholder (control plane; `NotImplemented` until the fleet view lands) |
+| `/reviews`, `/reviews/:sessionId` | React | Placeholder (control plane; `NotImplemented`) |
 | `/login` | React | Done |
 | `/register` | React | Done (local auth signup) |
 | `/signup` | React | Done (IDP org setup) |
@@ -118,7 +130,7 @@ Gateway backend (port 8009)
 | `/plugins/manage/jira` | React (redirect) | Done — legacy URL → `/jira-templates?tab=configuration` |
 | `/plugins/manage/slack` | React (redirect) | Done — legacy URL → `/integrations/slack` |
 | `/plugins/manage/webhooks` | React (redirect) | Done — legacy URL → `/integrations/webhooks` |
-| `/*` (catch-all) | ClojureApp (CLJS) | Ongoing — see `MIGRATION_ROADMAP.md` for the wave plan |
+| `/*` (catch-all) | React (`modes/ModeCatchAll`) | Gateway: ClojureApp (CLJS), ongoing — see `MIGRATION_ROADMAP.md` for the wave plan. Control plane: a 404 page, no CLJS |
 
 ---
 
