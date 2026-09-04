@@ -587,10 +587,33 @@ func loadConnections(
 	logger Logger,
 ) (activeCount int, err error) {
 	token, epoch := tokens.Snapshot()
-	conns, err := client.FetchConnections(ctx, client.FetchConnectionsOptions{
+	rotate := func(newToken string) { tokens.Rotate(newToken, epoch) }
+
+	// Some subtypes are only usable when their gateway feature flag is on
+	// (native Oracle today); the agent refuses the session otherwise. Read
+	// the flags on every load rather than caching them at bring-up so a flag
+	// flipped on the gateway takes effect at the next refresh.
+	//
+	// A serverinfo failure must not hide the whole connection list: fall back
+	// to no flags, which filters out only the gated subtypes.
+	var flags map[string]bool
+	si, err := client.FetchServerInfo(ctx, client.FetchServerInfoOptions{
 		APIBaseURL: apiBase,
 		Token:      token,
-		OnNewToken: func(newToken string) { tokens.Rotate(newToken, epoch) },
+		OnNewToken: rotate,
+	})
+	if err != nil {
+		logger.Printf("tunnelmgr: could not read gateway feature flags (%v); "+
+			"feature-gated connections will be hidden", err)
+	} else {
+		flags = si.FeatureFlags
+	}
+
+	conns, err := client.FetchConnections(ctx, client.FetchConnectionsOptions{
+		APIBaseURL:   apiBase,
+		Token:        token,
+		OnNewToken:   rotate,
+		FeatureFlags: flags,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("fetch connections: %w", err)

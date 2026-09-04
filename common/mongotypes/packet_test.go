@@ -2,7 +2,10 @@ package mongotypes
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/hex"
+	"errors"
+	"io"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -86,5 +89,108 @@ func TestDecodeOpMsgToJSON(t *testing.T) {
 				assert.NotNil(t, jsonData)
 			}
 		})
+	}
+}
+
+// newRawPacket builds a wire message with an explicit MessageLength, so tests
+// can craft the malformed lengths a desynced or hostile stream would produce.
+func newRawPacket(messageLength uint32, frame []byte) []byte {
+	out := make([]byte, 16+len(frame))
+	binary.LittleEndian.PutUint32(out[0:4], messageLength)
+	binary.LittleEndian.PutUint32(out[4:8], 1)  // requestID
+	binary.LittleEndian.PutUint32(out[8:12], 0) // responseTo
+	binary.LittleEndian.PutUint32(out[12:16], OpMsgType)
+	copy(out[16:], frame)
+	return out
+}
+
+// A MessageLength below the 16-byte header used to underflow the unsigned
+// subtraction into a multi-gigabyte allocation. It must be rejected instead.
+func TestDecodeRejectsUndersizedMessageLength(t *testing.T) {
+	for _, length := range []uint32{0, 1, 15} {
+		_, err := Decode(bytes.NewReader(newRawPacket(length, nil)))
+		if err == nil {
+			t.Errorf("MessageLength=%d: want an error, got nil", length)
+		}
+	}
+}
+
+// An absurd length means the stream desynced; refuse rather than try to
+// allocate and read it.
+func TestDecodeRejectsOversizedMessageLength(t *testing.T) {
+	_, err := Decode(bytes.NewReader(newRawPacket(MaxMessageSize+1, nil)))
+	if err == nil {
+		t.Fatal("want an error for an oversized MessageLength, got nil")
+	}
+}
+
+// CopyBuffer's contract: one write per wire message, preserved byte-for-byte,
+// regardless of how the reads were chunked. The agent-side proxy decodes one
+// message per write it receives.
+func TestCopyBufferSplitsOnMessageBoundaries(t *testing.T) {
+	first := newRawPacket(16+5, []byte("hello"))
+	second := newRawPacket(16+3, []byte("bye"))
+
+	var writes [][]byte
+	dst := writerFunc(func(p []byte) (int, error) {
+		writes = append(writes, append([]byte(nil), p...))
+		return len(p), nil
+	})
+
+	if err := CopyBuffer(dst, bytes.NewReader(append(first, second...))); err != nil {
+		t.Fatalf("CopyBuffer: %v", err)
+	}
+	if len(writes) != 2 {
+		t.Fatalf("want one write per message (2), got %d", len(writes))
+	}
+	if !bytes.Equal(writes[0], first) || !bytes.Equal(writes[1], second) {
+		t.Error("messages were not forwarded byte-for-byte on their own writes")
+	}
+}
+
+// A clean end-of-stream on a message boundary is the client closing its
+// socket, not a failure.
+func TestCopyBufferCleanEOF(t *testing.T) {
+	dst := writerFunc(func(p []byte) (int, error) { return len(p), nil })
+	if err := CopyBuffer(dst, bytes.NewReader(nil)); err != nil {
+		t.Fatalf("clean EOF should not error, got %v", err)
+	}
+}
+
+// A stream cut mid-message must error rather than forward a partial message.
+func TestCopyBufferTruncatedMessageErrors(t *testing.T) {
+	full := newRawPacket(16+8, []byte("abcdefgh"))
+	var writes int
+	dst := writerFunc(func(p []byte) (int, error) { writes++; return len(p), nil })
+
+	if err := CopyBuffer(dst, bytes.NewReader(full[:len(full)-2])); err == nil {
+		t.Fatal("want an error for a truncated message, got nil")
+	}
+	if writes != 0 {
+		t.Fatalf("truncated message must not be forwarded, got %d writes", writes)
+	}
+}
+
+type writerFunc func(p []byte) (int, error)
+
+func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
+
+// shortWriter accepts only the first n bytes of every write and reports no
+// error, which io.Writer explicitly permits. A relay that ignored the count
+// would forward a truncated message and desync the peer's decoder.
+type shortWriter struct{ accept int }
+
+func (w shortWriter) Write(p []byte) (int, error) {
+	if len(p) > w.accept {
+		return w.accept, nil
+	}
+	return len(p), nil
+}
+
+func TestCopyBufferRejectsShortWrite(t *testing.T) {
+	msg := newRawPacket(16+128, bytes.Repeat([]byte("x"), 128))
+	err := CopyBuffer(shortWriter{accept: 4}, bytes.NewReader(msg))
+	if !errors.Is(err, io.ErrShortWrite) {
+		t.Fatalf("want io.ErrShortWrite for a truncated forward, got %v", err)
 	}
 }
