@@ -41,6 +41,56 @@ func TestGRPCStatusRule(t *testing.T) {
 	}
 }
 
+// gRPC rides HTTP/2, so a trailer statement could carry the transport's
+// synthetic 200. http_status must never read that as an outcome: a 2xx
+// rule would fire on every RPC completion. The same rule keeps matching
+// real HTTP, and http_resource keeps matching gRPC method identity.
+func TestHTTPStatusRuleIgnoresGRPCStatements(t *testing.T) {
+	rules, err := NewRules([]Rule{{
+		Name: "no-2xx", Type: MatchHTTPStatus,
+		httpRuleFields: httpRuleFields{Statuses: []string{"2xx"}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	grpcTrailer := inspect.Statement{
+		Protocol:  inspect.GRPC,
+		Direction: inspect.FromServer,
+		HTTP:      &inspect.HTTPDetail{Method: "POST", Resource: "/billing.v1.Invoices/Get", StatusCode: 200},
+		Metadata:  map[string]string{inspect.MetadataGRPCStatusCode: "0"},
+	}
+	if got := rules.Evaluate(grpcTrailer); got.Denied {
+		t.Fatalf("http_status rule fired on a gRPC completion: %+v", got)
+	}
+
+	httpResponse := inspect.Statement{
+		Protocol:  inspect.HTTP,
+		Direction: inspect.FromServer,
+		HTTP:      &inspect.HTTPDetail{Method: "GET", Resource: "/users/*", StatusCode: 200},
+	}
+	if got := rules.Evaluate(httpResponse); !got.Denied {
+		t.Fatal("the guard must be protocol-scoped: the same rule no longer matches HTTP")
+	}
+}
+
+func TestHTTPResourceRuleStillMatchesGRPCMethods(t *testing.T) {
+	rules, err := NewRules([]Rule{{
+		Name: "no-bulk-export", Type: MatchHTTPResource,
+		httpRuleFields: httpRuleFields{Resources: []string{"/billing.v1.Invoices/ExportAll"}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stmt := inspect.Statement{
+		Protocol: inspect.GRPC,
+		HTTP:     &inspect.HTTPDetail{Method: "POST", Resource: "/billing.v1.Invoices/ExportAll"},
+	}
+	if got := rules.Evaluate(stmt); !got.Denied {
+		t.Fatal("http_resource must keep matching gRPC method identity")
+	}
+}
+
 func TestGRPCStatusRuleRejectsUnknownStatus(t *testing.T) {
 	_, err := NewRules([]Rule{{
 		Name: "bad-status", Type: MatchGRPCStatus,

@@ -119,7 +119,10 @@ func (s *laneStatements) request(r *http.Request) inspect.Statement {
 // the numeric grpc-status; message its grpc-message, already decoded.
 func (s *laneStatements) trailer(hdr http.Header, code int, message string) inspect.Statement {
 	stmt := s.base(inspect.FromServer, hdr)
-	stmt.HTTP.StatusCode = http.StatusOK // every live RPC answers 200
+	// The transport's :status (200 on every live RPC) is deliberately NOT
+	// copied into HTTP.StatusCode: it carries no outcome, and a non-zero
+	// value would hand http_status rules something meaningless to match.
+	// The RPC's outcome is the grpc-status below, matched by grpc_status.
 	stmt.Metadata[inspect.MetadataGRPCStatusCode] = strconv.Itoa(code)
 	if name := inspect.GRPCStatusText(code); name != "" {
 		stmt.Metadata[inspect.MetadataGRPCStatus] = name
