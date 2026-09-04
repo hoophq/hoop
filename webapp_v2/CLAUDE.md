@@ -19,6 +19,7 @@ details: `README.md`.
 src/
 ├── components/          # Presentational components (receive props, no business logic)
 ├── layout/              # App shell: Sidebar, Header, EmptyState
+├── modes/               # Application modes: gateway vs control plane (one manifest each)
 ├── features/            # Complex features (e.g., CommandPalette)
 ├── stores/              # Zustand global stores (cross-route state)
 ├── services/            # Axios API calls (one file per domain)
@@ -37,6 +38,52 @@ src/
 ├── Router.jsx           # Route definitions
 └── main.jsx             # Entry point
 ```
+
+## Application modes — gateway and control plane
+
+One bundle renders as one of two products. The backend decides which: `hoop start
+control-plane` reports `application_mode: "control-plane"` on `/api/publicserverinfo`
+(read once at boot, `main.jsx`) and on `/api/serverinfo` (read after login). The store
+keeps it in `useUserStore.appMode`, default `'gateway'`, and `src/modes/` is the only
+reader.
+
+- **One manifest per mode**: `modes/gateway.js`, `modes/controlPlane.js`. Everything
+  that varies between products is a key in it — sidebar sections (`nav`), command
+  palette items (`palette`), landing route (`home`), catch-all (`catchAll`), the
+  gateway-only chrome (`shell`), the theme slot (`theme`) and the post-login paths.
+- **One hook**: components call `useModeConfig()`; callbacks and effects call
+  `getModeConfig()`. Both live in `modes/index.js`.
+- **Pages never read `appMode`.** If a page needs to behave differently per product,
+  that is a new key in the manifest, read by the shell, not an `if` in the page.
+- **Routes are not gated by mode.** Every route in `Router.jsx` is registered in both
+  products; a page absent from a mode's sidebar is still reachable by URL. Only two
+  leaves are mode-aware: `/` (`modes/ModeHome.jsx`) and `/*` (`modes/ModeCatchAll.jsx`:
+  the CLJS app in the gateway, a 404 page in the control plane). `/onboarding/*` stays
+  CLJS in both.
+- **Adding a nav or palette item** means editing the mode file(s) that should show it.
+  The `nav` and `palette` lists of a mode sit side by side on purpose — keep them in
+  sync. Gating inside a section is unchanged: `adminOnly`, `selfhostedOnly`,
+  `featureFlag`, `licenseFeature`, all applied by `layout/Sidebar/helpers.js#shouldHide`.
+- **A second theme** is a new file next to `src/theme.js`, pointed at by the mode's
+  `theme` key; `modes/ModeThemeProvider.jsx` feeds it to `MantineProvider`.
+- **Roles (control plane).** `/userinfo` reports `role`: **admin** reaches every page,
+  **approver** reaches Reviews, anything else lands on the dead end at `/`. A role is a
+  reserved group name; `standard` is the absence of one and is never stored as a group.
+  The group names come from `/serverinfo` (`admin_role_name`, `approver_role_name`),
+  never a literal. Gate a route with `<ProtectedRoute role={ROLE_APPROVER}>` and a nav
+  or palette item with `role:`; `hasRole` in `utils/roles.js` is the single decision and
+  admin passes every gate. `adminOnly` stays the gateway's gate. This gates pages, not
+  data: the backend serves the same routes in both modes, so the route's own middleware
+  in `gateway/api/server.go` is the authority on what a request returns.
+
+Develop against the control plane with `make run-dev-control-plane` (port 8019) and
+`API_URL=http://localhost:8019 npm run dev`. No shadow-cljs: the control plane never
+loads the CLJS bundle, and Vite serves `/images`, `/icons` and `/data` from
+`webapp/resources/public` itself (`cljsStaticAssets` in `vite.config.js`). The catalog
+JSON there is gitignored — run `npm --prefix ../webapp run download-connection-metadata`
+once. The script listens on 8019 and sets `API_URL` to match; the OIDC callback derives
+from `API_URL`, so with an IdP that only allows the 8009 callback run
+`PORT=8009 make run-dev-control-plane` with the gateway stopped.
 
 ## Architecture Rules
 

@@ -37,7 +37,8 @@ func Get(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, openapi.PublicServerInfo{
-		AuthMethod:    string(authMethod),
-		SetupRequired: setupRequired,
+		AuthMethod:      string(authMethod),
+		SetupRequired:   setupRequired,
+		ApplicationMode: string(appconfig.Get().AppMode()),
 	})
 }

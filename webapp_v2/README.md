@@ -66,6 +66,34 @@ npm run dev
 
 Access the app at `http://localhost:5173`.
 
+**Against the control plane** (the same bundle, rendered as the control plane
+because `/api/publicserverinfo` reports `application_mode: "control-plane"`):
+
+```bash
+make run-dev-control-plane                                 # repo root, control plane on :8019
+npm --prefix ../webapp run download-connection-metadata    # once; the catalog JSON is gitignored
+API_URL=http://localhost:8019 npm run dev                  # no shadow-cljs needed
+```
+
+The control plane never loads the CLJS bundle, so shadow-cljs can stay down.
+`/images`, `/icons` and `/data` are served by Vite straight from
+`webapp/resources/public` (see `cljsStaticAssets` in `vite.config.js`); only
+`/js` and `/css` are proxied to :8280.
+
+**OIDC (Auth0 and friends):** the script sets `API_URL` to the port it listens
+on, and the OIDC callback is derived from `API_URL`. If your IdP only allows
+`http://localhost:8009/api/callback`, run the control plane on that port with
+the gateway stopped (the two cannot share it), and drop the `API_URL` override
+on the Vite side:
+
+```bash
+PORT=8009 make run-dev-control-plane
+npm run dev
+```
+
+Or add `http://localhost:8019/api/callback` to the IdP's allowed callback URLs
+and keep the two ports.
+
 #### Hot reload caveats
 
 - **Vite HMR** updates React/Mantine source under `webapp_v2/src` instantly.

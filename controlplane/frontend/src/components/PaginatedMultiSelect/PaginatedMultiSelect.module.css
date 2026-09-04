@@ -1,7 +1,0 @@
-/* Pill colors come from the global Pill theme (components/Pill/theme.js). */
-
-/* Center the loading bar on the pill's text line. */
-.skeleton {
-  display: inline-block;
-  vertical-align: middle;
-}

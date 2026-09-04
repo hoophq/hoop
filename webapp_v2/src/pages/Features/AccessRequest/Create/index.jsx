@@ -25,7 +25,9 @@ import Switch from '@/components/Switch'
 import TextInput from '@/components/TextInput'
 import { usePaginatedConnections } from '@/hooks/usePaginatedConnections'
 import { PAGE_PADDING } from '@/layout/PageLayout'
+import { useModeConfig } from '@/modes'
 import { useUserStore } from '@/stores/useUserStore'
+import { roleToGroups } from '@/utils/roles'
 import { showSnackbar } from '@/utils/snackbar'
 import { useAccessRequestStore } from '../store'
 import {
@@ -113,6 +115,14 @@ function RuleFormFields({ rule, isEdit }) {
   const deleteRule = useAccessRequestStore((s) => s.deleteRule)
 
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
+  // The control plane starts a rule with the approver group; the gateway with none.
+  // The group name comes from /serverinfo: a deployment may rename it.
+  const { defaultReviewerRoles } = useModeConfig()
+  const adminRoleName = useUserStore((s) => s.adminRoleName)
+  const approverRoleName = useUserStore((s) => s.approverRoleName)
+  const defaultReviewerGroups = defaultReviewerRoles.flatMap((role) =>
+    roleToGroups(role, adminRoleName, approverRoleName),
+  )
 
   // Rules that Hoop manages as part of a protection profile: the API accepts
   // changes to approval settings and group lists only, and refuses to delete
@@ -139,7 +149,7 @@ function RuleFormFields({ rule, isEdit }) {
     () => rule?.all_groups_must_approve ?? true,
   )
   const [reviewersGroups, setReviewersGroups] = useState(
-    () => rule?.reviewers_groups ?? [],
+    () => rule?.reviewers_groups ?? defaultReviewerGroups,
   )
   const [forceApprovalGroups, setForceApprovalGroups] = useState(
     () => rule?.force_approval_groups ?? [],

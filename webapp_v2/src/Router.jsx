@@ -52,6 +52,11 @@ import JiraTemplateForm from '@/pages/JiraTemplates/Form'
 import IntegrationsSlack from '@/pages/Integrations/Slack'
 import IntegrationsWebhooks from '@/pages/Integrations/Webhooks'
 import ComplianceReport from '@/pages/ComplianceReport'
+import Sidecars from '@/pages/Sidecars'
+import NotImplemented from '@/components/NotImplemented'
+import ModeHome from '@/modes/ModeHome'
+import ModeCatchAll from '@/modes/ModeCatchAll'
+import { ROLE_APPROVER } from '@/utils/roles'
 
 // The only lazily-loaded page. Every other route is imported eagerly, but the
 // Dashboard pulls in recharts + d3 (~150KB gzipped) and is reachable by admins
@@ -71,6 +76,12 @@ const Dashboard = lazy(() => import('@/pages/Dashboard'))
  *   The ClojureScript app renders only content (no sidebar, no cmdk)
  *   because react-shell flag is set by ClojureApp.jsx
  *
+ * Application modes (src/modes): every route below is registered in both the
+ * gateway and the control plane. What differs is the sidebar, the palette and
+ * two leaves here — '/' (ModeHome) and the '/*' catch-all (ModeCatchAll: the
+ * CLJS app in the gateway, a 404 page in the control plane). A page absent
+ * from a mode's sidebar is still reachable by URL.
+ *
  * To migrate a page from Clojure to React:
  *   1. Import the React component
  *   2. Add a <Route> above the /* catch-all
@@ -86,6 +97,71 @@ function Router() {
       <Route path="/register" element={<Register />} />
       <Route path="/auth/callback" element={<AuthCallback />} />
       <Route path="/signup/callback" element={<SignupCallback />} />
+
+      {/* Landing. Gateway: the CLJS app owns '/'. Control plane: each role goes to
+          its page, everyone else sees the "Administrators and approvers only" dead end. */}
+      <Route
+        path="/"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <ModeHome />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Control plane pages. Resources are derived from sidecar listeners, never
+          created here; Reviews holds its place until Human in the Loop lands and is
+          the one surface an approver reaches. */}
+      <Route
+        path="/sidecars"
+        element={
+          <ProtectedRoute adminOnly>
+            <Layout>
+              <PageLayout>
+                <Sidecars />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/reviews"
+        element={
+          <ProtectedRoute role={ROLE_APPROVER}>
+            <Layout>
+              <PageLayout>
+                <NotImplemented
+                  title="Reviews"
+                  project="Reviews (Human in the Loop)"
+                  missing={[
+                    'Sessions narrowed to review queries',
+                    'Approve and reject from the control plane',
+                    'The retry path after approval',
+                  ]}
+                />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/reviews/:sessionId"
+        element={
+          <ProtectedRoute role={ROLE_APPROVER}>
+            <Layout>
+              <PageLayout>
+                <NotImplemented
+                  title="Review"
+                  project="Reviews (Human in the Loop)"
+                  missing={['Review session detail', 'Approve and reject']}
+                />
+              </PageLayout>
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
 
       {/* React pages — fully migrated */}
       <Route
@@ -760,13 +836,13 @@ function Router() {
         }
       />
 
-      {/* All other routes → ClojureScript app */}
+      {/* All other routes → ClojureScript app (gateway) or a 404 page (control plane) */}
       <Route
         path="/*"
         element={
           <ProtectedRoute>
             <Layout>
-              <ClojureApp />
+              <ModeCatchAll />
             </Layout>
           </ProtectedRoute>
         }

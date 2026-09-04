@@ -5,7 +5,7 @@ import { useUserStore } from '@/stores/useUserStore'
 import { NavItem } from './NavItem'
 import { ConfigStatus } from './ConfigStatus'
 import { shouldHide } from './helpers'
-import { MAIN_ITEMS, DISCOVER_ITEMS, ORGANIZATION_ITEMS } from './constants'
+import { useModeConfig } from '@/modes'
 import classes from './Sidebar.module.css'
 
 // Left padding lives in the CSS module — it carries an optical correction that
@@ -20,18 +20,19 @@ function SectionLabel({ label, id }) {
 
 export function SidebarExpanded({ navKey }) {
   const { toggleSidebarCollapsed } = useUIStore()
-  const { isAdmin, isSelfHosted } = useUserStore()
+  const { isAdmin, isSelfHosted, role } = useUserStore()
   const isFeatureFlagEnabled = useUserStore((s) => s.isFeatureFlagEnabled)
   const isLicenseFeatureEnabled = useUserStore((s) => s.isLicenseFeatureEnabled)
+  const { nav, shell } = useModeConfig()
 
-  const navItemProps = { isAdmin, isSelfHosted }
+  const navItemProps = { isAdmin, isSelfHosted, role }
 
   // NavItem returns null for a hidden entry, but its <li> wrapper would survive
   // and the Stack would still lay out a gap around it — a non-admin saw a double
   // gap where Dashboard sits between Resources and Terminal. Filter here, like
   // the collapsed rail already does.
   const visible = (items) =>
-    items.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled))
+    items.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled, role))
 
   // No profile block here any more: the user menu lives in the global header
   // (layout/Header/UserMenu.jsx), so user/gatewayVersion/logout moved with it.
@@ -60,49 +61,35 @@ export function SidebarExpanded({ navKey }) {
         classNames={{ root: classes.expandedScrollArea, viewport: classes.scrollFill }}
       >
         <Box px="md" className={classes.scrollContent}>
-          <ConfigStatus />
+          {shell.configStatus && <ConfigStatus />}
 
-          <Box component="ul" role="list" aria-labelledby="sidebar-main-heading" className={classes.navList}>
-            <Stack gap="xsAlt" mb="sm">
-              {visible(MAIN_ITEMS).map(item =>
-                <Box component="li" key={item.path || item.label} className={classes.listItem}>
-                  <NavItem item={item} {...navItemProps} />
-                </Box>
-              )}
-            </Stack>
-          </Box>
-
-          {isAdmin && (
-            <Box component="ul" role="list" aria-labelledby="sidebar-discover-heading" mt="xl" className={classes.navList}>
-              <SectionLabel label="Discover" id="sidebar-discover-heading" />
-              <Stack gap="xsAlt" mb="sm">
-                {visible(DISCOVER_ITEMS).map(item =>
-                  <Box component="li" key={item.path} className={classes.listItem}>
-                    <NavItem item={item} {...navItemProps} />
-                  </Box>
-                )}
-              </Stack>
-            </Box>
-          )}
-
-          {isAdmin && (
-            <Box
-              component="ul"
-              role="list"
-              aria-labelledby="sidebar-organization-heading"
-              mt="xl"
-              className={classes.navList}
-            >
-              <SectionLabel label="Organization" id="sidebar-organization-heading" />
-              <Stack gap="xsAlt" mb="sm">
-                {visible(ORGANIZATION_ITEMS).map(item =>
-                  <Box component="li" key={item.path || item.label} className={classes.listItem}>
-                    <NavItem item={item} {...navItemProps} />
-                  </Box>
-                )}
-              </Stack>
-            </Box>
-          )}
+          {/* One list per section of the mode's nav. A section whose items are
+              all hidden renders nothing, heading included. */}
+          {nav.map(({ id, label, items }) => {
+            const shown = visible(items)
+            if (shown.length === 0) return null
+            const headingId = label ? `sidebar-${id}-heading` : undefined
+            return (
+              <Box
+                key={id}
+                component="ul"
+                role="list"
+                aria-labelledby={headingId}
+                aria-label={label ? undefined : 'Main navigation'}
+                mt={label ? 'xl' : undefined}
+                className={classes.navList}
+              >
+                {label && <SectionLabel label={label} id={headingId} />}
+                <Stack gap="xsAlt" mb="sm">
+                  {shown.map((item) => (
+                    <Box component="li" key={item.path || item.label} className={classes.listItem}>
+                      <NavItem item={item} {...navItemProps} />
+                    </Box>
+                  ))}
+                </Stack>
+              </Box>
+            )
+          })}
         </Box>
       </ScrollArea>
 

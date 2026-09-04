@@ -22,7 +22,10 @@ import MultiSelect from '@/components/MultiSelect'
 import CopyButton from '@/components/CopyButton'
 import { usersService } from '@/services/users'
 import { authService } from '@/services/auth'
+import { useModeConfig } from '@/modes'
+import { useUserStore } from '@/stores/useUserStore'
 import { docsUrl } from '@/utils/docsUrl'
+import { ROLE_ADMIN, roleLabel, roleOptions, roleToGroups } from '@/utils/roles'
 import { showSnackbar } from '@/utils/snackbar'
 
 const STATUS_OPTIONS = [
@@ -31,20 +34,43 @@ const STATUS_OPTIONS = [
   { value: 'reviewing', label: 'Reviewing' },
 ]
 
+// The gateway activates a local user with this password immediately and never forces a
+// change, so it is the account's real credential. The previous generator drew from three
+// eight-word lists with Math.random — 512 possibilities — and because the value lived in
+// component state of a modal that never unmounts, every user invited before a page
+// reload got the SAME one.
+//
+// Readability still matters, since an admin copies this into a message by hand: four
+// words from a larger list plus digits, drawn from crypto.getRandomValues.
+const WORDS = [
+  'amber', 'anchor', 'atlas', 'beacon', 'bridge', 'canyon', 'cedar', 'cobalt',
+  'compass', 'copper', 'coral', 'delta', 'ember', 'falcon', 'forest', 'granite',
+  'harbor', 'indigo', 'ivory', 'jasper', 'juniper', 'lantern', 'marble', 'meadow',
+  'mercury', 'nimbus', 'onyx', 'orbit', 'pepper', 'quartz', 'quiver', 'ridge',
+  'river', 'saffron', 'sierra', 'silver', 'summit', 'thunder', 'timber', 'tundra',
+  'velvet', 'walnut', 'willow', 'zephyr',
+]
+
 function generatePassword() {
-  const adjectives = ['Fast', 'Blue', 'Happy', 'Strong', 'Bright', 'Silent', 'Quick', 'Dark']
-  const colors = ['Red', 'Green', 'Gold', 'Cyan', 'Pink', 'Gray', 'Teal', 'Lime']
-  const animals = ['Tiger', 'Eagle', 'Shark', 'Panda', 'Wolf', 'Bear', 'Hawk', 'Fox']
-  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)]
-  return `${pick(adjectives)}-${pick(colors)}-${pick(animals)}`
+  const bytes = crypto.getRandomValues(new Uint32Array(5))
+  const words = Array.from(bytes.slice(0, 4), (n) => WORDS[n % WORDS.length])
+  return `${words.join('-')}-${String(bytes[4] % 10000).padStart(4, '0')}`
 }
 
 const CREATE_PREFIX = '__new__:'
 
-function UserFormModal({ opened, onClose, formType, user, groups, isLocalAuth, onSaved }) {
+// `usersForm` (modes): 'groups' edits free-form groups, the gateway way;
+// 'roles' assigns one role (utils/roles) and round-trips every other group
+// untouched, so an IdP-synced group survives an edit here.
+function UserFormModal({ opened, onClose, formType, user, groups, isLocalAuth, usersForm, onSaved }) {
+  const adminRoleName = useUserStore((s) => s.adminRoleName)
+  const approverRoleName = useUserStore((s) => s.approverRoleName)
+  const byRole = usersForm === 'roles'
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [selectedGroups, setSelectedGroups] = useState([])
+  const [role, setRole] = useState(ROLE_ADMIN)
+  const [otherGroups, setOtherGroups] = useState([])
   const [status, setStatus] = useState('active')
   const [slackId, setSlackId] = useState('')
   const [password] = useState(() => generatePassword())
@@ -57,12 +83,14 @@ function UserFormModal({ opened, onClose, formType, user, groups, isLocalAuth, o
       setName(user?.name ?? '')
       setEmail(user?.email ?? '')
       setSelectedGroups(user?.groups ?? [])
+      setRole(user?.role ?? ROLE_ADMIN)
+      setOtherGroups((user?.groups ?? []).filter((g) => g !== adminRoleName && g !== approverRoleName))
       setStatus(user?.status ?? 'active')
       setSlackId(user?.slack_id ?? '')
       setGroupOptions(groups.map((g) => ({ value: g.name ?? g, label: g.name ?? g })))
       setGroupSearch('')
     }
-  }, [opened, user, groups])
+  }, [opened, user, groups, adminRoleName, approverRoleName])
 
   const exactMatch = groupOptions.some((o) => o.value === groupSearch)
   const creatableGroupData = groupSearch && !exactMatch
@@ -96,7 +124,10 @@ function UserFormModal({ opened, onClose, formType, user, groups, isLocalAuth, o
     }
     setSaving(true)
     try {
-      const payload = { name, groups: selectedGroups, slack_id: slackId, email }
+      const groupsPayload = byRole
+        ? [...roleToGroups(role, adminRoleName, approverRoleName), ...otherGroups]
+        : selectedGroups
+      const payload = { name, groups: groupsPayload, slack_id: slackId, email }
       if (formType === 'update') {
         payload.id = user.id
         payload.status = status
@@ -136,17 +167,27 @@ function UserFormModal({ opened, onClose, formType, user, groups, isLocalAuth, o
             onChange={(e) => setName(e.currentTarget.value)}
             required
           />
-          <MultiSelect
-            label="Groups"
-            placeholder="Select groups…"
-            data={creatableGroupData}
-            value={selectedGroups}
-            onChange={handleGroupChange}
-            searchable
-            clearable
-            searchValue={groupSearch}
-            onSearchChange={setGroupSearch}
-          />
+          {byRole ? (
+            <Select
+              label="Role"
+              data={roleOptions(role)}
+              value={role}
+              onChange={setRole}
+              required
+            />
+          ) : (
+            <MultiSelect
+              label="Groups"
+              placeholder="Select groups…"
+              data={creatableGroupData}
+              value={selectedGroups}
+              onChange={handleGroupChange}
+              searchable
+              clearable
+              searchValue={groupSearch}
+              onSearchChange={setGroupSearch}
+            />
+          )}
           {formType === 'create' && (
             <TextInput
               label="Email"
@@ -208,6 +249,8 @@ function statusVariant(status) {
 }
 
 export default function Users() {
+  const { usersForm } = useModeConfig()
+  const byRole = usersForm === 'roles'
   const [users, setUsers] = useState([])
   const [groups, setGroups] = useState([])
   const [loading, setLoading] = useState(true)
@@ -216,6 +259,11 @@ export default function Users() {
   const [selectedUser, setSelectedUser] = useState(null)
   const [formType, setFormType] = useState('create')
   const [opened, { open, close }] = useDisclosure(false)
+  // Bumped on every open so UserFormModal remounts. The modal stays mounted with only
+  // `opened` toggling, so without this its initial state — including the generated
+  // password — is computed once for the lifetime of the page.
+  const [formKey, setFormKey] = useState(0)
+  const openForm = () => { setFormKey((n) => n + 1); open() }
 
   const showLoader = useMinDelay(loading)
 
@@ -243,13 +291,13 @@ export default function Users() {
   function handleAdd() {
     setSelectedUser(null)
     setFormType('create')
-    open()
+    openForm()
   }
 
   function handleEdit(user) {
     setSelectedUser(user)
     setFormType('update')
-    open()
+    openForm()
   }
 
   if (showLoader) return <PageLoader />
@@ -283,7 +331,7 @@ export default function Users() {
                 <Table.Tr>
                   <Table.Th>Name</Table.Th>
                   <Table.Th>Email</Table.Th>
-                  <Table.Th>Groups</Table.Th>
+                  <Table.Th>{byRole ? 'Role' : 'Groups'}</Table.Th>
                   <Table.Th>Status</Table.Th>
                   <Table.Th w={80} />
                 </Table.Tr>
@@ -297,7 +345,7 @@ export default function Users() {
                       <Table.Td>{user.email ?? '—'}</Table.Td>
                       <Table.Td>
                         <Text size="sm" c="dimmed">
-                          {(user.groups ?? []).join(', ') || '—'}
+                          {byRole ? roleLabel(user.role) : (user.groups ?? []).join(', ') || '—'}
                         </Text>
                       </Table.Td>
                       <Table.Td>
@@ -337,12 +385,14 @@ export default function Users() {
       </Stack>
 
       <UserFormModal
+        key={opened ? formKey : 'closed'}
         opened={opened}
         onClose={close}
         formType={formType}
         user={selectedUser}
         groups={groups}
         isLocalAuth={isLocalAuth}
+        usersForm={usersForm}
         onSaved={fetchAll}
       />
     </>
