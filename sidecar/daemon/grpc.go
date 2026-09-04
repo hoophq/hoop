@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net"
@@ -28,12 +29,16 @@ import (
 // reaches the policy engine, the audit trail and, where an analyzer is
 // configured, a third party.
 type GRPCCodecConfig struct {
-	// Descriptors is the path to a serialized FileDescriptorSet
-	// (protoc --include_imports --descriptor_set_out, or buf build -o).
+	// Descriptors names one or more serialized FileDescriptorSets
+	// (protoc --include_imports --descriptor_set_out, or buf build -o) —
+	// a single path or a list; sets merge, byte-identical shared imports
+	// dedupe, and conflicting copies of one file refuse at startup.
+	// Multiple sets are the multi-team shape: each service's CI ships its
+	// own artifact and no central re-bundle pipeline is required.
 	// Required for any payload work: schema-less protobuf walking loses
 	// values as a function of their bytes, so no capture, masking or PII
 	// scanning happens without it (ADR-0013).
-	Descriptors string `json:"descriptors,omitempty"`
+	Descriptors DescriptorPaths `json:"descriptors,omitempty"`
 
 	// CapturePayload renders decoded request and response messages into
 	// per-message Statements so payload-matching rules (pii, pattern_match)
@@ -44,6 +49,15 @@ type GRPCCodecConfig struct {
 	// default. Masking does not read this: it rewrites decoded fields
 	// whatever their size.
 	MaxPayloadBytes int `json:"max_payload_bytes,omitempty"`
+
+	// Strict refuses an RPC whose payload cannot be read: a method the
+	// descriptor set does not define is refused before the upstream is
+	// dialed (FAILED_PRECONDITION), and a message that does not decode as
+	// its declared type ends the RPC (INTERNAL). Off, the default, such
+	// payloads are forwarded with method-level inspection only, and each
+	// degradation is logged. A lane with mask rules fails closed either
+	// way: a redactor must not forward what it cannot decode.
+	Strict bool `json:"strict,omitempty"`
 
 	// Metadata names the request metadata headers to expose to policy,
 	// matched case-insensitively. There is no capture-all, and the same
@@ -70,7 +84,20 @@ func (g *GRPCCodecConfig) validate(lane string) []string {
 		problems = append(problems, fmt.Sprintf(
 			"listener %q: grpc.max_payload_bytes is negative", lane))
 	}
-	if g.CapturePayload && g.Descriptors == "" {
+	for _, p := range g.Descriptors {
+		switch {
+		case strings.TrimSpace(p) == "":
+			problems = append(problems, fmt.Sprintf(
+				"listener %q: grpc.descriptors contains an empty path", lane))
+		case strings.ContainsRune(p, ','):
+			// The paths travel to libhoop as one comma-separated setting,
+			// so a comma inside a path cannot be represented.
+			problems = append(problems, fmt.Sprintf(
+				"listener %q: grpc.descriptors path %q contains a comma, which the "+
+					"lane configuration cannot carry; rename the file", lane, p))
+		}
+	}
+	if g.CapturePayload && len(g.Descriptors) == 0 {
 		// Without a schema the lane cannot decode a message soundly, so a
 		// capture flag would produce nothing and every rule reading payloads
 		// would silently never fire: the failure this package refuses
@@ -82,13 +109,45 @@ func (g *GRPCCodecConfig) validate(lane string) []string {
 	return problems
 }
 
-// descriptors reports the configured descriptor set path, tolerating a nil
-// receiver so call sites read as one condition.
-func (g *GRPCCodecConfig) descriptors() string {
-	if g == nil {
-		return ""
+// DescriptorPaths accepts one path or a list in the config file, so the
+// single-set spelling every existing config uses keeps working while a
+// multi-team lane lists one artifact per service.
+type DescriptorPaths []string
+
+// UnmarshalJSON accepts "path" and ["a", "b"].
+func (d *DescriptorPaths) UnmarshalJSON(b []byte) error {
+	if len(b) > 0 && b[0] == '"' {
+		var s string
+		if err := json.Unmarshal(b, &s); err != nil {
+			return err
+		}
+		if s == "" {
+			*d = nil
+			return nil
+		}
+		*d = DescriptorPaths{s}
+		return nil
 	}
-	return g.Descriptors
+	var list []string
+	if err := json.Unmarshal(b, &list); err != nil {
+		return err
+	}
+	*d = DescriptorPaths(list)
+	return nil
+}
+
+// MarshalJSON keeps the single-path spelling stable for /config readers.
+func (d DescriptorPaths) MarshalJSON() ([]byte, error) {
+	if len(d) == 1 {
+		return json.Marshal(d[0])
+	}
+	return json.Marshal([]string(d))
+}
+
+// hasDescriptors reports whether the lane can decode payloads, tolerating a
+// nil receiver so call sites read as one condition.
+func (g *GRPCCodecConfig) hasDescriptors() bool {
+	return g != nil && len(g.Descriptors) > 0
 }
 
 // GRPCServer is the running side of a grpc lane. Serve blocks until the
@@ -148,14 +207,17 @@ func buildGRPCServer(
 	if lc.MaxConns > 0 {
 		opts["max_conns"] = strconv.Itoa(lc.MaxConns)
 	}
-	if gc.Descriptors != "" {
-		opts["descriptors"] = gc.Descriptors
+	if len(gc.Descriptors) > 0 {
+		opts["descriptors"] = strings.Join(gc.Descriptors, ",")
 	}
 	if gc.CapturePayload {
 		opts["capture_payload"] = "true"
 	}
 	if gc.MaxPayloadBytes > 0 {
 		opts["max_payload_bytes"] = strconv.Itoa(gc.MaxPayloadBytes)
+	}
+	if gc.Strict {
+		opts["strict"] = "true"
 	}
 	if ln.masker != nil {
 		opts["mask_responses"] = "true"

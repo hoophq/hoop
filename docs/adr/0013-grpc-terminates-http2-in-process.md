@@ -144,11 +144,17 @@ this entry and that has no production caller today
 enters at the same point.
 
 **We will require a descriptor set for any payload inspection.** A gRPC lane
-declares `grpc.descriptors`, a serialized `FileDescriptorSet` produced by
-`protoc --include_imports --descriptor_set_out` or `buf build -o`. No
-schema-less protobuf inspection ships. A lane without one may still authorize
-by method and record the trail; it may not mask and may not claim PII
-detection.
+declares `grpc.descriptors` — one serialized `FileDescriptorSet` produced by
+`protoc --include_imports --descriptor_set_out` or `buf build -o`, or a LIST
+of them for the multi-team shape where every service's CI ships its own
+artifact and no central re-bundle pipeline exists. Sets merge into one
+schema at startup: a shared import embedded in several sets dedupes when
+the copies are byte-identical, and two DIVERGED copies of one file, or two
+sets defining the same service, refuse to load with an error naming both
+artifacts — never a silent winner, because the loser is somebody's payloads
+misdescribed. No schema-less protobuf inspection ships. A lane without any
+set may still authorize by method and record the trail; it may not mask and
+may not claim PII detection.
 
 **`columns:` names protobuf field paths.** `Masker.MaskCell(column, value)`
 (`gate/gate.go:53-62`) means "the protocol named this value, here it is"; the
@@ -189,19 +195,27 @@ sibling RPCs on the connection keep flowing. The lifecycle rows above and
 the statement-volume consequence below are what long-lived streams change;
 the data path is the same code for all four shapes.
 
-**A descriptor mismatch fails closed exactly where payloads matter.** On a
-lane with `capture_payload` or mask rules, an RPC whose path the set does
-not define is refused BEFORE the upstream is dialed —
-`FAILED_PRECONDITION (9)`, "the descriptor set does not define
-/pkg.Service/Method" — and a message that does not decode as its declared
-type ends the RPC with `INTERNAL (13)`: the offending frame is withheld
-from the upstream on the request side and from the client on the response
-side, never forwarded as-is. A lane with neither capture nor masking
-forwards methods the set does not name (or runs with no set at all), with
-method-level policy and the two lifecycle statements still applying — the
-"may still authorize by method" tier above. The rule is: the moment a lane
-claims to read payloads, an unreadable payload is a refusal, not a
-pass-through.
+**A descriptor mismatch degrades or refuses, and `grpc.strict` picks
+which — except for masking, which always refuses.** By default the
+descriptor set is validated at startup (a missing or malformed file still
+refuses to load), and at runtime a capturing lane DEGRADES on what it
+cannot read: an RPC whose path the set does not define is forwarded with
+method-level inspection only, and a message that does not decode as its
+declared type travels uninspected — each degradation logged, never
+silent. With `grpc.strict: true` those become refusals: the undescribed
+method is refused BEFORE the upstream is dialed — `FAILED_PRECONDITION
+(9)`, "the descriptor set does not define /pkg.Service/Method" — and the
+undecodable message ends the RPC with `INTERNAL (13)`, the offending
+frame withheld from whichever side it was crossing to. Masking is the
+carve-out and it is not configurable: a lane with mask rules refuses
+undescribed methods and undecodable responses regardless of `strict`,
+because a redactor that forwards a payload it cannot decode has leaked
+the very bytes it exists to rewrite. A lane with neither capture nor
+masking forwards everything the set does not name (or runs with no set
+at all), with method-level policy and the two lifecycle statements still
+applying — the "may still authorize by method" tier above. The rule:
+capture visibility may degrade loudly when the operator accepts that;
+redaction never may.
 
 ## Usage
 
@@ -576,6 +590,21 @@ decides whether a relay lane may carry mask rules.
 
 **Descriptor set**: a serialized `google.protobuf.FileDescriptorSet`, the
 `.proto` files compiled to protobuf. _Avoid:_ "schema", "proto files", "IDL".
+
+**Payload capture** (`grpc.capture_payload`): the per-lane switch that turns
+decoded messages into per-message Statements. On, each request message is
+rendered (proto-name JSON, truncated at `max_payload_bytes`) and evaluated
+BEFORE its frame is forwarded, each response message after masking, and the
+renderings reach everything that reads content: `pii` and `pattern_match`
+rules, the OPA input document, the audit trail (one row per message), and a
+configured analyzer. It also refuses compressed request payloads and strips
+`Grpc-Accept-Encoding`, because the lane cannot inspect what it cannot
+decode. Off — the default — only the two lifecycle Statements exist, so
+policy sees method identity and outcome, never content. Masking does not
+depend on it. It is the DATA-EXPOSURE opt-in, which is why no rule enables
+it implicitly: a pii rule inherited from the process defaults must not
+silently start copying payloads into the evidence pipeline. _Avoid:_
+"logging", "sniffing"; capture feeds policy and evidence, not a packet dump.
 
 **Content-discovered**: masking driven by a detector over values. Catches the
 field nobody labelled; needs no schema.

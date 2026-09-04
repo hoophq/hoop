@@ -997,7 +997,7 @@ func (c *Config) validateLane(lc ListenerConfig, name string) []string {
 			// A grpc lane masks by decoding fields through the descriptor
 			// set and re-encoding, so the set is the capability. Without it
 			// the rules would load and never fire (ADR-0013).
-			if lc.GRPC.descriptors() == "" {
+			if !lc.GRPC.hasDescriptors() {
 				problems = append(problems, fmt.Sprintf(
 					"%s: masking on a grpc lane needs grpc.descriptors; without a "+
 						"descriptor set the lane cannot decode a message to rewrite it. "+

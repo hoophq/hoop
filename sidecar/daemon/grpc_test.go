@@ -49,7 +49,7 @@ func TestGRPCServerCapturesMasksPreservesTrailersAndAudits(t *testing.T) {
 
 	sink := newGRPCTestMemorySink()
 	server := buildGRPCTestServer(t, "grpc-test", upstreamAddr,
-		&GRPCCodecConfig{Descriptors: descriptorPath, CapturePayload: true},
+		&GRPCCodecConfig{Descriptors: DescriptorPaths{descriptorPath}, CapturePayload: true},
 		nil, grpcTestSecretMasker{}, sink)
 	laneAddr, stopLane := startGRPCTestServer(t, server)
 	defer stopLane()
@@ -191,7 +191,7 @@ func TestGRPCServerWithholdsDeniedRequestMessage(t *testing.T) {
 	defer stopUpstream()
 
 	server := buildGRPCTestServer(t, "request-deny-test", upstreamAddr,
-		&GRPCCodecConfig{Descriptors: descriptorPath, CapturePayload: true},
+		&GRPCCodecConfig{Descriptors: DescriptorPaths{descriptorPath}, CapturePayload: true},
 		grpcTestDenyClientMessages{}, nil, nil)
 	laneAddr, stopLane := startGRPCTestServer(t, server)
 	defer stopLane()
@@ -253,7 +253,7 @@ func TestGRPCServerResponseMessageDenialIsScopedToStream(t *testing.T) {
 	defer stopUpstream()
 
 	server := buildGRPCTestServer(t, "response-deny-test", upstreamAddr,
-		&GRPCCodecConfig{Descriptors: descriptorPath, CapturePayload: true},
+		&GRPCCodecConfig{Descriptors: DescriptorPaths{descriptorPath}, CapturePayload: true},
 		grpcTestDenyForbiddenServerMessage{}, nil, nil)
 	laneAddr, stopLane := startGRPCTestServer(t, server)
 	defer stopLane()
@@ -411,7 +411,7 @@ func TestGRPCServerInspectsBodyWhenStatusIsInInitialHeaders(t *testing.T) {
 	defer stopUpstream()
 
 	server := buildGRPCTestServer(t, "header-status-test", upstreamAddr,
-		&GRPCCodecConfig{Descriptors: descriptorPath}, nil, grpcTestSecretMasker{}, nil)
+		&GRPCCodecConfig{Descriptors: DescriptorPaths{descriptorPath}}, nil, grpcTestSecretMasker{}, nil)
 	laneAddr, stopLane := startGRPCTestServer(t, server)
 	defer stopLane()
 
@@ -515,7 +515,94 @@ func TestGRPCServerEmitsUnknownStatusWhenUpstreamOmitsIt(t *testing.T) {
 	}
 }
 
-func TestGRPCServerRefusesUndescribedMethodOnCapturingLane(t *testing.T) {
+// A strict lane makes this the strongest possible assertion: an RPC whose
+// method the merged schema did not resolve would be refused with 9, so two
+// successes prove both sets loaded into one schema.
+func TestGRPCServerServesMethodsFromMultipleDescriptorSets(t *testing.T) {
+	echoPath := writeGRPCTestDescriptors(t)
+	ledgerPath := writeGRPCTestLedgerDescriptors(t)
+	upstreamAddr, stopUpstream := startGRPCTestH2C(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.Header().Set("Content-Type", "application/grpc")
+		w.Header().Set("Trailer", "Grpc-Status")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(grpcTestFrame(0, marshalGRPCTestMessage("secret", "visible")))
+		w.Header().Set("Grpc-Status", "0")
+	}))
+	defer stopUpstream()
+
+	server := buildGRPCTestServer(t, "multi-set-test", upstreamAddr,
+		&GRPCCodecConfig{
+			Descriptors:    DescriptorPaths{echoPath, ledgerPath},
+			CapturePayload: true,
+			Strict:         true,
+		}, nil, nil, nil)
+	laneAddr, stopLane := startGRPCTestServer(t, server)
+	defer stopLane()
+
+	transport := grpcTestTransport()
+	defer transport.CloseIdleConnections()
+	for _, method := range []string{"/test.v1.Echo/Say", "/test.v2.Ledger/Post"} {
+		req, err := http.NewRequest(http.MethodPost, "http://"+laneAddr+method,
+			bytes.NewReader(grpcTestFrame(0, marshalGRPCTestMessage("request", "request"))))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", "application/grpc")
+		resp, err := transport.RoundTrip(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+		status := resp.Header.Get("Grpc-Status")
+		if status == "" {
+			status = resp.Trailer.Get("Grpc-Status")
+		}
+		if status != "0" {
+			t.Fatalf("%s: grpc-status = %q, want 0 (message: %q)", method, status,
+				codecgrpc.DecodeMessage(resp.Header.Get("Grpc-Message")))
+		}
+	}
+}
+
+// The config spelling is polymorphic so single-set configs never move:
+// "descriptors: path" and "descriptors: [a, b]" both load, and the
+// /config rendering keeps the single-path shape stable.
+func TestGRPCDescriptorPathsAcceptStringAndList(t *testing.T) {
+	var single GRPCCodecConfig
+	if err := json.Unmarshal([]byte(`{"descriptors":"one.pb"}`), &single); err != nil {
+		t.Fatal(err)
+	}
+	if len(single.Descriptors) != 1 || single.Descriptors[0] != "one.pb" {
+		t.Fatalf("single = %#v", single.Descriptors)
+	}
+	out, err := json.Marshal(single.Descriptors)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(out) != `"one.pb"` {
+		t.Fatalf("single path re-marshals as %s, want the string form", out)
+	}
+
+	var list GRPCCodecConfig
+	if err := json.Unmarshal([]byte(`{"descriptors":["a.pb","b.pb"]}`), &list); err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Descriptors) != 2 || list.Descriptors[1] != "b.pb" {
+		t.Fatalf("list = %#v", list.Descriptors)
+	}
+
+	// A comma cannot travel through the lane settings, so validation
+	// refuses it instead of letting the path split silently in libhoop.
+	bad := &GRPCCodecConfig{Descriptors: DescriptorPaths{"a,b.pb"}}
+	problems := bad.validate("lane")
+	if len(problems) != 1 || !strings.Contains(problems[0], "comma") {
+		t.Fatalf("problems = %v", problems)
+	}
+}
+
+func TestGRPCServerRefusesUndescribedMethodOnStrictLane(t *testing.T) {
 	descriptorPath := writeGRPCTestDescriptors(t)
 	upstreamCalled := make(chan struct{}, 1)
 	upstreamAddr, stopUpstream := startGRPCTestH2C(t, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
@@ -523,8 +610,8 @@ func TestGRPCServerRefusesUndescribedMethodOnCapturingLane(t *testing.T) {
 	}))
 	defer stopUpstream()
 
-	server := buildGRPCTestServer(t, "undescribed-test", upstreamAddr,
-		&GRPCCodecConfig{Descriptors: descriptorPath, CapturePayload: true}, nil, nil, nil)
+	server := buildGRPCTestServer(t, "undescribed-strict-test", upstreamAddr,
+		&GRPCCodecConfig{Descriptors: DescriptorPaths{descriptorPath}, CapturePayload: true, Strict: true}, nil, nil, nil)
 	laneAddr, stopLane := startGRPCTestServer(t, server)
 	defer stopLane()
 
@@ -542,7 +629,7 @@ func TestGRPCServerRefusesUndescribedMethodOnCapturingLane(t *testing.T) {
 	}
 	_, _ = io.Copy(io.Discard, resp.Body)
 	_ = resp.Body.Close()
-	// A capturing lane cannot vouch for a payload it cannot decode, so an
+	// A strict lane cannot vouch for a payload it cannot decode, so an
 	// RPC the descriptor set does not define is refused, fail closed,
 	// with FAILED_PRECONDITION naming the path (ADR-0013).
 	if got := resp.Header.Get("Grpc-Status"); got != "9" {
@@ -556,6 +643,173 @@ func TestGRPCServerRefusesUndescribedMethodOnCapturingLane(t *testing.T) {
 		t.Fatal("an undescribed RPC reached the upstream")
 	default:
 	}
+}
+
+// Without strict, an undescribed method degrades to method-level
+// inspection: the RPC is forwarded, the payload travels uninspected, and
+// the lifecycle statements still run. Masking flips that back to a
+// refusal — see the test below — because a redactor must not forward what
+// it cannot decode.
+func TestGRPCServerForwardsUndescribedMethodByDefault(t *testing.T) {
+	descriptorPath := writeGRPCTestDescriptors(t)
+	upstreamCalled := make(chan struct{}, 1)
+	upstreamAddr, stopUpstream := startGRPCTestH2C(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalled <- struct{}{}
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.Header().Set("Content-Type", "application/grpc")
+		w.Header().Set("Trailer", "Grpc-Status")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(grpcTestFrame(0, marshalGRPCTestMessage("secret", "visible")))
+		w.Header().Set("Grpc-Status", "0")
+	}))
+	defer stopUpstream()
+
+	server := buildGRPCTestServer(t, "undescribed-lenient-test", upstreamAddr,
+		&GRPCCodecConfig{Descriptors: DescriptorPaths{descriptorPath}, CapturePayload: true}, nil, nil, nil)
+	laneAddr, stopLane := startGRPCTestServer(t, server)
+	defer stopLane()
+
+	transport := grpcTestTransport()
+	defer transport.CloseIdleConnections()
+	req, err := http.NewRequest(http.MethodPost, "http://"+laneAddr+"/test.v1.Echo/Missing",
+		bytes.NewReader(grpcTestFrame(0, marshalGRPCTestMessage("request", "request"))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/grpc")
+	resp, err := transport.RoundTrip(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := resp.Trailer.Get("Grpc-Status"); got != "0" {
+		t.Fatalf("grpc-status = %q, want the upstream's 0", got)
+	}
+	if len(body) == 0 {
+		t.Fatal("response body was withheld on a lenient lane")
+	}
+	select {
+	case <-upstreamCalled:
+	default:
+		t.Fatal("the undescribed RPC never reached the upstream")
+	}
+}
+
+func TestGRPCServerMaskingLaneRefusesUndescribedMethodEvenLenient(t *testing.T) {
+	descriptorPath := writeGRPCTestDescriptors(t)
+	upstreamCalled := make(chan struct{}, 1)
+	upstreamAddr, stopUpstream := startGRPCTestH2C(t, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		upstreamCalled <- struct{}{}
+	}))
+	defer stopUpstream()
+
+	// No Strict flag: masking alone must force the refusal. Forwarding a
+	// response the lane cannot decode would leak the values the mask
+	// rules exist to rewrite.
+	server := buildGRPCTestServer(t, "undescribed-masking-test", upstreamAddr,
+		&GRPCCodecConfig{Descriptors: DescriptorPaths{descriptorPath}, CapturePayload: true}, nil, grpcTestSecretMasker{}, nil)
+	laneAddr, stopLane := startGRPCTestServer(t, server)
+	defer stopLane()
+
+	transport := grpcTestTransport()
+	defer transport.CloseIdleConnections()
+	req, err := http.NewRequest(http.MethodPost, "http://"+laneAddr+"/test.v1.Echo/Missing",
+		bytes.NewReader(grpcTestFrame(0, marshalGRPCTestMessage("request", "request"))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/grpc")
+	resp, err := transport.RoundTrip(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
+	if got := resp.Header.Get("Grpc-Status"); got != "9" {
+		t.Fatalf("grpc-status = %q, want 9", got)
+	}
+	select {
+	case <-upstreamCalled:
+		t.Fatal("an undescribed RPC reached a masking upstream")
+	default:
+	}
+}
+
+// An undecodable message on a described method: strict ends the RPC,
+// default forwards the frame uninspected.
+func TestGRPCServerUndecodableRequestMessage(t *testing.T) {
+	descriptorPath := writeGRPCTestDescriptors(t)
+	// 0xFF is a truncated varint tag: invalid protobuf for any schema.
+	garbage := []byte{0xFF}
+
+	run := func(t *testing.T, strict bool) (*http.Response, <-chan []byte) {
+		t.Helper()
+		upstreamBodies := make(chan []byte, 1)
+		upstreamAddr, stopUpstream := startGRPCTestH2C(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, _ := io.ReadAll(r.Body)
+			upstreamBodies <- body
+			w.Header().Set("Content-Type", "application/grpc")
+			w.Header().Set("Trailer", "Grpc-Status")
+			w.WriteHeader(http.StatusOK)
+			w.Header().Set("Grpc-Status", "0")
+		}))
+		t.Cleanup(stopUpstream)
+
+		server := buildGRPCTestServer(t, "undecodable-test", upstreamAddr,
+			&GRPCCodecConfig{Descriptors: DescriptorPaths{descriptorPath}, CapturePayload: true, Strict: strict}, nil, nil, nil)
+		laneAddr, stopLane := startGRPCTestServer(t, server)
+		t.Cleanup(stopLane)
+
+		transport := grpcTestTransport()
+		t.Cleanup(transport.CloseIdleConnections)
+		req, err := http.NewRequest(http.MethodPost, "http://"+laneAddr+"/test.v1.Echo/Say",
+			bytes.NewReader(grpcTestFrame(0, garbage)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", "application/grpc")
+		resp, err := transport.RoundTrip(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+		return resp, upstreamBodies
+	}
+
+	t.Run("strict ends the RPC", func(t *testing.T) {
+		resp, _ := run(t, true)
+		status := resp.Header.Get("Grpc-Status")
+		if status == "" {
+			status = resp.Trailer.Get("Grpc-Status")
+		}
+		if status != "13" {
+			t.Fatalf("grpc-status = %q, want 13", status)
+		}
+	})
+
+	t.Run("default forwards uninspected", func(t *testing.T) {
+		resp, upstreamBodies := run(t, false)
+		status := resp.Header.Get("Grpc-Status")
+		if status == "" {
+			status = resp.Trailer.Get("Grpc-Status")
+		}
+		if status != "0" {
+			t.Fatalf("grpc-status = %q, want the upstream's 0", status)
+		}
+		select {
+		case body := <-upstreamBodies:
+			if !bytes.Equal(body, grpcTestFrame(0, garbage)) {
+				t.Fatalf("upstream received %x, want the original frame", body)
+			}
+		default:
+			t.Fatal("the frame never reached the upstream")
+		}
+	})
 }
 
 func TestGRPCServerDeniesResponseFramingErrorWithTrailers(t *testing.T) {
@@ -575,7 +829,7 @@ func TestGRPCServerDeniesResponseFramingErrorWithTrailers(t *testing.T) {
 	defer stopUpstream()
 
 	server := buildGRPCTestServer(t, "framing-error-test", upstreamAddr,
-		&GRPCCodecConfig{Descriptors: descriptorPath, CapturePayload: true}, nil, nil, nil)
+		&GRPCCodecConfig{Descriptors: DescriptorPaths{descriptorPath}, CapturePayload: true}, nil, nil, nil)
 	laneAddr, stopLane := startGRPCTestServer(t, server)
 	defer stopLane()
 
@@ -769,6 +1023,24 @@ func writeGRPCTestDescriptors(t *testing.T) string {
 	}
 	if _, ok := schema.Lookup("/test.v1.Echo/Say"); !ok {
 		t.Fatal("fixture method missing")
+	}
+	return path
+}
+
+// grpcTestLedgerDescriptorSet is a second FileDescriptorSet — test.v2.Ledger/Post
+// with the same {secret=1, visible=2} string message shape — so multi-set
+// lanes can be exercised. Same provenance as grpcTestDescriptorSet.
+const grpcTestLedgerDescriptorSet = "Cq8BCgxsZWRnZXIucHJvdG8SB3Rlc3QudjIiKgoHUmVxdWVzdBIOCgZzZWNyZXQYASABKAkSDwoHdmlzaWJsZRgCIAEoCSIrCghSZXNwb25zZRIOCgZzZWNyZXQYASABKAkSDwoHdmlzaWJsZRgCIAEoCTI1CgZMZWRnZXISKwoEUG9zdBIQLnRlc3QudjIuUmVxdWVzdBoRLnRlc3QudjIuUmVzcG9uc2ViBnByb3RvMw=="
+
+func writeGRPCTestLedgerDescriptors(t *testing.T) string {
+	t.Helper()
+	blob, err := base64.StdEncoding.DecodeString(grpcTestLedgerDescriptorSet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := t.TempDir() + "/ledger.pb"
+	if err := os.WriteFile(path, blob, 0o600); err != nil {
+		t.Fatal(err)
 	}
 	return path
 }

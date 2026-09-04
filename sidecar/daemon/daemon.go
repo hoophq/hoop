@@ -778,7 +778,7 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 			problems = append(problems, name+": "+err.Error())
 			continue
 		}
-		masker, err := buildMasker(mc, det, inspect.Protocol(lc.Protocol), lc.GRPC.descriptors())
+		masker, err := buildMasker(mc, det, inspect.Protocol(lc.Protocol), lc.GRPC.hasDescriptors())
 		if err != nil {
 			problems = append(problems, name+": "+err.Error())
 			continue
@@ -943,7 +943,7 @@ func buildServer(
 //
 // Validate reports both at startup; these checks cover a caller reaching Run
 // without going through LoadConfig.
-func buildMasker(mc MaskConfig, det Plugin, proto inspect.Protocol, grpcDescriptors string) (gate.Masker, error) {
+func buildMasker(mc MaskConfig, det Plugin, proto inspect.Protocol, hasGRPCDescriptors bool) (gate.Masker, error) {
 	if !mc.hasRules() {
 		return nil, nil
 	}
@@ -951,7 +951,7 @@ func buildMasker(mc MaskConfig, det Plugin, proto inspect.Protocol, grpcDescript
 		return nil, fmt.Errorf("mask.rules is set but this build has no detection plugin")
 	}
 	if proto == inspect.GRPC {
-		if grpcDescriptors == "" {
+		if !hasGRPCDescriptors {
 			return nil, fmt.Errorf(
 				"mask.rules is set but this grpc lane has no grpc.descriptors; without a " +
 					"descriptor set the lane cannot decode a message to rewrite it")
