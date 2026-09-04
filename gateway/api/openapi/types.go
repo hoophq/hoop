@@ -1582,6 +1582,8 @@ type PublicServerInfo struct {
 	AuthMethod string `json:"auth_method" enums:"local,oidc,saml" example:"local"`
 	// Whether the server requires initial setup (no users have been registered yet)
 	SetupRequired bool `json:"setup_required" example:"true"`
+	// Which component this process runs as
+	ApplicationMode string `json:"application_mode" enums:"gateway,control-plane" example:"gateway"`
 }
 
 type IdpProviderNameType string
