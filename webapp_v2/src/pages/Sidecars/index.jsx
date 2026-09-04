@@ -1,6 +1,6 @@
 import { Stack } from '@mantine/core'
 import NotImplemented from '@/components/NotImplemented'
-import SidecarLicenseNotice from './components/SidecarLicenseNotice'
+import SidecarLicenseNotice from './sections/SidecarLicenseNotice'
 
 /**
  * The control plane landing page for every admin. Until Connecting Sidecars

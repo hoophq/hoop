@@ -16,7 +16,7 @@ import {
 import { useAuthStore } from '@/stores/useAuthStore'
 import { authService } from '@/services/auth'
 import AuthPageLoader from '@/components/AuthPageLoader'
-import { getModeConfig } from '@/modes'
+import { postAuthPath } from '@/modes'
 
 const LOGIN_ERROR_MESSAGES = {
   slack_not_configured: 'You must configure your Slack with Hoop',
@@ -65,7 +65,7 @@ function Login() {
       if (redirectUrl) {
         window.location.href = redirectUrl
       } else {
-        navigate(getModeConfig().postLoginPath)
+        postAuthPath().then(navigate)
       }
     }
   }, [isAuthenticated, navigate, getAndClearRedirectUrl])
@@ -137,7 +137,7 @@ function Login() {
         return
       }
 
-      navigate(getModeConfig().postLoginPath)
+      navigate(await postAuthPath())
     } catch (err) {
       setError(err.response?.data?.message || 'Invalid email or password')
     } finally {

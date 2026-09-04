@@ -34,7 +34,16 @@ function cljsStaticAssets() {
         const pathname = (req.url || '').split('?')[0];
         if (!CLJS_STATIC_PREFIXES.some((prefix) => pathname.startsWith(prefix))) return next();
 
-        const relative = path.normalize(decodeURIComponent(pathname)).replace(/^([/\\])+/, '');
+        let decoded;
+        try {
+          decoded = decodeURIComponent(pathname);
+        } catch {
+          res.statusCode = 400;
+          res.setHeader('Content-Type', 'text/plain');
+          res.end(`Malformed path: ${pathname}`);
+          return;
+        }
+        const relative = path.normalize(decoded).replace(/^([/\\])+/, '');
         const file = path.join(CLJS_PUBLIC_DIR, relative);
         if (!file.startsWith(CLJS_PUBLIC_DIR + path.sep) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
           res.statusCode = 404;

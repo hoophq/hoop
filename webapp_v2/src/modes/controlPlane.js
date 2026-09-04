@@ -1,5 +1,3 @@
-import { theme, cssVariablesResolver } from '@/theme'
-import { ROLE_ADMIN, ROLE_APPROVER } from '@/utils/roles'
 import {
   CircleCheckBig,
   Container,
@@ -11,6 +9,8 @@ import {
   Users,
   VenetianMask,
 } from 'lucide-react'
+import { theme, cssVariablesResolver } from '@/theme'
+import { ROLE_ADMIN, ROLE_APPROVER } from '@/utils/roles'
 
 /**
  * The control plane product: an admin manages a fleet of sidecars, configures
@@ -71,7 +71,7 @@ export default {
   postSetupPath: '/',
   home: { [ROLE_ADMIN]: '/sidecars', [ROLE_APPROVER]: '/reviews' },
   usersForm: 'roles',
-  defaultReviewerGroups: [ROLE_APPROVER],
+  defaultReviewerRoles: [ROLE_APPROVER],
   // No ClojureScript here: a path no React route claims is a 404 page. The one
   // CLJS page the control plane will want is Sessions; that comes with its port.
   catchAll: 'not-found',
