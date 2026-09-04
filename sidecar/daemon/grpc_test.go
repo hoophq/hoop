@@ -439,6 +439,52 @@ func TestGRPCServerInspectsBodyWhenStatusIsInInitialHeaders(t *testing.T) {
 	}
 }
 
+func TestGRPCServerEmitsUnknownStatusWhenUpstreamOmitsIt(t *testing.T) {
+	upstreamAddr, stopUpstream := startGRPCTestH2C(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// A broken server or an intermediary that ate the trailers: the
+		// stream ends with a body and no grpc-status anywhere.
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.Header().Set("Content-Type", "application/grpc")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(grpcTestFrame(0, marshalGRPCTestMessage("secret", "visible")))
+	}))
+	defer stopUpstream()
+
+	server := buildGRPCTestServer(t, "no-status-test", upstreamAddr, nil, nil, nil, nil)
+	laneAddr, stopLane := startGRPCTestServer(t, server)
+	defer stopLane()
+
+	transport := grpcTestTransport()
+	defer transport.CloseIdleConnections()
+	req, err := http.NewRequest(http.MethodPost, "http://"+laneAddr+"/test.v1.Echo/Say",
+		bytes.NewReader(grpcTestFrame(0, marshalGRPCTestMessage("request", "request"))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/grpc")
+	resp, err := transport.RoundTrip(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(body) == 0 {
+		t.Fatal("response body was dropped with the missing status")
+	}
+	// The lane synthesizes UNKNOWN for policy; the client MUST see the
+	// same trailer, or the wire and the audit trail disagree about how
+	// the RPC ended.
+	if got := resp.Trailer.Get("Grpc-Status"); got != "2" {
+		t.Fatalf("grpc-status = %q, want the synthesized 2 (UNKNOWN)", got)
+	}
+	if got := codecgrpc.DecodeMessage(resp.Trailer.Get("Grpc-Message")); got != "upstream returned no grpc-status" {
+		t.Fatalf("grpc-message = %q", got)
+	}
+}
+
 func TestGRPCServerAuditsLocalDenialAsServerTrailer(t *testing.T) {
 	upstreamAddr, stopUpstream := startGRPCTestH2C(t, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	defer stopUpstream()
