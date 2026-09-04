@@ -485,6 +485,58 @@ func TestGRPCServerEmitsUnknownStatusWhenUpstreamOmitsIt(t *testing.T) {
 	}
 }
 
+func TestGRPCServerDeniesResponseFramingErrorWithTrailers(t *testing.T) {
+	descriptorPath := writeGRPCTestDescriptors(t)
+	upstreamAddr, stopUpstream := startGRPCTestH2C(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.Header().Set("Content-Type", "application/grpc")
+		w.Header().Set("Trailer", "Grpc-Status")
+		w.WriteHeader(http.StatusOK)
+		// Garbage framing, not a bad payload: the compressed flag must be
+		// 0 or 1, so this error is raised by FrameReader itself, never by
+		// the transform. Before the denyOnErrorBody adapter it escaped
+		// through ReverseProxy's copy loop as an HTTP/2 stream reset.
+		_, _ = w.Write([]byte{7, 0, 0, 0, 0})
+		w.Header().Set("Grpc-Status", "0")
+	}))
+	defer stopUpstream()
+
+	server := buildGRPCTestServer(t, "framing-error-test", upstreamAddr,
+		&GRPCCodecConfig{Descriptors: descriptorPath, CapturePayload: true}, nil, nil, nil)
+	laneAddr, stopLane := startGRPCTestServer(t, server)
+	defer stopLane()
+
+	transport := grpcTestTransport()
+	defer transport.CloseIdleConnections()
+	req, err := http.NewRequest(http.MethodPost, "http://"+laneAddr+"/test.v1.Echo/Say",
+		bytes.NewReader(grpcTestFrame(0, marshalGRPCTestMessage("request", "request"))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/grpc")
+	resp, err := transport.RoundTrip(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The stream must end CLEANLY with denial trailers, not RST_STREAM: a
+	// gRPC client turns a reset into a transport error with no status,
+	// and the lane's verdict never reaches it.
+	body, err := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if err != nil {
+		t.Fatalf("body read = %v, want a clean EOF with trailers", err)
+	}
+	if len(body) != 0 {
+		t.Fatalf("body = %x, want the garbage frame withheld", body)
+	}
+	if got := resp.Trailer.Get("Grpc-Status"); got != "13" {
+		t.Fatalf("grpc-status = %q, want 13", got)
+	}
+	if got := codecgrpc.DecodeMessage(resp.Trailer.Get("Grpc-Message")); !strings.Contains(got, "invalid compressed flag") {
+		t.Fatalf("grpc-message = %q", got)
+	}
+}
+
 func TestGRPCServerAuditsLocalDenialAsServerTrailer(t *testing.T) {
 	upstreamAddr, stopUpstream := startGRPCTestH2C(t, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	defer stopUpstream()
