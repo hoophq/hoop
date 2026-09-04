@@ -30,3 +30,11 @@ export function useModeConfig() {
   const appMode = useUserStore((s) => s.appMode)
   return getModeConfig(appMode)
 }
+
+// Where an auth page sends the user next. Waits for the boot-time mode fetch,
+// which is a no-op once it has landed: a login submitted before /publicserverinfo
+// answered must not read the gateway default. A failed fetch keeps that default.
+export async function postAuthPath(kind = 'postLoginPath') {
+  await useUserStore.getState().loadAppMode()
+  return getModeConfig()[kind]
+}

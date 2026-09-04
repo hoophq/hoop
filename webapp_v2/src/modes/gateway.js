@@ -1,4 +1,3 @@
-import { theme, cssVariablesResolver } from '@/theme'
 import {
   BookMarked,
   BookUp2,
@@ -27,6 +26,7 @@ import {
   WandSparkles,
   Webhook
 } from 'lucide-react'
+import { theme, cssVariablesResolver } from '@/theme'
 
 /**
  * The gateway product: what webapp_v2 has always rendered. See ./index.js for
@@ -161,8 +161,9 @@ export default {
   // Users page: the gateway edits free-form groups; the control plane assigns a
   // role (utils/roles) and round-trips the other groups untouched.
   usersForm: 'groups',
-  // Reviewer groups a new review rule starts with.
-  defaultReviewerGroups: [],
+  // Roles (utils/roles) a new review rule names as reviewers. The form maps them
+  // to group names through /serverinfo, since ADMIN_USERNAME renames the admin one.
+  defaultReviewerRoles: [],
   // 'cljs' renders <ClojureApp/>, 'not-found' the 404 page (ModeCatchAll.jsx).
   catchAll: 'cljs',
   // Gateway-only chrome. Each key is read at exactly one call site.

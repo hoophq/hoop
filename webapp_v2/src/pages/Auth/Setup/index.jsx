@@ -16,7 +16,7 @@ import Button from '@/components/Button'
 import { useAuthStore } from '@/stores/useAuthStore'
 import { authService } from '@/services/auth'
 import classes from './Setup.module.css'
-import { getModeConfig } from '@/modes'
+import { postAuthPath } from '@/modes'
 
 const TRUSTED_BY = ['EBANX', 'RD Station', 'Dock', 'PicPay', 'Unico']
 
@@ -135,7 +135,7 @@ function Setup() {
     try {
       const { token } = await authService.registerLocal(email, password, fullName)
       setToken(token)
-      navigate(getModeConfig().postSetupPath, { replace: true })
+      navigate(await postAuthPath('postSetupPath'), { replace: true })
     } catch (err) {
       setError(
         err.response?.data?.message || 'Something went wrong. Please try again.'
