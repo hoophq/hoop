@@ -206,16 +206,20 @@ silent. With `grpc.strict: true` those become refusals: the undescribed
 method is refused BEFORE the upstream is dialed — `FAILED_PRECONDITION
 (9)`, "the descriptor set does not define /pkg.Service/Method" — and the
 undecodable message ends the RPC with `INTERNAL (13)`, the offending
-frame withheld from whichever side it was crossing to. Masking is the
-carve-out and it is not configurable: a lane with mask rules refuses
-undescribed methods and undecodable responses regardless of `strict`,
-because a redactor that forwards a payload it cannot decode has leaked
-the very bytes it exists to rewrite. A lane with neither capture nor
-masking forwards everything the set does not name (or runs with no set
-at all), with method-level policy and the two lifecycle statements still
-applying — the "may still authorize by method" tier above. The rule:
-capture visibility may degrade loudly when the operator accepts that;
-redaction never may.
+frame withheld from whichever side it was crossing to. `strict` stands on
+its own: it requires a descriptor set and enforces it with or without
+capture — a strict lane that captures nothing still verifies every
+message decodes, emits no statement for it, and refuses what it cannot
+read. Masking is the carve-out and it is not configurable: a lane with
+mask rules refuses undescribed methods and undecodable responses
+regardless of `strict`, because a redactor that forwards a payload it
+cannot decode has leaked the very bytes it exists to rewrite. A lane with
+neither capture, masking nor `strict` forwards everything the set does
+not name (or runs with no set at all), with method-level policy and the
+two lifecycle statements still applying — the "may still authorize by
+method" tier above. The rule: capture visibility may degrade loudly when
+the operator accepts that; redaction never may, and `strict` is the
+operator refusing degradation outright.
 
 ## Usage
 

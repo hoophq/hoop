@@ -1,0 +1,28 @@
+// The schema the lane does NOT hold. internal.pb is compiled and shipped
+// to the descriptors volume so grpcurl can encode calls to it, but neither
+// lane config lists it — which is what makes the strict/lenient contrast
+// demonstrable:
+//
+//   - the overlay lane (default, lenient) forwards /demo.internal.* with
+//     method-level inspection only and logs the degradation;
+//   - the standalone lane (strict: true) refuses it before the upstream is
+//     dialed, FAILED_PRECONDITION naming the path.
+//
+// The real-world analogue: a team deployed a new service behind the lane
+// before delivering its descriptor artifact.
+
+syntax = "proto3";
+
+package demo.internal;
+
+service Maintenance {
+  rpc Purge(PurgeRequest) returns (PurgeReply);
+}
+
+message PurgeRequest {
+  string reason = 1;
+}
+
+message PurgeReply {
+  string status = 1;
+}

@@ -97,17 +97,34 @@ listeners:
     # Envoy alone this line is the real pattern.
     identity_header: x-hoop-user
     grpc:
-      # The FileDescriptorSet compiled from app/ledger.proto in the image
-      # build, published to this volume by the grpc-descriptors init
-      # service. Mandatory for payload work: without it the lane still
-      # enforces method-level rules but cannot capture, mask or PII-scan a
-      # message (ADR-0013), and this stack's two live rules both read
-      # payloads.
-      descriptors: /etc/hoop-inspect/descriptors/ledger.pb
+      # TWO descriptor sets, each compiled from its own .proto by its own
+      # protoc run (see app/Dockerfile) — the multi-team shape: every
+      # service's CI ships its own artifact and the lane lists them. The
+      # sidecar merges the sets at startup; byte-identical shared imports
+      # dedupe, diverged copies of one file refuse to load naming both
+      # artifacts. A single-set lane spells this as a plain string.
+      #
+      # internal.pb is in the same volume and DELIBERATELY absent here:
+      # /demo.internal.Maintenance/Purge is the method this lane cannot
+      # read, which the demo uses to show lenient-vs-strict below.
+      # Mandatory for payload work either way: without a set the lane
+      # still enforces method-level rules but cannot capture, mask or
+      # PII-scan a message (ADR-0013).
+      descriptors:
+        - /etc/hoop-inspect/descriptors/ledger.pb
+        - /etc/hoop-inspect/descriptors/reports.pb
       # Render decoded request and response messages into per-message
       # statements, so the pii guardrail and the audit trail see field
       # values, not just "POST /demo.v1.Ledger/GetInvoice".
       capture_payload: true
+      # strict is OFF here, the default: an RPC these sets do not define
+      # (internal.pb's Purge) is forwarded with method-level inspection
+      # only, and the lane logs "method not in the descriptor set". Flip
+      # it on and the same call is refused before the upstream is dialed,
+      # FAILED_PRECONDITION naming the path — the standalone stack runs
+      # that way (config-standalone.yaml). Masking lanes refuse either
+      # way: a redactor must not forward what it cannot decode.
+      # strict: true
     # ---- over the limit: the lane's own guardrails --------------------
     # Both below are ALLOWED as shipped; the process's one rule is spent on
     # no-cpf-in-query above. ./demo-grpc.sh calls ExportAll and prints the
@@ -131,3 +148,43 @@ listeners:
     #       type: grpc_status
     #       statuses: [permission_denied]
     #       message: repeated permission denials are reported to security
+
+  # ---- the strict/lenient contrast pair ---------------------------------
+  # The ledger lane above cannot demonstrate `strict: false`: it MASKS, and
+  # a masking lane refuses what it cannot decode regardless of strict — a
+  # redactor that forwards an unreadable payload has leaked the bytes it
+  # exists to rewrite. ./demo-grpc.sh proves that carve-out on the ledger
+  # lane, then drives the SAME undescribed call into these two lanes,
+  # identical except for one flag. `mask: {rules: []}` is the documented
+  # opt-out of the inherited mask defaults; without it the carve-out would
+  # decide before strict ever could. Reached in-network by the demo's
+  # grpcurl; no Envoy listener and no host port on purpose.
+  - name: internal-lenient
+    protocol: grpc
+    listen: 0.0.0.0:18444
+    upstream: ledger:9000
+    mask: {rules: []}
+    grpc:
+      descriptors:
+        - /etc/hoop-inspect/descriptors/ledger.pb
+        - /etc/hoop-inspect/descriptors/reports.pb
+      capture_payload: true
+      # strict off (default): /demo.internal.Maintenance/Purge is not in
+      # the listed sets, so it forwards with method-level inspection only
+      # and the lane logs the degradation. The upstream stays the
+      # authority on methods the operator never described.
+
+  - name: internal-strict
+    protocol: grpc
+    listen: 0.0.0.0:18445
+    upstream: ledger:9000
+    mask: {rules: []}
+    grpc:
+      descriptors:
+        - /etc/hoop-inspect/descriptors/ledger.pb
+        - /etc/hoop-inspect/descriptors/reports.pb
+      capture_payload: true
+      # The one-line difference: the same Purge call is refused BEFORE the
+      # upstream is dialed, FAILED_PRECONDITION naming the path, and an
+      # undecodable message ends the RPC instead of traveling uninspected.
+      strict: true

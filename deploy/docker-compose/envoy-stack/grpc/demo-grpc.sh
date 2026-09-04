@@ -22,7 +22,10 @@ h()    { printf '\n\033[1;36m%s\033[0m\n' "$*"; hr; }
 note() { printf '\033[2m%s\033[0m\n' "$*"; }
 
 COMPOSE="docker compose --progress quiet -f docker-compose.yml -f grpc/docker-compose.grpc.yml"
-GRPCURL="$COMPOSE run --rm -T grpcurl -protoset /descriptors/ledger.pb"
+# Three protosets for the CLIENT: grpcurl needs a method's descriptor to
+# encode a request. The LANE lists only ledger.pb and reports.pb;
+# internal.pb is the one it cannot read (the lenient beat below).
+GRPCURL="$COMPOSE run --rm -T grpcurl -protoset /descriptors/ledger.pb -protoset /descriptors/reports.pb -protoset /descriptors/internal.pb"
 
 if ! curl -sf http://localhost:19000/healthz >/dev/null; then
     echo "hoop-inspect is not healthy. Bring the overlay up first:" >&2
@@ -89,6 +92,52 @@ note "one-guardrail limit no-cpf-in-query already spends."
 note ""
 $GRPCURL -insecure -H 'x-hoop-user: alice' -d '{}' \
     envoy:8444 demo.v1.Ledger/ExportAll 2>&1 | sed 's/^/  /'
+
+# -------------------------------------------------------- multiple sets
+h "MULTIPLE SETS / two teams, two artifacts, one merged schema"
+note "The lane lists ledger.pb AND reports.pb — each compiled by its own"
+note "protoc run, the way separate teams ship separate artifacts. The"
+note "sidecar merges them at startup, and the proof is behavioral: the"
+note "same one process-wide emails rule that redacts the Ledger's"
+note "customer_email redacts the Reports author_email below."
+note ""
+$GRPCURL -insecure -H 'x-hoop-user: alice' -d '{}' \
+    envoy:8444 reports.v1.Reports/Latest 2>&1 | sed 's/^/  /'
+
+# ------------------------------------------ the descriptor-mismatch matrix
+# One undescribed call, three lanes. internal.pb was shipped to the client
+# but never listed in any lane config: the team deployed before delivering
+# its descriptor artifact.
+
+h "MASKING NEVER DEGRADES / the undescribed call against the ledger lane"
+note "This lane MASKS, and a redactor that forwards a payload it cannot"
+note "decode has leaked the bytes it exists to rewrite -- so the refusal"
+note "below happens with strict OFF. The carve-out is not configurable."
+note ""
+$GRPCURL -insecure -H 'x-hoop-user: alice' -d '{"reason":"demo"}' \
+    envoy:8444 demo.internal.Maintenance/Purge 2>&1 | sed 's/^/  /' | head -4
+
+h "LENIENT (strict off, the default) / same call, a lane without masking"
+note "internal-lenient (:18444) lists the same two sets but opts out of"
+note "the inherited mask rule (mask: {rules: []}). Now the default shows:"
+note "the lane forwards the RPC with method-level inspection only, the"
+note "app answers, and the degradation lands in the lane's log."
+note ""
+$GRPCURL -plaintext -d '{"reason":"demo"}' \
+    hoop-inspect:18444 demo.internal.Maintenance/Purge 2>&1 | sed 's/^/  /'
+note ""
+note "Never silent:"
+$COMPOSE logs hoop-inspect --since 120s 2>/dev/null \
+    | grep -o 'grpc method not in the descriptor set.*' | tail -1 | sed 's/^/  /'
+
+h "STRICT / same call, same lane shape, one flag flipped"
+note "internal-strict (:18445) differs from :18444 by strict: true alone."
+note "The lane refuses before the upstream is dialed, FAILED_PRECONDITION"
+note "naming the path; an undecodable message would end the RPC the same"
+note "way instead of traveling uninspected."
+note ""
+$GRPCURL -plaintext -d '{"reason":"demo"}' \
+    hoop-inspect:18445 demo.internal.Maintenance/Purge 2>&1 | sed 's/^/  /' | head -4
 
 # ------------------------------------------------------------------- audit
 h "AUDIT / what hoop-inspect recorded"

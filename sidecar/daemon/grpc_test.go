@@ -653,6 +653,114 @@ func TestGRPCDescriptorPathWithCommaSurvivesTheSeam(t *testing.T) {
 	}
 }
 
+// strict must inspect ON ITS OWN: no capture, no masker, and unreadable
+// payloads still end the RPC while readable ones flow untouched. Before
+// this worked, strict without capture attached no frame reader at all and
+// silently forwarded everything.
+func TestGRPCServerStrictAloneInspects(t *testing.T) {
+	descriptorPath := writeGRPCTestDescriptors(t)
+	garbage := []byte{0xFF} // truncated varint tag: undecodable for any schema
+
+	newLane := func(t *testing.T, handler http.HandlerFunc) (string, func()) {
+		t.Helper()
+		upstreamAddr, stopUpstream := startGRPCTestH2C(t, handler)
+		t.Cleanup(stopUpstream)
+		server := buildGRPCTestServer(t, "strict-alone-test", upstreamAddr,
+			&GRPCCodecConfig{Descriptors: DescriptorPaths{descriptorPath}, Strict: true}, nil, nil, nil)
+		laneAddr, stopLane := startGRPCTestServer(t, server)
+		t.Cleanup(stopLane)
+		return laneAddr, stopUpstream
+	}
+	call := func(t *testing.T, laneAddr, method string, payload []byte) *http.Response {
+		t.Helper()
+		transport := grpcTestTransport()
+		t.Cleanup(transport.CloseIdleConnections)
+		req, err := http.NewRequest(http.MethodPost, "http://"+laneAddr+method,
+			bytes.NewReader(grpcTestFrame(0, payload)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", "application/grpc")
+		resp, err := transport.RoundTrip(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp
+	}
+	status := func(resp *http.Response) string {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+		if s := resp.Header.Get("Grpc-Status"); s != "" {
+			return s
+		}
+		return resp.Trailer.Get("Grpc-Status")
+	}
+
+	t.Run("undescribed method refused", func(t *testing.T) {
+		called := make(chan struct{}, 1)
+		laneAddr, _ := newLane(t, func(http.ResponseWriter, *http.Request) { called <- struct{}{} })
+		resp := call(t, laneAddr, "/test.v1.Echo/Missing", marshalGRPCTestMessage("a", "b"))
+		if got := status(resp); got != "9" {
+			t.Fatalf("grpc-status = %q, want 9", got)
+		}
+		select {
+		case <-called:
+			t.Fatal("undescribed RPC reached the upstream on a strict lane")
+		default:
+		}
+	})
+
+	t.Run("undecodable request refused", func(t *testing.T) {
+		laneAddr, _ := newLane(t, func(w http.ResponseWriter, r *http.Request) {
+			_, _ = io.Copy(io.Discard, r.Body)
+		})
+		resp := call(t, laneAddr, "/test.v1.Echo/Say", garbage)
+		if got := status(resp); got != "13" {
+			t.Fatalf("grpc-status = %q, want 13", got)
+		}
+	})
+
+	t.Run("undecodable response refused", func(t *testing.T) {
+		laneAddr, _ := newLane(t, func(w http.ResponseWriter, r *http.Request) {
+			_, _ = io.Copy(io.Discard, r.Body)
+			w.Header().Set("Content-Type", "application/grpc")
+			w.Header().Set("Trailer", "Grpc-Status")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(grpcTestFrame(0, garbage))
+			w.Header().Set("Grpc-Status", "0")
+		})
+		resp := call(t, laneAddr, "/test.v1.Echo/Say", marshalGRPCTestMessage("a", "b"))
+		if got := status(resp); got != "13" {
+			t.Fatalf("grpc-status = %q, want 13", got)
+		}
+	})
+
+	t.Run("readable round trip flows", func(t *testing.T) {
+		laneAddr, _ := newLane(t, func(w http.ResponseWriter, r *http.Request) {
+			_, _ = io.Copy(io.Discard, r.Body)
+			w.Header().Set("Content-Type", "application/grpc")
+			w.Header().Set("Trailer", "Grpc-Status")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(grpcTestFrame(0, marshalGRPCTestMessage("secret", "visible")))
+			w.Header().Set("Grpc-Status", "0")
+		})
+		resp := call(t, laneAddr, "/test.v1.Echo/Say", marshalGRPCTestMessage("a", "b"))
+		if got := status(resp); got != "0" {
+			t.Fatalf("grpc-status = %q, want 0", got)
+		}
+	})
+
+	// And the config surface: strictness about payloads nothing can decode
+	// is a misconfiguration, named at validation.
+	t.Run("strict without descriptors refused at validation", func(t *testing.T) {
+		bad := &GRPCCodecConfig{Strict: true}
+		problems := bad.validate("lane")
+		if len(problems) != 1 || !strings.Contains(problems[0], "grpc.strict needs grpc.descriptors") {
+			t.Fatalf("problems = %v", problems)
+		}
+	})
+}
+
 func TestGRPCServerRefusesUndescribedMethodOnStrictLane(t *testing.T) {
 	descriptorPath := writeGRPCTestDescriptors(t)
 	upstreamCalled := make(chan struct{}, 1)

@@ -73,5 +73,18 @@ listeners:
       cert_file: /etc/hoop-inspect/certs/lane.crt
       key_file: /etc/hoop-inspect/certs/lane.key
     grpc:
-      descriptors: /etc/hoop-inspect/descriptors/ledger.pb
+      # Both team artifacts, merged at startup (the overlay's
+      # config-grpc.yaml explains the multi-set shape). internal.pb sits
+      # in the same volume and is deliberately absent.
+      descriptors:
+        - /etc/hoop-inspect/descriptors/ledger.pb
+        - /etc/hoop-inspect/descriptors/reports.pb
       capture_payload: true
+      # The contrast with the overlay lane: strict refuses what these
+      # sets do not describe. /demo.internal.Maintenance/Purge answers
+      # FAILED_PRECONDITION from the LANE, before the upstream is dialed,
+      # where the lenient overlay lane forwards it and the app answers.
+      # An undecodable message likewise ends the RPC with INTERNAL
+      # instead of traveling uninspected. Requires descriptors: strict
+      # about payloads nothing can decode would refuse every RPC.
+      strict: true

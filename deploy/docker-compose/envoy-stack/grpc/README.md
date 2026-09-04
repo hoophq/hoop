@@ -56,18 +56,42 @@ protocol intelligence demonstrably lives in the sidecar, because the
 upstream has none.
 
 No reflection either, which is why every `grpcurl` call passes
-`-protoset`. The image build compiles `ledger.proto` into a
-`FileDescriptorSet` with `protoc`, and the `grpc-descriptors` init service
-publishes it to a volume both consumers mount:
+`-protoset`. The image build compiles THREE descriptor sets — one `protoc`
+run per `.proto`, the way separate teams ship separate artifacts — and the
+`grpc-descriptors` init service publishes them all to a volume both
+consumers mount:
 
-- **hoop-inspect** reads it at `grpc.descriptors`. A gRPC lane enforces
+- `ledger.pb` and `reports.pb` are what the lanes list under
+  `grpc.descriptors`: two artifacts merged into one schema at startup.
+- `internal.pb` ships to the **client only** — the lane deliberately never
+  lists it, which is what makes the strict/lenient beats demonstrable.
+- **hoop-inspect** reads the listed sets. A gRPC lane enforces
   method-level rules without one, but cannot capture, mask or PII-scan a
   payload (ADR-0013) — and both of this stack's live rules read payloads.
-- **grpcurl** reads it to encode requests against a server that cannot
-  describe itself.
+- **grpcurl** reads all three to encode requests against a server that
+  cannot describe itself.
 
-Edit the proto, `dcg build ledger`, `dcg up -d`, and both consumers see the
+Edit a proto, `dcg build ledger`, `dcg up -d`, and both consumers see the
 new schema.
+
+## Multiple sets, strict and lenient
+
+The two stacks run the same lane with one difference, and the demos drive
+the same undescribed call (`/demo.internal.Maintenance/Purge`) into both:
+
+| | overlay lane (default, lenient) | standalone lane (`strict: true`) |
+|---|---|---|
+| method in a listed set | inspected, masked, forwarded | same |
+| method only in `internal.pb` | forwarded with method-level inspection; the lane logs `grpc method not in the descriptor set` | refused **before the upstream is dialed**: `FAILED_PRECONDITION`, message naming the path |
+| undecodable message | forwarded uninspected, logged | ends the RPC with `INTERNAL` |
+| masking lane, either case | refused regardless — a redactor must not forward what it cannot decode | same |
+
+Multi-set merge rules (`config-grpc.yaml` documents them inline): sets
+merge at startup, byte-identical shared imports dedupe, and two DIVERGED
+copies of one file — or two sets defining the same service — refuse to
+load with an error naming both artifacts. `strict` requires descriptors;
+strictness about payloads nothing can decode would refuse every RPC, and
+`-validate` says so.
 
 ## What the demo shows
 
@@ -78,6 +102,8 @@ new schema.
 | a CPF inside a request field → `PermissionDenied` | both | the process's one guardrail, `no-cpf-in-query`, scanning the decoded message |
 | `ExportAll` answers | both | nothing: `no-bulk-export` sits commented out, over the one-rule limit |
 | direct `:18443` call works, as anyone | direct | nobody: identity is an unverified header off the proxy path |
+| `reports.v1.Reports/Latest` masked | both | the merged second artifact: same rule, other team's schema |
+| `Maintenance/Purge` answers via overlay, refused by standalone | both | lenient forwards + logs; `strict: true` refuses pre-dial |
 
 The lane adds **no rules**. The free tier's one guardrail and one mask rule
 are spent in the defaults, and the gRPC lane inherits both — the same
@@ -139,7 +165,7 @@ exists.
 | `envoy-grpc.yaml` | base Envoy config plus the `:8444` gRPC listener and h2 cluster |
 | `docker-compose.standalone.yml` | self-contained no-Envoy stack: the lane terminates TLS |
 | `config-standalone.yaml` | one TLS lane, no identity header, same two rules |
-| `app/` | proto, hand-rolled server, image build (binary + descriptor set) |
+| `app/` | three protos, hand-rolled server, image build (binary + one descriptor set per proto) |
 | `demo-grpc.sh` | the overlay walk (through Envoy, and direct h2c) |
 | `demo-standalone.sh` | the standalone walk; asserts the masking |
 

@@ -18,7 +18,7 @@ h()    { printf '\n\033[1;36m%s\033[0m\n' "$*"; hr; }
 note() { printf '\033[2m%s\033[0m\n' "$*"; }
 
 COMPOSE="docker compose --progress quiet -f docker-compose.standalone.yml"
-GRPCURL="$COMPOSE run --rm -T grpcurl -protoset /descriptors/ledger.pb"
+GRPCURL="$COMPOSE run --rm -T grpcurl -protoset /descriptors/ledger.pb -protoset /descriptors/reports.pb -protoset /descriptors/internal.pb"
 
 if ! curl -sf http://localhost:19000/healthz >/dev/null; then
     echo "hoop-inspect is not healthy. Bring the standalone stack up first:" >&2
@@ -66,6 +66,25 @@ note ""
 $GRPCURL -insecure \
     -d '{"id":"INV-1001","note":"customer cpf 111.444.777-35"}' \
     hoop-inspect:18443 demo.v1.Ledger/GetInvoice 2>&1 | sed 's/^/  /' | head -6
+
+# -------------------------------------------------------------- strict
+h "STRICT / an artifact the lane never got is a refusal, not a forward"
+note "This lane runs strict: true over two listed sets (ledger.pb,"
+note "reports.pb); internal.pb shipped to the client only. It ALSO masks,"
+note "and a masking lane refuses unreadable payloads even without strict"
+note "-- here both demand the same answer. The pure one-flag contrast"
+note "lives in the overlay demo's :18444/:18445 lane pair; what strict"
+note "adds on THIS lane is request-side rigor: an undecodable request"
+note "message ends the RPC instead of traveling uninspected."
+note ""
+$GRPCURL -insecure -d '{"reason":"demo"}' \
+    hoop-inspect:18443 demo.internal.Maintenance/Purge 2>&1 | sed 's/^/  /' | head -4
+note ""
+note "And the merged sets serve BOTH teams' methods -- the Reports"
+note "response below rides the second artifact, author_email redacted by"
+note "the same process-wide rule:"
+$GRPCURL -insecure -d '{}' \
+    hoop-inspect:18443 reports.v1.Reports/Latest 2>&1 | sed 's/^/  /'
 
 # ------------------------------------------------------------------- audit
 h "AUDIT / what the lane recorded"

@@ -90,6 +90,24 @@ func handle(w http.ResponseWriter, r *http.Request) {
 		// by the sidecar's no-bulk-export rule, never by this server.
 		reply(w, invoice("INV-1001", "1 of 3 invoices; the full export pages here"), 0, "")
 
+	case "/reports.v1.Reports/Latest":
+		// The second team's service (reports.proto, its own descriptor
+		// set). author_email is what the sidecar's emails rule rewrites,
+		// proving the MERGED schema drives masking across artifacts.
+		var report []byte
+		report = appendString(report, 1, "RPT-7")
+		report = appendString(report, 2, "quarterly close")
+		report = appendString(report, 3, "ada@example.com")
+		reply(w, report, 0, "")
+
+	case "/demo.internal.Maintenance/Purge":
+		// The service whose descriptor the lane does NOT hold
+		// (internal.proto). A lenient lane forwards here uninspected; a
+		// strict lane never lets the call arrive.
+		var purged []byte
+		purged = appendString(purged, 1, "purged")
+		reply(w, purged, 0, "")
+
 	default:
 		reply(w, nil, 12, "unknown method "+r.URL.Path) // UNIMPLEMENTED
 	}

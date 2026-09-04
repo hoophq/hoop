@@ -38,7 +38,7 @@ services:
     image: hoop-grpc-ledger:local
     build: ./app
     user: "0"
-    entrypoint: ["/bin/sh", "-c", "cp /srv/ledger.pb /descriptors/ledger.pb && chmod 444 /descriptors/ledger.pb"]
+    entrypoint: ["/bin/sh", "-c", "cp /srv/*.pb /descriptors/ && chmod 444 /descriptors/*.pb"]
     volumes:
       - grpc-descriptors:/descriptors
 

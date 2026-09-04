@@ -20,13 +20,20 @@ RUN CGO_ENABLED=0 go build -ldflags "-s -w" -o /out/ledger .
 
 FROM alpine:3.20 AS descriptors
 RUN apk add --no-cache protobuf
-COPY ledger.proto /src/ledger.proto
-RUN mkdir -p /out && protoc -I /src \
-    --include_imports --descriptor_set_out=/out/ledger.pb /src/ledger.proto
+COPY ledger.proto reports.proto internal.proto /src/
+# One protoc run PER artifact, on purpose: this simulates the multi-team
+# shape where each service's CI ships its own descriptor set and nobody
+# owns a central re-bundle. The lane configs list ledger.pb and
+# reports.pb; internal.pb is shipped only so grpcurl can encode calls the
+# lane cannot read (the strict/lenient demo).
+RUN mkdir -p /out \
+    && protoc -I /src --include_imports --descriptor_set_out=/out/ledger.pb /src/ledger.proto \
+    && protoc -I /src --include_imports --descriptor_set_out=/out/reports.pb /src/reports.proto \
+    && protoc -I /src --include_imports --descriptor_set_out=/out/internal.pb /src/internal.proto
 
 FROM alpine:3.20
 COPY --from=build /out/ledger /usr/local/bin/ledger
-COPY --from=descriptors /out/ledger.pb /srv/ledger.pb
+COPY --from=descriptors /out/*.pb /srv/
 
 # Non-root, same shape as the sidecar image: binds one high port, reads
 # nothing but its own binary.

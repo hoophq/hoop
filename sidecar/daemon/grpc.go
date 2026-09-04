@@ -90,6 +90,11 @@ func (g *GRPCCodecConfig) validate(lane string) []string {
 				"listener %q: grpc.descriptors contains an empty path", lane))
 		}
 	}
+	if g.Strict && len(g.Descriptors) == 0 {
+		problems = append(problems, fmt.Sprintf(
+			"listener %q: grpc.strict needs grpc.descriptors; strictness about "+
+				"payloads nothing can decode would refuse every RPC", lane))
+	}
 	if g.CapturePayload && len(g.Descriptors) == 0 {
 		// Without a schema the lane cannot decode a message soundly, so a
 		// capture flag would produce nothing and every rule reading payloads
