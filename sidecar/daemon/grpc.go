@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
-	"time"
 
 	"github.com/hoophq/hoop/sidecar/audit"
 	"github.com/hoophq/hoop/sidecar/gate"
@@ -119,19 +119,6 @@ func buildGRPCServer(
 	log *slog.Logger,
 ) (GRPCServer, error) {
 	lc := ln.cfg
-	upstreamTLS, err := lc.UpstreamTLS.BuildTLS()
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", ln.name, err)
-	}
-	if upstreamTLS != nil && upstreamTLS.InsecureSkipVerify {
-		log.Warn("upstream certificate verification is DISABLED",
-			"listener", ln.name, "upstream", lc.Upstream)
-	}
-	downstreamTLS, err := lc.DownstreamTLS.BuildDownstreamTLS()
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", ln.name, err)
-	}
-
 	var gc GRPCCodecConfig
 	if lc.GRPC != nil {
 		gc = *lc.GRPC
@@ -144,67 +131,112 @@ func buildGRPCServer(
 	}
 	failOnAuditError := ac.failOnAuditError()
 
-	return codecgrpc.NewServer(codecgrpc.Config{
-		Name:            ln.name,
-		Listen:          lc.Listen,
-		Network:         lc.Network,
-		Upstream:        lc.Upstream,
-		UpstreamTLS:     upstreamTLS,
-		DownstreamTLS:   downstreamTLS,
-		IdleTimeout:     time.Duration(lc.IdleTimeoutSec) * time.Second,
-		MaxConns:        lc.MaxConns,
-		Descriptors:     gc.Descriptors,
-		CapturePayload:  gc.CapturePayload,
-		MaxPayloadBytes: gc.MaxPayloadBytes,
-		Log:             laneLog,
-		MaskResponses:   ln.masker != nil,
-		Open: func(ctx context.Context, info codecgrpc.RPCInfo) (*codecgrpc.RPCHandler, *codecgrpc.Status, error) {
-			identity := session.Identity{PeerAddr: info.Request.RemoteAddr}
-			if lc.IdentityHeader != "" {
-				identity.Subject = info.Request.Header.Get(lc.IdentityHeader)
-			}
-			if identity.Subject == "" {
-				identity.Subject = grpcPeerSubject(info.Request)
-			}
+	// libhoop convention: configuration travels as a map[string]string the
+	// server validates (unknown keys refused). TLS rides as file paths, so
+	// the server loads the material and a bad path fails before binding.
+	opts := map[string]string{
+		"name":     ln.name,
+		"listen":   lc.Listen,
+		"upstream": lc.Upstream,
+	}
+	if lc.Network != "" {
+		opts["network"] = lc.Network
+	}
+	if lc.IdleTimeoutSec > 0 {
+		opts["idle_timeout_sec"] = strconv.Itoa(lc.IdleTimeoutSec)
+	}
+	if lc.MaxConns > 0 {
+		opts["max_conns"] = strconv.Itoa(lc.MaxConns)
+	}
+	if gc.Descriptors != "" {
+		opts["descriptors"] = gc.Descriptors
+	}
+	if gc.CapturePayload {
+		opts["capture_payload"] = "true"
+	}
+	if gc.MaxPayloadBytes > 0 {
+		opts["max_payload_bytes"] = strconv.Itoa(gc.MaxPayloadBytes)
+	}
+	if ln.masker != nil {
+		opts["mask_responses"] = "true"
+	}
+	if ut := lc.UpstreamTLS; ut != nil {
+		opts["upstream_tls"] = "true"
+		if ut.CAFile != "" {
+			opts["upstream_tls_ca_file"] = ut.CAFile
+		}
+		if ut.ServerName != "" {
+			opts["upstream_tls_server_name"] = ut.ServerName
+		}
+		if ut.CertFile != "" {
+			opts["upstream_tls_cert_file"] = ut.CertFile
+		}
+		if ut.KeyFile != "" {
+			opts["upstream_tls_key_file"] = ut.KeyFile
+		}
+		if ut.InsecureSkipVerify {
+			opts["upstream_tls_insecure_skip_verify"] = "true"
+			log.Warn("upstream certificate verification is DISABLED",
+				"listener", ln.name, "upstream", lc.Upstream)
+		}
+	}
+	if dt := lc.DownstreamTLS; dt != nil {
+		opts["downstream_tls_cert_file"] = dt.CertFile
+		opts["downstream_tls_key_file"] = dt.KeyFile
+	}
 
-			sess := session.New(inspect.GRPC, identity)
-			sess.Connection = ln.name
-			sess.Upstream = lc.Upstream
-			g, err := gate.NewStatementGate(sess, gate.Config{
-				Protocol:         inspect.GRPC,
-				Policy:           ln.policy,
-				Audit:            sink,
-				Masker:           ln.masker,
-				FailOnAuditError: failOnAuditError,
-			})
-			if err != nil {
-				return nil, nil, err
-			}
+	open := func(ctx context.Context, info codecgrpc.RPCInfo) (*codecgrpc.RPCHandler, *codecgrpc.Status, error) {
+		identity := session.Identity{PeerAddr: info.Request.RemoteAddr}
+		if lc.IdentityHeader != "" {
+			identity.Subject = info.Request.Header.Get(lc.IdentityHeader)
+		}
+		if identity.Subject == "" {
+			identity.Subject = grpcPeerSubject(info.Request)
+		}
 
-			state := &grpcRPCState{
-				gate:  g,
-				stmts: newLaneStatements(info.Request, info.Service, info.Method, allowedMetadata),
-				log:   laneLog,
-			}
-			handler := state.callbacks()
-			if err := g.Start(ctx); err != nil {
-				if failOnAuditError {
-					return handler, &codecgrpc.Status{
-						Code:    13,
-						Message: "audit trail unavailable; RPC refused",
-					}, nil
-				}
-				laneLog.Warn("grpc session start not recorded", "error", err)
-			}
+		sess := session.New(inspect.GRPC, identity)
+		sess.Connection = ln.name
+		sess.Upstream = lc.Upstream
+		g, err := gate.NewStatementGate(sess, gate.Config{
+			Protocol:         inspect.GRPC,
+			Policy:           ln.policy,
+			Audit:            sink,
+			Masker:           ln.masker,
+			FailOnAuditError: failOnAuditError,
+		})
+		if err != nil {
+			return nil, nil, err
+		}
 
-			d := g.EvaluateStatement(ctx, state.stmts.request(info.Request))
-			state.logDecisionError("request headers", d)
-			if !d.Allowed {
-				return handler, grpcDeniedStatus(d.Message), nil
+		state := &grpcRPCState{
+			gate:  g,
+			stmts: newLaneStatements(info.Request, info.Service, info.Method, allowedMetadata),
+			log:   laneLog,
+		}
+		handler := state.callbacks()
+		if err := g.Start(ctx); err != nil {
+			if failOnAuditError {
+				return handler, &codecgrpc.Status{
+					Code:    13,
+					Message: "audit trail unavailable; RPC refused",
+				}, nil
 			}
-			return handler, nil, nil
-		},
-	})
+			laneLog.Warn("grpc session start not recorded", "error", err)
+		}
+
+		d := g.EvaluateStatement(ctx, state.stmts.request(info.Request))
+		state.logDecisionError("request headers", d)
+		if !d.Allowed {
+			return handler, grpcDeniedStatus(d.Message), nil
+		}
+		return handler, nil, nil
+	}
+
+	srv, err := codecgrpc.NewServer(opts, open, laneLog)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", ln.name, err)
+	}
+	return srv, nil
 }
 
 type grpcRPCState struct {
