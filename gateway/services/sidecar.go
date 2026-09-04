@@ -85,6 +85,7 @@ type sidecarConnection struct {
 	guardRailInputRules  json.RawMessage
 	guardRailOutputRules json.RawMessage
 	dataMaskingRules     json.RawMessage
+	opa                  *daemon.OPAConfig
 }
 
 // dataMaskingRule is the shape GetDataMaskingEntityTypesByConnectionAndAttributes
@@ -132,6 +133,37 @@ func BuildSidecarConfig(db *gorm.DB, orgID, sidecarID string) (*daemon.Config, e
 		item.dataMaskingRules = maskRules
 		items = append(items, item)
 	}
+
+	// One batched lookup for the OPA endpoints the assigned connections
+	// point at, so a sidecar with N lanes costs one query rather than N.
+	var opaIDs []string
+	for _, conn := range conns {
+		if conn.OPAConfigID.Valid && conn.OPAConfigID.String != "" {
+			opaIDs = append(opaIDs, conn.OPAConfigID.String)
+		}
+	}
+	opaByID, err := models.ListOPAConfigsByIDs(db, orgID, opaIDs)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrSidecarLookup, err)
+	}
+	for i, conn := range conns {
+		if !conn.OPAConfigID.Valid || conn.OPAConfigID.String == "" {
+			continue
+		}
+		row, ok := opaByID[conn.OPAConfigID.String]
+		if !ok {
+			// The foreign key makes this unreachable; refusing the whole
+			// fetch is the fail-closed answer, since serving the lane
+			// without its policy is what the association exists to prevent.
+			return nil, fmt.Errorf("%w: opa configuration for connection %q", ErrSidecarLookup, conn.Name)
+		}
+		items[i].opa = &daemon.OPAConfig{
+			URL:        row.URL,
+			TimeoutSec: row.TimeoutSec,
+			FailOpen:   row.FailOpen,
+			Gate:       row.Gate,
+		}
+	}
 	return buildConfig(items)
 }
 
@@ -176,6 +208,12 @@ func buildConfig(conns []sidecarConnection) (*daemon.Config, error) {
 		if len(rules) > 0 {
 			listener.Guardrails = &daemon.GuardrailsConfig{Mode: daemon.ModeEnforce, Rules: rules}
 		}
+
+		// A nil pointer leaves the block absent, which is what a connection
+		// with no OPA configuration must produce. cfg.OPA stays unset: a
+		// top-level default would reach every lane, and a per-listener block
+		// REPLACES it rather than merging.
+		listener.OPA = conn.opa
 
 		maskRules, entities, threshold, err := sidecarMaskRules(conn)
 		if err != nil {
