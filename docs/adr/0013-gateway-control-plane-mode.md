@@ -62,6 +62,12 @@ its SPA fallback, behind one middleware chain. The web app is the gateway's;
 `controlplane/frontend` is a separate app, and which one a browser reaches is a
 deployment question.
 
+> **Amended 2026-09-04.** There is one web app, `webapp_v2`. It renders as the
+> control plane when `application_mode` is `control-plane`, which both
+> `/api/publicserverinfo` and `/api/serverinfo` report. `controlplane/frontend`
+> (PR #1754) was folded back into it; see `webapp_v2/CLAUDE.md`, "Application
+> modes".
+
 **`/healthz` is the one mode-aware handler.** The gateway's probe dials
 `127.0.0.1:8010` and returns 400 when it is closed. The control plane never
 opens that port, so its probe answers without dialing; otherwise the helm, AWS
