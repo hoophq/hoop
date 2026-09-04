@@ -22,7 +22,10 @@ import MultiSelect from '@/components/MultiSelect'
 import CopyButton from '@/components/CopyButton'
 import { usersService } from '@/services/users'
 import { authService } from '@/services/auth'
+import { useModeConfig } from '@/modes'
+import { useUserStore } from '@/stores/useUserStore'
 import { docsUrl } from '@/utils/docsUrl'
+import { ROLE_ADMIN, roleLabel, roleOptions, roleToGroups } from '@/utils/roles'
 import { showSnackbar } from '@/utils/snackbar'
 
 const STATUS_OPTIONS = [
@@ -56,10 +59,18 @@ function generatePassword() {
 
 const CREATE_PREFIX = '__new__:'
 
-function UserFormModal({ opened, onClose, formType, user, groups, isLocalAuth, onSaved }) {
+// `usersForm` (modes): 'groups' edits free-form groups, the gateway way;
+// 'roles' assigns one role (utils/roles) and round-trips every other group
+// untouched, so an IdP-synced group survives an edit here.
+function UserFormModal({ opened, onClose, formType, user, groups, isLocalAuth, usersForm, onSaved }) {
+  const adminRoleName = useUserStore((s) => s.adminRoleName)
+  const approverRoleName = useUserStore((s) => s.approverRoleName)
+  const byRole = usersForm === 'roles'
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [selectedGroups, setSelectedGroups] = useState([])
+  const [role, setRole] = useState(ROLE_ADMIN)
+  const [otherGroups, setOtherGroups] = useState([])
   const [status, setStatus] = useState('active')
   const [slackId, setSlackId] = useState('')
   const [password] = useState(() => generatePassword())
@@ -72,12 +83,14 @@ function UserFormModal({ opened, onClose, formType, user, groups, isLocalAuth, o
       setName(user?.name ?? '')
       setEmail(user?.email ?? '')
       setSelectedGroups(user?.groups ?? [])
+      setRole(user?.role ?? ROLE_ADMIN)
+      setOtherGroups((user?.groups ?? []).filter((g) => g !== adminRoleName && g !== approverRoleName))
       setStatus(user?.status ?? 'active')
       setSlackId(user?.slack_id ?? '')
       setGroupOptions(groups.map((g) => ({ value: g.name ?? g, label: g.name ?? g })))
       setGroupSearch('')
     }
-  }, [opened, user, groups])
+  }, [opened, user, groups, adminRoleName, approverRoleName])
 
   const exactMatch = groupOptions.some((o) => o.value === groupSearch)
   const creatableGroupData = groupSearch && !exactMatch
@@ -111,7 +124,10 @@ function UserFormModal({ opened, onClose, formType, user, groups, isLocalAuth, o
     }
     setSaving(true)
     try {
-      const payload = { name, groups: selectedGroups, slack_id: slackId, email }
+      const groupsPayload = byRole
+        ? [...roleToGroups(role, adminRoleName, approverRoleName), ...otherGroups]
+        : selectedGroups
+      const payload = { name, groups: groupsPayload, slack_id: slackId, email }
       if (formType === 'update') {
         payload.id = user.id
         payload.status = status
@@ -151,17 +167,27 @@ function UserFormModal({ opened, onClose, formType, user, groups, isLocalAuth, o
             onChange={(e) => setName(e.currentTarget.value)}
             required
           />
-          <MultiSelect
-            label="Groups"
-            placeholder="Select groups…"
-            data={creatableGroupData}
-            value={selectedGroups}
-            onChange={handleGroupChange}
-            searchable
-            clearable
-            searchValue={groupSearch}
-            onSearchChange={setGroupSearch}
-          />
+          {byRole ? (
+            <Select
+              label="Role"
+              data={roleOptions(role)}
+              value={role}
+              onChange={setRole}
+              required
+            />
+          ) : (
+            <MultiSelect
+              label="Groups"
+              placeholder="Select groups…"
+              data={creatableGroupData}
+              value={selectedGroups}
+              onChange={handleGroupChange}
+              searchable
+              clearable
+              searchValue={groupSearch}
+              onSearchChange={setGroupSearch}
+            />
+          )}
           {formType === 'create' && (
             <TextInput
               label="Email"
@@ -223,6 +249,8 @@ function statusVariant(status) {
 }
 
 export default function Users() {
+  const { usersForm } = useModeConfig()
+  const byRole = usersForm === 'roles'
   const [users, setUsers] = useState([])
   const [groups, setGroups] = useState([])
   const [loading, setLoading] = useState(true)
@@ -303,7 +331,7 @@ export default function Users() {
                 <Table.Tr>
                   <Table.Th>Name</Table.Th>
                   <Table.Th>Email</Table.Th>
-                  <Table.Th>Groups</Table.Th>
+                  <Table.Th>{byRole ? 'Role' : 'Groups'}</Table.Th>
                   <Table.Th>Status</Table.Th>
                   <Table.Th w={80} />
                 </Table.Tr>
@@ -317,7 +345,7 @@ export default function Users() {
                       <Table.Td>{user.email ?? '—'}</Table.Td>
                       <Table.Td>
                         <Text size="sm" c="dimmed">
-                          {(user.groups ?? []).join(', ') || '—'}
+                          {byRole ? roleLabel(user.role) : (user.groups ?? []).join(', ') || '—'}
                         </Text>
                       </Table.Td>
                       <Table.Td>
@@ -364,6 +392,7 @@ export default function Users() {
         user={selectedUser}
         groups={groups}
         isLocalAuth={isLocalAuth}
+        usersForm={usersForm}
         onSaved={fetchAll}
       />
     </>

@@ -6,12 +6,15 @@ import { authService } from '@/services/auth'
 import { connectionsService } from '@/services/connections'
 import { featureFlagsService } from '@/services/featureFlags'
 import { getModeConfig } from '@/modes'
+import { hasRole } from '@/utils/roles'
 import AuthPageLoader from '@/components/AuthPageLoader'
 
-function ProtectedRoute({ children, adminOnly = false, licenseFeature = null }) {
+// `adminOnly` is the gateway's gate. `role` (utils/roles) is the control plane's:
+// admin passes every role gate, approver passes the routes that name it.
+function ProtectedRoute({ children, adminOnly = false, role = null, licenseFeature = null }) {
   const location = useLocation()
   const { isAuthenticated, saveRedirectUrl, logout } = useAuthStore()
-  const { user, isAdmin, setUser, setLoading, setServerInfo, setFeatureFlags, initIntercom, initAnalytics } = useUserStore()
+  const { user, isAdmin, role: userRole, setUser, setLoading, setServerInfo, setFeatureFlags, initIntercom, initAnalytics } = useUserStore()
   const isLicenseFeatureEnabled = useUserStore((s) => s.isLicenseFeatureEnabled)
   const [initializing, setInitializing] = useState(true)
   const [redirectTo, setRedirectTo] = useState(null)
@@ -131,6 +134,10 @@ function ProtectedRoute({ children, adminOnly = false, licenseFeature = null }) 
   }
 
   if (adminOnly && !isAdmin) {
+    return <Navigate to="/" replace />
+  }
+
+  if (!hasRole(userRole, role)) {
     return <Navigate to="/" replace />
   }
 

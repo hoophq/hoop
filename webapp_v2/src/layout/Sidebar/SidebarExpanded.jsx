@@ -20,19 +20,19 @@ function SectionLabel({ label, id }) {
 
 export function SidebarExpanded({ navKey }) {
   const { toggleSidebarCollapsed } = useUIStore()
-  const { isAdmin, isSelfHosted } = useUserStore()
+  const { isAdmin, isSelfHosted, role } = useUserStore()
   const isFeatureFlagEnabled = useUserStore((s) => s.isFeatureFlagEnabled)
   const isLicenseFeatureEnabled = useUserStore((s) => s.isLicenseFeatureEnabled)
   const { nav, shell } = useModeConfig()
 
-  const navItemProps = { isAdmin, isSelfHosted }
+  const navItemProps = { isAdmin, isSelfHosted, role }
 
   // NavItem returns null for a hidden entry, but its <li> wrapper would survive
   // and the Stack would still lay out a gap around it — a non-admin saw a double
   // gap where Dashboard sits between Resources and Terminal. Filter here, like
   // the collapsed rail already does.
   const visible = (items) =>
-    items.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled))
+    items.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled, role))
 
   // No profile block here any more: the user menu lives in the global header
   // (layout/Header/UserMenu.jsx), so user/gatewayVersion/logout moved with it.

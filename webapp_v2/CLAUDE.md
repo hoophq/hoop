@@ -66,6 +66,15 @@ reader.
   `featureFlag`, `licenseFeature`, all applied by `layout/Sidebar/helpers.js#shouldHide`.
 - **A second theme** is a new file next to `src/theme.js`, pointed at by the mode's
   `theme` key; `modes/ModeThemeProvider.jsx` feeds it to `MantineProvider`.
+- **Roles (control plane).** `/userinfo` reports `role`: **admin** reaches every page,
+  **approver** reaches Reviews, anything else lands on the dead end at `/`. A role is a
+  reserved group name; `standard` is the absence of one and is never stored as a group.
+  The group names come from `/serverinfo` (`admin_role_name`, `approver_role_name`),
+  never a literal. Gate a route with `<ProtectedRoute role={ROLE_APPROVER}>` and a nav
+  or palette item with `role:`; `hasRole` in `utils/roles.js` is the single decision and
+  admin passes every gate. `adminOnly` stays the gateway's gate. This gates pages, not
+  data: the backend serves the same routes in both modes, so the route's own middleware
+  in `gateway/api/server.go` is the authority on what a request returns.
 
 Develop against the control plane with `make run-dev-control-plane` (port 8019) and
 `API_URL=http://localhost:8019 npm run dev`. No shadow-cljs: the control plane never
