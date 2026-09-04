@@ -187,9 +187,7 @@ func Put(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
-	// Absent means "leave as is": a client that does not know about sidecars
-	// must not clear the assignment on every save. The kept assignment is
-	// still checked against the new type.
+
 	sidecarID := conn.SidecarID
 	if req.SidecarID != nil {
 		resolved, err := resolveSidecarAssignment(ctx.OrgID, req.SidecarID, req.Type, req.SubType)
@@ -198,13 +196,10 @@ func Put(c *gin.Context) {
 			return
 		}
 		sidecarID = resolved
-	} else if err := revalidateSidecarAssignment(sidecarID, req.Type, req.SubType); err != nil {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
-		return
+	} else {
+		sidecarID = sql.NullString{String: "", Valid: false}
 	}
-	// Same "absent means leave as is" contract as sidecar_id. Nothing about a
-	// connection's type can invalidate an OPA endpoint, so there is no
-	// revalidation twin.
+
 	opaConfigID := conn.OPAConfigID
 	if req.OPAConfigID != nil {
 		resolved, err := resolveOPAConfigAssignment(ctx.OrgID, req.OPAConfigID)
@@ -213,6 +208,8 @@ func Put(c *gin.Context) {
 			return
 		}
 		opaConfigID = resolved
+	} else {
+		opaConfigID = sql.NullString{String: "", Valid: false}
 	}
 	setConnectionDefaults(&req)
 
