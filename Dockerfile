@@ -4,7 +4,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV ACCEPT_EULA=y
 
 RUN groupadd --gid 10001 hoop && \
-    useradd --uid 10001 --gid 10001 --no-create-home --shell /sbin/nologin hoop && \
+    useradd --uid 10001 --gid 10001 --create-home --shell /sbin/nologin hoop && \
     mkdir -p /app && \
     mkdir -p /opt/hoop/sessions && \
     mkdir -p /opt/hoop/bin && \
@@ -43,7 +43,10 @@ EXPOSE 15432
 
 ENV PATH="/app:${PATH}"
 ENV PATH="/opt/hoop/bin:${PATH}"
+ENV HOME="/home/hoop"
 
 USER hoop
+# Database clients create configuration and history files under HOME.
+RUN touch "$HOME/.hoop-write-check" && rm "$HOME/.hoop-write-check"
 
 ENTRYPOINT ["tini", "--"]
