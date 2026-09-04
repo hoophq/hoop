@@ -4,7 +4,7 @@ import { useUIStore } from '@/stores/useUIStore'
 import { useUserStore } from '@/stores/useUserStore'
 import { IconBtn } from './IconBtn'
 import { shouldHide } from './helpers'
-import { MAIN_ITEMS, DISCOVER_ITEMS, ORGANIZATION_ITEMS } from './constants'
+import { useModeConfig } from '@/modes'
 import classes from './Sidebar.module.css'
 
 export function SidebarCollapsed() {
@@ -12,6 +12,30 @@ export function SidebarCollapsed() {
   const { isAdmin, isSelfHosted } = useUserStore()
   const isFeatureFlagEnabled = useUserStore((s) => s.isFeatureFlagEnabled)
   const isLicenseFeatureEnabled = useUserStore((s) => s.isLicenseFeatureEnabled)
+  const { nav } = useModeConfig()
+
+  const visible = (items) =>
+    items.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled))
+
+  // A group (Integrations, Settings) has no page of its own: the rail expands
+  // the sidebar with that group open instead.
+  const renderItem = (item) =>
+    item.children ? (
+      <Box component="li" key={item.label} className={classes.listItem}>
+        <IconBtn
+          icon={item.icon}
+          label={item.label}
+          onClick={() => {
+            setPendingOpenSection(item.label)
+            toggleSidebarCollapsed()
+          }}
+        />
+      </Box>
+    ) : (
+      <Box component="li" key={item.path} className={classes.listItem}>
+        <IconBtn {...item} />
+      </Box>
+    )
 
   return (
     <Stack
@@ -40,52 +64,25 @@ export function SidebarCollapsed() {
         scrollbarSize={10}
         classNames={{ root: classes.collapsedScrollArea, viewport: classes.scrollFill }}
       >
-        <Stack gap={2} align="center" role="list" aria-label="Main navigation">
-          {MAIN_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled)).map((item) => (
-            <Box component="li" key={item.path || item.label} className={classes.listItem}>
-              <IconBtn {...item} />
+        {nav.map(({ id, label, items }) => {
+          const shown = visible(items)
+          if (shown.length === 0) return null
+          if (!label) {
+            return (
+              <Stack key={id} gap={2} align="center" role="list" aria-label="Main navigation">
+                {shown.map(renderItem)}
+              </Stack>
+            )
+          }
+          return (
+            <Box key={id} mt="xxl" w="100%">
+              <Text size="xs" fw={600} mb="xs" className={classes.sectionHidden}>{label}</Text>
+              <Stack gap="xsAlt" align="center" role="list" aria-label={label}>
+                {shown.map(renderItem)}
+              </Stack>
             </Box>
-          ))}
-        </Stack>
-
-        {isAdmin && (
-          <Box mt="xxl" w="100%">
-            <Text size="xs" fw={600} mb="xs" className={classes.sectionHidden}>Discover</Text>
-            <Stack gap="xsAlt" align="center" role="list" aria-label="Discover">
-              {DISCOVER_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled)).map((item) => (
-                <Box component="li" key={item.path} className={classes.listItem}>
-                  <IconBtn {...item} />
-                </Box>
-              ))}
-            </Stack>
-          </Box>
-        )}
-
-        {isAdmin && (
-          <Box mt="xxl" w="100%">
-            <Text size="xs" fw={600} mb="xs" className={classes.sectionHidden}>Organization</Text>
-            <Stack gap="xsAlt" align="center" role="list" aria-label="Organization">
-              {ORGANIZATION_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled)).map((item) =>
-                item.children ? (
-                  <Box component="li" key={item.label} className={classes.listItem}>
-                    <IconBtn
-                      icon={item.icon}
-                      label={item.label}
-                      onClick={() => {
-                        setPendingOpenSection(item.label)
-                        toggleSidebarCollapsed()
-                      }}
-                    />
-                  </Box>
-                ) : (
-                  <Box component="li" key={item.path} className={classes.listItem}>
-                    <IconBtn {...item} />
-                  </Box>
-                )
-              )}
-            </Stack>
-          </Box>
-        )}
+          )
+        })}
 
       </ScrollArea>
 

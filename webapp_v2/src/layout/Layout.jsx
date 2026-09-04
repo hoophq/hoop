@@ -1,5 +1,6 @@
 import { AppShell, Burger, Drawer } from '@mantine/core';
 import { useEffect } from 'react';
+import { useModeConfig } from '@/modes';
 import { useUIStore } from '@/stores/useUIStore';
 import Sidebar from './Sidebar';
 import AppHeader from './Header';
@@ -45,6 +46,7 @@ const MOBILE_DRAWER_STYLES = {
 
 function Layout({ children }) {
   const { sidebarOpen, sidebarCollapsed, toggleSidebar, setSidebarOpen } = useUIStore();
+  const { shell } = useModeConfig();
 
   // Close mobile drawer when resizing to desktop
   useEffect(() => {
@@ -112,8 +114,9 @@ function Layout({ children }) {
       </Drawer>
 
       {/* Mounted here, outside AppShell, so it is available on React routes and
-          on the ClojureApp catch-all alike. */}
-      <NativeConnectionsDrawer />
+          on the ClojureApp catch-all alike. Gateway only: the control plane
+          starts no data plane to connect to. */}
+      {shell.nativeConnections && <NativeConnectionsDrawer />}
     </>
   );
 }

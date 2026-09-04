@@ -1,4 +1,5 @@
 import { Box, Group } from '@mantine/core'
+import { useModeConfig } from '@/modes'
 import { HeaderSearch } from './HeaderSearch'
 import { NativeConnectionsButton } from './NativeConnectionsButton'
 import { UserMenu } from './UserMenu'
@@ -11,6 +12,7 @@ import { UserMenu } from './UserMenu'
  * the mobile sidebar Drawer that also lives there.
  */
 function AppHeader({ burger }) {
+  const { shell } = useModeConfig()
   return (
     <Group h="100%" px="md" gap="md" wrap="nowrap">
       {burger}
@@ -22,7 +24,7 @@ function AppHeader({ burger }) {
       </Box>
 
       <Group gap="sm" wrap="nowrap">
-        <NativeConnectionsButton />
+        {shell.nativeConnections && <NativeConnectionsButton />}
         <UserMenu />
       </Group>
     </Group>

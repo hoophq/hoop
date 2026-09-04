@@ -1,8 +1,8 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
-import { MantineProvider } from '@mantine/core';
-import { theme, cssVariablesResolver } from '@/theme';
+import ModeThemeProvider from '@/modes/ModeThemeProvider';
+import { useUserStore } from '@/stores/useUserStore';
 import App from './App';
 
 // layers.css MUST come first. A cascade layer takes its position from where the
@@ -25,12 +25,16 @@ import '@mantine/carousel/styles.layer.css';
 // instead of opening a second Radix dialog underneath the Mantine Spotlight.
 window.__hoopReactShellPresent = true;
 
+// Which product this bundle renders as (gateway or control plane) comes from the
+// backend. Kicked off before the first render; the shell re-renders when it lands.
+useUserStore.getState().loadAppMode();
+
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <MantineProvider theme={theme} defaultColorScheme="light" cssVariablesResolver={cssVariablesResolver}>
+    <ModeThemeProvider>
       <BrowserRouter>
         <App />
       </BrowserRouter>
-    </MantineProvider>
+    </ModeThemeProvider>
   </StrictMode>
 );

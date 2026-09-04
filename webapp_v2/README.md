@@ -66,6 +66,14 @@ npm run dev
 
 Access the app at `http://localhost:5173`.
 
+**Against the control plane** (the same bundle, rendered as the control plane
+because `/api/publicserverinfo` reports `application_mode: "control-plane"`):
+
+```bash
+make run-dev-control-plane                 # repo root, control plane on :8019
+API_URL=http://localhost:8019 npm run dev  # Vite only — the control plane loads no CLJS
+```
+
 #### Hot reload caveats
 
 - **Vite HMR** updates React/Mantine source under `webapp_v2/src` instantly.
