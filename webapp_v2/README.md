@@ -70,9 +70,15 @@ Access the app at `http://localhost:5173`.
 because `/api/publicserverinfo` reports `application_mode: "control-plane"`):
 
 ```bash
-make run-dev-control-plane                 # repo root, control plane on :8019
-API_URL=http://localhost:8019 npm run dev  # Vite only — the control plane loads no CLJS
+make run-dev-control-plane                                 # repo root, control plane on :8019
+npm --prefix ../webapp run download-connection-metadata    # once; the catalog JSON is gitignored
+API_URL=http://localhost:8019 npm run dev                  # no shadow-cljs needed
 ```
+
+The control plane never loads the CLJS bundle, so shadow-cljs can stay down.
+`/images`, `/icons` and `/data` are served by Vite straight from
+`webapp/resources/public` (see `cljsStaticAssets` in `vite.config.js`); only
+`/js` and `/css` are proxied to :8280.
 
 #### Hot reload caveats
 

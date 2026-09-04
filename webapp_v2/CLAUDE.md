@@ -68,8 +68,11 @@ reader.
   `theme` key; `modes/ModeThemeProvider.jsx` feeds it to `MantineProvider`.
 
 Develop against the control plane with `make run-dev-control-plane` (port 8019) and
-`API_URL=http://localhost:8019 npm run dev` — Vite only, the control plane loads no
-ClojureScript.
+`API_URL=http://localhost:8019 npm run dev`. No shadow-cljs: the control plane never
+loads the CLJS bundle, and Vite serves `/images`, `/icons` and `/data` from
+`webapp/resources/public` itself (`cljsStaticAssets` in `vite.config.js`). The catalog
+JSON there is gitignored — run `npm --prefix ../webapp run download-connection-metadata`
+once.
 
 ## Architecture Rules
 
