@@ -140,6 +140,14 @@ jobs:
           echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
 
+      # When this PR's branch is also open as a hoophq/libhoop PR, build
+      # against that branch instead of the pinned release. No match keeps
+      # the pin; see .github/actions/use-libhoop-pr.
+      - name: Use libhoop PR branch when one is open
+        uses: ./.github/actions/use-libhoop-pr
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+
       - name: Setup Rust for WASM
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -195,6 +203,14 @@ jobs:
         run: |
           echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
+
+      # When this PR's branch is also open as a hoophq/libhoop PR, build
+      # against that branch instead of the pinned release. No match keeps
+      # the pin; see .github/actions/use-libhoop-pr.
+      - name: Use libhoop PR branch when one is open
+        uses: ./.github/actions/use-libhoop-pr
+        with:
+          token: ${{ secrets.GH_TOKEN }}
 
       - name: Setup Rust for WASM
         uses: dtolnay/rust-toolchain@stable
@@ -252,6 +268,14 @@ jobs:
           echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
 
+      # When this PR's branch is also open as a hoophq/libhoop PR, build
+      # against that branch instead of the pinned release. No match keeps
+      # the pin; see .github/actions/use-libhoop-pr.
+      - name: Use libhoop PR branch when one is open
+        uses: ./.github/actions/use-libhoop-pr
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+
       - name: Setup Rust for WASM
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -308,6 +332,14 @@ jobs:
           echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
 
+      # When this PR's branch is also open as a hoophq/libhoop PR, build
+      # against that branch instead of the pinned release. No match keeps
+      # the pin; see .github/actions/use-libhoop-pr.
+      - name: Use libhoop PR branch when one is open
+        uses: ./.github/actions/use-libhoop-pr
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+
       - name: Setup Rust for WASM
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -363,6 +395,14 @@ jobs:
         run: |
           echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
+
+      # When this PR's branch is also open as a hoophq/libhoop PR, build
+      # against that branch instead of the pinned release. No match keeps
+      # the pin; see .github/actions/use-libhoop-pr.
+      - name: Use libhoop PR branch when one is open
+        uses: ./.github/actions/use-libhoop-pr
+        with:
+          token: ${{ secrets.GH_TOKEN }}
 
       - name: Setup Rust for WASM
         uses: dtolnay/rust-toolchain@stable
@@ -423,6 +463,14 @@ jobs:
         run: |
           echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
+
+      # When this PR's branch is also open as a hoophq/libhoop PR, build
+      # against that branch instead of the pinned release. No match keeps
+      # the pin; see .github/actions/use-libhoop-pr.
+      - name: Use libhoop PR branch when one is open
+        uses: ./.github/actions/use-libhoop-pr
+        with:
+          token: ${{ secrets.GH_TOKEN }}
 
       - name: Setup Rust for WASM
         uses: dtolnay/rust-toolchain@stable

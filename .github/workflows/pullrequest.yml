@@ -34,6 +34,14 @@ jobs:
         run: |
           echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
+
+      # When this PR's branch is also open as a hoophq/libhoop PR, test
+      # against that branch instead of the pinned release. No match keeps
+      # the pin; see .github/actions/use-libhoop-pr.
+      - name: Use libhoop PR branch when one is open
+        uses: ./.github/actions/use-libhoop-pr
+        with:
+          token: ${{ secrets.GH_TOKEN }}
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -79,6 +87,14 @@ jobs:
         run: |
           echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
+
+      # When this PR's branch is also open as a hoophq/libhoop PR, test
+      # against that branch instead of the pinned release. No match keeps
+      # the pin; see .github/actions/use-libhoop-pr.
+      - name: Use libhoop PR branch when one is open
+        uses: ./.github/actions/use-libhoop-pr
+        with:
+          token: ${{ secrets.GH_TOKEN }}
       - name: Setup Java
         uses: actions/setup-java@v5
         with:
@@ -139,6 +155,14 @@ jobs:
         run: |
           echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
+
+      # When this PR's branch is also open as a hoophq/libhoop PR, test
+      # against that branch instead of the pinned release. No match keeps
+      # the pin; see .github/actions/use-libhoop-pr.
+      - name: Use libhoop PR branch when one is open
+        uses: ./.github/actions/use-libhoop-pr
+        with:
+          token: ${{ secrets.GH_TOKEN }}
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -186,6 +210,14 @@ jobs:
           echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
 
+      # When this PR's branch is also open as a hoophq/libhoop PR, test
+      # against that branch instead of the pinned release. No match keeps
+      # the pin; see .github/actions/use-libhoop-pr.
+      - name: Use libhoop PR branch when one is open
+        uses: ./.github/actions/use-libhoop-pr
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+
       # Boots a throwaway postgres:17.6 via testcontainers; ubuntu-latest
       # runners have Docker pre-installed, so no services: block is needed.
       - name: Gateway Smoke Test
@@ -224,6 +256,14 @@ jobs:
           echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
 
+      # When this PR's branch is also open as a hoophq/libhoop PR, test
+      # against that branch instead of the pinned release. No match keeps
+      # the pin; see .github/actions/use-libhoop-pr.
+      - name: Use libhoop PR branch when one is open
+        uses: ./.github/actions/use-libhoop-pr
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+
       - name: Gateway Smoke Test (pglite)
         run: make test-gateway-pglite
 
@@ -260,6 +300,14 @@ jobs:
           echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
 
+      # When this PR's branch is also open as a hoophq/libhoop PR, test
+      # against that branch instead of the pinned release. No match keeps
+      # the pin; see .github/actions/use-libhoop-pr.
+      - name: Use libhoop PR branch when one is open
+        uses: ./.github/actions/use-libhoop-pr
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+
       - name: Standalone Mode Test
         run: make test-standalone
 
@@ -294,6 +342,14 @@ jobs:
         run: |
           echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
+
+      # When this PR's branch is also open as a hoophq/libhoop PR, test
+      # against that branch instead of the pinned release. No match keeps
+      # the pin; see .github/actions/use-libhoop-pr.
+      - name: Use libhoop PR branch when one is open
+        uses: ./.github/actions/use-libhoop-pr
+        with:
+          token: ${{ secrets.GH_TOKEN }}
 
       - name: Standalone Single-Binary E2E
         run: make test-standalone-e2e
@@ -340,6 +396,14 @@ jobs:
         run: |
           echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
+
+      # When this PR's branch is also open as a hoophq/libhoop PR, test
+      # against that branch instead of the pinned release. No match keeps
+      # the pin; see .github/actions/use-libhoop-pr.
+      - name: Use libhoop PR branch when one is open
+        uses: ./.github/actions/use-libhoop-pr
+        with:
+          token: ${{ secrets.GH_TOKEN }}
 
       # testcontainers-go manages container lifecycle itself via the Docker
       # daemon. ubuntu-latest runners have Docker pre-installed and running,
