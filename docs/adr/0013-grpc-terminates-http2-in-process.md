@@ -175,6 +175,34 @@ RPC and unbounded messages; the default audit trail is two rows per call, not
 one per frame. Each RPC is also one audit session: an HTTP/2 connection is a
 poor audit boundary for multiplexed outcomes.
 
+**All four RPC shapes flow through one pipeline: unary, server-streaming,
+client-streaming, and bidirectional.** The endpoint is a full-duplex HTTP/2
+reverse proxy flushing every frame as it arrives, and inspection is
+per-message in each direction (`FrameReader` + the message callbacks in
+`libhoop/v2/codec/grpc/server.go`), so a statement lands when its frame
+does, not when the stream ends. Nothing keys on the descriptor's streaming
+bits: a `stream` method needs no extra configuration and cannot be refused
+for being one. Mid-stream denial granularity follows direction — a denied
+request message is withheld from the upstream and the RPC ends with the
+operator's trailers; a denied response message ends only that stream, and
+sibling RPCs on the connection keep flowing. The lifecycle rows above and
+the statement-volume consequence below are what long-lived streams change;
+the data path is the same code for all four shapes.
+
+**A descriptor mismatch fails closed exactly where payloads matter.** On a
+lane with `capture_payload` or mask rules, an RPC whose path the set does
+not define is refused BEFORE the upstream is dialed —
+`FAILED_PRECONDITION (9)`, "the descriptor set does not define
+/pkg.Service/Method" — and a message that does not decode as its declared
+type ends the RPC with `INTERNAL (13)`: the offending frame is withheld
+from the upstream on the request side and from the client on the response
+side, never forwarded as-is. A lane with neither capture nor masking
+forwards methods the set does not name (or runs with no set at all), with
+method-level policy and the two lifecycle statements still applying — the
+"may still authorize by method" tier above. The rule is: the moment a lane
+claims to read payloads, an unreadable payload is a refusal, not a
+pass-through.
+
 ## Usage
 
 Both deployments share the `guardrails` and `mask` blocks, because both

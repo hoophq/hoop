@@ -298,6 +298,10 @@ github.com/hoophq/libhoop v0.0.0-20260827130908-d96eb386cba0 h1:3FJ2kGyOt0DUIkIB
 github.com/hoophq/libhoop v0.0.0-20260827130908-d96eb386cba0/go.mod h1:gDuPtytFeFWFCXmk34dpC/oJj1/NWk6XOHPx0fTg6rs=
 github.com/hoophq/libhoop v0.0.0-20260902174454-48fcbe3f45c5 h1:ouvhJ9FTD0NvUZonVwGnU0TOw37X1fnxo2TKMJoT8uE=
 github.com/hoophq/libhoop v0.0.0-20260902174454-48fcbe3f45c5/go.mod h1:gDuPtytFeFWFCXmk34dpC/oJj1/NWk6XOHPx0fTg6rs=
+github.com/hoophq/libhoop v0.0.0-20260904155214-f039a9424e7f h1:w8ygaAk1Klz35u0n4pPmnoucY9CV3CEtwCRduWhsyaY=
+github.com/hoophq/libhoop v0.0.0-20260904155214-f039a9424e7f/go.mod h1:Z28ISSRx1WOOXrN3QO8Lh/jUsJcmO6KXzFm8ujwUjq4=
+github.com/hoophq/libhoop v0.0.0-20260904162416-990b2b7228d4 h1:F35UDjRm7GhE3xfy2yQC/w/2NY567kyW+hNqIR2IKzs=
+github.com/hoophq/libhoop v0.0.0-20260904162416-990b2b7228d4/go.mod h1:Z28ISSRx1WOOXrN3QO8Lh/jUsJcmO6KXzFm8ujwUjq4=
 github.com/hoophq/mcpproxy v0.1.1 h1:Zj9/vOMAKSOTuGuuSLl/v01iKdQ1+yiYZLNNz2T1npQ=
 github.com/hoophq/mcpproxy v0.1.1/go.mod h1:Wi7Z5bo0hJRwKa/gFaC9vRAWFCy3dxcYS2n28/TTphc=
 github.com/jackc/pgpassfile v1.0.0 h1:/6Hmqy13Ss2zCq62VdNG8tM1wchn8zjSGOBJ6icpsIM=

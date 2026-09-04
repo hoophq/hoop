@@ -485,6 +485,49 @@ func TestGRPCServerEmitsUnknownStatusWhenUpstreamOmitsIt(t *testing.T) {
 	}
 }
 
+func TestGRPCServerRefusesUndescribedMethodOnCapturingLane(t *testing.T) {
+	descriptorPath := writeGRPCTestDescriptors(t)
+	upstreamCalled := make(chan struct{}, 1)
+	upstreamAddr, stopUpstream := startGRPCTestH2C(t, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		upstreamCalled <- struct{}{}
+	}))
+	defer stopUpstream()
+
+	server := buildGRPCTestServer(t, "undescribed-test", upstreamAddr,
+		&GRPCCodecConfig{Descriptors: descriptorPath, CapturePayload: true}, nil, nil, nil)
+	laneAddr, stopLane := startGRPCTestServer(t, server)
+	defer stopLane()
+
+	transport := grpcTestTransport()
+	defer transport.CloseIdleConnections()
+	req, err := http.NewRequest(http.MethodPost, "http://"+laneAddr+"/test.v1.Echo/Missing",
+		bytes.NewReader(grpcTestFrame(0, marshalGRPCTestMessage("request", "request"))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/grpc")
+	resp, err := transport.RoundTrip(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
+	// A capturing lane cannot vouch for a payload it cannot decode, so an
+	// RPC the descriptor set does not define is refused, fail closed,
+	// with FAILED_PRECONDITION naming the path (ADR-0013).
+	if got := resp.Header.Get("Grpc-Status"); got != "9" {
+		t.Fatalf("grpc-status = %q, want 9", got)
+	}
+	if got := codecgrpc.DecodeMessage(resp.Header.Get("Grpc-Message")); !strings.Contains(got, "does not define /test.v1.Echo/Missing") {
+		t.Fatalf("grpc-message = %q", got)
+	}
+	select {
+	case <-upstreamCalled:
+		t.Fatal("an undescribed RPC reached the upstream")
+	default:
+	}
+}
+
 func TestGRPCServerDeniesResponseFramingErrorWithTrailers(t *testing.T) {
 	descriptorPath := writeGRPCTestDescriptors(t)
 	upstreamAddr, stopUpstream := startGRPCTestH2C(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

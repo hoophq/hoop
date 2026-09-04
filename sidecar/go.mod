@@ -21,4 +21,6 @@ module github.com/hoophq/hoop/sidecar
 
 go 1.26.5
 
-require github.com/hoophq/libhoop v0.0.0-20260902174454-48fcbe3f45c5
+require github.com/hoophq/libhoop v0.0.0-20260904162416-990b2b7228d4
+
+require google.golang.org/protobuf v1.36.11 // indirect
