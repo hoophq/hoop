@@ -3,6 +3,7 @@ package client
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"io"
 	"sync"
@@ -168,13 +169,23 @@ func waitForSent(t *testing.T, ft *fakeTransport, n int, within time.Duration) [
 
 // --- tests ---
 
-func TestRunPipe_HappyPath_PostgresEcho(t *testing.T) {
+// TestRunPipe_HappyPath_PostgresProtocolFamily pins the core contract: a
+// postgres flow rides the PG protocol family, not the raw TCP relay.
+//
+// That routing is what makes the tunnel's fixed local credentials work. The
+// protocol family reaches the agent's libhoop PG proxy, which terminates the
+// client's authentication locally and re-authenticates upstream with the
+// connection's stored secrets. The raw relay would instead hand the client the
+// database's own auth challenge, which noop/noop cannot answer.
+func TestRunPipe_HappyPath_PostgresProtocolFamily(t *testing.T) {
 	ft := newFakeTransport()
 	const sessionID = "sess-123"
-	const wantClientBytes = "PING"
 	const wantServerBytes = "PONG"
+	// A well-formed client packet: the pipe re-frames the local stream into
+	// whole PG packets, so raw bytes would never make it onto the wire.
+	clientQuery := pgSimpleQuery("SELECT 1")
 
-	local := newFakeLocal([]byte(wantClientBytes))
+	local := newFakeLocal(clientQuery)
 
 	// Drive the gateway's side of the protocol in a goroutine.
 	go func() {
@@ -193,31 +204,24 @@ func TestRunPipe_HappyPath_PostgresEcho(t *testing.T) {
 			},
 		})
 
-		// Step 3: pipe will Send the TCPConnectionWrite "open" packet
-		// (with SpecTCPServerConnectKey). Then bytes from local.
-		// Wait until both arrive: 1 SessionOpen + 1 open + 1+ payload.
-		var openIdx = -1
-		var payloadSeen bool
+		// Step 3: the client's query must arrive as a PGConnectionWrite. No
+		// TCP open handshake exists on this family: the agent's proxy builds
+		// its upstream on the first data packet.
 		deadline := time.After(2 * time.Second)
 		for {
-			pkts := ft.sentPackets()
-			for i, p := range pkts {
-				if pb.PacketType(p.Type) == pbagent.TCPConnectionWrite {
-					if _, ok := p.Spec[pb.SpecTCPServerConnectKey]; ok && openIdx < 0 {
-						openIdx = i
-						continue
-					}
-					if string(p.Payload) == wantClientBytes {
-						payloadSeen = true
-					}
+			var payloadSeen bool
+			for _, p := range ft.sentPackets() {
+				if pb.PacketType(p.Type) == pbagent.PGConnectionWrite &&
+					bytes.Equal(p.Payload, clientQuery) {
+					payloadSeen = true
 				}
 			}
-			if openIdx >= 0 && payloadSeen {
+			if payloadSeen {
 				break
 			}
 			select {
 			case <-deadline:
-				t.Errorf("timeout waiting for open + payload; got %d packets", len(pkts))
+				t.Errorf("timeout waiting for the PG payload; got %d packets", len(ft.sentPackets()))
 				return
 			case <-time.After(5 * time.Millisecond):
 			}
@@ -225,7 +229,7 @@ func TestRunPipe_HappyPath_PostgresEcho(t *testing.T) {
 
 		// Step 4: send a server response, then close the connection.
 		ft.push(&pb.Packet{
-			Type: pbclient.TCPConnectionWrite,
+			Type: pbclient.PGConnectionWrite,
 			Spec: map[string][]byte{
 				pb.SpecGatewaySessionID:   []byte(sessionID),
 				pb.SpecClientConnectionID: []byte(connectionIDOnPipe),
@@ -255,13 +259,106 @@ func TestRunPipe_HappyPath_PostgresEcho(t *testing.T) {
 		t.Errorf("local writes: want %q, got %q", wantServerBytes, got)
 	}
 
-	// Verify the pipe sent the right initial packets in order.
+	pkts := ft.sentPackets()
+	if pb.PacketType(pkts[0].Type) != pbagent.SessionOpen {
+		t.Errorf("packet[0]: want SessionOpen, got %s", pkts[0].Type)
+	}
+
+	var sawData, sawClose bool
+	for _, p := range pkts {
+		switch pb.PacketType(p.Type) {
+		case pbagent.TCPConnectionWrite:
+			// The regression this test exists for: routing postgres onto the
+			// raw relay strands the client with the database's auth challenge.
+			t.Errorf("postgres session sent a TCPConnectionWrite (raw relay) packet")
+		case pbagent.PGConnectionWrite:
+			if _, ok := p.Spec[pb.SpecTCPServerConnectKey]; ok {
+				t.Errorf("PG write carries SpecTCPServerConnectKey (TCP open handshake)")
+			}
+			if string(p.Spec[pb.SpecGatewaySessionID]) != sessionID {
+				t.Errorf("PG write sessionID: want %q, got %q", sessionID, p.Spec[pb.SpecGatewaySessionID])
+			}
+			if bytes.Equal(p.Payload, clientQuery) {
+				sawData = true
+			}
+		case pbagent.TCPConnectionClose:
+			sawClose = true
+		}
+	}
+	if !sawData {
+		t.Errorf("client bytes never sent as PGConnectionWrite")
+	}
+	if !sawClose {
+		t.Errorf("pipe did not send TCPConnectionClose to the gateway")
+	}
+}
+
+// TestRunPipe_TCPSubtypeUsesRawRelay is the counterpart: a generic `tcp`
+// connection has no protocol hoop can parse and no credentials to inject, so
+// it must keep using the byte relay — including its explicit open handshake.
+func TestRunPipe_TCPSubtypeUsesRawRelay(t *testing.T) {
+	ft := newFakeTransport()
+	const sessionID = "sess-tcp-1"
+	const wantClientBytes = "PING"
+
+	local := newFakeLocal([]byte(wantClientBytes))
+
+	go func() {
+		_ = waitForSent(t, ft, 1, 2*time.Second)
+		ft.push(&pb.Packet{
+			Type: pbclient.SessionOpenOK,
+			Spec: map[string][]byte{
+				pb.SpecGatewaySessionID: []byte(sessionID),
+				pb.SpecConnectionType:   []byte(pb.ConnectionTypeTCP.String()),
+			},
+		})
+
+		deadline := time.After(2 * time.Second)
+		for {
+			var sawOpen, sawPayload bool
+			for _, p := range ft.sentPackets() {
+				if pb.PacketType(p.Type) != pbagent.TCPConnectionWrite {
+					continue
+				}
+				if _, ok := p.Spec[pb.SpecTCPServerConnectKey]; ok {
+					sawOpen = true
+					continue
+				}
+				if string(p.Payload) == wantClientBytes {
+					sawPayload = true
+				}
+			}
+			if sawOpen && sawPayload {
+				break
+			}
+			select {
+			case <-deadline:
+				t.Errorf("timeout waiting for the raw relay open + payload")
+				return
+			case <-time.After(5 * time.Millisecond):
+			}
+		}
+
+		ft.push(&pb.Packet{
+			Type: pbclient.TCPConnectionClose,
+			Spec: map[string][]byte{
+				pb.SpecGatewaySessionID:   []byte(sessionID),
+				pb.SpecClientConnectionID: []byte(connectionIDOnPipe),
+			},
+		})
+	}()
+
+	err := runPipe(context.Background(), ft, local, PipeOptions{
+		ConnectionName:     "redis-prod",
+		SessionOpenTimeout: 2 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("runPipe returned error: %v", err)
+	}
+
 	pkts := ft.sentPackets()
 	if len(pkts) < 3 {
 		t.Fatalf("expected at least 3 sent packets, got %d", len(pkts))
-	}
-	if pb.PacketType(pkts[0].Type) != pbagent.SessionOpen {
-		t.Errorf("packet[0]: want SessionOpen, got %s", pkts[0].Type)
 	}
 	if pb.PacketType(pkts[1].Type) != pbagent.TCPConnectionWrite {
 		t.Errorf("packet[1]: want TCPConnectionWrite, got %s", pkts[1].Type)
@@ -269,21 +366,89 @@ func TestRunPipe_HappyPath_PostgresEcho(t *testing.T) {
 	if _, ok := pkts[1].Spec[pb.SpecTCPServerConnectKey]; !ok {
 		t.Errorf("packet[1] missing SpecTCPServerConnectKey")
 	}
-	if string(pkts[1].Spec[pb.SpecGatewaySessionID]) != sessionID {
-		t.Errorf("packet[1] sessionID: want %q, got %q", sessionID, pkts[1].Spec[pb.SpecGatewaySessionID])
+}
+
+// TestRunPipe_MySQLSendsInitWrite pins the server-speaks-first handshake: the
+// MySQL client waits for the server greeting, which only exists once the
+// agent-side proxy has been constructed. The pipe must therefore send one
+// empty MySQLConnectionWrite before the client says anything, or the flow
+// deadlocks with both ends waiting to read.
+func TestRunPipe_MySQLSendsInitWrite(t *testing.T) {
+	ft := newFakeTransport()
+	const sessionID = "sess-mysql-1"
+
+	// The client stays silent until the greeting arrives, exactly like a real
+	// MySQL client.
+	local := newFakeLocal(nil)
+
+	go func() {
+		_ = waitForSent(t, ft, 1, 2*time.Second)
+		ft.push(&pb.Packet{
+			Type: pbclient.SessionOpenOK,
+			Spec: map[string][]byte{
+				pb.SpecGatewaySessionID: []byte(sessionID),
+				pb.SpecConnectionType:   []byte(pb.ConnectionTypeMySQL.String()),
+			},
+		})
+
+		// The init write must arrive with no client input whatsoever.
+		deadline := time.After(2 * time.Second)
+		for {
+			for _, p := range ft.sentPackets() {
+				if pb.PacketType(p.Type) == pbagent.MySQLConnectionWrite && len(p.Payload) == 0 {
+					ft.push(&pb.Packet{
+						Type: pbclient.TCPConnectionClose,
+						Spec: map[string][]byte{
+							pb.SpecGatewaySessionID:   []byte(sessionID),
+							pb.SpecClientConnectionID: []byte(connectionIDOnPipe),
+						},
+					})
+					return
+				}
+			}
+			select {
+			case <-deadline:
+				t.Errorf("mysql session never sent the proxy-init write")
+				local.Close()
+				return
+			case <-time.After(5 * time.Millisecond):
+			}
+		}
+	}()
+
+	err := runPipe(context.Background(), ft, local, PipeOptions{
+		ConnectionName:     "mysql-prod",
+		SessionOpenTimeout: 2 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("runPipe returned error: %v", err)
 	}
 
-	// The pipe MUST signal close after local EOFs.
-	sawClose := false
-	for _, p := range pkts {
-		if pb.PacketType(p.Type) == pbagent.TCPConnectionClose {
-			sawClose = true
-			break
+	var sawInit bool
+	for _, p := range ft.sentPackets() {
+		if pb.PacketType(p.Type) == pbagent.MySQLConnectionWrite && len(p.Payload) == 0 {
+			sawInit = true
+		}
+		if pb.PacketType(p.Type) == pbagent.TCPConnectionWrite {
+			t.Errorf("mysql session sent a TCPConnectionWrite (raw relay) packet")
 		}
 	}
-	if !sawClose {
-		t.Errorf("pipe did not send TCPConnectionClose to the gateway")
+	if !sawInit {
+		t.Errorf("mysql session did not send the empty proxy-init write")
 	}
+}
+
+// pgSimpleQuery builds a PostgreSQL simple-query ('Q') message. The pipe
+// re-frames the client stream into whole protocol packets, so tests must feed
+// it valid framing rather than arbitrary bytes.
+func pgSimpleQuery(sql string) []byte {
+	q := append([]byte(sql), 0)
+	total := 4 + len(q)
+	buf := make([]byte, 1+total)
+	buf[0] = 'Q'
+	binary.BigEndian.PutUint32(buf[1:5], uint32(total))
+	copy(buf[5:], q)
+	return buf
 }
 
 func TestRunPipe_HappyPath_HttpProxyEcho(t *testing.T) {

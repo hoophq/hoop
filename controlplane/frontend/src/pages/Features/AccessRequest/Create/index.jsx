@@ -26,6 +26,7 @@ import TextInput from '@/components/TextInput'
 import { usePaginatedConnections } from '@/hooks/usePaginatedConnections'
 import { PAGE_PADDING } from '@/layout/PageLayout'
 import { useUserStore } from '@/stores/useUserStore'
+import { ROLE_APPROVER } from '@/utils/roles'
 import { showSnackbar } from '@/utils/snackbar'
 import { useAccessRequestStore } from '../store'
 import {
@@ -141,7 +142,7 @@ function RuleFormFields({ rule, isEdit }) {
     () => rule?.all_groups_must_approve ?? true,
   )
   const [reviewersGroups, setReviewersGroups] = useState(
-    () => rule?.reviewers_groups ?? [],
+    () => rule?.reviewers_groups ?? [ROLE_APPROVER],
   )
   const [forceApprovalGroups, setForceApprovalGroups] = useState(
     () => rule?.force_approval_groups ?? [],

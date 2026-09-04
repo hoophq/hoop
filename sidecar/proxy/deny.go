@@ -3,9 +3,11 @@ package proxy
 import (
 	"encoding/binary"
 	"fmt"
+	"strconv"
 	"unicode/utf16"
 
 	"github.com/hoophq/hoop/sidecar/inspect"
+	codecmongodb "github.com/hoophq/libhoop/v2/codec/mongodb"
 )
 
 // ProtocolDenyWriter renders a denial in each protocol's native error frame.
@@ -49,6 +51,21 @@ func (ProtocolDenyWriter) Deny(proto inspect.Protocol, dir inspect.Direction, ms
 		return nil
 	}
 	return nil
+}
+
+// DenyStatement renders a denial that can use the statement's wire metadata.
+// MongoDB drivers multiplex requests and accept a reply only when responseTo
+// matches the denied request id; the older Deny interface does not carry it.
+func (w ProtocolDenyWriter) DenyStatement(statement inspect.Statement, msg string) []byte {
+	if statement.Protocol != inspect.MongoDB {
+		return w.Deny(statement.Protocol, statement.Direction, msg)
+	}
+	requestID, err := strconv.ParseInt(
+		statement.Metadata[codecmongodb.MetadataRequestID], 10, 32)
+	if err != nil {
+		return nil
+	}
+	return codecmongodb.DenyResponse(int32(requestID), msg)
 }
 
 // TDS token-stream constants for a synthesized server error.

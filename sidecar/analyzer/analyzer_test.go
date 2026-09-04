@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/analyzer"
 	_ "github.com/hoophq/hoop/sidecar/codec/all"
+	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
 )
 
@@ -196,12 +196,12 @@ func TestResponsesAreNotClassified(t *testing.T) {
 	}
 }
 
-// Every SQL protocol with a codec must have a content builder, or its lane
-// runs the analyzer and classifies nothing: classify returns before it has a
-// status, so there is no denial, no finding and no annotation to read. An
-// mssql lane shipped that way once, and the only symptom was silence.
-func TestEverySQLProtocolIsClassified(t *testing.T) {
-	for _, proto := range []inspect.Protocol{inspect.Postgres, inspect.MSSQL, inspect.MySQL} {
+// Every database protocol with a codec must have a content builder, or its
+// lane runs the analyzer and classifies nothing: classify returns before it
+// has a status, so there is no denial, no finding and no annotation to read.
+// An MSSQL lane shipped that way once, and the only symptom was silence.
+func TestEveryDatabaseProtocolIsClassified(t *testing.T) {
+	for _, proto := range []inspect.Protocol{inspect.Postgres, inspect.MSSQL, inspect.MySQL, inspect.MongoDB} {
 		t.Run(string(proto), func(t *testing.T) {
 			p := &stubProvider{level: analyzer.RiskHigh}
 			ev := mustNew(t, analyzer.Config{

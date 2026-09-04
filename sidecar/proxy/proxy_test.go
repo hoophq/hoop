@@ -15,9 +15,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/audit"
 	_ "github.com/hoophq/hoop/sidecar/codec/all"
+	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
 	"github.com/hoophq/hoop/sidecar/proxy"
 	"github.com/hoophq/hoop/sidecar/session"
@@ -563,7 +563,7 @@ func TestHTTPForbiddenFrame(t *testing.T) {
 func TestDenyWriterDispatch(t *testing.T) {
 	w := proxy.ProtocolDenyWriter{}
 	for _, proto := range []inspect.Protocol{
-		inspect.Postgres, inspect.MySQL, inspect.HTTP,
+		inspect.Postgres, inspect.MSSQL, inspect.MySQL, inspect.HTTP,
 	} {
 		if len(w.Deny(proto, inspect.FromClient, "x")) == 0 {
 			t.Errorf("%s produced no deny frame", proto)
@@ -579,8 +579,29 @@ func TestDenyWriterDispatch(t *testing.T) {
 	// A protocol with no shipped codec gets no frame: without a decoder
 	// there is no statement to explain a denial about, and emitting bytes a
 	// driver misparses is worse than closing.
-	if w.Deny(inspect.Protocol("mongodb"), inspect.FromClient, "x") != nil {
+	if w.Deny(inspect.Protocol("cassandra"), inspect.FromClient, "x") != nil {
 		t.Error("an unsupported protocol produced a deny frame")
+	}
+}
+
+func TestMongoDBDenyFrameUsesRequestID(t *testing.T) {
+	frame := proxy.ProtocolDenyWriter{}.DenyStatement(inspect.Statement{
+		Protocol:  inspect.MongoDB,
+		Direction: inspect.FromClient,
+		Metadata:  map[string]string{"mongodb.request_id": "-42"},
+	}, "destructive commands are not permitted")
+	if len(frame) < 21 {
+		t.Fatalf("MongoDB denial frame is %d bytes", len(frame))
+	}
+	if got := int32(binary.LittleEndian.Uint32(frame[8:12])); got != -42 {
+		t.Errorf("responseTo = %d, want -42", got)
+	}
+	if got := int32(binary.LittleEndian.Uint32(frame[12:16])); got != 2013 {
+		t.Errorf("opcode = %d, want OP_MSG (2013)", got)
+	}
+	if !bytes.Contains(frame, []byte("destructive commands are not permitted")) ||
+		!bytes.Contains(frame, []byte("Unauthorized")) {
+		t.Error("MongoDB denial omitted the operator message or command error name")
 	}
 }
 

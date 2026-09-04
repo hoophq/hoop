@@ -81,10 +81,10 @@ var startControlPlaneCmd = &cobra.Command{
 	Long: `Runs the control plane: the HTTP API used to administer a fleet of
 sidecars.
 
-It shares the gateway binary and its database, and starts none of the
-gateway's data plane: no gRPC transport on :8010, no protocol proxies, no
-transport plugins and no web UI. The API surface starts near-empty and grows
-as routes are ported, so today it answers /api/healthz and nothing else.
+It shares the gateway binary, its database, its HTTP API and its web UI, and
+starts none of the gateway's data plane: no gRPC transport on :8010, no
+protocol proxies and no transport plugins. A route that needs an agent or a
+client stream is still registered and fails per request.
 
 It reads the same database and API configuration the gateway does
 (POSTGRES_DB_URI, API_URL, AUTH_METHOD, ...); nothing in it is agent- or

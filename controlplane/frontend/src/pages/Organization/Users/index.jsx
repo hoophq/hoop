@@ -23,6 +23,8 @@ import { usersService } from '@/services/users'
 import { authService } from '@/services/auth'
 import { docsUrl } from '@/utils/docsUrl'
 import { showSnackbar } from '@/utils/snackbar'
+import { ROLE_ADMIN, roleLabel, roleOptions, roleToGroups } from '@/utils/roles'
+import { useUserStore } from '@/stores/useUserStore'
 
 const STATUS_OPTIONS = [
   { value: 'active', label: 'Active' },
@@ -57,11 +59,11 @@ function generatePassword() {
 function UserFormModal({ opened, onClose, formType, user, isLocalAuth, onSaved }) {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
-  // Read, never edited. The control plane does not expose access-control
-  // groups, so there is no picker and no GET /users/groups call — but they
-  // stay on the user record, and omitting them from the update payload would
-  // clear the ones an operator set on the gateway.
-  const [existingGroups, setExistingGroups] = useState([])
+  const adminRoleName = useUserStore((s) => s.adminRoleName)
+  const approverRoleName = useUserStore((s) => s.approverRoleName)
+  const [role, setRole] = useState(ROLE_ADMIN)
+  // Round-tripped so an IdP-synced group survives an edit here.
+  const [otherGroups, setOtherGroups] = useState([])
   const [status, setStatus] = useState('active')
   const [slackId, setSlackId] = useState('')
   const [password] = useState(() => generatePassword())
@@ -71,11 +73,12 @@ function UserFormModal({ opened, onClose, formType, user, isLocalAuth, onSaved }
     if (opened) {
       setName(user?.name ?? '')
       setEmail(user?.email ?? '')
-      setExistingGroups(user?.groups ?? [])
+      setRole(user?.role ?? ROLE_ADMIN)
+      setOtherGroups((user?.groups ?? []).filter((g) => g !== adminRoleName && g !== approverRoleName))
       setStatus(user?.status ?? 'active')
       setSlackId(user?.slack_id ?? '')
     }
-  }, [opened, user])
+  }, [opened, user, adminRoleName, approverRoleName])
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -89,7 +92,8 @@ function UserFormModal({ opened, onClose, formType, user, isLocalAuth, onSaved }
     }
     setSaving(true)
     try {
-      const payload = { name, groups: existingGroups, slack_id: slackId, email }
+      const groups = [...roleToGroups(role, adminRoleName, approverRoleName), ...otherGroups]
+      const payload = { name, groups, slack_id: slackId, email }
       if (formType === 'update') {
         payload.id = user.id
         payload.status = status
@@ -139,6 +143,13 @@ function UserFormModal({ opened, onClose, formType, user, isLocalAuth, onSaved }
               required
             />
           )}
+          <Select
+            label="Role"
+            data={roleOptions(role)}
+            value={role}
+            onChange={setRole}
+            required
+          />
           {formType === 'update' && (
             <Select
               label="Status"
@@ -267,7 +278,7 @@ export default function Users() {
                 <Table.Tr>
                   <Table.Th>Name</Table.Th>
                   <Table.Th>Email</Table.Th>
-                  <Table.Th>Groups</Table.Th>
+                  <Table.Th>Role</Table.Th>
                   <Table.Th>Status</Table.Th>
                   <Table.Th w={80} />
                 </Table.Tr>
@@ -281,7 +292,7 @@ export default function Users() {
                       <Table.Td>{user.email ?? '—'}</Table.Td>
                       <Table.Td>
                         <Text size="sm" c="dimmed">
-                          {(user.groups ?? []).join(', ') || '—'}
+                          {roleLabel(user.role)}
                         </Text>
                       </Table.Td>
                       <Table.Td>

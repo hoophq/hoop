@@ -27,6 +27,8 @@ var (
 	}()
 )
 
+const GroupApprover = "approver"
+
 const (
 	UserStatusActive    UserStatusType = "active"
 	UserStatusReviewing UserStatusType = "reviewing"

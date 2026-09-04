@@ -59,6 +59,7 @@ import (
 	serverlogsapi "github.com/hoophq/hoop/gateway/api/serverlogs"
 	serviceaccountapi "github.com/hoophq/hoop/gateway/api/serviceaccount"
 	sessionapi "github.com/hoophq/hoop/gateway/api/session"
+	apisidecar "github.com/hoophq/hoop/gateway/api/sidecar"
 	signupapi "github.com/hoophq/hoop/gateway/api/signup"
 	spiffemappingsapi "github.com/hoophq/hoop/gateway/api/spiffemappings"
 	userapi "github.com/hoophq/hoop/gateway/api/user"
@@ -107,6 +108,8 @@ type Api struct {
 
 //	@tag.name	Agents
 
+//	@tag.name	Sidecars
+
 //	@tag.name	Runbooks
 
 //	@tag.name	Guard Rails
@@ -137,45 +140,22 @@ type Api struct {
 // share the exact same handler — tests exercise the production middleware
 // chain and validators rather than a stripped-down router.
 //
-// In control-plane mode it returns the much smaller engine described in
-// buildControlPlaneEngine.
+// The control plane gets the same engine (ADR-0013): every route, the web
+// UI included. The routes it does not need are cheaper to leave in than to
+// list, so a route added to the gateway reaches the control plane by
+// construction; one that needs the gRPC transport that mode never starts
+// fails per request instead. The one handler that differs is /healthz.
 func (a *Api) BuildEngine() *gin.Engine {
+	return a.buildEngine(appconfig.Get().AppMode())
+}
+
+// buildEngine takes the mode as a parameter so a test can build both
+// surfaces in one process and diff them.
+func (a *Api) buildEngine(mode appconfig.AppMode) *gin.Engine {
 	route := a.newEngine()
 	baseURL := appconfig.Get().ApiURLPath()
 
-	if appconfig.Get().IsControlPlane() {
-		return a.buildControlPlaneEngine(route, baseURL)
-	}
-
-	// UI: assets resolved from STATIC_UI_PATH, the default disk path or the
-	// build embedded in the binary; index.html and js/app.js are
-	// transformed in memory with this gateway's URL and served from memory.
-	webappUI, err := webappui.Resolve()
-	if err != nil {
-		log.Warnf("failed loading the web UI, running API-only, reason=%v", err)
-	}
-	webappui.LogSource(webappUI)
-	if webappUI != nil {
-		route.Use(static.Serve(baseURL+"/", webappUI.FileSystem()))
-		route.GET(baseURL+"/index.html", func(c *gin.Context) {
-			webappUI.WriteIndex(c.Writer, http.StatusOK)
-		})
-		if webappUI.HasAppJs() {
-			route.GET(baseURL+"/js/app.js", func(c *gin.Context) {
-				webappUI.WriteAppJs(c.Writer)
-			})
-		}
-	}
-	route.NoRoute(func(c *gin.Context) {
-		if !strings.HasPrefix(c.Request.RequestURI, baseURL+"/api") {
-			if webappUI != nil {
-				webappUI.WriteIndex(c.Writer, http.StatusOK)
-				return
-			}
-			c.Status(http.StatusNotFound)
-			return
-		}
-	})
+	serveWebUI(route, baseURL)
 
 	route.GET("/.well-known/oauth-protected-resource", apimcpauth.MetadataHandler)
 	route.GET("/.well-known/oauth-protected-resource"+apimcpauth.McpResourcePath(), apimcpauth.MetadataHandler)
@@ -202,10 +182,44 @@ func (a *Api) BuildEngine() *gin.Engine {
 	ironRdpInstance := rdp.GetIronServerInstance()
 	ironRdpInstance.AttachHandlers(ironRdpGroup)
 
-	a.buildRoutes(a.newAPIRouter(route, baseURL))
+	a.buildRoutes(a.newAPIRouter(route, baseURL), mode)
 	openapi.RegisterGinValidators()
 
 	return route
+}
+
+// serveWebUI mounts the gateway's web app: assets resolved from
+// STATIC_UI_PATH, the default disk path or the build embedded in the binary;
+// index.html and js/app.js are transformed in memory with this gateway's URL
+// and served from memory. Any path outside /api falls back to index.html so
+// the SPA router owns it.
+func serveWebUI(route *gin.Engine, baseURL string) {
+	webappUI, err := webappui.Resolve()
+	if err != nil {
+		log.Warnf("failed loading the web UI, running API-only, reason=%v", err)
+	}
+	webappui.LogSource(webappUI)
+	if webappUI != nil {
+		route.Use(static.Serve(baseURL+"/", webappUI.FileSystem()))
+		route.GET(baseURL+"/index.html", func(c *gin.Context) {
+			webappUI.WriteIndex(c.Writer, http.StatusOK)
+		})
+		if webappUI.HasAppJs() {
+			route.GET(baseURL+"/js/app.js", func(c *gin.Context) {
+				webappUI.WriteAppJs(c.Writer)
+			})
+		}
+	}
+	route.NoRoute(func(c *gin.Context) {
+		if !strings.HasPrefix(c.Request.RequestURI, baseURL+"/api") {
+			if webappUI != nil {
+				webappUI.WriteIndex(c.Writer, http.StatusOK)
+				return
+			}
+			c.Status(http.StatusNotFound)
+			return
+		}
+	})
 }
 
 // newEngine builds the gin engine with the middleware every mode needs:
@@ -232,17 +246,6 @@ func (a *Api) newAPIRouter(route *gin.Engine, baseURL string) *apiroutes.Router 
 	rg.Use(sentrygin.New(sentrygin.Options{Repanic: true}))
 	rg.Use(sentryCatchAll5xxMiddleware)
 	return apiroutes.New(rg)
-}
-
-// buildControlPlaneEngine wires the control plane's HTTP surface. It shares
-// the middleware chain with the gateway and stops there: no static UI and no
-// SPA fallback (the gateway's web app calls routes the control plane does not
-// serve), no MCP well-known handlers, no SSM and no RDP proxy group — those
-// belong to the traffic path the control plane does not have.
-func (a *Api) buildControlPlaneEngine(route *gin.Engine, baseURL string) *gin.Engine {
-	a.buildControlPlaneRoutes(a.newAPIRouter(route, baseURL))
-	openapi.RegisterGinValidators()
-	return route
 }
 
 func (a *Api) StartAPI() {
@@ -278,363 +281,51 @@ func (a *Api) StartAPI() {
 	}
 }
 
-// buildControlPlaneRoutes registers the control plane's API surface. It is
-// deliberately near-empty: the gateway's routes are being ported one at a
-// time, and a route answers here only after it has been reviewed for a
-// deployment that has no agents, no connections and no sessions of its own.
-//
-// /healthz is the exception, and not an optional one: the helm service, the
-// AWS load balancer template and the docker-compose healthcheck all probe
-// /api/healthz, so a control plane without it never passes its health check.
-func (api *Api) buildControlPlaneRoutes(r *apiroutes.Router) {
-	// runControlPlane builds Api without a ReleaseConnectionFn because this
-	// mode runs no gRPC transport. Only reviewapi.ReviewByIdOrSid calls it, and
-	// that route is not registered below — this stub is here so that adding it
-	// back fails with a named error instead of a nil dereference after the
-	// review has already been written.
-	reviewHandler := reviewapi.NewHandler(func(orgID, sid, _, _, _, _ string) {
-		log.With("org", orgID, "sid", sid).
-			Error("control plane: asked to release a gRPC connection, but this mode runs no transport")
-	})
-	loginOidcApiHandler := loginoidcapi.New()
-	loginSamlApiHandler := loginsamlapi.New()
+// buildSidecarRoutes registers the sidecar surface. Administering a fleet of
+// sidecars is the control plane's whole job, and the gateway serves the same
+// routes because that is where an operator's connections already live.
+func (api *Api) buildSidecarRoutes(r *apiroutes.Router) {
+	r.POST("/sidecars",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		api.TrackRequest(analytics.EventCreateSidecar),
+		apisidecar.Post)
+	r.GET("/sidecars",
+		apiroutes.ReadOnlyAccessRole,
+		r.AuthMiddleware,
+		apisidecar.List)
 
-	// Probes and specs.
-	r.GET("/healthz", apihealthz.ControlPlaneLivenessHandler())
-	r.GET("/openapiv2.json", openapi.Handler)
-	r.GET("/openapiv3.json", openapi.HandlerV3)
+	// Registered before the :nameOrID routes so the static paths are the
+	// obvious ones to a reader. Post also refuses these two as resource
+	// names, so no sidecar can be shadowed by them.
+	r.POST("/sidecars/handshake", r.SidecarAuthMiddleware, apisidecar.Handshake)
 
-	// Obtaining a session. controlplane/frontend/src/services/auth.js calls every one of these.
-	r.GET("/publicserverinfo", apipublicserverinfo.Get)
-	r.GET("/serverinfo",
+	r.GET("/sidecars/:nameOrID",
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
-		apiserverinfo.Get)
-	r.GET("/login", loginOidcApiHandler.Login)
-	r.GET("/callback", loginOidcApiHandler.LoginCallback)
-	r.GET("/saml/login", loginSamlApiHandler.SamlLogin)
-	r.POST("/saml/callback", loginSamlApiHandler.SamlLoginCallback)
-	r.POST("/localauth/register",
-		api.TrackRequest(analytics.EventSignup),
-		loginlocalapi.Register)
-	r.POST("/localauth/login",
-		api.TrackRequest(analytics.EventLogin),
-		loginlocalapi.Login)
-	r.POST("/signup",
-		api.TrackRequest(analytics.EventSignup),
-		signupapi.Post)
-	r.GET("/userinfo",
-		apiroutes.UserInfoRouteType,
-		apiroutes.ReadOnlyAccessRole,
-		r.AuthMiddleware,
-		userapi.GetUserInfo)
-	r.POST("/orgs/invitations",
-		apiroutes.ReadOnlyAccessRole,
-		r.AuthMiddleware,
-		userapi.HandleOrgInvitation)
-
-	// Feature flags: the Settings -> Experimental surface.
-	r.GET("/feature-flags",
-		apiroutes.ReadOnlyAccessRole,
-		r.AuthMiddleware,
-		apifeatureflags.List)
-	r.PUT("/feature-flags/:name",
+		apisidecar.Get)
+	r.DELETE("/sidecars/:nameOrID",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		api.AuditMiddleware(),
-		apifeatureflags.Update)
-
-	// Administrators.
-	r.GET("/users",
-		apiroutes.ReadOnlyAccessRole,
-		r.AuthMiddleware,
-		userapi.List)
-	r.POST("/users",
-		apiroutes.AdminOnlyAccessRole,
-		r.AuthMiddleware,
-		api.AuditMiddleware(),
-		userapi.Create)
-	r.GET("/users/:emailOrID",
-		apiroutes.ReadOnlyAccessRole,
-		r.AuthMiddleware,
-		userapi.GetUserByEmailOrID)
-	r.PUT("/users/:emailOrID",
-		apiroutes.AdminOnlyAccessRole,
-		r.AuthMiddleware,
-		api.AuditMiddleware(),
-		api.TrackRequest(analytics.EventUpdateUser),
-		userapi.Update)
-	r.DELETE("/users/:emailOrID",
-		apiroutes.AdminOnlyAccessRole,
-		r.AuthMiddleware,
-		api.AuditMiddleware(),
-		userapi.Delete)
-	r.PATCH("/users/self/slack",
-		r.AuthMiddleware,
-		api.TrackRequest(analytics.EventUpdateUser),
-		userapi.PatchSlackID)
-	r.POST("/users/self/signup-origin",
-		apiroutes.ReadOnlyAccessRole,
-		r.AuthMiddleware,
-		userapi.PostSignupOrigin)
-
-	// Groups are READ ONLY. The control plane administers none; it reads the ones
-	// that exist because a review rule names its approvers by group.
-	r.GET("/users/groups",
-		apiroutes.ReadOnlyAccessRole,
-		r.AuthMiddleware,
-		userapi.ListAllGroups)
-
-	// Guardrails.
-	r.POST("/guardrails",
-		apiroutes.AdminOnlyAccessRole,
-		r.AuthMiddleware,
-		api.AuditMiddleware(),
-		api.TrackRequest(analytics.EventCreateGuardRailRules),
-		apiguardrails.Post)
-	r.GET("/guardrails",
-		apiroutes.AdminAndAuditorAccessRole,
-		r.AuthMiddleware,
-		apiguardrails.List)
-	r.GET("/guardrails/:id",
-		apiroutes.AdminAndAuditorAccessRole,
-		r.AuthMiddleware,
-		apiguardrails.Get)
-	r.PUT("/guardrails/:id",
-		apiroutes.AdminOnlyAccessRole,
-		r.AuthMiddleware,
-		api.AuditMiddleware(),
-		api.TrackRequest(analytics.EventUpdateGuardRailRules),
-		apiguardrails.Put)
-	r.DELETE("/guardrails/:id",
-		apiroutes.AdminOnlyAccessRole,
-		r.AuthMiddleware,
-		api.AuditMiddleware(),
-		api.TrackRequest(analytics.EventDeleteGuardRailRules),
-		apiguardrails.Delete)
-
-	// Live data masking.
-	r.POST("/datamasking-rules",
-		apiroutes.AdminOnlyAccessRole,
-		r.AuthMiddleware,
-		api.AuditMiddleware(),
-		apidatamasking.Post)
-	r.GET("/datamasking-rules",
-		apiroutes.AdminAndAuditorAccessRole,
-		r.AuthMiddleware,
-		apidatamasking.List)
-	r.GET("/datamasking-rules/:id",
-		apiroutes.AdminAndAuditorAccessRole,
-		r.AuthMiddleware,
-		apidatamasking.Get)
-	r.PUT("/datamasking-rules/:id",
-		apiroutes.AdminOnlyAccessRole,
-		r.AuthMiddleware,
-		api.AuditMiddleware(),
-		apidatamasking.Put)
-	r.DELETE("/datamasking-rules/:id",
-		apiroutes.AdminOnlyAccessRole,
-		r.AuthMiddleware,
-		api.AuditMiddleware(),
-		apidatamasking.Delete)
-
-	// AI session analyzer.
-	r.GET("/ai/session-analyzer/providers",
-		apiroutes.AdminAndAuditorAccessRole,
-		r.AuthMiddleware,
-		apiai.GetSessionAnalyzerProvider)
-	r.POST("/ai/session-analyzer/providers",
-		apiroutes.AdminOnlyAccessRole,
-		r.AuthMiddleware,
-		api.AuditMiddleware(),
-		apiai.UpsertSessionAnalyzerProvider)
-	r.DELETE("/ai/session-analyzer/providers",
-		apiroutes.AdminOnlyAccessRole,
-		r.AuthMiddleware,
-		api.AuditMiddleware(),
-		apiai.DeleteSessionAnalyzerProvider)
-	r.GET("/ai/session-analyzer/rules",
-		apiroutes.AdminAndAuditorAccessRole,
-		r.AuthMiddleware,
-		apiai.ListSessionAnalyzerRules)
-	r.POST("/ai/session-analyzer/rules",
-		apiroutes.AdminOnlyAccessRole,
-		r.AuthMiddleware,
-		api.AuditMiddleware(),
-		apiai.CreateSessionAnalyzerRule)
-	r.GET("/ai/session-analyzer/rules/:name",
-		apiroutes.AdminAndAuditorAccessRole,
-		r.AuthMiddleware,
-		apiai.GetSessionAnalyzerRule)
-	r.PUT("/ai/session-analyzer/rules/:name",
-		apiroutes.AdminOnlyAccessRole,
-		r.AuthMiddleware,
-		api.AuditMiddleware(),
-		apiai.UpdateSessionAnalyzerRule)
-	r.DELETE("/ai/session-analyzer/rules/:name",
-		apiroutes.AdminOnlyAccessRole,
-		r.AuthMiddleware,
-		api.AuditMiddleware(),
-		apiai.DeleteSessionAnalyzerRule)
-	r.GET("/ai/session-analyzer/system-prompt",
-		apiroutes.AdminAndAuditorAccessRole,
-		r.AuthMiddleware,
-		apiai.GetSessionAnalyzerSystemPrompt)
-	r.GET("/connections/:nameOrID/ai-session-analyzer-rule",
-		apiroutes.ReadOnlyAccessRole,
-		r.AuthMiddleware,
-		apiai.GetConnectionAnalyzerRule)
-
-	// Reviews, READ ONLY.
-	//
-	// PUT /reviews/:id is deliberately absent. Approving or rejecting calls
-	// TransportReleaseConnection to free the gRPC stream waiting on the
-	// verdict, and this mode starts no transport — so the callback is nil and
-	// the call panics *after* DoReview has already committed, which a recovered
-	// 500 hides from the client. There is nothing to release here either way:
-	// a sidecar pulls its configuration over HTTP and holds no stream.
-	//
-	// Reviews raised by a sidecar are a different entity from the gateway
-	// session reviews these two routes list (see ADR-0009). Approving belongs
-	// with that entity, not with a nil-guard on this one.
-	r.GET("/reviews",
-		apiroutes.ReadOnlyAccessRole,
-		r.AuthMiddleware,
-		api.TrackRequest(analytics.EventFetchReviews),
-		reviewHandler.List,
-	)
-	r.GET("/reviews/:id",
-		apiroutes.ReadOnlyAccessRole,
-		r.AuthMiddleware,
-		api.TrackRequest(analytics.EventFetchReviews),
-		reviewHandler.GetByIdOrSid,
-	)
-
-	// Review rules.
-	r.GET("/access-requests/rules",
-		apiroutes.AdminAndAuditorAccessRole,
-		r.AuthMiddleware,
-		accessrequestsapi.ListAccessRequestRules,
-	)
-	r.POST("/access-requests/rules",
-		apiroutes.AdminOnlyAccessRole,
-		r.AuthMiddleware,
-		api.AuditMiddleware(),
-		accessrequestsapi.CreateAccessRequestRule,
-	)
-	r.GET("/access-requests/rules/:name",
-		apiroutes.AdminAndAuditorAccessRole,
-		r.AuthMiddleware,
-		accessrequestsapi.GetAccessRequestRule,
-	)
-	r.PUT("/access-requests/rules/:name",
-		apiroutes.AdminOnlyAccessRole,
-		r.AuthMiddleware,
-		api.AuditMiddleware(),
-		accessrequestsapi.UpdateAccessRequestRule,
-	)
-	r.DELETE("/access-requests/rules/:name",
-		apiroutes.AdminOnlyAccessRole,
-		r.AuthMiddleware,
-		api.AuditMiddleware(),
-		accessrequestsapi.DeleteAccessRequestRule,
-	)
-
-	// Sessions, read only, as the surface behind Reviews. download, stream and
-	// result/stream stay out: nothing calls them, and GET /sessions/:session_id/download
-	// carries no auth middleware at all.
-	r.GET("/sessions",
-		apiroutes.ReadOnlyAccessRole,
-		r.AuthMiddleware,
-		sessionapi.List)
-	r.GET("/sessions/:session_id",
-		apiroutes.ReadOnlyAccessRole,
-		r.AuthMiddleware,
-		sessionapi.Get)
-	r.PATCH("/sessions/:session_id/metadata",
-		r.AuthMiddleware,
-		sessionapi.PatchMetadata)
-
-	// Slack. /plugins is one route for every plugin and the name arrives in the
-	// body, so gateway/api/plugins narrows it to slack in the handler — a route
-	// list cannot express that.
-	//
-	// LIMITATION, and it is visible to an admin: these routes persist Slack
-	// configuration and nothing more. plugintypes.RegisteredPlugins is
-	// populated in runGateway, so in this mode processOnUpdatePluginPhase
-	// iterates an empty list and no Slack runtime starts — no event listener,
-	// no notifications. Nothing is lost: the configuration is read when a
-	// runtime does start. But an admin who configures Slack here will not
-	// receive anything, and there is no review to notify about yet either,
-	// since PUT /reviews/:id is not on this surface.
-	//
-	// Keep the routes or drop them, but do not add a Slack-shaped feature on
-	// top of them until a control-plane notification path exists.
-	r.POST("/plugins",
-		apiroutes.AdminOnlyAccessRole,
-		r.AuthMiddleware,
-		api.TrackRequest(analytics.EventCreatePlugin),
-		apiplugins.Post)
-	r.GET("/plugins",
-		apiroutes.ReadOnlyAccessRole,
-		r.AuthMiddleware,
-		apiplugins.List)
-	r.GET("/plugins/:name",
-		apiroutes.ReadOnlyAccessRole,
-		r.AuthMiddleware,
-		apiplugins.Get)
-	r.PUT("/plugins/:name",
-		apiroutes.AdminOnlyAccessRole,
-		r.AuthMiddleware,
-		api.TrackRequest(analytics.EventUpdatePlugin),
-		apiplugins.Put)
-	r.PUT("/plugins/:name/config",
-		apiroutes.AdminOnlyAccessRole,
-		r.AuthMiddleware,
-		api.TrackRequest(analytics.EventUpdatePluginConfig),
-		apiplugins.PutConfig)
-
-	// Resources. The control plane reads and edits connection metadata; it never
-	// opens one. PUT /connections/:nameOrID is absent because the frontend uses PATCH.
-	r.GET("/connections",
-		apiroutes.ReadOnlyAccessRole,
-		r.AuthMiddleware,
-		apiconnections.List)
-	r.POST("/connections",
-		apiroutes.AdminOnlyAccessRole,
-		r.AuthMiddleware,
-		api.AuditMiddleware(),
-		api.TrackRequest(analytics.EventCreateConnection),
-		apiconnections.Post)
-	r.GET("/connections/:nameOrID",
-		apiroutes.ReadOnlyAccessRole,
-		r.AuthMiddleware,
-		apiconnections.Get)
-	r.PATCH("/connections/:nameOrID",
-		apiroutes.AdminOnlyAccessRole,
-		r.AuthMiddleware,
-		api.AuditMiddleware(),
-		api.TrackRequest(analytics.EventUpdateConnection),
-		apiconnections.Patch)
-	r.DELETE("/connections/:nameOrID",
-		apiroutes.AdminOnlyAccessRole,
-		r.AuthMiddleware,
-		api.AuditMiddleware(),
-		api.TrackRequest(analytics.EventDeleteConnection),
-		apiconnections.Delete)
-	r.GET("/connection-tags",
-		apiroutes.ReadOnlyAccessRole,
-		r.AuthMiddleware,
-		apiconnections.ListTags,
-	)
+		api.TrackRequest(analytics.EventDeleteSidecar),
+		apisidecar.Delete)
 }
 
-func (api *Api) buildRoutes(r *apiroutes.Router) {
+func (api *Api) buildRoutes(r *apiroutes.Router, mode appconfig.AppMode) {
 	reviewHandler := reviewapi.NewHandler(api.ReleaseConnectionFn)
 	loginOidcApiHandler := loginoidcapi.New()
 	loginSamlApiHandler := loginsamlapi.New()
 
-	r.GET("/healthz", apihealthz.LivenessHandler())
+	// The gateway's probe dials the gRPC port to prove the transport is up.
+	// The control plane never opens that port, so its probe answers without
+	// dialing; otherwise no control plane would ever pass a health check.
+	liveness := apihealthz.LivenessHandler()
+	if mode == appconfig.AppModeControlPlane {
+		liveness = apihealthz.ControlPlaneLivenessHandler()
+	}
+	r.GET("/healthz", liveness)
 	r.GET("/openapiv2.json", openapi.Handler)
 	r.GET("/openapiv3.json", openapi.HandlerV3)
 
@@ -1119,6 +810,8 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		api.TrackRequest(analytics.EventDeleteAgent),
 		apiagents.Delete)
 
+	api.buildSidecarRoutes(r)
+
 	r.POST("/orgs/keys",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
@@ -1302,6 +995,10 @@ func (api *Api) buildRoutes(r *apiroutes.Router) {
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
 		apireports.SessionReport)
+	r.GET("/reports/compliance",
+		apiroutes.AdminAndAuditorAccessRole,
+		r.AuthMiddleware,
+		apireports.ComplianceReport)
 
 	r.GET("/plugins/runbooks/connections/:name/templates",
 		apiroutes.ReadOnlyAccessRole,

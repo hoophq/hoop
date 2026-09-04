@@ -78,6 +78,12 @@ type Reframer interface {
 	Flush(mask func(column string, value []byte) []byte) []byte
 }
 
+// rewriteActivator lets a stateful codec retain request correlation before
+// any server bytes arrive. Stateless reframers do not need it.
+type rewriteActivator interface {
+	EnableRewrite()
+}
+
 // Duplex marks a codec whose two directions decode against ONE shared state.
 //
 // Most codecs are per-direction: a Postgres request decoder needs nothing the
@@ -166,6 +172,12 @@ type Decision struct {
 	// Statements are the statements decoded from this chunk, in order.
 	// Present whether allowed or denied, so a caller can log them.
 	Statements []inspect.Statement
+
+	// DeniedStatement is the exact statement whose verdict stopped the
+	// payload. Protocol denial writers use its wire metadata to correlate a
+	// native error with the request. Nil for stream-level refusals that did
+	// not decode a statement.
+	DeniedStatement *inspect.Statement
 
 	// Payload is the bytes to forward. It differs from the input only when
 	// masking rewrote something; otherwise it aliases the input.
@@ -296,6 +308,9 @@ func New(sess *session.Session, cfg Config) (*Gate, error) {
 	// MaskSupported gates.
 	if rf, ok := server.Codec().(Reframer); ok {
 		g.reframer = rf
+		if activator, ok := rf.(rewriteActivator); ok && cfg.Masker != nil {
+			activator.EnableRewrite()
+		}
 	}
 	return g, nil
 }
@@ -442,6 +457,8 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 			d.Allowed = false
 			d.Message = j.message
 			d.Rule = j.rule
+			denied := stmt
+			d.DeniedStatement = &denied
 			d.Payload = nil // nothing may be forwarded
 			return d
 		}
@@ -519,11 +536,13 @@ func (g *Gate) judge(ctx context.Context, stmt inspect.Statement) judgment {
 	auditErr := g.writeAudit(ctx, ev)
 
 	if auditErr != nil && g.cfg.FailOnAuditError {
+		denied := stmt
 		return judgment{refusal: &Decision{
-			Allowed: false,
-			Message: "audit trail unavailable; statement refused",
-			Rule:    "audit",
-			Err:     auditErr,
+			Allowed:         false,
+			Message:         "audit trail unavailable; statement refused",
+			Rule:            "audit",
+			DeniedStatement: &denied,
+			Err:             auditErr,
 		}}
 	}
 
@@ -585,6 +604,8 @@ func (g *Gate) EvaluateStatement(ctx context.Context, stmt inspect.Statement) De
 	if j.denied {
 		d.Message = j.message
 		d.Rule = j.rule
+		denied := stmt
+		d.DeniedStatement = &denied
 	}
 	return d
 }

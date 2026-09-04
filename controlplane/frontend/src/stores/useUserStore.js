@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { identify as analyticsIdentify } from '@/services/analytics'
+import { ROLE_ADMIN, ROLE_APPROVER, ROLE_STANDARD } from '@/utils/roles'
 
 const INTERCOM_APP_ID = 'ryuapdmp'
 
@@ -18,7 +19,9 @@ function loadIntercomScript() {
 
 export const useUserStore = create((set, get) => ({
   user: null,
+  role: ROLE_STANDARD,
   isAdmin: false,
+  isApprover: false,
   isSelfHosted: false,
   isFreeLicense: true,
   analyticsTracking: false,
@@ -39,14 +42,24 @@ export const useUserStore = create((set, get) => ({
   // /serverinfo postgres_proxy_enabled. Fail closed: without a Postgres proxy
   // listen address the gateway cannot serve a native postgres session.
   postgresProxyEnabled: false,
-  // Which API surface the backend serves: 'gateway' or 'control-plane'. Null
-  // until /serverinfo resolves. A backend in gateway mode answers every route,
-  // including the ones a control-plane deployment blocks, so developing
-  // against one hides the gap until production.
+  // Which product the backend runs as: 'gateway' or 'control-plane'. Null
+  // until /serverinfo resolves. Both serve the same routes; the control plane
+  // starts no gRPC transport, proxies or plugins. layout/ModeBanner reads it.
   applicationMode: null,
+  adminRoleName: ROLE_ADMIN,
+  approverRoleName: ROLE_APPROVER,
   loading: false,
 
-  setUser: (user) => set({ user, isAdmin: !!user?.is_admin, isSelfHosted: user?.tenancy_type === 'selfhosted' }),
+  setUser: (user) => {
+    const role = user?.role || ROLE_STANDARD
+    set({
+      user,
+      role,
+      isAdmin: role === ROLE_ADMIN,
+      isApprover: role === ROLE_APPROVER,
+      isSelfHosted: user?.tenancy_type === 'selfhosted'
+    })
+  },
   setServerInfo: (serverInfo) => {
     const license = serverInfo?.license_info
     const isFreeLicense = !(license?.is_valid && license?.type === 'enterprise')
@@ -71,7 +84,9 @@ export const useUserStore = create((set, get) => ({
       serverInfoLoaded: true,
       hasRedactCredentials: !!serverInfo?.has_redact_credentials,
       postgresProxyEnabled: !!serverInfo?.postgres_proxy_enabled,
-      applicationMode: serverInfo?.application_mode || null
+      applicationMode: serverInfo?.application_mode || null,
+      adminRoleName: serverInfo?.admin_role_name || ROLE_ADMIN,
+      approverRoleName: serverInfo?.approver_role_name || ROLE_APPROVER
     })
   },
   setFeatureFlags: (flags) => set({ featureFlags: flags }),
@@ -87,9 +102,11 @@ export const useUserStore = create((set, get) => ({
   clear: () => {
     if (window.Intercom) window.Intercom('shutdown')
     set({ 
-      user: null, 
-      isAdmin: false, 
-      isSelfHosted: false, 
+      user: null,
+      role: ROLE_STANDARD,
+      isAdmin: false,
+      isApprover: false,
+      isSelfHosted: false,
       isFreeLicense: true, 
       analyticsTracking: false, 
       analyticsMode: 'anonymous', 

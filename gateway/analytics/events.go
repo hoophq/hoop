@@ -45,6 +45,10 @@ const (
 	EventCreateEmbeddedAgent = "hoop-create-embedded-agent"
 	EventDeleteAgent         = "hoop-delete-agent"
 
+	// sidecar
+	EventCreateSidecar = "hoop-create-sidecar"
+	EventDeleteSidecar = "hoop-delete-sidecar"
+
 	// plugins
 	EventCreatePlugin          = "hoop-create-plugin"
 	EventUpdatePlugin          = "hoop-update-plugin"

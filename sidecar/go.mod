@@ -23,4 +23,7 @@ go 1.26.5
 
 require github.com/hoophq/libhoop v0.0.0-20260904162416-990b2b7228d4
 
-require google.golang.org/protobuf v1.36.11 // indirect
+require (
+	go.mongodb.org/mongo-driver v1.17.9 // indirect
+	google.golang.org/protobuf v1.36.11 // indirect
+)

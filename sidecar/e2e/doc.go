@@ -1,4 +1,4 @@
-// Package e2e runs the shipped sidecar binary against a real database.
+// Package e2e runs the shipped sidecar binary against real databases.
 //
 // # Why this module exists
 //
@@ -33,16 +33,18 @@
 // # What it actually runs
 //
 // The REAL artifact, not a library composition: `hoop-inspect` built from
-// sidecar/cmd and launched as a subprocess against a mysql:8 container. That
-// matters because masking is only reachable through the binary — the
-// detection plugin is a nested module the root cannot import, so a test that
-// called daemon.Run in-process would have to pass a nil Plugin and would
-// silently test the unmasked path.
+// sidecar/cmd and launched as a subprocess against mysql:8 and mongo:7
+// containers. That matters because masking is only reachable through the
+// binary — the detection plugin is a nested module the root cannot import, so
+// a test that called daemon.Run in-process would have to pass a nil Plugin and
+// would silently test the unmasked path.
 //
 // mysql:8 rather than the MariaDB image the agent integration suite uses,
-// deliberately. MariaDB negotiates mysql_native_password; the hang above
-// only appears under caching_sha2_password, which is MySQL 8's default. The
-// cheaper image would not have caught the bug this suite exists to catch.
+// deliberately. MariaDB negotiates mysql_native_password; the hang above only
+// appears under caching_sha2_password, which is MySQL 8's default. mongo:7 is
+// driven through real SCRAM authentication with the official Go driver,
+// including OP_QUERY hello, document sequences, native command errors and
+// multi-batch cursors.
 //
 // # Its own module
 //
