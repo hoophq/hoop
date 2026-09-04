@@ -16554,6 +16554,15 @@ const docTemplate = `{
         "openapi.PublicServerInfo": {
             "type": "object",
             "properties": {
+                "application_mode": {
+                    "description": "Which component this process runs as",
+                    "type": "string",
+                    "enum": [
+                        "gateway",
+                        "control-plane"
+                    ],
+                    "example": "gateway"
+                },
                 "auth_method": {
                     "description": "Auth method used by the server",
                     "type": "string",
