@@ -21,7 +21,7 @@ module github.com/hoophq/hoop/sidecar
 
 go 1.26.5
 
-require github.com/hoophq/libhoop v0.0.0-20260904162416-990b2b7228d4
+require github.com/hoophq/libhoop v0.0.0-20260904185223-6d0fabb8b600
 
 require (
 	go.mongodb.org/mongo-driver v1.17.9 // indirect

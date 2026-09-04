@@ -18,7 +18,7 @@ require (
 
 require (
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
-	github.com/hoophq/libhoop v0.0.0-20260904162416-990b2b7228d4 // indirect
+	github.com/hoophq/libhoop v0.0.0-20260904185223-6d0fabb8b600 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	go.mongodb.org/mongo-driver v1.17.9 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect

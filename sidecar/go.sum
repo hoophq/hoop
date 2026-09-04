@@ -2,8 +2,8 @@ github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/google/go-cmp v0.7.0 h1:wk8382ETsv4JYUZwIsn6YpYiWiBsYLSJiTsyBybVuN8=
 github.com/google/go-cmp v0.7.0/go.mod h1:pXiqmnSA92OHEEa9HXL2W4E7lf9JzCmGVUdgjX3N/iU=
-github.com/hoophq/libhoop v0.0.0-20260904162416-990b2b7228d4 h1:F35UDjRm7GhE3xfy2yQC/w/2NY567kyW+hNqIR2IKzs=
-github.com/hoophq/libhoop v0.0.0-20260904162416-990b2b7228d4/go.mod h1:Z28ISSRx1WOOXrN3QO8Lh/jUsJcmO6KXzFm8ujwUjq4=
+github.com/hoophq/libhoop v0.0.0-20260904185223-6d0fabb8b600 h1:T9Q783Hs03656PvCebYnRdGU0mrS2MWLVlyubtMIytI=
+github.com/hoophq/libhoop v0.0.0-20260904185223-6d0fabb8b600/go.mod h1:Z28ISSRx1WOOXrN3QO8Lh/jUsJcmO6KXzFm8ujwUjq4=
 github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 h1:Jamvg5psRIccs7FGNTlIRMkT8wgtp5eCXdBlqhYGL6U=
 github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=
