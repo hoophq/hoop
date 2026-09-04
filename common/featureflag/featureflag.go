@@ -124,13 +124,6 @@ var catalog = map[string]Flag{
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway},
 	},
-	"experimental.controlplane_require_role": {
-		Name:        "experimental.controlplane_require_role",
-		Description: "Refuse the API to a control-plane user who is neither an admin nor an approver, instead of granting them the standard user's read access. GET /userinfo stays open so the app can tell the user why it shows no page. Has no effect on a gateway, where a standard user is the primary user.",
-		Default:     false,
-		Stability:   StabilityExperimental,
-		Components:  []Component{ComponentGateway},
-	},
 }
 
 // All returns every registered flag, sorted by name.

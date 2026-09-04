@@ -273,6 +273,11 @@ user's API access — every read-only route answers them. Do not treat a role ga
 authorization for what a route returns; the route's own middleware in
 `gateway/api/server.go` is the authority.
 
+That is the ADR's choice, not an oversight: `/healthz` is the only mode-aware handler,
+and "no handler hides a feature by mode — the UI hides what the product does not
+expose". Refusing a role-less user in the auth middleware was tried and reverted. A
+route that must not answer an approver needs a route role, not a mode check.
+
 Key files: `utils/roles.js`, `stores/useAuthStore.js`, `stores/useUserStore.js`,
 `services/auth.js`, `services/api.js`, `components/ProtectedRoute.jsx`, `pages/Auth/`.
 
