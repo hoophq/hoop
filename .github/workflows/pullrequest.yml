@@ -53,7 +53,20 @@ jobs:
         with:
           workspaces: gateway/rdp/wasm
 
+      # The workflow-level GODEBUG (see the header comment) downgrades every
+      # go command's MODULE DOWNLOADS to HTTP/1.1, but it must not reach the
+      # test runtime: sidecar/daemon's gRPC tests drive real h2c clients
+      # through net/http, and http2client=0 turns every one of them into
+      # "http: Transport does not support unencrypted HTTP/2". So the module
+      # graph is fetched first, under the workaround, and the tests then run
+      # with client HTTP/2 restored against a warm cache — the flaky
+      # downloads and the h2c tests never share a process.
+      - name: Download modules over HTTP/1.1
+        run: go mod download
+
       - name: Test
+        env:
+          GODEBUG: http2client=1
         run: make test-oss
 
   integration-test:
@@ -409,5 +422,15 @@ jobs:
       # daemon. ubuntu-latest runners have Docker pre-installed and running,
       # so no services: block is required. See:
       # https://golang.testcontainers.org/system_requirements/
+      # Same GODEBUG split as the Unit Test job, one step further removed:
+      # the suite BUILDS hoop-inspect and runs it as a subprocess, which
+      # inherits this environment — and a grpc lane's h2c upstream
+      # transport dies under http2client=0. Downloads happen under the
+      # workaround; the suite and the binary run with client HTTP/2 on.
+      - name: Download modules over HTTP/1.1
+        run: cd sidecar/e2e && go mod download
+
       - name: Sidecar E2E Test
+        env:
+          GODEBUG: http2client=1
         run: make test-sidecar-e2e
