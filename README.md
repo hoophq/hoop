@@ -131,9 +131,12 @@ The control plane is the admin surface for that. Connect your sidecars. Set Data
 | Review queue: approve, reject, retry | Not built |
 | Pushing configuration to the fleet | Not built. Each sidecar still reads its own file. |
 
-The UI lives in [`controlplane/frontend/`](controlplane/frontend/). The backend is not built yet, so it runs against the gateway API:
+The UI is [`webapp_v2/`](webapp_v2/), the same web app the gateway serves: it renders as the control plane when the backend reports `application_mode: "control-plane"`. To run it:
 
 ```bash
+make run-dev-postgres
+make run-dev-control-plane                                      # control plane on :8019
+cd webapp_v2 && API_URL=http://localhost:8019 npm run dev       # UI on :5173
 ```
 
 Routes with no backend behind them say so and name the work they wait on. You will not find an empty table pretending to be loaded.
@@ -161,7 +164,6 @@ hoop.dev began as a gateway for human access to infrastructure. The sidecar and 
 | Directory | What it is |
 | --- | --- |
 | `sidecar/` | The inspection core. Wire bytes to statements, statements to verdicts. |
-| `controlplane/frontend/` | The control plane admin UI. |
 | `client/` | The `hoop` CLI, including `hoop start sidecar`. |
 | `gateway/` | The gateway server. REST API on :8009, gRPC on :8010. |
 | `agent/` | The agent that runs on your infrastructure and dials the gateway. |
