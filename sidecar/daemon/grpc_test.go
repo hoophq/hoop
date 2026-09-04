@@ -100,10 +100,21 @@ func TestGRPCServerCapturesMasksPreservesTrailersAndAudits(t *testing.T) {
 	}
 	events := sink.snapshot()
 	var statements, masked int
+	var maskedStatement bool
 	for _, event := range events {
 		switch event.Kind {
 		case audit.KindStatement:
 			statements++
+			// The recorded response statement is the MASKED rendering, the
+			// message the client received. The clear value appearing here
+			// would un-mask it: the trail is where an operator reads what
+			// left the building.
+			if event.Direction == inspect.FromServer && strings.Contains(event.Statement, "server-secret") {
+				t.Fatalf("audit statement carries the pre-mask value: %q", event.Statement)
+			}
+			if event.Direction == inspect.FromServer && strings.Contains(event.Statement, "[redacted]") {
+				maskedStatement = true
+			}
 		case audit.KindMasked:
 			masked++
 			if event.MaskedCount != 1 || len(event.MaskedEntities) != 1 || event.MaskedEntities[0] != "secret" {
@@ -113,6 +124,9 @@ func TestGRPCServerCapturesMasksPreservesTrailersAndAudits(t *testing.T) {
 	}
 	if statements != 4 {
 		t.Fatalf("statement events = %d, want request, request message, response message, trailer", statements)
+	}
+	if !maskedStatement {
+		t.Fatal("no response statement carries the masked rendering")
 	}
 	if masked != 1 {
 		t.Fatalf("masked events = %d, want 1", masked)

@@ -1,0 +1,91 @@
+# Overlay: a gRPC lane, through Envoy and without it.
+#
+#   docker compose -f docker-compose.yml -f grpc/docker-compose.grpc.yml up -d --wait
+#
+# Run it from the envoy-stack directory, after ./run.sh has minted the certs
+# and built the sidecar image at least once. ./grpc/demo-grpc.sh walks it.
+#
+# What it adds:
+#
+#   ledger            a dummy gRPC upstream (demo.v1.Ledger), hand-rolled
+#                     over stdlib h2c so the image builds offline and owns
+#                     zero protocol intelligence -- that all stays in the
+#                     sidecar, which is the claim being demonstrated
+#   grpc-descriptors  an init service that copies the FileDescriptorSet the
+#                     image compiled from ledger.proto into a volume the
+#                     sidecar (and grpcurl) mount; a gRPC lane cannot
+#                     capture or mask payloads without one (ADR-0013)
+#   envoy :8444       TLS + ALPN h2 + the same OPA fat gate, forwarding to
+#                     the sidecar's grpc lane over h2c
+#   host  :18443      the sidecar's grpc lane published directly -- the
+#                     WITHOUT-Envoy path: grpcurl -plaintext localhost:18443
+#   grpcurl           a client for both paths, run on demand:
+#                     docker compose ... run --rm grpcurl <args>
+#
+# What does not change: the appdb and httpbin lanes, the policy budget (the
+# gRPC lane inherits the process's one guardrail and one mask rule), the
+# audit trail, OPA, and both existing Envoy listeners.
+
+services:
+  ledger:
+    image: hoop-grpc-ledger:local
+    build: ./grpc/app
+    networks: [inspect]
+    healthcheck:
+      # busybox wget; the server answers /healthz over HTTP/1.1 while gRPC
+      # rides h2c on the same port.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9000/healthz"]
+      interval: "2s"
+      timeout: "5s"
+      retries: 10
+      start_period: "5s"
+
+  # Publishes /srv/ledger.pb from the ledger image into the shared volume.
+  # Root, because the volume arrives root-owned; 444 so the sidecar's uid
+  # 10001 and grpcurl's user can read it.
+  grpc-descriptors:
+    image: hoop-grpc-ledger:local
+    build: ./grpc/app
+    user: "0"
+    entrypoint: ["/bin/sh", "-c", "cp /srv/ledger.pb /descriptors/ledger.pb && chmod 444 /descriptors/ledger.pb"]
+    volumes:
+      - grpc-descriptors:/descriptors
+
+  hoop-inspect:
+    volumes:
+      - ./grpc/config-grpc.yaml:/etc/hoop-inspect/config.yaml:ro
+      - ./upstream/certs/server.crt:/etc/hoop-inspect/certs/appdb.crt:ro
+      - grpc-descriptors:/etc/hoop-inspect/descriptors:ro
+    ports:
+      # The without-Envoy path. The base stack keeps every data port off the
+      # host on purpose; this one is published on purpose, so the same lane
+      # is reachable both ways and the demo can show the difference is
+      # Envoy's TLS and fat gate, not the inspection.
+      - "18443:18443"
+    depends_on:
+      grpc-descriptors: { condition: service_completed_successfully }
+      ledger: { condition: service_healthy }
+
+  envoy:
+    volumes:
+      - ./grpc/envoy-grpc.yaml:/etc/envoy/envoy.yaml:ro
+      - ./envoy/certs:/etc/envoy/certs:ro
+    ports:
+      - "8444:8444"   # gRPC lane -> hoop-inspect (grpc lane)
+
+  # A gRPC client for demos and poking, never started by `up`: use
+  #   docker compose -f docker-compose.yml -f grpc/docker-compose.grpc.yml \
+  #     run --rm grpcurl -insecure -H 'x-hoop-user: alice' \
+  #     -protoset /descriptors/ledger.pb \
+  #     -d '{"id":"INV-1001"}' envoy:8444 demo.v1.Ledger/GetInvoice
+  # The ledger server has no reflection (it has no gRPC library), which is
+  # what -protoset is for -- the same descriptor set the sidecar reads.
+  grpcurl:
+    image: fullstorydev/grpcurl:latest
+    profiles: [cli]
+    networks: [inspect]
+    volumes:
+      - grpc-descriptors:/descriptors:ro
+
+volumes:
+  grpc-descriptors:
