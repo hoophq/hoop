@@ -81,7 +81,9 @@ Develop against the control plane with `make run-dev-control-plane` (port 8019) 
 loads the CLJS bundle, and Vite serves `/images`, `/icons` and `/data` from
 `webapp/resources/public` itself (`cljsStaticAssets` in `vite.config.js`). The catalog
 JSON there is gitignored — run `npm --prefix ../webapp run download-connection-metadata`
-once.
+once. The script listens on 8019 and sets `API_URL` to match; the OIDC callback derives
+from `API_URL`, so with an IdP that only allows the 8009 callback run
+`PORT=8009 make run-dev-control-plane` with the gateway stopped.
 
 ## Architecture Rules
 
