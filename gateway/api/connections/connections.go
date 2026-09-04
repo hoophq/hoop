@@ -59,7 +59,12 @@ func Post(c *gin.Context) {
 	}
 	sidecarID, err := resolveSidecarAssignment(ctx.OrgID, req.SidecarID, req.Type, req.SubType)
 	if err != nil {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		abortAssignment(c, err)
+		return
+	}
+	opaConfigID, err := resolveOPAConfigAssignment(ctx.OrgID, req.OPAConfigID)
+	if err != nil {
+		abortAssignment(c, err)
 		return
 	}
 	existingConn, err := models.GetConnectionByNameOrID(ctx, req.Name)
@@ -93,6 +98,7 @@ func Post(c *gin.Context) {
 		ResourceName:            req.ResourceName,
 		AgentID:                 sql.NullString{String: req.AgentId, Valid: true},
 		SidecarID:               sidecarID,
+		OPAConfigID:             opaConfigID,
 		Name:                    req.Name,
 		Command:                 req.Command,
 		Type:                    req.Type,
@@ -181,20 +187,29 @@ func Put(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
-	// Absent means "leave as is": a client that does not know about sidecars
-	// must not clear the assignment on every save. The kept assignment is
-	// still checked against the new type.
+
 	sidecarID := conn.SidecarID
 	if req.SidecarID != nil {
 		resolved, err := resolveSidecarAssignment(ctx.OrgID, req.SidecarID, req.Type, req.SubType)
 		if err != nil {
-			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+			abortAssignment(c, err)
 			return
 		}
 		sidecarID = resolved
-	} else if err := revalidateSidecarAssignment(sidecarID, req.Type, req.SubType); err != nil {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
-		return
+	} else {
+		sidecarID = sql.NullString{String: "", Valid: false}
+	}
+
+	opaConfigID := conn.OPAConfigID
+	if req.OPAConfigID != nil {
+		resolved, err := resolveOPAConfigAssignment(ctx.OrgID, req.OPAConfigID)
+		if err != nil {
+			abortAssignment(c, err)
+			return
+		}
+		opaConfigID = resolved
+	} else {
+		opaConfigID = sql.NullString{String: "", Valid: false}
 	}
 	setConnectionDefaults(&req)
 
@@ -230,6 +245,7 @@ func Put(c *gin.Context) {
 		ResourceName:            req.ResourceName,
 		AgentID:                 sql.NullString{String: req.AgentId, Valid: true},
 		SidecarID:               sidecarID,
+		OPAConfigID:             opaConfigID,
 		Name:                    conn.Name,
 		Command:                 req.Command,
 		Type:                    req.Type,
@@ -356,13 +372,21 @@ func Patch(c *gin.Context) {
 	if req.SidecarID != nil {
 		resolved, err := resolveSidecarAssignment(ctx.OrgID, req.SidecarID, conn.Type, conn.SubType.String)
 		if err != nil {
-			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+			abortAssignment(c, err)
 			return
 		}
 		conn.SidecarID = resolved
 	} else if err := revalidateSidecarAssignment(conn.SidecarID, conn.Type, conn.SubType.String); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
+	}
+	if req.OPAConfigID != nil {
+		resolved, err := resolveOPAConfigAssignment(ctx.OrgID, req.OPAConfigID)
+		if err != nil {
+			abortAssignment(c, err)
+			return
+		}
+		conn.OPAConfigID = resolved
 	}
 	if req.Reviewers != nil {
 		conn.Reviewers = *req.Reviewers
@@ -758,6 +782,7 @@ func ToOpenApi(conn *models.Connection, hideRoleInfo bool) openapi.Connection {
 		DefaultDatabase:         string(defaultDB),
 		AgentId:                 conn.AgentID.String,
 		SidecarID:               sidecarIDPtr(conn.SidecarID),
+		OPAConfigID:             opaConfigIDPtr(conn.OPAConfigID),
 		Status:                  conn.Status,
 		Reviewers:               conn.Reviewers,
 		RedactEnabled:           conn.RedactEnabled,

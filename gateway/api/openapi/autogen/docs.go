@@ -5421,6 +5421,243 @@ const docTemplate = `{
                 }
             }
         },
+        "/opa-configs": {
+            "get": {
+                "description": "List all OPA decision endpoints for the organization",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "OPA"
+                ],
+                "summary": "List OPA Configurations",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/openapi.OPAConfigResponse"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Register an OPA decision endpoint. A connection points at one by name or ID and it reaches the sidecar as the per-listener \"opa\" block.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "OPA"
+                ],
+                "summary": "Create OPA Configuration",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.OPAConfigRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.OPAConfigResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/opa-configs/{nameOrID}": {
+            "get": {
+                "description": "Get an OPA decision endpoint by name or ID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "OPA"
+                ],
+                "summary": "Get OPA Configuration",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the opa configuration",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.OPAConfigResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Update an OPA decision endpoint. The connections pointed at it pick up the change on their next sidecar configuration fetch.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "OPA"
+                ],
+                "summary": "Update OPA Configuration",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the opa configuration",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.OPAConfigRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.OPAConfigResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Delete an OPA decision endpoint. Refused while any connection points at it, because losing policy enforcement silently is worse than an error.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "OPA"
+                ],
+                "summary": "Delete OPA Configuration",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the opa configuration",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/orgs/analytics-mode": {
             "get": {
                 "description": "Get the analytics privacy mode of the caller's organization",
@@ -12928,6 +13165,12 @@ const docTemplate = `{
                     "type": "string",
                     "example": "pgdemo"
                 },
+                "opa_config_id": {
+                    "description": "The OPA decision endpoint consulted for this connection when a sidecar\nfronts it. Accepts the name or the id of a registered OPA\nconfiguration. Absent leaves the current assignment untouched, an\nempty string unassigns it.",
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "1837453e-01fc-46f3-9e4c-dcf22d395393"
+                },
                 "redact_enabled": {
                     "description": "When this option is enabled it will allow managing the redact types through the attribute ` + "`" + `redact_types` + "`" + `",
                     "type": "boolean"
@@ -13406,6 +13649,12 @@ const docTemplate = `{
                     "description": "MCPOAuthFlowID adopts a completed MCP OAuth login into a durable grant\nfor this connection. Write-only, and only meaningful for the \"mcpproxy\"\nsubtype. See Connection.MCPOAuthFlowID for the full rationale.\n\nPATCH needs it for the same reason POST and PUT do, and more urgently:\nre-authorizing an EXISTING connection is the only way to replace a\ncredential the provider has expired, and the edit screen speaks PATCH.\nWithout this the browser could obtain a fresh token but never hand over\nthe flow that owns its refresh token, so every re-authorization would\nfreeze another token destined to expire exactly like the last one.",
                     "type": "string",
                     "example": "7c8a1234-5678-9abc-def0-123456789abc"
+                },
+                "opa_config_id": {
+                    "description": "The OPA decision endpoint consulted for this connection when a sidecar\nfronts it. Accepts the name or the id of a registered OPA\nconfiguration. An empty string unassigns it.",
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "1837453e-01fc-46f3-9e4c-dcf22d395393"
                 },
                 "redact_types": {
                     "description": "Redact Types is a list of info types that will used to redact the output of the connection.\nPossible values are described in the DLP documentation: https://cloud.google.com/sensitive-data-protection/docs/infotypes-reference",
@@ -15511,6 +15760,104 @@ const docTemplate = `{
                     "type": "string",
                     "readOnly": true,
                     "example": "2024-07-25T15:56:35.317601Z"
+                }
+            }
+        },
+        "openapi.OPAConfigRequest": {
+            "type": "object",
+            "required": [
+                "name",
+                "url"
+            ],
+            "properties": {
+                "fail_open": {
+                    "description": "Allow the statement when OPA is unreachable. False stops traffic on\nan OPA outage instead of silently disabling enforcement.",
+                    "type": "boolean",
+                    "example": false
+                },
+                "gate": {
+                    "description": "Adds a decision before the AI analyzer runs. Refused while true: the\ngateway emits no ai_analysis rules, so the sidecar would reject the\nwhole configuration.",
+                    "type": "boolean",
+                    "example": false
+                },
+                "name": {
+                    "description": "Unique name of the resource",
+                    "type": "string",
+                    "example": "prod-opa"
+                },
+                "timeout_sec": {
+                    "description": "Per-decision timeout. 0 uses the sidecar default of 2 seconds.",
+                    "type": "integer",
+                    "example": 2
+                },
+                "url": {
+                    "description": "The FULL decision endpoint the sidecar POSTs to, not a base URL.",
+                    "type": "string",
+                    "example": "http://opa:8181/v1/data/hoop/inspect"
+                }
+            }
+        },
+        "openapi.OPAConfigResponse": {
+            "type": "object",
+            "properties": {
+                "connections": {
+                    "description": "Names of the connections pointed at this endpoint",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "pg-prod"
+                    ]
+                },
+                "created_at": {
+                    "description": "Creation timestamp",
+                    "type": "string"
+                },
+                "created_by": {
+                    "description": "Subject of the admin who created it",
+                    "type": "string"
+                },
+                "fail_open": {
+                    "description": "Allow the statement when OPA is unreachable",
+                    "type": "boolean",
+                    "example": false
+                },
+                "gate": {
+                    "description": "Adds a decision before the AI analyzer runs",
+                    "type": "boolean",
+                    "example": false
+                },
+                "id": {
+                    "description": "Unique identifier",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true
+                },
+                "name": {
+                    "description": "Human-readable name",
+                    "type": "string",
+                    "example": "prod-opa"
+                },
+                "org_id": {
+                    "description": "Organization ID",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true
+                },
+                "timeout_sec": {
+                    "description": "Per-decision timeout. 0 uses the sidecar default of 2 seconds.",
+                    "type": "integer",
+                    "example": 2
+                },
+                "updated_at": {
+                    "description": "Last update timestamp",
+                    "type": "string"
+                },
+                "url": {
+                    "description": "The decision endpoint the sidecar POSTs to",
+                    "type": "string",
+                    "example": "http://opa:8181/v1/data/hoop/inspect"
                 }
             }
         },

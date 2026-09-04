@@ -90,6 +90,41 @@ func TestBuildConfigPostgresListener(t *testing.T) {
 	}
 }
 
+func TestBuildConfigEmitsPerListenerOPA(t *testing.T) {
+	withOPA := pgConn("pg-prod", "prod.internal", "5432")
+	withOPA.opa = &daemon.OPAConfig{
+		URL:        "http://opa:8181/v1/data/hoop/inspect",
+		TimeoutSec: 3,
+		FailOpen:   true,
+	}
+	withoutOPA := pgConn("pg-stage", "stage.internal", "5433")
+
+	cfg, err := buildConfig([]sidecarConnection{withOPA, withoutOPA})
+	if err != nil {
+		t.Fatalf("buildConfig: %v", err)
+	}
+	if len(cfg.Listeners) != 2 {
+		t.Fatalf("want 2 listeners, got %d", len(cfg.Listeners))
+	}
+	opa := cfg.Listeners[0].OPA
+	if opa == nil {
+		t.Fatal("pg-prod must carry an opa block")
+	}
+	if opa.URL != "http://opa:8181/v1/data/hoop/inspect" {
+		t.Errorf("url: want http://opa:8181/v1/data/hoop/inspect, got %q", opa.URL)
+	}
+	if opa.TimeoutSec != 3 {
+		t.Errorf("timeout_sec: want 3, got %d", opa.TimeoutSec)
+	}
+	if !opa.FailOpen {
+		t.Error("fail_open: want true")
+	}
+	// A connection with no assignment must consult no OPA, not inherit one.
+	if cfg.Listeners[1].OPA != nil {
+		t.Errorf("pg-stage must have no opa block, got %+v", cfg.Listeners[1].OPA)
+	}
+}
+
 func TestBuildConfigDuplicateListenAddress(t *testing.T) {
 	_, err := buildConfig([]sidecarConnection{
 		pgConn("pg-a", "a.internal", "5432"),
