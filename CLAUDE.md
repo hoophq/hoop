@@ -68,7 +68,7 @@ A Go workspace (`go.work`) for the hoop gateway, agent, and CLI.
 - DB wire types: `pgtypes/`, `mssqltypes/`, `mongotypes/`.
 
 ### libhoop (`github.com/hoophq/libhoop`, private)
-- One module. Protocol proxies (`agent/{postgres,mssql,mysql,mongodb,oracle}`, `proxy/ssh`), redactors and recorder at the root; the wire codecs under `v2/codec/{postgres,mssql,http}`.
+- One module. Protocol proxies (`agent/{postgres,mssql,mysql,mongodb,oracle}`, `proxy/ssh`), redactors and recorder at the root; the wire codecs under `v2/codec/{postgres,mysql,mssql,http}`.
 - `v2/` is a plain directory, not a second module and not a major version. The import path reads `github.com/hoophq/libhoop/v2/codec/postgres` because that is where the files sit.
 - libhoop is a **leaf**: it imports nothing from this repository. The wire vocabulary (`Statement`, `Operation`, `Column`, ...) is DEFINED in `v2/codec/types` and aliased by `sidecar/inspect`, so a codec satisfies `inspect.Codec` structurally without naming it. The SQL classifier and lexer stay in `sidecar/` and are injected into the codecs as func values.
 - The codecs implement `sidecar/inspect`'s `Codec` interface and register through `inspect.Register`, so the module depends on `github.com/hoophq/hoop/sidecar`. That edge is one-way: nothing under `sidecar/` is imported by libhoop.

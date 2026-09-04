@@ -3,7 +3,8 @@
 ;; Schema for parallel mode state
 (def default-state
   {:modal {:open? false
-           :search-term ""}
+           :search-term ""
+           :source nil}            ; :terminal | :runbook - which toolbar opened it
    :selection {:connections []           ; Vector of selected connections
                :draft-connections nil}   ; Draft state (saved when opening modal)
    :execution {:search-term ""           ; Search in execution summary

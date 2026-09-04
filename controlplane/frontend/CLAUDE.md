@@ -29,37 +29,38 @@ Zustand · Axios · React Router v7 · lucide-react.
 | Lint | `npm run lint` |
 | Preview | `npm run preview` |
 
-There is no separate control plane backend: the API is the gateway booted into its
-control-plane surface. Put `APP_MODE=control-plane` in the repo-root `.env`, then
-`make run-dev`. It must be in the file: `scripts/dev/run.sh` starts the gateway in a
-container with `--env-file=.env`, so a shell prefix never reaches it.
+There is no separate control plane backend: the API is the gateway binary started with
+`hoop start control-plane`. From the repo root: `make run-dev-postgres` once, then
+`make run-dev-control-plane` (port 8019, reads `.env`); here,
+`API_URL=http://localhost:8019 npm run dev`. `make run-dev`, the gateway on :8009, works
+too: both modes answer the same routes.
 
-`APP_MODE` is not optional. Without it the gateway registers all 264 of its routes, so a
-service call to something the control plane blocks succeeds here and 404s in production.
-`buildControlPlaneRoutes` in `gateway/api/server.go` is the whole list of routes this app
-may call — the backend's counterpart to `Router.jsx`. `gateway/api/controlplane_routes_test.go`
-pins that list exactly, so a route added there without a decision fails the build.
-
-Nothing checks the two against each other, though: adding a service call here to a route
-the control plane does not serve compiles, builds and 404s at runtime. Check the list
-before adding one. `layout/ModeBanner` warns on screen, in dev builds, when the backend
-is answering in gateway mode and would hide the mistake.
+The control plane serves every route the gateway serves (ADR-0013). `buildRoutes` in
+`gateway/api/server.go` is the whole list, and `gateway/api/controlplane_routes_test.go`
+fails if the two modes drift apart. It also serves the gateway's web UI (`webapp_v2`) at
+`/`; this app is separate and is not embedded in the binary. What it does not start is
+the data plane: no gRPC transport, no protocol proxies and no transport plugins. A route
+that needs one of those is still registered and fails per request, so do not call one
+from here:
+session creation and exec, schema browsing (`/connections/:id/{databases,tables,columns,test}`),
+runbook execution, the proxy manager, resource plan/apply/health and `/dbroles/jobs`.
 
 Two features are only partly there, and the UI must not imply otherwise:
 
-- **Reviews are read only.** `GET /reviews` and `GET /reviews/:id` are served; approving
-  is not. `PUT /reviews/:id` releases the gRPC stream waiting on the verdict, and this
-  mode runs no transport. A sidecar review is a different entity anyway (ADR-0009).
+- **Reviews.** `PUT /reviews/:id` writes the verdict, but this process holds no session
+  stream to release: a session waiting on a gateway is not signalled from here, and
+  nothing creates a review here, since sessions only run on the gateway. A sidecar
+  review is a different entity anyway (ADR-0009).
 - **Slack stores configuration and runs nothing.** The plugin runtime is registered in
-  `runGateway`, so nothing starts here — no listener, no notifications. The config is
+  `runGateway`, so nothing starts here: no listener, no notifications. The config is
   kept for when a control-plane notification path exists.
 
-Two things it deliberately does not expose, so do not add UI that calls
-them: **access-control group management** (`GET /users/groups` is allowed because review
-rules name approvers by group; creating and deleting them is not) and **attributes**
-(blocked entirely — the pickers were removed from Guardrails, Data Masking and Review
-Rules, and each form carries the record's existing value through untouched rather than
-clearing it).
+Two things it deliberately does not expose, so do not add UI that calls them:
+**access-control group management** (`GET /users/groups` is used because review rules
+name approvers by group; creating and deleting them is a product decision, not a backend
+limit) and **attributes** (the pickers were removed from Guardrails, Data Masking and
+Review Rules, and each form carries the record's existing value through untouched rather
+than clearing it).
 
 ## Routing
 
@@ -251,12 +252,29 @@ teaching `check-assets.mjs` about it**, otherwise the guarantee quietly narrows.
 
 ## Authentication
 
-Admin only. Local auth (email/password) and OAuth/IDP, auto-detected from the gateway.
-Token in `localStorage.jwt-token`. No refresh token: a 401 saves the current URL, clears
-the token and redirects to `/login`.
+Local auth (email/password) and OAuth/IDP, auto-detected from the gateway. Token in
+`localStorage.jwt-token`. No refresh token: a 401 saves the current URL, clears the
+token and redirects to `/login`.
 
-Key files: `stores/useAuthStore.js`, `services/auth.js`, `services/api.js`,
-`components/ProtectedRoute.jsx`, `pages/Auth/`.
+Two roles, read from the `role` field of `/userinfo`: **admin** reaches every page,
+**approver** reaches Reviews. Anything else lands on the dead-end `pages/Home`. A role
+is a reserved group name in `private.user_groups` — `standard` is the absence of one and
+is never stored as a group. `ADMIN_USERNAME` and the auth server config rename the admin
+group, so the group names come from `/serverinfo` (`admin_role_name`,
+`approver_role_name`), never a literal.
+
+Gate a route with `<Page role={ROLE_ADMIN}>`, a nav entry with `role:` in
+`layout/Sidebar/constants.js` and `features/CommandPalette/constants.js`. `hasRole` in
+`utils/roles.js` is the single decision, and admin passes every gate.
+
+**This gates pages, not data.** The backend serves the same routes in both modes
+(ADR-0013) and treats the approver group as unreserved, so an approver has the standard
+user's API access — every read-only route answers them. Do not treat a role gate as
+authorization for what a route returns; the route's own middleware in
+`gateway/api/server.go` is the authority.
+
+Key files: `utils/roles.js`, `stores/useAuthStore.js`, `stores/useUserStore.js`,
+`services/auth.js`, `services/api.js`, `components/ProtectedRoute.jsx`, `pages/Auth/`.
 
 ## Symptom — "my CSS Module does nothing on a Mantine component"
 

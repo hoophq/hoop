@@ -21,4 +21,4 @@ module github.com/hoophq/hoop/sidecar
 
 go 1.26.5
 
-require github.com/hoophq/libhoop v0.0.0-20260827130908-d96eb386cba0
+require github.com/hoophq/libhoop v0.0.0-20260902174454-48fcbe3f45c5

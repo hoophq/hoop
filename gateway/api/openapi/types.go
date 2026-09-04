@@ -51,7 +51,8 @@ const (
 	RoleAdminType RoleType = "admin"
 	// RoleAuditorType grants read-only access to all routes
 	RoleAuditorType RoleType = "auditor"
-	// RoleApproverType grants access to reviews and nothing else. Control plane only.
+	// RoleApproverType reports membership of the approver group. No route names it:
+	// an approver has standard route access, and the control plane UI gates the pages.
 	RoleApproverType RoleType = "approver"
 	// RoleStandardType will grant access to standard routes
 	RoleStandardType RoleType = "standard"
@@ -283,6 +284,44 @@ type AIAgentResponse struct {
 	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
 }
 
+type SidecarRequest struct {
+	// Unique name of the resource
+	Name string `json:"name" binding:"required" example:"payments-sidecar"`
+}
+
+type SidecarResponse struct {
+	// Unique identifier
+	ID string `json:"id" readonly:"true" format:"uuid"`
+	// Organization ID
+	OrgID string `json:"org_id" readonly:"true" format:"uuid"`
+	// Human-readable name
+	Name string `json:"name" example:"payments-sidecar"`
+	// Names of the connections this sidecar fronts
+	Connections []string `json:"connections" example:"pg-prod"`
+	// Subject of the admin who created it
+	CreatedBy string `json:"created_by"`
+	// Creation timestamp
+	CreatedAt time.Time `json:"created_at"`
+	// Version reported at the last handshake. Held in gateway memory, not
+	// stored, so it is empty until the sidecar calls and again after a
+	// gateway restart.
+	Version string `json:"version,omitempty" example:"1.0.0"`
+	// Last time this gateway process saw the sidecar. Same lifetime as Version.
+	LastSeenAt *time.Time `json:"last_seen_at,omitempty"`
+}
+
+type SidecarCreateResponse struct {
+	SidecarResponse
+	// The generated token, sent in the hoop-sidecar-token header. This is the
+	// only time it is shown; it is stored hashed and cannot be recovered.
+	Token string `json:"token" example:"hsc_Ab3fX9kL..."`
+}
+
+type SidecarHandshakeRequest struct {
+	// Version of the sidecar binary
+	Version string `json:"version" binding:"required" example:"1.0.0"`
+}
+
 // AgentSPIFFEMapping ties a SPIFFE identity (exact ID or prefix) to a Hoop
 // agent plus a set of groups that feed into RBAC on authentication.
 //
@@ -407,6 +446,10 @@ type Connection struct {
 	DefaultDatabase string `json:"default_database"`
 	// The agent associated with this connection
 	AgentId string `json:"agent_id" binding:"required" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
+	// The sidecar that fronts this connection. Only "postgres", "mssql" and
+	// "httpproxy" connections may be assigned to one. Absent leaves the
+	// current assignment untouched, an empty string unassigns it.
+	SidecarID *string `json:"sidecar_id,omitempty" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
 	// Status is a read only field that informs if the connection is available for interaction
 	// * online - The agent is connected and alive
 	// * offline - The agent is not connected
@@ -604,6 +647,9 @@ type ConnectionPatch struct {
 	Secrets *map[string]any `json:"secret"`
 	// The agent associated with this connection
 	AgentId *string `json:"agent_id" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
+	// The sidecar that fronts this connection. Only "postgres", "mssql" and
+	// "httpproxy" connections may be assigned to one. An empty string unassigns it.
+	SidecarID *string `json:"sidecar_id" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
 	// Reviewers is a list of groups that will review the connection before the user could execute it
 	Reviewers *[]string `json:"reviewers" example:"dba-group"`
 	// Redact Types is a list of info types that will used to redact the output of the connection.
@@ -3863,4 +3909,142 @@ type MachineIdentityCredentialInfo struct {
 	Hostname          string     `json:"hostname,omitempty"`
 	Port              string     `json:"port,omitempty"`
 	CreatedAt         *time.Time `json:"created_at" readonly:"true"`
+}
+
+type ComplianceStatusType string
+
+const (
+	ComplianceStatusCompliant      ComplianceStatusType = "compliant"
+	ComplianceStatusWarning        ComplianceStatusType = "warning"
+	ComplianceStatusNonCompliant   ComplianceStatusType = "non_compliant"
+	ComplianceStatusNotApplicable  ComplianceStatusType = "not_applicable"
+	ComplianceStatusUnableToVerify ComplianceStatusType = "unable_to_verify"
+	ComplianceStatusIdpDependent   ComplianceStatusType = "idp_dependent"
+	// ComplianceStatusInformational marks discovery-style checks that are never
+	// pass/fail and are excluded from scoring and applicable totals.
+	ComplianceStatusInformational ComplianceStatusType = "informational"
+)
+
+// ComplianceControlAction is the remediation action attached to a control.
+// Type "app" targets an in-app route, "docs" a documentation path, and
+// "external" a system outside Hoop (empty target). Controls with no action
+// omit the field.
+type ComplianceControlAction struct {
+	// Label is the display text of the action
+	Label string `json:"label" example:"Go to Resources ↗"`
+	// Type classifies the action target
+	Type string `json:"type" enums:"app,docs,external"`
+	// Target is the in-app route or docs path; empty for external actions
+	Target string `json:"target" example:"/resources"`
+}
+
+type ComplianceCheckResult struct {
+	// ID is the stable evaluator id of the check
+	ID string `json:"id" example:"sso_enabled"`
+	// Title is the human readable name of the check
+	Title string `json:"title" example:"Single Sign-On Enabled"`
+	// Category groups checks by security domain
+	Category string `json:"category" enums:"identity,access_control,data_protection,audit_trail,monitoring_response,infrastructure"`
+	// Status is the evaluated compliance status
+	Status ComplianceStatusType `json:"status"`
+	// Message describes the evaluated result
+	Message string `json:"message" example:"SSO is enabled via OIDC provider"`
+	// Evidence is the data supporting the evaluated status
+	Evidence string `json:"evidence" example:"Authentication method: OIDC"`
+	// Action is the remediation action for this check, when one exists
+	Action *ComplianceControlAction `json:"action,omitempty"`
+}
+
+type ComplianceControl struct {
+	// ID is the framework control identifier
+	ID string `json:"id" example:"CC6.1"`
+	// Title is the control name
+	Title string `json:"title"`
+	// Description explains how the product satisfies the control
+	Description string `json:"description"`
+	// CheckID references the check that evaluates this control
+	CheckID string `json:"check_id" example:"sso_enabled"`
+	// Category groups the control by security domain
+	Category string `json:"category"`
+	// Status is the evaluated compliance status
+	Status ComplianceStatusType `json:"status"`
+	// Message describes the evaluated result
+	Message string `json:"message"`
+	// Evidence is the data supporting the evaluated status
+	Evidence string `json:"evidence"`
+	// Action is the remediation action for this control, when one exists
+	Action *ComplianceControlAction `json:"action,omitempty"`
+}
+
+type ComplianceControlGroup struct {
+	// ID is the control group identifier
+	ID string `json:"id" example:"CC6"`
+	// Title is the control group name
+	Title string `json:"title" example:"Logical and Physical Access Controls"`
+	// Controls are the evaluated controls of this group
+	Controls []ComplianceControl `json:"controls"`
+}
+
+type ComplianceStatusBreakdown struct {
+	Compliant      int `json:"compliant"`
+	Warning        int `json:"warning"`
+	NonCompliant   int `json:"non_compliant"`
+	NotApplicable  int `json:"not_applicable"`
+	UnableToVerify int `json:"unable_to_verify"`
+	IdpDependent   int `json:"idp_dependent"`
+	Informational  int `json:"informational"`
+}
+
+type ComplianceFramework struct {
+	// ID is the framework identifier
+	ID string `json:"id" enums:"soc2,gdpr,pci_dss,hipaa,best_practices"`
+	// Name is the framework display name
+	Name string `json:"name" example:"SOC 2 Type II"`
+	// ScorePercent is the weighted compliance score in the 0-100 range
+	ScorePercent int `json:"score_percent" example:"85"`
+	// Level classifies the score: low (0-39), moderate (40-69), strong (70-100)
+	Level string `json:"level" enums:"low,moderate,strong"`
+	// Compliant is the number of compliant controls
+	Compliant int `json:"compliant"`
+	// TotalApplicable is the number of controls excluding not_applicable, unable_to_verify and informational
+	TotalApplicable int `json:"total_applicable"`
+	// Breakdown counts controls by status
+	Breakdown ComplianceStatusBreakdown `json:"breakdown"`
+	// Groups are the framework control groups
+	Groups []ComplianceControlGroup `json:"groups"`
+}
+
+type ComplianceCategorySummary struct {
+	// ID is the category identifier
+	ID string `json:"id" example:"identity"`
+	// Title is the category display name
+	Title string `json:"title" example:"Identity"`
+	// Compliant is the number of compliant checks in this category
+	Compliant int `json:"compliant"`
+	// Total is the number of applicable checks (excludes not_applicable, unable_to_verify and informational)
+	Total int `json:"total"`
+}
+
+type ComplianceOverall struct {
+	// Score is the weighted compliance score in the 0-1000 range
+	Score int `json:"score" example:"812"`
+	// Level classifies the score: low (0-499), moderate (500-749), strong (750-1000)
+	Level string `json:"level" enums:"low,moderate,strong"`
+	// Compliant is the number of compliant control rows across all frameworks
+	Compliant int `json:"compliant"`
+	// TotalApplicable is the number of control rows excluding not_applicable, unable_to_verify and informational
+	TotalApplicable int `json:"total_applicable"`
+}
+
+type ComplianceReport struct {
+	// GeneratedAt is the UTC timestamp when the report was computed
+	GeneratedAt time.Time `json:"generated_at"`
+	// Overall is the aggregated compliance score
+	Overall ComplianceOverall `json:"overall"`
+	// Categories summarize the checks by security domain
+	Categories []ComplianceCategorySummary `json:"categories"`
+	// ActionRequired lists actionable checks with warning or non_compliant status
+	ActionRequired []ComplianceCheckResult `json:"action_required"`
+	// Frameworks are the per-framework control evaluations
+	Frameworks []ComplianceFramework `json:"frameworks"`
 }

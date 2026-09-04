@@ -1,5 +1,6 @@
 import {
   Package,
+  FileCheck,
   LayoutDashboard,
   SquareCode,
   BookUp2,
@@ -91,12 +92,13 @@ export const ORGANIZATION_ITEMS = [
     children: [
       { label: 'API Keys', path: '/settings/api-keys', adminOnly: true, badge: { text: 'NEW', color: 'green' } },
       { label: 'Attributes', path: '/settings/attributes', adminOnly: true, badge: { text: 'NEW', color: 'green' } },
-      { label: 'Protection rules', path: '/settings/protection-rules', adminOnly: true, badge: { text: 'NEW', color: 'green' } },
+      { label: 'Protection Rules', path: '/settings/protection-rules', adminOnly: true, badge: { text: 'NEW', color: 'green' } },
       { label: 'Infrastructure', path: '/settings/infrastructure', adminOnly: true, selfhostedOnly: true },
       { label: 'Experimental', path: '/settings/experimental', adminOnly: true },
       { label: 'License', path: '/settings/license', adminOnly: true },
       { label: 'Internal Audit Logs', path: '/settings/audit-logs', adminOnly: true },
       { label: 'Server Logs', path: '/settings/server-logs', adminOnly: true, badge: { text: 'NEW', color: 'green' } },
+      { label: 'Compliance Report', path: '/compliance-report', adminOnly: true, badge: { text: 'NEW', color: 'green' } },
       { label: 'Users', path: '/organization/users', adminOnly: true }
     ]
   }

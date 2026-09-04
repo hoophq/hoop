@@ -53,6 +53,11 @@ install-rust:
 run-dev:
 	./scripts/dev/run.sh
 
+# Runs on the host, not in the run-dev container: that container starts an
+# agent, and the control plane opens no gRPC transport for it to reach.
+run-dev-control-plane:
+	./scripts/dev/run-control-plane.sh
+
 run-dev-postgres:
 	./scripts/dev/run-postgres.sh
 
@@ -112,11 +117,39 @@ test-enterprise: generate-wasm
 # what defends it.
 #
 # The list is discovered rather than written down, so a nested module added
-# later is covered on the day it is added.
+# later is covered on the day it is added. It is then filtered to the modules
+# go.work actually lists: `go test` refuses to run in a directory the active
+# workspace does not contain ("directory prefix . does not contain modules
+# listed in go.work"), which under set -e aborts the loop and takes test-oss
+# with it. sidecar/e2e is out of the workspace on purpose and is the module
+# this skips today; see test-sidecar-e2e, which is how that one runs.
 test-sidecar:
 	@set -e; for m in $$(find sidecar -name go.mod -exec dirname {} \;); do \
+		grep -q "^[[:space:]]*\./$$m$$" go.work || continue; \
 		(cd $$m && env CGO_ENABLED=0 go test -json -v ./...); \
 	done
+
+# End-to-end sidecar suite (DEP-170): boots a real mysql:8 container through
+# testcontainers-go and drives the shipped hoop-inspect binary (sidecar/cmd)
+# as a subprocess in front of it, so masking and the auth handshake are proven
+# over the wire instead of against a decoder in isolation. `sidecar/e2e` is a
+# nested module, and `./sidecar/e2e/...` from here matches nothing for the
+# reason above, so the target enters the directory. No -race: the work is in
+# the container and the binary under test is a separate process anyway.
+#
+# GOWORK=off is required, not tidiness: this module is absent from go.work on
+# purpose — a testcontainers/docker dependency tree has no business in the
+# workspace every other module resolves against — and a workspace that does
+# not list it refuses the build outright ("directory prefix . does not contain
+# modules listed in go.work"). The harness re-derives the setting for the
+# sidecar/cmd build it shells out to, which must keep the workspace.
+#
+# NOT a dependency of test-oss or test-sidecar, and must not become one. Those
+# run in the unit-test job, which has no Docker guarantee and no budget for a
+# container pull plus boot plus binary build on every unit run. This target has
+# its own CI job (sidecar-e2e in .github/workflows/pullrequest.yml).
+test-sidecar-e2e:
+	cd sidecar/e2e && env GOWORK=off CGO_ENABLED=0 go test -tags integration -v -timeout 10m -count=1 ./...
 
 prepare-mssql-jdbc:
 	$(RM) $(MSSQL_JDBC_CLASSPATH_FILE)
@@ -365,4 +398,4 @@ publish-sentry-sourcemaps:
 	tar -xvf ${DIST_FOLDER}/webapp.tar.gz
 	sentry-cli sourcemaps upload --release=$$(cat ./version.txt) ./public/js/app.js.map --org hoopdev --project webapp
 
-.PHONY: run-dev run-dev-postgres build-dev-webapp test-enterprise test-oss test prepare-mssql-jdbc test-integration test-transport test-gateway test-gateway-pglite test-standalone test-standalone-e2e test-gateway-pglite generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm build-hsh-tunneld build-hsh-tunneld-all build-release-checksums stage-release-scripts
+.PHONY: run-dev run-dev-control-plane run-dev-postgres build-dev-webapp test-enterprise test-oss test prepare-mssql-jdbc test-integration test-transport test-gateway test-gateway-pglite test-standalone test-standalone-e2e test-gateway-pglite generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm build-hsh-tunneld build-hsh-tunneld-all build-release-checksums stage-release-scripts

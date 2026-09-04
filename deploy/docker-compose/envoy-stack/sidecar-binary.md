@@ -93,8 +93,13 @@ docker run --rm -v "$PWD/config.yaml:/etc/hoop-inspect/config.yaml:ro" \
 
 ```
 config OK: 1 listener(s)
+  license: missing, running the free tier. Add one with the license flag, the HOOP_LICENSE environment variable, or the "license" key in the config file
+  limits: 1 guardrail rule(s), 1 data masking rule(s)
   appdb            postgres  enforcing 1 rule(s) + masking
 ```
+
+Mount a license and pass `--license`, or set `HOOP_LICENSE`, to lift those
+caps for the features it names.
 
 That line is the **resolved** lane, so the rule count includes anything it
 inherited from the top-level defaults. Validation builds every lane, which
@@ -325,6 +330,8 @@ risky statement:
 
 ```
 config OK: 1 listener(s)
+  license: missing, running the free tier. Add one with the license flag, the HOOP_LICENSE environment variable, or the "license" key in the config file
+  limits: 1 guardrail rule(s), 1 data masking rule(s)
   appdb            postgres  enforcing 1 rule(s) + masking + 1 ai rule(s)
 ```
 

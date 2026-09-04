@@ -6,9 +6,9 @@ export const userGroupsService = {
   // organizations return `[]`; older gateways return `null`, so callers still
   // coalesce.
   //
-  // Read only. create and remove used to live here and were deleted with the
-  // control-plane surface: POST /users/groups and DELETE /users/groups/:name
-  // are not on buildControlPlaneRoutes in gateway/api/server.go, so they answer 404. The read
-  // stays because a review rule names its approvers by group.
+  // Read only. create and remove used to live here and were deleted: the
+  // control plane serves POST /users/groups and DELETE /users/groups/:name,
+  // but this app does not manage access-control groups (see CLAUDE.md). The
+  // read stays because a review rule names its approvers by group.
   list: () => api.get('/users/groups'),
 }

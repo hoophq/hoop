@@ -16,7 +16,7 @@ packages moved so the tree stops stuttering: the inspection core is
 and `HOOP_INSPECT_CONFIG` all keep the `hoop-inspect` spelling, because
 renaming those breaks running deployments.
 
-Full documentation is `README.md` here (68 KB, read the section you need, not
+Full documentation is `README.md` here (86 KB, read the section you need, not
 the whole thing).
 
 ## The invariant: exactly one dependency
@@ -72,6 +72,26 @@ do without.
 `make test-oss` depends on it, so CI runs them too. The commands are here
 because the target is a loop over them and you will want one at a time.
 
+`make test-sidecar-e2e` is the second, separate path: it boots a real
+`mysql:8` container and runs the `hoop-inspect` binary as a subprocess in
+front of it, so it needs a working Docker daemon. It is deliberately NOT a
+dependency of `test-oss` or `test-sidecar` — those run in the unit-test job,
+which has neither Docker nor the minutes for a container boot — and has its
+own CI job instead. `e2e/` is outside `go.work`, so it only builds under
+`GOWORK=off`; the make target sets that for you. See the gotcha below.
+
+`SIDECAR_E2E_GOWORK` overrides the workspace the harness builds
+`hoop-inspect` against. Unset — which is what CI does, and what you want —
+the binary resolves through the repository's own `go.work` and therefore the
+PUBLISHED libhoop pin, which is the thing under test. Point it at a
+workspace with a local `use` directive to run the suite against an unmerged
+codec before it lands:
+
+    SIDECAR_E2E_GOWORK=/path/to/dev/go.work make test-sidecar-e2e
+
+It is not in `.env.sample`: that file configures the gateway at runtime, and
+this is a test-only override read by one harness.
+
 ```bash
 # root module (inspect/, lexer/, codec/, policy/, gate/, proxy/, daemon/, ...)
 go test ./...
@@ -87,6 +107,10 @@ done
 
 # validate a sidecar config without starting anything
 (cd cmd && go run . -validate -config /path/to/config.yaml)
+
+# end to end against a real mysql:8, needs Docker. GOWORK=off is required:
+# e2e/ is deliberately not a go.work member.
+(cd e2e && GOWORK=off CGO_ENABLED=0 go test -tags integration -count=1 ./...)
 ```
 
 ## Gotchas
@@ -95,12 +119,26 @@ done
   files are what keeps optional dependencies out of the root, and the cost is that
   every nested module needs its own invocation. See the loop above.
 
-- **CI reaches this only through `test-sidecar`.** `make test-oss` runs
+- **CI reaches this through two targets, not one.** `make test-oss` runs
   `go test github.com/hoophq/hoop/...`, which does not match module
-  `github.com/hoophq/hoop/sidecar`, so the Makefile carries a second target
-  that walks every `go.mod` under `sidecar/` and `test-oss` depends on
-  it. Break that dependency and these tests stop running everywhere except
-  on your machine.
+  `github.com/hoophq/hoop/sidecar`, so the Makefile carries `test-sidecar`,
+  which walks every `go.mod` under `sidecar/` and which `test-oss` depends
+  on. Break that dependency and those tests stop running everywhere except on
+  your machine.
+
+- **`sidecar/e2e` is the exception, and it is not in `go.work`.** Its
+  testcontainers/docker dependency tree has no business in the workspace every
+  other module resolves against. The cost is that `go` refuses to work there
+  under the workspace at all — `cd sidecar/e2e && go test` fails with
+  "directory prefix . does not contain modules listed in go.work" — so both
+  the suite and anything building it need `GOWORK=off`. This is also why
+  `test-sidecar` filters its discovered module list against `go.work` instead
+  of running everything `find` turns up: unfiltered, the walk enters `e2e`,
+  hits that error and aborts the loop under `set -e`, taking `test-oss` with
+  it. The suite runs only under `make test-sidecar-e2e`, from its own CI job,
+  and needs Docker. Adding it to `test-oss` to "fix" the asymmetry puts a
+  multi-minute container boot on every unit run in a job with no Docker
+  guarantee.
 
 - **A `lexer/` change is not verified until the conformance suite passes.**
   `lexer/conformance/` runs PostgreSQL's own parser and the scanner over the
@@ -131,13 +169,49 @@ done
 - **`sidecar/codec/*` is the registration seam, not a decoder.** libhoop
   cannot call `Register`, so these thin packages do it, and they are also
   where `AnalyzeSQL` and the lexer get injected into a decoder. Import
-  `codec/all` for every protocol, or one package for one protocol so a binary
-  fronting Postgres never links the TDS and HTTP machinery.
+  `codec/all` for postgres, mysql, mssql and http, or one package for one
+  protocol so a binary fronting Postgres never links the TDS, MySQL and HTTP
+  machinery.
+
+- **Adding a protocol is not one package.** The codec seam is the smallest
+  part of it. A lane also needs a lexer `Dialect` (selected in
+  `inspect.AnalyzeSQL`), a deny frame in `proxy/deny.go`, an analyzer content
+  builder in `analyzer/content.go`, and the `Protocol` constant aliased in
+  `inspect/wiretypes.go`. Every one of those fails QUIETLY when it is missing:
+  the wrong dialect misreads a statement, a missing deny frame closes the
+  socket with no message, a missing builder makes `ai_analysis` rules
+  classify nothing. README.md's Protocols section carries the table.
 
 - **Construct codecs through the seam, never libhoop directly.** A decoder
   built with the zero `Options` has no classifier: it reports statement text
   with `OpUnknown`. That fails closed, but it means a policy naming `select`
   matches nothing.
+
+- **The license verifier exists twice, on purpose.** `sidecar/license`
+  reimplements `common/license` over the stdlib: same key, same RSA-PSS
+  signature over the same bytes, same JSON. Importing the gateway's module
+  would end the one-dependency invariant, so the copy is the price. Drift
+  locks paying customers out of features they bought and neither module can
+  see it, so `client/licensecompat` pins the two. Touch the key or the
+  signing data on one side and you MUST touch the other.
+
+- **The license verdict is a function of the clock.** `license.Status` stores
+  "the signature checked out" and derives everything else from the term, so a
+  relay that has been up for months loses the caps the second its license
+  lapses. Never cache `State()` in a field or a lane: that cache is the bug
+  this design exists to prevent. `Run` watches the term and stops a process
+  whose config the free tier would refuse, because re-applying the caps live
+  would mean deleting guardrail and mask rules from a running proxy.
+
+- **A verdict cannot be assembled, only earned.** `Status.verified` is
+  unexported and `license.Load` is the only thing that sets it, after checking
+  the signature. Build a `Status` literal anywhere else and it reports invalid
+  and grants nothing. `Config.UseLicense` therefore takes a `license.Ref` and
+  never a `Status`: the control plane sends a document and the sidecar checks
+  it, rather than believing whoever is on the connection. NEVER add a
+  constructor that skips `Verify`, and NEVER export the trust root; a test that
+  needs a licensed process uses `license/licensetest`, which signs for real
+  under a key it installs for the duration of one `*testing.T`.
 
 ## Layout
 
@@ -149,6 +223,7 @@ The module root holds no Go files: `go.mod`, this file and `README.md` only.
 | `lexer/` | SQL text to an effect and a relation list, without a grammar |
 | `codec/` | registration seam: wires libhoop's decoders to the classifier |
 | `policy/` | statement to verdict; local rules, then OPA |
+| `license/` | verifies the signed license that lifts the rule caps; a stdlib twin of `common/license`. `internal/trust` owns the key, `licensetest` signs for tests |
 | `analyzer/` | the model-backed evaluator, third in the policy chain |
 | `gate/` | orders inspection, policy, audit and masking into one decision |
 | `proxy/` | TCP relay that pumps both directions through a Gate |

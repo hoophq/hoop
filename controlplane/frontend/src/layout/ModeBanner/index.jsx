@@ -3,17 +3,15 @@ import { TriangleAlert } from 'lucide-react'
 import Alert from '@/components/Alert'
 import { useUserStore } from '@/stores/useUserStore'
 
-// Warns when this app is talking to a backend running the full gateway API.
+// Tells a developer that this app is talking to a gateway, not a control plane.
 //
-// The control plane is a subset of the gateway: a gateway booted without
-// APP_MODE=control-plane answers every route, including the ones a real
-// control-plane deployment returns 404 for. Developing against one means a
-// service call to a blocked route works locally and fails in production, which
-// is the single easiest mistake to make on this app and the hardest to spot.
-// A line in the README does not prevent it; this does, on first load.
+// The control plane serves every route the gateway serves (ADR-0013), so a
+// gateway backend hides nothing from this app. The difference is what runs
+// behind the routes: a gateway also starts the gRPC transport, the protocol
+// proxies and the transport plugins, and the deployment this app ships
+// against does not.
 //
-// Dev only. In a production build the operator cannot act on it, and the
-// gateway already logs the matching warning at startup.
+// Dev only. In a production build the operator cannot act on it.
 export default function ModeBanner() {
   const applicationMode = useUserStore((state) => state.applicationMode)
 
@@ -30,7 +28,7 @@ export default function ModeBanner() {
       icon={<TriangleAlert size={18} />}
     >
       <Text size="sm" component="span">
-        {'This backend serves the full gateway API. Routes the control plane blocks in production will work here — set APP_MODE=control-plane on the gateway to develop against the real surface.'}
+        {'This backend runs as the gateway. The control plane serves the same routes, so this app behaves the same here, but the real deployment starts no gRPC transport, proxies or plugins. Run make run-dev-control-plane to develop against it.'}
       </Text>
     </Alert>
   )

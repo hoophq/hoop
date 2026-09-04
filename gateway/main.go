@@ -52,12 +52,14 @@ import (
 	"github.com/hoophq/hoop/gateway/transport/streamclient"
 )
 
-func Run() {
+// Run boots the binary as mode. The caller is the subcommand the operator
+// typed, so the deployment picks a component by picking a command line.
+func Run(mode appconfig.AppMode) {
 	bootstrap.Start()
 	ver := version.Get()
 	bootstrap.Header(ver.Version, ver.Platform, ver.GitCommit)
 
-	if err := appconfig.Load(); err != nil {
+	if err := appconfig.Load(mode); err != nil {
 		log.Fatalf("failed loading gateway configuration, reason=%v", err)
 	}
 
@@ -186,12 +188,22 @@ func Run() {
 }
 
 // runControlPlane serves the control plane: the HTTP API and nothing else.
-// It administers a fleet of sidecars, so it accepts no agent or client
-// connection — the gRPC transport, the protocol proxies and the transport
-// plugins never start. The API surface is still being ported route by route
-// (see Api.buildControlPlaneRoutes), so today it answers /api/healthz only.
+// The gRPC transport, the protocol proxies and the transport plugins never
+// start. The HTTP API is the gateway's (see Api.BuildEngine): a route that
+// needs the gRPC transport fails per request, while /api/ws still accepts an
+// agent over WebSocket and /rdpproxy relays through it (ADR-0013).
 func runControlPlane(tlsConfig *tls.Config) {
-	a := &api.Api{TLSConfig: tlsConfig}
+	// Same wiring as runGateway. The transport server exists for its review
+	// callback and is never started, so the handlers run the gateway's code.
+	g := &transport.Server{
+		TLSConfig:   tlsConfig,
+		ApiHostname: appconfig.Get().ApiHostname(),
+		AppConfig:   appconfig.Get(),
+	}
+	a := &api.Api{
+		ReleaseConnectionFn: g.ReleaseConnectionOnReview,
+		TLSConfig:           tlsConfig,
+	}
 
 	bootstrap.Phase("Starting API")
 	apiStep := bootstrap.Step("HTTP API")

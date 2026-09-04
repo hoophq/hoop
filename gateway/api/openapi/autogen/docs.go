@@ -6648,6 +6648,32 @@ const docTemplate = `{
                 }
             }
         },
+        "/reports/compliance": {
+            "get": {
+                "description": "Computes the compliance report with an overall score, category summaries, actionable items and per-framework control evaluations.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Reports"
+                ],
+                "summary": "Get Compliance Report",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.ComplianceReport"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/reports/sessions": {
             "get": {
                 "description": "The report payload groups sessions by info types and by a custom field (` + "`" + `group_by` + "`" + `) provided by the client.\nThe items returns data containing the sum of redact fields performed by a given info type aggregated by the ` + "`" + `group_by` + "`" + ` attribute.",
@@ -9861,6 +9887,234 @@ const docTemplate = `{
                 }
             }
         },
+        "/sidecars": {
+            "get": {
+                "description": "List all sidecars for the organization",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sidecars"
+                ],
+                "summary": "List Sidecars",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/openapi.SidecarResponse"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Register a sidecar. The token is returned only once in this response and cannot be recovered.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sidecars"
+                ],
+                "summary": "Create Sidecar",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SidecarRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SidecarCreateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/sidecars/handshake": {
+            "post": {
+                "description": "Authenticated with the hoop-sidecar-token header. Records the reported version and returns the configuration the sidecar must serve.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sidecars"
+                ],
+                "summary": "Sidecar Handshake",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The token returned when the sidecar was created",
+                        "name": "hoop-sidecar-token",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SidecarHandshakeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/sidecars/{nameOrID}": {
+            "get": {
+                "description": "Get a sidecar by name or ID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sidecars"
+                ],
+                "summary": "Get Sidecar",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the sidecar",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SidecarResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Delete a sidecar. The token stops working immediately and the connections assigned to it are unassigned.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sidecars"
+                ],
+                "summary": "Delete Sidecar",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the sidecar",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/signup": {
             "post": {
                 "description": "Signup anonymous authenticated user. This endpoint is only used for multi tenant setups.",
@@ -12138,6 +12392,349 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.ComplianceCategorySummary": {
+            "type": "object",
+            "properties": {
+                "compliant": {
+                    "description": "Compliant is the number of compliant checks in this category",
+                    "type": "integer"
+                },
+                "id": {
+                    "description": "ID is the category identifier",
+                    "type": "string",
+                    "example": "identity"
+                },
+                "title": {
+                    "description": "Title is the category display name",
+                    "type": "string",
+                    "example": "Identity"
+                },
+                "total": {
+                    "description": "Total is the number of applicable checks (excludes not_applicable, unable_to_verify and informational)",
+                    "type": "integer"
+                }
+            }
+        },
+        "openapi.ComplianceCheckResult": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "description": "Action is the remediation action for this check, when one exists",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.ComplianceControlAction"
+                        }
+                    ]
+                },
+                "category": {
+                    "description": "Category groups checks by security domain",
+                    "type": "string",
+                    "enum": [
+                        "identity",
+                        "access_control",
+                        "data_protection",
+                        "audit_trail",
+                        "monitoring_response",
+                        "infrastructure"
+                    ]
+                },
+                "evidence": {
+                    "description": "Evidence is the data supporting the evaluated status",
+                    "type": "string",
+                    "example": "Authentication method: OIDC"
+                },
+                "id": {
+                    "description": "ID is the stable evaluator id of the check",
+                    "type": "string",
+                    "example": "sso_enabled"
+                },
+                "message": {
+                    "description": "Message describes the evaluated result",
+                    "type": "string",
+                    "example": "SSO is enabled via OIDC provider"
+                },
+                "status": {
+                    "description": "Status is the evaluated compliance status",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.ComplianceStatusType"
+                        }
+                    ]
+                },
+                "title": {
+                    "description": "Title is the human readable name of the check",
+                    "type": "string",
+                    "example": "Single Sign-On Enabled"
+                }
+            }
+        },
+        "openapi.ComplianceControl": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "description": "Action is the remediation action for this control, when one exists",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.ComplianceControlAction"
+                        }
+                    ]
+                },
+                "category": {
+                    "description": "Category groups the control by security domain",
+                    "type": "string"
+                },
+                "check_id": {
+                    "description": "CheckID references the check that evaluates this control",
+                    "type": "string",
+                    "example": "sso_enabled"
+                },
+                "description": {
+                    "description": "Description explains how the product satisfies the control",
+                    "type": "string"
+                },
+                "evidence": {
+                    "description": "Evidence is the data supporting the evaluated status",
+                    "type": "string"
+                },
+                "id": {
+                    "description": "ID is the framework control identifier",
+                    "type": "string",
+                    "example": "CC6.1"
+                },
+                "message": {
+                    "description": "Message describes the evaluated result",
+                    "type": "string"
+                },
+                "status": {
+                    "description": "Status is the evaluated compliance status",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.ComplianceStatusType"
+                        }
+                    ]
+                },
+                "title": {
+                    "description": "Title is the control name",
+                    "type": "string"
+                }
+            }
+        },
+        "openapi.ComplianceControlAction": {
+            "type": "object",
+            "properties": {
+                "label": {
+                    "description": "Label is the display text of the action",
+                    "type": "string",
+                    "example": "Go to Resources ↗"
+                },
+                "target": {
+                    "description": "Target is the in-app route or docs path; empty for external actions",
+                    "type": "string",
+                    "example": "/resources"
+                },
+                "type": {
+                    "description": "Type classifies the action target",
+                    "type": "string",
+                    "enum": [
+                        "app",
+                        "docs",
+                        "external"
+                    ]
+                }
+            }
+        },
+        "openapi.ComplianceControlGroup": {
+            "type": "object",
+            "properties": {
+                "controls": {
+                    "description": "Controls are the evaluated controls of this group",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.ComplianceControl"
+                    }
+                },
+                "id": {
+                    "description": "ID is the control group identifier",
+                    "type": "string",
+                    "example": "CC6"
+                },
+                "title": {
+                    "description": "Title is the control group name",
+                    "type": "string",
+                    "example": "Logical and Physical Access Controls"
+                }
+            }
+        },
+        "openapi.ComplianceFramework": {
+            "type": "object",
+            "properties": {
+                "breakdown": {
+                    "description": "Breakdown counts controls by status",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.ComplianceStatusBreakdown"
+                        }
+                    ]
+                },
+                "compliant": {
+                    "description": "Compliant is the number of compliant controls",
+                    "type": "integer"
+                },
+                "groups": {
+                    "description": "Groups are the framework control groups",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.ComplianceControlGroup"
+                    }
+                },
+                "id": {
+                    "description": "ID is the framework identifier",
+                    "type": "string",
+                    "enum": [
+                        "soc2",
+                        "gdpr",
+                        "pci_dss",
+                        "hipaa",
+                        "best_practices"
+                    ]
+                },
+                "level": {
+                    "description": "Level classifies the score: low (0-39), moderate (40-69), strong (70-100)",
+                    "type": "string",
+                    "enum": [
+                        "low",
+                        "moderate",
+                        "strong"
+                    ]
+                },
+                "name": {
+                    "description": "Name is the framework display name",
+                    "type": "string",
+                    "example": "SOC 2 Type II"
+                },
+                "score_percent": {
+                    "description": "ScorePercent is the weighted compliance score in the 0-100 range",
+                    "type": "integer",
+                    "example": 85
+                },
+                "total_applicable": {
+                    "description": "TotalApplicable is the number of controls excluding not_applicable, unable_to_verify and informational",
+                    "type": "integer"
+                }
+            }
+        },
+        "openapi.ComplianceOverall": {
+            "type": "object",
+            "properties": {
+                "compliant": {
+                    "description": "Compliant is the number of compliant control rows across all frameworks",
+                    "type": "integer"
+                },
+                "level": {
+                    "description": "Level classifies the score: low (0-499), moderate (500-749), strong (750-1000)",
+                    "type": "string",
+                    "enum": [
+                        "low",
+                        "moderate",
+                        "strong"
+                    ]
+                },
+                "score": {
+                    "description": "Score is the weighted compliance score in the 0-1000 range",
+                    "type": "integer",
+                    "example": 812
+                },
+                "total_applicable": {
+                    "description": "TotalApplicable is the number of control rows excluding not_applicable, unable_to_verify and informational",
+                    "type": "integer"
+                }
+            }
+        },
+        "openapi.ComplianceReport": {
+            "type": "object",
+            "properties": {
+                "action_required": {
+                    "description": "ActionRequired lists actionable checks with warning or non_compliant status",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.ComplianceCheckResult"
+                    }
+                },
+                "categories": {
+                    "description": "Categories summarize the checks by security domain",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.ComplianceCategorySummary"
+                    }
+                },
+                "frameworks": {
+                    "description": "Frameworks are the per-framework control evaluations",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.ComplianceFramework"
+                    }
+                },
+                "generated_at": {
+                    "description": "GeneratedAt is the UTC timestamp when the report was computed",
+                    "type": "string"
+                },
+                "overall": {
+                    "description": "Overall is the aggregated compliance score",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.ComplianceOverall"
+                        }
+                    ]
+                }
+            }
+        },
+        "openapi.ComplianceStatusBreakdown": {
+            "type": "object",
+            "properties": {
+                "compliant": {
+                    "type": "integer"
+                },
+                "idp_dependent": {
+                    "type": "integer"
+                },
+                "informational": {
+                    "type": "integer"
+                },
+                "non_compliant": {
+                    "type": "integer"
+                },
+                "not_applicable": {
+                    "type": "integer"
+                },
+                "unable_to_verify": {
+                    "type": "integer"
+                },
+                "warning": {
+                    "type": "integer"
+                }
+            }
+        },
+        "openapi.ComplianceStatusType": {
+            "type": "string",
+            "enum": [
+                "compliant",
+                "warning",
+                "non_compliant",
+                "not_applicable",
+                "unable_to_verify",
+                "idp_dependent",
+                "informational"
+            ],
+            "x-enum-varnames": [
+                "ComplianceStatusCompliant",
+                "ComplianceStatusWarning",
+                "ComplianceStatusNonCompliant",
+                "ComplianceStatusNotApplicable",
+                "ComplianceStatusUnableToVerify",
+                "ComplianceStatusIdpDependent",
+                "ComplianceStatusInformational"
+            ]
+        },
         "openapi.Connection": {
             "type": "object",
             "required": [
@@ -12370,6 +12967,12 @@ const docTemplate = `{
                     "type": "string",
                     "readOnly": true,
                     "example": "2025-01-15T10:30:00Z"
+                },
+                "sidecar_id": {
+                    "description": "The sidecar that fronts this connection. Only \"postgres\", \"mssql\" and\n\"httpproxy\" connections may be assigned to one. Absent leaves the\ncurrent assignment untouched, an empty string unassigns it.",
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "1837453e-01fc-46f3-9e4c-dcf22d395393"
                 },
                 "status": {
                     "description": "Status is a read only field that informs if the connection is available for interaction\n* online - The agent is connected and alive\n* offline - The agent is not connected",
@@ -12828,6 +13431,12 @@ const docTemplate = `{
                     "description": "Secrets are environment variables that are going to be exposed\nin the runtime of the connection:\n* { envvar:[env-key]: [base64-val] } - Expose the value as environment variable\n* { filesystem:[env-key]: [base64-val] } - Expose the value as a temporary file path creating the value in the filesystem\n\nThe value could also represent an integration with a external provider:\n* { envvar:[env-key]: _aws:[secret-name]:[secret-key] } - Obtain the value dynamically in the AWS secrets manager and expose as environment variable\n* { envvar:[env-key]: _envjson:[json-env-name]:[json-env-key] } - Obtain the value dynamically from a JSON env in the agent runtime. Example: MYENV={\"KEY\": \"val\"}",
                     "type": "object",
                     "additionalProperties": {}
+                },
+                "sidecar_id": {
+                    "description": "The sidecar that fronts this connection. Only \"postgres\", \"mssql\" and\n\"httpproxy\" connections may be assigned to one. An empty string unassigns it.",
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "1837453e-01fc-46f3-9e4c-dcf22d395393"
                 },
                 "subtype": {
                     "description": "Sub Type is the underline implementation of the connection:\n* postgres - Implements Postgres protocol\n* mysql - Implements MySQL protocol\n* mongodb - Implements MongoDB Wire Protocol\n* mssql - Implements Microsoft SQL Server Protocol\n* oracledb - Implements Oracle Database Protocol\n* tcp - Forwards a TCP connection\n* ssh - Forwards a SSH connection\n* httpproxy - Forwards a HTTP connection\n* dynamodb - AWS DynamoDB experimental integration\n* cloudwatch - AWS CloudWatch experimental integration",
@@ -18623,6 +19232,135 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.SidecarCreateResponse": {
+            "type": "object",
+            "properties": {
+                "connections": {
+                    "description": "Names of the connections this sidecar fronts",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "pg-prod"
+                    ]
+                },
+                "created_at": {
+                    "description": "Creation timestamp",
+                    "type": "string"
+                },
+                "created_by": {
+                    "description": "Subject of the admin who created it",
+                    "type": "string"
+                },
+                "id": {
+                    "description": "Unique identifier",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true
+                },
+                "last_seen_at": {
+                    "description": "Last time this gateway process saw the sidecar. Same lifetime as Version.",
+                    "type": "string"
+                },
+                "name": {
+                    "description": "Human-readable name",
+                    "type": "string",
+                    "example": "payments-sidecar"
+                },
+                "org_id": {
+                    "description": "Organization ID",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true
+                },
+                "token": {
+                    "description": "The generated token, sent in the hoop-sidecar-token header. This is the\nonly time it is shown; it is stored hashed and cannot be recovered.",
+                    "type": "string",
+                    "example": "hsc_Ab3fX9kL..."
+                },
+                "version": {
+                    "description": "Version reported at the last handshake. Held in gateway memory, not\nstored, so it is empty until the sidecar calls and again after a\ngateway restart.",
+                    "type": "string",
+                    "example": "1.0.0"
+                }
+            }
+        },
+        "openapi.SidecarHandshakeRequest": {
+            "type": "object",
+            "required": [
+                "version"
+            ],
+            "properties": {
+                "version": {
+                    "description": "Version of the sidecar binary",
+                    "type": "string",
+                    "example": "1.0.0"
+                }
+            }
+        },
+        "openapi.SidecarRequest": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "name": {
+                    "description": "Unique name of the resource",
+                    "type": "string",
+                    "example": "payments-sidecar"
+                }
+            }
+        },
+        "openapi.SidecarResponse": {
+            "type": "object",
+            "properties": {
+                "connections": {
+                    "description": "Names of the connections this sidecar fronts",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "pg-prod"
+                    ]
+                },
+                "created_at": {
+                    "description": "Creation timestamp",
+                    "type": "string"
+                },
+                "created_by": {
+                    "description": "Subject of the admin who created it",
+                    "type": "string"
+                },
+                "id": {
+                    "description": "Unique identifier",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true
+                },
+                "last_seen_at": {
+                    "description": "Last time this gateway process saw the sidecar. Same lifetime as Version.",
+                    "type": "string"
+                },
+                "name": {
+                    "description": "Human-readable name",
+                    "type": "string",
+                    "example": "payments-sidecar"
+                },
+                "org_id": {
+                    "description": "Organization ID",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true
+                },
+                "version": {
+                    "description": "Version reported at the last handshake. Held in gateway memory, not\nstored, so it is empty until the sidecar calls and again after a\ngateway restart.",
+                    "type": "string",
+                    "example": "1.0.0"
+                }
+            }
+        },
         "openapi.SignupRequest": {
             "type": "object",
             "required": [
@@ -19177,6 +19915,9 @@ const docTemplate = `{
         },
         {
             "name": "Agents"
+        },
+        {
+            "name": "Sidecars"
         },
         {
             "name": "Runbooks"

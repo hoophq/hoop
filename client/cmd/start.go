@@ -6,6 +6,7 @@ import (
 	"github.com/hoophq/hoop/agent"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/spf13/cobra"
 )
 
@@ -70,7 +71,27 @@ var startGatewayCmd = &cobra.Command{
 	Short:        "Runs the gateway component",
 	SilenceUsage: false,
 	Run: func(cmd *cobra.Command, args []string) {
-		gateway.Run()
+		gateway.Run(appconfig.AppModeGateway)
+	},
+}
+
+var startControlPlaneCmd = &cobra.Command{
+	Use:   "control-plane",
+	Short: "Runs the control plane component",
+	Long: `Runs the control plane: the HTTP API used to administer a fleet of
+sidecars.
+
+It shares the gateway binary, its database, its HTTP API and its web UI, and
+starts none of the gateway's data plane: no gRPC transport on :8010, no
+protocol proxies and no transport plugins. A route that needs an agent or a
+client stream is still registered and fails per request.
+
+It reads the same database and API configuration the gateway does
+(POSTGRES_DB_URI, API_URL, AUTH_METHOD, ...); nothing in it is agent- or
+connection-shaped.`,
+	SilenceUsage: false,
+	Run: func(cmd *cobra.Command, args []string) {
+		gateway.Run(appconfig.AppModeControlPlane)
 	},
 }
 
@@ -80,5 +101,6 @@ func init() {
 
 	startCmd.AddCommand(startAgentCmd)
 	startCmd.AddCommand(startGatewayCmd)
+	startCmd.AddCommand(startControlPlaneCmd)
 	rootCmd.AddCommand(startCmd)
 }

@@ -52,12 +52,17 @@ const (
 
 	// MSSQL covers Microsoft SQL Server and T-SQL.
 	MSSQL
+
+	// MySQL covers MySQL and MariaDB.
+	MySQL
 )
 
 func (d Dialect) String() string {
 	switch d {
 	case MSSQL:
 		return "mssql"
+	case MySQL:
+		return "mysql"
 	}
 	return "postgres"
 }
@@ -90,22 +95,86 @@ type lexRules struct {
 	unicodeIdent bool
 
 	// bracketIdent enables [name] with the ]] escape. T-SQL only; in
-	// PostgreSQL '[' is an array subscript.
+	// PostgreSQL '[' is an array subscript and in MySQL '[' is nothing at
+	// all, so `SELECT [a] FROM t` there is not a relation named a.
 	bracketIdent bool
 
-	// nestedBlockComment makes /* */ nest, which both engines do and the
-	// SQL standard does not. `/* a /* b */ DELETE FROM t */` is entirely a
-	// comment; a scanner that stops at the first close reports a delete.
+	// backtickIdent enables `name` with the doubled-backtick escape.
+	//
+	// MySQL only, and it is the ONLY way MySQL spells a quoted identifier
+	// out of the box, so this is not an optional nicety: without it
+	// ``DELETE FROM `select` `` scans the backticks as stray punctuation
+	// and the relation lands in the keyword table as a bare `select`,
+	// which the relation filter then drops. The delete is reported with no
+	// target and a rule naming that table never fires. In PostgreSQL and
+	// T-SQL a backtick is not an identifier delimiter at all — it is not
+	// even valid syntax — so enabling it there would only invent names out
+	// of typos.
+	backtickIdent bool
+
+	// nestedBlockComment makes /* */ nest, which PostgreSQL and T-SQL do
+	// and the SQL standard does not. `/* a /* b */ DELETE FROM t */` is
+	// entirely a comment there; a scanner that stops at the first close
+	// reports a delete. MySQL is the standard-conforming one and does NOT
+	// nest, where the same text ends at the first `*/` and the DELETE is
+	// live SQL — so this flag decides which of two opposite readings is
+	// the misread.
 	nestedBlockComment bool
+
+	// hashComment enables '#' as a comment to end of line.
+	//
+	// MySQL only. Without it `SELECT 1 # DROP TABLE t` scans the commented
+	// tail as live SQL and reports a drop nobody performed, which refuses
+	// a select. Enabling it for the other dialects has the mirror cost and
+	// it is the worse one: '#' is a live operator in both — PostgreSQL
+	// spells XOR and several geometric operators with it — so a '#' there
+	// would swallow the rest of the line, and any statement after it on
+	// that line disappears from the analysis entirely.
+	hashComment bool
+
+	// dashCommentUpToNewline requires whitespace (or end of input) after
+	// `--` before it opens a comment.
+	//
+	// MySQL only, and it closes a hole rather than adding a convenience.
+	// MySQL reads `--` glued to a following token as two minus signs, so
+	// `SELECT 1--2; DELETE FROM t` is two statements and the delete runs.
+	// A scanner applying the PostgreSQL rule treats `--2; DELETE FROM t`
+	// as a comment, sees one harmless select, and the delete is never
+	// analyzed at all. That is a statement executing unseen, which is the
+	// one outcome this package exists to prevent.
+	dashCommentNeedsSpace bool
+
+	// executableComment enables `/*! ... */` and `/*!50000 ... */`, whose
+	// bodies MySQL EXECUTES.
+	//
+	// MySQL only, and it is a bypass rather than a nicety. The body is real
+	// SQL: `/*! DROP TABLE t */` drops the table. A scanner treating it as
+	// an ordinary comment reports no verb at all, so a rule refusing `drop`
+	// matches nothing and the statement is forwarded. Verified on MySQL
+	// 8.4 through a relay configured to refuse destructive SQL — the table
+	// was gone and nothing was denied.
+	//
+	// PostgreSQL and T-SQL have no such construct; there `/*!` opens an
+	// ordinary comment, and enabling this would invent verbs out of
+	// commentary.
+	executableComment bool
 
 	// backslashInPlainString treats \ as an escape inside '...'.
 	//
-	// FALSE for both supported dialects. PostgreSQL defaults
+	// FALSE for PostgreSQL and T-SQL. PostgreSQL defaults
 	// standard_conforming_strings=on, where a backslash is an ordinary
 	// character, and T-SQL never had backslash escapes. When a server runs
 	// with the setting off, the literal scans short and the trailing quote
 	// is left unterminated, which surfaces as Complete=false rather than as
 	// a silent misread. That is the correct failure direction.
+	//
+	// TRUE for MySQL, where it is not a guess: backslash escapes are on
+	// unless NO_BACKSLASH_ESCAPES was set, so the default reading of
+	// `SELECT 'O\'Brien'; DELETE FROM t` is one literal followed by a
+	// second statement. Leaving it false there swallows the semicolon into
+	// the literal and the DELETE disappears — the same loss the
+	// escapeString comment describes for Postgres, but on the ordinary
+	// quoting every MySQL client emits.
 	backslashInPlainString bool
 }
 
@@ -116,6 +185,23 @@ func (d Dialect) rules() lexRules {
 			nationalString:     true,
 			bracketIdent:       true,
 			nestedBlockComment: true,
+		}
+	case MySQL:
+		// nestedBlockComment is deliberately absent, and it is not the
+		// typo it looks like beside the two rows above: MySQL follows
+		// the standard here and the FIRST `*/` closes the comment, so
+		// `/* a /* b */ DELETE FROM t */` really does execute a delete.
+		// Setting it true would file that delete as commented-out.
+		//
+		// backslashInPlainString is on for the reverse reason — the
+		// engine's default is the non-standard one, and it is the only
+		// dialect here where a bare '...' honours backslashes.
+		return lexRules{
+			backtickIdent:          true,
+			hashComment:            true,
+			dashCommentNeedsSpace:  true,
+			executableComment:      true,
+			backslashInPlainString: true,
 		}
 	default:
 		return lexRules{

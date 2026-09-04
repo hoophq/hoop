@@ -55,5 +55,7 @@ export function computeProgress(checks) {
     totalSteps: steps.length,
     percent: Math.floor((stepsDone * 100) / steps.length),
     firstIncompleteStepId: steps.find((step) => !step.done)?.id ?? null,
+    // How long a dismiss lasts depends on this — see useUIStore.
+    subItemsLeft: steps.reduce((n, step) => n + step.subItems.filter((sub) => !sub.done).length, 0),
   }
 }

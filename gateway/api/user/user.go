@@ -443,8 +443,8 @@ func GetUserInfo(c *gin.Context) {
 		roleName = openapi.RoleUnregisteredType
 	case ctx.IsAdminUser():
 		roleName = openapi.RoleAdminType
-	// Before auditor: isGroupAllowed grants an auditor+approver user the approver
-	// routes, and reporting auditor here would hide them in the UI.
+	// Before auditor: the control plane UI gates on admin/approver only, so
+	// reporting auditor for an approver would leave them no page at all.
 	case ctx.IsApproverUser():
 		roleName = openapi.RoleApproverType
 	case ctx.IsAuditorUser():

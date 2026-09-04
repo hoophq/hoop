@@ -32,8 +32,8 @@ export const connectionsService = {
     api.delete(`/connections/${encodeURIComponent(name)}`),
 
   // testConnection, the MCP OAuth flow (mcpOAuthAuthorize/mcpOAuthToken) and
-  // mcpCatalog were deleted with the control-plane surface. None had a call
-  // site, and all four target routes that are not on
-  // buildControlPlaneRoutes in gateway/api/server.go — /connections/:name/test, /mcp-oauth/*
-  // and /mcp-catalog serve a resource-opening flow this app does not have.
+  // mcpCatalog were deleted from this service. None had a call site: all four
+  // serve a resource-opening flow this app does not have, and
+  // /connections/:name/test needs the gRPC transport the control plane does
+  // not start.
 }

@@ -5,14 +5,16 @@
    [re-frame.core :as rf]))
 
 (defn parallel-mode-button
-  "Size and variant are props. Both the web terminal and the runbooks runner now
-   pass size \"1\" / ghost for their 40px toolbars; the defaults are kept for any
-   other caller."
-  [& [{:keys [size variant] :or {size "2" variant "soft"}}]]
+  "Size, variant and source are props. Both the web terminal and the runbooks
+   runner now pass size \"1\" / ghost for their 40px toolbars; the defaults are
+   kept for any other caller. :source says which toolbar this is, so the modal
+   pre-selects the role open on THIS page - see helpers/source->connection-path.
+   Props are read in the inner fn: the outer let only runs once."
+  [& [_props]]
   (let [selected-count (rf/subscribe [:parallel-mode/selected-count])
         is-active? (rf/subscribe [:parallel-mode/is-active?])
         modal-open? (rf/subscribe [:parallel-mode/modal-open?])]
-    (fn []
+    (fn [& [{:keys [size variant source] :or {size "2" variant "soft"}}]]
       [:> Tooltip {:content "Parallel Mode"}
        [:> Flex {:align "center" :gap "1"}
         [:> Button
@@ -28,10 +30,7 @@
                                 (when (not= 1 @selected-count) "s") " selected"))
                           ". Click to " (if @modal-open? "close" "open") " selection dialog")
           :aria-expanded (if @modal-open? "true" "false")
-          :onClick (fn []
-                     (rf/dispatch [:parallel-mode/toggle-modal])
-                     (when-not @modal-open?
-                       (rf/dispatch [:parallel-mode/seed-from-primary])))}
+          :onClick #(rf/dispatch [:parallel-mode/toggle-modal source])}
          [:> Flex {:align "center" :gap "2" :justify "center"}
           [:> FastForward {:size 16 :aria-hidden "true"}]
           (if @is-active?

@@ -5,7 +5,7 @@ export const ROLE_STANDARD = 'standard'
 export const ROLE_OPTIONS = [
   { value: ROLE_ADMIN, label: 'Administrator', description: 'Full access to the control plane' },
   { value: ROLE_APPROVER, label: 'Approver', description: 'Reviews only' },
-  { value: ROLE_STANDARD, label: 'Standard', description: 'No access beyond sign-in' }
+  { value: ROLE_STANDARD, label: 'Standard', description: 'No pages in this app' }
 ]
 
 export function roleLabel(role) {
@@ -20,7 +20,9 @@ export function roleToGroups(role, adminRoleName, approverRoleName) {
   return []
 }
 
-// Admin passes every route an approver passes, as in gateway/api/apiroutes/roles.go.
+// Admin passes everything, as isGroupAllowed does. Approver is enforced here only:
+// the backend gives it standard route access, so this hides pages, it does not
+// protect the API behind them.
 export function hasRole(userRole, requiredRole) {
   if (!requiredRole) return true
   if (userRole === ROLE_ADMIN) return true

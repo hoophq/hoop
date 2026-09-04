@@ -26,12 +26,6 @@ func isGroupAllowed(userGroups []string, roleNames ...openapi.RoleType) (valid b
 		return true
 	}
 
-	// Additive: a gateway org may already have a group named approver.
-	if slices.Contains(userGroups, types.GroupApprover) &&
-		slices.Contains(roleNames, openapi.RoleApproverType) {
-		return true
-	}
-
 	// it performs validation of route based roles
 	// in case the group exists it must match against a route role
 	for _, groupName := range userGroups {
@@ -59,12 +53,6 @@ func AdminOnlyAccessRole(c *gin.Context) {
 // AdminAndAuditorAccessRole allows admin and auditor users to access this route
 func AdminAndAuditorAccessRole(c *gin.Context) {
 	c.Set(roleContextKey, []openapi.RoleType{openapi.RoleAdminType, openapi.RoleAuditorType})
-	c.Next()
-}
-
-// AdminAndApproverAccessRole allows admin and approver users to access this route
-func AdminAndApproverAccessRole(c *gin.Context) {
-	c.Set(roleContextKey, []openapi.RoleType{openapi.RoleAdminType, openapi.RoleApproverType})
 	c.Next()
 }
 
