@@ -9,13 +9,13 @@ import classes from './Sidebar.module.css'
 
 export function SidebarCollapsed() {
   const { toggleSidebarCollapsed, setPendingOpenSection } = useUIStore()
-  const { isAdmin, isSelfHosted } = useUserStore()
+  const { isAdmin, isSelfHosted, role } = useUserStore()
   const isFeatureFlagEnabled = useUserStore((s) => s.isFeatureFlagEnabled)
   const isLicenseFeatureEnabled = useUserStore((s) => s.isLicenseFeatureEnabled)
   const { nav } = useModeConfig()
 
   const visible = (items) =>
-    items.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled))
+    items.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled, role))
 
   // A group (Integrations, Settings) has no page of its own: the rail expands
   // the sidebar with that group open instead.

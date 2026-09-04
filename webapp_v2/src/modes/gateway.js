@@ -155,9 +155,14 @@ export default {
   // flow continues in the CLJS onboarding, which the control plane does not have.
   postLoginPath: '/client',
   postSetupPath: '/onboarding/setup',
-  // null: the CLJS app owns '/'. A path: admins are sent there and everyone else
-  // gets the "Administrators only" dead end (ModeHome.jsx).
+  // null: the CLJS app owns '/'. A map role → path: each role is sent to its
+  // page and everyone else gets the dead end (ModeHome.jsx).
   home: null,
+  // Users page: the gateway edits free-form groups; the control plane assigns a
+  // role (utils/roles) and round-trips the other groups untouched.
+  usersForm: 'groups',
+  // Reviewer groups a new review rule starts with.
+  defaultReviewerGroups: [],
   // 'cljs' renders <ClojureApp/>, 'not-found' the 404 page (ModeCatchAll.jsx).
   catchAll: 'cljs',
   // Gateway-only chrome. Each key is read at exactly one call site.

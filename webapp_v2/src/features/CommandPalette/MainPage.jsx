@@ -6,10 +6,10 @@ import { shouldHide } from '@/layout/Sidebar/helpers'
 import { useModeConfig } from '@/modes'
 
 function SuggestionsAndQuickAccess({ onNavigate }) {
-  const { isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled } = useUserStore()
+  const { isAdmin, isSelfHosted, role, isFeatureFlagEnabled, isLicenseFeatureEnabled } = useUserStore()
   const { palette } = useModeConfig()
-  const visibleSuggestions = palette.suggestions.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled))
-  const visibleQuickAccess = palette.quickAccess.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled))
+  const visibleSuggestions = palette.suggestions.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled, role))
+  const visibleQuickAccess = palette.quickAccess.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled, role))
 
   return (
     <>

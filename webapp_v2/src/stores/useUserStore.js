@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { identify as analyticsIdentify } from '@/services/analytics'
 import { authService } from '@/services/auth'
+import { ROLE_ADMIN, ROLE_APPROVER, ROLE_STANDARD } from '@/utils/roles'
 
 const INTERCOM_APP_ID = 'ryuapdmp'
 
@@ -19,7 +20,11 @@ function loadIntercomScript() {
 
 export const useUserStore = create((set, get) => ({
   user: null,
+  // From the `role` field of /userinfo: admin, approver, standard or unregistered.
+  // Reserved group names carry the roles; standard is the absence of one.
+  role: ROLE_STANDARD,
   isAdmin: false,
+  isApprover: false,
   isSelfHosted: false,
   isFreeLicense: true,
   analyticsTracking: false,
@@ -47,9 +52,22 @@ export const useUserStore = create((set, get) => ({
   // read it through src/modes (useModeConfig), never directly.
   appMode: 'gateway',
   appModeLoaded: false,
+  // Group names that carry the roles. ADMIN_USERNAME and the auth server config
+  // rename the admin one, so /serverinfo is the source, never a literal.
+  adminRoleName: ROLE_ADMIN,
+  approverRoleName: ROLE_APPROVER,
   loading: false,
 
-  setUser: (user) => set({ user, isAdmin: !!user?.is_admin, isSelfHosted: user?.tenancy_type === 'selfhosted' }),
+  setUser: (user) => {
+    const role = user?.role || (user?.is_admin ? ROLE_ADMIN : ROLE_STANDARD)
+    set({
+      user,
+      role,
+      isAdmin: role === ROLE_ADMIN,
+      isApprover: role === ROLE_APPROVER,
+      isSelfHosted: user?.tenancy_type === 'selfhosted',
+    })
+  },
   setServerInfo: (serverInfo) => {
     const license = serverInfo?.license_info
     const isFreeLicense = !(license?.is_valid && license?.type === 'enterprise')
@@ -74,6 +92,8 @@ export const useUserStore = create((set, get) => ({
       serverInfoLoaded: true,
       hasRedactCredentials: !!serverInfo?.has_redact_credentials,
       postgresProxyEnabled: !!serverInfo?.postgres_proxy_enabled,
+      adminRoleName: serverInfo?.admin_role_name || ROLE_ADMIN,
+      approverRoleName: serverInfo?.approver_role_name || ROLE_APPROVER,
       // The authenticated answer wins over the boot-time /publicserverinfo one.
       ...(serverInfo?.application_mode && { appMode: serverInfo.application_mode }),
     })
@@ -100,7 +120,9 @@ export const useUserStore = create((set, get) => ({
     if (window.Intercom) window.Intercom('shutdown')
     set({ 
       user: null, 
+      role: ROLE_STANDARD,
       isAdmin: false, 
+      isApprover: false,
       isSelfHosted: false, 
       isFreeLicense: true, 
       analyticsTracking: false, 

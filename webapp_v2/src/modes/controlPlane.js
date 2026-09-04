@@ -1,4 +1,5 @@
 import { theme, cssVariablesResolver } from '@/theme'
+import { ROLE_ADMIN, ROLE_APPROVER } from '@/utils/roles'
 import {
   CircleCheckBig,
   Container,
@@ -21,9 +22,10 @@ import {
  * this sidebar is still reachable by URL.
  */
 
+// Two roles (utils/roles): admin reaches every page, approver reaches Reviews.
 const MAIN_ITEMS = [
   { label: 'Sidecars', path: '/sidecars', icon: Container, adminOnly: true },
-  { label: 'Reviews', path: '/reviews', icon: Signature, adminOnly: true },
+  { label: 'Reviews', path: '/reviews', icon: Signature, role: ROLE_APPROVER },
 ]
 
 const REVIEW_ITEMS = [
@@ -40,7 +42,7 @@ const FEATURE_ITEMS = [
 // License sits with the organization: it is an attribute of the org
 // (PUT /orgs/license), and the control plane has no Settings group.
 const ORGANIZATION_ITEMS = [
-  { label: 'Administrators', path: '/organization/users', icon: Users, adminOnly: true },
+  { label: 'Users', path: '/organization/users', icon: Users, adminOnly: true },
   { label: 'License', path: '/settings/license', icon: KeyRound, adminOnly: true },
 ]
 
@@ -48,7 +50,7 @@ const ORGANIZATION_ITEMS = [
 // Gating flags mirror the nav entries above — keep both lists in sync.
 const SUGGESTION_ITEMS = [
   { id: 'sidecars', label: 'Sidecars', description: 'Manage sidecars', icon: Container, path: '/sidecars', adminOnly: true },
-  { id: 'reviews', label: 'Reviews', description: 'Approve and reject reviews', icon: Signature, path: '/reviews', adminOnly: true },
+  { id: 'reviews', label: 'Reviews', description: 'Pending approvals', icon: Signature, path: '/reviews', role: ROLE_APPROVER },
 ]
 
 const QUICK_ACCESS_ITEMS = [
@@ -57,17 +59,19 @@ const QUICK_ACCESS_ITEMS = [
   { id: 'ai-session-analyzer', label: 'Session Analyzer', description: 'Configure the session analyzer', icon: Sparkles, path: '/features/ai-session-analyzer', adminOnly: true, licenseFeature: 'ai-session-analyzer' },
   { id: 'guardrails', label: 'Guardrails', description: 'Configure guardrails', icon: ShieldCheck, path: '/guardrails', adminOnly: true, licenseFeature: 'guardrails' },
   { id: 'data-masking', label: 'Live Data Masking', description: 'Configure live data masking', icon: VenetianMask, path: '/features/data-masking', adminOnly: true, licenseFeature: 'data-masking' },
-  { id: 'users', label: 'Administrators', description: 'Manage administrators', icon: Users, path: '/organization/users', adminOnly: true },
+  { id: 'users', label: 'Users', description: 'Invite and manage administrators and approvers', icon: Users, path: '/organization/users', adminOnly: true },
   { id: 'license', label: 'License', description: 'License management', icon: KeyRound, path: '/settings/license', adminOnly: true },
 ]
 
 export default {
   id: 'control-plane',
   theme: { theme, cssVariablesResolver },
-  // '/' sends admins to /sidecars and shows everyone else the dead end.
+  // '/' sends each role to its page and shows everyone else the dead end.
   postLoginPath: '/',
   postSetupPath: '/',
-  home: '/sidecars',
+  home: { [ROLE_ADMIN]: '/sidecars', [ROLE_APPROVER]: '/reviews' },
+  usersForm: 'roles',
+  defaultReviewerGroups: [ROLE_APPROVER],
   // No ClojureScript here: a path no React route claims is a 404 page. The one
   // CLJS page the control plane will want is Sessions; that comes with its port.
   catchAll: 'not-found',

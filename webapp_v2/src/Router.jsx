@@ -56,6 +56,7 @@ import Sidecars from '@/pages/Sidecars'
 import NotImplemented from '@/components/NotImplemented'
 import ModeHome from '@/modes/ModeHome'
 import ModeCatchAll from '@/modes/ModeCatchAll'
+import { ROLE_APPROVER } from '@/utils/roles'
 
 // The only lazily-loaded page. Every other route is imported eagerly, but the
 // Dashboard pulls in recharts + d3 (~150KB gzipped) and is reachable by admins
@@ -97,8 +98,8 @@ function Router() {
       <Route path="/auth/callback" element={<AuthCallback />} />
       <Route path="/signup/callback" element={<SignupCallback />} />
 
-      {/* Landing. Gateway: the CLJS app owns '/'. Control plane: admins go to
-          /sidecars, everyone else sees the "Administrators only" dead end. */}
+      {/* Landing. Gateway: the CLJS app owns '/'. Control plane: each role goes to
+          its page, everyone else sees the "Administrators and approvers only" dead end. */}
       <Route
         path="/"
         element={
@@ -111,7 +112,8 @@ function Router() {
       />
 
       {/* Control plane pages. Resources are derived from sidecar listeners, never
-          created here; Reviews holds its place until Human in the Loop lands. */}
+          created here; Reviews holds its place until Human in the Loop lands and is
+          the one surface an approver reaches. */}
       <Route
         path="/sidecars"
         element={
@@ -127,7 +129,7 @@ function Router() {
       <Route
         path="/reviews"
         element={
-          <ProtectedRoute adminOnly>
+          <ProtectedRoute role={ROLE_APPROVER}>
             <Layout>
               <PageLayout>
                 <NotImplemented
@@ -147,7 +149,7 @@ function Router() {
       <Route
         path="/reviews/:sessionId"
         element={
-          <ProtectedRoute adminOnly>
+          <ProtectedRoute role={ROLE_APPROVER}>
             <Layout>
               <PageLayout>
                 <NotImplemented
