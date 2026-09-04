@@ -19,6 +19,7 @@ details: `README.md`.
 src/
 ├── components/          # Presentational components (receive props, no business logic)
 ├── layout/              # App shell: Sidebar, Header, EmptyState
+├── modes/               # Application modes: gateway vs control plane (one manifest each)
 ├── features/            # Complex features (e.g., CommandPalette)
 ├── stores/              # Zustand global stores (cross-route state)
 ├── services/            # Axios API calls (one file per domain)
@@ -37,6 +38,38 @@ src/
 ├── Router.jsx           # Route definitions
 └── main.jsx             # Entry point
 ```
+
+## Application modes — gateway and control plane
+
+One bundle renders as one of two products. The backend decides which: `hoop start
+control-plane` reports `application_mode: "control-plane"` on `/api/publicserverinfo`
+(read once at boot, `main.jsx`) and on `/api/serverinfo` (read after login). The store
+keeps it in `useUserStore.appMode`, default `'gateway'`, and `src/modes/` is the only
+reader.
+
+- **One manifest per mode**: `modes/gateway.js`, `modes/controlPlane.js`. Everything
+  that varies between products is a key in it — sidebar sections (`nav`), command
+  palette items (`palette`), landing route (`home`), catch-all (`catchAll`), the
+  gateway-only chrome (`shell`), the theme slot (`theme`) and the post-login paths.
+- **One hook**: components call `useModeConfig()`; callbacks and effects call
+  `getModeConfig()`. Both live in `modes/index.js`.
+- **Pages never read `appMode`.** If a page needs to behave differently per product,
+  that is a new key in the manifest, read by the shell, not an `if` in the page.
+- **Routes are not gated by mode.** Every route in `Router.jsx` is registered in both
+  products; a page absent from a mode's sidebar is still reachable by URL. Only two
+  leaves are mode-aware: `/` (`modes/ModeHome.jsx`) and `/*` (`modes/ModeCatchAll.jsx`:
+  the CLJS app in the gateway, a 404 page in the control plane). `/onboarding/*` stays
+  CLJS in both.
+- **Adding a nav or palette item** means editing the mode file(s) that should show it.
+  The `nav` and `palette` lists of a mode sit side by side on purpose — keep them in
+  sync. Gating inside a section is unchanged: `adminOnly`, `selfhostedOnly`,
+  `featureFlag`, `licenseFeature`, all applied by `layout/Sidebar/helpers.js#shouldHide`.
+- **A second theme** is a new file next to `src/theme.js`, pointed at by the mode's
+  `theme` key; `modes/ModeThemeProvider.jsx` feeds it to `MantineProvider`.
+
+Develop against the control plane with `make run-dev-control-plane` (port 8019) and
+`API_URL=http://localhost:8019 npm run dev` — Vite only, the control plane loads no
+ClojureScript.
 
 ## Architecture Rules
 
