@@ -41,7 +41,14 @@ jobs:
         with:
           toolchain: stable
           targets: wasm32-unknown-unknown
+      # Keep the workflow-level HTTP/1.1 workaround out of the test runtime:
+      # sidecar/daemon's gRPC tests require an h2c-capable HTTP/2 client.
+      - name: Download modules over HTTP/1.1
+        run: go mod download
+
       - name: Test
+        env:
+          GODEBUG: http2client=1
         run: make test
 
   build-rust-binaries-darwin:
