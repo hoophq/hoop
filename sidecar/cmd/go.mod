@@ -1,7 +1,8 @@
 // The hoop-inspect binary.
 //
 // A nested module for the same reason as store/sqlite, pii/alcatraz and
-// config/yaml: the root carries libhoop and nothing else, and must keep it that way. This
+// config/yaml: the root carries libhoop and nothing else,
+// and must keep it that way. This
 // module is where the optional plugins get linked together, so it is the one
 // place that carries their dependencies. Nothing in the root module imports
 // it, so `go build ./...` at the root still resolves nothing.
@@ -17,8 +18,12 @@ require (
 
 require (
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
+	github.com/hoophq/libhoop v0.0.0-20260902174454-48fcbe3f45c5 // indirect
+	golang.org/x/net v0.57.0 // indirect
 	golang.org/x/oauth2 v0.32.0 // indirect
 	golang.org/x/sys v0.35.0 // indirect
+	golang.org/x/text v0.40.0 // indirect
+	google.golang.org/protobuf v1.36.11 // indirect
 )
 
 require (
@@ -32,6 +37,5 @@ replace github.com/hoophq/hoop/sidecar => ..
 replace github.com/hoophq/hoop/sidecar/config/yaml => ../config/yaml
 
 replace github.com/hoophq/hoop/sidecar/pii/alcatraz => ../pii/alcatraz
-
 
 replace github.com/hoophq/hoop/sidecar/analyzer/vertex => ../analyzer/vertex

@@ -3,21 +3,23 @@
 // evaluates each statement against policy, records an audit trail naming the
 // human who ran it, and masks sensitive values on the way back.
 //
-// It runs behind something that already owns TLS and identity, typically
-// Envoy forwarding plaintext over loopback or a unix socket. It routes
-// nothing: one listener, one upstream, one protocol per endpoint.
+// Relay lanes usually run behind something that owns TLS and identity,
+// typically Envoy forwarding plaintext over loopback or a unix socket. A
+// gRPC lane may instead terminate HTTP/2 TLS itself for standalone use. It
+// routes nothing: one listener, one upstream, one protocol per endpoint.
 //
 // # The binary's home
 //
 // The relay itself is assembled by github.com/hoophq/hoop/sidecar/daemon, in
-// the root module, whose only dependency is libhoop. This main sits in its own nested module
-// because it links the optional plugins -- alcatraz PII detection and the
-// YAML config front end -- and a main in the root could not import those
-// without putting their dependencies in the root's go.mod.
+// the root module, whose only direct dependency is libhoop. This main sits in
+// its own nested module because it links optional analyzer, PII detection, and
+// YAML configuration plugins; a main in the root could not import those
+// without putting their dependencies in the root's go.mod. The gRPC endpoint
+// is part of libhoop and is configured directly by the daemon.
 //
 // The same relay is reachable as `hoop start sidecar`, which links the same
-// two plugins into the hoop CLI. Prefer this binary for a sidecar container
-// that should carry nothing else.
+// optional components into the Hoop CLI. Prefer this binary for a sidecar
+// container that should carry nothing else.
 //
 // # What the config turns on
 //

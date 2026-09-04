@@ -1,8 +1,10 @@
 # CLAUDE.md: sidecar
 
-Wire-protocol inspection as a library. It turns raw database bytes into
-structured statements, and statements into allow/deny verdicts, masked
-responses and an audit trail.
+Wire-protocol inspection as a library. Relay codecs turn raw database and
+HTTP/1 bytes into structured statements; `libhoop/v2/codec/grpc` owns the
+gRPC HTTP/2 endpoint and reusable protocol mechanics, while `daemon/`
+injects identity, statement, policy, audit, and masking behavior. Policy
+turns either form into allow/deny verdicts, masked responses and an audit trail.
 
 The root `CLAUDE.md` does not cover this directory. It describes the product
 modules under `go.work`; `sidecar/` contributes seven more entries and follows
@@ -172,6 +174,12 @@ done
   `codec/all` for postgres, mysql, mssql and http, or one package for one
   protocol so a binary fronting Postgres never links the TDS, MySQL and HTTP
   machinery.
+
+- **gRPC deliberately has no `inspect.Codec`.** Its HTTP/2 endpoint and
+  reusable protocol mechanics live in `libhoop/v2/codec/grpc`; `daemon/`
+  injects callbacks that enter `gate.EvaluateStatement`, policy, audit, and
+  masking. Adding a registry decoder to `codec/all` would restore the
+  connection-fatal denial and nested-length masking bugs ADR-0013 rejects.
 
 - **Adding a protocol is not one package.** The codec seam is the smallest
   part of it. A lane also needs a lexer `Dialect` (selected in

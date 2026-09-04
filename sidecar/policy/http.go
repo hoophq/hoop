@@ -41,8 +41,9 @@ type httpRuleFields struct {
 	// method. Applies to MatchHTTPResource and MatchHTTPStatus.
 	Methods []string `json:"methods,omitempty"`
 
-	// Statuses for MatchHTTPStatus. Accepts exact codes ("404") and classes
-	// ("4xx", "5xx").
+	// Statuses for MatchHTTPStatus or MatchGRPCStatus. HTTP accepts exact
+	// codes and classes ("404", "4xx"); gRPC accepts canonical names and
+	// codes ("permission_denied", "7").
 	Statuses []string `json:"statuses,omitempty"`
 }
 

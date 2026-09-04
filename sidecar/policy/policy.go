@@ -587,6 +587,10 @@ func newRules(rules []Rule, hasScanner bool) (*Rules, error) {
 			if err := r.validateHTTP(); err != nil {
 				problems = append(problems, err.Error())
 			}
+		case MatchGRPCStatus:
+			if err := r.validateGRPC(); err != nil {
+				problems = append(problems, err.Error())
+			}
 		default:
 			problems = append(problems, fmt.Sprintf("%s: unknown rule type %q", r.Name, r.Type))
 		}
@@ -759,8 +763,12 @@ func (r Rule) messageOr(stmt inspect.Statement) string {
 }
 
 func (r Rule) matches(stmt inspect.Statement) (bool, error) {
-	// HTTP rule types are handled in http.go; ok=false means "not mine".
+	// HTTP rule types are handled in http.go, gRPC rule types in grpc.go;
+	// ok=false means "not mine".
 	if matched, ok := r.matchesHTTP(stmt); ok {
+		return matched, nil
+	}
+	if matched, ok := r.matchesGRPC(stmt); ok {
 		return matched, nil
 	}
 	switch r.Type {

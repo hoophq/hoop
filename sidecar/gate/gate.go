@@ -375,6 +375,17 @@ func (g *Gate) FlushResponse() []byte {
 func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) Decision {
 	d := Decision{Allowed: true, Payload: data}
 
+	// A statement gate has no inspectors: its caller builds statements and
+	// enters at EvaluateStatement. Refusing here beats a nil dereference,
+	// and forwarding uninspected bytes is not an option this package offers.
+	if g.client == nil {
+		d.Allowed = false
+		d.Rule = "gate"
+		d.Message = "this gate evaluates statements, not bytes; use EvaluateStatement"
+		d.Payload = nil
+		return d
+	}
+
 	insp := g.client
 	if dir == inspect.FromServer {
 		insp = g.server
@@ -418,58 +429,21 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 	}
 
 	for _, stmt := range stmts {
-		verdict := g.evaluate(stmt)
-
-		g.mu.Lock()
-		g.statements++
-		if verdict.Denied {
-			g.denied++
+		j := g.judge(ctx, stmt)
+		if j.refusal != nil {
+			r := *j.refusal
+			r.Statements = stmts
+			return r
 		}
-		g.mu.Unlock()
-
-		// Audit BEFORE the caller forwards. A crash between the write and
-		// the forward must not lose the record of the statement that ran.
-		ev := audit.StatementEvent(
-			g.sess, stmt, !verdict.Denied, verdict.Rule, verdict.Message)
-		// An evaluator's annotations (the AI analyzer's risk level) ride
-		// onto the event here rather than through StatementEvent, because
-		// they belong to the VERDICT and not to the statement: the same
-		// statement classified twice can carry different risk.
-		if len(verdict.Annotations) > 0 {
-			if ev.Metadata == nil {
-				ev.Metadata = make(map[string]string, len(verdict.Annotations))
-			}
-			for k, v := range verdict.Annotations {
-				ev.Metadata[k] = v
-			}
+		if j.err != nil {
+			d.Err = errors.Join(d.Err, j.err)
 		}
-		auditErr := g.writeAudit(ctx, ev)
-
-		if auditErr != nil && g.cfg.FailOnAuditError {
-			return Decision{
-				Allowed:    false,
-				Message:    "audit trail unavailable; statement refused",
-				Rule:       "audit",
-				Statements: stmts,
-				Err:        auditErr,
-			}
-		}
-		if auditErr != nil {
-			d.Err = errors.Join(d.Err, auditErr)
-		}
-
-		if verdict.Denied {
+		if j.denied {
 			d.Allowed = false
-			d.Message = verdict.Message
-			d.Rule = verdict.Rule
+			d.Message = j.message
+			d.Rule = j.rule
 			d.Payload = nil // nothing may be forwarded
-			if verdict.Err != nil {
-				d.Err = errors.Join(d.Err, verdict.Err)
-			}
 			return d
-		}
-		if verdict.Err != nil {
-			d.Err = errors.Join(d.Err, verdict.Err)
 		}
 	}
 
@@ -494,6 +468,153 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 	}
 
 	return d
+}
+
+// judgment is the outcome of evaluating one statement: what the caller must
+// join into its Decision, and whether it must stop.
+type judgment struct {
+	denied  bool
+	rule    string
+	message string
+
+	// err carries the non-fatal failures (a failed audit write under
+	// fail-open, an evaluator's infrastructure error) for logging.
+	err error
+
+	// refusal is non-nil when the audit trail is unavailable and the gate
+	// is configured to fail closed. The caller returns it as-is after
+	// filling Statements; nothing may be forwarded.
+	refusal *Decision
+}
+
+// judge evaluates one statement: policy, counters, audit. It is the shared
+// core of the byte path (inspect) and the statement path (EvaluateStatement),
+// so the two cannot drift on the order that matters — audit BEFORE the
+// caller forwards, because a crash between the write and the forward must
+// not lose the record of the statement that ran.
+func (g *Gate) judge(ctx context.Context, stmt inspect.Statement) judgment {
+	verdict := g.evaluate(stmt)
+
+	g.mu.Lock()
+	g.statements++
+	if verdict.Denied {
+		g.denied++
+	}
+	g.mu.Unlock()
+
+	ev := audit.StatementEvent(
+		g.sess, stmt, !verdict.Denied, verdict.Rule, verdict.Message)
+	// An evaluator's annotations (the AI analyzer's risk level) ride
+	// onto the event here rather than through StatementEvent, because
+	// they belong to the VERDICT and not to the statement: the same
+	// statement classified twice can carry different risk.
+	if len(verdict.Annotations) > 0 {
+		if ev.Metadata == nil {
+			ev.Metadata = make(map[string]string, len(verdict.Annotations))
+		}
+		for k, v := range verdict.Annotations {
+			ev.Metadata[k] = v
+		}
+	}
+	auditErr := g.writeAudit(ctx, ev)
+
+	if auditErr != nil && g.cfg.FailOnAuditError {
+		return judgment{refusal: &Decision{
+			Allowed: false,
+			Message: "audit trail unavailable; statement refused",
+			Rule:    "audit",
+			Err:     auditErr,
+		}}
+	}
+
+	j := judgment{
+		denied:  verdict.Denied,
+		rule:    verdict.Rule,
+		message: verdict.Message,
+		err:     errors.Join(auditErr, verdict.Err),
+	}
+	return j
+}
+
+// NewStatementGate builds a Gate for a caller that constructs statements
+// itself instead of handing over raw bytes: the gRPC lane, which terminates
+// HTTP/2 in-process and holds parsed requests (ADR-0013), and later an
+// ext_proc front end entering at the same point.
+//
+// No codecs are built and the registry is never consulted, so this works for
+// a protocol with no codec — which is the point. Request and Response return
+// an error Decision on such a gate; EvaluateStatement is its data path.
+// Masking is the caller's job too: it holds the decoded values, and the
+// Masker it needs is the same one Config carries.
+func NewStatementGate(sess *session.Session, cfg Config) (*Gate, error) {
+	if sess == nil {
+		return nil, errors.New("sidecar/gate: nil session")
+	}
+	if cfg.Protocol == "" {
+		cfg.Protocol = sess.Protocol
+	}
+	if cfg.Protocol == "" {
+		return nil, errors.New("sidecar/gate: no protocol configured")
+	}
+	sess.Protocol = cfg.Protocol
+	return &Gate{
+		cfg:    cfg,
+		sess:   sess,
+		policy: cfg.Policy,
+		audit:  cfg.Audit,
+		masker: cfg.Masker,
+		polCtx: sess.PolicyContext(),
+	}, nil
+}
+
+// EvaluateStatement judges one caller-built statement: policy, then audit,
+// in that order, exactly as the byte path does. The returned Decision has no
+// Payload; the caller owns the bytes and MUST NOT forward the unit this
+// statement describes when Allowed is false.
+//
+// Safe on any Gate, but built for one from NewStatementGate.
+func (g *Gate) EvaluateStatement(ctx context.Context, stmt inspect.Statement) Decision {
+	stmts := []inspect.Statement{stmt}
+	j := g.judge(ctx, stmt)
+	if j.refusal != nil {
+		r := *j.refusal
+		r.Statements = stmts
+		return r
+	}
+	d := Decision{Allowed: !j.denied, Statements: stmts, Err: j.err}
+	if j.denied {
+		d.Message = j.message
+		d.Rule = j.rule
+	}
+	return d
+}
+
+// Masker returns the masker this gate was configured with, nil when masking
+// is off. The statement path needs it: a caller that decodes its own frames
+// masks its own values, and reaching back into the Config it already handed
+// over is how two copies drift.
+func (g *Gate) Masker() Masker { return g.masker }
+
+// RecordMasked writes the audit event for values a statement-level transport
+// rewrote. Byte transports reach the same event through maskByReframing; a
+// gRPC lane owns decoding and re-encoding itself, so it reports the result
+// here after a successful proto marshal.
+func (g *Gate) RecordMasked(ctx context.Context, entities []string, count int) error {
+	if count == 0 {
+		return nil
+	}
+	sort.Strings(entities)
+	unique := entities[:0]
+	for _, entity := range entities {
+		if len(unique) == 0 || unique[len(unique)-1] != entity {
+			unique = append(unique, entity)
+		}
+	}
+	err := g.writeAudit(ctx, audit.MaskedEvent(g.sess, unique, count))
+	if g.cfg.FailOnAuditError {
+		return err
+	}
+	return nil
 }
 
 // maskBySubstitution rewrites the payload in place and corrects the declared

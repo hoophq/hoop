@@ -371,7 +371,17 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 		return nil, err
 	}
 	out := make([]LaneInfo, 0, len(lanes))
+	validationLog := slog.New(slog.NewTextHandler(io.Discard, nil))
 	for _, ln := range lanes {
+		notes := append([]string(nil), ln.notes...)
+		if isGRPC(ln.cfg) {
+			srv, err := buildGRPCServer(ln, cfg.Audit, nil, validationLog)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", ln.name, err)
+			}
+			notes = append(notes, srv.Notes()...)
+			_ = srv.Close()
+		}
 		out = append(out, LaneInfo{
 			Name:      ln.name,
 			Protocol:  ln.cfg.Protocol,
@@ -381,7 +391,7 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 			OPA:       ln.opaURL != "",
 			Masking:   ln.masker != nil,
 			Analyzed:  len(ln.analyzed),
-			Notes:     ln.notes,
+			Notes:     notes,
 		})
 	}
 	return out, nil
@@ -554,13 +564,30 @@ func Run(cfg *Config, det Plugin) error {
 		licenseExpired = watchLicense(ctx, cfg.lic, licenseCheckEvery, log)
 	}
 
+	// Two server kinds, one loop of lane facts. Relay lanes run
+	// proxy.Server; grpc lanes run the transport the plugin registered
+	// (ADR-0013). The stats zip in serveAdmin pairs servers with
+	// relayNames, so the two slices must stay in lockstep.
 	servers := make([]*proxy.Server, 0, len(lanes))
+	relayNames := make([]string, 0, len(lanes))
+	var grpcServers []GRPCServer
+	var grpcNames []string
 	for _, ln := range lanes {
-		srv, serr := buildServer(ln, cfg.Audit, auditSink, log)
-		if serr != nil {
-			return serr
+		if isGRPC(ln.cfg) {
+			gsrv, serr := buildGRPCServer(ln, cfg.Audit, auditSink, log)
+			if serr != nil {
+				return serr
+			}
+			grpcServers = append(grpcServers, gsrv)
+			grpcNames = append(grpcNames, ln.name)
+		} else {
+			srv, serr := buildServer(ln, cfg.Audit, auditSink, log)
+			if serr != nil {
+				return serr
+			}
+			servers = append(servers, srv)
+			relayNames = append(relayNames, ln.name)
 		}
-		servers = append(servers, srv)
 
 		// One line per lane naming what it enforces. The config file does not
 		// show what a lane inherited, so this logs the RESOLVED stack: it turns
@@ -589,11 +616,12 @@ func Run(cfg *Config, det Plugin) error {
 	}
 
 	if cfg.Admin.Listen != "" {
-		go serveAdmin(ctx, cfg.Admin.Listen, servers, lanes, ac, cfg.Analyzer, cfg.lic, log)
+		go serveAdmin(ctx, cfg.Admin.Listen, servers, relayNames, grpcServers, grpcNames,
+			lanes, ac, cfg.Analyzer, cfg.lic, log)
 	}
 
 	var wg sync.WaitGroup
-	errCh := make(chan error, len(servers))
+	errCh := make(chan error, len(servers)+len(grpcServers))
 	for i, srv := range servers {
 		wg.Add(1)
 		go func(s *proxy.Server, name string) {
@@ -602,13 +630,28 @@ func Run(cfg *Config, det Plugin) error {
 				log.Error("listener failed", "listener", name, "error", serr)
 				errCh <- serr
 			}
-		}(srv, lanes[i].name)
+		}(srv, relayNames[i])
 	}
-
-	var stoppedByLicense bool
+	for i, srv := range grpcServers {
+		wg.Add(1)
+		go func(s GRPCServer, name string) {
+			defer wg.Done()
+			if serr := s.Serve(ctx); serr != nil {
+				log.Error("listener failed", "listener", name, "error", serr)
+				errCh <- serr
+			}
+		}(srv, grpcNames[i])
+	}
+	var (
+		stoppedByLicense bool
+		listenerErr      error
+	)
 	select {
 	case <-ctx.Done():
 		log.Info("shutting down")
+	case listenerErr = <-errCh:
+		log.Info("shutting down after listener failure")
+		cancel()
 	case <-licenseExpired:
 		stoppedByLicense = true
 		log.Warn("stopping: the license term ended and this config needs more rules than "+
@@ -620,15 +663,21 @@ func Run(cfg *Config, det Plugin) error {
 	for _, srv := range servers {
 		_ = srv.Close()
 	}
+	for _, srv := range grpcServers {
+		_ = srv.Close()
+	}
 	wg.Wait()
 	close(errCh)
 
 	// Report the first listener failure: a shutdown request must not hide a
 	// bind error on one endpoint.
 	for e := range errCh {
-		if e != nil {
-			return e
+		if listenerErr == nil && e != nil {
+			listenerErr = e
 		}
+	}
+	if listenerErr != nil {
+		return listenerErr
 	}
 	if stoppedByLicense {
 		// A non-nil error exits non-zero, so a supervisor restarts and
@@ -729,7 +778,7 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 			problems = append(problems, name+": "+err.Error())
 			continue
 		}
-		masker, err := buildMasker(mc, det, inspect.Protocol(lc.Protocol))
+		masker, err := buildMasker(mc, det, inspect.Protocol(lc.Protocol), lc.GRPC.descriptors())
 		if err != nil {
 			problems = append(problems, name+": "+err.Error())
 			continue
@@ -887,16 +936,27 @@ func buildServer(
 // lane could carry rules for a protocol that cannot mask and still load
 // clean.
 //
+// grpc takes neither of gate.MaskSupported's paths: the lane rewrites
+// decoded fields and re-encodes the message itself, which is possible
+// exactly when it holds a descriptor set (ADR-0013). grpcDescriptors is
+// that fact; every other protocol ignores it.
+//
 // Validate reports both at startup; these checks cover a caller reaching Run
 // without going through LoadConfig.
-func buildMasker(mc MaskConfig, det Plugin, proto inspect.Protocol) (gate.Masker, error) {
+func buildMasker(mc MaskConfig, det Plugin, proto inspect.Protocol, grpcDescriptors string) (gate.Masker, error) {
 	if !mc.hasRules() {
 		return nil, nil
 	}
 	if det == nil {
 		return nil, fmt.Errorf("mask.rules is set but this build has no detection plugin")
 	}
-	if !gate.MaskSupported(proto) {
+	if proto == inspect.GRPC {
+		if grpcDescriptors == "" {
+			return nil, fmt.Errorf(
+				"mask.rules is set but this grpc lane has no grpc.descriptors; without a " +
+					"descriptor set the lane cannot decode a message to rewrite it")
+		}
+	} else if !gate.MaskSupported(proto) {
 		return nil, fmt.Errorf(
 			"mask.rules is set but masking is not supported on %s; remove the rules from "+
 				"this lane, or set mask: {rules: []} on it", proto)
@@ -987,6 +1047,9 @@ func serveAdmin(
 	ctx context.Context,
 	addr string,
 	servers []*proxy.Server,
+	relayNames []string,
+	grpcServers []GRPCServer,
+	grpcNames []string,
 	lanes []lane,
 	ac auditChain,
 	analyzerCfg *AnalyzerConfig,
@@ -1008,18 +1071,29 @@ func serveAdmin(
 			Total  int64  `json:"total"`
 			Denied int64  `json:"denied"`
 		}
-		out := make([]stat, 0, len(servers))
+		out := make([]stat, 0, len(servers)+len(grpcServers))
 		for i, s := range servers {
 			active, total, denied := s.Stats()
 			a := ""
 			if s.Addr() != nil {
 				a = s.Addr().String()
 			}
-			// servers and lanes are built in lockstep from cfg.Listeners, so
-			// the index is the join. Each entry carries its lane name so you
-			// can tell which of two postgres listeners denied something.
+			// servers and relayNames are built in lockstep from the relay
+			// listeners, so the index is the join. gRPC servers are appended
+			// below from their own lockstep slices.
 			out = append(out, stat{
-				Name: lanes[i].name, Addr: a,
+				Name: relayNames[i], Addr: a,
+				Active: active, Total: total, Denied: denied,
+			})
+		}
+		for i, s := range grpcServers {
+			active, total, denied := s.Stats()
+			a := ""
+			if s.Addr() != nil {
+				a = s.Addr().String()
+			}
+			out = append(out, stat{
+				Name: grpcNames[i], Addr: a,
 				Active: active, Total: total, Denied: denied,
 			})
 		}

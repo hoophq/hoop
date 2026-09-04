@@ -13,6 +13,7 @@ func init() {
 	RegisterBuilder(SQLBuilder{Protocol_: inspect.MSSQL})
 	RegisterBuilder(SQLBuilder{Protocol_: inspect.MySQL})
 	RegisterBuilder(HTTPBuilder{})
+	RegisterBuilder(grpcBuilder{})
 }
 
 // SQLBuilder renders a SQL statement for classification.
@@ -200,4 +201,49 @@ func httpCacheKey(stmt inspect.Statement, body string) string {
 	h.Write([]byte{0})
 	h.Write([]byte(normalizeSpace(body)))
 	return hex.EncodeToString(h.Sum(nil)[:16])
+}
+
+// grpcBuilder renders only descriptor-decoded message statements. Request
+// headers and response trailers carry method and status facts for local
+// policy, but no payload worth sending to a model.
+type grpcBuilder struct{}
+
+func (grpcBuilder) Protocol() inspect.Protocol { return inspect.GRPC }
+
+func (grpcBuilder) Build(stmt inspect.Statement, maxBytes int) (Content, bool) {
+	if stmt.HTTP == nil {
+		return Content{}, false
+	}
+	body := strings.TrimSpace(stmt.HTTP.Body)
+	if body == "" {
+		return Content{}, false
+	}
+
+	target := stmt.HTTP.Resource
+	if target == "" {
+		target = stmt.HTTP.Path
+	}
+	var sb strings.Builder
+	sb.WriteString("gRPC ")
+	sb.WriteString(target)
+	sb.WriteString("\nDirection: ")
+	sb.WriteString(string(stmt.Direction))
+	if stmt.HTTP.BodyTruncated {
+		sb.WriteString("\n(message truncated by the proxy)")
+	}
+	sb.WriteString("\n\n")
+	sb.WriteString(Truncate(body, maxBytes))
+
+	h := sha256.New()
+	h.Write([]byte("grpc"))
+	h.Write([]byte{0})
+	h.Write([]byte(stmt.Direction))
+	h.Write([]byte{0})
+	h.Write([]byte(target))
+	h.Write([]byte{0})
+	h.Write([]byte(normalizeSpace(body)))
+	return Content{
+		Text:     sb.String(),
+		CacheKey: hex.EncodeToString(h.Sum(nil)[:16]),
+	}, true
 }

@@ -1,10 +1,10 @@
 # ADR-0013: gRPC lanes terminate HTTP/2 in-process; no in-stream codec; descriptor sets required
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-09-03
 - **Author:** @matheusfrancisco
 - **Deciders:** —
-- **Code:** [`sidecar/inspect/`](../../sidecar/inspect), [`sidecar/codec/`](../../sidecar/codec), [`sidecar/gate/gate.go`](../../sidecar/gate/gate.go), [`sidecar/policy/`](../../sidecar/policy), [`sidecar/pii/alcatraz/masker.go`](../../sidecar/pii/alcatraz/masker.go), [`sidecar/proxy/`](../../sidecar/proxy)
+- **Code:** [`libhoop/v2/codec/grpc/`](../../libhoop/v2/codec/grpc), [`libhoop/v2/codec/types/`](../../libhoop/v2/codec/types), [`sidecar/daemon/grpc.go`](../../sidecar/daemon/grpc.go), [`sidecar/gate/gate.go`](../../sidecar/gate/gate.go), [`sidecar/policy/grpc.go`](../../sidecar/policy/grpc.go)
 - **Related:** [ADR-0005](0005-sidecar-flow.md) (the relay flow gRPC deviates from), [ADR-0009](0009-guardrails-and-masking-architecture.md) (the masking architecture this extends), [ADR-0011](0011-sidecar-config-schema.md) (the config schema these keys join)
 - **Supersedes / Superseded by:** —
 
@@ -67,11 +67,13 @@ instead mangles any nested message whose bytes are all printable, which is any
 message holding one string field of 32 to 126 characters. Both orderings are
 unsound, in opposite directions.
 
-Two constraints frame the options. `sidecar/go.sum` is two lines, both libhoop
-(`sidecar/go.mod:1-24`), and `libhoop/v2/**` imports stdlib plus
-`libhoop/v2/codec/types`; `hpack` and `protowire` sit outside stdlib, so
-anything needing them lives in a nested module or not at all. TLS is the
-second constraint: grpc-go refuses plaintext without an explicit
+Two constraints frame the options. The root sidecar module declares only
+`github.com/hoophq/libhoop`; the dependency edge must continue to point from
+sidecar to libhoop, never back. Go 1.26's standard library serves TLS HTTP/2
+and plaintext h2c, so the reusable endpoint can live with the descriptor,
+framing, rendering, masking, and status mechanics in
+`libhoop/v2/codec/grpc`. Sidecar behavior is injected through callbacks. TLS
+is the second constraint: grpc-go refuses plaintext without an explicit
 `insecure.NewCredentials()` and enforces ALPN on both ends
 (`credentials/tls.go:149-153,179-183` at v1.83.0), so a standalone gRPC lane
 must terminate TLS itself and advertise `h2`. `proxy/starttls.go` sets no
@@ -79,8 +81,8 @@ must terminate TLS itself and advertise `h2`. `proxy/starttls.go` sets no
 
 ## Options considered
 
-1. **Full in-stream codec, `libhoop/v2/codec/grpc`.** The shape every other
-   protocol has. Rejected for good: it needs a hand-rolled HPACK decoder to
+1. **Full in-stream `inspect.Codec` implementation in
+   `libhoop/v2/codec/grpc`.** The shape every other protocol has. Rejected for good: it needs a hand-rolled HPACK decoder to
    keep the two-line `go.sum`, it inherits connection-fatal denials, and it
    can never mask, because the flow-control fact above forces a rewriting
    relay to become an HTTP/2 endpoint anyway. At that point the codec is more
@@ -95,8 +97,8 @@ must terminate TLS itself and advertise `h2`. `proxy/starttls.go` sets no
 3. **Terminate HTTP/2 in the sidecar and reverse-proxy.** `net/http` owns
    HPACK, framing, flow control and multiplexing; per-stream deny and sound
    masking become ordinary code; it runs with no Envoy and no fronting proxy.
-   Costs a second execution model in `daemon/` and `x/net/http2/h2c` plus
-   `protobuf-go` in a nested module. Chosen.
+   Costs a second execution model in `daemon/` and a callback seam between
+   libhoop's transport and the sidecar's policy, audit, and masking stack. Chosen.
 4. **An `ext_proc` service.** Envoy does the protocol work; the sidecar
    supplies detection, policy, audit and the denial message. The cheapest
    path when Envoy is present, and the requirement says Envoy may be absent.
@@ -120,16 +122,20 @@ advertising `h2` via ALPN (h2c serves a lane behind a plaintext front),
 originates upstream TLS with `h2` in `NextProtos`, decodes payloads through
 the descriptor set, masks, re-encodes, and denies a single stream with a
 trailers-only response (`grpc-status: 7`, `grpc-message` carrying the
-operator's text) while sibling streams keep flowing. The implementation lives
-in a nested module alongside `pii/alcatraz` and `analyzer/vertex`, carrying
-`x/net/http2/h2c` and `protobuf-go`; `sidecar/go.sum` stays two lines and the
-`wasip1` target survives.
+operator's text) while sibling streams keep flowing. The HTTP/2 endpoint,
+descriptor loading, frame handling, protobuf rendering, masking, and status
+handling live in `libhoop/v2/codec/grpc`. The sidecar's Gate, policy, audit,
+identity, and Statement adapter live in `sidecar/daemon` and are injected
+through libhoop callbacks. The dependency edge remains one-way.
 
-**We will not ship a `codec/grpc`, now or later.** The Codec abstraction is
+**`libhoop/v2/codec/grpc` is a protocol package, not an `inspect.Codec`
+implementation.** The Codec abstraction is
 bytes-in/statements-out over a stream the relay forwards concurrently. The
 Context section shows that shape cannot deny a multi-read message, cannot deny
 per-stream, and cannot mask. The abstraction carries those limits; no codec
-implementation removes them.
+implementation removes them. `libhoop/v2/codec/types.GRPC` is the
+canonical protocol name, while registry lookup remains unsupported on
+purpose.
 
 **The Gate gains a statement-level entry point.** The h2 lane enters at parsed
 messages, the `InspectRequest`/`InspectResponse` shape libhoop designed for
@@ -162,11 +168,12 @@ heuristic. Policy gets an identity axis instead: method globs through
 `grpc_status` type, because `grpc-status` lives in the trailers and `:status`
 is 200 on every live RPC.
 
-**One Statement per RPC by default.** The lane emits one at the request
-headers and a second at the trailers carrying `grpc-status`. Per-message
+**Two lifecycle Statements per RPC by default.** The lane emits one at the
+request headers and one at the trailers carrying `grpc-status`. Per-message
 statements appear only when payload capture is on. A Kubernetes `Watch` is one
-RPC and unbounded messages; the default audit trail is one row per call, not
-one per frame.
+RPC and unbounded messages; the default audit trail is two rows per call, not
+one per frame. Each RPC is also one audit session: an HTTP/2 connection is a
+poor audit boundary for multiplexed outcomes.
 
 ## Usage
 
@@ -232,13 +239,12 @@ longer fire.
 /billing.v1.Invoices/GetInvoice
     request  billing.v1.GetInvoiceRequest
     response billing.v1.Invoice
-    maskable response fields: amount_cents (int64), card_last4 (string),
-      customer.email (string), customer.full_name (string),
-      customer.id (string), customer.tax_id (string), id (string), labels.value
+    maskable response fields: card_last4, customer.email, customer.full_name,
+      customer.id, customer.tax_id, id, labels.value
 /billing.v1.Invoices/ListInvoices
     response billing.v1.ListInvoicesResponse
-    maskable response fields: invoices.amount_cents (int64), ...,
-      invoices.customer.tax_id (string), next_page_token (string)
+    maskable response fields: invoices.card_last4, ...,
+      invoices.customer.tax_id, next_page_token
 /billing.v1.Invoices/ExportAll
     response billing.v1.Invoice           (stream)
 ```
@@ -273,7 +279,7 @@ listeners:
       rules:
         - name: no-bulk-export
           type: http_resource
-          resources: ["/billing.v1.Invoices/Export*"]
+          resources: ["/billing.v1.Invoices/ExportAll"]
           message: bulk export is not permitted through this proxy
     mask:
       rules:
@@ -347,7 +353,7 @@ listeners:
       rules:
         - name: no-bulk-export
           type: http_resource
-          resources: ["/billing.v1.Invoices/Export*"]
+          resources: ["/billing.v1.Invoices/ExportAll"]
           message: bulk export is not permitted through this proxy
     mask:
       rules:
@@ -399,11 +405,10 @@ listeners:
 
     guardrails:
       rules:
-        # Method identity, glob. One rule covers ExportAll and any Export*
-        # added later.
+        # Method identity, exact.
         - name: no-bulk-export
           type: http_resource
-          resources: ["/billing.v1.Invoices/Export*"]
+          resources: ["/billing.v1.Invoices/ExportAll"]
           message: bulk export is not permitted through this proxy
 
         # Service identity, exact. Tables carries billing.v1.invoices the way
@@ -487,12 +492,13 @@ denial is a trailers-only response the client renders as `PermissionDenied`
 with the operator's message, the cleanest denial of any shipped protocol. We
 hand-roll none of the code RFC 7541 makes dangerous.
 
-**Harder.** `daemon/` forks into two execution models: every lane today is a
-`proxy.Server`, and a grpc lane is an `http.Server` with its own lifecycle,
-idle handling, max-conns and `/config` reporting. Operators provision a server
-certificate per standalone gRPC lane, because the lane terminates TLS itself.
-The nested module carries `x/net` and `protobuf-go`. Interposition still
-breaks upstream mTLS: an upstream that authenticates callers by client
+**Harder.** The daemon supports two execution models: relay lanes use a
+`proxy.Server`, while a grpc lane configures the HTTP/2 endpoint in
+`libhoop/v2/codec/grpc` and injects sidecar policy, audit, identity, and masking
+through callbacks. Libhoop owns the grpc lane's lifecycle, idle handling,
+connection limit, and stats. Operators provision a server certificate per
+standalone gRPC lane, because the lane terminates TLS itself. Interposition
+still breaks upstream mTLS: an upstream that authenticates callers by client
 certificate sees the lane's certificate. No deployment shape fixes that, so we
 document the limit instead of working around it. `stripChannelBinding`
 (`starttls.go:129-184`) is the SCRAM precedent; mTLS offers no equivalent
@@ -508,13 +514,12 @@ authorization belongs to the mesh.
 
 **Revisit if.** (a) Every target deployment turns out Envoy-fronted: add the
 `ext_proc` front end (option 4) onto the same gate entry and keep the h2 lane
-for the rest. (b) The audit rate proves unworkable: audit is written per
-statement, synchronously, before forwarding (`gate/gate.go:381-397`), and
-`session.New` is per connection (`proxy.go:338`); a client that holds one
-HTTP/2 connection for days produces one session with millions of statements.
-The unit that means "one RPC" is the stream, and neither `session/` nor
-`audit/` knows what a stream is. That is a separate decision this ADR does not
-make.
+for the rest. (b) The audit rate for payload capture proves unworkable: the
+sidecar opens one callback handler and audit session per RPC, while each
+captured request or response message is another statement. A streaming RPC
+that runs for days can therefore produce millions of statements in one
+session. Sampling or aggregating those message statements is a separate
+decision this ADR does not make.
 
 ## Terms
 
@@ -532,9 +537,10 @@ one allow/deny answer.
 **Relay lane**: a lane whose transport is the byte-pump `proxy.Server`. Every
 protocol before this ADR. A gRPC lane is not one.
 
-**Seam**: a package under `sidecar/codec/` that registers a libhoop decoder
-and injects the collaborators libhoop may not import. gRPC has no seam; that
-absence is this ADR.
+**Seam**: the dependency-inversion boundary where sidecar behavior enters
+libhoop without a reverse import. For gRPC, `libhoop/v2/codec/grpc` exposes RPC
+callbacks and `sidecar/daemon` implements and injects them; there is no
+`sidecar/codec/grpc` registration package.
 
 **Reframer**: the optional codec capability to rebuild a length-prefixed
 stream around masked values. `gate.MaskSupported` tests for it, and the answer
