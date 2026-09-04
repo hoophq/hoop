@@ -593,12 +593,63 @@ func TestGRPCDescriptorPathsAcceptStringAndList(t *testing.T) {
 		t.Fatalf("list = %#v", list.Descriptors)
 	}
 
-	// A comma cannot travel through the lane settings, so validation
-	// refuses it instead of letting the path split silently in libhoop.
-	bad := &GRPCCodecConfig{Descriptors: DescriptorPaths{"a,b.pb"}}
+	// An empty element is a config mistake, named at validation.
+	bad := &GRPCCodecConfig{Descriptors: DescriptorPaths{" "}}
 	problems := bad.validate("lane")
-	if len(problems) != 1 || !strings.Contains(problems[0], "comma") {
+	if len(problems) != 1 || !strings.Contains(problems[0], "empty path") {
 		t.Fatalf("problems = %v", problems)
+	}
+}
+
+// A path containing a comma (or a backslash) worked before the list form
+// existed and must keep working: the daemon escapes, libhoop unescapes,
+// and a strict lane proves the file actually loaded — an unresolved
+// method would answer 9.
+func TestGRPCDescriptorPathWithCommaSurvivesTheSeam(t *testing.T) {
+	blob, err := base64.StdEncoding.DecodeString(grpcTestDescriptorSet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := t.TempDir() + `/with,comma\weird.pb`
+	if err := os.WriteFile(path, blob, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	upstreamAddr, stopUpstream := startGRPCTestH2C(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.Header().Set("Content-Type", "application/grpc")
+		w.Header().Set("Trailer", "Grpc-Status")
+		w.WriteHeader(http.StatusOK)
+		w.Header().Set("Grpc-Status", "0")
+	}))
+	defer stopUpstream()
+
+	server := buildGRPCTestServer(t, "comma-path-test", upstreamAddr,
+		&GRPCCodecConfig{Descriptors: DescriptorPaths{path}, CapturePayload: true, Strict: true}, nil, nil, nil)
+	laneAddr, stopLane := startGRPCTestServer(t, server)
+	defer stopLane()
+
+	transport := grpcTestTransport()
+	defer transport.CloseIdleConnections()
+	req, err := http.NewRequest(http.MethodPost, "http://"+laneAddr+"/test.v1.Echo/Say",
+		bytes.NewReader(grpcTestFrame(0, marshalGRPCTestMessage("request", "request"))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/grpc")
+	resp, err := transport.RoundTrip(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
+	status := resp.Header.Get("Grpc-Status")
+	if status == "" {
+		status = resp.Trailer.Get("Grpc-Status")
+	}
+	if status != "0" {
+		t.Fatalf("grpc-status = %q, want 0 (message: %q)", status,
+			codecgrpc.DecodeMessage(resp.Header.Get("Grpc-Message")))
 	}
 }
 

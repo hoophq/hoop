@@ -85,16 +85,9 @@ func (g *GRPCCodecConfig) validate(lane string) []string {
 			"listener %q: grpc.max_payload_bytes is negative", lane))
 	}
 	for _, p := range g.Descriptors {
-		switch {
-		case strings.TrimSpace(p) == "":
+		if strings.TrimSpace(p) == "" {
 			problems = append(problems, fmt.Sprintf(
 				"listener %q: grpc.descriptors contains an empty path", lane))
-		case strings.ContainsRune(p, ','):
-			// The paths travel to libhoop as one comma-separated setting,
-			// so a comma inside a path cannot be represented.
-			problems = append(problems, fmt.Sprintf(
-				"listener %q: grpc.descriptors path %q contains a comma, which the "+
-					"lane configuration cannot carry; rename the file", lane, p))
 		}
 	}
 	if g.CapturePayload && len(g.Descriptors) == 0 {
@@ -208,7 +201,15 @@ func buildGRPCServer(
 		opts["max_conns"] = strconv.Itoa(lc.MaxConns)
 	}
 	if len(gc.Descriptors) > 0 {
-		opts["descriptors"] = strings.Join(gc.Descriptors, ",")
+		// The list travels as one comma-separated setting; the escape
+		// discipline (\\ then \,) is libhoop's, so any filesystem path —
+		// commas and backslashes included — survives the seam.
+		escaped := make([]string, len(gc.Descriptors))
+		for i, p := range gc.Descriptors {
+			p = strings.ReplaceAll(p, `\`, `\\`)
+			escaped[i] = strings.ReplaceAll(p, ",", `\,`)
+		}
+		opts["descriptors"] = strings.Join(escaped, ",")
 	}
 	if gc.CapturePayload {
 		opts["capture_payload"] = "true"
