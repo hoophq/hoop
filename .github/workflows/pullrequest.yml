@@ -34,6 +34,14 @@ jobs:
         run: |
           echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
+
+      # When this PR's branch is also open as a hoophq/libhoop PR, test
+      # against that branch instead of the pinned release. No match keeps
+      # the pin; see .github/actions/use-libhoop-pr.
+      - name: Use libhoop PR branch when one is open
+        uses: ./.github/actions/use-libhoop-pr
+        with:
+          token: ${{ secrets.GH_TOKEN }}
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -45,7 +53,20 @@ jobs:
         with:
           workspaces: gateway/rdp/wasm
 
+      # The workflow-level GODEBUG (see the header comment) downgrades every
+      # go command's MODULE DOWNLOADS to HTTP/1.1, but it must not reach the
+      # test runtime: sidecar/daemon's gRPC tests drive real h2c clients
+      # through net/http, and http2client=0 turns every one of them into
+      # "http: Transport does not support unencrypted HTTP/2". So the module
+      # graph is fetched first, under the workaround, and the tests then run
+      # with client HTTP/2 restored against a warm cache — the flaky
+      # downloads and the h2c tests never share a process.
+      - name: Download modules over HTTP/1.1
+        run: go mod download
+
       - name: Test
+        env:
+          GODEBUG: http2client=1
         run: make test-oss
 
   integration-test:
@@ -79,6 +100,14 @@ jobs:
         run: |
           echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
+
+      # When this PR's branch is also open as a hoophq/libhoop PR, test
+      # against that branch instead of the pinned release. No match keeps
+      # the pin; see .github/actions/use-libhoop-pr.
+      - name: Use libhoop PR branch when one is open
+        uses: ./.github/actions/use-libhoop-pr
+        with:
+          token: ${{ secrets.GH_TOKEN }}
       - name: Setup Java
         uses: actions/setup-java@v5
         with:
@@ -139,6 +168,14 @@ jobs:
         run: |
           echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
+
+      # When this PR's branch is also open as a hoophq/libhoop PR, test
+      # against that branch instead of the pinned release. No match keeps
+      # the pin; see .github/actions/use-libhoop-pr.
+      - name: Use libhoop PR branch when one is open
+        uses: ./.github/actions/use-libhoop-pr
+        with:
+          token: ${{ secrets.GH_TOKEN }}
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -186,6 +223,14 @@ jobs:
           echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
 
+      # When this PR's branch is also open as a hoophq/libhoop PR, test
+      # against that branch instead of the pinned release. No match keeps
+      # the pin; see .github/actions/use-libhoop-pr.
+      - name: Use libhoop PR branch when one is open
+        uses: ./.github/actions/use-libhoop-pr
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+
       # Boots a throwaway postgres:17.6 via testcontainers; ubuntu-latest
       # runners have Docker pre-installed, so no services: block is needed.
       - name: Gateway Smoke Test
@@ -224,6 +269,14 @@ jobs:
           echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
 
+      # When this PR's branch is also open as a hoophq/libhoop PR, test
+      # against that branch instead of the pinned release. No match keeps
+      # the pin; see .github/actions/use-libhoop-pr.
+      - name: Use libhoop PR branch when one is open
+        uses: ./.github/actions/use-libhoop-pr
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+
       - name: Gateway Smoke Test (pglite)
         run: make test-gateway-pglite
 
@@ -260,6 +313,14 @@ jobs:
           echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
 
+      # When this PR's branch is also open as a hoophq/libhoop PR, test
+      # against that branch instead of the pinned release. No match keeps
+      # the pin; see .github/actions/use-libhoop-pr.
+      - name: Use libhoop PR branch when one is open
+        uses: ./.github/actions/use-libhoop-pr
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+
       - name: Standalone Mode Test
         run: make test-standalone
 
@@ -294,6 +355,14 @@ jobs:
         run: |
           echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
+
+      # When this PR's branch is also open as a hoophq/libhoop PR, test
+      # against that branch instead of the pinned release. No match keeps
+      # the pin; see .github/actions/use-libhoop-pr.
+      - name: Use libhoop PR branch when one is open
+        uses: ./.github/actions/use-libhoop-pr
+        with:
+          token: ${{ secrets.GH_TOKEN }}
 
       - name: Standalone Single-Binary E2E
         run: make test-standalone-e2e
@@ -341,9 +410,27 @@ jobs:
           echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
 
+      # When this PR's branch is also open as a hoophq/libhoop PR, test
+      # against that branch instead of the pinned release. No match keeps
+      # the pin; see .github/actions/use-libhoop-pr.
+      - name: Use libhoop PR branch when one is open
+        uses: ./.github/actions/use-libhoop-pr
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+
       # testcontainers-go manages container lifecycle itself via the Docker
       # daemon. ubuntu-latest runners have Docker pre-installed and running,
       # so no services: block is required. See:
       # https://golang.testcontainers.org/system_requirements/
+      # Same GODEBUG split as the Unit Test job, one step further removed:
+      # the suite BUILDS hoop-inspect and runs it as a subprocess, which
+      # inherits this environment — and a grpc lane's h2c upstream
+      # transport dies under http2client=0. Downloads happen under the
+      # workaround; the suite and the binary run with client HTTP/2 on.
+      - name: Download modules over HTTP/1.1
+        run: cd sidecar/e2e && go mod download
+
       - name: Sidecar E2E Test
+        env:
+          GODEBUG: http2client=1
         run: make test-sidecar-e2e

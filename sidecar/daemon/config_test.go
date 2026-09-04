@@ -171,11 +171,11 @@ func TestMaskRulesOnUnmaskableProtocolAreRefused(t *testing.T) {
 	det := stubPlugin{entities: []string{"US_SSN"}}
 
 	for _, p := range []inspect.Protocol{inspect.Postgres, inspect.MSSQL, inspect.MySQL, inspect.MongoDB, inspect.HTTP} {
-		if _, err := buildMasker(mc, det, p); err != nil {
+		if _, err := buildMasker(mc, det, p, false); err != nil {
 			t.Errorf("buildMasker refused %s, which can re-frame or re-tag: %v", p, err)
 		}
 	}
-	if _, err := buildMasker(mc, det, inspect.Protocol("cassandra")); err == nil {
+	if _, err := buildMasker(mc, det, inspect.Protocol("cassandra"), false); err == nil {
 		t.Error("buildMasker accepted a protocol with neither masking mechanism")
 	}
 }
@@ -220,7 +220,7 @@ func TestEmptyMaskRulesOptOutOfAnInheritedSet(t *testing.T) {
 func TestMaskWithoutPluginIsRefused(t *testing.T) {
 	mc := MaskConfig{Rules: []byte(`[{"name":"r","entities":["US_SSN"],"strategy":"redact"}]`)}
 
-	m, err := buildMasker(mc, nil, inspect.HTTP)
+	m, err := buildMasker(mc, nil, inspect.HTTP, false)
 	if err == nil {
 		t.Fatal("masking without a plugin must fail, not forward responses unmasked")
 	}
@@ -572,6 +572,28 @@ func TestAuditFailOnErrorIsTheInverseOfFailOpen(t *testing.T) {
 				t.Errorf("failOnAuditError() = %t, want %t", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestGRPCAIAnalysisRequiresPayloadCapture(t *testing.T) {
+	p := writeConfig(t, `{
+	  "analyzer": {"provider":"openai","model":"test"},
+	  "listeners": [{
+	    "name":"rpc","protocol":"grpc","listen":":1","upstream":"h:1",
+	    "grpc":{"descriptors":"schema.pb"},
+	    "guardrails":{"rules":[{
+	      "name":"risky-rpc","type":"ai_analysis",
+	      "trigger":{"resources":["/test.v1.Echo/**"]},"high":"block"
+	    }]}
+	  }]
+	}`)
+
+	_, err := LoadConfig(p)
+	if err == nil {
+		t.Fatal("gRPC ai_analysis without payload capture was accepted")
+	}
+	if !strings.Contains(err.Error(), "grpc.capture_payload") {
+		t.Fatalf("error does not name the missing capture setting: %v", err)
 	}
 }
 

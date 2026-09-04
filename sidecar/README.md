@@ -6,32 +6,34 @@
 > migration table and the three behaviour changes that can move traffic. The
 > Go interfaces will keep moving.
 
-Turn raw database wire-protocol bytes into structured statements, and
-structured statements into allow/deny verdicts.
+Turn wire protocols into structured statements, and structured statements
+into allow/deny verdicts.
 
-**The library is a pure function over bytes.** It opens no socket, terminates
-no TLS, routes nothing. You hand it bytes you already have, and whatever holds
-the connection keeps holding it.
+**Relay codecs are pure functions over bytes.** The root library opens no
+socket, terminates no TLS, and routes nothing. You hand it bytes you already
+have, and whatever holds the connection keeps holding it.
 
-**The relay owns a socket.** The nested `cmd` module builds `hoop-inspect`,
-which wraps the library in a listener that accepts a connection, dials one
-upstream, and pumps bytes through the gate in both directions. A TCP port or a
-unix socket, your choice per lane (see [Transport](#transport)). It runs behind
-something that already owns TLS and identity, typically Envoy forwarding
-plaintext over loopback or a unix socket.
+**The daemon owns protocol transports.** Database and HTTP/1 lanes accept one
+connection, dial one upstream, and pump bytes through a codec-backed gate.
+The gRPC lane is the deliberate exception: it terminates HTTP/2 in-process,
+applies policy and descriptor-backed protobuf masking per stream, then proxies
+the RPC upstream. This keeps one denied stream from closing unrelated RPCs on
+the same connection. It runs standalone; Envoy is optional.
 
-**One dependency.** `github.com/hoophq/libhoop`, which carries the protocol
-decoders and defines the wire types this module aliases. Everything else is
-standard library, tests included. libhoop is private, so building this module
-needs `GOPRIVATE=github.com/hoophq/libhoop` and credentials for it.
+**One root dependency.** `github.com/hoophq/libhoop` carries the protocol
+decoders, the gRPC HTTP/2 endpoint, and the wire types this module aliases.
+The root module declares only libhoop. Sidecar-specific gRPC identity,
+statement, policy, audit, and masking behavior is injected from `daemon/`
+into `libhoop/v2/codec/grpc`. libhoop is private, so builds need
+`GOPRIVATE=github.com/hoophq/libhoop` and credentials.
 
 The root shipped zero dependencies until the decoders moved to libhoop. They
 produce the `Statement` a policy evaluates, so this module cannot describe its
 own inputs without naming their types.
 
-**Go 1.26.5.** Every module here (the root and the six nested ones) declares
-`go 1.26.5`, so an older toolchain refuses the build instead of miscompiling
-it. The repo's `go.work` and the sidecar image pin the same version.
+**Go 1.26.5.** Every module here declares `go 1.26.5`, so an older toolchain
+refuses the build instead of miscompiling it. The repo's `go.work` and the
+sidecar image pin the same version.
 
 ```go
 import (
@@ -852,10 +854,9 @@ listeners:
 ```
 
 Setting only `analyzer.prompt` is fine: the built-in guidance it replaces
-covers both protocols, with separate high-risk examples for SQL and for HTTP,
-for exactly this reason. Overriding it with database-only wording is the easy
-mistake: an HTTP lane then classifies JSON bodies against advice about `DROP`
-and `TRUNCATE`.
+covers SQL, HTTP and gRPC payloads, with separate high-risk examples for each.
+Overriding it with database-only wording is the easy mistake: an HTTP or gRPC
+lane then classifies JSON bodies against advice about `DROP` and `TRUNCATE`.
 
 A prompt replaces the **guidance** only. Two instructions are appended after
 whatever you write and cannot be removed:
@@ -874,9 +875,10 @@ cache TTL. `/config` reports `custom_prompt: true` and never the text, for the
 same reason it reports rule names and not their `pattern_regex`.
 
 **Costs.** An ORM issues one statement shape thousands of times per session.
-The cache keys on the shape, with literals stripped and HTTP resources
-normalized, so `WHERE id = 1` and `WHERE id = 2` are one verdict. Watch the
-hit rate at `/stats` before enabling a blocking action:
+SQL cache keys strip literals; HTTP resources are normalized; HTTP and gRPC
+payload bodies remain part of the key because stripping arbitrary JSON values
+would merge requests whose risk can differ. Watch the hit rate at `/stats`
+before enabling a blocking action:
 
 ```bash
 curl -s localhost:19000/config | python3 -m json.tool   # what each lane sends
@@ -930,6 +932,7 @@ The boundary:
 | HTTP request | `ext_authz`: method, path, headers, bounded body | same, plus normalized resource |
 | HTTP **response** | ✗, ext_authz decides before the upstream is called | status, headers, body |
 | Deny UX | RBAC/ext_authz drops or returns a bare 403 | operator-authored message |
+| gRPC request/response messages | method and metadata matchers; proto scrubber removes configured fields on supported Envoy builds | descriptor-backed content policy in both directions and response value masking, standalone or behind Envoy |
 
 On HTTP, Envoy's `ext_authz` covers request-side authorization well, and the
 gaps named above are the narrow ones; Envoy is not blind here.
@@ -943,6 +946,38 @@ gaps named above are the narrow ones; Envoy is not blind here.
 | `mongodb` | `OP_MSG` commands and the legacy `OP_QUERY` hello; document-sequence sections are reassembled into the command | cursor `firstBatch`/`nextBatch`, `findAndModify.value`, distinct values and inline map-reduce results for masking | yes |
 | `mssql` | `SQLBatch` (0x01) and `RPCRequest` (0x03), reassembled across packets; login forwarded untouched | `COLMETADATA` (0x81), `ROW` (0xD1), `NBCROW` (0xD2) for masking; login replies scanned for a routing redirect | yes |
 | `http` | HTTP/1.x requests | HTTP/1.x responses | no |
+| `grpc` | request headers; decoded messages when capture is on | response trailers; decoded messages when capture or masking is on | yes, per HTTP/2 stream |
+
+`grpc` is the exception to this table's codec model. It has a canonical
+`libhoop/v2/codec/types.GRPC` protocol value and its HTTP/2 endpoint and
+reusable protocol mechanics live in `libhoop/v2/codec/grpc`, but it has no
+`inspect.Codec`. The sidecar daemon injects statement, Gate, policy, audit,
+and masking callbacks, so one denied RPC does not close sibling streams and
+masked protobuf messages are re-encoded with correct lengths. A
+descriptor set is mandatory for capture or masking; method-only policy works
+without one. See [ADR-0013](../docs/adr/0013-grpc-terminates-http2-in-process.md).
+
+```yaml
+listeners:
+  - name: billing
+    protocol: grpc
+    listen: 127.0.0.1:18443
+    upstream: billing:50051
+    downstream_tls:             # omit for h2c on loopback or a unix socket
+      cert_file: /etc/hoop/billing.crt
+      key_file: /etc/hoop/billing.key
+    upstream_tls: {}            # TLS + ALPN h2 to the backend
+    grpc:
+      descriptors: /etc/hoop/billing.pb
+      capture_payload: true
+      max_payload_bytes: 65536
+      metadata: [x-tenant-id]
+```
+
+`-validate` loads the descriptor set and prints each method, its message types
+and maskable response paths. Unreadable, malformed, or import-incomplete sets
+fail before the listener binds. Compare the printed method list with the
+deployed API to catch a valid but stale set that omits newer RPCs.
 
 The Postgres codec is stateful because one `RowDescription` describes every
 `DataRow` after it, and those land in different TCP reads. That is why the
@@ -1801,8 +1836,8 @@ the lane. Lanes in one process can differ, so a deployment can move one lane to
 a socket without touching the other.
 
 Nothing above the transport changes. Policy, masking, audit and `upstream_tls`
-behave identically, because the gate reads a `net.Conn` and never asks what
-kind it is.
+behave identically. Relay lanes read a `net.Conn`; a gRPC lane terminates
+HTTP/2 over either transport before entering the same statement gate.
 
 ### Why pick a socket
 
@@ -1903,7 +1938,21 @@ split a client's connections between them at random.
 ## Downstream TLS, and the GSS refusal
 
 The relay terminates no client TLS by default: whatever fronts it owns that
-leg. Postgres is the exception, because pgwire leaves no one else able to.
+leg. Postgres is one exception, because pgwire leaves no one else able to. A
+gRPC lane is the other: standalone clients require an HTTP/2 TLS endpoint.
+
+### gRPC: TLS on connect, or explicit h2c
+
+A gRPC lane with `downstream_tls` presents the configured certificate and
+advertises `h2` through ALPN. Omit the block to serve h2c, which is appropriate
+behind Envoy, on loopback, or on a unix socket. grpc-go clients must then opt
+into plaintext credentials explicitly; binding an h2c lane to a shared network
+exposes its metadata and is not refused automatically.
+
+The lane also owns upstream HTTP/2. `upstream_tls` means TLS plus ALPN `h2`;
+omitting it means h2c prior knowledge. Interposition cannot preserve end-to-end
+client-certificate authentication: the backend sees the lane's client
+certificate, not the caller's.
 
 ### The pgwire problem
 
@@ -1930,14 +1979,14 @@ the codec is handed plaintext.
 ```yaml
 listeners:
   - name: appdb
-    protocol: postgres            # the only protocol that accepts this
+    protocol: postgres            # gRPC also accepts downstream_tls, with normal ALPN h2
     downstream_tls:
       cert_file: /etc/hoop-inspect/certs/relay.crt
       key_file:  /etc/hoop-inspect/certs/relay.key
 ```
 
-The sidecar refuses this on any other protocol at startup, and loads the
-keypair there too. Finding a bad path on the first client connection would cost
+The sidecar accepts this on Postgres and gRPC lanes, refuses it on every other
+protocol at startup, and loads the keypair there too. Finding a bad path on the first client connection would cost
 one failed login per restart and leave the startup log silent.
 
 ### GSS encryption draws a refusal
@@ -1992,10 +2041,10 @@ without TLS. Encryption protects the bytes crossing the network, not the bytes
 the relay was built to read. A relay that could not read them would have
 nothing to mask.
 
-Do not confuse this with the client's leg. Nothing terminates downstream TLS
-here: if the CLIENT negotiates TLS end-to-end, there is no plaintext at this
-point in the path and inspection is impossible. That is the limit below, and
-it is a different hop.
+Do not confuse this with the client's leg. Relay lanes cannot inspect TLS
+that stays end to end; their plaintext must come from a front proxy or the
+Postgres terminator above. A gRPC lane is deliberately different: it terminates
+downstream HTTP/2 TLS itself, as [ADR-0013](../docs/adr/0013-grpc-terminates-http2-in-process.md) records.
 
 **Postgres negotiates in-band.** A TLS-on-connect dial fails against it: the
 server expects an 8-byte `SSLRequest` and a one-byte `S`/`N` reply before any

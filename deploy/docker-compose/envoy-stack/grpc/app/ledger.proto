@@ -1,0 +1,39 @@
+// The dummy service behind the gRPC lane. Small on purpose: one service,
+// two unary RPCs, string fields only, so the hand-rolled server in main.go
+// can encode and decode it without a protobuf library.
+//
+// The FileDescriptorSet the sidecar needs is compiled from THIS file in the
+// image build (see Dockerfile), so editing the schema here is the only step:
+// the next `docker compose build ledger` regenerates /srv/ledger.pb and the
+// grpc-descriptors init service republishes it to the shared volume.
+//
+// Field semantics the demo leans on:
+//   - Invoice.customer_email is what the process's one mask rule (emails)
+//     rewrites on the way back.
+//   - GetInvoiceRequest.note is where ./demo-grpc.sh plants a taxpayer id,
+//     refused by the inherited no-cpf-in-query guardrail.
+//   - ExportAll is the bulk endpoint the commented no-bulk-export rule in
+//     ../config-grpc.yaml would refuse.
+
+syntax = "proto3";
+
+package demo.v1;
+
+service Ledger {
+  rpc GetInvoice(GetInvoiceRequest) returns (Invoice);
+  rpc ExportAll(ExportAllRequest) returns (Invoice);
+}
+
+message GetInvoiceRequest {
+  string id = 1;
+  string note = 2;
+}
+
+message ExportAllRequest {}
+
+message Invoice {
+  string id = 1;
+  string customer_email = 2;
+  string ssn = 3;
+  string note = 4;
+}

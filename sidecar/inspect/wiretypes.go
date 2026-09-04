@@ -41,6 +41,10 @@ const (
 	MySQL    = codectypes.MySQL
 	MongoDB  = codectypes.MongoDB
 	HTTP     = codectypes.HTTP
+	// GRPC is canonical in libhoop like every other protocol, but unlike
+	// them it has no codec to register: the lane terminates HTTP/2 and
+	// enters at parsed statements (ADR-0013).
+	GRPC = codectypes.GRPC
 
 	FromClient = codectypes.FromClient
 	FromServer = codectypes.FromServer

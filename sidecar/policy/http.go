@@ -41,8 +41,9 @@ type httpRuleFields struct {
 	// method. Applies to MatchHTTPResource and MatchHTTPStatus.
 	Methods []string `json:"methods,omitempty"`
 
-	// Statuses for MatchHTTPStatus. Accepts exact codes ("404") and classes
-	// ("4xx", "5xx").
+	// Statuses for MatchHTTPStatus or MatchGRPCStatus. HTTP accepts exact
+	// codes and classes ("404", "4xx"); gRPC accepts canonical names and
+	// codes ("permission_denied", "7").
 	Statuses []string `json:"statuses,omitempty"`
 }
 
@@ -95,6 +96,15 @@ func (r Rule) matchesHTTP(stmt inspect.Statement) (matched, ok bool) {
 		return false, true
 
 	case MatchHTTPStatus:
+		if stmt.Protocol == inspect.GRPC {
+			// gRPC rides HTTP/2 and :status is 200 on every live RPC, so
+			// the transport status carries no outcome; matching it would
+			// make a success-status rule fire on every RPC completion.
+			// The RPC's outcome is the grpc-status trailer, which has its
+			// own rule type (grpc_status, grpc.go). http_resource above
+			// stays available to gRPC on purpose: method identity is real.
+			return false, true
+		}
 		if d.StatusCode == 0 {
 			return false, true // a request, not a response
 		}

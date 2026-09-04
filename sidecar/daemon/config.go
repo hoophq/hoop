@@ -248,6 +248,10 @@ type ListenerConfig struct {
 	// an http lane.
 	HTTP *HTTPCodecConfig `json:"http,omitempty"`
 
+	// GRPC configures what this lane's gRPC transport decodes and exposes.
+	// Only valid on a grpc lane. See GRPCCodecConfig.
+	GRPC *GRPCCodecConfig `json:"grpc,omitempty"`
+
 	// Connection is the DEPRECATED second name for this lane. normalize
 	// folds it onto Name, which now fills the audit key and
 	// input.context.connection on its own.
@@ -816,6 +820,11 @@ func (c *Config) Validate() error {
 		name := l.displayName(i)
 		if l.Protocol == "" {
 			problems = append(problems, name+": no protocol")
+		} else if isGRPC(l) {
+			// grpc has no codec, on purpose (ADR-0013): libhoop terminates
+			// HTTP/2 and the daemon injects statement, policy, audit, and
+			// masking callbacks. The codec registry cannot answer for it, so
+			// validation accepts the canonical protocol value here.
 		} else if _, err := inspect.New(inspect.Protocol(l.Protocol)); err != nil {
 			problems = append(problems, fmt.Sprintf("%s: unsupported protocol %q", name, l.Protocol))
 		}
@@ -835,15 +844,18 @@ func (c *Config) Validate() error {
 		seen[key] = true
 
 		// downstream_tls is refused at startup rather than accepted and
-		// ignored. On any other protocol the relay would never look at the
-		// SSLRequest that makes it work, so the lane would come up "green"
+		// ignored, except on the two lanes that terminate it: postgres,
+		// because pgwire negotiates TLS in-band so nothing in front can, and
+		// grpc, because a standalone lane is the HTTP/2 endpoint and must
+		// present the certificate itself (ADR-0013). On any other protocol
+		// the relay never looks, so the lane would come up "green"
 		// presenting a certificate nothing ever offers.
 		if l.DownstreamTLS != nil {
-			if l.Protocol != string(inspect.Postgres) {
+			if l.Protocol != string(inspect.Postgres) && !isGRPC(l) {
 				problems = append(problems, fmt.Sprintf(
-					"%s: downstream_tls is only supported on postgres, not %q "+
-						"(pgwire negotiates TLS in-band, which is the only reason "+
-						"the relay terminates it at all)", name, l.Protocol))
+					"%s: downstream_tls is only supported on postgres and grpc, not %q "+
+						"(pgwire negotiates in-band, and a grpc lane is its own "+
+						"HTTP/2 endpoint; no other protocol terminates here)", name, l.Protocol))
 			}
 			// Load the keypair now. Discovering a bad path on the first
 			// client connection means one failed login per restart and
@@ -898,6 +910,30 @@ func (c *Config) validateLane(lc ListenerConfig, name string) []string {
 		problems = append(problems, lc.HTTP.validate(name)...)
 	}
 
+	// The same rule for a grpc block: only a grpc lane reads it, and its
+	// own knobs are checked whatever the protocol so one restart reports
+	// both mistakes.
+	if lc.GRPC != nil {
+		if !isGRPC(lc) {
+			problems = append(problems, fmt.Sprintf(
+				"%s: a \"grpc\" block is only valid on a grpc listener, not %s",
+				name, lc.Protocol))
+		}
+		problems = append(problems, lc.GRPC.validate(name)...)
+	}
+
+	// A pii guardrail on a grpc lane scans Statement.Text, and Text holds
+	// only the method path unless the lane captures payloads. The rule
+	// would load, evaluate and never fire: refuse it, the same bargain the
+	// ai_analysis/capture_body check strikes for http below.
+	if isGRPC(lc) && anyPII(gc.Rules) &&
+		(lc.GRPC == nil || !lc.GRPC.CapturePayload) {
+		problems = append(problems, fmt.Sprintf(
+			"%s: has pii rule(s) on a grpc listener but grpc.capture_payload is not "+
+				"set, so rules would only ever scan the method path; add a \"grpc\" "+
+				"block with capture_payload: true and descriptors", name))
+	}
+
 	// An ai_analysis rule on an HTTP lane with no body capture classifies
 	// nothing: HTTPBuilder.Build returns ok=false on an empty body, and the
 	// codec leaves Body empty unless the lane asked for it. The rule would
@@ -914,6 +950,14 @@ func (c *Config) validateLane(lc ListenerConfig, name string) []string {
 			"%s: has ai_analysis rule(s) on an http listener but http.capture_body "+
 				"is not set, so every request would be skipped; add an \"http\" "+
 				"block with capture_body: true", name))
+	}
+
+	if len(aiRules) > 0 && isGRPC(lc) &&
+		(lc.GRPC == nil || !lc.GRPC.CapturePayload) {
+		problems = append(problems, fmt.Sprintf(
+			"%s: has ai_analysis rule(s) on a grpc listener but grpc.capture_payload "+
+				"is not set, so every RPC would be skipped; add a \"grpc\" block "+
+				"with capture_payload: true and descriptors", name))
 	}
 
 	// A lane whose protocol has no content builder classifies nothing, and
@@ -949,7 +993,18 @@ func (c *Config) validateLane(lc ListenerConfig, name string) []string {
 	// flag used to skip this block entirely, so a lane could carry rules for
 	// a protocol that cannot mask and still load clean.
 	if mc.hasRules() {
-		if p := inspect.Protocol(lc.Protocol); p != "" && !gate.MaskSupported(p) {
+		if isGRPC(lc) {
+			// A grpc lane masks by decoding fields through the descriptor
+			// set and re-encoding, so the set is the capability. Without it
+			// the rules would load and never fire (ADR-0013).
+			if !lc.GRPC.hasDescriptors() {
+				problems = append(problems, fmt.Sprintf(
+					"%s: masking on a grpc lane needs grpc.descriptors; without a "+
+						"descriptor set the lane cannot decode a message to rewrite it. "+
+						"Add the descriptor set, or set mask: {rules: []} on this lane.",
+					name))
+			}
+		} else if p := inspect.Protocol(lc.Protocol); p != "" && !gate.MaskSupported(p) {
 			problems = append(problems, fmt.Sprintf(
 				"%s: masking is not supported on %s (its rows are length-prefixed binary "+
 					"frames; rewriting bytes in place desynchronizes the client). Remove "+

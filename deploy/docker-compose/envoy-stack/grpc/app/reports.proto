@@ -1,0 +1,23 @@
+// The second team's schema. Compiled into its OWN descriptor set
+// (reports.pb) by the Dockerfile, never bundled with ledger.proto: the
+// point is the multi-team shape, where each service's CI ships its own
+// artifact and the lane lists both. The sidecar merges the sets at
+// startup; the demo proves the merged schema by masking author_email out
+// of a Reports response with the same one process-wide rule that masks
+// the Ledger's customer_email.
+
+syntax = "proto3";
+
+package reports.v1;
+
+service Reports {
+  rpc Latest(LatestRequest) returns (Report);
+}
+
+message LatestRequest {}
+
+message Report {
+  string id = 1;
+  string summary = 2;
+  string author_email = 3;
+}

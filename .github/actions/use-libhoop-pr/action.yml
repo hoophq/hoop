@@ -1,0 +1,102 @@
+# Build against a libhoop PR branch instead of the pinned release.
+#
+# The consuming go.mods pin a released libhoop version, so a hoop PR whose
+# counterpart lives in an unmerged libhoop branch builds against stale
+# protocol code and its CI verdict is a lie. This action closes that gap
+# with a branch-name convention: when hoophq/libhoop has an OPEN pull
+# request whose head branch has the SAME name as this PR's head branch,
+# the branch is cloned into ./libhoop (gitignored, the same path `make
+# libhoop-dev` documents) and the workspace replace is added, so every
+# module in go.work resolves libhoop from the checkout.
+#
+# An open PR is the trigger, not a branch's mere existence: a stale
+# same-named branch nobody is proposing must not silently redirect a
+# build. No matching PR is the normal case and keeps the pin; an API
+# failure fails the step, because "could not tell" silently degrading to
+# "use the pin" is the divergence this action exists to remove.
+#
+# Prerequisites, in step order before this action:
+#   - actions/setup-go (go work edit needs the toolchain)
+#   - the "Authenticate private modules" step (its insteadOf rewrite is
+#     what lets the plain-URL clone of the private repo authenticate)
+#
+# Release ordering is unchanged: merging the hoop PR still requires the
+# libhoop change published and the pin bumped first — the matched libhoop
+# PR being open is exactly the signal that has not happened yet.
+
+name: Use libhoop PR branch
+description: >-
+  When hoophq/libhoop has an open PR whose head branch matches this PR's
+  head branch, clone it into ./libhoop and add the go.work replace.
+
+inputs:
+  token:
+    description: Token that can read hoophq/libhoop and list its pull requests
+    required: true
+
+outputs:
+  used:
+    description: '"true" when the build was switched to a libhoop PR branch'
+    value: ${{ steps.resolve.outputs.used }}
+  sha:
+    description: Commit ./libhoop was left at, empty when the pin was kept
+    value: ${{ steps.resolve.outputs.sha }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve and apply libhoop PR branch
+      id: resolve
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        BRANCH: ${{ github.head_ref }}
+        HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+      run: |
+        set -euo pipefail
+        echo "used=false" >> "$GITHUB_OUTPUT"
+        echo "sha=" >> "$GITHUB_OUTPUT"
+
+        if [ -z "$BRANCH" ]; then
+          echo "not a pull_request run; keeping the pinned libhoop"
+          exit 0
+        fi
+        # A fork PR has no repo secrets, so the token above is empty and
+        # the private clone could not authenticate anyway. Same-repo only.
+        if [ "$HEAD_REPO" != "$GITHUB_REPOSITORY" ]; then
+          echo "fork PR; no credentials for hoophq/libhoop, keeping the pinned libhoop"
+          exit 0
+        fi
+
+        # -f parameters are URL-encoded by gh, which matters because a
+        # branch name may legally contain query delimiters (?, &, #).
+        # -f flips gh api to POST, so the method is pinned back to GET.
+        matches=$(gh api -X GET \
+          -f state=open \
+          -f head="hoophq:${BRANCH}" \
+          repos/hoophq/libhoop/pulls --jq 'length')
+        if [ "$matches" -eq 0 ]; then
+          echo "no open hoophq/libhoop PR from branch '${BRANCH}'; building with the pinned libhoop"
+          exit 0
+        fi
+
+        # Plain URL on purpose: the Authenticate step's insteadOf rewrite
+        # carries the credential, so it never lands in argv or this log.
+        git clone --depth 1 --branch "$BRANCH" \
+          https://github.com/hoophq/libhoop ./libhoop
+        sha=$(git -C libhoop rev-parse HEAD)
+
+        # The documented dev flow, one definition of the replace:
+        #   go work edit -replace github.com/hoophq/libhoop=./libhoop
+        make libhoop-dev
+
+        echo "used=true" >> "$GITHUB_OUTPUT"
+        echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+        echo "::notice title=libhoop PR branch::built against hoophq/libhoop ${BRANCH} @ ${sha} (open PR matched; the pin is NOT bumped by this)"
+        {
+          echo "### libhoop PR branch in use"
+          echo ""
+          echo "\`github.com/hoophq/libhoop\` resolved from branch \`${BRANCH}\` @ \`${sha}\`,"
+          echo "because hoophq/libhoop has an open PR from that branch. The released pin"
+          echo "was not used; merge and publish the libhoop PR before merging this one."
+        } >> "$GITHUB_STEP_SUMMARY"
