@@ -5,6 +5,10 @@ export const LIST_PATH = '/reviews/rules'
 export const NEW_PATH = '/reviews/rules/new'
 export const EDIT_PATH = '/reviews/rules/edit'
 
+// Same destination EnterpriseBanner and FreeLicenseCallout use. webapp_v2 sent this to
+// the ClojureScript /upgrade-plan page, which does not exist here.
+export const UPGRADE_PLAN_URL = 'https://hoop.dev/meet'
+
 export const PROMOTION_SEEN_STORAGE_KEY = 'access-request-promotion-seen'
 
 export const ACCESS_TYPE = {
@@ -29,6 +33,9 @@ export const TIME_RANGE_OPTIONS = [
   { value: '144000', label: '40 hours' },
   { value: '172800', label: '48 hours' },
 ]
+
+export const FREE_LICENSE_MESSAGE =
+  'Enable creating unlimited rules and applying to multiple resource roles for Command type requests by upgrading your plan.'
 
 export const MANAGED_RULE_MESSAGE =
   'This rule is managed by Hoop as part of your protection profile. Only approval settings and group lists can be changed.'

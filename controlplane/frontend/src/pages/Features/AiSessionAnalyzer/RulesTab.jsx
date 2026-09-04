@@ -10,12 +10,7 @@ import { docsUrl } from '@/utils/docsUrl'
 import { useAiSessionAnalyzerStore } from './store'
 import RuleListItem from './components/RuleListItem'
 
-export default function RulesTab({
-  providerConfigured,
-  createBlocked,
-  onAddLicense,
-  onGoConfigure,
-}) {
+export default function RulesTab({ providerConfigured, onGoConfigure }) {
   const navigate = useNavigate()
 
   const list = useAiSessionAnalyzerStore((s) => s.list)
@@ -43,12 +38,6 @@ export default function RulesTab({
 
   const goCreate = () => navigate('/features/ai-session-analyzer/rules/new')
 
-  // When the license blocks creation the primary action installs one instead
-  // of opening a form whose Save is disabled.
-  const createAction = createBlocked
-    ? { label: 'Add your license', onClick: onAddLicense }
-    : { label: 'Create new rule', onClick: goCreate }
-
   // Without a provider there is no model to grade sessions with, so the empty
   // state sends the admin to the Configure tab instead of the create form.
   if (list.length === 0) {
@@ -61,7 +50,7 @@ export default function RulesTab({
         }
         action={
           providerConfigured
-            ? createAction
+            ? { label: 'Create new rule', onClick: goCreate }
             : { label: 'Configure AI Session Analyzer', onClick: onGoConfigure }
         }
         docsUrl={docsUrl.features.aiSessionAnalyzer}

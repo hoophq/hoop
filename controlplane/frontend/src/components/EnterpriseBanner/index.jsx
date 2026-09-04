@@ -1,12 +1,14 @@
 import { Box, Group, Stack, Text } from '@mantine/core'
-import AddLicenseCta from '@/components/AddLicenseCta'
 import Button from '@/components/Button'
-import { openSales } from '@/utils/support'
+import { useUserStore } from '@/stores/useUserStore'
 import classes from './EnterpriseBanner.module.css'
+
+const SALES_URL = 'https://hoop.dev/meet'
+const INTERCOM_MESSAGE = 'I want to upgrade my current plan'
 
 const DEFAULT_TITLE = 'Unlock all protection controls'
 const DEFAULT_SUBTITLE =
-  'The control plane is part of the Enterprise plan. Add your license to create rules, or talk to sales.'
+  'Unlock unlimited Guardrails, Masking Rules, AI Session Analyzer, and more.'
 
 /**
  * Dark enterprise upsell banner pinned to feature pages for free-plan users.
@@ -14,16 +16,22 @@ const DEFAULT_SUBTITLE =
  * (webapp/src/webapp/features/activation_journey/views/enterprise_banner.cljs)
  * so both stacks render the same visual.
  *
- * "Add license" opens the shared modal (components/AddLicenseCta). "Talk to
- * Sales" opens Intercom when analytics tracking is enabled, otherwise
- * hoop.dev/meet in a new tab. Always gate the render on
- * `useUserStore.isFreeLicense` at the call site.
+ * The "Talk to Sales" action mirrors FreeLicenseCallout: it opens Intercom
+ * when analytics tracking is enabled, otherwise hoop.dev/meet in a new tab.
+ * Always gate the render on `useUserStore.isFreeLicense` at the call site.
  */
 export default function EnterpriseBanner({
   title = DEFAULT_TITLE,
   subtitle = DEFAULT_SUBTITLE,
   badgeLabel = 'Enterprise',
 }) {
+  const showIntercomMessage = useUserStore((state) => state.showIntercomMessage)
+
+  const handleTalkToSales = () => {
+    if (showIntercomMessage(INTERCOM_MESSAGE)) return
+    window.open(SALES_URL, '_blank', 'noopener,noreferrer')
+  }
+
   return (
     <Box className={classes.root}>
       <Group justify="space-between" align="center" gap="md" wrap="nowrap">
@@ -38,12 +46,9 @@ export default function EnterpriseBanner({
             {subtitle}
           </Text>
         </Stack>
-        <Group gap="xs" wrap="nowrap">
-          <Button variant="subtle" className={classes.secondary} onClick={() => openSales()}>
-            Talk to Sales
-          </Button>
-          <AddLicenseCta className={classes.action} />
-        </Group>
+        <Button className={classes.action} onClick={handleTalkToSales}>
+          Talk to Sales
+        </Button>
       </Group>
     </Box>
   )

@@ -11,13 +11,17 @@ import { useMinDelay } from '@/hooks/useMinDelay'
 import { usePaginatedConnections } from '@/hooks/usePaginatedConnections'
 import EmptyState from '@/layout/EmptyState'
 import FullBleed from '@/layout/FullBleed'
-import { useUIStore } from '@/stores/useUIStore'
 import { useUserStore } from '@/stores/useUserStore'
 import { docsUrl } from '@/utils/docsUrl'
-import { LICENSE_FEATURE_LABELS, licenseRequiredMessage, licenseState } from '@/utils/license'
 import { useAccessRequestStore } from './store'
 import { filterRules } from './helpers'
-import { NEW_PATH, PROMOTION_SEEN_STORAGE_KEY, EDIT_PATH } from './constants'
+import {
+  FREE_LICENSE_MESSAGE,
+  NEW_PATH,
+  PROMOTION_SEEN_STORAGE_KEY,
+  UPGRADE_PLAN_URL,
+  EDIT_PATH,
+} from './constants'
 import AccessRequestPromotion from './components/AccessRequestPromotion'
 import RuleListItem from './components/RuleListItem'
 
@@ -30,11 +34,7 @@ export default function AccessRequest() {
   const rulesStatus = useAccessRequestStore((s) => s.rulesStatus)
   const fetchRules = useAccessRequestStore((s) => s.fetchRules)
 
-  // Creating a rule needs a valid Enterprise license (hard zero on the client).
-  // Editing and deleting the rules that exist stay open in every state.
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
-  const licenseInfo = useUserStore((s) => s.licenseInfo)
-  const openLicenseModal = useUIStore((s) => s.openLicenseModal)
 
   // Any stored value counts as seen. Once dismissed the admin goes straight to
   // the empty state on later visits.
@@ -60,11 +60,7 @@ export default function AccessRequest() {
     [rules, selectedRole],
   )
 
-  const createBlocked = isFreeLicense
-  const licenseMessage = licenseRequiredMessage(
-    LICENSE_FEATURE_LABELS['access-requests'],
-    licenseState(licenseInfo),
-  )
+  const atFreeLimit = isFreeLicense && rules.length >= 1
   const loading = rulesStatus === 'idle' || rulesStatus === 'loading'
   const showLoader = useMinDelay(loading, 500)
   const activeFilterCount = selectedRole ? 1 : 0
@@ -87,15 +83,10 @@ export default function AccessRequest() {
     return <PageLoader error h={300} message="Failed to load access request rules." />
   }
 
-  // While creation is blocked the promotion's primary installs a license and
-  // the screen is not marked seen: the admin has not started the journey yet.
   if (rules.length === 0 && !promotionSeen) {
     return (
       <FullBleed>
-        <AccessRequestPromotion
-          onCreate={dismissPromotion}
-          onAddLicense={createBlocked ? openLicenseModal : undefined}
-        />
+        <AccessRequestPromotion onCreate={dismissPromotion} />
       </FullBleed>
     )
   }
@@ -110,22 +101,31 @@ export default function AccessRequest() {
           </Text>
         </Stack>
         {rules.length > 0 && (
-          <Button onClick={goCreate} disabled={createBlocked}>
+          // At the free-plan limit the button sells the upgrade instead of
+          // opening a form the gateway would reject.
+          <Button
+            onClick={
+              atFreeLimit
+                ? () => window.open(UPGRADE_PLAN_URL, '_blank', 'noopener,noreferrer')
+                : goCreate
+            }
+          >
             {CREATE_LABEL}
           </Button>
         )}
       </Group>
 
-      {createBlocked && <FreeLicenseCallout message={licenseMessage} />}
+      {isFreeLicense && (
+        <FreeLicenseCallout
+          message={FREE_LICENSE_MESSAGE}
+          variant={atFreeLimit ? 'limit' : 'info'}
+        />
+      )}
 
       {rules.length === 0 ? (
         <EmptyState
           title="No Access Request rules configured in your Organization yet"
-          action={
-            createBlocked
-              ? { label: 'Add your license', onClick: openLicenseModal }
-              : { label: CREATE_LABEL, onClick: goCreate }
-          }
+          action={{ label: CREATE_LABEL, onClick: goCreate }}
           docsUrl={docsUrl.features.accessRequests}
           docsLabel="Access Request documentation"
         />

@@ -32,6 +32,9 @@ export const RISK_LEVELS = [
 
 export const REQUIRE_ACCESS_REQUEST = 'require_access_request'
 
+export const FREE_LICENSE_LIMIT_MESSAGE =
+  'Your organization has reached AI Session Analyzer free usage limits. Upgrade to Enterprise to keep your sensitive data protected.'
+
 // The API still returns the deprecated flat `<tier>_risk_action` alongside the
 // nested `<tier>_risk`, so both are read, newest shape first.
 function tierFromRisk(riskEvaluation, level) {

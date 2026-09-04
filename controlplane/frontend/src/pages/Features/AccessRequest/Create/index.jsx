@@ -26,7 +26,6 @@ import TextInput from '@/components/TextInput'
 import { usePaginatedConnections } from '@/hooks/usePaginatedConnections'
 import { PAGE_PADDING } from '@/layout/PageLayout'
 import { useUserStore } from '@/stores/useUserStore'
-import { LICENSE_FEATURE_LABELS, licenseRequiredMessage, licenseState } from '@/utils/license'
 import { showSnackbar } from '@/utils/snackbar'
 import { useAccessRequestStore } from '../store'
 import {
@@ -38,6 +37,7 @@ import {
 } from '../helpers'
 import {
   ACCESS_TYPE,
+  FREE_LICENSE_MESSAGE,
   LIST_PATH,
   MANAGED_RULE_MESSAGE,
   TIME_RANGE_OPTIONS,
@@ -104,6 +104,7 @@ function RuleFormFields({ rule, isEdit }) {
   const { ref: sentinelRef, inViewport: headerInView } = useInViewport()
   const [deleteOpened, deleteModal] = useDisclosure(false)
 
+  const rules = useAccessRequestStore((s) => s.rules)
   const userGroups = useAccessRequestStore((s) => s.userGroups)
   const submitting = useAccessRequestStore((s) => s.submitting)
   const createRule = useAccessRequestStore((s) => s.createRule)
@@ -111,7 +112,6 @@ function RuleFormFields({ rule, isEdit }) {
   const deleteRule = useAccessRequestStore((s) => s.deleteRule)
 
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
-  const licenseInfo = useUserStore((s) => s.licenseInfo)
 
   // Rules that Hoop manages as part of a protection profile: the API accepts
   // changes to approval settings and group lists only, and refuses to delete
@@ -167,15 +167,10 @@ function RuleFormFields({ rule, isEdit }) {
 
   const userGroupOptions = userGroups.map((group) => ({ value: group, label: group }))
 
-  // Creating a rule needs a valid Enterprise license (hard zero on the client).
-  // Editing the rules that exist stays open in every state. A deep link to the
-  // create route still shows the form, with Save disabled and the callout.
-  const canCreate = !isFreeLicense
+  // The free plan allows a single rule. Editing the one that exists is always
+  // allowed; creating a second one is not.
+  const canCreate = !isFreeLicense || rules.length < 1
   const blockedByLicense = !isEdit && !canCreate
-  const licenseMessage = licenseRequiredMessage(
-    LICENSE_FEATURE_LABELS['access-requests'],
-    licenseState(licenseInfo),
-  )
 
   // Mirrors the gateway's own validation, so a rule that cannot be saved never
   // costs the admin a round trip: `required` on a Select or a pills input only
@@ -351,7 +346,12 @@ function RuleFormFields({ rule, isEdit }) {
         </Group>
 
         <Stack gap="xl" mb="xl">
-          {blockedByLicense && <FreeLicenseCallout message={licenseMessage} />}
+          {isFreeLicense && (
+            <FreeLicenseCallout
+              message={FREE_LICENSE_MESSAGE}
+              variant={blockedByLicense ? 'limit' : 'info'}
+            />
+          )}
           {managed && (
             <Alert color="blue" variant="light" icon={<Info size={16} />} radius="md">
               {MANAGED_RULE_MESSAGE}
@@ -609,14 +609,19 @@ export default function AccessRequestRuleForm() {
 
   const rule = useAccessRequestStore((s) => s.rule)
   const ruleStatus = useAccessRequestStore((s) => s.ruleStatus)
+  const rulesStatus = useAccessRequestStore((s) => s.rulesStatus)
   const userGroupsStatus = useAccessRequestStore((s) => s.userGroupsStatus)
   const fetchRule = useAccessRequestStore((s) => s.fetchRule)
+  const fetchRules = useAccessRequestStore((s) => s.fetchRules)
   const fetchUserGroups = useAccessRequestStore((s) => s.fetchUserGroups)
   const clearRule = useAccessRequestStore((s) => s.clearRule)
 
   useEffect(() => {
+    // The rule list is what the free-plan gate counts, so the form needs it
+    // even when the admin lands here from a bookmark.
+    fetchRules()
     fetchUserGroups()
-  }, [fetchUserGroups])
+  }, [fetchRules, fetchUserGroups])
 
   useEffect(() => {
     if (!ruleName) return undefined
@@ -625,7 +630,10 @@ export default function AccessRequestRuleForm() {
   }, [ruleName, fetchRule, clearRule])
 
   const pending = (status) => status === 'idle' || status === 'loading'
-  const loading = pending(userGroupsStatus) || (isEdit && pending(ruleStatus))
+  const loading =
+    pending(rulesStatus) ||
+    pending(userGroupsStatus) ||
+    (isEdit && pending(ruleStatus))
 
   if (loading) {
     return <PageLoader h={300} />
@@ -633,7 +641,11 @@ export default function AccessRequestRuleForm() {
 
   // Rendering the form anyway would show empty pickers as if the rule targeted
   // nothing, and saving would then wipe whatever failed to load.
-  if (userGroupsStatus === 'error' || (isEdit && ruleStatus === 'error')) {
+  if (
+    rulesStatus === 'error' ||
+    userGroupsStatus === 'error' ||
+    (isEdit && ruleStatus === 'error')
+  ) {
     return <PageLoader error h={300} message="Failed to load access request rule." />
   }
 

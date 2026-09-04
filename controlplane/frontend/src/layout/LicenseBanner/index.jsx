@@ -3,11 +3,11 @@ import { Anchor, Group, Text } from '@mantine/core'
 import { Link, useLocation } from 'react-router-dom'
 import { TriangleAlert } from 'lucide-react'
 import Alert from '@/components/Alert'
-import { RENEW_MESSAGE } from '@/features/License/constants'
 import { useUserStore } from '@/stores/useUserStore'
 import { LICENSE_STATUS, daysUntilExpiration, formatLicenseDate } from '@/utils/license'
 import { openSupport } from '@/utils/support'
 
+const SUPPORT_MESSAGE = 'I want to renew my hoop license'
 const WARN_DAYS = 30
 // Dismissing silences one step only; inside LOCKED_DAYS there is no close button.
 const DISMISS_STEPS = [30, 14]
@@ -94,16 +94,18 @@ export default function LicenseBanner() {
             Update license
           </Anchor>
         )}
-        <Anchor
-          component="button"
-          type="button"
-          onClick={() => openSupport(RENEW_MESSAGE)}
-          c={notice.color}
-          fw={500}
-          size="sm"
-        >
-          {'Contact support ↗'}
-        </Anchor>
+        {notice.action === 'support' && (
+          <Anchor
+            component="button"
+            type="button"
+            onClick={() => openSupport(SUPPORT_MESSAGE)}
+            c={notice.color}
+            fw={500}
+            size="sm"
+          >
+            {'Contact support ↗'}
+          </Anchor>
+        )}
       </Group>
     </Alert>
   )

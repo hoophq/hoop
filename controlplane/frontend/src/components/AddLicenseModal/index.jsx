@@ -1,99 +1,116 @@
 import { useState } from 'react'
-import { Anchor, Group, Stack, Text } from '@mantine/core'
+import { Group, Stack, Text } from '@mantine/core'
 import { ExternalLink } from 'lucide-react'
 import Button from '@/components/Button'
 import Modal from '@/components/Modal'
 import Textarea from '@/components/Textarea'
-import { MODAL_COPY } from '@/features/License/constants'
-import { useLicenseUpdate } from '@/features/License/useLicenseUpdate'
-import { useUIStore } from '@/stores/useUIStore'
+import licenseService from '@/services/license'
+import { authService } from '@/services/auth'
 import { useUserStore } from '@/stores/useUserStore'
-import { docsUrl } from '@/utils/docsUrl'
-import { LICENSE_STATE, licenseState } from '@/utils/license'
-import { openSales } from '@/utils/support'
+import { showSnackbar } from '@/utils/snackbar'
+
+const SALES_URL = 'https://hoop.dev/meet'
+const INTERCOM_MESSAGE = 'I want to upgrade my current plan'
 
 /**
- * The "Add your license" dialog. Mounted once in layout/Layout.jsx and opened
- * through useUIStore.openLicenseModal(), so every surface shares one copy.
- *
- * Ported from webapp_v2's ProtectionProfiles/AddLicenseModal with one save path
- * (features/License/useLicenseUpdate) and no disabled state: the server allows
- * replacing an installed license, and renewal needs exactly that.
+ * "Add your license" dialog, the same one webapp_v2 opens from its
+ * protection-profile picker. Saving a valid enterprise license refreshes the
+ * server info so the gated surfaces unlock in place.
  */
-export default function AddLicenseModal() {
-  const opened = useUIStore((state) => state.licenseModalOpened)
-  const closeLicenseModal = useUIStore((state) => state.closeLicenseModal)
-  const licenseInfo = useUserStore((state) => state.licenseInfo)
-  const { save, saving } = useLicenseUpdate()
+function AddLicenseModal({ opened, onClose }) {
+  const { analyticsTracking, setServerInfo } = useUserStore()
   const [licenseKey, setLicenseKey] = useState('')
-
-  const state = licenseState(licenseInfo)
-  const hasDocument = state !== LICENSE_STATE.FREE && state !== LICENSE_STATE.UNKNOWN
-  const copy = hasDocument ? MODAL_COPY.update : MODAL_COPY.free
+  const [saving, setSaving] = useState(false)
 
   function handleClose() {
     setLicenseKey('')
-    closeLicenseModal()
+    onClose()
+  }
+
+  function handleTalkToSales() {
+    if (analyticsTracking && window.Intercom) {
+      window.Intercom('showNewMessage', INTERCOM_MESSAGE)
+      return
+    }
+    window.open(SALES_URL, '_blank', 'noopener,noreferrer')
   }
 
   async function handleSave() {
-    const { ok } = await save(licenseKey)
-    if (ok) handleClose()
+    let parsed
+    try {
+      parsed = JSON.parse(licenseKey)
+    } catch {
+      showSnackbar({ level: 'error', text: 'Error processing license: invalid JSON format' })
+      return
+    }
+
+    setSaving(true)
+    try {
+      await licenseService.update(parsed)
+    } catch (err) {
+      showSnackbar({
+        level: 'error',
+        text: 'Failed to update license',
+        description: err.response?.data?.message,
+      })
+      setSaving(false)
+      return
+    }
+
+    // The license is active server-side from here on — a failure below only
+    // means the in-memory server info could not be refreshed.
+    try {
+      const serverInfo = await authService.getServerInfo()
+      setServerInfo(serverInfo)
+      showSnackbar({ level: 'success', text: 'License updated successfully' })
+    } catch {
+      showSnackbar({
+        level: 'info',
+        text: 'License updated successfully',
+        description: 'Reload the page to unlock Enterprise features.',
+      })
+    } finally {
+      setSaving(false)
+      handleClose()
+    }
   }
 
   return (
-    <Modal opened={opened} onClose={handleClose} title={copy.title} size="lg">
+    <Modal opened={opened} onClose={handleClose} title="Add your license" size="lg">
       <Stack gap="md">
         <Stack gap={4}>
-          <Text size="md">{copy.lead}</Text>
+          <Text size="md">Get the most out of Hoop with our Enterprise Plan.</Text>
           <Text size="sm" c="dimmed">
-            {copy.detail}
+            {"If you don't have one, reach out to us."}
           </Text>
         </Stack>
 
-        {state === LICENSE_STATE.INVALID && licenseInfo?.verify_error && (
-          <Text size="sm" c="red">
-            {`Current license: ${licenseInfo.verify_error}`}
-          </Text>
-        )}
-
         <Textarea
           label="License key"
-          placeholder="Paste the license JSON here"
+          placeholder="Paste your license key here"
           value={licenseKey}
-          onChange={(event) => setLicenseKey(event.currentTarget.value)}
-          minRows={6}
-          maxRows={14}
-          spellCheck={false}
+          onChange={(e) => setLicenseKey(e.currentTarget.value)}
+          minRows={4}
         />
 
-        <Group justify="space-between" align="center" wrap="wrap">
-          <Anchor
-            href={docsUrl.setup.licenseManagement}
-            target="_blank"
-            rel="noopener noreferrer"
-            size="xs"
-            c="dimmed"
+        <Group justify="flex-end" gap="md">
+          <Button variant="subtle" color="gray" onClick={handleClose}>
+            Cancel
+          </Button>
+          <Button
+            variant="default"
+            rightSection={<ExternalLink size={14} />}
+            onClick={handleTalkToSales}
           >
-            License management documentation
-          </Anchor>
-          <Group gap="md">
-            <Button variant="subtle" color="gray" onClick={handleClose}>
-              Cancel
-            </Button>
-            <Button
-              variant="default"
-              rightSection={<ExternalLink size={14} />}
-              onClick={() => openSales()}
-            >
-              Talk to sales
-            </Button>
-            <Button loading={saving} disabled={!licenseKey.trim()} onClick={handleSave}>
-              Save
-            </Button>
-          </Group>
+            Talk to sales
+          </Button>
+          <Button loading={saving} disabled={!licenseKey.trim()} onClick={handleSave}>
+            Save
+          </Button>
         </Group>
       </Stack>
     </Modal>
   )
 }
+
+export default AddLicenseModal

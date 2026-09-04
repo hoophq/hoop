@@ -1,12 +1,9 @@
 import { AppShell, Burger, Drawer } from '@mantine/core';
 import { useEffect } from 'react';
-import AddLicenseModal from '@/components/AddLicenseModal';
-import { useServerInfoRefresh } from '@/hooks/useServerInfoRefresh';
 import { useUIStore } from '@/stores/useUIStore';
 import Sidebar from './Sidebar';
 import AppHeader from './Header';
 import LicenseBanner from './LicenseBanner';
-import ModeBanner from './ModeBanner';
 import { SkipLink } from './SkipLink';
 
 const HEADER_HEIGHT = 56;
@@ -47,9 +44,6 @@ const MOBILE_DRAWER_STYLES = {
 
 function Layout({ children }) {
   const { sidebarOpen, sidebarCollapsed, toggleSidebar, setSidebarOpen } = useUIStore();
-
-  // License state can change outside this tab (CLI install, a sidecar one day).
-  useServerInfoRefresh();
 
   // Close mobile drawer when resizing to desktop
   useEffect(() => {
@@ -97,12 +91,9 @@ function Layout({ children }) {
         </AppShell.Navbar>
 
         <AppShell.Main id="main-content" tabIndex={-1}>
-          <ModeBanner />
           <LicenseBanner />
           {children}
         </AppShell.Main>
-        {/* One dialog for every "Add license" trigger (components/AddLicenseCta). */}
-        <AddLicenseModal />
       </AppShell>
 
       {/* Mobile sidebar — Drawer overlay (mirrors HeadlessUI Dialog in CLJS) */}

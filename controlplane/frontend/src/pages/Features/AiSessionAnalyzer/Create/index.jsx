@@ -15,10 +15,14 @@ import Textarea from '@/components/Textarea'
 import TextInput from '@/components/TextInput'
 import { PAGE_PADDING } from '@/layout/PageLayout'
 import { useUserStore } from '@/stores/useUserStore'
-import { LICENSE_FEATURE_LABELS, licenseRequiredMessage, licenseState } from '@/utils/license'
 import { showSnackbar } from '@/utils/snackbar'
 import { useAiSessionAnalyzerStore } from '../store'
-import { formToPayload, hasIncompleteTier, riskFromRule } from '../helpers'
+import {
+  FREE_LICENSE_LIMIT_MESSAGE,
+  formToPayload,
+  hasIncompleteTier,
+  riskFromRule,
+} from '../helpers'
 import { findAiAnalyzerTemplate } from '../templates'
 import SectionRow from '../components/SectionRow'
 import RiskEvaluation from './sections/RiskEvaluation'
@@ -34,18 +38,10 @@ function RuleFormFields({ rule, ruleName, isEdit }) {
   const { ref: sentinelRef, inViewport: headerInView } = useInViewport()
   const [deleteOpened, deleteModal] = useDisclosure(false)
 
-  // Creating a rule needs a valid Enterprise license (hard zero on the client).
-  // Editing and deleting the rules that exist stay open in every state, so a
-  // deep link to the create route shows the form with Save disabled, not a 403.
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
-  const licenseInfo = useUserStore((s) => s.licenseInfo)
-  const blockedByLicense = !isEdit && isFreeLicense
-  const licenseMessage = licenseRequiredMessage(
-    LICENSE_FEATURE_LABELS['ai-session-analyzer'],
-    licenseState(licenseInfo),
-  )
 
   const submitting = useAiSessionAnalyzerStore((s) => s.submitting)
+  const list = useAiSessionAnalyzerStore((s) => s.list)
   const accessRequestRules = useAiSessionAnalyzerStore((s) => s.accessRequestRules)
   const accessRequestRulesStatus = useAiSessionAnalyzerStore(
     (s) => s.accessRequestRulesStatus,
@@ -65,6 +61,10 @@ function RuleFormFields({ rule, ruleName, isEdit }) {
 
   const setField = (patch) => setForm((f) => ({ ...f, ...patch }))
   const setTier = (levelKey, tier) => setRisk((r) => ({ ...r, [levelKey]: tier }))
+
+  // The free plan allows one rule. Editing the one that exists is fine; a
+  // second one is not, and the route is reachable by deep link.
+  const blockedByLicense = !isEdit && isFreeLicense && list.length >= 1
 
   // An approval gate pointing at no rule would silently never resolve, so the
   // save is blocked until every require_access_request tier names one.
@@ -176,7 +176,7 @@ function RuleFormFields({ rule, ruleName, isEdit }) {
 
       {blockedByLicense && (
         <Box mb="xl">
-          <FreeLicenseCallout message={licenseMessage} />
+          <FreeLicenseCallout message={FREE_LICENSE_LIMIT_MESSAGE} variant="limit" />
         </Box>
       )}
 
@@ -304,6 +304,7 @@ export default function AiSessionAnalyzerRuleForm() {
   const fetchAccessRequestRules = useAiSessionAnalyzerStore(
     (s) => s.fetchAccessRequestRules,
   )
+  const fetchList = useAiSessionAnalyzerStore((s) => s.fetchList)
 
   // Without this the post-save redirect lands on the promotion splash instead
   // of the rule just created.
@@ -314,12 +315,13 @@ export default function AiSessionAnalyzerRuleForm() {
   }, [template])
 
   // ConnectionNamesMultiSelect loads/paginates its own options, so no
-  // connections fetch here.
+  // connections fetch here. The rule list backs the free-plan limit check.
   useEffect(() => {
     fetchAccessRequestRules()
+    fetchList()
     if (isEdit) fetchActive(ruleName)
     return () => clearActive()
-  }, [isEdit, ruleName, fetchAccessRequestRules, fetchActive, clearActive])
+  }, [isEdit, ruleName, fetchAccessRequestRules, fetchList, fetchActive, clearActive])
 
   if (isEdit && (activeStatus === 'loading' || activeStatus === 'idle')) {
     return <PageLoader h={400} />

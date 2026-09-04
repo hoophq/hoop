@@ -11,9 +11,7 @@ import ConnectionsMultiSelect from '@/components/ConnectionsMultiSelect'
 import Modal from '@/components/Modal'
 import PageLoader from '@/components/PageLoader'
 import EnterpriseBanner from '@/components/EnterpriseBanner'
-import FreeLicenseCallout from '@/components/FreeLicenseCallout'
 import { PAGE_PADDING } from '@/layout/PageLayout'
-import { LICENSE_FEATURE_LABELS, licenseRequiredMessage, licenseState } from '@/utils/license'
 import { showSnackbar } from '@/utils/snackbar'
 import { useUserStore } from '@/stores/useUserStore'
 import { useDataMaskingStore } from '../store'
@@ -48,7 +46,6 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
   const [deleteOpened, deleteModal] = useDisclosure(false)
 
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
-  const licenseInfo = useUserStore((s) => s.licenseInfo)
 
   const submitting = useDataMaskingStore((s) => s.submitting)
   const createRule = useDataMaskingStore((s) => s.createRule)
@@ -76,16 +73,7 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
 
   const setField = (patch) => setForm((f) => ({ ...f, ...patch }))
 
-  // Creating a rule needs a valid Enterprise license (hard zero on the client).
-  // Editing the rule that exists is fine, and the route is reachable by deep
-  // link, so the form still renders with Save disabled and a callout.
-  const blockedByLicense = !isEdit && isFreeLicense
-  const licenseMessage = licenseRequiredMessage(
-    LICENSE_FEATURE_LABELS['data-masking'],
-    licenseState(licenseInfo),
-  )
-
-  const canSubmit = form.name.trim().length > 0 && !blockedByLicense && !submitting
+  const canSubmit = form.name.trim().length > 0 && !submitting
 
   const handleSave = async () => {
     if (!canSubmit) return
@@ -189,12 +177,6 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
       {isFreeLicense && (
         <Box mb="xl">
           <EnterpriseBanner />
-        </Box>
-      )}
-
-      {blockedByLicense && (
-        <Box mb="xl">
-          <FreeLicenseCallout message={licenseMessage} />
         </Box>
       )}
 

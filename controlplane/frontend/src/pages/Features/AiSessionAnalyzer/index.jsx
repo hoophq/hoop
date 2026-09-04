@@ -7,10 +7,9 @@ import PageLoader from '@/components/PageLoader'
 import Tabs from '@/components/Tabs'
 import { useMinDelay } from '@/hooks/useMinDelay'
 import FullBleed from '@/layout/FullBleed'
-import { useUIStore } from '@/stores/useUIStore'
 import { useUserStore } from '@/stores/useUserStore'
-import { LICENSE_FEATURE_LABELS, licenseRequiredMessage, licenseState } from '@/utils/license'
 import { useAiSessionAnalyzerStore } from './store'
+import { FREE_LICENSE_LIMIT_MESSAGE } from './helpers'
 import RulesTab from './RulesTab'
 import ConfigureTab from './ConfigureTab'
 import AiSessionAnalyzerPromotion from './components/AiSessionAnalyzerPromotion'
@@ -23,11 +22,7 @@ export default function AiSessionAnalyzer() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
 
-  // Creating a rule needs a valid Enterprise license (hard zero on the client).
-  // Editing and deleting the rules that exist stay open in every state.
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
-  const licenseInfo = useUserStore((s) => s.licenseInfo)
-  const openLicenseModal = useUIStore((s) => s.openLicenseModal)
 
   const list = useAiSessionAnalyzerStore((s) => s.list)
   const listStatus = useAiSessionAnalyzerStore((s) => s.listStatus)
@@ -85,11 +80,8 @@ export default function AiSessionAnalyzer() {
     )
   }
 
-  const createBlocked = isFreeLicense
-  const licenseMessage = licenseRequiredMessage(
-    LICENSE_FEATURE_LABELS['ai-session-analyzer'],
-    licenseState(licenseInfo),
-  )
+  // Free-plan parity with Guardrails and Live Data Masking: one rule per org.
+  const atFreeLimit = isFreeLicense && list.length >= 1
 
   return (
     <Stack gap="xl">
@@ -103,14 +95,16 @@ export default function AiSessionAnalyzer() {
         {list.length > 0 && (
           <Button
             onClick={() => navigate('/features/ai-session-analyzer/rules/new')}
-            disabled={createBlocked}
+            disabled={atFreeLimit}
           >
             Create new rule
           </Button>
         )}
       </Group>
 
-      {createBlocked && <FreeLicenseCallout message={licenseMessage} />}
+      {atFreeLimit && (
+        <FreeLicenseCallout message={FREE_LICENSE_LIMIT_MESSAGE} variant="limit" />
+      )}
 
       <Tabs value={tab} onChange={setTab}>
         <Tabs.List aria-label="AI Session Analyzer tabs">
@@ -121,8 +115,6 @@ export default function AiSessionAnalyzer() {
         <Tabs.Panel value="rules" pt="md">
           <RulesTab
             providerConfigured={Boolean(provider)}
-            createBlocked={createBlocked}
-            onAddLicense={openLicenseModal}
             onGoConfigure={() => setTab('configure')}
           />
         </Tabs.Panel>

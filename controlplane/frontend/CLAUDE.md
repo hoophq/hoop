@@ -65,19 +65,13 @@ than clearing it).
 ## License
 
 The control plane is Enterprise-only, and an unlicensed install can still open every
-page. What it cannot do is create rules: Guardrails, Live Data Masking, AI Session
-Analyzer and Review rules block creation on the client whenever
-`useUserStore.isFreeLicense` is true (zero rules, not one). Editing and deleting the
-rules that exist stay open in every state. The gateway still accepts one rule per
-feature in OSS, so the API is looser than the UI until the backend caps move.
-
-`utils/license.js#licenseState()` is the only place that interprets `license_info`
-(`unknown | free | active | expired | invalid`). Every "Add license" or "Update license"
-action is `components/AddLicenseCta`, which opens the single `AddLicenseModal` mounted
-in `layout/Layout.jsx` through `useUIStore.openLicenseModal()`. Saving goes through
-`features/License/useLicenseUpdate`, and `useUserStore.refreshServerInfo()` is the one
-way to re-read `/serverinfo` after it. `/settings/license` is the one Settings page the
-control plane keeps; it carries no `licenseFeature` guard on purpose.
+page. License handling is a copy of `webapp_v2`, not a redesign: `/settings/license`
+is the same page (license tables, the JSON input, Save), `components/AddLicenseModal`
+is the same dialog `webapp_v2` opens from its protection-profile picker, and
+`FreeLicenseCallout`, `EnterpriseBanner` and `LicenseBanner` keep their `webapp_v2`
+behaviour. The free-plan gating on the rule pages is the `webapp_v2` one too: one rule
+per feature, then the create action is blocked. `/settings/license` carries no
+`licenseFeature` guard on purpose: it is the page that installs the license.
 
 ## Routing
 
