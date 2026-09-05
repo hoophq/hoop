@@ -40,7 +40,7 @@
   - `Button` - For actions with consistent styling
   - `Select` - For dropdown selections
 - **Styling**: Use Radix's built-in props (`:size`, `:variant`, `:color`) and Tailwind for custom styling
-- **Reference Components**: Copy only from a feature that is **still CLJS-owned**. Migrated trees stay on disk for a while after their React replacement ships, so "the file exists" is not evidence it is live — check the routing table in `../webapp_v2/CONTEXT_MIGRATION.md` ("All CLJS Routes") before using anything as a reference. As of this writing `webapp.features.ai-session-analyzer.*` and `webapp.features.runbooks.*` qualify; guardrails, jira-templates, access-control and access-request do not — all four are React now. The guardrails and access-control trees have already been deleted (EVL-147 / EVL-184) and access-request is down to a trimmed `events.cljs`/`subs.cljs`; only jira-templates still has a full dead tree on disk.
+- **Reference Components**: Copy only from a feature that is **still CLJS-owned**. Migrated trees stay on disk for a while after their React replacement ships, so "the file exists" is not evidence it is live — check the routing table in `../webapp_v2/CONTEXT_MIGRATION.md` ("All CLJS Routes") before using anything as a reference. As of this writing `webapp.features.runbooks.*` qualifies; guardrails, jira-templates, access-control, access-request and ai-session-analyzer do not — all five are React now. Only jira-templates still has a full dead tree on disk; the rest were deleted by EVL-147 / EVL-184 / EVL-228, and `webapp.features.ai-session-analyzer.*` is down to a trimmed `events.cljs`/`subs.cljs` plus the three session-analysis cards.
 
 ## Accessibility
 - **Baseline**: Ship basic accessibility on every UI change—keyboard navigation and screen-reader support are not optional extras.
@@ -53,7 +53,7 @@
 - New features should follow existing patterns in similar components
 - Use existing UI components when possible before creating new ones
 - Follow existing event/subscription patterns for state management
-- For forms and tables, refer to the ai_session_analyzer and runbooks implementations (verify they are still CLJS-owned first — see "Reference Components" above)
+- For forms and tables, refer to the runbooks implementation (verify it is still CLJS-owned first — see "Reference Components" above)
 
 ## Module Organization
 - **Feature Modules**: Organize features in their own directories with local `events.cljs` and `subs.cljs`
@@ -76,9 +76,10 @@
   - Feature/module-specific events and subs should live within their module directory
 - **Namespacing**: Use namespaced keywords (e.g., `:module-name/event-name`)
 - **Initial State**: Define in `/src/webapp/db.cljs` under the module key
-- **Examples**: See `webapp.features.ai_session_analyzer.*`, `webapp.features.runbooks.*`, `webapp.audit_logs.*`
-  (`webapp.features.access_request.*` used to be the canonical example; its views moved to React in EVL-184
-  and only the trimmed `events.cljs`/`subs.cljs` remain)
+- **Examples**: See `webapp.features.runbooks.*` and `webapp.audit_logs.*`
+  (`webapp.features.access_request.*` and `webapp.features.ai_session_analyzer.*` used to be
+  the canonical examples; both moved to React — the first is gone, the second is down to a
+  trimmed `events.cljs`/`subs.cljs`)
 
 ## Response Guidelines
 - Prefer concise and objective responses
