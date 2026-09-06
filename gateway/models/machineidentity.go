@@ -243,3 +243,62 @@ func IsMachineIdentityCredential(connectionCredentialID string) bool {
 		Count(&count)
 	return count > 0
 }
+
+// IsServiceIdentityCredential reports whether a connection credential belongs
+// to an active non-human identity. Database errors are returned so callers fail
+// closed instead of accidentally treating a service credential as a user.
+func IsServiceIdentityCredential(orgID, connectionCredentialID, userSubject string) (bool, error) {
+	var exists bool
+	err := DB.Raw(`SELECT EXISTS (
+		SELECT 1 FROM private.machine_identity_credentials
+		WHERE org_id = ? AND connection_credential_id = ?
+		UNION ALL
+		SELECT 1 FROM private.api_keys
+		WHERE org_id = ? AND id = ? AND status = 'active'
+		UNION ALL
+		SELECT 1 FROM private.ai_agents
+		WHERE org_id = ? AND id = ? AND status = 'active'
+	)`, orgID, connectionCredentialID, orgID, userSubject, orgID, userSubject).
+		Scan(&exists).Error
+	return exists, err
+}
+
+// GetServiceIdentityContextByID loads an active API key or AI agent context.
+func GetServiceIdentityContextByID(orgID, id string) (*Context, error) {
+	apiKey, err := GetAPIKeyByNameOrID(orgID, id)
+	if err != nil {
+		return nil, err
+	}
+	var name, status string
+	var groups pq.StringArray
+	if apiKey != nil {
+		name, status, groups = apiKey.Name, apiKey.Status, apiKey.Groups
+	} else {
+		aiAgent, err := GetAIAgentByNameOrID(orgID, id)
+		if err != nil {
+			return nil, err
+		}
+		if aiAgent == nil {
+			return nil, nil
+		}
+		name, status, groups = aiAgent.Name, aiAgent.Status, aiAgent.Groups
+	}
+	if status != "active" {
+		return nil, nil
+	}
+	org, err := GetOrganizationByNameOrID(orgID)
+	if err != nil {
+		return nil, err
+	}
+	return &Context{
+		OrgID:          org.ID,
+		OrgName:        org.Name,
+		OrgLicenseData: org.LicenseData,
+		UserID:         id,
+		UserSubject:    id,
+		UserName:       name,
+		UserEmail:      name,
+		UserStatus:     "active",
+		UserGroups:     groups,
+	}, nil
+}

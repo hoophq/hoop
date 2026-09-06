@@ -136,13 +136,13 @@ func runPgProxyServer(listenAddr string, tlsConfig *tls.Config) (*PGServer, erro
 			conn, err := newPostgresConnection(sid, strconv.Itoa(connectionID), pgClient, server.tlsConfig)
 			if err != nil {
 				// Prevents log pollution from health check requests on this port
-				if err == io.EOF {
+				if errors.Is(err, io.EOF) {
 					log.With("conn", connectionID).Debugf("failed creating new postgres connection, reason=EOF error")
 					_ = pgClient.Close()
 					continue
 				}
 				log.With("conn", connectionID).Warnf("failed creating new postgres connection, err=%v", err)
-				_, _ = pgClient.Write(pgtypes.NewFatalError("failed creating new postgres connection, err=%v", err).Encode())
+				writeConnectionError(pgClient, err)
 				_ = pgClient.Close()
 				continue
 			}
@@ -168,7 +168,33 @@ type postgresConn struct {
 	net.Conn
 }
 
-func newPostgresConnection(sid, connID string, conn net.Conn, tlsConfig *tls.Config) (*postgresConn, error) {
+type postgresConnectionError struct {
+	err  error
+	conn net.Conn
+}
+
+func (e *postgresConnectionError) Error() string { return e.err.Error() }
+func (e *postgresConnectionError) Unwrap() error { return e.err }
+
+func writeConnectionError(fallback net.Conn, err error) {
+	conn := fallback
+	var connectionErr *postgresConnectionError
+	if errors.As(err, &connectionErr) {
+		conn = connectionErr.conn
+	}
+	if conn != nil {
+		_, _ = conn.Write(pgtypes.NewFatalError("failed creating new postgres connection, err=%v", err).Encode())
+	}
+}
+
+func newPostgresConnection(sid, connID string, conn net.Conn, tlsConfig *tls.Config) (_ *postgresConn, err error) {
+	errorConn := conn
+	defer func() {
+		if err != nil {
+			err = &postgresConnectionError{err: err, conn: errorConn}
+		}
+	}()
+
 	pgpkt, err := pgtypes.Decode(conn)
 	if err != nil {
 		return nil, err
@@ -187,9 +213,11 @@ func newPostgresConnection(sid, connID string, conn net.Conn, tlsConfig *tls.Con
 
 		// Upgrade connection to TLS
 		tlsConn := tls.Server(conn, tlsConfig)
+		errorConn = nil
 		if err := tlsConn.Handshake(); err != nil {
 			return nil, fmt.Errorf("failed performing TLS handshake, err=%v", err)
 		}
+		errorConn = tlsConn
 
 		log.With("conn", connID).Infof("TLS handshake completed successfully")
 
@@ -250,10 +278,14 @@ func newPostgresConnection(sid, connID string, conn net.Conn, tlsConfig *tls.Con
 		return nil, fmt.Errorf("invalid secret access key credentials")
 	}
 
+	isServiceCredential, err := models.IsServiceIdentityCredential(dba.OrgID, dba.ID, dba.UserSubject)
+	if err != nil {
+		return nil, fmt.Errorf("failed identifying connection credential owner: %v", err)
+	}
 	isMachineCredential := models.IsMachineIdentityCredential(dba.ID)
 
 	var tokenVerifier idp.UserInfoTokenVerifier
-	if !isMachineCredential {
+	if !isServiceCredential {
 		var err error
 		tokenVerifier, _, err = idp.NewUserInfoTokenVerifierProvider()
 		if err != nil {
@@ -280,7 +312,7 @@ func newPostgresConnection(sid, connID string, conn net.Conn, tlsConfig *tls.Con
 	}
 	pgConn.ctx = ctx
 
-	if !isMachineCredential {
+	if !isServiceCredential {
 		usertoken.PollingUserToken(pgConn.ctx, func(cause error) {
 			pgConn.cancelFn("%s", cause.Error())
 		}, tokenVerifier, dba.UserSubject)
@@ -299,7 +331,13 @@ func newPostgresConnection(sid, connID string, conn net.Conn, tlsConfig *tls.Con
 			grpc.WithOption(grpckey.MachineIdentityFlagHeaderKey, "true"),
 			grpc.WithOption(grpckey.MachineIdentityOrgIDHeaderKey, dba.OrgID),
 		)
-	} else if dba.SessionID != "" {
+	} else if isServiceCredential {
+		grpcOpts = append(grpcOpts,
+			grpc.WithOption(grpckey.ServiceIdentityFlagHeaderKey, "true"),
+			grpc.WithOption(grpckey.ServiceIdentityOrgIDHeaderKey, dba.OrgID),
+		)
+	}
+	if !isMachineCredential && dba.SessionID != "" {
 		grpcOpts = append(grpcOpts, grpc.WithOption("credential-session-id", dba.SessionID))
 	}
 
