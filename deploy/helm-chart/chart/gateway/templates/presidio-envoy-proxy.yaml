@@ -14,6 +14,9 @@ spec:
     metadata:
       labels:
         app: presidio-envoy-proxy
+      {{- with omit .Values.dataMasking.envoyProxy.podLabels "app" }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       annotations:
         checksum/envoy-config: {{ include (print $.Template.BasePath "/presidio-envoy-config.yaml") . | sha256sum }}
     spec:
