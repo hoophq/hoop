@@ -28,7 +28,9 @@ func newFakeReview(ownerID, status, typ string, groups []models.ReviewGroups, ac
 	var ruleName *string
 	if accessRequestRule != nil {
 		if accessRequestRule.AllGroupsMustApprove {
-			minApprovals = ptr.Int(len(accessRequestRule.ApprovalRequiredGroups))
+			// Mirrors createReview: the bar is the reviewer groups, not the
+			// groups whose members need a review to begin with.
+			minApprovals = ptr.Int(len(groups))
 		} else {
 			minApprovals = accessRequestRule.MinApprovals
 		}
@@ -377,6 +379,48 @@ func TestDoReview(t *testing.T) {
 				// Check that RevokedAt is approximately 1 hour from now
 				expectedRevoke := time.Now().UTC().Add(time.Hour)
 				assert.WithinDuration(t, expectedRevoke, *rev.RevokedAt, time.Minute)
+			},
+		},
+		{
+			// EVL-250: the reviewer belongs to both reviewer groups, so one call
+			// approves both while the rule only asks for one approval.
+			name: "reviewer in more groups than the rule minimum settles the review",
+			input: inputData{
+				ctx: newFakeContext("user2", "user2@example.com", []string{"admin", "devops"}),
+				rev: newFakeReview("user1", "PENDING", "jit", []models.ReviewGroups{
+					{GroupName: "admin", Status: models.ReviewStatusPending},
+					{GroupName: "devops", Status: models.ReviewStatusPending},
+				}, &models.AccessRequestRule{
+					MinApprovals:         ptr.Int(1),
+					AllGroupsMustApprove: false,
+				}),
+				con:    &models.Connection{},
+				status: models.ReviewStatusApproved,
+			},
+			validateFunc: func(t *testing.T, rev *models.Review) {
+				assert.Equal(t, models.ReviewStatusApproved, rev.ReviewGroups[0].Status)
+				assert.Equal(t, models.ReviewStatusApproved, rev.ReviewGroups[1].Status)
+				assert.Equal(t, models.ReviewStatusApproved, rev.Status)
+			},
+		},
+		{
+			// EVL-250, same overshoot through the legacy connection reviewers.
+			name: "reviewer in more groups than the connection minimum settles the review",
+			input: inputData{
+				ctx: newFakeContext("user2", "user2@example.com", []string{"admin", "devops"}),
+				rev: newFakeReview("user1", "PENDING", "jit", []models.ReviewGroups{
+					{GroupName: "admin", Status: models.ReviewStatusPending},
+					{GroupName: "devops", Status: models.ReviewStatusPending},
+				}, nil),
+				con: &models.Connection{
+					MinReviewApprovals: ptr.Int(1),
+				},
+				status: models.ReviewStatusApproved,
+			},
+			validateFunc: func(t *testing.T, rev *models.Review) {
+				assert.Equal(t, models.ReviewStatusApproved, rev.ReviewGroups[0].Status)
+				assert.Equal(t, models.ReviewStatusApproved, rev.ReviewGroups[1].Status)
+				assert.Equal(t, models.ReviewStatusApproved, rev.Status)
 			},
 		},
 	}

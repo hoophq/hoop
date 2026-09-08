@@ -458,8 +458,9 @@ func doIndividualReview(ctx *storagev2.Context, rev *models.Review, connection *
 	// check if status is approved to avoid approving a rejected review
 	// Update the overall review status based on individual review group statuses
 	if status == models.ReviewStatusApproved {
-		// Only approve the review if all required review groups have approved
-		if approvedCount == reviewsCountNeeded {
+		// A reviewer in several reviewer groups approves all of them in one call,
+		// so the count overshoots the minimum; equality stranded it forever (EVL-250).
+		if approvedCount >= reviewsCountNeeded {
 			rev.Status = models.ReviewStatusApproved
 		}
 		// Otherwise, keep status as pending (no explicit assignment needed)
