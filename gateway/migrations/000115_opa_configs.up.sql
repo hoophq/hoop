@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS opa_configs (
 CREATE UNIQUE INDEX idx_opa_configs_org_name ON opa_configs(org_id, name);
 
 ALTER TABLE connections ADD COLUMN opa_config_id UUID NULL
-    REFERENCES opa_configs(id) ON DELETE RESTRICT;
+    REFERENCES opa_configs(id) ON DELETE SET NULL;
 CREATE INDEX idx_connections_opa_config_id ON connections(opa_config_id)
     WHERE opa_config_id IS NOT NULL;
 
