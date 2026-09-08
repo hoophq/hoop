@@ -57,8 +57,9 @@ what a product shows, and ClojureScript exists only in the gateway.**
 - **Three leaves per product**, and only three: `/`, `/onboarding/*` and `/*`. In the
   gateway they are ClojureScript (`ClojureApp`); in the control plane `/` is the
   landing by role (`pages/Home`) and the other two are a 404 (`pages/NotFound`). The
-  control plane never loads the CLJS bundle. Sessions arrives there when a React
-  Sessions page exists.
+  React onboarding routes (`/onboarding/protection-rules`, `/onboarding/license`) sit
+  above the leaf and exist in both products. The control plane never loads the CLJS
+  bundle. Sessions arrives there when a React Sessions page exists.
 - **The product manifest is components, not flags.** `modes/gateway.jsx` and
   `modes/controlPlane.jsx` export `{ id, theme, postLoginPath, postSetupPath, Page,
   Guard, Home, Onboarding, CatchAll }`. `Page` is the shell of a React page
@@ -72,19 +73,23 @@ what a product shows, and ClojureScript exists only in the gateway.**
   `Sidebar/GatewaySidebar*`/`ControlPlaneSidebar*`, `Sidebar/gatewayNav.js`/
   `controlPlaneNav.js`, `CommandPalette/GatewayCommandPalette`/
   `ControlPlaneCommandPalette`, `GatewayPage`/`ControlPlanePage`,
+  `GatewayProtectedRoute`/`ControlPlaneProtectedRoute`,
   `Organization/Users/GatewayUsers`/`ControlPlaneUsers`. What they still share stays
   un-prefixed next to them (`UserMenu`, `NavItem`, `helpers`, the CSS modules,
-  `Users/shared.js`). A file only one product has keeps a plain name (`Sidecars`,
-  `Home`, `NotFound`, `NativeConnections`, `ConfigStatus`).
+  `Users/shared.js`). A shared file may take a prop (`UserMenu` takes `versionLabel`),
+  never know the mode. A file only one product has keeps a plain name (`Sidecars`,
+  `Onboarding/License`, `Home`, `NotFound`, `NativeConnections`, `ConfigStatus`).
 - **A page that differs is chosen in `Router.jsx`** with `<ByProduct gateway={…}
   controlPlane={…} />` (`modes/ByProduct.jsx`, the one component that reads the
   product). `grep ByProduct src/Router.jsx` lists every such page. A shared page may
   take a prop (`AccessRequest/Create` takes `defaultReviewerRoles`, passed through
   `ByProduct`), never know the mode.
 - **Auth is one gate.** `components/ProtectedRoute` (token, `/userinfo`, `/serverinfo`,
-  flags, `adminOnly`, `role`, `licenseFeature`) serves both. `GatewayProtectedRoute`
-  adds the onboarding redirect through its `onReady` hook; the control plane uses the
-  shared one directly.
+  flags, `adminOnly`, `role`, `licenseFeature`) serves both. Each product adds its own
+  redirect through the `onReady` hook: `GatewayProtectedRoute` the onboarding,
+  `ControlPlaneProtectedRoute` the first-access license screen (`/onboarding/license`,
+  for an admin on the free plan with no sidecar; the skip is per user in
+  `utils/licenseIntro.js`).
 - **The name is the contract, enforced by lint** (`eslint.config.js`): a `ControlPlane*`
   file cannot import `Gateway*`, `ClojureApp`, the CLJS bridge, `NativeConnections` or
   `ConfigStatus`; a `Gateway*` file cannot import `ControlPlane*`; an un-prefixed file

@@ -127,7 +127,7 @@ The control plane is the admin surface for that. Connect your sidecars. Set Data
 | Guardrails, Data Masking, Session Analyzer, Review rules | Built. Configuration lives in the control plane. |
 | Slack for review delivery | Built. |
 | Administrators | Built. |
-| Sidecar fleet: token issuance, resources, liveness | Not built |
+| Sidecar fleet: token issuance, resources, liveness | Token issuance and the fleet list are built (`/sidecars`). The sidecar does not call the control plane yet, so liveness reads Waiting. |
 | Review queue: approve, reject, retry | Not built |
 | Pushing configuration to the fleet | Not built. Each sidecar still reads its own file. |
 
