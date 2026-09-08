@@ -27,6 +27,7 @@ import SettingsAttributes from '@/pages/Settings/Attributes'
 import SettingsAttributesForm from '@/pages/Settings/Attributes/Form'
 import SettingsProtectionRules from '@/pages/Settings/ProtectionRules'
 import OnboardingProtectionRules from '@/pages/Onboarding/ProtectionRules'
+import OnboardingLicense from '@/pages/Onboarding/License'
 import SettingsAuditLogs from '@/pages/Settings/AuditLogs'
 import SettingsServerLogs from '@/pages/Settings/ServerLogs'
 import GatewayUsers from '@/pages/Organization/Users/GatewayUsers'
@@ -609,13 +610,24 @@ function Router() {
         }
       />
 
-      {/* Onboarding — no shell (mirrors :auth layout in the legacy app). The CLJS
-          onboarding is a gateway leaf; the control plane answers 404. */}
+      {/* Onboarding — no shell (mirrors :auth layout in the legacy app). The two
+          React routes exist in both products; the rest of the CLJS onboarding is
+          a gateway leaf and the control plane answers 404. The control plane gate
+          (ControlPlaneProtectedRoute) sends a free-plan admin with no sidecar to
+          /onboarding/license. */}
       <Route
         path="/onboarding/protection-rules"
         element={
           <Guard adminOnly>
             <OnboardingProtectionRules />
+          </Guard>
+        }
+      />
+      <Route
+        path="/onboarding/license"
+        element={
+          <Guard adminOnly>
+            <OnboardingLicense />
           </Guard>
         }
       />

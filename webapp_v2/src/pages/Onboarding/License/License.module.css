@@ -1,0 +1,46 @@
+.shell {
+  background-color: var(--mantine-color-body);
+}
+
+/* Dark branded panel, the same surface as pages/Auth/Setup. The Figma shows a
+   geometric pattern over it; that asset is not in the repository yet, so the
+   gradient stands alone until it lands. */
+.leftPanel {
+  position: relative;
+  overflow: hidden;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #0d1729 0%, #182449 35%, #1e2e5a 70%, #243570 100%);
+}
+
+.leftPanel::before {
+  content: '';
+  position: absolute;
+  top: -30%;
+  right: -10%;
+  width: 70%;
+  height: 160%;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, var(--mantine-color-gray-7) 0%, transparent 70%);
+  opacity: 0.1;
+}
+
+.rightPanel {
+  display: flex;
+  align-items: center;
+  padding: var(--mantine-spacing-xxxlAlt) var(--mantine-spacing-xxlAlt);
+}
+
+/* 568px = the Figma form column; it shrinks with the viewport. */
+.content {
+  width: 100%;
+  max-width: 568px;
+}
+
+.logo {
+  display: block;
+}
+
+.heading {
+  font-size: 35px;
+  letter-spacing: -0.16px;
+}
