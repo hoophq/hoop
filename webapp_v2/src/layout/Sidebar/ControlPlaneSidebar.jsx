@@ -1,11 +1,14 @@
 import { Box } from '@mantine/core';
 import { useEffect, useRef, useState } from 'react';
 import { useUIStore } from '@/stores/useUIStore';
-import { SidebarCollapsed } from './SidebarCollapsed';
-import { SidebarExpanded } from './SidebarExpanded';
+import { SidebarCollapsed } from './ControlPlaneSidebarCollapsed';
+import { SidebarExpanded } from './ControlPlaneSidebarExpanded';
 import classes from './Sidebar.module.css';
 
-function Sidebar() {
+// The control plane sidebar, sibling of GatewaySidebar.jsx: the sections of
+// ./controlPlaneNav.js, no ConfigStatus (that checklist walks the gateway's
+// onboarding), and `role` gating next to `adminOnly`.
+function ControlPlaneSidebar() {
   const { sidebarCollapsed, toggleSidebarCollapsed } = useUIStore();
 
   // navKey forces a remount of the expanded nav each time the sidebar opens,
@@ -46,4 +49,4 @@ function Sidebar() {
   );
 }
 
-export default Sidebar;
+export default ControlPlaneSidebar;

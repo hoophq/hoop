@@ -1,9 +1,8 @@
 import { AppShell, Burger, Drawer } from '@mantine/core';
 import { useEffect } from 'react';
-import { useModeConfig } from '@/modes';
 import { useUIStore } from '@/stores/useUIStore';
-import Sidebar from './Sidebar';
-import AppHeader from './Header';
+import Sidebar from './Sidebar/GatewaySidebar';
+import AppHeader from './Header/GatewayHeader';
 import LicenseBanner from './LicenseBanner';
 import { SkipLink } from './SkipLink';
 import NativeConnectionsDrawer from '@/features/NativeConnections';
@@ -44,9 +43,10 @@ const MOBILE_DRAWER_STYLES = {
   body: { padding: 0, height: '100%' },
 };
 
-function Layout({ children }) {
+// The gateway shell. Its sibling is ControlPlaneLayout.jsx: same geometry, no
+// Native Connections drawer, its own Sidebar and Header.
+function GatewayLayout({ children }) {
   const { sidebarOpen, sidebarCollapsed, toggleSidebar, setSidebarOpen } = useUIStore();
-  const { shell } = useModeConfig();
 
   // Close mobile drawer when resizing to desktop
   useEffect(() => {
@@ -114,11 +114,10 @@ function Layout({ children }) {
       </Drawer>
 
       {/* Mounted here, outside AppShell, so it is available on React routes and
-          on the ClojureApp catch-all alike. Gateway only: the control plane
-          starts no data plane to connect to. */}
-      {shell.nativeConnections && <NativeConnectionsDrawer />}
+          on the ClojureApp catch-all alike. */}
+      <NativeConnectionsDrawer />
     </>
   );
 }
 
-export default Layout;
+export default GatewayLayout;

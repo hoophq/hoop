@@ -1,11 +1,12 @@
 import { Navigate, useNavigate } from 'react-router-dom'
 import { Stack, Text, Title } from '@mantine/core'
 import Button from '@/components/Button'
-import ClojureApp from '@/components/ClojureApp'
-import PageLayout from '@/layout/PageLayout'
-import { useModeConfig } from '@/modes'
 import { useAuthStore } from '@/stores/useAuthStore'
 import { useUserStore } from '@/stores/useUserStore'
+import { ROLE_ADMIN, ROLE_APPROVER } from '@/utils/roles'
+
+// Where each role lands. Everyone else gets the dead end below.
+const HOME = { [ROLE_ADMIN]: '/sidecars', [ROLE_APPROVER]: '/reviews' }
 
 // The control plane is an administration surface: an end user never signs in
 // here, they reach their resource through the sidecar. A user with neither
@@ -40,23 +41,13 @@ function NoRole() {
 }
 
 /**
- * The leaf of the '/' route.
- *
- * Gateway: the CLJS app owns '/', as before. Control plane: `home` maps a role
- * to its landing page. It cannot be a plain <Navigate> for everyone: those
- * routes are gated, and ProtectedRoute answers a denied route with
+ * The leaf of the '/' route. It cannot be a plain <Navigate> for everyone: the
+ * target routes are gated, and ProtectedRoute answers a denied route with
  * <Navigate to="/">, so a user without a role would bounce between the two.
  */
-export default function ModeHome() {
-  const { home } = useModeConfig()
+export default function Home() {
   const role = useUserStore((s) => s.role)
-
-  if (!home) return <ClojureApp />
-  const target = home[role]
+  const target = HOME[role]
   if (target) return <Navigate to={target} replace />
-  return (
-    <PageLayout>
-      <NoRole />
-    </PageLayout>
-  )
+  return <NoRole />
 }

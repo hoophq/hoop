@@ -1,41 +1,38 @@
+// The gateway navigation: sidebar sections and command palette items. Its
+// sibling is ./controlPlaneNav.js.
 import {
-  BookMarked,
-  BookUp2,
-  Bot,
-  Boxes,
-  BrainCog,
-  CircleCheckBig,
-  ExternalLink,
-  FlaskConical,
-  GalleryVerticalEnd,
-  KeyRound,
-  Layers,
-  LayoutDashboard,
   Package,
-  PackageSearch,
-  Puzzle,
-  ScrollText,
-  Settings,
+  FileCheck,
+  LayoutDashboard,
+  SquareCode,
+  BookUp2,
+  GalleryVerticalEnd,
+  Boxes,
+  CircleCheckBig,
+  BookMarked,
   ShieldCheck,
   Sparkles,
-  SquareCode,
-  Tags,
-  UserRoundCheck,
-  Users,
   VenetianMask,
+  UserRoundCheck,
+  PackageSearch,
+  BrainCog,
+  Puzzle,
+  Settings,
   WandSparkles,
-  Webhook
-} from 'lucide-react'
-import { theme, cssVariablesResolver } from '@/theme'
-
-/**
- * The gateway product: what webapp_v2 has always rendered. See ./index.js for
- * the shape every mode file shares, and ./controlPlane.js for the other one.
- */
+  Layers,
+  KeyRound,
+  Webhook,
+  Bot,
+  ExternalLink,
+  Users,
+  Tags,
+  FlaskConical,
+  ScrollText,
+} from 'lucide-react';
 
 // ─── Nav items ─────────────────────────────────────────────────────────────
 
-const MAIN_ITEMS = [
+export const MAIN_ITEMS = [
   { label: 'Resources', path: '/resources', icon: Package, adminOnly: false },
   { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, adminOnly: true },
   { label: 'Terminal', path: '/client', icon: SquareCode, adminOnly: false },
@@ -46,7 +43,7 @@ const MAIN_ITEMS = [
 ]
 
 // Alphabetical, mirroring the sidebar component in Figma (Components | Custom).
-const DISCOVER_ITEMS = [
+export const DISCOVER_ITEMS = [
   { label: 'Access Control', path: '/features/access-control', icon: UserRoundCheck, adminOnly: true, licenseFeature: 'access-control' },
   { label: 'Access Request', path: '/features/access-request', icon: CircleCheckBig, adminOnly: true, licenseFeature: 'access-requests' },
   { label: 'AI Agents Identities', path: '/ai-agents-identities', icon: Bot, adminOnly: true, licenseFeature: 'ai-agents' },
@@ -82,7 +79,7 @@ const DISCOVER_ITEMS = [
   { label: 'Runbooks Setup', path: '/features/runbooks/setup', icon: BookMarked, adminOnly: true, licenseFeature: 'runbooks' }
 ]
 
-const ORGANIZATION_ITEMS = [
+export const ORGANIZATION_ITEMS = [
   { label: 'Agents', path: '/agents', icon: BrainCog, adminOnly: true },
   {
     label: 'Integrations',
@@ -116,14 +113,14 @@ const ORGANIZATION_ITEMS = [
 
 // ─── Command palette ────────────────────────────────────────────────────────
 // Gating flags (adminOnly / selfhostedOnly / featureFlag / licenseFeature)
-// mirror the nav entries above and are applied with the same shouldHide()
+// mirror the sidebar entries above and are applied with the same shouldHide()
 // helper — keep both lists in sync when a page's gating changes.
-const SUGGESTION_ITEMS = [
+export const SUGGESTION_ITEMS = [
   { id: 'resources', label: 'Resources', description: 'Manage resources', icon: Package, path: '/resources' },
   { id: 'terminal', label: 'Terminal', description: 'Open terminal', icon: SquareCode, path: '/client' },
 ]
 
-const QUICK_ACCESS_ITEMS = [
+export const QUICK_ACCESS_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', description: 'Overview dashboard', icon: LayoutDashboard, path: '/dashboard', adminOnly: true },
   { id: 'runbooks', label: 'Runbooks', description: 'Browse and run runbooks', icon: BookUp2, path: '/runbooks', licenseFeature: 'runbooks' },
   { id: 'sessions', label: 'Sessions', description: 'View session history', icon: GalleryVerticalEnd, path: '/sessions' },
@@ -145,36 +142,3 @@ const QUICK_ACCESS_ITEMS = [
   { id: 'settings-experimental', label: 'Experimental', description: 'Toggle experimental features', icon: FlaskConical, path: '/settings/experimental', adminOnly: true },
   { id: 'settings-audit-logs', label: 'Internal Audit Logs', description: 'Browse internal audit logs', icon: ScrollText, path: '/settings/audit-logs', adminOnly: true },
 ]
-
-export default {
-  id: 'gateway',
-  // Theme slot. Both modes point at the same objects today; a second theme is a
-  // new file (e.g. src/theme.controlPlane.js) referenced from controlPlane.js.
-  theme: { theme, cssVariablesResolver },
-  // Where the auth pages land. Setup is separate because the gateway's first-run
-  // flow continues in the CLJS onboarding, which the control plane does not have.
-  postLoginPath: '/client',
-  postSetupPath: '/onboarding/setup',
-  // null: the CLJS app owns '/'. A map role → path: each role is sent to its
-  // page and everyone else gets the dead end (ModeHome.jsx).
-  home: null,
-  // Users page: the gateway edits free-form groups; the control plane assigns a
-  // role (utils/roles) and round-trips the other groups untouched.
-  usersForm: 'groups',
-  // Roles (utils/roles) a new review rule names as reviewers. The form maps them
-  // to group names through /serverinfo, since ADMIN_USERNAME renames the admin one.
-  defaultReviewerRoles: [],
-  // 'cljs' renders <ClojureApp/>, 'not-found' the 404 page (ModeCatchAll.jsx).
-  catchAll: 'cljs',
-  // Gateway-only chrome. Each key is read at exactly one call site.
-  shell: { nativeConnections: true, configStatus: true, onboardingRedirect: true },
-  // Sidebar sections. One without `label` renders headingless. A section whose
-  // items are all hidden by shouldHide() is skipped, which is what used to be the
-  // `isAdmin &&` around Discover and Organization.
-  nav: [
-    { id: 'main', items: MAIN_ITEMS },
-    { id: 'discover', label: 'Discover', items: DISCOVER_ITEMS },
-    { id: 'organization', label: 'Organization', items: ORGANIZATION_ITEMS },
-  ],
-  palette: { suggestions: SUGGESTION_ITEMS, quickAccess: QUICK_ACCESS_ITEMS },
-}

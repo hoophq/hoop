@@ -1,18 +1,17 @@
 import { Box, Group } from '@mantine/core'
-import { useModeConfig } from '@/modes'
-import { HeaderSearch } from './HeaderSearch'
+import { HeaderSearch } from './GatewayHeaderSearch'
 import { NativeConnectionsButton } from './NativeConnectionsButton'
 import { UserMenu } from './UserMenu'
 
 /**
- * The global application header. Rendered by layout/Layout.jsx inside
+ * The gateway header. Rendered by layout/GatewayLayout.jsx inside
  * AppShell.Header, so it sits above React routes AND the ClojureApp catch-all.
+ * Its sibling is ControlPlaneHeader.jsx.
  *
  * `burger` is the mobile navigation toggle, owned by Layout because it drives
  * the mobile sidebar Drawer that also lives there.
  */
 function AppHeader({ burger }) {
-  const { shell } = useModeConfig()
   return (
     <Group h="100%" px="md" gap="md" wrap="nowrap">
       {burger}
@@ -24,7 +23,7 @@ function AppHeader({ burger }) {
       </Box>
 
       <Group gap="sm" wrap="nowrap">
-        {shell.nativeConnections && <NativeConnectionsButton />}
+        <NativeConnectionsButton />
         <UserMenu />
       </Group>
     </Group>

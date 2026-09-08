@@ -3,15 +3,17 @@ import { Navigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '@/stores/useAuthStore'
 import { useUserStore } from '@/stores/useUserStore'
 import { authService } from '@/services/auth'
-import { connectionsService } from '@/services/connections'
 import { featureFlagsService } from '@/services/featureFlags'
-import { getModeConfig } from '@/modes'
 import { hasRole } from '@/utils/roles'
 import AuthPageLoader from '@/components/AuthPageLoader'
 
-// `adminOnly` is the gateway's gate. `role` (utils/roles) is the control plane's:
-// admin passes every role gate, approver passes the routes that name it.
-function ProtectedRoute({ children, adminOnly = false, role = null, licenseFeature = null }) {
+// The auth gate both products share: token, /userinfo, /serverinfo, feature
+// flags, then `adminOnly`, `role` (utils/roles: admin passes every role gate,
+// approver passes the routes that name it) and `licenseFeature`. `onReady(user)`
+// is the product's extra step once all of that is known; a path it returns is
+// where the user goes instead. The gateway uses it for onboarding
+// (GatewayProtectedRoute); the control plane renders this one directly.
+function ProtectedRoute({ children, adminOnly = false, role = null, licenseFeature = null, onReady = null }) {
   const location = useLocation()
   const { isAuthenticated, saveRedirectUrl, logout } = useAuthStore()
   const { user, isAdmin, role: userRole, setUser, setLoading, setServerInfo, setFeatureFlags, initIntercom, initAnalytics } = useUserStore()
@@ -19,8 +21,6 @@ function ProtectedRoute({ children, adminOnly = false, role = null, licenseFeatu
   const [initializing, setInitializing] = useState(true)
   const [redirectTo, setRedirectTo] = useState(null)
   const initialized = useRef(false)
-
-  const isOnboardingRoute = location.pathname.startsWith('/onboarding')
 
   useEffect(() => {
     // Run only once per component instance — prevents StrictMode double-fire
@@ -76,29 +76,10 @@ function ProtectedRoute({ children, adminOnly = false, role = null, licenseFeatu
         const featureFlags = Object.fromEntries(featureFlagsData.map(flag => [flag.name, flag.enabled]))
         setFeatureFlags(featureFlags)
 
-        // Check onboarding: admin with no connections must go through onboarding.
-        // Skip if already on onboarding routes to avoid a redirect loop. Read
-        // after setServerInfo(): /serverinfo carries application_mode, so the
-        // authenticated answer wins over the boot-time /publicserverinfo default.
-        // The control plane has no onboarding to send anyone to.
-        const { shell } = getModeConfig()
-        if (shell.onboardingRedirect && currentUser.is_admin && !isOnboardingRoute) {
-          try {
-            const { pages } = await connectionsService.getConnectionsPaginated({ pageSize: 1 })
-            if ((pages?.total ?? 0) === 0) {
-              // Protection rules come first: until a profile has been applied
-              // (default_protection_profile is null for both "never chose" and
-              // "manual"), onboarding starts at the protection-rules step.
-              setRedirectTo(
-                currentUser.default_protection_profile
-                  ? '/onboarding/setup'
-                  : '/onboarding/protection-rules'
-              )
-              return
-            }
-          } catch {
-            // On API error, let the user through rather than blocking access.
-          }
+        const target = onReady ? await onReady(currentUser) : null
+        if (target) {
+          setRedirectTo(target)
+          return
         }
       } catch (error) {
         console.error('[ProtectedRoute] initialization failed:', error)

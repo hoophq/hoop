@@ -9,17 +9,19 @@ import {
   Users,
   VenetianMask,
 } from 'lucide-react'
-import { theme, cssVariablesResolver } from '@/theme'
-import { ROLE_ADMIN, ROLE_APPROVER } from '@/utils/roles'
+import { ROLE_APPROVER } from '@/utils/roles'
 
 /**
- * The control plane product: an admin manages a fleet of sidecars, configures
- * features once for all of them and approves reviews. Same shape as ./gateway.js.
+ * The control plane navigation: an admin manages a fleet of sidecars, configures
+ * features once for all of them and approves reviews.
  *
  * The paths are the gateway's own: Rules is the access-request page and Slack
  * the integration page, listed under Reviews because that is where an approval
- * is delivered. No route is renamed and no route is hidden — a page absent from
- * this sidebar is still reachable by URL.
+ * is delivered. Every path here has a <Route> in Router.jsx. Its sibling is
+ * ./gatewayNav.js.
+ *
+ * Gating flags (adminOnly / role / licenseFeature) are applied by
+ * ./helpers.js#shouldHide, for the sidebar and the palette alike.
  */
 
 // Two roles (utils/roles): admin reaches every page, approver reaches Reviews.
@@ -46,6 +48,15 @@ const ORGANIZATION_ITEMS = [
   { label: 'License', path: '/settings/license', icon: KeyRound, adminOnly: true },
 ]
 
+// Sidebar sections. One without `label` renders headingless. A section whose
+// items are all hidden by shouldHide() is skipped.
+export const NAV = [
+  { id: 'main', items: MAIN_ITEMS },
+  { id: 'reviews', label: 'Reviews', items: REVIEW_ITEMS },
+  { id: 'features', label: 'Features', items: FEATURE_ITEMS },
+  { id: 'organization', label: 'Organization', items: ORGANIZATION_ITEMS },
+]
+
 // ─── Command palette ────────────────────────────────────────────────────────
 // Gating flags mirror the nav entries above — keep both lists in sync.
 const SUGGESTION_ITEMS = [
@@ -63,24 +74,4 @@ const QUICK_ACCESS_ITEMS = [
   { id: 'license', label: 'License', description: 'License management', icon: KeyRound, path: '/settings/license', adminOnly: true },
 ]
 
-export default {
-  id: 'control-plane',
-  theme: { theme, cssVariablesResolver },
-  // '/' sends each role to its page and shows everyone else the dead end.
-  postLoginPath: '/',
-  postSetupPath: '/',
-  home: { [ROLE_ADMIN]: '/sidecars', [ROLE_APPROVER]: '/reviews' },
-  usersForm: 'roles',
-  defaultReviewerRoles: [ROLE_APPROVER],
-  // No ClojureScript here: a path no React route claims is a 404 page. The one
-  // CLJS page the control plane will want is Sessions; that comes with its port.
-  catchAll: 'not-found',
-  shell: { nativeConnections: false, configStatus: false, onboardingRedirect: false },
-  nav: [
-    { id: 'main', items: MAIN_ITEMS },
-    { id: 'reviews', label: 'Reviews', items: REVIEW_ITEMS },
-    { id: 'features', label: 'Features', items: FEATURE_ITEMS },
-    { id: 'organization', label: 'Organization', items: ORGANIZATION_ITEMS },
-  ],
-  palette: { suggestions: SUGGESTION_ITEMS, quickAccess: QUICK_ACCESS_ITEMS },
-}
+export const PALETTE = { suggestions: SUGGESTION_ITEMS, quickAccess: QUICK_ACCESS_ITEMS }

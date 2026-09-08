@@ -2,7 +2,8 @@ import { Stack, Text, Title } from '@mantine/core'
 import { useNavigate } from 'react-router-dom'
 import Button from '@/components/Button'
 
-// Rendered inside the shell by modes/ModeCatchAll. Illustration-free on
+// The control plane's /onboarding/* and /* leaves (modes/controlPlane.jsx),
+// rendered inside the shell. The gateway has no 404: ClojureApp owns those. Illustration-free on
 // purpose: a 404 page that itself renders a broken asset is not much of one.
 export default function NotFound() {
   const navigate = useNavigate()

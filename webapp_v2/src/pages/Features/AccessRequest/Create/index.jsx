@@ -25,7 +25,6 @@ import Switch from '@/components/Switch'
 import TextInput from '@/components/TextInput'
 import { usePaginatedConnections } from '@/hooks/usePaginatedConnections'
 import { PAGE_PADDING } from '@/layout/PageLayout'
-import { useModeConfig } from '@/modes'
 import { useUserStore } from '@/stores/useUserStore'
 import { roleToGroups } from '@/utils/roles'
 import { showSnackbar } from '@/utils/snackbar'
@@ -101,7 +100,7 @@ function AccessTypeCard({ icon: Icon, title, description, checked, disabled, onT
 
 // Remounted via `key` when the edited rule changes, so state derives from the
 // loaded rule with lazy useState initializers instead of a prefill effect.
-function RuleFormFields({ rule, isEdit }) {
+function RuleFormFields({ rule, isEdit, defaultReviewerRoles }) {
   const navigate = useNavigate()
   const { ref: sentinelRef, inViewport: headerInView } = useInViewport()
   const [deleteOpened, deleteModal] = useDisclosure(false)
@@ -115,9 +114,9 @@ function RuleFormFields({ rule, isEdit }) {
   const deleteRule = useAccessRequestStore((s) => s.deleteRule)
 
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
-  // The control plane starts a rule with the approver group; the gateway with none.
-  // The group name comes from /serverinfo: a deployment may rename it.
-  const { defaultReviewerRoles } = useModeConfig()
+  // Roles (utils/roles) a new rule names as reviewers, given by the route table:
+  // the control plane passes the approver, the gateway none. The group name
+  // comes from /serverinfo: a deployment may rename it.
   const adminRoleName = useUserStore((s) => s.adminRoleName)
   const approverRoleName = useUserStore((s) => s.approverRoleName)
   const defaultReviewerGroups = defaultReviewerRoles.flatMap((role) =>
@@ -629,7 +628,7 @@ function RuleFormFields({ rule, isEdit }) {
 
 // Create and edit share one form; the rule name is a path segment so the
 // legacy `/features/access-request/edit/:rule-name` links keep working.
-export default function AccessRequestRuleForm() {
+export default function AccessRequestRuleForm({ defaultReviewerRoles = [] }) {
   const { ruleName } = useParams()
   const isEdit = Boolean(ruleName)
 
@@ -681,6 +680,11 @@ export default function AccessRequestRuleForm() {
   }
 
   return (
-    <RuleFormFields key={ruleName ?? 'new'} rule={isEdit ? rule : null} isEdit={isEdit} />
+    <RuleFormFields
+      key={ruleName ?? 'new'}
+      rule={isEdit ? rule : null}
+      isEdit={isEdit}
+      defaultReviewerRoles={defaultReviewerRoles}
+    />
   )
 }

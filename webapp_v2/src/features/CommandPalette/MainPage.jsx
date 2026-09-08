@@ -3,13 +3,12 @@ import { Loader, Text, Group } from '@mantine/core'
 import { Package, Rotate3d, File, ChevronRight } from 'lucide-react'
 import { useUserStore } from '@/stores/useUserStore'
 import { shouldHide } from '@/layout/Sidebar/helpers'
-import { useModeConfig } from '@/modes'
+import { SUGGESTION_ITEMS, QUICK_ACCESS_ITEMS } from '@/layout/Sidebar/gatewayNav'
 
 function SuggestionsAndQuickAccess({ onNavigate }) {
-  const { isAdmin, isSelfHosted, role, isFeatureFlagEnabled, isLicenseFeatureEnabled } = useUserStore()
-  const { palette } = useModeConfig()
-  const visibleSuggestions = palette.suggestions.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled, role))
-  const visibleQuickAccess = palette.quickAccess.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled, role))
+  const { isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled } = useUserStore()
+  const visibleSuggestions = SUGGESTION_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled))
+  const visibleQuickAccess = QUICK_ACCESS_ITEMS.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled))
 
   return (
     <>

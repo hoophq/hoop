@@ -4,7 +4,7 @@ import { useUIStore } from '@/stores/useUIStore'
 import { useUserStore } from '@/stores/useUserStore'
 import { IconBtn } from './IconBtn'
 import { shouldHide } from './helpers'
-import { useModeConfig } from '@/modes'
+import { NAV } from './controlPlaneNav'
 import classes from './Sidebar.module.css'
 
 export function SidebarCollapsed() {
@@ -12,7 +12,6 @@ export function SidebarCollapsed() {
   const { isAdmin, isSelfHosted, role } = useUserStore()
   const isFeatureFlagEnabled = useUserStore((s) => s.isFeatureFlagEnabled)
   const isLicenseFeatureEnabled = useUserStore((s) => s.isLicenseFeatureEnabled)
-  const { nav } = useModeConfig()
 
   const visible = (items) =>
     items.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled, role))
@@ -64,7 +63,7 @@ export function SidebarCollapsed() {
         scrollbarSize={10}
         classNames={{ root: classes.collapsedScrollArea, viewport: classes.scrollFill }}
       >
-        {nav.map(({ id, label, items }) => {
+        {NAV.map(({ id, label, items }) => {
           const shown = visible(items)
           if (shown.length === 0) return null
           if (!label) {

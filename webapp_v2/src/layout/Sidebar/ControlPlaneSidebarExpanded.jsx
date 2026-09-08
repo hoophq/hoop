@@ -3,9 +3,8 @@ import { ChevronsLeft } from 'lucide-react'
 import { useUIStore } from '@/stores/useUIStore'
 import { useUserStore } from '@/stores/useUserStore'
 import { NavItem } from './NavItem'
-import { ConfigStatus } from './ConfigStatus'
 import { shouldHide } from './helpers'
-import { useModeConfig } from '@/modes'
+import { NAV } from './controlPlaneNav'
 import classes from './Sidebar.module.css'
 
 // Left padding lives in the CSS module — it carries an optical correction that
@@ -23,7 +22,6 @@ export function SidebarExpanded({ navKey }) {
   const { isAdmin, isSelfHosted, role } = useUserStore()
   const isFeatureFlagEnabled = useUserStore((s) => s.isFeatureFlagEnabled)
   const isLicenseFeatureEnabled = useUserStore((s) => s.isLicenseFeatureEnabled)
-  const { nav, shell } = useModeConfig()
 
   const navItemProps = { isAdmin, isSelfHosted, role }
 
@@ -61,11 +59,9 @@ export function SidebarExpanded({ navKey }) {
         classNames={{ root: classes.expandedScrollArea, viewport: classes.scrollFill }}
       >
         <Box px="md" className={classes.scrollContent}>
-          {shell.configStatus && <ConfigStatus />}
-
-          {/* One list per section of the mode's nav. A section whose items are
+          {/* One list per section of ./controlPlaneNav.js. A section whose items are
               all hidden renders nothing, heading included. */}
-          {nav.map(({ id, label, items }) => {
+          {NAV.map(({ id, label, items }) => {
             const shown = visible(items)
             if (shown.length === 0) return null
             const headingId = label ? `sidebar-${id}-heading` : undefined
