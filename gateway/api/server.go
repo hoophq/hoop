@@ -43,6 +43,7 @@ import (
 	apimcpserver "github.com/hoophq/hoop/gateway/api/mcpserver"
 	metricsapi "github.com/hoophq/hoop/gateway/api/metrics"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	apiopaconfigs "github.com/hoophq/hoop/gateway/api/opaconfigs"
 	apiorgs "github.com/hoophq/hoop/gateway/api/orgs"
 	apipluginconnections "github.com/hoophq/hoop/gateway/api/pluginconnections"
 	apiplugins "github.com/hoophq/hoop/gateway/api/plugins"
@@ -311,6 +312,37 @@ func (api *Api) buildSidecarRoutes(r *apiroutes.Router) {
 		api.AuditMiddleware(),
 		api.TrackRequest(analytics.EventDeleteSidecar),
 		apisidecar.Delete)
+}
+
+// buildOPAConfigRoutes registers the OPA decision endpoints a connection can
+// be pointed at. They reach a sidecar as the per-listener "opa" block.
+func (api *Api) buildOPAConfigRoutes(r *apiroutes.Router) {
+	r.POST("/opa-configs",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		api.TrackRequest(analytics.EventCreateOPAConfig),
+		apiopaconfigs.Post)
+	r.PUT("/opa-configs/:nameOrID",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		api.TrackRequest(analytics.EventUpdateOPAConfig),
+		apiopaconfigs.Put)
+	r.DELETE("/opa-configs/:nameOrID",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		api.TrackRequest(analytics.EventDeleteOPAConfig),
+		apiopaconfigs.Delete)
+	r.GET("/opa-configs",
+		apiroutes.AdminAndAuditorAccessRole,
+		r.AuthMiddleware,
+		apiopaconfigs.List)
+	r.GET("/opa-configs/:nameOrID",
+		apiroutes.AdminAndAuditorAccessRole,
+		r.AuthMiddleware,
+		apiopaconfigs.Get)
 }
 
 func (api *Api) buildRoutes(r *apiroutes.Router, mode appconfig.AppMode) {
@@ -811,6 +843,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router, mode appconfig.AppMode) {
 		apiagents.Delete)
 
 	api.buildSidecarRoutes(r)
+	api.buildOPAConfigRoutes(r)
 
 	r.POST("/orgs/keys",
 		apiroutes.AdminOnlyAccessRole,

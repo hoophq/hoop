@@ -49,6 +49,11 @@ const (
 	EventCreateSidecar = "hoop-create-sidecar"
 	EventDeleteSidecar = "hoop-delete-sidecar"
 
+	// opa
+	EventCreateOPAConfig = "hoop-create-opa-config"
+	EventUpdateOPAConfig = "hoop-update-opa-config"
+	EventDeleteOPAConfig = "hoop-delete-opa-config"
+
 	// plugins
 	EventCreatePlugin          = "hoop-create-plugin"
 	EventUpdatePlugin          = "hoop-update-plugin"

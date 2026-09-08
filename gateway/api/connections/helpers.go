@@ -6,12 +6,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
 
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	pb "github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
 	"github.com/hoophq/hoop/gateway/models"
@@ -735,7 +738,7 @@ func resolveSidecarAssignment(orgID string, sidecarID *string, connType, subType
 		if errors.Is(err, models.ErrNotFound) {
 			return sql.NullString{}, fmt.Errorf("sidecar %q not found", *sidecarID)
 		}
-		return sql.NullString{}, err
+		return sql.NullString{}, fmt.Errorf("%w: sidecar %q: %v", errAssignmentLookup, *sidecarID, err)
 	}
 	return sql.NullString{String: sidecar.ID, Valid: true}, nil
 }
@@ -750,4 +753,50 @@ func revalidateSidecarAssignment(current sql.NullString, connType, subType strin
 	}
 	_, err := services.SidecarProtocol(connType, subType)
 	return err
+}
+
+// opaConfigIDPtr maps the nullable column onto the optional API field: nil
+// when the connection has no OPA configuration assigned.
+func opaConfigIDPtr(v sql.NullString) *string {
+	if !v.Valid || v.String == "" {
+		return nil
+	}
+	s := v.String
+	return &s
+}
+
+// errAssignmentLookup marks a resolve failure that is the gateway's problem
+// rather than the request's. Every other error a resolve returns names
+// something the caller got wrong, so the caller answers 422 by default and
+// keeps a database error out of the response body.
+var errAssignmentLookup = errors.New("assignment lookup failed")
+
+// resolveOPAConfigAssignment turns a name or id into the id stored on the
+// connection. A nil or empty value is not an assignment. It does NOT require
+// the connection to be fronted by a sidecar: the endpoint takes effect when
+// one is assigned, and forcing an order on two independent assignments buys
+// nothing.
+func resolveOPAConfigAssignment(orgID string, ref *string) (sql.NullString, error) {
+	if ref == nil || *ref == "" {
+		return sql.NullString{}, nil
+	}
+	item, err := models.GetOPAConfigByNameOrID(models.DB, orgID, *ref)
+	if err != nil {
+		if errors.Is(err, models.ErrNotFound) {
+			return sql.NullString{}, fmt.Errorf("opa configuration %q not found", *ref)
+		}
+		return sql.NullString{}, fmt.Errorf("%w: opa configuration %q: %v", errAssignmentLookup, *ref, err)
+	}
+	return sql.NullString{String: item.ID, Valid: true}, nil
+}
+
+// abortAssignment answers a failed sidecar or OPA assignment: a 500 when the
+// lookup itself failed, a 422 when the request named something the gateway
+// cannot serve or cannot find.
+func abortAssignment(c *gin.Context, err error) {
+	if errors.Is(err, errAssignmentLookup) {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed resolving connection assignment")
+		return
+	}
+	c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 }
