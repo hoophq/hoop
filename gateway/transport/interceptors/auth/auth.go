@@ -17,6 +17,7 @@ import (
 	"github.com/hoophq/hoop/gateway/idp"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/proxyproto/grpckey"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"google.golang.org/grpc"
@@ -321,7 +322,7 @@ func (i *interceptor) authenticateServiceIdentity(subject, orgID string, md meta
 	if orgID == "" {
 		return nil, status.Errorf(codes.Unauthenticated, "invalid authentication")
 	}
-	ctx, err := models.GetServiceIdentityContextByID(orgID, subject)
+	ctx, err := services.GetServiceIdentityContextByID(models.DB, orgID, subject)
 	if err != nil {
 		log.Errorf("failed loading service identity, org=%v id=%v err=%v", orgID, subject, err)
 		sentry.CaptureException(err)

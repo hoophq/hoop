@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	pgtypes "github.com/hoophq/hoop/common/pgtypes"
 )
 
 func TestConnectionSetupErrorStaysInsideTLS(t *testing.T) {
@@ -60,8 +62,8 @@ func TestConnectionSetupErrorStaysInsideTLS(t *testing.T) {
 	if _, err := io.ReadFull(tlsClient, responseType); err != nil {
 		t.Fatalf("read TLS-framed PostgreSQL error: %v", err)
 	}
-	if string(responseType) != "E" {
-		t.Fatalf("response type = %q, want PostgreSQL ErrorResponse E", responseType)
+	if responseType[0] != pgtypes.ServerErrorResponse.Byte() {
+		t.Fatalf("response type = %q, want %q", responseType[0], pgtypes.ServerErrorResponse.Byte())
 	}
 	if err := <-done; err == nil || !strings.Contains(err.Error(), "failed obtaining secret key") {
 		t.Fatalf("setup error = %v, want missing secret key", err)

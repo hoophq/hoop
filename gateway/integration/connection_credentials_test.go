@@ -11,6 +11,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/integration/testutil"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 )
 
 // secretFieldNames are keys that must never appear anywhere in the
@@ -81,14 +82,14 @@ func TestAIAgentCredentialIsAServiceIdentityCredential(t *testing.T) {
 
 	credential := mintPersistentCredential(t, identity.Key, connName)
 	credentialID, _ := credential["id"].(string)
-	isService, err := models.IsServiceIdentityCredential(identity.OrgID, credentialID, identity.ID)
+	isService, err := models.IsServiceIdentityCredential(models.DB, identity.OrgID, credentialID, identity.ID)
 	if err != nil {
 		t.Fatalf("classify AI-agent credential: %v", err)
 	}
 	if !isService {
 		t.Fatal("AI-agent credential classified as a human user credential")
 	}
-	ctx, err := models.GetServiceIdentityContextByID(identity.OrgID, identity.ID)
+	ctx, err := services.GetServiceIdentityContextByID(models.DB, identity.OrgID, identity.ID)
 	if err != nil {
 		t.Fatalf("load AI-agent context: %v", err)
 	}

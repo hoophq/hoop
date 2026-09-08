@@ -278,7 +278,7 @@ func newPostgresConnection(sid, connID string, conn net.Conn, tlsConfig *tls.Con
 		return nil, fmt.Errorf("invalid secret access key credentials")
 	}
 
-	isServiceCredential, err := models.IsServiceIdentityCredential(dba.OrgID, dba.ID, dba.UserSubject)
+	isServiceCredential, err := models.IsServiceIdentityCredential(models.DB, dba.OrgID, dba.ID, dba.UserSubject)
 	if err != nil {
 		return nil, fmt.Errorf("failed identifying connection credential owner: %v", err)
 	}

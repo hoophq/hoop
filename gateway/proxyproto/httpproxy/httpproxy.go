@@ -443,7 +443,7 @@ func (s *HttpProxyServer) createSession(secretKeyHash, correlationID string) (*h
 	}
 	ctxDuration := time.Until(dba.ExpireAt)
 
-	isServiceCredential, err := models.IsServiceIdentityCredential(dba.OrgID, dba.ID, dba.UserSubject)
+	isServiceCredential, err := models.IsServiceIdentityCredential(models.DB, dba.OrgID, dba.ID, dba.UserSubject)
 	if err != nil {
 		return nil, fmt.Errorf("failed identifying connection credential owner: %v", err)
 	}
