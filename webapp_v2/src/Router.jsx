@@ -57,6 +57,8 @@ import IntegrationsSlack from '@/pages/Integrations/Slack'
 import IntegrationsWebhooks from '@/pages/Integrations/Webhooks'
 import ComplianceReport from '@/pages/ComplianceReport'
 import Sidecars from '@/pages/Sidecars'
+import SidecarSetup from '@/pages/Sidecars/Setup'
+import SidecarDetailsPage from '@/pages/Sidecars/Details'
 
 // The only lazily-loaded page. Every other route is imported eagerly, but the
 // Dashboard pulls in recharts + d3 (~150KB gzipped) and is reachable by admins
@@ -105,14 +107,38 @@ function Router() {
       {/* Landing: the product decides (gateway: CLJS; control plane: by role). */}
       <Route path="/" element={Home} />
 
-      {/* Control plane pages. Resources are derived from sidecar listeners, never
-          created here; Reviews holds its place until Human in the Loop lands and is
-          the one surface an approver reaches. */}
+      {/* Control plane pages. The sidecar fleet (list, the connect/create wizard,
+          a details page) runs on /api/sidecars; Reviews holds its place until Human
+          in the Loop lands and is the one surface an approver reaches. */}
       <Route
         path="/sidecars"
         element={
           <Page adminOnly>
             <Sidecars />
+          </Page>
+        }
+      />
+      <Route
+        path="/sidecars/connect"
+        element={
+          <Page adminOnly>
+            <SidecarSetup mode="connect" />
+          </Page>
+        }
+      />
+      <Route
+        path="/sidecars/new"
+        element={
+          <Page adminOnly>
+            <SidecarSetup mode="create" />
+          </Page>
+        }
+      />
+      <Route
+        path="/sidecars/:id"
+        element={
+          <Page adminOnly>
+            <SidecarDetailsPage />
           </Page>
         }
       />

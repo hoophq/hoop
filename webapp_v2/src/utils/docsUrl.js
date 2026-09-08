@@ -29,6 +29,11 @@ export const docsUrl = {
     developmentEnvironments: 'https://hoop.dev/docs/quickstart/development-environments',
     ssh: 'https://hoop.dev/docs/quickstart/ssh',
   },
+  // The sidecar's public documentation is its README until hoop.dev/docs has a
+  // page for it.
+  sidecar: {
+    readme: 'https://github.com/hoophq/hoop/blob/main/sidecar/README.md',
+  },
   setup: {
     agents: 'https://hoop.dev/docs/setup/agents',
     architecture: 'https://hoop.dev/docs/setup/architecture',

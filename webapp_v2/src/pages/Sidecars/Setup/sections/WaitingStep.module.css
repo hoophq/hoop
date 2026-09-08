@@ -1,0 +1,10 @@
+/* The dashed frame of the Figma "Waiting for the Sidecar to connect" box;
+   Mantine has no prop for a dashed border. */
+.box {
+  border: 1px dashed var(--mantine-color-gray-4);
+  border-radius: var(--mantine-radius-md);
+}
+
+.box[data-connected] {
+  border-color: var(--mantine-color-green-5);
+}
