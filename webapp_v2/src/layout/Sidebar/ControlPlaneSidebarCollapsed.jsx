@@ -1,11 +1,14 @@
-import { Stack, Box, Text, Tooltip, ScrollArea } from '@mantine/core'
+import { Stack, Box, Tooltip, ScrollArea, Divider } from '@mantine/core'
 import { ChevronsRight } from 'lucide-react'
 import { useUIStore } from '@/stores/useUIStore'
 import { useUserStore } from '@/stores/useUserStore'
 import { IconBtn } from './IconBtn'
 import { shouldHide } from './helpers'
-import { NAV } from './controlPlaneNav'
+import { NAV, FOOTER_NAV } from './controlPlaneNav'
 import classes from './Sidebar.module.css'
+
+// Width of an icon button; the rule between groups matches it.
+const RAIL_ITEM_WIDTH = 40
 
 export function SidebarCollapsed() {
   const { toggleSidebarCollapsed, setPendingOpenSection } = useUIStore()
@@ -16,8 +19,13 @@ export function SidebarCollapsed() {
   const visible = (items) =>
     items.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled, role))
 
-  // A group (Integrations, Settings) has no page of its own: the rail expands
-  // the sidebar with that group open instead.
+  const sections = NAV.map((section) => ({ ...section, shown: visible(section.items) })).filter(
+    (section) => section.shown.length > 0,
+  )
+  const footerItems = visible(FOOTER_NAV.items)
+
+  // A group (Settings) has no page of its own: the rail expands the sidebar
+  // with that group open instead.
   const renderItem = (item) =>
     item.children ? (
       <Box component="li" key={item.label} className={classes.listItem}>
@@ -63,26 +71,22 @@ export function SidebarCollapsed() {
         scrollbarSize={10}
         classNames={{ root: classes.collapsedScrollArea, viewport: classes.scrollFill }}
       >
-        {NAV.map(({ id, label, items }) => {
-          const shown = visible(items)
-          if (shown.length === 0) return null
-          if (!label) {
-            return (
-              <Stack key={id} gap={2} align="center" role="list" aria-label="Main navigation">
-                {shown.map(renderItem)}
-              </Stack>
-            )
-          }
-          return (
-            <Box key={id} mt="xxl" w="100%">
-              <Text size="xs" fw={600} mb="xs" className={classes.sectionHidden}>{label}</Text>
-              <Stack gap="xsAlt" align="center" role="list" aria-label={label}>
-                {shown.map(renderItem)}
-              </Stack>
-            </Box>
-          )
-        })}
+        {sections.map(({ id, label, shown }, index) => (
+          <Box key={id} w="100%">
+            {index > 0 && <Divider color="gray.2" my="sm" w={RAIL_ITEM_WIDTH} mx="auto" />}
+            <Stack gap="xsAlt" align="center" role="list" aria-label={label}>
+              {shown.map(renderItem)}
+            </Stack>
+          </Box>
+        ))}
 
+        {footerItems.length > 0 && (
+          <Box w="100%" pt="sm" pb="sm" className={classes.profileFooter}>
+            <Stack gap="xsAlt" align="center" role="list" aria-label="Settings">
+              {footerItems.map(renderItem)}
+            </Stack>
+          </Box>
+        )}
       </ScrollArea>
 
       <div className={classes.collapsedFooter}>

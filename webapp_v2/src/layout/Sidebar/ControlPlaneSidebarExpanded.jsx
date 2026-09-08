@@ -1,10 +1,10 @@
-import { Stack, Box, Text, ScrollArea } from '@mantine/core'
+import { Stack, Box, Text, ScrollArea, Divider } from '@mantine/core'
 import { ChevronsLeft } from 'lucide-react'
 import { useUIStore } from '@/stores/useUIStore'
 import { useUserStore } from '@/stores/useUserStore'
 import { NavItem } from './NavItem'
 import { shouldHide } from './helpers'
-import { NAV } from './controlPlaneNav'
+import { NAV, FOOTER_NAV } from './controlPlaneNav'
 import classes from './Sidebar.module.css'
 
 // Left padding lives in the CSS module — it carries an optical correction that
@@ -32,6 +32,13 @@ export function SidebarExpanded({ navKey }) {
   const visible = (items) =>
     items.filter((i) => !shouldHide(i, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled, role))
 
+  // A section whose items are all hidden renders nothing, heading and divider
+  // included — an approver sees Activity alone, with no stray rule above it.
+  const sections = NAV.map((section) => ({ ...section, shown: visible(section.items) })).filter(
+    (section) => section.shown.length > 0,
+  )
+  const footerItems = visible(FOOTER_NAV.items)
+
   // No profile block here any more: the user menu lives in the global header
   // (layout/Header/UserMenu.jsx), so user/gatewayVersion/logout moved with it.
   return (
@@ -46,7 +53,7 @@ export function SidebarExpanded({ navKey }) {
         <img
           src="/images/hoop-branding/PNG/hoop-symbol+text_black@4x.png"
           alt="Hoop"
-          width={160}
+          width={135}
           style={{ display: 'block' }}
         />
       </Box>
@@ -59,33 +66,50 @@ export function SidebarExpanded({ navKey }) {
         classNames={{ root: classes.expandedScrollArea, viewport: classes.scrollFill }}
       >
         <Box px="md" className={classes.scrollContent}>
-          {/* One list per section of ./controlPlaneNav.js. A section whose items are
-              all hidden renders nothing, heading included. */}
-          {NAV.map(({ id, label, items }) => {
-            const shown = visible(items)
-            if (shown.length === 0) return null
-            const headingId = label ? `sidebar-${id}-heading` : undefined
+          {/* One list per section of ./controlPlaneNav.js, a rule between them. */}
+          {sections.map(({ id, label, shown }, index) => {
+            const headingId = `sidebar-${id}-heading`
             return (
-              <Box
-                key={id}
-                component="ul"
-                role="list"
-                aria-labelledby={headingId}
-                aria-label={label ? undefined : 'Main navigation'}
-                mt={label ? 'xl' : undefined}
-                className={classes.navList}
-              >
-                {label && <SectionLabel label={label} id={headingId} />}
-                <Stack gap="xsAlt" mb="sm">
-                  {shown.map((item) => (
-                    <Box component="li" key={item.path || item.label} className={classes.listItem}>
-                      <NavItem item={item} {...navItemProps} />
-                    </Box>
-                  ))}
-                </Stack>
+              <Box key={id}>
+                {index > 0 && <Divider color="gray.2" my="sm" />}
+                <Box
+                  component="ul"
+                  role="list"
+                  aria-labelledby={headingId}
+                  mt={index === 0 ? undefined : 'sm'}
+                  className={classes.navList}
+                >
+                  <SectionLabel label={label} id={headingId} />
+                  <Stack gap="xsAlt" mb="sm">
+                    {shown.map((item) => (
+                      <Box component="li" key={item.path || item.label} className={classes.listItem}>
+                        <NavItem item={item} {...navItemProps} />
+                      </Box>
+                    ))}
+                  </Stack>
+                </Box>
               </Box>
             )
           })}
+
+          {/* Settings, pinned to the foot: .profileFooter pushes it down while
+              the list is short and lets it scroll once the list overflows. */}
+          {footerItems.length > 0 && (
+            <Box
+              component="ul"
+              role="list"
+              aria-label="Settings"
+              className={`${classes.navList} ${classes.profileFooter}`}
+              pt="sm"
+              pb="sm"
+            >
+              {footerItems.map((item) => (
+                <Box component="li" key={item.label} className={classes.listItem}>
+                  <NavItem item={item} {...navItemProps} />
+                </Box>
+              ))}
+            </Box>
+          )}
         </Box>
       </ScrollArea>
 
