@@ -404,6 +404,30 @@ func TestDoReview(t *testing.T) {
 			},
 		},
 		{
+			// A review can carry a stored minimum of zero, which is what the
+			// credentials path copies off an all groups rule. Taken literally it
+			// would clear the bar before anyone approved, so the review must
+			// still hold out for every reviewer group.
+			name: "a minimum of zero still requires every reviewer group",
+			input: inputData{
+				ctx: newFakeContext("user2", "user2@example.com", []string{"admin"}),
+				rev: newFakeReview("user1", "PENDING", "jit", []models.ReviewGroups{
+					{GroupName: "admin", Status: models.ReviewStatusPending},
+					{GroupName: "devops", Status: models.ReviewStatusPending},
+				}, &models.AccessRequestRule{
+					MinApprovals:         ptr.Int(0),
+					AllGroupsMustApprove: false,
+				}),
+				con:    &models.Connection{},
+				status: models.ReviewStatusApproved,
+			},
+			validateFunc: func(t *testing.T, rev *models.Review) {
+				assert.Equal(t, models.ReviewStatusApproved, rev.ReviewGroups[0].Status)
+				assert.Equal(t, models.ReviewStatusPending, rev.ReviewGroups[1].Status)
+				assert.Equal(t, models.ReviewStatusPending, rev.Status)
+			},
+		},
+		{
 			// EVL-250, same overshoot through the legacy connection reviewers.
 			name: "reviewer in more groups than the connection minimum settles the review",
 			input: inputData{

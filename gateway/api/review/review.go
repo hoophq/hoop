@@ -393,10 +393,13 @@ func doIndividualReview(ctx *storagev2.Context, rev *models.Review, connection *
 	approvedCount := 0
 	reviewsCountNeeded := len(rev.ReviewGroups)
 	if rev.AccessRequestRuleName != nil {
-		if rev.MinApprovals != nil {
+		// A minimum of zero or less is only ever persisted for an all groups
+		// rule, so ignore it and keep the bar at every reviewer group. Read
+		// literally it would let the first approval settle the review.
+		if rev.MinApprovals != nil && *rev.MinApprovals > 0 {
 			reviewsCountNeeded = min(reviewsCountNeeded, *rev.MinApprovals)
 		}
-	} else if connection.MinReviewApprovals != nil {
+	} else if connection.MinReviewApprovals != nil && *connection.MinReviewApprovals > 0 {
 		reviewsCountNeeded = min(reviewsCountNeeded, *connection.MinReviewApprovals)
 	}
 
