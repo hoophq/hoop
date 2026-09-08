@@ -60,18 +60,24 @@ Gateway backend (port 8009)
 
 The same bundle is the gateway UI and the control plane UI. `useUserStore.appMode`
 (`'gateway'` | `'control-plane'`, from `/publicserverinfo` and `/serverinfo`) selects a
-manifest in `src/modes/` that owns the sidebar sections, the palette items, the landing
-route, the catch-all and the gateway-only chrome (Native Connections, ConfigStatus,
-the onboarding redirect). Routes are not gated by mode. See `CLAUDE.md`, "Application
-modes".
+product manifest in `src/modes/` (the shell a page renders in and the three leaves `/`,
+`/onboarding/*`, `/*`). Every React route below exists in both products; the sidebar of
+each product says what it shows. ClojureScript exists only in the gateway: the control
+plane answers `/onboarding/*` and `/*` with a 404 and never loads the CLJS bundle. Where
+the products differ, a file is a `Gateway*`/`ControlPlane*` pair chosen in `Router.jsx`
+with `<ByProduct>`. See `CLAUDE.md`, "Application modes".
 
 ### Routing Split (Router.jsx)
 
+One table for both products. The three product leaves: `/` (gateway: CLJS; control
+plane: role → `/sidecars` or `/reviews`, others the "Administrators and approvers only"
+dead end), `/onboarding/*` and `/*` (gateway: CLJS; control plane: 404).
+
 | Route | Handler | Status |
 |-------|---------|--------|
-| `/` | React (`modes/ModeHome`) | Done — gateway: the CLJS app; control plane: admins → `/sidecars`, others an "Administrators only" dead end |
-| `/sidecars` | React | Placeholder (control plane; `NotImplemented` until the fleet view lands) |
-| `/reviews`, `/reviews/:sessionId` | React | Placeholder (control plane; `NotImplemented`) |
+| `/sidecars` | React | Placeholder (control plane page; `NotImplemented` until the fleet view lands) |
+| `/reviews`, `/reviews/:sessionId` | React | Placeholder (control plane page; `NotImplemented`) |
+| `/organization/users` | React | Done — `GatewayUsers` / `ControlPlaneUsers` via `ByProduct` |
 | `/login` | React | Done |
 | `/register` | React | Done (local auth signup) |
 | `/signup` | React | Done (IDP org setup) |
@@ -130,7 +136,7 @@ modes".
 | `/plugins/manage/jira` | React (redirect) | Done — legacy URL → `/jira-templates?tab=configuration` |
 | `/plugins/manage/slack` | React (redirect) | Done — legacy URL → `/integrations/slack` |
 | `/plugins/manage/webhooks` | React (redirect) | Done — legacy URL → `/integrations/webhooks` |
-| `/*` (catch-all) | React (`modes/ModeCatchAll`) | Gateway: ClojureApp (CLJS), ongoing — see `MIGRATION_ROADMAP.md` for the wave plan. Control plane: a 404 page, no CLJS |
+| `/`, `/onboarding/*`, `/*` (catch-all) | Product leaves (`modes/`) | Gateway: ClojureApp (CLJS), ongoing — see `MIGRATION_ROADMAP.md` for the wave plan. Control plane: landing by role, then 404 |
 
 ---
 

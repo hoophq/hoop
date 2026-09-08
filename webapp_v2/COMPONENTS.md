@@ -259,23 +259,26 @@ import StepAccordion from '@/components/StepAccordion'
 />
 ```
 
-### `ProtectedRoute`
-Route guard — checks auth, fetches user, handles onboarding redirect. Already wrapping all routes in `Router.jsx`. Do not add another instance.
+### `ProtectedRoute` / `GatewayProtectedRoute`
+Route guard — checks auth, fetches user, then `adminOnly`, `role` and `licenseFeature`; `onReady(user)` is the product's extra step (a path it returns is where the user goes). `GatewayProtectedRoute` adds the onboarding redirect through it. Both are already wrapping every route through the product `Page` (`layout/GatewayPage`, `layout/ControlPlanePage`). Do not add another instance.
 
 ### `ClojureApp`
-Bridge component that mounts the CLJS bundle for un-migrated routes. Rendered by `modes/ModeHome` and `modes/ModeCatchAll` (gateway mode) and by the `/onboarding/*` route in `Router.jsx`. Do not use elsewhere.
+Bridge component that mounts the CLJS bundle for un-migrated routes. Mounted only by `modes/gateway.jsx` (the `/`, `/onboarding/*` and `/*` leaves). Do not use elsewhere, never from a `ControlPlane*` file.
 
 ### `NotImplemented`
-A route that exists in the information architecture but has no backend yet. Names the project that owes the work and lists what is missing; renders nothing that looks like loaded data.
+A route that exists in the information architecture but has no backend yet (the control plane's Reviews and Sidecars placeholders). Names the project that owes the work and lists what is missing; renders nothing that looks like loaded data.
 ```jsx
 <NotImplemented title="Reviews" project="Reviews (Human in the Loop)" missing={['Approve and reject']} />
 ```
 
-### `useModeConfig` / `getModeConfig` (`src/modes/`)
-The current application mode's manifest (gateway or control plane): `nav`, `palette`, `home`, `catchAll`, `shell`, `theme`, `postLoginPath`, `postSetupPath`. Hook in components, getter in callbacks. Pages do not use either — see `CLAUDE.md`, "Application modes".
+### `useModeConfig` / `getModeConfig` / `postAuthPath` (`src/modes/`)
+The current product manifest (`modes/gateway.jsx` or `modes/controlPlane.jsx`): `id`, `theme`, `postLoginPath`, `postSetupPath`, `Page`, `Guard`, `Home`, `Onboarding`, `CatchAll`. Read by `Router.jsx`, `ByProduct`, `ModeThemeProvider` and the auth pages only. Pages and layout never use them — see `CLAUDE.md`, "Application modes".
+
+### `ByProduct` (`src/modes/`)
+`<ByProduct gateway={<GatewayUsers />} controlPlane={<ControlPlaneUsers />} />` — renders one of two elements by product. Used in `Router.jsx` only; `grep ByProduct` lists every page that differs between the products.
 
 ### `ModeThemeProvider` (`src/modes/`)
-The app's `MantineProvider`, fed by the mode's `theme` slot. Mounted once in `main.jsx`.
+The app's `MantineProvider`, fed by the product's `theme` slot. Mounted once in `main.jsx`.
 
 ### `Input` (theme-level, no wrapper)
 Global resting border color **and height scale** for every Input-based component (`TextInput`, `Select`, `Textarea`, `MultiSelect`, `DatePickerInput`, …) via `Input.extend()` in `src/components/Input/theme.js` (registered in `src/theme.js`). Fields default to `size="md"` = 40px with xs=24 / sm=32 / lg=48 variants — see "Control size scale" above. The border is `--input-bd`, which Mantine declares per variant directly on the input wrapper element — a `:root` override from `cssVariablesResolver` never reaches it, so the extension applies a co-located CSS Module rule on the wrapper instead. Scoped to `[data-variant='default']:not([data-error])` so filled/unstyled variants, the error state, and the focus swap keep Mantine's behavior. To change the app-wide input border, edit `src/components/Input/Input.module.css` — do not add border variables to `cssVariablesResolver`.
