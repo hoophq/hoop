@@ -12,6 +12,36 @@ An open-source sidecar. One binary, one config file, MIT.
 <a href="https://github.com/hoophq/hoop/stargazers"><img src="https://img.shields.io/github/stars/hoophq/hoop?style=flat-square" alt="stars"></a>
 </p>
 
+## What Your Agent Sees
+
+**The query runs. The sensitive fields stay hidden.**
+
+```
+> pull the customer list for the churn report
+
+● postgres(SELECT name, email FROM customers)
+  ⎿  name           email
+     Ada Lovelace   [REDACTED:EMAIL_ADDRESS]
+     Grace Hopper   [REDACTED:EMAIL_ADDRESS]
+     hoop.dev · emails redacted at the wire
+```
+
+Masking rewrites the response in memory. The request itself is never touched.
+
+**The statement never reaches the database.**
+
+```
+> clean up the old test rows in customers
+
+● postgres(DELETE FROM customers WHERE id = 1)
+  ⎿  FATAL:  destructive statements are not permitted
+     hoop.dev · guardrail: no-destructive-sql
+```
+
+A real pgwire error carrying the message you wrote in the config. The agent reads why it was refused instead of guessing at a dropped connection.
+
+The agent never knows the sidecar exists. No SDK, no prompt changes, no agent-side config.
+
 ## Install
 
 ```bash
@@ -64,36 +94,6 @@ hoop start sidecar --config config.yaml --validate # check the config, then exit
 ```
 
 Point your agent at `127.0.0.1:15432` instead of the database. Your agents change one thing: the port in their connection string. The sidecar runs next to your database, not in place of it.
-
-## What Happens to a Query
-
-**The query runs. The sensitive fields stay hidden.**
-
-```
-> pull the customer list for the churn report
-
-● postgres(SELECT name, email FROM customers)
-  ⎿  name           email
-     Ada Lovelace   [REDACTED:EMAIL_ADDRESS]
-     Grace Hopper   [REDACTED:EMAIL_ADDRESS]
-     hoop.dev · emails redacted at the wire
-```
-
-Masking rewrites the response in memory. The request itself is never touched.
-
-**The statement never reaches the database.**
-
-```
-> clean up the old test rows in customers
-
-● postgres(DELETE FROM customers WHERE id = 1)
-  ⎿  FATAL:  destructive statements are not permitted
-     hoop.dev · guardrail: no-destructive-sql
-```
-
-A real pgwire error carrying the message you wrote in the config. The agent reads why it was refused instead of guessing at a dropped connection.
-
-The agent never knows the sidecar exists. No SDK, no prompt changes, no agent-side config.
 
 ## The Four Controls
 
