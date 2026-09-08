@@ -13166,7 +13166,7 @@ const docTemplate = `{
                     "example": "pgdemo"
                 },
                 "opa_config_id": {
-                    "description": "The OPA decision endpoint consulted for this connection when a sidecar\nfronts it. Accepts the name or the id of a registered OPA\nconfiguration. Absent leaves the current assignment untouched, an\nempty string unassigns it.",
+                    "description": "The OPA decision endpoint consulted for this connection when a sidecar\nfronts it. Accepts the name or the id of a registered OPA\nconfiguration.",
                     "type": "string",
                     "format": "uuid",
                     "example": "1837453e-01fc-46f3-9e4c-dcf22d395393"
@@ -13212,7 +13212,7 @@ const docTemplate = `{
                     "example": "2025-01-15T10:30:00Z"
                 },
                 "sidecar_id": {
-                    "description": "The sidecar that fronts this connection. Only \"postgres\", \"mssql\" and\n\"httpproxy\" connections may be assigned to one. Absent leaves the\ncurrent assignment untouched, an empty string unassigns it.",
+                    "description": "The sidecar that fronts this connection. Only \"postgres\", \"mssql\" and\n\"httpproxy\" connections may be assigned to one.",
                     "type": "string",
                     "format": "uuid",
                     "example": "1837453e-01fc-46f3-9e4c-dcf22d395393"

@@ -484,13 +484,11 @@ type Connection struct {
 	// The agent associated with this connection
 	AgentId string `json:"agent_id" binding:"required" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
 	// The sidecar that fronts this connection. Only "postgres", "mssql" and
-	// "httpproxy" connections may be assigned to one. Absent leaves the
-	// current assignment untouched, an empty string unassigns it.
+	// "httpproxy" connections may be assigned to one.
 	SidecarID *string `json:"sidecar_id,omitempty" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
 	// The OPA decision endpoint consulted for this connection when a sidecar
 	// fronts it. Accepts the name or the id of a registered OPA
-	// configuration. Absent leaves the current assignment untouched, an
-	// empty string unassigns it.
+	// configuration.
 	OPAConfigID *string `json:"opa_config_id,omitempty" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
 	// Status is a read only field that informs if the connection is available for interaction
 	// * online - The agent is connected and alive
