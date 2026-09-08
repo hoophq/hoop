@@ -18,7 +18,8 @@ details: `README.md`.
 ```
 src/
 ├── components/          # Presentational components (receive props, no business logic)
-├── layout/              # App shell: Sidebar, Header, EmptyState
+├── layout/              # App shell: Gateway*/ControlPlane* siblings + the pieces they share
+├── modes/               # The two products (gateway.jsx, controlPlane.jsx) and the switch
 ├── features/            # Complex features (e.g., CommandPalette)
 ├── stores/              # Zustand global stores (cross-route state)
 ├── services/            # Axios API calls (one file per domain)
@@ -34,9 +35,87 @@ src/
 │   │   └── [SubPage]/
 │   │       └── index.jsx
 ├── App.jsx              # Root component + providers
-├── Router.jsx           # Route definitions
+├── Router.jsx           # The one route table, for both products
 └── main.jsx             # Entry point
 ```
+
+## Application modes — gateway and control plane
+
+One bundle renders as one of two products. The backend decides which: `hoop start
+control-plane` reports `application_mode: "control-plane"` on `/api/publicserverinfo`
+(read once at boot, `main.jsx`) and on `/api/serverinfo` (read after login). The store
+keeps it in `useUserStore.appMode`, default `'gateway'`, and `src/modes/` is the only
+reader (ESLint: `appMode` anywhere else is an error).
+
+**The rule, in one sentence: every React route exists in both products, the sidebar says
+what a product shows, and ClojureScript exists only in the gateway.**
+
+- **One route table.** `Router.jsx` registers every React page once, for both products.
+  A page absent from a product's sidebar is still reachable by URL. That is a decision,
+  not an oversight: while the control plane is in transition, an open URL finds bugs.
+  Closing it later is a filter on the same table.
+- **Three leaves per product**, and only three: `/`, `/onboarding/*` and `/*`. In the
+  gateway they are ClojureScript (`ClojureApp`); in the control plane `/` is the
+  landing by role (`pages/Home`) and the other two are a 404 (`pages/NotFound`). The
+  control plane never loads the CLJS bundle. Sessions arrives there when a React
+  Sessions page exists.
+- **The product manifest is components, not flags.** `modes/gateway.jsx` and
+  `modes/controlPlane.jsx` export `{ id, theme, postLoginPath, postSetupPath, Page,
+  Guard, Home, Onboarding, CatchAll }`. `Page` is the shell of a React page
+  (`layout/GatewayPage`, `layout/ControlPlanePage`: auth gate + Layout + PageLayout),
+  `Guard` a React route without the shell. `Router.jsx` reads them through
+  `useModeConfig()`; nothing else does.
+- **Siblings, not branches.** A file without a product prefix serves both products. When
+  one product needs a line changed, the file becomes two siblings in the same directory,
+  `Gateway*` and `ControlPlane*`, and the un-prefixed name disappears. Today's pairs:
+  `GatewayLayout`/`ControlPlaneLayout`, `Header/GatewayHeader`/`ControlPlaneHeader`,
+  `Sidebar/GatewaySidebar*`/`ControlPlaneSidebar*`, `Sidebar/gatewayNav.js`/
+  `controlPlaneNav.js`, `CommandPalette/GatewayCommandPalette`/
+  `ControlPlaneCommandPalette`, `GatewayPage`/`ControlPlanePage`,
+  `Organization/Users/GatewayUsers`/`ControlPlaneUsers`. What they still share stays
+  un-prefixed next to them (`UserMenu`, `NavItem`, `helpers`, the CSS modules,
+  `Users/shared.js`). A file only one product has keeps a plain name (`Sidecars`,
+  `Home`, `NotFound`, `NativeConnections`, `ConfigStatus`).
+- **A page that differs is chosen in `Router.jsx`** with `<ByProduct gateway={…}
+  controlPlane={…} />` (`modes/ByProduct.jsx`, the one component that reads the
+  product). `grep ByProduct src/Router.jsx` lists every such page. A shared page may
+  take a prop (`AccessRequest/Create` takes `defaultReviewerRoles`, passed through
+  `ByProduct`), never know the mode.
+- **Auth is one gate.** `components/ProtectedRoute` (token, `/userinfo`, `/serverinfo`,
+  flags, `adminOnly`, `role`, `licenseFeature`) serves both. `GatewayProtectedRoute`
+  adds the onboarding redirect through its `onReady` hook; the control plane uses the
+  shared one directly.
+- **The name is the contract, enforced by lint** (`eslint.config.js`): a `ControlPlane*`
+  file cannot import `Gateway*`, `ClojureApp`, the CLJS bridge, `NativeConnections` or
+  `ConfigStatus`; a `Gateway*` file cannot import `ControlPlane*`; an un-prefixed file
+  cannot import either side (only `modes/` and `Router.jsx` may). Matching is
+  case-sensitive.
+- **Adding a page to the control plane** touches `pages/`, `Router.jsx` and
+  `layout/Sidebar/controlPlaneNav.js` (nav and palette items sit side by side there;
+  keep them in sync). The gateway's lists are `gatewayNav.js`.
+- **Deleting the gateway one day** is `modes/gateway.jsx`, every `Gateway*` file,
+  `ClojureApp`, the CLJS bridge, `NativeConnections`, `ConfigStatus`, the CLJS leaves of
+  `Router.jsx`, then the pages no control plane sidebar points at.
+- **A second theme** is a new file next to `src/theme.js`, pointed at by the product
+  manifest; `modes/ModeThemeProvider.jsx` feeds it to `MantineProvider`.
+- **Roles (control plane).** `/userinfo` reports `role`: **admin** reaches every page,
+  **approver** reaches Reviews, anything else lands on the dead end at `/`. A role is a
+  reserved group name; `standard` is the absence of one and is never stored as a group.
+  The group names come from `/serverinfo` (`admin_role_name`, `approver_role_name`),
+  never a literal. Gate a route with `<Page role={ROLE_APPROVER}>` and a nav or palette
+  item with `role:`; `hasRole` in `utils/roles.js` is the single decision and admin
+  passes every gate. `adminOnly` is the gate both products share. This gates pages, not
+  data: the backend serves the same routes in both modes, so the route's own middleware
+  in `gateway/api/server.go` is the authority on what a request returns.
+
+Develop against the control plane with `make run-dev-control-plane` (port 8019) and
+`API_URL=http://localhost:8019 npm run dev`. No shadow-cljs: the control plane never
+loads the CLJS bundle, and Vite serves `/images`, `/icons` and `/data` from
+`webapp/resources/public` itself (`cljsStaticAssets` in `vite.config.js`). The catalog
+JSON there is gitignored — run `npm --prefix ../webapp run download-connection-metadata`
+once. The script listens on 8019 and sets `API_URL` to match; the OIDC callback derives
+from `API_URL`, so with an IdP that only allows the 8009 callback run
+`PORT=8009 make run-dev-control-plane` with the gateway stopped.
 
 ## Architecture Rules
 
@@ -83,7 +162,7 @@ src/
 When something in `pages/[Page]/components/` starts getting reused outside the page, graduate it to `src/components/` (and update `COMPONENTS.md`).
 
 ### Layout
-- `src/layout/` = Shared layout infrastructure (Sidebar, Header, EmptyState, Layout container)
+- `src/layout/` = App shell infrastructure (Layout, Header, Sidebar, PageLayout, EmptyState). Where the two products differ, the file is a `Gateway*`/`ControlPlane*` pair — see "Application modes"
 - These are not generic reusable components, but structural elements that define the app shell
 
 ### Features
@@ -163,7 +242,7 @@ Authentication follows the same logic as the original webapp (ClojureScript):
 - `stores/useAuthStore.js` - Token management, cookie/query param handling
 - `services/auth.js` - Login/logout API calls
 - `services/api.js` - Axios interceptor for auth header and 401 handling
-- `components/ProtectedRoute.jsx` - Route protection wrapper
+- `components/ProtectedRoute.jsx` - Route protection wrapper (both products); `GatewayProtectedRoute.jsx` adds the onboarding redirect
 - `pages/Auth/Login/` - Login page (detects auth method from gateway)
 - `pages/Auth/Register/` - Local auth signup form
 - `pages/Auth/Signup/` - IDP org setup (post-OAuth)

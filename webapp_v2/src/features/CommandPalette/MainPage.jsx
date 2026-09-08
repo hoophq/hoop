@@ -3,7 +3,7 @@ import { Loader, Text, Group } from '@mantine/core'
 import { Package, Rotate3d, File, ChevronRight } from 'lucide-react'
 import { useUserStore } from '@/stores/useUserStore'
 import { shouldHide } from '@/layout/Sidebar/helpers'
-import { SUGGESTION_ITEMS, QUICK_ACCESS_ITEMS } from './constants'
+import { SUGGESTION_ITEMS, QUICK_ACCESS_ITEMS } from '@/layout/Sidebar/gatewayNav'
 
 function SuggestionsAndQuickAccess({ onNavigate }) {
   const { isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled } = useUserStore()

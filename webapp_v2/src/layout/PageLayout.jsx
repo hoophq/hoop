@@ -1,18 +1,16 @@
 import { Box } from '@mantine/core'
-import ConnectedCommandPalette from '@/features/CommandPalette'
 
 // Exported so FullBleed can cancel exactly this padding (single source of truth).
 export const PAGE_PADDING = 40
 
-// PageLayout is only used by React-owned routes (the CLJS catch-all renders
-// <Layout><ClojureApp /></Layout> without PageLayout). Mounting the Mantine
-// Spotlight here guarantees cmd+K works on every migrated page without having
-// to maintain a parallel list of React route patterns.
+// The padded body of a React page, shared by both products. The gateway's
+// command palette is mounted next to it by the gateway `Page` wrapper
+// (modes/gateway.jsx), so it exists on every migrated page and never on the
+// ClojureApp catch-all; the control plane mounts its own in ControlPlaneLayout.
 function PageLayout({ children }) {
   return (
     <Box p={PAGE_PADDING} mih="100%">
       {children}
-      <ConnectedCommandPalette />
     </Box>
   )
 }

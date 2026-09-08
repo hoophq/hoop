@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { useUserStore } from '@/stores/useUserStore'
 
 // Helper to get cookie value by name
 const getCookieValue = (cookieName) => {
@@ -39,9 +40,13 @@ export const useAuthStore = create((set, get) => ({
     set({ token, isAuthenticated: true })
   },
 
+  // Clearing the token is not enough. ProtectedRoute skips /userinfo when the user
+  // store already holds someone, so a second sign-in in the same tab would run with the
+  // previous account's identity, admin flag and license until a full reload.
   logout: () => {
     localStorage.removeItem('jwt-token')
     set({ token: null, isAuthenticated: false })
+    useUserStore.getState().clear()
   },
 
   // Save current URL for redirect after auth

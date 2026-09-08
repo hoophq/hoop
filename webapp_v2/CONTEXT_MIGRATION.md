@@ -56,10 +56,28 @@ Gateway backend (port 8009)
 | `hoop:native-access-open` (DOM CustomEvent on `window`) | Emitted by `native_client_access/events.cljs` when `window.__hoopReactShellPresent` is set, so CLJS entry points (`/resources`, session details, the CLJS palette) open the React Native Connections drawer. Detail: `{connectionName, reopen?}`. Outlives the CLJS native-access code — those pages stay CLJS past B4.0 |
 | `hoop:native-access-resume` (DOM CustomEvent on `window`) | Same bridge for the post-review resume. Detail: `{connectionName, sessionId, accessDurationSec}` — the duration travels in the event because it comes from the CLJS session-details payload |
 
+### Application modes
+
+The same bundle is the gateway UI and the control plane UI. `useUserStore.appMode`
+(`'gateway'` | `'control-plane'`, from `/publicserverinfo` and `/serverinfo`) selects a
+product manifest in `src/modes/` (the shell a page renders in and the three leaves `/`,
+`/onboarding/*`, `/*`). Every React route below exists in both products; the sidebar of
+each product says what it shows. ClojureScript exists only in the gateway: the control
+plane answers `/onboarding/*` and `/*` with a 404 and never loads the CLJS bundle. Where
+the products differ, a file is a `Gateway*`/`ControlPlane*` pair chosen in `Router.jsx`
+with `<ByProduct>`. See `CLAUDE.md`, "Application modes".
+
 ### Routing Split (Router.jsx)
+
+One table for both products. The three product leaves: `/` (gateway: CLJS; control
+plane: role → `/sidecars` or `/reviews`, others the "Administrators and approvers only"
+dead end), `/onboarding/*` and `/*` (gateway: CLJS; control plane: 404).
 
 | Route | Handler | Status |
 |-------|---------|--------|
+| `/sidecars` | React | Placeholder (control plane page; `NotImplemented` until the fleet view lands) |
+| `/reviews`, `/reviews/:sessionId` | React | Placeholder (control plane page; `NotImplemented`) |
+| `/organization/users` | React | Done — `GatewayUsers` / `ControlPlaneUsers` via `ByProduct` |
 | `/login` | React | Done |
 | `/register` | React | Done (local auth signup) |
 | `/signup` | React | Done (IDP org setup) |
@@ -118,7 +136,7 @@ Gateway backend (port 8009)
 | `/plugins/manage/jira` | React (redirect) | Done — legacy URL → `/jira-templates?tab=configuration` |
 | `/plugins/manage/slack` | React (redirect) | Done — legacy URL → `/integrations/slack` |
 | `/plugins/manage/webhooks` | React (redirect) | Done — legacy URL → `/integrations/webhooks` |
-| `/*` (catch-all) | ClojureApp (CLJS) | Ongoing — see `MIGRATION_ROADMAP.md` for the wave plan |
+| `/`, `/onboarding/*`, `/*` (catch-all) | Product leaves (`modes/`) | Gateway: ClojureApp (CLJS), ongoing — see `MIGRATION_ROADMAP.md` for the wave plan. Control plane: landing by role, then 404 |
 
 ---
 

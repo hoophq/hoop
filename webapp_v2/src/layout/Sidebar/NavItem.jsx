@@ -9,7 +9,7 @@ import { shouldHide, isActive } from './helpers'
 // ─── Collapsible nav item (Integrations / Settings) ───────────────────────
 // Separate component so useEffect can run on mount to clear pendingOpenSection.
 
-export function CollapsibleNavItem({ item, isAdmin, isSelfHosted, defaultOpened, onMount }) {
+export function CollapsibleNavItem({ item, isAdmin, isSelfHosted, role, defaultOpened, onMount }) {
   useEffect(() => {
     onMount?.()
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -22,7 +22,7 @@ export function CollapsibleNavItem({ item, isAdmin, isSelfHosted, defaultOpened,
       defaultOpened={defaultOpened}
     >
       {item.children.map((child) => (
-        <NavItem key={child.path} item={child} isAdmin={isAdmin} isSelfHosted={isSelfHosted} />
+        <NavItem key={child.path} item={child} isAdmin={isAdmin} isSelfHosted={isSelfHosted} role={role} />
       ))}
     </SidebarNavLink>
   )
@@ -30,13 +30,13 @@ export function CollapsibleNavItem({ item, isAdmin, isSelfHosted, defaultOpened,
 
 // ─── Single expanded nav item ──────────────────────────────────────────────
 
-export function NavItem({ item, isAdmin, isSelfHosted }) {
+export function NavItem({ item, isAdmin, isSelfHosted, role }) {
   const location = useLocation()
   const { setSidebarOpen, pendingOpenSection, clearPendingOpenSection } = useUIStore()
   const isFeatureFlagEnabled = useUserStore((s) => s.isFeatureFlagEnabled)
   const isLicenseFeatureEnabled = useUserStore((s) => s.isLicenseFeatureEnabled)
 
-  if (shouldHide(item, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled)) return null
+  if (shouldHide(item, isAdmin, isSelfHosted, isFeatureFlagEnabled, isLicenseFeatureEnabled, role)) return null
 
   const active = item.path ? isActive(item.path, location.pathname, location.search) : false
   const closeMobile = () => setSidebarOpen(false)
@@ -47,6 +47,7 @@ export function NavItem({ item, isAdmin, isSelfHosted }) {
       <CollapsibleNavItem
         item={item}
         isAdmin={isAdmin}
+        role={role}
         isSelfHosted={isSelfHosted}
         defaultOpened={shouldOpen}
         onMount={shouldOpen ? clearPendingOpenSection : undefined}

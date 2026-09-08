@@ -1,18 +1,20 @@
 import { lazy, Suspense } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
-import ProtectedRoute from '@/components/ProtectedRoute'
 import PageLoader from '@/components/PageLoader'
-import Layout from '@/layout/Layout'
-import PageLayout from '@/layout/PageLayout'
-import ClojureApp from '@/components/ClojureApp'
+import NotImplemented from '@/components/NotImplemented'
+import { useModeConfig } from '@/modes'
+import ByProduct from '@/modes/ByProduct'
+import { ROLE_APPROVER } from '@/utils/roles'
 
-// React pages (migrated from ClojureScript)
+// Auth pages
 import Login from '@/pages/Auth/Login'
 import Signup from '@/pages/Auth/Signup'
 import Setup from '@/pages/Auth/Setup'
 import Register from '@/pages/Auth/Register'
 import AuthCallback from '@/pages/Auth/Callback'
 import SignupCallback from '@/pages/Auth/SignupCallback'
+
+// React pages (migrated from ClojureScript, or born here)
 import Agents from '@/pages/Agents'
 import AgentsCreate from '@/pages/Agents/Create'
 import ConfigureRolePage from '@/pages/Roles/Configure'
@@ -27,7 +29,8 @@ import SettingsProtectionRules from '@/pages/Settings/ProtectionRules'
 import OnboardingProtectionRules from '@/pages/Onboarding/ProtectionRules'
 import SettingsAuditLogs from '@/pages/Settings/AuditLogs'
 import SettingsServerLogs from '@/pages/Settings/ServerLogs'
-import OrganizationUsers from '@/pages/Organization/Users'
+import GatewayUsers from '@/pages/Organization/Users/GatewayUsers'
+import ControlPlaneUsers from '@/pages/Organization/Users/ControlPlaneUsers'
 import SettingsExperimental from '@/pages/Settings/Experimental'
 import Rulepacks from '@/pages/Rulepacks'
 import RulepackDetail from '@/pages/Rulepacks/Detail'
@@ -52,24 +55,34 @@ import JiraTemplateForm from '@/pages/JiraTemplates/Form'
 import IntegrationsSlack from '@/pages/Integrations/Slack'
 import IntegrationsWebhooks from '@/pages/Integrations/Webhooks'
 import ComplianceReport from '@/pages/ComplianceReport'
+import Sidecars from '@/pages/Sidecars'
 
 // The only lazily-loaded page. Every other route is imported eagerly, but the
 // Dashboard pulls in recharts + d3 (~150KB gzipped) and is reachable by admins
 // only — no reason to put that in the bundle every user downloads.
 const Dashboard = lazy(() => import('@/pages/Dashboard'))
 
+// A review rule created in the control plane names the approver group as
+// reviewer; the form maps the role to the group name through /serverinfo.
+const CONTROL_PLANE_REVIEWER_ROLES = [ROLE_APPROVER]
+
 /**
- * Routing strategy:
+ * One route table for both products (src/modes). Every React route below exists
+ * in the gateway and in the control plane; the sidebar of each product says what
+ * it shows, and a page absent from it is still reachable by URL. That is a
+ * decision, not an oversight: while the control plane is in transition, an open
+ * URL finds bugs.
  *
- * Public routes (no auth):
- *   /login, /signup, /auth/callback → React
+ * What the product decides comes from its manifest:
+ *   - `Page`: the shell a React page renders in (ProtectedRoute + Layout).
+ *   - `Guard`: a React route without the shell (onboarding).
+ *   - `Home`, `Onboarding`, `CatchAll`: the three leaves that differ. In the
+ *     gateway they are ClojureScript; in the control plane '/' is the landing
+ *     by role and the other two are a 404, so the CLJS bundle never loads there.
  *
- * React pages (fully migrated):
- *   /agents, /agents/new → React
- *
- * Everything else → ClojureApp (ClojureScript/Reagent)
- *   The ClojureScript app renders only content (no sidebar, no cmdk)
- *   because react-shell flag is set by ClojureApp.jsx
+ * A page that differs between the products is a pair of sibling files
+ * (Gateway*, ControlPlane*) chosen here with <ByProduct>. `grep ByProduct` in
+ * this file lists every such page.
  *
  * To migrate a page from Clojure to React:
  *   1. Import the React component
@@ -77,6 +90,7 @@ const Dashboard = lazy(() => import('@/pages/Dashboard'))
  *   3. Delete the corresponding panel from app.cljs
  */
 function Router() {
+  const { Page, Guard, Home, Onboarding, CatchAll } = useModeConfig()
   return (
     <Routes>
       {/* Public Auth Routes — no Layout, no auth required */}
@@ -87,55 +101,82 @@ function Router() {
       <Route path="/auth/callback" element={<AuthCallback />} />
       <Route path="/signup/callback" element={<SignupCallback />} />
 
+      {/* Landing: the product decides (gateway: CLJS; control plane: by role). */}
+      <Route path="/" element={Home} />
+
+      {/* Control plane pages. Resources are derived from sidecar listeners, never
+          created here; Reviews holds its place until Human in the Loop lands and is
+          the one surface an approver reaches. */}
+      <Route
+        path="/sidecars"
+        element={
+          <Page adminOnly>
+            <Sidecars />
+          </Page>
+        }
+      />
+      <Route
+        path="/reviews"
+        element={
+          <Page role={ROLE_APPROVER}>
+            <NotImplemented
+              title="Reviews"
+              project="Reviews (Human in the Loop)"
+              missing={[
+                'Sessions narrowed to review queries',
+                'Approve and reject from the control plane',
+                'The retry path after approval',
+              ]}
+            />
+          </Page>
+        }
+      />
+      <Route
+        path="/reviews/:sessionId"
+        element={
+          <Page role={ROLE_APPROVER}>
+            <NotImplemented
+              title="Review"
+              project="Reviews (Human in the Loop)"
+              missing={['Review session detail', 'Approve and reject']}
+            />
+          </Page>
+        }
+      />
+
       {/* React pages — fully migrated */}
       <Route
         path="/dashboard"
         element={
-          <ProtectedRoute adminOnly>
-            <Layout>
-              <PageLayout>
-                <Suspense fallback={<PageLoader h={400} />}>
-                  <Dashboard />
-                </Suspense>
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly>
+            <Suspense fallback={<PageLoader h={400} />}>
+              <Dashboard />
+            </Suspense>
+          </Page>
         }
       />
       <Route
         path="/compliance-report"
         element={
-          <ProtectedRoute adminOnly>
-            <Layout>
-              <PageLayout>
-                <ComplianceReport />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly>
+            <ComplianceReport />
+          </Page>
         }
       />
       <Route
         path="/agents"
         element={
-          <ProtectedRoute adminOnly>
-            <Layout>
-              <PageLayout>
-                <Agents />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly>
+            <Agents />
+          </Page>
         }
       />
       <Route
         path="/agents/new"
         element={
-          <ProtectedRoute adminOnly>
-            <Layout>
-              <PageLayout>
-                <AgentsCreate />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly>
+            <AgentsCreate />
+          </Page>
         }
       />
 
@@ -143,13 +184,9 @@ function Router() {
       <Route
         path="/roles/:connectionName/configure"
         element={
-          <ProtectedRoute adminOnly>
-            <Layout>
-              <PageLayout>
-                <ConfigureRolePage />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly>
+            <ConfigureRolePage />
+          </Page>
         }
       />
 
@@ -157,26 +194,18 @@ function Router() {
       <Route
         path="/settings/infrastructure"
         element={
-          <ProtectedRoute adminOnly>
-            <Layout>
-              <PageLayout>
-                <SettingsInfrastructure />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly>
+            <SettingsInfrastructure />
+          </Page>
         }
       />
 
       <Route
         path="/settings/license"
         element={
-          <ProtectedRoute adminOnly>
-            <Layout>
-              <PageLayout>
-                <SettingsLicense />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly>
+            <SettingsLicense />
+          </Page>
         }
       />
 
@@ -184,49 +213,33 @@ function Router() {
       <Route
         path="/settings/api-keys"
         element={
-          <ProtectedRoute adminOnly>
-            <Layout>
-              <PageLayout>
-                <SettingsApiKeys />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly>
+            <SettingsApiKeys />
+          </Page>
         }
       />
       <Route
         path="/settings/api-keys/new"
         element={
-          <ProtectedRoute adminOnly>
-            <Layout>
-              <PageLayout>
-                <SettingsApiKeysForm />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly>
+            <SettingsApiKeysForm />
+          </Page>
         }
       />
       <Route
         path="/settings/api-keys/created"
         element={
-          <ProtectedRoute adminOnly>
-            <Layout>
-              <PageLayout>
-                <SettingsApiKeysCreated />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly>
+            <SettingsApiKeysCreated />
+          </Page>
         }
       />
       <Route
         path="/settings/api-keys/:id/configure"
         element={
-          <ProtectedRoute adminOnly>
-            <Layout>
-              <PageLayout>
-                <SettingsApiKeysForm />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly>
+            <SettingsApiKeysForm />
+          </Page>
         }
       />
 
@@ -234,37 +247,25 @@ function Router() {
       <Route
         path="/settings/attributes"
         element={
-          <ProtectedRoute adminOnly>
-            <Layout>
-              <PageLayout>
-                <SettingsAttributes />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly>
+            <SettingsAttributes />
+          </Page>
         }
       />
       <Route
         path="/settings/attributes/new"
         element={
-          <ProtectedRoute adminOnly>
-            <Layout>
-              <PageLayout>
-                <SettingsAttributesForm />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly>
+            <SettingsAttributesForm />
+          </Page>
         }
       />
       <Route
         path="/settings/attributes/edit/:name"
         element={
-          <ProtectedRoute adminOnly>
-            <Layout>
-              <PageLayout>
-                <SettingsAttributesForm />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly>
+            <SettingsAttributesForm />
+          </Page>
         }
       />
 
@@ -272,13 +273,9 @@ function Router() {
       <Route
         path="/settings/protection-rules"
         element={
-          <ProtectedRoute adminOnly>
-            <Layout>
-              <PageLayout>
-                <SettingsProtectionRules />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly>
+            <SettingsProtectionRules />
+          </Page>
         }
       />
 
@@ -286,13 +283,9 @@ function Router() {
       <Route
         path="/settings/audit-logs"
         element={
-          <ProtectedRoute adminOnly>
-            <Layout>
-              <PageLayout>
-                <SettingsAuditLogs />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly>
+            <SettingsAuditLogs />
+          </Page>
         }
       />
 
@@ -300,13 +293,9 @@ function Router() {
       <Route
         path="/settings/server-logs"
         element={
-          <ProtectedRoute adminOnly>
-            <Layout>
-              <PageLayout>
-                <SettingsServerLogs />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly>
+            <SettingsServerLogs />
+          </Page>
         }
       />
 
@@ -314,13 +303,9 @@ function Router() {
       <Route
         path="/organization/users"
         element={
-          <ProtectedRoute adminOnly>
-            <Layout>
-              <PageLayout>
-                <OrganizationUsers />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly>
+            <ByProduct gateway={<GatewayUsers />} controlPlane={<ControlPlaneUsers />} />
+          </Page>
         }
       />
 
@@ -328,25 +313,17 @@ function Router() {
       <Route
         path="/rulepacks"
         element={
-          <ProtectedRoute adminOnly licenseFeature="rulepacks">
-            <Layout>
-              <PageLayout>
-                <Rulepacks />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly licenseFeature="rulepacks">
+            <Rulepacks />
+          </Page>
         }
       />
       <Route
         path="/rulepacks/:id"
         element={
-          <ProtectedRoute adminOnly licenseFeature="rulepacks">
-            <Layout>
-              <PageLayout>
-                <RulepackDetail />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly licenseFeature="rulepacks">
+            <RulepackDetail />
+          </Page>
         }
       />
 
@@ -354,13 +331,9 @@ function Router() {
       <Route
         path="/settings/experimental"
         element={
-          <ProtectedRoute adminOnly>
-            <Layout>
-              <PageLayout>
-                <SettingsExperimental />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly>
+            <SettingsExperimental />
+          </Page>
         }
       />
 
@@ -368,86 +341,58 @@ function Router() {
       <Route
         path="/features/event-routing"
         element={
-          <ProtectedRoute adminOnly licenseFeature="event-routing">
-            <Layout>
-              <PageLayout>
-                <EventRouting />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly licenseFeature="event-routing">
+            <EventRouting />
+          </Page>
         }
       />
       <Route
         path="/features/event-routing/new"
         element={
-          <ProtectedRoute adminOnly licenseFeature="event-routing">
-            <Layout>
-              <PageLayout>
-                <EventRoutingForm />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly licenseFeature="event-routing">
+            <EventRoutingForm />
+          </Page>
         }
       />
       <Route
         path="/features/event-routing/:id/edit"
         element={
-          <ProtectedRoute adminOnly licenseFeature="event-routing">
-            <Layout>
-              <PageLayout>
-                <EventRoutingForm />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly licenseFeature="event-routing">
+            <EventRoutingForm />
+          </Page>
         }
       />
       <Route
         path="/features/event-routing/:id"
         element={
-          <ProtectedRoute adminOnly licenseFeature="event-routing">
-            <Layout>
-              <PageLayout>
-                <EventRoutingDetail />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly licenseFeature="event-routing">
+            <EventRoutingDetail />
+          </Page>
         }
       />
 
       <Route
         path="/features/data-masking"
         element={
-          <ProtectedRoute adminOnly licenseFeature="data-masking">
-            <Layout>
-              <PageLayout>
-                <DataMasking />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly licenseFeature="data-masking">
+            <DataMasking />
+          </Page>
         }
       />
       <Route
         path="/features/data-masking/new"
         element={
-          <ProtectedRoute adminOnly licenseFeature="data-masking">
-            <Layout>
-              <PageLayout>
-                <DataMaskingForm />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly licenseFeature="data-masking">
+            <DataMaskingForm />
+          </Page>
         }
       />
       <Route
         path="/features/data-masking/edit/:id"
         element={
-          <ProtectedRoute adminOnly licenseFeature="data-masking">
-            <Layout>
-              <PageLayout>
-                <DataMaskingForm />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly licenseFeature="data-masking">
+            <DataMaskingForm />
+          </Page>
         }
       />
 
@@ -458,37 +403,25 @@ function Router() {
       <Route
         path="/features/access-control"
         element={
-          <ProtectedRoute adminOnly licenseFeature="access-control">
-            <Layout>
-              <PageLayout>
-                <AccessControl />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly licenseFeature="access-control">
+            <AccessControl />
+          </Page>
         }
       />
       <Route
         path="/features/access-control/new"
         element={
-          <ProtectedRoute adminOnly licenseFeature="access-control">
-            <Layout>
-              <PageLayout>
-                <AccessControlForm />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly licenseFeature="access-control">
+            <AccessControlForm />
+          </Page>
         }
       />
       <Route
         path="/features/access-control/edit"
         element={
-          <ProtectedRoute adminOnly licenseFeature="access-control">
-            <Layout>
-              <PageLayout>
-                <AccessControlForm />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly licenseFeature="access-control">
+            <AccessControlForm />
+          </Page>
         }
       />
 
@@ -497,37 +430,31 @@ function Router() {
       <Route
         path="/features/access-request"
         element={
-          <ProtectedRoute adminOnly licenseFeature="access-requests">
-            <Layout>
-              <PageLayout>
-                <AccessRequest />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly licenseFeature="access-requests">
+            <AccessRequest />
+          </Page>
         }
       />
       <Route
         path="/features/access-request/new"
         element={
-          <ProtectedRoute adminOnly licenseFeature="access-requests">
-            <Layout>
-              <PageLayout>
-                <AccessRequestForm />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly licenseFeature="access-requests">
+            <ByProduct
+              gateway={<AccessRequestForm />}
+              controlPlane={<AccessRequestForm defaultReviewerRoles={CONTROL_PLANE_REVIEWER_ROLES} />}
+            />
+          </Page>
         }
       />
       <Route
         path="/features/access-request/edit/:ruleName"
         element={
-          <ProtectedRoute adminOnly licenseFeature="access-requests">
-            <Layout>
-              <PageLayout>
-                <AccessRequestForm />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly licenseFeature="access-requests">
+            <ByProduct
+              gateway={<AccessRequestForm />}
+              controlPlane={<AccessRequestForm defaultReviewerRoles={CONTROL_PLANE_REVIEWER_ROLES} />}
+            />
+          </Page>
         }
       />
 
@@ -536,37 +463,25 @@ function Router() {
       <Route
         path="/features/ai-session-analyzer"
         element={
-          <ProtectedRoute adminOnly licenseFeature="ai-session-analyzer">
-            <Layout>
-              <PageLayout>
-                <AiSessionAnalyzer />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly licenseFeature="ai-session-analyzer">
+            <AiSessionAnalyzer />
+          </Page>
         }
       />
       <Route
         path="/features/ai-session-analyzer/rules/new"
         element={
-          <ProtectedRoute adminOnly licenseFeature="ai-session-analyzer">
-            <Layout>
-              <PageLayout>
-                <AiSessionAnalyzerRuleForm />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly licenseFeature="ai-session-analyzer">
+            <AiSessionAnalyzerRuleForm />
+          </Page>
         }
       />
       <Route
         path="/features/ai-session-analyzer/rules/edit/:ruleName"
         element={
-          <ProtectedRoute adminOnly licenseFeature="ai-session-analyzer">
-            <Layout>
-              <PageLayout>
-                <AiSessionAnalyzerRuleForm />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly licenseFeature="ai-session-analyzer">
+            <AiSessionAnalyzerRuleForm />
+          </Page>
         }
       />
 
@@ -574,37 +489,25 @@ function Router() {
       <Route
         path="/guardrails"
         element={
-          <ProtectedRoute adminOnly licenseFeature="guardrails">
-            <Layout>
-              <PageLayout>
-                <Guardrails />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly licenseFeature="guardrails">
+            <Guardrails />
+          </Page>
         }
       />
       <Route
         path="/guardrails/new"
         element={
-          <ProtectedRoute adminOnly licenseFeature="guardrails">
-            <Layout>
-              <PageLayout>
-                <GuardrailForm />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly licenseFeature="guardrails">
+            <GuardrailForm />
+          </Page>
         }
       />
       <Route
         path="/guardrails/edit/:id"
         element={
-          <ProtectedRoute adminOnly licenseFeature="guardrails">
-            <Layout>
-              <PageLayout>
-                <GuardrailForm />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly licenseFeature="guardrails">
+            <GuardrailForm />
+          </Page>
         }
       />
 
@@ -612,49 +515,33 @@ function Router() {
       <Route
         path="/ai-agents-identities"
         element={
-          <ProtectedRoute adminOnly licenseFeature="ai-agents">
-            <Layout>
-              <PageLayout>
-                <AiAgentsIdentities />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly licenseFeature="ai-agents">
+            <AiAgentsIdentities />
+          </Page>
         }
       />
       <Route
         path="/ai-agents-identities/new"
         element={
-          <ProtectedRoute adminOnly licenseFeature="ai-agents">
-            <Layout>
-              <PageLayout>
-                <AiAgentsIdentitiesForm />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly licenseFeature="ai-agents">
+            <AiAgentsIdentitiesForm />
+          </Page>
         }
       />
       <Route
         path="/ai-agents-identities/created"
         element={
-          <ProtectedRoute adminOnly licenseFeature="ai-agents">
-            <Layout>
-              <PageLayout>
-                <AiAgentsIdentitiesCreated />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly licenseFeature="ai-agents">
+            <AiAgentsIdentitiesCreated />
+          </Page>
         }
       />
       <Route
         path="/ai-agents-identities/:id/configure"
         element={
-          <ProtectedRoute adminOnly licenseFeature="ai-agents">
-            <Layout>
-              <PageLayout>
-                <AiAgentsIdentitiesForm />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly licenseFeature="ai-agents">
+            <AiAgentsIdentitiesForm />
+          </Page>
         }
       />
 
@@ -662,37 +549,25 @@ function Router() {
       <Route
         path="/jira-templates"
         element={
-          <ProtectedRoute adminOnly licenseFeature="jira-integration">
-            <Layout>
-              <PageLayout>
-                <JiraTemplates />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly licenseFeature="jira-integration">
+            <JiraTemplates />
+          </Page>
         }
       />
       <Route
         path="/jira-templates/new"
         element={
-          <ProtectedRoute adminOnly licenseFeature="jira-integration">
-            <Layout>
-              <PageLayout>
-                <JiraTemplateForm />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly licenseFeature="jira-integration">
+            <JiraTemplateForm />
+          </Page>
         }
       />
       <Route
         path="/jira-templates/edit/:id"
         element={
-          <ProtectedRoute adminOnly licenseFeature="jira-integration">
-            <Layout>
-              <PageLayout>
-                <JiraTemplateForm />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly licenseFeature="jira-integration">
+            <JiraTemplateForm />
+          </Page>
         }
       />
       {/* Legacy URLs absorbed into the Configuration tab — keep old bookmarks working.
@@ -720,57 +595,34 @@ function Router() {
       <Route
         path="/integrations/slack"
         element={
-          <ProtectedRoute adminOnly>
-            <Layout>
-              <PageLayout>
-                <IntegrationsSlack />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly>
+            <IntegrationsSlack />
+          </Page>
         }
       />
       <Route
         path="/integrations/webhooks"
         element={
-          <ProtectedRoute adminOnly>
-            <Layout>
-              <PageLayout>
-                <IntegrationsWebhooks />
-              </PageLayout>
-            </Layout>
-          </ProtectedRoute>
+          <Page adminOnly>
+            <IntegrationsWebhooks />
+          </Page>
         }
       />
 
-      {/* Onboarding routes — no Layout, no sidebar (mirrors :auth layout in legacy app) */}
+      {/* Onboarding — no shell (mirrors :auth layout in the legacy app). The CLJS
+          onboarding is a gateway leaf; the control plane answers 404. */}
       <Route
         path="/onboarding/protection-rules"
         element={
-          <ProtectedRoute adminOnly>
+          <Guard adminOnly>
             <OnboardingProtectionRules />
-          </ProtectedRoute>
+          </Guard>
         }
       />
-      <Route
-        path="/onboarding/*"
-        element={
-          <ProtectedRoute>
-            <ClojureApp />
-          </ProtectedRoute>
-        }
-      />
+      <Route path="/onboarding/*" element={Onboarding} />
 
-      {/* All other routes → ClojureScript app */}
-      <Route
-        path="/*"
-        element={
-          <ProtectedRoute>
-            <Layout>
-              <ClojureApp />
-            </Layout>
-          </ProtectedRoute>
-        }
-      />
+      {/* Everything else: ClojureScript in the gateway, a 404 in the control plane */}
+      <Route path="/*" element={CatchAll} />
     </Routes>
   )
 }
