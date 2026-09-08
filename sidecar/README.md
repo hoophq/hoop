@@ -221,6 +221,51 @@ neither signature moves again. `daemon.Setup` briefly took the license as a
 fourth argument, which broke every embedder that upgraded; that is what the
 split is for.
 
+### Connecting it to a Control Plane
+
+A sidecar can fetch its whole configuration from a Hoop Control Plane instead
+of carrying its own listeners. Two facts connect it, each with two sources,
+highest precedence first:
+
+| Fact | Sources |
+|---|---|
+| URL | `HOOP_CONTROL_PLANE_URL`, then the `control_plane_url` config key |
+| Token | the token flag (`--token` / `-token`), then `HOOP_SIDECAR_TOKEN` |
+
+First wins, not first valid, same as the license sources: an env var holding
+garbage is an error, never a reason to fall through to the file.
+
+```bash
+# No config file at all: the env pair is the whole configuration.
+HOOP_CONTROL_PLANE_URL=https://cp.example.com \
+  hoop start sidecar --token hsc_...
+
+# Or name the plane in the file and pass only the token.
+echo 'control_plane_url: https://cp.example.com' > config.yaml
+hoop start sidecar --config config.yaml --token hsc_...
+```
+
+The plane issues the token once, when you register the sidecar
+(`POST /api/sidecars`), and stores only a hash of it, so losing the token
+means registering a new sidecar. Both sources hold the token itself, never a
+path, and no config key exists for it: a bearer secret does not belong in a
+file that gets committed.
+
+At startup the process runs the handshake
+(`POST {url}/api/sidecars/handshake`). The plane builds the answer from the
+connections assigned to this sidecar, and that document becomes the running
+config, checked by the same strict decoder the file path uses. `--config`
+becomes optional; a file may still name the plane and a license, but the
+process refuses one that also declares listeners: two authorities for one
+fact is the same mistake as a field written in two spellings. A first
+handshake that fails stops startup, since there is nothing to serve yet.
+
+Once running, a heartbeat repeats the handshake every minute. It keeps the
+plane's last-seen fresh and notices a config edited there: the process logs
+the change (`restart to apply it`) and keeps serving what it started with.
+A failed heartbeat also changes nothing, because losing the phone line home
+must not take the data path down with it.
+
 ## Configuring it: config.yaml
 
 One file is the whole configuration. The process reads it at startup, resolves
@@ -439,6 +484,12 @@ log_level: info
 # A path to the license Hoop issued, or the document itself. The license flag
 # and HOOP_LICENSE both outrank this. Omit it to run the free tier.
 license: /etc/hoop-inspect/license.json
+
+# The Control Plane this sidecar connects to. HOOP_CONTROL_PLANE_URL outranks
+# this. When set, the handshake supplies the whole running config and this
+# file must not also declare listeners; omit it to run standalone from this
+# file alone.
+# control_plane_url: https://cp.example.com
 
 admin:
   listen: 127.0.0.1:19000   # /healthz /stats /config /events /api/*

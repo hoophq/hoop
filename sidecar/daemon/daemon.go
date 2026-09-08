@@ -81,6 +81,7 @@ type Option func(*setupOptions)
 
 type setupOptions struct {
 	licenseFlag string
+	token       string
 }
 
 // WithLicense supplies a license from the command line, which outranks
@@ -111,6 +112,13 @@ func Setup(path string, load Loader, build PluginBuilder) (*Config, Plugin, erro
 //
 // An UNREADABLE license stops startup and an expired one does not, since
 // killing a data-path proxy over billing is an outage.
+//
+// When a control plane is configured (HOOP_CONTROL_PLANE_URL or the config
+// file's "control_plane_url" key), the running config comes from its
+// handshake and path may be empty; see resolveConfigSource for what a file
+// still contributes then. A first fetch that fails stops startup, because
+// there is nothing to serve yet; once running, the heartbeat degrades
+// instead.
 func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*Config, Plugin, error) {
 	var o setupOptions
 	for _, apply := range opts {
@@ -119,7 +127,15 @@ func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*
 	if load == nil {
 		load = LoadConfig
 	}
-	cfg, err := load(path)
+	var local *Config
+	if path != "" {
+		var err error
+		local, err = load(path)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	cfg, err := resolveConfigSource(local, o.token)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -189,6 +205,8 @@ func Main(version string, load Loader, build PluginBuilder) error {
 		licenseRef = fs.String("license", "", "path to the license file, or the license "+
 			"document itself; overrides "+license.EnvVar+" and the config file's "+
 			`"license" key`)
+		tokenRef = fs.String("token", "", "the token identifying this sidecar to the "+
+			"control plane; overrides "+SidecarTokenEnv)
 		validate = fs.Bool("validate", false, "validate the config and exit")
 		strict   = fs.Bool("strict", false, "treat a deprecated config field as an error")
 		showVer  = fs.Bool("version", false, "print the version and exit")
@@ -206,12 +224,13 @@ func Main(version string, load Loader, build PluginBuilder) error {
 		fmt.Println("hoop-inspect", version)
 		return nil
 	}
-	if *configPath == "" {
+	if *configPath == "" && os.Getenv(ControlPlaneURLEnv) == "" {
 		fs.Usage()
-		return fmt.Errorf("%w: -config is required", ErrUsage)
+		return fmt.Errorf("%w: -config is required unless %s is set", ErrUsage, ControlPlaneURLEnv)
 	}
 
-	cfg, det, err := SetupWith(*configPath, load, build, WithLicense(*licenseRef))
+	cfg, det, err := SetupWith(*configPath, load, build,
+		WithLicense(*licenseRef), WithControlPlaneToken(*tokenRef))
 	if err != nil {
 		return err
 	}
@@ -562,6 +581,17 @@ func Run(cfg *Config, det Plugin) error {
 	var licenseExpired <-chan struct{}
 	if cfg.dependsOnLicense() {
 		licenseExpired = watchLicense(ctx, cfg.lic, licenseCheckEvery, log)
+	}
+
+	if cfg.cp != nil {
+		// The heartbeat keeps the plane's last-seen fresh and logs when the
+		// config there no longer matches this process. It shares the run
+		// context, so shutdown stops it with everything else.
+		log.Info("control plane connected",
+			"url", cfg.cp.url,
+			"source", cfg.cp.urlSource,
+			"poll", heartbeatEvery.String())
+		go cfg.cp.heartbeat(ctx, log)
 	}
 
 	// Two server kinds, one loop of lane facts. Relay lanes run
