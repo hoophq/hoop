@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/hoophq/hoop/sidecar/analyzer"
@@ -106,6 +107,14 @@ type Config struct {
 	// precedence of the three sources; ResolveLicense holds the order.
 	License string `json:"license,omitempty"`
 
+	// ControlPlaneURL is the Control Plane this sidecar connects to. Empty
+	// means standalone: the process reads only this file, and nothing
+	// changes from a build that predates the field. When set, the plane
+	// supplies the whole running config through the handshake, so this
+	// file must not also declare listeners. HOOP_CONTROL_PLANE_URL
+	// outranks this key; resolveControlPlaneURL holds the order.
+	ControlPlaneURL string `json:"control_plane_url,omitempty"`
+
 	// Policy is the DEPRECATED pre-ADR-0011 spelling of Guardrails and OPA
 	// combined. normalize empties it.
 	Policy *PolicyConfig `json:"policy,omitempty"`
@@ -124,6 +133,12 @@ type Config struct {
 	// config key: the file names a license and does not carry a verdict.
 	// The zero value is missing, so an embedder who skips it keeps the caps.
 	lic license.Status
+
+	// cp is the resolved control plane connection, when one is configured.
+	// resolveConfigSource fills it; Run starts the heartbeat from it. Not a
+	// config key: the file names a URL and does not carry a token or a
+	// verdict about reachability.
+	cp *controlPlane
 }
 
 // Licensing reports the license this config runs under. The zero value is a
@@ -796,7 +811,11 @@ func (c *Config) resolve(lc ListenerConfig) (GuardrailsConfig, *OPAConfig, MaskC
 func (c *Config) Validate() error {
 	var problems []string
 
-	if len(c.Listeners) == 0 {
+	// A file that names a control plane carries no listeners of its own:
+	// the plane supplies them through the handshake. resolveConfigSource
+	// checks that what the plane sent has at least one, so an empty config
+	// still cannot start.
+	if len(c.Listeners) == 0 && !c.controlPlaneConfigured() {
 		problems = append(problems, "no listeners configured")
 	}
 
@@ -1118,13 +1137,7 @@ func buildPolicy(gc GuardrailsConfig, opa *OPAConfig, det Plugin, ac *analyzerDe
 	}
 
 	if len(aiRules) > 0 {
-		var cfg *AnalyzerConfig
-		var provider analyzer.Provider
-		var redact func(string) string
-		if ac != nil {
-			cfg, provider, redact = ac.cfg, ac.provider, ac.redact
-		}
-		evs, err := buildAnalyzerEvaluators(aiRules, cfg, provider, redact, opa.enabled())
+		evs, err := buildAnalyzerEvaluators(aiRules, ac, opa.enabled())
 		if err != nil {
 			return nil, err
 		}
@@ -1178,6 +1191,15 @@ type analyzerDeps struct {
 	cfg      *AnalyzerConfig
 	provider analyzer.Provider
 	redact   func(string) string
+
+	// budgets hands every generation of a rule's evaluator the same call
+	// counter, so MaxCalls bounds the rule's spend across hot reloads: a
+	// draining generation and its replacement pay from one purse. Keyed
+	// by rule name, the identity an operator edits; two lanes naming one
+	// rule share a budget too, which is what "process-wide" already
+	// promised. Entries are never dropped, and single-goroutine access
+	// (startup builds, then only the heartbeat) needs no lock.
+	budgets map[string]*atomic.Int64
 }
 
 // BuildTLS turns a TLSConfig into a *tls.Config.

@@ -140,13 +140,22 @@ type Config struct {
 	CacheSize int
 	CacheTTL  time.Duration
 
-	// MaxCallsPerSession bounds classifications for one Evaluator's
-	// lifetime. Zero means unbounded.
+	// MaxCallsPerSession bounds classifications charged to this rule's
+	// budget. Zero means unbounded.
 	//
 	// An Evaluator is shared across connections, so this is a process-wide
 	// budget rather than a per-connection one. It is a backstop against a
-	// pathological workload, not a quota.
+	// pathological workload, not a quota. The counter it bounds may be
+	// shared through Budget, in which case it also spans evaluator
+	// generations.
 	MaxCalls int
+
+	// Budget optionally supplies the call counter itself. A hot reload
+	// that rebuilds an evaluator hands the replacement the SAME cell, so
+	// the draining generation and the new one together never exceed
+	// MaxCalls; independent counters would let each generation spend the
+	// full budget. Nil allocates a private counter.
+	Budget *atomic.Int64
 
 	// Redact rewrites content before it leaves the process. Nil sends the
 	// statement as-is.
@@ -173,7 +182,7 @@ type Evaluator struct {
 	// their change to take effect would see nothing.
 	promptKey string
 
-	calls  atomic.Int64
+	calls  *atomic.Int64
 	denied atomic.Int64
 	errs   atomic.Int64
 
@@ -212,11 +221,16 @@ func New(cfg Config) (*Evaluator, error) {
 		}
 	}
 	prompt := BuildSystemPrompt(cfg.Guidance)
+	calls := cfg.Budget
+	if calls == nil {
+		calls = new(atomic.Int64)
+	}
 	return &Evaluator{
 		cfg:       cfg,
 		cache:     newCache(cfg.CacheSize, cfg.CacheTTL),
 		prompt:    prompt,
 		promptKey: fingerprint(prompt),
+		calls:     calls,
 	}, nil
 }
 

@@ -44,8 +44,6 @@ type Connection struct {
 	ID                      string         `gorm:"column:id"`
 	ResourceName            string         `gorm:"column:resource_name"`
 	AgentID                 sql.NullString `gorm:"column:agent_id"`
-	SidecarID               sql.NullString `gorm:"column:sidecar_id"`
-	OPAConfigID             sql.NullString `gorm:"column:opa_config_id"`
 	Name                    string         `gorm:"column:name"`
 	Command                 pq.StringArray `gorm:"column:command;type:text[]"`
 	Type                    string         `gorm:"column:type"`
@@ -548,7 +546,7 @@ func GetBareConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) 
 	SELECT
 		c.id, c.org_id, c.resource_name, c.name, c.command, c.status, c.type, c.subtype, c.managed_by,
 		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema, c.access_max_duration,
-		c.agent_id, c.sidecar_id, c.opa_config_id, a.name AS agent_name, a.mode AS agent_mode, c.force_approve_groups, c.min_review_approvals,
+		c.agent_id, a.name AS agent_name, a.mode AS agent_mode, c.force_approve_groups, c.min_review_approvals,
 		c.jira_issue_template_id, it.issue_transition_name_on_close, c.secrets_updated_at,
 		COALESCE(it.skip_transition_on_nonzero_exit_code, FALSE) AS skip_transition_on_nonzero_exit_code,
 		COALESCE(c.mandatory_metadata_fields, ARRAY[]::TEXT[]) AS mandatory_metadata_fields,
@@ -682,7 +680,7 @@ func getConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) (*Co
 	SELECT
 		c.id, c.org_id, c.resource_name, c.name, c.command, c.status, c.type, c.subtype, c.managed_by,
 		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema,
-		COALESCE(c.agent_id, r.agent_id) AS agent_id, c.sidecar_id, c.opa_config_id, a.name AS agent_name, a.mode AS agent_mode, c.access_max_duration,
+		COALESCE(c.agent_id, r.agent_id) AS agent_id, a.name AS agent_name, a.mode AS agent_mode, c.access_max_duration,
 		c.jira_issue_template_id, it.issue_transition_name_on_close, c.force_approve_groups, c.min_review_approvals, c.secrets_updated_at,
 		COALESCE(it.skip_transition_on_nonzero_exit_code, FALSE) AS skip_transition_on_nonzero_exit_code, 
 		COALESCE(c.mandatory_metadata_fields, ARRAY[]::TEXT[]) AS mandatory_metadata_fields,
@@ -864,7 +862,7 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 		SELECT * FROM json_to_recordset(?::JSON) AS x(key TEXT, op TEXT, val TEXT)
 	)
 	SELECT
-		c.id, c.org_id, c.agent_id, c.sidecar_id, c.opa_config_id, c.name, c.command, c.status, c.type, c.subtype, c.managed_by,
+		c.id, c.org_id, c.agent_id, c.name, c.command, c.status, c.type, c.subtype, c.managed_by,
 		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema,
 		c.jira_issue_template_id, c.resource_name,
 		-- legacy tags
@@ -1011,9 +1009,7 @@ func SearchConnectionsBySimilarity(orgID string, userGroups []string, searchTerm
 			c.resource_name,
 			c.access_mode_runbooks,
 			c.access_mode_exec,
-			c.access_mode_connect,
-			c.sidecar_id,
-			c.opa_config_id
+			c.access_mode_connect
 		FROM private.connections c
 		LEFT JOIN private.plugins ac ON ac.name = 'access_control' AND ac.org_id = ?
 		LEFT JOIN private.plugin_connections acc ON acc.connection_id = c.id AND acc.plugin_id = ac.id
@@ -1114,7 +1110,7 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 		SELECT * FROM json_to_recordset(?::JSON) AS x(key TEXT, op TEXT, val TEXT)
 	)
 	SELECT
-		c.id, c.org_id, c.agent_id, c.sidecar_id, c.opa_config_id, c.name, c.command, c.status, c.type, c.subtype, c.managed_by,
+		c.id, c.org_id, c.agent_id, c.name, c.command, c.status, c.type, c.subtype, c.managed_by,
 		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema,
 		c.resource_name,
 		COALESCE(c.mandatory_metadata_fields, ARRAY[]::TEXT[]) AS mandatory_metadata_fields,
@@ -1257,24 +1253,6 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 	}
 
 	return items, total, nil
-}
-
-// ListConnectionsBySidecarID returns the connections assigned to a sidecar,
-// ordered by name so the emitted sidecar configuration is stable.
-func ListConnectionsBySidecarID(db *gorm.DB, orgID, sidecarID string) ([]Connection, error) {
-	var items []Connection
-	err := db.Raw(`
-	SELECT c.id, c.org_id, c.name, c.type, c.subtype, c.opa_config_id,
-		COALESCE((SELECT envs FROM private.env_vars WHERE id = c.id), '{}') AS envs
-	FROM private.connections c
-	WHERE c.org_id = ? AND c.sidecar_id = ?
-	ORDER BY c.name`, orgID, sidecarID).
-		Find(&items).
-		Error
-	if err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 func GetConnectionGuardRailRulesByConnectionAndAttribute(db *gorm.DB, orgID uuid.UUID, connectionName string, attributes []string) (*ConnectionGuardRailRules, error) {

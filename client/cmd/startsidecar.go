@@ -29,6 +29,7 @@ const deprecatedSidecarAlias = "inspect"
 var (
 	sidecarConfigFlag   string
 	sidecarLicenseFlag  string
+	sidecarTokenFlag    string
 	sidecarValidateFlag bool
 	sidecarStrictFlag   bool
 )
@@ -62,25 +63,36 @@ prints a warning naming its replacement. Use --strict to fail on one.
 Without a license the process caps guardrail and data masking rules at one
 each and says so at startup. A license lifts the caps for the features it
 names. It may be a path or the document itself, and --license outranks
-HOOP_LICENSE, which outranks the "license" key in the config file.`,
+HOOP_LICENSE, which outranks the "license" key in the config file.
+
+A sidecar may connect to a Control Plane instead of carrying its own
+listeners: set HOOP_CONTROL_PLANE_URL or the "control_plane_url" config key
+(the env var outranks the key), and pass the token from the sidecar's
+registration with --token, which outranks HOOP_SIDECAR_TOKEN. The handshake
+then supplies the whole running config, --config becomes optional, and a
+file that still declares listeners is refused. The token is shown once when
+the sidecar is created; a lost one means registering a new sidecar.`,
 	Example: `  hoop start sidecar --config /etc/hoop-inspect/config.yaml
   hoop start sidecar --config config.yaml --license /etc/hoop-inspect/license.json
   hoop start sidecar --config config.yaml --validate
-  hoop start sidecar --config config.yaml --validate --strict`,
+  hoop start sidecar --config config.yaml --validate --strict
+  HOOP_CONTROL_PLANE_URL=https://cp.example.com hoop start sidecar --token hsc_...`,
 	// A bad config is not a usage error, and dumping the flag list under one
 	// buries the message that says which field is wrong.
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		warnDeprecatedSidecarAlias(os.Stderr, cmd.CalledAs())
 
-		if sidecarConfigFlag == "" {
+		if sidecarConfigFlag == "" && os.Getenv(daemon.ControlPlaneURLEnv) == "" {
 			// The one genuine usage error here, so let cobra show the flags.
 			cmd.SilenceUsage = false
-			return fmt.Errorf("--config is required (or set HOOP_SIDECAR_CONFIG)")
+			return fmt.Errorf("--config is required (or set HOOP_SIDECAR_CONFIG or %s)",
+				daemon.ControlPlaneURLEnv)
 		}
 
 		cfg, det, err := daemon.SetupWith(sidecarConfigFlag, configyaml.Load, buildSidecarPlugin,
-			daemon.WithLicense(sidecarLicenseFlag))
+			daemon.WithLicense(sidecarLicenseFlag),
+			daemon.WithControlPlaneToken(sidecarTokenFlag))
 		if err != nil {
 			return err
 		}
@@ -161,6 +173,12 @@ func init() {
 	startSidecarCmd.Flags().StringVar(&sidecarLicenseFlag, "license", "",
 		"Path to the license file, or the license document itself. Overrides "+
 			license.EnvVar+" and the config file's \"license\" key")
+	// Same rule as --license: no default from the environment, so daemon
+	// setup holds the precedence in one place and the token stays out of
+	// --help output.
+	startSidecarCmd.Flags().StringVar(&sidecarTokenFlag, "token", "",
+		"The token identifying this sidecar to the control plane. Overrides "+
+			daemon.SidecarTokenEnv)
 	startSidecarCmd.Flags().BoolVar(&sidecarValidateFlag, "validate", false,
 		"Validate the config, report what each listener resolved to, and exit")
 	startSidecarCmd.Flags().BoolVar(&sidecarStrictFlag, "strict", false,

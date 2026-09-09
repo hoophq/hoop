@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/hoophq/hoop/sidecar/inspect"
@@ -335,25 +336,40 @@ func splitAnalyzerRules(rules []policy.Rule) (local, ai []policy.Rule) {
 	return local, ai
 }
 
+// budgetFor returns the rule's process-lifetime call counter, creating it
+// on first sight. See analyzerDeps.budgets for the sharing contract.
+func (ac *analyzerDeps) budgetFor(rule string) *atomic.Int64 {
+	if ac.budgets == nil {
+		ac.budgets = map[string]*atomic.Int64{}
+	}
+	cell, ok := ac.budgets[rule]
+	if !ok {
+		cell = new(atomic.Int64)
+		ac.budgets[rule] = cell
+	}
+	return cell
+}
+
 // buildAnalyzerEvaluators turns ai_analysis rules into evaluators.
 //
 // Each rule becomes its own Evaluator, so two rules on one lane get their own
 // trigger, action map and denial message while sharing the provider and,
-// through the provider, the credential.
+// through the provider, the credential. The call BUDGET comes from ac's
+// per-rule registry, so a rebuilt evaluator (a hot reload that edited the
+// rule's lane) continues the running count instead of starting a fresh one.
 func buildAnalyzerEvaluators(
 	rules []policy.Rule,
-	cfg *AnalyzerConfig,
-	provider analyzer.Provider,
-	redact func(string) string,
+	ac *analyzerDeps,
 	hasOPA bool,
 ) ([]policy.Evaluator, error) {
 	if len(rules) == 0 {
 		return nil, nil
 	}
-	if cfg == nil || provider == nil {
+	if ac == nil || ac.cfg == nil || ac.provider == nil {
 		return nil, fmt.Errorf(
 			"ai_analysis rule %q needs an analyzer section, and none is configured", rules[0].Name)
 	}
+	cfg, provider, redact := ac.cfg, ac.provider, ac.redact
 
 	out := make([]policy.Evaluator, 0, len(rules))
 	for _, r := range rules {
@@ -379,6 +395,7 @@ func buildAnalyzerEvaluators(
 			CacheSize:     cfg.Cache.Size,
 			CacheTTL:      time.Duration(cfg.Cache.TTLSec) * time.Second,
 			MaxCalls:      cfg.MaxCalls,
+			Budget:        ac.budgetFor(r.Name),
 			Redact:        redact,
 		})
 		if err != nil {

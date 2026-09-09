@@ -45,7 +45,6 @@ var root = buildRoutes([]struct {
 	{[]string{"spiffe-mappings"}, ResourceAgentSPIFFEMapping},
 	{[]string{"spiffemappings"}, ResourceAgentSPIFFEMapping},
 	{[]string{"feature-flags"}, ResourceFeatureFlag},
-	{[]string{"opa-configs"}, ResourceOPAConfig},
 })
 
 func buildRoutes(entries []struct {
