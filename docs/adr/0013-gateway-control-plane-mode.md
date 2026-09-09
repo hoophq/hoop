@@ -1,12 +1,18 @@
 # ADR-0013: The control plane is a second boot path in the gateway binary
 
-- **Status:** Accepted
+- **Status:** Accepted (amended 2026-09-09 — the control plane starts the Slack plugin; see "Amended 2026-09-09" below)
 - **Date:** 2026-09-03
 - **Author:** @p3rotto
-- **Linear:** EVL-237, EVL-245
+- **Linear:** EVL-237, EVL-245, EVL-258
 - **Code:** [`client/cmd/start.go`](../../client/cmd/start.go), [`gateway/main.go`](../../gateway/main.go), [`gateway/api/server.go`](../../gateway/api/server.go), [`gateway/appconfig/appconfig.go`](../../gateway/appconfig/appconfig.go), [`gateway/api/healthz/healthz.go`](../../gateway/api/healthz/healthz.go), [`gateway/api/controlplane_routes_test.go`](../../gateway/api/controlplane_routes_test.go)
 - **Related:** PR #1754 (control plane frontend), PR #1773 and #1775 (boot paths, `hoop start control-plane`), PR #1770 (the route allowlist this ADR retires), PR #1772 (closed allowlist draft), PR #1785 (one route tree)
 - **Supersedes / Superseded by:** —
+
+> **Amendment (2026-09-09):** "transport plugins: not started" was true and
+> wrong. The control plane now starts the Slack plugin, and only that one,
+> because Slack review approvals were silently dead without it. The decision
+> below stands; read **"Amended 2026-09-09"** in the Decision section for what
+> changed and why it is not a hole in the rule.
 
 ## Context
 
@@ -81,7 +87,8 @@ PR #1770 is gone. The UI hides what the product does not expose.
 | HTTP routes, web UI, `/.well-known/*`, `/ssm`, `/rdpproxy` | 389, served | 389, served |
 | `/api/healthz` | probes the gRPC port | answers without dialing |
 | gRPC `:8010` | open | closed |
-| Proxies, transport plugins, agent controller | started | not started |
+| Proxies, agent controller | started | not started |
+| Transport plugins | all six | Slack only (amended 2026-09-09) |
 | Bootstrap: migrations, default org, auth | runs | runs |
 
 **What fails, and how.** 21 of the 271 distinct routes (389 with gin's `HEAD`
@@ -105,8 +112,49 @@ deployment that must carry no traffic must not expose `/api/ws`.
 
 **Reviews run the gateway's code.** `runControlPlane` wires
 `ReleaseConnectionOnReview` from a transport server it builds and never starts.
-With no stream in the process it only logs, so a verdict written here does not
-signal a session waiting on another gateway.
+With no stream in the process the release half is a no-op, so a verdict written
+here does not signal a session waiting on another gateway. Since the
+2026-09-09 amendment the Slack half is not: an approval posts a DM whenever the
+org has Slack configured.
+
+> **Amended 2026-09-09 (EVL-258): the control plane starts the Slack plugin.**
+>
+> "Transport plugins: not started" was true and wrong. Slack is registered as a
+> transport plugin, but almost nothing it does is transport work: the plugin
+> owns the `SlackService`, and that service owns the socket-mode connection an
+> approver clicks Approve on. Starting no plugins meant
+> `slack.GetServiceInstance` returned nil for every org, so in control-plane
+> mode no review reached Slack, the buttons and the reject modal were dead, and
+> `gateway/api/review/review.go` could not update a message it had never sent.
+>
+> Worse, it was quiet. `OnUpdate` is reached only through
+> `RegisteredPlugins` (`processOnUpdatePluginPhase`, `gateway/api/plugins`), so
+> `PUT /plugins/slack/config` persisted the tokens, answered 200, and started
+> nothing. The admin saw "Configuration saved." This is the failure mode
+> CLAUDE.md's No Hacks test 3 exists to prevent.
+>
+> `runControlPlane` now calls `startPlugins(controlPlanePlugins(...))` with
+> Slack alone. This is not a hole in "everything that carries traffic lives in
+> `runGateway`": with no stream, `OnConnect`, `OnReceive` and `OnDisconnect` are
+> unreachable, and the other five plugins do only packet work. `gatewayPlugins`
+> is unchanged, so gateway behaviour is byte for byte what it was, and
+> `gateway/plugins_test.go` pins both chains.
+>
+> **One Slack socket per org, across the whole deployment.** socketmode opens
+> one websocket per process, and nothing coordinates them: `gateway/slack` has
+> in-process mutexes, no lease and no advisory lock. Two processes that both
+> start Slack for one org post every review twice and race each other's clicks.
+>
+> That is two constraints, not one. The control plane must run a single
+> replica, and its chart, still owed, must pin it. Less obviously, a gateway
+> and a control plane pointed at the same database both read the same
+> `private.plugins` row and both open a socket, so one org must not have Slack
+> configured on both at once. This ADR's own Context motivates that topology:
+> the reason for staying in one binary is to reuse reviews with their tables.
+>
+> Neither constraint is enforced, and that is a No Hacks test 2 debt taken
+> knowingly. A lease electing one socket owner is the fix when either shape
+> stops being hypothetical.
 
 `/serverinfo` reports `application_mode`.
 
@@ -124,7 +172,12 @@ signal a session waiting on another gateway.
   harmless, and moving it is a behaviour change.
 - **No chart yet.** PR #1775 added and removed a skeleton chart;
   `make run-dev-control-plane` runs the mode on the host. A chart is owed
-  before production use.
+  before production use, and it must pin one replica (see the 2026-09-09
+  amendment).
+- **A plugin is not automatically off in control-plane mode.** The rule is
+  still that traffic subsystems live in `runGateway`, but a plugin whose value
+  is a background service rather than a packet hook can be listed in
+  `controlPlanePlugins`. Adding one is a decision to argue for, not a default.
 - **No agent sees any of this.** No packet type, spec key or payload changed.
 - **Revisit if the gateway is not retired.** Two products in one binary is
   cheap for a transition and expensive as a permanent condition; the answer is
@@ -133,6 +186,20 @@ signal a session waiting on another gateway.
 ### How this was verified
 
 `controlplane_routes_test.go` diffs both engines; `make test-oss` passes.
+
+The 2026-09-09 amendment was verified by building the binary on both sides of
+the change and booting each as a control plane on embedded PGlite. Saving a
+deliberately invalid Slack token through `PUT /api/plugins/slack/config`, the
+route the web app calls:
+
+| | result |
+|---|---|
+| before | `200`, tokens written, no service started, no log line |
+| after | `400 failed initializing plugin, reason=... err=invalid_auth` |
+
+The 400 is the whole point: `OnUpdate` now runs, so a bad token is refused
+where it used to be accepted and forgotten. `gateway/plugins_test.go` pins both
+plugin chains and their order.
 
 Both modes booted from one binary on embedded PGlite with `GIN_MODE=debug`
 register the same 389 routes, and with `STATIC_UI_PATH` set both serve
