@@ -33,6 +33,10 @@ spec:
       {{- if .Values.serviceAccount.create }}
       serviceAccountName: hoopagent
       {{- end }}
+      {{- with .Values.additionalInitContainers }}
+      initContainers:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
       - image: '{{ .Values.image.repository |default "hoophq/hoopdev" }}:{{ .Values.image.tag |default "latest" }}'
         name: agent
@@ -48,11 +52,16 @@ spec:
         - secretRef:
             name: extra-agent-config
         {{- end}}
-        {{- if .Values.spiffe.enabled }}
+        {{- if or .Values.spiffe.enabled .Values.volumeMounts }}
         volumeMounts:
+        {{- if .Values.spiffe.enabled }}
         - mountPath: /run/spiffe
           name: spiffe-tokens
           readOnly: true
+        {{- end }}
+        {{- with .Values.volumeMounts }}
+          {{- toYaml . | nindent 8 }}
+        {{- end }}
         {{- end }}
       {{- if .Values.spiffe.enabled }}
       - name: spiffe-helper
@@ -72,7 +81,22 @@ spec:
         - name: spiffe-helper-config
           mountPath: /etc/spiffe-helper
           readOnly: true
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if or .Values.spiffe.enabled .Values.volumes }}
       volumes:
+      {{- if .Values.spiffe.enabled }}
       - name: spiffe-workload-api
         {{- if eq (.Values.spiffe.workloadAPI.type | default "csi") "hostPath" }}
         hostPath:
@@ -90,15 +114,7 @@ spec:
         configMap:
           name: hoopagent-spiffe-helper
       {{- end }}
-      {{- with .Values.nodeSelector }}
-      nodeSelector:
-        {{- toYaml . | nindent 8 }}
+      {{- with .Values.volumes }}
+        {{- toYaml . | nindent 6 }}
       {{- end }}
-      {{- with .Values.affinity }}
-      affinity:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with .Values.tolerations }}
-      tolerations:
-        {{- toYaml . | nindent 8 }}
       {{- end }}
