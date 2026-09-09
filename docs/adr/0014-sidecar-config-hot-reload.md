@@ -154,6 +154,11 @@ generation is active, or an operator debugging "why did this not deny"
 reads rules a draining connection no longer runs. Session audit events need
 nothing: each Gate already records what it enforced.
 
+Two generations must also never mean two budgets: an analyzer rule's
+call counter is a per-rule cell that outlives its evaluators, so a draining
+generation and its replacement pay `max_calls` from one purse. A rebuilt
+evaluator continues the count; only a renamed rule starts a new one.
+
 Committed: the reload pipeline and the startup pipeline stay one code path.
 A config startup would refuse, reload refuses for the same reason with the
 same message. The moment those diverge, the heartbeat becomes a side door

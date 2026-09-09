@@ -291,7 +291,8 @@ func TestPromptPrecedence(t *testing.T) {
 			r.Prompt = tc.rulePrompt
 			cfg := &AnalyzerConfig{Provider: "stub", Model: "m", Prompt: tc.cfgPrompt}
 
-			evs, err := buildAnalyzerEvaluators([]policy.Rule{r}, cfg, stubAnalyzerProvider{}, nil, true)
+			evs, err := buildAnalyzerEvaluators([]policy.Rule{r},
+				&analyzerDeps{cfg: cfg, provider: stubAnalyzerProvider{}}, true)
 			if err != nil {
 				t.Fatalf("buildAnalyzerEvaluators: %v", err)
 			}
@@ -322,6 +323,50 @@ func (stubAnalyzerProvider) Name() string { return "stub" }
 
 func (stubAnalyzerProvider) Classify(context.Context, string, string) (*analyzer.Result, error) {
 	return &analyzer.Result{RiskLevel: analyzer.RiskLow}, nil
+}
+
+// A hot reload that rebuilds a rule's evaluator must not re-arm its call
+// budget: the draining generation and the replacement pay from one purse.
+// Two builds against one analyzerDeps stand in for two generations.
+func TestTheCallBudgetSurvivesAnEvaluatorRebuild(t *testing.T) {
+	deps := &analyzerDeps{
+		cfg:      &AnalyzerConfig{Provider: "stub", Model: "m", MaxCalls: 1},
+		provider: stubAnalyzerProvider{},
+	}
+	stmt := inspect.Statement{
+		Protocol:  inspect.Postgres,
+		Direction: inspect.FromClient,
+		Text:      "DELETE FROM t",
+		Operation: inspect.OpDelete,
+	}
+
+	gen1, err := buildAnalyzerEvaluators([]policy.Rule{aiRule("risky")}, deps, false)
+	if err != nil {
+		t.Fatalf("buildAnalyzerEvaluators: %v", err)
+	}
+	gen1[0].Evaluate(stmt) // spends the whole budget of 1
+
+	gen2, err := buildAnalyzerEvaluators([]policy.Rule{aiRule("risky")}, deps, false)
+	if err != nil {
+		t.Fatalf("buildAnalyzerEvaluators: %v", err)
+	}
+	gen2[0].Evaluate(stmt)
+
+	// One purse: the second generation saw the budget already spent. The
+	// counter never exceeds MaxCalls across generations.
+	if got := gen2[0].(*analyzer.Evaluator).Stats().Calls; got != 1 {
+		t.Fatalf("calls across generations = %d, want the budget of 1", got)
+	}
+
+	// A DIFFERENT rule name is a different identity with its own purse.
+	other, err := buildAnalyzerEvaluators([]policy.Rule{aiRule("other")}, deps, false)
+	if err != nil {
+		t.Fatalf("buildAnalyzerEvaluators: %v", err)
+	}
+	other[0].Evaluate(stmt)
+	if got := other[0].(*analyzer.Evaluator).Stats().Calls; got != 1 {
+		t.Fatalf("a fresh rule's budget = %d, want its own count of 1", got)
+	}
 }
 
 // An ai_analysis rule on an HTTP lane with no body capture classifies nothing:

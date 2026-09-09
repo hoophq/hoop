@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/hoophq/hoop/sidecar/analyzer"
@@ -1136,13 +1137,7 @@ func buildPolicy(gc GuardrailsConfig, opa *OPAConfig, det Plugin, ac *analyzerDe
 	}
 
 	if len(aiRules) > 0 {
-		var cfg *AnalyzerConfig
-		var provider analyzer.Provider
-		var redact func(string) string
-		if ac != nil {
-			cfg, provider, redact = ac.cfg, ac.provider, ac.redact
-		}
-		evs, err := buildAnalyzerEvaluators(aiRules, cfg, provider, redact, opa.enabled())
+		evs, err := buildAnalyzerEvaluators(aiRules, ac, opa.enabled())
 		if err != nil {
 			return nil, err
 		}
@@ -1196,6 +1191,15 @@ type analyzerDeps struct {
 	cfg      *AnalyzerConfig
 	provider analyzer.Provider
 	redact   func(string) string
+
+	// budgets hands every generation of a rule's evaluator the same call
+	// counter, so MaxCalls bounds the rule's spend across hot reloads: a
+	// draining generation and its replacement pay from one purse. Keyed
+	// by rule name, the identity an operator edits; two lanes naming one
+	// rule share a budget too, which is what "process-wide" already
+	// promised. Entries are never dropped, and single-goroutine access
+	// (startup builds, then only the heartbeat) needs no lock.
+	budgets map[string]*atomic.Int64
 }
 
 // BuildTLS turns a TLSConfig into a *tls.Config.
