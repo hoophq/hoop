@@ -3,10 +3,15 @@ package audit
 import "encoding/json"
 
 // redactKeys are request payload keys that must be redacted before storing.
+//
+// "license" holds a signed Hoop license document when a sidecar configuration
+// carries one inline (sidecar/daemon.Config.License), and that document is
+// replayable on any host it allows, so an audit reader must not receive it.
 var redactKeys = map[string]struct{}{
 	"password": {}, "hashed_password": {}, "client_secret": {},
 	"secret": {}, "secrets": {}, "api_key": {}, "token": {}, "key": {},
 	"env": {}, "envs": {}, "rollout_api_key": {}, "hosts_key": {},
+	"license": {},
 }
 
 const redactedPlaceholder = "[REDACTED]"

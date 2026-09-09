@@ -76,6 +76,23 @@ func TestRedactNestedMap(t *testing.T) {
 	assert.Equal(t, "[REDACTED]", nested["password"])
 }
 
+func TestRedactInlineLicenseInsideSidecarConfiguration(t *testing.T) {
+	input := map[string]any{
+		"name": "payments-sidecar",
+		"configuration": map[string]any{
+			"log_level": "info",
+			"license":   `{"payload":"...","signature":"..."}`,
+		},
+	}
+
+	result := Redact(input)
+
+	nested, ok := result["configuration"].(map[string]any)
+	assert.True(t, ok)
+	assert.Equal(t, "info", nested["log_level"])
+	assert.Equal(t, "[REDACTED]", nested["license"])
+}
+
 func TestRedactDeeplyNestedMap(t *testing.T) {
 	input := map[string]any{
 		"level1": map[string]any{

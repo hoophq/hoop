@@ -13,6 +13,7 @@ import (
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
+	"github.com/hoophq/hoop/sidecar/daemon"
 )
 
 // reservedNames would shadow the static routes registered beside
@@ -46,17 +47,23 @@ func Post(c *gin.Context) {
 		return
 	}
 
+	cfg, err := services.ParseSidecarConfiguration(req.Configuration)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
+	}
+
 	rawKey, err := services.GenerateSidecarKey()
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating sidecar")
 		return
 	}
 	sidecar := &models.Sidecar{
-		OrgID:       ctx.OrgID,
-		Name:        req.Name,
-		KeyHash:     models.HashAPIKey(rawKey),
-		CreatedBy:   ctx.UserEmail,
-		Connections: nil,
+		OrgID:         ctx.OrgID,
+		Name:          req.Name,
+		KeyHash:       models.HashAPIKey(rawKey),
+		Configuration: models.SidecarConfiguration(cfg),
+		CreatedBy:     ctx.UserEmail,
 	}
 
 	switch err := models.CreateSidecar(models.DB, sidecar); {
@@ -122,7 +129,7 @@ func Get(c *gin.Context) {
 // Delete Sidecar
 //
 //	@Summary		Delete Sidecar
-//	@Description	Delete a sidecar. The token stops working immediately and the connections assigned to it are unassigned.
+//	@Description	Delete a sidecar. The token stops working immediately.
 //	@Tags			Sidecars
 //	@Produce		json
 //	@Param			nameOrID	path	string	true	"Name or UUID of the sidecar"
@@ -144,6 +151,43 @@ func Delete(c *gin.Context) {
 	c.Writer.WriteHeader(http.StatusNoContent)
 }
 
+// Update Sidecar
+//
+//	@Summary		Update Sidecar
+//	@Description	Replace the configuration a sidecar serves. The sidecar picks it up on its next heartbeat.
+//	@Tags			Sidecars
+//	@Accept			json
+//	@Produce		json
+//	@Param			nameOrID			path		string							true	"Name or UUID of the sidecar"
+//	@Param			request				body		openapi.SidecarUpdateRequest	true	"The request body resource"
+//	@Success		200					{object}	openapi.SidecarResponse
+//	@Failure		400,404,422,500		{object}	openapi.HTTPError
+//	@Router			/sidecars/{nameOrID} [put]
+func Put(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	var req openapi.SidecarUpdateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+	cfg, err := services.ParseSidecarConfiguration(req.Configuration)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
+	}
+	item, err := models.UpdateSidecarConfiguration(models.DB, ctx.OrgID,
+		c.Param("nameOrID"), models.SidecarConfiguration(cfg))
+	if err != nil {
+		if errors.Is(err, models.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"message": "sidecar not found"})
+			return
+		}
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating sidecar")
+		return
+	}
+	c.JSON(http.StatusOK, toResponse(*item))
+}
+
 // Sidecar Handshake
 //
 //	@Summary		Sidecar Handshake
@@ -153,8 +197,8 @@ func Delete(c *gin.Context) {
 //	@Produce		json
 //	@Param			hoop-sidecar-token	header		string							true	"The token returned when the sidecar was created"
 //	@Param			request				body		openapi.SidecarHandshakeRequest	true	"The request body resource"
-//	@Success		200				{object}	map[string]interface{}
-//	@Failure		400,401,422,500	{object}	openapi.HTTPError
+//	@Success		200			{object}	map[string]interface{}
+//	@Failure		400,401,500	{object}	openapi.HTTPError
 //	@Router			/sidecars/handshake [post]
 func Handshake(c *gin.Context) {
 	sidecar := apiroutes.SidecarFromContext(c)
@@ -168,18 +212,18 @@ func Handshake(c *gin.Context) {
 		return
 	}
 	recordRuntime(sidecar.ID, req.Version)
-	respondConfig(c, sidecar)
+	c.JSON(http.StatusOK, sidecar.Configuration)
 }
 
 // Sidecar Configuration
 //
 //	@Summary		Sidecar Configuration
-//	@Description	Authenticated with the hoop-sidecar-token header. Returns the configuration the sidecar must serve, rebuilt from the connections assigned to it. Unlike the handshake it records nothing, so a poll never overwrites what the sidecar last reported about itself.
+//	@Description	Authenticated with the hoop-sidecar-token header. Returns the configuration the sidecar must serve. Unlike the handshake it records nothing, so a poll never overwrites what the sidecar last reported about itself.
 //	@Tags			Sidecars
 //	@Produce		json
 //	@Param			hoop-sidecar-token	header		string	true	"The token returned when the sidecar was created"
-//	@Success		200				{object}	map[string]interface{}
-//	@Failure		401,422,500		{object}	openapi.HTTPError
+//	@Success		200		{object}	map[string]interface{}
+//	@Failure		401,500	{object}	openapi.HTTPError
 //	@Router			/sidecars/configuration [get]
 func Configuration(c *gin.Context) {
 	sidecar := apiroutes.SidecarFromContext(c)
@@ -187,36 +231,17 @@ func Configuration(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"message": "access denied"})
 		return
 	}
-	respondConfig(c, sidecar)
-}
-
-// respondConfig is shared so the handshake and the poll can never drift.
-func respondConfig(c *gin.Context, sidecar *models.Sidecar) {
-	cfg, err := services.BuildSidecarConfig(models.DB, sidecar.OrgID, sidecar.ID)
-	switch {
-	case err == nil:
-		c.JSON(http.StatusOK, cfg)
-	case errors.Is(err, services.ErrSidecarLookup):
-		// A database failure is not the operator's config. Report it as a
-		// server error and keep the driver text out of the response.
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed building sidecar configuration")
-	default:
-		// Every translation and validation failure is an operator
-		// misconfiguration: the sidecar cannot fix it by retrying.
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
-	}
+	c.JSON(http.StatusOK, sidecar.Configuration)
 }
 
 func toResponse(s models.Sidecar) openapi.SidecarResponse {
-	connections := []string{}
-	connections = append(connections, s.Connections...)
 	resp := openapi.SidecarResponse{
-		ID:          s.ID,
-		OrgID:       s.OrgID,
-		Name:        s.Name,
-		Connections: connections,
-		CreatedBy:   s.CreatedBy,
-		CreatedAt:   s.CreatedAt,
+		ID:            s.ID,
+		OrgID:         s.OrgID,
+		Name:          s.Name,
+		CreatedBy:     s.CreatedBy,
+		CreatedAt:     s.CreatedAt,
+		Configuration: daemon.Config(s.Configuration),
 	}
 	if state := loadRuntime(s.ID); state != nil {
 		resp.Version = state.Version

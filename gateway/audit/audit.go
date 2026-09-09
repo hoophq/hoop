@@ -34,7 +34,6 @@ const (
 	ResourceAISessionAnalyzerProvider ResourceType = "ai_session_analyzer_providers"
 	ResourceAttribute                 ResourceType = "attributes"
 	ResourceOrgFeature                ResourceType = "org_features"
-	ResourceOPAConfig                 ResourceType = "opa_configs"
 )
 
 // Action is the operation performed.
