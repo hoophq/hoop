@@ -13,6 +13,7 @@ import (
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
+	"github.com/hoophq/hoop/sidecar/daemon"
 )
 
 // reservedNames would shadow the static routes registered beside
@@ -46,16 +47,23 @@ func Post(c *gin.Context) {
 		return
 	}
 
+	cfg, err := services.ParseSidecarConfiguration(req.Configuration)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
+	}
+
 	rawKey, err := services.GenerateSidecarKey()
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating sidecar")
 		return
 	}
 	sidecar := &models.Sidecar{
-		OrgID:     ctx.OrgID,
-		Name:      req.Name,
-		KeyHash:   models.HashAPIKey(rawKey),
-		CreatedBy: ctx.UserEmail,
+		OrgID:         ctx.OrgID,
+		Name:          req.Name,
+		KeyHash:       models.HashAPIKey(rawKey),
+		Configuration: models.SidecarConfiguration(cfg),
+		CreatedBy:     ctx.UserEmail,
 	}
 
 	switch err := models.CreateSidecar(models.DB, sidecar); {
@@ -143,6 +151,43 @@ func Delete(c *gin.Context) {
 	c.Writer.WriteHeader(http.StatusNoContent)
 }
 
+// Update Sidecar
+//
+//	@Summary		Update Sidecar
+//	@Description	Replace the configuration a sidecar serves. The sidecar picks it up on its next heartbeat.
+//	@Tags			Sidecars
+//	@Accept			json
+//	@Produce		json
+//	@Param			nameOrID			path		string							true	"Name or UUID of the sidecar"
+//	@Param			request				body		openapi.SidecarUpdateRequest	true	"The request body resource"
+//	@Success		200					{object}	openapi.SidecarResponse
+//	@Failure		400,404,422,500		{object}	openapi.HTTPError
+//	@Router			/sidecars/{nameOrID} [put]
+func Put(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	var req openapi.SidecarUpdateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+	cfg, err := services.ParseSidecarConfiguration(req.Configuration)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
+	}
+	item, err := models.UpdateSidecarConfiguration(models.DB, ctx.OrgID,
+		c.Param("nameOrID"), models.SidecarConfiguration(cfg))
+	if err != nil {
+		if errors.Is(err, models.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"message": "sidecar not found"})
+			return
+		}
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating sidecar")
+		return
+	}
+	c.JSON(http.StatusOK, toResponse(*item))
+}
+
 // Sidecar Handshake
 //
 //	@Summary		Sidecar Handshake
@@ -167,7 +212,7 @@ func Handshake(c *gin.Context) {
 		return
 	}
 	recordRuntime(sidecar.ID, req.Version)
-	c.JSON(http.StatusOK, services.BuildSidecarConfig())
+	c.JSON(http.StatusOK, sidecar.Configuration)
 }
 
 // Sidecar Configuration
@@ -181,20 +226,22 @@ func Handshake(c *gin.Context) {
 //	@Failure		401,500	{object}	openapi.HTTPError
 //	@Router			/sidecars/configuration [get]
 func Configuration(c *gin.Context) {
-	if apiroutes.SidecarFromContext(c) == nil {
+	sidecar := apiroutes.SidecarFromContext(c)
+	if sidecar == nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"message": "access denied"})
 		return
 	}
-	c.JSON(http.StatusOK, services.BuildSidecarConfig())
+	c.JSON(http.StatusOK, sidecar.Configuration)
 }
 
 func toResponse(s models.Sidecar) openapi.SidecarResponse {
 	resp := openapi.SidecarResponse{
-		ID:        s.ID,
-		OrgID:     s.OrgID,
-		Name:      s.Name,
-		CreatedBy: s.CreatedBy,
-		CreatedAt: s.CreatedAt,
+		ID:            s.ID,
+		OrgID:         s.OrgID,
+		Name:          s.Name,
+		CreatedBy:     s.CreatedBy,
+		CreatedAt:     s.CreatedAt,
+		Configuration: daemon.Config(s.Configuration),
 	}
 	if state := loadRuntime(s.ID); state != nil {
 		resp.Version = state.Version

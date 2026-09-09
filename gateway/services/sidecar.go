@@ -1,20 +1,13 @@
 package services
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 
 	"github.com/hoophq/hoop/sidecar/daemon"
-)
-
-// The ticket does not make these configurable: a sidecar logs where a
-// container platform collects, and serves admin on the port the compose
-// stacks and ADR-0005 already use.
-const (
-	sidecarAuditFile   = "-"
-	sidecarAdminListen = "0.0.0.0:19000"
-	sidecarLogLevel    = "info"
 )
 
 // GenerateSidecarKey returns the token a sidecar authenticates with. The
@@ -27,16 +20,27 @@ func GenerateSidecarKey() (string, error) {
 	return "hsc_" + base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-// BuildSidecarConfig returns the configuration a sidecar serves.
+// ParseSidecarConfiguration decodes a config document from the API into the
+// daemon's own type, so the gateway stores a config it could serve rather than
+// bytes nobody checked.
 //
-// Connections no longer carry a sidecar assignment, so the gateway has
-// nothing to derive listeners from and emits none. A sidecar refuses a
-// listener-less config from a control plane, so the gap stops the sidecar
-// at startup instead of leaving it relaying traffic nobody inspected.
-func BuildSidecarConfig() *daemon.Config {
-	return &daemon.Config{
-		Audit:    daemon.AuditConfig{File: sidecarAuditFile},
-		Admin:    daemon.AdminConfig{Listen: sidecarAdminListen},
-		LogLevel: sidecarLogLevel,
+// The decode is strict, the same rule daemon.LoadConfigBytes follows, so a
+// misspelled key is a rejected write instead of a sidecar running with a
+// control silently disabled.
+//
+// daemon.Validate is NOT run: it resolves listener TLS keypairs and license
+// paths from the local filesystem, which exist on the sidecar host and not on
+// the gateway. An empty document decodes to the zero config, which a sidecar
+// refuses at startup for having no listeners.
+func ParseSidecarConfiguration(raw json.RawMessage) (daemon.Config, error) {
+	var cfg daemon.Config
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return cfg, nil
 	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&cfg); err != nil {
+		return cfg, fmt.Errorf("invalid sidecar configuration: %w", err)
+	}
+	return cfg, nil
 }

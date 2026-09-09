@@ -302,6 +302,12 @@ func (api *Api) buildSidecarRoutes(r *apiroutes.Router) {
 		apiroutes.ReadOnlyAccessRole,
 		r.AuthMiddleware,
 		apisidecar.Get)
+	r.PUT("/sidecars/:nameOrID",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		api.TrackRequest(analytics.EventUpdateSidecar),
+		apisidecar.Put)
 	r.DELETE("/sidecars/:nameOrID",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,

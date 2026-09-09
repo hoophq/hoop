@@ -47,6 +47,7 @@ const (
 
 	// sidecar
 	EventCreateSidecar = "hoop-create-sidecar"
+	EventUpdateSidecar = "hoop-update-sidecar"
 	EventDeleteSidecar = "hoop-delete-sidecar"
 
 	// plugins

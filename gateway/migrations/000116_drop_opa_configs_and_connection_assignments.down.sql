@@ -27,4 +27,6 @@ ALTER TABLE connections ADD COLUMN IF NOT EXISTS sidecar_id UUID NULL
 CREATE INDEX IF NOT EXISTS idx_connections_sidecar_id ON connections(sidecar_id)
     WHERE sidecar_id IS NOT NULL;
 
+ALTER TABLE sidecars DROP COLUMN IF EXISTS configuration;
+
 COMMIT;

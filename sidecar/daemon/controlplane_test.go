@@ -12,7 +12,7 @@ import (
 )
 
 // planeConfig is what a healthy control plane answers: one postgres lane,
-// the same shape the gateway's BuildSidecarConfig produces.
+// the same shape an operator stores on the gateway's sidecar row.
 const planeConfig = `{"listeners":[{"name":"appdb","protocol":"postgres","listen":":1","upstream":"h:5432"}]}`
 
 // handshakeCall records what the fake plane saw, so a test can assert the

@@ -10114,6 +10114,69 @@ const docTemplate = `{
                     }
                 }
             },
+            "put": {
+                "description": "Replace the configuration a sidecar serves. The sidecar picks it up on its next heartbeat.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sidecars"
+                ],
+                "summary": "Update Sidecar",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the sidecar",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SidecarUpdateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SidecarResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
             "delete": {
                 "description": "Delete a sidecar. The token stops working immediately.",
                 "produces": [
@@ -19268,6 +19331,10 @@ const docTemplate = `{
         "openapi.SidecarCreateResponse": {
             "type": "object",
             "properties": {
+                "configuration": {
+                    "description": "The stored daemon configuration.",
+                    "type": "object"
+                },
                 "created_at": {
                     "description": "Creation timestamp",
                     "type": "string"
@@ -19328,6 +19395,10 @@ const docTemplate = `{
                 "name"
             ],
             "properties": {
+                "configuration": {
+                    "description": "The daemon configuration this sidecar serves, in the schema of the\nsidecar config file. Omitted stores an empty document, and the sidecar\nthen has no listeners and refuses to start.",
+                    "type": "object"
+                },
                 "name": {
                     "description": "Unique name of the resource",
                     "type": "string",
@@ -19338,6 +19409,10 @@ const docTemplate = `{
         "openapi.SidecarResponse": {
             "type": "object",
             "properties": {
+                "configuration": {
+                    "description": "The stored daemon configuration.",
+                    "type": "object"
+                },
                 "created_at": {
                     "description": "Creation timestamp",
                     "type": "string"
@@ -19371,6 +19446,18 @@ const docTemplate = `{
                     "description": "Version reported at the last handshake. Held in gateway memory, not\nstored, so it is empty until the sidecar calls and again after a\ngateway restart.",
                     "type": "string",
                     "example": "1.0.0"
+                }
+            }
+        },
+        "openapi.SidecarUpdateRequest": {
+            "type": "object",
+            "required": [
+                "configuration"
+            ],
+            "properties": {
+                "configuration": {
+                    "description": "The daemon configuration this sidecar serves. Replaces the stored\ndocument entirely.",
+                    "type": "object"
                 }
             }
         },

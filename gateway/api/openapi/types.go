@@ -6,6 +6,7 @@ import (
 
 	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
 	orgtypes "github.com/aws/aws-sdk-go-v2/service/organizations/types"
+	"github.com/hoophq/hoop/sidecar/daemon"
 )
 
 type HTTPError struct {
@@ -286,6 +287,16 @@ type AIAgentResponse struct {
 type SidecarRequest struct {
 	// Unique name of the resource
 	Name string `json:"name" binding:"required" example:"payments-sidecar"`
+	// The daemon configuration this sidecar serves, in the schema of the
+	// sidecar config file. Omitted stores an empty document, and the sidecar
+	// then has no listeners and refuses to start.
+	Configuration json.RawMessage `json:"configuration,omitempty" swaggertype:"object"`
+}
+
+type SidecarUpdateRequest struct {
+	// The daemon configuration this sidecar serves. Replaces the stored
+	// document entirely.
+	Configuration json.RawMessage `json:"configuration" binding:"required" swaggertype:"object"`
 }
 
 type SidecarResponse struct {
@@ -299,6 +310,8 @@ type SidecarResponse struct {
 	CreatedBy string `json:"created_by"`
 	// Creation timestamp
 	CreatedAt time.Time `json:"created_at"`
+	// The stored daemon configuration.
+	Configuration daemon.Config `json:"configuration" swaggertype:"object"`
 	// Version reported at the last handshake. Held in gateway memory, not
 	// stored, so it is empty until the sidecar calls and again after a
 	// gateway restart.
