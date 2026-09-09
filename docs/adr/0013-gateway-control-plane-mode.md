@@ -145,6 +145,12 @@ org has Slack configured.
 > in-process mutexes, no lease and no advisory lock. Two processes that both
 > start Slack for one org post every review twice and race each other's clicks.
 >
+> Slack documents that when several socket-mode connections are open, a payload
+> may go to any of them, with no delivery pattern to rely on. So the second
+> process is not only noisy: a click can be handled where the waiting session is
+> not, and `ReleaseConnectionOnReview` searches only its own registry. The
+> verdict is written and the session is never released.
+>
 > That is two constraints, not one. The control plane must run a single
 > replica, and its chart, still owed, must pin it. Less obviously, a gateway
 > and a control plane pointed at the same database both read the same
