@@ -38,6 +38,7 @@ import (
 	"os/signal"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -138,6 +139,11 @@ func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*
 	cfg, err := resolveConfigSource(local, o.token)
 	if err != nil {
 		return nil, nil, err
+	}
+	if cfg.cp != nil {
+		// Retained so a pii drift from the plane rebuilds the detector the
+		// way startup would. See reloader.
+		cfg.cp.build = build
 	}
 	cfg.lic = ResolveLicense(o.licenseFlag, cfg.License)
 	if cfg.lic.State() == license.StateInvalid {
@@ -583,17 +589,6 @@ func Run(cfg *Config, det Plugin) error {
 		licenseExpired = watchLicense(ctx, cfg.lic, licenseCheckEvery, log)
 	}
 
-	if cfg.cp != nil {
-		// The heartbeat keeps the plane's last-seen fresh and logs when the
-		// config there no longer matches this process. It shares the run
-		// context, so shutdown stops it with everything else.
-		log.Info("control plane connected",
-			"url", cfg.cp.url,
-			"source", cfg.cp.urlSource,
-			"poll", heartbeatEvery.String())
-		go cfg.cp.heartbeat(ctx, log)
-	}
-
 	// Two server kinds, one loop of lane facts. Relay lanes run
 	// proxy.Server; grpc lanes run the transport the plugin registered
 	// (ADR-0013). The stats zip in serveAdmin pairs servers with
@@ -645,9 +640,35 @@ func Run(cfg *Config, det Plugin) error {
 		}
 	}
 
+	// view is the generation the admin endpoints render. Startup publishes
+	// generation zero; every applied reload publishes the next, so /config
+	// answers for the rules the data path runs, not for a snapshot.
+	view := &atomic.Pointer[laneState]{}
+	view.Store(&laneState{lanes: lanes})
+
+	if cfg.cp != nil {
+		// The heartbeat keeps the plane's last-seen fresh and hands drift to
+		// the reloader: rule-only changes swap into the servers built above,
+		// everything else keeps the restart log (ADR-0014). It shares the
+		// run context, so shutdown stops it with everything else.
+		byName := make(map[string]*proxy.Server, len(servers))
+		for i, srv := range servers {
+			byName[relayNames[i]] = srv
+		}
+		rl, rerr := newReloader(cfg, lanes, byName, det, analyzerDeps, view)
+		if rerr != nil {
+			return rerr
+		}
+		log.Info("control plane connected",
+			"url", cfg.cp.url,
+			"source", cfg.cp.urlSource,
+			"poll", heartbeatEvery.String())
+		go cfg.cp.heartbeat(ctx, log, rl)
+	}
+
 	if cfg.Admin.Listen != "" {
 		go serveAdmin(ctx, cfg.Admin.Listen, servers, relayNames, grpcServers, grpcNames,
-			lanes, ac, cfg.Analyzer, cfg.lic, log)
+			view, ac, cfg.Analyzer, cfg.lic, log)
 	}
 
 	var wg sync.WaitGroup
@@ -1080,7 +1101,7 @@ func serveAdmin(
 	relayNames []string,
 	grpcServers []GRPCServer,
 	grpcNames []string,
-	lanes []lane,
+	view *atomic.Pointer[laneState],
 	ac auditChain,
 	analyzerCfg *AnalyzerConfig,
 	lic license.Status,
@@ -1174,8 +1195,12 @@ func serveAdmin(
 			AIRules     []string `json:"ai_rules,omitempty"`
 			CaptureBody bool     `json:"capture_body,omitempty"`
 		}
-		out := make([]laneView, 0, len(lanes))
-		for _, ln := range lanes {
+		// The generation the data path runs. A reload publishes new lanes
+		// and its generation as one store, so this render never mixes the
+		// two (ADR-0014).
+		st := view.Load()
+		out := make([]laneView, 0, len(st.lanes))
+		for _, ln := range st.lanes {
 			mode := ModeEnforce
 			if ln.observing {
 				mode = ModeObserve
@@ -1208,6 +1233,10 @@ func serveAdmin(
 		resp := map[string]any{
 			"version": Version,
 			"lanes":   out,
+			// Zero until a control-plane reload applies; each applied
+			// reload increments it, matching the "configuration applied"
+			// log line.
+			"config_generation": st.gen,
 			// Named in the payload rather than only in the README, so a
 			// control plane can warn its own developers without reading
 			// prose. These keys still carry correct values.

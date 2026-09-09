@@ -112,6 +112,70 @@ func TestABrokenControlPlaneEnvDoesNotFallThrough(t *testing.T) {
 	}
 }
 
+// A URL carrying a query, fragment or userinfo would build a request whose
+// path is not the handshake's, so validation refuses each one and names the
+// source the operator has to fix.
+func TestAControlPlaneURLCarriesNoQueryFragmentOrUser(t *testing.T) {
+	t.Setenv(SidecarTokenEnv, "hsc_x")
+	for _, bad := range []string{
+		"http://plane.example?tenant=a",
+		"http://plane.example#frag",
+		"http://user:pw@plane.example",
+	} {
+		t.Setenv(ControlPlaneURLEnv, bad)
+		_, _, err := SetupWith("", nil, nil)
+		if err == nil {
+			t.Fatalf("%q was accepted", bad)
+		}
+		if !strings.Contains(err.Error(), ControlPlaneURLEnv) {
+			t.Errorf("the error for %q does not name the source: %v", bad, err)
+		}
+	}
+}
+
+// A plane behind a path prefix keeps it: the handshake path joins the
+// configured base instead of replacing it.
+func TestAPathPrefixedPlaneURLKeepsItsPrefix(t *testing.T) {
+	srv, calls := planeServer(t, http.StatusOK, planeConfig)
+	t.Setenv(ControlPlaneURLEnv, srv.URL+"/hoop/")
+	t.Setenv(SidecarTokenEnv, "hsc_x")
+
+	if _, _, err := SetupWith("", nil, nil); err != nil {
+		t.Fatalf("SetupWith: %v", err)
+	}
+	if got := (*calls)[0].path; got != "/hoop"+controlPlaneHandshakePath {
+		t.Errorf("path = %q, want the prefix kept", got)
+	}
+}
+
+// The token rides a custom header, which Go forwards on redirects even
+// across origins. The handshake never follows one: the 3xx surfaces as an
+// error naming the Location, and the token goes nowhere else.
+func TestARedirectingPlaneIsRefusedWithoutResendingTheToken(t *testing.T) {
+	leaked := false
+	sink := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		leaked = true
+	}))
+	t.Cleanup(sink.Close)
+	redirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, sink.URL, http.StatusMovedPermanently)
+	}))
+	t.Cleanup(redirector.Close)
+	t.Setenv(ControlPlaneURLEnv, redirector.URL)
+	t.Setenv(SidecarTokenEnv, "hsc_secret")
+
+	_, _, err := SetupWith("", nil, nil)
+	if err == nil {
+		t.Fatal("a redirecting plane was accepted")
+	}
+	if !strings.Contains(err.Error(), "redirected") {
+		t.Errorf("the error does not say it was a redirect: %v", err)
+	}
+	if leaked {
+		t.Fatal("the redirect target was contacted; the token traveled")
+	}
+}
+
 func TestTheTokenFlagOutranksTheEnvironment(t *testing.T) {
 	srv, calls := planeServer(t, http.StatusOK, planeConfig)
 	t.Setenv(ControlPlaneURLEnv, srv.URL)
@@ -279,18 +343,20 @@ func TestAnEmptyPlaneConfigIsRefused(t *testing.T) {
 	}
 }
 
-// One edit on the plane logs once, not once per tick: lastRaw advances when
-// a change is seen.
-func TestPollNoticesAChangeOnce(t *testing.T) {
-	srv, _ := planeServer(t, http.StatusOK, planeConfig)
-	cp := &controlPlane{url: srv.URL, token: "hsc_x", lastRaw: []byte(`{"old":true}`)}
+// One edit is handled once, not once per tick: the reloader remembers the
+// last document that reached a terminal outcome, and the same bytes on the
+// next tick do nothing. reload_test.go covers what handling decides.
+func TestTheSameDocumentIsHandledOnce(t *testing.T) {
+	rl, buf := testReloader(t, reloadBase)
 
-	changed, err := cp.poll()
-	if err != nil || !changed {
-		t.Fatalf("first poll = %v, %v; want a change", changed, err)
+	drifted := editJSON(t, reloadBase, `"words": ["drop table"]`, `"words": ["truncate"]`)
+	if got := handleWith(rl, buf, drifted); got != reloadApplied {
+		t.Fatalf("first handle = %v, want applied; log:\n%s", got, buf)
 	}
-	changed, err = cp.poll()
-	if err != nil || changed {
-		t.Fatalf("second poll = %v, %v; want no change", changed, err)
+	if got := handleWith(rl, buf, drifted); got != reloadUnchanged {
+		t.Fatalf("second handle = %v, want unchanged; log:\n%s", got, buf)
+	}
+	if rl.gen != 1 {
+		t.Fatalf("generation = %d; the duplicate was re-applied", rl.gen)
 	}
 }
