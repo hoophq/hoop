@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
@@ -16,17 +15,10 @@ type Sidecar struct {
 	KeyHash   string    `gorm:"column:key_hash"`
 	CreatedBy string    `gorm:"column:created_by"`
 	CreatedAt time.Time `gorm:"column:created_at"`
-	// Connections is derived, not stored: the names of the connections whose
-	// sidecar_id points here.
-	Connections pq.StringArray `gorm:"column:connections;type:text[];->"`
 }
 
 const sidecarColumns = `
-	s.id, s.org_id, s.name, s.created_by, s.created_at,
-	COALESCE((
-		SELECT array_agg(c.name::TEXT) FROM private.connections c
-		WHERE c.sidecar_id = s.id
-	), ARRAY[]::TEXT[]) AS connections`
+	s.id, s.org_id, s.name, s.created_by, s.created_at`
 
 func CreateSidecar(db *gorm.DB, s *Sidecar) error {
 	if s.ID == "" {

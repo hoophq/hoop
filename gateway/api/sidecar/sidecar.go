@@ -52,11 +52,10 @@ func Post(c *gin.Context) {
 		return
 	}
 	sidecar := &models.Sidecar{
-		OrgID:       ctx.OrgID,
-		Name:        req.Name,
-		KeyHash:     models.HashAPIKey(rawKey),
-		CreatedBy:   ctx.UserEmail,
-		Connections: nil,
+		OrgID:     ctx.OrgID,
+		Name:      req.Name,
+		KeyHash:   models.HashAPIKey(rawKey),
+		CreatedBy: ctx.UserEmail,
 	}
 
 	switch err := models.CreateSidecar(models.DB, sidecar); {
@@ -122,7 +121,7 @@ func Get(c *gin.Context) {
 // Delete Sidecar
 //
 //	@Summary		Delete Sidecar
-//	@Description	Delete a sidecar. The token stops working immediately and the connections assigned to it are unassigned.
+//	@Description	Delete a sidecar. The token stops working immediately.
 //	@Tags			Sidecars
 //	@Produce		json
 //	@Param			nameOrID	path	string	true	"Name or UUID of the sidecar"
@@ -153,8 +152,8 @@ func Delete(c *gin.Context) {
 //	@Produce		json
 //	@Param			hoop-sidecar-token	header		string							true	"The token returned when the sidecar was created"
 //	@Param			request				body		openapi.SidecarHandshakeRequest	true	"The request body resource"
-//	@Success		200				{object}	map[string]interface{}
-//	@Failure		400,401,422,500	{object}	openapi.HTTPError
+//	@Success		200			{object}	map[string]interface{}
+//	@Failure		400,401,500	{object}	openapi.HTTPError
 //	@Router			/sidecars/handshake [post]
 func Handshake(c *gin.Context) {
 	sidecar := apiroutes.SidecarFromContext(c)
@@ -168,55 +167,34 @@ func Handshake(c *gin.Context) {
 		return
 	}
 	recordRuntime(sidecar.ID, req.Version)
-	respondConfig(c, sidecar)
+	c.JSON(http.StatusOK, services.BuildSidecarConfig())
 }
 
 // Sidecar Configuration
 //
 //	@Summary		Sidecar Configuration
-//	@Description	Authenticated with the hoop-sidecar-token header. Returns the configuration the sidecar must serve, rebuilt from the connections assigned to it. Unlike the handshake it records nothing, so a poll never overwrites what the sidecar last reported about itself.
+//	@Description	Authenticated with the hoop-sidecar-token header. Returns the configuration the sidecar must serve. Unlike the handshake it records nothing, so a poll never overwrites what the sidecar last reported about itself.
 //	@Tags			Sidecars
 //	@Produce		json
 //	@Param			hoop-sidecar-token	header		string	true	"The token returned when the sidecar was created"
-//	@Success		200				{object}	map[string]interface{}
-//	@Failure		401,422,500		{object}	openapi.HTTPError
+//	@Success		200		{object}	map[string]interface{}
+//	@Failure		401,500	{object}	openapi.HTTPError
 //	@Router			/sidecars/configuration [get]
 func Configuration(c *gin.Context) {
-	sidecar := apiroutes.SidecarFromContext(c)
-	if sidecar == nil {
+	if apiroutes.SidecarFromContext(c) == nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"message": "access denied"})
 		return
 	}
-	respondConfig(c, sidecar)
-}
-
-// respondConfig is shared so the handshake and the poll can never drift.
-func respondConfig(c *gin.Context, sidecar *models.Sidecar) {
-	cfg, err := services.BuildSidecarConfig(models.DB, sidecar.OrgID, sidecar.ID)
-	switch {
-	case err == nil:
-		c.JSON(http.StatusOK, cfg)
-	case errors.Is(err, services.ErrSidecarLookup):
-		// A database failure is not the operator's config. Report it as a
-		// server error and keep the driver text out of the response.
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed building sidecar configuration")
-	default:
-		// Every translation and validation failure is an operator
-		// misconfiguration: the sidecar cannot fix it by retrying.
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
-	}
+	c.JSON(http.StatusOK, services.BuildSidecarConfig())
 }
 
 func toResponse(s models.Sidecar) openapi.SidecarResponse {
-	connections := []string{}
-	connections = append(connections, s.Connections...)
 	resp := openapi.SidecarResponse{
-		ID:          s.ID,
-		OrgID:       s.OrgID,
-		Name:        s.Name,
-		Connections: connections,
-		CreatedBy:   s.CreatedBy,
-		CreatedAt:   s.CreatedAt,
+		ID:        s.ID,
+		OrgID:     s.OrgID,
+		Name:      s.Name,
+		CreatedBy: s.CreatedBy,
+		CreatedAt: s.CreatedAt,
 	}
 	if state := loadRuntime(s.ID); state != nil {
 		resp.Version = state.Version

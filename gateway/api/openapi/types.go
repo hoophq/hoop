@@ -295,8 +295,6 @@ type SidecarResponse struct {
 	OrgID string `json:"org_id" readonly:"true" format:"uuid"`
 	// Human-readable name
 	Name string `json:"name" example:"payments-sidecar"`
-	// Names of the connections this sidecar fronts
-	Connections []string `json:"connections" example:"pg-prod"`
 	// Subject of the admin who created it
 	CreatedBy string `json:"created_by"`
 	// Creation timestamp
@@ -319,47 +317,6 @@ type SidecarCreateResponse struct {
 type SidecarHandshakeRequest struct {
 	// Version of the sidecar binary
 	Version string `json:"version" binding:"required" example:"1.0.0"`
-}
-
-type OPAConfigRequest struct {
-	// Unique name of the resource
-	Name string `json:"name" binding:"required" example:"prod-opa"`
-	// The FULL decision endpoint the sidecar POSTs to, not a base URL.
-	URL string `json:"url" binding:"required" example:"http://opa:8181/v1/data/hoop/inspect"`
-	// Per-decision timeout. 0 uses the sidecar default of 2 seconds.
-	TimeoutSec int `json:"timeout_sec" example:"2"`
-	// Allow the statement when OPA is unreachable. False stops traffic on
-	// an OPA outage instead of silently disabling enforcement.
-	FailOpen bool `json:"fail_open" example:"false"`
-	// Adds a decision before the AI analyzer runs. Refused while true: the
-	// gateway emits no ai_analysis rules, so the sidecar would reject the
-	// whole configuration.
-	Gate bool `json:"gate" example:"false"`
-}
-
-type OPAConfigResponse struct {
-	// Unique identifier
-	ID string `json:"id" readonly:"true" format:"uuid"`
-	// Organization ID
-	OrgID string `json:"org_id" readonly:"true" format:"uuid"`
-	// Human-readable name
-	Name string `json:"name" example:"prod-opa"`
-	// The decision endpoint the sidecar POSTs to
-	URL string `json:"url" example:"http://opa:8181/v1/data/hoop/inspect"`
-	// Per-decision timeout. 0 uses the sidecar default of 2 seconds.
-	TimeoutSec int `json:"timeout_sec" example:"2"`
-	// Allow the statement when OPA is unreachable
-	FailOpen bool `json:"fail_open" example:"false"`
-	// Adds a decision before the AI analyzer runs
-	Gate bool `json:"gate" example:"false"`
-	// Names of the connections pointed at this endpoint
-	Connections []string `json:"connections" example:"pg-prod"`
-	// Subject of the admin who created it
-	CreatedBy string `json:"created_by"`
-	// Creation timestamp
-	CreatedAt time.Time `json:"created_at"`
-	// Last update timestamp
-	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // AgentSPIFFEMapping ties a SPIFFE identity (exact ID or prefix) to a Hoop
@@ -486,13 +443,6 @@ type Connection struct {
 	DefaultDatabase string `json:"default_database"`
 	// The agent associated with this connection
 	AgentId string `json:"agent_id" binding:"required" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
-	// The sidecar that fronts this connection. Only "postgres", "mssql" and
-	// "httpproxy" connections may be assigned to one.
-	SidecarID *string `json:"sidecar_id,omitempty" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
-	// The OPA decision endpoint consulted for this connection when a sidecar
-	// fronts it. Accepts the name or the id of a registered OPA
-	// configuration.
-	OPAConfigID *string `json:"opa_config_id,omitempty" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
 	// Status is a read only field that informs if the connection is available for interaction
 	// * online - The agent is connected and alive
 	// * offline - The agent is not connected
@@ -690,13 +640,6 @@ type ConnectionPatch struct {
 	Secrets *map[string]any `json:"secret"`
 	// The agent associated with this connection
 	AgentId *string `json:"agent_id" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
-	// The sidecar that fronts this connection. Only "postgres", "mssql" and
-	// "httpproxy" connections may be assigned to one. An empty string unassigns it.
-	SidecarID *string `json:"sidecar_id" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
-	// The OPA decision endpoint consulted for this connection when a sidecar
-	// fronts it. Accepts the name or the id of a registered OPA
-	// configuration. An empty string unassigns it.
-	OPAConfigID *string `json:"opa_config_id" format:"uuid" example:"1837453e-01fc-46f3-9e4c-dcf22d395393"`
 	// Reviewers is a list of groups that will review the connection before the user could execute it
 	Reviewers *[]string `json:"reviewers" example:"dba-group"`
 	// Redact Types is a list of info types that will used to redact the output of the connection.
