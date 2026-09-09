@@ -107,10 +107,20 @@ func resolveControlPlaneURL(fileValue string) (value, source string, err error) 
 	return "", "", nil
 }
 
+// checkControlPlaneURL admits only what the handshake can use: an http(s)
+// URL with a host, optionally a path prefix for a plane behind one. Query,
+// fragment and userinfo are refused rather than carried into a request
+// whose path would then not be the handshake's; the error names the source
+// the operator has to fix.
 func checkControlPlaneURL(value, source string) (string, string, error) {
 	u, err := url.Parse(value)
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
 		return "", "", fmt.Errorf("%s holds %q, which is not an http(s) URL", source, value)
+	}
+	if u.RawQuery != "" || u.Fragment != "" || u.User != nil {
+		return "", "", fmt.Errorf("%s holds %q; a control plane URL carries no query, "+
+			"fragment or user information, only a scheme, a host and an optional path prefix",
+			source, value)
 	}
 	return value, source, nil
 }
@@ -206,19 +216,38 @@ func fetchControlPlaneConfig(baseURL, token, version string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	// The base was validated by checkControlPlaneURL; JoinPath keeps a
+	// path prefix (a plane behind /hoop) and normalizes trailing slashes.
+	u, err := url.Parse(baseURL)
+	if err != nil {
+		return nil, fmt.Errorf("control plane URL %q: %w", baseURL, err)
+	}
 	req, err := http.NewRequest(http.MethodPost,
-		strings.TrimRight(baseURL, "/")+controlPlaneHandshakePath, bytes.NewReader(body))
+		u.JoinPath(controlPlaneHandshakePath).String(), bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("control plane request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set(sidecarTokenHeader, token)
 
-	resp, err := (&http.Client{Timeout: controlPlaneTimeout}).Do(req)
+	client := &http.Client{
+		Timeout: controlPlaneTimeout,
+		// Never follow a redirect: the token rides a custom header, which
+		// Go's redirect handling forwards even across origins (it strips
+		// only the headers it knows are credentials). Surfacing the 3xx
+		// turns a misdirected URL into an error naming the fix instead of
+		// a bearer token handed to whoever answered the Location.
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("the control plane at %s is unreachable: %w", baseURL, err)
 	}
-	defer resp.Body.Close()
+	// The body is always read to completion below; a close error after a
+	// full read carries nothing actionable, so it is dropped on purpose.
+	defer func() { _ = resp.Body.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxControlPlaneConfig+1))
 	if err != nil {
 		return nil, fmt.Errorf("reading the control plane response from %s: %w", baseURL, err)
@@ -244,10 +273,15 @@ func fetchControlPlaneConfig(baseURL, token, version string) ([]byte, error) {
 		// what to change.
 		return nil, fmt.Errorf("the control plane at %s cannot build this sidecar's config: %s",
 			baseURL, controlPlaneMessage(raw))
-	default:
-		return nil, fmt.Errorf("the control plane at %s answered %s: %s",
-			baseURL, resp.Status, controlPlaneMessage(raw))
 	}
+
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		return nil, fmt.Errorf("the control plane at %s redirected to %q; the handshake "+
+			"never follows one, so the token was not re-sent. Configure the final URL",
+			baseURL, resp.Header.Get("Location"))
+	}
+	return nil, fmt.Errorf("the control plane at %s answered %s: %s",
+		baseURL, resp.Status, controlPlaneMessage(raw))
 }
 
 // controlPlaneMessage extracts the gateway's {"message": ...} error shape,

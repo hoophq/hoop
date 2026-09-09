@@ -261,10 +261,14 @@ fact is the same mistake as a field written in two spellings. A first
 handshake that fails stops startup, since there is nothing to serve yet.
 
 Once running, a heartbeat repeats the handshake every minute. It keeps the
-plane's last-seen fresh and notices a config edited there: the process logs
-the change (`restart to apply it`) and keeps serving what it started with.
-A failed heartbeat also changes nothing, because losing the phone line home
-must not take the data path down with it.
+plane's last-seen fresh and picks up edits: a change that only touches rules
+(guardrails, masking, pii, OPA) is applied in place, logged as
+`configuration applied` with a generation number. Connections already open
+drain under the rules they were accepted with; new connections run the new
+rules, and nothing rebinds or drops. A change beyond the rules (listeners,
+audit, admin, log_level, analyzer) logs `restart to apply it` instead, and
+a failed heartbeat changes nothing, because losing the phone line home must
+not take the data path down with it. ADR-0014 records the boundary.
 
 ## Configuring it: config.yaml
 
