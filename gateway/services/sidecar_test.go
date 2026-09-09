@@ -125,13 +125,26 @@ func TestBuildConfigEmitsPerListenerOPA(t *testing.T) {
 	}
 }
 
-func TestBuildConfigDuplicateListenAddress(t *testing.T) {
-	_, err := buildConfig([]sidecarConnection{
+// Two databases commonly share an upstream port. The generated config must
+// still load in the sidecar, so the second lane (by name order) walks to the
+// next free listen port while both upstreams keep their own.
+func TestBuildConfigAllocatesDistinctListenPorts(t *testing.T) {
+	cfg, err := buildConfig([]sidecarConnection{
 		pgConn("pg-a", "a.internal", "5432"),
 		pgConn("pg-b", "b.internal", "5432"),
 	})
-	if err == nil || !strings.Contains(err.Error(), "duplicate listen address") {
-		t.Fatalf("want a duplicate listen address error, got %v", err)
+	if err != nil {
+		t.Fatalf("buildConfig: %v", err)
+	}
+	if got := cfg.Listeners[0].Listen; got != "0.0.0.0:5432" {
+		t.Errorf("first lane listen = %q, want the natural port", got)
+	}
+	if got := cfg.Listeners[1].Listen; got != "0.0.0.0:5433" {
+		t.Errorf("second lane listen = %q, want the next free port", got)
+	}
+	if cfg.Listeners[0].Upstream != "a.internal:5432" || cfg.Listeners[1].Upstream != "b.internal:5432" {
+		t.Errorf("upstreams moved with the listen allocation: %q, %q",
+			cfg.Listeners[0].Upstream, cfg.Listeners[1].Upstream)
 	}
 }
 

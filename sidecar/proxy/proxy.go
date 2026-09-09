@@ -134,11 +134,25 @@ type Config struct {
 	Logger *slog.Logger
 }
 
+// laneRules bundles the enforcement facts a connection captures at accept
+// time, so a swap replaces them as one unit: a policy from one config
+// generation must never run beside a masker from another.
+type laneRules struct {
+	policy policy.Evaluator
+	masker gate.Masker
+}
+
 // Server accepts connections and relays them through a Gate.
 type Server struct {
 	cfg      Config
 	log      *slog.Logger
 	listener net.Listener
+
+	// rules is what handle reads instead of cfg.Policy/cfg.Masker, so a
+	// config reload can replace both without a restart. Loaded once per
+	// accepted connection: the Gate keeps what it captured, which is what
+	// makes a swap safe under live traffic.
+	rules atomic.Pointer[laneRules]
 
 	mu      sync.Mutex
 	conns   map[net.Conn]struct{}
@@ -175,11 +189,25 @@ func NewServer(cfg Config) (*Server, error) {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
-	return &Server{
+	s := &Server{
 		cfg:   cfg,
 		log:   cfg.Logger,
 		conns: map[net.Conn]struct{}{},
-	}, nil
+	}
+	s.rules.Store(&laneRules{policy: cfg.Policy, masker: cfg.Masker})
+	return s, nil
+}
+
+// SwapRules replaces the policy evaluator and masker for every connection
+// accepted from now on. Connections already open keep the Gate they
+// captured at accept time and drain under the rules they started with;
+// nothing rebinds and nothing closes.
+//
+// This is the seam a control-plane config reload swaps through. Both fields
+// travel together on purpose: rules and masking come from one config
+// document, and mixing generations would enforce a config nobody wrote.
+func (s *Server) SwapRules(pol policy.Evaluator, masker gate.Masker) {
+	s.rules.Store(&laneRules{policy: pol, masker: masker})
 }
 
 // reclaimStaleSocket removes a leftover unix socket file so a restart can
@@ -270,9 +298,14 @@ func (s *Server) Serve(ctx context.Context) error {
 		}
 
 		s.track(conn)
+		// The rule generation is pinned HERE, at the accept boundary, not
+		// in the asynchronously scheduled handler: a swap landing between
+		// accept and the goroutine running must not blur which side of it
+		// this connection is on.
+		rules := s.rules.Load()
 		go func() {
 			defer s.untrack(conn)
-			s.handle(ctx, conn)
+			s.handle(ctx, conn, rules)
 		}()
 	}
 }
@@ -332,8 +365,9 @@ func (s *Server) untrack(c net.Conn) {
 	_ = c.Close()
 }
 
-// handle relays one connection.
-func (s *Server) handle(ctx context.Context, client net.Conn) {
+// handle relays one connection under rules, the immutable generation Serve
+// pinned at the accept boundary.
+func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) {
 	identity := session.Identity{PeerAddr: client.RemoteAddr().String()}
 	if s.cfg.IdentityFn != nil {
 		identity = s.cfg.IdentityFn(client)
@@ -350,9 +384,9 @@ func (s *Server) handle(ctx context.Context, client net.Conn) {
 
 	g, err := gate.New(sess, gate.Config{
 		Protocol:         s.cfg.Protocol,
-		Policy:           s.cfg.Policy,
+		Policy:           rules.policy,
 		Audit:            s.cfg.Audit,
-		Masker:           s.cfg.Masker,
+		Masker:           rules.masker,
 		FailOnAuditError: s.cfg.FailOnAuditError,
 		CodecFactory:     s.cfg.CodecFactory,
 	})

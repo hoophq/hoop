@@ -38,6 +38,7 @@ import (
 	"os/signal"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -81,6 +82,7 @@ type Option func(*setupOptions)
 
 type setupOptions struct {
 	licenseFlag string
+	token       string
 }
 
 // WithLicense supplies a license from the command line, which outranks
@@ -111,6 +113,13 @@ func Setup(path string, load Loader, build PluginBuilder) (*Config, Plugin, erro
 //
 // An UNREADABLE license stops startup and an expired one does not, since
 // killing a data-path proxy over billing is an outage.
+//
+// When a control plane is configured (HOOP_CONTROL_PLANE_URL or the config
+// file's "control_plane_url" key), the running config comes from its
+// handshake and path may be empty; see resolveConfigSource for what a file
+// still contributes then. A first fetch that fails stops startup, because
+// there is nothing to serve yet; once running, the heartbeat degrades
+// instead.
 func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*Config, Plugin, error) {
 	var o setupOptions
 	for _, apply := range opts {
@@ -119,9 +128,22 @@ func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*
 	if load == nil {
 		load = LoadConfig
 	}
-	cfg, err := load(path)
+	var local *Config
+	if path != "" {
+		var err error
+		local, err = load(path)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	cfg, err := resolveConfigSource(local, o.token)
 	if err != nil {
 		return nil, nil, err
+	}
+	if cfg.cp != nil {
+		// Retained so a pii drift from the plane rebuilds the detector the
+		// way startup would. See reloader.
+		cfg.cp.build = build
 	}
 	cfg.lic = ResolveLicense(o.licenseFlag, cfg.License)
 	if cfg.lic.State() == license.StateInvalid {
@@ -189,6 +211,8 @@ func Main(version string, load Loader, build PluginBuilder) error {
 		licenseRef = fs.String("license", "", "path to the license file, or the license "+
 			"document itself; overrides "+license.EnvVar+" and the config file's "+
 			`"license" key`)
+		tokenRef = fs.String("token", "", "the token identifying this sidecar to the "+
+			"control plane; overrides "+SidecarTokenEnv)
 		validate = fs.Bool("validate", false, "validate the config and exit")
 		strict   = fs.Bool("strict", false, "treat a deprecated config field as an error")
 		showVer  = fs.Bool("version", false, "print the version and exit")
@@ -206,12 +230,13 @@ func Main(version string, load Loader, build PluginBuilder) error {
 		fmt.Println("hoop-inspect", version)
 		return nil
 	}
-	if *configPath == "" {
+	if *configPath == "" && os.Getenv(ControlPlaneURLEnv) == "" {
 		fs.Usage()
-		return fmt.Errorf("%w: -config is required", ErrUsage)
+		return fmt.Errorf("%w: -config is required unless %s is set", ErrUsage, ControlPlaneURLEnv)
 	}
 
-	cfg, det, err := SetupWith(*configPath, load, build, WithLicense(*licenseRef))
+	cfg, det, err := SetupWith(*configPath, load, build,
+		WithLicense(*licenseRef), WithControlPlaneToken(*tokenRef))
 	if err != nil {
 		return err
 	}
@@ -615,9 +640,35 @@ func Run(cfg *Config, det Plugin) error {
 		}
 	}
 
+	// view is the generation the admin endpoints render. Startup publishes
+	// generation zero; every applied reload publishes the next, so /config
+	// answers for the rules the data path runs, not for a snapshot.
+	view := &atomic.Pointer[laneState]{}
+	view.Store(&laneState{lanes: lanes})
+
+	if cfg.cp != nil {
+		// The heartbeat keeps the plane's last-seen fresh and hands drift to
+		// the reloader: rule-only changes swap into the servers built above,
+		// everything else keeps the restart log (ADR-0014). It shares the
+		// run context, so shutdown stops it with everything else.
+		byName := make(map[string]*proxy.Server, len(servers))
+		for i, srv := range servers {
+			byName[relayNames[i]] = srv
+		}
+		rl, rerr := newReloader(cfg, lanes, byName, det, analyzerDeps, view)
+		if rerr != nil {
+			return rerr
+		}
+		log.Info("control plane connected",
+			"url", cfg.cp.url,
+			"source", cfg.cp.urlSource,
+			"poll", heartbeatEvery.String())
+		go cfg.cp.heartbeat(ctx, log, rl)
+	}
+
 	if cfg.Admin.Listen != "" {
 		go serveAdmin(ctx, cfg.Admin.Listen, servers, relayNames, grpcServers, grpcNames,
-			lanes, ac, cfg.Analyzer, cfg.lic, log)
+			view, ac, cfg.Analyzer, cfg.lic, log)
 	}
 
 	var wg sync.WaitGroup
@@ -1050,7 +1101,7 @@ func serveAdmin(
 	relayNames []string,
 	grpcServers []GRPCServer,
 	grpcNames []string,
-	lanes []lane,
+	view *atomic.Pointer[laneState],
 	ac auditChain,
 	analyzerCfg *AnalyzerConfig,
 	lic license.Status,
@@ -1144,8 +1195,12 @@ func serveAdmin(
 			AIRules     []string `json:"ai_rules,omitempty"`
 			CaptureBody bool     `json:"capture_body,omitempty"`
 		}
-		out := make([]laneView, 0, len(lanes))
-		for _, ln := range lanes {
+		// The generation the data path runs. A reload publishes new lanes
+		// and its generation as one store, so this render never mixes the
+		// two (ADR-0014).
+		st := view.Load()
+		out := make([]laneView, 0, len(st.lanes))
+		for _, ln := range st.lanes {
 			mode := ModeEnforce
 			if ln.observing {
 				mode = ModeObserve
@@ -1178,6 +1233,10 @@ func serveAdmin(
 		resp := map[string]any{
 			"version": Version,
 			"lanes":   out,
+			// Zero until a control-plane reload applies; each applied
+			// reload increments it, matching the "configuration applied"
+			// log line.
+			"config_generation": st.gen,
 			// Named in the payload rather than only in the README, so a
 			// control plane can warn its own developers without reading
 			// prose. These keys still carry correct values.

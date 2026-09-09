@@ -177,6 +177,7 @@ func buildConfig(conns []sidecarConnection) (*daemon.Config, error) {
 	var piiEntities []string
 	seenEntity := map[string]bool{}
 	var piiThreshold *float64
+	usedPorts := map[int]bool{}
 
 	for _, conn := range conns {
 		protocol, err := SidecarProtocol(conn.connType, conn.subType)
@@ -191,7 +192,7 @@ func buildConfig(conns []sidecarConnection) (*daemon.Config, error) {
 		listener := daemon.ListenerConfig{
 			Name:     conn.name,
 			Protocol: protocol,
-			Listen:   "0.0.0.0:" + port,
+			Listen:   "0.0.0.0:" + strconv.Itoa(allocateListenPort(usedPorts, port)),
 			Upstream: upstream,
 		}
 		// An empty, non-nil TLSConfig turns on upstream TLS with normal
@@ -335,6 +336,26 @@ func isValidPort(port string) bool {
 		return false
 	}
 	return strconv.Itoa(n) == port
+}
+
+// allocateListenPort binds each lane to its upstream's port, so an agent
+// pointed at the sidecar changes only the host in its connection string. On
+// a collision it walks upward to the next free port: two databases commonly
+// share 5432, and one wildcard listener cannot serve both. Connections
+// arrive ordered by name, so the allocation is deterministic for a given
+// set; the first name keeps the natural port, and the sidecar treats a
+// shifted port as topology drift, which is a restart, never a surprise.
+func allocateListenPort(used map[int]bool, natural string) int {
+	// natural passed isValidPort before reaching here.
+	p, _ := strconv.Atoi(natural)
+	for used[p] {
+		p++
+		if p > 65535 {
+			p = 1024
+		}
+	}
+	used[p] = true
+	return p
 }
 
 // decodeEnv reads a connection env-var secret, stored base64-encoded under
