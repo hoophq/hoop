@@ -28,16 +28,23 @@ func GenerateSidecarKey() (string, error) {
 // misspelled key is a rejected write instead of a sidecar running with a
 // control silently disabled.
 //
-// daemon.Validate is NOT run: it resolves listener TLS keypairs and license
-// paths from the local filesystem, which exist on the sidecar host and not on
-// the gateway. An empty document decodes to the zero config, which a sidecar
-// refuses at startup for having no listeners.
+// An absent document (no bytes) is the zero config, which a sidecar refuses at
+// startup for having no listeners. An explicit null is refused here instead:
+// "configuration": null claims to name a document and names nothing, and the
+// published schema declares an object.
+//
+// daemon.Validate is NOT run: it loads the listener TLS keypairs from the
+// local filesystem, which exists on the sidecar host and not on the gateway.
 func ParseSidecarConfiguration(raw json.RawMessage) (daemon.Config, error) {
 	var cfg daemon.Config
-	if len(bytes.TrimSpace(raw)) == 0 {
+	document := bytes.TrimSpace(raw)
+	if len(document) == 0 {
 		return cfg, nil
 	}
-	dec := json.NewDecoder(bytes.NewReader(raw))
+	if bytes.Equal(document, []byte("null")) {
+		return cfg, fmt.Errorf("invalid sidecar configuration: expected an object, got null")
+	}
+	dec := json.NewDecoder(bytes.NewReader(document))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&cfg); err != nil {
 		return cfg, fmt.Errorf("invalid sidecar configuration: %w", err)

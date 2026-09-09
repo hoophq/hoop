@@ -39,6 +39,10 @@ func TestParseSidecarConfiguration(t *testing.T) {
 		t.Errorf("listener not decoded: %+v", l)
 	}
 
+	if _, err := ParseSidecarConfiguration(json.RawMessage(`null`)); err == nil {
+		t.Error("want error for an explicit null document, got nil")
+	}
+
 	if _, err := ParseSidecarConfiguration(json.RawMessage(`{"listners":[]}`)); err == nil {
 		t.Error("want error for unknown field, got nil")
 	}

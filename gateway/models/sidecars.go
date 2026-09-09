@@ -1,6 +1,7 @@
 package models
 
 import (
+	"bytes"
 	"database/sql/driver"
 	"encoding/json"
 	"errors"
@@ -20,17 +21,33 @@ type SidecarConfiguration daemon.Config
 
 func (c SidecarConfiguration) Value() (driver.Value, error) { return json.Marshal(c) }
 
+// Scan decodes into a fresh value and rejects a key the compiled
+// daemon.Config does not declare, the same rule the write path and the
+// sidecar's own daemon.LoadConfigBytes follow. A row holding a key this
+// gateway cannot represent would otherwise be served with that key dropped,
+// silently disabling whatever control it named.
 func (c *SidecarConfiguration) Scan(value any) error {
+	var data []byte
 	switch v := value.(type) {
 	case nil:
 		*c = SidecarConfiguration{}
 		return nil
 	case []byte:
-		return json.Unmarshal(v, c)
+		data = v
 	case string:
-		return json.Unmarshal([]byte(v), c)
+		data = []byte(v)
+	default:
+		return fmt.Errorf("failed to scan sidecar configuration, got=%T", value)
 	}
-	return fmt.Errorf("failed to scan sidecar configuration, got=%T", value)
+
+	var cfg SidecarConfiguration
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&cfg); err != nil {
+		return fmt.Errorf("failed to scan sidecar configuration: %w", err)
+	}
+	*c = cfg
+	return nil
 }
 
 type Sidecar struct {
