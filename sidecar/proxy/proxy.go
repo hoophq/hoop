@@ -298,9 +298,14 @@ func (s *Server) Serve(ctx context.Context) error {
 		}
 
 		s.track(conn)
+		// The rule generation is pinned HERE, at the accept boundary, not
+		// in the asynchronously scheduled handler: a swap landing between
+		// accept and the goroutine running must not blur which side of it
+		// this connection is on.
+		rules := s.rules.Load()
 		go func() {
 			defer s.untrack(conn)
-			s.handle(ctx, conn)
+			s.handle(ctx, conn, rules)
 		}()
 	}
 }
@@ -360,8 +365,9 @@ func (s *Server) untrack(c net.Conn) {
 	_ = c.Close()
 }
 
-// handle relays one connection.
-func (s *Server) handle(ctx context.Context, client net.Conn) {
+// handle relays one connection under rules, the immutable generation Serve
+// pinned at the accept boundary.
+func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) {
 	identity := session.Identity{PeerAddr: client.RemoteAddr().String()}
 	if s.cfg.IdentityFn != nil {
 		identity = s.cfg.IdentityFn(client)
@@ -375,10 +381,6 @@ func (s *Server) handle(ctx context.Context, client net.Conn) {
 	sess.Upstream = s.cfg.Upstream
 
 	log := s.log.With("session", string(sess.ID), "principal", identity.Principal())
-
-	// One load for the whole connection: this Gate runs the rules current
-	// at accept time, however long the session lives. See SwapRules.
-	rules := s.rules.Load()
 
 	g, err := gate.New(sess, gate.Config{
 		Protocol:         s.cfg.Protocol,

@@ -58,7 +58,10 @@ type controlPlane struct {
 	url       string
 	urlSource string
 	token     string
-	lastRaw   []byte
+	// lastRaw is the startup handshake's document. The reloader seeds its
+	// handled-tracking from it; the heartbeat itself keeps no compare
+	// state.
+	lastRaw []byte
 
 	// build is the PluginBuilder SetupWith received, retained so a reload
 	// can rebuild the detector when the pii section drifts. Nil means the
@@ -308,9 +311,11 @@ func controlPlaneMessage(raw []byte) string {
 //
 // Failures degrade and never stop the process: the lanes keep serving the
 // last good config, because killing a data-path proxy over a lost phone line
-// home is an outage. A changed document goes to the reloader, which swaps
-// rule-only drift into the running lanes and answers "restart to apply it"
-// for everything a live process cannot change (ADR-0014).
+// home is an outage. Every fetched document goes to the reloader, which
+// owns the seen/handled bookkeeping: it swaps rule-only drift into the
+// running lanes, answers "restart to apply it" for everything a live
+// process cannot change, and retries a document whose failure can clear
+// without another edit (ADR-0014).
 func (cp *controlPlane) heartbeat(ctx context.Context, log *slog.Logger, rl *reloader) {
 	t := time.NewTicker(heartbeatEvery)
 	defer t.Stop()
@@ -320,30 +325,12 @@ func (cp *controlPlane) heartbeat(ctx context.Context, log *slog.Logger, rl *rel
 			return
 		case <-t.C:
 		}
-		changed, err := cp.poll()
-		switch {
-		case err != nil:
+		raw, err := fetchControlPlaneConfig(cp.url, cp.token, Version)
+		if err != nil {
 			log.Warn("control plane handshake failed; serving the last good config",
 				"url", cp.url, "error", err)
-		case changed:
-			rl.apply(log, cp.lastRaw)
+			continue
 		}
+		rl.handle(log, raw)
 	}
-}
-
-// poll fetches the current config and reports whether it differs from what
-// this process is serving. lastRaw advances on change so one edit logs once,
-// not once per tick. The byte compare is sound because the gateway builds
-// the document with encoding/json, which orders struct fields by declaration
-// and map keys alphabetically.
-func (cp *controlPlane) poll() (changed bool, err error) {
-	raw, err := fetchControlPlaneConfig(cp.url, cp.token, Version)
-	if err != nil {
-		return false, err
-	}
-	if bytes.Equal(raw, cp.lastRaw) {
-		return false, nil
-	}
-	cp.lastRaw = raw
-	return true, nil
 }

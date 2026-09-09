@@ -343,18 +343,20 @@ func TestAnEmptyPlaneConfigIsRefused(t *testing.T) {
 	}
 }
 
-// One edit on the plane logs once, not once per tick: lastRaw advances when
-// a change is seen.
-func TestPollNoticesAChangeOnce(t *testing.T) {
-	srv, _ := planeServer(t, http.StatusOK, planeConfig)
-	cp := &controlPlane{url: srv.URL, token: "hsc_x", lastRaw: []byte(`{"old":true}`)}
+// One edit is handled once, not once per tick: the reloader remembers the
+// last document that reached a terminal outcome, and the same bytes on the
+// next tick do nothing. reload_test.go covers what handling decides.
+func TestTheSameDocumentIsHandledOnce(t *testing.T) {
+	rl, buf := testReloader(t, reloadBase)
 
-	changed, err := cp.poll()
-	if err != nil || !changed {
-		t.Fatalf("first poll = %v, %v; want a change", changed, err)
+	drifted := editJSON(t, reloadBase, `"words": ["drop table"]`, `"words": ["truncate"]`)
+	if got := handleWith(rl, buf, drifted); got != reloadApplied {
+		t.Fatalf("first handle = %v, want applied; log:\n%s", got, buf)
 	}
-	changed, err = cp.poll()
-	if err != nil || changed {
-		t.Fatalf("second poll = %v, %v; want no change", changed, err)
+	if got := handleWith(rl, buf, drifted); got != reloadUnchanged {
+		t.Fatalf("second handle = %v, want unchanged; log:\n%s", got, buf)
+	}
+	if rl.gen != 1 {
+		t.Fatalf("generation = %d; the duplicate was re-applied", rl.gen)
 	}
 }

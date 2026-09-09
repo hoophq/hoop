@@ -3,7 +3,9 @@ package daemon
 import (
 	"bytes"
 	"log/slog"
+	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/hoophq/hoop/sidecar/proxy"
@@ -33,14 +35,15 @@ func editJSON(t *testing.T, doc, old, new string) string {
 }
 
 // testReloader builds a reloader over a running-shaped config, with a real
-// (unserved) proxy.Server per relay lane so a swap has a target.
+// (unserved) proxy.Server per relay lane so a swap has a target. It returns
+// the log buffer; startupLanes are reachable through rl.prevLanes.
 func testReloader(t *testing.T, raw string) (*reloader, *bytes.Buffer) {
 	t.Helper()
 	cfg, err := LoadConfigBytes([]byte(raw))
 	if err != nil {
 		t.Fatalf("LoadConfigBytes: %v", err)
 	}
-	cfg.cp = &controlPlane{url: "http://plane", token: "hsc_x"}
+	cfg.cp = &controlPlane{url: "http://plane", token: "hsc_x", lastRaw: []byte(raw)}
 
 	lanes, err := buildLanes(cfg, nil, nil)
 	if err != nil {
@@ -57,7 +60,9 @@ func testReloader(t *testing.T, raw string) (*reloader, *bytes.Buffer) {
 		}
 		servers[ln.name] = srv
 	}
-	rl, err := newReloader(cfg, lanes, servers, nil)
+	view := &atomic.Pointer[laneState]{}
+	view.Store(&laneState{lanes: lanes})
+	rl, err := newReloader(cfg, lanes, servers, nil, nil, view)
 	if err != nil {
 		t.Fatalf("newReloader: %v", err)
 	}
@@ -68,6 +73,11 @@ func testReloader(t *testing.T, raw string) (*reloader, *bytes.Buffer) {
 func applyWith(rl *reloader, buf *bytes.Buffer, raw string) reloadOutcome {
 	log := slog.New(slog.NewTextHandler(buf, nil))
 	return rl.apply(log, []byte(raw))
+}
+
+func handleWith(rl *reloader, buf *bytes.Buffer, raw string) reloadOutcome {
+	log := slog.New(slog.NewTextHandler(buf, nil))
+	return rl.handle(log, []byte(raw))
 }
 
 func TestARuleOnlyDriftIsApplied(t *testing.T) {
@@ -197,5 +207,64 @@ func TestNonRuleDocIgnoresEveryRuleSection(t *testing.T) {
 	}
 	if !bytes.Equal(docA, docB) {
 		t.Fatalf("rule drift leaked into the non-rule document:\n%s\n%s", docA, docB)
+	}
+}
+
+// A two-lane config where only one lane's rules drift: the untouched lane
+// keeps its RUNNING evaluator instances, so analyzer call budgets, verdict
+// caches and counters survive reloads that never edited it. The free tier
+// allows one guardrail rule per process, so lane A carries it and lane B
+// consults OPA, which gives B a non-nil evaluator without touching a cap.
+const twoLaneBase = `{
+  "listeners": [
+    {"name": "appdb", "protocol": "postgres",
+     "listen": "127.0.0.1:0", "upstream": "h:5432",
+     "guardrails": {"mode": "enforce", "rules": [
+       {"name": "r0", "type": "deny_words_list", "words": ["drop table"]}
+     ]}},
+    {"name": "webdb", "protocol": "postgres",
+     "listen": "127.0.0.1:1", "upstream": "h2:5432",
+     "opa": {"url": "http://opa.local/v1/data/hoop/allow"}}
+  ],
+  "audit": {"file": "-"},
+  "log_level": "info"
+}`
+
+func TestAnUntouchedLaneKeepsItsRunningEvaluators(t *testing.T) {
+	rl, buf := testReloader(t, twoLaneBase)
+	before, ok := rl.prevLanes["webdb"]
+	if !ok {
+		t.Fatal("test bug: no webdb lane")
+	}
+	if before.policy == nil {
+		t.Fatal("test bug: webdb built no evaluator, identity would compare nil to nil")
+	}
+
+	drifted := editJSON(t, twoLaneBase, `"words": ["drop table"]`, `"words": ["truncate"]`)
+	if got := handleWith(rl, buf, drifted); got != reloadApplied {
+		t.Fatalf("outcome = %v, want applied; log:\n%s", got, buf)
+	}
+
+	st := rl.view.Load()
+	if st.gen != 1 {
+		t.Fatalf("published generation = %d, want 1", st.gen)
+	}
+	var after *lane
+	for i := range st.lanes {
+		if st.lanes[i].name == "webdb" {
+			after = &st.lanes[i]
+		}
+	}
+	if after == nil {
+		t.Fatal("webdb missing from the published generation")
+	}
+	// Instance identity, not equality: a policy.Chain is a slice, so the
+	// underlying data pointer is what proves the running evaluator (and
+	// its budgets and counters) kept serving.
+	if reflect.ValueOf(after.policy).Pointer() != reflect.ValueOf(before.policy).Pointer() {
+		t.Error("webdb's evaluator was rebuilt by a drift that never touched it")
+	}
+	if !strings.Contains(buf.String(), "kept=1") {
+		t.Errorf("the applied line does not count the kept lane:\n%s", buf)
 	}
 }

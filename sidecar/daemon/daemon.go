@@ -38,6 +38,7 @@ import (
 	"os/signal"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -639,6 +640,12 @@ func Run(cfg *Config, det Plugin) error {
 		}
 	}
 
+	// view is the generation the admin endpoints render. Startup publishes
+	// generation zero; every applied reload publishes the next, so /config
+	// answers for the rules the data path runs, not for a snapshot.
+	view := &atomic.Pointer[laneState]{}
+	view.Store(&laneState{lanes: lanes})
+
 	if cfg.cp != nil {
 		// The heartbeat keeps the plane's last-seen fresh and hands drift to
 		// the reloader: rule-only changes swap into the servers built above,
@@ -648,7 +655,7 @@ func Run(cfg *Config, det Plugin) error {
 		for i, srv := range servers {
 			byName[relayNames[i]] = srv
 		}
-		rl, rerr := newReloader(cfg, lanes, byName, det)
+		rl, rerr := newReloader(cfg, lanes, byName, det, analyzerDeps, view)
 		if rerr != nil {
 			return rerr
 		}
@@ -661,7 +668,7 @@ func Run(cfg *Config, det Plugin) error {
 
 	if cfg.Admin.Listen != "" {
 		go serveAdmin(ctx, cfg.Admin.Listen, servers, relayNames, grpcServers, grpcNames,
-			lanes, ac, cfg.Analyzer, cfg.lic, log)
+			view, ac, cfg.Analyzer, cfg.lic, log)
 	}
 
 	var wg sync.WaitGroup
@@ -1094,7 +1101,7 @@ func serveAdmin(
 	relayNames []string,
 	grpcServers []GRPCServer,
 	grpcNames []string,
-	lanes []lane,
+	view *atomic.Pointer[laneState],
 	ac auditChain,
 	analyzerCfg *AnalyzerConfig,
 	lic license.Status,
@@ -1188,8 +1195,12 @@ func serveAdmin(
 			AIRules     []string `json:"ai_rules,omitempty"`
 			CaptureBody bool     `json:"capture_body,omitempty"`
 		}
-		out := make([]laneView, 0, len(lanes))
-		for _, ln := range lanes {
+		// The generation the data path runs. A reload publishes new lanes
+		// and its generation as one store, so this render never mixes the
+		// two (ADR-0014).
+		st := view.Load()
+		out := make([]laneView, 0, len(st.lanes))
+		for _, ln := range st.lanes {
 			mode := ModeEnforce
 			if ln.observing {
 				mode = ModeObserve
@@ -1222,6 +1233,10 @@ func serveAdmin(
 		resp := map[string]any{
 			"version": Version,
 			"lanes":   out,
+			// Zero until a control-plane reload applies; each applied
+			// reload increments it, matching the "configuration applied"
+			// log line.
+			"config_generation": st.gen,
 			// Named in the payload rather than only in the README, so a
 			// control plane can warn its own developers without reading
 			// prose. These keys still carry correct values.
