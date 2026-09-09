@@ -393,10 +393,13 @@ func doIndividualReview(ctx *storagev2.Context, rev *models.Review, connection *
 	approvedCount := 0
 	reviewsCountNeeded := len(rev.ReviewGroups)
 	if rev.AccessRequestRuleName != nil {
-		if rev.MinApprovals != nil {
+		// A minimum of zero or less is only ever persisted for an all groups
+		// rule, so ignore it and keep the bar at every reviewer group. Read
+		// literally it would let the first approval settle the review.
+		if rev.MinApprovals != nil && *rev.MinApprovals > 0 {
 			reviewsCountNeeded = min(reviewsCountNeeded, *rev.MinApprovals)
 		}
-	} else if connection.MinReviewApprovals != nil {
+	} else if connection.MinReviewApprovals != nil && *connection.MinReviewApprovals > 0 {
 		reviewsCountNeeded = min(reviewsCountNeeded, *connection.MinReviewApprovals)
 	}
 
@@ -458,8 +461,9 @@ func doIndividualReview(ctx *storagev2.Context, rev *models.Review, connection *
 	// check if status is approved to avoid approving a rejected review
 	// Update the overall review status based on individual review group statuses
 	if status == models.ReviewStatusApproved {
-		// Only approve the review if all required review groups have approved
-		if approvedCount == reviewsCountNeeded {
+		// A reviewer in several reviewer groups approves all of them in one call,
+		// so the count overshoots the minimum; equality stranded it forever (EVL-250).
+		if approvedCount >= reviewsCountNeeded {
 			rev.Status = models.ReviewStatusApproved
 		}
 		// Otherwise, keep status as pending (no explicit assignment needed)
