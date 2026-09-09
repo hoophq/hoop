@@ -21,6 +21,7 @@ import (
 	"github.com/hoophq/hoop/gateway/services"
 
 	apiorgs "github.com/hoophq/hoop/gateway/api/orgs"
+	reviewapi "github.com/hoophq/hoop/gateway/api/review"
 	apiserverconfig "github.com/hoophq/hoop/gateway/api/serverconfig"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/eventrouting"
@@ -187,11 +188,45 @@ func Run(mode appconfig.AppMode) {
 	runGateway(tlsConfig, apiURL, defaultOrgID, isOrgMultiTenant)
 }
 
-// runControlPlane serves the control plane: the HTTP API and nothing else.
-// The gRPC transport, the protocol proxies and the transport plugins never
-// start. The HTTP API is the gateway's (see Api.BuildEngine): a route that
-// needs the gRPC transport fails per request, while /api/ws still accepts an
-// agent over WebSocket and /rdpproxy relays through it (ADR-0013).
+// gatewayPlugins is the transport plugin chain, in a fixed and intentional
+// order. Do not reorder casually: a plugin reads what the ones before it wrote.
+func gatewayPlugins(apiURL string, releaseConnFn reviewapi.TransportReleaseConnectionFunc) []plugintypes.Plugin {
+	return []plugintypes.Plugin{
+		pluginsreview.New(apiURL),
+		pluginsaudit.New(),
+		pluginsdlp.New(),
+		pluginsrbac.New(),
+		pluginswebhooks.New(),
+		pluginsslack.New(releaseConnFn),
+	}
+}
+
+// controlPlanePlugins is Slack only: a background service worth starting, not
+// packet work. One process per org may run it. See ADR-0013, amended 2026-09-09.
+func controlPlanePlugins(releaseConnFn reviewapi.TransportReleaseConnectionFunc) []plugintypes.Plugin {
+	return []plugintypes.Plugin{
+		pluginsslack.New(releaseConnFn),
+	}
+}
+
+// startPlugins publishes plugins as the registered set and starts each one.
+// A plugin that cannot start is fatal: it fails here or it fails silently
+// later, on the first review nobody is told about.
+func startPlugins(plugins []plugintypes.Plugin) {
+	plugintypes.RegisteredPlugins = plugins
+	for _, p := range plugintypes.RegisteredPlugins {
+		pluginContext := plugintypes.Context{}
+		if err := p.OnStartup(pluginContext); err != nil {
+			log.Fatalf("failed initializing plugin %s, reason=%v", p.Name(), err)
+		}
+	}
+}
+
+// runControlPlane serves the control plane: the HTTP API, and Slack. The gRPC
+// transport and the protocol proxies never start. The HTTP API is the
+// gateway's (see Api.BuildEngine): a route that needs the gRPC transport fails
+// per request, while /api/ws still accepts an agent over WebSocket and
+// /rdpproxy relays through it (ADR-0013).
 func runControlPlane(tlsConfig *tls.Config) {
 	// Same wiring as runGateway. The transport server exists for its review
 	// callback and is never started, so the handlers run the gateway's code.
@@ -204,6 +239,7 @@ func runControlPlane(tlsConfig *tls.Config) {
 		ReleaseConnectionFn: g.ReleaseConnectionOnReview,
 		TLSConfig:           tlsConfig,
 	}
+	startPlugins(controlPlanePlugins(g.ReleaseConnectionOnReview))
 
 	bootstrap.Phase("Starting API")
 	apiStep := bootstrap.Step("HTTP API")
@@ -227,22 +263,7 @@ func runGateway(tlsConfig *tls.Config, apiURL, defaultOrgID string, isOrgMultiTe
 		ReleaseConnectionFn: g.ReleaseConnectionOnReview,
 		TLSConfig:           tlsConfig,
 	}
-	// order matters
-	plugintypes.RegisteredPlugins = []plugintypes.Plugin{
-		pluginsreview.New(apiURL),
-		pluginsaudit.New(),
-		pluginsdlp.New(),
-		pluginsrbac.New(),
-		pluginswebhooks.New(),
-		pluginsslack.New(g.ReleaseConnectionOnReview),
-	}
-
-	for _, p := range plugintypes.RegisteredPlugins {
-		pluginContext := plugintypes.Context{}
-		if err := p.OnStartup(pluginContext); err != nil {
-			log.Fatalf("failed initializing plugin %s, reason=%v", p.Name(), err)
-		}
-	}
+	startPlugins(gatewayPlugins(apiURL, g.ReleaseConnectionOnReview))
 
 	if isOrgMultiTenant {
 		// grpc url from env is used for multi tenant setups
