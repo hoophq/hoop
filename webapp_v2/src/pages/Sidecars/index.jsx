@@ -7,6 +7,7 @@ import { useMinDelay } from '@/hooks/useMinDelay'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import { showSnackbar } from '@/utils/snackbar'
 import AddSidecarModal from './components/AddSidecarModal'
+import MockNotice from './components/MockNotice'
 import SidecarMethodCards from './components/SidecarMethodCards'
 import DeleteSidecarModal from './sections/DeleteSidecarModal'
 import SidecarLicenseNotice from './sections/SidecarLicenseNotice'
@@ -71,6 +72,7 @@ export default function Sidecars() {
           {count > 0 && <Button onClick={openAdd}>Add new Sidecar</Button>}
         </Group>
 
+        <MockNotice />
         <SidecarLicenseNotice />
 
         {count === 0 ? (

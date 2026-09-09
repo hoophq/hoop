@@ -9,6 +9,7 @@ import { useSidecarStore } from '@/stores/useSidecarStore'
 import { useUserStore } from '@/stores/useUserStore'
 import { docsUrl } from '@/utils/docsUrl'
 import { showSnackbar } from '@/utils/snackbar'
+import MockNotice from '../components/MockNotice'
 import SidecarDetails from '../components/SidecarDetails'
 import { useConnectionsByName } from '../useConnectionsByName'
 import NameStep from './sections/NameStep'
@@ -120,6 +121,8 @@ export default function SidecarSetup({ mode = 'connect' }) {
           {action.label}
         </Button>
       </Group>
+
+      <MockNotice />
 
       {mode === 'create' && step === 0 && (
         <Alert color="blue" variant="light" radius="md" icon={<Info size={16} />}>

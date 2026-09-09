@@ -135,6 +135,7 @@ everything, so the dev server runs out of the box with no setup (see also
 | `VITE_API_URL` | `/api` (relative) | Custom backend base URL at runtime (`services/api.js`) |
 | `API_URL` | `http://localhost:8009` | Vite dev proxy target for `/api` — same env var the CLJS build reads via shadow-cljs closure-defines |
 | `VITE_CLJS_URL` | `http://localhost:8280` | Vite dev proxy target for CLJS assets (`/js`, `/css`, `/images`, …) |
+| `VITE_SIDECARS_MOCK` | unset | `true` serves the simulated sidecar fleet of `services/sidecars.mock.js` (control plane) instead of `/api/sidecars`, until the sidecar binary talks to the control plane. Build-time; off unless set. |
 | `SEGMENT_WRITE_KEY` | hoop.dev production key | Build-time: Segment write key baked into the bundle at `npm run build`. Same env var as the CLJS bundle, so one setting controls both webapps — override only when pointing a build at a different Segment workspace |
 
 ## Authentication

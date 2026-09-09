@@ -836,7 +836,12 @@ Non-obvious notes only:
   token (`hsc_…`); it is stored hashed and never shown again, so the wizard keeps it
   in component state. `version` and `last_seen_at` are gateway memory written by the
   sidecar's handshake and lost on a gateway restart: absent means "has not connected
-  to this gateway process", not "offline" (`pages/Sidecars/status.js`).
+  to this gateway process", not "offline" (`pages/Sidecars/status.js`). `config` is the
+  `daemon.Config` the sidecar reports (listeners, guardrails, mask, analyzer, audit);
+  `pages/Sidecars/config.js` derives the Features chips from it. **Mock:** with
+  `VITE_SIDECARS_MOCK=true` the export is `sidecars.mock.js`, a simulated fleet with the
+  same interface whose new sidecars connect a few seconds after creation. To go live
+  for good, delete that file and the switch at the bottom of `sidecars.js`.
 - `sessions.js` — `list(params)`. **`limit` does not make the call cheap**: the
   gateway always runs an unbounded `COUNT(*)` (joined against reviews) to fill
   `total` before applying the limit, so `{ limit: 1 }` costs the same as a full
