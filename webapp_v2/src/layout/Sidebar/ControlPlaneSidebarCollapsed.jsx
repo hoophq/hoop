@@ -73,21 +73,21 @@ export function SidebarCollapsed() {
       >
         {sections.map(({ id, label, shown }, index) => (
           <Box key={id} w="100%">
-            {index > 0 && <Divider color="gray.2" my="sm" w={RAIL_ITEM_WIDTH} mx="auto" />}
+            {index > 0 && <Divider color="gray.1" my="sm" w={RAIL_ITEM_WIDTH} mx="auto" />}
             <Stack gap="xsAlt" align="center" role="list" aria-label={label}>
               {shown.map(renderItem)}
             </Stack>
           </Box>
         ))}
-
-        {footerItems.length > 0 && (
-          <Box w="100%" pt="sm" pb="sm" className={classes.profileFooter}>
-            <Stack gap="xsAlt" align="center" role="list" aria-label="Settings">
-              {footerItems.map(renderItem)}
-            </Stack>
-          </Box>
-        )}
       </ScrollArea>
+
+      {footerItems.length > 0 && (
+        <Box w="100%" py="sm">
+          <Stack gap="xsAlt" align="center" role="list" aria-label="Settings">
+            {footerItems.map(renderItem)}
+          </Stack>
+        </Box>
+      )}
 
       <div className={classes.collapsedFooter}>
         <Tooltip label="Expand sidebar" position="right" withArrow>

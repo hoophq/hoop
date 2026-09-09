@@ -71,7 +71,7 @@ export function SidebarExpanded({ navKey }) {
             const headingId = `sidebar-${id}-heading`
             return (
               <Box key={id}>
-                {index > 0 && <Divider color="gray.2" my="sm" />}
+                {index > 0 && <Divider color="gray.1" my="sm" />}
                 <Box
                   component="ul"
                   role="list"
@@ -91,27 +91,20 @@ export function SidebarExpanded({ navKey }) {
               </Box>
             )
           })}
-
-          {/* Settings, pinned to the foot: .profileFooter pushes it down while
-              the list is short and lets it scroll once the list overflows. */}
-          {footerItems.length > 0 && (
-            <Box
-              component="ul"
-              role="list"
-              aria-label="Settings"
-              className={`${classes.navList} ${classes.profileFooter}`}
-              pt="sm"
-              pb="sm"
-            >
-              {footerItems.map((item) => (
-                <Box component="li" key={item.label} className={classes.listItem}>
-                  <NavItem item={item} {...navItemProps} />
-                </Box>
-              ))}
-            </Box>
-          )}
         </Box>
       </ScrollArea>
+
+      {/* Settings, pinned above the collapse bar: outside the scroll area so it
+          stays put however long the list above it grows. */}
+      {footerItems.length > 0 && (
+        <Box component="ul" role="list" aria-label="Settings" px="md" py="sm" className={classes.navList}>
+          {footerItems.map((item) => (
+            <Box component="li" key={item.label} className={classes.listItem}>
+              <NavItem item={item} {...navItemProps} />
+            </Box>
+          ))}
+        </Box>
+      )}
 
       <button aria-label="Collapse sidebar" className={classes.collapseBtn} onClick={toggleSidebarCollapsed}>
         <ChevronsLeft size={24} aria-hidden="true" />
