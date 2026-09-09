@@ -295,11 +295,11 @@ func (api *Api) buildSidecarRoutes(r *apiroutes.Router) {
 		api.TrackRequest(analytics.EventCreateSidecar),
 		apisidecar.Post)
 	r.GET("/sidecars",
-		apiroutes.ReadOnlyAccessRole,
+		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		apisidecar.List)
 	r.GET("/sidecars/:nameOrID",
-		apiroutes.ReadOnlyAccessRole,
+		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		apisidecar.Get)
 	r.PUT("/sidecars/:nameOrID",
