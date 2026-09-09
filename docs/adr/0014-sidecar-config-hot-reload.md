@@ -86,11 +86,12 @@ We will implement option 3, in stages:
    compares `name`, `protocol`, `network`, `listen`, `upstream`, and both
    TLS blocks. Any mismatch, addition, or removal falls back to the restart
    log.
-4. **Detector rebuild:** the entry points pass their `PluginBuilder` into
-   setup as a new `Option`, so a changed `pii` section rebuilds the detector
-   the way startup would. Without the option, a `pii` or `mask` drift falls
-   back to the restart log rather than swapping rules the old detector
-   cannot serve.
+4. **Detector rebuild:** `SetupWith` already receives the entry point's
+   `PluginBuilder`; the control-plane state retains it for the reloader, so
+   a changed `pii` section rebuilds the detector the way startup would. A
+   caller that passed no builder keeps a drifted `pii` section on the
+   restart path rather than swapping in rules the old detector cannot
+   serve.
 5. **gRPC lanes stay on the restart path** in this iteration, with a log
    line saying so. Their swap needs its own seam through the ADR-0013
    callback injection and earns its own change.
@@ -101,6 +102,45 @@ after the swap runs the new rules. Statement-granular semantics (a live
 session picks up new rules on its next statement) move the atomic load into
 the Gate's per-statement path and are deferred until connection-granular
 proves itself in the field.
+
+The heartbeat's decision per fetched document:
+
+```mermaid
+flowchart TD
+    HB[heartbeat tick:<br/>POST /api/sidecars/handshake] --> CMP{bytes differ from<br/>running config?}
+    CMP -- no --> HB
+    CMP -- yes --> LOAD[LoadConfigBytes:<br/>strict decode + Validate]
+    LOAD -- refused --> KEEP[warn, keep running rules]
+    LOAD -- ok --> GUARD{non-rule doc identical?<br/>listeners, audit, admin,<br/>log_level, analyzer}
+    GUARD -- no --> RESTART[warn: restart to apply it]
+    GUARD -- yes --> DET{pii drifted?}
+    DET -- "builder retained" --> REBUILD[rebuild detector<br/>+ analyzer deps]
+    DET -- "no builder" --> RESTART
+    DET -- unchanged --> LANES
+    REBUILD --> LANES[buildLanes:<br/>caps + policy + masker,<br/>same path as startup]
+    LANES -- refused --> KEEP
+    LANES -- ok --> SWAP[atomic SwapRules<br/>per relay lane]
+    SWAP --> GRPC[grpc lanes with drifted rules:<br/>warn, restart path]
+```
+
+What each connection runs across a swap:
+
+```mermaid
+sequenceDiagram
+    participant A as psql (opened before swap)
+    participant S as proxy.Server
+    participant B as psql (opened after swap)
+    Note over S: rules v1
+    A->>S: connect
+    S->>A: Gate captures rules v1
+    Note over S: heartbeat swaps to rules v2
+    B->>S: connect
+    S->>B: Gate captures rules v2
+    A->>S: statement
+    Note over A,S: still evaluated under v1<br/>until this session closes
+    B->>S: statement
+    Note over B,S: evaluated under v2
+```
 
 ## Consequences
 

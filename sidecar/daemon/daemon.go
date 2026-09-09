@@ -139,6 +139,11 @@ func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*
 	if err != nil {
 		return nil, nil, err
 	}
+	if cfg.cp != nil {
+		// Retained so a pii drift from the plane rebuilds the detector the
+		// way startup would. See reloader.
+		cfg.cp.build = build
+	}
 	cfg.lic = ResolveLicense(o.licenseFlag, cfg.License)
 	if cfg.lic.State() == license.StateInvalid {
 		return nil, nil, cfg.lic.Err
@@ -583,17 +588,6 @@ func Run(cfg *Config, det Plugin) error {
 		licenseExpired = watchLicense(ctx, cfg.lic, licenseCheckEvery, log)
 	}
 
-	if cfg.cp != nil {
-		// The heartbeat keeps the plane's last-seen fresh and logs when the
-		// config there no longer matches this process. It shares the run
-		// context, so shutdown stops it with everything else.
-		log.Info("control plane connected",
-			"url", cfg.cp.url,
-			"source", cfg.cp.urlSource,
-			"poll", heartbeatEvery.String())
-		go cfg.cp.heartbeat(ctx, log)
-	}
-
 	// Two server kinds, one loop of lane facts. Relay lanes run
 	// proxy.Server; grpc lanes run the transport the plugin registered
 	// (ADR-0013). The stats zip in serveAdmin pairs servers with
@@ -643,6 +637,26 @@ func Run(cfg *Config, det Plugin) error {
 				"listener", ln.name,
 				"hint", "add guardrails.rules at the top level or on this listener")
 		}
+	}
+
+	if cfg.cp != nil {
+		// The heartbeat keeps the plane's last-seen fresh and hands drift to
+		// the reloader: rule-only changes swap into the servers built above,
+		// everything else keeps the restart log (ADR-0014). It shares the
+		// run context, so shutdown stops it with everything else.
+		byName := make(map[string]*proxy.Server, len(servers))
+		for i, srv := range servers {
+			byName[relayNames[i]] = srv
+		}
+		rl, rerr := newReloader(cfg, lanes, byName, det)
+		if rerr != nil {
+			return rerr
+		}
+		log.Info("control plane connected",
+			"url", cfg.cp.url,
+			"source", cfg.cp.urlSource,
+			"poll", heartbeatEvery.String())
+		go cfg.cp.heartbeat(ctx, log, rl)
 	}
 
 	if cfg.Admin.Listen != "" {
