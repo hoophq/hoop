@@ -17,6 +17,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/events"
 	"github.com/hoophq/hoop/gateway/models"
 	slackservice "github.com/hoophq/hoop/gateway/slack"
@@ -261,11 +262,13 @@ func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.Review
 		return nil, fmt.Errorf("failed obtaining review, err=%v", err)
 	}
 
-	// A review that names no connection has nothing to look up, and nothing
-	// downstream wants one: the connection is only ever read as a fallback for
-	// reviews that carry no access request rule.
+	// The control plane does not model reviews against connections, so there is
+	// nothing to look up there. The gateway is unchanged.
+	//
+	// Everything below reads the connection rather than the mode, because a nil
+	// connection is exactly what this decided.
 	var connection *models.Connection
-	if !rev.HasConnection() {
+	if appconfig.Get().IsControlPlane() {
 		// UpdateReview syncs the session's status and private.sessions.id is a
 		// uuid, so a review with no session fails there on a cast rather than
 		// here on the thing that is actually wrong.
@@ -342,10 +345,9 @@ func doReview(ctx *storagev2.Context, rev *models.Review, connection *models.Con
 		return nil, err
 	}
 
-	// A connectionless review authorizes one statement that was already named,
-	// so it has no access window to expire. Stamping one from a zero duration
-	// would read as revoked the moment it was approved.
-	if rev.Status == models.ReviewStatusApproved && rev.HasConnection() {
+	// An access window belongs to a connection. With none, stamping one from a
+	// zero duration would read as revoked the moment it was approved.
+	if rev.Status == models.ReviewStatusApproved && connection != nil {
 		// TODO(san): should it be set only for jit reviews?
 		expiration := time.Now().UTC().Add(time.Duration(rev.AccessDurationSec) * time.Second)
 		rev.RevokedAt = &expiration
@@ -359,11 +361,9 @@ func doForcedReview(ctx *storagev2.Context, rev *models.Review, connection *mode
 	var forceApproveGroups []string
 	// Only use ForceApprovalGroups from Review if it's AccessRequestRuleName is set, otherwise fallback to Connection
 	//
-	// The nil check is load-bearing: a connectionless review has no rule name
-	// either, and force review is reachable for it through the API, so without
-	// it a forced review dereferences nil and takes the process down.
-	// doIndividualReview needs no such check: its else branch is only reached
-	// when the review has a connection.
+	// The nil check is load-bearing: force review is reachable through the API
+	// for a review that has no rule name and no connection, and without it that
+	// dereferences nil and takes the process down.
 	if rev.AccessRequestRuleName != nil && rev.ForceApprovalGroups != nil {
 		forceApproveGroups = rev.ForceApprovalGroups
 	} else if connection != nil && connection.ForceApproveGroups != nil {
@@ -415,10 +415,10 @@ func doIndividualReview(ctx *storagev2.Context, rev *models.Review, connection *
 	reviewedAt := time.Now().UTC()
 	approvedCount := 0
 	reviewsCountNeeded := len(rev.ReviewGroups)
-	// A connectionless review carries its minimum the same way a ruled review
-	// does. With no rule and no connection to fall back to, without this its
-	// bar would stay at every group row and one approval would never settle it.
-	if rev.AccessRequestRuleName != nil || !rev.HasConnection() {
+	// With no connection to fall back to, the review carries its own minimum the
+	// same way a ruled review does. Without this its bar would stay at every
+	// group row and one approval would never settle it.
+	if rev.AccessRequestRuleName != nil || connection == nil {
 		// A minimum of zero or less is only ever persisted for an all groups
 		// rule, so ignore it and keep the bar at every reviewer group. Read
 		// literally it would let the first approval settle the review.

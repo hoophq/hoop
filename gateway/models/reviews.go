@@ -61,9 +61,10 @@ type Review struct {
 	ConnectionName string           `gorm:"column:connection_name"`
 	ConnectionID   sql.NullString   `gorm:"column:connection_id"`
 
-	// SidecarID and ListenerName bind a review to a sidecar's listener. Set
-	// together or not at all: a review with a sidecar has no connection, and
-	// SidecarID is what tells the two kinds apart everywhere it matters.
+	// SidecarID and ListenerName bind a review to a sidecar's listener, in
+	// place of the connection a gateway review points at. SidecarID is nulled
+	// if the sidecar is deleted; the listener is what the review is about, so
+	// it outlives that.
 	SidecarID    sql.NullString `gorm:"column:sidecar_id"`
 	ListenerName sql.NullString `gorm:"column:listener_name"`
 
@@ -104,25 +105,6 @@ type ReviewGroups struct {
 	OwnerSlackID *string          `json:"owner_slack_id"`
 	ReviewedAt   *time.Time       `json:"reviewed_at"`
 	ForcedReview bool             `json:"forced_review"`
-}
-
-// HasConnection reports whether this review points at a connection. A review
-// filed by a sidecar does not: it binds to a listener instead.
-//
-// This is the discriminator the review path branches on, and it is deliberately
-// a fact about the row rather than about the process. Two reasons.
-//
-// The app mode cannot answer it. A control plane serves reviews that do have a
-// connection today — the AI analyzer files one from POST /sessions/:id/exec,
-// which answers before it ever needs the gRPC transport — and a gateway sharing
-// the database can read one that does not. A process-level test is right in at
-// most one of those.
-//
-// And it ages in the right direction: as the control plane stops using
-// connections, those reviews answer false here and take this path with no
-// further change.
-func (r *Review) HasConnection() bool {
-	return r != nil && r.ConnectionName != ""
 }
 
 // RejectedByEmail returns the email of the reviewer whose group rejected the
