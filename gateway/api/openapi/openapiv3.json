@@ -21710,11 +21710,104 @@
         "tags": [
           "Sidecars"
         ]
+      },
+      "put": {
+        "description": "Authenticated with the hoop-sidecar-token header. Stores the config document a sidecar carried locally, once: the import is refused with 409 when the control plane already holds a configuration with listeners, so a centrally authored config is never overwritten by a restarting sidecar.",
+        "parameters": [
+          {
+            "description": "The token returned when the sidecar was created",
+            "in": "header",
+            "name": "hoop-sidecar-token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "description": "The configuration document, the same shape the handshake answers",
+          "required": true,
+          "x-originalParamName": "request"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Import Sidecar Configuration",
+        "tags": [
+          "Sidecars"
+        ]
       }
     },
     "/sidecars/handshake": {
       "post": {
-        "description": "Authenticated with the hoop-sidecar-token header. Records the reported version and returns the configuration the sidecar must serve.",
+        "description": "Authenticated with the hoop-sidecar-token header. Records the reported version and returns the configuration the sidecar must serve. Answers 412 while no configuration with listeners is assigned, recording nothing: a sidecar that cannot run must not show up as recently seen.",
         "parameters": [
           {
             "description": "The token returned when the sidecar was created",
@@ -21769,6 +21862,16 @@
               }
             },
             "description": "Unauthorized"
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Precondition Failed"
           },
           "500": {
             "content": {

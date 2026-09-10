@@ -39,6 +39,10 @@ const (
 	// this sidecar must serve, and the gateway records the reported version
 	// as the sidecar's liveness.
 	controlPlaneHandshakePath = "/api/sidecars/handshake"
+	// controlPlaneConfigurationPath receives the import: a plane holding
+	// no configuration is seeded with the local file's document through
+	// it, once, on the first handshake that finds the plane empty.
+	controlPlaneConfigurationPath = "/api/sidecars/configuration"
 
 	controlPlaneTimeout = 15 * time.Second
 	// maxControlPlaneConfig bounds the response read. A config is a few KB;
@@ -62,6 +66,15 @@ type controlPlane struct {
 	// handled-tracking from it; the heartbeat itself keeps no compare
 	// state.
 	lastRaw []byte
+
+	// imported reports that this boot seeded the plane with the local
+	// file's document because the plane held none; Run logs it once.
+	imported bool
+	// fileListeners counts listeners the config file declared while the
+	// plane already held the running config. They are ignored, never
+	// merged; Run warns so an edit to the file that changed nothing is
+	// not a silent mystery.
+	fileListeners int
 
 	// build is the PluginBuilder SetupWith received, retained so a reload
 	// can rebuild the detector when the pii section drifts. Nil means the
@@ -143,13 +156,17 @@ func resolveSidecarToken(flagValue string) (value, source string) {
 // resolveConfigSource decides where the running config comes from: the local
 // file alone (standalone, today's behavior), or the control plane handshake.
 //
-// The two do not merge. A plane-connected process serves what the plane
-// sent, so a file that also declares listeners is refused rather than
-// half-read: no operator can predict which half of a merged config wins, the
-// same reason normalize refuses a field written in two spellings. The file
-// keeps two jobs in plane mode: naming the URL, and naming a license
-// (the documented precedence keeps the config file as a license source, and
-// the plane sends none today).
+// The two never merge. A plane-connected process serves what the plane sent:
+// no operator can predict which half of a merged config wins, the same
+// reason normalize refuses a field written in two spellings. The file keeps
+// three jobs in plane mode: naming the URL, naming a license (the documented
+// precedence keeps the config file as a license source, and the plane sends
+// none today), and seeding a plane that holds no configuration yet. That
+// last one is the connect journey: a handshake answered "nothing is
+// assigned" imports the file's whole document, so a standalone sidecar
+// connects by adding the URL and passing the token, nothing else. Once the
+// plane holds a configuration it owns it, and listeners still in the file
+// are ignored out loud (Run warns), never merged.
 func resolveConfigSource(local *Config, tokenFlag string) (*Config, error) {
 	fileURL := ""
 	if local != nil {
@@ -178,16 +195,20 @@ func resolveConfigSource(local *Config, tokenFlag string) (*Config, error) {
 		return nil, fmt.Errorf("a control plane is configured (%s) but no token was given; "+
 			"pass the token flag or set %s", urlSource, SidecarTokenEnv)
 	}
-	if local != nil && len(local.Listeners) > 0 {
-		return nil, fmt.Errorf("the config file declares %d listener(s) and a control plane is configured (%s); "+
-			"the control plane supplies the listeners, so remove them from the file or remove the control plane",
-			len(local.Listeners), urlSource)
-	}
 
 	raw, err := fetchControlPlaneConfig(planeURL, token, Version)
+	imported := false
+	// A plane with nothing to serve answers 412; an older gateway answers
+	// 200 with a document naming no listeners. Same fact, same move: seed
+	// the plane with the file's document, so the connect journey never
+	// asks anyone to translate their YAML into an API call by hand.
+	if errors.Is(err, errPlaneHasNoConfig) || (err == nil && !rawDeclaresListeners(raw)) {
+		raw, imported, err = importLocalConfig(planeURL, token, local)
+	}
 	if err != nil {
 		return nil, err
 	}
+
 	// The same strict decode, deprecation folding and validation the file
 	// path gets. The gateway round-trips through this decoder before
 	// answering, so a refusal here means the two builds disagree on the
@@ -198,9 +219,9 @@ func resolveConfigSource(local *Config, tokenFlag string) (*Config, error) {
 			"(the two versions may disagree on the schema): %w", planeURL, err)
 	}
 	// Validate relaxes the listener check whenever a plane is configured,
-	// which includes this process. The plane refuses to build a config for
-	// a sidecar with no connections, so an empty one here is a bug worth
-	// stopping on, not serving.
+	// which includes this process. Listener-less answers were routed into
+	// the import above, so reaching here without one means the config was
+	// emptied between two requests: a bug worth stopping on, not serving.
 	if len(cfg.Listeners) == 0 {
 		return nil, fmt.Errorf("the control plane at %s sent a config with no listeners", planeURL)
 	}
@@ -208,7 +229,10 @@ func resolveConfigSource(local *Config, tokenFlag string) (*Config, error) {
 		cfg.License = local.License
 	}
 	cfg.ControlPlaneURL = planeURL
-	cfg.cp = &controlPlane{url: planeURL, urlSource: urlSource, token: token, lastRaw: raw}
+	cfg.cp = &controlPlane{url: planeURL, urlSource: urlSource, token: token, lastRaw: raw, imported: imported}
+	if !imported && local != nil {
+		cfg.cp.fileListeners = len(local.Listeners)
+	}
 	return cfg, nil
 }
 
@@ -233,18 +257,7 @@ func fetchControlPlaneConfig(baseURL, token, version string) ([]byte, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set(sidecarTokenHeader, token)
 
-	client := &http.Client{
-		Timeout: controlPlaneTimeout,
-		// Never follow a redirect: the token rides a custom header, which
-		// Go's redirect handling forwards even across origins (it strips
-		// only the headers it knows are credentials). Surfacing the 3xx
-		// turns a misdirected URL into an error naming the fix instead of
-		// a bearer token handed to whoever answered the Location.
-		CheckRedirect: func(*http.Request, []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
-	resp, err := client.Do(req)
+	resp, err := controlPlaneHTTPClient().Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("the control plane at %s is unreachable: %w", baseURL, err)
 	}
@@ -270,6 +283,11 @@ func fetchControlPlaneConfig(baseURL, token, version string) ([]byte, error) {
 		// one means registering a new sidecar.
 		return nil, fmt.Errorf("the control plane at %s rejected the token; "+
 			"check it against the one shown when this sidecar was created", baseURL)
+	case http.StatusPreconditionFailed:
+		// The plane authenticated the token and holds nothing to serve.
+		// resolveConfigSource turns this into an import when the local
+		// file can supply the document; the heartbeat only logs it.
+		return nil, fmt.Errorf("%w (at %s): %s", errPlaneHasNoConfig, baseURL, controlPlaneMessage(raw))
 	case http.StatusUnprocessableEntity:
 		// An operator misconfiguration on the plane side (say, a connection
 		// type no codec speaks). Retrying never fixes it; the message names
@@ -284,6 +302,146 @@ func fetchControlPlaneConfig(baseURL, token, version string) ([]byte, error) {
 			baseURL, resp.Header.Get("Location"))
 	}
 	return nil, fmt.Errorf("the control plane at %s answered %s: %s",
+		baseURL, resp.Status, controlPlaneMessage(raw))
+}
+
+// controlPlaneHTTPClient never follows a redirect: the token rides a custom
+// header, which Go's redirect handling forwards even across origins (it
+// strips only the headers it knows are credentials). Surfacing the 3xx turns
+// a misdirected URL into an error naming the fix instead of a bearer token
+// handed to whoever answered the Location.
+func controlPlaneHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout: controlPlaneTimeout,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+}
+
+// errPlaneHasNoConfig marks the handshake's 412: the plane authenticated the
+// token and holds nothing to serve. resolveConfigSource turns it into an
+// import when the local file can supply the document.
+var errPlaneHasNoConfig = errors.New("the control plane has no configuration for this sidecar")
+
+// errPlaneAlreadyConfigured marks the import's 409: a configuration landed
+// on the plane between the handshake and the push. The concurrent author
+// wins; the caller re-fetches and serves their document.
+var errPlaneAlreadyConfigured = errors.New("the control plane already holds a configuration for this sidecar")
+
+// rawDeclaresListeners reports whether the document names at least one
+// listener, with a lenient probe rather than the strict decoder: it only
+// picks between "serve this" and "seed the plane", and whatever is served
+// still goes through LoadConfigBytes. Without it, an older gateway's empty
+// 200 document would reach the strict path and blame a schema mismatch for
+// what is really an unconfigured sidecar.
+func rawDeclaresListeners(raw []byte) bool {
+	var probe struct {
+		Listeners []json.RawMessage `json:"listeners"`
+	}
+	return json.Unmarshal(raw, &probe) == nil && len(probe.Listeners) > 0
+}
+
+// importLocalConfig seeds a plane that holds no configuration with the local
+// file's document, then returns what the plane serves afterwards, so the
+// running config still round-trips through the plane even on the boot that
+// taught it. pushed reports whether this process's write landed: a
+// concurrent author wins the race and this boot serves their document.
+//
+// The pushed document drops control_plane_url and license. The URL is
+// connection metadata this process already resolved, and the license stays
+// a file-side source (the documented precedence), not a row every fleet
+// admin can read.
+func importLocalConfig(planeURL, token string, local *Config) (raw []byte, pushed bool, err error) {
+	if local == nil || len(local.Listeners) == 0 {
+		return nil, false, fmt.Errorf("the control plane at %s has no configuration for this sidecar; "+
+			"author one in the control plane, or restart with a config file whose listeners this "+
+			"process can import", planeURL)
+	}
+	doc := *local
+	doc.ControlPlaneURL = ""
+	doc.License = ""
+	doc.cp = nil
+	body, err := json.Marshal(doc)
+	if err != nil {
+		return nil, false, fmt.Errorf("marshaling the config file for the import: %w", err)
+	}
+	switch err := pushControlPlaneConfig(planeURL, token, body); {
+	case err == nil:
+		pushed = true
+	case errors.Is(err, errPlaneAlreadyConfigured):
+		// Someone authored a config between the two requests. Their write
+		// wins; the fetch below serves it and Run warns about the file's
+		// ignored listeners.
+	default:
+		return nil, false, err
+	}
+	raw, err = fetchControlPlaneConfig(planeURL, token, Version)
+	if err != nil {
+		return nil, false, fmt.Errorf("the handshake after the configuration import failed: %w", err)
+	}
+	// A plane that accepted the import and still answers without listeners
+	// is broken; naming that beats letting the strict decoder blame a
+	// schema mismatch.
+	if !rawDeclaresListeners(raw) {
+		return nil, false, fmt.Errorf("the configuration was imported but the control plane at %s "+
+			"still answers without listeners; check the plane's logs", planeURL)
+	}
+	return raw, pushed, nil
+}
+
+// pushControlPlaneConfig PUTs the document to the plane's configuration
+// endpoint. The plane accepts it only when it holds no listeners yet;
+// errPlaneAlreadyConfigured reports that refusal so the caller can serve
+// the plane's document instead of overwriting it.
+func pushControlPlaneConfig(baseURL, token string, body []byte) error {
+	u, err := url.Parse(baseURL)
+	if err != nil {
+		return fmt.Errorf("control plane URL %q: %w", baseURL, err)
+	}
+	req, err := http.NewRequest(http.MethodPut,
+		u.JoinPath(controlPlaneConfigurationPath).String(), bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("control plane request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(sidecarTokenHeader, token)
+
+	resp, err := controlPlaneHTTPClient().Do(req)
+	if err != nil {
+		return fmt.Errorf("the control plane at %s is unreachable: %w", baseURL, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxControlPlaneConfig+1))
+	if err != nil {
+		return fmt.Errorf("reading the control plane response from %s: %w", baseURL, err)
+	}
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return nil
+	case http.StatusUnauthorized:
+		return fmt.Errorf("the control plane at %s rejected the token; "+
+			"check it against the one shown when this sidecar was created", baseURL)
+	case http.StatusConflict:
+		return fmt.Errorf("%w: %s", errPlaneAlreadyConfigured, controlPlaneMessage(raw))
+	case http.StatusNotFound, http.StatusMethodNotAllowed:
+		// A gateway that predates the import route. The operator can still
+		// author the configuration on the plane; the message says so
+		// instead of blaming the config file.
+		return fmt.Errorf("the control plane at %s does not accept a configuration import "+
+			"(no PUT %s route; it may predate this build); author the configuration in the "+
+			"control plane instead", baseURL, controlPlaneConfigurationPath)
+	case http.StatusUnprocessableEntity:
+		return fmt.Errorf("the control plane at %s refused the imported config: %s",
+			baseURL, controlPlaneMessage(raw))
+	}
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		return fmt.Errorf("the control plane at %s redirected to %q; the import "+
+			"never follows one, so the token was not re-sent. Configure the final URL",
+			baseURL, resp.Header.Get("Location"))
+	}
+	return fmt.Errorf("the control plane at %s answered %s: %s",
 		baseURL, resp.Status, controlPlaneMessage(raw))
 }
 

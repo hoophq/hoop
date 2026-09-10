@@ -168,6 +168,33 @@ func UpdateSidecarConfiguration(db *gorm.DB, orgID, nameOrID string, configurati
 	return &item, nil
 }
 
+// AdoptSidecarConfiguration stores the document a sidecar carried locally,
+// but only while the row holds no listeners: the guard runs in the UPDATE
+// itself, so a configuration authored concurrently in the control plane is
+// never overwritten by a restarting sidecar. ErrAlreadyExists reports the
+// guard firing; the row is known to exist because the caller authenticated
+// its token.
+func AdoptSidecarConfiguration(db *gorm.DB, orgID, id string, configuration SidecarConfiguration) (*Sidecar, error) {
+	var item Sidecar
+	err := db.Raw(`
+	UPDATE private.sidecars
+	SET configuration = ?
+	WHERE org_id = ? AND id = ?
+	  AND (jsonb_typeof(configuration->'listeners') IS DISTINCT FROM 'array'
+	       OR jsonb_array_length(configuration->'listeners') = 0)
+	RETURNING id, org_id, name, created_by, created_at, configuration`,
+		configuration, orgID, id).
+		Scan(&item).
+		Error
+	if err != nil {
+		return nil, err
+	}
+	if item.ID == "" {
+		return nil, ErrAlreadyExists
+	}
+	return &item, nil
+}
+
 // DeleteSidecarByNameOrID hard deletes the row and returns its id, so the
 // caller can evict any process-local runtime state.
 func DeleteSidecarByNameOrID(db *gorm.DB, orgID, nameOrID string) (string, error) {

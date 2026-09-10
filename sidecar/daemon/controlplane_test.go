@@ -2,9 +2,11 @@ package daemon
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/hoophq/hoop/sidecar/license"
@@ -238,20 +240,193 @@ func TestATokenWithoutAControlPlaneStopsStartup(t *testing.T) {
 	}
 }
 
-// The plane supplies the listeners, so a file that also declares them is two
-// authorities for one fact. Refused for the same reason normalize refuses a
-// field written in both spellings: nobody can predict the winner.
-func TestAConfigFileWithListenersConflictsWithAControlPlane(t *testing.T) {
-	srv, _ := planeServer(t, http.StatusOK, planeConfig)
+// adoptivePlane is a fake gateway with the import route, matching the real
+// handlers' contract: the handshake answers 412 (or, as a legacy build, 200
+// with the empty document) until something is stored, and the PUT stores a
+// document exactly once, answering 409 afterwards.
+type adoptivePlane struct {
+	mu     sync.Mutex
+	stored string
+	legacy bool
+	puts   []string
+	srv    *httptest.Server
+}
+
+func newAdoptivePlane(t *testing.T, stored string, legacy bool) *adoptivePlane {
+	t.Helper()
+	p := &adoptivePlane{stored: stored, legacy: legacy}
+	p.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == controlPlaneHandshakePath:
+			if p.stored == "" {
+				if p.legacy {
+					_, _ = w.Write([]byte(`{}`))
+					return
+				}
+				w.WriteHeader(http.StatusPreconditionFailed)
+				_, _ = w.Write([]byte(`{"message":"no configuration is assigned to this sidecar"}`))
+				return
+			}
+			_, _ = w.Write([]byte(p.stored))
+		case r.Method == http.MethodPut && r.URL.Path == controlPlaneConfigurationPath:
+			body, _ := io.ReadAll(r.Body)
+			p.puts = append(p.puts, string(body))
+			if p.stored != "" {
+				w.WriteHeader(http.StatusConflict)
+				_, _ = w.Write([]byte(`{"message":"already configured"}`))
+				return
+			}
+			p.stored = string(body)
+			_, _ = w.Write([]byte(p.stored))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(p.srv.Close)
+	return p
+}
+
+// The connect journey: a standalone sidecar's file, plus the URL and the
+// token, seeds a plane that holds no configuration, and the plane's answer
+// after the import is what runs. The pushed document carries no
+// control_plane_url and no license: the URL is connection metadata this
+// process resolved, and the license stays a file-side source.
+func TestAConfigFileSeedsAPlaneWithNoConfiguration(t *testing.T) {
+	plane := newAdoptivePlane(t, "", false)
+	t.Setenv(ControlPlaneURLEnv, plane.srv.URL)
+	t.Setenv(SidecarTokenEnv, "hsc_x")
+
+	cfg, _, err := SetupWith(writeConfig(t, minimalConfig+`,"log_level":"debug"}`), nil, nil)
+	if err != nil {
+		t.Fatalf("SetupWith: %v", err)
+	}
+	if len(cfg.Listeners) != 1 {
+		t.Fatalf("listeners = %d, want the file's one", len(cfg.Listeners))
+	}
+	if len(plane.puts) != 1 {
+		t.Fatalf("imports = %d, want 1", len(plane.puts))
+	}
+	if strings.Contains(plane.puts[0], "control_plane_url") || strings.Contains(plane.puts[0], "license") {
+		t.Errorf("the pushed document leaks a file-side fact: %s", plane.puts[0])
+	}
+	if !strings.Contains(plane.puts[0], `"log_level":"debug"`) {
+		t.Errorf("the pushed document lost a field: %s", plane.puts[0])
+	}
+	if cfg.cp == nil || !cfg.cp.imported || cfg.cp.fileListeners != 0 {
+		t.Errorf("cp bookkeeping: imported=%v fileListeners=%d, want true/0",
+			cfg.cp != nil && cfg.cp.imported, cfg.cp.fileListeners)
+	}
+
+	// The restart: the plane now owns the config. The file's listeners are
+	// ignored, not re-imported and not refused.
+	cfg2, _, err := SetupWith(writeConfig(t, minimalConfig+`}`), nil, nil)
+	if err != nil {
+		t.Fatalf("SetupWith after the import: %v", err)
+	}
+	if len(plane.puts) != 1 {
+		t.Fatalf("imports after the restart = %d, want still 1", len(plane.puts))
+	}
+	if cfg2.cp.imported || cfg2.cp.fileListeners != 1 {
+		t.Errorf("cp bookkeeping after the restart: imported=%v fileListeners=%d, want false/1",
+			cfg2.cp.imported, cfg2.cp.fileListeners)
+	}
+}
+
+// Once the plane holds a configuration it owns it: the file's listeners are
+// ignored rather than merged or refused, and the count reaches Run's warn.
+// Never merged: no operator can predict which half of a merged config wins.
+func TestAPlaneWithAConfigWinsOverTheFileListeners(t *testing.T) {
+	plane := newAdoptivePlane(t, planeConfig, false)
+	t.Setenv(ControlPlaneURLEnv, plane.srv.URL)
+	t.Setenv(SidecarTokenEnv, "hsc_x")
+
+	cfg, _, err := SetupWith(writeConfig(t, minimalConfig+`}`), nil, nil)
+	if err != nil {
+		t.Fatalf("SetupWith: %v", err)
+	}
+	if len(cfg.Listeners) != 1 || cfg.Listeners[0].Name != "appdb" {
+		t.Fatalf("the plane's config did not win: %+v", cfg.Listeners)
+	}
+	if len(plane.puts) != 0 {
+		t.Fatalf("imports = %d, want 0", len(plane.puts))
+	}
+	if cfg.cp.imported || cfg.cp.fileListeners != 1 {
+		t.Errorf("cp bookkeeping: imported=%v fileListeners=%d, want false/1",
+			cfg.cp.imported, cfg.cp.fileListeners)
+	}
+}
+
+// An older gateway answers the empty document with a 200 instead of the 412.
+// Same fact, same import; without the probe this build would blame a schema
+// mismatch for what is really an unconfigured sidecar.
+func TestALegacyEmptyAnswerTriggersTheImport(t *testing.T) {
+	plane := newAdoptivePlane(t, "", true)
+	t.Setenv(ControlPlaneURLEnv, plane.srv.URL)
+	t.Setenv(SidecarTokenEnv, "hsc_x")
+
+	cfg, _, err := SetupWith(writeConfig(t, minimalConfig+`}`), nil, nil)
+	if err != nil {
+		t.Fatalf("SetupWith: %v", err)
+	}
+	if len(cfg.Listeners) != 1 || len(plane.puts) != 1 {
+		t.Fatalf("listeners = %d, imports = %d, want 1 and 1", len(cfg.Listeners), len(plane.puts))
+	}
+}
+
+// A configuration authored between the handshake and the push wins the race:
+// the plane answers 409, and this boot serves the concurrent author's
+// document instead of failing or overwriting it.
+func TestAConcurrentlyAuthoredConfigWinsTheImportRace(t *testing.T) {
+	var mu sync.Mutex
+	handshakes := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == controlPlaneHandshakePath:
+			handshakes++
+			if handshakes == 1 {
+				w.WriteHeader(http.StatusPreconditionFailed)
+				_, _ = w.Write([]byte(`{"message":"no configuration is assigned to this sidecar"}`))
+				return
+			}
+			_, _ = w.Write([]byte(planeConfig))
+		case r.Method == http.MethodPut && r.URL.Path == controlPlaneConfigurationPath:
+			w.WriteHeader(http.StatusConflict)
+			_, _ = w.Write([]byte(`{"message":"already configured"}`))
+		}
+	}))
+	t.Cleanup(srv.Close)
 	t.Setenv(ControlPlaneURLEnv, srv.URL)
 	t.Setenv(SidecarTokenEnv, "hsc_x")
 
-	_, _, err := SetupWith(writeConfig(t, minimalConfig+`}`), nil, nil)
-	if err == nil {
-		t.Fatal("a file with listeners was accepted beside a control plane")
+	cfg, _, err := SetupWith(writeConfig(t, minimalConfig+`}`), nil, nil)
+	if err != nil {
+		t.Fatalf("SetupWith: %v", err)
 	}
-	if !strings.Contains(err.Error(), "listener") {
-		t.Errorf("the error does not say what conflicts: %v", err)
+	if len(cfg.Listeners) != 1 || cfg.Listeners[0].Name != "appdb" {
+		t.Fatalf("the concurrent author's config did not win: %+v", cfg.Listeners)
+	}
+	if cfg.cp.imported {
+		t.Error("a lost race must not claim the import")
+	}
+}
+
+// A plane with nothing to serve and no file to import from is a dead end the
+// error must name, with both ways out.
+func TestAnEmptyPlaneWithoutAFileStopsStartup(t *testing.T) {
+	plane := newAdoptivePlane(t, "", false)
+	t.Setenv(ControlPlaneURLEnv, plane.srv.URL)
+	t.Setenv(SidecarTokenEnv, "hsc_x")
+
+	_, _, err := SetupWith("", nil, nil)
+	if err == nil {
+		t.Fatal("an empty plane with no file was accepted")
+	}
+	if !strings.Contains(err.Error(), "has no configuration") {
+		t.Errorf("the error does not name the problem: %v", err)
 	}
 }
 
@@ -326,9 +501,10 @@ func TestAPlaneMisconfigurationReachesTheOperator(t *testing.T) {
 	}
 }
 
-// Validate relaxes the listener check whenever a plane is configured, so the
-// explicit check on the FETCHED config is what stands between an empty
-// answer and a process serving nothing.
+// A listener-less 200 answer with no file to import routes into the same
+// "has no configuration" error, never into the strict decoder's schema
+// blame: what stands between an empty answer and a process serving nothing
+// is the import path's own check.
 func TestAnEmptyPlaneConfigIsRefused(t *testing.T) {
 	srv, _ := planeServer(t, http.StatusOK, `{"listeners":[]}`)
 	t.Setenv(ControlPlaneURLEnv, srv.URL)
@@ -338,7 +514,7 @@ func TestAnEmptyPlaneConfigIsRefused(t *testing.T) {
 	if err == nil {
 		t.Fatal("a config with no listeners was accepted from the plane")
 	}
-	if !strings.Contains(err.Error(), "no listeners") {
+	if !strings.Contains(err.Error(), "has no configuration") {
 		t.Errorf("the error does not say what is missing: %v", err)
 	}
 }

@@ -811,10 +811,11 @@ func (c *Config) resolve(lc ListenerConfig) (GuardrailsConfig, *OPAConfig, MaskC
 func (c *Config) Validate() error {
 	var problems []string
 
-	// A file that names a control plane carries no listeners of its own:
-	// the plane supplies them through the handshake. resolveConfigSource
-	// checks that what the plane sent has at least one, so an empty config
-	// still cannot start.
+	// A file that names a control plane may still carry listeners: they
+	// seed a plane that holds no configuration yet, and are ignored (out
+	// loud) once it does. Either way the plane supplies the running set,
+	// and resolveConfigSource checks that what it sent has at least one,
+	// so an empty config still cannot start.
 	if len(c.Listeners) == 0 && !c.controlPlaneConfigured() {
 		problems = append(problems, "no listeners configured")
 	}

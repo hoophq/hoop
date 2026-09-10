@@ -252,13 +252,19 @@ path, and no config key exists for it: a bearer secret does not belong in a
 file that gets committed.
 
 At startup the process runs the handshake
-(`POST {url}/api/sidecars/handshake`). The plane builds the answer from the
-connections assigned to this sidecar, and that document becomes the running
-config, checked by the same strict decoder the file path uses. `--config`
-becomes optional; a file may still name the plane and a license, but the
-process refuses one that also declares listeners: two authorities for one
-fact is the same mistake as a field written in two spellings. A first
-handshake that fails stops startup, since there is nothing to serve yet.
+(`POST {url}/api/sidecars/handshake`). The plane answers with the document
+stored for this sidecar, and that document becomes the running config,
+checked by the same strict decoder the file path uses. `--config` becomes
+optional. A plane holding no configuration answers 412, and the process
+seeds it with the file's document (`PUT {url}/api/sidecars/configuration`),
+then serves what the plane sends back: a sidecar that ran standalone
+connects by adding the URL and passing the token, nothing else. The import
+happens only into an empty plane; once the plane holds a configuration it
+owns it, and listeners still in the file are ignored with a warning rather
+than merged: two authorities for one fact is the same mistake as a field
+written in two spellings. The pushed document drops `control_plane_url` and
+`license`, which stay file-side facts. A first handshake that fails stops
+startup, since there is nothing to serve yet.
 
 Once running, a heartbeat repeats the handshake every minute. It keeps the
 plane's last-seen fresh and picks up edits: a change that only touches rules

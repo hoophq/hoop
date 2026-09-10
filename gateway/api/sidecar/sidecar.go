@@ -191,14 +191,14 @@ func Put(c *gin.Context) {
 // Sidecar Handshake
 //
 //	@Summary		Sidecar Handshake
-//	@Description	Authenticated with the hoop-sidecar-token header. Records the reported version and returns the configuration the sidecar must serve.
+//	@Description	Authenticated with the hoop-sidecar-token header. Records the reported version and returns the configuration the sidecar must serve. Answers 412 while no configuration with listeners is assigned, recording nothing: a sidecar that cannot run must not show up as recently seen.
 //	@Tags			Sidecars
 //	@Accept			json
 //	@Produce		json
 //	@Param			hoop-sidecar-token	header		string							true	"The token returned when the sidecar was created"
 //	@Param			request				body		openapi.SidecarHandshakeRequest	true	"The request body resource"
-//	@Success		200			{object}	map[string]interface{}
-//	@Failure		400,401,500	{object}	openapi.HTTPError
+//	@Success		200				{object}	map[string]interface{}
+//	@Failure		400,401,412,500	{object}	openapi.HTTPError
 //	@Router			/sidecars/handshake [post]
 func Handshake(c *gin.Context) {
 	sidecar := apiroutes.SidecarFromContext(c)
@@ -211,8 +211,60 @@ func Handshake(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
+	// An empty answer would only kill the caller: the sidecar refuses to
+	// serve a config with no listeners and exits. The 412 lets it import
+	// its local file instead, and skipping recordRuntime keeps a process
+	// that cannot run from showing up as recently seen.
+	if len(sidecar.Configuration.Listeners) == 0 {
+		c.JSON(http.StatusPreconditionFailed, gin.H{"message": "no configuration is assigned to this sidecar; " +
+			"start the sidecar with its config file to import it, or author the configuration in the control plane"})
+		return
+	}
 	recordRuntime(sidecar.ID, req.Version)
 	c.JSON(http.StatusOK, sidecar.Configuration)
+}
+
+// Import Sidecar Configuration
+//
+//	@Summary		Import Sidecar Configuration
+//	@Description	Authenticated with the hoop-sidecar-token header. Stores the config document a sidecar carried locally, once: the import is refused with 409 when the control plane already holds a configuration with listeners, so a centrally authored config is never overwritten by a restarting sidecar.
+//	@Tags			Sidecars
+//	@Accept			json
+//	@Produce		json
+//	@Param			hoop-sidecar-token	header		string	true	"The token returned when the sidecar was created"
+//	@Param			request				body		object	true	"The configuration document, the same shape the handshake answers"
+//	@Success		200					{object}	map[string]interface{}
+//	@Failure		400,401,409,422,500	{object}	openapi.HTTPError
+//	@Router			/sidecars/configuration [put]
+func ImportConfiguration(c *gin.Context) {
+	sidecar := apiroutes.SidecarFromContext(c)
+	if sidecar == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"message": "access denied"})
+		return
+	}
+	raw, err := c.GetRawData()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+	cfg, err := services.ParseSidecarConfiguration(raw)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
+	}
+	if len(cfg.Listeners) == 0 {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "an imported configuration must declare at least one listener"})
+		return
+	}
+	item, err := models.AdoptSidecarConfiguration(models.DB, sidecar.OrgID, sidecar.ID, models.SidecarConfiguration(cfg))
+	switch {
+	case err == nil:
+		c.JSON(http.StatusOK, item.Configuration)
+	case errors.Is(err, models.ErrAlreadyExists):
+		c.JSON(http.StatusConflict, gin.H{"message": "the control plane already holds a configuration for this sidecar; edit it there"})
+	default:
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed importing sidecar configuration")
+	}
 }
 
 // Sidecar Configuration

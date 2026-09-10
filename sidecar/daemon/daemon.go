@@ -663,6 +663,16 @@ func Run(cfg *Config, det Plugin) error {
 			"url", cfg.cp.url,
 			"source", cfg.cp.urlSource,
 			"poll", heartbeatEvery.String())
+		if cfg.cp.imported {
+			log.Info("configuration imported into the control plane",
+				"url", cfg.cp.url,
+				"listeners", len(cfg.Listeners))
+		}
+		if cfg.cp.fileListeners > 0 {
+			log.Warn("the config file's listeners are ignored: the control plane owns the running config",
+				"file_listeners", cfg.cp.fileListeners,
+				"hint", "edit the configuration in the control plane; the local file no longer holds it")
+		}
 		go cfg.cp.heartbeat(ctx, log, rl)
 	}
 
