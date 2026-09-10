@@ -41,9 +41,13 @@ func newFakeReview(ownerID, status, typ string, groups []models.ReviewGroups, ac
 	}
 
 	return &models.Review{
-		OwnerID:               ownerID,
-		Status:                models.ReviewStatusType(status),
-		Type:                  models.ReviewType(typ),
+		OwnerID: ownerID,
+		Status:  models.ReviewStatusType(status),
+		Type:    models.ReviewType(typ),
+		// Every review created against a connection carries its name, and that
+		// is what keeps this one on the connection path. Leaving it empty here
+		// would quietly test a review shape production never builds.
+		ConnectionName:        "pgdemo",
 		ReviewGroups:          groups,
 		MinApprovals:          minApprovals,
 		ForceApprovalGroups:   forceApprovalGroups,
@@ -366,6 +370,7 @@ func TestDoReview(t *testing.T) {
 					OwnerID:           "user1",
 					Status:            models.ReviewStatusPending,
 					Type:              "onetime",
+					ConnectionName:    "pgdemo",
 					AccessDurationSec: 3600, // 1 hour
 					ReviewGroups: []models.ReviewGroups{
 						{GroupName: "issuing", Status: models.ReviewStatusPending},
@@ -699,22 +704,23 @@ func TestDoReviewSidecar(t *testing.T) {
 	}
 }
 
-// IsSidecarReview decides whether a review ever reaches the connection lookup.
-// It reads listener_name because deleting a sidecar nulls sidecar_id: a
-// discriminator answering from that column would drop an in-flight review onto
-// the connection path, where it could never be settled again.
-func TestIsSidecarReview(t *testing.T) {
-	assert.True(t, newFakeSidecarReview(types.GroupAdmin).IsSidecarReview())
+// HasConnection decides whether a review ever reaches the connection lookup,
+// and so which policy settles it. It is a fact about the row, not about the
+// process: a control plane serves reviews that do have a connection, and a
+// gateway sharing the database can read one that does not.
+func TestHasConnection(t *testing.T) {
+	assert.False(t, newFakeSidecarReview(types.GroupAdmin).HasConnection(),
+		"a review bound to a listener names no connection")
 
+	// Deleting a sidecar nulls sidecar_id through the foreign key. That must
+	// not change which path the review takes, or an in-flight review would
+	// fall to the connection path and never be settleable again.
 	orphaned := newFakeSidecarReview(types.GroupAdmin)
-	orphaned.SidecarID = sql.NullString{} // ON DELETE SET NULL
-	assert.True(t, orphaned.IsSidecarReview(),
-		"an orphaned sidecar review must keep taking the sidecar path")
+	orphaned.SidecarID = sql.NullString{}
+	assert.False(t, orphaned.HasConnection())
 
 	var nilReview *models.Review
-	assert.False(t, nilReview.IsSidecarReview())
-	assert.False(t, (&models.Review{}).IsSidecarReview(),
-		"a review with no listener must take the connection path")
-	assert.False(t, (&models.Review{ListenerName: sql.NullString{String: "", Valid: true}}).IsSidecarReview(),
-		"a valid-but-empty listener name is not a sidecar review")
+	assert.False(t, nilReview.HasConnection())
+	assert.True(t, (&models.Review{ConnectionName: "pgdemo"}).HasConnection(),
+		"every review created against a connection must keep the connection path")
 }

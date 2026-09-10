@@ -106,20 +106,23 @@ type ReviewGroups struct {
 	ForcedReview bool             `json:"forced_review"`
 }
 
-// IsSidecarReview reports whether this review was filed by a sidecar, and so
-// binds to a listener rather than to a connection.
+// HasConnection reports whether this review points at a connection. A review
+// filed by a sidecar does not: it binds to a listener instead.
 //
-// This is the discriminator, not the app mode. A control plane serves ordinary
-// reviews too: the AI analyzer files one from POST /sessions/:id/exec, which
-// answers before it ever needs the gRPC transport.
+// This is the discriminator the review path branches on, and it is deliberately
+// a fact about the row rather than about the process. Two reasons.
 //
-// It reads ListenerName rather than SidecarID on purpose. Deleting a sidecar
-// sets sidecar_id to NULL, and a discriminator that answered from that column
-// would change what a row IS when an unrelated sidecar is removed: the review
-// would fall to the connection path, find no connection, and become impossible
-// to approve or reject for the rest of its life. The listener survives.
-func (r *Review) IsSidecarReview() bool {
-	return r != nil && r.ListenerName.Valid && r.ListenerName.String != ""
+// The app mode cannot answer it. A control plane serves reviews that do have a
+// connection today — the AI analyzer files one from POST /sessions/:id/exec,
+// which answers before it ever needs the gRPC transport — and a gateway sharing
+// the database can read one that does not. A process-level test is right in at
+// most one of those.
+//
+// And it ages in the right direction: as the control plane stops using
+// connections, those reviews answer false here and take this path with no
+// further change.
+func (r *Review) HasConnection() bool {
+	return r != nil && r.ConnectionName != ""
 }
 
 // RejectedByEmail returns the email of the reviewer whose group rejected the
