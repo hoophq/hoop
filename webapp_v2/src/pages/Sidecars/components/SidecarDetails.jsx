@@ -102,8 +102,9 @@ export default function SidecarDetails({ sidecar }) {
       {configured ? (
         <Alert color="blue" variant="light" radius="md" icon={<Lock size={16} />}>
           <Text size="sm">
-            The control plane delivers guardrails, masking and analyzer settings to this sidecar. Listeners come from
-            the sidecar&apos;s own config file. Editing any of it from here is not built yet.
+            {
+              "The control plane delivers guardrails, masking and analyzer settings to this sidecar. Listeners come from the sidecar's own config file. Editing any of it from here is not built yet."
+            }
           </Text>
         </Alert>
       ) : (

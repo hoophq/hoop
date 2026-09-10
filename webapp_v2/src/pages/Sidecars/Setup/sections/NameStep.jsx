@@ -52,8 +52,17 @@ function SourceTabs({ sources }) {
 // (Config File Reference → Components → "As a sidecar container" and
 // "On Kubernetes"). The image is built from the Dockerfile in the repository;
 // there is no published sidecar image to name here.
-const DOCKER_COMPOSE = `hoop-inspect:
+//
+// Both carry the URL and the token as environment variables, because a
+// container has no other way to take them: its command reads the config file
+// only, and the daemon refuses to start with a control plane and no token
+// (resolveConfigSource, sidecar/daemon/controlplane.go). The CLI block further
+// down is the host install, where the flags are available instead.
+const dockerCompose = (url, token) => `hoop-inspect:
   image: hoop-inspect:local
+  environment:
+    HOOP_CONTROL_PLANE_URL: ${url}
+    HOOP_SIDECAR_TOKEN: ${token}
   volumes:
     - ./config.yaml:/etc/hoop-inspect/config.yaml:ro
   ports:
@@ -61,12 +70,22 @@ const DOCKER_COMPOSE = `hoop-inspect:
   healthcheck:
     test: ["CMD-SHELL", "curl -sf http://127.0.0.1:19000/healthz || exit 1"]`
 
-const KUBERNETES = `containers:
+// The token goes in a Secret rather than the manifest: a Deployment is the
+// thing most likely to sit in git.
+const kubernetes = (url) => `# kubectl create secret generic hoop-sidecar-token --from-literal=token=<token>
+containers:
   - name: hoop-inspect
     image: hoop-inspect:local
     env:
       - name: HOOP_SIDECAR_CONFIG
         value: /etc/hoop-inspect/config.yaml
+      - name: HOOP_CONTROL_PLANE_URL
+        value: ${url}
+      - name: HOOP_SIDECAR_TOKEN
+        valueFrom:
+          secretKeyRef:
+            name: hoop-sidecar-token
+            key: token
     volumeMounts:
       - name: config
         mountPath: /etc/hoop-inspect
@@ -100,12 +119,14 @@ export default function NameStep({ mode, sidecar, token, controlPlaneUrl, creati
       <NumberedBlock key="deploy" n={blocks.length + 1} title="Deploy the sidecar">
         <SourceTabs
           sources={[
-            { value: 'compose', label: 'Docker Compose', code: DOCKER_COMPOSE },
-            { value: 'k8s', label: 'Kubernetes', code: KUBERNETES },
+            { value: 'compose', label: 'Docker Compose', code: dockerCompose(controlPlaneUrl, token) },
+            { value: 'k8s', label: 'Kubernetes', code: kubernetes(controlPlaneUrl) },
           ]}
         />
         <Text size="xs" c="dimmed">
-          {'On Kubernetes, mount the config as a ConfigMap and set HOOP_SIDECAR_CONFIG instead of passing a flag. '}
+          {
+            'A container takes the URL and the token from its environment, so the two blocks below are the same settings for a sidecar you install on a host. '
+          }
           <Anchor href={docsUrl.sidecar.getStarted} target="_blank" rel="noopener noreferrer" size="xs">
             Running the Sidecar
           </Anchor>

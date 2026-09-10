@@ -840,12 +840,13 @@ Non-obvious notes only:
   empty document, and a sidecar with no listeners refuses to start — the details card
   says so. Writing it is `PUT /sidecars/:nameOrID`, which has no caller here yet.
   `pages/Sidecars/config.js` derives the Features chips from the document;
-  `pages/Sidecars/status.js` turns `last_seen_at` into Waiting / Connected / Offline
-  (the sidecar re-runs the handshake every minute, so a stale timestamp means it
-  stopped calling; a gateway restart clears the timestamp entirely). **Mock:** with
-  `VITE_SIDECARS_MOCK=true` the export is `sidecars.mock.js`, a simulated fleet with the
-  same interface covering the three states. To go live for good, delete that file and
-  the switch at the bottom of `sidecars.js`.
+  `pages/Sidecars/status.js` turns `last_seen_at` into Waiting or Connected, and
+  those two only: a stale timestamp still reads Connected with its relative last-seen
+  time. There is no Offline, because `last_seen_at` is gateway memory that a restart
+  clears, so a sidecar that stopped calling and one the gateway forgot look identical
+  from here. **Mock:** with `VITE_SIDECARS_MOCK=true` the export is `sidecars.mock.js`,
+  a simulated fleet with the same interface covering both states. To go live for good,
+  delete that file and the switch at the bottom of `sidecars.js`.
 - `sessions.js` — `list(params)`. **`limit` does not make the call cheap**: the
   gateway always runs an unbounded `COUNT(*)` (joined against reviews) to fill
   `total` before applying the limit, so `{ limit: 1 }` costs the same as a full
