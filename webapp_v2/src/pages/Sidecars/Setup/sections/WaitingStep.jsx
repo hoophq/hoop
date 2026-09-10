@@ -41,7 +41,7 @@ const STATE = {
  * Cancel asks before deleting: the token may already sit in a deployment that
  * is rolling out, and deleting revokes it for good.
  */
-export default function WaitingStep({ sidecar, onConnected, onDelete, onKeep, deleting }) {
+export default function WaitingStep({ sidecar, onConnected, onGone, onDelete, onKeep, deleting }) {
   const [connected, setConnected] = useState(!!sidecar?.last_seen_at)
   const [gone, setGone] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -63,6 +63,7 @@ export default function WaitingStep({ sidecar, onConnected, onDelete, onKeep, de
         if (cancelled) return
         if (err.response?.status === 404) {
           setGone(true)
+          onGone()
           return
         }
       }
@@ -73,7 +74,7 @@ export default function WaitingStep({ sidecar, onConnected, onDelete, onKeep, de
       cancelled = true
       clearTimeout(timer)
     }
-  }, [sidecar?.id, connected, gone, onConnected])
+  }, [sidecar?.id, connected, gone, onConnected, onGone])
 
   const copy = connected ? STATE.connected : gone ? STATE.gone : STATE.waiting
 

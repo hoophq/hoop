@@ -48,6 +48,9 @@ export default function SidecarSetup({ mode = 'connect' }) {
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState(null)
   const [deleting, setDeleting] = useState(false)
+  // True while step 1 is polling. The header button spins on it, so the wizard
+  // never offers an action whose outcome is still unknown.
+  const [waiting, setWaiting] = useState(false)
 
   const handleCreate = async (name) => {
     setCreating(true)
@@ -65,9 +68,14 @@ export default function SidecarSetup({ mode = 'connect' }) {
 
   // The fresh record carries version and last_seen_at; the overview shows both.
   const handleConnected = useCallback((fresh) => {
+    setWaiting(false)
     setSidecar(fresh)
     setStep(2)
   }, [])
+
+  // Deleted from somewhere else while this page was open: the banner says so,
+  // and the button stops pretending to wait for it.
+  const handleGone = useCallback(() => setWaiting(false), [])
 
   const handleDelete = async () => {
     setDeleting(true)
@@ -81,9 +89,20 @@ export default function SidecarSetup({ mode = 'connect' }) {
     }
   }
 
+  // Step 1 has no forward action of its own: the check-in decides, and
+  // handleConnected moves on. Cancel, in the banner, is the way out.
   const action = [
-    { label: 'Continue', disabled: !sidecar, onClick: () => setStep(1) },
-    { label: 'Continue without waiting', disabled: false, onClick: () => setStep(2) },
+    {
+      label: 'Continue',
+      disabled: !sidecar,
+      onClick: () => {
+        setWaiting(true)
+        setStep(1)
+      },
+    },
+    // Never actionable: while polling it spins, and once the sidecar is gone
+    // there is nothing to continue to. Back and Cancel are the ways out.
+    { label: 'Continue', loading: waiting, disabled: true },
     { label: 'Finish', disabled: false, onClick: () => navigate(LIST_PATH) },
   ][step]
 
@@ -114,7 +133,7 @@ export default function SidecarSetup({ mode = 'connect' }) {
             ))}
           </Stepper>
         </Stack>
-        <Button onClick={action.onClick} disabled={action.disabled} flex="0 0 auto">
+        <Button onClick={action.onClick} disabled={action.disabled} loading={action.loading} flex="0 0 auto">
           {action.label}
         </Button>
       </Group>
@@ -128,6 +147,7 @@ export default function SidecarSetup({ mode = 'connect' }) {
         <WaitingStep
           sidecar={sidecar}
           onConnected={handleConnected}
+          onGone={handleGone}
           onDelete={handleDelete}
           onKeep={() => navigate(LIST_PATH)}
           deleting={deleting}
