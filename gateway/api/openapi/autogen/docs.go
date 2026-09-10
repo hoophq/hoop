@@ -16864,6 +16864,12 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": "9F9745B4-C77B-4D52-84D3-E24F67E3623C"
                 },
+                "listener_name": {
+                    "description": "The sidecar listener this review is bound to. Absent on a review that came from a connection",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "appdb"
+                },
                 "min_approvals": {
                     "description": "The minimum number of approvals required for this review",
                     "type": "integer",
@@ -16896,6 +16902,13 @@ const docTemplate = `{
                     "format": "uuid",
                     "readOnly": true,
                     "example": "35DB0A2F-E5CE-4AD8-A308-55C3108956E5"
+                },
+                "sidecar_id": {
+                    "description": "The sidecar that filed this review. Absent on a review that came from a connection",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true,
+                    "example": "5F5E5C6E-6C3A-4E9A-9E8B-2D6A7F1B0C4D"
                 },
                 "status": {
                     "description": "The status of the review\n* PENDING - The resource is waiting to be reviewed\n* APPROVED - The resource is fully approved\n* REJECTED - The resource is fully rejected\n* REVOKED - The resource was revoked after being approved\n* PROCESSING - The review is being executed\n* EXECUTED - The review was executed\n* UNKNOWN - Unable to know the status of the review",

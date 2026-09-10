@@ -1,6 +1,7 @@
 package reviewapi
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"net/http"
@@ -258,6 +259,14 @@ func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.Review
 			rev.OwnerEmail, len(rev.ReviewGroups), rev.CreatedAt.Format(time.RFC3339))
 	default:
 		return nil, fmt.Errorf("failed obtaining review, err=%v", err)
+	}
+
+	// A sidecar review binds to a listener and has no connection, so it leaves
+	// here before the lookup below. The dispatch sits at the one place every
+	// caller already funnels through — the HTTP handler, the Slack buttons and
+	// the MCP tool — rather than at each of them, where one could be missed.
+	if rev.IsSidecarReview() {
+		return DoSidecarReview(ctx, rev, status, rejectionReason)
 	}
 
 	connection, err := models.GetConnectionByNameOrID(models.NewAdminContext(ctx.OrgID), rev.ConnectionName)
@@ -557,5 +566,16 @@ func toOpenApiReview(r *models.Review) *openapi.Review {
 		MinApprovals:          r.MinApprovals,
 		ForceApprovalGroups:   r.ForceApprovalGroups,
 		RejectionReason:       r.RejectionReason,
+		SidecarID:             nullStringPtr(r.SidecarID),
+		ListenerName:          nullStringPtr(r.ListenerName),
 	}
+}
+
+// nullStringPtr keeps an unset column out of the response body rather than
+// rendering it as an empty string, which a client would have to guess about.
+func nullStringPtr(v sql.NullString) *string {
+	if !v.Valid || v.String == "" {
+		return nil
+	}
+	return &v.String
 }
