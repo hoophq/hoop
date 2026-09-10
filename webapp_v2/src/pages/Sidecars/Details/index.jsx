@@ -37,7 +37,12 @@ export default function SidecarDetailsPage() {
 
   const { sidecar, error } = result
 
-  if (showLoader) return <PageLoader h={400} />
+  // `loading` as well as `showLoader`: useMinDelay only raises its flag from a
+  // timeout, so between two /sidecars/:id URLs there is one frame where the
+  // loader is not up yet and `result` still holds the previous sidecar. The
+  // delay is there to hold the loader on afterwards, not to let that frame
+  // render the wrong record.
+  if (loading || showLoader) return <PageLoader h={400} />
 
   return (
     <Stack gap="xl">
