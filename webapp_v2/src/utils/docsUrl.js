@@ -29,10 +29,11 @@ export const docsUrl = {
     developmentEnvironments: 'https://hoop.dev/docs/quickstart/development-environments',
     ssh: 'https://hoop.dev/docs/quickstart/ssh',
   },
-  // The sidecar's public documentation is its README until hoop.dev/docs has a
-  // page for it.
   sidecar: {
-    readme: 'https://github.com/hoophq/hoop/blob/main/sidecar/README.md',
+    getStarted: 'https://hoop.dev/docs/setup/configuration/hoop-sidecar/get-started',
+    configFile: 'https://hoop.dev/docs/setup/configuration/hoop-sidecar/config-file',
+    // The handshake, and how to issue a token for a sidecar.
+    connectToControlPlane: 'https://hoop.dev/docs/control-plane/connect-sidecar',
   },
   setup: {
     agents: 'https://hoop.dev/docs/setup/agents',

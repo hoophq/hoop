@@ -13,8 +13,8 @@
 //   so `version` and `last_seen_at` appear. The configuration does not: the
 //   control plane holds that document (PUT /sidecars/:nameOrID) and serves it,
 //   the sidecar never reports one.
-// - The seeded fleet covers the three states a row can be in: connected,
-//   never-connected, and connected-then-quiet (see ../pages/Sidecars/status.js).
+// - The seeded fleet covers both states a row can be in: checked in, and
+//   never checked in (see ../pages/Sidecars/status.js).
 // - State survives a reload (sessionStorage); a new tab starts from the seed.
 
 const STORAGE_KEY = 'hoop.sidecars.mock'
@@ -68,28 +68,17 @@ function seed() {
       created_at: iso(t - 7 * 24 * HOUR),
       configuration: seedConfiguration('dbpg-prod', '10.0.1.12:5432'),
       version: '1.2.0',
-      // A heartbeat a moment ago: Connected.
+      // A check-in a moment ago: Connected.
       last_seen_at: iso(t - 40 * 1000),
     },
     {
-      // Registered, never configured, never started: Waiting.
+      // Registered, never started: Waiting, and nothing to show yet.
       id: 'mock-edge-api',
       org_id: 'mock-org',
       name: 'edge-api',
       created_by: 'admin@acme.com',
       created_at: iso(t - 3 * 24 * HOUR),
       configuration: {},
-    },
-    {
-      // Ran, then stopped calling: Offline, still showing what it last served.
-      id: 'mock-analytics-ro',
-      org_id: 'mock-org',
-      name: 'analytics-ro',
-      created_by: 'admin@acme.com',
-      created_at: iso(t - 21 * 24 * HOUR),
-      configuration: seedConfiguration('analytics-ro', '10.0.4.7:5432'),
-      version: '1.1.0',
-      last_seen_at: iso(t - 2 * HOUR),
     },
   ]
 }

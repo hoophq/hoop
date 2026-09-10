@@ -13,9 +13,9 @@ const POLL_HIDDEN_MS = 15000
 
 /**
  * Step 2 of the sidecar wizard (Figma: "Create and deploy a new Sidecar |
- * Configure"). Polls the sidecar until the gateway records a handshake, then
- * hands the fresh record back through onConnected. A sidecar with no stored
- * configuration calls once and then refuses to start, so the page also offers
+ * Configure"). Polls the sidecar until the control plane records its first
+ * check-in, then hands the fresh record back through onConnected. Nothing here
+ * reaches the sidecar: it is the side that dials out, so the page also offers
  * to continue without waiting.
  *
  * Cancel asks before deleting: the token may already sit in a deployment that
@@ -86,10 +86,10 @@ export default function WaitingStep({ sidecar, onConnected, onDelete, onKeep, de
             <Text fw={700}>{connected ? 'Sidecar connected' : gone ? 'This sidecar was deleted' : 'Waiting for the Sidecar to connect'}</Text>
             <Text size="sm" c="dimmed" ta="center">
               {connected
-                ? 'The control plane recorded its handshake.'
+                ? 'It checked in and took its configuration.'
                 : gone
                   ? 'It was removed from the list while this page was open.'
-                  : 'This can take up to 5 minutes. Start the sidecar with the values from the previous step.'}
+                  : 'This can take up to 5 minutes. Start the sidecar with the values from the previous step. It dials out to reach this control plane and nothing dials in, so check outbound HTTPS from the host it runs on.'}
             </Text>
           </Stack>
           {!connected && !gone && (

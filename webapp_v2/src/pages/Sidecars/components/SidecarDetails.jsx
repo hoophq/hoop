@@ -1,5 +1,5 @@
 import { Box, Divider, Group, Image, Paper, Pill, Stack, Text, Title } from '@mantine/core'
-import { Lock, TriangleAlert } from 'lucide-react'
+import { Info, Lock } from 'lucide-react'
 import Alert from '@/components/Alert'
 import Badge from '@/components/Badge'
 import Tooltip from '@/components/Tooltip'
@@ -87,10 +87,9 @@ function Listener({ listener, config, getIcon }) {
 /**
  * The "Sidecar Details" card (Figma: wizard Overview and the details page).
  *
- * The control plane stores this configuration and serves it to the sidecar on
- * its handshake and on every poll (gateway/api/sidecar). Editing it from here
- * is not built yet: until it is, the document is written through
- * `PUT /api/sidecars/:nameOrID` and this card only reads it.
+ * The control plane answers the sidecar's check-in with the configuration it
+ * holds for it (gateway/api/sidecar). This card reads that document and never
+ * writes it: authoring a configuration from the control plane is not built.
  */
 export default function SidecarDetails({ sidecar }) {
   const getIcon = useConnectionIconGetter()
@@ -103,19 +102,15 @@ export default function SidecarDetails({ sidecar }) {
       {configured ? (
         <Alert color="blue" variant="light" radius="md" icon={<Lock size={16} />}>
           <Text size="sm">
-            The control plane serves this configuration to the sidecar. It cannot be edited here yet: use
-            {' PUT /api/sidecars/'}
-            {sidecar.name}
-            {' to replace it.'}
+            The control plane delivers guardrails, masking and analyzer settings to this sidecar. Listeners come from
+            the sidecar&apos;s own config file. Editing any of it from here is not built yet.
           </Text>
         </Alert>
       ) : (
-        <Alert color="amber" variant="light" radius="md" icon={<TriangleAlert size={16} />}>
+        <Alert color="gray" variant="light" radius="md" icon={<Info size={16} />}>
           <Text size="sm">
-            This sidecar has no configuration. It has no listeners, so it refuses to start. Set one with
-            {' PUT /api/sidecars/'}
-            {sidecar.name}
-            {' before you run it.'}
+            The control plane holds no configuration for this sidecar yet. Until it does, the sidecar runs whatever its
+            own config file says.
           </Text>
         </Alert>
       )}
@@ -163,7 +158,7 @@ export default function SidecarDetails({ sidecar }) {
               </>
             ) : (
               <Text size="sm" c="dimmed">
-                Nothing configured yet.
+                Nothing delivered by the control plane yet.
               </Text>
             )}
           </Stack>
@@ -187,7 +182,7 @@ export default function SidecarDetails({ sidecar }) {
               ))
             ) : (
               <Text size="sm" c="dimmed">
-                No listeners. The sidecar needs at least one to start.
+                No listeners here. A connected sidecar reads them from its own config file.
               </Text>
             )}
           </Stack>

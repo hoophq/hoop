@@ -1,13 +1,11 @@
 import { useCallback, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Anchor, Group, Stack, Text, Title } from '@mantine/core'
-import { ArrowLeft, Info, SquareArrowOutUpRight } from 'lucide-react'
-import Alert from '@/components/Alert'
+import { Group, Stack, Text, Title } from '@mantine/core'
+import { ArrowLeft } from 'lucide-react'
 import Button from '@/components/Button'
 import Stepper from '@/components/Stepper'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import { useUserStore } from '@/stores/useUserStore'
-import { docsUrl } from '@/utils/docsUrl'
 import { showSnackbar } from '@/utils/snackbar'
 import MockNotice from '../components/MockNotice'
 import SidecarDetails from '../components/SidecarDetails'
@@ -27,15 +25,16 @@ const COPY = {
   },
   create: {
     title: 'Create and deploy a new Sidecar',
-    subtitle: 'Generate the config and deploy a new Sidecar with Docker or Kubernetes.',
+    subtitle: 'Deploy a new sidecar with Docker or Kubernetes, then point it at this control plane.',
     steps: ['Deploy', 'Configure', 'Overview'],
   },
 }
 
 /**
- * Three steps: name the sidecar and copy its token, wait for its handshake,
- * review what the control plane knows. The token lives in this component's
- * state and dies with it; a refresh restarts at step one.
+ * Three steps: name the sidecar and work through the blocks that connect it,
+ * wait for its first check-in, then review what it is configured to run. The
+ * token lives in this component's state and dies with it; a refresh restarts
+ * at step one.
  */
 export default function SidecarSetup({ mode = 'connect' }) {
   const copy = COPY[mode] ?? COPY.connect
@@ -121,20 +120,6 @@ export default function SidecarSetup({ mode = 'connect' }) {
       </Group>
 
       <MockNotice />
-
-      {mode === 'create' && step === 0 && (
-        <Alert color="blue" variant="light" radius="md" icon={<Info size={16} />}>
-          <Group justify="space-between" align="center" wrap="nowrap" gap="md">
-            <Text size="sm">See how to deploy the sidecar in our docs. Then add these fields to your configuration file.</Text>
-            <Anchor href={docsUrl.sidecar.readme} target="_blank" rel="noopener noreferrer" size="xs" fw={500}>
-              <Group gap={4} wrap="nowrap">
-                Go to Docs
-                <SquareArrowOutUpRight size={14} aria-hidden="true" />
-              </Group>
-            </Anchor>
-          </Group>
-        </Alert>
-      )}
 
       {step === 0 && (
         <NameStep
