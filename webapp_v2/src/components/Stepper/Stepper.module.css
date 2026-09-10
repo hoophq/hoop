@@ -1,0 +1,37 @@
+/* Mantine paints the whole Stepper from one variable, --stepper-outline-color,
+   and declares it per color scheme directly on the Stepper root
+   ([data-mantine-color-scheme='light'] .m_xxx), so a :root override from
+   cssVariablesResolver never reaches it — the element-level declaration wins
+   over inheritance. Same case as --paper-border-color; see
+   components/Paper/Paper.module.css.
+
+   Its default is gray-2 (#c8c8cb), the same solid mid-gray the control plane
+   already rejected for disabled controls. And because Mantine uses that one
+   variable for BOTH the icon's fill and its border, softening it alone cannot
+   produce the Figma's step: a light fill inside a blue ring. Hence the extra
+   rules below.
+
+   The Figma (Control-Plane-UI, wizard frames 177:8558 / 202:11430) draws:
+     not reached  fill rgba(134, 142, 150, 0.1), blue ring, dark numeral
+     reached      fill and ring in the accent, white numeral
+   Mantine instead leaves the current step ([data-progress]) on the inactive
+   fill and only rings it, so that state is realigned here. */
+
+.root {
+  /* Drives the rule between steps. The Figma's icon tint at 10% alpha would
+     leave a 2px line all but invisible, so the separator takes the app's light
+     border color instead. */
+  --stepper-outline-color: var(--mantine-color-gray-1);
+}
+
+.stepIcon {
+  background-color: rgba(134, 142, 150, 0.1);
+  border-color: var(--stepper-color);
+  color: var(--mantine-color-text);
+}
+
+/* The current step reads as reached, like every step behind it. */
+.stepIcon[data-progress] {
+  background-color: var(--step-color);
+  color: var(--mantine-color-white);
+}

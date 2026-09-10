@@ -11,7 +11,8 @@ import {
   TagsInputTheme,
   PillsInputTheme,
 } from '@/components/Input/theme';
-import { PaperTheme } from '@/components/Paper/theme';
+import { PaperTheme } from '@/components/Paper/theme'
+import { StepperTheme } from '@/components/Stepper/theme';
 import { ButtonTheme } from '@/components/Button/theme';
 import { ActionIconTheme } from '@/components/ActionIcon/theme';
 
@@ -239,6 +240,7 @@ export const theme = createTheme({
     // so a plain theme entry stands in for Component.extend().
     PickerInputBase: { defaultProps: { size: 'md' } },
     Paper: PaperTheme,
+    Stepper: StepperTheme,
     Button: ButtonTheme,
     ActionIcon: ActionIconTheme,
   }

@@ -170,8 +170,8 @@ export default function NameStep({ mode, sidecar, token, controlPlaneUrl, creati
   )
 
   return (
-    <Grid gutter="xxl">
-      <Grid.Col span={{ base: 12, md: 4 }}>
+    <Grid columns={7} gutter="xl">
+      <Grid.Col span={2}>
         <Stack gap="xs">
           <Title order={4}>Connect it to this control plane</Title>
           <Text size="sm" c="dimmed">
@@ -185,7 +185,7 @@ export default function NameStep({ mode, sidecar, token, controlPlaneUrl, creati
         </Stack>
       </Grid.Col>
 
-      <Grid.Col span={{ base: 12, md: 8 }}>
+      <Grid.Col span={5}>
         <Stack gap="xl">
           <form onSubmit={handleSubmit}>
             <Stack gap="md" align="flex-start">

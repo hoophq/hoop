@@ -383,8 +383,14 @@ CSS Modules are allowed **only** for complex selectors that Mantine props cannot
 Available Mantine CSS variables (set by the theme in `src/theme.js`):
 
 ```css
-/* Spacing — xs=4px sm=8px md=16px lg=24px xl=32px xxl=48px xxxl=64px */
-var(--mantine-spacing-xs | sm | md | lg | xl | xxl | xxxl)
+/* Spacing. The theme's own scale carries an `Alt` suffix; Mantine's five
+   defaults stay alongside it, so both spellings resolve and they are NOT the
+   same size. There is no --mantine-spacing-xxl: that one silently resolves to
+   nothing and the rule using it is dropped.
+   theme:   xsAlt=4px smAlt=8px mdAlt=16px lgAlt=24px xlAlt=32px xxlAlt=48px xxxlAlt=64px
+   Mantine: xs=10px sm=12px md=16px lg=20px xl=32px */
+var(--mantine-spacing-xsAlt | smAlt | mdAlt | lgAlt | xlAlt | xxlAlt | xxxlAlt)
+var(--mantine-spacing-xs | sm | md | lg | xl)
 
 /* Font sizes — xs=12px sm=14px md=16px lg=18px xl=20px */
 var(--mantine-font-size-xs | sm | md | lg | xl)
