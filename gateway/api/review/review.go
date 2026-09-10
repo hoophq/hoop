@@ -34,6 +34,7 @@ var (
 	ErrGroupAlreadyReviewed = errors.New("it was already reviewed")
 	ErrForbidden            = errors.New("forbidden")
 	ErrUnknownStatus        = errors.New("unknown status")
+	ErrNoTimeWindow         = errors.New("a review with no connection takes no time window")
 )
 
 type TransportReleaseConnectionFunc func(orgID, sid, reviewOwnerSlackID, reviewStatus, rejectReason, rejectedBy string)
@@ -165,7 +166,7 @@ func (h *handler) ReviewByIdOrSid(c *gin.Context) {
 	req.Status = openapi.ReviewRequestStatusType(strings.ToUpper(string(req.Status)))
 	rev, err := DoReview(ctx, reviewIdOrSid, models.ReviewStatusType(req.Status), reviewTimeWindow, req.ForceReview, req.RejectionReason)
 	switch err {
-	case ErrNotEligible, ErrSelfApproval, ErrWrongState:
+	case ErrNotEligible, ErrSelfApproval, ErrWrongState, ErrNoTimeWindow:
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 	case ErrForbidden:
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"message": "access denied"})
@@ -280,6 +281,14 @@ func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.Review
 		if connection == nil || err != nil {
 			return nil, fmt.Errorf("failed fetching connection for review, err=%v", err)
 		}
+	}
+
+	// A time window says when a session may run against a connection, so it
+	// means nothing here for the same reason the access window below does not:
+	// this review authorizes one statement that has already been named. Refused
+	// rather than dropped, so a caller that asks for one is told it was ignored.
+	if timeWindow != nil && connection == nil {
+		return nil, ErrNoTimeWindow
 	}
 
 	if timeWindow != nil {
