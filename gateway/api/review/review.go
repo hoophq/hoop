@@ -261,17 +261,22 @@ func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.Review
 		return nil, fmt.Errorf("failed obtaining review, err=%v", err)
 	}
 
-	// A sidecar review binds to a listener and has no connection, so it leaves
-	// here before the lookup below. The dispatch sits at the one place every
-	// caller already funnels through — the HTTP handler, the Slack buttons and
-	// the MCP tool — rather than at each of them, where one could be missed.
+	// A sidecar review binds to a listener, so there is nothing to look up and
+	// nothing downstream that wants one: the connection is only ever read as a
+	// fallback for reviews that carry no access request rule.
+	var connection *models.Connection
 	if rev.IsSidecarReview() {
-		return DoSidecarReview(ctx, rev, status, rejectionReason)
-	}
-
-	connection, err := models.GetConnectionByNameOrID(models.NewAdminContext(ctx.OrgID), rev.ConnectionName)
-	if connection == nil || err != nil {
-		return nil, fmt.Errorf("failed fetching connection for review, err=%v", err)
+		// UpdateReview syncs the session's status and private.sessions.id is a
+		// uuid, so a review with no session fails there on a cast rather than
+		// here on the thing that is actually wrong.
+		if rev.SessionID == "" {
+			return nil, fmt.Errorf("sidecar review %s has no session", rev.ID)
+		}
+	} else {
+		connection, err = models.GetConnectionByNameOrID(models.NewAdminContext(ctx.OrgID), rev.ConnectionName)
+		if connection == nil || err != nil {
+			return nil, fmt.Errorf("failed fetching connection for review, err=%v", err)
+		}
 	}
 
 	if timeWindow != nil {
@@ -337,7 +342,10 @@ func doReview(ctx *storagev2.Context, rev *models.Review, connection *models.Con
 		return nil, err
 	}
 
-	if rev.Status == models.ReviewStatusApproved {
+	// A sidecar review authorizes one statement that was already named, so it
+	// has no access window to expire. Stamping one from a zero duration would
+	// read as revoked the moment it was approved.
+	if rev.Status == models.ReviewStatusApproved && !rev.IsSidecarReview() {
 		// TODO(san): should it be set only for jit reviews?
 		expiration := time.Now().UTC().Add(time.Duration(rev.AccessDurationSec) * time.Second)
 		rev.RevokedAt = &expiration
@@ -350,9 +358,15 @@ func doForcedReview(ctx *storagev2.Context, rev *models.Review, connection *mode
 	// check if the user has permissions to force the review
 	var forceApproveGroups []string
 	// Only use ForceApprovalGroups from Review if it's AccessRequestRuleName is set, otherwise fallback to Connection
+	//
+	// The nil check is load-bearing: a sidecar review has no connection and no
+	// rule name, and force review is reachable for it through the API, so
+	// without it a forced sidecar review dereferences nil and takes the process
+	// down. doIndividualReview needs no such check, because a review with no
+	// rule that is not a sidecar review always has a connection.
 	if rev.AccessRequestRuleName != nil && rev.ForceApprovalGroups != nil {
 		forceApproveGroups = rev.ForceApprovalGroups
-	} else if connection.ForceApproveGroups != nil {
+	} else if connection != nil && connection.ForceApproveGroups != nil {
 		forceApproveGroups = connection.ForceApproveGroups
 	}
 
@@ -401,7 +415,10 @@ func doIndividualReview(ctx *storagev2.Context, rev *models.Review, connection *
 	reviewedAt := time.Now().UTC()
 	approvedCount := 0
 	reviewsCountNeeded := len(rev.ReviewGroups)
-	if rev.AccessRequestRuleName != nil {
+	// A sidecar review carries its minimum the same way a ruled review does.
+	// It has no rule and no connection, so without this its bar would stay at
+	// every group row and one approval would never settle it.
+	if rev.AccessRequestRuleName != nil || rev.IsSidecarReview() {
 		// A minimum of zero or less is only ever persisted for an all groups
 		// rule, so ignore it and keep the bar at every reviewer group. Read
 		// literally it would let the first approval settle the review.
