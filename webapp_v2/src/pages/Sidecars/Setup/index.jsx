@@ -121,7 +121,20 @@ export default function SidecarSetup({ mode = 'connect' }) {
 
       <MockNotice />
 
-      {step === 0 && (
+      {/* The waiting banner sits above the blocks, which stay mounted through
+          step 1. The token exists nowhere else — it is shown once and the
+          store never keeps it — so the waiting state must not cover it. */}
+      {step === 1 && (
+        <WaitingStep
+          sidecar={sidecar}
+          onConnected={handleConnected}
+          onDelete={handleDelete}
+          onKeep={() => navigate(LIST_PATH)}
+          deleting={deleting}
+        />
+      )}
+
+      {step <= 1 && (
         <NameStep
           mode={mode}
           sidecar={sidecar}
@@ -130,16 +143,6 @@ export default function SidecarSetup({ mode = 'connect' }) {
           creating={creating}
           error={createError}
           onCreate={handleCreate}
-        />
-      )}
-
-      {step === 1 && (
-        <WaitingStep
-          sidecar={sidecar}
-          onConnected={handleConnected}
-          onDelete={handleDelete}
-          onKeep={() => navigate(LIST_PATH)}
-          deleting={deleting}
         />
       )}
 

@@ -11,12 +11,32 @@ import classes from './WaitingStep.module.css'
 const POLL_MS = 3000
 const POLL_HIDDEN_MS = 15000
 
+const STATE = {
+  waiting: {
+    title: 'Waiting for the sidecar to connect',
+    description:
+      'This can take up to 5 minutes. The sidecar dials out and nothing dials in, so check outbound HTTPS from the host it runs on.',
+  },
+  connected: {
+    title: 'Sidecar connected',
+    description: 'It checked in and took its configuration.',
+  },
+  gone: {
+    title: 'This sidecar was deleted',
+    description: 'It was removed from the list while this page was open.',
+  },
+}
+
 /**
- * Step 2 of the sidecar wizard (Figma: "Create and deploy a new Sidecar |
- * Configure"). Polls the sidecar until the control plane records its first
- * check-in, then hands the fresh record back through onConnected. Nothing here
- * reaches the sidecar: it is the side that dials out, so the page also offers
- * to continue without waiting.
+ * Step 2 of the sidecar wizard. Polls the sidecar until the control plane
+ * records its first check-in, then hands the fresh record back through
+ * onConnected. Nothing here reaches the sidecar: it is the side that dials
+ * out, so the page also offers to continue without waiting.
+ *
+ * A banner rather than the Figma's full-height box, because the blocks of step
+ * one stay on screen behind it. The token is shown once and this page is the
+ * only place it exists, so a waiting state that covered it would strand
+ * anyone who had not copied it yet.
  *
  * Cancel asks before deleting: the token may already sit in a deployment that
  * is rolling out, and deleting revokes it for good.
@@ -55,6 +75,8 @@ export default function WaitingStep({ sidecar, onConnected, onDelete, onKeep, de
     }
   }, [sidecar?.id, connected, gone, onConnected])
 
+  const copy = connected ? STATE.connected : gone ? STATE.gone : STATE.waiting
+
   return (
     <>
       <Modal opened={confirmOpen} onClose={() => setConfirmOpen(false)} title="Cancel the setup?" size="sm">
@@ -73,31 +95,37 @@ export default function WaitingStep({ sidecar, onConnected, onDelete, onKeep, de
         </Stack>
       </Modal>
 
-      <Box className={classes.box} data-connected={connected || undefined}>
-        <Stack align="center" gap="lg" py="xl">
+      <Box className={classes.box} data-connected={connected || undefined} p="md">
+        <Group wrap="nowrap" gap="md" align="center">
           {connected ? (
-            <ThemeIcon size={48} radius="xl" color="green" variant="light">
-              <Check size={24} aria-hidden="true" />
+            <ThemeIcon size={32} radius="xl" color="green" variant="light" flex="0 0 auto">
+              <Check size={18} aria-hidden="true" />
             </ThemeIcon>
           ) : (
-            <Loader size="md" color="gray" />
+            <Loader size="sm" color="gray" flex="0 0 auto" />
           )}
-          <Stack gap={4} align="center">
-            <Text fw={700}>{connected ? 'Sidecar connected' : gone ? 'This sidecar was deleted' : 'Waiting for the Sidecar to connect'}</Text>
-            <Text size="sm" c="dimmed" ta="center">
-              {connected
-                ? 'It checked in and took its configuration.'
-                : gone
-                  ? 'It was removed from the list while this page was open.'
-                  : 'This can take up to 5 minutes. Start the sidecar with the values from the previous step. It dials out to reach this control plane and nothing dials in, so check outbound HTTPS from the host it runs on.'}
+
+          <Stack gap={2} flex={1} miw={0}>
+            <Text fw={600} size="sm">
+              {copy.title}
+            </Text>
+            <Text size="xs" c="dimmed">
+              {copy.description}
             </Text>
           </Stack>
+
           {!connected && !gone && (
-            <Button color="red" variant="light" leftSection={<X size={18} aria-hidden="true" />} onClick={() => setConfirmOpen(true)}>
+            <Button
+              color="red"
+              variant="light"
+              leftSection={<X size={16} aria-hidden="true" />}
+              onClick={() => setConfirmOpen(true)}
+              flex="0 0 auto"
+            >
               Cancel
             </Button>
           )}
-        </Stack>
+        </Group>
       </Box>
     </>
   )
