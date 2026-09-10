@@ -1034,6 +1034,15 @@ and maskable response paths. Unreadable, malformed, or import-incomplete sets
 fail before the listener binds. Compare the printed method list with the
 deployed API to catch a valid but stale set that omits newer RPCs.
 
+`-grpc-discover <listener>` bootstraps that set when the upstream exposes
+gRPC server reflection: it dials the named lane's upstream with the lane's
+own `upstream_tls` facts, prints every method with its maskable field
+paths, and with `-grpc-discover-out billing.pb` writes the descriptor set
+for the operator to review and pin as `grpc.descriptors`. Discovery is an
+offline tool, not a lane capability — ADR-0013 keeps runtime lanes on
+pinned files so the policed service cannot rename fields out from under
+the mask rules.
+
 The Postgres codec is stateful because one `RowDescription` describes every
 `DataRow` after it, and those land in different TCP reads. That is why the
 registry hands out a factory rather than an instance: two connections sharing

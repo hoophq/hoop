@@ -112,7 +112,9 @@ must terminate TLS itself and advertise `h2`. `proxy/starttls.go` sets no
 6. **gRPC server reflection instead of a descriptor set.** Self-updating, no
    config. Rejected: most production services disable it, it makes the sidecar
    a gRPC client, and a schema fetched from the service you are policing is a
-   trust boundary nobody asked for.
+   trust boundary nobody asked for. Rejected AT RUNTIME only: `-grpc-discover`
+   later reused reflection as an offline bootstrap, where the operator reviews
+   and pins the fetched artifact and the lane still loads only pinned files.
 
 ## Decision
 

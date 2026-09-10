@@ -30,7 +30,8 @@ import (
 // configured, a third party.
 type GRPCCodecConfig struct {
 	// Descriptors names one or more serialized FileDescriptorSets
-	// (protoc --include_imports --descriptor_set_out, or buf build -o) —
+	// (protoc --include_imports --descriptor_set_out, buf build -o, or
+	// -grpc-discover against an upstream that exposes server reflection) —
 	// a single path or a list; sets merge, byte-identical shared imports
 	// dedupe, and conflicting copies of one file refuse at startup.
 	// Multiple sets are the multi-team shape: each service's CI ships its

@@ -193,6 +193,7 @@ var ErrUsage = errors.New("usage")
 //	hoop-inspect -config /etc/hoop-inspect/config.yaml
 //	hoop-inspect -config config.yaml -license /etc/hoop-inspect/license.json
 //	hoop-inspect -validate -config config.yaml   # check and exit
+//	hoop-inspect -grpc-discover api -grpc-discover-out api.pb -config config.yaml
 //	hoop-inspect -version
 func Main(version string, load Loader, build PluginBuilder) error {
 	Version = version
@@ -213,9 +214,14 @@ func Main(version string, load Loader, build PluginBuilder) error {
 			`"license" key`)
 		tokenRef = fs.String("token", "", "the token identifying this sidecar to the "+
 			"control plane; overrides "+SidecarTokenEnv)
-		validate = fs.Bool("validate", false, "validate the config and exit")
-		strict   = fs.Bool("strict", false, "treat a deprecated config field as an error")
-		showVer  = fs.Bool("version", false, "print the version and exit")
+		validate     = fs.Bool("validate", false, "validate the config and exit")
+		strict       = fs.Bool("strict", false, "treat a deprecated config field as an error")
+		showVer      = fs.Bool("version", false, "print the version and exit")
+		grpcDiscover = fs.String("grpc-discover", "", "name of a grpc listener: fetch its "+
+			"upstream's descriptor set over gRPC server reflection, print every method "+
+			"with its maskable field paths, and exit")
+		grpcDiscoverOut = fs.String("grpc-discover-out", "", "file -grpc-discover writes "+
+			"the fetched descriptor set to, for listeners[].grpc.descriptors")
 	)
 	if err := fs.Parse(os.Args[1:]); err != nil {
 		// -h is a request, not a mistake. ContinueOnError has already
@@ -252,6 +258,10 @@ func Main(version string, load Loader, build PluginBuilder) error {
 			return err
 		}
 		return PrintLanes(os.Stdout, cfg.lic, lanes)
+	}
+
+	if *grpcDiscover != "" {
+		return DiscoverGRPC(context.Background(), cfg, *grpcDiscover, *grpcDiscoverOut, os.Stdout)
 	}
 
 	return Run(cfg, det)
