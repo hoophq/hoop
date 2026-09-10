@@ -315,7 +315,7 @@ func makeReviewsUpdateHandler(releaseConnFn reviewapi.TransportReleaseConnection
 
 		rev, err := reviewapi.DoReview(sc, args.ID, status, reviewTimeWindow, args.ForceReview, args.RejectionReason)
 		switch err {
-		case reviewapi.ErrNotEligible, reviewapi.ErrSelfApproval, reviewapi.ErrWrongState:
+		case reviewapi.ErrNotEligible, reviewapi.ErrSelfApproval, reviewapi.ErrWrongState, reviewapi.ErrNoTimeWindow:
 			return errResult(err.Error()), nil, nil
 		case reviewapi.ErrForbidden:
 			return errResult("access denied"), nil, nil

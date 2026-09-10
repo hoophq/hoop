@@ -34,7 +34,7 @@ var (
 	ErrGroupAlreadyReviewed = errors.New("it was already reviewed")
 	ErrForbidden            = errors.New("forbidden")
 	ErrUnknownStatus        = errors.New("unknown status")
-	ErrNoTimeWindow         = errors.New("a review with no connection takes no time window")
+	ErrNoTimeWindow         = errors.New("a review bound to a listener takes no time window")
 )
 
 type TransportReleaseConnectionFunc func(orgID, sid, reviewOwnerSlackID, reviewStatus, rejectReason, rejectedBy string)
@@ -283,11 +283,15 @@ func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.Review
 		}
 	}
 
-	// A time window says when a session may run against a connection, so it
-	// means nothing here for the same reason the access window below does not:
-	// this review authorizes one statement that has already been named. Refused
-	// rather than dropped, so a caller that asks for one is told it was ignored.
-	if timeWindow != nil && connection == nil {
+	// A time window says when a session may run against a connection, so a
+	// review bound to a listener has no use for one: it authorizes a single
+	// statement that has already been named. Refused rather than dropped, so a
+	// caller that asks for one is told, instead of having it silently persisted.
+	//
+	// This asks the review, not the mode. In the control plane no review has a
+	// connection, so `connection == nil` would also refuse a window for an
+	// ordinary review created there, which the update contract allows.
+	if timeWindow != nil && rev.ListenerName.Valid && rev.ListenerName.String != "" {
 		return nil, ErrNoTimeWindow
 	}
 
