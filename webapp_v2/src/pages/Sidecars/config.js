@@ -29,15 +29,29 @@ export function protocolInfo(protocol) {
 
 const hasRules = (section) => Array.isArray(section?.rules) && section.rules.length > 0
 
-// The guardrails/mask block a lane runs with: its own when present, else the
-// config's default.
-const resolved = (listener, config, key) => (listener?.[key] !== undefined ? listener[key] : config?.[key])
+// Config.resolve in sidecar/daemon/config.go merges a lane's overrides onto the
+// top-level defaults, and the two sections do NOT merge the same way. Reading
+// the presence of the whole `guardrails`/`mask` block instead reported a lane
+// that overrides only `mode` as running no guardrails, while the daemon was
+// still applying the inherited rules.
+
+// `rules` absent inherits the default; `rules: []` is how a lane runs none
+// against a top-level set; a non-empty list concatenates with the default.
+function guardrailsOn(listener, config) {
+  const own = listener?.guardrails
+  if (own?.rules === undefined) return hasRules(config?.guardrails)
+  return own.rules.length > 0
+}
+
+// Only a non-empty lane list replaces the default (`o != nil && len(o.Rules) > 0`),
+// so nothing a lane writes can remove inherited masking.
+const maskOn = (listener, config) => hasRules(listener?.mask) || hasRules(config?.mask)
 
 export function listenerFeatures(listener, config) {
   const on = []
   if (config?.analyzer) on.push('ai-analyzer')
-  if (hasRules(resolved(listener, config, 'mask'))) on.push('data-masking')
-  if (hasRules(resolved(listener, config, 'guardrails'))) on.push('guardrails')
+  if (maskOn(listener, config)) on.push('data-masking')
+  if (guardrailsOn(listener, config)) on.push('guardrails')
   return on
 }
 
