@@ -102,7 +102,14 @@ what a product shows, and ClojureScript exists only in the gateway.**
   `ClojureApp`, the CLJS bridge, `NativeConnections`, `ConfigStatus`, the CLJS leaves of
   `Router.jsx`, then the pages no control plane sidebar points at.
 - **A second theme** is a new file next to `src/theme.js`, pointed at by the product
-  manifest; `modes/ModeThemeProvider.jsx` feeds it to `MantineProvider`.
+  manifest; `modes/ModeThemeProvider.jsx` feeds it to `MantineProvider`. The control
+  plane has one: `theme.controlPlane.js` re-exports the shared `theme` and wraps the
+  base `cssVariablesResolver` to soften the disabled tokens. Wrap, never copy — the
+  base resolver owns `--brand-navy`, the control-height scale and the light bucket's
+  body/text/dimmed/border/placeholder, and a second list would drift. `appMode` is
+  `'gateway'` until `/publicserverinfo` answers, so a control plane boot paints one
+  frame with the gateway's tokens; that is accepted rather than gated on
+  `appModeLoaded`.
 - **Roles (control plane).** `/userinfo` reports `role`: **admin** reaches every page,
   **approver** reaches Reviews, anything else lands on the dead end at `/`. A role is a
   reserved group name; `standard` is the absence of one and is never stored as a group.

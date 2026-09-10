@@ -1,4 +1,4 @@
-import { theme, cssVariablesResolver } from '@/theme'
+import { theme, cssVariablesResolver } from '@/theme.controlPlane'
 import ControlPlaneProtectedRoute from '@/components/ControlPlaneProtectedRoute'
 import ControlPlanePage from '@/layout/ControlPlanePage'
 import Home from '@/pages/Home'
