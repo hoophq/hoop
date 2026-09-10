@@ -127,9 +127,9 @@ The control plane is the admin surface for that. Connect your sidecars. Set Data
 | Guardrails, Data Masking, Session Analyzer, Review rules | Built. Configuration lives in the control plane. |
 | Slack for review delivery | Built. |
 | Administrators | Built. |
-| Sidecar fleet: token issuance, resources, liveness | Token issuance and the fleet list are built (`/sidecars`). The sidecar does not call the control plane yet, so liveness reads Waiting. |
+| Sidecar fleet: token issuance, liveness | Built. Register a sidecar for its token, then watch the fleet at `/sidecars`; a connected sidecar re-runs its handshake every minute. |
 | Review queue: approve, reject, retry | Not built |
-| Pushing configuration to the fleet | Not built. Each sidecar still reads its own file. |
+| Pushing configuration to the fleet | The API is built: the plane stores each sidecar's configuration and serves it on the handshake, and rule edits reload without a restart. Authoring that configuration in the UI is not built, so it goes through `PUT /api/sidecars/:nameOrID`. |
 
 The UI is [`webapp_v2/`](webapp_v2/), the same web app the gateway serves: it renders as the control plane when the backend reports `application_mode: "control-plane"`. To run it:
 

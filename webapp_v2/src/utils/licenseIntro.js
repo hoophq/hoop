@@ -5,22 +5,35 @@
 export const LICENSE_INTRO_PATH = '/onboarding/license'
 
 // Keyed by user, like the LicenseBanner dismissal: one admin cannot silence
-// another. Keyed by user only: an expired or invalid license has the red banner
-// with its own dismissal, and once a sidecar exists the intro never returns.
+// another, and two admins sharing a browser each keep their own answer. Keyed
+// by user only: an expired or invalid license has the red banner with its own
+// dismissal, and once a sidecar exists the intro never returns.
 const SKIP_KEY = 'control-plane-license-intro-skipped-for'
 
-export function hasSkippedLicenseIntro(userId) {
-  if (!userId) return false
+function skippedIds() {
   try {
-    return localStorage.getItem(SKIP_KEY) === userId
+    const raw = localStorage.getItem(SKIP_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    // A single id is what earlier versions stored; read it as a list of one.
+    return Array.isArray(parsed) ? parsed : [parsed]
   } catch {
-    return false
+    // Absent, blocked, or holding a bare id that is not JSON: no skip on file.
+    return []
   }
 }
 
+export function hasSkippedLicenseIntro(userId) {
+  if (!userId) return false
+  return skippedIds().includes(userId)
+}
+
 export function skipLicenseIntro(userId) {
+  if (!userId) return
   try {
-    localStorage.setItem(SKIP_KEY, userId)
+    const ids = skippedIds()
+    if (ids.includes(userId)) return
+    localStorage.setItem(SKIP_KEY, JSON.stringify([...ids, userId]))
   } catch {
     // Storage unavailable (private mode, quota): the intro shows again next time.
   }

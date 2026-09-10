@@ -6,7 +6,9 @@ import { sidecarsService } from '@/services/sidecars'
 // asked for it and must not outlive that page (compare useAgentStore.agentKey).
 export const useSidecarStore = create((set) => ({
   sidecars: [],
-  loading: false,
+  // True until the first fetch answers: an empty list is the onboarding screen,
+  // and showing it before the list arrives tells every org it owns no sidecar.
+  loading: true,
   error: null,
 
   fetchSidecars: async () => {

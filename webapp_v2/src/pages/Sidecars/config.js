@@ -1,6 +1,8 @@
 import { ShieldCheck, Sparkles, VenetianMask } from 'lucide-react'
 
-// Reading a sidecar's reported config (daemon.Config, sidecar/daemon/config.go).
+// Reading a sidecar's stored configuration (daemon.Config,
+// sidecar/daemon/config.go), the document the control plane holds and serves to
+// the sidecar on its handshake (SidecarResponse.configuration).
 // A feature is "on" when the config asks for it: a non-empty rule list turns
 // guardrails or masking on, an `analyzer` block turns the AI analyzer on. A
 // lane's own guardrails/mask block overrides the top-level default, so the
@@ -48,7 +50,19 @@ export function configFeatures(config) {
   return FEATURE_ORDER.filter((f) => all.has(f))
 }
 
-// Audit is on unless the config turns the sink off entirely.
+// The daemon records to stdout when `audit.file` is empty or "-", and a
+// deployment that wants no trail points the file at /dev/null
+// (buildAudit, sidecar/daemon/daemon.go). So audit is on unless the file is
+// a null device.
+const NULL_DEVICES = ['/dev/null', 'nul', 'NUL']
+
 export function auditEnabled(config) {
-  return !!config && config.audit?.file !== ''
+  if (!config) return false
+  return !NULL_DEVICES.includes(config.audit?.file ?? '')
+}
+
+// A sidecar the control plane has no configuration for cannot start: it has no
+// listeners, and the daemon refuses a config without them.
+export function hasConfiguration(config) {
+  return !!config && (config.listeners ?? []).length > 0
 }

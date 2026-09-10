@@ -12,7 +12,6 @@ import SidecarMethodCards from './components/SidecarMethodCards'
 import DeleteSidecarModal from './sections/DeleteSidecarModal'
 import SidecarLicenseNotice from './sections/SidecarLicenseNotice'
 import SidecarsTable from './sections/SidecarsTable'
-import { useConnectionsByName } from './useConnectionsByName'
 
 /**
  * The control plane landing page for every admin: the fleet of sidecars
@@ -21,7 +20,6 @@ import { useConnectionsByName } from './useConnectionsByName'
  */
 export default function Sidecars() {
   const { sidecars, loading, error, fetchSidecars, deleteSidecar } = useSidecarStore()
-  const connectionsByName = useConnectionsByName()
   const showLoader = useMinDelay(loading, 500)
 
   const [addOpened, { open: openAdd, close: closeAdd }] = useDisclosure(false)
@@ -82,7 +80,7 @@ export default function Sidecars() {
             <Text size="sm" fw={600}>
               {`${count} ${count === 1 ? 'Sidecar' : 'Sidecars'}`}
             </Text>
-            <SidecarsTable sidecars={sidecars} connectionsByName={connectionsByName} onDelete={setDeleting} />
+            <SidecarsTable sidecars={sidecars} onDelete={setDeleting} />
           </Stack>
         )}
       </Stack>

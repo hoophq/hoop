@@ -1,20 +1,21 @@
-// MOCK — a simulated fleet for the sidecar journey while the sidecar binary
-// cannot talk to the control plane yet. Same interface as the real service in
-// ./sidecars.js, so the pages never know which one they got.
+// MOCK — a simulated fleet for the sidecar journey, so the pages can be walked
+// without a control plane and a running sidecar. Same interface as the real
+// service in ./sidecars.js, so the pages never know which one they got.
 //
 // To go live: delete this file and the VITE_SIDECARS_MOCK switch at the bottom
 // of ./sidecars.js. Nothing else references it.
 //
-// What it simulates, in the shape the API will use:
+// What it simulates, in the shape the API uses (openapi.SidecarResponse):
 // - POST /sidecars: 409 on a duplicate name, 422 on a reserved one, a one-time
-//   hsc_ token.
-// - The handshake: HANDSHAKE_AFTER_MS after creation, a sidecar "connects" —
-//   last_seen_at and version appear, and so does `config`, the daemon.Config
-//   the sidecar reports (sidecar/daemon/config.go: listeners, guardrails, mask,
-//   analyzer, audit). The pages derive Features from that config and never
-//   store their own.
-// - State survives a reload (sessionStorage), so the list shows what the
-//   wizard created; a new tab starts from the seed.
+//   hsc_ token, and an EMPTY `configuration` — the real endpoint stores one
+//   only if the request carries it, and this UI has no editor to author it.
+// - The handshake: HANDSHAKE_AFTER_MS after creation a sidecar "calls home",
+//   so `version` and `last_seen_at` appear. The configuration does not: the
+//   control plane holds that document (PUT /sidecars/:nameOrID) and serves it,
+//   the sidecar never reports one.
+// - The seeded fleet covers the three states a row can be in: connected,
+//   never-connected, and connected-then-quiet (see ../pages/Sidecars/status.js).
+// - State survives a reload (sessionStorage); a new tab starts from the seed.
 
 const STORAGE_KEY = 'hoop.sidecars.mock'
 const HANDSHAKE_AFTER_MS = 8000
@@ -25,25 +26,25 @@ const HOUR = 60 * 60 * 1000
 const now = () => Date.now()
 const iso = (ms) => new Date(ms).toISOString()
 
-// The config a connected sidecar reports. Two lanes on one postgres, one with
-// every feature, one with masking only; guardrails and masking at the top
-// level are the defaults a lane inherits.
-function seedConfig() {
+// A configuration an admin stored for this sidecar: two lanes on one postgres,
+// one with every feature, one with masking only. Top-level guardrails and mask
+// are the defaults a lane inherits when it declares none of its own.
+function seedConfiguration(name, upstream) {
   return {
     listeners: [
       {
-        name: 'dbpg-prod-agentic',
+        name: `${name}-agentic`,
         protocol: 'postgres',
         listen: '0.0.0.0:15432',
-        upstream: '10.0.1.12:5432',
+        upstream,
         guardrails: { mode: 'enforce', rules: [{ name: 'deny-drop-table' }, { name: 'deny-delete-without-where' }] },
         mask: { rules: [{ name: 'pii-default' }] },
       },
       {
-        name: 'dbpg-prod',
+        name,
         protocol: 'postgres',
         listen: '0.0.0.0:15433',
-        upstream: '10.0.1.12:5432',
+        upstream,
         guardrails: { mode: 'observe', rules: [] },
         mask: { rules: [{ name: 'pii-default' }] },
       },
@@ -56,26 +57,6 @@ function seedConfig() {
   }
 }
 
-// What a sidecar created in the wizard reports after its simulated handshake.
-function handshakeConfig(name) {
-  return {
-    listeners: [
-      {
-        name: `${name}-pg`,
-        protocol: 'postgres',
-        listen: '0.0.0.0:15432',
-        upstream: 'db.internal:5432',
-        guardrails: { mode: 'enforce', rules: [{ name: 'deny-drop-table' }] },
-        mask: { rules: [{ name: 'pii-default' }] },
-      },
-    ],
-    guardrails: { mode: 'enforce', rules: [{ name: 'deny-drop-table' }] },
-    mask: { rules: [{ name: 'pii-default' }] },
-    audit: { file: '-', redact_statements: false },
-    log_level: 'info',
-  }
-}
-
 function seed() {
   const t = now()
   return [
@@ -83,20 +64,32 @@ function seed() {
       id: 'mock-dbpg-prod',
       org_id: 'mock-org',
       name: 'dbpg-prod',
-      connections: ['pg-prod', 'pg-prod-agentic'],
       created_by: 'admin@acme.com',
       created_at: iso(t - 7 * 24 * HOUR),
+      configuration: seedConfiguration('dbpg-prod', '10.0.1.12:5432'),
       version: '1.2.0',
-      last_seen_at: iso(t - 2 * HOUR),
-      config: seedConfig(),
+      // A heartbeat a moment ago: Connected.
+      last_seen_at: iso(t - 40 * 1000),
     },
     {
+      // Registered, never configured, never started: Waiting.
       id: 'mock-edge-api',
       org_id: 'mock-org',
       name: 'edge-api',
-      connections: [],
       created_by: 'admin@acme.com',
       created_at: iso(t - 3 * 24 * HOUR),
+      configuration: {},
+    },
+    {
+      // Ran, then stopped calling: Offline, still showing what it last served.
+      id: 'mock-analytics-ro',
+      org_id: 'mock-org',
+      name: 'analytics-ro',
+      created_by: 'admin@acme.com',
+      created_at: iso(t - 21 * 24 * HOUR),
+      configuration: seedConfiguration('analytics-ro', '10.0.4.7:5432'),
+      version: '1.1.0',
+      last_seen_at: iso(t - 2 * HOUR),
     },
   ]
 }
@@ -121,15 +114,17 @@ function save(fleet) {
   }
 }
 
-// The simulated handshake: a sidecar created in this session connects
-// HANDSHAKE_AFTER_MS after creation, the next time anything reads it. Seeded
-// sidecars keep the state they were seeded with (edge-api stays Waiting).
+// The simulated handshake: a sidecar created in this session calls home
+// HANDSHAKE_AFTER_MS after creation, the next time anything reads it. It
+// reports its version and nothing else — the gateway records that much before
+// it answers with the stored configuration. Seeded sidecars keep the state
+// they were seeded with (edge-api stays Waiting).
 function settle(sidecar) {
   if (sidecar.last_seen_at || !sidecar.simulate_handshake) return sidecar
   const age = now() - new Date(sidecar.created_at).getTime()
   if (age < HANDSHAKE_AFTER_MS) return sidecar
   const { simulate_handshake: _done, ...connected } = sidecar
-  return { ...connected, last_seen_at: iso(now()), version: '1.2.0', config: handshakeConfig(sidecar.name) }
+  return { ...connected, last_seen_at: iso(now()), version: '1.2.0' }
 }
 
 function settleAll(fleet) {
@@ -176,9 +171,9 @@ export const mockSidecarsService = {
       id: `mock-${name}-${fleet.length + 1}`,
       org_id: 'mock-org',
       name,
-      connections: [],
       created_by: 'you@acme.com',
       created_at: iso(now()),
+      configuration: {},
       simulate_handshake: true,
     }
     save([...fleet, sidecar])

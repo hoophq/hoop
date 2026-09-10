@@ -96,16 +96,26 @@ export default function NameStep({ mode, sidecar, token, controlPlaneUrl, creati
                     Shown once.
                   </Text>
                   {
-                    ' Keep it in your secrets manager and hand it to the sidecar when it supports the control plane. Never write it to a file. Leaving this page discards it; delete the sidecar to get a new one.'
+                    ' Pass it as --token, or set HOOP_SIDECAR_TOKEN. There is no config key for it: never write it to a file. Leaving this page discards it; delete the sidecar to get a new one.'
                   }
                 </Text>
               </NumberedBlock>
 
-              <NumberedBlock n={3} title={isConnect ? 'Restart your sidecar' : 'Start your sidecar'}>
+              <NumberedBlock n={3} title="Set its configuration">
+                <Text size="sm" c="dimmed">
+                  {`The control plane serves this sidecar its configuration. It has none yet, so it has no listeners and refuses to start. Store one with PUT /api/sidecars/${sidecar.name} before the next step. Authoring it here is not built yet.`}
+                </Text>
+              </NumberedBlock>
+
+              <NumberedBlock n={4} title={isConnect ? 'Restart your sidecar' : 'Start your sidecar'}>
+                <CodeSnippet
+                  code={`HOOP_CONTROL_PLANE_URL=${controlPlaneUrl} hoop start sidecar --token hsc_...`}
+                  variant="gray"
+                />
                 <Text size="sm" c="dimmed">
                   {isConnect
-                    ? 'Run it on the host that reaches your resources.'
-                    : 'Deploy it with Docker or Kubernetes on the host that reaches your resources.'}
+                    ? 'Run it on the host that reaches your resources. The control plane supplies the listeners, so remove the listeners block from your config file first: a file that declares both is refused.'
+                    : 'Run it on the host that reaches your resources. No config file is needed: the control plane supplies the whole configuration.'}
                 </Text>
               </NumberedBlock>
             </Stack>

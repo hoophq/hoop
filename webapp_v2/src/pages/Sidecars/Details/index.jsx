@@ -8,13 +8,11 @@ import { useMinDelay } from '@/hooks/useMinDelay'
 import { sidecarsService } from '@/services/sidecars'
 import MockNotice from '../components/MockNotice'
 import SidecarDetails from '../components/SidecarDetails'
-import { useConnectionsByName } from '../useConnectionsByName'
 
 // /sidecars/:id — the details card on its own page.
 export default function SidecarDetailsPage() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const connectionsByName = useConnectionsByName()
   // One record per id: `loading` is "the record on screen is not this id's".
   const [result, setResult] = useState({ id: null, sidecar: null, error: null })
   const loading = result.id !== id
@@ -61,7 +59,7 @@ export default function SidecarDetailsPage() {
           <>
             <Title order={1}>{sidecar.name}</Title>
             <MockNotice />
-            <SidecarDetails sidecar={sidecar} connectionsByName={connectionsByName} />
+            <SidecarDetails sidecar={sidecar} />
           </>
         )
       )}

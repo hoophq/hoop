@@ -14,8 +14,9 @@ const POLL_HIDDEN_MS = 15000
 /**
  * Step 2 of the sidecar wizard (Figma: "Create and deploy a new Sidecar |
  * Configure"). Polls the sidecar until the gateway records a handshake, then
- * hands the fresh record back through onConnected. No sidecar calls the
- * handshake yet, so the page also offers to continue without waiting.
+ * hands the fresh record back through onConnected. A sidecar with no stored
+ * configuration calls once and then refuses to start, so the page also offers
+ * to continue without waiting.
  *
  * Cancel asks before deleting: the token may already sit in a deployment that
  * is rolling out, and deleting revokes it for good.

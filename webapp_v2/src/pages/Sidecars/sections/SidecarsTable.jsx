@@ -8,31 +8,32 @@ import FeaturePills from '../components/FeaturePills'
 import { SidecarStatusBadge } from '../components/SidecarDetails'
 import { formatRelativeTime } from '../status'
 
-// Listeners come from the reported config once the sidecar connected; before
-// that, from the connections an admin assigned by name.
-function Listeners({ sidecar, connectionsByName, getIcon }) {
-  const listeners = sidecar.config?.listeners
-  const items = listeners
-    ? listeners.map((l) => ({ name: l.name, icon: getIcon({ subtype: protocolInfo(l.protocol).subtype }) }))
-    : (sidecar.connections ?? []).map((name) => {
-        const connection = connectionsByName.get(name)
-        return { name, icon: connection ? getIcon(connection) : null }
-      })
+// The lanes of the configuration the control plane stores for this sidecar. A
+// sidecar with none has nothing to serve and refuses to start, so the empty
+// cell says that rather than "No listeners".
+function Listeners({ sidecar, getIcon }) {
+  const listeners = sidecar.configuration?.listeners ?? []
 
-  if (items.length === 0) {
+  if (listeners.length === 0) {
     return (
       <Text size="sm" c="dimmed">
-        No listeners
+        Not configured
       </Text>
     )
   }
   return (
     <Group gap="xs">
-      {items.map(({ name, icon }) => (
-        <Pill key={name}>
+      {listeners.map((listener) => (
+        <Pill key={listener.name}>
           <Group gap={6} wrap="nowrap">
-            {icon && <Image src={icon} alt="" w={14} h={14} fit="contain" />}
-            <span>{name}</span>
+            <Image
+              src={getIcon({ subtype: protocolInfo(listener.protocol).subtype })}
+              alt=""
+              w={14}
+              h={14}
+              fit="contain"
+            />
+            <span>{listener.name}</span>
           </Group>
         </Pill>
       ))}
@@ -40,9 +41,10 @@ function Listeners({ sidecar, connectionsByName, getIcon }) {
   )
 }
 
-// Figma: "License has sidecards" table. No Edit: the rules live in the
-// sidecar's config file, so a row opens its read-only details.
-export default function SidecarsTable({ sidecars, connectionsByName, onDelete }) {
+// Figma: "License has sidecards" table. No Edit: writing the configuration
+// from the control plane is not built yet, so a row opens its read-only
+// details.
+export default function SidecarsTable({ sidecars, onDelete }) {
   const navigate = useNavigate()
   const getIcon = useConnectionIconGetter()
 
@@ -76,10 +78,10 @@ export default function SidecarsTable({ sidecars, connectionsByName, onDelete })
               </Group>
             </Table.Td>
             <Table.Td>
-              <Listeners sidecar={sidecar} connectionsByName={connectionsByName} getIcon={getIcon} />
+              <Listeners sidecar={sidecar} getIcon={getIcon} />
             </Table.Td>
             <Table.Td>
-              <FeaturePills features={configFeatures(sidecar.config)} />
+              <FeaturePills features={configFeatures(sidecar.configuration)} />
             </Table.Td>
             <Table.Td>
               <ActionMenu>

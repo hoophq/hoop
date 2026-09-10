@@ -1,10 +1,10 @@
 import { Box, Divider, Group, Image, Paper, Pill, Stack, Text, Title } from '@mantine/core'
-import { Lock } from 'lucide-react'
+import { Lock, TriangleAlert } from 'lucide-react'
 import Alert from '@/components/Alert'
 import Badge from '@/components/Badge'
 import Tooltip from '@/components/Tooltip'
 import { useConnectionIconGetter } from '@/utils/connectionIcons'
-import { auditEnabled, configFeatures, listenerFeatures, protocolInfo } from '../config'
+import { auditEnabled, configFeatures, hasConfiguration, listenerFeatures, protocolInfo } from '../config'
 import { formatRelativeTime, sidecarStatus } from '../status'
 import FeaturePills from './FeaturePills'
 
@@ -44,8 +44,8 @@ function ProtocolPill({ protocol, getIcon }) {
   )
 }
 
-// One lane of the reported config (Figma "Listeners": Name, Protocol, Listen,
-// Upstream, Features). Read-only: the file in the sidecar is the source.
+// One lane of the stored configuration (Figma "Listeners": Name, Protocol,
+// Listen, Upstream, Features).
 function Listener({ listener, config, getIcon }) {
   return (
     <Stack gap="sm">
@@ -84,55 +84,38 @@ function Listener({ listener, config, getIcon }) {
   )
 }
 
-// Before the handshake there is no config: the lanes are the connections an
-// admin assigned in the control plane, by name.
-function AssignedConnections({ names, connectionsByName, getIcon }) {
-  if (names.length === 0) {
-    return (
-      <Text size="sm" c="dimmed">
-        No listeners yet. They appear here when the sidecar connects and reports its configuration.
-      </Text>
-    )
-  }
-  return (
-    <Stack gap="xs">
-      {names.map((name) => {
-        const connection = connectionsByName?.get(name)
-        return (
-          <Group key={name} gap="sm" wrap="nowrap">
-            {connection && <Image src={getIcon(connection)} alt="" w={16} h={16} fit="contain" />}
-            <Text size="sm" fw={600}>
-              {name}
-            </Text>
-            {connection?.subtype && (
-              <Text size="xs" c="dimmed">
-                {connection.subtype}
-              </Text>
-            )}
-          </Group>
-        )
-      })}
-    </Stack>
-  )
-}
-
 /**
  * The "Sidecar Details" card (Figma: wizard Overview and the details page).
- * Everything here is what the sidecar reports; the rules live in its config
- * file and are not edited from the control plane.
+ *
+ * The control plane stores this configuration and serves it to the sidecar on
+ * its handshake and on every poll (gateway/api/sidecar). Editing it from here
+ * is not built yet: until it is, the document is written through
+ * `PUT /api/sidecars/:nameOrID` and this card only reads it.
  */
-export default function SidecarDetails({ sidecar, connectionsByName }) {
+export default function SidecarDetails({ sidecar }) {
   const getIcon = useConnectionIconGetter()
-  const config = sidecar.config
+  const config = sidecar.configuration
+  const configured = hasConfiguration(config)
   const listeners = config?.listeners ?? []
 
   return (
     <Stack gap="md">
-      {config && (
+      {configured ? (
         <Alert color="blue" variant="light" radius="md" icon={<Lock size={16} />}>
           <Text size="sm">
-            The rules below are managed in the sidecar and cannot be edited here. The control plane shows what the
-            sidecar reports.
+            The control plane serves this configuration to the sidecar. It cannot be edited here yet: use
+            {' PUT /api/sidecars/'}
+            {sidecar.name}
+            {' to replace it.'}
+          </Text>
+        </Alert>
+      ) : (
+        <Alert color="amber" variant="light" radius="md" icon={<TriangleAlert size={16} />}>
+          <Text size="sm">
+            This sidecar has no configuration. It has no listeners, so it refuses to start. Set one with
+            {' PUT /api/sidecars/'}
+            {sidecar.name}
+            {' before you run it.'}
           </Text>
         </Alert>
       )}
@@ -167,7 +150,7 @@ export default function SidecarDetails({ sidecar, connectionsByName }) {
 
           <Stack gap="sm">
             <Text fw={600}>Global settings</Text>
-            {config ? (
+            {configured ? (
               <>
                 <Row label="Features">
                   <FeaturePills features={configFeatures(config)} />
@@ -180,7 +163,7 @@ export default function SidecarDetails({ sidecar, connectionsByName }) {
               </>
             ) : (
               <Text size="sm" c="dimmed">
-                Reported by the sidecar on its first handshake.
+                Nothing configured yet.
               </Text>
             )}
           </Stack>
@@ -191,13 +174,11 @@ export default function SidecarDetails({ sidecar, connectionsByName }) {
             <Group gap="sm" align="baseline">
               <Text fw={600}>Listeners</Text>
               <Text size="sm" c="dimmed">
-                {config
-                  ? `${listeners.length} ${listeners.length === 1 ? 'listener' : 'listeners'}`
-                  : `${(sidecar.connections ?? []).length} assigned`}
+                {`${listeners.length} ${listeners.length === 1 ? 'listener' : 'listeners'}`}
               </Text>
             </Group>
 
-            {config ? (
+            {configured ? (
               listeners.map((listener, index) => (
                 <Box key={listener.name ?? index}>
                   {index > 0 && <Divider color="gray.1" mb="md" />}
@@ -205,11 +186,9 @@ export default function SidecarDetails({ sidecar, connectionsByName }) {
                 </Box>
               ))
             ) : (
-              <AssignedConnections
-                names={sidecar.connections ?? []}
-                connectionsByName={connectionsByName}
-                getIcon={getIcon}
-              />
+              <Text size="sm" c="dimmed">
+                No listeners. The sidecar needs at least one to start.
+              </Text>
             )}
           </Stack>
         </Stack>

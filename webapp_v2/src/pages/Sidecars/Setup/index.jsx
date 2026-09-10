@@ -11,7 +11,6 @@ import { docsUrl } from '@/utils/docsUrl'
 import { showSnackbar } from '@/utils/snackbar'
 import MockNotice from '../components/MockNotice'
 import SidecarDetails from '../components/SidecarDetails'
-import { useConnectionsByName } from '../useConnectionsByName'
 import NameStep from './sections/NameStep'
 import WaitingStep from './sections/WaitingStep'
 
@@ -43,7 +42,6 @@ export default function SidecarSetup({ mode = 'connect' }) {
   const navigate = useNavigate()
   const apiUrl = useUserStore((s) => s.apiUrl)
   const { createSidecar, deleteSidecar } = useSidecarStore()
-  const connectionsByName = useConnectionsByName()
 
   const [step, setStep] = useState(0)
   const [sidecar, setSidecar] = useState(null)
@@ -160,7 +158,7 @@ export default function SidecarSetup({ mode = 'connect' }) {
         />
       )}
 
-      {step === 2 && sidecar && <SidecarDetails sidecar={sidecar} connectionsByName={connectionsByName} />}
+      {step === 2 && sidecar && <SidecarDetails sidecar={sidecar} />}
     </Stack>
   )
 }
