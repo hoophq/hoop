@@ -190,12 +190,19 @@ func (r *reloader) apply(log *slog.Logger, raw []byte) reloadOutcome {
 			return reloadRefused
 		}
 		detChanged = true
-		if r.ac != nil {
-			// The provider and its credential stay: the analyzer section
-			// is inside the baseline. Only the redactor holds the
-			// detector, so only it follows the rebuild.
-			r.ac.redact = redactorFor(r.ac.cfg.Send, det)
-		}
+	}
+
+	// The candidate detector is STAGED, never written into r.ac before the
+	// document is accepted: a refusal below must leave the running
+	// dependencies exactly as they were, or a later reload would combine
+	// this uncommitted detector with the running maskers and pii rules.
+	// The copy shares the budgets map on purpose — budget continuity is
+	// per name, not per generation.
+	ac := r.ac
+	if detChanged && r.ac != nil {
+		staged := *r.ac
+		staged.det = det
+		ac = &staged
 	}
 
 	// The license the lanes are built against: the one in use, unless the
@@ -213,7 +220,10 @@ func (r *reloader) apply(log *slog.Logger, raw []byte) reloadOutcome {
 			licRotated = false
 		}
 	}
-	lanes, err := buildLanes(newCfg, det, r.ac)
+	// ac, not r.ac: main's staged detector. A refusal below must leave the
+	// running dependencies untouched, and the lanes have to be built
+	// against the candidate this reload staged.
+	lanes, err := buildLanes(newCfg, det, ac)
 	if err != nil {
 		// A narrower license reaches here when the running config needs
 		// what it stopped granting. The running rules keep serving under
@@ -226,8 +236,15 @@ func (r *reloader) apply(log *slog.Logger, raw []byte) reloadOutcome {
 		return reloadRefused
 	}
 
-	swapped, kept := 0, 0
-	viewLanes := make([]lane, 0, len(lanes))
+	// Pre-pass: render every lane's rule document BEFORE anything swaps.
+	// Two reasons. A gRPC-transport lane cannot swap (ADR-0013 binds its
+	// callbacks at server construction), so drift there makes the whole
+	// document restart-bound: swapping the relay lanes and reporting the
+	// generation applied would leave a lane silently serving old rules
+	// under a log line that says otherwise. And a render failure must
+	// surface before any lane swapped, so a retry re-runs the whole
+	// document rather than half of it.
+	docs := make(map[string][]byte, len(lanes))
 	for _, ln := range lanes {
 		doc, derr := laneRuleDoc(newCfg, ln.cfg)
 		if derr != nil {
@@ -235,14 +252,21 @@ func (r *reloader) apply(log *slog.Logger, raw []byte) reloadOutcome {
 				"listener", ln.name, "error", derr)
 			return reloadRetry
 		}
+		docs[ln.name] = doc
+		if isGRPCTransport(ln.cfg) && !bytes.Equal(doc, r.laneDocs[ln.name]) {
+			log.Warn("grpc lane rules changed on the control plane; restart to apply them",
+				"listener", ln.name)
+			return reloadRestart
+		}
+	}
+
+	swapped, kept := 0, 0
+	viewLanes := make([]lane, 0, len(lanes))
+	for _, ln := range lanes {
+		doc := docs[ln.name]
 		if isGRPCTransport(ln.cfg) {
-			// gRPC-transport lanes (grpc, spanner) stay on the restart path
-			// (ADR-0014); drift is reported, never swapped, and the view
-			// keeps the serving lane.
-			if !bytes.Equal(doc, r.laneDocs[ln.name]) {
-				log.Warn("grpc lane rules changed on the control plane; restart to apply them",
-					"listener", ln.name)
-			}
+			// Unchanged by the pre-pass check above; the view keeps the
+			// serving lane.
 			viewLanes = append(viewLanes, r.prevLanes[ln.name])
 			continue
 		}
@@ -269,6 +293,12 @@ func (r *reloader) apply(log *slog.Logger, raw []byte) reloadOutcome {
 		swapped++
 	}
 
+	// Commit, all together: the detector, the pii section it came from and
+	// the analyzer dependencies move as one, only on a document that
+	// applied.
+	if detChanged && r.ac != nil {
+		r.ac.det = det
+	}
 	r.det = det
 	r.piiRaw = newCfg.PII
 	if licRotated {
@@ -304,6 +334,10 @@ func nonRuleDoc(c *Config) ([]byte, error) {
 	listeners := make([]ListenerConfig, len(c.Listeners))
 	for i, lc := range c.Listeners {
 		lc.Guardrails, lc.OPA, lc.Mask, lc.Policy = nil, nil, nil, nil
+		// The lane's analyzer block swaps with the rules: it builds
+		// evaluators, not sockets, and its provider lives in the
+		// top-level analyzer section, which stays in the baseline.
+		lc.Analyzer = nil
 		listeners[i] = lc
 	}
 	cp.Listeners = listeners
@@ -315,8 +349,9 @@ func nonRuleDoc(c *Config) ([]byte, error) {
 func laneRuleDoc(c *Config, lc ListenerConfig) ([]byte, error) {
 	gc, opa, mc := c.resolve(lc)
 	return json.Marshal(struct {
-		G GuardrailsConfig `json:"g"`
-		O *OPAConfig       `json:"o"`
-		M MaskConfig       `json:"m"`
-	}{gc, opa, mc})
+		G GuardrailsConfig    `json:"g"`
+		O *OPAConfig          `json:"o"`
+		M MaskConfig          `json:"m"`
+		A *LaneAnalyzerConfig `json:"a"`
+	}{gc, opa, mc, lc.Analyzer})
 }

@@ -245,7 +245,7 @@ func TestEnforceIsTheDefault(t *testing.T) {
 	if !gc.enforcing() {
 		t.Fatal("an unset mode did not enforce")
 	}
-	pol, err := buildPolicy(gc, opa, nil, nil)
+	pol, err := buildPolicy("lane", gc, nil, opa, nil, nil)
 	if err != nil {
 		t.Fatalf("buildPolicy: %v", err)
 	}
@@ -272,7 +272,7 @@ func TestObserveModeWrapsTheChainInsteadOfSkippingIt(t *testing.T) {
 		},
 	}
 	gc, opa, _ := cfg.resolve(cfg.Listeners[0])
-	pol, err := buildPolicy(gc, opa, nil, nil)
+	pol, err := buildPolicy("lane", gc, nil, opa, nil, nil)
 	if err != nil {
 		t.Fatalf("buildPolicy: %v", err)
 	}
@@ -297,7 +297,7 @@ func TestObserveModeWrapsTheChainInsteadOfSkippingIt(t *testing.T) {
 
 // A lane with nothing to enforce relays normally rather than failing.
 func TestEnforceWithNoRulesIsAPassThrough(t *testing.T) {
-	pol, err := buildPolicy(GuardrailsConfig{Mode: ModeEnforce}, nil, nil, nil)
+	pol, err := buildPolicy("lane", GuardrailsConfig{Mode: ModeEnforce}, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("buildPolicy: %v", err)
 	}
@@ -309,7 +309,7 @@ func TestEnforceWithNoRulesIsAPassThrough(t *testing.T) {
 // Observe over an empty chain must stay nil too, or the gate loses its
 // short-circuit and every statement walks a wrapper that does nothing.
 func TestObserveWithNoRulesStaysNil(t *testing.T) {
-	pol, err := buildPolicy(GuardrailsConfig{Mode: ModeObserve}, nil, nil, nil)
+	pol, err := buildPolicy("lane", GuardrailsConfig{Mode: ModeObserve}, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("buildPolicy: %v", err)
 	}
@@ -325,7 +325,7 @@ func TestBuildPolicyChainsLocalRulesThenOPA(t *testing.T) {
 			Operations: []inspect.Operation{inspect.OpDrop},
 		}},
 	}
-	pol, err := buildPolicy(gc, &OPAConfig{URL: "http://opa:8181/v1/data/hoop"}, nil, nil)
+	pol, err := buildPolicy("lane", gc, nil, &OPAConfig{URL: "http://opa:8181/v1/data/hoop"}, nil, nil)
 	if err != nil {
 		t.Fatalf("buildPolicy: %v", err)
 	}
@@ -357,7 +357,7 @@ func TestDeferDeniesOnALaneWithNoOPA(t *testing.T) {
 			Message:    "no drops",
 		}},
 	}
-	pol, err := buildPolicy(gc, nil, nil, nil)
+	pol, err := buildPolicy("lane", gc, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("a deferring rule with no OPA was refused: %v", err)
 	}
@@ -382,7 +382,7 @@ func TestDeferReportsOnALaneWithOPA(t *testing.T) {
 			Action:     policy.ActionDefer,
 		}},
 	}
-	pol, err := buildPolicy(gc, &OPAConfig{URL: "http://opa:8181/v1/data/hoop"}, nil, nil)
+	pol, err := buildPolicy("lane", gc, nil, &OPAConfig{URL: "http://opa:8181/v1/data/hoop"}, nil, nil)
 	if err != nil {
 		t.Fatalf("buildPolicy: %v", err)
 	}

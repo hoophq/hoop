@@ -42,20 +42,27 @@ func TestAIRuleWithoutAnalyzerSectionIsRefused(t *testing.T) {
 	}
 }
 
-// An empty trigger classifies nothing, so the rule is a guardrail that does
-// not run. Accepting it silently is the pii-entity failure again.
-func TestAIRuleWithoutTriggerIsRefused(t *testing.T) {
+// An omitted trigger now means "classify everything" on an ungated lane:
+// declaring the analyzer is the opt-in, and the resolved lane carries a
+// startup note naming the per-statement cost.
+func TestAIRuleWithoutTriggerClassifiesEverything(t *testing.T) {
 	r := aiRule("risky")
 	r.Trigger = nil
 	cfg := pgLane(r)
 	cfg.Analyzer = &AnalyzerConfig{Provider: "stub", Model: "m"}
 
-	err := cfg.Validate()
-	if err == nil {
-		t.Fatal("an ai_analysis rule with no trigger was accepted")
+	lanes, err := Validate(cfg, nil)
+	if err != nil {
+		t.Fatalf("an untriggered ai_analysis rule was refused: %v", err)
 	}
-	if !strings.Contains(err.Error(), "trigger") {
-		t.Errorf("the error does not name the trigger: %v", err)
+	var noted bool
+	for _, n := range lanes[0].Notes {
+		if strings.Contains(n, "no trigger") && strings.Contains(n, "every statement") {
+			noted = true
+		}
+	}
+	if !noted {
+		t.Errorf("no startup note names the classify-everything cost: %v", lanes[0].Notes)
 	}
 }
 
@@ -292,7 +299,7 @@ func TestPromptPrecedence(t *testing.T) {
 			cfg := &AnalyzerConfig{Provider: "stub", Model: "m", Prompt: tc.cfgPrompt}
 
 			evs, err := buildAnalyzerEvaluators([]policy.Rule{r},
-				&analyzerDeps{cfg: cfg, provider: stubAnalyzerProvider{}}, true)
+				&analyzerDeps{cfg: cfg, provider: stubAnalyzerProvider{}}, true, false)
 			if err != nil {
 				t.Fatalf("buildAnalyzerEvaluators: %v", err)
 			}
@@ -340,13 +347,13 @@ func TestTheCallBudgetSurvivesAnEvaluatorRebuild(t *testing.T) {
 		Operation: inspect.OpDelete,
 	}
 
-	gen1, err := buildAnalyzerEvaluators([]policy.Rule{aiRule("risky")}, deps, false)
+	gen1, err := buildAnalyzerEvaluators([]policy.Rule{aiRule("risky")}, deps, false, false)
 	if err != nil {
 		t.Fatalf("buildAnalyzerEvaluators: %v", err)
 	}
 	gen1[0].Evaluate(stmt) // spends the whole budget of 1
 
-	gen2, err := buildAnalyzerEvaluators([]policy.Rule{aiRule("risky")}, deps, false)
+	gen2, err := buildAnalyzerEvaluators([]policy.Rule{aiRule("risky")}, deps, false, false)
 	if err != nil {
 		t.Fatalf("buildAnalyzerEvaluators: %v", err)
 	}
@@ -359,7 +366,7 @@ func TestTheCallBudgetSurvivesAnEvaluatorRebuild(t *testing.T) {
 	}
 
 	// A DIFFERENT rule name is a different identity with its own purse.
-	other, err := buildAnalyzerEvaluators([]policy.Rule{aiRule("other")}, deps, false)
+	other, err := buildAnalyzerEvaluators([]policy.Rule{aiRule("other")}, deps, false, false)
 	if err != nil {
 		t.Fatalf("buildAnalyzerEvaluators: %v", err)
 	}

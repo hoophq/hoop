@@ -130,7 +130,7 @@ inspect_phase := object.get(input, "phase", "decide")
 # ------------------------------------------------------------- gate phase
 # Runs BEFORE the producers and answers one question per source: is this
 # statement worth running that producer on? `request` overrides the source's
-# own configuration (the ai rule's `trigger` here), so the cost control
+# own configuration (the analyzer's `trigger` here), so the cost control
 # sits next to the policy that spends the money instead of in a YAML trigger
 # the Rego author never sees.
 #
@@ -160,7 +160,7 @@ inspect := {"allow": true, "request": {"ai_analysis": false}} if {
 # precedence order.
 inspect := inspect_decide if inspect_phase == "decide"
 
-# The ai_analysis producer. UNDEFINED on a lane carrying no ai_analysis rule,
+# The ai_analysis producer. UNDEFINED on a lane with no analyzer,
 # which is what separates "no analyzer here" from "the analyzer ran and could
 # not answer": a configured analyzer reports a finding even when it skips.
 inspect_ai := input.findings.ai_analysis
@@ -190,7 +190,7 @@ inspect_pii_hits := {e | some e in inspect_pii_entities; e in inspect_pii_protec
 inspect_decide := {"denied": true, "rule": "ai-unavailable", "message": msg} if {
 	# Fail closed on protected data nobody classified. A level-only
 	# contract cannot express this case, which is why status exists.
-	# Naming inspect_ai.status is also the presence check: with no ai rule
+	# Naming inspect_ai.status is also the presence check: with no analyzer
 	# on the lane this branch is undefined and the chain falls through,
 	# rather than denying everything because nothing classified.
 	inspect_touches_sensitive

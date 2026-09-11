@@ -37,15 +37,17 @@ pii:
     - IBAN_CODE
 
 # ------------------------------------------------------------------ analyzer
-# Commented out because it needs a credential and spends money per statement.
-# Uncomment, add an ai_analysis rule to a lane below, and the relay classifies
-# what the trigger names.
+# The provider plus the DEFAULTS every lane inherits. Commented out because
+# it needs a credential and spends money per statement. Uncomment, give a
+# lane below its own analyzer: block, and the relay classifies what that
+# block's trigger names. (The old spelling, a `type: ai_analysis` rule under
+# guardrails.rules, still loads but prints a deprecation.)
 #
 # Three things bound the cost, and all three matter on a database lane where
 # an ORM repeats one statement shape thousands of times: the trigger decides
 # what is worth asking about, the cache keys on the statement SHAPE (literals
 # stripped, so `WHERE id = 1` and `WHERE id = 2` are one verdict), and the
-# rule runs last in the chain, after the free local rules and OPA.
+# analyzer runs last in the chain, after the free local rules and OPA.
 #
 # analyzer:
 #   provider: vertex            # vertex | anthropic | openai
@@ -65,12 +67,12 @@ pii:
 #   max_input_bytes: 8192
 #   cache: {size: 4096, ttl_sec: 900}
 #   max_calls: 500
-#   # PROCESS-WIDE: this reaches every ai_analysis rule on every lane, the
-#   # http one included, so keep it protocol-neutral. Protocol-specific
-#   # wording belongs on a rule's own `prompt:`, which beats this. Neither can
-#   # remove the output contract (call one tool, never quote a literal value
-#   # from the statement) -- the second keeps an identifier the model objected
-#   # to out of the audit trail.
+#   # PROCESS-WIDE: this reaches every lane's analyzer, the http one
+#   # included, so keep it protocol-neutral. Protocol-specific wording
+#   # belongs on a listener block's own `prompt:`, which wins for its lane.
+#   # Neither can remove the output contract (call one tool, never quote a
+#   # literal value from the statement) -- the second keeps an identifier the
+#   # model objected to out of the audit trail.
 #   prompt: |
 #     You are classifying traffic to a production environment holding
 #     customer records. Anything reading or modifying customer data is at
@@ -176,17 +178,16 @@ listeners:
           type: operation # lexer-derived, so SELECT 'DROP TABLE x' is a select
           operations: [drop, delete, truncate]
           message: destructive statements are not permitted on appdb
-        # Uncomment with the analyzer block above. The trigger excludes
-        # select, so an ORM's read traffic costs nothing; delete is already
-        # refused by the rule above, and Chain short-circuits on the first
-        # denial, so only an UPDATE actually reaches the model.
-        # - name: risky-writes
-        #   type: ai_analysis
-        #   trigger: {operations: [update]}
-        #   high: block
-        #   medium: warn
-        #   low: allow
-        #   message: refused by risk analysis
+    # Uncomment with the analyzer section above. The trigger excludes
+    # select, so an ORM's read traffic costs nothing; delete is already
+    # refused by the rule above, and Chain short-circuits on the first
+    # denial, so only an UPDATE actually reaches the model.
+    # analyzer:
+    #   trigger: {operations: [update]}
+    #   high: block
+    #   medium: warn
+    #   low: allow
+    #   message: refused by risk analysis
     mask:
       rules:
         # Column rules are only possible where the protocol names its values,
@@ -221,13 +222,12 @@ listeners:
           # this is a question Envoy structurally cannot ask.
           statuses: ["5xx"]
           message: upstream failure suppressed by policy
-        # Needs the http block below: without capture_body the analyzer sees
-        # "POST /anything" and no payload, which tells a model nothing.
-        # - name: risky-payloads
-        #   type: ai_analysis
-        #   trigger: {resources: ["/anything"]}
-        #   high: block
-        #   medium: warn
+    # Needs the http block below: without capture_body the analyzer sees
+    # "POST /anything" and no payload, which tells a model nothing.
+    # analyzer:
+    #   trigger: {resources: ["/anything"]}
+    #   high: block
+    #   medium: warn
     # Off by default: everything captured reaches policy, the audit trail and,
     # with an analyzer configured, a third party. authorization, cookie and
     # proxy-authorization cannot be allowlisted, and no header ever reaches

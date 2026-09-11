@@ -399,6 +399,74 @@ func (d *Detector) ScanText(text string) []string {
 	return out
 }
 
+// RedactText rewrites every detected value as its entity class, returning
+// the rewritten text and the sorted class names found.
+//
+// It backs the analyzer's send: redacted mode, whose contract is that no
+// detected VALUE reaches a model vendor. Each span becomes "<ENTITY_TYPE>":
+// the class tells the model what kind of value stood there, which is all a
+// risk verdict needs, and the value itself never leaves the process.
+// Overlapping detections collapse onto the earliest-starting span, the same
+// resolution order Find publishes.
+func (d *Detector) RedactText(text string) (string, []string) {
+	if text == "" {
+		return text, nil
+	}
+	results := d.eng.Analyze(text, d.opts)
+	if len(results) == 0 {
+		return text, nil
+	}
+
+	type span struct {
+		start, end int
+		entity     string
+	}
+	spans := make([]span, 0, len(results))
+	seen := make(map[string]bool, len(results))
+	names := make([]string, 0, len(results))
+	for _, r := range results {
+		if r.Start < 0 || r.End > len(text) || r.Start >= r.End {
+			continue
+		}
+		spans = append(spans, span{r.Start, r.End, r.EntityType})
+		if !seen[r.EntityType] {
+			seen[r.EntityType] = true
+			names = append(names, r.EntityType)
+		}
+	}
+	if len(spans) == 0 {
+		return text, nil
+	}
+	sort.Slice(spans, func(i, j int) bool {
+		if spans[i].start != spans[j].start {
+			return spans[i].start < spans[j].start
+		}
+		// The longer span wins a tie so a value detected as two classes
+		// is removed whole.
+		return spans[i].end > spans[j].end
+	})
+
+	var b strings.Builder
+	b.Grow(len(text))
+	pos := 0
+	for _, s := range spans {
+		if s.start < pos {
+			// Overlap with an already-replaced span: extend the cut so
+			// no tail of the value survives, but write no second label.
+			if s.end > pos {
+				pos = s.end
+			}
+			continue
+		}
+		b.WriteString(text[pos:s.start])
+		b.WriteString("<" + s.entity + ">")
+		pos = s.end
+	}
+	b.WriteString(text[pos:])
+	sort.Strings(names)
+	return b.String(), names
+}
+
 // ScanTextFor is ScanText restricted to the entity classes the caller can act
 // on, implementing the root module's optional policy.ScopedScanner.
 //

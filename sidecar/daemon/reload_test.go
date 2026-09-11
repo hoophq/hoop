@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -419,5 +420,129 @@ func TestAnUnreachablePlaneKeepsTheLicenseInUse(t *testing.T) {
 	}
 	if after.State() != license.StateValid {
 		t.Errorf("license state = %q, want valid", after.State())
+	}
+}
+
+// An analyzer edit on a gRPC-transport lane cannot swap (its callbacks bind
+// at server construction), so the whole document keeps the restart path:
+// swapping the other lanes and logging "applied" would leave the gRPC lane
+// serving old rules under a log line that says otherwise.
+func TestAGRPCLaneAnalyzerEditKeepsTheRestartPath(t *testing.T) {
+	desc := writeGRPCTestDescriptors(t)
+	base := fmt.Sprintf(`{
+  "analyzer": {"provider": "stub", "model": "m"},
+  "listeners": [{
+    "name": "g", "protocol": "grpc",
+    "listen": "127.0.0.1:0", "upstream": "h:50051",
+    "grpc": {"capture_payload": true, "descriptors": [%q]},
+    "analyzer": {"trigger": {"operations": ["delete"]}, "high": "block"}
+  }],
+  "audit": {"file": "-"}
+}`, desc)
+
+	cfg, err := LoadConfigBytes([]byte(base))
+	if err != nil {
+		t.Fatalf("LoadConfigBytes: %v", err)
+	}
+	cfg.cp = &controlPlane{url: "http://plane", token: "hsc_x", lastRaw: []byte(base)}
+	ac, err := setupAnalyzer(cfg, nil)
+	if err != nil {
+		t.Fatalf("setupAnalyzer: %v", err)
+	}
+	lanes, err := buildLanes(cfg, nil, ac)
+	if err != nil {
+		t.Fatalf("buildLanes: %v", err)
+	}
+	view := &atomic.Pointer[laneState]{}
+	view.Store(&laneState{lanes: lanes})
+	rl, err := newReloader(cfg, lanes, map[string]*proxy.Server{}, nil, ac, view,
+		newLicenseState(cfg.lic, cfg.dependsOnLicense()))
+	if err != nil {
+		t.Fatalf("newReloader: %v", err)
+	}
+	var buf bytes.Buffer
+
+	drifted := editJSON(t, base, `"high": "block"`, `"high": "warn"`)
+	if got := handleWith(rl, &buf, drifted); got != reloadRestart {
+		t.Fatalf("outcome = %v, want restart; log:\n%s", got, &buf)
+	}
+	if !strings.Contains(buf.String(), "restart to apply them") {
+		t.Errorf("no restart log line:\n%s", &buf)
+	}
+	if strings.Contains(buf.String(), "configuration applied") {
+		t.Errorf("a document a grpc lane cannot absorb was reported applied:\n%s", &buf)
+	}
+	if rl.gen != 0 {
+		t.Errorf("generation = %d, want 0: nothing was applied", rl.gen)
+	}
+}
+
+// A refused reload must not leak its candidate detector into the running
+// analyzer dependencies: the pii section was not committed, so a later
+// reload must not combine the uncommitted redaction behavior with the
+// running maskers and pii evaluators.
+func TestARefusedReloadDoesNotLeakTheDetector(t *testing.T) {
+	cfg, err := LoadConfigBytes([]byte(reloadBase))
+	if err != nil {
+		t.Fatalf("LoadConfigBytes: %v", err)
+	}
+	det0 := &stubPlugin{entities: []string{"US_SSN"}}
+	det1 := &stubPlugin{entities: []string{"CREDIT_CARD"}}
+	cfg.cp = &controlPlane{
+		url: "http://plane", token: "hsc_x", lastRaw: []byte(reloadBase),
+		build: func(json.RawMessage) (Plugin, error) { return det1, nil },
+	}
+	ac := &analyzerDeps{
+		cfg:      &AnalyzerConfig{Provider: "stub", Model: "m"},
+		provider: stubAnalyzerProvider{},
+		det:      det0,
+	}
+	lanes, err := buildLanes(cfg, det0, ac)
+	if err != nil {
+		t.Fatalf("buildLanes: %v", err)
+	}
+	servers := map[string]*proxy.Server{}
+	for _, ln := range lanes {
+		srv, serr := buildServer(ln, cfg.Audit, nil, slog.Default())
+		if serr != nil {
+			t.Fatalf("buildServer: %v", serr)
+		}
+		servers[ln.name] = srv
+	}
+	view := &atomic.Pointer[laneState]{}
+	view.Store(&laneState{lanes: lanes})
+	rl, err := newReloader(cfg, lanes, servers, det0, ac, view,
+		newLicenseState(cfg.lic, cfg.dependsOnLicense()))
+	if err != nil {
+		t.Fatalf("newReloader: %v", err)
+	}
+	var buf bytes.Buffer
+
+	// A pii drift plus a second guardrail rule: the document decodes and
+	// validates, the detector rebuilds, and then the free-tier cap refuses
+	// the lanes. The candidate detector must go down with the document.
+	refused := editJSON(t, reloadBase, `"audit"`, `"pii": {"entities": ["US_SSN"]}, "audit"`)
+	refused = editJSON(t, refused,
+		`{"name": "r0", "type": "deny_words_list", "words": ["drop table"]}`,
+		`{"name": "r0", "type": "deny_words_list", "words": ["drop table"]},
+		 {"name": "r1", "type": "deny_words_list", "words": ["truncate"]}`)
+	if got := applyWith(rl, &buf, refused); got != reloadRefused {
+		t.Fatalf("outcome = %v, want refused; log:\n%s", got, &buf)
+	}
+	if rl.ac.det != Plugin(det0) {
+		t.Fatal("a refused reload leaked its candidate detector into the running deps")
+	}
+	if rl.det != Plugin(det0) {
+		t.Fatal("a refused reload committed its detector")
+	}
+
+	// The same pii drift without the extra rule applies, and everything
+	// moves together.
+	applied := editJSON(t, reloadBase, `"audit"`, `"pii": {"entities": ["US_SSN"]}, "audit"`)
+	if got := applyWith(rl, &buf, applied); got != reloadApplied {
+		t.Fatalf("outcome = %v, want applied; log:\n%s", got, &buf)
+	}
+	if rl.ac.det != Plugin(det1) || rl.det != Plugin(det1) {
+		t.Fatal("an applied pii drift did not commit the detector everywhere")
 	}
 }

@@ -16,6 +16,7 @@ import (
 // would make the sidecar believe detection is on and call through it.
 type Plugin interface {
 	ScanText(text string) []string
+	RedactText(text string) (string, []string)
 	Entities() []string
 	BuildMasker(rawRules []byte) (gate.Masker, error)
 }

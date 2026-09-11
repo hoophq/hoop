@@ -129,6 +129,105 @@ func ToJSON(data []byte) ([]byte, error) {
 	return out, nil
 }
 
+// FromJSON renders a JSON document as YAML, preserving the document's key
+// order.
+//
+// It exists for -migrate, which rebuilds a config from the parsed struct
+// and owes the operator a file in the syntax they wrote. Order matters for
+// a file a person maintains, and yaml.Marshal of a decoded map would
+// scramble it (Go maps carry no order), so this walks the JSON token
+// stream and builds a yaml.Node tree instead: the encoder then emits keys
+// exactly as json.Marshal ordered them, which is struct declaration order.
+func FromJSON(data []byte) ([]byte, error) {
+	dec := json.NewDecoder(strings.NewReader(string(data)))
+	dec.UseNumber()
+	node, err := nodeFromJSON(dec)
+	if err != nil {
+		return nil, fmt.Errorf("convert json to yaml: %w", err)
+	}
+	var buf strings.Builder
+	enc := yamlv3.NewEncoder(&buf)
+	enc.SetIndent(2)
+	if err := enc.Encode(node); err != nil {
+		return nil, fmt.Errorf("convert json to yaml: %w", err)
+	}
+	if err := enc.Close(); err != nil {
+		return nil, fmt.Errorf("convert json to yaml: %w", err)
+	}
+	return []byte(buf.String()), nil
+}
+
+// nodeFromJSON consumes one JSON value from dec as a yaml.Node.
+func nodeFromJSON(dec *json.Decoder) (*yamlv3.Node, error) {
+	tok, err := dec.Token()
+	if err != nil {
+		return nil, err
+	}
+	return nodeFromToken(dec, tok)
+}
+
+// nodeFromToken builds the node a token opens: a container's children are
+// consumed from the decoder, a scalar is complete in the token itself.
+func nodeFromToken(dec *json.Decoder, tok json.Token) (*yamlv3.Node, error) {
+	switch t := tok.(type) {
+	case json.Delim:
+		switch t {
+		case '{':
+			node := &yamlv3.Node{Kind: yamlv3.MappingNode, Tag: "!!map"}
+			for dec.More() {
+				keyTok, err := dec.Token()
+				if err != nil {
+					return nil, err
+				}
+				key, ok := keyTok.(string)
+				if !ok {
+					return nil, fmt.Errorf("object key %v is not a string", keyTok)
+				}
+				keyNode := &yamlv3.Node{}
+				keyNode.SetString(key)
+				valNode, err := nodeFromJSON(dec)
+				if err != nil {
+					return nil, err
+				}
+				node.Content = append(node.Content, keyNode, valNode)
+			}
+			_, err := dec.Token() // consume '}'
+			return node, err
+		case '[':
+			node := &yamlv3.Node{Kind: yamlv3.SequenceNode, Tag: "!!seq"}
+			for dec.More() {
+				child, err := nodeFromJSON(dec)
+				if err != nil {
+					return nil, err
+				}
+				node.Content = append(node.Content, child)
+			}
+			_, err := dec.Token() // consume ']'
+			return node, err
+		}
+		return nil, fmt.Errorf("unexpected delimiter %v", t)
+	case string:
+		// SetString picks the safe style: plain where possible, quoted
+		// where the value would otherwise read as a number or a bool,
+		// literal for multiline. That is exactly the round-trip rule
+		// ToJSON needs to hold in the other direction.
+		node := &yamlv3.Node{}
+		node.SetString(t)
+		return node, nil
+	case json.Number:
+		tag := "!!int"
+		if strings.ContainsAny(t.String(), ".eE") {
+			tag = "!!float"
+		}
+		return &yamlv3.Node{Kind: yamlv3.ScalarNode, Tag: tag, Value: t.String()}, nil
+	case bool:
+		return &yamlv3.Node{Kind: yamlv3.ScalarNode, Tag: "!!bool", Value: fmt.Sprintf("%t", t)}, nil
+	case nil:
+		return &yamlv3.Node{Kind: yamlv3.ScalarNode, Tag: "!!null", Value: "null"}, nil
+	}
+	return nil, fmt.Errorf("unexpected token %v", tok)
+}
+
 // normalize rewrites a decoded YAML value into something encoding/json can
 // marshal.
 //
