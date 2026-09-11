@@ -21694,7 +21694,7 @@
     },
     "/sidecars/configuration": {
       "get": {
-        "description": "Authenticated with the hoop-sidecar-token header. Returns the configuration the sidecar must serve. Unlike the handshake it records nothing, so a poll never overwrites what the sidecar last reported about itself.",
+        "description": "Authenticated with the hoop-sidecar-token header. Returns the configuration the sidecar must serve, or only the load_from_disk flag and the license when the sidecar loads its configuration from disk. Unlike the handshake it records nothing, so a poll never overwrites what the sidecar last reported about itself.",
         "parameters": [
           {
             "description": "The token returned when the sidecar was created",
@@ -21745,7 +21745,7 @@
         ]
       },
       "put": {
-        "description": "Authenticated with the hoop-sidecar-token header. Stores the config document a sidecar carried locally, once: the import is refused with 409 when the control plane already holds a configuration with listeners, so a centrally authored config is never overwritten by a restarting sidecar.",
+        "description": "Authenticated with the hoop-sidecar-token header. Stores the config document a sidecar carried locally, once: the import is refused with 409 when the control plane already holds a configuration with listeners, or when the sidecar loads its configuration from disk.",
         "parameters": [
           {
             "description": "The token returned when the sidecar was created",
@@ -21840,7 +21840,7 @@
     },
     "/sidecars/handshake": {
       "post": {
-        "description": "Authenticated with the hoop-sidecar-token header. Records the reported version and returns the configuration the sidecar must serve. Answers 412 while no configuration with listeners is assigned, recording nothing: a sidecar that cannot run must not show up as recently seen.",
+        "description": "Authenticated with the hoop-sidecar-token header. Records the reported version and returns the configuration the sidecar must serve. A sidecar whose stored configuration sets load_from_disk receives only that flag and its license, and runs its own config file. Answers 412 while no configuration with listeners is assigned, recording nothing: a sidecar that cannot run must not show up as recently seen.",
         "parameters": [
           {
             "description": "The token returned when the sidecar was created",

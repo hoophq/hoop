@@ -191,7 +191,7 @@ func Put(c *gin.Context) {
 // Sidecar Handshake
 //
 //	@Summary		Sidecar Handshake
-//	@Description	Authenticated with the hoop-sidecar-token header. Records the reported version and returns the configuration the sidecar must serve. Answers 412 while no configuration with listeners is assigned, recording nothing: a sidecar that cannot run must not show up as recently seen.
+//	@Description	Authenticated with the hoop-sidecar-token header. Records the reported version and returns the configuration the sidecar must serve. A sidecar whose stored configuration sets load_from_disk receives only that flag and its license, and runs its own config file. Answers 412 while no configuration with listeners is assigned, recording nothing: a sidecar that cannot run must not show up as recently seen.
 //	@Tags			Sidecars
 //	@Accept			json
 //	@Produce		json
@@ -211,6 +211,18 @@ func Handshake(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
+	license, err := controlPlaneLicense(sidecar.OrgID)
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed loading the control plane license")
+		return
+	}
+	if sidecar.Configuration.LoadFromDisk != nil && *sidecar.Configuration.LoadFromDisk {
+		// Running fine on its own file, so it is recently seen. The 412
+		// below is for a sidecar that cannot run at all.
+		recordRuntime(sidecar.ID, req.Version)
+		c.JSON(http.StatusOK, toDaemonConfig(sidecar.Configuration, license))
+		return
+	}
 	// An empty answer would only kill the caller: the sidecar refuses to
 	// serve a config with no listeners and exits. The 412 lets it import
 	// its local file instead, and skipping recordRuntime keeps a process
@@ -221,13 +233,13 @@ func Handshake(c *gin.Context) {
 		return
 	}
 	recordRuntime(sidecar.ID, req.Version)
-	c.JSON(http.StatusOK, sidecar.Configuration)
+	c.JSON(http.StatusOK, toDaemonConfig(sidecar.Configuration, license))
 }
 
 // Import Sidecar Configuration
 //
 //	@Summary		Import Sidecar Configuration
-//	@Description	Authenticated with the hoop-sidecar-token header. Stores the config document a sidecar carried locally, once: the import is refused with 409 when the control plane already holds a configuration with listeners, so a centrally authored config is never overwritten by a restarting sidecar.
+//	@Description	Authenticated with the hoop-sidecar-token header. Stores the config document a sidecar carried locally, once: the import is refused with 409 when the control plane already holds a configuration with listeners, or when the sidecar loads its configuration from disk.
 //	@Tags			Sidecars
 //	@Accept			json
 //	@Produce		json
@@ -270,7 +282,7 @@ func ImportConfiguration(c *gin.Context) {
 // Sidecar Configuration
 //
 //	@Summary		Sidecar Configuration
-//	@Description	Authenticated with the hoop-sidecar-token header. Returns the configuration the sidecar must serve. Unlike the handshake it records nothing, so a poll never overwrites what the sidecar last reported about itself.
+//	@Description	Authenticated with the hoop-sidecar-token header. Returns the configuration the sidecar must serve, or only the load_from_disk flag and the license when the sidecar loads its configuration from disk. Unlike the handshake it records nothing, so a poll never overwrites what the sidecar last reported about itself.
 //	@Tags			Sidecars
 //	@Produce		json
 //	@Param			hoop-sidecar-token	header		string	true	"The token returned when the sidecar was created"
@@ -283,7 +295,36 @@ func Configuration(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"message": "access denied"})
 		return
 	}
-	c.JSON(http.StatusOK, sidecar.Configuration)
+
+	license, err := controlPlaneLicense(sidecar.OrgID)
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed loading the control plane license")
+		return
+	}
+	c.JSON(http.StatusOK, toDaemonConfig(sidecar.Configuration, license))
+}
+
+// toDaemonConfig prepares the configuration answer a sidecar serves. The
+// license it carries is the control plane's own, so every sidecar runs under
+// the same license as the gateway instead of one pasted into each config
+// document.
+func toDaemonConfig(cfg models.SidecarConfiguration, license string) models.SidecarConfiguration {
+	if cfg.LoadFromDisk != nil && *cfg.LoadFromDisk {
+		return models.SidecarConfiguration{LoadFromDisk: cfg.LoadFromDisk, License: license}
+	}
+	cfg.License = license
+	return cfg
+}
+
+// controlPlaneLicense reads the license the gateway itself runs under, the
+// document stored on the organization the sidecar's token belongs to. An org
+// with no license yields "", the free tier.
+func controlPlaneLicense(orgID string) (string, error) {
+	org, err := models.GetOrganizationByNameOrID(orgID)
+	if err != nil {
+		return "", err
+	}
+	return string(org.LicenseData), nil
 }
 
 func toResponse(s models.Sidecar) openapi.SidecarResponse {

@@ -62,7 +62,15 @@ export default function SidecarDetailsPage() {
         sidecar && (
           <>
             <Title order={1}>{sidecar.name}</Title>
-            <SidecarDetails sidecar={sidecar} />
+            <SidecarDetails
+              sidecar={sidecar}
+              // Only for the record on screen: a flip still in flight when the
+              // route moves on must not write the previous sidecar back over
+              // this one, which would strand the page on its loader.
+              onSourceChange={(updated) =>
+                setResult((prev) => (prev.sidecar?.id === updated.id ? { ...prev, sidecar: updated } : prev))
+              }
+            />
           </>
         )
       )}

@@ -162,7 +162,8 @@ func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*
 // ResolveLicense picks the license a process runs under, highest precedence
 // first: the command line, then HOOP_LICENSE, then the config file's
 // `license` key. Licensing a fleet must not mean editing every file in it.
-// The control plane goes above all three once it sends one on connection.
+// The control plane sends one when it releases the config to disk;
+// resolveConfigSource puts that above the config key and below the other two.
 func ResolveLicense(flagValue, fileValue string) license.Status {
 	return license.Resolve(
 		license.Ref{Value: flagValue, Source: "the license flag"},
@@ -737,6 +738,7 @@ func Run(cfg *Config, det Plugin) error {
 		log.Info("control plane connected",
 			"url", cfg.cp.url,
 			"source", cfg.cp.urlSource,
+			"load_from_disk", cfg.cp.diskMode,
 			"poll", heartbeatEvery.String())
 		if cfg.cp.imported {
 			log.Info("configuration imported into the control plane",

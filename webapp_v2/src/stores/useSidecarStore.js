@@ -42,6 +42,26 @@ export const useSidecarStore = create((set, get) => ({
     return created
   },
 
+  // Flip which side owns this sidecar's configuration.
+  //
+  // PUT replaces the stored document whole, so the flip is a read-modify-write
+  // and the read has to be fresh: the page's copy can be minutes old, and
+  // writing it back would undo a configuration authored meanwhile. That leaves
+  // one round trip of exposure, which no endpoint here can close — flipping
+  // the source is not a config edit, so it never authors listeners itself.
+  setLoadFromDisk: async (id, loadFromDisk) => {
+    const current = await sidecarsService.get(id)
+    const updated = await sidecarsService.update(id, {
+      ...(current.configuration ?? {}),
+      load_from_disk: loadFromDisk,
+    })
+    set((state) => ({
+      sidecars: state.sidecars.map((s) => (s.id === updated.id ? updated : s)),
+      requestId: state.requestId + 1,
+    }))
+    return updated
+  },
+
   deleteSidecar: async (id) => {
     await sidecarsService.delete(id)
     set((state) => ({ sidecars: state.sidecars.filter((s) => s.id !== id), requestId: state.requestId + 1 }))

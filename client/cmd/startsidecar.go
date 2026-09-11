@@ -83,7 +83,11 @@ document on that first handshake, so an existing sidecar connects by adding
 the URL and passing the token, nothing else; once the plane holds a config
 it owns it, and listeners still in the file are ignored with a warning. The
 token is shown once when the sidecar is created; a lost one means
-registering a new sidecar.`,
+registering a new sidecar. A sidecar whose control plane entry says
+"load_from_disk" runs the listeners in its own config file and receives only
+its license; moving that entry either way reaches a running sidecar on its
+next check-in, which applies what a live process can change and logs what
+needs a restart.`,
 	Example: `  hoop start sidecar
   hoop start sidecar --config /etc/hoop-inspect/config.yaml
   hoop start sidecar --config config.yaml --license /etc/hoop-inspect/license.json
