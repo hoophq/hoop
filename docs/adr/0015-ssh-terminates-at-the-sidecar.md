@@ -6,7 +6,7 @@
 - **Deciders:** —
 - **Code:** [`sidecar/daemon/`](../../sidecar/daemon), [`sidecar/gate/`](../../sidecar/gate), [`sidecar/policy/`](../../sidecar/policy), [`sidecar/analyzer/`](../../sidecar/analyzer), `libhoop/v2/codec/` (new packages)
 - **Related:** [ADR-0005](0005-sidecar-flow.md) (the relay flow SSH deviates from), [ADR-0009](0009-guardrails-and-masking-architecture.md) (where the rules run), [ADR-0011](0011-sidecar-config-schema.md) (the config schema the `ssh` block joins), [ADR-0013](0013-grpc-terminates-http2-in-process.md) (the first lane to terminate its own protocol, and the precedent this follows), [ADR-0014](0014-sidecar-config-hot-reload.md) (how a fleet's rules reach a running sidecar)
-- **Input:** a design draft (`docs/ssh-sidecar-native-bastion.md`) and a throwaway POC that implemented it end to end. This ADR absorbs both; the draft does not need to be read alongside it.
+- **Input:** A throwaway POC that implemented it end to end `hoophq/ssh-sidecar-bastion`
 - **Supersedes / Superseded by:** —
 
 ## Context
@@ -400,7 +400,7 @@ only record is the admission. Mode 2 works precisely because this is ordinary
 
 ### The operation vocabulary
 
-Thirteen operations, all of them implemented and audited in the POC. The
+Twelve operations, all of them implemented and audited in the POC. The
 "matches" column is the contract with whoever writes a rule: it is the text a
 `pattern_match` regexp is tested against, and it differs per operation because
 what a statement *is* differs per capability.
@@ -408,7 +408,6 @@ what a statement *is* differs per capability.
 | Operation | Capability | A rule matches against | POC |
 |---|---|---|---|
 | `exec_line` | `exec` | the whole command, one statement | exercised — allow, deny and defer |
-| `shell_line` | `shell` | one reconstructed input line | exercised, and the reason v1 ships no shell guardrails |
 | `env_set` | `env` | the variable **name**, not its value | exercised — denied `LD_PRELOAD`, allowed a benign name |
 | `sftp_read` | `sftp` | the path being read | exercised — denied a `.ssh` path, masked a download |
 | `sftp_write` | `sftp` | the path being written | exercised — denied a write under `/etc`, refused an upload a mask rule would touch |
@@ -447,6 +446,14 @@ is the same audit-before-act ordering the whole chain follows.
 a capability is a separate kind of audit record with no operation on it — the
 POC writes `capability agent_forward block` alongside `statement exec_line
 block`, and a rule cannot scope itself to the former.
+
+**A shell has no operation either.** The POC framed interactive input into
+`shell_line` statements so a rule could act on them, and v1 has no such rule —
+so there is nothing for the operation to feed. A shell's content is recorded
+as a stream, the way an interactive session already is, rather than cut into
+statements nothing evaluates. This is what makes the shell decision cheap as
+well as honest: with no `shell_line`, v1 needs no keystroke reconstruction at
+all, and the unsound heuristic the POC measured is not written a second time.
 
 **A forward has no operation, so no rule can scope to it.** The POC audits one
 as a capability event rather than a statement, and that is the right shape: a
@@ -528,8 +535,8 @@ not. The better full-screen signal narrows the unsound window without closing
 it, and no signal at all addresses shell expansion.
 
 So an interactive shell is admitted by capability, recorded in full, and
-masked on the way out — and a guardrail rule naming a shell-typed operation is
-refused at config load, naming the reason.
+masked on the way out. There is no shell operation for a rule to name, so an
+attempt to write one fails at config load as an unknown operation.
 
 **The analyzer works on an SSH lane in v1, and this is not optional.** A
 missing content builder makes an `ai_analysis` rule classify nothing and match
@@ -768,6 +775,32 @@ listeners:
       host_key: /etc/hoop-inspect/keys/bastion_host_key
       trusted_ca: /etc/hoop-inspect/keys/hoop_ca.pub
 ```
+
+Every key this design adds, and nothing else:
+
+| Key | Value | Required | What it decides |
+|---|---|---|---|
+| `listeners[].protocol` | `ssh` | yes | Selects the lane. A new value for an existing key, not a new key |
+| `listeners[].ssh` | block | yes | Everything below. Its presence on a non-`ssh` lane is a config error |
+| `ssh.host_key` | path | yes | The server identity this listener presents, the same file a real `sshd` would hold |
+| `ssh.trusted_ca` | path | yes | The CA public key(s) a certificate must be signed by. The only standing trust decision a listener makes |
+| `ssh.capabilities_allowed` | list | no | Which session capabilities are admitted. **Absent admits none**, which is exactly right for a bastion. Forwarding is not a member |
+| `ssh.identity.subject` | `key_id`, `principals`, `extensions.<name>` | no | Which certificate field becomes the principal policy and audit see. Absent takes the key id |
+| `ssh.identity.email` | same | no | Where an email is written, when the CA writes one |
+| `ssh.identity.groups` | same | no | The field group-based policy reads |
+| `ssh.identity.attributes` | list of extension names | no | Certificate extensions surfaced to policy verbatim, alongside the fixed identity fields |
+
+Three listener keys do not apply and are refused: `upstream`, `upstream_tls`
+and `downstream_tls`. A bastion has no fixed upstream and an end-hop has none
+at all, and SSH negotiates its own transport, so there is no TLS to terminate
+or originate. `idle_timeout_sec` and `max_conns` work as they do on any lane.
+
+And five keys are deliberately **not** here, each because something else
+already says the same thing: a `role`, which the capability list says; a
+target list or a forwarding switch, because forwarding is unrestricted and
+takes its destination from the client; a per-listener audit path, because the
+sink is process-wide; and a per-capability masking set, because one rule set
+covers the lane.
 
 Three details are decided here rather than inherited from the POC:
 
