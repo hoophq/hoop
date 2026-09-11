@@ -1,7 +1,6 @@
 package rdp
 
 import (
-	"context"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -340,7 +339,7 @@ func (r *IronRDPGateway) handle(c *gin.Context) {
 	}
 
 	if !isMachineCredential {
-		usertoken.PollingUserToken(context.Background(), func(cause error) {
+		usertoken.PollingUserToken(session.Context(), func(cause error) {
 			session.Close()
 		}, tokenVerifier, dba.UserSubject)
 	}
