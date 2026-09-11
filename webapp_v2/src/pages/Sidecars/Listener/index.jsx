@@ -1,15 +1,14 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Paper, Stack, Text, Title } from '@mantine/core'
+import { Stack, Text, Title } from '@mantine/core'
 import { ArrowLeft } from 'lucide-react'
-import Alert from '@/components/Alert'
 import Button from '@/components/Button'
 import FormFooter, { FORM_FOOTER_CLEARANCE } from '@/components/FormFooter'
 import PageLoader from '@/components/PageLoader'
 import { sidecarsService } from '@/services/sidecars'
 import ListenerForm from '../components/ListenerForm'
 import { listenerIndexByLabel, listenerLabel } from '../listeners'
-import { RESTART_NOTE, useListenerEditor } from '../useListenerEditor'
+import { useListenerEditor } from '../useListenerEditor'
 
 // The sidecar this listener belongs to, above its own name. There is no
 // Breadcrumbs component in the app and one consumer does not earn one; this is
@@ -54,13 +53,7 @@ function Editor({ sidecar, index, onDone }) {
           </Text>
         </Stack>
 
-        <Alert color="yellow" variant="light" radius="md">
-          <Text size="sm">{`The sidecar keeps serving its current listeners until it restarts. ${RESTART_NOTE}`}</Text>
-        </Alert>
-
-        <Paper withBorder radius="md" p="lg">
-          <ListenerForm form={form} setField={setField} errors={errors} />
-        </Paper>
+        <ListenerForm form={form} setField={setField} errors={errors} />
       </Stack>
 
       {/* Pinned, because the form runs past the fold as soon as Advanced is

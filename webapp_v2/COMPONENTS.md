@@ -275,6 +275,29 @@ import Stepper from '@/components/Stepper'
 ```
 `StepAccordion` is the vertical, one-page wizard (Agents); `Stepper` is for a flow whose steps replace each other (the sidecar setup).
 
+### SectionRow
+
+Two-column form row: heading and supporting copy on the left (span 2), fields on the
+right (span 5), on a `Grid columns={7}`.
+
+```jsx
+<Stack gap="xxlAlt">
+  <SectionRow title="Identity" description="What this section is for.">
+    <Stack gap="md">{fields}</Stack>
+  </SectionRow>
+</Stack>
+```
+
+**This is the app's form layout.** Sixteen form pages put their fields straight on the
+page background — none wraps inputs in a bordered container, `Paper withBorder` is for
+lists and tables — and ten lay them out on this grid. Moving the explanation into the
+left column is what lets each field drop its own `description`, which is most of what
+makes a long form read as a wall of grey.
+
+It was copied by hand into ten pages before it was a component, and those copies are
+still there; `pages/Features/AiSessionAnalyzer/components/SectionRow` re-exports this
+one. Collapsing the rest is a mechanical change of its own.
+
 ### FormFooter
 
 Action bar pinned to the bottom of the viewport, for a form long enough that its Save
@@ -873,18 +896,20 @@ Non-obvious notes only:
   decoded with `DisallowUnknownFields` three times over, so a dropped key is silent
   data loss rather than an error. A listener is addressed by its POSITION: it is an
   element of the configuration JSON, has no id, and its name is editable.
-  A listener change does NOT hot-reload — the daemon swaps rules in place but needs a
-  restart for topology, and re-handshakes only once a minute. Every save and delete
-  says so (`RESTART_NOTE` in `pages/Sidecars/useListenerEditor.js`).
+  The UI says nothing about restarts. The daemon does need one for a listener change
+  (`reload.go:167` — rules hot-swap, topology does not), but the product's intent is
+  that the plane orchestrates the sidecar, so that is recorded as a comment in
+  `pages/Sidecars/useListenerEditor.js` rather than shown to an admin.
   Editing is one full page, `/sidecars/:id/listeners/*` — the modal that was wired
   beside it for comparison is gone. The route keys on `listenerLabel(listener, index)`,
   which falls back to `listener[i]` exactly as the daemon's `displayName` does, so a
   listener that never named itself is still reachable and reads the way its own audit
   rows do.
-  `sections/ListenerDetails.jsx` is the expanded row: the lane's remaining configuration
-  on the left, and on the right what it RESOLVES to — guardrails, masking and OPA, each
-  rule marked Listener or Inherited. That half is the only place those rules appear at
-  all; the form does not edit them.
+  `sections/ListenerDetails.jsx` is the expanded row: a short chip strip of the
+  operational facts, then what the lane RESOLVES to — guardrails, masking and OPA, each
+  rule marked Listener or Inherited. Those rules appear nowhere else in the app, which
+  is what the expansion is for; certificate paths and codec switches are the form's job
+  and were deliberately left out.
   `pages/Sidecars/resolve.js` is the one port of `Config.resolve`, and both the Features
   chips (`config.js`) and the expanded row read it. Guardrail `rules` absent — **or
   `null`, which is what commenting them out in YAML leaves** — inherits, `[]` runs none,

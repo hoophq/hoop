@@ -1,4 +1,4 @@
-import { Box, Divider, Grid, Group, Stack, Text } from '@mantine/core'
+import { Box, Divider, Group, Stack, Text } from '@mantine/core'
 import Badge from '@/components/Badge'
 import { MODE_OBSERVE, SOURCE_LISTENER, resolveListener } from '../resolve'
 import { supportsGRPCBlock, supportsHTTPBlock } from '../listeners'
@@ -24,8 +24,6 @@ const MASK_STRATEGY_LABELS = {
   partial: 'Partial',
   hash: 'Hash',
 }
-
-const NONE = '—'
 
 const join = (v) => (Array.isArray(v) && v.length > 0 ? v.join(', ') : null)
 
@@ -53,23 +51,35 @@ function ruleMatcher(rule) {
       return [join(rule.methods), join(rule.statuses)].filter(Boolean).join(' ') || null
     case 'ai_analysis':
       return (
-        join([rule.trigger?.operations, rule.trigger?.tables, rule.trigger?.resources].map(join).filter(Boolean)) ||
-        null
+        [rule.trigger?.operations, rule.trigger?.tables, rule.trigger?.resources]
+          .map(join)
+          .filter(Boolean)
+          .join(', ') || null
       )
     default:
       return null
   }
 }
 
-function Field({ label, children }) {
-  return (
-    <Group gap="xs" align="baseline" wrap="nowrap">
-      <Text size="xs" c="dimmed" w={110} flex="0 0 auto">
-        {label}
-      </Text>
-      <Text size="xs">{children}</Text>
-    </Group>
-  )
+/**
+ * The few configuration facts worth reading without opening the form.
+ *
+ * Deliberately not the whole listener: certificate paths, body limits and
+ * codec switches are the form's job, and a reader who wants them opens Edit.
+ * What survives is what an operator asks at a glance — how the lane is
+ * reached, whether either hop is encrypted, and any limit that is actually
+ * set. A limit left at its default says nothing and is left out.
+ */
+function configChips(listener) {
+  const chips = [listener.network === 'unix' ? 'Unix socket' : 'TCP']
+  if (listener.upstream_tls) chips.push('Upstream TLS')
+  if (listener.downstream_tls) chips.push('Client TLS')
+  if (listener.max_conns) chips.push(`max ${listener.max_conns} conns`)
+  if (listener.idle_timeout_sec) chips.push(`idle ${listener.idle_timeout_sec}s`)
+  if (supportsHTTPBlock(listener.protocol) && listener.http?.capture_body) chips.push('Body captured')
+  if (supportsGRPCBlock(listener.protocol) && listener.grpc?.capture_payload) chips.push('Payload captured')
+  if (listener.upstream_tls?.insecure_skip_verify) chips.push('Verification off')
+  return chips
 }
 
 function Section({ title, right, children }) {
@@ -95,85 +105,30 @@ function SourceBadge({ source }) {
   )
 }
 
-function GuardrailRule({ entry }) {
-  const { rule, source } = entry
-  const matcher = ruleMatcher(rule)
+function Rule({ name, detail, source, extra }) {
   return (
-    <Stack gap={2}>
-      <Group gap="xs" wrap="nowrap">
-        <Text size="xs" fw={600}>
-          {rule.name || 'Unnamed rule'}
-        </Text>
-        <SourceBadge source={source} />
-        {/* action: "defer" reports a finding instead of denying. */}
-        {rule.action === 'defer' && (
-          <Badge variant="light" color="yellow" tt="none" fw={500}>
-            Report only
-          </Badge>
-        )}
-      </Group>
-      <Text size="xs" c="dimmed">
-        {[RULE_TYPE_LABELS[rule.type] ?? rule.type, matcher].filter(Boolean).join(' · ')}
+    <Group gap="sm" align="baseline" wrap="nowrap">
+      <Text size="xs" fw={600}>
+        {name || 'Unnamed rule'}
       </Text>
-    </Stack>
-  )
-}
-
-function MaskRule({ entry }) {
-  const { rule, source } = entry
-  const target = join(rule.columns) || join(rule.entities) || (rule.entity ?? null)
-  const strategy = MASK_STRATEGY_LABELS[rule.strategy] ?? MASK_STRATEGY_LABELS.redact
-  // keep_last only means anything to the partial strategy; its default is 4.
-  const keepLast = rule.strategy === 'partial' ? `keep last ${rule.keep_last ?? 4}` : null
-  return (
-    <Stack gap={2}>
-      <Group gap="xs" wrap="nowrap">
-        <Text size="xs" fw={600}>
-          {rule.name || 'Unnamed rule'}
-        </Text>
-        <SourceBadge source={source} />
-      </Group>
-      <Text size="xs" c="dimmed">
-        {[target, strategy, keepLast].filter(Boolean).join(' · ')}
+      <Text size="xs" c="dimmed" flex={1}>
+        {detail}
       </Text>
-    </Stack>
-  )
-}
-
-function TLSSummary({ tls, downstream }) {
-  if (!tls) return NONE
-  const parts = []
-  if (downstream) {
-    if (tls.cert_file) parts.push(tls.cert_file)
-  } else {
-    parts.push(tls.ca_file ? `CA ${tls.ca_file}` : 'host trust store')
-    if (tls.server_name) parts.push(`SNI ${tls.server_name}`)
-    if (tls.cert_file) parts.push('mTLS')
-  }
-  return (
-    <Group gap="xs" wrap="nowrap" component="span">
-      <span>{parts.join(' · ') || 'On'}</span>
-      {tls.insecure_skip_verify && (
-        <Badge variant="danger" tt="none" fw={500}>
-          Verification off
-        </Badge>
-      )}
+      {extra}
+      <SourceBadge source={source} />
     </Group>
   )
 }
 
 /**
- * Everything about one lane that the table's five columns do not say.
+ * What a lane actually enforces, which has no other home in the UI.
  *
- * Two halves. The left is the listener's own configuration, which the form
- * edits. The right is what it RESOLVES to — the guardrails, masking and OPA
- * the daemon actually applies to this lane, which the form does not edit and
- * which has no other home in the UI: today they reduce to a Features chip, so
- * an operator reads the YAML to learn which rules run where.
- *
- * Every rule is marked Listener or Inherited, because the merge is not a union:
- * guardrails concatenate, masking and OPA replace, and each has a spelling that
- * means "none" rather than "inherit" (resolve.js holds the rules).
+ * Guardrails, masking and OPA are not editable anywhere yet; outside this panel
+ * they reduce to a Features chip, so an operator reads the YAML to learn which
+ * rules run where. Every rule is marked Listener or Inherited, because the
+ * merge is not a union: guardrails concatenate, masking and OPA replace, and
+ * each has a spelling that means "none" rather than "inherit" (resolve.js
+ * holds the rules).
  */
 export default function ListenerDetails({ listener, config }) {
   const { mode, guardrails, mask, opa } = resolveListener(listener, config)
@@ -181,97 +136,97 @@ export default function ListenerDetails({ listener, config }) {
 
   return (
     <Box bg="gray.0" p="md">
-      <Grid gutter="xl">
-        <Grid.Col span={{ base: 12, md: 5 }}>
-          <Section title="Configuration">
-            <Stack gap={4}>
-              <Field label="Transport">{listener.network === 'unix' ? 'Unix socket' : 'TCP'}</Field>
-              <Field label="Max conns">{listener.max_conns || 'Unlimited'}</Field>
-              <Field label="Idle timeout">
-                {listener.idle_timeout_sec ? `${listener.idle_timeout_sec}s` : 'Disabled'}
-              </Field>
-              <Field label="Upstream TLS">
-                <TLSSummary tls={listener.upstream_tls} />
-              </Field>
-              <Field label="Client TLS">
-                <TLSSummary tls={listener.downstream_tls} downstream />
-              </Field>
-              {supportsHTTPBlock(listener.protocol) && (
-                <>
-                  <Field label="Identity header">{listener.identity_header || NONE}</Field>
-                  <Field label="Capture body">{listener.http?.capture_body ? 'Yes' : 'No'}</Field>
-                  <Field label="Headers">{join(listener.http?.headers) || NONE}</Field>
-                </>
-              )}
-              {supportsGRPCBlock(listener.protocol) && (
-                <>
-                  <Field label="Descriptors">{join([].concat(listener.grpc?.descriptors ?? [])) || NONE}</Field>
-                  <Field label="Capture payload">{listener.grpc?.capture_payload ? 'Yes' : 'No'}</Field>
-                  <Field label="Strict">{listener.grpc?.strict ? 'Yes' : 'No'}</Field>
-                  <Field label="Metadata">{join(listener.grpc?.metadata) || NONE}</Field>
-                </>
-              )}
+      <Stack gap="md">
+        <Group gap="xs">
+          {configChips(listener).map((chip) => (
+            <Badge key={chip} variant="inactive" tt="none" fw={500}>
+              {chip}
+            </Badge>
+          ))}
+        </Group>
+
+        <Divider color="gray.2" />
+
+        <Section
+          title="Guardrails"
+          right={
+            <Badge variant={observing ? 'warning' : 'inactive'} tt="none" fw={500}>
+              {observing ? 'Observe' : 'Enforce'}
+            </Badge>
+          }
+        >
+          {guardrails.length === 0 ? (
+            <Text size="xs" c="dimmed">
+              {observing ? 'No rules. Nothing is evaluated.' : 'No rules. Everything passes.'}
+            </Text>
+          ) : (
+            <Stack gap={6}>
+              {guardrails.map((entry, i) => (
+                <Rule
+                  key={`${entry.rule.name}-${i}`}
+                  name={entry.rule.name}
+                  source={entry.source}
+                  detail={[RULE_TYPE_LABELS[entry.rule.type] ?? entry.rule.type, ruleMatcher(entry.rule)]
+                    .filter(Boolean)
+                    .join(' · ')}
+                  // action: "defer" reports a finding instead of denying.
+                  extra={
+                    entry.rule.action === 'defer' && (
+                      <Badge variant="light" color="amber" tt="none" fw={500}>
+                        Report only
+                      </Badge>
+                    )
+                  }
+                />
+              ))}
             </Stack>
-          </Section>
-        </Grid.Col>
+          )}
+        </Section>
 
-        <Grid.Col span={{ base: 12, md: 7 }}>
-          <Stack gap="md">
-            <Section
-              title="Guardrails"
-              right={
-                <Badge variant={observing ? 'warning' : 'inactive'} tt="none" fw={500}>
-                  {observing ? 'Observe' : 'Enforce'}
-                </Badge>
-              }
-            >
-              {guardrails.length === 0 ? (
-                <Text size="xs" c="dimmed">
-                  {observing ? 'No rules. Nothing is evaluated.' : 'No rules. Everything passes.'}
-                </Text>
-              ) : (
-                <Stack gap="xs">
-                  {guardrails.map((entry, i) => (
-                    <GuardrailRule key={`${entry.rule.name}-${i}`} entry={entry} />
-                  ))}
-                </Stack>
-              )}
-            </Section>
+        <Divider color="gray.2" />
 
-            <Divider color="gray.2" />
+        <Section title="Masking">
+          {mask.length === 0 ? (
+            <Text size="xs" c="dimmed">
+              No rules. Responses are returned unchanged.
+            </Text>
+          ) : (
+            <Stack gap={6}>
+              {mask.map((entry, i) => {
+                const { rule } = entry
+                const target = join(rule.columns) || join(rule.entities) || rule.entity || null
+                const strategy = MASK_STRATEGY_LABELS[rule.strategy] ?? MASK_STRATEGY_LABELS.redact
+                // keep_last only means anything to the partial strategy; its default is 4.
+                const keepLast = rule.strategy === 'partial' ? `keep last ${rule.keep_last ?? 4}` : null
+                return (
+                  <Rule
+                    key={`${rule.name}-${i}`}
+                    name={rule.name}
+                    source={entry.source}
+                    detail={[target, strategy, keepLast].filter(Boolean).join(' · ')}
+                  />
+                )
+              })}
+            </Stack>
+          )}
+        </Section>
 
-            <Section title="Masking">
-              {mask.length === 0 ? (
-                <Text size="xs" c="dimmed">
-                  No rules. Responses are returned unchanged.
-                </Text>
-              ) : (
-                <Stack gap="xs">
-                  {mask.map((entry, i) => (
-                    <MaskRule key={`${entry.rule.name}-${i}`} entry={entry} />
-                  ))}
-                </Stack>
-              )}
-            </Section>
+        <Divider color="gray.2" />
 
-            <Divider color="gray.2" />
-
-            <Section title="OPA">
-              {opa ? (
-                <Stack gap={4}>
-                  <Field label="Endpoint">{opa.url}</Field>
-                  <Field label="On failure">{opa.fail_open ? 'Allow' : 'Deny'}</Field>
-                  <Field label="Gate">{opa.gate ? 'Before the analyzer' : 'After local rules'}</Field>
-                </Stack>
-              ) : (
-                <Text size="xs" c="dimmed">
-                  Not used.
-                </Text>
-              )}
-            </Section>
-          </Stack>
-        </Grid.Col>
-      </Grid>
+        <Section title="OPA">
+          {opa ? (
+            <Text size="xs" c="dimmed">
+              {[opa.url, opa.fail_open ? 'allows on failure' : 'denies on failure', opa.gate && 'gates the analyzer']
+                .filter(Boolean)
+                .join(' · ')}
+            </Text>
+          ) : (
+            <Text size="xs" c="dimmed">
+              Not used.
+            </Text>
+          )}
+        </Section>
+      </Stack>
     </Box>
   )
 }

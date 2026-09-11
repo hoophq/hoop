@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { Group, Image, Stack, Text } from '@mantine/core'
-import { ChevronDown, ChevronRight, Plus } from 'lucide-react'
+import { Group, Image, Pill, Stack, Text } from '@mantine/core'
+import { ArrowRightFromLine, ArrowRightToLine, ChevronDown, ChevronRight, Plus } from 'lucide-react'
 import ActionIcon from '@/components/ActionIcon'
 import ActionMenu from '@/components/ActionMenu'
 import Button from '@/components/Button'
@@ -10,6 +10,24 @@ import { listenerFeatures, protocolInfo } from '../config'
 import { listenerLabel } from '../listeners'
 import FeaturePills from '../components/FeaturePills'
 import ListenerDetails from './ListenerDetails'
+
+// Figma draws the two addresses as chips with a direction on them rather than
+// as bare text, which is what stops a fleet table from reading like a
+// spreadsheet. Inbound is where clients arrive, outbound is where the sidecar
+// dials your resource.
+function AddressChip({ value, inbound }) {
+  const Icon = inbound ? ArrowRightToLine : ArrowRightFromLine
+  return (
+    <Pill>
+      <Group gap={6} wrap="nowrap">
+        <Icon size={12} aria-hidden="true" />
+        <Text size="xs" ff="monospace" component="span">
+          {value}
+        </Text>
+      </Group>
+    </Pill>
+  )
+}
 
 function ProtocolCell({ protocol, getIcon }) {
   const info = protocolInfo(protocol)
@@ -123,14 +141,10 @@ export default function ListenersTable({ sidecar, onAdd, onEdit, onDelete }) {
                     <ProtocolCell protocol={listener.protocol} getIcon={getIcon} />
                   </Table.Td>
                   <Table.Td>
-                    <Text size="sm" ff="monospace">
-                      {listener.listen}
-                    </Text>
+                    <AddressChip value={listener.listen} inbound />
                   </Table.Td>
                   <Table.Td>
-                    <Text size="sm" ff="monospace">
-                      {listener.upstream}
-                    </Text>
+                    <AddressChip value={listener.upstream} />
                   </Table.Td>
                   <Table.Td>
                     <FeaturePills features={listenerFeatures(listener, config)} />

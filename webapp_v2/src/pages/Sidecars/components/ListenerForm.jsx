@@ -1,6 +1,7 @@
 import { Checkbox, Divider, Grid, Stack, Text } from '@mantine/core'
 import Accordion from '@/components/Accordion'
 import NumberInput from '@/components/NumberInput'
+import SectionRow from '@/components/SectionRow'
 import SegmentedControl from '@/components/SegmentedControl'
 import Select from '@/components/Select'
 import Switch from '@/components/Switch'
@@ -13,7 +14,9 @@ import { PROTOCOL_OPTIONS, supportsDownstreamTLS, supportsGRPCBlock, supportsHTT
 // so once instead of on each field.
 const PATH_HINT = 'A path on the sidecar host.'
 
-function Section({ title, description, children }) {
+// Inside Advanced the fields keep their own labels: the accordion is already
+// one visual block, and a second 2/5 grid nested in it would indent twice.
+function Block({ title, description, children }) {
   return (
     <Stack gap="sm">
       <Stack gap={2}>
@@ -34,9 +37,11 @@ function Section({ title, description, children }) {
 /**
  * The fields of one listener, with no chrome of its own.
  *
- * Two shells render it: a modal on the sidecar's details page and a full page
- * at /sidecars/:id/listeners/*. They own the title, the buttons and the save;
- * this owns only the inputs, so the two cannot drift apart.
+ * The page owns the title, the pinned actions and the save; this owns only the
+ * inputs. Nothing wraps them in a border: sixteen other form pages in this app
+ * put their fields on the page background, and `Paper withBorder` is reserved
+ * for lists and tables. The one boundary that stays is the Advanced accordion,
+ * which earns it by being a different kind of area.
  *
  * `form` and `errors` come from ../listeners: `listenerToForm` builds the
  * first, `validateListener` the second.
@@ -46,76 +51,76 @@ export default function ListenerForm({ form, setField, errors }) {
   const unixSocket = form.network === 'unix'
 
   return (
-    <Stack gap="lg">
-      <TextInput
-        label="Name"
-        description="Identifies the listener in logs and in every audit event. Renaming it splits that history."
-        placeholder="appdb"
-        value={form.name}
-        onChange={(e) => setField({ name: e.currentTarget.value })}
-        error={errors.name}
-        required
-      />
+    <Stack gap="xxlAlt">
+      <SectionRow
+        title="Identity"
+        description="The name follows this lane into every log line and audit event, so renaming it splits that history. The protocol picks the codec that reads its traffic."
+      >
+        <Stack gap="md">
+          <TextInput
+            label="Name"
+            placeholder="appdb"
+            value={form.name}
+            onChange={(e) => setField({ name: e.currentTarget.value })}
+            error={errors.name}
+            required
+          />
+          <Select
+            label="Protocol"
+            data={PROTOCOL_OPTIONS}
+            value={form.protocol || null}
+            onChange={(protocol) => setField({ protocol })}
+            error={errors.protocol}
+            allowDeselect={false}
+            required
+          />
+        </Stack>
+      </SectionRow>
 
-      <Select
-        label="Protocol"
-        description="Selects the codec that reads this lane's traffic."
-        data={PROTOCOL_OPTIONS}
-        value={form.protocol || null}
-        onChange={(protocol) => setField({ protocol })}
-        error={errors.protocol}
-        allowDeselect={false}
-        required
-      />
-
-      <Stack gap="xs">
-        <Text size="sm" fw={500}>
-          Transport
-        </Text>
-        <SegmentedControl
-          value={form.network}
-          onChange={(network) => setField({ network })}
-          data={[
-            { value: 'tcp', label: 'TCP port' },
-            { value: 'unix', label: 'Unix socket' },
-          ]}
-          w="fit-content"
-        />
-        <Text size="xs" c="dimmed">
-          {unixSocket
-            ? 'No port is opened; filesystem permissions decide who reaches the proxy.'
-            : 'Reachable over the network, which is what a separate host needs.'}
-        </Text>
-      </Stack>
-
-      <TextInput
-        label="Listen"
-        description={
-          unixSocket ? `The socket the sidecar creates. ${PATH_HINT}` : 'The address outside clients connect to.'
-        }
-        placeholder={unixSocket ? '/run/hoop-inspect/pg.sock' : '0.0.0.0:15432'}
-        value={form.listen}
-        onChange={(e) => setField({ listen: e.currentTarget.value })}
-        error={errors.listen}
-        required
-      />
-
-      <TextInput
-        label="Upstream"
-        description="The real backend, as host:port."
-        placeholder="appdb:5432"
-        value={form.upstream}
-        onChange={(e) => setField({ upstream: e.currentTarget.value })}
-        error={errors.upstream}
-        required
-      />
+      <SectionRow
+        title="Addresses"
+        description="Two ends of one lane: where clients reach the sidecar, and where the sidecar reaches your resource. A unix socket opens no port, so filesystem permissions decide who can connect."
+      >
+        <Stack gap="md">
+          <Stack gap="xs">
+            <Text size="sm" fw={500}>
+              Transport
+            </Text>
+            <SegmentedControl
+              value={form.network}
+              onChange={(network) => setField({ network })}
+              data={[
+                { value: 'tcp', label: 'TCP port' },
+                { value: 'unix', label: 'Unix socket' },
+              ]}
+              w="fit-content"
+            />
+          </Stack>
+          <TextInput
+            label={unixSocket ? 'Listen on socket' : 'Listen on'}
+            placeholder={unixSocket ? '/run/hoop-inspect/pg.sock' : '0.0.0.0:15432'}
+            value={form.listen}
+            onChange={(e) => setField({ listen: e.currentTarget.value })}
+            error={errors.listen}
+            required
+          />
+          <TextInput
+            label="Upstream"
+            placeholder="appdb:5432"
+            value={form.upstream}
+            onChange={(e) => setField({ upstream: e.currentTarget.value })}
+            error={errors.upstream}
+            required
+          />
+        </Stack>
+      </SectionRow>
 
       <Accordion>
         <Accordion.Item value="advanced">
           <Accordion.Control>Advanced</Accordion.Control>
           <Accordion.Panel>
             <Stack gap="lg" pt="xs">
-              <Section title="Limits">
+              <Block title="Limits">
                 <Grid gutter="md">
                   <Grid.Col span={{ base: 12, sm: 6 }}>
                     <NumberInput
@@ -136,11 +141,11 @@ export default function ListenerForm({ form, setField, errors }) {
                     />
                   </Grid.Col>
                 </Grid>
-              </Section>
+              </Block>
 
               <Divider />
 
-              <Section
+              <Block
                 title="Upstream TLS"
                 description="Encrypts the hop to the backend. The sidecar is the TLS client there, so it still reads the traffic."
               >
@@ -190,12 +195,12 @@ export default function ListenerForm({ form, setField, errors }) {
                     />
                   </Stack>
                 )}
-              </Section>
+              </Block>
 
               {supportsDownstreamTLS(form.protocol) && (
                 <>
                   <Divider />
-                  <Section
+                  <Block
                     title="Downstream TLS"
                     description="Terminates the client's TLS on this lane. Leave both empty when something in front already does."
                   >
@@ -221,14 +226,14 @@ export default function ListenerForm({ form, setField, errors }) {
                         />
                       </Grid.Col>
                     </Grid>
-                  </Section>
+                  </Block>
                 </>
               )}
 
               {supportsHTTPBlock(form.protocol) && (
                 <>
                   <Divider />
-                  <Section title="HTTP" description="What this lane's codec reads out of a request.">
+                  <Block title="HTTP" description="What this lane's codec reads out of a request.">
                     <TextInput
                       label="Identity header"
                       description="The header carrying the authenticated subject. Only trust it when nothing but your proxy can reach this listener."
@@ -256,14 +261,14 @@ export default function ListenerForm({ form, setField, errors }) {
                       value={form.http.headers}
                       onChange={(headers) => setNested('http', { headers })}
                     />
-                  </Section>
+                  </Block>
                 </>
               )}
 
               {supportsGRPCBlock(form.protocol) && (
                 <>
                   <Divider />
-                  <Section title="gRPC" description="What this lane decodes and exposes to policy.">
+                  <Block title="gRPC" description="What this lane decodes and exposes to policy.">
                     <TagsInput
                       label="Descriptors"
                       description={`Protobuf descriptor sets. Sets merge. ${PATH_HINT}`}
@@ -298,7 +303,7 @@ export default function ListenerForm({ form, setField, errors }) {
                       value={form.grpc.metadata}
                       onChange={(metadata) => setNested('grpc', { metadata })}
                     />
-                  </Section>
+                  </Block>
                 </>
               )}
             </Stack>

@@ -11,7 +11,7 @@ import { showSnackbar } from '@/utils/snackbar'
 import SidecarDetails from '../components/SidecarDetails'
 import { listenerPath, removeListener } from '../listeners'
 import DeleteListenerModal from '../sections/DeleteListenerModal'
-import { RESTART_NOTE, saveErrorMessage } from '../useListenerEditor'
+import { saveErrorMessage } from '../useListenerEditor'
 
 // /sidecars/:id — the details card on its own page, and the listener controls.
 export default function SidecarDetailsPage() {
@@ -60,11 +60,7 @@ export default function SidecarDetailsPage() {
     }
     onSaved(updated)
     setDeleting(null)
-    showSnackbar({
-      level: 'success',
-      text: `Listener "${deleting.listener.name}" deleted.`,
-      description: RESTART_NOTE,
-    })
+    showSnackbar({ level: 'success', text: `Listener "${deleting.listener.name}" deleted.` })
   }
 
   // `loading` as well as `showLoader`: useMinDelay only raises its flag from a

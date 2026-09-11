@@ -48,10 +48,10 @@ export default function SidecarDetails({ sidecar, listenerActions }) {
   return (
     <Stack gap="md">
       {configured ? (
-        <Alert color="blue" variant="light" radius="md" icon={<Lock size={16} />}>
+        <Alert color="sky" variant="light" radius="md" icon={<Lock size={16} />}>
           <Text size="sm">
             {
-              "The control plane holds this sidecar's configuration and serves it on every check-in. Changes to a listener apply when the sidecar restarts."
+              "The control plane owns this sidecar's configuration and serves it on every check-in. Edit it here, not in the sidecar's own file."
             }
           </Text>
         </Alert>
@@ -59,7 +59,7 @@ export default function SidecarDetails({ sidecar, listenerActions }) {
         <Alert color="gray" variant="light" radius="md" icon={<Info size={16} />}>
           <Text size="sm">
             {
-              'The control plane holds no configuration for this sidecar yet. Until it does, the sidecar runs whatever its own config file says. Adding a listener here takes that over, and the sidecar stops seeding from its file.'
+              'The sidecar still owns its configuration: it runs whatever its own file says. Adding a listener here takes that over, and the control plane becomes the source of truth.'
             }
           </Text>
         </Alert>

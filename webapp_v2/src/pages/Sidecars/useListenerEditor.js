@@ -10,11 +10,14 @@ import {
   validateListener,
 } from './listeners'
 
-// A listener change is NOT applied to a running sidecar. reload.go compares
-// the document with the listeners nulled out: rules hot-swap, topology does
-// not. The sidecar also re-handshakes only once a minute, so it does not even
-// see the change until then.
-export const RESTART_NOTE = 'Restart the sidecar to apply it.'
+// Worth knowing before you add copy here: a listener change is NOT applied to a
+// running sidecar. reload.go:167 compares the document with the rule sections
+// nulled out and returns reloadRestart on any other difference, so topology
+// waits for a restart while guardrails, masking, opa and pii hot-swap within
+// one heartbeat. The UI says nothing about it on purpose — the product's
+// intent is that the plane orchestrates the sidecar and restarts are not a
+// user-facing idea. If that intent lands in the daemon (ADR-0014 option 2,
+// rejected once), nothing here has to change.
 
 export const saveErrorMessage = (error) =>
   error?.response?.data?.message || error?.message || 'The control plane refused the change.'
@@ -61,11 +64,7 @@ export function useListenerEditor({ sidecar, index }) {
       showSnackbar({ level: 'error', text: 'Failed to save the listener.', description: saveErrorMessage(error) })
       return null
     }
-    showSnackbar({
-      level: 'success',
-      text: `Listener "${form.name.trim()}" saved.`,
-      description: RESTART_NOTE,
-    })
+    showSnackbar({ level: 'success', text: `Listener "${form.name.trim()}" saved.` })
     return updated
   }
 
