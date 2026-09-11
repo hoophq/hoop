@@ -86,7 +86,8 @@ type setupOptions struct {
 }
 
 // WithLicense supplies a license from the command line, which outranks
-// HOOP_LICENSE and the config file's `license` key.
+// HOOP_LICENSE and the config file's `license` key. All three are ignored
+// when a control plane is configured; it holds the fleet's license.
 //
 // Only a caller with such a flag needs it. Setup reads the other two sources
 // on its own, so an embedder that mounts a license file and names it in the
@@ -145,7 +146,19 @@ func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*
 		// way startup would. See reloader.
 		cfg.cp.build = build
 	}
-	cfg.lic = ResolveLicense(o.licenseFlag, cfg.License)
+	if cfg.cp != nil {
+		// Recorded before the resolution, not after: a local license is
+		// not consulted at all in plane mode, so nothing downstream could
+		// tell there was one to warn about. cfg.License is already empty
+		// here (resolveConfigSource drops it), so the file's value comes
+		// from the file.
+		fileLicense := ""
+		if local != nil {
+			fileLicense = local.License
+		}
+		cfg.cp.ignoredLicense = ignoredLocalLicenseSource(o.licenseFlag, fileLicense)
+	}
+	cfg.lic = resolveLicenseFor(cfg.cp, o.licenseFlag, cfg.License)
 	if cfg.lic.State() == license.StateInvalid {
 		return nil, nil, cfg.lic.Err
 	}
@@ -159,16 +172,62 @@ func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*
 	return cfg, det, nil
 }
 
-// ResolveLicense picks the license a process runs under, highest precedence
-// first: the command line, then HOOP_LICENSE, then the config file's
-// `license` key. Licensing a fleet must not mean editing every file in it.
-// The control plane goes above all three once it sends one on connection.
+// The names every message about a license uses for the place it came from.
+// An operator reading "expired" needs to know which one to go fix, and a
+// message naming a source the resolver does not use sends them to the wrong
+// file, so both read these.
+const (
+	// PlaneLicenseSource names the control plane's own license.
+	PlaneLicenseSource = "the control plane"
+	flagLicenseSource  = "the license flag"
+	fileLicenseSource  = `the "license" config key`
+)
+
+// ResolveLicense picks the license a STANDALONE process runs under, highest
+// precedence first: the command line, then HOOP_LICENSE, then the config
+// file's `license` key. Licensing a fleet must not mean editing every file
+// in it.
 func ResolveLicense(flagValue, fileValue string) license.Status {
 	return license.Resolve(
-		license.Ref{Value: flagValue, Source: "the license flag"},
+		license.Ref{Value: flagValue, Source: flagLicenseSource},
 		license.Ref{Value: os.Getenv(license.EnvVar), Source: license.EnvVar},
-		license.Ref{Value: fileValue, Source: `the "license" config key`},
+		license.Ref{Value: fileValue, Source: fileLicenseSource},
 	)
+}
+
+// resolveLicenseFor picks the license this process runs under.
+//
+// A control plane is the ONLY source when one is configured. Not the first of
+// four: the fleet's license is the fleet's, and an operator who could add one
+// from a pod's environment would make it an opinion. A plane whose
+// organization holds no license therefore runs the free tier, with whatever
+// sits in the local sources ignored and said out loud (Run warns).
+//
+// The alternative -- local sources as a fallback -- reads kinder and is
+// worse: the startup path and the heartbeat would then disagree about the
+// same state, since a license REMOVED from the plane drops a running process
+// to the free tier and a restart would license it again.
+func resolveLicenseFor(cp *controlPlane, flagValue, fileValue string) license.Status {
+	if cp != nil {
+		return license.Resolve(license.Ref{Value: cp.license, Source: PlaneLicenseSource})
+	}
+	return ResolveLicense(flagValue, fileValue)
+}
+
+// ignoredLocalLicenseSource names the local source a plane-connected process
+// is NOT using, empty when there is none. Highest precedence first, the order
+// ResolveLicense would have read them in: naming the second one while the
+// first also holds a document sends an operator to the wrong place.
+func ignoredLocalLicenseSource(flagValue, fileValue string) string {
+	switch {
+	case strings.TrimSpace(flagValue) != "":
+		return flagLicenseSource
+	case strings.TrimSpace(os.Getenv(license.EnvVar)) != "":
+		return license.EnvVar
+	case strings.TrimSpace(fileValue) != "":
+		return fileLicenseSource
+	}
+	return ""
 }
 
 // ErrUsage marks a command-line misuse: a missing or unparseable flag, as
@@ -533,6 +592,30 @@ const (
 	licenseNotice     = 14 * 24 * time.Hour
 )
 
+// licenseState is the license the process runs under, and whether the running
+// config needs one.
+//
+// Two goroutines read it while a third replaces it: the expiry watchdog, the
+// admin report, and the reload path that adopts a license the control plane
+// sent. A plain field would be a data race, and worse, a rotation one
+// goroutine sees and another misses.
+type licenseState struct {
+	lic     atomic.Pointer[license.Status]
+	depends atomic.Bool
+}
+
+// newLicenseState publishes the license Setup resolved, and whether the
+// config it resolved it for exceeds the free tier.
+func newLicenseState(lic license.Status, depends bool) *licenseState {
+	s := &licenseState{}
+	s.set(lic)
+	s.depends.Store(depends)
+	return s
+}
+
+func (s *licenseState) get() license.Status    { return *s.lic.Load() }
+func (s *licenseState) set(lic license.Status) { s.lic.Store(&lic) }
+
 // watchLicense stops the relay when the license term ends, and closes the
 // returned channel to say so.
 //
@@ -544,20 +627,41 @@ const (
 //
 // So the transition is a controlled stop. Run drains, flushes the audit trail
 // and returns an error, the supervisor restarts, and buildLanes then refuses
-// the config by name until somebody renews or removes rules. Callers start
-// this only for a config that exceeds the free tier, because a process
-// already inside the caps has nothing to take away.
-func watchLicense(ctx context.Context, lic license.Status, every time.Duration, log *slog.Logger) <-chan struct{} {
+// the config by name until somebody renews or removes rules.
+//
+// It reads the state on every tick instead of closing over one license,
+// because neither fact holds still: the control plane can send a different
+// license, and a reload can add rules a free tier would refuse. A config
+// inside the caps is still never stopped — expiry takes nothing away from it.
+func watchLicense(ctx context.Context, st *licenseState, every time.Duration, log *slog.Logger) <-chan struct{} {
 	expired := make(chan struct{})
 	go func() {
 		tick := time.NewTicker(every)
 		defer tick.Stop()
 		notified := -1
+		var noticedTerm time.Time
 		for {
+			if !st.depends.Load() {
+				// Nothing to take away, so nothing to watch for. Not a
+				// return: a later reload can add rules that change this.
+				select {
+				case <-ctx.Done():
+					return
+				case <-tick.C:
+					continue
+				}
+			}
+			lic := st.get()
 			if lic.StateAt(time.Now().UTC()) == license.StateExpired {
 				log.Warn(lic.Line())
 				close(expired)
 				return
+			}
+			// A license replaced mid-run gets its own fortnight of
+			// notices; without this the day count of the old term
+			// silences the new one.
+			if !lic.ExpiresAt().Equal(noticedTerm) {
+				notified, noticedTerm = -1, lic.ExpiresAt()
 			}
 			notified = noticeLicenseExpiry(lic, notified, log)
 			select {
@@ -656,13 +760,12 @@ func Run(cfg *Config, det Plugin) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	// Only a config the free tier would refuse is worth watching. One inside
-	// the caps keeps serving when its term ends, because expiry takes
-	// nothing away from it.
-	var licenseExpired <-chan struct{}
-	if cfg.dependsOnLicense() {
-		licenseExpired = watchLicense(ctx, cfg.lic, licenseCheckEvery, log)
-	}
+	// Started whatever this config needs today: both facts the watchdog
+	// reads can change under a control plane, so it reads them per tick
+	// rather than being started for one of them. A config inside the free
+	// tier is still never stopped -- expiry takes nothing away from it.
+	licState := newLicenseState(cfg.lic, cfg.dependsOnLicense())
+	licenseExpired := watchLicense(ctx, licState, licenseCheckEvery, log)
 
 	// Two server kinds, one loop of lane facts. Relay lanes run
 	// proxy.Server; grpc lanes run the transport the plugin registered
@@ -730,7 +833,7 @@ func Run(cfg *Config, det Plugin) error {
 		for i, srv := range servers {
 			byName[relayNames[i]] = srv
 		}
-		rl, rerr := newReloader(cfg, lanes, byName, det, analyzerDeps, view)
+		rl, rerr := newReloader(cfg, lanes, byName, det, analyzerDeps, view, licState)
 		if rerr != nil {
 			return rerr
 		}
@@ -748,12 +851,22 @@ func Run(cfg *Config, det Plugin) error {
 				"file_listeners", cfg.cp.fileListeners,
 				"hint", "edit the configuration in the control plane; the local file no longer holds it")
 		}
+		if cfg.cp.ignoredLicense != "" {
+			// Silence here is the failure an operator finds a month later,
+			// wondering why the license they mounted bought nothing. Warned
+			// whether or not the plane sent one: either way this document
+			// is not what the process runs under.
+			log.Warn("the license from "+cfg.cp.ignoredLicense+" is ignored: the control plane "+
+				"owns the license for every sidecar it serves",
+				"in_force", cfg.lic.State().String(),
+				"hint", "set the organization's license in the control plane")
+		}
 		go cfg.cp.heartbeat(ctx, log, rl)
 	}
 
 	if cfg.Admin.Listen != "" {
 		go serveAdmin(ctx, cfg.Admin.Listen, servers, relayNames, grpcServers, grpcNames,
-			view, ac, cfg.Analyzer, cfg.lic, log)
+			view, ac, cfg.Analyzer, licState, log)
 	}
 
 	var wg sync.WaitGroup
@@ -1212,7 +1325,7 @@ func serveAdmin(
 	view *atomic.Pointer[laneState],
 	ac auditChain,
 	analyzerCfg *AnalyzerConfig,
-	lic license.Status,
+	licState *licenseState,
 	log *slog.Logger,
 ) {
 	mux := http.NewServeMux()
@@ -1340,7 +1453,7 @@ func serveAdmin(
 			}
 			out = append(out, v)
 		}
-		limit := capsFor(lic)
+		limit := capsFor(licState.get())
 		resp := map[string]any{
 			"version": Version,
 			"lanes":   out,
@@ -1363,7 +1476,7 @@ func serveAdmin(
 			// Beside the limits because it is the reason for them. Never
 			// the signature: an endpoint handing out a complete, reusable
 			// license is a licensing hole with an HTTP interface.
-			"license": lic.Report(),
+			"license": licState.get().Report(),
 		}
 		// The analyzer view names the provider, the model and the HOST it
 		// talks to — never the path, never a query string, and never the

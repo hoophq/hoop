@@ -82,8 +82,15 @@ type reloader struct {
 	// endpoints.
 	view *atomic.Pointer[laneState]
 
-	lic license.Status
-	det Plugin
+	// lic is the live license state, shared with the expiry watchdog and
+	// the admin report. The reloader is the only writer: a plane that
+	// rotates the organization's license publishes it here, and every
+	// reader sees the same one.
+	lic *licenseState
+	// licRaw is the license document the plane last sent, the compare that
+	// tells a rotation from a rule edit. Empty when the plane sends none.
+	licRaw string
+	det    Plugin
 	// ac is the startup analyzer state, retained whole: the provider and
 	// its credential are restart-guarded, so a reload never rebuilds them.
 	// Only the redactor is replaced, and only when the detector changed.
@@ -100,7 +107,8 @@ type reloader struct {
 
 // newReloader captures the startup state handle compares against.
 func newReloader(cfg *Config, lanes []lane, servers map[string]*proxy.Server,
-	det Plugin, ac *analyzerDeps, view *atomic.Pointer[laneState]) (*reloader, error) {
+	det Plugin, ac *analyzerDeps, view *atomic.Pointer[laneState],
+	lic *licenseState) (*reloader, error) {
 	baseline, err := nonRuleDoc(cfg)
 	if err != nil {
 		return nil, err
@@ -122,7 +130,8 @@ func newReloader(cfg *Config, lanes []lane, servers map[string]*proxy.Server,
 		prevLanes:   prevLanes,
 		servers:     servers,
 		view:        view,
-		lic:         cfg.lic,
+		lic:         lic,
+		licRaw:      cfg.cp.license,
 		det:         det,
 		ac:          ac,
 		build:       cfg.cp.build,
@@ -196,9 +205,32 @@ func (r *reloader) apply(log *slog.Logger, raw []byte) reloadOutcome {
 		ac = &staged
 	}
 
-	newCfg.lic = r.lic
+	// The license the lanes are built against: the one in use, unless the
+	// plane sent a different document. UseLicense verifies the signature
+	// here the same way startup does, so a plane cannot hand this process
+	// a verdict, only a document.
+	newCfg.lic = r.lic.get()
+	licRotated := newCfg.License != r.licRaw
+	if licRotated {
+		if err := newCfg.UseLicense(license.Ref{Value: newCfg.License, Source: PlaneLicenseSource}); err != nil {
+			// Kept, not refused: a license nobody can read must not
+			// also freeze the rules. The caps stay where they were.
+			log.Warn("the control plane sent a license this build refuses; keeping the license in use",
+				"error", err)
+			licRotated = false
+		}
+	}
+	// ac, not r.ac: main's staged detector. A refusal below must leave the
+	// running dependencies untouched, and the lanes have to be built
+	// against the candidate this reload staged.
 	lanes, err := buildLanes(newCfg, det, ac)
 	if err != nil {
+		// A narrower license reaches here when the running config needs
+		// what it stopped granting. The running rules keep serving under
+		// the license they were built with until a restart, because
+		// deleting a guardrail or a mask rule from a live proxy leaks
+		// more than it saves -- the same reason watchLicense stops
+		// instead of re-applying caps.
 		log.Warn("the control plane sent a config the rules or the caps refuse; keeping the running rules",
 			"error", err)
 		return reloadRefused
@@ -269,6 +301,15 @@ func (r *reloader) apply(log *slog.Logger, raw []byte) reloadOutcome {
 	}
 	r.det = det
 	r.piiRaw = newCfg.PII
+	if licRotated {
+		r.licRaw = newCfg.License
+		r.lic.set(newCfg.lic)
+		log.Info(newCfg.lic.Line())
+	}
+	// Published on every applied generation, not only on a rotation: rules
+	// added by this reload can push a config past the free tier, and the
+	// watchdog only stops a process that would lose something.
+	r.lic.depends.Store(newCfg.dependsOnLicense())
 	r.gen++
 	r.view.Store(&laneState{lanes: viewLanes, gen: r.gen})
 	log.Info("control plane configuration applied",

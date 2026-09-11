@@ -263,7 +263,9 @@ happens only into an empty plane; once the plane holds a configuration it
 owns it, and listeners still in the file are ignored with a warning rather
 than merged: two authorities for one fact is the same mistake as a field
 written in two spellings. The pushed document drops `control_plane_url` and
-`license`, which stay file-side facts. A first handshake that fails stops
+`license`: the URL is connection metadata this process already resolved, and
+the license belongs to the organization, which serves its own on every
+handshake. A first handshake that fails stops
 startup, since there is nothing to serve yet.
 
 Once running, a heartbeat repeats the handshake every minute. It keeps the
@@ -323,7 +325,21 @@ config keys, because a cap the file it limits can raise is documentation. They
 mirror the control plane's free tier, which caps the same two things per
 organization.
 
-A license Hoop signed lifts them, per feature. Three places carry one, and the
+A license Hoop signed lifts them, per feature. Where it comes from depends on
+one thing: whether this process is connected to a control plane.
+
+**With a control plane, it is the only source.** The organization's license is
+held once, on the organization, and written into the configuration document
+the handshake answers with; nothing is stored per sidecar, and a `license` key
+authored on a sidecar's configuration is refused. The sidecar verifies that
+signature itself, so a license grants nothing because of who sent it. A plane
+whose organization holds no license runs the free tier, and any license in the
+three local sources below is ignored — the process says so in a warning at
+startup. The fleet's license is the fleet's: a pod that could license itself
+from its own environment would mean an admin removing a license in the control
+plane had removed nothing.
+
+**Standalone, the three local sources rank as they always have,** and the
 first that holds anything decides:
 
 | Source | Spelling |
@@ -344,9 +360,20 @@ license: /etc/hoop-inspect/license.json
 First wins, not first valid. A `HOOP_LICENSE` that points at nothing is an
 error rather than a reason to fall through to the config file, because a
 process that quietly ignored your environment variable will surprise you on
-the restart after the file changes. The control plane will be added above the
-flag when the sidecar starts receiving a license on connection, and it will
-outrank all three.
+the restart after the file changes.
+
+A license renewed in the control plane reaches the process on the next
+heartbeat, with no restart: the caps move with it and the new term is logged.
+A license REMOVED there reaches it the same way, and drops the process to the
+free tier rather than falling back to a local source — the startup path
+answers identically, so a restart never relicenses what a heartbeat
+unlicensed. A control plane that becomes unreachable changes nothing: the
+license it last sent keeps serving. A document that fails verification is
+logged and dropped, and the license already in use keeps serving. A license that GRANTS LESS than the running
+config needs is the one case a heartbeat cannot apply — the reload is
+refused and the running rules keep serving under the license they were built
+with until the process restarts, for the same reason an expiring term stops
+the relay instead of deleting rules from it.
 
 The license names the features it covers, and each one lifts its own cap:
 `guardrails` and `data-masking` are the two this process reads. A license
