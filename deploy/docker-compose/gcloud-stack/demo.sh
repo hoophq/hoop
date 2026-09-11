@@ -149,7 +149,7 @@ if docker compose exec -T client test -f /descriptors/bqstorage.pb; then
 
     out=$($GRPCURL -plaintext -protoset /descriptors/bqstorage.pb \
         -d '{"writeStream":"projects/demo/datasets/demo_ds/tables/t1/streams/_default"}' \
-        hoop-inspect:29060 google.bigquery.storage.v1.BigQueryWrite/AppendRows 2>&1)
+        hoop-inspect:29060 google.cloud.bigquery.storage.v1.BigQueryWrite/AppendRows 2>&1)
     if grep -q "write plane is fenced" <<<"$out"; then
         ok "AppendRows refused with the fence rule's message (licensed build)"
     else
@@ -159,7 +159,7 @@ if docker compose exec -T client test -f /descriptors/bqstorage.pb; then
 
     out=$($GRPCURL -plaintext -protoset /descriptors/bqstorage.pb \
         -d '{"parent":"projects/demo","readSession":{"table":"projects/demo/datasets/demo_ds/tables/t1","dataFormat":"AVRO"}}' \
-        hoop-inspect:29060 google.bigquery.storage.v1.BigQueryRead/CreateReadSession 2>&1)
+        hoop-inspect:29060 google.cloud.bigquery.storage.v1.BigQueryRead/CreateReadSession 2>&1)
     grep -q "write plane is fenced" <<<"$out" \
         && fail "the write fence caught a READ; the rule is too broad"
     ok "CreateReadSession crossed the lane; the emulator answered:"

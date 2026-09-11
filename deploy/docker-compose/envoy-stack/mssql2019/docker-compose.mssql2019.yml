@@ -131,6 +131,12 @@ services:
     networks: [inspect]
     volumes:
       - ./config-mssql2019.yaml:/etc/hoop-inspect/config.yaml:ro
+    environment:
+      # config-mssql2019.yaml authors two mask rules, one over the free
+      # tier's cap, so the process refuses to start without a license.
+      # Same pass-through as gcloud-stack: export HOOP_LICENSE (the
+      # document or a path readable in-container) before bringing this up.
+      HOOP_LICENSE: ${HOOP_LICENSE:-}
     ports:
       - "11433:11433"  # the TDS lane
       - "19001:19000"  # admin: /healthz, /stats, /config, /api/sessions

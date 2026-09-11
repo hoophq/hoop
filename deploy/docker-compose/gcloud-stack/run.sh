@@ -109,7 +109,7 @@ else
   warn "spanner emulator serves no gRPC reflection; building the set with buf instead"
   docker compose --profile tools run --rm -T buf \
       build 'https://github.com/googleapis/googleapis/archive/refs/heads/master.tar.gz#strip_components=1' \
-      --path google/spanner --path google/bigquery/storage \
+      --path google/spanner --path google/cloud/bigquery/storage \
       -o '/descriptors/spanner.pb#format=binpb'
   SPANNER_FROM_BUF=1
   c_ok "wrote /descriptors/spanner.pb from the googleapis tree (Spanner + BigQuery Storage)"

@@ -95,5 +95,5 @@ listeners:
     #   rules:
     #     - name: no-bq-write-plane
     #       type: table
-    #       tables: [google.bigquery.storage.v1.bigquerywrite]
+    #       tables: [google.cloud.bigquery.storage.v1.bigquerywrite]
     #       message: the BigQuery Storage write plane is fenced; loads go through reviewed pipelines
