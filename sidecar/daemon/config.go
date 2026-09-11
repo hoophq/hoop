@@ -835,6 +835,64 @@ func (c *Config) Validate() error {
 	// HOOP_LICENSE, so a cap here would refuse a licensed config for a
 	// limit its license lifts. buildLanes is the single site instead.
 
+	problems = append(problems, c.structuralProblems()...)
+
+	for i, l := range c.Listeners {
+		name := l.displayName(i)
+
+		// Load the keypair now. Discovering a bad path on the first client
+		// connection means one failed login per restart and nothing in the
+		// startup log. This reads the filesystem, which is why it sits here
+		// and not in structuralProblems.
+		if l.DownstreamTLS != nil {
+			if _, err := l.DownstreamTLS.BuildDownstreamTLS(); err != nil {
+				problems = append(problems, fmt.Sprintf("%s: %v", name, err))
+			}
+		}
+
+		problems = append(problems, c.validateLane(l, name)...)
+	}
+
+	if len(problems) > 0 {
+		return fmt.Errorf("invalid config:\n  - %s", strings.Join(problems, "\n  - "))
+	}
+	return nil
+}
+
+// ValidateStructure checks everything about the listeners that can be decided
+// from the document alone: the protocol is one this build speaks, both
+// addresses are present, the transport is a transport, no two lanes bind the
+// same address, and downstream_tls sits on a lane that terminates it.
+//
+// It is separate from Validate because the CONTROL PLANE authors these
+// documents and never runs one. Validate reads the sidecar's own filesystem —
+// it loads the downstream keypair — and validateLane answers for a resolved
+// stack whose analyzer providers are whatever that binary linked. A gateway
+// cannot call it. Storing a document nothing checked is worse: the typo
+// travels to the customer's host and surfaces there as a daemon that refuses
+// to boot.
+//
+// Nothing here reads normalize's output. Every deprecated spelling normalize
+// folds — listeners[].connection, listeners[].policy, mask.enabled,
+// audit.fail_closed — lives in a field this function does not touch, so a
+// caller holding a config it decoded but did not normalize gets the same
+// answer. Only the NAME in a message differs: an un-normalized listener that
+// wrote connection instead of name reports as listener[i].
+//
+// "No listeners at all" is deliberately NOT a problem here. A file that names
+// a control plane may carry none, and Validate owns that rule because it is
+// the one with the context to decide it.
+func (c *Config) ValidateStructure() error {
+	if problems := c.structuralProblems(); len(problems) > 0 {
+		return fmt.Errorf("invalid config:\n  - %s", strings.Join(problems, "\n  - "))
+	}
+	return nil
+}
+
+// structuralProblems is the body ValidateStructure and Validate share, so the
+// gateway and the daemon cannot drift on what a listener must say.
+func (c *Config) structuralProblems() []string {
+	var problems []string
 	seen := map[string]bool{}
 	for i, l := range c.Listeners {
 		name := l.displayName(i)
@@ -872,28 +930,14 @@ func (c *Config) Validate() error {
 		// present the certificate itself (ADR-0013). On any other protocol
 		// the relay never looks, so the lane would come up "green"
 		// presenting a certificate nothing ever offers.
-		if l.DownstreamTLS != nil {
-			if l.Protocol != string(inspect.Postgres) && !isGRPCTransport(l) {
-				problems = append(problems, fmt.Sprintf(
-					"%s: downstream_tls is only supported on postgres, grpc and spanner, not %q "+
-						"(pgwire negotiates in-band, and a grpc-transport lane is its own "+
-						"HTTP/2 endpoint; no other protocol terminates here)", name, l.Protocol))
-			}
-			// Load the keypair now. Discovering a bad path on the first
-			// client connection means one failed login per restart and
-			// nothing in the startup log.
-			if _, err := l.DownstreamTLS.BuildDownstreamTLS(); err != nil {
-				problems = append(problems, fmt.Sprintf("%s: %v", name, err))
-			}
+		if l.DownstreamTLS != nil && l.Protocol != string(inspect.Postgres) && !isGRPCTransport(l) {
+			problems = append(problems, fmt.Sprintf(
+				"%s: downstream_tls is only supported on postgres, grpc and spanner, not %q "+
+					"(pgwire negotiates in-band, and a grpc-transport lane is its own "+
+					"HTTP/2 endpoint; no other protocol terminates here)", name, l.Protocol))
 		}
-
-		problems = append(problems, c.validateLane(l, name)...)
 	}
-
-	if len(problems) > 0 {
-		return fmt.Errorf("invalid config:\n  - %s", strings.Join(problems, "\n  - "))
-	}
-	return nil
+	return problems
 }
 
 // validateLane checks one listener's RESOLVED stack.

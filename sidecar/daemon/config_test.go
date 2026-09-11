@@ -866,3 +866,113 @@ func TestDeprecatedMaskEntityIsLeftToThePlugin(t *testing.T) {
 		t.Errorf("the daemon rewrote a plugin-owned rule: %v", got[0])
 	}
 }
+
+// ValidateStructure is what the control plane calls: it authors configs and
+// never runs one, so the checks that need this host's filesystem are the ones
+// it must not run.
+func TestValidateStructureReportsEveryStructuralProblem(t *testing.T) {
+	cfg := Config{Listeners: []ListenerConfig{
+		{Name: "a", Listen: ":1", Upstream: "h:1"},
+		{Name: "b", Protocol: "nope", Listen: ":2", Upstream: "h:2"},
+		{Name: "c", Protocol: "postgres", Listen: ":3"},
+		{Name: "d", Protocol: "postgres", Upstream: "h:4"},
+		{Name: "e", Protocol: "postgres", Listen: ":5", Upstream: "h:5", Network: "udp"},
+		{Name: "f", Protocol: "postgres", Listen: ":1", Upstream: "h:6"},
+		{Name: "g", Protocol: "mysql", Listen: ":7", Upstream: "h:7",
+			DownstreamTLS: &TLSConfig{CertFile: "/nope.crt", KeyFile: "/nope.key"}},
+	}}
+
+	err := cfg.ValidateStructure()
+	if err == nil {
+		t.Fatal("an invalid listener set was accepted")
+	}
+	for _, want := range []string{
+		"a: no protocol",
+		`b: unsupported protocol "nope"`,
+		"c: no upstream",
+		"d: no listen address",
+		`e: network must be tcp or unix, got "udp"`,
+		`f: duplicate listen address ":1"`,
+		"g: downstream_tls is only supported on postgres, grpc and spanner",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error missing %q:\n%v", want, err)
+		}
+	}
+}
+
+// The gateway stores documents for hosts it cannot see. Reading a keypair off
+// ITS disk would refuse every config naming a path that exists on the sidecar,
+// which is all of them.
+func TestValidateStructureDoesNotReadTheFilesystem(t *testing.T) {
+	cfg := Config{Listeners: []ListenerConfig{{
+		Name: "pg", Protocol: "postgres", Listen: ":1", Upstream: "h:1",
+		DownstreamTLS: &TLSConfig{
+			CertFile: "/etc/hoop-inspect/tls.crt",
+			KeyFile:  "/etc/hoop-inspect/tls.key",
+		},
+		UpstreamTLS: &TLSConfig{CAFile: "/etc/hoop-inspect/ca.pem"},
+	}}}
+
+	if err := cfg.ValidateStructure(); err != nil {
+		t.Errorf("a config naming paths on the sidecar host was refused: %v", err)
+	}
+	// The same config through Validate DOES read the keypair, which is the
+	// whole reason the two are separate.
+	if err := cfg.Validate(); err == nil {
+		t.Error("Validate accepted a downstream keypair that does not exist")
+	}
+}
+
+// A control plane holds no listeners until an operator writes one, and a
+// sidecar is created before it is configured. Validate owns the "a running
+// process needs a lane" rule; this function must not.
+func TestValidateStructureAcceptsNoListeners(t *testing.T) {
+	if err := (&Config{}).ValidateStructure(); err != nil {
+		t.Errorf("an empty document was refused: %v", err)
+	}
+}
+
+// ValidateStructure runs on documents nobody normalized. Every deprecated
+// spelling normalize folds sits in a field it does not read, so the verdict
+// must not depend on having run it.
+func TestValidateStructureIsIndependentOfNormalize(t *testing.T) {
+	raw := `{
+      "listeners": [{
+        "connection": "pg",
+        "protocol": "postgres",
+        "listen": ":1",
+        "upstream": "h:1",
+        "policy": {"rules": [{"name": "r", "type": "operation", "operations": ["drop"]}]},
+        "mask": {"enabled": true}
+      }]
+    }`
+	var raw2 Config
+	if err := json.Unmarshal([]byte(raw), &raw2); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if err := raw2.ValidateStructure(); err != nil {
+		t.Fatalf("a config in the deprecated spelling was refused before normalize: %v", err)
+	}
+
+	normalized, err := LoadConfigBytes([]byte(raw))
+	if err != nil {
+		t.Fatalf("LoadConfigBytes: %v", err)
+	}
+	if err := normalized.ValidateStructure(); err != nil {
+		t.Errorf("the same config after normalize was refused: %v", err)
+	}
+}
+
+// grpc and spanner have no codec by design (ADR-0013), so the registry cannot
+// answer for them and the carve-out has to survive the split.
+func TestValidateStructureAcceptsCodecLessTransports(t *testing.T) {
+	for _, proto := range []string{"grpc", "spanner"} {
+		cfg := Config{Listeners: []ListenerConfig{{
+			Name: proto, Protocol: proto, Listen: ":1", Upstream: "h:1",
+		}}}
+		if err := cfg.ValidateStructure(); err != nil {
+			t.Errorf("protocol %q was refused: %v", proto, err)
+		}
+	}
+}
