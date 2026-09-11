@@ -181,26 +181,38 @@ func (r *reloader) apply(log *slog.Logger, raw []byte) reloadOutcome {
 			return reloadRefused
 		}
 		detChanged = true
-		if r.ac != nil {
-			// The provider and its credential stay: the analyzer section
-			// is inside the baseline. Only the redactors hold the
-			// detector, and each evaluator builds its own from ac.det
-			// at swap time, so handing the rebuilt detector over is
-			// all a pii edit needs.
-			r.ac.det = det
-		}
+	}
+
+	// The candidate detector is STAGED, never written into r.ac before the
+	// document is accepted: a refusal below must leave the running
+	// dependencies exactly as they were, or a later reload would combine
+	// this uncommitted detector with the running maskers and pii rules.
+	// The copy shares the budgets map on purpose — budget continuity is
+	// per name, not per generation.
+	ac := r.ac
+	if detChanged && r.ac != nil {
+		staged := *r.ac
+		staged.det = det
+		ac = &staged
 	}
 
 	newCfg.lic = r.lic
-	lanes, err := buildLanes(newCfg, det, r.ac)
+	lanes, err := buildLanes(newCfg, det, ac)
 	if err != nil {
 		log.Warn("the control plane sent a config the rules or the caps refuse; keeping the running rules",
 			"error", err)
 		return reloadRefused
 	}
 
-	swapped, kept := 0, 0
-	viewLanes := make([]lane, 0, len(lanes))
+	// Pre-pass: render every lane's rule document BEFORE anything swaps.
+	// Two reasons. A gRPC-transport lane cannot swap (ADR-0013 binds its
+	// callbacks at server construction), so drift there makes the whole
+	// document restart-bound: swapping the relay lanes and reporting the
+	// generation applied would leave a lane silently serving old rules
+	// under a log line that says otherwise. And a render failure must
+	// surface before any lane swapped, so a retry re-runs the whole
+	// document rather than half of it.
+	docs := make(map[string][]byte, len(lanes))
 	for _, ln := range lanes {
 		doc, derr := laneRuleDoc(newCfg, ln.cfg)
 		if derr != nil {
@@ -208,14 +220,21 @@ func (r *reloader) apply(log *slog.Logger, raw []byte) reloadOutcome {
 				"listener", ln.name, "error", derr)
 			return reloadRetry
 		}
+		docs[ln.name] = doc
+		if isGRPCTransport(ln.cfg) && !bytes.Equal(doc, r.laneDocs[ln.name]) {
+			log.Warn("grpc lane rules changed on the control plane; restart to apply them",
+				"listener", ln.name)
+			return reloadRestart
+		}
+	}
+
+	swapped, kept := 0, 0
+	viewLanes := make([]lane, 0, len(lanes))
+	for _, ln := range lanes {
+		doc := docs[ln.name]
 		if isGRPCTransport(ln.cfg) {
-			// gRPC-transport lanes (grpc, spanner) stay on the restart path
-			// (ADR-0014); drift is reported, never swapped, and the view
-			// keeps the serving lane.
-			if !bytes.Equal(doc, r.laneDocs[ln.name]) {
-				log.Warn("grpc lane rules changed on the control plane; restart to apply them",
-					"listener", ln.name)
-			}
+			// Unchanged by the pre-pass check above; the view keeps the
+			// serving lane.
 			viewLanes = append(viewLanes, r.prevLanes[ln.name])
 			continue
 		}
@@ -242,6 +261,12 @@ func (r *reloader) apply(log *slog.Logger, raw []byte) reloadOutcome {
 		swapped++
 	}
 
+	// Commit, all together: the detector, the pii section it came from and
+	// the analyzer dependencies move as one, only on a document that
+	// applied.
+	if detChanged && r.ac != nil {
+		r.ac.det = det
+	}
 	r.det = det
 	r.piiRaw = newCfg.PII
 	r.gen++

@@ -1155,6 +1155,12 @@ type Plugin interface {
 	// published it into the audit trail.
 	ScanText(text string) []string
 
+	// RedactText rewrites every detected value in text as its entity class
+	// and names the classes found. The returned text carries NO detected
+	// value: it is what the analyzer's send: redacted mode transmits, so a
+	// value surviving here has left the process.
+	RedactText(text string) (string, []string)
+
 	// Entities lists what this detector was configured to find, for the
 	// startup log and for a config error that has to say what is available.
 	Entities() []string

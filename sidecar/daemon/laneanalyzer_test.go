@@ -1,11 +1,13 @@
 package daemon
 
 import (
+	"context"
 	"strings"
+	"sync"
 	"testing"
 
-	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/analyzer"
+	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
 )
 
@@ -376,5 +378,191 @@ func TestLaneAnalyzerBlockIsInsideTheReloadBoundary(t *testing.T) {
 	}
 	if string(d1) == string(d2) {
 		t.Error("an analyzer block edit did not change the lane's rule document")
+	}
+}
+
+// recordingProvider captures what actually leaves the process, which is the
+// only honest way to test redaction: an assertion on the redactor alone
+// cannot notice a caller that skipped it.
+type recordingProvider struct {
+	mu    sync.Mutex
+	texts []string
+}
+
+func (r *recordingProvider) Name() string { return "recording" }
+
+func (r *recordingProvider) Classify(_ context.Context, _ string, text string) (*analyzer.Result, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.texts = append(r.texts, text)
+	return &analyzer.Result{RiskLevel: analyzer.RiskLow}, nil
+}
+
+func (r *recordingProvider) sent() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.texts...)
+}
+
+func deleteStmt(text string) inspect.Statement {
+	return inspect.Statement{
+		Protocol:  inspect.Postgres,
+		Direction: inspect.FromClient,
+		Text:      text,
+		Operation: inspect.OpDelete,
+	}
+}
+
+// A block naming ONE cache field keeps the other's inherited value, like
+// every other override. Replacing the struct wholesale would zero the
+// unnamed field, and a zero on either side disables caching.
+func TestLaneCacheOverrideMergesFieldWise(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		cache *AnalyzerCacheConfig
+	}{
+		{"ttl only keeps the inherited size", &AnalyzerCacheConfig{TTLSec: 60}},
+		{"size only keeps the inherited ttl", &AnalyzerCacheConfig{Size: 8}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := &recordingProvider{}
+			deps := &analyzerDeps{
+				cfg: &AnalyzerConfig{Provider: "stub", Model: "m",
+					Cache: AnalyzerCacheConfig{Size: 128, TTLSec: 900}},
+				provider: rec,
+			}
+			la := laneBlock()
+			la.Cache = tc.cache
+			ev, err := buildLaneAnalyzer("appdb", la, deps, false)
+			if err != nil {
+				t.Fatalf("buildLaneAnalyzer: %v", err)
+			}
+			ev.Evaluate(deleteStmt("DELETE FROM t WHERE id = 1"))
+			ev.Evaluate(deleteStmt("DELETE FROM t WHERE id = 1"))
+			if calls := len(rec.sent()); calls != 1 {
+				t.Fatalf("provider calls = %d, want 1: a partial cache override "+
+					"disabled the cache instead of merging", calls)
+			}
+		})
+	}
+}
+
+// A lane's block and a DEPRECATED rule that happens to carry the lane's
+// name must not share a purse: the two forms draw names from different
+// namespaces, and coexistence is supported during migration.
+func TestBlockAndRuleBudgetsDoNotCollideOnOneName(t *testing.T) {
+	rec := &recordingProvider{}
+	deps := &analyzerDeps{
+		cfg:      &AnalyzerConfig{Provider: "stub", Model: "m", MaxCalls: 1},
+		provider: rec,
+	}
+
+	block, err := buildLaneAnalyzer("appdb", laneBlock(), deps, false)
+	if err != nil {
+		t.Fatalf("buildLaneAnalyzer: %v", err)
+	}
+	rules, err := buildAnalyzerEvaluators([]policy.Rule{aiRule("appdb")}, deps, false)
+	if err != nil {
+		t.Fatalf("buildAnalyzerEvaluators: %v", err)
+	}
+
+	block.Evaluate(deleteStmt("DELETE FROM a"))    // spends the lane's budget of 1
+	rules[0].Evaluate(deleteStmt("DELETE FROM b")) // must spend the RULE's own budget
+
+	if calls := len(rec.sent()); calls != 2 {
+		t.Fatalf("provider calls = %d, want 2: the rule named after the lane "+
+			"paid from the lane's purse", calls)
+	}
+}
+
+// send: redacted must never transmit a detected value. The provider sees
+// the entity class where the value stood, and never the value.
+func TestRedactedSendTransmitsNoValues(t *testing.T) {
+	const pan = "4111111111111111"
+	rec := &recordingProvider{}
+	deps := &analyzerDeps{
+		cfg:      &AnalyzerConfig{Provider: "stub", Model: "m", Send: SendRedacted},
+		provider: rec,
+		det:      stubPlugin{entities: []string{"CREDIT_CARD"}, find: pan},
+	}
+	ev, err := buildLaneAnalyzer("appdb", laneBlock(), deps, false)
+	if err != nil {
+		t.Fatalf("buildLaneAnalyzer: %v", err)
+	}
+
+	ev.Evaluate(deleteStmt("DELETE FROM cards WHERE pan = '" + pan + "'"))
+
+	sent := rec.sent()
+	if len(sent) != 1 {
+		t.Fatalf("provider calls = %d, want 1", len(sent))
+	}
+	if strings.Contains(sent[0], pan) {
+		t.Fatalf("the detected value left the process:\n%s", sent[0])
+	}
+	if !strings.Contains(sent[0], "<CREDIT_CARD>") {
+		t.Errorf("the entity class did not replace the value:\n%s", sent[0])
+	}
+}
+
+// A lane overriding send to redacted or refuse in a build with no detector
+// would get a nil redactor and transmit raw text under a name that promises
+// otherwise. The build refuses instead, exactly like the top-level check.
+func TestLanePrivacySendWithoutDetectorIsRefused(t *testing.T) {
+	for _, mode := range []SendMode{SendRedacted, SendRefuse} {
+		t.Run(string(mode), func(t *testing.T) {
+			deps := &analyzerDeps{
+				cfg:      &AnalyzerConfig{Provider: "stub", Model: "m"}, // send: raw default
+				provider: stubAnalyzerProvider{},
+			}
+			la := laneBlock()
+			la.Send = mode
+			_, err := buildLaneAnalyzer("appdb", la, deps, false)
+			if err == nil || !strings.Contains(err.Error(), "detector") {
+				t.Fatalf("a %s override with no detector was accepted: %v", mode, err)
+			}
+
+			// The same refusal through the front door.
+			cfg := blockLane(la)
+			if _, verr := Validate(cfg, nil); verr == nil {
+				t.Fatalf("Validate accepted a %s lane with no detector", mode)
+			}
+		})
+	}
+}
+
+// send: refuse runs on EVERY statement, cache hit or not. The cache keys on
+// the statement's shape, so a clean statement must not open a hole for a
+// sensitive literal with the same shape.
+func TestRefuseRunsOnCacheHits(t *testing.T) {
+	const pan = "4111111111111111"
+	rec := &recordingProvider{}
+	deps := &analyzerDeps{
+		cfg: &AnalyzerConfig{Provider: "stub", Model: "m", Send: SendRefuse,
+			Cache: AnalyzerCacheConfig{Size: 16, TTLSec: 900}},
+		provider: rec,
+		det:      stubPlugin{entities: []string{"CREDIT_CARD"}, find: pan},
+	}
+	ev, err := buildLaneAnalyzer("appdb", laneBlock(), deps, false)
+	if err != nil {
+		t.Fatalf("buildLaneAnalyzer: %v", err)
+	}
+
+	// A clean statement seeds the cache for this SQL shape.
+	if v := ev.Evaluate(deleteStmt("DELETE FROM cards WHERE pan = '1'")); v.Denied {
+		t.Fatalf("the clean statement was denied: %+v", v)
+	}
+	// The same shape carrying the sensitive literal must be refused
+	// locally, not served the cached verdict.
+	v := ev.Evaluate(deleteStmt("DELETE FROM cards WHERE pan = '" + pan + "'"))
+	if !v.Denied {
+		t.Fatal("a sensitive literal rode a cached shape past send: refuse")
+	}
+	if calls := len(rec.sent()); calls != 1 {
+		t.Fatalf("provider calls = %d, want 1: the refusal must not cost a call", calls)
+	}
+	for _, sent := range rec.sent() {
+		if strings.Contains(sent, pan) {
+			t.Fatalf("the detected value left the process:\n%s", sent)
+		}
 	}
 }

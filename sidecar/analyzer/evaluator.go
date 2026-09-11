@@ -450,17 +450,25 @@ func (e *Evaluator) classify(
 		return Result{}, StatusSkipped, nil
 	}
 
-	cacheKey := e.promptKey + ":" + content.CacheKey
-	if cached, hit := e.cache.get(cacheKey); hit {
-		return cached, StatusCached, nil
-	}
-
+	// Redaction runs BEFORE the cache, deliberately. The cache keys on the
+	// statement's SHAPE (literals stripped for SQL), so a sensitive literal
+	// can share a key with a clean statement that already seeded a verdict.
+	// send: refuse promises that content carrying a detected entity is
+	// refused in-process — every statement, not every cache miss — so the
+	// scan is the one per-statement cost a cache hit cannot skip. For
+	// redacted mode a hit transmits nothing, but the same ordering keeps
+	// one rule for where the callback runs.
 	text := content.Text
 	if e.cfg.Redact != nil {
 		text = e.cfg.Redact(text)
 		if text == RefuseSentinel {
 			return Result{}, StatusRefused, nil
 		}
+	}
+
+	cacheKey := e.promptKey + ":" + content.CacheKey
+	if cached, hit := e.cache.get(cacheKey); hit {
+		return cached, StatusCached, nil
 	}
 	// Reserve a slot atomically.
 	//

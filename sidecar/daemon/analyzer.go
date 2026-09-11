@@ -403,19 +403,32 @@ func splitAnalyzerRules(rules []policy.Rule) (local, ai []policy.Rule) {
 	return local, ai
 }
 
-// budgetFor returns the rule's process-lifetime call counter, creating it
-// on first sight. See analyzerDeps.budgets for the sharing contract.
-func (ac *analyzerDeps) budgetFor(rule string) *atomic.Int64 {
+// budgetFor returns the process-lifetime call counter for one budget key,
+// creating it on first sight. Keys are namespaced by analyzer form — see
+// the budget key prefixes — and the sharing contract lives on
+// analyzerDeps.budgets.
+func (ac *analyzerDeps) budgetFor(key string) *atomic.Int64 {
 	if ac.budgets == nil {
 		ac.budgets = map[string]*atomic.Int64{}
 	}
-	cell, ok := ac.budgets[rule]
+	cell, ok := ac.budgets[key]
 	if !ok {
 		cell = new(atomic.Int64)
-		ac.budgets[rule] = cell
+		ac.budgets[key] = cell
 	}
 	return cell
 }
+
+// budget key prefixes. The map in analyzerDeps is process-wide and keyed by
+// name, and the two analyzer forms draw their names from different
+// namespaces: a rule is named by the operator, a block by its listener. A
+// rule that happens to carry a listener's name must not spend that lane's
+// allowance, so each form prefixes its keys and the collision cannot be
+// spelled.
+const (
+	budgetRulePrefix = "rule:"
+	budgetLanePrefix = "lane:"
+)
 
 // buildAnalyzerEvaluators turns DEPRECATED ai_analysis rules into
 // evaluators.
@@ -424,7 +437,8 @@ func (ac *analyzerDeps) budgetFor(rule string) *atomic.Int64 {
 // trigger, action map and denial message while sharing the provider and,
 // through the provider, the credential. The call BUDGET comes from ac's
 // per-name registry, so a rebuilt evaluator (a hot reload that edited the
-// rule's lane) continues the running count instead of starting a fresh one.
+// rule's lane) continues the running count instead of starting a fresh one,
+// and two lanes naming one rule still pay from one purse.
 func buildAnalyzerEvaluators(
 	rules []policy.Rule,
 	ac *analyzerDeps,
@@ -439,7 +453,8 @@ func buildAnalyzerEvaluators(
 	}
 	out := make([]policy.Evaluator, 0, len(rules))
 	for _, r := range rules {
-		ev, err := buildAnalyzerEvaluator(r.Name, specFromRule(r), ac, hasOPA)
+		ev, err := buildAnalyzerEvaluator(r.Name, budgetRulePrefix+r.Name,
+			specFromRule(r), ac, hasOPA)
 		if err != nil {
 			return nil, fmt.Errorf("rule %q: %w", r.Name, err)
 		}
@@ -469,7 +484,7 @@ func buildLaneAnalyzer(
 			"listener %q has an analyzer block, and the config has no top-level "+
 				"analyzer section to supply the provider", lane)
 	}
-	ev, err := buildAnalyzerEvaluator(lane, *la, ac, hasOPA)
+	ev, err := buildAnalyzerEvaluator(lane, budgetLanePrefix+lane, *la, ac, hasOPA)
 	if err != nil {
 		return nil, fmt.Errorf("analyzer block: %w", err)
 	}
@@ -479,8 +494,13 @@ func buildLaneAnalyzer(
 // buildAnalyzerEvaluator is the one place an evaluator is assembled, for
 // both spellings. Every zero field in la inherits the top-level analyzer
 // default, so the block overrides exactly what it names and nothing else.
+//
+// name is what the evaluator reports (Finding.Rule, the ai_rule audit key);
+// budgetKey is its purse in ac's registry. They differ because the report
+// name is an operator-facing identity and the purse must not collide across
+// the two analyzer forms — see the budget key prefixes above.
 func buildAnalyzerEvaluator(
-	name string,
+	name, budgetKey string,
 	la LaneAnalyzerConfig,
 	ac *analyzerDeps,
 	hasOPA bool,
@@ -512,13 +532,35 @@ func buildAnalyzerEvaluator(
 	if maxCalls == 0 {
 		maxCalls = cfg.MaxCalls
 	}
+	// Cache fields merge INDIVIDUALLY, like every other override here: a
+	// block naming only ttl_sec keeps the inherited size. Replacing the
+	// struct wholesale would zero the field the block did not write, and a
+	// zero on either side disables caching — the opposite of what a partial
+	// override asked for.
 	cache := cfg.Cache
 	if la.Cache != nil {
-		cache = *la.Cache
+		if la.Cache.Size != 0 {
+			cache.Size = la.Cache.Size
+		}
+		if la.Cache.TTLSec != 0 {
+			cache.TTLSec = la.Cache.TTLSec
+		}
 	}
 	send := la.Send
 	if send == "" {
 		send = cfg.Send
+	}
+	// The EFFECTIVE mode is what has to be checked against the detector,
+	// because a lane can override the top-level send. The top-level check
+	// in AnalyzerConfig.validate cannot see overrides, and a nil redactor
+	// under redacted or refuse would transmit the original text under a
+	// name that promises otherwise.
+	switch send {
+	case SendRedacted, SendRefuse:
+		if ac.det == nil {
+			return nil, fmt.Errorf(
+				"send: %s needs a detector, and this build has none", send)
+		}
 	}
 	return analyzer.New(analyzer.Config{
 		Rule:          name,
@@ -533,7 +575,7 @@ func buildAnalyzerEvaluator(
 		CacheSize:     cache.Size,
 		CacheTTL:      time.Duration(cache.TTLSec) * time.Second,
 		MaxCalls:      maxCalls,
-		Budget:        ac.budgetFor(name),
+		Budget:        ac.budgetFor(budgetKey),
 		Redact:        redactorFor(send, ac.det),
 	})
 }
@@ -651,19 +693,18 @@ func redactorFor(mode SendMode, det Plugin) func(string) string {
 	switch mode {
 	case SendRedacted:
 		return func(s string) string {
-			// ScanText returns entity NAMES and never values or
-			// offsets, so the only redaction it supports is naming
-			// what was found. That is the right shape here anyway: a
-			// model asked to judge "a statement containing a
-			// taxpayer id" gives the same verdict as one shown the
-			// number, and the number never leaves.
-			entities := det.ScanText(s)
+			// RedactText rewrites every detected span as its entity
+			// class, so the value itself never leaves the process. The
+			// note tells the model what it is looking at: a statement
+			// judged as "contains <US_SSN>" classifies the same as one
+			// shown the number, and the number stays here.
+			redacted, entities := det.RedactText(s)
 			if len(entities) == 0 {
 				return s
 			}
-			return s + "\n\n[proxy: this statement contains " +
+			return redacted + "\n\n[proxy: this statement contained " +
 				strings.Join(entities, ", ") +
-				"; the values were withheld]"
+				"; each value was replaced with its entity class]"
 		}
 	case SendRefuse:
 		return func(s string) string {

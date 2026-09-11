@@ -858,10 +858,12 @@ A classifier that denies whenever its provider has an outage takes the
 database down with it. Set it false where the classification is a compliance
 requirement, and accept that a provider outage then stops traffic.
 
-**`send: redacted` uses the in-process detector** to name entities instead of
-transmitting their values. A relay whose job is keeping taxpayer ids out of a
-database's query log should not post them to a model vendor. `send: refuse`
-denies locally instead of transmitting. Neither one needs a `pii` section any
+**`send: redacted` rewrites every detected value as its entity class** before
+the statement leaves the process. A relay whose job is keeping taxpayer ids
+out of a database's query log should not post them to a model vendor, and a
+model judging `pan = '<CREDIT_CARD>'` classifies the same as one shown the
+number. `send: refuse` denies locally instead of transmitting. Neither one
+needs a `pii` section any
 more: a detector always exists once the plugin is linked, and the section only
 narrows which entity types it scans for.
 
