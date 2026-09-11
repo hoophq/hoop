@@ -8,12 +8,16 @@ const EMPTY = {
   // and showing it before the list arrives tells every org it owns no sidecar.
   loading: true,
   error: null,
-  // The one record /sidecars/:id is looking at. `selectedId` is what the store
-  // went to fetch, not what the route asks for, so a page compares the two to
-  // know whether the record on screen is its own.
+  // The one record /sidecars/:id is looking at, for as long as that page is
+  // mounted. `selectedId` is what the store went to fetch, so a page compares
+  // it with the route to know whether the record on screen is its own;
+  // `selectedLoading` says whether that fetch has answered yet. Both are
+  // needed: the first alone reads "we asked for this id", which is true from
+  // the moment the request leaves.
   selected: null,
   selectedId: null,
   selectedError: null,
+  selectedLoading: false,
 }
 
 // The fleet as the gateway lists it, and the single record the details page
@@ -54,17 +58,41 @@ export const useSidecarStore = create((set, get) => ({
 
   // Clears the previous record before the request leaves, so nothing can render
   // one sidecar under another's URL.
+  //
+  // A superseded response leaves `selectedLoading` alone, unlike the list: the
+  // generation only changes when a newer fetch or clearSelected took over, and
+  // that caller owns the flag now.
   fetchSidecar: async (nameOrId) => {
     const requestId = get().selectedRequestId + 1
-    set({ selectedRequestId: requestId, selectedId: nameOrId, selected: null, selectedError: null })
+    set({
+      selectedRequestId: requestId,
+      selectedId: nameOrId,
+      selected: null,
+      selectedError: null,
+      selectedLoading: true,
+    })
     try {
       const { data } = await sidecarsService.get(nameOrId)
-      set((state) => (state.selectedRequestId === requestId ? { selected: data } : {}))
+      set((state) => (state.selectedRequestId === requestId ? { selected: data, selectedLoading: false } : {}))
     } catch (error) {
       const message = error.response?.status === 404 ? 'Sidecar not found.' : error.message
-      set((state) => (state.selectedRequestId === requestId ? { selectedError: message } : {}))
+      set((state) => (state.selectedRequestId === requestId ? { selectedError: message, selectedLoading: false } : {}))
     }
   },
+
+  // The selected record belongs to one page view, not to the app: a details
+  // page that unmounts drops it. Keeping it would let the next visit to the
+  // same URL paint a record minutes old — or one already deleted — before the
+  // refresh lands, with nothing on screen saying it is stale. Bumping the
+  // generation also retires a request still in flight.
+  clearSelected: () =>
+    set((state) => ({
+      selected: null,
+      selectedId: null,
+      selectedError: null,
+      selectedLoading: false,
+      selectedRequestId: state.selectedRequestId + 1,
+    })),
 
   createSidecar: async ({ name }) => {
     const { data } = await sidecarsService.create({ name })

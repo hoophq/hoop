@@ -808,13 +808,19 @@ Non-obvious notes only:
   `useAuthStore`), and every read is scoped by `forUserId`.
 - `useSidecarStore` — the fleet (`sidecars`, `fetchSidecars`, `createSidecar`,
   `deleteSidecar`) and the one record `/sidecars/:id` reads (`selected`,
-  `selectedId`, `selectedError`, `fetchSidecar`). `createSidecar` returns the
-  response with the one-time token and keeps none of it. Two generation counters,
-  one per resource, drop a response that arrives after its resource moved on;
-  `reset()` runs on logout through an `useAuthStore` subscription. `selectedId` is
-  what the store went to fetch, so a page derives "the record on screen is not
-  mine" from `selectedId !== id` rather than from a flag an effect sets a frame
-  late.
+  `selectedId`, `selectedError`, `selectedLoading`, `fetchSidecar`,
+  `clearSelected`). `createSidecar` returns the response with the one-time token
+  and keeps none of it. Two generation counters, one per resource, drop a response
+  that arrives after its resource moved on; `reset()` runs on logout through an
+  `useAuthStore` subscription.
+  The selected record needs **both** of its flags, and a page checks both:
+  `selectedId !== id` catches the frame between a URL change and the effect that
+  refetches — a loading flag alone still reads "idle" there and paints the
+  previous sidecar under the new URL — while `selectedLoading` covers the request
+  itself, without which the loader lifts after `useMinDelay` and a slow response
+  renders an empty body. `clearSelected` belongs in the details page's effect
+  cleanup: the slot serves one page view, so a revisit cannot open on a record
+  minutes old, or on one already deleted.
 - `useConnectionsMetadataStore` — loaded once at app start (`App.jsx`); feeds
   credential field schemas + connection icons; `load()` is idempotent.
 

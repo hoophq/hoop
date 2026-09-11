@@ -15,19 +15,27 @@ export default function SidecarDetailsPage() {
   const navigate = useNavigate()
   const selected = useSidecarStore((s) => s.selected)
   const selectedId = useSidecarStore((s) => s.selectedId)
+  const selectedLoading = useSidecarStore((s) => s.selectedLoading)
   const error = useSidecarStore((s) => s.selectedError)
   const fetchSidecar = useSidecarStore((s) => s.fetchSidecar)
+  const clearSelected = useSidecarStore((s) => s.clearSelected)
 
-  // "What the store went to fetch is not what this route asks for." Derived
-  // rather than read from a flag, because the effect below runs after the
-  // first render of a new id: a flag would still say "idle" for that frame and
-  // the previous sidecar would paint under the new URL.
-  const loading = selectedId !== id
+  // Two conditions, and both are needed.
+  //   selectedId !== id — the store is not even looking at this route's id.
+  //     True for the frame between a URL change and the effect below, which a
+  //     flag alone would miss: it would still read "idle" and paint the
+  //     previous sidecar under the new URL.
+  //   selectedLoading — the store went for this id but has no answer yet.
+  //     Without it the loader lifts after useMinDelay's 500 ms and a slower
+  //     request renders an empty body.
+  const loading = selectedId !== id || selectedLoading
   const showLoader = useMinDelay(loading, 500)
 
+  // Dropping the record on unmount keeps this page from opening on a stale one.
   useEffect(() => {
     fetchSidecar(id)
-  }, [id, fetchSidecar])
+    return clearSelected
+  }, [id, fetchSidecar, clearSelected])
 
   if (loading || showLoader) return <PageLoader h={400} />
 
