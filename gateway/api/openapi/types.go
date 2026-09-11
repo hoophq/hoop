@@ -327,6 +327,17 @@ type SidecarCreateResponse struct {
 	Token string `json:"token" example:"hsc_Ab3fX9kL..."`
 }
 
+// SidecarReviewRequest registers a statement a sidecar held for human approval.
+//
+// The sidecar is not in the body and must not be: the token identifies it, so a
+// field here would let one sidecar file a review as another.
+type SidecarReviewRequest struct {
+	// The sidecar listener the statement arrived on
+	ListenerName string `json:"listener_name" binding:"required" example:"appdb"`
+	// The statement to review, base64 encoded
+	Payload string `json:"payload" binding:"required" example:"REVMRVRFIEZST00gdXNlcnM7"`
+}
+
 type SidecarHandshakeRequest struct {
 	// Version of the sidecar binary
 	Version string `json:"version" binding:"required" example:"1.0.0"`

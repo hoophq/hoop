@@ -287,6 +287,10 @@ func (a *Api) StartAPI() {
 func (api *Api) buildSidecarRoutes(r *apiroutes.Router) {
 	r.POST("/sidecars/handshake", r.SidecarAuthMiddleware, apisidecar.Handshake)
 	r.GET("/sidecars/configuration", r.SidecarAuthMiddleware, apisidecar.Configuration)
+	// No TrackRequest: SidecarAuthMiddleware installs an org context with no
+	// user, and TrackRequest requires a user email, so it would be a no-op
+	// that reads as an emitted event.
+	r.POST("/sidecars/reviews", r.SidecarAuthMiddleware, apisidecar.PostReview)
 	r.PUT("/sidecars/configuration", r.SidecarAuthMiddleware, apisidecar.ImportConfiguration)
 
 	r.POST("/sidecars",
