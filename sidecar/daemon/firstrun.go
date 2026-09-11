@@ -14,6 +14,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -88,13 +89,32 @@ func firstRunServe(ctx context.Context, out io.Writer, restartCmd string) error 
 // port when it is taken. fellBack reports which one happened, so the banner
 // can say the port moved.
 func firstRunListen() (ln net.Listener, fellBack bool, err error) {
-	ln, err = net.Listen("tcp", firstRunAddr)
+	return firstRunListenAt(firstRunAddr, firstRunFallbackAddr)
+}
+
+// firstRunListenAt is firstRunListen over caller-chosen addresses, so a
+// test can exercise the error classification without squatting on the
+// real port.
+//
+// Only a busy preferred port moves to the fallback: that is the one
+// failure a different port fixes. Anything else — no route, fd
+// exhaustion, a policy denying the bind — would fail again on the
+// fallback, and retrying would misreport it as "port busy" in the
+// banner, so it is returned as what it is. syscall.EADDRINUSE matches
+// both the bare errno and the wrapped net.OpError forms Go returns,
+// on POSIX and Windows alike (see tunnel/loginflow's isAddrInUse).
+func firstRunListenAt(preferred, fallback string) (ln net.Listener, fellBack bool, err error) {
+	ln, err = net.Listen("tcp", preferred)
 	if err == nil {
 		return ln, false, nil
 	}
-	ln, fbErr := net.Listen("tcp", firstRunFallbackAddr)
+	if !errors.Is(err, syscall.EADDRINUSE) {
+		return nil, false, fmt.Errorf("binding the default listener: %w", err)
+	}
+	ln, fbErr := net.Listen("tcp", fallback)
 	if fbErr != nil {
-		return nil, false, fmt.Errorf("binding the default listener: %w", fbErr)
+		return nil, false, fmt.Errorf("the preferred address %s is busy and the fallback bind failed: %w",
+			preferred, fbErr)
 	}
 	return ln, true, nil
 }

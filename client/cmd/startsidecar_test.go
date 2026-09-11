@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 )
 
 func TestStartSidecarCommandNames(t *testing.T) {
@@ -75,31 +77,36 @@ func TestSidecarConfigFromEnv(t *testing.T) {
 }
 
 func TestSidecarBareInvocation(t *testing.T) {
-	// The gate reads package-level flag variables; save and restore them so
-	// this test composes with any other that touches the command.
-	restore := func(validate, strict bool, lic, tok string) {
-		sidecarValidateFlag, sidecarStrictFlag = validate, strict
-		sidecarLicenseFlag, sidecarTokenFlag = lic, tok
-	}
-	defer restore(sidecarValidateFlag, sidecarStrictFlag, sidecarLicenseFlag, sidecarTokenFlag)
-
 	for _, tt := range []struct {
-		msg      string
-		validate bool
-		strict   bool
-		license  string
-		token    string
-		want     bool
+		msg  string
+		args []string
+		want bool
 	}{
 		{msg: "nothing at all is bare", want: true},
-		{msg: "--validate keeps the usage error", validate: true},
-		{msg: "--strict keeps the usage error", strict: true},
-		{msg: "--license keeps the usage error", license: "/lic.json"},
-		{msg: "--token keeps the usage error", token: "hsc_x"},
+		{msg: "--validate keeps the usage error", args: []string{"--validate"}},
+		{msg: "--strict keeps the usage error", args: []string{"--strict"}},
+		{msg: "--license keeps the usage error", args: []string{"--license", "/lic.json"}},
+		{msg: "--token keeps the usage error", args: []string{"--token", "hsc_x"}},
+		{msg: "an explicit default value still keeps the usage error", args: []string{"--validate=false"}},
+		{msg: "an explicit empty value still keeps the usage error", args: []string{"--license="}},
+		{msg: "an inherited global flag keeps the usage error", args: []string{"--debug"}},
+		{msg: "a positional argument keeps the usage error", args: []string{"extra"}},
 	} {
 		t.Run(tt.msg, func(t *testing.T) {
-			restore(tt.validate, tt.strict, tt.license, tt.token)
-			if got := sidecarBareInvocation(); got != tt.want {
+			// Fresh commands per case: pflag's Changed sticks once set, so
+			// reusing the package-level command would leak state across cases.
+			root := &cobra.Command{Use: "hoop"}
+			root.PersistentFlags().Bool("debug", false, "")
+			cmd := &cobra.Command{Use: "sidecar"}
+			cmd.Flags().Bool("validate", false, "")
+			cmd.Flags().Bool("strict", false, "")
+			cmd.Flags().String("license", "", "")
+			cmd.Flags().String("token", "", "")
+			root.AddCommand(cmd)
+			if err := cmd.ParseFlags(tt.args); err != nil {
+				t.Fatalf("parse: %v", err)
+			}
+			if got := sidecarBareInvocation(cmd, cmd.Flags().Args()); got != tt.want {
 				t.Fatalf("got %v, want %v", got, tt.want)
 			}
 		})

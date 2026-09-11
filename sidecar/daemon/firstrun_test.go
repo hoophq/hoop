@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -63,6 +64,49 @@ func TestFirstRunListenFallsBackWhenThePortIsBusy(t *testing.T) {
 	}
 }
 
+// A preferred bind that fails for any reason other than a busy port must
+// surface as that failure, not as "port busy": the fallback would fail
+// the same way, and the banner's diagnosis would be false.
+func TestFirstRunListenReportsANonBusyBindFailure(t *testing.T) {
+	// 192.0.2.1 is TEST-NET-1: never a local address, so the bind fails
+	// with EADDRNOTAVAIL, which is not EADDRINUSE.
+	ln, fellBack, err := firstRunListenAt("192.0.2.1:0", firstRunFallbackAddr)
+	if err == nil {
+		ln.Close()
+		t.Fatal("binding a non-local address succeeded")
+	}
+	if fellBack {
+		t.Error("a non-busy bind failure reported fellBack = true")
+	}
+	if strings.Contains(err.Error(), "busy") {
+		t.Errorf("a non-busy failure was diagnosed as busy: %v", err)
+	}
+}
+
+// When the preferred port is genuinely busy AND the fallback bind fails,
+// the error must carry both facts, or the operator debugs blind.
+func TestFirstRunListenNamesBothFailuresWhenTheFallbackAlsoFails(t *testing.T) {
+	squatter, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("binding a loopback squatter: %v", err)
+	}
+	defer squatter.Close()
+
+	ln, fellBack, err := firstRunListenAt(squatter.Addr().String(), "192.0.2.1:0")
+	if err == nil {
+		ln.Close()
+		t.Fatal("both binds were doomed, yet firstRunListenAt succeeded")
+	}
+	if fellBack {
+		t.Error("an error return reported fellBack = true")
+	}
+	for _, want := range []string{"busy", "fallback"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %q", err, want)
+		}
+	}
+}
+
 // The banner is the interface: it must carry the URL that was actually
 // bound, say the config is a default, and name the command that replaces
 // it. When the port moved, it must say so.
@@ -99,7 +143,7 @@ func TestFirstRunServeAnswersAndStopsOnContextCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	var buf bytes.Buffer
+	var buf syncBuffer
 	done := make(chan error, 1)
 	go func() {
 		done <- firstRunServe(ctx, &buf, "hoop start sidecar --config config.yaml")
@@ -137,12 +181,32 @@ func TestFirstRunServeAnswersAndStopsOnContextCancel(t *testing.T) {
 	}
 }
 
+// syncBuffer is a bytes.Buffer the banner writer (the firstRunServe
+// goroutine) and the test's poller can share: bytes.Buffer alone is not
+// safe for concurrent Write and String.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
 // waitForBannerURL polls the banner buffer until the "Open http://..." line
 // lands and returns that URL. The banner is written before the server
 // starts accepting, so once the URL is visible the GET below may still race
 // the Serve goroutine by a scheduler tick; the poll in the caller's Get is
 // the client timeout.
-func waitForBannerURL(t *testing.T, buf *bytes.Buffer) string {
+func waitForBannerURL(t *testing.T, buf *syncBuffer) string {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {

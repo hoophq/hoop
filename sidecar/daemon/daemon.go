@@ -236,14 +236,14 @@ func Main(version string, load Loader, build PluginBuilder) error {
 		return nil
 	}
 	if *configPath == "" && os.Getenv(ControlPlaneURLEnv) == "" {
-		// A truly bare invocation — no config source and no flag asking for
-		// anything — runs the first-run default instead of erroring, so a
-		// user's first contact after the install is a working URL rather
-		// than a usage message. Any flag at all keeps the old error: a
-		// -validate or -token without a config is a mistake to report, not
-		// a request for the demo.
-		if !*validate && !*strict && *grpcDiscover == "" && *grpcDiscoverOut == "" &&
-			*licenseRef == "" && *tokenRef == "" {
+		// A truly bare invocation — nothing typed at all — runs the
+		// first-run default instead of erroring, so a user's first contact
+		// after the install is a working URL rather than a usage message.
+		// Anything typed keeps the old error: a flag set even to its
+		// default (-validate=false, -license=) or a stray positional
+		// argument without a config is a mistake to report, not a request
+		// for the demo. -version returned above, so it never reaches this.
+		if bareInvocation(fs) {
 			return FirstRun(os.Stdout, "hoop-inspect -config config.yaml")
 		}
 		fs.Usage()
@@ -274,6 +274,14 @@ func Main(version string, load Loader, build PluginBuilder) error {
 	}
 
 	return Run(cfg, det)
+}
+
+// bareInvocation reports whether the parsed command line asked for nothing:
+// no flag was set (NFlag counts flags the user typed, so an explicit
+// default like -validate=false still counts) and no positional argument
+// was given. Only that invocation runs the first-run default.
+func bareInvocation(fs *flag.FlagSet) bool {
+	return fs.NFlag() == 0 && fs.NArg() == 0
 }
 
 // ReportDeprecations writes each deprecation notice to w, one per line.

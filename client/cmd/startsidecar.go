@@ -20,6 +20,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/license"
 	"github.com/hoophq/hoop/sidecar/pii/alcatraz"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 // deprecatedSidecarAlias is the pre-rename name of this command. Cobra routes
@@ -94,7 +95,7 @@ registering a new sidecar.`,
 		warnDeprecatedSidecarAlias(os.Stderr, cmd.CalledAs())
 
 		if sidecarConfigFlag == "" && os.Getenv(daemon.ControlPlaneURLEnv) == "" {
-			if sidecarBareInvocation() {
+			if sidecarBareInvocation(cmd, args) {
 				return daemon.FirstRun(os.Stdout, "hoop start sidecar --config config.yaml")
 			}
 			// The one genuine usage error here, so let cobra show the flags.
@@ -149,18 +150,27 @@ func warnDeprecatedSidecarAlias(w io.Writer, calledAs string) {
 }
 
 // sidecarBareInvocation reports whether this invocation asked for nothing:
-// no config anywhere, no control plane, and no flag. That is the one case
-// that runs the first-run default (daemon.FirstRun) — a loopback URL
-// forwarding to the getting-started guide — instead of a usage error, so a
-// user's first contact after the install is a working URL. Any flag keeps
-// the error: --validate or --token without a config is a mistake to
-// report, not a request for the demo.
+// no config anywhere, no control plane, no flag, no argument. That is the
+// one case that runs the first-run default (daemon.FirstRun) — a loopback
+// URL forwarding to the getting-started guide — instead of a usage error,
+// so a user's first contact after the install is a working URL.
+//
+// The gate keys on what the user typed, not on resulting values: a flag
+// set to its default (--validate=false, --license=) or an inherited global
+// flag (--debug) still keeps the error, because typing anything without a
+// config is a mistake to report, not a request for the demo.
 //
 // The caller has already established that sidecarConfigFlag (whose default
 // comes from the environment) and the control plane env var are empty.
-func sidecarBareInvocation() bool {
-	return !sidecarValidateFlag && !sidecarStrictFlag &&
-		sidecarLicenseFlag == "" && sidecarTokenFlag == ""
+func sidecarBareInvocation(cmd *cobra.Command, args []string) bool {
+	if len(args) > 0 {
+		return false
+	}
+	changed := false
+	seen := func(f *pflag.Flag) { changed = changed || f.Changed }
+	cmd.Flags().VisitAll(seen)
+	cmd.InheritedFlags().VisitAll(seen)
+	return !changed
 }
 
 // sidecarConfigFromEnv reads the config path from the environment. It prefers
