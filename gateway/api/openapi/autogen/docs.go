@@ -10150,6 +10150,77 @@ const docTemplate = `{
                 }
             }
         },
+        "/sidecars/reviews": {
+            "post": {
+                "description": "Register a review for a statement a sidecar held. The sidecar is taken from the token, never the body.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sidecars"
+                ],
+                "summary": "Create Sidecar Review",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The token returned when the sidecar was created",
+                        "name": "hoop-sidecar-token",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SidecarReviewRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.Review"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "412": {
+                        "description": "Precondition Failed",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/sidecars/{nameOrID}": {
             "get": {
                 "description": "Get a sidecar by name or ID",
@@ -19535,6 +19606,26 @@ const docTemplate = `{
                     "description": "Version reported at the last handshake. Held in gateway memory, not\nstored, so it is empty until the sidecar calls and again after a\ngateway restart.",
                     "type": "string",
                     "example": "1.0.0"
+                }
+            }
+        },
+        "openapi.SidecarReviewRequest": {
+            "type": "object",
+            "required": [
+                "listener_name",
+                "payload"
+            ],
+            "properties": {
+                "listener_name": {
+                    "description": "The sidecar listener the statement arrived on\n\nBounded because private.reviews.listener_name is VARCHAR(255): a longer\nname would reach Postgres and fail the write, rather than being told at\nthe door that it is too long.",
+                    "type": "string",
+                    "maxLength": 255,
+                    "example": "appdb"
+                },
+                "payload": {
+                    "description": "The statement to review, base64 encoded",
+                    "type": "string",
+                    "example": "REVMRVRFIEZST00gdXNlcnM7"
                 }
             }
         },

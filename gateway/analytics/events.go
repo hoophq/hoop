@@ -49,6 +49,9 @@ const (
 	EventCreateSidecar = "hoop-create-sidecar"
 	EventUpdateSidecar = "hoop-update-sidecar"
 	EventDeleteSidecar = "hoop-delete-sidecar"
+	// EventCreateSidecarReview is emitted with TrackEvent, not TrackRequest:
+	// a sidecar authenticates with its own token and carries no user.
+	EventCreateSidecarReview = "hoop-create-sidecar-review"
 
 	// plugins
 	EventCreatePlugin          = "hoop-create-plugin"

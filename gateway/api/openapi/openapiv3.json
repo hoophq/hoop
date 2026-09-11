@@ -8493,6 +8493,26 @@
         },
         "type": "object"
       },
+      "openapi.SidecarReviewRequest": {
+        "properties": {
+          "listener_name": {
+            "description": "The sidecar listener the statement arrived on\n\nBounded because private.reviews.listener_name is VARCHAR(255): a longer\nname would reach Postgres and fail the write, rather than being told at\nthe door that it is too long.",
+            "example": "appdb",
+            "maxLength": 255,
+            "type": "string"
+          },
+          "payload": {
+            "description": "The statement to review, base64 encoded",
+            "example": "REVMRVRFIEZST00gdXNlcnM7",
+            "type": "string"
+          }
+        },
+        "required": [
+          "listener_name",
+          "payload"
+        ],
+        "type": "object"
+      },
       "openapi.SidecarUpdateRequest": {
         "properties": {
           "configuration": {
@@ -21898,6 +21918,100 @@
           }
         },
         "summary": "Sidecar Handshake",
+        "tags": [
+          "Sidecars"
+        ]
+      }
+    },
+    "/sidecars/reviews": {
+      "post": {
+        "description": "Register a review for a statement a sidecar held. The sidecar is taken from the token, never the body.",
+        "parameters": [
+          {
+            "description": "The token returned when the sidecar was created",
+            "in": "header",
+            "name": "hoop-sidecar-token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/openapi.SidecarReviewRequest"
+              }
+            }
+          },
+          "description": "The request body resource",
+          "required": true,
+          "x-originalParamName": "request"
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.Review"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Precondition Failed"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Create Sidecar Review",
         "tags": [
           "Sidecars"
         ]
