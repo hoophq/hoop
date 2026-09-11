@@ -86,7 +86,8 @@ type setupOptions struct {
 }
 
 // WithLicense supplies a license from the command line, which outranks
-// HOOP_LICENSE and the config file's `license` key.
+// HOOP_LICENSE and the config file's `license` key. All three are ignored
+// when a control plane is configured; it holds the fleet's license.
 //
 // Only a caller with such a flag needs it. Setup reads the other two sources
 // on its own, so an embedder that mounts a license file and names it in the
@@ -145,11 +146,19 @@ func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*
 		// way startup would. See reloader.
 		cfg.cp.build = build
 	}
-	planeLicense := ""
 	if cfg.cp != nil {
-		planeLicense = cfg.cp.license
+		// Recorded before the resolution, not after: a local license is
+		// not consulted at all in plane mode, so nothing downstream could
+		// tell there was one to warn about. cfg.License is already empty
+		// here (resolveConfigSource drops it), so the file's value comes
+		// from the file.
+		fileLicense := ""
+		if local != nil {
+			fileLicense = local.License
+		}
+		cfg.cp.ignoredLicense = ignoredLocalLicenseSource(o.licenseFlag, fileLicense)
 	}
-	cfg.lic = resolveLicense(planeLicense, o.licenseFlag, cfg.License)
+	cfg.lic = resolveLicenseFor(cfg.cp, o.licenseFlag, cfg.License)
 	if cfg.lic.State() == license.StateInvalid {
 		return nil, nil, cfg.lic.Err
 	}
@@ -163,34 +172,62 @@ func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*
 	return cfg, det, nil
 }
 
-// PlaneLicenseSource names the control plane in every message about a license
-// it sent. An operator reading "expired" needs to know which of four places
-// to go fix.
-const PlaneLicenseSource = "the control plane"
+// The names every message about a license uses for the place it came from.
+// An operator reading "expired" needs to know which one to go fix, and a
+// message naming a source the resolver does not use sends them to the wrong
+// file, so both read these.
+const (
+	// PlaneLicenseSource names the control plane's own license.
+	PlaneLicenseSource = "the control plane"
+	flagLicenseSource  = "the license flag"
+	fileLicenseSource  = `the "license" config key`
+)
 
-// ResolveLicense picks the license a standalone process runs under, highest
+// ResolveLicense picks the license a STANDALONE process runs under, highest
 // precedence first: the command line, then HOOP_LICENSE, then the config
 // file's `license` key. Licensing a fleet must not mean editing every file
 // in it.
 func ResolveLicense(flagValue, fileValue string) license.Status {
-	return resolveLicense("", flagValue, fileValue)
+	return license.Resolve(
+		license.Ref{Value: flagValue, Source: flagLicenseSource},
+		license.Ref{Value: os.Getenv(license.EnvVar), Source: license.EnvVar},
+		license.Ref{Value: fileValue, Source: fileLicenseSource},
+	)
 }
 
-// resolveLicense is ResolveLicense with the control plane in front of the
-// three local sources.
+// resolveLicenseFor picks the license this process runs under.
 //
-// The plane outranks even the command line, because it is the fleet's answer
-// and the three below it are one machine's. A local license is what runs when
-// the plane's organization has none, not a way to overrule the plane: an
-// operator who could out-rank the control plane from a pod's environment
-// would make the fleet's license an opinion.
-func resolveLicense(planeValue, flagValue, fileValue string) license.Status {
-	return license.Resolve(
-		license.Ref{Value: planeValue, Source: PlaneLicenseSource},
-		license.Ref{Value: flagValue, Source: "the license flag"},
-		license.Ref{Value: os.Getenv(license.EnvVar), Source: license.EnvVar},
-		license.Ref{Value: fileValue, Source: `the "license" config key`},
-	)
+// A control plane is the ONLY source when one is configured. Not the first of
+// four: the fleet's license is the fleet's, and an operator who could add one
+// from a pod's environment would make it an opinion. A plane whose
+// organization holds no license therefore runs the free tier, with whatever
+// sits in the local sources ignored and said out loud (Run warns).
+//
+// The alternative -- local sources as a fallback -- reads kinder and is
+// worse: the startup path and the heartbeat would then disagree about the
+// same state, since a license REMOVED from the plane drops a running process
+// to the free tier and a restart would license it again.
+func resolveLicenseFor(cp *controlPlane, flagValue, fileValue string) license.Status {
+	if cp != nil {
+		return license.Resolve(license.Ref{Value: cp.license, Source: PlaneLicenseSource})
+	}
+	return ResolveLicense(flagValue, fileValue)
+}
+
+// ignoredLocalLicenseSource names the local source a plane-connected process
+// is NOT using, empty when there is none. Highest precedence first, the order
+// ResolveLicense would have read them in: naming the second one while the
+// first also holds a document sends an operator to the wrong place.
+func ignoredLocalLicenseSource(flagValue, fileValue string) string {
+	switch {
+	case strings.TrimSpace(flagValue) != "":
+		return flagLicenseSource
+	case strings.TrimSpace(os.Getenv(license.EnvVar)) != "":
+		return license.EnvVar
+	case strings.TrimSpace(fileValue) != "":
+		return fileLicenseSource
+	}
+	return ""
 }
 
 // ErrUsage marks a command-line misuse: a missing or unparseable flag, as
@@ -765,6 +802,16 @@ func Run(cfg *Config, det Plugin) error {
 			log.Warn("the config file's listeners are ignored: the control plane owns the running config",
 				"file_listeners", cfg.cp.fileListeners,
 				"hint", "edit the configuration in the control plane; the local file no longer holds it")
+		}
+		if cfg.cp.ignoredLicense != "" {
+			// Silence here is the failure an operator finds a month later,
+			// wondering why the license they mounted bought nothing. Warned
+			// whether or not the plane sent one: either way this document
+			// is not what the process runs under.
+			log.Warn("the license from "+cfg.cp.ignoredLicense+" is ignored: the control plane "+
+				"owns the license for every sidecar it serves",
+				"in_force", cfg.lic.State().String(),
+				"hint", "set the organization's license in the control plane")
 		}
 		go cfg.cp.heartbeat(ctx, log, rl)
 	}

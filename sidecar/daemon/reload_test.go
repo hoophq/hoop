@@ -2,12 +2,16 @@ package daemon
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/hoophq/hoop/sidecar/license"
 	"github.com/hoophq/hoop/sidecar/license/licensetest"
@@ -355,5 +359,65 @@ func TestAnAppliedReloadPublishesWhetherTheConfigNeedsALicense(t *testing.T) {
 	}
 	if !rl.lic.depends.Load() {
 		t.Error("the reloaded config exceeds the free tier and was not reported as needing a license")
+	}
+}
+
+// The admin removes the organization's license in the control plane. The
+// process drops to the free tier, and does NOT fall back to a license sitting
+// in a local source: the plane owns the fleet's license, so removing it there
+// has to remove it here. Startup answers the same way, which is the point --
+// a restart must not relicense what a heartbeat just unlicensed.
+func TestALicenseRemovedFromThePlaneDropsToTheFreeTier(t *testing.T) {
+	t.Setenv(license.EnvVar, licensetest.Document(t, licensetest.Enterprise()))
+	rl, buf := testReloader(t, reloadBase)
+	doc := licensetest.Document(t, licensetest.Enterprise())
+
+	if got := applyWith(rl, buf, withLicense(t, reloadBase, doc)); got != reloadApplied {
+		t.Fatalf("outcome = %v, want applied; log:\n%s", got, buf)
+	}
+	if got := rl.lic.get().State(); got != license.StateValid {
+		t.Fatalf("license state = %q, want valid before the removal", got)
+	}
+
+	if got := applyWith(rl, buf, reloadBase); got != reloadApplied {
+		t.Fatalf("outcome = %v, want applied; log:\n%s", got, buf)
+	}
+	if got := rl.lic.get().State(); got != license.StateMissing {
+		t.Fatalf("license state = %q, want missing: a local source relicensed the process", got)
+	}
+}
+
+// The plane goes unreachable. The heartbeat degrades and the license in use
+// stays: killing the caps over a lost connection would be an outage, and the
+// document the plane last sent is still the one it issued.
+func TestAnUnreachablePlaneKeepsTheLicenseInUse(t *testing.T) {
+	rl, buf := testReloader(t, reloadBase)
+	doc := licensetest.Document(t, licensetest.Enterprise())
+	if got := applyWith(rl, buf, withLicense(t, reloadBase, doc)); got != reloadApplied {
+		t.Fatalf("outcome = %v, want applied; log:\n%s", got, buf)
+	}
+	before := rl.lic.get()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+	cp := &controlPlane{url: srv.URL, token: "hsc_x", every: time.Millisecond}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	log := slog.New(slog.NewTextHandler(buf, nil))
+	cp.heartbeat(ctx, log, rl)
+
+	if !strings.Contains(buf.String(), "serving the last good config") {
+		t.Fatalf("the failed handshake was not reported:\n%s", buf)
+	}
+	after := rl.lic.get()
+	if after.State() != before.State() || after.Source != before.Source {
+		t.Errorf("the license changed while the plane was unreachable: %q/%q -> %q/%q",
+			before.State(), before.Source, after.State(), after.Source)
+	}
+	if after.State() != license.StateValid {
+		t.Errorf("license state = %q, want valid", after.State())
 	}
 }
