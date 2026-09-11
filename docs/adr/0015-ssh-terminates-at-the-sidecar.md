@@ -223,8 +223,14 @@ certificate itself.
 - **Certificates only. No password authentication, ever.** A password mode
   needs something to check a secret against, and this design has nothing to
   give it. This is an exclusion, not a "not yet".
-- **`permit-port-forwarding`** decides whether a certificate may jump through
-  a bastion at all. Without it, a bastion refuses every forward request.
+- **`permit-port-forwarding`** decides whether the holder may open TCP
+  forwards at all. Jumping through a bastion is one *use* of that — a jump is
+  a forward the client opens on the jump host — but the grant does not
+  distinguish it from any other: SSH has no "may be used as a jump host"
+  notion to grant instead, so the same certificate can tunnel to any
+  destination a listener admitting forwarding can reach. Read it as "this
+  holder may open forwards", never as "this holder may jump". Without it,
+  every forward request is refused.
 - **`permit-pty`** decides whether it may open an interactive shell at an
   end-hop. Without it, at most a non-interactive command is available.
 - **`valid-before` and `source-address`**, the standard critical options, bound
@@ -854,9 +860,7 @@ graph LR
   without a bastion in the path.
 - **Direct exposure removes the client-side problem entirely.** There is no
   `ProxyJump` block to distribute, so the one piece of client configuration
-  this design cannot yet deliver is simply not needed. The certificate also
-  needs no `permit-port-forwarding` grant, because nothing is being jumped
-  through: `permit-pty` alone gets a shell.
+  this design cannot yet deliver is simply not needed.
 - **A bastion is worth adding for what it centralizes, not because an end-hop
   needs one.** One ingress address to firewall instead of one per host, one
   place that records every destination anyone asked to reach. In exchange the
@@ -1012,7 +1016,7 @@ sidecar's own identity and should not travel.
 **Issuing.** The control plane operates the user CA, holds its private key
 under the same custody bar as any other signing key, and issues against the
 access decision it already makes for a user: a short `valid-before`,
-`permit-port-forwarding` only if they may use a bastion, `permit-pty` only if
+`permit-port-forwarding` only if they may open forwards, `permit-pty` only if
 interactive access is granted, and the principals that carry their group
 membership. The certificate becomes the transport for a decision already being
 made, not a new decision surface.
