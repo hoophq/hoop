@@ -57,7 +57,17 @@ func DiscoverGRPC(ctx context.Context, cfg *Config, name, out string, w io.Write
 
 	ctx, cancel := context.WithTimeout(ctx, grpcDiscoverTimeout)
 	defer cancel()
-	schema, raw, err := codecgrpc.Discover(ctx, lc.Upstream, tlsConf)
+	// A nil logger falls back to slog.Default() inside Discover, which is
+	// where the InsecureSkipVerify warning lands: this command runs before
+	// the daemon builds its logger, and stderr is exactly where an
+	// operator watching a bootstrap looks.
+	raw, err := codecgrpc.Discover(ctx, lc.Upstream, tlsConf, nil)
+	if err != nil {
+		return err
+	}
+	// Discover validated the artifact; indexing it again here is what
+	// turns the bytes into the method report below.
+	schema, err := codecgrpc.LoadSchemaBytes("discovered from "+lc.Upstream, raw)
 	if err != nil {
 		return err
 	}

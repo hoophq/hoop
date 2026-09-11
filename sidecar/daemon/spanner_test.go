@@ -404,6 +404,46 @@ func TestSpannerLaneFailsClosedWhenCaptureTruncatesTheSQL(t *testing.T) {
 	}
 }
 
+// The full front door: a config file declaring `protocol: spanner` passes
+// Config.Validate, and daemon.Validate builds the lane end to end,
+// descriptors loaded and method notes reported. This is the seam an
+// operator's -validate run exercises, so a regression here is a spanner
+// deployment that refuses to start rather than a failing unit.
+func TestSpannerListenerValidatesAndBuilds(t *testing.T) {
+	descriptorPath := writeSpannerTestDescriptors(t)
+	cfg := &Config{Listeners: []ListenerConfig{{
+		Name:     "spanner",
+		Protocol: "spanner",
+		Listen:   "127.0.0.1:0",
+		Upstream: "127.0.0.1:1",
+		GRPC: &GRPCCodecConfig{
+			Descriptors:    DescriptorPaths{descriptorPath},
+			CapturePayload: true,
+		},
+	}}}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Config.Validate refused a spanner listener: %v", err)
+	}
+	lanes, err := Validate(cfg, nil)
+	if err != nil {
+		t.Fatalf("daemon.Validate refused a spanner listener: %v", err)
+	}
+	if len(lanes) != 1 || lanes[0].Protocol != "spanner" {
+		t.Fatalf("lanes = %+v, want one spanner lane", lanes)
+	}
+	// The notes prove the descriptor set loaded through the spanner
+	// branch of the build, not that a string survived a struct copy.
+	var sawMethod bool
+	for _, note := range lanes[0].Notes {
+		if strings.Contains(note, "/google.spanner.v1.Spanner/ExecuteSql") {
+			sawMethod = true
+		}
+	}
+	if !sawMethod {
+		t.Fatalf("lane notes carry no descriptor-derived method summary: %q", lanes[0].Notes)
+	}
+}
+
 // buildSpannerTestServer is buildGRPCTestServer with the spanner protocol
 // value: same transport, same descriptor plumbing, statements carrying
 // inspect.Spanner.
