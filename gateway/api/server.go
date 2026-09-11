@@ -287,6 +287,7 @@ func (a *Api) StartAPI() {
 func (api *Api) buildSidecarRoutes(r *apiroutes.Router) {
 	r.POST("/sidecars/handshake", r.SidecarAuthMiddleware, apisidecar.Handshake)
 	r.GET("/sidecars/configuration", r.SidecarAuthMiddleware, apisidecar.Configuration)
+	r.PUT("/sidecars/configuration", r.SidecarAuthMiddleware, apisidecar.ImportConfiguration)
 
 	r.POST("/sidecars",
 		apiroutes.AdminOnlyAccessRole,

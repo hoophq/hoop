@@ -69,9 +69,13 @@ A sidecar may connect to a Control Plane instead of carrying its own
 listeners: set HOOP_CONTROL_PLANE_URL or the "control_plane_url" config key
 (the env var outranks the key), and pass the token from the sidecar's
 registration with --token, which outranks HOOP_SIDECAR_TOKEN. The handshake
-then supplies the whole running config, --config becomes optional, and a
-file that still declares listeners is refused. The token is shown once when
-the sidecar is created; a lost one means registering a new sidecar.`,
+then supplies the whole running config and --config becomes optional. A
+Control Plane holding no configuration is seeded with the config file's
+document on that first handshake, so an existing sidecar connects by adding
+the URL and passing the token, nothing else; once the plane holds a config
+it owns it, and listeners still in the file are ignored with a warning. The
+token is shown once when the sidecar is created; a lost one means
+registering a new sidecar.`,
 	Example: `  hoop start sidecar --config /etc/hoop-inspect/config.yaml
   hoop start sidecar --config config.yaml --license /etc/hoop-inspect/license.json
   hoop start sidecar --config config.yaml --validate
