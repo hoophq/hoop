@@ -84,8 +84,8 @@ export default function ListenersTable({ sidecar, onAdd, onEdit, onDelete }) {
             {listeners.map((listener, index) => (
               <Table.Tr key={`${listener.name}-${index}`}>
                 <Table.Td miw={140}>
-                  <Text size="sm" fw={600}>
-                    {listener.name}
+                  <Text size="sm" fw={600} c={listener.name ? undefined : 'dimmed'}>
+                    {listener.name || 'Unnamed'}
                   </Text>
                 </Table.Td>
                 <Table.Td miw={140}>
@@ -108,7 +108,13 @@ export default function ListenersTable({ sidecar, onAdd, onEdit, onDelete }) {
                   <Table.Td>
                     <ActionMenu>
                       <ActionMenu.Item onClick={() => onEdit(index)}>Edit</ActionMenu.Item>
-                      <ActionMenu.Item onClick={() => fullPage(listener)}>Edit on full page</ActionMenu.Item>
+                      {/* The route keys on the name, and a listener seeded
+                          from a file may have none — the daemon defaults it to
+                          listener[i] rather than storing one. The modal works
+                          on the position and does not care. */}
+                      {listener.name && (
+                        <ActionMenu.Item onClick={() => fullPage(listener)}>Edit on full page</ActionMenu.Item>
+                      )}
                       <ActionMenu.Divider />
                       <ActionMenu.Item danger onClick={() => onDelete(index)}>
                         Delete
