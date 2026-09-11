@@ -43,6 +43,26 @@ func TestDiscoverGRPCNamesTheGRPCLanesOnAMiss(t *testing.T) {
 	}
 }
 
+// Two grpc-transport lanes sharing a name is a config the loader accepts
+// (their listen addresses differ), but discovery must not resolve it by
+// slice order: the operator is fetching descriptors to PIN, and pinning the
+// wrong upstream's schema is worse than no answer. The error must name both
+// upstreams so the operator sees exactly what collided.
+func TestDiscoverGRPCRefusesAmbiguousLaneNames(t *testing.T) {
+	cfg := &Config{Listeners: []ListenerConfig{
+		{Name: "api", Protocol: "grpc", Listen: "127.0.0.1:8443", Upstream: "svc-a:443"},
+		{Name: "api", Protocol: "spanner", Listen: "127.0.0.1:8444", Upstream: "svc-b:443"},
+	}}
+
+	err := DiscoverGRPC(context.Background(), cfg, "api", "", &strings.Builder{})
+	if err == nil {
+		t.Fatal("a name carried by two lanes was resolved instead of refused")
+	}
+	if !strings.Contains(err.Error(), "svc-a:443") || !strings.Contains(err.Error(), "svc-b:443") {
+		t.Fatalf("the error does not name both candidate upstreams: %v", err)
+	}
+}
+
 func TestDiscoverGRPCSurfacesUpstreamTLSErrors(t *testing.T) {
 	cfg := &Config{Listeners: []ListenerConfig{
 		{Name: "api", Protocol: "grpc", Listen: "127.0.0.1:8443", Upstream: "svc:443",

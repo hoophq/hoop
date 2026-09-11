@@ -955,6 +955,22 @@ func (c *Config) validateLane(lc ListenerConfig, name string) []string {
 				"block with capture_payload: true and descriptors", name, lc.Protocol))
 	}
 
+	// A spanner lane extracts SQL only inside captured request messages
+	// (see grpcRPCState.requestMessage): without capture_payload every
+	// statement a rule sees is the generic RPC-header one, whose Operation
+	// is the method call and whose Tables carry the service name. An
+	// operation or table rule written against the SQL would load, evaluate
+	// and never match a DELETE — the silent failure this package refuses
+	// everywhere else, on the lane whose whole point is reading the SQL.
+	if isSpanner(lc) && anySQLDerived(localRules) &&
+		(lc.GRPC == nil || !lc.GRPC.CapturePayload) {
+		problems = append(problems, fmt.Sprintf(
+			"%s: has operation/table rule(s) on a spanner listener but "+
+				"grpc.capture_payload is not set, so rules would only ever see "+
+				"the generic RPC statement and never the extracted SQL; add a "+
+				"\"grpc\" block with capture_payload: true and descriptors", name))
+	}
+
 	// An ai_analysis rule on an HTTP lane with no body capture classifies
 	// nothing: HTTPBuilder.Build returns ok=false on an empty body, and the
 	// codec leaves Body empty unless the lane asked for it. The rule would
@@ -1040,6 +1056,21 @@ func (c *Config) validateLane(lc ListenerConfig, name string) []string {
 func anyPII(rules []policy.Rule) bool {
 	for _, r := range rules {
 		if r.Type == policy.MatchPII {
+			return true
+		}
+	}
+	return false
+}
+
+// anySQLDerived reports whether a rule set contains matchers that read the
+// classifier's SQL-derived facts — the normalized operation verb or the
+// referenced relations. On a spanner lane those facts exist only in
+// statements extracted from captured payloads, which is what
+// validateLane's capture check keys on.
+func anySQLDerived(rules []policy.Rule) bool {
+	for _, r := range rules {
+		switch r.Type {
+		case policy.MatchOperation, policy.MatchTable:
 			return true
 		}
 	}

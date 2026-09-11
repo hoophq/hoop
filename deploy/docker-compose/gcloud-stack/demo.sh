@@ -150,9 +150,18 @@ if docker compose exec -T client test -f /descriptors/bqstorage.pb; then
     out=$($GRPCURL -plaintext -protoset /descriptors/bqstorage.pb \
         -d '{"writeStream":"projects/demo/datasets/demo_ds/tables/t1/streams/_default"}' \
         hoop-inspect:29060 google.cloud.bigquery.storage.v1.BigQueryWrite/AppendRows 2>&1)
+    rc=$?
     if grep -q "write plane is fenced" <<<"$out"; then
         ok "AppendRows refused with the fence rule's message (licensed build)"
     else
+        # No fence in the answer, so the RPC must have genuinely crossed the
+        # lane: a nonzero grpcurl here is a broken stack (bad descriptors, a
+        # dead emulator), not a pass, and reading it as one would green-light
+        # a demo that proved nothing.
+        if [[ $rc -ne 0 ]]; then
+            printf '%s\n' "$out" | sed 's/^/    /'
+            fail "AppendRows failed (exit $rc) without the fence rule's message"
+        fi
         note "  AppendRows reached the emulator (fence over the limit); it answered:"
         printf '%s\n' "$out" | sed 's/^/    /' | head -4
     fi
@@ -160,8 +169,13 @@ if docker compose exec -T client test -f /descriptors/bqstorage.pb; then
     out=$($GRPCURL -plaintext -protoset /descriptors/bqstorage.pb \
         -d '{"parent":"projects/demo","readSession":{"table":"projects/demo/datasets/demo_ds/tables/t1","dataFormat":"AVRO"}}' \
         hoop-inspect:29060 google.cloud.bigquery.storage.v1.BigQueryRead/CreateReadSession 2>&1)
+    rc=$?
     grep -q "write plane is fenced" <<<"$out" \
         && fail "the write fence caught a READ; the rule is too broad"
+    if [[ $rc -ne 0 ]]; then
+        printf '%s\n' "$out" | sed 's/^/    /'
+        fail "CreateReadSession failed (exit $rc); the read plane should cross the lane"
+    fi
     ok "CreateReadSession crossed the lane; the emulator answered:"
     printf '%s\n' "$out" | sed 's/^/    /' | head -4
 else

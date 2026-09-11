@@ -38,6 +38,16 @@ func DiscoverGRPC(ctx context.Context, cfg *Config, name, out string, w io.Write
 		n := l.displayName(i)
 		grpcNames = append(grpcNames, n)
 		if n == name {
+			// Two lanes carrying one name would leave the choice to slice
+			// order, and discovery would silently dial whichever came last.
+			// The operator is about to pin descriptors from this upstream;
+			// picking one for them is how the wrong schema gets trusted.
+			if lc != nil {
+				return fmt.Errorf(
+					"listener name %q is ambiguous: it names more than one grpc-transport "+
+						"lane (upstreams %s and %s); rename one so -grpc-discover dials "+
+						"the intended upstream", name, lc.Upstream, l.Upstream)
+			}
 			lc = l
 		}
 	}

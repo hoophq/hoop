@@ -125,16 +125,24 @@ note "DELETE FROM songs reaches the emulator as this file ships."
 note "no-destructive-googlesql, the operation rule that would refuse it by"
 note "verb (lexer-derived: delete, drop, unknown), sits commented out in"
 note "spanner/config-spanner.yaml, over the one-guardrail limit"
-note "no-cpf-in-query already spends. Whatever the emulator answers below"
-note "(a missing transaction, an empty table), the frame got through"
-note "policy. Uncomment the rule and free the budget (comment out"
-note "no-cpf-in-query, or set HOOP_LICENSE) and this beat flips to"
-note "PermissionDenied."
+note "no-cpf-in-query already spends. The call carries a read-write"
+note "transaction so the DELETE is valid DML: the beat asserts the RPC"
+note "SUCCEEDED, not merely that no denial string appeared. Uncomment the"
+note "rule and free the budget (comment out no-cpf-in-query, or set"
+note "HOOP_LICENSE) and this beat flips to PermissionDenied."
 note ""
 out=$($GRPCURL -insecure -H 'x-hoop-user: alice' \
-    -d "{\"session\":\"$SESSION\",\"sql\":\"DELETE FROM songs\"}" \
+    -d "{\"session\":\"$SESSION\",\"transaction\":{\"begin\":{\"readWrite\":{}}},\"sql\":\"DELETE FROM songs\"}" \
     envoy:8445 google.spanner.v1.Spanner/ExecuteSql 2>&1)
+rc=$?
 printf '%s\n' "$out" | sed 's/^/  /' | head -6
+# "Reached the emulator" is a claim about the RPC, not about the absence of
+# one string: a dead emulator or a broken session also answers without
+# PermissionDenied, and reading that as a pass proves nothing crossed.
+if [[ $rc -ne 0 ]]; then
+    printf '%s\n' "$out" | sed 's/^/  /'
+    fail "the DELETE failed (exit $rc); it should have reached the emulator and succeeded"
+fi
 grep -q "PermissionDenied" <<<"$out" && fail "the DELETE was refused; no live rule should match it"
 ok "the DELETE reached the emulator (no live rule matched)"
 

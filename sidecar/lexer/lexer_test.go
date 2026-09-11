@@ -886,6 +886,57 @@ func TestGoogleSQLBacktickBackslashEscape(t *testing.T) {
 	}
 }
 
+// GoogleSQL quoted identifiers share the string-literal escape table, so
+// every spelling below names the relation a table policy was written
+// against. A scanner that strips the backslash and keeps the next byte
+// verbatim turns `\x63ustomers` into "x63ustomers" — a two-byte bypass of
+// a rule protecting customers. Each row pins the DECODED relation name.
+func TestGoogleSQLIdentifierEscapesDecode(t *testing.T) {
+	for _, tc := range []struct {
+		sql  string
+		want string
+	}{
+		{"DELETE FROM `a\\\\b`", `a\b`},
+		{"DELETE FROM `a\\nb`", "a\nb"},
+		{"DELETE FROM `a\\tb`", "a\tb"},
+		{"DELETE FROM `a\\'b`", "a'b"},
+		{"DELETE FROM `a\\?b`", "a?b"},
+		{"DELETE FROM `\\x63ustomers`", "customers"},
+		{"DELETE FROM `\\X63ustomers`", "customers"},
+		{"DELETE FROM `\\143ustomers`", "customers"},
+		{"DELETE FROM `\\u0063ustomers`", "customers"},
+		{"DELETE FROM `\\U00000063ustomers`", "customers"},
+		{"DELETE FROM `caf\\u00e9`", "café"},
+	} {
+		a := lexer.Analyze(tc.sql, lexer.GoogleSQL)
+		if got := writes(a); !slices.Equal(got, []string{tc.want}) {
+			t.Errorf("writes = %q, want [%q]: %s", got, tc.want, tc.sql)
+		}
+		if !a.Complete {
+			t.Errorf("Complete = false (%s): %s", a.Reason, tc.sql)
+		}
+	}
+}
+
+// An escape GoogleSQL does not define never yields a guessed byte: the
+// relation it would name is one nobody could have written a rule against,
+// so the only honest answer is Complete=false and a caller failing closed.
+func TestGoogleSQLInvalidIdentifierEscapesFailClosed(t *testing.T) {
+	for _, sql := range []string{
+		"SELECT x FROM `a\\qb`",         // no such named escape
+		"SELECT x FROM `a\\x6z`",        // hex escape cut short
+		"SELECT x FROM `a\\x6`",         // hex escape ends at the close
+		"SELECT x FROM `a\\400b`",       // octal beyond one byte
+		"SELECT x FROM `a\\18b`",        // octal with a non-octal digit
+		"SELECT x FROM `a\\uD800b`",     // a lone surrogate is not a rune
+		"SELECT x FROM `a\\U00110000b`", // beyond the last code point
+	} {
+		if a := lexer.Analyze(sql, lexer.GoogleSQL); a.Complete {
+			t.Errorf("Complete = true on an invalid identifier escape: %s", sql)
+		}
+	}
+}
+
 // The load-bearing GoogleSQL case. In r'...' a backslash is an ordinary
 // byte, so r'\' is a complete literal holding one backslash. A scanner that
 // honours the escape swallows the terminator, the literal runs to the next

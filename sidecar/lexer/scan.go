@@ -1,6 +1,9 @@
 package lexer
 
-import "strings"
+import (
+	"strings"
+	"unicode/utf8"
+)
 
 // Kind classifies a token. The distinction that matters most is Word versus
 // Quoted: `DELETE FROM "select"` names a table, and a scanner that folds a
@@ -477,13 +480,13 @@ func (s *scanner) delimitedIdent(open, close byte) Token {
 	for s.pos < len(s.src) {
 		c := s.src[s.pos]
 		if backslashEscape && c == '\\' && s.pos+1 < len(s.src) {
-			// The byte after the backslash is kept verbatim, which is
-			// exact for \` and \\ — the escapes a NAME needs — and
-			// close enough for the exotic ones (\n and friends), where
-			// fidelity of unprintable bytes in a relation name buys
-			// nothing a policy could match on.
-			b.WriteByte(s.src[s.pos+1])
-			s.pos += 2
+			// GoogleSQL quoted identifiers share the string-literal
+			// escape table, so `\x63ustomers` and `customers` spell the
+			// SAME relation. Decode every escape to its actual bytes:
+			// keeping the byte after the backslash verbatim would hand
+			// policy a name like "x63ustomers" that nothing was written
+			// against, which is a bypass spelled with two extra bytes.
+			s.identEscape(&b)
 			continue
 		}
 		if c == close {
@@ -500,6 +503,117 @@ func (s *scanner) delimitedIdent(open, close byte) Token {
 	}
 	s.fail("unterminated quoted identifier")
 	return Token{Kind: Quoted, Text: b.String()}
+}
+
+// identEscape decodes one GoogleSQL escape sequence — the backslash sits at
+// s.pos and at least one byte follows — appending the decoded bytes to b
+// and advancing past the sequence. The table is GoogleSQL's string-literal
+// one: the named escapes, \ooo octal (three digits, at most \377), \xhh,
+// and the \uhhhh / \Uhhhhhhhh code points. An escape the dialect does not
+// define fails the scan instead of guessing: an invented byte here becomes
+// a relation name policy silently stops matching.
+func (s *scanner) identEscape(b *strings.Builder) {
+	c := s.src[s.pos+1]
+	switch c {
+	case 'a':
+		b.WriteByte('\a')
+	case 'b':
+		b.WriteByte('\b')
+	case 'f':
+		b.WriteByte('\f')
+	case 'n':
+		b.WriteByte('\n')
+	case 'r':
+		b.WriteByte('\r')
+	case 't':
+		b.WriteByte('\t')
+	case 'v':
+		b.WriteByte('\v')
+	case '\\', '?', '"', '\'', '`':
+		b.WriteByte(c)
+	case 'x', 'X':
+		if v, ok := s.hexDigits(s.pos+2, 2); ok {
+			b.WriteByte(byte(v))
+			s.pos += 4
+			return
+		}
+		s.fail("invalid hex escape in quoted identifier")
+		s.pos += 2
+		return
+	case 'u':
+		if v, ok := s.hexDigits(s.pos+2, 4); ok && utf8.ValidRune(rune(v)) {
+			b.WriteRune(rune(v))
+			s.pos += 6
+			return
+		}
+		s.fail("invalid unicode escape in quoted identifier")
+		s.pos += 2
+		return
+	case 'U':
+		if v, ok := s.hexDigits(s.pos+2, 8); ok && v <= utf8.MaxRune && utf8.ValidRune(rune(v)) {
+			b.WriteRune(rune(v))
+			s.pos += 10
+			return
+		}
+		s.fail("invalid unicode escape in quoted identifier")
+		s.pos += 2
+		return
+	case '0', '1', '2', '3', '4', '5', '6', '7':
+		v := 0
+		for i := 1; i <= 3; i++ {
+			d := s.peek(i)
+			if d < '0' || d > '7' {
+				s.fail("invalid octal escape in quoted identifier")
+				s.pos += 2
+				return
+			}
+			v = v<<3 | int(d-'0')
+		}
+		// Three digits reach \777; GoogleSQL stops the escape at one
+		// byte, so \400 and up is not a longer number, it is invalid.
+		if v > 0xFF {
+			s.fail("invalid octal escape in quoted identifier")
+			s.pos += 2
+			return
+		}
+		b.WriteByte(byte(v))
+		s.pos += 4
+		return
+	default:
+		s.fail("invalid escape in quoted identifier")
+		s.pos += 2
+		return
+	}
+	s.pos += 2
+}
+
+// hexDigits reads exactly n hex digits starting at pos, reporting failure
+// when the input ends first or a byte is not a hex digit.
+func (s *scanner) hexDigits(pos, n int) (uint32, bool) {
+	if pos+n > len(s.src) {
+		return 0, false
+	}
+	var v uint32
+	for i := 0; i < n; i++ {
+		d := hexVal(s.src[pos+i])
+		if d < 0 {
+			return 0, false
+		}
+		v = v<<4 | uint32(d)
+	}
+	return v, true
+}
+
+func hexVal(c byte) int {
+	switch {
+	case c >= '0' && c <= '9':
+		return int(c - '0')
+	case c >= 'a' && c <= 'f':
+		return int(c-'a') + 10
+	case c >= 'A' && c <= 'F':
+		return int(c-'A') + 10
+	}
+	return -1
 }
 
 // dollarString consumes $$...$$ or $tag$...$tag$.
