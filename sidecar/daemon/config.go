@@ -104,7 +104,14 @@ type Config struct {
 	// License is a path to the document Hoop issued, or the document
 	// itself: a value starting with "{" is the document, so moving one
 	// between a mounted file and a secret is not also a rename. Lowest
-	// precedence of the three sources; ResolveLicense holds the order.
+	// precedence of the local sources, and all of them rank below a
+	// control plane that sends one; resolveLicense holds the order.
+	//
+	// It is also the key the control plane's own license arrives in: the
+	// plane writes the organization's document here on the way out, rather
+	// than beside it, because this process decodes the answer with
+	// DisallowUnknownFields. resolveConfigSource moves it off the Config
+	// as soon as it lands, so the two never read as one source.
 	License string `json:"license,omitempty"`
 
 	// ControlPlaneURL is the Control Plane this sidecar connects to. Empty
@@ -128,7 +135,7 @@ type Config struct {
 	// three have to report the same thing.
 	Deprecations []string `json:"-"`
 
-	// lic is the VERIFIED license ResolveLicense reached. Setup fills it,
+	// lic is the VERIFIED license resolveLicense reached. Setup fills it,
 	// UseLicense sets it for a caller assembling a Config in Go. Not a
 	// config key: the file names a license and does not carry a verdict.
 	// The zero value is missing, so an embedder who skips it keeps the caps.

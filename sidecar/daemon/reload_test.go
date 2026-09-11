@@ -2,12 +2,15 @@ package daemon
 
 import (
 	"bytes"
+	"encoding/json"
 	"log/slog"
 	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
 
+	"github.com/hoophq/hoop/sidecar/license"
+	"github.com/hoophq/hoop/sidecar/license/licensetest"
 	"github.com/hoophq/hoop/sidecar/proxy"
 )
 
@@ -62,7 +65,7 @@ func testReloader(t *testing.T, raw string) (*reloader, *bytes.Buffer) {
 	}
 	view := &atomic.Pointer[laneState]{}
 	view.Store(&laneState{lanes: lanes})
-	rl, err := newReloader(cfg, lanes, servers, nil, nil, view)
+	rl, err := newReloader(cfg, lanes, servers, nil, nil, view, newLicenseState(cfg.lic, cfg.dependsOnLicense()))
 	if err != nil {
 		t.Fatalf("newReloader: %v", err)
 	}
@@ -266,5 +269,91 @@ func TestAnUntouchedLaneKeepsItsRunningEvaluators(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), "kept=1") {
 		t.Errorf("the applied line does not count the kept lane:\n%s", buf)
+	}
+}
+
+// withLicense renders the base document carrying a license, the way the
+// gateway serves the organization's.
+func withLicense(t *testing.T, doc, licenseDoc string) string {
+	t.Helper()
+	quoted, err := json.Marshal(licenseDoc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return editJSON(t, doc, `"log_level": "info"`, `"log_level": "info", "license": `+string(quoted))
+}
+
+// An admin renews the license in the control plane. The sidecar adopts it on
+// the next heartbeat: no restart, and the lanes keep serving. This is the case
+// the feature exists for -- a fleet whose license is edited in one place.
+func TestARotatedLicenseIsAdoptedWithoutARestart(t *testing.T) {
+	rl, buf := testReloader(t, reloadBase)
+	doc := licensetest.Document(t, licensetest.Enterprise())
+
+	if got := applyWith(rl, buf, withLicense(t, reloadBase, doc)); got != reloadApplied {
+		t.Fatalf("outcome = %v, want applied; log:\n%s", got, buf)
+	}
+	if got := rl.lic.get().State(); got != license.StateValid {
+		t.Fatalf("license state = %q, want valid; log:\n%s", got, buf)
+	}
+	if got := rl.lic.get().Source; got != PlaneLicenseSource {
+		t.Errorf("license source = %q, want %q", got, PlaneLicenseSource)
+	}
+}
+
+// A license the trust root refuses must not also freeze the rules: the
+// running license stays and the rest of the document is applied.
+func TestARefusedLicenseKeepsTheOneInUse(t *testing.T) {
+	rl, buf := testReloader(t, reloadBase)
+	// Signed, then tampered: a real forgery rather than malformed JSON.
+	// The payload no longer matches the signature over it.
+	signed := licensetest.Document(t, licensetest.Enterprise())
+	forged := strings.Replace(signed, "Acme Corp", "Forged Corp", 1)
+	if forged == signed {
+		t.Fatal("test bug: the document was not tampered with")
+	}
+
+	if got := applyWith(rl, buf, withLicense(t, reloadBase, forged)); got != reloadApplied {
+		t.Fatalf("outcome = %v, want applied; log:\n%s", got, buf)
+	}
+	if got := rl.lic.get().State(); got == license.StateValid {
+		t.Error("a forged license was adopted")
+	}
+	if !strings.Contains(buf.String(), "keeping the license in use") {
+		t.Errorf("the refusal was not logged:\n%s", buf)
+	}
+}
+
+// The expiry watchdog only stops a process that would lose something, and
+// what it would lose changes with the rules. A reload that pushes the config
+// past the free tier has to say so, or a term ending later takes nothing
+// away from a config that now depends on it.
+func TestAnAppliedReloadPublishesWhetherTheConfigNeedsALicense(t *testing.T) {
+	rl, buf := testReloader(t, reloadBase)
+	if rl.lic.depends.Load() {
+		t.Fatal("the base config fits the free tier; it must not depend on a license")
+	}
+	doc := licensetest.Document(t, licensetest.Enterprise())
+
+	// Enough guardrail rules to exceed the free tier cap, so the config
+	// stops being one the free tier would serve.
+	overCapRules := `"rules": [
+      {"name": "r0", "type": "deny_words_list", "words": ["drop table"]},
+      {"name": "r1", "type": "deny_words_list", "words": ["truncate"]},
+      {"name": "r2", "type": "deny_words_list", "words": ["delete from"]},
+      {"name": "r3", "type": "deny_words_list", "words": ["alter table"]},
+      {"name": "r4", "type": "deny_words_list", "words": ["grant"]},
+      {"name": "r5", "type": "deny_words_list", "words": ["revoke"]}
+    ]`
+	drifted := editJSON(t, withLicense(t, reloadBase, doc),
+		`"rules": [
+      {"name": "r0", "type": "deny_words_list", "words": ["drop table"]}
+    ]`, overCapRules)
+
+	if got := applyWith(rl, buf, drifted); got != reloadApplied {
+		t.Fatalf("outcome = %v, want applied; log:\n%s", got, buf)
+	}
+	if !rl.lic.depends.Load() {
+		t.Error("the reloaded config exceeds the free tier and was not reported as needing a license")
 	}
 }

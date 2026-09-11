@@ -83,7 +83,7 @@ func TestTheWatchdogFiresWhenTheTermEnds(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	expired := watchLicense(ctx, expiredIn(t, -time.Second), time.Millisecond, log)
+	expired := watchLicense(ctx, newLicenseState(expiredIn(t, -time.Second), true), time.Millisecond, log)
 
 	select {
 	case <-expired:
@@ -102,7 +102,7 @@ func TestTheWatchdogWaitsWhileTheTermRuns(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	expired := watchLicense(ctx, expiredIn(t, time.Hour), time.Millisecond, newTestLogger(&bytes.Buffer{}))
+	expired := watchLicense(ctx, newLicenseState(expiredIn(t, time.Hour), true), time.Millisecond, newTestLogger(&bytes.Buffer{}))
 
 	select {
 	case <-expired:
@@ -115,7 +115,7 @@ func TestTheWatchdogWaitsWhileTheTermRuns(t *testing.T) {
 // context ends, so Run reports a signal as a signal and exits zero.
 func TestTheWatchdogIsSilentOnShutdown(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	expired := watchLicense(ctx, expiredIn(t, time.Hour), time.Hour, newTestLogger(&bytes.Buffer{}))
+	expired := watchLicense(ctx, newLicenseState(expiredIn(t, time.Hour), true), time.Hour, newTestLogger(&bytes.Buffer{}))
 	cancel()
 
 	select {
