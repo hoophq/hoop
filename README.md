@@ -89,9 +89,15 @@ listeners:
 ## Run
 
 ```bash
+hoop start sidecar                                # no config: a built-in default
 hoop start sidecar --config config.yaml           # start
 hoop start sidecar --config config.yaml --validate # check the config, then exit
 ```
+
+With no config at all, the sidecar starts anyway: one loopback URL that
+forwards to the [getting-started guide](https://hoop.dev/docs). It inspects
+no traffic — it exists so your first run works — and the terminal says how
+to replace it with a real config.
 
 Point your agent at `127.0.0.1:15432` instead of the database. Your agents change one thing: the port in their connection string. The sidecar runs next to your database, not in place of it.
 

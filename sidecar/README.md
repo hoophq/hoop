@@ -284,6 +284,15 @@ and the extension picks the parser: `.yaml` and `.yml` go through the nested
 `config/yaml` module, anything else is read as JSON. Decoding is strict, so a
 mistyped key fails the startup instead of silently disabling a control.
 
+Run with no config at all — no file, no flags, no control plane — and a
+built-in default starts instead of a usage error: one loopback HTTP
+listener (port 15321, or a free one when that is taken) answering every
+request with a redirect to the getting-started guide at
+https://hoop.dev/docs. It is not a relay lane: no codec, no policy, no
+audit. It exists so the first run after the install shows a working URL
+and a next step, and the banner says exactly that. Any flag keeps the
+usage error, and a config file replaces the default entirely.
+
 ### What this build limits, and the license that lifts it
 
 Unlicensed, one guardrail rule and one data masking rule, for the whole

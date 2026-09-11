@@ -190,10 +190,9 @@ var ErrUsage = errors.New("usage")
 //
 // Usage:
 //
+//	hoop-inspect                    (no config: first-run default, see FirstRun)
 //	hoop-inspect -config /etc/hoop-inspect/config.yaml
-//	hoop-inspect -config config.yaml -license /etc/hoop-inspect/license.json
-//	hoop-inspect -validate -config config.yaml   # check and exit
-//	hoop-inspect -grpc-discover api -grpc-discover-out api.pb -config config.yaml
+//	hoop-inspect -validate -config config.yaml
 //	hoop-inspect -version
 func Main(version string, load Loader, build PluginBuilder) error {
 	Version = version
@@ -237,6 +236,16 @@ func Main(version string, load Loader, build PluginBuilder) error {
 		return nil
 	}
 	if *configPath == "" && os.Getenv(ControlPlaneURLEnv) == "" {
+		// A truly bare invocation — no config source and no flag asking for
+		// anything — runs the first-run default instead of erroring, so a
+		// user's first contact after the install is a working URL rather
+		// than a usage message. Any flag at all keeps the old error: a
+		// -validate or -token without a config is a mistake to report, not
+		// a request for the demo.
+		if !*validate && !*strict && *grpcDiscover == "" && *grpcDiscoverOut == "" &&
+			*licenseRef == "" && *tokenRef == "" {
+			return FirstRun(os.Stdout, "hoop-inspect -config config.yaml")
+		}
 		fs.Usage()
 		return fmt.Errorf("%w: -config is required unless %s is set", ErrUsage, ControlPlaneURLEnv)
 	}

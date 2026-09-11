@@ -73,3 +73,35 @@ func TestSidecarConfigFromEnv(t *testing.T) {
 		})
 	}
 }
+
+func TestSidecarBareInvocation(t *testing.T) {
+	// The gate reads package-level flag variables; save and restore them so
+	// this test composes with any other that touches the command.
+	restore := func(validate, strict bool, lic, tok string) {
+		sidecarValidateFlag, sidecarStrictFlag = validate, strict
+		sidecarLicenseFlag, sidecarTokenFlag = lic, tok
+	}
+	defer restore(sidecarValidateFlag, sidecarStrictFlag, sidecarLicenseFlag, sidecarTokenFlag)
+
+	for _, tt := range []struct {
+		msg      string
+		validate bool
+		strict   bool
+		license  string
+		token    string
+		want     bool
+	}{
+		{msg: "nothing at all is bare", want: true},
+		{msg: "--validate keeps the usage error", validate: true},
+		{msg: "--strict keeps the usage error", strict: true},
+		{msg: "--license keeps the usage error", license: "/lic.json"},
+		{msg: "--token keeps the usage error", token: "hsc_x"},
+	} {
+		t.Run(tt.msg, func(t *testing.T) {
+			restore(tt.validate, tt.strict, tt.license, tt.token)
+			if got := sidecarBareInvocation(); got != tt.want {
+				t.Fatalf("got %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
