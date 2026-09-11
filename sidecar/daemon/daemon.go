@@ -193,6 +193,7 @@ var ErrUsage = errors.New("usage")
 //	hoop-inspect                    (no config: first-run default, see FirstRun)
 //	hoop-inspect -config /etc/hoop-inspect/config.yaml
 //	hoop-inspect -validate -config config.yaml
+//	hoop-inspect -migrate -config config.yaml -migrate-out config-new.yaml
 //	hoop-inspect -version
 func Main(version string, load Loader, build PluginBuilder) error {
 	Version = version
@@ -216,6 +217,11 @@ func Main(version string, load Loader, build PluginBuilder) error {
 		validate     = fs.Bool("validate", false, "validate the config and exit")
 		strict       = fs.Bool("strict", false, "treat a deprecated config field as an error")
 		showVer      = fs.Bool("version", false, "print the version and exit")
+		migrate = fs.Bool("migrate", false, "rewrite the config onto the current schema, "+
+			"print it, and exit; deprecated fields are folded and ai_analysis rules "+
+			"become listener analyzer blocks where the move is faithful")
+		migrateOut = fs.String("migrate-out", "", "file -migrate writes to instead of "+
+			"stdout; its extension picks the syntax, defaulting to the input's")
 		grpcDiscover = fs.String("grpc-discover", "", "name of a grpc or spanner listener: "+
 			"fetch its upstream's descriptor set over gRPC server reflection, print every "+
 			"method with its maskable field paths, and exit")
@@ -234,6 +240,36 @@ func Main(version string, load Loader, build PluginBuilder) error {
 	if *showVer {
 		fmt.Println("hoop-inspect", version)
 		return nil
+	}
+
+	if *migrate {
+		if *configPath == "" {
+			fs.Usage()
+			return fmt.Errorf("%w: -migrate needs -config", ErrUsage)
+		}
+		if load == nil {
+			load = LoadConfig
+		}
+		cfg, err := load(*configPath)
+		if err != nil {
+			return err
+		}
+		out := os.Stdout
+		if *migrateOut != "" {
+			f, err := os.Create(*migrateOut)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+			out = f
+		}
+		// The destination's extension picks the syntax; stdout inherits
+		// the input's, so `-migrate -config config.yaml` prints YAML.
+		target := *migrateOut
+		if target == "" {
+			target = *configPath
+		}
+		return WriteMigrated(cfg, isYAMLPath(target), out, os.Stderr)
 	}
 	if *configPath == "" && os.Getenv(ControlPlaneURLEnv) == "" {
 		// A truly bare invocation — nothing typed at all — runs the

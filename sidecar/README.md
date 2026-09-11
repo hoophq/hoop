@@ -494,6 +494,23 @@ that already holds every entity type. Nothing that worked stops working.
 `hoop-inspect -validate -strict` exits non-zero on any deprecation, so a
 pipeline can fail on the old spelling before the release that removes it does.
 
+`hoop-inspect -migrate` rewrites the file for you:
+
+```bash
+hoop-inspect -migrate -config config.yaml -migrate-out config-new.yaml
+```
+
+It loads the config through the same strict decoder the daemon uses, folds
+every renamed field above onto its replacement, moves `type: ai_analysis`
+rules onto listener `analyzer` blocks where the move is faithful (see
+"Migrating from `type: ai_analysis` rules" below), and emits a document that
+passes `-validate -strict`. The report on stderr names everything it moved
+and everything it left for you: a lane carrying two ai rules, or a top-level
+rule some lane cannot absorb, keeps the rule form with a note instead of a
+guess. The output's extension picks the syntax (stdout inherits the input's),
+and comments and key order from the original are not preserved — review the
+diff before deploying. `hoop start sidecar --migrate` is the same command.
+
 ### 1. Write the file
 
 Top-level `policy` and `mask` are DEFAULTS. Each listener is one upstream, and
@@ -1006,8 +1023,10 @@ path, and prints a deprecation naming its replacement (`-strict` turns the
 warning into a non-zero exit). Both spellings can serve one lane while you
 migrate, each as its own evaluator.
 
-Move the rule's fields onto the listener's `analyzer` block; they keep their
-names:
+`hoop-inspect -migrate -config old.yaml -migrate-out new.yaml` does the move
+below mechanically, refuses to guess where it would be lossy, and reports
+what is left; the rest of this section is what it does and why. Move the
+rule's fields onto the listener's `analyzer` block; they keep their names:
 
 ```yaml
 # before

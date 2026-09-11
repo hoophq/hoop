@@ -348,7 +348,12 @@ type GuardrailsConfig struct {
 
 	// Rules is the local rule set, evaluated first so a statement the
 	// local rules already forbid costs no network round trip.
-	Rules []policy.Rule `json:"rules,omitempty"`
+	//
+	// No omitempty: an explicitly empty list is a listener's opt-out from
+	// inherited rules (resolve reads nil and [] differently), and omitempty
+	// would marshal both as absence. A nil set marshals as null, which every
+	// consumer reads back as nil.
+	Rules []policy.Rule `json:"rules"`
 }
 
 // enforcing reports whether a resolved lane denies what its rules match.
