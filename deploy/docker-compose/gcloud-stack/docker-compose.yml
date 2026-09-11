@@ -1,0 +1,162 @@
+# Google Cloud emulator topology, fully local and Envoy-free.
+#
+#   grpcurl ──h2c──> hoop-inspect :29010 ──h2c──> spanner:9010   (Cloud Spanner emulator)
+#   grpcurl ──h2c──> hoop-inspect :29060 ──h2c──> bigquery:9060  (BigQuery Storage emulator)
+#
+# The claim under test is the sidecar's GoogleSQL scanner: the spanner lane
+# extracts the SQL out of Spanner RPC payloads (ExecuteSql and friends),
+# classifies it with the googlesql lexer dialect, and the operation guardrail
+# refuses a DELETE the emulator never sees. envoy-stack already demonstrates
+# fronting; putting Envoy here would only obscure which hop refused.
+#
+# Bring up:  ./run.sh   (it bootstraps /descriptors over gRPC reflection
+#                        before the sidecar starts; see run.sh for why)
+
+name: hoop-gcloud-stack
+
+services:
+  # The Cloud Spanner emulator: gRPC on 9010, a REST admin gateway on 9020.
+  # Both stay off the host on purpose: ./demo.sh reaches the data plane
+  # only through the sidecar, and the REST gateway only for setup (creating
+  # the instance and database).
+  #
+  # No healthcheck: the image is shell-less, so there is nothing to exec.
+  # run.sh waits for the REST gateway from the client container instead.
+  #
+  # The emulator speaks h2c and authenticates nobody, so the sidecar lane
+  # carries no TLS on either hop (see sidecar/config.yaml).
+  spanner:
+    image: gcr.io/cloud-spanner-emulator/emulator
+    networks: [inspect]
+
+  # goccy's BigQuery emulator: the jobs/query REST API on 9050, the Storage
+  # API (the gRPC plane) on 9060. Only 9060 matters here: the bqstorage
+  # lane below is a plain grpc lane in front of it. The REST port exists so
+  # run.sh can probe liveness; BigQuery's REST query path is HTTP, not gRPC,
+  # and out of this stack's scope.
+  #
+  # Shell-less like the spanner image, so again no compose healthcheck.
+  # If the registry lacks an image for the host architecture, add
+  # `platform: linux/amd64` here.
+  bigquery:
+    image: ghcr.io/goccy/bigquery-emulator:latest
+    networks: [inspect]
+    command:
+      - --project=demo
+      - --dataset=demo_ds
+      - --port=9050
+      - --grpc-port=9060
+
+  # Stands in for the sandbox, and doubles as the stack's probe: the
+  # emulator images carry no shell or curl, so every "is it up yet" and
+  # every REST admin call in run.sh/demo.sh runs from here. It mounts the
+  # descriptor volume read-only so demo.sh can ask "did bqstorage discovery
+  # produce a protoset" without needing a shell in the grpcurl image.
+  client:
+    image: alpine:3.20
+    networks: [inspect]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - apk add --no-cache curl >/dev/null
+        && exec sleep infinity
+    volumes:
+      - descriptors:/descriptors:ro
+    healthcheck:
+      test: ["CMD-SHELL", "command -v curl"]
+      interval: "3s"
+      timeout: "10s"
+      retries: 20
+      start_period: "10s"
+
+  # The hoop-inspect sidecar. Same image recipe as envoy-stack: the build
+  # points at the Dockerfile there, so the two stacks cannot drift apart.
+  # The tag differs (hoop-inspect:gcloud) because this stack needs a build
+  # carrying the spanner protocol; reusing envoy-stack's cached
+  # hoop-inspect:local could hand us a binary without it.
+  hoop-inspect:
+    image: hoop-inspect:gcloud
+    build:
+      context: ../../../sidecar
+      dockerfile: ../deploy/docker-compose/envoy-stack/sidecar/Dockerfile
+      # sidecar's codecs live in libhoop, a private module. This stack
+      # builds from the local tree rather than the proxy, so libhoop comes
+      # from the local checkout too. A second context keeps the main one
+      # small instead of shipping the whole repo to the daemon.
+      additional_contexts:
+        libhoop: ../../../libhoop
+    networks: [inspect]
+    volumes:
+      - ./sidecar/config.yaml:/etc/hoop-inspect/config.yaml:ro
+      # Mounted permanently, used only by run.sh's bootstrap:
+      #   docker compose run --rm hoop-inspect -grpc-discover ... \
+      #     -config /etc/hoop-inspect/config-discover.yaml
+      # It is the same lanes minus grpc: blocks and guardrails, so a
+      # missing descriptor file cannot block the very run that fetches it.
+      - ./sidecar/config-discover.yaml:/etc/hoop-inspect/config-discover.yaml:ro
+      # A named volume, not a bind mount: run.sh fills it over gRPC server
+      # reflection (-grpc-discover) before the daemon starts, and the
+      # spanner lane refuses to start without its pinned descriptor set;
+      # runtime lanes never touch reflection (ADR-0013).
+      - descriptors:/descriptors
+    environment:
+      # Pass-through for a licensed operator. The free tier enforces ONE
+      # guardrail rule for the whole process, and sidecar/config.yaml
+      # spends it on the spanner lane's operation rule; the bqstorage
+      # write-plane fence ships commented out beside it, over the limit.
+      HOOP_LICENSE: ${HOOP_LICENSE:-}
+    ports:
+      # Data lanes on the host for playing along from a laptop; demo.sh
+      # itself stays on the compose network.
+      - "29010:29010" # spanner lane
+      - "29060:29060" # bqstorage lane
+      # Admin: /healthz, /stats, /config and the audit query API. 19001 on
+      # the host so this stack coexists with envoy-stack's :19000.
+      - "19001:19000"
+    depends_on:
+      # Neither emulator image can carry a healthcheck (no shell), so
+      # service_started is the strongest condition available; run.sh does
+      # the real readiness wait through the client container.
+      spanner: { condition: service_started }
+      bigquery: { condition: service_started }
+      client: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:19000/healthz || exit 1"]
+      interval: "2s"
+      timeout: "10s"
+      retries: 15
+      start_period: "5s"
+
+  # A client for the data lanes, run on demand:
+  #   docker compose run --rm grpcurl -plaintext \
+  #     -protoset /descriptors/spanner.pb \
+  #     -d '{"database":"..."}' hoop-inspect:29010 \
+  #     google.spanner.v1.Spanner/CreateSession
+  # -protoset because the calls should not depend on reflection being
+  # proxied through the lane; the client reads the same descriptor set the
+  # sidecar pinned, which is also the proof the bootstrap produced one.
+  grpcurl:
+    image: fullstorydev/grpcurl:latest
+    profiles: [cli]
+    networks: [inspect]
+    volumes:
+      - descriptors:/descriptors:ro
+
+  # Descriptor builder for run.sh's fallback path. The Cloud Spanner
+  # emulator serves no gRPC reflection, so -grpc-discover cannot bootstrap
+  # /descriptors against it; run.sh then has buf build the set from the
+  # public googleapis tree, filtered to the Spanner and BigQuery Storage
+  # APIs. Root because the named volume arrives root-owned; run.sh chmods
+  # the artifact readable afterwards, same as the discovery path.
+  buf:
+    image: bufbuild/buf:1.50.0
+    profiles: [tools]
+    user: "0"
+    networks: [inspect]
+    volumes:
+      - descriptors:/descriptors
+
+networks:
+  inspect:
+
+volumes:
+  descriptors:

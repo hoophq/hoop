@@ -433,11 +433,12 @@ func TestAnalyzeDoesNotPanic(t *testing.T) {
 	for _, sql := range []string{
 		"", " ", ";", "(", ")", "'", `"`, "$", "$$", "--", "/*", "*/",
 		"`", "``", "#", "-", `'a\`, "`a``",
+		"r'", `rb"`, "'''", `"""`, "r'''", "@", "@{", "@{}",
 		"with", "with as", "with x as", "select from", "delete from",
 		strings.Repeat("(", 200), strings.Repeat(")", 200),
 		strings.Repeat("with x as (", 50),
 	} {
-		for _, d := range []lexer.Dialect{lexer.Postgres, lexer.MSSQL, lexer.MySQL} {
+		for _, d := range []lexer.Dialect{lexer.Postgres, lexer.MSSQL, lexer.MySQL, lexer.GoogleSQL} {
 			lexer.Analyze(sql, d)
 			lexer.Split(sql, d)
 		}
@@ -829,5 +830,266 @@ func TestMySQLBackslashLiteralStaysLiteral(t *testing.T) {
 	}
 	if !a.Complete {
 		t.Errorf("Complete = false (%s) on an ordinary backslash literal", a.Reason)
+	}
+}
+
+// GoogleSQL makes '"' a STRING delimiter, interchangeable with the single
+// quote, and spells its identifiers with backticks. Reading "..." under the
+// PostgreSQL rule closes the "identifier" at an escaped quote and scans the
+// literal's TAIL as live SQL — a delete nobody wrote, refused by a lane that
+// should have forwarded a select.
+func TestGoogleSQLDoubleQuoteIsAString(t *testing.T) {
+	for _, sql := range []string{
+		`SELECT "a\";DELETE FROM customers;--"`,
+		`SELECT ";DELETE FROM customers;"`,
+	} {
+		a := lexer.Analyze(sql, lexer.GoogleSQL)
+		if a.Writes() {
+			t.Errorf("string content executed as live SQL: effects=%v rels=%v: %s", a.Effects, a.Relations, sql)
+		}
+		if got := a.Severity(); got != lexer.Select {
+			t.Errorf("Severity() = %q, want select: %s", got, sql)
+		}
+		if len(a.Relations) != 0 {
+			t.Errorf("relations = %v, want none; the literal leaked a name: %s", a.Relations, sql)
+		}
+		if !a.Complete {
+			t.Errorf("Complete = false (%s): %s", a.Reason, sql)
+		}
+	}
+
+	// The negative control: Postgres must keep reading "..." as a quoted
+	// identifier, or `DELETE FROM "select"` loses its relation.
+	pg := lexer.Analyze(`DELETE FROM "customers"`, lexer.Postgres)
+	if got := writes(pg); !slices.Equal(got, []string{"customers"}) {
+		t.Errorf("postgres writes = %v, want [customers]", got)
+	}
+}
+
+// GoogleSQL escapes a backtick inside an identifier with a BACKSLASH, not
+// MySQL's doubling. Under the MySQL rule `a\`b` ends at the escaped backtick
+// and the stray tail re-opens quoting over whatever follows.
+func TestGoogleSQLBacktickBackslashEscape(t *testing.T) {
+	a := lexer.Analyze("DELETE FROM `a\\`b`", lexer.GoogleSQL)
+	if got := writes(a); !slices.Equal(got, []string{"a`b"}) {
+		t.Errorf("writes = %v, want [a`b]; the backslash escape was not honoured", got)
+	}
+	if !a.Complete {
+		t.Errorf("Complete = false (%s)", a.Reason)
+	}
+
+	// MySQL's doubling must survive this flag existing: the two escape
+	// styles are per-dialect rows, not a global change of mind.
+	my := lexer.Analyze("DELETE FROM `cust``omers`", lexer.MySQL)
+	if got := writes(my); !slices.Equal(got, []string{"cust`omers"}) {
+		t.Errorf("mysql writes = %v, want [cust`omers]", got)
+	}
+}
+
+// The load-bearing GoogleSQL case. In r'...' a backslash is an ordinary
+// byte, so r'\' is a complete literal holding one backslash. A scanner that
+// honours the escape swallows the terminator, the literal runs to the next
+// quote, and the DELETE between them is never analyzed — a statement
+// executing unseen, the misread class this dialect exists to prevent.
+func TestGoogleSQLRawStringDoesNotSwallowTheNextStatement(t *testing.T) {
+	for _, sql := range []string{
+		`SELECT r'\'; DELETE FROM customers; --'`,
+		// The byte-raw spellings share the raw rule, in either order.
+		`SELECT rb'\'; DELETE FROM customers; --'`,
+		`SELECT br"\"; DELETE FROM customers; --"`,
+	} {
+		if got := lexer.Split(sql, lexer.GoogleSQL); len(got) < 2 {
+			t.Errorf("Split = %q, want the DELETE as its own statement: %s", got, sql)
+		}
+		a := lexer.Analyze(sql, lexer.GoogleSQL)
+		if got := writes(a); !slices.Equal(got, []string{"customers"}) {
+			t.Errorf("writes = %v, want [customers]; the raw literal ate the DELETE: %s", got, sql)
+		}
+	}
+
+	// The same bytes WITHOUT the prefix honour the escape, so the literal
+	// really does run on and the statement is one harmless select. The
+	// prefix alone decides where the literal ends.
+	plain := lexer.Analyze(`SELECT 'a\'; DELETE FROM customers; --'`, lexer.GoogleSQL)
+	if plain.Writes() {
+		t.Errorf("escaped literal executed its content: effects=%v rels=%v", plain.Effects, plain.Relations)
+	}
+	if !plain.Complete {
+		t.Errorf("Complete = false (%s); the default escape reading is unambiguous", plain.Reason)
+	}
+}
+
+// An unterminated raw string is a truncated statement: what follows the
+// missing quote is unknown, and the only honest answer is Complete=false.
+func TestGoogleSQLUnterminatedRawStringFailsClosed(t *testing.T) {
+	for _, sql := range []string{
+		`SELECT r'abc`,
+		`SELECT rb"abc`,
+		`SELECT r'''abc`,
+	} {
+		if a := lexer.Analyze(sql, lexer.GoogleSQL); a.Complete {
+			t.Errorf("Complete = true on an unterminated raw string: %s", sql)
+		}
+	}
+}
+
+// A triple-quoted body is data. It may contain bare quotes, so a scanner
+// without the form closes the literal two quotes early and classifies its
+// BODY: a DELETE inside a triple-quoted literal must not reach policy as a
+// delete.
+func TestGoogleSQLTripleQuotedBodiesAreData(t *testing.T) {
+	for _, sql := range []string{
+		`SELECT '''; DELETE FROM customers; '''`,
+		`SELECT """; DELETE FROM customers; """`,
+	} {
+		a := lexer.Analyze(sql, lexer.GoogleSQL)
+		if a.Writes() {
+			t.Errorf("triple-quoted content executed as live SQL: effects=%v rels=%v: %s", a.Effects, a.Relations, sql)
+		}
+		if got := a.Severity(); got != lexer.Select {
+			t.Errorf("Severity() = %q, want select: %s", got, sql)
+		}
+		if !a.Complete {
+			t.Errorf("Complete = false (%s): %s", a.Reason, sql)
+		}
+	}
+
+	// Raw-ness composes with the triple form: in r'''...''' the backslash
+	// before the closing quotes is literal, so the literal CLOSES and the
+	// DELETE after it is live. The escaping read runs past the close and
+	// loses it.
+	raw := lexer.Analyze(`SELECT r'''a\'''; DELETE FROM customers`, lexer.GoogleSQL)
+	if got := writes(raw); !slices.Equal(got, []string{"customers"}) {
+		t.Errorf("writes = %v, want [customers]; the raw triple swallowed the DELETE", got)
+	}
+
+	// And unterminated fails closed, same as every other literal form.
+	if a := lexer.Analyze(`SELECT '''abc`, lexer.GoogleSQL); a.Complete {
+		t.Errorf("Complete = true on an unterminated triple-quoted string")
+	}
+}
+
+// ZetaSQL comments: '--' and '#' to end of line, '/* */' NOT nested. Each
+// reading has a misread on the other side — '--' needing whitespace would
+// hide nothing here but a nested read of /* */ files a live DELETE as
+// commentary.
+func TestGoogleSQLComments(t *testing.T) {
+	for _, sql := range []string{
+		"SELECT 1 # DROP TABLE t",
+		"SELECT 1 -- DROP TABLE t",
+		// Unlike MySQL, '--' opens a comment even glued to a token, so
+		// the tail is commentary and this is ONE harmless select.
+		"SELECT 1--2; DELETE FROM t",
+	} {
+		a := lexer.Analyze(sql, lexer.GoogleSQL)
+		if a.Writes() {
+			t.Errorf("commented-out SQL executed: effects=%v rels=%v: %s", a.Effects, a.Relations, sql)
+		}
+		if got := a.Severity(); got != lexer.Select {
+			t.Errorf("Severity() = %q, want select: %s", got, sql)
+		}
+	}
+
+	// The standard-conforming close: the FIRST */ ends the comment and the
+	// DELETE after it is live SQL, exactly as in MySQL.
+	flat := lexer.Analyze(`/* a /* b */ DELETE FROM t */`, lexer.GoogleSQL)
+	if got := writes(flat); !slices.Equal(got, []string{"t"}) {
+		t.Errorf("writes = %v, want [t]; the block comment was read as nested", got)
+	}
+}
+
+// Bytes that quote something in another dialect are inert in ZetaSQL.
+// Honouring PostgreSQL's dollar quote here would hide the statement after
+// the semicolon inside a phantom literal, and honouring MySQL's executable
+// comment would invent a verb out of commentary.
+func TestGoogleSQLDoesNotBorrowOtherDialectsQuoting(t *testing.T) {
+	a := lexer.Analyze(`SELECT $$x$$; DELETE FROM customers`, lexer.GoogleSQL)
+	if got := writes(a); !slices.Equal(got, []string{"customers"}) {
+		t.Errorf("writes = %v, want [customers]; a dollar quote swallowed the DELETE", got)
+	}
+
+	exec := lexer.Analyze(`/*! DROP TABLE t */ SELECT 1`, lexer.GoogleSQL)
+	if exec.Writes() {
+		t.Errorf("executable-comment body classified: effects=%v rels=%v", exec.Effects, exec.Relations)
+	}
+	if got := exec.Severity(); got != lexer.Select {
+		t.Errorf("Severity() = %q, want select", got)
+	}
+}
+
+// '@' is punctuation in GoogleSQL: @param binds a parameter and @{...} is
+// an optimizer hint. Neither is an effect, and neither may cost the
+// statement its classification — a hint glued to a relation must not eat
+// the name, and a statement-level hint must not leave the SELECT after it
+// headless, which would classify the statement as nothing and refuse it on
+// a lane that forwards selects.
+func TestGoogleSQLHintsAndParametersAreInert(t *testing.T) {
+	glued := lexer.Analyze("SELECT x FROM t@{FORCE_INDEX=idx}", lexer.GoogleSQL)
+	if got := reads(glued); !slices.Equal(got, []string{"t"}) {
+		t.Errorf("reads = %v, want [t]; the hint ate the relation", got)
+	}
+	if got := glued.Severity(); got != lexer.Select {
+		t.Errorf("Severity() = %q, want select", got)
+	}
+
+	stmt := lexer.Analyze("@{USE_ADDITIONAL_PARALLELISM=TRUE} SELECT x FROM t", lexer.GoogleSQL)
+	if got := stmt.Severity(); got != lexer.Select {
+		t.Errorf("Severity() = %q, want select; the hint cost the SELECT its head position", got)
+	}
+	if got := reads(stmt); !slices.Equal(got, []string{"t"}) {
+		t.Errorf("reads = %v, want [t]", got)
+	}
+	if !stmt.Complete {
+		t.Errorf("Complete = false (%s)", stmt.Reason)
+	}
+
+	param := lexer.Analyze("SELECT x FROM t WHERE id = @id", lexer.GoogleSQL)
+	if got := reads(param); !slices.Equal(got, []string{"t"}) || param.Severity() != lexer.Select {
+		t.Errorf("parameter binding disturbed the analysis: reads=%v severity=%q", got, param.Severity())
+	}
+
+	// Half a hint is half a statement: the missing brace would have
+	// preceded SQL this scan never saw.
+	if a := lexer.Analyze("@{FORCE_INDEX=idx SELECT 1", lexer.GoogleSQL); a.Complete {
+		t.Errorf("Complete = true on an unterminated hint")
+	}
+}
+
+// The GoogleSQL DML spellings policy must see through: the OR UPDATE/OR
+// IGNORE insert modifiers and the THEN RETURN clause. Each row pins the verb
+// AND the written relation, because losing the target is how a `tables:`
+// rule stops firing.
+func TestGoogleSQLDMLShapes(t *testing.T) {
+	for _, tc := range []struct {
+		sql  string
+		verb lexer.Verb
+		want []string
+	}{
+		{"INSERT OR UPDATE INTO t (a) VALUES (1)", lexer.Insert, []string{"t"}},
+		{"INSERT OR IGNORE INTO t (a) VALUES (1)", lexer.Insert, []string{"t"}},
+		{"INSERT INTO t (a) VALUES (1) THEN RETURN id", lexer.Insert, []string{"t"}},
+		{"UPDATE t SET a = 1 WHERE b = 2 THEN RETURN *", lexer.Update, []string{"t"}},
+		{"DELETE FROM t WHERE a = 1 THEN RETURN *", lexer.Delete, []string{"t"}},
+	} {
+		a := lexer.Analyze(tc.sql, lexer.GoogleSQL)
+		if got := a.Severity(); got != tc.verb {
+			t.Errorf("Severity() = %q, want %q: %s", got, tc.verb, tc.sql)
+		}
+		if got := writes(a); !slices.Equal(got, tc.want) {
+			t.Errorf("writes = %v, want %v: %s", got, tc.want, tc.sql)
+		}
+		if !a.Complete {
+			t.Errorf("Complete = false (%s): %s", a.Reason, tc.sql)
+		}
+	}
+
+	// GoogleSQL has no data-modifying CTE, so plain WITH ... SELECT is the
+	// only WITH shape and it stays a select.
+	with := lexer.Analyze("WITH x AS (SELECT 1 FROM t) SELECT * FROM x", lexer.GoogleSQL)
+	if got := with.Severity(); got != lexer.Select {
+		t.Errorf("Severity() = %q, want select", got)
+	}
+	if got := reads(with); !slices.Equal(got, []string{"t"}) {
+		t.Errorf("reads = %v, want [t]; the CTE alias leaked or the base table was lost", got)
 	}
 }

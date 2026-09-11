@@ -1002,6 +1002,7 @@ gaps named above are the narrow ones; Envoy is not blind here.
 | `mssql` | `SQLBatch` (0x01) and `RPCRequest` (0x03), reassembled across packets; login forwarded untouched | `COLMETADATA` (0x81), `ROW` (0xD1), `NBCROW` (0xD2) for masking; login replies scanned for a routing redirect | yes |
 | `http` | HTTP/1.x requests | HTTP/1.x responses | no |
 | `grpc` | request headers; decoded messages when capture is on | response trailers; decoded messages when capture or masking is on | yes, per HTTP/2 stream |
+| `spanner` | like `grpc`, plus one SQL statement per query or DDL string extracted from known Cloud Spanner methods | as `grpc` | yes, per HTTP/2 stream |
 
 `grpc` is the exception to this table's codec model. It has a canonical
 `libhoop/v2/codec/types.GRPC` protocol value and its HTTP/2 endpoint and
@@ -1048,6 +1049,28 @@ The Postgres codec is stateful because one `RowDescription` describes every
 registry hands out a factory rather than an instance: two connections sharing
 one codec would corrupt each other's reassembly, and one tenant's SQL would
 surface in another tenant's audit trail. Give every connection its own.
+
+### spanner: GoogleSQL over the gRPC lane
+
+`protocol: spanner` runs the same in-process HTTP/2 endpoint as `grpc` —
+same `grpc:` block, same descriptor plumbing, same `-grpc-discover` — but
+reads through the RPC to the GoogleSQL inside it. On
+`google.spanner.v1.Spanner` (`ExecuteSql`, `ExecuteStreamingSql`,
+`PartitionQuery`, `ExecuteBatchDml`) and
+`google.spanner.admin.database.v1.DatabaseAdmin` (`UpdateDatabaseDdl`,
+`CreateDatabase`) each SQL string in a captured request message becomes its
+own statement: `Text` is the query, the GoogleSQL lexer supplies the
+operation and relations, and `spanner.sql_index` numbers it within the
+message. Operation and table rules therefore work on Spanner SQL — a rule
+naming `delete` refuses `ExecuteSql` carrying a DELETE, and a batch is
+refused whole when any member denies, because it commits whole upstream.
+
+SQL extraction needs payload capture, which needs `grpc.descriptors`
+(ADR-0013: schema-less protobuf walking is unsound); without capture the
+lane still fences methods like a `grpc` lane. Methods carrying no SQL keep
+the generic per-message statement. A statement the lexer cannot read is
+`unknown` with the reason in `sql.incomplete` — fail-closed, so a rule
+naming `unknown` refuses it.
 
 ### MySQL, and the three ways a session goes dark
 

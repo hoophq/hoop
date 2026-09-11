@@ -166,6 +166,24 @@ func isGRPC(lc ListenerConfig) bool {
 	return inspect.Protocol(lc.Protocol) == inspect.GRPC
 }
 
+// isSpanner reports whether a listener is a spanner lane: GoogleSQL
+// extracted from Cloud Spanner RPCs, carried over the same gRPC transport.
+func isSpanner(lc ListenerConfig) bool {
+	return inspect.Protocol(lc.Protocol) == inspect.Spanner
+}
+
+// isGRPCTransport reports whether a listener terminates HTTP/2 in-process
+// the way ADR-0013 describes. Every transport fact — the grpc block, the
+// downstream_tls carve-out, descriptor-gated capture and masking, the
+// server construction branch, -grpc-discover — keys on this, while
+// statement SEMANTICS (which Protocol the statements carry, whether SQL is
+// extracted) key on the specific predicate above. Keeping the two apart is
+// what lets spanner ride the grpc machinery without becoming "grpc with a
+// flag": a new transport sharer extends this function and nothing else.
+func isGRPCTransport(lc ListenerConfig) bool {
+	return isGRPC(lc) || isSpanner(lc)
+}
+
 const grpcPermissionDenied = 7
 
 // buildGRPCServer resolves one grpc lane's transport facts and builds the
@@ -254,6 +272,16 @@ func buildGRPCServer(
 		opts["downstream_tls_key_file"] = dt.KeyFile
 	}
 
+	// The lane's statement protocol. A spanner lane shares every transport
+	// fact above — same libhoop server, same descriptor plumbing — but its
+	// statements carry inspect.Spanner so policy, audit, dialect selection
+	// (AnalyzeSQL) and the analyzer's content builder all see the lane for
+	// what it fronts, not for how it travels.
+	proto := inspect.GRPC
+	if isSpanner(lc) {
+		proto = inspect.Spanner
+	}
+
 	open := func(ctx context.Context, info codecgrpc.RPCInfo) (*codecgrpc.RPCHandler, *codecgrpc.Status, error) {
 		identity := session.Identity{PeerAddr: info.Request.RemoteAddr}
 		if lc.IdentityHeader != "" {
@@ -263,11 +291,11 @@ func buildGRPCServer(
 			identity.Subject = grpcPeerSubject(info.Request)
 		}
 
-		sess := session.New(inspect.GRPC, identity)
+		sess := session.New(proto, identity)
 		sess.Connection = ln.name
 		sess.Upstream = lc.Upstream
 		g, err := gate.NewStatementGate(sess, gate.Config{
-			Protocol:         inspect.GRPC,
+			Protocol:         proto,
 			Policy:           ln.policy,
 			Audit:            sink,
 			Masker:           ln.masker,
@@ -279,7 +307,7 @@ func buildGRPCServer(
 
 		state := &grpcRPCState{
 			gate:  g,
-			stmts: newLaneStatements(info.Request, info.Service, info.Method, allowedMetadata),
+			stmts: newLaneStatements(info.Request, info.Service, info.Method, allowedMetadata, proto),
 			log:   laneLog,
 		}
 		handler := state.callbacks()
@@ -331,6 +359,41 @@ func (r *grpcRPCState) requestMessage(
 	truncated bool,
 	index int,
 ) *codecgrpc.Status {
+	// A spanner lane reads THROUGH the message when it can: the SQL inside
+	// an ExecuteSql or a DDL batch is what operation and table rules were
+	// written against, and the protojson wrapper around it matches nothing.
+	// Each extracted statement is evaluated on its own and the first denial
+	// wins, so one DELETE inside an otherwise harmless ExecuteBatchDml
+	// refuses the whole message — the batch is atomic upstream, so letting
+	// the rest through would be a partial evaluation of an all-or-nothing
+	// request. A SQL-bearing method whose rendering yielded NO SQL is the
+	// fail-closed branch: an OpUnknown statement, never the generic OpCall
+	// one, or truncating the capture would be a policy bypass. Methods
+	// carrying no SQL, and lanes other than spanner, keep the generic
+	// per-message statement below.
+	if r.stmts.protocol == inspect.Spanner {
+		sqls, sqlBearing := spannerSQLStatements(r.stmts.service, r.stmts.method, rendered)
+		for i, sql := range sqls {
+			d := r.gate.EvaluateStatement(ctx,
+				r.stmts.spannerSQL(sql, rendered, truncated, index, i+1))
+			r.logDecisionError("request message", d)
+			if !d.Allowed {
+				return grpcDeniedStatus(d.Message)
+			}
+		}
+		if sqlBearing {
+			if len(sqls) > 0 {
+				return nil
+			}
+			d := r.gate.EvaluateStatement(ctx,
+				r.stmts.spannerUnreadable(rendered, truncated, index))
+			r.logDecisionError("request message", d)
+			if !d.Allowed {
+				return grpcDeniedStatus(d.Message)
+			}
+			return nil
+		}
+	}
 	d := r.gate.EvaluateStatement(ctx,
 		r.stmts.message(inspect.FromClient, rendered, truncated, index))
 	r.logDecisionError("request message", d)

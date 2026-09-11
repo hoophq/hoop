@@ -16,11 +16,11 @@ import (
 // not a big schema.
 const grpcDiscoverTimeout = 30 * time.Second
 
-// DiscoverGRPC implements -grpc-discover: dial the named grpc lane's
-// upstream with the lane's own upstream_tls facts, fetch its descriptor set
-// over gRPC server reflection, and report every method with its maskable
-// field paths. With out set, the serialized set lands there for the
-// operator to review and pin as listeners[].grpc.descriptors.
+// DiscoverGRPC implements -grpc-discover: dial the named grpc or spanner
+// lane's upstream with the lane's own upstream_tls facts, fetch its
+// descriptor set over gRPC server reflection, and report every method with
+// its maskable field paths. With out set, the serialized set lands there
+// for the operator to review and pin as listeners[].grpc.descriptors.
 //
 // It reads the lane's config rather than taking an address flag so
 // discovery dials exactly what the lane will dial — same upstream, same
@@ -32,7 +32,7 @@ func DiscoverGRPC(ctx context.Context, cfg *Config, name, out string, w io.Write
 	var grpcNames []string
 	for i := range cfg.Listeners {
 		l := &cfg.Listeners[i]
-		if !isGRPC(*l) {
+		if !isGRPCTransport(*l) {
 			continue
 		}
 		n := l.displayName(i)
@@ -43,10 +43,10 @@ func DiscoverGRPC(ctx context.Context, cfg *Config, name, out string, w io.Write
 	}
 	if lc == nil {
 		if len(grpcNames) == 0 {
-			return fmt.Errorf("-grpc-discover needs a grpc listener in the config; " +
+			return fmt.Errorf("-grpc-discover needs a grpc or spanner listener in the config; " +
 				"it dials the lane's upstream with the lane's upstream_tls")
 		}
-		return fmt.Errorf("no grpc listener named %q; the config defines: %s",
+		return fmt.Errorf("no grpc or spanner listener named %q; the config defines: %s",
 			name, strings.Join(grpcNames, ", "))
 	}
 

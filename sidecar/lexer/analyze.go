@@ -293,6 +293,33 @@ func (a *analyzer) walk() {
 				}
 				atHead = a.wrapper
 				continue
+			case "@":
+				// A GoogleSQL hint — @{FORCE_INDEX=i} glued to a
+				// relation, or @{USE_ADDITIONAL_PARALLELISM=TRUE}
+				// before the whole statement — is advice to the
+				// optimizer, not an effect. The group is skipped at
+				// TOKEN level, so a quoted value containing '}' was
+				// already consumed as a literal, and atHead is left
+				// exactly as it was: a statement-level hint must not
+				// cost the SELECT after it its head position, or the
+				// statement classifies as nothing and a lane that
+				// forwards on `select` refuses it. Elsewhere '@' falls
+				// through below: a bare @param binding is ordinary
+				// punctuation in every dialect.
+				if a.d == GoogleSQL && i+1 < len(a.toks) &&
+					a.toks[i+1].Kind == Punct && a.toks[i+1].Text == "{" {
+					j := i + 2
+					for j < len(a.toks) && !(a.toks[j].Kind == Punct && a.toks[j].Text == "}") {
+						j++
+					}
+					if j == len(a.toks) {
+						// Half a hint means half a statement; what the
+						// missing brace would have preceded is unknown.
+						a.fail("unterminated statement hint")
+					}
+					i = j
+					continue
+				}
 			}
 			atHead = a.wrapper
 			continue

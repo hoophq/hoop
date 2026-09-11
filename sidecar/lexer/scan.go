@@ -136,7 +136,7 @@ func (s *scanner) next() (Token, bool) {
 	c := s.src[s.pos]
 	switch {
 	case c == '\'':
-		return s.plainString(), true
+		return s.stringLit('\'', false), true
 
 	case s.rules.escapeString && (c == 'E' || c == 'e') && s.peek(1) == '\'':
 		s.pos++
@@ -144,7 +144,24 @@ func (s *scanner) next() (Token, bool) {
 
 	case s.rules.nationalString && (c == 'N' || c == 'n') && s.peek(1) == '\'':
 		s.pos++
-		return s.plainString(), true
+		return s.plainString('\''), true
+
+	// Gated, and ahead of the word case below on purpose: r/R/b/B are
+	// ordinary identifier bytes everywhere else, and even under GoogleSQL
+	// `rb` followed by anything but a quote is a plain word. The prefix
+	// decides whether the literal is RAW, which decides where it ENDS —
+	// see lexRules.rawString for what riding over that costs.
+	case s.rules.rawString && (c == 'r' || c == 'R' || c == 'b' || c == 'B'):
+		if n, raw, ok := s.stringPrefix(); ok {
+			s.pos += n
+			return s.stringLit(s.src[s.pos], raw), true
+		}
+		return s.word(), true
+
+	// Ahead of the identifier case below: under GoogleSQL '"' delimits a
+	// STRING, interchangeable with '\'', and identifiers are backticked.
+	case s.rules.doubleQuoteString && c == '"':
+		return s.stringLit('"', false), true
 
 	case c == '"':
 		return s.delimitedIdent('"', '"'), true
@@ -298,8 +315,17 @@ func (s *scanner) dashOpensComment() bool {
 	return c <= ' '
 }
 
-// plainString consumes '...' with the doubled ” escape.
-func (s *scanner) plainString() Token {
+// plainString consumes a quoted literal with the doubled-close escape,
+// honouring backslashInPlainString. q is the delimiter: the single quote
+// everywhere, also '"' under GoogleSQL, where both quotes delimit strings.
+//
+// The doubled-close escape stays on for GoogleSQL even though ZetaSQL has
+// no such escape — there a doubled quote is an empty literal beside another
+// one. The two readings pair the quotes differently but always agree on where the
+// LITERAL REGION ends: doubling consumes close+reopen where ZetaSQL closes
+// one string and opens the next, so neither reading leaks live SQL into a
+// literal or literal content into SQL.
+func (s *scanner) plainString(q byte) Token {
 	s.pos++ // opening quote
 	for s.pos < len(s.src) {
 		c := s.src[s.pos]
@@ -307,8 +333,8 @@ func (s *scanner) plainString() Token {
 			s.pos += 2
 			continue
 		}
-		if c == '\'' {
-			if s.peek(1) == '\'' {
+		if c == q {
+			if s.peek(1) == q {
 				s.pos += 2
 				continue
 			}
@@ -318,6 +344,102 @@ func (s *scanner) plainString() Token {
 		s.pos++
 	}
 	s.fail("unterminated string literal")
+	return Token{Kind: Literal}
+}
+
+// stringLit consumes one string literal delimited by q, routing to the
+// triple-quoted and raw forms when the rules enable them. The cursor sits ON
+// the opening quote; a raw/byte prefix was already consumed by the caller.
+//
+// Triple detection comes first because it is a longest-match decision:
+// ZetaSQL reads three quotes as the opener of a triple-quoted string, never
+// as a quote-and-empty-literal, and a scanner choosing the short reading closes
+// the literal two quotes early and scans its BODY as live SQL.
+func (s *scanner) stringLit(q byte, raw bool) Token {
+	if s.rules.tripleQuoteString && s.peek(1) == q && s.peek(2) == q {
+		return s.tripleString(q, raw)
+	}
+	if raw {
+		return s.rawStringLit(q)
+	}
+	return s.plainString(q)
+}
+
+// stringPrefix reports the length of the r/R/b/B string prefix at the
+// cursor and whether it makes the literal raw. ok is false when the letters
+// are not a valid prefix glued to a quote, in which case they are an
+// ordinary word.
+//
+// At most one r and one b, in either order and any case — rr'...' is an
+// identifier followed by a string, and accepting it here would eat a byte
+// of somebody's column name.
+func (s *scanner) stringPrefix() (n int, raw, ok bool) {
+	for n < 2 {
+		switch s.peek(n) {
+		case 'r', 'R':
+			if raw {
+				return 0, false, false
+			}
+			raw = true
+		case 'b', 'B':
+			if ok { // ok doubles as "b seen" until the return below
+				return 0, false, false
+			}
+			ok = true
+		case '\'', '"':
+			return n, raw, n > 0
+		default:
+			return 0, false, false
+		}
+		n++
+	}
+	if c := s.peek(n); c == '\'' || c == '"' {
+		return n, raw, true
+	}
+	return 0, false, false
+}
+
+// rawStringLit consumes r'...' or r"...", where a backslash is an ordinary
+// byte. The FIRST closing quote ends the literal, always.
+//
+// This is the whole point of the raw form's rules row: under the escaping
+// read, r'\' consumes the terminator, the literal swallows everything to
+// the next quote, and a statement between them is never analyzed. The
+// converse misread — closing early on a quote ZetaSQL would have kept —
+// only splits data into fragments the analysis reads separately, which
+// denies nothing by itself.
+func (s *scanner) rawStringLit(q byte) Token {
+	s.pos++ // opening quote
+	for s.pos < len(s.src) {
+		if s.src[s.pos] == q {
+			s.pos++
+			return Token{Kind: Literal}
+		}
+		s.pos++
+	}
+	s.fail("unterminated raw string")
+	return Token{Kind: Literal}
+}
+
+// tripleString consumes a triple-quoted literal, opened and closed by three
+// q bytes. The body may contain bare quotes, and in the non-raw form a
+// backslash escapes the next byte, so an escaped quote never begins the
+// close.
+func (s *scanner) tripleString(q byte, raw bool) Token {
+	s.pos += 3 // opening delimiter
+	for s.pos < len(s.src) {
+		c := s.src[s.pos]
+		if !raw && c == '\\' && s.pos+1 < len(s.src) {
+			s.pos += 2
+			continue
+		}
+		if c == q && s.peek(1) == q && s.peek(2) == q {
+			s.pos += 3
+			return Token{Kind: Literal}
+		}
+		s.pos++
+	}
+	s.fail("unterminated triple-quoted string")
 	return Token{Kind: Literal}
 }
 
@@ -345,14 +467,27 @@ func (s *scanner) escapedString() Token {
 }
 
 // delimitedIdent consumes a quoted identifier, honouring the doubled-close
-// escape: "a""b", [a]]b].
+// escape: "a""b", [a]]b]. Under backtickBackslashEscape a backtick
+// identifier instead escapes with a backslash and a doubled backtick is
+// two identifiers, which is GoogleSQL's spelling; see the rules row.
 func (s *scanner) delimitedIdent(open, close byte) Token {
+	backslashEscape := open == '`' && s.rules.backtickBackslashEscape
 	s.pos++ // opening delimiter
 	var b strings.Builder
 	for s.pos < len(s.src) {
 		c := s.src[s.pos]
+		if backslashEscape && c == '\\' && s.pos+1 < len(s.src) {
+			// The byte after the backslash is kept verbatim, which is
+			// exact for \` and \\ — the escapes a NAME needs — and
+			// close enough for the exotic ones (\n and friends), where
+			// fidelity of unprintable bytes in a relation name buys
+			// nothing a policy could match on.
+			b.WriteByte(s.src[s.pos+1])
+			s.pos += 2
+			continue
+		}
 		if c == close {
-			if s.peek(1) == close {
+			if !backslashEscape && s.peek(1) == close {
 				b.WriteByte(close)
 				s.pos += 2
 				continue

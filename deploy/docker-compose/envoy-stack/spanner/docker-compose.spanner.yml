@@ -1,0 +1,109 @@
+# Overlay: a Cloud Spanner lane, through Envoy and without it.
+#
+#   docker compose -f docker-compose.yml -f spanner/docker-compose.spanner.yml up -d --wait
+#
+# Run it from the envoy-stack directory, after ./run.sh has minted the certs
+# and built the sidecar image at least once. ./spanner/demo-spanner.sh walks
+# it. The cached hoop-inspect:local must carry `protocol: spanner` (the
+# grpc2 branch); if the image predates it, `./run.sh --rebuild` first.
+#
+# What it adds:
+#
+#   spanner              the Cloud Spanner emulator: gRPC on 9010, a REST
+#                        admin gateway on 9020, both internal-only. The
+#                        sidecar fronts the data plane; the gateway serves
+#                        setup only (creating the instance and database)
+#   spanner-descriptors  an init service that builds the FileDescriptorSet
+#                        with buf from the public googleapis tree; the
+#                        emulator serves no gRPC reflection, and a lane
+#                        cannot capture payloads (here, extract the SQL)
+#                        without a set (ADR-0013)
+#   envoy :8445          TLS + ALPN h2 + the same OPA fat gate, forwarding
+#                        to the sidecar's spanner lane over h2c
+#   host  :29010         the sidecar's spanner lane published directly:
+#                        the without-Envoy path, grpcurl -plaintext
+#                        localhost:29010 (the full Envoy-free stack, with
+#                        its own bootstrap, is ../../gcloud-stack)
+#   grpcurl              a client for both paths, run on demand:
+#                        docker compose ... run --rm grpcurl <args>
+#
+# Unchanged: the appdb and httpbin lanes, the policy budget (the spanner
+# lane inherits the process's one guardrail; its own operation rule ships
+# commented out, over the limit), the audit trail, OPA, and both existing
+# Envoy listeners.
+
+services:
+  # No healthcheck: the emulator image is shell-less, so there is nothing to
+  # exec; service_started below is the strongest condition available and the
+  # sidecar dials lazily. If the registry lacks an image for the host
+  # architecture, add `platform: linux/amd64` here.
+  spanner:
+    image: gcr.io/cloud-spanner-emulator/emulator
+    networks: [inspect]
+
+  # Builds /descriptors/spanner.pb from the public googleapis tree, filtered
+  # to the Spanner API. This is the exact invocation gcloud-stack/run.sh
+  # uses as its fallback when reflection answers Unimplemented, which
+  # against this emulator it always does. master because googleapis tags no
+  # releases; for a validation stack that trade is fine. Network on first
+  # run, then the [ -f ] guard skips the fetch on every re-up.
+  #
+  # The buf image is alpine-based (verified: /bin/sh and chmod are present),
+  # so the chmod folds into the same run; no second init job. Root,
+  # because the named volume arrives root-owned; 444 so the sidecar's uid
+  # 10001 and grpcurl's user can read the artifact.
+  spanner-descriptors:
+    image: bufbuild/buf:1.50.0
+    user: "0"
+    networks: [inspect]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        [ -f /descriptors/spanner.pb ] && exit 0
+        buf build 'https://github.com/googleapis/googleapis/archive/refs/heads/master.tar.gz#strip_components=1' \
+          --path google/spanner \
+          -o '/descriptors/spanner.pb#format=binpb'
+        chmod 444 /descriptors/spanner.pb
+    volumes:
+      - spanner-descriptors:/descriptors
+
+  hoop-inspect:
+    volumes:
+      - ./spanner/config-spanner.yaml:/etc/hoop-inspect/config.yaml:ro
+      - ./upstream/certs/server.crt:/etc/hoop-inspect/certs/appdb.crt:ro
+      - spanner-descriptors:/etc/hoop-inspect/descriptors:ro
+    ports:
+      # The without-Envoy path. The base stack keeps every data port off
+      # the host; this overlay publishes this one so the same lane is
+      # reachable both ways and the demo can show what only Envoy adds:
+      # TLS and the fat gate.
+      - "29010:29010"
+    depends_on:
+      spanner-descriptors: { condition: service_completed_successfully }
+      spanner: { condition: service_started }
+
+  envoy:
+    volumes:
+      - ./spanner/envoy-spanner.yaml:/etc/envoy/envoy.yaml:ro
+      - ./envoy/certs:/etc/envoy/certs:ro
+    ports:
+      - "8445:8445"   # Spanner lane -> hoop-inspect (spanner lane)
+
+  # A gRPC client for demos and poking, never started by `up`: use
+  #   docker compose -f docker-compose.yml -f spanner/docker-compose.spanner.yml \
+  #     run --rm grpcurl -insecure -H 'x-hoop-user: alice' \
+  #     -protoset /descriptors/spanner.pb \
+  #     -d '{"database":"projects/demo/instances/demo-instance/databases/demodb"}' \
+  #     envoy:8445 google.spanner.v1.Spanner/CreateSession
+  # The emulator has no reflection; -protoset points at the same descriptor
+  # set the sidecar reads.
+  grpcurl:
+    image: fullstorydev/grpcurl:latest
+    profiles: [cli]
+    networks: [inspect]
+    volumes:
+      - spanner-descriptors:/descriptors:ro
+
+volumes:
+  spanner-descriptors:

@@ -17,6 +17,7 @@ func init() {
 	RegisterBuilder(MongoDBBuilder{})
 	RegisterBuilder(HTTPBuilder{})
 	RegisterBuilder(grpcBuilder{})
+	RegisterBuilder(spannerBuilder{})
 }
 
 // SQLBuilder renders a SQL statement for classification.
@@ -389,4 +390,27 @@ func (grpcBuilder) Build(stmt inspect.Statement, maxBytes int) (Content, bool) {
 		Text:     sb.String(),
 		CacheKey: hex.EncodeToString(h.Sum(nil)[:16]),
 	}, true
+}
+
+// spannerBuilder renders statements from a spanner lane, which emits two
+// shapes on one protocol. A statement the daemon extracted GoogleSQL from
+// carries the SQL as its Text with `spanner.sql_index` in its metadata (the
+// key is a literal here because analyzer cannot import daemon), and reads
+// exactly like a wire-database statement: SQL-style rendering, so the model
+// sees the query plus the classifier's own reading of it, and the literal-
+// stripped cache key folds parameter-only variants into one verdict. Every
+// other statement — request headers, trailers, messages on RPCs that carry
+// no SQL — is the grpc shape and delegates to that rendering, empty-body
+// skip included. Operation is the fallback signal for the split: a lane
+// statement is OpCall unless SQL analysis replaced it, so a non-OpCall
+// statement is an extracted one even if the metadata key were ever lost.
+type spannerBuilder struct{}
+
+func (spannerBuilder) Protocol() inspect.Protocol { return inspect.Spanner }
+
+func (spannerBuilder) Build(stmt inspect.Statement, maxBytes int) (Content, bool) {
+	if _, ok := stmt.Metadata["spanner.sql_index"]; ok || stmt.Operation != inspect.OpCall {
+		return SQLBuilder{Protocol_: inspect.Spanner}.Build(stmt, maxBytes)
+	}
+	return grpcBuilder{}.Build(stmt, maxBytes)
 }

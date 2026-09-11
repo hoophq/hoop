@@ -55,6 +55,16 @@ const (
 
 	// MySQL covers MySQL and MariaDB.
 	MySQL
+
+	// GoogleSQL covers ZetaSQL as Cloud Spanner and BigQuery speak it.
+	//
+	// It is close enough to MySQL to be mistaken for it — backticks,
+	// '#' comments, backslash escapes — and different in exactly the
+	// places that hide SQL: '"' opens a STRING rather than an identifier,
+	// r'...' turns backslash into an ordinary byte, and '''...''' runs a
+	// literal across quotes that would close anything else. Each of those
+	// is a rules row below.
+	GoogleSQL
 )
 
 func (d Dialect) String() string {
@@ -63,6 +73,8 @@ func (d Dialect) String() string {
 		return "mssql"
 	case MySQL:
 		return "mysql"
+	case GoogleSQL:
+		return "googlesql"
 	}
 	return "postgres"
 }
@@ -176,6 +188,51 @@ type lexRules struct {
 	// escapeString comment describes for Postgres, but on the ordinary
 	// quoting every MySQL client emits.
 	backslashInPlainString bool
+
+	// doubleQuoteString makes "..." a STRING literal rather than a quoted
+	// identifier.
+	//
+	// GoogleSQL only. There the two quote characters are interchangeable
+	// string delimiters and identifiers are backticked, so reading "..."
+	// with the PostgreSQL rule invents a quoted identifier out of string
+	// data — `SELECT "a\";DELETE FROM t;--"` would close the "identifier"
+	// at the escaped quote and scan the literal's tail, a live DELETE
+	// nobody wrote, as SQL. The misread direction is a false denial, but
+	// it also puts string CONTENT into a token, which the Literal kind
+	// exists to prevent.
+	doubleQuoteString bool
+
+	// backtickBackslashEscape makes backslash the escape inside `...`
+	// identifiers, replacing the doubled-backtick escape.
+	//
+	// GoogleSQL only. MySQL escapes a backtick by doubling it; GoogleSQL
+	// by preceding it with a backslash. Reading GoogleSQL's `a\`b` under
+	// the MySQL rule ends the identifier at the escaped backtick, and the
+	// stray tail re-opens quoting that swallows whatever follows —
+	// including a separator and the statement after it. The flag rather
+	// than a constant because MySQL's doubling must keep working
+	// unchanged.
+	backtickBackslashEscape bool
+
+	// rawString enables the r/R and byte rb/br prefixes: r'...', R"...",
+	// rb'...', in which a backslash is an ORDINARY byte and never escapes
+	// the closing quote.
+	//
+	// GoogleSQL only, and it is the misread class this dialect exists to
+	// prevent: under the escaping read, r'\' swallows its terminator, the
+	// literal runs on, and every live statement after it disappears into
+	// a phantom string — `SELECT r'\'; DELETE FROM t; --'` is a select
+	// with a hidden delete.
+	rawString bool
+
+	// tripleQuoteString enables '''...''' and """...""", which run across
+	// the single quotes that would close an ordinary literal.
+	//
+	// GoogleSQL only. The body is data: a DELETE inside a triple-quoted
+	// string must not classify, and the closing delimiter is three quotes,
+	// so a scanner without this rule ends the literal two quotes early and
+	// reads the rest of the string as SQL.
+	tripleQuoteString bool
 }
 
 func (d Dialect) rules() lexRules {
@@ -202,6 +259,24 @@ func (d Dialect) rules() lexRules {
 			dashCommentNeedsSpace:  true,
 			executableComment:      true,
 			backslashInPlainString: true,
+		}
+	case GoogleSQL:
+		// The MySQL-adjacent rows (backticks, '#', backslash escapes)
+		// are shared; nestedBlockComment stays absent because ZetaSQL
+		// follows the standard and the FIRST `*/` closes the comment.
+		// dashCommentNeedsSpace stays absent too: `--` opens a comment
+		// unconditionally, as in PostgreSQL. Everything PostgreSQL-only
+		// (dollar quotes, E'', U&"") and MySQL-only (executable
+		// comments) is deliberately off — those bytes are inert in
+		// ZetaSQL and honouring them would hide or invent statements.
+		return lexRules{
+			backtickIdent:           true,
+			backtickBackslashEscape: true,
+			hashComment:             true,
+			backslashInPlainString:  true,
+			doubleQuoteString:       true,
+			rawString:               true,
+			tripleQuoteString:       true,
 		}
 	default:
 		return lexRules{

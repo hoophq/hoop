@@ -466,3 +466,59 @@ func TestMySQLIsAnalyzedWithTheMySQLDialect(t *testing.T) {
 		t.Errorf("backtick identifier: op = %q, tables = %v", a.Operation, a.Tables)
 	}
 }
+
+// The spanner lane speaks GoogleSQL, and AnalyzeSQL must select that
+// dialect for inspect.Spanner. Each case is phrased as the verdict an
+// operator gets: the first hides a live DELETE that a wrong-dialect read
+// swallows into a literal — a rule naming `delete` or customers-as-written
+// never fires and the statement executes unseen. The rest are the inverse:
+// string data and hint syntax that a wrong-dialect read classifies as
+// something it is not, which denies a harmless select and trains the
+// operator to widen the rule.
+func TestSpannerIsAnalyzedWithTheGoogleSQLDialect(t *testing.T) {
+	// In r'...' the backslash is an ordinary byte, so the literal closes
+	// at the first quote and the DELETE after it is a live statement. A
+	// lexer honouring the escape swallows the terminator and reports one
+	// select; the delete reaches Spanner having never been evaluated.
+	raw := inspect.AnalyzeSQL(`SELECT r'\'; DELETE FROM customers; --'`, inspect.Spanner)
+	if raw.Operation != inspect.OpDelete {
+		t.Errorf("raw string: op = %q, want %q; the DELETE was hidden in a phantom literal", raw.Operation, inspect.OpDelete)
+	}
+	if !slices.Contains(raw.Tables, "customers") {
+		t.Errorf("raw string: tables = %v, want customers; the written relation was lost", raw.Tables)
+	}
+
+	// The false-positive direction: DELETEs that are string DATA. A
+	// triple-quoted body may contain bare quotes, and '"' delimits a
+	// string in GoogleSQL, not an identifier — a scanner without either
+	// rule classifies literal content and refuses a select that touches
+	// nothing.
+	for _, tc := range []struct {
+		sql string
+		why string
+	}{
+		{`SELECT '''; DELETE FROM customers; '''`, "delete inside a triple-quoted string"},
+		{`SELECT "a\";DELETE FROM customers;--"`, "delete inside a double-quoted string"},
+	} {
+		a := inspect.AnalyzeSQL(tc.sql, inspect.Spanner)
+		if a.Operation != inspect.OpSelect {
+			t.Errorf("%s: op = %q, want %q: %s", tc.why, a.Operation, inspect.OpSelect, tc.sql)
+		}
+		if len(a.Tables) != 0 {
+			t.Errorf("%s: tables = %v, want none; literal content leaked a relation: %s", tc.why, a.Tables, tc.sql)
+		}
+	}
+
+	// Hints are optimizer advice. Glued to a relation the hint must not
+	// eat the name — a `tables: [t]` rule that stops matching is a
+	// guardrail that stops guarding — and before the statement it must
+	// not cost the SELECT its classification.
+	glued := inspect.AnalyzeSQL("SELECT x FROM t@{FORCE_INDEX=idx}", inspect.Spanner)
+	if glued.Operation != inspect.OpSelect || !slices.Contains(glued.Tables, "t") {
+		t.Errorf("hint-glued relation: op = %q, tables = %v, want select on t", glued.Operation, glued.Tables)
+	}
+	stmt := inspect.AnalyzeSQL("@{USE_ADDITIONAL_PARALLELISM=TRUE} SELECT x FROM t", inspect.Spanner)
+	if stmt.Operation != inspect.OpSelect || !slices.Contains(stmt.Tables, "t") {
+		t.Errorf("statement-level hint: op = %q, tables = %v, want select on t", stmt.Operation, stmt.Tables)
+	}
+}

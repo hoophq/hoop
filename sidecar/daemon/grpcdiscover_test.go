@@ -17,7 +17,7 @@ func TestDiscoverGRPCRefusesConfigWithoutGRPCLanes(t *testing.T) {
 	}}
 
 	err := DiscoverGRPC(context.Background(), cfg, "pg", "", &strings.Builder{})
-	if err == nil || !strings.Contains(err.Error(), "needs a grpc listener") {
+	if err == nil || !strings.Contains(err.Error(), "needs a grpc or spanner listener") {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -27,15 +27,18 @@ func TestDiscoverGRPCNamesTheGRPCLanesOnAMiss(t *testing.T) {
 		{Name: "pg", Protocol: "postgres", Listen: "127.0.0.1:5432", Upstream: "db:5432"},
 		{Name: "api", Protocol: "grpc", Listen: "127.0.0.1:8443", Upstream: "svc:443"},
 		{Protocol: "grpc", Listen: "127.0.0.1:8444", Upstream: "svc2:443"},
+		{Name: "sp", Protocol: "spanner", Listen: "127.0.0.1:8445", Upstream: "spanner:443"},
 	}}
 
 	err := DiscoverGRPC(context.Background(), cfg, "nope", "", &strings.Builder{})
 	if err == nil {
 		t.Fatal("a wrong lane name was accepted")
 	}
-	// The candidates listed are grpc lanes only, under the same names the
-	// rest of the daemon reports: Name when set, listener[i] when not.
-	if !strings.Contains(err.Error(), "api, listener[2]") || strings.Contains(err.Error(), "pg") {
+	// The candidates listed are grpc-transport lanes only — grpc AND
+	// spanner, since a spanner lane's descriptors are fetched the same way
+	// — under the same names the rest of the daemon reports: Name when
+	// set, listener[i] when not.
+	if !strings.Contains(err.Error(), "api, listener[2], sp") || strings.Contains(err.Error(), "pg") {
 		t.Fatalf("err = %v", err)
 	}
 }

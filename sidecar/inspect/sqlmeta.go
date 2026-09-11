@@ -43,6 +43,9 @@ func AnalyzeSQL(sql string, proto Protocol) SQLAnalysis {
 		d = lexer.MSSQL
 	case MySQL:
 		d = lexer.MySQL
+	case Spanner:
+		// Spanner payloads carry GoogleSQL (ZetaSQL); see lexer.GoogleSQL.
+		d = lexer.GoogleSQL
 	case GRPC:
 		// gRPC statements carry protobuf renderings, not SQL. Falling
 		// through to the PostgreSQL lexer would "analyze" protojson and
