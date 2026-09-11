@@ -23,6 +23,10 @@ import (
 // loaded), so a test binary gets a single mode and the gateway-mode refusal is
 // covered by booting a real gateway rather than from here.
 func TestMain(m *testing.M) {
+	// With a bare origin the two url accessors return the same string, so the
+	// WebappURL assertion below would hold whichever one the code calls. The
+	// path prefix is what makes it mean something.
+	os.Setenv("API_URL", "http://localhost:8009/hoop")
 	if err := appconfig.Load(appconfig.AppModeControlPlane); err != nil {
 		panic(err)
 	}
@@ -191,7 +195,9 @@ func TestNewSlackReviewRequest(t *testing.T) {
 	// The line renders unconditionally, so an empty value would show a broken
 	// link. Until there is a page for one review, it points at the home page.
 	assert.NotEmpty(t, req.WebappURL, "an empty url renders as a dead More details link")
-	assert.Equal(t, appconfig.Get().ApiURL(), req.WebappURL)
+	assert.Equal(t, appconfig.Get().FullApiURL(), req.WebappURL)
+	assert.True(t, strings.HasSuffix(req.WebappURL, "/hoop"),
+		"ApiURL drops a configured path prefix and lands the approver outside the app")
 	assert.NotContains(t, req.WebappURL, "/sessions/",
 		"the control plane serves no /sessions route")
 

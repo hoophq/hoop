@@ -165,7 +165,7 @@ func notifySlack(sidecar *models.Sidecar, rev *models.Review, listenerName, stat
 	}
 
 	result := slackSvc.SendMessageReview(req)
-	log.With("sid", rev.SessionID, "review-id", rev.ID).Infof("sent slack review message, %v", result)
+	log.With("sid", rev.SessionID, "review-id", rev.ID).Infof("slack review message, %v", result)
 }
 
 // newSlackReviewRequest is what a reviewer ends up reading. Split out so the
@@ -191,10 +191,11 @@ func newSlackReviewRequest(sidecar *models.Sidecar, rev *models.Review, listener
 		ApprovalGroups: slackplugin.ParseGroups(rev.ReviewGroups),
 		Script:         statement,
 
-		// The control plane serves no page for a single review yet, so this
-		// points at its home rather than at a link that would 404. Replace it
-		// once there is a layout to point at.
-		WebappURL: appconfig.Get().ApiURL(),
+		// /reviews/<sid> exists in the router but renders a placeholder, so
+		// this points at the home page until there is a layout to point at.
+		// FullApiURL, not ApiURL: the latter drops the configured path prefix,
+		// which lands the approver outside the app wherever one is set.
+		WebappURL: appconfig.Get().FullApiURL(),
 	}
 }
 
