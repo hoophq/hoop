@@ -117,6 +117,11 @@ func New(slackBotToken, slackAppToken, slackChannel, instanceID, apiURL string) 
 func (s *SlackService) Close()           { s.cancelFn() }
 func (s *SlackService) BotToken() string { return s.slackBotToken }
 
+// DefaultChannel is where a message with no channels of its own is posted.
+// Empty means the org configured none, and a caller that has no other
+// destination is posting into nothing.
+func (s *SlackService) DefaultChannel() string { return s.slackChannel }
+
 type MessageReviewRequest struct {
 	ID             string
 	Name           string
