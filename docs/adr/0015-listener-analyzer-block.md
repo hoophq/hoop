@@ -1,6 +1,6 @@
 # ADR-0015: The analyzer is a listener component, not a guardrail rule
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-09-11
 - **Author:** @matheusfrancisco
 - **Code:** [`sidecar/daemon/analyzer.go`](../../sidecar/daemon/analyzer.go), [`sidecar/daemon/config.go`](../../sidecar/daemon/config.go), [`sidecar/daemon/reload.go`](../../sidecar/daemon/reload.go)
