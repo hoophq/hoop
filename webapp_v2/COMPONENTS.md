@@ -259,14 +259,27 @@ import StepAccordion from '@/components/StepAccordion'
 />
 ```
 
-### `ProtectedRoute` / `GatewayProtectedRoute`
-Route guard — checks auth, fetches user, then `adminOnly`, `role` and `licenseFeature`; `onReady(user)` is the product's extra step (a path it returns is where the user goes). `GatewayProtectedRoute` adds the onboarding redirect through it. Both are already wrapping every route through the product `Page` (`layout/GatewayPage`, `layout/ControlPlanePage`). Do not add another instance.
+### `ProtectedRoute` / `GatewayProtectedRoute` / `ControlPlaneProtectedRoute`
+Route guard — checks auth, fetches user, then `adminOnly`, `role` and `licenseFeature`; `onReady(user)` is the product's extra step (a path it returns is where the user goes). `GatewayProtectedRoute` adds the onboarding redirect through it; `ControlPlaneProtectedRoute` sends an admin on the free plan with no sidecar to `/onboarding/license` once (`utils/licenseIntro.js` remembers the skip per user). All three are already wrapping every route through the product `Page` (`layout/GatewayPage`, `layout/ControlPlanePage`). Do not add another instance.
+
+### `Stepper`
+Horizontal step indicator for a multi-page flow (numbered circles joined by a rule). Controlled by the zero-based `active` step; render the step body below it yourself.
+```jsx
+import Stepper from '@/components/Stepper'
+
+<Stepper active={step}>
+  <Stepper.Step label="Connect" />
+  <Stepper.Step label="Configure" />
+  <Stepper.Step label="Overview" />
+</Stepper>
+```
+`StepAccordion` is the vertical, one-page wizard (Agents); `Stepper` is for a flow whose steps replace each other (the sidecar setup).
 
 ### `ClojureApp`
 Bridge component that mounts the CLJS bundle for un-migrated routes. Mounted only by `modes/gateway.jsx` (the `/`, `/onboarding/*` and `/*` leaves). Do not use elsewhere, never from a `ControlPlane*` file.
 
 ### `NotImplemented`
-A route that exists in the information architecture but has no backend yet (the control plane's Reviews and Sidecars placeholders). Names the project that owes the work and lists what is missing; renders nothing that looks like loaded data.
+A route that exists in the information architecture but has no backend yet (the control plane's Reviews placeholder). Names the project that owes the work and lists what is missing; renders nothing that looks like loaded data.
 ```jsx
 <NotImplemented title="Reviews" project="Reviews (Human in the Loop)" missing={['Approve and reject']} />
 ```
@@ -784,6 +797,9 @@ Non-obvious notes only:
   on navigation, on window focus and on the `hoop:session-executed` DOM event
   from the CLJS terminal — no timers. Resets itself on logout (subscribes to
   `useAuthStore`), and every read is scoped by `forUserId`.
+- `useSidecarStore` — the fleet (`sidecars`, `fetchSidecars`, `createSidecar`,
+  `deleteSidecar`). `createSidecar` returns the response with the one-time token and
+  keeps none of it.
 - `useConnectionsMetadataStore` — loaded once at app start (`App.jsx`); feeds
   credential field schemas + connection icons; `load()` is idempotent.
 
@@ -816,6 +832,25 @@ Non-obvious notes only:
   infinite-scroll dropdowns.
 - `eventRouting.js` — normalizes the backend's snake_case JSON to camelCase at
   the service boundary.
+- `sidecars.js` — `/sidecars`. `create({ name })` is the only call that returns the
+  token (`hsc_…`); it is stored hashed and never shown again, so the wizard keeps it
+  in component state. **The control plane owns the configuration**: `configuration` is
+  the `daemon.Config` it stores for that sidecar and serves back on the handshake and
+  on every poll, not something the sidecar reports. Creating without one stores an
+  empty document; the sidecar then seeds the plane with its own config file on the
+  first handshake (`importLocalConfig`), which is the connect journey the wizard
+  prints. Writing it from here is `PUT /sidecars/:nameOrID`, which has no caller: the
+  pages read the configuration, they do not author it.
+  `pages/Sidecars/config.js` derives the Features chips from the document, resolving a
+  lane's overrides the way `Config.resolve` does — guardrail `rules` absent inherits
+  the default, `rules: []` disables, a non-empty list concatenates; mask only replaces
+  on a non-empty lane list. Reading the presence of the whole block instead reports a
+  lane that overrides only `mode` as unprotected.
+  `pages/Sidecars/status.js` turns `last_seen_at` into Waiting or Connected, and
+  those two only: a stale timestamp still reads Connected with its relative last-seen
+  time. There is no Offline, because `last_seen_at` is gateway memory that a restart
+  clears, so a sidecar that stopped calling and one the gateway forgot look identical
+  from here.
 - `sessions.js` — `list(params)`. **`limit` does not make the call cheap**: the
   gateway always runs an unbounded `COUNT(*)` (joined against reviews) to fill
   `total` before applying the limit, so `{ limit: 1 }` costs the same as a full

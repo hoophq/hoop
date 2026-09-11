@@ -1,5 +1,5 @@
-import { theme, cssVariablesResolver } from '@/theme'
-import ProtectedRoute from '@/components/ProtectedRoute'
+import { theme, cssVariablesResolver } from '@/theme.controlPlane'
+import ControlPlaneProtectedRoute from '@/components/ControlPlaneProtectedRoute'
 import ControlPlanePage from '@/layout/ControlPlanePage'
 import Home from '@/pages/Home'
 import NotFound from '@/pages/NotFound'
@@ -11,7 +11,8 @@ import NotFound from '@/pages/NotFound'
  * Every React route of Router.jsx exists here too; the sidebar
  * (layout/Sidebar/controlPlaneNav.js) says what the product shows. The only
  * things that do not exist are the ClojureScript leaves: '/' is the landing by
- * role, '/onboarding/*' and '/*' are a 404, and the CLJS bundle is never loaded.
+ * role, '/onboarding/*' (except the React /onboarding/license) and '/*' are a
+ * 404, and the CLJS bundle is never loaded.
  */
 const notFound = (
   <ControlPlanePage>
@@ -26,7 +27,7 @@ export default {
   postLoginPath: '/',
   postSetupPath: '/',
   Page: ControlPlanePage,
-  Guard: ProtectedRoute,
+  Guard: ControlPlaneProtectedRoute,
   Home: (
     <ControlPlanePage>
       <Home />

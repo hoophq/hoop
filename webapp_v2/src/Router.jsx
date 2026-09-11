@@ -27,6 +27,7 @@ import SettingsAttributes from '@/pages/Settings/Attributes'
 import SettingsAttributesForm from '@/pages/Settings/Attributes/Form'
 import SettingsProtectionRules from '@/pages/Settings/ProtectionRules'
 import OnboardingProtectionRules from '@/pages/Onboarding/ProtectionRules'
+import OnboardingLicense from '@/pages/Onboarding/License'
 import SettingsAuditLogs from '@/pages/Settings/AuditLogs'
 import SettingsServerLogs from '@/pages/Settings/ServerLogs'
 import GatewayUsers from '@/pages/Organization/Users/GatewayUsers'
@@ -56,6 +57,8 @@ import IntegrationsSlack from '@/pages/Integrations/Slack'
 import IntegrationsWebhooks from '@/pages/Integrations/Webhooks'
 import ComplianceReport from '@/pages/ComplianceReport'
 import Sidecars from '@/pages/Sidecars'
+import SidecarSetup from '@/pages/Sidecars/Setup'
+import SidecarDetailsPage from '@/pages/Sidecars/Details'
 
 // The only lazily-loaded page. Every other route is imported eagerly, but the
 // Dashboard pulls in recharts + d3 (~150KB gzipped) and is reachable by admins
@@ -104,14 +107,38 @@ function Router() {
       {/* Landing: the product decides (gateway: CLJS; control plane: by role). */}
       <Route path="/" element={Home} />
 
-      {/* Control plane pages. Resources are derived from sidecar listeners, never
-          created here; Reviews holds its place until Human in the Loop lands and is
-          the one surface an approver reaches. */}
+      {/* Control plane pages. The sidecar fleet (list, the connect/create wizard,
+          a details page) runs on /api/sidecars; Reviews holds its place until Human
+          in the Loop lands and is the one surface an approver reaches. */}
       <Route
         path="/sidecars"
         element={
           <Page adminOnly>
             <Sidecars />
+          </Page>
+        }
+      />
+      <Route
+        path="/sidecars/connect"
+        element={
+          <Page adminOnly>
+            <SidecarSetup mode="connect" />
+          </Page>
+        }
+      />
+      <Route
+        path="/sidecars/new"
+        element={
+          <Page adminOnly>
+            <SidecarSetup mode="create" />
+          </Page>
+        }
+      />
+      <Route
+        path="/sidecars/:id"
+        element={
+          <Page adminOnly>
+            <SidecarDetailsPage />
           </Page>
         }
       />
@@ -609,13 +636,24 @@ function Router() {
         }
       />
 
-      {/* Onboarding — no shell (mirrors :auth layout in the legacy app). The CLJS
-          onboarding is a gateway leaf; the control plane answers 404. */}
+      {/* Onboarding — no shell (mirrors :auth layout in the legacy app). The two
+          React routes exist in both products; the rest of the CLJS onboarding is
+          a gateway leaf and the control plane answers 404. The control plane gate
+          (ControlPlaneProtectedRoute) sends a free-plan admin with no sidecar to
+          /onboarding/license. */}
       <Route
         path="/onboarding/protection-rules"
         element={
           <Guard adminOnly>
             <OnboardingProtectionRules />
+          </Guard>
+        }
+      />
+      <Route
+        path="/onboarding/license"
+        element={
+          <Guard adminOnly>
+            <OnboardingLicense />
           </Guard>
         }
       />

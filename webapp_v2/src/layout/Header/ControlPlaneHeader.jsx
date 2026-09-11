@@ -43,7 +43,7 @@ function AppHeader({ burger }) {
         <HeaderSearch />
       </Box>
 
-      <UserMenu />
+      <UserMenu versionLabel="Control plane" />
     </Group>
   )
 }

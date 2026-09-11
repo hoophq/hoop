@@ -1,0 +1,18 @@
+/* Mantine paints the pending step and the rule between steps from one
+   variable, --stepper-outline-color, and declares it per color scheme directly
+   on the Stepper root ([data-mantine-color-scheme='light'] .m_xxx), so a :root
+   override from cssVariablesResolver never reaches it — the element-level
+   declaration wins over inheritance. Same case as --paper-border-color; see
+   components/Paper/Paper.module.css.
+
+   Its default is gray-2 (#c8c8cb), a solid mid-gray that pulls more attention
+   than a step nobody has reached deserves. gray-1 is the app's light border
+   tone, already used for the disabled border and the top bar rule.
+
+   Only this one variable. Mantine reuses it for the completed step's own
+   fill rules elsewhere, and a CSS module here sits outside @layer mantine, so
+   anything more specific added to .stepIcon would also beat [data-completed]
+   and leave the white check mark on a near-white circle. */
+.root {
+  --stepper-outline-color: var(--mantine-color-gray-1);
+}

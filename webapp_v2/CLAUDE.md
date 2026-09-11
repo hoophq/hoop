@@ -57,8 +57,9 @@ what a product shows, and ClojureScript exists only in the gateway.**
 - **Three leaves per product**, and only three: `/`, `/onboarding/*` and `/*`. In the
   gateway they are ClojureScript (`ClojureApp`); in the control plane `/` is the
   landing by role (`pages/Home`) and the other two are a 404 (`pages/NotFound`). The
-  control plane never loads the CLJS bundle. Sessions arrives there when a React
-  Sessions page exists.
+  React onboarding routes (`/onboarding/protection-rules`, `/onboarding/license`) sit
+  above the leaf and exist in both products. The control plane never loads the CLJS
+  bundle. Sessions arrives there when a React Sessions page exists.
 - **The product manifest is components, not flags.** `modes/gateway.jsx` and
   `modes/controlPlane.jsx` export `{ id, theme, postLoginPath, postSetupPath, Page,
   Guard, Home, Onboarding, CatchAll }`. `Page` is the shell of a React page
@@ -72,19 +73,23 @@ what a product shows, and ClojureScript exists only in the gateway.**
   `Sidebar/GatewaySidebar*`/`ControlPlaneSidebar*`, `Sidebar/gatewayNav.js`/
   `controlPlaneNav.js`, `CommandPalette/GatewayCommandPalette`/
   `ControlPlaneCommandPalette`, `GatewayPage`/`ControlPlanePage`,
+  `GatewayProtectedRoute`/`ControlPlaneProtectedRoute`,
   `Organization/Users/GatewayUsers`/`ControlPlaneUsers`. What they still share stays
   un-prefixed next to them (`UserMenu`, `NavItem`, `helpers`, the CSS modules,
-  `Users/shared.js`). A file only one product has keeps a plain name (`Sidecars`,
-  `Home`, `NotFound`, `NativeConnections`, `ConfigStatus`).
+  `Users/shared.js`). A shared file may take a prop (`UserMenu` takes `versionLabel`),
+  never know the mode. A file only one product has keeps a plain name (`Sidecars`,
+  `Onboarding/License`, `Home`, `NotFound`, `NativeConnections`, `ConfigStatus`).
 - **A page that differs is chosen in `Router.jsx`** with `<ByProduct gateway={…}
   controlPlane={…} />` (`modes/ByProduct.jsx`, the one component that reads the
   product). `grep ByProduct src/Router.jsx` lists every such page. A shared page may
   take a prop (`AccessRequest/Create` takes `defaultReviewerRoles`, passed through
   `ByProduct`), never know the mode.
 - **Auth is one gate.** `components/ProtectedRoute` (token, `/userinfo`, `/serverinfo`,
-  flags, `adminOnly`, `role`, `licenseFeature`) serves both. `GatewayProtectedRoute`
-  adds the onboarding redirect through its `onReady` hook; the control plane uses the
-  shared one directly.
+  flags, `adminOnly`, `role`, `licenseFeature`) serves both. Each product adds its own
+  redirect through the `onReady` hook: `GatewayProtectedRoute` the onboarding,
+  `ControlPlaneProtectedRoute` the first-access license screen (`/onboarding/license`,
+  for an admin on the free plan with no sidecar; the skip is per user in
+  `utils/licenseIntro.js`).
 - **The name is the contract, enforced by lint** (`eslint.config.js`): a `ControlPlane*`
   file cannot import `Gateway*`, `ClojureApp`, the CLJS bridge, `NativeConnections` or
   `ConfigStatus`; a `Gateway*` file cannot import `ControlPlane*`; an un-prefixed file
@@ -97,7 +102,14 @@ what a product shows, and ClojureScript exists only in the gateway.**
   `ClojureApp`, the CLJS bridge, `NativeConnections`, `ConfigStatus`, the CLJS leaves of
   `Router.jsx`, then the pages no control plane sidebar points at.
 - **A second theme** is a new file next to `src/theme.js`, pointed at by the product
-  manifest; `modes/ModeThemeProvider.jsx` feeds it to `MantineProvider`.
+  manifest; `modes/ModeThemeProvider.jsx` feeds it to `MantineProvider`. The control
+  plane has one: `theme.controlPlane.js` re-exports the shared `theme` and wraps the
+  base `cssVariablesResolver` to soften the disabled tokens. Wrap, never copy — the
+  base resolver owns `--brand-navy`, the control-height scale and the light bucket's
+  body/text/dimmed/border/placeholder, and a second list would drift. `appMode` is
+  `'gateway'` until `/publicserverinfo` answers, so a control plane boot paints one
+  frame with the gateway's tokens; that is accepted rather than gated on
+  `appModeLoaded`.
 - **Roles (control plane).** `/userinfo` reports `role`: **admin** reaches every page,
   **approver** reaches Reviews, anything else lands on the dead end at `/`. A role is a
   reserved group name; `standard` is the absence of one and is never stored as a group.
@@ -371,8 +383,14 @@ CSS Modules are allowed **only** for complex selectors that Mantine props cannot
 Available Mantine CSS variables (set by the theme in `src/theme.js`):
 
 ```css
-/* Spacing — xs=4px sm=8px md=16px lg=24px xl=32px xxl=48px xxxl=64px */
-var(--mantine-spacing-xs | sm | md | lg | xl | xxl | xxxl)
+/* Spacing. The theme's own scale carries an `Alt` suffix; Mantine's five
+   defaults stay alongside it, so both spellings resolve and they are NOT the
+   same size. There is no --mantine-spacing-xxl: that one silently resolves to
+   nothing and the rule using it is dropped.
+   theme:   xsAlt=4px smAlt=8px mdAlt=16px lgAlt=24px xlAlt=32px xxlAlt=48px xxxlAlt=64px
+   Mantine: xs=10px sm=12px md=16px lg=20px xl=32px */
+var(--mantine-spacing-xsAlt | smAlt | mdAlt | lgAlt | xlAlt | xxlAlt | xxxlAlt)
+var(--mantine-spacing-xs | sm | md | lg | xl)
 
 /* Font sizes — xs=12px sm=14px md=16px lg=18px xl=20px */
 var(--mantine-font-size-xs | sm | md | lg | xl)
