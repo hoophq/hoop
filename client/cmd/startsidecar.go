@@ -20,6 +20,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/license"
 	"github.com/hoophq/hoop/sidecar/pii/alcatraz"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 // deprecatedSidecarAlias is the pre-rename name of this command. Cobra routes
@@ -53,6 +54,11 @@ Every capability is decided by the config file, so turning on PII detection
 does not require a different binary. The file may be YAML or JSON; the
 extension picks the parser.
 
+Run with nothing at all — no config, no flags — and a built-in default
+starts instead: one loopback URL that forwards to the getting-started
+guide. It inspects no traffic; it exists so the first run after the
+install works. Write a config to replace it.
+
 This command was named "inspect". That name still works as a deprecated
 alias.
 
@@ -76,7 +82,8 @@ the URL and passing the token, nothing else; once the plane holds a config
 it owns it, and listeners still in the file are ignored with a warning. The
 token is shown once when the sidecar is created; a lost one means
 registering a new sidecar.`,
-	Example: `  hoop start sidecar --config /etc/hoop-inspect/config.yaml
+	Example: `  hoop start sidecar
+  hoop start sidecar --config /etc/hoop-inspect/config.yaml
   hoop start sidecar --config config.yaml --license /etc/hoop-inspect/license.json
   hoop start sidecar --config config.yaml --validate
   hoop start sidecar --config config.yaml --validate --strict
@@ -88,6 +95,9 @@ registering a new sidecar.`,
 		warnDeprecatedSidecarAlias(os.Stderr, cmd.CalledAs())
 
 		if sidecarConfigFlag == "" && os.Getenv(daemon.ControlPlaneURLEnv) == "" {
+			if sidecarBareInvocation(cmd, args) {
+				return daemon.FirstRun(os.Stdout, "hoop start sidecar --config config.yaml")
+			}
 			// The one genuine usage error here, so let cobra show the flags.
 			cmd.SilenceUsage = false
 			return fmt.Errorf("--config is required (or set HOOP_SIDECAR_CONFIG or %s)",
@@ -137,6 +147,30 @@ func warnDeprecatedSidecarAlias(w io.Writer, calledAs string) {
 			"Use \"hoop start sidecar\"; the alias is removed in a future release.",
 		deprecatedSidecarAlias))
 	_, _ = fmt.Fprintf(w, "%s\n", msg)
+}
+
+// sidecarBareInvocation reports whether this invocation asked for nothing:
+// no config anywhere, no control plane, no flag, no argument. That is the
+// one case that runs the first-run default (daemon.FirstRun) — a loopback
+// URL forwarding to the getting-started guide — instead of a usage error,
+// so a user's first contact after the install is a working URL.
+//
+// The gate keys on what the user typed, not on resulting values: a flag
+// set to its default (--validate=false, --license=) or an inherited global
+// flag (--debug) still keeps the error, because typing anything without a
+// config is a mistake to report, not a request for the demo.
+//
+// The caller has already established that sidecarConfigFlag (whose default
+// comes from the environment) and the control plane env var are empty.
+func sidecarBareInvocation(cmd *cobra.Command, args []string) bool {
+	if len(args) > 0 {
+		return false
+	}
+	changed := false
+	seen := func(f *pflag.Flag) { changed = changed || f.Changed }
+	cmd.Flags().VisitAll(seen)
+	cmd.InheritedFlags().VisitAll(seen)
+	return !changed
 }
 
 // sidecarConfigFromEnv reads the config path from the environment. It prefers

@@ -60,6 +60,8 @@
 //
 // Usage:
 //
+//	hoop-inspect                    (no config: a built-in default that serves
+//	                                 one loopback URL forwarding to the docs)
 //	hoop-inspect -config /etc/hoop-inspect/config.yaml
 //	hoop-inspect -validate -config config.yaml
 //	hoop-inspect -validate -strict -config config.yaml
