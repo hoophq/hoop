@@ -170,8 +170,8 @@ sequenceDiagram
 
     User->>Bastion: ssh -J bastion target-host (hop 1)
     Bastion->>Bastion: validate cert against trusted CA
-    Bastion->>Bastion: cert grants port-forwarding? destination allowed?
-    Bastion->>Bastion: admit the forward, dial target-host, relay bytes blind
+    Bastion->>Bastion: cert permits opening a forward? no destination check
+    Bastion->>Bastion: dial the host the client named, relay bytes blind
     Note over Bastion,Endpoint: the bastion never sees hop 2's plaintext
 
     User->>Endpoint: second handshake through the pipe, same cert (hop 2)
