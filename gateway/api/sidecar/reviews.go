@@ -29,6 +29,12 @@ const (
 	// database user or the source address behind the statement will go.
 	reviewOwnerEmail = "hoop@hoop.dev"
 
+	// maxStatementBytes caps the decoded statement. It is stored twice, as the
+	// session blob and the review blob, and a token holder could otherwise fill
+	// the database one request at a time. A statement a human is expected to
+	// read has no business being larger.
+	maxStatementBytes = 100000 // 0.1MB, the ceiling plugin config already uses
+
 	// reviewConnectionType is what a session must declare. private.sessions
 	// requires one and enum_connection_type has no label for a listener, so a
 	// sidecar session takes the catch-all rather than the enum taking a new
@@ -46,7 +52,7 @@ const (
 //	@Param			hoop-sidecar-token	header		string							true	"The token returned when the sidecar was created"
 //	@Param			request				body		openapi.SidecarReviewRequest	true	"The request body resource"
 //	@Success		201					{object}	openapi.Review
-//	@Failure		400,401,412,500		{object}	openapi.HTTPError
+//	@Failure		400,401,412,413,500	{object}	openapi.HTTPError
 //	@Router			/sidecars/reviews [post]
 func PostReview(c *gin.Context) {
 	sidecar := apiroutes.SidecarFromContext(c)
@@ -81,9 +87,19 @@ func PostReview(c *gin.Context) {
 		return
 	}
 
+	if len(statement) > maxStatementBytes {
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{
+			"message": fmt.Sprintf("statement is larger than %d bytes", maxStatementBytes),
+		})
+		return
+	}
+
 	rev, err := createSidecarReview(sidecar, req.ListenerName, string(statement))
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating sidecar review: %v", err)
+		// The error is logged and sent to Sentry by AbortWithErr; the caller
+		// gets none of it. A database message names constraints, tables and
+		// columns, and a token holder has no use for any of that.
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating sidecar review")
 		return
 	}
 
@@ -92,7 +108,9 @@ func PostReview(c *gin.Context) {
 
 	// TrackEvent, not TrackRequest: this request has no user, and TrackRequest
 	// answers an empty user email by doing nothing at all.
-	analytics.New().TrackEvent(analytics.EventCreateSidecarReview, map[string]any{
+	trackClient := analytics.New()
+	defer trackClient.Close()
+	trackClient.TrackEvent(analytics.EventCreateSidecarReview, map[string]any{
 		"org-id":   sidecar.OrgID,
 		"sidecar":  sidecar.Name,
 		"listener": req.ListenerName,
@@ -127,7 +145,19 @@ func createSidecarReview(sidecar *models.Sidecar, listenerName, statement string
 		return nil, fmt.Errorf("failed creating session: %w", err)
 	}
 
-	rev := &models.Review{
+	rev := newSidecarReview(sidecar, listenerName, sessionID, now)
+	if err := models.CreateReview(rev, statement); err != nil {
+		return nil, fmt.Errorf("failed creating review: %w", err)
+	}
+	return rev, nil
+}
+
+// newSidecarReview builds the row, and with it the whole approval policy: a
+// group per eligible role and a minimum of one. Nothing in the review path
+// spells that out, so an omission here is silent — without the minimum the
+// review needs BOTH groups, and without a row a role cannot approve at all.
+func newSidecarReview(sidecar *models.Sidecar, listenerName, sessionID string, now time.Time) *models.Review {
+	return &models.Review{
 		ID:        uuid.NewString(),
 		OrgID:     sidecar.OrgID,
 		Type:      models.ReviewTypeOneTime,
@@ -150,11 +180,6 @@ func createSidecarReview(sidecar *models.Sidecar, listenerName, statement string
 
 		CreatedAt: now,
 	}
-
-	if err := models.CreateReview(rev, statement); err != nil {
-		return nil, fmt.Errorf("failed creating review: %w", err)
-	}
-	return rev, nil
 }
 
 // eligibleReviewGroups is the fixed policy: an admin or an approver, whichever

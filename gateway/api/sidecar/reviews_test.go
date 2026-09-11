@@ -2,11 +2,13 @@ package apisidecar
 
 import (
 	"database/sql"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -25,6 +27,27 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	os.Exit(m.Run())
+}
+
+// The minimum is half the policy and nothing downstream restates it. Without
+// it reviewsCountNeeded falls back to the number of group rows, so the review
+// would quietly need BOTH an admin and an approver.
+func TestNewSidecarReviewCarriesTheWholePolicy(t *testing.T) {
+	sc := &models.Sidecar{ID: "sidecar-1", OrgID: "org-1", Name: "sc-a"}
+
+	rev := newSidecarReview(sc, "appdb", "session-1", time.Now().UTC())
+
+	assert.NotNil(t, rev.MinApprovals, "no minimum means both groups must approve")
+	assert.Equal(t, 1, *rev.MinApprovals, "one approval settles a sidecar review")
+	assert.Len(t, rev.ReviewGroups, 2)
+
+	assert.Equal(t, "sidecar-1", rev.SidecarID.String)
+	assert.Equal(t, "appdb", rev.ListenerName.String)
+	assert.Empty(t, rev.ConnectionName, "a sidecar review resolves no connection")
+	assert.Equal(t, reviewOwnerEmail, rev.OwnerEmail)
+	assert.Equal(t, models.ReviewStatusPending, rev.Status)
+	assert.Equal(t, models.ReviewTypeOneTime, rev.Type)
+	assert.Nil(t, rev.AccessRequestRuleName, "the policy is fixed, not carried by a rule")
 }
 
 // The whole approval policy lives in these rows. EVL-273 put none of it in
@@ -119,4 +142,22 @@ func TestPostReviewRefusesAPayloadThatIsNotBase64(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 	assert.Contains(t, rec.Body.String(), "not valid base64")
+}
+
+// The statement is stored twice, as the session blob and the review blob, so a
+// token holder could otherwise fill the database one request at a time.
+func TestPostReviewRefusesAStatementOverTheCap(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Set("sidecar-auth", &models.Sidecar{ID: "sidecar-1", OrgID: "org-1", Name: "sc-a"})
+	oversized := base64.StdEncoding.EncodeToString([]byte(strings.Repeat("a", maxStatementBytes+1)))
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/sidecars/reviews",
+		strings.NewReader(`{"listener_name":"appdb","payload":"`+oversized+`"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	PostReview(c)
+
+	assert.Equal(t, http.StatusRequestEntityTooLarge, rec.Code)
+	assert.Contains(t, rec.Body.String(), "larger than")
 }

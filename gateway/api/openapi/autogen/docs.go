@@ -10206,6 +10206,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
                     },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -19611,8 +19617,9 @@ const docTemplate = `{
             ],
             "properties": {
                 "listener_name": {
-                    "description": "The sidecar listener the statement arrived on",
+                    "description": "The sidecar listener the statement arrived on\n\nBounded because private.reviews.listener_name is VARCHAR(255): a longer\nname would reach Postgres and fail the write, rather than being told at\nthe door that it is too long.",
                     "type": "string",
+                    "maxLength": 255,
                     "example": "appdb"
                 },
                 "payload": {

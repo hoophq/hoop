@@ -8496,8 +8496,9 @@
       "openapi.SidecarReviewRequest": {
         "properties": {
           "listener_name": {
-            "description": "The sidecar listener the statement arrived on",
+            "description": "The sidecar listener the statement arrived on\n\nBounded because private.reviews.listener_name is VARCHAR(255): a longer\nname would reach Postgres and fail the write, rather than being told at\nthe door that it is too long.",
             "example": "appdb",
+            "maxLength": 255,
             "type": "string"
           },
           "payload": {
@@ -21988,6 +21989,16 @@
               }
             },
             "description": "Precondition Failed"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
           },
           "500": {
             "content": {
