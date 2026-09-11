@@ -8,43 +8,105 @@ const EMPTY = {
   // and showing it before the list arrives tells every org it owns no sidecar.
   loading: true,
   error: null,
+  // The one record /sidecars/:id is looking at, for as long as that page is
+  // mounted. `selectedId` is what the store went to fetch, so a page compares
+  // it with the route to know whether the record on screen is its own;
+  // `selectedLoading` says whether that fetch has answered yet. Both are
+  // needed: the first alone reads "we asked for this id", which is true from
+  // the moment the request leaves.
+  selected: null,
+  selectedId: null,
+  selectedError: null,
+  selectedLoading: false,
 }
 
-// The fleet as the gateway lists it. createSidecar returns the response, token
-// included, and keeps none of it: the token is shown once by the wizard that
-// asked for it and must not outlive that page (compare useAgentStore.agentKey).
+// The fleet as the gateway lists it, and the single record the details page
+// reads. createSidecar returns the response, token included, and keeps none of
+// it: the token is shown once by the wizard that asked for it and must not
+// outlive that page (compare useAgentStore.agentKey).
 export const useSidecarStore = create((set, get) => ({
   ...EMPTY,
-  // Bumped by every fetch, every mutation and the logout reset, so a list
-  // response that arrives after the fleet moved on is dropped rather than
-  // restoring what it saw.
-  requestId: 0,
+  // One generation per resource. The list and the selected record are fetched
+  // independently, so a shared counter would let either cancel the other.
+  // Bumped by every fetch, every mutation and the logout reset, so a response
+  // that arrives after its resource moved on is dropped rather than restoring
+  // what it saw.
+  listRequestId: 0,
+  selectedRequestId: 0,
 
-  reset: () => set((state) => ({ ...EMPTY, requestId: state.requestId + 1 })),
+  reset: () =>
+    set((state) => ({
+      ...EMPTY,
+      listRequestId: state.listRequestId + 1,
+      selectedRequestId: state.selectedRequestId + 1,
+    })),
 
   fetchSidecars: async () => {
-    const requestId = get().requestId + 1
-    set({ requestId, loading: true, error: null })
+    const requestId = get().listRequestId + 1
+    set({ listRequestId: requestId, loading: true, error: null })
     // A superseded response still clears `loading` — the request it belonged to
     // is over either way, and leaving it set strands the page on a loader.
     try {
-      const sidecars = await sidecarsService.list()
-      set((state) => (state.requestId === requestId ? { sidecars, loading: false } : { loading: false }))
+      const { data } = await sidecarsService.list()
+      set((state) => (state.listRequestId === requestId ? { sidecars: data ?? [], loading: false } : { loading: false }))
     } catch (error) {
-      set((state) => (state.requestId === requestId ? { error: error.message, loading: false } : { loading: false }))
+      set((state) =>
+        state.listRequestId === requestId ? { error: error.message, loading: false } : { loading: false }
+      )
     }
   },
 
+  // Clears the previous record before the request leaves, so nothing can render
+  // one sidecar under another's URL.
+  //
+  // A superseded response leaves `selectedLoading` alone, unlike the list: the
+  // generation only changes when a newer fetch or clearSelected took over, and
+  // that caller owns the flag now.
+  fetchSidecar: async (nameOrId) => {
+    const requestId = get().selectedRequestId + 1
+    set({
+      selectedRequestId: requestId,
+      selectedId: nameOrId,
+      selected: null,
+      selectedError: null,
+      selectedLoading: true,
+    })
+    try {
+      const { data } = await sidecarsService.get(nameOrId)
+      set((state) => (state.selectedRequestId === requestId ? { selected: data, selectedLoading: false } : {}))
+    } catch (error) {
+      const message = error.response?.status === 404 ? 'Sidecar not found.' : error.message
+      set((state) => (state.selectedRequestId === requestId ? { selectedError: message, selectedLoading: false } : {}))
+    }
+  },
+
+  // The selected record belongs to one page view, not to the app: a details
+  // page that unmounts drops it. Keeping it would let the next visit to the
+  // same URL paint a record minutes old — or one already deleted — before the
+  // refresh lands, with nothing on screen saying it is stale. Bumping the
+  // generation also retires a request still in flight.
+  clearSelected: () =>
+    set((state) => ({
+      selected: null,
+      selectedId: null,
+      selectedError: null,
+      selectedLoading: false,
+      selectedRequestId: state.selectedRequestId + 1,
+    })),
+
   createSidecar: async ({ name }) => {
-    const created = await sidecarsService.create({ name })
-    const { token: _token, ...sidecar } = created
-    set((state) => ({ sidecars: [...state.sidecars, sidecar], requestId: state.requestId + 1 }))
-    return created
+    const { data } = await sidecarsService.create({ name })
+    const { token: _token, ...sidecar } = data
+    set((state) => ({ sidecars: [...state.sidecars, sidecar], listRequestId: state.listRequestId + 1 }))
+    return data
   },
 
   deleteSidecar: async (id) => {
     await sidecarsService.delete(id)
-    set((state) => ({ sidecars: state.sidecars.filter((s) => s.id !== id), requestId: state.requestId + 1 }))
+    set((state) => ({
+      sidecars: state.sidecars.filter((s) => s.id !== id),
+      listRequestId: state.listRequestId + 1,
+    }))
   },
 }))
 

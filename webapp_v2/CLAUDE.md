@@ -134,13 +134,69 @@ from `API_URL`, so with an IdP that only allows the 8009 callback run
 ### Stores (Zustand)
 - **Global stores** (`src/stores/`): State consumed by multiple pages (auth, user, resources, connections, agents, UI)
 - **Local stores** (`src/pages/[Page]/store.js`): State that only exists in that specific page (form wizard steps, local filters)
-- Stores access services for API calls. Components access stores for state.
 - Access store state outside React with `useStore.getState()`
 
 ### Services (Axios)
 - Base instance in `services/api.js` with auth interceptor and 401 handling
 - One file per domain: `services/agents.js`, `services/resources.js`, etc.
-- Services return axios promises. Stores handle the response.
+
+**A service returns the raw Axios promise.** No `.then`, no `response.data`, no
+defaulting — the store unwraps. `services/agents.js` is the shape to copy:
+
+```js
+// ✅ services/agents.js
+export const agentsService = {
+  list: () => api.get('/agents'),
+  create: (data) => api.post('/agents', data),
+}
+// consumed in useAgentStore
+const { data } = await agentsService.list()
+
+// ❌ unwrapping inside the service
+list: () => api.get('/agents').then((r) => r.data ?? []),
+```
+
+The store is where status, headers and defaulting belong, and a service that
+unwraps forces a rewrite the day a caller needs a header or a status. **10 of
+the 34 service files still unwrap**; they predate the rule and are not a
+licence to add an eleventh. Touching one is the moment to fix it.
+
+### Who owns a request
+
+**The store owns the request: its loading flag, its error, and its
+cancellation.** A page asks for an id and renders what comes back.
+
+A page **may** import a service directly — 39 do, and routing a one-shot probe
+through a store is worse, not better. What a page must not do is hand-roll
+loading/error state for a resource a store already owns. Two calls that stay
+out of the store on purpose, both in the control plane:
+
+- `Setup/sections/WaitingStep.jsx` polls every 3s. In a global store that
+  re-renders every subscriber, for state that dies when the wizard closes.
+- `components/ControlPlaneProtectedRoute.jsx` asks one question before any page
+  mounts. Through the fleet store, an auth gate would populate application
+  state as a side effect of a redirect decision.
+
+**One generation counter per resource** when a store's state has more than one
+async writer, so a late response cannot restore what a newer one replaced.
+`useSidecarStore` carries `listRequestId` and `selectedRequestId`; each fetch
+takes the next number and commits only while it is still current. A superseded
+*list* response still clears `loading` — the request it belonged to is over
+either way, and leaving the flag set strands the page on a loader.
+
+**Reset session-scoped stores on logout**, from the store's own side:
+
+```js
+useAuthStore.subscribe((state, prev) => {
+  if (prev.isAuthenticated && !state.isAuthenticated) useMyStore.getState().reset()
+})
+```
+
+Module state outlives a logout — nothing on that path reloads the tab — so the
+next user in the same tab sees the previous one's data until the first fetch
+answers. Subscribing from this side keeps the dependency pointing the right way
+and avoids the cycle a call from `useAuthStore` would create. Live examples:
+`useNativeAccessStore`, `useSidecarStore`.
 
 ### Components — Component Library Strategy
 

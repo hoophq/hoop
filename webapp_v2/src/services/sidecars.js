@@ -12,8 +12,8 @@ import api from './api'
 // `PUT /sidecars/:nameOrID`, which has no caller: the pages read the
 // configuration, they do not author it.
 export const sidecarsService = {
-  list: () => api.get('/sidecars').then((r) => r.data ?? []),
-  get: (nameOrId) => api.get(`/sidecars/${encodeURIComponent(nameOrId)}`).then((r) => r.data),
-  create: ({ name }) => api.post('/sidecars', { name }).then((r) => r.data),
+  list: () => api.get('/sidecars'),
+  get: (nameOrId) => api.get(`/sidecars/${encodeURIComponent(nameOrId)}`),
+  create: ({ name }) => api.post('/sidecars', { name }),
   delete: (nameOrId) => api.delete(`/sidecars/${encodeURIComponent(nameOrId)}`),
 }
