@@ -367,10 +367,12 @@ type LaneInfo struct {
 	// shows. See lane.notes.
 	Notes []string
 
-	// Analyzed counts the ai_analysis rules on this lane. They are
-	// reported apart from Rules because they behave differently in the way
-	// that matters to whoever is reading a validate output: they leave the
-	// process, they cost money, and they can be slow.
+	// Analyzer reports the lane's own analyzer block, and Analyzed counts
+	// any DEPRECATED ai_analysis rules still on the lane. Both are
+	// reported apart from Rules because the analyzer is a component, not
+	// a rule count: it leaves the process, it costs money, and it can be
+	// slow.
+	Analyzer bool
 	Analyzed int
 }
 
@@ -392,8 +394,17 @@ func (l LaneInfo) Summary() string {
 	if l.Masking {
 		mode += " + masking"
 	}
-	if l.Analyzed > 0 {
-		mode += fmt.Sprintf(" + %d ai rule(s)", l.Analyzed)
+	// The analyzer is a component of the lane, not a rule count. The
+	// deprecated rule form is still named — with its count, since two
+	// rules are two evaluators — so an operator can see what is left to
+	// migrate.
+	switch {
+	case l.Analyzer && l.Analyzed > 0:
+		mode += fmt.Sprintf(" + ai analyzer (and %d deprecated ai rule(s))", l.Analyzed)
+	case l.Analyzer:
+		mode += " + ai analyzer"
+	case l.Analyzed > 0:
+		mode += fmt.Sprintf(" + ai analyzer (%d deprecated ai rule(s))", l.Analyzed)
 	}
 	return mode
 }
@@ -442,6 +453,7 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 			Rules:     len(ln.rules),
 			OPA:       ln.opaURL != "",
 			Masking:   ln.masker != nil,
+			Analyzer:  ln.cfg.Analyzer != nil,
 			Analyzed:  len(ln.analyzed),
 			Notes:     notes,
 		})
@@ -813,9 +825,11 @@ type lane struct {
 	rules  []string
 	opaURL string
 
-	// analyzed names the ai_analysis rules on this lane, reported the same
-	// way and for the same reason: the Chain cannot say what is in it, and
-	// an operator needs to see that a lane is sending statements to a model.
+	// analyzed names any DEPRECATED ai_analysis rules on this lane,
+	// reported the same way and for the same reason: the Chain cannot say
+	// what is in it, and an operator needs to see that a lane is sending
+	// statements to a model. The lane's own analyzer block is reported
+	// through cfg.Analyzer instead.
 	analyzed []string
 
 	// captureBody reports whether this lane's codec exposes request bodies,
@@ -861,7 +875,7 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 			continue
 		}
 
-		pol, err := buildPolicy(gc, opa, det, ac)
+		pol, err := buildPolicy(name, gc, lc.Analyzer, opa, det, ac)
 		if err != nil {
 			problems = append(problems, name+": "+err.Error())
 			continue
@@ -901,10 +915,10 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 				"observe mode: every rule is evaluated and nothing is denied. "+
 					"Matches are recorded on the audit line as "+policy.AnnotationWouldDeny)
 		}
-		if !opa.enabled() && anyDeferred(gc.Rules) {
+		if !opa.enabled() && (anyDeferred(gc.Rules) || analyzerDefers(lc.Analyzer)) {
 			ln.notes = append(ln.notes,
-				"rule(s) defer to a decision this lane has no opa.url for, so a match "+
-					"denies instead of reporting a finding")
+				"defer names a decision this lane has no opa.url for, so a deferred "+
+					"match or risk level denies instead of reporting a finding")
 		}
 		out = append(out, ln)
 	}
@@ -1225,11 +1239,13 @@ func serveAdmin(
 			OPAGate    bool     `json:"opa_gate,omitempty"`
 			Notes      []string `json:"notes,omitempty"`
 
-			// AIRules names the ai_analysis rules and CaptureBody says
-			// whether this lane's codec exposes request bodies. Both
-			// are here because they answer "what leaves this process",
-			// which is the question an operator has about an analyzer
-			// and cannot answer from the config file alone.
+			// Analyzer reports the lane's own analyzer block, AIRules
+			// names any DEPRECATED ai_analysis rules, and CaptureBody
+			// says whether this lane's codec exposes request bodies.
+			// All three are here because they answer "what leaves this
+			// process", which is the question an operator has about an
+			// analyzer and cannot answer from the config file alone.
+			Analyzer    bool     `json:"analyzer,omitempty"`
 			AIRules     []string `json:"ai_rules,omitempty"`
 			CaptureBody bool     `json:"capture_body,omitempty"`
 		}
@@ -1252,6 +1268,7 @@ func serveAdmin(
 				Rules:       ln.rules,
 				OPA:         ln.opaURL,
 				Masking:     ln.masker != nil,
+				Analyzer:    ln.cfg.Analyzer != nil,
 				AIRules:     ln.analyzed,
 				CaptureBody: ln.captureBody,
 				Observing:   ln.observing,

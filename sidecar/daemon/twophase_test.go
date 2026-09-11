@@ -53,10 +53,12 @@ func denyWordsRule(name, action string) policy.Rule {
 }
 
 // lanePolicy is an enforcing lane policy, whatever produces on it.
-// laneStack is the pair buildPolicy takes now that the old policy block is
-// two config sections. Bundling them keeps each test below a single call.
+// laneStack is what buildPolicy takes now that the old policy block is
+// separate config sections. Bundling them keeps each test below a single
+// call.
 type laneStack struct {
 	gc  GuardrailsConfig
+	la  *LaneAnalyzerConfig
 	opa *OPAConfig
 }
 
@@ -66,7 +68,7 @@ func lanePolicy(opa *OPAConfig, rules ...policy.Rule) laneStack {
 }
 
 func buildLane(s laneStack, det Plugin, ac *analyzerDeps) (policy.Evaluator, error) {
-	return buildPolicy(s.gc, s.opa, det, ac)
+	return buildPolicy("lane", s.gc, s.la, s.opa, det, ac)
 }
 
 // A lane with no defer and no gate must build exactly the chain it built
@@ -139,7 +141,7 @@ func TestAIDeferWithoutOPABlocks(t *testing.T) {
 		t.Fatalf("a rule deferring on a lane with no opa was refused: %v", err)
 	}
 
-	m, err := actionMap(deferRule("risky"), false)
+	m, err := actionMap(specFromRule(deferRule("risky")), false)
 	if err != nil {
 		t.Fatalf("actionMap: %v", err)
 	}
@@ -149,7 +151,7 @@ func TestAIDeferWithoutOPABlocks(t *testing.T) {
 	}
 
 	// With a consumer, the same rule defers as written.
-	m, err = actionMap(deferRule("risky"), true)
+	m, err = actionMap(specFromRule(deferRule("risky")), true)
 	if err != nil {
 		t.Fatalf("actionMap: %v", err)
 	}

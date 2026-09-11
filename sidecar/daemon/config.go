@@ -259,6 +259,24 @@ type ListenerConfig struct {
 	// a lane switches inherited masking off.
 	Mask *MaskConfig `json:"mask,omitempty"`
 
+	// Analyzer is this listener's own AI analyzer block: the trigger, the
+	// risk-to-action map and the prompt for this lane, plus overrides of
+	// the top-level analyzer defaults (send, fail_open, timeout_sec,
+	// max_input_bytes, max_calls, cache).
+	//
+	// It sits beside Guardrails and Mask as a peer, not inside them: the
+	// analyzer is a per-lane component that leaves the process and costs
+	// money, and modelling it as a guardrail rule hid both facts. The
+	// top-level analyzer section stays process-wide for what genuinely is
+	// (provider, model, credential) and supplies the defaults this block
+	// inherits.
+	//
+	// The DEPRECATED spelling — a `type: ai_analysis` rule under
+	// guardrails.rules — still loads and still works; normalize records a
+	// deprecation naming this block. Both can coexist on one lane during a
+	// migration, each becoming its own evaluator.
+	Analyzer *LaneAnalyzerConfig `json:"analyzer,omitempty"`
+
 	// HTTP configures what this lane's HTTP codec captures. Only valid on
 	// an http lane.
 	HTTP *HTTPCodecConfig `json:"http,omitempty"`
@@ -612,6 +630,16 @@ func (c *Config) normalize() error {
 	// mask.enabled -> the presence of mask.rules.
 	c.Mask = normalizeMask("mask", c.Mask, warn)
 
+	// A `type: ai_analysis` rule is the deprecated spelling of the
+	// listener analyzer block. It is warned about rather than folded:
+	// folding could not be faithful (two rules on one lane cannot become
+	// one block, and a top-level rule reaches lanes that have their own
+	// block), so the rule form keeps working through its own path and the
+	// warning names the replacement.
+	if c.Guardrails != nil {
+		warnAIRules("guardrails", c.Guardrails.Rules, warn)
+	}
+
 	for i := range c.Listeners {
 		lc := &c.Listeners[i]
 		where := lc.Name
@@ -648,12 +676,33 @@ func (c *Config) normalize() error {
 		lc.Policy = nil
 
 		lc.Mask = normalizeMask(where+": mask", lc.Mask, warn)
+		if lc.Guardrails != nil {
+			warnAIRules(where+": guardrails", lc.Guardrails.Rules, warn)
+		}
 	}
 
 	if len(conflicts) > 0 {
 		return fmt.Errorf("invalid config:\n  - %s", strings.Join(conflicts, "\n  - "))
 	}
 	return nil
+}
+
+// warnAIRules records a deprecation for every ai_analysis rule in one
+// guardrails block. Top-level rules point at each listener's block, because
+// a top-level analyzer block does not exist: what is process-wide about the
+// analyzer already lives in the top-level analyzer section.
+func warnAIRules(where string, rules []policy.Rule, warn func(string, ...any)) {
+	for _, r := range rules {
+		if r.Type != policy.MatchAIAnalysis {
+			continue
+		}
+		warn("%s: rule %q: type: ai_analysis is deprecated; the analyzer is a "+
+			"per-listener component, not a guardrail rule. Move trigger, "+
+			"high/medium/low, prompt and message to the listener's own "+
+			"\"analyzer\" block, which inherits the top-level analyzer "+
+			"defaults and overrides them per lane. The rule form keeps "+
+			"working for now", where, r.Name)
+	}
 }
 
 // foldPolicy maps one deprecated policy block onto a guardrails block and an
@@ -913,7 +962,7 @@ func (c *Config) validateLane(lc ListenerConfig, name string) []string {
 	}
 
 	localRules, aiRules := splitAnalyzerRules(gc.Rules)
-	problems = append(problems, validateAIRules(aiRules, c.Analyzer, opa, name)...)
+	problems = append(problems, validateLaneAnalysis(aiRules, lc.Analyzer, c.Analyzer, opa, name)...)
 
 	if opa != nil && opa.URL == "" && !opa.off() {
 		problems = append(problems, name+
@@ -972,28 +1021,30 @@ func (c *Config) validateLane(lc ListenerConfig, name string) []string {
 				"\"grpc\" block with capture_payload: true and descriptors", name))
 	}
 
-	// An ai_analysis rule on an HTTP lane with no body capture classifies
-	// nothing: HTTPBuilder.Build returns ok=false on an empty body, and the
-	// codec leaves Body empty unless the lane asked for it. The rule would
-	// load, evaluate and never fire: the same silent failure the config
-	// refuses everywhere else, on a control that also costs money when it
-	// does work.
+	// A lane's analyzer — the block or a DEPRECATED ai_analysis rule — on
+	// an HTTP lane with no body capture classifies nothing:
+	// HTTPBuilder.Build returns ok=false on an empty body, and the codec
+	// leaves Body empty unless the lane asked for it. It would load,
+	// evaluate and never fire: the same silent failure the config refuses
+	// everywhere else, on a control that also costs money when it does
+	// work.
 	//
 	// This asserts only that the proxy COULD capture a body. A request that
 	// carries no body is still skipped at runtime, deliberately: paying for
 	// a verdict on "POST /orders" with no payload is what that skip avoids.
-	if len(aiRules) > 0 && inspect.Protocol(lc.Protocol) == inspect.HTTP &&
+	analyzing := len(aiRules) > 0 || lc.Analyzer != nil
+	if analyzing && inspect.Protocol(lc.Protocol) == inspect.HTTP &&
 		(lc.HTTP == nil || !lc.HTTP.CaptureBody) {
 		problems = append(problems, fmt.Sprintf(
-			"%s: has ai_analysis rule(s) on an http listener but http.capture_body "+
+			"%s: has an analyzer on an http listener but http.capture_body "+
 				"is not set, so every request would be skipped; add an \"http\" "+
 				"block with capture_body: true", name))
 	}
 
-	if len(aiRules) > 0 && isGRPCTransport(lc) &&
+	if analyzing && isGRPCTransport(lc) &&
 		(lc.GRPC == nil || !lc.GRPC.CapturePayload) {
 		problems = append(problems, fmt.Sprintf(
-			"%s: has ai_analysis rule(s) on a %s listener but grpc.capture_payload "+
+			"%s: has an analyzer on a %s listener but grpc.capture_payload "+
 				"is not set, so every RPC would be skipped; add a \"grpc\" block "+
 				"with capture_payload: true and descriptors", name, lc.Protocol))
 	}
@@ -1002,12 +1053,13 @@ func (c *Config) validateLane(lc ListenerConfig, name string) []string {
 	// does so more quietly than any other failure here: Evaluator.classify
 	// returns before it has a status, so there is no skipped finding and no
 	// annotation, and an operator watching the trail sees a lane behaving
-	// exactly as if the rule were absent. That is the mssql case this check
-	// exists for, and it covers any protocol that relays without decoding.
-	if p := inspect.Protocol(lc.Protocol); len(aiRules) > 0 && p != "" {
+	// exactly as if the analyzer were absent. That is the mssql case this
+	// check exists for, and it covers any protocol that relays without
+	// decoding.
+	if p := inspect.Protocol(lc.Protocol); analyzing && p != "" {
 		if _, ok := analyzer.BuilderFor(p); !ok {
 			problems = append(problems, fmt.Sprintf(
-				"%s: has ai_analysis rule(s) on a listener with protocol %q, and this "+
+				"%s: has an analyzer on a listener with protocol %q, and this "+
 					"build has no content builder for it, so every statement would be "+
 					"skipped without leaving a finding", name, p))
 		}
@@ -1126,13 +1178,17 @@ type Plugin interface {
 // the config at startup stopped one file from serving a deployment with OPA
 // and a deployment without one.
 //
+// lane names the listener; it is what the analyzer block's evaluator, its
+// findings and its call budget carry, since a component has no rule name.
+//
 // Returns nil when nothing would evaluate. det may be nil, and a lane with pii
 // rules then fails to build by design: a guardrail that cannot see must not
 // start.
-func buildPolicy(gc GuardrailsConfig, opa *OPAConfig, det Plugin, ac *analyzerDeps) (policy.Evaluator, error) {
-	// ai_analysis rules are lifted out before Rules sees them: they need a
-	// provider and a deadline, which a local matcher has no business
-	// holding, and Rules refuses one that reaches it.
+func buildPolicy(lane string, gc GuardrailsConfig, la *LaneAnalyzerConfig,
+	opa *OPAConfig, det Plugin, ac *analyzerDeps) (policy.Evaluator, error) {
+	// DEPRECATED ai_analysis rules are lifted out before Rules sees them:
+	// they need a provider and a deadline, which a local matcher has no
+	// business holding, and Rules refuses one that reaches it.
 	localRules, aiRules := splitAnalyzerRules(gc.Rules)
 
 	var chain policy.Chain
@@ -1157,7 +1213,7 @@ func buildPolicy(gc GuardrailsConfig, opa *OPAConfig, det Plugin, ac *analyzerDe
 	// ai_analysis risk level or a local rule reporting a match. Both need a
 	// decision placed AFTER them, because a policy reading input.findings
 	// has to run after the thing that fills it.
-	twoPhase := opa.enabled() && (opa.Gate || anyDeferred(gc.Rules))
+	twoPhase := opa.enabled() && (opa.Gate || anyDeferred(gc.Rules) || analyzerDefers(la))
 
 	switch {
 	case !opa.enabled():
@@ -1170,6 +1226,17 @@ func buildPolicy(gc GuardrailsConfig, opa *OPAConfig, det Plugin, ac *analyzerDe
 		chain = append(chain, opa.client(policy.PhaseGate))
 	}
 
+	// The lane's own analyzer block runs first, then any DEPRECATED
+	// rule-form analyzers in concatenation order. All of them sit after
+	// the local rules and the single-call/gate OPA position, so a
+	// statement a free evaluator already refused never costs a model call.
+	if la != nil {
+		ev, err := buildLaneAnalyzer(lane, la, ac, opa.enabled())
+		if err != nil {
+			return nil, err
+		}
+		chain = append(chain, ev)
+	}
 	if len(aiRules) > 0 {
 		evs, err := buildAnalyzerEvaluators(aiRules, ac, opa.enabled())
 		if err != nil {
@@ -1219,20 +1286,43 @@ func anyDeferred(rules []policy.Rule) bool {
 	return false
 }
 
+// analyzerDefers reports whether a lane's analyzer block hands any risk
+// level to a later evaluator: the block's spelling of what anyDeferred
+// reads off the rule set.
+func analyzerDefers(la *LaneAnalyzerConfig) bool {
+	if la == nil {
+		return false
+	}
+	for _, raw := range [...]string{la.HighRisk, la.MediumRisk, la.LowRisk} {
+		if analyzer.Action(raw) == analyzer.ActionDefer {
+			return true
+		}
+	}
+	return false
+}
+
 // analyzerDeps carries the process-wide analyzer to each lane's policy build.
 // One provider serves every lane, so the credential is read once.
 type analyzerDeps struct {
 	cfg      *AnalyzerConfig
 	provider analyzer.Provider
-	redact   func(string) string
 
-	// budgets hands every generation of a rule's evaluator the same call
-	// counter, so MaxCalls bounds the rule's spend across hot reloads: a
+	// det builds each evaluator's redactor from its EFFECTIVE send mode:
+	// a lane overriding `send` gets its own rewrite function while every
+	// other lane keeps the default. Held here rather than a prebuilt
+	// redactor because the mode is per lane now. Nil in a build with no
+	// detector, which sends raw.
+	det Plugin
+
+	// budgets hands every generation of an evaluator the same call
+	// counter, so MaxCalls bounds the spend across hot reloads: a
 	// draining generation and its replacement pay from one purse. Keyed
-	// by rule name, the identity an operator edits; two lanes naming one
-	// rule share a budget too, which is what "process-wide" already
-	// promised. Entries are never dropped, and single-goroutine access
-	// (startup builds, then only the heartbeat) needs no lock.
+	// by the evaluator's name — the rule name for the DEPRECATED rule
+	// form, the LANE name for an analyzer block — which is the identity
+	// an operator edits. Two lanes naming one rule share a budget too,
+	// which is what "process-wide" already promised. Entries are never
+	// dropped, and single-goroutine access (startup builds, then only
+	// the heartbeat) needs no lock.
 	budgets map[string]*atomic.Int64
 }
 

@@ -67,12 +67,13 @@ func (h *HTTPCodecConfig) validate(lane string) []string {
 	return problems
 }
 
-// AnalyzerConfig configures the AI risk analyzer for the whole process.
+// AnalyzerConfig configures the AI risk analyzer: the provider for the whole
+// process, and the defaults every listener's analyzer block inherits.
 //
-// One provider serves every lane. Per-lane variation lives in the rules,
-// which is where an operator already expresses per-lane policy; a second
-// provider per lane would double the credential surface for a case nobody
-// has asked for.
+// One provider serves every lane. Provider, model, endpoint and credential
+// are process-wide because a second provider per lane would double the
+// credential surface for a case nobody has asked for; everything else here
+// is a DEFAULT a listener's own analyzer block overrides per lane.
 type AnalyzerConfig struct {
 	// Provider names a registered provider: anthropic, openai, vertex.
 	// Availability depends on what the binary links.
@@ -173,6 +174,72 @@ type AnalyzerCacheConfig struct {
 	// TTLSec expires an entry. Zero disables the cache, because an entry
 	// that never expires outlives a prompt or model change.
 	TTLSec int `json:"ttl_sec,omitempty"`
+}
+
+// LaneAnalyzerConfig is one listener's own analyzer block: what this lane
+// classifies, what each risk level does, and which process defaults it
+// overrides.
+//
+// The analyzer is a per-lane component, a peer of guardrails and mask,
+// not a guardrail rule. The block holds what is genuinely per lane — the
+// trigger, the risk-to-action map, the prompt — and inherits everything
+// else from the top-level analyzer section, which keeps the provider, the
+// model and the credential: one provider, one credential read per process.
+//
+// The DEPRECATED spelling is a `type: ai_analysis` rule under
+// guardrails.rules. It still loads and still works (normalize records a
+// deprecation naming this block), because removing it would break every
+// deployed config on upgrade rather than warning about it.
+type LaneAnalyzerConfig struct {
+	// Trigger narrows which statements this lane classifies. A block with
+	// an empty trigger classifies nothing and is refused, unless opa.gate
+	// is on and the policy decides what gets classified: the failure mode
+	// of "matches everything by accident" is a bill rather than an error.
+	Trigger *policy.AITrigger `json:"trigger,omitempty"`
+
+	// HighRisk, MediumRisk and LowRisk map a verdict onto an action:
+	// allow, warn, block or defer. An unset level defaults to allow, so an
+	// operator opts into blocking a tier by naming it.
+	HighRisk   string `json:"high,omitempty"`
+	MediumRisk string `json:"medium,omitempty"`
+	LowRisk    string `json:"low,omitempty"`
+
+	// Prompt replaces the inherited risk guidance for this lane. This is
+	// where protocol-specific wording belongs: analyzer.prompt reaches
+	// every lane, so SQL advice written there follows an HTTP body to the
+	// model. The output contract (call exactly one tool, never quote a
+	// literal value) is appended after it and cannot be removed.
+	Prompt string `json:"prompt,omitempty"`
+
+	// Message reaches the user on denial. Empty falls back to the model's
+	// own title.
+	Message string `json:"message,omitempty"`
+
+	// The rest override the top-level analyzer defaults for this lane.
+	// A zero value inherits; see the field of the same name on
+	// AnalyzerConfig for what each bounds.
+	TimeoutSec    int                  `json:"timeout_sec,omitempty"`
+	FailOpen      *bool                `json:"fail_open,omitempty"`
+	Send          SendMode             `json:"send,omitempty"`
+	MaxInputBytes int                  `json:"max_input_bytes,omitempty"`
+	MaxCalls      int                  `json:"max_calls,omitempty"`
+	Cache         *AnalyzerCacheConfig `json:"cache,omitempty"`
+}
+
+// specFromRule maps a DEPRECATED ai_analysis rule onto the lane block
+// shape, which is how the rule form "keeps working": both spellings build
+// through buildAnalyzerEvaluator, so they cannot drift apart. A rule
+// carries no per-lane overrides, so every zero field inherits the
+// top-level defaults exactly as it always did.
+func specFromRule(r policy.Rule) LaneAnalyzerConfig {
+	return LaneAnalyzerConfig{
+		Trigger:    r.Trigger,
+		HighRisk:   r.HighRisk,
+		MediumRisk: r.MediumRisk,
+		LowRisk:    r.LowRisk,
+		Prompt:     r.Prompt,
+		Message:    r.Message,
+	}
 }
 
 // failOpen resolves the pointer default.
@@ -350,12 +417,13 @@ func (ac *analyzerDeps) budgetFor(rule string) *atomic.Int64 {
 	return cell
 }
 
-// buildAnalyzerEvaluators turns ai_analysis rules into evaluators.
+// buildAnalyzerEvaluators turns DEPRECATED ai_analysis rules into
+// evaluators.
 //
 // Each rule becomes its own Evaluator, so two rules on one lane get their own
 // trigger, action map and denial message while sharing the provider and,
 // through the provider, the credential. The call BUDGET comes from ac's
-// per-rule registry, so a rebuilt evaluator (a hot reload that edited the
+// per-name registry, so a rebuilt evaluator (a hot reload that edited the
 // rule's lane) continues the running count instead of starting a fresh one.
 func buildAnalyzerEvaluators(
 	rules []policy.Rule,
@@ -369,41 +437,105 @@ func buildAnalyzerEvaluators(
 		return nil, fmt.Errorf(
 			"ai_analysis rule %q needs an analyzer section, and none is configured", rules[0].Name)
 	}
-	cfg, provider, redact := ac.cfg, ac.provider, ac.redact
-
 	out := make([]policy.Evaluator, 0, len(rules))
 	for _, r := range rules {
-		actions, err := actionMap(r, hasOPA)
-		if err != nil {
-			return nil, err
-		}
-		// Rule prompt beats the analyzer default beats the built-in.
-		guidance := r.Prompt
-		if guidance == "" {
-			guidance = cfg.Prompt
-		}
-		ev, err := analyzer.New(analyzer.Config{
-			Rule:          r.Name,
-			Provider:      provider,
-			Guidance:      guidance,
-			Actions:       actions,
-			Trigger:       triggerFrom(r.Trigger),
-			Message:       r.Message,
-			Timeout:       time.Duration(cfg.TimeoutSec) * time.Second,
-			FailOpen:      cfg.failOpen(),
-			MaxInputBytes: cfg.MaxInputBytes,
-			CacheSize:     cfg.Cache.Size,
-			CacheTTL:      time.Duration(cfg.Cache.TTLSec) * time.Second,
-			MaxCalls:      cfg.MaxCalls,
-			Budget:        ac.budgetFor(r.Name),
-			Redact:        redact,
-		})
+		ev, err := buildAnalyzerEvaluator(r.Name, specFromRule(r), ac, hasOPA)
 		if err != nil {
 			return nil, fmt.Errorf("rule %q: %w", r.Name, err)
 		}
 		out = append(out, ev)
 	}
 	return out, nil
+}
+
+// buildLaneAnalyzer turns a listener's analyzer block into its evaluator.
+//
+// The evaluator is named after the LANE, because the block is a per-lane
+// component rather than a named rule: that name is what Finding.Rule, the
+// ai_rule audit key and the call budget all carry, and it is the identity
+// an operator edits. Two lanes therefore never share a budget, which is
+// what "per lane" promises.
+func buildLaneAnalyzer(
+	lane string,
+	la *LaneAnalyzerConfig,
+	ac *analyzerDeps,
+	hasOPA bool,
+) (policy.Evaluator, error) {
+	if la == nil {
+		return nil, nil
+	}
+	if ac == nil || ac.cfg == nil || ac.provider == nil {
+		return nil, fmt.Errorf(
+			"listener %q has an analyzer block, and the config has no top-level "+
+				"analyzer section to supply the provider", lane)
+	}
+	ev, err := buildAnalyzerEvaluator(lane, *la, ac, hasOPA)
+	if err != nil {
+		return nil, fmt.Errorf("analyzer block: %w", err)
+	}
+	return ev, nil
+}
+
+// buildAnalyzerEvaluator is the one place an evaluator is assembled, for
+// both spellings. Every zero field in la inherits the top-level analyzer
+// default, so the block overrides exactly what it names and nothing else.
+func buildAnalyzerEvaluator(
+	name string,
+	la LaneAnalyzerConfig,
+	ac *analyzerDeps,
+	hasOPA bool,
+) (policy.Evaluator, error) {
+	cfg := ac.cfg
+
+	actions, err := actionMap(la, hasOPA)
+	if err != nil {
+		return nil, err
+	}
+	// Lane prompt beats the analyzer default beats the built-in.
+	guidance := la.Prompt
+	if guidance == "" {
+		guidance = cfg.Prompt
+	}
+	timeout := la.TimeoutSec
+	if timeout == 0 {
+		timeout = cfg.TimeoutSec
+	}
+	failOpen := cfg.failOpen()
+	if la.FailOpen != nil {
+		failOpen = *la.FailOpen
+	}
+	maxInput := la.MaxInputBytes
+	if maxInput == 0 {
+		maxInput = cfg.MaxInputBytes
+	}
+	maxCalls := la.MaxCalls
+	if maxCalls == 0 {
+		maxCalls = cfg.MaxCalls
+	}
+	cache := cfg.Cache
+	if la.Cache != nil {
+		cache = *la.Cache
+	}
+	send := la.Send
+	if send == "" {
+		send = cfg.Send
+	}
+	return analyzer.New(analyzer.Config{
+		Rule:          name,
+		Provider:      ac.provider,
+		Guidance:      guidance,
+		Actions:       actions,
+		Trigger:       triggerFrom(la.Trigger),
+		Message:       la.Message,
+		Timeout:       time.Duration(timeout) * time.Second,
+		FailOpen:      failOpen,
+		MaxInputBytes: maxInput,
+		CacheSize:     cache.Size,
+		CacheTTL:      time.Duration(cache.TTLSec) * time.Second,
+		MaxCalls:      maxCalls,
+		Budget:        ac.budgetFor(name),
+		Redact:        redactorFor(send, ac.det),
+	})
 }
 
 func triggerFrom(t *policy.AITrigger) analyzer.Trigger {
@@ -417,7 +549,7 @@ func triggerFrom(t *policy.AITrigger) analyzer.Trigger {
 	}
 }
 
-// actionMap turns a rule's high/medium/low strings into the analyzer's
+// actionMap turns the block's high/medium/low strings into the analyzer's
 // action vocabulary.
 //
 // hasOPA false degrades `defer` to `block`. Deferring names a decision-maker,
@@ -426,19 +558,19 @@ func triggerFrom(t *policy.AITrigger) analyzer.Trigger {
 // which allows the statement: the opposite of what the operator asked for.
 // The lane keeps a startup note saying so, because a config that reads
 // `high: defer` and behaves as `high: block` has to say which one it did.
-func actionMap(r policy.Rule, hasOPA bool) (analyzer.ActionMap, error) {
+func actionMap(la LaneAnalyzerConfig, hasOPA bool) (analyzer.ActionMap, error) {
 	m := analyzer.ActionMap{}
 	for level, raw := range map[analyzer.RiskLevel]string{
-		analyzer.RiskHigh:   r.HighRisk,
-		analyzer.RiskMedium: r.MediumRisk,
-		analyzer.RiskLow:    r.LowRisk,
+		analyzer.RiskHigh:   la.HighRisk,
+		analyzer.RiskMedium: la.MediumRisk,
+		analyzer.RiskLow:    la.LowRisk,
 	} {
 		if raw == "" {
 			continue
 		}
 		a := analyzer.Action(raw)
 		if !a.Valid() {
-			return nil, fmt.Errorf("rule %q: unknown action %q for %s risk", r.Name, raw, level)
+			return nil, fmt.Errorf("unknown action %q for %s risk", raw, level)
 		}
 		if a == analyzer.ActionDefer && !hasOPA {
 			a = analyzer.ActionBlock
@@ -469,7 +601,7 @@ func setupAnalyzer(cfg *Config, det Plugin) (*analyzerDeps, error) {
 	return &analyzerDeps{
 		cfg:      cfg.Analyzer,
 		provider: provider,
-		redact:   redactorFor(cfg.Analyzer.Send, det),
+		det:      det,
 	}, nil
 }
 
@@ -562,22 +694,24 @@ func httpCodecFactory(proto inspect.Protocol, h *HTTPCodecConfig) func() inspect
 	return newHTTPCodec(*h)
 }
 
-// validateAIRules checks each ai_analysis rule against the analyzer section
-// and against the lane's OPA settings.
+// validateLaneAnalysis checks a lane's analyzer surface — its own analyzer
+// block and any DEPRECATED ai_analysis rules — against the top-level
+// analyzer section and the lane's OPA settings.
 //
 // Every refusal here is a control that would otherwise load, evaluate and do
 // nothing: the exact failure the pii-entity check exists to prevent, applied
 // to a feature that also costs money when it does fire.
-func validateAIRules(rules []policy.Rule, cfg *AnalyzerConfig, opa *OPAConfig, lane string) []string {
+func validateLaneAnalysis(rules []policy.Rule, la *LaneAnalyzerConfig,
+	cfg *AnalyzerConfig, opa *OPAConfig, lane string) []string {
 	gated := opa.enabled() && opa.Gate
 
-	if len(rules) == 0 {
+	if len(rules) == 0 && la == nil {
 		if gated {
 			// A gate answers "is this worth a model call" for an
 			// analyzer that is not there. It would cost a round trip
 			// per statement and change nothing.
 			return []string{fmt.Sprintf(
-				"%s: opa.gate is on but the lane has no ai_analysis rule, "+
+				"%s: opa.gate is on but the lane has no analyzer block, "+
 					"so the extra decision would gate nothing", lane)}
 		}
 		return nil
@@ -585,8 +719,17 @@ func validateAIRules(rules []policy.Rule, cfg *AnalyzerConfig, opa *OPAConfig, l
 	var problems []string
 
 	if cfg == nil {
+		what := "has ai_analysis rule(s)"
+		if la != nil {
+			what = "has an analyzer block"
+		}
 		problems = append(problems, fmt.Sprintf(
-			"%s: has ai_analysis rule(s) but the config has no \"analyzer\" section", lane))
+			"%s: %s but the config has no top-level \"analyzer\" section "+
+				"(the provider, the model and the credential live there)", lane, what))
+	}
+
+	if la != nil {
+		problems = append(problems, validateLaneBlock(la, gated, lane)...)
 	}
 
 	for _, r := range rules {
@@ -616,41 +759,95 @@ func validateAIRules(rules []policy.Rule, cfg *AnalyzerConfig, opa *OPAConfig, l
 				lane, r.Name, r.Action))
 		}
 
-		named := false
-		for level, raw := range map[string]string{
-			"high": r.HighRisk, "medium": r.MediumRisk, "low": r.LowRisk,
-		} {
-			if raw == "" {
-				continue
-			}
-			named = true
-			a := analyzer.Action(raw)
-			if !a.Valid() {
-				problems = append(problems, fmt.Sprintf(
-					"%s: ai_analysis rule %q: unknown action %q for %s risk "+
-						"(allow, warn, block or defer)", lane, r.Name, raw, level))
-				continue
-			}
-			// `defer` with no OPA is no longer a refusal. actionMap
-			// degrades it to block, so the statement is denied rather
-			// than allowed, and one config file can serve a deployment
-			// with OPA and a deployment without one.
-			if a == analyzer.ActionRequireReview {
-				// The action is declared in the enum so the schema is
-				// stable when review lands, and refused here so nobody
-				// ships a config that looks like it holds statements
-				// for approval and quietly does not.
-				problems = append(problems, fmt.Sprintf(
-					"%s: ai_analysis rule %q asks for %q on %s risk, and this build "+
-						"cannot hold a statement for human approval; use block, warn "+
-						"or defer to an OPA policy", lane, r.Name, raw, level))
-			}
+		problems = append(problems, validateRiskActions(
+			r.HighRisk, r.MediumRisk, r.LowRisk,
+			fmt.Sprintf("%s: ai_analysis rule %q", lane, r.Name))...)
+	}
+	return problems
+}
+
+// validateLaneBlock checks one listener's analyzer block in isolation. The
+// checks mirror the rule-form ones — same failure, same message shape — plus
+// the numeric bounds a rule never carried, which get the same negative
+// refusal AnalyzerConfig.validate applies to the defaults they override.
+func validateLaneBlock(la *LaneAnalyzerConfig, gated bool, lane string) []string {
+	var problems []string
+	where := lane + ": analyzer block"
+
+	if la.Trigger.IsZero() && !gated {
+		problems = append(problems, fmt.Sprintf(
+			"%s has no trigger, so it would classify nothing; name operations, "+
+				"tables or resources, or turn on opa.gate and let the policy decide",
+			where))
+	}
+
+	problems = append(problems, validateRiskActions(
+		la.HighRisk, la.MediumRisk, la.LowRisk, where)...)
+
+	switch la.Send {
+	case "", SendRaw, SendRedacted, SendRefuse:
+	default:
+		problems = append(problems, fmt.Sprintf(
+			"%s: unknown send mode %q (raw, redacted or refuse)", where, la.Send))
+	}
+	if la.TimeoutSec < 0 {
+		problems = append(problems, where+": timeout_sec is negative")
+	}
+	if la.MaxInputBytes < 0 {
+		problems = append(problems, where+": max_input_bytes is negative")
+	}
+	if la.MaxCalls < 0 {
+		problems = append(problems, where+": max_calls is negative")
+	}
+	if la.Cache != nil {
+		if la.Cache.Size < 0 {
+			problems = append(problems, where+": cache.size is negative")
 		}
-		if !named {
+		if la.Cache.TTLSec < 0 {
+			problems = append(problems, where+": cache.ttl_sec is negative")
+		}
+	}
+	return problems
+}
+
+// validateRiskActions checks a high/medium/low action map, shared by the
+// block and the rule form so the two spellings refuse identically.
+func validateRiskActions(high, medium, low, where string) []string {
+	var problems []string
+	named := false
+	for level, raw := range map[string]string{
+		"high": high, "medium": medium, "low": low,
+	} {
+		if raw == "" {
+			continue
+		}
+		named = true
+		a := analyzer.Action(raw)
+		if !a.Valid() {
 			problems = append(problems, fmt.Sprintf(
-				"%s: ai_analysis rule %q names no action for any risk level, "+
-					"so every verdict would allow", lane, r.Name))
+				"%s: unknown action %q for %s risk "+
+					"(allow, warn, block or defer)", where, raw, level))
+			continue
 		}
+		// `defer` with no OPA is not a refusal. actionMap degrades it
+		// to block, so the statement is denied rather than allowed,
+		// and one config file can serve a deployment with OPA and a
+		// deployment without one.
+		if a == analyzer.ActionRequireReview {
+			// The action is declared in the enum so the schema is
+			// stable when review lands, and refused here so nobody
+			// ships a config that looks like it holds statements
+			// for approval and quietly does not.
+			problems = append(problems, fmt.Sprintf(
+				"%s asks for %q on %s risk, and this build "+
+					"cannot hold a statement for human approval; use block, warn "+
+					"or defer to an OPA policy", where, raw, level))
+		}
+	}
+	if !named {
+		problems = append(problems, fmt.Sprintf(
+			"%s names no action for any risk level, "+
+				"so every verdict would allow", where))
 	}
 	return problems
 }

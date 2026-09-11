@@ -290,12 +290,19 @@ in the audit stream on stdout as one JSON line:
 
 ## Turning on AI risk analysis
 
-A `type: ai_analysis` rule sends a statement to a language model and denies on
-the risk it reports. It works on both lane types: SQL on a postgres listener,
-request bodies on an HTTP one. The relay holds the provider credential; there
-is no gateway call.
+The AI analyzer is a per-listener component, declared beside `guardrails` and
+`mask`. It sends a statement to a language model and denies on the risk it
+reports. It works on both lane types: SQL on a postgres listener, request
+bodies on an HTTP one. The relay holds the provider credential; there is no
+gateway call.
 
-Add an `analyzer:` block and a rule:
+Two blocks share the work. The top-level `analyzer:` section holds the
+provider plus the defaults every listener inherits; each lane's own
+`analyzer:` block holds the trigger, the risk→action map and any default it
+overrides. (The old spelling — a `type: ai_analysis` rule under
+`guardrails.rules` — is deprecated but still loads: it builds the same
+evaluator, prints a deprecation naming the listener block, and `-strict`
+fails on it.)
 
 ```yaml
 analyzer:
@@ -313,15 +320,12 @@ analyzer:
 listeners:
   - name: appdb
     # ... as above
-    guardrails:
-      rules:
-        - name: risky-writes
-          type: ai_analysis
-          trigger: {operations: [update, delete]}
-          high: block
-          medium: warn
-          low: allow
-          message: refused by risk analysis
+    analyzer:                        # this lane's analyzer, beside guardrails
+      trigger: {operations: [update, delete]}
+      high: block
+      medium: warn
+      low: allow
+      message: refused by risk analysis
 ```
 
 `--validate` reports it, and for Vertex it mints one token so a bad key or a
@@ -332,7 +336,7 @@ risky statement:
 config OK: 1 listener(s)
   license: missing, running the free tier. Add one with the license flag, the HOOP_LICENSE environment variable, or the "license" key in the config file
   limits: 1 guardrail rule(s), 1 data masking rule(s)
-  appdb            postgres  enforcing 1 rule(s) + masking + 1 ai rule(s)
+  appdb            postgres  enforcing 1 rule(s) + masking + ai analyzer
 ```
 
 ### Three knobs decide what it costs
@@ -342,9 +346,13 @@ these are not optimizations you can skip:
 
 | Knob | Effect |
 |---|---|
-| `trigger` | Only these operations, tables or resources are classified. Everything else is free. An empty trigger classifies nothing and is a startup error. |
+| `trigger` | Only these operations, tables or resources are classified. Everything else is free. An empty trigger classifies nothing and is a startup error, except under `opa.gate: true`, where it means Rego decides. |
 | `cache` | Keys on the statement SHAPE. `WHERE id = 1` and `WHERE id = 2` are one verdict. |
-| `max_calls` | Process-lifetime budget. Past it, statements fall through to the local rules. |
+| `max_calls` | Call budget, keyed on the listener name. Past it, statements fall through to the local rules. |
+
+All three default to the top-level `analyzer:` value; a block that names one
+overrides it for that lane alone, as do `send`, `fail_open`, `timeout_sec`
+and `max_input_bytes`.
 
 Read the hit rate before you enable `block` anywhere:
 
@@ -369,16 +377,13 @@ The HTTP codec exposes nothing by default. Without a body the model sees `POST
       capture_body: true
       max_body_bytes: 8192
       headers: [Content-Type]      # authorization is refused at startup
-    guardrails:
-      rules:
-        - name: risky-payloads
-          type: ai_analysis
-          trigger: {resources: ["/orders/**"]}
-          high: block
+    analyzer:
+      trigger: {resources: ["/orders/**"]}
+      high: block
 ```
 
 A request with no body is skipped rather than classified, so a forgotten
-`capture_body` looks like a rule that never fires.
+`capture_body` looks like an analyzer that never fires.
 
 ### Reading the verdicts
 
@@ -468,13 +473,14 @@ is a compliance requirement.
 
 ### Writing your own prompt
 
-`analyzer.prompt` sets the risk guidance for every rule; a rule's own
-`prompt:` beats it.
+`analyzer.prompt` at the top level sets the risk guidance for every lane; a
+listener block's own `prompt:` beats it for that lane.
 
-`analyzer.prompt` reaches **every lane**, so keep it protocol-neutral and put
-SQL- or HTTP-specific wording on the rule. Guidance reading "you are
-classifying SQL against a customer database" follows an HTTP statement to the
-model and has it reasoning about `DROP` while it looks at a JSON body.
+The top-level prompt reaches **every lane**, so keep it protocol-neutral and
+put SQL- or HTTP-specific wording on the listener's block. Guidance reading
+"you are classifying SQL against a customer database" follows an HTTP
+statement to the model and has it reasoning about `DROP` while it looks at a
+JSON body.
 
 Either way, two instructions are appended and cannot be removed: call exactly
 one risk tool, and never quote a literal value from the statement. The second
@@ -523,10 +529,10 @@ recognizing the value, and the detector deliberately refuses obvious fixtures
 like `123-45-6789`. Use a column rule when the protocol names the value, an
 entity rule when it does not.
 
-**An `ai_analysis` rule on an HTTP lane needs `capture_body: true`.** The HTTP
-codec exposes no body by default, and a request with no body is skipped rather
-than classified, so the symptom is a rule that does not fire rather than an
-error. The same rule on a postgres lane needs nothing extra, because the
+**The analyzer on an HTTP lane needs `capture_body: true`.** The HTTP codec
+exposes no body by default, and a request with no body is skipped rather than
+classified, so the symptom is an analyzer that does not fire rather than an
+error. The same block on a postgres lane needs nothing extra, because the
 statement text is there either way.
 
 ---

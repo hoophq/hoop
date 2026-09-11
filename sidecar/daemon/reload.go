@@ -183,9 +183,11 @@ func (r *reloader) apply(log *slog.Logger, raw []byte) reloadOutcome {
 		detChanged = true
 		if r.ac != nil {
 			// The provider and its credential stay: the analyzer section
-			// is inside the baseline. Only the redactor holds the
-			// detector, so only it follows the rebuild.
-			r.ac.redact = redactorFor(r.ac.cfg.Send, det)
+			// is inside the baseline. Only the redactors hold the
+			// detector, and each evaluator builds its own from ac.det
+			// at swap time, so handing the rebuilt detector over is
+			// all a pii edit needs.
+			r.ac.det = det
 		}
 	}
 
@@ -266,6 +268,10 @@ func nonRuleDoc(c *Config) ([]byte, error) {
 	listeners := make([]ListenerConfig, len(c.Listeners))
 	for i, lc := range c.Listeners {
 		lc.Guardrails, lc.OPA, lc.Mask, lc.Policy = nil, nil, nil, nil
+		// The lane's analyzer block swaps with the rules: it builds
+		// evaluators, not sockets, and its provider lives in the
+		// top-level analyzer section, which stays in the baseline.
+		lc.Analyzer = nil
 		listeners[i] = lc
 	}
 	cp.Listeners = listeners
@@ -277,8 +283,9 @@ func nonRuleDoc(c *Config) ([]byte, error) {
 func laneRuleDoc(c *Config, lc ListenerConfig) ([]byte, error) {
 	gc, opa, mc := c.resolve(lc)
 	return json.Marshal(struct {
-		G GuardrailsConfig `json:"g"`
-		O *OPAConfig       `json:"o"`
-		M MaskConfig       `json:"m"`
-	}{gc, opa, mc})
+		G GuardrailsConfig    `json:"g"`
+		O *OPAConfig          `json:"o"`
+		M MaskConfig          `json:"m"`
+		A *LaneAnalyzerConfig `json:"a"`
+	}{gc, opa, mc, lc.Analyzer})
 }
