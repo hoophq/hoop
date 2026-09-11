@@ -3,8 +3,6 @@ import { Navigate, useNavigate } from 'react-router-dom'
 import { Box, Group, SimpleGrid, Stack, Text, Title } from '@mantine/core'
 import Button from '@/components/Button'
 import PasswordInput from '@/components/PasswordInput'
-import licenseService from '@/services/license'
-import { authService } from '@/services/auth'
 import { useUserStore } from '@/stores/useUserStore'
 import { skipLicenseIntro } from '@/utils/licenseIntro'
 import classes from './License.module.css'
@@ -24,7 +22,7 @@ function LicenseIntro() {
   const navigate = useNavigate()
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
   const userId = useUserStore((s) => s.user?.id)
-  const setServerInfo = useUserStore((s) => s.setServerInfo)
+  const installLicense = useUserStore((s) => s.installLicense)
 
   const [licenseKey, setLicenseKey] = useState('')
   const [error, setError] = useState(null)
@@ -54,26 +52,22 @@ function LicenseIntro() {
     }
 
     setSaving(true)
-    try {
-      await licenseService.update(parsed)
-    } catch (err) {
-      setError(err.response?.data?.message || 'Failed to update the license.')
+    const result = await installLicense(parsed)
+
+    if (!result.ok) {
+      setError(result.message)
       setSaving(false)
       return
     }
-
-    // The license is active server-side from here on. If /serverinfo cannot be
-    // re-read, a full reload fetches it instead of navigating on stale state.
-    let serverInfo
-    try {
-      serverInfo = await authService.getServerInfo()
-    } catch {
+    // The license is live but the store could not be refreshed. A full reload
+    // fetches /serverinfo instead of navigating on stale state.
+    if (result.needsReload) {
       window.location.replace(SIDECARS_PATH)
       return
     }
-    setServerInfo(serverInfo)
     setSaving(false)
 
+    // Installed and the store is current, so this reads the new plan.
     if (useUserStore.getState().isFreeLicense) {
       setError('This license is valid, but it is not an Enterprise license.')
       return
