@@ -6,7 +6,6 @@ import Button from '@/components/Button'
 import PageLoader from '@/components/PageLoader'
 import { useMinDelay } from '@/hooks/useMinDelay'
 import { sidecarsService } from '@/services/sidecars'
-import MockNotice from '../components/MockNotice'
 import SidecarDetails from '../components/SidecarDetails'
 
 // /sidecars/:id — the details card on its own page.
@@ -63,7 +62,6 @@ export default function SidecarDetailsPage() {
         sidecar && (
           <>
             <Title order={1}>{sidecar.name}</Title>
-            <MockNotice />
             <SidecarDetails sidecar={sidecar} />
           </>
         )

@@ -837,16 +837,20 @@ Non-obvious notes only:
   in component state. **The control plane owns the configuration**: `configuration` is
   the `daemon.Config` it stores for that sidecar and serves back on the handshake and
   on every poll, not something the sidecar reports. Creating without one stores an
-  empty document, and a sidecar with no listeners refuses to start — the details card
-  says so. Writing it is `PUT /sidecars/:nameOrID`, which has no caller here yet.
-  `pages/Sidecars/config.js` derives the Features chips from the document;
+  empty document; the sidecar then seeds the plane with its own config file on the
+  first handshake (`importLocalConfig`), which is the connect journey the wizard
+  prints. Writing it from here is `PUT /sidecars/:nameOrID`, which has no caller: the
+  pages read the configuration, they do not author it.
+  `pages/Sidecars/config.js` derives the Features chips from the document, resolving a
+  lane's overrides the way `Config.resolve` does — guardrail `rules` absent inherits
+  the default, `rules: []` disables, a non-empty list concatenates; mask only replaces
+  on a non-empty lane list. Reading the presence of the whole block instead reports a
+  lane that overrides only `mode` as unprotected.
   `pages/Sidecars/status.js` turns `last_seen_at` into Waiting or Connected, and
   those two only: a stale timestamp still reads Connected with its relative last-seen
   time. There is no Offline, because `last_seen_at` is gateway memory that a restart
   clears, so a sidecar that stopped calling and one the gateway forgot look identical
-  from here. **Mock:** with `VITE_SIDECARS_MOCK=true` the export is `sidecars.mock.js`,
-  a simulated fleet with the same interface covering both states. To go live for good,
-  delete that file and the switch at the bottom of `sidecars.js`.
+  from here.
 - `sessions.js` — `list(params)`. **`limit` does not make the call cheap**: the
   gateway always runs an unbounded `COUNT(*)` (joined against reviews) to fill
   `total` before applying the limit, so `{ limit: 1 }` costs the same as a full

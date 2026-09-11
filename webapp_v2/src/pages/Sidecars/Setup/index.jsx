@@ -7,7 +7,6 @@ import Stepper from '@/components/Stepper'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import { useUserStore } from '@/stores/useUserStore'
 import { showSnackbar } from '@/utils/snackbar'
-import MockNotice from '../components/MockNotice'
 import SidecarDetails from '../components/SidecarDetails'
 import NameStep from './sections/NameStep'
 import WaitingStep from './sections/WaitingStep'
@@ -137,8 +136,6 @@ export default function SidecarSetup({ mode = 'connect' }) {
           {action.label}
         </Button>
       </Group>
-
-      <MockNotice />
 
       {/* The waiting banner sits above the blocks, which stay mounted through
           step 1. The token exists nowhere else — it is shown once and the
