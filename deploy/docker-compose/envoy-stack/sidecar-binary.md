@@ -346,7 +346,7 @@ these are not optimizations you can skip:
 
 | Knob | Effect |
 |---|---|
-| `trigger` | Only these operations, tables or resources are classified. Everything else is free. An empty trigger classifies nothing and is a startup error, except under `opa.gate: true`, where it means Rego decides. |
+| `trigger` | Only these operations, tables or resources are classified. Everything else is free. Omit it and EVERY statement on the lane is classified (a model call per statement shape; `-validate` prints a note); under `opa.gate: true` an omitted trigger means Rego decides instead. |
 | `cache` | Keys on the statement SHAPE. `WHERE id = 1` and `WHERE id = 2` are one verdict. |
 | `max_calls` | Call budget, keyed on the listener name. Past it, statements fall through to the local rules. |
 

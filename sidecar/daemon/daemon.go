@@ -214,10 +214,10 @@ func Main(version string, load Loader, build PluginBuilder) error {
 			`"license" key`)
 		tokenRef = fs.String("token", "", "the token identifying this sidecar to the "+
 			"control plane; overrides "+SidecarTokenEnv)
-		validate     = fs.Bool("validate", false, "validate the config and exit")
-		strict       = fs.Bool("strict", false, "treat a deprecated config field as an error")
-		showVer      = fs.Bool("version", false, "print the version and exit")
-		migrate = fs.Bool("migrate", false, "rewrite the config onto the current schema, "+
+		validate = fs.Bool("validate", false, "validate the config and exit")
+		strict   = fs.Bool("strict", false, "treat a deprecated config field as an error")
+		showVer  = fs.Bool("version", false, "print the version and exit")
+		migrate  = fs.Bool("migrate", false, "rewrite the config onto the current schema, "+
 			"print it, and exit; deprecated fields are folded and ai_analysis rules "+
 			"become listener analyzer blocks where the move is faithful")
 		migrateOut = fs.String("migrate-out", "", "file -migrate writes to instead of "+
@@ -955,6 +955,26 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 			ln.notes = append(ln.notes,
 				"defer names a decision this lane has no opa.url for, so a deferred "+
 					"match or risk level denies instead of reporting a finding")
+		}
+		// An omitted trigger on an ungated lane classifies EVERYTHING.
+		// That is what the operator wrote, and it is also a model call
+		// per statement shape, so the resolved lane says it out loud
+		// where a validate run and the startup log both read it.
+		if !(opa.enabled() && opa.Gate) {
+			if lc.Analyzer != nil && lc.Analyzer.Trigger.IsZero() {
+				ln.notes = append(ln.notes,
+					"the analyzer block has no trigger, so every statement on this "+
+						"lane is classified: a model call per statement shape, bounded "+
+						"only by the cache and max_calls. Add a trigger to narrow it")
+			}
+			for _, r := range gc.Rules {
+				if r.Type == policy.MatchAIAnalysis && r.Trigger.IsZero() {
+					ln.notes = append(ln.notes, fmt.Sprintf(
+						"ai_analysis rule %q has no trigger, so every statement on this "+
+							"lane is classified: a model call per statement shape, bounded "+
+							"only by the cache and max_calls. Add a trigger to narrow it", r.Name))
+				}
+			}
 		}
 		out = append(out, ln)
 	}

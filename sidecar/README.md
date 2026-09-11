@@ -654,7 +654,9 @@ it under `guardrails.would_deny`. A lane that should skip the work sets
 `-validate` also prints a note where a resolved lane behaves in a way the file
 does not show. A rule carrying `action: defer`, or an analyzer block deferring
 a risk level, on a lane with no `opa.url` gets one, because that match or
-level denies rather than reporting a finding.
+level denies rather than reporting a finding. An analyzer with no trigger on
+an ungated lane gets one too, naming the model call per statement shape it
+implies.
 
 Validation builds every lane, so it catches what a syntax check cannot, and it
 reports every problem in one run rather than one per restart. It refuses these
@@ -674,8 +676,11 @@ outright:
 - A key typo, in YAML or JSON.
 - A bad regex in any lane's rules, naming the lane.
 - An analyzer (a listener's block, or a deprecated `ai_analysis` rule) with
-  no top-level `analyzer` section, no trigger, or no action for any risk
-  level. All three would load and classify nothing.
+  no top-level `analyzer` section, or with no action for any risk level.
+  Both would load and classify nothing. An OMITTED trigger is legal and
+  classifies everything on an ungated lane — a note, not a refusal, because
+  declaring the analyzer is already the opt-in — and `-validate` prints the
+  per-statement cost it implies.
 - An analyzer on a lane whose protocol has no content builder, naming the
   protocol. That lane classifies nothing and says nothing while doing it: the
   analyzer returns before it has a status, so there is no finding and no
@@ -904,13 +909,15 @@ answer what the level means. Both calls hit the same URL and carry
 `input.phase`, so a policy that ignores the field answers both identically,
 and turning the gate on costs one round trip rather than a rewrite.
 
-Three configs are refused at startup. `gate: true` on a lane with no analyzer
-is a round trip that buys nothing. An analyzer block with no `trigger` is
-refused too, except under `gate: true`, where an empty trigger is how you say
-Rego decides. So is a block naming no action for any risk level, because
-every verdict would then allow while looking like enforcement.
+Two configs are refused at startup. `gate: true` on a lane with no analyzer
+is a round trip that buys nothing. A block naming no action for any risk
+level is refused too, because every verdict would then allow while looking
+like enforcement. An omitted `trigger` is NOT a refusal: on a plain lane it
+classifies everything (a model call per statement shape, bounded by the
+cache and `max_calls`, and `-validate` says so in a note), and under
+`gate: true` it is how you say Rego decides.
 
-`defer` on a lane with no `opa.url` used to be a fourth refusal. It now
+`defer` on a lane with no `opa.url` used to be a refusal too. It now
 loads, warns at startup, and DENIES on a match. Deferring to a decision that
 does not exist has to fail closed somewhere, and moving that from startup to
 runtime lets one file serve a deployment with OPA and a deployment without

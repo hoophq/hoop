@@ -208,9 +208,10 @@ listeners:
     # No trigger, on purpose. `gate: true` below consults OPA BEFORE the
     # analyzer (phase: gate) and it answers request: {ai_analysis:
     # true|false}, so Rego decides what is worth a model call. Without
-    # gate: true an analyzer block with no trigger is refused at startup,
-    # and without the gate at all the model runs first: a statement Rego
-    # would have refused for free has already been paid for.
+    # gate: true an analyzer block with no trigger classifies EVERY
+    # statement (a model call per statement shape; -validate prints a
+    # note), and without the gate at all the model runs first: a statement
+    # Rego would have refused for free has already been paid for.
     # analyzer:
     #   high: defer
     #   medium: defer

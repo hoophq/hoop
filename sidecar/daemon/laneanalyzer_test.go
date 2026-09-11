@@ -51,9 +51,10 @@ func TestLaneAnalyzerWithoutTopLevelSectionIsRefused(t *testing.T) {
 	}
 }
 
-// An empty trigger classifies nothing on an ungated lane, exactly as it did
-// on the rule form, and is the correct spelling on a gated one.
-func TestLaneAnalyzerTriggerIsRequiredUnlessGated(t *testing.T) {
+// An omitted trigger means "classify everything" on an ungated lane and
+// "the gate decides" on a gated one. Both spellings are accepted; the
+// difference is who spends the money.
+func TestOmittedTriggerClassifiesEverythingUnlessGated(t *testing.T) {
 	build := func(gate bool) error {
 		cfg := blockLane(&LaneAnalyzerConfig{HighRisk: "block"})
 		if gate {
@@ -63,11 +64,49 @@ func TestLaneAnalyzerTriggerIsRequiredUnlessGated(t *testing.T) {
 		}
 		return cfg.Validate()
 	}
-	if err := build(false); err == nil {
-		t.Error("an untriggered block on an ungated lane was accepted")
+	if err := build(false); err != nil {
+		t.Errorf("an untriggered block on an ungated lane was refused: %v", err)
 	}
 	if err := build(true); err != nil {
 		t.Errorf("an untriggered block on a gated lane was refused: %v", err)
+	}
+
+	// The runtime split. Ungated: everything is classified, a SELECT
+	// included. Gated: the zero trigger stays, so with no gate request the
+	// statement is skipped and nothing is spent — Rego's silence keeps
+	// meaning "skip" for deployed two-phase configs.
+	stmt := inspect.Statement{
+		Protocol:  inspect.Postgres,
+		Direction: inspect.FromClient,
+		Text:      "SELECT id FROM t",
+		Operation: inspect.OpSelect,
+	}
+
+	rec := &recordingProvider{}
+	deps := &analyzerDeps{
+		cfg:      &AnalyzerConfig{Provider: "stub", Model: "m"},
+		provider: rec,
+	}
+	ungated, err := buildLaneAnalyzer("appdb", &LaneAnalyzerConfig{HighRisk: "block"},
+		deps, false, false)
+	if err != nil {
+		t.Fatalf("buildLaneAnalyzer: %v", err)
+	}
+	ungated.Evaluate(stmt)
+	if calls := len(rec.sent()); calls != 1 {
+		t.Fatalf("ungated untriggered block made %d provider calls, want 1: "+
+			"an omitted trigger classifies everything", calls)
+	}
+
+	gated, err := buildLaneAnalyzer("payments", &LaneAnalyzerConfig{HighRisk: "block"},
+		deps, true, true)
+	if err != nil {
+		t.Fatalf("buildLaneAnalyzer: %v", err)
+	}
+	gated.Evaluate(stmt)
+	if calls := len(rec.sent()); calls != 1 {
+		t.Fatalf("a gated untriggered block classified without a gate request "+
+			"(provider calls = %d)", calls)
 	}
 }
 
@@ -167,7 +206,7 @@ func TestLaneAnalyzerPromptPrecedence(t *testing.T) {
 				cfg:      &AnalyzerConfig{Provider: "stub", Model: "m", Prompt: tc.cfgPrompt},
 				provider: stubAnalyzerProvider{},
 			}
-			ev, err := buildLaneAnalyzer("appdb", la, deps, true)
+			ev, err := buildLaneAnalyzer("appdb", la, deps, true, false)
 			if err != nil {
 				t.Fatalf("buildLaneAnalyzer: %v", err)
 			}
@@ -199,13 +238,13 @@ func TestLaneAnalyzerOverridesAndBudgetKeyOnTheLane(t *testing.T) {
 		Operation: inspect.OpDelete,
 	}
 
-	gen1, err := buildLaneAnalyzer("appdb", la, deps, false)
+	gen1, err := buildLaneAnalyzer("appdb", la, deps, false, false)
 	if err != nil {
 		t.Fatalf("buildLaneAnalyzer: %v", err)
 	}
 	gen1.Evaluate(stmt) // spends the whole lane budget of 1
 
-	gen2, err := buildLaneAnalyzer("appdb", la, deps, false)
+	gen2, err := buildLaneAnalyzer("appdb", la, deps, false, false)
 	if err != nil {
 		t.Fatalf("buildLaneAnalyzer: %v", err)
 	}
@@ -215,7 +254,7 @@ func TestLaneAnalyzerOverridesAndBudgetKeyOnTheLane(t *testing.T) {
 	}
 
 	// A different lane is a different identity with its own purse.
-	other, err := buildLaneAnalyzer("payments", la, deps, false)
+	other, err := buildLaneAnalyzer("payments", la, deps, false, false)
 	if err != nil {
 		t.Fatalf("buildLaneAnalyzer: %v", err)
 	}
@@ -433,7 +472,7 @@ func TestLaneCacheOverrideMergesFieldWise(t *testing.T) {
 			}
 			la := laneBlock()
 			la.Cache = tc.cache
-			ev, err := buildLaneAnalyzer("appdb", la, deps, false)
+			ev, err := buildLaneAnalyzer("appdb", la, deps, false, false)
 			if err != nil {
 				t.Fatalf("buildLaneAnalyzer: %v", err)
 			}
@@ -457,11 +496,11 @@ func TestBlockAndRuleBudgetsDoNotCollideOnOneName(t *testing.T) {
 		provider: rec,
 	}
 
-	block, err := buildLaneAnalyzer("appdb", laneBlock(), deps, false)
+	block, err := buildLaneAnalyzer("appdb", laneBlock(), deps, false, false)
 	if err != nil {
 		t.Fatalf("buildLaneAnalyzer: %v", err)
 	}
-	rules, err := buildAnalyzerEvaluators([]policy.Rule{aiRule("appdb")}, deps, false)
+	rules, err := buildAnalyzerEvaluators([]policy.Rule{aiRule("appdb")}, deps, false, false)
 	if err != nil {
 		t.Fatalf("buildAnalyzerEvaluators: %v", err)
 	}
@@ -485,7 +524,7 @@ func TestRedactedSendTransmitsNoValues(t *testing.T) {
 		provider: rec,
 		det:      stubPlugin{entities: []string{"CREDIT_CARD"}, find: pan},
 	}
-	ev, err := buildLaneAnalyzer("appdb", laneBlock(), deps, false)
+	ev, err := buildLaneAnalyzer("appdb", laneBlock(), deps, false, false)
 	if err != nil {
 		t.Fatalf("buildLaneAnalyzer: %v", err)
 	}
@@ -516,7 +555,7 @@ func TestLanePrivacySendWithoutDetectorIsRefused(t *testing.T) {
 			}
 			la := laneBlock()
 			la.Send = mode
-			_, err := buildLaneAnalyzer("appdb", la, deps, false)
+			_, err := buildLaneAnalyzer("appdb", la, deps, false, false)
 			if err == nil || !strings.Contains(err.Error(), "detector") {
 				t.Fatalf("a %s override with no detector was accepted: %v", mode, err)
 			}
@@ -542,7 +581,7 @@ func TestRefuseRunsOnCacheHits(t *testing.T) {
 		provider: rec,
 		det:      stubPlugin{entities: []string{"CREDIT_CARD"}, find: pan},
 	}
-	ev, err := buildLaneAnalyzer("appdb", laneBlock(), deps, false)
+	ev, err := buildLaneAnalyzer("appdb", laneBlock(), deps, false, false)
 	if err != nil {
 		t.Fatalf("buildLaneAnalyzer: %v", err)
 	}

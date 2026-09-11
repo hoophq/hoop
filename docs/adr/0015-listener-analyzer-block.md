@@ -140,10 +140,12 @@ pins the contract:
 - A postgres lane with `analyzer: {trigger: {operations: [delete]}, high: block}`
   validates, builds, and `-validate` reports `+ ai analyzer` with
   `LaneInfo.Analyzer` set and no rule count.
-- The block without a root `analyzer` section, without a trigger on an
-  ungated lane, without any risk action, with `high: require_review`, with
-  an unknown action, an unknown `send`, or any negative numeric: each
-  refused, naming the lane.
+- The block without a root `analyzer` section, without any risk action,
+  with `high: require_review`, with an unknown action, an unknown `send`,
+  or any negative numeric: each refused, naming the lane. An omitted
+  trigger is accepted and classifies everything on an ungated lane (with a
+  `-validate` note naming the cost); on a gated lane the gate keeps
+  deciding, so Rego's silence still means "skip".
 - Prompt precedence block → root → built-in, and the output contract
   survives all three.
 - `max_calls: 1` on a block bounds the lane across evaluator rebuilds (one

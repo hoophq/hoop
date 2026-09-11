@@ -175,9 +175,11 @@ func TestGateWithoutAIRulesIsRefused(t *testing.T) {
 	}
 }
 
-// An empty trigger is a broken rule on an ungated lane and the correct
-// configuration on a gated one, where the policy decides what gets analyzed.
-func TestEmptyTriggerIsAllowedOnlyWhenGated(t *testing.T) {
+// An empty trigger loads on both lane kinds. On an ungated lane it
+// classifies everything; on a gated one the policy decides what gets
+// analyzed. The runtime split is pinned in
+// TestOmittedTriggerClassifiesEverythingUnlessGated.
+func TestEmptyTriggerLoadsOnBothLaneKinds(t *testing.T) {
 	build := func(gate bool) error {
 		r := aiRule("risky")
 		r.Trigger = nil
@@ -189,8 +191,8 @@ func TestEmptyTriggerIsAllowedOnlyWhenGated(t *testing.T) {
 		return cfg.Validate()
 	}
 
-	if err := build(false); err == nil {
-		t.Error("an untriggered rule on an ungated lane was accepted")
+	if err := build(false); err != nil {
+		t.Errorf("an untriggered rule on an ungated lane was refused: %v", err)
 	}
 	if err := build(true); err != nil {
 		t.Errorf("an untriggered rule on a gated lane was refused: %v", err)

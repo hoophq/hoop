@@ -8,8 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/analyzer"
+	"github.com/hoophq/hoop/sidecar/inspect"
 
 	"github.com/hoophq/hoop/sidecar/policy"
 )
@@ -191,10 +191,12 @@ type AnalyzerCacheConfig struct {
 // deprecation naming this block), because removing it would break every
 // deployed config on upgrade rather than warning about it.
 type LaneAnalyzerConfig struct {
-	// Trigger narrows which statements this lane classifies. A block with
-	// an empty trigger classifies nothing and is refused, unless opa.gate
-	// is on and the policy decides what gets classified: the failure mode
-	// of "matches everything by accident" is a bill rather than an error.
+	// Trigger narrows which statements this lane classifies. OMITTED, the
+	// lane classifies everything: declaring the analyzer is the opt-in,
+	// max_calls and the cache bound the bill, and -validate prints the
+	// per-statement cost as a note. On a lane with opa.gate the gate-phase
+	// policy decides instead, and an omitted trigger leaves it fully in
+	// charge.
 	Trigger *policy.AITrigger `json:"trigger,omitempty"`
 
 	// HighRisk, MediumRisk and LowRisk map a verdict onto an action:
@@ -442,7 +444,7 @@ const (
 func buildAnalyzerEvaluators(
 	rules []policy.Rule,
 	ac *analyzerDeps,
-	hasOPA bool,
+	hasOPA, gated bool,
 ) ([]policy.Evaluator, error) {
 	if len(rules) == 0 {
 		return nil, nil
@@ -454,7 +456,7 @@ func buildAnalyzerEvaluators(
 	out := make([]policy.Evaluator, 0, len(rules))
 	for _, r := range rules {
 		ev, err := buildAnalyzerEvaluator(r.Name, budgetRulePrefix+r.Name,
-			specFromRule(r), ac, hasOPA)
+			specFromRule(r), ac, hasOPA, gated)
 		if err != nil {
 			return nil, fmt.Errorf("rule %q: %w", r.Name, err)
 		}
@@ -474,7 +476,7 @@ func buildLaneAnalyzer(
 	lane string,
 	la *LaneAnalyzerConfig,
 	ac *analyzerDeps,
-	hasOPA bool,
+	hasOPA, gated bool,
 ) (policy.Evaluator, error) {
 	if la == nil {
 		return nil, nil
@@ -484,7 +486,7 @@ func buildLaneAnalyzer(
 			"listener %q has an analyzer block, and the config has no top-level "+
 				"analyzer section to supply the provider", lane)
 	}
-	ev, err := buildAnalyzerEvaluator(lane, budgetLanePrefix+lane, *la, ac, hasOPA)
+	ev, err := buildAnalyzerEvaluator(lane, budgetLanePrefix+lane, *la, ac, hasOPA, gated)
 	if err != nil {
 		return nil, fmt.Errorf("analyzer block: %w", err)
 	}
@@ -499,13 +501,25 @@ func buildLaneAnalyzer(
 // budgetKey is its purse in ac's registry. They differ because the report
 // name is an operator-facing identity and the purse must not collide across
 // the two analyzer forms — see the budget key prefixes above.
+//
+// An OMITTED trigger classifies everything — on an ungated lane. Declaring
+// an analyzer is already the opt-in, so the absence of a narrower means
+// "all of it", bounded by the cache and max_calls; buildLanes leaves a
+// startup note naming the cost. A GATED lane keeps the zero trigger, so a
+// gate-phase policy stays the only spender and Rego's silence keeps
+// meaning "skip" for every deployed two-phase config.
 func buildAnalyzerEvaluator(
 	name, budgetKey string,
 	la LaneAnalyzerConfig,
 	ac *analyzerDeps,
-	hasOPA bool,
+	hasOPA, gated bool,
 ) (policy.Evaluator, error) {
 	cfg := ac.cfg
+
+	trigger := triggerFrom(la.Trigger)
+	if trigger.IsZero() && !gated {
+		trigger.All = true
+	}
 
 	actions, err := actionMap(la, hasOPA)
 	if err != nil {
@@ -567,7 +581,7 @@ func buildAnalyzerEvaluator(
 		Provider:      ac.provider,
 		Guidance:      guidance,
 		Actions:       actions,
-		Trigger:       triggerFrom(la.Trigger),
+		Trigger:       trigger,
 		Message:       la.Message,
 		Timeout:       time.Duration(timeout) * time.Second,
 		FailOpen:      failOpen,
@@ -770,23 +784,13 @@ func validateLaneAnalysis(rules []policy.Rule, la *LaneAnalyzerConfig,
 	}
 
 	if la != nil {
-		problems = append(problems, validateLaneBlock(la, gated, lane)...)
+		problems = append(problems, validateLaneBlock(la, lane)...)
 	}
 
 	for _, r := range rules {
-		if r.Trigger.IsZero() && !gated {
-			// An empty trigger classifies nothing. Silently accepting
-			// it leaves an operator believing a guardrail is running.
-			//
-			// A gated lane is the exception: there the gate decides
-			// what gets classified, and an empty trigger is how an
-			// operator says so.
-			problems = append(problems, fmt.Sprintf(
-				"%s: ai_analysis rule %q has no trigger, so it would classify nothing; "+
-					"name operations, tables or resources, or turn on opa.gate "+
-					"and let the policy decide", lane, r.Name))
-		}
-
+		// An omitted trigger is legal on either lane kind: an ungated
+		// lane classifies everything (buildLanes leaves a cost note), a
+		// gated one hands the question to the gate-phase policy.
 		if r.Action != "" {
 			// policy.newRules refuses this, but an ai_analysis rule
 			// never reaches it: splitAnalyzerRules lifts these out
@@ -811,17 +815,9 @@ func validateLaneAnalysis(rules []policy.Rule, la *LaneAnalyzerConfig,
 // checks mirror the rule-form ones — same failure, same message shape — plus
 // the numeric bounds a rule never carried, which get the same negative
 // refusal AnalyzerConfig.validate applies to the defaults they override.
-func validateLaneBlock(la *LaneAnalyzerConfig, gated bool, lane string) []string {
+func validateLaneBlock(la *LaneAnalyzerConfig, lane string) []string {
 	var problems []string
 	where := lane + ": analyzer block"
-
-	if la.Trigger.IsZero() && !gated {
-		problems = append(problems, fmt.Sprintf(
-			"%s has no trigger, so it would classify nothing; name operations, "+
-				"tables or resources, or turn on opa.gate and let the policy decide",
-			where))
-	}
-
 	problems = append(problems, validateRiskActions(
 		la.HighRisk, la.MediumRisk, la.LowRisk, where)...)
 

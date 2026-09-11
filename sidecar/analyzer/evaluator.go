@@ -22,12 +22,18 @@ const DefaultMaxInputBytes = 8 << 10
 
 // Trigger decides whether a statement is worth classifying.
 //
-// It is the first and cheapest cost control. A lane with no trigger
-// classifies everything, which on a database lane means paying for every
-// SELECT an ORM emits. An empty Trigger matches nothing, so a rule must state
-// what it cares about; that is the safe default, because the failure mode of
-// "matches everything by accident" is a bill.
+// It is the first and cheapest cost control. A zero Trigger matches
+// NOTHING; All matches everything. The split exists because the two
+// callers mean different things by an absent trigger: the sidecar sets All
+// for an ungated lane that omitted its trigger (the operator asked for
+// everything, out loud, and max_calls and the cache bound the bill), while
+// a gated lane keeps the zero trigger so the gate-phase policy stays the
+// only thing that spends money — Rego's silence must keep meaning "skip",
+// or a policy that answers nothing would start paying for every statement.
 type Trigger struct {
+	// All classifies every statement, overriding the three lists below.
+	All bool
+
 	// Operations matches the statement's normalized verb.
 	Operations []inspect.Operation
 
@@ -45,11 +51,14 @@ type Trigger struct {
 
 // IsZero reports whether the trigger names nothing.
 func (t Trigger) IsZero() bool {
-	return len(t.Operations) == 0 && len(t.Tables) == 0 && len(t.Resources) == 0
+	return !t.All && len(t.Operations) == 0 && len(t.Tables) == 0 && len(t.Resources) == 0
 }
 
 // matches reports whether stmt should be classified.
 func (t Trigger) matches(stmt inspect.Statement) bool {
+	if t.All {
+		return true
+	}
 	for _, op := range t.Operations {
 		if stmt.Operation == op {
 			return true

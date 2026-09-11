@@ -1241,15 +1241,19 @@ func buildPolicy(lane string, gc GuardrailsConfig, la *LaneAnalyzerConfig,
 	// rule-form analyzers in concatenation order. All of them sit after
 	// the local rules and the single-call/gate OPA position, so a
 	// statement a free evaluator already refused never costs a model call.
+	//
+	// gated tells the builders what an OMITTED trigger means: everything
+	// on a plain lane, gate-decided on a gated one.
+	gated := opa.enabled() && opa.Gate
 	if la != nil {
-		ev, err := buildLaneAnalyzer(lane, la, ac, opa.enabled())
+		ev, err := buildLaneAnalyzer(lane, la, ac, opa.enabled(), gated)
 		if err != nil {
 			return nil, err
 		}
 		chain = append(chain, ev)
 	}
 	if len(aiRules) > 0 {
-		evs, err := buildAnalyzerEvaluators(aiRules, ac, opa.enabled())
+		evs, err := buildAnalyzerEvaluators(aiRules, ac, opa.enabled(), gated)
 		if err != nil {
 			return nil, err
 		}
