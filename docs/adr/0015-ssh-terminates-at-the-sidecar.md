@@ -136,8 +136,9 @@ admits**. The two behaviours the design talks about
 are what a capability list produces, not settings to declare:
 
 - **A bastion** admits the client-opened forward and no session capability. It
-  authenticates the connection, dials the destination the client named unless a
-  guardrail refuses it, and forwards bytes blind. It refuses
+  authenticates the connection, checks the destination the client named against
+  its `forward_allowed`, dials the address that passed and forwards bytes
+  blind. It refuses
   a session channel because none is admitted, so there is no shell on it, and
   it never sees the plaintext of what it carries.
 - **An end-hop** admits the session capabilities. It terminates the handshake,
@@ -170,12 +171,12 @@ sequenceDiagram
 
     User->>Bastion: ssh -J bastion target-host (hop 1)
     Bastion->>Bastion: validate cert against trusted CA
-    Bastion->>Bastion: cert permits opening a forward? no destination check
+    Bastion->>Bastion: cert carries permit-port-forwarding? destination in forward_allowed?
     Bastion->>Bastion: dial the host the client named, relay bytes blind
     Note over Bastion,Endpoint: the bastion never sees hop 2's plaintext
 
     User->>Endpoint: second handshake through the pipe, same cert (hop 2)
-    Endpoint->>Endpoint: validate cert, check it grants a PTY, spawn locally
+    Endpoint->>Endpoint: validate cert, check permit-pty, spawn locally
 
     loop session
         User->>Endpoint: input
@@ -201,7 +202,7 @@ sequenceDiagram
     Note over User,SSHD: sshd forwards a pipe and never re-signs identity
 
     User->>Endpoint: second handshake through the pipe, same cert (hop 2)
-    Endpoint->>Endpoint: validate cert, check it grants a PTY, spawn locally
+    Endpoint->>Endpoint: validate cert, check permit-pty, spawn locally
     Endpoint->>Endpoint: guardrails, analyzer, audit, mask
 ```
 
@@ -227,10 +228,10 @@ certificate itself.
   forwards at all. Jumping through a bastion is one *use* of that — a jump is
   a forward the client opens on the jump host — but the grant does not
   distinguish it from any other: SSH has no "may be used as a jump host"
-  notion to grant instead, so the same certificate can tunnel to any
-  destination a listener admitting forwarding can reach. Read it as "this
+  notion to grant instead, so the same certificate opens a jump and a tunnel
+  alike, wherever a listener's `forward_allowed` carries one. Read it as "this
   holder may open forwards", never as "this holder may jump". Without it,
-  every forward request is refused.
+  every forward request is refused whatever a listener allows.
 - **`permit-pty`** decides whether it may open an interactive shell at an
   end-hop. Without it, at most a non-interactive command is available.
 - **`valid-before` and `source-address`**, the standard critical options, bound
@@ -248,7 +249,8 @@ should.** Where a connection may be forwarded is the client's decision to make
 and the server's to permit — a certificate has no standard field for a
 destination, and inventing one would put network topology into a short-lived
 credential, so adding a host would mean reissuing certificates. The
-destination comes from the client's own request, as it does for `sshd`.
+destination comes from the client's own request, and the listener's
+`forward_allowed` decides whether it is carried.
 
 Restricting *which end-hop* a given user may reach is deliberately not
 attempted, because it would protect nothing. The end-hop authenticates hop 2
@@ -322,27 +324,42 @@ request and response, `grpc_status` reads a gRPC one. None of them has
 anything to read here, so naming one is a config error rather than a rule
 that loads and never matches.
 
-**Forwarding takes no configuration and is allowed by default — the one
-exception to default-deny.** A client's forward request already carries the
-host and port it wants, so a bastion needs no map to do its job: it dials what
-was asked for, resolved by its own network view. Nothing is added to
-`capabilities_allowed` for it either. This is `sshd`'s behaviour, defaults
-included: forwarding on, destinations unrestricted, and restriction expressed
-as an exception rather than an allowlist.
+**Forwarding is denied by default and opened by one directive,
+`forward_allowed`.** It lists the networks a client-opened forward may reach,
+each optionally carrying a port: `10.0.0.0/8:2222` permits that port and
+nothing else on that network, `10.0.0.0/8` permits any port on it, and `any`
+permits everything. An empty list denies, and so does an absent one — the
+difference being that an empty list says an operator meant it.
 
-The cost is stated rather than hidden, because it is real and there is no
-setting that softens it: a listener that admits forwarding relays to anything
-it can route to, for anyone holding a certificate with the forwarding grant,
-and an administrator cannot refuse a destination. Nothing in the sidecar
-bounds it. What does is the network the listener sits on, the forwarding grant
-on the certificate, its lifetime, and `source-address`. A deployment that
-needs a destination refused has to do it with routing or a firewall, or not
-admit forwarding on that listener.
+**A forward needs two independent permissions, and they answer different
+questions.** The certificate's `permit-port-forwarding` says whether this
+holder may open forwards at all, which is a property of the person and travels
+with them. `forward_allowed` says where this listener will carry one, which is
+a property of where the listener sits. Either one missing refuses the request.
+This is how OpenSSH layers the same decision, and it is what makes the two
+useful: an issuer can deny one person forwarding without touching a listener,
+and a listener can refuse a destination for everyone without reissuing
+anything.
+
+**The listener evaluates it, so the same directive expresses different things
+at different hops.** A jump and a tunnel are the same request; what separates
+them is which listener receives it. A bastion that permits only an end-hop's
+SSH port is a jump host and nothing else — nobody reaches a database through
+it. An end-hop that permits a database port lets someone tunnel there after
+they land, and one that permits nothing lets them land and no more.
+
+**A name is resolved once, and the address that passed is the address dialled.**
+A client asks for a host, so the listener resolves it, tests the result
+against `forward_allowed`, and connects to that address rather than resolving
+the name a second time. Checking a name and then dialling it again would leave
+a window where the two disagree. The cost is that this policy depends on the
+resolver the listener trusts.
 
 **Admission is default-deny over the rest of the SSH capability surface**,
 declared per listener as `capabilities_allowed` — over what this design names,
-with everything it does not name refused. Forwarding is the exception just
-described; every other capability has to be asked for. Not just subsystem names: a listener
+with everything it does not name refused. Forwarding is governed by
+`forward_allowed` rather than by this list, and is denied just as firmly
+without it. Not just subsystem names: a listener
 that can deny file transfer by name but cannot deny agent forwarding is not
 default-deny, it is default-deny-for-one-capability. Modelling each subsystem
 as its own listener was also considered and rejected — a subsystem is
@@ -464,8 +481,8 @@ all, and the unsound heuristic the POC measured is not written a second time.
 **A forward has no operation, so no rule can scope to it.** The POC audits one
 as a capability event rather than a statement, and that is the right shape: a
 forward carries a destination, not content, and the statement vocabulary is
-for text a rule matches against. The consequence is stated under v1 — a
-destination cannot be refused.
+for text a rule matches against. Refusing a destination is `forward_allowed`'s
+job, not a guardrail's.
 
 ### The same surface in `sshd_config`
 
@@ -520,7 +537,7 @@ to work.
 | `sftp` | full — guardrails on the path, analyzer, download masking, per-operation audit |
 | `env` | full — guardrails on the name, audit |
 | `shell`, `pty` | admitted, audited in full, output masked; **no guardrails** |
-| `local_forward` | full — admitted by default to any destination, relayed blind, admission audited. Nothing restricts it, and no rule can (below) |
+| `local_forward` | full — admitted when the certificate permits forwarding and the destination matches `forward_allowed`, then relayed blind. Absent list denies |
 | `remote_forward` | not delivered; the refusal is exercised, but the return path that would make it work was never built |
 | `agent_forward`, `x11`, other subsystems | not delivered; no handler exists, and none was run |
 
@@ -767,10 +784,9 @@ listeners:
           mask_char: '*'
 ```
 
-A bastion is the same block with nothing else in it. No session capabilities,
-so no shell; no content policy, because there is no session to inspect; and no
-forwarding configuration, because forwarding is on and unrestricted. Identity
-is the whole of it:
+A bastion is the same block with no session capabilities, so no shell, and no
+content policy, because there is no session to inspect. What it does carry is
+the one directive that lets it forward at all:
 
 ```yaml
 listeners:
@@ -780,6 +796,13 @@ listeners:
     ssh:
       host_key: /etc/hoop-inspect/keys/bastion_host_key
       trusted_ca: /etc/hoop-inspect/keys/hoop_ca.pub
+
+      # A jump host and nothing else: the end-hops' SSH port on this
+      # network, no other port and no other network. Absent would deny
+      # every forward, which is what makes this the only line that
+      # turns the listener into a bastion at all.
+      forward_allowed:
+        - 10.0.0.0/8:2222
 ```
 
 Every key this design adds, and nothing else:
@@ -791,6 +814,7 @@ Every key this design adds, and nothing else:
 | `ssh.host_key` | path | yes | The server identity this listener presents, the same file a real `sshd` would hold |
 | `ssh.trusted_ca` | path | yes | The CA public key(s) a certificate must be signed by. The only standing trust decision a listener makes |
 | `ssh.capabilities_allowed` | list | no | Which session capabilities are admitted. **Absent admits none**, which is exactly right for a bastion. Forwarding is not a member |
+| `ssh.forward_allowed` | list of `network[:port]`, or `any` | no | Where a client-opened forward may be carried. **Absent or empty denies every forward.** A port restricts to it, no port means any port on that network. Checked after the certificate's own forwarding grant |
 | `ssh.identity.subject` | `key_id`, `principals`, `extensions.<name>` | no | Which certificate field becomes the principal policy and audit see. Absent takes the key id |
 | `ssh.identity.email` | same | no | Where an email is written, when the CA writes one |
 | `ssh.identity.groups` | same | no | The field group-based policy reads |
@@ -801,12 +825,11 @@ and `downstream_tls`. A bastion has no fixed upstream and an end-hop has none
 at all, and SSH negotiates its own transport, so there is no TLS to terminate
 or originate. `idle_timeout_sec` and `max_conns` work as they do on any lane.
 
-And five keys are deliberately **not** here, each because something else
+And four keys are deliberately **not** here, each because something else
 already says the same thing: a `role`, which the capability list says; a
-target list or a forwarding switch, because forwarding is unrestricted and
-takes its destination from the client; a per-listener audit path, because the
-sink is process-wide; and a per-capability masking set, because one rule set
-covers the lane.
+separate on/off switch for forwarding, because an empty `forward_allowed`
+already means no; a per-listener audit path, because the sink is process-wide;
+and a per-capability masking set, because one rule set covers the lane.
 
 Three details are decided here rather than inherited from the POC:
 
@@ -863,7 +886,8 @@ graph LR
   this design cannot yet deliver is simply not needed.
 - **A bastion is worth adding for what it centralizes, not because an end-hop
   needs one.** One ingress address to firewall instead of one per host, one
-  place that records every destination anyone asked to reach. In exchange the
+  place that records every destination anyone asked to reach, and one
+  `forward_allowed` to maintain instead of one per host. In exchange the
   end-hop can then be closed to everything except the bastion.
 - **Bastion → every end-hop it may jump to (mode 1).** The bastion dials the
   target itself, so it needs outbound reachability to every protected host and
@@ -902,7 +926,7 @@ already required is unchanged.
 | Component | Needs locally |
 |---|---|
 | User machine | `ssh`; the certificate and its private key in an agent or a `CertificateFile`. Nothing else when the end-hop is reached directly; a `ProxyJump` entry per bastion otherwise |
-| Bastion sidecar | its own host key; the trusted CA public key(s); a listen address; outbound reachability and name resolution for whatever it is meant to reach. **No target list, no per-user configuration, no content policy.** Optional — no topology requires one |
+| Bastion sidecar | its own host key; the trusted CA public key(s); a listen address; its `forward_allowed` networks; outbound reachability and name resolution for them. **No per-user configuration and no content policy.** Optional — no topology requires one |
 | End-hop sidecar | its own host key; the trusted CA public key(s) — the same one every other hop trusts; a listen address; a capability list admitting the session capabilities; guardrail/analyzer/mask policy; enough host privilege to spawn a session as the resolved user. **Sufficient on its own** |
 | Existing `sshd` (mode 2) | unchanged, except its trusted-CA file must name the same CA, and forwarding must be enabled for the relevant users |
 
@@ -977,12 +1001,6 @@ would reopen the shell decision.
   already narrows a rule to named result-set values and sits inert for
   protocols that name none. Deferred, not rejected — the nested per-capability
   rule set the POC used is the shape that is rejected.
-- **Restricting a forward's destination.** v1 cannot: forwarding is allowed to
-  anywhere the listener can route, and there is no operation for a forward, so
-  no guardrail can scope to one. Refusing a destination therefore means a
-  routing or firewall change outside the sidecar. Adding it needs both a
-  destination operation and a decision about whether the default stays permit;
-  OpenSSH's `PermitOpen` is the shape to copy if it is wanted.
 - Whether an audited environment-variable value stays raw, as in v1, or is
   redacted before it reaches the trail — masking has no response to act on for
   this capability, so the audit record is the only place a secret could be
