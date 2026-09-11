@@ -284,9 +284,12 @@ Two producers sit commented out in `sidecar/config.yaml`:
   lane with no `opa.url` denies on a match instead of reporting it, so the
   rule on its own turns this lane into a hard block on those four entity
   classes.
-- **`ai_analysis`**: sends a statement to a language model and reports the
-  risk it comes back with. Needs a credential and spends money per statement,
-  so it also needs the `analyzer:` block.
+- **the analyzer**: a per-listener `analyzer:` block, beside `guardrails`,
+  that sends a statement to a language model and reports the risk it comes
+  back with. Needs a credential and spends money per statement, so it also
+  needs the top-level `analyzer:` section that holds the provider. (The old
+  spelling, a `type: ai_analysis` rule under `guardrails.rules`, still loads
+  but prints a deprecation and fails under `-strict`.)
 
 Either way nothing else in the stack changes: the Rego is already loaded and
 the OPA container is already running.
@@ -297,7 +300,7 @@ would put it in this YAML, a second place decisions live that nobody reviews.
 already owns:
 
 ```yaml
-analyzer:
+analyzer:                              # the provider, plus defaults every lane inherits
   provider: vertex                     # vertex | anthropic | openai
   model: claude-sonnet-4-5@20250929
   extra: {project: my-gcp-project, region: global}
@@ -317,31 +320,29 @@ listeners:
           type: pii
           action: defer                # report the classes, do not deny
           entities: [US_SSN, CREDIT_CARD, IBAN_CODE, EMAIL_ADDRESS]
-        - name: risky-writes
-          type: ai_analysis
-          high: defer                  # the analyzer classifies; Rego decides
-          medium: defer
-          low: defer
+    analyzer:                          # this lane's analyzer, beside guardrails
+      high: defer                      # the analyzer classifies; Rego decides
+      medium: defer
+      low: defer
 ```
 
 BR_CPF is missing from that entity list because `no-cpf-in-query` in the
 defaults already denies it outright, for free, before OPA is consulted.
 Taking the `pii` rule on its own means dropping `gate: true`, because a gate
-with no `ai_analysis` rule is a round trip that buys nothing and is refused at
-startup.
+with no analyzer is a round trip that buys nothing and is refused at startup.
 
 The lane then consults OPA twice, at the same URL, with `input.phase` saying
 which call it is. The **gate** phase runs before the producers and answers
 `request: {"ai_analysis": true}` or `false`, so the cost control is a Rego
-rule rather than a `trigger:` list. That is why the ai rule above has no
-trigger at all. The **decide** phase runs after, carrying what each producer
+rule rather than a `trigger:` list. That is why the analyzer block above has
+no trigger at all. The **decide** phase runs after, carrying what each producer
 established in `input.findings`, keyed by source:
 
 ```json
 {"findings": {
   "pii": {"rule": "sensitive-columns", "status": "ok",
           "values": {"entities": ["US_SSN"], "rules": ["sensitive-columns"]}},
-  "ai_analysis": {"rule": "risky-writes", "status": "ok",
+  "ai_analysis": {"rule": "appdb", "status": "ok",
                   "values": {"risk_level": "high"}}
 }}
 ```
@@ -379,7 +380,7 @@ with the word in `reason`:
 
 ```bash
 curl -s localhost:19000/api/stats | python3 -m json.tool   # by_risk
-curl -s localhost:19000/config    | python3 -m json.tool   # ai_rules per lane
+curl -s localhost:19000/config    | python3 -m json.tool   # each lane's resolved analyzer
 ```
 
 This evaluator **fails open** by default. It depends on a third-party API, and

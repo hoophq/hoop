@@ -93,6 +93,11 @@ import (
 var version = "0.1.0"
 
 func main() {
+	// -migrate renders YAML through the same nested module that parses it;
+	// the daemon package cannot import it, so the renderer is injected the
+	// same way the Loader is.
+	daemon.YAMLFromJSON = configyaml.FromJSON
+
 	err := daemon.Main(version, configyaml.Load, func(raw json.RawMessage) (daemon.Plugin, error) {
 		// An absent "pii" section no longer means no detector: the plugin
 		// builds one over every entity type it knows and the section

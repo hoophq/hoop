@@ -1,11 +1,21 @@
 # ADR-0008: The AI analyzer decides for itself; OPA is the opt-in second decider
 
-- **Status:** Accepted
+- **Status:** Accepted (amended 2026-09-11: omitted trigger classifies everything, see note below)
 - **Date:** 2026-08-27
 - **Author:** @matheusfrancisco
 - **Code:** [`sidecar/analyzer/`](../../sidecar/analyzer), [`sidecar/daemon/config.go`](../../sidecar/daemon/config.go), [`sidecar/daemon/analyzer.go`](../../sidecar/daemon/analyzer.go), [`sidecar/policy/`](../../sidecar/policy)
 - **Related:** [ADR-0005](0005-sidecar-flow.md) (request flow, current state), [ADR-0006](0006-sidecar-config-defaults-and-overrides.md) (the refusal table this ADR explains the other half of), [ADR-0009](0009-guardrails-and-masking-architecture.md) (the enforcement points this chain sits in)
 - **Supersedes / Superseded by:** —
+
+> **Amendment (2026-09-11):** the trigger is no longer load-bearing as a
+> refusal. "The trigger is the cost control" below stands, but an OMITTED
+> trigger on an ungated lane now classifies everything instead of being
+> refused at startup: declaring the analyzer is the opt-in, the cache and
+> `max_calls` bound the bill, and `-validate` prints the per-statement cost
+> as a note. Gated lanes are unchanged — the zero trigger stays, so a
+> gate-phase policy's silence keeps meaning "skip". See
+> [ADR-0015](0015-listener-analyzer-block.md) for the listener block this
+> applies to.
 
 ## Context
 

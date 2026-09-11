@@ -28,11 +28,13 @@ import (
 const deprecatedSidecarAlias = "inspect"
 
 var (
-	sidecarConfigFlag   string
-	sidecarLicenseFlag  string
-	sidecarTokenFlag    string
-	sidecarValidateFlag bool
-	sidecarStrictFlag   bool
+	sidecarConfigFlag     string
+	sidecarLicenseFlag    string
+	sidecarTokenFlag      string
+	sidecarValidateFlag   bool
+	sidecarStrictFlag     bool
+	sidecarMigrateFlag    bool
+	sidecarMigrateOutFlag string
 )
 
 var startSidecarCmd = &cobra.Command{
@@ -102,6 +104,33 @@ registering a new sidecar.`,
 			cmd.SilenceUsage = false
 			return fmt.Errorf("--config is required (or set HOOP_SIDECAR_CONFIG or %s)",
 				daemon.ControlPlaneURLEnv)
+		}
+		if sidecarMigrateFlag {
+			if sidecarConfigFlag == "" {
+				cmd.SilenceUsage = false
+				return fmt.Errorf("--migrate needs --config: it rewrites a file, " +
+					"and a control-plane config has no file to rewrite")
+			}
+			cfg, err := configyaml.Load(sidecarConfigFlag)
+			if err != nil {
+				return err
+			}
+			out := os.Stdout
+			if sidecarMigrateOutFlag != "" {
+				f, err := os.Create(sidecarMigrateOutFlag)
+				if err != nil {
+					return err
+				}
+				defer f.Close()
+				out = f
+			}
+			// The destination's extension picks the syntax; stdout
+			// inherits the input's.
+			target := sidecarMigrateOutFlag
+			if target == "" {
+				target = sidecarConfigFlag
+			}
+			return daemon.WriteMigrated(cfg, configyaml.IsYAML(target), out, os.Stderr)
 		}
 
 		cfg, det, err := daemon.SetupWith(sidecarConfigFlag, configyaml.Load, buildSidecarPlugin,
@@ -202,6 +231,9 @@ func init() {
 	// operator reading either sees the hoop version that produced the binary
 	// rather than the library's "dev" default.
 	daemon.Version = version.Get().Version
+	// --migrate renders YAML through the same module that parses it; the
+	// daemon package cannot import it, so the renderer is injected.
+	daemon.YAMLFromJSON = configyaml.FromJSON
 
 	startSidecarCmd.Flags().StringVar(&sidecarConfigFlag, "config", sidecarConfigFromEnv(),
 		"Path to the inspection config file (YAML or JSON)")
@@ -222,6 +254,13 @@ func init() {
 	startSidecarCmd.Flags().BoolVar(&sidecarStrictFlag, "strict", false,
 		"Fail when the config uses a deprecated field, so a pipeline can catch it "+
 			"before the release that removes it")
+	startSidecarCmd.Flags().BoolVar(&sidecarMigrateFlag, "migrate", false,
+		"Rewrite the config onto the current schema, print it, and exit. Deprecated "+
+			"fields are folded and ai_analysis rules become listener analyzer blocks "+
+			"where the move is faithful")
+	startSidecarCmd.Flags().StringVar(&sidecarMigrateOutFlag, "migrate-out", "",
+		"File --migrate writes to instead of stdout; its extension picks the syntax, "+
+			"defaulting to the input's")
 
 	startCmd.AddCommand(startSidecarCmd)
 }

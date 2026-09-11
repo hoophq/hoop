@@ -27,6 +27,16 @@ func (s stubPlugin) ScanText(text string) []string {
 	return nil
 }
 
+// RedactText mirrors the real plugin's contract: the found literal is
+// replaced with its entity class, never appended to.
+func (s stubPlugin) RedactText(text string) (string, []string) {
+	if s.find != "" && strings.Contains(text, s.find) {
+		return strings.ReplaceAll(text, s.find, "<"+s.entities[0]+">"),
+			[]string{s.entities[0]}
+	}
+	return text, nil
+}
+
 // BuildMasker mirrors the real plugin: a rule naming an entity it does not
 // detect is a config error, so it cannot become a rule that silently never
 // fires.

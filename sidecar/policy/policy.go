@@ -432,9 +432,9 @@ type Rule struct {
 	Entities []string `json:"entities,omitempty"`
 
 	// Trigger narrows which statements a MatchAIAnalysis rule classifies.
-	// A rule with an empty trigger classifies nothing, because the failure
-	// mode of "matches everything by accident" is a bill rather than an
-	// error.
+	// A rule with an empty trigger classifies EVERYTHING on an ungated
+	// lane (the resolved lane carries a startup note naming the cost) and
+	// leaves a gate-phase policy in charge on a gated one.
 	Trigger *AITrigger `json:"trigger,omitempty"`
 
 	// HighRisk, MediumRisk and LowRisk map a MatchAIAnalysis verdict onto
