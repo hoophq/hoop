@@ -1,4 +1,5 @@
 import { ShieldCheck, Sparkles, VenetianMask } from 'lucide-react'
+import { guardrailRules, maskRules } from './resolve'
 
 // Reading a sidecar's stored configuration (daemon.Config,
 // sidecar/daemon/config.go), the document the control plane holds and serves to
@@ -39,31 +40,17 @@ export function protocolInfo(protocol) {
   return PROTOCOLS[protocol] ?? { label: protocol, subtype: protocol }
 }
 
-const hasRules = (section) => Array.isArray(section?.rules) && section.rules.length > 0
-
-// Config.resolve in sidecar/daemon/config.go merges a lane's overrides onto the
-// top-level defaults, and the two sections do NOT merge the same way. Reading
-// the presence of the whole `guardrails`/`mask` block instead reported a lane
-// that overrides only `mode` as running no guardrails, while the daemon was
-// still applying the inherited rules.
-
-// `rules` absent inherits the default; `rules: []` is how a lane runs none
-// against a top-level set; a non-empty list concatenates with the default.
-function guardrailsOn(listener, config) {
-  const own = listener?.guardrails
-  if (own?.rules === undefined) return hasRules(config?.guardrails)
-  return own.rules.length > 0
-}
-
-// Only a non-empty lane list replaces the default (`o != nil && len(o.Rules) > 0`),
-// so nothing a lane writes can remove inherited masking.
-const maskOn = (listener, config) => hasRules(listener?.mask) || hasRules(config?.mask)
+// Whether a lane runs a feature is a question about its RESOLVED rules, so both
+// answers come from resolve.js rather than re-reading the document here. The
+// two sections inherit by different rules and each has its own opt-out
+// spelling; keeping that logic in one place is what stops the chips from
+// disagreeing with the lane detail that renders beside them.
 
 export function listenerFeatures(listener, config) {
   const on = []
   if (config?.analyzer) on.push('ai-analyzer')
-  if (maskOn(listener, config)) on.push('data-masking')
-  if (guardrailsOn(listener, config)) on.push('guardrails')
+  if (maskRules(listener, config).length > 0) on.push('data-masking')
+  if (guardrailRules(listener, config).length > 0) on.push('guardrails')
   return on
 }
 

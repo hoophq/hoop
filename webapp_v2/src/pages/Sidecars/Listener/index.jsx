@@ -1,13 +1,35 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Group, Paper, Stack, Text, Title } from '@mantine/core'
+import { Paper, Stack, Text, Title } from '@mantine/core'
 import { ArrowLeft } from 'lucide-react'
 import Alert from '@/components/Alert'
 import Button from '@/components/Button'
+import FormFooter, { FORM_FOOTER_CLEARANCE } from '@/components/FormFooter'
 import PageLoader from '@/components/PageLoader'
 import { sidecarsService } from '@/services/sidecars'
 import ListenerForm from '../components/ListenerForm'
+import { listenerIndexByLabel, listenerLabel } from '../listeners'
 import { RESTART_NOTE, useListenerEditor } from '../useListenerEditor'
+
+// The sidecar this listener belongs to, above its own name. There is no
+// Breadcrumbs component in the app and one consumer does not earn one; this is
+// the shape pages/Rulepacks/Detail uses, as a Button rather than a Group with
+// an onClick so it is reachable from the keyboard.
+function Parent({ name, onClick }) {
+  return (
+    <Button
+      variant="transparent"
+      color="gray"
+      leftSection={<ArrowLeft size={16} />}
+      onClick={onClick}
+      px={0}
+      w="fit-content"
+      size="compact-sm"
+    >
+      {name}
+    </Button>
+  )
+}
 
 // The form, once the sidecar it edits is on hand. Split out so the editor's
 // state is seeded from a listener that exists, rather than from null on the
@@ -20,39 +42,47 @@ function Editor({ sidecar, index, onDone }) {
   }
 
   return (
-    <Stack gap="xl">
-      <Stack gap="xs">
-        <Title order={1}>{isNew ? 'Add listener' : form.name || 'Edit listener'}</Title>
-        <Text c="dimmed">{`One upstream of ${sidecar.name}, with its own protocol and bind address.`}</Text>
+    <>
+      <Stack gap="xl" pb={FORM_FOOTER_CLEARANCE}>
+        <Stack gap="xs">
+          <Parent name={sidecar.name} onClick={onDone} />
+          <Title order={1}>{isNew ? 'Add listener' : form.name || listenerLabel(null, index)}</Title>
+          <Text c="dimmed">
+            {isNew
+              ? `A new lane on ${sidecar.name}: one upstream, one protocol, its own bind address.`
+              : `Listener on ${sidecar.name}.`}
+          </Text>
+        </Stack>
+
+        <Alert color="yellow" variant="light" radius="md">
+          <Text size="sm">{`The sidecar keeps serving its current listeners until it restarts. ${RESTART_NOTE}`}</Text>
+        </Alert>
+
+        <Paper withBorder radius="md" p="lg">
+          <ListenerForm form={form} setField={setField} errors={errors} />
+        </Paper>
       </Stack>
 
-      <Alert color="yellow" variant="light" radius="md">
-        <Text size="sm">{`The sidecar keeps serving its current listeners until it restarts. ${RESTART_NOTE}`}</Text>
-      </Alert>
-
-      <Paper withBorder radius="md" p="lg">
-        <ListenerForm form={form} setField={setField} errors={errors} />
-      </Paper>
-
-      <Group justify="flex-end">
+      {/* Pinned, because the form runs past the fold as soon as Advanced is
+          open and the page header already carries the search. */}
+      <FormFooter>
         <Button variant="subtle" color="gray" onClick={onDone} disabled={saving}>
           Cancel
         </Button>
         <Button onClick={handleSave} loading={saving}>
           {isNew ? 'Add listener' : 'Save listener'}
         </Button>
-      </Group>
-    </Stack>
+      </FormFooter>
+    </>
   )
 }
 
 /**
- * Shell B: the listener form on its own route.
+ * One listener of one sidecar, on its own route.
  *
- * /sidecars/:id/listeners/new adds one, /sidecars/:id/listeners/:name edits
- * the one with that name. The URL keys on the name because that is what an
- * operator can read and share; the editor works on the position it resolves
- * to, so a rename stays one edit.
+ * /sidecars/:id/listeners/new adds one; /sidecars/:id/listeners/:name edits the
+ * one that label resolves to. The editor then works on the position, so a
+ * rename is one edit rather than a delete and an insert.
  */
 export default function SidecarListenerPage() {
   const { id, name } = useParams()
@@ -90,29 +120,28 @@ export default function SidecarListenerPage() {
   if (loading) return <PageLoader h={400} />
 
   const { sidecar, error } = result
-  const index = isNew ? null : (sidecar?.configuration?.listeners ?? []).findIndex((l) => l.name === name)
+  const index = isNew ? null : listenerIndexByLabel(sidecar?.configuration?.listeners, name)
 
-  return (
-    <Stack gap="xl">
-      <Button
-        variant="transparent"
-        color="gray"
-        leftSection={<ArrowLeft size={16} />}
-        onClick={back}
-        px={0}
-        w="fit-content"
-      >
-        Back
-      </Button>
+  if (error) {
+    return (
+      <Stack gap="xl">
+        <Parent name="Sidecars" onClick={() => navigate('/sidecars')} />
+        <Text c="red">{error}</Text>
+      </Stack>
+    )
+  }
 
-      {error && <Text c="red">{error}</Text>}
+  // A label that is not in the document is an error, not an empty form: saving
+  // one would add a second listener under a name the operator thinks they are
+  // editing.
+  if (!isNew && index === -1) {
+    return (
+      <Stack gap="xl">
+        <Parent name={sidecar.name} onClick={back} />
+        <Text c="red">{`No listener named "${name}" on this sidecar.`}</Text>
+      </Stack>
+    )
+  }
 
-      {/* A named listener that is not in the document is an error, not an
-          empty form: saving one would add a second listener under a name the
-          operator thinks they are editing. */}
-      {!error && !isNew && index === -1 && <Text c="red">{`No listener named "${name}" on this sidecar.`}</Text>}
-
-      {sidecar && (isNew || index >= 0) && <Editor sidecar={sidecar} index={index} onDone={back} />}
-    </Stack>
-  )
+  return <Editor sidecar={sidecar} index={index} onDone={back} />
 }

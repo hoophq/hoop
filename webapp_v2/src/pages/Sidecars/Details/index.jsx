@@ -9,9 +9,8 @@ import { sidecarsService } from '@/services/sidecars'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import { showSnackbar } from '@/utils/snackbar'
 import SidecarDetails from '../components/SidecarDetails'
-import { removeListener } from '../listeners'
+import { listenerPath, removeListener } from '../listeners'
 import DeleteListenerModal from '../sections/DeleteListenerModal'
-import ListenerModal from '../sections/ListenerModal'
 import { RESTART_NOTE, saveErrorMessage } from '../useListenerEditor'
 
 // /sidecars/:id — the details card on its own page, and the listener controls.
@@ -23,10 +22,6 @@ export default function SidecarDetailsPage() {
   const loading = result.id !== id
   const showLoader = useMinDelay(loading, 500)
 
-  // `editing` is the listener's position, or null to add one; `undefined`
-  // means the modal is closed. Position rather than name, so a rename is one
-  // edit rather than a delete and an insert.
-  const [editing, setEditing] = useState(undefined)
   const [deleting, setDeleting] = useState(null)
   const [deletingBusy, setDeletingBusy] = useState(false)
   const updateSidecar = useSidecarStore((s) => s.updateSidecar)
@@ -83,11 +78,6 @@ export default function SidecarDetailsPage() {
 
   return (
     <Stack gap="xl">
-      {/* Mounted only while open, so the editor seeds from the row it was
-          opened on rather than the previous one. */}
-      {editing !== undefined && sidecar && (
-        <ListenerModal sidecar={sidecar} index={editing} onClose={() => setEditing(undefined)} onSaved={onSaved} />
-      )}
       <DeleteListenerModal
         listener={deleting?.listener}
         lastOne={listeners.length === 1}
@@ -117,8 +107,8 @@ export default function SidecarDetailsPage() {
             <SidecarDetails
               sidecar={sidecar}
               listenerActions={{
-                onAdd: () => setEditing(null),
-                onEdit: (index) => setEditing(index),
+                onAdd: () => navigate(`/sidecars/${encodeURIComponent(sidecar.id)}/listeners/new`),
+                onEdit: (index) => navigate(listenerPath(sidecar.id, listeners[index], index)),
                 onDelete: (index) => setDeleting({ index, listener: listeners[index] }),
               }}
             />

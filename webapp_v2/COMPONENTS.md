@@ -275,6 +275,24 @@ import Stepper from '@/components/Stepper'
 ```
 `StepAccordion` is the vertical, one-page wizard (Agents); `Stepper` is for a flow whose steps replace each other (the sidecar setup).
 
+### FormFooter
+
+Action bar pinned to the bottom of the viewport, for a form long enough that its Save
+would scroll out of reach. `left` is the secondary action, `children` the primary ones.
+The caller pads its own content by the exported `FORM_FOOTER_CLEARANCE`.
+
+```jsx
+<FormFooter left={<Button variant="default" onClick={back}>Back</Button>}>
+  <Button onClick={save} loading={saving}>Save</Button>
+</FormFooter>
+```
+
+Fixed, not `sticky; bottom: 0` — the body is the scroll container, so sticky only pins
+while the parent runs past the fold and a short form would leave the bar mid-page. The
+left edge reads `var(--app-shell-navbar-offset)`, which Mantine publishes on the AppShell
+root and its own `AppShell.Header` uses under `layout="alt"`; that is why the bar follows
+the sidebar collapsing instead of recomputing its width from a store.
+
 ### `ClojureApp`
 Bridge component that mounts the CLJS bundle for un-migrated routes. Mounted only by `modes/gateway.jsx` (the `/`, `/onboarding/*` and `/*` leaves). Do not use elsewhere, never from a `ControlPlane*` file.
 
@@ -858,15 +876,23 @@ Non-obvious notes only:
   A listener change does NOT hot-reload — the daemon swaps rules in place but needs a
   restart for topology, and re-handshakes only once a minute. Every save and delete
   says so (`RESTART_NOTE` in `pages/Sidecars/useListenerEditor.js`).
-  Two edit shells are wired on purpose while they are compared: `sections/
-  ListenerModal.jsx` and the `/sidecars/:id/listeners/*` route. Both render
-  `components/ListenerForm.jsx`, so only the chrome differs; one shell is deleted once
-  the comparison ends.
-  `pages/Sidecars/config.js` derives the Features chips from the document, resolving a
-  lane's overrides the way `Config.resolve` does — guardrail `rules` absent inherits
-  the default, `rules: []` disables, a non-empty list concatenates; mask only replaces
-  on a non-empty lane list. Reading the presence of the whole block instead reports a
-  lane that overrides only `mode` as unprotected.
+  Editing is one full page, `/sidecars/:id/listeners/*` — the modal that was wired
+  beside it for comparison is gone. The route keys on `listenerLabel(listener, index)`,
+  which falls back to `listener[i]` exactly as the daemon's `displayName` does, so a
+  listener that never named itself is still reachable and reads the way its own audit
+  rows do.
+  `sections/ListenerDetails.jsx` is the expanded row: the lane's remaining configuration
+  on the left, and on the right what it RESOLVES to — guardrails, masking and OPA, each
+  rule marked Listener or Inherited. That half is the only place those rules appear at
+  all; the form does not edit them.
+  `pages/Sidecars/resolve.js` is the one port of `Config.resolve`, and both the Features
+  chips (`config.js`) and the expanded row read it. Guardrail `rules` absent — **or
+  `null`, which is what commenting them out in YAML leaves** — inherits, `[]` runs none,
+  a non-empty list concatenates with the listener's own first. Mask turns on the
+  PRESENCE of the `rules` key, `[]` and `null` included: `MaskConfig.Rules` is a
+  `json.RawMessage`, so the daemon's `len(o.Rules) > 0` counts BYTES, and the two bytes
+  of `[]` are not the nil slice. Reading it as "a non-empty list replaces" reported
+  masking on a lane that had switched it off. `opa: {}` drops an inherited endpoint.
   `pages/Sidecars/status.js` turns `last_seen_at` into Waiting or Connected, and
   those two only: a stale timestamp still reads Connected with its relative last-seen
   time. There is no Offline, because `last_seen_at` is gateway memory that a restart

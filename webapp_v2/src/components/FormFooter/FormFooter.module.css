@@ -1,0 +1,23 @@
+/* Pinned to the bottom of the viewport, spanning from the navbar's edge to the
+ * right of the screen. inset-inline plus margin-inline-start is how Mantine's
+ * own AppShell.Header positions itself under layout="alt".
+ *
+ * The duration matches the navbar's own width transition in
+ * components/AppShell/theme.js, so the two edges move together. Neither is a
+ * theme token — Mantine publishes no transition variable — and a mismatch is
+ * visible as the bar lagging behind the sidebar.
+ *
+ * A directional border and a fixed position are the documented CSS-Module
+ * exception: no Mantine style prop expresses either.
+ */
+.root {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  margin-inline-start: var(--app-shell-navbar-offset, 0rem);
+  transition: margin-inline-start 200ms ease;
+  z-index: 10;
+  background-color: var(--mantine-color-body);
+  border-top: 1px solid var(--mantine-color-default-border);
+  padding: var(--mantine-spacing-md) var(--mantine-spacing-xl);
+}

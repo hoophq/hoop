@@ -259,6 +259,32 @@ export function validateListener(form, others = []) {
 
 export const hasErrors = (errors) => Object.keys(errors).length > 0
 
+/**
+ * What to call a listener that may not have said.
+ *
+ * `name` is optional in the document, and a config seeded from a file often
+ * omits it. The daemon does not store one either: displayName (daemon.go) falls
+ * back to `listener[i]` at read time, and that fallback is what its logs, its
+ * audit rows and its startup errors print. Using the same string here means the
+ * UI names a lane the way the operator already sees it named elsewhere.
+ */
+export function listenerLabel(listener, index) {
+  return listener?.name || `listener[${index}]`
+}
+
+// Where a listener is edited. The route keys on the LABEL, because that is what
+// an operator can read in a URL and share, while the editor works on the
+// position — so a rename stays one edit rather than a delete and an insert.
+export function listenerPath(sidecarId, listener, index) {
+  return `/sidecars/${encodeURIComponent(sidecarId)}/listeners/${encodeURIComponent(listenerLabel(listener, index))}`
+}
+
+// The position the route's label points at, or -1. Resolving through the same
+// label the path was built from is what keeps an unnamed listener reachable.
+export function listenerIndexByLabel(listeners, label) {
+  return (listeners ?? []).findIndex((l, i) => listenerLabel(l, i) === label)
+}
+
 // The listeners of a configuration with one replaced or appended, ready to PUT
 // as a whole document. The rest of the document is the caller's to carry.
 export function replaceListener(configuration, index, listener) {
