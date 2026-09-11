@@ -16,12 +16,24 @@ export const FEATURES = {
 
 const FEATURE_ORDER = ['ai-analyzer', 'data-masking', 'guardrails']
 
+// Every protocol a listener can declare, which is the codec registry
+// (sidecar/codec/all) plus grpc and spanner — those two have no codec on
+// purpose (ADR-0013) and are carved out of the daemon's own validation.
+//
+// `subtype` is a connections-metadata key, only for the protocols that are
+// also a hoop connection type. grpc and spanner are not, so they carry none
+// and render without an icon rather than falling back to an unrelated one.
 const PROTOCOLS = {
   postgres: { label: 'PostgreSQL', subtype: 'postgres' },
   mysql: { label: 'MySQL', subtype: 'mysql' },
   mssql: { label: 'SQL Server', subtype: 'mssql' },
+  mongodb: { label: 'MongoDB', subtype: 'mongodb' },
   http: { label: 'HTTP', subtype: 'httpproxy' },
+  grpc: { label: 'gRPC', subtype: null },
+  spanner: { label: 'Cloud Spanner', subtype: null },
 }
+
+export const PROTOCOLS_ORDER = ['postgres', 'mysql', 'mssql', 'mongodb', 'http', 'grpc', 'spanner']
 
 export function protocolInfo(protocol) {
   return PROTOCOLS[protocol] ?? { label: protocol, subtype: protocol }

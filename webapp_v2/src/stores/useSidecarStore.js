@@ -42,6 +42,29 @@ export const useSidecarStore = create((set, get) => ({
     return created
   },
 
+  /**
+   * Replace a sidecar's whole configuration document.
+   *
+   * Returns `{ ok, error }` rather than throwing, so a form can put the
+   * gateway's message next to the field it is about. The rest of this store
+   * still throws; the wizard it serves has no field to put a message in.
+   *
+   * The updated sidecar is merged back into the list so the fleet table shows
+   * the new listeners without a refetch.
+   */
+  updateSidecar: async (nameOrId, configuration) => {
+    try {
+      const updated = await sidecarsService.update(nameOrId, configuration)
+      set((state) => ({
+        sidecars: state.sidecars.map((s) => (s.id === updated.id ? updated : s)),
+        requestId: state.requestId + 1,
+      }))
+      return { ok: true, sidecar: updated }
+    } catch (error) {
+      return { ok: false, error }
+    }
+  },
+
   deleteSidecar: async (id) => {
     await sidecarsService.delete(id)
     set((state) => ({ sidecars: state.sidecars.filter((s) => s.id !== id), requestId: state.requestId + 1 }))

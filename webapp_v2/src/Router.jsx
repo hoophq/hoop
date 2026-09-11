@@ -59,6 +59,7 @@ import ComplianceReport from '@/pages/ComplianceReport'
 import Sidecars from '@/pages/Sidecars'
 import SidecarSetup from '@/pages/Sidecars/Setup'
 import SidecarDetailsPage from '@/pages/Sidecars/Details'
+import SidecarListenerPage from '@/pages/Sidecars/Listener'
 
 // The only lazily-loaded page. Every other route is imported eagerly, but the
 // Dashboard pulls in recharts + d3 (~150KB gzipped) and is reachable by admins
@@ -139,6 +140,22 @@ function Router() {
         element={
           <Page adminOnly>
             <SidecarDetailsPage />
+          </Page>
+        }
+      />
+      <Route
+        path="/sidecars/:id/listeners/new"
+        element={
+          <Page adminOnly>
+            <SidecarListenerPage />
+          </Page>
+        }
+      />
+      <Route
+        path="/sidecars/:id/listeners/:name"
+        element={
+          <Page adminOnly>
+            <SidecarListenerPage />
           </Page>
         }
       />

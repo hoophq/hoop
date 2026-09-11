@@ -798,8 +798,10 @@ Non-obvious notes only:
   from the CLJS terminal — no timers. Resets itself on logout (subscribes to
   `useAuthStore`), and every read is scoped by `forUserId`.
 - `useSidecarStore` — the fleet (`sidecars`, `fetchSidecars`, `createSidecar`,
-  `deleteSidecar`). `createSidecar` returns the response with the one-time token and
-  keeps none of it.
+  `updateSidecar`, `deleteSidecar`). `createSidecar` returns the response with the
+  one-time token and keeps none of it. `updateSidecar(nameOrId, configuration)`
+  replaces the whole configuration document and returns `{ ok, error }` instead of
+  throwing, so a listener form can put the gateway's message next to the field.
 - `useConnectionsMetadataStore` — loaded once at app start (`App.jsx`); feeds
   credential field schemas + connection icons; `load()` is idempotent.
 
@@ -839,8 +841,27 @@ Non-obvious notes only:
   on every poll, not something the sidecar reports. Creating without one stores an
   empty document; the sidecar then seeds the plane with its own config file on the
   first handshake (`importLocalConfig`), which is the connect journey the wizard
-  prints. Writing it from here is `PUT /sidecars/:nameOrID`, which has no caller: the
-  pages read the configuration, they do not author it.
+  prints. Once the plane holds listeners that seed is refused with a 409, so the
+  first listener written from the UI takes the document over for good.
+  `update(nameOrId, configuration)` is `PUT /sidecars/:nameOrID`, which **replaces the
+  whole document** — there is no per-listener endpoint and no ETag, so authoring is a
+  read-modify-write and two admins editing at once means the second write wins
+  silently.
+  `pages/Sidecars/listeners.js` is that read-modify-write. `formToListener` spreads
+  the listener it was opened with and writes only its own `OWNED_KEYS`, because the
+  form renders no `guardrails`, `mask` or `opa` and every one of them has three
+  meanings: absent inherits, `[]` or `{}` opts out, non-empty overrides. Rebuilding
+  the object instead of spreading it would flatten all of that, and the document is
+  decoded with `DisallowUnknownFields` three times over, so a dropped key is silent
+  data loss rather than an error. A listener is addressed by its POSITION: it is an
+  element of the configuration JSON, has no id, and its name is editable.
+  A listener change does NOT hot-reload — the daemon swaps rules in place but needs a
+  restart for topology, and re-handshakes only once a minute. Every save and delete
+  says so (`RESTART_NOTE` in `pages/Sidecars/useListenerEditor.js`).
+  Two edit shells are wired on purpose while they are compared: `sections/
+  ListenerModal.jsx` and the `/sidecars/:id/listeners/*` route. Both render
+  `components/ListenerForm.jsx`, so only the chrome differs; one shell is deleted once
+  the comparison ends.
   `pages/Sidecars/config.js` derives the Features chips from the document, resolving a
   lane's overrides the way `Config.resolve` does — guardrail `rules` absent inherits
   the default, `rules: []` disables, a non-empty list concatenates; mask only replaces
