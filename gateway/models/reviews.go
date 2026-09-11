@@ -53,13 +53,21 @@ func IsValidReviewStatus(v string) bool {
 }
 
 type Review struct {
-	ID                string            `gorm:"column:id"`
-	OrgID             string            `gorm:"column:org_id"`
-	SessionID         string            `gorm:"column:session_id"`
-	Type              ReviewType        `gorm:"column:type"`
-	Status            ReviewStatusType  `gorm:"column:status"`
-	ConnectionName    string            `gorm:"column:connection_name"`
-	ConnectionID      sql.NullString    `gorm:"column:connection_id"`
+	ID             string           `gorm:"column:id"`
+	OrgID          string           `gorm:"column:org_id"`
+	SessionID      string           `gorm:"column:session_id"`
+	Type           ReviewType       `gorm:"column:type"`
+	Status         ReviewStatusType `gorm:"column:status"`
+	ConnectionName string           `gorm:"column:connection_name"`
+	ConnectionID   sql.NullString   `gorm:"column:connection_id"`
+
+	// SidecarID and ListenerName bind a review to a sidecar's listener, in
+	// place of the connection a gateway review points at. SidecarID is nulled
+	// if the sidecar is deleted; the listener is what the review is about, so
+	// it outlives that.
+	SidecarID    sql.NullString `gorm:"column:sidecar_id"`
+	ListenerName sql.NullString `gorm:"column:listener_name"`
+
 	BlobInputID       sql.NullString    `gorm:"column:blob_input_id"`
 	InputEnvVars      map[string]string `gorm:"column:input_env_vars;serializer:json"`
 	InputClientArgs   pq.StringArray    `gorm:"column:input_client_args;type:text[]"`
@@ -159,7 +167,8 @@ func GetReviewByIdOrSid(orgID, id string) (*Review, error) {
 	var review Review
 	err := DB.Raw(`
 	SELECT
-		id, org_id, session_id, connection_name, type, access_duration_sec, status,
+		id, org_id, session_id, connection_name, sidecar_id, listener_name,
+		type, access_duration_sec, status,
 		blob_input_id, input_env_vars, input_client_args, time_window, access_request_rule_name,
 		force_approval_groups, min_approvals, owner_id, owner_email, owner_name, owner_slack_id,
 		( SELECT jsonb_agg(
@@ -194,7 +203,8 @@ func ListReviews(orgID string) (*[]Review, error) {
 	var reviews []Review
 	err := DB.Raw(`
 	SELECT
-		id, org_id, session_id, connection_name, type, access_duration_sec, status,
+		id, org_id, session_id, connection_name, sidecar_id, listener_name,
+		type, access_duration_sec, status,
 		blob_input_id, input_env_vars, input_client_args, access_request_rule_name,
 		force_approval_groups, min_approvals, owner_id, owner_email, owner_name, owner_slack_id,
 		( SELECT jsonb_agg(

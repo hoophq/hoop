@@ -1,6 +1,7 @@
 package reviewapi
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/events"
 	"github.com/hoophq/hoop/gateway/models"
 	slackservice "github.com/hoophq/hoop/gateway/slack"
@@ -32,6 +34,7 @@ var (
 	ErrGroupAlreadyReviewed = errors.New("it was already reviewed")
 	ErrForbidden            = errors.New("forbidden")
 	ErrUnknownStatus        = errors.New("unknown status")
+	ErrNoTimeWindow         = errors.New("a review bound to a listener takes no time window")
 )
 
 type TransportReleaseConnectionFunc func(orgID, sid, reviewOwnerSlackID, reviewStatus, rejectReason, rejectedBy string)
@@ -163,7 +166,7 @@ func (h *handler) ReviewByIdOrSid(c *gin.Context) {
 	req.Status = openapi.ReviewRequestStatusType(strings.ToUpper(string(req.Status)))
 	rev, err := DoReview(ctx, reviewIdOrSid, models.ReviewStatusType(req.Status), reviewTimeWindow, req.ForceReview, req.RejectionReason)
 	switch err {
-	case ErrNotEligible, ErrSelfApproval, ErrWrongState:
+	case ErrNotEligible, ErrSelfApproval, ErrWrongState, ErrNoTimeWindow:
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 	case ErrForbidden:
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"message": "access denied"})
@@ -260,9 +263,36 @@ func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.Review
 		return nil, fmt.Errorf("failed obtaining review, err=%v", err)
 	}
 
-	connection, err := models.GetConnectionByNameOrID(models.NewAdminContext(ctx.OrgID), rev.ConnectionName)
-	if connection == nil || err != nil {
-		return nil, fmt.Errorf("failed fetching connection for review, err=%v", err)
+	// The control plane does not model reviews against connections, so there is
+	// nothing to look up there. The gateway is unchanged.
+	//
+	// Everything below reads the connection rather than the mode, because a nil
+	// connection is exactly what this decided.
+	var connection *models.Connection
+	if appconfig.Get().IsControlPlane() {
+		// UpdateReview syncs the session's status and private.sessions.id is a
+		// uuid, so a review with no session fails there on a cast rather than
+		// here on the thing that is actually wrong.
+		if rev.SessionID == "" {
+			return nil, fmt.Errorf("sidecar review %s has no session", rev.ID)
+		}
+	} else {
+		connection, err = models.GetConnectionByNameOrID(models.NewAdminContext(ctx.OrgID), rev.ConnectionName)
+		if connection == nil || err != nil {
+			return nil, fmt.Errorf("failed fetching connection for review, err=%v", err)
+		}
+	}
+
+	// A time window says when a session may run against a connection, so a
+	// review bound to a listener has no use for one: it authorizes a single
+	// statement that has already been named. Refused rather than dropped, so a
+	// caller that asks for one is told, instead of having it silently persisted.
+	//
+	// This asks the review, not the mode. In the control plane no review has a
+	// connection, so `connection == nil` would also refuse a window for an
+	// ordinary review created there, which the update contract allows.
+	if timeWindow != nil && rev.ListenerName.Valid && rev.ListenerName.String != "" {
+		return nil, ErrNoTimeWindow
 	}
 
 	if timeWindow != nil {
@@ -328,7 +358,9 @@ func doReview(ctx *storagev2.Context, rev *models.Review, connection *models.Con
 		return nil, err
 	}
 
-	if rev.Status == models.ReviewStatusApproved {
+	// An access window belongs to a connection. With none, stamping one from a
+	// zero duration would read as revoked the moment it was approved.
+	if rev.Status == models.ReviewStatusApproved && connection != nil {
 		// TODO(san): should it be set only for jit reviews?
 		expiration := time.Now().UTC().Add(time.Duration(rev.AccessDurationSec) * time.Second)
 		rev.RevokedAt = &expiration
@@ -341,9 +373,13 @@ func doForcedReview(ctx *storagev2.Context, rev *models.Review, connection *mode
 	// check if the user has permissions to force the review
 	var forceApproveGroups []string
 	// Only use ForceApprovalGroups from Review if it's AccessRequestRuleName is set, otherwise fallback to Connection
+	//
+	// The nil check is load-bearing: force review is reachable through the API
+	// for a review that has no rule name and no connection, and without it that
+	// dereferences nil and takes the process down.
 	if rev.AccessRequestRuleName != nil && rev.ForceApprovalGroups != nil {
 		forceApproveGroups = rev.ForceApprovalGroups
-	} else if connection.ForceApproveGroups != nil {
+	} else if connection != nil && connection.ForceApproveGroups != nil {
 		forceApproveGroups = connection.ForceApproveGroups
 	}
 
@@ -392,7 +428,10 @@ func doIndividualReview(ctx *storagev2.Context, rev *models.Review, connection *
 	reviewedAt := time.Now().UTC()
 	approvedCount := 0
 	reviewsCountNeeded := len(rev.ReviewGroups)
-	if rev.AccessRequestRuleName != nil {
+	// With no connection to fall back to, the review carries its own minimum the
+	// same way a ruled review does. Without this its bar would stay at every
+	// group row and one approval would never settle it.
+	if rev.AccessRequestRuleName != nil || connection == nil {
 		// A minimum of zero or less is only ever persisted for an all groups
 		// rule, so ignore it and keep the bar at every reviewer group. Read
 		// literally it would let the first approval settle the review.
@@ -557,5 +596,16 @@ func toOpenApiReview(r *models.Review) *openapi.Review {
 		MinApprovals:          r.MinApprovals,
 		ForceApprovalGroups:   r.ForceApprovalGroups,
 		RejectionReason:       r.RejectionReason,
+		SidecarID:             nullStringPtr(r.SidecarID),
+		ListenerName:          nullStringPtr(r.ListenerName),
 	}
+}
+
+// nullStringPtr keeps an unset column out of the response body rather than
+// rendering it as an empty string, which a client would have to guess about.
+func nullStringPtr(v sql.NullString) *string {
+	if !v.Valid || v.String == "" {
+		return nil
+	}
+	return &v.String
 }

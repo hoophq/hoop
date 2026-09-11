@@ -1251,6 +1251,10 @@ type Review struct {
 	ForceApprovalGroups []string `json:"force_approval_groups" readonly:"true" example:"sre-team"`
 	// The reason provided by the reviewer when rejecting this review
 	RejectionReason *string `json:"rejection_reason,omitempty" readonly:"true" example:"This command is not allowed in production."`
+	// The sidecar that filed this review. Absent on a review that came from a connection
+	SidecarID *string `json:"sidecar_id,omitempty" format:"uuid" readonly:"true" example:"5F5E5C6E-6C3A-4E9A-9E8B-2D6A7F1B0C4D"`
+	// The sidecar listener this review is bound to. Absent on a review that came from a connection
+	ListenerName *string `json:"listener_name,omitempty" readonly:"true" example:"appdb"`
 }
 
 type ReviewOwner struct {

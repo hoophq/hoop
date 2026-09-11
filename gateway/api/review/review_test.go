@@ -1,6 +1,7 @@
 package reviewapi
 
 import (
+	"database/sql"
 	"testing"
 	"time"
 
@@ -556,6 +557,144 @@ func TestErrDoReview(t *testing.T) {
 
 			assert.Nil(t, rev)
 			assert.NoError(t, err)
+		})
+	}
+}
+
+// newFakeSidecarReview mirrors what the create path persists: a review bound to
+// a listener, one pending group row per eligible role, min_approvals 1, and no
+// connection, no rule, no access duration.
+func newFakeSidecarReview(groups ...string) *models.Review {
+	reviewGroups := make([]models.ReviewGroups, 0, len(groups))
+	for _, name := range groups {
+		reviewGroups = append(reviewGroups, models.ReviewGroups{
+			GroupName: name,
+			Status:    models.ReviewStatusPending,
+		})
+	}
+	return &models.Review{
+		ID:           "review-1",
+		SessionID:    "session-1",
+		OwnerID:      "sidecar-1",
+		OwnerEmail:   "hoop@hoop.dev",
+		Status:       models.ReviewStatusPending,
+		Type:         models.ReviewTypeOneTime,
+		MinApprovals: ptr.Int(1),
+		SidecarID:    sql.NullString{String: "sidecar-1", Valid: true},
+		ListenerName: sql.NullString{String: "appdb", Valid: true},
+		ReviewGroups: reviewGroups,
+	}
+}
+
+// A sidecar review runs the same decision path as every other review, with no
+// connection. The policy is carried by its rows: one group per eligible role
+// and min_approvals 1, so a single verdict settles it.
+func TestDoReviewSidecar(t *testing.T) {
+	tests := []struct {
+		name          string
+		input         inputData
+		expectedError error
+		validateFunc  func(t *testing.T, rev *models.Review)
+	}{
+		{
+			name: "an admin settles it alone",
+			input: inputData{
+				ctx:    newFakeContext("u1", "admin@hoop.dev", []string{types.GroupAdmin}),
+				rev:    newFakeSidecarReview(types.GroupAdmin, types.GroupApprover),
+				status: models.ReviewStatusApproved,
+			},
+			validateFunc: func(t *testing.T, rev *models.Review) {
+				assert.Equal(t, models.ReviewStatusApproved, rev.Status)
+			},
+		},
+		{
+			name: "an approver settles it alone",
+			input: inputData{
+				ctx:    newFakeContext("u1", "approver@hoop.dev", []string{types.GroupApprover}),
+				rev:    newFakeSidecarReview(types.GroupAdmin, types.GroupApprover),
+				status: models.ReviewStatusApproved,
+			},
+			validateFunc: func(t *testing.T, rev *models.Review) {
+				assert.Equal(t, models.ReviewStatusApproved, rev.Status)
+			},
+		},
+		{
+			name: "only the reviewer's own group is stamped",
+			input: inputData{
+				ctx:    newFakeContext("u1", "approver@hoop.dev", []string{types.GroupApprover}),
+				rev:    newFakeSidecarReview(types.GroupAdmin, types.GroupApprover),
+				status: models.ReviewStatusApproved,
+			},
+			validateFunc: func(t *testing.T, rev *models.Review) {
+				for _, rg := range rev.ReviewGroups {
+					if rg.GroupName == types.GroupApprover {
+						assert.Equal(t, models.ReviewStatusApproved, rg.Status)
+						assert.Equal(t, "approver@hoop.dev", *rg.OwnerEmail)
+						continue
+					}
+					assert.Equal(t, models.ReviewStatusPending, rg.Status,
+						"a group that did not review must stay pending")
+				}
+			},
+		},
+		{
+			name: "a rejection settles it too",
+			input: inputData{
+				ctx:    newFakeContext("u1", "admin@hoop.dev", []string{types.GroupAdmin}),
+				rev:    newFakeSidecarReview(types.GroupAdmin, types.GroupApprover),
+				status: models.ReviewStatusRejected,
+			},
+			validateFunc: func(t *testing.T, rev *models.Review) {
+				assert.Equal(t, models.ReviewStatusRejected, rev.Status)
+			},
+		},
+		{
+			name: "no access window is stamped",
+			input: inputData{
+				ctx:    newFakeContext("u1", "admin@hoop.dev", []string{types.GroupAdmin}),
+				rev:    newFakeSidecarReview(types.GroupAdmin),
+				status: models.ReviewStatusApproved,
+			},
+			validateFunc: func(t *testing.T, rev *models.Review) {
+				assert.Nil(t, rev.RevokedAt,
+					"a sidecar review authorizes one named statement, not a window")
+			},
+		},
+		{
+			name: "force review does not dereference the missing connection",
+			input: inputData{
+				ctx:    newFakeContext("u1", "admin@hoop.dev", []string{types.GroupAdmin}),
+				rev:    newFakeSidecarReview(types.GroupAdmin),
+				status: models.ReviewStatusApproved,
+				force:  true,
+			},
+			// No force-approval groups exist for a sidecar review, so this is
+			// refused rather than granted. The point is that it refuses instead
+			// of panicking: the review has no connection to read them from.
+			expectedError: ErrNotEligible,
+		},
+		{
+			name: "an unrelated group cannot approve",
+			input: inputData{
+				ctx:    newFakeContext("u1", "dev@hoop.dev", []string{"engineering"}),
+				rev:    newFakeSidecarReview(types.GroupAdmin, types.GroupApprover),
+				status: models.ReviewStatusApproved,
+			},
+			expectedError: ErrNotEligible,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// con is nil on purpose: a sidecar review has no connection, and
+			// every connection read downstream must stay behind a guard.
+			rev, err := doReview(tt.input.ctx, tt.input.rev, nil, tt.input.status, tt.input.force)
+			if tt.expectedError != nil {
+				assert.EqualError(t, err, tt.expectedError.Error())
+				return
+			}
+			assert.NoError(t, err)
+			tt.validateFunc(t, rev)
 		})
 	}
 }
