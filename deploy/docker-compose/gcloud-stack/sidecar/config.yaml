@@ -1,0 +1,99 @@
+# hoop-inspect: two Google Cloud lanes, one process.
+#
+#   grpcurl :29010 --> lane "spanner"   --> spanner:9010   (Cloud Spanner emulator)
+#   grpcurl :29060 --> lane "bqstorage" --> bigquery:9060  (BigQuery Storage emulator)
+#
+# The spanner lane carries this stack's claim: `protocol: spanner` rides the
+# same gRPC transport as a plain grpc lane, but it also pulls the GoogleSQL
+# text out of Spanner RPC payloads (ExecuteSql and friends) and classifies
+# each statement with the googlesql lexer dialect. The operation rule below
+# can therefore refuse a DELETE by its VERB: the lexer keeps a DELETE inside
+# a raw string literal a select and a DELETE behind a comment a delete,
+# where substring matching would misread both.
+#
+# This build enforces ONE guardrail rule for the whole process (the free
+# tier). This file spends it on the spanner lane's operation rule, because
+# that rule is what the stack demonstrates; the bqstorage write-plane fence
+# is present below as a commented block marked "over the limit", so on a
+# licensed build (HOOP_LICENSE, passed through by docker-compose.yml)
+# uncommenting is the only step.
+
+log_level: info
+
+admin:
+  listen: 0.0.0.0:19000
+
+audit:
+  file: "-" # stdout, for the container log pipeline
+  memory_buffer: 256
+  async_queue_size: 1024 # a slow disk must not block a user's query
+  query_sessions: 500 # backs /api/sessions, which ./demo.sh reads
+
+# ------------------------------------------------------------------- lanes
+listeners:
+  # No TLS on either hop of either lane, deliberately: both emulators speak
+  # h2c and authenticate nobody. A real Spanner or BigQuery endpoint would
+  # need upstream_tls here, and something in front (or downstream_tls)
+  # covering the client's leg.
+  - name: spanner
+    protocol: spanner
+    listen: 0.0.0.0:29010
+    upstream: spanner:9010
+    grpc:
+      # Fetched by run.sh over gRPC server reflection (-grpc-discover) and
+      # pinned here. Runtime lanes never touch reflection (ADR-0013): the
+      # policed service must not be able to rename fields out from under
+      # the policy, so a missing or malformed set fails before the
+      # listener binds rather than degrading silently.
+      descriptors: /descriptors/spanner.pb
+      # Decode request messages into per-message statements. On a spanner
+      # lane this is what feeds the SQL extraction: without payloads there
+      # is no sql field to read and every RPC reads as "POST
+      # /google.spanner.v1.Spanner/ExecuteSql".
+      capture_payload: true
+    guardrails:
+      rules:
+        # The process's one rule. `operation` is lexer-derived, so
+        # `SELECT r'DELETE FROM x'` is a select and
+        # `DELETE /* hidden */ FROM songs` is a delete. `unknown` is the
+        # fail-closed catch: GoogleSQL the scanner cannot read (an
+        # unterminated string, a construct the lexer refuses) classifies
+        # as unknown and is denied rather than waved through. On a lane
+        # built to read the SQL, an unreadable statement counts as unsafe.
+        - name: no-destructive-googlesql
+          type: operation
+          operations: [delete, drop, unknown]
+          message: destructive or unreadable GoogleSQL is not permitted on the spanner lane
+
+  # The BigQuery Storage lane is method-only: no grpc: block, so no payload
+  # capture and no descriptor requirement. The lane polices RPC identity
+  # (service and method land in Tables, lowercased) and forwards frames it
+  # never decodes. That shape fits an API whose payloads are Arrow/Avro row
+  # blocks: they carry no SQL to read.
+  #
+  # BigQuery's QUERY path (jobs.query and friends) is REST over HTTP, not
+  # gRPC, and out of this stack's scope; only the Storage API is a gRPC
+  # plane.
+  - name: bqstorage
+    protocol: grpc
+    listen: 0.0.0.0:29060
+    upstream: bigquery:9060
+    # ---- over the limit: the write-plane fence -------------------------
+    # This lane ships with NO rules: the free tier's single guardrail is
+    # spent on the spanner lane above, and a second authored rule refuses
+    # to start. The block below is the fence ./demo.sh talks about; with a
+    # license in place, uncommenting it is the only step and the demo's
+    # AppendRows beat flips from "reached the emulator" to
+    # PERMISSION_DENIED.
+    #
+    # This is an ordinary `table` rule: a grpc statement carries the
+    # lowercased service and service/method in Tables the way the HTTP
+    # codec carries its resource, so fencing the whole BigQueryWrite
+    # service is one exact-match entry. Reads (BigQueryRead) are a
+    # different service and stay open.
+    # guardrails:
+    #   rules:
+    #     - name: no-bq-write-plane
+    #       type: table
+    #       tables: [google.cloud.bigquery.storage.v1.bigquerywrite]
+    #       message: the BigQuery Storage write plane is fenced; loads go through reviewed pipelines

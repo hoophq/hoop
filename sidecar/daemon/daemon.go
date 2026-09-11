@@ -193,6 +193,7 @@ var ErrUsage = errors.New("usage")
 //	hoop-inspect -config /etc/hoop-inspect/config.yaml
 //	hoop-inspect -config config.yaml -license /etc/hoop-inspect/license.json
 //	hoop-inspect -validate -config config.yaml   # check and exit
+//	hoop-inspect -grpc-discover api -grpc-discover-out api.pb -config config.yaml
 //	hoop-inspect -version
 func Main(version string, load Loader, build PluginBuilder) error {
 	Version = version
@@ -213,9 +214,14 @@ func Main(version string, load Loader, build PluginBuilder) error {
 			`"license" key`)
 		tokenRef = fs.String("token", "", "the token identifying this sidecar to the "+
 			"control plane; overrides "+SidecarTokenEnv)
-		validate = fs.Bool("validate", false, "validate the config and exit")
-		strict   = fs.Bool("strict", false, "treat a deprecated config field as an error")
-		showVer  = fs.Bool("version", false, "print the version and exit")
+		validate     = fs.Bool("validate", false, "validate the config and exit")
+		strict       = fs.Bool("strict", false, "treat a deprecated config field as an error")
+		showVer      = fs.Bool("version", false, "print the version and exit")
+		grpcDiscover = fs.String("grpc-discover", "", "name of a grpc or spanner listener: "+
+			"fetch its upstream's descriptor set over gRPC server reflection, print every "+
+			"method with its maskable field paths, and exit")
+		grpcDiscoverOut = fs.String("grpc-discover-out", "", "file -grpc-discover writes "+
+			"the fetched descriptor set to, for listeners[].grpc.descriptors")
 	)
 	if err := fs.Parse(os.Args[1:]); err != nil {
 		// -h is a request, not a mistake. ContinueOnError has already
@@ -252,6 +258,10 @@ func Main(version string, load Loader, build PluginBuilder) error {
 			return err
 		}
 		return PrintLanes(os.Stdout, cfg.lic, lanes)
+	}
+
+	if *grpcDiscover != "" {
+		return DiscoverGRPC(context.Background(), cfg, *grpcDiscover, *grpcDiscoverOut, os.Stdout)
 	}
 
 	return Run(cfg, det)
@@ -399,7 +409,7 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 	validationLog := slog.New(slog.NewTextHandler(io.Discard, nil))
 	for _, ln := range lanes {
 		notes := append([]string(nil), ln.notes...)
-		if isGRPC(ln.cfg) {
+		if isGRPCTransport(ln.cfg) {
 			srv, err := buildGRPCServer(ln, cfg.Audit, nil, validationLog)
 			if err != nil {
 				return nil, fmt.Errorf("%s: %w", ln.name, err)
@@ -598,7 +608,7 @@ func Run(cfg *Config, det Plugin) error {
 	var grpcServers []GRPCServer
 	var grpcNames []string
 	for _, ln := range lanes {
-		if isGRPC(ln.cfg) {
+		if isGRPCTransport(ln.cfg) {
 			gsrv, serr := buildGRPCServer(ln, cfg.Audit, auditSink, log)
 			if serr != nil {
 				return serr
@@ -997,10 +1007,11 @@ func buildServer(
 // lane could carry rules for a protocol that cannot mask and still load
 // clean.
 //
-// grpc takes neither of gate.MaskSupported's paths: the lane rewrites
-// decoded fields and re-encodes the message itself, which is possible
-// exactly when it holds a descriptor set (ADR-0013). grpcDescriptors is
-// that fact; every other protocol ignores it.
+// grpc — and spanner, which shares its transport — takes neither of
+// gate.MaskSupported's paths: the lane rewrites decoded fields and
+// re-encodes the message itself, which is possible exactly when it holds a
+// descriptor set (ADR-0013). grpcDescriptors is that fact; every other
+// protocol ignores it.
 //
 // Validate reports both at startup; these checks cover a caller reaching Run
 // without going through LoadConfig.
@@ -1011,11 +1022,11 @@ func buildMasker(mc MaskConfig, det Plugin, proto inspect.Protocol, hasGRPCDescr
 	if det == nil {
 		return nil, fmt.Errorf("mask.rules is set but this build has no detection plugin")
 	}
-	if proto == inspect.GRPC {
+	if proto == inspect.GRPC || proto == inspect.Spanner {
 		if !hasGRPCDescriptors {
 			return nil, fmt.Errorf(
-				"mask.rules is set but this grpc lane has no grpc.descriptors; without a " +
-					"descriptor set the lane cannot decode a message to rewrite it")
+				"mask.rules is set but this %s lane has no grpc.descriptors; without a "+
+					"descriptor set the lane cannot decode a message to rewrite it", proto)
 		}
 	} else if !gate.MaskSupported(proto) {
 		return nil, fmt.Errorf(

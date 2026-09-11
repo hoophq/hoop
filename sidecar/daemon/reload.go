@@ -206,9 +206,10 @@ func (r *reloader) apply(log *slog.Logger, raw []byte) reloadOutcome {
 				"listener", ln.name, "error", derr)
 			return reloadRetry
 		}
-		if isGRPC(ln.cfg) {
-			// gRPC lanes stay on the restart path (ADR-0014); drift is
-			// reported, never swapped, and the view keeps the serving lane.
+		if isGRPCTransport(ln.cfg) {
+			// gRPC-transport lanes (grpc, spanner) stay on the restart path
+			// (ADR-0014); drift is reported, never swapped, and the view
+			// keeps the serving lane.
 			if !bytes.Equal(doc, r.laneDocs[ln.name]) {
 				log.Warn("grpc lane rules changed on the control plane; restart to apply them",
 					"listener", ln.name)

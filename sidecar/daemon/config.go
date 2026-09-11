@@ -840,11 +840,13 @@ func (c *Config) Validate() error {
 		name := l.displayName(i)
 		if l.Protocol == "" {
 			problems = append(problems, name+": no protocol")
-		} else if isGRPC(l) {
+		} else if isGRPCTransport(l) {
 			// grpc has no codec, on purpose (ADR-0013): libhoop terminates
 			// HTTP/2 and the daemon injects statement, policy, audit, and
 			// masking callbacks. The codec registry cannot answer for it, so
-			// validation accepts the canonical protocol value here.
+			// validation accepts the canonical protocol value here. spanner
+			// is the same transport with SQL extraction on top, so the same
+			// carve-out covers it.
 		} else if _, err := inspect.New(inspect.Protocol(l.Protocol)); err != nil {
 			problems = append(problems, fmt.Sprintf("%s: unsupported protocol %q", name, l.Protocol))
 		}
@@ -871,10 +873,10 @@ func (c *Config) Validate() error {
 		// the relay never looks, so the lane would come up "green"
 		// presenting a certificate nothing ever offers.
 		if l.DownstreamTLS != nil {
-			if l.Protocol != string(inspect.Postgres) && !isGRPC(l) {
+			if l.Protocol != string(inspect.Postgres) && !isGRPCTransport(l) {
 				problems = append(problems, fmt.Sprintf(
-					"%s: downstream_tls is only supported on postgres and grpc, not %q "+
-						"(pgwire negotiates in-band, and a grpc lane is its own "+
+					"%s: downstream_tls is only supported on postgres, grpc and spanner, not %q "+
+						"(pgwire negotiates in-band, and a grpc-transport lane is its own "+
 						"HTTP/2 endpoint; no other protocol terminates here)", name, l.Protocol))
 			}
 			// Load the keypair now. Discovering a bad path on the first
@@ -934,9 +936,9 @@ func (c *Config) validateLane(lc ListenerConfig, name string) []string {
 	// own knobs are checked whatever the protocol so one restart reports
 	// both mistakes.
 	if lc.GRPC != nil {
-		if !isGRPC(lc) {
+		if !isGRPCTransport(lc) {
 			problems = append(problems, fmt.Sprintf(
-				"%s: a \"grpc\" block is only valid on a grpc listener, not %s",
+				"%s: a \"grpc\" block is only valid on a grpc or spanner listener, not %s",
 				name, lc.Protocol))
 		}
 		problems = append(problems, lc.GRPC.validate(name)...)
@@ -946,12 +948,28 @@ func (c *Config) validateLane(lc ListenerConfig, name string) []string {
 	// only the method path unless the lane captures payloads. The rule
 	// would load, evaluate and never fire: refuse it, the same bargain the
 	// ai_analysis/capture_body check strikes for http below.
-	if isGRPC(lc) && anyPII(gc.Rules) &&
+	if isGRPCTransport(lc) && anyPII(gc.Rules) &&
 		(lc.GRPC == nil || !lc.GRPC.CapturePayload) {
 		problems = append(problems, fmt.Sprintf(
-			"%s: has pii rule(s) on a grpc listener but grpc.capture_payload is not "+
+			"%s: has pii rule(s) on a %s listener but grpc.capture_payload is not "+
 				"set, so rules would only ever scan the method path; add a \"grpc\" "+
-				"block with capture_payload: true and descriptors", name))
+				"block with capture_payload: true and descriptors", name, lc.Protocol))
+	}
+
+	// A spanner lane extracts SQL only inside captured request messages
+	// (see grpcRPCState.requestMessage): without capture_payload every
+	// statement a rule sees is the generic RPC-header one, whose Operation
+	// is the method call and whose Tables carry the service name. An
+	// operation or table rule written against the SQL would load, evaluate
+	// and never match a DELETE — the silent failure this package refuses
+	// everywhere else, on the lane whose whole point is reading the SQL.
+	if isSpanner(lc) && anySQLDerived(localRules) &&
+		(lc.GRPC == nil || !lc.GRPC.CapturePayload) {
+		problems = append(problems, fmt.Sprintf(
+			"%s: has operation/table rule(s) on a spanner listener but "+
+				"grpc.capture_payload is not set, so rules would only ever see "+
+				"the generic RPC statement and never the extracted SQL; add a "+
+				"\"grpc\" block with capture_payload: true and descriptors", name))
 	}
 
 	// An ai_analysis rule on an HTTP lane with no body capture classifies
@@ -972,12 +990,12 @@ func (c *Config) validateLane(lc ListenerConfig, name string) []string {
 				"block with capture_body: true", name))
 	}
 
-	if len(aiRules) > 0 && isGRPC(lc) &&
+	if len(aiRules) > 0 && isGRPCTransport(lc) &&
 		(lc.GRPC == nil || !lc.GRPC.CapturePayload) {
 		problems = append(problems, fmt.Sprintf(
-			"%s: has ai_analysis rule(s) on a grpc listener but grpc.capture_payload "+
+			"%s: has ai_analysis rule(s) on a %s listener but grpc.capture_payload "+
 				"is not set, so every RPC would be skipped; add a \"grpc\" block "+
-				"with capture_payload: true and descriptors", name))
+				"with capture_payload: true and descriptors", name, lc.Protocol))
 	}
 
 	// A lane whose protocol has no content builder classifies nothing, and
@@ -1013,16 +1031,16 @@ func (c *Config) validateLane(lc ListenerConfig, name string) []string {
 	// flag used to skip this block entirely, so a lane could carry rules for
 	// a protocol that cannot mask and still load clean.
 	if mc.hasRules() {
-		if isGRPC(lc) {
-			// A grpc lane masks by decoding fields through the descriptor
-			// set and re-encoding, so the set is the capability. Without it
-			// the rules would load and never fire (ADR-0013).
+		if isGRPCTransport(lc) {
+			// A grpc-transport lane masks by decoding fields through the
+			// descriptor set and re-encoding, so the set is the capability.
+			// Without it the rules would load and never fire (ADR-0013).
 			if !lc.GRPC.hasDescriptors() {
 				problems = append(problems, fmt.Sprintf(
-					"%s: masking on a grpc lane needs grpc.descriptors; without a "+
+					"%s: masking on a %s lane needs grpc.descriptors; without a "+
 						"descriptor set the lane cannot decode a message to rewrite it. "+
 						"Add the descriptor set, or set mask: {rules: []} on this lane.",
-					name))
+					name, lc.Protocol))
 			}
 		} else if p := inspect.Protocol(lc.Protocol); p != "" && !gate.MaskSupported(p) {
 			problems = append(problems, fmt.Sprintf(
@@ -1039,6 +1057,21 @@ func (c *Config) validateLane(lc ListenerConfig, name string) []string {
 func anyPII(rules []policy.Rule) bool {
 	for _, r := range rules {
 		if r.Type == policy.MatchPII {
+			return true
+		}
+	}
+	return false
+}
+
+// anySQLDerived reports whether a rule set contains matchers that read the
+// classifier's SQL-derived facts — the normalized operation verb or the
+// referenced relations. On a spanner lane those facts exist only in
+// statements extracted from captured payloads, which is what
+// validateLane's capture check keys on.
+func anySQLDerived(rules []policy.Rule) bool {
+	for _, r := range rules {
+		switch r.Type {
+		case policy.MatchOperation, policy.MatchTable:
 			return true
 		}
 	}

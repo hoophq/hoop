@@ -51,7 +51,7 @@ func testReloader(t *testing.T, raw string) (*reloader, *bytes.Buffer) {
 	}
 	servers := map[string]*proxy.Server{}
 	for _, ln := range lanes {
-		if isGRPC(ln.cfg) {
+		if isGRPCTransport(ln.cfg) {
 			continue
 		}
 		srv, serr := buildServer(ln, cfg.Audit, nil, slog.Default())

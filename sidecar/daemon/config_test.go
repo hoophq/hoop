@@ -597,6 +597,48 @@ func TestGRPCAIAnalysisRequiresPayloadCapture(t *testing.T) {
 	}
 }
 
+// A spanner lane extracts SQL only from captured request messages, so an
+// operation or table rule on a no-capture lane would evaluate the generic
+// RPC-header statement forever and never see a DELETE. The config must
+// refuse that shape rather than load a guardrail that cannot fire.
+func TestSpannerSQLRulesRequirePayloadCapture(t *testing.T) {
+	p := writeConfig(t, `{
+	  "listeners": [{
+	    "name":"sp","protocol":"spanner","listen":":1","upstream":"h:1",
+	    "guardrails":{"rules":[{
+	      "name":"no-deletes","type":"operation","operations":["delete"]
+	    }]}
+	  }]
+	}`)
+
+	_, err := LoadConfig(p)
+	if err == nil {
+		t.Fatal("a spanner deletion rule without payload capture was accepted")
+	}
+	if !strings.Contains(err.Error(), "grpc.capture_payload") {
+		t.Fatalf("error does not name the missing capture setting: %v", err)
+	}
+}
+
+// The same rules on a lane that CAN extract the SQL are the supported
+// shape, and the capture check must not refuse it.
+func TestSpannerSQLRulesWithCaptureAreValid(t *testing.T) {
+	p := writeConfig(t, `{
+	  "listeners": [{
+	    "name":"sp","protocol":"spanner","listen":":1","upstream":"h:1",
+	    "grpc":{"descriptors":"schema.pb","capture_payload":true},
+	    "guardrails":{"rules":[
+	      {"name":"no-deletes","type":"operation","operations":["delete"]},
+	      {"name":"protect-songs","type":"table","tables":["songs"]}
+	    ]}
+	  }]
+	}`)
+
+	if _, err := LoadConfig(p); err != nil {
+		t.Fatalf("a captured spanner lane with SQL rules was refused: %v", err)
+	}
+}
+
 // ── the deprecation window ────────────────────────────────────────────────
 //
 // Every test below feeds a pre-ADR-0011 config. They exist because the

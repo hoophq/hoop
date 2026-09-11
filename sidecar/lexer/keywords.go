@@ -200,12 +200,16 @@ func introduces(intro string, verb Verb) bool {
 //
 // The entries earn their place from real misreads. `WHEN MATCHED THEN UPDATE
 // SET n = 1` has an UPDATE with no relation of its own, so SET was taken as
-// the target; `COPY t FROM STDIN` reported a write to stdin and lost t.
+// the target; `COPY t FROM STDIN` reported a write to stdin and lost t;
+// GoogleSQL's `INSERT OR UPDATE INTO t` had the mid-statement UPDATE claim
+// INTO as its target, and the t behind it — the relation a rule would
+// name — was never recorded. INTO is reserved in every dialect here, so a
+// bare `into` can never be the name.
 var notARelation = map[string]bool{
 	"set": true, "values": true, "select": true, "where": true,
 	"do": true, "on": true, "returning": true, "default": true,
 	"null": true, "stdin": true, "stdout": true, "program": true,
-	"nothing": true, "conflict": true,
+	"nothing": true, "conflict": true, "into": true,
 }
 
 // relSkip are keywords that may sit between an introducer and the name.

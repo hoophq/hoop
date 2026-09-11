@@ -45,6 +45,10 @@ const (
 	// them it has no codec to register: the lane terminates HTTP/2 and
 	// enters at parsed statements (ADR-0013).
 	GRPC = codectypes.GRPC
+	// Spanner shares GRPC's transport and its no-codec exception: the lane
+	// terminates HTTP/2 through the same machinery and differs only in
+	// treating the payloads as carriers of GoogleSQL.
+	Spanner = codectypes.Spanner
 
 	FromClient = codectypes.FromClient
 	FromServer = codectypes.FromServer

@@ -36,20 +36,23 @@ user := u if {
 # grant, so a typo fails closed rather than falling back to a shared service
 # account (the exact Teleport behaviour Matt objects to).
 grants := {
-	"alice": ["httpbin", "ledger"],
+	"alice": ["httpbin", "ledger", "spanner"],
 	"bob": [],
 }
 
 # One listener, one service. The base stack has a single ext_authz caller
-# (:8443 -> httpbin); the grpc/ overlay adds :8444 -> ledger, and keying on
-# the destination port keeps this file the one policy both stacks load.
-# A port neither rule names yields an undefined service, and the grant
-# check fails closed on it.
+# (:8443 -> httpbin); the grpc/ overlay adds :8444 -> ledger and the
+# spanner/ overlay :8445 -> spanner, and keying on the destination port
+# keeps this file the one policy all three stacks load. A port none of the
+# rules name yields an undefined service, and the grant check fails closed
+# on it.
 listener_port := input.attributes.destination.address.socketAddress.portValue
 
 service := "ledger" if listener_port == 8444
 
-service := "httpbin" if listener_port != 8444
+service := "spanner" if listener_port == 8445
+
+service := "httpbin" if not listener_port in {8444, 8445}
 
 allow if {
 	some svc in grants[user]

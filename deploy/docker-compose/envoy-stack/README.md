@@ -65,6 +65,16 @@ adds no rules: it inherits the process's one guardrail and one mask rule,
 refusing a taxpayer id inside a protobuf field and redacting an email out
 of a response by re-encoding the frame.
 
+[`spanner/`](spanner/README.md) adds a fourth: the Cloud Spanner emulator
+behind a `protocol: spanner` lane, on a new Envoy `:8445` listener (TLS,
+ALPN h2, the same OPA fat gate) and directly on `:29010` as the
+without-Envoy h2c path. The lane extracts the GoogleSQL out of ExecuteSql
+payloads, so the process's one guardrail refuses a taxpayer id inside SQL
+a Google SDK sends in a protobuf field. The emulator serves no reflection;
+a `buf` init service builds the descriptor set from the googleapis tree.
+The full Envoy-free spanner stack lives in
+[`../gcloud-stack`](../gcloud-stack/README.md).
+
 Two more overlays add an MSSQL lane, and what separates them is who terminates
 the client's TLS. [`mssql/`](mssql/README.md) runs SQL Server 2022 over TDS
 8.0, an ordinary TLS-on-connect handshake Envoy terminates with no TDS

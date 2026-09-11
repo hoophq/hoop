@@ -1,0 +1,157 @@
+# hoop-inspect with a third lane: Cloud Spanner.
+#
+#   envoy :8443 --cluster hoop_inspect_http-----> :18080  lane "httpbin"
+#   envoy :5432 --cluster hoop_inspect_pg-------> :15432  lane "appdb"
+#   envoy :8445 --cluster hoop_inspect_spanner--> :29010  lane "spanner"
+#   host  :29010 --------------h2c--------------> :29010  the same lane, no Envoy
+#
+# The appdb and httpbin lanes are the live parts of ../sidecar/config.yaml,
+# verbatim; the worked commentary and the over-the-limit blocks live there
+# and are not repeated. The addition is the spanner lane at the bottom.
+#
+# The spanner lane adds no rules. This build enforces one guardrail rule and
+# one data masking rule for the whole process, both spent in the defaults
+# below, and the spanner lane inherits them like any other: `protocol: spanner`
+# extracts the GoogleSQL text out of Spanner RPC payloads (ExecuteSql and
+# friends) into the statement, so no-cpf-in-query refuses a taxpayer id
+# inside the SQL of an ExecuteSql request. The lane's own would-be rule,
+# the operation rule ../../gcloud-stack is built around, ships commented
+# out below, over the limit.
+#
+# Validate without starting anything:
+#   cd sidecar/cmd && go run . -validate \
+#     -config ../../deploy/docker-compose/envoy-stack/spanner/config-spanner.yaml
+# with one caveat this file adds: -validate opens the descriptor set (a
+# missing or malformed one must fail before the listener binds), and
+# grpc.descriptors below is a container path. On the host, point it at a
+# locally built spanner.pb first, or read the verdict off the container:
+# the sidecar refuses to start on exactly the same check.
+
+log_level: info
+
+admin:
+  listen: 0.0.0.0:19000
+
+audit:
+  file: "-"
+  memory_buffer: 256
+  async_queue_size: 1024
+  query_sessions: 500
+
+pii:
+  entities:
+    - EMAIL_ADDRESS
+    - US_SSN
+    - CREDIT_CARD
+    - BR_CPF
+    - IBAN_CODE
+
+guardrails:
+  mode: enforce
+  rules:
+    - name: no-cpf-in-query
+      type: pii
+      entities: [BR_CPF]
+      message: do not put a taxpayer id in a query; it lands in the database's own logs
+
+mask:
+  rules:
+    - {name: emails, entities: [EMAIL_ADDRESS], strategy: redact}
+
+listeners:
+  - name: appdb
+    protocol: postgres
+    listen: 0.0.0.0:15432
+    upstream: appdb:5432
+    upstream_tls:
+      ca_file: /etc/hoop-inspect/certs/appdb.crt
+      server_name: appdb
+
+  - name: httpbin
+    protocol: http
+    listen: 0.0.0.0:18080
+    upstream: httpbin:8080
+
+  # ---------------------------------------------------------- spanner lane
+  # `protocol: spanner` rides the same gRPC transport as a plain grpc lane
+  # and adds one thing on top: it pulls the GoogleSQL text out of Spanner
+  # RPC payloads and classifies each statement with the googlesql lexer
+  # dialect. That puts the SQL where the pii guardrail and the audit trail
+  # read it. Two callers reach the lane; the demo walks both:
+  #
+  #   - Envoy's :8445 listener forwards to it over h2c, after TLS and the
+  #     OPA fat gate. The client is told to go there.
+  #   - The compose file also publishes 29010 on the host, which is the
+  #     without-Envoy path: `grpcurl -plaintext localhost:29010 ...` hits
+  #     this lane directly. Same policy, same audit trail; the lane applies
+  #     the same rules on both paths.
+  #
+  # No TLS on either hop: the emulator upstream speaks h2c and authenticates
+  # nobody, and the lane listens for cleartext HTTP/2 so plaintext clients
+  # must opt in (grpcurl -plaintext; grpc-go insecure.NewCredentials()).
+  - name: spanner
+    protocol: spanner
+    listen: 0.0.0.0:29010
+    upstream: spanner:9010
+    # Trusting a header is safe only when nothing but the authenticating
+    # proxy can reach the listener. The published host port breaks that on
+    # purpose, to make the direct path demonstrable: a direct caller can
+    # assert any identity, and ./demo-spanner.sh shows it. Behind
+    # Envoy alone this line is the real pattern.
+    identity_header: x-hoop-user
+    grpc:
+      # Built by the spanner-descriptors init service with buf from the
+      # public googleapis tree. The emulator serves no gRPC reflection,
+      # and runtime lanes never touch reflection (ADR-0013): a missing
+      # or malformed set fails before the listener binds rather than
+      # degrading silently.
+      descriptors: /etc/hoop-inspect/descriptors/spanner.pb
+      # Decode request messages into per-message statements. On a spanner
+      # lane this feeds the SQL extraction: without payloads there is no
+      # sql field to read and every RPC is just "POST
+      # /google.spanner.v1.Spanner/ExecuteSql".
+      capture_payload: true
+      # ---- possible configuration: strict ------------------------------
+      # Off (the default): an RPC the descriptor set does not define is
+      # forwarded with method-level inspection only, and the lane logs it.
+      # Flipped on, the same call is refused before the upstream is
+      # dialed, FAILED_PRECONDITION naming the path.
+      # strict: true
+    # ---- over the limit: the lane's own guardrail ---------------------
+    # Allowed as shipped; the process's one rule is spent on no-cpf-in-query
+    # above. ./demo-spanner.sh sends `DELETE FROM songs` and prints the
+    # answer it got beside the rule that would have refused it. Uncommenting
+    # needs the budget back: merge it with no-cpf-in-query's slot (comment
+    # that rule out) or run a licensed build (HOOP_LICENSE).
+    #
+    # `operation` is lexer-derived, so `SELECT r'DELETE FROM x'` is a
+    # select and `DELETE /* hidden */ FROM songs` is a delete. `unknown`
+    # is the fail-closed catch: GoogleSQL the scanner cannot read (an
+    # unterminated string, a construct the lexer refuses) classifies as
+    # unknown and is denied rather than waved through.
+    # guardrails:
+    #   rules:
+    #     - name: no-destructive-googlesql
+    #       type: operation
+    #       operations: [delete, drop, unknown]
+    #       message: destructive or unreadable GoogleSQL is not permitted on the spanner lane
+    # ---- possible configuration: the lane owns the client's TLS --------
+    # A real Google SDK client will not take the direct h2c door: grpc-go
+    # refuses to attach OAuth per-RPC credentials to an insecure channel.
+    # Give the lane the cert pair and it terminates TLS itself: the
+    # standalone shape. ../grpc/docker-compose.standalone.yml mints such a
+    # pair with an init service, and ../../gcloud-stack is the full
+    # Envoy-free spanner stack (emulator clients dodge the issue with
+    # WithInsecure/SPANNER_EMULATOR_HOST, which is why this overlay does
+    # not need it).
+    # downstream_tls:
+    #   cert_file: /etc/hoop-inspect/certs/lane.crt
+    #   key_file: /etc/hoop-inspect/certs/lane.key
+    # ---- a note on masking; nothing here to uncomment --------------------
+    # Response masking on Spanner ResultSets is limited: rows arrive as
+    # lists of google.protobuf.Value, positional, with the column names off
+    # in the ResultSetMetadata, so an entity-based mask rule scans opaque
+    # value lists rather than named fields like the grpc overlay's
+    # customer_email.
+    # The lane inherits the process's emails mask rule like every other,
+    # but the beat that demonstrates masking well lives in ../grpc.

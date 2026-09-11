@@ -1,0 +1,41 @@
+# Bootstrap config for -grpc-discover ONLY; the daemon never runs on it.
+#
+# run.sh executes, before the sidecar starts:
+#
+#   docker compose run --rm hoop-inspect -grpc-discover spanner \
+#     -grpc-discover-out /descriptors/spanner.pb \
+#     -config /etc/hoop-inspect/config-discover.yaml
+#
+# and the same for bqstorage. Discovery dials the NAMED LANE's upstream with
+# the lane's own upstream_tls facts (that is why it reads a config instead
+# of taking an address flag), so this file restates the lanes from
+# config.yaml minus two things:
+#
+#   - the grpc: blocks. config.yaml pins descriptors the bootstrap has not
+#     fetched yet; a config that refuses to load over the missing file
+#     would deadlock the very run that creates it.
+#   - the guardrails. Discovery evaluates nothing, and keeping rules here
+#     would be a second copy to keep in sync for no reader.
+#
+# Lanes must agree with config.yaml on name, protocol and upstream; listen
+# is irrelevant to discovery (nothing binds) but kept identical so the two
+# files diff cleanly.
+
+log_level: info
+
+admin:
+  listen: 0.0.0.0:19000
+
+audit:
+  file: "-"
+
+listeners:
+  - name: spanner
+    protocol: spanner
+    listen: 0.0.0.0:29010
+    upstream: spanner:9010
+
+  - name: bqstorage
+    protocol: grpc
+    listen: 0.0.0.0:29060
+    upstream: bigquery:9060
