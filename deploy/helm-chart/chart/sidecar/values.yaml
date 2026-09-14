@@ -1,0 +1,223 @@
+## Default values for the hoop inspection sidecar.
+## This is a YAML-formatted file.
+## Declare variables to be passed into your templates.
+
+# Refer to this guide for more details: https://hoop.dev/docs/setup/deployment/overview
+
+# -- Define a custom image configuration
+image: {}
+  # repository: hoophq/hoopsidecar
+  # pullPolicy: Always
+  # tag: latest
+  #
+  # Tags: `latest` is an alias of `<version>-minimal`, the Ubuntu flavour, and
+  # only ever that — it keeps a shell, so the default is the one you can debug.
+  # `<version>-distroless` is the same binary on a distroless static rootfs:
+  # no package manager, no shell, zero OS-package CVEs, about two thirds the
+  # size. Name it explicitly to get it.
+  #
+  # The chart sets no command: the image's own entrypoint runs the relay, and
+  # the config reaches it at /etc/hoop-inspect/config.yaml — the path this
+  # chart mounts and passes in HOOP_SIDECAR_CONFIG. An image that defaults to
+  # anything else needs `command:` put back.
+  #
+  # The relay binary also ships inside the images you already pull, as
+  # `hoop start sidecar` from 1.149.0 (`hoop start inspect` from 1.126.0):
+  # hoophq/hoopdev, hoophq/hoop and hoophq/hoopagent. None of them DEFAULTS to
+  # the relay — hoopdev and hoopagent start an agent — so running one here
+  # means naming the command as well:
+  #   repository: hoophq/hoopagent
+  #   tag: <release>-distroless
+  # and, in the Deployment, `command: ["hoop", "start", "sidecar"]`. It has to
+  # be `command:` and not a bare `args:`: those images carry no ENTRYPOINT, so
+  # `args:` replaces CMD entirely and runs nothing.
+  #
+  # PII detection needs NO special image. The detector is linked into every
+  # build above and holds all 54 entity types without a model on disk. The
+  # `-alcatraz` tags exist for the gateway's statistical entity types
+  # (PERSON, LOCATION, NRP) and are not read by this process.
+
+# -- The sidecar's own configuration document, rendered into a ConfigMap and
+# mounted at /etc/hoop-inspect/config.yaml. The chart passes its path in
+# HOOP_SIDECAR_CONFIG and no arguments, so a policy change is a `helm upgrade`
+# and not a rebuild: the checksum annotation on the Deployment rolls the pods.
+#
+# Everything the relay does is decided here — protocol, guardrails, masking,
+# audit, PII entities, AI analysis. The chart does not interpret the document
+# beyond reading admin.listen for the probe port; see the schema in
+# sidecar/README.md and the worked examples under
+# deploy/docker-compose/*/sidecar/config.yaml.
+#
+# A config naming no listeners does not start. Supply this, or point
+# existingConfigMap at your own, or connect to a control plane below.
+config: {}
+  # log_level: info
+  #
+  # # Health, stats and the audit query API. REQUIRED, and on 19000: the
+  # # relay disables admin when the address is empty and has no default port
+  # # of its own, while this chart declares 19000 and probes /healthz there.
+  # # A config that omits it or moves it is refused at render, not left to
+  # # fail every pod. 19000 is the number every config under
+  # # deploy/docker-compose/*/sidecar/ binds.
+  # admin:
+  #   listen: '0.0.0.0:19000'
+  #
+  # audit:
+  #   file: '-'              # stdout, for the container log pipeline
+  #   memory_buffer: 256
+  #   async_queue_size: 1024 # a slow disk must not block a user's query
+  #
+  # # NARROWS a permissive default: omit the section and all 54 entity types
+  # # are active. Name the union of what your rules below reference, so an
+  # # ordinary numeric column is not rewritten by a recognizer nobody asked
+  # # for (US_SSN fires on roughly a third of random nine-digit ids).
+  # pii:
+  #   entities: [EMAIL_ADDRESS, CREDIT_CARD]
+  #
+  # # Defaults every lane inherits unless it overrides them.
+  # guardrails:
+  #   mode: enforce
+  #   rules:
+  #     - name: no-destructive-sql
+  #       type: operation
+  #       operations: [drop, truncate]
+  #       message: destructive statements are not permitted here
+  # mask:
+  #   rules:
+  #     - {name: emails, entities: [EMAIL_ADDRESS], strategy: redact}
+  #
+  # # One lane per upstream. These ports are NOT declared on the pod and NOT
+  # # published by this chart's Service — a containerPort is informational,
+  # # and a lane is reached through whatever fronts this pod: an Envoy sidecar
+  # # over loopback, or a Service of your own. The chart README has one to
+  # # paste.
+  # #
+  # # The numbers below are this project's conventions, the same ones every
+  # # config under deploy/docker-compose/*/sidecar/ binds:
+  # #   19000 admin   15432 postgres   18080 http
+  # #   11433 mssql   18443 grpc       29010 spanner
+  # # mysql and mongodb have no established number here; pick your own.
+  # listeners:
+  #   - name: appdb
+  #     protocol: postgres
+  #     listen: '0.0.0.0:15432'
+  #     upstream: appdb.default.svc.cluster.local:5432
+  #     # The hop to the database stays encrypted: the relay is the TLS
+  #     # CLIENT there, so it decrypts on read and still inspects and masks
+  #     # plaintext. Mount the CA through extraVolumes below.
+  #     # upstream_tls:
+  #     #   ca_file: /etc/hoop-inspect/certs/appdb.crt
+  #     #   server_name: appdb
+
+# -- Mount a ConfigMap you manage instead of rendering `config` above. The key
+# `config.yaml` is the document. Mutually exclusive with `config`.
+existingConfigMap: ''
+
+# -- License document, or a path to one. Without it the process caps guardrail
+# and data masking rules at one each and says so on its first line of output.
+# A value starting with '{' is read as the license itself, anything else as a
+# filename — so a mounted secret and this value are the same field. Passed as
+# HOOP_LICENSE, which outranks the config file's "license" key.
+license: ''
+
+# -- Take the running configuration from a Control Plane instead of the file
+# above. The handshake supplies the whole config and `config` becomes optional;
+# the two never merge, so listeners left in the file are ignored out loud once
+# the plane holds a configuration of its own. A plane holding none is seeded
+# with the file's document on that first handshake.
+#
+# The token is shown once when the sidecar is created; a lost one means
+# registering a new sidecar. In this mode the chart cannot know which ports
+# the plane will hand out: set `ports` and `probe.port` to match.
+controlPlane:
+  url: ''
+  token: ''
+
+# -- Define extra secret as environment variables
+extraSecret: {}
+# ENVSECRET1: RAWVALUE1
+# ENVSECRET2: RAWVALUE2
+
+# -- Readiness and liveness probes against the admin server's /healthz on
+# 19000. The port is not configurable: it is written into the Deployment, the
+# Service and both probes as a literal, and a config that puts admin anywhere
+# else is refused at render.
+probe: {}
+  # initialDelaySeconds: 5
+  # periodSeconds: 10
+
+# -- A ClusterIP Service for the admin server on 19000, and only that.
+# Lane ports are not published here; add a Service of your own selecting
+# `app: hoopsidecar` with the ports your config binds.
+service:
+  enabled: true
+  type: ClusterIP
+  annotations: {}
+
+# -- Extra volumes and mounts, for what the config document references by
+# path: an upstream CA (upstream_tls.ca_file), a downstream server
+# certificate, an analyzer credential (analyzer.credentials_file), a license
+# file. Mount secrets holding a credential with `defaultMode: 0400` —
+# Kubernetes writes 0644 by default and the relay refuses to read a
+# credential at that mode, naming it.
+extraVolumes: []
+# - name: appdb-ca
+#   secret:
+#     secretName: appdb-ca
+# - name: vertex-key
+#   secret:
+#     secretName: hoop-sidecar-llm
+#     defaultMode: 0400
+extraVolumeMounts: []
+# - name: appdb-ca
+#   mountPath: /etc/hoop-inspect/certs
+#   readOnly: true
+# - name: vertex-key
+#   mountPath: /run/secrets/vertex
+#   readOnly: true
+
+# -- Number of sidecar replicas. Each replica is an independent proxy holding
+# no shared state, so raising this is safe: the Service spreads connections
+# across them. Sessions are per-connection, so a replica going away drops the
+# connections it was carrying and not the others.
+replicas: 1
+
+# -- Deployment strategy
+#
+# RollingUpdate rather than the agent chart's Recreate: this process sits in
+# the data path between a client and its database, and Recreate would close
+# every connection on every config change with nothing listening in between.
+deploymentStrategy:
+  type: RollingUpdate
+
+# -- CPU/Memory resource requests/limits
+# resources:
+#   limits:
+#     cpu: 1024m
+#     memory: 1Gi
+#   requests:
+#     cpu: 1024m
+#     memory: 1Gi
+
+# -- Node labels for pod assignment
+nodeSelector: {}
+
+# -- Toleration labels for pod assignment
+tolerations: []
+
+# -- Affinity settings for pod assignment
+affinity: {}
+
+## Set pod annotations
+##
+podAnnotations: {}
+
+## Set deployment annotations
+##
+deploymentAnnotations: {}
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: false
+  # Annotations to add to the service account
+  annotations: {}

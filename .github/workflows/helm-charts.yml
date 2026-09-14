@@ -4,6 +4,11 @@
 # image defaults, so a base-chart rename or version bump can break only the
 # wrappers — which otherwise wouldn't surface until `make build-helm-chart` at
 # release time.
+#
+# It also covers the sidecar chart, for a different reason: that chart refuses
+# to render a Deployment that cannot start, and those guards are the only thing
+# standing between a typo and a CrashLoopBackOff. A guard that silently stopped
+# firing looks exactly like a chart that works.
 name: helm-charts
 
 on:
@@ -33,6 +38,11 @@ jobs:
           helm lint ./deploy/helm-chart/chart/agent
           helm lint ./deploy/helm-chart/chart/hoop-ng
           helm lint ./deploy/helm-chart/chart/hoopagent-ng
+          # The sidecar chart has no startable default: a config naming no
+          # listeners does not start, so the chart refuses to render one. Lint
+          # it against the smallest values that pass its guards.
+          helm lint ./deploy/helm-chart/chart/sidecar \
+            --set config.admin.listen=0.0.0.0:19000
       - name: Assert clean line renders the -ng images
         run: |
           set -euo pipefail
@@ -48,3 +58,46 @@ jobs:
           echo "$ag" | grep -q 'hoophq/hoopdev-ng:' \
             || { echo "::error::hoopagent-ng did not render hoophq/hoopdev-ng"; exit 1; }
           echo "clean-line charts resolve dependencies and render the -ng images"
+
+      - name: Assert the sidecar chart renders and its guards hold
+        run: |
+          set -euo pipefail
+          chart=./deploy/helm-chart/chart/sidecar
+
+          sc=$(helm template t "$chart" \
+            --set config.admin.listen=0.0.0.0:19000 \
+            --set config.listeners[0].name=appdb \
+            --set config.listeners[0].protocol=postgres \
+            --set config.listeners[0].listen=0.0.0.0:15432 \
+            --set config.listeners[0].upstream=appdb:5432)
+
+          echo "$sc" | grep -q 'hoophq/hoopsidecar:' \
+            || { echo "::error::sidecar chart did not render hoophq/hoopsidecar"; exit 1; }
+          # The image entrypoint runs the relay. A command here would mean the
+          # chart is overriding it again, which is what the image exists to avoid.
+          echo "$sc" | grep -qE '^ *(command|args):' \
+            && { echo "::error::sidecar chart emitted a command/args override"; exit 1; }
+          # 19000 is hardcoded in the Deployment, the Service and both probes.
+          # Any other port number means one of the four drifted.
+          if echo "$sc" | grep -E 'containerPort:|targetPort:|port:' | grep -qv 19000; then
+            echo "::error::sidecar chart declared a port other than the admin port 19000"
+            exit 1
+          fi
+
+          # Each of these MUST fail to render. A guard that stopped firing ships
+          # a Deployment that cannot start, and nothing else in CI would notice.
+          guard() {
+            local why=$1; shift
+            if helm template t "$chart" "$@" >/dev/null 2>&1; then
+              echo "::error::sidecar chart guard no longer fires: $why"
+              exit 1
+            fi
+          }
+          guard "no config source"      
+          guard "config + existingConfigMap" --set config.admin.listen=0.0.0.0:19000 --set existingConfigMap=x
+          guard "control plane, no token" --set controlPlane.url=https://cp.example.com
+          guard "token, no control plane" --set controlPlane.token=t --set config.admin.listen=0.0.0.0:19000
+          guard "admin server disabled"   --set config.log_level=info
+          guard "admin on a wrong port"   --set config.admin.listen=0.0.0.0:9901
+
+          echo "sidecar chart renders hoophq/hoopsidecar on 19000 and all six guards fire"

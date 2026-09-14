@@ -1,0 +1,24 @@
+{{- if .Values.service.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: hoopsidecar
+  labels:
+    app: hoopsidecar
+  {{- with .Values.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.type | default "ClusterIP" }}
+  selector:
+    app: hoopsidecar
+  # The admin server only: /healthz, /stats, /config, /events, /api/*.
+  # To reach a lane from outside the pod, add a Service of your own with the
+  # same selector and the ports your config binds — see the chart README.
+  ports:
+    - name: admin
+      port: 19000
+      targetPort: 19000
+      protocol: TCP
+{{- end }}

@@ -895,6 +895,67 @@ jobs:
             hoophq/hoopagent:${{ env.GIT_TAG }}-minimal-alcatraz \
             hoophq/hoopagent:${{ env.GIT_TAG }}-distroless-alcatraz
 
+  # Preview build of hoophq/hoopsidecar, both targets of Dockerfile.sidecar.
+  # Mirrors the release workflow. hoophq/hoopsidecar is a clean-only repository
+  # — see the bright-line note in Dockerfile.sidecar before adding a tag here.
+  #
+  # NO :latest here, unlike the release job. That tag is the Ubuntu flavour of
+  # the last release and is what deploy/helm-chart/chart/sidecar/ defaults to;
+  # a preview moving it would repoint every install that took the default at an
+  # unreviewed branch. Previews are reachable only by their PR-numbered tag.
+  #
+  # No -alcatraz targets to build, unlike hoopagent: sidecar/pii/alcatraz never
+  # loads the ONNX model, so there is no baked-in artifact for a preview to
+  # validate.
+  docker-publish-hoopsidecar:
+    runs-on: ubuntu-latest
+    name: Publish Sidecar Image (hoopsidecar)
+    needs:
+      - build-tar-files
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_LOGIN }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-artifacts-*
+          merge-multiple: true
+          path: dist/
+      - name: Set Git Tag
+        run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-g$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
+      - name: Build and push (minimal)
+        uses: docker/build-push-action@v4
+        with:
+          file: ./Dockerfile.sidecar
+          context: '.'
+          target: minimal
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          sbom: false
+          push: true
+          tags: |
+            hoophq/hoopsidecar:${{ env.GIT_TAG }}-minimal
+      - name: Build and push (distroless)
+        uses: docker/build-push-action@v4
+        with:
+          file: ./Dockerfile.sidecar
+          context: '.'
+          target: distroless
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          sbom: false
+          push: true
+          tags: |
+            hoophq/hoopsidecar:${{ env.GIT_TAG }}-distroless
+
   publish-release:
     runs-on: ubuntu-latest
     name: Publish Release

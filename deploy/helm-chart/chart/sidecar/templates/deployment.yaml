@@ -1,0 +1,104 @@
+{{- include "hoopsidecar.validate" . }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hoopsidecar
+  {{- if .Values.deploymentAnnotations }}
+  annotations:
+  {{- with .Values.deploymentAnnotations }}
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- end }}
+spec:
+  replicas: {{ .Values.replicas | default 1 }}
+  selector:
+    matchLabels:
+      app: hoopsidecar
+  {{- with .Values.deploymentStrategy }}
+  strategy: {{- toYaml . | trim | nindent 4 }}
+  {{- end }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/secret-config.yaml") . | sha256sum }}
+        checksum/sidecar-config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/extra-config: {{ include (print $.Template.BasePath "/extra-sidecar-config.yaml") . | sha256sum }}
+      {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        app: hoopsidecar
+    spec:
+      {{- if .Values.serviceAccount.create }}
+      serviceAccountName: hoopsidecar
+      {{- end }}
+      containers:
+      - image: '{{ .Values.image.repository |default "hoophq/hoopsidecar" }}:{{ .Values.image.tag |default "latest" }}'
+        name: sidecar
+        imagePullPolicy: {{ .Values.image.pullPolicy | default "Always" }}
+        {{- if .Values.resources }}
+        resources:
+          {{- toYaml .Values.resources | nindent 10 }}
+        {{- end }}
+        envFrom:
+        - secretRef:
+            name: sidecar-config
+        {{- with .Values.extraSecret }}
+        - secretRef:
+            name: extra-sidecar-config
+        {{- end}}
+        # The admin server, and nothing else. Every lane port comes from the
+        # config document and differs per deployment, so none is declared
+        # here; a containerPort is informational either way, and a lane is
+        # reached through whatever fronts this pod — an Envoy sidecar over
+        # loopback, or a Service of your own selecting app: hoopsidecar.
+        ports:
+        - name: admin
+          containerPort: 19000
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 19000
+          initialDelaySeconds: {{ .Values.probe.initialDelaySeconds | default 5 }}
+          periodSeconds: {{ .Values.probe.periodSeconds | default 10 }}
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 19000
+          initialDelaySeconds: {{ .Values.probe.initialDelaySeconds | default 5 }}
+          periodSeconds: {{ .Values.probe.periodSeconds | default 10 }}
+        {{- if or (include "hoopsidecar.hasConfigFile" .) .Values.extraVolumeMounts }}
+        volumeMounts:
+        {{- if include "hoopsidecar.hasConfigFile" . }}
+        - name: sidecar-config
+          mountPath: {{ include "hoopsidecar.configDir" . }}
+          readOnly: true
+        {{- end }}
+        {{- with .Values.extraVolumeMounts }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- end }}
+      {{- if or (include "hoopsidecar.hasConfigFile" .) .Values.extraVolumes }}
+      volumes:
+      {{- if include "hoopsidecar.hasConfigFile" . }}
+      - name: sidecar-config
+        configMap:
+          name: {{ .Values.existingConfigMap | default "hoopsidecar-config" }}
+      {{- end }}
+      {{- with .Values.extraVolumes }}
+      {{- toYaml . | nindent 6 }}
+      {{- end }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

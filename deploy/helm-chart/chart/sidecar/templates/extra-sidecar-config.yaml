@@ -1,0 +1,11 @@
+{{- with .Values.extraSecret }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: extra-sidecar-config
+type: Opaque
+stringData:
+  {{- range $KEY, $VAL := . }}
+  {{ $KEY }}: '{{ $VAL}}'
+  {{- end }}
+{{- end }}

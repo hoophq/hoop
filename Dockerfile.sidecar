@@ -1,0 +1,172 @@
+# hoophq/hoopsidecar — the hoop inspection sidecar image, in two slim flavours.
+#
+# One Dockerfile, two final stages selected with `docker build --target`. They
+# share the `unpack` stage, so release-tarball handling exists in exactly one
+# place:
+#
+#   --target minimal     -> hoophq/hoopsidecar:<version>-minimal
+#                           hoophq/hoopsidecar:latest
+#   --target distroless  -> hoophq/hoopsidecar:<version>-distroless
+#
+# `:latest` is minimal, the Ubuntu flavour, and only ever minimal. It keeps a
+# shell, so the tag someone reaches for without thinking is the one they can
+# debug; distroless is a deliberate choice and is named explicitly. This is
+# also what the helm chart at deploy/helm-chart/chart/sidecar/ defaults to.
+#
+# A bare `docker build -f Dockerfile.sidecar` with no --target builds the stage
+# declared LAST, `minimal`: the same flavour `:latest` points at, and a
+# superset of distroless, so an accidental default is never the restrictive
+# one.
+#
+# ---------------------------------------------------------------------------
+# LICENSE BRIGHT LINE — read before adding a stage
+#
+# hoophq/hoopsidecar is a clean-only image repository: no layer published under
+# it may carry an AGPL- or SSPL-licensed component, so that the repository has
+# no such component anywhere in its history. Both flavours here are built from
+# a stock Ubuntu or distroless rootfs plus the `hoop` binary, and carry none.
+#
+# This is why no flavour is built FROM hoophq/agent-tools. That base bundles
+# third-party database clients including an SSPL-licensed MongoDB shell, and
+# deriving from it would put those layers into this repository permanently.
+# The relay needs none of it: it speaks the wire protocols itself and never
+# execs a client.
+#
+# Do NOT add a stage here that derives from agent-tools, or that installs
+# database clients, without first checking the license policy in
+# scripts/ci/check-forbidden-licenses.py.
+#
+# ---------------------------------------------------------------------------
+# What this image runs
+#
+# The relay, as PID 1: `hoop start sidecar`. It decodes the wire protocol
+# between a client and a database or API, evaluates each statement against
+# policy, records an audit trail, and masks sensitive values on the way back.
+# It routes nothing and terminates no downstream TLS — run it behind something
+# that already owns the network path, typically an Envoy sidecar forwarding
+# plaintext over loopback.
+#
+# The `hoop` binary is the same one hoophq/hoopdev and hoophq/hoopagent ship;
+# only the default command differs. This image exists so a deployment that
+# carries the relay and nothing else does not have to override one.
+#
+# Every capability is decided by the config file, so turning on PII detection
+# or AI analysis does not require a different image. HOOP_SIDECAR_CONFIG below
+# is the default path; set it empty to run against a control plane instead,
+# which supplies the whole running config over its handshake.
+#
+# ---------------------------------------------------------------------------
+# Why there is no -alcatraz flavour
+#
+# The agent images publish `-alcatraz` tags that bake in an ONNX model for the
+# statistical entity types (PERSON, LOCATION, NRP). This process cannot use it:
+# sidecar/pii/alcatraz wires the pattern-and-checksum core only and does not
+# wire the alcatraz/ner module, so those three entities are refused by name at
+# config load however the weights are mounted. Baking them in would add ~250MB
+# of bytes nothing here reads.
+#
+# The other 51 entity types need no model on disk and are active in both
+# flavours below without any configuration.
+#
+# If sidecar/pii/alcatraz ever wires ner, add the `models` stage and the two
+# derived targets from Dockerfile.agent rather than inventing a second shape.
+#
+# ---------------------------------------------------------------------------
+# Choosing a flavour
+#
+#   minimal      Ubuntu 24.04 LTS rootfs + the `hoop` binary and nothing else.
+#   distroless   Distroless static rootfs + the `hoop` binary and nothing else.
+#
+# Both serve every protocol the relay decodes (postgres, mysql, mssql, mongodb,
+# http, grpc, spanner) and run as uid 10001.
+#
+# distroless carries no OS package manager and no shell, so it reports zero
+# OS-package CVEs and is roughly two thirds the size of minimal — at the cost
+# of `kubectl exec <pod> -- sh` being impossible, and of `--validate` being
+# unreachable without a shell to run it from. Use minimal when that
+# debuggability matters, distroless when the smallest possible surface does.
+#
+# ---------------------------------------------------------------------------
+# Build (from the repo root, with release tarballs in dist/binaries/):
+#   GOOS=linux GOARCH=arm64 make build-go build-tar-files
+#   docker build -f Dockerfile.sidecar --target minimal -t hoophq/hoopsidecar:dev-minimal .
+#   docker build -f Dockerfile.sidecar --target distroless -t hoophq/hoopsidecar:dev-distroless .
+
+# Ubuntu 24.04 LTS (noble). Pinned deliberately, same policy as ./Dockerfile
+# and ./Dockerfile.agent, so builds are reproducible; bump it in a dedicated PR.
+ARG UBUNTU_IMAGE=ubuntu:noble-20260730.1
+ARG DISTROLESS_IMAGE=gcr.io/distroless/static-debian12:nonroot
+
+# Where both flavours look for the config document. The same path the helm
+# chart mounts its ConfigMap at and the compose stacks bind, so a config moves
+# between them without also moving.
+ARG SIDECAR_CONFIG=/etc/hoop-inspect/config.yaml
+
+# --- Stage: unpack the release tarball ---------------------------------------
+# A separate stage so the ~200MB of release tarballs in dist/binaries/ never
+# reaches a layer of any published flavour (a `rm -rf` in a later RUN would not
+# shrink it — the COPY layer keeps the bytes forever).
+#
+# Pinned to BUILDPLATFORM and keyed off TARGETARCH rather than `uname -m`:
+# these images are built as single multiarch jobs, and only the runtime stages
+# should be emulated. `make build-tar-files` publishes both the Go-style
+# (amd64/arm64) and uname-style (x86_64/aarch64) archive names, so TARGETARCH
+# matches directly.
+#
+# The tarball also carries `hoop_rs` (the Rust agent that serves RDP); only
+# `hoop` is extracted, since no flavour here ships it and the relay never
+# execs it. Naming the member explicitly makes a tarball layout change fail the
+# build loudly instead of silently producing an image with no relay in it.
+FROM --platform=${BUILDPLATFORM} ${UBUNTU_IMAGE} AS unpack
+ARG TARGETARCH
+COPY dist/binaries/ /tmp/binaries/
+RUN mkdir -p /out && \
+    tar -xf /tmp/binaries/hoop_*_Linux_${TARGETARCH}.tar.gz -C /out/ ./hoop && \
+    chown root:root /out/hoop && \
+    chmod 755 /out/hoop
+
+# --- Flavour: distroless -----------------------------------------------------
+# The static rootfs already ships the CA bundle, which this process needs for
+# three separate hops: an upstream_tls lane where it originates TLS to the
+# database, an analyzer provider over HTTPS, and a control plane over HTTPS.
+# Nothing is installed here.
+#
+# uid 10001 is set numerically: distroless has no useradd, and the relay never
+# resolves a passwd entry.
+FROM ${DISTROLESS_IMAGE} AS distroless
+ARG SIDECAR_CONFIG
+COPY --from=unpack /out/hoop /app/hoop
+ENV PATH="/app:${PATH}"
+# --config defaults to this, so the command below takes no arguments and
+# mounting a different ConfigMap is the whole change. Set it EMPTY to take the
+# running config from a control plane instead: a path naming a file that does
+# not exist is an error, not a reason to fall through to the handshake.
+ENV HOOP_SIDECAR_CONFIG=${SIDECAR_CONFIG}
+USER 10001:10001
+# No init shim: the relay is PID 1 and installs its own SIGINT/SIGTERM handler
+# (daemon.Run). It forks no children.
+CMD ["hoop", "start", "sidecar"]
+
+# --- Flavour: minimal (Ubuntu 24.04 LTS) -------------------------------------
+# Declared last on purpose: see the note about a bare build at the top.
+FROM ${UBUNTU_IMAGE} AS minimal
+ARG SIDECAR_CONFIG
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# ca-certificates is the one runtime dependency the binary cannot carry itself,
+# for the three TLS hops named in the distroless note above — the ubuntu base
+# rootfs does not include a trust store. Nothing else is installed.
+RUN groupadd --gid 10001 hoop && \
+    useradd --uid 10001 --gid 10001 --shell /sbin/nologin hoop && \
+    apt-get update -y && \
+    apt-get install -y --no-install-recommends ca-certificates && \
+    rm -rf /var/lib/apt/lists/* /var/cache/apt/archives
+
+# Ownership and mode are already root:root 0755 from the unpack stage.
+COPY --from=unpack /out/hoop /app/hoop
+ENV PATH="/app:${PATH}"
+ENV HOOP_SIDECAR_CONFIG=${SIDECAR_CONFIG}
+USER hoop
+# No init shim (tini is not installed) — see the distroless note above.
+CMD ["hoop", "start", "sidecar"]

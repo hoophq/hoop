@@ -1,0 +1,9 @@
+{{- with .Values.config }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hoopsidecar-config
+data:
+  {{ include "hoopsidecar.configFile" $ }}: |
+    {{- toYaml . | nindent 4 }}
+{{- end }}
