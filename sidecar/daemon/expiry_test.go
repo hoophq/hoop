@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -75,6 +76,14 @@ func TestOnlyAnOverCapConfigDependsOnTheLicense(t *testing.T) {
 	}
 }
 
+// holderFor wraps a status in the shared holder Run publishes the running
+// license through.
+func holderFor(s license.Status) *atomic.Pointer[license.Status] {
+	h := &atomic.Pointer[license.Status]{}
+	h.Store(&s)
+	return h
+}
+
 // The transition itself: the watchdog notices the term ending and closes its
 // channel, which is what makes Run drain and exit.
 func TestTheWatchdogFiresWhenTheTermEnds(t *testing.T) {
@@ -83,7 +92,7 @@ func TestTheWatchdogFiresWhenTheTermEnds(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	expired := watchLicense(ctx, expiredIn(t, -time.Second), time.Millisecond, log)
+	expired := watchLicense(ctx, holderFor(expiredIn(t, -time.Second)), time.Millisecond, log)
 
 	select {
 	case <-expired:
@@ -102,7 +111,7 @@ func TestTheWatchdogWaitsWhileTheTermRuns(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	expired := watchLicense(ctx, expiredIn(t, time.Hour), time.Millisecond, newTestLogger(&bytes.Buffer{}))
+	expired := watchLicense(ctx, holderFor(expiredIn(t, time.Hour)), time.Millisecond, newTestLogger(&bytes.Buffer{}))
 
 	select {
 	case <-expired:
@@ -115,13 +124,32 @@ func TestTheWatchdogWaitsWhileTheTermRuns(t *testing.T) {
 // context ends, so Run reports a signal as a signal and exits zero.
 func TestTheWatchdogIsSilentOnShutdown(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	expired := watchLicense(ctx, expiredIn(t, time.Hour), time.Hour, newTestLogger(&bytes.Buffer{}))
+	expired := watchLicense(ctx, holderFor(expiredIn(t, time.Hour)), time.Hour, newTestLogger(&bytes.Buffer{}))
 	cancel()
 
 	select {
 	case <-expired:
 		t.Fatal("a signalled shutdown was reported as a license expiry")
 	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+// The watchdog reads the shared holder each tick, so a license a disk-mode
+// reload swapped in governs the running watcher: this is what lets a plane
+// shorten a term — or renew one — without a restart.
+func TestTheWatchdogFollowsAHotSwappedLicense(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	h := holderFor(expiredIn(t, time.Hour))
+	expired := watchLicense(ctx, h, time.Millisecond, newTestLogger(&bytes.Buffer{}))
+
+	revoked := expiredIn(t, -time.Second)
+	h.Store(&revoked)
+	select {
+	case <-expired:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the watchdog kept running on a license the holder replaced")
 	}
 }
 

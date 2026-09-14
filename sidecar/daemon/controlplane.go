@@ -53,6 +53,10 @@ const (
 	// gateway's last-seen fresh and notices a config edited in the UI; a
 	// minute is fast enough for both and costs one small request.
 	heartbeatEvery = time.Minute
+
+	// controlPlaneLicenseSource names the plane as a license source, in the
+	// startup adoption and in a disk-mode reload alike.
+	controlPlaneLicenseSource = "the control plane"
 )
 
 // controlPlane is the resolved connection Setup reached: where to call, what
@@ -75,6 +79,19 @@ type controlPlane struct {
 	// merged; Run warns so an edit to the file that changed nothing is
 	// not a silent mystery.
 	fileListeners int
+	// diskMode reports the plane answered load_from_disk: the file's
+	// document is serving, the heartbeat still runs, and the reloader
+	// hot-applies license drift and ownership flips when the documents
+	// allow it, restarting only for drift no reload can absorb.
+	diskMode bool
+	// planeLicense is the license the disk-mode answer carried. SetupWith
+	// adopts it through UseLicense, above every local source; a reload
+	// swaps a drifted one in through the same seam.
+	planeLicense string
+	// configPath and load let the reloader re-read the config file when
+	// the plane hands ownership to it mid-run; SetupWith fills them.
+	configPath string
+	load       Loader
 
 	// build is the PluginBuilder SetupWith received, retained so a reload
 	// can rebuild the detector when the pii section drifts. Nil means the
@@ -167,7 +184,17 @@ func resolveSidecarToken(flagValue string) (value, source string) {
 // connects by adding the URL and passing the token, nothing else. Once the
 // plane holds a configuration it owns it, and listeners still in the file
 // are ignored out loud (Run warns), never merged.
+//
+// A plane answering "load_from_disk" hands the document back to the file:
+// the file's listeners serve, while the connection stays a plane-side fact
+// and a license the answer carries goes through UseLicense, above every
+// local source ("the control plane goes above all three").
 func resolveConfigSource(local *Config, tokenFlag string) (*Config, error) {
+	if local != nil && local.LoadFromDisk != nil {
+		return nil, errors.New(`"load_from_disk" is not a config file key; ` +
+			`it is set on the control plane's sidecar configuration, and the file cannot answer for the plane`)
+	}
+
 	fileURL := ""
 	if local != nil {
 		fileURL = local.ControlPlaneURL
@@ -177,7 +204,6 @@ func resolveConfigSource(local *Config, tokenFlag string) (*Config, error) {
 		return nil, err
 	}
 	token, tokenSource := resolveSidecarToken(tokenFlag)
-
 	if planeURL == "" {
 		if token != "" {
 			// A token someone set that does nothing will surprise them the
@@ -197,6 +223,22 @@ func resolveConfigSource(local *Config, tokenFlag string) (*Config, error) {
 	}
 
 	raw, err := fetchControlPlaneConfig(planeURL, token, Version)
+	var planeDoc Config
+	if err == nil && json.Unmarshal(raw, &planeDoc) == nil &&
+		planeDoc.LoadFromDisk != nil && *planeDoc.LoadFromDisk {
+		if local == nil {
+			return nil, fmt.Errorf("the control plane at %s says this sidecar loads its "+
+				"configuration from disk, but no config file was given", planeURL)
+		}
+		if len(local.Listeners) == 0 {
+			return nil, fmt.Errorf("the control plane at %s says this sidecar loads its "+
+				"configuration from disk, but the config file declares no listeners", planeURL)
+		}
+		local.ControlPlaneURL = planeURL
+		local.cp = &controlPlane{url: planeURL, urlSource: urlSource, token: token,
+			lastRaw: raw, diskMode: true, planeLicense: planeDoc.License}
+		return local, nil
+	}
 	imported := false
 	// A plane with nothing to serve answers 412; an older gateway answers
 	// 200 with a document naming no listeners. Same fact, same move: seed

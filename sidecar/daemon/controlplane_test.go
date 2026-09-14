@@ -536,3 +536,194 @@ func TestTheSameDocumentIsHandledOnce(t *testing.T) {
 		t.Fatalf("generation = %d; the duplicate was re-applied", rl.gen)
 	}
 }
+
+// A plane answering load_from_disk hands the document back to the file: the
+// file's listeners and license key survive untouched, the plane's license
+// rides on cp for SetupWith to adopt, and the connection stays plane-side.
+func TestADiskModeAnswerServesTheLocalFile(t *testing.T) {
+	srv, _ := planeServer(t, http.StatusOK, `{"load_from_disk":true,"license":"PLANE"}`)
+	t.Setenv(ControlPlaneURLEnv, srv.URL)
+	t.Setenv(SidecarTokenEnv, "hsc_x")
+
+	local, err := LoadConfigBytes([]byte(minimalConfig + `,"license":"FILE"}`))
+	if err != nil {
+		t.Fatalf("LoadConfigBytes: %v", err)
+	}
+	cfg, err := resolveConfigSource(local, "")
+	if err != nil {
+		t.Fatalf("resolveConfigSource: %v", err)
+	}
+	if len(cfg.Listeners) != 1 {
+		t.Fatalf("listeners = %d, want the file's one", len(cfg.Listeners))
+	}
+	if cfg.License != "FILE" {
+		t.Errorf("license key = %q; the file's document must survive untouched", cfg.License)
+	}
+	if cfg.ControlPlaneURL != srv.URL {
+		t.Errorf("control plane URL = %q, want %q", cfg.ControlPlaneURL, srv.URL)
+	}
+	if cfg.cp == nil || !cfg.cp.diskMode || cfg.cp.fileListeners != 0 {
+		t.Fatalf("cp bookkeeping: diskMode=%v fileListeners=%d, want true/0",
+			cfg.cp != nil && cfg.cp.diskMode, cfg.cp.fileListeners)
+	}
+	if cfg.cp.planeLicense != "PLANE" {
+		t.Errorf("planeLicense = %q, want the plane's", cfg.cp.planeLicense)
+	}
+}
+
+// The license the disk-mode answer carries goes through UseLicense, above
+// every local source; an answer without one (free tier) leaves the file's
+// resolution standing. One signed document plays both parts because each
+// licensetest.Sign re-roots the process trust; the SOURCE is the assertion.
+func TestADiskModeLicenseIsAdoptedAboveTheFile(t *testing.T) {
+	doc := licensetest.Document(t, licensetest.Enterprise())
+	body, err := json.Marshal(map[string]any{"load_from_disk": true, "license": doc})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv, _ := planeServer(t, http.StatusOK, string(body))
+	t.Setenv(ControlPlaneURLEnv, srv.URL)
+	t.Setenv(SidecarTokenEnv, "hsc_x")
+
+	cfgJSON, err := json.Marshal(map[string]any{
+		"listeners": []map[string]string{{"protocol": "postgres", "listen": ":1", "upstream": "h:5432"}},
+		"license":   doc,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err := SetupWith(writeConfig(t, string(cfgJSON)), nil, nil)
+	if err != nil {
+		t.Fatalf("SetupWith: %v", err)
+	}
+	if got := cfg.Licensing(); got.Source != controlPlaneLicenseSource {
+		t.Errorf("license source = %q, want the control plane", got.Source)
+	}
+
+	// Free tier: no license in the answer, the file's key stays the source.
+	srv2, _ := planeServer(t, http.StatusOK, `{"load_from_disk":true}`)
+	t.Setenv(ControlPlaneURLEnv, srv2.URL)
+	cfg2, _, err := SetupWith(writeConfig(t, string(cfgJSON)), nil, nil)
+	if err != nil {
+		t.Fatalf("SetupWith: %v", err)
+	}
+	if got := cfg2.Licensing(); got.Source == controlPlaneLicenseSource {
+		t.Errorf("license source = %q; an empty answer must not read as a plane license", got.Source)
+	}
+}
+
+// A disk-mode answer carrying a license the verifier refuses stops startup:
+// a plane sending garbage is a plane bug, not something to run past.
+func TestADiskModeGarbageLicenseStopsStartup(t *testing.T) {
+	srv, _ := planeServer(t, http.StatusOK, `{"load_from_disk":true,"license":"garbage"}`)
+	t.Setenv(ControlPlaneURLEnv, srv.URL)
+	t.Setenv(SidecarTokenEnv, "hsc_x")
+
+	_, _, err := SetupWith(writeConfig(t, minimalConfig+`}`), nil, nil)
+	if err == nil {
+		t.Fatal("a garbage plane license was accepted at startup")
+	}
+}
+
+// The plane says the file is the source of truth, but no file was given:
+// nothing can serve, so startup stops naming the missing file.
+func TestADiskModeAnswerWithoutAFileStopsStartup(t *testing.T) {
+	srv, _ := planeServer(t, http.StatusOK, `{"load_from_disk":true}`)
+	t.Setenv(ControlPlaneURLEnv, srv.URL)
+	t.Setenv(SidecarTokenEnv, "hsc_x")
+
+	_, err := resolveConfigSource(nil, "")
+	if err == nil {
+		t.Fatal("a disk-mode answer without a file was accepted")
+	}
+	if !strings.Contains(err.Error(), "no config file was given") {
+		t.Errorf("the error does not name the missing file: %v", err)
+	}
+}
+
+// A file whose only job was naming the plane declares no listeners; a
+// disk-mode answer then has nothing to serve.
+func TestADiskModeAnswerNeedsFileListeners(t *testing.T) {
+	srv, _ := planeServer(t, http.StatusOK, `{"load_from_disk":true}`)
+	t.Setenv(ControlPlaneURLEnv, srv.URL)
+	t.Setenv(SidecarTokenEnv, "hsc_x")
+
+	local, err := LoadConfigBytes([]byte(`{}`))
+	if err != nil {
+		t.Fatalf("LoadConfigBytes: %v", err)
+	}
+	_, err = resolveConfigSource(local, "")
+	if err == nil {
+		t.Fatal("a disk-mode answer with a listener-less file was accepted")
+	}
+	if !strings.Contains(err.Error(), "declares no listeners") {
+		t.Errorf("the error does not name the missing listeners: %v", err)
+	}
+}
+
+// load_from_disk is only meaningful in the document the plane serves; a
+// local file writing it (either value) is refused, plane or no plane.
+func TestAConfigFileMayNotWriteLoadFromDisk(t *testing.T) {
+	srv, _ := planeServer(t, http.StatusOK, planeConfig)
+	for _, tc := range []struct {
+		name, value, planeURL string
+	}{
+		{"true standalone", "true", ""},
+		{"false standalone", "false", ""},
+		{"true with a plane", "true", srv.URL},
+		{"false with a plane", "false", srv.URL},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(ControlPlaneURLEnv, tc.planeURL)
+			token := ""
+			if tc.planeURL != "" {
+				token = "hsc_x"
+			}
+			t.Setenv(SidecarTokenEnv, token)
+			local, err := LoadConfigBytes([]byte(minimalConfig + `,"load_from_disk":` + tc.value + `}`))
+			if err != nil {
+				t.Fatalf("LoadConfigBytes: %v", err)
+			}
+			_, err = resolveConfigSource(local, "")
+			if err == nil {
+				t.Fatal("a file writing load_from_disk was accepted")
+			}
+			if !strings.Contains(err.Error(), "load_from_disk") {
+				t.Errorf("the error does not name the key: %v", err)
+			}
+		})
+	}
+}
+
+// The tiny disk-mode doc names no listeners, which is also what an empty
+// plane answers; the disk branch must run first, or the file's document
+// would be pushed over a plane deliberately serving the flag.
+func TestADiskModeAnswerNeverSeedsThePlane(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == controlPlaneHandshakePath:
+			_, _ = w.Write([]byte(`{"load_from_disk":true}`))
+		case r.Method == http.MethodPut && r.URL.Path == controlPlaneConfigurationPath:
+			t.Error("the disk-mode answer triggered an import push")
+			w.WriteHeader(http.StatusConflict)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv(ControlPlaneURLEnv, srv.URL)
+	t.Setenv(SidecarTokenEnv, "hsc_x")
+
+	local, err := LoadConfigBytes([]byte(minimalConfig + `}`))
+	if err != nil {
+		t.Fatalf("LoadConfigBytes: %v", err)
+	}
+	cfg, err := resolveConfigSource(local, "")
+	if err != nil {
+		t.Fatalf("resolveConfigSource: %v", err)
+	}
+	if cfg.cp == nil || !cfg.cp.diskMode || cfg.cp.imported {
+		t.Errorf("cp bookkeeping: diskMode=%v imported=%v, want true/false",
+			cfg.cp != nil && cfg.cp.diskMode, cfg.cp != nil && cfg.cp.imported)
+	}
+}

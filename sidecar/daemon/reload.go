@@ -30,7 +30,8 @@ import (
 type reloadOutcome int
 
 const (
-	// reloadApplied swapped the rules into the running lanes.
+	// reloadApplied swapped the drift into the running process: rules
+	// into the lanes, or a disk-mode license into the shared holder.
 	reloadApplied reloadOutcome = iota
 	// reloadRestart names drift a live process cannot absorb.
 	reloadRestart
@@ -82,7 +83,10 @@ type reloader struct {
 	// endpoints.
 	view *atomic.Pointer[laneState]
 
-	lic license.Status
+	// lic is the shared holder Run publishes the running license through.
+	// A disk-mode reload stores a drifted license here; rule reloads read
+	// it so the caps follow the running license.
+	lic *atomic.Pointer[license.Status]
 	det Plugin
 	// ac is the startup analyzer state, retained whole: the provider and
 	// its credential are restart-guarded, so a reload never rebuilds them.
@@ -96,11 +100,21 @@ type reloader struct {
 	// tick instead of waiting for another edit.
 	lastHandled []byte
 	gen         int
+	// diskMode reports the plane delegated the config to the local file:
+	// a license drift hot-applies through lic, and an ownership flip runs
+	// the incoming owner's document through applyOwned, flipping this
+	// only when it applied.
+	diskMode bool
+	// configPath and load re-read the config file when the plane hands
+	// ownership to it mid-run. An empty path means no file was given.
+	configPath string
+	load       Loader
 }
 
 // newReloader captures the startup state handle compares against.
 func newReloader(cfg *Config, lanes []lane, servers map[string]*proxy.Server,
-	det Plugin, ac *analyzerDeps, view *atomic.Pointer[laneState]) (*reloader, error) {
+	det Plugin, ac *analyzerDeps, view *atomic.Pointer[laneState],
+	lic *atomic.Pointer[license.Status]) (*reloader, error) {
 	baseline, err := nonRuleDoc(cfg)
 	if err != nil {
 		return nil, err
@@ -122,11 +136,14 @@ func newReloader(cfg *Config, lanes []lane, servers map[string]*proxy.Server,
 		prevLanes:   prevLanes,
 		servers:     servers,
 		view:        view,
-		lic:         cfg.lic,
+		lic:         lic,
 		det:         det,
 		ac:          ac,
 		build:       cfg.cp.build,
 		lastHandled: cfg.cp.lastRaw,
+		diskMode:    cfg.cp.diskMode,
+		configPath:  cfg.cp.configPath,
+		load:        cfg.cp.load,
 	}, nil
 }
 
@@ -149,10 +166,99 @@ func (r *reloader) handle(log *slog.Logger, raw []byte) reloadOutcome {
 // (LoadConfigBytes, the caps in buildLanes), so a config startup would
 // refuse is refused here with the same message; the heartbeat must never be
 // a side door past validation.
+//
+// The load_from_disk flag flipping is handled here too, hot when the
+// documents allow it: the incoming owner's document (the plane's full
+// answer on a takeover, the re-read config file on a handover) runs through
+// the same swap-or-restart decision as any owned drift, and the mode flips
+// only on a document that applied.
 func (r *reloader) apply(log *slog.Logger, raw []byte) reloadOutcome {
+	var planeDoc Config
+	on := json.Unmarshal(raw, &planeDoc) == nil &&
+		planeDoc.LoadFromDisk != nil && *planeDoc.LoadFromDisk
+	switch {
+	case on && r.diskMode:
+		// Same flag, different bytes: only the license moved.
+		return r.applyLicense(log, planeDoc.License)
+	case on && !r.diskMode:
+		return r.adoptFile(log, planeDoc.License)
+	case !on && r.diskMode:
+		out := r.applyOwned(log, raw, "control plane")
+		if out == reloadApplied {
+			r.diskMode = false
+			log.Info("the control plane took ownership of the configuration; " +
+				"the config file's document no longer serves")
+		}
+		return out
+	}
+	return r.applyOwned(log, raw, "control plane")
+}
+
+// adoptFile is the handover flip: the plane's answer turned into the tiny
+// disk-mode document, so the config file is the source of truth from here.
+// The file is re-read — load_from_disk means the FILE, not a startup
+// snapshot of it — and its document runs through the same swap-or-restart
+// decision as any owned drift. A file this process cannot hot-adopt stays
+// on the restart path, where startup either serves it or refuses it by
+// name.
+func (r *reloader) adoptFile(log *slog.Logger, planeLicense string) reloadOutcome {
+	if r.configPath == "" {
+		log.Warn("the control plane handed the configuration to the local file, " +
+			"but this process was started without a config file; restart with one to apply it")
+		return reloadRestart
+	}
+	local, err := r.load(r.configPath)
+	if err != nil {
+		log.Warn("the control plane handed the configuration to the local file, "+
+			"but the file does not load; fix it and restart to apply it",
+			"path", r.configPath, "error", err)
+		return reloadRestart
+	}
+	if local.LoadFromDisk != nil {
+		log.Warn(`the control plane handed the configuration to the local file, `+
+			`but the file writes "load_from_disk", which only the control plane says; `+
+			`remove the key and restart to apply it`, "path", r.configPath)
+		return reloadRestart
+	}
+	if len(local.Listeners) == 0 {
+		log.Warn("the control plane handed the configuration to the local file, "+
+			"but the file declares no listeners; restart to apply it", "path", r.configPath)
+		return reloadRestart
+	}
+	raw, err := json.Marshal(local)
+	if err != nil {
+		log.Warn("config compare failed; keeping the running rules", "error", err)
+		return reloadRetry
+	}
+	out := r.applyOwned(log, raw, "config file")
+	if out != reloadApplied {
+		return out
+	}
+	r.diskMode = true
+	log.Info("the control plane handed the configuration to the local file; "+
+		"the file's document now serves", "path", r.configPath)
+	if planeLicense != "" {
+		// The tiny document's license, through the same seam as startup;
+		// a refused one keeps the running license without undoing the
+		// adopted lanes.
+		if s := license.Load(license.Ref{Value: planeLicense,
+			Source: controlPlaneLicenseSource}); s.State() == license.StateInvalid {
+			log.Warn("the control plane sent a license this build refuses; keeping the running one",
+				"error", s.Err)
+		} else {
+			r.lic.Store(&s)
+		}
+	}
+	return reloadApplied
+}
+
+// applyOwned runs one owner's full document against the running process:
+// rule-only drift swaps, anything beyond the rules is restart-bound. from
+// names the document's owner in the logs: "control plane" or "config file".
+func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadOutcome {
 	newCfg, err := LoadConfigBytes(raw)
 	if err != nil {
-		log.Warn("the control plane sent a config this build refuses; keeping the running rules",
+		log.Warn("the "+from+" sent a config this build refuses; keeping the running rules",
 			"error", err)
 		return reloadRefused
 	}
@@ -165,7 +271,7 @@ func (r *reloader) apply(log *slog.Logger, raw []byte) reloadOutcome {
 		return reloadRetry
 	}
 	if !bytes.Equal(doc, r.baseline) {
-		log.Warn("the control plane configuration changed beyond the rules; restart to apply it")
+		log.Warn("the " + from + " changed the configuration beyond the rules; restart to apply it")
 		return reloadRestart
 	}
 
@@ -196,10 +302,10 @@ func (r *reloader) apply(log *slog.Logger, raw []byte) reloadOutcome {
 		ac = &staged
 	}
 
-	newCfg.lic = r.lic
+	newCfg.lic = *r.lic.Load()
 	lanes, err := buildLanes(newCfg, det, ac)
 	if err != nil {
-		log.Warn("the control plane sent a config the rules or the caps refuse; keeping the running rules",
+		log.Warn("the "+from+" sent a config the rules or the caps refuse; keeping the running rules",
 			"error", err)
 		return reloadRefused
 	}
@@ -222,7 +328,7 @@ func (r *reloader) apply(log *slog.Logger, raw []byte) reloadOutcome {
 		}
 		docs[ln.name] = doc
 		if isGRPCTransport(ln.cfg) && !bytes.Equal(doc, r.laneDocs[ln.name]) {
-			log.Warn("grpc lane rules changed on the control plane; restart to apply them",
+			log.Warn("grpc lane rules changed on the "+from+"; restart to apply them",
 				"listener", ln.name)
 			return reloadRestart
 		}
@@ -271,8 +377,34 @@ func (r *reloader) apply(log *slog.Logger, raw []byte) reloadOutcome {
 	r.piiRaw = newCfg.PII
 	r.gen++
 	r.view.Store(&laneState{lanes: viewLanes, gen: r.gen})
-	log.Info("control plane configuration applied",
+	log.Info(from+" configuration applied",
 		"generation", r.gen, "swapped", swapped, "kept", kept)
+	return reloadApplied
+}
+
+// applyLicense is the disk-mode drift: the plane's answer carries only the
+// flag and the license, so different bytes mean the license moved. A
+// verified document swaps into the shared holder — a renewal must not cost
+// a restart — and the expiry watcher picks the new term up on its next
+// tick. Same seam and same precedence as startup's UseLicense: the control
+// plane goes above every local source.
+func (r *reloader) applyLicense(log *slog.Logger, doc string) reloadOutcome {
+	if doc == "" {
+		// Removal narrows the caps, and a running lane may exceed them.
+		// Same posture as expiry (watchLicense holds the rationale): a
+		// controlled restart, where startup re-resolves the local sources
+		// or refuses the config by name.
+		log.Warn("the control plane removed the license; restart to apply it")
+		return reloadRestart
+	}
+	s := license.Load(license.Ref{Value: doc, Source: controlPlaneLicenseSource})
+	if s.State() == license.StateInvalid {
+		log.Warn("the control plane sent a license this build refuses; keeping the running one",
+			"error", s.Err)
+		return reloadRefused
+	}
+	r.lic.Store(&s)
+	log.Info("control plane license applied: " + s.Line())
 	return reloadApplied
 }
 

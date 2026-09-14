@@ -142,12 +142,24 @@ func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*
 	}
 	if cfg.cp != nil {
 		// Retained so a pii drift from the plane rebuilds the detector the
-		// way startup would. See reloader.
+		// way startup would, and so a mid-run handover re-reads the config
+		// file the way startup would. See reloader.
 		cfg.cp.build = build
+		cfg.cp.configPath = path
+		cfg.cp.load = load
 	}
 	cfg.lic = ResolveLicense(o.licenseFlag, cfg.License)
 	if cfg.lic.State() == license.StateInvalid {
 		return nil, nil, cfg.lic.Err
+	}
+	if cfg.cp != nil && cfg.cp.planeLicense != "" {
+		// The disk-mode answer carried a license. UseLicense is the seam a
+		// control-plane license arrives through: verified here, adopted
+		// above every local source.
+		if err := cfg.UseLicense(license.Ref{Value: cfg.cp.planeLicense,
+			Source: controlPlaneLicenseSource}); err != nil {
+			return nil, nil, err
+		}
 	}
 	if build == nil {
 		return cfg, nil, nil
@@ -547,19 +559,25 @@ const (
 // the config by name until somebody renews or removes rules. Callers start
 // this only for a config that exceeds the free tier, because a process
 // already inside the caps has nothing to take away.
-func watchLicense(ctx context.Context, lic license.Status, every time.Duration, log *slog.Logger) <-chan struct{} {
+//
+// The status is read through the shared holder each tick: a disk-mode
+// reload may renew the license under a running watcher, and a renewal must
+// keep the relay alive without a restart.
+func watchLicense(ctx context.Context, lic *atomic.Pointer[license.Status],
+	every time.Duration, log *slog.Logger) <-chan struct{} {
 	expired := make(chan struct{})
 	go func() {
 		tick := time.NewTicker(every)
 		defer tick.Stop()
 		notified := -1
 		for {
-			if lic.StateAt(time.Now().UTC()) == license.StateExpired {
-				log.Warn(lic.Line())
+			cur := *lic.Load()
+			if cur.StateAt(time.Now().UTC()) == license.StateExpired {
+				log.Warn(cur.Line())
 				close(expired)
 				return
 			}
-			notified = noticeLicenseExpiry(lic, notified, log)
+			notified = noticeLicenseExpiry(cur, notified, log)
 			select {
 			case <-ctx.Done():
 				return
@@ -613,6 +631,13 @@ func Run(cfg *Config, det Plugin) error {
 		"guardrail_rules", capText(limit.guardrails),
 		"mask_rules", capText(limit.mask))
 
+	// lic publishes the license the process currently runs under. Startup
+	// stores what Setup resolved; a disk-mode reload stores a renewal the
+	// plane sent, so the expiry watcher, the admin endpoint and the rule
+	// caps follow the running license, not the startup snapshot.
+	lic := &atomic.Pointer[license.Status]{}
+	lic.Store(&cfg.lic)
+
 	ac, err := buildAudit(cfg.Audit)
 	if err != nil {
 		return err
@@ -661,7 +686,7 @@ func Run(cfg *Config, det Plugin) error {
 	// nothing away from it.
 	var licenseExpired <-chan struct{}
 	if cfg.dependsOnLicense() {
-		licenseExpired = watchLicense(ctx, cfg.lic, licenseCheckEvery, log)
+		licenseExpired = watchLicense(ctx, lic, licenseCheckEvery, log)
 	}
 
 	// Two server kinds, one loop of lane facts. Relay lanes run
@@ -730,7 +755,7 @@ func Run(cfg *Config, det Plugin) error {
 		for i, srv := range servers {
 			byName[relayNames[i]] = srv
 		}
-		rl, rerr := newReloader(cfg, lanes, byName, det, analyzerDeps, view)
+		rl, rerr := newReloader(cfg, lanes, byName, det, analyzerDeps, view, lic)
 		if rerr != nil {
 			return rerr
 		}
@@ -738,6 +763,10 @@ func Run(cfg *Config, det Plugin) error {
 			"url", cfg.cp.url,
 			"source", cfg.cp.urlSource,
 			"poll", heartbeatEvery.String())
+		if cfg.cp.diskMode {
+			log.Info("the control plane delegates the configuration to the local file",
+				"listeners", len(cfg.Listeners))
+		}
 		if cfg.cp.imported {
 			log.Info("configuration imported into the control plane",
 				"url", cfg.cp.url,
@@ -753,7 +782,7 @@ func Run(cfg *Config, det Plugin) error {
 
 	if cfg.Admin.Listen != "" {
 		go serveAdmin(ctx, cfg.Admin.Listen, servers, relayNames, grpcServers, grpcNames,
-			view, ac, cfg.Analyzer, cfg.lic, log)
+			view, ac, cfg.Analyzer, lic, log)
 	}
 
 	var wg sync.WaitGroup
@@ -1212,7 +1241,7 @@ func serveAdmin(
 	view *atomic.Pointer[laneState],
 	ac auditChain,
 	analyzerCfg *AnalyzerConfig,
-	lic license.Status,
+	lic *atomic.Pointer[license.Status],
 	log *slog.Logger,
 ) {
 	mux := http.NewServeMux()
@@ -1340,7 +1369,7 @@ func serveAdmin(
 			}
 			out = append(out, v)
 		}
-		limit := capsFor(lic)
+		limit := capsFor(*lic.Load())
 		resp := map[string]any{
 			"version": Version,
 			"lanes":   out,
@@ -1363,7 +1392,7 @@ func serveAdmin(
 			// Beside the limits because it is the reason for them. Never
 			// the signature: an endpoint handing out a complete, reusable
 			// license is a licensing hole with an HTTP interface.
-			"license": lic.Report(),
+			"license": lic.Load().Report(),
 		}
 		// The analyzer view names the provider, the model and the HOST it
 		// talks to — never the path, never a query string, and never the
