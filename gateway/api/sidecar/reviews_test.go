@@ -23,6 +23,10 @@ import (
 // loaded), so a test binary gets a single mode and the gateway-mode refusal is
 // covered by booting a real gateway rather than from here.
 func TestMain(m *testing.M) {
+	// With a bare origin the two url accessors return the same string, so the
+	// WebappURL assertion below would hold whichever one the code calls. The
+	// path prefix is what makes it mean something.
+	os.Setenv("API_URL", "http://localhost:8009/hoop")
 	if err := appconfig.Load(appconfig.AppModeControlPlane); err != nil {
 		panic(err)
 	}
@@ -160,4 +164,43 @@ func TestPostReviewRefusesAStatementOverTheCap(t *testing.T) {
 
 	assert.Equal(t, http.StatusRequestEntityTooLarge, rec.Code)
 	assert.Contains(t, rec.Body.String(), "larger than")
+}
+
+// What a reviewer ends up reading. The message renders Name, Email, Connection
+// and Type whether or not they mean anything for a sidecar review, so each one
+// carries something true rather than an empty label.
+func TestNewSlackReviewRequest(t *testing.T) {
+	sc := &models.Sidecar{ID: "sidecar-1", OrgID: "org-1", Name: "payments-sidecar"}
+	rev := newSidecarReview(sc, "appdb", "session-1", time.Now().UTC())
+	statement := "DELETE FROM users WHERE id = 42;"
+
+	req := newSlackReviewRequest(sc, rev, "appdb", statement)
+
+	// Without these two a click cannot find the review: the id becomes the
+	// message metadata and the prefix of every button id.
+	assert.Equal(t, rev.ID, req.ID)
+	assert.Equal(t, rev.SessionID, req.SessionID)
+
+	assert.Equal(t, "payments-sidecar", req.Name, "which environment asked")
+	assert.Equal(t, "appdb", req.Connection, "which listener it arrived on")
+	assert.Equal(t, reviewSlackType, req.ConnectionType)
+	assert.Equal(t, reviewOwnerEmail, req.Email)
+	assert.Equal(t, statement, req.Script, "the statement is what is being approved")
+
+	assert.ElementsMatch(t, []string{types.GroupAdmin, types.GroupApprover}, req.ApprovalGroups,
+		"one button pair per eligible role")
+	assert.ElementsMatch(t, req.ApprovalGroups, req.UserGroups,
+		"Groups renders unconditionally, so it says who may act rather than nothing")
+
+	// The line renders unconditionally, so an empty value would show a broken
+	// link. Until there is a page for one review, it points at the home page.
+	assert.NotEmpty(t, req.WebappURL, "an empty url renders as a dead More details link")
+	assert.Equal(t, appconfig.Get().FullApiURL(), req.WebappURL)
+	assert.True(t, strings.HasSuffix(req.WebappURL, "/hoop"),
+		"ApiURL drops a configured path prefix and lands the approver outside the app")
+	assert.NotContains(t, req.WebappURL, "/sessions/",
+		"the control plane serves no /sessions route")
+
+	assert.Empty(t, req.SlackChannels, "a sidecar review has no connection, so the org default is the only destination")
+	assert.Nil(t, req.SessionTime, "a sidecar review grants no access window")
 }
