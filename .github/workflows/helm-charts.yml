@@ -101,3 +101,28 @@ jobs:
           guard "admin on a wrong port"   --set config.admin.listen=0.0.0.0:9901
 
           echo "sidecar chart renders hoophq/hoopsidecar on 19000 and all six guards fire"
+
+          # Two releases in one namespace must be independent: the chart is
+          # installed once per upstream it fronts. A hardcoded resource name or
+          # a selector without the instance label makes the second install
+          # adopt the first one's pods, which routes a client to the wrong
+          # database and looks like a working deploy.
+          # An array, not a string: the flags must stay separate words without
+          # relying on unquoted expansion.
+          base=(--set config.admin.listen=0.0.0.0:19000
+                --set serviceAccount.create=true
+                --set extraSecret.K=v)
+          helm template pg-lane    "$chart" "${base[@]}" > /tmp/rel1.yaml
+          helm template mssql-lane "$chart" "${base[@]}" > /tmp/rel2.yaml
+          names() { grep -E '^  name: ' "$1" | sort -u; }
+          if comm -12 <(names /tmp/rel1.yaml) <(names /tmp/rel2.yaml) | grep -q .; then
+            echo "::error::two sidecar releases share a resource name:"
+            comm -12 <(names /tmp/rel1.yaml) <(names /tmp/rel2.yaml)
+            exit 1
+          fi
+          grep -q 'app.kubernetes.io/instance: pg-lane' /tmp/rel1.yaml \
+            || { echo "::error::sidecar selector lost its instance label"; exit 1; }
+          grep -q 'app.kubernetes.io/instance: mssql-lane' /tmp/rel1.yaml \
+            && { echo "::error::sidecar release pg-lane leaked mssql-lane labels"; exit 1; }
+
+          echo "two sidecar releases in one namespace share no resource name or selector"

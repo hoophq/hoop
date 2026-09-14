@@ -66,7 +66,10 @@ metadata:
   name: hoopsidecar-lanes
 spec:
   selector:
-    app: hoopsidecar          # set by this chart
+    # Both labels. The instance label is what keeps this Service pointed at
+    # one release's pods when several are installed in the namespace.
+    app.kubernetes.io/name: hoopsidecar
+    app.kubernetes.io/instance: <your release name>
   ports:
     - {name: postgres, port: 15432, targetPort: 15432}
 ```
@@ -103,12 +106,13 @@ under `deploy/docker-compose/` binds:
 | `probe.initialDelaySeconds`, `probe.periodSeconds` | Probe timing. The port is fixed at 19000 |
 | `service.annotations` | Annotations on the Service |
 | `extraVolumes` / `extraVolumeMounts` | For what the config references by path: CA files, credentials |
+| `nameOverride`, `fullnameOverride` | Change the name chart-owned resources are built from |
 | `replicas` | Default `1` |
 | `deploymentStrategy` | Default `RollingUpdate` |
 | `resources` | CPU/memory requests and limits |
 | `nodeSelector`, `tolerations`, `affinity` | Pod assignment |
 | `podAnnotations`, `deploymentAnnotations` | Annotations |
-| `serviceAccount.create`, `serviceAccount.annotations` | Service account |
+| `serviceAccount.create`, `serviceAccount.name`, `serviceAccount.annotations` | Service account. `name` with `create: false` points at an existing one (GKE Workload Identity) |
 
 The chart reads the config document only to check that admin is on 19000.
 Everything the

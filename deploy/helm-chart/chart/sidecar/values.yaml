@@ -4,6 +4,18 @@
 
 # Refer to this guide for more details: https://hoop.dev/docs/setup/deployment/overview
 
+# -- Override the name every chart-owned resource is built from. The default
+# is "hoopsidecar", prefixed with the release name, so two installs in one
+# namespace do not collide: `helm install pg-lane` owns pg-lane-hoopsidecar,
+# `helm install mssql-lane` owns mssql-lane-hoopsidecar. A release named
+# hoopsidecar collapses to the bare name.
+#
+# nameOverride changes the base; fullnameOverride replaces the whole name and
+# drops the release prefix. Both feed the Deployment's selector, which is
+# immutable — changing either on a live release makes `helm upgrade` fail.
+nameOverride: ''
+fullnameOverride: ''
+
 # -- Define a custom image configuration
 image: {}
   # repository: hoophq/hoopsidecar
@@ -219,5 +231,11 @@ deploymentAnnotations: {}
 serviceAccount:
   # Specifies whether a service account should be created
   create: false
+  # Name of the service account. With create: true this names the one the
+  # chart makes, defaulting to the release's full name. With create: false it
+  # names one that already exists — the shape GKE Workload Identity wants, so
+  # an analyzer reaches Vertex with no credential on disk. Empty and
+  # create: false means the pod uses the namespace default.
+  name: ''
   # Annotations to add to the service account
   annotations: {}

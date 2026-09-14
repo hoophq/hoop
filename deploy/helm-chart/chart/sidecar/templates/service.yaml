@@ -2,9 +2,9 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: hoopsidecar
+  name: {{ include "hoopsidecar.fullname" . }}
   labels:
-    app: hoopsidecar
+    {{- include "hoopsidecar.labels" . | nindent 4 }}
   {{- with .Values.service.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
@@ -12,7 +12,7 @@ metadata:
 spec:
   type: {{ .Values.service.type | default "ClusterIP" }}
   selector:
-    app: hoopsidecar
+    {{- include "hoopsidecar.selectorLabels" . | nindent 4 }}
   # The admin server only: /healthz, /stats, /config, /events, /api/*.
   # To reach a lane from outside the pod, add a Service of your own with the
   # same selector and the ports your config binds — see the chart README.

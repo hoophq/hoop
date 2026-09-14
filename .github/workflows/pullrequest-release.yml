@@ -962,6 +962,11 @@ jobs:
     needs:
       - docker-publish-hoopgateway-multiarch
       - docker-publish-hoopagent-multiarch
+      # build-helm-chart packages hoopsidecar-chart, whose image default is
+      # hoophq/hoopsidecar:latest. Publishing the chart before the image exists
+      # ships a chart that pulls a stale tag, or none at all. The gateway and
+      # agent charts are gated the same way, by the two jobs above.
+      - docker-publish-hoopsidecar
 
     steps:
       - name: Checkout Hoop

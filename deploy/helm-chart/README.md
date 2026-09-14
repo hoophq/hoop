@@ -94,7 +94,11 @@ hoop start sidecar --config sidecar-config.yaml --validate
 
 Only the admin port is declared and published. Lane ports differ per config, so
 a lane is reached through whatever fronts the pod — an Envoy sidecar over
-loopback, or a Service of your own selecting `app: hoopsidecar`.
+loopback, or a Service of your own carrying the chart's selector labels
+(`app.kubernetes.io/name` and `app.kubernetes.io/instance`).
+
+Every resource is named after its release, so installing the chart once per
+upstream in the same namespace is safe.
 
 ## Installing the clean (AGPL/SSPL-free) line
 

@@ -1,4 +1,90 @@
 {{/*
+Release-aware names. The sidecar chart is installed once per upstream it
+fronts — the README says as many times as you have upstreams — so every
+chart-owned resource carries the release name. Two installs in one namespace
+must not fight over a Deployment called "hoopsidecar".
+
+The base is the literal "hoopsidecar" rather than .Chart.Name, which is
+"hoopsidecar-chart" and would read as a duplicate in every resource name. A
+release named after the chart collapses to the bare name, so
+`helm install hoopsidecar ...` still produces "hoopsidecar" and not
+"hoopsidecar-hoopsidecar".
+*/}}
+{{- define "hoopsidecar.name" -}}
+{{- default "hoopsidecar" .Values.nameOverride | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "hoopsidecar.fullname" -}}
+{{- if .Values.fullnameOverride -}}
+{{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" -}}
+{{- else -}}
+{{- $name := include "hoopsidecar.name" . -}}
+{{- if contains $name .Release.Name -}}
+{{- .Release.Name | trunc 63 | trimSuffix "-" -}}
+{{- else -}}
+{{- printf "%s-%s" .Release.Name $name | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Selector labels. The instance label is what isolates one release from another:
+without it a second install's Deployment selects the first install's pods, and
+its Service sends a client's Postgres session to the wrong upstream.
+
+These go into the Deployment's selector, which is IMMUTABLE once applied. They
+are settled now, before the chart's first release, and must not be edited after
+one: a changed selector makes `helm upgrade` fail on an existing install.
+*/}}
+{{- define "hoopsidecar.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "hoopsidecar.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end -}}
+
+{{- define "hoopsidecar.labels" -}}
+helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
+{{ include "hoopsidecar.selectorLabels" . }}
+{{- if .Chart.AppVersion }}
+app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+{{- end }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- end -}}
+
+{{/*
+The ServiceAccount the pod runs as. `serviceAccount.name` names one this chart
+does not create — the shape GKE Workload Identity wants, which is how an
+analyzer reaches Vertex with no credential on disk.
+*/}}
+{{- define "hoopsidecar.serviceAccountName" -}}
+{{- if .Values.serviceAccount.create -}}
+{{- default (include "hoopsidecar.fullname" .) .Values.serviceAccount.name -}}
+{{- else -}}
+{{- .Values.serviceAccount.name | default "" -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Names of the resources this chart owns. The ConfigMap is the exception the
+caller may override: `existingConfigMap` names one somebody else made, so it is
+used verbatim and never rewritten through fullname.
+*/}}
+{{- define "hoopsidecar.configMapName" -}}
+{{- if .Values.existingConfigMap -}}
+{{- .Values.existingConfigMap -}}
+{{- else -}}
+{{- printf "%s-config" (include "hoopsidecar.fullname" .) -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "hoopsidecar.envSecretName" -}}
+{{- printf "%s-env" (include "hoopsidecar.fullname" .) -}}
+{{- end -}}
+
+{{- define "hoopsidecar.extraEnvSecretName" -}}
+{{- printf "%s-extra-env" (include "hoopsidecar.fullname" .) -}}
+{{- end -}}
+
+{{/*
 Where the rendered config document is mounted. One place, because the mount,
 the volume and HOOP_SIDECAR_CONFIG all have to agree.
 */}}

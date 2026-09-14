@@ -2,7 +2,9 @@
 apiVersion: v1
 kind: Secret
 metadata:
-  name: extra-sidecar-config
+  name: {{ include "hoopsidecar.extraEnvSecretName" $ }}
+  labels:
+    {{- include "hoopsidecar.labels" $ | nindent 4 }}
 type: Opaque
 stringData:
   {{- range $KEY, $VAL := . }}
