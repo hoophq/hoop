@@ -44,6 +44,62 @@ helm upgrade --install hoopagent https://releases.hoop.dev/release/$VERSION/hoop
     --set 'config.HOOP_KEY='
 ```
 
+## Installing the inspection sidecar
+
+`hoopsidecar-chart` deploys the inspection relay: it decodes the wire protocol
+between a client and a database or API, evaluates each statement against
+policy, records an audit trail, and masks sensitive values on the way back. It
+is independent of the gateway and agent charts — install it on its own, as many
+times as you have upstreams to front.
+
+Everything the relay does is decided by the config document under `config:`.
+There is no startable default, so the chart refuses to render a Deployment that
+could not start: a config naming no listeners, an admin server on a port other
+than 19000, a control plane with no token. See
+[chart/sidecar/README.md](./chart/sidecar/README.md) for the full reference.
+
+```sh
+cat - > ./sidecar-values.yaml <<EOF
+config:
+  # Required, and on 19000: the chart probes /healthz there.
+  admin:
+    listen: '0.0.0.0:19000'
+  audit:
+    file: '-'          # stdout, for the container log pipeline
+  mask:
+    rules:
+      - {name: emails, entities: [EMAIL_ADDRESS], strategy: redact}
+  listeners:
+    - name: appdb
+      protocol: postgres
+      listen: '0.0.0.0:15432'
+      upstream: appdb.default.svc.cluster.local:5432
+EOF
+```
+
+```sh
+VERSION=$(curl -s https://releases.hoop.dev/release/latest.txt)
+helm upgrade --install hoopsidecar \
+  https://releases.hoop.dev/release/$VERSION/hoopsidecar-chart-$VERSION.tgz \
+  -f sidecar-values.yaml
+```
+
+Validate a config change before it reaches a pod. This takes the config
+document itself — everything nested under `config:` above, with that key
+stripped — not the values file:
+
+```sh
+hoop start sidecar --config sidecar-config.yaml --validate
+```
+
+Only the admin port is declared and published. Lane ports differ per config, so
+a lane is reached through whatever fronts the pod — an Envoy sidecar over
+loopback, or a Service of your own carrying the chart's selector labels
+(`app.kubernetes.io/name` and `app.kubernetes.io/instance`).
+
+Every resource is named after its release, so installing the chart once per
+upstream in the same namespace is safe.
+
 ## Installing the clean (AGPL/SSPL-free) line
 
 `hoop-ng-chart` and `hoopagent-ng-chart` are drop-in equivalents of
