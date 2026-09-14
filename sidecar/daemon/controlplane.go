@@ -67,6 +67,13 @@ type controlPlane struct {
 	// state.
 	lastRaw []byte
 
+	// license is the document the plane sent, kept apart from the config
+	// file's own `license` key so the two sources stay distinguishable.
+	// Setup ranks this above every local source, and every message about
+	// the license names where it came from; folding it into Config.License
+	// would tell an operator their file is in force when it is not.
+	license string
+
 	// imported reports that this boot seeded the plane with the local
 	// file's document because the plane held none; Run logs it once.
 	imported bool
@@ -159,9 +166,9 @@ func resolveSidecarToken(flagValue string) (value, source string) {
 // The two never merge. A plane-connected process serves what the plane sent:
 // no operator can predict which half of a merged config wins, the same
 // reason normalize refuses a field written in two spellings. The file keeps
-// three jobs in plane mode: naming the URL, naming a license (the documented
-// precedence keeps the config file as a license source, and the plane sends
-// none today), and seeding a plane that holds no configuration yet. That
+// three jobs in plane mode: naming the URL, naming a license (a fallback for
+// a plane whose organization has none; a plane that sends one outranks it),
+// and seeding a plane that holds no configuration yet. That
 // last one is the connect journey: a handshake answered "nothing is
 // assigned" imports the file's whole document, so a standalone sidecar
 // connects by adding the URL and passing the token, nothing else. Once the
@@ -225,11 +232,17 @@ func resolveConfigSource(local *Config, tokenFlag string) (*Config, error) {
 	if len(cfg.Listeners) == 0 {
 		return nil, fmt.Errorf("the control plane at %s sent a config with no listeners", planeURL)
 	}
-	if local != nil && cfg.License == "" {
+	// The plane's license moves to the connection and the file's key goes
+	// back where it was. Setup ranks the two; nothing here decides which
+	// one wins.
+	planeLicense := cfg.License
+	cfg.License = ""
+	if local != nil {
 		cfg.License = local.License
 	}
 	cfg.ControlPlaneURL = planeURL
-	cfg.cp = &controlPlane{url: planeURL, urlSource: urlSource, token: token, lastRaw: raw, imported: imported}
+	cfg.cp = &controlPlane{url: planeURL, urlSource: urlSource, token: token,
+		lastRaw: raw, imported: imported, license: planeLicense}
 	if !imported && local != nil {
 		cfg.cp.fileListeners = len(local.Listeners)
 	}
@@ -349,9 +362,11 @@ func rawDeclaresListeners(raw []byte) bool {
 // concurrent author wins the race and this boot serves their document.
 //
 // The pushed document drops control_plane_url and license. The URL is
-// connection metadata this process already resolved, and the license stays
-// a file-side source (the documented precedence), not a row every fleet
-// admin can read.
+// connection metadata this process already resolved, and the license belongs
+// to the organization, not to this sidecar's row: the plane serves its own
+// on every handshake, and a copy stored here would go stale the day it is
+// renewed. The plane refuses the key as well; this keeps the refusal from
+// ever being reached.
 func importLocalConfig(planeURL, token string, local *Config) (raw []byte, pushed bool, err error) {
 	if local == nil || len(local.Listeners) == 0 {
 		return nil, false, fmt.Errorf("the control plane at %s has no configuration for this sidecar; "+
