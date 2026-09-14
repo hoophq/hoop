@@ -1,4 +1,5 @@
 import { Group, Stack, Text } from '@mantine/core'
+import Alert from '@/components/Alert'
 import Button from '@/components/Button'
 import Modal from '@/components/Modal'
 

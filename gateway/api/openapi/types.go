@@ -299,6 +299,13 @@ type SidecarUpdateRequest struct {
 	Configuration json.RawMessage `json:"configuration" binding:"required" swaggertype:"object"`
 }
 
+type SidecarPatchRequest struct {
+	// A partial daemon configuration. Only the keys present are updated; the
+	// rest of the stored document is left unchanged. load_from_disk false
+	// clears the key and hands the document back to the control plane.
+	Configuration json.RawMessage `json:"configuration" binding:"required" swaggertype:"object"`
+}
+
 type SidecarResponse struct {
 	// Unique identifier
 	ID string `json:"id" readonly:"true" format:"uuid"`

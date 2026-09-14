@@ -1,8 +1,11 @@
 package daemon
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -534,5 +537,446 @@ func TestTheSameDocumentIsHandledOnce(t *testing.T) {
 	}
 	if rl.gen != 1 {
 		t.Fatalf("generation = %d; the duplicate was re-applied", rl.gen)
+	}
+}
+
+// diskAnswer is what the plane sends a sidecar whose configuration it has
+// released: the instruction and nothing that could configure a lane.
+const diskAnswer = `{"listeners":null,"audit":{"file":""},"admin":{"listen":""},"log_level":"","load_from_disk":true}`
+
+// localFileConfig declares the one lane a disk-mode sidecar must keep
+// serving, under a name no plane answer in this file uses.
+const localFileConfig = `{"listeners":[{"name":"localdb","protocol":"postgres","listen":":1","upstream":"h:5432"}]}`
+
+// The plane released the configuration: the file's listeners run, the plane
+// is still connected for the heartbeat, and nothing was imported — a
+// listener-less answer must not be mistaken for an unconfigured sidecar.
+func TestADiskModeAnswerRunsTheLocalFile(t *testing.T) {
+	srv, calls := planeServer(t, http.StatusOK, diskAnswer)
+	t.Setenv(ControlPlaneURLEnv, srv.URL)
+	t.Setenv(SidecarTokenEnv, "hsc_x")
+
+	cfg, _, err := SetupWith(writeConfig(t, localFileConfig), nil, nil)
+	if err != nil {
+		t.Fatalf("SetupWith: %v", err)
+	}
+	if len(cfg.Listeners) != 1 || cfg.Listeners[0].Name != "localdb" {
+		t.Fatalf("the file's listeners did not become the running config: %+v", cfg.Listeners)
+	}
+	if url, _, ok := cfg.ControlPlane(); !ok || url != srv.URL {
+		t.Errorf("ControlPlane() = %q, %v; a disk-mode sidecar stays registered", url, ok)
+	}
+	if !cfg.cp.diskMode {
+		t.Error("diskMode is not set, so Run and the heartbeat cannot tell the source")
+	}
+	if cfg.cp.fileListeners != 0 {
+		t.Errorf("fileListeners = %d; Run would warn that listeners it is serving are ignored",
+			cfg.cp.fileListeners)
+	}
+	if len(*calls) != 1 {
+		t.Fatalf("plane calls = %v, want one handshake and no import", *calls)
+	}
+	if (*calls)[0].path != controlPlaneHandshakePath {
+		t.Errorf("path = %q, want the handshake", (*calls)[0].path)
+	}
+}
+
+func TestDiskModeWithoutAConfigFileStopsStartup(t *testing.T) {
+	srv, _ := planeServer(t, http.StatusOK, diskAnswer)
+	t.Setenv(ControlPlaneURLEnv, srv.URL)
+	t.Setenv(SidecarTokenEnv, "hsc_x")
+
+	_, _, err := SetupWith("", nil, nil)
+	if err == nil {
+		t.Fatal("a disk-mode answer with no config file was accepted")
+	}
+	if !strings.Contains(err.Error(), "no config file was given") {
+		t.Errorf("the error does not name the missing file: %v", err)
+	}
+}
+
+// A file whose only job was naming the plane has nothing to run once the
+// plane releases the configuration, and says so.
+func TestDiskModeWithAListenerLessFileStopsStartup(t *testing.T) {
+	srv, _ := planeServer(t, http.StatusOK, diskAnswer)
+	t.Setenv(SidecarTokenEnv, "hsc_x")
+	t.Setenv(ControlPlaneURLEnv, "")
+
+	_, _, err := SetupWith(writeConfig(t, `{"control_plane_url":"`+srv.URL+`"}`), nil, nil)
+	if err == nil {
+		t.Fatal("a disk-mode answer with a listener-less file was accepted")
+	}
+	if !strings.Contains(err.Error(), "declares no listeners") {
+		t.Errorf("the error does not name the problem: %v", err)
+	}
+}
+
+// The license the plane sends in disk mode outranks the file's "license"
+// key. Only the last document licensetest signs verifies (the trust root is
+// process-wide), so a wrong precedence here fails startup outright instead
+// of quietly reporting the file's license.
+func TestThePlaneLicenseOutranksTheFileKeyInDiskMode(t *testing.T) {
+	fileDoc := licensetest.Document(t, licensetest.Enterprise())
+	planePayload := licensetest.Enterprise()
+	planePayload.Description = "from the plane"
+	planeDoc := licensetest.Document(t, planePayload)
+
+	answer, err := json.Marshal(map[string]any{"load_from_disk": true, "license": planeDoc})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv, _ := planeServer(t, http.StatusOK, string(answer))
+	t.Setenv(ControlPlaneURLEnv, srv.URL)
+	t.Setenv(SidecarTokenEnv, "hsc_x")
+
+	file, err := json.Marshal(map[string]any{
+		"listeners": []map[string]string{
+			{"name": "localdb", "protocol": "postgres", "listen": ":1", "upstream": "h:5432"},
+		},
+		"license": fileDoc,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err := SetupWith(writeConfig(t, string(file)), nil, nil)
+	if err != nil {
+		t.Fatalf("SetupWith: %v", err)
+	}
+	if cfg.Licensing().State() != license.StateValid {
+		t.Fatalf("license state = %q, want valid", cfg.Licensing().State())
+	}
+	if got := cfg.Licensing().License.Payload.Description; got != "from the plane" {
+		t.Errorf("license description = %q; the plane's license did not win", got)
+	}
+}
+
+// The entry belongs to the plane. A file carrying it is refused rather than
+// ignored: two ways to say the same thing is two ways to get it wrong.
+func TestADiskModeFlagInTheConfigFileIsRefused(t *testing.T) {
+	srv, calls := planeServer(t, http.StatusOK, planeConfig)
+	t.Setenv(ControlPlaneURLEnv, srv.URL)
+	t.Setenv(SidecarTokenEnv, "hsc_x")
+
+	_, _, err := SetupWith(writeConfig(t, `{"load_from_disk":true,`+
+		`"listeners":[{"name":"localdb","protocol":"postgres","listen":":1","upstream":"h:5432"}]}`), nil, nil)
+	if err == nil {
+		t.Fatal("a config file setting load_from_disk was accepted")
+	}
+	if !strings.Contains(err.Error(), "set by the control plane") {
+		t.Errorf("the error does not say who sets it: %v", err)
+	}
+	if len(*calls) != 0 {
+		t.Errorf("the plane was contacted %d time(s) despite the refusal", len(*calls))
+	}
+}
+
+// A file may not carry the key at all, in either spelling: "false" beside a
+// plane that says true is the contradiction that would otherwise run from
+// disk while the file asked for the opposite.
+func TestADiskModeFlagSetFalseInTheConfigFileIsRefused(t *testing.T) {
+	srv, calls := planeServer(t, http.StatusOK, planeConfig)
+	t.Setenv(ControlPlaneURLEnv, srv.URL)
+	t.Setenv(SidecarTokenEnv, "hsc_x")
+
+	_, _, err := SetupWith(writeConfig(t, `{"load_from_disk":false,`+
+		`"listeners":[{"name":"localdb","protocol":"postgres","listen":":1","upstream":"h:5432"}]}`), nil, nil)
+	if err == nil {
+		t.Fatal(`a config file setting load_from_disk to false was accepted`)
+	}
+	if !strings.Contains(err.Error(), "set by the control plane") {
+		t.Errorf("the error does not say who sets it: %v", err)
+	}
+	if len(*calls) != 0 {
+		t.Errorf("the plane was contacted %d time(s) despite the refusal", len(*calls))
+	}
+}
+
+// An admin can turn the flag on between the startup handshake and the import
+// push. The plane refuses the push and serves the disk answer; the boot runs
+// its file rather than reporting a plane that "still answers without
+// listeners".
+func TestAFlipDuringTheImportRunsTheLocalFile(t *testing.T) {
+	var mu sync.Mutex
+	flipped := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		switch {
+		case r.Method == http.MethodPut:
+			// The flag landed just now, so the plane will not adopt.
+			flipped = true
+			w.WriteHeader(http.StatusConflict)
+			_, _ = w.Write([]byte(`{"message":"this sidecar loads its configuration from disk"}`))
+		case flipped:
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(diskAnswer))
+		default:
+			w.WriteHeader(http.StatusPreconditionFailed)
+			_, _ = w.Write([]byte(`{"message":"no configuration is assigned to this sidecar"}`))
+		}
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv(ControlPlaneURLEnv, srv.URL)
+	t.Setenv(SidecarTokenEnv, "hsc_x")
+
+	cfg, _, err := SetupWith(writeConfig(t, localFileConfig), nil, nil)
+	if err != nil {
+		t.Fatalf("SetupWith: %v", err)
+	}
+	if len(cfg.Listeners) != 1 || cfg.Listeners[0].Name != "localdb" {
+		t.Fatalf("the file's listeners did not become the running config: %+v", cfg.Listeners)
+	}
+	if !cfg.cp.diskMode {
+		t.Error("diskMode is not set after the flip was discovered by the import")
+	}
+}
+
+// The plane keeps the config file it was handed, so a Loader that caches its
+// result must not come back holding anything this boot resolved.
+func TestADiskModeBootDoesNotMutateTheLoadedConfig(t *testing.T) {
+	srv, _ := planeServer(t, http.StatusOK, diskAnswer)
+	t.Setenv(ControlPlaneURLEnv, srv.URL)
+	t.Setenv(SidecarTokenEnv, "hsc_x")
+
+	local, err := LoadConfigBytes([]byte(localFileConfig))
+	if err != nil {
+		t.Fatalf("LoadConfigBytes: %v", err)
+	}
+	before, err := json.Marshal(local)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err := SetupWith("cached", func(string) (*Config, error) { return local, nil }, nil)
+	if err != nil {
+		t.Fatalf("SetupWith: %v", err)
+	}
+	if cfg == local {
+		t.Fatal("the running config is the loader's own value; a second Setup would inherit this boot")
+	}
+	after, err := json.Marshal(local)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Errorf("the loader's config was rewritten by this boot:\nbefore %s\nafter  %s", before, after)
+	}
+	if local.cp != nil {
+		t.Error("the loader's config carries this boot's connection")
+	}
+}
+
+func testLogger() (*slog.Logger, *strings.Builder) {
+	var b strings.Builder
+	return slog.New(slog.NewTextHandler(&b, nil)), &b
+}
+
+// The plane taking the configuration back reaches the running lanes: its
+// document goes to the reloader like any other drift, so rules the plane
+// authored apply without a restart. The answer carries load_from_disk
+// explicitly, which must not read as a change beyond the rules.
+func TestATakeoverAppliesThePlanesRules(t *testing.T) {
+	rl, _ := testReloader(t, reloadBase)
+	log, out := testLogger()
+	cp := &controlPlane{url: "http://plane", token: "hsc_x", diskMode: true, fileDoc: []byte(reloadBase)}
+
+	drifted := editJSON(t, reloadBase, `"words": ["drop table"]`, `"words": ["truncate"]`)
+	drifted = editJSON(t, drifted, `"log_level": "info"`, `"log_level": "info", "load_from_disk": false`)
+	cp.handleAnswer(log, rl, []byte(drifted), nil)
+	if rl.gen != 1 {
+		t.Fatalf("generation = %d; the plane's rules did not reach the running lanes; log:\n%s", rl.gen, out)
+	}
+	if cp.diskMode {
+		t.Error("the process still reports the config file as its source")
+	}
+	// And the same answer again is one document, handled once.
+	cp.handleAnswer(log, rl, []byte(drifted), nil)
+	if rl.gen != 1 {
+		t.Errorf("generation = %d; the unchanged document was re-applied", rl.gen)
+	}
+}
+
+// The release reaches them too, from the other side: the file's own document
+// goes to the reloader, so the rules the file declares apply without a
+// restart.
+func TestAReleaseAppliesTheConfigFile(t *testing.T) {
+	rl, _ := testReloader(t, reloadBase)
+	log, out := testLogger()
+	// A plane-owned boot whose file differs from the plane's document in its
+	// rules alone, which is what a live process can swap.
+	fileDoc := editJSON(t, reloadBase, `"words": ["drop table"]`, `"words": ["truncate"]`)
+	cp := &controlPlane{url: "http://plane", token: "hsc_x", fileDoc: []byte(fileDoc)}
+
+	cp.handleAnswer(log, rl, []byte(diskAnswer), nil)
+	if rl.gen != 1 {
+		t.Fatalf("generation = %d; the config file's rules did not reach the running lanes; log:\n%s", rl.gen, out)
+	}
+	if !cp.diskMode {
+		t.Error("the process does not report the config file as its source")
+	}
+	if rl.lastHandled == nil {
+		t.Error("the reloader was not told which document is now running")
+	}
+}
+
+// Nothing to switch to: a process started without a config file cannot obey
+// a release, and says what would make it possible.
+func TestAReleaseWithoutAConfigFileAsksForOne(t *testing.T) {
+	rl, _ := testReloader(t, reloadBase)
+	log, out := testLogger()
+	cp := &controlPlane{url: "http://plane", token: "hsc_x"}
+
+	cp.handleAnswer(log, rl, []byte(diskAnswer), nil)
+	cp.handleAnswer(log, rl, []byte(diskAnswer), nil)
+	if rl.gen != 0 {
+		t.Fatalf("generation = %d; something was applied with no config file to apply", rl.gen)
+	}
+	if got := strings.Count(out.String(), "without a config file"); got != 1 {
+		t.Errorf("the advice was logged %d time(s), want once; log:\n%s", got, out)
+	}
+
+	// The plane taking it back makes that advice stale, so the next release
+	// has to say it again rather than pass in silence.
+	cp.handleAnswer(log, rl, []byte(reloadBase), nil)
+	cp.handleAnswer(log, rl, []byte(diskAnswer), nil)
+	if got := strings.Count(out.String(), "without a config file"); got != 2 {
+		t.Errorf("the second release advised %d time(s) in total, want 2; log:\n%s", got, out)
+	}
+}
+
+// A release this process can only half apply keeps ADR-0014's boundary: the
+// lanes it cannot rebuild stay, and the operator is told what a restart
+// would change.
+func TestAReleaseBeyondTheRulesAsksForARestart(t *testing.T) {
+	rl, _ := testReloader(t, reloadBase)
+	log, out := testLogger()
+	fileDoc := editJSON(t, reloadBase, `"upstream": "h:5432"`, `"upstream": "other:5432"`)
+	cp := &controlPlane{url: "http://plane", token: "hsc_x", fileDoc: []byte(fileDoc)}
+
+	cp.handleAnswer(log, rl, []byte(diskAnswer), nil)
+	if rl.gen != 0 {
+		t.Fatalf("generation = %d; a lane was rebuilt live; log:\n%s", rl.gen, out)
+	}
+	if !strings.Contains(out.String(), "restart to apply it") {
+		t.Errorf("the operator was not told a restart applies it; log:\n%s", out)
+	}
+}
+
+// A disk-mode boot is already serving its file, so the first heartbeat that
+// repeats the same answer must say nothing at all.
+func TestADiskModeBootIsQuietUntilSomethingMoves(t *testing.T) {
+	rl, _ := testReloader(t, reloadBase)
+	log, out := testLogger()
+	cp := &controlPlane{url: "http://plane", token: "hsc_x", diskMode: true, fileDoc: []byte(reloadBase)}
+
+	cp.handleAnswer(log, rl, []byte(diskAnswer), nil)
+	if out.String() != "" {
+		t.Errorf("an unchanged answer produced output:\n%s", out)
+	}
+	if rl.gen != 0 {
+		t.Errorf("generation = %d; the running document was re-applied", rl.gen)
+	}
+}
+
+// A license the plane moved is the one thing a running process cannot take,
+// whichever side owns the configuration when it moves.
+func TestAMovedLicenseAsksForARestart(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		answer string
+	}{
+		{"released", `{"load_from_disk":true,"license":"new"}`},
+		{"taken back", editJSON(t, reloadBase, `"log_level": "info"`, `"log_level": "info", "license": "new"`)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rl, _ := testReloader(t, reloadBase)
+			log, out := testLogger()
+			cp := &controlPlane{url: "http://plane", token: "hsc_x", diskMode: true,
+				fileDoc: []byte(reloadBase), planeLicense: "old"}
+
+			cp.handleAnswer(log, rl, []byte(tc.answer), nil)
+			if got := strings.Count(out.String(), "the license the control plane sends changed"); got != 1 {
+				t.Errorf("the moved license was reported %d time(s), want once; log:\n%s", got, out)
+			}
+			// Said once: the license does not move again on its own.
+			cp.handleAnswer(log, rl, []byte(tc.answer), nil)
+			if got := strings.Count(out.String(), "the license the control plane sends changed"); got != 1 {
+				t.Errorf("the same license was reported %d time(s); log:\n%s", got, out)
+			}
+		})
+	}
+}
+
+// A plane that took the configuration back and holds nothing yet answers
+// 412. There is no document to apply, so the operator reads what will
+// happen instead of a failed handshake.
+func TestADiskModeBootReadsA412AsTheTakeover(t *testing.T) {
+	rl, _ := testReloader(t, reloadBase)
+	log, out := testLogger()
+	cp := &controlPlane{url: "http://plane", token: "hsc_x", diskMode: true, fileDoc: []byte(reloadBase)}
+
+	cp.handleAnswer(log, rl, nil, fmt.Errorf("%w (at %s)", errPlaneHasNoConfig, "http://plane"))
+	if !strings.Contains(out.String(), "took this sidecar's configuration back but holds none") {
+		t.Errorf("the 412 was not read as the takeover; log:\n%s", out)
+	}
+	if strings.Contains(out.String(), "handshake failed") {
+		t.Errorf("the 412 was reported as a failed handshake; log:\n%s", out)
+	}
+}
+
+// Every other failure keeps degrading the way it did: the lanes run on and
+// the operator hears about the plane.
+func TestAFailedHandshakeStillDegradesInDiskMode(t *testing.T) {
+	rl, _ := testReloader(t, reloadBase)
+	log, out := testLogger()
+	cp := &controlPlane{url: "http://plane", token: "hsc_x", diskMode: true}
+
+	cp.handleAnswer(log, rl, nil, fmt.Errorf("connection refused"))
+	if !strings.Contains(out.String(), "handshake failed") {
+		t.Errorf("a transport failure was not reported; log:\n%s", out)
+	}
+	if strings.Contains(out.String(), "took this sidecar's configuration back") {
+		t.Errorf("a transport failure was read as a source flip; log:\n%s", out)
+	}
+}
+
+// The plane's license is labeled as the plane's in diagnostics, not as the
+// file's "license" key: an operator told to fix a license must be sent to the
+// right source. Disk mode is the path that folded the two together.
+func TestThePlaneLicenseIsLabeledAsThePlanes(t *testing.T) {
+	planePayload := licensetest.Enterprise()
+	planePayload.Description = "from the plane"
+	planeDoc := licensetest.Document(t, planePayload)
+
+	answer, err := json.Marshal(map[string]any{"load_from_disk": true, "license": planeDoc})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv, _ := planeServer(t, http.StatusOK, string(answer))
+	t.Setenv(ControlPlaneURLEnv, srv.URL)
+	t.Setenv(SidecarTokenEnv, "hsc_x")
+
+	cfg, _, err := SetupWith(writeConfig(t, localFileConfig), nil, nil)
+	if err != nil {
+		t.Fatalf("SetupWith: %v", err)
+	}
+	if got := cfg.Licensing().Source; got != "the control plane" {
+		t.Errorf("license source = %q; a plane license must not be labeled a file key", got)
+	}
+}
+
+// --license or HOOP_LICENSE outranks the plane, so a plane license that moves
+// cannot be applied by a restart. noteLicense must not advise one.
+func TestAMovedLicenseIsSilentWhenOverridden(t *testing.T) {
+	rl, _ := testReloader(t, reloadBase)
+	log, out := testLogger()
+	cp := &controlPlane{url: "http://plane", token: "hsc_x", diskMode: true,
+		fileDoc: []byte(reloadBase), planeLicense: "old", licenseOverridden: true}
+
+	cp.handleAnswer(log, rl, []byte(`{"load_from_disk":true,"license":"new"}`), nil)
+	if strings.Contains(out.String(), "the license the control plane sends changed") {
+		t.Errorf("a moved license was advised even though a higher source wins; log:\n%s", out)
+	}
+	if cp.planeLicense != "new" {
+		t.Errorf("planeLicense = %q; the move must still be tracked", cp.planeLicense)
 	}
 }
