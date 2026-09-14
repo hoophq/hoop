@@ -67,12 +67,19 @@ type controlPlane struct {
 	// state.
 	lastRaw []byte
 
-	// license is the document the plane sent, kept apart from the config
-	// file's own `license` key so the two sources stay distinguishable.
-	// Setup ranks this above every local source, and every message about
-	// the license names where it came from; folding it into Config.License
-	// would tell an operator their file is in force when it is not.
+	// license is the document the plane sent, empty when its organization
+	// holds none. It is the ONLY license a plane-connected process runs
+	// under; Config.License is emptied in plane mode so no reader mistakes
+	// the file's key for something in force.
 	license string
+	// ignoredLicense names the local source this process is NOT using, so
+	// Run can say so once. Empty when no local source held a document.
+	ignoredLicense string
+
+	// every overrides the heartbeat interval. Zero means heartbeatEvery,
+	// which is what every deployment runs; a test sets it so a case about
+	// what a heartbeat does is not also a case about waiting a minute.
+	every time.Duration
 
 	// imported reports that this boot seeded the plane with the local
 	// file's document because the plane held none; Run logs it once.
@@ -166,9 +173,9 @@ func resolveSidecarToken(flagValue string) (value, source string) {
 // The two never merge. A plane-connected process serves what the plane sent:
 // no operator can predict which half of a merged config wins, the same
 // reason normalize refuses a field written in two spellings. The file keeps
-// three jobs in plane mode: naming the URL, naming a license (a fallback for
-// a plane whose organization has none; a plane that sends one outranks it),
-// and seeding a plane that holds no configuration yet. That
+// two jobs in plane mode: naming the URL, and seeding a plane that holds no
+// configuration yet. Its `license` key is not one of them -- the plane owns
+// the license as well, and a local one is ignored out loud. That
 // last one is the connect journey: a handshake answered "nothing is
 // assigned" imports the file's whole document, so a standalone sidecar
 // connects by adding the URL and passing the token, nothing else. Once the
@@ -232,14 +239,11 @@ func resolveConfigSource(local *Config, tokenFlag string) (*Config, error) {
 	if len(cfg.Listeners) == 0 {
 		return nil, fmt.Errorf("the control plane at %s sent a config with no listeners", planeURL)
 	}
-	// The plane's license moves to the connection and the file's key goes
-	// back where it was. Setup ranks the two; nothing here decides which
-	// one wins.
+	// The plane's license moves to the connection, and the file's key is
+	// NOT restored: in plane mode it is not a source, so leaving it on the
+	// Config would report a license this process does not run under.
 	planeLicense := cfg.License
 	cfg.License = ""
-	if local != nil {
-		cfg.License = local.License
-	}
 	cfg.ControlPlaneURL = planeURL
 	cfg.cp = &controlPlane{url: planeURL, urlSource: urlSource, token: token,
 		lastRaw: raw, imported: imported, license: planeLicense}
@@ -490,7 +494,11 @@ func controlPlaneMessage(raw []byte) string {
 // process cannot change, and retries a document whose failure can clear
 // without another edit (ADR-0014).
 func (cp *controlPlane) heartbeat(ctx context.Context, log *slog.Logger, rl *reloader) {
-	t := time.NewTicker(heartbeatEvery)
+	every := cp.every
+	if every == 0 {
+		every = heartbeatEvery
+	}
+	t := time.NewTicker(every)
 	defer t.Stop()
 	for {
 		select {
