@@ -287,13 +287,9 @@ func nonRuleDoc(c *Config) ([]byte, error) {
 	cp.Guardrails, cp.OPA, cp.Mask, cp.Policy = nil, nil, nil, nil
 	cp.PII = nil
 	// The running config carries the resolved URL and the file's license
-	// reference; the fetched one carries neither. Neither is a lane fact,
-	// and neither is the source flag: which side owns the configuration is
-	// handleAnswer's decision, and it answers it by sending this document.
-	// Comparing it here would turn every flip into a restart.
+	// reference; the fetched one carries neither. Neither is a lane fact.
 	cp.License = ""
 	cp.ControlPlaneURL = ""
-	cp.LoadFromDisk = nil
 	listeners := make([]ListenerConfig, len(c.Listeners))
 	for i, lc := range c.Listeners {
 		lc.Guardrails, lc.OPA, lc.Mask, lc.Policy = nil, nil, nil, nil

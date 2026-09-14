@@ -76,29 +76,6 @@ type controlPlane struct {
 	// not a silent mystery.
 	fileListeners int
 
-	// diskMode is the source this process is serving right now: the local
-	// config file, rather than the document the plane holds. Startup sets
-	// it from the handshake and handleAnswer moves it, because either flip
-	// is applied to the running process, not deferred to a restart.
-	diskMode bool
-	// fileDoc is the config file's own document, retained so a plane that
-	// releases this sidecar can be obeyed without a restart. Nil when the
-	// process was started with no file, or with one declaring no listeners:
-	// there is then nothing to switch to.
-	fileDoc []byte
-	// planeLicense is the license this process resolved from the plane, so a
-	// license the plane moved is reported once rather than every minute. A
-	// license cannot be swapped into a running process; only that fact waits
-	// for a restart.
-	planeLicense string
-	// licenseOverridden reports that --license or HOOP_LICENSE is set, so
-	// those outrank any license the plane sends. noteLicense stays silent
-	// about a moved plane license then: a restart could not apply it.
-	licenseOverridden bool
-	// warned records the advice already given for the source this process
-	// cannot act on, so it is said once per flip rather than every tick.
-	warned bool
-
 	// build is the PluginBuilder SetupWith received, retained so a reload
 	// can rebuild the detector when the pii section drifts. Nil means the
 	// entry point linked no detector; a drifted pii section then stays on
@@ -191,14 +168,6 @@ func resolveSidecarToken(flagValue string) (value, source string) {
 // plane holds a configuration it owns it, and listeners still in the file
 // are ignored out loud (Run warns), never merged.
 func resolveConfigSource(local *Config, tokenFlag string) (*Config, error) {
-	// A file saying what only the plane may say is refused rather than
-	// ignored: two ways to spell the same instruction is two ways to get it
-	// wrong, and "false" in a file the plane released is the contradiction
-	// that would go unnoticed. Wrong with or without a plane, so it is
-	// checked before the URL.
-	if local != nil && local.LoadFromDisk != nil {
-		return nil, errors.New(`"load_from_disk" is set by the control plane, not by this file; remove it`)
-	}
 	fileURL := ""
 	if local != nil {
 		fileURL = local.ControlPlaneURL
@@ -228,11 +197,6 @@ func resolveConfigSource(local *Config, tokenFlag string) (*Config, error) {
 	}
 
 	raw, err := fetchControlPlaneConfig(planeURL, token, Version)
-	if err == nil {
-		if ans, ok := decodeAnswer(raw); ok && ans.releasedToDisk() {
-			return useLocalConfig(local, ans, planeURL, urlSource, token, raw)
-		}
-	}
 	imported := false
 	// A plane with nothing to serve answers 412; an older gateway answers
 	// 200 with a document naming no listeners. Same fact, same move: seed
@@ -243,12 +207,6 @@ func resolveConfigSource(local *Config, tokenFlag string) (*Config, error) {
 	}
 	if err != nil {
 		return nil, err
-	}
-	// The flip can land between the handshake and the import: the plane
-	// refuses the push and serves the disk answer, which importLocalConfig
-	// hands back untouched.
-	if ans, ok := decodeAnswer(raw); ok && ans.releasedToDisk() {
-		return useLocalConfig(local, ans, planeURL, urlSource, token, raw)
 	}
 
 	// The same strict decode, deprecation folding and validation the file
@@ -267,28 +225,11 @@ func resolveConfigSource(local *Config, tokenFlag string) (*Config, error) {
 	if len(cfg.Listeners) == 0 {
 		return nil, fmt.Errorf("the control plane at %s sent a config with no listeners", planeURL)
 	}
-	// planeLicense is what the PLANE sent; cfg.License is reset to the file's
-	// key so each keeps its own source in diagnostics. SetupWith ranks the
-	// plane above the file and below --license and HOOP_LICENSE.
-	planeLicense := cfg.License
-	cfg.License = ""
-	if local != nil {
+	if local != nil && cfg.License == "" {
 		cfg.License = local.License
 	}
 	cfg.ControlPlaneURL = planeURL
-	fileDoc, err := localDoc(local)
-	if err != nil {
-		return nil, err
-	}
-	cfg.cp = &controlPlane{
-		url:          planeURL,
-		urlSource:    urlSource,
-		token:        token,
-		lastRaw:      raw,
-		imported:     imported,
-		planeLicense: planeLicense,
-		fileDoc:      fileDoc,
-	}
+	cfg.cp = &controlPlane{url: planeURL, urlSource: urlSource, token: token, lastRaw: raw, imported: imported}
 	if !imported && local != nil {
 		cfg.cp.fileListeners = len(local.Listeners)
 	}
@@ -401,94 +342,6 @@ func rawDeclaresListeners(raw []byte) bool {
 	return json.Unmarshal(raw, &probe) == nil && len(probe.Listeners) > 0
 }
 
-// decodeAnswer decodes the plane's answer leniently rather than through
-// LoadConfigBytes: that path runs Validate, which refuses a document with no
-// listeners, and a released sidecar's answer has none by design. False means
-// the body is not a Config at all, which reaches the strict path, and that
-// error names the real problem.
-func decodeAnswer(raw []byte) (Config, bool) {
-	var cfg Config
-	if err := json.Unmarshal(raw, &cfg); err != nil {
-		return Config{}, false
-	}
-	return cfg, true
-}
-
-// releasedToDisk reports the instruction this document carries: the sidecar's
-// own config file is the source of truth, not this document.
-func (c *Config) releasedToDisk() bool {
-	return c.LoadFromDisk != nil && *c.LoadFromDisk
-}
-
-// useLocalConfig runs the local file while staying registered with the
-// plane: the plane answered that this sidecar owns its own configuration, so
-// only the license is taken from ans. Nothing else in that answer is obeyed,
-// which is why it is neither normalized nor validated here.
-func useLocalConfig(local *Config, ans Config, planeURL, urlSource, token string, raw []byte) (*Config, error) {
-	if local == nil {
-		return nil, fmt.Errorf("the control plane at %s says this sidecar loads its configuration "+
-			"from disk, but no config file was given; restart with one, or turn load_from_disk "+
-			"off in the control plane", planeURL)
-	}
-	if len(local.Listeners) == 0 {
-		return nil, fmt.Errorf("the control plane at %s says this sidecar loads its configuration "+
-			"from disk, but that file declares no listeners", planeURL)
-	}
-	// A copy, so this owns what it returns the way the plane path owns what
-	// LoadConfigBytes gave it: a Loader is free to hand out a cached config,
-	// and a second Setup must not inherit the first one's plane license,
-	// resolved URL or connection.
-	cfg := *local
-	// The file's "license" key stays in cfg.License as the file-source
-	// candidate. The plane's license rides cp.planeLicense, and SetupWith
-	// ranks it above the file and below --license and HOOP_LICENSE, so a plane
-	// license shows up as the plane's in diagnostics rather than the file's.
-	cfg.ControlPlaneURL = planeURL
-	fileDoc, err := localDoc(local)
-	if err != nil {
-		return nil, err
-	}
-	// lastRaw is the document this process SERVES, which here is the file's:
-	// the reloader compares against it, so a later answer that moves the
-	// source is drift it can act on and an unchanged one is silence.
-	//
-	// fileListeners stays zero: these listeners are being served, so Run's
-	// "the config file's listeners are ignored" warning must not fire.
-	cfg.cp = &controlPlane{
-		url:          planeURL,
-		urlSource:    urlSource,
-		token:        token,
-		lastRaw:      fileDoc,
-		diskMode:     true,
-		planeLicense: ans.License,
-		fileDoc:      fileDoc,
-	}
-	return &cfg, nil
-}
-
-// localDoc renders the config file's own document, the one a process runs
-// when the plane releases it. Nil, with no error, when there is no file to
-// run: that is the state serveFileDoc advises about. The plane's URL and the
-// license are connection facts this process already resolved, and the
-// reloader compares documents, so they are left out the same way
-// importLocalConfig leaves them out.
-func localDoc(local *Config) ([]byte, error) {
-	if local == nil || len(local.Listeners) == 0 {
-		return nil, nil
-	}
-	doc := *local
-	doc.ControlPlaneURL = ""
-	doc.License = ""
-	doc.cp = nil
-	raw, err := json.Marshal(doc)
-	if err != nil {
-		// Collapsing this into nil would read as "no file to switch to" and
-		// turn a release into wrong advice a boot later.
-		return nil, fmt.Errorf("rendering the config file's document: %w", err)
-	}
-	return raw, nil
-}
-
 // importLocalConfig seeds a plane that holds no configuration with the local
 // file's document, then returns what the plane serves afterwards, so the
 // running config still round-trips through the plane even on the boot that
@@ -526,12 +379,6 @@ func importLocalConfig(planeURL, token string, local *Config) (raw []byte, pushe
 	raw, err = fetchControlPlaneConfig(planeURL, token, Version)
 	if err != nil {
 		return nil, false, fmt.Errorf("the handshake after the configuration import failed: %w", err)
-	}
-	// An admin who turned load_from_disk on between the handshake and the
-	// push gets the refusal above and this answer: no listeners, by design.
-	// The caller's disk-mode branch takes it from here.
-	if ans, ok := decodeAnswer(raw); ok && ans.releasedToDisk() {
-		return raw, false, nil
 	}
 	// A plane that accepted the import and still answers without listeners
 	// is broken; naming that beats letting the strict decoder blame a
@@ -622,7 +469,11 @@ func controlPlaneMessage(raw []byte) string {
 //
 // Failures degrade and never stop the process: the lanes keep serving the
 // last good config, because killing a data-path proxy over a lost phone line
-// home is an outage. handleAnswer decides what each fetched document means.
+// home is an outage. Every fetched document goes to the reloader, which
+// owns the seen/handled bookkeeping: it swaps rule-only drift into the
+// running lanes, answers "restart to apply it" for everything a live
+// process cannot change, and retries a document whose failure can clear
+// without another edit (ADR-0014).
 func (cp *controlPlane) heartbeat(ctx context.Context, log *slog.Logger, rl *reloader) {
 	t := time.NewTicker(heartbeatEvery)
 	defer t.Stop()
@@ -633,104 +484,11 @@ func (cp *controlPlane) heartbeat(ctx context.Context, log *slog.Logger, rl *rel
 		case <-t.C:
 		}
 		raw, err := fetchControlPlaneConfig(cp.url, cp.token, Version)
-		cp.handleAnswer(log, rl, raw, err)
-	}
-}
-
-// handleAnswer routes one handshake result.
-//
-// Both the document and the SOURCE it comes from are drift, handled the same
-// way: the reloader receives the document the answer selects — the plane's
-// when it owns the configuration, the config file's when it has released it
-// — and decides what a live process can do with it. Rule-only differences
-// swap into the running lanes; anything a live process cannot change keeps
-// the "restart to apply it" line, and a document whose failure can clear
-// without another edit is retried (ADR-0014).
-//
-// So a flip in either direction is applied, not deferred. What cannot follow
-// it live is the license, resolved once at startup, so a license the plane
-// moved is reported instead.
-func (cp *controlPlane) handleAnswer(log *slog.Logger, rl *reloader, raw []byte, err error) {
-	if err != nil {
-		// A plane that took the configuration back and holds nothing yet
-		// answers 412. For a process running from its file that is the flip,
-		// not a broken plane, and there is no document to apply: the next
-		// start imports this file.
-		if cp.diskMode && errors.Is(err, errPlaneHasNoConfig) {
-			cp.advise(log, "the control plane took this sidecar's configuration back but holds none yet",
-				"this process keeps serving its config file; the next start imports it into the control plane")
-			return
+		if err != nil {
+			log.Warn("control plane handshake failed; serving the last good config",
+				"url", cp.url, "error", err)
+			continue
 		}
-		log.Warn("control plane handshake failed; serving the last good config",
-			"url", cp.url, "error", err)
-		return
+		rl.handle(log, raw)
 	}
-	ans, decoded := decodeAnswer(raw)
-	if decoded {
-		// Whichever side owns the configuration, the license rides the same
-		// answer and nonRuleDoc drops it, so the reloader will never report
-		// it: this is the only place it is noticed.
-		cp.noteLicense(log, ans.License)
-	}
-	if decoded && ans.releasedToDisk() {
-		cp.serveFileDoc(log, rl)
-		return
-	}
-	if cp.diskMode {
-		log.Info("the control plane took this sidecar's configuration back; applying it")
-		cp.diskMode = false
-	}
-	// Re-armed on every answer the plane owns, not only on a source change:
-	// a release this process could not obey left advice standing that the
-	// takeover made stale, and the next release deserves it again.
-	cp.warned = false
-	rl.handle(log, raw)
-}
-
-// serveFileDoc obeys an answer that released this sidecar's configuration:
-// the file's own document goes to the reloader, which applies what it can
-// and asks for a restart for the rest. An unchanged answer reaches the
-// reloader's dedupe and does nothing.
-func (cp *controlPlane) serveFileDoc(log *slog.Logger, rl *reloader) {
-	if len(cp.fileDoc) == 0 {
-		cp.advise(log, "the control plane says this sidecar loads its configuration from disk, "+
-			"but this process was started without a config file declaring listeners",
-			"restart with one, or turn load_from_disk off in the control plane")
-		return
-	}
-	if !cp.diskMode {
-		log.Info("the control plane released this sidecar's configuration; applying its config file")
-		cp.diskMode, cp.warned = true, false
-	}
-	rl.handle(log, cp.fileDoc)
-}
-
-// noteLicense reports a license the plane moved. A license cannot be swapped
-// into a running process: ResolveLicense ran at startup, above the file's
-// key and below the flag and the env var. Reported once per change, because
-// nothing about it moves again until the plane or the operator does.
-//
-// When --license or HOOP_LICENSE is set it stays silent: those outrank the
-// plane, so a restart could not apply the moved license and "restart to apply
-// it" would be wrong. The change is still tracked so it is not re-examined.
-func (cp *controlPlane) noteLicense(log *slog.Logger, license string) {
-	if license == cp.planeLicense {
-		return
-	}
-	cp.planeLicense = license
-	if cp.licenseOverridden {
-		return
-	}
-	log.Warn("the license the control plane sends changed; restart to apply it")
-}
-
-// advise says, once per source flip, what an operator has to do about a
-// state this process cannot act on. Repeating it every minute would say
-// nothing new: nothing changes until the plane or the operator moves.
-func (cp *controlPlane) advise(log *slog.Logger, msg, hint string) {
-	if cp.warned {
-		return
-	}
-	cp.warned = true
-	log.Warn(msg, "hint", hint)
 }

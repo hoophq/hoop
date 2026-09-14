@@ -263,9 +263,7 @@ happens only into an empty plane; once the plane holds a configuration it
 owns it, and listeners still in the file are ignored with a warning rather
 than merged: two authorities for one fact is the same mistake as a field
 written in two spellings. The pushed document drops `control_plane_url` and
-`license`. The file's `license` key still ranks below the flag and
-`HOOP_LICENSE`, and below the license the plane sends on any handshake,
-whether it owns the configuration or has released it. A first handshake that fails stops
+`license`, which stay file-side facts. A first handshake that fails stops
 startup, since there is nothing to serve yet.
 
 Once running, a heartbeat repeats the handshake every minute. It keeps the
@@ -278,29 +276,6 @@ the rules (listeners, audit, admin, log_level, the top-level analyzer
 section) logs `restart to apply it` instead, and a failed heartbeat changes
 nothing, because losing the phone line home must not take the data path down
 with it. ADR-0014 records the boundary.
-
-#### Which side is the source of truth
-
-The plane decides, per sidecar, whether it delivers the configuration or the
-sidecar's own config file does. The entry lives in the document the plane
-stores — `load_from_disk: true` — and an admin moves it on the sidecar's
-details page. A released sidecar gets a handshake answer carrying that flag
-and its license, nothing else: the stored listeners and rules stay in the
-row, readable and not applied, so turning the entry off serves them again.
-
-The key belongs to the plane only. A local config file that sets it, to
-either value, fails startup: two ways to say one thing is the mistake the
-ignored-listeners warning above exists to avoid. That refusal is also why
-the document a sidecar imports never carries it: the key reaches the row
-from the control plane, not from a config file.
-
-Moving the entry reaches a running sidecar on its next heartbeat, and it is
-applied there by the same rule as any other drift: the document of the
-source now in force goes through the reloader, so rules swap in place and a
-change beyond them logs `restart to apply it`. Two things still wait for a
-restart: a license the plane moved, resolved once at startup, and a release
-reaching a process started with no config file, which has nothing to switch
-to and says so.
 
 ## Configuring it: config.yaml
 
@@ -348,14 +323,13 @@ config keys, because a cap the file it limits can raise is documentation. They
 mirror the control plane's free tier, which caps the same two things per
 organization.
 
-A license Hoop signed lifts them, per feature. Four places carry one, and the
+A license Hoop signed lifts them, per feature. Three places carry one, and the
 first that holds anything decides:
 
 | Source | Spelling |
 |---|---|
 | Command line | `hoop-inspect -license …`, `hoop start sidecar --license …` |
 | Environment | `HOOP_LICENSE` |
-| Control plane | sent on the handshake when a plane is connected |
 | Config file | `license: …` |
 
 The value is a path to the document Hoop issued, or the document itself: a
@@ -370,9 +344,9 @@ license: /etc/hoop-inspect/license.json
 First wins, not first valid. A `HOOP_LICENSE` that points at nothing is an
 error rather than a reason to fall through to the config file, because a
 process that quietly ignored your environment variable will surprise you on
-the restart after the file changes. The control plane's license licenses a
-fleet without editing every file in it, and stays below the flag and the
-environment so a local override still wins.
+the restart after the file changes. The control plane will be added above the
+flag when the sidecar starts receiving a license on connection, and it will
+outrank all three.
 
 The license names the features it covers, and each one lifts its own cap:
 `guardrails` and `data-masking` are the two this process reads. A license
@@ -446,9 +420,9 @@ A verdict cannot be handed to the daemon, only earned. The flag that says a
 license verified is unexported and `license.Load` is the only thing that sets
 it, after checking the signature, so a `license.Status` built by hand reports
 `invalid` and lifts nothing. `Config.UseLicense` takes a reference rather than
-a verdict for the same reason: the control plane sends the document Hoop
-signed, and the sidecar checks that signature itself instead of trusting
-whoever is on the connection.
+a verdict for the same reason: when the control plane starts sending licenses,
+it will send the document Hoop signed and the sidecar will check that
+signature itself, instead of trusting whoever is on the connection.
 
 That leaves a test no way to run a licensed daemon, which
 `sidecar/license/licensetest` fixes honestly. It generates a keypair, points
@@ -550,10 +524,9 @@ log_level: info
 license: /etc/hoop-inspect/license.json
 
 # The Control Plane this sidecar connects to. HOOP_CONTROL_PLANE_URL outranks
-# this. When set, the handshake supplies the whole running config, and
-# listeners here are ignored with a warning — unless the plane releases this
-# sidecar (load_from_disk), when they are the ones it runs. Omit it to run
-# standalone from this file alone.
+# this. When set, the handshake supplies the whole running config and this
+# file must not also declare listeners; omit it to run standalone from this
+# file alone.
 # control_plane_url: https://cp.example.com
 
 admin:

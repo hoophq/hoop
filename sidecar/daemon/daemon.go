@@ -140,19 +140,12 @@ func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*
 	if err != nil {
 		return nil, nil, err
 	}
-	planeLicense := ""
 	if cfg.cp != nil {
 		// Retained so a pii drift from the plane rebuilds the detector the
 		// way startup would. See reloader.
 		cfg.cp.build = build
-		// noteLicense stays silent about a moved plane license when a
-		// higher-precedence source is set. Presence follows license.Resolve's
-		// rule: a whitespace-only value supplies nothing and wins nothing.
-		cfg.cp.licenseOverridden = strings.TrimSpace(o.licenseFlag) != "" ||
-			strings.TrimSpace(os.Getenv(license.EnvVar)) != ""
-		planeLicense = cfg.cp.planeLicense
 	}
-	cfg.lic = ResolveLicense(o.licenseFlag, planeLicense, cfg.License)
+	cfg.lic = ResolveLicense(o.licenseFlag, cfg.License)
 	if cfg.lic.State() == license.StateInvalid {
 		return nil, nil, cfg.lic.Err
 	}
@@ -167,16 +160,13 @@ func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*
 }
 
 // ResolveLicense picks the license a process runs under, highest precedence
-// first: the command line, then HOOP_LICENSE, then the control plane, then the
-// config file's `license` key. Licensing a fleet must not mean editing every
-// file in it. The plane sends its license on the handshake; passing it as its
-// own ref keeps a plane license labeled as the plane's in diagnostics rather
-// than as the file key.
-func ResolveLicense(flagValue, planeValue, fileValue string) license.Status {
+// first: the command line, then HOOP_LICENSE, then the config file's
+// `license` key. Licensing a fleet must not mean editing every file in it.
+// The control plane goes above all three once it sends one on connection.
+func ResolveLicense(flagValue, fileValue string) license.Status {
 	return license.Resolve(
 		license.Ref{Value: flagValue, Source: "the license flag"},
 		license.Ref{Value: os.Getenv(license.EnvVar), Source: license.EnvVar},
-		license.Ref{Value: planeValue, Source: "the control plane"},
 		license.Ref{Value: fileValue, Source: `the "license" config key`},
 	)
 }
@@ -747,7 +737,6 @@ func Run(cfg *Config, det Plugin) error {
 		log.Info("control plane connected",
 			"url", cfg.cp.url,
 			"source", cfg.cp.urlSource,
-			"load_from_disk", cfg.cp.diskMode,
 			"poll", heartbeatEvery.String())
 		if cfg.cp.imported {
 			log.Info("configuration imported into the control plane",
