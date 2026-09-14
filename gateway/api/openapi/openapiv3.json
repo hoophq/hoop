@@ -21716,7 +21716,15 @@
                 }
               }
             },
-            "description": "OK"
+            "description": "OK",
+            "headers": {
+              "hoop-sidecar-license-managed": {
+                "description": "Present when this gateway owns the licensing decision; see the handshake.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "401": {
             "content": {
@@ -21874,7 +21882,15 @@
                 }
               }
             },
-            "description": "OK"
+            "description": "OK",
+            "headers": {
+              "hoop-sidecar-license-managed": {
+                "description": "Present when this gateway owns the licensing decision, so an answer with no license means the organization holds none. A gateway older than the feature omits it, and the sidecar then keeps its own license sources.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           },
           "400": {
             "content": {

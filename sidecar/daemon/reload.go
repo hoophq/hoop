@@ -224,12 +224,28 @@ func (r *reloader) apply(log *slog.Logger, raw []byte) reloadOutcome {
 	// must leave the running dependencies untouched.
 	lanes, err := buildLanes(newCfg, det, ac)
 	if err != nil {
-		// A narrower license reaches here when the running config needs
-		// what it stopped granting. The running rules keep serving under
-		// the license they were built with until a restart, because
-		// deleting a guardrail or a mask rule from a live proxy leaks
-		// more than it saves -- the same reason watchLicense stops
-		// instead of re-applying caps.
+		if licRotated {
+			// The plane narrowed or removed the license and the running
+			// rules no longer fit under it. Keeping the old one would let
+			// a downgraded organization serve paid rules until the term
+			// ended or somebody restarted the process -- and `handle`
+			// records this document as handled, so no later heartbeat
+			// would revisit it.
+			//
+			// So the new license is published and the relay is stopped,
+			// the same controlled drain the expiry path runs: Run exits,
+			// the supervisor restarts, and buildLanes then refuses the
+			// config by name until somebody renews it or removes rules.
+			// Rules are never dropped from a live proxy to fit a smaller
+			// license; that widens what the proxy allows.
+			r.licRaw = newCfg.License
+			r.lic.set(newCfg.lic)
+			r.lic.overCap.Store(true)
+			log.Warn("the control plane's license no longer covers the running rules; "+
+				"stopping the relay so it restarts under the new one",
+				"license", newCfg.lic.Line(), "error", err)
+			return reloadRefused
+		}
 		log.Warn("the control plane sent a config the rules or the caps refuse; keeping the running rules",
 			"error", err)
 		return reloadRefused

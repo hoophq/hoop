@@ -30,6 +30,22 @@ var reservedNames = []string{"handshake", "configuration"}
 const licenseIsNotASidecarKey = `the "license" key does not belong in a sidecar configuration; ` +
 	"the organization's license is served to every sidecar automatically. Set it in Settings -> License"
 
+// licenseManagedHeader tells a sidecar that this gateway owns the licensing
+// decision, so an absent license in the answer means the organization holds
+// none rather than "this gateway does not know about the feature".
+//
+// A HEADER, not a field in the document: the sidecar decodes that body with
+// DisallowUnknownFields, so a new key would be a startup failure on every
+// build that predates it. The distinction matters because a sidecar can be
+// upgraded before the gateway it talks to. Without this, an upgraded sidecar
+// against an older gateway would read silence as an unlicensed organization
+// and discard the operator's own license, which for a config that needs the
+// paid caps is not a downgrade but a refusal to start.
+//
+// The name comes from the module that parses it, so a rename fails a build
+// instead of disabling the signal.
+const licenseManagedHeader = daemon.LicenseManagedHeader
+
 // Create Sidecar
 //
 //	@Summary		Create Sidecar
@@ -216,6 +232,7 @@ func Put(c *gin.Context) {
 //	@Param			hoop-sidecar-token	header		string							true	"The token returned when the sidecar was created"
 //	@Param			request				body		openapi.SidecarHandshakeRequest	true	"The request body resource"
 //	@Success		200				{object}	map[string]interface{}
+//	@Header			200				{string}	hoop-sidecar-license-managed	"Present when this gateway owns the licensing decision, so an answer with no license means the organization holds none. A gateway older than the feature omits it, and the sidecar then keeps its own license sources."
 //	@Failure		400,401,412,500	{object}	openapi.HTTPError
 //	@Router			/sidecars/handshake [post]
 func Handshake(c *gin.Context) {
@@ -244,6 +261,7 @@ func Handshake(c *gin.Context) {
 		return
 	}
 	recordRuntime(sidecar.ID, req.Version)
+	c.Header(licenseManagedHeader, "true")
 	c.JSON(http.StatusOK, served)
 }
 
@@ -281,9 +299,11 @@ func withOrgLicense(orgID string, cfg models.SidecarConfiguration) (daemon.Confi
 // because something read it.
 func servedConfig(cfg models.SidecarConfiguration, licenseData json.RawMessage) daemon.Config {
 	served := daemon.Config(cfg)
-	if len(licenseData) > 0 {
-		served.License = string(licenseData)
-	}
+	// Assigned unconditionally, so an organization with no license serves
+	// none. A row written before this feature can carry a `license` of its
+	// own -- the write routes only started refusing one here -- and letting
+	// that through would license a fleet the organization has unlicensed.
+	served.License = string(licenseData)
 	return served
 }
 
@@ -344,6 +364,7 @@ func ImportConfiguration(c *gin.Context) {
 //	@Produce		json
 //	@Param			hoop-sidecar-token	header		string	true	"The token returned when the sidecar was created"
 //	@Success		200		{object}	map[string]interface{}
+//	@Header			200		{string}	hoop-sidecar-license-managed	"Present when this gateway owns the licensing decision; see the handshake."
 //	@Failure		401,500	{object}	openapi.HTTPError
 //	@Router			/sidecars/configuration [get]
 func Configuration(c *gin.Context) {
@@ -357,6 +378,7 @@ func Configuration(c *gin.Context) {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the organization license")
 		return
 	}
+	c.Header(licenseManagedHeader, "true")
 	c.JSON(http.StatusOK, served)
 }
 
@@ -369,6 +391,11 @@ func toResponse(s models.Sidecar) openapi.SidecarResponse {
 		CreatedAt:     s.CreatedAt,
 		Configuration: daemon.Config(s.Configuration),
 	}
+	// A row written before this feature can carry one, and Put refuses it:
+	// handing it back would 422 an admin for a field they never authored
+	// and cannot see the purpose of. The license belongs to the
+	// organization, so it is not part of this document in either direction.
+	resp.Configuration.License = ""
 	if state := loadRuntime(s.ID); state != nil {
 		resp.Version = state.Version
 		lastSeen := state.LastSeen

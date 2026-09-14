@@ -328,7 +328,12 @@ organization.
 A license Hoop signed lifts them, per feature. Where it comes from depends on
 one thing: whether this process is connected to a control plane.
 
-**With a control plane, it is the only source.** The organization's license is
+**With a control plane that manages licensing, it is the only source.** A
+gateway older than this feature does not manage it and says so by staying
+silent, and then the three local sources below rank as they always did — an
+upgraded sidecar never loses its license to an older gateway.
+
+The organization's license is
 held once, on the organization, and written into the configuration document
 the handshake answers with; nothing is stored per sidecar, and a `license` key
 authored on a sidecar's configuration is refused. The sidecar verifies that
@@ -367,7 +372,12 @@ heartbeat, with no restart: the caps move with it and the new term is logged.
 A license REMOVED there reaches it the same way, and drops the process to the
 free tier rather than falling back to a local source — the startup path
 answers identically, so a restart never relicenses what a heartbeat
-unlicensed. A control plane that becomes unreachable changes nothing: the
+unlicensed. When the running rules no longer fit under the license that
+arrives, the relay stops rather than serving them: it drains, exits, and the
+supervisor restarts it, where the config is refused by name until somebody
+renews the license or removes rules. Rules are never dropped from a live proxy
+to fit a smaller license, for the same reason an ended term stops the process
+instead of re-applying the caps. A control plane that becomes unreachable changes nothing: the
 license it last sent keeps serving. A document that fails verification is
 logged and dropped, and the license already in use keeps serving. A license that GRANTS LESS than the running
 config needs is the one case a heartbeat cannot apply — the reload is

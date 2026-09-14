@@ -27,8 +27,23 @@ type handshakeCall struct {
 }
 
 // planeServer serves the handshake with body, capturing each call. A nil
-// check leaves the default 200 handler.
+// check leaves the default 200 handler. It answers as a CURRENT gateway: it
+// claims the licensing decision, which is what every deployment of this
+// build does.
 func planeServer(t *testing.T, status int, body string) (*httptest.Server, *[]handshakeCall) {
+	t.Helper()
+	return planeServerWith(t, status, body, true)
+}
+
+// legacyPlaneServer is a gateway older than control-plane licensing: same
+// answers, no capability header. A sidecar upgraded ahead of its gateway
+// talks to one of these.
+func legacyPlaneServer(t *testing.T, status int, body string) (*httptest.Server, *[]handshakeCall) {
+	t.Helper()
+	return planeServerWith(t, status, body, false)
+}
+
+func planeServerWith(t *testing.T, status int, body string, managesLicense bool) (*httptest.Server, *[]handshakeCall) {
 	t.Helper()
 	calls := &[]handshakeCall{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -41,6 +56,9 @@ func planeServer(t *testing.T, status int, body string) (*httptest.Server, *[]ha
 			version: req.Version,
 			path:    r.URL.Path,
 		})
+		if managesLicense && status == http.StatusOK {
+			w.Header().Set(LicenseManagedHeader, "true")
+		}
 		w.WriteHeader(status)
 		_, _ = w.Write([]byte(body))
 	}))
@@ -720,5 +738,55 @@ func TestTheImportedDocumentCarriesNoLicense(t *testing.T) {
 	}
 	if _, ok := pushed["license"]; ok {
 		t.Errorf("the imported document carries a license: %s", imported)
+	}
+}
+
+// A gateway older than this feature sends no capability header, and its
+// silence is not an answer. Reading it as "the organization has no license"
+// would take an operator's caps away the moment they upgrade the sidecar --
+// and a config that needs those caps would not start at all.
+func TestALegacyPlaneLeavesTheLocalLicenseInForce(t *testing.T) {
+	srv, _ := legacyPlaneServer(t, http.StatusOK, planeConfig)
+	t.Setenv(ControlPlaneURLEnv, srv.URL)
+	t.Setenv(SidecarTokenEnv, "hsc_x")
+	t.Setenv(license.EnvVar, licensetest.Document(t, licensetest.Enterprise()))
+
+	cfg, _, err := SetupWith("", nil, nil)
+	if err != nil {
+		t.Fatalf("SetupWith: %v", err)
+	}
+	if got := cfg.Licensing().State(); got != license.StateValid {
+		t.Fatalf("license state = %q, want valid: an older gateway's silence unlicensed the process", got)
+	}
+	if got := cfg.Licensing().Source; got != license.EnvVar {
+		t.Errorf("license source = %q, want %q", got, license.EnvVar)
+	}
+	// Nothing was ignored, so nothing is warned about.
+	if got := cfg.cp.ignoredLicense; got != "" {
+		t.Errorf("ignored source = %q, want empty against a legacy gateway", got)
+	}
+}
+
+// The same file, against a legacy gateway, keeps licensing the process: the
+// config key is a source again because the plane never claimed it.
+func TestALegacyPlaneLeavesTheFileLicenseInForce(t *testing.T) {
+	srv, _ := legacyPlaneServer(t, http.StatusOK, planeConfig)
+	t.Setenv(SidecarTokenEnv, "hsc_x")
+	t.Setenv(ControlPlaneURLEnv, "")
+	doc := licensetest.Document(t, licensetest.Enterprise())
+
+	body, err := json.Marshal(map[string]string{"control_plane_url": srv.URL, "license": doc})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err := SetupWith(writeConfig(t, string(body)), nil, nil)
+	if err != nil {
+		t.Fatalf("SetupWith: %v", err)
+	}
+	if got := cfg.Licensing().State(); got != license.StateValid {
+		t.Fatalf("license state = %q, want valid", got)
+	}
+	if got := cfg.Licensing().Source; got != fileLicenseSource {
+		t.Errorf("license source = %q, want %q", got, fileLicenseSource)
 	}
 }

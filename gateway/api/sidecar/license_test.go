@@ -39,11 +39,29 @@ func TestTheServedConfigCarriesTheOrganizationLicense(t *testing.T) {
 		"the sidecar reads the license from this key; empty means it never sees one")
 }
 
-// No license on the organization leaves the key out, so the sidecar falls
-// back to its own sources instead of loading an empty document.
+// No license on the organization serves no license.
 func TestAnOrganizationWithoutALicenseServesNoKey(t *testing.T) {
 	assert.Empty(t, servedConfig(storedConfig(), nil).License)
 	assert.Empty(t, servedConfig(storedConfig(), json.RawMessage(``)).License)
+}
+
+// A row written before this feature can carry a license of its own: the write
+// routes only started refusing one here. Serving it would license a fleet the
+// organization has unlicensed, and the organization row is the only source.
+func TestALegacyStoredLicenseIsNotServed(t *testing.T) {
+	legacy := storedConfig()
+	legacy.License = licenseDoc
+
+	assert.Empty(t, servedConfig(legacy, nil).License,
+		"a stored license outlived the organization's")
+}
+
+// And when the organization has one, it wins over whatever the row held.
+func TestTheOrganizationLicenseReplacesAStoredOne(t *testing.T) {
+	legacy := storedConfig()
+	legacy.License = `{"payload":{"description":"stale"}}`
+
+	assert.Equal(t, licenseDoc, servedConfig(legacy, json.RawMessage(licenseDoc)).License)
 }
 
 // The stored row is the caller's, loaded by the auth middleware. Writing the
@@ -61,8 +79,14 @@ func TestServingALicenseDoesNotTouchTheStoredConfiguration(t *testing.T) {
 // The UI renders it, and a license rendered there is a license an editor
 // would eventually send back.
 func TestTheAdminResponseCarriesNoLicense(t *testing.T) {
+	// The fixture CARRIES one, the way a row written before this feature
+	// does. Handing it back would 422 an admin on the round-trip, for a
+	// field they never authored.
+	legacy := storedConfig()
+	legacy.License = licenseDoc
+
 	resp := toResponse(models.Sidecar{ID: "sc-1", OrgID: "org-1", Name: "sc-a",
-		Configuration: storedConfig()})
+		Configuration: legacy})
 
 	assert.Empty(t, resp.Configuration.License)
 }

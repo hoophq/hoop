@@ -146,12 +146,12 @@ func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*
 		// way startup would. See reloader.
 		cfg.cp.build = build
 	}
-	if cfg.cp != nil {
+	if cfg.cp != nil && cfg.cp.licenseManaged {
 		// Recorded before the resolution, not after: a local license is
-		// not consulted at all in plane mode, so nothing downstream could
-		// tell there was one to warn about. cfg.License is already empty
-		// here (resolveConfigSource drops it), so the file's value comes
-		// from the file.
+		// not consulted at all under a managing plane, so nothing
+		// downstream could tell there was one to warn about. cfg.License
+		// is already empty here (resolveConfigSource drops it), so the
+		// file's value comes from the file.
 		fileLicense := ""
 		if local != nil {
 			fileLicense = local.License
@@ -197,18 +197,24 @@ func ResolveLicense(flagValue, fileValue string) license.Status {
 
 // resolveLicenseFor picks the license this process runs under.
 //
-// A control plane is the ONLY source when one is configured. Not the first of
+// A control plane that MANAGES licensing is the only source. Not the first of
 // four: the fleet's license is the fleet's, and an operator who could add one
-// from a pod's environment would make it an opinion. A plane whose
-// organization holds no license therefore runs the free tier, with whatever
-// sits in the local sources ignored and said out loud (Run warns).
+// from a pod's environment would make it an opinion. Such a plane holding no
+// license therefore runs the free tier, with whatever sits in the local
+// sources ignored and said out loud (Run warns).
 //
 // The alternative -- local sources as a fallback -- reads kinder and is
 // worse: the startup path and the heartbeat would then disagree about the
 // same state, since a license REMOVED from the plane drops a running process
 // to the free tier and a restart would license it again.
+//
+// A plane that does NOT claim the decision is a gateway older than the
+// feature. Its silence is not an answer, so the local sources rank as they
+// always did. Reading that silence as "the organization has no license"
+// would take an operator's caps away on a sidecar upgrade, and a config that
+// needs them would not start at all.
 func resolveLicenseFor(cp *controlPlane, flagValue, fileValue string) license.Status {
-	if cp != nil {
+	if cp != nil && cp.licenseManaged {
 		return license.Resolve(license.Ref{Value: cp.license, Source: PlaneLicenseSource})
 	}
 	return ResolveLicense(flagValue, fileValue)
@@ -602,6 +608,14 @@ const (
 type licenseState struct {
 	lic     atomic.Pointer[license.Status]
 	depends atomic.Bool
+	// overCap reports that the license in force no longer covers the rules
+	// the process is serving -- a plane that replaced a license with a
+	// narrower one, or removed it. The reloader sets it; the watchdog stops
+	// the relay on it, the same controlled stop an ended term gets.
+	//
+	// It is a SEPARATE fact from the term ending, because the document is
+	// perfectly valid: what ran out is the entitlement, not the time.
+	overCap atomic.Bool
 }
 
 // newLicenseState publishes the license Setup resolved, and whether the
@@ -641,7 +655,10 @@ func watchLicense(ctx context.Context, st *licenseState, every time.Duration, lo
 		notified := -1
 		var noticedTerm time.Time
 		for {
-			if !st.depends.Load() {
+			// Checked before depends: overCap is an explicit verdict the
+			// reloader reached against the running rules, not a property
+			// of the config this loop has to infer.
+			if !st.depends.Load() && !st.overCap.Load() {
 				// Nothing to take away, so nothing to watch for. Not a
 				// return: a later reload can add rules that change this.
 				select {
@@ -652,6 +669,17 @@ func watchLicense(ctx context.Context, st *licenseState, every time.Duration, lo
 				}
 			}
 			lic := st.get()
+			if st.overCap.Load() {
+				// The rules outlived the entitlement that allowed them.
+				// Same stop as an ended term, for the same reason: the
+				// alternative is deleting a guardrail or a mask rule from
+				// a live proxy, which leaks more than it saves.
+				log.Warn("the control plane's license no longer covers the rules this process "+
+					"is serving; stopping so it restarts under the new one",
+					"license", lic.Line())
+				close(expired)
+				return
+			}
 			if lic.StateAt(time.Now().UTC()) == license.StateExpired {
 				log.Warn(lic.Line())
 				close(expired)

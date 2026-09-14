@@ -9997,6 +9997,12 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        },
+                        "headers": {
+                            "hoop-sidecar-license-managed": {
+                                "type": "string",
+                                "description": "Present when this gateway owns the licensing decision; see the handshake."
+                            }
                         }
                     },
                     "401": {
@@ -10121,6 +10127,12 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        },
+                        "headers": {
+                            "hoop-sidecar-license-managed": {
+                                "type": "string",
+                                "description": "Present when this gateway owns the licensing decision, so an answer with no license means the organization holds none. A gateway older than the feature omits it, and the sidecar then keeps its own license sources."
+                            }
                         }
                     },
                     "400": {

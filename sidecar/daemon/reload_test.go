@@ -51,7 +51,16 @@ func testReloader(t *testing.T, raw string) (*reloader, *bytes.Buffer) {
 	if err != nil {
 		t.Fatalf("LoadConfigBytes: %v", err)
 	}
-	cfg.cp = &controlPlane{url: "http://plane", token: "hsc_x", lastRaw: []byte(raw)}
+	// Mirror what resolveConfigSource does: a license in the document is the
+	// plane's, adopted and moved onto the connection, so the reloader starts
+	// from the same state a running process would.
+	if cfg.License != "" {
+		if lerr := cfg.UseLicense(license.Ref{Value: cfg.License, Source: PlaneLicenseSource}); lerr != nil {
+			t.Fatalf("UseLicense: %v", lerr)
+		}
+	}
+	cfg.cp = &controlPlane{url: "http://plane", token: "hsc_x", lastRaw: []byte(raw),
+		license: cfg.License, licenseManaged: true}
 
 	lanes, err := buildLanes(cfg, nil, nil)
 	if err != nil {
@@ -544,5 +553,67 @@ func TestAnUnreachablePlaneKeepsTheLicenseInUse(t *testing.T) {
 	}
 	if after.State() != license.StateValid {
 		t.Errorf("license state = %q, want valid", after.State())
+	}
+}
+
+// A downgrade the running rules do not fit under. The old license must not
+// keep serving them: `handle` records this document as handled, so no later
+// heartbeat revisits it, and without the stop the organization would serve
+// paid rules until the term ended or somebody restarted the process.
+func TestANarrowerLicenseStopsTheRelay(t *testing.T) {
+	// A config that needs a license: six guardrail rules, over the free cap.
+	overCap := editJSON(t, reloadBase,
+		`"rules": [
+      {"name": "r0", "type": "deny_words_list", "words": ["drop table"]}
+    ]`,
+		`"rules": [
+      {"name": "r0", "type": "deny_words_list", "words": ["drop table"]},
+      {"name": "r1", "type": "deny_words_list", "words": ["truncate"]},
+      {"name": "r2", "type": "deny_words_list", "words": ["delete from"]},
+      {"name": "r3", "type": "deny_words_list", "words": ["alter table"]},
+      {"name": "r4", "type": "deny_words_list", "words": ["grant"]},
+      {"name": "r5", "type": "deny_words_list", "words": ["revoke"]}
+    ]`)
+	doc := licensetest.Document(t, licensetest.Enterprise())
+	rl, buf := testReloader(t, withLicense(t, overCap, doc))
+
+	// The plane removes the license. The rules no longer fit.
+	if got := applyWith(rl, buf, overCap); got != reloadRefused {
+		t.Fatalf("outcome = %v, want refused; log:\n%s", got, buf)
+	}
+	if got := rl.lic.get().State(); got != license.StateMissing {
+		t.Fatalf("license state = %q, want missing: the old license kept serving", got)
+	}
+	if !rl.lic.overCap.Load() {
+		t.Fatal("the relay was not told to stop under a license that no longer covers its rules")
+	}
+	if !strings.Contains(buf.String(), "stopping the relay") {
+		t.Errorf("the stop was not logged:\n%s", buf)
+	}
+}
+
+// The watchdog is what turns that flag into a stop, by the same controlled
+// drain an ended term gets.
+func TestTheWatchdogStopsOnAnUncoveredLicense(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	st := newLicenseState(licensetest.Status(t, licensetest.Enterprise()), false)
+	var buf bytes.Buffer
+	expired := watchLicense(ctx, st, time.Millisecond, slog.New(slog.NewTextHandler(&buf, nil)))
+
+	select {
+	case <-expired:
+		t.Fatal("the watchdog stopped a relay whose license still covers it")
+	case <-time.After(30 * time.Millisecond):
+	}
+
+	st.overCap.Store(true)
+	select {
+	case <-expired:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the watchdog did not stop a relay the license stopped covering")
+	}
+	if !strings.Contains(buf.String(), "no longer covers") {
+		t.Errorf("the stop was not explained:\n%s", &buf)
 	}
 }
