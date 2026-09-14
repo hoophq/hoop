@@ -29,7 +29,14 @@ func startTestDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("start embedded database: %v", err)
 	}
-	t.Cleanup(func() { inst.Close(ctx) })
+	// A close that fails leaks an embedded Postgres process and its port. Left
+	// unchecked it surfaces later, as a confusing failure in an unrelated test,
+	// so it fails the test that leaked it instead (as gateway/pglite does).
+	t.Cleanup(func() {
+		if err := inst.Close(ctx); err != nil {
+			t.Errorf("close embedded database: %v", err)
+		}
+	})
 
 	if err := modelsbootstrap.MigrateDB(inst.MigrateDSN(), ""); err != nil {
 		t.Fatalf("migrations failed: %v", err)
