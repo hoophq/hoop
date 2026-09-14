@@ -1043,14 +1043,15 @@ jobs:
   # hoophq/hoopsidecar — the inspection sidecar image, both targets of
   # Dockerfile.sidecar (see that file for what each ships):
   #
-  #   :<version>-minimal      Ubuntu 24.04 LTS + the binary only
+  #   :<version>              Ubuntu 24.04 LTS + the binary only
   #   :<version>-distroless   distroless static + the binary only
-  #   :latest                 an alias of -minimal, and only ever that
+  #   :latest                 an alias of the unsuffixed tag
   #
-  # :latest is the Ubuntu flavour on purpose: it keeps a shell, so the tag
-  # someone reaches for without thinking is the one they can debug. distroless
-  # is a deliberate choice and is named explicitly. deploy/helm-chart/chart/
-  # sidecar/ defaults to :latest, so the two have to agree.
+  # The Ubuntu flavour carries no suffix on purpose: it is the image, and it
+  # keeps a shell, so the tag someone reaches for without thinking is the one
+  # they can debug. distroless is the deliberate choice and the only one that
+  # is named. deploy/helm-chart/chart/sidecar/ defaults to :latest, so the two
+  # have to agree.
   #
   # No -alcatraz pair, unlike hoopagent: sidecar/pii/alcatraz wires the
   # pattern-and-checksum core only and never loads the ONNX model, so baking it
@@ -1066,7 +1067,8 @@ jobs:
   # Needs build-tar-files and no published base: both flavours extract the
   # release tarball directly, so nothing waits on a registry. One job, one
   # multiarch build per target, for the same reason as hoopagent above — each
-  # build is a tar extraction plus (for minimal) a single apt package, so
+  # build is a tar extraction plus (for the Ubuntu flavour) a single apt
+  # package, so
   # emulating the non-native arch is cheaper than a per-arch runner plus a
   # manifest dance, and the release artifacts are pulled once.
   docker-publish-hoopsidecar:
@@ -1094,18 +1096,18 @@ jobs:
           path: dist/
       - name: Set Git Tag
         run: echo "GIT_TAG=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
-      - name: Build and push (minimal)
+      - name: Build and push (default)
         uses: docker/build-push-action@v4
         with:
           file: ./Dockerfile.sidecar
           context: '.'
-          target: minimal
+          target: default
           platforms: linux/amd64,linux/arm64
           provenance: false
           sbom: false
           push: true
           tags: |
-            hoophq/hoopsidecar:${{ env.GIT_TAG }}-minimal
+            hoophq/hoopsidecar:${{ env.GIT_TAG }}
             hoophq/hoopsidecar:latest
       - name: Build and push (distroless)
         uses: docker/build-push-action@v4

@@ -14,8 +14,9 @@ spec:
   selector:
     {{- include "hoopsidecar.selectorLabels" . | nindent 4 }}
   # The admin server only: /healthz, /stats, /config, /events, /api/*.
-  # To reach a lane from outside the pod, add a Service of your own with the
-  # same selector and the ports your config binds — see the chart README.
+  # Lane ports are published by `laneServices`, one Service per entry, because
+  # Service type and the cloud load-balancer knobs are per-Service. This one
+  # stays ClusterIP on 19000 whatever those do.
   ports:
     - name: admin
       port: 19000

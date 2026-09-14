@@ -899,8 +899,9 @@ jobs:
   # Mirrors the release workflow. hoophq/hoopsidecar is a clean-only repository
   # — see the bright-line note in Dockerfile.sidecar before adding a tag here.
   #
-  # NO :latest here, unlike the release job. That tag is the Ubuntu flavour of
-  # the last release and is what deploy/helm-chart/chart/sidecar/ defaults to;
+  # NO :latest here, unlike the release job. That tag is the unsuffixed Ubuntu
+  # flavour of the last release and what deploy/helm-chart/chart/sidecar/
+  # defaults to;
   # a preview moving it would repoint every install that took the default at an
   # unreviewed branch. Previews are reachable only by their PR-numbered tag.
   #
@@ -931,18 +932,18 @@ jobs:
           path: dist/
       - name: Set Git Tag
         run: echo "GIT_TAG=${{ github.event.pull_request.number }}.0.0-g$(git rev-parse --short ${{ github.event.pull_request.head.sha }})" >> $GITHUB_ENV
-      - name: Build and push (minimal)
+      - name: Build and push (default)
         uses: docker/build-push-action@v4
         with:
           file: ./Dockerfile.sidecar
           context: '.'
-          target: minimal
+          target: default
           platforms: linux/amd64,linux/arm64
           provenance: false
           sbom: false
           push: true
           tags: |
-            hoophq/hoopsidecar:${{ env.GIT_TAG }}-minimal
+            hoophq/hoopsidecar:${{ env.GIT_TAG }}
       - name: Build and push (distroless)
         uses: docker/build-push-action@v4
         with:

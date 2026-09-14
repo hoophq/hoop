@@ -22,11 +22,11 @@ image: {}
   # pullPolicy: Always
   # tag: latest
   #
-  # Tags: `latest` is an alias of `<version>-minimal`, the Ubuntu flavour, and
-  # only ever that — it keeps a shell, so the default is the one you can debug.
+  # Tags: the Ubuntu flavour carries NO SUFFIX — `<version>`, with `latest`
+  # pointing at it. It keeps a shell, so the default is the one you can debug.
   # `<version>-distroless` is the same binary on a distroless static rootfs:
   # no package manager, no shell, zero OS-package CVEs, about two thirds the
-  # size. Name it explicitly to get it.
+  # size. It is the only flavour that is named; ask for it explicitly.
   #
   # The chart sets no command: the image's own entrypoint runs the relay, and
   # the config reaches it at /etc/hoop-inspect/config.yaml — the path this
@@ -125,6 +125,34 @@ config: {}
 # `config.yaml` is the document. Mutually exclusive with `config`.
 existingConfigMap: ''
 
+# -- Rollout trigger for `existingConfigMap`. REQUIRED IN PRACTICE THERE.
+#
+# The Deployment carries checksums of what this chart renders, so editing
+# `config` above rolls the pods by itself. A ConfigMap you manage is outside
+# the release: the chart cannot see its contents, its checksum here never
+# changes, and `helm upgrade` produces an identical pod template.
+#
+# Nothing else covers the gap. The relay reads its config file once at startup
+# and watches nothing — the hot reload path is control-plane only — so a pod
+# that is not replaced keeps serving the document it booted with, however many
+# times the ConfigMap is edited. The kubelet updates the mounted file and the
+# process never looks at it again.
+#
+# Put anything that changes with the content here — a digest, the Git SHA that
+# produced it, a timestamp — and change it in the same commit that changes the
+# ConfigMap:
+#
+#   configRevision: "sha256-9f2b1c"
+#   configRevision: "{{ .Values.gitSha }}"
+#
+# Or generate it: `--set configRevision=$(kubectl get cm my-config -o yaml | sha256sum | cut -c1-16)`
+#
+# With `config` you do not need it — the rendered checksum already rolls the
+# pods — but it still applies, so it doubles as a way to force a rollout on
+# demand. A GitOps tool that annotates pods itself (Reloader, Argo CD) makes it
+# unnecessary; leave it empty then.
+configRevision: ''
+
 # -- License document, or a path to one. Without it the process caps guardrail
 # and data masking rules at one each and says so on its first line of output.
 # A value starting with '{' is read as the license itself, anything else as a
@@ -165,6 +193,63 @@ service:
   enabled: true
   type: ClusterIP
   annotations: {}
+
+# -- Services publishing the lane ports, one Kubernetes Service per entry.
+#
+# The `service` block above is the admin server and only that. Lane ports live
+# here because Service type and every cloud load-balancer knob — internal vs
+# internet-facing, LB class, source ranges, traffic policy — are per-Service
+# and not per-port. One lane on an internal LB and another on a public one is
+# two Service objects, and no single multi-port Service can express it.
+#
+# A map, so `--set laneServices.public.type=LoadBalancer` works and several
+# values files merge. Every entry is off until `enabled: true`.
+#
+# Ports are literal. The chart does not read them out of `config.listeners`,
+# so keep them in step with the `listen` addresses you wrote there — a Service
+# pointing at a port nothing binds is accepted by Kubernetes and reaches
+# nothing.
+#
+# WARNING — read before setting `type: LoadBalancer`.
+#   The relay terminates NO client TLS unless the lane says `downstream_tls`,
+#   and that is accepted on postgres, grpc and spanner ONLY. On http, mysql,
+#   mssql and mongodb it is refused at startup, so those lanes are always
+#   plaintext. A public load balancer in front of one of them puts credentials
+#   and query results in the clear on the internet.
+#   Expose a lane publicly only when the lane terminates TLS itself, or when
+#   something in front of it does (Envoy, an ingress controller, a mesh).
+#   `loadBalancerSourceRanges` narrows who can reach it; it does not encrypt.
+laneServices: {}
+  # internal:
+  #   enabled: true
+  #   # Defaults to <release>-hoopsidecar-<key>
+  #   name: ''
+  #   type: ClusterIP
+  #   annotations: {}
+  #   labels: {}
+  #   ports:
+  #     # `name` is required once an entry has more than one port.
+  #     - {name: postgres, port: 15432}
+  #     - {name: http, port: 18080, targetPort: 18080, protocol: TCP}
+  #
+  # public:
+  #   enabled: true
+  #   type: LoadBalancer
+  #   # This lane sets downstream_tls, so it terminates the client's TLS
+  #   # itself. Without that, see the warning above.
+  #   ports:
+  #     - {name: postgres, port: 5432, targetPort: 15432}
+  #   annotations:
+  #     service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
+  #     service.beta.kubernetes.io/aws-load-balancer-type: nlb
+  #   loadBalancerSourceRanges:
+  #     - 203.0.113.0/24
+  #   externalTrafficPolicy: Local
+  #
+  # Also accepted per entry: clusterIP, loadBalancerIP, loadBalancerClass,
+  # internalTrafficPolicy, sessionAffinity, externalIPs, ipFamilyPolicy,
+  # ipFamilies, publishNotReadyAddresses, allocateLoadBalancerNodePorts.
+  # Per port: name, port, targetPort, protocol, nodePort, appProtocol.
 
 # -- Extra volumes and mounts, for what the config document references by
 # path: an upstream CA (upstream_tls.ca_file), a downstream server

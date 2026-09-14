@@ -53,26 +53,54 @@ Under `controlPlane.url` or `existingConfigMap` the chart cannot see the
 config, so that check does not run and putting admin on 19000 is yours to get
 right.
 
-**Lane ports are not declared and not published.** Every port a lane opens
-comes from `listeners` in your config and differs per deployment; a
-`containerPort` is informational in Kubernetes either way. A lane is reached
-through whatever fronts this pod — an Envoy sidecar over loopback, which is
-the deployment this relay is built for, or a Service of your own:
+**Lane ports are not declared on the pod.** A `containerPort` is informational
+in Kubernetes, and a lane bound to a unix socket has no port at all.
+
+Publishing them is `laneServices`, a map of Services — one Kubernetes Service
+per entry:
 
 ```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: hoopsidecar-lanes
-spec:
-  selector:
-    # Both labels. The instance label is what keeps this Service pointed at
-    # one release's pods when several are installed in the namespace.
-    app.kubernetes.io/name: hoopsidecar
-    app.kubernetes.io/instance: <your release name>
-  ports:
-    - {name: postgres, port: 15432, targetPort: 15432}
+laneServices:
+  internal:
+    enabled: true
+    ports:
+      - {name: postgres, port: 15432}
+      - {name: http, port: 18080}
+
+  public:
+    enabled: true
+    type: LoadBalancer
+    ports:
+      - {name: postgres, port: 5432, targetPort: 15432}
+    annotations:
+      service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
+    loadBalancerSourceRanges: ["203.0.113.0/24"]
 ```
+
+A map and not one multi-port Service, because Service type and every cloud
+load-balancer knob — internal vs internet-facing, LB class, source ranges,
+traffic policy — are per-Service and not per-port. One lane internal and
+another public is two objects, and nothing can collapse them into one. A map
+also merges across values files, which a list indexed by position does not.
+
+Ports here are literal. The chart does not read them from `config.listeners`,
+so keep the two in step: a Service pointing at a port nothing binds is accepted
+by Kubernetes and reaches nothing.
+
+The admin Service is separate and unaffected — always ClusterIP, always 19000.
+
+> **Before setting `type: LoadBalancer`.** The relay terminates no client TLS
+> unless the lane sets `downstream_tls`, and that is accepted on **postgres,
+> grpc and spanner only** — on http, mysql, mssql and mongodb it is refused at
+> startup, so those lanes are always plaintext. A public load balancer in front
+> of one of them puts credentials and query results in the clear on the
+> internet. Expose a lane publicly only when the lane terminates TLS itself, or
+> when something in front of it does. `loadBalancerSourceRanges` narrows who
+> can reach it; it does not encrypt.
+
+A hand-written Service still works for anything the block does not cover — the
+selector is `app.kubernetes.io/name: hoopsidecar` plus
+`app.kubernetes.io/instance: <release>`.
 
 The numbers to use are this project's conventions, the same ones every config
 under `deploy/docker-compose/` binds:
@@ -93,15 +121,17 @@ under `deploy/docker-compose/` binds:
 | Value | Description |
 |---|---|
 | `image.repository` | Container image. Default `hoophq/hoopsidecar` |
-| `image.tag` | Image tag. Default `latest`, an alias of `<version>-minimal` |
+| `image.tag` | Image tag. Default `latest`, an alias of the unsuffixed `<version>` |
 | `image.pullPolicy` | Default `Always` |
 | `config` | The sidecar config document, rendered into a ConfigMap and mounted at `/etc/hoop-inspect/config.yaml` |
 | `existingConfigMap` | Mount a ConfigMap you manage instead, key `config.yaml`. Mutually exclusive with `config` |
+| `configRevision` | Rollout trigger for `existingConfigMap`. Change it whenever that ConfigMap's content changes, or the pods never pick it up |
 | `license` | License document or a path to one → `HOOP_LICENSE` |
 | `controlPlane.url` | Control Plane to take the running config from → `HOOP_CONTROL_PLANE_URL` |
 | `controlPlane.token` | Token from the sidecar's registration → `HOOP_SIDECAR_TOKEN` |
 | `extraSecret` | Extra environment variables, as a Secret |
 | `service.enabled` | A Service for the admin port, 19000 only. Default `true` |
+| `laneServices` | Map of Services publishing lane ports. One Service per entry; empty by default |
 | `service.type` | Default `ClusterIP` |
 | `probe.initialDelaySeconds`, `probe.periodSeconds` | Probe timing. The port is fixed at 19000 |
 | `service.annotations` | Annotations on the Service |
@@ -132,13 +162,13 @@ hoop start sidecar --config my-config.yaml --validate
 
 | Tag | Base |
 |---|---|
-| `<version>-minimal`, and `latest` | Ubuntu 24.04 LTS + the `hoop` binary |
+| `<version>`, and `latest` | Ubuntu 24.04 LTS + the `hoop` binary |
 | `<version>-distroless` | distroless static + the `hoop` binary |
 
-`latest` is minimal and only ever minimal — it keeps a shell, so the default
-is the flavour you can `kubectl exec` into. distroless has no package manager
-and no shell, reports zero OS-package CVEs and is about two thirds the size;
-name it explicitly to get it.
+The Ubuntu flavour carries no suffix — it is the image, and `latest` points at
+it. It keeps a shell, so the default is the flavour you can `kubectl exec` into.
+distroless has no package manager and no shell, reports zero OS-package CVEs and
+is about two thirds the size; it is the only flavour that is named.
 
 The chart sets no `command`. It expects the image's own entrypoint to run the
 relay and to read the config at `/etc/hoop-inspect/config.yaml` — the path the
@@ -157,6 +187,40 @@ command: ["hoop", "start", "sidecar"]
 `command:` and not a bare `args:`: those images carry no ENTRYPOINT, so `args:`
 replaces CMD entirely and runs nothing. Their invocation contract is in
 `Dockerfile.agent`.
+
+## Rolling pods when the config changes
+
+The Deployment carries checksums of everything this chart renders, so editing
+`config` rolls the pods on `helm upgrade` by itself.
+
+`existingConfigMap` is the case that needs your help. That object lives outside
+the release: the chart cannot see its contents, so its checksum here never
+changes and `helm upgrade` produces a byte-identical pod template. Nothing else
+covers the gap — the relay reads its config file once at startup and watches
+nothing, because the hot-reload path is control-plane only. The kubelet updates
+the mounted file and the process never looks at it again, so a pod that is not
+replaced keeps serving the document it booted with.
+
+`configRevision` is the handle. Put anything that changes with the content in
+it, and change it in the same commit that changes the ConfigMap:
+
+```yaml
+existingConfigMap: my-sidecar-config
+configRevision: "sha256-9f2b1c"
+```
+
+Or generate it at install time:
+
+```bash
+helm upgrade ... \
+  --set configRevision=$(kubectl get cm my-sidecar-config -o yaml | sha256sum | cut -c1-16)
+```
+
+With `config` you do not need it — the rendered checksum already does the job —
+but it still applies, so it doubles as a way to force a rollout on demand. A
+GitOps tool that annotates the pods for you (Reloader, Argo CD) makes it
+unnecessary. Without any of these,
+`kubectl rollout restart deploy/<release>-hoopsidecar` is the manual equivalent.
 
 ## Environment variables
 

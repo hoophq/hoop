@@ -4,18 +4,19 @@
 # share the `unpack` stage, so release-tarball handling exists in exactly one
 # place:
 #
-#   --target minimal     -> hoophq/hoopsidecar:<version>-minimal
+#   --target default     -> hoophq/hoopsidecar:<version>
 #                           hoophq/hoopsidecar:latest
 #   --target distroless  -> hoophq/hoopsidecar:<version>-distroless
 #
-# `:latest` is minimal, the Ubuntu flavour, and only ever minimal. It keeps a
-# shell, so the tag someone reaches for without thinking is the one they can
-# debug; distroless is a deliberate choice and is named explicitly. This is
-# also what the helm chart at deploy/helm-chart/chart/sidecar/ defaults to.
+# The Ubuntu flavour carries NO SUFFIX: it is the image, and `:latest` points
+# at it. It keeps a shell, so the tag someone reaches for without thinking is
+# the one they can debug. distroless is the deliberate choice and the only one
+# that is named. This is also what the helm chart at
+# deploy/helm-chart/chart/sidecar/ defaults to.
 #
 # A bare `docker build -f Dockerfile.sidecar` with no --target builds the stage
-# declared LAST, `minimal`: the same flavour `:latest` points at, and a
-# superset of distroless, so an accidental default is never the restrictive
+# declared LAST, `default`: the same flavour the unsuffixed tag points at, and
+# a superset of distroless, so an accidental default is never the restrictive
 # one.
 #
 # ---------------------------------------------------------------------------
@@ -74,22 +75,22 @@
 # ---------------------------------------------------------------------------
 # Choosing a flavour
 #
-#   minimal      Ubuntu 24.04 LTS rootfs + the `hoop` binary and nothing else.
+#   default      Ubuntu 24.04 LTS rootfs + the `hoop` binary and nothing else.
 #   distroless   Distroless static rootfs + the `hoop` binary and nothing else.
 #
 # Both serve every protocol the relay decodes (postgres, mysql, mssql, mongodb,
 # http, grpc, spanner) and run as uid 10001.
 #
 # distroless carries no OS package manager and no shell, so it reports zero
-# OS-package CVEs and is roughly two thirds the size of minimal — at the cost
-# of `kubectl exec <pod> -- sh` being impossible, and of `--validate` being
-# unreachable without a shell to run it from. Use minimal when that
+# OS-package CVEs and is roughly two thirds the size of the default — at the
+# cost of `kubectl exec <pod> -- sh` being impossible, and of `--validate`
+# being unreachable without a shell to run it from. Use the default when that
 # debuggability matters, distroless when the smallest possible surface does.
 #
 # ---------------------------------------------------------------------------
 # Build (from the repo root, with release tarballs in dist/binaries/):
 #   GOOS=linux GOARCH=arm64 make build-go build-tar-files
-#   docker build -f Dockerfile.sidecar --target minimal -t hoophq/hoopsidecar:dev-minimal .
+#   docker build -f Dockerfile.sidecar --target default -t hoophq/hoopsidecar:dev .
 #   docker build -f Dockerfile.sidecar --target distroless -t hoophq/hoopsidecar:dev-distroless .
 
 # Ubuntu 24.04 LTS (noble). Pinned deliberately, same policy as ./Dockerfile
@@ -147,9 +148,10 @@ USER 10001:10001
 # (daemon.Run). It forks no children.
 CMD ["hoop", "start", "sidecar"]
 
-# --- Flavour: minimal (Ubuntu 24.04 LTS) -------------------------------------
-# Declared last on purpose: see the note about a bare build at the top.
-FROM ${UBUNTU_IMAGE} AS minimal
+# --- Flavour: default (Ubuntu 24.04 LTS) -------------------------------------
+# The unsuffixed image, and what :latest points at. Declared last on purpose:
+# see the note about a bare build at the top.
+FROM ${UBUNTU_IMAGE} AS default
 ARG SIDECAR_CONFIG
 
 ENV DEBIAN_FRONTEND=noninteractive

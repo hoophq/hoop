@@ -126,3 +126,84 @@ jobs:
             && { echo "::error::sidecar release pg-lane leaked mssql-lane labels"; exit 1; }
 
           echo "two sidecar releases in one namespace share no resource name or selector"
+
+          # An existingConfigMap lives outside the release, so the chart's
+          # checksums cannot see it change and the relay reads its file only at
+          # boot. configRevision is the only thing that rolls those pods; if it
+          # stops reaching the pod template, an operator edits a ConfigMap and
+          # the fleet silently keeps the old policy.
+          ext() {
+            helm template t "$chart" --set existingConfigMap=cm --set probe.port=19000 \
+              --set configRevision="$1"
+          }
+          ext rev-a | grep -q 'hoop.dev/config-revision: "rev-a"' \
+            || { echo "::error::configRevision did not reach the sidecar pod annotations"; exit 1; }
+          if ext rev-a | diff -q - <(ext rev-b) >/dev/null; then
+            echo "::error::changing configRevision did not change the sidecar pod template"
+            exit 1
+          fi
+          # Absent unless asked for, so an unset value adds no annotation churn.
+          helm template t "$chart" --set existingConfigMap=cm --set probe.port=19000 \
+            | grep -q 'hoop.dev/config-revision' \
+            && { echo "::error::config-revision annotation rendered with no configRevision set"; exit 1; }
+
+          echo "configRevision changes the pod template, so an external ConfigMap edit can roll the pods"
+
+          # Lane Services. The admin Service must stay admin-only whatever
+          # these do, and each entry must be its own object: Service type and
+          # every cloud LB knob are per-Service, so one lane internal and
+          # another public is two objects and cannot collapse into one.
+          lanes=(--set config.admin.listen=0.0.0.0:19000
+                 --set laneServices.internal.enabled=true
+                 --set laneServices.internal.ports[0].port=18080
+                 --set laneServices.public.enabled=true
+                 --set laneServices.public.type=LoadBalancer
+                 --set laneServices.public.ports[0].port=5432
+                 --set laneServices.public.ports[0].targetPort=15432)
+          out=$(helm template t "$chart" "${lanes[@]}")
+          # 15432 appears nowhere else in these values, so it proves the
+          # port -> targetPort remap on the public entry actually happened.
+          for want in "-internal" "-public" "type: LoadBalancer" "targetPort: 15432"; do
+            echo "$out" | grep -q -- "$want" \
+              || { echo "::error::lane Services did not render: $want"; exit 1; }
+          done
+          # A lane Service that loses the instance label selects the OTHER
+          # release's pods in a shared namespace, which routes a client to the
+          # wrong upstream and still looks healthy. The whole-render isolation
+          # check above cannot see this: the Deployment supplies the label
+          # regardless.
+          lanesvc=$(helm template pg-lane "$chart" "${lanes[@]}" \
+            --show-only templates/service-lanes.yaml)
+          # Scoped to the selector block. A plain grep of the document passes
+          # on a broken selector, because metadata.labels carries the same
+          # labels regardless.
+          sel=$(echo "$lanesvc" | awk '/^  selector:$/{f=1;next} f&&/^  [^ ]/{f=0} f')
+          nsvc=$(echo "$lanesvc" | grep -c '^kind: Service')
+          ninst=$(echo "$sel" | grep -c 'app.kubernetes.io/instance: pg-lane' || true)
+          nname=$(echo "$sel" | grep -c 'app.kubernetes.io/name: hoopsidecar' || true)
+          if [ "$ninst" != "$nsvc" ] || [ "$nname" != "$nsvc" ]; then
+            echo "::error::a lane Service selector is missing the name/instance labels ($nsvc services, $nname name, $ninst instance)"
+            exit 1
+          fi
+
+          # --show-only isolates the admin Service: it must still be ClusterIP
+          # on 19000 and must never pick up a lane port.
+          admin=$(helm template t "$chart" "${lanes[@]}" --show-only templates/service.yaml)
+          echo "$admin" | grep -q 'port: 19000' \
+            || { echo "::error::the admin Service lost port 19000"; exit 1; }
+          echo "$admin" | grep -q 'type: ClusterIP' \
+            || { echo "::error::the admin Service is no longer ClusterIP"; exit 1; }
+          echo "$admin" | grep -qE 'port: (5432|15432)$' \
+            && { echo "::error::a lane port leaked into the admin Service"; exit 1; }
+          # A Service with no ports reaches nothing; the chart must refuse it,
+          # and say why. Asserting the message and not just the failure: without
+          # the guard the template still errors, with an unreadable
+          # "len of nil pointer" from the next line instead.
+          # Captured first: under pipefail a failing helm would poison the
+          # pipeline even when grep found the message.
+          noports=$(helm template t "$chart" --set config.admin.listen=0.0.0.0:19000 \
+            --set laneServices.x.enabled=true 2>&1 || true)
+          echo "$noports" | grep -q 'names no ports' \
+            || { echo "::error::an enabled lane Service with no ports was not refused with a clear message"; exit 1; }
+
+          echo "lane Services render per entry and leave the admin Service alone"
