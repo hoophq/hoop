@@ -275,6 +275,47 @@ import Stepper from '@/components/Stepper'
 ```
 `StepAccordion` is the vertical, one-page wizard (Agents); `Stepper` is for a flow whose steps replace each other (the sidecar setup).
 
+### SectionRow
+
+Two-column form row: heading and supporting copy on the left (span 2), fields on the
+right (span 5), on a `Grid columns={7}`.
+
+```jsx
+<Stack gap="xxlAlt">
+  <SectionRow title="Identity" description="What this section is for.">
+    <Stack gap="md">{fields}</Stack>
+  </SectionRow>
+</Stack>
+```
+
+**This is the app's form layout.** Sixteen form pages put their fields straight on the
+page background — none wraps inputs in a bordered container, `Paper withBorder` is for
+lists and tables — and ten lay them out on this grid. Moving the explanation into the
+left column is what lets each field drop its own `description`, which is most of what
+makes a long form read as a wall of grey.
+
+It was copied by hand into ten pages before it was a component, and those copies are
+still there; `pages/Features/AiSessionAnalyzer/components/SectionRow` re-exports this
+one. Collapsing the rest is a mechanical change of its own.
+
+### FormFooter
+
+Action bar pinned to the bottom of the viewport, for a form long enough that its Save
+would scroll out of reach. `left` is the secondary action, `children` the primary ones.
+The caller pads its own content by the exported `FORM_FOOTER_CLEARANCE`.
+
+```jsx
+<FormFooter left={<Button variant="default" onClick={back}>Back</Button>}>
+  <Button onClick={save} loading={saving}>Save</Button>
+</FormFooter>
+```
+
+Fixed, not `sticky; bottom: 0` — the body is the scroll container, so sticky only pins
+while the parent runs past the fold and a short form would leave the bar mid-page. The
+left edge reads `var(--app-shell-navbar-offset)`, which Mantine publishes on the AppShell
+root and its own `AppShell.Header` uses under `layout="alt"`; that is why the bar follows
+the sidebar collapsing instead of recomputing its width from a store.
+
 ### `ClojureApp`
 Bridge component that mounts the CLJS bundle for un-migrated routes. Mounted only by `modes/gateway.jsx` (the `/`, `/onboarding/*` and `/*` leaves). Do not use elsewhere, never from a `ControlPlane*` file.
 
@@ -807,20 +848,25 @@ Non-obvious notes only:
   from the CLJS terminal — no timers. Resets itself on logout (subscribes to
   `useAuthStore`), and every read is scoped by `forUserId`.
 - `useSidecarStore` — the fleet (`sidecars`, `fetchSidecars`, `createSidecar`,
-  `deleteSidecar`) and the one record `/sidecars/:id` reads (`selected`,
-  `selectedId`, `selectedError`, `selectedLoading`, `fetchSidecar`,
+  `updateSidecar`, `deleteSidecar`) and the one record `/sidecars/:id` reads
+  (`selected`, `selectedId`, `selectedError`, `selectedLoading`, `fetchSidecar`,
   `clearSelected`). `createSidecar` returns the response with the one-time token
-  and keeps none of it. Two generation counters, one per resource, drop a response
-  that arrives after its resource moved on; `reset()` runs on logout through an
-  `useAuthStore` subscription.
+  and keeps none of it. `updateSidecar(nameOrId, configuration)` replaces the
+  whole configuration document and returns `{ ok, error }` instead of throwing,
+  so a listener form can put the gateway's message next to the field; it writes
+  the stored document into both the list and `selected`, and moves both
+  generation counters, because a read already in flight would otherwise commit
+  the pre-save document over the saved one. Two generation counters, one per
+  resource, drop a response that arrives after its resource moved on; `reset()`
+  runs on logout through an `useAuthStore` subscription.
   The selected record needs **both** of its flags, and a page checks both:
   `selectedId !== id` catches the frame between a URL change and the effect that
   refetches — a loading flag alone still reads "idle" there and paints the
   previous sidecar under the new URL — while `selectedLoading` covers the request
   itself, without which the loader lifts after `useMinDelay` and a slow response
-  renders an empty body. `clearSelected` belongs in the details page's effect
-  cleanup: the slot serves one page view, so a revisit cannot open on a record
-  minutes old, or on one already deleted.
+  renders an empty body. `clearSelected` belongs in the effect cleanup of every
+  page that reads the slot — the details page and the listener form — so a
+  revisit cannot open on a record minutes old, or on one already deleted.
 - `useConnectionsMetadataStore` — loaded once at app start (`App.jsx`); feeds
   credential field schemas + connection icons; `load()` is idempotent.
 
@@ -861,13 +907,42 @@ Non-obvious notes only:
   on every poll, not something the sidecar reports. Creating without one stores an
   empty document; the sidecar then seeds the plane with its own config file on the
   first handshake (`importLocalConfig`), which is the connect journey the wizard
-  prints. Writing it from here is `PUT /sidecars/:nameOrID`, which has no caller: the
-  pages read the configuration, they do not author it.
-  `pages/Sidecars/config.js` derives the Features chips from the document, resolving a
-  lane's overrides the way `Config.resolve` does — guardrail `rules` absent inherits
-  the default, `rules: []` disables, a non-empty list concatenates; mask only replaces
-  on a non-empty lane list. Reading the presence of the whole block instead reports a
-  lane that overrides only `mode` as unprotected.
+  prints. Once the plane holds listeners that seed is refused with a 409, so the
+  first listener written from the UI takes the document over for good.
+  `update(nameOrId, configuration)` is `PUT /sidecars/:nameOrID`, which **replaces the
+  whole document** — there is no per-listener endpoint and no ETag, so authoring is a
+  read-modify-write and two admins editing at once means the second write wins
+  silently.
+  `pages/Sidecars/listeners.js` is that read-modify-write. `formToListener` spreads
+  the listener it was opened with and writes only its own `OWNED_KEYS`, because the
+  form renders no `guardrails`, `mask` or `opa` and every one of them has three
+  meanings: absent inherits, `[]` or `{}` opts out, non-empty overrides. Rebuilding
+  the object instead of spreading it would flatten all of that, and the document is
+  decoded with `DisallowUnknownFields` three times over, so a dropped key is silent
+  data loss rather than an error. A listener is addressed by its POSITION: it is an
+  element of the configuration JSON, has no id, and its name is editable.
+  The UI says nothing about restarts. The daemon does need one for a listener change
+  (`reload.go:167` — rules hot-swap, topology does not), but the product's intent is
+  that the plane orchestrates the sidecar, so that is recorded as a comment in
+  `pages/Sidecars/useListenerEditor.js` rather than shown to an admin.
+  Editing is one full page, `/sidecars/:id/listeners/*` — the modal that was wired
+  beside it for comparison is gone. The route keys on `listenerLabel(listener, index)`,
+  which falls back to `listener[i]` exactly as the daemon's `displayName` does, so a
+  listener that never named itself is still reachable and reads the way its own audit
+  rows do.
+  `sections/ListenerDetails.jsx` is the expanded row: a short chip strip of the
+  operational facts, then what the lane RESOLVES to — guardrails, masking and OPA, each
+  rule marked Listener or Inherited. Those rules appear nowhere else in the app, which
+  is what the expansion is for; certificate paths and codec switches are the form's job
+  and were deliberately left out.
+  `pages/Sidecars/resolve.js` is the one port of `Config.resolve`, and both the Features
+  chips (`config.js`) and the expanded row read it. Guardrail `rules` absent — **or
+  `null`, which is what commenting them out in YAML leaves** — inherits, `[]` runs none,
+  a non-empty list concatenates with the listener's own first. Mask turns on the
+  PRESENCE of the `rules` key, `[]` and `null` included: `MaskConfig.Rules` is a
+  `json.RawMessage`, so the daemon's `len(o.Rules) > 0` counts BYTES, and the two bytes
+  of `[]` are not the nil slice. Reading it as "a non-empty list replaces" reported
+  masking on a lane that had switched it off. `opa: {}` drops an inherited endpoint.
   `pages/Sidecars/status.js` turns `last_seen_at` into Waiting or Connected, and
   those two only: a stale timestamp still reads Connected with its relative last-seen
   time. There is no Offline, because `last_seen_at` is gateway memory that a restart

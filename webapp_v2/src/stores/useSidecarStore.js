@@ -48,10 +48,12 @@ export const useSidecarStore = create((set, get) => ({
     // is over either way, and leaving it set strands the page on a loader.
     try {
       const { data } = await sidecarsService.list()
-      set((state) => (state.listRequestId === requestId ? { sidecars: data ?? [], loading: false } : { loading: false }))
+      set((state) =>
+        state.listRequestId === requestId ? { sidecars: data ?? [], loading: false } : { loading: false },
+      )
     } catch (error) {
       set((state) =>
-        state.listRequestId === requestId ? { error: error.message, loading: false } : { loading: false }
+        state.listRequestId === requestId ? { error: error.message, loading: false } : { loading: false },
       )
     }
   },
@@ -117,6 +119,39 @@ export const useSidecarStore = create((set, get) => ({
       listRequestId: state.listRequestId + 1,
     }))
     return updated
+  },
+
+  /**
+   * Replace a sidecar's whole configuration document.
+   *
+   * Returns `{ ok, error }` rather than throwing, so a form can put the
+   * gateway's message next to the field it is about. The rest of this store
+   * still throws; the wizard it serves has no field to put a message in.
+   *
+   * The updated sidecar is merged back into the list, and into `selected` when
+   * it is the record on screen, so both show the new listeners without a
+   * refetch and neither can serve a stale document to the next write.
+   */
+  updateSidecar: async (nameOrId, configuration) => {
+    try {
+      const { data: updated } = await sidecarsService.update(nameOrId, configuration)
+      set((state) => ({
+        sidecars: state.sidecars.map((s) => (s.id === updated.id ? updated : s)),
+        // `selected` too, and this is the one that bites: the details page
+        // deletes a listener WITHOUT navigating, and builds the next
+        // whole-document PUT from selected.configuration. Leaving it stale
+        // means a second delete writes the first listener back.
+        selected: state.selected?.id === updated.id ? updated : state.selected,
+        // Both counters, because this is a write that replaces what a read
+        // would return. `requestId` was neither of them and existed nowhere:
+        // state.requestId is undefined, so the old line stored NaN.
+        listRequestId: state.listRequestId + 1,
+        selectedRequestId: state.selectedRequestId + 1,
+      }))
+      return { ok: true, sidecar: updated }
+    } catch (error) {
+      return { ok: false, error }
+    }
   },
 
   deleteSidecar: async (id) => {

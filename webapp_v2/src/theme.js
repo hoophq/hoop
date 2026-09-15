@@ -1,6 +1,7 @@
 import { createTheme, rem } from '@mantine/core';
 import { SpotlightTheme } from '@/components/Spotlight/theme';
 import { AppShellTheme } from '@/components/AppShell/theme';
+import { BadgeTheme } from '@/components/Badge/theme';
 import { PillTheme } from '@/components/Pill/theme';
 import {
   InputTheme,
@@ -172,6 +173,34 @@ export const theme = createTheme({
       "#2792bc",
       "#1582a9",
       "#007196"
+    ],
+    // Radix Pink and Violet. Defined only so the sidecar feature chips stop
+    // falling through to stock Mantine: the Figma gives the AI Analyzer and
+    // Data Masking chips these hues, and an undefined palette silently
+    // resolves outside the theme.
+    pink: [
+      "#fdf0f7",
+      "#fbe4ef",
+      "#f6cee4",
+      "#f0b7d7",
+      "#e79ec8",
+      "#d6409f",
+      "#c7308f",
+      "#b02481",
+      "#991a72",
+      "#651249"
+    ],
+    violet: [
+      "#f5f2ff",
+      "#ede9fe",
+      "#ddd6fc",
+      "#c9bcf9",
+      "#b29df5",
+      "#8e4ec6",
+      "#7f3fb8",
+      "#6f31a6",
+      "#5f2793",
+      "#402060"
     ]
   },
   spacing: {
@@ -226,6 +255,7 @@ export const theme = createTheme({
   components: {
     Spotlight: SpotlightTheme,
     AppShell: AppShellTheme,
+    Badge: BadgeTheme,
     Pill: PillTheme,
     Input: InputTheme,
     // Input-family components with local `size: 'sm'` defaults that would

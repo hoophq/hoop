@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { Group, Image, Pill, Text } from '@mantine/core'
+import { Group, Image, Text } from '@mantine/core'
 import ActionMenu from '@/components/ActionMenu'
 import Badge from '@/components/Badge'
 import Table from '@/components/Table'
@@ -8,6 +8,12 @@ import { configFeatures, loadsFromDisk, protocolInfo } from '../config'
 import FeaturePills from '../components/FeaturePills'
 import { SidecarStatusBadge } from '../components/SidecarDetails'
 import { formatRelativeTime } from '../status'
+
+// A fleet row is one line per sidecar, so the lane list cannot grow with the
+// sidecar: a relay in front of fifty databases would push every other row off
+// the screen. Four names say what kind of sidecar this is, which is what the
+// fleet view answers; the rest are one click away in its own table.
+const LANES_SHOWN = 4
 
 // The lanes of the configuration the control plane stores for this sidecar. A
 // sidecar with none has nothing to serve and refuses to start, so the empty
@@ -33,11 +39,17 @@ function Listeners({ sidecar, getIcon }) {
       </Text>
     )
   }
+  const hidden = listeners.length - LANES_SHOWN
   return (
     <Group gap="xs">
-      {listeners.map((listener) => (
-        <Pill key={listener.name}>
-          <Group gap={6} wrap="nowrap">
+      {listeners.slice(0, LANES_SHOWN).map((listener) => (
+        <Badge
+          key={listener.name}
+          tag
+          chip
+          variant="light"
+          color="gray"
+          icon={
             <Image
               src={getIcon({ subtype: protocolInfo(listener.protocol).subtype })}
               alt=""
@@ -45,17 +57,23 @@ function Listeners({ sidecar, getIcon }) {
               h={14}
               fit="contain"
             />
-            <span>{listener.name}</span>
-          </Group>
-        </Pill>
+          }
+        >
+          {listener.name}
+        </Badge>
       ))}
+      {hidden > 0 && (
+        <Text size="xs" c="dimmed">
+          {`+${hidden} more`}
+        </Text>
+      )}
     </Group>
   )
 }
 
-// Figma: "License has sidecards" table. No Edit: authoring a configuration
-// from the control plane is not built yet, so a row opens its details, where
-// the one writable fact is which side owns the configuration.
+// Figma: "License has sidecards" table. No Edit on the row: a listener is
+// authored on the sidecar's own page, so a row opens its details and the fleet
+// stays one line per sidecar.
 export default function SidecarsTable({ sidecars, onDelete }) {
   const navigate = useNavigate()
   const getIcon = useConnectionIconGetter()
@@ -75,7 +93,9 @@ export default function SidecarsTable({ sidecars, onDelete }) {
       <Table.Tbody>
         {sidecars.map((sidecar) => (
           <Table.Tr key={sidecar.id}>
-            <Table.Td miw={160}>
+            {/* A hyphenated name is a legal break point, so a narrower cell
+                splits "payments-sidecar" across two lines. */}
+            <Table.Td miw={190}>
               <Text size="sm" fw={600}>
                 {sidecar.name}
               </Text>
@@ -104,7 +124,10 @@ export default function SidecarsTable({ sidecars, onDelete }) {
                   Not delivered
                 </Text>
               ) : (
-                <FeaturePills features={configFeatures(sidecar.configuration)} />
+                /* Icons, like the listener table: three labelled chips push a
+                   fleet row to three lines the moment the listener names beside
+                   them get long. */
+                <FeaturePills compact features={configFeatures(sidecar.configuration)} />
               )}
             </Table.Td>
             <Table.Td>
