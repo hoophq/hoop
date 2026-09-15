@@ -1,6 +1,7 @@
 package accessrequests
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -77,6 +78,17 @@ func validateSidecarAccessRequestRuleBody(req *openapi.AccessRequestRuleRequest)
 	return nil
 }
 
+// bindAccessRequestRule decodes the request body. A control plane skips the
+// binding tags: they require the fields of a connection rule, which a sidecar
+// rule has no reason to send. validateSidecarAccessRequestRuleBody checks what
+// a sidecar rule needs instead.
+func bindAccessRequestRule(c *gin.Context, req *openapi.AccessRequestRuleRequest) error {
+	if appconfig.Get().IsControlPlane() {
+		return json.NewDecoder(c.Request.Body).Decode(req)
+	}
+	return c.ShouldBindJSON(req)
+}
+
 // CreateAccessRequestRule
 //
 //	@Summary		Create Access Request Rule
@@ -92,7 +104,7 @@ func CreateAccessRequestRule(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
 
 	var req openapi.AccessRequestRuleRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := bindAccessRequestRule(c, &req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
@@ -119,7 +131,7 @@ func CreateAccessRequestRule(c *gin.Context) {
 	// A deployment runs as a gateway or as a control plane, never both, and
 	// every rule a control plane stores authorizes sidecars.
 	if appconfig.Get().IsControlPlane() {
-		createSidecarAccessRequestRule(c, orgID, &req)
+		createSidecarAccessRequestRule(c, models.DB, orgID, &req)
 		return
 	}
 
@@ -313,7 +325,7 @@ func UpdateAccessRequestRule(c *gin.Context) {
 	name := c.Param("name")
 
 	var req openapi.AccessRequestRuleRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := bindAccessRequestRule(c, &req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
@@ -351,7 +363,7 @@ func UpdateAccessRequestRule(c *gin.Context) {
 	}
 
 	if appconfig.Get().IsControlPlane() {
-		updateSidecarAccessRequestRule(c, orgID, existingRule, &req)
+		updateSidecarAccessRequestRule(c, models.DB, orgID, existingRule, &req)
 		return
 	}
 
@@ -455,8 +467,8 @@ func updateManagedAccessRequestRule(c *gin.Context, rule *models.AccessRequestRu
 // createSidecarAccessRequestRule creates a rule that authorizes sidecars. The
 // connection and attribute conflict checks do not apply: the rule gates no
 // connection, and the attribute check would treat it as a jit_command rule.
-func createSidecarAccessRequestRule(c *gin.Context, orgID uuid.UUID, req *openapi.AccessRequestRuleRequest) {
-	sidecarNames, ok := resolveSidecarNames(c, orgID, req)
+func createSidecarAccessRequestRule(c *gin.Context, db *gorm.DB, orgID uuid.UUID, req *openapi.AccessRequestRuleRequest) {
+	sidecarNames, ok := resolveSidecarNames(c, db, orgID, req)
 	if !ok {
 		return
 	}
@@ -468,15 +480,22 @@ func createSidecarAccessRequestRule(c *gin.Context, orgID uuid.UUID, req *openap
 		AccessType:             models.AccessTypeSidecar,
 		ConnectionNames:        []string{},
 		SidecarNames:           sidecarNames,
-		ApprovalRequiredGroups: req.ApprovalRequiredGroups,
+		ApprovalRequiredGroups: orEmpty(req.ApprovalRequiredGroups),
 		AllGroupsMustApprove:   req.AllGroupsMustApprove,
-		ReviewersGroups:        req.ReviewersGroups,
-		ForceApprovalGroups:    req.ForceApprovalGroups,
+		ReviewersGroups:        orEmpty(req.ReviewersGroups),
+		ForceApprovalGroups:    orEmpty(req.ForceApprovalGroups),
 		SkipReviewGroups:       req.SkipReviewGroups,
 		AccessMaxDuration:      req.AccessMaxDuration,
 		MinApprovals:           req.MinApprovals,
 	}
-	if err := models.CreateAccessRequestRule(models.DB, rule); err != nil {
+	// One transaction: a failed attribute write must not leave the rule behind.
+	err := db.Transaction(func(tx *gorm.DB) error {
+		if err := models.CreateAccessRequestRule(tx, rule); err != nil {
+			return err
+		}
+		return models.UpsertAccessRequestRuleAttributes(tx, orgID, rule.Name, req.Attributes)
+	})
+	if err != nil {
 		if errors.Is(err, gorm.ErrDuplicatedKey) {
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "access request rule with the same name already exists"})
 			return
@@ -484,16 +503,14 @@ func createSidecarAccessRequestRule(c *gin.Context, orgID uuid.UUID, req *openap
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to create access request rule")
 		return
 	}
-	if !storeSidecarRuleAttributes(c, orgID, rule, req.Attributes) {
-		return
-	}
+	rule.RuleAttributes = ruleAttributes(orgID, rule.Name, req.Attributes)
 	c.JSON(http.StatusCreated, toAccessRequestRuleOpenApi(rule))
 }
 
-// updateSidecarAccessRequestRule replaces a sidecar rule and the sidecars it
-// authorizes.
-func updateSidecarAccessRequestRule(c *gin.Context, orgID uuid.UUID, rule *models.AccessRequestRule, req *openapi.AccessRequestRuleRequest) {
-	sidecarNames, ok := resolveSidecarNames(c, orgID, req)
+// updateSidecarAccessRequestRule replaces a sidecar rule, the sidecars it
+// authorizes and its attributes, in one transaction.
+func updateSidecarAccessRequestRule(c *gin.Context, db *gorm.DB, orgID uuid.UUID, rule *models.AccessRequestRule, req *openapi.AccessRequestRuleRequest) {
+	sidecarNames, ok := resolveSidecarNames(c, db, orgID, req)
 	if !ok {
 		return
 	}
@@ -501,14 +518,20 @@ func updateSidecarAccessRequestRule(c *gin.Context, orgID uuid.UUID, rule *model
 	rule.Name = req.Name
 	rule.Description = req.Description
 	rule.SidecarNames = sidecarNames
-	rule.ApprovalRequiredGroups = req.ApprovalRequiredGroups
+	rule.ApprovalRequiredGroups = orEmpty(req.ApprovalRequiredGroups)
 	rule.AllGroupsMustApprove = req.AllGroupsMustApprove
-	rule.ReviewersGroups = req.ReviewersGroups
-	rule.ForceApprovalGroups = req.ForceApprovalGroups
+	rule.ReviewersGroups = orEmpty(req.ReviewersGroups)
+	rule.ForceApprovalGroups = orEmpty(req.ForceApprovalGroups)
 	rule.SkipReviewGroups = req.SkipReviewGroups
 	rule.AccessMaxDuration = req.AccessMaxDuration
 	rule.MinApprovals = req.MinApprovals
-	if err := models.UpdateAccessRequestRule(models.DB, rule); err != nil {
+	err := db.Transaction(func(tx *gorm.DB) error {
+		if err := models.UpdateAccessRequestRule(tx, rule); err != nil {
+			return err
+		}
+		return models.UpsertAccessRequestRuleAttributes(tx, orgID, rule.Name, req.Attributes)
+	})
+	if err != nil {
 		if errors.Is(err, gorm.ErrDuplicatedKey) {
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "access request rule with the same name already exists"})
 			return
@@ -516,41 +539,22 @@ func updateSidecarAccessRequestRule(c *gin.Context, orgID uuid.UUID, rule *model
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to update access request rule")
 		return
 	}
-	if !storeSidecarRuleAttributes(c, orgID, rule, req.Attributes) {
-		return
-	}
+	rule.RuleAttributes = ruleAttributes(orgID, rule.Name, req.Attributes)
 	c.JSON(http.StatusOK, toAccessRequestRuleOpenApi(rule))
-}
-
-// storeSidecarRuleAttributes replaces the attributes of a sidecar rule and
-// mirrors them on rule for the response. It answers the request itself and
-// returns false when the write fails.
-func storeSidecarRuleAttributes(c *gin.Context, orgID uuid.UUID, rule *models.AccessRequestRule, attributeNames []string) bool {
-	if err := models.UpsertAccessRequestRuleAttributes(models.DB, orgID, rule.Name, attributeNames); err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to upsert access request rule attributes")
-		return false
-	}
-	rule.RuleAttributes = make([]models.AccessRequestRuleAttribute, 0, len(attributeNames))
-	for _, attr := range attributeNames {
-		rule.RuleAttributes = append(rule.RuleAttributes, models.AccessRequestRuleAttribute{
-			OrgID: orgID, AttributeName: attr, AccessRuleName: rule.Name,
-		})
-	}
-	return true
 }
 
 // resolveSidecarNames validates a sidecar rule request and returns its sidecar
 // names sorted and without duplicates. Every name must belong to a sidecar of
 // the organization, so a typo is refused instead of stored. It answers the
 // request itself and returns false when the request is refused.
-func resolveSidecarNames(c *gin.Context, orgID uuid.UUID, req *openapi.AccessRequestRuleRequest) ([]string, bool) {
+func resolveSidecarNames(c *gin.Context, db *gorm.DB, orgID uuid.UUID, req *openapi.AccessRequestRuleRequest) ([]string, bool) {
 	if err := validateSidecarAccessRequestRuleBody(req); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return nil, false
 	}
 
 	names := slices.Compact(slices.Sorted(slices.Values(req.SidecarNames)))
-	found, err := models.ListSidecarNames(models.DB, orgID.String(), names)
+	found, err := models.ListSidecarNames(db, orgID.String(), names)
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to list sidecars")
 		return nil, false
@@ -562,6 +566,24 @@ func resolveSidecarNames(c *gin.Context, orgID uuid.UUID, req *openapi.AccessReq
 		}
 	}
 	return names, true
+}
+
+// orEmpty stores a list the request omitted as empty: the rule's group
+// columns are NOT NULL.
+func orEmpty(list []string) []string {
+	if list == nil {
+		return []string{}
+	}
+	return list
+}
+
+// ruleAttributes mirrors the attribute rows a write stored, for the response.
+func ruleAttributes(orgID uuid.UUID, ruleName string, names []string) []models.AccessRequestRuleAttribute {
+	attrs := make([]models.AccessRequestRuleAttribute, 0, len(names))
+	for _, name := range names {
+		attrs = append(attrs, models.AccessRequestRuleAttribute{OrgID: orgID, AttributeName: name, AccessRuleName: ruleName})
+	}
+	return attrs
 }
 
 func attributeNames(rule *models.AccessRequestRule) []string {

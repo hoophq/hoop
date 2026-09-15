@@ -89,6 +89,26 @@ func TestSidecarAccessRequestRules(t *testing.T) {
 		}
 	})
 
+	// The sidecar rule handlers write a rule and its attributes in one
+	// transaction, so a failed attribute write must take the rule with it.
+	t.Run("a failed attribute write rolls back the rule", func(t *testing.T) {
+		fresh := newAccessRequestRule(orgID, "rolled-back", models.AccessTypeSidecar)
+		fresh.SidecarNames = []string{"sidecar-a"}
+		tooLong := strings.Repeat("a", 256) // attributes.name is VARCHAR(255)
+		err := models.DB.Transaction(func(tx *gorm.DB) error {
+			if err := models.CreateAccessRequestRule(tx, fresh); err != nil {
+				return err
+			}
+			return models.UpsertAccessRequestRuleAttributes(tx, orgID, fresh.Name, []string{tooLong})
+		})
+		if err == nil {
+			t.Fatal("expected the oversized attribute name to fail the write")
+		}
+		if _, err := models.GetAccessRequestRuleByName(models.DB, fresh.Name, orgID); !errors.Is(err, gorm.ErrRecordNotFound) {
+			t.Errorf("expected the rule to roll back, got %v", err)
+		}
+	})
+
 	// The subtests below each break the check constraint. gorm translates the
 	// violation into a sentinel that drops the constraint name, and the
 	// embedded backend appends a second error, so errors.Is cannot see the

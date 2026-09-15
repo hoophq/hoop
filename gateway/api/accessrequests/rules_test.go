@@ -1,14 +1,48 @@
 package accessrequests
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/aws/smithy-go/ptr"
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
 )
+
+// bindAccessRequestRule branches on the app mode, and appconfig.Load is
+// one-shot, so this test binary runs as a control plane. The validation tests
+// below do not read the mode.
+func TestMain(m *testing.M) {
+	if err := appconfig.Load(appconfig.AppModeControlPlane); err != nil {
+		panic(err)
+	}
+	os.Exit(m.Run())
+}
+
+// A sidecar rule has no reason to send the connection fields the gateway
+// binding tags require.
+func TestBindAccessRequestRuleSkipsConnectionFieldsInControlPlane(t *testing.T) {
+	body := `{"name":"prod-approvals","access_type":"sidecar","sidecar_names":["sidecar-prod"]}`
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/access-requests/rules", strings.NewReader(body))
+
+	var req openapi.AccessRequestRuleRequest
+	if err := bindAccessRequestRule(c, &req); err != nil {
+		t.Fatalf("expected a sidecar rule without connection fields to bind, got %v", err)
+	}
+	if err := validateSidecarAccessRequestRuleBody(&req); err != nil {
+		t.Fatalf("expected the bound rule to pass sidecar validation, got %v", err)
+	}
+	if orEmpty(req.ReviewersGroups) == nil || orEmpty(req.ForceApprovalGroups) == nil {
+		t.Fatal("expected omitted group lists to be stored as empty, not NULL")
+	}
+}
 
 func validSidecarRule() openapi.AccessRequestRuleRequest {
 	return openapi.AccessRequestRuleRequest{
