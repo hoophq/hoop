@@ -44,6 +44,23 @@ const (
 	// it, once, on the first handshake that finds the plane empty.
 	controlPlaneConfigurationPath = "/api/sidecars/configuration"
 
+	// LicenseManagedHeader is how a plane says it owns the licensing
+	// decision. A gateway that predates the feature sends nothing, and the
+	// difference is not visible in the document: an organization with no
+	// license and a gateway that knows nothing about licenses both answer
+	// without a `license` key.
+	//
+	// It decides whether an absent license means "the organization has
+	// none" (ignore the local sources) or "this gateway cannot tell you"
+	// (keep them). Reading it wrong costs an operator their caps, and a
+	// config that needs them does not start at all.
+	//
+	// Exported because the gateway sets what this reads. One constant, in
+	// the module that has to parse it: two string literals agreeing today
+	// is not a contract, and a rename on one side would disable the signal
+	// in silence rather than fail a build.
+	LicenseManagedHeader = "hoop-sidecar-license-managed"
+
 	controlPlaneTimeout = 15 * time.Second
 	// maxControlPlaneConfig bounds the response read. A config is a few KB;
 	// anything near this is a misdirected URL, not a big deployment.
@@ -66,6 +83,26 @@ type controlPlane struct {
 	// handled-tracking from it; the heartbeat itself keeps no compare
 	// state.
 	lastRaw []byte
+
+	// license is the document the plane sent, empty when its organization
+	// holds none. It is the ONLY license a plane-connected process runs
+	// under -- when licenseManaged says so; Config.License is emptied in
+	// plane mode so no reader mistakes the file's key for something in
+	// force.
+	license string
+	// licenseManaged reports that the plane answered with
+	// licenseManagedHeader, so an absent license is an answer rather than
+	// a silence. False for a gateway older than this feature, and then the
+	// local sources rank as they always did.
+	licenseManaged bool
+	// ignoredLicense names the local source this process is NOT using, so
+	// Run can say so once. Empty when no local source held a document.
+	ignoredLicense string
+
+	// every overrides the heartbeat interval. Zero means heartbeatEvery,
+	// which is what every deployment runs; a test sets it so a case about
+	// what a heartbeat does is not also a case about waiting a minute.
+	every time.Duration
 
 	// imported reports that this boot seeded the plane with the local
 	// file's document because the plane held none; Run logs it once.
@@ -159,9 +196,9 @@ func resolveSidecarToken(flagValue string) (value, source string) {
 // The two never merge. A plane-connected process serves what the plane sent:
 // no operator can predict which half of a merged config wins, the same
 // reason normalize refuses a field written in two spellings. The file keeps
-// three jobs in plane mode: naming the URL, naming a license (the documented
-// precedence keeps the config file as a license source, and the plane sends
-// none today), and seeding a plane that holds no configuration yet. That
+// two jobs in plane mode: naming the URL, and seeding a plane that holds no
+// configuration yet. Its `license` key is not one of them -- the plane owns
+// the license as well, and a local one is ignored out loud. That
 // last one is the connect journey: a handshake answered "nothing is
 // assigned" imports the file's whole document, so a standalone sidecar
 // connects by adding the URL and passing the token, nothing else. Once the
@@ -196,14 +233,14 @@ func resolveConfigSource(local *Config, tokenFlag string) (*Config, error) {
 			"pass the token flag or set %s", urlSource, SidecarTokenEnv)
 	}
 
-	raw, err := fetchControlPlaneConfig(planeURL, token, Version)
+	raw, managed, err := fetchControlPlaneConfig(planeURL, token, Version)
 	imported := false
 	// A plane with nothing to serve answers 412; an older gateway answers
 	// 200 with a document naming no listeners. Same fact, same move: seed
 	// the plane with the file's document, so the connect journey never
 	// asks anyone to translate their YAML into an API call by hand.
 	if errors.Is(err, errPlaneHasNoConfig) || (err == nil && !rawDeclaresListeners(raw)) {
-		raw, imported, err = importLocalConfig(planeURL, token, local)
+		raw, imported, managed, err = importLocalConfig(planeURL, token, local)
 	}
 	if err != nil {
 		return nil, err
@@ -225,11 +262,19 @@ func resolveConfigSource(local *Config, tokenFlag string) (*Config, error) {
 	if len(cfg.Listeners) == 0 {
 		return nil, fmt.Errorf("the control plane at %s sent a config with no listeners", planeURL)
 	}
-	if local != nil && cfg.License == "" {
+	// The plane's license moves to the connection. The file's key comes
+	// back only when the plane does NOT manage licensing: under a managing
+	// plane it is not a source, and leaving it on the Config would report a
+	// license this process does not run under; against an older gateway it
+	// is still the operator's license and has to keep working.
+	planeLicense := cfg.License
+	cfg.License = ""
+	if !managed && local != nil {
 		cfg.License = local.License
 	}
 	cfg.ControlPlaneURL = planeURL
-	cfg.cp = &controlPlane{url: planeURL, urlSource: urlSource, token: token, lastRaw: raw, imported: imported}
+	cfg.cp = &controlPlane{url: planeURL, urlSource: urlSource, token: token,
+		lastRaw: raw, imported: imported, license: planeLicense, licenseManaged: managed}
 	if !imported && local != nil {
 		cfg.cp.fileListeners = len(local.Listeners)
 	}
@@ -238,70 +283,73 @@ func resolveConfigSource(local *Config, tokenFlag string) (*Config, error) {
 
 // fetchControlPlaneConfig runs one handshake: it presents the token, reports
 // the version, and returns the config document the plane answered with.
-func fetchControlPlaneConfig(baseURL, token, version string) ([]byte, error) {
-	body, err := json.Marshal(map[string]string{"version": version})
-	if err != nil {
-		return nil, err
+// managed reports whether the plane claimed the licensing decision. It rides
+// beside the document rather than in it, so an older gateway simply does not
+// say it; see licenseManagedHeader.
+func fetchControlPlaneConfig(baseURL, token, version string) (raw []byte, managed bool, err error) {
+	body, merr := json.Marshal(map[string]string{"version": version})
+	if merr != nil {
+		return nil, false, merr
 	}
 	// The base was validated by checkControlPlaneURL; JoinPath keeps a
 	// path prefix (a plane behind /hoop) and normalizes trailing slashes.
-	u, err := url.Parse(baseURL)
-	if err != nil {
-		return nil, fmt.Errorf("control plane URL %q: %w", baseURL, err)
+	u, perr := url.Parse(baseURL)
+	if perr != nil {
+		return nil, false, fmt.Errorf("control plane URL %q: %w", baseURL, perr)
 	}
-	req, err := http.NewRequest(http.MethodPost,
+	req, rerr := http.NewRequest(http.MethodPost,
 		u.JoinPath(controlPlaneHandshakePath).String(), bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("control plane request: %w", err)
+	if rerr != nil {
+		return nil, false, fmt.Errorf("control plane request: %w", rerr)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set(sidecarTokenHeader, token)
 
-	resp, err := controlPlaneHTTPClient().Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("the control plane at %s is unreachable: %w", baseURL, err)
+	resp, derr := controlPlaneHTTPClient().Do(req)
+	if derr != nil {
+		return nil, false, fmt.Errorf("the control plane at %s is unreachable: %w", baseURL, derr)
 	}
 	// The body is always read to completion below; a close error after a
 	// full read carries nothing actionable, so it is dropped on purpose.
 	defer func() { _ = resp.Body.Close() }()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxControlPlaneConfig+1))
-	if err != nil {
-		return nil, fmt.Errorf("reading the control plane response from %s: %w", baseURL, err)
+	raw, aerr := io.ReadAll(io.LimitReader(resp.Body, maxControlPlaneConfig+1))
+	if aerr != nil {
+		return nil, false, fmt.Errorf("reading the control plane response from %s: %w", baseURL, aerr)
 	}
 
 	switch resp.StatusCode {
 	case http.StatusOK:
 		if len(raw) > maxControlPlaneConfig {
-			return nil, fmt.Errorf("the control plane at %s answered with more than %d bytes; "+
+			return nil, false, fmt.Errorf("the control plane at %s answered with more than %d bytes; "+
 				"check that the URL is the control plane and not something in front of it",
 				baseURL, maxControlPlaneConfig)
 		}
-		return raw, nil
+		return raw, resp.Header.Get(LicenseManagedHeader) == "true", nil
 	case http.StatusUnauthorized:
 		// Not self-healing: a mistyped token and a deleted sidecar both land
 		// here, and the plane shows the token once at creation, so a lost
 		// one means registering a new sidecar.
-		return nil, fmt.Errorf("the control plane at %s rejected the token; "+
+		return nil, false, fmt.Errorf("the control plane at %s rejected the token; "+
 			"check it against the one shown when this sidecar was created", baseURL)
 	case http.StatusPreconditionFailed:
 		// The plane authenticated the token and holds nothing to serve.
 		// resolveConfigSource turns this into an import when the local
 		// file can supply the document; the heartbeat only logs it.
-		return nil, fmt.Errorf("%w (at %s): %s", errPlaneHasNoConfig, baseURL, controlPlaneMessage(raw))
+		return nil, false, fmt.Errorf("%w (at %s): %s", errPlaneHasNoConfig, baseURL, controlPlaneMessage(raw))
 	case http.StatusUnprocessableEntity:
 		// An operator misconfiguration on the plane side (say, a connection
 		// type no codec speaks). Retrying never fixes it; the message names
 		// what to change.
-		return nil, fmt.Errorf("the control plane at %s cannot build this sidecar's config: %s",
+		return nil, false, fmt.Errorf("the control plane at %s cannot build this sidecar's config: %s",
 			baseURL, controlPlaneMessage(raw))
 	}
 
 	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
-		return nil, fmt.Errorf("the control plane at %s redirected to %q; the handshake "+
+		return nil, false, fmt.Errorf("the control plane at %s redirected to %q; the handshake "+
 			"never follows one, so the token was not re-sent. Configure the final URL",
 			baseURL, resp.Header.Get("Location"))
 	}
-	return nil, fmt.Errorf("the control plane at %s answered %s: %s",
+	return nil, false, fmt.Errorf("the control plane at %s answered %s: %s",
 		baseURL, resp.Status, controlPlaneMessage(raw))
 }
 
@@ -349,12 +397,14 @@ func rawDeclaresListeners(raw []byte) bool {
 // concurrent author wins the race and this boot serves their document.
 //
 // The pushed document drops control_plane_url and license. The URL is
-// connection metadata this process already resolved, and the license stays
-// a file-side source (the documented precedence), not a row every fleet
-// admin can read.
-func importLocalConfig(planeURL, token string, local *Config) (raw []byte, pushed bool, err error) {
+// connection metadata this process already resolved, and the license belongs
+// to the organization, not to this sidecar's row: the plane serves its own
+// on every handshake, and a copy stored here would go stale the day it is
+// renewed. The plane refuses the key as well; this keeps the refusal from
+// ever being reached.
+func importLocalConfig(planeURL, token string, local *Config) (raw []byte, pushed, managed bool, err error) {
 	if local == nil || len(local.Listeners) == 0 {
-		return nil, false, fmt.Errorf("the control plane at %s has no configuration for this sidecar; "+
+		return nil, false, false, fmt.Errorf("the control plane at %s has no configuration for this sidecar; "+
 			"author one in the control plane, or restart with a config file whose listeners this "+
 			"process can import", planeURL)
 	}
@@ -364,7 +414,7 @@ func importLocalConfig(planeURL, token string, local *Config) (raw []byte, pushe
 	doc.cp = nil
 	body, err := json.Marshal(doc)
 	if err != nil {
-		return nil, false, fmt.Errorf("marshaling the config file for the import: %w", err)
+		return nil, false, false, fmt.Errorf("marshaling the config file for the import: %w", err)
 	}
 	switch err := pushControlPlaneConfig(planeURL, token, body); {
 	case err == nil:
@@ -374,20 +424,20 @@ func importLocalConfig(planeURL, token string, local *Config) (raw []byte, pushe
 		// wins; the fetch below serves it and Run warns about the file's
 		// ignored listeners.
 	default:
-		return nil, false, err
+		return nil, false, false, err
 	}
-	raw, err = fetchControlPlaneConfig(planeURL, token, Version)
+	raw, managed, err = fetchControlPlaneConfig(planeURL, token, Version)
 	if err != nil {
-		return nil, false, fmt.Errorf("the handshake after the configuration import failed: %w", err)
+		return nil, false, false, fmt.Errorf("the handshake after the configuration import failed: %w", err)
 	}
 	// A plane that accepted the import and still answers without listeners
 	// is broken; naming that beats letting the strict decoder blame a
 	// schema mismatch.
 	if !rawDeclaresListeners(raw) {
-		return nil, false, fmt.Errorf("the configuration was imported but the control plane at %s "+
+		return nil, false, false, fmt.Errorf("the configuration was imported but the control plane at %s "+
 			"still answers without listeners; check the plane's logs", planeURL)
 	}
-	return raw, pushed, nil
+	return raw, pushed, managed, nil
 }
 
 // pushControlPlaneConfig PUTs the document to the plane's configuration
@@ -475,7 +525,11 @@ func controlPlaneMessage(raw []byte) string {
 // process cannot change, and retries a document whose failure can clear
 // without another edit (ADR-0014).
 func (cp *controlPlane) heartbeat(ctx context.Context, log *slog.Logger, rl *reloader) {
-	t := time.NewTicker(heartbeatEvery)
+	every := cp.every
+	if every == 0 {
+		every = heartbeatEvery
+	}
+	t := time.NewTicker(every)
 	defer t.Stop()
 	for {
 		select {
@@ -483,7 +537,7 @@ func (cp *controlPlane) heartbeat(ctx context.Context, log *slog.Logger, rl *rel
 			return
 		case <-t.C:
 		}
-		raw, err := fetchControlPlaneConfig(cp.url, cp.token, Version)
+		raw, _, err := fetchControlPlaneConfig(cp.url, cp.token, Version)
 		if err != nil {
 			log.Warn("control plane handshake failed; serving the last good config",
 				"url", cp.url, "error", err)
