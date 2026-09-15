@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -281,6 +283,114 @@ func TestSessionAuditLifecycle(t *testing.T) {
 			t.Errorf("event %s has principal %q; identity must reach the audit trail",
 				ev.Kind, ev.Principal)
 		}
+	}
+}
+
+// pgStartup builds a v3 StartupMessage naming user, the message every libpq
+// client opens with.
+func pgStartup(user string) []byte {
+	var params []byte
+	for _, kv := range [][2]string{{"user", user}, {"database", "appdb"}} {
+		params = append(params, kv[0]...)
+		params = append(params, 0)
+		params = append(params, kv[1]...)
+		params = append(params, 0)
+	}
+	params = append(params, 0)
+
+	out := make([]byte, 8, 8+len(params))
+	binary.BigEndian.PutUint32(out[0:4], uint32(8+len(params)))
+	binary.BigEndian.PutUint32(out[4:8], 3<<16)
+	return append(out, params...)
+}
+
+// syncBuffer is a bytes.Buffer the log handler can write from the session
+// goroutine while the test reads it.
+type syncBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (s *syncBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
+}
+
+// topLevelValues returns every value under key at the top level of one JSON
+// object, in order. json.Unmarshal into a map keeps only the last duplicate,
+// which is exactly the defect this must see.
+func topLevelValues(t *testing.T, line, key string) []string {
+	t.Helper()
+	dec := json.NewDecoder(strings.NewReader(line))
+	if tok, err := dec.Token(); err != nil || tok != json.Delim('{') {
+		t.Fatalf("log line is not a JSON object: %q", line)
+	}
+	var out []string
+	for dec.More() {
+		k, err := dec.Token()
+		if err != nil {
+			t.Fatalf("reading key: %v", err)
+		}
+		var v any
+		if err := dec.Decode(&v); err != nil {
+			t.Fatalf("reading value of %v: %v", k, err)
+		}
+		if k == key {
+			out = append(out, fmt.Sprint(v))
+		}
+	}
+	return out
+}
+
+// pgwire learns the user after the logger already carries "anonymous". The
+// two must not both survive onto the "session opened" line.
+func TestSessionOpenedLogsThePrincipalOnce(t *testing.T) {
+	up := newEchoUpstream(t, nil)
+	var logs syncBuffer
+	srv := startServer(t, proxy.Config{
+		Upstream:   up.addr(),
+		Protocol:   inspect.Postgres,
+		Connection: "appdb",
+		Audit:      audit.NewMemorySink(64),
+		Logger:     slog.New(slog.NewJSONHandler(&logs, nil)),
+	})
+
+	c, err := net.Dial("tcp", srv.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Write(pgStartup("alice"))
+	c.SetReadDeadline(time.Now().Add(2 * time.Second))
+	io.ReadFull(c, make([]byte, len(pgStartup("alice"))))
+	c.Close()
+
+	var opened string
+	deadline := time.Now().Add(3 * time.Second)
+	for opened == "" && time.Now().Before(deadline) {
+		// The handler writes a line at a time; the tail after the last
+		// newline is a line still being written.
+		lines := strings.Split(logs.String(), "\n")
+		for _, line := range lines[:len(lines)-1] {
+			if strings.Contains(line, `"msg":"session opened"`) {
+				opened = line
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if opened == "" {
+		t.Fatalf("no \"session opened\" line in:\n%s", logs.String())
+	}
+
+	got := topLevelValues(t, opened, "principal")
+	if len(got) != 1 || got[0] != "alice" {
+		t.Fatalf("principal keys = %q, want exactly [alice]; line: %s", got, opened)
 	}
 }
 
