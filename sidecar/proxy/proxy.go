@@ -446,7 +446,10 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 	// a verified subject from the fronting proxy and this is a client claim.
 	if claimedUser != "" && sess.Identity.Subject == "" {
 		sess.Identity.Subject = claimedUser
-		log = log.With("principal", claimedUser)
+		// Rebuilt from the root, not layered with With: slog appends an
+		// attribute and never replaces one, so layering would print two
+		// principal keys, "anonymous" and the real one, on every line.
+		log = s.log.With("session", string(sess.ID), "principal", claimedUser)
 	}
 
 	log.Info("session opened", "upstream", s.cfg.Upstream)
