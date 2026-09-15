@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/hoophq/hoop/sidecar/license"
 	"github.com/hoophq/hoop/sidecar/license/licensetest"
@@ -26,8 +27,23 @@ type handshakeCall struct {
 }
 
 // planeServer serves the handshake with body, capturing each call. A nil
-// check leaves the default 200 handler.
+// check leaves the default 200 handler. It answers as a CURRENT gateway: it
+// claims the licensing decision, which is what every deployment of this
+// build does.
 func planeServer(t *testing.T, status int, body string) (*httptest.Server, *[]handshakeCall) {
+	t.Helper()
+	return planeServerWith(t, status, body, true)
+}
+
+// legacyPlaneServer is a gateway older than control-plane licensing: same
+// answers, no capability header. A sidecar upgraded ahead of its gateway
+// talks to one of these.
+func legacyPlaneServer(t *testing.T, status int, body string) (*httptest.Server, *[]handshakeCall) {
+	t.Helper()
+	return planeServerWith(t, status, body, false)
+}
+
+func planeServerWith(t *testing.T, status int, body string, managesLicense bool) (*httptest.Server, *[]handshakeCall) {
 	t.Helper()
 	calls := &[]handshakeCall{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -40,6 +56,9 @@ func planeServer(t *testing.T, status int, body string) (*httptest.Server, *[]ha
 			version: req.Version,
 			path:    r.URL.Path,
 		})
+		if managesLicense && status == http.StatusOK {
+			w.Header().Set(LicenseManagedHeader, "true")
+		}
 		w.WriteHeader(status)
 		_, _ = w.Write([]byte(body))
 	}))
@@ -451,7 +470,11 @@ func TestAPlanePointingFileNeedsNoListeners(t *testing.T) {
 
 // The plane sends no license today, so the file's "license" key stays a
 // license source in plane mode; the documented precedence is unchanged.
-func TestTheFileLicenseKeySurvivesThePlaneConfig(t *testing.T) {
+// The file's `license` key stops being a source the moment a control plane is
+// configured. It used to survive into plane mode; the decision that the plane
+// owns the fleet's license reversed that, because a startup that honoured the
+// file while a heartbeat did not would answer the same question two ways.
+func TestTheFileLicenseKeyIsIgnoredInPlaneMode(t *testing.T) {
 	srv, _ := planeServer(t, http.StatusOK, planeConfig)
 	t.Setenv(SidecarTokenEnv, "hsc_x")
 	t.Setenv(ControlPlaneURLEnv, "")
@@ -465,8 +488,14 @@ func TestTheFileLicenseKeySurvivesThePlaneConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SetupWith: %v", err)
 	}
-	if cfg.Licensing().State() != license.StateValid {
-		t.Fatalf("license state = %q, want valid", cfg.Licensing().State())
+	if got := cfg.Licensing().State(); got != license.StateMissing {
+		t.Fatalf("license state = %q, want missing: the file licensed a plane-connected process", got)
+	}
+	if cfg.License != "" {
+		t.Error("the running config still carries a license key that is not in force")
+	}
+	if got := cfg.cp.ignoredLicense; got != fileLicenseSource {
+		t.Errorf("ignored source = %q, want %q", got, fileLicenseSource)
 	}
 }
 
@@ -537,9 +566,234 @@ func TestTheSameDocumentIsHandledOnce(t *testing.T) {
 	}
 }
 
+// planeConfigWith renders the plane's answer carrying a license document, the
+// way the gateway serves the organization's license: inside the config
+// document, in the key the schema already declares.
+func planeConfigWith(t *testing.T, doc string) string {
+	t.Helper()
+	body, err := json.Marshal(map[string]any{
+		"listeners": []map[string]string{
+			{"name": "appdb", "protocol": "postgres", "listen": ":1", "upstream": "h:5432"},
+		},
+		"license": doc,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(body)
+}
+
+// The point of the feature: an operator licenses a fleet in the control plane
+// and no sidecar carries a license of its own.
+func TestThePlaneLicensesASidecarThatCarriesNone(t *testing.T) {
+	doc := licensetest.Document(t, licensetest.Enterprise())
+	srv, _ := planeServer(t, http.StatusOK, planeConfigWith(t, doc))
+	t.Setenv(ControlPlaneURLEnv, srv.URL)
+	t.Setenv(SidecarTokenEnv, "hsc_x")
+
+	cfg, _, err := SetupWith("", nil, nil)
+	if err != nil {
+		t.Fatalf("SetupWith: %v", err)
+	}
+	if got := cfg.Licensing().State(); got != license.StateValid {
+		t.Fatalf("license state = %q, want valid", got)
+	}
+	if got := cfg.Licensing().Source; got != PlaneLicenseSource {
+		t.Errorf("license source = %q, want %q", got, PlaneLicenseSource)
+	}
+}
+
+// The decision this implements: the control plane is the source of truth. A
+// license set on the machine does not overrule the fleet's, whichever of the
+// three local sources it came from.
+func TestThePlaneLicenseIsTheOnlyOneInPlaneMode(t *testing.T) {
+	// Signed FIRST, so the trust root each Sign installs leaves these three
+	// unverifiable: licensetest swaps it per call and the last one wins.
+	// That is what makes the assertion sharp -- an invalid license stops
+	// startup, so picking any local source here fails loudly rather than
+	// quietly returning the wrong document.
+	envDoc := licensetest.Document(t, licensetest.Expiring(-time.Hour))
+	fileDoc := licensetest.Document(t, licensetest.Expiring(-2*time.Hour))
+	flagDoc := licensetest.Document(t, licensetest.Expiring(-3*time.Hour))
+	planeDoc := licensetest.Document(t, licensetest.Enterprise())
+
+	srv, _ := planeServer(t, http.StatusOK, planeConfigWith(t, planeDoc))
+	t.Setenv(ControlPlaneURLEnv, srv.URL)
+	t.Setenv(SidecarTokenEnv, "hsc_x")
+	t.Setenv(license.EnvVar, envDoc)
+
+	body, err := json.Marshal(map[string]string{"license": fileDoc})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, _, err := SetupWith(writeConfig(t, string(body)), nil, nil, WithLicense(flagDoc))
+	if err != nil {
+		t.Fatalf("SetupWith: %v", err)
+	}
+	if got := cfg.Licensing().State(); got != license.StateValid {
+		t.Fatalf("license state = %q, want valid: a local source outranked the control plane", got)
+	}
+	if got := cfg.cp.ignoredLicense; got != flagLicenseSource {
+		t.Errorf("ignored source = %q, want %q: the flag is the highest local source here", got, flagLicenseSource)
+	}
+	if got := cfg.Licensing().Source; got != PlaneLicenseSource {
+		t.Errorf("license source = %q, want %q", got, PlaneLicenseSource)
+	}
+}
+
+// A plane whose organization has no license runs the free tier, even with a
+// valid one sitting in the environment. The control plane is the only source
+// once one is configured: an operator who could license a pod from its own
+// environment would make the fleet's license an opinion, and the admin who
+// removes a license in the control plane would not remove anything.
+func TestAPlaneWithoutALicenseIgnoresTheLocalOnes(t *testing.T) {
+	srv, _ := planeServer(t, http.StatusOK, planeConfig)
+	t.Setenv(ControlPlaneURLEnv, srv.URL)
+	t.Setenv(SidecarTokenEnv, "hsc_x")
+	t.Setenv(license.EnvVar, licensetest.Document(t, licensetest.Enterprise()))
+
+	cfg, _, err := SetupWith("", nil, nil)
+	if err != nil {
+		t.Fatalf("SetupWith: %v", err)
+	}
+	if got := cfg.Licensing().State(); got != license.StateMissing {
+		t.Fatalf("license state = %q, want missing: %s licensed a plane-connected process",
+			got, license.EnvVar)
+	}
+	// Ignoring it in silence is the failure an operator finds a month later.
+	if got := cfg.cp.ignoredLicense; got != license.EnvVar {
+		t.Errorf("ignored source = %q, want %q", got, license.EnvVar)
+	}
+}
+
+// Standalone is the case this whole change must not touch: no control plane,
+// so the three local sources rank as they always have.
+func TestWithoutAPlaneTheLocalLicenseStillRuns(t *testing.T) {
+	t.Setenv(ControlPlaneURLEnv, "")
+	t.Setenv(license.EnvVar, licensetest.Document(t, licensetest.Enterprise()))
+
+	body, err := json.Marshal(map[string]any{
+		"listeners": []map[string]string{
+			{"name": "appdb", "protocol": "postgres", "listen": ":1", "upstream": "h:5432"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err := SetupWith(writeConfig(t, string(body)), nil, nil)
+	if err != nil {
+		t.Fatalf("SetupWith: %v", err)
+	}
+	if got := cfg.Licensing().State(); got != license.StateValid {
+		t.Fatalf("license state = %q, want valid", got)
+	}
+	if got := cfg.Licensing().Source; got != license.EnvVar {
+		t.Errorf("license source = %q, want %q", got, license.EnvVar)
+	}
+}
+
+// The license the plane sends must never reach the document this process
+// pushes back: the organization owns it, and a copy on the sidecar's row
+// goes stale the day it is renewed.
+func TestTheImportedDocumentCarriesNoLicense(t *testing.T) {
+	var imported []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			imported, _ = io.ReadAll(r.Body)
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(planeConfig))
+			return
+		}
+		if imported == nil {
+			w.WriteHeader(http.StatusPreconditionFailed)
+			_, _ = w.Write([]byte(`{"message":"no configuration is assigned"}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(planeConfig))
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv(ControlPlaneURLEnv, srv.URL)
+	t.Setenv(SidecarTokenEnv, "hsc_x")
+
+	body, err := json.Marshal(map[string]any{
+		"license": licensetest.Document(t, licensetest.Enterprise()),
+		"listeners": []map[string]string{
+			{"name": "appdb", "protocol": "postgres", "listen": ":1", "upstream": "h:5432"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := SetupWith(writeConfig(t, string(body)), nil, nil); err != nil {
+		t.Fatalf("SetupWith: %v", err)
+	}
+	if imported == nil {
+		t.Fatal("the config file was never imported")
+	}
+	var pushed map[string]any
+	if err := json.Unmarshal(imported, &pushed); err != nil {
+		t.Fatalf("the imported document is not JSON: %v", err)
+	}
+	if _, ok := pushed["license"]; ok {
+		t.Errorf("the imported document carries a license: %s", imported)
+	}
+}
+
+// A gateway older than this feature sends no capability header, and its
+// silence is not an answer. Reading it as "the organization has no license"
+// would take an operator's caps away the moment they upgrade the sidecar --
+// and a config that needs those caps would not start at all.
+func TestALegacyPlaneLeavesTheLocalLicenseInForce(t *testing.T) {
+	srv, _ := legacyPlaneServer(t, http.StatusOK, planeConfig)
+	t.Setenv(ControlPlaneURLEnv, srv.URL)
+	t.Setenv(SidecarTokenEnv, "hsc_x")
+	t.Setenv(license.EnvVar, licensetest.Document(t, licensetest.Enterprise()))
+
+	cfg, _, err := SetupWith("", nil, nil)
+	if err != nil {
+		t.Fatalf("SetupWith: %v", err)
+	}
+	if got := cfg.Licensing().State(); got != license.StateValid {
+		t.Fatalf("license state = %q, want valid: an older gateway's silence unlicensed the process", got)
+	}
+	if got := cfg.Licensing().Source; got != license.EnvVar {
+		t.Errorf("license source = %q, want %q", got, license.EnvVar)
+	}
+	// Nothing was ignored, so nothing is warned about.
+	if got := cfg.cp.ignoredLicense; got != "" {
+		t.Errorf("ignored source = %q, want empty against a legacy gateway", got)
+	}
+}
+
+// The same file, against a legacy gateway, keeps licensing the process: the
+// config key is a source again because the plane never claimed it.
+func TestALegacyPlaneLeavesTheFileLicenseInForce(t *testing.T) {
+	srv, _ := legacyPlaneServer(t, http.StatusOK, planeConfig)
+	t.Setenv(SidecarTokenEnv, "hsc_x")
+	t.Setenv(ControlPlaneURLEnv, "")
+	doc := licensetest.Document(t, licensetest.Enterprise())
+
+	body, err := json.Marshal(map[string]string{"control_plane_url": srv.URL, "license": doc})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err := SetupWith(writeConfig(t, string(body)), nil, nil)
+	if err != nil {
+		t.Fatalf("SetupWith: %v", err)
+	}
+	if got := cfg.Licensing().State(); got != license.StateValid {
+		t.Fatalf("license state = %q, want valid", got)
+	}
+	if got := cfg.Licensing().Source; got != fileLicenseSource {
+		t.Errorf("license source = %q, want %q", got, fileLicenseSource)
+	}
+}
+
 // A plane answering load_from_disk hands the document back to the file: the
 // file's listeners and license key survive untouched, the plane's license
-// rides on cp for SetupWith to adopt, and the connection stays plane-side.
+// and its managed claim ride on cp, and the connection stays plane-side.
 func TestADiskModeAnswerServesTheLocalFile(t *testing.T) {
 	srv, _ := planeServer(t, http.StatusOK, `{"load_from_disk":true,"license":"PLANE"}`)
 	t.Setenv(ControlPlaneURLEnv, srv.URL)
@@ -566,16 +820,16 @@ func TestADiskModeAnswerServesTheLocalFile(t *testing.T) {
 		t.Fatalf("cp bookkeeping: diskMode=%v fileListeners=%d, want true/0",
 			cfg.cp != nil && cfg.cp.diskMode, cfg.cp.fileListeners)
 	}
-	if cfg.cp.planeLicense != "PLANE" {
-		t.Errorf("planeLicense = %q, want the plane's", cfg.cp.planeLicense)
+	if cfg.cp.license != "PLANE" || !cfg.cp.licenseManaged {
+		t.Errorf("cp license = %q managed=%v, want the plane's and true",
+			cfg.cp.license, cfg.cp.licenseManaged)
 	}
 }
 
-// The license the disk-mode answer carries goes through UseLicense, above
-// every local source; an answer without one (free tier) leaves the file's
-// resolution standing. One signed document plays both parts because each
-// licensetest.Sign re-roots the process trust; the SOURCE is the assertion.
-func TestADiskModeLicenseIsAdoptedAboveTheFile(t *testing.T) {
+// The disk-mode answer's license resolves the same way a plane-owned one
+// does: a managing plane is the only source, and an empty answer runs the
+// free tier with the file's key ignored, never a fallback.
+func TestADiskModeLicenseIsThePlanes(t *testing.T) {
 	doc := licensetest.Document(t, licensetest.Enterprise())
 	body, err := json.Marshal(map[string]any{"load_from_disk": true, "license": doc})
 	if err != nil {
@@ -596,19 +850,23 @@ func TestADiskModeLicenseIsAdoptedAboveTheFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SetupWith: %v", err)
 	}
-	if got := cfg.Licensing(); got.Source != controlPlaneLicenseSource {
-		t.Errorf("license source = %q, want the control plane", got.Source)
+	if got := cfg.Licensing(); got.State() != license.StateValid || got.Source != PlaneLicenseSource {
+		t.Errorf("license = %q from %q, want valid from the control plane", got.State(), got.Source)
 	}
 
-	// Free tier: no license in the answer, the file's key stays the source.
+	// A managing plane without a license runs the free tier; the file's
+	// key is ignored out loud, never a fallback.
 	srv2, _ := planeServer(t, http.StatusOK, `{"load_from_disk":true}`)
 	t.Setenv(ControlPlaneURLEnv, srv2.URL)
 	cfg2, _, err := SetupWith(writeConfig(t, string(cfgJSON)), nil, nil)
 	if err != nil {
 		t.Fatalf("SetupWith: %v", err)
 	}
-	if got := cfg2.Licensing(); got.Source == controlPlaneLicenseSource {
-		t.Errorf("license source = %q; an empty answer must not read as a plane license", got.Source)
+	if got := cfg2.Licensing().State(); got != license.StateMissing {
+		t.Errorf("license state = %q, want missing under a managing plane with none", got)
+	}
+	if got := cfg2.cp.ignoredLicense; got != fileLicenseSource {
+		t.Errorf("ignored source = %q, want %q", got, fileLicenseSource)
 	}
 }
 

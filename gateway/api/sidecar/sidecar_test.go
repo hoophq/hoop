@@ -53,7 +53,7 @@ func TestControlPlaneAnswerNeverCarriesLoadFromDisk(t *testing.T) {
 		LoadFromDisk: &off,
 		Listeners:    []daemon.ListenerConfig{{Name: "appdb"}},
 	})
-	raw, err := json.Marshal(toDaemonConfig(stored, "L"))
+	raw, err := json.Marshal(servedConfig(stored, json.RawMessage(`"L"`)))
 	if err != nil {
 		t.Fatalf("marshaling the answer: %v", err)
 	}

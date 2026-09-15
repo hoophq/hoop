@@ -9974,7 +9974,7 @@ const docTemplate = `{
         },
         "/sidecars/configuration": {
             "get": {
-                "description": "Authenticated with the hoop-sidecar-token header. Returns the configuration the sidecar must serve, or only the load_from_disk flag and the license when the sidecar loads its configuration from disk. Unlike the handshake it records nothing, so a poll never overwrites what the sidecar last reported about itself.",
+                "description": "Authenticated with the hoop-sidecar-token header. Returns the configuration the sidecar must serve, carrying the organization's license in its \"license\" key, or only the load_from_disk flag and the license when the sidecar loads its configuration from disk. Unlike the handshake it records nothing, so a poll never overwrites what the sidecar last reported about itself.",
                 "produces": [
                     "application/json"
                 ],
@@ -9997,6 +9997,12 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        },
+                        "headers": {
+                            "hoop-sidecar-license-managed": {
+                                "type": "string",
+                                "description": "Present when this gateway owns the licensing decision; see the handshake."
+                            }
                         }
                     },
                     "401": {
@@ -10086,7 +10092,7 @@ const docTemplate = `{
         },
         "/sidecars/handshake": {
             "post": {
-                "description": "Authenticated with the hoop-sidecar-token header. Records the reported version and returns the configuration the sidecar must serve. A sidecar whose stored configuration sets load_from_disk receives only that flag and its license, and runs its own config file. Answers 412 while no configuration with listeners is assigned, recording nothing: a sidecar that cannot run must not show up as recently seen.",
+                "description": "Authenticated with the hoop-sidecar-token header. Records the reported version and returns the configuration the sidecar must serve. A sidecar whose stored configuration sets load_from_disk receives only that flag and its license, and runs its own config file. Answers 412 while no configuration with listeners is assigned, recording nothing: a sidecar that cannot run must not show up as recently seen. The answer carries the organization's license in its \"license\" key; the sidecar verifies that signature itself and the license is never stored per sidecar.",
                 "consumes": [
                     "application/json"
                 ],
@@ -10121,6 +10127,12 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        },
+                        "headers": {
+                            "hoop-sidecar-license-managed": {
+                                "type": "string",
+                                "description": "Present when this gateway owns the licensing decision, so an answer with no license means the organization holds none. A gateway older than the feature omits it, and the sidecar then keeps its own license sources."
+                            }
                         }
                     },
                     "400": {

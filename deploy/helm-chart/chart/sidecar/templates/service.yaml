@@ -1,0 +1,25 @@
+{{- if .Values.service.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "hoopsidecar.fullname" . }}
+  labels:
+    {{- include "hoopsidecar.labels" . | nindent 4 }}
+  {{- with .Values.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.type | default "ClusterIP" }}
+  selector:
+    {{- include "hoopsidecar.selectorLabels" . | nindent 4 }}
+  # The admin server only: /healthz, /stats, /config, /events, /api/*.
+  # Lane ports are published by `laneServices`, one Service per entry, because
+  # Service type and the cloud load-balancer knobs are per-Service. This one
+  # stays ClusterIP on 19000 whatever those do.
+  ports:
+    - name: admin
+      port: 19000
+      targetPort: 19000
+      protocol: TCP
+{{- end }}

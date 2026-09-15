@@ -52,7 +52,10 @@ export default function WaitingStep({ sidecar, onConnected, onGone, onDelete, on
     let timer
     const tick = async () => {
       try {
-        const fresh = await sidecarsService.get(sidecar.id)
+        // Polled from the wizard, not from useSidecarStore: this state dies
+        // when the wizard closes, and writing it to a global store would
+        // re-render every subscriber every POLL_MS.
+        const { data: fresh } = await sidecarsService.get(sidecar.id)
         if (cancelled) return
         if (fresh.last_seen_at) {
           setConnected(true)

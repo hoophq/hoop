@@ -1,6 +1,14 @@
 # ADR-0016: The control plane licenses the sidecar fleet
 
-- **Status:** Proposed
+> **Amendment (2026-09-14):** review of the implementation found three things
+> this record got wrong, none of which changes the decision. A control plane
+> only owns the licensing decision when it SAYS so, through a response header,
+> because an older gateway's silence is not an answer. A license that grants
+> less than the running rules need now stops the relay instead of being
+> ignored. And the exposure of the signed document to any sidecar token holder
+> is recorded below as a consequence we accepted rather than one we missed.
+
+- **Status:** Proposed (amended 2026-09-14)
 - **Date:** 2026-09-11
 - **Author:** @rogerio
 - **Deciders:** @rogerio, @chico, @felipe
@@ -60,11 +68,20 @@ written at serve time and never stored per sidecar.
 - Authoring a `license` key on a sidecar configuration is refused with 422.
   The import route drops it instead, because a standalone sidecar's file
   legitimately carries one and the connect journey must not fail over it.
-- A configured control plane is the ONLY license source. The three local
-  sources (the flag, `HOOP_LICENSE`, the config file's key) are ignored in
-  plane mode, out loud: a plane whose organization holds no license runs the
-  free tier, and startup warns naming the local source it did not use. They
-  rank exactly as before for a standalone sidecar.
+- A control plane that MANAGES licensing is the only license source. The three
+  local sources (the flag, `HOOP_LICENSE`, the config file's key) are ignored
+  under one, out loud: such a plane whose organization holds no license runs
+  the free tier, and startup warns naming the local source it did not use.
+  They rank exactly as before for a standalone sidecar.
+  A plane says it manages licensing with the `hoop-sidecar-license-managed`
+  response header. A gateway older than this feature sends nothing, and a
+  sidecar cannot tell that silence from "the organization has none" by the
+  document alone, because the key is `omitempty`. Without the header an
+  upgraded sidecar would discard the operator's own license, and a config that
+  needs the paid caps would not start at all -- a sidecar can be upgraded
+  before the gateway it talks to. The signal is a header for the same reason
+  the license is not a new field: the body is decoded with
+  `DisallowUnknownFields`.
   Local sources as a fallback was the first cut and is worse: a license
   REMOVED from the plane drops a running process to the free tier, so a
   fallback would have a restart relicense it, and an admin could never
@@ -89,18 +106,31 @@ because the alternative is a wire format change to a response contract that
 has no version negotiation. Revisit this if the handshake ever grows a
 versioned envelope for another reason — the license should move out with it.
 
-A narrower license arriving at a running relay is not applied: `buildLanes`
-refuses the reload and the running rules keep serving under the license they
-were built with until a restart. Dropping a guardrail or a mask rule from a
-live proxy leaks more than it saves, which is the same reason `watchLicense`
-stops a process instead of re-applying caps. A control plane that renews a
-license into a smaller one, rather than a larger one, needs that gap closed.
+A license that grants LESS than the running rules need stops the relay. The
+reload cannot apply it -- dropping a guardrail or a mask rule from a live
+proxy leaks more than it saves -- so the process publishes the new license,
+drains, and exits; the supervisor restarts it and `buildLanes` refuses the
+config by name until somebody renews the license or removes rules. This is
+the same controlled stop an ended term gets, and it is why the reload path
+cannot simply keep the old license: the heartbeat records a refused document
+as handled, so nothing would revisit it and the organization would serve paid
+rules until the term ended.
 
 A control plane that becomes unreachable leaves the sidecar on the last
 license it received, for as long as the process runs. This is deliberate —
 killing a data-path proxy over a lost connection is an outage — and it means
 the control plane cannot revoke a license from a partitioned sidecar. A
 grace period would close that and has not been specified.
+
+The signed document is served whole to anyone holding a sidecar token, and the
+sidecar verifier does not enforce its `allowed_hosts` -- deliberately, since a
+sidecar's only hostname is a scheduler-generated pod name. A token holder can
+therefore lift the document and run it on an unrelated standalone sidecar.
+What leaks is entitlement, not customer data, and that token already fetches
+the whole configuration: upstreams, guardrails, masking rules. Closing it
+properly means issuing a grant bound to the organization and the sidecar,
+which changes the license format that `client/licensecompat` pins across both
+verifiers. That is a contract change, deferred rather than dismissed.
 
 Connecting a licensed standalone sidecar to a control plane that holds no
 license takes its caps away. That is the decision working as intended, and it

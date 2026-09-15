@@ -102,11 +102,11 @@ function Listener({ listener, config, getIcon }) {
  *
  * The control plane answers the sidecar's check-in with the configuration it
  * holds for it (gateway/api/sidecar). This card reads that document; the one
- * thing it writes is which side owns it, and only when onSourceChange is
- * given — the wizard renders the same card for a sidecar whose source is
- * chosen afterwards. onSourceChange receives the updated record.
+ * thing it writes is which side owns it, and only when `editable` is set —
+ * the wizard renders the same card for a sidecar whose source is chosen
+ * afterwards. The store updates both the list and the selected record.
  */
-export default function SidecarDetails({ sidecar, onSourceChange }) {
+export default function SidecarDetails({ sidecar, editable }) {
   const getIcon = useConnectionIconGetter()
   const setLoadFromDisk = useSidecarStore((s) => s.setLoadFromDisk)
   const config = sidecar.configuration
@@ -130,7 +130,7 @@ export default function SidecarDetails({ sidecar, onSourceChange }) {
     if (!asking) return
     setSaving(true)
     try {
-      onSourceChange(await setLoadFromDisk(sidecar.id, target))
+      await setLoadFromDisk(sidecar.id, target)
       setAsking(false)
     } catch (error) {
       // The switch renders the stored value, so it is already back where it
@@ -181,7 +181,7 @@ export default function SidecarDetails({ sidecar, onSourceChange }) {
           <Group justify="space-between" align="center">
             <Title order={3}>Sidecar Details</Title>
             <Group gap="lg" align="center">
-              {onSourceChange && (
+              {editable && (
                 <Switch
                   label="Load configuration from disk"
                   labelPosition="left"

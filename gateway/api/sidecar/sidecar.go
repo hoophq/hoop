@@ -1,6 +1,7 @@
 package apisidecar
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"slices"
@@ -19,6 +20,31 @@ import (
 // reservedNames would shadow the static routes registered beside
 // /sidecars/:nameOrID.
 var reservedNames = []string{"handshake", "configuration"}
+
+// licenseIsNotASidecarKey refuses a license authored per sidecar. One
+// organization runs under one license, stored on the organization row and
+// served to every sidecar by withOrgLicense; a copy in this document would
+// be a second answer to the same question, stale the day the org's license
+// is renewed. Refusing beats accepting and ignoring: an admin who pastes a
+// license here has to learn that it did nothing.
+const licenseIsNotASidecarKey = `the "license" key does not belong in a sidecar configuration; ` +
+	"the organization's license is served to every sidecar automatically. Set it in Settings -> License"
+
+// licenseManagedHeader tells a sidecar that this gateway owns the licensing
+// decision, so an absent license in the answer means the organization holds
+// none rather than "this gateway does not know about the feature".
+//
+// A HEADER, not a field in the document: the sidecar decodes that body with
+// DisallowUnknownFields, so a new key would be a startup failure on every
+// build that predates it. The distinction matters because a sidecar can be
+// upgraded before the gateway it talks to. Without this, an upgraded sidecar
+// against an older gateway would read silence as an unlicensed organization
+// and discard the operator's own license, which for a config that needs the
+// paid caps is not a downgrade but a refusal to start.
+//
+// The name comes from the module that parses it, so a rename fails a build
+// instead of disabling the signal.
+const licenseManagedHeader = daemon.LicenseManagedHeader
 
 // Create Sidecar
 //
@@ -50,6 +76,10 @@ func Post(c *gin.Context) {
 	cfg, err := services.ParseSidecarConfiguration(req.Configuration)
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
+	}
+	if cfg.License != "" {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": licenseIsNotASidecarKey})
 		return
 	}
 
@@ -175,6 +205,10 @@ func Put(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
+	if cfg.License != "" {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": licenseIsNotASidecarKey})
+		return
+	}
 	item, err := models.UpdateSidecarConfiguration(models.DB, ctx.OrgID,
 		c.Param("nameOrID"), models.SidecarConfiguration(cfg))
 	if err != nil {
@@ -227,13 +261,14 @@ func Patch(c *gin.Context) {
 // Sidecar Handshake
 //
 //	@Summary		Sidecar Handshake
-//	@Description	Authenticated with the hoop-sidecar-token header. Records the reported version and returns the configuration the sidecar must serve. A sidecar whose stored configuration sets load_from_disk receives only that flag and its license, and runs its own config file. Answers 412 while no configuration with listeners is assigned, recording nothing: a sidecar that cannot run must not show up as recently seen.
+//	@Description	Authenticated with the hoop-sidecar-token header. Records the reported version and returns the configuration the sidecar must serve. A sidecar whose stored configuration sets load_from_disk receives only that flag and its license, and runs its own config file. Answers 412 while no configuration with listeners is assigned, recording nothing: a sidecar that cannot run must not show up as recently seen. The answer carries the organization's license in its "license" key; the sidecar verifies that signature itself and the license is never stored per sidecar.
 //	@Tags			Sidecars
 //	@Accept			json
 //	@Produce		json
 //	@Param			hoop-sidecar-token	header		string							true	"The token returned when the sidecar was created"
 //	@Param			request				body		openapi.SidecarHandshakeRequest	true	"The request body resource"
 //	@Success		200				{object}	map[string]interface{}
+//	@Header			200				{string}	hoop-sidecar-license-managed	"Present when this gateway owns the licensing decision, so an answer with no license means the organization holds none. A gateway older than the feature omits it, and the sidecar then keeps its own license sources."
 //	@Failure		400,401,412,500	{object}	openapi.HTTPError
 //	@Router			/sidecars/handshake [post]
 func Handshake(c *gin.Context) {
@@ -247,16 +282,17 @@ func Handshake(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
-	license, err := controlPlaneLicense(sidecar.OrgID)
-	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed loading the control plane license")
-		return
-	}
 	if sidecar.Configuration.LoadFromDisk != nil && *sidecar.Configuration.LoadFromDisk {
+		licenseData, err := models.GetOrgLicenseData(models.DB, sidecar.OrgID)
+		if err != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the organization license")
+			return
+		}
 		// Running fine on its own file, so it is recently seen. The 412
 		// below is for a sidecar that cannot run at all.
 		recordRuntime(sidecar.ID, req.Version)
-		c.JSON(http.StatusOK, diskModeConfig{LoadFromDisk: true, License: license})
+		c.Header(licenseManagedHeader, "true")
+		c.JSON(http.StatusOK, diskModeConfig{LoadFromDisk: true, License: string(licenseData)})
 		return
 	}
 	// An empty answer would only kill the caller: the sidecar refuses to
@@ -268,8 +304,62 @@ func Handshake(c *gin.Context) {
 			"start the sidecar with its config file to import it, or author the configuration in the control plane"})
 		return
 	}
+	served, err := withOrgLicense(sidecar.OrgID, sidecar.Configuration)
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the organization license")
+		return
+	}
 	recordRuntime(sidecar.ID, req.Version)
-	c.JSON(http.StatusOK, toDaemonConfig(sidecar.Configuration, license))
+	c.Header(licenseManagedHeader, "true")
+	c.JSON(http.StatusOK, served)
+}
+
+// withOrgLicense answers the config a sidecar must serve, carrying the
+// organization's license.
+//
+// The license is NOT stored per sidecar. It lives in one place, the
+// organization row, and is written into the served document here, on the way
+// out. The sidecar then verifies that signature itself (daemon.Config's
+// UseLicense), so nothing is trusted because of who sent it.
+//
+// It rides in the document's existing "license" key rather than beside it.
+// The sidecar decodes this body with DisallowUnknownFields, so a sibling key
+// would be refused by every build that does not know it yet.
+//
+// The document goes out as it was stored, unverified: PUT /orgs/license
+// already checked the signature and the allowed hosts against this API's
+// hostname, and a sidecar's hostname is a scheduler-generated pod name that
+// no license can name. An expired document still goes out, because the
+// sidecar has its own rule for a term that ended and cannot apply it to a
+// license it never received.
+func withOrgLicense(orgID string, cfg models.SidecarConfiguration) (daemon.Config, error) {
+	licenseData, err := models.GetOrgLicenseData(models.DB, orgID)
+	if err != nil {
+		// Not found is not a missing license, it is a missing org: the
+		// token authenticated against a row that names it.
+		return daemon.Config(cfg), err
+	}
+	return servedConfig(cfg, licenseData), nil
+}
+
+// servedConfig is the document itself: the stored configuration with the
+// license written in. A copy, never the stored value: the caller holds the
+// row the middleware loaded, and a sidecar's row must not grow a license
+// because something read it.
+func servedConfig(cfg models.SidecarConfiguration, licenseData json.RawMessage) daemon.Config {
+	served := daemon.Config(cfg)
+	// Assigned unconditionally, so an organization with no license serves
+	// none. A row written before this feature can carry a `license` of its
+	// own -- the write routes only started refusing one here -- and letting
+	// that through would license a fleet the organization has unlicensed.
+	served.License = string(licenseData)
+	// A false (or set) load_from_disk is stripped: this answer is the
+	// control-plane-owned document, never the instruction. An older
+	// sidecar decodes with DisallowUnknownFields and would reject the
+	// whole config over a key it does not declare, and could then never
+	// recover.
+	served.LoadFromDisk = nil
+	return served
 }
 
 // Import Sidecar Configuration
@@ -304,10 +394,17 @@ func ImportConfiguration(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "an imported configuration must declare at least one listener"})
 		return
 	}
-
+	// Dropped rather than refused, unlike the admin routes above. A
+	// standalone sidecar legitimately names a license in its config file,
+	// and the connect journey must not fail over a key this row will never
+	// hold. The sidecar strips it before pushing; this is the second
+	// barrier, for a client that does not.
+	cfg.License = ""
+	// An imported configuration is plane-owned by definition: the sidecar
+	// pushed its file to hand ownership over, so the row records the flag
+	// explicitly off.
 	defaultLoadFromDisk := false
 	cfg.LoadFromDisk = &defaultLoadFromDisk
-
 	item, err := models.AdoptSidecarConfiguration(models.DB, sidecar.OrgID, sidecar.ID, models.SidecarConfiguration(cfg))
 	switch {
 	case err == nil:
@@ -322,11 +419,12 @@ func ImportConfiguration(c *gin.Context) {
 // Sidecar Configuration
 //
 //	@Summary		Sidecar Configuration
-//	@Description	Authenticated with the hoop-sidecar-token header. Returns the configuration the sidecar must serve, or only the load_from_disk flag and the license when the sidecar loads its configuration from disk. Unlike the handshake it records nothing, so a poll never overwrites what the sidecar last reported about itself.
+//	@Description	Authenticated with the hoop-sidecar-token header. Returns the configuration the sidecar must serve, carrying the organization's license in its "license" key, or only the load_from_disk flag and the license when the sidecar loads its configuration from disk. Unlike the handshake it records nothing, so a poll never overwrites what the sidecar last reported about itself.
 //	@Tags			Sidecars
 //	@Produce		json
 //	@Param			hoop-sidecar-token	header		string	true	"The token returned when the sidecar was created"
 //	@Success		200		{object}	map[string]interface{}
+//	@Header			200		{string}	hoop-sidecar-license-managed	"Present when this gateway owns the licensing decision; see the handshake."
 //	@Failure		401,500	{object}	openapi.HTTPError
 //	@Router			/sidecars/configuration [get]
 func Configuration(c *gin.Context) {
@@ -335,52 +433,33 @@ func Configuration(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"message": "access denied"})
 		return
 	}
-
-	license, err := controlPlaneLicense(sidecar.OrgID)
-	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed loading the control plane license")
-		return
-	}
 	if sidecar.Configuration.LoadFromDisk != nil && *sidecar.Configuration.LoadFromDisk {
-		c.JSON(http.StatusOK, diskModeConfig{LoadFromDisk: true, License: license})
+		licenseData, err := models.GetOrgLicenseData(models.DB, sidecar.OrgID)
+		if err != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the organization license")
+			return
+		}
+		c.Header(licenseManagedHeader, "true")
+		c.JSON(http.StatusOK, diskModeConfig{LoadFromDisk: true, License: string(licenseData)})
 		return
 	}
-	c.JSON(http.StatusOK, toDaemonConfig(sidecar.Configuration, license))
+	served, err := withOrgLicense(sidecar.OrgID, sidecar.Configuration)
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the organization license")
+		return
+	}
+	c.Header(licenseManagedHeader, "true")
+	c.JSON(http.StatusOK, served)
 }
 
 // diskModeConfig is the whole answer a released sidecar receives: the
 // instruction to run its own file, and the license to run it under. Nothing
-// that could configure a lane, and no zero-valued config fields — an answer
+// that could configure a lane, and no zero-valued config fields -- an answer
 // naming a null listener list or an empty audit block would read as a
 // configuration rather than an instruction.
 type diskModeConfig struct {
 	LoadFromDisk bool   `json:"load_from_disk"`
 	License      string `json:"license,omitempty"`
-}
-
-// toDaemonConfig prepares the control-plane-owned configuration answer. The
-// license it carries is the control plane's own, so every sidecar runs under
-// the same license as the gateway instead of one pasted into each config
-// document. The disk-mode answer is diskModeConfig, built by the callers.
-func toDaemonConfig(cfg models.SidecarConfiguration, license string) models.SidecarConfiguration {
-	// A false (or set) load_from_disk is stripped here: this answer is the
-	// control-plane-owned document, never the instruction. An older sidecar
-	// decodes with DisallowUnknownFields and would reject the whole config
-	// over a key it does not declare, and could then never recover.
-	cfg.LoadFromDisk = nil
-	cfg.License = license
-	return cfg
-}
-
-// controlPlaneLicense reads the license the gateway itself runs under, the
-// document stored on the organization the sidecar's token belongs to. An org
-// with no license yields "", the free tier.
-func controlPlaneLicense(orgID string) (string, error) {
-	org, err := models.GetOrganizationByNameOrID(orgID)
-	if err != nil {
-		return "", err
-	}
-	return string(org.LicenseData), nil
 }
 
 func toResponse(s models.Sidecar) openapi.SidecarResponse {
@@ -392,6 +471,11 @@ func toResponse(s models.Sidecar) openapi.SidecarResponse {
 		CreatedAt:     s.CreatedAt,
 		Configuration: daemon.Config(s.Configuration),
 	}
+	// A row written before this feature can carry one, and Put refuses it:
+	// handing it back would 422 an admin for a field they never authored
+	// and cannot see the purpose of. The license belongs to the
+	// organization, so it is not part of this document in either direction.
+	resp.Configuration.License = ""
 	if state := loadRuntime(s.ID); state != nil {
 		resp.Version = state.Version
 		lastSeen := state.LastSeen
