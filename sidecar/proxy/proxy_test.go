@@ -350,8 +350,9 @@ func topLevelValues(t *testing.T, line, key string) []string {
 }
 
 // pgwire learns the user after the logger already carries "anonymous". The
-// two must not both survive onto the "session opened" line.
-func TestSessionOpenedLogsThePrincipalOnce(t *testing.T) {
+// two must not both survive onto the "session opened" and "session closed"
+// lines.
+func TestSessionLinesLogThePrincipalOnce(t *testing.T) {
 	up := newEchoUpstream(t, nil)
 	var logs syncBuffer
 	srv := startServer(t, proxy.Config{
@@ -371,26 +372,34 @@ func TestSessionOpenedLogsThePrincipalOnce(t *testing.T) {
 	io.ReadFull(c, make([]byte, len(pgStartup("alice"))))
 	c.Close()
 
-	var opened string
+	// Both lines come from the session logger: "opened" right after the
+	// user is learned, "closed" from the deferred teardown.
+	found := map[string]string{"session opened": "", "session closed": ""}
 	deadline := time.Now().Add(3 * time.Second)
-	for opened == "" && time.Now().Before(deadline) {
+	for time.Now().Before(deadline) {
 		// The handler writes a line at a time; the tail after the last
 		// newline is a line still being written.
 		lines := strings.Split(logs.String(), "\n")
 		for _, line := range lines[:len(lines)-1] {
-			if strings.Contains(line, `"msg":"session opened"`) {
-				opened = line
+			for msg := range found {
+				if strings.Contains(line, `"msg":"`+msg+`"`) {
+					found[msg] = line
+				}
 			}
+		}
+		if found["session opened"] != "" && found["session closed"] != "" {
+			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if opened == "" {
-		t.Fatalf("no \"session opened\" line in:\n%s", logs.String())
-	}
-
-	got := topLevelValues(t, opened, "principal")
-	if len(got) != 1 || got[0] != "alice" {
-		t.Fatalf("principal keys = %q, want exactly [alice]; line: %s", got, opened)
+	for msg, line := range found {
+		if line == "" {
+			t.Fatalf("no %q line in:\n%s", msg, logs.String())
+		}
+		got := topLevelValues(t, line, "principal")
+		if len(got) != 1 || got[0] != "alice" {
+			t.Errorf("%s: principal keys = %q, want exactly [alice]; line: %s", msg, got, line)
+		}
 	}
 }
 
