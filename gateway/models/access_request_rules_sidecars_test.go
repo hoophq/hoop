@@ -76,6 +76,19 @@ func TestSidecarAccessRequestRules(t *testing.T) {
 		}
 	})
 
+	// A sidecar rule may carry attributes, which a connection must never match.
+	t.Run("attribute lookups never match a sidecar rule", func(t *testing.T) {
+		if err := models.UpsertAccessRequestRuleAttributes(models.DB, orgID, rule.Name, []string{"production"}); err != nil {
+			t.Fatalf("link attribute: %v", err)
+		}
+		for _, accessType := range []string{models.AccessTypeJit, models.AccessTypeCommand, models.AccessTypeJitCommand} {
+			_, err := models.GetRequestRulesByAttributes(models.DB, orgID, []string{"production"}, accessType)
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				t.Errorf("access_type %s: expected gorm.ErrRecordNotFound, got %v", accessType, err)
+			}
+		}
+	})
+
 	// The subtests below each break the check constraint. gorm translates the
 	// violation into a sentinel that drops the constraint name, and the
 	// embedded backend appends a second error, so errors.Is cannot see the

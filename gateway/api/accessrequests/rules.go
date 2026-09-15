@@ -14,7 +14,6 @@ import (
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
-	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"github.com/hoophq/hoop/gateway/utils"
 	"gorm.io/gorm"
 )
@@ -63,8 +62,9 @@ func validateAccessRequestRuleBody(orgID uuid.UUID, req *openapi.AccessRequestRu
 }
 
 // validateSidecarAccessRequestRuleBody checks a rule that authorizes sidecars.
-// A sidecar review has no requester and grants no session, so the fields that
-// filter requesters or bound a session are refused rather than stored inert.
+// A sidecar review reads only the reviewer settings today. The other fields
+// are stored as sent, so a later change can read them without refusing rules
+// already stored.
 func validateSidecarAccessRequestRuleBody(req *openapi.AccessRequestRuleRequest) error {
 	if err := apivalidation.ValidateResourceName(req.Name); err != nil {
 		return err
@@ -75,30 +75,12 @@ func validateSidecarAccessRequestRuleBody(req *openapi.AccessRequestRuleRequest)
 		return fmt.Errorf("sidecar_names must have at least 1 entry when access_type is 'sidecar'")
 	case len(req.ConnectionNames) > 0:
 		return fmt.Errorf("connection_names must be empty when access_type is 'sidecar'")
-	case len(req.Attributes) > 0:
-		return fmt.Errorf("attributes must be empty when access_type is 'sidecar'")
-	case len(req.ApprovalRequiredGroups) > 0:
-		return fmt.Errorf("approval_required_groups must be empty when access_type is 'sidecar'")
-	case len(req.SkipReviewGroups) > 0:
-		return fmt.Errorf("skip_review_groups must be empty when access_type is 'sidecar'")
-	case req.AccessMaxDuration != nil:
-		return fmt.Errorf("access_max_duration must be empty when access_type is 'sidecar'")
 	case len(req.ReviewersGroups) == 0:
 		return fmt.Errorf("reviewers_groups must have at least 1 entry")
 	case !req.AllGroupsMustApprove && (req.MinApprovals == nil || *req.MinApprovals < 1):
 		return fmt.Errorf("min_approvals must be at least 1 when all_groups_must_approve is false")
-	}
-
-	// Only the control plane serves sidecar reviews, and its users hold no
-	// other group. A user outside a review's groups can reject it but never
-	// approve it (review.DoReview), so any other group files a review nobody
-	// can approve.
-	eligible := []string{types.GroupAdmin, types.GroupApprover}
-	for _, group := range slices.Concat(req.ReviewersGroups, req.ForceApprovalGroups) {
-		if !slices.Contains(eligible, group) {
-			return fmt.Errorf("group %q cannot approve a sidecar review, use %q or %q",
-				group, types.GroupAdmin, types.GroupApprover)
-		}
+	case len(req.SkipReviewGroups) > 0 && len(req.ApprovalRequiredGroups) > 0:
+		return fmt.Errorf("skip_review_groups can only be set when approval_required_groups is empty")
 	}
 	return nil
 }
@@ -483,9 +465,9 @@ func updateManagedAccessRequestRule(c *gin.Context, rule *models.AccessRequestRu
 	c.JSON(http.StatusOK, toAccessRequestRuleOpenApi(rule))
 }
 
-// createSidecarAccessRequestRule creates a rule that authorizes sidecars. It
-// targets no connection, so the connection and attribute conflict checks do
-// not apply.
+// createSidecarAccessRequestRule creates a rule that authorizes sidecars. The
+// connection and attribute conflict checks do not apply: the rule gates no
+// connection, and the attribute check would treat it as a jit_command rule.
 func createSidecarAccessRequestRule(c *gin.Context, orgID uuid.UUID, req *openapi.AccessRequestRuleRequest) {
 	sidecarNames, ok := resolveSidecarNames(c, orgID, req)
 	if !ok {
@@ -499,10 +481,12 @@ func createSidecarAccessRequestRule(c *gin.Context, orgID uuid.UUID, req *openap
 		AccessType:             models.AccessTypeSidecar,
 		ConnectionNames:        []string{},
 		SidecarNames:           sidecarNames,
-		ApprovalRequiredGroups: []string{},
+		ApprovalRequiredGroups: req.ApprovalRequiredGroups,
 		AllGroupsMustApprove:   req.AllGroupsMustApprove,
 		ReviewersGroups:        req.ReviewersGroups,
 		ForceApprovalGroups:    req.ForceApprovalGroups,
+		SkipReviewGroups:       req.SkipReviewGroups,
+		AccessMaxDuration:      req.AccessMaxDuration,
 		MinApprovals:           req.MinApprovals,
 	}
 	if err := models.CreateAccessRequestRule(models.DB, rule); err != nil {
@@ -511,6 +495,9 @@ func createSidecarAccessRequestRule(c *gin.Context, orgID uuid.UUID, req *openap
 			return
 		}
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to create access request rule")
+		return
+	}
+	if !storeSidecarRuleAttributes(c, orgID, rule, req.Attributes) {
 		return
 	}
 	c.JSON(http.StatusCreated, toAccessRequestRuleOpenApi(rule))
@@ -527,9 +514,12 @@ func updateSidecarAccessRequestRule(c *gin.Context, orgID uuid.UUID, rule *model
 	rule.Name = req.Name
 	rule.Description = req.Description
 	rule.SidecarNames = sidecarNames
+	rule.ApprovalRequiredGroups = req.ApprovalRequiredGroups
 	rule.AllGroupsMustApprove = req.AllGroupsMustApprove
 	rule.ReviewersGroups = req.ReviewersGroups
 	rule.ForceApprovalGroups = req.ForceApprovalGroups
+	rule.SkipReviewGroups = req.SkipReviewGroups
+	rule.AccessMaxDuration = req.AccessMaxDuration
 	rule.MinApprovals = req.MinApprovals
 	if err := models.UpdateAccessRequestRule(models.DB, rule); err != nil {
 		if errors.Is(err, gorm.ErrDuplicatedKey) {
@@ -539,7 +529,27 @@ func updateSidecarAccessRequestRule(c *gin.Context, orgID uuid.UUID, rule *model
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to update access request rule")
 		return
 	}
+	if !storeSidecarRuleAttributes(c, orgID, rule, req.Attributes) {
+		return
+	}
 	c.JSON(http.StatusOK, toAccessRequestRuleOpenApi(rule))
+}
+
+// storeSidecarRuleAttributes replaces the attributes of a sidecar rule and
+// mirrors them on rule for the response. It answers the request itself and
+// returns false when the write fails.
+func storeSidecarRuleAttributes(c *gin.Context, orgID uuid.UUID, rule *models.AccessRequestRule, attributeNames []string) bool {
+	if err := models.UpsertAccessRequestRuleAttributes(models.DB, orgID, rule.Name, attributeNames); err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to upsert access request rule attributes")
+		return false
+	}
+	rule.RuleAttributes = make([]models.AccessRequestRuleAttribute, 0, len(attributeNames))
+	for _, attr := range attributeNames {
+		rule.RuleAttributes = append(rule.RuleAttributes, models.AccessRequestRuleAttribute{
+			OrgID: orgID, AttributeName: attr, AccessRuleName: rule.Name,
+		})
+	}
+	return true
 }
 
 // resolveSidecarNames validates a sidecar rule request and returns its sidecar

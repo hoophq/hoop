@@ -8,7 +8,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
-	"github.com/hoophq/hoop/gateway/storagev2/types"
 )
 
 func validSidecarRule() openapi.AccessRequestRuleRequest {
@@ -18,7 +17,7 @@ func validSidecarRule() openapi.AccessRequestRuleRequest {
 		SidecarNames:           []string{"sidecar-prod"},
 		ConnectionNames:        []string{},
 		ApprovalRequiredGroups: []string{},
-		ReviewersGroups:        []string{types.GroupAdmin, types.GroupApprover},
+		ReviewersGroups:        []string{"admin", "approver"},
 		ForceApprovalGroups:    []string{},
 		MinApprovals:           ptr.Int(1),
 	}
@@ -34,8 +33,22 @@ func TestValidateSidecarAccessRequestRuleBody(t *testing.T) {
 		{name: "all groups must approve needs no minimum", mutate: func(r *openapi.AccessRequestRuleRequest) {
 			r.AllGroupsMustApprove, r.MinApprovals = true, nil
 		}},
-		{name: "force approval by an approver", mutate: func(r *openapi.AccessRequestRuleRequest) {
-			r.ForceApprovalGroups = []string{types.GroupApprover}
+		// A sidecar review reads none of these today. They are stored as sent,
+		// so a later change can read them without refusing stored rules.
+		{name: "any reviewer and force approval group", mutate: func(r *openapi.AccessRequestRuleRequest) {
+			r.ReviewersGroups, r.ForceApprovalGroups = []string{"dba"}, []string{"sre"}
+		}},
+		{name: "attributes", mutate: func(r *openapi.AccessRequestRuleRequest) {
+			r.Attributes = []string{"production"}
+		}},
+		{name: "approval required groups", mutate: func(r *openapi.AccessRequestRuleRequest) {
+			r.ApprovalRequiredGroups = []string{"developers"}
+		}},
+		{name: "skip review groups", mutate: func(r *openapi.AccessRequestRuleRequest) {
+			r.SkipReviewGroups = []string{"sre"}
+		}},
+		{name: "access window", mutate: func(r *openapi.AccessRequestRuleRequest) {
+			r.AccessMaxDuration = ptr.Int(3600)
 		}},
 		{name: "no sidecars", wantErr: "sidecar_names", mutate: func(r *openapi.AccessRequestRuleRequest) {
 			r.SidecarNames = nil
@@ -43,31 +56,14 @@ func TestValidateSidecarAccessRequestRuleBody(t *testing.T) {
 		{name: "connections", wantErr: "connection_names", mutate: func(r *openapi.AccessRequestRuleRequest) {
 			r.ConnectionNames = []string{"pg-prod"}
 		}},
-		{name: "attributes", wantErr: "attributes", mutate: func(r *openapi.AccessRequestRuleRequest) {
-			r.Attributes = []string{"production"}
-		}},
-		{name: "approval required groups", wantErr: "approval_required_groups", mutate: func(r *openapi.AccessRequestRuleRequest) {
-			r.ApprovalRequiredGroups = []string{"developers"}
-		}},
-		{name: "skip review groups", wantErr: "skip_review_groups", mutate: func(r *openapi.AccessRequestRuleRequest) {
-			r.SkipReviewGroups = []string{types.GroupAdmin}
-		}},
-		{name: "access window", wantErr: "access_max_duration", mutate: func(r *openapi.AccessRequestRuleRequest) {
-			r.AccessMaxDuration = ptr.Int(3600)
-		}},
 		{name: "no reviewers", wantErr: "reviewers_groups", mutate: func(r *openapi.AccessRequestRuleRequest) {
 			r.ReviewersGroups = nil
 		}},
 		{name: "no minimum", wantErr: "min_approvals", mutate: func(r *openapi.AccessRequestRuleRequest) {
 			r.MinApprovals = nil
 		}},
-		// The control plane puts nobody in this group, so its reviews could
-		// never be approved.
-		{name: "reviewer group nobody holds", wantErr: `"sre"`, mutate: func(r *openapi.AccessRequestRuleRequest) {
-			r.ReviewersGroups = []string{types.GroupAdmin, "sre"}
-		}},
-		{name: "force approval group nobody holds", wantErr: `"sre"`, mutate: func(r *openapi.AccessRequestRuleRequest) {
-			r.ForceApprovalGroups = []string{"sre"}
+		{name: "skip and require review groups together", wantErr: "skip_review_groups", mutate: func(r *openapi.AccessRequestRuleRequest) {
+			r.ApprovalRequiredGroups, r.SkipReviewGroups = []string{"developers"}, []string{"sre"}
 		}},
 	}
 	for _, tt := range tests {
