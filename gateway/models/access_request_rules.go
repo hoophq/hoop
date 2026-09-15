@@ -36,7 +36,11 @@ type AccessRequestRule struct {
 	AccessType  string  `gorm:"column:access_type"`
 	ManagedBy   *string `gorm:"column:managed_by"`
 
-	ConnectionNames        pq.StringArray `gorm:"column:connection_names;type:text[]"`
+	ConnectionNames pq.StringArray `gorm:"column:connection_names;type:text[]"`
+	// SidecarNames is set only on a sidecar rule. The default leaves the column
+	// to the database when a writer never sets it, as every connection rule
+	// writer does, instead of inserting NULL into a NOT NULL column.
+	SidecarNames           pq.StringArray `gorm:"column:sidecar_names;type:text[];default:'{}'"`
 	ApprovalRequiredGroups pq.StringArray `gorm:"column:approval_required_groups;type:text[]"`
 	AllGroupsMustApprove   bool           `gorm:"column:all_groups_must_approve;default:false"`
 	ReviewersGroups        pq.StringArray `gorm:"column:reviewers_groups;type:text[]"`
