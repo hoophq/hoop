@@ -777,6 +777,15 @@ useAuthStore.getState().token
 
 Non-obvious notes only:
 
+- `useUserStore` — the signed-in user, the org's plan and the product mode.
+  `installLicense(payload)` is one operation on purpose: the moment the `PUT`
+  lands the plan has changed server-side, and every gate reading `isFreeLicense`
+  or `licenseFeatures` is stale until `/serverinfo` is re-read. Doing the two
+  steps apart is how a screen navigates on the old plan. It answers
+  `{ ok: false, message }`, `{ ok: true, needsReload: true }` (license live,
+  `/serverinfo` did not answer — reload rather than trust the store) or
+  `{ ok: true }`. `features/ProtectionProfiles/AddLicenseModal` still runs the
+  sequence inline and is the next caller to adopt it.
 - `useBridgeStore` — wraps `window.hoopDispatch` re-frame bridge calls; never
   call `hoopDispatch` from a component (rule in `CLAUDE.md` "Re-frame Interop").
   Current methods: `refreshLegacyUser()`, `syncPrimaryConnectionFromUrl()`.
@@ -798,8 +807,20 @@ Non-obvious notes only:
   from the CLJS terminal — no timers. Resets itself on logout (subscribes to
   `useAuthStore`), and every read is scoped by `forUserId`.
 - `useSidecarStore` — the fleet (`sidecars`, `fetchSidecars`, `createSidecar`,
-  `deleteSidecar`). `createSidecar` returns the response with the one-time token and
-  keeps none of it.
+  `deleteSidecar`) and the one record `/sidecars/:id` reads (`selected`,
+  `selectedId`, `selectedError`, `selectedLoading`, `fetchSidecar`,
+  `clearSelected`). `createSidecar` returns the response with the one-time token
+  and keeps none of it. Two generation counters, one per resource, drop a response
+  that arrives after its resource moved on; `reset()` runs on logout through an
+  `useAuthStore` subscription.
+  The selected record needs **both** of its flags, and a page checks both:
+  `selectedId !== id` catches the frame between a URL change and the effect that
+  refetches — a loading flag alone still reads "idle" there and paints the
+  previous sidecar under the new URL — while `selectedLoading` covers the request
+  itself, without which the loader lifts after `useMinDelay` and a slow response
+  renders an empty body. `clearSelected` belongs in the details page's effect
+  cleanup: the slot serves one page view, so a revisit cannot open on a record
+  minutes old, or on one already deleted.
 - `useConnectionsMetadataStore` — loaded once at app start (`App.jsx`); feeds
   credential field schemas + connection icons; `load()` is idempotent.
 
@@ -832,7 +853,8 @@ Non-obvious notes only:
   infinite-scroll dropdowns.
 - `eventRouting.js` — normalizes the backend's snake_case JSON to camelCase at
   the service boundary.
-- `sidecars.js` — `/sidecars`. `create({ name })` is the only call that returns the
+- `sidecars.js` — `/sidecars`. Returns raw Axios promises; `useSidecarStore` unwraps
+  them. `create({ name })` is the only call that returns the
   token (`hsc_…`); it is stored hashed and never shown again, so the wizard keeps it
   in component state. **The control plane owns the configuration**: `configuration` is
   the `daemon.Config` it stores for that sidecar and serves back on the handshake and

@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { identify as analyticsIdentify } from '@/services/analytics'
 import { authService } from '@/services/auth'
+import licenseService from '@/services/license'
 import { ROLE_ADMIN, ROLE_APPROVER, ROLE_STANDARD } from '@/utils/roles'
 
 const INTERCOM_APP_ID = 'ryuapdmp'
@@ -97,6 +98,35 @@ export const useUserStore = create((set, get) => ({
       // The authenticated answer wins over the boot-time /publicserverinfo one.
       ...(serverInfo?.application_mode && { appMode: serverInfo.application_mode }),
     })
+  },
+  /**
+   * Install a license and make the app know it.
+   *
+   * The two steps are one operation: once the PUT lands the plan has changed
+   * server-side, and every gate that reads isFreeLicense or licenseFeatures is
+   * stale until /serverinfo is re-read. Keeping them apart is how a screen ends
+   * up navigating on the old plan.
+   *
+   * Returns what the caller cannot derive from the store:
+   *   { ok: false, message }      the PUT was refused; nothing changed
+   *   { ok: true, needsReload }   the license is live but /serverinfo did not
+   *                               answer; reload rather than trust this state
+   *   { ok: true }                installed and the store is current
+   */
+  installLicense: async (payload) => {
+    try {
+      await licenseService.update(payload)
+    } catch (err) {
+      return { ok: false, message: err.response?.data?.message || 'Failed to update the license.' }
+    }
+    let serverInfo
+    try {
+      serverInfo = await authService.getServerInfo()
+    } catch {
+      return { ok: true, needsReload: true }
+    }
+    get().setServerInfo(serverInfo)
+    return { ok: true }
   },
   // Boot fetch, called once at module level from main.jsx so StrictMode's
   // double-invoked effects cannot fire it twice. A failed request keeps the
