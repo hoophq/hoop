@@ -98,7 +98,6 @@ services:
   sidecar:
     profiles: ["sidecar"]
     image: hoophq/hoopsidecar
-    tty: true
     networks:
       - hoopcp
     environment:
