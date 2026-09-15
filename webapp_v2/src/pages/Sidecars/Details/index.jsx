@@ -58,7 +58,7 @@ export default function SidecarDetailsPage() {
         selected && (
           <>
             <Title order={1}>{selected.name}</Title>
-            <SidecarDetails sidecar={selected} />
+            <SidecarDetails sidecar={selected} editable />
           </>
         )
       )}

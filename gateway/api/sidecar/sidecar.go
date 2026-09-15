@@ -222,10 +222,46 @@ func Put(c *gin.Context) {
 	c.JSON(http.StatusOK, toResponse(*item))
 }
 
+// Patch Sidecar Configuration
+//
+//	@Summary		Patch Sidecar Configuration
+//	@Description	Merge a partial configuration into the document a sidecar serves: the keys sent are updated and the rest are left as stored. Unlike PUT it never replaces the whole document, so it cannot overwrite a configuration a sidecar imported meanwhile. load_from_disk false clears the key, handing the document back to the control plane.
+//	@Tags			Sidecars
+//	@Accept			json
+//	@Produce		json
+//	@Param			nameOrID			path		string							true	"Name or UUID of the sidecar"
+//	@Param			request				body		openapi.SidecarPatchRequest		true	"The request body resource"
+//	@Success		200					{object}	openapi.SidecarResponse
+//	@Failure		400,404,422,500		{object}	openapi.HTTPError
+//	@Router			/sidecars/{nameOrID} [patch]
+func Patch(c *gin.Context) {
+	ctx := storagev2.ParseContext(c)
+	var req openapi.SidecarPatchRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+	merge, removeLoadFromDisk, err := services.ParseSidecarConfigurationPatch(req.Configuration)
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
+	}
+	item, err := models.PatchSidecarConfiguration(models.DB, ctx.OrgID, c.Param("nameOrID"), merge, removeLoadFromDisk)
+	if err != nil {
+		if errors.Is(err, models.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"message": "sidecar not found"})
+			return
+		}
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed patching sidecar configuration")
+		return
+	}
+	c.JSON(http.StatusOK, toResponse(*item))
+}
+
 // Sidecar Handshake
 //
 //	@Summary		Sidecar Handshake
-//	@Description	Authenticated with the hoop-sidecar-token header. Records the reported version and returns the configuration the sidecar must serve. Answers 412 while no configuration with listeners is assigned, recording nothing: a sidecar that cannot run must not show up as recently seen. The answer carries the organization's license in its "license" key; the sidecar verifies that signature itself and the license is never stored per sidecar.
+//	@Description	Authenticated with the hoop-sidecar-token header. Records the reported version and returns the configuration the sidecar must serve. A sidecar whose stored configuration sets load_from_disk receives only that flag and its license, and runs its own config file. Answers 412 while no configuration with listeners is assigned, recording nothing: a sidecar that cannot run must not show up as recently seen. The answer carries the organization's license in its "license" key; the sidecar verifies that signature itself and the license is never stored per sidecar.
 //	@Tags			Sidecars
 //	@Accept			json
 //	@Produce		json
@@ -244,6 +280,19 @@ func Handshake(c *gin.Context) {
 	var req openapi.SidecarHandshakeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
+		return
+	}
+	if sidecar.Configuration.LoadFromDisk != nil && *sidecar.Configuration.LoadFromDisk {
+		licenseData, err := models.GetOrgLicenseData(models.DB, sidecar.OrgID)
+		if err != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the organization license")
+			return
+		}
+		// Running fine on its own file, so it is recently seen. The 412
+		// below is for a sidecar that cannot run at all.
+		recordRuntime(sidecar.ID, req.Version)
+		c.Header(licenseManagedHeader, "true")
+		c.JSON(http.StatusOK, diskModeConfig{LoadFromDisk: true, License: string(licenseData)})
 		return
 	}
 	// An empty answer would only kill the caller: the sidecar refuses to
@@ -304,13 +353,19 @@ func servedConfig(cfg models.SidecarConfiguration, licenseData json.RawMessage) 
 	// own -- the write routes only started refusing one here -- and letting
 	// that through would license a fleet the organization has unlicensed.
 	served.License = string(licenseData)
+	// A false (or set) load_from_disk is stripped: this answer is the
+	// control-plane-owned document, never the instruction. An older
+	// sidecar decodes with DisallowUnknownFields and would reject the
+	// whole config over a key it does not declare, and could then never
+	// recover.
+	served.LoadFromDisk = nil
 	return served
 }
 
 // Import Sidecar Configuration
 //
 //	@Summary		Import Sidecar Configuration
-//	@Description	Authenticated with the hoop-sidecar-token header. Stores the config document a sidecar carried locally, once: the import is refused with 409 when the control plane already holds a configuration with listeners, so a centrally authored config is never overwritten by a restarting sidecar.
+//	@Description	Authenticated with the hoop-sidecar-token header. Stores the config document a sidecar carried locally, once: the import is refused with 409 when the control plane already holds a configuration with listeners, or when the sidecar loads its configuration from disk.
 //	@Tags			Sidecars
 //	@Accept			json
 //	@Produce		json
@@ -345,6 +400,11 @@ func ImportConfiguration(c *gin.Context) {
 	// hold. The sidecar strips it before pushing; this is the second
 	// barrier, for a client that does not.
 	cfg.License = ""
+	// An imported configuration is plane-owned by definition: the sidecar
+	// pushed its file to hand ownership over, so the row records the flag
+	// explicitly off.
+	defaultLoadFromDisk := false
+	cfg.LoadFromDisk = &defaultLoadFromDisk
 	item, err := models.AdoptSidecarConfiguration(models.DB, sidecar.OrgID, sidecar.ID, models.SidecarConfiguration(cfg))
 	switch {
 	case err == nil:
@@ -359,7 +419,7 @@ func ImportConfiguration(c *gin.Context) {
 // Sidecar Configuration
 //
 //	@Summary		Sidecar Configuration
-//	@Description	Authenticated with the hoop-sidecar-token header. Returns the configuration the sidecar must serve, carrying the organization's license in its "license" key. Unlike the handshake it records nothing, so a poll never overwrites what the sidecar last reported about itself.
+//	@Description	Authenticated with the hoop-sidecar-token header. Returns the configuration the sidecar must serve, carrying the organization's license in its "license" key, or only the load_from_disk flag and the license when the sidecar loads its configuration from disk. Unlike the handshake it records nothing, so a poll never overwrites what the sidecar last reported about itself.
 //	@Tags			Sidecars
 //	@Produce		json
 //	@Param			hoop-sidecar-token	header		string	true	"The token returned when the sidecar was created"
@@ -373,6 +433,16 @@ func Configuration(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"message": "access denied"})
 		return
 	}
+	if sidecar.Configuration.LoadFromDisk != nil && *sidecar.Configuration.LoadFromDisk {
+		licenseData, err := models.GetOrgLicenseData(models.DB, sidecar.OrgID)
+		if err != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the organization license")
+			return
+		}
+		c.Header(licenseManagedHeader, "true")
+		c.JSON(http.StatusOK, diskModeConfig{LoadFromDisk: true, License: string(licenseData)})
+		return
+	}
 	served, err := withOrgLicense(sidecar.OrgID, sidecar.Configuration)
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the organization license")
@@ -380,6 +450,16 @@ func Configuration(c *gin.Context) {
 	}
 	c.Header(licenseManagedHeader, "true")
 	c.JSON(http.StatusOK, served)
+}
+
+// diskModeConfig is the whole answer a released sidecar receives: the
+// instruction to run its own file, and the license to run it under. Nothing
+// that could configure a lane, and no zero-valued config fields -- an answer
+// naming a null listener list or an empty audit block would read as a
+// configuration rather than an instruction.
+type diskModeConfig struct {
+	LoadFromDisk bool   `json:"load_from_disk"`
+	License      string `json:"license,omitempty"`
 }
 
 func toResponse(s models.Sidecar) openapi.SidecarResponse {

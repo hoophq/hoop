@@ -1,0 +1,5 @@
+/* Mantine ellipsizes a badge label that misses fitting by a sub-pixel.
+   Opt in with `fullLabel` when the label is short and must never truncate. */
+.fullLabel {
+  overflow: visible;
+}

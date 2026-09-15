@@ -1,11 +1,24 @@
+import { useState } from 'react'
 import { Box, Divider, Group, Image, Paper, Pill, Stack, Text, Title } from '@mantine/core'
 import { Info, Lock } from 'lucide-react'
 import Alert from '@/components/Alert'
 import Badge from '@/components/Badge'
+import Switch from '@/components/Switch'
 import Tooltip from '@/components/Tooltip'
+import EmptyState from '@/layout/EmptyState'
+import { useSidecarStore } from '@/stores/useSidecarStore'
 import { useConnectionIconGetter } from '@/utils/connectionIcons'
-import { auditEnabled, configFeatures, hasConfiguration, listenerFeatures, protocolInfo } from '../config'
+import { showSnackbar } from '@/utils/snackbar'
+import {
+  auditEnabled,
+  configFeatures,
+  hasConfiguration,
+  listenerFeatures,
+  loadsFromDisk,
+  protocolInfo,
+} from '../config'
 import { formatRelativeTime, sidecarStatus } from '../status'
+import SidecarSourceModal from '../sections/SidecarSourceModal'
 import FeaturePills from './FeaturePills'
 
 const LABEL_WIDTH = 88
@@ -88,30 +101,77 @@ function Listener({ listener, config, getIcon }) {
  * The "Sidecar Details" card (Figma: wizard Overview and the details page).
  *
  * The control plane answers the sidecar's check-in with the configuration it
- * holds for it (gateway/api/sidecar). This card reads that document and never
- * writes it: authoring a configuration from the control plane is not built.
+ * holds for it (gateway/api/sidecar). This card reads that document; the one
+ * thing it writes is which side owns it, and only when `editable` is set —
+ * the wizard renders the same card for a sidecar whose source is chosen
+ * afterwards. The store updates both the list and the selected record.
  */
-export default function SidecarDetails({ sidecar }) {
+export default function SidecarDetails({ sidecar, editable }) {
   const getIcon = useConnectionIconGetter()
+  const setLoadFromDisk = useSidecarStore((s) => s.setLoadFromDisk)
   const config = sidecar.configuration
   const configured = hasConfiguration(config)
+  const fromDisk = loadsFromDisk(sidecar)
   const listeners = config?.listeners ?? []
+  // The value awaiting confirmation, and whether the dialog is up. Two states
+  // rather than one: Mantine keeps the modal mounted through its exit
+  // transition, and a target cleared on close would rewrite the copy of the
+  // dialog the user is watching leave.
+  const [target, setTarget] = useState(false)
+  const [asking, setAsking] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  const ask = (next) => {
+    setTarget(next)
+    setAsking(true)
+  }
+
+  const confirmSource = async () => {
+    if (!asking) return
+    setSaving(true)
+    try {
+      await setLoadFromDisk(sidecar.id, target)
+      setAsking(false)
+    } catch (error) {
+      // The switch renders the stored value, so it is already back where it
+      // was once the dialog closes.
+      setAsking(false)
+      showSnackbar({
+        level: 'error',
+        text: 'Could not change the configuration source.',
+        description: error.response?.data?.message ?? error.message,
+      })
+    } finally {
+      setSaving(false)
+    }
+  }
 
   return (
     <Stack gap="md">
-      {configured ? (
+      {fromDisk ? (
+        <Alert color="blue" variant="light" radius="md" icon={<Lock size={16} />}>
+          <Stack gap={4}>
+            <Text size="sm">
+              {
+                'This sidecar loads its configuration from its own config file, and the control plane sends only its license. A running sidecar picks this up on its next check-in, within a minute.'
+              }
+            </Text>
+            {configured && (
+              <Text size="sm">The configuration below is stored in the control plane and is not applied.</Text>
+            )}
+          </Stack>
+        </Alert>
+      ) : configured ? (
         <Alert color="blue" variant="light" radius="md" icon={<Lock size={16} />}>
           <Text size="sm">
-            {
-              "The control plane delivers guardrails, masking and analyzer settings to this sidecar. Listeners come from the sidecar's own config file. Editing any of it from here is not built yet."
-            }
+            {"The control plane delivers this sidecar's whole configuration, listeners included."}
           </Text>
         </Alert>
       ) : (
         <Alert color="gray" variant="light" radius="md" icon={<Info size={16} />}>
           <Text size="sm">
-            The control plane holds no configuration for this sidecar yet. Until it does, the sidecar runs whatever its
-            own config file says.
+            The control plane stores no listeners for this sidecar yet. The sidecar imports its own config file on its
+            first handshake, and the control plane owns it from then on.
           </Text>
         </Alert>
       )}
@@ -120,7 +180,18 @@ export default function SidecarDetails({ sidecar }) {
         <Stack gap="lg">
           <Group justify="space-between" align="center">
             <Title order={3}>Sidecar Details</Title>
-            <SidecarStatusBadge sidecar={sidecar} />
+            <Group gap="lg" align="center">
+              {editable && (
+                <Switch
+                  label="Load configuration from disk"
+                  labelPosition="left"
+                  checked={fromDisk}
+                  disabled={saving || asking}
+                  onChange={(event) => ask(event.currentTarget.checked)}
+                />
+              )}
+              <SidecarStatusBadge sidecar={sidecar} />
+            </Group>
           </Group>
 
           <Stack gap="sm">
@@ -144,10 +215,10 @@ export default function SidecarDetails({ sidecar }) {
 
           <Divider />
 
-          <Stack gap="sm">
-            <Text fw={600}>Global settings</Text>
-            {configured ? (
-              <>
+          {configured ? (
+            <>
+              <Stack gap="sm">
+                <Text fw={600}>Global settings</Text>
                 <Row label="Features">
                   <FeaturePills features={configFeatures(config)} />
                 </Row>
@@ -156,39 +227,52 @@ export default function SidecarDetails({ sidecar }) {
                     {auditEnabled(config) ? 'Active' : 'Off'}
                   </Badge>
                 </Row>
-              </>
-            ) : (
-              <Text size="sm" c="dimmed">
-                Nothing delivered by the control plane yet.
-              </Text>
-            )}
-          </Stack>
+              </Stack>
 
-          <Divider />
+              <Divider />
 
-          <Stack gap="md">
-            <Group gap="sm" align="baseline">
-              <Text fw={600}>Listeners</Text>
-              <Text size="sm" c="dimmed">
-                {`${listeners.length} ${listeners.length === 1 ? 'listener' : 'listeners'}`}
-              </Text>
-            </Group>
+              <Stack gap="md">
+                <Group gap="sm" align="baseline">
+                  <Text fw={600}>Listeners</Text>
+                  <Text size="sm" c="dimmed">
+                    {`${listeners.length} ${listeners.length === 1 ? 'listener' : 'listeners'}`}
+                  </Text>
+                </Group>
 
-            {configured ? (
-              listeners.map((listener, index) => (
-                <Box key={listener.name ?? index}>
-                  {index > 0 && <Divider color="gray.1" mb="md" />}
-                  <Listener listener={listener} config={config} getIcon={getIcon} />
-                </Box>
-              ))
-            ) : (
-              <Text size="sm" c="dimmed">
-                No listeners here. A connected sidecar reads them from its own config file.
-              </Text>
-            )}
-          </Stack>
+                {listeners.map((listener, index) => (
+                  <Box key={listener.name ?? index}>
+                    {index > 0 && <Divider color="gray.1" mb="md" />}
+                    <Listener listener={listener} config={config} getIcon={getIcon} />
+                  </Box>
+                ))}
+              </Stack>
+            </>
+          ) : (
+            <EmptyState
+              compact
+              title={
+                fromDisk
+                  ? 'This sidecar runs the configuration in its own config file'
+                  : 'The control plane stores no listeners yet'
+              }
+              description={
+                fromDisk
+                  ? 'The control plane stores no listeners for it and sends only its license.'
+                  : "Nothing is delivered to this sidecar yet. A connected sidecar reads its listeners from its own config file and imports them here."
+              }
+            />
+          )}
         </Stack>
       </Paper>
+
+      <SidecarSourceModal
+        opened={asking}
+        toDisk={target}
+        storedListeners={listeners.length}
+        onClose={() => setAsking(false)}
+        onConfirm={confirmSource}
+        loading={saving}
+      />
     </Stack>
   )
 }

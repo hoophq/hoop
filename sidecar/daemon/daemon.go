@@ -143,8 +143,11 @@ func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*
 	}
 	if cfg.cp != nil {
 		// Retained so a pii drift from the plane rebuilds the detector the
-		// way startup would. See reloader.
+		// way startup would, and so a mid-run handover re-reads the config
+		// file the way startup would. See reloader.
 		cfg.cp.build = build
+		cfg.cp.configPath = path
+		cfg.cp.load = load
 	}
 	if cfg.cp != nil && cfg.cp.licenseManaged {
 		// Recorded before the resolution, not after: a local license is
@@ -869,6 +872,10 @@ func Run(cfg *Config, det Plugin) error {
 			"url", cfg.cp.url,
 			"source", cfg.cp.urlSource,
 			"poll", heartbeatEvery.String())
+		if cfg.cp.diskMode {
+			log.Info("the control plane delegates the configuration to the local file",
+				"listeners", len(cfg.Listeners))
+		}
 		if cfg.cp.imported {
 			log.Info("configuration imported into the control plane",
 				"url", cfg.cp.url,

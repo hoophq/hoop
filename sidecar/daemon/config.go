@@ -124,6 +124,20 @@ type Config struct {
 	// outranks this key; resolveControlPlaneURL holds the order.
 	ControlPlaneURL string `json:"control_plane_url,omitempty"`
 
+	// LoadFromDisk is the control plane telling this sidecar that its own
+	// config file is the source of truth. It is meaningful only in the
+	// document the plane SERVES: the plane answers such a sidecar with this
+	// flag and a license, nothing else, and the process runs the file it was
+	// started with.
+	//
+	// A pointer for the reason Guardrails is one: resolveConfigSource has to
+	// tell "the operator wrote this key" from "the operator wrote nothing",
+	// because a LOCAL file may not write it at all. Either value there is a
+	// second way to say what only the plane says, so both are refused.
+	//
+	// Absent (the zero value) is today's contract: the plane owns the document.
+	LoadFromDisk *bool `json:"load_from_disk,omitempty"`
+
 	// Policy is the DEPRECATED pre-ADR-0011 spelling of Guardrails and OPA
 	// combined. normalize empties it.
 	Policy *PolicyConfig `json:"policy,omitempty"`

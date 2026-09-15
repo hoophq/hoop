@@ -47,3 +47,68 @@ func TestParseSidecarConfiguration(t *testing.T) {
 		t.Error("want error for unknown field, got nil")
 	}
 }
+
+func TestParseSidecarConfigurationCanonicalizesLoadFromDisk(t *testing.T) {
+	off, err := ParseSidecarConfiguration(json.RawMessage(`{"load_from_disk":false}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if off.LoadFromDisk != nil {
+		t.Errorf("load_from_disk false was stored as %v; want it dropped", *off.LoadFromDisk)
+	}
+
+	on, err := ParseSidecarConfiguration(json.RawMessage(`{"load_from_disk":true}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if on.LoadFromDisk == nil || !*on.LoadFromDisk {
+		t.Errorf("load_from_disk true was not preserved: %+v", on.LoadFromDisk)
+	}
+}
+
+func TestParseSidecarConfigurationPatch(t *testing.T) {
+	// A partial patch returns only the keys the caller sent, so the stored
+	// document keeps every field the patch does not name.
+	merge, remove, err := ParseSidecarConfigurationPatch(json.RawMessage(`{"log_level":"debug"}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if remove {
+		t.Error("a patch without load_from_disk must not remove it")
+	}
+	if got := string(merge); got != `{"log_level":"debug"}` {
+		t.Errorf("merge = %s; want only the sent key", got)
+	}
+
+	// load_from_disk true stays in the merge so the plane serves the flag.
+	merge, remove, err = ParseSidecarConfigurationPatch(json.RawMessage(`{"load_from_disk":true}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if remove {
+		t.Error("load_from_disk true must be merged, not removed")
+	}
+	if got := string(merge); got != `{"load_from_disk":true}` {
+		t.Errorf("merge = %s; want the flag merged", got)
+	}
+
+	// load_from_disk false is dropped from the merge and removed from the
+	// stored document: an older sidecar rejects an unknown key.
+	merge, remove, err = ParseSidecarConfigurationPatch(json.RawMessage(`{"load_from_disk":false}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !remove {
+		t.Error("load_from_disk false must remove the key")
+	}
+	if got := string(merge); got != `{}` {
+		t.Errorf("merge = %s; want the flag dropped", got)
+	}
+
+	if _, _, err := ParseSidecarConfigurationPatch(json.RawMessage(`null`)); err == nil {
+		t.Error("want error for an explicit null document, got nil")
+	}
+	if _, _, err := ParseSidecarConfigurationPatch(json.RawMessage(`{"listners":[]}`)); err == nil {
+		t.Error("want error for unknown field, got nil")
+	}
+}

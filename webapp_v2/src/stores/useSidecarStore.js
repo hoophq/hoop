@@ -101,6 +101,24 @@ export const useSidecarStore = create((set, get) => ({
     return data
   },
 
+  // Flip which side owns this sidecar's configuration.
+  //
+  // One atomic PATCH merges only `load_from_disk`, so the flip never has to
+  // read the stored document and write it back: a configuration a sidecar
+  // imported meanwhile keeps its listeners instead of being overwritten by a
+  // stale copy.
+  setLoadFromDisk: async (id, loadFromDisk) => {
+    const { data: updated } = await sidecarsService.patch(id, { load_from_disk: loadFromDisk })
+    set((state) => ({
+      sidecars: state.sidecars.map((s) => (s.id === updated.id ? updated : s)),
+      // Only the record on screen: a flip still in flight when the route
+      // moves on must not write the previous sidecar back over the next.
+      selected: state.selected?.id === updated.id ? updated : state.selected,
+      listRequestId: state.listRequestId + 1,
+    }))
+    return updated
+  },
+
   deleteSidecar: async (id) => {
     await sidecarsService.delete(id)
     set((state) => ({

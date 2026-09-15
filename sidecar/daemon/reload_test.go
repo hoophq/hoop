@@ -496,6 +496,212 @@ func TestARefusedReloadDoesNotLeakTheDetector(t *testing.T) {
 	}
 }
 
+// In disk mode the same flag with different bytes means the license moved.
+// The file is re-adopted and the rotation publishes the verified document --
+// a renewal must not cost an outage -- with the plane as its source.
+func TestADiskModeLicenseDriftIsAppliedHot(t *testing.T) {
+	rl, buf := testReloader(t, reloadBase)
+	rl.diskMode = true
+	rl.configPath = writeConfig(t, reloadBase)
+	rl.load = LoadConfig
+
+	doc := licensetest.Document(t, licensetest.Enterprise())
+	tiny, err := json.Marshal(map[string]any{"load_from_disk": true, "license": doc})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := applyWith(rl, buf, string(tiny)); got != reloadApplied {
+		t.Fatalf("outcome = %v, want applied; log:\n%s", got, buf)
+	}
+	cur := rl.lic.get()
+	if cur.State() != license.StateValid || cur.Source != PlaneLicenseSource {
+		t.Errorf("license = %q from %q, want valid from the control plane", cur.State(), cur.Source)
+	}
+}
+
+// A document the verifier refuses is kept out without freezing the rules:
+// the reload still applies, the license in use stays, and handle remembers
+// the document so a broken plane logs once, not once per tick.
+func TestADiskModeGarbageLicenseKeepsTheLicenseInUse(t *testing.T) {
+	rl, buf := testReloader(t, reloadBase)
+	rl.diskMode = true
+	rl.configPath = writeConfig(t, reloadBase)
+	rl.load = LoadConfig
+	before := rl.lic.get()
+
+	tiny := `{"load_from_disk":true,"license":"not a license"}`
+	if got := handleWith(rl, buf, tiny); got != reloadApplied {
+		t.Fatalf("outcome = %v, want applied; log:\n%s", got, buf)
+	}
+	after := rl.lic.get()
+	if after.State() != before.State() || after.Source != before.Source {
+		t.Errorf("a refused license changed the one in use: %q/%q -> %q/%q",
+			before.State(), before.Source, after.State(), after.Source)
+	}
+	if !strings.Contains(buf.String(), "license this build refuses") {
+		t.Errorf("the refusal was not logged:\n%s", buf)
+	}
+	if got := handleWith(rl, buf, tiny); got != reloadUnchanged {
+		t.Fatalf("second handle = %v, want unchanged; log:\n%s", got, buf)
+	}
+}
+
+// The plane removes the license while the file's rules fit the free tier:
+// the process drops to the caps hot, the same answer a plane-owned removal
+// gets, and a restart would resolve the same way.
+func TestADiskModeLicenseRemovalDropsToTheFreeTier(t *testing.T) {
+	rl, buf := testReloader(t, reloadBase)
+	rl.diskMode = true
+	rl.configPath = writeConfig(t, reloadBase)
+	rl.load = LoadConfig
+
+	doc := licensetest.Document(t, licensetest.Enterprise())
+	tiny, err := json.Marshal(map[string]any{"load_from_disk": true, "license": doc})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := applyWith(rl, buf, string(tiny)); got != reloadApplied {
+		t.Fatalf("outcome = %v, want applied; log:\n%s", got, buf)
+	}
+	if rl.lic.get().State() != license.StateValid {
+		t.Fatalf("license state = %q, want valid before the removal", rl.lic.get().State())
+	}
+
+	if got := applyWith(rl, buf, `{"load_from_disk":true}`); got != reloadApplied {
+		t.Fatalf("outcome = %v, want applied; log:\n%s", got, buf)
+	}
+	if rl.lic.get().State() != license.StateMissing {
+		t.Fatalf("license state = %q, want missing after the removal", rl.lic.get().State())
+	}
+}
+
+// The plane taking the config back (a full document instead of the flag)
+// flips ownership hot when the document's non-rule half matches what runs:
+// rules swap, the mode flips, and nothing restarts.
+func TestAPlaneTakeoverAppliesHotWhenOnlyRulesMoved(t *testing.T) {
+	rl, buf := testReloader(t, reloadBase)
+	rl.diskMode = true
+
+	drifted := editJSON(t, reloadBase, `"words": ["drop table"]`, `"words": ["truncate"]`)
+	if got := applyWith(rl, buf, drifted); got != reloadApplied {
+		t.Fatalf("outcome = %v, want applied; log:\n%s", got, buf)
+	}
+	if rl.diskMode {
+		t.Error("the mode did not flip to plane-owned")
+	}
+	if !strings.Contains(buf.String(), "took ownership") {
+		t.Errorf("no ownership log line:\n%s", buf)
+	}
+}
+
+// A takeover whose document also moves the topology cannot flip hot:
+// sockets would have to rebind. The restart path keeps the file serving,
+// and the mode stays put so the next tick is not misread as owned drift.
+func TestAPlaneTakeoverWithTopologyDriftKeepsTheRestartPath(t *testing.T) {
+	rl, buf := testReloader(t, reloadBase)
+	rl.diskMode = true
+
+	drifted := editJSON(t, reloadBase, `"upstream": "h:5432"`, `"upstream": "other:5432"`)
+	if got := applyWith(rl, buf, drifted); got != reloadRestart {
+		t.Fatalf("outcome = %v, want restart; log:\n%s", got, buf)
+	}
+	if !rl.diskMode {
+		t.Error("a restart-bound takeover flipped the mode")
+	}
+	if !strings.Contains(buf.String(), "restart to apply it") {
+		t.Errorf("no restart log line:\n%s", buf)
+	}
+}
+
+// The flip the other way: the plane hands ownership to the file, and the
+// file is re-read and adopted hot when its non-rule half matches what runs.
+func TestAHandoverAdoptsTheFileHot(t *testing.T) {
+	rl, buf := testReloader(t, reloadBase)
+	rl.configPath = writeConfig(t,
+		editJSON(t, reloadBase, `"words": ["drop table"]`, `"words": ["truncate"]`))
+	rl.load = LoadConfig
+
+	if got := applyWith(rl, buf, `{"load_from_disk":true}`); got != reloadApplied {
+		t.Fatalf("outcome = %v, want applied; log:\n%s", got, buf)
+	}
+	if !rl.diskMode {
+		t.Error("the mode did not flip to disk")
+	}
+	if !strings.Contains(buf.String(), "handed the configuration to the local file") {
+		t.Errorf("no handover log line:\n%s", buf)
+	}
+}
+
+// A handover's tiny document still carries the license, and it rides the
+// same rotation as a plane-owned one: verified, then published as the
+// plane's.
+func TestAHandoverAdoptsThePlaneLicense(t *testing.T) {
+	rl, buf := testReloader(t, reloadBase)
+	rl.configPath = writeConfig(t, reloadBase)
+	rl.load = LoadConfig
+
+	doc := licensetest.Document(t, licensetest.Enterprise())
+	tiny, err := json.Marshal(map[string]any{"load_from_disk": true, "license": doc})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := applyWith(rl, buf, string(tiny)); got != reloadApplied {
+		t.Fatalf("outcome = %v, want applied; log:\n%s", got, buf)
+	}
+	cur := rl.lic.get()
+	if cur.State() != license.StateValid || cur.Source != PlaneLicenseSource {
+		t.Errorf("license = %q from %q, want valid from the control plane", cur.State(), cur.Source)
+	}
+}
+
+// A handover this process cannot absorb stays on the restart path: no file,
+// a file that moved the topology, or a file writing the plane-only key. The
+// mode never flips on a document that did not apply.
+func TestAHandoverTheProcessCannotAbsorbKeepsTheRestartPath(t *testing.T) {
+	topo := editJSON(t, reloadBase, `"upstream": "h:5432"`, `"upstream": "other:5432"`)
+	withKey := editJSON(t, reloadBase, `"listeners": [{`, `"load_from_disk": false, "listeners": [{`)
+	for _, tc := range []struct {
+		name, file, wants string
+	}{
+		{"no file", "", "started without a config file"},
+		{"topology drift", topo, "restart to apply it"},
+		{"file writes the key", withKey, "load_from_disk"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rl, buf := testReloader(t, reloadBase)
+			if tc.file != "" {
+				rl.configPath = writeConfig(t, tc.file)
+				rl.load = LoadConfig
+			}
+			if got := applyWith(rl, buf, `{"load_from_disk":true}`); got != reloadRestart {
+				t.Fatalf("outcome = %v, want restart; log:\n%s", got, buf)
+			}
+			if rl.diskMode {
+				t.Error("a restart-bound handover flipped the mode")
+			}
+			if !strings.Contains(buf.String(), tc.wants) {
+				t.Errorf("the log does not name the problem (%q):\n%s", tc.wants, buf)
+			}
+		})
+	}
+}
+
+// The steady state: every tick answers the same tiny doc the startup
+// handshake seeded, and nothing runs or logs.
+func TestAnUnchangedDiskModeDocIsDropped(t *testing.T) {
+	rl, buf := testReloader(t, reloadBase)
+	tiny := `{"load_from_disk":true,"license":"L"}`
+	rl.diskMode = true
+	rl.lastHandled = []byte(tiny) // what cp.lastRaw seeds after a disk-mode handshake
+
+	if got := handleWith(rl, buf, tiny); got != reloadUnchanged {
+		t.Fatalf("outcome = %v, want unchanged; log:\n%s", got, buf)
+	}
+	if buf.Len() != 0 {
+		t.Errorf("an unchanged doc logged:\n%s", buf)
+	}
+}
+
 // The admin removes the organization's license in the control plane. The
 // process drops to the free tier, and does NOT fall back to a license sitting
 // in a local source: the plane owns the fleet's license, so removing it there

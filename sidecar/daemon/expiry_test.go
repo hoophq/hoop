@@ -125,6 +125,24 @@ func TestTheWatchdogIsSilentOnShutdown(t *testing.T) {
 	}
 }
 
+// The watchdog reads the shared state each tick, so a license a reload
+// published governs the running watcher: this is what lets a plane shorten
+// a term — or renew one — without a restart.
+func TestTheWatchdogFollowsAHotSwappedLicense(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	st := newLicenseState(expiredIn(t, time.Hour), true)
+	expired := watchLicense(ctx, st, time.Millisecond, newTestLogger(&bytes.Buffer{}))
+
+	st.set(expiredIn(t, -time.Second))
+	select {
+	case <-expired:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the watchdog kept running on a license the state replaced")
+	}
+}
+
 // The stop is abrupt, so the notice is what keeps it from being a surprise.
 // It counts down in days and repeats only when the count changes.
 func TestExpiryIsAnnouncedBeforeItHappens(t *testing.T) {
