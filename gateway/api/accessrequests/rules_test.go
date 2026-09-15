@@ -28,7 +28,7 @@ func TestMain(m *testing.M) {
 // A sidecar rule has no reason to send the connection fields the gateway
 // binding tags require.
 func TestBindAccessRequestRuleSkipsConnectionFieldsInControlPlane(t *testing.T) {
-	body := `{"name":"prod-approvals","access_type":"sidecar","sidecar_names":["sidecar-prod"]}`
+	body := `{"name":"prod-approvals","access_type":"sidecar"}`
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	c.Request = httptest.NewRequest(http.MethodPost, "/access-requests/rules", strings.NewReader(body))
 
@@ -44,19 +44,6 @@ func TestBindAccessRequestRuleSkipsConnectionFieldsInControlPlane(t *testing.T) 
 	}
 }
 
-func validSidecarRule() openapi.AccessRequestRuleRequest {
-	return openapi.AccessRequestRuleRequest{
-		Name:                   "prod-approvals",
-		AccessType:             models.AccessTypeSidecar,
-		SidecarNames:           []string{"sidecar-prod"},
-		ConnectionNames:        []string{},
-		ApprovalRequiredGroups: []string{},
-		ReviewersGroups:        []string{"admin", "approver"},
-		ForceApprovalGroups:    []string{},
-		MinApprovals:           ptr.Int(1),
-	}
-}
-
 func TestValidateSidecarAccessRequestRuleBody(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -64,11 +51,8 @@ func TestValidateSidecarAccessRequestRuleBody(t *testing.T) {
 		wantErr string
 	}{
 		{name: "valid", mutate: func(*openapi.AccessRequestRuleRequest) {}},
-		// Only the name, access_type, sidecar_names and connection_names are
-		// checked; every other field is stored as sent.
-		{name: "no reviewer settings", mutate: func(r *openapi.AccessRequestRuleRequest) {
-			r.ReviewersGroups, r.MinApprovals = nil, nil
-		}},
+		// Only the name, access_type and connection_names are checked; every
+		// other field is stored as sent.
 		{name: "any other field", mutate: func(r *openapi.AccessRequestRuleRequest) {
 			r.ReviewersGroups, r.ForceApprovalGroups = []string{"dba"}, []string{"sre"}
 			r.ApprovalRequiredGroups, r.SkipReviewGroups = []string{"developers"}, []string{"sre"}
@@ -82,16 +66,13 @@ func TestValidateSidecarAccessRequestRuleBody(t *testing.T) {
 		{name: "another access type", wantErr: "access_type must be 'sidecar'", mutate: func(r *openapi.AccessRequestRuleRequest) {
 			r.AccessType = models.AccessTypeCommand
 		}},
-		{name: "no sidecars", wantErr: "sidecar_names", mutate: func(r *openapi.AccessRequestRuleRequest) {
-			r.SidecarNames = nil
-		}},
 		{name: "connections", wantErr: "connection_names", mutate: func(r *openapi.AccessRequestRuleRequest) {
 			r.ConnectionNames = []string{"pg-prod"}
 		}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := validSidecarRule()
+			req := openapi.AccessRequestRuleRequest{Name: "prod-approvals", AccessType: models.AccessTypeSidecar}
 			tt.mutate(&req)
 			err := validateSidecarAccessRequestRuleBody(&req)
 			if tt.wantErr == "" {

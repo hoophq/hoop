@@ -101,20 +101,6 @@ func ListSidecars(db *gorm.DB, orgID string) ([]Sidecar, error) {
 	return items, nil
 }
 
-// ListSidecarNames returns which of names belong to a sidecar of the
-// organization.
-func ListSidecarNames(db *gorm.DB, orgID string, names []string) ([]string, error) {
-	found := []string{}
-	if len(names) == 0 {
-		return found, nil
-	}
-	err := db.Table("private.sidecars").
-		Where("org_id = ? AND name IN ?", orgID, names).
-		Pluck("name", &found).
-		Error
-	return found, err
-}
-
 func GetSidecarByNameOrID(db *gorm.DB, orgID, nameOrID string) (*Sidecar, error) {
 	identifierClause := "s.name = ?"
 	if _, err := uuid.Parse(nameOrID); err == nil {

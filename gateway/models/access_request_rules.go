@@ -12,8 +12,9 @@ const (
 	AccessTypeJit        = "jit"
 	AccessTypeCommand    = "command"
 	AccessTypeJitCommand = "jit_command"
-	// AccessTypeSidecar authorizes sidecars to file reviews. It targets no
-	// connection, so no connection lookup matches it.
+	// AccessTypeSidecar marks a rule that serves sidecar reviews, the only kind
+	// a control plane stores. It targets no connection, so no connection lookup
+	// matches it.
 	AccessTypeSidecar = "sidecar"
 )
 
@@ -36,11 +37,7 @@ type AccessRequestRule struct {
 	AccessType  string  `gorm:"column:access_type"`
 	ManagedBy   *string `gorm:"column:managed_by"`
 
-	ConnectionNames pq.StringArray `gorm:"column:connection_names;type:text[]"`
-	// SidecarNames is set only on a sidecar rule. The default leaves the column
-	// to the database when a writer never sets it, as every connection rule
-	// writer does, instead of inserting NULL into a NOT NULL column.
-	SidecarNames           pq.StringArray `gorm:"column:sidecar_names;type:text[];default:'{}'"`
+	ConnectionNames        pq.StringArray `gorm:"column:connection_names;type:text[]"`
 	ApprovalRequiredGroups pq.StringArray `gorm:"column:approval_required_groups;type:text[]"`
 	AllGroupsMustApprove   bool           `gorm:"column:all_groups_must_approve;default:false"`
 	ReviewersGroups        pq.StringArray `gorm:"column:reviewers_groups;type:text[]"`
