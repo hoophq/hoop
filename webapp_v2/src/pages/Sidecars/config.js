@@ -1,4 +1,5 @@
 import { ShieldCheck, Sparkles, VenetianMask } from 'lucide-react'
+import { guardrailMatchers, laneAnalyzer, maskRules } from './resolve'
 
 // Reading a sidecar's stored configuration (daemon.Config,
 // sidecar/daemon/config.go), the document the control plane holds and serves to
@@ -16,42 +17,57 @@ export const FEATURES = {
 
 const FEATURE_ORDER = ['ai-analyzer', 'data-masking', 'guardrails']
 
+// Every protocol a listener can declare, which is the codec registry
+// (sidecar/codec/all) plus grpc and spanner — those two have no codec on
+// purpose (ADR-0013) and are carved out of the daemon's own validation.
+//
+// `subtype` is a connections-metadata key, only for the protocols that are
+// also a hoop connection type. grpc and spanner are not, so they carry none
+// and render without an icon rather than falling back to an unrelated one.
 const PROTOCOLS = {
   postgres: { label: 'PostgreSQL', subtype: 'postgres' },
   mysql: { label: 'MySQL', subtype: 'mysql' },
   mssql: { label: 'SQL Server', subtype: 'mssql' },
+  mongodb: { label: 'MongoDB', subtype: 'mongodb' },
   http: { label: 'HTTP', subtype: 'httpproxy' },
+  grpc: { label: 'gRPC', subtype: null },
+  spanner: { label: 'Cloud Spanner', subtype: null },
 }
+
+// What the picker offers, and it deliberately trails the schema.
+//
+// The published reference (setup/configuration/hoop-sidecar/config-file, the
+// Listeners table) names six protocols. `spanner` is the seventh and the daemon
+// accepts it, but the docs still carry it as unreleased, so offering it here
+// would put a choice in front of an operator that the documentation denies.
+// The frontend stays behind on purpose: when the docs gain it, this list does
+// too, in the same change.
+//
+// This is ONLY about what a new lane may choose. PROTOCOLS above still knows
+// every protocol so an existing lane renders with its real name, and nothing in
+// listeners.js narrows what it will WRITE — a lane the docs do not mention must
+// still round-trip byte for byte.
+export const PROTOCOLS_ORDER = ['postgres', 'mysql', 'mssql', 'mongodb', 'http', 'grpc']
+
+// Every protocol the daemon accepts, offered or not. The write path reads this
+// one, so a lane already on an unlisted protocol keeps its blocks.
+export const PROTOCOLS_SUPPORTED = ['postgres', 'mysql', 'mssql', 'mongodb', 'http', 'grpc', 'spanner']
 
 export function protocolInfo(protocol) {
   return PROTOCOLS[protocol] ?? { label: protocol, subtype: protocol }
 }
 
-const hasRules = (section) => Array.isArray(section?.rules) && section.rules.length > 0
-
-// Config.resolve in sidecar/daemon/config.go merges a lane's overrides onto the
-// top-level defaults, and the two sections do NOT merge the same way. Reading
-// the presence of the whole `guardrails`/`mask` block instead reported a lane
-// that overrides only `mode` as running no guardrails, while the daemon was
-// still applying the inherited rules.
-
-// `rules` absent inherits the default; `rules: []` is how a lane runs none
-// against a top-level set; a non-empty list concatenates with the default.
-function guardrailsOn(listener, config) {
-  const own = listener?.guardrails
-  if (own?.rules === undefined) return hasRules(config?.guardrails)
-  return own.rules.length > 0
-}
-
-// Only a non-empty lane list replaces the default (`o != nil && len(o.Rules) > 0`),
-// so nothing a lane writes can remove inherited masking.
-const maskOn = (listener, config) => hasRules(listener?.mask) || hasRules(config?.mask)
+// Whether a lane runs a feature is a question about its RESOLVED rules, so both
+// answers come from resolve.js rather than re-reading the document here. The
+// two sections inherit by different rules and each has its own opt-out
+// spelling; keeping that logic in one place is what stops the chips from
+// disagreeing with the lane detail that renders beside them.
 
 export function listenerFeatures(listener, config) {
   const on = []
-  if (config?.analyzer) on.push('ai-analyzer')
-  if (maskOn(listener, config)) on.push('data-masking')
-  if (guardrailsOn(listener, config)) on.push('guardrails')
+  if (laneAnalyzer(listener, config).on) on.push('ai-analyzer')
+  if (maskRules(listener, config).length > 0) on.push('data-masking')
+  if (guardrailMatchers(listener, config).length > 0) on.push('guardrails')
   return on
 }
 

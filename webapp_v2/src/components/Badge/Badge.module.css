@@ -3,3 +3,29 @@
 .fullLabel {
   overflow: visible;
 }
+
+/* An icon-only badge.
+ *
+ * Mantine ships a `circle` prop that squares the box, but its vars resolver
+ * drops `radius` whenever circle is set — a circle is what it means — and a
+ * round chip beside the rounded-rectangle chips in the same table row is two
+ * shapes saying the same thing. So the squaring happens here and the radius
+ * stays whatever the badge asked for.
+ *
+ * The root is an inline-grid of `auto 1fr` once it has a left section. With no
+ * label the 1fr track is still there, so the icon is laid out against the left
+ * edge of a box wide enough for text that does not exist. Flex plus the root's
+ * own justify-content centres it instead. */
+.iconOnly {
+  display: flex;
+  inline-size: var(--badge-height);
+  padding-inline: 0;
+}
+
+/* Mantine gives the section a margin so it clears the label. With no label
+ * that margin is dead space on the right, and it pushes the icon off centre by
+ * half of it. `--badge-section-margin` is declared ON the section, so an
+ * override has to reach the section too: setting it on the root is shadowed. */
+.iconOnlySection {
+  margin-inline-end: 0;
+}

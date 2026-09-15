@@ -8,15 +8,24 @@ import api from './api'
 // sidecar and serves back on the handshake and on every poll. Creating without
 // one stores an empty document; the sidecar then seeds the plane with its own
 // config file on the first handshake (importLocalConfig, #1803), which is the
-// connect journey the wizard prints. The fleet pages never author listeners;
-// they only flip which side owns the document, and `patch` merges just that
-// key with one `PATCH /sidecars/:nameOrID` that leaves the rest of the stored
-// document alone, so a config a sidecar imports meanwhile is never clobbered.
+// connect journey the wizard prints. Once the plane holds listeners that seed
+// is refused with a 409 and the plane owns the document from then on.
+//
+// Two ways to write it, and they are not interchangeable:
+//
+// `patch` merges the keys it sends and leaves the rest of the stored document
+// alone, so it cannot clobber a configuration a sidecar imported meanwhile.
+// The fleet pages use it to flip which side owns the document.
+//
+// `update` REPLACES the whole document. The listener editor needs that — there
+// is no per-listener endpoint, so it reads the configuration, edits one element
+// of `listeners`, and writes all of it back. With no ETag, two admins editing
+// at once means the second write wins silently.
 export const sidecarsService = {
   list: () => api.get('/sidecars'),
   get: (nameOrId) => api.get(`/sidecars/${encodeURIComponent(nameOrId)}`),
   create: ({ name }) => api.post('/sidecars', { name }),
-  patch: (nameOrId, configuration) =>
-    api.patch(`/sidecars/${encodeURIComponent(nameOrId)}`, { configuration }),
+  patch: (nameOrId, configuration) => api.patch(`/sidecars/${encodeURIComponent(nameOrId)}`, { configuration }),
+  update: (nameOrId, configuration) => api.put(`/sidecars/${encodeURIComponent(nameOrId)}`, { configuration }),
   delete: (nameOrId) => api.delete(`/sidecars/${encodeURIComponent(nameOrId)}`),
 }
