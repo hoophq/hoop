@@ -1,8 +1,10 @@
 package accessrequests
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -12,6 +14,7 @@ import (
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"github.com/hoophq/hoop/gateway/utils"
 	"gorm.io/gorm"
 )
@@ -37,7 +40,11 @@ func validateAccessRequestRuleBody(orgID uuid.UUID, req *openapi.AccessRequestRu
 	switch req.AccessType {
 	case models.AccessTypeJit, models.AccessTypeCommand, models.AccessTypeJitCommand:
 	default:
-		return fmt.Errorf("access_type must be one of 'jit', 'command' or 'jit_command'")
+		return fmt.Errorf("access_type must be one of 'jit', 'command', 'jit_command' or 'sidecar'")
+	}
+
+	if len(req.SidecarNames) > 0 {
+		return fmt.Errorf("sidecar_names can only be set when access_type is 'sidecar'")
 	}
 
 	if len(req.ReviewersGroups) == 0 {
@@ -52,6 +59,47 @@ func validateAccessRequestRuleBody(orgID uuid.UUID, req *openapi.AccessRequestRu
 		return fmt.Errorf("skip_review_groups can only be set when approval_required_groups is empty")
 	}
 
+	return nil
+}
+
+// validateSidecarAccessRequestRuleBody checks a rule that authorizes sidecars.
+// A sidecar review has no requester and grants no session, so the fields that
+// filter requesters or bound a session are refused rather than stored inert.
+func validateSidecarAccessRequestRuleBody(req *openapi.AccessRequestRuleRequest) error {
+	if err := apivalidation.ValidateResourceName(req.Name); err != nil {
+		return err
+	}
+
+	switch {
+	case len(req.SidecarNames) == 0:
+		return fmt.Errorf("sidecar_names must have at least 1 entry when access_type is 'sidecar'")
+	case len(req.ConnectionNames) > 0:
+		return fmt.Errorf("connection_names must be empty when access_type is 'sidecar'")
+	case len(req.Attributes) > 0:
+		return fmt.Errorf("attributes must be empty when access_type is 'sidecar'")
+	case len(req.ApprovalRequiredGroups) > 0:
+		return fmt.Errorf("approval_required_groups must be empty when access_type is 'sidecar'")
+	case len(req.SkipReviewGroups) > 0:
+		return fmt.Errorf("skip_review_groups must be empty when access_type is 'sidecar'")
+	case req.AccessMaxDuration != nil:
+		return fmt.Errorf("access_max_duration must be empty when access_type is 'sidecar'")
+	case len(req.ReviewersGroups) == 0:
+		return fmt.Errorf("reviewers_groups must have at least 1 entry")
+	case !req.AllGroupsMustApprove && (req.MinApprovals == nil || *req.MinApprovals < 1):
+		return fmt.Errorf("min_approvals must be at least 1 when all_groups_must_approve is false")
+	}
+
+	// Only the control plane serves sidecar reviews, and its users hold no
+	// other group. A user outside a review's groups can reject it but never
+	// approve it (review.DoReview), so any other group files a review nobody
+	// can approve.
+	eligible := []string{types.GroupAdmin, types.GroupApprover}
+	for _, group := range slices.Concat(req.ReviewersGroups, req.ForceApprovalGroups) {
+		if !slices.Contains(eligible, group) {
+			return fmt.Errorf("group %q cannot approve a sidecar review, use %q or %q",
+				group, types.GroupAdmin, types.GroupApprover)
+		}
+	}
 	return nil
 }
 
@@ -92,6 +140,11 @@ func CreateAccessRequestRule(c *gin.Context) {
 			c.JSON(http.StatusForbidden, gin.H{"message": "access request rules are limited to 1 in the OSS version"})
 			return
 		}
+	}
+
+	if req.AccessType == models.AccessTypeSidecar {
+		createSidecarAccessRequestRule(c, orgID, &req)
+		return
 	}
 
 	foundRule, err := models.GetAccessRequestRuleByResourceNamesAndAccessType(models.DB, orgID, req.ConnectionNames, req.AccessType)
@@ -154,7 +207,7 @@ func CreateAccessRequestRule(c *gin.Context) {
 		})
 	}
 
-	c.JSON(http.StatusCreated, toAccessRequestRuleOpenApi(accessRequestRule))
+	c.JSON(http.StatusCreated, toAccessRequestRuleOpenApi(accessRequestRule, nil))
 }
 
 // GetAccessRequestRule
@@ -188,7 +241,12 @@ func GetAccessRequestRule(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, toAccessRequestRuleOpenApi(accessRequestRule))
+	if accessRequestRule.AccessType == models.AccessTypeSidecar {
+		respondSidecarAccessRequestRule(c, http.StatusOK, orgID, accessRequestRule)
+		return
+	}
+
+	c.JSON(http.StatusOK, toAccessRequestRuleOpenApi(accessRequestRule, nil))
 }
 
 // ListAccessRequestRules
@@ -245,9 +303,15 @@ func ListAccessRequestRules(c *gin.Context) {
 		return
 	}
 
+	sidecarNames, err := listSidecarNames(orgID, accessRequestRules)
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to list access request rule sidecars")
+		return
+	}
+
 	var data []openapi.AccessRequestRule
 	for _, rule := range accessRequestRules {
-		data = append(data, *toAccessRequestRuleOpenApi(&rule))
+		data = append(data, *toAccessRequestRuleOpenApi(&rule, sidecarNames[rule.Name]))
 	}
 
 	if data == nil {
@@ -321,6 +385,18 @@ func UpdateAccessRequestRule(c *gin.Context) {
 		return
 	}
 
+	// A rule keeps its kind. Converting it would strand the targets of the old
+	// kind in a table no lookup reads for the new one.
+	if (existingRule.AccessType == models.AccessTypeSidecar) != (req.AccessType == models.AccessTypeSidecar) {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "access_type cannot change between 'sidecar' and a connection access type"})
+		return
+	}
+
+	if req.AccessType == models.AccessTypeSidecar {
+		updateSidecarAccessRequestRule(c, orgID, existingRule, &req)
+		return
+	}
+
 	if foundRule != nil && foundRule.ID != existingRule.ID {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "an access request rule with the same connection names and access type already exists"})
 		return
@@ -374,7 +450,7 @@ func UpdateAccessRequestRule(c *gin.Context) {
 		})
 	}
 
-	c.JSON(http.StatusOK, toAccessRequestRuleOpenApi(existingRule))
+	c.JSON(http.StatusOK, toAccessRequestRuleOpenApi(existingRule, nil))
 }
 
 // updateManagedAccessRequestRule applies the restricted update path for
@@ -415,7 +491,92 @@ func updateManagedAccessRequestRule(c *gin.Context, rule *models.AccessRequestRu
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to update access request rule")
 		return
 	}
-	c.JSON(http.StatusOK, toAccessRequestRuleOpenApi(rule))
+	c.JSON(http.StatusOK, toAccessRequestRuleOpenApi(rule, nil))
+}
+
+// createSidecarAccessRequestRule creates a rule that authorizes sidecars. It
+// targets no connection, so the connection and attribute conflict checks do
+// not apply. One transaction: an unknown sidecar must not leave a rule behind.
+func createSidecarAccessRequestRule(c *gin.Context, orgID uuid.UUID, req *openapi.AccessRequestRuleRequest) {
+	if err := validateSidecarAccessRequestRuleBody(req); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
+	}
+
+	rule := &models.AccessRequestRule{
+		OrgID:                  orgID,
+		Name:                   req.Name,
+		Description:            req.Description,
+		AccessType:             models.AccessTypeSidecar,
+		ConnectionNames:        []string{},
+		ApprovalRequiredGroups: []string{},
+		AllGroupsMustApprove:   req.AllGroupsMustApprove,
+		ReviewersGroups:        req.ReviewersGroups,
+		ForceApprovalGroups:    req.ForceApprovalGroups,
+		MinApprovals:           req.MinApprovals,
+	}
+	err := models.DB.Transaction(func(tx *gorm.DB) error {
+		if err := models.CreateAccessRequestRule(tx, rule); err != nil {
+			return err
+		}
+		return models.SetAccessRequestRuleSidecars(tx, orgID, rule.Name, req.SidecarNames)
+	})
+	if err != nil {
+		abortSidecarRuleWrite(c, err)
+		return
+	}
+	respondSidecarAccessRequestRule(c, http.StatusCreated, orgID, rule)
+}
+
+// updateSidecarAccessRequestRule replaces a sidecar rule and the sidecars it
+// authorizes, in one transaction.
+func updateSidecarAccessRequestRule(c *gin.Context, orgID uuid.UUID, rule *models.AccessRequestRule, req *openapi.AccessRequestRuleRequest) {
+	if err := validateSidecarAccessRequestRuleBody(req); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
+	}
+
+	rule.Name = req.Name
+	rule.Description = req.Description
+	rule.AllGroupsMustApprove = req.AllGroupsMustApprove
+	rule.ReviewersGroups = req.ReviewersGroups
+	rule.ForceApprovalGroups = req.ForceApprovalGroups
+	rule.MinApprovals = req.MinApprovals
+	err := models.DB.Transaction(func(tx *gorm.DB) error {
+		if err := models.UpdateAccessRequestRule(tx, rule); err != nil {
+			return err
+		}
+		return models.SetAccessRequestRuleSidecars(tx, orgID, rule.Name, req.SidecarNames)
+	})
+	if err != nil {
+		abortSidecarRuleWrite(c, err)
+		return
+	}
+	respondSidecarAccessRequestRule(c, http.StatusOK, orgID, rule)
+}
+
+// abortSidecarRuleWrite answers a failed sidecar rule write. A name taken or
+// an unknown sidecar is the caller's mistake, not a server error.
+func abortSidecarRuleWrite(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, gorm.ErrDuplicatedKey):
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "access request rule with the same name already exists"})
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+	default:
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to write access request rule")
+	}
+}
+
+// respondSidecarAccessRequestRule answers with the sidecars as stored, so a
+// write and a later read return the same list.
+func respondSidecarAccessRequestRule(c *gin.Context, status int, orgID uuid.UUID, rule *models.AccessRequestRule) {
+	names, err := models.ListAccessRequestRuleSidecarNames(models.DB, orgID, []string{rule.Name})
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed to list access request rule sidecars")
+		return
+	}
+	c.JSON(status, toAccessRequestRuleOpenApi(rule, names[rule.Name]))
 }
 
 func attributeNames(rule *models.AccessRequestRule) []string {
@@ -497,10 +658,25 @@ func DeleteAccessRequestRule(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-func toAccessRequestRuleOpenApi(rule *models.AccessRequestRule) *openapi.AccessRequestRule {
+// listSidecarNames loads the sidecars of the sidecar rules among rules. It
+// runs no query when there are none.
+func listSidecarNames(orgID uuid.UUID, rules []models.AccessRequestRule) (map[string][]string, error) {
+	var names []string
+	for _, rule := range rules {
+		if rule.AccessType == models.AccessTypeSidecar {
+			names = append(names, rule.Name)
+		}
+	}
+	return models.ListAccessRequestRuleSidecarNames(models.DB, orgID, names)
+}
+
+func toAccessRequestRuleOpenApi(rule *models.AccessRequestRule, sidecarNames []string) *openapi.AccessRequestRule {
 	attrs := make([]string, len(rule.RuleAttributes))
 	for i, ra := range rule.RuleAttributes {
 		attrs[i] = ra.AttributeName
+	}
+	if sidecarNames == nil {
+		sidecarNames = []string{}
 	}
 	return &openapi.AccessRequestRule{
 		ID:                     rule.ID.String(),
@@ -509,6 +685,7 @@ func toAccessRequestRuleOpenApi(rule *models.AccessRequestRule) *openapi.AccessR
 		ManagedBy:              rule.ManagedBy,
 		AccessType:             rule.AccessType,
 		ConnectionNames:        rule.ConnectionNames,
+		SidecarNames:           sidecarNames,
 		Attributes:             attrs,
 		ApprovalRequiredGroups: rule.ApprovalRequiredGroups,
 		ReviewersGroups:        rule.ReviewersGroups,

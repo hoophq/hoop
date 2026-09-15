@@ -3568,9 +3568,11 @@ type AccessRequestRule struct {
 	// The description of the access request rule
 	Description *string `json:"description" example:"Access control rule for production databases"`
 	// The access type
-	AccessType string `json:"access_type" enums:"jit,command,jit_command" example:"command"`
+	AccessType string `json:"access_type" enums:"jit,command,jit_command,sidecar" example:"command"`
 	// Connection names that this rule applies to
 	ConnectionNames []string `json:"connection_names" example:"pgdemo,mysql-prod"`
+	// Sidecars this rule authorizes to file reviews. Set only when access_type is sidecar
+	SidecarNames []string `json:"sidecar_names" example:"sidecar-prod"`
 	// Attributes associated with this access request rule
 	Attributes []string `json:"attributes" example:"production,pii"`
 	// Groups that require approval
@@ -3604,9 +3606,11 @@ type AccessRequestRuleRequest struct {
 	// The description of the access request rule
 	Description *string `json:"description" example:"Access request rule for production databases"`
 	// The access type
-	AccessType string `json:"access_type" binding:"required" enums:"jit,command,jit_command" example:"command"`
-	// Connection names that this rule applies to
+	AccessType string `json:"access_type" binding:"required" enums:"jit,command,jit_command,sidecar" example:"command"`
+	// Connection names that this rule applies to. Must be empty when access_type is sidecar
 	ConnectionNames []string `json:"connection_names" binding:"required" example:"pgdemo,mysql-prod"`
+	// Sidecars this rule authorizes to file reviews. Required when access_type is sidecar, refused otherwise
+	SidecarNames []string `json:"sidecar_names,omitempty" example:"sidecar-prod"`
 	// Attributes associated with this access request rule
 	Attributes []string `json:"attributes" example:"production,pii"`
 	// User groups whose members require approval to access. An empty list makes

@@ -12032,7 +12032,8 @@ const docTemplate = `{
                     "enum": [
                         "jit",
                         "command",
-                        "jit_command"
+                        "jit_command",
+                        "sidecar"
                     ],
                     "example": "command"
                 },
@@ -12129,6 +12130,16 @@ const docTemplate = `{
                         "dba"
                     ]
                 },
+                "sidecar_names": {
+                    "description": "Sidecars this rule authorizes to file reviews. Set only when access_type is sidecar",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "sidecar-prod"
+                    ]
+                },
                 "skip_review_groups": {
                     "description": "Groups whose members skip the approval review. Only honored when\napproval_required_groups is empty",
                     "type": "array",
@@ -12169,7 +12180,8 @@ const docTemplate = `{
                     "enum": [
                         "jit",
                         "command",
-                        "jit_command"
+                        "jit_command",
+                        "sidecar"
                     ],
                     "example": "command"
                 },
@@ -12201,7 +12213,7 @@ const docTemplate = `{
                     ]
                 },
                 "connection_names": {
-                    "description": "Connection names that this rule applies to",
+                    "description": "Connection names that this rule applies to. Must be empty when access_type is sidecar",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -12245,6 +12257,16 @@ const docTemplate = `{
                     "example": [
                         "sre",
                         "dba"
+                    ]
+                },
+                "sidecar_names": {
+                    "description": "Sidecars this rule authorizes to file reviews. Required when access_type is sidecar, refused otherwise",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "sidecar-prod"
                     ]
                 },
                 "skip_review_groups": {

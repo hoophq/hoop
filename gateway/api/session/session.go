@@ -115,6 +115,11 @@ func AIAnalyze(ctx context.Context, in AIAnalyzeInput) (*models.SessionAIAnalysi
 	if err != nil {
 		return analysis, nil, fmt.Errorf("ai analyzer rule %q references access request rule %q that could not be loaded: %w", aiAnalyzerRule.Name, *tier.AccessRequestRuleName, err)
 	}
+	// Saving the tier refuses a sidecar rule, but a rule deleted and created
+	// again under the same name as a sidecar rule gets past that check.
+	if accessRule.AccessType == models.AccessTypeSidecar {
+		return analysis, nil, fmt.Errorf("ai analyzer rule %q references access request rule %q, which authorizes sidecars and cannot gate a session", aiAnalyzerRule.Name, *tier.AccessRequestRuleName)
+	}
 	return analysis, accessRule, nil
 }
 

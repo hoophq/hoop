@@ -914,7 +914,8 @@
             "enum": [
               "jit",
               "command",
-              "jit_command"
+              "jit_command",
+              "sidecar"
             ],
             "example": "command",
             "type": "string"
@@ -1012,6 +1013,16 @@
             },
             "type": "array"
           },
+          "sidecar_names": {
+            "description": "Sidecars this rule authorizes to file reviews. Set only when access_type is sidecar",
+            "example": [
+              "sidecar-prod"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "skip_review_groups": {
             "description": "Groups whose members skip the approval review. Only honored when\napproval_required_groups is empty",
             "example": [
@@ -1043,7 +1054,8 @@
             "enum": [
               "jit",
               "command",
-              "jit_command"
+              "jit_command",
+              "sidecar"
             ],
             "example": "command",
             "type": "string"
@@ -1076,7 +1088,7 @@
             "type": "array"
           },
           "connection_names": {
-            "description": "Connection names that this rule applies to",
+            "description": "Connection names that this rule applies to. Must be empty when access_type is sidecar",
             "example": [
               "pgdemo",
               "mysql-prod"
@@ -1116,6 +1128,16 @@
             "example": [
               "sre",
               "dba"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "sidecar_names": {
+            "description": "Sidecars this rule authorizes to file reviews. Required when access_type is sidecar, refused otherwise",
+            "example": [
+              "sidecar-prod"
             ],
             "items": {
               "type": "string"

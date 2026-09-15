@@ -40,11 +40,17 @@ func validateRiskTier(orgID uuid.UUID, level string, tier openapi.AISessionAnaly
 		if tier.AccessRequestRuleName == nil || *tier.AccessRequestRuleName == "" {
 			return fmt.Errorf("%s_risk: access_request_rule_name is required when action is require_access_request", level)
 		}
-		if _, err := models.GetAccessRequestRuleByName(models.DB, *tier.AccessRequestRuleName, orgID); err != nil {
+		rule, err := models.GetAccessRequestRuleByName(models.DB, *tier.AccessRequestRuleName, orgID)
+		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return fmt.Errorf("%s_risk: access request rule %q not found", level, *tier.AccessRequestRuleName)
 			}
 			return fmt.Errorf("%s_risk: failed validating access request rule: %w", level, err)
+		}
+		// A sidecar rule carries the reviewer policy of a sidecar review, not of
+		// a session on a connection.
+		if rule.AccessType == models.AccessTypeSidecar {
+			return fmt.Errorf("%s_risk: access request rule %q authorizes sidecars and cannot gate a session", level, *tier.AccessRequestRuleName)
 		}
 		return nil
 	}
