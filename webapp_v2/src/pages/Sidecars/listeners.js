@@ -277,6 +277,8 @@ export function validateListener(form, others = [], original = null, config = nu
     errors.name = 'Required.'
   } else if (others.some((l) => l.name === name)) {
     errors.name = 'Another listener already uses this name.'
+  } else if (GENERATED_LABEL.test(name)) {
+    errors.name = 'Reserved: a listener with no name is shown as listener[0], listener[1] and so on.'
   }
 
   if (!form.protocol) {
@@ -356,16 +358,6 @@ export function validateListener(form, others = [], original = null, config = nu
     errors.http_capture_body = 'This listener runs the AI analyzer, which reads the request body.'
   }
 
-  // A NumberInput's `min` is presentation: it stops the spinner, not a paste.
-  // The daemon refuses a negative limit outright (grpc.go, analyzer.go), so a
-  // save that carried one would store a config the sidecar cannot start from.
-  if (supportsHTTPBlock(form.protocol) && num(form.http.max_body_bytes) < 0) {
-    errors.http_max_body_bytes = 'Cannot be negative.'
-  }
-  if (supportsGRPCBlock(form.protocol) && num(form.grpc.max_payload_bytes) < 0) {
-    errors.grpc_max_payload_bytes = 'Cannot be negative.'
-  }
-
   if (supportsGRPCBlock(form.protocol)) {
     const hasDescriptors = form.grpc.descriptors.some((d) => d.trim())
     if (analyzing && !form.grpc.capture_payload) {
@@ -411,6 +403,13 @@ export const hasErrors = (errors) => Object.keys(errors).length > 0
 export function listenerLabel(listener, index) {
   return listener?.name || `listener[${index}]`
 }
+
+// The shape listenerLabel generates for a listener with no name. A real name of
+// that shape gives two rows one URL, and the route can only resolve to one of
+// them, so the form refuses to write one. Reserving it is what makes the label
+// a key rather than a guess: names are already unique, generated labels are
+// unique by position, and this keeps the two sets from overlapping.
+const GENERATED_LABEL = /^listener\[\d+\]$/
 
 // Where a listener is edited. The route keys on the LABEL, because that is what
 // an operator can read in a URL and share, while the editor works on the
