@@ -58,6 +58,24 @@ func GetOrganizationByNameOrID(nameOrID string) (*Organization, error) {
 	return &org, err
 }
 
+// GetOrgLicenseData returns the signed license document the organization
+// runs under, or nil when it has none. The document itself, not a verdict:
+// the caller decides what to do with an expired or absent one.
+//
+// Narrower than GetOrganizationByNameOrID on purpose. The sidecar handshake
+// runs this once a minute per sidecar, and it has no use for the user count
+// that query joins.
+func GetOrgLicenseData(db *gorm.DB, orgID string) (json.RawMessage, error) {
+	var org Organization
+	err := db.Raw(`SELECT license_data FROM private.orgs WHERE id = ?`, orgID).
+		First(&org).
+		Error
+	if err != nil {
+		return nil, err
+	}
+	return org.LicenseData, nil
+}
+
 func UpdateOrgAnalyticsMode(orgID, mode string) error {
 	if !IsValidAnalyticsMode(mode) {
 		return fmt.Errorf("invalid analytics_mode %q", mode)
