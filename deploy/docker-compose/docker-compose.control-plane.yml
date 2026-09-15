@@ -1,30 +1,18 @@
 # The control plane, and optionally one sidecar connected to it.
 #
-# This is NOT docker-compose.yml with a flag flipped. The mode comes from the
-# subcommand (ADR-0013; PR #1775 removed APP_MODE), and the topology differs:
-# the gateway stack runs an agent, two Presidio services and a default-agent
-# seeder, and publishes 8010, 15432, 12222 and 13389. The control plane opens
-# none of them.
-#
 #   docker compose -f docker-compose.control-plane.yml up
 #
-# Then create the first admin at http://localhost:8009, register a sidecar,
-# put its token in .env as HOOP_SIDECAR_TOKEN, and bring up the second half:
+# Then create the first admin at http://localhost:8009, register a sidecar, put
+# its token in .env as HOOP_SIDECAR_TOKEN, and:
 #
 #   docker compose -f docker-compose.control-plane.yml --profile sidecar up -d
 #
-# The sidecar is behind a profile because its token does not exist until the
-# control plane issues one, and a sidecar without a token exits rather than
-# retrying. Profiles are additive, so the base stack stays two services.
-#
-# Needs Compose 2.23.1 or greater for the inline `configs` content below, which
-# is what keeps this a single file you can download on its own.
+# Needs Compose 2.23.1 or greater for the inline `configs` content.
 name: hoop-control-plane
 
 services:
   db:
     image: postgres:17.6
-    # Hide postgres startup chatter; still available via `docker compose logs db`.
     attach: false
     networks:
       - hoopcp
@@ -42,16 +30,13 @@ services:
 
   control-plane:
     image: hoophq/hoop
-    # Allocate a TTY so the log auto-detect picks the human-readable encoder in
-    # an interactive `docker compose up`.
     tty: true
     command: ["hoop", "start", "control-plane"]
     environment:
       - GIN_MODE=release
       - POSTGRES_DB_URI=postgres://postgres:postgres@db:5432/hoopdb?sslmode=disable
-    # API_URL goes here. It defaults to 127.0.0.1, which only works from this
-    # host; a remote install has to carry the full scheme and host or the web
-    # app assets point at the wrong place.
+    # API_URL lives here. It defaults to 127.0.0.1, which only works from this
+    # host.
     env_file: ".env"
     ports:
       - "8009:8009"
@@ -60,9 +45,6 @@ services:
     depends_on:
       db:
         condition: "service_healthy"
-    # The control plane never opens the gRPC port, and its probe answers
-    # without dialing it. The gateway's probe does dial, which is the one
-    # handler that differs between the two modes.
     healthcheck:
       test:
         - CMD-SHELL
@@ -74,9 +56,7 @@ services:
       retries: 10
       start_period: "20s"
 
-  # --- profile: sidecar -----------------------------------------------------
-  # The resource the sidecar sits in front of. Empty on purpose: connect
-  # through the lane on 15432 and create whatever you want to test against.
+  # The resource the sidecar sits in front of. Empty on purpose.
   appdb:
     profiles: ["sidecar"]
     image: postgres:17.6
@@ -95,6 +75,8 @@ services:
       retries: 10
       start_period: "20s"
 
+  # Behind a profile: the token does not exist until the control plane issues
+  # one, and a sidecar without one exits rather than retrying.
   sidecar:
     profiles: ["sidecar"]
     image: hoophq/hoopsidecar
@@ -102,9 +84,6 @@ services:
       - hoopcp
     environment:
       - HOOP_CONTROL_PLANE_URL=http://control-plane:8009
-      # Issued once, when you register the sidecar in the control plane. Left
-      # empty the process exits and names the missing variable; it does not
-      # fall back to serving the file below on its own.
       - HOOP_SIDECAR_TOKEN=${HOOP_SIDECAR_TOKEN:-}
     # HOOP_SIDECAR_CONFIG already points here in the image.
     configs:
@@ -120,10 +99,9 @@ services:
         condition: "service_healthy"
 
 configs:
-  # Read once, to seed a control plane that holds no configuration for this
-  # sidecar yet: the first handshake answers 412 and the sidecar imports this
-  # document. After that the control plane owns it, and the listeners here are
-  # ignored with a warning rather than merged. Edit the configuration there.
+  # Read once, to seed a control plane that holds no configuration yet: the
+  # first handshake answers 412 and the sidecar imports this. After that the
+  # control plane owns it and these listeners are ignored.
   sidecar-config:
     content: |
       log_level: info
@@ -141,8 +119,7 @@ configs:
           upstream: appdb:5432
 
           # One rule: an unlicensed build enforces one guardrail and one
-          # masking rule for the whole process, and this stack spends its
-          # guardrail on the statements a test is most likely to reach for.
+          # masking rule for the whole process.
           guardrails:
             mode: enforce
             rules:
