@@ -12,6 +12,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/utils"
@@ -39,11 +40,7 @@ func validateAccessRequestRuleBody(orgID uuid.UUID, req *openapi.AccessRequestRu
 	switch req.AccessType {
 	case models.AccessTypeJit, models.AccessTypeCommand, models.AccessTypeJitCommand:
 	default:
-		return fmt.Errorf("access_type must be one of 'jit', 'command', 'jit_command' or 'sidecar'")
-	}
-
-	if len(req.SidecarNames) > 0 {
-		return fmt.Errorf("sidecar_names can only be set when access_type is 'sidecar'")
+		return fmt.Errorf("access_type must be one of 'jit', 'command' or 'jit_command'")
 	}
 
 	if len(req.ReviewersGroups) == 0 {
@@ -61,18 +58,21 @@ func validateAccessRequestRuleBody(orgID uuid.UUID, req *openapi.AccessRequestRu
 	return nil
 }
 
-// validateSidecarAccessRequestRuleBody checks only what makes a rule a sidecar
-// rule: it lists sidecars and no connection. Every other field is stored as
-// sent.
+// validateSidecarAccessRequestRuleBody checks a rule in control-plane mode,
+// where every rule authorizes sidecars. It checks only what makes a rule a
+// sidecar rule; every other field is stored as sent.
 func validateSidecarAccessRequestRuleBody(req *openapi.AccessRequestRuleRequest) error {
 	if err := apivalidation.ValidateResourceName(req.Name); err != nil {
 		return err
 	}
+	if req.AccessType != models.AccessTypeSidecar {
+		return fmt.Errorf("access_type must be 'sidecar'")
+	}
 	if len(req.SidecarNames) == 0 {
-		return fmt.Errorf("sidecar_names must have at least 1 entry when access_type is 'sidecar'")
+		return fmt.Errorf("sidecar_names must have at least 1 entry")
 	}
 	if len(req.ConnectionNames) > 0 {
-		return fmt.Errorf("connection_names must be empty when access_type is 'sidecar'")
+		return fmt.Errorf("connection_names must be empty")
 	}
 	return nil
 }
@@ -116,7 +116,9 @@ func CreateAccessRequestRule(c *gin.Context) {
 		}
 	}
 
-	if req.AccessType == models.AccessTypeSidecar {
+	// A deployment runs as a gateway or as a control plane, never both, and
+	// every rule a control plane stores authorizes sidecars.
+	if appconfig.Get().IsControlPlane() {
 		createSidecarAccessRequestRule(c, orgID, &req)
 		return
 	}
@@ -348,14 +350,7 @@ func UpdateAccessRequestRule(c *gin.Context) {
 		return
 	}
 
-	// A rule keeps its kind. The database refuses the change anyway; this
-	// answers it as the caller's mistake instead of a server error.
-	if (existingRule.AccessType == models.AccessTypeSidecar) != (req.AccessType == models.AccessTypeSidecar) {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "access_type cannot change between 'sidecar' and a connection access type"})
-		return
-	}
-
-	if req.AccessType == models.AccessTypeSidecar {
+	if appconfig.Get().IsControlPlane() {
 		updateSidecarAccessRequestRule(c, orgID, existingRule, &req)
 		return
 	}

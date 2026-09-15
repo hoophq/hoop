@@ -1050,7 +1050,7 @@
             "type": "integer"
           },
           "access_type": {
-            "description": "The access type",
+            "description": "The access type. A control plane accepts only sidecar; a gateway accepts jit, command or jit_command",
             "enum": [
               "jit",
               "command",

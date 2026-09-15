@@ -30,8 +30,8 @@ func TestValidateSidecarAccessRequestRuleBody(t *testing.T) {
 		wantErr string
 	}{
 		{name: "valid", mutate: func(*openapi.AccessRequestRuleRequest) {}},
-		// Only the name, sidecar_names and connection_names are checked; every
-		// other field is stored as sent.
+		// Only the name, access_type, sidecar_names and connection_names are
+		// checked; every other field is stored as sent.
 		{name: "no reviewer settings", mutate: func(r *openapi.AccessRequestRuleRequest) {
 			r.ReviewersGroups, r.MinApprovals = nil, nil
 		}},
@@ -43,6 +43,10 @@ func TestValidateSidecarAccessRequestRuleBody(t *testing.T) {
 		}},
 		{name: "invalid name", wantErr: "name", mutate: func(r *openapi.AccessRequestRuleRequest) {
 			r.Name = "prod/approvals"
+		}},
+		// A control plane stores only sidecar rules.
+		{name: "another access type", wantErr: "access_type must be 'sidecar'", mutate: func(r *openapi.AccessRequestRuleRequest) {
+			r.AccessType = models.AccessTypeCommand
 		}},
 		{name: "no sidecars", wantErr: "sidecar_names", mutate: func(r *openapi.AccessRequestRuleRequest) {
 			r.SidecarNames = nil
@@ -69,25 +73,19 @@ func TestValidateSidecarAccessRequestRuleBody(t *testing.T) {
 	}
 }
 
-// A connection rule never stores sidecars: nothing would read them.
-func TestValidateAccessRequestRuleBodyRefusesSidecarNames(t *testing.T) {
+// A gateway keeps its own access types, and its message never offers sidecar.
+func TestValidateAccessRequestRuleBodyRefusesSidecarAccessType(t *testing.T) {
 	req := openapi.AccessRequestRuleRequest{
-		Name:                   "prod-jit",
-		AccessType:             models.AccessTypeJit,
+		Name:                   "prod-rule",
+		AccessType:             models.AccessTypeSidecar,
 		ConnectionNames:        []string{"pg-prod"},
 		ApprovalRequiredGroups: []string{},
 		ReviewersGroups:        []string{"sre"},
 		ForceApprovalGroups:    []string{},
 		MinApprovals:           ptr.Int(1),
-		SidecarNames:           []string{"sidecar-prod"},
 	}
-	err := validateAccessRequestRuleBody(uuid.New(), &req, nil)
-	if err == nil || !strings.Contains(err.Error(), "sidecar_names") {
-		t.Fatalf("expected an error naming sidecar_names, got %v", err)
-	}
-
-	req.SidecarNames = nil
-	if err := validateAccessRequestRuleBody(uuid.New(), &req, nil); err != nil {
-		t.Fatalf("a connection rule without sidecars must stay valid, got %v", err)
+	want := "access_type must be one of 'jit', 'command' or 'jit_command'"
+	if err := validateAccessRequestRuleBody(uuid.New(), &req, nil); err == nil || err.Error() != want {
+		t.Fatalf("expected %q, got %v", want, err)
 	}
 }
