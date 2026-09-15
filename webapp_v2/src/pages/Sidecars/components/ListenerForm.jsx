@@ -271,10 +271,11 @@ export default function ListenerForm({ form, setField, errors }) {
                     />
                     <NumberInput
                       label="Max body bytes"
-                      description="0 uses the codec default."
+                      description="0 uses the codec default of 64 KiB."
                       min={0}
                       value={form.http.max_body_bytes}
                       onChange={(v) => setNested('http', { max_body_bytes: Number(v) || 0 })}
+                      error={errors.http_max_body_bytes}
                     />
                     <TagsInput
                       label="Headers"
@@ -319,6 +320,7 @@ export default function ListenerForm({ form, setField, errors }) {
                       min={0}
                       value={form.grpc.max_payload_bytes}
                       onChange={(v) => setNested('grpc', { max_payload_bytes: Number(v) || 0 })}
+                      error={errors.grpc_max_payload_bytes}
                     />
                     <TagsInput
                       label="Metadata"
