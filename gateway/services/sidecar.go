@@ -98,6 +98,9 @@ func ParseSidecarConfigurationPatch(raw json.RawMessage) (merge json.RawMessage,
 			removeLoadFromDisk = true
 		}
 	}
+	// A license is never a sidecar key (see the create and PUT paths). Drop it
+	// rather than reject, so a document round-tripped from GET still patches.
+	delete(fields, "license")
 	merged, err := json.Marshal(fields)
 	if err != nil {
 		return nil, false, err

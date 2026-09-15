@@ -70,9 +70,10 @@ prints a warning naming its replacement. Use --strict to fail on one.
 
 Without a license the process caps guardrail and data masking rules at one
 each and says so at startup. A license lifts the caps for the features it
-names. It may be a path or the document itself, and --license outranks
-HOOP_LICENSE, which outranks a license the control plane sends, which
-outranks the "license" key in the config file.
+names. It may be a path or the document itself. A sidecar connected to a
+control plane that manages licensing runs under the plane's license only,
+and every local source is ignored with a warning. Otherwise --license
+outranks HOOP_LICENSE, which outranks the "license" key in the config file.
 
 A sidecar may connect to a Control Plane instead of carrying its own
 listeners: set HOOP_CONTROL_PLANE_URL or the "control_plane_url" config key

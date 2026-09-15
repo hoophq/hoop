@@ -91,13 +91,7 @@ export default function SidecarsTable({ sidecars, onDelete }) {
               </Group>
             </Table.Td>
             <Table.Td miw={140}>
-              {/* Mantine ellipsizes a badge label that misses fitting by a sub-pixel, and
-                  "Control plane" lands exactly there. */}
-              <Badge
-                variant="light"
-                color={loadsFromDisk(sidecar) ? 'gray' : 'blue'}
-                styles={{ label: { overflow: 'visible' } }}
-              >
+              <Badge variant="light" color={loadsFromDisk(sidecar) ? 'gray' : 'blue'} fullLabel>
                 {loadsFromDisk(sidecar) ? 'Config file' : 'Control plane'}
               </Badge>
             </Table.Td>

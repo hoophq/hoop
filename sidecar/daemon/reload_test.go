@@ -563,15 +563,15 @@ func TestADiskModeLicenseRemovalDropsToTheFreeTier(t *testing.T) {
 	if got := applyWith(rl, buf, string(tiny)); got != reloadApplied {
 		t.Fatalf("outcome = %v, want applied; log:\n%s", got, buf)
 	}
-	if got := rl.lic.get().State(); got != license.StateValid {
-		t.Fatalf("license state = %q, want valid before the removal", got)
+	if rl.lic.get().State() != license.StateValid {
+		t.Fatalf("license state = %q, want valid before the removal", rl.lic.get().State())
 	}
 
 	if got := applyWith(rl, buf, `{"load_from_disk":true}`); got != reloadApplied {
 		t.Fatalf("outcome = %v, want applied; log:\n%s", got, buf)
 	}
-	if got := rl.lic.get().State(); got != license.StateMissing {
-		t.Fatalf("license state = %q, want missing after the removal", got)
+	if rl.lic.get().State() != license.StateMissing {
+		t.Fatalf("license state = %q, want missing after the removal", rl.lic.get().State())
 	}
 }
 

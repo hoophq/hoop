@@ -862,8 +862,8 @@ func TestADiskModeLicenseIsThePlanes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SetupWith: %v", err)
 	}
-	if got := cfg2.Licensing().State(); got != license.StateMissing {
-		t.Errorf("license state = %q, want missing under a managing plane with none", got)
+	if cfg2.Licensing().State() != license.StateMissing {
+		t.Errorf("license state = %q, want missing under a managing plane with none", cfg2.Licensing().State())
 	}
 	if got := cfg2.cp.ignoredLicense; got != fileLicenseSource {
 		t.Errorf("ignored source = %q, want %q", got, fileLicenseSource)
