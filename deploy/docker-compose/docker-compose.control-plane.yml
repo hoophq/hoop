@@ -1,0 +1,156 @@
+# The control plane, and optionally one sidecar connected to it.
+#
+# This is NOT docker-compose.yml with a flag flipped. The mode comes from the
+# subcommand (ADR-0013; PR #1775 removed APP_MODE), and the topology differs:
+# the gateway stack runs an agent, two Presidio services and a default-agent
+# seeder, and publishes 8010, 15432, 12222 and 13389. The control plane opens
+# none of them.
+#
+#   docker compose -f docker-compose.control-plane.yml up
+#
+# Then create the first admin at http://localhost:8009, register a sidecar,
+# put its token in .env as HOOP_SIDECAR_TOKEN, and bring up the second half:
+#
+#   docker compose -f docker-compose.control-plane.yml --profile sidecar up -d
+#
+# The sidecar is behind a profile because its token does not exist until the
+# control plane issues one, and a sidecar without a token exits rather than
+# retrying. Profiles are additive, so the base stack stays two services.
+#
+# Needs Compose 2.23.1 or greater for the inline `configs` content below, which
+# is what keeps this a single file you can download on its own.
+name: hoop-control-plane
+
+services:
+  db:
+    image: postgres:17.6
+    # Hide postgres startup chatter; still available via `docker compose logs db`.
+    attach: false
+    networks:
+      - hoopcp
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: hoopdb
+      PGUSER: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready", "-U", "postgres"]
+      interval: "2s"
+      timeout: "30s"
+      retries: 10
+      start_period: "20s"
+
+  control-plane:
+    image: hoophq/hoop
+    # Allocate a TTY so the log auto-detect picks the human-readable encoder in
+    # an interactive `docker compose up`.
+    tty: true
+    command: ["hoop", "start", "control-plane"]
+    environment:
+      - GIN_MODE=release
+      - POSTGRES_DB_URI=postgres://postgres:postgres@db:5432/hoopdb?sslmode=disable
+    # API_URL goes here. It defaults to 127.0.0.1, which only works from this
+    # host; a remote install has to carry the full scheme and host or the web
+    # app assets point at the wrong place.
+    env_file: ".env"
+    ports:
+      - "8009:8009"
+    networks:
+      - hoopcp
+    depends_on:
+      db:
+        condition: "service_healthy"
+    # The control plane never opens the gRPC port, and its probe answers
+    # without dialing it. The gateway's probe does dial, which is the one
+    # handler that differs between the two modes.
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - |
+          PROTO=http; [ -n "$$TLS_KEY" ] && PROTO=https
+          curl -k -f $$PROTO://127.0.0.1:8009/api/healthz || exit 1
+      interval: "2s"
+      timeout: "30s"
+      retries: 10
+      start_period: "20s"
+
+  # --- profile: sidecar -----------------------------------------------------
+  # The resource the sidecar sits in front of. Empty on purpose: connect
+  # through the lane on 15432 and create whatever you want to test against.
+  appdb:
+    profiles: ["sidecar"]
+    image: postgres:17.6
+    attach: false
+    networks:
+      - hoopcp
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: appdb
+      PGUSER: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready", "-U", "postgres"]
+      interval: "2s"
+      timeout: "30s"
+      retries: 10
+      start_period: "20s"
+
+  sidecar:
+    profiles: ["sidecar"]
+    image: hoophq/hoopsidecar
+    tty: true
+    networks:
+      - hoopcp
+    environment:
+      - HOOP_CONTROL_PLANE_URL=http://control-plane:8009
+      # Issued once, when you register the sidecar in the control plane. Left
+      # empty the process exits and names the missing variable; it does not
+      # fall back to serving the file below on its own.
+      - HOOP_SIDECAR_TOKEN=${HOOP_SIDECAR_TOKEN:-}
+    # HOOP_SIDECAR_CONFIG already points here in the image.
+    configs:
+      - source: sidecar-config
+        target: /etc/hoop-inspect/config.yaml
+    ports:
+      - "15432:15432"  # the postgres lane
+      - "19000:19000"  # /healthz /stats /config
+    depends_on:
+      control-plane:
+        condition: "service_healthy"
+      appdb:
+        condition: "service_healthy"
+
+configs:
+  # Read once, to seed a control plane that holds no configuration for this
+  # sidecar yet: the first handshake answers 412 and the sidecar imports this
+  # document. After that the control plane owns it, and the listeners here are
+  # ignored with a warning rather than merged. Edit the configuration there.
+  sidecar-config:
+    content: |
+      log_level: info
+
+      admin:
+        listen: 0.0.0.0:19000
+
+      audit:
+        file: "-"
+
+      listeners:
+        - name: appdb
+          protocol: postgres
+          listen: 0.0.0.0:15432
+          upstream: appdb:5432
+
+          # One rule: an unlicensed build enforces one guardrail and one
+          # masking rule for the whole process, and this stack spends its
+          # guardrail on the statements a test is most likely to reach for.
+          guardrails:
+            mode: enforce
+            rules:
+              - name: no-destructive-sql
+                type: operation
+                operations: [drop, delete, truncate]
+                message: destructive statements are not permitted through this lane
+
+networks:
+  hoopcp:
