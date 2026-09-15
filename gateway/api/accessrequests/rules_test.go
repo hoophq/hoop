@@ -30,40 +30,25 @@ func TestValidateSidecarAccessRequestRuleBody(t *testing.T) {
 		wantErr string
 	}{
 		{name: "valid", mutate: func(*openapi.AccessRequestRuleRequest) {}},
-		{name: "all groups must approve needs no minimum", mutate: func(r *openapi.AccessRequestRuleRequest) {
-			r.AllGroupsMustApprove, r.MinApprovals = true, nil
+		// Only the name, sidecar_names and connection_names are checked; every
+		// other field is stored as sent.
+		{name: "no reviewer settings", mutate: func(r *openapi.AccessRequestRuleRequest) {
+			r.ReviewersGroups, r.MinApprovals = nil, nil
 		}},
-		// A sidecar review reads none of these today. They are stored as sent,
-		// so a later change can read them without refusing stored rules.
-		{name: "any reviewer and force approval group", mutate: func(r *openapi.AccessRequestRuleRequest) {
+		{name: "any other field", mutate: func(r *openapi.AccessRequestRuleRequest) {
 			r.ReviewersGroups, r.ForceApprovalGroups = []string{"dba"}, []string{"sre"}
-		}},
-		{name: "attributes", mutate: func(r *openapi.AccessRequestRuleRequest) {
+			r.ApprovalRequiredGroups, r.SkipReviewGroups = []string{"developers"}, []string{"sre"}
 			r.Attributes = []string{"production"}
-		}},
-		{name: "approval required groups", mutate: func(r *openapi.AccessRequestRuleRequest) {
-			r.ApprovalRequiredGroups = []string{"developers"}
-		}},
-		{name: "skip review groups", mutate: func(r *openapi.AccessRequestRuleRequest) {
-			r.SkipReviewGroups = []string{"sre"}
-		}},
-		{name: "access window", mutate: func(r *openapi.AccessRequestRuleRequest) {
 			r.AccessMaxDuration = ptr.Int(3600)
+		}},
+		{name: "invalid name", wantErr: "name", mutate: func(r *openapi.AccessRequestRuleRequest) {
+			r.Name = "prod/approvals"
 		}},
 		{name: "no sidecars", wantErr: "sidecar_names", mutate: func(r *openapi.AccessRequestRuleRequest) {
 			r.SidecarNames = nil
 		}},
 		{name: "connections", wantErr: "connection_names", mutate: func(r *openapi.AccessRequestRuleRequest) {
 			r.ConnectionNames = []string{"pg-prod"}
-		}},
-		{name: "no reviewers", wantErr: "reviewers_groups", mutate: func(r *openapi.AccessRequestRuleRequest) {
-			r.ReviewersGroups = nil
-		}},
-		{name: "no minimum", wantErr: "min_approvals", mutate: func(r *openapi.AccessRequestRuleRequest) {
-			r.MinApprovals = nil
-		}},
-		{name: "skip and require review groups together", wantErr: "skip_review_groups", mutate: func(r *openapi.AccessRequestRuleRequest) {
-			r.ApprovalRequiredGroups, r.SkipReviewGroups = []string{"developers"}, []string{"sre"}
 		}},
 	}
 	for _, tt := range tests {

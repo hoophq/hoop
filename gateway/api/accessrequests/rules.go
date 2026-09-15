@@ -61,26 +61,18 @@ func validateAccessRequestRuleBody(orgID uuid.UUID, req *openapi.AccessRequestRu
 	return nil
 }
 
-// validateSidecarAccessRequestRuleBody checks a rule that authorizes sidecars.
-// A sidecar review reads only the reviewer settings today. The other fields
-// are stored as sent, so a later change can read them without refusing rules
-// already stored.
+// validateSidecarAccessRequestRuleBody checks only what makes a rule a sidecar
+// rule: it lists sidecars and no connection. Every other field is stored as
+// sent.
 func validateSidecarAccessRequestRuleBody(req *openapi.AccessRequestRuleRequest) error {
 	if err := apivalidation.ValidateResourceName(req.Name); err != nil {
 		return err
 	}
-
-	switch {
-	case len(req.SidecarNames) == 0:
+	if len(req.SidecarNames) == 0 {
 		return fmt.Errorf("sidecar_names must have at least 1 entry when access_type is 'sidecar'")
-	case len(req.ConnectionNames) > 0:
+	}
+	if len(req.ConnectionNames) > 0 {
 		return fmt.Errorf("connection_names must be empty when access_type is 'sidecar'")
-	case len(req.ReviewersGroups) == 0:
-		return fmt.Errorf("reviewers_groups must have at least 1 entry")
-	case !req.AllGroupsMustApprove && (req.MinApprovals == nil || *req.MinApprovals < 1):
-		return fmt.Errorf("min_approvals must be at least 1 when all_groups_must_approve is false")
-	case len(req.SkipReviewGroups) > 0 && len(req.ApprovalRequiredGroups) > 0:
-		return fmt.Errorf("skip_review_groups can only be set when approval_required_groups is empty")
 	}
 	return nil
 }
