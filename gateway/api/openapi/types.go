@@ -3575,7 +3575,7 @@ type AccessRequestRule struct {
 	// The description of the access request rule
 	Description *string `json:"description" example:"Access control rule for production databases"`
 	// The access type
-	AccessType string `json:"access_type" enums:"jit,command,jit_command" example:"command"`
+	AccessType string `json:"access_type" enums:"jit,command,jit_command,sidecar" example:"command"`
 	// Connection names that this rule applies to
 	ConnectionNames []string `json:"connection_names" example:"pgdemo,mysql-prod"`
 	// Attributes associated with this access request rule
@@ -3610,9 +3610,9 @@ type AccessRequestRuleRequest struct {
 	Name string `json:"name" binding:"required" example:"default-access-request-rule"`
 	// The description of the access request rule
 	Description *string `json:"description" example:"Access request rule for production databases"`
-	// The access type
-	AccessType string `json:"access_type" binding:"required" enums:"jit,command,jit_command" example:"command"`
-	// Connection names that this rule applies to
+	// The access type. A control plane accepts only sidecar; a gateway accepts jit, command or jit_command
+	AccessType string `json:"access_type" binding:"required" enums:"jit,command,jit_command,sidecar" example:"command"`
+	// Connection names that this rule applies to. Required by a gateway, refused by a control plane
 	ConnectionNames []string `json:"connection_names" binding:"required" example:"pgdemo,mysql-prod"`
 	// Attributes associated with this access request rule
 	Attributes []string `json:"attributes" example:"production,pii"`

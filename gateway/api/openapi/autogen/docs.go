@@ -12107,7 +12107,8 @@ const docTemplate = `{
                     "enum": [
                         "jit",
                         "command",
-                        "jit_command"
+                        "jit_command",
+                        "sidecar"
                     ],
                     "example": "command"
                 },
@@ -12239,12 +12240,13 @@ const docTemplate = `{
                     "example": 3600
                 },
                 "access_type": {
-                    "description": "The access type",
+                    "description": "The access type. A control plane accepts only sidecar; a gateway accepts jit, command or jit_command",
                     "type": "string",
                     "enum": [
                         "jit",
                         "command",
-                        "jit_command"
+                        "jit_command",
+                        "sidecar"
                     ],
                     "example": "command"
                 },
@@ -12276,7 +12278,7 @@ const docTemplate = `{
                     ]
                 },
                 "connection_names": {
-                    "description": "Connection names that this rule applies to",
+                    "description": "Connection names that this rule applies to. Required by a gateway, refused by a control plane",
                     "type": "array",
                     "items": {
                         "type": "string"

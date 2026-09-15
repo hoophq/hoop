@@ -914,7 +914,8 @@
             "enum": [
               "jit",
               "command",
-              "jit_command"
+              "jit_command",
+              "sidecar"
             ],
             "example": "command",
             "type": "string"
@@ -1039,11 +1040,12 @@
             "type": "integer"
           },
           "access_type": {
-            "description": "The access type",
+            "description": "The access type. A control plane accepts only sidecar; a gateway accepts jit, command or jit_command",
             "enum": [
               "jit",
               "command",
-              "jit_command"
+              "jit_command",
+              "sidecar"
             ],
             "example": "command",
             "type": "string"
@@ -1076,7 +1078,7 @@
             "type": "array"
           },
           "connection_names": {
-            "description": "Connection names that this rule applies to",
+            "description": "Connection names that this rule applies to. Required by a gateway, refused by a control plane",
             "example": [
               "pgdemo",
               "mysql-prod"

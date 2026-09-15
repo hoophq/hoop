@@ -12,6 +12,10 @@ const (
 	AccessTypeJit        = "jit"
 	AccessTypeCommand    = "command"
 	AccessTypeJitCommand = "jit_command"
+	// AccessTypeSidecar marks a rule that serves sidecar reviews, the only kind
+	// a control plane stores. It targets no connection, so no connection lookup
+	// matches it.
+	AccessTypeSidecar = "sidecar"
 )
 
 // expandAccessTypes returns every access_type value that overlaps the given
