@@ -97,7 +97,7 @@ func BenchmarkLaneCounterStatement(b *testing.B) {
 	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			l.Statement(false)
+			l.Statement(false, "")
 		}
 	})
 }

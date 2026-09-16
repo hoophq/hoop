@@ -290,11 +290,11 @@ prompt, no token, no listener or upstream address — the same line
 | Event | When | Carries |
 |---|---|---|
 | `hoop-sidecar-first-run` | a bare invocation served the default page | port, whether it fell back, how long it stayed up |
-| `hoop-sidecar-started` | every lane built, about to serve | config source and format, license state, lane count per protocol, how many lanes enforce / observe / mask / consult OPA / run an analyzer, rule totals, audit sinks |
-| `hoop-sidecar-config-applied` | a control plane edit reached the reloader | generation, outcome (`applied`, `restart-required`, `refused`), lanes swapped and kept |
-| `hoop-sidecar-usage` | every 15 minutes and at shutdown | connections and statements in the window, denied and masked counts, per protocol |
-| `hoop-sidecar-stopped` | the process is exiting | reason (`signal`, `listener-failed`, `license-expired`), uptime |
-| `hoop-sidecar-license-expired` | the term ended under a config the free tier refuses | rule totals that exceeded it |
+| `hoop-sidecar-started` | every lane built, about to serve | config source and format, license state and type, lane count per protocol, how many lanes enforce / observe / mask / consult OPA / run an analyzer, rule totals, PII entity count, audit sinks |
+| `hoop-sidecar-config-applied` | a control plane edit reached the reloader | generation, outcome (`applied`, `restart-required`, `refused`), which sections changed, lanes swapped and kept |
+| `hoop-sidecar-usage` | every 15 minutes and at shutdown | connections and statements in the window, denied and masked counts, denials by evaluator kind, analyzer calls and failures, audit write failures, per protocol |
+| `hoop-sidecar-stopped` | the process is exiting | reason (`signal`, `listener-failed`, `license-expired`), failure class, uptime |
+| `hoop-sidecar-license-expired` | the term ended under a config the free tier refuses | rule totals that exceeded it, term length, warnings sent |
 
 Every event also carries the version, the entry point (`hoop`,
 `hoop-inspect` or `embedded`), OS and architecture, and a sidecar id: the

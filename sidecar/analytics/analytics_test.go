@@ -102,51 +102,93 @@ func TestDisabledWithoutKeyOrByEnv(t *testing.T) {
 	(&Client{}).Close()
 }
 
-func TestFullQueueDropsAndReportsTheDrop(t *testing.T) {
-	// A server that never answers holds the sender on its first batch, so
-	// the queue behind it fills.
-	block := make(chan struct{})
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		<-block
-	}))
-	defer srv.Close()
-	defer close(block)
-
-	c := New(Options{Endpoint: srv.URL, WriteKey: "wk", HTTPClient: &http.Client{Timeout: time.Hour}})
-	for range queueSize + batchSize + 10 {
+// A full queue drops events and remembers how many. The count must survive
+// every event that is itself dropped and arrive, whole, on the first one
+// that gets through.
+//
+// The client is assembled without its sender, so the queue is the only
+// capacity and the drop count is exact rather than a race against how far
+// the sender got before the HTTP request parked it.
+func TestFullQueueDropsAndReportsTheAccumulatedTotal(t *testing.T) {
+	cap := newCapture(t)
+	c := &Client{
+		opts:   Options{Endpoint: cap.srv.URL, WriteKey: "wk", SidecarID: "abc"},
+		common: Properties{},
+		http:   cap.srv.Client(),
+		queue:  make(chan message, queueSize),
+		done:   make(chan struct{}),
+	}
+	const overflow = 30
+	for range queueSize + overflow {
 		c.Track(EventUsage, nil)
 	}
 	c.mu.Lock()
 	dropped := c.dropped
 	c.mu.Unlock()
-	if dropped == 0 {
-		t.Fatal("expected drops once the queue filled; Track must never block")
+	if dropped != overflow {
+		t.Fatalf("dropped = %d, want %d: Track must never block and must count every drop", dropped, overflow)
+	}
+
+	// Start the sender, let it drain, then send the event that carries the
+	// total.
+	go c.run()
+	deadline := time.Now().Add(5 * time.Second)
+	for len(c.queue) > 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	c.Track(EventStopped, nil)
+	c.Close()
+
+	var reported []float64
+	for _, ev := range cap.events() {
+		if v, ok := ev.Properties["dropped-events"]; ok {
+			reported = append(reported, v.(float64))
+		}
+	}
+	if len(reported) != 1 || int(reported[0]) != overflow {
+		t.Fatalf("dropped-events reported = %v, want exactly one event carrying %d", reported, overflow)
+	}
+	if got := len(cap.events()); got != queueSize+1 {
+		t.Fatalf("delivered %d events, want %d queued + 1", got, queueSize+1)
 	}
 }
 
 func TestCountersReportDeltas(t *testing.T) {
 	cs := NewCounters()
 	pg := cs.Lane("postgres")
-	pg.Statement(false)
-	pg.Statement(true)
+	pg.Statement(false, "")
+	pg.Statement(true, "operation")
+	pg.Statement(true, "opa")
+	pg.Statement(true, "") // an unnamed denial still lands in the breakdown
 	pg.Masked(3)
+	pg.AuditError()
 	cs.Lane("mysql") // touched, never used: must not appear
 	cs.HeartbeatFailed()
 
 	u := cs.Snapshot()
-	if u.Statements != 2 || u.Denied != 1 || u.Masked != 3 || u.HeartbeatFailures != 1 {
+	if u.Statements != 4 || u.Denied != 3 || u.Masked != 3 || u.AuditErrors != 1 || u.HeartbeatFailures != 1 {
 		t.Fatalf("first snapshot = %+v", u)
 	}
 	if _, ok := u.ByProtocol["mysql"]; ok {
 		t.Fatal("an idle protocol must be omitted")
 	}
-	if got := u.ByProtocol["postgres"]; got != (LaneUsage{Statements: 2, Denied: 1, Masked: 3}) {
+	if got := u.ByProtocol["postgres"]; got != (LaneUsage{Statements: 4, Denied: 3, Masked: 3}) {
 		t.Fatalf("postgres = %+v", got)
 	}
+	if u.DeniedBy["operation"] != 1 || u.DeniedBy["opa"] != 1 || u.DeniedBy["unknown"] != 1 {
+		t.Fatalf("denied-by = %v", u.DeniedBy)
+	}
+	var sum int64
+	for _, n := range u.DeniedBy {
+		sum += n
+	}
+	if sum != u.Denied {
+		t.Fatalf("denied-by sums to %d, denied total is %d; the breakdown must partition the total", sum, u.Denied)
+	}
 
-	pg.Statement(false)
+	pg.Statement(false, "")
 	u = cs.Snapshot()
-	if u.Statements != 1 || u.Denied != 0 || u.HeartbeatFailures != 0 {
+	if u.Statements != 1 || u.Denied != 0 || u.HeartbeatFailures != 0 || len(u.DeniedBy) != 0 {
 		t.Fatalf("second snapshot must be a delta, got %+v", u)
 	}
 }

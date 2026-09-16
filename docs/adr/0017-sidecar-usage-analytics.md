@@ -192,9 +192,11 @@ plus the config shape.
   "control-plane-imported": true,
   "file-listeners-ignored": false,
   "license-state": "valid",
+  "license-type": "enterprise",
   "license-required": true,
   "detector-attached": true,
   "pii-configured": true,
+  "pii-entities": 12,
 
   "lane-count": 3,
   "protocols": {"postgres": 2, "http": 1},
@@ -207,7 +209,6 @@ plus the config shape.
   "mask-rules-total": 4,
   "lanes-with-analyzer": 1,
   "analyzer-provider": "vertex",
-  "analyzer-model": "gemini-2.5-flash",
   "analyzer-send": "redacted",
   "analyzer-fail-open": true,
   "analyzer-custom-prompt": false,
@@ -227,18 +228,24 @@ plus the config shape.
 plane delegated the document to the local file.
 
 **`hoop-sidecar-config-applied`** — a heartbeat delivered a changed document
-and the reloader acted on it. Silent for unchanged and retry outcomes. The
-config shape block above is attached when the outcome is `applied`.
+and the reloader acted on it. Silent for unchanged and retry outcomes.
+`changed` names the sections that differed from the running generation, from
+the fixed set `guardrails`, `opa`, `mask`, `analyzer`, `pii`, `license`; one
+edit that touches mask and guardrails is one event naming both. The config
+shape block above is attached when the outcome is `applied`.
 
 ```json
-{"config-generation": 4, "outcome": "applied", "lanes-swapped": 1, "lanes-kept": 2, "lane-count": 3, "…": "shape"}
+{"config-generation": 4, "outcome": "applied", "changed": ["guardrails", "mask"], "lanes-swapped": 1, "lanes-kept": 2, "lane-count": 3, "…": "shape"}
 {"config-generation": 4, "outcome": "restart-required", "lanes-swapped": 0, "lanes-kept": 0}
 {"config-generation": 4, "outcome": "refused", "lanes-swapped": 0, "lanes-kept": 0}
 ```
 
 **`hoop-sidecar-usage`** — counters since the previous usage event, every
 fifteen minutes and once at shutdown. `by-protocol` is keyed by protocol,
-never by lane.
+never by lane. `denies-by-kind` partitions `statements-denied` by the kind
+of evaluator that refused: a local rule's type (`operation`,
+`pattern_match`, `pii`, `http_resource`, …), `opa`, `analyzer`, `audit`
+(fail-closed sink), `stream` (codec refusal).
 
 ```json
 {
@@ -250,10 +257,17 @@ never by lane.
   "statements-total": 18250,
   "statements-denied": 17,
   "statements-masked": 1204,
+  "denies-by-kind": {"operation": 11, "pii": 4, "opa": 2},
+  "analyzer-calls": 320,
+  "analyzer-failures": 2,
+  "analyzer-fail-open-hits": 2,
+  "analyzer-denied": 5,
+  "analyzer-cache-hits": 1480,
+  "audit-write-failures": 0,
   "heartbeat-failures": 0,
   "by-protocol": {
-    "postgres": {"statements": 17900, "denied": 15, "masked": 1204},
-    "http": {"statements": 350, "denied": 2, "masked": 0}
+    "postgres": {"statements": 17900, "denied": 15, "masked": 1204, "connections": 380, "connections-denied": 3},
+    "http": {"statements": 350, "denied": 2, "masked": 0, "connections": 32, "connections-denied": 0}
   }
 }
 ```
@@ -263,16 +277,20 @@ goes out as its own `hoop-sidecar-usage` just before.
 
 ```json
 {"reason": "signal", "uptime-seconds": 86412, "reloads-applied": 4, "reloads-restart-required": 1, "reloads-refused": 0}
+{"reason": "listener-failed", "listener-error-kind": "bind", "uptime-seconds": 0, "reloads-applied": 0, "reloads-restart-required": 0, "reloads-refused": 0}
 ```
 
-`reason` is `signal`, `listener-failed` or `license-expired`.
+`reason` is `signal`, `listener-failed` or `license-expired`;
+`listener-error-kind` is `bind`, `tls` or `other`, present only on
+`listener-failed`.
 
-**`hoop-sidecar-license-expired`** — the term ended under a config the
-free tier refuses; the process stops for it, and `stopped` follows with
-`reason: license-expired`.
+**`hoop-sidecar-license-expired`** — the term ended (or, with `over-cap`,
+the entitlement stopped covering the rules) under a config the free tier
+refuses; the process stops for it, and `stopped` follows with `reason:
+license-expired`.
 
 ```json
-{"guardrail-rules-total": 7, "mask-rules-total": 4, "uptime-seconds": 2592000}
+{"guardrail-rules-total": 7, "mask-rules-total": 4, "uptime-seconds": 2592000, "license-state": "expired", "license-type": "enterprise", "over-cap": false, "expiry-notices-sent": 14, "license-term-days": 365}
 ```
 
 ## Consequences
@@ -298,15 +316,21 @@ read on every change to it. Also committed to the env var as the sole
 runtime switch: a config key would put the decision in a document the
 control plane owns.
 
-Not covered, and left on the table: a denial breakdown by rule *kind*
-(operation, regex, pii, opa, analyzer) needs a `Source` on `policy.Verdict`
-that the rules, OPA and analyzer evaluators would all have to set — a
-policy change with its own tests. Analyzer call and failure counts need the
-daemon to retain the evaluators it builds into each lane's chain, which it
-does not today. Option 2 — the plane emitting on the handshake with the
-org id and the org's analytics mode — remains the right way to attribute a
-managed sidecar to a customer, and would land beside this rather than
-replace it.
+Two facts had to be threaded through other packages to be countable, and
+both were done as fixed vocabularies rather than names. `policy.Verdict`
+gained `Source`: a local rule reports its `MatchType`, OPA and the analyzer
+report `SourceOPA` / `SourceAnalyzer`, the gate adds `audit` and `stream`
+for refusals no evaluator made. That is what `denies-by-kind` partitions,
+and it stays out of the audit trail, which keeps `Rule`. And each `lane`
+retains the `*analyzer.Evaluator` instances `buildPolicy` composed into its
+chain, so usage can read their `Stats`; a reload that swaps a lane's
+evaluators starts them from zero, and the deltas are keyed by instance so
+the swap never reads as a negative.
+
+Not covered: attribution to a customer. Option 2 — the plane emitting on
+the handshake with the org id and the org's analytics mode — remains the
+right way to attribute a managed sidecar to an organisation, and would land
+beside this rather than replace it.
 
 Revisit if a customer with a plane-connected sidecar needs their org's
 `disabled` analytics mode honoured on the sidecar side. Today the plane's

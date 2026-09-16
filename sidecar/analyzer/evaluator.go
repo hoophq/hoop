@@ -291,6 +291,7 @@ func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext)
 			msg = "statement contains sensitive data and cannot be risk-analyzed"
 		}
 		v := policy.Deny(e.cfg.Rule, msg)
+		v.Source = policy.SourceAnalyzer
 		v.Annotations = e.notes(status, "", string(ActionBlock))
 		return v
 
@@ -336,6 +337,7 @@ func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext)
 		msg = "refused by risk analysis"
 	}
 	v := policy.Deny(e.cfg.Rule, msg)
+	v.Source = policy.SourceAnalyzer
 	v.Annotations = notes
 	return v
 }
@@ -534,6 +536,7 @@ func (e *Evaluator) failure(err error) policy.Verdict {
 		Denied:  true,
 		Message: "risk analysis unavailable; denying",
 		Rule:    e.cfg.Rule,
+		Source:  policy.SourceAnalyzer,
 		Err:     err,
 	}
 }
@@ -562,6 +565,9 @@ func (e *Evaluator) Stats() Stats {
 
 // Rule reports the rule name this analyzer denies under.
 func (e *Evaluator) Rule() string { return e.cfg.Rule }
+
+// FailOpen reports whether a provider failure allows the statement.
+func (e *Evaluator) FailOpen() bool { return e.cfg.FailOpen }
 
 // SystemPrompt returns the assembled prompt this Evaluator sends.
 //

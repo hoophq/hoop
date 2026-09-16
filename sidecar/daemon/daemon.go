@@ -43,6 +43,7 @@ import (
 	"time"
 
 	"github.com/hoophq/hoop/sidecar/analytics"
+	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/audit"
 	_ "github.com/hoophq/hoop/sidecar/codec/all"
 	"github.com/hoophq/hoop/sidecar/gate"
@@ -648,7 +649,9 @@ const (
 // sent. A plain field would be a data race, and worse, a rotation one
 // goroutine sees and another misses.
 type licenseState struct {
-	lic     atomic.Pointer[license.Status]
+	lic atomic.Pointer[license.Status]
+	// depends reports that the RUNNING config exceeds the free tier, so an
+	// ended term takes something away. A reload can flip it either way.
 	depends atomic.Bool
 	// overCap reports that the license in force no longer covers the rules
 	// the process is serving -- a plane that replaced a license with a
@@ -658,6 +661,9 @@ type licenseState struct {
 	// It is a SEPARATE fact from the term ending, because the document is
 	// perfectly valid: what ran out is the entitlement, not the time.
 	overCap atomic.Bool
+	// notices counts the daily expiry warnings the watchdog logged, so the
+	// stop can report how much warning the operator had.
+	notices atomic.Int64
 }
 
 // newLicenseState publishes the license Setup resolved, and whether the
@@ -733,7 +739,10 @@ func watchLicense(ctx context.Context, st *licenseState, every time.Duration, lo
 			if !lic.ExpiresAt().Equal(noticedTerm) {
 				notified, noticedTerm = -1, lic.ExpiresAt()
 			}
-			notified = noticeLicenseExpiry(lic, notified, log)
+			if next := noticeLicenseExpiry(lic, notified, log); next != notified {
+				st.notices.Add(1)
+				notified = next
+			}
 			select {
 			case <-ctx.Done():
 				return
@@ -859,6 +868,9 @@ func Run(cfg *Config, det Plugin) error {
 	relayNames := make([]string, 0, len(lanes))
 	var endpoints []endpointServer
 	var endpointNames []string
+	// statSources pairs every server with its lane's protocol, so usage
+	// can report connections per protocol without naming a lane.
+	statSources := make([]statSource, 0, len(lanes))
 	for _, ln := range lanes {
 		switch {
 		case isGRPCTransport(ln.cfg):
@@ -868,6 +880,7 @@ func Run(cfg *Config, det Plugin) error {
 			}
 			endpoints = append(endpoints, gsrv)
 			endpointNames = append(endpointNames, ln.name)
+			statSources = append(statSources, statSource{ln.cfg.Protocol, gsrv})
 		case isSSH(ln.cfg):
 			ssrv, serr := buildSSHServer(ln, cfg.Audit, auditSink, log)
 			if serr != nil {
@@ -875,6 +888,7 @@ func Run(cfg *Config, det Plugin) error {
 			}
 			endpoints = append(endpoints, ssrv)
 			endpointNames = append(endpointNames, ln.name)
+			statSources = append(statSources, statSource{ln.cfg.Protocol, ssrv})
 		default:
 			srv, serr := buildServer(ln, cfg.Audit, auditSink, log)
 			if serr != nil {
@@ -882,6 +896,7 @@ func Run(cfg *Config, det Plugin) error {
 			}
 			servers = append(servers, srv)
 			relayNames = append(relayNames, ln.name)
+			statSources = append(statSources, statSource{ln.cfg.Protocol, srv})
 		}
 
 		// One line per lane naming what it enforces. The config file does not
@@ -968,7 +983,9 @@ func Run(cfg *Config, det Plugin) error {
 	}
 
 	// Usage deltas on a ticker; the final one is cut at shutdown below so
-	// the series closes on the last window.
+	// the series closes on the last window. Lanes come from the view so a
+	// reload's new analyzer instances are the ones read.
+	usage := func() { tel.trackUsage(statSources, view.Load().lanes) }
 	go func() {
 		t := time.NewTicker(usageEvery)
 		defer t.Stop()
@@ -977,7 +994,7 @@ func Run(cfg *Config, det Plugin) error {
 			case <-ctx.Done():
 				return
 			case <-t.C:
-				tel.trackUsage(servers, grpcServers)
+				usage()
 			}
 		}
 	}()
@@ -1023,7 +1040,7 @@ func Run(cfg *Config, det Plugin) error {
 			"the free tier allows",
 			"free_tier", limitsText(license.Status{}),
 			"renew", license.Support)
-		tel.trackLicenseExpired(cfg)
+		tel.trackLicenseExpired(cfg, licState)
 		cancel()
 	}
 	for _, srv := range servers {
@@ -1035,11 +1052,6 @@ func Run(cfg *Config, det Plugin) error {
 	wg.Wait()
 	close(errCh)
 
-	// The last usage window, then the stop. Both before the deferred close
-	// flushes them; nothing after this point emits.
-	tel.trackUsage(servers, grpcServers)
-	tel.trackStopped(stopReason)
-
 	// Report the first listener failure: a shutdown request must not hide a
 	// bind error on one endpoint.
 	for e := range errCh {
@@ -1047,6 +1059,11 @@ func Run(cfg *Config, det Plugin) error {
 			listenerErr = e
 		}
 	}
+
+	// The last usage window, then the stop. Both before the deferred close
+	// flushes them; nothing after this point emits.
+	usage()
+	tel.trackStopped(stopReason, listenerErr)
 	if listenerErr != nil {
 		return listenerErr
 	}
@@ -1093,8 +1110,13 @@ type lane struct {
 	// rules and opaURL are the resolved facts the startup log and the
 	// /config endpoint report. They sit alongside the built evaluator because
 	// a policy.Chain cannot report what went into it.
-	rules  []string
-	opaURL string
+	rules []string
+
+	// analyzers are the model-backed evaluators inside policy, retained so
+	// usage analytics can read their Stats. The chain cannot say what is
+	// in it, same reason rules and opaURL are kept beside it.
+	analyzers []*analyzer.Evaluator
+	opaURL    string
 
 	// analyzed names any DEPRECATED ai_analysis rules on this lane,
 	// reported the same way and for the same reason: the Chain cannot say
@@ -1171,6 +1193,7 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 			codecFactory: httpCodecFactory(proto, lc.HTTP),
 			captureBody:  lc.HTTP != nil && lc.HTTP.CaptureBody,
 			observing:    gc.observing(),
+			analyzers:    collectAnalyzers(pol),
 		}
 		// Reported whether or not the lane enforces. An observing lane runs
 		// every one of these, and a reader of the startup log needs to see

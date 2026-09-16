@@ -238,12 +238,15 @@ func (c *Client) Track(event Event, props Properties) {
 		c.dropped++
 		return
 	}
+	// The pending drop count rides on this message, but it is cleared only
+	// once the message is in the queue: if this one is dropped too, the
+	// total must survive to the event that finally gets through.
 	if c.dropped > 0 {
 		out["dropped-events"] = c.dropped
-		c.dropped = 0
 	}
 	select {
 	case c.queue <- m:
+		c.dropped = 0
 	default:
 		c.dropped++
 	}
