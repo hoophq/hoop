@@ -297,9 +297,9 @@ listeners:
     #
     #   {"note": "close the account"}
     #
-    # The cache keys on the resource, the query parameter NAMES and the
-    # body, so another id or another value for export with the same body
-    # is the same verdict.
+    # The cache keys on the resource, the query string and the body, so
+    # another id with the same query and body is the same verdict, and a
+    # different value for export is another call.
     # analyzer:
     #   trigger: {resources: ["/anything"]}
     #   high: block

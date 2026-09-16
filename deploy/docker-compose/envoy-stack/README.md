@@ -384,9 +384,10 @@ Content-Type: application/json
 
 The raw path and query are there because the model is judging intent, and
 the literal id and `?export=all` are part of it; the resource form exists to
-fold them away for policy. The **cache** still keys on the resource, the
-query parameter names and the body, so `/anything/12345?export=all` and
-`/anything/67890?export=none` with the same body are one verdict. No header other than
+fold them away for policy. The **cache** keys on the resource, the query
+string and the body, so `/anything/12345?export=all` and
+`/anything/67890?export=all` with the same body are one verdict, while
+`?export=none` is another call: a query value changes what the request does. No header other than
 `Content-Type` ever reaches the model, whatever `http.headers` allowlists.
 
 Verdicts land in the audit trail as `metadata.risk_level` and roll up per

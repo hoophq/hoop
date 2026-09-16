@@ -397,9 +397,10 @@ Content-Type: application/json
 ```
 
 The literal id and the query string are intent, so the model sees them; the
-cache still keys on the resource, the query parameter names and the body, so
-two ids sending the same body are one call. `send: redacted` runs the
-detector over this whole text, path included.
+cache keys on the resource, the query string and the body, so two ids
+sending the same query and body are one call and a different `?export=`
+value is another. `send: redacted` runs the detector over this whole text,
+path included.
 
 ### Reading the verdicts
 
