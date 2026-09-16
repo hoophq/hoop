@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/aws/smithy-go/ptr"
@@ -22,6 +23,7 @@ import (
 	"github.com/hoophq/hoop/gateway/services"
 	slackservice "github.com/hoophq/hoop/gateway/slack"
 	slackplugin "github.com/hoophq/hoop/gateway/transport/plugins/slack"
+	"github.com/hoophq/hoop/sidecar/daemon"
 	"gorm.io/gorm"
 )
 
@@ -121,7 +123,7 @@ func PostReview(c *gin.Context) {
 		return
 	}
 
-	rule, err := authorizedApprovalRule(sidecar, req.ListenerName, req.ApprovalRule)
+	rule, err := authorizedApprovalRule(models.DB, sidecar, req.ListenerName, req.ApprovalRule)
 	if err != nil {
 		var refusal ruleNotAuthorized
 		if errors.As(err, &refusal) {
@@ -132,9 +134,15 @@ func PostReview(c *gin.Context) {
 		return
 	}
 
+	// EVL-286 stores a sidecar rule without checking its reviewer settings, so
+	// this is the first place they are checked.
+	if err := approvableSidecarRule(rule); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
+	}
+
 	// A rule naming nobody produces a review with no group row, which no
-	// approval can ever settle. EVL-286 stores a sidecar rule without checking
-	// its reviewer settings, so this is the first place it is checked.
+	// approval can ever settle.
 	policy, err := services.ReviewPolicyFromRule(sidecar.OrgID, rule)
 	if err != nil {
 		if errors.Is(err, services.ErrRuleHasNoReviewers) {
@@ -245,6 +253,51 @@ func newSlackReviewRequest(sidecar *models.Sidecar, rev *models.Review, listener
 	}
 }
 
+// approvableSidecarRule refuses a rule that cannot produce a review a human is
+// able to settle, or whose stored policy is not the policy that would be
+// enforced.
+//
+// It lives on this path rather than inside services.ReviewPolicyFromRule
+// because the gateway's AI review path shares that function. A rule refused
+// here is one a gateway files reviews against today, and this project changes
+// the control plane only.
+//
+// The control plane stores a sidecar rule after checking its name, its access
+// type and that it targets no connection (EVL-286). Nothing checks the fields
+// below, so they are checked here instead of trusted.
+func approvableSidecarRule(rule *models.AccessRequestRule) error {
+	seen := make(map[string]struct{}, len(rule.ReviewersGroups))
+	for _, groupName := range rule.ReviewersGroups {
+		// A blank name matches no group, so its row stays pending forever and
+		// takes the review with it.
+		if strings.TrimSpace(groupName) == "" {
+			return fmt.Errorf("access request rule %q has a blank entry in reviewers_groups", rule.Name)
+		}
+		// One approval marks every row whose group the approver is in, so a
+		// repeated group lets one person satisfy several approvals.
+		if _, duplicate := seen[groupName]; duplicate {
+			return fmt.Errorf("access request rule %q repeats the reviewers_groups entry %q",
+				rule.Name, groupName)
+		}
+		seen[groupName] = struct{}{}
+	}
+
+	// doIndividualReview reads the minimum as min(group rows, minimum) and
+	// ignores it entirely below 1. Either bound would persist and return a
+	// number that is not the number enforced, so refuse rather than record a
+	// policy the review does not follow.
+	if !rule.AllGroupsMustApprove && rule.MinApprovals != nil {
+		switch min := *rule.MinApprovals; {
+		case min < 1:
+			return fmt.Errorf("access request rule %q sets min_approvals to %d, below 1", rule.Name, min)
+		case min > len(rule.ReviewersGroups):
+			return fmt.Errorf("access request rule %q sets min_approvals to %d, more than its %d reviewers_groups",
+				rule.Name, min, len(rule.ReviewersGroups))
+		}
+	}
+	return nil
+}
+
 // authorizedApprovalRule loads the rule the request names and checks that the
 // calling sidecar may file against it.
 //
@@ -252,7 +305,7 @@ func newSlackReviewRequest(sidecar *models.Sidecar, rev *models.Review, listener
 // body: the request could otherwise name any rule in the organization and pick
 // its own approvers. The listener must exist in that configuration and its
 // analyzer block must name this rule (EVL-294).
-func authorizedApprovalRule(sidecar *models.Sidecar, listenerName, ruleName string) (*models.AccessRequestRule, error) {
+func authorizedApprovalRule(db *gorm.DB, sidecar *models.Sidecar, listenerName, ruleName string) (*models.AccessRequestRule, error) {
 	refuse := ruleNotAuthorized{listenerName: listenerName, ruleName: ruleName}
 
 	if !listenerNamesApprovalRule(sidecar, listenerName, ruleName) {
@@ -264,7 +317,7 @@ func authorizedApprovalRule(sidecar *models.Sidecar, listenerName, ruleName stri
 		return nil, fmt.Errorf("failed parsing the sidecar organization id: %w", err)
 	}
 
-	rule, err := models.GetAccessRequestRuleByName(models.DB, ruleName, orgID)
+	rule, err := models.GetAccessRequestRuleByName(db, ruleName, orgID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, refuse
@@ -288,17 +341,29 @@ func listenerNamesApprovalRule(sidecar *models.Sidecar, listenerName, ruleName s
 	if listenerName == "" || ruleName == "" {
 		return false
 	}
+	var analyzer *daemon.LaneAnalyzerConfig
+	matches := 0
 	for _, listener := range sidecar.Configuration.Listeners {
 		if listener.Name != listenerName {
 			continue
 		}
-		// A listener with no analyzer block, or one naming a different rule,
-		// authorizes nothing. There is no inherited default: the people who
-		// may release a statement against one database are not the people who
-		// may release one against another.
-		return listener.Analyzer != nil && listener.Analyzer.ApprovalRule == ruleName
+		matches++
+		analyzer = listener.Analyzer
 	}
-	return false
+
+	// Listener names are NOT unique: daemon validation keys uniqueness on the
+	// listen address. Two lanes may share a name and name different rules, and
+	// the request says which listener but not which lane, so authorizing
+	// against either one would let the sidecar choose the looser of the two.
+	if matches != 1 {
+		return false
+	}
+
+	// A listener with no analyzer block, or one naming a different rule,
+	// authorizes nothing. There is no inherited default: the people who may
+	// release a statement against one database are not the people who may
+	// release one against another.
+	return analyzer != nil && analyzer.ApprovalRule == ruleName
 }
 
 // createSidecarReview writes the session and the review one statement needs to

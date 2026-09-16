@@ -176,7 +176,9 @@ func TestListenerNamesApprovalRule(t *testing.T) {
 func TestAuthorizedApprovalRuleRefusesAnUnauthorizedListener(t *testing.T) {
 	sc := sidecarWithListener("appdb", "payments-approvers")
 
-	rule, err := authorizedApprovalRule(sc, "reporting", "payments-approvers")
+	// A nil database is safe and deliberate here: the listener check runs
+	// first, so an unauthorized listener never reaches a query.
+	rule, err := authorizedApprovalRule(nil, sc, "reporting", "payments-approvers")
 
 	assert.Nil(t, rule)
 	var refusal ruleNotAuthorized
@@ -184,6 +186,109 @@ func TestAuthorizedApprovalRuleRefusesAnUnauthorizedListener(t *testing.T) {
 	// The whole message, not a prefix: it is what the sidecar logs, and an
 	// internal marker appended to it would read as part of the reason.
 	assert.Equal(t, `listener "reporting" is not configured to use approval rule "payments-approvers"`, err.Error())
+}
+
+// sidecarWithListeners builds a stored configuration holding several lanes, so
+// the duplicate-name case can be asserted.
+func sidecarWithListeners(listeners ...daemon.ListenerConfig) *models.Sidecar {
+	return &models.Sidecar{
+		ID: "sidecar-1", OrgID: "org-1", Name: "payments-sidecar",
+		Configuration: models.SidecarConfiguration{Listeners: listeners},
+	}
+}
+
+func lane(name, ruleName string) daemon.ListenerConfig {
+	return daemon.ListenerConfig{
+		Name:     name,
+		Analyzer: &daemon.LaneAnalyzerConfig{ApprovalRule: ruleName},
+	}
+}
+
+// Listener names are not unique: daemon validation keys uniqueness on the
+// listen address. Two lanes sharing a name may name different rules, and the
+// request says which listener but not which lane, so matching either one would
+// let the sidecar choose the looser of the two policies.
+func TestListenerNamesApprovalRuleFailsClosedOnDuplicateNames(t *testing.T) {
+	sc := sidecarWithListeners(lane("appdb", "lax-approvers"), lane("appdb", "strict-approvers"))
+
+	assert.False(t, listenerNamesApprovalRule(sc, "appdb", "lax-approvers"),
+		"the first lane must not authorize a statement the second lane may have held")
+	assert.False(t, listenerNamesApprovalRule(sc, "appdb", "strict-approvers"),
+		"neither direction authorizes while the name is ambiguous")
+
+	// A second lane under another name changes nothing: the match is unique.
+	sc = sidecarWithListeners(lane("appdb", "lax-approvers"), lane("reporting", "strict-approvers"))
+	assert.True(t, listenerNamesApprovalRule(sc, "appdb", "lax-approvers"))
+	assert.True(t, listenerNamesApprovalRule(sc, "reporting", "strict-approvers"))
+}
+
+// The control plane stores a sidecar rule without checking these fields, so a
+// review filed against one would be unsettleable or would enforce a policy
+// other than the one it records.
+func TestApprovableSidecarRule(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		rule    *models.AccessRequestRule
+		wantErr string
+	}{
+		{
+			name: "a well formed rule passes",
+			rule: approvalRule(),
+		},
+		{
+			name: "a repeated group lets one person approve twice",
+			rule: &models.AccessRequestRule{
+				Name:            "payments-approvers",
+				ReviewersGroups: []string{"dba", "dba"},
+				MinApprovals:    ptr.Int(2),
+			},
+			wantErr: "repeats the reviewers_groups entry",
+		},
+		{
+			name: "a blank group can never be matched",
+			rule: &models.AccessRequestRule{
+				Name:            "payments-approvers",
+				ReviewersGroups: []string{"dba", "  "},
+			},
+			wantErr: "blank entry in reviewers_groups",
+		},
+		{
+			name: "a minimum below one is ignored at approval time",
+			rule: &models.AccessRequestRule{
+				Name:            "payments-approvers",
+				ReviewersGroups: []string{"dba", "sre"},
+				MinApprovals:    ptr.Int(0),
+			},
+			wantErr: "below 1",
+		},
+		{
+			name: "a minimum above the group count is clamped at approval time",
+			rule: &models.AccessRequestRule{
+				Name:            "payments-approvers",
+				ReviewersGroups: []string{"dba", "sre"},
+				MinApprovals:    ptr.Int(3),
+			},
+			wantErr: "more than its 2 reviewers_groups",
+		},
+		{
+			name: "all_groups_must_approve makes the minimum irrelevant",
+			rule: &models.AccessRequestRule{
+				Name:                 "payments-approvers",
+				ReviewersGroups:      []string{"dba", "sre"},
+				AllGroupsMustApprove: true,
+				MinApprovals:         ptr.Int(0),
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := approvableSidecarRule(tc.rule)
+			if tc.wantErr == "" {
+				assert.NoError(t, err)
+				return
+			}
+			assert.ErrorContains(t, err, tc.wantErr)
+		})
+	}
 }
 
 func groupNames(groups []models.ReviewGroups) []string {
