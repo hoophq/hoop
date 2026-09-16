@@ -58,6 +58,23 @@ func AnalyzeSQL(sql string, proto Protocol) SQLAnalysis {
 			Complete:  false,
 			Reason:    "grpc statements carry no SQL to analyze",
 		}
+	case SSH:
+		// An ssh statement is a command line, a variable name or a file
+		// path. The PostgreSQL lexer reads all three: `rm -rf /` scans,
+		// `update` in a command is a verb it knows, and a path becomes a
+		// relation nobody named. Fail closed for the same reason grpc
+		// does — an invented relation is worse than an absent one,
+		// because a rule acts on it.
+		//
+		// Nothing calls this with SSH today: the ssh codec classifies its
+		// own statements and never asks for a dialect. The branch is here
+		// so the first caller that does gets an answer rather than a
+		// hallucination.
+		return SQLAnalysis{
+			Operation: OpUnknown,
+			Complete:  false,
+			Reason:    "ssh statements carry no SQL to analyze",
+		}
 	}
 	a := lexer.Analyze(sql, d)
 
