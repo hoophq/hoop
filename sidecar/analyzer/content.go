@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"net/url"
 	"slices"
 	"sort"
 	"strings"
@@ -278,7 +279,18 @@ type HTTPBuilder struct{}
 // Protocol implements Builder.
 func (HTTPBuilder) Protocol() inspect.Protocol { return inspect.HTTP }
 
-// Build renders "METHOD resource" plus the body.
+// Build renders the request line, the normalized resource and the body.
+//
+// The request line carries the RAW path and query string, not the
+// normalized resource. The resource is for policy, where /users/12345 and
+// /users/67890 must be one rule; the model is judging intent, and the
+// literal target is part of it: a numeric id, a `?limit=100000` or an
+// `?export=all` are facts the resource form throws away. The resource
+// follows on its own line where it differs from the path, so the model
+// also sees which segments the codec considers identifiers. Identifiers in
+// the path reach the model under the same terms as identifiers in the
+// body: `send: redacted` runs the detector over this whole text, and the
+// prompt contract forbids quoting a literal back.
 //
 // Headers are deliberately excluded even when a lane allowlists them for
 // policy. An allowlist that is safe for a local rule is not automatically
@@ -298,15 +310,20 @@ func (HTTPBuilder) Build(stmt inspect.Statement, maxBytes int) (Content, bool) {
 		return Content{}, false
 	}
 
-	target := d.Resource
-	if target == "" {
-		target = d.Path
-	}
-
 	var sb strings.Builder
 	sb.WriteString(d.Method)
 	sb.WriteString(" ")
-	sb.WriteString(target)
+	sb.WriteString(httpTarget(d))
+	if len(d.Query) > 0 {
+		// url.Values.Encode sorts by key, so the rendering is stable
+		// across two requests that differ only in parameter order.
+		sb.WriteString("?")
+		sb.WriteString(url.Values(d.Query).Encode())
+	}
+	if d.Resource != "" && d.Resource != d.Path {
+		sb.WriteString("\nResource: ")
+		sb.WriteString(d.Resource)
+	}
 	if d.ContentType != "" {
 		sb.WriteString("\nContent-Type: ")
 		sb.WriteString(d.ContentType)
@@ -326,24 +343,46 @@ func (HTTPBuilder) Build(stmt inspect.Statement, maxBytes int) (Content, bool) {
 	}, true
 }
 
-// httpCacheKey hashes method, normalized resource and body shape.
+// httpTarget is the path the request line shows the model. Path is what the
+// client sent; Resource stands in only for a detail built by hand without
+// one, which the codec never produces.
+func httpTarget(d *inspect.HTTPDetail) string {
+	if d.Path != "" {
+		return d.Path
+	}
+	return d.Resource
+}
+
+// httpCacheKey hashes method, normalized resource, query parameter NAMES
+// and body shape.
 //
 // Resource rather than Path is what makes this cache work: /users/12345/orders
 // and /users/67890/orders are one shape, and the codec already collapsed the
-// ids. The body is hashed whole, since there is no general way to strip its
-// literals without knowing its content type.
+// ids. Query keys are structure the same way JSON field names are: a
+// `?dry_run=` beside a body and the same body without it are two requests,
+// while `?id=1` and `?id=2` are one. Query values are literals and stay out,
+// as body literals would if there were a general way to strip them; the body
+// is hashed whole, since there is not.
 func httpCacheKey(stmt inspect.Statement, body string) string {
 	d := stmt.HTTP
 	target := d.Resource
 	if target == "" {
 		target = d.Path
 	}
+	keys := make([]string, 0, len(d.Query))
+	for k := range d.Query {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
 	h := sha256.New()
 	h.Write([]byte("http"))
 	h.Write([]byte{0})
 	h.Write([]byte(d.Method))
 	h.Write([]byte{0})
 	h.Write([]byte(target))
+	h.Write([]byte{0})
+	h.Write([]byte(strings.Join(keys, "&")))
 	h.Write([]byte{0})
 	h.Write([]byte(normalizeSpace(body)))
 	return hex.EncodeToString(h.Sum(nil)[:16])

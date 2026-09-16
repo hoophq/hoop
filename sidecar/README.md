@@ -892,6 +892,25 @@ classified, so an unset flag shows up as an analyzer that never fires.
 `authorization`, `cookie` and `proxy-authorization` cannot be allowlisted;
 headers never reach the model regardless.
 
+**What the model sees** is the request line as the client sent it — verb,
+raw path and query string — then the normalized resource where it differs,
+the content type, and the body:
+
+```
+POST /users/12345/orders?export=all
+Resource: /users/*/orders
+Content-Type: application/json
+
+{"format": "csv"}
+```
+
+The raw path is deliberate. The resource is the policy key, where every id
+must fold into one rule; the model is judging intent, and `?export=all` or a
+`?limit=100000` is part of it. Identifiers in the path are covered by the
+same `send: redacted` pass as identifiers in the body. The CACHE still keys
+on the resource plus the query parameter names, so `/users/1` and `/users/2`
+with the same body cost one call, not one per id.
+
 **Only requests are classified.** By the time a response comes back a write
 has already happened, and read-side exposure is masking's job.
 
@@ -1216,6 +1235,33 @@ listeners:
 and maskable response paths. Unreadable, malformed, or import-incomplete sets
 fail before the listener binds. Compare the printed method list with the
 deployed API to catch a valid but stale set that omits newer RPCs.
+
+`grpc.descriptors` takes one entry or a list; sets merge, shared imports
+dedupe, and two copies of one file that differ refuse to load. An entry is
+a file path or a URL a linked fetcher resolves at startup and on every
+reload. `hoop-inspect` and `hoop start sidecar` link `gs://`:
+
+```yaml
+    grpc:
+      descriptors:
+        - gs://acme-schemas/billing/v42.pb
+        - gs://acme-schemas/ledger.pb?generation=1726480000123456   # pinned
+        - /etc/hoop/local-override.pb
+```
+
+A bucket carries an artifact a ConfigMap cannot (1 MiB cap), and lets each
+team's CI publish its own set without a redeploy of the sidecar's volume.
+The read is one GET on the JSON API with Application Default Credentials —
+Workload Identity, an attached service account, or
+`GOOGLE_APPLICATION_CREDENTIALS` — and the identity needs
+`storage.objects.get` on the object (`roles/storage.objectViewer`). There
+is no anonymous read. `?generation=N` pins one version; any other query
+parameter is refused, so a typo cannot read the current version while the
+config appears pinned. `-validate` performs the fetch, so a wrong object
+name or a missing IAM binding fails there with the URL in the message. A
+scheme this binary does not link (`s3://`) is refused at config validation
+naming what is linked; the fetcher lives in the nested module
+`descriptors/gcs`, and a binary that does not import it resolves no URL.
 
 `-grpc-discover <listener>` bootstraps that set when the upstream exposes
 gRPC server reflection: it dials the named lane's upstream with the lane's

@@ -434,7 +434,10 @@ func TestHTTPWithoutBodyIsNotClassified(t *testing.T) {
 	}
 }
 
-// An HTTP request WITH a body is classified, and the prompt carries the body.
+// An HTTP request WITH a body is classified, and the prompt carries the verb,
+// the RAW path with its query string, the normalized resource and the body.
+// A model judging intent needs the literal target — the id, the
+// `?export=all` — that the resource form exists to throw away.
 func TestHTTPWithBodyIsClassified(t *testing.T) {
 	p := &stubProvider{level: analyzer.RiskHigh}
 	ev := mustNew(t, analyzer.Config{
@@ -450,6 +453,7 @@ func TestHTTPWithBodyIsClassified(t *testing.T) {
 		HTTP: &inspect.HTTPDetail{
 			Method:   "POST",
 			Path:     "/users/12345/orders",
+			Query:    map[string][]string{"export": {"all"}, "limit": {"100000"}},
 			Resource: "/users/*/orders",
 			Body:     `{"drop":"everything"}`,
 		},
@@ -457,8 +461,45 @@ func TestHTTPWithBodyIsClassified(t *testing.T) {
 	if v := ev.Evaluate(stmt); !v.Denied {
 		t.Fatal("a high-risk request with a body was not denied")
 	}
-	if seen := p.lastSeen(); !strings.Contains(seen, `{"drop":"everything"}`) {
-		t.Errorf("the prompt did not carry the body: %q", seen)
+	seen := p.lastSeen()
+	for _, want := range []string{
+		"POST /users/12345/orders?export=all&limit=100000\n",
+		"\nResource: /users/*/orders\n",
+		`{"drop":"everything"}`,
+	} {
+		if !strings.Contains(seen, want) {
+			t.Errorf("the prompt did not carry %q:\n%s", want, seen)
+		}
+	}
+}
+
+// The cache folds requests that differ only in path ids and query VALUES,
+// and keeps apart requests that differ in query NAMES. The raw path is in
+// the prompt, so this is what stops one call per id.
+func TestHTTPCacheKeyFoldsIdsAndQueryValues(t *testing.T) {
+	build := func(path string, query map[string][]string) string {
+		c, ok := analyzer.HTTPBuilder{}.Build(inspect.Statement{
+			Protocol: inspect.HTTP,
+			HTTP: &inspect.HTTPDetail{
+				Method:   "POST",
+				Path:     path,
+				Query:    query,
+				Resource: "/users/*/orders",
+				Body:     `{"n":1}`,
+			},
+		}, 4096)
+		if !ok {
+			t.Fatalf("Build(%q) declined", path)
+		}
+		return c.CacheKey
+	}
+
+	base := build("/users/1/orders", map[string][]string{"id": {"1"}})
+	if got := build("/users/2/orders", map[string][]string{"id": {"2"}}); got != base {
+		t.Error("a different id and query value produced a new cache key")
+	}
+	if got := build("/users/1/orders", map[string][]string{"id": {"1"}, "dry_run": {"true"}}); got == base {
+		t.Error("an extra query parameter shared the cache key")
 	}
 }
 
