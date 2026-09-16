@@ -178,7 +178,9 @@ func New(opts Options) *Client {
 		opts.Endpoint = endpoint
 	}
 	if opts.SidecarID == "" {
-		opts.SidecarID = RandomID()
+		// A caller with nothing better (first-run has no config) still
+		// gets one id per machine, not one per process.
+		opts.SidecarID = IDFromHost()
 	}
 	c := &Client{
 		opts: opts,
@@ -341,14 +343,41 @@ func (c *Client) send(batch []message) {
 // same install reports under the same id across restarts, and the token
 // itself never leaves the process. SHA-256, hex.
 func IDFromToken(token string) string {
-	sum := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(sum[:])
+	return hashID("token", token)
 }
 
-// RandomID returns a fresh 128-bit hex id. A standalone sidecar has no
-// durable identity — no token, no state directory — so it gets one per
-// process, and a dashboard reads restarts as new installs. That is the
-// honest reading: nothing ties the two processes together.
+// IDFromHost derives a stable id for a process with no token: the hostname
+// plus whatever else the caller knows is fixed for the install (listener
+// addresses, a config path). The same machine running the same config
+// reports under one id across restarts, which is what keeps a daily
+// rollout from minting a new Segment profile — and a new billable
+// tracked user — every day. Only the hash leaves the process.
+//
+// Segment bills by distinct anonymousId per month on its MTU plans, so a
+// fresh id per process is not "honest", it is a cost multiplier; every
+// caller must reach for this before RandomID.
+func IDFromHost(parts ...string) string {
+	host, err := os.Hostname()
+	if err != nil || host == "" {
+		return RandomID()
+	}
+	return hashID("host", append([]string{host}, parts...)...)
+}
+
+// hashID is SHA-256 over a kind tag and the parts, NUL-separated so two
+// different splits of the same bytes hash apart.
+func hashID(kind string, parts ...string) string {
+	h := sha256.New()
+	h.Write([]byte(kind))
+	for _, p := range parts {
+		h.Write([]byte{0})
+		h.Write([]byte(p))
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// RandomID returns a fresh 128-bit hex id. The last resort for a sidecar
+// id — a host with no hostname — and the message id on every event.
 func RandomID() string {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {

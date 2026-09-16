@@ -79,7 +79,7 @@ func firstRunServe(ctx context.Context, out io.Writer, restartCmd string, o setu
 	// The one event a process with no config can send: that the install
 	// happened and somebody ran the binary. Emitted when the page stops
 	// serving, so it carries how long the URL stayed up. No config means
-	// no token and no stable id; this install reports under a fresh one.
+	// no token and no listeners; the id falls back to the hostname alone.
 	entry := o.entrypoint
 	if entry == "" {
 		entry = analytics.EntrypointEmbedded

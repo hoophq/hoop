@@ -297,9 +297,10 @@ prompt, no token, no listener or upstream address — the same line
 | `hoop-sidecar-license-expired` | the term ended under a config the free tier refuses | rule totals that exceeded it, term length, warnings sent |
 
 Every event also carries the version, the entry point (`hoop`,
-`hoop-inspect` or `embedded`), OS and architecture, and a sidecar id: the
-SHA-256 of the control plane token when there is one, a random id per process
-otherwise.
+`hoop-inspect` or `embedded`), OS and architecture, and a sidecar id that is
+stable across restarts: the SHA-256 of the control plane token when there is
+one, otherwise of the hostname plus the listener addresses. Neither leaves
+the process in the clear.
 
 Switch it off with `HOOP_SIDECAR_ANALYTICS=off`. A binary built without the
 write key (`go build` from this tree, the compose stack's image) sends

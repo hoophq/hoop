@@ -78,9 +78,11 @@ type telemetry struct {
 	analyzers map[*analyzer.Evaluator]analyzer.Stats
 }
 
-// newTelemetry builds the client from what Setup learned. A control plane
-// token gives a stable id across restarts; a standalone process gets one
-// per boot, which is the honest reading of an install with no identity.
+// newTelemetry builds the client from what Setup learned. The sidecar id
+// must be the same across restarts of one install, because Segment bills
+// per distinct id per month: a control plane token gives it directly; a
+// standalone process derives it from the host and the addresses it
+// listens on, which is what stays fixed when the pod restarts.
 func newTelemetry(cfg *Config, log *slog.Logger) *telemetry {
 	opts := analytics.Options{
 		Version:      Version,
@@ -92,6 +94,8 @@ func newTelemetry(cfg *Config, log *slog.Logger) *telemetry {
 	}
 	if cfg.cp != nil {
 		opts.SidecarID = analytics.IDFromToken(cfg.cp.token)
+	} else {
+		opts.SidecarID = analytics.IDFromHost(cfg.listenAddrs()...)
 	}
 	now := time.Now()
 	t := &telemetry{
@@ -106,6 +110,18 @@ func newTelemetry(cfg *Config, log *slog.Logger) *telemetry {
 		log.Info("usage analytics enabled", "disable", analytics.EnvVar+"=off")
 	}
 	return t
+}
+
+// listenAddrs is what a standalone install has that is both fixed and
+// distinct: the sorted listener bind addresses. Two sidecars on one host
+// on different ports are two installs; one restarted is one.
+func (c *Config) listenAddrs() []string {
+	out := make([]string, 0, len(c.Listeners))
+	for _, lc := range c.Listeners {
+		out = append(out, lc.Network+"/"+lc.Listen)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // laneMetrics returns the counter a lane's gates report into, keyed by

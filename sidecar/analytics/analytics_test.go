@@ -193,12 +193,31 @@ func TestCountersReportDeltas(t *testing.T) {
 	}
 }
 
-func TestIDFromTokenIsStableAndNotTheToken(t *testing.T) {
+// Segment bills per distinct anonymousId per month, so every id source must
+// be stable across restarts of one install and must not leak its input.
+func TestIDsAreStableAndNotTheirInputs(t *testing.T) {
 	a, b := IDFromToken("hsc_secret"), IDFromToken("hsc_secret")
 	if a != b || a == "hsc_secret" || len(a) != 64 {
-		t.Fatalf("id = %q", a)
+		t.Fatalf("token id = %q", a)
+	}
+	h1, h2 := IDFromHost("tcp/:15432", "tcp/:8080"), IDFromHost("tcp/:15432", "tcp/:8080")
+	if h1 != h2 || len(h1) != 64 {
+		t.Fatalf("host id not stable: %q vs %q", h1, h2)
+	}
+	if IDFromHost("tcp/:15432") == h1 {
+		t.Fatal("two installs on one host with different listeners must not share an id")
+	}
+	if IDFromHost() == IDFromToken("") {
+		t.Fatal("a host id and a token id over empty input must not collide")
 	}
 	if RandomID() == RandomID() {
 		t.Fatal("RandomID must differ per call")
+	}
+	// New with no id falls back to the host, not to a random per process.
+	c1, c2 := New(Options{WriteKey: "wk", Endpoint: "http://127.0.0.1:1/"}), New(Options{WriteKey: "wk", Endpoint: "http://127.0.0.1:1/"})
+	defer c1.Close()
+	defer c2.Close()
+	if c1.opts.SidecarID != c2.opts.SidecarID {
+		t.Fatal("two clients on one host without an explicit id must share it")
 	}
 }

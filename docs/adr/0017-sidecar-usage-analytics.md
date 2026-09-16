@@ -118,12 +118,15 @@ hook in the gate. Specifically:
   key, so a document pushed by a control plane cannot turn it back on.
   `Run` logs `usage analytics enabled` when, and only when, it will send.
 
-- **Identity is the token hash or nothing.** `sidecar-id` is
-  `sha256(control-plane token)` when a plane is configured, giving one
-  profile per install across restarts without the token leaving the
-  process. A standalone sidecar gets a random id per process, and a
-  dashboard reads its restarts as new installs — the honest reading of a
-  process nothing ties to its predecessor.
+- **Identity is stable per install, and only a hash.** Segment bills by
+  distinct `anonymousId` per month, so a fresh id per process is a cost
+  multiplier, not a neutral choice. `sidecar-id` is `sha256(control-plane
+  token)` when a plane is configured. A standalone sidecar hashes its
+  hostname with its sorted listener addresses: the same machine running the
+  same config is one profile across restarts, two sidecars on one host on
+  different ports are two. First-run hashes the hostname alone. Neither the
+  token nor the hostname leaves the process; a random id is the last resort
+  for a host with no hostname.
 
 - **The audit chain is untouched.** Same events, same sinks, same
   `fail_on_audit_error` semantics, same `/api/*` query surface. `Metrics`
@@ -326,6 +329,26 @@ retains the `*analyzer.Evaluator` instances `buildPolicy` composed into its
 chain, so usage can read their `Stats`; a reload that swaps a lane's
 evaluators starts them from zero, and the deltas are keyed by instance so
 the swap never reads as a negative.
+
+Identity has a bill attached, which is why it is a hash of something fixed
+and never a value per process. Segment's MTU plans count every distinct
+`anonymousId` seen in a month; the first cut minted a random id per
+standalone process, so a sidecar restarted daily would have cost thirty
+tracked users a month on its own. The rule now: one id per install. A
+control plane token gives it directly. Standalone hashes the hostname with
+the sorted listener addresses, so the same machine running the same config
+is one profile across restarts and two sidecars on one host on different
+ports are two. First-run hashes the hostname alone. A random id is the last
+resort, for a host that reports no hostname.
+
+The caveat is Kubernetes, where the hostname is the pod name and changes on
+every rollout (`sidecar-7d9f-abc12` → `sidecar-7d9f-xyz89`). A standalone
+sidecar there still mints a new id per deploy — not per container restart,
+which keeps the pod. The durable identity a sidecar has is the control
+plane token, so connecting to a plane is the fix that needs no new knob. If
+standalone-on-Kubernetes turns out to be a common shape, an optional
+`HOOP_SIDECAR_ID` override is one line and one more environment variable
+to document; it is not added here because nothing yet shows the need.
 
 Not covered: attribution to a customer. Option 2 — the plane emitting on
 the handshake with the org id and the org's analytics mode — remains the
