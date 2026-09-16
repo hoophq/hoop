@@ -3,19 +3,33 @@
 # Brings up the three-topology SSH stack:
 #
 #   1. mint a CA, two host keys and ONE user certificate
-#   2. build the hoop-inspect image from the local sidecar tree
+#   2. build the end-hop image
 #   3. compose up
 #
 # One certificate opens all three paths, which is the thing to notice. The
 # bastions do not issue anything and do not re-sign anything; they carry a
 # connection whose identity was decided by the CA and is verified at the end.
 #
+# Two modes, and step 2 is the whole difference between them. The DEFAULT
+# takes the relay from a PUBLISHED hoophq/hoopsidecar image, compiles
+# nothing, and runs for anyone. --local builds it from ../../../sidecar and
+# ../../../libhoop, which is available to hoop engineers alone — libhoop is a
+# private module — and is the only mode that can prove an unpushed change.
+#
 # Usage:
-#   ./run.sh              bring everything up. The image is rebuilt whenever
-#                         ../../../sidecar or ../../../libhoop changed, so a
-#                         green ./demo.sh is a result about the current code
-#   ./run.sh --rebuild    rebuild even when neither tree changed
+#   ./run.sh              bring everything up from the published image
+#   ./run.sh --local      build the end-hop from the local sidecar and
+#                         libhoop trees. The image is rebuilt whenever either
+#                         tree changed, so a green ./demo.sh is a result
+#                         about the current code
+#   ./run.sh --rebuild    implies --local, and rebuilds even when neither
+#                         tree changed
 #   ./run.sh down         tear down, including the generated keys
+#
+# Which release the default takes:
+#   SIDECAR_TAG=1.176.0 ./run.sh      any tag of hoophq/hoopsidecar
+# Unset, it is `latest`. A tag whose relay has no ssh lane is refused by name
+# before anything starts, rather than failing later as a config error.
 
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -30,8 +44,26 @@ if [[ "${1:-}" == "down" ]]; then
     exit 0
 fi
 
-REBUILD=""
-[[ "${1:-}" == "--rebuild" ]] && REBUILD=1
+# --rebuild implies --local: there is nothing to rebuild from sources in the
+# published-image mode, and silently rebuilding the thin layer instead would
+# answer a question nobody asked.
+LOCAL=""; REBUILD=""
+case "${1:-}" in
+    "")          ;;
+    --local)     LOCAL=1 ;;
+    --rebuild)   LOCAL=1; REBUILD=1 ;;
+    *)           die "unknown argument: $1 (want --local, --rebuild, down, or nothing)" ;;
+esac
+
+# The overlay carries the local build and nothing else, so it is added rather
+# than swapped in. COMPOSE_FILE is exported because `docker compose` reads it
+# natively; demo.sh and a bare `docker compose` in this directory then keep
+# working without either one having to learn about modes.
+if [[ -n "$LOCAL" ]]; then
+    export COMPOSE_FILE="docker-compose.yml:docker-compose.local.yml"
+fi
+SIDECAR_TAG="${SIDECAR_TAG:-latest}"
+export SIDECAR_TAG
 
 need() { command -v "$1" >/dev/null || die "missing required tool: $1"; }
 need docker; need ssh-keygen
@@ -43,10 +75,11 @@ elif command -v sha256sum >/dev/null; then HASH=(sha256sum)
 else die "missing required tool: shasum or sha256sum"
 fi
 
-[[ -d ../../../libhoop ]] || die \
-    "../../../libhoop is missing. sidecar's codecs are a private module; this
-     stack builds them from a local checkout beside the repo (see
-     sidecar/CLAUDE.md, and 'make libhoop-dev' at the repo root)."
+[[ -z "$LOCAL" || -d ../../../libhoop ]] || die \
+    "--local needs ../../../libhoop, which is missing. sidecar's codecs are a
+     private module; this mode builds them from a local checkout beside the
+     repo (see sidecar/CLAUDE.md, and 'make libhoop-dev' at the repo root).
+     Drop --local to run from a published hoophq/hoopsidecar image instead."
 
 # ------------------------------------------------------------------ 0. keys
 #
@@ -175,7 +208,7 @@ source_stamp() {
     {   find -H ../../../sidecar ../../../libhoop -name .git -prune -o -type f -print0 |
             LC_ALL=C sort -z | xargs -0 "${HASH[@]}"
         # Neither file is in either context, and both change the image.
-        "${HASH[@]}" sidecar/Dockerfile docker-compose.yml
+        "${HASH[@]}" sidecar/Dockerfile.local docker-compose.yml docker-compose.local.yml
     } | "${HASH[@]}" | cut -d' ' -f1
 }
 
@@ -185,24 +218,59 @@ image_stamp() {
 }
 
 c_step "Images"
-STAMP=$(source_stamp)
-if [[ -n "$REBUILD" ]]; then
-    REASON="--rebuild"
-elif ! docker image inspect hoop-inspect-ssh:local >/dev/null 2>&1; then
-    REASON="there is no hoop-inspect-ssh:local yet"
-elif [[ "$(image_stamp)" != "$STAMP" ]]; then
-    REASON="../../../sidecar or ../../../libhoop changed since that image was built"
-else
-    REASON=""
-fi
+if [[ -z "$LOCAL" ]]; then
+    # Published mode. There are no sources to hash: the relay is whatever
+    # hoophq/hoopsidecar:$SIDECAR_TAG holds, and --pull is what makes a
+    # moving tag mean the release it points at today rather than the one
+    # cached here in March.
+    docker compose build --pull endhost >/dev/null \
+        || die "could not build from hoophq/hoopsidecar:$SIDECAR_TAG. Check the
+     tag exists, or use ./run.sh --local to build from the local trees."
+    c_ok "built hoop-inspect-ssh:local from hoophq/hoopsidecar:$SIDECAR_TAG"
 
-if [[ -n "$REASON" ]]; then
-    printf '      %s\n' "$REASON"
-    docker compose build --build-arg SOURCE_STAMP="$STAMP" endhost
-    c_ok "built hoop-inspect-ssh:local from ../../../sidecar and ../../../libhoop"
+    # Refuse a release with no ssh lane BY NAME, before any container starts.
+    # The stack is entirely ssh, so such a tag produces `unknown field "ssh"`
+    # from every sidecar at once, several screens away from the tag that
+    # caused it. The relay answers this question itself, offline, in one
+    # container that exits.
+    #
+    # The probe config is deliberately incomplete, so --validate fails either
+    # way. Only the REASON is read: a relay that knows the lane complains
+    # about the missing host key, one that does not cannot parse the field at
+    # all. Nothing matches the happy path, so there is none to keep in step.
+    PROBE=$(docker run --rm --entrypoint sh hoop-inspect-ssh:local -c '
+        printf "listeners:\n  - {name: p, protocol: ssh, listen: \":1\", ssh: {}}\n" > /tmp/probe.yaml
+        hoop-inspect --validate --config /tmp/probe.yaml 2>&1' || true)
+    if grep -q 'unknown field "ssh"' <<<"$PROBE"; then
+        die "hoophq/hoopsidecar:$SIDECAR_TAG has no ssh lane, so this stack cannot
+     run on it. The ssh lane ships from hoop PR #1821; until a release carries
+     it, name a tag that does:
+
+         SIDECAR_TAG=1821.0.0-g2872597 ./run.sh
+
+     or build from the local trees with ./run.sh --local."
+    fi
+    c_ok "hoophq/hoopsidecar:$SIDECAR_TAG carries an ssh lane"
 else
-    c_ok "reusing hoop-inspect-ssh:local; it holds ${STAMP:0:12}, which is these
-      exact sources. ./run.sh --rebuild rebuilds it anyway."
+    STAMP=$(source_stamp)
+    if [[ -n "$REBUILD" ]]; then
+        REASON="--rebuild"
+    elif ! docker image inspect hoop-inspect-ssh:local >/dev/null 2>&1; then
+        REASON="there is no hoop-inspect-ssh:local yet"
+    elif [[ "$(image_stamp)" != "$STAMP" ]]; then
+        REASON="../../../sidecar or ../../../libhoop changed since that image was built"
+    else
+        REASON=""
+    fi
+
+    if [[ -n "$REASON" ]]; then
+        printf '      %s\n' "$REASON"
+        docker compose build --build-arg SOURCE_STAMP="$STAMP" endhost
+        c_ok "built hoop-inspect-ssh:local from ../../../sidecar and ../../../libhoop"
+    else
+        c_ok "reusing hoop-inspect-ssh:local; it holds ${STAMP:0:12}, which is these
+          exact sources. ./run.sh --rebuild rebuilds it anyway."
+    fi
 fi
 docker compose build bastion-sshd client >/dev/null
 c_ok "built the sshd bastion and the client"
@@ -234,8 +302,8 @@ c_step "What each sidecar resolved to"
 SVCS=(endhost endhost-multi endhost-opa bastion-sidecar)
 for svc in "${SVCS[@]}"; do
     printf '\n  \033[1m%s\033[0m\n' "$svc"
-    docker compose exec -T "$svc" hoop-inspect -validate \
-        -config /etc/hoop-inspect/config.yaml | sed 's/^/    /'
+    docker compose exec -T "$svc" hoop-inspect --validate \
+        --config /etc/hoop-inspect/config.yaml | sed 's/^/    /'
 done
 
 cat <<'EOF'

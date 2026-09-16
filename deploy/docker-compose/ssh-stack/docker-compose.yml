@@ -34,13 +34,15 @@ services:
   # encrypted connection can.
   endhost:
     build:
-      context: ../../../sidecar
-      dockerfile: ../deploy/docker-compose/ssh-stack/sidecar/Dockerfile
-      # sidecar's codecs live in libhoop, a private module. This stack builds
-      # from the local tree rather than the proxy, so libhoop comes from the
-      # local checkout too.
-      additional_contexts:
-        libhoop: ../../../libhoop
+      # The DEFAULT mode: a published hoophq/hoopsidecar image plus the OS
+      # surface an end-hop session needs. Nothing is compiled and nothing
+      # private is fetched, so this runs anywhere. SIDECAR_TAG picks the
+      # release; `./run.sh --local` swaps in docker-compose.local.yml and
+      # builds from the local sidecar and libhoop trees instead.
+      context: ./sidecar
+      dockerfile: Dockerfile.released
+      args:
+        SIDECAR_TAG: ${SIDECAR_TAG:-latest}
     image: hoop-inspect-ssh:local
     networks:
       sshnet:

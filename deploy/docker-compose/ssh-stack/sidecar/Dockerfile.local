@@ -1,4 +1,9 @@
-# hoop-inspect with an SSH lane, plus the things an END-HOP session needs.
+# The end-hop, built from the LOCAL sidecar and libhoop trees.
+#
+# The alternative mode, selected with `./run.sh --local`, and the only one
+# that proves a change you have not pushed. It needs ../../../libhoop, a
+# PRIVATE module, so it is available to hoop engineers alone; everyone else
+# gets Dockerfile.released, which compiles nothing.
 #
 # One image serves both sidecars in this stack. The bastion uses none of the
 # session machinery below — it admits no session capability — but giving it a
@@ -10,7 +15,7 @@
 # beside the repo.
 #
 # Build via compose, which supplies both contexts:
-#   docker compose build endhost
+#   ./run.sh --local
 
 FROM golang:1.26-alpine AS build
 WORKDIR /src
@@ -65,4 +70,4 @@ WORKDIR /home/devuser
 USER devuser
 
 ENTRYPOINT ["/usr/local/bin/hoop-inspect"]
-CMD ["-config", "/etc/hoop-inspect/config.yaml"]
+CMD ["--config", "/etc/hoop-inspect/config.yaml"]

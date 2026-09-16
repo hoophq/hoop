@@ -43,8 +43,28 @@ OpenSSH that has never heard of hoop.
 ./run.sh down # tear down, including the generated keys
 ```
 
-`./run.sh` needs `../../../libhoop` beside the repo — sidecar's codecs are a
-private module, and this stack builds them from a local checkout.
+### Two modes, and the only difference is where the relay comes from
+
+`./run.sh` takes the relay from a **published `hoophq/hoopsidecar` image**.
+Nothing is compiled, nothing private is fetched, and everything below runs
+as written. Pick the release with `SIDECAR_TAG`; unset, it is `latest`:
+
+```bash
+SIDECAR_TAG=1.176.0 ./run.sh
+```
+
+A tag whose relay has no `ssh` lane is refused **by name** before any
+container starts, rather than failing later as a config error from every
+sidecar at once.
+
+`./run.sh --local` builds the end-hop from `../../../sidecar` and
+`../../../libhoop` instead. libhoop is a private module, so this mode is for
+hoop engineers — and it is the only one that can prove a change you have not
+pushed. The image is rebuilt whenever either tree changed, so a green
+`./demo.sh` is a result about the current code; `./run.sh --rebuild` forces it.
+
+Everything else — the addresses, the ports, the lanes, every command in this
+walkthrough — is identical in both modes.
 
 ---
 
@@ -1434,6 +1454,9 @@ tested against a DHCP lease.
 | `opa/policy.rego` | the decision: a finding, a certificate subject, and an operation |
 | `bastion-sshd/sshd_config` | the one line that makes stock sshd trust our CA, and the shell-less `Match` block |
 | `client/ssh_config` | the four host aliases, and what ProxyJump actually does |
+| `sidecar/Dockerfile.released` | the DEFAULT end-hop: a published `hoophq/hoopsidecar` image plus the accounts and programs an end-hop session needs |
+| `sidecar/Dockerfile.local` | the `--local` end-hop: the same relay compiled from `../../../sidecar` and `../../../libhoop` |
+| `docker-compose.local.yml` | the overlay `--local` adds, carrying that build and nothing else |
 | `run.sh` | mints the CA and certificate, builds, brings up, prints what each lane resolved to |
 | `demo.sh` | every check above, asserted; exits with the number of failures |
 | `certs.sh` | one certificate per attribute, each differing from a working one in exactly one field; same exit convention |

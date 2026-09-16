@@ -1,0 +1,66 @@
+# The end-hop, built from a PUBLISHED hoophq/hoopsidecar image.
+#
+# This is the default, and it is what lets anyone run the stack: the
+# published image already carries the relay binary, so nothing here needs
+# github.com/hoophq/libhoop, a private module only hoop engineers can fetch.
+# Nothing is compiled. See Dockerfile.local for the other mode.
+#
+# A layer is still needed, and none of it is about the relay. An END-HOP
+# session runs as an OS account and SPAWNS what the client asked for, and
+# hoophq/hoopsidecar is a relay image: one account, no shell, no tools. So
+# this adds the accounts and the programs the walkthrough exercises, and
+# nothing else.
+#
+# Build via compose, which supplies SIDECAR_TAG:
+#   docker compose build endhost
+
+ARG SIDECAR_TAG=latest
+FROM hoophq/hoopsidecar:${SIDECAR_TAG}
+
+USER root
+
+# curl for the compose healthcheck. The rest because an end-hop SPAWNS what
+# the client asks for, and each client runs a DIFFERENT program on this side:
+#   rsync           -> `rsync --server`, an exec
+#   scp -O          -> `scp -f`, an exec (openssh-client carries the binary)
+#   scp (default)   -> the sftp subsystem, served inside the sidecar itself
+RUN apt-get update -y \
+    && apt-get install -y --no-install-recommends curl rsync openssh-client \
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives
+
+# The account every session on the end-hop becomes.
+#
+# The sidecar RUNS AS this account rather than as root, and that is load
+# bearing rather than hygiene. File transfer is served inside the sidecar
+# process — there is no child to hand a credential to — so the subsystem is
+# refused unless the process already IS the account (ADR-0015).
+#
+# The base image already holds uid 10001 as `hoop` with a nologin shell, so
+# this RENAMES it rather than adding a second account at a second uid: the
+# walkthrough, the validate notes and the audit trail all say 10001, and two
+# accounts sharing one uid is a worse thing to explain than one rename.
+#
+# A SECOND account, for the multi-user lane. The certificate names three
+# principals — devuser, analyst and ghost — and only two of them exist here.
+# `ghost` is deliberately absent: a name the CA vouches for is not by itself
+# a name this host can become, and the session has to be refused rather than
+# run as somebody else.
+RUN usermod --login devuser --shell /bin/sh --home /home/devuser hoop \
+    && groupmod --new-name devuser hoop \
+    && useradd --uid 10004 --create-home --shell /bin/sh analyst \
+    && mkdir -p /home/devuser/upload \
+    && chown -R devuser:devuser /home/devuser
+
+# One command name in both modes. The published image calls the relay
+# `hoop start sidecar`; Dockerfile.local builds it as `hoop-inspect`. run.sh
+# and the walkthrough should not have to know which image they are on, so
+# the published one gains the other's name. Flags are written --double-dash
+# everywhere, which Go's flag package and cobra both accept.
+RUN printf '#!/bin/sh\nexec hoop start sidecar "$@"\n' > /usr/local/bin/hoop-inspect \
+    && chmod 0755 /usr/local/bin/hoop-inspect
+
+WORKDIR /home/devuser
+USER devuser
+
+ENTRYPOINT ["/usr/local/bin/hoop-inspect"]
+CMD ["--config", "/etc/hoop-inspect/config.yaml"]
