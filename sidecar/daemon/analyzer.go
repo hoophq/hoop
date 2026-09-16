@@ -217,6 +217,25 @@ type LaneAnalyzerConfig struct {
 	// own title.
 	Message string `json:"message,omitempty"`
 
+	// ApprovalRule names the control plane access request rule that decides
+	// who may approve a statement this lane holds. The rule carries the
+	// reviewer groups, the approval count and the force-approval list; this
+	// field carries only its name, because the sidecar never holds that
+	// policy and the control plane authorizes the review against the stored
+	// config.
+	//
+	// PER LANE, not process-wide: the people who may release a statement
+	// against the payments database are not the people who may release one
+	// against a reporting replica, and an inherited default would make the
+	// looser of the two the accident.
+	//
+	// It is meaningful only where a risk level asks for require_review, and
+	// this build refuses require_review outright, so every config naming it
+	// is refused at startup today. The field exists now so the control plane
+	// can store and serve one: a stored document it cannot represent is
+	// served with the key dropped, silently disabling the control it named.
+	ApprovalRule string `json:"approval_rule,omitempty"`
+
 	// The rest override the top-level analyzer defaults for this lane.
 	// A zero value inherits; see the field of the same name on
 	// AnalyzerConfig for what each bounds.
@@ -842,6 +861,24 @@ func validateLaneBlock(la *LaneAnalyzerConfig, lane string) []string {
 		}
 		if la.Cache.TTLSec < 0 {
 			problems = append(problems, where+": cache.ttl_sec is negative")
+		}
+	}
+
+	// An approval rule with nothing to approve is the same failure the
+	// risk-action checks above exist to prevent: a control that loads,
+	// names reviewers and is read by nobody. The blank case is separate
+	// because a name of spaces matches no rule in the control plane and
+	// would surface as a refused review long after startup.
+	if la.ApprovalRule != "" {
+		switch {
+		case strings.TrimSpace(la.ApprovalRule) == "":
+			problems = append(problems, where+
+				": approval_rule is blank; it names an access request rule in the control plane")
+		case !analyzerHolds(la):
+			problems = append(problems, fmt.Sprintf(
+				"%s: approval_rule %q names who may approve a statement, and no risk "+
+					"level asks for %q, so nothing on this lane would hold one",
+				where, la.ApprovalRule, analyzer.ActionRequireReview))
 		}
 	}
 	return problems

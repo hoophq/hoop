@@ -961,6 +961,37 @@ runtime lets one file serve a deployment with OPA and a deployment without
 one. See [Guardrails and OPA](#guardrails-and-opa) for what the two phases
 send and what the gate may answer.
 
+**Holding a statement for a human.** The fourth action is `require_review`:
+the statement waits while a person approves or refuses it. **This build
+refuses it at startup**, so the rest of this paragraph describes a schema
+that is accepted and a runtime that is not yet there.
+
+`approval_rule` names the control plane access request rule that decides who
+may approve. The rule holds the reviewer groups, the approval count and the
+force-approval list; the lane holds only its name, and the control plane
+authorizes each review against the config it stored for that sidecar.
+
+```yaml
+listeners:
+  - name: payments
+    # ...
+    analyzer:
+      trigger: {operations: [delete, update]}
+      high: require_review
+      approval_rule: payments-approvers
+```
+
+It is per lane on purpose: the people who may release a statement against the
+payments database are not the people who may release one against a reporting
+replica, and a process-wide default would make the looser of the two the
+accident. An `approval_rule` on a lane where no risk level asks for
+`require_review` is refused at startup, the same way every other control that
+would load and be read by nobody is. A blank name is refused too, because
+spaces match no rule.
+
+Editing it is a hot reload, not a restart: the block swaps with the lane's
+rules, so a corrected reviewer group reaches the lane on the next heartbeat.
+
 **Writing your own prompt.** Risk depends on what you are protecting, so the
 risk guidance is replaceable at two levels.
 
