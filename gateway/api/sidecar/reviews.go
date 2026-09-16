@@ -3,6 +3,7 @@ package apisidecar
 import (
 	"database/sql"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -18,9 +19,10 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	slackservice "github.com/hoophq/hoop/gateway/slack"
-	"github.com/hoophq/hoop/gateway/storagev2/types"
 	slackplugin "github.com/hoophq/hoop/gateway/transport/plugins/slack"
+	"gorm.io/gorm"
 )
 
 const (
@@ -48,6 +50,25 @@ const (
 	reviewConnectionType = "custom"
 )
 
+// ruleNotAuthorized answers every way the named rule can fail to authorize the
+// review: no such rule, a rule of another kind, a listener the stored
+// configuration does not have, and a listener that names a different rule. One
+// message for the four, because telling them apart would let a token holder
+// enumerate the organization's rule names.
+//
+// A type rather than a wrapped sentinel, so what the sidecar reads is the
+// whole message with no internal marker appended to it.
+//
+// Both values came from the caller, so naming them leaks nothing and makes the
+// window after a configuration edit readable in the sidecar's own log: a
+// review is refused until the sidecar reloads, up to a minute, and the sidecar
+// denies the statement in the meantime.
+type ruleNotAuthorized struct{ listenerName, ruleName string }
+
+func (e ruleNotAuthorized) Error() string {
+	return fmt.Sprintf("listener %q is not configured to use approval rule %q", e.listenerName, e.ruleName)
+}
+
 // PostReview
 //
 //	@Summary		Create Sidecar Review
@@ -57,8 +78,8 @@ const (
 //	@Produce		json
 //	@Param			hoop-sidecar-token	header		string							true	"The token returned when the sidecar was created"
 //	@Param			request				body		openapi.SidecarReviewRequest	true	"The request body resource"
-//	@Success		201					{object}	openapi.Review
-//	@Failure		400,401,412,413,500	{object}	openapi.HTTPError
+//	@Success		201						{object}	openapi.Review
+//	@Failure		400,401,412,413,422,500	{object}	openapi.HTTPError
 //	@Router			/sidecars/reviews [post]
 func PostReview(c *gin.Context) {
 	sidecar := apiroutes.SidecarFromContext(c)
@@ -100,7 +121,31 @@ func PostReview(c *gin.Context) {
 		return
 	}
 
-	rev, err := createSidecarReview(sidecar, req.ListenerName, string(statement))
+	rule, err := authorizedApprovalRule(sidecar, req.ListenerName, req.ApprovalRule)
+	if err != nil {
+		var refusal ruleNotAuthorized
+		if errors.As(err, &refusal) {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": refusal.Error()})
+			return
+		}
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed loading the approval rule")
+		return
+	}
+
+	// A rule naming nobody produces a review with no group row, which no
+	// approval can ever settle. EVL-286 stores a sidecar rule without checking
+	// its reviewer settings, so this is the first place it is checked.
+	policy, err := services.ReviewPolicyFromRule(sidecar.OrgID, rule)
+	if err != nil {
+		if errors.Is(err, services.ErrRuleHasNoReviewers) {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+			return
+		}
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed building the review policy")
+		return
+	}
+
+	rev, err := createSidecarReview(sidecar, req.ListenerName, string(statement), rule, policy)
 	if err != nil {
 		// The error is logged and sent to Sentry by AbortWithErr; the caller
 		// gets none of it. A database message names constraints, tables and
@@ -109,7 +154,8 @@ func PostReview(c *gin.Context) {
 		return
 	}
 
-	log.With("sid", rev.SessionID, "review-id", rev.ID, "sidecar", sidecar.Name, "listener", req.ListenerName).
+	log.With("sid", rev.SessionID, "review-id", rev.ID, "sidecar", sidecar.Name,
+		"listener", req.ListenerName, "rule", rule.Name).
 		Infof("registered a sidecar review")
 
 	// TrackEvent, not TrackRequest: this request has no user, and TrackRequest
@@ -199,9 +245,65 @@ func newSlackReviewRequest(sidecar *models.Sidecar, rev *models.Review, listener
 	}
 }
 
+// authorizedApprovalRule loads the rule the request names and checks that the
+// calling sidecar may file against it.
+//
+// Authorization comes from the sidecar's STORED configuration, never from the
+// body: the request could otherwise name any rule in the organization and pick
+// its own approvers. The listener must exist in that configuration and its
+// analyzer block must name this rule (EVL-294).
+func authorizedApprovalRule(sidecar *models.Sidecar, listenerName, ruleName string) (*models.AccessRequestRule, error) {
+	refuse := ruleNotAuthorized{listenerName: listenerName, ruleName: ruleName}
+
+	if !listenerNamesApprovalRule(sidecar, listenerName, ruleName) {
+		return nil, refuse
+	}
+
+	orgID, err := uuid.Parse(sidecar.OrgID)
+	if err != nil {
+		return nil, fmt.Errorf("failed parsing the sidecar organization id: %w", err)
+	}
+
+	rule, err := models.GetAccessRequestRuleByName(models.DB, ruleName, orgID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, refuse
+		}
+		return nil, err
+	}
+	// A control plane stores only sidecar rules today, so this guard fires for
+	// nothing that exists yet. It is here so a rule of another kind arriving
+	// later cannot be approved through a listener: the access type is what
+	// makes a rule a sidecar rule, and nothing downstream reads it again.
+	if rule.AccessType != models.AccessTypeSidecar {
+		return nil, refuse
+	}
+	return rule, nil
+}
+
+// listenerNamesApprovalRule reports whether the sidecar's stored configuration
+// gives this listener this approval rule. Split out, and free of the database,
+// so the whole authorization table can be asserted without Postgres.
+func listenerNamesApprovalRule(sidecar *models.Sidecar, listenerName, ruleName string) bool {
+	if listenerName == "" || ruleName == "" {
+		return false
+	}
+	for _, listener := range sidecar.Configuration.Listeners {
+		if listener.Name != listenerName {
+			continue
+		}
+		// A listener with no analyzer block, or one naming a different rule,
+		// authorizes nothing. There is no inherited default: the people who
+		// may release a statement against one database are not the people who
+		// may release one against another.
+		return listener.Analyzer != nil && listener.Analyzer.ApprovalRule == ruleName
+	}
+	return false
+}
+
 // createSidecarReview writes the session and the review one statement needs to
 // wait for a human.
-func createSidecarReview(sidecar *models.Sidecar, listenerName, statement string) (*models.Review, error) {
+func createSidecarReview(sidecar *models.Sidecar, listenerName, statement string, rule *models.AccessRequestRule, policy *services.ReviewPolicy) (*models.Review, error) {
 	now := time.Now().UTC()
 	sessionID := uuid.NewString()
 
@@ -225,18 +327,18 @@ func createSidecarReview(sidecar *models.Sidecar, listenerName, statement string
 		return nil, fmt.Errorf("failed creating session: %w", err)
 	}
 
-	rev := newSidecarReview(sidecar, listenerName, sessionID, now)
+	rev := newSidecarReview(sidecar, listenerName, sessionID, rule, policy, now)
 	if err := models.CreateReview(rev, statement); err != nil {
 		return nil, fmt.Errorf("failed creating review: %w", err)
 	}
 	return rev, nil
 }
 
-// newSidecarReview builds the row, and with it the whole approval policy: a
-// group per eligible role and a minimum of one. Nothing in the review path
-// spells that out, so an omission here is silent — without the minimum the
-// review needs BOTH groups, and without a row a role cannot approve at all.
-func newSidecarReview(sidecar *models.Sidecar, listenerName, sessionID string, now time.Time) *models.Review {
+// newSidecarReview builds the row, and with it the whole approval policy the
+// named rule describes. Nothing in the review path spells that out, so an
+// omission here is silent: without MinApprovals the review needs every group,
+// and without a group row a role cannot approve at all.
+func newSidecarReview(sidecar *models.Sidecar, listenerName, sessionID string, rule *models.AccessRequestRule, policy *services.ReviewPolicy, now time.Time) *models.Review {
 	return &models.Review{
 		ID:        uuid.NewString(),
 		OrgID:     sidecar.OrgID,
@@ -255,29 +357,13 @@ func newSidecarReview(sidecar *models.Sidecar, listenerName, sessionID string, n
 		OwnerEmail: reviewOwnerEmail,
 		OwnerName:  ptr.String(sidecar.Name),
 
-		MinApprovals: ptr.Int(1),
-		ReviewGroups: eligibleReviewGroups(sidecar.OrgID),
+		MinApprovals:          &policy.MinApprovals,
+		ReviewGroups:          policy.Groups,
+		ForceApprovalGroups:   rule.ForceApprovalGroups,
+		AccessRequestRuleName: &rule.Name,
 
 		CreatedAt: now,
 	}
-}
-
-// eligibleReviewGroups is the fixed policy: an admin or an approver, whichever
-// gets there first. Read from types rather than spelled, because an
-// organization can rename its admin group through the environment and a
-// hardcoded name would produce a row nobody is in.
-func eligibleReviewGroups(orgID string) []models.ReviewGroups {
-	groups := []string{types.GroupAdmin, types.GroupApprover}
-	reviewGroups := make([]models.ReviewGroups, 0, len(groups))
-	for _, name := range groups {
-		reviewGroups = append(reviewGroups, models.ReviewGroups{
-			ID:        uuid.NewString(),
-			OrgID:     orgID,
-			GroupName: name,
-			Status:    models.ReviewStatusPending,
-		})
-	}
-	return reviewGroups
 }
 
 // toOpenApiSidecarReview renders what the sidecar needs to recognise the review
@@ -302,5 +388,10 @@ func toOpenApiSidecarReview(r *models.Review) *openapi.Review {
 		MinApprovals:     r.MinApprovals,
 		SidecarID:        ptr.String(r.SidecarID.String),
 		ListenerName:     ptr.String(r.ListenerName.String),
+
+		// The policy the review was filed under, so a sidecar can record which
+		// rule held a statement rather than only which rule it asked for.
+		AccessRequestRuleName: r.AccessRequestRuleName,
+		ForceApprovalGroups:   r.ForceApprovalGroups,
 	}
 }

@@ -12,9 +12,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/aws/smithy-go/ptr"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
-	"github.com/hoophq/hoop/gateway/storagev2/types"
+	"github.com/hoophq/hoop/gateway/services"
+	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -33,17 +35,55 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// The minimum is half the policy and nothing downstream restates it. Without
-// it reviewsCountNeeded falls back to the number of group rows, so the review
-// would quietly need BOTH an admin and an approver.
+// approvalRule is the policy every test here files against: two reviewer
+// groups and a minimum of one, so a drift in either half is visible.
+func approvalRule() *models.AccessRequestRule {
+	return &models.AccessRequestRule{
+		Name:                "payments-approvers",
+		AccessType:          models.AccessTypeSidecar,
+		ReviewersGroups:     []string{"dba", "sre"},
+		ForceApprovalGroups: []string{"security"},
+		MinApprovals:        ptr.Int(1),
+	}
+}
+
+// sidecarWithListener builds the stored configuration the authorization reads.
+// It is the sidecar row the middleware loads, not anything the request sent.
+func sidecarWithListener(listenerName, ruleName string) *models.Sidecar {
+	sc := &models.Sidecar{ID: "sidecar-1", OrgID: "org-1", Name: "payments-sidecar"}
+	listener := daemon.ListenerConfig{Name: listenerName}
+	if ruleName != "" {
+		listener.Analyzer = &daemon.LaneAnalyzerConfig{ApprovalRule: ruleName}
+	}
+	sc.Configuration = models.SidecarConfiguration{Listeners: []daemon.ListenerConfig{listener}}
+	return sc
+}
+
+func testPolicy(t *testing.T, rule *models.AccessRequestRule) *services.ReviewPolicy {
+	t.Helper()
+	policy, err := services.ReviewPolicyFromRule("org-1", rule)
+	assert.NoError(t, err)
+	return policy
+}
+
+// The rule is the whole approval policy and nothing downstream restates it.
+// Without MinApprovals reviewsCountNeeded falls back to the number of group
+// rows, so the review would quietly need every reviewer group.
 func TestNewSidecarReviewCarriesTheWholePolicy(t *testing.T) {
-	sc := &models.Sidecar{ID: "sidecar-1", OrgID: "org-1", Name: "sc-a"}
+	sc := sidecarWithListener("appdb", "payments-approvers")
+	rule := approvalRule()
 
-	rev := newSidecarReview(sc, "appdb", "session-1", time.Now().UTC())
+	rev := newSidecarReview(sc, "appdb", "session-1", rule, testPolicy(t, rule), time.Now().UTC())
 
-	assert.NotNil(t, rev.MinApprovals, "no minimum means both groups must approve")
-	assert.Equal(t, 1, *rev.MinApprovals, "one approval settles a sidecar review")
+	assert.NotNil(t, rev.MinApprovals, "no minimum means every group must approve")
+	assert.Equal(t, 1, *rev.MinApprovals, "the rule's minimum, not a fixed one")
 	assert.Len(t, rev.ReviewGroups, 2)
+	assert.ElementsMatch(t, []string{"dba", "sre"}, groupNames(rev.ReviewGroups),
+		"the review is approved by the rule's groups, not by a fixed pair of roles")
+	assert.Equal(t, []string{"security"}, []string(rev.ForceApprovalGroups))
+
+	assert.NotNil(t, rev.AccessRequestRuleName, "the review records which rule held the statement")
+	assert.Equal(t, "payments-approvers", *rev.AccessRequestRuleName)
 
 	assert.Equal(t, "sidecar-1", rev.SidecarID.String)
 	assert.Equal(t, "appdb", rev.ListenerName.String)
@@ -51,36 +91,107 @@ func TestNewSidecarReviewCarriesTheWholePolicy(t *testing.T) {
 	assert.Equal(t, reviewOwnerEmail, rev.OwnerEmail)
 	assert.Equal(t, models.ReviewStatusPending, rev.Status)
 	assert.Equal(t, models.ReviewTypeOneTime, rev.Type)
-	assert.Nil(t, rev.AccessRequestRuleName, "the policy is fixed, not carried by a rule")
 }
 
-// The whole approval policy lives in these rows. EVL-273 put none of it in
-// code, so if this drifts a sidecar review silently becomes unapprovable by
-// one of the two roles, and nothing says so at the time.
-func TestEligibleReviewGroups(t *testing.T) {
-	groups := eligibleReviewGroups("org-1")
+// AccessRequestRuleName is load bearing beyond bookkeeping: doIndividualReview
+// only reads MinApprovals when the review carries a rule name or has no
+// connection, and review.go only reads ForceApprovalGroups from the review
+// when the rule name is set.
+func TestNewSidecarReviewNamesTheRuleSoTheMinimumIsRead(t *testing.T) {
+	sc := sidecarWithListener("appdb", "payments-approvers")
+	rule := approvalRule()
 
+	rev := newSidecarReview(sc, "appdb", "session-1", rule, testPolicy(t, rule), time.Now().UTC())
+
+	assert.NotNil(t, rev.AccessRequestRuleName,
+		"without the rule name the review needs every group and ignores its force approval list")
+}
+
+// Authorization comes from the sidecar's stored configuration, never from the
+// body: a request could otherwise name any rule in the organization and pick
+// its own approvers.
+func TestListenerNamesApprovalRule(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		sidecar      *models.Sidecar
+		listenerName string
+		ruleName     string
+		want         bool
+	}{
+		{
+			name:         "the listener names this rule",
+			sidecar:      sidecarWithListener("appdb", "payments-approvers"),
+			listenerName: "appdb",
+			ruleName:     "payments-approvers",
+			want:         true,
+		},
+		{
+			name:         "the listener names another rule",
+			sidecar:      sidecarWithListener("appdb", "reporting-approvers"),
+			listenerName: "appdb",
+			ruleName:     "payments-approvers",
+		},
+		{
+			name:         "the stored configuration has no such listener",
+			sidecar:      sidecarWithListener("appdb", "payments-approvers"),
+			listenerName: "reporting",
+			ruleName:     "payments-approvers",
+		},
+		{
+			name:         "the listener has no analyzer block",
+			sidecar:      sidecarWithListener("appdb", ""),
+			listenerName: "appdb",
+			ruleName:     "payments-approvers",
+		},
+		{
+			name:         "the stored configuration has no listeners at all",
+			sidecar:      &models.Sidecar{ID: "sidecar-1", OrgID: "org-1"},
+			listenerName: "appdb",
+			ruleName:     "payments-approvers",
+		},
+		{
+			name:         "an empty rule name authorizes nothing",
+			sidecar:      sidecarWithListener("appdb", ""),
+			listenerName: "appdb",
+			ruleName:     "",
+		},
+		{
+			name:         "an empty listener name authorizes nothing",
+			sidecar:      sidecarWithListener("", "payments-approvers"),
+			listenerName: "",
+			ruleName:     "payments-approvers",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := listenerNamesApprovalRule(tc.sidecar, tc.listenerName, tc.ruleName)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+// An unauthorized listener is refused before the rule is loaded, so the
+// refusal costs no query and the message is the same whether or not the rule
+// exists. Reaching the database would need Postgres; this pins the branch that
+// answers 422 without one.
+func TestAuthorizedApprovalRuleRefusesAnUnauthorizedListener(t *testing.T) {
+	sc := sidecarWithListener("appdb", "payments-approvers")
+
+	rule, err := authorizedApprovalRule(sc, "reporting", "payments-approvers")
+
+	assert.Nil(t, rule)
+	var refusal ruleNotAuthorized
+	assert.ErrorAs(t, err, &refusal)
+	// The whole message, not a prefix: it is what the sidecar logs, and an
+	// internal marker appended to it would read as part of the reason.
+	assert.Equal(t, `listener "reporting" is not configured to use approval rule "payments-approvers"`, err.Error())
+}
+
+func groupNames(groups []models.ReviewGroups) []string {
 	names := make([]string, 0, len(groups))
 	for _, rg := range groups {
 		names = append(names, rg.GroupName)
-		assert.Equal(t, models.ReviewStatusPending, rg.Status)
-		assert.Equal(t, "org-1", rg.OrgID)
-		assert.NotEmpty(t, rg.ID, "a group row needs its own id: CreateReview inserts it verbatim")
 	}
-
-	assert.ElementsMatch(t, []string{types.GroupAdmin, types.GroupApprover}, names,
-		"an admin or an approver settles a sidecar review, so both need a row")
-}
-
-// The admin group name is read from the environment, so spelling it would
-// produce a row nobody is in for an organization that renamed it.
-func TestEligibleReviewGroupsDoesNotHardcodeAdmin(t *testing.T) {
-	for _, rg := range eligibleReviewGroups("org-1") {
-		if rg.GroupName == types.GroupApprover {
-			continue
-		}
-		assert.Equal(t, types.GroupAdmin, rg.GroupName)
-	}
+	return names
 }
 
 // A sidecar review has no connection. Sending the fields empty would invite a
@@ -93,7 +204,10 @@ func TestToOpenApiSidecarReviewOmitsConnectionFields(t *testing.T) {
 		Status:       models.ReviewStatusPending,
 		SidecarID:    sql.NullString{String: "sidecar-1", Valid: true},
 		ListenerName: sql.NullString{String: "appdb", Valid: true},
-		ReviewGroups: eligibleReviewGroups("org-1"),
+
+		ReviewGroups:          testPolicy(t, approvalRule()).Groups,
+		AccessRequestRuleName: ptr.String("payments-approvers"),
+		ForceApprovalGroups:   []string{"security"},
 	}
 
 	got := toOpenApiSidecarReview(rev)
@@ -109,7 +223,12 @@ func TestToOpenApiSidecarReviewOmitsConnectionFields(t *testing.T) {
 	// structural. This pins the response the sidecar actually reads.
 	assert.Nil(t, got.RevokeAt, "a sidecar review is granted no access window")
 	assert.Nil(t, got.TimeWindow)
-	assert.Nil(t, got.AccessRequestRuleName, "the policy is fixed, not carried by a rule")
+
+	// The policy the review was filed under. A sidecar sends the rule name and
+	// reads it back, so a review filed against a rule it did not ask for is
+	// visible rather than silent.
+	assert.Equal(t, "payments-approvers", *got.AccessRequestRuleName)
+	assert.Equal(t, []string{"security"}, got.ForceApprovalGroups)
 }
 
 // Without the middleware there is no sidecar, and the handler must say so
@@ -119,7 +238,7 @@ func TestPostReviewRefusesARequestThatSkippedTheMiddleware(t *testing.T) {
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/sidecars/reviews",
-		strings.NewReader(`{"listener_name":"appdb","payload":"c2VsZWN0IDE7"}`))
+		strings.NewReader(`{"listener_name":"appdb","payload":"c2VsZWN0IDE7","approval_rule":"payments-approvers"}`))
 	c.Request.Header.Set("Content-Type", "application/json")
 
 	PostReview(c)
@@ -139,7 +258,7 @@ func TestPostReviewRefusesAPayloadThatIsNotBase64(t *testing.T) {
 	// first guard without a middleware or a database.
 	c.Set("sidecar-auth", &models.Sidecar{ID: "sidecar-1", OrgID: "org-1", Name: "sc-a"})
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/sidecars/reviews",
-		strings.NewReader(`{"listener_name":"appdb","payload":"!!!not-base64!!!"}`))
+		strings.NewReader(`{"listener_name":"appdb","payload":"!!!not-base64!!!","approval_rule":"payments-approvers"}`))
 	c.Request.Header.Set("Content-Type", "application/json")
 
 	PostReview(c)
@@ -157,7 +276,7 @@ func TestPostReviewRefusesAStatementOverTheCap(t *testing.T) {
 	c.Set("sidecar-auth", &models.Sidecar{ID: "sidecar-1", OrgID: "org-1", Name: "sc-a"})
 	oversized := base64.StdEncoding.EncodeToString([]byte(strings.Repeat("a", maxStatementBytes+1)))
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/sidecars/reviews",
-		strings.NewReader(`{"listener_name":"appdb","payload":"`+oversized+`"}`))
+		strings.NewReader(`{"listener_name":"appdb","payload":"`+oversized+`","approval_rule":"payments-approvers"}`))
 	c.Request.Header.Set("Content-Type", "application/json")
 
 	PostReview(c)
@@ -170,8 +289,9 @@ func TestPostReviewRefusesAStatementOverTheCap(t *testing.T) {
 // and Type whether or not they mean anything for a sidecar review, so each one
 // carries something true rather than an empty label.
 func TestNewSlackReviewRequest(t *testing.T) {
-	sc := &models.Sidecar{ID: "sidecar-1", OrgID: "org-1", Name: "payments-sidecar"}
-	rev := newSidecarReview(sc, "appdb", "session-1", time.Now().UTC())
+	sc := sidecarWithListener("appdb", "payments-approvers")
+	rule := approvalRule()
+	rev := newSidecarReview(sc, "appdb", "session-1", rule, testPolicy(t, rule), time.Now().UTC())
 	statement := "DELETE FROM users WHERE id = 42;"
 
 	req := newSlackReviewRequest(sc, rev, "appdb", statement)
@@ -187,8 +307,8 @@ func TestNewSlackReviewRequest(t *testing.T) {
 	assert.Equal(t, reviewOwnerEmail, req.Email)
 	assert.Equal(t, statement, req.Script, "the statement is what is being approved")
 
-	assert.ElementsMatch(t, []string{types.GroupAdmin, types.GroupApprover}, req.ApprovalGroups,
-		"one button pair per eligible role")
+	assert.ElementsMatch(t, []string{"dba", "sre"}, req.ApprovalGroups,
+		"one button pair per group the rule names, not per fixed role")
 	assert.ElementsMatch(t, req.ApprovalGroups, req.UserGroups,
 		"Groups renders unconditionally, so it says who may act rather than nothing")
 

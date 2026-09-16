@@ -347,6 +347,15 @@ type SidecarReviewRequest struct {
 	ListenerName string `json:"listener_name" binding:"required,max=255" example:"appdb"`
 	// The statement to review, base64 encoded
 	Payload string `json:"payload" binding:"required" example:"REVMRVRFIEZST00gdXNlcnM7"`
+	// The access request rule that decides who may approve this statement
+	//
+	// It must be the rule the sidecar's stored configuration names for this
+	// listener. The rule carries the reviewer groups, the approval count and
+	// the force-approval list; the sidecar holds none of that policy and only
+	// names it.
+	//
+	// Bounded at 254 to match what a rule name may be.
+	ApprovalRule string `json:"approval_rule" binding:"required,max=254" example:"payments-approvers"`
 }
 
 type SidecarHandshakeRequest struct {
