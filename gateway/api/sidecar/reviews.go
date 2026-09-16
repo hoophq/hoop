@@ -159,39 +159,53 @@ func PostReview(c *gin.Context) {
 	// of `DELETE ... WHERE id = 1` release `id = 999`.
 	statementHash := models.HashStatement(statement)
 
-	rev, err := models.GetLiveSidecarReview(models.DB, sidecar.OrgID, sidecar.ID,
-		req.ListenerName, rule.Name, statementHash)
-	switch {
-	case err == nil:
-		answerExistingReview(c, sidecar, req.ListenerName, rev)
-		return
-	case !errors.Is(err, gorm.ErrRecordNotFound):
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed loading the sidecar review")
-		return
-	}
-
-	rev, err = createSidecarReview(sidecar, req.ListenerName, string(statement), statementHash, rule, policy)
-	switch {
-	case errors.Is(err, gorm.ErrDuplicatedKey):
-		// A racing request filed first. Two simultaneous first requests must
-		// produce one review and one Slack message, so answer from that one.
-		rev, err = models.GetLiveSidecarReview(models.DB, sidecar.OrgID, sidecar.ID,
+	// Two passes. A match can be consumed between the read and the insert, and
+	// an insert can lose the index to a racing request whose review is then
+	// consumed before the re-read. Either way one more pass settles it.
+	const attempts = 2
+	for range attempts {
+		rev, err := models.GetLiveSidecarReview(models.DB, sidecar.OrgID, sidecar.ID,
 			req.ListenerName, rule.Name, statementHash)
-		if err != nil {
-			httputils.AbortWithErr(c, http.StatusInternalServerError, err,
-				"failed loading the sidecar review that was filed concurrently")
+		switch {
+		case err == nil:
+			answerExistingReview(c, sidecar, req.ListenerName, rev)
+			return
+		case !errors.Is(err, gorm.ErrRecordNotFound):
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed loading the sidecar review")
 			return
 		}
-		answerExistingReview(c, sidecar, req.ListenerName, rev)
-		return
-	case err != nil:
-		// The error is logged and sent to Sentry by AbortWithErr; the caller
-		// gets none of it. A database message names constraints, tables and
-		// columns, and a token holder has no use for any of that.
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating sidecar review")
+
+		rev, err = createSidecarReview(sidecar, req.ListenerName, string(statement), statementHash, rule, policy)
+		switch {
+		case errors.Is(err, gorm.ErrDuplicatedKey):
+			// A racing request filed first. Look again rather than answer: its
+			// review is normally there to answer from, and if it was consumed
+			// in between then nothing is live and this statement needs its own.
+			continue
+		case err != nil:
+			// The error is logged and sent to Sentry by AbortWithErr; the caller
+			// gets none of it. A database message names constraints, tables and
+			// columns, and a token holder has no use for any of that.
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating sidecar review")
+			return
+		}
+
+		answerFiledReview(c, sidecar, req, rule, rev, statement)
 		return
 	}
 
+	// Both passes lost the race. Refuse instead of looping: the statement is
+	// being filed and consumed faster than a request can answer it, and a
+	// non-2xx makes the sidecar deny.
+	httputils.AbortWithErr(c, http.StatusInternalServerError,
+		fmt.Errorf("could not match or file a review in %d attempts", attempts),
+		"failed creating sidecar review")
+}
+
+// answerFiledReview reports a review this request filed. Forward is false: it
+// was filed a moment ago and no human has seen it.
+func answerFiledReview(c *gin.Context, sidecar *models.Sidecar, req openapi.SidecarReviewRequest,
+	rule *models.AccessRequestRule, rev *models.Review, statement []byte) {
 	log.With("sid", rev.SessionID, "review-id", rev.ID, "sidecar", sidecar.Name,
 		"listener", req.ListenerName, "rule", rule.Name).
 		Infof("registered a sidecar review")
