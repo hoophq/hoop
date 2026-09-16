@@ -344,6 +344,24 @@ func (c *sshConnState) judge(ctx context.Context, phase string, stmt inspect.Sta
 // session SEES; rewriting what the user typed would change the command that
 // runs, which is a denial wearing a redaction's clothes — and the input side
 // already has guardrails, which refuse rather than silently alter.
+//
+// TODO: a value that crosses two reads is not masked. libhoop reads this
+// stream 32KB at a time and the masker holds nothing between calls, so an
+// address split over two reads matches in neither half and reaches the
+// client in the clear. Both halves count zero, so no masked record says it
+// happened either.
+//
+// State in the masker does not fix it: the first half is forwarded before
+// the second arrives, and nothing can un-send it. A fix has to HOLD the tail
+// of a read until the next one confirms it, which returns fewer bytes than
+// it was given — libhoop enforces the opposite, because a length change
+// desynchronizes a terminal. So it is a contract change, not a patch here.
+//
+// The file-transfer side already holds: libhoop reads a masked download
+// whole for this exact reason. A terminal cannot, and it cannot wait either
+// — a prompt with no trailing newline would sit in the held tail and never
+// be displayed. What to hold, for how long, and what the user sees meanwhile
+// is an ADR. README, "Known limitations", carries the same note.
 func (c *sshConnState) streamData(ctx context.Context, dir inspect.Direction, b []byte) ([]byte, *codecssh.Refusal) {
 	if dir != inspect.FromServer {
 		return b, nil
