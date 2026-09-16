@@ -232,9 +232,12 @@ func TestSSHFailClosedRefusesWhenMaskingIsNotRecorded(t *testing.T) {
 	}
 }
 
-// The default stays fail-OPEN, and that is deliberate: a broken sink lets
-// traffic through unless the operator asked otherwise. Without this the fix
-// above would turn every sink hiccup into a dead session on every lane.
+// A lane that opted into fail-open keeps forwarding.
+//
+// audit.fail_open is false by default, so the refusal above is what a stock
+// deployment does — the same posture the statement path already takes. This
+// pins the other half: an operator who wrote fail_open: true asked for a
+// broken sink to be survivable, and must not get a dead session instead.
 func TestSSHFailOpenStillForwardsWhenMaskingIsNotRecorded(t *testing.T) {
 	c := sshTestMaskConnSink(t, sshTestMasker{
 		find: []byte("alice@example.com"), replace: []byte("*****************")},
