@@ -113,6 +113,10 @@ type reloader struct {
 	// ownership to it mid-run. An empty path means no file was given.
 	configPath string
 	load       Loader
+
+	// tel receives every terminal outcome. Nil in a test that built no
+	// telemetry; its methods accept that.
+	tel *telemetry
 }
 
 // newReloader captures the startup state handle compares against.
@@ -162,6 +166,11 @@ func (r *reloader) handle(log *slog.Logger, raw []byte) reloadOutcome {
 	out := r.apply(log, raw)
 	if out != reloadRetry {
 		r.lastHandled = raw
+	}
+	if out != reloadApplied {
+		// apply reports the applied case itself, where it still holds the
+		// generation's lanes for the shape properties.
+		r.tel.trackReload(out, r.gen, 0, 0, nil, nil, nil)
 	}
 	return out
 }
@@ -427,6 +436,7 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 	r.view.Store(&laneState{lanes: viewLanes, gen: r.gen})
 	log.Info(from+" configuration applied",
 		"generation", r.gen, "swapped", swapped, "kept", kept)
+	r.tel.trackReload(reloadApplied, r.gen, swapped, kept, newCfg, viewLanes, det)
 	return reloadApplied
 }
 

@@ -42,6 +42,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/hoophq/hoop/sidecar/analytics"
 	"github.com/hoophq/hoop/sidecar/audit"
 	_ "github.com/hoophq/hoop/sidecar/codec/all"
 	"github.com/hoophq/hoop/sidecar/gate"
@@ -81,8 +82,10 @@ type PluginBuilder func(rawPII json.RawMessage) (Plugin, error)
 type Option func(*setupOptions)
 
 type setupOptions struct {
-	licenseFlag string
-	token       string
+	licenseFlag     string
+	token           string
+	entrypoint      string
+	deprecatedAlias bool
 }
 
 // WithLicense supplies a license from the command line, which outranks
@@ -94,6 +97,19 @@ type setupOptions struct {
 // config gets it from a plain three-argument call.
 func WithLicense(ref string) Option {
 	return func(o *setupOptions) { o.licenseFlag = ref }
+}
+
+// WithEntrypoint names how the process was started, for analytics: one of
+// analytics.EntrypointCLI, analytics.EntrypointBinary or, when omitted,
+// analytics.EntrypointEmbedded.
+func WithEntrypoint(name string) Option {
+	return func(o *setupOptions) { o.entrypoint = name }
+}
+
+// WithDeprecatedAlias records that the command was reached through its
+// pre-rename name, so the alias can be retired once nobody types it.
+func WithDeprecatedAlias(used bool) Option {
+	return func(o *setupOptions) { o.deprecatedAlias = used }
 }
 
 // Setup loads a config file, resolves the license and builds the detection
@@ -160,6 +176,14 @@ func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*
 			fileLicense = local.License
 		}
 		cfg.cp.ignoredLicense = ignoredLocalLicenseSource(o.licenseFlag, fileLicense)
+	}
+	cfg.entrypoint = o.entrypoint
+	cfg.deprecatedAlias = o.deprecatedAlias
+	if path != "" {
+		cfg.configFormat = "json"
+		if isYAMLPath(path) {
+			cfg.configFormat = "yaml"
+		}
 	}
 	cfg.lic = resolveLicenseFor(cfg.cp, o.licenseFlag, cfg.License)
 	if cfg.lic.State() == license.StateInvalid {
@@ -348,14 +372,16 @@ func Main(version string, load Loader, build PluginBuilder) error {
 		// argument without a config is a mistake to report, not a request
 		// for the demo. -version returned above, so it never reaches this.
 		if bareInvocation(fs) {
-			return FirstRun(os.Stdout, "hoop-inspect -config config.yaml")
+			return FirstRun(os.Stdout, "hoop-inspect -config config.yaml",
+				WithEntrypoint(analytics.EntrypointBinary))
 		}
 		fs.Usage()
 		return fmt.Errorf("%w: -config is required unless %s is set", ErrUsage, ControlPlaneURLEnv)
 	}
 
 	cfg, det, err := SetupWith(*configPath, load, build,
-		WithLicense(*licenseRef), WithControlPlaneToken(*tokenRef))
+		WithLicense(*licenseRef), WithControlPlaneToken(*tokenRef),
+		WithEntrypoint(analytics.EntrypointBinary))
 	if err != nil {
 		return err
 	}
@@ -798,6 +824,15 @@ func Run(cfg *Config, det Plugin) error {
 		return err
 	}
 
+	// Analytics starts once the config is known good, so a refused config
+	// reports nothing: an install that never served is not an install.
+	// Every gate on every lane counts into it, keyed by protocol.
+	tel := newTelemetry(cfg, log)
+	defer tel.close()
+	for i := range lanes {
+		lanes[i].metrics = tel.laneMetrics(lanes[i].cfg.Protocol)
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(),
 		os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -880,6 +915,7 @@ func Run(cfg *Config, det Plugin) error {
 	// answers for the rules the data path runs, not for a snapshot.
 	view := &atomic.Pointer[laneState]{}
 	view.Store(&laneState{lanes: lanes})
+	tel.trackStarted(cfg, lanes, det)
 
 	if cfg.cp != nil {
 		// The heartbeat keeps the plane's last-seen fresh and hands drift to
@@ -894,6 +930,7 @@ func Run(cfg *Config, det Plugin) error {
 		if rerr != nil {
 			return rerr
 		}
+		rl.tel = tel
 		log.Info("control plane connected",
 			"url", cfg.cp.url,
 			"source", cfg.cp.urlSource,
@@ -930,6 +967,21 @@ func Run(cfg *Config, det Plugin) error {
 			view, ac, cfg.Analyzer, licState, log)
 	}
 
+	// Usage deltas on a ticker; the final one is cut at shutdown below so
+	// the series closes on the last window.
+	go func() {
+		t := time.NewTicker(usageEvery)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				tel.trackUsage(servers, grpcServers)
+			}
+		}
+	}()
+
 	var wg sync.WaitGroup
 	errCh := make(chan error, len(servers)+len(endpoints))
 	for i, srv := range servers {
@@ -955,19 +1007,23 @@ func Run(cfg *Config, det Plugin) error {
 	var (
 		stoppedByLicense bool
 		listenerErr      error
+		stopReason       = stopSignal
 	)
 	select {
 	case <-ctx.Done():
 		log.Info("shutting down")
 	case listenerErr = <-errCh:
+		stopReason = stopListenerFailed
 		log.Info("shutting down after listener failure")
 		cancel()
 	case <-licenseExpired:
 		stoppedByLicense = true
+		stopReason = stopLicenseExpired
 		log.Warn("stopping: the license term ended and this config needs more rules than "+
 			"the free tier allows",
 			"free_tier", limitsText(license.Status{}),
 			"renew", license.Support)
+		tel.trackLicenseExpired(cfg)
 		cancel()
 	}
 	for _, srv := range servers {
@@ -978,6 +1034,11 @@ func Run(cfg *Config, det Plugin) error {
 	}
 	wg.Wait()
 	close(errCh)
+
+	// The last usage window, then the stop. Both before the deferred close
+	// flushes them; nothing after this point emits.
+	tel.trackUsage(servers, grpcServers)
+	tel.trackStopped(stopReason)
 
 	// Report the first listener failure: a shutdown request must not hide a
 	// bind error on one endpoint.
@@ -1057,6 +1118,11 @@ type lane struct {
 	// stack rather than of anything written down. A rule that defers on a
 	// lane with no OPA is the case this exists for.
 	notes []string
+
+	// metrics is the process-wide counter this lane's gates report into,
+	// keyed by protocol. Run sets it after buildLanes; a lane built by
+	// Validate or a test leaves it nil and counts nothing.
+	metrics gate.Metrics
 }
 
 // buildLanes resolves and builds every listener's stack.
@@ -1250,6 +1316,7 @@ func buildServer(
 		DenyWriter:       proxy.ProtocolDenyWriter{},
 		IdentityFn:       identityFn,
 		CodecFactory:     ln.codecFactory,
+		Metrics:          ln.metrics,
 		IdleTimeout:      time.Duration(lc.IdleTimeoutSec) * time.Second,
 		MaxConns:         lc.MaxConns,
 		Logger:           log.With("listener", ln.name),

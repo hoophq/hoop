@@ -23,6 +23,8 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/hoophq/hoop/sidecar/analytics"
 )
 
 // FirstRunDocsURL is where the default lane sends a browser. The site
@@ -50,23 +52,49 @@ const firstRunFallbackAddr = "127.0.0.1:0"
 //
 // restartCmd is the command line the banner tells the user to run once they
 // have written a config; the CLI and the standalone binary spell it
-// differently.
-func FirstRun(out io.Writer, restartCmd string) error {
+// differently. opts carry the entry point's facts for analytics
+// (WithEntrypoint, WithDeprecatedAlias); the license and token options are
+// accepted and ignored, since nothing here loads a config.
+func FirstRun(out io.Writer, restartCmd string, opts ...Option) error {
 	ctx, stop := signal.NotifyContext(context.Background(),
 		os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	return firstRunServe(ctx, out, restartCmd)
+	var o setupOptions
+	for _, apply := range opts {
+		apply(&o)
+	}
+	return firstRunServe(ctx, out, restartCmd, o)
 }
 
 // firstRunServe is FirstRun minus the signal wiring, so a test can stop it
 // with a context instead of a signal.
-func firstRunServe(ctx context.Context, out io.Writer, restartCmd string) error {
+func firstRunServe(ctx context.Context, out io.Writer, restartCmd string, o setupOptions) error {
 	ln, fellBack, err := firstRunListen()
 	if err != nil {
 		return err
 	}
 
 	firstRunBanner(out, ln.Addr().String(), fellBack, restartCmd)
+
+	// The one event a process with no config can send: that the install
+	// happened and somebody ran the binary. Emitted when the page stops
+	// serving, so it carries how long the URL stayed up. No config means
+	// no token and no stable id; this install reports under a fresh one.
+	entry := o.entrypoint
+	if entry == "" {
+		entry = analytics.EntrypointEmbedded
+	}
+	tel := analytics.New(analytics.Options{Version: Version, Entrypoint: entry})
+	started := time.Now()
+	defer tel.Close()
+	defer func() {
+		tel.Track(analytics.EventFirstRun, analytics.Properties{
+			"deprecated-alias": o.deprecatedAlias,
+			"port":             portOf(ln.Addr().String()),
+			"port-fell-back":   fellBack,
+			"duration-seconds": int64(time.Since(started).Seconds()),
+		})
+	}()
 
 	srv := &http.Server{
 		Handler:           firstRunRedirect(),

@@ -152,6 +152,22 @@ type Config struct {
 	// stateful codec corrupt each other's reassembly buffer, which is the
 	// same reason Register takes a factory rather than an instance.
 	CodecFactory func() inspect.Codec
+
+	// Metrics receives per-statement outcomes for a process-wide counter.
+	// Optional; nil records nothing. Every connection's gate shares one
+	// implementation, so it MUST be safe for concurrent use and MUST cost
+	// no more than an atomic increment: it runs on the data path.
+	Metrics Metrics
+}
+
+// Metrics is the counting hook a Gate reports into. Declared here as a
+// narrow interface rather than imported, so the package that aggregates
+// (analytics) depends on nothing and the gate depends on no aggregator.
+type Metrics interface {
+	// Statement records one judged statement and whether it was denied.
+	Statement(denied bool)
+	// Masked records values rewritten out of one response.
+	Masked(values int)
 }
 
 // Decision is the answer for one chunk of bytes.
@@ -439,6 +455,7 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 			g.mu.Lock()
 			g.denied++
 			g.mu.Unlock()
+			g.countStatement(true)
 			return d
 		}
 	}
@@ -518,6 +535,7 @@ func (g *Gate) judge(ctx context.Context, stmt inspect.Statement) judgment {
 		g.denied++
 	}
 	g.mu.Unlock()
+	g.countStatement(verdict.Denied)
 
 	ev := audit.StatementEvent(
 		g.sess, stmt, !verdict.Denied, verdict.Rule, verdict.Message)
@@ -631,6 +649,7 @@ func (g *Gate) RecordMasked(ctx context.Context, entities []string, count int) e
 			unique = append(unique, entity)
 		}
 	}
+	g.countMasked(count)
 	err := g.writeAudit(ctx, audit.MaskedEvent(g.sess, unique, count))
 	if g.cfg.FailOnAuditError {
 		return err
@@ -689,6 +708,7 @@ func (g *Gate) maskBySubstitution(ctx context.Context, d *Decision, data []byte)
 	d.Payload = out
 	d.Masked = entities
 	d.MaskedCount = count
+	g.countMasked(count)
 	g.writeAudit(ctx, audit.MaskedEvent(g.sess, entities, count))
 }
 
@@ -730,6 +750,7 @@ func (g *Gate) maskByReframing(ctx context.Context, d *Decision, data []byte) {
 		sort.Strings(entities)
 		d.Masked = entities
 		d.MaskedCount = res.Cells
+		g.countMasked(res.Cells)
 		g.writeAudit(ctx, audit.MaskedEvent(g.sess, entities, res.Cells))
 	}
 }
@@ -831,4 +852,19 @@ func (g *Gate) Stats() (statements, denied int) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return g.statements, g.denied
+}
+
+// countStatement and countMasked forward to the configured Metrics. Two
+// one-liners rather than a nil check at every site, so a new call site
+// cannot forget the check.
+func (g *Gate) countStatement(denied bool) {
+	if g.cfg.Metrics != nil {
+		g.cfg.Metrics.Statement(denied)
+	}
+}
+
+func (g *Gate) countMasked(values int) {
+	if g.cfg.Metrics != nil {
+		g.cfg.Metrics.Masked(values)
+	}
 }

@@ -119,6 +119,10 @@ type Config struct {
 	// factory cannot express.
 	CodecFactory func() inspect.Codec
 
+	// Metrics is handed to every connection's Gate. Optional. See
+	// gate.Config.Metrics for the contract it must meet.
+	Metrics gate.Metrics
+
 	// DialTimeout bounds the upstream connect. Default 10s.
 	DialTimeout time.Duration
 
@@ -389,6 +393,7 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 		Masker:           rules.masker,
 		FailOnAuditError: s.cfg.FailOnAuditError,
 		CodecFactory:     s.cfg.CodecFactory,
+		Metrics:          s.cfg.Metrics,
 	})
 	if err != nil {
 		log.Error("gate setup failed", "error", err)

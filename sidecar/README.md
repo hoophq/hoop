@@ -279,6 +279,33 @@ section) logs `restart to apply it` instead, and a failed heartbeat changes
 nothing, because losing the phone line home must not take the data path down
 with it. ADR-0014 records the boundary.
 
+### Usage analytics
+
+A release build reports usage to Segment: that the process started, what
+shape its config has, how much traffic it judged, and why it stopped. Counts
+and shape only. No statement text, no identity, no rule name or pattern, no
+prompt, no token, no listener or upstream address — the same line
+`/config` draws, enforced in `sidecar/analytics` and `daemon/analytics.go`.
+
+| Event | When | Carries |
+|---|---|---|
+| `hoop-sidecar-first-run` | a bare invocation served the default page | port, whether it fell back, how long it stayed up |
+| `hoop-sidecar-started` | every lane built, about to serve | config source and format, license state, lane count per protocol, how many lanes enforce / observe / mask / consult OPA / run an analyzer, rule totals, audit sinks |
+| `hoop-sidecar-config-applied` | a control plane edit reached the reloader | generation, outcome (`applied`, `restart-required`, `refused`), lanes swapped and kept |
+| `hoop-sidecar-usage` | every 15 minutes and at shutdown | connections and statements in the window, denied and masked counts, per protocol |
+| `hoop-sidecar-stopped` | the process is exiting | reason (`signal`, `listener-failed`, `license-expired`), uptime |
+| `hoop-sidecar-license-expired` | the term ended under a config the free tier refuses | rule totals that exceeded it |
+
+Every event also carries the version, the entry point (`hoop`,
+`hoop-inspect` or `embedded`), OS and architecture, and a sidecar id: the
+SHA-256 of the control plane token when there is one, a random id per process
+otherwise.
+
+Switch it off with `HOOP_SIDECAR_ANALYTICS=off`. A binary built without the
+write key (`go build` from this tree, the compose stack's image) sends
+nothing either way; the startup log says `usage analytics enabled` when it
+will.
+
 ## Configuring it: config.yaml
 
 One file is the whole configuration. The process reads it at startup, resolves
