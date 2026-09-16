@@ -25,7 +25,7 @@ require (
 	github.com/go-sql-driver/mysql v1.10.0
 	github.com/hoophq/hoop/client v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/common v0.0.0-00010101000000-000000000000
-	github.com/hoophq/libhoop v0.0.0-20260916183132-1443e5d2e2d2
+	github.com/hoophq/libhoop v0.0.0-20260916204722-be8e357544d1
 	github.com/hoophq/mcpproxy v0.1.1
 	github.com/lib/pq v1.12.3
 	github.com/microsoft/go-mssqldb v1.10.0
