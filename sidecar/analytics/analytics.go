@@ -53,6 +53,13 @@ var writeKey string
 // it; anything else, including unset, leaves the build-time decision alone.
 const EnvVar = "HOOP_SIDECAR_ANALYTICS"
 
+// IDEnvVar lets an operator choose the sidecar id. It outranks every derived
+// id, and it is the only way a standalone install keeps one identity across
+// a Kubernetes rollout, where the hostname is the pod name. The value is
+// hashed like every other source, so a human-readable name here never
+// reaches Segment in the clear.
+const IDEnvVar = "HOOP_SIDECAR_ID"
+
 // endpoint is Segment's batch ingestion URL. A var rather than a const so
 // a build can point it elsewhere with the same -X mechanism as writeKey,
 // which is how the end-to-end smoke run captures what a real binary sends.
@@ -166,21 +173,27 @@ func disabledByEnv() bool {
 // when no write key is available or the environment turned analytics off;
 // the caller uses it the same way either way, and Close is safe on both.
 func New(opts Options) *Client {
+	// The id is resolved even for a disabled client, so a caller can log
+	// or test what this install would report under.
+	if opts.SidecarID == "" {
+		// A caller with nothing better (first-run has no config) still
+		// honours the operator's id, then gets one per machine, never one
+		// per process.
+		opts.SidecarID = IDFromEnv()
+	}
+	if opts.SidecarID == "" {
+		opts.SidecarID = IDFromHost()
+	}
 	key := opts.WriteKey
 	if key == "" {
 		key = writeKey
 	}
 	if key == "" || disabledByEnv() {
-		return &Client{}
+		return &Client{opts: Options{SidecarID: opts.SidecarID}}
 	}
 	opts.WriteKey = key
 	if opts.Endpoint == "" {
 		opts.Endpoint = endpoint
-	}
-	if opts.SidecarID == "" {
-		// A caller with nothing better (first-run has no config) still
-		// gets one id per machine, not one per process.
-		opts.SidecarID = IDFromHost()
 	}
 	c := &Client{
 		opts: opts,
@@ -201,6 +214,15 @@ func New(opts Options) *Client {
 	}
 	go c.run()
 	return c
+}
+
+// ID is the sidecar id this client reports under, resolved even when the
+// client is disabled. Empty only on a nil or zero Client.
+func (c *Client) ID() string {
+	if c == nil {
+		return ""
+	}
+	return c.opts.SidecarID
 }
 
 // Enabled reports whether this client sends anything.
@@ -339,6 +361,16 @@ func (c *Client) send(batch []message) {
 	_ = resp.Body.Close()
 }
 
+// IDFromEnv returns the hash of the operator-chosen id in IDEnvVar, or ""
+// when it is unset. Callers check it before every derived source.
+func IDFromEnv() string {
+	v := strings.TrimSpace(os.Getenv(IDEnvVar))
+	if v == "" {
+		return ""
+	}
+	return hashID("env", v)
+}
+
 // IDFromToken derives a stable sidecar id from the control plane token: the
 // same install reports under the same id across restarts, and the token
 // itself never leaves the process. SHA-256, hex.
@@ -347,11 +379,11 @@ func IDFromToken(token string) string {
 }
 
 // IDFromHost derives a stable id for a process with no token: the hostname
-// plus whatever else the caller knows is fixed for the install (listener
-// addresses, a config path). The same machine running the same config
-// reports under one id across restarts, which is what keeps a daily
-// rollout from minting a new Segment profile — and a new billable
-// tracked user — every day. Only the hash leaves the process.
+// plus whatever else the caller knows is fixed for the install (the config
+// file path). The same machine running the same file reports under one id
+// across restarts and across edits to that file, which is what keeps a
+// daily rollout or a config change from minting a new Segment profile —
+// and a new billable tracked user. Only the hash leaves the process.
 //
 // Segment bills by distinct anonymousId per month on its MTU plans, so a
 // fresh id per process is not "honest", it is a cost multiplier; every

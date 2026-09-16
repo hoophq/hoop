@@ -269,3 +269,24 @@ func TestIDsAreStableAndNotTheirInputs(t *testing.T) {
 		t.Fatal("two clients on one host without an explicit id must share it")
 	}
 }
+
+// HOOP_SIDECAR_ID outranks every derived id, is hashed rather than sent as
+// written, and reaches a client that was given no id.
+func TestOperatorIDOverridesAndIsHashed(t *testing.T) {
+	if IDFromEnv() != "" {
+		t.Fatal("IDFromEnv must be empty when the variable is unset")
+	}
+	t.Setenv(IDEnvVar, "billing-db-proxy")
+	id := IDFromEnv()
+	if id == "" || id == "billing-db-proxy" || len(id) != 64 {
+		t.Fatalf("env id = %q, want a hash", id)
+	}
+	if id != IDFromEnv() {
+		t.Fatal("env id not stable")
+	}
+	c := New(Options{WriteKey: "wk", Endpoint: "http://127.0.0.1:1/"})
+	defer c.Close()
+	if c.opts.SidecarID != id {
+		t.Fatalf("New without an id = %q, want the operator's %q", c.opts.SidecarID, id)
+	}
+}

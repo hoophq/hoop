@@ -180,6 +180,7 @@ func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*
 	}
 	cfg.entrypoint = o.entrypoint
 	cfg.deprecatedAlias = o.deprecatedAlias
+	cfg.configPath = path
 	setConfigFormat(cfg, path)
 	cfg.lic = resolveLicenseFor(cfg.cp, o.licenseFlag, cfg.License)
 	if cfg.lic.State() == license.StateInvalid {

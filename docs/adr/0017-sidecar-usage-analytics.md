@@ -120,13 +120,13 @@ hook in the gate. Specifically:
 
 - **Identity is stable per install, and only a hash.** Segment bills by
   distinct `anonymousId` per month, so a fresh id per process is a cost
-  multiplier, not a neutral choice. `sidecar-id` is `sha256(control-plane
-  token)` when a plane is configured. A standalone sidecar hashes its
-  hostname with its sorted listener addresses: the same machine running the
-  same config is one profile across restarts, two sidecars on one host on
-  different ports are two. First-run hashes the hostname alone. Neither the
-  token nor the hostname leaves the process; a random id is the last resort
-  for a host with no hostname.
+  multiplier, not a neutral choice. Highest precedence first: an operator's
+  `HOOP_SIDECAR_ID`; the control plane token; the hostname plus the config
+  file's absolute path; the hostname alone. Each is hashed before it leaves
+  the process. The file path, not its contents, is the standalone identity:
+  renaming a listener, adding one or editing rules keeps the profile, while
+  two processes on one host with two files are two installs. A random id is
+  the last resort, for a host with no hostname.
 
 - **The audit chain is untouched.** Same events, same sinks, same
   `fail_on_audit_error` semantics, same `/api/*` query surface. `Metrics`
@@ -334,21 +334,22 @@ Identity has a bill attached, which is why it is a hash of something fixed
 and never a value per process. Segment's MTU plans count every distinct
 `anonymousId` seen in a month; the first cut minted a random id per
 standalone process, so a sidecar restarted daily would have cost thirty
-tracked users a month on its own. The rule now: one id per install. A
-control plane token gives it directly. Standalone hashes the hostname with
-the sorted listener addresses, so the same machine running the same config
-is one profile across restarts and two sidecars on one host on different
-ports are two. First-run hashes the hostname alone. A random id is the last
-resort, for a host that reports no hostname.
+tracked users a month on its own. The second cut hashed the listener
+addresses, which made adding a listener a new install. The rule now: one id
+per install, where an install is a file on a host. A control plane token
+gives it directly. Standalone hashes the hostname with the config file's
+absolute path, so every edit to that file — renaming a listener, adding
+one, changing rules or ports — keeps the profile, and two processes on one
+host reading two files are two. First-run hashes the hostname alone. A
+random id is the last resort, for a host that reports no hostname.
 
 The caveat is Kubernetes, where the hostname is the pod name and changes on
 every rollout (`sidecar-7d9f-abc12` → `sidecar-7d9f-xyz89`). A standalone
-sidecar there still mints a new id per deploy — not per container restart,
-which keeps the pod. The durable identity a sidecar has is the control
-plane token, so connecting to a plane is the fix that needs no new knob. If
-standalone-on-Kubernetes turns out to be a common shape, an optional
-`HOOP_SIDECAR_ID` override is one line and one more environment variable
-to document; it is not added here because nothing yet shows the need.
+sidecar there mints a new id per deploy — not per container restart, which
+keeps the pod — unless the operator sets `HOOP_SIDECAR_ID`, which outranks
+every derived source and is hashed like them. Connecting to a control plane
+is the fix that needs no knob at all: the token is the one identity a
+sidecar has that survives everything.
 
 Not covered: attribution to a customer. Option 2 — the plane emitting on
 the handshake with the org id and the org's analytics mode — remains the

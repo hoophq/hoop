@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"log/slog"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -130,9 +131,16 @@ func (t *telemetry) retireAnalyzers(evs []*analyzer.Evaluator) {
 
 // newTelemetry builds the client from what Setup learned. The sidecar id
 // must be the same across restarts of one install, because Segment bills
-// per distinct id per month: a control plane token gives it directly; a
-// standalone process derives it from the host and the addresses it
-// listens on, which is what stays fixed when the pod restarts.
+// per distinct id per month. Highest precedence first:
+//
+//   - analytics.IDEnvVar, an operator-chosen id. The only thing that
+//     survives a Kubernetes rollout for a standalone install, where the
+//     hostname is the pod name.
+//   - The control plane token: one per registered sidecar.
+//   - The hostname plus the config file path. Two processes on one host
+//     have two files; one process editing its file — renaming a listener,
+//     adding one, changing rules — keeps the same path and the same id.
+//   - The hostname alone, for a config that came from nowhere on disk.
 func newTelemetry(cfg *Config, log *slog.Logger) *telemetry {
 	opts := analytics.Options{
 		Version:      Version,
@@ -142,10 +150,15 @@ func newTelemetry(cfg *Config, log *slog.Logger) *telemetry {
 	if opts.Entrypoint == "" {
 		opts.Entrypoint = analytics.EntrypointEmbedded
 	}
-	if cfg.cp != nil {
+	switch {
+	case analytics.IDFromEnv() != "":
+		opts.SidecarID = analytics.IDFromEnv()
+	case cfg.cp != nil:
 		opts.SidecarID = analytics.IDFromToken(cfg.cp.token)
-	} else {
-		opts.SidecarID = analytics.IDFromHost(cfg.listenAddrs()...)
+	case cfg.configPath != "":
+		opts.SidecarID = analytics.IDFromHost(absPath(cfg.configPath))
+	default:
+		opts.SidecarID = analytics.IDFromHost()
 	}
 	now := time.Now()
 	t := &telemetry{
@@ -162,16 +175,14 @@ func newTelemetry(cfg *Config, log *slog.Logger) *telemetry {
 	return t
 }
 
-// listenAddrs is what a standalone install has that is both fixed and
-// distinct: the sorted listener bind addresses. Two sidecars on one host
-// on different ports are two installs; one restarted is one.
-func (c *Config) listenAddrs() []string {
-	out := make([]string, 0, len(c.Listeners))
-	for _, lc := range c.Listeners {
-		out = append(out, lc.Network+"/"+lc.Listen)
+// absPath resolves the config path so `-config config.yaml` run from two
+// working directories that name the same file hash alike. A path that
+// cannot be resolved is used as written.
+func absPath(p string) string {
+	if abs, err := filepath.Abs(p); err == nil {
+		return abs
 	}
-	sort.Strings(out)
-	return out
+	return p
 }
 
 // laneMetrics returns the counter a lane's gates report into, keyed by

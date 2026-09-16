@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log/slog"
 	"net"
 	"strings"
 	"syscall"
@@ -240,5 +242,51 @@ func TestConfigFormatFollowsTheAuthoritativeSource(t *testing.T) {
 		if cfg.configFormat != tc.want {
 			t.Errorf("%s: config-format = %q, want %q", tc.name, cfg.configFormat, tc.want)
 		}
+	}
+}
+
+// A standalone install's id follows the host and the config FILE, so the
+// edits an operator makes routinely — renaming a listener, adding one,
+// changing rules — keep the same Segment profile. A different file on the
+// same host is a different install; the operator's own id wins over both.
+func TestStandaloneIDSurvivesConfigEdits(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	idFor := func(cfg *Config) string {
+		tel := newTelemetry(cfg, log)
+		defer tel.close()
+		return tel.client.ID()
+	}
+	base := func() *Config {
+		return &Config{
+			configPath: "/etc/hoop-inspect/config.yaml",
+			Listeners:  []ListenerConfig{{Name: "appdb", Protocol: "postgres", Listen: ":15432", Upstream: "h:1"}},
+		}
+	}
+	want := idFor(base())
+	if want == "" {
+		t.Fatal("no id")
+	}
+
+	renamed := base()
+	renamed.Listeners[0].Name = "reporting"
+	added := base()
+	added.Listeners = append(added.Listeners, ListenerConfig{Name: "api", Protocol: "http", Listen: ":8080", Upstream: "h:2"})
+	moved := base()
+	moved.Listeners[0].Listen = ":15433"
+	for name, cfg := range map[string]*Config{"renamed": renamed, "added listener": added, "moved port": moved} {
+		if got := idFor(cfg); got != want {
+			t.Errorf("%s changed the id", name)
+		}
+	}
+
+	other := base()
+	other.configPath = "/etc/hoop-inspect/other.yaml"
+	if idFor(other) == want {
+		t.Error("a different config file on the same host must be a different install")
+	}
+
+	t.Setenv(analytics.IDEnvVar, "billing-proxy")
+	if idFor(base()) != analytics.IDFromEnv() {
+		t.Error("the operator's id must win")
 	}
 }

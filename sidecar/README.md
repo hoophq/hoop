@@ -298,9 +298,11 @@ prompt, no token, no listener or upstream address — the same line
 
 Every event also carries the version, the entry point (`hoop`,
 `hoop-inspect` or `embedded`), OS and architecture, and a sidecar id that is
-stable across restarts: the SHA-256 of the control plane token when there is
-one, otherwise of the hostname plus the listener addresses. Neither leaves
-the process in the clear.
+stable across restarts and config edits: `HOOP_SIDECAR_ID` if you set one,
+else the control plane token, else the hostname plus the config file path.
+Every source is hashed; nothing leaves the process in the clear. Set
+`HOOP_SIDECAR_ID` for a standalone sidecar on Kubernetes, where the hostname
+is the pod name and would otherwise change on every rollout.
 
 Switch it off with `HOOP_SIDECAR_ANALYTICS=off`. A binary built without the
 write key (`go build` from this tree, the compose stack's image) sends

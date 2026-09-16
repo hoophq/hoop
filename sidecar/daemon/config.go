@@ -171,6 +171,10 @@ type Config struct {
 	entrypoint      string
 	deprecatedAlias bool
 	configFormat    string
+	// configPath is the file SetupWith loaded, when there was one. Part of
+	// a standalone install's identity for analytics: two processes on one
+	// host have two files, and one process editing its file keeps it.
+	configPath string
 }
 
 // Licensing reports the license this config runs under. The zero value is a
