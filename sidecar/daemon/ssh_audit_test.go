@@ -110,6 +110,43 @@ func TestSSHRefusedCapabilityLeavesOneEvent(t *testing.T) {
 	}
 }
 
+// A refused connection says so in the trail, and says what it was refused
+// FOR.
+//
+// libhoop closes a handler even when the connection is refused, so such a
+// session always gets its session_end. Without this record that end is all
+// there is: a session with no statements and a clean verdict, which reads as
+// a connection that did nothing rather than one that was turned away. The
+// login name is here because no other record of a refused connection carries
+// it — there is no connection_open — and it is usually what the refusal was
+// about.
+func TestSSHRefusedConnectionIsRecordedWithItsReason(t *testing.T) {
+	c, sink := sshTestConn(t, nil, nil)
+
+	in := codecssh.Refuse("login %q is not an account on this host", "ghost")
+	out := c.refuse(context.Background(), in, "ghost")
+	if out != in {
+		t.Error("refuse did not return the refusal it was given")
+	}
+
+	got := activities(sink.snapshot(), "connection_refused")
+	if len(got) != 1 {
+		t.Fatalf("recorded %d events for one refused connection", len(got))
+	}
+	if got[0].Metadata["login"] != "ghost" {
+		t.Errorf("the record does not name the login asked for: %v", got[0].Metadata)
+	}
+	if !strings.Contains(got[0].Metadata["reason"], "not an account") {
+		t.Errorf("the record does not say why: %v", got[0].Metadata)
+	}
+	// The reason belongs in metadata, not in a statement: nothing was run.
+	for _, ev := range sink.snapshot() {
+		if ev.Kind == audit.KindStatement {
+			t.Error("a refused connection wrote a statement")
+		}
+	}
+}
+
 // An sftp transfer records its operation, path, direction and byte count
 // unconditionally. The file's bytes are never recorded and no config key
 // offers them: a setting that records nothing is the silent failure this

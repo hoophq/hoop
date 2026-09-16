@@ -142,14 +142,34 @@ func buildSSHServer(
 		}
 		handler := state.callbacks()
 
+		// The session OPENS before anything below can refuse it.
+		//
+		// libhoop closes a handler even when the connection is refused, so
+		// Gate.Close runs either way and writes a session_end. Starting
+		// after the refusals therefore produced a session that ended
+		// without ever beginning, and a store folding those events built a
+		// row with no statements and a clean verdict — a refused login
+		// reading as a connection that did nothing.
+		//
+		// It also settles an order: audit availability is a precondition of
+		// admitting anything, so on a fail-closed lane with a dead sink the
+		// client is told the trail is unavailable rather than being told
+		// which account it lacks.
+		if err := g.Start(ctx); err != nil {
+			if failOnAuditError {
+				return handler, codecssh.Refuse("audit trail unavailable; connection refused"), nil
+			}
+			laneLog.Warn("ssh session start not recorded", "error", err)
+		}
+
 		// A session that names nobody is refused before it is admitted, and
 		// with the handler rather than instead of it, so the audit session
-		// opened above still gets its Close and the refusal is recorded.
+		// opened above still gets its Close.
 		if anonymous != nil {
 			laneLog.Warn("ssh certificate carries no identity; refusing the connection",
 				"reads", sshIdentitySources(sc.Identity),
 				"login", info.LoginName, "peer", info.RemoteAddr)
-			return handler, anonymous, nil
+			return handler, state.refuse(ctx, anonymous, info.LoginName), nil
 		}
 
 		// The account is resolved BEFORE anything is admitted, and a
@@ -169,17 +189,10 @@ func buildSSHServer(
 			if refusal != nil {
 				// Returned with the handler, not instead of it: libhoop
 				// closes a handler even when the connection is refused, so
-				// the audit session that started here still gets its Close.
-				return handler, refusal, nil
+				// the audit session started above still gets its Close.
+				return handler, state.refuse(ctx, refusal, info.LoginName), nil
 			}
 			handler.RunAs = runAs
-		}
-
-		if err := g.Start(ctx); err != nil {
-			if failOnAuditError {
-				return handler, codecssh.Refuse("audit trail unavailable; connection refused"), nil
-			}
-			laneLog.Warn("ssh session start not recorded", "error", err)
 		}
 		return handler, nil, nil
 	}
@@ -461,6 +474,29 @@ func (c *sshConnState) close(ctx context.Context, s codecssh.Stats) error {
 		c.log.Warn("ssh session end not recorded", "error", err)
 	}
 	return err
+}
+
+// refuse records a refused connection and returns the refusal unchanged.
+//
+// Every refusal goes through here so recording one and returning it are a
+// single act: a branch that returns the refusal directly would leave the
+// trail holding a session that closed without saying why, which is the
+// state this exists to end.
+//
+// The login name rides along because it is the one fact the refusal is
+// usually ABOUT, and no other record of this connection carries it: there
+// is no connection_open on a refused connection, and the principal names
+// the human, not the account they asked for.
+//
+// The audit-unavailable refusal above is deliberately not recorded here.
+// The sink that just failed to take the session_start is the sink this
+// record would go to.
+func (c *sshConnState) refuse(ctx context.Context, r *codecssh.Refusal, login string) *codecssh.Refusal {
+	c.event(ctx, "connection_refused", map[string]string{
+		"login":  login,
+		"reason": r.String(),
+	})
+	return r
 }
 
 // event records something worth keeping that is not a statement: a

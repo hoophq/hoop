@@ -49,6 +49,7 @@ no() {
 
 C="docker compose exec -T client"
 E="docker compose exec -T endhost"
+E_MULTI="docker compose exec -T endhost-multi"
 DATA=/home/devuser/data
 
 if ! docker compose ps --status running --services 2>/dev/null | grep -q endhost; then
@@ -199,6 +200,21 @@ no "and it did not fall back to somebody else" "$GHOST" "uid="
 
 # The reason is JSON-escaped inside the log line, so the needle is too.
 ok "the server logs the refusal too"    "$(docker compose logs endhost-multi 2>&1 | grep 'is not an account' | tail -1)"    'is not an account on this host'
+
+# And the TRAIL, not only the log. A refused connection is closed by libhoop
+# the same way an admitted one is, so its session ends either way; without
+# this record the whole audit story of a turned-away login is a session that
+# ended with no statements, which reads as a connection that did nothing.
+REFUSED="$($E_MULTI sh -c 'grep connection_refused /tmp/audit.jsonl | tail -1')"
+ok "the trail records the refusal"       "$REFUSED" '"activity":"connection_refused"'
+ok "and names the login asked for"       "$REFUSED" '"login":"ghost"'
+ok "and says why"                        "$REFUSED" 'is not an account on this host'
+
+# A session that ends without beginning is the shape this replaced. Count the
+# session_start lines carrying the refused session's own id: exactly one.
+SID="$(printf '%s' "$REFUSED" | sed 's/.*"session_id":"\([0-9a-f]*\)".*/\1/')"
+ok "and the session has a beginning too" \
+   "$($E_MULTI sh -c "grep '$SID' /tmp/audit.jsonl | grep -c session_start")" "1"
 
 # ============================================================= capabilities
 h "CAPABILITIES / a lane that admits exec and nothing else"

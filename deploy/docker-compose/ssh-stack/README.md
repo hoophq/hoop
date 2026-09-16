@@ -430,6 +430,27 @@ docker compose logs endhost-multi | grep "is not an account"
 docker compose exec endhost-multi id ghost     # no such user
 ```
 
+**And the trail says it, not only the log.** A refused connection is closed by
+libhoop the same way an admitted one is, so its audit session ends either way.
+The refusal is recorded between the two, which is what keeps a turned-away
+login from reading as a connection that did nothing:
+
+```bash
+docker compose exec endhost-multi sh -c 'grep connection_refused /tmp/audit.jsonl | tail -1'
+```
+
+```json
+{"kind":"activity","metadata":{"activity":"connection_refused","login":"ghost",
+ "reason":"login \"ghost\" is not an account on this host"}}
+```
+
+The login name is in that record because nothing else carries it: there is no
+`connection_open` on a connection that never opened, and the principal names
+the human, not the account they asked to become.
+
+> Asserted by `demo.sh`: *the trail records the refusal* · *and names the
+> login asked for* · *and says why* · *and the session has a beginning too*.
+
 ### Why this lane runs as root, and what it costs
 
 `endhost-multi` runs as **root**; `endhost` runs as **devuser**. That is not an

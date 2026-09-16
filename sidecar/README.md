@@ -1355,6 +1355,7 @@ what ADR-0015 refuses.
 | `sftp` | one statement per operation per path — both ends of a rename — plus the operation, path, direction and byte count of each transfer. The file's bytes are never recorded |
 | `shell`, `pty` | events only: the open, the terminal geometry, the duration and the byte counts. No keystrokes and no output, so there is nothing to replay |
 | forwards, refused capabilities | thin metadata: a destination, a reason, a byte count. Never the relayed bytes |
+| a refused connection | `session_start`, one `connection_refused` activity carrying the login asked for and the reason, then the close. libhoop closes a handler even when the connection is refused, so the session ends either way; without the middle record a turned-away login reads as a connection that did nothing |
 
 Everything that is not a statement is written as `kind: activity`, with what
 happened in `metadata.activity`.
