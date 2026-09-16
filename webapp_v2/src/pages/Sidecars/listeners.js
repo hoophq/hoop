@@ -1,5 +1,5 @@
-import { PROTOCOLS_ORDER, protocolInfo } from './config'
-import { guardrailMatchers, laneAnalyzer, maskRules } from './resolve'
+import { PROTOCOLS_ORDER, PROTOCOLS_SUPPORTED, protocolInfo } from './config'
+import { guardrailMatchers, laneAnalyzer, maskConfigured } from './resolve'
 
 /**
  * Authoring one listener of a sidecar's configuration.
@@ -142,7 +142,7 @@ function httpFromForm(form) {
   const headers = http.headers.map((h) => h.trim()).filter(Boolean)
   if (!http.capture_body && !num(http.max_body_bytes) && headers.length === 0) return undefined
   const out = { capture_body: http.capture_body }
-  if (num(http.max_body_bytes)) out.max_body_bytes = num(http.max_body_bytes)
+  if (num(http.max_body_bytes) > 0) out.max_body_bytes = num(http.max_body_bytes)
   if (headers.length) out.headers = headers
   return out
 }
@@ -165,7 +165,7 @@ function grpcFromForm(form) {
   if (descriptors.length) out.descriptors = descriptors
   if (grpc.capture_payload) out.capture_payload = true
   if (grpc.strict) out.strict = true
-  if (num(grpc.max_payload_bytes)) out.max_payload_bytes = num(grpc.max_payload_bytes)
+  if (num(grpc.max_payload_bytes) > 0) out.max_payload_bytes = num(grpc.max_payload_bytes)
   if (metadata.length) out.metadata = metadata
   return out
 }
@@ -279,7 +279,15 @@ export function validateListener(form, others = [], original = null, config = nu
     errors.name = 'Another listener already uses this name.'
   }
 
-  if (!form.protocol) errors.protocol = 'Required.'
+  if (!form.protocol) {
+    errors.protocol = 'Required.'
+  } else if (!PROTOCOLS_SUPPORTED.includes(form.protocol)) {
+    // protocolOptions keeps a listener's current protocol selectable even when
+    // the picker does not offer it, so the document stays readable. Readable is
+    // not savable: a protocol the daemon does not speak has to be corrected
+    // before the whole document goes back.
+    errors.protocol = `The sidecar does not support "${form.protocol}".`
+  }
 
   if (!listen) {
     errors.listen = 'Required.'
@@ -302,6 +310,16 @@ export function validateListener(form, others = [], original = null, config = nu
   if (supportsHTTPBlock(form.protocol)) {
     const bad = forbiddenHeader(form.http.headers)
     if (bad) errors.http_headers = `"${bad}" may not be exposed to policy.`
+  }
+
+  // A NumberInput's `min` is presentation: it stops the spinner, not a paste.
+  // The daemon refuses a negative limit outright (grpc.go, analyzer.go), so a
+  // save that carried one would store a config the sidecar cannot start from.
+  if (supportsHTTPBlock(form.protocol) && num(form.http.max_body_bytes) < 0) {
+    errors.http_max_body_bytes = 'Cannot be negative.'
+  }
+  if (supportsGRPCBlock(form.protocol) && num(form.grpc.max_payload_bytes) < 0) {
+    errors.grpc_max_payload_bytes = 'Cannot be negative.'
   }
 
   if (supportsGRPCBlock(form.protocol)) {
@@ -328,11 +346,24 @@ export function validateListener(form, others = [], original = null, config = nu
   // opened with. Changing a protocol is what makes them reachable: the rules
   // stay, and the block that made them work does not.
   const analyzing = laneAnalyzer(original, config).on
-  const masking = maskRules(original, config).length > 0
+  // maskConfigured, not the resolved rule count: the daemon decides from the
+  // raw bytes, so `rules: null` counts as masking and would be refused here
+  // while the form thought the lane had none.
+  const masking = maskConfigured(original, config)
   const ruleTypes = new Set(guardrailMatchers(original, config).map((e) => e.rule?.type))
 
   if (supportsHTTPBlock(form.protocol) && analyzing && !form.http.capture_body) {
     errors.http_capture_body = 'This listener runs the AI analyzer, which reads the request body.'
+  }
+
+  // A NumberInput's `min` is presentation: it stops the spinner, not a paste.
+  // The daemon refuses a negative limit outright (grpc.go, analyzer.go), so a
+  // save that carried one would store a config the sidecar cannot start from.
+  if (supportsHTTPBlock(form.protocol) && num(form.http.max_body_bytes) < 0) {
+    errors.http_max_body_bytes = 'Cannot be negative.'
+  }
+  if (supportsGRPCBlock(form.protocol) && num(form.grpc.max_payload_bytes) < 0) {
+    errors.grpc_max_payload_bytes = 'Cannot be negative.'
   }
 
   if (supportsGRPCBlock(form.protocol)) {
@@ -390,8 +421,22 @@ export function listenerPath(sidecarId, listener, index) {
 
 // The position the route's label points at, or -1. Resolving through the same
 // label the path was built from is what keeps an unnamed listener reachable.
+/**
+ * The position a route label refers to, or -1.
+ *
+ * A NAMED listener wins over a generated one. `listenerLabel` falls back to
+ * `listener[i]` for an unnamed lane, and nothing stops the operator from naming
+ * a different listener exactly that — at which point a plain findIndex returns
+ * whichever comes first in the array, and Edit opens the wrong row. Names are
+ * unique (validateListener refuses a duplicate), so preferring them makes the
+ * answer deterministic; the generated label only resolves when no listener
+ * carries it as a real name.
+ */
 export function listenerIndexByLabel(listeners, label) {
-  return (listeners ?? []).findIndex((l, i) => listenerLabel(l, i) === label)
+  const all = listeners ?? []
+  const named = all.findIndex((l) => str(l?.name).trim() === label && label !== '')
+  if (named !== -1) return named
+  return all.findIndex((l, i) => listenerLabel(l, i) === label)
 }
 
 // The listeners of a configuration with one replaced or appended, ready to PUT

@@ -91,6 +91,24 @@ export function guardrailMode(listener, config) {
  * off, exactly as the field's own doc comment says. Reading it as "a non-empty
  * list replaces" instead reports masking on a lane that turned it off.
  */
+/**
+ * Whether masking is CONFIGURED on this lane, which is not the same question as
+ * how many rules it resolves to.
+ *
+ * MaskConfig.hasRules is `len(m.Rules) > 0 && !isEmptyJSONList(m.Rules)` over a
+ * json.RawMessage, so it counts BYTES: `rules: null` is four of them and reads
+ * as configured, while `rules: []` is the one spelling that reads as off. The
+ * resolved list below flattens null to an empty array — right for "what runs",
+ * wrong for "does the daemon think masking is on", and the daemon's protocol
+ * and descriptor checks ask the second question.
+ */
+export function maskConfigured(listener, config) {
+  const own = listener?.mask
+  const raw = own == null || !('rules' in own) ? config?.mask?.rules : own.rules
+  if (raw === undefined) return false
+  return !(Array.isArray(raw) && raw.length === 0)
+}
+
 export function maskRules(listener, config) {
   const own = listener?.mask
   // Presence of the KEY, not of a value, and this is where mask parts company
