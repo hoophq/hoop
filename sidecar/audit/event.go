@@ -55,6 +55,23 @@ const (
 	// KindError is emitted for transport or upstream failures, so a session
 	// that died mid-flight is distinguishable from one that completed.
 	KindError Kind = "error"
+
+	// KindActivity is something a session DID that is not a statement: a
+	// capability admitted or refused, a terminal's geometry, a forward
+	// carried or denied, a file transferred.
+	//
+	// It exists because SSH has capabilities with no statements in them. A
+	// shell is a keystroke stream with no boundary a rule could act on, so
+	// it produces nothing for KindStatement to carry — and yet an
+	// unrecorded shell is a session nobody can account for. The same is
+	// true of a forward, whose bytes this relay cannot read at all.
+	//
+	// It carries NO content, and there is no setting that would make it:
+	// the attrs are flat metadata, and ADR-0015 keeps session content out
+	// of v1 entirely. A record that says "alice opened a shell, 80x24, for
+	// four minutes, 1.2 kB in" is a different thing from a transcript, and
+	// it is the thing this kind is for.
+	KindActivity Kind = "activity"
 )
 
 // Event is one audit record.
@@ -245,6 +262,65 @@ func ErrorEvent(s *session.Session, err error) Event {
 		Error:      msg,
 	}
 }
+
+// ActivityEvent records something a session did that is not a statement.
+//
+// activity names what happened ("session_close", "forward_open",
+// "capability_refused") and attrs carries its flat metadata. Both come from
+// the lane, because what is worth recording differs per protocol; nothing
+// here interprets either.
+//
+// attrs is copied into Metadata rather than aliased: the caller may reuse
+// its map, and a sink that buffers would otherwise write whatever the map
+// said later rather than what it said here.
+func ActivityEvent(s *session.Session, activity string, attrs map[string]string) Event {
+	meta := make(map[string]string, len(attrs)+1)
+	for k, v := range attrs {
+		meta[k] = v
+	}
+	// The activity name rides in the metadata as well as deciding the
+	// event, so one grep over the trail answers "what happened" without a
+	// second field to remember.
+	meta[MetadataActivity] = activity
+
+	return Event{
+		Kind:       KindActivity,
+		Timestamp:  time.Now().UTC(),
+		SessionID:  s.ID,
+		Principal:  s.Identity.Principal(),
+		Protocol:   s.Protocol,
+		Connection: s.Connection,
+		Metadata:   meta,
+	}
+}
+
+// MetadataActivity names the metadata key carrying what a KindActivity event
+// records. A stable spelling: it ends up in JSON lines someone greps a year
+// later.
+const MetadataActivity = "activity"
+
+// MetadataSSHEnvValue carries the value an SSH client asked to set an
+// environment variable to. The NAME is the statement's text, because that is
+// what a rule matches; the value travels beside it.
+//
+// It is declared HERE, rather than beside the lane's other metadata keys,
+// because this package has to know the key to honour SinkOptions.
+// RedactStatements on it: the value is statement CONTENT in the same sense a
+// SQL literal is, and a deployment that redacts statement text because
+// literals embed regulated data would otherwise find the same data in a
+// metadata field. contentMetadataKeys is the list, and one definition of the
+// spelling is what keeps the two from drifting apart.
+const MetadataSSHEnvValue = "ssh.env_value"
+
+// contentMetadataKeys names the metadata keys whose values are statement
+// content, and which SinkOptions.RedactStatements therefore fingerprints.
+//
+// It is deliberately short, and the line it draws is the one the rest of this
+// package already draws. A resource IDENTIFIER — an HTTP path, an sftp path,
+// a gRPC method — is not redacted, because an audit trail that cannot say
+// WHAT was touched answers nothing. What a user typed or set is redacted,
+// because that is where the regulated values live.
+var contentMetadataKeys = []string{MetadataSSHEnvValue}
 
 // MaskedEvent records that response data was rewritten.
 func MaskedEvent(s *session.Session, entities []string, count int) Event {

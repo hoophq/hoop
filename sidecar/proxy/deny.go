@@ -49,6 +49,15 @@ func (ProtocolDenyWriter) Deny(proto inspect.Protocol, dir inspect.Direction, ms
 		// never carries a grpc lane, and a frame injected into a
 		// multiplexed HTTP/2 connection mid-stream would corrupt it.
 		return nil
+	case inspect.SSH:
+		// Deliberately no frame either, and for a stronger reason: an
+		// ssh lane is not relayed at all. The endpoint terminates the
+		// handshake itself and refuses through libhoop, which writes the
+		// operator's message on the channel it owns (ADR-0015). Bytes
+		// injected into an SSH transport would land inside an encrypted,
+		// MAC'd record stream and break the connection rather than
+		// explain anything.
+		return nil
 	}
 	return nil
 }

@@ -638,6 +638,25 @@ func (g *Gate) RecordMasked(ctx context.Context, entities []string, count int) e
 	return nil
 }
 
+// RecordActivity writes one non-statement record for this session: a
+// capability admitted or refused, a terminal's geometry, a forward carried,
+// a file transferred.
+//
+// It goes through the gate rather than straight to the sink so a lane has
+// ONE place that knows about the session, the sink and the fail-closed
+// policy. A lane that wrote to the sink itself would be a second audit path
+// that could disagree with this one about whether an unrecorded event may
+// still proceed.
+//
+// attrs is flat metadata and must never carry session content.
+func (g *Gate) RecordActivity(ctx context.Context, activity string, attrs map[string]string) error {
+	err := g.writeAudit(ctx, audit.ActivityEvent(g.sess, activity, attrs))
+	if g.cfg.FailOnAuditError {
+		return err
+	}
+	return nil
+}
+
 // maskBySubstitution rewrites the payload in place and corrects the declared
 // length. HTTP only.
 //
@@ -734,6 +753,18 @@ func (g *Gate) maskByReframing(ctx context.Context, d *Decision, data []byte) {
 // masking. One predicate, so the config check and the data path cannot drift.
 func MaskSupported(p inspect.Protocol) bool {
 	if p == inspect.HTTP {
+		return true
+	}
+	// A third way, and the reason this is not simply "ask the codec": SSH
+	// has no codec to ask. It rewrites a byte stream IN PLACE, with no
+	// length header to correct and no frame to rebuild, which is safe for
+	// exactly one reason — the replacement is the same size as what it
+	// replaced. The daemon refuses every other mask strategy on an ssh lane
+	// at load, and the lane fails the stream closed if a rewrite comes back
+	// a different length. Without this branch inspect.New would be asked
+	// for a protocol that has no decoder and masking would be refused on
+	// the lane whose whole content path is masking.
+	if p == inspect.SSH {
 		return true
 	}
 	insp, err := inspect.New(p)

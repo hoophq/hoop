@@ -541,8 +541,21 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 	validationLog := slog.New(slog.NewTextHandler(io.Discard, nil))
 	for _, ln := range lanes {
 		notes := append([]string(nil), ln.notes...)
+		// An endpoint lane is CONSTRUCTED here, not merely described. That
+		// is what turns an unreadable key or a descriptor set that does not
+		// merge into a validate failure, and it is where a lane's own notes
+		// — what it admits, where it will carry a forward, the account it
+		// will run as — come from.
 		if isGRPCTransport(ln.cfg) {
 			srv, err := buildGRPCServer(ln, cfg.Audit, nil, validationLog)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", ln.name, err)
+			}
+			notes = append(notes, srv.Notes()...)
+			_ = srv.Close()
+		}
+		if isSSH(ln.cfg) {
+			srv, err := buildSSHServer(ln, cfg.Audit, nil, validationLog)
 			if err != nil {
 				return nil, fmt.Errorf("%s: %w", ln.name, err)
 			}
@@ -798,23 +811,36 @@ func Run(cfg *Config, det Plugin) error {
 	licState := newLicenseState(cfg.lic, cfg.dependsOnLicense())
 	licenseExpired := watchLicense(ctx, licState, licenseCheckEvery, log)
 
-	// Two server kinds, one loop of lane facts. Relay lanes run
-	// proxy.Server; grpc lanes run the transport the plugin registered
-	// (ADR-0013). The stats zip in serveAdmin pairs servers with
-	// relayNames, so the two slices must stay in lockstep.
+	// Two server SHAPES, one loop of lane facts. A relay lane pumps bytes
+	// through a Gate and runs proxy.Server; an ENDPOINT lane terminates the
+	// protocol itself and runs the one libhoop built — the grpc transport
+	// (ADR-0013) or the ssh endpoint (ADR-0015). The two endpoints share an
+	// interface rather than a slice each, so adding the third protocol that
+	// terminates in-process does not mean a fourth pair of slices to keep
+	// in lockstep here, in the error fan-in, in the shutdown loop and in
+	// the stats zip. The stats zip pairs a server with a name by index, so
+	// each pair must stay in lockstep.
 	servers := make([]*proxy.Server, 0, len(lanes))
 	relayNames := make([]string, 0, len(lanes))
-	var grpcServers []GRPCServer
-	var grpcNames []string
+	var endpoints []endpointServer
+	var endpointNames []string
 	for _, ln := range lanes {
-		if isGRPCTransport(ln.cfg) {
+		switch {
+		case isGRPCTransport(ln.cfg):
 			gsrv, serr := buildGRPCServer(ln, cfg.Audit, auditSink, log)
 			if serr != nil {
 				return serr
 			}
-			grpcServers = append(grpcServers, gsrv)
-			grpcNames = append(grpcNames, ln.name)
-		} else {
+			endpoints = append(endpoints, gsrv)
+			endpointNames = append(endpointNames, ln.name)
+		case isSSH(ln.cfg):
+			ssrv, serr := buildSSHServer(ln, cfg.Audit, auditSink, log)
+			if serr != nil {
+				return serr
+			}
+			endpoints = append(endpoints, ssrv)
+			endpointNames = append(endpointNames, ln.name)
+		default:
 			srv, serr := buildServer(ln, cfg.Audit, auditSink, log)
 			if serr != nil {
 				return serr
@@ -900,12 +926,12 @@ func Run(cfg *Config, det Plugin) error {
 	}
 
 	if cfg.Admin.Listen != "" {
-		go serveAdmin(ctx, cfg.Admin.Listen, servers, relayNames, grpcServers, grpcNames,
+		go serveAdmin(ctx, cfg.Admin.Listen, servers, relayNames, endpoints, endpointNames,
 			view, ac, cfg.Analyzer, licState, log)
 	}
 
 	var wg sync.WaitGroup
-	errCh := make(chan error, len(servers)+len(grpcServers))
+	errCh := make(chan error, len(servers)+len(endpoints))
 	for i, srv := range servers {
 		wg.Add(1)
 		go func(s *proxy.Server, name string) {
@@ -916,15 +942,15 @@ func Run(cfg *Config, det Plugin) error {
 			}
 		}(srv, relayNames[i])
 	}
-	for i, srv := range grpcServers {
+	for i, srv := range endpoints {
 		wg.Add(1)
-		go func(s GRPCServer, name string) {
+		go func(s endpointServer, name string) {
 			defer wg.Done()
 			if serr := s.Serve(ctx); serr != nil {
 				log.Error("listener failed", "listener", name, "error", serr)
 				errCh <- serr
 			}
-		}(srv, grpcNames[i])
+		}(srv, endpointNames[i])
 	}
 	var (
 		stoppedByLicense bool
@@ -947,7 +973,7 @@ func Run(cfg *Config, det Plugin) error {
 	for _, srv := range servers {
 		_ = srv.Close()
 	}
-	for _, srv := range grpcServers {
+	for _, srv := range endpoints {
 		_ = srv.Close()
 	}
 	wg.Wait()
@@ -1093,6 +1119,9 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 		}
 		if opa.enabled() {
 			ln.opaURL = opa.URL
+		}
+		if isSSH(lc) {
+			ln.notes = append(ln.notes, sshLaneNotes(lc.SSH)...)
 		}
 		if gc.observing() {
 			ln.notes = append(ln.notes,
@@ -1355,8 +1384,8 @@ func serveAdmin(
 	addr string,
 	servers []*proxy.Server,
 	relayNames []string,
-	grpcServers []GRPCServer,
-	grpcNames []string,
+	endpoints []endpointServer,
+	endpointNames []string,
 	view *atomic.Pointer[laneState],
 	ac auditChain,
 	analyzerCfg *AnalyzerConfig,
@@ -1378,7 +1407,7 @@ func serveAdmin(
 			Total  int64  `json:"total"`
 			Denied int64  `json:"denied"`
 		}
-		out := make([]stat, 0, len(servers)+len(grpcServers))
+		out := make([]stat, 0, len(servers)+len(endpoints))
 		for i, s := range servers {
 			active, total, denied := s.Stats()
 			a := ""
@@ -1386,21 +1415,21 @@ func serveAdmin(
 				a = s.Addr().String()
 			}
 			// servers and relayNames are built in lockstep from the relay
-			// listeners, so the index is the join. gRPC servers are appended
-			// below from their own lockstep slices.
+			// listeners, so the index is the join. Endpoint lanes are
+			// appended below from their own lockstep slices.
 			out = append(out, stat{
 				Name: relayNames[i], Addr: a,
 				Active: active, Total: total, Denied: denied,
 			})
 		}
-		for i, s := range grpcServers {
+		for i, s := range endpoints {
 			active, total, denied := s.Stats()
 			a := ""
 			if s.Addr() != nil {
 				a = s.Addr().String()
 			}
 			out = append(out, stat{
-				Name: grpcNames[i], Addr: a,
+				Name: endpointNames[i], Addr: a,
 				Active: active, Total: total, Denied: denied,
 			})
 		}

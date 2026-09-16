@@ -49,6 +49,13 @@ const (
 	// terminates HTTP/2 through the same machinery and differs only in
 	// treating the payloads as carriers of GoogleSQL.
 	Spanner = codectypes.Spanner
+	// SSH has no codec either, for a third reason. GRPC and Spanner have
+	// bytes a decoder could read and enter above them anyway; SSH has
+	// none. The connection is encrypted end to end, so a component in the
+	// middle can read nothing, and the lane must BE one end of it. A
+	// registry position handed relay bytes would be handed ciphertext
+	// (ADR-0015).
+	SSH = codectypes.SSH
 
 	FromClient = codectypes.FromClient
 	FromServer = codectypes.FromServer
@@ -78,6 +85,24 @@ const (
 	OpOptions = codectypes.OpOptions
 	OpConnect = codectypes.OpConnect
 	OpTrace   = codectypes.OpTrace
+
+	// SSH operations. The capability is the prefix, so a rule reads which
+	// surface it fences without SSH needing a channel field of its own.
+	// There is no sftp_open: a client's open surfaces as the first read or
+	// write against the path, which is the earliest point a rule can act.
+	OpExecLine = codectypes.OpExecLine
+	OpEnvSet   = codectypes.OpEnvSet
+
+	OpSFTPRead    = codectypes.OpSFTPRead
+	OpSFTPWrite   = codectypes.OpSFTPWrite
+	OpSFTPRemove  = codectypes.OpSFTPRemove
+	OpSFTPRename  = codectypes.OpSFTPRename
+	OpSFTPMkdir   = codectypes.OpSFTPMkdir
+	OpSFTPRmdir   = codectypes.OpSFTPRmdir
+	OpSFTPList    = codectypes.OpSFTPList
+	OpSFTPStat    = codectypes.OpSFTPStat
+	OpSFTPSetstat = codectypes.OpSFTPSetstat
+	OpSFTPSymlink = codectypes.OpSFTPSymlink
 
 	OpOther   = codectypes.OpOther
 	OpUnknown = codectypes.OpUnknown

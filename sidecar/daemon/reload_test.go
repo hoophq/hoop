@@ -68,7 +68,9 @@ func testReloader(t *testing.T, raw string) (*reloader, *bytes.Buffer) {
 	}
 	servers := map[string]*proxy.Server{}
 	for _, ln := range lanes {
-		if isGRPCTransport(ln.cfg) {
+		// An endpoint lane runs its own server, not a proxy.Server, so
+		// there is nothing here to build a relay for.
+		if isEndpointLane(ln.cfg) {
 			continue
 		}
 		srv, serr := buildServer(ln, cfg.Audit, nil, slog.Default())
@@ -493,6 +495,33 @@ func TestARefusedReloadDoesNotLeakTheDetector(t *testing.T) {
 	}
 	if rl.ac.det != Plugin(det1) || rl.det != Plugin(det1) {
 		t.Fatal("an applied pii drift did not commit the detector everywhere")
+	}
+}
+
+// An ssh lane closes over its evaluator when the endpoint is built, the same
+// way a grpc lane does. Swapping the view alone would show an operator rules
+// that are not the rules being enforced, and nothing would say so.
+func TestAnSSHRuleDriftKeepsTheRestartPath(t *testing.T) {
+	hostKey, trustedCA := writeSSHKeyMaterial(t)
+	base := `{
+  "listeners": [{
+    "name": "jump", "protocol": "ssh", "listen": "127.0.0.1:0",
+    "ssh": {"host_key": "` + hostKey + `", "trusted_ca": "` + trustedCA + `"},
+    "guardrails": {"mode": "enforce", "rules": [
+      {"name": "r0", "type": "deny_words_list", "words": ["drop table"]}
+    ]}
+  }],
+  "audit": {"file": "-"},
+  "log_level": "info"
+}`
+	rl, buf := testReloader(t, base)
+
+	drifted := editJSON(t, base, `"words": ["drop table"]`, `"words": ["truncate"]`)
+	if got := applyWith(rl, buf, drifted); got != reloadRestart {
+		t.Fatalf("outcome = %v, want restart; log:\n%s", got, buf)
+	}
+	if !strings.Contains(buf.String(), "restart to apply") {
+		t.Errorf("no restart log line:\n%s", buf)
 	}
 }
 

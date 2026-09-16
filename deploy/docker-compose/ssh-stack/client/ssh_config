@@ -1,0 +1,100 @@
+# Host aliases, so the walkthrough reads as intent rather than as flags.
+#
+# ProxyJump is the whole mechanism behind topologies 2 and 3. It does NOT
+# log in to the bastion and run ssh there. It opens a forwarded channel
+# through the bastion and speaks SSH to the end-hop over it — so the end-hop
+# sees, and verifies, the CLIENT's certificate. The bastion carries bytes it
+# cannot read.
+
+Host *
+    # accept-new rather than `no` with /dev/null: a host key is learned once
+    # and remembered, so the "Permanently added" warning appears once per
+    # host instead of on every command.
+    StrictHostKeyChecking accept-new
+    # /tmp, because ~/.ssh holds read-only bind mounts and docker creates
+    # that directory root-owned: the client cannot write a known_hosts into
+    # it, and ssh then warns on every single command.
+    UserKnownHostsFile /tmp/known_hosts
+    IdentitiesOnly yes
+    IdentityFile ~/.ssh/id_ed25519
+    CertificateFile ~/.ssh/id_ed25519-cert.pub
+
+    # INFO, not ERROR. A refused channel — a capability this listener does
+    # not admit, a login that is not an account, a forward outside the
+    # destination list — is reported by the client at this level and
+    # SWALLOWED at ERROR. On a stack whose whole subject is refusals, hiding
+    # them makes every denial look like a hang.
+    LogLevel INFO
+
+# 1. Direct to the end-hop.
+Host direct
+    HostName 172.31.77.10
+    Port 2222
+    User devuser
+
+# 2. Through the sidecar bastion.
+Host via-sidecar
+    HostName 172.31.77.10
+    Port 2222
+    User devuser
+    ProxyJump jump@172.31.77.20:2222
+
+# 3. Through a real sshd bastion.
+Host via-sshd
+    HostName 172.31.77.10
+    Port 2222
+    User devuser
+    ProxyJump jump@172.31.77.30:22
+
+# A jump the sidecar bastion must REFUSE: same bastion, different
+# destination. Its destinations_allowed names 172.31.77.10:2222 only.
+Host denied-jump
+    HostName 172.31.77.30
+    Port 22
+    User jump
+    ProxyJump jump@172.31.77.20:2222
+
+# ---------------------------------------------------------------- accounts
+#
+# One listener, three logins. The certificate vouches for all three names;
+# the host has accounts for only two of them.
+
+Host multi-devuser
+    HostName 172.31.77.11
+    Port 2222
+    User devuser
+
+Host multi-analyst
+    HostName 172.31.77.11
+    Port 2222
+    User analyst
+
+# `ghost` is in the certificate's principals and is NOT an account on the
+# end-hop. The session is refused: a name the CA vouches for is not by itself
+# a name this host can become.
+Host multi-ghost
+    HostName 172.31.77.11
+    Port 2222
+    User ghost
+
+# ------------------------------------------------------------- capabilities
+#
+# A lane that admits `exec` and nothing else. A command runs; an interactive
+# shell, a terminal, an env request and a forward are each refused.
+Host exec-only
+    HostName 172.31.77.11
+    Port 2223
+    User devuser
+
+# ------------------------------------------------------------------ policy
+#
+# One lane that decides with something other than a local rule.
+
+# The verdict comes from Rego. The lane's word list DEFERS: it reports what
+# it matched, and opa/policy.rego decides what the match means for the
+# certificate subject this connection carries.
+Host opa-lane
+    HostName 172.31.77.12
+    Port 2222
+    User devuser
+

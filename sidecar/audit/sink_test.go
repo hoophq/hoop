@@ -771,3 +771,39 @@ func TestAsyncOverJSONLProducesWellFormedLines(t *testing.T) {
 		}
 	}
 }
+
+// A deployment redacts statement text because literals embed the very data
+// it is regulated for. An SSH env_set matches on the variable NAME, so the
+// value rides in the metadata — and it must not be the one field that
+// escapes the policy.
+func TestRedactStatementsCoversContentMetadata(t *testing.T) {
+	var buf bytes.Buffer
+	sink := NewJSONLSink(&buf, SinkOptions{RedactStatements: true})
+
+	meta := map[string]string{
+		MetadataSSHEnvValue: "super-secret-token",
+		"ssh.path":          "/srv/reports/q3.csv",
+	}
+	if err := sink.Write(context.Background(), Event{
+		Kind:      KindStatement,
+		Statement: "DATABASE_URL",
+		Metadata:  meta,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	line := buf.String()
+	if strings.Contains(line, "super-secret-token") {
+		t.Errorf("the env value was written in the clear:\n%s", line)
+	}
+	// A resource IDENTIFIER still has to be readable, or the trail cannot
+	// say what was touched.
+	if !strings.Contains(line, "/srv/reports/q3.csv") {
+		t.Errorf("the path was redacted; the trail can no longer say what was touched:\n%s", line)
+	}
+	// The caller's map is shared with any sibling sink and must not be
+	// rewritten underneath it.
+	if meta[MetadataSSHEnvValue] != "super-secret-token" {
+		t.Error("the sink redacted the caller's own map")
+	}
+}

@@ -1184,6 +1184,7 @@ gaps named above are the narrow ones; Envoy is not blind here.
 | `http` | HTTP/1.x requests | HTTP/1.x responses | no |
 | `grpc` | request headers; decoded messages when capture is on | response trailers; decoded messages when capture or masking is on | yes, per HTTP/2 stream |
 | `spanner` | like `grpc`, plus one SQL statement per query or DDL string extracted from known Cloud Spanner methods | as `grpc` | yes, per HTTP/2 stream |
+| `ssh` | the command of an `exec`, the name of an `env`, the path of each file operation | none — the lane rewrites output in flight and records none of it | yes, per connection |
 
 `grpc` is the exception to this table's codec model. It has a canonical
 `libhoop/v2/codec/types.GRPC` protocol value and its HTTP/2 endpoint and
@@ -1252,6 +1253,143 @@ lane still fences methods like a `grpc` lane. Methods carrying no SQL keep
 the generic per-message statement. A statement the lexer cannot read is
 `unknown` with the reason in `sql.incomplete` — fail-closed, so a rule
 naming `unknown` refuses it.
+
+### ssh: the lane that is one end of the connection
+
+`protocol: ssh` is not a relay. An SSH connection is encrypted end to end, so
+nothing in the middle can read a command — to see one at all the sidecar has
+to BE one end of it. The lane terminates the handshake, verifies the client's
+certificate against a CA it trusts, and runs each admitted capability itself.
+libhoop owns the mechanics; this module owns every decision. See
+[ADR-0015](../docs/adr/0015-ssh-terminates-at-the-sidecar.md).
+
+```yaml
+listeners:
+  - name: prod-endpoint
+    protocol: ssh
+    listen: 0.0.0.0:2222
+    ssh:
+      host_key: /etc/hoop-inspect/keys/endpoint_host_key
+      trusted_ca: /etc/hoop-inspect/keys/hoop_ca.pub
+      capabilities_allowed: [shell, pty, exec, env, sftp]
+      identity:
+        subject: key_id
+        groups: principals
+    guardrails:
+      rules:
+        - name: no-preload-injection
+          type: pattern_match
+          pattern_regex: '^(LD_PRELOAD|LD_LIBRARY_PATH)$'
+          operations: [env_set]
+          message: this environment variable is not permitted
+```
+
+**Certificates only.** There is no password method and no
+`authorized_keys` list. A connection presents an OpenSSH user certificate
+signed by `trusted_ca` or it is refused at the handshake, and the login name
+it asks for must appear in the certificate's principals.
+
+**And the certificate has to name someone.** `identity.subject` picks the
+field, `key_id` by default, and a certificate that leaves it empty — an
+`ssh-keygen -I ''`, or an extension a CA has not rolled out — is REFUSED
+rather than admitted as `anonymous`. An `email` mapping satisfies it too;
+either one names a principal. The trail is half the reason: the other half is
+that `PolicyContext` omits an empty `subject`, and a Rego rule reading an
+absent key does not fire, so a deny keyed on the subject would pass a session
+it was written to stop.
+
+**`operations` is what scopes a rule here.** One SSH lane emits three kinds of
+text — a command line for `exec_line`, a variable name for `env_set`, a path
+for every `sftp_*` — so a pattern written for one of them has to say which.
+Unscoped, it is evaluated against all three.
+
+**Four rule types are refused at load**: `table`, `http_resource`,
+`http_status` and `grpc_status`. SSH has no relations, no request path and no
+RPC, so each would load and never fire. An sftp path is matched with
+`pattern_match`, not with `table`.
+
+**`capabilities_allowed` is tri-state.** Omitted admits the five capabilities
+this version delivers; `[]` admits none, which is how a jump host drops the
+shell; a list admits those. Naming a capability this version does not deliver —
+`x11`, `agent_forward`, `remote_forward`, `subsystem` — fails at load rather
+than being admitted and then quietly not working.
+
+**Forwarding is not a capability.** `destinations_allowed` decides where a
+client-opened forward may be carried, and an absent or empty list denies every
+one of them. Entries are `network[:port]` or the single word `any`; IPv6 needs
+no brackets, because the port is read after the prefix length
+(`2001:db8::/32:22`). The check is handed the address the endpoint WILL dial,
+resolved once, and that same address is connected to — checking a name and
+dialling it again would leave a window where the two disagree.
+
+```yaml
+  - name: prod-bastion
+    protocol: ssh
+    listen: 0.0.0.0:2222
+    ssh:
+      host_key: /etc/hoop-inspect/keys/bastion_host_key
+      trusted_ca: /etc/hoop-inspect/keys/hoop_ca.pub
+      capabilities_allowed: []          # optional: empty, not omitted, so no session here
+      destinations_allowed:
+        - 10.0.0.0/8:2222
+```
+
+**A session runs as the login name, as it does under `sshd`.** The name the
+client asked for is looked up per connection, after the certificate's
+principals have already vouched for it, and a login that is not an account on
+this host is refused. There is no key for the account, no default and no
+fallback to the sidecar's own user.
+
+What bounds the set of accounts is the account this process runs as.
+Unprivileged, it can serve only itself — the container's `USER` line is the
+policy. As root it serves any account on the host, at the cost of running the
+whole pre-authentication surface privileged.
+
+The session also takes the account's own login shell, home directory and
+environment. A shell that does not exist or is not executable refuses the
+session, `/sbin/nologin` disables an account here exactly as it does
+everywhere else on the host, and a home directory that is missing starts the
+session in `/` rather than failing it.
+
+File transfer is the one capability that runs in-process rather than in a
+child, so it is served only for a login that resolves to the account this
+process already IS; `-validate` reports that uid and gid whenever `sftp` is
+admitted, and libhoop refuses every other login at the request.
+
+**Masking is length-preserving or it is refused.** `strategy: mask` is the only
+strategy an ssh lane can carry, and its `mask_char` must be a single byte: the
+lane rewrites a byte stream in place, so a replacement of a different size
+shifts everything after it and desynchronizes a terminal's escape sequences.
+A rewrite that comes back a different length fails the stream closed rather
+than forwarding a corrupted one. Terminal output and file downloads are masked
+by the same rule set; client input is never rewritten, because changing what a
+user typed is a denial wearing a redaction's clothes, and the guardrails
+already refuse.
+
+**`upstream`, `upstream_tls`, `downstream_tls` and `identity_header` are
+refused** on an ssh lane. There is no fixed backend, SSH negotiates its own
+transport, and the identity comes from the certificate this listener verified
+itself.
+
+#### What the trail holds, and what it does not
+
+**v1 records no session content.** There is no recorder, no replay, and no
+setting that would add one: that needs a store, a retention policy, a read
+path and a decision about who may replay another person's terminal, and
+landing the weakest version of each as a side effect of the first SSH lane is
+what ADR-0015 refuses.
+
+| Capability | What is recorded |
+|---|---|
+| `exec` | the command in full, as a statement with its verdict. Its output is masked in flight and not retained |
+| `env` | the variable name as the statement, the value beside it. A sink with `RedactStatements` fingerprints that value, because it is statement content |
+| `sftp` | one statement per operation per path — both ends of a rename — plus the operation, path, direction and byte count of each transfer. The file's bytes are never recorded |
+| `shell`, `pty` | events only: the open, the terminal geometry, the duration and the byte counts. No keystrokes and no output, so there is nothing to replay |
+| forwards, refused capabilities | thin metadata: a destination, a reason, a byte count. Never the relayed bytes |
+| a refused connection | `session_start`, one `connection_refused` activity carrying the login asked for and the reason, then the close. libhoop closes a handler even when the connection is refused, so the session ends either way; without the middle record a turned-away login reads as a connection that did nothing |
+
+Everything that is not a statement is written as `kind: activity`, with what
+happened in `metadata.activity`.
 
 ### MySQL, and the three ways a session goes dark
 
@@ -1452,6 +1590,18 @@ the decoder is keyed by protocol and each omitted piece fails differently:
 | classification | a SQL `lexer.Dialect` selected by `inspect.AnalyzeSQL`, or the wire codec's native command classifier | operations and relations stay `unknown` |
 | a deny frame | `proxy/deny.go`; include request correlation when the protocol requires it | a denial closes the socket with no useful message |
 | an analyzer content builder | `analyzer/content.go` | an analyzer on the lane classifies nothing; startup refuses the lane rather than let it run silent |
+
+An ENDPOINT protocol — one that terminates in-process rather than relaying,
+so `grpc`, `spanner` and `ssh` — skips the decoder, the registration seam and
+the deny frame, and picks up four of its own. Every one of them fails quietly
+when omitted, which is why they are listed rather than left to be noticed:
+
+| Add | Where | Symptom if you skip it |
+|---|---|---|
+| a codec-registry carve-out | `daemon/config.go`, beside `isGRPCTransport` | the lane is refused at load as an unsupported protocol |
+| the server build and its two call sites | `daemon/<name>.go`, registered in the `-validate` pass and the run loop in `daemon/daemon.go` | the config validates and the listener never binds |
+| protocol-aware rule refusals | `policy/<name>.go` | a rule type the lane cannot read loads, evaluates and never fires |
+| a `MaskSupported` answer | `gate/gate.go` | `mask.rules` on the lane is refused as unsupported, or accepted and never applied |
 
 Masking needs no registration: the gate asks the codec for a `Reframer`, so a
 decoder that can rebuild its rows masks, and one that cannot has its

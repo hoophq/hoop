@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"sync"
 	"time"
 	"unicode/utf8"
@@ -111,6 +112,11 @@ func (o SinkOptions) apply(ev Event) Event {
 			detail.Body = fingerprint(detail.Body)
 			ev.HTTP = &detail
 		}
+		// Some content does not travel in Statement. An SSH env_set matches
+		// on the variable NAME, so the value it was set to rides in the
+		// metadata — and a deployment that redacts statement text because
+		// literals embed regulated data must not find the same data there.
+		ev.Metadata = redactContentMetadata(ev.Metadata)
 		return ev
 	}
 
@@ -479,3 +485,28 @@ var (
 	_ Sink = (*MemorySink)(nil)
 	_ Sink = (*AsyncSink)(nil)
 )
+
+// redactContentMetadata fingerprints the metadata values that are statement
+// content, leaving every other key alone.
+//
+// It copies before writing. A sink in a MultiSink shares the caller's map,
+// and redacting in place would rewrite what the next sink — and the caller —
+// still hold.
+func redactContentMetadata(md map[string]string) map[string]string {
+	var out map[string]string
+	for _, key := range contentMetadataKeys {
+		v, ok := md[key]
+		if !ok || v == "" {
+			continue
+		}
+		if out == nil {
+			out = make(map[string]string, len(md))
+			maps.Copy(out, md)
+		}
+		out[key] = fingerprint(v)
+	}
+	if out == nil {
+		return md
+	}
+	return out
+}

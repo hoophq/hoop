@@ -362,9 +362,13 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 			return reloadRetry
 		}
 		docs[ln.name] = doc
-		if isGRPCTransport(ln.cfg) && !bytes.Equal(doc, r.laneDocs[ln.name]) {
-			log.Warn("grpc lane rules changed on the "+from+"; restart to apply them",
-				"listener", ln.name)
+		// An endpoint lane closes over its evaluator when the server is
+		// built, so its rules cannot be swapped in place. Restarting is the
+		// honest answer: applying the swap to the view alone would show an
+		// operator rules that are not the rules being enforced.
+		if isEndpointLane(ln.cfg) && !bytes.Equal(doc, r.laneDocs[ln.name]) {
+			log.Warn("endpoint lane rules changed on the "+from+"; restart to apply them",
+				"listener", ln.name, "protocol", ln.cfg.Protocol)
 			return reloadRestart
 		}
 	}
@@ -373,7 +377,7 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 	viewLanes := make([]lane, 0, len(lanes))
 	for _, ln := range lanes {
 		doc := docs[ln.name]
-		if isGRPCTransport(ln.cfg) {
+		if isEndpointLane(ln.cfg) {
 			// Unchanged by the pre-pass check above; the view keeps the
 			// serving lane.
 			viewLanes = append(viewLanes, r.prevLanes[ln.name])
