@@ -18,6 +18,7 @@ func init() {
 	RegisterBuilder(HTTPBuilder{})
 	RegisterBuilder(grpcBuilder{})
 	RegisterBuilder(spannerBuilder{})
+	RegisterBuilder(sshBuilder{})
 }
 
 // SQLBuilder renders a SQL statement for classification.
@@ -413,4 +414,55 @@ func (spannerBuilder) Build(stmt inspect.Statement, maxBytes int) (Content, bool
 		return SQLBuilder{Protocol_: inspect.Spanner}.Build(stmt, maxBytes)
 	}
 	return grpcBuilder{}.Build(stmt, maxBytes)
+}
+
+// sshBuilder renders an SSH statement for classification.
+//
+// exec_line is the operation worth sending, and the only one this builder
+// answers for. A command line is a whole instruction a model can reason
+// about — "is this exfiltration", "is this a destructive administrative
+// action" — which is what an ai_analysis rule is buying.
+//
+// The other eleven are deliberately skipped, and skipped LOUDLY in the sense
+// that matters: nothing is classified, so nothing is charged and no finding
+// is invented. A variable name (env_set) and a file path (sftp_*) are short,
+// structural strings with no room for intent; a model asked to rate
+// "/srv/data.csv" would return a guess at full price, once per path, and a
+// rule written against that verdict would be acting on noise. Both are
+// already better served by a pattern rule scoped with `operations`.
+//
+// A shell never reaches here at all: it produces no statements, because v1
+// reconstructs no keystrokes (ADR-0015).
+type sshBuilder struct{}
+
+func (sshBuilder) Protocol() inspect.Protocol { return inspect.SSH }
+
+func (sshBuilder) Build(stmt inspect.Statement, maxBytes int) (Content, bool) {
+	if stmt.Operation != inspect.OpExecLine {
+		return Content{}, false
+	}
+	cmd := strings.TrimSpace(stmt.Text)
+	if cmd == "" {
+		return Content{}, false
+	}
+
+	var sb strings.Builder
+	sb.WriteString("Protocol: ssh\nOperation: ")
+	sb.WriteString(string(stmt.Operation))
+	sb.WriteString("\n\nCommand line submitted over SSH:\n")
+	sb.WriteString(Truncate(cmd, maxBytes))
+
+	// The cache key is the command's SHAPE after whitespace normalization,
+	// and nothing more is stripped. A SQL key can drop literals because the
+	// classifier already read the statement's structure; a shell command
+	// has no such structure, and its arguments ARE the risk — `rm -rf /tmp`
+	// and `rm -rf /` differ only there.
+	h := sha256.New()
+	h.Write([]byte("ssh"))
+	h.Write([]byte{0})
+	h.Write([]byte(normalizeSpace(cmd)))
+	return Content{
+		Text:     sb.String(),
+		CacheKey: hex.EncodeToString(h.Sum(nil)[:16]),
+	}, true
 }

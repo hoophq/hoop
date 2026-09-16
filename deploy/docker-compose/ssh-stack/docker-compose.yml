@@ -1,0 +1,279 @@
+# Three SSH topologies, one stack, one client certificate.
+#
+#   1. direct          client ───────────────────────────> endhost (sidecar)
+#   2. sidecar bastion client ──> bastion-sidecar ────────> endhost (sidecar)
+#   3. sshd bastion    client ──> bastion-sshd (real) ────> endhost (sidecar)
+#
+# The end-hop is the same container in all three. That is the point of the
+# stack rather than a convenience: ADR-0015 puts the whole decision — the
+# certificate, the capabilities, the guardrails, the masking, the audit
+# trail — at the end, so what is in front of it changes nothing about what is
+# enforced. Topology 3 is the strongest form of that claim, because the
+# bastion there is stock OpenSSH that has never heard of hoop.
+#
+# Bring up:  ./run.sh
+# Prove it:  ./demo.sh
+# Learn it:  README.md, which walks each topology one command at a time.
+
+name: hoop-ssh-stack
+
+# Static addresses, because one of the things under test is a policy WRITTEN
+# against an address. bastion-sidecar carries forwards to 172.31.77.10/32:2222
+# and nowhere else, and a DHCP lease would turn that into a guess.
+networks:
+  sshnet:
+    ipam:
+      config:
+        - subnet: 172.31.77.0/24
+
+services:
+  # ---------------------------------------------------------------- end-hop
+  #
+  # The sidecar that IS one end of the SSH connection. It terminates the
+  # handshake, so it can read a command at all — nothing in the middle of an
+  # encrypted connection can.
+  endhost:
+    build:
+      context: ../../../sidecar
+      dockerfile: ../deploy/docker-compose/ssh-stack/sidecar/Dockerfile
+      # sidecar's codecs live in libhoop, a private module. This stack builds
+      # from the local tree rather than the proxy, so libhoop comes from the
+      # local checkout too.
+      additional_contexts:
+        libhoop: ../../../libhoop
+    image: hoop-inspect-ssh:local
+    networks:
+      sshnet:
+        ipv4_address: 172.31.77.10
+    volumes:
+      - ./endhost/config.yaml:/etc/hoop-inspect/config.yaml:ro
+      - ./keys/endhost_host_key:/etc/hoop-inspect/keys/endhost_host_key:ro
+      - ./keys/ca.pub:/etc/hoop-inspect/keys/ca.pub:ro
+      # devuser's home. The walkthrough reads and writes these.
+      - ./endhost/seed:/home/devuser/data:ro
+    ports:
+      # Published so you can also drive it from the host, with the same
+      # commands the client container runs.
+      - "2222:2222"
+      - "19090:9090"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9090/healthz || exit 1"]
+      interval: "2s"
+      timeout: "10s"
+      retries: 15
+
+  # ------------------------------------------------ end-hop, many accounts
+  #
+  # The same binary and the same image, running as ROOT and serving two lanes
+  # the first end-hop cannot: one that resolves a different OS account per
+  # login, and one that admits a single capability.
+  #
+  # Root is the trade, not a shortcut. Dropping to another uid needs
+  # privilege, so serving several accounts requires it — and it costs the
+  # sftp subsystem, which is served inside the process and would be serving
+  # files as the wrong account. endhost/config.yaml takes the other side of
+  # the same trade. See endhost-multi/config.yaml.
+  endhost-multi:
+    image: hoop-inspect-ssh:local
+    user: "0:0"
+    depends_on:
+      endhost:
+        condition: service_healthy
+    networks:
+      sshnet:
+        ipv4_address: 172.31.77.11
+    volumes:
+      - ./endhost-multi/config.yaml:/etc/hoop-inspect/config.yaml:ro
+      - ./keys/endhost_host_key:/etc/hoop-inspect/keys/endhost_host_key:ro
+      - ./keys/ca.pub:/etc/hoop-inspect/keys/ca.pub:ro
+    ports:
+      - "2225:2222"   # multiuser
+      - "2226:2223"   # exec-only
+      - "2227:2224"   # identity-ext
+      - "19092:9090"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9090/healthz || exit 1"]
+      interval: "2s"
+      timeout: "10s"
+      retries: 15
+
+  # -------------------------------------------------------- sidecar bastion
+  #
+  # The same binary, one key different: capabilities_allowed is EMPTY, so
+  # there is no session here to inspect and nothing to write content rules
+  # about. It forwards, and only to one address.
+  bastion-sidecar:
+    image: hoop-inspect-ssh:local
+    depends_on:
+      endhost:
+        condition: service_healthy
+    networks:
+      sshnet:
+        ipv4_address: 172.31.77.20
+    volumes:
+      - ./bastion-sidecar/config.yaml:/etc/hoop-inspect/config.yaml:ro
+      - ./keys/bastion_host_key:/etc/hoop-inspect/keys/bastion_host_key:ro
+      - ./keys/ca.pub:/etc/hoop-inspect/keys/ca.pub:ro
+    ports:
+      - "2223:2222"
+      - "19091:9090"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9090/healthz || exit 1"]
+      interval: "2s"
+      timeout: "10s"
+      retries: 15
+
+  # ----------------------------------------------------------- sshd bastion
+  #
+  # Stock OpenSSH. It knows nothing about hoop: it trusts the same CA and
+  # allows forwarding, which is what every corporate bastion already does.
+  # The end-hop behind it enforces exactly what it enforces in topology 1.
+  bastion-sshd:
+    build:
+      context: ./bastion-sshd
+    image: hoop-ssh-stack-bastion-sshd:local
+    networks:
+      sshnet:
+        ipv4_address: 172.31.77.30
+    volumes:
+      - ./keys/ca.pub:/etc/ssh/hoop_ca.pub:ro
+    ports:
+      - "2224:22"
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 22 || exit 1"]
+      interval: "2s"
+      timeout: "10s"
+      retries: 15
+
+  # -------------------------------------------------------------------- opa
+  #
+  # A stock Open Policy Agent. It knows nothing about SSH or about hoop: it
+  # serves one Rego package over HTTP and answers whatever document it is
+  # posted, which is the whole integration.
+  #
+  # The static image is distroless and carries no shell, so it gets no
+  # compose healthcheck. run.sh polls /health through endhost-opa instead,
+  # which has curl.
+  opa:
+    image: openpolicyagent/opa:0.70.0-static
+    command:
+      - run
+      - --server
+      - --addr=0.0.0.0:8181
+      - --log-level=error
+      - /policy
+    networks:
+      sshnet:
+        ipv4_address: 172.31.77.50
+    volumes:
+      - ./opa:/policy:ro
+    ports:
+      # Published so you can replay a decision by hand against the same
+      # policy the lane is using:
+      #   curl -s localhost:18181/v1/data/hoop/ssh/decision -d @input.json
+      - "18181:8181"
+
+  # ------------------------------------------------------ end-hop, deferring
+  #
+  # The same binary again, with the verdict handed to Rego. Its one guardrail
+  # rule sets `action: defer`: the word match stays local and free, and what
+  # the match MEANS for this principal is decided at opa.
+  #
+  # It is a separate process rather than another lane on endhost for a reason
+  # beyond tidiness — the free tier enforces one guardrail rule PER PROCESS,
+  # and endhost already spends its one on protected-paths.
+  endhost-opa:
+    image: hoop-inspect-ssh:local
+    depends_on:
+      endhost:
+        condition: service_healthy
+      opa:
+        condition: service_started
+    networks:
+      sshnet:
+        ipv4_address: 172.31.77.12
+    volumes:
+      - ./endhost-opa/config.yaml:/etc/hoop-inspect/config.yaml:ro
+      - ./keys/endhost_host_key:/etc/hoop-inspect/keys/endhost_host_key:ro
+      - ./keys/ca.pub:/etc/hoop-inspect/keys/ca.pub:ro
+      - ./endhost/seed:/home/devuser/data:ro
+    ports:
+      - "2228:2222"
+      - "19093:9090"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9090/healthz || exit 1"]
+      interval: "2s"
+      timeout: "10s"
+      retries: 15
+
+  # ------------------------------------------------------- end-hop, analyzed
+  #
+  # Behind a compose PROFILE, because it is the one service in this stack
+  # that cannot come up without a credential. run.sh enables the profile only
+  # when $ANTHROPIC_API_KEY is set; without it the rest of the stack is
+  # unaffected.
+  #
+  # Root, and that is about the key rather than about SSH: a 0600 file
+  # bind-mounted from the host keeps its host owner, and on Linux that uid is
+  # not this image's devuser. Root reads it either way, and 0600 still
+  # satisfies the sidecar's permission check.
+  endhost-ai:
+    image: hoop-inspect-ssh:local
+    profiles: [ai]
+    user: "0:0"
+    depends_on:
+      endhost:
+        condition: service_healthy
+    networks:
+      sshnet:
+        ipv4_address: 172.31.77.13
+    volumes:
+      - ./endhost-ai/config.yaml:/etc/hoop-inspect/config.yaml:ro
+      - ./keys/endhost_host_key:/etc/hoop-inspect/keys/endhost_host_key:ro
+      - ./keys/ca.pub:/etc/hoop-inspect/keys/ca.pub:ro
+      # Written by run.sh from $ANTHROPIC_API_KEY. keys/ is gitignored and
+      # `./run.sh down` deletes it, so the credential neither reaches the
+      # repository nor outlives the stack.
+      - ./keys/anthropic.key:/etc/hoop-inspect/keys/anthropic.key:ro
+    ports:
+      - "2229:2222"
+      - "19094:9090"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9090/healthz || exit 1"]
+      interval: "2s"
+      timeout: "10s"
+      retries: 15
+
+  # ----------------------------------------------------------------- client
+  #
+  # Where the walkthrough is typed. It holds the user certificate and the
+  # four clients: ssh, sftp, scp and rsync.
+  client:
+    build:
+      context: ./client
+    image: hoop-ssh-stack-client:local
+    depends_on:
+      endhost:
+        condition: service_healthy
+      bastion-sidecar:
+        condition: service_healthy
+      bastion-sshd:
+        condition: service_healthy
+      endhost-multi:
+        condition: service_healthy
+      endhost-opa:
+        condition: service_healthy
+    networks:
+      sshnet:
+        ipv4_address: 172.31.77.40
+    volumes:
+      - ./keys/user:/home/rider/.ssh/id_ed25519:ro
+      - ./keys/user-cert.pub:/home/rider/.ssh/id_ed25519-cert.pub:ro
+      - ./client/ssh_config:/home/rider/.ssh/config:ro
+      # A file to push in the upload demonstrations.
+      - ./client/outbox:/home/rider/outbox:ro
+      # One certificate per attribute under test, minted by certs.sh. A
+      # DIRECTORY mount, not a file list: certs.sh mints into it while the
+      # stack is already up, and a file mount would pin the inode that
+      # existed at compose time.
+      - ./keys/probe:/home/rider/probe:ro

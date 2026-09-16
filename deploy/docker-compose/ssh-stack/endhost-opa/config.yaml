@@ -1,0 +1,65 @@
+# An end-hop that hands the VERDICT to Rego.
+#
+# The local engine still does the matching — a word list, in microseconds,
+# with no network. What changes is who decides what a match means: the rule
+# below sets `action: defer`, so instead of denying it writes a FINDING and
+# asks the policy at opa.url.
+#
+# Why that split is worth the round trip: "is `curl` in this command" is a
+# fact, and cheap. "May THIS person run a network tool on THIS host right
+# now" is a judgement, and it belongs in one policy rather than scattered
+# across every lane's YAML.
+#
+# The identity the policy reads is the part specific to an ssh lane. This
+# process verified the client's certificate itself at the handshake, so
+# input.context.subject is a key id the CA signed. Nothing upstream asserted
+# it, and there is no header to spoof.
+#
+# This is its own process, which is also why it can afford a rule at all:
+# the free tier enforces one guardrail rule PER PROCESS, and endhost already
+# spends its one on protected-paths.
+
+listeners:
+  - name: opa-policy
+    protocol: ssh
+    listen: 0.0.0.0:2222
+
+    ssh:
+      host_key: /etc/hoop-inspect/keys/endhost_host_key
+      trusted_ca: /etc/hoop-inspect/keys/ca.pub
+
+      # sftp is admitted so the policy has a second KIND of statement to act
+      # on. The read-only-lane decision in policy.rego reads the operation
+      # alone — no local rule matches it, and none is needed.
+      capabilities_allowed: [exec, sftp]
+
+      identity:
+        subject: key_id          # what the policy reads as input.context.subject
+        groups: principals
+
+    opa:
+      url: http://opa:8181/v1/data/hoop/ssh/decision
+      timeout_sec: 2
+      # Fail CLOSED. A policy engine that cannot be reached is not an
+      # allow-list: on this lane an unreachable OPA denies, which is the
+      # answer to pick when the thing you deferred was a security decision.
+      fail_open: false
+
+    guardrails:
+      rules:
+        # action: defer turns this from a decision into a REPORT. The match
+        # is still local and still free; the verdict comes from Rego, which
+        # reads the words in input.findings.deny_words_list.values.words.
+        - name: network-tools
+          type: deny_words_list
+          words: [curl, wget, nc]
+          operations: [exec_line]
+          action: defer
+
+audit:
+  file: /tmp/audit.jsonl
+
+admin:
+  listen: 0.0.0.0:9090
+
+log_level: info

@@ -1,0 +1,3 @@
+controlPlane:
+  url: http://localhost:8009
+  token: foo

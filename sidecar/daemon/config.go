@@ -285,6 +285,11 @@ type ListenerConfig struct {
 	// Only valid on a grpc lane. See GRPCCodecConfig.
 	GRPC *GRPCCodecConfig `json:"grpc,omitempty"`
 
+	// SSH configures this lane's SSH endpoint: the keys it trusts, what it
+	// admits, the account it runs as. Required on an ssh lane and a config
+	// error anywhere else. See SSHConfig.
+	SSH *SSHConfig `json:"ssh,omitempty"`
+
 	// Connection is the DEPRECATED second name for this lane. normalize
 	// folds it onto Name, which now fills the audit key and
 	// input.context.connection on its own.
@@ -901,13 +906,23 @@ func (c *Config) Validate() error {
 			// validation accepts the canonical protocol value here. spanner
 			// is the same transport with SQL extraction on top, so the same
 			// carve-out covers it.
+		} else if isSSH(l) {
+			// ssh has no codec either, and could not have one (ADR-0015):
+			// the connection is encrypted end to end, so there are no relay
+			// bytes for a registry decoder to be handed. The lane terminates
+			// the handshake and enters at statements the endpoint reports.
 		} else if _, err := inspect.New(inspect.Protocol(l.Protocol)); err != nil {
 			problems = append(problems, fmt.Sprintf("%s: unsupported protocol %q", name, l.Protocol))
 		}
 		if l.Listen == "" {
 			problems = append(problems, name+": no listen address")
 		}
-		if l.Upstream == "" {
+		// An ssh lane has no upstream to name. An end-hop terminates the
+		// session and spawns a local process; a bastion carries forwards a
+		// client chooses one at a time. Neither has a fixed backend, so the
+		// key is not merely optional here — it is refused below, and its
+		// absence must not read as a missing one.
+		if l.Upstream == "" && !isSSH(l) {
 			problems = append(problems, name+": no upstream")
 		}
 		if l.Network != "" && l.Network != "tcp" && l.Network != "unix" {
@@ -919,6 +934,37 @@ func (c *Config) Validate() error {
 		}
 		seen[key] = true
 
+		// Three listener keys do not apply to an ssh lane and are refused
+		// rather than ignored. There is no fixed upstream to dial, and SSH
+		// negotiates its own transport inside the connection, so a
+		// certificate configured here would be bound to nothing and the
+		// lane would still come up green (ADR-0015).
+		if isSSH(l) {
+			if l.Upstream != "" {
+				problems = append(problems, fmt.Sprintf(
+					"%s: upstream is not valid on an ssh listener; an end-hop spawns a "+
+						"local process and a bastion carries forwards the client chooses, "+
+						"so neither has a fixed backend", name))
+			}
+			if l.UpstreamTLS != nil {
+				problems = append(problems, fmt.Sprintf(
+					"%s: upstream_tls is not valid on an ssh listener; there is no "+
+						"upstream to originate TLS to", name))
+			}
+			if l.DownstreamTLS != nil {
+				problems = append(problems, fmt.Sprintf(
+					"%s: downstream_tls is not valid on an ssh listener; SSH negotiates "+
+						"its own transport, so there is no TLS here to terminate. The "+
+						"listener's own identity is ssh.host_key", name))
+			}
+			if l.IdentityHeader != "" {
+				problems = append(problems, fmt.Sprintf(
+					"%s: identity_header is not valid on an ssh listener; the identity "+
+						"comes from the certificate this listener verified itself, mapped "+
+						"by ssh.identity", name))
+			}
+		}
+
 		// downstream_tls is refused at startup rather than accepted and
 		// ignored, except on the two lanes that terminate it: postgres,
 		// because pgwire negotiates TLS in-band so nothing in front can, and
@@ -926,7 +972,7 @@ func (c *Config) Validate() error {
 		// present the certificate itself (ADR-0013). On any other protocol
 		// the relay never looks, so the lane would come up "green"
 		// presenting a certificate nothing ever offers.
-		if l.DownstreamTLS != nil {
+		if l.DownstreamTLS != nil && !isSSH(l) {
 			if l.Protocol != string(inspect.Postgres) && !isGRPCTransport(l) {
 				problems = append(problems, fmt.Sprintf(
 					"%s: downstream_tls is only supported on postgres, grpc and spanner, not %q "+
@@ -996,6 +1042,20 @@ func (c *Config) validateLane(lc ListenerConfig, name string) []string {
 				name, lc.Protocol))
 		}
 		problems = append(problems, lc.GRPC.validate(name)...)
+	}
+
+	// The same rule for an ssh block, and one more: the block is REQUIRED
+	// on an ssh lane. A missing http or grpc block leaves a lane that
+	// inspects less; a missing ssh block leaves one with no host key and no
+	// trusted CA, which cannot complete a handshake at all.
+	if isSSH(lc) {
+		problems = append(problems, lc.SSH.validate(name)...)
+		problems = append(problems, validateSSHRules(localRules, name)...)
+		problems = append(problems, validateSSHMasking(mc, name)...)
+	} else if lc.SSH != nil {
+		problems = append(problems, fmt.Sprintf(
+			"%s: an \"ssh\" block is only valid on an ssh listener, not %s",
+			name, lc.Protocol))
 	}
 
 	// A pii guardrail on a grpc lane scans Statement.Text, and Text holds

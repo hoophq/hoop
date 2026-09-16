@@ -1,0 +1,81 @@
+# The END-HOP. This is the sidecar that is one end of the SSH connection:
+# it verifies the certificate, admits capabilities, runs the decision chain
+# and spawns the session. Every topology in this stack terminates here.
+#
+# It has no `upstream`. An end-hop spawns a local process; there is no fixed
+# backend to name, and writing one is a config error.
+
+listeners:
+  - name: prod-endhost
+    protocol: ssh
+    listen: 0.0.0.0:2222
+
+    ssh:
+      host_key: /etc/hoop-inspect/keys/endhost_host_key
+      trusted_ca: /etc/hoop-inspect/keys/ca.pub
+
+      # Written out, so the surface is the contract rather than the default.
+      # Omitting the key admits exactly this set; an empty list admits none.
+      capabilities_allowed: [shell, pty, exec, env, sftp]
+
+      # There is no key for the account. A session runs as the login name
+      # the certificate admitted — `devuser` here — and this container runs
+      # as that same user, which is what lets the sftp subsystem be served
+      # at all.
+
+      # This end-hop is not a jump host: an absent list already denies every
+      # forward, and it is written empty to say so on purpose.
+      destinations_allowed: []
+
+      identity:
+        subject: key_id          # the CA writes the human here
+        groups: principals       # the cert's own principals list
+        attributes: [permit-pty]
+
+    guardrails:
+      rules:
+        # ONE rule, and it fences a set of paths no matter which route
+        # reaches them.
+        #
+        # This is the demonstration worth understanding. `cat secrets.env`,
+        # `sftp get secrets.env`, `scp secrets.env`, and `rsync secrets.env`
+        # are four different SSH capabilities producing four different
+        # operations — but every one of them carries the path in the text a
+        # rule matches, so one rule covers all four. Scoping with
+        # `operations` is what keeps the same regex from being evaluated
+        # against a variable name it was never written for.
+        #
+        # The free tier enforces one guardrail rule per process, which is
+        # why this stack makes its point with one rather than five.
+        - name: protected-paths
+          type: pattern_match
+          pattern_regex: '(secrets\.env|/etc/shadow|\.aws/credentials)'
+          operations:
+            [
+              exec_line,
+              sftp_read,
+              sftp_write,
+              sftp_rename,
+              sftp_remove,
+              sftp_stat,
+              sftp_setstat,
+            ]
+          message: this path is not readable through hoop
+
+    mask:
+      rules:
+        # Length-preserving, because an ssh lane rewrites a byte stream in
+        # place: a replacement of a different size shifts every byte after it
+        # and corrupts a full-screen program. `mask` is the only strategy
+        # this lane accepts, and mask_char is a rune VALUE — 42 is '*'.
+        - entities: [EMAIL_ADDRESS]
+          strategy: mask
+          mask_char: 42
+
+audit:
+  file: /tmp/audit.jsonl
+
+admin:
+  listen: 0.0.0.0:9090
+
+log_level: info
