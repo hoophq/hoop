@@ -35,6 +35,13 @@ RUN apk add --no-cache curl ca-certificates rsync coreutils openssh-client
 
 COPY --from=build /out/hoop-inspect /usr/local/bin/hoop-inspect
 
+# The hash of the two source trees this binary was built from. run.sh hashes
+# them again on every run and rebuilds when the image no longer matches, so a
+# stale image cannot pass for a current one. A stamp on the image rather than
+# in a file beside it, because a file can outlive the image it describes.
+ARG SOURCE_STAMP=unknown
+LABEL dev.hoop.source-stamp=$SOURCE_STAMP
+
 # The account every session on the end-hop becomes.
 #
 # The sidecar RUNS AS this account rather than as root, and that is load

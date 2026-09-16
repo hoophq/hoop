@@ -11,8 +11,10 @@
 # connection whose identity was decided by the CA and is verified at the end.
 #
 # Usage:
-#   ./run.sh              bring everything up
-#   ./run.sh --rebuild    force an image rebuild first
+#   ./run.sh              bring everything up. The image is rebuilt whenever
+#                         ../../../sidecar or ../../../libhoop changed, so a
+#                         green ./demo.sh is a result about the current code
+#   ./run.sh --rebuild    rebuild even when neither tree changed
 #   ./run.sh down         tear down, including the generated keys
 
 set -euo pipefail
@@ -35,6 +37,13 @@ REBUILD=""
 
 need() { command -v "$1" >/dev/null || die "missing required tool: $1"; }
 need docker; need ssh-keygen
+
+# sha256 of stdin or of the named files. macOS ships shasum, most Linux
+# images ship sha256sum, and the stamp below needs one of them.
+if command -v shasum >/dev/null; then HASH=(shasum -a 256)
+elif command -v sha256sum >/dev/null; then HASH=(sha256sum)
+else die "missing required tool: shasum or sha256sum"
+fi
 
 [[ -d ../../../libhoop ]] || die \
     "../../../libhoop is missing. sidecar's codecs are a private module; this
@@ -167,12 +176,62 @@ else
 fi
 
 # ---------------------------------------------------------------- 1. images
+#
+# The image carries the binary, so reusing one built from older sources is
+# how a green ./demo.sh comes to prove nothing. Hash what goes INTO the image
+# and compare it with the hash the image was built with: the sources decide
+# whether to rebuild, not the operator's memory of what they edited.
+#
+# Everything both build contexts hold, because that is what docker copies in:
+# there is no .dockerignore, so any file either tree gains or loses changes
+# the image. Hashing only *.go would assume no build ever reads anything
+# else, and nothing here enforces that.
+#
+# -H follows the two roots and nothing below them. ../../../libhoop is
+# normally the symlink `make libhoop-dev` leaves, and a find without it walks
+# no further than the link: the stamp then covers sidecar alone and holds
+# still through every libhoop edit, which is the failure this check exists to
+# stop. The count guards that, because a stamp over nothing looks exactly
+# like a stamp over something unchanged.
+source_stamp() {
+    local ctx n
+    for ctx in ../../../sidecar ../../../libhoop; do
+        n=$(find -H "$ctx" -name .git -prune -o -type f -print0 | tr -cd '\0' | wc -c) || n=0
+        (( n > 0 )) || die "the source stamp found no files under $ctx, so it
+     cannot see a change there. Check that the path is a directory or a
+     symlink to one."
+    done
+    {   find -H ../../../sidecar ../../../libhoop -name .git -prune -o -type f -print0 |
+            LC_ALL=C sort -z | xargs -0 "${HASH[@]}"
+        # Neither file is in either context, and both change the image.
+        "${HASH[@]}" sidecar/Dockerfile docker-compose.yml
+    } | "${HASH[@]}" | cut -d' ' -f1
+}
+
+image_stamp() {
+    docker image inspect -f '{{index .Config.Labels "dev.hoop.source-stamp"}}' \
+        hoop-inspect-ssh:local 2>/dev/null
+}
+
 c_step "Images"
-if [[ -n "$REBUILD" ]] || ! docker image inspect hoop-inspect-ssh:local >/dev/null 2>&1; then
-    docker compose build endhost
-    c_ok "built hoop-inspect-ssh:local from ../../../sidecar"
+STAMP=$(source_stamp)
+if [[ -n "$REBUILD" ]]; then
+    REASON="--rebuild"
+elif ! docker image inspect hoop-inspect-ssh:local >/dev/null 2>&1; then
+    REASON="there is no hoop-inspect-ssh:local yet"
+elif [[ "$(image_stamp)" != "$STAMP" ]]; then
+    REASON="../../../sidecar or ../../../libhoop changed since that image was built"
 else
-    c_ok "reusing hoop-inspect-ssh:local (./run.sh --rebuild to rebuild)"
+    REASON=""
+fi
+
+if [[ -n "$REASON" ]]; then
+    printf '      %s\n' "$REASON"
+    docker compose build --build-arg SOURCE_STAMP="$STAMP" endhost
+    c_ok "built hoop-inspect-ssh:local from ../../../sidecar and ../../../libhoop"
+else
+    c_ok "reusing hoop-inspect-ssh:local; it holds ${STAMP:0:12}, which is these
+      exact sources. ./run.sh --rebuild rebuilds it anyway."
 fi
 docker compose build bastion-sshd client >/dev/null
 c_ok "built the sshd bastion and the client"
