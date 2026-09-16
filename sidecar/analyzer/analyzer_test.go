@@ -437,7 +437,8 @@ func TestHTTPWithoutBodyIsNotClassified(t *testing.T) {
 // An HTTP request WITH a body is classified, and the prompt carries the verb,
 // the RAW path with its query string, the normalized resource and the body.
 // A model judging intent needs the literal target — the id, the
-// `?export=all` — that the resource form exists to throw away.
+// `?export=all`, the client's own escaping and parameter order — that the
+// resource form and the parsed query exist to throw away.
 func TestHTTPWithBodyIsClassified(t *testing.T) {
 	p := &stubProvider{level: analyzer.RiskHigh}
 	ev := mustNew(t, analyzer.Config{
@@ -453,7 +454,8 @@ func TestHTTPWithBodyIsClassified(t *testing.T) {
 		HTTP: &inspect.HTTPDetail{
 			Method:   "POST",
 			Path:     "/users/12345/orders",
-			Query:    map[string][]string{"export": {"all"}, "limit": {"100000"}},
+			Target:   "/users/12345/orders?limit=100000&export=all%20",
+			Query:    map[string][]string{"export": {"all "}, "limit": {"100000"}},
 			Resource: "/users/*/orders",
 			Body:     `{"drop":"everything"}`,
 		},
@@ -463,7 +465,7 @@ func TestHTTPWithBodyIsClassified(t *testing.T) {
 	}
 	seen := p.lastSeen()
 	for _, want := range []string{
-		"POST /users/12345/orders?export=all&limit=100000\n",
+		"POST /users/12345/orders?limit=100000&export=all%20\n",
 		"\nResource: /users/*/orders\n",
 		`{"drop":"everything"}`,
 	} {
@@ -473,33 +475,54 @@ func TestHTTPWithBodyIsClassified(t *testing.T) {
 	}
 }
 
-// The cache folds requests that differ only in path ids and query VALUES,
-// and keeps apart requests that differ in query NAMES. The raw path is in
-// the prompt, so this is what stops one call per id.
-func TestHTTPCacheKeyFoldsIdsAndQueryValues(t *testing.T) {
-	build := func(path string, query map[string][]string) string {
+// The cache folds requests that differ only in path ids or in the wire
+// spelling of one query, and keeps apart requests that differ in a query
+// name, a query value, or a repeated value: the model sees the values, so a
+// verdict on `?dry_run=true` is not a verdict on `?dry_run=false`.
+func TestHTTPCacheKeyFoldsIdsNotQueryValues(t *testing.T) {
+	build := func(path, target string, query map[string][]string) string {
 		c, ok := analyzer.HTTPBuilder{}.Build(inspect.Statement{
 			Protocol: inspect.HTTP,
 			HTTP: &inspect.HTTPDetail{
 				Method:   "POST",
 				Path:     path,
+				Target:   target,
 				Query:    query,
 				Resource: "/users/*/orders",
 				Body:     `{"n":1}`,
 			},
 		}, 4096)
 		if !ok {
-			t.Fatalf("Build(%q) declined", path)
+			t.Fatalf("Build(%q) declined", target)
 		}
 		return c.CacheKey
 	}
 
-	base := build("/users/1/orders", map[string][]string{"id": {"1"}})
-	if got := build("/users/2/orders", map[string][]string{"id": {"2"}}); got != base {
-		t.Error("a different id and query value produced a new cache key")
+	base := build("/users/1/orders", "/users/1/orders?id=1&tag=a&tag=b",
+		map[string][]string{"id": {"1"}, "tag": {"a", "b"}})
+	for name, other := range map[string]string{
+		"a different path id": build("/users/2/orders", "/users/2/orders?id=1&tag=a&tag=b",
+			map[string][]string{"id": {"1"}, "tag": {"a", "b"}}),
+		"parameter order and escaping": build("/users/1/orders", "/users/1/orders?tag=a&id=%31&tag=b",
+			map[string][]string{"id": {"1"}, "tag": {"a", "b"}}),
+	} {
+		if other != base {
+			t.Errorf("%s produced a new cache key", name)
+		}
 	}
-	if got := build("/users/1/orders", map[string][]string{"id": {"1"}, "dry_run": {"true"}}); got == base {
-		t.Error("an extra query parameter shared the cache key")
+	for name, other := range map[string]string{
+		"an extra query parameter": build("/users/1/orders", "/users/1/orders?id=1&tag=a&tag=b&dry_run=true",
+			map[string][]string{"id": {"1"}, "tag": {"a", "b"}, "dry_run": {"true"}}),
+		"a different query value": build("/users/1/orders", "/users/1/orders?id=2&tag=a&tag=b",
+			map[string][]string{"id": {"2"}, "tag": {"a", "b"}}),
+		"a different repeated value": build("/users/1/orders", "/users/1/orders?id=1&tag=a&tag=c",
+			map[string][]string{"id": {"1"}, "tag": {"a", "c"}}),
+		"a value spelled to alias another query": build("/users/1/orders", "/users/1/orders?id=1%26tag%3Da&tag=b",
+			map[string][]string{"id": {"1&tag=a"}, "tag": {"b"}}),
+	} {
+		if other == base {
+			t.Errorf("%s shared the cache key", name)
+		}
 	}
 }
 

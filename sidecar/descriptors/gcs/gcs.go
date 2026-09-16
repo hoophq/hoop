@@ -11,8 +11,10 @@
 // for is not a configuration this package will build.
 //
 // `?generation=N` pins one version of the object, the JSON API's own
-// parameter. Without it every startup and reload reads the current version,
-// which is the file-on-disk behavior an operator already has.
+// parameter. Without it every startup reads the current version, which is
+// the file-on-disk behavior an operator already has. A grpc lane binds its
+// schema when its endpoint is built, so a new version of the object — like
+// a new file on disk — is applied by a restart, not by a reload.
 //
 // It registers on import; a binary links it with a blank import, the way
 // sidecar/cmd and `hoop start sidecar` do.
@@ -48,8 +50,10 @@ var maxBytes int64 = 512 << 20
 // endpoint is the JSON API base. A variable so a test can stand in for it.
 var endpoint = "https://storage.googleapis.com"
 
-// findCredentials resolves ADC. A variable so a test can supply a token
-// without a metadata server or a key file.
+// findCredentials resolves ADC under the fetch's context: the token source
+// it returns mints over that context's deadline, where the credential type
+// allows one. A variable so a test can supply a token without a metadata
+// server or a key file.
 var findCredentials = func(ctx context.Context) (oauth2.TokenSource, error) {
 	creds, err := google.FindDefaultCredentials(ctx, scope)
 	if err != nil {
@@ -59,14 +63,19 @@ var findCredentials = func(ctx context.Context) (oauth2.TokenSource, error) {
 	return creds.TokenSource, nil
 }
 
-// tokenSrc caches the resolved credential. oauth2.TokenSource refreshes
-// before expiry, so one source serves every entry in a config and every
-// reload without minting a token per fetch. A failed resolution is not
-// cached: the next reload retries, because the usual cause is a Workload
-// Identity binding that is still propagating.
+// token is the last access token minted, reused while it is valid so the
+// entries of one config share one mint. It is the TOKEN that is cached, not
+// the source: an oauth2.TokenSource is bound to the context it was built
+// with, and one built over an early fetch's deadline would fail every later
+// mint with a timer that fired long ago, while one built over a context
+// without a deadline could block a fetch for as long as the credential
+// backend takes to answer. Each fetch therefore resolves its own source over
+// its own context and refreshes only when this token has lapsed. A failed
+// resolution leaves the field alone: the next fetch retries, because the
+// usual cause is a Workload Identity binding that is still propagating.
 var (
-	tokenMu  sync.Mutex
-	tokenSrc oauth2.TokenSource
+	tokenMu sync.Mutex
+	token   *oauth2.Token
 )
 
 func init() {
@@ -87,24 +96,26 @@ func Fetch(ctx context.Context, u *url.URL) ([]byte, error) {
 	if u.Fragment != "" {
 		return nil, errors.New("a gs:// URL has no fragment; pin a version with ?generation=N")
 	}
+	// ParseQuery, not u.Query(): the latter drops a pair it cannot decode,
+	// so `?generation=%zz` would read the current version while the
+	// operator believes it pinned one. Anything but generation is refused
+	// rather than dropped for the same reason: a typo such as ?generaton=N
+	// must not silently unpin.
+	params, err := url.ParseQuery(u.RawQuery)
+	if err != nil {
+		return nil, fmt.Errorf("malformed query %q: %w; the only parameter is ?generation=N", u.RawQuery, err)
+	}
 	query := url.Values{"alt": {"media"}}
-	for key, values := range u.Query() {
-		// Anything but generation is refused rather than dropped: a typo
-		// such as ?generaton=N would otherwise read the current version
-		// while the operator believes it pinned one.
+	for key, values := range params {
 		if key != "generation" || len(values) != 1 || !digits(values[0]) {
 			return nil, fmt.Errorf("unsupported query %q; the only parameter is ?generation=N", key)
 		}
 		query.Set("generation", values[0])
 	}
 
-	ts, err := tokenSource(ctx)
+	tok, err := accessToken(ctx)
 	if err != nil {
 		return nil, err
-	}
-	tok, err := ts.Token()
-	if err != nil {
-		return nil, fmt.Errorf("could not mint a GCP access token (check the service account and the host clock): %w", err)
 	}
 
 	reqURL := endpoint + "/storage/v1/b/" + url.PathEscape(bucket) + "/o/" + url.PathEscape(object) + "?" + query.Encode()
@@ -138,22 +149,52 @@ func Fetch(ctx context.Context, u *url.URL) ([]byte, error) {
 	return blob, nil
 }
 
-func tokenSource(ctx context.Context) (oauth2.TokenSource, error) {
+// accessToken returns a valid token, minting one under ctx when the cached
+// one has lapsed. The whole path — ADC discovery, the assertion exchange or
+// the metadata call — runs under the fetch's deadline, so a credential
+// backend that never answers is a fetch that fails, not a startup that
+// hangs. The lock is held across the mint so concurrent lanes share one
+// exchange rather than racing to mint the same token.
+func accessToken(ctx context.Context) (*oauth2.Token, error) {
 	tokenMu.Lock()
 	defer tokenMu.Unlock()
-	if tokenSrc != nil {
-		return tokenSrc, nil
+	if token.Valid() {
+		return token, nil
 	}
-	// The source outlives this fetch and refreshes tokens over the context
-	// it was built with, so it must not inherit the fetch's deadline: a
-	// reload minutes later would otherwise fail with "context deadline
-	// exceeded" from a timer that fired at startup.
-	ts, err := findCredentials(context.WithoutCancel(ctx))
+	ts, err := findCredentials(ctx)
 	if err != nil {
 		return nil, err
 	}
-	tokenSrc = ts
-	return ts, nil
+	tok, err := mint(ctx, ts)
+	if err != nil {
+		return nil, fmt.Errorf("could not mint a GCP access token (check the service account and the host clock): %w", err)
+	}
+	token = tok
+	return tok, nil
+}
+
+// mint calls ts.Token() and gives up when ctx does. A source built from a
+// key file or an external-account config already exchanges over ctx's HTTP
+// client and deadline; the metadata-server source (GCE, Workload Identity)
+// takes no context at all, and this select is what bounds it. On timeout the
+// goroutine is left to finish on the metadata client's own dial timeout;
+// its result is dropped, never cached.
+func mint(ctx context.Context, ts oauth2.TokenSource) (*oauth2.Token, error) {
+	type result struct {
+		tok *oauth2.Token
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		tok, err := ts.Token()
+		done <- result{tok, err}
+	}()
+	select {
+	case r := <-done:
+		return r.tok, r.err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }
 
 func digits(s string) bool {

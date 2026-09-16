@@ -2,11 +2,13 @@ package gcs
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hoophq/hoop/sidecar/descriptors"
 	"golang.org/x/oauth2"
@@ -23,13 +25,13 @@ func standIn(t *testing.T, handler http.HandlerFunc) (requests *[]*http.Request)
 		handler(w, r)
 	}))
 	t.Cleanup(srv.Close)
-	prevEndpoint, prevFind, prevSrc := endpoint, findCredentials, tokenSrc
+	prevEndpoint, prevFind, prevToken := endpoint, findCredentials, token
 	endpoint = srv.URL
 	findCredentials = func(context.Context) (oauth2.TokenSource, error) {
 		return oauth2.StaticTokenSource(&oauth2.Token{AccessToken: "t0k3n"}), nil
 	}
-	tokenSrc = nil
-	t.Cleanup(func() { endpoint, findCredentials, tokenSrc = prevEndpoint, prevFind, prevSrc })
+	token = nil
+	t.Cleanup(func() { endpoint, findCredentials, token = prevEndpoint, prevFind, prevToken })
 	return &got
 }
 
@@ -87,6 +89,11 @@ func TestFetchRefusesURLsThatWouldReadTheWrongObject(t *testing.T) {
 		"gs://acme-schemas/api.pb?generation=latest": "unsupported query",
 		"gs://acme-schemas/api.pb#generation=7":      "?generation=N",
 		"gs://user:pw@acme-schemas/api.pb":           "no credentials",
+		// url.URL.Query drops a pair it cannot decode; either of these
+		// would otherwise read the current version under a URL that
+		// looks pinned.
+		"gs://acme-schemas/api.pb?generation=%zz":   "malformed query",
+		"gs://acme-schemas/api.pb?generation=7&x=%": "malformed query",
 	} {
 		_, err := fetch(t, entry)
 		if err == nil || !strings.Contains(err.Error(), want) {
@@ -129,11 +136,11 @@ func TestFetchBoundsTheObjectSize(t *testing.T) {
 	}
 }
 
-// The credential is resolved once and kept: every entry of a config and
-// every reload reads through the same source, and a resolution that failed
-// is retried rather than remembered.
-func TestCredentialResolutionIsCachedOnSuccessOnly(t *testing.T) {
-	standIn(t, func(w http.ResponseWriter, r *http.Request) {
+// The TOKEN is cached while it is valid, not the source: every entry of a
+// config and every reload reads under one mint, a lapsed token is minted
+// again, and a resolution that failed is retried rather than remembered.
+func TestTokenIsReusedWhileValidAndResolutionRetriedOnFailure(t *testing.T) {
+	got := standIn(t, func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("ok"))
 	})
 	calls := 0
@@ -141,9 +148,9 @@ func TestCredentialResolutionIsCachedOnSuccessOnly(t *testing.T) {
 	findCredentials = func(context.Context) (oauth2.TokenSource, error) {
 		calls++
 		if failing {
-			return nil, context.DeadlineExceeded
+			return nil, errors.New("binding still propagating")
 		}
-		return oauth2.StaticTokenSource(&oauth2.Token{AccessToken: "t"}), nil
+		return oauth2.StaticTokenSource(&oauth2.Token{AccessToken: "fresh", Expiry: time.Now().Add(time.Hour)}), nil
 	}
 	if _, err := fetch(t, "gs://b/o"); err == nil {
 		t.Fatal("a failed credential resolution fetched")
@@ -156,6 +163,72 @@ func TestCredentialResolutionIsCachedOnSuccessOnly(t *testing.T) {
 	}
 	if calls != 2 {
 		t.Fatalf("credential resolutions = %d, want 2 (one failure, one success)", calls)
+	}
+
+	// A token past its expiry is not reused; the next fetch mints again.
+	token = &oauth2.Token{AccessToken: "stale", Expiry: time.Now().Add(-time.Minute)}
+	if _, err := fetch(t, "gs://b/o"); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 3 {
+		t.Fatalf("credential resolutions = %d, want 3 after the token lapsed", calls)
+	}
+	last := (*got)[len(*got)-1]
+	if last.Header.Get("Authorization") != "Bearer fresh" {
+		t.Errorf("authorization = %q, want the re-minted token", last.Header.Get("Authorization"))
+	}
+}
+
+// blockingSource is a credential backend that never answers, the metadata
+// server of a node whose Workload Identity is misconfigured.
+type blockingSource struct{ release chan struct{} }
+
+func (b blockingSource) Token() (*oauth2.Token, error) {
+	<-b.release
+	return nil, errors.New("released")
+}
+
+// The fetch deadline covers credential discovery and the token exchange,
+// not only the object read. Either of them hanging used to be a startup
+// that never completed; now it is a fetch that fails within the budget the
+// caller set, and nothing reaches the API.
+func TestDeadlineBoundsCredentialDiscoveryAndMinting(t *testing.T) {
+	got := standIn(t, func(w http.ResponseWriter, r *http.Request) {
+		t.Error("a fetch with no token reached the API")
+	})
+	u, err := url.Parse("gs://b/o")
+	if err != nil {
+		t.Fatal(err)
+	}
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+
+	for name, find := range map[string]func(context.Context) (oauth2.TokenSource, error){
+		"discovery": func(ctx context.Context) (oauth2.TokenSource, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+		"minting": func(context.Context) (oauth2.TokenSource, error) {
+			return blockingSource{release}, nil
+		},
+	} {
+		findCredentials = find
+		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		start := time.Now()
+		_, err := Fetch(ctx, u)
+		cancel()
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Errorf("%s: error = %v, want the deadline", name, err)
+		}
+		if took := time.Since(start); took > 2*time.Second {
+			t.Errorf("%s: fetch took %s past a 50ms deadline", name, took)
+		}
+		if token != nil {
+			t.Errorf("%s: a token was cached from a fetch that timed out", name)
+		}
+	}
+	if len(*got) != 0 {
+		t.Fatalf("%d requests reached the API", len(*got))
 	}
 }
 
