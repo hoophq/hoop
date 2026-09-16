@@ -17,7 +17,8 @@
 # strings with no room for intent; a model asked to rate "/srv/data.csv"
 # would return a guess at full price, once per path. Those are already
 # better served by a pattern rule scoped with `operations`, and the builder
-# skips them — no call, no charge, no invented finding.
+# skips them — no call, no charge, no invented finding. A trigger that names
+# one is refused at load rather than left silently firing at nothing.
 #
 # # The credential
 #
@@ -90,7 +91,9 @@ listeners:
       # lane is classified; with it, only the operation that carries an
       # instruction is. On an ssh lane exec_line is also the only operation
       # the builder answers for, so this trigger states what would otherwise
-      # be an invisible default.
+      # be an invisible default -- and naming any other one is refused at
+      # load, because the trigger would match, the builder would decline, and
+      # the statement would be allowed with nothing to show for it.
       trigger:
         operations: [exec_line]
 

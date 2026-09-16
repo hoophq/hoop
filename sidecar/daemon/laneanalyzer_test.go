@@ -388,6 +388,97 @@ func TestHTTPLaneAnalyzerWithoutCaptureBodyIsRefused(t *testing.T) {
 	}
 }
 
+// An ssh lane classifies exec_line and nothing else, so a trigger naming
+// env_set or an sftp operation describes a call that is never made: the
+// trigger matches, the builder declines, and the statement is allowed
+// carrying a `skipped` finding that reads exactly like an unmatched trigger.
+// The same bargain the http capture_body check strikes one level up.
+func TestSSHAnalyzerTriggerOnAnUnclassifiedOperationIsRefused(t *testing.T) {
+	hostKey, trustedCA := writeSSHKeyMaterial(t)
+	sshLane := func(ops ...inspect.Operation) *Config {
+		return &Config{
+			Analyzer: &AnalyzerConfig{Provider: "stub", Model: "m"},
+			Listeners: []ListenerConfig{{
+				Name: "bastion", Protocol: "ssh", Listen: ":1",
+				SSH: &SSHConfig{HostKey: hostKey, TrustedCA: trustedCA},
+				Analyzer: &LaneAnalyzerConfig{
+					Trigger:  &policy.AITrigger{Operations: ops},
+					HighRisk: "block",
+				},
+			}},
+		}
+	}
+
+	for _, op := range []inspect.Operation{inspect.OpEnvSet, inspect.OpSFTPRead} {
+		err := sshLane(op).Validate()
+		if err == nil {
+			t.Fatalf("a trigger on %q was accepted; the rule would never fire", op)
+		}
+		if !strings.Contains(err.Error(), string(op)) {
+			t.Errorf("the refusal does not name the operation: %v", err)
+		}
+		// The message has to say what the lane DOES classify, or the
+		// operator is told only that they are wrong.
+		if !strings.Contains(err.Error(), string(inspect.OpExecLine)) {
+			t.Errorf("the refusal does not name what this lane classifies: %v", err)
+		}
+	}
+
+	if err := sshLane(inspect.OpExecLine).Validate(); err != nil {
+		t.Fatalf("the operation this lane does classify was refused: %v", err)
+	}
+
+	// One good operation does not carry a dead one: the rule works for
+	// exec_line and silently does nothing for the path, which is the half
+	// of the trigger the operator would never learn about.
+	err := sshLane(inspect.OpExecLine, inspect.OpSFTPWrite).Validate()
+	if err == nil {
+		t.Fatal("a trigger mixing a classified operation with one that is not was accepted")
+	}
+	if !strings.Contains(err.Error(), string(inspect.OpSFTPWrite)) {
+		t.Errorf("the refusal does not name the dead half: %v", err)
+	}
+}
+
+// The deprecated rule spelling carries its own trigger, so it reaches the
+// same check. Two spellings that disagree about what loads would be worse
+// than either answer.
+func TestSSHAnalyzerRuleFormReachesTheSameCheck(t *testing.T) {
+	hostKey, trustedCA := writeSSHKeyMaterial(t)
+	r := aiRule("risky")
+	r.Trigger = &policy.AITrigger{Operations: []inspect.Operation{inspect.OpEnvSet}}
+	cfg := &Config{
+		Analyzer: &AnalyzerConfig{Provider: "stub", Model: "m"},
+		Listeners: []ListenerConfig{{
+			Name: "bastion", Protocol: "ssh", Listen: ":1",
+			SSH:        &SSHConfig{HostKey: hostKey, TrustedCA: trustedCA},
+			Guardrails: &GuardrailsConfig{Rules: []policy.Rule{r}},
+		}},
+	}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("the rule spelling of the same trigger was accepted")
+	}
+	if !strings.Contains(err.Error(), string(inspect.OpEnvSet)) {
+		t.Errorf("the refusal does not name the operation: %v", err)
+	}
+}
+
+// A protocol whose builder declines on CONTENT rather than on the operation
+// must not be checked this way: whether a statement has a body is a
+// per-statement fact, and refusing a trigger over it would refuse a working
+// config.
+func TestOnlyAnOperationScopedBuilderConstrainsATrigger(t *testing.T) {
+	if _, scoped := analyzer.AnalyzableOperations(inspect.SSH); !scoped {
+		t.Error("the ssh builder does not declare the operations it answers for")
+	}
+	for _, p := range []inspect.Protocol{inspect.Postgres, inspect.HTTP, inspect.MongoDB} {
+		if _, scoped := analyzer.AnalyzableOperations(p); scoped {
+			t.Errorf("%s declares a fixed operation set; a trigger on it would be refused", p)
+		}
+	}
+}
+
 // Editing only a lane's analyzer block must swap on a hot reload rather
 // than demand a restart: the block builds evaluators, not sockets.
 func TestLaneAnalyzerBlockIsInsideTheReloadBoundary(t *testing.T) {

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -1153,6 +1154,34 @@ func (c *Config) validateLane(lc ListenerConfig, name string) []string {
 		}
 	}
 
+	// A trigger can also name an operation the builder will never answer
+	// for, which is the same failure one level down: the trigger matches,
+	// the builder declines, and the statement is allowed carrying a
+	// `skipped` finding that reads exactly like an unmatched trigger or a
+	// spent budget. An ssh lane is the case this exists for — exec_line is
+	// a whole instruction a model can reason about, while a variable name
+	// and a file path are short structural strings it would rate at full
+	// price, so the builder answers for exec_line alone.
+	//
+	// Refused rather than noted, for the reason every check above it is:
+	// the operator who wrote the trigger reads a load refusal, and nobody
+	// at all reads a silent skip.
+	if p := inspect.Protocol(lc.Protocol); analyzing && p != "" {
+		if can, scoped := analyzer.AnalyzableOperations(p); scoped {
+			for _, op := range analyzerTriggerOperations(lc, aiRules) {
+				if slices.Contains(can, op) {
+					continue
+				}
+				problems = append(problems, fmt.Sprintf(
+					"%s: the analyzer trigger names operation %q, which a %s lane "+
+						"never classifies, so every statement carrying it would be "+
+						"skipped and allowed with no call made. This lane classifies "+
+						"%s; match the rest with a pattern_match rule scoped by "+
+						"operations", name, op, p, joinOperations(can)))
+			}
+		}
+	}
+
 	// Local rule compilation is checked at build time against the real
 	// scanner, not here: a pii rule needs one, and NewRules without it fails
 	// for the wrong reason. Rules with no pii type can still be compiled
@@ -1481,4 +1510,29 @@ func (t *TLSConfig) BuildDownstreamTLS() (*tls.Config, error) {
 		Certificates: []tls.Certificate{cert},
 		MinVersion:   tls.VersionTLS12,
 	}, nil
+}
+
+// analyzerTriggerOperations lists every operation a lane's analyzer is
+// triggered on, in BOTH spellings: the listener's analyzer block and any
+// deprecated ai_analysis rule still carrying its own trigger.
+func analyzerTriggerOperations(lc ListenerConfig, aiRules []policy.Rule) []inspect.Operation {
+	var ops []inspect.Operation
+	if lc.Analyzer != nil && lc.Analyzer.Trigger != nil {
+		ops = append(ops, lc.Analyzer.Trigger.Operations...)
+	}
+	for _, r := range aiRules {
+		if r.Trigger != nil {
+			ops = append(ops, r.Trigger.Operations...)
+		}
+	}
+	return ops
+}
+
+// joinOperations renders an operation list for a config message.
+func joinOperations(ops []inspect.Operation) string {
+	names := make([]string, len(ops))
+	for i, op := range ops {
+		names[i] = string(op)
+	}
+	return strings.Join(names, ", ")
 }
