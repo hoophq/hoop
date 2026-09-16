@@ -129,6 +129,9 @@ under `deploy/docker-compose/` binds:
 | `license` | License document or a path to one → `HOOP_LICENSE` |
 | `controlPlane.url` | Control Plane to take the running config from → `HOOP_CONTROL_PLANE_URL` |
 | `controlPlane.token` | Token from the sidecar's registration → `HOOP_SIDECAR_TOKEN` |
+| `analytics.enabled` | Usage analytics to Segment. `false` → `HOOP_SIDECAR_ANALYTICS=off`. Default `true` |
+| `analytics.sidecarId` | Stable install identity → `HOOP_SIDECAR_ID`. Default: the release's full name. Hashed before it is sent |
+| `analytics.hostId` | Machine identity → `HOOP_HOST_ID`. Default: the node name via the downward API. Hashed before it is sent |
 | `extraSecret` | Extra environment variables, as a Secret |
 | `service.enabled` | A Service for the admin port, 19000 only. Default `true` |
 | `laneServices` | Map of Services publishing lane ports. One Service per entry; empty by default |
@@ -224,8 +227,9 @@ unnecessary. Without any of these,
 
 ## Environment variables
 
-The relay reads four, and the chart sets all four from the Secret
-`sidecar-config`:
+The relay reads seven. Six come from the Secret `sidecar-config`; the seventh
+is set directly on the container because it defaults to a downward-API field,
+which a Secret cannot express:
 
 | Variable | From |
 |---|---|
@@ -233,9 +237,30 @@ The relay reads four, and the chart sets all four from the Secret
 | `HOOP_LICENSE` | `license` |
 | `HOOP_CONTROL_PLANE_URL` | `controlPlane.url` |
 | `HOOP_SIDECAR_TOKEN` | `controlPlane.token` |
+| `HOOP_SIDECAR_ANALYTICS` | `off` when `analytics.enabled: false`, else empty |
+| `HOOP_SIDECAR_ID` | `analytics.sidecarId`, defaulting to the release's full name |
+| `HOOP_HOST_ID` | `analytics.hostId`, defaulting to `fieldRef: spec.nodeName` on the container |
 
 Add anything else through `extraSecret`, which becomes a second `envFrom`
 Secret — an analyzer provider's API key, for instance.
+
+## Usage analytics
+
+A release build reports anonymous usage to Segment: that the process
+started, the shape of its config, how much traffic it judged, why it
+stopped. Counts only — no statement text, identity, rule name, prompt or
+address. The full event list is under "Usage analytics" in
+`sidecar/README.md`; `analytics.enabled: false` switches it off.
+
+Two identities ride on every event, both hashed before they leave the pod.
+A pod's hostname is its name and changes on every rollout, so left to
+itself each deploy would look like a new sidecar on a new host — and
+Segment bills per distinct id per month. The chart defaults both ids to
+something that survives a rollout: `HOOP_SIDECAR_ID` to the release's full
+name, so one release is one profile however often it rolls, and
+`HOOP_HOST_ID` to the node name, so sidecars can be counted per node.
+Under `controlPlane.token` the relay uses the token as its identity and
+ignores `HOOP_SIDECAR_ID`.
 
 ## Credentials referenced by path
 
