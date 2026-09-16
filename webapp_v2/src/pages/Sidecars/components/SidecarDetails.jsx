@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Box, Divider, Group, Image, Paper, Pill, Stack, Text, Title } from '@mantine/core'
+import { Divider, Group, Paper, Stack, Text, Title } from '@mantine/core'
 import { Info, Lock } from 'lucide-react'
 import Alert from '@/components/Alert'
 import Badge from '@/components/Badge'
@@ -7,16 +7,9 @@ import Switch from '@/components/Switch'
 import Tooltip from '@/components/Tooltip'
 import EmptyState from '@/layout/EmptyState'
 import { useSidecarStore } from '@/stores/useSidecarStore'
-import { useConnectionIconGetter } from '@/utils/connectionIcons'
 import { showSnackbar } from '@/utils/snackbar'
-import {
-  auditEnabled,
-  configFeatures,
-  hasConfiguration,
-  listenerFeatures,
-  loadsFromDisk,
-  protocolInfo,
-} from '../config'
+import { auditEnabled, configFeatures, hasConfiguration, loadsFromDisk } from '../config'
+import ListenersTable from '../sections/ListenersTable'
 import { formatRelativeTime, sidecarStatus } from '../status'
 import SidecarSourceModal from '../sections/SidecarSourceModal'
 import FeaturePills from './FeaturePills'
@@ -45,69 +38,17 @@ export function SidecarStatusBadge({ sidecar }) {
   )
 }
 
-function ProtocolPill({ protocol, getIcon }) {
-  const info = protocolInfo(protocol)
-  return (
-    <Pill>
-      <Group gap={6} wrap="nowrap">
-        <Image src={getIcon({ subtype: info.subtype })} alt="" w={14} h={14} fit="contain" />
-        <span>{info.label}</span>
-      </Group>
-    </Pill>
-  )
-}
-
-// One lane of the stored configuration (Figma "Listeners": Name, Protocol,
-// Listen, Upstream, Features).
-function Listener({ listener, config, getIcon }) {
-  return (
-    <Stack gap="sm">
-      <Row label="Name">
-        <Text size="sm" fw={600}>
-          {listener.name}
-        </Text>
-      </Row>
-      <Row label="Protocol">
-        <ProtocolPill protocol={listener.protocol} getIcon={getIcon} />
-      </Row>
-      <Row label="Listen">
-        <Group gap="sm" wrap="nowrap">
-          <Text size="sm" ff="monospace">
-            {listener.listen}
-          </Text>
-          <Text size="xs" c="dimmed">
-            Sidecar address where outside clients connect to
-          </Text>
-        </Group>
-      </Row>
-      <Row label="Upstream">
-        <Group gap="sm" wrap="nowrap">
-          <Text size="sm" ff="monospace">
-            {listener.upstream}
-          </Text>
-          <Text size="xs" c="dimmed">
-            Internal address of your real resource
-          </Text>
-        </Group>
-      </Row>
-      <Row label="Features">
-        <FeaturePills features={listenerFeatures(listener, config)} />
-      </Row>
-    </Stack>
-  )
-}
-
 /**
  * The "Sidecar Details" card (Figma: wizard Overview and the details page).
  *
  * The control plane answers the sidecar's check-in with the configuration it
- * holds for it (gateway/api/sidecar). This card reads that document; the one
- * thing it writes is which side owns it, and only when `editable` is set —
- * the wizard renders the same card for a sidecar whose source is chosen
- * afterwards. The store updates both the list and the selected record.
+ * holds for it (gateway/api/sidecar). This card reads that document and writes
+ * two things, each only when the caller hands it somewhere to put the result:
+ * which side owns the document, under `editable`, and the listeners inside it,
+ * under `listenerActions`. The wizard's Overview step passes neither — it holds
+ * its own copy of a sidecar that is still waiting for the first handshake.
  */
-export default function SidecarDetails({ sidecar, editable }) {
-  const getIcon = useConnectionIconGetter()
+export default function SidecarDetails({ sidecar, editable, listenerActions }) {
   const setLoadFromDisk = useSidecarStore((s) => s.setLoadFromDisk)
   const config = sidecar.configuration
   const configured = hasConfiguration(config)
@@ -231,36 +172,22 @@ export default function SidecarDetails({ sidecar, editable }) {
 
               <Divider />
 
-              <Stack gap="md">
-                <Group gap="sm" align="baseline">
-                  <Text fw={600}>Listeners</Text>
-                  <Text size="sm" c="dimmed">
-                    {`${listeners.length} ${listeners.length === 1 ? 'listener' : 'listeners'}`}
-                  </Text>
-                </Group>
-
-                {listeners.map((listener, index) => (
-                  <Box key={listener.name ?? index}>
-                    {index > 0 && <Divider color="gray.1" mb="md" />}
-                    <Listener listener={listener} config={config} getIcon={getIcon} />
-                  </Box>
-                ))}
-              </Stack>
+              {/* Still authorable while the sidecar runs from disk: the stored
+                  document is what the switch above hands back, so it is worth
+                  getting right before the flip, not after. */}
+              <ListenersTable sidecar={sidecar} {...listenerActions} />
             </>
-          ) : (
+          ) : fromDisk ? (
+            // Nothing stored and nothing to store into: the plane sends this
+            // sidecar only its license, so an empty listener table with an Add
+            // button would offer an edit that changes nothing it runs.
             <EmptyState
               compact
-              title={
-                fromDisk
-                  ? 'This sidecar runs the configuration in its own config file'
-                  : 'The control plane stores no listeners yet'
-              }
-              description={
-                fromDisk
-                  ? 'The control plane stores no listeners for it and sends only its license.'
-                  : "Nothing is delivered to this sidecar yet. A connected sidecar reads its listeners from its own config file and imports them here."
-              }
+              title="This sidecar runs the configuration in its own config file"
+              description="The control plane stores no listeners for it and sends only its license."
             />
+          ) : (
+            <ListenersTable sidecar={sidecar} {...listenerActions} />
           )}
         </Stack>
       </Paper>

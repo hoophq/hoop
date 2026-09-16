@@ -2,14 +2,15 @@ import { useEffect, useState, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Stack, Text, Group } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
+import { ArrowLeft } from 'lucide-react'
 import Modal from '@/components/Modal'
 import Button from '@/components/Button'
+import FormFooter, { FORM_FOOTER_CLEARANCE } from '@/components/FormFooter'
 import Tabs from '@/components/Tabs'
 import PageLoader from '@/components/PageLoader'
 import { showSnackbar } from '@/utils/snackbar'
 import { useConfigureRoleStore } from '@/pages/Roles/Configure/store'
 import ConfigureHeader from '@/pages/Roles/Configure/ConfigureHeader'
-import FormFooter from '@/pages/Roles/Configure/FormFooter'
 import CredentialsTab from '@/pages/Roles/Configure/CredentialsTab'
 import DetailsTab from '@/pages/Roles/Configure/DetailsTab'
 import TerminalAccessTab from '@/pages/Roles/Configure/TerminalAccessTab'
@@ -158,7 +159,7 @@ export default function ConfigureRolePage() {
           handleSave()
         }}
       >
-        <Stack gap="xl" pb={120}>
+        <Stack gap="xl" pb={FORM_FOOTER_CLEARANCE}>
           <ConfigureHeader
             connection={connection}
             testing={testing}
@@ -190,14 +191,27 @@ export default function ConfigureRolePage() {
             </Tabs.Panel>
           </Tabs>
 
+          {/* Dirty state is surfaced as a subtle hint so users always know
+              whether Save is needed. */}
           <FormFooter
-            saving={saving}
-            deleting={deleting}
-            dirty={dirty}
-            onBack={() => navigate(-1)}
-            onDelete={open}
-            onSave={handleSave}
-          />
+            left={
+              <Button variant="default" leftSection={<ArrowLeft size={16} />} onClick={() => navigate(-1)}>
+                Back
+              </Button>
+            }
+          >
+            {dirty && (
+              <Text size="sm" c="dimmed">
+                Unsaved changes
+              </Text>
+            )}
+            <Button variant="transparent" color="red" loading={deleting} onClick={open}>
+              Delete
+            </Button>
+            <Button loading={saving} onClick={handleSave}>
+              Save
+            </Button>
+          </FormFooter>
         </Stack>
       </form>
     </>

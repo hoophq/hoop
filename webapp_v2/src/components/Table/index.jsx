@@ -14,10 +14,16 @@ import classes from './Table.module.css'
  *     <Table.Thead>...</Table.Thead>
  *     <Table.Tbody>...</Table.Tbody>
  *   </Table>
+ *
+ * `scrollable` lets the surface scroll sideways instead of clipping. The
+ * surface hides overflow so its rounded border clips, which on a narrow screen
+ * makes the right-hand columns unreachable rather than merely cut off: the
+ * page itself does not scroll to reach them. Opt in on any table too wide for
+ * a phone.
  */
-function Table({ children, ...props }) {
+function Table({ children, scrollable, ...props }) {
   return (
-    <Box className={classes.surface}>
+    <Box className={scrollable ? `${classes.surface} ${classes.scrollable}` : classes.surface}>
       <MantineTable
         withRowBorders
         stripedColor="rgba(240, 240, 243, .4)"
