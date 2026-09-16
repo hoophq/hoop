@@ -287,7 +287,19 @@ listeners:
         #   statuses: ["5xx"]
         #   message: upstream failure suppressed by policy
     # Needs the http block below: without capture_body the analyzer sees
-    # "POST /anything" and no payload, which tells a model nothing.
+    # "POST /anything" and no payload, which tells a model nothing. With
+    # it, the model receives the request line as sent, the resource the
+    # trigger matched, and the body:
+    #
+    #   POST /anything/12345?export=all
+    #   Resource: /anything/*
+    #   Content-Type: application/json
+    #
+    #   {"note": "close the account"}
+    #
+    # The cache keys on the resource, the query parameter NAMES and the
+    # body, so another id or another value for export with the same body
+    # is the same verdict.
     # analyzer:
     #   trigger: {resources: ["/anything"]}
     #   high: block
