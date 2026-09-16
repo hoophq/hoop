@@ -128,21 +128,18 @@ over a command line cannot see through the shell's own expansion, so
 We terminate SSH at the sidecar, one per host, as a lane that owns its own
 handshake.
 
-### Two behaviours, one binary, no role key
+### What configures a bastion, and what configures an end-hop
 
 Whether a deployment wants a bastion architecture is a topology choice the
-operator makes, and **the only thing that expresses it is what a listener
-admits**. The two behaviours the design talks about
-are what a capability list produces, not settings to declare:
+operator makes. Two keys produce the behaviours the design talks about:
 
-- **A bastion** admits the client-opened forward and no session capability. It
-  authenticates the connection, checks the destination the client named against
-  its `destinations_allowed`, dials the address that passed and forwards bytes
-  blind. It refuses a session channel because its `capabilities_allowed` is written empty, so
-  there is no shell on it, and
-  it never sees the plaintext of what it carries. An empty list is the one
-  line that makes a listener a bastion, and it has to be written — omitting
-  the key admits the session capabilities instead.
+- **A bastion** carries a client-opened forward. `destinations_allowed` names
+  where, and is the key that puts a listener in the position: it authenticates
+  the connection, checks the destination the client named, dials the address
+  that passed and forwards bytes blind, never seeing the plaintext of what it
+  carries. `capabilities_allowed: []` on top of that drops the shell — a
+  session channel is refused, so the jump host has no shell, no command and no
+  file transfer, and no content policy, because there is no session to inspect.
 - **An end-hop** admits the session capabilities. It terminates the handshake,
   resolves the session, spawns the shell or command, and runs the whole
   decision chain locally.
@@ -178,7 +175,7 @@ sequenceDiagram
     Note over Bastion,Endpoint: the bastion never sees hop 2's plaintext
 
     User->>Endpoint: second handshake through the pipe, same cert (hop 2)
-    Endpoint->>Endpoint: validate cert, check permit-pty, resolve run_as, spawn locally
+    Endpoint->>Endpoint: validate cert, check permit-pty, resolve the login name, spawn locally
 
     loop session
         User->>Endpoint: input
@@ -204,7 +201,7 @@ sequenceDiagram
     Note over User,SSHD: sshd forwards a pipe and never re-signs identity
 
     User->>Endpoint: second handshake through the pipe, same cert (hop 2)
-    Endpoint->>Endpoint: validate cert, check permit-pty, resolve run_as, spawn locally
+    Endpoint->>Endpoint: validate cert, check permit-pty, resolve the login name, spawn locally
     Endpoint->>Endpoint: guardrails, analyzer, audit, mask
 ```
 
@@ -269,39 +266,98 @@ check is what keeps a certificate issued for one identity from serving as
 another, and it is free, because the principals list is already verified as
 part of the signature.
 
-**Which OS user the session runs as is a separate decision from who logged
-in, and `run_as` is what states it.** Authentication says the connection is
-alice's; it does not say which account on this host executes her shell. The
-two are separable because a container or an appliance host often has no
-per-user accounts at all, and because attribution does not depend on the
-answer: the principal policy and audit see comes from the certificate, so a
-session running as a shared account is still recorded as alice's.
+**The session runs as the login name, and no key says otherwise.** The name
+the client asked for is looked up in the OS user database, per connection.
+It is already verified against the certificate's principals, so it is the
+one name this connection can be trusted to become. It resolves, the session
+runs as it; it does not resolve, the session is **refused**. There is no
+default account and no fallback to the user the sidecar happens to run as —
+either would hand a session an account nobody chose for it, and would make
+the audit trail name an account nobody picked.
 
-- **Set, it is one OS user for the whole listener.** Every admitted session
-  runs as that account, whoever connected. **It does not replace the
-  principals check** — the requested login name must still appear in the
-  certificate, and a name that does not is refused before `run_as` is
-  consulted. It narrows what the host grants; it never widens who may log in.
-- **Omitted, the requested login name is looked up in the OS user database.**
-  That name is already verified against the certificate's principals, so it
-  is the one name the listener can trust enough to become. It resolves, the
-  session runs as it; it does not resolve, the session is **refused**. There
-  is no fallback to a default account, and none to the user the sidecar
-  happens to be running as — either would silently hand a session an account
-  nobody chose for it.
-- **Nothing here refuses `run_as: root`.** A deployment that needs it is
-  legitimate, and a check that could be satisfied by an account with the same
-  privilege under another name would only look like a control. What bounds a
-  privileged session is the capability list and the guardrail chain, which
-  run identically whatever the account.
+This is `sshd`'s rule, arrived at for `sshd`'s reason: the username in the
+authentication request IS the account request, and the certificate only says
+whether the holder may make it. **Two checks, and they answer different
+questions.** The certificate answers *may this person claim this name?* The
+OS answers *is this name an account on this host?* A login passes both or it
+does not log in.
 
-**An explicit `run_as` is checked when the listener loads**, not when the
-first session arrives: the account must exist, and the process must be able
-to become it. A sidecar that cannot satisfy either refuses to start, so a
-misspelled account is a startup failure rather than a listener that accepts
-connections and denies every one of them. The omitted case cannot be checked
-this way — the name arrives in the handshake — so it is checked per session
-and denies there, which is the one runtime refusal this key has.
+**What bounds the set of accounts is the account this PROCESS runs as, not a
+config key.** Changing to another uid needs privilege; staying put needs
+none. So an unprivileged sidecar can only ever serve the account it already
+is, and a config file cannot say otherwise — the container's `USER` line is
+the policy, and it cannot disagree with itself. Running as root serves any
+account on the host, and pays for it: the whole pre-authentication surface
+runs privileged, where `sshd` would have separated it into an unprivileged
+child.
+
+**Nothing here refuses a session as root.** A deployment that needs it is
+legitimate, and a check that could be satisfied by an account with the same
+privilege under another name would only look like a control. What bounds a
+privileged session is the capability list and the guardrail chain, which run
+identically whatever the account.
+
+**This account decision cannot be made at load, and that is the cost.** The
+name arrives in the handshake, so a host missing an account it meant to
+serve is discovered by the first session that asks for it, not by
+`-validate`. The one part that IS knowable at load is `sftp`: it is served
+inside this process, so it works for this process's account and no other,
+and `-validate` reports the uid and gid it will serve whenever the
+capability is admitted.
+
+**The session runs the account's own login shell, so the host keeps the
+power to disable an account.** The passwd entry names the shell, and
+`usermod -s /sbin/nologin alice` is how an administrator removes access
+without deleting the account. The end-hop reads that field and runs what it
+names, for an interactive shell and for a one-shot command alike.
+
+- **There is no list of disabled shells.** `/sbin/nologin` and `/bin/false`
+  are programs whose job is to refuse, so running one IS the refusal, in the
+  words the host already uses. A list of paths in the sidecar would be a
+  second copy of a decision the host has made, and it would drift from it.
+- **An empty shell field takes `/bin/sh`**, which is the default `sshd`
+  applies to the same empty field.
+- **A shell that does not exist, or that is not an executable file, refuses
+  the session.** This is the check `sshd` makes before it admits a login. It
+  turns an unreadable exec failure into a message that names the file.
+- **The field is read from the passwd file directly**, because `os/user`
+  gives the name, the ids and the home directory and not the shell. An
+  account that resolves through NSS and is absent from the passwd file
+  refuses: its shell cannot be read, and a session that ran without it would
+  give back access the host had taken away. The same build constraint
+  applies as to the account itself.
+
+The shell is resolved with the account, so it is read per session, at the
+same moment and with the same refusal.
+
+**A session starts in the account's home directory, and in `/` when that
+directory is not usable.** A host where accounts exist and home directories
+are made at first login is ordinary, and a failed `chdir` there would reach
+the user as a session that does not start and does not say why. `sshd`
+answers this by starting the session in `/` and writing the reason to its
+own log, and so does the end-hop. The session runs; the operator gets the
+line that says the home directory is missing.
+
+**The session environment holds the account's facts, the connection's facts
+and nothing this process carries.** A sidecar's own environment holds its
+configuration and can hold credentials, so none of it is inherited. What the
+session gets is `USER`, `LOGNAME`, `HOME`, `SHELL` and `PATH` from the
+account, `TERM` when a terminal was requested, `SSH_CONNECTION` and
+`SSH_CLIENT` in the spelling `sshd` uses, and the variables the client asked
+for that passed the `env_set` rules.
+
+`SSH_CONNECTION` and `SSH_CLIENT` are not decoration: a `.bashrc` branches
+on them, an audit rule quotes them, and a session without them looks local
+to everything that asks. A listener bound to a unix socket has no address in
+that shape, so both are left unset rather than filled with a value a reader
+would mis-parse.
+
+**`SSH_TTY` is the one variable `sshd` sets that the end-hop does not.**
+`sshd` makes the terminal before it builds the environment and can name it.
+Here the terminal is made by the same call that runs the child, so the name
+does not exist in time. Splitting that call would mean re-writing the
+controlling-terminal handling that makes job control and Ctrl-C work, which
+is too much risk for one variable that only reports.
 
 ### What goes where
 
@@ -395,8 +451,8 @@ policy depends on the resolver the listener trusts.
 listener as `capabilities_allowed`, and the list has three states.** Omitted
 admits every capability v1 delivers (`shell`, `pty`, `exec`, `env`, `sftp`),
 which is the usable end-hop an operator expects from a listener they only
-gave a host key and a CA. Written empty admits none, which is what makes a
-bastion. Written with members admits those and refuses the rest. What this
+gave a host key and a CA. Written empty admits none, which is how a jump host drops
+the shell. Written with members admits those and refuses the rest. What this
 design does not name is refused in every one of the three states, because no
 handler exists to admit it.
 
@@ -415,8 +471,8 @@ The full surface, and what each capability can carry:
 
 | Capability | SSH request | Content | Guardrails | Analyzer | Masking | Audit |
 |---|---|---|---|---|---|---|
-| `shell` | `shell` | keystroke stream, no boundary | — (see below) | — | ✅ output | full content, replayable |
-| `exec` | `exec` | the whole command, one statement | ✅ | ✅ | ✅ output | full content, replayable |
+| `shell` | `shell` | keystroke stream, no boundary | — (see below) | — | ✅ output | event only |
+| `exec` | `exec` | the whole command, one statement | ✅ | ✅ | ✅ output | the command in full; not its output |
 | `env` | `env` | one statement per variable | ✅ on the name | — | — | metadata always |
 | `sftp` | `subsystem` named `sftp` | one statement per file operation | ✅ on the path | ✅ | ✅ download only | metadata always, content optional |
 | `subsystem` | any other `subsystem` | opaque | — | — | — | thin metadata |
@@ -582,10 +638,10 @@ to work.
 
 | Capability | v1 |
 |---|---|
-| `exec` | full — guardrails, analyzer, output masking, full-content audit |
-| `sftp` | full — guardrails on the path, analyzer, download masking, per-operation audit |
+| `exec` | full — guardrails, analyzer, output masking, the command audited in full. Output is masked, not recorded |
+| `sftp` | full — guardrails on the path, analyzer, download masking, per-operation audit. File bytes are not recorded |
 | `env` | full — guardrails on the name, audit |
-| `shell`, `pty` | admitted, audited in full, output masked; **no guardrails** |
+| `shell`, `pty` | admitted, output masked, recorded as events; **no guardrails and no content trail** |
 | `local_forward` | full — admitted when the certificate permits forwarding and the destination matches `destinations_allowed`, then relayed blind. Absent list denies |
 | `remote_forward` | not delivered; the refusal is exercised, but the return path that would make it work was never built |
 | `agent_forward`, `x11`, other subsystems | not delivered; no handler exists, and none was run |
@@ -646,16 +702,31 @@ audit trail.
 ### Audit granularity
 
 Audit is a separate axis from the other three: a capability can be worth
-recording with no rule applying to it, and one can carry content that is too
-large to record in full by default.
+recording with no rule applying to it, and what is worth recording is not the
+same as what a rule can read.
 
-- **Full content, replayable — `shell` and `exec`.** Input and output, the way
-  hoop already records an interactive session. `pty` is not a separate record;
-  it contributes terminal geometry to its shell's entry.
-- **Metadata always, content optional — `sftp`.** Operation, path, direction
-  and byte count are recorded unconditionally. The file's bytes are optional:
-  a download can be recorded like terminal output, but an upload's bytes are
-  someone else's file, so full retention is opt-in.
+**v1 records events and statements. It records no session content at all.**
+The sidecar's audit sink writes events, and a content trail is a different
+thing built out of different parts — a store, a retention policy, a read path,
+and a decision about who may replay someone else's terminal. Landing one as a
+side effect of the first SSH lane would be the weakest version of each. So the
+trail answers who connected, what they asked for and what was refused, and it
+does not answer what scrolled past.
+
+Masking is unaffected, because it rewrites bytes in flight rather than on the
+way to a record: a masked shell is still a masked shell, with no copy of
+either version kept.
+
+- **Events, not content — `shell`.** The session's open, the terminal geometry
+  `pty` contributed, its duration and its byte counts. **No keystrokes and no
+  output**, so there is nothing to replay. `pty` is not a separate record.
+- **The command, not its output — `exec`.** The command line *is* a statement,
+  so it is recorded in full with its verdict, the way every other statement
+  is. Its output is masked in flight and not retained.
+- **Metadata always, no content — `sftp`.** Operation, path, direction and
+  byte count are recorded unconditionally. The file's bytes are not, and
+  there is no key to ask for them: a setting that records nothing is the
+  failure this design refuses everywhere else.
 - **Thin metadata — forwards and unrecognized subsystems.** Destination or
   bind address, duration, byte count. Never the relayed bytes: there is no
   protocol knowledge to interpret them, so recording them would produce an
@@ -746,12 +817,6 @@ listeners:
       # Omitting the key admits exactly this set; an empty list admits none.
       capabilities_allowed: [shell, pty, exec, env, sftp]
 
-      # The OS account every session on this listener runs as. Omit it and
-      # the requested login name is looked up instead, with no match
-      # refusing the session. Checked at load: missing account, or a
-      # process that cannot become it, and the sidecar does not start.
-      run_as: hoop-session
-
       identity:
         subject: key_id
         groups: principals
@@ -841,10 +906,9 @@ listeners:
           mask_char: '*'
 ```
 
-A bastion is the same block with its capability list written empty, so no
-shell, and no content policy, because there is no session to inspect. The
-empty list is not optional here — omitting the key would admit a shell. What
-it carries besides is the one directive that lets it forward at all:
+A bastion is the same block with `destinations_allowed` written, which is what
+lets it forward at all, and its capability list written empty, which drops the
+shell:
 
 ```yaml
 listeners:
@@ -855,8 +919,8 @@ listeners:
       host_key: /etc/hoop-inspect/keys/bastion_host_key
       trusted_ca: /etc/hoop-inspect/keys/hoop_ca.pub
 
-      # Empty, not omitted: a bastion has no session. Omitting this key
-      # would admit a shell, exec, env and sftp instead.
+      # Empty rather than omitted: this jump host offers no session at
+      # all. Omit the key to keep a shell, exec, env and sftp.
       capabilities_allowed: []
 
       # A jump host and nothing else: the end-hops' SSH port on this
@@ -875,9 +939,8 @@ Every key this design adds, and nothing else:
 | `listeners[].ssh` | block | yes | Everything below. Its presence on a non-`ssh` lane is a config error |
 | `ssh.host_key` | path | yes | The server identity this listener presents, the same file a real `sshd` would hold |
 | `ssh.trusted_ca` | path | yes | The CA public key(s) a certificate must be signed by. The only standing trust decision a listener makes |
-| `ssh.capabilities_allowed` | list | no | Which session capabilities are admitted. **Absent admits every capability v1 delivers** (`shell`, `pty`, `exec`, `env`, `sftp`); **empty admits none**, which is what a bastion writes; members admit those and refuse the rest. Naming a capability v1 does not deliver fails at load. Forwarding is not a member |
+| `ssh.capabilities_allowed` | list | no | Which session capabilities are admitted. **Absent admits every capability v1 delivers** (`shell`, `pty`, `exec`, `env`, `sftp`); **empty admits none**, which is how a jump host drops the shell as well; members admit those and refuse the rest. Naming a capability v1 does not deliver fails at load. Forwarding is not a member |
 | `ssh.destinations_allowed` | list of `network[:port]`, or `any` | no | Where a client-opened forward may be carried. **Absent or empty denies every forward** — this key stays default-deny where `capabilities_allowed` does not. A port restricts to it, no port means any port on that network. Governs the destination of a client-opened forward only. Checked after the certificate's own forwarding grant |
-| `ssh.run_as` | OS user name | no | The single OS account every admitted session on this listener runs as. **Absent looks up the requested login name** — already verified against the certificate's principals — and **refuses the session when it resolves to no OS user.** Never replaces the principals check. Set, it is verified at load: the account must exist and the process must be able to become it, or the sidecar refuses to start. A config error on a listener that admits no session capability |
 | `ssh.identity.subject` | `key_id`, `principals`, `extensions.<name>` | no | Which certificate field becomes the principal policy and audit see. Absent takes the key id |
 | `ssh.identity.email` | same | no | Where an email is written, when the CA writes one |
 | `ssh.identity.groups` | same | no | The field group-based policy reads |
@@ -888,16 +951,18 @@ and `downstream_tls`. A bastion has no fixed upstream and an end-hop has none
 at all, and SSH negotiates its own transport, so there is no TLS to terminate
 or originate. `idle_timeout_sec` and `max_conns` work as they do on any lane.
 
-**One further key is refused, but only in one configuration: `run_as` on a
-listener whose `capabilities_allowed` is empty.** Nothing is ever spawned
-there, so the key would state a fact about sessions that cannot happen — and
-an operator who wrote it is describing a listener they think has a session.
+**There is no key for the OS account.** A session runs as the login name the
+certificate admitted, and the account the process itself runs as is what
+bounds that. `run_as` was such a key in an earlier draft of this record; a
+config that still carries it is refused at load, by the same rule that
+refuses any other unknown key in the block.
 This is the one load check that reads two keys together, and it is
 enforceable because both are known at load.
 
 And four keys are deliberately **not** here, each because something else
-already says the same thing: a `role`, which the capability list says — empty
-for a bastion, written or omitted for an end-hop; a
+already says the same thing: a `role`, because
+`destinations_allowed` puts a listener in a bastion's position and the
+capability list says whether it also has a session; a
 separate on/off switch for forwarding, because an absent or empty
 `destinations_allowed` already means no; a per-listener audit path, because
 the sink is process-wide;
@@ -998,8 +1063,8 @@ already required is unchanged.
 | Component | Needs locally |
 |---|---|
 | User machine | `ssh`; the certificate and its private key in an agent or a `CertificateFile`. Nothing else when the end-hop is reached directly; a `ProxyJump` entry per bastion otherwise |
-| Bastion sidecar | its own host key; the trusted CA public key(s); a listen address; an explicitly empty `capabilities_allowed`; its `destinations_allowed` networks; outbound reachability and name resolution for them. **No per-user configuration and no content policy.** Optional — no topology requires one |
-| End-hop sidecar | its own host key; the trusted CA public key(s) — the same one every other hop trusts; a listen address; a capability list admitting the session capabilities, or no such key at all; guardrail/analyzer/mask policy; the OS account named by `run_as` — or an account per login name it will admit, where the key is omitted — and enough host privilege to become it. **Sufficient on its own** |
+| Bastion sidecar | its own host key; the trusted CA public key(s); a listen address; its `destinations_allowed` networks, which put it in this position, and an empty `capabilities_allowed` to drop the shell; outbound reachability and name resolution for them. **No per-user configuration and no content policy.** Optional — no topology requires one |
+| End-hop sidecar | its own host key; the trusted CA public key(s) — the same one every other hop trusts; a listen address; a capability list admitting the session capabilities, or no such key at all; guardrail/analyzer/mask policy; an account per login name it will admit, each with a login shell that exists and is executable, and enough host privilege to become them — which for more than one account means root. **Sufficient on its own** |
 | Existing `sshd` (mode 2) | unchanged, except its trusted-CA file must name the same CA, and forwarding must be enabled for the relevant users |
 
 Host keys and trusted-CA files need the file permissions `sshd` already
@@ -1011,7 +1076,7 @@ tampered CA file defeats deny-by-default entirely.
 | Actor | Responsibility |
 |---|---|
 | User, with a native `ssh` client | Connects with a plain `ssh` invocation. Already holds a valid short-lived certificate |
-| Bastion sidecar (mode 1) | Authenticates hop 1, admits or denies from the certificate's own grants, refuses any shell on itself, relays bytes blind, writes one thin audit event. Holds only a public key |
+| Bastion sidecar (mode 1) | Authenticates hop 1, admits or denies from the certificate's own grants, offers no shell of its own, relays bytes blind, writes one thin audit event. Holds only a public key |
 | Existing `sshd` (mode 2) | Unchanged. Owns its own auth. Never talks to the sidecar |
 | End-hop sidecar | Terminates hop 2, resolves the principal, spawns the session, runs guardrails, the analyzer, masking and audit against local policy |
 
@@ -1034,8 +1099,8 @@ that subsystem as opaque.
 address, so its host key and trusted-CA file carry the same weight as a real
 `sshd`'s. A bastion, where one is deployed, must reach every end-hop
 directly, and the firewall has to say so. An end-hop needs enough host
-privilege to become the account `run_as` names, or the one the login name
-resolves to. Every sidecar validating a certificate needs a synchronized
+privilege to become the account each login name resolves to, which is root
+wherever it serves more than one. Every sidecar validating a certificate needs a synchronized
 clock. The sidecar is now a real SSH server, with a host key and the
 operational obligations that come with one. And masking an interactive
 terminal adds a measurable delay to every echo.
@@ -1056,10 +1121,14 @@ would reopen the shell decision.
 
 - Certificate issuance, refresh and revocation. This starts at "a sidecar
   trusts a CA public key."
+- Recording session content, and replaying it. v1 records events and
+  statements only; see Audit granularity. The store, the retention policy and
+  the authorization to replay another person's terminal are each their own
+  decision.
 - Confining a file-transfer session to a directory. It needs its own short
   spec, and an end-hop that admits `sftp` is not safe to deploy without it.
   Choosing the OS account a session runs as was the other half of this
-  non-goal and is now decided here, as `run_as`.
+  non-goal and is now decided here: it is the login name, as in `sshd`.
 - CA rotation and distribution as an operator experience.
 - Which subsystems beyond file transfer deserve a real decoder rather than
   name-only admission. That is a product judgment, made one subsystem at a

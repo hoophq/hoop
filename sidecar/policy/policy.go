@@ -380,7 +380,15 @@ type Rule struct {
 	// Pattern for MatchPattern, an RE2 regular expression.
 	Pattern string `json:"pattern_regex,omitempty"`
 
-	// Operations for MatchOperation.
+	// Operations is the matcher for MatchOperation, and a SCOPE for every
+	// other rule type: a rule that names operations is evaluated only
+	// against statements carrying one of them.
+	//
+	// The scope is what makes one rule set usable on a lane whose
+	// statements carry different KINDS of text. An SSH lane is the case:
+	// exec_line's text is a command, env_set's is a variable name, and
+	// every sftp_*'s is a path, so a pattern written for one of them has to
+	// say which (ADR-0015).
 	Operations []inspect.Operation `json:"operations,omitempty"`
 
 	// Tables for MatchTable, compared lowercased. A bare name matches any
@@ -763,6 +771,28 @@ func (r Rule) messageOr(stmt inspect.Statement) string {
 }
 
 func (r Rule) matches(stmt inspect.Statement) (bool, error) {
+	// Operations NARROWS every rule type except the one it defines.
+	//
+	// On a SQL lane this is rarely written: a pattern rule there reads one
+	// kind of text. An SSH lane is the case that needs it, because one rule
+	// set sees three kinds — a command line for exec_line, a variable name
+	// for env_set, a path for every sftp_* — so a pattern written for one
+	// of them would otherwise be evaluated against all three. ADR-0015's
+	// worked rules are all scoped this way.
+	//
+	// It can only NARROW. A rule that does not set the field behaves
+	// exactly as before, and a rule that does can match fewer statements
+	// than it did, never more — which is why this is safe to apply to every
+	// existing rule type rather than to a new one.
+	//
+	// MatchOperation is excluded because there the field IS the matcher;
+	// narrowing it by itself would be a tautology.
+	if len(r.Operations) > 0 && r.Type != MatchOperation {
+		if !slices.Contains(r.Operations, stmt.Operation) {
+			return false, nil
+		}
+	}
+
 	// HTTP rule types are handled in http.go, gRPC rule types in grpc.go;
 	// ok=false means "not mine".
 	if matched, ok := r.matchesHTTP(stmt); ok {

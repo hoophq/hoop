@@ -1,0 +1,140 @@
+# Two more lanes, in one process, answering two questions the first end-hop
+# cannot.
+#
+#   multiuser   one listener serving SEVERAL accounts, and refusing a
+#               certificate principal that is not an account here
+#   exec-only   a listener that admits ONE capability, so a shell and a
+#               forward are both refused
+#
+# # Why this is a second process, running as root
+#
+# The first end-hop runs AS devuser, which is what lets it serve the sftp
+# subsystem — file transfer happens inside the sidecar process, so the
+# process must already BE the account (ADR-0015). The cost of that choice is
+# that it can serve exactly one account: dropping to a different uid needs
+# privilege, and devuser has none.
+#
+# Serving several accounts is the opposite trade. This process runs as root,
+# so it can spawn a session as any of them — and therefore CANNOT serve sftp
+# for any of them except root, because root serving devuser's files would
+# serve them as an account the session never became, for the one capability
+# where file ownership matters most. Neither lane below admits sftp, and that
+# is not an oversight.
+#
+# Pick per deployment:
+#
+#   run as the account   sftp works, one account per listener
+#   run as root          many accounts, no sftp
+#
+# The stack runs both so the difference is visible rather than described.
+
+listeners:
+  # ------------------------------------------------------------- multiuser
+  #
+  # The login name the client asked for is looked up in the OS user database
+  # per connection — after the certificate's principals have already vouched
+  # for it — and a name that resolves to no account REFUSES the session.
+  #
+  # Two checks, and they are different questions:
+  #
+  #   the certificate  may this person claim to be this name?
+  #   the OS           is this name an account on this host?
+  #
+  # A name has to pass both. There is no default account and no fallback to
+  # the user the sidecar happens to run as: either would hand a session an
+  # account nobody chose for it, and would make the audit trail name an
+  # account nobody picked.
+  - name: multiuser
+    protocol: ssh
+    listen: 0.0.0.0:2222
+
+    ssh:
+      host_key: /etc/hoop-inspect/keys/endhost_host_key
+      trusted_ca: /etc/hoop-inspect/keys/ca.pub
+
+      # No sftp: see the header. This process cannot serve it honestly for
+      # an account it is not.
+      capabilities_allowed: [shell, pty, exec, env]
+
+      destinations_allowed: []
+
+      identity:
+        subject: key_id
+        groups: principals
+
+  # ------------------------------------------------------------- exec-only
+  #
+  # One capability. A client may run a command and nothing else: no
+  # interactive shell, no terminal, no environment variables, no file
+  # transfer — and no forwarding, which is governed separately.
+  #
+  # This is the shape for a deployment that wants every action to be a
+  # statement a rule can read. A shell is the one capability with no
+  # boundary a guardrail can act on (ADR-0015 admits it, and writes no rules
+  # for it); a listener that refuses it has no unpoliced surface left.
+  - name: exec-only
+    protocol: ssh
+    listen: 0.0.0.0:2223
+
+    ssh:
+      host_key: /etc/hoop-inspect/keys/endhost_host_key
+      trusted_ca: /etc/hoop-inspect/keys/ca.pub
+
+      # Written out rather than omitted. Omitting the key would admit all
+      # five delivered capabilities, which is the opposite of this lane.
+      capabilities_allowed: [exec]
+
+      # Empty, and it would deny every forward if it were absent too. A
+      # certificate carrying permit-port-forwarding is still refused here,
+      # because the certificate says what the HOLDER may ask for and this
+      # list says what the LISTENER will carry.
+      destinations_allowed: []
+
+      identity:
+        subject: key_id
+        groups: principals
+
+  # --------------------------------------------------------- identity-ext
+  #
+  # The same certificate fields, mapped differently. A certificate has no
+  # field called "email" and no field called "groups", so `identity` is a
+  # MAPPING and not a read — and which field carries the human is the CA's
+  # decision, not this binary's.
+  #
+  # The other two lanes take the key id as the subject, which is the default
+  # and suits a CA that writes the human there. This lane reads two
+  # namespaced extensions instead, for a CA that would rather keep identity
+  # out of both the key id and the principals list:
+  #
+  #   key_id        stays free for whatever the CA already uses it for
+  #   principals    stay a list of LOGIN NAMES, which is all this endpoint
+  #                 checks them for
+  #   extensions    carry the identity, namespaced as OpenSSH requires
+  #
+  # An unknown extension is ignored rather than refused — that is the
+  # certificate format's own rule, and it is what makes this safe to issue
+  # to a fleet where some hosts read these names and some do not. A critical
+  # option behaves the opposite way; certs.sh probes both.
+  - name: identity-ext
+    protocol: ssh
+    listen: 0.0.0.0:2224
+
+    ssh:
+      host_key: /etc/hoop-inspect/keys/endhost_host_key
+      trusted_ca: /etc/hoop-inspect/keys/ca.pub
+
+      capabilities_allowed: [exec]
+      destinations_allowed: []
+
+      identity:
+        subject: extensions.login@hoop.dev
+        groups: extensions.groups@hoop.dev
+        attributes: [permit-pty]
+
+audit:
+  file: /tmp/audit.jsonl
+
+admin:
+  listen: 0.0.0.0:9090
+
+log_level: info

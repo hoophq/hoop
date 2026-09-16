@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"slices"
 	"sort"
 	"strings"
 
@@ -18,6 +19,7 @@ func init() {
 	RegisterBuilder(HTTPBuilder{})
 	RegisterBuilder(grpcBuilder{})
 	RegisterBuilder(spannerBuilder{})
+	RegisterBuilder(sshBuilder{})
 }
 
 // SQLBuilder renders a SQL statement for classification.
@@ -413,4 +415,98 @@ func (spannerBuilder) Build(stmt inspect.Statement, maxBytes int) (Content, bool
 		return SQLBuilder{Protocol_: inspect.Spanner}.Build(stmt, maxBytes)
 	}
 	return grpcBuilder{}.Build(stmt, maxBytes)
+}
+
+// OperationScoped is implemented by a Builder that answers for a FIXED set
+// of operations, known before any statement arrives.
+//
+// It exists so the config layer can refuse a trigger naming an operation the
+// builder will never build content for. Without it such a rule loads, the
+// trigger matches, the builder declines, and the statement is allowed with a
+// skipped finding — a control that costs money when it works and says
+// nothing when it does not.
+//
+// A builder that does not implement it declines on CONTENT instead — an
+// empty body, an empty statement — which is a per-statement fact no config
+// check can predict.
+type OperationScoped interface {
+	AnalyzableOperations() []inspect.Operation
+}
+
+// AnalyzableOperations reports the operations a protocol's builder answers
+// for, and whether it is scoped to a fixed set at all. A false second return
+// means every operation reaches the builder, which then decides per
+// statement.
+func AnalyzableOperations(p inspect.Protocol) ([]inspect.Operation, bool) {
+	b, ok := BuilderFor(p)
+	if !ok {
+		return nil, false
+	}
+	scoped, ok := b.(OperationScoped)
+	if !ok {
+		return nil, false
+	}
+	return scoped.AnalyzableOperations(), true
+}
+
+// sshBuilder renders an SSH statement for classification.
+//
+// exec_line is the operation worth sending, and the only one this builder
+// answers for. A command line is a whole instruction a model can reason
+// about — "is this exfiltration", "is this a destructive administrative
+// action" — which is what an ai_analysis rule is buying.
+//
+// The other eleven are deliberately skipped, and skipped LOUDLY in the sense
+// that matters: nothing is classified, so nothing is charged and no finding
+// is invented. A variable name (env_set) and a file path (sftp_*) are short,
+// structural strings with no room for intent; a model asked to rate
+// "/srv/data.csv" would return a guess at full price, once per path, and a
+// rule written against that verdict would be acting on noise. Both are
+// already better served by a pattern rule scoped with `operations`.
+//
+// A shell never reaches here at all: it produces no statements, because v1
+// reconstructs no keystrokes (ADR-0015).
+type sshBuilder struct{}
+
+// sshAnalyzable is the operation set this builder answers for.
+//
+// Build tests membership here rather than naming exec_line a second time, so
+// the list a config is validated against and the list the builder honours
+// are one list and cannot drift.
+var sshAnalyzable = []inspect.Operation{inspect.OpExecLine}
+
+func (sshBuilder) Protocol() inspect.Protocol { return inspect.SSH }
+
+func (sshBuilder) AnalyzableOperations() []inspect.Operation {
+	return slices.Clone(sshAnalyzable)
+}
+
+func (sshBuilder) Build(stmt inspect.Statement, maxBytes int) (Content, bool) {
+	if !slices.Contains(sshAnalyzable, stmt.Operation) {
+		return Content{}, false
+	}
+	cmd := strings.TrimSpace(stmt.Text)
+	if cmd == "" {
+		return Content{}, false
+	}
+
+	var sb strings.Builder
+	sb.WriteString("Protocol: ssh\nOperation: ")
+	sb.WriteString(string(stmt.Operation))
+	sb.WriteString("\n\nCommand line submitted over SSH:\n")
+	sb.WriteString(Truncate(cmd, maxBytes))
+
+	// The cache key is the command's SHAPE after whitespace normalization,
+	// and nothing more is stripped. A SQL key can drop literals because the
+	// classifier already read the statement's structure; a shell command
+	// has no such structure, and its arguments ARE the risk — `rm -rf /tmp`
+	// and `rm -rf /` differ only there.
+	h := sha256.New()
+	h.Write([]byte("ssh"))
+	h.Write([]byte{0})
+	h.Write([]byte(normalizeSpace(cmd)))
+	return Content{
+		Text:     sb.String(),
+		CacheKey: hex.EncodeToString(h.Sum(nil)[:16]),
+	}, true
 }
