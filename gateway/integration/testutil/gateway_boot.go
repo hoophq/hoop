@@ -68,6 +68,13 @@ type GatewayOptions struct {
 	// Database selects the state store backend; defaults to
 	// DBPostgresContainer.
 	Database DatabaseBackend
+	// AppMode selects which component the binary runs as, the way
+	// gateway/main.go picks it from the command. The zero value is
+	// appconfig.AppModeGateway. A suite exercising control-plane-only routes
+	// (the sidecar endpoints) sets appconfig.AppModeControlPlane, and must be
+	// its own test binary: appconfig.Load is one-shot, so a process gets one
+	// mode for its whole life.
+	AppMode appconfig.AppMode
 }
 
 // Gateway is a fully booted, in-process gateway under test. It owns every
@@ -159,7 +166,9 @@ func StartGateway(ctx context.Context, opts GatewayOptions) (gw *Gateway, err er
 		}
 	}
 
-	if err = appconfig.Load(appconfig.AppModeGateway); err != nil {
+	// The zero value resolves to AppModeGateway inside Load, so a suite that
+	// does not care keeps the mode it always had.
+	if err = appconfig.Load(opts.AppMode); err != nil {
 		return nil, fmt.Errorf("appconfig.Load: %w", err)
 	}
 

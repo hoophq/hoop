@@ -80,7 +80,8 @@ func (e ruleNotAuthorized) Error() string {
 //	@Produce		json
 //	@Param			hoop-sidecar-token	header		string							true	"The token returned when the sidecar was created"
 //	@Param			request				body		openapi.SidecarReviewRequest	true	"The request body resource"
-//	@Success		201						{object}	openapi.Review
+//	@Success		200						{object}	openapi.SidecarReviewResponse
+//	@Success		201						{object}	openapi.SidecarReviewResponse
 //	@Failure		400,401,412,413,422,500	{object}	openapi.HTTPError
 //	@Router			/sidecars/reviews [post]
 func PostReview(c *gin.Context) {
@@ -153,8 +154,37 @@ func PostReview(c *gin.Context) {
 		return
 	}
 
-	rev, err := createSidecarReview(sidecar, req.ListenerName, string(statement), rule, policy)
-	if err != nil {
+	// The exact bytes bind the approval to one statement. The sidecar's analyzer
+	// cache key strips literals, and a key of that shape would let an approval
+	// of `DELETE ... WHERE id = 1` release `id = 999`.
+	statementHash := models.HashStatement(statement)
+
+	rev, err := models.GetLiveSidecarReview(models.DB, sidecar.OrgID, sidecar.ID,
+		req.ListenerName, rule.Name, statementHash)
+	switch {
+	case err == nil:
+		answerExistingReview(c, sidecar, req.ListenerName, rev)
+		return
+	case !errors.Is(err, gorm.ErrRecordNotFound):
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed loading the sidecar review")
+		return
+	}
+
+	rev, err = createSidecarReview(sidecar, req.ListenerName, string(statement), statementHash, rule, policy)
+	switch {
+	case errors.Is(err, gorm.ErrDuplicatedKey):
+		// A racing request filed first. Two simultaneous first requests must
+		// produce one review and one Slack message, so answer from that one.
+		rev, err = models.GetLiveSidecarReview(models.DB, sidecar.OrgID, sidecar.ID,
+			req.ListenerName, rule.Name, statementHash)
+		if err != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err,
+				"failed loading the sidecar review that was filed concurrently")
+			return
+		}
+		answerExistingReview(c, sidecar, req.ListenerName, rev)
+		return
+	case err != nil:
 		// The error is logged and sent to Sentry by AbortWithErr; the caller
 		// gets none of it. A database message names constraints, tables and
 		// columns, and a token holder has no use for any of that.
@@ -186,7 +216,52 @@ func PostReview(c *gin.Context) {
 	// and visible to an approver either way.
 	go notifySlack(sidecar, rev, req.ListenerName, string(statement))
 
-	c.JSON(http.StatusCreated, toOpenApiSidecarReview(rev))
+	// Forward is false: the review was filed a moment ago and no human has
+	// seen it. The sidecar denies this statement and carries the review id.
+	c.JSON(http.StatusCreated, &openapi.SidecarReviewResponse{
+		Forward: false,
+		Review:  toOpenApiSidecarReview(rev),
+	})
+}
+
+// answerExistingReview answers a retry against the review already filed for its
+// statement. PENDING, REJECTED and REVOKED come back as they stand, so a
+// rejection keeps denying instead of being retried into a fresh review.
+// APPROVED is claimed here, and only the claim's winner may forward.
+func answerExistingReview(c *gin.Context, sidecar *models.Sidecar, listenerName string, rev *models.Review) {
+	forward := false
+	if rev.Status == models.ReviewStatusApproved {
+		claimed, status, err := models.ClaimApprovedSidecarReview(models.DB, sidecar.OrgID, rev.ID)
+		if err != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err,
+				"failed consuming the approved sidecar review")
+			return
+		}
+		// The status the row holds now, so a claim loser reports EXECUTED
+		// rather than the APPROVED it read a moment earlier. It is forward,
+		// not this, that says whether the statement may run.
+		rev.Status = status
+		forward = claimed
+
+		if claimed {
+			log.With("sid", rev.SessionID, "review-id", rev.ID, "sidecar", sidecar.Name,
+				"listener", listenerName).
+				Infof("consumed an approved sidecar review")
+
+			trackClient := analytics.New()
+			defer trackClient.Close()
+			trackClient.TrackEvent(analytics.EventConsumeSidecarReview, map[string]any{
+				"org-id":   sidecar.OrgID,
+				"sidecar":  sidecar.Name,
+				"listener": listenerName,
+			})
+		}
+	}
+
+	c.JSON(http.StatusOK, &openapi.SidecarReviewResponse{
+		Forward: forward,
+		Review:  toOpenApiSidecarReview(rev),
+	})
 }
 
 // notifySlack posts the review to the org's Slack channel, so a human learns it
@@ -367,15 +442,16 @@ func listenerNamesApprovalRule(sidecar *models.Sidecar, listenerName, ruleName s
 }
 
 // createSidecarReview writes the session and the review one statement needs to
-// wait for a human.
-func createSidecarReview(sidecar *models.Sidecar, listenerName, statement string, rule *models.AccessRequestRule, policy *services.ReviewPolicy) (*models.Review, error) {
+// wait for a human. It returns gorm.ErrDuplicatedKey when a racing request
+// filed for the same bytes first.
+func createSidecarReview(sidecar *models.Sidecar, listenerName, statement, statementHash string, rule *models.AccessRequestRule, policy *services.ReviewPolicy) (*models.Review, error) {
 	now := time.Now().UTC()
 	sessionID := uuid.NewString()
 
 	// A review is one per session (private.reviews is UNIQUE on org and
 	// session), and UpdateReview syncs the session's status when the review
 	// settles, so the session is not optional bookkeeping.
-	err := models.UpsertSession(models.Session{
+	sess := models.Session{
 		ID:             sessionID,
 		OrgID:          sidecar.OrgID,
 		BlobInput:      models.BlobInputType(statement),
@@ -387,14 +463,11 @@ func createSidecarReview(sidecar *models.Sidecar, listenerName, statement string
 		UserName:       sidecar.Name,
 		UserEmail:      reviewOwnerEmail,
 		CreatedAt:      now,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed creating session: %w", err)
 	}
 
-	rev := newSidecarReview(sidecar, listenerName, sessionID, rule, policy, now)
-	if err := models.CreateReview(rev, statement); err != nil {
-		return nil, fmt.Errorf("failed creating review: %w", err)
+	rev := newSidecarReview(sidecar, listenerName, sessionID, statementHash, rule, policy, now)
+	if err := models.CreateSidecarReview(models.DB, sess, rev, statement); err != nil {
+		return nil, err
 	}
 	return rev, nil
 }
@@ -403,7 +476,7 @@ func createSidecarReview(sidecar *models.Sidecar, listenerName, statement string
 // named rule describes. Nothing in the review path spells that out, so an
 // omission here is silent: without MinApprovals the review needs every group,
 // and without a group row a role cannot approve at all.
-func newSidecarReview(sidecar *models.Sidecar, listenerName, sessionID string, rule *models.AccessRequestRule, policy *services.ReviewPolicy, now time.Time) *models.Review {
+func newSidecarReview(sidecar *models.Sidecar, listenerName, sessionID, statementHash string, rule *models.AccessRequestRule, policy *services.ReviewPolicy, now time.Time) *models.Review {
 	return &models.Review{
 		ID:        uuid.NewString(),
 		OrgID:     sidecar.OrgID,
@@ -417,6 +490,10 @@ func newSidecarReview(sidecar *models.Sidecar, listenerName, sessionID string, r
 		// a real connection of the same name.
 		SidecarID:    sql.NullString{String: sidecar.ID, Valid: true},
 		ListenerName: sql.NullString{String: listenerName, Valid: listenerName != ""},
+
+		// What a retry of this statement matches on, and the reason the same
+		// bytes are never reviewed twice while this review is live.
+		StatementHash: sql.NullString{String: statementHash, Valid: statementHash != ""},
 
 		OwnerID:    sidecar.ID,
 		OwnerEmail: reviewOwnerEmail,

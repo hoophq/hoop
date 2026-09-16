@@ -280,6 +280,60 @@ jobs:
       - name: Gateway Smoke Test (pglite)
         run: make test-gateway-pglite
 
+  control-plane-test:
+    name: Control Plane Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # Control-plane suite: boots the gateway as a control plane and drives
+      # the sidecar endpoints, which the gateway mode refuses with 412. A
+      # separate job from gateway-smoke-test because appconfig.Load is
+      # one-shot, so a test binary holds one app mode for its whole life.
+      # It covers what only a database shows: the partial unique index that
+      # keeps a retried statement from filing a second review, and the
+      # conditional UPDATE that lets exactly one retry consume an approval.
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.work
+          # This is a go.work workspace with no root go.mod, so setup-go
+          # cannot find a manifest on its own and silently caches nothing.
+          cache-dependency-path: "**/go.sum"
+
+      # libhoop is a private module fetched from the proxy. GOPRIVATE keeps it
+      # off proxy.golang.org and sum.golang.org; the credential rewrite lets
+      # the direct fetch authenticate as the token.
+      - name: Authenticate private modules
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
+
+      # When this PR's branch is also open as a hoophq/libhoop PR, test
+      # against that branch instead of the pinned release. No match keeps
+      # the pin; see .github/actions/use-libhoop-pr.
+      - name: Use libhoop PR branch when one is open
+        uses: ./.github/actions/use-libhoop-pr
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+
+      # Boots a throwaway postgres:17.6 via testcontainers; ubuntu-latest
+      # runners have Docker pre-installed, so no services: block is needed.
+      - name: Control Plane Test
+        run: make test-controlplane
+
+      # The same suite on the embedded PGlite backend, in this job rather than
+      # its own: it reuses the checkout and the module cache, and runs
+      # entirely in-process. Migration 000118's partial unique index and the
+      # claim's UPDATE ... FROM have to be SQL the embedded backend accepts.
+      - name: Control Plane Test (pglite)
+        run: make test-controlplane-pglite
+
   standalone-test:
     name: Standalone Mode Test
     runs-on: ubuntu-latest
