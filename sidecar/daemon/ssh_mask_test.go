@@ -3,6 +3,7 @@ package daemon
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/gate"
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/session"
+	codecssh "github.com/hoophq/libhoop/v2/codec/ssh"
 )
 
 // sshTestMasker rewrites one literal into a replacement, so a test can
@@ -35,13 +37,24 @@ func (m sshTestMasker) MaskCell(_ string, value []byte) ([]byte, []string, int) 
 
 func sshTestMaskConn(t *testing.T, masker gate.Masker) (*sshConnState, *sshTestSink) {
 	t.Helper()
+	sink := &sshTestSink{}
+	return sshTestMaskConnSink(t, masker, sink, false), sink
+}
+
+// sshTestMaskConnSink builds the same connection over a caller-supplied sink
+// and the lane's fail-closed setting, so a test can make the trail fail and
+// say whether the lane is supposed to care.
+func sshTestMaskConnSink(
+	t *testing.T, masker gate.Masker, sink audit.Sink, failClosed bool,
+) *sshConnState {
+	t.Helper()
 	sess := session.New(inspect.SSH, session.Identity{Subject: "alice"})
 	sess.Connection = "prod-endpoint"
-	sink := &sshTestSink{}
 	g, err := gate.NewStatementGate(sess, gate.Config{
-		Protocol: inspect.SSH,
-		Audit:    sink,
-		Masker:   masker,
+		Protocol:         inspect.SSH,
+		Audit:            sink,
+		Masker:           masker,
+		FailOnAuditError: failClosed,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -50,8 +63,17 @@ func sshTestMaskConn(t *testing.T, masker gate.Masker) (*sshConnState, *sshTestS
 		gate:  g,
 		stmts: sshStatements{},
 		log:   slog.New(slog.NewTextHandler(io.Discard, nil)),
-	}, sink
+	}
 }
+
+// sshDeadSink is an audit trail that is down.
+type sshDeadSink struct{}
+
+func (sshDeadSink) Write(context.Context, audit.Event) error {
+	return errors.New("audit sink unreachable")
+}
+
+func (sshDeadSink) Close() error { return nil }
 
 // Masking is a rewrite in flight. The masked bytes go out, neither version is
 // kept, and the trail records only WHAT was rewritten.
@@ -165,5 +187,65 @@ func TestSSHUnmaskedLaneWiresNoRewriteHooks(t *testing.T) {
 	h = c.callbacks()
 	if h.StreamData == nil || h.SFTPData == nil {
 		t.Error("a masking lane wired no rewrite hook")
+	}
+}
+
+// A lane that fails closed must not forward content whose masking record was
+// refused.
+//
+// The bytes are masked, which is what makes this easy to wave through — and
+// what makes it wrong. The masked event is the only record that a rule
+// matched anything in this stream, so forwarding without it leaves a trail
+// that says the session saw nothing sensitive. The gRPC lane already refuses
+// on the same error; SSH logged it and forwarded.
+func TestSSHFailClosedRefusesWhenMaskingIsNotRecorded(t *testing.T) {
+	masker := sshTestMasker{
+		find: []byte("alice@example.com"), replace: []byte("*****************")}
+
+	for _, tc := range []struct {
+		name string
+		call func(*sshConnState) ([]byte, *codecssh.Refusal)
+	}{
+		{"terminal output", func(c *sshConnState) ([]byte, *codecssh.Refusal) {
+			return c.streamData(context.Background(), inspect.FromServer,
+				[]byte("user: alice@example.com\r\n"))
+		}},
+		{"file transfer", func(c *sshConnState) ([]byte, *codecssh.Refusal) {
+			return c.sftpData(context.Background(), "/srv/users.csv",
+				[]byte("id,alice@example.com\n"))
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := sshTestMaskConnSink(t, masker, sshDeadSink{}, true)
+
+			out, r := tc.call(c)
+			if r == nil {
+				t.Fatalf("%s was forwarded with its masking unrecorded: %q", tc.name, out)
+			}
+			if out != nil {
+				t.Errorf("bytes were returned alongside the refusal: %q", out)
+			}
+			if !strings.Contains(r.String(), "audit trail unavailable") {
+				t.Errorf("refusal = %q, want it to name the audit trail", r.String())
+			}
+		})
+	}
+}
+
+// The default stays fail-OPEN, and that is deliberate: a broken sink lets
+// traffic through unless the operator asked otherwise. Without this the fix
+// above would turn every sink hiccup into a dead session on every lane.
+func TestSSHFailOpenStillForwardsWhenMaskingIsNotRecorded(t *testing.T) {
+	c := sshTestMaskConnSink(t, sshTestMasker{
+		find: []byte("alice@example.com"), replace: []byte("*****************")},
+		sshDeadSink{}, false)
+
+	out, r := c.streamData(context.Background(), inspect.FromServer,
+		[]byte("user: alice@example.com\r\n"))
+	if r != nil {
+		t.Fatalf("a fail-open lane refused a stream over a sink failure: %v", r)
+	}
+	if bytes.Contains(out, []byte("alice@example.com")) {
+		t.Errorf("the address survived masking: %q", out)
 	}
 }

@@ -359,7 +359,8 @@ func (c *sshConnState) sftpData(ctx context.Context, path string, b []byte) ([]b
 	return c.mask(ctx, "file transfer", b)
 }
 
-// mask applies the lane's rules and ENFORCES length preservation.
+// mask applies the lane's rules, ENFORCES length preservation, and refuses
+// the stream when the masking record cannot be written.
 //
 // The config refuses every variable-length strategy at load, so a mismatch
 // here means the masker did something its configuration said it would not.
@@ -387,8 +388,20 @@ func (c *sshConnState) mask(ctx context.Context, what string, b []byte) ([]byte,
 			"masking could not be applied to this %s without changing its length; "+
 				"the stream was closed rather than corrupted", what)
 	}
+	// RecordMasked returns an error ONLY when the lane is configured to fail
+	// closed, so a non-nil error here is the operator's own instruction:
+	// no audit trail, no traffic. Forwarding anyway would leave the trail
+	// saying this session saw nothing sensitive, which is the opposite of
+	// what happened — these are the bytes a rule matched.
+	//
+	// No event is written about it. The sink that just refused the record is
+	// the sink a second record would go to.
 	if err := c.gate.RecordMasked(ctx, entities, count); err != nil {
-		c.log.Warn("ssh masking not recorded", "error", err)
+		c.log.Error("ssh masking not recorded; refusing the stream",
+			"stream", what, "error", err)
+		return nil, codecssh.Refuse(
+			"audit trail unavailable; this %s was refused rather than "+
+				"forwarded unrecorded", what)
 	}
 	return out, nil
 }
