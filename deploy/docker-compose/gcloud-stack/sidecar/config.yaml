@@ -45,6 +45,11 @@ listeners:
       # policed service must not be able to rename fields out from under
       # the policy, so a missing or malformed set fails before the
       # listener binds rather than degrading silently.
+      # Outside the emulator the pinned set can live in a bucket instead
+      # of a volume: gs://BUCKET/spanner.pb?generation=N, fetched at
+      # startup with Application Default Credentials
+      # (roles/storage.objectViewer). The generation pin is the same
+      # commitment this file makes with a path.
       descriptors: /descriptors/spanner.pb
       # Decode request messages into per-message statements. On a spanner
       # lane this is what feeds the SQL extraction: without payloads there

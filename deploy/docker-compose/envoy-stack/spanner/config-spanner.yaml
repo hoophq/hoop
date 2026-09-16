@@ -105,6 +105,9 @@ listeners:
       # and runtime lanes never touch reflection (ADR-0013): a missing
       # or malformed set fails before the listener binds rather than
       # degrading silently.
+      # Against real Spanner the set can live in a bucket instead:
+      # gs://BUCKET/spanner.pb[?generation=N], fetched at startup with
+      # Application Default Credentials (roles/storage.objectViewer).
       descriptors: /etc/hoop-inspect/descriptors/spanner.pb
       # Decode request messages into per-message statements. On a spanner
       # lane this feeds the SQL extraction: without payloads there is no

@@ -110,6 +110,12 @@ listeners:
       # Mandatory for payload work either way: without a set the lane
       # still enforces method-level rules but cannot capture, mask or
       # PII-scan a message (ADR-0013).
+      #
+      # A volume is the demo's stand-in for the bucket. In production an
+      # entry may be gs://BUCKET/OBJECT[?generation=N]: the sidecar
+      # fetches it at startup with Application Default Credentials
+      # (roles/storage.objectViewer), and mixes URLs with file paths in
+      # one merge. -validate performs the fetch.
       descriptors:
         - /etc/hoop-inspect/descriptors/ledger.pb
         - /etc/hoop-inspect/descriptors/reports.pb

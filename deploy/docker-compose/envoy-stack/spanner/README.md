@@ -63,6 +63,11 @@ the sidecar and `grpcurl` mount; `hoop-inspect` orders on
 network fetch. This is the exact invocation `../../gcloud-stack/run.sh`
 uses as its fallback after reflection answers Unimplemented.
 
+Against real Spanner the set can live in a bucket instead of a volume:
+`descriptors: gs://BUCKET/spanner.pb?generation=N`, fetched at startup
+with Application Default Credentials (`roles/storage.objectViewer`).
+`-validate` performs the fetch.
+
 ## The one-rule budget, on a fourth protocol
 
 The lane adds no rules. The free tier's one guardrail and one mask
