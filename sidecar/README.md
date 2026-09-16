@@ -297,12 +297,24 @@ prompt, no token, no listener or upstream address — the same line
 | `hoop-sidecar-license-expired` | the term ended under a config the free tier refuses | rule totals that exceeded it, term length, warnings sent |
 
 Every event also carries the version, the entry point (`hoop`,
-`hoop-inspect` or `embedded`), OS and architecture, and a sidecar id that is
-stable across restarts and config edits: `HOOP_SIDECAR_ID` if you set one,
-else the control plane token, else the hostname plus the config file path.
-Every source is hashed; nothing leaves the process in the clear. Set
-`HOOP_SIDECAR_ID` for a standalone sidecar on Kubernetes, where the hostname
-is the pod name and would otherwise change on every rollout.
+`hoop-inspect` or `embedded`), OS and architecture, the `runtime`
+(`linux`, `docker`, `kubernetes`, `macos`, `windows`), and two identities.
+`sidecar-id` says which install: `HOOP_SIDECAR_ID` if you set one, else the
+control plane token, else the hostname plus the config file path — stable
+across restarts and config edits. `host-id` says which machine: `HOOP_HOST_ID`
+if you set one, else the OS machine id plus the hostname. Every source is
+hashed; nothing leaves the process in the clear.
+
+What the process can learn on its own depends on where it runs, so set the
+variable the table names and nothing else:
+
+| Runs on | `sidecar-id` | `host-id` |
+|---|---|---|
+| Linux VM, bare metal, macOS | derived, nothing to set | derived from `/etc/machine-id` or `IOPlatformUUID` |
+| Docker | hostname is the container id: pass `--hostname` or set `HOOP_SIDECAR_ID` | container's own; set `HOOP_HOST_ID` to group by machine |
+| Kubernetes | hostname is the pod name: set `HOOP_SIDECAR_ID`, or connect a control plane | set `HOOP_HOST_ID` from `spec.nodeName` via the downward API |
+
+A control plane token makes `HOOP_SIDECAR_ID` unnecessary anywhere.
 
 Switch it off with `HOOP_SIDECAR_ANALYTICS=off`. A binary built without the
 write key (`go build` from this tree, the compose stack's image) sends

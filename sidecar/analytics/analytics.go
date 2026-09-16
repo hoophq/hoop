@@ -202,12 +202,19 @@ func New(opts Options) *Client {
 			"entrypoint":              opts.Entrypoint,
 			"os":                      runtime.GOOS,
 			"arch":                    runtime.GOARCH,
+			"runtime":                 Runtime(),
 			"sidecar-id":              opts.SidecarID,
 			"control-plane-connected": opts.ControlPlane,
 		},
 		http:  opts.HTTPClient,
 		queue: make(chan message, queueSize),
 		done:  make(chan struct{}),
+	}
+	// Resolved once per process: it costs a hostname lookup, a file read
+	// and on macOS one exec, none of which belongs on a per-event path.
+	// Omitted rather than empty when the host reports nothing.
+	if hid := HostID(); hid != "" {
+		c.common["host-id"] = hid
 	}
 	if c.http == nil {
 		c.http = &http.Client{Timeout: sendTimeout}

@@ -118,15 +118,19 @@ hook in the gate. Specifically:
   key, so a document pushed by a control plane cannot turn it back on.
   `Run` logs `usage analytics enabled` when, and only when, it will send.
 
-- **Identity is stable per install, and only a hash.** Segment bills by
-  distinct `anonymousId` per month, so a fresh id per process is a cost
-  multiplier, not a neutral choice. Highest precedence first: an operator's
-  `HOOP_SIDECAR_ID`; the control plane token; the hostname plus the config
-  file's absolute path; the hostname alone. Each is hashed before it leaves
-  the process. The file path, not its contents, is the standalone identity:
+- **Two identities, stable per install and per machine, and only hashes.**
+  Segment bills by distinct `anonymousId` per month, so a fresh id per
+  process is a cost multiplier, not a neutral choice. `sidecar-id`, highest
+  precedence first: an operator's `HOOP_SIDECAR_ID`; the control plane
+  token; the hostname plus the config file's absolute path; the hostname
+  alone. The file path, not its contents, is the standalone identity:
   renaming a listener, adding one or editing rules keeps the profile, while
-  two processes on one host with two files are two installs. A random id is
-  the last resort, for a host with no hostname.
+  two processes on one host with two files are two installs. `host-id`
+  answers "how many sidecars on this machine": `HOOP_HOST_ID`; else the OS
+  machine id (`/etc/machine-id`, `IOPlatformUUID`) folded with the hostname,
+  because cloned images that never regenerated their machine-id are common;
+  else the hostname. Every source is hashed before it leaves the process. A
+  random id is the last resort, for a host with no hostname.
 
 - **The audit chain is untouched.** Same events, same sinks, same
   `fail_on_audit_error` semantics, same `/api/*` query surface. `Metrics`
@@ -164,13 +168,19 @@ Every event carries the same common block, added by the client:
   "entrypoint": "hoop",
   "os": "linux",
   "arch": "amd64",
+  "runtime": "kubernetes",
   "sidecar-id": "9f2c…",
+  "host-id": "4b81…",
   "control-plane-connected": true
 }
 ```
 
 `entrypoint` is `hoop` (`hoop start sidecar`), `hoop-inspect` (the
-standalone binary) or `embedded` (a caller of `daemon.Run`). The examples
+standalone binary) or `embedded` (a caller of `daemon.Run`). `runtime` is
+`linux` (a VM or bare metal), `docker`, `kubernetes`, `macos` or `windows`,
+detected from the environment; it says how far the two identities can be
+trusted. `sidecar-id` names the install, `host-id` the machine; both are
+hashes and `host-id` is omitted when the host reports nothing. The examples
 below show only the event's own properties.
 
 ## Events
@@ -343,13 +353,21 @@ one, changing rules or ports — keeps the profile, and two processes on one
 host reading two files are two. First-run hashes the hostname alone. A
 random id is the last resort, for a host that reports no hostname.
 
-The caveat is Kubernetes, where the hostname is the pod name and changes on
-every rollout (`sidecar-7d9f-abc12` → `sidecar-7d9f-xyz89`). A standalone
-sidecar there mints a new id per deploy — not per container restart, which
-keeps the pod — unless the operator sets `HOOP_SIDECAR_ID`, which outranks
-every derived source and is hashed like them. Connecting to a control plane
-is the fix that needs no knob at all: the token is the one identity a
-sidecar has that survives everything.
+The caveat is containers, and it applies to both identities. In Docker the
+hostname is the container id and in Kubernetes it is the pod name, changing
+on every rollout (`sidecar-7d9f-abc12` → `sidecar-7d9f-xyz89`); the
+machine-id a container reads is its own. So a standalone sidecar there mints
+a new `sidecar-id` per deploy, and every pod reports as its own `host-id`,
+unless the operator sets `HOOP_SIDECAR_ID` and `HOOP_HOST_ID`. Both outrank
+every derived source and are hashed like them; on Kubernetes the downward
+API supplies the node name in two lines, and the pod guide in
+`deploy/docker-compose/envoy-stack/sidecar-binary.md` shows them. `runtime`
+is on every event so a dashboard knows which reading applies: on `linux` and
+`macos` an equal `host-id` is the same OS install, on `docker` and
+`kubernetes` it is only as good as what the operator injected. Connecting to
+a control plane fixes `sidecar-id` with no knob at all — the token is the
+one identity a sidecar has that survives everything — but says nothing
+about the machine.
 
 Not covered: attribution to a customer. Option 2 — the plane emitting on
 the handshake with the org id and the org's analytics mode — remains the
