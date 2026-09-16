@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"sync"
@@ -14,37 +15,41 @@ import (
 
 	"github.com/hoophq/hoop/sidecar/audit"
 	"github.com/hoophq/hoop/sidecar/inspect"
+	"github.com/hoophq/hoop/sidecar/lexer"
 	"github.com/hoophq/hoop/sidecar/policy"
 	codecgrpc "github.com/hoophq/libhoop/v2/codec/grpc"
 )
 
 // The method table itself, without a server: which methods yield SQL, both
-// JSON spellings for the CreateDatabase fields, and the fail-CLOSED
-// contract: an unknown method or service is not sqlBearing (generic
-// statement territory), while a SQL-bearing method whose rendering does
-// not parse stays sqlBearing with no SQL — the caller must turn that into
-// OpUnknown, never the generic OpCall statement, or truncating the capture
-// becomes a policy bypass.
+// JSON spellings for the CreateDatabase fields, the database each request
+// names, and the fail-CLOSED contract: an unknown method or service is not
+// sqlBearing (generic statement territory), while a SQL-bearing method
+// whose rendering does not parse stays sqlBearing with no SQL — the caller
+// must turn that into OpUnknown, never the generic OpCall statement, or
+// truncating the capture becomes a policy bypass.
 func TestSpannerSQLStatements(t *testing.T) {
+	const db = "projects/p/instances/i/databases/d"
 	cases := []struct {
 		name       string
 		service    string
 		method     string
 		rendered   string
 		want       []string
+		database   string
+		declared   string
 		sqlBearing bool
 	}{
 		{
 			name:    "ExecuteSql",
 			service: "google.spanner.v1.Spanner", method: "ExecuteSql",
-			rendered: `{"sql":"SELECT 1"}`,
-			want:     []string{"SELECT 1"}, sqlBearing: true,
+			rendered: `{"session":"` + db + `/sessions/abc","sql":"SELECT 1"}`,
+			want:     []string{"SELECT 1"}, database: db, sqlBearing: true,
 		},
 		{
 			name:    "ExecuteStreamingSql",
 			service: "google.spanner.v1.Spanner", method: "ExecuteStreamingSql",
 			rendered: `{"session":"s","sql":"SELECT id FROM t"}`,
-			want:     []string{"SELECT id FROM t"}, sqlBearing: true,
+			want:     []string{"SELECT id FROM t"}, sqlBearing: true, // malformed session: no database
 		},
 		{
 			name:    "PartitionQuery",
@@ -55,26 +60,32 @@ func TestSpannerSQLStatements(t *testing.T) {
 		{
 			name:    "ExecuteBatchDml",
 			service: "google.spanner.v1.Spanner", method: "ExecuteBatchDml",
-			rendered: `{"statements":[{"sql":"UPDATE t SET a = 1"},{"sql":"DELETE FROM t"}]}`,
-			want:     []string{"UPDATE t SET a = 1", "DELETE FROM t"}, sqlBearing: true,
+			rendered: `{"session":"` + db + `/sessions/x","statements":[{"sql":"UPDATE t SET a = 1"},{"sql":"DELETE FROM t"}]}`,
+			want:     []string{"UPDATE t SET a = 1", "DELETE FROM t"}, database: db, sqlBearing: true,
 		},
 		{
 			name:    "UpdateDatabaseDdl",
 			service: "google.spanner.admin.database.v1.DatabaseAdmin", method: "UpdateDatabaseDdl",
-			rendered: `{"statements":["CREATE TABLE t (id INT64) PRIMARY KEY (id)","DROP TABLE old"]}`,
-			want:     []string{"CREATE TABLE t (id INT64) PRIMARY KEY (id)", "DROP TABLE old"}, sqlBearing: true,
+			rendered: `{"database":"` + db + `","statements":["CREATE TABLE t (id INT64) PRIMARY KEY (id)","DROP TABLE old"]}`,
+			want:     []string{"CREATE TABLE t (id INT64) PRIMARY KEY (id)", "DROP TABLE old"}, database: db, sqlBearing: true,
 		},
 		{
-			name:    "CreateDatabase proto names",
+			name:    "CreateDatabase proto names, PostgreSQL declared",
 			service: "google.spanner.admin.database.v1.DatabaseAdmin", method: "CreateDatabase",
-			rendered: `{"create_statement":"CREATE DATABASE db","extra_statements":["CREATE TABLE t (id INT64) PRIMARY KEY (id)"]}`,
-			want:     []string{"CREATE DATABASE db", "CREATE TABLE t (id INT64) PRIMARY KEY (id)"}, sqlBearing: true,
+			rendered: `{"parent":"projects/p/instances/i","create_statement":"CREATE DATABASE db","extra_statements":["CREATE TABLE t (id bigint PRIMARY KEY)"],"database_dialect":"POSTGRESQL"}`,
+			want:     []string{"CREATE DATABASE db", "CREATE TABLE t (id bigint PRIMARY KEY)"}, declared: SpannerDialectPostgreSQL, sqlBearing: true,
 		},
 		{
-			name:    "CreateDatabase lowerCamel",
+			name:    "CreateDatabase lowerCamel, dialect absent is GoogleSQL",
 			service: "google.spanner.admin.database.v1.DatabaseAdmin", method: "CreateDatabase",
 			rendered: `{"createStatement":"CREATE DATABASE db","extraStatements":["DROP TABLE t"]}`,
-			want:     []string{"CREATE DATABASE db", "DROP TABLE t"}, sqlBearing: true,
+			want:     []string{"CREATE DATABASE db", "DROP TABLE t"}, declared: SpannerDialectGoogleSQL, sqlBearing: true,
+		},
+		{
+			name:    "CreateDatabase lowerCamel dialect",
+			service: "google.spanner.admin.database.v1.DatabaseAdmin", method: "CreateDatabase",
+			rendered: `{"createStatement":"CREATE DATABASE db","databaseDialect":"POSTGRESQL"}`,
+			want:     []string{"CREATE DATABASE db"}, declared: SpannerDialectPostgreSQL, sqlBearing: true,
 		},
 		{
 			name:    "unknown method",
@@ -106,15 +117,117 @@ func TestSpannerSQLStatements(t *testing.T) {
 		if sqlBearing != tc.sqlBearing {
 			t.Errorf("%s: sqlBearing = %v, want %v", tc.name, sqlBearing, tc.sqlBearing)
 		}
-		if len(got) != len(tc.want) {
-			t.Errorf("%s: got %q, want %q", tc.name, got, tc.want)
+		if got.database != tc.database {
+			t.Errorf("%s: database = %q, want %q", tc.name, got.database, tc.database)
+		}
+		if got.declared != tc.declared {
+			t.Errorf("%s: declared dialect = %q, want %q", tc.name, got.declared, tc.declared)
+		}
+		if len(got.sqls) != len(tc.want) {
+			t.Errorf("%s: got %q, want %q", tc.name, got.sqls, tc.want)
 			continue
 		}
-		for i := range got {
-			if got[i] != tc.want[i] {
-				t.Errorf("%s: statement %d = %q, want %q", tc.name, i, got[i], tc.want[i])
+		for i := range got.sqls {
+			if got.sqls[i] != tc.want[i] {
+				t.Errorf("%s: statement %d = %q, want %q", tc.name, i, got.sqls[i], tc.want[i])
 			}
 		}
+	}
+}
+
+// The dialect decides what a statement MEANS, and the failure this exists
+// to prevent is silent: under the GoogleSQL lexer, `"Songs"` is a string
+// literal and a table rule fencing songs never fires on a PostgreSQL-dialect
+// database. The config resolves per database, CreateDatabase's own
+// declaration wins, and per_database refuses to guess.
+func TestSpannerDialectResolution(t *testing.T) {
+	const pg = "projects/p/instances/i/databases/ledger-pg"
+	const gsql = "projects/p/instances/i/databases/reports"
+	const other = "projects/p/instances/i/databases/unlisted"
+
+	var absent *SpannerConfig
+	if name, _, ok := absent.dialectFor(pg, ""); !ok || name != SpannerDialectGoogleSQL {
+		t.Fatalf("absent block: %q %v, want googlesql", name, ok)
+	}
+
+	cfg := &SpannerConfig{
+		Dialect:   SpannerDialectPostgreSQL,
+		Databases: map[string]string{gsql: SpannerDialectGoogleSQL},
+	}
+	if name, _, _ := cfg.dialectFor(other, ""); name != SpannerDialectPostgreSQL {
+		t.Errorf("lane default: %q, want postgresql", name)
+	}
+	if name, _, _ := cfg.dialectFor(gsql, ""); name != SpannerDialectGoogleSQL {
+		t.Errorf("mapped database: %q, want googlesql", name)
+	}
+	if name, _, _ := cfg.dialectFor(gsql, SpannerDialectPostgreSQL); name != SpannerDialectPostgreSQL {
+		t.Errorf("CreateDatabase declaration must win: %q", name)
+	}
+
+	strict := &SpannerConfig{
+		Dialect:   SpannerDialectPerDatabase,
+		Databases: map[string]string{pg: SpannerDialectPostgreSQL},
+	}
+	if _, _, ok := strict.dialectFor(other, ""); ok {
+		t.Error("per_database guessed a dialect for an unlisted database")
+	}
+	if _, _, ok := strict.dialectFor("", ""); ok {
+		t.Error("per_database guessed a dialect for a request naming no database")
+	}
+	if name, _, ok := strict.dialectFor(pg, ""); !ok || name != SpannerDialectPostgreSQL {
+		t.Errorf("per_database listed: %q %v", name, ok)
+	}
+
+	// The observable consequence: the same bytes classify differently.
+	req := httptest.NewRequest(http.MethodPost, "/google.spanner.v1.Spanner/ExecuteSql", nil)
+	stmts := newLaneStatements(req, spannerDataService, "ExecuteSql", nil, inspect.Spanner, cfg)
+	const sql = `DELETE FROM "Songs" WHERE id = $1`
+	asPG := stmts.spannerSQL(sql, "{}", false, 1, 1, pg, SpannerDialectPostgreSQL, lexer.Postgres)
+	if asPG.Operation != inspect.OpDelete || len(asPG.Tables) != 1 || asPG.Tables[0] != "songs" {
+		t.Errorf("postgresql read: op = %q, tables = %v, want delete on songs", asPG.Operation, asPG.Tables)
+	}
+	if asPG.Metadata[spannerDialectMetadata] != SpannerDialectPostgreSQL || asPG.Metadata[spannerDatabaseMetadata] != pg {
+		t.Errorf("metadata = %v, want dialect and database recorded", asPG.Metadata)
+	}
+	asGSQL := stmts.spannerSQL(sql, "{}", false, 1, 1, gsql, SpannerDialectGoogleSQL, lexer.GoogleSQL)
+	if len(asGSQL.Tables) == 1 && asGSQL.Tables[0] == "songs" {
+		t.Error(`the GoogleSQL lexer read "Songs" as a table; the dialect switch is not observable`)
+	}
+}
+
+func TestSpannerConfigValidation(t *testing.T) {
+	for name, tc := range map[string]struct {
+		cfg  SpannerConfig
+		want string
+	}{
+		"unknown dialect":       {SpannerConfig{Dialect: "zetasql"}, `unknown spanner.dialect "zetasql"`},
+		"per_database, no map":  {SpannerConfig{Dialect: SpannerDialectPerDatabase}, "spanner.databases is empty"},
+		"session path as key":   {SpannerConfig{Databases: map[string]string{"projects/p/instances/i/databases/d/sessions/s": "postgresql"}}, "not a database resource name"},
+		"short name as key":     {SpannerConfig{Databases: map[string]string{"d": "postgresql"}}, "not a database resource name"},
+		"bad value":             {SpannerConfig{Databases: map[string]string{"projects/p/instances/i/databases/d": "pg"}}, `= "pg"; want googlesql or postgresql`},
+		"per_database as value": {SpannerConfig{Databases: map[string]string{"projects/p/instances/i/databases/d": "per_database"}}, "want googlesql or postgresql"},
+	} {
+		problems := tc.cfg.validate("sp")
+		if len(problems) == 0 || !strings.Contains(strings.Join(problems, "\n"), tc.want) {
+			t.Errorf("%s: problems = %q, want one containing %q", name, problems, tc.want)
+		}
+	}
+	good := SpannerConfig{Dialect: SpannerDialectPerDatabase, Databases: map[string]string{
+		"projects/p/instances/i/databases/a": "googlesql",
+		"projects/p/instances/i/databases/b": "postgresql",
+	}}
+	if problems := good.validate("sp"); len(problems) != 0 {
+		t.Errorf("valid config refused: %q", problems)
+	}
+
+	// The block is spanner-only, the same rule http and grpc blocks follow.
+	cfg := &Config{Listeners: []ListenerConfig{{
+		Name: "rpc", Protocol: "grpc", Listen: "127.0.0.1:0", Upstream: "h:1",
+		Spanner: &SpannerConfig{Dialect: SpannerDialectPostgreSQL},
+	}}}
+	err := cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), `a "spanner" block is only valid on a spanner listener`) {
+		t.Errorf("spanner block on a grpc lane: %v", err)
 	}
 }
 

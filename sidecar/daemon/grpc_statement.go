@@ -43,22 +43,27 @@ type laneStatements struct {
 	authority string
 
 	// protocol is the lane's statement protocol: inspect.GRPC, or
-	// inspect.Spanner when the lane extracts GoogleSQL from Spanner RPCs.
+	// inspect.Spanner when the lane extracts SQL from Spanner RPCs.
 	// Both ride the same transport, so one builder serves both and the
 	// protocol is a fact it carries rather than a second type.
 	protocol inspect.Protocol
+
+	// spanner is the lane's dialect configuration; nil is GoogleSQL for
+	// every database. Read only when protocol is inspect.Spanner.
+	spanner *SpannerConfig
 
 	metadataAllow []string // lower-cased header allowlist
 	baseMeta      map[string]string
 }
 
-func newLaneStatements(r *http.Request, service, methodName string, allow []string, proto inspect.Protocol) *laneStatements {
+func newLaneStatements(r *http.Request, service, methodName string, allow []string, proto inspect.Protocol, spanner *SpannerConfig) *laneStatements {
 	s := &laneStatements{
 		path:          r.URL.Path,
 		service:       service,
 		method:        methodName,
 		authority:     r.Host,
 		protocol:      proto,
+		spanner:       spanner,
 		metadataAllow: allow,
 	}
 

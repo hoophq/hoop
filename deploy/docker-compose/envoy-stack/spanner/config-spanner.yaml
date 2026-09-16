@@ -120,6 +120,24 @@ listeners:
       # Flipped on, the same call is refused before the upstream is
       # dialed, FAILED_PRECONDITION naming the path.
       # strict: true
+    # ---- dialects: one instance, two grammars ---------------------------
+    # A Spanner database is created as GoogleSQL or as the PostgreSQL
+    # interface, and the data plane never says which: ExecuteSql carries a
+    # session and a string. Read PostgreSQL with the GoogleSQL lexer and
+    # `"songs"` is a string literal, not a table, so a table rule fencing
+    # songs never fires. The dialect is therefore config, keyed on the
+    # database resource name every SQL-bearing request carries, never
+    # inferred from the text a client controls. ./demo-spanner.sh creates
+    # demodb-pg with databaseDialect POSTGRESQL and shows the same quoted
+    # query recorded with tables=[songs] there and not on demodb.
+    #
+    # dialect is the lane default (googlesql, also what an absent block
+    # means); databases overrides per database. `dialect: per_database`
+    # is the fail-closed shape: a database not listed reads as unknown.
+    spanner:
+      dialect: googlesql
+      databases:
+        projects/demo/instances/demo-instance/databases/demodb-pg: postgresql
     # ---- over the limit: the lane's own guardrail ---------------------
     # Allowed as shipped; the process's one rule is spent on no-cpf-in-query
     # above. ./demo-spanner.sh sends `DELETE FROM songs` and prints the

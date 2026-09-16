@@ -121,7 +121,8 @@ ok "refused by no-cpf-in-query before the emulator saw the frame"
 
 # ------------------------------------------------- the rule not afforded
 h "ALLOWED / the rule this build cannot afford"
-note "DELETE FROM songs reaches the emulator as this file ships."
+note "DELETE FROM songs WHERE true reaches the emulator as this file ships."
+note "(WHERE true, because the emulator refuses a DELETE with no WHERE.)"
 note "no-destructive-googlesql, the operation rule that would refuse it by"
 note "verb (lexer-derived: delete, drop, unknown), sits commented out in"
 note "spanner/config-spanner.yaml, over the one-guardrail limit"
@@ -132,7 +133,7 @@ note "rule and free the budget (comment out no-cpf-in-query, or set"
 note "HOOP_LICENSE) and this beat flips to PermissionDenied."
 note ""
 out=$($GRPCURL -insecure -H 'x-hoop-user: alice' \
-    -d "{\"session\":\"$SESSION\",\"transaction\":{\"begin\":{\"readWrite\":{}}},\"sql\":\"DELETE FROM songs\"}" \
+    -d "{\"session\":\"$SESSION\",\"transaction\":{\"begin\":{\"readWrite\":{}}},\"sql\":\"DELETE FROM songs WHERE true\"}" \
     envoy:8445 google.spanner.v1.Spanner/ExecuteSql 2>&1)
 rc=$?
 printf '%s\n' "$out" | sed 's/^/  /' | head -6
@@ -163,6 +164,69 @@ out=$($GRPCURL -plaintext -H 'x-hoop-user: mallory' \
 [[ $? -eq 0 ]] || { printf '%s\n' "$out" | sed 's/^/  /'; fail "the direct h2c call should have succeeded"; }
 printf '%s\n' "$out" | sed 's/^/  /'
 ok "mallory's direct call worked; nothing verified the header"
+
+# --------------------------------------------------------------- dialects
+h "DIALECTS / the same quoted query on a GoogleSQL and a PostgreSQL database"
+note "A Spanner database is created as GoogleSQL or as the PostgreSQL"
+note "interface, and ExecuteSql never says which. config-spanner.yaml maps"
+note "demodb-pg to postgresql and leaves demodb on the lane default. The"
+note "query below quotes its table: in PostgreSQL \"songs\" is an identifier,"
+note "in GoogleSQL it is a string literal. The lane must record tables=[songs]"
+note "on demodb-pg and NOT on demodb, and say which lexer it used."
+note ""
+PGDB="projects/demo/instances/demo-instance/databases/demodb-pg"
+code=$($CURL -s -o /dev/null -w '%{http_code}' --max-time 20 \
+    -X POST http://spanner:9020/v1/projects/demo/instances/demo-instance/databases \
+    -H 'Content-Type: application/json' \
+    -d '{"createStatement":"CREATE DATABASE \"demodb-pg\"","databaseDialect":"POSTGRESQL","extraStatements":["CREATE TABLE songs (id bigint PRIMARY KEY, title varchar)"]}')
+[[ "$code" == "200" || "$code" == "409" ]] || fail "PostgreSQL-dialect database create answered HTTP $code"
+ok "database demodb-pg, dialect POSTGRESQL (HTTP $code)"
+
+out=$($GRPCURL -insecure -H 'x-hoop-user: alice' -d "{\"database\":\"$PGDB\"}" \
+    envoy:8445 google.spanner.v1.Spanner/CreateSession 2>&1)
+PGSESSION=$(grep -o "\"$PGDB/sessions/[^\"]*\"" <<<"$out" | head -1 | tr -d '"')
+[[ -n "$PGSESSION" ]] || { printf '%s\n' "$out" | sed 's/^/  /'; fail "CreateSession on demodb-pg returned no session name"; }
+ok "session ${PGSESSION##*/} on demodb-pg"
+
+MARK="dialect-$RANDOM$RANDOM"
+QUERY="SELECT id, title FROM \\\"songs\\\" WHERE title = '$MARK'"
+note ""
+note "  on demodb-pg (postgresql):"
+out=$($GRPCURL -insecure -H 'x-hoop-user: alice' \
+    -d "{\"session\":\"$PGSESSION\",\"sql\":\"$QUERY\"}" \
+    envoy:8445 google.spanner.v1.Spanner/ExecuteSql 2>&1)
+[[ $? -eq 0 ]] || { printf '%s\n' "$out" | sed 's/^/  /'; fail "the quoted query should be valid PostgreSQL and succeed"; }
+ok "the emulator ran it: \"songs\" is an identifier there"
+note ""
+note "  on demodb (googlesql; the emulator refuses it, the lane still records it):"
+out=$($GRPCURL -insecure -H 'x-hoop-user: alice' \
+    -d "{\"session\":\"$SESSION\",\"sql\":\"$QUERY\"}" \
+    envoy:8445 google.spanner.v1.Spanner/ExecuteSql 2>&1)
+printf '%s\n' "$out" | sed 's/^/  /' | head -3
+grep -q "PermissionDenied" <<<"$out" && fail "the lane refused the query; no live rule should match it"
+
+sleep 1
+events=$($CURL -s --max-time 10 "http://hoop-inspect:19000/api/events?protocol=spanner&q=$MARK&limit=20")
+# One line per statement event: <database> <dialect> <tables>, read from the
+# event's metadata and tables fields.
+read_events() {
+    python3 -c '
+import json, sys
+for e in json.load(sys.stdin).get("events", []):
+    if e.get("kind") != "statement": continue
+    m = e.get("metadata", {})
+    print(m.get("spanner.database", "-"), m.get("spanner.dialect", "-"), ",".join(e.get("tables", [])) or "-")
+' <<<"$events"
+}
+rows=$(read_events)
+printf '%s\n' "$rows" | sed 's/^/  /'
+pg_row=$(grep "^$PGDB " <<<"$rows" | head -1)
+gsql_row=$(grep "^$DB " <<<"$rows" | head -1)
+[[ -n "$pg_row" && -n "$gsql_row" ]] || fail "/api/events lacks a statement for each database"
+[[ "$pg_row" == "$PGDB postgresql songs" ]] || fail "demodb-pg: want 'postgresql songs', got '${pg_row#"$PGDB" }'"
+[[ "$gsql_row" == "$DB googlesql -" ]] || fail "demodb: want 'googlesql -' (a string, not a table), got '${gsql_row#"$DB" }'"
+ok "demodb-pg read as postgresql with tables=[songs]; demodb read as googlesql with none"
+ok "a table rule fencing songs fires on the PostgreSQL database and cannot be dodged by quoting"
 
 # ------------------------------------------------------------------- audit
 h "AUDIT / what hoop-inspect recorded"

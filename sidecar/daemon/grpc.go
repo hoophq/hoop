@@ -41,11 +41,17 @@ type GRPCCodecConfig struct {
 	// own artifact and no central re-bundle pipeline is required.
 	//
 	// An entry is a file path, or a URL a linked fetcher resolves at
-	// startup and on reload: gs://BUCKET/OBJECT[?generation=N] with the
-	// descriptors/gcs module. A bucket carries an artifact a ConfigMap
-	// cannot (1 MiB cap) and lets each team publish without a redeploy of
-	// the sidecar's volume. A scheme this binary does not link is refused
-	// at validation.
+	// startup: gs://BUCKET/OBJECT[?generation=N] with the descriptors/gcs
+	// module. A bucket carries an artifact a ConfigMap cannot (1 MiB cap)
+	// and lets each team publish without a redeploy of the sidecar's
+	// volume. A scheme this binary does not link is refused at validation.
+	//
+	// Resolved ONCE, when the endpoint is built. The schema is bound into
+	// the server the way the lane's callbacks are (ADR-0013), so a new
+	// entry list is restart-bound drift (this block is in the reload
+	// baseline) and a new version of an unpinned object is applied by a
+	// restart, exactly like a new file at the same path. Pin
+	// ?generation=N where two restarts must decode against one schema.
 	//
 	// Required for any payload work: schema-less protobuf walking loses
 	// values as a function of their bytes, so no capture, masking or PII
@@ -323,7 +329,7 @@ func buildGRPCServer(
 
 		state := &grpcRPCState{
 			gate:  g,
-			stmts: newLaneStatements(info.Request, info.Service, info.Method, allowedMetadata, proto),
+			stmts: newLaneStatements(info.Request, info.Service, info.Method, allowedMetadata, proto, lc.Spanner),
 			log:   laneLog,
 		}
 		handler := state.callbacks()
@@ -432,30 +438,46 @@ func (r *grpcRPCState) requestMessage(
 	// carrying no SQL, and lanes other than spanner, keep the generic
 	// per-message statement below.
 	if r.stmts.protocol == inspect.Spanner {
-		sqls, sqlBearing := spannerSQLStatements(r.stmts.service, r.stmts.method, rendered)
-		for i, sql := range sqls {
-			d := r.gate.EvaluateStatement(ctx,
-				r.stmts.spannerSQL(sql, rendered, truncated, index, i+1))
-			r.logDecisionError("request message", d)
-			if !d.Allowed {
-				return grpcDeniedStatus(d.Message)
+		req, sqlBearing := spannerSQLStatements(r.stmts.service, r.stmts.method, rendered)
+		if sqlBearing && len(req.sqls) > 0 {
+			// The dialect is decided once per message, from the database
+			// the request names and the lane's config — never from the
+			// SQL text, which the client controls. Under per_database an
+			// unlisted database is the same fail-closed verdict as an
+			// unreadable rendering: a rule naming `unknown` refuses it.
+			dialect, d, ok := r.stmts.spanner.dialectFor(req.database, req.declared)
+			if !ok {
+				return r.evaluateSpannerUnreadable(ctx, rendered, truncated, index,
+					fmt.Sprintf("spanner.dialect is per_database and database %q is not listed", req.database))
 			}
-		}
-		if sqlBearing {
-			if len(sqls) > 0 {
-				return nil
-			}
-			d := r.gate.EvaluateStatement(ctx,
-				r.stmts.spannerUnreadable(rendered, truncated, index))
-			r.logDecisionError("request message", d)
-			if !d.Allowed {
-				return grpcDeniedStatus(d.Message)
+			for i, sql := range req.sqls {
+				dec := r.gate.EvaluateStatement(ctx,
+					r.stmts.spannerSQL(sql, rendered, truncated, index, i+1, req.database, dialect, d))
+				r.logDecisionError("request message", dec)
+				if !dec.Allowed {
+					return grpcDeniedStatus(dec.Message)
+				}
 			}
 			return nil
+		}
+		if sqlBearing {
+			return r.evaluateSpannerUnreadable(ctx, rendered, truncated, index, "")
 		}
 	}
 	d := r.gate.EvaluateStatement(ctx,
 		r.stmts.message(inspect.FromClient, rendered, truncated, index))
+	r.logDecisionError("request message", d)
+	if !d.Allowed {
+		return grpcDeniedStatus(d.Message)
+	}
+	return nil
+}
+
+// evaluateSpannerUnreadable runs the fail-closed statement for a SQL-bearing
+// message whose SQL could not be read. reason "" lets the statement pick
+// the rendering's own explanation.
+func (r *grpcRPCState) evaluateSpannerUnreadable(ctx context.Context, rendered string, truncated bool, index int, reason string) *codecgrpc.Status {
+	d := r.gate.EvaluateStatement(ctx, r.stmts.spannerUnreadable(rendered, truncated, index, reason))
 	r.logDecisionError("request message", d)
 	if !d.Allowed {
 		return grpcDeniedStatus(d.Message)

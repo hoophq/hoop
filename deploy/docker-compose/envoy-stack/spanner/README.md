@@ -68,6 +68,20 @@ Against real Spanner the set can live in a bucket instead of a volume:
 with Application Default Credentials (`roles/storage.objectViewer`).
 `-validate` performs the fetch.
 
+## Two dialects on one instance
+
+A Spanner database is created as GoogleSQL or as the PostgreSQL interface,
+and `ExecuteSql` never says which. `config-spanner.yaml` maps `demodb-pg`
+to `postgresql` under a `spanner:` block and leaves `demodb` on the lane
+default. The demo creates `demodb-pg` with `databaseDialect: POSTGRESQL`
+and sends `SELECT id, title FROM "songs" ...` to both: the trail records
+`spanner.dialect=postgresql, tables=[songs]` on one and
+`spanner.dialect=googlesql` with no table on the other, because there the
+quoted name is a string literal (the emulator says so too: `Unexpected
+string literal "songs"`). A table rule fencing `songs` fires where it
+should and cannot be dodged by quoting. `dialect: per_database` refuses to
+guess for a database the block does not list.
+
 ## The one-rule budget, on a fourth protocol
 
 The lane adds no rules. The free tier's one guardrail and one mask

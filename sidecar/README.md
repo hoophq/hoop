@@ -904,12 +904,13 @@ Content-Type: application/json
 {"format": "csv"}
 ```
 
-The raw path is deliberate. The resource is the policy key, where every id
-must fold into one rule; the model is judging intent, and `?export=all` or a
-`?limit=100000` is part of it. Identifiers in the path are covered by the
-same `send: redacted` pass as identifiers in the body. The CACHE still keys
-on the resource plus the query parameter names, so `/users/1` and `/users/2`
-with the same body cost one call, not one per id.
+The raw target is deliberate, as the client spelled it. The resource is the
+policy key, where every id must fold into one rule; the model is judging
+intent, and `?export=all` or a `?limit=100000` is part of it. Identifiers in
+the path are covered by the same `send: redacted` pass as identifiers in the
+body. The CACHE keys on the resource plus the whole query, names and values,
+so `/users/1` and `/users/2` with the same body cost one call, not one per
+id, while `?dry_run=true` and `?dry_run=false` are two verdicts.
 
 **Only requests are classified.** By the time a response comes back a write
 has already happened, and read-side exposure is masking's job.
@@ -1238,8 +1239,8 @@ deployed API to catch a valid but stale set that omits newer RPCs.
 
 `grpc.descriptors` takes one entry or a list; sets merge, shared imports
 dedupe, and two copies of one file that differ refuse to load. An entry is
-a file path or a URL a linked fetcher resolves at startup and on every
-reload. `hoop-inspect` and `hoop start sidecar` link `gs://`:
+a file path or a URL a linked fetcher resolves at startup. `hoop-inspect`
+and `hoop start sidecar` link `gs://`:
 
 ```yaml
     grpc:
@@ -1256,8 +1257,14 @@ Workload Identity, an attached service account, or
 `GOOGLE_APPLICATION_CREDENTIALS` — and the identity needs
 `storage.objects.get` on the object (`roles/storage.objectViewer`). There
 is no anonymous read. `?generation=N` pins one version; any other query
-parameter is refused, so a typo cannot read the current version while the
-config appears pinned. `-validate` performs the fetch, so a wrong object
+parameter, or one the URL parser cannot decode, is refused, so a typo
+cannot read the current version while the config appears pinned. The
+fetch happens once, when the lane's endpoint is built, under the same
+two-minute budget for credential discovery, the token exchange and the
+read: the schema is bound into the server like the lane's rules, so a
+changed `descriptors` list is restart-bound drift on the heartbeat, and a
+new version published behind an unpinned URL is applied by a restart, the
+way a replaced file is. `-validate` performs the fetch, so a wrong object
 name or a missing IAM binding fails there with the URL in the message. A
 scheme this binary does not link (`s3://`) is refused at config validation
 naming what is linked; the fetcher lives in the nested module
@@ -1299,6 +1306,30 @@ lane still fences methods like a `grpc` lane. Methods carrying no SQL keep
 the generic per-message statement. A statement the lexer cannot read is
 `unknown` with the reason in `sql.incomplete` — fail-closed, so a rule
 naming `unknown` refuses it.
+
+A Spanner database is created as GoogleSQL or as the PostgreSQL interface,
+and one instance holds both; the data plane never says which. Read
+PostgreSQL with the GoogleSQL lexer and `"songs"` is a string literal, so a
+table rule fencing songs never fires. The dialect is therefore
+configuration, keyed on the database resource name every SQL-bearing
+request carries (`session`, `database`), never inferred from the text a
+client controls:
+
+```yaml
+  - name: spanner
+    protocol: spanner
+    spanner:
+      dialect: googlesql                 # lane default; absent block = googlesql
+      databases:
+        projects/p/instances/i/databases/ledger-pg: postgresql
+```
+
+`dialect: per_database` is the fail-closed shape: SQL against a database
+not listed is `unknown` with the reason in `sql.incomplete`. `CreateDatabase`
+is the one request that declares its dialect (`database_dialect`), and the
+lane believes it for that request's statements. Each extracted statement
+records `spanner.dialect` and `spanner.database` in its metadata, so the
+trail says which lexer read it.
 
 ### ssh: the lane that is one end of the connection
 

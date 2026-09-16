@@ -56,6 +56,12 @@ listeners:
       # is no sql field to read and every RPC reads as "POST
       # /google.spanner.v1.Spanner/ExecuteSql".
       capture_payload: true
+    # A database created with the PostgreSQL interface speaks a different
+    # grammar, and ExecuteSql does not say which. Map it here; the lane
+    # default is googlesql. ../../envoy-stack/spanner demonstrates both.
+    # spanner:
+    #   databases:
+    #     projects/demo/instances/demo-instance/databases/demodb-pg: postgresql
     guardrails:
       rules:
         # The process's one rule. `operation` is lexer-derived, so
