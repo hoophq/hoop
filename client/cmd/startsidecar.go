@@ -17,6 +17,8 @@ import (
 	_ "github.com/hoophq/hoop/sidecar/analyzer/vertex"
 	configyaml "github.com/hoophq/hoop/sidecar/config/yaml"
 	"github.com/hoophq/hoop/sidecar/daemon"
+	// The gs:// descriptor fetcher, same rule as the providers above.
+	_ "github.com/hoophq/hoop/sidecar/descriptors/gcs"
 	"github.com/hoophq/hoop/sidecar/license"
 	"github.com/hoophq/hoop/sidecar/pii/alcatraz"
 	"github.com/spf13/cobra"
