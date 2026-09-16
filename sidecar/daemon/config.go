@@ -1339,6 +1339,20 @@ func analyzerDefers(la *LaneAnalyzerConfig) bool {
 	return false
 }
 
+// analyzerHolds reports whether a lane's analyzer block holds any risk level
+// for human approval: the require_review counterpart of analyzerDefers.
+func analyzerHolds(la *LaneAnalyzerConfig) bool {
+	if la == nil {
+		return false
+	}
+	for _, raw := range [...]string{la.HighRisk, la.MediumRisk, la.LowRisk} {
+		if analyzer.Action(raw) == analyzer.ActionRequireReview {
+			return true
+		}
+	}
+	return false
+}
+
 // analyzerDeps carries the process-wide analyzer to each lane's policy build.
 // One provider serves every lane, so the credential is read once.
 type analyzerDeps struct {

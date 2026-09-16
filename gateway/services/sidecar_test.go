@@ -112,3 +112,23 @@ func TestParseSidecarConfigurationPatch(t *testing.T) {
 		t.Error("want error for unknown field, got nil")
 	}
 }
+
+// The control plane stores a listener analyzer block that names an approval
+// rule. DisallowUnknownFields is what makes this a real check: before the
+// field existed the write was refused, and the rule EVL-287 authorizes a
+// review against had nowhere to live.
+func TestParseSidecarConfigurationKeepsTheApprovalRule(t *testing.T) {
+	raw := `{"listeners":[{"name":"pg","protocol":"postgres","listen":"0.0.0.0:5432",` +
+		`"upstream":"db:5432","analyzer":{"high":"require_review",` +
+		`"approval_rule":"payments-approvers"}}]}`
+	cfg, err := ParseSidecarConfiguration(json.RawMessage(raw))
+	if err != nil {
+		t.Fatalf("a config naming an approval rule was refused: %v", err)
+	}
+	if len(cfg.Listeners) != 1 || cfg.Listeners[0].Analyzer == nil {
+		t.Fatalf("the analyzer block did not decode: %+v", cfg.Listeners)
+	}
+	if got := cfg.Listeners[0].Analyzer.ApprovalRule; got != "payments-approvers" {
+		t.Errorf("approval_rule = %q; want payments-approvers", got)
+	}
+}

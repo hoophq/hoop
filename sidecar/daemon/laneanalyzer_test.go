@@ -390,33 +390,114 @@ func TestHTTPLaneAnalyzerWithoutCaptureBodyIsRefused(t *testing.T) {
 
 // Editing only a lane's analyzer block must swap on a hot reload rather
 // than demand a restart: the block builds evaluators, not sockets.
+//
+// approval_rule is in the table although no config carrying it starts today:
+// require_review is refused, so the pairing is unreachable until a build can
+// hold a statement. Pinning it here means the reviewer list an operator edits
+// then reaches the lane on the next heartbeat instead of at the next restart,
+// which is the difference between a mistargeted approval group living for
+// seconds and living until someone notices.
 func TestLaneAnalyzerBlockIsInsideTheReloadBoundary(t *testing.T) {
-	before := blockLane(laneBlock())
-	after := blockLane(laneBlock())
-	after.Listeners[0].Analyzer.HighRisk = "warn"
+	for _, tc := range []struct {
+		name string
+		edit func(*LaneAnalyzerConfig)
+	}{
+		{"risk action", func(la *LaneAnalyzerConfig) { la.HighRisk = "warn" }},
+		{"approval_rule", func(la *LaneAnalyzerConfig) { la.ApprovalRule = "payments-approvers" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			before := blockLane(laneBlock())
+			after := blockLane(laneBlock())
+			tc.edit(after.Listeners[0].Analyzer)
 
-	b1, err := nonRuleDoc(before)
-	if err != nil {
-		t.Fatalf("nonRuleDoc: %v", err)
-	}
-	b2, err := nonRuleDoc(after)
-	if err != nil {
-		t.Fatalf("nonRuleDoc: %v", err)
-	}
-	if string(b1) != string(b2) {
-		t.Error("an analyzer block edit changed the restart-guarded document")
-	}
+			b1, err := nonRuleDoc(before)
+			if err != nil {
+				t.Fatalf("nonRuleDoc: %v", err)
+			}
+			b2, err := nonRuleDoc(after)
+			if err != nil {
+				t.Fatalf("nonRuleDoc: %v", err)
+			}
+			if string(b1) != string(b2) {
+				t.Error("an analyzer block edit changed the restart-guarded document")
+			}
 
-	d1, err := laneRuleDoc(before, before.Listeners[0])
-	if err != nil {
-		t.Fatalf("laneRuleDoc: %v", err)
+			d1, err := laneRuleDoc(before, before.Listeners[0])
+			if err != nil {
+				t.Fatalf("laneRuleDoc: %v", err)
+			}
+			d2, err := laneRuleDoc(after, after.Listeners[0])
+			if err != nil {
+				t.Fatalf("laneRuleDoc: %v", err)
+			}
+			if string(d1) == string(d2) {
+				t.Error("an analyzer block edit did not change the lane's rule document")
+			}
+		})
 	}
-	d2, err := laneRuleDoc(after, after.Listeners[0])
-	if err != nil {
-		t.Fatalf("laneRuleDoc: %v", err)
+}
+
+// approval_rule names who may release a held statement, so a lane that holds
+// nothing has written down a reviewer list nobody reads. The blank name is
+// its own refusal: spaces match no rule in the control plane, and startup is
+// where that should be said.
+func TestApprovalRuleNeedsARiskLevelThatHolds(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		la   func() *LaneAnalyzerConfig
+		want string
+	}{
+		{
+			name: "no level holds",
+			la: func() *LaneAnalyzerConfig {
+				la := laneBlock()
+				la.ApprovalRule = "payments-approvers"
+				return la
+			},
+			want: "nothing on this lane would hold one",
+		},
+		{
+			name: "blank name",
+			la: func() *LaneAnalyzerConfig {
+				la := laneBlock()
+				la.HighRisk = "require_review"
+				la.ApprovalRule = "   "
+				return la
+			},
+			want: "approval_rule is blank",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := blockLane(tc.la()).Validate()
+			if err == nil {
+				t.Fatal("the block was accepted")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error %v does not contain %q", err, tc.want)
+			}
+		})
 	}
-	if string(d1) == string(d2) {
-		t.Error("an analyzer block edit did not change the lane's rule document")
+}
+
+// Pairing approval_rule with require_review satisfies this check and still
+// does not start: the action itself stays refused until a build can hold a
+// statement. The field exists so the control plane can store and serve one,
+// and the sidecar says which half is missing rather than loading a review
+// that never happens.
+func TestApprovalRuleWithRequireReviewStillRefusesTheAction(t *testing.T) {
+	la := laneBlock()
+	la.HighRisk = "require_review"
+	la.ApprovalRule = "payments-approvers"
+
+	err := blockLane(la).Validate()
+	if err == nil {
+		t.Fatal("require_review was accepted because an approval_rule was set")
+	}
+	if !strings.Contains(err.Error(), "hold a statement") {
+		t.Errorf("the error does not name the missing review backend: %v", err)
+	}
+	if strings.Contains(err.Error(), "approval_rule") {
+		t.Errorf("the pairing check fired on a block that names both: %v", err)
 	}
 }
 
