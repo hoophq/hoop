@@ -128,6 +128,11 @@ func Fetch(ctx context.Context, u *url.URL) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Closed explicitly on the success path, so a close error is reported
+	// there: the bytes are about to be indexed as the lane's schema, and a
+	// transport that could not complete the read cleanly must not have its
+	// output trusted as complete. The deferred close covers the error
+	// returns above, where the body is drained for nothing.
 	defer resp.Body.Close()
 
 	switch resp.StatusCode {
@@ -145,6 +150,9 @@ func Fetch(ctx context.Context, u *url.URL) ([]byte, error) {
 	}
 	if int64(len(blob)) > maxBytes {
 		return nil, fmt.Errorf("object exceeds %d MiB; is this the descriptor set?", maxBytes>>20)
+	}
+	if err := resp.Body.Close(); err != nil {
+		return nil, fmt.Errorf("closing the object stream: %w", err)
 	}
 	return blob, nil
 }
