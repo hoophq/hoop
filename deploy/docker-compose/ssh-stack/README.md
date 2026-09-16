@@ -853,6 +853,35 @@ the config key are not spelled the same.
 > the trail names the EXTENSION, not the key id* · *the key id is not the
 > subject on this lane* · *though the key id is still recorded beside it*.
 
+### A certificate that names nobody is refused
+
+Whichever field the lane reads, it has to hold something. `ssh-keygen` signs
+an empty `-I` without a word, and an extension a CA has not rolled out yet is
+simply absent, so a certificate can be right about the CA, the principal and
+the dates and still name no one:
+
+```bash
+ssh-keygen -s keys/ca -I '' -n devuser -V +1h keys/probe/noidentity.pub
+docker compose exec client ssh $P -o CertificateFile=/home/rider/probe/noidentity-cert.pub \
+  -p 2222 devuser@172.31.77.10 id
+```
+
+```
+this certificate carries no identity in key_id; a session this listener
+cannot attribute is refused rather than recorded as anonymous
+```
+
+The alternative is a trail whose actor column says `anonymous`, and it costs
+more than a name. The policy context OMITS `subject`, `email` and `groups`
+when they are empty rather than sending them empty, and an absent key in Rego
+is undefined — so `input.context.subject == "..."` does not compare false, it
+fails to fire. On the OPA lane in section 7, the deny that names the user in
+its message would fall through and the flagged command would run.
+
+> Asserted by `certs.sh`: *an empty key id is refused* · *and the refusal
+> names the field to fill* · *nothing ran under it* · *so is a certificate
+> missing the extension its lane maps* · *groups alone are not an identity*.
+
 ### What is not probed here
 
 - **Revocation.** The serial is recorded, but no KRL is loaded by these

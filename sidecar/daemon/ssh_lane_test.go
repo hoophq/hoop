@@ -325,6 +325,59 @@ func TestSSHCertificateFieldsMapToIdentity(t *testing.T) {
 	}
 }
 
+// A certificate that names nobody is REFUSED, not admitted as "anonymous".
+//
+// The field a lane reads can be empty on a perfectly valid certificate:
+// ssh-keygen -I "" leaves the key id blank, and an extension a CA has not
+// rolled out yet is absent. What follows is not only a thin audit record.
+// PolicyContext omits subject, email and groups when they are empty, so a
+// Rego rule reading input.context.subject sees an undefined key, the rule
+// does not fire, and a command a named certificate is denied runs for this
+// one.
+func TestSSHCertificateWithNoIdentityIsRefused(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		cfg  *SSHIdentityConfig
+		says string
+	}{
+		{"the default lane reads the key id", nil, identitySourceKeyID},
+		{"a lane that maps an extension names it",
+			&SSHIdentityConfig{Subject: "extensions.login@hoop.dev"},
+			"extensions.login@hoop.dev"},
+		{"a lane that maps an email names both fields",
+			&SSHIdentityConfig{Subject: "key_id", Email: "extensions.mail@hoop.dev"},
+			"key_id or extensions.mail@hoop.dev"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := sshIdentityRefusal(tc.cfg, session.Identity{PeerAddr: "10.0.0.1:2222"})
+			if r == nil {
+				t.Fatal("a certificate carrying no identity was admitted")
+			}
+			// The message has to say which field to ask the CA to fill.
+			// "refused" with no field names is a support ticket.
+			if !strings.Contains(r.String(), tc.says) {
+				t.Errorf("refusal = %q, want it to name %q", r.String(), tc.says)
+			}
+		})
+	}
+}
+
+// Either field names a principal, and a lane may map only the one its CA
+// fills in. A peer address is not a principal: it names a machine, and the
+// question the trail answers is which person ran the command.
+func TestSSHIdentityAdmittedWhenEitherFieldIsSet(t *testing.T) {
+	if r := sshIdentityRefusal(nil, session.Identity{Subject: "alice@example.com"}); r != nil {
+		t.Errorf("a named certificate was refused: %v", r)
+	}
+	if r := sshIdentityRefusal(nil, session.Identity{Email: "alice@example.com"}); r != nil {
+		t.Errorf("a certificate carrying only an email was refused: %v", r)
+	}
+	if r := sshIdentityRefusal(nil, session.Identity{
+		Groups: []string{"sre"}, PeerAddr: "10.0.0.1:2222"}); r == nil {
+		t.Error("groups and a peer address were accepted as an identity")
+	}
+}
+
 // A bastion admits no session capability, so nothing is ever spawned. That
 // leaves the login name as the only account it could resolve, on a host
 // where that name has no reason to exist — so requiring one would refuse

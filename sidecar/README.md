@@ -1258,6 +1258,15 @@ listeners:
 signed by `trusted_ca` or it is refused at the handshake, and the login name
 it asks for must appear in the certificate's principals.
 
+**And the certificate has to name someone.** `identity.subject` picks the
+field, `key_id` by default, and a certificate that leaves it empty — an
+`ssh-keygen -I ''`, or an extension a CA has not rolled out — is REFUSED
+rather than admitted as `anonymous`. An `email` mapping satisfies it too;
+either one names a principal. The trail is half the reason: the other half is
+that `PolicyContext` omits an empty `subject`, and a Rego rule reading an
+absent key does not fire, so a deny keyed on the subject would pass a session
+it was written to stop.
+
 **`operations` is what scopes a rule here.** One SSH lane emits three kinds of
 text — a command line for `exec_line`, a variable name for `env_set`, a path
 for every `sftp_*` — so a pattern written for one of them has to say which.

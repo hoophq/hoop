@@ -180,6 +180,11 @@ mint      jumpnogrant   -I rider@example.com -n jump    -V +1h -O clear
 mint      identityext   -I ca-internal-ref-99 -n devuser -V +1h \
                         -O extension:login@hoop.dev=alice@corp.example \
                         -O extension:groups@hoop.dev=sre,oncall
+# The two that name NOBODY. Both are certificates ssh-keygen signs without a
+# complaint, and both used to be admitted as `anonymous`.
+mint      noidentity    -I '' -n devuser -V +1h
+mint      idextnoname   -I ca-internal-ref-99 -n devuser -V +1h \
+                        -O extension:groups@hoop.dev=sre,oncall
 chmod 600 keys/probe/id keys/probe/rogue-ca
 
 # ================================================================ the signer
@@ -352,6 +357,25 @@ ok "though the key id is still recorded beside it" \
 note "so a CA can keep principals a list of LOGIN NAMES -- all this endpoint"
 note "checks them for -- and carry identity somewhere the login check will"
 note "never be tempted to read."
+
+note ""
+note "And a certificate that fills NEITHER field is REFUSED, not admitted as"
+note "anonymous. The actor column is not the only thing at stake: the policy"
+note "context omits subject, email and groups when they are empty, so a Rego"
+note "rule reading input.context.subject sees an absent key. The rule does not"
+note "fire, and a command a named certificate is denied would run for this one."
+
+NOID="$(probe noidentity devuser $ENDHOST 2222 id)"
+ok "an empty key id is refused"                  "$NOID" "carries no identity"
+ok "and the refusal names the field to fill"     "$NOID" "key_id"
+no "nothing ran under it"                        "$NOID" "uid="
+
+IDNONAME="$(probe idextnoname devuser $MULTI 2224 id)"
+ok "so is a certificate missing the extension its lane maps" \
+                                                 "$IDNONAME" "extensions.login@hoop.dev"
+no "groups alone are not an identity"            "$IDNONAME" "uid="
+note "both certificates are otherwise valid: right CA, right principal, in"
+note "date. Only the field that names the human is empty."
 
 printf '\n\033[1m%d passed, %d failed\033[0m\n\n' "$PASS" "$FAIL"
 exit "$FAIL"

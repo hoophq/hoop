@@ -119,8 +119,7 @@ func buildSSHServer(
 	}
 
 	open := func(ctx context.Context, info codecssh.ConnInfo) (*codecssh.ConnHandler, *codecssh.Refusal, error) {
-		identity := sshIdentity(sc.Identity, info)
-		identity.PeerAddr = info.RemoteAddr
+		identity, anonymous := sshIdentity(sc.Identity, info)
 
 		sess := session.New(inspect.SSH, identity)
 		sess.Connection = ln.name
@@ -142,6 +141,16 @@ func buildSSHServer(
 			log:          laneLog,
 		}
 		handler := state.callbacks()
+
+		// A session that names nobody is refused before it is admitted, and
+		// with the handler rather than instead of it, so the audit session
+		// opened above still gets its Close and the refusal is recorded.
+		if anonymous != nil {
+			laneLog.Warn("ssh certificate carries no identity; refusing the connection",
+				"reads", sshIdentitySources(sc.Identity),
+				"login", info.LoginName, "peer", info.RemoteAddr)
+			return handler, anonymous, nil
+		}
 
 		// The account is resolved BEFORE anything is admitted, and a
 		// session that cannot name one is refused. There is no default
@@ -508,18 +517,14 @@ func (c *sshConnState) event(ctx context.Context, kind string, attrs map[string]
 // libhoop's side of the seam. Go needs the import to name a type, not to
 // reach through a value, so the three claims travel as a string, a list and a
 // map.
-func sshIdentity(cfg *SSHIdentityConfig, info codecssh.ConnInfo) session.Identity {
-	id := session.Identity{}
+func sshIdentity(cfg *SSHIdentityConfig, info codecssh.ConnInfo) (session.Identity, *codecssh.Refusal) {
+	id := session.Identity{PeerAddr: info.RemoteAddr}
 	if info.Cert == nil {
-		return id
+		return id, sshIdentityRefusal(cfg, id)
 	}
 	keyID, principals, extensions := info.Cert.KeyId, info.Cert.ValidPrincipals, info.Cert.Extensions
 
-	subjectSource := identitySourceKeyID
-	if cfg != nil && cfg.Subject != "" {
-		subjectSource = cfg.Subject
-	}
-	id.Subject = certScalar(subjectSource, keyID, principals, extensions)
+	id.Subject = certScalar(sshSubjectSource(cfg), keyID, principals, extensions)
 
 	if cfg != nil {
 		if cfg.Email != "" {
@@ -539,7 +544,57 @@ func sshIdentity(cfg *SSHIdentityConfig, info codecssh.ConnInfo) session.Identit
 			id.Attributes[name] = value
 		}
 	}
-	return id
+	return id, sshIdentityRefusal(cfg, id)
+}
+
+// sshSubjectSource names the certificate field a lane reads the subject
+// from.
+//
+// Shared by the mapping and by the refusal that quotes it, so a message can
+// never name a field the mapping did not read.
+func sshSubjectSource(cfg *SSHIdentityConfig) string {
+	if cfg != nil && cfg.Subject != "" {
+		return cfg.Subject
+	}
+	return identitySourceKeyID
+}
+
+// sshIdentityRefusal refuses a certificate that names nobody.
+//
+// A valid certificate can carry nothing in the field a lane reads: an
+// ssh-keygen -I "" leaves the key id empty, and an extension a CA has not
+// rolled out yet is simply absent. Admitting one leaves Principal() at
+// "anonymous", and that is not a cosmetic hole in the trail. PolicyContext
+// OMITS subject, email and groups when they are empty rather than sending
+// them empty, so a Rego rule reading input.context.subject sees an undefined
+// key: the rule does not fire, and a command a named certificate is denied
+// runs for this one.
+//
+// So the session is refused, the same rule the account resolution above
+// carries. There is no fallback, for the same reason: every candidate name
+// would be one nobody chose.
+//
+// It is the subject OR the email, because either one names a principal and a
+// lane may map only the one its CA fills in.
+func sshIdentityRefusal(cfg *SSHIdentityConfig, id session.Identity) *codecssh.Refusal {
+	if !id.IsAnonymous() {
+		return nil
+	}
+	return codecssh.Refuse(
+		"this certificate carries no identity in %s; a session this listener "+
+			"cannot attribute is refused rather than recorded as anonymous",
+		sshIdentitySources(cfg))
+}
+
+// sshIdentitySources lists the fields that could have named this session, for
+// a refusal the holder of the certificate can act on: it says which field to
+// ask their CA to fill.
+func sshIdentitySources(cfg *SSHIdentityConfig) string {
+	sources := sshSubjectSource(cfg)
+	if cfg != nil && cfg.Email != "" {
+		sources += " or " + cfg.Email
+	}
+	return sources
 }
 
 // certScalar reads one certificate field as a single value.
