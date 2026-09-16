@@ -88,7 +88,7 @@ Host exec-only
 
 # ------------------------------------------------------------------ policy
 #
-# Two lanes that decide with something other than a local rule.
+# One lane that decides with something other than a local rule.
 
 # The verdict comes from Rego. The lane's word list DEFERS: it reports what
 # it matched, and opa/policy.rego decides what the match means for the
@@ -98,9 +98,3 @@ Host opa-lane
     Port 2222
     User devuser
 
-# The verdict comes from a model reading the command. Only up when
-# $ANTHROPIC_API_KEY was set at ./run.sh time.
-Host ai-lane
-    HostName 172.31.77.13
-    Port 2222
-    User devuser

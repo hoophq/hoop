@@ -25,9 +25,7 @@ c_step() { printf '\n\033[1;36m==>\033[0m \033[1m%s\033[0m\n' "$*"; }
 die()    { printf '\033[31mfail\033[0m %s\n' "$*" >&2; exit 1; }
 
 if [[ "${1:-}" == "down" ]]; then
-    # --profile ai so the analyzer container is removed too; compose ignores
-    # a profile whose services never started.
-    docker compose --profile ai down -v --remove-orphans
+    docker compose down -v --remove-orphans
     rm -rf keys
     exit 0
 fi
@@ -148,33 +146,6 @@ cp keys/user keys/probe/id
 chmod 600 keys/probe/id
 c_ok "minted keys/probe/breakglass-cert.pub (key id incident-response@example.com)"
 
-# ------------------------------------------------- 0b. analyzer credential
-#
-# The sidecar takes a credentials_file — a PATH, never the key itself — and
-# refuses a file readable by group or other. So the key has to land in a file
-# whatever the operator prefers to hold it in, and the question is only which
-# file.
-#
-# An environment variable is the nicer thing to TYPE and a file is the only
-# thing the product READS, so run.sh bridges the two: export the variable,
-# and the key is written to keys/anthropic.key at 0600. keys/ is gitignored
-# and `./run.sh down` deletes it, so the credential neither reaches the
-# repository nor outlives the stack.
-#
-# Without the variable the analyzer lane simply does not start. Everything
-# else in the stack is unaffected, which is why this is a compose profile
-# rather than a hard dependency.
-WITH_AI=""
-if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
-    printf '%s' "$ANTHROPIC_API_KEY" > keys/anthropic.key
-    chmod 600 keys/anthropic.key
-    WITH_AI=1
-    c_ok "wrote keys/anthropic.key from \$ANTHROPIC_API_KEY (0600); the analyzer lane is in"
-else
-    rm -f keys/anthropic.key
-    c_ok "no \$ANTHROPIC_API_KEY, so the analyzer lane stays down (export it and re-run)"
-fi
-
 # ---------------------------------------------------------------- 1. images
 #
 # The image carries the binary, so reusing one built from older sources is
@@ -238,15 +209,10 @@ c_ok "built the sshd bastion and the client"
 
 # --------------------------------------------------------------- 2. compose
 c_step "Starting every end-hop, both bastions, OPA and the client"
-if [[ -n "$WITH_AI" ]]; then
-    docker compose --profile ai up -d --wait
-else
-    docker compose up -d --wait
-fi
+docker compose up -d --wait
 c_ok "endhost :2222, sidecar bastion :2223, sshd bastion :2224"
 c_ok "endhost-multi :2225 (many accounts), :2226 (exec only)"
 c_ok "endhost-opa :2228 (verdict from Rego)"
-[[ -n "$WITH_AI" ]] && c_ok "endhost-ai :2229 (verdict from a model)"
 
 # OPA's static image is distroless and carries no shell, so it gets no
 # compose healthcheck. Poll it from a container that has curl instead: a lane
@@ -266,7 +232,6 @@ c_ok "opa :18181 serving hoop.ssh from opa/policy.rego"
 # right up until the first forward is refused.
 c_step "What each sidecar resolved to"
 SVCS=(endhost endhost-multi endhost-opa bastion-sidecar)
-[[ -n "$WITH_AI" ]] && SVCS+=(endhost-ai)
 for svc in "${SVCS[@]}"; do
     printf '\n  \033[1m%s\033[0m\n' "$svc"
     docker compose exec -T "$svc" hoop-inspect -validate \
@@ -309,12 +274,6 @@ ready
     docker compose exec client ssh opa-lane "id"                  # allowed
     docker compose exec client ssh opa-lane "curl https://x.test" # Rego denies
     docker compose exec client sftp -q opa-lane                   # writes refused
-
-  Risk analysis -- a model reads the command, which is the only control here
-  that sees through shell expansion (needs $ANTHROPIC_API_KEY at run time):
-
-    docker compose exec client ssh ai-lane "uptime"
-    docker compose exec client ssh ai-lane 'X=cat; $X /root/.aws/credentials'
 
   Walk it properly, one command at a time, with the explanations:
 

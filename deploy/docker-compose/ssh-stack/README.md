@@ -23,12 +23,11 @@ who a session RUNS AS, what it may DO, and who the trail NAMES:
 | [5](#5-capabilities--a-lane-that-admits-exec-and-nothing-else) | `exec-only` | `:2223` | **what it may do.** `capabilities_allowed: [exec]` — shell, pty, env, sftp and forwarding are each refused, and each says so |
 | [6](#6-certificate-attributes--which-field-decided-what) | `identity-ext` | `:2224` | **who the trail names.** The same certificate, with the human read from an extension instead of the key id |
 
-Two more decide with something that is not a local rule at all:
+One more decides with something that is not a local rule at all:
 
 | | Lane | Where | What it answers |
 |---|---|---|---|
 | [7](#7-opa--the-lane-matches-rego-decides) | `opa-policy` | `172.31.77.12:2222` | **who decides.** The word list matches locally and DEFERS; Rego reads the finding beside the certificate subject and rules on it |
-| [8](#8-risk-analysis--a-model-reads-the-command) | `ai-analyzer` | `172.31.77.13:2222` | **what a pattern cannot see.** A model reads the whole command, which is the only control here that survives shell expansion |
 
 **The end-hop is the same container in all three.** That is the claim this
 stack exists to make concrete: ADR-0015 puts the whole decision — the
@@ -42,13 +41,6 @@ OpenSSH that has never heard of hoop.
 ./demo.sh     # run every check below and assert the result
 ./certs.sh    # one certificate per attribute: which FIELD decided what
 ./run.sh down # tear down, including the generated keys
-```
-
-Section 8 is the one part that needs a credential. Everything else runs
-without one:
-
-```bash
-export ANTHROPIC_API_KEY=sk-ant-... && ./run.sh
 ```
 
 `./run.sh` needs `../../../libhoop` beside the repo — sidecar's codecs are a
@@ -66,7 +58,6 @@ private module, and this stack builds them from a local checkout.
 | `bastion-sshd` | real OpenSSH `sshd` | proves the end-hop needs no cooperation from what is in front |
 | `endhost-opa` | the same binary, deferring | its rule reports instead of deciding; Rego rules on the finding |
 | `opa` | stock Open Policy Agent | knows nothing about SSH or hoop — it answers a document posted to it |
-| `endhost-ai` | the same binary, classifying | a model reads the command. Only up when `$ANTHROPIC_API_KEY` is set |
 | `client` | `ssh`, `sftp`, `scp`, `rsync` | four clients that take four different routes through SSH |
 
 **One certificate opens all three paths.** `run.sh` mints it:
@@ -102,7 +93,6 @@ exact hop a command takes:
                      172.31.77.11:2223     lane exec-only
                      172.31.77.11:2224     lane identity-ext
   endhost-opa        172.31.77.12:2222     lane opa-policy
-  endhost-ai         172.31.77.13:2222     lane ai-analyzer  (profile: ai)
   bastion-sidecar    172.31.77.20:2222
   bastion-sshd       172.31.77.30:22
   opa                172.31.77.50:8181     stock OPA, serving opa/policy.rego
@@ -995,7 +985,7 @@ policy still refuses a write, because `input.operation` is a fact the
 protocol reports:
 
 ```bash
-docker compose exec client sh -c 'sftp -q opa-lane <<EOF
+docker compose exec client sh -c 'echo x > /tmp/up.txt; sftp -q opa-lane <<EOF
 put /tmp/up.txt /home/devuser/upload/up.txt
 EOF'
 ```
@@ -1019,9 +1009,7 @@ docker compose start opa
 hoop: policy engine unavailable; denying
 ```
 
-A policy engine that cannot be reached is not an allow-list. Compare
-[section 8](#8-risk-analysis--a-model-reads-the-command), which takes the
-opposite setting for a defensible reason.
+A policy engine that cannot be reached is not an allow-list.
 
 ### Why this is its own process
 
@@ -1029,103 +1017,6 @@ The free tier enforces one guardrail rule **per process**, and `endhost`
 already spends its one on `protected-paths`. Each sidecar carries its own
 budget, so a second process is what buys this lane a rule of its own — the
 same reason the bastion's budget is separate.
-
----
-
-## 8. Risk analysis — a model reads the command
-
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-./run.sh
-```
-
-Without the variable this lane does not start and nothing else in the stack
-notices. It is a compose profile, not a dependency.
-
-### The credential, and why it is a file
-
-`credentials_file` takes a **path**, never the key, and the sidecar refuses
-a file readable by group or other. So a file is the only thing the product
-reads — the only question is what you type. `run.sh` bridges the two:
-
-```bash
-printf '%s' "$ANTHROPIC_API_KEY" > keys/anthropic.key
-chmod 600 keys/anthropic.key
-```
-
-`keys/` is gitignored and `./run.sh down` deletes it, so the credential
-neither reaches the repository nor outlives the stack.
-
-**This lane runs as root, and that is about the key rather than about SSH.**
-A `0600` file bind-mounted from the host keeps its host owner; on Linux that
-uid is not the image's `devuser`, and the lane would refuse to start on a
-file it cannot read. Root reads it either way, and `0600` still satisfies the
-permission check.
-
-### What it buys that a pattern cannot
-
-Every other control in this stack matches text. None of them survives the
-shell's own expansion:
-
-```bash
-docker compose exec client ssh ai-lane 'X=cat; $X /root/.aws/credentials'
-```
-
-There is no `.aws/credentials` in that command for a regexp to find — the
-string does not exist until the shell builds it, which is after every rule
-has already seen the statement. A model reading the whole line can say what
-it intends. That is the gap this lane fills, and it is the only thing here
-that fills it.
-
-### It answers for `exec_line` and nothing else
-
-A variable name and a file path are short structural strings with no room
-for intent. A model asked to rate `/srv/data.csv` returns a guess at full
-price, once per path, and a rule written against that verdict acts on noise.
-The builder skips them — no call, no charge, no invented finding — and
-`env_set` and the `sftp_*` operations stay the pattern engine's job.
-
-```yaml
-analyzer:
-  trigger:
-    operations: [exec_line]     # states what is already the only option
-  high: block
-  medium: warn
-```
-
-### fail_open: true, which is the opposite of section 7
-
-```yaml
-fail_open: true
-```
-
-Written out because it is the opposite default from every other evaluator in
-the system, and because the consequence is easy to miss. Point the lane at a
-bad credential and watch:
-
-```bash
-docker compose logs endhost-ai | tail -1
-```
-
-```
-"msg":"ssh statement evaluation continued after error",
-"error":"analyzer/anthropic: provider returned 401 Unauthorized"
-```
-
-**The command ran.** That is deliberate: a policy engine outage is a security
-decision nobody made, so denying is the safe reading; a classifier outage is
-a paid dependency being down, and denying there takes production with it. Set
-`fail_open: false` where the classification is a compliance requirement, and
-know that you have made the model a hard dependency of every command.
-
-### Cost controls
-
-| Key | Does |
-|---|---|
-| `trigger.operations` | the only thing that narrows WHICH statements are classified |
-| `max_calls` | a process-lifetime ceiling. Past it, statements fall through to the local rules — the same outcome as a lane with no analyzer |
-| `cache` | same command shape, same verdict, one call. The key is the command after whitespace normalization and nothing else: `rm -rf /tmp` and `rm -rf /` differ only in their arguments, so arguments cannot be stripped |
-| `send: redacted` | detected entities are replaced before the command leaves the process. `raw` sends it verbatim; `refuse` skips the call rather than send anything |
 
 ---
 
@@ -1541,7 +1432,6 @@ tested against a DHCP lease.
 | `bastion-sidecar/config.yaml` | the bastion role: one destination, plus the optional empty capability list |
 | `endhost-opa/config.yaml` | a rule that DEFERS, and the opa block it defers to |
 | `opa/policy.rego` | the decision: a finding, a certificate subject, and an operation |
-| `endhost-ai/config.yaml` | the analyzer: provider, credential, trigger and the cost controls |
 | `bastion-sshd/sshd_config` | the one line that makes stock sshd trust our CA, and the shell-less `Match` block |
 | `client/ssh_config` | the four host aliases, and what ProxyJump actually does |
 | `run.sh` | mints the CA and certificate, builds, brings up, prints what each lane resolved to |

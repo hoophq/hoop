@@ -206,44 +206,6 @@ services:
       timeout: "10s"
       retries: 15
 
-  # ------------------------------------------------------- end-hop, analyzed
-  #
-  # Behind a compose PROFILE, because it is the one service in this stack
-  # that cannot come up without a credential. run.sh enables the profile only
-  # when $ANTHROPIC_API_KEY is set; without it the rest of the stack is
-  # unaffected.
-  #
-  # Root, and that is about the key rather than about SSH: a 0600 file
-  # bind-mounted from the host keeps its host owner, and on Linux that uid is
-  # not this image's devuser. Root reads it either way, and 0600 still
-  # satisfies the sidecar's permission check.
-  endhost-ai:
-    image: hoop-inspect-ssh:local
-    profiles: [ai]
-    user: "0:0"
-    depends_on:
-      endhost:
-        condition: service_healthy
-    networks:
-      sshnet:
-        ipv4_address: 172.31.77.13
-    volumes:
-      - ./endhost-ai/config.yaml:/etc/hoop-inspect/config.yaml:ro
-      - ./keys/endhost_host_key:/etc/hoop-inspect/keys/endhost_host_key:ro
-      - ./keys/ca.pub:/etc/hoop-inspect/keys/ca.pub:ro
-      # Written by run.sh from $ANTHROPIC_API_KEY. keys/ is gitignored and
-      # `./run.sh down` deletes it, so the credential neither reaches the
-      # repository nor outlives the stack.
-      - ./keys/anthropic.key:/etc/hoop-inspect/keys/anthropic.key:ro
-    ports:
-      - "2229:2222"
-      - "19094:9090"
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:9090/healthz || exit 1"]
-      interval: "2s"
-      timeout: "10s"
-      retries: 15
-
   # ----------------------------------------------------------------- client
   #
   # Where the walkthrough is typed. It holds the user certificate and the

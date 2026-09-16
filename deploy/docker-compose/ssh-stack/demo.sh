@@ -305,27 +305,5 @@ for _ in $(seq 20); do
 done
 ok "and recovers when it comes back" "$($C ssh opa-lane id 2>&1)" "uid=10001(devuser)"
 
-# ======================================================== risk analysis (AI)
-h "ANALYZER / a model reads the command, which a pattern cannot"
-
-if docker compose ps --status running --services 2>/dev/null | grep -q endhost-ai; then
-    note "This is the only control in the stack that sees through shell"
-    note "expansion: the command below carries no literal path to match."
-
-    ok "an ordinary command is allowed" \
-       "$($C ssh ai-lane uptime 2>&1)" "load average"
-
-    ok "an expanded credential read is blocked" \
-       "$($C ssh ai-lane 'X=cat; $X /root/.aws/credentials' 2>&1)" "hoop:"
-
-    ok "the verdict and its risk level reach the trail" \
-       "$(docker compose exec -T endhost-ai sh -c 'grep ai_ /tmp/audit.jsonl | tail -1')" \
-       "risk"
-else
-    note "SKIPPED: endhost-ai is not running. It needs a credential:"
-    note "    export ANTHROPIC_API_KEY=sk-ant-... && ./run.sh"
-    note "Everything else in this stack runs without one."
-fi
-
 printf '\n\033[1m%d passed, %d failed\033[0m\n\n' "$PASS" "$FAIL"
 exit "$FAIL"
