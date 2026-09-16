@@ -10,6 +10,7 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	slackModel "github.com/hoophq/hoop/gateway/slack"
 	"github.com/hoophq/hoop/gateway/transport/plugins/slack"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
@@ -34,26 +35,9 @@ func CreateReviewFromAIAnalysis(
 	inputClientArgs []string,
 	analysis *models.SessionAIAnalysis,
 ) (*models.Review, error) {
-	if accessRule == nil {
-		return nil, fmt.Errorf("ai analyzer review: access request rule is required")
-	}
-	if len(accessRule.ReviewersGroups) == 0 {
-		return nil, fmt.Errorf("ai analyzer review: access request rule %q has no reviewers_groups configured", accessRule.Name)
-	}
-
-	reviewGroups := make([]models.ReviewGroups, 0, len(accessRule.ReviewersGroups))
-	for _, groupName := range accessRule.ReviewersGroups {
-		reviewGroups = append(reviewGroups, models.ReviewGroups{
-			ID:        uuid.NewString(),
-			OrgID:     orgID.String(),
-			GroupName: groupName,
-			Status:    models.ReviewStatusPending,
-		})
-	}
-
-	minApprovals := len(reviewGroups)
-	if !accessRule.AllGroupsMustApprove && accessRule.MinApprovals != nil {
-		minApprovals = *accessRule.MinApprovals
+	policy, err := services.ReviewPolicyFromRule(orgID.String(), accessRule)
+	if err != nil {
+		return nil, fmt.Errorf("ai analyzer review: %w", err)
 	}
 
 	rev := &models.Review{
@@ -70,10 +54,10 @@ func CreateReviewFromAIAnalysis(
 		OwnerName:             ptr.String(requester.UserName),
 		OwnerSlackID:          ptr.String(requester.UserSlackID),
 		Status:                models.ReviewStatusPending,
-		ReviewGroups:          reviewGroups,
+		ReviewGroups:          policy.Groups,
 		ForceApprovalGroups:   accessRule.ForceApprovalGroups,
 		AccessRequestRuleName: &accessRule.Name,
-		MinApprovals:          &minApprovals,
+		MinApprovals:          &policy.MinApprovals,
 		CreatedAt:             time.Now().UTC(),
 	}
 

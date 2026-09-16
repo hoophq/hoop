@@ -10224,6 +10224,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
                     },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -19701,10 +19707,17 @@ const docTemplate = `{
         "openapi.SidecarReviewRequest": {
             "type": "object",
             "required": [
+                "approval_rule",
                 "listener_name",
                 "payload"
             ],
             "properties": {
+                "approval_rule": {
+                    "description": "The access request rule that decides who may approve this statement\n\nIt must be the rule the sidecar's stored configuration names for this\nlistener. The rule carries the reviewer groups, the approval count and\nthe force-approval list; the sidecar holds none of that policy and only\nnames it.\n\nBounded at 254 to match what a rule name may be.",
+                    "type": "string",
+                    "maxLength": 254,
+                    "example": "payments-approvers"
+                },
                 "listener_name": {
                     "description": "The sidecar listener the statement arrived on\n\nBounded because private.reviews.listener_name is VARCHAR(255): a longer\nname would reach Postgres and fail the write, rather than being told at\nthe door that it is too long.",
                     "type": "string",
