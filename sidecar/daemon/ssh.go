@@ -445,6 +445,31 @@ func (c *sshConnState) close(ctx context.Context, s codecssh.Stats) error {
 // is its open, its geometry, its duration and its byte counts — which makes
 // these records the whole audit story for the one capability that has no
 // statements.
+// TODO: a shell already open survives an audit outage on a fail-closed lane.
+// audit.fail_open is false by default, so the promise is that traffic stops
+// when the trail does — and it is kept everywhere a decision is made: exec,
+// env and every sftp op run through judge, and a new connection is refused
+// at g.Start above. An interactive shell asks the sidecar for nothing between
+// those two points. Its whole timeline is session_start, connection_open,
+// then session_close and connection_close at the end, so there is no callback
+// left to refuse in.
+//
+// Refusing here does not close it: the error is already discarded, but the
+// two events this function still gets for such a session are its first and
+// its last. libhoop also gives Event no return value, so the daemon cannot
+// refuse from it at all.
+//
+// A fix needs something that runs WHILE a shell does — a heartbeat write
+// whose failure ends the connection. The termination half already exists:
+// cancelling the connection context makes libhoop's watchdog kill the child
+// and emit one session_close with terminated_by=server, and open() is handed
+// that exact context; only the cancel is not passed back. The detection half
+// needs a decision about interval and about what the disconnected user sees,
+// which makes it an ADR rather than a patch.
+//
+// It also needs audit.AsyncSink fixed first: its Write returns nil whatever
+// the backing store does, so on a lane with async_queue_size set, no failure
+// is ever observed to react to.
 func (c *sshConnState) event(ctx context.Context, kind string, attrs map[string]string) {
 	if err := c.gate.RecordActivity(ctx, kind, attrs); err != nil {
 		c.log.Warn("ssh activity not recorded", "activity", kind, "error", err)
