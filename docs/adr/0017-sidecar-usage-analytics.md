@@ -1,9 +1,9 @@
 # ADR-0017: The sidecar reports usage to Segment through its own stdlib client
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-09-16
-- **Author:** @chico
-- **Deciders:** @chico
+- **Author:** @matheusfrancisco
+- **Deciders:** @matheusfrancisco
 - **Supersedes / Superseded by:** —
 
 ## Context
@@ -129,6 +129,151 @@ hook in the gate. Specifically:
   `fail_on_audit_error` semantics, same `/api/*` query surface. `Metrics`
   is a second consumer of a fact the gate already established, not a
   second reader of the audit trail.
+
+## Flow
+
+```mermaid
+flowchart LR
+    subgraph data path
+        G[gate.judge / mask sites] -->|atomic.Add| LC[LaneCounter per protocol]
+    end
+    subgraph lifecycle
+        R[Run · reloader · heartbeat · FirstRun · 15 min ticker] --> T[daemon telemetry.track*]
+        LC -->|Snapshot: deltas| T
+        S[proxy.Server.Stats] -->|connection totals| T
+    end
+    T -->|Properties + common| C[analytics.Client.Track]
+    C -->|non-blocking| Q[queue · 64]
+    Q --> W[sender goroutine]
+    W -->|20 events · 10 s · Close| P[POST /v1/batch]
+    P --> SEG[Segment]
+```
+
+Three places an event is dropped, none where it blocks or errors: the queue
+is full, the client is closed, or the POST fails. A drop is counted and
+rides as `dropped-events` on the next event that gets through.
+
+Every event carries the same common block, added by the client:
+
+```json
+{
+  "version": "1.152.0",
+  "entrypoint": "hoop",
+  "os": "linux",
+  "arch": "amd64",
+  "sidecar-id": "9f2c…",
+  "control-plane-connected": true
+}
+```
+
+`entrypoint` is `hoop` (`hoop start sidecar`), `hoop-inspect` (the
+standalone binary) or `embedded` (a caller of `daemon.Run`). The examples
+below show only the event's own properties.
+
+## Events
+
+**`hoop-sidecar-first-run`** — a bare invocation served the default
+redirect page. Emitted when the page stops, so it carries how long the URL
+stayed up.
+
+```json
+{"deprecated-alias": false, "port": "15321", "port-fell-back": false, "duration-seconds": 41}
+```
+
+**`hoop-sidecar-started`** — every lane built, about to serve. Boot facts
+plus the config shape.
+
+```json
+{
+  "config-source": "control_plane",
+  "config-format": "yaml",
+  "deprecated-alias": false,
+  "deprecations-count": 0,
+  "control-plane-imported": true,
+  "file-listeners-ignored": false,
+  "license-state": "valid",
+  "license-required": true,
+  "detector-attached": true,
+  "pii-configured": true,
+
+  "lane-count": 3,
+  "protocols": {"postgres": 2, "http": 1},
+  "lanes-enforcing": 2,
+  "lanes-observing": 1,
+  "lanes-with-rules": 3,
+  "guardrail-rules-total": 7,
+  "lanes-with-opa": 1,
+  "lanes-masking": 2,
+  "mask-rules-total": 4,
+  "lanes-with-analyzer": 1,
+  "analyzer-provider": "vertex",
+  "analyzer-model": "gemini-2.5-flash",
+  "analyzer-send": "redacted",
+  "analyzer-fail-open": true,
+  "analyzer-custom-prompt": false,
+  "lanes-capture-body": 0,
+  "lanes-identity-header": 1,
+  "lanes-upstream-tls": 2,
+  "lanes-downstream-tls": 0,
+  "audit-sinks": ["jsonl", "query"],
+  "audit-async": true,
+  "fail-on-audit-error": true,
+  "admin-enabled": true,
+  "log-level": "info"
+}
+```
+
+`config-source` is `file`, `control_plane`, or `control_plane_disk` when the
+plane delegated the document to the local file.
+
+**`hoop-sidecar-config-applied`** — a heartbeat delivered a changed document
+and the reloader acted on it. Silent for unchanged and retry outcomes. The
+config shape block above is attached when the outcome is `applied`.
+
+```json
+{"config-generation": 4, "outcome": "applied", "lanes-swapped": 1, "lanes-kept": 2, "lane-count": 3, "…": "shape"}
+{"config-generation": 4, "outcome": "restart-required", "lanes-swapped": 0, "lanes-kept": 0}
+{"config-generation": 4, "outcome": "refused", "lanes-swapped": 0, "lanes-kept": 0}
+```
+
+**`hoop-sidecar-usage`** — counters since the previous usage event, every
+fifteen minutes and once at shutdown. `by-protocol` is keyed by protocol,
+never by lane.
+
+```json
+{
+  "interval-seconds": 900,
+  "uptime-seconds": 86400,
+  "connections-total": 412,
+  "connections-active": 9,
+  "connections-denied": 3,
+  "statements-total": 18250,
+  "statements-denied": 17,
+  "statements-masked": 1204,
+  "heartbeat-failures": 0,
+  "by-protocol": {
+    "postgres": {"statements": 17900, "denied": 15, "masked": 1204},
+    "http": {"statements": 350, "denied": 2, "masked": 0}
+  }
+}
+```
+
+**`hoop-sidecar-stopped`** — `Run` is returning. The final usage window
+goes out as its own `hoop-sidecar-usage` just before.
+
+```json
+{"reason": "signal", "uptime-seconds": 86412, "reloads-applied": 4, "reloads-restart-required": 1, "reloads-refused": 0}
+```
+
+`reason` is `signal`, `listener-failed` or `license-expired`.
+
+**`hoop-sidecar-license-expired`** — the term ended under a config the
+free tier refuses; the process stops for it, and `stopped` follows with
+`reason: license-expired`.
+
+```json
+{"guardrail-rules-total": 7, "mask-rules-total": 4, "uptime-seconds": 2592000}
+```
 
 ## Consequences
 
