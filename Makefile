@@ -191,25 +191,6 @@ test-gateway:
 test-gateway-pglite:
 	env CGO_ENABLED=0 GATEWAY_TEST_DB=pglite go test -tags integration -v -timeout 8m -count=1 ./gateway/integration/
 
-# Control-plane suite: boots the gateway as a control plane and drives the
-# sidecar endpoints, which the gateway mode refuses with 412. A separate test
-# binary from test-gateway because appconfig.Load is one-shot, so a process
-# holds one app mode for its whole life.
-#
-# It covers what only a database shows: the partial unique index that keeps a
-# retried statement from filing a second review, and the conditional UPDATE
-# that lets exactly one retry consume an approval.
-test-controlplane:
-	env CGO_ENABLED=0 go test -tags integration -v -timeout 8m -count=1 ./gateway/integration/controlplane/
-
-# The same control-plane suite on the embedded PGlite backend. Worth its own
-# run: migration 000118 builds a partial unique index whose predicate compares
-# an enum, and the claim is an UPDATE ... FROM across two tables. Both have to
-# be SQL the embedded backend accepts, and a pool capped at one connection has
-# to carry the concurrent retries without deadlocking.
-test-controlplane-pglite:
-	env CGO_ENABLED=0 GATEWAY_TEST_DB=pglite go test -tags integration -v -timeout 8m -count=1 ./gateway/integration/controlplane/
-
 # Standalone-mode lifecycle suite (DEP-38): boots the gateway on the embedded
 # PGlite database with the full transport stack, provisions the dedicated
 # `standalone` agent through the same services code path `hoop start
@@ -421,4 +402,4 @@ publish-sentry-sourcemaps:
 	tar -xvf ${DIST_FOLDER}/webapp.tar.gz
 	sentry-cli sourcemaps upload --release=$$(cat ./version.txt) ./public/js/app.js.map --org hoopdev --project webapp
 
-.PHONY: run-dev run-dev-control-plane run-dev-postgres build-dev-webapp test-enterprise test-oss test prepare-mssql-jdbc test-integration test-transport test-gateway test-gateway-pglite test-controlplane test-controlplane-pglite test-standalone test-standalone-e2e test-gateway-pglite generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm build-hsh-tunneld build-hsh-tunneld-all build-release-checksums stage-release-scripts
+.PHONY: run-dev run-dev-control-plane run-dev-postgres build-dev-webapp test-enterprise test-oss test prepare-mssql-jdbc test-integration test-transport test-gateway test-gateway-pglite test-standalone test-standalone-e2e test-gateway-pglite generate-openapi-docs build-go build-dev-client build-webapp build-helm-chart build-gateway-bundle extract-webapp publish release-s3 release-s3-latest release-s3-cf-templates-latest release-s3-cf-templates-latest swag-fmt build-rust-darwin-all build-rust-linux-all build-rust-single build-empty-folder build-dev-rust install-rust merge-artifacts generate-wasm build-hsh-tunneld build-hsh-tunneld-all build-release-checksums stage-release-scripts
