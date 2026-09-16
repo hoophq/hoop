@@ -1,0 +1,137 @@
+# The control plane, and optionally one sidecar connected to it.
+#
+#   docker compose -f docker-compose.control-plane.yml up
+#
+# Then create the first admin at http://localhost:8009, register a sidecar, put
+# its token in .env as HOOP_SIDECAR_TOKEN, and:
+#
+#   docker compose -f docker-compose.control-plane.yml --profile sidecar up -d
+#
+# Needs Compose 2.24.0 or greater.
+name: hoop-control-plane
+
+services:
+  db:
+    image: postgres:17.6
+    attach: false
+    networks:
+      - hoopcp
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: hoopdb
+      PGUSER: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready", "-U", "postgres"]
+      interval: "2s"
+      timeout: "30s"
+      retries: 10
+      start_period: "20s"
+
+  control-plane:
+    image: hoophq/hoop
+    tty: true
+    command: ["hoop", "start", "control-plane"]
+    environment:
+      - GIN_MODE=release
+      - POSTGRES_DB_URI=postgres://postgres:postgres@db:5432/hoopdb?sslmode=disable
+    # API_URL lives here. It defaults to 127.0.0.1, which only works from this
+    # host.
+    env_file:
+      - path: ".env"
+        required: false
+    ports:
+      - "8009:8009"
+    networks:
+      - hoopcp
+    depends_on:
+      db:
+        condition: "service_healthy"
+    # Either scheme: four separate variables turn TLS on, so probe rather than
+    # predict.
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl -kfsS http://127.0.0.1:8009/api/healthz || curl -kfsS https://127.0.0.1:8009/api/healthz
+      interval: "2s"
+      timeout: "30s"
+      retries: 10
+      start_period: "20s"
+
+  # The resource the sidecar sits in front of. Empty on purpose.
+  appdb:
+    profiles: ["sidecar"]
+    image: postgres:17.6
+    attach: false
+    networks:
+      - hoopcp
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: appdb
+      PGUSER: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready", "-U", "postgres"]
+      interval: "2s"
+      timeout: "30s"
+      retries: 10
+      start_period: "20s"
+
+  # Behind a profile: the token does not exist until the control plane issues
+  # one, and a sidecar without one exits rather than retrying.
+  sidecar:
+    profiles: ["sidecar"]
+    image: hoophq/hoopsidecar
+    networks:
+      - hoopcp
+    environment:
+      # Override when the control plane serves TLS.
+      - HOOP_CONTROL_PLANE_URL=${HOOP_CONTROL_PLANE_URL:-http://control-plane:8009}
+      - HOOP_SIDECAR_TOKEN=${HOOP_SIDECAR_TOKEN:-}
+    # HOOP_SIDECAR_CONFIG already points here in the image.
+    configs:
+      - source: sidecar-config
+        target: /etc/hoop-inspect/config.yaml
+    # Loopback: the admin endpoint has no authentication, and the lane is
+    # reached by service name from inside the network.
+    ports:
+      - "127.0.0.1:15432:15432"  # the postgres lane
+      - "127.0.0.1:19000:19000"  # /healthz /stats /config
+    depends_on:
+      control-plane:
+        condition: "service_healthy"
+      appdb:
+        condition: "service_healthy"
+
+configs:
+  # Read once, to seed a control plane that holds no configuration yet: the
+  # first handshake answers 412 and the sidecar imports this. After that the
+  # control plane owns it and these listeners are ignored.
+  sidecar-config:
+    content: |
+      log_level: info
+
+      admin:
+        listen: 0.0.0.0:19000
+
+      audit:
+        file: "-"
+
+      listeners:
+        - name: appdb
+          protocol: postgres
+          listen: 0.0.0.0:15432
+          upstream: appdb:5432
+
+          # One rule: an unlicensed build enforces one guardrail and one
+          # masking rule for the whole process.
+          guardrails:
+            mode: enforce
+            rules:
+              - name: no-destructive-sql
+                type: operation
+                operations: [drop, delete, truncate]
+                message: destructive statements are not permitted through this lane
+
+networks:
+  hoopcp:
