@@ -70,8 +70,10 @@ prints a warning naming its replacement. Use --strict to fail on one.
 
 Without a license the process caps guardrail and data masking rules at one
 each and says so at startup. A license lifts the caps for the features it
-names. It may be a path or the document itself, and --license outranks
-HOOP_LICENSE, which outranks the "license" key in the config file.
+names. It may be a path or the document itself. A sidecar connected to a
+control plane that manages licensing runs under the plane's license only,
+and every local source is ignored with a warning. Otherwise --license
+outranks HOOP_LICENSE, which outranks the "license" key in the config file.
 
 A sidecar may connect to a Control Plane instead of carrying its own
 listeners: set HOOP_CONTROL_PLANE_URL or the "control_plane_url" config key
@@ -83,7 +85,11 @@ document on that first handshake, so an existing sidecar connects by adding
 the URL and passing the token, nothing else; once the plane holds a config
 it owns it, and listeners still in the file are ignored with a warning. The
 token is shown once when the sidecar is created; a lost one means
-registering a new sidecar.`,
+registering a new sidecar. A sidecar whose control plane entry says
+"load_from_disk" runs the listeners in its own config file and receives only
+its license; moving that entry either way reaches a running sidecar on its
+next check-in, which applies what a live process can change and logs what
+needs a restart.`,
 	Example: `  hoop start sidecar
   hoop start sidecar --config /etc/hoop-inspect/config.yaml
   hoop start sidecar --config config.yaml --license /etc/hoop-inspect/license.json

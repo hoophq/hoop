@@ -24,8 +24,12 @@ function ControlPlaneProtectedRoute(props) {
     if (!serverInfoLoaded || !isFreeLicense) return null
     if (hasSkippedLicenseIntro(user.id)) return null
     try {
-      const sidecars = await sidecarsService.list()
-      if (sidecars.length === 0) return LICENSE_INTRO_PATH
+      // Read straight from the service, not through useSidecarStore: this runs
+      // before any page mounts and answers one question, "does this org own a
+      // sidecar". Routing it through the fleet store would make the gate
+      // populate application state as a side effect of a redirect decision.
+      const { data } = await sidecarsService.list()
+      if ((data ?? []).length === 0) return LICENSE_INTRO_PATH
     } catch {
       // On API error, let the user through rather than blocking access.
     }

@@ -14,6 +14,7 @@ import (
 	"github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/common/version"
 	"github.com/hoophq/hoop/gateway/analytics"
+	"gorm.io/gorm"
 
 	"github.com/hoophq/hoop/gateway/agentcontroller"
 	"github.com/hoophq/hoop/gateway/api"
@@ -222,11 +223,27 @@ func startPlugins(plugins []plugintypes.Plugin) {
 	}
 }
 
-// runControlPlane serves the control plane: the HTTP API, and Slack. The gRPC
-// transport and the protocol proxies never start. The HTTP API is the
-// gateway's (see Api.BuildEngine): a route that needs the gRPC transport fails
-// per request, while /api/ws still accepts an agent over WebSocket and
-// /rdpproxy relays through it (ADR-0013).
+// reconcileStaleReviews settles every review left in PROCESSING or UNKNOWN by
+// an execution whose session finished while this process was down. Both boot
+// paths run it: a control plane may share its database with a gateway
+// (ADR-0013), and the rows it finds there were written by the gateway. The
+// UPDATE is idempotent, so both settling the same row costs nothing.
+//
+// Callers run it on a goroutine. A large backlog must never delay readiness.
+func reconcileStaleReviews(db *gorm.DB) {
+	if reconciled, err := models.ReconcileStaleReviews(db); err != nil {
+		log.Warnf("failed reconciling stale reviews, reason=%v", err)
+	} else if reconciled > 0 {
+		log.Infof("reconciled %d stale review(s) to executed status", reconciled)
+	}
+}
+
+// runControlPlane serves the control plane: the HTTP API, Slack, and the
+// background work that needs nothing but a database. The gRPC transport and
+// the protocol proxies never start. The HTTP API is the gateway's (see
+// Api.BuildEngine): a route that needs the gRPC transport fails per request,
+// while /api/ws still accepts an agent over WebSocket and /rdpproxy relays
+// through it (ADR-0013).
 func runControlPlane(tlsConfig *tls.Config) {
 	// Same wiring as runGateway. The transport server exists for its review
 	// callback and is never started, so the handlers run the gateway's code.
@@ -240,6 +257,7 @@ func runControlPlane(tlsConfig *tls.Config) {
 		TLSConfig:           tlsConfig,
 	}
 	startPlugins(controlPlanePlugins(g.ReleaseConnectionOnReview))
+	go reconcileStaleReviews(models.DB)
 
 	bootstrap.Phase("Starting API")
 	apiStep := bootstrap.Step("HTTP API")
@@ -277,16 +295,7 @@ func runGateway(tlsConfig *tls.Config, apiURL, defaultOrgID string, isOrgMultiTe
 	connectionstatus.InitConciliationProcess()
 	streamclient.InitProxyMemoryCleanup()
 
-	// Settle reviews left in PROCESSING/UNKNOWN by executions whose session
-	// finished while the gateway was down. Runs in background so a large
-	// backlog never delays gateway readiness.
-	go func() {
-		if reconciled, err := models.ReconcileStaleReviews(models.DB); err != nil {
-			log.Warnf("failed reconciling stale reviews, reason=%v", err)
-		} else if reconciled > 0 {
-			log.Infof("reconciled %d stale review(s) to executed status", reconciled)
-		}
-	}()
+	go reconcileStaleReviews(models.DB)
 
 	// Finalise the audit session of credentials whose access window elapsed.
 	// This used to run inline as the first statement of GET /api/sessions and

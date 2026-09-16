@@ -18,7 +18,9 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
+	slackservice "github.com/hoophq/hoop/gateway/slack"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
+	slackplugin "github.com/hoophq/hoop/gateway/transport/plugins/slack"
 )
 
 const (
@@ -34,6 +36,10 @@ const (
 	// the database one request at a time. A statement a human is expected to
 	// read has no business being larger.
 	maxStatementBytes = 100000 // 0.1MB, the ceiling plugin config already uses
+
+	// reviewSlackType labels the review in Slack, where the message renders a
+	// "Type" line for what a gateway review calls its connection type.
+	reviewSlackType = "sidecar"
 
 	// reviewConnectionType is what a session must declare. private.sessions
 	// requires one and enum_connection_type has no label for a listener, so a
@@ -116,7 +122,81 @@ func PostReview(c *gin.Context) {
 		"listener": req.ListenerName,
 	})
 
+	// Detached, and deliberately after the review exists. SendMessageReview
+	// sleeps 1200ms per channel and the Slack client carries no timeout, so on
+	// the request path this would hold the sidecar for at least that long and
+	// potentially forever, while it waits on a statement it is blocking. A
+	// sidecar that gives up and retries would then file the review twice.
+	//
+	// Nothing in the response depends on it: the review is already persisted
+	// and visible to an approver either way.
+	go notifySlack(sidecar, rev, req.ListenerName, string(statement))
+
 	c.JSON(http.StatusCreated, toOpenApiSidecarReview(rev))
+}
+
+// notifySlack posts the review to the org's Slack channel, so a human learns it
+// exists rather than finding it by looking.
+//
+// Slack is optional everywhere else in this codebase and stays optional here:
+// an org that has not configured it gets no message and no error.
+func notifySlack(sidecar *models.Sidecar, rev *models.Review, listenerName, statement string) {
+	slackSvc := slackservice.GetServiceInstance(sidecar.OrgID)
+	if slackSvc == nil {
+		return
+	}
+
+	// A sidecar review has no connection to take channels from, so the org
+	// default is its only destination. Said out loud because otherwise a
+	// misconfigured org gets silence that looks like success.
+	if slackSvc.DefaultChannel() == "" {
+		log.With("sid", rev.SessionID, "review-id", rev.ID).
+			Warnf("the org has no default slack channel, nobody was notified of this review")
+		return
+	}
+
+	req := newSlackReviewRequest(sidecar, rev, listenerName, statement)
+	// The same ceiling both existing senders apply. Two groups today, but a
+	// message with no buttons is a notification nobody can act on.
+	if len(req.ApprovalGroups) == 0 || len(req.ApprovalGroups) >= slackplugin.SlackMaxButtons {
+		log.With("review-id", rev.ID).Warnf("not sending a review message with %d approval groups",
+			len(req.ApprovalGroups))
+		return
+	}
+
+	result := slackSvc.SendMessageReview(req)
+	log.With("sid", rev.SessionID, "review-id", rev.ID).Infof("slack review message, %v", result)
+}
+
+// newSlackReviewRequest is what a reviewer ends up reading. Split out so the
+// message can be asserted without a Slack workspace.
+func newSlackReviewRequest(sidecar *models.Sidecar, rev *models.Review, listenerName, statement string) *slackservice.MessageReviewRequest {
+	return &slackservice.MessageReviewRequest{
+		// ID is load bearing: it becomes the message metadata and the button
+		// ids, and it is how a click finds its way back to this review.
+		ID:        rev.ID,
+		SessionID: rev.SessionID,
+
+		// The message renders these labels whether or not they mean anything
+		// here, so each carries what a sidecar review does know rather than a
+		// blank that reads as broken. Groups repeats the eligible roles the
+		// buttons are labelled with: a sidecar has no groups of its own, and
+		// saying who may act beats an empty field.
+		Name:           sidecar.Name,
+		UserGroups:     slackplugin.ParseGroups(rev.ReviewGroups),
+		Email:          reviewOwnerEmail,
+		Connection:     listenerName,
+		ConnectionType: reviewSlackType,
+
+		ApprovalGroups: slackplugin.ParseGroups(rev.ReviewGroups),
+		Script:         statement,
+
+		// /reviews/<sid> exists in the router but renders a placeholder, so
+		// this points at the home page until there is a layout to point at.
+		// FullApiURL, not ApiURL: the latter drops the configured path prefix,
+		// which lands the approver outside the app wherever one is set.
+		WebappURL: appconfig.Get().FullApiURL(),
+	}
 }
 
 // createSidecarReview writes the session and the review one statement needs to

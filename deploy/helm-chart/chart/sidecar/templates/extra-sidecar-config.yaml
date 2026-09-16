@@ -1,0 +1,13 @@
+{{- with .Values.extraSecret }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "hoopsidecar.extraEnvSecretName" $ }}
+  labels:
+    {{- include "hoopsidecar.labels" $ | nindent 4 }}
+type: Opaque
+stringData:
+  {{- range $KEY, $VAL := . }}
+  {{ $KEY }}: '{{ $VAL}}'
+  {{- end }}
+{{- end }}

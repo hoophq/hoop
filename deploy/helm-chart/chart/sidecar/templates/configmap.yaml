@@ -1,0 +1,11 @@
+{{- if and .Values.config (not .Values.existingConfigMap) }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "hoopsidecar.configMapName" . }}
+  labels:
+    {{- include "hoopsidecar.labels" . | nindent 4 }}
+data:
+  {{ include "hoopsidecar.configFile" . }}: |
+    {{- toYaml .Values.config | nindent 4 }}
+{{- end }}

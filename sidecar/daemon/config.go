@@ -104,7 +104,16 @@ type Config struct {
 	// License is a path to the document Hoop issued, or the document
 	// itself: a value starting with "{" is the document, so moving one
 	// between a mounted file and a secret is not also a rename. Lowest
-	// precedence of the three sources; ResolveLicense holds the order.
+	// precedence of the three STANDALONE sources; ResolveLicense holds the
+	// order. It is not a source at all once a control plane is configured,
+	// and resolveConfigSource empties it there so no reader mistakes it for
+	// something in force.
+	//
+	// It is also the key the control plane's own license arrives in: the
+	// plane writes the organization's document here on the way out, rather
+	// than beside it, because this process decodes the answer with
+	// DisallowUnknownFields. resolveConfigSource moves it onto the
+	// connection as soon as it lands, so the two never read as one source.
 	License string `json:"license,omitempty"`
 
 	// ControlPlaneURL is the Control Plane this sidecar connects to. Empty
@@ -114,6 +123,20 @@ type Config struct {
 	// file must not also declare listeners. HOOP_CONTROL_PLANE_URL
 	// outranks this key; resolveControlPlaneURL holds the order.
 	ControlPlaneURL string `json:"control_plane_url,omitempty"`
+
+	// LoadFromDisk is the control plane telling this sidecar that its own
+	// config file is the source of truth. It is meaningful only in the
+	// document the plane SERVES: the plane answers such a sidecar with this
+	// flag and a license, nothing else, and the process runs the file it was
+	// started with.
+	//
+	// A pointer for the reason Guardrails is one: resolveConfigSource has to
+	// tell "the operator wrote this key" from "the operator wrote nothing",
+	// because a LOCAL file may not write it at all. Either value there is a
+	// second way to say what only the plane says, so both are refused.
+	//
+	// Absent (the zero value) is today's contract: the plane owns the document.
+	LoadFromDisk *bool `json:"load_from_disk,omitempty"`
 
 	// Policy is the DEPRECATED pre-ADR-0011 spelling of Guardrails and OPA
 	// combined. normalize empties it.
@@ -128,7 +151,7 @@ type Config struct {
 	// three have to report the same thing.
 	Deprecations []string `json:"-"`
 
-	// lic is the VERIFIED license ResolveLicense reached. Setup fills it,
+	// lic is the VERIFIED license resolveLicenseFor reached. Setup fills it,
 	// UseLicense sets it for a caller assembling a Config in Go. Not a
 	// config key: the file names a license and does not carry a verdict.
 	// The zero value is missing, so an embedder who skips it keeps the caps.

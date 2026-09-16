@@ -168,6 +168,43 @@ func UpdateSidecarConfiguration(db *gorm.DB, orgID, nameOrID string, configurati
 	return &item, nil
 }
 
+// PatchSidecarConfiguration merges a partial document into the stored
+// configuration: the keys in merge overwrite, the rest of the document is left
+// as it was. It is a jsonb concatenation on the column rather than a document
+// replacement, so a configuration a sidecar imported concurrently keeps its
+// listeners instead of being overwritten by a stale copy. removeLoadFromDisk
+// drops the key after the merge — false is the same fact as absent, and an
+// older sidecar rejects an unknown key. Returns ErrNotFound when no row
+// matched.
+func PatchSidecarConfiguration(db *gorm.DB, orgID, nameOrID string, merge json.RawMessage, removeLoadFromDisk bool) (*Sidecar, error) {
+	identifierClause := "name = ?"
+	if _, err := uuid.Parse(nameOrID); err == nil {
+		identifierClause = "id = ?"
+	}
+
+	expr := "configuration || ?::jsonb"
+	if removeLoadFromDisk {
+		expr = "(configuration || ?::jsonb) - 'load_from_disk'"
+	}
+
+	var item Sidecar
+	err := db.Raw(`
+	UPDATE private.sidecars
+	SET configuration = `+expr+`
+	WHERE org_id = ? AND `+identifierClause+`
+	RETURNING id, org_id, name, created_by, created_at, configuration`,
+		string(merge), orgID, nameOrID).
+		Scan(&item).
+		Error
+	if err != nil {
+		return nil, err
+	}
+	if item.ID == "" {
+		return nil, ErrNotFound
+	}
+	return &item, nil
+}
+
 // AdoptSidecarConfiguration stores the document a sidecar carried locally,
 // but only while the row holds no listeners: the guard runs in the UPDATE
 // itself, so a configuration authored concurrently in the control plane is

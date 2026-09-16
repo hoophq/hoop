@@ -1,0 +1,17 @@
+Inspection sidecar deployed
+
+The relay opens one listener per entry in your config's `listeners` block and
+nothing else. Check what each one resolved to:
+
+  kubectl logs deploy/{{ include "hoopsidecar.fullname" . }}
+
+With the admin server configured, /healthz, /stats and /config report the
+running state, and /config is the resolved result — every default a lane
+inherited, already folded in.
+
+Validate a config change before it reaches a pod:
+
+  hoop start sidecar --config config.yaml --validate
+
+Documentation:
+https://hoop.dev/docs/setup

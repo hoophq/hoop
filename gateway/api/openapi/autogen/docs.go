@@ -9974,7 +9974,7 @@ const docTemplate = `{
         },
         "/sidecars/configuration": {
             "get": {
-                "description": "Authenticated with the hoop-sidecar-token header. Returns the configuration the sidecar must serve. Unlike the handshake it records nothing, so a poll never overwrites what the sidecar last reported about itself.",
+                "description": "Authenticated with the hoop-sidecar-token header. Returns the configuration the sidecar must serve, carrying the organization's license in its \"license\" key, or only the load_from_disk flag and the license when the sidecar loads its configuration from disk. Unlike the handshake it records nothing, so a poll never overwrites what the sidecar last reported about itself.",
                 "produces": [
                     "application/json"
                 ],
@@ -9997,6 +9997,12 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        },
+                        "headers": {
+                            "hoop-sidecar-license-managed": {
+                                "type": "string",
+                                "description": "Present when this gateway owns the licensing decision; see the handshake."
+                            }
                         }
                     },
                     "401": {
@@ -10014,7 +10020,7 @@ const docTemplate = `{
                 }
             },
             "put": {
-                "description": "Authenticated with the hoop-sidecar-token header. Stores the config document a sidecar carried locally, once: the import is refused with 409 when the control plane already holds a configuration with listeners, so a centrally authored config is never overwritten by a restarting sidecar.",
+                "description": "Authenticated with the hoop-sidecar-token header. Stores the config document a sidecar carried locally, once: the import is refused with 409 when the control plane already holds a configuration with listeners, or when the sidecar loads its configuration from disk.",
                 "consumes": [
                     "application/json"
                 ],
@@ -10086,7 +10092,7 @@ const docTemplate = `{
         },
         "/sidecars/handshake": {
             "post": {
-                "description": "Authenticated with the hoop-sidecar-token header. Records the reported version and returns the configuration the sidecar must serve. Answers 412 while no configuration with listeners is assigned, recording nothing: a sidecar that cannot run must not show up as recently seen.",
+                "description": "Authenticated with the hoop-sidecar-token header. Records the reported version and returns the configuration the sidecar must serve. A sidecar whose stored configuration sets load_from_disk receives only that flag and its license, and runs its own config file. Answers 412 while no configuration with listeners is assigned, recording nothing: a sidecar that cannot run must not show up as recently seen. The answer carries the organization's license in its \"license\" key; the sidecar verifies that signature itself and the license is never stored per sidecar.",
                 "consumes": [
                     "application/json"
                 ],
@@ -10121,6 +10127,12 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        },
+                        "headers": {
+                            "hoop-sidecar-license-managed": {
+                                "type": "string",
+                                "description": "Present when this gateway owns the licensing decision, so an answer with no license means the organization holds none. A gateway older than the feature omits it, and the sidecar then keeps its own license sources."
+                            }
                         }
                     },
                     "400": {
@@ -10348,6 +10360,69 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "Merge a partial configuration into the document a sidecar serves: the keys sent are updated and the rest are left as stored. Unlike PUT it never replaces the whole document, so it cannot overwrite a configuration a sidecar imported meanwhile. load_from_disk false clears the key, handing the document back to the control plane.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sidecars"
+                ],
+                "summary": "Patch Sidecar Configuration",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the sidecar",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SidecarPatchRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SidecarResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -12032,7 +12107,8 @@ const docTemplate = `{
                     "enum": [
                         "jit",
                         "command",
-                        "jit_command"
+                        "jit_command",
+                        "sidecar"
                     ],
                     "example": "command"
                 },
@@ -12164,12 +12240,13 @@ const docTemplate = `{
                     "example": 3600
                 },
                 "access_type": {
-                    "description": "The access type",
+                    "description": "The access type. A control plane accepts only sidecar; a gateway accepts jit, command or jit_command",
                     "type": "string",
                     "enum": [
                         "jit",
                         "command",
-                        "jit_command"
+                        "jit_command",
+                        "sidecar"
                     ],
                     "example": "command"
                 },
@@ -12201,7 +12278,7 @@ const docTemplate = `{
                     ]
                 },
                 "connection_names": {
-                    "description": "Connection names that this rule applies to",
+                    "description": "Connection names that this rule applies to. Required by a gateway, refused by a control plane",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -19546,6 +19623,18 @@ const docTemplate = `{
                     "description": "Version of the sidecar binary",
                     "type": "string",
                     "example": "1.0.0"
+                }
+            }
+        },
+        "openapi.SidecarPatchRequest": {
+            "type": "object",
+            "required": [
+                "configuration"
+            ],
+            "properties": {
+                "configuration": {
+                    "description": "A partial daemon configuration. Only the keys present are updated; the\nrest of the stored document is left unchanged. load_from_disk false\nclears the key and hands the document back to the control plane.",
+                    "type": "object"
                 }
             }
         },

@@ -1,0 +1,97 @@
+{{- /*
+Lane Services. One Kubernetes Service per entry, because Service type and
+every cloud load-balancer knob are per-Service and not per-port: an admin
+putting one lane on an internal LB and another on a public one needs two
+objects, and no single multi-port Service can express it.
+
+A map rather than a list so `--set laneServices.public.type=LoadBalancer`
+works and several values files merge. List indices are positional and do not.
+
+The admin Service is separate and untouched: always ClusterIP, always 19000.
+*/ -}}
+{{- range $key, $svc := .Values.laneServices }}
+{{- if $svc.enabled }}
+{{- if not $svc.ports }}
+{{- fail (printf "laneServices.%s is enabled but names no ports: a Service with no port reaches nothing. List the ports your config's listeners bind." $key) }}
+{{- end }}
+{{- if gt (len $svc.ports) 1 }}
+{{- range $svc.ports }}
+{{- if not .name }}
+{{- fail (printf "laneServices.%s has more than one port, so every port needs a name" $key) }}
+{{- end }}
+{{- end }}
+{{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $svc.name | default (printf "%s-%s" (include "hoopsidecar.fullname" $) $key) }}
+  labels:
+    {{- include "hoopsidecar.labels" $ | nindent 4 }}
+    {{- with $svc.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with $svc.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ $svc.type | default "ClusterIP" }}
+  selector:
+    {{- include "hoopsidecar.selectorLabels" $ | nindent 4 }}
+  ports:
+  {{- range $svc.ports }}
+    - port: {{ .port }}
+      targetPort: {{ .targetPort | default .port }}
+      protocol: {{ .protocol | default "TCP" }}
+      {{- with .name }}
+      name: {{ . }}
+      {{- end }}
+      {{- with .nodePort }}
+      nodePort: {{ . }}
+      {{- end }}
+      {{- with .appProtocol }}
+      appProtocol: {{ . }}
+      {{- end }}
+  {{- end }}
+  {{- with $svc.clusterIP }}
+  clusterIP: {{ . }}
+  {{- end }}
+  {{- with $svc.loadBalancerIP }}
+  loadBalancerIP: {{ . }}
+  {{- end }}
+  {{- with $svc.loadBalancerClass }}
+  loadBalancerClass: {{ . }}
+  {{- end }}
+  {{- with $svc.loadBalancerSourceRanges }}
+  loadBalancerSourceRanges:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with $svc.externalTrafficPolicy }}
+  externalTrafficPolicy: {{ . }}
+  {{- end }}
+  {{- with $svc.internalTrafficPolicy }}
+  internalTrafficPolicy: {{ . }}
+  {{- end }}
+  {{- with $svc.sessionAffinity }}
+  sessionAffinity: {{ . }}
+  {{- end }}
+  {{- with $svc.externalIPs }}
+  externalIPs:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with $svc.ipFamilyPolicy }}
+  ipFamilyPolicy: {{ . }}
+  {{- end }}
+  {{- with $svc.ipFamilies }}
+  ipFamilies:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- if $svc.publishNotReadyAddresses }}
+  publishNotReadyAddresses: true
+  {{- end }}
+  {{- if hasKey $svc "allocateLoadBalancerNodePorts" }}
+  allocateLoadBalancerNodePorts: {{ $svc.allocateLoadBalancerNodePorts }}
+  {{- end }}
+{{- end }}
+{{- end }}

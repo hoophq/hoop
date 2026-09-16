@@ -83,7 +83,7 @@ func TestTheWatchdogFiresWhenTheTermEnds(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	expired := watchLicense(ctx, expiredIn(t, -time.Second), time.Millisecond, log)
+	expired := watchLicense(ctx, newLicenseState(expiredIn(t, -time.Second), true), time.Millisecond, log)
 
 	select {
 	case <-expired:
@@ -102,7 +102,7 @@ func TestTheWatchdogWaitsWhileTheTermRuns(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	expired := watchLicense(ctx, expiredIn(t, time.Hour), time.Millisecond, newTestLogger(&bytes.Buffer{}))
+	expired := watchLicense(ctx, newLicenseState(expiredIn(t, time.Hour), true), time.Millisecond, newTestLogger(&bytes.Buffer{}))
 
 	select {
 	case <-expired:
@@ -115,13 +115,31 @@ func TestTheWatchdogWaitsWhileTheTermRuns(t *testing.T) {
 // context ends, so Run reports a signal as a signal and exits zero.
 func TestTheWatchdogIsSilentOnShutdown(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	expired := watchLicense(ctx, expiredIn(t, time.Hour), time.Hour, newTestLogger(&bytes.Buffer{}))
+	expired := watchLicense(ctx, newLicenseState(expiredIn(t, time.Hour), true), time.Hour, newTestLogger(&bytes.Buffer{}))
 	cancel()
 
 	select {
 	case <-expired:
 		t.Fatal("a signalled shutdown was reported as a license expiry")
 	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+// The watchdog reads the shared state each tick, so a license a reload
+// published governs the running watcher: this is what lets a plane shorten
+// a term — or renew one — without a restart.
+func TestTheWatchdogFollowsAHotSwappedLicense(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	st := newLicenseState(expiredIn(t, time.Hour), true)
+	expired := watchLicense(ctx, st, time.Millisecond, newTestLogger(&bytes.Buffer{}))
+
+	st.set(expiredIn(t, -time.Second))
+	select {
+	case <-expired:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the watchdog kept running on a license the state replaced")
 	}
 }
 
