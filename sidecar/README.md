@@ -1252,9 +1252,12 @@ and `hoop start sidecar` link `gs://`:
 
 A bucket carries an artifact a ConfigMap cannot (1 MiB cap), and lets each
 team's CI publish its own set without a redeploy of the sidecar's volume.
-The read is one GET on the JSON API with Application Default Credentials —
+The read is one GET on the JSON API as a GCP identity: a service account
+key inline in `GOOGLE_APPLICATION_CREDENTIALS_JSON` (the gateway's own
+variable, so one Secret serves both processes; set but malformed is an
+error, never a fallthrough), else Application Default Credentials —
 Workload Identity, an attached service account, or
-`GOOGLE_APPLICATION_CREDENTIALS` — and the identity needs
+`GOOGLE_APPLICATION_CREDENTIALS`. The identity needs
 `storage.objects.get` on the object (`roles/storage.objectViewer`). There
 is no anonymous read. `?generation=N` pins one version; any other query
 parameter, or one the URL parser cannot decode, is refused, so a typo

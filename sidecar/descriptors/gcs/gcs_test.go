@@ -44,6 +44,45 @@ func fetch(t *testing.T, entry string) ([]byte, error) {
 	return Fetch(context.Background(), u)
 }
 
+// realFindCredentials is the resolver as shipped, captured before any test
+// stubs the variable, so the credential-source tests exercise the real one.
+var realFindCredentials = findCredentials
+
+// A key passed inline outranks ADC, its contents never reach an error, and
+// a value that is set but wrong is an error rather than a fallthrough to
+// whatever identity ADC would have found.
+func TestInlineJSONCredentialOutranksADCAndIsNeverEchoed(t *testing.T) {
+	// ADC would fail here: the path variable names a file that does not
+	// exist. The inline key must be consulted first and win.
+	t.Setenv("GOOGLE_APPLICATION_CREDENTIALS", t.TempDir()+"/absent.json")
+	const secret = "MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC-not-a-real-key"
+	t.Setenv(CredentialsJSONEnv, `{"type":"service_account","project_id":"p",`+
+		`"client_email":"reader@p.iam.gserviceaccount.com",`+
+		`"private_key":"-----BEGIN PRIVATE KEY-----\n`+secret+`\n-----END PRIVATE KEY-----\n",`+
+		`"token_uri":"https://oauth2.googleapis.com/token"}`)
+	if _, err := realFindCredentials(context.Background()); err != nil {
+		t.Fatalf("inline key was not accepted: %v", err)
+	}
+
+	t.Setenv(CredentialsJSONEnv, `{"type":"service_account","private_key":"`+secret+`"`) // truncated
+	_, err := realFindCredentials(context.Background())
+	if err == nil {
+		t.Fatal("a malformed inline key fell through")
+	}
+	if !strings.Contains(err.Error(), CredentialsJSONEnv+" is set but is not") {
+		t.Errorf("error %q does not name the variable", err)
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Errorf("error echoes the key material")
+	}
+
+	t.Setenv(CredentialsJSONEnv, "   ")
+	_, err = realFindCredentials(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "no application default credentials") {
+		t.Errorf("blank inline value must fall through to ADC, got %v", err)
+	}
+}
+
 // The object name is one path segment to the JSON API, so its slashes must
 // travel escaped; the version pin must reach the API under its own name;
 // and the bearer token must be on the request. Any of these wrong is a 404

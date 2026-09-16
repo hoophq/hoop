@@ -2,7 +2,9 @@
 // Storage, for `descriptors` entries spelled gs://BUCKET/OBJECT.
 //
 // The read is one GET against the JSON API with alt=media — the object
-// bytes, nothing else — authenticated with Application Default Credentials:
+// bytes, nothing else — authenticated as a GCP identity: a service account
+// key passed inline in GOOGLE_APPLICATION_CREDENTIALS_JSON (the gateway's
+// spelling, so one Secret serves both), or Application Default Credentials:
 // Workload Identity on GKE, the attached service account on GCE or Cloud
 // Run, GOOGLE_APPLICATION_CREDENTIALS, or gcloud on a laptop. The identity
 // needs storage.objects.get on the object (roles/storage.objectViewer). There
@@ -27,6 +29,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 
@@ -50,15 +53,37 @@ var maxBytes int64 = 512 << 20
 // endpoint is the JSON API base. A variable so a test can stand in for it.
 var endpoint = "https://storage.googleapis.com"
 
-// findCredentials resolves ADC under the fetch's context: the token source
-// it returns mints over that context's deadline, where the credential type
-// allows one. A variable so a test can supply a token without a metadata
-// server or a key file.
+// CredentialsJSONEnv names the environment variable carrying a service
+// account key as inline JSON: the gateway's spelling for its own GCP
+// credential, so one Secret serves both processes. It outranks ADC. A value
+// that is set but is not a credential is an error, never a fallthrough to
+// ADC: an operator who set it meant it, and silently minting under a
+// different identity would make the IAM error name the wrong account.
+const CredentialsJSONEnv = "GOOGLE_APPLICATION_CREDENTIALS_JSON"
+
+// findCredentials resolves the credential under the fetch's context: the
+// token source it returns mints over that context's deadline, where the
+// credential type allows one. Inline JSON first, then ADC — Workload
+// Identity, an attached service account, GOOGLE_APPLICATION_CREDENTIALS, or
+// gcloud on a laptop. A variable so a test can supply a token without a
+// metadata server or a key file.
 var findCredentials = func(ctx context.Context) (oauth2.TokenSource, error) {
+	if raw := strings.TrimSpace(os.Getenv(CredentialsJSONEnv)); raw != "" {
+		creds, err := google.CredentialsFromJSON(ctx, []byte(raw), scope)
+		if err != nil {
+			// The library's error can quote the malformed input; a key
+			// file's contents must not reach a log line. Name the
+			// variable and the shape instead.
+			return nil, fmt.Errorf("%s is set but is not a service account key "+
+				"(want the key file's JSON, not a path; the path variable is GOOGLE_APPLICATION_CREDENTIALS)", CredentialsJSONEnv)
+		}
+		return creds.TokenSource, nil
+	}
 	creds, err := google.FindDefaultCredentials(ctx, scope)
 	if err != nil {
 		return nil, fmt.Errorf("no application default credentials found "+
-			"(Workload Identity, an attached service account, or GOOGLE_APPLICATION_CREDENTIALS): %w", err)
+			"(Workload Identity, an attached service account, GOOGLE_APPLICATION_CREDENTIALS, "+
+			"or the key's JSON in %s): %w", CredentialsJSONEnv, err)
 	}
 	return creds.TokenSource, nil
 }
