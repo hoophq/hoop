@@ -11,8 +11,10 @@ import (
 //
 // Lock-free on the allow path: a gate increments an atomic per statement,
 // and nothing here is allowed to cost the data path more than that. The
-// deny path takes a mutex to bump a per-source counter; denials are the
-// rare case and the map is small.
+// deny path takes a mutex, because a denial is two facts — the total and
+// its source — and a snapshot must see both or neither, or the per-source
+// breakdown stops partitioning the total within a window. Denials are the
+// rare case.
 type Counters struct {
 	mu    sync.Mutex
 	lanes map[string]*LaneCounter
@@ -34,7 +36,7 @@ func (c *Counters) Lane(protocol string) *LaneCounter {
 	defer c.mu.Unlock()
 	lc, ok := c.lanes[protocol]
 	if !ok {
-		lc = &LaneCounter{deniedBy: make(map[string]int64)}
+		lc = &LaneCounter{deniedBy: make(map[string]int64), prevDeniedBy: make(map[string]int64)}
 		c.lanes[protocol] = lc
 	}
 	return lc
@@ -48,19 +50,21 @@ func (c *Counters) HeartbeatFailed() { c.heartbeatFailures.Add(1) }
 // reason to import this one.
 type LaneCounter struct {
 	statements  atomic.Int64
-	denied      atomic.Int64
 	masked      atomic.Int64
 	auditErrors atomic.Int64
 
-	// deniedBy counts denials per source (a rule type, "opa", "analyzer",
-	// "audit", "stream"). Written under mu on the deny path only.
-	mu       sync.Mutex
-	deniedBy map[string]int64
+	// denied and deniedBy are written together under mu, and Snapshot reads
+	// them under it too, so the breakdown always sums to the total for the
+	// same instant. prevDenied and prevDeniedBy are the baselines the last
+	// Snapshot advanced to; they live under the same lock.
+	mu           sync.Mutex
+	denied       int64
+	deniedBy     map[string]int64
+	prevDenied   int64
+	prevDeniedBy map[string]int64
 
-	// prev* hold the values the last Snapshot reported, so the next one
-	// reports a delta. Read and written under Counters.mu only.
-	prevStatements, prevDenied, prevMasked, prevAuditErrors int64
-	prevDeniedBy                                            map[string]int64
+	// prev* for the atomics, read and written under Counters.mu only.
+	prevStatements, prevMasked, prevAuditErrors int64
 }
 
 // Statement records one judged statement. source is the denial's kind,
@@ -71,11 +75,11 @@ func (l *LaneCounter) Statement(denied bool, source string) {
 	if !denied {
 		return
 	}
-	l.denied.Add(1)
 	if source == "" {
 		source = "unknown"
 	}
 	l.mu.Lock()
+	l.denied++
 	l.deniedBy[source]++
 	l.mu.Unlock()
 }
@@ -107,7 +111,7 @@ type Usage struct {
 	HeartbeatFailures int64
 	ByProtocol        map[string]LaneUsage
 	// DeniedBy is the process-wide denial count per source in the window.
-	// Sources with no denials are omitted.
+	// Sources with no denials are omitted. It sums to Denied.
 	DeniedBy map[string]int64
 }
 
@@ -121,19 +125,20 @@ func (c *Counters) Snapshot() Usage {
 		DeniedBy:   make(map[string]int64),
 	}
 	for proto, l := range c.lanes {
-		s, d, m, a := l.statements.Load(), l.denied.Load(), l.masked.Load(), l.auditErrors.Load()
+		s, m, a := l.statements.Load(), l.masked.Load(), l.auditErrors.Load()
 		lu := LaneUsage{
 			Statements: s - l.prevStatements,
-			Denied:     d - l.prevDenied,
 			Masked:     m - l.prevMasked,
 		}
 		u.AuditErrors += a - l.prevAuditErrors
-		l.prevStatements, l.prevDenied, l.prevMasked, l.prevAuditErrors = s, d, m, a
+		l.prevStatements, l.prevMasked, l.prevAuditErrors = s, m, a
 
+		// One critical section for the denial total and its breakdown: a
+		// denial landing between two separate reads would be in one and
+		// not the other.
 		l.mu.Lock()
-		if l.prevDeniedBy == nil {
-			l.prevDeniedBy = make(map[string]int64, len(l.deniedBy))
-		}
+		lu.Denied = l.denied - l.prevDenied
+		l.prevDenied = l.denied
 		for src, n := range l.deniedBy {
 			if delta := n - l.prevDeniedBy[src]; delta > 0 {
 				u.DeniedBy[src] += delta

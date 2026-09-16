@@ -416,7 +416,11 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 	if err != nil {
 		log.Error("upstream dial failed", "upstream", s.cfg.Upstream, "error", err)
 		if s.cfg.Audit != nil {
-			_ = s.cfg.Audit.Write(ctx, audit.ErrorEvent(sess, err))
+			if aerr := s.cfg.Audit.Write(ctx, audit.ErrorEvent(sess, err)); aerr != nil && s.cfg.Metrics != nil {
+				// The one audit write that happens outside a Gate, so it
+				// reports its own failure into the same counter.
+				s.cfg.Metrics.AuditError()
+			}
 		}
 		return
 	}

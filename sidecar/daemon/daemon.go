@@ -180,12 +180,7 @@ func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*
 	}
 	cfg.entrypoint = o.entrypoint
 	cfg.deprecatedAlias = o.deprecatedAlias
-	if path != "" {
-		cfg.configFormat = "json"
-		if isYAMLPath(path) {
-			cfg.configFormat = "yaml"
-		}
-	}
+	setConfigFormat(cfg, path)
 	cfg.lic = resolveLicenseFor(cfg.cp, o.licenseFlag, cfg.License)
 	if cfg.lic.State() == license.StateInvalid {
 		return nil, nil, cfg.lic.Err
@@ -210,6 +205,23 @@ const (
 	flagLicenseSource  = "the license flag"
 	fileLicenseSource  = `the "license" config key`
 )
+
+// setConfigFormat records the format of the document that is AUTHORITATIVE
+// for this process, for analytics. A plane-served config is JSON regardless
+// of what a local file is; the file's extension counts only when the file is
+// what runs (standalone, or a plane that delegated to disk). Empty when
+// nothing was loaded from anywhere.
+func setConfigFormat(cfg *Config, path string) {
+	switch {
+	case cfg.cp != nil && !cfg.cp.diskMode:
+		cfg.configFormat = "json"
+	case path != "":
+		cfg.configFormat = "json"
+		if isYAMLPath(path) {
+			cfg.configFormat = "yaml"
+		}
+	}
+}
 
 // ResolveLicense picks the license a STANDALONE process runs under, highest
 // precedence first: the command line, then HOOP_LICENSE, then the config

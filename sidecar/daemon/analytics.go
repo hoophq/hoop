@@ -76,6 +76,56 @@ type telemetry struct {
 	// starts them from zero, and keying by pointer keeps that from reading
 	// as a negative delta.
 	analyzers map[*analyzer.Evaluator]analyzer.Stats
+	// banked is the final delta of evaluators retired since the previous
+	// usage event, carried into the next one. Under usageMu.
+	banked analyzerDelta
+}
+
+// analyzerDelta is one window's worth of analyzer counters, either read
+// from live instances or banked from instances a reload retired.
+type analyzerDelta struct {
+	calls, failures, failOpen, denied, cacheHits int64
+}
+
+// analyzerDeltaSince is what an evaluator did between a baseline and now.
+func analyzerDeltaSince(ev *analyzer.Evaluator, now, prev analyzer.Stats) analyzerDelta {
+	d := analyzerDelta{
+		calls:     now.Calls - prev.Calls,
+		denied:    now.Denied - prev.Denied,
+		cacheHits: int64(now.CacheHits - prev.CacheHits),
+		failures:  now.Errors - prev.Errors,
+	}
+	if ev.FailOpen() {
+		d.failOpen = d.failures
+	}
+	return d
+}
+
+// retireAnalyzers banks the final delta of evaluators a reload is about to
+// drop, so their last window's work reaches the next usage event instead of
+// vanishing with the instance. Called by the reloader before it publishes
+// the swapped lanes; the usage lock keeps it from racing a snapshot.
+func (t *telemetry) retireAnalyzers(evs []*analyzer.Evaluator) {
+	if t == nil {
+		return
+	}
+	t.usageMu.Lock()
+	defer t.usageMu.Unlock()
+	for _, ev := range evs {
+		prev, tracked := t.analyzers[ev]
+		if !tracked {
+			// Installed and retired inside one window: nothing was
+			// baselined, so everything it did is the delta.
+			prev = analyzer.Stats{}
+		}
+		d := analyzerDeltaSince(ev, ev.Stats(), prev)
+		t.banked.calls += d.calls
+		t.banked.failures += d.failures
+		t.banked.failOpen += d.failOpen
+		t.banked.denied += d.denied
+		t.banked.cacheHits += d.cacheHits
+		delete(t.analyzers, ev)
+	}
 }
 
 // newTelemetry builds the client from what Setup learned. The sidecar id
@@ -374,6 +424,12 @@ func (t *telemetry) trackUsage(sources []statSource, lanes []lane) {
 	if t == nil {
 		return
 	}
+	t.client.Track(analytics.EventUsage, t.usageProperties(sources, lanes))
+}
+
+// usageProperties cuts one usage window and advances every baseline. Split
+// from trackUsage so a test reads the numbers without a Segment stub.
+func (t *telemetry) usageProperties(sources []statSource, lanes []lane) analytics.Properties {
 	t.usageMu.Lock()
 	defer t.usageMu.Unlock()
 	now := time.Now()
@@ -417,10 +473,13 @@ func (t *telemetry) trackUsage(sources []statSource, lanes []lane) {
 	}
 	t.conns = cur
 
-	// Analyzer: deltas per evaluator instance, summed. Instances that left
-	// with a reload take their tail with them; the next generation starts
+	// Analyzer: deltas per evaluator instance, summed, plus whatever
+	// retireAnalyzers banked from instances a reload swapped out since the
+	// last window. A newly installed instance has no baseline and starts
 	// from its own zero.
-	var calls, failures, failOpen, denied, cacheHits int64
+	calls, failures, failOpen, denied, cacheHits :=
+		t.banked.calls, t.banked.failures, t.banked.failOpen, t.banked.denied, t.banked.cacheHits
+	t.banked = analyzerDelta{}
 	seen := make(map[*analyzer.Evaluator]analyzer.Stats)
 	for _, ln := range lanes {
 		for _, ev := range ln.analyzers {
@@ -428,16 +487,13 @@ func (t *telemetry) trackUsage(sources []statSource, lanes []lane) {
 				continue
 			}
 			s := ev.Stats()
-			prev := t.analyzers[ev]
+			d := analyzerDeltaSince(ev, s, t.analyzers[ev])
 			seen[ev] = s
-			calls += s.Calls - prev.Calls
-			denied += s.Denied - prev.Denied
-			cacheHits += int64(s.CacheHits - prev.CacheHits)
-			errs := s.Errors - prev.Errors
-			failures += errs
-			if ev.FailOpen() {
-				failOpen += errs
-			}
+			calls += d.calls
+			denied += d.denied
+			cacheHits += d.cacheHits
+			failures += d.failures
+			failOpen += d.failOpen
 		}
 	}
 	t.analyzers = seen
@@ -462,7 +518,7 @@ func (t *telemetry) trackUsage(sources []statSource, lanes []lane) {
 		"by-protocol":             byProto,
 	}
 	t.lastUsage = now
-	t.client.Track(analytics.EventUsage, p)
+	return p
 }
 
 // connSnapshot is one protocol's lifetime connection totals at an instant;

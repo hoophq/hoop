@@ -2,6 +2,7 @@ package analytics
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -190,6 +191,53 @@ func TestCountersReportDeltas(t *testing.T) {
 	u = cs.Snapshot()
 	if u.Statements != 1 || u.Denied != 0 || u.HeartbeatFailures != 0 || len(u.DeniedBy) != 0 {
 		t.Fatalf("second snapshot must be a delta, got %+v", u)
+	}
+}
+
+// A denial is two writes, the total and its source. A snapshot racing the
+// writer must see both or neither in one window, or denies-by-kind stops
+// partitioning statements-denied. Hammered from several goroutines while
+// snapshots are cut mid-flight; every window must balance.
+func TestDeniedBreakdownPartitionsTheTotalUnderConcurrency(t *testing.T) {
+	cs := NewCounters()
+	l := cs.Lane("postgres")
+	const writers, perWriter = 8, 2000
+	var wg sync.WaitGroup
+	for w := range writers {
+		wg.Add(1)
+		go func(src string) {
+			defer wg.Done()
+			for range perWriter {
+				l.Statement(true, src)
+			}
+		}(fmt.Sprintf("kind-%d", w%3))
+	}
+	done := make(chan struct{})
+	go func() { wg.Wait(); close(done) }()
+
+	var totalDenied, totalByKind int64
+	check := func(u Usage) {
+		var sum int64
+		for _, n := range u.DeniedBy {
+			sum += n
+		}
+		if sum != u.Denied {
+			t.Fatalf("window: denied=%d but breakdown sums to %d", u.Denied, sum)
+		}
+		totalDenied += u.Denied
+		totalByKind += sum
+	}
+	for {
+		select {
+		case <-done:
+			check(cs.Snapshot())
+			if totalDenied != writers*perWriter || totalByKind != writers*perWriter {
+				t.Fatalf("across windows: denied=%d by-kind=%d, want %d", totalDenied, totalByKind, writers*perWriter)
+			}
+			return
+		default:
+			check(cs.Snapshot())
+		}
 	}
 }
 

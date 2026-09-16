@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/hoophq/hoop/sidecar/analytics"
 	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
@@ -158,5 +159,86 @@ func TestCollectAnalyzersFindsEvaluatorsInsideChainAndObserve(t *testing.T) {
 	}
 	if collectAnalyzers(nil) != nil || collectAnalyzers(rules) != nil {
 		t.Fatal("a chain with no analyzer must collect none")
+	}
+}
+
+// An evaluator a reload swaps out must not take its last window's work with
+// it: the reloader banks the delta, and the next usage event carries it.
+// Then the new instance starts from zero, never negative.
+func TestRetiredAnalyzersReachTheNextUsageEvent(t *testing.T) {
+	newEv := func() *analyzer.Evaluator {
+		ev, err := analyzer.New(analyzer.Config{
+			Rule: "risky", Provider: stubAnalyzerProvider{},
+			Trigger: analyzer.Trigger{All: true},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ev
+	}
+	// A request on a protocol with a content builder: what classify accepts.
+	stmt := inspect.Statement{
+		Protocol: inspect.Postgres, Direction: inspect.FromClient,
+		Operation: inspect.OpSelect, Text: "SELECT 1",
+	}
+
+	tel := &telemetry{
+		client:    &analytics.Client{}, // disabled; we read the properties directly
+		counters:  analytics.NewCounters(),
+		conns:     map[string]connSnapshot{},
+		analyzers: map[*analyzer.Evaluator]analyzer.Stats{},
+	}
+	old := newEv()
+	old.Evaluate(stmt)
+	old.Evaluate(stmt)
+	oldCalls := old.Stats().Calls
+	if oldCalls == 0 {
+		t.Fatal("fixture: the retired evaluator made no calls")
+	}
+
+	// A reload retires old before any usage event baselined it.
+	tel.retireAnalyzers([]*analyzer.Evaluator{old})
+	fresh := newEv()
+	fresh.Evaluate(stmt)
+	freshCalls := fresh.Stats().Calls
+
+	got := tel.usageProperties(nil, []lane{{analyzers: []*analyzer.Evaluator{fresh}}})
+	if want := oldCalls + freshCalls; got["analyzer-calls"] != want {
+		t.Fatalf("analyzer-calls = %v, want %d (%d banked from the retired instance + %d live)",
+			got["analyzer-calls"], want, oldCalls, freshCalls)
+	}
+	if _, still := tel.analyzers[old]; still {
+		t.Fatal("retired evaluator still tracked")
+	}
+
+	// Next window: nothing new happened; the bank is empty and fresh's
+	// baseline holds, so the delta is zero, not negative.
+	got = tel.usageProperties(nil, []lane{{analyzers: []*analyzer.Evaluator{fresh}}})
+	if got["analyzer-calls"] != int64(0) {
+		t.Fatalf("second window analyzer-calls = %v, want 0", got["analyzer-calls"])
+	}
+}
+
+// config-format names the document that is authoritative: a plane-served
+// config is JSON whatever the local file is; the file's extension counts
+// only when the file runs.
+func TestConfigFormatFollowsTheAuthoritativeSource(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		cp   *controlPlane
+		path string
+		want string
+	}{
+		{"standalone yaml", nil, "cfg.yaml", "yaml"},
+		{"standalone json", nil, "cfg.json", "json"},
+		{"plane owns, yaml on disk", &controlPlane{}, "cfg.yaml", "json"},
+		{"plane owns, no file", &controlPlane{}, "", "json"},
+		{"plane delegated to disk", &controlPlane{diskMode: true}, "cfg.yaml", "yaml"},
+	} {
+		cfg := &Config{cp: tc.cp}
+		setConfigFormat(cfg, tc.path)
+		if cfg.configFormat != tc.want {
+			t.Errorf("%s: config-format = %q, want %q", tc.name, cfg.configFormat, tc.want)
+		}
 	}
 }

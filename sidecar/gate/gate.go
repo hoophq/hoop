@@ -363,7 +363,7 @@ func (g *Gate) Start(ctx context.Context) error {
 	if g.audit == nil {
 		return nil
 	}
-	return g.audit.Write(ctx, audit.SessionStartEvent(g.sess))
+	return g.writeAudit(ctx, audit.SessionStartEvent(g.sess))
 }
 
 // Request inspects bytes travelling client -> upstream and decides whether
@@ -874,7 +874,7 @@ func (g *Gate) Close(ctx context.Context) error {
 	if g.audit == nil {
 		return nil
 	}
-	return g.audit.Write(ctx, audit.SessionEndEvent(g.sess, statements, denied))
+	return g.writeAudit(ctx, audit.SessionEndEvent(g.sess, statements, denied))
 }
 
 // Stats reports the running totals.

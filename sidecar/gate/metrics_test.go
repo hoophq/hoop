@@ -145,3 +145,31 @@ func TestMetricsCountValuesMaskedOnFlush(t *testing.T) {
 		t.Fatalf("masked after flush = %d, want 1", m.masked)
 	}
 }
+
+// Session start and end are audit writes too. A sink that fails them must
+// show up in the counter exactly once each, and the errors still return.
+func TestMetricsCountLifecycleAuditErrors(t *testing.T) {
+	for _, kind := range []audit.Kind{audit.KindSessionStart, audit.KindSessionEnd} {
+		m := &countingMetrics{}
+		g, _ := gate.New(newSession(), gate.Config{
+			Protocol: inspect.Postgres,
+			Audit:    &recordingSink{failOn: kind},
+			Metrics:  m,
+		})
+		ctx := context.Background()
+		startErr := g.Start(ctx)
+		closeErr := g.Close(ctx)
+		if (startErr != nil) != (kind == audit.KindSessionStart) || (closeErr != nil) != (kind == audit.KindSessionEnd) {
+			t.Fatalf("%s: start err=%v close err=%v", kind, startErr, closeErr)
+		}
+		if m.auditErrors != 1 {
+			t.Fatalf("%s: audit errors = %d, want 1", kind, m.auditErrors)
+		}
+		// Idempotent calls write nothing, so they count nothing.
+		_ = g.Start(ctx)
+		_ = g.Close(ctx)
+		if m.auditErrors != 1 {
+			t.Fatalf("%s: repeated Start/Close counted again: %d", kind, m.auditErrors)
+		}
+	}
+}
