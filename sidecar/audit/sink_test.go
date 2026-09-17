@@ -227,27 +227,48 @@ func TestRedactionReplacesStatementWithStableFingerprint(t *testing.T) {
 	}
 }
 
-func TestRedactionCoversHTTPBodyWithoutMutatingTheCaller(t *testing.T) {
-	detail := &inspect.HTTPDetail{Method: "POST", Path: "/login", Body: `{"password":"hunter2"}`}
+// Body, Target and Query values are the request's content; Path is its
+// identity. Redaction must take the first three and leave the last, and
+// must not write into the detail the caller still holds.
+func TestRedactionCoversHTTPContentWithoutMutatingTheCaller(t *testing.T) {
+	detail := &inspect.HTTPDetail{
+		Method: "POST", Path: "/login", Resource: "/login",
+		Target: "/login?next=%2Fadmin&user=alice",
+		Query:  map[string][]string{"next": {"/admin"}, "user": {"alice"}},
+		Body:   `{"password":"hunter2"}`,
+	}
 
 	var buf bytes.Buffer
 	s := NewJSONLSink(&buf, SinkOptions{RedactStatements: true})
-	if err := s.Write(context.Background(), Event{Statement: "POST /login", HTTP: detail}); err != nil {
+	if err := s.Write(context.Background(), Event{Statement: "POST /login?next=%2Fadmin&user=alice", HTTP: detail}); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 
-	if strings.Contains(buf.String(), "hunter2") {
-		t.Fatalf("redaction left the HTTP body in the record: %q", buf.String())
+	for _, leak := range []string{"hunter2", "alice", "admin"} {
+		if strings.Contains(buf.String(), leak) {
+			t.Fatalf("redaction left %q in the record: %q", leak, buf.String())
+		}
 	}
-	if detail.Body != `{"password":"hunter2"}` {
-		t.Errorf("the sink mutated the caller's HTTPDetail: Body = %q", detail.Body)
+	if detail.Body != `{"password":"hunter2"}` || detail.Target != "/login?next=%2Fadmin&user=alice" || detail.Query["user"][0] != "alice" {
+		t.Errorf("the sink mutated the caller's HTTPDetail: %+v", detail)
 	}
 	got := decodeLines(t, buf.String())[0]
-	if got.HTTP == nil || !strings.HasPrefix(got.HTTP.Body, "sha256:") {
-		t.Errorf("HTTP.Body = %+v, want a fingerprint", got.HTTP)
+	if got.HTTP == nil {
+		t.Fatal("HTTP detail dropped")
 	}
-	if got.HTTP.Path != "/login" {
-		t.Errorf("redaction clobbered a non-body field: Path = %q", got.HTTP.Path)
+	if !strings.HasPrefix(got.HTTP.Body, "sha256:") || !strings.HasPrefix(got.HTTP.Target, "sha256:") {
+		t.Errorf("Body = %q, Target = %q, want fingerprints", got.HTTP.Body, got.HTTP.Target)
+	}
+	if got.HTTP.Target != fingerprint(detail.Target) {
+		t.Errorf("Target fingerprint = %q, want the hash of the full target so records correlate", got.HTTP.Target)
+	}
+	// The key names survive so a reader can see WHICH parameters were
+	// passed; the values are what carried the content.
+	if got.HTTP.Query["user"][0] != fingerprint("alice") || got.HTTP.Query["next"][0] != fingerprint("/admin") {
+		t.Errorf("Query = %v, want the keys with fingerprinted values", got.HTTP.Query)
+	}
+	if got.HTTP.Path != "/login" || got.HTTP.Resource != "/login" {
+		t.Errorf("redaction clobbered an identity field: Path = %q, Resource = %q", got.HTTP.Path, got.HTTP.Resource)
 	}
 }
 

@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+
+	"github.com/hoophq/hoop/sidecar/inspect"
 )
 
 // DefaultMaxStatementBytes caps a persisted statement when SinkOptions leaves
@@ -51,8 +53,11 @@ var (
 // The zero value is usable: full statement text, capped at
 // DefaultMaxStatementBytes, stamped with time.Now.
 type SinkOptions struct {
-	// RedactStatements replaces Event.Statement (and Event.HTTP.Body) with a
-	// non-reversible fingerprint instead of the text.
+	// RedactStatements replaces Event.Statement with a non-reversible
+	// fingerprint instead of the text. On an HTTP event the same policy
+	// covers every field that carries request CONTENT rather than the
+	// resource identity: Body, Target and each Query value are
+	// fingerprinted; Method, Path, Resource and Host stay.
 	//
 	// Some shops cannot store query text at all, because literals embed the
 	// very PII the database is regulated for. A fingerprint still answers
@@ -104,13 +109,8 @@ func (o SinkOptions) apply(ev Event) Event {
 		if ev.Statement != "" {
 			ev.Statement = fingerprint(ev.Statement)
 		}
-		if ev.HTTP != nil && ev.HTTP.Body != "" {
-			// Copy: the HTTPDetail is shared with the caller's Statement and
-			// possibly with a sibling sink in a MultiSink. Redacting in
-			// place would rewrite someone else's data.
-			detail := *ev.HTTP
-			detail.Body = fingerprint(detail.Body)
-			ev.HTTP = &detail
+		if ev.HTTP != nil {
+			ev.HTTP = redactHTTPContent(ev.HTTP)
 		}
 		// Some content does not travel in Statement. An SSH env_set matches
 		// on the variable NAME, so the value it was set to rides in the
@@ -133,6 +133,43 @@ func (o SinkOptions) apply(ev Event) Event {
 func fingerprint(s string) string {
 	sum := sha256.Sum256([]byte(s))
 	return "sha256:" + hex.EncodeToString(sum[:8])
+}
+
+// redactHTTPContent fingerprints the content-bearing fields of an HTTP
+// detail and returns the result, or d itself when there was nothing to do.
+//
+// Target and Query are the query string twice over — the same literals
+// Statement carries in its request line — so a policy that fingerprints
+// Statement and left them alone would have redacted one copy of three.
+// Path and Resource are the identifier and stay: a trail that cannot say
+// what was touched answers nothing.
+//
+// It copies before writing. The HTTPDetail is shared with the caller's
+// Statement and possibly with a sibling sink in a MultiSink; redacting in
+// place would rewrite someone else's data.
+func redactHTTPContent(d *inspect.HTTPDetail) *inspect.HTTPDetail {
+	if d.Body == "" && d.Target == "" && len(d.Query) == 0 {
+		return d
+	}
+	out := *d
+	if out.Body != "" {
+		out.Body = fingerprint(out.Body)
+	}
+	if out.Target != "" {
+		out.Target = fingerprint(out.Target)
+	}
+	if len(out.Query) > 0 {
+		q := make(map[string][]string, len(out.Query))
+		for k, vs := range out.Query {
+			fp := make([]string, len(vs))
+			for i, v := range vs {
+				fp[i] = fingerprint(v)
+			}
+			q[k] = fp
+		}
+		out.Query = q
+	}
+	return &out
 }
 
 // truncate cuts s to at most max bytes and marks it.
