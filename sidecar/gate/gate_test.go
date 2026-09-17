@@ -709,6 +709,40 @@ func (c *filteringCodec) Decode(_ inspect.Direction, data []byte) ([]inspect.Sta
 	return nil, len(data), nil
 }
 
+type sizedCodec struct {
+	completeAt int
+}
+
+func (*sizedCodec) Protocol() inspect.Protocol { return inspect.Postgres }
+func (c *sizedCodec) MaxReassemblyBytes() int  { return c.completeAt }
+func (c *sizedCodec) Decode(_ inspect.Direction, data []byte) ([]inspect.Statement, int, error) {
+	if len(data) < c.completeAt {
+		return nil, 0, nil
+	}
+	return nil, len(data), nil
+}
+
+func TestGateHonorsCodecReassemblyLimit(t *testing.T) {
+	limit := inspect.DefaultMaxBuffer + 1024
+	codec := &sizedCodec{completeAt: limit}
+	g, err := gate.New(newSession(), gate.Config{
+		Protocol:     inspect.Postgres,
+		CodecFactory: func() inspect.Codec { return codec },
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	first := g.Request(context.Background(), make([]byte, inspect.DefaultMaxBuffer+1))
+	if !first.Allowed || first.Err != nil {
+		t.Fatalf("first fragment was rejected at the generic limit: %+v", first)
+	}
+	second := g.Request(context.Background(), make([]byte, 1023))
+	if !second.Allowed || second.Err != nil {
+		t.Fatalf("packet within codec limit was rejected: %+v", second)
+	}
+}
+
 func TestGateFiltersBeforeDecodeAndForward(t *testing.T) {
 	codec := &filteringCodec{}
 	g, err := gate.New(newSession(), gate.Config{

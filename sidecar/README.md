@@ -2604,7 +2604,7 @@ through with sequence numbers translated around the inserted SSLRequest.
 ```yaml
 listeners:
   - name: appdb
-    protocol: postgres            # gRPC also accepts downstream_tls, with normal ALPN h2
+    protocol: postgres            # ClickHouse, gRPC and Spanner also accept downstream_tls
     downstream_tls:
       cert_file: /etc/hoop-inspect/certs/relay.crt
       key_file:  /etc/hoop-inspect/certs/relay.key
@@ -2626,9 +2626,10 @@ openssl pkey -in mysql-auth.key -pubout -out mysql-auth.pub
 ```
 
 
-The sidecar accepts `downstream_tls` on Postgres and gRPC lanes and refuses it
-on every other protocol at startup. It loads the keypair there too, so a bad
-path fails startup instead of the first client connection.
+The sidecar accepts `downstream_tls` on Postgres, ClickHouse, gRPC and Spanner
+lanes and refuses it on every other protocol at startup. ClickHouse starts TLS
+on the first byte; Postgres uses the in-band exchange above. The sidecar loads
+the keypair at startup, so a bad path fails before the first client connection.
 
 ### GSS encryption draws a refusal
 

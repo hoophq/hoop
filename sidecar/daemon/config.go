@@ -241,11 +241,12 @@ type ListenerConfig struct {
 	// Requires cert_file and key_file; the other TLSConfig fields describe an
 	// outbound connection and are ignored here.
 	//
-	// Only `postgres` supports it. pgwire negotiates TLS in-band with an
-	// 8-byte SSLRequest, so a plain TLS listener in front cannot terminate
-	// it. Envoy's own postgres filter can, but it is contrib-only, marked
-	// work-in-progress, and gives up permanently the moment a client asks
-	// for GSS encryption, which is what psql does by default whenever a
+	// Postgres negotiates TLS in-band with an 8-byte SSLRequest, so a plain
+	// TLS listener in front cannot terminate it. ClickHouse starts TLS on the
+	// first byte instead; gRPC and Spanner use their own direct TLS servers.
+	// Envoy's postgres filter can handle pgwire, but it is contrib-only,
+	// marked work-in-progress, and gives up permanently the moment a client
+	// asks for GSS encryption, which is what psql does by default whenever a
 	// Kerberos ticket is present.
 	//
 	// MySQL negotiates in-band too and is still refused, because the relay

@@ -7,9 +7,10 @@ import (
 	"github.com/hoophq/hoop/sidecar/inspect"
 )
 
-// ClickHouseCodecConfig bounds the memory one ClickHouse connection may use
-// while inspecting a compressed result. Both values are bytes. Zero keeps the
-// codec defaults (16 MiB per frame, 64 MiB per decompressed block).
+// ClickHouseCodecConfig bounds the codec's declared compressed frame and
+// decompressed block sizes. The gate derives its bounded wire reassembly limit
+// from these values. Both are bytes. Zero keeps the codec defaults (16 MiB per
+// frame, 64 MiB per decompressed block).
 type ClickHouseCodecConfig struct {
 	MaxFrameBytes int `json:"max_frame_bytes,omitempty"`
 	MaxBlockBytes int `json:"max_block_bytes,omitempty"`

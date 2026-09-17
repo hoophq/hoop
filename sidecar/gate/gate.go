@@ -120,6 +120,14 @@ type StreamFilter interface {
 	Filter(dir inspect.Direction, data []byte) ([]byte, error)
 }
 
+// reassemblySizer lets a codec raise the default inspector buffer to the
+// largest packet its own parser admits. The codec remains the authority on
+// the packet-specific cap; this only prevents the generic 8 MiB guard from
+// rejecting a valid larger frame first.
+type reassemblySizer interface {
+	MaxReassemblyBytes() int
+}
+
 // Config assembles a Gate.
 type Config struct {
 	// Protocol selects the codec. Required.
@@ -332,9 +340,17 @@ func New(sess *session.Session, cfg Config) (*Gate, error) {
 
 	client := inspect.NewWithCodec(clientCodec)
 	server := inspect.NewWithCodec(serverCodec)
-	if cfg.MaxBuffer > 0 {
-		client.SetMaxBuffer(cfg.MaxBuffer)
-		server.SetMaxBuffer(cfg.MaxBuffer)
+	maxBuffer := cfg.MaxBuffer
+	if maxBuffer <= 0 {
+		for _, codec := range []inspect.Codec{clientCodec, serverCodec} {
+			if sized, ok := codec.(reassemblySizer); ok && sized.MaxReassemblyBytes() > maxBuffer {
+				maxBuffer = sized.MaxReassemblyBytes()
+			}
+		}
+	}
+	if maxBuffer > 0 {
+		client.SetMaxBuffer(maxBuffer)
+		server.SetMaxBuffer(maxBuffer)
 	}
 
 	sess.Protocol = cfg.Protocol
