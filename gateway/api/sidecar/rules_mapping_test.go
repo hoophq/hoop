@@ -222,8 +222,8 @@ func TestEnrichSidecarConfiguration(t *testing.T) {
 	if len(alcatrazRules) != 1 {
 		t.Fatalf("want 1 masking rule, got %d", len(alcatrazRules))
 	}
-	if alcatrazRules[0].Name != "mask-ssn" {
-		t.Errorf("want masking rule name 'mask-ssn', got %q", alcatrazRules[0].Name)
+	if alcatrazRules[0].Name != "SSN" {
+		t.Errorf("want masking rule name 'SSN', got %q", alcatrazRules[0].Name)
 	}
 
 	// 3. AI Session Analyzer assertions

@@ -5,6 +5,7 @@ import Badge from '@/components/Badge'
 import Select from '@/components/Select'
 import MultiSelect from '@/components/MultiSelect'
 import TextInput from '@/components/TextInput'
+import TagsInput from '@/components/TagsInput'
 import Table from '@/components/Table'
 import {
   RULE_TYPES,
@@ -150,8 +151,10 @@ export default function RulesTable({
           <Table.Tr>
             {selectMode && <Table.Th w={40} />}
             <Table.Th w={TYPE_COLUMN_WIDTH}>Type</Table.Th>
-            <Table.Th w={RULE_COLUMN_WIDTH}>Rule</Table.Th>
+            <Table.Th w={RULE_COLUMN_WIDTH}>Rule / Entities</Table.Th>
             <Table.Th>Details</Table.Th>
+            <Table.Th w={150}>Strategy</Table.Th>
+            <Table.Th w={200}>Parameters / Columns</Table.Th>
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
@@ -189,6 +192,53 @@ export default function RulesTable({
                   freeLicense={freeLicense}
                   onChange={(patch) => patchRow(idx, patch)}
                 />
+              </Table.Td>
+              <Table.Td>
+                {row.type && (
+                  <Select
+                    size={ROW_CONTROL_SIZE}
+                    data={[
+                      { value: 'redact', label: 'Redact' },
+                      { value: 'mask', label: 'Mask' },
+                      { value: 'partial', label: 'Partial' },
+                      { value: 'hash', label: 'Hash' },
+                    ]}
+                    value={row.strategy || 'redact'}
+                    onChange={(v) => patchRow(idx, { strategy: v || 'redact' })}
+                    comboboxProps={{ withinPortal: true }}
+                  />
+                )}
+              </Table.Td>
+              <Table.Td>
+                {row.type && (
+                  <Stack gap="xs">
+                    {row.strategy === 'partial' && (
+                      <TextInput
+                        type="number"
+                        min={0}
+                        placeholder="Keep Last (4)"
+                        size={ROW_CONTROL_SIZE}
+                        value={row.keepLast ?? 4}
+                        onChange={(e) => patchRow(idx, { keepLast: Number(e.currentTarget.value) })}
+                      />
+                    )}
+                    {(row.strategy === 'mask' || row.strategy === 'partial') && (
+                      <TextInput
+                        maxLength={1}
+                        placeholder="Mask Char (*)"
+                        size={ROW_CONTROL_SIZE}
+                        value={row.maskChar ?? '*'}
+                        onChange={(e) => patchRow(idx, { maskChar: e.currentTarget.value })}
+                      />
+                    )}
+                    <TagsInput
+                      placeholder="Columns to mask"
+                      size={ROW_CONTROL_SIZE}
+                      value={row.columns ?? []}
+                      onChange={(values) => patchRow(idx, { columns: values })}
+                    />
+                  </Stack>
+                )}
               </Table.Td>
             </Table.Tr>
           ))}

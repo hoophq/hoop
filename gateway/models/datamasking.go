@@ -22,10 +22,6 @@ type DataMaskingRule struct {
 	SupportedEntityTypes SupportedEntityTypesList `gorm:"column:supported_entity_types;serializer:json"`
 	CustomEntityTypes    CustomEntityTypesList    `gorm:"column:custom_entity_types;serializer:json"`
 	ScoreThreshold       *float64                 `gorm:"column:score_threshold"`
-	Strategy             string                   `gorm:"column:strategy;default:redact"`
-	Columns              pq.StringArray           `gorm:"column:columns;type:text[]"`
-	KeepLast             *int                     `gorm:"column:keep_last"`
-	MaskChar             *string                  `gorm:"column:mask_char"`
 	RulepackID           sql.NullString           `gorm:"column:rulepack_id"`
 	ManagedBy            *string                  `gorm:"column:managed_by"`
 	ConnectionIDs        pq.StringArray           `gorm:"column:connection_ids;type:text[];->"`
@@ -36,6 +32,10 @@ type DataMaskingRule struct {
 type SupportedEntityTypesEntry struct {
 	Name        string   `json:"name"`
 	EntityTypes []string `json:"entity_types"`
+	Strategy    string   `json:"strategy,omitempty"`
+	Columns     []string `json:"columns,omitempty"`
+	KeepLast    *int     `json:"keep_last,omitempty"`
+	MaskChar    *string  `json:"mask_char,omitempty"`
 }
 
 type CustomEntityTypesEntry struct {
@@ -43,6 +43,10 @@ type CustomEntityTypesEntry struct {
 	Regex    string   `json:"regex"`
 	DenyList []string `json:"deny_list"`
 	Score    float64  `json:"score"`
+	Strategy string   `json:"strategy,omitempty"`
+	Columns  []string `json:"columns,omitempty"`
+	KeepLast *int     `json:"keep_last,omitempty"`
+	MaskChar *string  `json:"mask_char,omitempty"`
 }
 
 type DataMaskingRuleConnection struct {
@@ -334,7 +338,7 @@ func (DataMaskingRuleSidecar) TableName() string { return "private.datamasking_r
 func GetDataMaskingRulesBySidecarListener(db *gorm.DB, orgID, sidecarID uuid.UUID, listenerName string) ([]*DataMaskingRule, error) {
 	var rules []*DataMaskingRule
 	err := db.Table("private.datamasking_rules").
-		Select("private.datamasking_rules.id, private.datamasking_rules.org_id, private.datamasking_rules.name, private.datamasking_rules.description, private.datamasking_rules.supported_entity_types, private.datamasking_rules.custom_entity_types, private.datamasking_rules.score_threshold, private.datamasking_rules.strategy, private.datamasking_rules.columns, private.datamasking_rules.keep_last, private.datamasking_rules.mask_char, private.datamasking_rules.rulepack_id, private.datamasking_rules.managed_by, private.datamasking_rules.updated_at").
+		Select("private.datamasking_rules.id, private.datamasking_rules.org_id, private.datamasking_rules.name, private.datamasking_rules.description, private.datamasking_rules.supported_entity_types, private.datamasking_rules.custom_entity_types, private.datamasking_rules.score_threshold, private.datamasking_rules.rulepack_id, private.datamasking_rules.managed_by, private.datamasking_rules.updated_at").
 		Joins("JOIN private.datamasking_rules_sidecars dms ON dms.rule_id = private.datamasking_rules.id AND dms.org_id = private.datamasking_rules.org_id").
 		Where("private.datamasking_rules.org_id = ? AND dms.sidecar_id = ? AND dms.listener_name = ?", orgID, sidecarID, listenerName).
 		Order("private.datamasking_rules.name DESC").

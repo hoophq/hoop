@@ -562,34 +562,63 @@ func enrichSidecarConfiguration(orgID, sidecarID string, cfg *daemon.Config) err
 			}
 			var alcatrazRules []AlcatrazRule
 			for _, r := range dmRules {
-				var entities []string
+				// 1. Process Supported Entity Types
 				for _, et := range r.SupportedEntityTypes {
-					entities = append(entities, et.EntityTypes...)
+					strategy := et.Strategy
+					if strategy == "" {
+						strategy = "redact"
+					}
+
+					keepLast := 4
+					if et.KeepLast != nil {
+						keepLast = *et.KeepLast
+					}
+
+					maskChar := "*"
+					if et.MaskChar != nil && *et.MaskChar != "" {
+						maskChar = *et.MaskChar
+					}
+
+					ruleName := et.Name
+					if ruleName == "CUSTOM_SELECTION" {
+						ruleName = r.Name
+					}
+
+					alcatrazRules = append(alcatrazRules, AlcatrazRule{
+						Name:     ruleName,
+						Entities: et.EntityTypes,
+						Columns:  et.Columns,
+						Strategy: strategy,
+						KeepLast: keepLast,
+						MaskChar: maskChar,
+					})
 				}
 
-				strategy := r.Strategy
-				if strategy == "" {
-					strategy = "redact"
-				}
+				// 2. Process Custom Entity Types
+				for _, ct := range r.CustomEntityTypes {
+					strategy := ct.Strategy
+					if strategy == "" {
+						strategy = "redact"
+					}
 
-				keepLast := 4
-				if r.KeepLast != nil {
-					keepLast = *r.KeepLast
-				}
+					keepLast := 4
+					if ct.KeepLast != nil {
+						keepLast = *ct.KeepLast
+					}
 
-				maskChar := "*"
-				if r.MaskChar != nil && *r.MaskChar != "" {
-					maskChar = *r.MaskChar
-				}
+					maskChar := "*"
+					if ct.MaskChar != nil && *ct.MaskChar != "" {
+						maskChar = *ct.MaskChar
+					}
 
-				alcatrazRules = append(alcatrazRules, AlcatrazRule{
-					Name:     r.Name,
-					Entities: entities,
-					Columns:  r.Columns,
-					Strategy: strategy,
-					KeepLast: keepLast,
-					MaskChar: maskChar,
-				})
+					alcatrazRules = append(alcatrazRules, AlcatrazRule{
+						Name:     ct.Name,
+						Strategy: strategy,
+						Columns:  ct.Columns,
+						KeepLast: keepLast,
+						MaskChar: maskChar,
+					})
+				}
 			}
 
 			var existingRules []AlcatrazRule

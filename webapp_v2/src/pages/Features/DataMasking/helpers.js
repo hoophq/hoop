@@ -143,7 +143,17 @@ function nextRowId() {
 }
 
 export function createEmptyRow() {
-  return { id: nextRowId(), type: '', rule: '', details: '', selected: false }
+  return {
+    id: nextRowId(),
+    type: '',
+    rule: '',
+    details: '',
+    strategy: 'redact',
+    columns: [],
+    keepLast: 4,
+    maskChar: '*',
+    selected: false,
+  }
 }
 
 // UPPERCASE_WITH_UNDERSCORES, stripping anything that isn't [A-Z0-9_].
@@ -159,21 +169,16 @@ export function normalizeEntityName(name) {
 export function apiRuleToFormRows(rule) {
   const supported = (rule?.supported_entity_types ?? []).map((entity) => {
     const entityValues = entity.entity_types ?? entity.values ?? []
-    if (entity.name === 'CUSTOM_SELECTION') {
-      return {
-        id: nextRowId(),
-        type: 'fields',
-        rule: 'Custom Selection',
-        details: [...entityValues],
-        selected: false,
-      }
-    }
-    // Preset: keep the underscored name as-is.
+    const type = entity.name === 'CUSTOM_SELECTION' ? 'fields' : 'presets'
     return {
       id: nextRowId(),
-      type: 'presets',
+      type,
       rule: entity.name,
-      details: '',
+      details: type === 'fields' ? [...entityValues] : '',
+      strategy: entity.strategy ?? 'redact',
+      columns: entity.columns ?? [],
+      keepLast: entity.keep_last ?? 4,
+      maskChar: entity.mask_char ?? '*',
       selected: false,
     }
   })
@@ -183,6 +188,10 @@ export function apiRuleToFormRows(rule) {
     type: 'custom',
     rule: c.name,
     details: c.regex,
+    strategy: c.strategy ?? 'redact',
+    columns: c.columns ?? [],
+    keepLast: c.keep_last ?? 4,
+    maskChar: c.mask_char ?? '*',
     selected: false,
   }))
 
@@ -205,23 +214,27 @@ function removeEmptyRows(rows) {
 function prepareSupportedEntityTypes(rows) {
   const clean = removeEmptyRows(rows).filter((r) => r.type !== 'custom')
 
-  // Group presets by their key; group all fields rows under "fields".
-  const groups = new Map()
-  for (const row of clean) {
-    const key = row.type === 'presets' ? row.rule : 'fields'
-    if (!groups.has(key)) groups.set(key, [])
-    groups.get(key).push(row)
-  }
-
   const result = []
-  for (const [key, groupRows] of groups) {
-    if (key === 'fields') {
-      const entityTypes = groupRows.flatMap((r) =>
-        Array.isArray(r.details) ? r.details : [],
-      )
-      result.push({ name: 'CUSTOM_SELECTION', entity_types: entityTypes })
+  for (const row of clean) {
+    if (row.type === 'fields') {
+      const entityTypes = Array.isArray(row.details) ? row.details : []
+      result.push({
+        name: 'CUSTOM_SELECTION',
+        entity_types: entityTypes,
+        strategy: row.strategy || 'redact',
+        columns: row.columns || [],
+        keep_last: row.keepLast ? Number(row.keepLast) : null,
+        mask_char: row.maskChar || '*',
+      })
     } else {
-      result.push({ name: key, entity_types: getPresetValues(key) })
+      result.push({
+        name: row.rule,
+        entity_types: getPresetValues(row.rule),
+        strategy: row.strategy || 'redact',
+        columns: row.columns || [],
+        keep_last: row.keepLast ? Number(row.keepLast) : null,
+        mask_char: row.maskChar || '*',
+      })
     }
   }
   return result
@@ -234,6 +247,10 @@ function prepareCustomEntityTypes(rows) {
       name: normalizeEntityName(r.rule),
       regex: r.details,
       score: 0.8,
+      strategy: r.strategy || 'redact',
+      columns: r.columns || [],
+      keep_last: r.keepLast ? Number(r.keepLast) : null,
+      mask_char: r.maskChar || '*',
     }))
 }
 

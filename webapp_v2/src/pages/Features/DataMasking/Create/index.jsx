@@ -276,51 +276,6 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
           </Stack>
         </SectionRow>
 
-        <SectionRow
-          title="Masking Configuration"
-          description="Configure how the sidecar should rewrite sensitive values."
-        >
-          <Stack gap="md">
-            <Select
-              label="Masking Strategy"
-              data={[
-                { value: 'redact', label: 'Redact (Bracketed entity tag)' },
-                { value: 'mask', label: 'Mask (Entire value replaced)' },
-                { value: 'partial', label: 'Partial (Keep last characters)' },
-                { value: 'hash', label: 'Hash (Deterministic SHA256 join key)' },
-              ]}
-              value={form.strategy}
-              onChange={(value) => setField({ strategy: value || 'redact' })}
-            />
-            {form.strategy === 'partial' && (
-              <TextInput
-                label="Keep Last Characters"
-                type="number"
-                min={0}
-                placeholder="4"
-                value={form.keepLast}
-                onChange={(e) => setField({ keepLast: Number(e.currentTarget.value) })}
-              />
-            )}
-            {(form.strategy === 'mask' || form.strategy === 'partial') && (
-              <TextInput
-                label="Mask Character"
-                maxLength={1}
-                placeholder="*"
-                value={form.maskChar}
-                onChange={(e) => setField({ maskChar: e.currentTarget.value })}
-              />
-            )}
-            <TagsInput
-              label="Result-set Column Names (Optional)"
-              placeholder="e.g. ssn, password, credit_card (Case-insensitive)"
-              value={form.columns}
-              onChange={(values) => setField({ columns: values })}
-              description="SQL result column names to mask outright regardless of detection."
-            />
-          </Stack>
-        </SectionRow>
-
         {!isControlPlane && (
           <SectionRow
             title="Resource Role configuration"
