@@ -36,6 +36,13 @@ type HTTPCodecConfig struct {
 	// Headers names the headers to expose, matched case-insensitively.
 	// There is no capture-all.
 	Headers []string `json:"headers,omitempty"`
+
+	// SensitiveQueryParams adds query parameter names whose value the codec
+	// redacts before anything sees the request: the audit trail, OPA, the
+	// analyzer. The codec already redacts the common credential names
+	// (access_token, api_key, sig, X-Amz-Signature, ...); this list widens
+	// that for a deployment's own spelling. There is no way to narrow it.
+	SensitiveQueryParams []string `json:"sensitive_query_params,omitempty"`
 }
 
 // forbiddenHeaders are never allowlistable.

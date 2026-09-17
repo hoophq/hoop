@@ -912,6 +912,7 @@ listeners:
       capture_body: true
       max_body_bytes: 8192
       headers: [Content-Type]
+      sensitive_query_params: [ticket]   # widens the codec's credential denylist
     analyzer:
       trigger: {resources: ["/anything", "/users/*/orders"]}
       high: block
@@ -953,6 +954,15 @@ the path are covered by the same `send: redacted` pass as identifiers in the
 body. The CACHE keys on the resource plus the whole query, names and values,
 so `/users/1` and `/users/2` with the same body cost one call, not one per
 id, while `?dry_run=true` and `?dry_run=false` are two verdicts.
+
+**A credential in the query string never leaves the codec.** The value of
+`access_token`, `api_key`, `key`, `sig`, `X-Amz-Signature` and the other
+names in `codec/http.DefaultSensitiveQueryParams` is replaced by `[redacted]`
+in the request line, `http.query` and `http.target` before a statement is
+built, so the audit trail, OPA and the analyzer all see the same marker. The
+key and its position survive: the record still says a token was passed. It is
+a denylist; `sensitive_query_params` adds a deployment's own names and
+nothing removes one.
 
 **Only requests are classified.** By the time a response comes back a write
 has already happened, and read-side exposure is masking's job.
