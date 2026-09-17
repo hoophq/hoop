@@ -169,6 +169,22 @@ type Config struct {
 	// Redact rewrites content before it leaves the process. Nil sends the
 	// statement as-is.
 	Redact func(string) string
+
+	// Review files a statement for human approval and reports what the
+	// backend answered. It is what ActionRequireReview calls.
+	//
+	// Injected rather than built here because the backend is the control
+	// plane, whose URL and token the daemon resolves: that package imports
+	// this one and must not be imported back. Same reason Redact is a
+	// function rather than a detector.
+	//
+	// It receives the RAW statement text, never the model input. See hold.
+	//
+	// Nil files nothing and DENIES. An observed lane is built without one,
+	// so a dry run records what it would have held without paging a human,
+	// and a lane that reached no control plane fails closed rather than
+	// forwarding what it promised to hold.
+	Review func(ctx context.Context, statement string) (ReviewResult, error)
 }
 
 // Evaluator classifies statements and turns verdicts into policy decisions.
@@ -190,6 +206,15 @@ type Evaluator struct {
 	// prompt produced until the TTL expired, and an operator watching for
 	// their change to take effect would see nothing.
 	promptKey string
+
+	// holds reports that some risk level on this lane waits for a human.
+	//
+	// It is read where a statement could NOT be classified (a spent
+	// budget, a provider that did not answer), because on a holding lane
+	// those cannot fall through to the caller's fail-open preference. Kept
+	// as a field rather than re-scanned per statement: the action map is
+	// fixed at construction.
+	holds bool
 
 	calls  *atomic.Int64
 	denied atomic.Int64
@@ -215,6 +240,7 @@ func New(cfg Config) (*Evaluator, error) {
 	if cfg.MaxInputBytes <= 0 {
 		cfg.MaxInputBytes = DefaultMaxInputBytes
 	}
+	holds := false
 	for level, action := range cfg.Actions {
 		if !level.Valid() {
 			return nil, fmt.Errorf("sidecar/analyzer: unknown risk level %q", level)
@@ -223,10 +249,7 @@ func New(cfg Config) (*Evaluator, error) {
 			return nil, fmt.Errorf("sidecar/analyzer: unknown action %q for risk %q", action, level)
 		}
 		if action == ActionRequireReview {
-			return nil, fmt.Errorf(
-				"sidecar/analyzer: action %q is not supported by this build: "+
-					"holding a statement for human approval needs a review backend, "+
-					"and this relay has none", ActionRequireReview)
+			holds = true
 		}
 	}
 	prompt := BuildSystemPrompt(cfg.Guidance)
@@ -239,6 +262,7 @@ func New(cfg Config) (*Evaluator, error) {
 		cache:     newCache(cfg.CacheSize, cfg.CacheTTL),
 		prompt:    prompt,
 		promptKey: fingerprint(prompt),
+		holds:     holds,
 		calls:     calls,
 	}, nil
 }
@@ -303,11 +327,24 @@ func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext)
 		v.Annotations = e.notes(status, "", "")
 		return v
 
-	case StatusSkipped, StatusBudget:
-		// Neither is a provider failure: the local rules and OPA still
-		// ran and allowed this statement. Falling through to allow is
-		// the same outcome as a lane with no analyzer, which is what a
-		// spent budget and an unmatched trigger both mean.
+	case StatusBudget:
+		// A spent budget is not a provider failure, and on a lane that
+		// only warns or blocks it falls through to allow like an
+		// unmatched trigger does. A lane that HOLDS cannot: no
+		// classification means no risk level, and forwarding on a
+		// missing level would retire the human gate the moment
+		// max_calls ran out and leave it retired until a restart.
+		if e.holds {
+			return e.denyUnclassified(status,
+				"the risk analysis budget is spent and this lane holds "+
+					"statements for approval")
+		}
+		return policy.Verdict{Annotations: e.notes(status, "", "")}
+
+	case StatusSkipped:
+		// The trigger did not match, or the statement carries nothing to
+		// classify. Both are the operator's own narrowing, so this is
+		// the same outcome as a lane with no analyzer.
 		return policy.Verdict{Annotations: e.notes(status, "", "")}
 	}
 
@@ -320,6 +357,14 @@ func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext)
 	// audit redaction does not reach Metadata, and a model that quotes the
 	// statement back would write the value into the record verbatim.
 	notes := e.notes(status, string(level), string(action))
+
+	if action == ActionRequireReview {
+		// A CACHED verdict reaches here like any other. The cache
+		// collapses classifications, not approvals: the statement in
+		// front of us has not been released, whatever a previous one of
+		// the same shape cost.
+		return e.hold(stmt, notes)
+	}
 
 	if action != ActionBlock {
 		// Allow, warn and defer all forward. They differ in the record,
@@ -528,17 +573,41 @@ func (e *Evaluator) classify(
 // non-denying verdict carrying Err, so policy.Chain accumulates the error
 // instead of swallowing it, and the statement's audit record still shows that
 // the analyzer could not answer.
+//
+// FailOpen does not reach a lane that holds. The setting says an operator
+// would rather pass traffic than lose a database to a model vendor's outage;
+// it was never an answer about a statement a human was supposed to see, and
+// reading it as one would turn every outage into a bypass of the approval.
 func (e *Evaluator) failure(err error) policy.Verdict {
-	if e.cfg.FailOpen {
+	if e.cfg.FailOpen && !e.holds {
 		return policy.Verdict{Err: err}
+	}
+	msg := "risk analysis unavailable; denying"
+	if e.holds {
+		msg = "risk analysis unavailable and this lane holds statements for " +
+			"approval; denying"
 	}
 	return policy.Verdict{
 		Denied:  true,
-		Message: "risk analysis unavailable; denying",
+		Message: msg,
 		Rule:    e.cfg.Rule,
 		Source:  policy.SourceAnalyzer,
 		Err:     err,
 	}
+}
+
+// denyUnclassified refuses a statement no level could be established for, on
+// a lane whose levels include a hold.
+//
+// The annotation records block, because blocking is what happened: nothing
+// was filed and no human will see this statement. Writing require_review
+// there would put a review in the trail that does not exist.
+func (e *Evaluator) denyUnclassified(status, reason string) policy.Verdict {
+	e.denied.Add(1)
+	v := policy.Deny(e.cfg.Rule, reason+"; denying")
+	v.Source = policy.SourceAnalyzer
+	v.Annotations = e.notes(status, "", string(ActionBlock))
+	return v
 }
 
 // Stats reports what the analyzer has done. It backs the /stats admin

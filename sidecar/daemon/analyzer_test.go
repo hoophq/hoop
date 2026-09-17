@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/analyzer"
+	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
 )
 
@@ -79,10 +79,10 @@ func TestAIRuleWithoutAnyActionIsRefused(t *testing.T) {
 	}
 }
 
-// require_review is in the enum so the schema is stable when review lands,
-// and refused here so nobody ships a config that appears to hold statements
-// for approval and quietly does not.
-func TestRequireReviewIsRefusedAtConfig(t *testing.T) {
+// The listener analyzer block holds statements for approval; the DEPRECATED
+// rule form still cannot, and says so by name rather than shipping a config
+// that appears to hold and quietly does not.
+func TestRequireReviewIsRefusedOnTheDeprecatedRule(t *testing.T) {
 	r := aiRule("risky")
 	r.HighRisk = "require_review"
 	cfg := pgLane(r)
@@ -385,7 +385,7 @@ func TestHTTPAIRuleWithoutCaptureBodyIsRefused(t *testing.T) {
 			Analyzer: &AnalyzerConfig{Provider: "stub", Model: "m"},
 			Listeners: []ListenerConfig{{
 				Name: "api", Protocol: "http", Listen: ":1", Upstream: "h:1",
-				HTTP:   h,
+				HTTP:       h,
 				Guardrails: &GuardrailsConfig{Rules: []policy.Rule{aiRule("risky")}},
 			}},
 		}

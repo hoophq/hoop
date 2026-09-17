@@ -1186,6 +1186,15 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 			continue
 		}
 
+		if holdsWithoutAPlane(cfg, lc.Analyzer, ac) {
+			problems = append(problems, fmt.Sprintf(
+				"%s: the analyzer block asks for %q and this sidecar has no control "+
+					"plane; the review is filed with the plane named by %s or the "+
+					"control_plane_url key, and there is nowhere else to file it",
+				name, analyzer.ActionRequireReview, ControlPlaneURLEnv))
+			continue
+		}
+
 		pol, err := buildPolicy(name, gc, lc.Analyzer, opa, det, ac)
 		if err != nil {
 			problems = append(problems, name+": "+err.Error())
@@ -1229,6 +1238,15 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 			ln.notes = append(ln.notes,
 				"observe mode: every rule is evaluated and nothing is denied. "+
 					"Matches are recorded on the audit line as "+policy.AnnotationWouldDeny)
+		}
+		// Said out loud because it is the one control observe mode
+		// switches OFF rather than records: every other rule still runs
+		// and still writes what it would have done, while a review
+		// nobody filed cannot be approved later either.
+		if gc.observing() && analyzerHolds(lc.Analyzer) {
+			ln.notes = append(ln.notes,
+				"observe mode files no review: a held statement is recorded as "+
+					policy.AnnotationWouldDeny+" and forwarded, and no approver is asked")
 		}
 		if !opa.enabled() && (anyDeferred(gc.Rules) || analyzerDefers(lc.Analyzer)) {
 			ln.notes = append(ln.notes,

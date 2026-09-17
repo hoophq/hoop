@@ -358,23 +358,6 @@ func TestTimeoutBoundsTheProvider(t *testing.T) {
 	}
 }
 
-// require_review is declared in the enum so the schema is stable when review
-// lands, and refused at construction so nobody ships a config that looks like
-// it holds statements for approval and quietly does not.
-func TestRequireReviewIsRefused(t *testing.T) {
-	_, err := analyzer.New(analyzer.Config{
-		Provider: &stubProvider{},
-		Trigger:  deleteTrigger(),
-		Actions:  analyzer.ActionMap{analyzer.RiskHigh: analyzer.ActionRequireReview},
-	})
-	if err == nil {
-		t.Fatal("require_review was accepted by a build that cannot hold a statement")
-	}
-	if !strings.Contains(err.Error(), "require_review") {
-		t.Errorf("error does not name the action: %v", err)
-	}
-}
-
 // send=refuse must deny locally without transmitting anything.
 func TestRefuseSentinelDeniesWithoutCallingProvider(t *testing.T) {
 	p := &stubProvider{level: analyzer.RiskLow}

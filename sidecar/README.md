@@ -1024,14 +1024,7 @@ one. See [Guardrails and OPA](#guardrails-and-opa) for what the two phases
 send and what the gate may answer.
 
 **Holding a statement for a human.** The fourth action is `require_review`:
-the statement waits while a person approves or refuses it. **This build
-refuses it at startup**, so the rest of this paragraph describes a schema
-that is accepted and a runtime that is not yet there.
-
-`approval_rule` names the control plane access request rule that decides who
-may approve. The rule holds the reviewer groups, the approval count and the
-force-approval list; the lane holds only its name, and the control plane
-authorizes each review against the config it stored for that sidecar.
+the statement is refused until a person approves it.
 
 ```yaml
 listeners:
@@ -1043,16 +1036,74 @@ listeners:
       approval_rule: payments-approvers
 ```
 
+`approval_rule` names the control plane access request rule that decides who
+may approve. The rule holds the reviewer groups, the approval count and the
+force-approval list; the lane holds only its name, and the control plane
+authorizes each review against the config it stored for that sidecar.
+
+**A hold is not a pause.** Nothing waits on the connection: an approval
+arrives minutes or hours later, long after the client's socket is gone. The
+first attempt is DENIED, with the review id in the error the developer reads:
+
+```
+ERROR:  statement held for human approval: waiting for approval (review 9f97…)
+```
+
+They ask an approver, then run the statement again. That retry is what
+collects the approval. The relay files nothing on the second attempt: the
+plane recognizes the same statement, consumes the approved review and answers
+that this one may go through. It answers that ONCE, since the third run of the same
+statement files a fresh review, and a rejection stays, so a refused statement
+is refused every time without paging anyone again.
+
+Matching is on the exact bytes, so the retry must be the same statement, not
+an equivalent one. Two consequences worth knowing: a client using prepared
+statements sends the query with its parameters unbound, so an approval
+releases that query shape rather than one set of values, and a statement
+larger than 100 KB is refused by the plane rather than reviewed.
+
+**The approval is exact; the classification is not.** The verdict cache keys
+on the statement SHAPE with literals stripped, so two statements differing
+only in a literal share one classification. On a holding lane that cuts both
+ways: a shape the model rated high holds every statement of that shape, each
+filing its own review, while a shape it rated low is forwarded without a hold
+even when a later literal makes it the dangerous one. `WHERE tenant = 'test'`
+and `WHERE tenant = 'prod'` are one shape. The cache is off unless the config
+turns it on; set `cache: {size: 0}` on a lane where every statement has to be
+judged on its own, and pay one model call per statement for it.
+
+Four things have to be true, and each missing one is refused at startup rather
+than at the first held statement:
+
+| | |
+|---|---|
+| a level asks for `require_review` | otherwise `approval_rule` names reviewers nobody consults |
+| `approval_rule` is set, and not blank | spaces match no rule in the control plane |
+| the lane is postgres, mysql, mssql or mongodb | a hold needs a client that resends the statement; an http or grpc caller reads a refusal and an ssh session is already closed |
+| the sidecar has a control plane | there is nowhere else to file a review |
+
+Everything else fails CLOSED, `fail_open` included: it answers for a model
+vendor's outage, not for a human gate. A control plane that times out, refuses
+or answers something unreadable denies, and so does a statement that could not
+be classified at all, whether the provider failed or `max_calls` ran out. On a
+lane that only warns or blocks, a spent budget still allows.
+
+`mode: observe` is the one exception, and it files NOTHING. A dry run that
+paged approvers about statements it then forwarded would be a dry run with
+consequences; the lane records the hold as `guardrails.would_deny` and the
+startup report says so.
+
 It is per lane on purpose: the people who may release a statement against the
 payments database are not the people who may release one against a reporting
 replica, and a process-wide default would make the looser of the two the
-accident. An `approval_rule` on a lane where no risk level asks for
-`require_review` is refused at startup, the same way every other control that
-would load and be read by nobody is. A blank name is refused too, because
-spaces match no rule.
+accident. Editing it is a hot reload, not a restart: the block swaps with the
+lane's rules, so a corrected reviewer group reaches the lane on the next
+heartbeat.
 
-Editing it is a hot reload, not a restart: the block swaps with the lane's
-rules, so a corrected reviewer group reaches the lane on the next heartbeat.
+The deprecated `type: ai_analysis` rule cannot hold. It carries no
+`approval_rule`, so a review filed from one would name nobody who could
+release it; a rule naming `require_review` is refused with a message pointing
+at the listener block.
 
 **Writing your own prompt.** Risk depends on what you are protecting, so the
 risk guidance is replaceable at two levels.
