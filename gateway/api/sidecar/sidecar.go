@@ -515,10 +515,6 @@ func enrichSidecarConfiguration(orgID, sidecarID string, cfg *daemon.Config) err
 		if err != nil {
 			return err
 		}
-		grWildcardRules, err := models.GetGuardrailRulesBySidecarListener(models.DB, orgUUID, sidecarUUID, "*")
-		if err == nil {
-			grRules = append(grRules, grWildcardRules...)
-		}
 
 		if len(grRules) > 0 {
 			if lc.Guardrails == nil {
@@ -556,10 +552,6 @@ func enrichSidecarConfiguration(orgID, sidecarID string, cfg *daemon.Config) err
 		if err != nil {
 			return err
 		}
-		dmWildcardRules, err := models.GetDataMaskingRulesBySidecarListener(models.DB, orgUUID, sidecarUUID, "*")
-		if err == nil {
-			dmRules = append(dmRules, dmWildcardRules...)
-		}
 
 		if len(dmRules) > 0 {
 			if lc.Mask == nil {
@@ -591,12 +583,6 @@ func enrichSidecarConfiguration(orgID, sidecarID string, cfg *daemon.Config) err
 		analyzerRule, err := models.GetAISessionAnalyzerRuleBySidecarListener(models.DB, orgUUID, sidecarUUID, lc.Name)
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
-		}
-		if analyzerRule == nil {
-			analyzerRule, err = models.GetAISessionAnalyzerRuleBySidecarListener(models.DB, orgUUID, sidecarUUID, "*")
-			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-				return err
-			}
 		}
 
 		if analyzerRule != nil {

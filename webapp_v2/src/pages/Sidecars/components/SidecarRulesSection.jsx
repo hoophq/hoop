@@ -17,8 +17,15 @@ export default function SidecarRulesSection({ sidecar }) {
 
   // Form State
   const [ruleType, setRuleType] = useState('guardrail')
-  const [listenerName, setListenerName] = useState('*')
+  const [listenerName, setListenerName] = useState('')
   const [selectedRuleId, setSelectedRuleId] = useState('')
+
+  useEffect(() => {
+    const listeners = sidecar.configuration?.listeners ?? []
+    if (listeners.length > 0 && !listenerName) {
+      setListenerName(listeners[0].name)
+    }
+  }, [sidecar])
 
   const fetchMappingsAndRules = async () => {
     try {
@@ -109,7 +116,7 @@ export default function SidecarRulesSection({ sidecar }) {
   }
 
   const getListenerOptions = () => {
-    const list = [{ value: '*', label: '* (All Listeners)' }]
+    const list = []
     const listeners = sidecar.configuration?.listeners ?? []
     listeners.forEach((l) => {
       list.push({ value: l.name, label: l.name })

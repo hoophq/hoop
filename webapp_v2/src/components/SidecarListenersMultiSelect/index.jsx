@@ -20,10 +20,6 @@ export default function SidecarListenersMultiSelect({
         if (!active) return
         const opts = []
         ;(res.data || []).forEach((sc) => {
-          opts.push({
-            value: `${sc.id}/*`,
-            label: `${sc.name} > * (All Listeners)`,
-          })
           const listeners = sc.configuration?.listeners ?? []
           listeners.forEach((l) => {
             opts.push({
