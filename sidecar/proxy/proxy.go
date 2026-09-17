@@ -18,6 +18,7 @@ package proxy
 
 import (
 	"context"
+	"crypto/rsa"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -73,6 +74,10 @@ type Config struct {
 
 	// UpstreamTLS, when non-nil, wraps the upstream connection.
 	UpstreamTLS *tls.Config
+	// MySQLAuthPrivateKey is the stable relay key that MySQL clients pin when
+	// they send an RSA-encrypted password without first requesting a key.
+	// It is used only on a MySQL lane with UpstreamTLS.
+	MySQLAuthPrivateKey *rsa.PrivateKey
 
 	// DownstreamTLS, when non-nil, lets the relay terminate the CLIENT's TLS.
 	//
@@ -195,18 +200,25 @@ func NewServer(cfg Config) (*Server, error) {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
+	if cfg.MySQLAuthPrivateKey != nil &&
+		(cfg.Protocol != inspect.MySQL || cfg.UpstreamTLS == nil) {
+		return nil, errors.New(
+			"sidecar/proxy: MySQL authentication key requires a MySQL lane with upstream TLS",
+		)
+	}
 	var (
 		mysqlAuth           *mysqlAuthBridge
 		mysqlHandshakeSlots chan struct{}
 	)
 	if cfg.Protocol == inspect.MySQL && cfg.UpstreamTLS != nil {
 		var err error
-		mysqlAuth, err = newMySQLAuthBridge()
+		mysqlAuth, err = newMySQLAuthBridge(cfg.MySQLAuthPrivateKey)
 		if err != nil {
 			return nil, fmt.Errorf("sidecar/proxy: %w", err)
 		}
 		mysqlHandshakeSlots = make(chan struct{}, mysqlMaxConcurrentHandshakes)
 	}
+	cfg.MySQLAuthPrivateKey = nil
 	s := &Server{
 		cfg:                 cfg,
 		log:                 cfg.Logger,

@@ -2536,11 +2536,19 @@ the codec also fails closed if an SSLRequest reaches it.
 it gives the plaintext client, sends its own SSLRequest upstream, verifies the
 database certificate, and completes authentication before the normal pumps
 start. MySQL's `caching_sha2_password` and `sha256_password` need one extra
-bridge: the relay answers the plaintext client's RSA public-key request,
-decrypts that password response, and forwards the recovered NUL-terminated
-password only inside the verified upstream TLS connection. Authentication
-packets for other plugins pass through with sequence numbers translated
-around the inserted SSLRequest.
+bridge: the relay answers a client's RSA public-key request, decrypts the
+response, and forwards the recovered NUL-terminated password only inside the
+verified upstream TLS connection.
+
+A client that pins a server public key does not request one. Set
+`mysql_auth_key_file` to a stable RSA private key and configure the client to
+pin its public half. The backend's public key cannot be used: only the backend
+has its private half, while the relay must decrypt the response before it enters
+the upstream TLS session. Without a matching relay key, the client receives a
+MySQL authentication error instead of having ciphertext forwarded as a
+password. Clients that request the key continue to use the relay's generated
+key when this field is absent. Authentication packets for other plugins pass
+through with sequence numbers translated around the inserted SSLRequest.
 
 ```yaml
 listeners:
@@ -2555,6 +2563,15 @@ listeners:
     upstream_tls:
       ca_file: /etc/hoop-inspect/certs/mysql-ca.crt
       server_name: mysql.internal
+    # Required when clients pin an RSA server key instead of requesting one.
+    mysql_auth_key_file: /etc/hoop-inspect/certs/mysql-auth.key
+```
+
+Create the private key and the public file that clients pin:
+
+```sh
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out mysql-auth.key
+openssl pkey -in mysql-auth.key -pubout -out mysql-auth.pub
 ```
 
 

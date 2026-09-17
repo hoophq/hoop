@@ -19,39 +19,55 @@ import (
 )
 
 const (
-	mysqlClientSSL               uint32 = 1 << 11
-	mysqlMaxPacketPayload               = (1 << 24) - 1
-	mysqlMaxHandshakeMessageSize        = mysqlMaxPacketPayload + (1 << 20)
-	mysqlHandshakeReadChunkSize         = 32 << 10
-	mysqlMaxConcurrentHandshakes        = 8
-	mysqlMaxAuthRounds                  = 32
-	mysqlProtocol41HeaderLen            = 32
-	mysqlAuthMoreData            byte   = 0x01
-	mysqlAuthSwitchRequest       byte   = 0xfe
-	mysqlOKPacket                byte   = 0x00
-	mysqlERRPacket               byte   = 0xff
-	mysqlCachingSHA2                    = "caching_sha2_password"
-	mysqlSHA256Password                 = "sha256_password"
+	mysqlClientConnectWithDB              uint32 = 1 << 3
+	mysqlClientSSL                        uint32 = 1 << 11
+	mysqlClientSecureConnection           uint32 = 1 << 15
+	mysqlClientPluginAuth                 uint32 = 1 << 19
+	mysqlClientPluginAuthLenencClientData uint32 = 1 << 21
+	mysqlMaxPacketPayload                        = (1 << 24) - 1
+	mysqlMaxHandshakeMessageSize                 = mysqlMaxPacketPayload + (1 << 20)
+	mysqlHandshakeReadChunkSize                  = 32 << 10
+	mysqlMaxConcurrentHandshakes                 = 8
+	mysqlMaxAuthRounds                           = 32
+	mysqlProtocol41HeaderLen                     = 32
+	mysqlMinRSACiphertextSize                    = 128
+	mysqlAuthMoreData                     byte   = 0x01
+	mysqlAuthSwitchRequest                byte   = 0xfe
+	mysqlOKPacket                         byte   = 0x00
+	mysqlERRPacket                        byte   = 0xff
+	mysqlCachingSHA2                             = "caching_sha2_password"
+	mysqlSHA256Password                          = "sha256_password"
+	mysqlDirectRSAErrorMessage                   = "direct RSA authentication requires the client to pin the relay authentication public key from mysql_auth_key_file; the pinned key is missing or does not match"
 )
+
+var errMySQLDirectRSA = errors.New(mysqlDirectRSAErrorMessage)
 
 type mysqlHandshakeInspector func(inspect.Direction, []byte) ([]byte, error)
 
 type mysqlAuthBridge struct {
-	key       *rsa.PrivateKey
-	publicPEM []byte
+	key        *rsa.PrivateKey
+	publicPEM  []byte
+	configured bool
 }
 
-func newMySQLAuthBridge() (*mysqlAuthBridge, error) {
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		return nil, fmt.Errorf("generate MySQL authentication key: %w", err)
+func newMySQLAuthBridge(key *rsa.PrivateKey) (*mysqlAuthBridge, error) {
+	configured := key != nil
+	if key == nil {
+		var err error
+		key, err = rsa.GenerateKey(rand.Reader, 2048)
+		if err != nil {
+			return nil, fmt.Errorf("generate MySQL authentication key: %w", err)
+		}
+	} else if err := key.Validate(); err != nil {
+		return nil, fmt.Errorf("validate MySQL authentication key: %w", err)
 	}
 	der, err := x509.MarshalPKIXPublicKey(&key.PublicKey)
 	if err != nil {
 		return nil, fmt.Errorf("encode MySQL authentication key: %w", err)
 	}
 	return &mysqlAuthBridge{
-		key: key,
+		key:        key,
+		configured: configured,
 		publicPEM: pem.EncodeToMemory(&pem.Block{
 			Type:  "PUBLIC KEY",
 			Bytes: der,
@@ -297,6 +313,223 @@ func mysqlRequestsPublicKey(plugin string, payload []byte) bool {
 	}
 }
 
+type mysqlHandshakeAuthResponse struct {
+	plugin      string
+	auth        []byte
+	lengthStart int
+	authStart   int
+	authEnd     int
+	suffixStart int
+	encoding    byte
+}
+
+const (
+	mysqlAuthEncodingLenenc byte = iota
+	mysqlAuthEncodingByte
+	mysqlAuthEncodingNUL
+)
+
+func readMySQLLengthEncodedInt(data []byte) (uint64, int, error) {
+	if len(data) == 0 {
+		return 0, 0, errors.New("missing length-encoded integer")
+	}
+	switch data[0] {
+	case 0xfc:
+		if len(data) < 3 {
+			return 0, 0, errors.New("truncated two-byte length-encoded integer")
+		}
+		return uint64(binary.LittleEndian.Uint16(data[1:3])), 3, nil
+	case 0xfd:
+		if len(data) < 4 {
+			return 0, 0, errors.New("truncated three-byte length-encoded integer")
+		}
+		return uint64(data[1]) | uint64(data[2])<<8 | uint64(data[3])<<16, 4, nil
+	case 0xfe:
+		if len(data) < 9 {
+			return 0, 0, errors.New("truncated eight-byte length-encoded integer")
+		}
+		return binary.LittleEndian.Uint64(data[1:9]), 9, nil
+	case 0xfb:
+		return 0, 0, errors.New("NULL is not a valid authentication response length")
+	default:
+		return uint64(data[0]), 1, nil
+	}
+}
+
+func appendMySQLLengthEncodedInt(dst []byte, n uint64) []byte {
+	switch {
+	case n < 0xfb:
+		return append(dst, byte(n))
+	case n <= 0xffff:
+		dst = append(dst, 0xfc)
+		return binary.LittleEndian.AppendUint16(dst, uint16(n))
+	case n <= 0xffffff:
+		return append(dst, 0xfd, byte(n), byte(n>>8), byte(n>>16))
+	default:
+		dst = append(dst, 0xfe)
+		return binary.LittleEndian.AppendUint64(dst, n)
+	}
+}
+
+func parseMySQLHandshakeAuthResponse(payload []byte, fallbackPlugin string) (mysqlHandshakeAuthResponse, error) {
+	if len(payload) < mysqlProtocol41HeaderLen {
+		return mysqlHandshakeAuthResponse{}, fmt.Errorf(
+			"MySQL HandshakeResponse41 is %d bytes, want at least %d",
+			len(payload), mysqlProtocol41HeaderLen,
+		)
+	}
+	flags := binary.LittleEndian.Uint32(payload[:4])
+	off := mysqlProtocol41HeaderLen
+	usernameEnd := bytes.IndexByte(payload[off:], 0)
+	if usernameEnd < 0 {
+		return mysqlHandshakeAuthResponse{}, errors.New("MySQL HandshakeResponse41 has no username terminator")
+	}
+	off += usernameEnd + 1
+
+	response := mysqlHandshakeAuthResponse{
+		plugin:      fallbackPlugin,
+		lengthStart: off,
+	}
+	switch {
+	case flags&mysqlClientPluginAuthLenencClientData != 0:
+		authLen, prefixLen, err := readMySQLLengthEncodedInt(payload[off:])
+		if err != nil {
+			return mysqlHandshakeAuthResponse{}, fmt.Errorf("read MySQL authentication response length: %w", err)
+		}
+		if authLen > uint64(len(payload)) {
+			return mysqlHandshakeAuthResponse{}, errors.New("MySQL authentication response length overflows the packet")
+		}
+		response.encoding = mysqlAuthEncodingLenenc
+		response.authStart = off + prefixLen
+		response.authEnd = response.authStart + int(authLen)
+		response.suffixStart = response.authEnd
+	case flags&mysqlClientSecureConnection != 0:
+		if off >= len(payload) {
+			return mysqlHandshakeAuthResponse{}, errors.New("MySQL HandshakeResponse41 has no authentication response length")
+		}
+		response.encoding = mysqlAuthEncodingByte
+		response.authStart = off + 1
+		response.authEnd = response.authStart + int(payload[off])
+		response.suffixStart = response.authEnd
+	default:
+		authEnd := bytes.IndexByte(payload[off:], 0)
+		if authEnd < 0 {
+			return mysqlHandshakeAuthResponse{}, errors.New("MySQL HandshakeResponse41 has no authentication response terminator")
+		}
+		response.encoding = mysqlAuthEncodingNUL
+		response.authStart = off
+		response.authEnd = off + authEnd
+		response.suffixStart = response.authEnd + 1
+	}
+	if response.authEnd > len(payload) {
+		return mysqlHandshakeAuthResponse{}, errors.New("MySQL HandshakeResponse41 authentication response is truncated")
+	}
+	response.auth = payload[response.authStart:response.authEnd]
+
+	off = response.suffixStart
+	if flags&mysqlClientConnectWithDB != 0 {
+		databaseEnd := bytes.IndexByte(payload[off:], 0)
+		if databaseEnd < 0 {
+			return mysqlHandshakeAuthResponse{}, errors.New("MySQL HandshakeResponse41 has no database terminator")
+		}
+		off += databaseEnd + 1
+	}
+	if flags&mysqlClientPluginAuth != 0 {
+		pluginEnd := bytes.IndexByte(payload[off:], 0)
+		if pluginEnd < 0 {
+			return mysqlHandshakeAuthResponse{}, errors.New("MySQL HandshakeResponse41 has no authentication plugin terminator")
+		}
+		response.plugin = string(payload[off : off+pluginEnd])
+	}
+	return response, nil
+}
+
+func rewriteMySQLHandshakeRSAResponse(
+	payload []byte,
+	fallbackPlugin string,
+	scramble []byte,
+	bridge *mysqlAuthBridge,
+) ([]byte, bool, error) {
+	response, err := parseMySQLHandshakeAuthResponse(payload, fallbackPlugin)
+	if err != nil {
+		return nil, false, err
+	}
+	directRSA := len(response.auth) == bridge.key.Size() ||
+		len(response.auth) >= mysqlMinRSACiphertextSize ||
+		(len(response.auth) > 0 && response.auth[len(response.auth)-1] != 0)
+	if response.plugin != mysqlSHA256Password || len(response.auth) <= 1 || !directRSA {
+		return payload, false, nil
+	}
+	if !bridge.configured {
+		return nil, false, errMySQLDirectRSA
+	}
+	password, err := bridge.decryptPassword(response.plugin, response.auth, scramble)
+	if err != nil {
+		return nil, false, fmt.Errorf("%w: %v", errMySQLDirectRSA, err)
+	}
+	defer clear(password)
+
+	out := make([]byte, 0, len(payload)-len(response.auth)+len(password)+9)
+	out = append(out, payload[:response.lengthStart]...)
+	switch response.encoding {
+	case mysqlAuthEncodingLenenc:
+		out = appendMySQLLengthEncodedInt(out, uint64(len(password)))
+		out = append(out, password...)
+	case mysqlAuthEncodingByte:
+		if len(password) > 255 {
+			return nil, false, errors.New("decrypted MySQL authentication response exceeds one-byte length")
+		}
+		out = append(out, byte(len(password)))
+		out = append(out, password...)
+	case mysqlAuthEncodingNUL:
+		out = append(out, bytes.TrimSuffix(password, []byte{0})...)
+		out = append(out, 0)
+	default:
+		return nil, false, errors.New("unknown MySQL authentication response encoding")
+	}
+	out = append(out, payload[response.suffixStart:]...)
+	return out, true, nil
+}
+
+func mysqlIsDirectRSAResponse(
+	plugin string,
+	serverPayload, clientPayload []byte,
+	bridge *mysqlAuthBridge,
+) bool {
+	if len(clientPayload) == 0 || mysqlRequestsPublicKey(plugin, clientPayload) {
+		return false
+	}
+	directRSA := len(clientPayload) == bridge.key.Size() ||
+		len(clientPayload) >= mysqlMinRSACiphertextSize ||
+		clientPayload[len(clientPayload)-1] != 0
+	if !directRSA {
+		return false
+	}
+	switch plugin {
+	case mysqlCachingSHA2:
+		return bytes.Equal(serverPayload, []byte{mysqlAuthMoreData, 0x04})
+	case mysqlSHA256Password:
+		return true
+	default:
+		return false
+	}
+}
+
+func writeMySQLAuthError(
+	client net.Conn,
+	seq byte,
+	message string,
+	inspectPacket mysqlHandshakeInspector,
+) error {
+	payload := []byte{mysqlERRPacket, 0x15, 0x04, '#'} // 1045 ER_ACCESS_DENIED_ERROR
+	payload = append(payload, "28000"...)
+	payload = append(payload, message...)
+	if _, err := writeMySQLHandshakeMessage(client, seq, payload, inspectPacket, inspect.FromServer); err != nil {
+		return fmt.Errorf("%s; write MySQL authentication error: %w", message, err)
+	}
+	return errors.New(message)
+}
+
 func (b *mysqlAuthBridge) decryptPassword(plugin string, ciphertext, scramble []byte) ([]byte, error) {
 	if len(scramble) == 0 {
 		return nil, fmt.Errorf("%s RSA authentication has no scramble", plugin)
@@ -389,6 +622,18 @@ func negotiateMySQLUpstreamTLS(
 		return nil, nil, err
 	}
 	downNext = responseMessage.nextSeq
+	rewrittenResponse, rewritten, err := rewriteMySQLHandshakeRSAResponse(
+		responseMessage.payload, greeting.plugin, greeting.scramble, bridge,
+	)
+	if err != nil {
+		if errors.Is(err, errMySQLDirectRSA) {
+			return nil, nil, writeMySQLAuthError(client, downNext, mysqlDirectRSAErrorMessage, inspectPacket)
+		}
+		return nil, nil, err
+	}
+	if rewritten {
+		responseMessage.payload = rewrittenResponse
+	}
 
 	sslRequest := append([]byte(nil), responseMessage.payload[:mysqlProtocol41HeaderLen]...)
 	flags := binary.LittleEndian.Uint32(sslRequest[:4]) | mysqlClientSSL
@@ -502,7 +747,25 @@ func negotiateMySQLUpstreamTLS(
 			continue
 		}
 
-		upNext, err = writeMySQLHandshakeMessage(upstream, upNext, clientMessage.payload, nil, inspect.FromClient)
+		upstreamPayload := clientMessage.payload
+		var password []byte
+		if mysqlIsDirectRSAResponse(plugin, serverMessage.payload, clientMessage.payload, bridge) {
+			if !bridge.configured {
+				return nil, nil, writeMySQLAuthError(
+					client, downNext, mysqlDirectRSAErrorMessage, inspectPacket,
+				)
+			}
+			password, err = bridge.decryptPassword(plugin, clientMessage.payload, scramble)
+			if err != nil {
+				return nil, nil, writeMySQLAuthError(
+					client, downNext, mysqlDirectRSAErrorMessage, inspectPacket,
+				)
+			}
+			upstreamPayload = password
+		}
+
+		upNext, err = writeMySQLHandshakeMessage(upstream, upNext, upstreamPayload, nil, inspect.FromClient)
+		clear(password)
 		if err != nil {
 			return nil, nil, fmt.Errorf("write MySQL authentication response upstream: %w", err)
 		}

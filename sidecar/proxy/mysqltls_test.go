@@ -9,9 +9,11 @@ import (
 	"crypto/x509"
 	"encoding/binary"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"net"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -58,6 +60,41 @@ func mysqlTestHandshakeResponse(plugin string) []byte {
 	payload = append(payload, []byte(plugin)...)
 	payload = append(payload, 0)
 	return payload
+}
+func mysqlTestHandshakeResponseWithAuth(plugin string, auth []byte) []byte {
+	flags := testMySQLClientProtocol41 |
+		testMySQLClientSecureConnection |
+		testMySQLClientPluginAuth |
+		mysqlClientPluginAuthLenencClientData
+	payload := make([]byte, mysqlProtocol41HeaderLen)
+	binary.LittleEndian.PutUint32(payload[:4], flags)
+	payload[8] = 45
+	payload = append(payload, []byte("app")...)
+	payload = append(payload, 0)
+	payload = appendMySQLLengthEncodedInt(payload, uint64(len(auth)))
+	payload = append(payload, auth...)
+	payload = append(payload, []byte(plugin)...)
+	payload = append(payload, 0)
+	return payload
+}
+
+func mysqlTestEncryptPassword(
+	t *testing.T,
+	password string,
+	scramble []byte,
+	key *rsa.PublicKey,
+) []byte {
+	t.Helper()
+	plain := append([]byte(password), 0)
+	for i := range plain {
+		plain[i] ^= scramble[i%len(scramble)]
+	}
+	ciphertext, err := rsa.EncryptOAEP(sha1.New(), rand.Reader, key, plain, nil)
+	clear(plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ciphertext
 }
 
 func mustReadMySQLPacket(t *testing.T, conn net.Conn) mysqlPacket {
@@ -275,7 +312,7 @@ func TestNegotiateMySQLUpstreamTLSBridgesCachingSHA2FullAuth(t *testing.T) {
 		return nil
 	})
 
-	bridge, err := newMySQLAuthBridge()
+	bridge, err := newMySQLAuthBridge(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -362,7 +399,7 @@ func TestNegotiateMySQLUpstreamTLSPassesOtherAuthenticationPlugins(t *testing.T)
 		return nil
 	})
 
-	bridge, err := newMySQLAuthBridge()
+	bridge, err := newMySQLAuthBridge(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -385,7 +422,7 @@ func TestNegotiateMySQLUpstreamTLSPassesOtherAuthenticationPlugins(t *testing.T)
 
 func TestMySQLAuthBridgeSupportsBuiltInRSAPlugins(t *testing.T) {
 	scramble := []byte("0123456789abcdefghij")
-	bridge, err := newMySQLAuthBridge()
+	bridge, err := newMySQLAuthBridge(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -420,6 +457,200 @@ func TestMySQLAuthBridgeSupportsBuiltInRSAPlugins(t *testing.T) {
 		})
 	}
 }
+func TestNegotiateMySQLUpstreamTLSDecryptsPinnedCachingSHA2Response(t *testing.T) {
+	scramble := []byte("0123456789abcdefghij")
+	serverTLS := testTLSConfig(t)
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	upstream, serverDone := runMySQLPeer(t, func(conn net.Conn) error {
+		mustWriteMySQLPacket(t, conn, 0, mysqlTestGreeting(mysqlCachingSHA2, scramble, true))
+		if pkt := mustReadMySQLPacket(t, conn); pkt.seq != 1 {
+			return fmt.Errorf("SSLRequest sequence = %d", pkt.seq)
+		}
+		tlsConn := tls.Server(conn, serverTLS)
+		if err := tlsConn.Handshake(); err != nil {
+			return err
+		}
+		if pkt := mustReadMySQLPacket(t, tlsConn); pkt.seq != 2 {
+			return fmt.Errorf("handshake response sequence = %d", pkt.seq)
+		}
+		mustWriteMySQLPacket(t, tlsConn, 3, []byte{mysqlAuthMoreData, 0x04})
+		password := mustReadMySQLPacket(t, tlsConn)
+		if password.seq != 4 || !bytes.Equal(password.payload, []byte("secret\x00")) {
+			return fmt.Errorf("full-auth response = seq %d, payload %q", password.seq, password.payload)
+		}
+		mustWriteMySQLPacket(t, tlsConn, 5, []byte{mysqlOKPacket, 0, 0, 2, 0, 0, 0})
+		return nil
+	})
+
+	client, clientDone := runMySQLPeer(t, func(conn net.Conn) error {
+		if pkt := mustReadMySQLPacket(t, conn); pkt.seq != 0 {
+			return fmt.Errorf("greeting sequence = %d", pkt.seq)
+		}
+		mustWriteMySQLPacket(t, conn, 1, mysqlTestHandshakeResponse(mysqlCachingSHA2))
+		fullAuth := mustReadMySQLPacket(t, conn)
+		if fullAuth.seq != 2 || !bytes.Equal(fullAuth.payload, []byte{mysqlAuthMoreData, 0x04}) {
+			return fmt.Errorf("full-auth request = seq %d, payload %x", fullAuth.seq, fullAuth.payload)
+		}
+		ciphertext := mysqlTestEncryptPassword(t, "secret", scramble, &key.PublicKey)
+		mustWriteMySQLPacket(t, conn, 3, ciphertext)
+		if pkt := mustReadMySQLPacket(t, conn); pkt.seq != 4 || pkt.payload[0] != mysqlOKPacket {
+			return fmt.Errorf("authentication result = seq %d, payload %x", pkt.seq, pkt.payload)
+		}
+		return nil
+	})
+
+	bridge, err := newMySQLAuthBridge(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotClient, gotUpstream, err := negotiateMySQLUpstreamTLS(
+		client, upstream, "mysql:3306", &tls.Config{InsecureSkipVerify: true},
+		5*time.Second, bridge, nil,
+	)
+	if err != nil {
+		t.Fatalf("negotiateMySQLUpstreamTLS: %v", err)
+	}
+	defer gotClient.Close()
+	defer gotUpstream.Close()
+	if err := <-clientDone; err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	if err := <-serverDone; err != nil {
+		t.Fatalf("server: %v", err)
+	}
+}
+
+func TestNegotiateMySQLUpstreamTLSDecryptsPinnedSHA256HandshakeResponse(t *testing.T) {
+	scramble := []byte("0123456789abcdefghij")
+	serverTLS := testTLSConfig(t)
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	upstream, serverDone := runMySQLPeer(t, func(conn net.Conn) error {
+		mustWriteMySQLPacket(t, conn, 0, mysqlTestGreeting(mysqlSHA256Password, scramble, true))
+		if pkt := mustReadMySQLPacket(t, conn); pkt.seq != 1 {
+			return fmt.Errorf("SSLRequest sequence = %d", pkt.seq)
+		}
+		tlsConn := tls.Server(conn, serverTLS)
+		if err := tlsConn.Handshake(); err != nil {
+			return err
+		}
+		response := mustReadMySQLPacket(t, tlsConn)
+		parsed, err := parseMySQLHandshakeAuthResponse(response.payload, mysqlSHA256Password)
+		if err != nil {
+			return err
+		}
+		if response.seq != 2 || !bytes.Equal(parsed.auth, []byte("secret\x00")) {
+			return fmt.Errorf("handshake password = seq %d, payload %q", response.seq, parsed.auth)
+		}
+		mustWriteMySQLPacket(t, tlsConn, 3, []byte{mysqlOKPacket, 0, 0, 2, 0, 0, 0})
+		return nil
+	})
+
+	client, clientDone := runMySQLPeer(t, func(conn net.Conn) error {
+		if pkt := mustReadMySQLPacket(t, conn); pkt.seq != 0 {
+			return fmt.Errorf("greeting sequence = %d", pkt.seq)
+		}
+		ciphertext := mysqlTestEncryptPassword(t, "secret", scramble, &key.PublicKey)
+		mustWriteMySQLPacket(t, conn, 1,
+			mysqlTestHandshakeResponseWithAuth(mysqlSHA256Password, ciphertext))
+		if pkt := mustReadMySQLPacket(t, conn); pkt.seq != 2 || pkt.payload[0] != mysqlOKPacket {
+			return fmt.Errorf("authentication result = seq %d, payload %x", pkt.seq, pkt.payload)
+		}
+		return nil
+	})
+
+	bridge, err := newMySQLAuthBridge(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotClient, gotUpstream, err := negotiateMySQLUpstreamTLS(
+		client, upstream, "mysql:3306", &tls.Config{InsecureSkipVerify: true},
+		5*time.Second, bridge, nil,
+	)
+	if err != nil {
+		t.Fatalf("negotiateMySQLUpstreamTLS: %v", err)
+	}
+	defer gotClient.Close()
+	defer gotUpstream.Close()
+	if err := <-clientDone; err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	if err := <-serverDone; err != nil {
+		t.Fatalf("server: %v", err)
+	}
+}
+
+func TestNegotiateMySQLUpstreamTLSRejectsUnconfiguredDirectRSAResponse(t *testing.T) {
+	scramble := []byte("0123456789abcdefghij")
+	serverTLS := testTLSConfig(t)
+	pinnedKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverMayFinish := make(chan struct{})
+
+	upstream, serverDone := runMySQLPeer(t, func(conn net.Conn) error {
+		mustWriteMySQLPacket(t, conn, 0, mysqlTestGreeting(mysqlCachingSHA2, scramble, true))
+		_ = mustReadMySQLPacket(t, conn)
+		tlsConn := tls.Server(conn, serverTLS)
+		if err := tlsConn.Handshake(); err != nil {
+			return err
+		}
+		_ = mustReadMySQLPacket(t, tlsConn)
+		mustWriteMySQLPacket(t, tlsConn, 3, []byte{mysqlAuthMoreData, 0x04})
+		<-serverMayFinish
+		if _, err := readMySQLHandshakeMessage(tlsConn); err == nil {
+			return errors.New("relay forwarded direct RSA ciphertext upstream")
+		}
+		return nil
+	})
+
+	client, clientDone := runMySQLPeer(t, func(conn net.Conn) error {
+		_ = mustReadMySQLPacket(t, conn)
+		mustWriteMySQLPacket(t, conn, 1, mysqlTestHandshakeResponse(mysqlCachingSHA2))
+		_ = mustReadMySQLPacket(t, conn)
+		ciphertext := mysqlTestEncryptPassword(t, "secret", scramble, &pinnedKey.PublicKey)
+		// RSA ciphertext is opaque and can legitimately end in NUL. The relay
+		// must classify by authentication state and size before considering a
+		// NUL-terminated response plaintext.
+		ciphertext[len(ciphertext)-1] = 0
+		mustWriteMySQLPacket(t, conn, 3, ciphertext)
+		failure := mustReadMySQLPacket(t, conn)
+		if failure.seq != 4 || failure.payload[0] != mysqlERRPacket ||
+			!bytes.Contains(failure.payload, []byte("mysql_auth_key_file")) {
+			return fmt.Errorf("authentication failure = seq %d, payload %q", failure.seq, failure.payload)
+		}
+		return nil
+	})
+
+	bridge, err := newMySQLAuthBridge(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = negotiateMySQLUpstreamTLS(
+		client, upstream, "mysql:3306", &tls.Config{InsecureSkipVerify: true},
+		5*time.Second, bridge, nil,
+	)
+	client.Close()
+	upstream.Close()
+	close(serverMayFinish)
+	if err == nil || !strings.Contains(err.Error(), mysqlDirectRSAErrorMessage) {
+		t.Fatalf("error = %v, want direct RSA configuration error", err)
+	}
+	if err := <-clientDone; err != nil {
+		t.Fatalf("client: %v", err)
+	}
+	if err := <-serverDone; err != nil {
+		t.Fatalf("server: %v", err)
+	}
+}
 
 func TestNegotiateMySQLUpstreamTLSRefusesServerWithoutTLS(t *testing.T) {
 	scramble := []byte("0123456789abcdefghij")
@@ -429,7 +660,7 @@ func TestNegotiateMySQLUpstreamTLSRefusesServerWithoutTLS(t *testing.T) {
 	})
 	clientRelay, clientPeer := net.Pipe()
 	defer clientPeer.Close()
-	bridge, err := newMySQLAuthBridge()
+	bridge, err := newMySQLAuthBridge(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
