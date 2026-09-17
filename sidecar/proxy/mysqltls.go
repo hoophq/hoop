@@ -19,16 +19,19 @@ import (
 )
 
 const (
-	mysqlClientSSL           uint32 = 1 << 11
-	mysqlMaxHandshakePayload        = (1 << 24) - 1
-	mysqlMaxAuthRounds              = 32
-	mysqlProtocol41HeaderLen        = 32
-	mysqlAuthMoreData        byte   = 0x01
-	mysqlAuthSwitchRequest   byte   = 0xfe
-	mysqlOKPacket            byte   = 0x00
-	mysqlERRPacket           byte   = 0xff
-	mysqlCachingSHA2                = "caching_sha2_password"
-	mysqlSHA256Password             = "sha256_password"
+	mysqlClientSSL               uint32 = 1 << 11
+	mysqlMaxPacketPayload               = (1 << 24) - 1
+	mysqlMaxHandshakeMessageSize        = mysqlMaxPacketPayload + (1 << 20)
+	mysqlHandshakeReadChunkSize         = 32 << 10
+	mysqlMaxConcurrentHandshakes        = 8
+	mysqlMaxAuthRounds                  = 32
+	mysqlProtocol41HeaderLen            = 32
+	mysqlAuthMoreData            byte   = 0x01
+	mysqlAuthSwitchRequest       byte   = 0xfe
+	mysqlOKPacket                byte   = 0x00
+	mysqlERRPacket               byte   = 0xff
+	mysqlCachingSHA2                    = "caching_sha2_password"
+	mysqlSHA256Password                 = "sha256_password"
 )
 
 type mysqlHandshakeInspector func(inspect.Direction, []byte) ([]byte, error)
@@ -58,23 +61,61 @@ func newMySQLAuthBridge() (*mysqlAuthBridge, error) {
 
 type mysqlPacket struct {
 	seq     byte
+	nextSeq byte
 	payload []byte
 }
 
-func readMySQLHandshakePacket(conn net.Conn) (mysqlPacket, error) {
-	var header [4]byte
-	if _, err := io.ReadFull(conn, header[:]); err != nil {
-		return mysqlPacket{}, err
+func readMySQLMessage(conn net.Conn, maxPacketPayload, maxMessageSize int) (mysqlPacket, error) {
+	if maxPacketPayload <= 0 || maxMessageSize < 0 {
+		return mysqlPacket{}, errors.New("invalid MySQL message limits")
 	}
-	length := int(header[0]) | int(header[1])<<8 | int(header[2])<<16
-	if length > mysqlMaxHandshakePayload {
-		return mysqlPacket{}, fmt.Errorf("MySQL handshake packet is %d bytes, maximum is %d", length, mysqlMaxHandshakePayload)
+
+	var (
+		header   [4]byte
+		payload  []byte
+		startSeq byte
+		nextSeq  byte
+		first    = true
+	)
+	scratch := make([]byte, mysqlHandshakeReadChunkSize)
+	for {
+		if _, err := io.ReadFull(conn, header[:]); err != nil {
+			return mysqlPacket{}, err
+		}
+		length := int(header[0]) | int(header[1])<<8 | int(header[2])<<16
+		if length > maxPacketPayload {
+			return mysqlPacket{}, fmt.Errorf("MySQL packet is %d bytes, maximum is %d", length, maxPacketPayload)
+		}
+		if first {
+			startSeq = header[3]
+			nextSeq = startSeq
+			first = false
+		}
+		if header[3] != nextSeq {
+			return mysqlPacket{}, fmt.Errorf("MySQL continuation sequence is %d, want %d", header[3], nextSeq)
+		}
+		nextSeq++
+		if length > maxMessageSize-len(payload) {
+			return mysqlPacket{}, fmt.Errorf("MySQL handshake message exceeds %d bytes", maxMessageSize)
+		}
+
+		remaining := length
+		for remaining > 0 {
+			n := min(remaining, len(scratch))
+			if _, err := io.ReadFull(conn, scratch[:n]); err != nil {
+				return mysqlPacket{}, err
+			}
+			payload = append(payload, scratch[:n]...)
+			remaining -= n
+		}
+		if length < maxPacketPayload {
+			return mysqlPacket{seq: startSeq, nextSeq: nextSeq, payload: payload}, nil
+		}
 	}
-	payload := make([]byte, length)
-	if _, err := io.ReadFull(conn, payload); err != nil {
-		return mysqlPacket{}, err
-	}
-	return mysqlPacket{seq: header[3], payload: payload}, nil
+}
+
+func readMySQLHandshakeMessage(conn net.Conn) (mysqlPacket, error) {
+	return readMySQLMessage(conn, mysqlMaxPacketPayload, mysqlMaxHandshakeMessageSize)
 }
 
 func frameMySQLHandshakePacket(seq byte, payload []byte) []byte {
@@ -87,7 +128,7 @@ func frameMySQLHandshakePacket(seq byte, payload []byte) []byte {
 	return out
 }
 
-func writeAll(conn net.Conn, data []byte) error {
+func writeAll(conn io.Writer, data []byte) error {
 	for len(data) > 0 {
 		n, err := conn.Write(data)
 		if err != nil {
@@ -99,6 +140,68 @@ func writeAll(conn net.Conn, data []byte) error {
 		data = data[n:]
 	}
 	return nil
+}
+
+func writeMySQLMessage(
+	conn io.Writer,
+	seq byte,
+	payload []byte,
+	maxPacketPayload int,
+	inspectPacket mysqlHandshakeInspector,
+	dir inspect.Direction,
+) (byte, error) {
+	if maxPacketPayload <= 0 {
+		return seq, errors.New("invalid MySQL packet limit")
+	}
+
+	wroteInspected := false
+	for {
+		chunkLen := min(len(payload), maxPacketPayload)
+		chunk := payload[:chunkLen]
+		if inspectPacket == nil {
+			var header [4]byte
+			header[0] = byte(chunkLen)
+			header[1] = byte(chunkLen >> 8)
+			header[2] = byte(chunkLen >> 16)
+			header[3] = seq
+			if err := writeAll(conn, header[:]); err != nil {
+				return seq, err
+			}
+			if err := writeAll(conn, chunk); err != nil {
+				return seq, err
+			}
+		} else {
+			out, err := inspectPacket(dir, frameMySQLHandshakePacket(seq, chunk))
+			if err != nil {
+				return seq, err
+			}
+			if len(out) > 0 {
+				if err := writeAll(conn, out); err != nil {
+					return seq, err
+				}
+				wroteInspected = true
+			}
+		}
+
+		seq++
+		payload = payload[chunkLen:]
+		if chunkLen < maxPacketPayload {
+			if inspectPacket != nil && !wroteInspected {
+				return seq, errors.New("MySQL handshake inspector held a complete message")
+			}
+			return seq, nil
+		}
+	}
+}
+
+func writeMySQLHandshakeMessage(
+	conn io.Writer,
+	seq byte,
+	payload []byte,
+	inspectPacket mysqlHandshakeInspector,
+	dir inspect.Direction,
+) (byte, error) {
+	return writeMySQLMessage(conn, seq, payload, mysqlMaxPacketPayload, inspectPacket, dir)
 }
 
 type mysqlGreeting struct {
@@ -215,20 +318,6 @@ func (b *mysqlAuthBridge) decryptPassword(plugin string, ciphertext, scramble []
 	return plain, nil
 }
 
-func inspectMySQLHandshake(inspectPacket mysqlHandshakeInspector, dir inspect.Direction, frame []byte) ([]byte, error) {
-	if inspectPacket == nil {
-		return frame, nil
-	}
-	out, err := inspectPacket(dir, frame)
-	if err != nil {
-		return nil, err
-	}
-	if len(out) == 0 {
-		return nil, errors.New("MySQL handshake inspector held a complete packet")
-	}
-	return out, nil
-}
-
 // negotiateMySQLUpstreamTLS completes the server-first MySQL TLS and
 // authentication exchange before the ordinary bidirectional pumps start. The
 // client remains on plaintext, while the upstream receives an SSLRequest and
@@ -251,14 +340,14 @@ func negotiateMySQLUpstreamTLS(
 		}
 	}
 
-	greetingPacket, err := readMySQLHandshakePacket(upstream)
+	greetingMessage, err := readMySQLHandshakeMessage(upstream)
 	if err != nil {
 		return nil, nil, fmt.Errorf("read MySQL greeting: %w", err)
 	}
-	if greetingPacket.seq != 0 {
-		return nil, nil, fmt.Errorf("MySQL greeting sequence is %d, want 0", greetingPacket.seq)
+	if greetingMessage.seq != 0 {
+		return nil, nil, fmt.Errorf("MySQL greeting sequence is %d, want 0", greetingMessage.seq)
 	}
-	greeting, err := parseMySQLGreeting(greetingPacket.payload)
+	greeting, err := parseMySQLGreeting(greetingMessage.payload)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -269,148 +358,154 @@ func negotiateMySQLUpstreamTLS(
 		return nil, nil, errors.New("MySQL greeting contains no authentication scramble")
 	}
 
-	clientGreeting := append([]byte(nil), greetingPacket.payload...)
+	clientGreeting := append([]byte(nil), greetingMessage.payload...)
 	lower := binary.LittleEndian.Uint16(clientGreeting[greeting.capabilityOffset : greeting.capabilityOffset+2])
 	binary.LittleEndian.PutUint16(clientGreeting[greeting.capabilityOffset:greeting.capabilityOffset+2], lower&^uint16(mysqlClientSSL))
-	downNext := byte(0)
-	upNext := byte(1)
-	frame := frameMySQLHandshakePacket(downNext, clientGreeting)
-	frame, err = inspectMySQLHandshake(inspectPacket, inspect.FromServer, frame)
+	downNext, err := writeMySQLHandshakeMessage(
+		client, 0, clientGreeting, inspectPacket, inspect.FromServer,
+	)
 	if err != nil {
-		return nil, nil, err
-	}
-	if err := writeAll(client, frame); err != nil {
 		return nil, nil, fmt.Errorf("write MySQL greeting: %w", err)
 	}
-	downNext++
 
-	responsePacket, err := readMySQLHandshakePacket(client)
+	responseMessage, err := readMySQLHandshakeMessage(client)
 	if err != nil {
 		return nil, nil, fmt.Errorf("read MySQL handshake response: %w", err)
 	}
-	if responsePacket.seq != downNext {
-		return nil, nil, fmt.Errorf("MySQL handshake response sequence is %d, want %d", responsePacket.seq, downNext)
+	if responseMessage.seq != downNext {
+		return nil, nil, fmt.Errorf("MySQL handshake response sequence is %d, want %d", responseMessage.seq, downNext)
 	}
-	if len(responsePacket.payload) < mysqlProtocol41HeaderLen {
-		return nil, nil, fmt.Errorf("MySQL HandshakeResponse41 is %d bytes, want at least %d", len(responsePacket.payload), mysqlProtocol41HeaderLen)
+	if len(responseMessage.payload) < mysqlProtocol41HeaderLen {
+		return nil, nil, fmt.Errorf("MySQL HandshakeResponse41 is %d bytes, want at least %d", len(responseMessage.payload), mysqlProtocol41HeaderLen)
 	}
-	if _, err := inspectMySQLHandshake(inspectPacket, inspect.FromClient,
-		frameMySQLHandshakePacket(responsePacket.seq, responsePacket.payload)); err != nil {
+	if _, err := writeMySQLMessage(
+		io.Discard,
+		responseMessage.seq,
+		responseMessage.payload,
+		mysqlMaxPacketPayload,
+		inspectPacket,
+		inspect.FromClient,
+	); err != nil {
 		return nil, nil, err
 	}
-	downNext++
+	downNext = responseMessage.nextSeq
 
-	sslRequest := append([]byte(nil), responsePacket.payload[:mysqlProtocol41HeaderLen]...)
+	sslRequest := append([]byte(nil), responseMessage.payload[:mysqlProtocol41HeaderLen]...)
 	flags := binary.LittleEndian.Uint32(sslRequest[:4]) | mysqlClientSSL
 	binary.LittleEndian.PutUint32(sslRequest[:4], flags)
-	if err := writeAll(upstream, frameMySQLHandshakePacket(upNext, sslRequest)); err != nil {
+	upNext, err := writeMySQLHandshakeMessage(upstream, greetingMessage.nextSeq, sslRequest, nil, inspect.FromClient)
+	if err != nil {
 		return nil, nil, fmt.Errorf("write MySQL SSLRequest: %w", err)
 	}
-	upNext++
 
 	tlsConn, err := startTLS(upstream, upstreamAddr, inspect.MySQL, tlsCfg)
 	if err != nil {
 		return nil, nil, err
 	}
 	upstream = tlsConn
-	if err := writeAll(upstream, frameMySQLHandshakePacket(upNext, responsePacket.payload)); err != nil {
+	upNext, err = writeMySQLHandshakeMessage(upstream, upNext, responseMessage.payload, nil, inspect.FromClient)
+	if err != nil {
 		return nil, nil, fmt.Errorf("write encrypted MySQL handshake response: %w", err)
 	}
-	upNext++
 
 	plugin := greeting.plugin
 	scramble := greeting.scramble
 	for range mysqlMaxAuthRounds {
-		serverPacket, err := readMySQLHandshakePacket(upstream)
+		serverMessage, err := readMySQLHandshakeMessage(upstream)
 		if err != nil {
 			return nil, nil, fmt.Errorf("read MySQL authentication response: %w", err)
 		}
-		if serverPacket.seq != upNext {
-			return nil, nil, fmt.Errorf("MySQL upstream authentication sequence is %d, want %d", serverPacket.seq, upNext)
+		if serverMessage.seq != upNext {
+			return nil, nil, fmt.Errorf("MySQL upstream authentication sequence is %d, want %d", serverMessage.seq, upNext)
 		}
-		upNext++
-		if p, s, ok := mysqlAuthSwitch(serverPacket.payload); ok {
+		upNext = serverMessage.nextSeq
+		if p, s, ok := mysqlAuthSwitch(serverMessage.payload); ok {
 			plugin, scramble = p, s
 		}
 
-		serverFrame := frameMySQLHandshakePacket(downNext, serverPacket.payload)
-		serverFrame, err = inspectMySQLHandshake(inspectPacket, inspect.FromServer, serverFrame)
+		downNext, err = writeMySQLHandshakeMessage(
+			client, downNext, serverMessage.payload, inspectPacket, inspect.FromServer,
+		)
 		if err != nil {
-			return nil, nil, err
-		}
-		if err := writeAll(client, serverFrame); err != nil {
 			return nil, nil, fmt.Errorf("write MySQL authentication response: %w", err)
 		}
-		downNext++
 
-		if len(serverPacket.payload) == 0 {
+		if len(serverMessage.payload) == 0 {
 			return nil, nil, errors.New("MySQL upstream sent an empty authentication packet")
 		}
-		switch serverPacket.payload[0] {
+		switch serverMessage.payload[0] {
 		case mysqlOKPacket, mysqlERRPacket:
 			_ = client.SetDeadline(time.Time{})
 			_ = upstream.SetDeadline(time.Time{})
 			return client, upstream, nil
 		}
-		if bytes.Equal(serverPacket.payload, []byte{mysqlAuthMoreData, 0x03}) {
+		if bytes.Equal(serverMessage.payload, []byte{mysqlAuthMoreData, 0x03}) {
 			continue
 		}
 
-		clientPacket, err := readMySQLHandshakePacket(client)
+		clientMessage, err := readMySQLHandshakeMessage(client)
 		if err != nil {
 			return nil, nil, fmt.Errorf("read MySQL authentication response from client: %w", err)
 		}
-		if clientPacket.seq != downNext {
-			return nil, nil, fmt.Errorf("MySQL client authentication sequence is %d, want %d", clientPacket.seq, downNext)
+		if clientMessage.seq != downNext {
+			return nil, nil, fmt.Errorf("MySQL client authentication sequence is %d, want %d", clientMessage.seq, downNext)
 		}
-		if _, err := inspectMySQLHandshake(inspectPacket, inspect.FromClient,
-			frameMySQLHandshakePacket(clientPacket.seq, clientPacket.payload)); err != nil {
+		if _, err := writeMySQLMessage(
+			io.Discard,
+			clientMessage.seq,
+			clientMessage.payload,
+			mysqlMaxPacketPayload,
+			inspectPacket,
+			inspect.FromClient,
+		); err != nil {
 			return nil, nil, err
 		}
-		downNext++
+		downNext = clientMessage.nextSeq
 
-		if mysqlRequestsPublicKey(plugin, clientPacket.payload) {
+		if mysqlRequestsPublicKey(plugin, clientMessage.payload) {
 			publicKeyPayload := append([]byte{mysqlAuthMoreData}, bridge.publicPEM...)
-			publicKeyFrame := frameMySQLHandshakePacket(downNext, publicKeyPayload)
-			publicKeyFrame, err = inspectMySQLHandshake(inspectPacket, inspect.FromServer, publicKeyFrame)
+			downNext, err = writeMySQLHandshakeMessage(
+				client, downNext, publicKeyPayload, inspectPacket, inspect.FromServer,
+			)
 			if err != nil {
-				return nil, nil, err
-			}
-			if err := writeAll(client, publicKeyFrame); err != nil {
 				return nil, nil, fmt.Errorf("write MySQL authentication public key: %w", err)
 			}
-			downNext++
 
-			encryptedPacket, err := readMySQLHandshakePacket(client)
+			encryptedMessage, err := readMySQLHandshakeMessage(client)
 			if err != nil {
 				return nil, nil, fmt.Errorf("read encrypted MySQL authentication response: %w", err)
 			}
-			if encryptedPacket.seq != downNext {
-				return nil, nil, fmt.Errorf("MySQL encrypted authentication sequence is %d, want %d", encryptedPacket.seq, downNext)
+			if encryptedMessage.seq != downNext {
+				return nil, nil, fmt.Errorf("MySQL encrypted authentication sequence is %d, want %d", encryptedMessage.seq, downNext)
 			}
-			if _, err := inspectMySQLHandshake(inspectPacket, inspect.FromClient,
-				frameMySQLHandshakePacket(encryptedPacket.seq, encryptedPacket.payload)); err != nil {
+			if _, err := writeMySQLMessage(
+				io.Discard,
+				encryptedMessage.seq,
+				encryptedMessage.payload,
+				mysqlMaxPacketPayload,
+				inspectPacket,
+				inspect.FromClient,
+			); err != nil {
 				return nil, nil, err
 			}
-			downNext++
+			downNext = encryptedMessage.nextSeq
 
-			password, err := bridge.decryptPassword(plugin, encryptedPacket.payload, scramble)
+			password, err := bridge.decryptPassword(plugin, encryptedMessage.payload, scramble)
 			if err != nil {
 				return nil, nil, err
 			}
-			err = writeAll(upstream, frameMySQLHandshakePacket(upNext, password))
+			upNext, err = writeMySQLHandshakeMessage(upstream, upNext, password, nil, inspect.FromClient)
 			clear(password)
 			if err != nil {
 				return nil, nil, fmt.Errorf("write MySQL full authentication response: %w", err)
 			}
-			upNext++
 			continue
 		}
 
-		if err := writeAll(upstream, frameMySQLHandshakePacket(upNext, clientPacket.payload)); err != nil {
+		upNext, err = writeMySQLHandshakeMessage(upstream, upNext, clientMessage.payload, nil, inspect.FromClient)
+		if err != nil {
 			return nil, nil, fmt.Errorf("write MySQL authentication response upstream: %w", err)
 		}
-		upNext++
 	}
 
 	return nil, nil, fmt.Errorf("MySQL authentication exceeded %d round trips", mysqlMaxAuthRounds)

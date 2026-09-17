@@ -156,8 +156,9 @@ type Server struct {
 	// config reload can replace both without a restart. Loaded once per
 	// accepted connection: the Gate keeps what it captured, which is what
 	// makes a swap safe under live traffic.
-	rules     atomic.Pointer[laneRules]
-	mysqlAuth *mysqlAuthBridge
+	rules               atomic.Pointer[laneRules]
+	mysqlAuth           *mysqlAuthBridge
+	mysqlHandshakeSlots chan struct{}
 
 	mu      sync.Mutex
 	conns   map[net.Conn]struct{}
@@ -194,22 +195,45 @@ func NewServer(cfg Config) (*Server, error) {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
-	var mysqlAuth *mysqlAuthBridge
+	var (
+		mysqlAuth           *mysqlAuthBridge
+		mysqlHandshakeSlots chan struct{}
+	)
 	if cfg.Protocol == inspect.MySQL && cfg.UpstreamTLS != nil {
 		var err error
 		mysqlAuth, err = newMySQLAuthBridge()
 		if err != nil {
 			return nil, fmt.Errorf("sidecar/proxy: %w", err)
 		}
+		mysqlHandshakeSlots = make(chan struct{}, mysqlMaxConcurrentHandshakes)
 	}
 	s := &Server{
-		cfg:       cfg,
-		log:       cfg.Logger,
-		conns:     map[net.Conn]struct{}{},
-		mysqlAuth: mysqlAuth,
+		cfg:                 cfg,
+		log:                 cfg.Logger,
+		conns:               map[net.Conn]struct{}{},
+		mysqlAuth:           mysqlAuth,
+		mysqlHandshakeSlots: mysqlHandshakeSlots,
 	}
 	s.rules.Store(&laneRules{policy: cfg.Policy, masker: cfg.Masker})
 	return s, nil
+}
+
+func (s *Server) reserveMySQLHandshake() bool {
+	if s.mysqlHandshakeSlots == nil {
+		return true
+	}
+	select {
+	case s.mysqlHandshakeSlots <- struct{}{}:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Server) releaseMySQLHandshake() {
+	if s.mysqlHandshakeSlots != nil {
+		<-s.mysqlHandshakeSlots
+	}
 }
 
 // SwapRules replaces the policy evaluator and masker for every connection
@@ -311,6 +335,13 @@ func (s *Server) Serve(ctx context.Context) error {
 			continue
 		}
 
+		if !s.reserveMySQLHandshake() {
+			s.log.Warn("MySQL TLS handshake refused, at capacity",
+				"max_handshakes", mysqlMaxConcurrentHandshakes)
+			_ = conn.Close()
+			continue
+		}
+
 		s.track(conn)
 		// The rule generation is pinned HERE, at the accept boundary, not
 		// in the asynchronously scheduled handler: a swap landing between
@@ -382,6 +413,15 @@ func (s *Server) untrack(c net.Conn) {
 // handle relays one connection under rules, the immutable generation Serve
 // pinned at the accept boundary.
 func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) {
+	releaseMySQLHandshake := s.mysqlHandshakeSlots != nil
+	if releaseMySQLHandshake {
+		defer func() {
+			if releaseMySQLHandshake {
+				s.releaseMySQLHandshake()
+			}
+		}()
+	}
+
 	identity := session.Identity{PeerAddr: client.RemoteAddr().String()}
 	if s.cfg.IdentityFn != nil {
 		identity = s.cfg.IdentityFn(client)
@@ -466,6 +506,8 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 			log.Debug("MySQL upstream TLS negotiation failed", "error", err)
 			return
 		}
+		s.releaseMySQLHandshake()
+		releaseMySQLHandshake = false
 	}
 
 	// Answer the pgwire pre-startup exchange before the gate sees a byte. It

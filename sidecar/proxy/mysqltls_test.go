@@ -62,7 +62,7 @@ func mysqlTestHandshakeResponse(plugin string) []byte {
 
 func mustReadMySQLPacket(t *testing.T, conn net.Conn) mysqlPacket {
 	t.Helper()
-	pkt, err := readMySQLHandshakePacket(conn)
+	pkt, err := readMySQLHandshakeMessage(conn)
 	if err != nil {
 		t.Fatalf("read MySQL packet: %v", err)
 	}
@@ -87,6 +87,99 @@ func runMySQLPeer(t *testing.T, fn func(net.Conn) error) (net.Conn, <-chan error
 	return relay, done
 }
 
+func TestMySQLMessageFragmentsGreetingResponseAndAuthFlow(t *testing.T) {
+	const packetSize = 8
+	for _, tc := range []struct {
+		name    string
+		seq     byte
+		payload []byte
+		nextSeq byte
+	}{
+		{name: "greeting", seq: 254, payload: []byte("greeting-payload"), nextSeq: 1},
+		{name: "response exact multiple", seq: 1, payload: []byte("12345678abcdefgh"), nextSeq: 4},
+		{name: "authentication", seq: 7, payload: []byte("authentication-data"), nextSeq: 10},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			relay, peer := net.Pipe()
+			done := make(chan error, 1)
+			go func() {
+				defer peer.Close()
+				_, err := writeMySQLMessage(peer, tc.seq, tc.payload, packetSize, nil, inspect.FromClient)
+				done <- err
+			}()
+
+			got, err := readMySQLMessage(relay, packetSize, 64)
+			relay.Close()
+			if err != nil {
+				t.Fatalf("readMySQLMessage: %v", err)
+			}
+			if err := <-done; err != nil {
+				t.Fatalf("writeMySQLMessage: %v", err)
+			}
+			if got.seq != tc.seq || got.nextSeq != tc.nextSeq {
+				t.Fatalf("sequence = %d..%d, want %d..%d", got.seq, got.nextSeq, tc.seq, tc.nextSeq)
+			}
+			if !bytes.Equal(got.payload, tc.payload) {
+				t.Fatalf("payload = %q, want %q", got.payload, tc.payload)
+			}
+		})
+	}
+}
+
+func TestReadMySQLMessageRejectsBrokenContinuationSequence(t *testing.T) {
+	relay, peer := net.Pipe()
+	done := make(chan error, 1)
+	go func() {
+		defer peer.Close()
+		if err := writeAll(peer, frameMySQLHandshakePacket(4, []byte("12345678"))); err != nil {
+			done <- err
+			return
+		}
+		done <- writeAll(peer, frameMySQLHandshakePacket(6, []byte("x")))
+	}()
+
+	_, err := readMySQLMessage(relay, 8, 32)
+	relay.Close()
+	if err == nil || !bytes.Contains([]byte(err.Error()), []byte("sequence is 6, want 5")) {
+		t.Fatalf("error = %v, want continuation sequence refusal", err)
+	}
+	<-done
+}
+
+func TestReadMySQLMessageRejectsOversizeBeforeBody(t *testing.T) {
+	relay, peer := net.Pipe()
+	done := make(chan error, 1)
+	go func() {
+		defer peer.Close()
+		done <- writeAll(peer, []byte{5, 0, 0, 1})
+	}()
+
+	_, err := readMySQLMessage(relay, 8, 4)
+	relay.Close()
+	if err == nil || !bytes.Contains([]byte(err.Error()), []byte("exceeds 4 bytes")) {
+		t.Fatalf("error = %v, want size refusal", err)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("write header: %v", err)
+	}
+}
+
+func TestMySQLTLSHandshakeConcurrencyIsBounded(t *testing.T) {
+	s := &Server{mysqlHandshakeSlots: make(chan struct{}, mysqlMaxConcurrentHandshakes)}
+	for range mysqlMaxConcurrentHandshakes {
+		if !s.reserveMySQLHandshake() {
+			t.Fatal("handshake slot refused below the limit")
+		}
+	}
+	if s.reserveMySQLHandshake() {
+		t.Fatal("handshake slot accepted above the limit")
+	}
+	s.releaseMySQLHandshake()
+	if !s.reserveMySQLHandshake() {
+		t.Fatal("released handshake slot was not reusable")
+	}
+}
+
 func TestNegotiateMySQLUpstreamTLSBridgesCachingSHA2FullAuth(t *testing.T) {
 	scramble := []byte("0123456789abcdefghij")
 	serverTLS := testTLSConfig(t)
@@ -96,7 +189,7 @@ func TestNegotiateMySQLUpstreamTLSBridgesCachingSHA2FullAuth(t *testing.T) {
 			mysqlTestGreeting(mysqlCachingSHA2, scramble, true))); err != nil {
 			return err
 		}
-		sslRequest, err := readMySQLHandshakePacket(conn)
+		sslRequest, err := readMySQLHandshakeMessage(conn)
 		if err != nil {
 			return err
 		}
@@ -111,7 +204,7 @@ func TestNegotiateMySQLUpstreamTLSBridgesCachingSHA2FullAuth(t *testing.T) {
 		if err := tlsConn.Handshake(); err != nil {
 			return err
 		}
-		response, err := readMySQLHandshakePacket(tlsConn)
+		response, err := readMySQLHandshakeMessage(tlsConn)
 		if err != nil {
 			return err
 		}
@@ -121,7 +214,7 @@ func TestNegotiateMySQLUpstreamTLSBridgesCachingSHA2FullAuth(t *testing.T) {
 		if err := writeAll(tlsConn, frameMySQLHandshakePacket(3, []byte{mysqlAuthMoreData, 0x04})); err != nil {
 			return err
 		}
-		password, err := readMySQLHandshakePacket(tlsConn)
+		password, err := readMySQLHandshakeMessage(tlsConn)
 		if err != nil {
 			return err
 		}
