@@ -279,6 +279,48 @@ section) logs `restart to apply it` instead, and a failed heartbeat changes
 nothing, because losing the phone line home must not take the data path down
 with it. ADR-0014 records the boundary.
 
+### Usage analytics
+
+A release build reports usage to Segment: that the process started, what
+shape its config has, how much traffic it judged, and why it stopped. Counts
+and shape only. No statement text, no identity, no rule name or pattern, no
+prompt, no token, no listener or upstream address — the same line
+`/config` draws, enforced in `sidecar/analytics` and `daemon/analytics.go`.
+
+| Event | When | Carries |
+|---|---|---|
+| `hoop-sidecar-first-run` | a bare invocation served the default page | port, whether it fell back, how long it stayed up |
+| `hoop-sidecar-started` | every lane built, about to serve | config source and format, license state and type, lane count per protocol, how many lanes enforce / observe / mask / consult OPA / run an analyzer, rule totals, PII entity count, audit sinks |
+| `hoop-sidecar-config-applied` | a control plane edit reached the reloader | generation, outcome (`applied`, `restart-required`, `refused`), which sections changed, lanes swapped and kept |
+| `hoop-sidecar-usage` | every 15 minutes and at shutdown | connections and statements in the window, denied and masked counts, denials by evaluator kind, analyzer calls and failures, audit write failures, per protocol |
+| `hoop-sidecar-stopped` | the process is exiting | reason (`signal`, `listener-failed`, `license-expired`), failure class, uptime |
+| `hoop-sidecar-license-expired` | the term ended under a config the free tier refuses | rule totals that exceeded it, term length, warnings sent |
+
+Every event also carries the version, the entry point (`hoop`,
+`hoop-inspect` or `embedded`), OS and architecture, the `runtime`
+(`linux`, `docker`, `kubernetes`, `macos`, `windows`), and two identities.
+`sidecar-id` says which install: `HOOP_SIDECAR_ID` if you set one, else the
+control plane token, else the hostname plus the config file path — stable
+across restarts and config edits. `host-id` says which machine: `HOOP_HOST_ID`
+if you set one, else the OS machine id plus the hostname. Every source is
+hashed; nothing leaves the process in the clear.
+
+What the process can learn on its own depends on where it runs, so set the
+variable the table names and nothing else:
+
+| Runs on | `sidecar-id` | `host-id` |
+|---|---|---|
+| Linux VM, bare metal, macOS | derived, nothing to set | derived from `/etc/machine-id` or `IOPlatformUUID` |
+| Docker | hostname is the container id: pass `--hostname` or set `HOOP_SIDECAR_ID` | container's own; set `HOOP_HOST_ID` to group by machine |
+| Kubernetes | hostname is the pod name: set `HOOP_SIDECAR_ID`, or connect a control plane | set `HOOP_HOST_ID` from `spec.nodeName` via the downward API |
+
+A control plane token makes `HOOP_SIDECAR_ID` unnecessary anywhere.
+
+Switch it off with `HOOP_SIDECAR_ANALYTICS=off`. A binary built without the
+write key (`go build` from this tree, the compose stack's image) sends
+nothing either way; the startup log says `usage analytics enabled` when it
+will.
+
 ## Configuring it: config.yaml
 
 One file is the whole configuration. The process reads it at startup, resolves
@@ -892,6 +934,26 @@ classified, so an unset flag shows up as an analyzer that never fires.
 `authorization`, `cookie` and `proxy-authorization` cannot be allowlisted;
 headers never reach the model regardless.
 
+**What the model sees** is the request line as the client sent it — verb,
+raw path and query string — then the normalized resource where it differs,
+the content type, and the body:
+
+```
+POST /users/12345/orders?export=all
+Resource: /users/*/orders
+Content-Type: application/json
+
+{"format": "csv"}
+```
+
+The raw target is deliberate, as the client spelled it. The resource is the
+policy key, where every id must fold into one rule; the model is judging
+intent, and `?export=all` or a `?limit=100000` is part of it. Identifiers in
+the path are covered by the same `send: redacted` pass as identifiers in the
+body. The CACHE keys on the resource plus the whole query, names and values,
+so `/users/1` and `/users/2` with the same body cost one call, not one per
+id, while `?dry_run=true` and `?dry_run=false` are two verdicts.
+
 **Only requests are classified.** By the time a response comes back a write
 has already happened, and read-side exposure is masking's job.
 
@@ -962,14 +1024,7 @@ one. See [Guardrails and OPA](#guardrails-and-opa) for what the two phases
 send and what the gate may answer.
 
 **Holding a statement for a human.** The fourth action is `require_review`:
-the statement waits while a person approves or refuses it. **This build
-refuses it at startup**, so the rest of this paragraph describes a schema
-that is accepted and a runtime that is not yet there.
-
-`approval_rule` names the control plane access request rule that decides who
-may approve. The rule holds the reviewer groups, the approval count and the
-force-approval list; the lane holds only its name, and the control plane
-authorizes each review against the config it stored for that sidecar.
+the statement is refused until a person approves it.
 
 ```yaml
 listeners:
@@ -981,16 +1036,74 @@ listeners:
       approval_rule: payments-approvers
 ```
 
+`approval_rule` names the control plane access request rule that decides who
+may approve. The rule holds the reviewer groups, the approval count and the
+force-approval list; the lane holds only its name, and the control plane
+authorizes each review against the config it stored for that sidecar.
+
+**A hold is not a pause.** Nothing waits on the connection: an approval
+arrives minutes or hours later, long after the client's socket is gone. The
+first attempt is DENIED, with the review id in the error the developer reads:
+
+```
+ERROR:  statement held for human approval: waiting for approval (review 9f97…)
+```
+
+They ask an approver, then run the statement again. That retry is what
+collects the approval. The relay files nothing on the second attempt: the
+plane recognizes the same statement, consumes the approved review and answers
+that this one may go through. It answers that ONCE, since the third run of the same
+statement files a fresh review, and a rejection stays, so a refused statement
+is refused every time without paging anyone again.
+
+Matching is on the exact bytes, so the retry must be the same statement, not
+an equivalent one. Two consequences worth knowing: a client using prepared
+statements sends the query with its parameters unbound, so an approval
+releases that query shape rather than one set of values, and a statement
+larger than 100 KB is refused by the plane rather than reviewed.
+
+**The approval is exact; the classification is not.** The verdict cache keys
+on the statement SHAPE with literals stripped, so two statements differing
+only in a literal share one classification. On a holding lane that cuts both
+ways: a shape the model rated high holds every statement of that shape, each
+filing its own review, while a shape it rated low is forwarded without a hold
+even when a later literal makes it the dangerous one. `WHERE tenant = 'test'`
+and `WHERE tenant = 'prod'` are one shape. The cache is off unless the config
+turns it on; set `cache: {size: 0}` on a lane where every statement has to be
+judged on its own, and pay one model call per statement for it.
+
+Four things have to be true, and each missing one is refused at startup rather
+than at the first held statement:
+
+| | |
+|---|---|
+| a level asks for `require_review` | otherwise `approval_rule` names reviewers nobody consults |
+| `approval_rule` is set, and not blank | spaces match no rule in the control plane |
+| the lane is postgres, mysql, mssql or mongodb | a hold needs a client that resends the statement; an http or grpc caller reads a refusal and an ssh session is already closed |
+| the sidecar has a control plane | there is nowhere else to file a review |
+
+Everything else fails CLOSED, `fail_open` included: it answers for a model
+vendor's outage, not for a human gate. A control plane that times out, refuses
+or answers something unreadable denies, and so does a statement that could not
+be classified at all, whether the provider failed or `max_calls` ran out. On a
+lane that only warns or blocks, a spent budget still allows.
+
+`mode: observe` is the one exception, and it files NOTHING. A dry run that
+paged approvers about statements it then forwarded would be a dry run with
+consequences; the lane records the hold as `guardrails.would_deny` and the
+startup report says so.
+
 It is per lane on purpose: the people who may release a statement against the
 payments database are not the people who may release one against a reporting
 replica, and a process-wide default would make the looser of the two the
-accident. An `approval_rule` on a lane where no risk level asks for
-`require_review` is refused at startup, the same way every other control that
-would load and be read by nobody is. A blank name is refused too, because
-spaces match no rule.
+accident. Editing it is a hot reload, not a restart: the block swaps with the
+lane's rules, so a corrected reviewer group reaches the lane on the next
+heartbeat.
 
-Editing it is a hot reload, not a restart: the block swaps with the lane's
-rules, so a corrected reviewer group reaches the lane on the next heartbeat.
+The deprecated `type: ai_analysis` rule cannot hold. It carries no
+`approval_rule`, so a review filed from one would name nobody who could
+release it; a rule naming `require_review` is refused with a message pointing
+at the listener block.
 
 **Writing your own prompt.** Risk depends on what you are protecting, so the
 risk guidance is replaceable at two levels.
@@ -1184,6 +1297,7 @@ gaps named above are the narrow ones; Envoy is not blind here.
 | `http` | HTTP/1.x requests | HTTP/1.x responses | no |
 | `grpc` | request headers; decoded messages when capture is on | response trailers; decoded messages when capture or masking is on | yes, per HTTP/2 stream |
 | `spanner` | like `grpc`, plus one SQL statement per query or DDL string extracted from known Cloud Spanner methods | as `grpc` | yes, per HTTP/2 stream |
+| `ssh` | the command of an `exec`, the name of an `env`, the path of each file operation | none — the lane rewrites output in flight and records none of it | yes, per connection |
 
 `grpc` is the exception to this table's codec model. It has a canonical
 `libhoop/v2/codec/types.GRPC` protocol value and its HTTP/2 endpoint and
@@ -1215,6 +1329,42 @@ listeners:
 and maskable response paths. Unreadable, malformed, or import-incomplete sets
 fail before the listener binds. Compare the printed method list with the
 deployed API to catch a valid but stale set that omits newer RPCs.
+
+`grpc.descriptors` takes one entry or a list; sets merge, shared imports
+dedupe, and two copies of one file that differ refuse to load. An entry is
+a file path or a URL a linked fetcher resolves at startup. `hoop-inspect`
+and `hoop start sidecar` link `gs://`:
+
+```yaml
+    grpc:
+      descriptors:
+        - gs://acme-schemas/billing/v42.pb
+        - gs://acme-schemas/ledger.pb?generation=1726480000123456   # pinned
+        - /etc/hoop/local-override.pb
+```
+
+A bucket carries an artifact a ConfigMap cannot (1 MiB cap), and lets each
+team's CI publish its own set without a redeploy of the sidecar's volume.
+The read is one GET on the JSON API as a GCP identity: a service account
+key inline in `GOOGLE_APPLICATION_CREDENTIALS_JSON` (the gateway's own
+variable, so one Secret serves both processes; set but malformed is an
+error, never a fallthrough), else Application Default Credentials —
+Workload Identity, an attached service account, or
+`GOOGLE_APPLICATION_CREDENTIALS`. The identity needs
+`storage.objects.get` on the object (`roles/storage.objectViewer`). There
+is no anonymous read. `?generation=N` pins one version; any other query
+parameter, or one the URL parser cannot decode, is refused, so a typo
+cannot read the current version while the config appears pinned. The
+fetch happens once, when the lane's endpoint is built, under the same
+two-minute budget for credential discovery, the token exchange and the
+read: the schema is bound into the server like the lane's rules, so a
+changed `descriptors` list is restart-bound drift on the heartbeat, and a
+new version published behind an unpinned URL is applied by a restart, the
+way a replaced file is. `-validate` performs the fetch, so a wrong object
+name or a missing IAM binding fails there with the URL in the message. A
+scheme this binary does not link (`s3://`) is refused at config validation
+naming what is linked; the fetcher lives in the nested module
+`descriptors/gcs`, and a binary that does not import it resolves no URL.
 
 `-grpc-discover <listener>` bootstraps that set when the upstream exposes
 gRPC server reflection: it dials the named lane's upstream with the lane's
@@ -1252,6 +1402,167 @@ lane still fences methods like a `grpc` lane. Methods carrying no SQL keep
 the generic per-message statement. A statement the lexer cannot read is
 `unknown` with the reason in `sql.incomplete` — fail-closed, so a rule
 naming `unknown` refuses it.
+
+A Spanner database is created as GoogleSQL or as the PostgreSQL interface,
+and one instance holds both; the data plane never says which. Read
+PostgreSQL with the GoogleSQL lexer and `"songs"` is a string literal, so a
+table rule fencing songs never fires. The dialect is therefore
+configuration, keyed on the database resource name every SQL-bearing
+request carries (`session`, `database`), never inferred from the text a
+client controls:
+
+```yaml
+  - name: spanner
+    protocol: spanner
+    spanner:
+      dialect: googlesql                 # lane default; absent block = googlesql
+      databases:
+        projects/p/instances/i/databases/ledger-pg: postgresql
+```
+
+`dialect: per_database` is the fail-closed shape: SQL against a database
+not listed is `unknown` with the reason in `sql.incomplete`. `CreateDatabase`
+is the one request that declares its dialect (`database_dialect`), and the
+lane believes it for that request's statements. Each extracted statement
+records `spanner.dialect` and `spanner.database` in its metadata, so the
+trail says which lexer read it.
+
+### ssh: the lane that is one end of the connection
+
+`protocol: ssh` is not a relay. An SSH connection is encrypted end to end, so
+nothing in the middle can read a command — to see one at all the sidecar has
+to BE one end of it. The lane terminates the handshake, verifies the client's
+certificate against a CA it trusts, and runs each admitted capability itself.
+libhoop owns the mechanics; this module owns every decision. See
+[ADR-0015](../docs/adr/0015-ssh-terminates-at-the-sidecar.md).
+
+```yaml
+listeners:
+  - name: prod-endpoint
+    protocol: ssh
+    listen: 0.0.0.0:2222
+    ssh:
+      host_key: /etc/hoop-inspect/keys/endpoint_host_key
+      trusted_ca: /etc/hoop-inspect/keys/hoop_ca.pub
+      capabilities_allowed: [shell, pty, exec, env, sftp]
+      identity:
+        subject: key_id
+        groups: principals
+    guardrails:
+      rules:
+        - name: no-preload-injection
+          type: pattern_match
+          pattern_regex: '^(LD_PRELOAD|LD_LIBRARY_PATH)$'
+          operations: [env_set]
+          message: this environment variable is not permitted
+```
+
+**Certificates only.** There is no password method and no
+`authorized_keys` list. A connection presents an OpenSSH user certificate
+signed by `trusted_ca` or it is refused at the handshake, and the login name
+it asks for must appear in the certificate's principals.
+
+**And the certificate has to name someone.** `identity.subject` picks the
+field, `key_id` by default, and a certificate that leaves it empty — an
+`ssh-keygen -I ''`, or an extension a CA has not rolled out — is REFUSED
+rather than admitted as `anonymous`. An `email` mapping satisfies it too;
+either one names a principal. The trail is half the reason: the other half is
+that `PolicyContext` omits an empty `subject`, and a Rego rule reading an
+absent key does not fire, so a deny keyed on the subject would pass a session
+it was written to stop.
+
+**`operations` is what scopes a rule here.** One SSH lane emits three kinds of
+text — a command line for `exec_line`, a variable name for `env_set`, a path
+for every `sftp_*` — so a pattern written for one of them has to say which.
+Unscoped, it is evaluated against all three.
+
+**Four rule types are refused at load**: `table`, `http_resource`,
+`http_status` and `grpc_status`. SSH has no relations, no request path and no
+RPC, so each would load and never fire. An sftp path is matched with
+`pattern_match`, not with `table`.
+
+**`capabilities_allowed` is tri-state.** Omitted admits the five capabilities
+this version delivers; `[]` admits none, which is how a jump host drops the
+shell; a list admits those. Naming a capability this version does not deliver —
+`x11`, `agent_forward`, `remote_forward`, `subsystem` — fails at load rather
+than being admitted and then quietly not working.
+
+**Forwarding is not a capability.** `destinations_allowed` decides where a
+client-opened forward may be carried, and an absent or empty list denies every
+one of them. Entries are `network[:port]` or the single word `any`; IPv6 needs
+no brackets, because the port is read after the prefix length
+(`2001:db8::/32:22`). The check is handed the address the endpoint WILL dial,
+resolved once, and that same address is connected to — checking a name and
+dialling it again would leave a window where the two disagree.
+
+```yaml
+  - name: prod-bastion
+    protocol: ssh
+    listen: 0.0.0.0:2222
+    ssh:
+      host_key: /etc/hoop-inspect/keys/bastion_host_key
+      trusted_ca: /etc/hoop-inspect/keys/hoop_ca.pub
+      capabilities_allowed: []          # optional: empty, not omitted, so no session here
+      destinations_allowed:
+        - 10.0.0.0/8:2222
+```
+
+**A session runs as the login name, as it does under `sshd`.** The name the
+client asked for is looked up per connection, after the certificate's
+principals have already vouched for it, and a login that is not an account on
+this host is refused. There is no key for the account, no default and no
+fallback to the sidecar's own user.
+
+What bounds the set of accounts is the account this process runs as.
+Unprivileged, it can serve only itself — the container's `USER` line is the
+policy. As root it serves any account on the host, at the cost of running the
+whole pre-authentication surface privileged.
+
+The session also takes the account's own login shell, home directory and
+environment. A shell that does not exist or is not executable refuses the
+session, `/sbin/nologin` disables an account here exactly as it does
+everywhere else on the host, and a home directory that is missing starts the
+session in `/` rather than failing it.
+
+File transfer is the one capability that runs in-process rather than in a
+child, so it is served only for a login that resolves to the account this
+process already IS; `-validate` reports that uid and gid whenever `sftp` is
+admitted, and libhoop refuses every other login at the request.
+
+**Masking is length-preserving or it is refused.** `strategy: mask` is the only
+strategy an ssh lane can carry, and its `mask_char` must be a single byte: the
+lane rewrites a byte stream in place, so a replacement of a different size
+shifts everything after it and desynchronizes a terminal's escape sequences.
+A rewrite that comes back a different length fails the stream closed rather
+than forwarding a corrupted one. Terminal output and file downloads are masked
+by the same rule set; client input is never rewritten, because changing what a
+user typed is a denial wearing a redaction's clothes, and the guardrails
+already refuse.
+
+**`upstream`, `upstream_tls`, `downstream_tls` and `identity_header` are
+refused** on an ssh lane. There is no fixed backend, SSH negotiates its own
+transport, and the identity comes from the certificate this listener verified
+itself.
+
+#### What the trail holds, and what it does not
+
+**v1 records no session content.** There is no recorder, no replay, and no
+setting that would add one: that needs a store, a retention policy, a read
+path and a decision about who may replay another person's terminal, and
+landing the weakest version of each as a side effect of the first SSH lane is
+what ADR-0015 refuses.
+
+| Capability | What is recorded |
+|---|---|
+| `exec` | the command in full, as a statement with its verdict. Its output is masked in flight and not retained |
+| `env` | the variable name as the statement, the value beside it. A sink with `RedactStatements` fingerprints that value, because it is statement content |
+| `sftp` | one statement per operation per path — both ends of a rename — plus the operation, path, direction and byte count of each transfer. The file's bytes are never recorded |
+| `shell`, `pty` | events only: the open, the terminal geometry, the duration and the byte counts. No keystrokes and no output, so there is nothing to replay |
+| forwards, refused capabilities | thin metadata: a destination, a reason, a byte count. Never the relayed bytes |
+| a refused connection | `session_start`, one `connection_refused` activity carrying the login asked for and the reason, then the close. libhoop closes a handler even when the connection is refused, so the session ends either way; without the middle record a turned-away login reads as a connection that did nothing |
+
+Everything that is not a statement is written as `kind: activity`, with what
+happened in `metadata.activity`.
 
 ### MySQL, and the three ways a session goes dark
 
@@ -1452,6 +1763,18 @@ the decoder is keyed by protocol and each omitted piece fails differently:
 | classification | a SQL `lexer.Dialect` selected by `inspect.AnalyzeSQL`, or the wire codec's native command classifier | operations and relations stay `unknown` |
 | a deny frame | `proxy/deny.go`; include request correlation when the protocol requires it | a denial closes the socket with no useful message |
 | an analyzer content builder | `analyzer/content.go` | an analyzer on the lane classifies nothing; startup refuses the lane rather than let it run silent |
+
+An ENDPOINT protocol — one that terminates in-process rather than relaying,
+so `grpc`, `spanner` and `ssh` — skips the decoder, the registration seam and
+the deny frame, and picks up four of its own. Every one of them fails quietly
+when omitted, which is why they are listed rather than left to be noticed:
+
+| Add | Where | Symptom if you skip it |
+|---|---|---|
+| a codec-registry carve-out | `daemon/config.go`, beside `isGRPCTransport` | the lane is refused at load as an unsupported protocol |
+| the server build and its two call sites | `daemon/<name>.go`, registered in the `-validate` pass and the run loop in `daemon/daemon.go` | the config validates and the listener never binds |
+| protocol-aware rule refusals | `policy/<name>.go` | a rule type the lane cannot read loads, evaluates and never fires |
+| a `MaskSupported` answer | `gate/gate.go` | `mask.rules` on the lane is refused as unsupported, or accepted and never applied |
 
 Masking needs no registration: the gate asks the codec for a `Reframer`, so a
 decoder that can rebuild its rows masks, and one that cannot has its

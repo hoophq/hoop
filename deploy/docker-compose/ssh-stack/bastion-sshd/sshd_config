@@ -1,0 +1,26 @@
+# Stock sshd, with the two lines that make it a certificate-aware bastion.
+
+Port 22
+HostKey /etc/ssh/ssh_host_ed25519_key
+
+# 1. Trust the same CA the sidecars trust. This is what lets one client
+#    certificate open the whole path: the bastion admits it, and the end-hop
+#    verifies that SAME certificate at the other end of the tunnel.
+TrustedUserCAKeys /etc/ssh/hoop_ca.pub
+
+# 2. Carry the jump. Without this, ProxyJump has nothing to forward through.
+AllowTcpForwarding yes
+
+# No passwords anywhere on this path.
+PasswordAuthentication no
+PermitRootLogin no
+PubkeyAuthentication yes
+
+# A jump host has no business giving anyone a shell. sshd expresses that as
+# a forced command per user; the sidecar bastion expresses the same idea as
+# `capabilities_allowed: []`, checked at load and reported by -validate.
+Match User jump
+    ForceCommand /bin/false
+    PermitTTY no
+    X11Forwarding no
+    AllowAgentForwarding no

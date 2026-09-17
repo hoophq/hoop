@@ -1,0 +1,24 @@
+# The --local mode: build the end-hop from the LOCAL sidecar and libhoop
+# trees instead of a published image.
+#
+# An overlay rather than a second stack. Every service, address, port and
+# volume stays in docker-compose.yml; the only difference a local build makes
+# is where the binary in hoop-inspect-ssh:local came from, so that is the only
+# thing here. The three other sidecar services name the same image and need no
+# entry.
+#
+# libhoop is a PRIVATE module, so this mode is available to hoop engineers
+# alone. It is also the only mode that can prove a change you have not pushed.
+#
+# Never used directly:
+#   ./run.sh --local
+services:
+  endhost:
+    build:
+      context: ../../../sidecar
+      dockerfile: ../deploy/docker-compose/ssh-stack/sidecar/Dockerfile.local
+      # sidecar's codecs live in libhoop. This mode builds from the local
+      # tree rather than the proxy, so libhoop comes from the local checkout
+      # too.
+      additional_contexts:
+        libhoop: ../../../libhoop

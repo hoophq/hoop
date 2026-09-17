@@ -152,7 +152,35 @@ type Config struct {
 	// stateful codec corrupt each other's reassembly buffer, which is the
 	// same reason Register takes a factory rather than an instance.
 	CodecFactory func() inspect.Codec
+
+	// Metrics receives per-statement outcomes for a process-wide counter.
+	// Optional; nil records nothing. Every connection's gate shares one
+	// implementation, so it MUST be safe for concurrent use and MUST cost
+	// no more than an atomic increment: it runs on the data path.
+	Metrics Metrics
 }
+
+// Metrics is the counting hook a Gate reports into. Declared here as a
+// narrow interface rather than imported, so the package that aggregates
+// (analytics) depends on nothing and the gate depends on no aggregator.
+type Metrics interface {
+	// Statement records one judged statement. source is the kind of
+	// evaluator that denied it — a policy.Verdict.Source, or one of the
+	// gate's own Source* values — and empty when it was allowed.
+	Statement(denied bool, source string)
+	// Masked records values rewritten out of one response.
+	Masked(values int)
+	// AuditError records one audit event the sink could not write.
+	AuditError()
+}
+
+// Denial sources the gate reports that no evaluator produced.
+const (
+	// SourceAudit is the fail-closed refusal when the audit sink is down.
+	SourceAudit = "audit"
+	// SourceStream is a codec refusing bytes it cannot safely forward.
+	SourceStream = "stream"
+)
 
 // Decision is the answer for one chunk of bytes.
 type Decision struct {
@@ -335,7 +363,7 @@ func (g *Gate) Start(ctx context.Context) error {
 	if g.audit == nil {
 		return nil
 	}
-	return g.audit.Write(ctx, audit.SessionStartEvent(g.sess))
+	return g.writeAudit(ctx, audit.SessionStartEvent(g.sess))
 }
 
 // Request inspects bytes travelling client -> upstream and decides whether
@@ -378,13 +406,19 @@ func (g *Gate) FlushResponse() []byte {
 	if g.masker == nil {
 		return g.reframer.Flush(nil)
 	}
-	return g.reframer.Flush(func(column string, value []byte) []byte {
-		out, _, n := g.masker.MaskCell(column, value)
+	// Rows masked here were held back by the codec and never passed through
+	// maskByReframing, so this is their only chance to be counted.
+	masked := 0
+	out := g.reframer.Flush(func(column string, value []byte) []byte {
+		res, _, n := g.masker.MaskCell(column, value)
 		if n == 0 {
 			return value
 		}
-		return out
+		masked += n
+		return res
 	})
+	g.countMasked(masked)
+	return out
 }
 
 func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) Decision {
@@ -439,6 +473,7 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 			g.mu.Lock()
 			g.denied++
 			g.mu.Unlock()
+			g.countStatement(true, SourceStream)
 			return d
 		}
 	}
@@ -512,13 +547,6 @@ type judgment struct {
 func (g *Gate) judge(ctx context.Context, stmt inspect.Statement) judgment {
 	verdict := g.evaluate(stmt)
 
-	g.mu.Lock()
-	g.statements++
-	if verdict.Denied {
-		g.denied++
-	}
-	g.mu.Unlock()
-
 	ev := audit.StatementEvent(
 		g.sess, stmt, !verdict.Denied, verdict.Rule, verdict.Message)
 	// An evaluator's annotations (the AI analyzer's risk level) ride
@@ -534,8 +562,25 @@ func (g *Gate) judge(ctx context.Context, stmt inspect.Statement) judgment {
 		}
 	}
 	auditErr := g.writeAudit(ctx, ev)
+	refused := auditErr != nil && g.cfg.FailOnAuditError
 
-	if auditErr != nil && g.cfg.FailOnAuditError {
+	// Counted once, after the audit result is known: a statement the policy
+	// allowed but the fail-closed audit refused is a denial to the client,
+	// and the counters must say what the client saw.
+	denied := verdict.Denied || refused
+	source := verdict.Source
+	if refused {
+		source = SourceAudit
+	}
+	g.mu.Lock()
+	g.statements++
+	if denied {
+		g.denied++
+	}
+	g.mu.Unlock()
+	g.countStatement(denied, source)
+
+	if refused {
 		denied := stmt
 		return judgment{refusal: &Decision{
 			Allowed:         false,
@@ -546,13 +591,12 @@ func (g *Gate) judge(ctx context.Context, stmt inspect.Statement) judgment {
 		}}
 	}
 
-	j := judgment{
+	return judgment{
 		denied:  verdict.Denied,
 		rule:    verdict.Rule,
 		message: verdict.Message,
 		err:     errors.Join(auditErr, verdict.Err),
 	}
-	return j
 }
 
 // NewStatementGate builds a Gate for a caller that constructs statements
@@ -631,7 +675,27 @@ func (g *Gate) RecordMasked(ctx context.Context, entities []string, count int) e
 			unique = append(unique, entity)
 		}
 	}
+	g.countMasked(count)
 	err := g.writeAudit(ctx, audit.MaskedEvent(g.sess, unique, count))
+	if g.cfg.FailOnAuditError {
+		return err
+	}
+	return nil
+}
+
+// RecordActivity writes one non-statement record for this session: a
+// capability admitted or refused, a terminal's geometry, a forward carried,
+// a file transferred.
+//
+// It goes through the gate rather than straight to the sink so a lane has
+// ONE place that knows about the session, the sink and the fail-closed
+// policy. A lane that wrote to the sink itself would be a second audit path
+// that could disagree with this one about whether an unrecorded event may
+// still proceed.
+//
+// attrs is flat metadata and must never carry session content.
+func (g *Gate) RecordActivity(ctx context.Context, activity string, attrs map[string]string) error {
+	err := g.writeAudit(ctx, audit.ActivityEvent(g.sess, activity, attrs))
 	if g.cfg.FailOnAuditError {
 		return err
 	}
@@ -670,6 +734,7 @@ func (g *Gate) maskBySubstitution(ctx context.Context, d *Decision, data []byte)
 	d.Payload = out
 	d.Masked = entities
 	d.MaskedCount = count
+	g.countMasked(count)
 	g.writeAudit(ctx, audit.MaskedEvent(g.sess, entities, count))
 }
 
@@ -711,6 +776,7 @@ func (g *Gate) maskByReframing(ctx context.Context, d *Decision, data []byte) {
 		sort.Strings(entities)
 		d.Masked = entities
 		d.MaskedCount = res.Cells
+		g.countMasked(res.Cells)
 		g.writeAudit(ctx, audit.MaskedEvent(g.sess, entities, res.Cells))
 	}
 }
@@ -734,6 +800,18 @@ func (g *Gate) maskByReframing(ctx context.Context, d *Decision, data []byte) {
 // masking. One predicate, so the config check and the data path cannot drift.
 func MaskSupported(p inspect.Protocol) bool {
 	if p == inspect.HTTP {
+		return true
+	}
+	// A third way, and the reason this is not simply "ask the codec": SSH
+	// has no codec to ask. It rewrites a byte stream IN PLACE, with no
+	// length header to correct and no frame to rebuild, which is safe for
+	// exactly one reason — the replacement is the same size as what it
+	// replaced. The daemon refuses every other mask strategy on an ssh lane
+	// at load, and the lane fails the stream closed if a rewrite comes back
+	// a different length. Without this branch inspect.New would be asked
+	// for a protocol that has no decoder and masking would be refused on
+	// the lane whose whole content path is masking.
+	if p == inspect.SSH {
 		return true
 	}
 	insp, err := inspect.New(p)
@@ -773,7 +851,11 @@ func (g *Gate) writeAudit(ctx context.Context, ev audit.Event) error {
 	if g.audit == nil {
 		return nil
 	}
-	return g.audit.Write(ctx, ev)
+	err := g.audit.Write(ctx, ev)
+	if err != nil && g.cfg.Metrics != nil {
+		g.cfg.Metrics.AuditError()
+	}
+	return err
 }
 
 // Close ends the session and records the closing event with totals.
@@ -792,7 +874,7 @@ func (g *Gate) Close(ctx context.Context) error {
 	if g.audit == nil {
 		return nil
 	}
-	return g.audit.Write(ctx, audit.SessionEndEvent(g.sess, statements, denied))
+	return g.writeAudit(ctx, audit.SessionEndEvent(g.sess, statements, denied))
 }
 
 // Stats reports the running totals.
@@ -800,4 +882,19 @@ func (g *Gate) Stats() (statements, denied int) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return g.statements, g.denied
+}
+
+// countStatement and countMasked forward to the configured Metrics. Two
+// one-liners rather than a nil check at every site, so a new call site
+// cannot forget the check.
+func (g *Gate) countStatement(denied bool, source string) {
+	if g.cfg.Metrics != nil {
+		g.cfg.Metrics.Statement(denied, source)
+	}
+}
+
+func (g *Gate) countMasked(values int) {
+	if g.cfg.Metrics != nil {
+		g.cfg.Metrics.Masked(values)
+	}
 }

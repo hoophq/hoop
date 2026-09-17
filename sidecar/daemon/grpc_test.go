@@ -6,10 +6,12 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -18,6 +20,7 @@ import (
 	"time"
 
 	"github.com/hoophq/hoop/sidecar/audit"
+	"github.com/hoophq/hoop/sidecar/descriptors"
 	"github.com/hoophq/hoop/sidecar/gate"
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
@@ -562,6 +565,113 @@ func TestGRPCServerServesMethodsFromMultipleDescriptorSets(t *testing.T) {
 		if status != "0" {
 			t.Fatalf("%s: grpc-status = %q, want 0 (message: %q)", method, status,
 				codecgrpc.DecodeMessage(resp.Header.Get("Grpc-Message")))
+		}
+	}
+}
+
+// testBucket is the fetcher the remote-descriptor tests register: a scheme
+// no real module claims, backed by a map, so a lane can be built from a
+// "remote" set without a network. One registration per process; the
+// registry panics on a second.
+var (
+	testBucketOnce sync.Once
+	testBucketMu   sync.Mutex
+	testBucket     = map[string][]byte{}
+	testBucketHits atomic.Int32
+)
+
+func registerTestBucket(t *testing.T) {
+	t.Helper()
+	testBucketOnce.Do(func() {
+		descriptors.Register("testbucket", func(_ context.Context, u *url.URL) ([]byte, error) {
+			testBucketHits.Add(1)
+			testBucketMu.Lock()
+			defer testBucketMu.Unlock()
+			blob, ok := testBucket[u.Host+u.Path]
+			if !ok {
+				return nil, errors.New("object not found")
+			}
+			return blob, nil
+		})
+	})
+}
+
+func putTestBucket(t *testing.T, key string, path string) string {
+	t.Helper()
+	blob, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	testBucketMu.Lock()
+	testBucket[key] = blob
+	testBucketMu.Unlock()
+	return "testbucket://" + key
+}
+
+// A descriptors entry may be a URL. The lane must fetch it through the
+// registered fetcher, merge it with the sets read from disk in ONE schema —
+// so a method from each resolves and a conflict between a file and a bucket
+// artifact would be caught — and -validate must exercise the fetch, because
+// a wrong object name has to fail there and not at the first RPC.
+func TestGRPCLaneLoadsDescriptorsFromARegisteredFetcher(t *testing.T) {
+	registerTestBucket(t)
+	echoPath := writeGRPCTestDescriptors(t)
+	ledgerURL := putTestBucket(t, "schemas/ledger.pb", writeGRPCTestLedgerDescriptors(t))
+	before := testBucketHits.Load()
+
+	cfg := &Config{Listeners: []ListenerConfig{{
+		Name: "remote", Protocol: "grpc", Listen: "127.0.0.1:0", Upstream: "127.0.0.1:1",
+		GRPC: &GRPCCodecConfig{
+			Descriptors:    DescriptorPaths{echoPath, ledgerURL},
+			CapturePayload: true,
+			Strict:         true,
+		},
+	}}}
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	lanes, err := Validate(cfg, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	notes := strings.Join(lanes[0].Notes, "\n")
+	for _, method := range []string{"/test.v1.Echo/Say", "/test.v2.Ledger/Post"} {
+		if !strings.Contains(notes, method) {
+			t.Errorf("notes lack %s:\n%s", method, notes)
+		}
+	}
+	if testBucketHits.Load() != before+1 {
+		t.Fatalf("fetches = %d, want 1", testBucketHits.Load()-before)
+	}
+
+	cfg.Listeners[0].GRPC.Descriptors = DescriptorPaths{echoPath, "testbucket://schemas/missing.pb"}
+	_, err = Validate(cfg, nil)
+	if err == nil {
+		t.Fatal("a missing remote object validated")
+	}
+	for _, want := range []string{"testbucket://schemas/missing.pb", "object not found"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q lacks %q", err, want)
+		}
+	}
+}
+
+// A scheme no linked module resolves is a config error naming the scheme
+// and what IS linked. It must fail at Config.Validate — the gateway-free,
+// network-free check — and not surface later as "no such file: gs://...".
+func TestGRPCConfigRefusesADescriptorSchemeTheBinaryDoesNotLink(t *testing.T) {
+	registerTestBucket(t)
+	cfg := &Config{Listeners: []ListenerConfig{{
+		Name: "remote", Protocol: "grpc", Listen: "127.0.0.1:0", Upstream: "127.0.0.1:1",
+		GRPC: &GRPCCodecConfig{Descriptors: DescriptorPaths{"gs://acme-schemas/api.pb"}},
+	}}}
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("an unlinked scheme validated")
+	}
+	for _, want := range []string{`"gs://acme-schemas/api.pb"`, `scheme "gs"`, "does not link", "testbucket"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q lacks %q", err, want)
 		}
 	}
 }

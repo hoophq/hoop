@@ -575,6 +575,7 @@ func (cp *controlPlane) heartbeat(ctx context.Context, log *slog.Logger, rl *rel
 		}
 		raw, _, err := fetchControlPlaneConfig(cp.url, cp.token, Version)
 		if err != nil {
+			rl.tel.heartbeatFailed()
 			log.Warn("control plane handshake failed; serving the last good config",
 				"url", cp.url, "error", err)
 			continue

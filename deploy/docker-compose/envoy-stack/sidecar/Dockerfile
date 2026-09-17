@@ -24,8 +24,12 @@ WORKDIR /src/cmd
 RUN go mod edit -replace github.com/hoophq/libhoop=/libhoop && go mod tidy
 # CGO off and a static build so the runtime stage can be distroless-thin.
 # The version matches sidecar/cmd/main.go; bump both together.
+# SEGMENT_API_KEY stamps the usage-analytics write key; the default empty
+# value builds a binary that sends nothing, which is what a local stack
+# wants. See sidecar/analytics.
+ARG SEGMENT_API_KEY=
 RUN CGO_ENABLED=0 go build \
-    -ldflags "-s -w -X main.version=0.1.0" \
+    -ldflags "-s -w -X main.version=0.1.0 -X github.com/hoophq/hoop/sidecar/analytics.writeKey=${SEGMENT_API_KEY}" \
     -o /out/hoop-inspect .
 
 FROM alpine:3.20

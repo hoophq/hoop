@@ -52,15 +52,17 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.3.16 // indirect
 	github.com/googleapis/gax-go/v2 v2.22.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
-	github.com/hoophq/libhoop v0.0.0-20260911124740-15e4171c522b // indirect
+	github.com/hoophq/libhoop v0.0.0-20260916211709-c49b31f354b0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/pgx/v5 v5.9.2 // indirect
 	github.com/klauspost/compress v1.18.5 // indirect
+	github.com/kr/fs v0.1.0 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/lib/pq v1.12.3 // indirect
 	github.com/microsoft/go-mssqldb v1.10.0 // indirect
 	github.com/montanaflynn/stats v0.7.1 // indirect
+	github.com/pkg/sftp v1.13.11 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/sijms/go-ora/v2 v2.9.0 // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect
@@ -101,6 +103,7 @@ require (
 require (
 	github.com/hoophq/alcatraz v0.19.0 // indirect
 	github.com/hoophq/hoop/sidecar/analyzer/vertex v0.0.0
+	github.com/hoophq/hoop/sidecar/descriptors/gcs v0.0.0
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
@@ -111,3 +114,5 @@ replace github.com/hoophq/hoop/sidecar/config/yaml => ../config/yaml
 replace github.com/hoophq/hoop/sidecar/pii/alcatraz => ../pii/alcatraz
 
 replace github.com/hoophq/hoop/sidecar/analyzer/vertex => ../analyzer/vertex
+
+replace github.com/hoophq/hoop/sidecar/descriptors/gcs => ../descriptors/gcs

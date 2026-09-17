@@ -648,3 +648,51 @@ func TestChainIgnoresUnknownRiskLevel(t *testing.T) {
 		t.Errorf("risk_level = %q, want high", got)
 	}
 }
+
+// Operations narrows every rule type, not only the one it defines.
+//
+// Without it a lane whose statements carry different KINDS of text cannot be
+// policed by one rule set: an SSH pattern written against a command would
+// also be evaluated against a variable name and a file path. It can only
+// narrow, so a rule that does not set the field is unaffected.
+func TestOperationsScopesEveryRuleType(t *testing.T) {
+	rules, err := policy.NewRules([]policy.Rule{{
+		Name:       "env-only",
+		Type:       policy.MatchPattern,
+		Pattern:    `^LD_PRELOAD$`,
+		Operations: []inspect.Operation{inspect.OpEnvSet},
+		Message:    "not permitted",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	scoped := inspect.Statement{Protocol: inspect.SSH, Operation: inspect.OpEnvSet, Text: "LD_PRELOAD"}
+	if v := rules.Evaluate(scoped); !v.Denied {
+		t.Error("the rule did not fire on the operation it names")
+	}
+	// The same text, a different operation. Before the scope this matched.
+	other := inspect.Statement{Protocol: inspect.SSH, Operation: inspect.OpExecLine, Text: "LD_PRELOAD"}
+	if v := rules.Evaluate(other); v.Denied {
+		t.Error("an env_set-scoped rule fired on an exec_line")
+	}
+}
+
+// A rule that names no operations keeps matching everything, so the scope
+// cannot change what an existing config denies.
+func TestUnscopedRuleStillMatchesEveryOperation(t *testing.T) {
+	rules, err := policy.NewRules([]policy.Rule{{
+		Name:    "no-shadow",
+		Type:    policy.MatchPattern,
+		Pattern: `/etc/shadow`,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, op := range []inspect.Operation{inspect.OpExecLine, inspect.OpSFTPRead, inspect.OpSelect} {
+		stmt := inspect.Statement{Operation: op, Text: "cat /etc/shadow"}
+		if v := rules.Evaluate(stmt); !v.Denied {
+			t.Errorf("an unscoped rule did not fire on %s", op)
+		}
+	}
+}

@@ -42,6 +42,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/hoophq/hoop/sidecar/analytics"
+	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/audit"
 	_ "github.com/hoophq/hoop/sidecar/codec/all"
 	"github.com/hoophq/hoop/sidecar/gate"
@@ -81,8 +83,10 @@ type PluginBuilder func(rawPII json.RawMessage) (Plugin, error)
 type Option func(*setupOptions)
 
 type setupOptions struct {
-	licenseFlag string
-	token       string
+	licenseFlag     string
+	token           string
+	entrypoint      string
+	deprecatedAlias bool
 }
 
 // WithLicense supplies a license from the command line, which outranks
@@ -94,6 +98,19 @@ type setupOptions struct {
 // config gets it from a plain three-argument call.
 func WithLicense(ref string) Option {
 	return func(o *setupOptions) { o.licenseFlag = ref }
+}
+
+// WithEntrypoint names how the process was started, for analytics: one of
+// analytics.EntrypointCLI, analytics.EntrypointBinary or, when omitted,
+// analytics.EntrypointEmbedded.
+func WithEntrypoint(name string) Option {
+	return func(o *setupOptions) { o.entrypoint = name }
+}
+
+// WithDeprecatedAlias records that the command was reached through its
+// pre-rename name, so the alias can be retired once nobody types it.
+func WithDeprecatedAlias(used bool) Option {
+	return func(o *setupOptions) { o.deprecatedAlias = used }
 }
 
 // Setup loads a config file, resolves the license and builds the detection
@@ -161,6 +178,10 @@ func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*
 		}
 		cfg.cp.ignoredLicense = ignoredLocalLicenseSource(o.licenseFlag, fileLicense)
 	}
+	cfg.entrypoint = o.entrypoint
+	cfg.deprecatedAlias = o.deprecatedAlias
+	cfg.configPath = path
+	setConfigFormat(cfg, path)
 	cfg.lic = resolveLicenseFor(cfg.cp, o.licenseFlag, cfg.License)
 	if cfg.lic.State() == license.StateInvalid {
 		return nil, nil, cfg.lic.Err
@@ -185,6 +206,23 @@ const (
 	flagLicenseSource  = "the license flag"
 	fileLicenseSource  = `the "license" config key`
 )
+
+// setConfigFormat records the format of the document that is AUTHORITATIVE
+// for this process, for analytics. A plane-served config is JSON regardless
+// of what a local file is; the file's extension counts only when the file is
+// what runs (standalone, or a plane that delegated to disk). Empty when
+// nothing was loaded from anywhere.
+func setConfigFormat(cfg *Config, path string) {
+	switch {
+	case cfg.cp != nil && !cfg.cp.diskMode:
+		cfg.configFormat = "json"
+	case path != "":
+		cfg.configFormat = "json"
+		if isYAMLPath(path) {
+			cfg.configFormat = "yaml"
+		}
+	}
+}
 
 // ResolveLicense picks the license a STANDALONE process runs under, highest
 // precedence first: the command line, then HOOP_LICENSE, then the config
@@ -348,14 +386,16 @@ func Main(version string, load Loader, build PluginBuilder) error {
 		// argument without a config is a mistake to report, not a request
 		// for the demo. -version returned above, so it never reaches this.
 		if bareInvocation(fs) {
-			return FirstRun(os.Stdout, "hoop-inspect -config config.yaml")
+			return FirstRun(os.Stdout, "hoop-inspect -config config.yaml",
+				WithEntrypoint(analytics.EntrypointBinary))
 		}
 		fs.Usage()
 		return fmt.Errorf("%w: -config is required unless %s is set", ErrUsage, ControlPlaneURLEnv)
 	}
 
 	cfg, det, err := SetupWith(*configPath, load, build,
-		WithLicense(*licenseRef), WithControlPlaneToken(*tokenRef))
+		WithLicense(*licenseRef), WithControlPlaneToken(*tokenRef),
+		WithEntrypoint(analytics.EntrypointBinary))
 	if err != nil {
 		return err
 	}
@@ -541,8 +581,21 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 	validationLog := slog.New(slog.NewTextHandler(io.Discard, nil))
 	for _, ln := range lanes {
 		notes := append([]string(nil), ln.notes...)
+		// An endpoint lane is CONSTRUCTED here, not merely described. That
+		// is what turns an unreadable key or a descriptor set that does not
+		// merge into a validate failure, and it is where a lane's own notes
+		// — what it admits, where it will carry a forward, the account it
+		// will run as — come from.
 		if isGRPCTransport(ln.cfg) {
 			srv, err := buildGRPCServer(ln, cfg.Audit, nil, validationLog)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %w", ln.name, err)
+			}
+			notes = append(notes, srv.Notes()...)
+			_ = srv.Close()
+		}
+		if isSSH(ln.cfg) {
+			srv, err := buildSSHServer(ln, cfg.Audit, nil, validationLog)
 			if err != nil {
 				return nil, fmt.Errorf("%s: %w", ln.name, err)
 			}
@@ -609,7 +662,9 @@ const (
 // sent. A plain field would be a data race, and worse, a rotation one
 // goroutine sees and another misses.
 type licenseState struct {
-	lic     atomic.Pointer[license.Status]
+	lic atomic.Pointer[license.Status]
+	// depends reports that the RUNNING config exceeds the free tier, so an
+	// ended term takes something away. A reload can flip it either way.
 	depends atomic.Bool
 	// overCap reports that the license in force no longer covers the rules
 	// the process is serving -- a plane that replaced a license with a
@@ -619,6 +674,9 @@ type licenseState struct {
 	// It is a SEPARATE fact from the term ending, because the document is
 	// perfectly valid: what ran out is the entitlement, not the time.
 	overCap atomic.Bool
+	// notices counts the daily expiry warnings the watchdog logged, so the
+	// stop can report how much warning the operator had.
+	notices atomic.Int64
 }
 
 // newLicenseState publishes the license Setup resolved, and whether the
@@ -694,7 +752,10 @@ func watchLicense(ctx context.Context, st *licenseState, every time.Duration, lo
 			if !lic.ExpiresAt().Equal(noticedTerm) {
 				notified, noticedTerm = -1, lic.ExpiresAt()
 			}
-			notified = noticeLicenseExpiry(lic, notified, log)
+			if next := noticeLicenseExpiry(lic, notified, log); next != notified {
+				st.notices.Add(1)
+				notified = next
+			}
 			select {
 			case <-ctx.Done():
 				return
@@ -785,6 +846,15 @@ func Run(cfg *Config, det Plugin) error {
 		return err
 	}
 
+	// Analytics starts once the config is known good, so a refused config
+	// reports nothing: an install that never served is not an install.
+	// Every gate on every lane counts into it, keyed by protocol.
+	tel := newTelemetry(cfg, log)
+	defer tel.close()
+	for i := range lanes {
+		lanes[i].metrics = tel.laneMetrics(lanes[i].cfg.Protocol)
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(),
 		os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -798,29 +868,48 @@ func Run(cfg *Config, det Plugin) error {
 	licState := newLicenseState(cfg.lic, cfg.dependsOnLicense())
 	licenseExpired := watchLicense(ctx, licState, licenseCheckEvery, log)
 
-	// Two server kinds, one loop of lane facts. Relay lanes run
-	// proxy.Server; grpc lanes run the transport the plugin registered
-	// (ADR-0013). The stats zip in serveAdmin pairs servers with
-	// relayNames, so the two slices must stay in lockstep.
+	// Two server SHAPES, one loop of lane facts. A relay lane pumps bytes
+	// through a Gate and runs proxy.Server; an ENDPOINT lane terminates the
+	// protocol itself and runs the one libhoop built — the grpc transport
+	// (ADR-0013) or the ssh endpoint (ADR-0015). The two endpoints share an
+	// interface rather than a slice each, so adding the third protocol that
+	// terminates in-process does not mean a fourth pair of slices to keep
+	// in lockstep here, in the error fan-in, in the shutdown loop and in
+	// the stats zip. The stats zip pairs a server with a name by index, so
+	// each pair must stay in lockstep.
 	servers := make([]*proxy.Server, 0, len(lanes))
 	relayNames := make([]string, 0, len(lanes))
-	var grpcServers []GRPCServer
-	var grpcNames []string
+	var endpoints []endpointServer
+	var endpointNames []string
+	// statSources pairs every server with its lane's protocol, so usage
+	// can report connections per protocol without naming a lane.
+	statSources := make([]statSource, 0, len(lanes))
 	for _, ln := range lanes {
-		if isGRPCTransport(ln.cfg) {
+		switch {
+		case isGRPCTransport(ln.cfg):
 			gsrv, serr := buildGRPCServer(ln, cfg.Audit, auditSink, log)
 			if serr != nil {
 				return serr
 			}
-			grpcServers = append(grpcServers, gsrv)
-			grpcNames = append(grpcNames, ln.name)
-		} else {
+			endpoints = append(endpoints, gsrv)
+			endpointNames = append(endpointNames, ln.name)
+			statSources = append(statSources, statSource{ln.cfg.Protocol, gsrv})
+		case isSSH(ln.cfg):
+			ssrv, serr := buildSSHServer(ln, cfg.Audit, auditSink, log)
+			if serr != nil {
+				return serr
+			}
+			endpoints = append(endpoints, ssrv)
+			endpointNames = append(endpointNames, ln.name)
+			statSources = append(statSources, statSource{ln.cfg.Protocol, ssrv})
+		default:
 			srv, serr := buildServer(ln, cfg.Audit, auditSink, log)
 			if serr != nil {
 				return serr
 			}
 			servers = append(servers, srv)
 			relayNames = append(relayNames, ln.name)
+			statSources = append(statSources, statSource{ln.cfg.Protocol, srv})
 		}
 
 		// One line per lane naming what it enforces. The config file does not
@@ -854,6 +943,7 @@ func Run(cfg *Config, det Plugin) error {
 	// answers for the rules the data path runs, not for a snapshot.
 	view := &atomic.Pointer[laneState]{}
 	view.Store(&laneState{lanes: lanes})
+	tel.trackStarted(cfg, lanes, det)
 
 	if cfg.cp != nil {
 		// The heartbeat keeps the plane's last-seen fresh and hands drift to
@@ -868,6 +958,7 @@ func Run(cfg *Config, det Plugin) error {
 		if rerr != nil {
 			return rerr
 		}
+		rl.tel = tel
 		log.Info("control plane connected",
 			"url", cfg.cp.url,
 			"source", cfg.cp.urlSource,
@@ -900,12 +991,29 @@ func Run(cfg *Config, det Plugin) error {
 	}
 
 	if cfg.Admin.Listen != "" {
-		go serveAdmin(ctx, cfg.Admin.Listen, servers, relayNames, grpcServers, grpcNames,
+		go serveAdmin(ctx, cfg.Admin.Listen, servers, relayNames, endpoints, endpointNames,
 			view, ac, cfg.Analyzer, licState, log)
 	}
 
+	// Usage deltas on a ticker; the final one is cut at shutdown below so
+	// the series closes on the last window. Lanes come from the view so a
+	// reload's new analyzer instances are the ones read.
+	usage := func() { tel.trackUsage(statSources, view.Load().lanes) }
+	go func() {
+		t := time.NewTicker(usageEvery)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				usage()
+			}
+		}
+	}()
+
 	var wg sync.WaitGroup
-	errCh := make(chan error, len(servers)+len(grpcServers))
+	errCh := make(chan error, len(servers)+len(endpoints))
 	for i, srv := range servers {
 		wg.Add(1)
 		go func(s *proxy.Server, name string) {
@@ -916,38 +1024,42 @@ func Run(cfg *Config, det Plugin) error {
 			}
 		}(srv, relayNames[i])
 	}
-	for i, srv := range grpcServers {
+	for i, srv := range endpoints {
 		wg.Add(1)
-		go func(s GRPCServer, name string) {
+		go func(s endpointServer, name string) {
 			defer wg.Done()
 			if serr := s.Serve(ctx); serr != nil {
 				log.Error("listener failed", "listener", name, "error", serr)
 				errCh <- serr
 			}
-		}(srv, grpcNames[i])
+		}(srv, endpointNames[i])
 	}
 	var (
 		stoppedByLicense bool
 		listenerErr      error
+		stopReason       = stopSignal
 	)
 	select {
 	case <-ctx.Done():
 		log.Info("shutting down")
 	case listenerErr = <-errCh:
+		stopReason = stopListenerFailed
 		log.Info("shutting down after listener failure")
 		cancel()
 	case <-licenseExpired:
 		stoppedByLicense = true
+		stopReason = stopLicenseExpired
 		log.Warn("stopping: the license term ended and this config needs more rules than "+
 			"the free tier allows",
 			"free_tier", limitsText(license.Status{}),
 			"renew", license.Support)
+		tel.trackLicenseExpired(cfg, licState)
 		cancel()
 	}
 	for _, srv := range servers {
 		_ = srv.Close()
 	}
-	for _, srv := range grpcServers {
+	for _, srv := range endpoints {
 		_ = srv.Close()
 	}
 	wg.Wait()
@@ -960,6 +1072,11 @@ func Run(cfg *Config, det Plugin) error {
 			listenerErr = e
 		}
 	}
+
+	// The last usage window, then the stop. Both before the deferred close
+	// flushes them; nothing after this point emits.
+	usage()
+	tel.trackStopped(stopReason, listenerErr)
 	if listenerErr != nil {
 		return listenerErr
 	}
@@ -1006,8 +1123,13 @@ type lane struct {
 	// rules and opaURL are the resolved facts the startup log and the
 	// /config endpoint report. They sit alongside the built evaluator because
 	// a policy.Chain cannot report what went into it.
-	rules  []string
-	opaURL string
+	rules []string
+
+	// analyzers are the model-backed evaluators inside policy, retained so
+	// usage analytics can read their Stats. The chain cannot say what is
+	// in it, same reason rules and opaURL are kept beside it.
+	analyzers []*analyzer.Evaluator
+	opaURL    string
 
 	// analyzed names any DEPRECATED ai_analysis rules on this lane,
 	// reported the same way and for the same reason: the Chain cannot say
@@ -1031,6 +1153,11 @@ type lane struct {
 	// stack rather than of anything written down. A rule that defers on a
 	// lane with no OPA is the case this exists for.
 	notes []string
+
+	// metrics is the process-wide counter this lane's gates report into,
+	// keyed by protocol. Run sets it after buildLanes; a lane built by
+	// Validate or a test leaves it nil and counts nothing.
+	metrics gate.Metrics
 }
 
 // buildLanes resolves and builds every listener's stack.
@@ -1059,6 +1186,15 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 			continue
 		}
 
+		if holdsWithoutAPlane(cfg, lc.Analyzer, ac) {
+			problems = append(problems, fmt.Sprintf(
+				"%s: the analyzer block asks for %q and this sidecar has no control "+
+					"plane; the review is filed with the plane named by %s or the "+
+					"control_plane_url key, and there is nowhere else to file it",
+				name, analyzer.ActionRequireReview, ControlPlaneURLEnv))
+			continue
+		}
+
 		pol, err := buildPolicy(name, gc, lc.Analyzer, opa, det, ac)
 		if err != nil {
 			problems = append(problems, name+": "+err.Error())
@@ -1079,6 +1215,7 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 			codecFactory: httpCodecFactory(proto, lc.HTTP),
 			captureBody:  lc.HTTP != nil && lc.HTTP.CaptureBody,
 			observing:    gc.observing(),
+			analyzers:    collectAnalyzers(pol),
 		}
 		// Reported whether or not the lane enforces. An observing lane runs
 		// every one of these, and a reader of the startup log needs to see
@@ -1094,10 +1231,22 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 		if opa.enabled() {
 			ln.opaURL = opa.URL
 		}
+		if isSSH(lc) {
+			ln.notes = append(ln.notes, sshLaneNotes(lc.SSH)...)
+		}
 		if gc.observing() {
 			ln.notes = append(ln.notes,
 				"observe mode: every rule is evaluated and nothing is denied. "+
 					"Matches are recorded on the audit line as "+policy.AnnotationWouldDeny)
+		}
+		// Said out loud because it is the one control observe mode
+		// switches OFF rather than records: every other rule still runs
+		// and still writes what it would have done, while a review
+		// nobody filed cannot be approved later either.
+		if gc.observing() && analyzerHolds(lc.Analyzer) {
+			ln.notes = append(ln.notes,
+				"observe mode files no review: a held statement is recorded as "+
+					policy.AnnotationWouldDeny+" and forwarded, and no approver is asked")
 		}
 		if !opa.enabled() && (anyDeferred(gc.Rules) || analyzerDefers(lc.Analyzer)) {
 			ln.notes = append(ln.notes,
@@ -1221,6 +1370,7 @@ func buildServer(
 		DenyWriter:       proxy.ProtocolDenyWriter{},
 		IdentityFn:       identityFn,
 		CodecFactory:     ln.codecFactory,
+		Metrics:          ln.metrics,
 		IdleTimeout:      time.Duration(lc.IdleTimeoutSec) * time.Second,
 		MaxConns:         lc.MaxConns,
 		Logger:           log.With("listener", ln.name),
@@ -1355,8 +1505,8 @@ func serveAdmin(
 	addr string,
 	servers []*proxy.Server,
 	relayNames []string,
-	grpcServers []GRPCServer,
-	grpcNames []string,
+	endpoints []endpointServer,
+	endpointNames []string,
 	view *atomic.Pointer[laneState],
 	ac auditChain,
 	analyzerCfg *AnalyzerConfig,
@@ -1378,7 +1528,7 @@ func serveAdmin(
 			Total  int64  `json:"total"`
 			Denied int64  `json:"denied"`
 		}
-		out := make([]stat, 0, len(servers)+len(grpcServers))
+		out := make([]stat, 0, len(servers)+len(endpoints))
 		for i, s := range servers {
 			active, total, denied := s.Stats()
 			a := ""
@@ -1386,21 +1536,21 @@ func serveAdmin(
 				a = s.Addr().String()
 			}
 			// servers and relayNames are built in lockstep from the relay
-			// listeners, so the index is the join. gRPC servers are appended
-			// below from their own lockstep slices.
+			// listeners, so the index is the join. Endpoint lanes are
+			// appended below from their own lockstep slices.
 			out = append(out, stat{
 				Name: relayNames[i], Addr: a,
 				Active: active, Total: total, Denied: denied,
 			})
 		}
-		for i, s := range grpcServers {
+		for i, s := range endpoints {
 			active, total, denied := s.Stats()
 			a := ""
 			if s.Addr() != nil {
 				a = s.Addr().String()
 			}
 			out = append(out, stat{
-				Name: grpcNames[i], Addr: a,
+				Name: endpointNames[i], Addr: a,
 				Active: active, Total: total, Denied: denied,
 			})
 		}

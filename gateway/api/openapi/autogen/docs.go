@@ -10235,10 +10235,16 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SidecarReviewResponse"
+                        }
+                    },
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/openapi.Review"
+                            "$ref": "#/definitions/openapi.SidecarReviewResponse"
                         }
                     },
                     "400": {
@@ -10261,6 +10267,12 @@ const docTemplate = `{
                     },
                     "413": {
                         "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -19757,10 +19769,17 @@ const docTemplate = `{
         "openapi.SidecarReviewRequest": {
             "type": "object",
             "required": [
+                "approval_rule",
                 "listener_name",
                 "payload"
             ],
             "properties": {
+                "approval_rule": {
+                    "description": "The access request rule that decides who may approve this statement\n\nIt must be the rule the sidecar's stored configuration names for this\nlistener. The rule carries the reviewer groups, the approval count and\nthe force-approval list; the sidecar holds none of that policy and only\nnames it.\n\nBounded at 254 to match what a rule name may be.",
+                    "type": "string",
+                    "maxLength": 254,
+                    "example": "payments-approvers"
+                },
                 "listener_name": {
                     "description": "The sidecar listener the statement arrived on\n\nBounded because private.reviews.listener_name is VARCHAR(255): a longer\nname would reach Postgres and fail the write, rather than being told at\nthe door that it is too long.",
                     "type": "string",
@@ -19771,6 +19790,24 @@ const docTemplate = `{
                     "description": "The statement to review, base64 encoded",
                     "type": "string",
                     "example": "REVMRVRFIEZST00gdXNlcnM7"
+                }
+            }
+        },
+        "openapi.SidecarReviewResponse": {
+            "type": "object",
+            "properties": {
+                "forward": {
+                    "description": "Whether the sidecar may release the statement it held\n\nTrue only on the request that consumed an approved review, and only\nonce per review. False while the review waits, and false forever once\nit is rejected or revoked.",
+                    "type": "boolean",
+                    "example": false
+                },
+                "review": {
+                    "description": "The review the statement is waiting on, or the one that released it",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.Review"
+                        }
+                    ]
                 }
             }
         },

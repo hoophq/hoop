@@ -343,6 +343,14 @@ github.com/hoophq/libhoop v0.0.0-20260904185223-6d0fabb8b600 h1:T9Q783Hs03656PvC
 github.com/hoophq/libhoop v0.0.0-20260904185223-6d0fabb8b600/go.mod h1:Z28ISSRx1WOOXrN3QO8Lh/jUsJcmO6KXzFm8ujwUjq4=
 github.com/hoophq/libhoop v0.0.0-20260911124740-15e4171c522b h1:sKjwfNRVD4yTz4hDkMtCWWHXP3DzQ4Zbxtma9jHY3LY=
 github.com/hoophq/libhoop v0.0.0-20260911124740-15e4171c522b/go.mod h1:Z28ISSRx1WOOXrN3QO8Lh/jUsJcmO6KXzFm8ujwUjq4=
+github.com/hoophq/libhoop v0.0.0-20260916183132-1443e5d2e2d2 h1:lN6/qxPoIUJZCS1ICy8b0YZDHb0mYkmjG+aI2U7ldHw=
+github.com/hoophq/libhoop v0.0.0-20260916183132-1443e5d2e2d2/go.mod h1:D0ohPkqnVsv8UWbu3CExGU9dgUOCoFGgVZY7X6PK86U=
+github.com/hoophq/libhoop v0.0.0-20260916204722-be8e357544d1 h1:0LEX/zBA4pzwIwKcK5/taHEdmnt+xJi1f+fnaErbco4=
+github.com/hoophq/libhoop v0.0.0-20260916204722-be8e357544d1/go.mod h1:D0ohPkqnVsv8UWbu3CExGU9dgUOCoFGgVZY7X6PK86U=
+github.com/hoophq/libhoop v0.0.0-20260916211013-e28c81bb9dad h1:4uMEkR76fuu1o3NSNmfkZSUgSB+//owe1ddA6rzfxl4=
+github.com/hoophq/libhoop v0.0.0-20260916211013-e28c81bb9dad/go.mod h1:D0ohPkqnVsv8UWbu3CExGU9dgUOCoFGgVZY7X6PK86U=
+github.com/hoophq/libhoop v0.0.0-20260916211709-c49b31f354b0 h1:ElgCEqp9U9hDhaIQBR6JiFoROCb3k20HXkMQW+HCGeo=
+github.com/hoophq/libhoop v0.0.0-20260916211709-c49b31f354b0/go.mod h1:D0ohPkqnVsv8UWbu3CExGU9dgUOCoFGgVZY7X6PK86U=
 github.com/hoophq/mcpproxy v0.1.1 h1:Zj9/vOMAKSOTuGuuSLl/v01iKdQ1+yiYZLNNz2T1npQ=
 github.com/hoophq/mcpproxy v0.1.1/go.mod h1:Wi7Z5bo0hJRwKa/gFaC9vRAWFCy3dxcYS2n28/TTphc=
 github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=
@@ -377,6 +385,7 @@ github.com/knights-analytics/hugot v0.7.7 h1:+gVc2p8Q2VLwgE1XVZcBidpYj4pNnTjUiVE
 github.com/knights-analytics/hugot v0.7.7/go.mod h1:nvHwHMfvYHfOm8rGY7nPAhBahJcq3a/y5hFcsJG9A40=
 github.com/knights-analytics/ortgenai v0.3.2 h1:0RnCmiSV68GSDuTYlViyPB3UAYNVzhJ1Sg7gPer9t3w=
 github.com/knights-analytics/ortgenai v0.3.2/go.mod h1:lSbQsRP5wY5NS+4W5CUGhdxjTzERQkR7WprAFxrBSt4=
+github.com/kr/fs v0.1.0/go.mod h1:FFnZGqtBN9Gxj7eW1uZ42v5BccTP0vu6NEaFoC2HwRg=
 github.com/kr/pretty v0.1.0/go.mod h1:dAy3ld7l9f0ibDNOQOHHMYYIIbhfbHSm3C4ZsoJORNo=
 github.com/kr/pretty v0.3.1 h1:flRD4NNwYAUpkphVc1HcthR4KEIFJ65n8Mw5qdRn3LE=
 github.com/kr/pretty v0.3.1/go.mod h1:hoEshYVHaxMs3cyo3Yncou5ZscifuDolrwPKZanG3xk=
@@ -446,6 +455,7 @@ github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c h1:+mdjkGKdHQG3305AYmd
 github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c/go.mod h1:7rwL4CYBLnjLxUqIJNnCWiEdr3bn6IUYi15bNlnbCCU=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
 github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
+github.com/pkg/sftp v1.13.11/go.mod h1:uNkH9roSXglNJqM+glJJi+TQXQUm0fXFWqCFmT8hsN0=
 github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 h1:GFCKgmp0tecUJ0sJuv4pzYCqS9+RGSn52M3FUwPs+uo=
 github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10/go.mod h1:t/avpk3KcrXxUnYOhZhMXJlSEyie6gQbtLq5NM3loB8=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=

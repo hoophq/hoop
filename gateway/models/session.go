@@ -775,62 +775,69 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 // UpsertSession updates or create all attributes of a session with exception of
 // session streams
 func UpsertSession(sess Session) error {
+	return DB.Transaction(func(tx *gorm.DB) error {
+		return upsertSessionTx(tx, sess)
+	})
+}
+
+// upsertSessionTx is UpsertSession's body with the transaction supplied by the
+// caller, so a caller that must write a session alongside other rows gets one
+// rollback boundary instead of two. The behaviour is otherwise unchanged.
+func upsertSessionTx(tx *gorm.DB, sess Session) error {
 	if sess.IdentityType == "" {
 		sess.IdentityType = "user"
 	}
-	return DB.Transaction(func(tx *gorm.DB) error {
-		// generate deterministic uuid based on the session id to avoid duplicates
-		blobInputID := sql.NullString{
-			String: uuid.NewSHA1(uuid.NameSpaceURL, fmt.Appendf(nil, "blobinput:%s", sess.ID)).String(),
-			Valid:  true,
-		}
+	// generate deterministic uuid based on the session id to avoid duplicates
+	blobInputID := sql.NullString{
+		String: uuid.NewSHA1(uuid.NameSpaceURL, fmt.Appendf(nil, "blobinput:%s", sess.ID)).String(),
+		Valid:  true,
+	}
 
-		blobInput := Blob{
-			ID:         blobInputID.String,
-			OrgID:      sess.OrgID,
-			Type:       "session-input",
-			BlobStream: json.RawMessage(fmt.Sprintf("[%q]", sess.BlobInput)),
-		}
-		res := tx.Table("private.blobs").
-			Where("org_id = ? AND id = ?", sess.OrgID, blobInputID.String).
-			Updates(blobInput)
-		if res.Error == nil && res.RowsAffected == 0 {
-			res.Error = tx.Table("private.blobs").Create(blobInput).Error
-		}
+	blobInput := Blob{
+		ID:         blobInputID.String,
+		OrgID:      sess.OrgID,
+		Type:       "session-input",
+		BlobStream: json.RawMessage(fmt.Sprintf("[%q]", sess.BlobInput)),
+	}
+	res := tx.Table("private.blobs").
+		Where("org_id = ? AND id = ?", sess.OrgID, blobInputID.String).
+		Updates(blobInput)
+	if res.Error == nil && res.RowsAffected == 0 {
+		res.Error = tx.Table("private.blobs").Create(blobInput).Error
+	}
 
-		if res.Error != nil {
-			return fmt.Errorf("failed creating session blob input, reason=%v", res.Error)
-		}
-		return tx.Table("private.sessions").Save(
-			Session{
-				ID:                   sess.ID,
-				OrgID:                sess.OrgID,
-				Labels:               sess.Labels,
-				Metadata:             sess.Metadata,
-				IntegrationsMetadata: sess.IntegrationsMetadata,
-				Metrics:              sess.Metrics,
-				Connection:           sess.Connection,
-				ConnectionType:       sess.ConnectionType,
-				ConnectionSubtype:    sess.ConnectionSubtype,
-				ConnectionTags:       sess.ConnectionTags,
-				Verb:                 sess.Verb,
-				UserID:               sess.UserID,
-				UserName:             sess.UserName,
-				UserEmail:            sess.UserEmail,
-				BlobInputID:          blobInputID,
-				Status:               sess.Status,
-				ExitCode:             sess.ExitCode,
-				SessionBatchID:       sess.SessionBatchID,
-				MachineIdentityID:    sess.MachineIdentityID,
-				IdentityType:         sess.IdentityType,
-				CorrelationID:        sess.CorrelationID,
-				Origin:               sess.Origin,
-				CreatedAt:            sess.CreatedAt,
-				EndSession:           sess.EndSession,
-				AIAnalysis:           sess.AIAnalysis,
-				GuardRailsInfo:       sess.GuardRailsInfo,
-			}).Error
-	})
+	if res.Error != nil {
+		return fmt.Errorf("failed creating session blob input, reason=%v", res.Error)
+	}
+	return tx.Table("private.sessions").Save(
+		Session{
+			ID:                   sess.ID,
+			OrgID:                sess.OrgID,
+			Labels:               sess.Labels,
+			Metadata:             sess.Metadata,
+			IntegrationsMetadata: sess.IntegrationsMetadata,
+			Metrics:              sess.Metrics,
+			Connection:           sess.Connection,
+			ConnectionType:       sess.ConnectionType,
+			ConnectionSubtype:    sess.ConnectionSubtype,
+			ConnectionTags:       sess.ConnectionTags,
+			Verb:                 sess.Verb,
+			UserID:               sess.UserID,
+			UserName:             sess.UserName,
+			UserEmail:            sess.UserEmail,
+			BlobInputID:          blobInputID,
+			Status:               sess.Status,
+			ExitCode:             sess.ExitCode,
+			SessionBatchID:       sess.SessionBatchID,
+			MachineIdentityID:    sess.MachineIdentityID,
+			IdentityType:         sess.IdentityType,
+			CorrelationID:        sess.CorrelationID,
+			Origin:               sess.Origin,
+			CreatedAt:            sess.CreatedAt,
+			EndSession:           sess.EndSession,
+			AIAnalysis:           sess.AIAnalysis,
+			GuardRailsInfo:       sess.GuardRailsInfo,
+		}).Error
 }
 
 // UpdateSessionStatus updates only the status of a session

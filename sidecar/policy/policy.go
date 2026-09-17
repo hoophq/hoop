@@ -50,6 +50,13 @@ type Verdict struct {
 	// Empty on allow.
 	Rule string
 
+	// Source names the KIND of evaluator that denied, from a fixed
+	// vocabulary: a local rule's MatchType ("operation", "pattern_match",
+	// "pii", ...), SourceOPA, SourceAnalyzer, or a gate-level refusal. It
+	// exists for counting denials by kind without carrying Rule, which is
+	// operator-written text, out of the process. Empty on allow.
+	Source string
+
 	// Err holds the failure when evaluation itself broke (OPA unreachable,
 	// bad regex). Denied reflects the fail-open/fail-closed choice; Err
 	// records the cause.
@@ -73,9 +80,22 @@ type Verdict struct {
 // Allow is the zero verdict.
 func Allow() Verdict { return Verdict{} }
 
-// Deny builds a denial carrying a user-facing message.
+// Evaluator kinds a Verdict.Source can name, beside the MatchType values a
+// local rule reports. The gate adds its own for refusals no evaluator made.
+const (
+	SourceOPA      = "opa"
+	SourceAnalyzer = "analyzer"
+)
+
+// Deny builds a denial carrying a user-facing message. The caller sets
+// Source; DenyRule does it for a local rule.
 func Deny(rule, msg string) Verdict {
 	return Verdict{Denied: true, Message: msg, Rule: rule}
+}
+
+// DenyRule is Deny for a local rule: the rule's type is the source.
+func DenyRule(rule Rule, msg string) Verdict {
+	return Verdict{Denied: true, Message: msg, Rule: rule.Name, Source: string(rule.Type)}
 }
 
 // Evaluator produces a verdict for a statement. Rules and OPAClient both
@@ -380,7 +400,15 @@ type Rule struct {
 	// Pattern for MatchPattern, an RE2 regular expression.
 	Pattern string `json:"pattern_regex,omitempty"`
 
-	// Operations for MatchOperation.
+	// Operations is the matcher for MatchOperation, and a SCOPE for every
+	// other rule type: a rule that names operations is evaluated only
+	// against statements carrying one of them.
+	//
+	// The scope is what makes one rule set usable on a lane whose
+	// statements carry different KINDS of text. An SSH lane is the case:
+	// exec_line's text is a command, env_set's is a variable name, and
+	// every sftp_*'s is a path, so a pattern written for one of them has to
+	// say which (ADR-0015).
 	Operations []inspect.Operation `json:"operations,omitempty"`
 
 	// Tables for MatchTable, compared lowercased. A bare name matches any
@@ -659,7 +687,7 @@ func (r *Rules) EvaluateWith(stmt inspect.Statement, ec *EvalContext) Verdict {
 				})
 				continue
 			}
-			return Deny(rule.Name, rule.piiMessage(entities))
+			return DenyRule(rule, rule.piiMessage(entities))
 		}
 
 		matched, err := rule.matches(stmt)
@@ -671,6 +699,7 @@ func (r *Rules) EvaluateWith(stmt inspect.Statement, ec *EvalContext) Verdict {
 				Denied:  true,
 				Message: "policy evaluation failed; denying",
 				Rule:    rule.Name,
+				Source:  string(rule.Type),
 				Err:     err,
 			}
 		}
@@ -681,7 +710,7 @@ func (r *Rules) EvaluateWith(stmt inspect.Statement, ec *EvalContext) Verdict {
 			deferred = recordMatch(deferred, rule, rule.findingValues(stmt))
 			continue
 		}
-		return Deny(rule.Name, rule.messageOr(stmt))
+		return DenyRule(rule, rule.messageOr(stmt))
 	}
 	return Allow()
 }
@@ -763,6 +792,28 @@ func (r Rule) messageOr(stmt inspect.Statement) string {
 }
 
 func (r Rule) matches(stmt inspect.Statement) (bool, error) {
+	// Operations NARROWS every rule type except the one it defines.
+	//
+	// On a SQL lane this is rarely written: a pattern rule there reads one
+	// kind of text. An SSH lane is the case that needs it, because one rule
+	// set sees three kinds — a command line for exec_line, a variable name
+	// for env_set, a path for every sftp_* — so a pattern written for one
+	// of them would otherwise be evaluated against all three. ADR-0015's
+	// worked rules are all scoped this way.
+	//
+	// It can only NARROW. A rule that does not set the field behaves
+	// exactly as before, and a rule that does can match fewer statements
+	// than it did, never more — which is why this is safe to apply to every
+	// existing rule type rather than to a new one.
+	//
+	// MatchOperation is excluded because there the field IS the matcher;
+	// narrowing it by itself would be a tautology.
+	if len(r.Operations) > 0 && r.Type != MatchOperation {
+		if !slices.Contains(r.Operations, stmt.Operation) {
+			return false, nil
+		}
+	}
+
 	// HTTP rule types are handled in http.go, gRPC rule types in grpc.go;
 	// ok=false means "not mine".
 	if matched, ok := r.matchesHTTP(stmt); ok {

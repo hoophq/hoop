@@ -146,7 +146,7 @@ func TestFirstRunServeAnswersAndStopsOnContextCancel(t *testing.T) {
 	var buf syncBuffer
 	done := make(chan error, 1)
 	go func() {
-		done <- firstRunServe(ctx, &buf, "hoop start sidecar --config config.yaml")
+		done <- firstRunServe(ctx, &buf, "hoop start sidecar --config config.yaml", setupOptions{})
 	}()
 
 	url := waitForBannerURL(t, &buf)

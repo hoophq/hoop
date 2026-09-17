@@ -203,6 +203,17 @@ containers:
     env:
       - name: HOOP_SIDECAR_CONFIG
         value: /etc/hoop-inspect/config.yaml
+      # Usage analytics identity. A pod's hostname changes on every
+      # rollout, so without these each deploy reports as a new sidecar on
+      # a new host. Both are hashed before they are sent. Omit
+      # HOOP_SIDECAR_ID when connecting to a control plane (the token is
+      # the identity), and set HOOP_SIDECAR_ANALYTICS=off to send nothing.
+      - name: HOOP_SIDECAR_ID
+        value: appdb-relay
+      - name: HOOP_HOST_ID
+        valueFrom:
+          fieldRef:
+            fieldPath: spec.nodeName
     ports:
       - {containerPort: 15432, name: pg}
       - {containerPort: 19000, name: admin}
@@ -384,6 +395,23 @@ The HTTP codec exposes nothing by default. Without a body the model sees `POST
 
 A request with no body is skipped rather than classified, so a forgotten
 `capture_body` looks like an analyzer that never fires.
+
+With it on, `POST /orders/12345?export=all` reaches the model as the request
+line the client sent, the resource the trigger matched, and the body:
+
+```
+POST /orders/12345?export=all
+Resource: /orders/*
+Content-Type: application/json
+
+{"status": "cancelled"}
+```
+
+The literal id and the query string are intent, so the model sees them; the
+cache keys on the resource, the query string and the body, so two ids
+sending the same query and body are one call and a different `?export=`
+value is another. `send: redacted` runs the detector over this whole text,
+path included.
 
 ### Reading the verdicts
 

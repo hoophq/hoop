@@ -347,6 +347,33 @@ type SidecarReviewRequest struct {
 	ListenerName string `json:"listener_name" binding:"required,max=255" example:"appdb"`
 	// The statement to review, base64 encoded
 	Payload string `json:"payload" binding:"required" example:"REVMRVRFIEZST00gdXNlcnM7"`
+	// The access request rule that decides who may approve this statement
+	//
+	// It must be the rule the sidecar's stored configuration names for this
+	// listener. The rule carries the reviewer groups, the approval count and
+	// the force-approval list; the sidecar holds none of that policy and only
+	// names it.
+	//
+	// Bounded at 254 to match what a rule name may be.
+	ApprovalRule string `json:"approval_rule" binding:"required,max=254" example:"payments-approvers"`
+}
+
+// SidecarReviewResponse answers a sidecar that asked to review a statement.
+//
+// Forward is separate from the review status deliberately. When two retries of
+// one approved statement race, both read APPROVED and both see EXECUTED
+// afterwards; only the request that consumed the review may release the
+// statement, and no status tells it apart from the one that lost. A sidecar
+// reads Forward and nothing else to decide.
+type SidecarReviewResponse struct {
+	// Whether the sidecar may release the statement it held
+	//
+	// True only on the request that consumed an approved review, and only
+	// once per review. False while the review waits, and false forever once
+	// it is rejected or revoked.
+	Forward bool `json:"forward" example:"false"`
+	// The review the statement is waiting on, or the one that released it
+	Review *Review `json:"review"`
 }
 
 type SidecarHandshakeRequest struct {

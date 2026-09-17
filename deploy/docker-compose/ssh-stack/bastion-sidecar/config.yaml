@@ -1,0 +1,43 @@
+# The SIDECAR configured to act as a BASTION. A jump host and nothing else.
+#
+# destinations_allowed puts this listener in the role: it says where a client
+# may jump, and every forward is denied until an address is written there.
+#
+# capabilities_allowed is written EMPTY on top of that, which drops the shell:
+# a session channel is refused, so there is no shell, no command and no file
+# transfer, and no content policy, because there is no session to inspect.
+# Omit the key to keep a shell, for users who log in here and run ssh onward
+# by hand.
+
+listeners:
+  - name: prod-bastion
+    protocol: ssh
+    listen: 0.0.0.0:2222
+
+    ssh:
+      host_key: /etc/hoop-inspect/keys/bastion_host_key
+      trusted_ca: /etc/hoop-inspect/keys/ca.pub
+
+      capabilities_allowed: []
+
+      # The end-hop's SSH port on this network, and nothing else. Not the
+      # end-hop's other ports, not the sshd bastion, not the internet.
+      #
+      # Absent or empty would deny every forward, so this line is what lets
+      # the bastion carry anything at all. The check is handed the address
+      # the endpoint WILL dial, resolved once, and that same address is
+      # connected to.
+      destinations_allowed:
+        - 172.31.77.10/32:2222
+
+      identity:
+        subject: key_id
+        groups: principals
+
+audit:
+  file: /tmp/audit.jsonl
+
+admin:
+  listen: 0.0.0.0:9090
+
+log_level: info

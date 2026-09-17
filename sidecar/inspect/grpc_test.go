@@ -57,3 +57,36 @@ func TestAnalyzeSQLFailsClosedForGRPC(t *testing.T) {
 		t.Fatalf("grpc analysis invented relations: %+v", got)
 	}
 }
+
+// An ssh statement is a command line, a variable name or a file path, and
+// the PostgreSQL lexer reads all three without complaining. `rm -rf /` is
+// not SQL, but nothing in a lexer says so, and the relations it returns
+// would be read by a rule as if a human had named them.
+//
+// Nothing passes SSH here today. The branch exists so the first caller that
+// does fails closed rather than acting on an invented answer.
+func TestAnalyzeSQLFailsClosedForSSH(t *testing.T) {
+	for _, text := range []string{
+		"rm -rf /var/lib/postgresql",
+		"/srv/customers.csv",
+		"LD_PRELOAD",
+		// The one that is not merely noise: the PostgreSQL lexer reads
+		// this command as a complete UPDATE, which a read-only lane
+		// would deny and an audit trail would record as a write.
+		"update-alternatives --config editor",
+	} {
+		got := inspect.AnalyzeSQL(text, inspect.SSH)
+		if got.Complete {
+			t.Errorf("ssh analysis of %q reported a complete scan", text)
+		}
+		if got.Operation != inspect.OpUnknown {
+			t.Errorf("operation for %q = %q, want unknown", text, got.Operation)
+		}
+		if got.Reason == "" {
+			t.Errorf("fail-closed result for %q carries no reason", text)
+		}
+		if len(got.Relations) != 0 || len(got.Tables) != 0 {
+			t.Errorf("ssh analysis of %q invented relations: %+v", text, got)
+		}
+	}
+}
