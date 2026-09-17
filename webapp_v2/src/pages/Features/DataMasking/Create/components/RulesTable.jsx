@@ -45,20 +45,16 @@ function RuleCell({ row, freeLicense, onChange }) {
   }
 
   if (row.type === 'fields') {
-    return <Text size="sm">Custom Selection</Text>
+    return (
+      <TextInput
+        placeholder="Rule Name"
+        size={ROW_CONTROL_SIZE}
+        value={row.rule === 'Custom Selection' ? '' : row.rule}
+        onChange={(e) => onChange({ rule: e.currentTarget.value })}
+      />
+    )
   }
-  return (
-    <TextInput
-      placeholder="Rule Name"
-      size={ROW_CONTROL_SIZE}
-      value={row.rule}
-      onChange={(e) => onChange({ rule: e.currentTarget.value })}
-      onBlur={(e) => {
-        const normalized = normalizeEntityName(e.currentTarget.value)
-        if (normalized !== e.currentTarget.value) onChange({ rule: normalized })
-      }}
-    />
-  )
+  return null
 }
 
 function DetailsCell({ row, freeLicense, onChange }) {
@@ -90,14 +86,7 @@ function DetailsCell({ row, freeLicense, onChange }) {
       />
     )
   }
-  return (
-    <TextInput
-      placeholder="\b[A-Z]{2}[0-9]{3}\b"
-      size={ROW_CONTROL_SIZE}
-      value={row.details}
-      onChange={(e) => onChange({ details: e.currentTarget.value })}
-    />
-  )
+  return null
 }
 
 export default function RulesTable({
@@ -145,8 +134,10 @@ export default function RulesTable({
             <Table.Th w={TYPE_COLUMN_WIDTH}>Type</Table.Th>
             <Table.Th w={RULE_COLUMN_WIDTH}>Rule Name</Table.Th>
             <Table.Th>Entities</Table.Th>
-            <Table.Th w={150}>Strategy</Table.Th>
-            <Table.Th w={200}>Parameters / Columns</Table.Th>
+            <Table.Th w={130}>Strategy</Table.Th>
+            <Table.Th w={100}>Keep Last</Table.Th>
+            <Table.Th w={100}>Mask Char</Table.Th>
+            <Table.Th w={200}>Columns</Table.Th>
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
@@ -202,34 +193,36 @@ export default function RulesTable({
                 )}
               </Table.Td>
               <Table.Td>
+                {row.type && row.strategy === 'partial' ? (
+                  <TextInput
+                    type="number"
+                    min={0}
+                    placeholder="4"
+                    size={ROW_CONTROL_SIZE}
+                    value={row.keepLast ?? 4}
+                    onChange={(e) => patchRow(idx, { keepLast: Number(e.currentTarget.value) })}
+                  />
+                ) : null}
+              </Table.Td>
+              <Table.Td>
+                {row.type && (row.strategy === 'mask' || row.strategy === 'partial') ? (
+                  <TextInput
+                    maxLength={1}
+                    placeholder="*"
+                    size={ROW_CONTROL_SIZE}
+                    value={row.maskChar ?? '*'}
+                    onChange={(e) => patchRow(idx, { maskChar: e.currentTarget.value })}
+                  />
+                ) : null}
+              </Table.Td>
+              <Table.Td>
                 {row.type && (
-                  <Stack gap="xs">
-                    {row.strategy === 'partial' && (
-                      <TextInput
-                        type="number"
-                        min={0}
-                        placeholder="Keep Last (4)"
-                        size={ROW_CONTROL_SIZE}
-                        value={row.keepLast ?? 4}
-                        onChange={(e) => patchRow(idx, { keepLast: Number(e.currentTarget.value) })}
-                      />
-                    )}
-                    {(row.strategy === 'mask' || row.strategy === 'partial') && (
-                      <TextInput
-                        maxLength={1}
-                        placeholder="Mask Char (*)"
-                        size={ROW_CONTROL_SIZE}
-                        value={row.maskChar ?? '*'}
-                        onChange={(e) => patchRow(idx, { maskChar: e.currentTarget.value })}
-                      />
-                    )}
-                    <TagsInput
-                      placeholder="Columns to mask"
-                      size={ROW_CONTROL_SIZE}
-                      value={row.columns ?? []}
-                      onChange={(values) => patchRow(idx, { columns: values })}
-                    />
-                  </Stack>
+                  <TagsInput
+                    placeholder="Columns to mask"
+                    size={ROW_CONTROL_SIZE}
+                    value={row.columns ?? []}
+                    onChange={(values) => patchRow(idx, { columns: values })}
+                  />
                 )}
               </Table.Td>
             </Table.Tr>

@@ -122,7 +122,6 @@ export const PRESIDIO_OPTIONS = [
 export const RULE_TYPES = [
   { value: 'presets', label: 'Presets' },
   { value: 'fields', label: 'Fields' },
-  { value: 'custom', label: 'Custom' },
 ]
 
 export const PRESET_OPTIONS = Object.entries(PRESET_DEFINITIONS).map(
