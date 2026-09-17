@@ -72,6 +72,9 @@ type reloader struct {
 	// evaluator instances alive: analyzer call budgets, verdict caches and
 	// counters survive every reload that does not edit that lane's rules.
 	laneDocs map[string][]byte
+	// sections is laneDocs split per section (guardrails, opa, mask,
+	// analyzer), kept only so the applied event can name what moved.
+	sections map[string]map[string][]byte
 	// prevLanes keeps the lane structs the skipped lanes still serve, so a
 	// published generation renders the truth for swapped and kept lanes
 	// alike.
@@ -113,6 +116,10 @@ type reloader struct {
 	// ownership to it mid-run. An empty path means no file was given.
 	configPath string
 	load       Loader
+
+	// tel receives every terminal outcome. Nil in a test that built no
+	// telemetry; its methods accept that.
+	tel *telemetry
 }
 
 // newReloader captures the startup state handle compares against.
@@ -124,19 +131,26 @@ func newReloader(cfg *Config, lanes []lane, servers map[string]*proxy.Server,
 		return nil, err
 	}
 	laneDocs := make(map[string][]byte, len(lanes))
+	laneSections := make(map[string]map[string][]byte, len(lanes))
 	prevLanes := make(map[string]lane, len(lanes))
 	for _, ln := range lanes {
 		doc, derr := laneRuleDoc(cfg, ln.cfg)
 		if derr != nil {
 			return nil, derr
 		}
+		sections, serr := laneSectionDocs(cfg, ln.cfg)
+		if serr != nil {
+			return nil, serr
+		}
 		laneDocs[ln.name] = doc
+		laneSections[ln.name] = sections
 		prevLanes[ln.name] = ln
 	}
 	return &reloader{
 		baseline:    baseline,
 		piiRaw:      cfg.PII,
 		laneDocs:    laneDocs,
+		sections:    laneSections,
 		prevLanes:   prevLanes,
 		servers:     servers,
 		view:        view,
@@ -162,6 +176,11 @@ func (r *reloader) handle(log *slog.Logger, raw []byte) reloadOutcome {
 	out := r.apply(log, raw)
 	if out != reloadRetry {
 		r.lastHandled = raw
+	}
+	if out != reloadApplied {
+		// apply reports the applied case itself, where it still holds the
+		// generation's lanes for the shape properties.
+		r.tel.trackReload(reloadReport{outcome: out, gen: r.gen})
 	}
 	return out
 }
@@ -399,6 +418,9 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 			log.Warn("no running server for a reloaded lane", "listener", ln.name)
 			continue
 		}
+		// The outgoing generation's analyzers stop being read after this
+		// swap; bank what they did since the last usage event first.
+		r.tel.retireAnalyzers(r.prevLanes[ln.name].analyzers)
 		srv.SwapRules(ln.policy, ln.masker)
 		r.laneDocs[ln.name] = doc
 		r.prevLanes[ln.name] = ln
@@ -423,10 +445,41 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 	// added by this reload can push a config past the free tier, and the
 	// watchdog only stops a process that would lose something.
 	r.lic.depends.Store(newCfg.dependsOnLicense())
+	// Which sections moved, for the applied event: compared per lane
+	// against the sections the previous generation resolved, then the
+	// facts that travel outside the lanes.
+	changed := make(map[string]bool, 5)
+	sections := make(map[string]map[string][]byte, len(lanes))
+	for _, ln := range lanes {
+		next, serr := laneSectionDocs(newCfg, ln.cfg)
+		if serr != nil {
+			// The document already applied; a report that cannot say
+			// which section moved says none rather than failing the swap.
+			sections = r.sections
+			break
+		}
+		sections[ln.name] = next
+		for name, doc := range next {
+			if !bytes.Equal(doc, r.sections[ln.name][name]) {
+				changed[name] = true
+			}
+		}
+	}
+	if detChanged {
+		changed["pii"] = true
+	}
+	if licRotated {
+		changed["license"] = true
+	}
+	r.sections = sections
 	r.gen++
 	r.view.Store(&laneState{lanes: viewLanes, gen: r.gen})
 	log.Info(from+" configuration applied",
 		"generation", r.gen, "swapped", swapped, "kept", kept)
+	r.tel.trackReload(reloadReport{
+		outcome: reloadApplied, gen: r.gen, swapped: swapped, kept: kept,
+		changed: sortedKeys(changed), cfg: newCfg, lanes: viewLanes, det: det,
+	})
 	return reloadApplied
 }
 
@@ -467,4 +520,22 @@ func laneRuleDoc(c *Config, lc ListenerConfig) ([]byte, error) {
 		M MaskConfig          `json:"m"`
 		A *LaneAnalyzerConfig `json:"a"`
 	}{gc, opa, mc, lc.Analyzer})
+}
+
+// laneSectionDocs renders the same resolved stack as laneRuleDoc, one
+// document per section, so a reload can say WHICH section moved. Keys are
+// the fixed vocabulary the config-applied event reports.
+func laneSectionDocs(c *Config, lc ListenerConfig) (map[string][]byte, error) {
+	gc, opa, mc := c.resolve(lc)
+	out := make(map[string][]byte, 4)
+	for name, v := range map[string]any{
+		"guardrails": gc, "opa": opa, "mask": mc, "analyzer": lc.Analyzer,
+	} {
+		doc, err := json.Marshal(v)
+		if err != nil {
+			return nil, err
+		}
+		out[name] = doc
+	}
+	return out, nil
 }

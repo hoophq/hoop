@@ -119,6 +119,10 @@ type Config struct {
 	// factory cannot express.
 	CodecFactory func() inspect.Codec
 
+	// Metrics is handed to every connection's Gate. Optional. See
+	// gate.Config.Metrics for the contract it must meet.
+	Metrics gate.Metrics
+
 	// DialTimeout bounds the upstream connect. Default 10s.
 	DialTimeout time.Duration
 
@@ -389,6 +393,7 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 		Masker:           rules.masker,
 		FailOnAuditError: s.cfg.FailOnAuditError,
 		CodecFactory:     s.cfg.CodecFactory,
+		Metrics:          s.cfg.Metrics,
 	})
 	if err != nil {
 		log.Error("gate setup failed", "error", err)
@@ -411,7 +416,11 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 	if err != nil {
 		log.Error("upstream dial failed", "upstream", s.cfg.Upstream, "error", err)
 		if s.cfg.Audit != nil {
-			_ = s.cfg.Audit.Write(ctx, audit.ErrorEvent(sess, err))
+			if aerr := s.cfg.Audit.Write(ctx, audit.ErrorEvent(sess, err)); aerr != nil && s.cfg.Metrics != nil {
+				// The one audit write that happens outside a Gate, so it
+				// reports its own failure into the same counter.
+				s.cfg.Metrics.AuditError()
+			}
 		}
 		return
 	}

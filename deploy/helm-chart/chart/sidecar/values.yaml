@@ -173,6 +173,28 @@ controlPlane:
   url: ''
   token: ''
 
+# -- Usage analytics. A release build reports anonymous usage to Segment —
+# counts and config shape, never statement text, identities, rule names or
+# addresses; see "Usage analytics" in sidecar/README.md. Every identity is
+# hashed before it is sent.
+#
+# A pod's hostname is its name, which changes on every rollout, so without
+# the two ids below each deploy would report as a new sidecar on a new host
+# — and Segment bills per distinct id per month. The chart therefore defaults
+# both: the sidecar id to this release's full name (one profile per install,
+# stable across rollouts, distinct per release) and the host id to the node
+# name through the downward API (fieldRef spec.nodeName). Override the
+# sidecar id to give a name of your own; it is hashed, so the name never
+# leaves the pod. With `controlPlane.token` set, the token is the identity
+# and `sidecarId` is ignored by the relay.
+analytics:
+  # Set false to send nothing → HOOP_SIDECAR_ANALYTICS=off
+  enabled: true
+  # → HOOP_SIDECAR_ID. Empty uses the release's full name.
+  sidecarId: ''
+  # → HOOP_HOST_ID. Empty uses spec.nodeName; a literal replaces it.
+  hostId: ''
+
 # -- Define extra secret as environment variables
 extraSecret: {}
 # ENVSECRET1: RAWVALUE1

@@ -279,6 +279,48 @@ section) logs `restart to apply it` instead, and a failed heartbeat changes
 nothing, because losing the phone line home must not take the data path down
 with it. ADR-0014 records the boundary.
 
+### Usage analytics
+
+A release build reports usage to Segment: that the process started, what
+shape its config has, how much traffic it judged, and why it stopped. Counts
+and shape only. No statement text, no identity, no rule name or pattern, no
+prompt, no token, no listener or upstream address — the same line
+`/config` draws, enforced in `sidecar/analytics` and `daemon/analytics.go`.
+
+| Event | When | Carries |
+|---|---|---|
+| `hoop-sidecar-first-run` | a bare invocation served the default page | port, whether it fell back, how long it stayed up |
+| `hoop-sidecar-started` | every lane built, about to serve | config source and format, license state and type, lane count per protocol, how many lanes enforce / observe / mask / consult OPA / run an analyzer, rule totals, PII entity count, audit sinks |
+| `hoop-sidecar-config-applied` | a control plane edit reached the reloader | generation, outcome (`applied`, `restart-required`, `refused`), which sections changed, lanes swapped and kept |
+| `hoop-sidecar-usage` | every 15 minutes and at shutdown | connections and statements in the window, denied and masked counts, denials by evaluator kind, analyzer calls and failures, audit write failures, per protocol |
+| `hoop-sidecar-stopped` | the process is exiting | reason (`signal`, `listener-failed`, `license-expired`), failure class, uptime |
+| `hoop-sidecar-license-expired` | the term ended under a config the free tier refuses | rule totals that exceeded it, term length, warnings sent |
+
+Every event also carries the version, the entry point (`hoop`,
+`hoop-inspect` or `embedded`), OS and architecture, the `runtime`
+(`linux`, `docker`, `kubernetes`, `macos`, `windows`), and two identities.
+`sidecar-id` says which install: `HOOP_SIDECAR_ID` if you set one, else the
+control plane token, else the hostname plus the config file path — stable
+across restarts and config edits. `host-id` says which machine: `HOOP_HOST_ID`
+if you set one, else the OS machine id plus the hostname. Every source is
+hashed; nothing leaves the process in the clear.
+
+What the process can learn on its own depends on where it runs, so set the
+variable the table names and nothing else:
+
+| Runs on | `sidecar-id` | `host-id` |
+|---|---|---|
+| Linux VM, bare metal, macOS | derived, nothing to set | derived from `/etc/machine-id` or `IOPlatformUUID` |
+| Docker | hostname is the container id: pass `--hostname` or set `HOOP_SIDECAR_ID` | container's own; set `HOOP_HOST_ID` to group by machine |
+| Kubernetes | hostname is the pod name: set `HOOP_SIDECAR_ID`, or connect a control plane | set `HOOP_HOST_ID` from `spec.nodeName` via the downward API |
+
+A control plane token makes `HOOP_SIDECAR_ID` unnecessary anywhere.
+
+Switch it off with `HOOP_SIDECAR_ANALYTICS=off`. A binary built without the
+write key (`go build` from this tree, the compose stack's image) sends
+nothing either way; the startup log says `usage analytics enabled` when it
+will.
+
 ## Configuring it: config.yaml
 
 One file is the whole configuration. The process reads it at startup, resolves

@@ -300,6 +300,7 @@ func buildGRPCServer(
 			Audit:            sink,
 			Masker:           ln.masker,
 			FailOnAuditError: failOnAuditError,
+			Metrics:          ln.metrics,
 		})
 		if err != nil {
 			return nil, nil, err

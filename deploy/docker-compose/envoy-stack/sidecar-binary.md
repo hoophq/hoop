@@ -203,6 +203,17 @@ containers:
     env:
       - name: HOOP_SIDECAR_CONFIG
         value: /etc/hoop-inspect/config.yaml
+      # Usage analytics identity. A pod's hostname changes on every
+      # rollout, so without these each deploy reports as a new sidecar on
+      # a new host. Both are hashed before they are sent. Omit
+      # HOOP_SIDECAR_ID when connecting to a control plane (the token is
+      # the identity), and set HOOP_SIDECAR_ANALYTICS=off to send nothing.
+      - name: HOOP_SIDECAR_ID
+        value: appdb-relay
+      - name: HOOP_HOST_ID
+        valueFrom:
+          fieldRef:
+            fieldPath: spec.nodeName
     ports:
       - {containerPort: 15432, name: pg}
       - {containerPort: 19000, name: admin}

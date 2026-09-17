@@ -12,6 +12,7 @@ import (
 	// standalone hoop-inspect binary. Linking all three keeps the
 	// config-decides-everything rule: turning on Vertex must not require a
 	// different binary.
+	"github.com/hoophq/hoop/sidecar/analytics"
 	_ "github.com/hoophq/hoop/sidecar/analyzer/anthropic"
 	_ "github.com/hoophq/hoop/sidecar/analyzer/openai"
 	_ "github.com/hoophq/hoop/sidecar/analyzer/vertex"
@@ -104,7 +105,9 @@ needs a restart.`,
 
 		if sidecarConfigFlag == "" && os.Getenv(daemon.ControlPlaneURLEnv) == "" {
 			if sidecarBareInvocation(cmd, args) {
-				return daemon.FirstRun(os.Stdout, "hoop start sidecar --config config.yaml")
+				return daemon.FirstRun(os.Stdout, "hoop start sidecar --config config.yaml",
+					daemon.WithEntrypoint(analytics.EntrypointCLI),
+					daemon.WithDeprecatedAlias(cmd.CalledAs() == deprecatedSidecarAlias))
 			}
 			// The one genuine usage error here, so let cobra show the flags.
 			cmd.SilenceUsage = false
@@ -141,7 +144,9 @@ needs a restart.`,
 
 		cfg, det, err := daemon.SetupWith(sidecarConfigFlag, configyaml.Load, buildSidecarPlugin,
 			daemon.WithLicense(sidecarLicenseFlag),
-			daemon.WithControlPlaneToken(sidecarTokenFlag))
+			daemon.WithControlPlaneToken(sidecarTokenFlag),
+			daemon.WithEntrypoint(analytics.EntrypointCLI),
+			daemon.WithDeprecatedAlias(cmd.CalledAs() == deprecatedSidecarAlias))
 		if err != nil {
 			return err
 		}

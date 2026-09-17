@@ -163,6 +163,18 @@ type Config struct {
 	// config key: the file names a URL and does not carry a token or a
 	// verdict about reachability.
 	cp *controlPlane
+
+	// entrypoint, deprecatedAlias and configFormat are facts the entry
+	// point learned about its own invocation, carried here so Run can
+	// report them. Setup fills them from its Options; none is a config
+	// key, because a file cannot know how it was loaded.
+	entrypoint      string
+	deprecatedAlias bool
+	configFormat    string
+	// configPath is the file SetupWith loaded, when there was one. Part of
+	// a standalone install's identity for analytics: two processes on one
+	// host have two files, and one process editing its file keeps it.
+	configPath string
 }
 
 // Licensing reports the license this config runs under. The zero value is a
