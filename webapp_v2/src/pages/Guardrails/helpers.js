@@ -44,6 +44,7 @@ function nextRowId() {
 export function createEmptyRow() {
   return {
     id: nextRowId(),
+    name: '',
     type: '',
     rule: '',
     pattern_regex: '',
@@ -54,6 +55,9 @@ export function createEmptyRow() {
     resources: [],
     methods: [],
     statuses: [],
+    access: 'write',
+    require_table_match: false,
+    action: '',
     message: '',
     selected: false,
   }
@@ -89,11 +93,12 @@ export function apiRulesToRows(section) {
   const rules = section?.rules ?? []
   if (!rules.length) return [createEmptyRow()]
 
-  return rules.map((rule) => {
+  return rules.map((rule, idx) => {
     const words = [...(rule.words ?? [])]
     const patternRegex = rule.pattern_regex ?? ''
     return {
       id: nextRowId(),
+      name: rule.name ?? `rule_${idx + 1}`,
       type: rule.type ?? '',
       rule: identifyPreset(rule.type, patternRegex, words),
       pattern_regex: patternRegex,
@@ -104,6 +109,9 @@ export function apiRulesToRows(section) {
       resources: [...(rule.resources ?? [])],
       methods: [...(rule.methods ?? [])],
       statuses: [...(rule.statuses ?? [])],
+      access: rule.access ?? 'write',
+      require_table_match: !!rule.require_table_match,
+      action: rule.action ?? '',
       message: rule.message ?? '',
       selected: false,
     }
@@ -139,7 +147,8 @@ export function orphanMessageError(inputRows, outputRows) {
 
 function rowsToSection(rows) {
   return {
-    rules: rows.filter((row) => !isEmptyRule(row)).map((row) => ({
+    rules: rows.filter((row) => !isEmptyRule(row)).map((row, idx) => ({
+      name: row.name?.trim() || `${row.type}_rule_${idx + 1}`,
       type: row.type,
       words: row.words ?? [],
       pattern_regex: row.pattern_regex ?? '',
@@ -149,6 +158,9 @@ function rowsToSection(rows) {
       resources: row.resources ?? [],
       methods: row.methods ?? [],
       statuses: row.statuses ?? [],
+      access: row.type === 'table' ? (row.access || 'write') : undefined,
+      require_table_match: row.type === 'table' ? !!row.require_table_match : undefined,
+      action: row.action || '',
       message: row.message ?? '',
     })),
   }

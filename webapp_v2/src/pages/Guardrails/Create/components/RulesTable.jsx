@@ -173,9 +173,11 @@ export default function RulesTable({
         <Table.Thead>
           <Table.Tr>
             {selectMode && <Table.Th w={40} />}
+            <Table.Th w={150}>Name</Table.Th>
             <Table.Th w={TYPE_COLUMN_WIDTH}>Type</Table.Th>
-            <Table.Th w={RULE_COLUMN_WIDTH}>Rule</Table.Th>
-            <Table.Th>Details</Table.Th>
+            <Table.Th w={180}>Rule</Table.Th>
+            <Table.Th>Details / Params</Table.Th>
+            <Table.Th w={130}>Action</Table.Th>
             <Table.Th>
               <Group gap="xs" wrap="nowrap">
                 {'Custom error message'}
@@ -199,8 +201,16 @@ export default function RulesTable({
                 </Table.Td>
               )}
               <Table.Td>
+                <TextInput
+                  placeholder="e.g. rule-name"
+                  size={ROW_CONTROL_SIZE}
+                  value={row.name || ''}
+                  onChange={(e) => ops.patchRow(row.id, { name: e.currentTarget.value })}
+                />
+              </Table.Td>
+              <Table.Td>
                 <Select
-                  placeholder="Select one"
+                  placeholder="Select type"
                   size={ROW_CONTROL_SIZE}
                   data={RULE_TYPE_OPTIONS}
                   value={row.type || null}
@@ -212,7 +222,7 @@ export default function RulesTable({
               <Table.Td>
                 {row.type && (
                   <Select
-                    placeholder="Select one"
+                    placeholder="Select preset"
                     size={ROW_CONTROL_SIZE}
                     data={ruleOptions(row.type)}
                     value={row.rule || null}
@@ -223,75 +233,111 @@ export default function RulesTable({
                 )}
               </Table.Td>
               <Table.Td>
-                {row.rule && row.type === 'pattern_match' && (
-                  <PatternCell
-                    key={`${row.id}:${row.rule}`}
-                    row={row}
-                    onCommit={(value) =>
-                      ops.patchRow(row.id, { pattern_regex: value })
-                    }
-                  />
-                )}
-                {row.rule && row.type === 'deny_words_list' && (
-                  <TagsInput
-                    size={ROW_CONTROL_SIZE}
-                    value={row.words}
-                    onChange={(values) => ops.patchRow(row.id, { words: values })}
-                    aria-label="Denied words"
-                  />
-                )}
-                {row.rule && row.type === 'operation' && (
-                  <TagsInput
-                    size={ROW_CONTROL_SIZE}
-                    placeholder="e.g. select, drop, delete, insert"
-                    value={row.operations}
-                    onChange={(values) => ops.patchRow(row.id, { operations: values })}
-                    aria-label="Operations"
-                  />
-                )}
-                {row.rule && row.type === 'table' && (
-                  <TagsInput
-                    size={ROW_CONTROL_SIZE}
-                    placeholder="e.g. users, payments"
-                    value={row.tables}
-                    onChange={(values) => ops.patchRow(row.id, { tables: values })}
-                    aria-label="Tables"
-                  />
-                )}
-                {row.rule && row.type === 'pii' && (
-                  <TagsInput
-                    size={ROW_CONTROL_SIZE}
-                    placeholder="e.g. EMAIL_ADDRESS, US_SSN"
-                    value={row.entities}
-                    onChange={(values) => ops.patchRow(row.id, { entities: values })}
-                    aria-label="PII Entities"
-                  />
-                )}
-                {row.rule && row.type === 'http_resource' && (
-                  <Stack gap="xs">
+                <Stack gap="xs">
+                  {row.rule && row.type === 'pattern_match' && (
+                    <PatternCell
+                      key={`${row.id}:${row.rule}`}
+                      row={row}
+                      onCommit={(value) =>
+                        ops.patchRow(row.id, { pattern_regex: value })
+                      }
+                    />
+                  )}
+                  {row.rule && row.type === 'deny_words_list' && (
                     <TagsInput
                       size={ROW_CONTROL_SIZE}
-                      placeholder="Paths (e.g. /v1/users/**)"
-                      value={row.resources}
-                      onChange={(values) => ops.patchRow(row.id, { resources: values })}
-                      aria-label="HTTP Resources"
+                      value={row.words}
+                      onChange={(values) => ops.patchRow(row.id, { words: values })}
+                      aria-label="Denied words"
                     />
+                  )}
+                  {row.rule && row.type === 'operation' && (
                     <TagsInput
                       size={ROW_CONTROL_SIZE}
-                      placeholder="Methods (e.g. POST, DELETE)"
-                      value={row.methods}
-                      onChange={(values) => ops.patchRow(row.id, { methods: values })}
-                      aria-label="HTTP Methods"
+                      placeholder="e.g. select, drop, delete"
+                      value={row.operations}
+                      onChange={(values) => ops.patchRow(row.id, { operations: values })}
+                      aria-label="Operations"
                     />
-                  </Stack>
-                )}
-                {row.rule && row.type === 'http_status' && (
-                  <TagsInput
+                  )}
+                  {row.rule && row.type === 'table' && (
+                    <Stack gap="xs">
+                      <TagsInput
+                        size={ROW_CONTROL_SIZE}
+                        placeholder="e.g. users, payments"
+                        value={row.tables}
+                        onChange={(values) => ops.patchRow(row.id, { tables: values })}
+                        aria-label="Tables"
+                      />
+                      <Group gap="md">
+                        <Select
+                          size={ROW_CONTROL_SIZE}
+                          w={110}
+                          data={[
+                            { value: 'read', label: 'Read Only' },
+                            { value: 'write', label: 'Read/Write' },
+                          ]}
+                          value={row.access || 'write'}
+                          onChange={(v) => ops.patchRow(row.id, { access: v || 'write' })}
+                        />
+                        <Checkbox
+                          size={ROW_CONTROL_SIZE}
+                          label="Fail-closed table matches"
+                          checked={!!row.require_table_match}
+                          onChange={(e) => ops.patchRow(row.id, { require_table_match: e.currentTarget.checked })}
+                        />
+                      </Group>
+                    </Stack>
+                  )}
+                  {row.rule && row.type === 'pii' && (
+                    <TagsInput
+                      size={ROW_CONTROL_SIZE}
+                      placeholder="e.g. EMAIL_ADDRESS, US_SSN"
+                      value={row.entities}
+                      onChange={(values) => ops.patchRow(row.id, { entities: values })}
+                      aria-label="PII Entities"
+                    />
+                  )}
+                  {row.rule && row.type === 'http_resource' && (
+                    <Stack gap="xs">
+                      <TagsInput
+                        size={ROW_CONTROL_SIZE}
+                        placeholder="Paths (e.g. /v1/users/**)"
+                        value={row.resources}
+                        onChange={(values) => ops.patchRow(row.id, { resources: values })}
+                        aria-label="HTTP Resources"
+                      />
+                      <TagsInput
+                        size={ROW_CONTROL_SIZE}
+                        placeholder="Methods (e.g. POST, DELETE)"
+                        value={row.methods}
+                        onChange={(values) => ops.patchRow(row.id, { methods: values })}
+                        aria-label="HTTP Methods"
+                      />
+                    </Stack>
+                  )}
+                  {row.rule && row.type === 'http_status' && (
+                    <TagsInput
+                      size={ROW_CONTROL_SIZE}
+                      placeholder="e.g. 4xx, 5xx, 404"
+                      value={row.statuses}
+                      onChange={(values) => ops.patchRow(row.id, { statuses: values })}
+                      aria-label="HTTP Statuses"
+                    />
+                  )}
+                </Stack>
+              </Table.Td>
+              <Table.Td>
+                {row.type && (
+                  <Select
                     size={ROW_CONTROL_SIZE}
-                    placeholder="e.g. 4xx, 5xx, 404"
-                    value={row.statuses}
-                    onChange={(values) => ops.patchRow(row.id, { statuses: values })}
-                    aria-label="HTTP Statuses"
+                    data={[
+                      { value: '', label: 'Deny immediately' },
+                      { value: 'defer', label: 'Defer to OPA' },
+                    ]}
+                    value={row.action || ''}
+                    onChange={(v) => ops.patchRow(row.id, { action: v || '' })}
+                    comboboxProps={{ withinPortal: true }}
                   />
                 )}
               </Table.Td>
