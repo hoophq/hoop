@@ -13,6 +13,7 @@ import ListenersTable from '../sections/ListenersTable'
 import { formatRelativeTime, sidecarStatus } from '../status'
 import SidecarSourceModal from '../sections/SidecarSourceModal'
 import FeaturePills from './FeaturePills'
+import SidecarRulesSection from './SidecarRulesSection'
 
 const LABEL_WIDTH = 88
 
@@ -191,6 +192,10 @@ export default function SidecarDetails({ sidecar, editable, listenerActions }) {
           )}
         </Stack>
       </Paper>
+
+      {configured && (
+        <SidecarRulesSection sidecar={sidecar} />
+      )}
 
       <SidecarSourceModal
         opened={asking}

@@ -108,9 +108,9 @@ export const useAiSessionAnalyzerStore = create((set, get) => ({
   createRule: async (payload) => {
     set({ submitting: true })
     try {
-      await aiSessionAnalyzerService.createRule(payload)
+      const res = await aiSessionAnalyzerService.createRule(payload)
       set({ submitting: false })
-      return { ok: true }
+      return { ok: true, data: res.data }
     } catch (error) {
       set({ submitting: false })
       return { ok: false, error }
@@ -120,9 +120,9 @@ export const useAiSessionAnalyzerStore = create((set, get) => ({
   updateRule: async (name, payload) => {
     set({ submitting: true })
     try {
-      await aiSessionAnalyzerService.updateRule(name, payload)
+      const res = await aiSessionAnalyzerService.updateRule(name, payload)
       set({ submitting: false })
-      return { ok: true }
+      return { ok: true, data: res.data }
     } catch (error) {
       set({ submitting: false })
       return { ok: false, error }

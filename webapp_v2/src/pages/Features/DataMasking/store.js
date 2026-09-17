@@ -50,9 +50,9 @@ export const useDataMaskingStore = create((set) => ({
   createRule: async (payload) => {
     set({ submitting: true })
     try {
-      await dataMaskingService.create(payload)
+      const res = await dataMaskingService.create(payload)
       set({ submitting: false })
-      return { ok: true }
+      return { ok: true, data: res.data }
     } catch (error) {
       set({ submitting: false })
       return { ok: false, error }
@@ -62,9 +62,9 @@ export const useDataMaskingStore = create((set) => ({
   updateRule: async (id, payload) => {
     set({ submitting: true })
     try {
-      await dataMaskingService.update(id, payload)
+      const res = await dataMaskingService.update(id, payload)
       set({ submitting: false })
-      return { ok: true }
+      return { ok: true, data: res.data }
     } catch (error) {
       set({ submitting: false })
       return { ok: false, error }

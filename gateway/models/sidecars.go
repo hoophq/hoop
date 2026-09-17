@@ -255,3 +255,9 @@ func DeleteSidecarByNameOrID(db *gorm.DB, orgID, nameOrID string) (string, error
 	}
 	return deletedID, nil
 }
+
+type SidecarListenerTarget struct {
+	SidecarID    string `json:"sidecar_id"`
+	SidecarName  string `json:"sidecar_name,omitempty"`
+	ListenerName string `json:"listener_name"`
+}

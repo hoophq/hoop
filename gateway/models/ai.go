@@ -274,3 +274,31 @@ func GetAIAnalyzerRulesByConnections(db *gorm.DB, orgID uuid.UUID, connectionNam
 
 	return &rule, nil
 }
+
+type AISessionAnalyzerRuleSidecar struct {
+	ID             string    `gorm:"column:id;type:uuid;default:gen_random_uuid();primaryKey"`
+	OrgID          string    `gorm:"column:org_id"`
+	AnalyzerRuleID string    `gorm:"column:analyzer_rule_id"`
+	SidecarID      string    `gorm:"column:sidecar_id"`
+	ListenerName   string    `gorm:"column:listener_name"`
+	CreatedAt      time.Time `gorm:"column:created_at;autoCreateTime"`
+}
+
+func (AISessionAnalyzerRuleSidecar) TableName() string {
+	return "private.ai_session_analyzer_rules_sidecars"
+}
+
+func GetAISessionAnalyzerRuleBySidecarListener(db *gorm.DB, orgID, sidecarID uuid.UUID, listenerName string) (*AISessionAnalyzerRules, error) {
+	var rule AISessionAnalyzerRules
+	err := db.Table("private.ai_session_analyzer_rules").
+		Joins("JOIN private.ai_session_analyzer_rules_sidecars ars ON ars.analyzer_rule_id = private.ai_session_analyzer_rules.id AND ars.org_id = private.ai_session_analyzer_rules.org_id").
+		Where("private.ai_session_analyzer_rules.org_id = ? AND ars.sidecar_id = ? AND ars.listener_name = ?", orgID, sidecarID, listenerName).
+		First(&rule).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, gorm.ErrRecordNotFound
+		}
+		return nil, err
+	}
+	return &rule, nil
+}

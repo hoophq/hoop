@@ -7,6 +7,7 @@ import (
 	"slices"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
@@ -15,6 +16,8 @@ import (
 	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/sidecar/daemon"
+	"github.com/hoophq/hoop/sidecar/policy"
+	"gorm.io/gorm"
 )
 
 // reservedNames would shadow the static routes registered beside
@@ -309,6 +312,10 @@ func Handshake(c *gin.Context) {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the organization license")
 		return
 	}
+	if err := enrichSidecarConfiguration(sidecar.OrgID, sidecar.ID, &served); err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed enriching sidecar configuration: %v", err)
+		return
+	}
 	recordRuntime(sidecar.ID, req.Version)
 	c.Header(licenseManagedHeader, "true")
 	c.JSON(http.StatusOK, served)
@@ -482,4 +489,144 @@ func toResponse(s models.Sidecar) openapi.SidecarResponse {
 		resp.LastSeenAt = &lastSeen
 	}
 	return resp
+}
+
+type AlcatrazRule struct {
+	Name     string   `json:"name,omitempty"`
+	Entities []string `json:"entities,omitempty"`
+	Strategy string   `json:"strategy,omitempty"`
+}
+
+func enrichSidecarConfiguration(orgID, sidecarID string, cfg *daemon.Config) error {
+	orgUUID, err := uuid.Parse(orgID)
+	if err != nil {
+		return err
+	}
+	sidecarUUID, err := uuid.Parse(sidecarID)
+	if err != nil {
+		return err
+	}
+
+	for i := range cfg.Listeners {
+		lc := &cfg.Listeners[i]
+
+		// 1. Guardrails
+		grRules, err := models.GetGuardrailRulesBySidecarListener(models.DB, orgUUID, sidecarUUID, lc.Name)
+		if err != nil {
+			return err
+		}
+		grWildcardRules, err := models.GetGuardrailRulesBySidecarListener(models.DB, orgUUID, sidecarUUID, "*")
+		if err == nil {
+			grRules = append(grRules, grWildcardRules...)
+		}
+
+		if len(grRules) > 0 {
+			if lc.Guardrails == nil {
+				lc.Guardrails = &daemon.GuardrailsConfig{}
+			}
+			if lc.Guardrails.Mode == "" {
+				lc.Guardrails.Mode = "enforce"
+			}
+			for _, gr := range grRules {
+				if gr.Input == nil {
+					continue
+				}
+				rulesVal, ok := gr.Input["rules"]
+				if !ok {
+					continue
+				}
+				rulesJSON, err := json.Marshal(rulesVal)
+				if err != nil {
+					continue
+				}
+				var decodedRules []policy.Rule
+				if err := json.Unmarshal(rulesJSON, &decodedRules); err == nil {
+					for idx := range decodedRules {
+						if decodedRules[idx].Name == "" {
+							decodedRules[idx].Name = gr.Name
+						}
+					}
+					lc.Guardrails.Rules = append(lc.Guardrails.Rules, decodedRules...)
+				}
+			}
+		}
+
+		// 2. Data Masking
+		dmRules, err := models.GetDataMaskingRulesBySidecarListener(models.DB, orgUUID, sidecarUUID, lc.Name)
+		if err != nil {
+			return err
+		}
+		dmWildcardRules, err := models.GetDataMaskingRulesBySidecarListener(models.DB, orgUUID, sidecarUUID, "*")
+		if err == nil {
+			dmRules = append(dmRules, dmWildcardRules...)
+		}
+
+		if len(dmRules) > 0 {
+			if lc.Mask == nil {
+				lc.Mask = &daemon.MaskConfig{}
+			}
+			var alcatrazRules []AlcatrazRule
+			for _, r := range dmRules {
+				var entities []string
+				for _, et := range r.SupportedEntityTypes {
+					entities = append(entities, et.EntityTypes...)
+				}
+				alcatrazRules = append(alcatrazRules, AlcatrazRule{
+					Name:     r.Name,
+					Entities: entities,
+					Strategy: "redact",
+				})
+			}
+
+			var existingRules []AlcatrazRule
+			if len(lc.Mask.Rules) > 0 {
+				_ = json.Unmarshal(lc.Mask.Rules, &existingRules)
+			}
+			existingRules = append(existingRules, alcatrazRules...)
+			rulesBytes, _ := json.Marshal(existingRules)
+			lc.Mask.Rules = rulesBytes
+		}
+
+		// 3. AI Session Analyzer
+		analyzerRule, err := models.GetAISessionAnalyzerRuleBySidecarListener(models.DB, orgUUID, sidecarUUID, lc.Name)
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		if analyzerRule == nil {
+			analyzerRule, err = models.GetAISessionAnalyzerRuleBySidecarListener(models.DB, orgUUID, sidecarUUID, "*")
+			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+		}
+
+		if analyzerRule != nil {
+			if lc.Analyzer == nil {
+				lc.Analyzer = &daemon.LaneAnalyzerConfig{}
+			}
+			mapAction := func(act models.RiskEvaluationAction) string {
+				switch act {
+				case models.BlockExecution:
+					return "block"
+				case models.RequireAccessRequest:
+					return "defer"
+				case models.AllowExecution:
+					fallthrough
+				default:
+					return "allow"
+				}
+			}
+
+			lc.Analyzer.HighRisk = mapAction(analyzerRule.RiskEvaluation.Tier(models.RiskLevelKeyHigh).Action)
+			lc.Analyzer.MediumRisk = mapAction(analyzerRule.RiskEvaluation.Tier(models.RiskLevelKeyMedium).Action)
+			lc.Analyzer.LowRisk = mapAction(analyzerRule.RiskEvaluation.Tier(models.RiskLevelKeyLow).Action)
+
+			if analyzerRule.CustomPrompt != nil {
+				lc.Analyzer.Prompt = *analyzerRule.CustomPrompt
+			}
+			if analyzerRule.Description != nil {
+				lc.Analyzer.Message = *analyzerRule.Description
+			}
+		}
+	}
+	return nil
 }

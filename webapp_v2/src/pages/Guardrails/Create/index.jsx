@@ -6,7 +6,9 @@ import { ArrowLeft } from 'lucide-react'
 import Badge from '@/components/Badge'
 import Button from '@/components/Button'
 import ConnectionsMultiSelect from '@/components/ConnectionsMultiSelect'
+import SidecarListenersMultiSelect from '@/components/SidecarListenersMultiSelect'
 import EnterpriseBanner from '@/components/EnterpriseBanner'
+import { sidecarsService } from '@/services/sidecars'
 import Modal from '@/components/Modal'
 import MultiSelect from '@/components/MultiSelect'
 import PageLoader from '@/components/PageLoader'
@@ -61,7 +63,24 @@ function GuardrailFormFields({ guardrail, id, isEdit }) {
     description: guardrail?.description ?? '',
     connectionIds: guardrail?.connection_ids ?? [],
     attributes: guardrail?.attributes ?? [],
+    sidecarListenerIds: [],
   }))
+  const [initialSidecarListenerIds, setInitialSidecarListenerIds] = useState([])
+
+  useEffect(() => {
+    if (isEdit && id) {
+      ;(async () => {
+        try {
+          const res = await sidecarsService.getRuleMappingsByRule(id, 'guardrail')
+          const ids = (res.data || []).map((m) => `${m.sidecar_id}/${m.listener_name}`)
+          setField({ sidecarListenerIds: ids })
+          setInitialSidecarListenerIds(ids)
+        } catch {
+          // ignore
+        }
+      })()
+    }
+  }, [isEdit, id])
   const [inputRules, setInputRules] = useState(() => apiRulesToRows(guardrail?.input))
   const [outputRules, setOutputRules] = useState(() => apiRulesToRows(guardrail?.output))
   const [inputSelectMode, setInputSelectMode] = useState(false)
@@ -91,10 +110,43 @@ function GuardrailFormFields({ guardrail, id, isEdit }) {
       inputRules,
       outputRules,
     })
-    const { ok, error } = isEdit
+    const { ok, error, data } = isEdit
       ? await updateGuardrail(id, payload)
       : await createGuardrail(payload)
     if (ok) {
+      const savedId = isEdit ? id : data?.id
+      if (savedId) {
+        const added = form.sidecarListenerIds.filter((x) => !initialSidecarListenerIds.includes(x))
+        const removed = initialSidecarListenerIds.filter((x) => !form.sidecarListenerIds.includes(x))
+
+        try {
+          await Promise.all([
+            ...added.map((x) => {
+              const [sidecarId, listenerName] = x.split('/')
+              return sidecarsService.createRuleMapping(sidecarId, {
+                rule_type: 'guardrail',
+                rule_id: savedId,
+                listener_name: listenerName,
+              })
+            }),
+            ...removed.map((x) => {
+              const [sidecarId, listenerName] = x.split('/')
+              return sidecarsService.deleteRuleMapping(sidecarId, {
+                rule_type: 'guardrail',
+                rule_id: savedId,
+                listener_name: listenerName,
+              })
+            }),
+          ])
+        } catch (err) {
+          showSnackbar({
+            level: 'error',
+            text: 'Guardrail saved, but some sidecar mappings failed to update.',
+            description: err.response?.data?.message ?? err.message,
+          })
+        }
+      }
+
       showSnackbar({
         level: 'success',
         text: isEdit ? 'Guardrail updated.' : 'Guardrail created.',
@@ -228,6 +280,16 @@ function GuardrailFormFields({ guardrail, id, isEdit }) {
           <ConnectionsMultiSelect
             value={form.connectionIds}
             onChange={(values) => setField({ connectionIds: values })}
+          />
+        </SectionRow>
+
+        <SectionRow
+          title="Associate Sidecar Listeners"
+          description="Select the sidecar listeners where this guardrail should be applied dynamically."
+        >
+          <SidecarListenersMultiSelect
+            value={form.sidecarListenerIds}
+            onChange={(values) => setField({ sidecarListenerIds: values })}
           />
         </SectionRow>
 

@@ -28,4 +28,8 @@ export const sidecarsService = {
   patch: (nameOrId, configuration) => api.patch(`/sidecars/${encodeURIComponent(nameOrId)}`, { configuration }),
   update: (nameOrId, configuration) => api.put(`/sidecars/${encodeURIComponent(nameOrId)}`, { configuration }),
   delete: (nameOrId) => api.delete(`/sidecars/${encodeURIComponent(nameOrId)}`),
+  getRules: (nameOrId) => api.get(`/sidecars/${encodeURIComponent(nameOrId)}/rules`),
+  createRuleMapping: (nameOrId, data) => api.post(`/sidecars/${encodeURIComponent(nameOrId)}/rules`, data),
+  deleteRuleMapping: (nameOrId, data) => api.delete(`/sidecars/${encodeURIComponent(nameOrId)}/rules`, { data }),
+  getRuleMappingsByRule: (ruleId, ruleType) => api.get(`/sidecars/rules`, { params: { rule_id: ruleId, rule_type: ruleType } }),
 }

@@ -8,6 +8,8 @@ import TextInput from '@/components/TextInput'
 import Textarea from '@/components/Textarea'
 import MultiSelect from '@/components/MultiSelect'
 import ConnectionsMultiSelect from '@/components/ConnectionsMultiSelect'
+import SidecarListenersMultiSelect from '@/components/SidecarListenersMultiSelect'
+import { sidecarsService } from '@/services/sidecars'
 import Modal from '@/components/Modal'
 import PageLoader from '@/components/PageLoader'
 import EnterpriseBanner from '@/components/EnterpriseBanner'
@@ -56,15 +58,27 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
   const [form, setForm] = useState(() => ({
     name: rule?.name ?? '',
     description: rule?.description ?? '',
-    // New blank rules start at 85%. Template/edited rules keep their own
-    // value — a stored NULL stays empty so saving doesn't silently add a
-    // threshold to a rule that masks every detection today. The `!isEdit`
-    // guard keeps the default out of edit flows even if a null rule ever
-    // slips past the page-level error gate.
     scoreThreshold: !isEdit && !rule ? 85 : scoreToPercent(rule?.score_threshold),
     connectionIds: rule?.connection_ids ?? [],
     attributes: rule?.attributes ?? [],
+    sidecarListenerIds: [],
   }))
+  const [initialSidecarListenerIds, setInitialSidecarListenerIds] = useState([])
+
+  useEffect(() => {
+    if (isEdit && id) {
+      ;(async () => {
+        try {
+          const res = await sidecarsService.getRuleMappingsByRule(id, 'datamasking')
+          const ids = (res.data || []).map((m) => `${m.sidecar_id}/${m.listener_name}`)
+          setField({ sidecarListenerIds: ids })
+          setInitialSidecarListenerIds(ids)
+        } catch {
+          // ignore
+        }
+      })()
+    }
+  }, [isEdit, id])
   const [rules, setRules] = useState(() =>
     rule ? apiRuleToFormRows(rule) : [createEmptyRow()],
   )
@@ -77,10 +91,43 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
   const handleSave = async () => {
     if (!canSubmit) return
     const payload = formToPayload({ ...form, name: form.name.trim(), rules })
-    const { ok, error } = isEdit
+    const { ok, error, data } = isEdit
       ? await updateRule(id, payload)
       : await createRule(payload)
     if (ok) {
+      const savedId = isEdit ? id : data?.id
+      if (savedId) {
+        const added = form.sidecarListenerIds.filter((x) => !initialSidecarListenerIds.includes(x))
+        const removed = initialSidecarListenerIds.filter((x) => !form.sidecarListenerIds.includes(x))
+
+        try {
+          await Promise.all([
+            ...added.map((x) => {
+              const [sidecarId, listenerName] = x.split('/')
+              return sidecarsService.createRuleMapping(sidecarId, {
+                rule_type: 'datamasking',
+                rule_id: savedId,
+                listener_name: listenerName,
+              })
+            }),
+            ...removed.map((x) => {
+              const [sidecarId, listenerName] = x.split('/')
+              return sidecarsService.deleteRuleMapping(sidecarId, {
+                rule_type: 'datamasking',
+                rule_id: savedId,
+                listener_name: listenerName,
+              })
+            }),
+          ])
+        } catch (err) {
+          showSnackbar({
+            level: 'error',
+            text: 'Data masking rule saved, but some sidecar mappings failed to update.',
+            description: err.response?.data?.message ?? err.message,
+          })
+        }
+      }
+
       showSnackbar({
         level: 'success',
         text: isEdit ? 'Rule updated.' : 'Rule created.',
@@ -228,6 +275,16 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
           <ConnectionsMultiSelect
             value={form.connectionIds}
             onChange={(values) => setField({ connectionIds: values })}
+          />
+        </SectionRow>
+
+        <SectionRow
+          title="Associate Sidecar Listeners"
+          description="Select the sidecar listeners where this data masking rule should be applied dynamically."
+        >
+          <SidecarListenersMultiSelect
+            value={form.sidecarListenerIds}
+            onChange={(values) => setField({ sidecarListenerIds: values })}
           />
         </SectionRow>
 

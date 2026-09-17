@@ -287,6 +287,10 @@ func (a *Api) StartAPI() {
 func (api *Api) buildSidecarRoutes(r *apiroutes.Router) {
 	r.POST("/sidecars/handshake", r.SidecarAuthMiddleware, apisidecar.Handshake)
 	r.GET("/sidecars/configuration", r.SidecarAuthMiddleware, apisidecar.Configuration)
+	r.GET("/sidecars/rules",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apisidecar.ListRuleMappingsByRule)
 	// No TrackRequest: SidecarAuthMiddleware installs an org context with no
 	// user, and TrackRequest requires a user email, so it would be a no-op
 	// that reads as an emitted event.
@@ -325,6 +329,21 @@ func (api *Api) buildSidecarRoutes(r *apiroutes.Router) {
 		api.AuditMiddleware(),
 		api.TrackRequest(analytics.EventDeleteSidecar),
 		apisidecar.Delete)
+
+	r.POST("/sidecars/:nameOrID/rules",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		apisidecar.CreateRuleMapping)
+	r.DELETE("/sidecars/:nameOrID/rules",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		apisidecar.DeleteRuleMapping)
+	r.GET("/sidecars/:nameOrID/rules",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apisidecar.ListRuleMappings)
 }
 
 func (api *Api) buildRoutes(r *apiroutes.Router, mode appconfig.AppMode) {

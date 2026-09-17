@@ -315,3 +315,25 @@ func UpdateDataMaskingRuleConnection(orgID, connectionID string, items []DataMas
 		return nil
 	})
 }
+
+type DataMaskingRuleSidecar struct {
+	ID           string    `gorm:"column:id;type:uuid;default:gen_random_uuid();primaryKey"`
+	OrgID        string    `gorm:"column:org_id"`
+	RuleID       string    `gorm:"column:rule_id"`
+	SidecarID    string    `gorm:"column:sidecar_id"`
+	ListenerName string    `gorm:"column:listener_name"`
+	CreatedAt    time.Time `gorm:"column:created_at;autoCreateTime"`
+}
+
+func (DataMaskingRuleSidecar) TableName() string { return "private.datamasking_rules_sidecars" }
+
+func GetDataMaskingRulesBySidecarListener(db *gorm.DB, orgID, sidecarID uuid.UUID, listenerName string) ([]*DataMaskingRule, error) {
+	var rules []*DataMaskingRule
+	err := db.Table("private.datamasking_rules").
+		Select("private.datamasking_rules.id, private.datamasking_rules.org_id, private.datamasking_rules.name, private.datamasking_rules.description, private.datamasking_rules.supported_entity_types, private.datamasking_rules.custom_entity_types, private.datamasking_rules.score_threshold, private.datamasking_rules.rulepack_id, private.datamasking_rules.managed_by, private.datamasking_rules.updated_at").
+		Joins("JOIN private.datamasking_rules_sidecars dms ON dms.rule_id = private.datamasking_rules.id AND dms.org_id = private.datamasking_rules.org_id").
+		Where("private.datamasking_rules.org_id = ? AND dms.sidecar_id = ? AND dms.listener_name = ?", orgID, sidecarID, listenerName).
+		Order("private.datamasking_rules.name DESC").
+		Find(&rules).Error
+	return rules, err
+}

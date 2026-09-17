@@ -325,3 +325,24 @@ func UpsertGuardRailRuleWithConnectionsTx(tx *gorm.DB, rule *GuardRailRules, con
 
 	return nil
 }
+
+type GuardRailRuleSidecar struct {
+	ID           string    `gorm:"column:id;type:uuid;default:gen_random_uuid();primaryKey"`
+	OrgID        string    `gorm:"column:org_id"`
+	RuleID       string    `gorm:"column:rule_id"`
+	SidecarID    string    `gorm:"column:sidecar_id"`
+	ListenerName string    `gorm:"column:listener_name"`
+	CreatedAt    time.Time `gorm:"column:created_at;autoCreateTime"`
+}
+
+func (GuardRailRuleSidecar) TableName() string { return "private.guardrail_rules_sidecars" }
+
+func GetGuardrailRulesBySidecarListener(db *gorm.DB, orgID, sidecarID uuid.UUID, listenerName string) ([]*GuardRailRules, error) {
+	var rules []*GuardRailRules
+	err := db.Table(tableGuardRails).
+		Joins("JOIN private.guardrail_rules_sidecars grs ON grs.rule_id = private.guardrail_rules.id AND grs.org_id = private.guardrail_rules.org_id").
+		Where("private.guardrail_rules.org_id = ? AND grs.sidecar_id = ? AND grs.listener_name = ?", orgID, sidecarID, listenerName).
+		Order("private.guardrail_rules.name DESC").
+		Find(&rules).Error
+	return rules, err
+}

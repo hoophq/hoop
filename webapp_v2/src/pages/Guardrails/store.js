@@ -50,9 +50,9 @@ export const useGuardrailsStore = create((set) => ({
   createGuardrail: async (payload) => {
     set({ submitting: true })
     try {
-      await guardrailsService.create(payload)
+      const res = await guardrailsService.create(payload)
       set({ submitting: false })
-      return { ok: true }
+      return { ok: true, data: res.data }
     } catch (error) {
       set({ submitting: false })
       return { ok: false, error }
@@ -62,9 +62,9 @@ export const useGuardrailsStore = create((set) => ({
   updateGuardrail: async (id, payload) => {
     set({ submitting: true })
     try {
-      await guardrailsService.update(id, payload)
+      const res = await guardrailsService.update(id, payload)
       set({ submitting: false })
-      return { ok: true }
+      return { ok: true, data: res.data }
     } catch (error) {
       set({ submitting: false })
       return { ok: false, error }

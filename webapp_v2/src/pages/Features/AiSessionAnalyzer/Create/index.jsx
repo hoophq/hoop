@@ -6,6 +6,8 @@ import { ArrowLeft, Info } from 'lucide-react'
 import Alert from '@/components/Alert'
 import Button from '@/components/Button'
 import ConnectionNamesMultiSelect from '@/components/ConnectionNamesMultiSelect'
+import SidecarListenersMultiSelect from '@/components/SidecarListenersMultiSelect'
+import { sidecarsService } from '@/services/sidecars'
 import EnterpriseBanner from '@/components/EnterpriseBanner'
 import FreeLicenseCallout from '@/components/FreeLicenseCallout'
 import Modal from '@/components/Modal'
@@ -56,7 +58,24 @@ function RuleFormFields({ rule, ruleName, isEdit }) {
     connectionNames: rule?.connection_names ?? [],
     customPrompt: rule?.custom_prompt ?? '',
     agentic: rule?.agentic ?? false,
+    sidecarListenerIds: [],
   }))
+  const [initialSidecarListenerIds, setInitialSidecarListenerIds] = useState([])
+
+  useEffect(() => {
+    if (isEdit && rule?.id) {
+      ;(async () => {
+        try {
+          const res = await sidecarsService.getRuleMappingsByRule(rule.id, 'ai_analyzer')
+          const ids = (res.data || []).map((m) => `${m.sidecar_id}/${m.listener_name}`)
+          setField({ sidecarListenerIds: ids })
+          setInitialSidecarListenerIds(ids)
+        } catch {
+          // ignore
+        }
+      })()
+    }
+  }, [isEdit, rule?.id])
   const [risk, setRisk] = useState(() => riskFromRule(rule))
 
   const setField = (patch) => setForm((f) => ({ ...f, ...patch }))
@@ -78,11 +97,44 @@ function RuleFormFields({ rule, ruleName, isEdit }) {
     const payload = formToPayload({ ...form, risk })
     // The gateway keys the update on the path segment and never writes `name`,
     // so an edit always addresses the rule it was opened with.
-    const { ok, error } = isEdit
+    const { ok, error, data } = isEdit
       ? await updateRule(ruleName, payload)
       : await createRule(payload)
 
     if (ok) {
+      const savedId = isEdit ? rule?.id : data?.id
+      if (savedId) {
+        const added = form.sidecarListenerIds.filter((x) => !initialSidecarListenerIds.includes(x))
+        const removed = initialSidecarListenerIds.filter((x) => !form.sidecarListenerIds.includes(x))
+
+        try {
+          await Promise.all([
+            ...added.map((x) => {
+              const [sidecarId, listenerName] = x.split('/')
+              return sidecarsService.createRuleMapping(sidecarId, {
+                rule_type: 'ai_analyzer',
+                rule_id: savedId,
+                listener_name: listenerName,
+              })
+            }),
+            ...removed.map((x) => {
+              const [sidecarId, listenerName] = x.split('/')
+              return sidecarsService.deleteRuleMapping(sidecarId, {
+                rule_type: 'ai_analyzer',
+                rule_id: savedId,
+                listener_name: listenerName,
+              })
+            }),
+          ])
+        } catch (err) {
+          showSnackbar({
+            level: 'error',
+            text: 'AI analyzer rule saved, but some sidecar mappings failed to update.',
+            description: err.response?.data?.message ?? err.message,
+          })
+        }
+      }
+
       showSnackbar({
         level: 'success',
         text: isEdit ? 'Rule updated successfully!' : 'Rule created successfully!',
@@ -214,6 +266,16 @@ function RuleFormFields({ rule, ruleName, isEdit }) {
           <ConnectionNamesMultiSelect
             value={form.connectionNames}
             onChange={(values) => setField({ connectionNames: values })}
+          />
+        </SectionRow>
+
+        <SectionRow
+          title="Associate Sidecar Listeners"
+          description="Select the sidecar listeners where this AI analyzer rule should be applied dynamically."
+        >
+          <SidecarListenersMultiSelect
+            value={form.sidecarListenerIds}
+            onChange={(values) => setField({ sidecarListenerIds: values })}
           />
         </SectionRow>
 
