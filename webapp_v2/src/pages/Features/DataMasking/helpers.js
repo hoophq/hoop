@@ -238,8 +238,6 @@ function prepareCustomEntityTypes(rows) {
 }
 
 // Build the API payload from form state.
-// form = { name, description, connectionIds, attributes, scoreThreshold, rules }
-// scoreThreshold is a percentage (1-100) or '' / null.
 export function formToPayload(form) {
   const payload = {
     name: form.name,
@@ -248,6 +246,10 @@ export function formToPayload(form) {
     attributes: form.attributes,
     supported_entity_types: prepareSupportedEntityTypes(form.rules),
     custom_entity_types: prepareCustomEntityTypes(form.rules),
+    strategy: form.strategy || 'redact',
+    columns: form.columns || [],
+    keep_last: form.keepLast ? Number(form.keepLast) : null,
+    mask_char: form.maskChar || '*',
   }
 
   const score = form.scoreThreshold

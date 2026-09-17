@@ -494,7 +494,10 @@ func toResponse(s models.Sidecar) openapi.SidecarResponse {
 type AlcatrazRule struct {
 	Name     string   `json:"name,omitempty"`
 	Entities []string `json:"entities,omitempty"`
+	Columns  []string `json:"columns,omitempty"`
 	Strategy string   `json:"strategy,omitempty"`
+	KeepLast int      `json:"keep_last,omitempty"`
+	MaskChar string   `json:"mask_char,omitempty"`
 }
 
 func enrichSidecarConfiguration(orgID, sidecarID string, cfg *daemon.Config) error {
@@ -563,10 +566,29 @@ func enrichSidecarConfiguration(orgID, sidecarID string, cfg *daemon.Config) err
 				for _, et := range r.SupportedEntityTypes {
 					entities = append(entities, et.EntityTypes...)
 				}
+
+				strategy := r.Strategy
+				if strategy == "" {
+					strategy = "redact"
+				}
+
+				keepLast := 4
+				if r.KeepLast != nil {
+					keepLast = *r.KeepLast
+				}
+
+				maskChar := "*"
+				if r.MaskChar != nil && *r.MaskChar != "" {
+					maskChar = *r.MaskChar
+				}
+
 				alcatrazRules = append(alcatrazRules, AlcatrazRule{
 					Name:     r.Name,
 					Entities: entities,
-					Strategy: "redact",
+					Columns:  r.Columns,
+					Strategy: strategy,
+					KeepLast: keepLast,
+					MaskChar: maskChar,
 				})
 			}
 
