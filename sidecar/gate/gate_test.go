@@ -688,6 +688,69 @@ func TestGateEnablesStatefulRewriteBeforeTraffic(t *testing.T) {
 	}
 }
 
+type filteringCodec struct {
+	decoded [][]byte
+}
+
+func (*filteringCodec) Protocol() inspect.Protocol { return inspect.Postgres }
+func (*filteringCodec) Duplex()                    {}
+func (c *filteringCodec) Filter(_ inspect.Direction, data []byte) ([]byte, error) {
+	switch string(data) {
+	case "partial":
+		return nil, nil
+	case "broken":
+		return nil, errors.New("negotiation is malformed")
+	default:
+		return bytes.ToUpper(data), nil
+	}
+}
+func (c *filteringCodec) Decode(_ inspect.Direction, data []byte) ([]inspect.Statement, int, error) {
+	c.decoded = append(c.decoded, bytes.Clone(data))
+	return nil, len(data), nil
+}
+
+func TestGateFiltersBeforeDecodeAndForward(t *testing.T) {
+	codec := &filteringCodec{}
+	g, err := gate.New(newSession(), gate.Config{
+		Protocol:     inspect.Postgres,
+		CodecFactory: func() inspect.Codec { return codec },
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	held := g.Request(context.Background(), []byte("partial"))
+	if !held.Allowed || len(held.Payload) != 0 || len(codec.decoded) != 0 {
+		t.Fatalf("held prefix = %+v, decoded=%q", held, codec.decoded)
+	}
+
+	filtered := g.Request(context.Background(), []byte("hello"))
+	if !filtered.Allowed || !bytes.Equal(filtered.Payload, []byte("HELLO")) {
+		t.Fatalf("filtered decision = %+v", filtered)
+	}
+	if len(codec.decoded) != 1 || !bytes.Equal(codec.decoded[0], []byte("HELLO")) {
+		t.Fatalf("decoder saw %q, want HELLO", codec.decoded)
+	}
+}
+
+func TestGateFailsClosedWhenStreamFilterFails(t *testing.T) {
+	codec := &filteringCodec{}
+	g, err := gate.New(newSession(), gate.Config{
+		Protocol:     inspect.Postgres,
+		CodecFactory: func() inspect.Codec { return codec },
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	d := g.Request(context.Background(), []byte("broken"))
+	if d.Allowed || len(d.Payload) != 0 || d.Rule != "stream-filter" || d.Err == nil {
+		t.Fatalf("filter error did not fail closed: %+v", d)
+	}
+	if len(codec.decoded) != 0 {
+		t.Fatalf("decoder saw bytes after filter failure: %q", codec.decoded)
+	}
+}
+
 type plainCodec struct{}
 
 func (*plainCodec) Protocol() inspect.Protocol { return inspect.Postgres }

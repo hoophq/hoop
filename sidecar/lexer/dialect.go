@@ -56,6 +56,12 @@ const (
 	// MySQL covers MySQL and MariaDB.
 	MySQL
 
+	// ClickHouse follows its own SQL lexer: identifiers may use backticks or
+	// double quotes, strings use single quotes with backslash escapes, and
+	// both `--` and `#` open line comments. It deliberately does not inherit
+	// MySQL executable comments or the whitespace condition on `--`.
+	ClickHouse
+
 	// GoogleSQL covers ZetaSQL as Cloud Spanner and BigQuery speak it.
 	//
 	// It is close enough to MySQL to be mistaken for it — backticks,
@@ -73,6 +79,8 @@ func (d Dialect) String() string {
 		return "mssql"
 	case MySQL:
 		return "mysql"
+	case ClickHouse:
+		return "clickhouse"
 	case GoogleSQL:
 		return "googlesql"
 	}
@@ -242,6 +250,12 @@ func (d Dialect) rules() lexRules {
 			nationalString:     true,
 			bracketIdent:       true,
 			nestedBlockComment: true,
+		}
+	case ClickHouse:
+		return lexRules{
+			backtickIdent:          true,
+			hashComment:            true,
+			backslashInPlainString: true,
 		}
 	case MySQL:
 		// nestedBlockComment is deliberately absent, and it is not the

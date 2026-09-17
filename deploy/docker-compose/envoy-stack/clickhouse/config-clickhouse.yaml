@@ -1,0 +1,153 @@
+# hoop-inspect with ClickHouse behind all four of its front doors.
+#
+#   envoy :8443 --cluster hoop_inspect_http------> :18080  lane "httpbin"
+#   envoy :5432 --cluster hoop_inspect_pg--------> :15432  lane "appdb"
+#   envoy :8446 --cluster hoop_inspect_ch_http---> :18123  lane "clickhouse-http"    http codec
+#   envoy :9000 --cluster hoop_inspect_ch_native> :19006  lane "clickhouse-native"  clickhouse codec
+#   envoy :9004 --cluster hoop_inspect_ch_mysql--> :19004  lane "clickhouse-mysql"   mysql codec
+#   envoy :9005 --cluster hoop_inspect_ch_pg-----> :19005  lane "clickhouse-pg"      postgres codec
+#
+# One server, four wire protocols, four lanes. ClickHouse speaks its native
+# protocol on :9000, HTTP on :8123, and emulates MySQL on :9004 and PostgreSQL
+# on :9005. The native codec clamps both hello revisions to the layout it
+# understands, inspects LZ4 blocks one at a time, and rebuilds masked result
+# blocks without buffering the result set.
+#
+# The appdb and httpbin lanes are the LIVE parts of ../sidecar/config.yaml.
+# The ClickHouse lanes add NO rules: this process has one guardrail and one
+# masking rule in the defaults below. All three database lanes inherit both.
+# The HTTP lane remains audit-only and switches masking off explicitly.
+#
+# Validate without starting anything:
+#   cd sidecar/cmd && go run . -validate \
+#     -config ../../deploy/docker-compose/envoy-stack/clickhouse/config-clickhouse.yaml
+
+log_level: info
+
+admin:
+  listen: 0.0.0.0:19000
+
+audit:
+  file: "-"
+  memory_buffer: 256
+  async_queue_size: 1024
+  query_sessions: 500
+
+pii:
+  entities:
+    - EMAIL_ADDRESS
+    - US_SSN
+    - CREDIT_CARD
+    - BR_CPF
+    - IBAN_CODE
+
+guardrails:
+  mode: enforce
+  rules:
+    - name: no-cpf-in-query
+      type: pii
+      entities: [BR_CPF]
+      message: do not put a taxpayer id in a query; it lands in the database's own logs
+
+mask:
+  rules:
+    - {name: emails, entities: [EMAIL_ADDRESS], strategy: redact}
+
+listeners:
+  - name: appdb
+    protocol: postgres
+    listen: 0.0.0.0:15432
+    upstream: appdb:5432
+    upstream_tls:
+      ca_file: /etc/hoop-inspect/certs/appdb.crt
+      server_name: appdb
+
+  - name: httpbin
+    protocol: http
+    listen: 0.0.0.0:18080
+    upstream: httpbin:8080
+
+  # ClickHouse's HTTP interface, as an AUDIT lane: OPA's fat gate in front,
+  # every request recorded with the SQL it carried, nothing enforced on the
+  # SQL itself. Two facts about the relay decide that, both documented in
+  # sidecar/:
+  #
+  #   - Guardrails scan Statement.Text, which on http is the request line
+  #     (policy/pii.go). ClickHouse takes the SQL as the POST body, so a
+  #     guardrail never sees it. Only a GET ?query= is scanned, and
+  #     ClickHouse makes GET read-only, so the one shape a rule can refuse
+  #     is a shape that could not write.
+  #   - Response masking on http substitutes bytes and corrects
+  #     Content-Length (gate/contentlength.go). ClickHouse answers with
+  #     Transfer-Encoding: chunked, always, so the body passes unmasked.
+  #     mask: {rules: []} says so here instead of inheriting a rule that
+  #     would load clean and mask nothing.
+  #
+  # capture_body is what puts the SQL into the audit trail (http.body on
+  # the statement record) and in front of an AI analyzer, should one be
+  # configured; without it the lane records "POST /" and nothing else. It
+  # captures BOTH directions and there is no request-only setting, so with
+  # no masking on this lane every result set lands in the trail in the
+  # clear, up to max_body_bytes. ../sidecar/read-audit.py reports that as a
+  # LEAK on this overlay, correctly. The headers list is an allowlist.
+  # X-ClickHouse-Key is the password and stays off it, same as Authorization
+  # on any http lane. For enforcement, point the client at :9004 or :9005.
+  - name: clickhouse-http
+    protocol: http
+    listen: 0.0.0.0:18123
+    upstream: clickhouse:8123
+    mask:
+      rules: []
+    http:
+      capture_body: true
+      max_body_bytes: 65536
+      headers:
+        - X-ClickHouse-User
+        - X-ClickHouse-Database
+        - X-ClickHouse-Format
+        - X-ClickHouse-Query-Id
+
+  # ClickHouse native TCP. The codec caps a declared decompressed frame before
+  # allocation and never accumulates the result set: these limits bound one
+  # frame and one block per connection, respectively. ClickHouse defaults to
+  # ~1 MiB frames and 65k-row blocks, so these values leave room without
+  # allowing a peer-declared multi-gigabyte allocation.
+  - name: clickhouse-native
+    protocol: clickhouse
+    listen: 0.0.0.0:19006
+    upstream: clickhouse:9000
+    clickhouse:
+      max_frame_bytes: 16777216
+      max_block_bytes: 67108864
+
+  # ClickHouse's MySQL emulation. Same rules as the mysql/ overlay: no
+  # upstream_tls (the server greets first, a ClientHello would meet the
+  # greeting) and no downstream_tls (refused on mysql lanes). Clients pass
+  # --ssl-mode=DISABLED. ClickHouse authenticates this port with
+  # mysql_native_password, which needs the password stored as plaintext or
+  # double-SHA1 on the server; server/users.d/appuser.yaml stores plaintext.
+  #
+  # KNOWN GAP, in the codec, not in this file: ClickHouse does not advertise
+  # CLIENT_QUERY_ATTRIBUTES, the MySQL 8.0.23+ CLI sets the flag anyway and
+  # then sends COM_QUERY with no attribute block. The codec reads the flags
+  # from the client's response alone (libhoop v2/codec/mysql/client.go
+  # readHandshakeResponse) and looks for a block that is not there, so every
+  # statement from that CLI arrives as `sql.incomplete` with no text and
+  # passes the guardrail. The demo shows it. Until the codec intersects with
+  # the server's greeting, use a client that does not set the flag: the
+  # MariaDB CLI, go-sql-driver, mysql-connector-python.
+  - name: clickhouse-mysql
+    protocol: mysql
+    listen: 0.0.0.0:19004
+    upstream: clickhouse:9004
+
+  # ClickHouse's PostgreSQL emulation. Ordinary pgwire from the codec's
+  # point of view: StartupMessage, cleartext password, simple Query. No
+  # upstream_tls because the server has no certificate configured and
+  # answers SSLRequest with N; add one and the block from appdb applies
+  # unchanged. psql connects with sslmode=disable, as on every pg lane in
+  # this stack.
+  - name: clickhouse-pg
+    protocol: postgres
+    listen: 0.0.0.0:19005
+    upstream: clickhouse:9005

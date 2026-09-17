@@ -16,6 +16,7 @@ func init() {
 	RegisterBuilder(SQLBuilder{Protocol_: inspect.Postgres})
 	RegisterBuilder(SQLBuilder{Protocol_: inspect.MSSQL})
 	RegisterBuilder(SQLBuilder{Protocol_: inspect.MySQL})
+	RegisterBuilder(SQLBuilder{Protocol_: inspect.ClickHouse})
 	RegisterBuilder(MongoDBBuilder{})
 	RegisterBuilder(HTTPBuilder{})
 	RegisterBuilder(grpcBuilder{})

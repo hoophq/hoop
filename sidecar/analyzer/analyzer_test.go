@@ -201,7 +201,7 @@ func TestResponsesAreNotClassified(t *testing.T) {
 // has a status, so there is no denial, no finding and no annotation to read.
 // An MSSQL lane shipped that way once, and the only symptom was silence.
 func TestEveryDatabaseProtocolIsClassified(t *testing.T) {
-	for _, proto := range []inspect.Protocol{inspect.Postgres, inspect.MSSQL, inspect.MySQL, inspect.MongoDB} {
+	for _, proto := range []inspect.Protocol{inspect.Postgres, inspect.MSSQL, inspect.MySQL, inspect.ClickHouse, inspect.MongoDB} {
 		t.Run(string(proto), func(t *testing.T) {
 			p := &stubProvider{level: analyzer.RiskHigh}
 			ev := mustNew(t, analyzer.Config{
