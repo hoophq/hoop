@@ -3286,6 +3286,21 @@
         ],
         "type": "object"
       },
+      "openapi.DirectoryGroup": {
+        "properties": {
+          "id": {
+            "description": "Identifier of the group in the identity provider",
+            "example": "grp_4ZJ1kL9x2M0nQ7Yt",
+            "type": "string"
+          },
+          "name": {
+            "description": "Display name of the group",
+            "example": "engineering",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "openapi.ExecRequest": {
         "properties": {
           "client_args": {
@@ -19835,6 +19850,60 @@
           }
         },
         "summary": "Generate API Key",
+        "tags": [
+          "Server Management"
+        ]
+      }
+    },
+    "/serverconfig/auth/groups": {
+      "get": {
+        "description": "List every group of the identity provider directory using the configured OIDC client credentials. Supported for Auth0 and Microsoft Entra ID issuers.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/openapi.DirectoryGroup"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          }
+        },
+        "summary": "List Identity Provider Directory Groups",
         "tags": [
           "Server Management"
         ]

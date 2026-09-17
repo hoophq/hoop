@@ -1340,6 +1340,11 @@ func (api *Api) buildRoutes(r *apiroutes.Router, mode appconfig.AppMode) {
 		r.AuthMiddleware,
 		apiserverconfig.GenerateApiKey,
 	)
+	r.GET("/serverconfig/auth/groups",
+		// apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiserverconfig.ListDirectoryGroups,
+	)
 	r.GET("/serverconfig/mcp-auth",
 		apiroutes.AdminAndAuditorAccessRole,
 		r.AuthMiddleware,

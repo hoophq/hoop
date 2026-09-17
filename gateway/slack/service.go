@@ -122,6 +122,29 @@ func (s *SlackService) BotToken() string { return s.slackBotToken }
 // destination is posting into nothing.
 func (s *SlackService) DefaultChannel() string { return s.slackChannel }
 
+// UserGroup is a Slack workspace user group (usergroups.list).
+type UserGroup struct {
+	ID          string
+	Handle      string
+	Name        string
+	Description string
+}
+
+// ListUserGroups lists the workspace user groups visible to the bot token.
+// The Slack app needs the usergroups:read scope; without it Slack answers
+// "missing_scope", which is returned as-is.
+func (s *SlackService) ListUserGroups(ctx context.Context) ([]UserGroup, error) {
+	groups, err := s.apiClient.GetUserGroupsContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed listing slack user groups, err=%w", err)
+	}
+	out := make([]UserGroup, len(groups))
+	for i, g := range groups {
+		out[i] = UserGroup{ID: g.ID, Handle: g.Handle, Name: g.Name, Description: g.Description}
+	}
+	return out, nil
+}
+
 type MessageReviewRequest struct {
 	ID             string
 	Name           string

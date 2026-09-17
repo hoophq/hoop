@@ -1,6 +1,7 @@
 package apiserverconfig
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -386,4 +387,44 @@ func toAuthOpenApi(cfg *models.ServerAuthConfig) *openapi.ServerAuthConfig {
 		AdminRoleName:               ptr.ToString(cfg.AdminRoleName),
 		AuditorRoleName:             ptr.ToString(cfg.AuditorRoleName),
 	}
+}
+
+// ListDirectoryGroups
+//
+//	@Summary		List Identity Provider Directory Groups
+//	@Description	List every group of the identity provider directory using the configured OIDC client credentials. Supported for Auth0 and Microsoft Entra ID issuers.
+//	@Tags			Server Management
+//	@Produce		json
+//	@Success		200			{array}		openapi.DirectoryGroup
+//	@Failure		403,422,502	{object}	openapi.HTTPError
+//	@Router			/serverconfig/auth/groups [get]
+func ListDirectoryGroups(c *gin.Context) {
+	if forbidden := forbiddenOnMultiTenantSetups(c); forbidden {
+		return
+	}
+	verifier, _, err := idp.NewUserInfoTokenVerifierProvider()
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed loading identity provider")
+		return
+	}
+	lister, ok := verifier.(idp.DirectoryGroupLister)
+	if !ok {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": idptypes.ErrDirectoryGroupsUnsupported.Error()})
+		return
+	}
+	groups, err := lister.ListDirectoryGroups(c.Request.Context())
+	switch {
+	case errors.Is(err, idptypes.ErrDirectoryGroupsUnsupported):
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
+	case err != nil:
+		log.Warnf("failed listing identity provider directory groups, reason=%v", err)
+		c.JSON(http.StatusBadGateway, gin.H{"message": "failed listing groups from the identity provider"})
+		return
+	}
+	response := make([]openapi.DirectoryGroup, 0, len(groups))
+	for _, g := range groups {
+		response = append(response, openapi.DirectoryGroup{ID: g.ID, Name: g.Name})
+	}
+	c.JSON(http.StatusOK, response)
 }

@@ -1,6 +1,7 @@
 package slack
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -225,5 +226,34 @@ func TestUpdateReviewMessageTracking(t *testing.T) {
 	}
 	if _, ok := s.sentReviewItems["rev-new"]; !ok {
 		t.Errorf("fresh entry was not tracked")
+	}
+}
+
+// Only id, handle, name and description leave the mapping; members and team
+// are dropped. A Slack API error (e.g. missing usergroups:read) surfaces as-is.
+func TestListUserGroups(t *testing.T) {
+	body := `{"ok":true,"usergroups":[{"id":"S01","team_id":"T1","is_usergroup":true,"name":"DBAs","description":"database team","handle":"dba","user_count":3,"users":["U1","U2","U3"]}]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/usergroups.list" {
+			t.Errorf("unexpected path %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, body)
+	}))
+	defer srv.Close()
+	s := &SlackService{apiClient: slack.New("xoxb-test", slack.OptionAPIURL(srv.URL+"/"))}
+
+	got, err := s.ListUserGroups(context.Background())
+	if err != nil {
+		t.Fatalf("ListUserGroups failed: %v", err)
+	}
+	want := []UserGroup{{ID: "S01", Handle: "dba", Name: "DBAs", Description: "database team"}}
+	if len(got) != 1 || got[0] != want[0] {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+
+	body = `{"ok":false,"error":"missing_scope"}`
+	if _, err := s.ListUserGroups(context.Background()); err == nil || !strings.Contains(err.Error(), "missing_scope") {
+		t.Fatalf("want missing_scope error, got %v", err)
 	}
 }

@@ -2807,6 +2807,14 @@ const (
 	ProviderTypeLocal ProviderType = "local"
 )
 
+// DirectoryGroup is one group of the identity provider directory
+type DirectoryGroup struct {
+	// Identifier of the group in the identity provider
+	ID string `json:"id" example:"grp_4ZJ1kL9x2M0nQ7Yt"`
+	// Display name of the group
+	Name string `json:"name" example:"engineering"`
+}
+
 type ServerAuthConfig struct {
 	// The identity provider type to configure
 	AuthMethod ProviderType `json:"auth_method" example:"local" binding:"required"`

@@ -8553,6 +8553,47 @@ const docTemplate = `{
                 }
             }
         },
+        "/serverconfig/auth/groups": {
+            "get": {
+                "description": "List every group of the identity provider directory using the configured OIDC client credentials. Supported for Auth0 and Microsoft Entra ID issuers.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Management"
+                ],
+                "summary": "List Identity Provider Directory Groups",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/openapi.DirectoryGroup"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/serverconfig/mcp-auth": {
             "get": {
                 "description": "Returns the per-org MCP OAuth Resource Server settings. When disabled (default), /mcp accepts Hoop-issued bearer tokens only.",
@@ -14474,6 +14515,21 @@ const docTemplate = `{
                     "type": "string",
                     "readOnly": true,
                     "example": "2023-08-15T14:30:45Z"
+                }
+            }
+        },
+        "openapi.DirectoryGroup": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "description": "Identifier of the group in the identity provider",
+                    "type": "string",
+                    "example": "grp_4ZJ1kL9x2M0nQ7Yt"
+                },
+                "name": {
+                    "description": "Display name of the group",
+                    "type": "string",
+                    "example": "engineering"
                 }
             }
         },
