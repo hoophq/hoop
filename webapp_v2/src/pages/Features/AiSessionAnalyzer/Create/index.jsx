@@ -41,6 +41,8 @@ function RuleFormFields({ rule, ruleName, isEdit }) {
   const [deleteOpened, deleteModal] = useDisclosure(false)
 
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
+  const appMode = useUserStore((s) => s.appMode)
+  const isControlPlane = appMode === 'control-plane'
 
   const submitting = useAiSessionAnalyzerStore((s) => s.submitting)
   const list = useAiSessionAnalyzerStore((s) => s.list)
@@ -259,15 +261,17 @@ function RuleFormFields({ rule, ruleName, isEdit }) {
           </Stack>
         </SectionRow>
 
-        <SectionRow
-          title="Roles configuration"
-          description="Select which Resources to apply this configuration."
-        >
-          <ConnectionNamesMultiSelect
-            value={form.connectionNames}
-            onChange={(values) => setField({ connectionNames: values })}
-          />
-        </SectionRow>
+        {!isControlPlane && (
+          <SectionRow
+            title="Roles configuration"
+            description="Select which Resources to apply this configuration."
+          >
+            <ConnectionNamesMultiSelect
+              value={form.connectionNames}
+              onChange={(values) => setField({ connectionNames: values })}
+            />
+          </SectionRow>
+        )}
 
         <SectionRow
           title="Associate Sidecar Listeners"

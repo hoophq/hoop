@@ -51,6 +51,8 @@ function GuardrailFormFields({ guardrail, id, isEdit }) {
   const [deleteOpened, deleteModal] = useDisclosure(false)
 
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
+  const appMode = useUserStore((s) => s.appMode)
+  const isControlPlane = appMode === 'control-plane'
 
   const attributes = useGuardrailsStore((s) => s.attributes)
   const submitting = useGuardrailsStore((s) => s.submitting)
@@ -273,15 +275,17 @@ function GuardrailFormFields({ guardrail, id, isEdit }) {
           </Stack>
         </SectionRow>
 
-        <SectionRow
-          title="Associate Resource Roles"
-          description="Select the resource roles where this guardrail should be applied."
-        >
-          <ConnectionsMultiSelect
-            value={form.connectionIds}
-            onChange={(values) => setField({ connectionIds: values })}
-          />
-        </SectionRow>
+        {!isControlPlane && (
+          <SectionRow
+            title="Associate Resource Roles"
+            description="Select the resource roles where this guardrail should be applied."
+          >
+            <ConnectionsMultiSelect
+              value={form.connectionIds}
+              onChange={(values) => setField({ connectionIds: values })}
+            />
+          </SectionRow>
+        )}
 
         <SectionRow
           title="Associate Sidecar Listeners"
@@ -293,20 +297,22 @@ function GuardrailFormFields({ guardrail, id, isEdit }) {
           />
         </SectionRow>
 
-        <SectionRow
-          title="Attribute configuration"
-          description="Select which Attributes to apply this configuration."
-        >
-          <MultiSelect
-            label="Attributes"
-            placeholder="Select attributes..."
-            data={attributeOptions}
-            value={form.attributes}
-            onChange={(values) => setField({ attributes: values })}
-            searchable
-            clearable
-          />
-        </SectionRow>
+        {!isControlPlane && (
+          <SectionRow
+            title="Attribute configuration"
+            description="Select which Attributes to apply this configuration."
+          >
+            <MultiSelect
+              label="Attributes"
+              placeholder="Select attributes..."
+              data={attributeOptions}
+              value={form.attributes}
+              onChange={(values) => setField({ attributes: values })}
+              searchable
+              clearable
+            />
+          </SectionRow>
+        )}
 
         <SectionRow
           title="Configure rules"

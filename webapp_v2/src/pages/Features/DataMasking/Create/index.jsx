@@ -48,6 +48,8 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
   const [deleteOpened, deleteModal] = useDisclosure(false)
 
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
+  const appMode = useUserStore((s) => s.appMode)
+  const isControlPlane = appMode === 'control-plane'
 
   const attributes = useDataMaskingStore((s) => s.attributes)
   const submitting = useDataMaskingStore((s) => s.submitting)
@@ -268,15 +270,17 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
           </Stack>
         </SectionRow>
 
-        <SectionRow
-          title="Resource Role configuration"
-          description="Select which resource roles to apply this configuration."
-        >
-          <ConnectionsMultiSelect
-            value={form.connectionIds}
-            onChange={(values) => setField({ connectionIds: values })}
-          />
-        </SectionRow>
+        {!isControlPlane && (
+          <SectionRow
+            title="Resource Role configuration"
+            description="Select which resource roles to apply this configuration."
+          >
+            <ConnectionsMultiSelect
+              value={form.connectionIds}
+              onChange={(values) => setField({ connectionIds: values })}
+            />
+          </SectionRow>
+        )}
 
         <SectionRow
           title="Associate Sidecar Listeners"
@@ -288,20 +292,22 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
           />
         </SectionRow>
 
-        <SectionRow
-          title="Attribute configuration"
-          description="Select which Attributes to apply this configuration."
-        >
-          <MultiSelect
-            label="Attributes"
-            placeholder="Select attributes..."
-            data={attributeOptions}
-            value={form.attributes}
-            onChange={(values) => setField({ attributes: values })}
-            searchable
-            clearable
-          />
-        </SectionRow>
+        {!isControlPlane && (
+          <SectionRow
+            title="Attribute configuration"
+            description="Select which Attributes to apply this configuration."
+          >
+            <MultiSelect
+              label="Attributes"
+              placeholder="Select attributes..."
+              data={attributeOptions}
+              value={form.attributes}
+              onChange={(values) => setField({ attributes: values })}
+              searchable
+              clearable
+            />
+          </SectionRow>
+        )}
 
         <Stack gap="md">
           <Title order={4} fw={500}>
