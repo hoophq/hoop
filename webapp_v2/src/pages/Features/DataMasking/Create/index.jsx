@@ -260,19 +260,6 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
               onChange={(e) => setField({ description: e.currentTarget.value })}
               minRows={3}
             />
-            <TextInput
-              label="Analyzer confidence threshold (Optional)"
-              type="number"
-              min={1}
-              max={100}
-              placeholder="85"
-              value={form.scoreThreshold}
-              onChange={(e) => {
-                const value = e.currentTarget.value
-                setField({ scoreThreshold: value === '' ? '' : Number(value) })
-              }}
-              description="Minimum confidence level (1-100) a detection needs to be masked. Defaults to 85% for new rules. Leave empty to mask every detection regardless of confidence. Custom entity types with a score below this value are never masked."
-            />
           </Stack>
         </SectionRow>
 

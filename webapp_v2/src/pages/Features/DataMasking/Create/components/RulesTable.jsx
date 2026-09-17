@@ -32,17 +32,11 @@ function RuleCell({ row, freeLicense, onChange }) {
   if (!row.type) return null
 
   if (row.type === 'presets') {
-    const options = freeLicense
-      ? PRESET_OPTIONS.map((opt) => ({
-          ...opt,
-          disabled: opt.value !== row.rule,
-        }))
-      : PRESET_OPTIONS
     return (
       <Select
         placeholder="Select preset"
         size={ROW_CONTROL_SIZE}
-        data={options}
+        data={PRESET_OPTIONS}
         value={row.rule || null}
         onChange={(v) => onChange({ rule: v || '' })}
         comboboxProps={{ withinPortal: true }}
@@ -90,9 +84,7 @@ function DetailsCell({ row, freeLicense, onChange }) {
         size={ROW_CONTROL_SIZE}
         data={FIELD_OPTIONS}
         value={Array.isArray(row.details) ? row.details : []}
-        onChange={(values) =>
-          onChange({ details: freeLicense ? values.slice(-1) : values })
-        }
+        onChange={(values) => onChange({ details: values })}
         searchable
         comboboxProps={{ withinPortal: true }}
       />
@@ -151,8 +143,8 @@ export default function RulesTable({
           <Table.Tr>
             {selectMode && <Table.Th w={40} />}
             <Table.Th w={TYPE_COLUMN_WIDTH}>Type</Table.Th>
-            <Table.Th w={RULE_COLUMN_WIDTH}>Rule / Entities</Table.Th>
-            <Table.Th>Details</Table.Th>
+            <Table.Th w={RULE_COLUMN_WIDTH}>Rule Name</Table.Th>
+            <Table.Th>Entities</Table.Th>
             <Table.Th w={150}>Strategy</Table.Th>
             <Table.Th w={200}>Parameters / Columns</Table.Th>
           </Table.Tr>
