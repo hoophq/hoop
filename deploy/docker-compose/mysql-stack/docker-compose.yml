@@ -40,9 +40,16 @@ services:
             -CA /certs/ca.crt -CAkey /certs/ca.key -CAcreateserial \
             -extfile /certs/server.ext -out /certs/server.crt >/dev/null 2>&1
         fi
+        if [ ! -f /certs/relay-auth.key ]; then
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 \
+            -out /certs/relay-auth.key >/dev/null 2>&1
+          openssl pkey -in /certs/relay-auth.key -pubout \
+            -out /certs/relay-auth.pub >/dev/null 2>&1
+        fi
         chown 999:999 /certs/server.key
-        chmod 600 /certs/server.key
-        chmod 644 /certs/ca.crt /certs/server.crt
+        chown 10001:10001 /certs/relay-auth.key
+        chmod 600 /certs/server.key /certs/relay-auth.key
+        chmod 644 /certs/ca.crt /certs/server.crt /certs/relay-auth.pub
     volumes:
       - mysql-certs:/certs
   # The upstream a DBA would actually care about.
@@ -71,9 +78,9 @@ services:
     depends_on:
       mysqlcerts: { condition: service_completed_successfully }
     healthcheck:
-      # -h127.0.0.1, not the socket: the entrypoint runs a throwaway server
-      # Requiring TLS here proves the database is not merely advertising it.
-      test: ["CMD-SHELL", "mysqladmin ping -h127.0.0.1 -uappuser -papppass --ssl-mode=REQUIRED --silent"]
+      # Authenticate as root so appuser's caching_sha2_password cache stays
+      # cold. The first connection through the lane must use pinned-key RSA.
+      test: ["CMD-SHELL", "mysqladmin ping -h127.0.0.1 -uroot -prootpass --ssl-mode=REQUIRED --silent"]
       interval: "3s"
       timeout: "10s"
       retries: 30
@@ -91,6 +98,8 @@ services:
     image: mysql:8
     networks: [inspect]
     entrypoint: ["sleep", "infinity"]
+    volumes:
+      - mysql-certs:/etc/mysql/relay-certs:ro
     healthcheck:
       test: ["CMD-SHELL", "command -v mysql"]
       interval: "3s"

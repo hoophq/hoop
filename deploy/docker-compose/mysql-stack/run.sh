@@ -52,14 +52,16 @@ cat <<'EOF'
 
 ready
 
-  mysql (Envoy :3307 -> hoop-inspect :13306 -> TLS -> appdb):
+  mysql (pinned relay RSA key -> Envoy -> hoop-inspect -> TLS -> appdb):
 
     docker compose exec -T client env MYSQL_PWD=apppass \
       mysql -h envoy -P 3306 -u appuser appdb \
+            --ssl-mode=DISABLED \
+            --server-public-key-path=/etc/mysql/relay-certs/relay-auth.pub \
             -e 'SELECT name, email FROM customers'
 
-  The client uses plaintext so hoop-inspect can inspect it. The relay removes
-  CLIENT_SSL from the client greeting and originates verified TLS to appdb.
+  The client pins the relay's public key. hoop-inspect decrypts the direct RSA
+  password response, then sends the password to appdb through verified TLS.
 
   Or just: ./demo.sh
 

@@ -29,6 +29,10 @@ listeners:
     upstream_tls:
       ca_file: /etc/hoop-inspect/mysql-certs/ca.crt
       server_name: appdb
+    # The demo client pins the public half and sends its RSA response without
+    # requesting a key. The relay decrypts it before forwarding the password
+    # through the verified upstream TLS session.
+    mysql_auth_key_file: /etc/hoop-inspect/mysql-certs/relay-auth.key
     # The relay clears CLIENT_SSL in the greeting sent to the client, then
     # originates the server-first SSLRequest exchange on this upstream leg.
     # downstream_tls remains unsupported because inspection requires this

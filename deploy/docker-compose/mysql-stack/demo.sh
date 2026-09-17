@@ -23,9 +23,10 @@ h()    { printf '\n\033[1;36m%s\033[0m\n' "$*"; hr; }
 note() { printf '\033[2m%s\033[0m\n' "$*"; }
 
 # MYSQL_PWD rather than -p, so the CLI does not print its password warning.
-# Its default PREFERRED mode sees CLIENT_SSL removed from the relay's greeting
-# and continues in plaintext; the relay creates a separate TLS upstream leg.
-MY="docker compose exec -T client env MYSQL_PWD=apppass mysql -h envoy -P 3306 -u appuser appdb"
+# The client pins the relay public key and sends the RSA password response
+# without requesting a key. --ssl-mode=DISABLED keeps this inspection leg
+# plaintext; the relay creates a separate TLS connection to appdb.
+MY="docker compose exec -T client env MYSQL_PWD=apppass mysql -h envoy -P 3306 -u appuser appdb --ssl-mode=DISABLED --server-public-key-path=/etc/mysql/relay-certs/relay-auth.pub"
 
 if ! curl -sf http://localhost:19000/healthz >/dev/null; then
     echo "hoop-inspect is not up; run ./run.sh first" >&2
@@ -37,11 +38,12 @@ fi
 since_log() { docker compose logs hoop-inspect --since "$1" 2>/dev/null; }
 DEMO_START=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 sleep 1
-# ------------------------------------------------------------- encrypted hop
-h "MYSQL / transport -- plaintext client, verified TLS upstream"
-note "The client-facing greeting has CLIENT_SSL removed, so the sidecar can"
-note "inspect ordinary frames. This status belongs to the database connection"
-note "on the other leg; a non-empty cipher proves appdb accepted it over TLS."
+# --------------------------------------------------------- authentication
+h "MYSQL / authentication -- pinned relay RSA key, verified TLS upstream"
+note "The client reads relay-auth.pub and sends its encrypted password without"
+note "requesting a key. The sidecar owns the matching private key, decrypts the"
+note "response, and sends the password through its verified TLS connection."
+note "A non-empty cipher confirms that appdb accepted this session over TLS."
 $MY -e "SHOW SESSION STATUS LIKE 'Ssl_cipher'" 2>&1 | sed 's/^/  /'
 
 

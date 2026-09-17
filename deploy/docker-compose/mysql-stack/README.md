@@ -41,11 +41,14 @@ publication.
 ```bash
 docker compose exec -T client env MYSQL_PWD=apppass \
   mysql -h envoy -P 3306 -u appuser appdb \
+        --ssl-mode=DISABLED \
+        --server-public-key-path=/etc/mysql/relay-certs/relay-auth.pub \
         -e 'SELECT name, email FROM customers'
 ```
 
-The client leg is plaintext so hoop-inspect can inspect it. The upstream leg
-uses verified TLS and MySQL refuses a direct plaintext connection.
+The client pins the relay's public key and sends an RSA-encrypted password
+without requesting a key. hoop-inspect decrypts it, then sends the password
+through verified TLS to a MySQL server that refuses plaintext connections.
 
 ## MySQL TLS split
 
@@ -64,29 +67,38 @@ begins a TLS handshake on the same socket.
   `SHOW SESSION STATUS LIKE 'Ssl_cipher'` in `./demo.sh` proves this hop has a
   negotiated cipher.
 
-For MySQL's `caching_sha2_password` and `sha256_password`, a plaintext client
-performs an RSA password exchange while a TLS-connected server asks for the
-password directly. The relay terminates that exchange: it supplies an
-ephemeral RSA public key to the client, decrypts the response, and sends the
-recovered NUL-terminated password only inside the verified upstream TLS
-session. Other authentication plugin packets pass through with their sequence
-numbers translated around the inserted `SSLRequest`.
+`caching_sha2_password` and `sha256_password` encrypt passwords on a plaintext
+connection. A client can request a key or load a trusted key before it
+connects. This stack tests the second path:
+
+1. `mysqlcerts` creates `relay-auth.key` and `relay-auth.pub`.
+2. hoop-inspect reads the private key through `mysql_auth_key_file`.
+3. The client reads the public key through `--server-public-key-path` and sends
+   ciphertext without a public-key request.
+
+The relay decrypts that response and sends the recovered NUL-terminated
+password inside the verified upstream TLS session. The backend server's public
+key cannot replace `relay-auth.pub` because hoop-inspect does not hold the
+backend private key.
 
 ## What the demo shows
+1. **Pinned-key authentication.** The first `appuser` connection sends a
+   direct RSA response encrypted for the relay key. The database health check
+   uses `root`, so it does not warm `appuser`'s `caching_sha2_password` cache.
 
-1. **Masked result set.** The codec keys masking on the column NAME from the
+2. **Masked result set.** The codec keys masking on the column NAME from the
    definitions the server sends ahead of every result set, so
    `columns: [email]` is exact and covers both row encodings. Rows are
    rebuilt around the new values: every cell and the packet holding it are
    length-prefixed, so a substituted byte string would desynchronize the
    client.
-2. **Denied DELETE, as a native error.** The client reads
+3. **Denied DELETE, as a native error.** The client reads
    `ERROR 1142 (42000): destructive statements are not permitted on appdb`,
    the frame the server itself sends for a privilege refusal, and the row
    count proves the statement stopped at the relay.
-3. **Executable comment.** `/*! DROP TABLE customers */` is a drop to MySQL
+4. **Executable comment.** `/*! DROP TABLE customers */` is a drop to MySQL
    and to the lexer, so the same rule refuses it.
-4. **Unsafe framing refused.** Compression is closed at the handshake with a
+5. **Unsafe framing refused.** Compression is closed at the handshake with a
    reason in the relay log. A client requiring TLS also fails, but earlier:
    the client-facing greeting deliberately does not advertise `CLIENT_SSL`;
    the independently verified upstream hop remains encrypted.
