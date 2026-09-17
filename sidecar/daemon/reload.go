@@ -19,6 +19,11 @@ import (
 // The boundary is the non-rule document: listener topology, audit, admin,
 // log_level and the analyzer section are bound at startup (sockets, sinks,
 // loggers, provider credentials), so any drift there keeps the restart log.
+// A grpc lane's descriptor sets sit on that side too: the schema is bound
+// into the endpoint when it is built, so a changed `descriptors` list is
+// restart-bound drift, and a new version of a remote object behind an
+// unchanged URL is never refetched by a reload — a restart reads it, the
+// same way a restart reads a replaced file.
 //
 // Everything here runs on the heartbeat goroutine alone. Run hands the
 // reloader over before starting it and never touches it again, which is why

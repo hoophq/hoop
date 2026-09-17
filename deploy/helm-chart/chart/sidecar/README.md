@@ -280,6 +280,44 @@ extraVolumeMounts:
     readOnly: true
 ```
 
+A grpc lane whose `descriptors` are `gs://` URLs reads them as a GCP
+identity. On GKE, Workload Identity needs no secret: point
+`serviceAccount` at the Google account holding `roles/storage.objectViewer`
+on the bucket.
+
+```yaml
+serviceAccount:
+  create: true
+  annotations:
+    iam.gke.io/gcp-service-account: hoop-sidecar@PROJECT.iam.gserviceaccount.com
+```
+
+Off GKE, hand the sidecar a service account key either inline, through the
+gateway's own variable so one Secret serves both processes, or as a mounted
+file under the standard ADC variable:
+
+```yaml
+extraSecret:
+  GOOGLE_APPLICATION_CREDENTIALS_JSON: '{"type":"service_account", ...}'
+```
+
+```yaml
+extraVolumes:
+  - name: gcs-reader
+    secret:
+      secretName: hoop-sidecar-gcs
+      defaultMode: 0400
+extraVolumeMounts:
+  - name: gcs-reader
+    mountPath: /run/secrets/gcs
+    readOnly: true
+extraSecret:
+  GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/gcs/key.json
+```
+
+The inline variable outranks the file; set but malformed, it is an error
+rather than a fallthrough to another identity.
+
 ## Differences from the agent chart
 
 Two, both deliberate:

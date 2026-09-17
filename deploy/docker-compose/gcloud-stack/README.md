@@ -54,6 +54,12 @@ lanes land on the `grpc2` branch; the image must be built from it.
 bqstorage discovery is allowed to fail (the lane is method-only and runs
 without a protoset); `demo.sh` then skips its beats with a notice.
 
+The `/descriptors` volume is the emulator's stand-in for a bucket. Against
+real Spanner, publish the artifact `-grpc-discover-out` wrote and pin it
+as `descriptors: gs://BUCKET/spanner.pb?generation=N`; the sidecar
+fetches it at startup with Application Default Credentials
+(`roles/storage.objectViewer`), and `-validate` performs the fetch.
+
 ## Caveats
 
 - **BigQuery's query path is not here.** `jobs.query` and friends are REST

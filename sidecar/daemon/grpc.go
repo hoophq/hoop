@@ -7,10 +7,13 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/hoophq/hoop/sidecar/audit"
+	"github.com/hoophq/hoop/sidecar/descriptors"
 	"github.com/hoophq/hoop/sidecar/gate"
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/session"
@@ -32,10 +35,24 @@ type GRPCCodecConfig struct {
 	// Descriptors names one or more serialized FileDescriptorSets
 	// (protoc --include_imports --descriptor_set_out, buf build -o, or
 	// -grpc-discover against an upstream that exposes server reflection) —
-	// a single path or a list; sets merge, byte-identical shared imports
+	// a single entry or a list; sets merge, byte-identical shared imports
 	// dedupe, and conflicting copies of one file refuse at startup.
 	// Multiple sets are the multi-team shape: each service's CI ships its
 	// own artifact and no central re-bundle pipeline is required.
+	//
+	// An entry is a file path, or a URL a linked fetcher resolves at
+	// startup: gs://BUCKET/OBJECT[?generation=N] with the descriptors/gcs
+	// module. A bucket carries an artifact a ConfigMap cannot (1 MiB cap)
+	// and lets each team publish without a redeploy of the sidecar's
+	// volume. A scheme this binary does not link is refused at validation.
+	//
+	// Resolved ONCE, when the endpoint is built. The schema is bound into
+	// the server the way the lane's callbacks are (ADR-0013), so a new
+	// entry list is restart-bound drift (this block is in the reload
+	// baseline) and a new version of an unpinned object is applied by a
+	// restart, exactly like a new file at the same path. Pin
+	// ?generation=N where two restarts must decode against one schema.
+	//
 	// Required for any payload work: schema-less protobuf walking loses
 	// values as a function of their bytes, so no capture, masking or PII
 	// scanning happens without it (ADR-0013).
@@ -89,6 +106,15 @@ func (g *GRPCCodecConfig) validate(lane string) []string {
 		if strings.TrimSpace(p) == "" {
 			problems = append(problems, fmt.Sprintf(
 				"listener %q: grpc.descriptors contains an empty path", lane))
+			continue
+		}
+		// Decided here, not at the fetch: a scheme nobody linked must be a
+		// validate failure naming the module, not a startup "no such file"
+		// for a path that starts with gs://.
+		if scheme := descriptors.Scheme(p); scheme != "" && !descriptors.Linked(scheme) {
+			problems = append(problems, fmt.Sprintf(
+				"listener %q: grpc.descriptors %q uses scheme %q, which this binary does not "+
+					"link (%s)", lane, p, scheme, describeLinkedFetchers()))
 		}
 	}
 	if g.Strict && len(g.Descriptors) == 0 {
@@ -224,16 +250,12 @@ func buildGRPCServer(
 	if lc.MaxConns > 0 {
 		opts["max_conns"] = strconv.Itoa(lc.MaxConns)
 	}
-	if len(gc.Descriptors) > 0 {
-		// The list travels as one comma-separated setting; the escape
-		// discipline (\\ then \,) is libhoop's, so any filesystem path —
-		// commas and backslashes included — survives the seam.
-		escaped := make([]string, len(gc.Descriptors))
-		for i, p := range gc.Descriptors {
-			p = strings.ReplaceAll(p, `\`, `\\`)
-			escaped[i] = strings.ReplaceAll(p, ",", `\,`)
-		}
-		opts["descriptors"] = strings.Join(escaped, ",")
+	// Descriptor sets do not travel as a setting: an entry may be a URL, and
+	// resolving it — a fetch with credentials — is this package's job, not
+	// the codec's. The merged schema is handed over already loaded.
+	schema, err := loadGRPCSchema(gc.Descriptors)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", ln.name, err)
 	}
 	if gc.CapturePayload {
 		opts["capture_payload"] = "true"
@@ -308,7 +330,7 @@ func buildGRPCServer(
 
 		state := &grpcRPCState{
 			gate:  g,
-			stmts: newLaneStatements(info.Request, info.Service, info.Method, allowedMetadata, proto),
+			stmts: newLaneStatements(info.Request, info.Service, info.Method, allowedMetadata, proto, lc.Spanner),
 			log:   laneLog,
 		}
 		handler := state.callbacks()
@@ -330,11 +352,55 @@ func buildGRPCServer(
 		return handler, nil, nil
 	}
 
-	srv, err := codecgrpc.NewServer(opts, open, laneLog)
+	srv, err := codecgrpc.NewServerWithSchema(opts, schema, open, laneLog)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", ln.name, err)
 	}
 	return srv, nil
+}
+
+// grpcDescriptorFetchTimeout bounds one remote descriptor fetch. Generous,
+// because the artifact this feature exists for is the one too large for a
+// ConfigMap, and a stall here is a startup that never completes rather than
+// a request that fails, so the operator sees it either way.
+const grpcDescriptorFetchTimeout = 2 * time.Minute
+
+// loadGRPCSchema resolves every descriptors entry — files read here, URLs
+// fetched through the descriptors registry — and merges them into one
+// schema under libhoop's rules. Nil for a lane with no descriptors.
+//
+// Local files are read here rather than by passing paths to libhoop so one
+// merge sees every set: conflict detection between a file and a bucket
+// artifact needs both in the same call.
+func loadGRPCSchema(entries DescriptorPaths) (*codecgrpc.Schema, error) {
+	if len(entries) == 0 {
+		return nil, nil
+	}
+	sources := make([]codecgrpc.SchemaSource, 0, len(entries))
+	for _, entry := range entries {
+		var blob []byte
+		var err error
+		if descriptors.Scheme(entry) != "" {
+			ctx, cancel := context.WithTimeout(context.Background(), grpcDescriptorFetchTimeout)
+			blob, err = descriptors.Fetch(ctx, entry)
+			cancel()
+		} else {
+			blob, err = os.ReadFile(entry)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("grpc descriptors: %w", err)
+		}
+		sources = append(sources, codecgrpc.SchemaSource{Name: entry, Blob: blob})
+	}
+	return codecgrpc.LoadSchemaSources(sources)
+}
+
+func describeLinkedFetchers() string {
+	linked := descriptors.Registered()
+	if len(linked) == 0 {
+		return "no descriptor fetcher is linked; build github.com/hoophq/hoop/sidecar/cmd"
+	}
+	return "linked: " + strings.Join(linked, ", ")
 }
 
 type grpcRPCState struct {
@@ -373,30 +439,46 @@ func (r *grpcRPCState) requestMessage(
 	// carrying no SQL, and lanes other than spanner, keep the generic
 	// per-message statement below.
 	if r.stmts.protocol == inspect.Spanner {
-		sqls, sqlBearing := spannerSQLStatements(r.stmts.service, r.stmts.method, rendered)
-		for i, sql := range sqls {
-			d := r.gate.EvaluateStatement(ctx,
-				r.stmts.spannerSQL(sql, rendered, truncated, index, i+1))
-			r.logDecisionError("request message", d)
-			if !d.Allowed {
-				return grpcDeniedStatus(d.Message)
+		req, sqlBearing := spannerSQLStatements(r.stmts.service, r.stmts.method, rendered)
+		if sqlBearing && len(req.sqls) > 0 {
+			// The dialect is decided once per message, from the database
+			// the request names and the lane's config — never from the
+			// SQL text, which the client controls. Under per_database an
+			// unlisted database is the same fail-closed verdict as an
+			// unreadable rendering: a rule naming `unknown` refuses it.
+			dialect, d, ok := r.stmts.spanner.dialectFor(req.database, req.declared)
+			if !ok {
+				return r.evaluateSpannerUnreadable(ctx, rendered, truncated, index,
+					fmt.Sprintf("spanner.dialect is per_database and database %q is not listed", req.database))
 			}
-		}
-		if sqlBearing {
-			if len(sqls) > 0 {
-				return nil
-			}
-			d := r.gate.EvaluateStatement(ctx,
-				r.stmts.spannerUnreadable(rendered, truncated, index))
-			r.logDecisionError("request message", d)
-			if !d.Allowed {
-				return grpcDeniedStatus(d.Message)
+			for i, sql := range req.sqls {
+				dec := r.gate.EvaluateStatement(ctx,
+					r.stmts.spannerSQL(sql, rendered, truncated, index, i+1, req.database, dialect, d))
+				r.logDecisionError("request message", dec)
+				if !dec.Allowed {
+					return grpcDeniedStatus(dec.Message)
+				}
 			}
 			return nil
+		}
+		if sqlBearing {
+			return r.evaluateSpannerUnreadable(ctx, rendered, truncated, index, "")
 		}
 	}
 	d := r.gate.EvaluateStatement(ctx,
 		r.stmts.message(inspect.FromClient, rendered, truncated, index))
+	r.logDecisionError("request message", d)
+	if !d.Allowed {
+		return grpcDeniedStatus(d.Message)
+	}
+	return nil
+}
+
+// evaluateSpannerUnreadable runs the fail-closed statement for a SQL-bearing
+// message whose SQL could not be read. reason "" lets the statement pick
+// the rendering's own explanation.
+func (r *grpcRPCState) evaluateSpannerUnreadable(ctx context.Context, rendered string, truncated bool, index int, reason string) *codecgrpc.Status {
+	d := r.gate.EvaluateStatement(ctx, r.stmts.spannerUnreadable(rendered, truncated, index, reason))
 	r.logDecisionError("request message", d)
 	if !d.Allowed {
 		return grpcDeniedStatus(d.Message)

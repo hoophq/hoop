@@ -428,6 +428,41 @@ func TestAGRPCLaneAnalyzerEditKeepsTheRestartPath(t *testing.T) {
 	}
 }
 
+// A grpc lane's descriptor sets are bound into its endpoint when it is
+// built, the way its callbacks are, so a changed `descriptors` list is
+// drift a live process cannot absorb. The plane must hear "restart", not
+// "applied": applied would report a schema the lane is not decoding with.
+// This is the reload half of the contract the gcs fetcher documents; the
+// other half — a new version behind an unpinned URL — is invisible to a
+// reload by construction, since the document did not move.
+func TestAGRPCDescriptorsEditKeepsTheRestartPath(t *testing.T) {
+	desc := writeGRPCTestDescriptors(t)
+	base := fmt.Sprintf(`{
+  "listeners": [{
+    "name": "g", "protocol": "grpc",
+    "listen": "127.0.0.1:0", "upstream": "h:50051",
+    "grpc": {"capture_payload": true, "descriptors": [%q]}
+  }],
+  "audit": {"file": "-"}
+}`, desc)
+	rl, buf := testReloader(t, base)
+
+	// A second set at a new path: the merge accepts byte-identical files,
+	// so what changes is the list, not the schema's validity.
+	second := writeGRPCTestDescriptors(t)
+	drifted := editJSON(t, base, fmt.Sprintf(`"descriptors": [%q]`, desc),
+		fmt.Sprintf(`"descriptors": [%q, %q]`, desc, second))
+	if got := handleWith(rl, buf, drifted); got != reloadRestart {
+		t.Fatalf("outcome = %v, want restart; log:\n%s", got, buf)
+	}
+	if !strings.Contains(buf.String(), "beyond the rules; restart to apply it") {
+		t.Errorf("no restart log line:\n%s", buf)
+	}
+	if rl.gen != 0 {
+		t.Errorf("generation = %d, want 0: nothing was applied", rl.gen)
+	}
+}
+
 // A refused reload must not leak its candidate detector into the running
 // analyzer dependencies: the pii section was not committed, so a later
 // reload must not combine the uncommitted redaction behavior with the

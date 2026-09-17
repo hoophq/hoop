@@ -321,6 +321,11 @@ type ListenerConfig struct {
 	// Only valid on a grpc lane. See GRPCCodecConfig.
 	GRPC *GRPCCodecConfig `json:"grpc,omitempty"`
 
+	// Spanner tells a spanner lane which SQL dialect each database speaks,
+	// GoogleSQL or PostgreSQL. Only valid on a spanner lane; absent means
+	// GoogleSQL everywhere. See SpannerConfig.
+	Spanner *SpannerConfig `json:"spanner,omitempty"`
+
 	// SSH configures this lane's SSH endpoint: the keys it trusts, what it
 	// admits, the account it runs as. Required on an ssh lane and a config
 	// error anywhere else. See SSHConfig.
@@ -1078,6 +1083,17 @@ func (c *Config) validateLane(lc ListenerConfig, name string) []string {
 				name, lc.Protocol))
 		}
 		problems = append(problems, lc.GRPC.validate(name)...)
+	}
+
+	// And for a spanner block: only a spanner lane reads a dialect map,
+	// and on any other protocol it would load and decide nothing.
+	if lc.Spanner != nil {
+		if !isSpanner(lc) {
+			problems = append(problems, fmt.Sprintf(
+				"%s: a \"spanner\" block is only valid on a spanner listener, not %s",
+				name, lc.Protocol))
+		}
+		problems = append(problems, lc.Spanner.validate(name)...)
 	}
 
 	// The same rule for an ssh block, and one more: the block is REQUIRED

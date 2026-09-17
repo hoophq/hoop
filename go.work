@@ -11,6 +11,7 @@ use (
 	./sidecar/analyzer/vertex
 	./sidecar/cmd
 	./sidecar/config/yaml
+	./sidecar/descriptors/gcs
 	./sidecar/lexer/conformance
 	./sidecar/pii/alcatraz
 	./sidecar/store/sqlite

@@ -396,6 +396,23 @@ The HTTP codec exposes nothing by default. Without a body the model sees `POST
 A request with no body is skipped rather than classified, so a forgotten
 `capture_body` looks like an analyzer that never fires.
 
+With it on, `POST /orders/12345?export=all` reaches the model as the request
+line the client sent, the resource the trigger matched, and the body:
+
+```
+POST /orders/12345?export=all
+Resource: /orders/*
+Content-Type: application/json
+
+{"status": "cancelled"}
+```
+
+The literal id and the query string are intent, so the model sees them; the
+cache keys on the resource, the query string and the body, so two ids
+sending the same query and body are one call and a different `?export=`
+value is another. `send: redacted` runs the detector over this whole text,
+path included.
+
 ### Reading the verdicts
 
 Every classified statement carries its risk into the audit trail, allowed ones
