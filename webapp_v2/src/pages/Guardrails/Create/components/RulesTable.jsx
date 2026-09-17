@@ -240,6 +240,60 @@ export default function RulesTable({
                     aria-label="Denied words"
                   />
                 )}
+                {row.rule && row.type === 'operation' && (
+                  <TagsInput
+                    size={ROW_CONTROL_SIZE}
+                    placeholder="e.g. select, drop, delete, insert"
+                    value={row.operations}
+                    onChange={(values) => ops.patchRow(row.id, { operations: values })}
+                    aria-label="Operations"
+                  />
+                )}
+                {row.rule && row.type === 'table' && (
+                  <TagsInput
+                    size={ROW_CONTROL_SIZE}
+                    placeholder="e.g. users, payments"
+                    value={row.tables}
+                    onChange={(values) => ops.patchRow(row.id, { tables: values })}
+                    aria-label="Tables"
+                  />
+                )}
+                {row.rule && row.type === 'pii' && (
+                  <TagsInput
+                    size={ROW_CONTROL_SIZE}
+                    placeholder="e.g. EMAIL_ADDRESS, US_SSN"
+                    value={row.entities}
+                    onChange={(values) => ops.patchRow(row.id, { entities: values })}
+                    aria-label="PII Entities"
+                  />
+                )}
+                {row.rule && row.type === 'http_resource' && (
+                  <Stack gap="xs">
+                    <TagsInput
+                      size={ROW_CONTROL_SIZE}
+                      placeholder="Paths (e.g. /v1/users/**)"
+                      value={row.resources}
+                      onChange={(values) => ops.patchRow(row.id, { resources: values })}
+                      aria-label="HTTP Resources"
+                    />
+                    <TagsInput
+                      size={ROW_CONTROL_SIZE}
+                      placeholder="Methods (e.g. POST, DELETE)"
+                      value={row.methods}
+                      onChange={(values) => ops.patchRow(row.id, { methods: values })}
+                      aria-label="HTTP Methods"
+                    />
+                  </Stack>
+                )}
+                {row.rule && row.type === 'http_status' && (
+                  <TagsInput
+                    size={ROW_CONTROL_SIZE}
+                    placeholder="e.g. 4xx, 5xx, 404"
+                    value={row.statuses}
+                    onChange={(values) => ops.patchRow(row.id, { statuses: values })}
+                    aria-label="HTTP Statuses"
+                  />
+                )}
               </Table.Td>
               <Table.Td>
                 {row.rule && (

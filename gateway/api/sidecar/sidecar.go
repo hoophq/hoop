@@ -589,11 +589,17 @@ func enrichSidecarConfiguration(orgID, sidecarID string, cfg *daemon.Config) err
 			if lc.Analyzer == nil {
 				lc.Analyzer = &daemon.LaneAnalyzerConfig{}
 			}
-			mapAction := func(act models.RiskEvaluationAction) string {
-				switch act {
+			mapAction := func(tier *models.AISessionAnalyzerRiskTier) string {
+				if tier == nil {
+					return "allow"
+				}
+				switch tier.Action {
 				case models.BlockExecution:
 					return "block"
 				case models.RequireAccessRequest:
+					if tier.AccessRequestRuleName != nil && *tier.AccessRequestRuleName != "" {
+						lc.Analyzer.ApprovalRule = *tier.AccessRequestRuleName
+					}
 					return "defer"
 				case models.AllowExecution:
 					fallthrough
@@ -602,9 +608,9 @@ func enrichSidecarConfiguration(orgID, sidecarID string, cfg *daemon.Config) err
 				}
 			}
 
-			lc.Analyzer.HighRisk = mapAction(analyzerRule.RiskEvaluation.Tier(models.RiskLevelKeyHigh).Action)
-			lc.Analyzer.MediumRisk = mapAction(analyzerRule.RiskEvaluation.Tier(models.RiskLevelKeyMedium).Action)
-			lc.Analyzer.LowRisk = mapAction(analyzerRule.RiskEvaluation.Tier(models.RiskLevelKeyLow).Action)
+			lc.Analyzer.HighRisk = mapAction(analyzerRule.RiskEvaluation.HighRisk)
+			lc.Analyzer.MediumRisk = mapAction(analyzerRule.RiskEvaluation.MediumRisk)
+			lc.Analyzer.LowRisk = mapAction(analyzerRule.RiskEvaluation.LowRisk)
 
 			if analyzerRule.CustomPrompt != nil {
 				lc.Analyzer.Prompt = *analyzerRule.CustomPrompt

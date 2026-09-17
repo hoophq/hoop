@@ -138,6 +138,7 @@ func TestEnrichSidecarConfiguration(t *testing.T) {
 
 	// 3. Seed AI Session Analyzer Rule
 	desc := "Analyze all DB queries for anomalies"
+	ruleName := "test-approval-rule"
 	aiRule := models.AISessionAnalyzerRules{
 		ID:              uuid.New(),
 		OrgID:           orgUUID,
@@ -145,9 +146,12 @@ func TestEnrichSidecarConfiguration(t *testing.T) {
 		Description:     &desc,
 		ConnectionNames: []string{},
 		RiskEvaluation: models.AISessionAnalyzerRiskEvaluation{
-			HighRiskAction:   models.BlockExecution,
-			MediumRiskAction: models.RequireAccessRequest,
-			LowRiskAction:    models.AllowExecution,
+			HighRisk: &models.AISessionAnalyzerRiskTier{Action: models.BlockExecution},
+			MediumRisk: &models.AISessionAnalyzerRiskTier{
+				Action:                models.RequireAccessRequest,
+				AccessRequestRuleName: &ruleName,
+			},
+			LowRisk: &models.AISessionAnalyzerRiskTier{Action: models.AllowExecution},
 		},
 		CreatedAt: time.Now().UTC(),
 		UpdatedAt: time.Now().UTC(),
@@ -228,5 +232,8 @@ func TestEnrichSidecarConfiguration(t *testing.T) {
 	}
 	if prod.Analyzer.HighRisk != "block" || prod.Analyzer.MediumRisk != "defer" || prod.Analyzer.LowRisk != "allow" {
 		t.Errorf("incorrect AI analyzer risk actions: %+v", prod.Analyzer)
+	}
+	if prod.Analyzer.ApprovalRule != "test-approval-rule" {
+		t.Errorf("want approval rule 'test-approval-rule', got %q", prod.Analyzer.ApprovalRule)
 	}
 }

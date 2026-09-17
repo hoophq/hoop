@@ -1,7 +1,12 @@
-// The two rule engines the gateway understands.
+// The rule engines the sidecar/gateway understands.
 export const RULE_TYPE_OPTIONS = [
   { value: 'deny_words_list', label: 'Deny Word' },
   { value: 'pattern_match', label: 'Pattern Match' },
+  { value: 'operation', label: 'Operation' },
+  { value: 'table', label: 'Table' },
+  { value: 'pii', label: 'PII' },
+  { value: 'http_resource', label: 'HTTP Resource' },
+  { value: 'http_status', label: 'HTTP Status' },
 ]
 
 // Sentinel for the "write your own" entry of the Rule column.
@@ -43,6 +48,12 @@ export function createEmptyRow() {
     rule: '',
     pattern_regex: '',
     words: [],
+    operations: [],
+    tables: [],
+    entities: [],
+    resources: [],
+    methods: [],
+    statuses: [],
     message: '',
     selected: false,
   }
@@ -56,11 +67,6 @@ function sameWords(a, b) {
 }
 
 // Which Rule-column entry a stored rule maps back to when reopening a guardrail.
-//
-// The ClojureScript original looked presets up by the stringified word list
-// ["password"], but block-password stores four words, so every saved preset
-// came back as a custom rule. Comparing against the preset definition keeps
-// presets round-tripping through save/edit.
 export function identifyPreset(type, patternRegex, words) {
   if (type === 'pattern_match' && patternRegex) {
     const match = Object.entries(PRESETS).find(
@@ -92,6 +98,12 @@ export function apiRulesToRows(section) {
       rule: identifyPreset(rule.type, patternRegex, words),
       pattern_regex: patternRegex,
       words,
+      operations: [...(rule.operations ?? [])],
+      tables: [...(rule.tables ?? [])],
+      entities: [...(rule.entities ?? [])],
+      resources: [...(rule.resources ?? [])],
+      methods: [...(rule.methods ?? [])],
+      statuses: [...(rule.statuses ?? [])],
       message: rule.message ?? '',
       selected: false,
     }
@@ -101,7 +113,14 @@ export function apiRulesToRows(section) {
 // A row carries no enforceable configuration: it is dropped on save.
 function isEmptyRule(row) {
   if (!row.type) return true
-  return !row.words?.length && !row.pattern_regex
+  if (row.type === 'pattern_match') return !row.pattern_regex
+  if (row.type === 'deny_words_list') return !row.words?.length
+  if (row.type === 'operation') return !row.operations?.length
+  if (row.type === 'table') return !row.tables?.length
+  if (row.type === 'pii') return !row.entities?.length
+  if (row.type === 'http_resource') return !row.resources?.length && !row.methods?.length
+  if (row.type === 'http_status') return !row.statuses?.length
+  return true
 }
 
 // Dropping empty rows would silently discard a message the admin typed, so
@@ -113,9 +132,9 @@ export function orphanMessageError(inputRows, outputRows) {
   )
   if (!orphans.length) return null
   if (orphans.length === 1) {
-    return 'A rule has a custom error message but no configured words or pattern. Configure the rule or clear its message before saving.'
+    return 'A rule has a custom error message but no configured criteria. Configure the rule or clear its message before saving.'
   }
-  return `${orphans.length} rules have a custom error message but no configured words or pattern. Configure the rules or clear their messages before saving.`
+  return `${orphans.length} rules have a custom error message but no configured criteria. Configure the rules or clear their messages before saving.`
 }
 
 function rowsToSection(rows) {
@@ -124,6 +143,12 @@ function rowsToSection(rows) {
       type: row.type,
       words: row.words ?? [],
       pattern_regex: row.pattern_regex ?? '',
+      operations: row.operations ?? [],
+      tables: row.tables ?? [],
+      entities: row.entities ?? [],
+      resources: row.resources ?? [],
+      methods: row.methods ?? [],
+      statuses: row.statuses ?? [],
       message: row.message ?? '',
     })),
   }
