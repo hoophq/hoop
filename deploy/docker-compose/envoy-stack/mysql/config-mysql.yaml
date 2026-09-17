@@ -1,0 +1,77 @@
+# hoop-inspect with a third lane: MySQL.
+#
+#   envoy :8443 --cluster hoop_inspect_http---> :18080  lane "httpbin"
+#   envoy :5432 --cluster hoop_inspect_pg-----> :15432  lane "appdb"
+#   envoy :3306 --cluster hoop_inspect_mysql--> :13306  lane "mysqldb"
+#
+# The appdb and httpbin lanes are the LIVE parts of ../sidecar/config.yaml,
+# verbatim; the worked commentary and the over-the-limit blocks live there
+# and are not repeated. What is new here is the mysqldb lane at the bottom.
+#
+# The mysqldb lane adds NO rules. This build enforces one guardrail rule and
+# one data masking rule for the whole process, both spent in the defaults
+# below, and a MySQL lane inherits them like any other: no-cpf-in-query
+# refuses a taxpayer id inside a COM_QUERY, and emails rewrites the cells of
+# a result set -- text rows from the CLI, binary rows from a driver's
+# prepared statement -- by rebuilding each changed row around the new
+# lengths. Same budget, third protocol.
+#
+# Validate without starting anything:
+#   cd sidecar/cmd && go run . -validate \
+#     -config ../../deploy/docker-compose/envoy-stack/mysql/config-mysql.yaml
+
+log_level: info
+
+admin:
+  listen: 0.0.0.0:19000
+
+audit:
+  file: "-"
+  memory_buffer: 256
+  async_queue_size: 1024
+  query_sessions: 500
+
+pii:
+  entities:
+    - EMAIL_ADDRESS
+    - US_SSN
+    - CREDIT_CARD
+    - BR_CPF
+    - IBAN_CODE
+
+guardrails:
+  mode: enforce
+  rules:
+    - name: no-cpf-in-query
+      type: pii
+      entities: [BR_CPF]
+      message: do not put a taxpayer id in a query; it lands in the database's own logs
+
+mask:
+  rules:
+    - {name: emails, entities: [EMAIL_ADDRESS], strategy: redact}
+
+listeners:
+  - name: appdb
+    protocol: postgres
+    listen: 0.0.0.0:15432
+    upstream: appdb:5432
+    upstream_tls:
+      ca_file: /etc/hoop-inspect/certs/appdb.crt
+      server_name: appdb
+
+  - name: httpbin
+    protocol: http
+    listen: 0.0.0.0:18080
+    upstream: httpbin:8080
+
+  # The relay removes CLIENT_SSL from the greeting sent to the client, then
+  # performs MySQL's server-first SSLRequest exchange on the upstream leg.
+  # mysqldb requires TLS and the relay verifies this generated demo CA.
+  - name: mysqldb
+    protocol: mysql
+    listen: 0.0.0.0:13306
+    upstream: mysqldb:3306
+    upstream_tls:
+      ca_file: /etc/hoop-inspect/mysql-certs/ca.crt
+      server_name: mysqldb

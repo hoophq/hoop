@@ -1,0 +1,45 @@
+# Envoy owns the network path and forwards to an ordinary upstream.
+# hoop-inspect never owns a socket the client can see.
+#
+# One lane:
+#   :3306  TCP -> hoop-inspect (mysql codec) -> appdb
+#
+# Plain tcp_proxy, no client-facing TLS and no ext_authz. Envoy has no MySQL
+# parser in the main image, so it forwards opaque bytes to hoop-inspect. The
+# relay reads those plaintext frames, then creates a separate verified TLS
+# connection to appdb.
+
+admin:
+  address:
+    socket_address: { address: 0.0.0.0, port_value: 9901 }
+
+static_resources:
+  listeners:
+    - name: mysql_ingress
+      address:
+        socket_address: { address: 0.0.0.0, port_value: 3306 }
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.tcp_proxy
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy
+                stat_prefix: ingress_mysql
+                cluster: hoop_inspect_mysql
+                access_log:
+                  - name: envoy.access_loggers.stdout
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
+                      log_format:
+                        text_format: "[envoy] tcp mysql bytes_in=%BYTES_RECEIVED% bytes_out=%BYTES_SENT% flags=%RESPONSE_FLAGS% %DURATION%ms\n"
+
+  clusters:
+    - name: hoop_inspect_mysql
+      type: STRICT_DNS
+      connect_timeout: 5s
+      load_assignment:
+        cluster_name: hoop_inspect_mysql
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address: { address: hoop-inspect, port_value: 13306 }
