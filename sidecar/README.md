@@ -1062,6 +1062,16 @@ statements sends the query with its parameters unbound, so an approval
 releases that query shape rather than one set of values, and a statement
 larger than 100 KB is refused by the plane rather than reviewed.
 
+**The approval is exact; the classification is not.** The verdict cache keys
+on the statement SHAPE with literals stripped, so two statements differing
+only in a literal share one classification. On a holding lane that cuts both
+ways: a shape the model rated high holds every statement of that shape, each
+filing its own review, while a shape it rated low is forwarded without a hold
+even when a later literal makes it the dangerous one. `WHERE tenant = 'test'`
+and `WHERE tenant = 'prod'` are one shape. The cache is off unless the config
+turns it on; set `cache: {size: 0}` on a lane where every statement has to be
+judged on its own, and pay one model call per statement for it.
+
 Four things have to be true, and each missing one is refused at startup rather
 than at the first held statement:
 

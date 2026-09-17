@@ -138,6 +138,12 @@ func TestEveryRefusalIsAnError(t *testing.T) {
 			"refused a review for listener"},
 		{"server error", http.StatusInternalServerError, `{"message":"boom"}`, "500"},
 		{"unreadable body", http.StatusOK, `not json`, "could not be read"},
+		// A release names the review it spent, always. These two are what
+		// something that is not the control plane answers, and a statement
+		// must not go through on them.
+		{"forward with no review", http.StatusOK, `{"forward":true}`, "without naming a review"},
+		{"forward with an empty review id", http.StatusOK,
+			`{"forward":true,"review":{"id":"","status":"EXECUTED"}}`, "without naming a review"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cp, _ := reviewPlane(t, tc.code, tc.body)

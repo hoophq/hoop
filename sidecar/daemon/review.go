@@ -198,5 +198,15 @@ func decodeReview(raw []byte) (analyzer.ReviewResult, error) {
 		out.ID = answer.Review.ID
 		out.Status = answer.Review.Status
 	}
+	// A release has to name the review it spent. The plane always does, so
+	// anything answering `{"forward":true}` and nothing else is not the
+	// plane: a proxy, a captive portal, a URL pointing at the wrong service.
+	// Releasing on one JSON field would put a statement through on a
+	// document nobody authorized and leave an audit record tying it to no
+	// human decision, which is the one record this feature exists to write.
+	if out.Forward && out.ID == "" {
+		return analyzer.ReviewResult{}, fmt.Errorf(
+			"the control plane released a statement without naming a review")
+	}
 	return out, nil
 }
