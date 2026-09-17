@@ -52,10 +52,11 @@ func (r RiskLevel) Valid() bool {
 // gate copies onto the audit event.
 //
 // The vocabulary is fixed and short on purpose. audit.SinkOptions redaction
-// fingerprints Statement and HTTP.Body but never touches Event.Metadata, so
-// anything written here lands in the trail verbatim regardless of the
-// operator's redact_statements setting. Only classifications go here, never
-// model prose and never a value the statement carried.
+// fingerprints Statement and the content fields of HTTP (Body, Target, Query
+// values) but never touches Event.Metadata, so anything written here lands
+// in the trail verbatim regardless of the operator's redact_statements
+// setting. Only classifications go here, never model prose and never a value
+// the statement carried.
 const (
 	// MetadataRiskLevel is read by store.MemoryStore and the SQLite store
 	// to roll a session's highest risk up onto its record. The key name is
