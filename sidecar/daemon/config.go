@@ -224,7 +224,9 @@ type ListenerConfig struct {
 	// Upstream is the real backend.
 	Upstream string `json:"upstream"`
 
-	// UpstreamTLS enables TLS to the backend.
+	// UpstreamTLS enables TLS to the backend. MySQL negotiates this after
+	// its plaintext server greeting; other supported protocols negotiate
+	// before their ordinary message flow.
 	UpstreamTLS *TLSConfig `json:"upstream_tls"`
 
 	// DownstreamTLS lets the relay terminate the CLIENT's TLS on this lane.

@@ -1,0 +1,54 @@
+# hoop-inspect: one process, one lane.
+#
+#   envoy :3306 --cluster hoop_inspect_mysql--> :13306  lane "appdb"
+#
+# Validate without starting anything:
+#   cd sidecar/cmd && go run . -validate \
+#     -config ../../deploy/docker-compose/mysql-stack/sidecar/config.yaml
+#
+# Unlicensed, the process enforces ONE guardrail rule and ONE data masking
+# rule. Both are spent below, on the lane itself: there is no second lane
+# for a top-level default to reach.
+
+log_level: info
+
+admin:
+  listen: 0.0.0.0:19000
+
+audit:
+  file: "-" # stdout, for the container log pipeline
+  memory_buffer: 256
+  async_queue_size: 1024 # a slow disk must not block a user's query
+  query_sessions: 500 # backs /api/sessions
+
+listeners:
+  - name: appdb
+    protocol: mysql
+    listen: 0.0.0.0:13306
+    upstream: appdb:3306
+    upstream_tls:
+      ca_file: /etc/hoop-inspect/mysql-certs/ca.crt
+      server_name: appdb
+    # The relay clears CLIENT_SSL in the greeting sent to the client, then
+    # originates the server-first SSLRequest exchange on this upstream leg.
+    # downstream_tls remains unsupported because inspection requires this
+    # process to read the client's MySQL frames.
+    guardrails:
+      mode: enforce
+      rules:
+        # Lexer-derived under MySQL's rules: backticks quote identifiers,
+        # `#` starts a comment, `/*! ... */` EXECUTES, and backslashes
+        # escape inside string literals. SELECT 'DROP TABLE x' is a select;
+        # /*! DROP TABLE x */ is a drop.
+        - name: no-destructive-sql
+          type: operation
+          operations: [drop, delete, truncate]
+          message: destructive statements are not permitted on appdb
+    mask:
+      rules:
+        # A column rule, because that is what the MySQL codec keys masking
+        # on: the column NAME from the definitions the server sends ahead of
+        # every result set. It is exact, and it covers both row encodings --
+        # the text rows the mysql CLI receives and the binary rows a driver
+        # gets back from a prepared statement.
+        - {name: email-column, columns: [email], strategy: redact}

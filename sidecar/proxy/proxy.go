@@ -156,7 +156,8 @@ type Server struct {
 	// config reload can replace both without a restart. Loaded once per
 	// accepted connection: the Gate keeps what it captured, which is what
 	// makes a swap safe under live traffic.
-	rules atomic.Pointer[laneRules]
+	rules     atomic.Pointer[laneRules]
+	mysqlAuth *mysqlAuthBridge
 
 	mu      sync.Mutex
 	conns   map[net.Conn]struct{}
@@ -193,10 +194,19 @@ func NewServer(cfg Config) (*Server, error) {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
+	var mysqlAuth *mysqlAuthBridge
+	if cfg.Protocol == inspect.MySQL && cfg.UpstreamTLS != nil {
+		var err error
+		mysqlAuth, err = newMySQLAuthBridge()
+		if err != nil {
+			return nil, fmt.Errorf("sidecar/proxy: %w", err)
+		}
+	}
 	s := &Server{
-		cfg:   cfg,
-		log:   cfg.Logger,
-		conns: map[net.Conn]struct{}{},
+		cfg:       cfg,
+		log:       cfg.Logger,
+		conns:     map[net.Conn]struct{}{},
+		mysqlAuth: mysqlAuth,
 	}
 	s.rules.Store(&laneRules{policy: cfg.Policy, masker: cfg.Masker})
 	return s, nil
@@ -425,6 +435,38 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 		return
 	}
 	defer upstream.Close()
+	if s.cfg.Protocol == inspect.MySQL && s.cfg.UpstreamTLS != nil {
+		inspectPacket := func(dir inspect.Direction, data []byte) ([]byte, error) {
+			var d gate.Decision
+			if dir == inspect.FromClient {
+				d = g.Request(ctx, data)
+			} else {
+				d = g.Response(ctx, data)
+			}
+			if d.Err != nil {
+				log.Warn("inspection reported an error during MySQL authentication",
+					"direction", string(dir), "error", d.Err)
+			}
+			if !d.Allowed {
+				s.denied.Add(1)
+				return nil, fmt.Errorf("MySQL authentication denied: %s", d.Message)
+			}
+			return d.Payload, nil
+		}
+		client, upstream, err = negotiateMySQLUpstreamTLS(
+			client,
+			upstream,
+			s.cfg.Upstream,
+			s.cfg.UpstreamTLS,
+			s.cfg.DialTimeout,
+			s.mysqlAuth,
+			inspectPacket,
+		)
+		if err != nil {
+			log.Debug("MySQL upstream TLS negotiation failed", "error", err)
+			return
+		}
+	}
 
 	// Answer the pgwire pre-startup exchange before the gate sees a byte. It
 	// decides whether this session is inspectable at all: a client asking for
@@ -487,7 +529,7 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 func (s *Server) dialUpstream(ctx context.Context) (net.Conn, error) {
 	d := &net.Dialer{Timeout: s.cfg.DialTimeout}
 	conn, err := d.DialContext(ctx, "tcp", s.cfg.Upstream)
-	if err != nil || s.cfg.UpstreamTLS == nil {
+	if err != nil || s.cfg.UpstreamTLS == nil || s.cfg.Protocol == inspect.MySQL {
 		return conn, err
 	}
 

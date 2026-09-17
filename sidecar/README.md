@@ -1582,6 +1582,24 @@ other column is measured so the walk stays aligned and forwarded unchanged. A
 number carrying a secret is a real gap, and the honest one: the alternative is
 a protocol error the user reads as an outage.
 
+**Commands are queued, not latched.** A client may send the next command
+before the previous reply arrives — go-sql-driver closes a statement straight
+behind its execute, Connector/J batches, and a cursor loop issues the next
+fetch while the last batch is still streaming. The codec keeps the commands
+awaiting a reply in order and pairs each reply with the oldest, advancing on
+the packet that completes it (the final terminator, or an OK/EOF without
+`SERVER_MORE_RESULTS_EXISTS`). Commands the server never answers — `COM_QUIT`,
+`COM_STMT_CLOSE`, `COM_STMT_SEND_LONG_DATA` — are not queued. More than 1024
+unanswered commands is refused as malformed.
+
+**Server-side cursors are masked.** A `COM_STMT_EXECUTE` with a cursor flag
+(Connector/J `useCursorFetch=true`) returns the column definitions and no rows;
+the rows come back in `COM_STMT_FETCH` replies with no definitions of their
+own. The codec retains the definitions while `SERVER_STATUS_CURSOR_EXISTS` is
+set and releases them on `SERVER_STATUS_LAST_ROW_SENT`, so fetched rows are
+masked by the same column names. A fetch on a cursor the relay did not see
+open is refused: its rows would have no name to match.
+
 ### MongoDB, correlated commands and topology
 
 MongoDB multiplexes requests on one socket. A response names the request it
@@ -2509,14 +2527,20 @@ Compare MSSQL. TDS 8.0 is TLS-on-connect, so an ordinary
 `DownstreamTlsContext` terminates it with no protocol awareness, and that lane
 needs none of this.
 
-MySQL negotiates in-band too and is still refused this field, because the
-relay does not speak that exchange: the server greets first there, and the
-client asks to encrypt by sending a truncated handshake response rather than a
-self-describing 8-byte packet, so none of the pgwire negotiation applies.
-Something in front must terminate it. The consequence is not silent — the
-codec refuses a session it sees the client upgrade, naming the fix — but the
-deployment is what has to change, so terminate the TLS ahead of the relay and
-the codec is handed plaintext.
+MySQL negotiates in-band too, but with the opposite ordering: the server
+greets first, then the client sends a 32-byte `SSLRequest`. `downstream_tls`
+is still refused because the relay does not terminate the client's MySQL TLS;
+the codec also fails closed if an SSLRequest reaches it.
+
+`upstream_tls` is supported. The relay removes `CLIENT_SSL` from the greeting
+it gives the plaintext client, sends its own SSLRequest upstream, verifies the
+database certificate, and completes authentication before the normal pumps
+start. MySQL's `caching_sha2_password` and `sha256_password` need one extra
+bridge: the relay answers the plaintext client's RSA public-key request,
+decrypts that password response, and forwards the recovered NUL-terminated
+password only inside the verified upstream TLS connection. Authentication
+packets for other plugins pass through with sequence numbers translated
+around the inserted SSLRequest.
 
 ```yaml
 listeners:
@@ -2525,11 +2549,18 @@ listeners:
     downstream_tls:
       cert_file: /etc/hoop-inspect/certs/relay.crt
       key_file:  /etc/hoop-inspect/certs/relay.key
+  - name: mysqldb
+    protocol: mysql
+    upstream: mysql.internal:3306
+    upstream_tls:
+      ca_file: /etc/hoop-inspect/certs/mysql-ca.crt
+      server_name: mysql.internal
 ```
 
-The sidecar accepts this on Postgres and gRPC lanes, refuses it on every other
-protocol at startup, and loads the keypair there too. Finding a bad path on the first client connection would cost
-one failed login per restart and leave the startup log silent.
+
+The sidecar accepts `downstream_tls` on Postgres and gRPC lanes and refuses it
+on every other protocol at startup. It loads the keypair there too, so a bad
+path fails startup instead of the first client connection.
 
 ### GSS encryption draws a refusal
 

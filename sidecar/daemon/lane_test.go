@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/gate"
+	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
 )
 
@@ -227,7 +227,7 @@ func TestResolveReplacesMaskRules(t *testing.T) {
 // rules to every lane, the bug this change fixes.
 func TestBuildLanesGivesEachListenerItsOwnEvaluator(t *testing.T) {
 	cfg := &Config{
-		
+
 		Listeners: []ListenerConfig{
 			{Name: "a", Protocol: "postgres", Listen: ":1", Upstream: "h:1",
 				Guardrails: &GuardrailsConfig{Rules: []policy.Rule{rule("deny-on-a")}}},
@@ -335,12 +335,35 @@ func TestMaskOnMySQLIsAccepted(t *testing.T) {
 	}
 }
 
+func TestUpstreamTLSOnMySQLIsAccepted(t *testing.T) {
+	cfg := &Config{
+		Listeners: []ListenerConfig{{
+			Name: "appdb", Protocol: "mysql", Listen: ":1", Upstream: "h:3306",
+			UpstreamTLS: &TLSConfig{InsecureSkipVerify: true},
+		}},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("upstream_tls on mysql was refused: %v", err)
+	}
+
+	lanes, err := buildLanes(cfg, stubPlugin{}, nil)
+	if err != nil {
+		t.Fatalf("buildLanes: %v", err)
+	}
+	if lanes[0].cfg.UpstreamTLS == nil {
+		t.Fatal("mysql lane lost its upstream TLS config")
+	}
+	if !lanes[0].cfg.UpstreamTLS.InsecureSkipVerify {
+		t.Fatal("mysql lane changed its upstream TLS verification config")
+	}
+}
+
 // A pii rule naming an entity the detector was not told to find would
 // evaluate cleanly and never match, a guardrail that silently allows what it
 // was written to deny.
 func TestPIIRuleNamingUndetectedEntityIsRefused(t *testing.T) {
 	cfg := &Config{
-		
+
 		Listeners: []ListenerConfig{{
 			Name: "appdb", Protocol: "postgres", Listen: ":1", Upstream: "h:1",
 			Guardrails: &GuardrailsConfig{Rules: []policy.Rule{{
@@ -368,7 +391,7 @@ func TestPIIRuleNamingUndetectedEntityIsRefused(t *testing.T) {
 // error per restart.
 func TestBuildLanesReportsEveryBrokenLane(t *testing.T) {
 	cfg := &Config{
-		
+
 		Listeners: []ListenerConfig{
 			{Name: "bad-regex", Protocol: "postgres", Listen: ":1", Upstream: "h:1",
 				Guardrails: &GuardrailsConfig{Rules: []policy.Rule{{

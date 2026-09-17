@@ -51,29 +51,31 @@ func startTLS(conn net.Conn, addr string, proto inspect.Protocol, cfg *tls.Confi
 		}
 	}
 
-	// tls.Dial infers ServerName from the dial address; tls.Client does not,
-	// and an empty ServerName with verification on fails every handshake.
-	// Fill it the same way so an operator who set no server_name gets the
-	// behavior a plain TLS dial would have given them.
-	//
-	// It comes from the CONFIGURED address, never conn.RemoteAddr(), which is
-	// the resolved IP: a certificate issued for "appdb" does not match
-	// "172.18.0.5", so using the peer address would fail every verified
-	// handshake against a DNS-named upstream.
-	if cfg.ServerName == "" && !cfg.InsecureSkipVerify {
-		host, _, err := net.SplitHostPort(addr)
-		if err != nil {
-			return nil, fmt.Errorf("upstream TLS: cannot derive server name from %q: %w", addr, err)
-		}
-		cfg = cfg.Clone()
-		cfg.ServerName = host
+	cfg, err := upstreamTLSConfig(addr, cfg)
+	if err != nil {
+		return nil, err
 	}
-
 	tc := tls.Client(conn, cfg)
 	if err := tc.Handshake(); err != nil {
 		return nil, fmt.Errorf("upstream TLS handshake: %w", err)
 	}
 	return tc, nil
+}
+
+// upstreamTLSConfig fills ServerName from the configured upstream address,
+// matching tls.Dial's behavior while keeping protocol negotiation on the raw
+// connection under the relay's control.
+func upstreamTLSConfig(addr string, cfg *tls.Config) (*tls.Config, error) {
+	if cfg.ServerName != "" || cfg.InsecureSkipVerify {
+		return cfg, nil
+	}
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, fmt.Errorf("upstream TLS: cannot derive server name from %q: %w", addr, err)
+	}
+	cfg = cfg.Clone()
+	cfg.ServerName = host
+	return cfg, nil
 }
 
 // negotiatePostgresTLS performs the SSLRequest exchange on a freshly dialled

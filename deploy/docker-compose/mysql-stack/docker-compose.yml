@@ -1,0 +1,157 @@
+# Envoy-fronted MySQL, fully local.
+#
+#   client ──plaintext──> envoy ──tcp──> hoop-inspect :13306 ──TLS──> appdb
+#    mysql CLI            tcp_proxy      mysql codec              mysql:8
+#                                        inspects, masks, audits
+#
+# The sibling ../envoy-stack runs Postgres and HTTP behind the same shape,
+# with OPA and TLS. This stack omits OPA because Envoy has no MySQL parser in
+# the main image, so ext_authz has no statement to authorize.
+#
+# The client leg stays plaintext: Envoy forwards opaque TCP and hoop-inspect
+# must read the protocol. The relay clears CLIENT_SSL in the greeting, then
+# performs MySQL's server-first SSLRequest exchange itself and encrypts the
+# upstream hop. MySQL requires secure transport, so a plaintext bypass fails.
+#
+# There is no hoop gateway and no hoop agent here. The sidecar is the whole
+# story.
+#
+# Bring up:  ./run.sh
+
+name: hoop-mysql-stack
+
+services:
+  mysqlcerts:
+    image: alpine:3.20
+    networks: [inspect]
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        apk add --no-cache openssl >/dev/null
+        if [ ! -f /certs/ca.crt ]; then
+          openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
+            -keyout /certs/ca.key -out /certs/ca.crt \
+            -subj "/CN=hoop-mysql-demo-ca" >/dev/null 2>&1
+          openssl req -new -newkey rsa:2048 -nodes \
+            -keyout /certs/server.key -out /certs/server.csr \
+            -subj "/CN=appdb" >/dev/null 2>&1
+          printf 'subjectAltName=DNS:appdb\nextendedKeyUsage=serverAuth\n' >/certs/server.ext
+          openssl x509 -req -days 365 -in /certs/server.csr \
+            -CA /certs/ca.crt -CAkey /certs/ca.key -CAcreateserial \
+            -extfile /certs/server.ext -out /certs/server.crt >/dev/null 2>&1
+        fi
+        chown 999:999 /certs/server.key
+        chmod 600 /certs/server.key
+        chmod 644 /certs/ca.crt /certs/server.crt
+    volumes:
+      - mysql-certs:/certs
+  # The upstream a DBA would actually care about.
+  #
+  # mysql:8 rather than MariaDB, deliberately. MariaDB authenticates with
+  # mysql_native_password; the relay bug the e2e suite was built to catch
+  # only appears under caching_sha2_password, MySQL 8's default, where the
+  # server's fast-auth packet and the OK that follows it arrive together.
+  appdb:
+    image: mysql:8
+    attach: false
+    networks: [inspect]
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: appdb
+      MYSQL_USER: appuser
+      MYSQL_PASSWORD: apppass
+    command:
+      - --require-secure-transport=ON
+      - --ssl-ca=/etc/mysql/certs/ca.crt
+      - --ssl-cert=/etc/mysql/certs/server.crt
+      - --ssl-key=/etc/mysql/certs/server.key
+    volumes:
+      - ./upstream/seed.sql:/docker-entrypoint-initdb.d/seed.sql:ro
+      - mysql-certs:/etc/mysql/certs:ro
+    depends_on:
+      mysqlcerts: { condition: service_completed_successfully }
+    healthcheck:
+      # -h127.0.0.1, not the socket: the entrypoint runs a throwaway server
+      # Requiring TLS here proves the database is not merely advertising it.
+      test: ["CMD-SHELL", "mysqladmin ping -h127.0.0.1 -uappuser -papppass --ssl-mode=REQUIRED --silent"]
+      interval: "3s"
+      timeout: "10s"
+      retries: 30
+      start_period: "20s"
+
+  # Stands in for the sandbox: the only box a developer types on. It reaches
+  # nothing directly -- the lane goes through Envoy.
+  #
+  # The same image as the server, for its mysql CLI. The point is the CLI's
+  # wire behaviour, not the binary: since 8.0.23 it negotiates
+  # CLIENT_QUERY_ATTRIBUTES and prefixes every COM_QUERY with an attribute
+  # block that go-sql-driver never sends. A human at a terminal uses this
+  # capability set, so this is the client to police.
+  client:
+    image: mysql:8
+    networks: [inspect]
+    entrypoint: ["sleep", "infinity"]
+    healthcheck:
+      test: ["CMD-SHELL", "command -v mysql"]
+      interval: "3s"
+      timeout: "10s"
+      retries: 20
+      start_period: "5s"
+
+  # The hoop-inspect sidecar: plaintext MySQL on its client leg, verified
+  # MySQL TLS on its upstream leg. It decodes the decrypted protocol,
+  # evaluates policy per statement, writes an audit trail, and rebuilds
+  # result-set rows with masked values on the way back.
+  hoop-inspect:
+    image: hoop-inspect:local
+    build:
+      # The same image ../envoy-stack builds, from the same Dockerfile, so
+      # one `docker compose build` serves both stacks. sidecar's codecs live
+      # in libhoop, a private module; the second context takes it from the
+      # local checkout beside the repo.
+      context: ../../../sidecar
+      dockerfile: ../deploy/docker-compose/envoy-stack/sidecar/Dockerfile
+      additional_contexts:
+        libhoop: ../../../libhoop
+    networks: [inspect]
+    volumes:
+      - ./sidecar/config.yaml:/etc/hoop-inspect/config.yaml:ro
+      - mysql-certs:/etc/hoop-inspect/mysql-certs:ro
+    ports:
+      # Admin only: /healthz, /stats, /config and the audit query API. The
+      # data-path listener is reached over the compose network by Envoy,
+      # never from the host.
+      - "19000:19000"
+    depends_on:
+      appdb: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:19000/healthz || exit 1"]
+      interval: "2s"
+      timeout: "10s"
+      retries: 15
+      start_period: "5s"
+
+  envoy:
+    image: envoyproxy/envoy:v1.33-latest
+    networks: [inspect]
+    volumes:
+      - ./envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro
+    ports:
+      # 3307 on the host, because a developer laptop usually already has
+      # something on 3306.
+      - "3307:3306"   # TCP lane -> hoop-inspect (mysql codec)
+      - "9901:9901"   # admin
+    command:
+      - envoy
+      - -c
+      - /etc/envoy/envoy.yaml
+      - --log-level
+      - warn
+    depends_on:
+      hoop-inspect: { condition: service_healthy }
+
+networks:
+  inspect:
+
+volumes:
+  mysql-certs:
