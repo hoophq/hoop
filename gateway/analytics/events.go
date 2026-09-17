@@ -52,6 +52,12 @@ const (
 	// EventCreateSidecarReview is emitted with TrackEvent, not TrackRequest:
 	// a sidecar authenticates with its own token and carries no user.
 	EventCreateSidecarReview = "hoop-create-sidecar-review"
+	// EventConsumeSidecarReview is the approval being spent: the retry that
+	// claimed an approved review and released the statement. Emitted once per
+	// review, by the request that wins the claim, so counting it against
+	// EventCreateSidecarReview measures how many held statements a human
+	// actually releases.
+	EventConsumeSidecarReview = "hoop-consume-sidecar-review"
 
 	// plugins
 	EventCreatePlugin          = "hoop-create-plugin"

@@ -358,6 +358,24 @@ type SidecarReviewRequest struct {
 	ApprovalRule string `json:"approval_rule" binding:"required,max=254" example:"payments-approvers"`
 }
 
+// SidecarReviewResponse answers a sidecar that asked to review a statement.
+//
+// Forward is separate from the review status deliberately. When two retries of
+// one approved statement race, both read APPROVED and both see EXECUTED
+// afterwards; only the request that consumed the review may release the
+// statement, and no status tells it apart from the one that lost. A sidecar
+// reads Forward and nothing else to decide.
+type SidecarReviewResponse struct {
+	// Whether the sidecar may release the statement it held
+	//
+	// True only on the request that consumed an approved review, and only
+	// once per review. False while the review waits, and false forever once
+	// it is rejected or revoked.
+	Forward bool `json:"forward" example:"false"`
+	// The review the statement is waiting on, or the one that released it
+	Review *Review `json:"review"`
+}
+
 type SidecarHandshakeRequest struct {
 	// Version of the sidecar binary
 	Version string `json:"version" binding:"required" example:"1.0.0"`
