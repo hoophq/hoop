@@ -199,20 +199,26 @@ func TestEmptyTriggerLoadsOnBothLaneKinds(t *testing.T) {
 	}
 }
 
-// require_review still has no backend, and the message must point at the
-// alternative that now exists rather than only at block and warn.
-func TestRequireReviewNamesDeferAsTheAlternative(t *testing.T) {
+// The DEPRECATED rule form cannot hold a statement: it has no approval_rule
+// to carry, so a review filed from one would name nobody who could release
+// it. The message has to send the operator to the block, which is the only
+// spelling that takes both halves.
+func TestRequireReviewOnTheRuleFormNamesTheAnalyzerBlock(t *testing.T) {
 	r := aiRule("risky")
 	r.HighRisk = "require_review"
 	cfg := pgLane(r)
 	cfg.Analyzer = &AnalyzerConfig{Provider: "stub", Model: "m"}
+	cfg.ControlPlaneURL = "https://cp.example.com"
 
 	err := cfg.Validate()
 	if err == nil {
-		t.Fatal("require_review was accepted")
+		t.Fatal("require_review was accepted on an ai_analysis rule")
 	}
-	if !strings.Contains(err.Error(), "defer") {
-		t.Errorf("the error does not offer defer: %v", err)
+	if !strings.Contains(err.Error(), "approval_rule") {
+		t.Errorf("the error does not name what the rule form lacks: %v", err)
+	}
+	if !strings.Contains(err.Error(), "analyzer") {
+		t.Errorf("the error does not point at the analyzer block: %v", err)
 	}
 }
 

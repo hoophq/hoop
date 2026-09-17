@@ -230,10 +230,8 @@ type LaneAnalyzerConfig struct {
 	// looser of the two the accident.
 	//
 	// It is meaningful only where a risk level asks for require_review, and
-	// this build refuses require_review outright, so every config naming it
-	// is refused at startup today. The field exists now so the control plane
-	// can store and serve one: a stored document it cannot represent is
-	// served with the key dropped, silently disabling the control it named.
+	// required there: the two arrive together or startup refuses the lane,
+	// because either one alone is a control nothing reads.
 	ApprovalRule string `json:"approval_rule,omitempty"`
 
 	// The rest override the top-level analyzer defaults for this lane.
@@ -440,6 +438,24 @@ func (ac *analyzerDeps) budgetFor(key string) *atomic.Int64 {
 	return cell
 }
 
+// reviewerFor returns the call this lane makes to hold a statement for human
+// approval, or nil when nothing should be filed.
+//
+// Nil in three cases, and each one denies rather than forwards:
+//
+//   - The lane names no approval_rule, so no level on it holds.
+//   - The lane is OBSERVING. A dry run that paged approvers would be a dry
+//     run with consequences, and the statement runs anyway: policy.Observe
+//     turns the hold's denial into an allow annotated would_deny, which is
+//     the record the mode exists to produce.
+//   - The process has no control plane, which is every -validate run.
+func (ac *analyzerDeps) reviewerFor(listener string, la *LaneAnalyzerConfig, observing bool) reviewFunc {
+	if ac == nil || la == nil || la.ApprovalRule == "" || observing {
+		return nil
+	}
+	return ac.cp.reviewer(listener, la.ApprovalRule)
+}
+
 // budget key prefixes. The map in analyzerDeps is process-wide and keyed by
 // name, and the two analyzer forms draw their names from different
 // namespaces: a rule is named by the operator, a block by its listener. A
@@ -460,6 +476,10 @@ const (
 // per-name registry, so a rebuilt evaluator (a hot reload that edited the
 // rule's lane) continues the running count instead of starting a fresh one,
 // and two lanes naming one rule still pay from one purse.
+//
+// A rule never holds a statement: it carries no approval_rule to name who
+// could release one, which is why validateLaneAnalysis refuses require_review
+// on this spelling. Each evaluator is therefore built with a nil reviewer.
 func buildAnalyzerEvaluators(
 	rules []policy.Rule,
 	ac *analyzerDeps,
@@ -475,7 +495,7 @@ func buildAnalyzerEvaluators(
 	out := make([]policy.Evaluator, 0, len(rules))
 	for _, r := range rules {
 		ev, err := buildAnalyzerEvaluator(r.Name, budgetRulePrefix+r.Name,
-			specFromRule(r), ac, hasOPA, gated)
+			specFromRule(r), ac, hasOPA, gated, nil)
 		if err != nil {
 			return nil, fmt.Errorf("rule %q: %w", r.Name, err)
 		}
@@ -496,6 +516,7 @@ func buildLaneAnalyzer(
 	la *LaneAnalyzerConfig,
 	ac *analyzerDeps,
 	hasOPA, gated bool,
+	review reviewFunc,
 ) (policy.Evaluator, error) {
 	if la == nil {
 		return nil, nil
@@ -505,7 +526,7 @@ func buildLaneAnalyzer(
 			"listener %q has an analyzer block, and the config has no top-level "+
 				"analyzer section to supply the provider", lane)
 	}
-	ev, err := buildAnalyzerEvaluator(lane, budgetLanePrefix+lane, *la, ac, hasOPA, gated)
+	ev, err := buildAnalyzerEvaluator(lane, budgetLanePrefix+lane, *la, ac, hasOPA, gated, review)
 	if err != nil {
 		return nil, fmt.Errorf("analyzer block: %w", err)
 	}
@@ -527,11 +548,16 @@ func buildLaneAnalyzer(
 // startup note naming the cost. A GATED lane keeps the zero trigger, so a
 // gate-phase policy stays the only spender and Rego's silence keeps
 // meaning "skip" for every deployed two-phase config.
+//
+// review is what an ActionRequireReview level calls, already carrying the
+// listener and the approval rule (see controlPlane.reviewer). Nil where
+// nothing should be filed, which denies: see analyzer.Config.Review.
 func buildAnalyzerEvaluator(
 	name, budgetKey string,
 	la LaneAnalyzerConfig,
 	ac *analyzerDeps,
 	hasOPA, gated bool,
+	review reviewFunc,
 ) (policy.Evaluator, error) {
 	cfg := ac.cfg
 
@@ -610,6 +636,7 @@ func buildAnalyzerEvaluator(
 		MaxCalls:      maxCalls,
 		Budget:        ac.budgetFor(budgetKey),
 		Redact:        redactorFor(send, ac.det),
+		Review:        review,
 	})
 }
 
@@ -676,6 +703,7 @@ func setupAnalyzer(cfg *Config, det Plugin) (*analyzerDeps, error) {
 	return &analyzerDeps{
 		cfg:      cfg.Analyzer,
 		provider: provider,
+		cp:       cfg.cp,
 		det:      det,
 	}, nil
 }
@@ -775,8 +803,13 @@ func httpCodecFactory(proto inspect.Protocol, h *HTTPCodecConfig) func() inspect
 // Every refusal here is a control that would otherwise load, evaluate and do
 // nothing: the exact failure the pii-entity check exists to prevent, applied
 // to a feature that also costs money when it does fire.
+//
+// protocol is read only by the require_review checks: a hold needs a lane
+// whose client resends the statement, and the analyzer block cannot see which
+// lane it is on. The action's OTHER prerequisite, a control plane to file
+// with, is checked in buildLanes; see holdsWithoutAPlane.
 func validateLaneAnalysis(rules []policy.Rule, la *LaneAnalyzerConfig,
-	cfg *AnalyzerConfig, opa *OPAConfig, lane string) []string {
+	cfg *AnalyzerConfig, opa *OPAConfig, lane, protocol string) []string {
 	gated := opa.enabled() && opa.Gate
 
 	if len(rules) == 0 && la == nil {
@@ -803,7 +836,7 @@ func validateLaneAnalysis(rules []policy.Rule, la *LaneAnalyzerConfig,
 	}
 
 	if la != nil {
-		problems = append(problems, validateLaneBlock(la, lane)...)
+		problems = append(problems, validateLaneBlock(la, lane, protocol)...)
 	}
 
 	for _, r := range rules {
@@ -823,18 +856,44 @@ func validateLaneAnalysis(rules []policy.Rule, la *LaneAnalyzerConfig,
 				lane, r.Name, r.Action))
 		}
 
+		where := fmt.Sprintf("%s: ai_analysis rule %q", lane, r.Name)
 		problems = append(problems, validateRiskActions(
-			r.HighRisk, r.MediumRisk, r.LowRisk,
-			fmt.Sprintf("%s: ai_analysis rule %q", lane, r.Name))...)
+			r.HighRisk, r.MediumRisk, r.LowRisk, where)...)
+		problems = append(problems, refuseRuleFormHold(
+			r.HighRisk, r.MediumRisk, r.LowRisk, where)...)
 	}
 	return problems
+}
+
+// refuseRuleFormHold refuses require_review on the DEPRECATED ai_analysis
+// rule, which the listener analyzer block supports.
+//
+// The rule carries no approval_rule and cannot: specFromRule maps a rule onto
+// the block shape and leaves the field empty, so a holding rule would file a
+// review naming nobody who could release it. The message names the block
+// rather than offering block or defer, because moving there is both the fix
+// for this and the direction the config is going anyway.
+func refuseRuleFormHold(high, medium, low, where string) []string {
+	for _, level := range [...]struct{ name, action string }{
+		{"high", high}, {"medium", medium}, {"low", low},
+	} {
+		if analyzer.Action(level.action) != analyzer.ActionRequireReview {
+			continue
+		}
+		return []string{fmt.Sprintf(
+			"%s asks for %q on %s risk, which a deprecated ai_analysis rule cannot "+
+				"do: it carries no approval_rule to name who may release a held "+
+				"statement. Move this lane to a listener \"analyzer\" block, which "+
+				"takes both", where, level.action, level.name)}
+	}
+	return nil
 }
 
 // validateLaneBlock checks one listener's analyzer block in isolation. The
 // checks mirror the rule-form ones — same failure, same message shape — plus
 // the numeric bounds a rule never carried, which get the same negative
 // refusal AnalyzerConfig.validate applies to the defaults they override.
-func validateLaneBlock(la *LaneAnalyzerConfig, lane string) []string {
+func validateLaneBlock(la *LaneAnalyzerConfig, lane, protocol string) []string {
 	var problems []string
 	where := lane + ": analyzer block"
 	problems = append(problems, validateRiskActions(
@@ -864,24 +923,57 @@ func validateLaneBlock(la *LaneAnalyzerConfig, lane string) []string {
 		}
 	}
 
-	// An approval rule with nothing to approve is the same failure the
-	// risk-action checks above exist to prevent: a control that loads,
-	// names reviewers and is read by nobody. The blank case is separate
-	// because a name of spaces matches no rule in the control plane and
-	// would surface as a refused review long after startup.
-	if la.ApprovalRule != "" {
-		switch {
-		case strings.TrimSpace(la.ApprovalRule) == "":
-			problems = append(problems, where+
-				": approval_rule is blank; it names an access request rule in the control plane")
-		case !analyzerHolds(la):
+	// The approval rule and the levels that hold have to arrive together.
+	// Either one alone is a control that loads and is read by nobody: a
+	// reviewer list nothing consults, or a hold with no one able to
+	// release it. The blank case is separate because a name of spaces
+	// matches no rule in the control plane and would surface as a refused
+	// review long after startup.
+	holds := analyzerHolds(la)
+	switch {
+	case la.ApprovalRule == "" && holds:
+		problems = append(problems, fmt.Sprintf(
+			"%s asks for %q and names no approval_rule; the rule is what decides who "+
+				"may release a held statement, and the control plane refuses a review "+
+				"that does not name one", where, analyzer.ActionRequireReview))
+	case la.ApprovalRule == "":
+	case strings.TrimSpace(la.ApprovalRule) == "":
+		problems = append(problems, where+
+			": approval_rule is blank; it names an access request rule in the control plane")
+	case !holds:
+		problems = append(problems, fmt.Sprintf(
+			"%s: approval_rule %q names who may approve a statement, and no risk "+
+				"level asks for %q, so nothing on this lane would hold one",
+			where, la.ApprovalRule, analyzer.ActionRequireReview))
+	}
+
+	if holds {
+		if !holdableProtocol(protocol) {
 			problems = append(problems, fmt.Sprintf(
-				"%s: approval_rule %q names who may approve a statement, and no risk "+
-					"level asks for %q, so nothing on this lane would hold one",
-				where, la.ApprovalRule, analyzer.ActionRequireReview))
+				"%s asks for %q on a %s lane, and only a database lane can hold a "+
+					"statement: the hold refuses the first attempt and releases an "+
+					"identical retry, which needs a client that sends the statement "+
+					"again", where, analyzer.ActionRequireReview, protocol))
 		}
 	}
 	return problems
+}
+
+// holdableProtocol reports whether a lane's protocol may hold a statement for
+// human approval: the four wire-database codecs, and nothing else.
+//
+// A hold is not a pause. It denies the first attempt and releases a retry
+// that carries the same bytes, so it needs a client that sends a statement
+// twice, which is what a database client does when a developer runs the
+// query again. An http or grpc caller is a program reading a refusal, and an
+// ssh session is a shell the denial already ended; neither replays a
+// statement byte for byte on its own. EVL-284 draws the line here.
+func holdableProtocol(protocol string) bool {
+	switch inspect.Protocol(protocol) {
+	case inspect.Postgres, inspect.MySQL, inspect.MSSQL, inspect.MongoDB:
+		return true
+	}
+	return false
 }
 
 // validateRiskActions checks a high/medium/low action map, shared by the
@@ -900,23 +992,18 @@ func validateRiskActions(high, medium, low, where string) []string {
 		if !a.Valid() {
 			problems = append(problems, fmt.Sprintf(
 				"%s: unknown action %q for %s risk "+
-					"(allow, warn, block or defer)", where, raw, level))
+					"(allow, warn, block, defer or require_review)", where, raw, level))
 			continue
 		}
 		// `defer` with no OPA is not a refusal. actionMap degrades it
 		// to block, so the statement is denied rather than allowed,
 		// and one config file can serve a deployment with OPA and a
 		// deployment without one.
-		if a == analyzer.ActionRequireReview {
-			// The action is declared in the enum so the schema is
-			// stable when review lands, and refused here so nobody
-			// ships a config that looks like it holds statements
-			// for approval and quietly does not.
-			problems = append(problems, fmt.Sprintf(
-				"%s asks for %q on %s risk, and this build "+
-					"cannot hold a statement for human approval; use block, warn "+
-					"or defer to an OPA policy", where, raw, level))
-		}
+		//
+		// `require_review` is not refused here either, and its
+		// prerequisites are not this function's business: it is legal
+		// on an analyzer block and refused on the deprecated rule
+		// form, and only the caller knows which it is reading.
 	}
 	if !named {
 		problems = append(problems, fmt.Sprintf(

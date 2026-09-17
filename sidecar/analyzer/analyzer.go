@@ -75,6 +75,15 @@ const (
 	// carrying two ai_analysis rules can be told apart in the trail.
 	MetadataAIRule = "ai_rule"
 
+	// MetadataReviewID names the review a held statement is waiting on, or
+	// the one that released it.
+	//
+	// An id, never content, so it belongs in Metadata under the same rule
+	// as the classifications: it is the handle a developer quotes to an
+	// approver, and it is what ties this audit record to a decision a
+	// human made somewhere else entirely.
+	MetadataReviewID = "review_id"
+
 	// MetadataAIStatus records what the analyzer did. It is the key that
 	// separates "rated low" from "never asked", "provider down" and
 	// "budget spent". All four look like an absent risk_level to anything
@@ -178,11 +187,16 @@ const (
 
 	// ActionRequireReview holds the statement for human approval.
 	//
-	// Declared but not implemented. The config layer refuses it by name so
-	// the enum is stable when review lands: an operator who writes it today
-	// gets a startup error explaining that this build cannot hold a
-	// statement, rather than a config that silently downgrades to warn and
-	// looks like a working guardrail.
+	// The hold is a denial with a handle: the statement is refused, a
+	// review is filed with the backend Config.Review reaches, and the id
+	// travels back in the message. Nothing waits on the connection for a
+	// human. Approval arrives minutes or hours later, when the client's
+	// socket is long gone, so the release happens on a RETRY, which the
+	// backend matches against the exact bytes it already approved.
+	//
+	// That is why an approval is spent once and why the statement sent for
+	// review is the raw text rather than the model's input: both sides
+	// have to be comparing the same bytes.
 	ActionRequireReview Action = "require_review"
 )
 

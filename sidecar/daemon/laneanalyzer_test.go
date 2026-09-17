@@ -29,6 +29,18 @@ func blockLane(la *LaneAnalyzerConfig) *Config {
 	return cfg
 }
 
+// holdingLane is a lane that holds high-risk statements for a human: every
+// half present, which is what makes it the baseline each refusal below
+// removes exactly one piece from.
+func holdingLane() *Config {
+	la := laneBlock()
+	la.HighRisk = "require_review"
+	la.ApprovalRule = "payments-approvers"
+	cfg := blockLane(la)
+	cfg.ControlPlaneURL = "https://cp.example.com"
+	return cfg
+}
+
 // The analyzer is a per-lane component now: a listener declares it beside
 // guardrails and mask, with no rule wrapper.
 func TestLaneAnalyzerBlockIsAccepted(t *testing.T) {
@@ -88,7 +100,7 @@ func TestOmittedTriggerClassifiesEverythingUnlessGated(t *testing.T) {
 		provider: rec,
 	}
 	ungated, err := buildLaneAnalyzer("appdb", &LaneAnalyzerConfig{HighRisk: "block"},
-		deps, false, false)
+		deps, false, false, nil)
 	if err != nil {
 		t.Fatalf("buildLaneAnalyzer: %v", err)
 	}
@@ -99,7 +111,7 @@ func TestOmittedTriggerClassifiesEverythingUnlessGated(t *testing.T) {
 	}
 
 	gated, err := buildLaneAnalyzer("payments", &LaneAnalyzerConfig{HighRisk: "block"},
-		deps, true, true)
+		deps, true, true, nil)
 	if err != nil {
 		t.Fatalf("buildLaneAnalyzer: %v", err)
 	}
@@ -127,12 +139,16 @@ func TestLaneAnalyzerWithoutAnyActionIsRefused(t *testing.T) {
 
 // The block refuses the same action values the rule form refuses, through
 // the same shared check.
+//
+// require_review is in the table with its own reason: the block SUPPORTS it,
+// so what is refused here is the half-written form: a hold that names nobody
+// who could release it.
 func TestLaneAnalyzerActionVocabulary(t *testing.T) {
 	for _, tc := range []struct {
 		name, action, want string
 	}{
 		{"unknown", "explode", "unknown action"},
-		{"require_review", "require_review", "hold a statement"},
+		{"require_review with no approval_rule", "require_review", "names no approval_rule"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			la := laneBlock()
@@ -206,7 +222,7 @@ func TestLaneAnalyzerPromptPrecedence(t *testing.T) {
 				cfg:      &AnalyzerConfig{Provider: "stub", Model: "m", Prompt: tc.cfgPrompt},
 				provider: stubAnalyzerProvider{},
 			}
-			ev, err := buildLaneAnalyzer("appdb", la, deps, true, false)
+			ev, err := buildLaneAnalyzer("appdb", la, deps, true, false, nil)
 			if err != nil {
 				t.Fatalf("buildLaneAnalyzer: %v", err)
 			}
@@ -238,13 +254,13 @@ func TestLaneAnalyzerOverridesAndBudgetKeyOnTheLane(t *testing.T) {
 		Operation: inspect.OpDelete,
 	}
 
-	gen1, err := buildLaneAnalyzer("appdb", la, deps, false, false)
+	gen1, err := buildLaneAnalyzer("appdb", la, deps, false, false, nil)
 	if err != nil {
 		t.Fatalf("buildLaneAnalyzer: %v", err)
 	}
 	gen1.Evaluate(stmt) // spends the whole lane budget of 1
 
-	gen2, err := buildLaneAnalyzer("appdb", la, deps, false, false)
+	gen2, err := buildLaneAnalyzer("appdb", la, deps, false, false, nil)
 	if err != nil {
 		t.Fatalf("buildLaneAnalyzer: %v", err)
 	}
@@ -254,7 +270,7 @@ func TestLaneAnalyzerOverridesAndBudgetKeyOnTheLane(t *testing.T) {
 	}
 
 	// A different lane is a different identity with its own purse.
-	other, err := buildLaneAnalyzer("payments", la, deps, false, false)
+	other, err := buildLaneAnalyzer("payments", la, deps, false, false, nil)
 	if err != nil {
 		t.Fatalf("buildLaneAnalyzer: %v", err)
 	}
@@ -482,11 +498,10 @@ func TestOnlyAnOperationScopedBuilderConstrainsATrigger(t *testing.T) {
 // Editing only a lane's analyzer block must swap on a hot reload rather
 // than demand a restart: the block builds evaluators, not sockets.
 //
-// approval_rule is in the table although no config carrying it starts today:
-// require_review is refused, so the pairing is unreachable until a build can
-// hold a statement. Pinning it here means the reviewer list an operator edits
-// then reaches the lane on the next heartbeat instead of at the next restart,
-// which is the difference between a mistargeted approval group living for
+// approval_rule is in the table because it is the one field here that names
+// people: the reviewer list an operator edits reaches the lane on the next
+// heartbeat instead of at the next restart, which is the difference between
+// a mistargeted approval group living for
 // seconds and living until someone notices.
 func TestLaneAnalyzerBlockIsInsideTheReloadBoundary(t *testing.T) {
 	for _, tc := range []struct {
@@ -570,25 +585,31 @@ func TestApprovalRuleNeedsARiskLevelThatHolds(t *testing.T) {
 	}
 }
 
-// Pairing approval_rule with require_review satisfies this check and still
-// does not start: the action itself stays refused until a build can hold a
-// statement. The field exists so the control plane can store and serve one,
-// and the sidecar says which half is missing rather than loading a review
-// that never happens.
-func TestApprovalRuleWithRequireReviewStillRefusesTheAction(t *testing.T) {
-	la := laneBlock()
-	la.HighRisk = "require_review"
-	la.ApprovalRule = "payments-approvers"
+// The complete form starts: a level that holds, a rule naming who may
+// release, a database lane and a control plane to file with.
+func TestRequireReviewStartsWhenEveryHalfIsPresent(t *testing.T) {
+	if err := holdingLane().Validate(); err != nil {
+		t.Fatalf("a complete require_review lane was refused: %v", err)
+	}
+}
 
-	err := blockLane(la).Validate()
-	if err == nil {
-		t.Fatal("require_review was accepted because an approval_rule was set")
-	}
-	if !strings.Contains(err.Error(), "hold a statement") {
-		t.Errorf("the error does not name the missing review backend: %v", err)
-	}
-	if strings.Contains(err.Error(), "approval_rule") {
-		t.Errorf("the pairing check fired on a block that names both: %v", err)
+// A hold releases a retry that carries the same bytes, so it needs a client
+// that sends the statement twice. A lane whose caller never does could file a
+// review no one could ever collect, which is worth a startup refusal rather
+// than a pending review nobody consumes.
+func TestRequireReviewNeedsADatabaseLane(t *testing.T) {
+	for _, protocol := range []string{"http", "grpc", "spanner", "ssh"} {
+		t.Run(protocol, func(t *testing.T) {
+			cfg := holdingLane()
+			cfg.Listeners[0].Protocol = protocol
+			err := cfg.Validate()
+			if err == nil {
+				t.Fatalf("a %s lane was accepted", protocol)
+			}
+			if !strings.Contains(err.Error(), "only a database lane can hold a statement") {
+				t.Errorf("error %v does not name the reason", err)
+			}
+		})
 	}
 }
 
@@ -644,7 +665,7 @@ func TestLaneCacheOverrideMergesFieldWise(t *testing.T) {
 			}
 			la := laneBlock()
 			la.Cache = tc.cache
-			ev, err := buildLaneAnalyzer("appdb", la, deps, false, false)
+			ev, err := buildLaneAnalyzer("appdb", la, deps, false, false, nil)
 			if err != nil {
 				t.Fatalf("buildLaneAnalyzer: %v", err)
 			}
@@ -668,7 +689,7 @@ func TestBlockAndRuleBudgetsDoNotCollideOnOneName(t *testing.T) {
 		provider: rec,
 	}
 
-	block, err := buildLaneAnalyzer("appdb", laneBlock(), deps, false, false)
+	block, err := buildLaneAnalyzer("appdb", laneBlock(), deps, false, false, nil)
 	if err != nil {
 		t.Fatalf("buildLaneAnalyzer: %v", err)
 	}
@@ -696,7 +717,7 @@ func TestRedactedSendTransmitsNoValues(t *testing.T) {
 		provider: rec,
 		det:      stubPlugin{entities: []string{"CREDIT_CARD"}, find: pan},
 	}
-	ev, err := buildLaneAnalyzer("appdb", laneBlock(), deps, false, false)
+	ev, err := buildLaneAnalyzer("appdb", laneBlock(), deps, false, false, nil)
 	if err != nil {
 		t.Fatalf("buildLaneAnalyzer: %v", err)
 	}
@@ -727,7 +748,7 @@ func TestLanePrivacySendWithoutDetectorIsRefused(t *testing.T) {
 			}
 			la := laneBlock()
 			la.Send = mode
-			_, err := buildLaneAnalyzer("appdb", la, deps, false, false)
+			_, err := buildLaneAnalyzer("appdb", la, deps, false, false, nil)
 			if err == nil || !strings.Contains(err.Error(), "detector") {
 				t.Fatalf("a %s override with no detector was accepted: %v", mode, err)
 			}
@@ -753,7 +774,7 @@ func TestRefuseRunsOnCacheHits(t *testing.T) {
 		provider: rec,
 		det:      stubPlugin{entities: []string{"CREDIT_CARD"}, find: pan},
 	}
-	ev, err := buildLaneAnalyzer("appdb", laneBlock(), deps, false, false)
+	ev, err := buildLaneAnalyzer("appdb", laneBlock(), deps, false, false, nil)
 	if err != nil {
 		t.Fatalf("buildLaneAnalyzer: %v", err)
 	}

@@ -1054,7 +1054,8 @@ func (c *Config) validateLane(lc ListenerConfig, name string) []string {
 	}
 
 	localRules, aiRules := splitAnalyzerRules(gc.Rules)
-	problems = append(problems, validateLaneAnalysis(aiRules, lc.Analyzer, c.Analyzer, opa, name)...)
+	problems = append(problems, validateLaneAnalysis(aiRules, lc.Analyzer, c.Analyzer, opa,
+		name, lc.Protocol)...)
 
 	if opa != nil && opa.URL == "" && !opa.off() {
 		problems = append(problems, name+
@@ -1386,7 +1387,8 @@ func buildPolicy(lane string, gc GuardrailsConfig, la *LaneAnalyzerConfig,
 	// on a plain lane, gate-decided on a gated one.
 	gated := opa.enabled() && opa.Gate
 	if la != nil {
-		ev, err := buildLaneAnalyzer(lane, la, ac, opa.enabled(), gated)
+		ev, err := buildLaneAnalyzer(lane, la, ac, opa.enabled(), gated,
+			ac.reviewerFor(lane, la, gc.observing()))
 		if err != nil {
 			return nil, err
 		}
@@ -1475,6 +1477,13 @@ func analyzerHolds(la *LaneAnalyzerConfig) bool {
 type analyzerDeps struct {
 	cfg      *AnalyzerConfig
 	provider analyzer.Provider
+
+	// cp is the control plane this process reached, nil when it has none.
+	// A lane that holds a statement for approval files the review through
+	// it; every other lane never reads it. Held here rather than passed
+	// down because the reloader rebuilds lanes from these deps, so an
+	// edited approval_rule reaches the lane on the next heartbeat.
+	cp *controlPlane
 
 	// det builds each evaluator's redactor from its EFFECTIVE send mode:
 	// a lane overriding `send` gets its own rewrite function while every
