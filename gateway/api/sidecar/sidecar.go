@@ -583,8 +583,20 @@ func toResponse(s models.Sidecar) openapi.SidecarResponse {
 	// organization, so it is not part of this document in either direction.
 	resp.Configuration.License = ""
 	resp.LastSeenAt = s.LastSeenAt
-	if s.ReportedVersion != nil {
-		resp.Version = *s.ReportedVersion
-	}
+	// Each stays empty when the column is NULL, so a sidecar that has never
+	// handshaken, and one too old to report, both read as unknown. Rendering
+	// a zero value as a real answer here would report convergence nobody
+	// claimed.
+	resp.Version = derefOrEmpty(s.ReportedVersion)
+	resp.ServedRevision = derefOrEmpty(s.ServedRevision)
+	resp.AppliedRevision = derefOrEmpty(s.AppliedRevision)
+	resp.LastOutcome = derefOrEmpty(s.LastOutcome)
 	return resp
+}
+
+func derefOrEmpty(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }

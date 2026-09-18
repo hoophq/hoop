@@ -319,12 +319,29 @@ type SidecarResponse struct {
 	CreatedAt time.Time `json:"created_at"`
 	// The stored daemon configuration.
 	Configuration daemon.Config `json:"configuration" swaggertype:"object"`
-	// Version reported at the last handshake. Held in gateway memory, not
-	// stored, so it is empty until the sidecar calls and again after a
-	// gateway restart.
+	// Version reported at the last handshake. Empty until the sidecar calls.
 	Version string `json:"version,omitempty" example:"1.0.0"`
-	// Last time this gateway process saw the sidecar. Same lifetime as Version.
+	// Last time the sidecar handshook. Empty until it does.
 	LastSeenAt *time.Time `json:"last_seen_at,omitempty"`
+	// ServedRevision names the configuration last answered to this sidecar,
+	// and AppliedRevision the one it says it is running. Equal means the
+	// sidecar is enforcing what the control plane holds.
+	//
+	// Both are opaque: the control plane issues them and compares them to
+	// itself. Nothing parses them.
+	ServedRevision  string `json:"served_revision,omitempty" example:"8f14e45fceea167a5a36dedd4bea2543"`
+	AppliedRevision string `json:"applied_revision,omitempty" example:"8f14e45fceea167a5a36dedd4bea2543"`
+	// LastOutcome is what the sidecar did with the last configuration it
+	// handled: applied, unchanged, restart, refused or retry.
+	//
+	// It is the field that separates a sidecar enforcing the current rules
+	// from one that refused them and kept the old ones. A refusal, or a
+	// document needing a restart, leaves the sidecar handshaking on time
+	// with stale rules, and nothing else tells the two apart.
+	//
+	// Empty for a sidecar that has handled nothing yet, or one too old to
+	// report. Empty must read as unknown, never as converged.
+	LastOutcome string `json:"last_outcome,omitempty" example:"applied"`
 }
 
 type SidecarCreateResponse struct {

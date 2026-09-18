@@ -19580,6 +19580,10 @@ const docTemplate = `{
         "openapi.SidecarCreateResponse": {
             "type": "object",
             "properties": {
+                "applied_revision": {
+                    "type": "string",
+                    "example": "8f14e45fceea167a5a36dedd4bea2543"
+                },
                 "configuration": {
                     "description": "The stored daemon configuration.",
                     "type": "object"
@@ -19598,8 +19602,13 @@ const docTemplate = `{
                     "format": "uuid",
                     "readOnly": true
                 },
+                "last_outcome": {
+                    "description": "LastOutcome is what the sidecar did with the last configuration it\nhandled: applied, unchanged, restart, refused or retry.\n\nIt is the field that separates a sidecar enforcing the current rules\nfrom one that refused them and kept the old ones. A refusal, or a\ndocument needing a restart, leaves the sidecar handshaking on time\nwith stale rules, and nothing else tells the two apart.\n\nEmpty for a sidecar that has handled nothing yet, or one too old to\nreport. Empty must read as unknown, never as converged.",
+                    "type": "string",
+                    "example": "applied"
+                },
                 "last_seen_at": {
-                    "description": "Last time this gateway process saw the sidecar. Same lifetime as Version.",
+                    "description": "Last time the sidecar handshook. Empty until it does.",
                     "type": "string"
                 },
                 "name": {
@@ -19613,13 +19622,18 @@ const docTemplate = `{
                     "format": "uuid",
                     "readOnly": true
                 },
+                "served_revision": {
+                    "description": "ServedRevision names the configuration last answered to this sidecar,\nand AppliedRevision the one it says it is running. Equal means the\nsidecar is enforcing what the control plane holds.\n\nBoth are opaque: the control plane issues them and compares them to\nitself. Nothing parses them.",
+                    "type": "string",
+                    "example": "8f14e45fceea167a5a36dedd4bea2543"
+                },
                 "token": {
                     "description": "The generated token, sent in the hoop-sidecar-token header. This is the\nonly time it is shown; it is stored hashed and cannot be recovered.",
                     "type": "string",
                     "example": "hsc_Ab3fX9kL..."
                 },
                 "version": {
-                    "description": "Version reported at the last handshake. Held in gateway memory, not\nstored, so it is empty until the sidecar calls and again after a\ngateway restart.",
+                    "description": "Version reported at the last handshake. Empty until the sidecar calls.",
                     "type": "string",
                     "example": "1.0.0"
                 }
@@ -19680,6 +19694,10 @@ const docTemplate = `{
         "openapi.SidecarResponse": {
             "type": "object",
             "properties": {
+                "applied_revision": {
+                    "type": "string",
+                    "example": "8f14e45fceea167a5a36dedd4bea2543"
+                },
                 "configuration": {
                     "description": "The stored daemon configuration.",
                     "type": "object"
@@ -19698,8 +19716,13 @@ const docTemplate = `{
                     "format": "uuid",
                     "readOnly": true
                 },
+                "last_outcome": {
+                    "description": "LastOutcome is what the sidecar did with the last configuration it\nhandled: applied, unchanged, restart, refused or retry.\n\nIt is the field that separates a sidecar enforcing the current rules\nfrom one that refused them and kept the old ones. A refusal, or a\ndocument needing a restart, leaves the sidecar handshaking on time\nwith stale rules, and nothing else tells the two apart.\n\nEmpty for a sidecar that has handled nothing yet, or one too old to\nreport. Empty must read as unknown, never as converged.",
+                    "type": "string",
+                    "example": "applied"
+                },
                 "last_seen_at": {
-                    "description": "Last time this gateway process saw the sidecar. Same lifetime as Version.",
+                    "description": "Last time the sidecar handshook. Empty until it does.",
                     "type": "string"
                 },
                 "name": {
@@ -19713,8 +19736,13 @@ const docTemplate = `{
                     "format": "uuid",
                     "readOnly": true
                 },
+                "served_revision": {
+                    "description": "ServedRevision names the configuration last answered to this sidecar,\nand AppliedRevision the one it says it is running. Equal means the\nsidecar is enforcing what the control plane holds.\n\nBoth are opaque: the control plane issues them and compares them to\nitself. Nothing parses them.",
+                    "type": "string",
+                    "example": "8f14e45fceea167a5a36dedd4bea2543"
+                },
                 "version": {
-                    "description": "Version reported at the last handshake. Held in gateway memory, not\nstored, so it is empty until the sidecar calls and again after a\ngateway restart.",
+                    "description": "Version reported at the last handshake. Empty until the sidecar calls.",
                     "type": "string",
                     "example": "1.0.0"
                 }
