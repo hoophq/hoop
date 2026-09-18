@@ -427,7 +427,10 @@ function Router() {
         path="/features/data-masking/new"
         element={
           <Page adminOnly licenseFeature="data-masking">
-            <DataMaskingForm />
+            <ByProduct
+              gateway={<DataMaskingForm />}
+              controlPlane={<DataMaskingForm sidecarTargets />}
+            />
           </Page>
         }
       />
@@ -435,7 +438,10 @@ function Router() {
         path="/features/data-masking/edit/:id"
         element={
           <Page adminOnly licenseFeature="data-masking">
-            <DataMaskingForm />
+            <ByProduct
+              gateway={<DataMaskingForm />}
+              controlPlane={<DataMaskingForm sidecarTargets />}
+            />
           </Page>
         }
       />
@@ -516,7 +522,10 @@ function Router() {
         path="/features/ai-session-analyzer/rules/new"
         element={
           <Page adminOnly licenseFeature="ai-session-analyzer">
-            <AiSessionAnalyzerRuleForm />
+            <ByProduct
+              gateway={<AiSessionAnalyzerRuleForm />}
+              controlPlane={<AiSessionAnalyzerRuleForm sidecarTargets />}
+            />
           </Page>
         }
       />
@@ -524,7 +533,10 @@ function Router() {
         path="/features/ai-session-analyzer/rules/edit/:ruleName"
         element={
           <Page adminOnly licenseFeature="ai-session-analyzer">
-            <AiSessionAnalyzerRuleForm />
+            <ByProduct
+              gateway={<AiSessionAnalyzerRuleForm />}
+              controlPlane={<AiSessionAnalyzerRuleForm sidecarTargets />}
+            />
           </Page>
         }
       />
@@ -542,7 +554,10 @@ function Router() {
         path="/guardrails/new"
         element={
           <Page adminOnly licenseFeature="guardrails">
-            <GuardrailForm />
+            <ByProduct
+              gateway={<GuardrailForm />}
+              controlPlane={<GuardrailForm sidecarTargets />}
+            />
           </Page>
         }
       />
@@ -550,7 +565,10 @@ function Router() {
         path="/guardrails/edit/:id"
         element={
           <Page adminOnly licenseFeature="guardrails">
-            <GuardrailForm />
+            <ByProduct
+              gateway={<GuardrailForm />}
+              controlPlane={<GuardrailForm sidecarTargets />}
+            />
           </Page>
         }
       />

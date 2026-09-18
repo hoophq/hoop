@@ -11709,6 +11709,13 @@ const docTemplate = `{
                         }
                     ]
                 },
+                "sidecar_targets": {
+                    "description": "SidecarTargets binds this rule to sidecar listeners, which is how a\ncontrol plane distributes it to a fleet. The analyzer is a per-lane\ncomponent, so a listener must already carry an analyzer block -- the\ntrigger and the call budget stay the operator's, and the rule supplies\nthe risk decision and the prompt.\n\nrequire_access_request is refused on a bound rule: a sidecar declares the\nreview action in its configuration but refuses it at startup until\nEVL-289 lands.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.SidecarRuleTarget"
+                    }
+                },
                 "updated_at": {
                     "description": "The time the resource was updated",
                     "type": "string",
@@ -11763,6 +11770,13 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.AISessionAnalyzerRiskEvaluation"
                         }
                     ]
+                },
+                "sidecar_targets": {
+                    "description": "SidecarTargets binds this rule to sidecar listeners, which is how a\ncontrol plane distributes it to a fleet. The analyzer is a per-lane\ncomponent, so a listener must already carry an analyzer block -- the\ntrigger and the call budget stay the operator's, and the rule supplies\nthe risk decision and the prompt.\n\nrequire_access_request is refused on a bound rule: a sidecar declares the\nreview action in its configuration but refuses it at startup until\nEVL-289 lands.\n\nA POINTER because absent and empty are different instructions: absent\nleaves the bindings exactly as they are, and [] unbinds the rule from\nevery sidecar. Without that distinction any write that did not mention\nthe field -- a script fixing a typo, the gateway's own UI, an MCP call --\nwould silently unbind a rule from the whole fleet.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.SidecarRuleTarget"
+                    }
                 }
             }
         },
@@ -14352,6 +14366,13 @@ const docTemplate = `{
                     "type": "number",
                     "example": 0.6
                 },
+                "sidecar_targets": {
+                    "description": "SidecarTargets binds this rule to sidecar listeners, which is how a\ncontrol plane distributes it to a fleet. An entry with an empty listener\ntargets every listener on that sidecar.\n\nA bound rule is restricted to what a sidecar can detect: supported entity\ntypes only. Custom entity types are refused, because the sidecar's pii\nsection selects and ignores built-in recognizers and cannot register a\nregex of its own.\n\nA POINTER because absent and empty are different instructions: absent\nleaves the bindings exactly as they are, and [] unbinds the rule from\nevery sidecar. Without that distinction any write that did not mention\nthe field -- a script fixing a typo, the gateway's own UI, an MCP call --\nwould silently unbind a rule from the whole fleet.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.SidecarRuleTarget"
+                    }
+                },
                 "supported_entity_types": {
                     "description": "The registered entity types that this rule applies to",
                     "type": "array",
@@ -14467,6 +14488,13 @@ const docTemplate = `{
                     "description": "The minimal detection score threshold for the entities to be masked.",
                     "type": "number",
                     "example": 0.6
+                },
+                "sidecar_targets": {
+                    "description": "SidecarTargets binds this rule to sidecar listeners, which is how a\ncontrol plane distributes it to a fleet. An entry with an empty listener\ntargets every listener on that sidecar.\n\nA bound rule is restricted to what a sidecar can detect: supported entity\ntypes only. Custom entity types are refused, because the sidecar's pii\nsection selects and ignores built-in recognizers and cannot register a\nregex of its own.\n\nA POINTER because absent and empty are different instructions: absent\nleaves the bindings exactly as they are, and [] unbinds the rule from\nevery sidecar. Without that distinction any write that did not mention\nthe field -- a script fixing a typo, the gateway's own UI, an MCP call --\nwould silently unbind a rule from the whole fleet.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.SidecarRuleTarget"
+                    }
                 },
                 "supported_entity_types": {
                     "description": "The registered entity types that this rule applies to",
@@ -14898,7 +14926,7 @@ const docTemplate = `{
                     "additionalProperties": {}
                 },
                 "sidecar_targets": {
-                    "description": "SidecarTargets binds this rule to sidecar listeners, which is how a\ncontrol plane distributes it to a fleet. An entry with an empty listener\ntargets every listener on that sidecar.\n\nA bound rule is restricted to what a sidecar can enforce: request-side\nrules only, of type deny_words_list or pattern_match, with a pattern Go's\nRE2 accepts. A rule outside that is refused on the write rather than\nsaved and quietly never enforced.",
+                    "description": "SidecarTargets binds this rule to sidecar listeners, which is how a\ncontrol plane distributes it to a fleet. An entry with an empty listener\ntargets every listener on that sidecar.\n\nA bound rule is restricted to what a sidecar can enforce: request-side\nrules only, of type deny_words_list or pattern_match, with a pattern Go's\nRE2 accepts. A rule outside that is refused on the write rather than\nsaved and quietly never enforced.\n\nA POINTER because absent and empty are different instructions: absent\nleaves the bindings exactly as they are, and [] unbinds the rule from\nevery sidecar. Without that distinction any write that did not mention\nthe field -- a script fixing a typo, the gateway's own UI, an MCP call --\nwould silently unbind a rule from the whole fleet.",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/openapi.SidecarRuleTarget"

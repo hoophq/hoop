@@ -27,8 +27,8 @@ import (
 // It runs on every write to a bound rule, not only when the binding is
 // created: editing a compliant rule into a non-compliant one would otherwise
 // walk straight past it.
-func refuseSidecarTargets(c *gin.Context, orgID uuid.UUID, rule *models.AISessionAnalyzerRules, reqTargets []openapi.SidecarRuleTarget) bool {
-	targets := toSidecarTargets(reqTargets)
+func refuseSidecarTargets(c *gin.Context, orgID uuid.UUID, rule *models.AISessionAnalyzerRules, reqTargets *[]openapi.SidecarRuleTarget) bool {
+	targets := toSidecarTargets(derefTargets(reqTargets))
 
 	bound := len(targets) > 0
 	if !bound {
@@ -61,8 +61,25 @@ func refuseSidecarTargets(c *gin.Context, orgID uuid.UUID, rule *models.AISessio
 
 // persistSidecarTargets replaces the rule's target set. Called only after the
 // rule row exists, so the junction's foreign key has something to point at.
-func persistSidecarTargets(orgID uuid.UUID, ruleName string, targets []openapi.SidecarRuleTarget) error {
-	return models.SetAnalyzerRuleListeners(models.DB, orgID, ruleName, toSidecarTargets(targets))
+//
+// An ABSENT field is not an empty one: it leaves the bindings alone, so a write
+// that says nothing about sidecars changes nothing about them. An explicit []
+// is the admin unbinding the rule, and does replace the set with nothing.
+func persistSidecarTargets(orgID uuid.UUID, ruleName string, targets *[]openapi.SidecarRuleTarget) error {
+	if targets == nil {
+		return nil
+	}
+	return models.SetAnalyzerRuleListeners(models.DB, orgID, ruleName, toSidecarTargets(*targets))
+}
+
+// derefTargets reads the optional field as a list, for the guards, which treat
+// "not mentioned" and "none" the same: neither adds a binding, and a rule that
+// is bound elsewhere is checked either way.
+func derefTargets(in *[]openapi.SidecarRuleTarget) []openapi.SidecarRuleTarget {
+	if in == nil {
+		return nil
+	}
+	return *in
 }
 
 func toSidecarTargets(in []openapi.SidecarRuleTarget) []models.SidecarRuleTarget {

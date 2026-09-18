@@ -291,7 +291,12 @@ func GetSessionAnalyzerRule(c *gin.Context) {
 	case gorm.ErrRecordNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
 	case nil:
-		c.JSON(http.StatusOK, toSessionAnalyzerRuleResponse(rule))
+		out := toSessionAnalyzerRuleResponse(rule)
+		// Read back on the single-rule route, which is what the edit form
+		// loads. Without it the form opens with the picker empty and the next
+		// save unbinds the rule from every sidecar it reached.
+		out.SidecarTargets = loadSidecarTargets(orgID, rule.Name)
+		c.JSON(http.StatusOK, out)
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching AI session analyzer rule: %v", err)
 	}

@@ -296,8 +296,12 @@ func Get(c *gin.Context) {
 			Output:        rule.Output,
 			ConnectionIDs: rule.ConnectionIDs,
 			Attributes:    rule.Attributes,
-			CreatedAt:     rule.CreatedAt,
-			UpdatedAt:     rule.UpdatedAt,
+			// Read back on the single-rule route, which is what the edit form
+			// loads. Without it the form opens with the picker empty and the
+			// next save unbinds the rule from every sidecar it reached.
+			SidecarTargets: loadSidecarTargets(ctx.GetOrgID(), rule.Name),
+			CreatedAt:      rule.CreatedAt,
+			UpdatedAt:      rule.UpdatedAt,
 		})
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing guard rail rules: %v", err)
@@ -390,7 +394,7 @@ func upsertGuardrailRuleAttributes(ctx *storagev2.Context, ruleName string, attr
 // write cascades them, so both are looked up.
 func refuseSidecarTargets(c *gin.Context, ctx *storagev2.Context, req *openapi.GuardRailRuleRequest, storedName string) bool {
 	orgID := uuid.MustParse(ctx.GetOrgID())
-	targets := toSidecarTargets(req.SidecarTargets)
+	targets := toSidecarTargets(derefTargets(req.SidecarTargets))
 
 	bound := len(targets) > 0
 	for _, name := range []string{req.Name, storedName} {
@@ -425,9 +429,26 @@ func refuseSidecarTargets(c *gin.Context, ctx *storagev2.Context, req *openapi.G
 
 // persistSidecarTargets replaces the rule's target set. Called only after the
 // rule row exists, so the junction's foreign key has something to point at.
-func persistSidecarTargets(ctx *storagev2.Context, ruleName string, targets []openapi.SidecarRuleTarget) error {
+//
+// An ABSENT field is not an empty one: it leaves the bindings alone, so a write
+// that says nothing about sidecars changes nothing about them. An explicit []
+// is the admin unbinding the rule, and does replace the set with nothing.
+func persistSidecarTargets(ctx *storagev2.Context, ruleName string, targets *[]openapi.SidecarRuleTarget) error {
+	if targets == nil {
+		return nil
+	}
 	return models.SetGuardrailRuleListeners(models.DB, uuid.MustParse(ctx.GetOrgID()),
-		ruleName, toSidecarTargets(targets))
+		ruleName, toSidecarTargets(*targets))
+}
+
+// derefTargets reads the optional field as a list, for the guards, which treat
+// "not mentioned" and "none" the same: neither adds a binding, and a rule that
+// is bound elsewhere is checked either way.
+func derefTargets(in *[]openapi.SidecarRuleTarget) []openapi.SidecarRuleTarget {
+	if in == nil {
+		return nil
+	}
+	return *in
 }
 
 func toSidecarTargets(in []openapi.SidecarRuleTarget) []models.SidecarRuleTarget {

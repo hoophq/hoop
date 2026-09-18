@@ -2045,7 +2045,13 @@ type GuardRailRuleRequest struct {
 	// rules only, of type deny_words_list or pattern_match, with a pattern Go's
 	// RE2 accepts. A rule outside that is refused on the write rather than
 	// saved and quietly never enforced.
-	SidecarTargets []SidecarRuleTarget `json:"sidecar_targets,omitempty"`
+	//
+	// A POINTER because absent and empty are different instructions: absent
+	// leaves the bindings exactly as they are, and [] unbinds the rule from
+	// every sidecar. Without that distinction any write that did not mention
+	// the field -- a script fixing a typo, the gateway's own UI, an MCP call --
+	// would silently unbind a rule from the whole fleet.
+	SidecarTargets *[]SidecarRuleTarget `json:"sidecar_targets,omitempty"`
 }
 
 type GuardRailRuleResponse struct {
@@ -2496,7 +2502,13 @@ type DataMaskingRuleRequest struct {
 	// types only. Custom entity types are refused, because the sidecar's pii
 	// section selects and ignores built-in recognizers and cannot register a
 	// regex of its own.
-	SidecarTargets []SidecarRuleTarget `json:"sidecar_targets,omitempty"`
+	//
+	// A POINTER because absent and empty are different instructions: absent
+	// leaves the bindings exactly as they are, and [] unbinds the rule from
+	// every sidecar. Without that distinction any write that did not mention
+	// the field -- a script fixing a typo, the gateway's own UI, an MCP call --
+	// would silently unbind a rule from the whole fleet.
+	SidecarTargets *[]SidecarRuleTarget `json:"sidecar_targets,omitempty"`
 
 	// The timestamp when the rule was updated
 	UpdatedAt time.Time `json:"updated_at" readonly:"true" example:"2023-08-15T14:30:45Z"`
@@ -3810,7 +3822,13 @@ type AISessionAnalyzerRuleRequest struct {
 	// require_access_request is refused on a bound rule: a sidecar declares the
 	// review action in its configuration but refuses it at startup until
 	// EVL-289 lands.
-	SidecarTargets []SidecarRuleTarget `json:"sidecar_targets,omitempty"`
+	//
+	// A POINTER because absent and empty are different instructions: absent
+	// leaves the bindings exactly as they are, and [] unbinds the rule from
+	// every sidecar. Without that distinction any write that did not mention
+	// the field -- a script fixing a typo, the gateway's own UI, an MCP call --
+	// would silently unbind a rule from the whole fleet.
+	SidecarTargets *[]SidecarRuleTarget `json:"sidecar_targets,omitempty"`
 }
 
 type AISessionAnalyzerRule struct {

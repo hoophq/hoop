@@ -10,6 +10,7 @@ import EnterpriseBanner from '@/components/EnterpriseBanner'
 import Modal from '@/components/Modal'
 import MultiSelect from '@/components/MultiSelect'
 import PageLoader from '@/components/PageLoader'
+import SidecarTargetPicker from '@/components/SidecarTargetPicker'
 import TextInput from '@/components/TextInput'
 import { PAGE_PADDING } from '@/layout/PageLayout'
 import { useUserStore } from '@/stores/useUserStore'
@@ -43,7 +44,7 @@ function SectionRow({ title, badge, description, children }) {
 
 // Remounted via `key` when the loaded guardrail changes, so state derives from
 // `guardrail` with lazy useState initializers instead of a prefill effect.
-function GuardrailFormFields({ guardrail, id, isEdit }) {
+function GuardrailFormFields({ guardrail, id, isEdit, sidecarTargets: showSidecarTargets }) {
   const navigate = useNavigate()
   const { ref: sentinelRef, inViewport: headerInView } = useInViewport()
   const [deleteOpened, deleteModal] = useDisclosure(false)
@@ -61,6 +62,7 @@ function GuardrailFormFields({ guardrail, id, isEdit }) {
     description: guardrail?.description ?? '',
     connectionIds: guardrail?.connection_ids ?? [],
     attributes: guardrail?.attributes ?? [],
+    sidecarTargets: guardrail?.sidecar_targets ?? [],
   }))
   const [inputRules, setInputRules] = useState(() => apiRulesToRows(guardrail?.input))
   const [outputRules, setOutputRules] = useState(() => apiRulesToRows(guardrail?.output))
@@ -88,6 +90,9 @@ function GuardrailFormFields({ guardrail, id, isEdit }) {
       description: form.description,
       connectionIds: form.connectionIds,
       attributes: form.attributes,
+      // Undefined where the picker does not render, so the write leaves the
+      // rule's bindings alone instead of clearing them.
+      sidecarTargets: showSidecarTargets ? form.sidecarTargets : undefined,
       inputRules,
       outputRules,
     })
@@ -246,6 +251,18 @@ function GuardrailFormFields({ guardrail, id, isEdit }) {
           />
         </SectionRow>
 
+        {showSidecarTargets && (
+          <SectionRow
+            title="Distribute to sidecars"
+            description="Select the sidecars and listeners that must enforce this guardrail. A sidecar with no listener named enforces it on all of them."
+          >
+            <SidecarTargetPicker
+              value={form.sidecarTargets}
+              onChange={(targets) => setField({ sidecarTargets: targets })}
+            />
+          </SectionRow>
+        )}
+
         <SectionRow
           title="Configure rules"
           badge={
@@ -296,7 +313,7 @@ function GuardrailFormFields({ guardrail, id, isEdit }) {
   )
 }
 
-export default function GuardrailForm() {
+export default function GuardrailForm({ sidecarTargets = false }) {
   const { id } = useParams()
   const isEdit = Boolean(id)
 
@@ -344,6 +361,7 @@ export default function GuardrailForm() {
       guardrail={isEdit ? active : seededGuardrail}
       id={id}
       isEdit={isEdit}
+      sidecarTargets={sidecarTargets}
     />
   )
 }

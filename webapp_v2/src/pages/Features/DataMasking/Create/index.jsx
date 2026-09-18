@@ -10,6 +10,7 @@ import MultiSelect from '@/components/MultiSelect'
 import ConnectionsMultiSelect from '@/components/ConnectionsMultiSelect'
 import Modal from '@/components/Modal'
 import PageLoader from '@/components/PageLoader'
+import SidecarTargetPicker from '@/components/SidecarTargetPicker'
 import EnterpriseBanner from '@/components/EnterpriseBanner'
 import { PAGE_PADDING } from '@/layout/PageLayout'
 import { showSnackbar } from '@/utils/snackbar'
@@ -40,7 +41,7 @@ function SectionRow({ title, description, children }) {
 
 // Remounted via `key` when the loaded rule changes, so state derives from `rule`
 // with lazy useState initializers instead of a prefill effect.
-function DataMaskingFormFields({ rule, id, isEdit }) {
+function DataMaskingFormFields({ rule, id, isEdit, sidecarTargets: showSidecarTargets }) {
   const navigate = useNavigate()
   const { ref: sentinelRef, inViewport: headerInView } = useInViewport()
   const [deleteOpened, deleteModal] = useDisclosure(false)
@@ -64,6 +65,7 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
     scoreThreshold: !isEdit && !rule ? 85 : scoreToPercent(rule?.score_threshold),
     connectionIds: rule?.connection_ids ?? [],
     attributes: rule?.attributes ?? [],
+    sidecarTargets: rule?.sidecar_targets ?? [],
   }))
   const [rules, setRules] = useState(() =>
     rule ? apiRuleToFormRows(rule) : [createEmptyRow()],
@@ -76,7 +78,12 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
 
   const handleSave = async () => {
     if (!canSubmit) return
-    const payload = formToPayload({ ...form, name: form.name.trim(), rules })
+    const payload = formToPayload({
+      ...form,
+      name: form.name.trim(),
+      rules,
+      sidecarTargets: showSidecarTargets ? form.sidecarTargets : undefined,
+    })
     const { ok, error } = isEdit
       ? await updateRule(id, payload)
       : await createRule(payload)
@@ -246,6 +253,18 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
           />
         </SectionRow>
 
+        {showSidecarTargets && (
+          <SectionRow
+            title="Distribute to sidecars"
+            description="Select the sidecars and listeners that must apply this masking. A sidecar with no listener named applies it on all of them."
+          >
+            <SidecarTargetPicker
+              value={form.sidecarTargets}
+              onChange={(targets) => setField({ sidecarTargets: targets })}
+            />
+          </SectionRow>
+        )}
+
         <Stack gap="md">
           <Title order={4} fw={500}>
             Output rules
@@ -284,7 +303,7 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
   )
 }
 
-export default function DataMaskingForm() {
+export default function DataMaskingForm({ sidecarTargets = false }) {
   const { id } = useParams()
   const isEdit = Boolean(id)
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
@@ -335,6 +354,7 @@ export default function DataMaskingForm() {
       rule={isEdit ? active : templateRule}
       id={id}
       isEdit={isEdit}
+      sidecarTargets={sidecarTargets}
     />
   )
 }

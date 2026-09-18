@@ -250,6 +250,12 @@ export function formToPayload(form) {
     custom_entity_types: prepareCustomEntityTypes(form.rules),
   }
 
+  // Omitted where the picker does not render. The backend REPLACES the target
+  // set with what a write carries and leaves it alone when the key is absent,
+  // so sending [] from a form that never showed the field would unbind the
+  // rule from every sidecar it reaches.
+  if (form.sidecarTargets) payload.sidecar_targets = form.sidecarTargets
+
   const score = form.scoreThreshold
   if (score !== '' && score !== null && score !== undefined) {
     payload.score_threshold = Number(score) / 100

@@ -76,6 +76,7 @@ export function formToPayload({
   customPrompt,
   agentic,
   risk,
+  sidecarTargets,
 }) {
   const prompt = customPrompt.trim()
   return {
@@ -89,5 +90,10 @@ export function formToPayload({
     ),
     custom_prompt: prompt || null,
     agentic,
+    // Omitted where the picker does not render. The backend REPLACES the
+    // target set with what a write carries and leaves it alone when the key is
+    // absent, so sending [] from a form that never showed the field would
+    // unbind the rule from every sidecar it reaches.
+    ...(sidecarTargets ? { sidecar_targets: sidecarTargets } : {}),
   }
 }
