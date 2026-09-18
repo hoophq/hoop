@@ -345,6 +345,9 @@ build-helm-chart:
 	# The inspection sidecar. Standalone, not a wrapper: it depends on no other
 	# chart and ships its own image, hoophq/hoopsidecar.
 	helm package ./deploy/helm-chart/chart/sidecar/ --app-version ${VERSION} --destination ${DIST_FOLDER}/ --version ${VERSION}
+	# The control plane. Standalone like the sidecar: it ships its own image,
+	# hoophq/hoopcontrolplane, whose entrypoint runs `hoop start control-plane`.
+	helm package ./deploy/helm-chart/chart/controlplane/ --app-version ${VERSION} --destination ${DIST_FOLDER}/ --version ${VERSION}
 	# Clean image line (DEP-66): wrapper charts that bundle the base chart via a
 	# file:// dependency (-u) and default images to the clean-only hoophq/*-ng repos.
 	helm package -u ./deploy/helm-chart/chart/hoop-ng/ --app-version ${VERSION} --destination ${DIST_FOLDER}/ --version ${VERSION}
@@ -353,6 +356,7 @@ build-helm-chart:
 	helm push ${DIST_FOLDER}/hoop-chart-${VERSION}.tgz oci://ghcr.io/hoophq/helm-charts/
 	helm push ${DIST_FOLDER}/hoopagent-chart-${VERSION}.tgz oci://ghcr.io/hoophq/helm-charts/
 	helm push ${DIST_FOLDER}/hoopsidecar-chart-${VERSION}.tgz oci://ghcr.io/hoophq/helm-charts/
+	helm push ${DIST_FOLDER}/hoopcontrolplane-chart-${VERSION}.tgz oci://ghcr.io/hoophq/helm-charts/
 	helm push ${DIST_FOLDER}/hoop-ng-chart-${VERSION}.tgz oci://ghcr.io/hoophq/helm-charts/
 	helm push ${DIST_FOLDER}/hoopagent-ng-chart-${VERSION}.tgz oci://ghcr.io/hoophq/helm-charts/
 

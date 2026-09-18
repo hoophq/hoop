@@ -1,0 +1,28 @@
+{{- if and .Values.gatewayApi.enabled .Values.gatewayApi.createGateway -}}
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: {{ .Values.gatewayApi.gateway.name | default (include "hoopcontrolplane.fullname" .) }}
+  labels:
+    {{- include "hoopcontrolplane.labels" . | nindent 4 }}
+  {{- with .Values.gatewayApi.gateway.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  gatewayClassName: {{ required "gatewayApi.gateway.gatewayClassName is required" .Values.gatewayApi.gateway.gatewayClassName }}
+  listeners:
+    {{- toYaml (required "gatewayApi.gateway.listeners is required: a Gateway with no listener accepts nothing" .Values.gatewayApi.gateway.listeners) | nindent 4 }}
+  {{- with .Values.gatewayApi.gateway.addresses }}
+  addresses:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.gatewayApi.gateway.infrastructure }}
+  infrastructure:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.gatewayApi.gateway.backendTLS }}
+  backendTLS:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}

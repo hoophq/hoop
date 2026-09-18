@@ -1,0 +1,92 @@
+{{- include "hoopcontrolplane.validate" . }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "hoopcontrolplane.fullname" . }}
+  labels:
+    {{- include "hoopcontrolplane.labels" . | nindent 4 }}
+  {{- with .Values.deploymentAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  replicas: {{ .Values.replicas | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "hoopcontrolplane.selectorLabels" . | nindent 6 }}
+  {{- with .Values.deploymentStrategy }}
+  strategy: {{- toYaml . | trim | nindent 4 }}
+  {{- end }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/secret-config.yaml") . | sha256sum }}
+        checksum/extra-config: {{ include (print $.Template.BasePath "/extra-secret.yaml") . | sha256sum }}
+      {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "hoopcontrolplane.labels" . | nindent 8 }}
+    spec:
+      {{- with (include "hoopcontrolplane.serviceAccountName" .) }}
+      serviceAccountName: {{ . }}
+      {{- end }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+      - image: '{{ .Values.image.repository | default "hoophq/hoopcontrolplane" }}:{{ .Values.image.tag | default "latest" }}'
+        name: controlplane
+        imagePullPolicy: {{ .Values.image.pullPolicy | default "Always" }}
+        {{- with .Values.securityContext }}
+        securityContext:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        {{- with .Values.resources }}
+        resources:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        envFrom:
+        - secretRef:
+            name: {{ include "hoopcontrolplane.configSecretName" . }}
+        {{- with .Values.extraSecret }}
+        - secretRef:
+            name: {{ include "hoopcontrolplane.extraSecretName" $ }}
+        {{- end }}
+        {{- with .Values.existingSecret }}
+        - secretRef:
+            name: {{ . }}
+        {{- end }}
+        ports:
+        - name: http
+          containerPort: {{ include "hoopcontrolplane.httpPort" . }}
+          protocol: TCP
+        {{- with .Values.readinessProbe }}
+        readinessProbe:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        {{- with .Values.livenessProbe }}
+        livenessProbe:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        {{- with .Values.extraVolumeMounts }}
+        volumeMounts:
+          {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.extraVolumes }}
+      volumes:
+        {{- toYaml . | nindent 6 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

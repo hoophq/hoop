@@ -1,0 +1,359 @@
+## Default values for the hoop control plane.
+## This is a YAML-formatted file.
+## Declare variables to be passed into your templates.
+
+# Refer to this guide for more details: https://hoop.dev/docs/setup/deployment/overview
+
+# The control plane is the gateway binary started with
+# `hoop start control-plane` (ADR-0013). It serves the HTTP API and the web app,
+# administers a fleet of sidecars, and carries no traffic: no gRPC on :8010, no
+# protocol proxies, no agent controller, and of the six transport plugins only
+# Slack is started.
+#
+# This is NOT the gateway chart in another hat. It renders the environment the
+# control plane reads and nothing else, so a DLP credential or a SPIFFE bundle
+# cannot end up mounted in a process that never looks at it. Every key the
+# gateway chart has and this one does not is in README.md with a reason.
+
+# -- Override the name every chart-owned resource is built from. The default is
+# "hoopcontrolplane", prefixed with the release name.
+#
+# nameOverride changes the base; fullnameOverride replaces the whole name and
+# drops the release prefix. Both feed the Deployment's selector, which is
+# immutable — changing either on a live release makes `helm upgrade` fail.
+nameOverride: ''
+fullnameOverride: ''
+
+# -- Define a custom image configuration
+image: {}
+  # repository: hoophq/hoopcontrolplane
+  # pullPolicy: Always
+  # tag: latest
+  #
+  # The argv belongs to the image: `command` and `args` are refused at render,
+  # not merely ignored. The image runs `hoop start control-plane` from its own
+  # CMD behind a tini ENTRYPOINT.
+  #
+  # That subcommand is the only way to select the mode — there is no APP_MODE
+  # variable — so the image owning it keeps exactly one place able to get it
+  # wrong. A command here could boot a full gateway instead: gRPC on :8010,
+  # every protocol proxy, all six transport plugins. Overriding the entrypoint
+  # would also drop tini, and this process installs no signal handler of its
+  # own, so it would then ignore SIGTERM and every pod delete would wait out
+  # the kill timeout.
+  #
+  # To run a different build, point repository and tag at an image whose CMD
+  # already starts the control plane.
+  #
+  # Tags: the Ubuntu flavour carries NO SUFFIX — `<version>`, with `latest`
+  # pointing at it. It keeps a shell, so the default is the one you can debug.
+  # `<version>-distroless` is the same binary on a distroless static rootfs:
+  # no package manager, no shell, zero OS-package CVEs, about two thirds the
+  # size. It is the only flavour that is named; ask for it explicitly.
+  #
+  # The web UI is compiled into the binary, so neither flavour carries webapp
+  # files and both serve it with no configuration. Do not set STATIC_UI_PATH
+  # through extraSecret: any value points at a path the image does not have,
+  # and the UI 404s while the pod stays green.
+
+# hoop control plane configuration.
+#
+# POSTGRES_DB_URI and API_URL are required. Everything else has a default or is
+# optional. A key not listed here is not rendered — see README.md, and use
+# extraSecret if you need one anyway.
+config:
+  # -- REQUIRED. External PostgreSQL. pglite:// is refused: it is single-node
+  # and serves one connection at a time.
+  POSTGRES_DB_URI: ''
+  # 'postgres://<user>:<pwd>@<db-host>:<port>/<dbname>'
+
+  # -- REQUIRED. The address the web app and every sidecar reach this on. Must
+  # carry a scheme: appconfig parses it with url.Parse, and without one the
+  # hostname is read as a URL path and every route is mounted under it.
+  #
+  # A path is allowed. The default HTTPRoute match follows it, and every route
+  # moves under it: 'https://cp.example.tld/hoop' serves health at
+  # /hoop/api/healthz, so an httpGet probe you write must use that path too.
+  API_URL: ''
+  # 'https://cp.yourdomain.tld'
+
+  ## Identity provider.
+  ##
+  ## Setting any IDP_* key below selects OIDC; setting none leaves local auth.
+  ## There is no AUTH_METHOD: it is inferred. SAML is configured in the
+  ## database, not by environment.
+  ##
+  ## An authconfig row in the database overrides all of this at runtime; these
+  ## are the boot defaults.
+  # IDP_ISSUER: 'https://idp-issuer-url'
+  # IDP_CLIENT_ID: 'client-id'          # required once IDP_ISSUER is set
+  # IDP_CLIENT_SECRET: 'client-secret'  # required once IDP_ISSUER is set
+  # IDP_CUSTOM_SCOPES: ''
+  # IDP_GROUPS_CLAIM: ''
+  # IDP_AUDIENCE: ''
+
+  ## Server and web app.
+  # Migrations are embedded in the binary and run at every boot. The image
+  # ships no SQL files, so there is nothing on disk to point at — set this only
+  # to override the embedded migrations with files you mount yourself.
+  # MIGRATION_PATH_FILES: ''
+  # GIN_MODE: 'release'
+  # LOG_ENCODING: 'console|json'
+  # LOG_LEVEL: 'debug|info|warn|error'
+
+  ## TLS for the API listener.
+  ##
+  ## Set both to serve HTTPS; leave both empty to serve plaintext. That is the
+  ## whole rule, and it is the one appconfig uses — nothing is generated and
+  ## half a pair simply serves plaintext.
+  ##
+  ## The chart renders no probe, so nothing here is derived — an httpGet probe
+  ## you write must name 'scheme: HTTPS' itself.
+  ##
+  ## Values go through envloader, so 'base64://<b64>' and
+  ## 'file:///path/mounted/by/extraVolumes' both work.
+  # TLS_CERT: ''
+  # TLS_KEY: ''
+
+# -- Define extra secret as environment variables.
+#
+# Also the way through for any key this chart declines to render: the exclusion
+# list is a default, not a wall.
+extraSecret: {}
+# ENVSECRET1: RAWVALUE1
+# ENVSECRET2: RAWVALUE2
+
+# -- Load environment variables from a Secret that already exists in the
+# namespace. The chart references it and never creates or manages it. It is
+# loaded last, so it overrides both of the above.
+existingSecret: ''
+# existingSecret: hoop-controlplane-credentials
+
+# -- Number of control plane replicas.
+#
+# Defaults to 1, and read ADR-0013 before raising it. socketmode opens one Slack
+# websocket per process and nothing coordinates them: no lease, no advisory
+# lock, only in-process mutexes in gateway/slack. Two replicas with Slack
+# configured for an org post every review twice and race each other's clicks,
+# and Slack documents that a payload may go to any open connection with no
+# pattern to rely on — so a click can be handled by the replica that is not
+# holding the waiting session, the verdict is written, and the session is never
+# released.
+#
+# Raising this is safe when no organization in this deployment has Slack
+# configured. Everything else in the process is stateless HTTP over a shared
+# database. The chart does not enforce it: whether Slack is configured lives in
+# a private.plugins row no chart can read.
+replicas: 1
+
+# -- Deployment strategy
+#
+# Recreate, not the sidecar chart's RollingUpdate. At one replica the default
+# maxSurge of 1 runs two pods through every upgrade, which is two Slack sockets
+# on a timer — the condition above, every `helm upgrade`. The control plane
+# holds no sessions, so the short API gap drops nothing.
+#
+# Running several replicas already accepts that condition; set RollingUpdate
+# there.
+deploymentStrategy:
+  type: Recreate
+
+# -- Readiness and liveness probes. OFF by default.
+#
+# Empty renders no probe at all: the kubelet then treats the container as ready
+# as soon as it starts and never restarts it for health. Set them below.
+#
+# Off rather than a default, because the chart cannot know the listener's
+# protocol. TLS_CERT and TLS_KEY decide it and either can arrive through
+# extraSecret or existingSecret, which no template can read — and the kubelet
+# does not negotiate: an httpGet probe naming HTTP against a TLS listener gets
+# a 400 and the pod never goes ready. (Trust is not the issue; kubelet HTTPS
+# probes always skip certificate verification and there is no field for it.)
+#
+# Whatever you write here is rendered verbatim, so any handler the Probe schema
+# accepts works: httpGet, tcpSocket, exec, grpc, plus the timing and threshold
+# fields. Health lives at GET /api/healthz, under API_URL's path if it has one.
+#
+# Ten seconds and not the sidecar's five: the listener opens only after
+# migrations, the org bootstrap and the IdP.
+#
+# Plaintext listener:
+# readinessProbe:
+#   httpGet:
+#     path: /api/healthz
+#     port: 8009
+#   initialDelaySeconds: 10
+#   periodSeconds: 10
+# livenessProbe:
+#   httpGet:
+#     path: /api/healthz
+#     port: 8009
+#   initialDelaySeconds: 10
+#   periodSeconds: 10
+#
+# TLS listener — same, with `scheme: HTTPS` inside httpGet.
+#
+# Either listener, one stanza, at the cost of not calling the endpoint:
+# readinessProbe:
+#   tcpSocket:
+#     port: 8009
+#   initialDelaySeconds: 10
+#   periodSeconds: 10
+readinessProbe: {}
+livenessProbe: {}
+
+# -- A Service for the HTTP API on 8009, and only that.
+#
+# type is here so a cluster with no Gateway API CRDs can set LoadBalancer and be
+# done. There is deliberately no source-range or traffic-policy plumbing: one
+# HTTP port does not need it.
+#
+# enabled: false with gatewayApi.enabled is refused unless you also set
+# gatewayApi.httpRoute.rules: the default route points at this Service.
+service:
+  enabled: true
+  type: ClusterIP
+  annotations: {}
+
+# -- Gateway API resources (gateway.networking.k8s.io/v1)
+#
+# Requires the Gateway API CRDs in your cluster.
+# For Istio: `istioctl install` or the Istio Helm chart.
+# Others: https://gateway-api.sigs.k8s.io/guides/
+#
+# Unlike the gateway chart, parentRefs and rules have working defaults here: a
+# route with no rules attaches, routes nothing, and looks installed.
+gatewayApi:
+  # -- Enable Gateway API resources (HTTPRoute + optional Gateway)
+  enabled: false
+
+  # -- Create a Gateway resource.
+  # false attaches the HTTPRoute to a pre-existing Gateway, and then
+  # httpRoute.parentRefs is required — the chart refuses to render without it.
+  createGateway: true
+
+  gateway:
+    # -- Defaults to the release's full name
+    name: ''
+    annotations: {}
+    # -- GatewayClass name (e.g. istio, nginx, cilium)
+    gatewayClassName: istio
+    # -- Listeners define the addresses and ports for incoming traffic.
+    # https://gateway-api.sigs.k8s.io/reference/spec/#gateway.networking.k8s.io/v1.Listener
+    listeners:
+    - name: http
+      # -- Restrict the listener to a hostname; leave commented to accept all
+      # hostname: cp.yourdomain.tld
+      port: 80
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: Same
+
+    # -- Requested addresses for the Gateway (optional)
+    # addresses:
+    # - type: IPAddress
+    #   value: 1.2.3.4
+
+    # -- Infrastructure-level parameters for the Gateway implementation (optional)
+    # infrastructure:
+    #   annotations:
+    #     networking.example.com/service-type: Internal
+
+    # -- Client certificate this Gateway presents to backends, for mTLS
+    # (optional). Gateway API EXPERIMENTAL channel only: the standard channel's
+    # Gateway CRD has no such field and prunes it silently, so it renders and
+    # then disappears.
+    #
+    # Not backend certificate validation. Checking the backend's own
+    # certificate is a separate BackendTLSPolicy resource, which this chart
+    # does not render.
+    # backendTLS:
+    #   clientCertificateRef:
+    #     name: my-client-cert
+
+  httpRoute:
+    # -- Defaults to <fullname>-route
+    name: ''
+    annotations: {}
+    # -- Hostnames the route applies to; should match the listener hostname
+    # hostnames:
+    # - cp.yourdomain.tld
+
+    # -- Parent references. Defaults to the Gateway above. REQUIRED when
+    # createGateway is false.
+    # parentRefs:
+    # - name: shared-ingress
+    #   namespace: infra
+    #   sectionName: http
+
+    # -- Route rules. Defaults to one PathPrefix on API_URL's path, backed by
+    # this chart's Service on 8009 — the whole control plane, since it serves
+    # one HTTP port and nothing else. Set this to replace that entirely.
+    # https://gateway-api.sigs.k8s.io/reference/spec/#gateway.networking.k8s.io/v1.HTTPRouteRule
+    # rules:
+    # - matches:
+    #   - path:
+    #       type: PathPrefix
+    #       value: /
+    #   backendRefs:
+    #   - name: hoopcontrolplane
+    #     port: 8009
+
+# -- Extra volumes and mounts, for what the config references by path: a TLS
+# certificate under 'file:///...', an IDP CA bundle. Mount secrets holding a
+# private key with `defaultMode: 0400`.
+extraVolumes: []
+# - name: api-tls
+#   secret:
+#     secretName: hoop-controlplane-tls
+#     defaultMode: 0400
+extraVolumeMounts: []
+# - name: api-tls
+#   mountPath: /etc/hoop/certs
+#   readOnly: true
+
+# -- CPU/Memory resource requests/limits.
+# API-only: this process carries no sessions and runs no proxies.
+resources:
+  limits:
+    cpu: 1024m
+    memory: 1Gi
+  requests:
+    cpu: 256m
+    memory: 512Mi
+
+# -- Node labels for pod assignment
+nodeSelector: {}
+
+# -- Toleration labels for pod assignment
+tolerations: []
+
+# -- Affinity settings for pod assignment
+affinity: {}
+
+## Set pod annotations
+##
+podAnnotations: {}
+
+## Set deployment annotations
+##
+deploymentAnnotations: {}
+
+# -- Pod-level security context (e.g. fsGroup, runAsNonRoot, seccompProfile)
+podSecurityContext: {}
+
+# -- Container-level security context (e.g. allowPrivilegeEscalation,
+# capabilities, readOnlyRootFilesystem, runAsNonRoot)
+securityContext: {}
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: false
+  # Name of the service account. With create: true this names the one the chart
+  # makes, defaulting to the release's full name. With create: false it names
+  # one that already exists — the shape workload identity wants. Empty and
+  # create: false means the pod uses the namespace default.
+  name: ''
+  # Annotations to add to the service account
+  annotations: {}
