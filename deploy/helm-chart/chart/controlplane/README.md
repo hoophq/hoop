@@ -272,7 +272,7 @@ does nothing. Use `extraSecret` if you have a reason to set one anyway.
 | `service.enabled` / `service.type` / `service.annotations` | `true` / `ClusterIP` / `{}` | One port, 8009 |
 | `gatewayApi.enabled` | `false` | |
 | `gatewayApi.createGateway` | `true` | `false` makes `httpRoute.parentRefs` required |
-| `gatewayApi.gateway.*` | see `values.yaml` | `name`, `annotations`, `gatewayClassName`, `listeners`, `addresses`, `infrastructure`, `backendTLS` |
+| `gatewayApi.gateway.*` | see `values.yaml` | `name`, `annotations`, `gatewayClassName`, `listeners`, `addresses`, `infrastructure`, `backendTLS` (experimental channel only) |
 | `gatewayApi.httpRoute.*` | see `values.yaml` | `name`, `annotations`, `hostnames`, `parentRefs`, `rules` |
 | `extraVolumes` / `extraVolumeMounts` | `[]` | |
 | `resources` | 1024m/1Gi limits, 256m/512Mi requests | |

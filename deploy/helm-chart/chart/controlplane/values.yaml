@@ -257,7 +257,14 @@ gatewayApi:
     #   annotations:
     #     networking.example.com/service-type: Internal
 
-    # -- Backend TLS applied to all backends via this Gateway (optional)
+    # -- Client certificate this Gateway presents to backends, for mTLS
+    # (optional). Gateway API EXPERIMENTAL channel only: the standard channel's
+    # Gateway CRD has no such field and prunes it silently, so it renders and
+    # then disappears.
+    #
+    # Not backend certificate validation. Checking the backend's own
+    # certificate is a separate BackendTLSPolicy resource, which this chart
+    # does not render.
     # backendTLS:
     #   clientCertificateRef:
     #     name: my-client-cert
