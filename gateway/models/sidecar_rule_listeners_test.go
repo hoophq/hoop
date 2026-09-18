@@ -59,7 +59,7 @@ func TestGuardrailRuleListeners(t *testing.T) {
 
 	targets := []models.SidecarRuleTarget{
 		{SidecarID: sc.ID, ListenerName: "appdb"},
-		{SidecarID: sc.ID, ListenerName: ""}, // the whole sidecar
+		{SidecarID: sc.ID, ListenerName: "reporting"},
 	}
 	if err := models.SetGuardrailRuleListeners(models.DB, orgID, rule.Name, targets); err != nil {
 		t.Fatalf("bind: %v", err)
@@ -74,7 +74,7 @@ func TestGuardrailRuleListeners(t *testing.T) {
 	}
 	// Ordered, because the served document is hashed into a revision and an
 	// unstable order would report every sidecar as lagging forever.
-	if bound[0].ListenerName != "" || bound[1].ListenerName != "appdb" {
+	if bound[0].ListenerName != "appdb" || bound[1].ListenerName != "reporting" {
 		t.Errorf("want a stable order, got %q then %q", bound[0].ListenerName, bound[1].ListenerName)
 	}
 	// The join carries the rule's own content, which is what gets translated.

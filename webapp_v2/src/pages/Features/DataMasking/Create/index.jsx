@@ -256,7 +256,7 @@ function DataMaskingFormFields({ rule, id, isEdit, sidecarTargets: showSidecarTa
         {showSidecarTargets && (
           <SectionRow
             title="Distribute to sidecars"
-            description="Select the sidecars and listeners that must apply this masking. A sidecar with no listener named applies it on all of them."
+            description="Select the listeners that must apply this masking. A listener's mask rules replace the sidecar defaults rather than adding to them."
           >
             <SidecarTargetPicker
               value={form.sidecarTargets}

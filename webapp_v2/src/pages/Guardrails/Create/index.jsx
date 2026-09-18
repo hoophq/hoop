@@ -254,7 +254,7 @@ function GuardrailFormFields({ guardrail, id, isEdit, sidecarTargets: showSideca
         {showSidecarTargets && (
           <SectionRow
             title="Distribute to sidecars"
-            description="Select the sidecars and listeners that must enforce this guardrail. A sidecar with no listener named enforces it on all of them."
+            description="Select the listeners that must enforce this guardrail. Each listener carries its own protocol, which is what decides the rules it can run."
           >
             <SidecarTargetPicker
               value={form.sidecarTargets}

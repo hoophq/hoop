@@ -376,9 +376,9 @@ func boundEverything() (daemon.Config, []models.BoundRule, []models.MaskBinding,
 	}}
 	return cfg,
 		[]models.BoundRule{
-			{RuleName: "fleet-wide", Input: json.RawMessage(
+			{RuleName: "no-truncate", ListenerName: "appdb", Input: json.RawMessage(
 				`{"rules":[{"type":"deny_words_list","words":["TRUNCATE"]}]}`)},
-			{RuleName: "appdb-only", ListenerName: "appdb", Input: json.RawMessage(
+			{RuleName: "no-drop", ListenerName: "appdb", Input: json.RawMessage(
 				`{"rules":[{"type":"pattern_match","pattern_regex":"(?i)^\\s*DROP\\b"}]}`)},
 		},
 		[]models.MaskBinding{
@@ -415,13 +415,18 @@ func TestComposedDocumentStillDecodesStrictly(t *testing.T) {
 		t.Fatalf("the composed document would be refused by a sidecar: %v\ndocument: %s", err, raw)
 	}
 
-	// And the rules actually landed where the daemon reads them.
-	if composed.Guardrails == nil || len(composed.Guardrails.Rules) != 1 {
-		t.Errorf("the sidecar-wide guardrail is missing from the top-level block: %+v", composed.Guardrails)
+	// And the rules actually landed where the daemon reads them. Nothing is
+	// written at the top level: a rule binds to listeners only.
+	if composed.Guardrails != nil {
+		t.Errorf("composition wrote the top-level guardrails block, which no binding targets: %+v",
+			composed.Guardrails)
+	}
+	if composed.Mask != nil {
+		t.Errorf("composition wrote the top-level mask block: %+v", composed.Mask)
 	}
 	appdb := composed.Listeners[0]
-	if appdb.Guardrails == nil || len(appdb.Guardrails.Rules) != 1 {
-		t.Errorf("the listener-scoped guardrail is missing from its lane: %+v", appdb.Guardrails)
+	if appdb.Guardrails == nil || len(appdb.Guardrails.Rules) != 2 {
+		t.Errorf("both listener-scoped guardrails should be on the lane: %+v", appdb.Guardrails)
 	}
 	if appdb.Mask == nil || len(appdb.Mask.Rules) == 0 {
 		t.Errorf("the masking rule is missing from its lane: %+v", appdb.Mask)
@@ -501,9 +506,52 @@ func TestCompositionRefusesARuleBoundToAMissingListener(t *testing.T) {
 	if err == nil {
 		t.Fatal("want a refusal for a rule bound to a listener that no longer exists")
 	}
-	for _, want := range []string{"appdb-only", "appdb"} {
+	for _, want := range []string{"no-truncate", "appdb"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("the refusal must name the rule and the listener, it omits %q: %v", want, err)
 		}
+	}
+}
+
+// TestABindingWithNoListenerIsRefused pins the scope decision. A rule bound to
+// a sidecar rather than a listener would write the document's top-level block,
+// which a lane carrying its own mask block REPLACES -- so the same rule would
+// apply on some lanes and be ignored on others, with nothing in the UI saying
+// which. The listener is also what carries the protocol, and the protocol
+// decides which rule types and masking strategies the lane can run at all.
+func TestABindingWithNoListenerIsRefused(t *testing.T) {
+	cfg, guardrails, masking, analyzers := boundEverything()
+	for _, tt := range []struct {
+		name string
+		fold func() error
+	}{
+		{"guardrail", func() error {
+			g := append([]models.BoundRule{}, guardrails...)
+			g[0].ListenerName = ""
+			_, err := foldSidecarRules(cfg, g, nil, nil)
+			return err
+		}},
+		{"data masking", func() error {
+			m := append([]models.MaskBinding{}, masking...)
+			m[0].ListenerName = ""
+			_, err := foldSidecarRules(cfg, nil, m, nil)
+			return err
+		}},
+		{"analyzer", func() error {
+			a := append([]models.AnalyzerBinding{}, analyzers...)
+			a[0].ListenerName = ""
+			_, err := foldSidecarRules(cfg, nil, nil, a)
+			return err
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.fold()
+			if err == nil {
+				t.Fatal("want a refusal for a binding that names no listener")
+			}
+			if !strings.Contains(err.Error(), "listener") {
+				t.Errorf("the refusal must say what is missing: %v", err)
+			}
+		})
 	}
 }

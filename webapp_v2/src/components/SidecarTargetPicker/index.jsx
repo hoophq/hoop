@@ -32,9 +32,12 @@ function decodeTarget(value) {
  * with no target is stored and distributed to nobody, which is a valid state —
  * a gateway-only rule.
  *
- * Selecting a sidecar with no listener named targets the WHOLE sidecar. That is
- * not "unset": it writes the configuration's top-level block, which every lane
- * on that sidecar inherits. Picking one listener writes that lane alone.
+ * A rule binds to LISTENERS, one at a time. There is no "whole sidecar"
+ * option: that would write the document's top-level block, which a lane
+ * carrying its own mask block replaces, so one rule would apply on some lanes
+ * and be ignored on others with nothing here saying which. The listener is
+ * also what carries the protocol, and the protocol decides which rules and
+ * which masking strategies are legal at all.
  *
  * Rendered only in the control plane, where the page is given the prop that
  * asks for it. In the gateway the fleet endpoint is not something a page should
@@ -51,19 +54,21 @@ export default function SidecarTargetPicker({ value = [], onChange, label, descr
 
   const data = sidecars.map((sc) => ({
     group: sc.name,
-    items: [
-      { value: encodeTarget({ sidecar_id: sc.id, listener_name: '' }), label: 'All listeners' },
-      // A listener with no name cannot be bound: the name is the only handle
-      // the control plane has on a lane, and the gateway refuses a document
-      // whose listeners lack one. Leaving it out of the list is how an admin
-      // finds out before a save is refused.
-      ...(sc.configuration?.listeners ?? [])
-        .filter((l) => l?.name)
-        .map((l) => ({
-          value: encodeTarget({ sidecar_id: sc.id, listener_name: l.name }),
-          label: l.protocol ? `${l.name} (${l.protocol})` : l.name,
-        })),
-    ],
+    // Listeners only. There is no "whole sidecar" option, and that is the
+    // point: a sidecar-wide rule writes the document's top-level block, which
+    // a lane carrying its own mask block silently replaces, so the same rule
+    // would apply on some lanes and be ignored on others with nothing here
+    // saying which.
+    //
+    // A listener with no name is left out. The name is the only handle the
+    // control plane has on a lane, and a binding to a nameless one is refused
+    // on save.
+    items: (sc.configuration?.listeners ?? [])
+      .filter((l) => l?.name)
+      .map((l) => ({
+        value: encodeTarget({ sidecar_id: sc.id, listener_name: l.name }),
+        label: l.protocol ? `${l.name} (${l.protocol})` : l.name,
+      })),
   }))
 
   const empty = !loading && sidecars.length === 0

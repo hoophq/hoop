@@ -87,6 +87,11 @@ func foldSidecarRules(cfg daemon.Config, guardrails []models.BoundRule, masking 
 	// refusal the handshake answers with -- and the sidecar keeps the rules it
 	// already has rather than losing them.
 	listenerIndex := func(kind, ruleName, listenerName string) (int, error) {
+		if listenerName == "" {
+			return -1, fmt.Errorf("%s rule %q is bound to this sidecar without naming a listener, "+
+				"which this version does not distribute; rebind it to the listeners that must "+
+				"enforce it", kind, ruleName)
+		}
 		for i, l := range listeners {
 			if l.Name == listenerName {
 				return i, nil
@@ -123,10 +128,6 @@ func foldSidecarRules(cfg daemon.Config, guardrails []models.BoundRule, masking 
 		if raw == nil {
 			continue
 		}
-		if scope == "" {
-			cfg.Mask = &daemon.MaskConfig{Rules: raw}
-			continue
-		}
 		idx, err := listenerIndex("data masking", group[0].RuleName, scope)
 		if err != nil {
 			return cfg, err
@@ -134,36 +135,18 @@ func foldSidecarRules(cfg daemon.Config, guardrails []models.BoundRule, masking 
 		listeners[idx].Mask = &daemon.MaskConfig{Rules: raw}
 	}
 
-	// The analyzer is a per-lane component: there is no top-level risk action
-	// to set, so a rule bound to the whole sidecar reaches every lane that has
-	// an analyzer block and is refused if none does.
+	// The analyzer is a per-lane component to begin with: there is no top-level
+	// risk action to set, so its binding was always one listener.
 	for _, b := range analyzers {
-		scopes := []int{}
-		if b.ListenerName == "" {
-			for i := range listeners {
-				if listeners[i].Analyzer != nil {
-					scopes = append(scopes, i)
-				}
-			}
-			if len(scopes) == 0 {
-				return cfg, fmt.Errorf("analyzer rule %q is bound to every listener on this sidecar "+
-					"and none of them has an analyzer block; enable the analyzer on at least one "+
-					"listener first", b.RuleName)
-			}
-		} else {
-			idx, err := listenerIndex("analyzer", b.RuleName, b.ListenerName)
-			if err != nil {
-				return cfg, err
-			}
-			scopes = append(scopes, idx)
+		idx, err := listenerIndex("analyzer", b.RuleName, b.ListenerName)
+		if err != nil {
+			return cfg, err
 		}
-		for _, idx := range scopes {
-			block, err := analyzerBlockFor(b.RuleName, b.RiskEvaluation, b.CustomPrompt, listeners[idx].Analyzer)
-			if err != nil {
-				return cfg, err
-			}
-			listeners[idx].Analyzer = block
+		block, err := analyzerBlockFor(b.RuleName, b.RiskEvaluation, b.CustomPrompt, listeners[idx].Analyzer)
+		if err != nil {
+			return cfg, err
 		}
+		listeners[idx].Analyzer = block
 	}
 
 	for _, b := range guardrails {
@@ -172,10 +155,6 @@ func foldSidecarRules(cfg daemon.Config, guardrails []models.BoundRule, masking 
 			return cfg, err
 		}
 		if len(rules) == 0 {
-			continue
-		}
-		if b.ListenerName == "" {
-			cfg.Guardrails = appendGuardrails(cfg.Guardrails, rules)
 			continue
 		}
 		idx, err := listenerIndex("guardrail", b.RuleName, b.ListenerName)
@@ -338,8 +317,17 @@ func ValidateSidecarRuleTargets(db *gorm.DB, orgID string, targets []models.Side
 			}
 			seen[t.SidecarID] = sc
 		}
+		// A rule binds to one listener, never to a sidecar as a whole. The
+		// sidecar-wide binding would write the top-level block, which a lane
+		// carrying its own mask block silently replaces -- the same rule
+		// applying on some lanes and ignored on others, with nothing saying
+		// which. The listener also carries the protocol, and the protocol is
+		// what decides which rule types and masking strategies are legal at
+		// all.
 		if t.ListenerName == "" {
-			continue
+			return fmt.Errorf("a rule bound to sidecar %q names no listener; bind it to the "+
+				"listeners that must enforce it, because a listener's protocol decides which "+
+				"rules it can carry", sc.Name)
 		}
 		matches := 0
 		for _, l := range sc.Configuration.Listeners {
@@ -603,10 +591,7 @@ func effectiveAction(tier *models.AISessionAnalyzerRiskTier, flat models.RiskEva
 // refused by the sidecar, so it is refused here first, where the admin is
 // looking.
 //
-// A rule bound to the whole sidecar needs at least ONE lane with the block --
-// it reaches those lanes and leaves the rest alone, so requiring every lane to
-// have an analyzer would refuse the ordinary case of one analyzed lane beside
-// several plain ones.
+// Checked per bound listener, which is the only scope a binding has.
 func ValidateAnalyzerTargetListeners(db *gorm.DB, orgID, ruleName string, targets []models.SidecarRuleTarget) error {
 	seen := map[string]*models.Sidecar{}
 	for _, t := range targets {
@@ -621,21 +606,13 @@ func ValidateAnalyzerTargetListeners(db *gorm.DB, orgID, ruleName string, target
 		}
 		found := false
 		for _, l := range sc.Configuration.Listeners {
-			if t.ListenerName != "" && l.Name != t.ListenerName {
-				continue
-			}
-			if l.Analyzer != nil {
+			if l.Name == t.ListenerName && l.Analyzer != nil {
 				found = true
 				break
 			}
 		}
 		if found {
 			continue
-		}
-		if t.ListenerName == "" {
-			return fmt.Errorf("analyzer rule %q is bound to every listener on sidecar %q and none of "+
-				"them has an analyzer block; enable the analyzer on at least one listener first, so it "+
-				"carries a trigger and a call budget", ruleName, sc.Name)
 		}
 		return fmt.Errorf("analyzer rule %q is bound to listener %q on sidecar %q, which has no "+
 			"analyzer block; enable the analyzer on that listener first, so it carries a trigger and "+
