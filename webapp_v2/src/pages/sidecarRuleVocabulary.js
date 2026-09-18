@@ -126,8 +126,12 @@ export const SSH_ONLY_STRATEGY = 'mask'
 // AI analyzer
 // ---------------------------------------------------------------------------
 
+// An unset level and an explicit `allow` do the same thing, and the list has
+// both because omitting the key keeps it out of the served document. They need
+// different LABELS: two entries reading "Allow" in one dropdown give the
+// operator no way to tell which one they picked.
 export const ANALYZER_ACTIONS = [
-  { value: '', label: 'Allow' },
+  { value: '', label: 'Not set (allows)' },
   { value: 'allow', label: 'Allow' },
   { value: 'warn', label: 'Warn' },
   { value: 'block', label: 'Block' },
