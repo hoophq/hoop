@@ -19,7 +19,7 @@
 // Guardrails
 // ---------------------------------------------------------------------------
 
-// The seven rule types, with the fields each one reads. `protocols` narrows
+// The eight rule types, with the fields each one reads. `protocols` narrows
 // which lanes may carry it: a sidecar REFUSES a rule its lane cannot read,
 // at startup, rather than skipping it at evaluation.
 //
@@ -64,6 +64,17 @@ export const GUARDRAIL_RULE_TYPES = [
     label: 'HTTP status',
     fields: ['statuses', 'methods'],
     protocols: ['http'],
+  },
+  {
+    // The gRPC twin of http_status, and it reads a trailer rather than a
+    // header: a gRPC call answers 200 and carries its real outcome in
+    // grpc-status, so http_status matches nothing on these lanes. Spanner is
+    // here too — it is GoogleSQL over the same gRPC transport, so the same
+    // status metadata is on its statements.
+    value: 'grpc_status',
+    label: 'gRPC status',
+    fields: ['statuses'],
+    protocols: ['grpc', 'spanner'],
   },
 ]
 

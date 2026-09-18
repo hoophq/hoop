@@ -46,6 +46,7 @@ function decodeTarget(value) {
 export default function SidecarTargetPicker({ value = [], onChange, label, description }) {
   const sidecars = useSidecarStore((s) => s.sidecars)
   const loading = useSidecarStore((s) => s.loading)
+  const error = useSidecarStore((s) => s.error)
   const fetchSidecars = useSidecarStore((s) => s.fetchSidecars)
 
   useEffect(() => {
@@ -103,14 +104,25 @@ export default function SidecarTargetPicker({ value = [], onChange, label, descr
       .filter(Boolean)
   }
 
-  const empty = !loading && sidecars.length === 0
+  // A fleet that did not load is not an empty fleet. Rendering the failure as
+  // "no sidecars yet" tells an admin their fleet is gone and hides the reason,
+  // and the disabled input then reads as a state of the product rather than as
+  // a request that failed.
+  const failed = !loading && !!error && sidecars.length === 0
+  const empty = !loading && !error && sidecars.length === 0
 
   return (
     <Stack gap="xs">
       <MultiSelect
         label={label ?? 'Listeners'}
         description={description}
-        placeholder={empty ? 'No sidecars yet' : 'Search a sidecar or a listener...'}
+        placeholder={
+          failed
+            ? 'Sidecars could not be loaded'
+            : empty
+              ? 'No sidecars yet'
+              : 'Search a sidecar or a listener...'
+        }
         data={data}
         value={value.map(encodeTarget)}
         onChange={(values) => onChange(values.map(decodeTarget))}
@@ -129,7 +141,8 @@ export default function SidecarTargetPicker({ value = [], onChange, label, descr
           </Group>
         )}
         filter={filter}
-        disabled={empty}
+        error={failed ? error : undefined}
+        disabled={empty || failed}
         searchable
         clearable
       />
@@ -140,6 +153,11 @@ export default function SidecarTargetPicker({ value = [], onChange, label, descr
             Add a sidecar
           </Anchor>
         </Text>
+      )}
+      {failed && (
+        <Anchor component="button" type="button" size="sm" onClick={() => fetchSidecars()}>
+          Try again
+        </Anchor>
       )}
     </Stack>
   )

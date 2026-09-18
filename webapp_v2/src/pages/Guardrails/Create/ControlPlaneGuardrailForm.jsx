@@ -200,7 +200,10 @@ function RuleEditor({ rule, index, onChange, onRemove, removable, types, operati
         {has('statuses') && (
           <TagsInput
             label="Statuses"
-            placeholder="5xx"
+            // The two status types spell a status differently, and the sidecar
+            // refuses the wrong spelling at startup: HTTP takes a code or a
+            // class, gRPC takes one of its sixteen names or codes.
+            placeholder={rule.type === 'grpc_status' ? 'permission_denied' : '5xx'}
             value={rule.statuses}
             onChange={(v) => set({ statuses: v })}
           />
