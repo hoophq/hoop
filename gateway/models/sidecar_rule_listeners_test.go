@@ -2,10 +2,13 @@ package models_test
 
 import (
 	"encoding/json"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/sidecar/daemon"
 )
 
@@ -119,5 +122,77 @@ func TestGuardrailRuleListeners(t *testing.T) {
 	}
 	if len(left) != 0 {
 		t.Errorf("deleting the sidecar must drop its bindings, got %+v", left)
+	}
+}
+
+// Editing a bound rule must not count it twice.
+//
+// The free tier allows one guardrail rule per process. The cap check composes
+// what the served document WOULD be, and the rule being edited is already in
+// that document under its stored name -- so folding the incoming version in
+// beside it reports two rules and refuses an edit that changes no count at all.
+// On the free tier that makes a bound rule permanently uneditable.
+func TestEditingABoundRuleIsNotCountedTwice(t *testing.T) {
+	startTestDB(t)
+	orgID := uuid.MustParse(testOrgID)
+
+	sc := &models.Sidecar{
+		OrgID:     testOrgID,
+		Name:      "cap-target",
+		KeyHash:   models.HashAPIKey("hsc_cap_target_test"),
+		CreatedBy: "tests@hoop.dev",
+		Configuration: models.SidecarConfiguration{
+			Listeners: []daemon.ListenerConfig{{
+				Name: "appdb", Protocol: "postgres", Listen: ":5432", Upstream: "db:5432",
+			}},
+		},
+	}
+	if err := models.CreateSidecar(models.DB, sc); err != nil {
+		t.Fatalf("seed sidecar: %v", err)
+	}
+
+	const spec = `{"rules":[{"name":"no-drop","type":"operation","operations":[%q]}]}`
+	rule := &models.GuardRailRules{
+		OrgID:       testOrgID,
+		ID:          uuid.NewString(),
+		Name:        "no-drop",
+		Input:       map[string]any{"rules": []any{}},
+		Output:      map[string]any{"rules": []any{}},
+		SidecarSpec: json.RawMessage(fmt.Sprintf(spec, "drop")),
+	}
+	if err := models.UpsertGuardRailRuleWithConnections(rule, nil, true); err != nil {
+		t.Fatalf("seed guardrail rule: %v", err)
+	}
+	targets := []models.SidecarRuleTarget{{SidecarID: sc.ID, ListenerName: "appdb"}}
+	if err := models.SetGuardrailRuleListeners(models.DB, orgID, rule.Name, targets); err != nil {
+		t.Fatalf("bind: %v", err)
+	}
+
+	// The same rule, edited. No license, so the cap is one rule per process.
+	err := services.ValidateSidecarRuleTargets(models.DB, testOrgID,
+		services.SidecarRuleGuardrail, rule.Name, rule.Name,
+		json.RawMessage(fmt.Sprintf(spec, "truncate")), targets)
+	if err != nil {
+		t.Fatalf("editing the one bound rule was refused at the cap: %v", err)
+	}
+
+	// A rename still finds the stored version, which sits under the old name
+	// until the write cascades it.
+	err = services.ValidateSidecarRuleTargets(models.DB, testOrgID,
+		services.SidecarRuleGuardrail, "no-drop-v2", rule.Name,
+		json.RawMessage(fmt.Sprintf(spec, "truncate")), targets)
+	if err != nil {
+		t.Fatalf("renaming the one bound rule was refused at the cap: %v", err)
+	}
+
+	// The cap itself still holds: a SECOND rule on the same lane is over it.
+	second := json.RawMessage(`{"rules":[{"name":"no-delete","type":"operation","operations":["delete"]}]}`)
+	err = services.ValidateSidecarRuleTargets(models.DB, testOrgID,
+		services.SidecarRuleGuardrail, "no-delete", "", second, targets)
+	if err == nil {
+		t.Fatal("a second guardrail rule on the free tier must be refused")
+	}
+	if !strings.Contains(err.Error(), "rule limit") {
+		t.Errorf("the refusal must name the cap, got: %v", err)
 	}
 }

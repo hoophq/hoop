@@ -31,7 +31,9 @@ type Request struct {
 	Kind services.SidecarRuleKind
 	// Name the rule is written under, and StoredName the name it currently
 	// has. A rename makes them differ, and the bindings sit under the old one
-	// until the write cascades them.
+	// until the write cascades them. StoredName is EMPTY on a create, which is
+	// what tells the cap check there is no stored version of this rule to leave
+	// out of its count.
 	Name, StoredName string
 	// Spec is the rule in the sidecar's own vocabulary. Nil means the request
 	// did not mention it.
@@ -92,7 +94,7 @@ func Refuse(c *gin.Context, orgID string, req Request) bool {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return true
 	}
-	err = services.ValidateSidecarRuleTargets(models.DB, orgID, req.Kind, req.Name, req.Spec, targets)
+	err = services.ValidateSidecarRuleTargets(models.DB, orgID, req.Kind, req.Name, req.StoredName, req.Spec, targets)
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return true

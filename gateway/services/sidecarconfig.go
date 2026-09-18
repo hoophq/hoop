@@ -30,6 +30,19 @@ import (
 // per-lane rule document, so a rule edit hot-swaps into a running sidecar
 // instead of asking it to restart (ADR-0014).
 func ComposeSidecarConfiguration(db *gorm.DB, sc *models.Sidecar) (daemon.Config, error) {
+	return composeSidecarConfiguration(db, sc, "", "")
+}
+
+// composeSidecarConfiguration is ComposeSidecarConfiguration with one rule left
+// out of the fold.
+//
+// The exclusion serves the WRITE path. A rule being edited is already in the
+// database under its stored name, so composing it and then folding the incoming
+// version in on top counts one rule twice -- and the free tier then refuses an
+// edit that changes nothing about the count. skipName is the name the bindings
+// currently sit under, which a rename makes differ from the new one; empty
+// excludes nothing, which is what a read wants.
+func composeSidecarConfiguration(db *gorm.DB, sc *models.Sidecar, skipKind SidecarRuleKind, skipName string) (daemon.Config, error) {
 	cfg := daemon.Config(sc.Configuration)
 
 	orgID, err := uuid.Parse(sc.OrgID)
@@ -49,7 +62,30 @@ func ComposeSidecarConfiguration(db *gorm.DB, sc *models.Sidecar) (daemon.Config
 	if err != nil {
 		return cfg, fmt.Errorf("failed loading the analyzer rules bound to this sidecar: %w", err)
 	}
+	if skipName != "" {
+		switch skipKind {
+		case SidecarRuleGuardrail:
+			guardrails = withoutRule(guardrails, skipName)
+		case SidecarRuleMask:
+			masking = withoutRule(masking, skipName)
+		case SidecarRuleAnalyzer:
+			analyzers = withoutRule(analyzers, skipName)
+		}
+	}
 	return foldSidecarRules(cfg, guardrails, masking, analyzers)
+}
+
+// withoutRule drops every binding of one rule, by the name the bindings are
+// stored under.
+func withoutRule(bound []models.BoundRule, name string) []models.BoundRule {
+	kept := make([]models.BoundRule, 0, len(bound))
+	for _, b := range bound {
+		if b.RuleName == name {
+			continue
+		}
+		kept = append(kept, b)
+	}
+	return kept
 }
 
 // foldSidecarRules is the composition itself, separated from the loading so

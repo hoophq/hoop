@@ -107,7 +107,7 @@ func Post(c *gin.Context) {
 	}
 
 	if sidecarbind.Refuse(c, ctx.GetOrgID(), sidecarbind.Request{
-		Kind: services.SidecarRuleGuardrail, Name: req.Name, StoredName: req.Name,
+		Kind: services.SidecarRuleGuardrail, Name: req.Name, StoredName: "",
 		Spec: req.SidecarSpec, Targets: req.SidecarTargets,
 	}) {
 		return

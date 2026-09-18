@@ -241,7 +241,7 @@ func Post(c *gin.Context) {
 	customEntityTypes := payload.CustomEntityTypes
 
 	if sidecarbind.Refuse(c, ctx.GetOrgID(), sidecarbind.Request{
-		Kind: services.SidecarRuleMask, Name: req.Name, StoredName: req.Name,
+		Kind: services.SidecarRuleMask, Name: req.Name, StoredName: "",
 		Spec: req.SidecarSpec, Targets: req.SidecarTargets,
 	}) {
 		return

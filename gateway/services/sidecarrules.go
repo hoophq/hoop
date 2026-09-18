@@ -102,7 +102,10 @@ func ValidateSidecarRuleSpec(kind SidecarRuleKind, ruleName string, spec json.Ra
 // lane's own analyzer enabled. All four are startup refusals on the sidecar,
 // which means a rule saved without this check bricks a fleet at its next
 // restart rather than at the save.
-func ValidateSidecarRuleTargets(db *gorm.DB, orgID string, kind SidecarRuleKind, ruleName string, spec json.RawMessage, targets []models.SidecarRuleTarget) error {
+// storedName is the name the rule's bindings currently sit under, so the cap
+// check can leave the version already in the database out of its count. A
+// rename makes it differ from ruleName; empty means the rule is new.
+func ValidateSidecarRuleTargets(db *gorm.DB, orgID string, kind SidecarRuleKind, ruleName, storedName string, spec json.RawMessage, targets []models.SidecarRuleTarget) error {
 	seen := map[string]*models.Sidecar{}
 	for _, t := range targets {
 		sc, ok := seen[t.SidecarID]
@@ -140,7 +143,7 @@ func ValidateSidecarRuleTargets(db *gorm.DB, orgID string, kind SidecarRuleKind,
 		if err := validateSpecForLane(kind, ruleName, spec, sc.Name, *lane); err != nil {
 			return err
 		}
-		if err := checkCapWithRule(db, orgID, sc, kind, ruleName, spec, t.ListenerName); err != nil {
+		if err := checkCapWithRule(db, sc, kind, ruleName, storedName, spec, t.ListenerName); err != nil {
 			return err
 		}
 	}
@@ -158,21 +161,23 @@ func ValidateSidecarRuleTargets(db *gorm.DB, orgID string, kind SidecarRuleKind,
 //
 // It composes what the document WOULD be and asks the daemon's own counter, so
 // there is no second arithmetic to keep in step with it.
-func checkCapWithRule(db *gorm.DB, orgID string, sc *models.Sidecar, kind SidecarRuleKind, ruleName string, spec json.RawMessage, listenerName string) error {
+func checkCapWithRule(db *gorm.DB, sc *models.Sidecar, kind SidecarRuleKind, ruleName, storedName string, spec json.RawMessage, listenerName string) error {
 	licenseData, err := models.GetOrgLicenseData(db, sc.OrgID)
 	if err != nil {
 		// A missing org is the caller's problem, not this check's: the write
 		// itself fails on the same row a moment later.
 		return nil
 	}
-	composed, err := ComposeSidecarConfiguration(db, sc)
+	// Without the rule's own stored version: an edit would otherwise count the
+	// old content and the new one as two rules and refuse itself at the cap.
+	composed, err := composeSidecarConfiguration(db, sc, kind, storedName)
 	if err != nil {
 		// Composition is already broken for a reason this binding did not
 		// cause. Reporting it here would name the wrong rule.
 		return nil
 	}
-	// The rule being written is not in the database yet, or is there with its
-	// old content, so it is folded in by hand on top.
+	// The rule being written is not in the database yet, or was just excluded
+	// from the fold above, so it is folded in by hand on top.
 	bound := []models.BoundRule{{RuleName: ruleName, ListenerName: listenerName, Spec: spec}}
 	var withRule daemon.Config
 	switch kind {
