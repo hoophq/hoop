@@ -85,8 +85,19 @@ func ValidateSidecarRuleSpec(kind SidecarRuleKind, ruleName string, spec json.Ra
 		if err := decodeSpec(spec, &block); err != nil {
 			return fmt.Errorf("%s rule %q: %w", kind, ruleName, err)
 		}
-		if err := validateAnalyzerBlock(ruleName, block); err != nil {
-			return err
+		// The daemon's own check, which is the authority: the risk
+		// vocabulary, the send mode, the numeric bounds, and the pairing a
+		// hold needs -- require_review on a level and an approval rule naming
+		// who may release the statement, each refused without the other.
+		//
+		// postgres stands in for the lane, because this pass has none. Every
+		// refusal but one is protocol-independent; the exception is the hold,
+		// which needs a database lane, so a holdable protocol here lets the
+		// pairing answer and validateSpecForLane asks the real protocol once
+		// the rule names a listener.
+		where := fmt.Sprintf("analyzer rule %q", ruleName)
+		if problems := daemon.ValidateLaneAnalyzerBlock(&block, where, "postgres"); len(problems) > 0 {
+			return errors.New(strings.Join(problems, "; "))
 		}
 	default:
 		return fmt.Errorf("unknown sidecar rule kind %q", kind)
@@ -152,6 +163,11 @@ func ValidateSidecarRuleTargets(db *gorm.DB, orgID string, kind SidecarRuleKind,
 			RuleName: ruleName, ListenerName: t.ListenerName, Spec: spec,
 		})
 	}
+	if kind == SidecarRuleAnalyzer && len(targets) > 0 {
+		if err := checkApprovalRuleExists(db, orgID, ruleName, spec); err != nil {
+			return err
+		}
+	}
 	// One composition per sidecar, carrying EVERY binding this write adds to
 	// it. Per target would count a rule bound to three lanes as one rule, three
 	// times over, and never see the cap the third one breaks.
@@ -159,6 +175,47 @@ func ValidateSidecarRuleTargets(db *gorm.DB, orgID string, kind SidecarRuleKind,
 		if err := checkComposedWithRule(db, seen[id], kind, ruleName, storedName, candidates[id]); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// checkApprovalRuleExists refuses a hold whose approval rule is not there.
+//
+// The sidecar cannot see this. It validates that the rule is NAMED and files
+// the review; the plane then authorizes that review against its own rows, and
+// a name matching nothing is refused there -- once per held statement, at the
+// moment a developer is waiting, with the statement denied and no review for
+// anyone to approve. The admin's side is silent: the rule saved, the fleet
+// applied it, and the reviewer list they meant to point at is one they never
+// created or have since renamed.
+//
+// Access type as well as existence, because that is the whole of what makes a
+// rule a sidecar rule, and authorizedApprovalRule refuses on it too.
+func checkApprovalRuleExists(db *gorm.DB, orgID, ruleName string, spec json.RawMessage) error {
+	var block daemon.LaneAnalyzerConfig
+	if err := decodeSpec(spec, &block); err != nil {
+		return fmt.Errorf("analyzer rule %q: %w", ruleName, err)
+	}
+	if block.ApprovalRule == "" {
+		return nil
+	}
+	org, err := uuid.Parse(orgID)
+	if err != nil {
+		return fmt.Errorf("%w: parsing the organization id: %v", ErrSidecarRulesUnavailable, err)
+	}
+	approval, err := models.GetAccessRequestRuleByName(db, block.ApprovalRule, org)
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		return fmt.Errorf("analyzer rule %q holds statements under approval rule %q, and this "+
+			"organization has no access request rule by that name; create it first, so there "+
+			"is someone to release a held statement", ruleName, block.ApprovalRule)
+	case err != nil:
+		return fmt.Errorf("%w: reading approval rule %q: %v",
+			ErrSidecarRulesUnavailable, block.ApprovalRule, err)
+	case approval.AccessType != models.AccessTypeSidecar:
+		return fmt.Errorf("analyzer rule %q names approval rule %q, which is a %q rule; a "+
+			"sidecar review is released by a rule whose access type is %q",
+			ruleName, block.ApprovalRule, approval.AccessType, models.AccessTypeSidecar)
 	}
 	return nil
 }
@@ -327,6 +384,20 @@ func validateSpecForLane(kind SidecarRuleKind, ruleName string, spec json.RawMes
 				"off; enable it on that listener first, so it carries a trigger and a call budget",
 				ruleName, where)
 		}
+		var block daemon.LaneAnalyzerConfig
+		if err := decodeSpec(spec, &block); err != nil {
+			return fmt.Errorf("analyzer rule %q: %w", ruleName, err)
+		}
+		// The half only the lane can answer. A hold denies the first attempt
+		// and releases an identical retry, so it needs a client that sends the
+		// statement again: a database client does when the developer runs the
+		// query once more, an http caller is a program reading a refusal, and
+		// an ssh session is a shell the denial already ended.
+		// where is already inside each problem, so the rule name is all this
+		// adds: the admin is looking at a rule, not at a listener.
+		if problems := daemon.ValidateLaneAnalyzerBlock(&block, where, lane.Protocol); len(problems) > 0 {
+			return fmt.Errorf("analyzer rule %q: %s", ruleName, strings.Join(problems, "; "))
+		}
 	}
 	return nil
 }
@@ -368,44 +439,6 @@ func (r maskRule) validate() error {
 	}
 	if r.KeepLast != nil && *r.KeepLast < 0 {
 		return fmt.Errorf("sets keep_last to %d", *r.KeepLast)
-	}
-	return nil
-}
-
-// analyzerActions is the lane block's own vocabulary. It is NOT the gateway's
-// (allow_execution, block_execution, require_access_request): the two features
-// share a name and nothing else.
-var analyzerActions = map[string]bool{"": true, "allow": true, "warn": true, "block": true, "defer": true}
-
-func validateAnalyzerBlock(ruleName string, block daemon.LaneAnalyzerConfig) error {
-	named := false
-	for _, tier := range []struct {
-		name   string
-		action string
-	}{
-		{"high", block.HighRisk},
-		{"medium", block.MediumRisk},
-		{"low", block.LowRisk},
-	} {
-		if !analyzerActions[tier.action] {
-			return fmt.Errorf("analyzer rule %q sets %s risk to %q; a sidecar answers with allow, "+
-				"warn, block or defer", ruleName, tier.name, tier.action)
-		}
-		if tier.action != "" {
-			named = true
-		}
-	}
-	if !named {
-		// The sidecar's own refusal, quoted: a block naming no action allows
-		// every verdict, which is a classifier nobody is reading and a bill
-		// nobody approved.
-		return fmt.Errorf("analyzer rule %q names no action for any risk level, so every verdict "+
-			"would allow while still paying for the classification", ruleName)
-	}
-	if block.ApprovalRule != "" {
-		return fmt.Errorf("analyzer rule %q names an approval rule, which needs the review action; "+
-			"a sidecar declares that action in its configuration and refuses it at startup until "+
-			"EVL-289 lands. Use block or defer", ruleName)
 	}
 	return nil
 }

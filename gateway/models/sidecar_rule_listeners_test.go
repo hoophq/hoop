@@ -550,3 +550,105 @@ func TestAConfigurationEditCannotOrphanABoundRule(t *testing.T) {
 		t.Error("an ssh lane carrying a table guardrail must be refused at the write")
 	}
 }
+
+// TestABoundAnalyzerRuleCarriesItsApprovalRuleIntoTheServedConfig is the whole
+// review path end to end, on the plane's side.
+//
+// A hold is two halves that must agree, and they are stored apart: the SIDECAR
+// learns which rule releases a statement from the analyzer block it is served,
+// and the PLANE authorizes each filed review against the listener it has. When
+// the block comes from a bound rule, only the served document carries the
+// name -- so the plane has to read that one, and reading the stored row
+// instead refuses every review the fleet files, forever, with the statement
+// denied and nothing saying why.
+func TestABoundAnalyzerRuleCarriesItsApprovalRuleIntoTheServedConfig(t *testing.T) {
+	startTestDB(t)
+	orgID := uuid.MustParse(testOrgID)
+
+	sc := &models.Sidecar{
+		OrgID:     testOrgID,
+		Name:      "review-target",
+		KeyHash:   models.HashAPIKey("hsc_review_target_test"),
+		CreatedBy: "tests@hoop.dev",
+		Configuration: models.SidecarConfiguration{
+			Listeners: []daemon.ListenerConfig{{
+				Name: "appdb", Protocol: "postgres", Listen: ":5432", Upstream: "db:5432",
+				// The operator's own block: a budget, and no approval rule.
+				// Naming one here is what a standalone sidecar does; a fleet
+				// gets it from the rule instead.
+				Analyzer: &daemon.LaneAnalyzerConfig{MaxCalls: 40},
+			}},
+		},
+	}
+	if err := models.CreateSidecar(models.DB, sc); err != nil {
+		t.Fatalf("seed sidecar: %v", err)
+	}
+
+	approval := &models.AccessRequestRule{
+		OrgID: orgID, Name: "payments-review", AccessType: models.AccessTypeSidecar,
+		ConnectionNames: pq.StringArray{}, ApprovalRequiredGroups: pq.StringArray{},
+		ReviewersGroups: pq.StringArray{"admin"}, ForceApprovalGroups: pq.StringArray{},
+	}
+	if err := models.CreateAccessRequestRule(models.DB, approval); err != nil {
+		t.Fatalf("seed approval rule: %v", err)
+	}
+
+	const spec = `{"trigger":{"operations":["delete"]},"high":"require_review",` +
+		`"approval_rule":"payments-review"}`
+	rule := &models.AISessionAnalyzerRules{
+		OrgID: orgID, Name: "hold-deletes", ConnectionNames: pq.StringArray{},
+		SidecarSpec: json.RawMessage(spec),
+	}
+	if err := models.CreateAISessionAnalyzerRule(rule); err != nil {
+		t.Fatalf("seed analyzer rule: %v", err)
+	}
+	targets := []models.SidecarRuleTarget{{SidecarID: sc.ID, ListenerName: "appdb"}}
+
+	// The write gate accepts it: the hold names a rule that exists, on a lane
+	// whose client resends the statement.
+	err := services.ValidateSidecarRuleTargets(models.DB, testOrgID,
+		services.SidecarRuleAnalyzer, rule.Name, "", json.RawMessage(spec), targets)
+	if err != nil {
+		t.Fatalf("a hold naming an existing sidecar approval rule was refused: %v", err)
+	}
+	if err := models.SetAnalyzerRuleListeners(models.DB, orgID, rule.Name, targets); err != nil {
+		t.Fatalf("bind: %v", err)
+	}
+
+	// The stored row still names nobody. This is the state that made the
+	// propagation look impossible.
+	if got := sc.Configuration.Listeners[0].Analyzer.ApprovalRule; got != "" {
+		t.Fatalf("the stored listener must not carry the rule's approval_rule, got %q", got)
+	}
+
+	composed, err := services.ComposeSidecarConfiguration(models.DB, sc)
+	if err != nil {
+		t.Fatalf("compose: %v", err)
+	}
+	lane := composed.Listeners[0]
+	if lane.Analyzer.ApprovalRule != "payments-review" {
+		t.Errorf("the served listener must name the rule's approval_rule, got %q",
+			lane.Analyzer.ApprovalRule)
+	}
+	if lane.Analyzer.HighRisk != "require_review" {
+		t.Errorf("the served listener must hold on high risk, got %q", lane.Analyzer.HighRisk)
+	}
+	// The listener's own budget survives: the rule owns the decision, the
+	// listener owns what a classification may cost.
+	if lane.Analyzer.MaxCalls != 40 {
+		t.Errorf("the listener's own max_calls was lost, got %d", lane.Analyzer.MaxCalls)
+	}
+
+	// A hold naming a rule that is not there is refused at the save. The
+	// sidecar cannot see this: it files the review and the plane refuses it,
+	// once per held statement, long after the admin left the form.
+	missing := `{"high":"require_review","approval_rule":"nobody-review"}`
+	err = services.ValidateSidecarRuleTargets(models.DB, testOrgID,
+		services.SidecarRuleAnalyzer, rule.Name, rule.Name, json.RawMessage(missing), targets)
+	if err == nil {
+		t.Fatal("a hold naming a missing approval rule must be refused at the save")
+	}
+	if !strings.Contains(err.Error(), "nobody-review") {
+		t.Errorf("the refusal must name the missing rule, got: %v", err)
+	}
+}

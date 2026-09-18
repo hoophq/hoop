@@ -130,7 +130,7 @@ func TestValidateSidecarRuleSpec(t *testing.T) {
 			name: "the gateway's risk actions",
 			kind: SidecarRuleAnalyzer,
 			spec: `{"high":"block_execution"}`,
-			want: "allow, warn, block or defer",
+			want: "allow, warn, block, defer or require_review",
 		},
 		{
 			// The sidecar's own refusal: a block naming no action allows every
@@ -140,11 +140,26 @@ func TestValidateSidecarRuleSpec(t *testing.T) {
 			spec: `{"trigger":{"operations":["update"]}}`,
 			want: "names no action",
 		},
+		// ---- the review pairing, which the sidecar refuses at STARTUP -----
+		// A hold and the rule that releases it must arrive together. Either
+		// alone is a control nobody reads: reviewers no statement ever
+		// reaches, or a statement nobody can release.
 		{
-			name: "an approval rule, which needs the review action",
+			name: "an approval rule with no level that holds",
 			kind: SidecarRuleAnalyzer,
 			spec: `{"high":"block","approval_rule":"payments-review"}`,
-			want: "EVL-289",
+			want: "no risk level asks for",
+		},
+		{
+			name: "a hold that names no approval rule",
+			kind: SidecarRuleAnalyzer,
+			spec: `{"high":"require_review"}`,
+			want: "names no approval_rule",
+		},
+		{
+			name: "a hold with its approval rule",
+			kind: SidecarRuleAnalyzer,
+			spec: `{"high":"require_review","medium":"warn","approval_rule":"payments-review"}`,
 		},
 		{
 			name: "an empty spec on a bound rule",
@@ -180,6 +195,8 @@ func TestValidateSpecForLane(t *testing.T) {
 	ssh := daemon.ListenerConfig{Name: "bastion", Protocol: "ssh"}
 	pg := daemon.ListenerConfig{Name: "appdb", Protocol: "postgres"}
 	analyzed := daemon.ListenerConfig{Name: "appdb", Protocol: "postgres",
+		Analyzer: &daemon.LaneAnalyzerConfig{MaxCalls: 40}}
+	analyzedHTTP := daemon.ListenerConfig{Name: "api", Protocol: "http",
 		Analyzer: &daemon.LaneAnalyzerConfig{MaxCalls: 40}}
 
 	for _, tt := range []struct {
@@ -245,6 +262,23 @@ func TestValidateSpecForLane(t *testing.T) {
 			kind: SidecarRuleAnalyzer,
 			lane: analyzed,
 			spec: `{"high":"block"}`,
+		},
+		{
+			// A hold denies the first attempt and releases an identical
+			// retry, so it needs a client that sends the statement again. An
+			// http caller is a program reading a refusal: it never replays
+			// the bytes, so the statement is simply denied forever.
+			name: "a hold on an http lane",
+			kind: SidecarRuleAnalyzer,
+			lane: analyzedHTTP,
+			spec: `{"high":"require_review","approval_rule":"payments-review"}`,
+			want: "only a database lane can hold a statement",
+		},
+		{
+			name: "the same hold on a postgres lane",
+			kind: SidecarRuleAnalyzer,
+			lane: analyzed,
+			spec: `{"high":"require_review","approval_rule":"payments-review"}`,
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
