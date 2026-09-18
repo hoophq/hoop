@@ -77,6 +77,12 @@ export function cssVariablesResolver(theme) {
 }
 
 export const theme = createTheme({
+  // Mantine defaults this to false, which means a reader who set "reduce
+  // motion" in their OS still gets every transition. Turned on when the
+  // combobox dropdown gained one (components/Input/theme.js): the setting is
+  // the reader's answer to exactly that, and honouring it is not optional
+  // once the app animates anything.
+  respectReducedMotion: true,
   primaryColor: 'indigo',
   primaryShade: 5, // → Radix shade 9, the solid/saturated action color
   defaultRadius: 'md',
