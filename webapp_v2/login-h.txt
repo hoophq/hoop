@@ -1,0 +1,19 @@
+HTTP/1.1 200 OK
+Access-Control-Allow-Credentials: true
+Access-Control-Allow-Headers: Content-Type, Authorization, accept, origin, user-client
+Access-Control-Allow-Methods: POST, OPTIONS, GET, PUT, DELETE, PATCH
+Access-Control-Allow-Origin: *
+Access-Control-Expose-Headers: Token
+Content-Security-Policy: default-src self; script-src * 'unsafe-inline' 'unsafe-eval'; script-src-elem * 'unsafe-inline'; style-src * 'unsafe-inline'; font-src *; connect-src *; img-src * data: blob:; frame-src *; object-src *; worker-src *;
+Content-Type: application/json; charset=utf-8
+Permissions-Policy: geolocation=(),midi=(),sync-xhr=(),microphone=(),camera=(),magnetometer=(),gyroscope=(),fullscreen=(self),payment=()
+Referrer-Policy: strict-origin
+Server: hoopgateway/unknown
+Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+Token: eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6InJvZ2VyaW9AaG9vcC5kZXYiLCJhdXRoX3RpbWUiOjE3ODk2NjMwOTcsInN1YiI6InJvZ2VyaW9AaG9vcC5kZXYiLCJleHAiOjE3ODk3MDYyOTcsImlhdCI6MTc4OTY2MzA5N30.A3EFg2NWUc5SWixrPsw9EhR_ehVzqc2LD4crN08XwSfB1_ZpYzhtl56nkA-ay1YNGx4st0pYGSLvONu9efjkBw
+X-Content-Type-Options: nosniff
+X-Frame-Options: DENY
+X-Xss-Protection: 1; mode=block
+Date: Thu, 17 Sep 2026 16:38:17 GMT
+Content-Length: 15
+

@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { Box, Group, Paper, Stack, Text } from '@mantine/core'
 import { ArrowLeft, Plus, Trash2 } from 'lucide-react'
 import ActionIcon from '@/components/ActionIcon'
+import DocsBtnCallOut from '@/components/DocsBtnCallOut'
 import Button from '@/components/Button'
 import MultiSelect from '@/components/MultiSelect'
 import PageLoader from '@/components/PageLoader'
@@ -13,6 +14,7 @@ import Switch from '@/components/Switch'
 import TagsInput from '@/components/TagsInput'
 import TextInput from '@/components/TextInput'
 import { useSidecarStore } from '@/stores/useSidecarStore'
+import { docsUrl } from '@/utils/docsUrl'
 import { showSnackbar } from '@/utils/snackbar'
 import {
   ENTITY_TYPES,
@@ -111,16 +113,9 @@ function RuleEditor({ rule, onChange, onRemove, removable, types, operations }) 
           )}
         </Group>
 
-        {type?.help && (
-          <Text size="sm" c="dimmed">
-            {type.help}
-          </Text>
-        )}
-
         {has('operations') && (
           <MultiSelect
             label="Operations"
-            description="The statement’s most consequential effect, whatever verb it opens with."
             placeholder="Select operations..."
             data={operations}
             value={rule.operations}
@@ -133,7 +128,6 @@ function RuleEditor({ rule, onChange, onRemove, removable, types, operations }) 
           <Group align="flex-end" gap="sm" wrap="nowrap">
             <TagsInput
               label="Tables"
-              description="A bare name matches any schema, so customers covers public.customers."
               placeholder="customers"
               value={rule.tables}
               onChange={(v) => set({ tables: v })}
@@ -158,13 +152,11 @@ function RuleEditor({ rule, onChange, onRemove, removable, types, operations }) 
             checked={rule.require_table_match}
             onChange={(e) => set({ require_table_match: e.currentTarget.checked })}
             label="Also deny statements whose tables could not be determined"
-            description="Costs false positives. The right trade on a table that must never be written."
           />
         )}
         {has('words') && (
           <TagsInput
             label="Words"
-            description="Matched case-insensitively against the raw text. Use it for identifiers, not for verbs."
             placeholder="pg_sleep"
             value={rule.words}
             onChange={(v) => set({ words: v })}
@@ -173,7 +165,6 @@ function RuleEditor({ rule, onChange, onRemove, removable, types, operations }) 
         {has('pattern_regex') && (
           <TextInput
             label="Pattern"
-            description="RE2, compiled when the sidecar loads. No lookahead and no backreferences."
             placeholder="(?i)^\\s*delete\\s+from\\s+\\w+\\s*;?\\s*$"
             value={rule.pattern_regex}
             onChange={(e) => set({ pattern_regex: e.currentTarget.value })}
@@ -193,7 +184,6 @@ function RuleEditor({ rule, onChange, onRemove, removable, types, operations }) 
         {has('resources') && (
           <TagsInput
             label="Resources"
-            description="The normalized path, so /users/12345/orders arrives as /users/*/orders. A trailing /** matches any deeper path."
             placeholder="/admin/**"
             value={rule.resources}
             onChange={(v) => set({ resources: v })}
@@ -202,7 +192,6 @@ function RuleEditor({ rule, onChange, onRemove, removable, types, operations }) 
         {has('statuses') && (
           <TagsInput
             label="Statuses"
-            description="Exact codes and classes both work."
             placeholder="5xx"
             value={rule.statuses}
             onChange={(v) => set({ statuses: v })}
@@ -221,8 +210,7 @@ function RuleEditor({ rule, onChange, onRemove, removable, types, operations }) 
 
         {rule.type !== 'operation' && (
           <MultiSelect
-            label="Scope to operations (optional)"
-            description="The statement’s text differs per operation: a command line for exec_line, a variable name for env_set, a path for every sftp_*. Unscoped, this rule is evaluated against all of them."
+            label="Only for these operations (optional)"
             placeholder="Every operation"
             data={operations}
             value={rule.operations}
@@ -235,7 +223,6 @@ function RuleEditor({ rule, onChange, onRemove, removable, types, operations }) 
         <Group align="flex-end" gap="sm" wrap="nowrap">
           <TextInput
             label="Denial message"
-            description="Reaches the user in the protocol’s own error frame. Write one: the fallback names only the rule and the operation."
             placeholder="destructive statements are not permitted on this lane"
             value={rule.message}
             onChange={(e) => set({ message: e.currentTarget.value })}
@@ -360,14 +347,17 @@ function FormFields({ guardrail, id, isEdit }) {
 
       <SectionRow
         title="Distribute to listeners"
-        description="Each listener carries its own protocol, and the protocol decides which rule types it can run. Pick the listeners first: the types below narrow to what all of them accept."
+        description="Pick these first: the rule types below narrow to what every listener you choose can run."
       >
         <SidecarTargetPicker value={targets} onChange={setTargets} />
       </SectionRow>
 
       <SectionRow
         title="Configure rules"
-        description="Evaluated in order, first match wins among the rules that deny. A rule that defers records a finding and evaluation continues."
+        description="Evaluated in order. The first rule that denies wins."
+        callout={
+          <DocsBtnCallOut text="What each rule type matches" href={docsUrl.sidecar.policyRules} />
+        }
       >
         <Stack gap="md">
           {rules.map((rule, i) => (

@@ -4,6 +4,7 @@ import { Box, Group, Stack, Text } from '@mantine/core'
 import { ArrowLeft, Info } from 'lucide-react'
 import Alert from '@/components/Alert'
 import Button from '@/components/Button'
+import DocsBtnCallOut from '@/components/DocsBtnCallOut'
 import MultiSelect from '@/components/MultiSelect'
 import NumberInput from '@/components/NumberInput'
 import PageLoader from '@/components/PageLoader'
@@ -14,6 +15,7 @@ import TagsInput from '@/components/TagsInput'
 import Textarea from '@/components/Textarea'
 import TextInput from '@/components/TextInput'
 import { useSidecarStore } from '@/stores/useSidecarStore'
+import { docsUrl } from '@/utils/docsUrl'
 import { showSnackbar } from '@/utils/snackbar'
 import { ANALYZER_ACTIONS, operationsFor } from '@/pages/sidecarRuleVocabulary'
 import { useAiSessionAnalyzerStore } from '../store'
@@ -113,7 +115,7 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
     if (!spec.high && !spec.medium && !spec.low) {
       showSnackbar({
         level: 'error',
-        text: 'Name an action for at least one risk level, or every verdict allows while still paying for the classification.',
+        text: 'Set an action for at least one risk level.',
       })
       return
     }
@@ -185,20 +187,22 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
 
       <SectionRow
         title="Distribute to listeners"
-        description="A listener runs ONE analyzer block, and it needs its analyzer enabled first — the provider, the model and the credential live on the sidecar and cannot be set from here."
+        description="One rule per listener, and the listener needs its analyzer switched on first."
       >
         <SidecarTargetPicker value={targets} onChange={setTargets} />
       </SectionRow>
 
       <SectionRow
         title="What gets classified"
-        description="The analyzer is the only evaluator that leaves the process, costs money per statement and can take a second. Narrow it."
+        description="This is the only check that leaves the process and costs money per statement. Narrow it."
+        callout={
+          <DocsBtnCallOut text="Triggers and cost controls" href={docsUrl.sidecar.riskAnalysis} />
+        }
       >
         <Stack gap="md">
           {isHTTP ? (
             <TagsInput
               label="Resources"
-              description="Only requests matching these paths are sent. A trailing /** matches any deeper path."
               placeholder="/orders/**"
               value={form.trigger_resources}
               onChange={(v) => set({ trigger_resources: v })}
@@ -207,7 +211,6 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
             <>
               <MultiSelect
                 label="Operations"
-                description="Reads the statement’s most consequential effect, so a data-modifying CTE triggers on the delete it performs."
                 placeholder="Select operations..."
                 data={operations}
                 value={form.trigger_operations}
@@ -217,7 +220,6 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
               />
               <TagsInput
                 label="Tables (optional)"
-                description="Comes from a scanner rather than a full SQL grammar: a statement whose relations it could not determine does NOT match. Trigger on operations for anything load-bearing."
                 placeholder="customers"
                 value={form.trigger_tables}
                 onChange={(v) => set({ trigger_tables: v })}
@@ -226,13 +228,11 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
           )}
           {noTrigger && (
             <Alert color="amber" variant="light" icon={<Info size={16} />} radius="md">
-              With no trigger this listener classifies EVERY statement: a model call per statement
-              shape, bounded only by the cache and the call budget.
+              With no trigger, every statement on this listener is sent to the model.
             </Alert>
           )}
           <NumberInput
             label="Call budget (optional)"
-            description="A process-lifetime backstop for this listener. Past it, statements fall through to the guardrails, the same outcome as a listener with no analyzer."
             placeholder="Inherit the sidecar’s"
             value={form.max_calls}
             onChange={(v) => set({ max_calls: v })}
@@ -243,7 +243,7 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
 
       <SectionRow
         title="What happens per risk level"
-        description="A level you do not name allows, so you opt into blocking a tier by writing it down."
+        description="A level you leave unset allows."
       >
         <Stack gap="md">
           {[
@@ -262,7 +262,6 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
           ))}
           <TextInput
             label="Denial message (optional)"
-            description="Reaches the user on a block. Empty falls back to the model’s own title."
             placeholder="refused by risk analysis"
             value={form.message}
             onChange={(e) => set({ message: e.currentTarget.value })}
@@ -272,7 +271,7 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
 
       <SectionRow
         title="Custom analysis prompt"
-        description="Replaces the inherited risk guidance for this listener. The output contract is appended after it and cannot be removed."
+        description="Replaces the default risk guidance for this listener."
       >
         <Textarea
           label="Your prompt (Optional)"

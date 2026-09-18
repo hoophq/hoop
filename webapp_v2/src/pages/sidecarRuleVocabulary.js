@@ -22,49 +22,46 @@
 // The seven rule types, with the fields each one reads. `protocols` narrows
 // which lanes may carry it: a sidecar REFUSES a rule its lane cannot read,
 // at startup, rather than skipping it at evaluation.
+//
+// No prose here. What each type matches on is the docs' job, and the form
+// links to them — a paragraph per type made the page unreadable and still
+// said less than the reference does.
 export const GUARDRAIL_RULE_TYPES = [
   {
     value: 'operation',
     label: 'Operation',
-    help: 'The statement’s most consequential effect. Reads the scanner’s classification rather than the text, so SELECT \'DROP TABLE x\' stays a select.',
     fields: ['operations'],
   },
   {
     value: 'table',
     label: 'Table',
-    help: 'A relation the statement touches. Narrow it with access, or a rule meaning “nothing writes to customers” also fires on a statement that only reads it.',
     fields: ['tables', 'access', 'require_table_match'],
     deniedOn: ['ssh'],
   },
   {
     value: 'deny_words_list',
     label: 'Deny words',
-    help: 'A case-insensitive substring of the statement text. For identifiers the scanner has no concept of, such as a function name — not for verbs.',
     fields: ['words'],
   },
   {
     value: 'pattern_match',
     label: 'Pattern match',
-    help: 'An RE2 regular expression over the statement text. Compiled when the sidecar loads, so a bad pattern is refused here rather than on the first request.',
     fields: ['pattern_regex'],
   },
   {
     value: 'pii',
     label: 'PII',
-    help: 'Entity classes a detector finds in the REQUEST. Masking rewrites a response; a taxpayer ID in a WHERE clause has already reached the database’s query log.',
     fields: ['entities'],
   },
   {
     value: 'http_resource',
     label: 'HTTP resource',
-    help: 'The normalized request path, so /users/12345/orders arrives as /users/*/orders and one rule replaces a regex per endpoint.',
     fields: ['resources', 'methods'],
     protocols: ['http'],
   },
   {
     value: 'http_status',
     label: 'HTTP status',
-    help: 'The response status. Exact codes ("404") and classes ("5xx") both work.',
     fields: ['statuses', 'methods'],
     protocols: ['http'],
   },
@@ -111,11 +108,13 @@ export const GUARDRAIL_ACTIONS = [
 // Data masking
 // ---------------------------------------------------------------------------
 
+// The `help` here stays, unlike the guardrail types': a before/after on a real
+// value is what an operator picks a strategy on, and no label can carry it.
 export const MASK_STRATEGIES = [
   { value: 'redact', label: 'Redact', help: '4111111111111111 → [REDACTED:CREDIT_CARD]' },
   { value: 'mask', label: 'Mask', help: '4111111111111111 → ****************' },
   { value: 'partial', label: 'Partial', help: '4111111111111111 → ************1111' },
-  { value: 'hash', label: 'Hash', help: 'sha256 prefix. Equal inputs give equal outputs, so a masked column still joins.' },
+  { value: 'hash', label: 'Hash', help: '4111111111111111 → sha256:19d25e4ad4f3a1c2 (equal inputs still join)' },
 ]
 
 // An ssh lane rewrites a byte stream in place, so only a length-preserving
@@ -128,11 +127,11 @@ export const SSH_ONLY_STRATEGY = 'mask'
 // ---------------------------------------------------------------------------
 
 export const ANALYZER_ACTIONS = [
-  { value: '', label: 'Allow (the default for an unnamed level)' },
-  { value: 'allow', label: 'Allow, and record the verdict' },
-  { value: 'warn', label: 'Warn — forward and record the risk' },
-  { value: 'block', label: 'Block, with the model’s own title' },
-  { value: 'defer', label: 'Defer to a Rego decision' },
+  { value: '', label: 'Allow' },
+  { value: 'allow', label: 'Allow' },
+  { value: 'warn', label: 'Warn' },
+  { value: 'block', label: 'Block' },
+  { value: 'defer', label: 'Defer to Rego' },
 ]
 
 // ---------------------------------------------------------------------------

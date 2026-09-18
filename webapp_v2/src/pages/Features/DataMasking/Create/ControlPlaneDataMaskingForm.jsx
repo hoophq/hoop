@@ -3,8 +3,8 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { Box, Group, Paper, Stack, Text } from '@mantine/core'
 import { ArrowLeft, Plus, Trash2 } from 'lucide-react'
 import ActionIcon from '@/components/ActionIcon'
-import Alert from '@/components/Alert'
 import Button from '@/components/Button'
+import DocsBtnCallOut from '@/components/DocsBtnCallOut'
 import MultiSelect from '@/components/MultiSelect'
 import NumberInput from '@/components/NumberInput'
 import PageLoader from '@/components/PageLoader'
@@ -14,6 +14,7 @@ import SidecarTargetPicker from '@/components/SidecarTargetPicker'
 import TagsInput from '@/components/TagsInput'
 import TextInput from '@/components/TextInput'
 import { useSidecarStore } from '@/stores/useSidecarStore'
+import { docsUrl } from '@/utils/docsUrl'
 import { showSnackbar } from '@/utils/snackbar'
 import {
   ENTITY_TYPES,
@@ -124,7 +125,6 @@ function RuleEditor({ rule, onChange, onRemove, removable, strategies, sshBound 
         {rule.match === 'entities' ? (
           <MultiSelect
             label="Entity types"
-            description="Rewritten wherever they appear, including inside an opaque HTTP body."
             placeholder="Select entity types..."
             data={ENTITY_TYPES}
             value={rule.entities}
@@ -135,7 +135,6 @@ function RuleEditor({ rule, onChange, onRemove, removable, strategies, sshBound 
         ) : (
           <TagsInput
             label="Columns"
-            description="Compared case-insensitively. A column rule cannot miss, because it never guesses — and it only works where the protocol names its values."
             placeholder="ssn"
             value={rule.columns}
             onChange={(v) => set({ columns: v })}
@@ -174,8 +173,7 @@ function RuleEditor({ rule, onChange, onRemove, removable, strategies, sshBound 
 
         {sshBound && (
           <Text size="sm" c="dimmed">
-            An SSH lane rewrites a byte stream in place, so only Mask keeps the byte count and
-            only an ASCII mask character does. The others are refused when the sidecar loads.
+            An SSH listener masks bytes in place, so Mask is its only strategy.
           </Text>
         )}
       </Stack>
@@ -286,20 +284,19 @@ function FormFields({ rule: stored, id, isEdit }) {
 
       <SectionRow
         title="Distribute to listeners"
-        description="A listener's mask rules REPLACE the sidecar defaults rather than adding to them, which is why the binding is per listener."
+        description="A listener's mask rules replace the sidecar defaults rather than adding to them."
       >
         <SidecarTargetPicker value={targets} onChange={setTargets} />
       </SectionRow>
 
       <SectionRow
         title="Configure rules"
-        description="Masking runs on responses only. Requests are never rewritten: changing the statement the upstream executes is a correctness change wearing a privacy label."
+        description="Responses only. A statement on its way in is never rewritten."
+        callout={
+          <DocsBtnCallOut text="Entities, columns and strategies" href={docsUrl.sidecar.dataMasking} />
+        }
       >
         <Stack gap="md">
-          <Alert color="blue" variant="light" radius="md">
-            US_SSN carries no checksum, so nine digits in a legal range is a valid one as far as
-            any detector can tell. Prefer a column rule for a column you can name.
-          </Alert>
           {rules.map((rule, i) => (
             <RuleEditor
               key={rule.key}
