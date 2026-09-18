@@ -38,10 +38,11 @@ export const decidedGroups = (review) =>
   (review?.review_groups_data ?? []).filter((g) => g.status !== STATUS.PENDING)
 
 // An approval from outside the review's groups answers 200 and changes nothing,
-// so the button is what has to refuse it. Groups come from the role because
-// useUserStore carries no raw list, which covers a control plane's two.
-export function canApprove(review, { role, adminRoleName, approverRoleName }) {
-  const mine = roleToGroups(role, adminRoleName, approverRoleName)
+// so the button is what has to refuse it. `groups` is what /userinfo reports,
+// the same list the backend intersects; the role is the fallback for a gateway
+// that answers none.
+export function canApprove(review, { groups, role, adminRoleName, approverRoleName }) {
+  const mine = groups?.length ? groups : roleToGroups(role, adminRoleName, approverRoleName)
   return (review?.review_groups_data ?? []).some((g) => mine.includes(g.group))
 }
 
@@ -51,9 +52,12 @@ export const canReject = (review, user) => user.isAdmin || canApprove(review, us
 export const isSettled = (review) =>
   review?.status !== STATUS.PENDING && review?.status !== STATUS.APPROVED
 
+// The review carries no connection name, so a review filed against one has
+// nothing to show here. A control plane stores none; the gateway is where they
+// exist, and this page is not its queue.
 export function reviewSource(review, sidecarsById) {
   const listener = review?.listener_name
-  if (!listener) return { primary: review?.connection_name || '—', secondary: null }
+  if (!listener) return { primary: '—', secondary: null }
   return { primary: listener, secondary: sidecarsById.get(review.sidecar_id)?.name ?? null }
 }
 

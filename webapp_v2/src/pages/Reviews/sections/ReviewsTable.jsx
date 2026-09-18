@@ -3,6 +3,7 @@ import Badge from '@/components/Badge'
 import Table from '@/components/Table'
 import { formatRelativeTime } from '@/utils/datetime'
 import { reviewSource, statusLabel } from '../helpers'
+import classes from './ReviewsTable.module.css'
 
 export default function ReviewsTable({ reviews, sidecarsById, selectedId, onSelect }) {
   return (
@@ -23,7 +24,7 @@ export default function ReviewsTable({ reviews, sidecarsById, selectedId, onSele
             <Table.Tr
               key={review.id}
               onClick={() => onSelect(review)}
-              style={{ cursor: 'pointer' }}
+              className={classes.row}
               data-selected={review.id === selectedId || undefined}
             >
               <Table.Td miw={190}>

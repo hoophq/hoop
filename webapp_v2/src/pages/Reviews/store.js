@@ -1,25 +1,39 @@
 import { create } from 'zustand'
 import { reviewsService } from '@/services/reviews'
 import { sessionsService } from '@/services/sessions'
+import { useAuthStore } from '@/stores/useAuthStore'
 
-export const useReviewStore = create((set, get) => ({
+const EMPTY = {
   reviews: [],
   // 'idle' | 'loading' | 'success' | 'error'
   reviewsStatus: 'idle',
-
-  // Keyed by session id: the statement the sidecar held, fetched per drawer.
+  // Keyed by session id: the statement the sidecar held, fetched per modal.
   statements: {},
   statementStatus: {},
-
   submitting: false,
+}
+
+export const useReviewStore = create((set, get) => ({
+  ...EMPTY,
+  // Bumped by every list fetch, every decision and the logout reset, so a
+  // response that arrives after the list moved on is dropped instead of
+  // restoring what it saw.
+  listRequestId: 0,
+
+  reset: () => set((state) => ({ ...EMPTY, listRequestId: state.listRequestId + 1 })),
 
   fetchReviews: async () => {
-    set({ reviewsStatus: 'loading' })
+    const requestId = get().listRequestId + 1
+    set({ listRequestId: requestId, reviewsStatus: 'loading' })
     try {
       const { data } = await reviewsService.list()
-      set({ reviews: Array.isArray(data) ? data : [], reviewsStatus: 'success' })
+      set((state) =>
+        state.listRequestId === requestId
+          ? { reviews: Array.isArray(data) ? data : [], reviewsStatus: 'success' }
+          : {},
+      )
     } catch {
-      set({ reviewsStatus: 'error' })
+      set((state) => (state.listRequestId === requestId ? { reviewsStatus: 'error' } : {}))
     }
   },
 
@@ -41,9 +55,12 @@ export const useReviewStore = create((set, get) => ({
     set({ submitting: true })
     try {
       const { data } = await reviewsService.update(id, payload)
-      set((s) => ({
+      set((state) => ({
         submitting: false,
-        reviews: s.reviews.map((review) => (review.id === data.id ? data : review)),
+        // Also bumped so a list fetch still in flight cannot restore the row
+        // as it was before this decision.
+        listRequestId: state.listRequestId + 1,
+        reviews: state.reviews.map((review) => (review.id === data.id ? data : review)),
       }))
       return { ok: true, review: data }
     } catch (error) {
@@ -52,3 +69,12 @@ export const useReviewStore = create((set, get) => ({
     }
   },
 }))
+
+// Module state outlives a logout, so the next user in the same tab would see
+// the previous organization's reviews and statements until the first fetch
+// answers. Subscribed from this side, as useSidecarStore does.
+useAuthStore.subscribe((state, prev) => {
+  if (prev.isAuthenticated && !state.isAuthenticated) {
+    useReviewStore.getState().reset()
+  }
+})
