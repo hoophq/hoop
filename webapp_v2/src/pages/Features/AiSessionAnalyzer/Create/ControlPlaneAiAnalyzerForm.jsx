@@ -196,7 +196,7 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
         title="What gets classified"
         description="This is the only check that leaves the process and costs money per statement. Narrow it."
         callout={
-          <DocsBtnCallOut text="Triggers and cost controls" href={docsUrl.sidecar.riskAnalysis} variant="indigo" />
+          <DocsBtnCallOut text="See our docs for triggers and costs" href={docsUrl.sidecar.riskAnalysis} variant="indigo" />
         }
       >
         <Stack gap="md">

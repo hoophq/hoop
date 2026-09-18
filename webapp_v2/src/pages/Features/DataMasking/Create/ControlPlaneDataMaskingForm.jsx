@@ -299,7 +299,7 @@ function FormFields({ rule: stored, id, isEdit }) {
         title="Configure rules"
         description="Responses only. A statement on its way in is never rewritten."
         callout={
-          <DocsBtnCallOut text="Entities, columns and strategies" href={docsUrl.sidecar.dataMasking} variant="indigo" />
+          <DocsBtnCallOut text="See our docs for every masking option" href={docsUrl.sidecar.dataMasking} variant="indigo" />
         }
       >
         <Stack gap="md">

@@ -364,7 +364,7 @@ function FormFields({ guardrail, id, isEdit }) {
         title="Configure rules"
         description="Evaluated in order. The first rule that denies wins."
         callout={
-          <DocsBtnCallOut text="What each rule type matches" href={docsUrl.sidecar.policyRules} variant="indigo" />
+          <DocsBtnCallOut text="See our docs for every rule type" href={docsUrl.sidecar.policyRules} variant="indigo" />
         }
       >
         <Stack gap="md">
