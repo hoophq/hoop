@@ -273,7 +273,13 @@ func UpdateAISessionAnalyzerRuleTx(tx *gorm.DB, rule *AISessionAnalyzerRules) er
 }
 
 func DeleteAISessionAnalyzerRule(orgID uuid.UUID, name string) error {
-	result := DB.Where("org_id = ? AND name = ?", orgID, name).Delete(&AISessionAnalyzerRules{})
+	return DeleteAISessionAnalyzerRuleTx(DB, orgID, name)
+}
+
+// DeleteAISessionAnalyzerRuleTx deletes inside the caller's transaction, so the
+// rule and the approval rule that releases what it holds go together.
+func DeleteAISessionAnalyzerRuleTx(db *gorm.DB, orgID uuid.UUID, name string) error {
+	result := db.Where("org_id = ? AND name = ?", orgID, name).Delete(&AISessionAnalyzerRules{})
 	if result.Error != nil {
 		return result.Error
 	}

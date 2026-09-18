@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/services"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/lib/pq"
 	"gorm.io/gorm"
@@ -726,5 +727,94 @@ func TestAFailedBindingLeavesTheRuleUnchanged(t *testing.T) {
 	}
 	if len(left) != 1 || left[0].SidecarID != sc.ID {
 		t.Errorf("the refused write changed the bindings: %+v", left)
+	}
+}
+
+// TestTheHoldSwitchOwnsItsApprovalRule pins the second half of a hold.
+//
+// A control plane has no page for an access request rule, so an analyzer rule
+// that holds statements and names nothing would deny every matching statement
+// and leave a review nobody can approve. The switch therefore owns the rule:
+// created with it, refreshed with it, removed with it -- and never over a rule
+// somebody else made.
+func TestTheHoldSwitchOwnsItsApprovalRule(t *testing.T) {
+	startTestDB(t)
+	orgID := uuid.MustParse(testOrgID)
+
+	const holding = `{"high":"require_review","approval_rule":"hold-writes"}`
+	const notHolding = `{"high":"block"}`
+
+	// Switched on: the rule appears, with the resolved role names rather than
+	// the literal "admin", and one approval releases.
+	err := services.SyncAnalyzerApprovalRule(models.DB, orgID, "hold-writes", json.RawMessage(holding))
+	if err != nil {
+		t.Fatalf("turning the hold on: %v", err)
+	}
+	rule, err := models.GetAccessRequestRuleByName(models.DB, "hold-writes", orgID)
+	if err != nil {
+		t.Fatalf("the approval rule was not created: %v", err)
+	}
+	if rule.AccessType != models.AccessTypeSidecar {
+		t.Errorf("access type = %q, want %q", rule.AccessType, models.AccessTypeSidecar)
+	}
+	if len(rule.ConnectionNames) != 0 {
+		t.Errorf("a sidecar rule gates no connection, got %v", rule.ConnectionNames)
+	}
+	want := map[string]bool{types.GroupApprover: true, types.GroupAdmin: true}
+	if len(rule.ReviewersGroups) != len(want) {
+		t.Fatalf("reviewers = %v, want the approver and admin groups", rule.ReviewersGroups)
+	}
+	for _, g := range rule.ReviewersGroups {
+		if !want[g] {
+			t.Errorf("reviewers carry %q, which is not a role this server resolves", g)
+		}
+	}
+	if rule.MinApprovals == nil || *rule.MinApprovals != 1 {
+		t.Errorf("min approvals = %v, want 1", rule.MinApprovals)
+	}
+	// The review path refuses a rule it cannot settle, and this rule has to
+	// pass that check or the hold is unreleasable in a different way.
+	if rule.MinApprovals != nil && *rule.MinApprovals > len(rule.ReviewersGroups) {
+		t.Errorf("min approvals %d exceeds %d reviewer groups", *rule.MinApprovals, len(rule.ReviewersGroups))
+	}
+
+	// Switched off: the rule goes with it.
+	err = services.SyncAnalyzerApprovalRule(models.DB, orgID, "hold-writes", json.RawMessage(notHolding))
+	if err != nil {
+		t.Fatalf("turning the hold off: %v", err)
+	}
+	if _, err := models.GetAccessRequestRuleByName(models.DB, "hold-writes", orgID); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Errorf("the approval rule outlived the hold, err = %v", err)
+	}
+
+	// A rule somebody else made is never written over, and never deleted.
+	handMade := &models.AccessRequestRule{
+		OrgID: orgID, Name: "ops-review", AccessType: models.AccessTypeSidecar,
+		ConnectionNames: pq.StringArray{}, ApprovalRequiredGroups: pq.StringArray{},
+		ReviewersGroups: pq.StringArray{"sre"}, ForceApprovalGroups: pq.StringArray{},
+	}
+	if err := models.CreateAccessRequestRule(models.DB, handMade); err != nil {
+		t.Fatalf("seed a hand-made rule: %v", err)
+	}
+	err = services.SyncAnalyzerApprovalRule(models.DB, orgID, "ops-review", json.RawMessage(holding))
+	if err == nil {
+		t.Fatal("a hold must not take over an access request rule it did not create")
+	}
+	if !strings.Contains(err.Error(), "ops-review") {
+		t.Errorf("the refusal must name the rule, got: %v", err)
+	}
+	kept, err := models.GetAccessRequestRuleByName(models.DB, "ops-review", orgID)
+	if err != nil {
+		t.Fatalf("the hand-made rule was removed: %v", err)
+	}
+	if len(kept.ReviewersGroups) != 1 || kept.ReviewersGroups[0] != "sre" {
+		t.Errorf("the hand-made reviewers were rewritten: %v", kept.ReviewersGroups)
+	}
+	// And switching a hold off never deletes it either.
+	if err := services.DeleteAnalyzerApprovalRule(models.DB, orgID, "ops-review"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, err := models.GetAccessRequestRuleByName(models.DB, "ops-review", orgID); err != nil {
+		t.Errorf("a rule this feature does not own was deleted: %v", err)
 	}
 }

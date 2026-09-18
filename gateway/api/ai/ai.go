@@ -378,13 +378,24 @@ func CreateSessionAnalyzerRule(c *gin.Context) {
 	// fails after the rule row commits leaves the OLD bindings serving the NEW
 	// spec, which is the pairing sidecarbind.Refuse rejects.
 	var bindErr error
+	var holdErr error
 	err = models.DB.Transaction(func(tx *gorm.DB) error {
 		if err := models.CreateAISessionAnalyzerRuleTx(tx, rule); err != nil {
 			return err
 		}
+		// The rule that says who may release a statement this one holds. In
+		// the same transaction, because a rule that holds and cannot release
+		// denies every matching statement with no review anyone can approve.
+		if holdErr = services.SyncAnalyzerApprovalRule(tx, orgID, rule.Name, rule.SidecarSpec); holdErr != nil {
+			return holdErr
+		}
 		bindErr = sidecarbind.PersistTx(tx, ctx.GetOrgID(), services.SidecarRuleAnalyzer, rule.Name, req.SidecarTargets)
 		return bindErr
 	})
+	if holdErr != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": holdErr.Error()})
+		return
+	}
 	if bindErr != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, bindErr, "failed binding the rule to its sidecars: %v", bindErr)
 		return
@@ -495,13 +506,24 @@ func UpdateSessionAnalyzerRule(c *gin.Context) {
 	rule.SidecarSpec = bind.EffectiveSpec()
 
 	var bindErr error
+	var holdErr error
 	err = models.DB.Transaction(func(tx *gorm.DB) error {
 		if err := models.UpdateAISessionAnalyzerRuleTx(tx, rule); err != nil {
 			return err
 		}
+		// Present while the rule holds, gone once it stops: switching the hold
+		// off has to take the approval rule with it, or the fleet keeps a
+		// reviewer list for a statement nothing holds any more.
+		if holdErr = services.SyncAnalyzerApprovalRule(tx, orgID, rule.Name, rule.SidecarSpec); holdErr != nil {
+			return holdErr
+		}
 		bindErr = sidecarbind.PersistTx(tx, ctx.GetOrgID(), services.SidecarRuleAnalyzer, rule.Name, req.SidecarTargets)
 		return bindErr
 	})
+	if holdErr != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": holdErr.Error()})
+		return
+	}
 	if bindErr != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, bindErr, "failed binding the rule to its sidecars: %v", bindErr)
 		return
@@ -548,7 +570,15 @@ func DeleteSessionAnalyzerRule(c *gin.Context) {
 		return
 	}
 
-	err = models.DeleteAISessionAnalyzerRule(orgID, c.Param("name"))
+	// The approval rule goes with it. Left behind it would be a reviewer list
+	// in a control plane with no page to remove it from, and the next analyzer
+	// rule of the same name would refuse to save over it.
+	err = models.DB.Transaction(func(tx *gorm.DB) error {
+		if err := models.DeleteAISessionAnalyzerRuleTx(tx, orgID, c.Param("name")); err != nil {
+			return err
+		}
+		return services.DeleteAnalyzerApprovalRule(tx, orgID, c.Param("name"))
+	})
 	switch err {
 	case gorm.ErrRecordNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})

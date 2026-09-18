@@ -199,6 +199,12 @@ func checkApprovalRuleExists(db *gorm.DB, orgID, ruleName string, spec json.RawM
 	if block.ApprovalRule == "" {
 		return nil
 	}
+	// The rule's own pair, which this write creates beside it
+	// (SyncAnalyzerApprovalRule). Checking it would refuse the save that is
+	// about to make it, on every first save of a hold.
+	if block.ApprovalRule == ruleName {
+		return nil
+	}
 	org, err := uuid.Parse(orgID)
 	if err != nil {
 		return fmt.Errorf("%w: parsing the organization id: %v", ErrSidecarRulesUnavailable, err)
