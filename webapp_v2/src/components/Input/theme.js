@@ -1,4 +1,5 @@
 import {
+  Combobox,
   Input,
   InputBase,
   Textarea,
@@ -74,6 +75,18 @@ export const TextareaTheme = Textarea.extend({ defaultProps: SIZE_DEFAULT })
 export const MultiSelectTheme = MultiSelect.extend({ defaultProps: SIZE_DEFAULT })
 export const TagsInputTheme = TagsInput.extend({ defaultProps: SIZE_DEFAULT })
 export const PillsInputTheme = PillsInput.extend({ defaultProps: SIZE_DEFAULT })
+
+// The floating half of every Select, MultiSelect, Autocomplete and TagsInput.
+//
+// Mantine ships the dropdown with NO shadow (its Combobox defaultProps set
+// keepMounted, withinPortal, width and size, and nothing else), so the panel
+// arrived with a 1px border and nothing to lift it off the form. Over a field
+// it overlaps, it read as part of the page rather than above it.
+//
+// `md` is the same step the app's three Menu call sites already pass by hand
+// (SourceMenu, ActionMenu, OriginSurvey). One extension here means no call
+// site has to remember it, and every floating surface in the app agrees.
+export const ComboboxTheme = Combobox.extend({ defaultProps: { shadow: 'md' } })
 
 // Descriptions and errors track the field size; labels are pinned to 14px/700
 // to match the section headings they sit under. Four Create forms each carried

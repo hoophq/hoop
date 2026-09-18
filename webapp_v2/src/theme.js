@@ -11,6 +11,7 @@ import {
   MultiSelectTheme,
   TagsInputTheme,
   PillsInputTheme,
+  ComboboxTheme,
 } from '@/components/Input/theme';
 import { PaperTheme } from '@/components/Paper/theme'
 import { StepperTheme } from '@/components/Stepper/theme';
@@ -266,6 +267,9 @@ export const theme = createTheme({
     MultiSelect: MultiSelectTheme,
     TagsInput: TagsInputTheme,
     PillsInput: PillsInputTheme,
+    // The dropdown panel those fields open. Mantine ships it without a
+    // shadow; see components/Input/theme.js.
+    Combobox: ComboboxTheme,
     // PickerInputBase (under @mantine/dates DatePickerInput) is not exported,
     // so a plain theme entry stands in for Component.extend().
     PickerInputBase: { defaultProps: { size: 'md' } },
