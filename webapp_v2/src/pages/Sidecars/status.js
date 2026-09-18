@@ -31,19 +31,3 @@ export function sidecarStatus(sidecar) {
   return sidecar?.last_seen_at ? STATUS[SIDECAR_STATUS.CONNECTED] : STATUS[SIDECAR_STATUS.WAITING]
 }
 
-const RELATIVE = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
-const UNITS = [
-  ['day', 24 * 60 * 60 * 1000],
-  ['hour', 60 * 60 * 1000],
-  ['minute', 60 * 1000],
-]
-
-// "2 hours ago", "yesterday", "just now". Staleness stays visible next to
-// "Connected", because nothing turns it off.
-export function formatRelativeTime(iso, now = Date.now()) {
-  const diff = new Date(iso).getTime() - now
-  for (const [unit, ms] of UNITS) {
-    if (Math.abs(diff) >= ms) return RELATIVE.format(Math.round(diff / ms), unit)
-  }
-  return 'just now'
-}
