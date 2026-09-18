@@ -91,4 +91,8 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- if and .Values.gatewayApi.enabled (not .Values.gatewayApi.createGateway) (not .Values.gatewayApi.httpRoute.parentRefs) -}}
 {{- fail "gatewayApi.createGateway is false but gatewayApi.httpRoute.parentRefs is empty: name the Gateway to attach to, or set createGateway" -}}
 {{- end -}}
+
+{{- if and .Values.gatewayApi.enabled (not .Values.service.enabled) (not .Values.gatewayApi.httpRoute.rules) -}}
+{{- fail "gatewayApi.enabled is true and service.enabled is false, but gatewayApi.httpRoute.rules is empty: the default route points at the Service this chart would have created, so it would resolve to nothing. Set service.enabled, or set rules naming a backend of your own" -}}
+{{- end -}}
 {{- end -}}

@@ -202,6 +202,10 @@ gatewayApi:
     hostnames: [cp.yourdomain.tld]
 ```
 
+Turning the Service off while the default route is in use is refused too: that
+route's backend is the Service, so it would resolve to nothing. Set
+`httpRoute.rules` naming a backend of your own, or leave the Service on.
+
 To attach to a Gateway somebody else owns, set `createGateway: false` and name
 it in `httpRoute.parentRefs` — the chart refuses to render without it, because
 a route with no parent attaches to nothing and looks installed.

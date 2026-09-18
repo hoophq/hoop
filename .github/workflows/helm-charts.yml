@@ -336,6 +336,10 @@ jobs:
           guard "image.command"       "${base[@]}" --set 'image.command={hoop}'
           guard "image.args"          "${base[@]}" --set 'image.args={start}'
           guard "no parentRefs"       "${base[@]}" --set gatewayApi.enabled=true --set gatewayApi.createGateway=false
+          # A default route backed by a Service the chart was told not to
+          # create resolves to nothing: BackendNotFound, and every request
+          # gets a 500 from an install that rendered clean.
+          guard "route, no Service"   "${base[@]}" --set gatewayApi.enabled=true --set service.enabled=false
 
           # The inverse: valid values must still render. Without this, a guard
           # that fires on everything also passes above.
@@ -346,6 +350,12 @@ jobs:
           # reinvent a rule the binary does not have.
           helm template t "$chart" "${base[@]}" --set config.TLS_CERT=a >/dev/null \
             || { echo "::error::half a TLS pair was refused; the binary accepts it and serves plaintext"; exit 1; }
+          # Custom rules name their own backend, so the Service is genuinely
+          # optional there. The guard above must not catch this.
+          helm template t "$chart" "${base[@]}" --set gatewayApi.enabled=true --set service.enabled=false \
+            --set 'gatewayApi.httpRoute.rules[0].backendRefs[0].name=my-own-svc' \
+            --set 'gatewayApi.httpRoute.rules[0].backendRefs[0].port=8009' >/dev/null \
+            || { echo "::error::a route with custom rules was refused without the chart's Service"; exit 1; }
           idp=$(helm template t "$chart" "${base[@]}" --set config.IDP_ISSUER=https://idp \
             --set config.IDP_CLIENT_ID=i --set config.IDP_CLIENT_SECRET=s) \
             || { echo "::error::a complete IDP block was refused"; exit 1; }
@@ -354,7 +364,7 @@ jobs:
           echo "$idp" | grep -q 'IDP_ISSUER' \
             || { echo "::error::the IDP block did not reach the Secret"; exit 1; }
 
-          echo "all nine control plane guards fire, and valid values still render"
+          echo "all ten control plane guards fire, and valid values still render"
 
           # The chart renders the control plane's environment and nothing else.
           # It does not police what an operator writes under config: a key it

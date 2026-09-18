@@ -207,6 +207,9 @@ livenessProbe: {}
 # type is here so a cluster with no Gateway API CRDs can set LoadBalancer and be
 # done. There is deliberately no source-range or traffic-policy plumbing: one
 # HTTP port does not need it.
+#
+# enabled: false with gatewayApi.enabled is refused unless you also set
+# gatewayApi.httpRoute.rules: the default route points at this Service.
 service:
   enabled: true
   type: ClusterIP

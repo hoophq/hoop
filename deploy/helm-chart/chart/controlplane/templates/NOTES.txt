@@ -1,7 +1,11 @@
 Control plane deployed.
 
   kubectl logs deploy/{{ include "hoopcontrolplane.fullname" . }}
+{{- if .Values.service.enabled }}
   kubectl port-forward svc/{{ include "hoopcontrolplane.fullname" . }} 8009:8009
+{{- else }}
+  kubectl port-forward deploy/{{ include "hoopcontrolplane.fullname" . }} 8009:8009
+{{- end }}
 
 Confirm the mode — application_mode must read "control-plane":
 
