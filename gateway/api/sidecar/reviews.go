@@ -334,11 +334,9 @@ func newSlackReviewRequest(sidecar *models.Sidecar, rev *models.Review, listener
 		ApprovalGroups: slackplugin.ParseGroups(rev.ReviewGroups),
 		Script:         statement,
 
-		// /reviews/<sid> exists in the router but renders a placeholder, so
-		// this points at the home page until there is a layout to point at.
 		// FullApiURL, not ApiURL: the latter drops the configured path prefix,
 		// which lands the approver outside the app wherever one is set.
-		WebappURL: appconfig.Get().FullApiURL(),
+		WebappURL: fmt.Sprintf("%s/reviews/%s", appconfig.Get().FullApiURL(), rev.SessionID),
 	}
 }
 

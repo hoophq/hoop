@@ -435,13 +435,11 @@ func TestNewSlackReviewRequest(t *testing.T) {
 		"Groups renders unconditionally, so it says who may act rather than nothing")
 
 	// The line renders unconditionally, so an empty value would show a broken
-	// link. Until there is a page for one review, it points at the home page.
+	// link. It opens the review the message is about.
 	assert.NotEmpty(t, req.WebappURL, "an empty url renders as a dead More details link")
-	assert.Equal(t, appconfig.Get().FullApiURL(), req.WebappURL)
-	assert.True(t, strings.HasSuffix(req.WebappURL, "/hoop"),
+	assert.Equal(t, appconfig.Get().FullApiURL()+"/reviews/"+rev.SessionID, req.WebappURL)
+	assert.True(t, strings.HasPrefix(req.WebappURL, "http://localhost:8009/hoop/"),
 		"ApiURL drops a configured path prefix and lands the approver outside the app")
-	assert.NotContains(t, req.WebappURL, "/sessions/",
-		"the control plane serves no /sessions route")
 
 	assert.Empty(t, req.SlackChannels, "a sidecar review has no connection, so the org default is the only destination")
 	assert.Nil(t, req.SessionTime, "a sidecar review grants no access window")
