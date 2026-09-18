@@ -152,7 +152,12 @@ function RuleEditor({ rule, index, onChange, onRemove, removable, strategies, ss
           />
         )}
 
-        <Group align="flex-end" gap="sm" wrap="nowrap">
+        {/* Aligned at the TOP, unlike the rows above: the Strategy field
+            carries its example under the input, so a bottom alignment would
+            line the two inputs beside it up with that text instead of with
+            the select. Every label here is one line, so the tops of the
+            labels put the three inputs on the same line. */}
+        <Group align="flex-start" gap="sm" wrap="nowrap">
           <Select
             label="Strategy"
             data={strategies.map((s) => ({ value: s.value, label: s.label }))}
