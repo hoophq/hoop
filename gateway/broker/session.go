@@ -81,6 +81,10 @@ func (s *Session) ReadFromAgent() (int, []byte, error) {
 	return l, message, err
 }
 
+func (s *Session) Context() context.Context {
+	return s.ctx
+}
+
 func (s *Session) Close() {
 	s.mu.Lock()
 	defer s.mu.Unlock()

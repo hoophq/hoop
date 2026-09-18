@@ -209,7 +209,7 @@ func (r *RDPProxy) handleRDPClient(conn net.Conn, peerAddr net.Addr) {
 	}
 
 	if !isMachineCredential {
-		usertoken.PollingUserToken(context.Background(), func(cause error) {
+		usertoken.PollingUserToken(session.Context(), func(cause error) {
 			session.Close()
 		}, tokenVerifier, dba.UserSubject)
 	}
