@@ -39,15 +39,18 @@ import EventRouting from '@/pages/EventRouting'
 import EventRoutingForm from '@/pages/EventRouting/Form'
 import EventRoutingDetail from '@/pages/EventRouting/Detail'
 import DataMasking from '@/pages/Features/DataMasking'
-import DataMaskingForm from '@/pages/Features/DataMasking/Create'
+import GatewayDataMaskingForm from '@/pages/Features/DataMasking/Create/GatewayDataMaskingForm'
+import ControlPlaneDataMaskingForm from '@/pages/Features/DataMasking/Create/ControlPlaneDataMaskingForm'
 import AccessControl from '@/pages/Features/AccessControl'
 import AccessControlForm from '@/pages/Features/AccessControl/Create'
 import AccessRequest from '@/pages/Features/AccessRequest'
 import AccessRequestForm from '@/pages/Features/AccessRequest/Create'
 import AiSessionAnalyzer from '@/pages/Features/AiSessionAnalyzer'
-import AiSessionAnalyzerRuleForm from '@/pages/Features/AiSessionAnalyzer/Create'
+import GatewayAiAnalyzerForm from '@/pages/Features/AiSessionAnalyzer/Create/GatewayAiAnalyzerForm'
+import ControlPlaneAiAnalyzerForm from '@/pages/Features/AiSessionAnalyzer/Create/ControlPlaneAiAnalyzerForm'
 import Guardrails from '@/pages/Guardrails'
-import GuardrailForm from '@/pages/Guardrails/Create'
+import GatewayGuardrailForm from '@/pages/Guardrails/Create/GatewayGuardrailForm'
+import ControlPlaneGuardrailForm from '@/pages/Guardrails/Create/ControlPlaneGuardrailForm'
 import AiAgentsIdentities from '@/pages/AiAgentsIdentities'
 import AiAgentsIdentitiesForm from '@/pages/AiAgentsIdentities/Form'
 import AiAgentsIdentitiesCreated from '@/pages/AiAgentsIdentities/Created'
@@ -428,8 +431,8 @@ function Router() {
         element={
           <Page adminOnly licenseFeature="data-masking">
             <ByProduct
-              gateway={<DataMaskingForm />}
-              controlPlane={<DataMaskingForm sidecarTargets />}
+              gateway={<GatewayDataMaskingForm />}
+              controlPlane={<ControlPlaneDataMaskingForm />}
             />
           </Page>
         }
@@ -439,8 +442,8 @@ function Router() {
         element={
           <Page adminOnly licenseFeature="data-masking">
             <ByProduct
-              gateway={<DataMaskingForm />}
-              controlPlane={<DataMaskingForm sidecarTargets />}
+              gateway={<GatewayDataMaskingForm />}
+              controlPlane={<ControlPlaneDataMaskingForm />}
             />
           </Page>
         }
@@ -523,8 +526,8 @@ function Router() {
         element={
           <Page adminOnly licenseFeature="ai-session-analyzer">
             <ByProduct
-              gateway={<AiSessionAnalyzerRuleForm />}
-              controlPlane={<AiSessionAnalyzerRuleForm sidecarTargets />}
+              gateway={<GatewayAiAnalyzerForm />}
+              controlPlane={<ControlPlaneAiAnalyzerForm />}
             />
           </Page>
         }
@@ -534,8 +537,8 @@ function Router() {
         element={
           <Page adminOnly licenseFeature="ai-session-analyzer">
             <ByProduct
-              gateway={<AiSessionAnalyzerRuleForm />}
-              controlPlane={<AiSessionAnalyzerRuleForm sidecarTargets />}
+              gateway={<GatewayAiAnalyzerForm />}
+              controlPlane={<ControlPlaneAiAnalyzerForm />}
             />
           </Page>
         }
@@ -555,8 +558,8 @@ function Router() {
         element={
           <Page adminOnly licenseFeature="guardrails">
             <ByProduct
-              gateway={<GuardrailForm />}
-              controlPlane={<GuardrailForm sidecarTargets />}
+              gateway={<GatewayGuardrailForm />}
+              controlPlane={<ControlPlaneGuardrailForm />}
             />
           </Page>
         }
@@ -566,8 +569,8 @@ function Router() {
         element={
           <Page adminOnly licenseFeature="guardrails">
             <ByProduct
-              gateway={<GuardrailForm />}
-              controlPlane={<GuardrailForm sidecarTargets />}
+              gateway={<GatewayGuardrailForm />}
+              controlPlane={<ControlPlaneGuardrailForm />}
             />
           </Page>
         }

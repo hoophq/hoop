@@ -10,7 +10,6 @@ import EnterpriseBanner from '@/components/EnterpriseBanner'
 import FreeLicenseCallout from '@/components/FreeLicenseCallout'
 import Modal from '@/components/Modal'
 import PageLoader from '@/components/PageLoader'
-import SidecarTargetPicker from '@/components/SidecarTargetPicker'
 import Switch from '@/components/Switch'
 import Textarea from '@/components/Textarea'
 import TextInput from '@/components/TextInput'
@@ -34,7 +33,7 @@ const LIST_PATH = '/features/ai-session-analyzer'
 
 // Remounted via `key` when the loaded rule changes, so state derives from
 // `rule` with lazy useState initializers instead of a prefill effect.
-function RuleFormFields({ rule, ruleName, isEdit, sidecarTargets: showSidecarTargets }) {
+function RuleFormFields({ rule, ruleName, isEdit }) {
   const navigate = useNavigate()
   const { ref: sentinelRef, inViewport: headerInView } = useInViewport()
   const [deleteOpened, deleteModal] = useDisclosure(false)
@@ -57,7 +56,6 @@ function RuleFormFields({ rule, ruleName, isEdit, sidecarTargets: showSidecarTar
     connectionNames: rule?.connection_names ?? [],
     customPrompt: rule?.custom_prompt ?? '',
     agentic: rule?.agentic ?? false,
-    sidecarTargets: rule?.sidecar_targets ?? [],
   }))
   const [risk, setRisk] = useState(() => riskFromRule(rule))
 
@@ -77,11 +75,7 @@ function RuleFormFields({ rule, ruleName, isEdit, sidecarTargets: showSidecarTar
   const handleSave = async () => {
     if (!canSubmit) return
 
-    const payload = formToPayload({
-      ...form,
-      risk,
-      sidecarTargets: showSidecarTargets ? form.sidecarTargets : undefined,
-    })
+    const payload = formToPayload({ ...form, risk })
     // The gateway keys the update on the path segment and never writes `name`,
     // so an edit always addresses the rule it was opened with.
     const { ok, error } = isEdit
@@ -245,18 +239,6 @@ function RuleFormFields({ rule, ruleName, isEdit, sidecarTargets: showSidecarTar
           </Stack>
         </SectionRow>
 
-        {showSidecarTargets && (
-          <SectionRow
-            title="Distribute to sidecars"
-            description="Select the sidecar listeners that must run this analysis. A listener needs its analyzer enabled first: the rule supplies the risk actions and the prompt, the listener keeps its trigger and call budget."
-          >
-            <SidecarTargetPicker
-              value={form.sidecarTargets}
-              onChange={(targets) => setField({ sidecarTargets: targets })}
-            />
-          </SectionRow>
-        )}
-
         <SectionRow
           title="Agentic analysis"
           description="Let the analyzer investigate before grading."
@@ -300,7 +282,7 @@ function RuleFormFields({ rule, ruleName, isEdit, sidecarTargets: showSidecarTar
   )
 }
 
-export default function AiSessionAnalyzerRuleForm({ sidecarTargets = false }) {
+export default function GatewayAiAnalyzerForm() {
   const { ruleName } = useParams()
   const isEdit = Boolean(ruleName)
 
@@ -357,7 +339,6 @@ export default function AiSessionAnalyzerRuleForm({ sidecarTargets = false }) {
       rule={isEdit ? active : seededRule}
       ruleName={ruleName}
       isEdit={isEdit}
-      sidecarTargets={sidecarTargets}
     />
   )
 }

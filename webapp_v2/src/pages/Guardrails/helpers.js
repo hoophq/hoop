@@ -137,10 +137,6 @@ export function formToPayload(form) {
     description: form.description,
     connection_ids: form.connectionIds,
     attributes: form.attributes,
-    // Omitted rather than sent empty in the gateway, where the picker does not
-    // render: the backend REPLACES the target set with what a write carries,
-    // so an always-present [] would unbind a rule the control plane had bound.
-    ...(form.sidecarTargets ? { sidecar_targets: form.sidecarTargets } : {}),
     input: rowsToSection(form.inputRules),
     output: rowsToSection(form.outputRules),
   }
