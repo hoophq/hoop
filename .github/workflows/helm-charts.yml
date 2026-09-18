@@ -5,10 +5,10 @@
 # wrappers — which otherwise wouldn't surface until `make build-helm-chart` at
 # release time.
 #
-# It also covers the sidecar chart, for a different reason: that chart refuses
-# to render a Deployment that cannot start, and those guards are the only thing
-# standing between a typo and a CrashLoopBackOff. A guard that silently stopped
-# firing looks exactly like a chart that works.
+# It also covers the sidecar and control plane charts, for a different reason:
+# those charts refuse to render a Deployment that cannot start, and their guards
+# are the only thing standing between a typo and a CrashLoopBackOff. A guard
+# that silently stopped firing looks exactly like a chart that works.
 name: helm-charts
 
 on:
@@ -43,6 +43,11 @@ jobs:
           # it against the smallest values that pass its guards.
           helm lint ./deploy/helm-chart/chart/sidecar \
             --set config.admin.listen=0.0.0.0:19000
+          # Same for the control plane: POSTGRES_DB_URI and API_URL are
+          # required, so there is no startable default to lint against.
+          helm lint ./deploy/helm-chart/chart/controlplane \
+            --set config.POSTGRES_DB_URI=postgres://u:p@h:5432/db \
+            --set config.API_URL=https://cp.example.tld
       - name: Assert clean line renders the -ng images
         run: |
           set -euo pipefail
@@ -207,3 +212,216 @@ jobs:
             || { echo "::error::an enabled lane Service with no ports was not refused with a clear message"; exit 1; }
 
           echo "lane Services render per entry and leave the admin Service alone"
+
+      - name: Assert the control plane chart renders and its guards hold
+        run: |
+          set -euo pipefail
+          chart=./deploy/helm-chart/chart/controlplane
+          base=(--set config.POSTGRES_DB_URI=postgres://u:p@h:5432/db
+                --set config.API_URL=https://cp.example.tld)
+
+          out=$(helm template t "$chart" "${base[@]}")
+
+          echo "$out" | grep -q 'hoophq/hoopcontrolplane:' \
+            || { echo "::error::control plane chart did not render hoophq/hoopcontrolplane"; exit 1; }
+          # The image runs `hoop start control-plane` from its own CMD behind a
+          # tini ENTRYPOINT, and that subcommand is the only thing that picks
+          # the mode. A command/args here means the chart is picking it again,
+          # which is what the image exists to avoid — and picking it wrong
+          # boots a full gateway on :8010 with every proxy and all six plugins.
+          # Same assertion the sidecar block makes, for the same reason.
+          echo "$out" | grep -qE '^ *(command|args):' \
+            && { echo "::error::control plane chart emitted a command/args override"; exit 1; }
+          # And they cannot be set: an override is refused, not ignored. The
+          # value that would be dropped is the one selecting the mode, and a
+          # wrong one boots a full gateway from a chart named controlplane.
+          argv=$(helm template t "$chart" "${base[@]}" --set 'image.command={hoop}' 2>&1 || true)
+          echo "$argv" | grep -q 'argv belongs to the image\|not supported by this chart' \
+            || { echo "::error::image.command was not refused"; exit 1; }
+          # STATIC_UI_PATH must not appear at all. The image compiles the web
+          # UI into the binary and ships no webapp files, and resolveSource()
+          # returns on a non-empty value WITHOUT checking the path exists — it
+          # never falls through to the embed. Any value serves API-only with a
+          # 404 at /, and nothing shows it: /api/healthz still answers 200, so
+          # any probe stays green and the rollout completes.
+          echo "$out" | grep -q 'STATIC_UI_PATH' \
+            && { echo "::error::the chart rendered STATIC_UI_PATH; the UI would 404"; exit 1; }
+
+          # 8009 is read by the Deployment's containerPort, the Service and
+          # the default HTTPRoute backend. Any other number means one of the
+          # three drifted.
+          if echo "$out" | grep -E 'containerPort:|targetPort:|port:' | grep -qv 8009; then
+            echo "::error::control plane chart declared a port other than 8009"
+            exit 1
+          fi
+
+          # Both directions. A default that drifted and a value that stopped
+          # being read look identical in a passing lint.
+          echo "$out" | grep -q 'replicas: 1' \
+            || { echo "::error::replicas no longer defaults to 1 (ADR-0013)"; exit 1; }
+          helm template t "$chart" "${base[@]}" --set replicas=3 | grep -q 'replicas: 3' \
+            || { echo "::error::replicas is no longer configurable"; exit 1; }
+
+          echo "control plane chart renders hoophq/hoopcontrolplane on 8009, one replica, no command"
+
+          # No probe by default, and none conjured from anything. The chart
+          # cannot know the listener's protocol: TLS_CERT/TLS_KEY decide it and
+          # either can arrive through extraSecret or existingSecret, which no
+          # template can read. The kubelet does not negotiate, so a wrong
+          # scheme does not degrade — it stops the pod from ever going ready.
+          # Measured on a real cluster: HTTP against TLS gets a 400 and the pod
+          # never goes ready; HTTPS against TLS with a deliberately wrong CN
+          # goes ready, because kubelet HTTPS probes always skip verification
+          # and there is no field to change that.
+          for kind in readinessProbe livenessProbe; do
+            echo "$out" | grep -q "$kind:" \
+              && { echo "::error::$kind rendered by default; the chart must not guess the listener protocol"; exit 1; }
+            # Neither an API_URL path nor a TLS pair may produce one.
+            helm template t "$chart" "${base[@]}" --set config.API_URL=https://cp.example.tld/hoop \
+              --set config.TLS_CERT=x --set config.TLS_KEY=y | grep -q "$kind:" \
+              && { echo "::error::$kind appeared once TLS/API_URL were set; probes must stay the operator's"; exit 1; }
+          done
+          # Set, they render verbatim: with + toYaml is all that stands between
+          # the value and the pod, so a lost field is a silent wrong probe.
+          probes=$(helm template t "$chart" "${base[@]}" \
+            --set readinessProbe.httpGet.path=/api/healthz \
+            --set readinessProbe.httpGet.port=8009 \
+            --set readinessProbe.httpGet.scheme=HTTPS \
+            --set readinessProbe.initialDelaySeconds=10 \
+            --set livenessProbe.tcpSocket.port=8009 --show-only templates/deployment.yaml)
+          for want in 'readinessProbe:' 'path: /api/healthz' 'scheme: HTTPS' 'initialDelaySeconds: 10' 'livenessProbe:' 'tcpSocket:'; do
+            echo "$probes" | grep -q "$want" \
+              || { echo "::error::a probe set in values lost '$want' on the way to the pod"; exit 1; }
+          done
+          echo "control plane chart renders no probe by default and passes a set one through unchanged"
+
+          # The default HTTPRoute match DOES follow the API_URL path: that one
+          # is the outside world's address, and it is the only reader of
+          # basePath left now that the probes are the operator's.
+          helm template t "$chart" --set config.POSTGRES_DB_URI=postgres://u:p@h:5432/db \
+            --set config.API_URL=https://cp.example.tld/hoop --set gatewayApi.enabled=true \
+            --show-only templates/httproute.yaml | grep -q 'value: /hoop/' \
+            || { echo "::error::the default HTTPRoute match did not follow the API_URL path"; exit 1; }
+
+          # Every Secret value goes through helm's quote function rather than
+          # being wrapped in single quotes by hand. A PEM is multi-line, and a
+          # hand-quoted one renders a Secret that is not valid YAML — the error
+          # names the template, not the value, so it is a slow thing to debug.
+          openssl req -x509 -newkey rsa:2048 -nodes -keyout /tmp/probe-k.pem \
+            -out /tmp/probe-c.pem -days 1 -subj /CN=localhost >/dev/null 2>&1
+          helm template t "$chart" "${base[@]}" \
+            --set-file config.TLS_CERT=/tmp/probe-c.pem \
+            --set-file config.TLS_KEY=/tmp/probe-k.pem >/dev/null \
+            || { echo "::error::a multi-line PEM broke the Secret manifest"; exit 1; }
+          rm -f /tmp/probe-c.pem /tmp/probe-k.pem
+
+          echo "a multi-line PEM renders a valid Secret"
+
+          # Each of these MUST fail to render. A guard that stopped firing ships
+          # a Deployment that cannot start, or one that is silently wrong, and
+          # nothing else in CI would notice.
+          guard() {
+            local why=$1; shift
+            if helm template t "$chart" "$@" >/dev/null 2>&1; then
+              echo "::error::control plane chart guard no longer fires: $why"
+              exit 1
+            fi
+          }
+          guard "no POSTGRES_DB_URI"  --set config.API_URL=https://cp.example.tld
+          guard "no API_URL"          --set config.POSTGRES_DB_URI=postgres://u:p@h:5432/db
+          guard "pglite"              --set config.POSTGRES_DB_URI=pglite:///data --set config.API_URL=https://cp.example.tld
+          guard "API_URL no scheme"   --set config.POSTGRES_DB_URI=postgres://u:p@h:5432/db --set config.API_URL=cp.example.tld
+          guard "PORT moved"          "${base[@]}" --set config.PORT=9000
+          guard "issuer, no client"   "${base[@]}" --set config.IDP_ISSUER=https://idp
+          guard "image.command"       "${base[@]}" --set 'image.command={hoop}'
+          guard "image.args"          "${base[@]}" --set 'image.args={start}'
+          guard "no parentRefs"       "${base[@]}" --set gatewayApi.enabled=true --set gatewayApi.createGateway=false
+
+          # The inverse: valid values must still render. Without this, a guard
+          # that fires on everything also passes above.
+          helm template t "$chart" "${base[@]}" --set config.TLS_CERT=a --set config.TLS_KEY=b >/dev/null \
+            || { echo "::error::a complete TLS pair was refused"; exit 1; }
+          # Half a pair is ACCEPTED and degrades to plaintext, matching
+          # appconfig: TLS is on exactly when both are set. The chart must not
+          # reinvent a rule the binary does not have.
+          helm template t "$chart" "${base[@]}" --set config.TLS_CERT=a >/dev/null \
+            || { echo "::error::half a TLS pair was refused; the binary accepts it and serves plaintext"; exit 1; }
+          idp=$(helm template t "$chart" "${base[@]}" --set config.IDP_ISSUER=https://idp \
+            --set config.IDP_CLIENT_ID=i --set config.IDP_CLIENT_SECRET=s) \
+            || { echo "::error::a complete IDP block was refused"; exit 1; }
+          # OIDC is inferred from these keys alone — loadAuthMethod picks it up
+          # when any IDP_* is set.
+          echo "$idp" | grep -q 'IDP_ISSUER' \
+            || { echo "::error::the IDP block did not reach the Secret"; exit 1; }
+
+          echo "all nine control plane guards fire, and valid values still render"
+
+          # The chart renders the control plane's environment and nothing else.
+          # It does not police what an operator writes under config: a key it
+          # does not know is simply not rendered, and extraSecret is the way
+          # through. What must hold is the output — nothing gateway-only in the
+          # Secret.
+          # TLS_CERT/TLS_KEY are rendered unconditionally, empty when unset.
+          # A conditionally-rendered key can never be un-set on an existing
+          # release: Helm writes stringData, Kubernetes stores data, so the
+          # patch that would delete the key is a no-op and the old value
+          # survives the upgrade.
+          secret=$(helm template t "$chart" "${base[@]}" --show-only templates/secret-config.yaml)
+          for k in TLS_CERT TLS_KEY; do
+            echo "$secret" | grep -qE "^  $k: (''|\"\")$" \
+              || { echo "::error::$k is not rendered empty by default; clearing it on an upgrade would not take effect"; exit 1; }
+          done
+          for k in GRPC_URL DLP_PROVIDER PLUGIN_AUDIT_PATH USE_TLS HOOP_SPIFFE_MODE ORG_MULTI_TENANT STATIC_UI_PATH AUTH_METHOD; do
+            echo "$secret" | grep -qE "^  $k:" \
+              && { echo "::error::$k leaked into the control plane Secret"; exit 1; }
+          done
+
+          echo "no gateway-only key reaches the control plane Secret"
+
+          # Gateway API. The gateway chart renders an HTTPRoute with no rules
+          # when an operator enables the block and reads no further: it
+          # attaches, routes nothing, and looks installed. This chart defaults
+          # both parentRefs and rules, so assert they survive.
+          gw=$(helm template cp "$chart" "${base[@]}" --set gatewayApi.enabled=true)
+          echo "$gw" | grep -q 'kind: Gateway' \
+            || { echo "::error::createGateway did not render a Gateway"; exit 1; }
+          route=$(helm template cp "$chart" "${base[@]}" --set gatewayApi.enabled=true \
+            --show-only templates/httproute.yaml)
+          echo "$route" | grep -q 'name: cp-hoopcontrolplane$' \
+            || { echo "::error::the default HTTPRoute lost its parentRef or backendRef"; exit 1; }
+          echo "$route" | grep -q 'port: 8009' \
+            || { echo "::error::the default HTTPRoute backend is not 8009"; exit 1; }
+          # createGateway: false must attach to somebody else's Gateway and
+          # render no Gateway of its own.
+          helm template cp "$chart" "${base[@]}" --set gatewayApi.enabled=true \
+            --set gatewayApi.createGateway=false --set 'gatewayApi.httpRoute.parentRefs[0].name=shared' \
+            | grep -q 'kind: Gateway' \
+            && { echo "::error::createGateway=false still rendered a Gateway"; exit 1; }
+
+          echo "Gateway API renders with working parentRefs and rules defaults"
+
+          # Two releases in one namespace must be independent. A hardcoded
+          # resource name or a selector without the instance label makes the
+          # second install adopt the first one's pods — the bug the gateway
+          # chart has and this one must not.
+          iso=(--set config.POSTGRES_DB_URI=postgres://u:p@h:5432/db
+               --set config.API_URL=https://cp.example.tld
+               --set serviceAccount.create=true
+               --set extraSecret.K=v)
+          helm template cp-a "$chart" "${iso[@]}" > /tmp/cp1.yaml
+          helm template cp-b "$chart" "${iso[@]}" > /tmp/cp2.yaml
+          names() { grep -E '^  name: ' "$1" | sort -u; }
+          if comm -12 <(names /tmp/cp1.yaml) <(names /tmp/cp2.yaml) | grep -q .; then
+            echo "::error::two control plane releases share a resource name:"
+            comm -12 <(names /tmp/cp1.yaml) <(names /tmp/cp2.yaml)
+            exit 1
+          fi
+          # Scoped to the selector block: metadata.labels carries the same
+          # labels, so a plain grep passes on a broken selector.
+          sel=$(awk '/^  selector:$/{f=1;next} f&&/^  [^ ]/{f=0} f' /tmp/cp1.yaml)
+          echo "$sel" | grep -q 'app.kubernetes.io/instance: cp-a' \
+            || { echo "::error::the control plane Service selector lost its instance label"; exit 1; }
+          echo "$sel" | grep -q 'app.kubernetes.io/instance: cp-b' \
+            && { echo "::error::release cp-a leaked cp-b labels"; exit 1; }
+
+          echo "two control plane releases in one namespace share no resource name or selector"

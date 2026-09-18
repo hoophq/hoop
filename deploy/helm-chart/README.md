@@ -100,6 +100,63 @@ loopback, or a Service of your own carrying the chart's selector labels
 Every resource is named after its release, so installing the chart once per
 upstream in the same namespace is safe.
 
+## Installing the control plane
+
+`hoopcontrolplane-chart` deploys the control plane: the gateway binary started
+with `hoop start control-plane`. It serves the HTTP API and the web app, and
+administers a fleet of inspection sidecars. It carries no traffic — no gRPC on
+`:8010`, no protocol proxies, no agent controller — so it renders only the
+environment that mode reads and refuses the rest. See
+[chart/controlplane/README.md](./chart/controlplane/README.md) for the full
+reference and the list of gateway keys it declines.
+
+It needs an external PostgreSQL: `pglite://` is refused, being single-node and
+one connection at a time.
+
+```sh
+cat - > ./controlplane-values.yaml <<EOF
+config:
+  POSTGRES_DB_URI: 'postgres://<user>:<pwd>@<db-host>:5432/<dbname>'
+  API_URL: 'https://cp.yourdomain.tld'
+  AUTH_METHOD: 'oidc'
+  IDP_ISSUER: 'https://idp-issuer-url'
+  IDP_CLIENT_ID: 'client-id'
+  IDP_CLIENT_SECRET: 'client-secret'
+
+# Expose it through the Gateway API. Requires the CRDs; without them, set
+# service.type: LoadBalancer instead.
+gatewayApi:
+  enabled: true
+  gateway:
+    gatewayClassName: istio
+    listeners:
+    - name: http
+      hostname: cp.yourdomain.tld
+      port: 80
+      protocol: HTTP
+      allowedRoutes:
+        namespaces: {from: Same}
+  httpRoute:
+    hostnames: [cp.yourdomain.tld]
+EOF
+```
+
+```sh
+VERSION=$(curl -s https://releases.hoop.dev/release/latest.txt)
+helm upgrade --install hoopcontrolplane \
+  https://releases.hoop.dev/release/$VERSION/hoopcontrolplane-chart-$VERSION.tgz \
+  -f controlplane-values.yaml
+```
+
+`replicas` defaults to 1 and the chart warns above that. Each replica opens its
+own Slack socket-mode connection and nothing elects an owner between them, so
+with Slack configured for an organization, reviews are posted once per replica
+and an approval click may be handled by a replica that is not holding the
+waiting session. Raise it only when no organization here uses Slack.
+
+Register a sidecar in the UI, copy the token it shows once, and install
+`hoopsidecar-chart` with `controlPlane.url` and `controlPlane.token`.
+
 ## Installing the clean (AGPL/SSPL-free) line
 
 `hoop-ng-chart` and `hoopagent-ng-chart` are drop-in equivalents of
