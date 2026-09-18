@@ -24,7 +24,7 @@ type DataMaskingRule struct {
 	ScoreThreshold       *float64                 `gorm:"column:score_threshold"`
 	// SidecarSpec is the rule in the SIDECAR's own vocabulary: entities OR
 	// columns, a strategy and a keep_last, none of which the columns above
-	// can hold. NULL on every rule a gateway writes. See migration 000120.
+	// can hold. NULL on every rule a gateway writes. See migration 000121.
 	SidecarSpec   json.RawMessage `gorm:"column:sidecar_spec"`
 	RulepackID    sql.NullString  `gorm:"column:rulepack_id"`
 	ManagedBy     *string         `gorm:"column:managed_by"`

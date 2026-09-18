@@ -111,7 +111,7 @@ type AISessionAnalyzerRules struct {
 	// SidecarSpec is the listener's analyzer BLOCK as the sidecar reads it:
 	// the trigger, the risk-to-action map in its own vocabulary (allow, warn,
 	// block, defer) and the per-lane cost overrides. NULL on every rule a
-	// gateway writes. See migration 000120.
+	// gateway writes. See migration 000121.
 	SidecarSpec json.RawMessage `gorm:"column:sidecar_spec"`
 	ManagedBy   *string         `gorm:"column:managed_by"`
 

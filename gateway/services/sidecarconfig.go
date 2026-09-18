@@ -23,7 +23,7 @@ import (
 //
 // Composition PLACES a stored block; it does not convert one. A rule for a
 // sidecar is authored and stored in the sidecar's own vocabulary
-// (sidecar_spec, migration 000120), so there is no translation step to get
+// (sidecar_spec, migration 000121), so there is no translation step to get
 // wrong and no rule that saves cleanly and arrives meaning something else.
 //
 // It only ever touches a listener's guardrails, mask and analyzer blocks.

@@ -8652,6 +8652,24 @@
         ],
         "type": "object"
       },
+      "openapi.SidecarReviewResponse": {
+        "properties": {
+          "forward": {
+            "description": "Whether the sidecar may release the statement it held\n\nTrue only on the request that consumed an approved review, and only\nonce per review. False while the review waits, and false forever once\nit is rejected or revoked.",
+            "example": false,
+            "type": "boolean"
+          },
+          "review": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/openapi.Review"
+              }
+            ],
+            "description": "The review the statement is waiting on, or the one that released it"
+          }
+        },
+        "type": "object"
+      },
       "openapi.SidecarRuleBinding": {
         "properties": {
           "kind": {
@@ -22141,11 +22159,21 @@
           "x-originalParamName": "request"
         },
         "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.SidecarReviewResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
           "201": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/openapi.Review"
+                  "$ref": "#/components/schemas/openapi.SidecarReviewResponse"
                 }
               }
             },

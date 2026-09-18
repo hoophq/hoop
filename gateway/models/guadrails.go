@@ -24,7 +24,7 @@ type GuardRailRules struct {
 	// SidecarSpec is the rule in the SIDECAR's own vocabulary, which does not
 	// meet the gateway's: seven rule types, an operations scope on each, and
 	// action: defer. NULL on every rule a gateway writes; only the control
-	// plane fills it. See migration 000120.
+	// plane fills it. See migration 000121.
 	SidecarSpec   json.RawMessage `gorm:"column:sidecar_spec"`
 	RulepackID    sql.NullString  `gorm:"column:rulepack_id"`
 	ManagedBy     *string         `gorm:"column:managed_by"`

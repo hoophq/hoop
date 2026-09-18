@@ -10194,10 +10194,16 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SidecarReviewResponse"
+                        }
+                    },
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/openapi.Review"
+                            "$ref": "#/definitions/openapi.SidecarReviewResponse"
                         }
                     },
                     "400": {
@@ -19846,6 +19852,24 @@ const docTemplate = `{
                     "description": "The statement to review, base64 encoded",
                     "type": "string",
                     "example": "REVMRVRFIEZST00gdXNlcnM7"
+                }
+            }
+        },
+        "openapi.SidecarReviewResponse": {
+            "type": "object",
+            "properties": {
+                "forward": {
+                    "description": "Whether the sidecar may release the statement it held\n\nTrue only on the request that consumed an approved review, and only\nonce per review. False while the review waits, and false forever once\nit is rejected or revoked.",
+                    "type": "boolean",
+                    "example": false
+                },
+                "review": {
+                    "description": "The review the statement is waiting on, or the one that released it",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.Review"
+                        }
+                    ]
                 }
             }
         },
