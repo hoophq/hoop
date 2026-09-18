@@ -81,8 +81,8 @@ func TestGatewayModeRefusesTheControlPlaneFields(t *testing.T) {
 // waiting for a request.
 func TestGatewayModeWritesNothing(t *testing.T) {
 	targets := []openapi.SidecarRuleTarget{{SidecarID: "x", ListenerName: "appdb"}}
-	if err := Persist("5c5d1e10-4d7e-4b8f-9a7a-4a0e0f6a9b11", services.SidecarRuleGuardrail, "r", &targets); err != nil {
-		t.Errorf("Persist must be a no-op in a gateway, got %v", err)
+	if err := PersistTx(models.DB, "5c5d1e10-4d7e-4b8f-9a7a-4a0e0f6a9b11", services.SidecarRuleGuardrail, "r", &targets); err != nil {
+		t.Errorf("PersistTx must be a no-op in a gateway, got %v", err)
 	}
 	if got := Load("5c5d1e10-4d7e-4b8f-9a7a-4a0e0f6a9b11", services.SidecarRuleGuardrail, "r"); got != nil {
 		t.Errorf("Load must answer nothing in a gateway, got %+v", got)

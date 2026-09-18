@@ -228,7 +228,14 @@ func GetAISessionAnalyzerRuleByConnection(db *gorm.DB, orgID uuid.UUID, connecti
 }
 
 func CreateAISessionAnalyzerRule(rule *AISessionAnalyzerRules) error {
-	err := DB.Create(rule).Error
+	return CreateAISessionAnalyzerRuleTx(DB, rule)
+}
+
+// CreateAISessionAnalyzerRuleTx is the transaction-aware variant of
+// CreateAISessionAnalyzerRule. It runs inside the caller's transaction so the
+// rule can be composed atomically with other writes.
+func CreateAISessionAnalyzerRuleTx(tx *gorm.DB, rule *AISessionAnalyzerRules) error {
+	err := tx.Create(rule).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrDuplicatedKey) {
 			return ErrAlreadyExists
@@ -239,7 +246,13 @@ func CreateAISessionAnalyzerRule(rule *AISessionAnalyzerRules) error {
 }
 
 func UpdateAISessionAnalyzerRule(rule *AISessionAnalyzerRules) error {
-	result := DB.Model(rule).
+	return UpdateAISessionAnalyzerRuleTx(DB, rule)
+}
+
+// UpdateAISessionAnalyzerRuleTx is the transaction-aware variant of
+// UpdateAISessionAnalyzerRule.
+func UpdateAISessionAnalyzerRuleTx(tx *gorm.DB, rule *AISessionAnalyzerRules) error {
+	result := tx.Model(rule).
 		Clauses(clause.Returning{}).
 		Where("org_id = ? AND name = ?", rule.OrgID, rule.Name).
 		Updates(map[string]any{

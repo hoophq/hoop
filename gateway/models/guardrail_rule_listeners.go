@@ -44,23 +44,35 @@ func ListGuardrailRulesForSidecar(db *gorm.DB, orgID uuid.UUID, sidecarID string
 // failed insert cannot leave the rule bound to nothing.
 func SetGuardrailRuleListeners(db *gorm.DB, orgID uuid.UUID, ruleName string, targets []SidecarRuleTarget) error {
 	return db.Transaction(func(tx *gorm.DB) error {
-		err := tx.Where("org_id = ? AND guardrail_rule_name = ?", orgID, ruleName).
-			Delete(&GuardrailRuleListener{}).Error
-		if err != nil {
-			return err
-		}
-		if len(targets) == 0 {
-			return nil
-		}
-		rows := make([]GuardrailRuleListener, 0, len(targets))
-		for _, t := range targets {
-			rows = append(rows, GuardrailRuleListener{
-				OrgID: orgID, RuleName: ruleName,
-				SidecarID: t.SidecarID, ListenerName: t.ListenerName,
-			})
-		}
-		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error
+		return SetGuardrailRuleListenersTx(tx, orgID, ruleName, targets)
 	})
+}
+
+// SetGuardrailRuleListenersTx is the transaction-aware variant of
+// SetGuardrailRuleListeners. It opens no transaction of its own, so the rule
+// row and its bindings commit together or not at all.
+//
+// Separate transactions are what the API must not do here. The write gate
+// checks the INCOMING spec against the INCOMING target set, so a rule row that
+// commits before its bindings fail leaves the OLD bindings serving the NEW
+// spec -- the one combination the gate refuses.
+func SetGuardrailRuleListenersTx(tx *gorm.DB, orgID uuid.UUID, ruleName string, targets []SidecarRuleTarget) error {
+	err := tx.Where("org_id = ? AND guardrail_rule_name = ?", orgID, ruleName).
+		Delete(&GuardrailRuleListener{}).Error
+	if err != nil {
+		return err
+	}
+	if len(targets) == 0 {
+		return nil
+	}
+	rows := make([]GuardrailRuleListener, 0, len(targets))
+	for _, t := range targets {
+		rows = append(rows, GuardrailRuleListener{
+			OrgID: orgID, RuleName: ruleName,
+			SidecarID: t.SidecarID, ListenerName: t.ListenerName,
+		})
+	}
+	return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error
 }
 
 // ListGuardrailRuleTargets returns where one rule is bound, for the API to

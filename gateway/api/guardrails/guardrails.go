@@ -17,6 +17,7 @@ import (
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
+	"gorm.io/gorm"
 )
 
 func getLicenseType(ctx *storagev2.Context) string {
@@ -113,20 +114,33 @@ func Post(c *gin.Context) {
 		return
 	}
 
-	err := models.UpsertGuardRailRuleWithConnections(rule, validConnectionIDs, true)
+	// One transaction: the rule, its attributes and its sidecar bindings. A
+	// binding that fails after the rule row commits leaves the OLD bindings
+	// serving the NEW spec, which is the pairing sidecarbind.Refuse rejects.
+	var attrErr, bindErr error
+	err := models.DB.Transaction(func(tx *gorm.DB) error {
+		if err := models.UpsertGuardRailRuleWithConnectionsTx(tx, rule, validConnectionIDs, true); err != nil {
+			return err
+		}
+		if attrErr = upsertGuardrailRuleAttributes(tx, ctx, rule.Name, req.Attributes); attrErr != nil {
+			return attrErr
+		}
+		bindErr = sidecarbind.PersistTx(tx, ctx.GetOrgID(), services.SidecarRuleGuardrail, rule.Name, req.SidecarTargets)
+		return bindErr
+	})
+	switch {
+	case attrErr != nil:
+		httputils.AbortWithErr(c, http.StatusInternalServerError, attrErr, "Failed upserting guard rail rule attributes: %v", attrErr)
+		return
+	case bindErr != nil:
+		httputils.AbortWithErr(c, http.StatusInternalServerError, bindErr, "Failed binding the rule to its sidecars: %v", bindErr)
+		return
+	}
 	switch err {
 	case models.ErrAlreadyExists:
 		c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
 		return
 	case nil:
-		if err := upsertGuardrailRuleAttributes(ctx, rule.Name, req.Attributes); err != nil {
-			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed upserting guard rail rule attributes: %v", err)
-			return
-		}
-		if err := sidecarbind.Persist(ctx.GetOrgID(), services.SidecarRuleGuardrail, rule.Name, req.SidecarTargets); err != nil {
-			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed binding the rule to its sidecars: %v", err)
-			return
-		}
 		c.JSON(http.StatusCreated, &openapi.GuardRailRuleResponse{
 			ID:             rule.ID,
 			Name:           rule.Name,
@@ -216,21 +230,32 @@ func Put(c *gin.Context) {
 		UpdatedAt:   time.Now().UTC(),
 	}
 
-	// Update guardrail and associate connections in a single transaction
-	err = models.UpsertGuardRailRuleWithConnections(rule, validConnectionIDs, false)
+	// Update the guardrail, its connections, its attributes and its sidecar
+	// bindings in a single transaction.
+	var attrErr, bindErr error
+	err = models.DB.Transaction(func(tx *gorm.DB) error {
+		if err := models.UpsertGuardRailRuleWithConnectionsTx(tx, rule, validConnectionIDs, false); err != nil {
+			return err
+		}
+		if attrErr = upsertGuardrailRuleAttributes(tx, ctx, rule.Name, req.Attributes); attrErr != nil {
+			return attrErr
+		}
+		bindErr = sidecarbind.PersistTx(tx, ctx.GetOrgID(), services.SidecarRuleGuardrail, rule.Name, req.SidecarTargets)
+		return bindErr
+	})
+	switch {
+	case attrErr != nil:
+		httputils.AbortWithErr(c, http.StatusInternalServerError, attrErr, "Failed upserting guard rail rule attributes: %v", attrErr)
+		return
+	case bindErr != nil:
+		httputils.AbortWithErr(c, http.StatusInternalServerError, bindErr, "Failed binding the rule to its sidecars: %v", bindErr)
+		return
+	}
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
 		return
 	case nil:
-		if err := upsertGuardrailRuleAttributes(ctx, rule.Name, req.Attributes); err != nil {
-			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed upserting guard rail rule attributes: %v", err)
-			return
-		}
-		if err := sidecarbind.Persist(ctx.GetOrgID(), services.SidecarRuleGuardrail, rule.Name, req.SidecarTargets); err != nil {
-			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed binding the rule to its sidecars: %v", err)
-			return
-		}
 		c.JSON(http.StatusOK, &openapi.GuardRailRuleResponse{
 			ID:             rule.ID,
 			Name:           rule.Name,
@@ -390,7 +415,7 @@ func filterEmptyIDs(ids []string) []string {
 	return result
 }
 
-func upsertGuardrailRuleAttributes(ctx *storagev2.Context, ruleName string, attributeNames []string) error {
+func upsertGuardrailRuleAttributes(db *gorm.DB, ctx *storagev2.Context, ruleName string, attributeNames []string) error {
 	orgID := uuid.MustParse(ctx.GetOrgID())
-	return models.UpsertGuardrailRuleAttributes(models.DB, orgID, ruleName, attributeNames)
+	return models.UpsertGuardrailRuleAttributes(db, orgID, ruleName, attributeNames)
 }

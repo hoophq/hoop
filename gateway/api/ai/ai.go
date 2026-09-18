@@ -374,15 +374,25 @@ func CreateSessionAnalyzerRule(c *gin.Context) {
 		return
 	}
 
-	err = models.CreateAISessionAnalyzerRule(rule)
+	// One transaction: the rule row and its sidecar bindings. A binding that
+	// fails after the rule row commits leaves the OLD bindings serving the NEW
+	// spec, which is the pairing sidecarbind.Refuse rejects.
+	var bindErr error
+	err = models.DB.Transaction(func(tx *gorm.DB) error {
+		if err := models.CreateAISessionAnalyzerRuleTx(tx, rule); err != nil {
+			return err
+		}
+		bindErr = sidecarbind.PersistTx(tx, ctx.GetOrgID(), services.SidecarRuleAnalyzer, rule.Name, req.SidecarTargets)
+		return bindErr
+	})
+	if bindErr != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, bindErr, "failed binding the rule to its sidecars: %v", bindErr)
+		return
+	}
 	switch err {
 	case models.ErrAlreadyExists:
 		c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
 	case nil:
-		if err := sidecarbind.Persist(ctx.GetOrgID(), services.SidecarRuleAnalyzer, rule.Name, req.SidecarTargets); err != nil {
-			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed binding the rule to its sidecars: %v", err)
-			return
-		}
 		analytics.New().Track(ctx.UserID, analytics.EventSessionAIAnalysisRuleCreated, map[string]interface{}{
 			"org-id":             rule.OrgID,
 			"low-risk-action":    rule.RiskEvaluation.Tier(models.RiskLevelKeyLow).Action,
@@ -484,15 +494,22 @@ func UpdateSessionAnalyzerRule(c *gin.Context) {
 	}
 	rule.SidecarSpec = bind.EffectiveSpec()
 
-	err = models.UpdateAISessionAnalyzerRule(rule)
+	var bindErr error
+	err = models.DB.Transaction(func(tx *gorm.DB) error {
+		if err := models.UpdateAISessionAnalyzerRuleTx(tx, rule); err != nil {
+			return err
+		}
+		bindErr = sidecarbind.PersistTx(tx, ctx.GetOrgID(), services.SidecarRuleAnalyzer, rule.Name, req.SidecarTargets)
+		return bindErr
+	})
+	if bindErr != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, bindErr, "failed binding the rule to its sidecars: %v", bindErr)
+		return
+	}
 	switch err {
 	case gorm.ErrRecordNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
 	case nil:
-		if err := sidecarbind.Persist(ctx.GetOrgID(), services.SidecarRuleAnalyzer, rule.Name, req.SidecarTargets); err != nil {
-			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed binding the rule to its sidecars: %v", err)
-			return
-		}
 		analytics.New().Track(ctx.UserID, analytics.EventSessionAIAnalysisRuleUpdated, map[string]interface{}{
 			"org-id":             rule.OrgID,
 			"low-risk-action":    rule.RiskEvaluation.Tier(models.RiskLevelKeyLow).Action,

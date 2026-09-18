@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/lib/pq"
+	"gorm.io/gorm"
 )
 
 // TestGuardrailRuleListeners covers the binding end to end against a real
@@ -650,5 +652,79 @@ func TestABoundAnalyzerRuleCarriesItsApprovalRuleIntoTheServedConfig(t *testing.
 	}
 	if !strings.Contains(err.Error(), "nobody-review") {
 		t.Errorf("the refusal must name the missing rule, got: %v", err)
+	}
+}
+
+// TestAFailedBindingLeavesTheRuleUnchanged pins the rule row and its bindings
+// to ONE transaction, which is how the three rule APIs now write them.
+//
+// The write gate gets the INCOMING spec and the INCOMING target set. Commit
+// the rule row first and let the binding fail -- a sidecar deleted a moment
+// ago, a constraint, a dropped connection -- and the OLD bindings serve the
+// NEW spec: the one pairing the gate exists to refuse, reached behind a 500
+// the admin reads as "nothing happened".
+func TestAFailedBindingLeavesTheRuleUnchanged(t *testing.T) {
+	startTestDB(t)
+	orgID := uuid.MustParse(testOrgID)
+
+	sc := &models.Sidecar{
+		OrgID: testOrgID, Name: "half-save", KeyHash: models.HashAPIKey("hsc_half_save_test"),
+		CreatedBy: "tests@hoop.dev",
+		Configuration: models.SidecarConfiguration{Listeners: []daemon.ListenerConfig{{
+			Name: "appdb", Protocol: "postgres", Listen: ":5432", Upstream: "db:5432",
+		}}},
+	}
+	if err := models.CreateSidecar(models.DB, sc); err != nil {
+		t.Fatalf("seed sidecar: %v", err)
+	}
+
+	const spec = `{"rules":[{"name":"no-drop","type":"operation","operations":[%q]}]}`
+	rule := &models.GuardRailRules{
+		OrgID: testOrgID, ID: uuid.NewString(), Name: "no-drop",
+		Input: map[string]any{"rules": []any{}}, Output: map[string]any{"rules": []any{}},
+		SidecarSpec: json.RawMessage(fmt.Sprintf(spec, "drop")),
+	}
+	if err := models.UpsertGuardRailRuleWithConnections(rule, nil, true); err != nil {
+		t.Fatalf("seed guardrail rule: %v", err)
+	}
+	bound := []models.SidecarRuleTarget{{SidecarID: sc.ID, ListenerName: "appdb"}}
+	if err := models.SetGuardrailRuleListeners(models.DB, orgID, rule.Name, bound); err != nil {
+		t.Fatalf("seed binding: %v", err)
+	}
+
+	// The edit an admin sends: a new spec, and a target naming a sidecar that
+	// was deleted between the gate reading it and this write. The foreign key
+	// refuses the binding.
+	edited := &models.GuardRailRules{
+		OrgID: testOrgID, ID: rule.ID, Name: rule.Name,
+		Input: map[string]any{"rules": []any{}}, Output: map[string]any{"rules": []any{}},
+		SidecarSpec: json.RawMessage(fmt.Sprintf(spec, "truncate")),
+		UpdatedAt:   time.Now().UTC(),
+	}
+	gone := []models.SidecarRuleTarget{{SidecarID: uuid.NewString(), ListenerName: "appdb"}}
+
+	err := models.DB.Transaction(func(tx *gorm.DB) error {
+		if err := models.UpsertGuardRailRuleWithConnectionsTx(tx, edited, nil, false); err != nil {
+			return err
+		}
+		return models.SetGuardrailRuleListenersTx(tx, orgID, edited.Name, gone)
+	})
+	if err == nil {
+		t.Fatal("binding to a sidecar that does not exist must fail")
+	}
+
+	stored, err := models.GetGuardRailRules(testOrgID, rule.ID)
+	if err != nil {
+		t.Fatalf("read the rule back: %v", err)
+	}
+	if strings.Contains(string(stored.SidecarSpec), "truncate") {
+		t.Errorf("the refused write left the new spec on the rule: %s", stored.SidecarSpec)
+	}
+	left, err := models.ListGuardrailRuleTargets(models.DB, orgID, rule.Name)
+	if err != nil {
+		t.Fatalf("read the bindings back: %v", err)
+	}
+	if len(left) != 1 || left[0].SidecarID != sc.ID {
+		t.Errorf("the refused write changed the bindings: %+v", left)
 	}
 }

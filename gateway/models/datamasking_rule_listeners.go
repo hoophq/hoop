@@ -35,20 +35,24 @@ func ListDataMaskingRulesForSidecar(db *gorm.DB, orgID uuid.UUID, sidecarID stri
 
 func SetDataMaskingRuleListeners(db *gorm.DB, orgID uuid.UUID, ruleName string, targets []SidecarRuleTarget) error {
 	return db.Transaction(func(tx *gorm.DB) error {
-		err := tx.Where("org_id = ? AND datamasking_rule_name = ?", orgID, ruleName).
-			Delete(&DatamaskingRuleListener{}).Error
-		if err != nil || len(targets) == 0 {
-			return err
-		}
-		rows := make([]DatamaskingRuleListener, 0, len(targets))
-		for _, t := range targets {
-			rows = append(rows, DatamaskingRuleListener{
-				OrgID: orgID, RuleName: ruleName,
-				SidecarID: t.SidecarID, ListenerName: t.ListenerName,
-			})
-		}
-		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error
+		return SetDataMaskingRuleListenersTx(tx, orgID, ruleName, targets)
 	})
+}
+
+func SetDataMaskingRuleListenersTx(tx *gorm.DB, orgID uuid.UUID, ruleName string, targets []SidecarRuleTarget) error {
+	err := tx.Where("org_id = ? AND datamasking_rule_name = ?", orgID, ruleName).
+		Delete(&DatamaskingRuleListener{}).Error
+	if err != nil || len(targets) == 0 {
+		return err
+	}
+	rows := make([]DatamaskingRuleListener, 0, len(targets))
+	for _, t := range targets {
+		rows = append(rows, DatamaskingRuleListener{
+			OrgID: orgID, RuleName: ruleName,
+			SidecarID: t.SidecarID, ListenerName: t.ListenerName,
+		})
+	}
+	return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error
 }
 
 func ListDataMaskingRuleTargets(db *gorm.DB, orgID uuid.UUID, ruleName string) ([]SidecarRuleTarget, error) {

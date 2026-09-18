@@ -113,45 +113,52 @@ func DeleteDataMaskingRulesByRulepackIDTx(tx *gorm.DB, orgID, rulepackID uuid.UU
 
 func UpdateDataMaskingRule(rule *DataMaskingRule) (*DataMaskingRule, error) {
 	return rule, DB.Transaction(func(tx *gorm.DB) error {
-		res := tx.Table("private.datamasking_rules").
-			Where("org_id = ? AND id = ?", rule.OrgID, rule.ID).
-			Select("description", "supported_entity_types", "custom_entity_types", "score_threshold", "sidecar_spec", "rulepack_id", "updated_at").
-			Updates(DataMaskingRule{
-				Description:          rule.Description,
-				SupportedEntityTypes: rule.SupportedEntityTypes,
-				CustomEntityTypes:    rule.CustomEntityTypes,
-				ScoreThreshold:       rule.ScoreThreshold,
-				SidecarSpec:          rule.SidecarSpec,
-				RulepackID:           rule.RulepackID,
-				UpdatedAt:            rule.UpdatedAt,
-			})
-		if res.Error != nil {
-			return fmt.Errorf("failed updating data masking rule: %v", res.Error)
-		}
-		if res.RowsAffected == 0 {
-			return ErrNotFound
-		}
+		return UpdateDataMaskingRuleTx(tx, rule)
+	})
+}
 
-		err := tx.Table("private.datamasking_rules_connections").
-			Where("org_id = ? AND rule_id = ?", rule.OrgID, rule.ID).
-			Delete(&DataMaskingRule{}).
+// UpdateDataMaskingRuleTx is the transaction-aware variant of
+// UpdateDataMaskingRule. It runs inside the caller's transaction so the rule
+// and its connection junction rows can be composed atomically with other writes.
+func UpdateDataMaskingRuleTx(tx *gorm.DB, rule *DataMaskingRule) error {
+	res := tx.Table("private.datamasking_rules").
+		Where("org_id = ? AND id = ?", rule.OrgID, rule.ID).
+		Select("description", "supported_entity_types", "custom_entity_types", "score_threshold", "sidecar_spec", "rulepack_id", "updated_at").
+		Updates(DataMaskingRule{
+			Description:          rule.Description,
+			SupportedEntityTypes: rule.SupportedEntityTypes,
+			CustomEntityTypes:    rule.CustomEntityTypes,
+			ScoreThreshold:       rule.ScoreThreshold,
+			SidecarSpec:          rule.SidecarSpec,
+			RulepackID:           rule.RulepackID,
+			UpdatedAt:            rule.UpdatedAt,
+		})
+	if res.Error != nil {
+		return fmt.Errorf("failed updating data masking rule: %v", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+
+	err := tx.Table("private.datamasking_rules_connections").
+		Where("org_id = ? AND rule_id = ?", rule.OrgID, rule.ID).
+		Delete(&DataMaskingRule{}).
+		Error
+	if err != nil {
+		return fmt.Errorf("failed removing data masking associations: %v", err)
+	}
+
+	for _, connID := range rule.ConnectionIDs {
+		err := tx.Exec(`
+		INSERT INTO private.datamasking_rules_connections (org_id, rule_id, connection_id)
+		VALUES (?, ?, ?)
+		`, rule.OrgID, rule.ID, connID).
 			Error
 		if err != nil {
-			return fmt.Errorf("failed removing data masking associations: %v", err)
+			return fmt.Errorf("failed creating data masking association %s: %v", connID, err)
 		}
-
-		for _, connID := range rule.ConnectionIDs {
-			err := tx.Exec(`
-			INSERT INTO private.datamasking_rules_connections (org_id, rule_id, connection_id)
-			VALUES (?, ?, ?)
-			`, rule.OrgID, rule.ID, connID).
-				Error
-			if err != nil {
-				return fmt.Errorf("failed creating data masking association %s: %v", connID, err)
-			}
-		}
-		return nil
-	})
+	}
+	return nil
 }
 
 type DataMaskingListOption struct {

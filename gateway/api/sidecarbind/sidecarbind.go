@@ -24,6 +24,7 @@ import (
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/services"
+	"gorm.io/gorm"
 )
 
 // Request is the part of a rule request this package reads. The three openapi
@@ -162,13 +163,21 @@ func bindingName(req Request) string {
 	return req.Name
 }
 
-// Persist replaces the rule's target set. Called only after the rule row
-// exists, so the junction's foreign key has something to point at.
+// PersistTx replaces the rule's target set inside the caller's transaction,
+// after the rule row is written in that same transaction so the junction's
+// foreign key has something to point at.
+//
+// The transaction is the point. Refuse checks the INCOMING spec against the
+// INCOMING target set, so committing the rule row before the bindings leaves
+// the OLD bindings serving the NEW spec whenever this write fails -- a sidecar
+// deleted a moment ago, a constraint, a dropped connection. That pairing is
+// the one Refuse exists to reject, and a half-applied write reaches it behind
+// a 500 the admin reads as "nothing happened".
 //
 // An ABSENT target list is not an empty one: it leaves the bindings alone, so
 // a write that says nothing about sidecars changes nothing about them. An
 // explicit [] is the admin unbinding the rule.
-func Persist(orgID string, kind services.SidecarRuleKind, ruleName string, targets *[]openapi.SidecarRuleTarget) error {
+func PersistTx(tx *gorm.DB, orgID string, kind services.SidecarRuleKind, ruleName string, targets *[]openapi.SidecarRuleTarget) error {
 	if targets == nil || !appconfig.Get().IsControlPlane() {
 		return nil
 	}
@@ -182,11 +191,11 @@ func Persist(orgID string, kind services.SidecarRuleKind, ruleName string, targe
 	}
 	switch kind {
 	case services.SidecarRuleGuardrail:
-		return models.SetGuardrailRuleListeners(models.DB, org, ruleName, rows)
+		return models.SetGuardrailRuleListenersTx(tx, org, ruleName, rows)
 	case services.SidecarRuleMask:
-		return models.SetDataMaskingRuleListeners(models.DB, org, ruleName, rows)
+		return models.SetDataMaskingRuleListenersTx(tx, org, ruleName, rows)
 	case services.SidecarRuleAnalyzer:
-		return models.SetAnalyzerRuleListeners(models.DB, org, ruleName, rows)
+		return models.SetAnalyzerRuleListenersTx(tx, org, ruleName, rows)
 	}
 	return fmt.Errorf("unknown sidecar rule kind %q", kind)
 }
