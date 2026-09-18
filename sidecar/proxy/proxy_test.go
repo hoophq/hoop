@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -280,6 +282,123 @@ func TestSessionAuditLifecycle(t *testing.T) {
 		if ev.Principal != "alice@example.com" {
 			t.Errorf("event %s has principal %q; identity must reach the audit trail",
 				ev.Kind, ev.Principal)
+		}
+	}
+}
+
+// pgStartup builds a v3 StartupMessage naming user, the message every libpq
+// client opens with.
+func pgStartup(user string) []byte {
+	var params []byte
+	for _, kv := range [][2]string{{"user", user}, {"database", "appdb"}} {
+		params = append(params, kv[0]...)
+		params = append(params, 0)
+		params = append(params, kv[1]...)
+		params = append(params, 0)
+	}
+	params = append(params, 0)
+
+	out := make([]byte, 8, 8+len(params))
+	binary.BigEndian.PutUint32(out[0:4], uint32(8+len(params)))
+	binary.BigEndian.PutUint32(out[4:8], 3<<16)
+	return append(out, params...)
+}
+
+// syncBuffer is a bytes.Buffer the log handler can write from the session
+// goroutine while the test reads it.
+type syncBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (s *syncBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
+}
+
+// topLevelValues returns every value under key at the top level of one JSON
+// object, in order. json.Unmarshal into a map keeps only the last duplicate,
+// which is exactly the defect this must see.
+func topLevelValues(t *testing.T, line, key string) []string {
+	t.Helper()
+	dec := json.NewDecoder(strings.NewReader(line))
+	if tok, err := dec.Token(); err != nil || tok != json.Delim('{') {
+		t.Fatalf("log line is not a JSON object: %q", line)
+	}
+	var out []string
+	for dec.More() {
+		k, err := dec.Token()
+		if err != nil {
+			t.Fatalf("reading key: %v", err)
+		}
+		var v any
+		if err := dec.Decode(&v); err != nil {
+			t.Fatalf("reading value of %v: %v", k, err)
+		}
+		if k == key {
+			out = append(out, fmt.Sprint(v))
+		}
+	}
+	return out
+}
+
+// pgwire learns the user after the logger already carries "anonymous". The
+// two must not both survive onto the "session opened" and "session closed"
+// lines.
+func TestSessionLinesLogThePrincipalOnce(t *testing.T) {
+	up := newEchoUpstream(t, nil)
+	var logs syncBuffer
+	srv := startServer(t, proxy.Config{
+		Upstream:   up.addr(),
+		Protocol:   inspect.Postgres,
+		Connection: "appdb",
+		Audit:      audit.NewMemorySink(64),
+		Logger:     slog.New(slog.NewJSONHandler(&logs, nil)),
+	})
+
+	c, err := net.Dial("tcp", srv.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Write(pgStartup("alice"))
+	c.SetReadDeadline(time.Now().Add(2 * time.Second))
+	io.ReadFull(c, make([]byte, len(pgStartup("alice"))))
+	c.Close()
+
+	// Both lines come from the session logger: "opened" right after the
+	// user is learned, "closed" from the deferred teardown.
+	found := map[string]string{"session opened": "", "session closed": ""}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		// The handler writes a line at a time; the tail after the last
+		// newline is a line still being written.
+		lines := strings.Split(logs.String(), "\n")
+		for _, line := range lines[:len(lines)-1] {
+			for msg := range found {
+				if strings.Contains(line, `"msg":"`+msg+`"`) {
+					found[msg] = line
+				}
+			}
+		}
+		if found["session opened"] != "" && found["session closed"] != "" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	for msg, line := range found {
+		if line == "" {
+			t.Fatalf("no %q line in:\n%s", msg, logs.String())
+		}
+		got := topLevelValues(t, line, "principal")
+		if len(got) != 1 || got[0] != "alice" {
+			t.Errorf("%s: principal keys = %q, want exactly [alice]; line: %s", msg, got, line)
 		}
 	}
 }
