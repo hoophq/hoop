@@ -140,6 +140,57 @@ func ValidateSidecarRuleTargets(db *gorm.DB, orgID string, kind SidecarRuleKind,
 		if err := validateSpecForLane(kind, ruleName, spec, sc.Name, *lane); err != nil {
 			return err
 		}
+		if err := checkCapWithRule(db, orgID, sc, kind, ruleName, spec, t.ListenerName); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// checkCapWithRule refuses a binding that would push a sidecar past the free
+// tier's rule cap.
+//
+// The cap counts what the SERVED document authors, so a rule bound here raises
+// a count the stored configuration's own check never saw. Without this the
+// save succeeds, the running sidecar refuses the document and keeps its old
+// rules, and every pod that reschedules afterwards -- a helm upgrade, a node
+// drain -- hard-exits at boot, all at once, hours later.
+//
+// It composes what the document WOULD be and asks the daemon's own counter, so
+// there is no second arithmetic to keep in step with it.
+func checkCapWithRule(db *gorm.DB, orgID string, sc *models.Sidecar, kind SidecarRuleKind, ruleName string, spec json.RawMessage, listenerName string) error {
+	licenseData, err := models.GetOrgLicenseData(db, sc.OrgID)
+	if err != nil {
+		// A missing org is the caller's problem, not this check's: the write
+		// itself fails on the same row a moment later.
+		return nil
+	}
+	composed, err := ComposeSidecarConfiguration(db, sc)
+	if err != nil {
+		// Composition is already broken for a reason this binding did not
+		// cause. Reporting it here would name the wrong rule.
+		return nil
+	}
+	// The rule being written is not in the database yet, or is there with its
+	// old content, so it is folded in by hand on top.
+	bound := []models.BoundRule{{RuleName: ruleName, ListenerName: listenerName, Spec: spec}}
+	var withRule daemon.Config
+	switch kind {
+	case SidecarRuleGuardrail:
+		withRule, err = foldSidecarRules(composed, bound, nil, nil)
+	case SidecarRuleMask:
+		withRule, err = foldSidecarRules(composed, nil, bound, nil)
+	default:
+		// The analyzer is not a rule and is not capped: its controls are the
+		// trigger and the call budget rather than a number of rules.
+		return nil
+	}
+	if err != nil {
+		return nil
+	}
+	if err := CheckSidecarConfigurationLimits(withRule, licenseData); err != nil {
+		return fmt.Errorf("binding %s rule %q to listener %q on sidecar %q puts that sidecar over "+
+			"its rule limit: %w", kind, ruleName, listenerName, sc.Name, err)
 	}
 	return nil
 }

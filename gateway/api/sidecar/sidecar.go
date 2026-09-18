@@ -444,6 +444,22 @@ func withOrgLicense(sc *models.Sidecar) (daemon.Config, error) {
 	if err != nil {
 		return daemon.Config(sc.Configuration), err
 	}
+	// The free tier caps rules PER PROCESS, and it counts what the served
+	// document authors -- so bound rules push the count up even though the
+	// stored configuration passed the same check when it was written.
+	//
+	// This is the backstop, and it exists because of how the sidecar fails
+	// without it: a document over the cap is refused while the process lives
+	// (it keeps the rules it has) and a HARD EXIT on its next boot. The fleet
+	// keeps serving stale rules, keeps reporting itself recently seen, and
+	// then every pod that reschedules -- a helm upgrade, a node drain --
+	// crash-loops at once, hours after the save looked fine.
+	//
+	// Answering the handshake with an error instead is the one failure the
+	// sidecar survives: fetchControlPlaneConfig logs it and keeps running.
+	if err := services.CheckSidecarConfigurationLimits(composed, licenseData); err != nil {
+		return daemon.Config(sc.Configuration), err
+	}
 	return servedConfig(models.SidecarConfiguration(composed), licenseData), nil
 }
 
