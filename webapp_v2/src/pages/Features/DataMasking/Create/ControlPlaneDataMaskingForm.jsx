@@ -17,9 +17,11 @@ import { useSidecarStore } from '@/stores/useSidecarStore'
 import { docsUrl } from '@/utils/docsUrl'
 import { showSnackbar } from '@/utils/snackbar'
 import {
+  DEFAULT_KEEP_LAST,
   ENTITY_TYPES,
   MASK_STRATEGIES,
   SSH_ONLY_STRATEGY,
+  maskPreview,
 } from '@/pages/sidecarRuleVocabulary'
 import { useDataMaskingStore } from '../store'
 
@@ -43,7 +45,7 @@ const emptyRule = () => ({
   entities: [],
   columns: [],
   strategy: 'redact',
-  keep_last: 4,
+  keep_last: DEFAULT_KEEP_LAST,
   mask_char: '',
 })
 
@@ -55,7 +57,7 @@ function specToRules(spec) {
     ...r,
     match: (r.columns ?? []).length > 0 ? 'columns' : 'entities',
     strategy: r.strategy || 'redact',
-    keep_last: r.keep_last ?? 4,
+    keep_last: r.keep_last ?? DEFAULT_KEEP_LAST,
     mask_char: r.mask_char ? String.fromCodePoint(r.mask_char) : '',
     key: Math.random().toString(36).slice(2),
   }))
@@ -90,7 +92,10 @@ function RuleEditor({ rule, index, onChange, onRemove, removable, strategies, ss
   // What this rule would actually be saved as, which on an ssh lane is the
   // one length-preserving strategy whatever the row holds.
   const value = sshBound ? SSH_ONLY_STRATEGY : rule.strategy
-  const strategy = strategies.find((s) => s.value === value)
+  // The example rewrites as the row does, so the mask character and the tail
+  // length are visible in their result rather than described. It reads the
+  // row's own fields, which is why it updates as they are typed.
+  const preview = maskPreview(value, { maskChar: rule.mask_char, keepLast: rule.keep_last })
 
   return (
     <Paper p="md" radius="md" withBorder>
@@ -154,7 +159,11 @@ function RuleEditor({ rule, index, onChange, onRemove, removable, strategies, ss
             value={value}
             onChange={(v) => set({ strategy: v ?? 'redact' })}
             allowDeselect={false}
-            description={strategy?.help}
+            // Under the input, not under the label: it is the result of the
+            // whole row, including the two fields to its right, so it reads
+            // after them rather than before the control it describes.
+            description={preview}
+            inputWrapperOrder={['label', 'input', 'description', 'error']}
             flex={1}
           />
           {value === 'partial' && (

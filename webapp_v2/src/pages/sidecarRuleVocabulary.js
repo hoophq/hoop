@@ -111,11 +111,64 @@ export const GUARDRAIL_ACTIONS = [
 // The `help` here stays, unlike the guardrail types': a before/after on a real
 // value is what an operator picks a strategy on, and no label can carry it.
 export const MASK_STRATEGIES = [
-  { value: 'redact', label: 'Redact', help: '4111111111111111 → [REDACTED:CREDIT_CARD]' },
-  { value: 'mask', label: 'Mask', help: '4111111111111111 → ****************' },
-  { value: 'partial', label: 'Partial', help: '4111111111111111 → ************1111' },
-  { value: 'hash', label: 'Hash', help: '4111111111111111 → sha256:19d25e4ad4f3a1c2 (equal inputs still join)' },
+  { value: 'redact', label: 'Redact' },
+  { value: 'mask', label: 'Mask' },
+  { value: 'partial', label: 'Partial' },
+  { value: 'hash', label: 'Hash' },
 ]
+
+// The value every preview rewrites: a card number, because it is what an
+// operator pictures, and sixteen digits make a keep_last of four read at a
+// glance.
+const MASK_SAMPLE = '4111111111111111'
+
+// The real first 16 hex digits of sha256(MASK_SAMPLE). A made-up digest in a
+// field that invites the reader to check it is worse than no example.
+const MASK_SAMPLE_DIGEST = '9bbef19476623ca5'
+
+// The daemon's own defaults (sidecar/pii/alcatraz/masker.go), for the two
+// fields the form leaves empty to inherit them.
+export const DEFAULT_MASK_CHAR = '*'
+export const DEFAULT_KEEP_LAST = 4
+
+// maskPreview renders what the lane would return for MASK_SAMPLE.
+//
+// It reproduces the masker's operators rather than approximating them, so an
+// operator reading the field learns the real rule. The one worth seeing is
+// `partial`: it masks only LETTERS AND DIGITS before the tail and leaves
+// separators in place, because a separator is format rather than data. And a
+// keep_last at or above the value's length masks the whole thing instead of
+// passing it through — the safe end, and the opposite of what "keep this many"
+// suggests.
+export function maskPreview(strategy, { maskChar, keepLast } = {}) {
+  const ch = maskChar || DEFAULT_MASK_CHAR
+  const chars = [...MASK_SAMPLE]
+
+  switch (strategy) {
+    case 'redact':
+      return `${MASK_SAMPLE} → [REDACTED:CREDIT_CARD]`
+    case 'mask':
+      // Every character, separators included, with the rune count preserved.
+      return `${MASK_SAMPLE} → ${ch.repeat(chars.length)}`
+    case 'partial': {
+      // Zero is not zero. The daemon reads an unset keep_last as the default,
+      // and `omitempty` means a 0 never reaches it as a 0 anyway — so an
+      // operator who types 0 expecting the whole value masked gets the last
+      // four in the clear. The preview shows that rather than describing it.
+      const raw = Number(keepLast)
+      const keep = Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_KEEP_LAST
+      const cut = keep >= chars.length ? chars.length : chars.length - keep
+      const out = chars
+        .map((c, i) => (i >= cut ? c : /[\p{L}\p{N}]/u.test(c) ? ch : c))
+        .join('')
+      return `${MASK_SAMPLE} → ${out}`
+    }
+    case 'hash':
+      return `${MASK_SAMPLE} → sha256:${MASK_SAMPLE_DIGEST} (equal inputs still join)`
+    default:
+      return ''
+  }
+}
 
 // An ssh lane rewrites a byte stream in place, so only a length-preserving
 // strategy can run there. The gateway refuses the rest with the daemon's own
