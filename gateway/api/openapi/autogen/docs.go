@@ -19644,6 +19644,13 @@ const docTemplate = `{
                     "type": "string",
                     "example": "8f14e45fceea167a5a36dedd4bea2543"
                 },
+                "bound_rules": {
+                    "description": "BoundRules names the rules the control plane distributes to this\nsidecar, and the listener each one lands on.\n\nThey are NOT inside Configuration and never will be: a bound rule is\nfolded into the SERVED document on every handshake and nothing is\nstored, so one row update reaches a fleet. That is also why this field\nhas to exist — a page reading Configuration alone shows a listener\nenforcing nothing while the sidecar enforces the rule.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.SidecarRuleBinding"
+                    }
+                },
                 "configuration": {
                     "description": "The stored daemon configuration.",
                     "type": "object"
@@ -19758,6 +19765,13 @@ const docTemplate = `{
                     "type": "string",
                     "example": "8f14e45fceea167a5a36dedd4bea2543"
                 },
+                "bound_rules": {
+                    "description": "BoundRules names the rules the control plane distributes to this\nsidecar, and the listener each one lands on.\n\nThey are NOT inside Configuration and never will be: a bound rule is\nfolded into the SERVED document on every handshake and nothing is\nstored, so one row update reaches a fleet. That is also why this field\nhas to exist — a page reading Configuration alone shows a listener\nenforcing nothing while the sidecar enforces the rule.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.SidecarRuleBinding"
+                    }
+                },
                 "configuration": {
                     "description": "The stored daemon configuration.",
                     "type": "object"
@@ -19832,6 +19846,26 @@ const docTemplate = `{
                     "description": "The statement to review, base64 encoded",
                     "type": "string",
                     "example": "REVMRVRFIEZST00gdXNlcnM7"
+                }
+            }
+        },
+        "openapi.SidecarRuleBinding": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "description": "Which feature the rule belongs to: guardrail, datamasking or analyzer",
+                    "type": "string",
+                    "example": "guardrail"
+                },
+                "listener_name": {
+                    "description": "The listener that enforces it",
+                    "type": "string",
+                    "example": "appdb"
+                },
+                "rule_name": {
+                    "description": "The rule's name",
+                    "type": "string",
+                    "example": "no-destructive-sql"
                 }
             }
         },

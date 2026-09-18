@@ -20,6 +20,10 @@
 
 export const SOURCE_LISTENER = 'listener'
 export const SOURCE_INHERITED = 'inherited'
+// A rule the control plane distributes. It is not in the stored document at
+// all -- composition folds it into the served one on each handshake -- so it
+// arrives from the bindings beside the config, never from resolveListener.
+export const SOURCE_DISTRIBUTED = 'distributed'
 
 // Enforcement modes, GuardrailsConfig.Mode in sidecar/daemon/config.go.
 export const MODE_ENFORCE = 'enforce'

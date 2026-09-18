@@ -319,6 +319,15 @@ type SidecarResponse struct {
 	CreatedAt time.Time `json:"created_at"`
 	// The stored daemon configuration.
 	Configuration daemon.Config `json:"configuration" swaggertype:"object"`
+	// BoundRules names the rules the control plane distributes to this
+	// sidecar, and the listener each one lands on.
+	//
+	// They are NOT inside Configuration and never will be: a bound rule is
+	// folded into the SERVED document on every handshake and nothing is
+	// stored, so one row update reaches a fleet. That is also why this field
+	// has to exist — a page reading Configuration alone shows a listener
+	// enforcing nothing while the sidecar enforces the rule.
+	BoundRules []SidecarRuleBinding `json:"bound_rules,omitempty"`
 	// Version reported at the last handshake. Empty until the sidecar calls.
 	Version string `json:"version,omitempty" example:"1.0.0"`
 	// Last time the sidecar handshook. Empty until it does.
@@ -355,6 +364,18 @@ type SidecarRuleTarget struct {
 	SidecarID string `json:"sidecar_id" format:"uuid" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
 	// The listener on that sidecar, or empty for every listener it has
 	ListenerName string `json:"listener_name,omitempty" example:"appdb"`
+}
+
+// SidecarRuleBinding is the read side of a target: which rule, of which
+// feature, reaches which listener. It carries no rule body — the pages that
+// read it ask what a listener enforces, not what the rule says.
+type SidecarRuleBinding struct {
+	// Which feature the rule belongs to: guardrail, datamasking or analyzer
+	Kind string `json:"kind" example:"guardrail"`
+	// The rule's name
+	RuleName string `json:"rule_name" example:"no-destructive-sql"`
+	// The listener that enforces it
+	ListenerName string `json:"listener_name" example:"appdb"`
 }
 
 type SidecarCreateResponse struct {

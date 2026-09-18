@@ -1,6 +1,7 @@
 package models
 
 import (
+	"database/sql"
 	"encoding/json"
 	"time"
 
@@ -70,6 +71,45 @@ type BoundRule struct {
 	RuleName     string
 	ListenerName string
 	Spec         json.RawMessage `gorm:"column:sidecar_spec"`
+}
+
+// SidecarRuleBinding names one rule bound to one listener, for the READ side.
+//
+// It carries no spec. The admin pages ask which rules a listener enforces, not
+// what they say, and a list page that shipped every rule body would carry the
+// whole fleet's policy to render three chips.
+type SidecarRuleBinding struct {
+	SidecarID    string `json:"sidecar_id"`
+	Kind         string `json:"kind"`
+	RuleName     string `json:"rule_name"`
+	ListenerName string `json:"listener_name"`
+}
+
+// ListSidecarRuleBindings returns every rule bound to any sidecar in the
+// organization, or to one sidecar when sidecarID is set.
+//
+// The admin pages need this because a bound rule is NEVER in the stored
+// configuration: composition folds it into the served document on each
+// handshake and stores nothing. A page reading the stored configuration alone
+// shows a listener enforcing nothing while the sidecar enforces the rule --
+// the control plane hiding its own work.
+//
+// One query over the three junctions rather than three per sidecar: the list
+// page renders every sidecar at once.
+func ListSidecarRuleBindings(db *gorm.DB, orgID uuid.UUID, sidecarID string) ([]SidecarRuleBinding, error) {
+	var out []SidecarRuleBinding
+	err := db.Raw(`
+	SELECT sidecar_id, 'guardrail' AS kind, guardrail_rule_name AS rule_name, listener_name
+	FROM private.guardrail_rules_listeners WHERE org_id = @org AND (@sc = '' OR sidecar_id::text = @sc)
+	UNION ALL
+	SELECT sidecar_id, 'datamasking', datamasking_rule_name, listener_name
+	FROM private.datamasking_rules_listeners WHERE org_id = @org AND (@sc = '' OR sidecar_id::text = @sc)
+	UNION ALL
+	SELECT sidecar_id, 'analyzer', analyzer_rule_name, listener_name
+	FROM private.ai_session_analyzer_rules_listeners WHERE org_id = @org AND (@sc = '' OR sidecar_id::text = @sc)
+	ORDER BY sidecar_id, listener_name, kind, rule_name`,
+		sql.Named("org", orgID), sql.Named("sc", sidecarID)).Scan(&out).Error
+	return out, err
 }
 
 // ListGuardrailRulesForSidecar returns every guardrail rule bound to this

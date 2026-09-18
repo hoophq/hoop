@@ -9,6 +9,7 @@ import (
 	"slices"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/api/httputils"
@@ -188,11 +189,41 @@ func List(c *gin.Context) {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing sidecars")
 		return
 	}
+	bindings := bindingsBySidecar(ctx.OrgID, "")
 	result := []openapi.SidecarResponse{}
 	for _, item := range items {
-		result = append(result, toResponse(item))
+		resp := toResponse(item)
+		resp.BoundRules = bindings[item.ID]
+		result = append(result, resp)
 	}
 	c.JSON(http.StatusOK, result)
+}
+
+// bindingsBySidecar groups the org's rule bindings by sidecar id, for one
+// sidecar when id is set and for every one otherwise.
+//
+// A failure returns nothing rather than an error: the bindings are a read-side
+// annotation on a page whose subject is the sidecar, and failing the whole
+// request because an annotation could not be built would take the page down
+// over a decoration. The listener then renders without its chips, which is what
+// it did before this field existed.
+func bindingsBySidecar(orgID, sidecarID string) map[string][]openapi.SidecarRuleBinding {
+	out := map[string][]openapi.SidecarRuleBinding{}
+	org, err := uuid.Parse(orgID)
+	if err != nil {
+		return out
+	}
+	rows, err := models.ListSidecarRuleBindings(models.DB, org, sidecarID)
+	if err != nil {
+		log.Warnf("failed listing the rules bound to the organization's sidecars, err=%v", err)
+		return out
+	}
+	for _, r := range rows {
+		out[r.SidecarID] = append(out[r.SidecarID], openapi.SidecarRuleBinding{
+			Kind: r.Kind, RuleName: r.RuleName, ListenerName: r.ListenerName,
+		})
+	}
+	return out
 }
 
 // Get Sidecar
@@ -216,7 +247,9 @@ func Get(c *gin.Context) {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching sidecar")
 		return
 	}
-	c.JSON(http.StatusOK, toResponse(*item))
+	resp := toResponse(*item)
+	resp.BoundRules = bindingsBySidecar(ctx.OrgID, item.ID)[item.ID]
+	c.JSON(http.StatusOK, resp)
 }
 
 // Delete Sidecar

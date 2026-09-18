@@ -125,6 +125,81 @@ func TestGuardrailRuleListeners(t *testing.T) {
 	}
 }
 
+// The admin pages read the bindings, because the stored configuration does not
+// carry them: composition folds a rule into the SERVED document and stores
+// nothing. Without this query a listener enforcing a distributed rule renders
+// as "No rules. Everything passes.", which is the control plane lying about
+// what its own fleet enforces.
+func TestListSidecarRuleBindings(t *testing.T) {
+	startTestDB(t)
+	orgID := uuid.MustParse(testOrgID)
+
+	sc := &models.Sidecar{
+		OrgID:     testOrgID,
+		Name:      "read-side",
+		KeyHash:   models.HashAPIKey("hsc_read_side_test"),
+		CreatedBy: "tests@hoop.dev",
+		Configuration: models.SidecarConfiguration{
+			Listeners: []daemon.ListenerConfig{{
+				Name: "appdb", Protocol: "postgres", Listen: ":5432", Upstream: "db:5432",
+			}},
+		},
+	}
+	if err := models.CreateSidecar(models.DB, sc); err != nil {
+		t.Fatalf("seed sidecar: %v", err)
+	}
+	rule := &models.GuardRailRules{
+		OrgID: testOrgID, ID: uuid.NewString(), Name: "read-side-rule",
+		Input: map[string]any{"rules": []any{}}, Output: map[string]any{"rules": []any{}},
+		SidecarSpec: json.RawMessage(`{"rules":[{"name":"r","type":"operation","operations":["drop"]}]}`),
+	}
+	if err := models.UpsertGuardRailRuleWithConnections(rule, nil, true); err != nil {
+		t.Fatalf("seed guardrail rule: %v", err)
+	}
+	err := models.SetGuardrailRuleListeners(models.DB, orgID, rule.Name,
+		[]models.SidecarRuleTarget{{SidecarID: sc.ID, ListenerName: "appdb"}})
+	if err != nil {
+		t.Fatalf("bind: %v", err)
+	}
+
+	// Org-wide: what the sidecars list page reads in one call.
+	all, err := models.ListSidecarRuleBindings(models.DB, orgID, "")
+	if err != nil {
+		t.Fatalf("list org bindings: %v", err)
+	}
+	found := false
+	for _, b := range all {
+		if b.SidecarID == sc.ID && b.RuleName == rule.Name {
+			found = true
+			if b.Kind != "guardrail" || b.ListenerName != "appdb" {
+				t.Errorf("wrong binding shape: %+v", b)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("the bound rule is missing from the org listing: %+v", all)
+	}
+
+	// Scoped to one sidecar: what the detail page reads.
+	one, err := models.ListSidecarRuleBindings(models.DB, orgID, sc.ID)
+	if err != nil {
+		t.Fatalf("list sidecar bindings: %v", err)
+	}
+	if len(one) != 1 || one[0].RuleName != rule.Name {
+		t.Fatalf("want the one binding for this sidecar, got %+v", one)
+	}
+
+	// Another sidecar's id must not pick it up: the filter is the whole reason
+	// the list page can render every row from one query.
+	other, err := models.ListSidecarRuleBindings(models.DB, orgID, uuid.NewString())
+	if err != nil {
+		t.Fatalf("list other sidecar bindings: %v", err)
+	}
+	if len(other) != 0 {
+		t.Errorf("a binding leaked across sidecars: %+v", other)
+	}
+}
+
 // Editing a bound rule must not count it twice.
 //
 // The free tier allows one guardrail rule per process. The cap check composes
