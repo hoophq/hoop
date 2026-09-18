@@ -563,7 +563,7 @@ func TestHTTPForbiddenFrame(t *testing.T) {
 func TestDenyWriterDispatch(t *testing.T) {
 	w := proxy.ProtocolDenyWriter{}
 	for _, proto := range []inspect.Protocol{
-		inspect.Postgres, inspect.MSSQL, inspect.MySQL, inspect.HTTP,
+		inspect.Postgres, inspect.MSSQL, inspect.MySQL, inspect.ClickHouse, inspect.HTTP,
 	} {
 		if len(w.Deny(proto, inspect.FromClient, "x")) == 0 {
 			t.Errorf("%s produced no deny frame", proto)

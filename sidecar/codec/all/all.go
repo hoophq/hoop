@@ -15,6 +15,7 @@
 package all
 
 import (
+	_ "github.com/hoophq/hoop/sidecar/codec/clickhouse"
 	_ "github.com/hoophq/hoop/sidecar/codec/http"
 	_ "github.com/hoophq/hoop/sidecar/codec/mongodb"
 	_ "github.com/hoophq/hoop/sidecar/codec/mssql"
