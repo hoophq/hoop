@@ -58,10 +58,20 @@ type Sidecar struct {
 	Configuration SidecarConfiguration `gorm:"column:configuration"`
 	CreatedBy     string               `gorm:"column:created_by"`
 	CreatedAt     time.Time            `gorm:"column:created_at"`
+
+	// What the sidecar last reported about itself, and what was last served
+	// to it. All nullable: a sidecar that has never handshaken and one too
+	// old to report must both read as unknown, never as converged.
+	LastSeenAt      *time.Time `gorm:"column:last_seen_at"`
+	ReportedVersion *string    `gorm:"column:reported_version"`
+	ServedRevision  *string    `gorm:"column:served_revision"`
+	AppliedRevision *string    `gorm:"column:applied_revision"`
+	LastOutcome     *string    `gorm:"column:last_outcome"`
 }
 
 const sidecarColumns = `
-	s.id, s.org_id, s.name, s.created_by, s.created_at, s.configuration`
+	s.id, s.org_id, s.name, s.created_by, s.created_at, s.configuration,
+	s.last_seen_at, s.reported_version, s.served_revision, s.applied_revision, s.last_outcome`
 
 func CreateSidecar(db *gorm.DB, s *Sidecar) error {
 	if s.ID == "" {
@@ -254,4 +264,25 @@ func DeleteSidecarByNameOrID(db *gorm.DB, orgID, nameOrID string) (string, error
 		return "", ErrNotFound
 	}
 	return deletedID, nil
+}
+
+// RecordSidecarHandshake stores one handshake: what the sidecar said about
+// itself, and the revision of the document being answered with.
+//
+// One statement for both halves because they describe one exchange. Writing
+// them apart would let a crash between the two leave a row claiming the
+// sidecar applied a revision that was never served.
+//
+// Called from the handshake only. The configuration poll deliberately records
+// nothing, so a sidecar that polls between handshakes cannot overwrite what it
+// last reported about itself.
+func RecordSidecarHandshake(db *gorm.DB, sidecarID, version, appliedRevision, lastOutcome, servedRevision string) error {
+	return db.Exec(`
+	UPDATE private.sidecars SET
+		last_seen_at = NOW(),
+		reported_version = NULLIF(?, ''),
+		applied_revision = NULLIF(?, ''),
+		last_outcome = NULLIF(?, ''),
+		served_revision = NULLIF(?, '')
+	WHERE id = ?`, version, appliedRevision, lastOutcome, servedRevision, sidecarID).Error
 }

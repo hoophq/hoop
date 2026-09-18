@@ -1,6 +1,7 @@
 package apiai
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -11,8 +12,10 @@ import (
 	"github.com/hoophq/hoop/gateway/analytics"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/api/sidecarbind"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"gorm.io/gorm"
 )
@@ -291,7 +294,12 @@ func GetSessionAnalyzerRule(c *gin.Context) {
 	case gorm.ErrRecordNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
 	case nil:
-		c.JSON(http.StatusOK, toSessionAnalyzerRuleResponse(rule))
+		out := toSessionAnalyzerRuleResponse(rule)
+		// Read back on the single-rule route, which is what the edit form
+		// loads. Without it the form opens with the picker empty and the next
+		// save unbinds the rule from every sidecar it reached.
+		out.SidecarTargets = sidecarbind.Load(ctx.GetOrgID(), services.SidecarRuleAnalyzer, rule.Name)
+		c.JSON(http.StatusOK, out)
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching AI session analyzer rule: %v", err)
 	}
@@ -351,6 +359,7 @@ func CreateSessionAnalyzerRule(c *gin.Context) {
 		ConnectionNames: req.ConnectionNames,
 		CustomPrompt:    req.CustomPrompt,
 		Agentic:         req.Agentic,
+		SidecarSpec:     req.SidecarSpec,
 		RiskEvaluation: models.AISessionAnalyzerRiskEvaluation{
 			LowRisk:    toModelRiskTier(lowTier),
 			MediumRisk: toModelRiskTier(mediumTier),
@@ -358,7 +367,39 @@ func CreateSessionAnalyzerRule(c *gin.Context) {
 		},
 	}
 
-	err = models.CreateAISessionAnalyzerRule(rule)
+	if sidecarbind.Refuse(c, ctx.GetOrgID(), sidecarbind.Request{
+		Kind: services.SidecarRuleAnalyzer, Name: rule.Name, StoredName: "",
+		Spec: req.SidecarSpec, Targets: req.SidecarTargets,
+	}) {
+		return
+	}
+
+	// One transaction: the rule row and its sidecar bindings. A binding that
+	// fails after the rule row commits leaves the OLD bindings serving the NEW
+	// spec, which is the pairing sidecarbind.Refuse rejects.
+	var bindErr error
+	var holdErr error
+	err = models.DB.Transaction(func(tx *gorm.DB) error {
+		if err := models.CreateAISessionAnalyzerRuleTx(tx, rule); err != nil {
+			return err
+		}
+		// The rule that says who may release a statement this one holds. In
+		// the same transaction, because a rule that holds and cannot release
+		// denies every matching statement with no review anyone can approve.
+		if holdErr = services.SyncAnalyzerApprovalRule(tx, orgID, rule.Name, rule.SidecarSpec); holdErr != nil {
+			return holdErr
+		}
+		bindErr = sidecarbind.PersistTx(tx, ctx.GetOrgID(), services.SidecarRuleAnalyzer, rule.Name, req.SidecarTargets)
+		return bindErr
+	})
+	if holdErr != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": holdErr.Error()})
+		return
+	}
+	if bindErr != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, bindErr, "failed binding the rule to its sidecars: %v", bindErr)
+		return
+	}
 	switch err {
 	case models.ErrAlreadyExists:
 		c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
@@ -369,7 +410,9 @@ func CreateSessionAnalyzerRule(c *gin.Context) {
 			"medium-risk-action": rule.RiskEvaluation.Tier(models.RiskLevelKeyMedium).Action,
 			"high-risk-action":   rule.RiskEvaluation.Tier(models.RiskLevelKeyHigh).Action,
 		})
-		c.JSON(http.StatusCreated, toSessionAnalyzerRuleResponse(rule))
+		out := toSessionAnalyzerRuleResponse(rule)
+		out.SidecarTargets = sidecarbind.Load(ctx.GetOrgID(), services.SidecarRuleAnalyzer, rule.Name)
+		c.JSON(http.StatusCreated, out)
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating AI session analyzer rule: %v", err)
 	}
@@ -406,9 +449,16 @@ func UpdateSessionAnalyzerRule(c *gin.Context) {
 		return
 	}
 
-	if existing, gerr := models.GetAISessionAnalyzerRule(orgID, c.Param("name")); gerr == nil && existing.ManagedBy != nil {
+	// Read once and keep it: the managed-by refusal below and the sidecar
+	// block this write preserves both come off the stored row.
+	existing, gerr := models.GetAISessionAnalyzerRule(orgID, c.Param("name"))
+	if gerr == nil && existing.ManagedBy != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "this rule is managed by Hoop and cannot be modified directly"})
 		return
+	}
+	var storedSpec json.RawMessage
+	if gerr == nil && existing != nil {
+		storedSpec = existing.SidecarSpec
 	}
 
 	lowTier, mediumTier, highTier, err := validateAnalyzerRuleRequest(orgID, req)
@@ -442,7 +492,42 @@ func UpdateSessionAnalyzerRule(c *gin.Context) {
 		},
 	}
 
-	err = models.UpdateAISessionAnalyzerRule(rule)
+	// The sidecar block this write leaves on the rule, which is what the gate
+	// checks and what the row stores. A request that says nothing about it
+	// keeps the stored one rather than clearing it, so an edit to the prompt
+	// or the connections does not silently disarm a bound rule.
+	bind := sidecarbind.Request{
+		Kind: services.SidecarRuleAnalyzer, Name: rule.Name, StoredName: rule.Name,
+		Spec: req.SidecarSpec, StoredSpec: storedSpec, Targets: req.SidecarTargets,
+	}
+	if sidecarbind.Refuse(c, ctx.GetOrgID(), bind) {
+		return
+	}
+	rule.SidecarSpec = bind.EffectiveSpec()
+
+	var bindErr error
+	var holdErr error
+	err = models.DB.Transaction(func(tx *gorm.DB) error {
+		if err := models.UpdateAISessionAnalyzerRuleTx(tx, rule); err != nil {
+			return err
+		}
+		// Present while the rule holds, gone once it stops: switching the hold
+		// off has to take the approval rule with it, or the fleet keeps a
+		// reviewer list for a statement nothing holds any more.
+		if holdErr = services.SyncAnalyzerApprovalRule(tx, orgID, rule.Name, rule.SidecarSpec); holdErr != nil {
+			return holdErr
+		}
+		bindErr = sidecarbind.PersistTx(tx, ctx.GetOrgID(), services.SidecarRuleAnalyzer, rule.Name, req.SidecarTargets)
+		return bindErr
+	})
+	if holdErr != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": holdErr.Error()})
+		return
+	}
+	if bindErr != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, bindErr, "failed binding the rule to its sidecars: %v", bindErr)
+		return
+	}
 	switch err {
 	case gorm.ErrRecordNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
@@ -454,7 +539,9 @@ func UpdateSessionAnalyzerRule(c *gin.Context) {
 			"high-risk-action":   rule.RiskEvaluation.Tier(models.RiskLevelKeyHigh).Action,
 		})
 
-		c.JSON(http.StatusOK, toSessionAnalyzerRuleResponse(rule))
+		out := toSessionAnalyzerRuleResponse(rule)
+		out.SidecarTargets = sidecarbind.Load(ctx.GetOrgID(), services.SidecarRuleAnalyzer, rule.Name)
+		c.JSON(http.StatusOK, out)
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating AI session analyzer rule: %v", err)
 	}
@@ -483,7 +570,15 @@ func DeleteSessionAnalyzerRule(c *gin.Context) {
 		return
 	}
 
-	err = models.DeleteAISessionAnalyzerRule(orgID, c.Param("name"))
+	// The approval rule goes with it. Left behind it would be a reviewer list
+	// in a control plane with no page to remove it from, and the next analyzer
+	// rule of the same name would refuse to save over it.
+	err = models.DB.Transaction(func(tx *gorm.DB) error {
+		if err := models.DeleteAISessionAnalyzerRuleTx(tx, orgID, c.Param("name")); err != nil {
+			return err
+		}
+		return services.DeleteAnalyzerApprovalRule(tx, orgID, c.Param("name"))
+	})
 	switch err {
 	case gorm.ErrRecordNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
@@ -549,6 +644,7 @@ func toSessionAnalyzerRuleResponse(r *models.AISessionAnalyzerRules) openapi.AIS
 		ManagedBy:       r.ManagedBy,
 		CustomPrompt:    r.CustomPrompt,
 		Agentic:         r.Agentic,
+		SidecarSpec:     r.SidecarSpec,
 		RiskEvaluation: openapi.AISessionAnalyzerRiskEvaluation{
 			LowRiskAction:    string(lowTier.Action),
 			MediumRiskAction: string(mediumTier.Action),

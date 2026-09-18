@@ -282,7 +282,7 @@ function RuleFormFields({ rule, ruleName, isEdit }) {
   )
 }
 
-export default function AiSessionAnalyzerRuleForm() {
+export default function GatewayAiAnalyzerForm() {
   const { ruleName } = useParams()
   const isEdit = Boolean(ruleName)
 

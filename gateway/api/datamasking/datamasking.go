@@ -15,10 +15,12 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/api/sidecarbind"
 	"github.com/hoophq/hoop/gateway/audit"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
+	"gorm.io/gorm"
 )
 
 // requireRedactProvider aborts rule creation/updates with 422 when the
@@ -239,7 +241,14 @@ func Post(c *gin.Context) {
 	supportedEntityTypes := payload.SupportedEntityTypes
 	customEntityTypes := payload.CustomEntityTypes
 
-	rule, err := models.CreateDataMaskingRule(&models.DataMaskingRule{
+	if sidecarbind.Refuse(c, ctx.GetOrgID(), sidecarbind.Request{
+		Kind: services.SidecarRuleMask, Name: req.Name, StoredName: "",
+		Spec: req.SidecarSpec, Targets: req.SidecarTargets,
+	}) {
+		return
+	}
+
+	rule := &models.DataMaskingRule{
 		ID:                   uuid.NewString(),
 		OrgID:                ctx.OrgID,
 		Name:                 req.Name,
@@ -247,8 +256,23 @@ func Post(c *gin.Context) {
 		SupportedEntityTypes: supportedEntityTypes,
 		CustomEntityTypes:    customEntityTypes,
 		ScoreThreshold:       req.ScoreThreshold,
+		SidecarSpec:          req.SidecarSpec,
 		ConnectionIDs:        req.ConnectionIDs,
 		UpdatedAt:            time.Now().UTC(),
+	}
+	// One transaction: the rule, its attributes and its sidecar bindings. A
+	// binding that fails after the rule row commits leaves the OLD bindings
+	// serving the NEW spec, which is the pairing sidecarbind.Refuse rejects.
+	var attrErr, bindErr error
+	err := models.DB.Transaction(func(tx *gorm.DB) error {
+		if err := models.CreateDataMaskingRuleTx(tx, rule); err != nil {
+			return err
+		}
+		if attrErr = upsertDatamaskingRuleAttributes(tx, ctx, req.Name, req.Attributes); attrErr != nil {
+			return attrErr
+		}
+		bindErr = sidecarbind.PersistTx(tx, ctx.GetOrgID(), services.SidecarRuleMask, rule.Name, req.SidecarTargets)
+		return bindErr
 	})
 	evt := audit.NewEvent(audit.ResourceDataMasking, audit.ActionCreate).
 		Resource("", req.Name).
@@ -261,22 +285,30 @@ func Post(c *gin.Context) {
 		Set("attributes", req.Attributes)
 	defer func() { evt.Log(c) }()
 
-	if rule != nil {
-		evt.Resource(rule.ID, req.Name)
-	}
+	evt.Resource(rule.ID, req.Name)
 	evt.Err(err)
+	switch {
+	case attrErr != nil:
+		httputils.AbortWithErr(c, http.StatusInternalServerError, attrErr, "Failed upserting data masking rule attributes: %v", attrErr)
+		return
+	case bindErr != nil:
+		httputils.AbortWithErr(c, http.StatusInternalServerError, bindErr, "Failed binding the rule to its sidecars: %v", bindErr)
+		return
+	}
 	switch err {
 	case models.ErrAlreadyExists:
 		c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
 	case models.ErrNotFound:
 		c.JSON(http.StatusBadRequest, gin.H{"message": "connection not found: a connection reference in the connection_ids field does not exist"})
 	case nil:
-		if err := upsertDatamaskingRuleAttributes(ctx, req.Name, req.Attributes); err != nil {
-			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed upserting data masking rule attributes: %v", err)
-			return
-		}
 		rule.Attributes = req.Attributes
-		c.JSON(http.StatusCreated, toOpenApi(rule))
+		out := toOpenApi(rule)
+		// The response type embeds the request, so this field is the optional
+		// pointer. Always set on a read-back: the rule's real bindings, which
+		// is what a round-trip must return whatever the write said.
+		bound := sidecarbind.Load(ctx.GetOrgID(), services.SidecarRuleMask, rule.Name)
+		out.SidecarTargets = &bound
+		c.JSON(http.StatusCreated, out)
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed creating data masking rule: %v", err)
 	}
@@ -334,6 +366,18 @@ func Put(c *gin.Context) {
 	supportedEntityTypes := payload.SupportedEntityTypes
 	customEntityTypes := payload.CustomEntityTypes
 
+	// The sidecar block this write leaves on the rule, which is what the gate
+	// checks and what the row stores. A request that says nothing about it
+	// keeps the stored one rather than clearing it, so an edit to the
+	// entity types or the connections does not silently disarm a bound rule.
+	bind := sidecarbind.Request{
+		Kind: services.SidecarRuleMask, Name: req.Name, StoredName: existing.Name,
+		Spec: req.SidecarSpec, StoredSpec: existing.SidecarSpec, Targets: req.SidecarTargets,
+	}
+	if sidecarbind.Refuse(c, ctx.GetOrgID(), bind) {
+		return
+	}
+
 	evt := audit.NewEvent(audit.ResourceDataMasking, audit.ActionUpdate).
 		Resource(ruleID, req.Name).
 		Set("name", req.Name).
@@ -345,7 +389,7 @@ func Put(c *gin.Context) {
 		Set("attributes", req.Attributes)
 	defer func() { evt.Log(c) }()
 
-	rule, err := models.UpdateDataMaskingRule(&models.DataMaskingRule{
+	rule := &models.DataMaskingRule{
 		ID:                   ruleID,
 		OrgID:                ctx.GetOrgID(),
 		Name:                 req.Name,
@@ -353,20 +397,39 @@ func Put(c *gin.Context) {
 		SupportedEntityTypes: supportedEntityTypes,
 		CustomEntityTypes:    customEntityTypes,
 		ScoreThreshold:       req.ScoreThreshold,
+		SidecarSpec:          bind.EffectiveSpec(),
 		ConnectionIDs:        req.ConnectionIDs,
 		UpdatedAt:            time.Now().UTC(),
+	}
+	var attrErr, bindErr error
+	err = models.DB.Transaction(func(tx *gorm.DB) error {
+		if err := models.UpdateDataMaskingRuleTx(tx, rule); err != nil {
+			return err
+		}
+		if attrErr = upsertDatamaskingRuleAttributes(tx, ctx, req.Name, req.Attributes); attrErr != nil {
+			return attrErr
+		}
+		bindErr = sidecarbind.PersistTx(tx, ctx.GetOrgID(), services.SidecarRuleMask, rule.Name, req.SidecarTargets)
+		return bindErr
 	})
 	evt.Err(err)
+	switch {
+	case attrErr != nil:
+		httputils.AbortWithErr(c, http.StatusInternalServerError, attrErr, "Failed upserting data masking rule attributes: %v", attrErr)
+		return
+	case bindErr != nil:
+		httputils.AbortWithErr(c, http.StatusInternalServerError, bindErr, "Failed binding the rule to its sidecars: %v", bindErr)
+		return
+	}
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
 	case nil:
-		if err := upsertDatamaskingRuleAttributes(ctx, req.Name, req.Attributes); err != nil {
-			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed upserting data masking rule attributes: %v", err)
-			return
-		}
 		rule.Attributes = req.Attributes
-		c.JSON(http.StatusOK, toOpenApi(rule))
+		out := toOpenApi(rule)
+		bound := sidecarbind.Load(ctx.GetOrgID(), services.SidecarRuleMask, rule.Name)
+		out.SidecarTargets = &bound
+		c.JSON(http.StatusOK, out)
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed updating data masking rule: %v", err)
 	}
@@ -415,7 +478,13 @@ func Get(c *gin.Context) {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
 	case nil:
-		c.JSON(http.StatusOK, toOpenApi(rule))
+		out := toOpenApi(rule)
+		// Read back on the single-rule route, which is what the edit form
+		// loads. Without it the form opens with the picker empty and the next
+		// save unbinds the rule from every sidecar it reached.
+		bound := sidecarbind.Load(ctx.GetOrgID(), services.SidecarRuleMask, rule.Name)
+		out.SidecarTargets = &bound
+		c.JSON(http.StatusOK, out)
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching data masking rule: %v", err)
 	}
@@ -495,6 +564,7 @@ func toOpenApi(obj *models.DataMaskingRule) *openapi.DataMaskingRule {
 			SupportedEntityTypes:    entityTypes,
 			CustomEntityTypesEntrys: customEntityTypes,
 			ScoreThreshold:          obj.ScoreThreshold,
+			SidecarSpec:             obj.SidecarSpec,
 			ConnectionIDs:           obj.ConnectionIDs,
 			Attributes:              obj.Attributes,
 			UpdatedAt:               obj.UpdatedAt,
@@ -502,9 +572,9 @@ func toOpenApi(obj *models.DataMaskingRule) *openapi.DataMaskingRule {
 	}
 }
 
-func upsertDatamaskingRuleAttributes(ctx *storagev2.Context, ruleName string, attributeNames []string) error {
+func upsertDatamaskingRuleAttributes(db *gorm.DB, ctx *storagev2.Context, ruleName string, attributeNames []string) error {
 	orgID := uuid.MustParse(ctx.GetOrgID())
-	return models.UpsertDatamaskingRuleAttributes(models.DB, orgID, ruleName, attributeNames)
+	return models.UpsertDatamaskingRuleAttributes(db, orgID, ruleName, attributeNames)
 }
 
 // parseRequestPayload parses the openapi-shaped HTTP body and validates it

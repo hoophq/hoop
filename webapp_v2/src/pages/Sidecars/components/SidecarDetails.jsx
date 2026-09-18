@@ -161,7 +161,7 @@ export default function SidecarDetails({ sidecar, editable, listenerActions }) {
               <Stack gap="sm">
                 <Text fw={600}>Global settings</Text>
                 <Row label="Features">
-                  <FeaturePills features={configFeatures(config)} />
+                  <FeaturePills features={configFeatures(config, sidecar.bound_rules)} />
                 </Row>
                 <Row label="Audit">
                   <Badge variant={auditEnabled(config) ? 'active' : 'inactive'}>

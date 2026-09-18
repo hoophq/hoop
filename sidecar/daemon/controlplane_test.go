@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -983,5 +984,83 @@ func TestADiskModeAnswerNeverSeedsThePlane(t *testing.T) {
 	if cfg.cp == nil || !cfg.cp.diskMode || cfg.cp.imported {
 		t.Errorf("cp bookkeeping: diskMode=%v imported=%v, want true/false",
 			cfg.cp != nil && cfg.cp.diskMode, cfg.cp != nil && cfg.cp.imported)
+	}
+}
+
+// TestHandshakeReportsWhatTheSidecarIsRunning pins the reporting contract the
+// control plane's fleet view depends on. Without it the plane can only know
+// what it SENT, and a sidecar that refused a document keeps reporting itself
+// healthy on time while enforcing the previous rules.
+func TestHandshakeReportsWhatTheSidecarIsRunning(t *testing.T) {
+	var got []handshakeRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var hs handshakeRequest
+		_ = json.NewDecoder(r.Body).Decode(&hs)
+		got = append(got, hs)
+		w.Header().Set(ConfigRevisionHeader, "rev-2")
+		w.Header().Set(LicenseManagedHeader, "true")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"listeners":[]}`))
+	}))
+	defer srv.Close()
+
+	answer, err := fetchControlPlaneConfig(srv.URL, "hsc_token", handshakeRequest{
+		Version:         "1.2.3",
+		AppliedRevision: "rev-1",
+		LastOutcome:     "refused",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if answer.revision != "rev-2" {
+		t.Errorf("the plane's revision must come back from the header, got %q", answer.revision)
+	}
+	if !answer.managed {
+		t.Error("the license-managed header was not read")
+	}
+	if len(got) != 1 {
+		t.Fatalf("want one handshake, got %d", len(got))
+	}
+	if got[0].Version != "1.2.3" || got[0].AppliedRevision != "rev-1" || got[0].LastOutcome != "refused" {
+		t.Errorf("the request did not carry what this sidecar is running: %+v", got[0])
+	}
+}
+
+// TestHandshakeOmitsAnUnreportedDocument proves a sidecar that has handled
+// nothing says nothing, rather than sending empty strings a plane could read
+// as a real answer.
+func TestHandshakeOmitsAnUnreportedDocument(t *testing.T) {
+	var body []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"listeners":[]}`))
+	}))
+	defer srv.Close()
+
+	if _, err := fetchControlPlaneConfig(srv.URL, "hsc_token", handshakeRequest{Version: "1.2.3"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, key := range []string{"applied_revision", "last_outcome"} {
+		if bytes.Contains(body, []byte(key)) {
+			t.Errorf("a sidecar that handled no document must omit %q, got %s", key, body)
+		}
+	}
+}
+
+// TestReloadOutcomeNamesAreStable guards the wire vocabulary the plane stores
+// in sidecars.last_outcome. Renaming one turns every fleet row written by an
+// older sidecar into a value the plane does not recognise.
+func TestReloadOutcomeNamesAreStable(t *testing.T) {
+	for outcome, want := range map[reloadOutcome]string{
+		reloadApplied:   "applied",
+		reloadRestart:   "restart",
+		reloadRefused:   "refused",
+		reloadUnchanged: "unchanged",
+		reloadRetry:     "retry",
+	} {
+		if got := outcome.String(); got != want {
+			t.Errorf("outcome %d = %q, want %q", outcome, got, want)
+		}
 	}
 }

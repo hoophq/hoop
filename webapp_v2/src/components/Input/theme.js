@@ -1,4 +1,5 @@
 import {
+  Combobox,
   Input,
   InputBase,
   Textarea,
@@ -74,6 +75,33 @@ export const TextareaTheme = Textarea.extend({ defaultProps: SIZE_DEFAULT })
 export const MultiSelectTheme = MultiSelect.extend({ defaultProps: SIZE_DEFAULT })
 export const TagsInputTheme = TagsInput.extend({ defaultProps: SIZE_DEFAULT })
 export const PillsInputTheme = PillsInput.extend({ defaultProps: SIZE_DEFAULT })
+
+// The floating half of every Select, MultiSelect, Autocomplete and TagsInput.
+//
+// Mantine ships the dropdown with NO shadow (its Combobox defaultProps set
+// keepMounted, withinPortal, width and size, and nothing else), so the panel
+// arrived with a 1px border and nothing to lift it off the form. Over a field
+// it overlaps, it read as part of the page rather than above it.
+//
+// `md` is the same step the app's three Menu call sites already pass by hand
+// (SourceMenu, ActionMenu, OriginSurvey). One extension here means no call
+// site has to remember it, and every floating surface in the app agrees.
+//
+// The transition is Mantine's own `fade` -- it already declares it -- given a
+// duration instead of the 0ms it ships with. 0ms means the panel is simply
+// there on the next frame, which reads as a layout change rather than
+// something opening over the form; 120ms is long enough to see the direction
+// and short enough not to sit between a keystroke and its filtered results.
+//
+// Motion here is why src/theme.js turns respectReducedMotion on: a dropdown
+// that animates for a reader who asked the OS for less is a defect this
+// extension would otherwise introduce.
+export const ComboboxTheme = Combobox.extend({
+  defaultProps: {
+    shadow: 'md',
+    transitionProps: { transition: 'fade', duration: 120 },
+  },
+})
 
 // Descriptions and errors track the field size; labels are pinned to 14px/700
 // to match the section headings they sit under. Four Create forms each carried

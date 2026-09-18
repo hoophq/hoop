@@ -319,12 +319,63 @@ type SidecarResponse struct {
 	CreatedAt time.Time `json:"created_at"`
 	// The stored daemon configuration.
 	Configuration daemon.Config `json:"configuration" swaggertype:"object"`
-	// Version reported at the last handshake. Held in gateway memory, not
-	// stored, so it is empty until the sidecar calls and again after a
-	// gateway restart.
+	// BoundRules names the rules the control plane distributes to this
+	// sidecar, and the listener each one lands on.
+	//
+	// They are NOT inside Configuration and never will be: a bound rule is
+	// folded into the SERVED document on every handshake and nothing is
+	// stored, so one row update reaches a fleet. That is also why this field
+	// has to exist — a page reading Configuration alone shows a listener
+	// enforcing nothing while the sidecar enforces the rule.
+	BoundRules []SidecarRuleBinding `json:"bound_rules,omitempty"`
+	// Version reported at the last handshake. Empty until the sidecar calls.
 	Version string `json:"version,omitempty" example:"1.0.0"`
-	// Last time this gateway process saw the sidecar. Same lifetime as Version.
+	// Last time the sidecar handshook. Empty until it does.
 	LastSeenAt *time.Time `json:"last_seen_at,omitempty"`
+	// ServedRevision names the configuration last answered to this sidecar,
+	// and AppliedRevision the one it says it is running. Equal means the
+	// sidecar is enforcing what the control plane holds.
+	//
+	// Both are opaque: the control plane issues them and compares them to
+	// itself. Nothing parses them.
+	ServedRevision  string `json:"served_revision,omitempty" example:"8f14e45fceea167a5a36dedd4bea2543"`
+	AppliedRevision string `json:"applied_revision,omitempty" example:"8f14e45fceea167a5a36dedd4bea2543"`
+	// LastOutcome is what the sidecar did with the last configuration it
+	// handled: applied, unchanged, restart, refused or retry.
+	//
+	// It is the field that separates a sidecar enforcing the current rules
+	// from one that refused them and kept the old ones. A refusal, or a
+	// document needing a restart, leaves the sidecar handshaking on time
+	// with stale rules, and nothing else tells the two apart.
+	//
+	// Empty for a sidecar that has handled nothing yet, or one too old to
+	// report. Empty must read as unknown, never as converged.
+	LastOutcome string `json:"last_outcome,omitempty" example:"applied"`
+}
+
+// SidecarRuleTarget is one place a rule is enforced: a sidecar, and either one
+// of its listeners or all of them.
+//
+// An empty ListenerName is not "unset". It selects the configuration's
+// top-level block, which the daemon concatenates into every lane, and is how an
+// admin says "this whole sidecar".
+type SidecarRuleTarget struct {
+	// The sidecar that must enforce the rule
+	SidecarID string `json:"sidecar_id" format:"uuid" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// The listener on that sidecar, or empty for every listener it has
+	ListenerName string `json:"listener_name,omitempty" example:"appdb"`
+}
+
+// SidecarRuleBinding is the read side of a target: which rule, of which
+// feature, reaches which listener. It carries no rule body — the pages that
+// read it ask what a listener enforces, not what the rule says.
+type SidecarRuleBinding struct {
+	// Which feature the rule belongs to: guardrail, datamasking or analyzer
+	Kind string `json:"kind" example:"guardrail"`
+	// The rule's name
+	RuleName string `json:"rule_name" example:"no-destructive-sql"`
+	// The listener that enforces it
+	ListenerName string `json:"listener_name" example:"appdb"`
 }
 
 type SidecarCreateResponse struct {
@@ -379,6 +430,22 @@ type SidecarReviewResponse struct {
 type SidecarHandshakeRequest struct {
 	// Version of the sidecar binary
 	Version string `json:"version" binding:"required" example:"1.0.0"`
+	// AppliedRevision is the hoop-sidecar-config-revision of the last
+	// configuration this sidecar actually took on, which is not necessarily
+	// the last one it was served: a document it refused, or one needing a
+	// restart, leaves this at the revision still running.
+	//
+	// Optional. A sidecar too old to report it, or one that has handled no
+	// document yet, sends nothing and is reported as unknown rather than as
+	// converged.
+	AppliedRevision string `json:"applied_revision,omitempty" example:"8f14e45fceea167a5a36dedd4bea2543"`
+	// LastOutcome is what this sidecar concluded about that configuration:
+	// applied, restart, refused, unchanged or retry. It is the only way to
+	// tell a sidecar enforcing the current rules from one that refused them
+	// and kept the old ones while still handshaking on time.
+	//
+	// Optional, for the same reason as AppliedRevision.
+	LastOutcome string `json:"last_outcome,omitempty" example:"applied"`
 }
 
 // AgentSPIFFEMapping ties a SPIFFE identity (exact ID or prefix) to a Hoop
@@ -1990,6 +2057,26 @@ type GuardRailRuleRequest struct {
 	ConnectionIDs []string `json:"connection_ids" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7,15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D8"`
 	// Attributes associated with this guardrail rule
 	Attributes []string `json:"attributes" example:"production,pii"`
+
+	// SidecarSpec is this rule in the SIDECAR's own vocabulary, which the
+	// gateway's fields above do not share: seven rule types, an `operations` scope on every one of them,
+	// and `action: defer` to hand the verdict to a Rego policy. It holds the
+	// guardrails block the listener receives: {"rules": [...]}.
+	//
+	// A control plane field. A gateway has no sidecars and refuses it.
+	SidecarSpec json.RawMessage `json:"sidecar_spec,omitempty" swaggertype:"object"`
+
+	// SidecarTargets names the sidecar LISTENERS that must enforce this rule,
+	// which is how a control plane distributes it to a fleet. A listener, not
+	// a sidecar: the listener carries the protocol, and the protocol decides
+	// which rule types it can run at all.
+	//
+	// A POINTER because absent and empty are different instructions: absent
+	// leaves the bindings exactly as they are, and [] unbinds the rule from
+	// every sidecar. Without that distinction any write that did not mention
+	// the field -- a script fixing a typo, the gateway's own UI, an MCP call --
+	// would silently unbind a rule from the whole fleet.
+	SidecarTargets *[]SidecarRuleTarget `json:"sidecar_targets,omitempty"`
 }
 
 type GuardRailRuleResponse struct {
@@ -2046,6 +2133,11 @@ type GuardRailRuleResponse struct {
 	ConnectionIDs []string `json:"connection_ids" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7,15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D8"`
 	// Attributes associated with this guardrail rule
 	Attributes []string `json:"attributes" example:"production,pii"`
+	// SidecarSpec is this rule in the sidecar's own vocabulary; see the
+	// request type. Present only in a control plane.
+	SidecarSpec json.RawMessage `json:"sidecar_spec,omitempty" swaggertype:"object"`
+	// The sidecar listeners this rule is bound to, and therefore distributed to
+	SidecarTargets []SidecarRuleTarget `json:"sidecar_targets,omitempty"`
 	// The time the resource was created
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 	// The time the resource was updated
@@ -2429,6 +2521,26 @@ type DataMaskingRuleRequest struct {
 	ScoreThreshold *float64 `json:"score_threshold" example:"0.6"`
 	// The custom entity types that this rule applies to
 	CustomEntityTypesEntrys []CustomEntityTypesEntry `json:"custom_entity_types"`
+
+	// SidecarSpec is this rule in the SIDECAR's own vocabulary, which the
+	// gateway's fields above do not share: entities OR column names, a strategy (redact, mask,
+	// partial, hash) and a keep_last. It holds the mask block the listener
+	// receives: {"rules": [...]}.
+	//
+	// A control plane field. A gateway has no sidecars and refuses it.
+	SidecarSpec json.RawMessage `json:"sidecar_spec,omitempty" swaggertype:"object"`
+
+	// SidecarTargets names the sidecar LISTENERS that must apply this rule.
+	// A listener's mask block REPLACES the sidecar defaults rather than adding
+	// to them, which is why the binding is per listener.
+	//
+	// A POINTER because absent and empty are different instructions: absent
+	// leaves the bindings exactly as they are, and [] unbinds the rule from
+	// every sidecar. Without that distinction any write that did not mention
+	// the field -- a script fixing a typo, the gateway's own UI, an MCP call --
+	// would silently unbind a rule from the whole fleet.
+	SidecarTargets *[]SidecarRuleTarget `json:"sidecar_targets,omitempty"`
+
 	// The timestamp when the rule was updated
 	UpdatedAt time.Time `json:"updated_at" readonly:"true" example:"2023-08-15T14:30:45Z"`
 }
@@ -3731,6 +3843,25 @@ type AISessionAnalyzerRuleRequest struct {
 	// When true, the analyzer runs an agentic tool-calling loop over past sessions
 	// and resource metadata before classifying.
 	Agentic bool `json:"agentic" example:"false"`
+
+	// SidecarSpec is this rule in the SIDECAR's own vocabulary, which the
+	// gateway's fields above do not share: a trigger, risk actions spelled allow / warn / block /
+	// defer, and the per-lane cost overrides. It IS the analyzer block the
+	// listener receives.
+	//
+	// A control plane field. A gateway has no sidecars and refuses it.
+	SidecarSpec json.RawMessage `json:"sidecar_spec,omitempty" swaggertype:"object"`
+
+	// SidecarTargets names the sidecar LISTENERS that must run this analysis.
+	// One block per listener: two rules bound to one listener is refused
+	// rather than merged.
+	//
+	// A POINTER because absent and empty are different instructions: absent
+	// leaves the bindings exactly as they are, and [] unbinds the rule from
+	// every sidecar. Without that distinction any write that did not mention
+	// the field -- a script fixing a typo, the gateway's own UI, an MCP call --
+	// would silently unbind a rule from the whole fleet.
+	SidecarTargets *[]SidecarRuleTarget `json:"sidecar_targets,omitempty"`
 }
 
 type AISessionAnalyzerRule struct {
@@ -3749,6 +3880,13 @@ type AISessionAnalyzerRule struct {
 	// When true, the analyzer runs an agentic tool-calling loop over past sessions
 	// and resource metadata before classifying.
 	Agentic bool `json:"agentic" example:"false"`
+
+	// SidecarSpec is this rule in the sidecar's own vocabulary; see the
+	// request type. Present only in a control plane.
+	SidecarSpec json.RawMessage `json:"sidecar_spec,omitempty" swaggertype:"object"`
+	// The sidecar listeners this rule is bound to, and therefore distributed to
+	SidecarTargets []SidecarRuleTarget `json:"sidecar_targets,omitempty"`
+
 	// Set to "hoop" when the rule is materialized and lifecycle-managed by a
 	// protection profile; managed rules are read-only through this API
 	ManagedBy *string `json:"managed_by" readonly:"true" example:"hoop"`
