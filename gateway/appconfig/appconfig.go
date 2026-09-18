@@ -240,21 +240,7 @@ func Load(mode AppMode) error {
 	}
 
 	allowPlainText := os.Getenv("GATEWAY_ALLOW_PLAINTEXT") != "false" // Defaults to true
-	// One rule, one source of truth: the gateway serves TLS when it has a
-	// complete certificate pair to serve it with, and plaintext otherwise.
-	//
-	// This is the same condition GetTLSConfig() uses to build the listener's
-	// *tls.Config, and the two must not drift: this value also tells the
-	// in-process gRPC clients (clientexec and the protocol proxies) whether to
-	// dial their own gateway over TLS. Disagreement means they negotiate TLS
-	// against a plaintext listener, or the reverse.
-	//
-	// USE_TLS used to force it on and HOOP_TLSCA implied it. Neither can
-	// produce a certificate, so both only ever turned on a listener that had
-	// nothing to serve — which is why a self-signed certificate had to be
-	// generated to cover them. HOOP_TLSCA keeps its real job below: the CA
-	// those same clients verify the gateway's certificate against.
-	gatewayUseTLS := gatewayTLSKey != "" && gatewayTLSCert != ""
+	gatewayUseTLS := grpcClientTLSCa != "" || gatewayTLSKey != "" || gatewayTLSCert != ""
 
 	// RDP PII analysis defaults (overridable via env)
 	rdpPIISnapshotInterval := 0.25 // 250ms
