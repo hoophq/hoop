@@ -3,6 +3,7 @@ package services
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -33,6 +34,16 @@ func ComposeSidecarConfiguration(db *gorm.DB, sc *models.Sidecar) (daemon.Config
 	return composeSidecarConfiguration(db, sc, "", "")
 }
 
+// ErrSidecarRulesUnavailable marks a composition that could not be ATTEMPTED,
+// as opposed to one the rules make impossible.
+//
+// The two are different answers to an admin and different HTTP statuses. A
+// conflicting binding is theirs to fix and reads 422; a junction table that
+// would not read is ours and reads 500. Both still refuse, because a write
+// gate that passes when it could not run is the failure this whole file
+// exists to prevent.
+var ErrSidecarRulesUnavailable = errors.New("the rules bound to this sidecar could not be read")
+
 // composeSidecarConfiguration is ComposeSidecarConfiguration with one rule left
 // out of the fold.
 //
@@ -42,7 +53,13 @@ func ComposeSidecarConfiguration(db *gorm.DB, sc *models.Sidecar) (daemon.Config
 // edit that changes nothing about the count. skipName is the name the bindings
 // currently sit under, which a rename makes differ from the new one; empty
 // excludes nothing, which is what a read wants.
-func composeSidecarConfiguration(db *gorm.DB, sc *models.Sidecar, skipKind SidecarRuleKind, skipName string) (daemon.Config, error) {
+// candidates are bindings that are not in the database yet -- the write being
+// checked. They are folded in with the stored ones rather than on top of an
+// already-composed document, because the three features do not fold the same
+// way: a second mask rule REPLACES a lane's block and a second analyzer rule
+// on one lane is a conflict, so a candidate laid over a composed result would
+// under-count the first and never see the second.
+func composeSidecarConfiguration(db *gorm.DB, sc *models.Sidecar, skipKind SidecarRuleKind, skipName string, candidates ...models.BoundRule) (daemon.Config, error) {
 	cfg := daemon.Config(sc.Configuration)
 
 	orgID, err := uuid.Parse(sc.OrgID)
@@ -52,15 +69,15 @@ func composeSidecarConfiguration(db *gorm.DB, sc *models.Sidecar, skipKind Sidec
 
 	guardrails, err := models.ListGuardrailRulesForSidecar(db, orgID, sc.ID)
 	if err != nil {
-		return cfg, fmt.Errorf("failed loading the guardrail rules bound to this sidecar: %w", err)
+		return cfg, fmt.Errorf("%w: failed loading the guardrail rules bound to this sidecar: %v", ErrSidecarRulesUnavailable, err)
 	}
 	masking, err := models.ListDataMaskingRulesForSidecar(db, orgID, sc.ID)
 	if err != nil {
-		return cfg, fmt.Errorf("failed loading the data masking rules bound to this sidecar: %w", err)
+		return cfg, fmt.Errorf("%w: failed loading the data masking rules bound to this sidecar: %v", ErrSidecarRulesUnavailable, err)
 	}
 	analyzers, err := models.ListAnalyzerRulesForSidecar(db, orgID, sc.ID)
 	if err != nil {
-		return cfg, fmt.Errorf("failed loading the analyzer rules bound to this sidecar: %w", err)
+		return cfg, fmt.Errorf("%w: failed loading the analyzer rules bound to this sidecar: %v", ErrSidecarRulesUnavailable, err)
 	}
 	if skipName != "" {
 		switch skipKind {
@@ -71,6 +88,17 @@ func composeSidecarConfiguration(db *gorm.DB, sc *models.Sidecar, skipKind Sidec
 		case SidecarRuleAnalyzer:
 			analyzers = withoutRule(analyzers, skipName)
 		}
+	}
+	switch {
+	case len(candidates) == 0:
+	case skipKind == SidecarRuleGuardrail:
+		guardrails = append(guardrails, candidates...)
+	case skipKind == SidecarRuleMask:
+		masking = append(masking, candidates...)
+	case skipKind == SidecarRuleAnalyzer:
+		analyzers = append(analyzers, candidates...)
+	default:
+		return cfg, fmt.Errorf("cannot compose a candidate %s rule", skipKind)
 	}
 	return foldSidecarRules(cfg, guardrails, masking, analyzers)
 }

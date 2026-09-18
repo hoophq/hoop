@@ -2,6 +2,7 @@ package models_test
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/sidecar/daemon"
+	"github.com/lib/pq"
 )
 
 // TestGuardrailRuleListeners covers the binding end to end against a real
@@ -401,5 +403,150 @@ func TestEditingABoundRuleIsNotCountedTwice(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "rule limit") {
 		t.Errorf("the refusal must name the cap, got: %v", err)
+	}
+}
+
+// TestASecondAnalyzerRuleOnOneListenerIsRefusedAtTheWrite pins the refusal at
+// the write rather than at the handshake.
+//
+// A listener runs ONE analyzer block, so composition cannot build a document
+// with two -- and it fails for the WHOLE sidecar, not for the rule. Accepted
+// here, the save answers 200, the next handshake answers an error, every other
+// rule on every other lane stops being delivered, and the fleet sits on its
+// last good document until somebody thinks to look at a binding.
+func TestASecondAnalyzerRuleOnOneListenerIsRefusedAtTheWrite(t *testing.T) {
+	startTestDB(t)
+	orgID := uuid.MustParse(testOrgID)
+
+	sc := &models.Sidecar{
+		OrgID:     testOrgID,
+		Name:      "analyzer-conflict",
+		KeyHash:   models.HashAPIKey("hsc_analyzer_conflict_test"),
+		CreatedBy: "tests@hoop.dev",
+		Configuration: models.SidecarConfiguration{
+			Listeners: []daemon.ListenerConfig{{
+				Name: "appdb", Protocol: "postgres", Listen: ":5432", Upstream: "db:5432",
+				Analyzer: &daemon.LaneAnalyzerConfig{MaxCalls: 40},
+			}},
+		},
+	}
+	if err := models.CreateSidecar(models.DB, sc); err != nil {
+		t.Fatalf("seed sidecar: %v", err)
+	}
+
+	const spec = `{"trigger":{"operations":["insert","update","delete"]},"high":"block"}`
+	first := &models.AISessionAnalyzerRules{
+		OrgID: orgID, Name: "risk-a", ConnectionNames: pq.StringArray{},
+		SidecarSpec: json.RawMessage(spec),
+	}
+	if err := models.CreateAISessionAnalyzerRule(first); err != nil {
+		t.Fatalf("seed analyzer rule: %v", err)
+	}
+	targets := []models.SidecarRuleTarget{{SidecarID: sc.ID, ListenerName: "appdb"}}
+	if err := models.SetAnalyzerRuleListeners(models.DB, orgID, first.Name, targets); err != nil {
+		t.Fatalf("bind: %v", err)
+	}
+
+	// Editing the rule that already owns the lane is not a conflict with
+	// itself: the stored version is left out and the incoming one takes its
+	// place.
+	err := services.ValidateSidecarRuleTargets(models.DB, testOrgID,
+		services.SidecarRuleAnalyzer, first.Name, first.Name, json.RawMessage(spec), targets)
+	if err != nil {
+		t.Fatalf("editing the rule that owns the lane was refused: %v", err)
+	}
+
+	// A DIFFERENT rule on the same lane is the conflict.
+	err = services.ValidateSidecarRuleTargets(models.DB, testOrgID,
+		services.SidecarRuleAnalyzer, "risk-b", "", json.RawMessage(spec), targets)
+	if err == nil {
+		t.Fatal("a second analyzer rule on one listener must be refused at the write")
+	}
+	if !strings.Contains(err.Error(), "risk-a") || !strings.Contains(err.Error(), "one analyzer block") {
+		t.Errorf("the refusal must name the rule that already owns the lane, got: %v", err)
+	}
+}
+
+// TestAConfigurationEditCannotOrphanABoundRule pins the other half of the same
+// failure: the listener moving out from under the binding.
+//
+// Listener names ARE the binding key, so dropping a bound lane, or renaming
+// it, breaks the next handshake for the whole sidecar exactly as a conflicting
+// rule does -- and from a screen that never mentions rules.
+func TestAConfigurationEditCannotOrphanABoundRule(t *testing.T) {
+	startTestDB(t)
+	orgID := uuid.MustParse(testOrgID)
+
+	sc := &models.Sidecar{
+		OrgID:     testOrgID,
+		Name:      "listener-edit",
+		KeyHash:   models.HashAPIKey("hsc_listener_edit_test"),
+		CreatedBy: "tests@hoop.dev",
+		Configuration: models.SidecarConfiguration{
+			Listeners: []daemon.ListenerConfig{
+				{Name: "appdb", Protocol: "postgres", Listen: ":5432", Upstream: "db:5432"},
+				{Name: "reporting", Protocol: "mysql", Listen: ":3306", Upstream: "dw:3306"},
+			},
+		},
+	}
+	if err := models.CreateSidecar(models.DB, sc); err != nil {
+		t.Fatalf("seed sidecar: %v", err)
+	}
+	rule := &models.GuardRailRules{
+		OrgID:  testOrgID,
+		ID:     uuid.NewString(),
+		Name:   "no-drop",
+		Input:  map[string]any{"rules": []any{}},
+		Output: map[string]any{"rules": []any{}},
+		SidecarSpec: json.RawMessage(
+			`{"rules":[{"name":"no-drop","type":"table","tables":["customers"],"access":"write"}]}`),
+	}
+	if err := models.UpsertGuardRailRuleWithConnections(rule, nil, true); err != nil {
+		t.Fatalf("seed guardrail rule: %v", err)
+	}
+	err := models.SetGuardrailRuleListeners(models.DB, orgID, rule.Name,
+		[]models.SidecarRuleTarget{{SidecarID: sc.ID, ListenerName: "appdb"}})
+	if err != nil {
+		t.Fatalf("bind: %v", err)
+	}
+
+	// The configuration as stored still carries the lane: nothing to refuse.
+	if err := services.ValidateSidecarBindingsForConfiguration(models.DB, sc); err != nil {
+		t.Fatalf("the stored configuration was refused: %v", err)
+	}
+
+	// The same edit an admin makes when they rename or retire a listener.
+	edited := *sc
+	edited.Configuration = models.SidecarConfiguration{
+		Listeners: []daemon.ListenerConfig{
+			{Name: "appdb-v2", Protocol: "postgres", Listen: ":5432", Upstream: "db:5432"},
+			{Name: "reporting", Protocol: "mysql", Listen: ":3306", Upstream: "dw:3306"},
+		},
+	}
+	err = services.ValidateSidecarBindingsForConfiguration(models.DB, &edited)
+	if err == nil {
+		t.Fatal("dropping a bound listener must be refused at the write")
+	}
+	var broken services.ErrSidecarBindingBroken
+	if !errors.As(err, &broken) {
+		t.Fatalf("want a binding refusal the API answers 422, got %T: %v", err, err)
+	}
+	if !strings.Contains(err.Error(), "no-drop") || !strings.Contains(err.Error(), "appdb") {
+		t.Errorf("the refusal must name the rule and the listener, got: %v", err)
+	}
+
+	// A protocol change is the quieter version: the lane is still there and
+	// still named, and the rule it carries is one an ssh lane cannot read.
+	reprotocoled := *sc
+	reprotocoled.Configuration = models.SidecarConfiguration{
+		Listeners: []daemon.ListenerConfig{
+			{Name: "appdb", Protocol: "ssh", Listen: ":2222", Upstream: "host:22",
+				SSH: &daemon.SSHConfig{HostKey: "/etc/hoop/hostkey", TrustedCA: "/etc/hoop/ca.pub"}},
+		},
+	}
+	// An ssh lane reads a byte stream, not a parsed statement, so it has no
+	// table to match: the sidecar refuses a `table` rule there at STARTUP.
+	if err := services.ValidateSidecarBindingsForConfiguration(models.DB, &reprotocoled); err == nil {
+		t.Error("an ssh lane carrying a table guardrail must be refused at the write")
 	}
 }

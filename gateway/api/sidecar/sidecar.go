@@ -91,6 +91,58 @@ func refuseOverCap(c *gin.Context, orgID string, cfg daemon.Config) bool {
 	return false
 }
 
+// writeSidecarConfiguration commits a configuration edit and refuses one the
+// sidecar could not serve.
+//
+// One transaction around the write and both checks, because both are about the
+// document AS STORED: the cap counts what it authors, and the bindings name
+// its listeners. Checking either outside the transaction reads a document
+// another writer can replace before the write lands, and then reports on one
+// nobody has.
+//
+// The binding check is the one a listener edit needs. Listener names are the
+// binding key, so removing, renaming, or re-protocoling a bound lane breaks
+// the NEXT handshake -- and it breaks it for the whole sidecar, not for the
+// rule: composition answers an error, and every rule on every other lane stops
+// being delivered with it. The sidecar keeps its last good document and goes
+// on looking healthy while an admin edits rules that no longer reach it.
+func writeSidecarConfiguration(db *gorm.DB, licenseData json.RawMessage, write func(tx *gorm.DB) (*models.Sidecar, error)) (*models.Sidecar, error) {
+	var item *models.Sidecar
+	err := db.Transaction(func(tx *gorm.DB) error {
+		sc, err := write(tx)
+		if err != nil {
+			return err
+		}
+		if err := services.CheckSidecarConfigurationLimits(daemon.Config(sc.Configuration), licenseData); err != nil {
+			return err
+		}
+		if err := services.ValidateSidecarBindingsForConfiguration(tx, sc); err != nil {
+			return err
+		}
+		item = sc
+		return nil
+	})
+	return item, err
+}
+
+// answerSidecarWrite maps what writeSidecarConfiguration refused onto a status.
+// An over-cap document and a broken binding are the admin's to fix and read
+// 422; a check that could not run is ours and reads 500.
+func answerSidecarWrite(c *gin.Context, err error) {
+	var overCap services.ErrSidecarConfigOverCap
+	var broken services.ErrSidecarBindingBroken
+	switch {
+	case errors.Is(err, models.ErrNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"message": "sidecar not found"})
+	case errors.As(err, &overCap):
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": overCap.Error()})
+	case errors.As(err, &broken):
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": broken.Error()})
+	default:
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed writing sidecar configuration")
+	}
+}
+
 // licenseManagedHeader tells a sidecar that this gateway owns the licensing
 // decision, so an absent license in the answer means the organization holds
 // none rather than "this gateway does not know about the feature".
@@ -304,17 +356,17 @@ func Put(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": licenseIsNotASidecarKey})
 		return
 	}
-	if refuseOverCap(c, ctx.OrgID, cfg) {
+	licenseData, err := models.GetOrgLicenseData(models.DB, ctx.OrgID)
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the organization license")
 		return
 	}
-	item, err := models.UpdateSidecarConfiguration(models.DB, ctx.OrgID,
-		c.Param("nameOrID"), models.SidecarConfiguration(cfg))
+	item, err := writeSidecarConfiguration(models.DB, licenseData, func(tx *gorm.DB) (*models.Sidecar, error) {
+		return models.UpdateSidecarConfiguration(tx, ctx.OrgID,
+			c.Param("nameOrID"), models.SidecarConfiguration(cfg))
+	})
 	if err != nil {
-		if errors.Is(err, models.ErrNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"message": "sidecar not found"})
-			return
-		}
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating sidecar")
+		answerSidecarWrite(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, toResponse(*item))
@@ -350,32 +402,15 @@ func Patch(c *gin.Context) {
 		return
 	}
 	// A patch is a partial document: what it authors in total is only known
-	// once the merge has run. So the merge and the cap check share one
-	// transaction and an over-cap result rolls the merge back, rather than
-	// the gateway reading the stored document first and racing another
-	// writer between the read and the write.
-	var item *models.Sidecar
-	err = models.DB.Transaction(func(tx *gorm.DB) error {
-		patched, err := models.PatchSidecarConfiguration(tx, ctx.OrgID, c.Param("nameOrID"), merge, removeLoadFromDisk)
-		if err != nil {
-			return err
-		}
-		if err := services.CheckSidecarConfigurationLimits(daemon.Config(patched.Configuration), licenseData); err != nil {
-			return err
-		}
-		item = patched
-		return nil
+	// once the merge has run. So the merge and the checks share one
+	// transaction and a refusal rolls the merge back, rather than the gateway
+	// reading the stored document first and racing another writer between the
+	// read and the write.
+	item, err := writeSidecarConfiguration(models.DB, licenseData, func(tx *gorm.DB) (*models.Sidecar, error) {
+		return models.PatchSidecarConfiguration(tx, ctx.OrgID, c.Param("nameOrID"), merge, removeLoadFromDisk)
 	})
 	if err != nil {
-		var overCap services.ErrSidecarConfigOverCap
-		switch {
-		case errors.Is(err, models.ErrNotFound):
-			c.JSON(http.StatusNotFound, gin.H{"message": "sidecar not found"})
-		case errors.As(err, &overCap):
-			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": overCap.Error()})
-		default:
-			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed patching sidecar configuration")
-		}
+		answerSidecarWrite(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, toResponse(*item))

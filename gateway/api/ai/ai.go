@@ -1,6 +1,7 @@
 package apiai
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -367,7 +368,7 @@ func CreateSessionAnalyzerRule(c *gin.Context) {
 	}
 
 	if sidecarbind.Refuse(c, ctx.GetOrgID(), sidecarbind.Request{
-		Kind: services.SidecarRuleAnalyzer, Name: rule.Name, StoredName: rule.Name,
+		Kind: services.SidecarRuleAnalyzer, Name: rule.Name, StoredName: "",
 		Spec: req.SidecarSpec, Targets: req.SidecarTargets,
 	}) {
 		return
@@ -427,9 +428,16 @@ func UpdateSessionAnalyzerRule(c *gin.Context) {
 		return
 	}
 
-	if existing, gerr := models.GetAISessionAnalyzerRule(orgID, c.Param("name")); gerr == nil && existing.ManagedBy != nil {
+	// Read once and keep it: the managed-by refusal below and the sidecar
+	// block this write preserves both come off the stored row.
+	existing, gerr := models.GetAISessionAnalyzerRule(orgID, c.Param("name"))
+	if gerr == nil && existing.ManagedBy != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "this rule is managed by Hoop and cannot be modified directly"})
 		return
+	}
+	var storedSpec json.RawMessage
+	if gerr == nil && existing != nil {
+		storedSpec = existing.SidecarSpec
 	}
 
 	lowTier, mediumTier, highTier, err := validateAnalyzerRuleRequest(orgID, req)
@@ -456,7 +464,6 @@ func UpdateSessionAnalyzerRule(c *gin.Context) {
 		ConnectionNames: req.ConnectionNames,
 		CustomPrompt:    req.CustomPrompt,
 		Agentic:         req.Agentic,
-		SidecarSpec:     req.SidecarSpec,
 		RiskEvaluation: models.AISessionAnalyzerRiskEvaluation{
 			LowRisk:    toModelRiskTier(lowTier),
 			MediumRisk: toModelRiskTier(mediumTier),
@@ -464,12 +471,18 @@ func UpdateSessionAnalyzerRule(c *gin.Context) {
 		},
 	}
 
-	if sidecarbind.Refuse(c, ctx.GetOrgID(), sidecarbind.Request{
+	// The sidecar block this write leaves on the rule, which is what the gate
+	// checks and what the row stores. A request that says nothing about it
+	// keeps the stored one rather than clearing it, so an edit to the prompt
+	// or the connections does not silently disarm a bound rule.
+	bind := sidecarbind.Request{
 		Kind: services.SidecarRuleAnalyzer, Name: rule.Name, StoredName: rule.Name,
-		Spec: req.SidecarSpec, Targets: req.SidecarTargets,
-	}) {
+		Spec: req.SidecarSpec, StoredSpec: storedSpec, Targets: req.SidecarTargets,
+	}
+	if sidecarbind.Refuse(c, ctx.GetOrgID(), bind) {
 		return
 	}
+	rule.SidecarSpec = bind.EffectiveSpec()
 
 	err = models.UpdateAISessionAnalyzerRule(rule)
 	switch err {

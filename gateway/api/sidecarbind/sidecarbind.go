@@ -13,6 +13,7 @@ package sidecarbind
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -36,11 +37,33 @@ type Request struct {
 	// out of its count.
 	Name, StoredName string
 	// Spec is the rule in the sidecar's own vocabulary. Nil means the request
-	// did not mention it.
+	// did not mention it, and StoredSpec stands in for it; an explicit JSON
+	// null clears it, which a bound rule is then refused for.
 	Spec json.RawMessage
+	// StoredSpec is what the rule carries in the database today, so a write
+	// that says nothing about the sidecar block keeps it rather than erasing
+	// it. Empty on a create.
+	StoredSpec json.RawMessage
 	// Targets is the listener set. Nil means the request did not mention it,
 	// which LEAVES THE BINDINGS ALONE; an empty slice unbinds everywhere.
 	Targets *[]openapi.SidecarRuleTarget
+}
+
+// EffectiveSpec is the sidecar block this write leaves on the rule.
+//
+// Omission preserves, for the same reason it does for the targets: a form that
+// edits a description, a connection list or an attribute sends the fields it
+// owns, and reading its silence as "clear the sidecar block" would unbind a
+// fleet's policy from a screen that never mentioned sidecars. An explicit null
+// still clears, which is how the block is removed on purpose.
+//
+// The handler persists THIS value, not req.Spec. Validating one document and
+// storing another is how a rule gets saved that no sidecar can run.
+func (r Request) EffectiveSpec() json.RawMessage {
+	if r.Spec == nil {
+		return r.StoredSpec
+	}
+	return r.Spec
 }
 
 // Refuse validates a rule against what a sidecar can run and reports whether
@@ -69,37 +92,74 @@ func Refuse(c *gin.Context, orgID string, req Request) bool {
 		abort(c, err)
 		return true
 	}
-	targets := toModelTargets(req.Targets)
 
-	// Is this rule distributed at all? A rule with no binding is stored and
-	// reaches nobody, which is a valid state, and it is not checked against a
-	// sidecar it never touches.
-	bound := len(targets) > 0
-	for _, name := range []string{req.Name, req.StoredName} {
-		if bound || name == "" {
-			continue
-		}
-		existing, err := boundSidecars(req.Kind, org, name)
-		if err != nil {
+	targets, err := effectiveTargets(req.Targets, func() ([]models.SidecarRuleTarget, error) {
+		return storedTargets(req.Kind, org, bindingName(req))
+	})
+	if err != nil {
+		// A malformed list is the admin's; a stored list that would not read
+		// is ours. Both refuse, and the second one says so.
+		if _, bad := err.(malformedTargets); bad {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		} else {
 			abort(c, err)
-			return true
 		}
-		bound = len(existing) > 0
+		return true
 	}
-	if !bound {
+	// A rule bound nowhere is stored and reaches nobody, which is a valid
+	// state and not one to check against a sidecar it never touches. It is
+	// also the state an admin unbinding a broken rule is trying to reach, so
+	// refusing it here would leave them unable to.
+	if len(targets) == 0 {
 		return false
 	}
 
-	if err := services.ValidateSidecarRuleSpec(req.Kind, req.Name, req.Spec); err != nil {
+	spec := req.EffectiveSpec()
+	if err := services.ValidateSidecarRuleSpec(req.Kind, req.Name, spec); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return true
 	}
-	err = services.ValidateSidecarRuleTargets(models.DB, orgID, req.Kind, req.Name, req.StoredName, req.Spec, targets)
-	if err != nil {
+	err = services.ValidateSidecarRuleTargets(models.DB, orgID, req.Kind, req.Name, req.StoredName, spec, targets)
+	switch {
+	case err == nil:
+		return false
+	case errors.Is(err, services.ErrSidecarRulesUnavailable):
+		// The check could not run. It still refuses -- a gate that passes when
+		// it could not read is the failure it exists to prevent -- but it says
+		// 500, because there is nothing in the form for the admin to fix.
+		abort(c, err)
+	default:
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
-		return true
 	}
-	return false
+	return true
+}
+
+// effectiveTargets is where the rule will be bound AFTER this write, which is
+// what the write has to be valid against.
+//
+// A request that names targets replaces the set. One that does not keeps the
+// set the rule already has -- and those bindings go on serving the spec this
+// write stores, so they are what it is checked against. Reading the absent
+// list as "no targets" instead is an edit that walks past every listener,
+// protocol and cap check while the fleet keeps enforcing the result.
+//
+// stored is a func rather than a slice so the caller does not read the
+// junction table on a write that replaces it anyway.
+func effectiveTargets(requested *[]openapi.SidecarRuleTarget, stored func() ([]models.SidecarRuleTarget, error)) ([]models.SidecarRuleTarget, error) {
+	if requested != nil {
+		return toModelTargets(requested)
+	}
+	return stored()
+}
+
+// bindingName is the name the rule's bindings sit under right now. A rename
+// makes it differ from the name being written, and the junction rows follow
+// the rule row through the foreign key's ON UPDATE CASCADE afterwards.
+func bindingName(req Request) string {
+	if req.StoredName != "" {
+		return req.StoredName
+	}
+	return req.Name
 }
 
 // Persist replaces the rule's target set. Called only after the rule row
@@ -116,13 +176,17 @@ func Persist(orgID string, kind services.SidecarRuleKind, ruleName string, targe
 	if err != nil {
 		return err
 	}
+	rows, err := toModelTargets(targets)
+	if err != nil {
+		return err
+	}
 	switch kind {
 	case services.SidecarRuleGuardrail:
-		return models.SetGuardrailRuleListeners(models.DB, org, ruleName, toModelTargets(targets))
+		return models.SetGuardrailRuleListeners(models.DB, org, ruleName, rows)
 	case services.SidecarRuleMask:
-		return models.SetDataMaskingRuleListeners(models.DB, org, ruleName, toModelTargets(targets))
+		return models.SetDataMaskingRuleListeners(models.DB, org, ruleName, rows)
 	case services.SidecarRuleAnalyzer:
-		return models.SetAnalyzerRuleListeners(models.DB, org, ruleName, toModelTargets(targets))
+		return models.SetAnalyzerRuleListeners(models.DB, org, ruleName, rows)
 	}
 	return fmt.Errorf("unknown sidecar rule kind %q", kind)
 }
@@ -158,30 +222,47 @@ func Load(orgID string, kind services.SidecarRuleKind, ruleName string) []openap
 	return out
 }
 
-func boundSidecars(kind services.SidecarRuleKind, orgID uuid.UUID, ruleName string) ([]string, error) {
+// storedTargets is where the rule is bound today.
+func storedTargets(kind services.SidecarRuleKind, orgID uuid.UUID, ruleName string) ([]models.SidecarRuleTarget, error) {
+	if ruleName == "" {
+		return nil, nil
+	}
 	switch kind {
 	case services.SidecarRuleGuardrail:
-		return models.SidecarsBoundToGuardrailRule(models.DB, orgID, ruleName)
+		return models.ListGuardrailRuleTargets(models.DB, orgID, ruleName)
 	case services.SidecarRuleMask:
-		return models.SidecarsBoundToDataMaskingRule(models.DB, orgID, ruleName)
+		return models.ListDataMaskingRuleTargets(models.DB, orgID, ruleName)
 	case services.SidecarRuleAnalyzer:
-		return models.SidecarsBoundToAnalyzerRule(models.DB, orgID, ruleName)
+		return models.ListAnalyzerRuleTargets(models.DB, orgID, ruleName)
 	}
 	return nil, fmt.Errorf("unknown sidecar rule kind %q", kind)
 }
 
-func toModelTargets(in *[]openapi.SidecarRuleTarget) []models.SidecarRuleTarget {
+// malformedTargets is a target list the CLIENT sent wrong, as opposed to one
+// that could not be read. The first reads 422, the second 500.
+type malformedTargets struct{ reason string }
+
+func (e malformedTargets) Error() string { return e.reason }
+
+// toModelTargets refuses a malformed entry rather than dropping it.
+//
+// Dropping is what makes it dangerous: a list of nothing but malformed entries
+// then reads as an empty list, which is the admin unbinding the rule
+// everywhere -- so a client bug that sends a target with no sidecar_id deletes
+// a fleet's bindings and answers 200.
+func toModelTargets(in *[]openapi.SidecarRuleTarget) ([]models.SidecarRuleTarget, error) {
 	if in == nil {
-		return nil
+		return nil, nil
 	}
 	out := make([]models.SidecarRuleTarget, 0, len(*in))
-	for _, t := range *in {
+	for i, t := range *in {
 		if t.SidecarID == "" {
-			continue
+			return nil, malformedTargets{fmt.Sprintf("sidecar target %d names no sidecar; "+
+				"every target is one listener on one sidecar", i+1)}
 		}
 		out = append(out, models.SidecarRuleTarget{SidecarID: t.SidecarID, ListenerName: t.ListenerName})
 	}
-	return out
+	return out, nil
 }
 
 func abort(c *gin.Context, err error) {

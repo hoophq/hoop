@@ -353,10 +353,15 @@ func Put(c *gin.Context) {
 	supportedEntityTypes := payload.SupportedEntityTypes
 	customEntityTypes := payload.CustomEntityTypes
 
-	if sidecarbind.Refuse(c, ctx.GetOrgID(), sidecarbind.Request{
+	// The sidecar block this write leaves on the rule, which is what the gate
+	// checks and what the row stores. A request that says nothing about it
+	// keeps the stored one rather than clearing it, so an edit to the
+	// entity types or the connections does not silently disarm a bound rule.
+	bind := sidecarbind.Request{
 		Kind: services.SidecarRuleMask, Name: req.Name, StoredName: existing.Name,
-		Spec: req.SidecarSpec, Targets: req.SidecarTargets,
-	}) {
+		Spec: req.SidecarSpec, StoredSpec: existing.SidecarSpec, Targets: req.SidecarTargets,
+	}
+	if sidecarbind.Refuse(c, ctx.GetOrgID(), bind) {
 		return
 	}
 
@@ -379,7 +384,7 @@ func Put(c *gin.Context) {
 		SupportedEntityTypes: supportedEntityTypes,
 		CustomEntityTypes:    customEntityTypes,
 		ScoreThreshold:       req.ScoreThreshold,
-		SidecarSpec:          req.SidecarSpec,
+		SidecarSpec:          bind.EffectiveSpec(),
 		ConnectionIDs:        req.ConnectionIDs,
 		UpdatedAt:            time.Now().UTC(),
 	})

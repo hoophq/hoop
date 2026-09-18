@@ -193,6 +193,18 @@ func Put(c *gin.Context) {
 	// Filter out empty connection IDs
 	validConnectionIDs := filterEmptyIDs(req.ConnectionIDs)
 
+	// The sidecar block this write leaves on the rule, which is what the gate
+	// checks and what the row stores. A request that says nothing about it
+	// keeps the stored one rather than clearing it, so an edit to the
+	// description or the connections does not silently disarm a bound rule.
+	bind := sidecarbind.Request{
+		Kind: services.SidecarRuleGuardrail, Name: req.Name, StoredName: existing.Name,
+		Spec: req.SidecarSpec, StoredSpec: existing.SidecarSpec, Targets: req.SidecarTargets,
+	}
+	if sidecarbind.Refuse(c, ctx.GetOrgID(), bind) {
+		return
+	}
+
 	rule := &models.GuardRailRules{
 		OrgID:       ctx.GetOrgID(),
 		ID:          ruleID,
@@ -200,15 +212,8 @@ func Put(c *gin.Context) {
 		Description: req.Description,
 		Input:       req.Input,
 		Output:      req.Output,
-		SidecarSpec: req.SidecarSpec,
+		SidecarSpec: bind.EffectiveSpec(),
 		UpdatedAt:   time.Now().UTC(),
-	}
-
-	if sidecarbind.Refuse(c, ctx.GetOrgID(), sidecarbind.Request{
-		Kind: services.SidecarRuleGuardrail, Name: req.Name, StoredName: existing.Name,
-		Spec: req.SidecarSpec, Targets: req.SidecarTargets,
-	}) {
-		return
 	}
 
 	// Update guardrail and associate connections in a single transaction
@@ -234,7 +239,7 @@ func Put(c *gin.Context) {
 			Output:         rule.Output,
 			ConnectionIDs:  rule.ConnectionIDs,
 			Attributes:     req.Attributes,
-			SidecarSpec:    req.SidecarSpec,
+			SidecarSpec:    rule.SidecarSpec,
 			SidecarTargets: sidecarbind.Load(ctx.GetOrgID(), services.SidecarRuleGuardrail, rule.Name),
 			CreatedAt:      rule.CreatedAt,
 			UpdatedAt:      rule.UpdatedAt,

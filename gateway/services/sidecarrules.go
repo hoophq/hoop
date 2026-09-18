@@ -2,9 +2,11 @@ package services
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/hoophq/hoop/sidecar/policy"
@@ -102,11 +104,13 @@ func ValidateSidecarRuleSpec(kind SidecarRuleKind, ruleName string, spec json.Ra
 // lane's own analyzer enabled. All four are startup refusals on the sidecar,
 // which means a rule saved without this check bricks a fleet at its next
 // restart rather than at the save.
-// storedName is the name the rule's bindings currently sit under, so the cap
-// check can leave the version already in the database out of its count. A
-// rename makes it differ from ruleName; empty means the rule is new.
+// storedName is the name the rule's bindings currently sit under, so the
+// composed check can leave the version already in the database out. A rename
+// makes it differ from ruleName; empty means the rule is new.
 func ValidateSidecarRuleTargets(db *gorm.DB, orgID string, kind SidecarRuleKind, ruleName, storedName string, spec json.RawMessage, targets []models.SidecarRuleTarget) error {
 	seen := map[string]*models.Sidecar{}
+	order := []string{}
+	candidates := map[string][]models.BoundRule{}
 	for _, t := range targets {
 		sc, ok := seen[t.SidecarID]
 		if !ok {
@@ -116,6 +120,7 @@ func ValidateSidecarRuleTargets(db *gorm.DB, orgID string, kind SidecarRuleKind,
 				return fmt.Errorf("sidecar %q was not found in this organization", t.SidecarID)
 			}
 			seen[t.SidecarID] = sc
+			order = append(order, t.SidecarID)
 		}
 		// A rule binds to one listener, never to a sidecar as a whole. The
 		// sidecar-wide binding would write the top-level block, which a lane
@@ -143,61 +148,137 @@ func ValidateSidecarRuleTargets(db *gorm.DB, orgID string, kind SidecarRuleKind,
 		if err := validateSpecForLane(kind, ruleName, spec, sc.Name, *lane); err != nil {
 			return err
 		}
-		if err := checkCapWithRule(db, sc, kind, ruleName, storedName, spec, t.ListenerName); err != nil {
+		candidates[t.SidecarID] = append(candidates[t.SidecarID], models.BoundRule{
+			RuleName: ruleName, ListenerName: t.ListenerName, Spec: spec,
+		})
+	}
+	// One composition per sidecar, carrying EVERY binding this write adds to
+	// it. Per target would count a rule bound to three lanes as one rule, three
+	// times over, and never see the cap the third one breaks.
+	for _, id := range order {
+		if err := checkComposedWithRule(db, seen[id], kind, ruleName, storedName, candidates[id]); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// checkCapWithRule refuses a binding that would push a sidecar past the free
-// tier's rule cap.
+// checkComposedWithRule builds the document this write would make the sidecar
+// serve, and refuses a write the sidecar could not run.
 //
-// The cap counts what the SERVED document authors, so a rule bound here raises
-// a count the stored configuration's own check never saw. Without this the
-// save succeeds, the running sidecar refuses the document and keeps its old
-// rules, and every pod that reschedules afterwards -- a helm upgrade, a node
-// drain -- hard-exits at boot, all at once, hours later.
+// Two different refusals come out of the one composition, which is why they
+// are one function.
+//
+// The cap: it counts what the SERVED document authors, so a rule bound here
+// raises a count the stored configuration's own check never saw. Without this
+// the save succeeds, the running sidecar refuses the document and keeps its
+// old rules, and every pod that reschedules afterwards -- a helm upgrade, a
+// node drain -- hard-exits at boot, all at once, hours later.
+//
+// The conflict: a listener runs ONE analyzer block, so a second analyzer rule
+// bound to a lane that already has one is a document composition cannot build
+// at all. Unrefused here it is worse than a bad rule: the handshake fails for
+// the WHOLE sidecar, every other rule on it stops being delivered, and the
+// fleet sits on its last good document until somebody finds the binding.
 //
 // It composes what the document WOULD be and asks the daemon's own counter, so
 // there is no second arithmetic to keep in step with it.
-func checkCapWithRule(db *gorm.DB, sc *models.Sidecar, kind SidecarRuleKind, ruleName, storedName string, spec json.RawMessage, listenerName string) error {
+func checkComposedWithRule(db *gorm.DB, sc *models.Sidecar, kind SidecarRuleKind, ruleName, storedName string, candidates []models.BoundRule) error {
 	licenseData, err := models.GetOrgLicenseData(db, sc.OrgID)
 	if err != nil {
-		// A missing org is the caller's problem, not this check's: the write
-		// itself fails on the same row a moment later.
-		return nil
+		return fmt.Errorf("%w: reading the license of the organization owning sidecar %q: %v",
+			ErrSidecarRulesUnavailable, sc.Name, err)
 	}
-	// Without the rule's own stored version: an edit would otherwise count the
-	// old content and the new one as two rules and refuse itself at the cap.
-	composed, err := composeSidecarConfiguration(db, sc, kind, storedName)
+	// Composed with the rule's own stored version left out and the incoming
+	// one folded in its place: an edit would otherwise count the old content
+	// and the new one as two rules and refuse itself at a cap it does not move.
+	withRule, err := composeSidecarConfiguration(db, sc, kind, storedName, candidates...)
 	if err != nil {
-		// Composition is already broken for a reason this binding did not
-		// cause. Reporting it here would name the wrong rule.
-		return nil
+		if errors.Is(err, ErrSidecarRulesUnavailable) {
+			return err
+		}
+		return fmt.Errorf("binding %s rule %q to sidecar %q: %w", kind, ruleName, sc.Name, err)
 	}
-	// The rule being written is not in the database yet, or was just excluded
-	// from the fold above, so it is folded in by hand on top.
-	bound := []models.BoundRule{{RuleName: ruleName, ListenerName: listenerName, Spec: spec}}
-	var withRule daemon.Config
-	switch kind {
-	case SidecarRuleGuardrail:
-		withRule, err = foldSidecarRules(composed, bound, nil, nil)
-	case SidecarRuleMask:
-		withRule, err = foldSidecarRules(composed, nil, bound, nil)
-	default:
-		// The analyzer is not a rule and is not capped: its controls are the
-		// trigger and the call budget rather than a number of rules.
-		return nil
-	}
-	if err != nil {
+	if kind == SidecarRuleAnalyzer {
+		// Not capped. A lane's analyzer controls are its trigger and its call
+		// budget, not a number of rules.
 		return nil
 	}
 	if err := CheckSidecarConfigurationLimits(withRule, licenseData); err != nil {
-		return fmt.Errorf("binding %s rule %q to listener %q on sidecar %q puts that sidecar over "+
-			"its rule limit: %w", kind, ruleName, listenerName, sc.Name, err)
+		return fmt.Errorf("binding %s rule %q to sidecar %q puts that sidecar over its rule "+
+			"limit: %w", kind, ruleName, sc.Name, err)
 	}
 	return nil
+}
+
+// ValidateSidecarBindingsForConfiguration refuses a configuration edit that
+// would break a rule already bound to this sidecar.
+//
+// Listener names are the binding key, so removing a listener, renaming one, or
+// giving one a protocol its bound rules cannot run all break the NEXT
+// handshake rather than this request -- and they break it for the whole
+// sidecar, not for the rule: composition returns an error, the handshake
+// answers it, and every rule on every other lane stops being delivered too.
+// The sidecar keeps its last good document and looks healthy while an admin
+// edits rules that no longer reach it.
+//
+// Run inside the write's own transaction, over the document the write would
+// store, so there is no window where the configuration is saved and the
+// bindings are not checked.
+// ErrSidecarBindingBroken is a configuration edit a rule already bound to this
+// sidecar cannot survive. The admin's to fix -- unbind the rule, or keep the
+// listener -- so it reads 422 rather than 500.
+type ErrSidecarBindingBroken struct{ Reason string }
+
+func (e ErrSidecarBindingBroken) Error() string { return e.Reason }
+
+func ValidateSidecarBindingsForConfiguration(db *gorm.DB, sc *models.Sidecar) error {
+	orgID, err := uuid.Parse(sc.OrgID)
+	if err != nil {
+		return fmt.Errorf("%w: parsing the sidecar organization id: %v", ErrSidecarRulesUnavailable, err)
+	}
+	lanes := map[string]int{}
+	for _, l := range sc.Configuration.Listeners {
+		lanes[l.Name]++
+	}
+	for _, kind := range []SidecarRuleKind{SidecarRuleGuardrail, SidecarRuleMask, SidecarRuleAnalyzer} {
+		bound, err := listBoundRules(db, kind, orgID, sc.ID)
+		if err != nil {
+			return fmt.Errorf("%w: reading the %s rules bound to sidecar %q: %v",
+				ErrSidecarRulesUnavailable, kind, sc.Name, err)
+		}
+		for _, b := range bound {
+			if lanes[b.ListenerName] != 1 {
+				return ErrSidecarBindingBroken{Reason: fmt.Sprintf("%s rule %q is bound to "+
+					"listener %q, which this configuration has %d of; unbind the rule first, "+
+					"or keep exactly one listener by that name",
+					kind, b.RuleName, b.ListenerName, lanes[b.ListenerName])}
+			}
+			var lane daemon.ListenerConfig
+			for _, l := range sc.Configuration.Listeners {
+				if l.Name == b.ListenerName {
+					lane = l
+					break
+				}
+			}
+			if err := validateSpecForLane(kind, b.RuleName, b.Spec, sc.Name, lane); err != nil {
+				return ErrSidecarBindingBroken{Reason: err.Error()}
+			}
+		}
+	}
+	return nil
+}
+
+func listBoundRules(db *gorm.DB, kind SidecarRuleKind, orgID uuid.UUID, sidecarID string) ([]models.BoundRule, error) {
+	switch kind {
+	case SidecarRuleGuardrail:
+		return models.ListGuardrailRulesForSidecar(db, orgID, sidecarID)
+	case SidecarRuleMask:
+		return models.ListDataMaskingRulesForSidecar(db, orgID, sidecarID)
+	case SidecarRuleAnalyzer:
+		return models.ListAnalyzerRulesForSidecar(db, orgID, sidecarID)
+	}
+	return nil, fmt.Errorf("unknown sidecar rule kind %q", kind)
 }
 
 // validateSpecForLane runs the refusals that depend on which lane the rule
