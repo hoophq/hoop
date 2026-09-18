@@ -55,7 +55,15 @@ export default defineConfig([
       },
     },
     rules: {
-      'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
+      // There is no eslint-plugin-react here, so core no-unused-vars never
+      // counts a JSX element as a use of its component. Hence the capitalised
+      // exemption — and it applies to a component reached through a PROP
+      // (AiSessionAnalyzer takes its Configure tab that way) exactly as it does
+      // to an imported one.
+      'no-unused-vars': [
+        'error',
+        { varsIgnorePattern: '^[A-Z_]', argsIgnorePattern: '^[A-Z_]' },
+      ],
     },
   },
   // Which product the bundle renders as is read in src/modes only. Pages, layout

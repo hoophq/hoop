@@ -48,6 +48,8 @@ import AccessRequestForm from '@/pages/Features/AccessRequest/Create'
 import AiSessionAnalyzer from '@/pages/Features/AiSessionAnalyzer'
 import GatewayAiAnalyzerForm from '@/pages/Features/AiSessionAnalyzer/Create/GatewayAiAnalyzerForm'
 import ControlPlaneAiAnalyzerForm from '@/pages/Features/AiSessionAnalyzer/Create/ControlPlaneAiAnalyzerForm'
+import GatewayAiAnalyzerConfigureTab from '@/pages/Features/AiSessionAnalyzer/GatewayConfigureTab'
+import ControlPlaneAiAnalyzerConfigureTab from '@/pages/Features/AiSessionAnalyzer/ControlPlaneConfigureTab'
 import Guardrails from '@/pages/Guardrails'
 import GatewayGuardrailForm from '@/pages/Guardrails/Create/GatewayGuardrailForm'
 import ControlPlaneGuardrailForm from '@/pages/Guardrails/Create/ControlPlaneGuardrailForm'
@@ -517,7 +519,20 @@ function Router() {
         path="/features/ai-session-analyzer"
         element={
           <Page adminOnly licenseFeature="ai-session-analyzer">
-            <AiSessionAnalyzer />
+            {/* The Configure tab is the one part that differs: the gateway
+                stores one provider per organization, a sidecar carries its own
+                and reads its credential off its own disk. */}
+            <ByProduct
+              gateway={
+                <AiSessionAnalyzer ConfigureTab={GatewayAiAnalyzerConfigureTab} />
+              }
+              controlPlane={
+                <AiSessionAnalyzer
+                  ConfigureTab={ControlPlaneAiAnalyzerConfigureTab}
+                  orgWideProvider={false}
+                />
+              }
+            />
           </Page>
         }
       />

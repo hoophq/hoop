@@ -181,7 +181,7 @@ func ListDataMaskingRules(orgID string, opts ...DataMaskingListOption) ([]DataMa
 	var rules []DataMaskingRule
 	return rules, DB.Raw(`
 	SELECT
-		r.id, r.org_id, r.name, r.description, r.supported_entity_types, r.custom_entity_types, r.score_threshold, r.rulepack_id, r.managed_by,
+		r.id, r.org_id, r.name, r.description, r.supported_entity_types, r.custom_entity_types, r.score_threshold, r.rulepack_id, r.managed_by, r.sidecar_spec,
 		(
 			SELECT ARRAY_AGG(connection_id) FROM private.datamasking_rules_connections
 			WHERE org_id = ? AND rule_id = r.id AND status = 'active'
@@ -202,7 +202,7 @@ func GetDataMaskingRuleByID(orgID, ruleID string) (*DataMaskingRule, error) {
 	var rule DataMaskingRule
 	err := DB.Raw(`
 	SELECT
-		r.id, r.org_id, r.name, r.description, r.supported_entity_types, r.custom_entity_types, r.score_threshold, r.rulepack_id, r.managed_by,
+		r.id, r.org_id, r.name, r.description, r.supported_entity_types, r.custom_entity_types, r.score_threshold, r.rulepack_id, r.managed_by, r.sidecar_spec,
 		(
 			SELECT ARRAY_AGG(connection_id) FROM private.datamasking_rules_connections
 			WHERE org_id = ? AND rule_id = r.id AND status = 'active'

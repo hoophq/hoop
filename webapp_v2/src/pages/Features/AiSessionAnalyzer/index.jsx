@@ -11,14 +11,20 @@ import { useUserStore } from '@/stores/useUserStore'
 import { useAiSessionAnalyzerStore } from './store'
 import { FREE_LICENSE_LIMIT_MESSAGE } from './helpers'
 import RulesTab from './RulesTab'
-import ConfigureTab from './ConfigureTab'
 import AiSessionAnalyzerPromotion from './components/AiSessionAnalyzerPromotion'
 
 // The CLJS activation journey writes the same key, so both stacks agree on
 // what "seen" means.
 const PROMOTION_SEEN_STORAGE_KEY = 'ai-session-analyzer-promotion-seen'
 
-export default function AiSessionAnalyzer() {
+// ConfigureTab and orgWideProvider come from Router.jsx through <ByProduct>, so
+// this page serves both products without reading the mode.
+//
+// orgWideProvider is false where the provider is a property of each sidecar
+// rather than of the organization. The empty state reads it: pushing a control
+// plane admin at "Configure AI Session Analyzer" would send them to a tab that
+// has nothing to save.
+export default function AiSessionAnalyzer({ ConfigureTab, orgWideProvider = true }) {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
 
@@ -114,7 +120,7 @@ export default function AiSessionAnalyzer() {
 
         <Tabs.Panel value="rules" pt="md">
           <RulesTab
-            providerConfigured={Boolean(provider)}
+            providerConfigured={!orgWideProvider || Boolean(provider)}
             onGoConfigure={() => setTab('configure')}
           />
         </Tabs.Panel>

@@ -125,6 +125,60 @@ func TestGuardrailRuleListeners(t *testing.T) {
 	}
 }
 
+// A masking rule's sidecar_spec has to survive a read.
+//
+// The datamasking reads name their columns one by one, unlike the guardrail and
+// analyzer ones which go through GORM's struct mapping, so a column added to
+// the table is absent from the answer until someone adds it to the list too.
+// The rule then opens in the editor with its name, its description and its
+// listeners intact and its content gone — and saving from there overwrites the
+// stored rule with the empty one.
+func TestADataMaskingRuleKeepsItsSidecarSpecOnRead(t *testing.T) {
+	startTestDB(t)
+
+	const spec = `{"rules":[{"name":"ssn-column","columns":["ssn"],"strategy":"hash"}]}`
+	created, err := models.CreateDataMaskingRule(&models.DataMaskingRule{
+		ID:          uuid.NewString(),
+		OrgID:       testOrgID,
+		Name:        "spec-round-trip",
+		Description: "keeps its content",
+		SidecarSpec: json.RawMessage(spec),
+	})
+	if err != nil {
+		t.Fatalf("seed masking rule: %v", err)
+	}
+
+	byID, err := models.GetDataMaskingRuleByID(testOrgID, created.ID)
+	if err != nil {
+		t.Fatalf("read by id: %v", err)
+	}
+	if len(byID.SidecarSpec) == 0 {
+		t.Error("the rule came back with no sidecar_spec; the editor would open empty")
+	} else if !strings.Contains(string(byID.SidecarSpec), "ssn-column") {
+		t.Errorf("the spec did not survive the read: %s", byID.SidecarSpec)
+	}
+
+	// The list feeds the rules page, which is where an admin decides whether a
+	// rule is configured at all.
+	all, err := models.ListDataMaskingRules(testOrgID)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	found := false
+	for _, r := range all {
+		if r.Name != "spec-round-trip" {
+			continue
+		}
+		found = true
+		if !strings.Contains(string(r.SidecarSpec), "ssn-column") {
+			t.Errorf("the listed rule lost its spec: %s", r.SidecarSpec)
+		}
+	}
+	if !found {
+		t.Fatal("the seeded rule is missing from the listing")
+	}
+}
+
 // The admin pages read the bindings, because the stored configuration does not
 // carry them: composition folds a rule into the SERVED document and stores
 // nothing. Without this query a listener enforcing a distributed rule renders
