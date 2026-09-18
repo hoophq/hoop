@@ -13,6 +13,7 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/api/sidecarbind"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -100,11 +101,15 @@ func Post(c *gin.Context) {
 		Description: req.Description,
 		Input:       req.Input,
 		Output:      req.Output,
+		SidecarSpec: req.SidecarSpec,
 		CreatedAt:   time.Now().UTC(),
 		UpdatedAt:   time.Now().UTC(),
 	}
 
-	if refuseSidecarTargets(c, ctx, req, req.Name) {
+	if sidecarbind.Refuse(c, ctx.GetOrgID(), sidecarbind.Request{
+		Kind: services.SidecarRuleGuardrail, Name: req.Name, StoredName: req.Name,
+		Spec: req.SidecarSpec, Targets: req.SidecarTargets,
+	}) {
 		return
 	}
 
@@ -118,7 +123,7 @@ func Post(c *gin.Context) {
 			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed upserting guard rail rule attributes: %v", err)
 			return
 		}
-		if err := persistSidecarTargets(ctx, rule.Name, req.SidecarTargets); err != nil {
+		if err := sidecarbind.Persist(ctx.GetOrgID(), services.SidecarRuleGuardrail, rule.Name, req.SidecarTargets); err != nil {
 			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed binding the rule to its sidecars: %v", err)
 			return
 		}
@@ -130,7 +135,8 @@ func Post(c *gin.Context) {
 			Output:         rule.Output,
 			ConnectionIDs:  rule.ConnectionIDs,
 			Attributes:     req.Attributes,
-			SidecarTargets: loadSidecarTargets(ctx.GetOrgID(), rule.Name),
+			SidecarSpec:    req.SidecarSpec,
+			SidecarTargets: sidecarbind.Load(ctx.GetOrgID(), services.SidecarRuleGuardrail, rule.Name),
 			CreatedAt:      rule.CreatedAt,
 			UpdatedAt:      rule.UpdatedAt,
 		})
@@ -194,10 +200,14 @@ func Put(c *gin.Context) {
 		Description: req.Description,
 		Input:       req.Input,
 		Output:      req.Output,
+		SidecarSpec: req.SidecarSpec,
 		UpdatedAt:   time.Now().UTC(),
 	}
 
-	if refuseSidecarTargets(c, ctx, req, existing.Name) {
+	if sidecarbind.Refuse(c, ctx.GetOrgID(), sidecarbind.Request{
+		Kind: services.SidecarRuleGuardrail, Name: req.Name, StoredName: existing.Name,
+		Spec: req.SidecarSpec, Targets: req.SidecarTargets,
+	}) {
 		return
 	}
 
@@ -212,7 +222,7 @@ func Put(c *gin.Context) {
 			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed upserting guard rail rule attributes: %v", err)
 			return
 		}
-		if err := persistSidecarTargets(ctx, rule.Name, req.SidecarTargets); err != nil {
+		if err := sidecarbind.Persist(ctx.GetOrgID(), services.SidecarRuleGuardrail, rule.Name, req.SidecarTargets); err != nil {
 			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed binding the rule to its sidecars: %v", err)
 			return
 		}
@@ -224,7 +234,8 @@ func Put(c *gin.Context) {
 			Output:         rule.Output,
 			ConnectionIDs:  rule.ConnectionIDs,
 			Attributes:     req.Attributes,
-			SidecarTargets: loadSidecarTargets(ctx.GetOrgID(), rule.Name),
+			SidecarSpec:    req.SidecarSpec,
+			SidecarTargets: sidecarbind.Load(ctx.GetOrgID(), services.SidecarRuleGuardrail, rule.Name),
 			CreatedAt:      rule.CreatedAt,
 			UpdatedAt:      rule.UpdatedAt,
 		})
@@ -297,9 +308,10 @@ func Get(c *gin.Context) {
 			ConnectionIDs: rule.ConnectionIDs,
 			Attributes:    rule.Attributes,
 			// Read back on the single-rule route, which is what the edit form
-			// loads. Without it the form opens with the picker empty and the
-			// next save unbinds the rule from every sidecar it reached.
-			SidecarTargets: loadSidecarTargets(ctx.GetOrgID(), rule.Name),
+			// loads. Without it the form opens empty and the next save unbinds
+			// the rule from every sidecar it reached.
+			SidecarSpec:    rule.SidecarSpec,
+			SidecarTargets: sidecarbind.Load(ctx.GetOrgID(), services.SidecarRuleGuardrail, rule.Name),
 			CreatedAt:      rule.CreatedAt,
 			UpdatedAt:      rule.UpdatedAt,
 		})
@@ -376,103 +388,4 @@ func filterEmptyIDs(ids []string) []string {
 func upsertGuardrailRuleAttributes(ctx *storagev2.Context, ruleName string, attributeNames []string) error {
 	orgID := uuid.MustParse(ctx.GetOrgID())
 	return models.UpsertGuardrailRuleAttributes(models.DB, orgID, ruleName, attributeNames)
-}
-
-// refuseSidecarTargets validates a rule against what a sidecar can enforce and
-// reports whether it answered the request.
-//
-// Two checks, and both exist because the alternative is a rule that looks saved
-// and enforces nothing. The vocabulary check refuses a rule shape no sidecar
-// configuration can express; the target check refuses a binding that does not
-// resolve to exactly one listener on a sidecar this organization owns.
-//
-// It runs on every write to a rule that is bound, not only when the binding is
-// created: editing a compliant rule into a non-compliant one would otherwise
-// walk straight past it.
-// storedName is the rule's name as persisted right now, which a rename makes
-// different from req.Name: the bindings still sit under the old one until the
-// write cascades them, so both are looked up.
-func refuseSidecarTargets(c *gin.Context, ctx *storagev2.Context, req *openapi.GuardRailRuleRequest, storedName string) bool {
-	orgID := uuid.MustParse(ctx.GetOrgID())
-	targets := toSidecarTargets(derefTargets(req.SidecarTargets))
-
-	bound := len(targets) > 0
-	for _, name := range []string{req.Name, storedName} {
-		if bound {
-			break
-		}
-		// Already bound elsewhere: the rule's content still has to stay
-		// enforceable, even when this request does not mention the bindings.
-		existing, err := models.SidecarsBoundToGuardrailRule(models.DB, orgID, name)
-		if err != nil {
-			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the rule's sidecar bindings")
-			return true
-		}
-		bound = len(existing) > 0
-	}
-	if !bound {
-		return false
-	}
-
-	input, _ := json.Marshal(req.Input)
-	output, _ := json.Marshal(req.Output)
-	if err := services.ValidateGuardrailRuleForSidecar(req.Name, input, output); err != nil {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
-		return true
-	}
-	if err := services.ValidateSidecarRuleTargets(models.DB, ctx.GetOrgID(), targets); err != nil {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
-		return true
-	}
-	return false
-}
-
-// persistSidecarTargets replaces the rule's target set. Called only after the
-// rule row exists, so the junction's foreign key has something to point at.
-//
-// An ABSENT field is not an empty one: it leaves the bindings alone, so a write
-// that says nothing about sidecars changes nothing about them. An explicit []
-// is the admin unbinding the rule, and does replace the set with nothing.
-func persistSidecarTargets(ctx *storagev2.Context, ruleName string, targets *[]openapi.SidecarRuleTarget) error {
-	if targets == nil {
-		return nil
-	}
-	return models.SetGuardrailRuleListeners(models.DB, uuid.MustParse(ctx.GetOrgID()),
-		ruleName, toSidecarTargets(*targets))
-}
-
-// derefTargets reads the optional field as a list, for the guards, which treat
-// "not mentioned" and "none" the same: neither adds a binding, and a rule that
-// is bound elsewhere is checked either way.
-func derefTargets(in *[]openapi.SidecarRuleTarget) []openapi.SidecarRuleTarget {
-	if in == nil {
-		return nil
-	}
-	return *in
-}
-
-func toSidecarTargets(in []openapi.SidecarRuleTarget) []models.SidecarRuleTarget {
-	out := make([]models.SidecarRuleTarget, 0, len(in))
-	for _, t := range in {
-		if t.SidecarID == "" {
-			continue
-		}
-		out = append(out, models.SidecarRuleTarget{SidecarID: t.SidecarID, ListenerName: t.ListenerName})
-	}
-	return out
-}
-
-// loadSidecarTargets renders back where a rule is bound, so a round-trip
-// through the API returns what was saved.
-func loadSidecarTargets(orgID, ruleName string) []openapi.SidecarRuleTarget {
-	rows, err := models.ListGuardrailRuleTargets(models.DB, uuid.MustParse(orgID), ruleName)
-	if err != nil {
-		log.Warnf("failed reading the sidecar targets of guardrail rule %q, reason=%v", ruleName, err)
-		return nil
-	}
-	out := make([]openapi.SidecarRuleTarget, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, openapi.SidecarRuleTarget{SidecarID: r.SidecarID, ListenerName: r.ListenerName})
-	}
-	return out
 }

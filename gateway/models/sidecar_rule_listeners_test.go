@@ -43,6 +43,10 @@ func TestGuardrailRuleListeners(t *testing.T) {
 			"type": "deny_words_list", "words": []any{"DROP TABLE"},
 		}}},
 		Output: map[string]any{"rules": []any{}},
+		// The sidecar's half, in the sidecar's own vocabulary. It is what the
+		// join returns, and what composition places on a lane.
+		SidecarSpec: json.RawMessage(
+			`{"rules":[{"name":"no-drop","type":"operation","operations":["drop"]}]}`),
 	}
 	if err := models.UpsertGuardRailRuleWithConnections(rule, nil, true); err != nil {
 		t.Fatalf("seed guardrail rule: %v", err)
@@ -77,17 +81,18 @@ func TestGuardrailRuleListeners(t *testing.T) {
 	if bound[0].ListenerName != "appdb" || bound[1].ListenerName != "reporting" {
 		t.Errorf("want a stable order, got %q then %q", bound[0].ListenerName, bound[1].ListenerName)
 	}
-	// The join carries the rule's own content, which is what gets translated.
+	// The join carries the SIDECAR's block, not the gateway's columns: that is
+	// the document the listener receives, and composition places it as is.
 	var doc struct {
 		Rules []struct {
-			Type  string   `json:"type"`
-			Words []string `json:"words"`
+			Type       string   `json:"type"`
+			Operations []string `json:"operations"`
 		} `json:"rules"`
 	}
-	if err := json.Unmarshal(bound[0].Input, &doc); err != nil {
-		t.Fatalf("the joined input is not the stored shape: %v", err)
+	if err := json.Unmarshal(bound[0].Spec, &doc); err != nil {
+		t.Fatalf("the joined spec is not the stored shape: %v", err)
 	}
-	if len(doc.Rules) != 1 || doc.Rules[0].Words[0] != "DROP TABLE" {
+	if len(doc.Rules) != 1 || doc.Rules[0].Type != "operation" || doc.Rules[0].Operations[0] != "drop" {
 		t.Errorf("the rule content did not survive the join: %+v", doc.Rules)
 	}
 

@@ -11,8 +11,10 @@ import (
 	"github.com/hoophq/hoop/gateway/analytics"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/api/sidecarbind"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"gorm.io/gorm"
 )
@@ -295,7 +297,7 @@ func GetSessionAnalyzerRule(c *gin.Context) {
 		// Read back on the single-rule route, which is what the edit form
 		// loads. Without it the form opens with the picker empty and the next
 		// save unbinds the rule from every sidecar it reached.
-		out.SidecarTargets = loadSidecarTargets(orgID, rule.Name)
+		out.SidecarTargets = sidecarbind.Load(ctx.GetOrgID(), services.SidecarRuleAnalyzer, rule.Name)
 		c.JSON(http.StatusOK, out)
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching AI session analyzer rule: %v", err)
@@ -356,6 +358,7 @@ func CreateSessionAnalyzerRule(c *gin.Context) {
 		ConnectionNames: req.ConnectionNames,
 		CustomPrompt:    req.CustomPrompt,
 		Agentic:         req.Agentic,
+		SidecarSpec:     req.SidecarSpec,
 		RiskEvaluation: models.AISessionAnalyzerRiskEvaluation{
 			LowRisk:    toModelRiskTier(lowTier),
 			MediumRisk: toModelRiskTier(mediumTier),
@@ -363,7 +366,10 @@ func CreateSessionAnalyzerRule(c *gin.Context) {
 		},
 	}
 
-	if refuseSidecarTargets(c, orgID, rule, req.SidecarTargets) {
+	if sidecarbind.Refuse(c, ctx.GetOrgID(), sidecarbind.Request{
+		Kind: services.SidecarRuleAnalyzer, Name: rule.Name, StoredName: rule.Name,
+		Spec: req.SidecarSpec, Targets: req.SidecarTargets,
+	}) {
 		return
 	}
 
@@ -372,7 +378,7 @@ func CreateSessionAnalyzerRule(c *gin.Context) {
 	case models.ErrAlreadyExists:
 		c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
 	case nil:
-		if err := persistSidecarTargets(orgID, rule.Name, req.SidecarTargets); err != nil {
+		if err := sidecarbind.Persist(ctx.GetOrgID(), services.SidecarRuleAnalyzer, rule.Name, req.SidecarTargets); err != nil {
 			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed binding the rule to its sidecars: %v", err)
 			return
 		}
@@ -383,7 +389,7 @@ func CreateSessionAnalyzerRule(c *gin.Context) {
 			"high-risk-action":   rule.RiskEvaluation.Tier(models.RiskLevelKeyHigh).Action,
 		})
 		out := toSessionAnalyzerRuleResponse(rule)
-		out.SidecarTargets = loadSidecarTargets(orgID, rule.Name)
+		out.SidecarTargets = sidecarbind.Load(ctx.GetOrgID(), services.SidecarRuleAnalyzer, rule.Name)
 		c.JSON(http.StatusCreated, out)
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating AI session analyzer rule: %v", err)
@@ -450,6 +456,7 @@ func UpdateSessionAnalyzerRule(c *gin.Context) {
 		ConnectionNames: req.ConnectionNames,
 		CustomPrompt:    req.CustomPrompt,
 		Agentic:         req.Agentic,
+		SidecarSpec:     req.SidecarSpec,
 		RiskEvaluation: models.AISessionAnalyzerRiskEvaluation{
 			LowRisk:    toModelRiskTier(lowTier),
 			MediumRisk: toModelRiskTier(mediumTier),
@@ -457,7 +464,10 @@ func UpdateSessionAnalyzerRule(c *gin.Context) {
 		},
 	}
 
-	if refuseSidecarTargets(c, orgID, rule, req.SidecarTargets) {
+	if sidecarbind.Refuse(c, ctx.GetOrgID(), sidecarbind.Request{
+		Kind: services.SidecarRuleAnalyzer, Name: rule.Name, StoredName: rule.Name,
+		Spec: req.SidecarSpec, Targets: req.SidecarTargets,
+	}) {
 		return
 	}
 
@@ -466,7 +476,7 @@ func UpdateSessionAnalyzerRule(c *gin.Context) {
 	case gorm.ErrRecordNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
 	case nil:
-		if err := persistSidecarTargets(orgID, rule.Name, req.SidecarTargets); err != nil {
+		if err := sidecarbind.Persist(ctx.GetOrgID(), services.SidecarRuleAnalyzer, rule.Name, req.SidecarTargets); err != nil {
 			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed binding the rule to its sidecars: %v", err)
 			return
 		}
@@ -478,7 +488,7 @@ func UpdateSessionAnalyzerRule(c *gin.Context) {
 		})
 
 		out := toSessionAnalyzerRuleResponse(rule)
-		out.SidecarTargets = loadSidecarTargets(orgID, rule.Name)
+		out.SidecarTargets = sidecarbind.Load(ctx.GetOrgID(), services.SidecarRuleAnalyzer, rule.Name)
 		c.JSON(http.StatusOK, out)
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating AI session analyzer rule: %v", err)
@@ -574,6 +584,7 @@ func toSessionAnalyzerRuleResponse(r *models.AISessionAnalyzerRules) openapi.AIS
 		ManagedBy:       r.ManagedBy,
 		CustomPrompt:    r.CustomPrompt,
 		Agentic:         r.Agentic,
+		SidecarSpec:     r.SidecarSpec,
 		RiskEvaluation: openapi.AISessionAnalyzerRiskEvaluation{
 			LowRiskAction:    string(lowTier.Action),
 			MediumRiskAction: string(mediumTier.Action),

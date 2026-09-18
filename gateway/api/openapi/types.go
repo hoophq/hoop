@@ -2037,14 +2037,18 @@ type GuardRailRuleRequest struct {
 	// Attributes associated with this guardrail rule
 	Attributes []string `json:"attributes" example:"production,pii"`
 
-	// SidecarTargets binds this rule to sidecar listeners, which is how a
-	// control plane distributes it to a fleet. An entry with an empty listener
-	// targets every listener on that sidecar.
+	// SidecarSpec is this rule in the SIDECAR's own vocabulary, which the
+	// gateway's fields above do not share: seven rule types, an `operations` scope on every one of them,
+	// and `action: defer` to hand the verdict to a Rego policy. It holds the
+	// guardrails block the listener receives: {"rules": [...]}.
 	//
-	// A bound rule is restricted to what a sidecar can enforce: request-side
-	// rules only, of type deny_words_list or pattern_match, with a pattern Go's
-	// RE2 accepts. A rule outside that is refused on the write rather than
-	// saved and quietly never enforced.
+	// A control plane field. A gateway has no sidecars and refuses it.
+	SidecarSpec json.RawMessage `json:"sidecar_spec,omitempty" swaggertype:"object"`
+
+	// SidecarTargets names the sidecar LISTENERS that must enforce this rule,
+	// which is how a control plane distributes it to a fleet. A listener, not
+	// a sidecar: the listener carries the protocol, and the protocol decides
+	// which rule types it can run at all.
 	//
 	// A POINTER because absent and empty are different instructions: absent
 	// leaves the bindings exactly as they are, and [] unbinds the rule from
@@ -2108,6 +2112,9 @@ type GuardRailRuleResponse struct {
 	ConnectionIDs []string `json:"connection_ids" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7,15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D8"`
 	// Attributes associated with this guardrail rule
 	Attributes []string `json:"attributes" example:"production,pii"`
+	// SidecarSpec is this rule in the sidecar's own vocabulary; see the
+	// request type. Present only in a control plane.
+	SidecarSpec json.RawMessage `json:"sidecar_spec,omitempty" swaggertype:"object"`
 	// The sidecar listeners this rule is bound to, and therefore distributed to
 	SidecarTargets []SidecarRuleTarget `json:"sidecar_targets,omitempty"`
 	// The time the resource was created
@@ -2494,14 +2501,17 @@ type DataMaskingRuleRequest struct {
 	// The custom entity types that this rule applies to
 	CustomEntityTypesEntrys []CustomEntityTypesEntry `json:"custom_entity_types"`
 
-	// SidecarTargets binds this rule to sidecar listeners, which is how a
-	// control plane distributes it to a fleet. An entry with an empty listener
-	// targets every listener on that sidecar.
+	// SidecarSpec is this rule in the SIDECAR's own vocabulary, which the
+	// gateway's fields above do not share: entities OR column names, a strategy (redact, mask,
+	// partial, hash) and a keep_last. It holds the mask block the listener
+	// receives: {"rules": [...]}.
 	//
-	// A bound rule is restricted to what a sidecar can detect: supported entity
-	// types only. Custom entity types are refused, because the sidecar's pii
-	// section selects and ignores built-in recognizers and cannot register a
-	// regex of its own.
+	// A control plane field. A gateway has no sidecars and refuses it.
+	SidecarSpec json.RawMessage `json:"sidecar_spec,omitempty" swaggertype:"object"`
+
+	// SidecarTargets names the sidecar LISTENERS that must apply this rule.
+	// A listener's mask block REPLACES the sidecar defaults rather than adding
+	// to them, which is why the binding is per listener.
 	//
 	// A POINTER because absent and empty are different instructions: absent
 	// leaves the bindings exactly as they are, and [] unbinds the rule from
@@ -3813,15 +3823,17 @@ type AISessionAnalyzerRuleRequest struct {
 	// and resource metadata before classifying.
 	Agentic bool `json:"agentic" example:"false"`
 
-	// SidecarTargets binds this rule to sidecar listeners, which is how a
-	// control plane distributes it to a fleet. The analyzer is a per-lane
-	// component, so a listener must already carry an analyzer block -- the
-	// trigger and the call budget stay the operator's, and the rule supplies
-	// the risk decision and the prompt.
+	// SidecarSpec is this rule in the SIDECAR's own vocabulary, which the
+	// gateway's fields above do not share: a trigger, risk actions spelled allow / warn / block /
+	// defer, and the per-lane cost overrides. It IS the analyzer block the
+	// listener receives.
 	//
-	// require_access_request is refused on a bound rule: a sidecar declares the
-	// review action in its configuration but refuses it at startup until
-	// EVL-289 lands.
+	// A control plane field. A gateway has no sidecars and refuses it.
+	SidecarSpec json.RawMessage `json:"sidecar_spec,omitempty" swaggertype:"object"`
+
+	// SidecarTargets names the sidecar LISTENERS that must run this analysis.
+	// One block per listener: two rules bound to one listener is refused
+	// rather than merged.
 	//
 	// A POINTER because absent and empty are different instructions: absent
 	// leaves the bindings exactly as they are, and [] unbinds the rule from
@@ -3848,15 +3860,10 @@ type AISessionAnalyzerRule struct {
 	// and resource metadata before classifying.
 	Agentic bool `json:"agentic" example:"false"`
 
-	// SidecarTargets binds this rule to sidecar listeners, which is how a
-	// control plane distributes it to a fleet. The analyzer is a per-lane
-	// component, so a listener must already carry an analyzer block -- the
-	// trigger and the call budget stay the operator's, and the rule supplies
-	// the risk decision and the prompt.
-	//
-	// require_access_request is refused on a bound rule: a sidecar declares the
-	// review action in its configuration but refuses it at startup until
-	// EVL-289 lands.
+	// SidecarSpec is this rule in the sidecar's own vocabulary; see the
+	// request type. Present only in a control plane.
+	SidecarSpec json.RawMessage `json:"sidecar_spec,omitempty" swaggertype:"object"`
+	// The sidecar listeners this rule is bound to, and therefore distributed to
 	SidecarTargets []SidecarRuleTarget `json:"sidecar_targets,omitempty"`
 
 	// Set to "hoop" when the rule is materialized and lifecycle-managed by a

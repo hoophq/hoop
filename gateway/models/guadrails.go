@@ -2,6 +2,7 @@ package models
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -14,18 +15,23 @@ const tableGuardRails = "private.guardrail_rules"
 const tableGuardRailsConnections = "private.guardrail_rules_connections"
 
 type GuardRailRules struct {
-	OrgID         string         `gorm:"column:org_id"`
-	ID            string         `gorm:"column:id"`
-	Name          string         `gorm:"column:name"`
-	Description   string         `gorm:"column:description"`
-	Input         map[string]any `gorm:"column:input;serializer:json"`
-	Output        map[string]any `gorm:"column:output;serializer:json"`
-	RulepackID    sql.NullString `gorm:"column:rulepack_id"`
-	ManagedBy     *string        `gorm:"column:managed_by"`
-	CreatedAt     time.Time      `gorm:"column:created_at"`
-	UpdatedAt     time.Time      `gorm:"column:updated_at"`
-	ConnectionIDs []string       `gorm:"-"` // Not stored in DB, populated from join query
-	Attributes    []string       `gorm:"-"` // Not stored in DB, populated from join query
+	OrgID       string         `gorm:"column:org_id"`
+	ID          string         `gorm:"column:id"`
+	Name        string         `gorm:"column:name"`
+	Description string         `gorm:"column:description"`
+	Input       map[string]any `gorm:"column:input;serializer:json"`
+	Output      map[string]any `gorm:"column:output;serializer:json"`
+	// SidecarSpec is the rule in the SIDECAR's own vocabulary, which does not
+	// meet the gateway's: seven rule types, an operations scope on each, and
+	// action: defer. NULL on every rule a gateway writes; only the control
+	// plane fills it. See migration 000120.
+	SidecarSpec   json.RawMessage `gorm:"column:sidecar_spec"`
+	RulepackID    sql.NullString  `gorm:"column:rulepack_id"`
+	ManagedBy     *string         `gorm:"column:managed_by"`
+	CreatedAt     time.Time       `gorm:"column:created_at"`
+	UpdatedAt     time.Time       `gorm:"column:updated_at"`
+	ConnectionIDs []string        `gorm:"-"` // Not stored in DB, populated from join query
+	Attributes    []string        `gorm:"-"` // Not stored in DB, populated from join query
 }
 
 type GuardRailConnection struct {
@@ -260,12 +266,13 @@ func UpsertGuardRailRuleWithConnectionsTx(tx *gorm.DB, rule *GuardRailRules, con
 		res := tx.Table(tableGuardRails).
 			Model(rule).
 			Clauses(clause.Returning{}).
-			Select("name", "description", "input", "output", "rulepack_id", "updated_at").
+			Select("name", "description", "input", "output", "sidecar_spec", "rulepack_id", "updated_at").
 			Updates(GuardRailRules{
 				Name:        rule.Name,
 				Description: rule.Description,
 				Input:       rule.Input,
 				Output:      rule.Output,
+				SidecarSpec: rule.SidecarSpec,
 				RulepackID:  rule.RulepackID,
 				UpdatedAt:   rule.UpdatedAt,
 			}).

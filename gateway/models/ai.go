@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -107,7 +108,12 @@ type AISessionAnalyzerRules struct {
 	RiskEvaluation  AISessionAnalyzerRiskEvaluation `gorm:"column:risk_evaluation;type:jsonb;serializer:json"`
 	CustomPrompt    *string                         `gorm:"column:custom_prompt"`
 	Agentic         bool                            `gorm:"column:agentic"`
-	ManagedBy       *string                         `gorm:"column:managed_by"`
+	// SidecarSpec is the listener's analyzer BLOCK as the sidecar reads it:
+	// the trigger, the risk-to-action map in its own vocabulary (allow, warn,
+	// block, defer) and the per-lane cost overrides. NULL on every rule a
+	// gateway writes. See migration 000120.
+	SidecarSpec json.RawMessage `gorm:"column:sidecar_spec"`
+	ManagedBy   *string         `gorm:"column:managed_by"`
 
 	RuleAttributes []AISessionAnalyzerRuleAttribute `gorm:"foreignKey:OrgID,AnalyzerRuleName;references:OrgID,Name"`
 
@@ -242,6 +248,7 @@ func UpdateAISessionAnalyzerRule(rule *AISessionAnalyzerRules) error {
 			"risk_evaluation":  rule.RiskEvaluation,
 			"custom_prompt":    rule.CustomPrompt,
 			"agentic":          rule.Agentic,
+			"sidecar_spec":     rule.SidecarSpec,
 		})
 	if result.Error != nil {
 		return result.Error

@@ -57,16 +57,19 @@ func (AnalyzerRuleListener) TableName() string {
 }
 
 // BoundRule is a rule the control plane must fold into one sidecar's served
-// configuration: where it goes, and the rule's own stored content.
+// configuration: which listener it goes on, and the block that listener gets.
 //
-// Content is the raw column the feature stores, so the translators in
-// gateway/services read one shape and this layer stays ignorant of rule
-// vocabulary.
+// Spec is sidecar_spec verbatim -- the rule as the SIDECAR spells it, which is
+// the block the lane receives rather than a translation of one. Composition
+// places it; nothing converts it. The gateway's own columns beside it are that
+// feature's, and this layer never reads them.
+//
+// One shape for all three features: they differ in what the block contains,
+// not in how it is bound or delivered.
 type BoundRule struct {
 	RuleName     string
 	ListenerName string
-	Input        json.RawMessage `gorm:"column:input"`
-	Output       json.RawMessage `gorm:"column:output"`
+	Spec         json.RawMessage `gorm:"column:sidecar_spec"`
 }
 
 // ListGuardrailRulesForSidecar returns every guardrail rule bound to this
@@ -76,7 +79,7 @@ type BoundRule struct {
 func ListGuardrailRulesForSidecar(db *gorm.DB, orgID uuid.UUID, sidecarID string) ([]BoundRule, error) {
 	var out []BoundRule
 	err := db.Raw(`
-	SELECT b.listener_name, r.name AS rule_name, r.input, r.output
+	SELECT b.listener_name, r.name AS rule_name, r.sidecar_spec
 	FROM private.guardrail_rules_listeners b
 	JOIN private.guardrail_rules r ON r.org_id = b.org_id AND r.name = b.guardrail_rule_name
 	WHERE b.org_id = ? AND b.sidecar_id = ?
@@ -134,27 +137,10 @@ func SidecarsBoundToGuardrailRule(db *gorm.DB, orgID uuid.UUID, ruleName string)
 	return out, err
 }
 
-// MaskBinding is one data masking rule bound to a sidecar, with the entity
-// groups the translator flattens.
-type MaskBinding struct {
-	RuleName             string
-	ListenerName         string
-	SupportedEntityTypes SupportedEntityTypesList `gorm:"column:supported_entity_types;serializer:json"`
-	ScoreThreshold       *float64                 `gorm:"column:score_threshold"`
-}
-
-// AnalyzerBinding is one analyzer rule bound to a sidecar listener.
-type AnalyzerBinding struct {
-	RuleName       string
-	ListenerName   string
-	RiskEvaluation AISessionAnalyzerRiskEvaluation `gorm:"column:risk_evaluation;serializer:json"`
-	CustomPrompt   *string                         `gorm:"column:custom_prompt"`
-}
-
-func ListDataMaskingRulesForSidecar(db *gorm.DB, orgID uuid.UUID, sidecarID string) ([]MaskBinding, error) {
-	var out []MaskBinding
+func ListDataMaskingRulesForSidecar(db *gorm.DB, orgID uuid.UUID, sidecarID string) ([]BoundRule, error) {
+	var out []BoundRule
 	err := db.Raw(`
-	SELECT b.listener_name, r.name AS rule_name, r.supported_entity_types, r.score_threshold
+	SELECT b.listener_name, r.name AS rule_name, r.sidecar_spec
 	FROM private.datamasking_rules_listeners b
 	JOIN private.datamasking_rules r ON r.org_id = b.org_id AND r.name = b.datamasking_rule_name
 	WHERE b.org_id = ? AND b.sidecar_id = ?
@@ -162,10 +148,10 @@ func ListDataMaskingRulesForSidecar(db *gorm.DB, orgID uuid.UUID, sidecarID stri
 	return out, err
 }
 
-func ListAnalyzerRulesForSidecar(db *gorm.DB, orgID uuid.UUID, sidecarID string) ([]AnalyzerBinding, error) {
-	var out []AnalyzerBinding
+func ListAnalyzerRulesForSidecar(db *gorm.DB, orgID uuid.UUID, sidecarID string) ([]BoundRule, error) {
+	var out []BoundRule
 	err := db.Raw(`
-	SELECT b.listener_name, r.name AS rule_name, r.risk_evaluation, r.custom_prompt
+	SELECT b.listener_name, r.name AS rule_name, r.sidecar_spec
 	FROM private.ai_session_analyzer_rules_listeners b
 	JOIN private.ai_session_analyzer_rules r ON r.org_id = b.org_id AND r.name = b.analyzer_rule_name
 	WHERE b.org_id = ? AND b.sidecar_id = ?

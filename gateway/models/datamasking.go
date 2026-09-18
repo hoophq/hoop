@@ -22,11 +22,15 @@ type DataMaskingRule struct {
 	SupportedEntityTypes SupportedEntityTypesList `gorm:"column:supported_entity_types;serializer:json"`
 	CustomEntityTypes    CustomEntityTypesList    `gorm:"column:custom_entity_types;serializer:json"`
 	ScoreThreshold       *float64                 `gorm:"column:score_threshold"`
-	RulepackID           sql.NullString           `gorm:"column:rulepack_id"`
-	ManagedBy            *string                  `gorm:"column:managed_by"`
-	ConnectionIDs        pq.StringArray           `gorm:"column:connection_ids;type:text[];->"`
-	Attributes           pq.StringArray           `gorm:"column:attributes;type:text[];->"`
-	UpdatedAt            time.Time                `gorm:"column:updated_at"`
+	// SidecarSpec is the rule in the SIDECAR's own vocabulary: entities OR
+	// columns, a strategy and a keep_last, none of which the columns above
+	// can hold. NULL on every rule a gateway writes. See migration 000120.
+	SidecarSpec   json.RawMessage `gorm:"column:sidecar_spec"`
+	RulepackID    sql.NullString  `gorm:"column:rulepack_id"`
+	ManagedBy     *string         `gorm:"column:managed_by"`
+	ConnectionIDs pq.StringArray  `gorm:"column:connection_ids;type:text[];->"`
+	Attributes    pq.StringArray  `gorm:"column:attributes;type:text[];->"`
+	UpdatedAt     time.Time       `gorm:"column:updated_at"`
 }
 
 type SupportedEntityTypesEntry struct {
@@ -111,12 +115,13 @@ func UpdateDataMaskingRule(rule *DataMaskingRule) (*DataMaskingRule, error) {
 	return rule, DB.Transaction(func(tx *gorm.DB) error {
 		res := tx.Table("private.datamasking_rules").
 			Where("org_id = ? AND id = ?", rule.OrgID, rule.ID).
-			Select("description", "supported_entity_types", "custom_entity_types", "score_threshold", "rulepack_id", "updated_at").
+			Select("description", "supported_entity_types", "custom_entity_types", "score_threshold", "sidecar_spec", "rulepack_id", "updated_at").
 			Updates(DataMaskingRule{
 				Description:          rule.Description,
 				SupportedEntityTypes: rule.SupportedEntityTypes,
 				CustomEntityTypes:    rule.CustomEntityTypes,
 				ScoreThreshold:       rule.ScoreThreshold,
+				SidecarSpec:          rule.SidecarSpec,
 				RulepackID:           rule.RulepackID,
 				UpdatedAt:            rule.UpdatedAt,
 			})
