@@ -514,6 +514,17 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 //
 // A JSON render rather than a field-by-field compare, so a new Config field
 // is restart-guarded by default; forgetting it here fails safe.
+// BaselineDoc exposes nonRuleDoc to the control plane, which composes rules
+// into a sidecar's document before serving it and must be able to PROVE the
+// composition never reaches the baseline -- a rule edit that did would turn
+// every rule edit into a fleet restart.
+//
+// Exported for the same reason as CheckLimits: the authority on what this
+// build refuses, and on what it can hot-swap, is this build. A copy of the
+// list on the gateway side would pass its own test and still be wrong the
+// first time a Config field is added here.
+func BaselineDoc(c *Config) ([]byte, error) { return nonRuleDoc(c) }
+
 func nonRuleDoc(c *Config) ([]byte, error) {
 	cp := *c
 	cp.Guardrails, cp.OPA, cp.Mask, cp.Policy = nil, nil, nil, nil

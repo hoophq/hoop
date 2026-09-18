@@ -2487,6 +2487,17 @@ type DataMaskingRuleRequest struct {
 	ScoreThreshold *float64 `json:"score_threshold" example:"0.6"`
 	// The custom entity types that this rule applies to
 	CustomEntityTypesEntrys []CustomEntityTypesEntry `json:"custom_entity_types"`
+
+	// SidecarTargets binds this rule to sidecar listeners, which is how a
+	// control plane distributes it to a fleet. An entry with an empty listener
+	// targets every listener on that sidecar.
+	//
+	// A bound rule is restricted to what a sidecar can detect: supported entity
+	// types only. Custom entity types are refused, because the sidecar's pii
+	// section selects and ignores built-in recognizers and cannot register a
+	// regex of its own.
+	SidecarTargets []SidecarRuleTarget `json:"sidecar_targets,omitempty"`
+
 	// The timestamp when the rule was updated
 	UpdatedAt time.Time `json:"updated_at" readonly:"true" example:"2023-08-15T14:30:45Z"`
 }
@@ -3789,6 +3800,17 @@ type AISessionAnalyzerRuleRequest struct {
 	// When true, the analyzer runs an agentic tool-calling loop over past sessions
 	// and resource metadata before classifying.
 	Agentic bool `json:"agentic" example:"false"`
+
+	// SidecarTargets binds this rule to sidecar listeners, which is how a
+	// control plane distributes it to a fleet. The analyzer is a per-lane
+	// component, so a listener must already carry an analyzer block -- the
+	// trigger and the call budget stay the operator's, and the rule supplies
+	// the risk decision and the prompt.
+	//
+	// require_access_request is refused on a bound rule: a sidecar declares the
+	// review action in its configuration but refuses it at startup until
+	// EVL-289 lands.
+	SidecarTargets []SidecarRuleTarget `json:"sidecar_targets,omitempty"`
 }
 
 type AISessionAnalyzerRule struct {
@@ -3807,6 +3829,18 @@ type AISessionAnalyzerRule struct {
 	// When true, the analyzer runs an agentic tool-calling loop over past sessions
 	// and resource metadata before classifying.
 	Agentic bool `json:"agentic" example:"false"`
+
+	// SidecarTargets binds this rule to sidecar listeners, which is how a
+	// control plane distributes it to a fleet. The analyzer is a per-lane
+	// component, so a listener must already carry an analyzer block -- the
+	// trigger and the call budget stay the operator's, and the rule supplies
+	// the risk decision and the prompt.
+	//
+	// require_access_request is refused on a bound rule: a sidecar declares the
+	// review action in its configuration but refuses it at startup until
+	// EVL-289 lands.
+	SidecarTargets []SidecarRuleTarget `json:"sidecar_targets,omitempty"`
+
 	// Set to "hoop" when the rule is materialized and lifecycle-managed by a
 	// protection profile; managed rules are read-only through this API
 	ManagedBy *string `json:"managed_by" readonly:"true" example:"hoop"`

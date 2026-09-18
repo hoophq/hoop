@@ -133,3 +133,115 @@ func SidecarsBoundToGuardrailRule(db *gorm.DB, orgID uuid.UUID, ruleName string)
 	WHERE org_id = ? AND guardrail_rule_name = ?`, orgID, ruleName).Scan(&out).Error
 	return out, err
 }
+
+// MaskBinding is one data masking rule bound to a sidecar, with the entity
+// groups the translator flattens.
+type MaskBinding struct {
+	RuleName             string
+	ListenerName         string
+	SupportedEntityTypes SupportedEntityTypesList `gorm:"column:supported_entity_types;serializer:json"`
+	ScoreThreshold       *float64                 `gorm:"column:score_threshold"`
+}
+
+// AnalyzerBinding is one analyzer rule bound to a sidecar listener.
+type AnalyzerBinding struct {
+	RuleName       string
+	ListenerName   string
+	RiskEvaluation AISessionAnalyzerRiskEvaluation `gorm:"column:risk_evaluation;serializer:json"`
+	CustomPrompt   *string                         `gorm:"column:custom_prompt"`
+}
+
+func ListDataMaskingRulesForSidecar(db *gorm.DB, orgID uuid.UUID, sidecarID string) ([]MaskBinding, error) {
+	var out []MaskBinding
+	err := db.Raw(`
+	SELECT b.listener_name, r.name AS rule_name, r.supported_entity_types, r.score_threshold
+	FROM private.datamasking_rules_listeners b
+	JOIN private.datamasking_rules r ON r.org_id = b.org_id AND r.name = b.datamasking_rule_name
+	WHERE b.org_id = ? AND b.sidecar_id = ?
+	ORDER BY b.listener_name, r.name`, orgID, sidecarID).Scan(&out).Error
+	return out, err
+}
+
+func ListAnalyzerRulesForSidecar(db *gorm.DB, orgID uuid.UUID, sidecarID string) ([]AnalyzerBinding, error) {
+	var out []AnalyzerBinding
+	err := db.Raw(`
+	SELECT b.listener_name, r.name AS rule_name, r.risk_evaluation, r.custom_prompt
+	FROM private.ai_session_analyzer_rules_listeners b
+	JOIN private.ai_session_analyzer_rules r ON r.org_id = b.org_id AND r.name = b.analyzer_rule_name
+	WHERE b.org_id = ? AND b.sidecar_id = ?
+	ORDER BY b.listener_name, r.name`, orgID, sidecarID).Scan(&out).Error
+	return out, err
+}
+
+// The write and read-back halves, one per feature. Same replace-set semantics
+// as the guardrail pair: the request carries the complete list the admin sees,
+// so a target they removed must disappear rather than linger and keep being
+// enforced.
+
+func SetDataMaskingRuleListeners(db *gorm.DB, orgID uuid.UUID, ruleName string, targets []SidecarRuleTarget) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		err := tx.Where("org_id = ? AND datamasking_rule_name = ?", orgID, ruleName).
+			Delete(&DatamaskingRuleListener{}).Error
+		if err != nil || len(targets) == 0 {
+			return err
+		}
+		rows := make([]DatamaskingRuleListener, 0, len(targets))
+		for _, t := range targets {
+			rows = append(rows, DatamaskingRuleListener{
+				OrgID: orgID, RuleName: ruleName,
+				SidecarID: t.SidecarID, ListenerName: t.ListenerName,
+			})
+		}
+		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error
+	})
+}
+
+func SetAnalyzerRuleListeners(db *gorm.DB, orgID uuid.UUID, ruleName string, targets []SidecarRuleTarget) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		err := tx.Where("org_id = ? AND analyzer_rule_name = ?", orgID, ruleName).
+			Delete(&AnalyzerRuleListener{}).Error
+		if err != nil || len(targets) == 0 {
+			return err
+		}
+		rows := make([]AnalyzerRuleListener, 0, len(targets))
+		for _, t := range targets {
+			rows = append(rows, AnalyzerRuleListener{
+				OrgID: orgID, RuleName: ruleName,
+				SidecarID: t.SidecarID, ListenerName: t.ListenerName,
+			})
+		}
+		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error
+	})
+}
+
+func ListDataMaskingRuleTargets(db *gorm.DB, orgID uuid.UUID, ruleName string) ([]SidecarRuleTarget, error) {
+	var out []SidecarRuleTarget
+	err := db.Raw(`
+	SELECT sidecar_id, listener_name FROM private.datamasking_rules_listeners
+	WHERE org_id = ? AND datamasking_rule_name = ?
+	ORDER BY sidecar_id, listener_name`, orgID, ruleName).Scan(&out).Error
+	return out, err
+}
+
+func ListAnalyzerRuleTargets(db *gorm.DB, orgID uuid.UUID, ruleName string) ([]SidecarRuleTarget, error) {
+	var out []SidecarRuleTarget
+	err := db.Raw(`
+	SELECT sidecar_id, listener_name FROM private.ai_session_analyzer_rules_listeners
+	WHERE org_id = ? AND analyzer_rule_name = ?
+	ORDER BY sidecar_id, listener_name`, orgID, ruleName).Scan(&out).Error
+	return out, err
+}
+
+func SidecarsBoundToDataMaskingRule(db *gorm.DB, orgID uuid.UUID, ruleName string) ([]string, error) {
+	var out []string
+	err := db.Raw(`SELECT DISTINCT sidecar_id FROM private.datamasking_rules_listeners
+	WHERE org_id = ? AND datamasking_rule_name = ?`, orgID, ruleName).Scan(&out).Error
+	return out, err
+}
+
+func SidecarsBoundToAnalyzerRule(db *gorm.DB, orgID uuid.UUID, ruleName string) ([]string, error) {
+	var out []string
+	err := db.Raw(`SELECT DISTINCT sidecar_id FROM private.ai_session_analyzer_rules_listeners
+	WHERE org_id = ? AND analyzer_rule_name = ?`, orgID, ruleName).Scan(&out).Error
+	return out, err
+}

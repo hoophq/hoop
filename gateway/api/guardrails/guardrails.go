@@ -104,7 +104,7 @@ func Post(c *gin.Context) {
 		UpdatedAt:   time.Now().UTC(),
 	}
 
-	if refuseSidecarTargets(c, ctx, req) {
+	if refuseSidecarTargets(c, ctx, req, req.Name) {
 		return
 	}
 
@@ -197,7 +197,7 @@ func Put(c *gin.Context) {
 		UpdatedAt:   time.Now().UTC(),
 	}
 
-	if refuseSidecarTargets(c, ctx, req) {
+	if refuseSidecarTargets(c, ctx, req, existing.Name) {
 		return
 	}
 
@@ -385,15 +385,21 @@ func upsertGuardrailRuleAttributes(ctx *storagev2.Context, ruleName string, attr
 // It runs on every write to a rule that is bound, not only when the binding is
 // created: editing a compliant rule into a non-compliant one would otherwise
 // walk straight past it.
-func refuseSidecarTargets(c *gin.Context, ctx *storagev2.Context, req *openapi.GuardRailRuleRequest) bool {
+// storedName is the rule's name as persisted right now, which a rename makes
+// different from req.Name: the bindings still sit under the old one until the
+// write cascades them, so both are looked up.
+func refuseSidecarTargets(c *gin.Context, ctx *storagev2.Context, req *openapi.GuardRailRuleRequest, storedName string) bool {
 	orgID := uuid.MustParse(ctx.GetOrgID())
 	targets := toSidecarTargets(req.SidecarTargets)
 
 	bound := len(targets) > 0
-	if !bound {
+	for _, name := range []string{req.Name, storedName} {
+		if bound {
+			break
+		}
 		// Already bound elsewhere: the rule's content still has to stay
 		// enforceable, even when this request does not mention the bindings.
-		existing, err := models.SidecarsBoundToGuardrailRule(models.DB, orgID, req.Name)
+		existing, err := models.SidecarsBoundToGuardrailRule(models.DB, orgID, name)
 		if err != nil {
 			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the rule's sidecar bindings")
 			return true

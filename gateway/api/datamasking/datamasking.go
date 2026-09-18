@@ -239,6 +239,10 @@ func Post(c *gin.Context) {
 	supportedEntityTypes := payload.SupportedEntityTypes
 	customEntityTypes := payload.CustomEntityTypes
 
+	if refuseSidecarTargets(c, ctx, req, payload, req.Name) {
+		return
+	}
+
 	rule, err := models.CreateDataMaskingRule(&models.DataMaskingRule{
 		ID:                   uuid.NewString(),
 		OrgID:                ctx.OrgID,
@@ -275,8 +279,14 @@ func Post(c *gin.Context) {
 			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed upserting data masking rule attributes: %v", err)
 			return
 		}
+		if err := persistSidecarTargets(ctx, rule.Name, req.SidecarTargets); err != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed binding the rule to its sidecars: %v", err)
+			return
+		}
 		rule.Attributes = req.Attributes
-		c.JSON(http.StatusCreated, toOpenApi(rule))
+		out := toOpenApi(rule)
+		out.SidecarTargets = loadSidecarTargets(ctx.GetOrgID(), rule.Name)
+		c.JSON(http.StatusCreated, out)
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed creating data masking rule: %v", err)
 	}
@@ -334,6 +344,10 @@ func Put(c *gin.Context) {
 	supportedEntityTypes := payload.SupportedEntityTypes
 	customEntityTypes := payload.CustomEntityTypes
 
+	if refuseSidecarTargets(c, ctx, req, payload, existing.Name) {
+		return
+	}
+
 	evt := audit.NewEvent(audit.ResourceDataMasking, audit.ActionUpdate).
 		Resource(ruleID, req.Name).
 		Set("name", req.Name).
@@ -365,8 +379,14 @@ func Put(c *gin.Context) {
 			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed upserting data masking rule attributes: %v", err)
 			return
 		}
+		if err := persistSidecarTargets(ctx, rule.Name, req.SidecarTargets); err != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed binding the rule to its sidecars: %v", err)
+			return
+		}
 		rule.Attributes = req.Attributes
-		c.JSON(http.StatusOK, toOpenApi(rule))
+		out := toOpenApi(rule)
+		out.SidecarTargets = loadSidecarTargets(ctx.GetOrgID(), rule.Name)
+		c.JSON(http.StatusOK, out)
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed updating data masking rule: %v", err)
 	}
@@ -505,6 +525,90 @@ func toOpenApi(obj *models.DataMaskingRule) *openapi.DataMaskingRule {
 func upsertDatamaskingRuleAttributes(ctx *storagev2.Context, ruleName string, attributeNames []string) error {
 	orgID := uuid.MustParse(ctx.GetOrgID())
 	return models.UpsertDatamaskingRuleAttributes(models.DB, orgID, ruleName, attributeNames)
+}
+
+// refuseSidecarTargets validates a rule against what a sidecar can detect and
+// reports whether it answered the request.
+//
+// Three checks, each refusing a rule that would look saved and mask nothing:
+// a custom entity type no sidecar recognizer can register, a binding that does
+// not resolve to exactly one listener, and a threshold that would collide with
+// another rule already bound to the same sidecar.
+//
+// It runs on every write to a bound rule, not only when the binding is
+// created: editing a compliant rule into a non-compliant one would otherwise
+// walk straight past it.
+//
+// storedName is the rule's name as persisted right now, which a rename makes
+// different from req.Name: the bindings still sit under the old one until the
+// write cascades them, so both are looked up.
+func refuseSidecarTargets(c *gin.Context, ctx *storagev2.Context, req *openapi.DataMaskingRuleRequest, payload RulePayload, storedName string) bool {
+	orgID := uuid.MustParse(ctx.GetOrgID())
+	targets := toSidecarTargets(req.SidecarTargets)
+
+	bound := len(targets) > 0
+	for _, name := range []string{req.Name, storedName} {
+		if bound {
+			break
+		}
+		// Already bound elsewhere: the rule's content still has to stay
+		// enforceable, even when this request does not mention the bindings.
+		existing, err := models.SidecarsBoundToDataMaskingRule(models.DB, orgID, name)
+		if err != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the rule's sidecar bindings")
+			return true
+		}
+		bound = len(existing) > 0
+	}
+	if !bound {
+		return false
+	}
+
+	err := services.ValidateDataMaskingRuleForSidecar(req.Name, payload.SupportedEntityTypes, payload.CustomEntityTypes)
+	if err == nil {
+		err = services.ValidateSidecarRuleTargets(models.DB, ctx.GetOrgID(), targets)
+	}
+	if err == nil {
+		err = services.ValidateMaskThresholdForSidecars(models.DB, orgID, req.Name, req.ScoreThreshold, targets)
+	}
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return true
+	}
+	return false
+}
+
+// persistSidecarTargets replaces the rule's target set. Called only after the
+// rule row exists, so the junction's foreign key has something to point at.
+func persistSidecarTargets(ctx *storagev2.Context, ruleName string, targets []openapi.SidecarRuleTarget) error {
+	return models.SetDataMaskingRuleListeners(models.DB, uuid.MustParse(ctx.GetOrgID()),
+		ruleName, toSidecarTargets(targets))
+}
+
+func toSidecarTargets(in []openapi.SidecarRuleTarget) []models.SidecarRuleTarget {
+	out := make([]models.SidecarRuleTarget, 0, len(in))
+	for _, t := range in {
+		if t.SidecarID == "" {
+			continue
+		}
+		out = append(out, models.SidecarRuleTarget{SidecarID: t.SidecarID, ListenerName: t.ListenerName})
+	}
+	return out
+}
+
+// loadSidecarTargets renders back where a rule is bound, so a round-trip
+// through the API returns what was saved.
+func loadSidecarTargets(orgID, ruleName string) []openapi.SidecarRuleTarget {
+	rows, err := models.ListDataMaskingRuleTargets(models.DB, uuid.MustParse(orgID), ruleName)
+	if err != nil {
+		log.Warnf("failed reading the sidecar targets of data masking rule %q, reason=%v", ruleName, err)
+		return nil
+	}
+	out := make([]openapi.SidecarRuleTarget, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, openapi.SidecarRuleTarget{SidecarID: r.SidecarID, ListenerName: r.ListenerName})
+	}
+	return out
 }
 
 // parseRequestPayload parses the openapi-shaped HTTP body and validates it

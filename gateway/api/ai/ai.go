@@ -358,18 +358,28 @@ func CreateSessionAnalyzerRule(c *gin.Context) {
 		},
 	}
 
+	if refuseSidecarTargets(c, orgID, rule, req.SidecarTargets) {
+		return
+	}
+
 	err = models.CreateAISessionAnalyzerRule(rule)
 	switch err {
 	case models.ErrAlreadyExists:
 		c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
 	case nil:
+		if err := persistSidecarTargets(orgID, rule.Name, req.SidecarTargets); err != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed binding the rule to its sidecars: %v", err)
+			return
+		}
 		analytics.New().Track(ctx.UserID, analytics.EventSessionAIAnalysisRuleCreated, map[string]interface{}{
 			"org-id":             rule.OrgID,
 			"low-risk-action":    rule.RiskEvaluation.Tier(models.RiskLevelKeyLow).Action,
 			"medium-risk-action": rule.RiskEvaluation.Tier(models.RiskLevelKeyMedium).Action,
 			"high-risk-action":   rule.RiskEvaluation.Tier(models.RiskLevelKeyHigh).Action,
 		})
-		c.JSON(http.StatusCreated, toSessionAnalyzerRuleResponse(rule))
+		out := toSessionAnalyzerRuleResponse(rule)
+		out.SidecarTargets = loadSidecarTargets(orgID, rule.Name)
+		c.JSON(http.StatusCreated, out)
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating AI session analyzer rule: %v", err)
 	}
@@ -442,11 +452,19 @@ func UpdateSessionAnalyzerRule(c *gin.Context) {
 		},
 	}
 
+	if refuseSidecarTargets(c, orgID, rule, req.SidecarTargets) {
+		return
+	}
+
 	err = models.UpdateAISessionAnalyzerRule(rule)
 	switch err {
 	case gorm.ErrRecordNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
 	case nil:
+		if err := persistSidecarTargets(orgID, rule.Name, req.SidecarTargets); err != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed binding the rule to its sidecars: %v", err)
+			return
+		}
 		analytics.New().Track(ctx.UserID, analytics.EventSessionAIAnalysisRuleUpdated, map[string]interface{}{
 			"org-id":             rule.OrgID,
 			"low-risk-action":    rule.RiskEvaluation.Tier(models.RiskLevelKeyLow).Action,
@@ -454,7 +472,9 @@ func UpdateSessionAnalyzerRule(c *gin.Context) {
 			"high-risk-action":   rule.RiskEvaluation.Tier(models.RiskLevelKeyHigh).Action,
 		})
 
-		c.JSON(http.StatusOK, toSessionAnalyzerRuleResponse(rule))
+		out := toSessionAnalyzerRuleResponse(rule)
+		out.SidecarTargets = loadSidecarTargets(orgID, rule.Name)
+		c.JSON(http.StatusOK, out)
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating AI session analyzer rule: %v", err)
 	}
