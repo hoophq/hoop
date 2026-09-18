@@ -207,9 +207,69 @@ func foldSidecarRules(cfg daemon.Config, guardrails, masking, analyzers []models
 		if err := decodeSpec(b.Spec, &block); err != nil {
 			return cfg, fmt.Errorf("analyzer rule %q: %w", b.RuleName, err)
 		}
-		listeners[idx].Analyzer = &block
+		listeners[idx].Analyzer = mergeAnalyzerBlock(listeners[idx].Analyzer, block)
 	}
 	return cfg, nil
+}
+
+// mergeAnalyzerBlock lays a rule over the listener's own analyzer block.
+//
+// The rule owns the risk DECISION -- what is classified and what each verdict
+// does. The listener keeps the controls a control plane has no business
+// setting from a rule form: what leaves the process, what happens when the
+// provider is down, and what one classification may cost.
+//
+// Replacing the whole block instead would silently revert two safety
+// properties an operator wrote down. `send: refuse` becomes the inherited
+// default, so statement text a relay exists to keep away from a model vendor
+// is posted to one; `fail_open: false` becomes true, so a provider outage
+// starts allowing the statements the block was there to deny. Neither failure
+// is visible anywhere: the document still validates and the lane still
+// reports an analyzer.
+//
+// A nil base cannot happen through the API -- ValidateSidecarRuleTargets
+// refuses a rule bound to a lane with the analyzer off -- and is handled
+// rather than dereferenced, because composition also runs over rows written
+// before that guard existed.
+func mergeAnalyzerBlock(base *daemon.LaneAnalyzerConfig, rule daemon.LaneAnalyzerConfig) *daemon.LaneAnalyzerConfig {
+	if base == nil {
+		return &rule
+	}
+	out := *base
+
+	// What the rule form writes, and every one of these REPLACES: a rule
+	// naming no trigger classifies everything on purpose, and a level it
+	// leaves unset allows on purpose. Falling back to the listener here
+	// would make a rule unable to widen what it narrowed.
+	out.Trigger = rule.Trigger
+	out.HighRisk, out.MediumRisk, out.LowRisk = rule.HighRisk, rule.MediumRisk, rule.LowRisk
+	out.Prompt, out.Message = rule.Prompt, rule.Message
+
+	// The overrides, kept from the listener unless the rule names one. The
+	// form writes only max_calls today; the rest are here because the spec is
+	// stored as the daemon's own type, so a spec that names one means it.
+	if rule.MaxCalls != 0 {
+		out.MaxCalls = rule.MaxCalls
+	}
+	if rule.TimeoutSec != 0 {
+		out.TimeoutSec = rule.TimeoutSec
+	}
+	if rule.MaxInputBytes != 0 {
+		out.MaxInputBytes = rule.MaxInputBytes
+	}
+	if rule.Send != "" {
+		out.Send = rule.Send
+	}
+	if rule.FailOpen != nil {
+		out.FailOpen = rule.FailOpen
+	}
+	if rule.Cache != nil {
+		out.Cache = rule.Cache
+	}
+	if rule.ApprovalRule != "" {
+		out.ApprovalRule = rule.ApprovalRule
+	}
+	return &out
 }
 
 // decodeSpec reads a stored sidecar_spec into the daemon's own type, strictly.

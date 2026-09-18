@@ -266,6 +266,69 @@ func TestTwoAnalyzerRulesOnOneListenerAreRefused(t *testing.T) {
 	}
 }
 
+// An analyzer rule carries the risk decision. It must not carry away the
+// listener's own safety and cost controls with it.
+//
+// Replacing the block whole reverts two properties silently. `send: refuse`
+// falls back to the inherited default, so statement text the operator kept
+// away from a model vendor is posted to one; `fail_open: false` falls back to
+// true, so a provider outage starts allowing what the block existed to deny.
+// The document still validates and the lane still reports an analyzer, so
+// nothing anywhere reports the downgrade.
+func TestAnAnalyzerRuleKeepsTheListenersOwnControls(t *testing.T) {
+	cfg, _, _, analyzers := boundEverything()
+	denyOnOutage := false
+	cfg.Listeners[0].Analyzer = &daemon.LaneAnalyzerConfig{
+		Send:          daemon.SendRefuse,
+		FailOpen:      &denyOnOutage,
+		TimeoutSec:    10,
+		MaxInputBytes: 8192,
+		MaxCalls:      40,
+		Cache:         &daemon.AnalyzerCacheConfig{Size: 4096, TTLSec: 900},
+		// A level the rule also names, to prove the rule wins on the decision.
+		HighRisk: "warn",
+	}
+
+	composed, err := foldSidecarRules(cfg, nil, nil, analyzers)
+	if err != nil {
+		t.Fatalf("composition failed: %v", err)
+	}
+	got := composed.Listeners[0].Analyzer
+	if got == nil {
+		t.Fatal("the lane lost its analyzer block entirely")
+	}
+
+	// Kept: the listener owns these, and the rule form cannot set them.
+	if got.Send != daemon.SendRefuse {
+		t.Errorf("send was downgraded to %q; statement text would reach the model vendor", got.Send)
+	}
+	if got.FailOpen == nil || *got.FailOpen {
+		t.Errorf("fail_open reverted to allow-on-outage: %v", got.FailOpen)
+	}
+	if got.TimeoutSec != 10 || got.MaxInputBytes != 8192 || got.MaxCalls != 40 {
+		t.Errorf("the lane's bounds were dropped: %+v", got)
+	}
+	if got.Cache == nil || got.Cache.Size != 4096 {
+		t.Errorf("the lane's cache was dropped: %+v", got.Cache)
+	}
+
+	// Replaced: the rule owns what is classified and what each verdict does.
+	if got.HighRisk != "block" || got.MediumRisk != "warn" {
+		t.Errorf("the rule's risk actions did not win: high=%q medium=%q", got.HighRisk, got.MediumRisk)
+	}
+	if got.Trigger == nil || len(got.Trigger.Operations) != 2 {
+		t.Errorf("the rule's trigger did not land: %+v", got.Trigger)
+	}
+	if !strings.Contains(got.Prompt, "payments schema") {
+		t.Errorf("the rule's prompt did not land: %q", got.Prompt)
+	}
+
+	// And the stored row is untouched, like every other composition.
+	if cfg.Listeners[0].Analyzer.HighRisk != "warn" {
+		t.Error("composition wrote back into the stored listener block")
+	}
+}
+
 // TestASpecWithAnUnknownKeyIsRefused pins the strict decode. sidecar_spec is a
 // JSONB column and nothing in the database constrains its shape, so a key the
 // daemon does not declare would otherwise reach a sidecar that refuses its
