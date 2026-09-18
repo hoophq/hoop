@@ -125,6 +125,84 @@ func TestGuardrailRuleListeners(t *testing.T) {
 	}
 }
 
+// A rule bound to one sidecar must not compose onto another.
+//
+// Two sidecars in one organization is the normal case, and the composition
+// query is the only thing keeping their documents apart: a rule that leaked
+// would enforce on a lane nobody bound it to, and the operator reading the
+// rule's own page would see the right listener the whole time.
+func TestARuleBoundToOneSidecarDoesNotReachAnother(t *testing.T) {
+	startTestDB(t)
+	orgID := uuid.MustParse(testOrgID)
+
+	first := &models.Sidecar{
+		OrgID: testOrgID, Name: "first", KeyHash: models.HashAPIKey("hsc_first_test"),
+		CreatedBy: "tests@hoop.dev",
+		Configuration: models.SidecarConfiguration{Listeners: []daemon.ListenerConfig{{
+			Name: "appdb", Protocol: "postgres", Listen: ":5432", Upstream: "db:5432",
+		}}},
+	}
+	second := &models.Sidecar{
+		OrgID: testOrgID, Name: "second", KeyHash: models.HashAPIKey("hsc_second_test"),
+		CreatedBy: "tests@hoop.dev",
+		Configuration: models.SidecarConfiguration{Listeners: []daemon.ListenerConfig{{
+			Name: "warehouse", Protocol: "postgres", Listen: ":5433", Upstream: "db:5433",
+		}}},
+	}
+	for _, sc := range []*models.Sidecar{first, second} {
+		if err := models.CreateSidecar(models.DB, sc); err != nil {
+			t.Fatalf("seed sidecar %s: %v", sc.Name, err)
+		}
+	}
+
+	rule := &models.GuardRailRules{
+		OrgID: testOrgID, ID: uuid.NewString(), Name: "only-on-second",
+		Input: map[string]any{"rules": []any{}}, Output: map[string]any{"rules": []any{}},
+		SidecarSpec: json.RawMessage(`{"rules":[{"name":"r","type":"operation","operations":["drop"]}]}`),
+	}
+	if err := models.UpsertGuardRailRuleWithConnections(rule, nil, true); err != nil {
+		t.Fatalf("seed guardrail rule: %v", err)
+	}
+	err := models.SetGuardrailRuleListeners(models.DB, orgID, rule.Name,
+		[]models.SidecarRuleTarget{{SidecarID: second.ID, ListenerName: "warehouse"}})
+	if err != nil {
+		t.Fatalf("bind to the second sidecar: %v", err)
+	}
+
+	onSecond, err := models.ListGuardrailRulesForSidecar(models.DB, orgID, second.ID)
+	if err != nil {
+		t.Fatalf("list on second: %v", err)
+	}
+	if len(onSecond) != 1 || onSecond[0].ListenerName != "warehouse" {
+		t.Fatalf("the rule did not reach the sidecar it was bound to: %+v", onSecond)
+	}
+
+	onFirst, err := models.ListGuardrailRulesForSidecar(models.DB, orgID, first.ID)
+	if err != nil {
+		t.Fatalf("list on first: %v", err)
+	}
+	if len(onFirst) != 0 {
+		t.Fatalf("a rule bound to %q leaked onto %q: %+v", second.Name, first.Name, onFirst)
+	}
+
+	// The composed documents say the same thing, which is what the handshake
+	// actually serves.
+	composedFirst, err := services.ComposeSidecarConfiguration(models.DB, first)
+	if err != nil {
+		t.Fatalf("compose first: %v", err)
+	}
+	if g := composedFirst.Listeners[0].Guardrails; g != nil && len(g.Rules) != 0 {
+		t.Errorf("the first sidecar was served rules it has none bound: %+v", g.Rules)
+	}
+	composedSecond, err := services.ComposeSidecarConfiguration(models.DB, second)
+	if err != nil {
+		t.Fatalf("compose second: %v", err)
+	}
+	if g := composedSecond.Listeners[0].Guardrails; g == nil || len(g.Rules) != 1 {
+		t.Errorf("the second sidecar was not served its own rule: %+v", g)
+	}
+}
+
 // A masking rule's sidecar_spec has to survive a read.
 //
 // The datamasking reads name their columns one by one, unlike the guardrail and
