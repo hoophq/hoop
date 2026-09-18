@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { Stack, Table, Text } from '@mantine/core'
+import { Group, Stack, Text } from '@mantine/core'
 import Button from '@/components/Button'
 import DocsBtnCallOut from '@/components/DocsBtnCallOut'
 import { docsUrl } from '@/utils/docsUrl'
@@ -58,24 +58,21 @@ export default function ControlPlaneConfigureTab() {
             analyzer section:
           </Text>
 
-          <Table verticalSpacing="xs" horizontalSpacing={0} withRowBorders={false}>
-            <Table.Tbody>
-              {FIELDS.map(([key, what]) => (
-                <Table.Tr key={key}>
-                  <Table.Td w={260} valign="top">
-                    <Text size="sm" fw={600} ff="monospace">
-                      {key}
-                    </Text>
-                  </Table.Td>
-                  <Table.Td>
-                    <Text size="sm" c="dimmed">
-                      {what}
-                    </Text>
-                  </Table.Td>
-                </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
+          {/* A term and what it does, not a data table: no header, no row
+              borders, nothing to sort or scan down a column. Rows, so it
+              reads as the list it is and carries no table chrome. */}
+          <Stack gap="xs">
+            {FIELDS.map(([key, what]) => (
+              <Group key={key} align="flex-start" gap="md" wrap="nowrap">
+                <Text size="sm" fw={600} ff="monospace" w={260} style={{ flexShrink: 0 }}>
+                  {key}
+                </Text>
+                <Text size="sm" c="dimmed">
+                  {what}
+                </Text>
+              </Group>
+            ))}
+          </Stack>
 
           <Text size="sm" c="dimmed">
             A listener needs its own analyzer block before a rule can reach it.
