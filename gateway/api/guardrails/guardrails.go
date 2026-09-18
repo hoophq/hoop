@@ -104,6 +104,10 @@ func Post(c *gin.Context) {
 		UpdatedAt:   time.Now().UTC(),
 	}
 
+	if refuseSidecarTargets(c, ctx, req) {
+		return
+	}
+
 	err := models.UpsertGuardRailRuleWithConnections(rule, validConnectionIDs, true)
 	switch err {
 	case models.ErrAlreadyExists:
@@ -114,16 +118,21 @@ func Post(c *gin.Context) {
 			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed upserting guard rail rule attributes: %v", err)
 			return
 		}
+		if err := persistSidecarTargets(ctx, rule.Name, req.SidecarTargets); err != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed binding the rule to its sidecars: %v", err)
+			return
+		}
 		c.JSON(http.StatusCreated, &openapi.GuardRailRuleResponse{
-			ID:            rule.ID,
-			Name:          rule.Name,
-			Description:   rule.Description,
-			Input:         rule.Input,
-			Output:        rule.Output,
-			ConnectionIDs: rule.ConnectionIDs,
-			Attributes:    req.Attributes,
-			CreatedAt:     rule.CreatedAt,
-			UpdatedAt:     rule.UpdatedAt,
+			ID:             rule.ID,
+			Name:           rule.Name,
+			Description:    rule.Description,
+			Input:          rule.Input,
+			Output:         rule.Output,
+			ConnectionIDs:  rule.ConnectionIDs,
+			Attributes:     req.Attributes,
+			SidecarTargets: loadSidecarTargets(ctx.GetOrgID(), rule.Name),
+			CreatedAt:      rule.CreatedAt,
+			UpdatedAt:      rule.UpdatedAt,
 		})
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed creating guard rail rule: %v", err)
@@ -188,6 +197,10 @@ func Put(c *gin.Context) {
 		UpdatedAt:   time.Now().UTC(),
 	}
 
+	if refuseSidecarTargets(c, ctx, req) {
+		return
+	}
+
 	// Update guardrail and associate connections in a single transaction
 	err = models.UpsertGuardRailRuleWithConnections(rule, validConnectionIDs, false)
 	switch err {
@@ -199,16 +212,21 @@ func Put(c *gin.Context) {
 			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed upserting guard rail rule attributes: %v", err)
 			return
 		}
+		if err := persistSidecarTargets(ctx, rule.Name, req.SidecarTargets); err != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed binding the rule to its sidecars: %v", err)
+			return
+		}
 		c.JSON(http.StatusOK, &openapi.GuardRailRuleResponse{
-			ID:            rule.ID,
-			Name:          rule.Name,
-			Description:   rule.Description,
-			Input:         rule.Input,
-			Output:        rule.Output,
-			ConnectionIDs: rule.ConnectionIDs,
-			Attributes:    req.Attributes,
-			CreatedAt:     rule.CreatedAt,
-			UpdatedAt:     rule.UpdatedAt,
+			ID:             rule.ID,
+			Name:           rule.Name,
+			Description:    rule.Description,
+			Input:          rule.Input,
+			Output:         rule.Output,
+			ConnectionIDs:  rule.ConnectionIDs,
+			Attributes:     req.Attributes,
+			SidecarTargets: loadSidecarTargets(ctx.GetOrgID(), rule.Name),
+			CreatedAt:      rule.CreatedAt,
+			UpdatedAt:      rule.UpdatedAt,
 		})
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed updating guard rail rule: %v", err)
@@ -354,4 +372,80 @@ func filterEmptyIDs(ids []string) []string {
 func upsertGuardrailRuleAttributes(ctx *storagev2.Context, ruleName string, attributeNames []string) error {
 	orgID := uuid.MustParse(ctx.GetOrgID())
 	return models.UpsertGuardrailRuleAttributes(models.DB, orgID, ruleName, attributeNames)
+}
+
+// refuseSidecarTargets validates a rule against what a sidecar can enforce and
+// reports whether it answered the request.
+//
+// Two checks, and both exist because the alternative is a rule that looks saved
+// and enforces nothing. The vocabulary check refuses a rule shape no sidecar
+// configuration can express; the target check refuses a binding that does not
+// resolve to exactly one listener on a sidecar this organization owns.
+//
+// It runs on every write to a rule that is bound, not only when the binding is
+// created: editing a compliant rule into a non-compliant one would otherwise
+// walk straight past it.
+func refuseSidecarTargets(c *gin.Context, ctx *storagev2.Context, req *openapi.GuardRailRuleRequest) bool {
+	orgID := uuid.MustParse(ctx.GetOrgID())
+	targets := toSidecarTargets(req.SidecarTargets)
+
+	bound := len(targets) > 0
+	if !bound {
+		// Already bound elsewhere: the rule's content still has to stay
+		// enforceable, even when this request does not mention the bindings.
+		existing, err := models.SidecarsBoundToGuardrailRule(models.DB, orgID, req.Name)
+		if err != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the rule's sidecar bindings")
+			return true
+		}
+		bound = len(existing) > 0
+	}
+	if !bound {
+		return false
+	}
+
+	input, _ := json.Marshal(req.Input)
+	output, _ := json.Marshal(req.Output)
+	if err := services.ValidateGuardrailRuleForSidecar(req.Name, input, output); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return true
+	}
+	if err := services.ValidateSidecarRuleTargets(models.DB, ctx.GetOrgID(), targets); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return true
+	}
+	return false
+}
+
+// persistSidecarTargets replaces the rule's target set. Called only after the
+// rule row exists, so the junction's foreign key has something to point at.
+func persistSidecarTargets(ctx *storagev2.Context, ruleName string, targets []openapi.SidecarRuleTarget) error {
+	return models.SetGuardrailRuleListeners(models.DB, uuid.MustParse(ctx.GetOrgID()),
+		ruleName, toSidecarTargets(targets))
+}
+
+func toSidecarTargets(in []openapi.SidecarRuleTarget) []models.SidecarRuleTarget {
+	out := make([]models.SidecarRuleTarget, 0, len(in))
+	for _, t := range in {
+		if t.SidecarID == "" {
+			continue
+		}
+		out = append(out, models.SidecarRuleTarget{SidecarID: t.SidecarID, ListenerName: t.ListenerName})
+	}
+	return out
+}
+
+// loadSidecarTargets renders back where a rule is bound, so a round-trip
+// through the API returns what was saved.
+func loadSidecarTargets(orgID, ruleName string) []openapi.SidecarRuleTarget {
+	rows, err := models.ListGuardrailRuleTargets(models.DB, uuid.MustParse(orgID), ruleName)
+	if err != nil {
+		log.Warnf("failed reading the sidecar targets of guardrail rule %q, reason=%v", ruleName, err)
+		return nil
+	}
+	out := make([]openapi.SidecarRuleTarget, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, openapi.SidecarRuleTarget{SidecarID: r.SidecarID, ListenerName: r.ListenerName})
+	}
+	return out
 }

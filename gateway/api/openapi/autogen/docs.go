@@ -10194,16 +10194,10 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.SidecarReviewResponse"
-                        }
-                    },
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/openapi.SidecarReviewResponse"
+                            "$ref": "#/definitions/openapi.Review"
                         }
                     },
                     "400": {
@@ -14902,6 +14896,13 @@ const docTemplate = `{
                     "description": "The output rule. Each rule entry accepts an optional \"message\" field that\nis shown to the user when that specific rule is hit.\n\n\t\t{\n\t\t\t\"name\": \"deny-select\",\n\t\t\t\"description\": \"\u003coptional-description\u003e\",\n\t\t\t\"input\": {\n\t\t\t\t\"rules\": [\n\t\t\t\t\t{\"type\": \"deny_words_list\", \"words\": [\"SELECT\"], \"pattern_regex\": \"\", \"message\": \"\u003coptional-message\u003e\"}\n\t\t\t\t]\n\t\t\t},\n\t\t\t\"output\": {\n\t\t\t\t\"rules\": [\n\t\t\t\t\t{\"type\": \"pattern_match\", \"words\": [], \"pattern_regex\": \"[A-Z0-9]+\", \"message\": \"\u003coptional-message\u003e\"}\n\t\t\t\t]\n\t\t\t}\n\t\t}",
                     "type": "object",
                     "additionalProperties": {}
+                },
+                "sidecar_targets": {
+                    "description": "SidecarTargets binds this rule to sidecar listeners, which is how a\ncontrol plane distributes it to a fleet. An entry with an empty listener\ntargets every listener on that sidecar.\n\nA bound rule is restricted to what a sidecar can enforce: request-side\nrules only, of type deny_words_list or pattern_match, with a pattern Go's\nRE2 accepts. A rule outside that is refused on the write rather than\nsaved and quietly never enforced.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.SidecarRuleTarget"
+                    }
                 }
             }
         },
@@ -14968,6 +14969,13 @@ const docTemplate = `{
                     "description": "The output rule. Each rule entry accepts an optional \"message\" field that\nis shown to the user when that specific rule is hit.\n\n\t\t{\n\t\t\t\"name\": \"deny-select\",\n\t\t\t\"description\": \"\u003coptional-description\u003e\",\n\t\t\t\"input\": {\n\t\t\t\t\"rules\": [\n\t\t\t\t\t{\"type\": \"deny_words_list\", \"words\": [\"SELECT\"], \"pattern_regex\": \"\", \"name\": \"\u003coptional-name\u003e\", \"message\": \"\u003coptional-message\u003e\"}\n\t\t\t\t]\n\t\t\t},\n\t\t\t\"output\": {\n\t\t\t\t\"rules\": [\n\t\t\t\t\t{\"type\": \"pattern_match\", \"words\": [], \"pattern_regex\": \"[A-Z0-9]+\", \"message\": \"\u003coptional-message\u003e\"}\n\t\t\t\t]\n\t\t\t}\n\t\t}",
                     "type": "object",
                     "additionalProperties": {}
+                },
+                "sidecar_targets": {
+                    "description": "The sidecar listeners this rule is bound to, and therefore distributed to",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.SidecarRuleTarget"
+                    }
                 },
                 "updated_at": {
                     "description": "The time the resource was updated",
@@ -19775,21 +19783,19 @@ const docTemplate = `{
                 }
             }
         },
-        "openapi.SidecarReviewResponse": {
+        "openapi.SidecarRuleTarget": {
             "type": "object",
             "properties": {
-                "forward": {
-                    "description": "Whether the sidecar may release the statement it held\n\nTrue only on the request that consumed an approved review, and only\nonce per review. False while the review waits, and false forever once\nit is rejected or revoked.",
-                    "type": "boolean",
-                    "example": false
+                "listener_name": {
+                    "description": "The listener on that sidecar, or empty for every listener it has",
+                    "type": "string",
+                    "example": "appdb"
                 },
-                "review": {
-                    "description": "The review the statement is waiting on, or the one that released it",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/openapi.Review"
-                        }
-                    ]
+                "sidecar_id": {
+                    "description": "The sidecar that must enforce the rule",
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
                 }
             }
         },

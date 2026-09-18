@@ -398,7 +398,7 @@ func Handshake(c *gin.Context) {
 			"start the sidecar with its config file to import it, or author the configuration in the control plane"})
 		return
 	}
-	served, err := withOrgLicense(sidecar.OrgID, sidecar.Configuration)
+	served, err := withOrgLicense(sidecar)
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the organization license")
 		return
@@ -428,14 +428,23 @@ func Handshake(c *gin.Context) {
 // no license can name. An expired document still goes out, because the
 // sidecar has its own rule for a term that ended and cannot apply it to a
 // license it never received.
-func withOrgLicense(orgID string, cfg models.SidecarConfiguration) (daemon.Config, error) {
-	licenseData, err := models.GetOrgLicenseData(models.DB, orgID)
+func withOrgLicense(sc *models.Sidecar) (daemon.Config, error) {
+	licenseData, err := models.GetOrgLicenseData(models.DB, sc.OrgID)
 	if err != nil {
 		// Not found is not a missing license, it is a missing org: the
 		// token authenticated against a row that names it.
-		return daemon.Config(cfg), err
+		return daemon.Config(sc.Configuration), err
 	}
-	return servedConfig(cfg, licenseData), nil
+	// The rules an admin bound to this sidecar are folded in here, on the way
+	// out, and never stored: the row keeps what an admin authored and the
+	// answer is derived on every handshake. Composition touches only the
+	// sections the sidecar hot-reloads, so a rule edit reaches a running
+	// process without restarting it.
+	composed, err := services.ComposeSidecarConfiguration(models.DB, sc)
+	if err != nil {
+		return daemon.Config(sc.Configuration), err
+	}
+	return servedConfig(models.SidecarConfiguration(composed), licenseData), nil
 }
 
 // servedConfig is the document itself: the stored configuration with the
@@ -549,7 +558,7 @@ func Configuration(c *gin.Context) {
 		c.JSON(http.StatusOK, diskModeConfig{LoadFromDisk: true, License: string(licenseData)})
 		return
 	}
-	served, err := withOrgLicense(sidecar.OrgID, sidecar.Configuration)
+	served, err := withOrgLicense(sidecar)
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the organization license")
 		return

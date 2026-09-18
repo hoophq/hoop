@@ -344,6 +344,19 @@ type SidecarResponse struct {
 	LastOutcome string `json:"last_outcome,omitempty" example:"applied"`
 }
 
+// SidecarRuleTarget is one place a rule is enforced: a sidecar, and either one
+// of its listeners or all of them.
+//
+// An empty ListenerName is not "unset". It selects the configuration's
+// top-level block, which the daemon concatenates into every lane, and is how an
+// admin says "this whole sidecar".
+type SidecarRuleTarget struct {
+	// The sidecar that must enforce the rule
+	SidecarID string `json:"sidecar_id" format:"uuid" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"`
+	// The listener on that sidecar, or empty for every listener it has
+	ListenerName string `json:"listener_name,omitempty" example:"appdb"`
+}
+
 type SidecarCreateResponse struct {
 	SidecarResponse
 	// The generated token, sent in the hoop-sidecar-token header. This is the
@@ -2023,6 +2036,16 @@ type GuardRailRuleRequest struct {
 	ConnectionIDs []string `json:"connection_ids" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7,15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D8"`
 	// Attributes associated with this guardrail rule
 	Attributes []string `json:"attributes" example:"production,pii"`
+
+	// SidecarTargets binds this rule to sidecar listeners, which is how a
+	// control plane distributes it to a fleet. An entry with an empty listener
+	// targets every listener on that sidecar.
+	//
+	// A bound rule is restricted to what a sidecar can enforce: request-side
+	// rules only, of type deny_words_list or pattern_match, with a pattern Go's
+	// RE2 accepts. A rule outside that is refused on the write rather than
+	// saved and quietly never enforced.
+	SidecarTargets []SidecarRuleTarget `json:"sidecar_targets,omitempty"`
 }
 
 type GuardRailRuleResponse struct {
@@ -2079,6 +2102,8 @@ type GuardRailRuleResponse struct {
 	ConnectionIDs []string `json:"connection_ids" example:"15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7,15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D8"`
 	// Attributes associated with this guardrail rule
 	Attributes []string `json:"attributes" example:"production,pii"`
+	// The sidecar listeners this rule is bound to, and therefore distributed to
+	SidecarTargets []SidecarRuleTarget `json:"sidecar_targets,omitempty"`
 	// The time the resource was created
 	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
 	// The time the resource was updated

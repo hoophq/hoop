@@ -3695,6 +3695,13 @@
             "additionalProperties": {},
             "description": "The output rule. Each rule entry accepts an optional \"message\" field that\nis shown to the user when that specific rule is hit.\n\n\t\t{\n\t\t\t\"name\": \"deny-select\",\n\t\t\t\"description\": \"\u003coptional-description\u003e\",\n\t\t\t\"input\": {\n\t\t\t\t\"rules\": [\n\t\t\t\t\t{\"type\": \"deny_words_list\", \"words\": [\"SELECT\"], \"pattern_regex\": \"\", \"message\": \"\u003coptional-message\u003e\"}\n\t\t\t\t]\n\t\t\t},\n\t\t\t\"output\": {\n\t\t\t\t\"rules\": [\n\t\t\t\t\t{\"type\": \"pattern_match\", \"words\": [], \"pattern_regex\": \"[A-Z0-9]+\", \"message\": \"\u003coptional-message\u003e\"}\n\t\t\t\t]\n\t\t\t}\n\t\t}",
             "type": "object"
+          },
+          "sidecar_targets": {
+            "description": "SidecarTargets binds this rule to sidecar listeners, which is how a\ncontrol plane distributes it to a fleet. An entry with an empty listener\ntargets every listener on that sidecar.\n\nA bound rule is restricted to what a sidecar can enforce: request-side\nrules only, of type deny_words_list or pattern_match, with a pattern Go's\nRE2 accepts. A rule outside that is refused on the write rather than\nsaved and quietly never enforced.",
+            "items": {
+              "$ref": "#/components/schemas/openapi.SidecarRuleTarget"
+            },
+            "type": "array"
           }
         },
         "required": [
@@ -3764,6 +3771,13 @@
             "additionalProperties": {},
             "description": "The output rule. Each rule entry accepts an optional \"message\" field that\nis shown to the user when that specific rule is hit.\n\n\t\t{\n\t\t\t\"name\": \"deny-select\",\n\t\t\t\"description\": \"\u003coptional-description\u003e\",\n\t\t\t\"input\": {\n\t\t\t\t\"rules\": [\n\t\t\t\t\t{\"type\": \"deny_words_list\", \"words\": [\"SELECT\"], \"pattern_regex\": \"\", \"name\": \"\u003coptional-name\u003e\", \"message\": \"\u003coptional-message\u003e\"}\n\t\t\t\t]\n\t\t\t},\n\t\t\t\"output\": {\n\t\t\t\t\"rules\": [\n\t\t\t\t\t{\"type\": \"pattern_match\", \"words\": [], \"pattern_regex\": \"[A-Z0-9]+\", \"message\": \"\u003coptional-message\u003e\"}\n\t\t\t\t]\n\t\t\t}\n\t\t}",
             "type": "object"
+          },
+          "sidecar_targets": {
+            "description": "The sidecar listeners this rule is bound to, and therefore distributed to",
+            "items": {
+              "$ref": "#/components/schemas/openapi.SidecarRuleTarget"
+            },
+            "type": "array"
           },
           "updated_at": {
             "description": "The time the resource was updated",
@@ -8572,20 +8586,18 @@
         ],
         "type": "object"
       },
-      "openapi.SidecarReviewResponse": {
+      "openapi.SidecarRuleTarget": {
         "properties": {
-          "forward": {
-            "description": "Whether the sidecar may release the statement it held\n\nTrue only on the request that consumed an approved review, and only\nonce per review. False while the review waits, and false forever once\nit is rejected or revoked.",
-            "example": false,
-            "type": "boolean"
+          "listener_name": {
+            "description": "The listener on that sidecar, or empty for every listener it has",
+            "example": "appdb",
+            "type": "string"
           },
-          "review": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/openapi.Review"
-              }
-            ],
-            "description": "The review the statement is waiting on, or the one that released it"
+          "sidecar_id": {
+            "description": "The sidecar that must enforce the rule",
+            "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7",
+            "format": "uuid",
+            "type": "string"
           }
         },
         "type": "object"
@@ -22043,21 +22055,11 @@
           "x-originalParamName": "request"
         },
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/openapi.SidecarReviewResponse"
-                }
-              }
-            },
-            "description": "OK"
-          },
           "201": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/openapi.SidecarReviewResponse"
+                  "$ref": "#/components/schemas/openapi.Review"
                 }
               }
             },
