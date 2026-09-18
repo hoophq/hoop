@@ -19631,6 +19631,16 @@ const docTemplate = `{
                 "version"
             ],
             "properties": {
+                "applied_revision": {
+                    "description": "AppliedRevision is the hoop-sidecar-config-revision of the last\nconfiguration this sidecar actually took on, which is not necessarily\nthe last one it was served: a document it refused, or one needing a\nrestart, leaves this at the revision still running.\n\nOptional. A sidecar too old to report it, or one that has handled no\ndocument yet, sends nothing and is reported as unknown rather than as\nconverged.",
+                    "type": "string",
+                    "example": "8f14e45fceea167a5a36dedd4bea2543"
+                },
+                "last_outcome": {
+                    "description": "LastOutcome is what this sidecar concluded about that configuration:\napplied, restart, refused, unchanged or retry. It is the only way to\ntell a sidecar enforcing the current rules from one that refused them\nand kept the old ones while still handshaking on time.\n\nOptional, for the same reason as AppliedRevision.",
+                    "type": "string",
+                    "example": "applied"
+                },
                 "version": {
                     "description": "Version of the sidecar binary",
                     "type": "string",

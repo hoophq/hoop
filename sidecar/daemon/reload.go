@@ -51,6 +51,26 @@ const (
 	reloadRetry
 )
 
+// String is the name this outcome travels under. The control plane reads it
+// to tell a sidecar that took a document from one that refused it, so these
+// are a wire vocabulary: rename one and a fleet view starts reading "unknown"
+// for every sidecar that has not been upgraded.
+func (o reloadOutcome) String() string {
+	switch o {
+	case reloadApplied:
+		return "applied"
+	case reloadRestart:
+		return "restart"
+	case reloadRefused:
+		return "refused"
+	case reloadUnchanged:
+		return "unchanged"
+	case reloadRetry:
+		return "retry"
+	}
+	return "unknown"
+}
+
 // laneState is one config generation as the admin endpoints see it: the
 // lanes serving traffic and the generation they came from. Published
 // atomically so /config renders what the data path runs, never the startup

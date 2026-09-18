@@ -1,12 +1,15 @@
 package apisidecar
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"slices"
 
 	"github.com/gin-gonic/gin"
+	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
@@ -15,6 +18,7 @@ import (
 	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/sidecar/daemon"
+	"gorm.io/gorm"
 )
 
 // reservedNames would shadow the static routes registered beside
@@ -29,6 +33,62 @@ var reservedNames = []string{"handshake", "configuration"}
 // license here has to learn that it did nothing.
 const licenseIsNotASidecarKey = `the "license" key does not belong in a sidecar configuration; ` +
 	"the organization's license is served to every sidecar automatically. Set it in Settings -> License"
+
+// configRevision names a served document. It is a hash rather than a counter
+// because the plane holds no per-sidecar sequence and derives the document on
+// every request: two answers built from the same rows must carry the same
+// name, or a sidecar that changed nothing would read as lagging forever.
+//
+// Opaque by contract. The plane issues it, the sidecar echoes it, and the
+// plane compares it to itself; nothing parses it. Truncated to 32 hex
+// characters because the column is VARCHAR(64) and this is an equality key,
+// not a signature.
+func configRevision(served daemon.Config) string {
+	doc, err := json.Marshal(served)
+	if err != nil {
+		// A document that cannot be marshaled is about to fail the response
+		// write anyway. An empty revision reads as "unknown" downstream,
+		// which is the honest answer and never as "converged".
+		return ""
+	}
+	sum := sha256.Sum256(doc)
+	return hex.EncodeToString(sum[:16])
+}
+
+// recordHandshake stores what the sidecar reported and what it is being
+// served. A failure to record is logged and never fails the handshake: the
+// sidecar needs its configuration more than the fleet view needs a row, and
+// the next tick is a minute away.
+func recordHandshake(sidecarID string, req openapi.SidecarHandshakeRequest, servedRevision string) {
+	err := models.RecordSidecarHandshake(models.DB, sidecarID,
+		req.Version, req.AppliedRevision, req.LastOutcome, servedRevision)
+	if err != nil {
+		log.With("sidecar", sidecarID).Warnf("failed recording the sidecar handshake, reason=%v", err)
+	}
+}
+
+// refuseOverCap answers 422 when a configuration authors more rules than the
+// organization's license allows, and reports whether it did.
+//
+// Every write goes through it. The caps are the sidecar's own
+// (sidecar/daemon/limits.go), counted the way the sidecar counts them, so a
+// document this accepts is a document a sidecar boots. Refusing here rather
+// than only when the document is served is the point: a sidecar that already
+// holds an over-cap document keeps its OLD rules and keeps reporting itself
+// recently seen, then exits on its next start -- so the whole fleet looks
+// healthy until a rescheduling event, and then none of it comes back.
+func refuseOverCap(c *gin.Context, orgID string, cfg daemon.Config) bool {
+	licenseData, err := models.GetOrgLicenseData(models.DB, orgID)
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the organization license")
+		return true
+	}
+	if err := services.CheckSidecarConfigurationLimits(cfg, licenseData); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return true
+	}
+	return false
+}
 
 // licenseManagedHeader tells a sidecar that this gateway owns the licensing
 // decision, so an absent license in the answer means the organization holds
@@ -80,6 +140,9 @@ func Post(c *gin.Context) {
 	}
 	if cfg.License != "" {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": licenseIsNotASidecarKey})
+		return
+	}
+	if refuseOverCap(c, ctx.OrgID, cfg) {
 		return
 	}
 
@@ -168,7 +231,7 @@ func Get(c *gin.Context) {
 //	@Router			/sidecars/{nameOrID} [delete]
 func Delete(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	deletedID, err := models.DeleteSidecarByNameOrID(models.DB, ctx.OrgID, c.Param("nameOrID"))
+	_, err := models.DeleteSidecarByNameOrID(models.DB, ctx.OrgID, c.Param("nameOrID"))
 	if err != nil {
 		if errors.Is(err, models.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"message": "sidecar not found"})
@@ -177,7 +240,6 @@ func Delete(c *gin.Context) {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed deleting sidecar")
 		return
 	}
-	forgetRuntime(deletedID)
 	c.Writer.WriteHeader(http.StatusNoContent)
 }
 
@@ -207,6 +269,9 @@ func Put(c *gin.Context) {
 	}
 	if cfg.License != "" {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": licenseIsNotASidecarKey})
+		return
+	}
+	if refuseOverCap(c, ctx.OrgID, cfg) {
 		return
 	}
 	item, err := models.UpdateSidecarConfiguration(models.DB, ctx.OrgID,
@@ -246,13 +311,38 @@ func Patch(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
-	item, err := models.PatchSidecarConfiguration(models.DB, ctx.OrgID, c.Param("nameOrID"), merge, removeLoadFromDisk)
+	licenseData, err := models.GetOrgLicenseData(models.DB, ctx.OrgID)
 	if err != nil {
-		if errors.Is(err, models.ErrNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"message": "sidecar not found"})
-			return
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the organization license")
+		return
+	}
+	// A patch is a partial document: what it authors in total is only known
+	// once the merge has run. So the merge and the cap check share one
+	// transaction and an over-cap result rolls the merge back, rather than
+	// the gateway reading the stored document first and racing another
+	// writer between the read and the write.
+	var item *models.Sidecar
+	err = models.DB.Transaction(func(tx *gorm.DB) error {
+		patched, err := models.PatchSidecarConfiguration(tx, ctx.OrgID, c.Param("nameOrID"), merge, removeLoadFromDisk)
+		if err != nil {
+			return err
 		}
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed patching sidecar configuration")
+		if err := services.CheckSidecarConfigurationLimits(daemon.Config(patched.Configuration), licenseData); err != nil {
+			return err
+		}
+		item = patched
+		return nil
+	})
+	if err != nil {
+		var overCap services.ErrSidecarConfigOverCap
+		switch {
+		case errors.Is(err, models.ErrNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"message": "sidecar not found"})
+		case errors.As(err, &overCap):
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": overCap.Error()})
+		default:
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed patching sidecar configuration")
+		}
 		return
 	}
 	c.JSON(http.StatusOK, toResponse(*item))
@@ -290,14 +380,18 @@ func Handshake(c *gin.Context) {
 		}
 		// Running fine on its own file, so it is recently seen. The 412
 		// below is for a sidecar that cannot run at all.
-		recordRuntime(sidecar.ID, req.Version)
+		//
+		// No revision: the plane does not own this sidecar's document, so it
+		// has nothing to be converged with. The state renders from
+		// load_from_disk instead.
+		recordHandshake(sidecar.ID, req, "")
 		c.Header(licenseManagedHeader, "true")
 		c.JSON(http.StatusOK, diskModeConfig{LoadFromDisk: true, License: string(licenseData)})
 		return
 	}
 	// An empty answer would only kill the caller: the sidecar refuses to
 	// serve a config with no listeners and exits. The 412 lets it import
-	// its local file instead, and skipping recordRuntime keeps a process
+	// its local file instead, and skipping recordHandshake keeps a process
 	// that cannot run from showing up as recently seen.
 	if len(sidecar.Configuration.Listeners) == 0 {
 		c.JSON(http.StatusPreconditionFailed, gin.H{"message": "no configuration is assigned to this sidecar; " +
@@ -309,8 +403,10 @@ func Handshake(c *gin.Context) {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the organization license")
 		return
 	}
-	recordRuntime(sidecar.ID, req.Version)
+	revision := configRevision(served)
+	recordHandshake(sidecar.ID, req, revision)
 	c.Header(licenseManagedHeader, "true")
+	c.Header(daemon.ConfigRevisionHeader, revision)
 	c.JSON(http.StatusOK, served)
 }
 
@@ -400,6 +496,16 @@ func ImportConfiguration(c *gin.Context) {
 	// hold. The sidecar strips it before pushing; this is the second
 	// barrier, for a client that does not.
 	cfg.License = ""
+	// Checked on the way in, against the ORGANIZATION's license rather than
+	// whatever the sidecar was running under. A file that booted on a
+	// sidecar with its own license can be over the cap for the org that
+	// adopts it, and storing it would make the plane serve a document the
+	// sidecar then refuses on its next start. The sidecar renders this 422
+	// as "the control plane refused the imported config", and keeps running
+	// its local file meanwhile.
+	if refuseOverCap(c, sidecar.OrgID, cfg) {
+		return
+	}
 	// An imported configuration is plane-owned by definition: the sidecar
 	// pushed its file to hand ownership over, so the row records the flag
 	// explicitly off.
@@ -476,10 +582,9 @@ func toResponse(s models.Sidecar) openapi.SidecarResponse {
 	// and cannot see the purpose of. The license belongs to the
 	// organization, so it is not part of this document in either direction.
 	resp.Configuration.License = ""
-	if state := loadRuntime(s.ID); state != nil {
-		resp.Version = state.Version
-		lastSeen := state.LastSeen
-		resp.LastSeenAt = &lastSeen
+	resp.LastSeenAt = s.LastSeenAt
+	if s.ReportedVersion != nil {
+		resp.Version = *s.ReportedVersion
 	}
 	return resp
 }

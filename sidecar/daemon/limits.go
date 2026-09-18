@@ -137,6 +137,27 @@ func (c *Config) checkLimits(lic license.Status) []string {
 	return problems
 }
 
+// CheckLimits reports every way a config exceeds the rule caps the given
+// license allows, as messages an operator can act on. An empty result means
+// the config fits.
+//
+// It exists for the control plane. A plane that composes rules into a served
+// document must refuse at authoring time exactly what a sidecar refuses at
+// boot, or the refusal is invisible: a document over the caps is
+// reloadRefused by a running process (which keeps its OLD rules and keeps
+// reporting itself healthy) and a hard exit on the next start. The fleet then
+// looks fine until a helm upgrade or a node drain reschedules it, and every
+// pod crash-loops at once.
+//
+// This is the whole cap check and not a second opinion: it is the same
+// function buildLanes runs, so a config the plane accepts is a config a
+// sidecar boots. Unlike Validate it reads no filesystem, so a caller that is
+// not the sidecar host can run it.
+//
+// The Status must come from license.Load. A zero Status is the free tier,
+// which is the safe default for a caller that has no license to offer.
+func (c *Config) CheckLimits(lic license.Status) []string { return c.checkLimits(lic) }
+
 // licenseAdvice says what would lift the cap. Hitting one is the moment an
 // operator looks straight at the limit, and "contact our support" wastes it
 // when the reason is a license that expired last week.

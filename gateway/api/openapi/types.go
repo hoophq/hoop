@@ -379,6 +379,22 @@ type SidecarReviewResponse struct {
 type SidecarHandshakeRequest struct {
 	// Version of the sidecar binary
 	Version string `json:"version" binding:"required" example:"1.0.0"`
+	// AppliedRevision is the hoop-sidecar-config-revision of the last
+	// configuration this sidecar actually took on, which is not necessarily
+	// the last one it was served: a document it refused, or one needing a
+	// restart, leaves this at the revision still running.
+	//
+	// Optional. A sidecar too old to report it, or one that has handled no
+	// document yet, sends nothing and is reported as unknown rather than as
+	// converged.
+	AppliedRevision string `json:"applied_revision,omitempty" example:"8f14e45fceea167a5a36dedd4bea2543"`
+	// LastOutcome is what this sidecar concluded about that configuration:
+	// applied, restart, refused, unchanged or retry. It is the only way to
+	// tell a sidecar enforcing the current rules from one that refused them
+	// and kept the old ones while still handshaking on time.
+	//
+	// Optional, for the same reason as AppliedRevision.
+	LastOutcome string `json:"last_outcome,omitempty" example:"applied"`
 }
 
 // AgentSPIFFEMapping ties a SPIFFE identity (exact ID or prefix) to a Hoop

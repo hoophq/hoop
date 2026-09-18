@@ -2,6 +2,8 @@ package services
 
 import (
 	"encoding/json"
+	"errors"
+	"strings"
 	"testing"
 )
 
@@ -130,5 +132,122 @@ func TestParseSidecarConfigurationKeepsTheApprovalRule(t *testing.T) {
 	}
 	if got := cfg.Listeners[0].Analyzer.ApprovalRule; got != "payments-approvers" {
 		t.Errorf("approval_rule = %q; want payments-approvers", got)
+	}
+}
+
+// TestValidateListenerNames pins the whole refusal table. The rule exists
+// because a listener name is the only handle anything outside the document
+// has on a lane: an approval rule is authorized through it
+// (gateway/api/sidecar/reviews.go listenerNamesApprovalRule) and the sidecar's
+// reload path keys its per-lane rule documents and running servers by it
+// (sidecar/daemon/reload.go). The daemon itself requires neither presence nor
+// uniqueness, so nothing else enforces this.
+func TestValidateListenerNames(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		raw     string
+		wantErr bool
+	}{
+		{"no listeners at all", `{}`, false},
+		{"one named listener", `{"listeners":[{"name":"pg","protocol":"postgres","listen":":5432","upstream":"db:5432"}]}`, false},
+		{
+			"two listeners with distinct names",
+			`{"listeners":[{"name":"pg","protocol":"postgres","listen":":5432","upstream":"db:5432"},` +
+				`{"name":"api","protocol":"http","listen":":8080","upstream":"api:80"}]}`,
+			false,
+		},
+		{
+			// The daemon keys uniqueness on network|listen, so this document
+			// is valid to it and saved with a 200 before this guard.
+			"two listeners sharing a name on different ports",
+			`{"listeners":[{"name":"pg","protocol":"postgres","listen":":5432","upstream":"db:5432"},` +
+				`{"name":"pg","protocol":"postgres","listen":":5433","upstream":"db2:5432"}]}`,
+			true,
+		},
+		{
+			// daemon.go displayName falls back to listener[i], which nothing
+			// outside the document can name.
+			"a listener with no name",
+			`{"listeners":[{"protocol":"postgres","listen":":5432","upstream":"db:5432"}]}`,
+			true,
+		},
+		{
+			"a listener named only with spaces",
+			`{"listeners":[{"name":"   ","protocol":"postgres","listen":":5432","upstream":"db:5432"}]}`,
+			true,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ParseSidecarConfiguration(json.RawMessage(tt.raw))
+			if tt.wantErr && err == nil {
+				t.Fatal("want a refusal, got nil")
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("want the document accepted, got %v", err)
+			}
+		})
+	}
+}
+
+// TestParseSidecarConfigurationPatchChecksListenerNamesOnlyWhenSent proves the
+// patch path does not refuse a document it never received. A patch that leaves
+// listeners alone decodes into a probe with none, which must not read as "a
+// nameless listener".
+func TestParseSidecarConfigurationPatchChecksListenerNamesOnlyWhenSent(t *testing.T) {
+	if _, _, err := ParseSidecarConfigurationPatch(json.RawMessage(`{"log_level":"debug"}`)); err != nil {
+		t.Fatalf("a patch that does not name listeners must be accepted, got %v", err)
+	}
+
+	dup := `{"listeners":[{"name":"pg","protocol":"postgres","listen":":5432","upstream":"db:5432"},` +
+		`{"name":"pg","protocol":"postgres","listen":":5433","upstream":"db2:5432"}]}`
+	if _, _, err := ParseSidecarConfigurationPatch(json.RawMessage(dup)); err == nil {
+		t.Error("a patch that sends duplicate listener names must be refused, got nil")
+	}
+}
+
+// TestCheckSidecarConfigurationLimits pins the gateway half of the free-tier
+// caps. The numbers themselves belong to sidecar/daemon/limits.go; what this
+// asserts is that the gateway asks the same question the sidecar asks at boot,
+// so a document the control plane stores is a document a sidecar starts on.
+func TestCheckSidecarConfigurationLimits(t *testing.T) {
+	oneRule := `{"listeners":[{"name":"pg","protocol":"postgres","listen":":5432","upstream":"db:5432"}],` +
+		`"guardrails":{"rules":[{"name":"no-drop","type":"deny_words_list","words":["DROP TABLE"]}]}}`
+	cfg, err := ParseSidecarConfiguration(json.RawMessage(oneRule))
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+	if err := CheckSidecarConfigurationLimits(cfg, nil); err != nil {
+		t.Fatalf("one guardrail rule is inside the free tier, got %v", err)
+	}
+
+	// Two guardrail rules in one document: one on the default block and one
+	// on the lane. The daemon counts what a document AUTHORS across every
+	// block, so this is two even though each site holds one.
+	twoRules := `{"listeners":[{"name":"pg","protocol":"postgres","listen":":5432","upstream":"db:5432",` +
+		`"guardrails":{"rules":[{"name":"lane","type":"deny_words_list","words":["TRUNCATE"]}]}}],` +
+		`"guardrails":{"rules":[{"name":"no-drop","type":"deny_words_list","words":["DROP TABLE"]}]}}`
+	cfg, err = ParseSidecarConfiguration(json.RawMessage(twoRules))
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+	err = CheckSidecarConfigurationLimits(cfg, nil)
+	if err == nil {
+		t.Fatal("two guardrail rules exceed the free tier; want a refusal, got nil")
+	}
+	var overCap ErrSidecarConfigOverCap
+	if !errors.As(err, &overCap) {
+		t.Fatalf("want ErrSidecarConfigOverCap so the handler can answer 422, got %T", err)
+	}
+	// The message is the daemon's own, naming each block to merge. Without
+	// the breakdown an admin reads a total and starts from the top of the
+	// file.
+	if !strings.Contains(overCap.Error(), "guardrails") || !strings.Contains(overCap.Error(), "pg") {
+		t.Errorf("want the per-site breakdown naming both blocks, got %q", overCap.Error())
+	}
+
+	// A malformed licence must not read as a licensed one. license.Load
+	// answers an invalid Status, which grants nothing, so the caps hold.
+	if err := CheckSidecarConfigurationLimits(cfg, json.RawMessage(`{"not":"a license"}`)); err == nil {
+		t.Error("an unverifiable licence must not lift the caps")
 	}
 }
