@@ -81,14 +81,27 @@ function rulesToSpec(rules, typeFields) {
   return { rules: out }
 }
 
-function RuleEditor({ rule, onChange, onRemove, removable, types, operations }) {
+function RuleEditor({ rule, index, onChange, onRemove, removable, types, operations }) {
   const type = types.find((t) => t.value === rule.type) ?? types[0]
   const set = (patch) => onChange({ ...rule, ...patch })
   const has = (field) => type?.fields.includes(field)
 
   return (
-    <Paper p="md" withBorder>
+    <Paper p="md" radius="md" withBorder>
       <Stack gap="md">
+        {/* The number is not decoration. Rules evaluate in order and the first
+            denial wins, so which card is second is a fact about the policy. */}
+        <Group justify="space-between" align="center">
+          <Text size="xs" fw={600} c="dimmed" tt="uppercase">
+            {`Rule ${index + 1}`}
+          </Text>
+          {removable && (
+            <ActionIcon variant="subtle" color="gray" onClick={onRemove} aria-label="Remove rule">
+              <Trash2 size={16} />
+            </ActionIcon>
+          )}
+        </Group>
+
         <Group align="flex-end" gap="sm" wrap="nowrap">
           <TextInput
             label="Rule name"
@@ -106,11 +119,6 @@ function RuleEditor({ rule, onChange, onRemove, removable, types, operations }) 
             allowDeselect={false}
             w={200}
           />
-          {removable && (
-            <ActionIcon variant="subtle" color="red" onClick={onRemove} aria-label="Remove rule">
-              <Trash2 size={16} />
-            </ActionIcon>
-          )}
         </Group>
 
         {has('operations') && (
@@ -356,7 +364,7 @@ function FormFields({ guardrail, id, isEdit }) {
         title="Configure rules"
         description="Evaluated in order. The first rule that denies wins."
         callout={
-          <DocsBtnCallOut text="What each rule type matches" href={docsUrl.sidecar.policyRules} />
+          <DocsBtnCallOut text="What each rule type matches" href={docsUrl.sidecar.policyRules} variant="indigo" />
         }
       >
         <Stack gap="md">
@@ -364,6 +372,7 @@ function FormFields({ guardrail, id, isEdit }) {
             <RuleEditor
               key={rule.key}
               rule={rule}
+              index={i}
               types={types}
               operations={operations}
               removable={rules.length > 1}

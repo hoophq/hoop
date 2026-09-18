@@ -1,10 +1,10 @@
-import { useEffect } from 'react'
-import { Anchor, Stack, Text } from '@mantine/core'
+import { useEffect, useMemo } from 'react'
+import { Anchor, Group, Stack, Text } from '@mantine/core'
 import MultiSelect from '@/components/MultiSelect'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 
-// A target is a sidecar and, optionally, one of its listeners. MultiSelect
-// carries flat strings, so the pair is encoded into one.
+// A target is a sidecar and one of its listeners. MultiSelect carries flat
+// strings, so the pair is encoded into one.
 //
 // The separator is positional, not a delimiter: a sidecar id is a UUID and
 // therefore exactly 36 characters, while a listener name is free text an
@@ -52,36 +52,83 @@ export default function SidecarTargetPicker({ value = [], onChange, label, descr
     fetchSidecars()
   }, [fetchSidecars])
 
-  const data = sidecars.map((sc) => ({
-    group: sc.name,
-    // Listeners only. There is no "whole sidecar" option, and that is the
-    // point: a sidecar-wide rule writes the document's top-level block, which
-    // a lane carrying its own mask block silently replaces, so the same rule
-    // would apply on some lanes and be ignored on others with nothing here
-    // saying which.
-    //
-    // A listener with no name is left out. The name is the only handle the
-    // control plane has on a lane, and a binding to a nameless one is refused
-    // on save.
-    items: (sc.configuration?.listeners ?? [])
-      .filter((l) => l?.name)
-      .map((l) => ({
-        value: encodeTarget({ sidecar_id: sc.id, listener_name: l.name }),
-        label: l.protocol ? `${l.name} (${l.protocol})` : l.name,
+  const data = useMemo(
+    () =>
+      sidecars.map((sc) => ({
+        group: sc.name,
+        // Listeners only. There is no "whole sidecar" option, and that is the
+        // point: a sidecar-wide rule writes the document's top-level block,
+        // which a lane carrying its own mask block silently replaces, so the
+        // same rule would apply on some lanes and be ignored on others with
+        // nothing here saying which.
+        //
+        // A listener with no name is left out. The name is the only handle the
+        // control plane has on a lane, and a binding to a nameless one is
+        // refused on save.
+        items: (sc.configuration?.listeners ?? [])
+          .filter((l) => l?.name)
+          .map((l) => ({
+            value: encodeTarget({ sidecar_id: sc.id, listener_name: l.name }),
+            // The label is the listener name ALONE, because it is also the
+            // chip. "appdb (postgres)" doubles a chip's width to repeat what
+            // the row below already shows, and a rule bound to six listeners
+            // then wraps the field to three lines.
+            label: l.name,
+            protocol: l.protocol ?? '',
+            sidecar: sc.name,
+          })),
       })),
-  }))
+    [sidecars],
+  )
+
+  // Search matches the SIDECAR too, not just the listener. "payments" is how an
+  // operator thinks about a fleet, and Mantine's default filter reads the
+  // option label only — so typing a sidecar's name matched nothing, while its
+  // group heading sat right there on screen.
+  const filter = ({ options, search }) => {
+    const q = search.trim().toLowerCase()
+    if (q === '') return options
+    return options
+      .map((group) => {
+        // A group whose sidecar matches keeps ALL its listeners: the operator
+        // asked for that sidecar, and hiding lanes whose names happen not to
+        // contain the query would answer a question they did not ask.
+        if (group.group?.toLowerCase().includes(q)) return group
+        const items = (group.items ?? []).filter(
+          (o) =>
+            o.label.toLowerCase().includes(q) || (o.protocol ?? '').toLowerCase().includes(q),
+        )
+        return items.length > 0 ? { ...group, items } : null
+      })
+      .filter(Boolean)
+  }
 
   const empty = !loading && sidecars.length === 0
 
   return (
     <Stack gap="xs">
       <MultiSelect
-        label={label ?? 'Sidecars and listeners'}
+        label={label ?? 'Listeners'}
         description={description}
-        placeholder={empty ? 'No sidecars yet' : 'Select sidecars and listeners...'}
+        placeholder={empty ? 'No sidecars yet' : 'Search a sidecar or a listener...'}
         data={data}
         value={value.map(encodeTarget)}
         onChange={(values) => onChange(values.map(decodeTarget))}
+        // The protocol moves here, where it is read once while choosing,
+        // instead of riding in the chip forever. It is what decides which rule
+        // types and masking strategies the lane can run, so it earns a place
+        // in the row and not in the summary.
+        renderOption={({ option }) => (
+          <Group justify="space-between" gap="sm" wrap="nowrap" w="100%">
+            <Text size="sm">{option.label}</Text>
+            {option.protocol && (
+              <Text size="xs" c="dimmed" tt="lowercase">
+                {option.protocol}
+              </Text>
+            )}
+          </Group>
+        )}
+        filter={filter}
         disabled={empty}
         searchable
         clearable

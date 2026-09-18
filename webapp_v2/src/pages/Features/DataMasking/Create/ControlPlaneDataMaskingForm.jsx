@@ -85,7 +85,7 @@ function rulesToSpec(rules, sshBound) {
   return { rules: out }
 }
 
-function RuleEditor({ rule, onChange, onRemove, removable, strategies, sshBound }) {
+function RuleEditor({ rule, index, onChange, onRemove, removable, strategies, sshBound }) {
   const set = (patch) => onChange({ ...rule, ...patch })
   // What this rule would actually be saved as, which on an ssh lane is the
   // one length-preserving strategy whatever the row holds.
@@ -93,8 +93,19 @@ function RuleEditor({ rule, onChange, onRemove, removable, strategies, sshBound 
   const strategy = strategies.find((s) => s.value === value)
 
   return (
-    <Paper p="md" withBorder>
+    <Paper p="md" radius="md" withBorder>
       <Stack gap="md">
+        <Group justify="space-between" align="center">
+          <Text size="xs" fw={600} c="dimmed" tt="uppercase">
+            {`Rule ${index + 1}`}
+          </Text>
+          {removable && (
+            <ActionIcon variant="subtle" color="gray" onClick={onRemove} aria-label="Remove rule">
+              <Trash2 size={16} />
+            </ActionIcon>
+          )}
+        </Group>
+
         <Group align="flex-end" gap="sm" wrap="nowrap">
           <TextInput
             label="Rule name"
@@ -115,11 +126,6 @@ function RuleEditor({ rule, onChange, onRemove, removable, strategies, sshBound 
             allowDeselect={false}
             w={220}
           />
-          {removable && (
-            <ActionIcon variant="subtle" color="red" onClick={onRemove} aria-label="Remove rule">
-              <Trash2 size={16} />
-            </ActionIcon>
-          )}
         </Group>
 
         {rule.match === 'entities' ? (
@@ -293,7 +299,7 @@ function FormFields({ rule: stored, id, isEdit }) {
         title="Configure rules"
         description="Responses only. A statement on its way in is never rewritten."
         callout={
-          <DocsBtnCallOut text="Entities, columns and strategies" href={docsUrl.sidecar.dataMasking} />
+          <DocsBtnCallOut text="Entities, columns and strategies" href={docsUrl.sidecar.dataMasking} variant="indigo" />
         }
       >
         <Stack gap="md">
@@ -301,6 +307,7 @@ function FormFields({ rule: stored, id, isEdit }) {
             <RuleEditor
               key={rule.key}
               rule={rule}
+              index={i}
               strategies={strategies}
               sshBound={sshBound}
               removable={rules.length > 1}
