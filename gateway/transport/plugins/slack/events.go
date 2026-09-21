@@ -2,6 +2,7 @@ package slack
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -127,9 +128,15 @@ func (p *slackPlugin) resolveSlackGroupApprover(ev *event) (userContext *storage
 	}
 
 	rev, err := models.GetReviewByIdOrSid(ev.orgID, ev.msg.ID)
-	if err != nil {
-		log.With("sid", sid).Infof("slack group check skipped, failed loading review %s, reason=%v", ev.msg.ID, err)
+	switch {
+	case errors.Is(err, models.ErrNotFound):
+		// let the fallback path and DoReview report it
+		log.With("sid", sid).Infof("slack group check skipped, review %s not found", ev.msg.ID)
 		return nil, false
+	case err != nil:
+		log.With("sid", sid).Errorf("failed loading review %s, err=%v", ev.msg.ID, err)
+		_ = ev.ss.PostEphemeralMessage(ev.msg, "failed obtaining review information, try again")
+		return nil, true
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), slackAPITimeout)

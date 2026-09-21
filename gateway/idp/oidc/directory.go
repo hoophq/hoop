@@ -83,12 +83,9 @@ func (p *Provider) clientCredentialsToken(ctx context.Context, scopes []string, 
 func (p *Provider) ListDirectoryGroups(ctx context.Context) ([]idptypes.DirectoryGroup, error) {
 	switch p.directoryVendor() {
 	case vendorAuth0:
+		// Management API tokens need the API's own audience, not the login one.
 		issuer := strings.TrimSuffix(p.IssuerURL, "/")
-		audience := p.Audience
-		if audience == "" {
-			audience = issuer + "/api/v2/"
-		}
-		tok, err := p.clientCredentialsToken(ctx, nil, audience)
+		tok, err := p.clientCredentialsToken(ctx, nil, issuer+"/api/v2/")
 		if err != nil {
 			return nil, err
 		}

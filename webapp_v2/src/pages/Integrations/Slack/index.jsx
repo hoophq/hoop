@@ -21,7 +21,9 @@ function IntegrationsSlack() {
     updateConnectionConfig,
     saveEnvvars,
   } = usePlugin('slack')
-  const [tab, setTab] = useState(id == 'control-plane' ? 'configurations' : 'connections')
+  const isControlPlane = id === 'control-plane'
+  const [tab, setTab] = useState('connections')
+  const activeTab = isControlPlane ? 'configurations' : tab
   const [configConnection, setConfigConnection] = useState(null)
 
   const showLoader = useMinDelay(status === 'loading')
@@ -38,30 +40,32 @@ function IntegrationsSlack() {
         </Text>
       </Stack>
 
-      <Tabs value={tab} onChange={setTab}>
+      <Tabs value={activeTab} onChange={setTab}>
         <Tabs.List>
-          {id !== 'control-plane' && <Tabs.Tab value="connections">Connections</Tabs.Tab>}
+          {!isControlPlane && <Tabs.Tab value="connections">Connections</Tabs.Tab>}
           <Tabs.Tab value="configurations">Configurations</Tabs.Tab>
         </Tabs.List>
 
-        <Tabs.Panel value="connections" pt="md">
-          <PluginConnectionsList
-            plugin={plugin}
-            connections={connections}
-            mutating={mutating}
-            onToggle={toggleConnection}
-            renderAction={(connection, enabled) => (
-              <Button
-                variant="outline"
-                size="xs"
-                disabled={!enabled}
-                onClick={() => setConfigConnection(connection)}
-              >
-                Configure
-              </Button>
-            )}
-          />
-        </Tabs.Panel>
+        {!isControlPlane && (
+          <Tabs.Panel value="connections" pt="md">
+            <PluginConnectionsList
+              plugin={plugin}
+              connections={connections}
+              mutating={mutating}
+              onToggle={toggleConnection}
+              renderAction={(connection, enabled) => (
+                <Button
+                  variant="outline"
+                  size="xs"
+                  disabled={!enabled}
+                  onClick={() => setConfigConnection(connection)}
+                >
+                  Configure
+                </Button>
+              )}
+            />
+          </Tabs.Panel>
+        )}
 
         <Tabs.Panel value="configurations" pt="md">
           <SlackConfigurationsTab plugin={plugin} saving={mutating} onSave={saveEnvvars} />

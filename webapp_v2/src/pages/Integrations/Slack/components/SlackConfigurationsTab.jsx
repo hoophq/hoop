@@ -51,7 +51,9 @@ function SlackConfigurationsTab({ plugin, saving, onSave }) {
       payload = {
         SLACK_BOT_TOKEN: btoa(botToken.trim()),
         SLACK_APP_TOKEN: btoa(appToken.trim()),
-        SLACK_CHANNEL: btoa(slackChannel.trim())
+      }
+      if (slackChannel.trim()) {
+        payload.SLACK_CHANNEL = btoa(slackChannel.trim())
       }
     } catch {
       showSnackbar({ level: 'error', text: 'Tokens must contain only ASCII characters.' })
