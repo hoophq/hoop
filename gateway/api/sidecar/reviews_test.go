@@ -180,7 +180,7 @@ func TestListenerNamesApprovalRule(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := listenerNamesApprovalRule(tc.sidecar, tc.listenerName, tc.ruleName)
+			got := listenerNamesApprovalRule(tc.sidecar.Configuration.Listeners, tc.listenerName, tc.ruleName)
 			assert.Equal(t, tc.want, got)
 		})
 	}
@@ -228,15 +228,15 @@ func lane(name, ruleName string) daemon.ListenerConfig {
 func TestListenerNamesApprovalRuleFailsClosedOnDuplicateNames(t *testing.T) {
 	sc := sidecarWithListeners(lane("appdb", "lax-approvers"), lane("appdb", "strict-approvers"))
 
-	assert.False(t, listenerNamesApprovalRule(sc, "appdb", "lax-approvers"),
+	assert.False(t, listenerNamesApprovalRule(sc.Configuration.Listeners, "appdb", "lax-approvers"),
 		"the first lane must not authorize a statement the second lane may have held")
-	assert.False(t, listenerNamesApprovalRule(sc, "appdb", "strict-approvers"),
+	assert.False(t, listenerNamesApprovalRule(sc.Configuration.Listeners, "appdb", "strict-approvers"),
 		"neither direction authorizes while the name is ambiguous")
 
 	// A second lane under another name changes nothing: the match is unique.
 	sc = sidecarWithListeners(lane("appdb", "lax-approvers"), lane("reporting", "strict-approvers"))
-	assert.True(t, listenerNamesApprovalRule(sc, "appdb", "lax-approvers"))
-	assert.True(t, listenerNamesApprovalRule(sc, "reporting", "strict-approvers"))
+	assert.True(t, listenerNamesApprovalRule(sc.Configuration.Listeners, "appdb", "lax-approvers"))
+	assert.True(t, listenerNamesApprovalRule(sc.Configuration.Listeners, "reporting", "strict-approvers"))
 }
 
 // The control plane stores a sidecar rule without checking these fields, so a

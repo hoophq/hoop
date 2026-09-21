@@ -127,7 +127,7 @@ export default function SidecarsTable({ sidecars, onDelete }) {
                 /* Icons, like the listener table: three labelled chips push a
                    fleet row to three lines the moment the listener names beside
                    them get long. */
-                <FeaturePills compact features={configFeatures(sidecar.configuration)} />
+                <FeaturePills compact features={configFeatures(sidecar.configuration, sidecar.bound_rules)} />
               )}
             </Table.Td>
             <Table.Td>

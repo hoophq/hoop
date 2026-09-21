@@ -154,7 +154,10 @@ export default function ListenersTable({ sidecar, onAdd, onEdit, onDelete }) {
                     <AddressChip value={listener.upstream} />
                   </Table.Td>
                   <Table.Td>
-                    <FeaturePills compact features={listenerFeatures(listener, config)} />
+                    <FeaturePills
+                      compact
+                      features={listenerFeatures(listener, config, sidecar.bound_rules)}
+                    />
                   </Table.Td>
                   {editable && (
                     <Table.Td>
@@ -171,7 +174,11 @@ export default function ListenersTable({ sidecar, onAdd, onEdit, onDelete }) {
                 open && (
                   <Table.Tr key={`${label}-${index}-details`}>
                     <Table.Td colSpan={columnCount} p={0}>
-                      <ListenerDetails listener={listener} config={config} />
+                      <ListenerDetails
+                        listener={listener}
+                        config={config}
+                        boundRules={sidecar.bound_rules}
+                      />
                     </Table.Td>
                   </Table.Tr>
                 ),

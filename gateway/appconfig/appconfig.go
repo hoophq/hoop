@@ -93,7 +93,6 @@ type Config struct {
 	gatewayTLSKey                   string
 	gatewayTLSCert                  string
 	gatewayAllowPlainText           bool
-	gatewaySkipTLSVerify            bool
 	sshClientHostKey                string
 	integrationAWSInstanceRoleAllow bool
 
@@ -241,9 +240,7 @@ func Load(mode AppMode) error {
 	}
 
 	allowPlainText := os.Getenv("GATEWAY_ALLOW_PLAINTEXT") != "false" // Defaults to true
-	// For backwards compatibility, we also allow plaintext if no TLS envs are set
-	gatewayUseTLS := os.Getenv("USE_TLS") == "true" || grpcClientTLSCa != "" || gatewayTLSKey != "" || gatewayTLSCert != ""
-	gatewaySkipTLSVerify := os.Getenv("HOOP_TLS_SKIP_VERIFY") == "true"
+	gatewayUseTLS := grpcClientTLSCa != "" || gatewayTLSKey != "" || gatewayTLSCert != ""
 
 	// RDP PII analysis defaults (overridable via env)
 	rdpPIISnapshotInterval := 0.25 // 250ms
@@ -331,7 +328,6 @@ func Load(mode AppMode) error {
 		gatewayTLSKey:                   gatewayTLSKey,
 		gatewayTLSCert:                  gatewayTLSCert,
 		gatewayAllowPlainText:           allowPlainText,
-		gatewaySkipTLSVerify:            gatewaySkipTLSVerify,
 		sshClientHostKey:                sshClientHostKey,
 		integrationAWSInstanceRoleAllow: os.Getenv("INTEGRATION_AWS_INSTANCE_ROLE_ALLOW") == "true",
 		rdpPIISnapshotInterval:          rdpPIISnapshotInterval,
@@ -540,17 +536,20 @@ func (c Config) PgliteDataDir() string { return c.pgCred.pgliteDataDir }
 
 // IsPgliteEnabled reports whether the gateway must boot the embedded PGlite
 // database instead of connecting to an external PostgreSQL.
-func (c Config) IsPgliteEnabled() bool                 { return c.pgCred.pgliteDataDir != "" }
-func (c Config) DisableSessionsDownload() bool         { return c.disableSessionsDownload }
-func (c Config) DisableClipboardCopyCut() bool         { return c.disableClipboardCopyCut }
-func (c Config) OrgMultitenant() bool                  { return c.orgMultitenant }
-func (c Config) WebappUsersManagement() string         { return c.webappUsersManagement }
-func (c Config) IsAskAIAvailable() bool                { return c.askAICredentials != nil }
+func (c Config) IsPgliteEnabled() bool         { return c.pgCred.pgliteDataDir != "" }
+func (c Config) DisableSessionsDownload() bool { return c.disableSessionsDownload }
+func (c Config) DisableClipboardCopyCut() bool { return c.disableClipboardCopyCut }
+func (c Config) OrgMultitenant() bool          { return c.orgMultitenant }
+func (c Config) WebappUsersManagement() string { return c.webappUsersManagement }
+func (c Config) IsAskAIAvailable() bool        { return c.askAICredentials != nil }
+
+// GatewayUseTLS reports whether a complete TLS certificate pair is configured,
+// which is exactly when the gateway serves TLS. Read by the in-process gRPC
+// clients to decide whether to dial their own gateway securely.
 func (c Config) GatewayUseTLS() bool                   { return c.gatewayUseTLS }
 func (c Config) GrpcClientTLSCa() string               { return c.grpcClientTLSCa }
 func (c Config) GatewayTLSKey() string                 { return c.gatewayTLSKey }
 func (c Config) GatewayTLSCert() string                { return c.gatewayTLSCert }
-func (c Config) GatewaySkipTLSVerify() bool            { return c.gatewaySkipTLSVerify }
 func (c Config) SSHClientHostKey() string              { return c.sshClientHostKey }
 func (c Config) IntegrationAWSInstanceRoleAllow() bool { return c.integrationAWSInstanceRoleAllow }
 func (c Config) RDPPIISnapshotInterval() float64       { return c.rdpPIISnapshotInterval }

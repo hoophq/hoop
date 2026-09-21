@@ -11715,6 +11715,17 @@ const docTemplate = `{
                         }
                     ]
                 },
+                "sidecar_spec": {
+                    "description": "SidecarSpec is this rule in the sidecar's own vocabulary; see the\nrequest type. Present only in a control plane.",
+                    "type": "object"
+                },
+                "sidecar_targets": {
+                    "description": "The sidecar listeners this rule is bound to, and therefore distributed to",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.SidecarRuleTarget"
+                    }
+                },
                 "updated_at": {
                     "description": "The time the resource was updated",
                     "type": "string",
@@ -11769,6 +11780,17 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.AISessionAnalyzerRiskEvaluation"
                         }
                     ]
+                },
+                "sidecar_spec": {
+                    "description": "SidecarSpec is this rule in the SIDECAR's own vocabulary, which the\ngateway's fields above do not share: a trigger, risk actions spelled allow / warn / block /\ndefer, and the per-lane cost overrides. It IS the analyzer block the\nlistener receives.\n\nA control plane field. A gateway has no sidecars and refuses it.",
+                    "type": "object"
+                },
+                "sidecar_targets": {
+                    "description": "SidecarTargets names the sidecar LISTENERS that must run this analysis.\nOne block per listener: two rules bound to one listener is refused\nrather than merged.\n\nA POINTER because absent and empty are different instructions: absent\nleaves the bindings exactly as they are, and [] unbinds the rule from\nevery sidecar. Without that distinction any write that did not mention\nthe field -- a script fixing a typo, the gateway's own UI, an MCP call --\nwould silently unbind a rule from the whole fleet.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.SidecarRuleTarget"
+                    }
                 }
             }
         },
@@ -14358,6 +14380,17 @@ const docTemplate = `{
                     "type": "number",
                     "example": 0.6
                 },
+                "sidecar_spec": {
+                    "description": "SidecarSpec is this rule in the SIDECAR's own vocabulary, which the\ngateway's fields above do not share: entities OR column names, a strategy (redact, mask,\npartial, hash) and a keep_last. It holds the mask block the listener\nreceives: {\"rules\": [...]}.\n\nA control plane field. A gateway has no sidecars and refuses it.",
+                    "type": "object"
+                },
+                "sidecar_targets": {
+                    "description": "SidecarTargets names the sidecar LISTENERS that must apply this rule.\nA listener's mask block REPLACES the sidecar defaults rather than adding\nto them, which is why the binding is per listener.\n\nA POINTER because absent and empty are different instructions: absent\nleaves the bindings exactly as they are, and [] unbinds the rule from\nevery sidecar. Without that distinction any write that did not mention\nthe field -- a script fixing a typo, the gateway's own UI, an MCP call --\nwould silently unbind a rule from the whole fleet.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.SidecarRuleTarget"
+                    }
+                },
                 "supported_entity_types": {
                     "description": "The registered entity types that this rule applies to",
                     "type": "array",
@@ -14473,6 +14506,17 @@ const docTemplate = `{
                     "description": "The minimal detection score threshold for the entities to be masked.",
                     "type": "number",
                     "example": 0.6
+                },
+                "sidecar_spec": {
+                    "description": "SidecarSpec is this rule in the SIDECAR's own vocabulary, which the\ngateway's fields above do not share: entities OR column names, a strategy (redact, mask,\npartial, hash) and a keep_last. It holds the mask block the listener\nreceives: {\"rules\": [...]}.\n\nA control plane field. A gateway has no sidecars and refuses it.",
+                    "type": "object"
+                },
+                "sidecar_targets": {
+                    "description": "SidecarTargets names the sidecar LISTENERS that must apply this rule.\nA listener's mask block REPLACES the sidecar defaults rather than adding\nto them, which is why the binding is per listener.\n\nA POINTER because absent and empty are different instructions: absent\nleaves the bindings exactly as they are, and [] unbinds the rule from\nevery sidecar. Without that distinction any write that did not mention\nthe field -- a script fixing a typo, the gateway's own UI, an MCP call --\nwould silently unbind a rule from the whole fleet.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.SidecarRuleTarget"
+                    }
                 },
                 "supported_entity_types": {
                     "description": "The registered entity types that this rule applies to",
@@ -14902,6 +14946,17 @@ const docTemplate = `{
                     "description": "The output rule. Each rule entry accepts an optional \"message\" field that\nis shown to the user when that specific rule is hit.\n\n\t\t{\n\t\t\t\"name\": \"deny-select\",\n\t\t\t\"description\": \"\u003coptional-description\u003e\",\n\t\t\t\"input\": {\n\t\t\t\t\"rules\": [\n\t\t\t\t\t{\"type\": \"deny_words_list\", \"words\": [\"SELECT\"], \"pattern_regex\": \"\", \"message\": \"\u003coptional-message\u003e\"}\n\t\t\t\t]\n\t\t\t},\n\t\t\t\"output\": {\n\t\t\t\t\"rules\": [\n\t\t\t\t\t{\"type\": \"pattern_match\", \"words\": [], \"pattern_regex\": \"[A-Z0-9]+\", \"message\": \"\u003coptional-message\u003e\"}\n\t\t\t\t]\n\t\t\t}\n\t\t}",
                     "type": "object",
                     "additionalProperties": {}
+                },
+                "sidecar_spec": {
+                    "description": "SidecarSpec is this rule in the SIDECAR's own vocabulary, which the\ngateway's fields above do not share: seven rule types, an ` + "`" + `operations` + "`" + ` scope on every one of them,\nand ` + "`" + `action: defer` + "`" + ` to hand the verdict to a Rego policy. It holds the\nguardrails block the listener receives: {\"rules\": [...]}.\n\nA control plane field. A gateway has no sidecars and refuses it.",
+                    "type": "object"
+                },
+                "sidecar_targets": {
+                    "description": "SidecarTargets names the sidecar LISTENERS that must enforce this rule,\nwhich is how a control plane distributes it to a fleet. A listener, not\na sidecar: the listener carries the protocol, and the protocol decides\nwhich rule types it can run at all.\n\nA POINTER because absent and empty are different instructions: absent\nleaves the bindings exactly as they are, and [] unbinds the rule from\nevery sidecar. Without that distinction any write that did not mention\nthe field -- a script fixing a typo, the gateway's own UI, an MCP call --\nwould silently unbind a rule from the whole fleet.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.SidecarRuleTarget"
+                    }
                 }
             }
         },
@@ -14968,6 +15023,17 @@ const docTemplate = `{
                     "description": "The output rule. Each rule entry accepts an optional \"message\" field that\nis shown to the user when that specific rule is hit.\n\n\t\t{\n\t\t\t\"name\": \"deny-select\",\n\t\t\t\"description\": \"\u003coptional-description\u003e\",\n\t\t\t\"input\": {\n\t\t\t\t\"rules\": [\n\t\t\t\t\t{\"type\": \"deny_words_list\", \"words\": [\"SELECT\"], \"pattern_regex\": \"\", \"name\": \"\u003coptional-name\u003e\", \"message\": \"\u003coptional-message\u003e\"}\n\t\t\t\t]\n\t\t\t},\n\t\t\t\"output\": {\n\t\t\t\t\"rules\": [\n\t\t\t\t\t{\"type\": \"pattern_match\", \"words\": [], \"pattern_regex\": \"[A-Z0-9]+\", \"message\": \"\u003coptional-message\u003e\"}\n\t\t\t\t]\n\t\t\t}\n\t\t}",
                     "type": "object",
                     "additionalProperties": {}
+                },
+                "sidecar_spec": {
+                    "description": "SidecarSpec is this rule in the sidecar's own vocabulary; see the\nrequest type. Present only in a control plane.",
+                    "type": "object"
+                },
+                "sidecar_targets": {
+                    "description": "The sidecar listeners this rule is bound to, and therefore distributed to",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.SidecarRuleTarget"
+                    }
                 },
                 "updated_at": {
                     "description": "The time the resource was updated",
@@ -19580,6 +19646,17 @@ const docTemplate = `{
         "openapi.SidecarCreateResponse": {
             "type": "object",
             "properties": {
+                "applied_revision": {
+                    "type": "string",
+                    "example": "8f14e45fceea167a5a36dedd4bea2543"
+                },
+                "bound_rules": {
+                    "description": "BoundRules names the rules the control plane distributes to this\nsidecar, and the listener each one lands on.\n\nThey are NOT inside Configuration and never will be: a bound rule is\nfolded into the SERVED document on every handshake and nothing is\nstored, so one row update reaches a fleet. That is also why this field\nhas to exist — a page reading Configuration alone shows a listener\nenforcing nothing while the sidecar enforces the rule.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.SidecarRuleBinding"
+                    }
+                },
                 "configuration": {
                     "description": "The stored daemon configuration.",
                     "type": "object"
@@ -19598,8 +19675,13 @@ const docTemplate = `{
                     "format": "uuid",
                     "readOnly": true
                 },
+                "last_outcome": {
+                    "description": "LastOutcome is what the sidecar did with the last configuration it\nhandled: applied, unchanged, restart, refused or retry.\n\nIt is the field that separates a sidecar enforcing the current rules\nfrom one that refused them and kept the old ones. A refusal, or a\ndocument needing a restart, leaves the sidecar handshaking on time\nwith stale rules, and nothing else tells the two apart.\n\nEmpty for a sidecar that has handled nothing yet, or one too old to\nreport. Empty must read as unknown, never as converged.",
+                    "type": "string",
+                    "example": "applied"
+                },
                 "last_seen_at": {
-                    "description": "Last time this gateway process saw the sidecar. Same lifetime as Version.",
+                    "description": "Last time the sidecar handshook. Empty until it does.",
                     "type": "string"
                 },
                 "name": {
@@ -19613,13 +19695,18 @@ const docTemplate = `{
                     "format": "uuid",
                     "readOnly": true
                 },
+                "served_revision": {
+                    "description": "ServedRevision names the configuration last answered to this sidecar,\nand AppliedRevision the one it says it is running. Equal means the\nsidecar is enforcing what the control plane holds.\n\nBoth are opaque: the control plane issues them and compares them to\nitself. Nothing parses them.",
+                    "type": "string",
+                    "example": "8f14e45fceea167a5a36dedd4bea2543"
+                },
                 "token": {
                     "description": "The generated token, sent in the hoop-sidecar-token header. This is the\nonly time it is shown; it is stored hashed and cannot be recovered.",
                     "type": "string",
                     "example": "hsc_Ab3fX9kL..."
                 },
                 "version": {
-                    "description": "Version reported at the last handshake. Held in gateway memory, not\nstored, so it is empty until the sidecar calls and again after a\ngateway restart.",
+                    "description": "Version reported at the last handshake. Empty until the sidecar calls.",
                     "type": "string",
                     "example": "1.0.0"
                 }
@@ -19631,6 +19718,16 @@ const docTemplate = `{
                 "version"
             ],
             "properties": {
+                "applied_revision": {
+                    "description": "AppliedRevision is the hoop-sidecar-config-revision of the last\nconfiguration this sidecar actually took on, which is not necessarily\nthe last one it was served: a document it refused, or one needing a\nrestart, leaves this at the revision still running.\n\nOptional. A sidecar too old to report it, or one that has handled no\ndocument yet, sends nothing and is reported as unknown rather than as\nconverged.",
+                    "type": "string",
+                    "example": "8f14e45fceea167a5a36dedd4bea2543"
+                },
+                "last_outcome": {
+                    "description": "LastOutcome is what this sidecar concluded about that configuration:\napplied, restart, refused, unchanged or retry. It is the only way to\ntell a sidecar enforcing the current rules from one that refused them\nand kept the old ones while still handshaking on time.\n\nOptional, for the same reason as AppliedRevision.",
+                    "type": "string",
+                    "example": "applied"
+                },
                 "version": {
                     "description": "Version of the sidecar binary",
                     "type": "string",
@@ -19670,6 +19767,17 @@ const docTemplate = `{
         "openapi.SidecarResponse": {
             "type": "object",
             "properties": {
+                "applied_revision": {
+                    "type": "string",
+                    "example": "8f14e45fceea167a5a36dedd4bea2543"
+                },
+                "bound_rules": {
+                    "description": "BoundRules names the rules the control plane distributes to this\nsidecar, and the listener each one lands on.\n\nThey are NOT inside Configuration and never will be: a bound rule is\nfolded into the SERVED document on every handshake and nothing is\nstored, so one row update reaches a fleet. That is also why this field\nhas to exist — a page reading Configuration alone shows a listener\nenforcing nothing while the sidecar enforces the rule.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.SidecarRuleBinding"
+                    }
+                },
                 "configuration": {
                     "description": "The stored daemon configuration.",
                     "type": "object"
@@ -19688,8 +19796,13 @@ const docTemplate = `{
                     "format": "uuid",
                     "readOnly": true
                 },
+                "last_outcome": {
+                    "description": "LastOutcome is what the sidecar did with the last configuration it\nhandled: applied, unchanged, restart, refused or retry.\n\nIt is the field that separates a sidecar enforcing the current rules\nfrom one that refused them and kept the old ones. A refusal, or a\ndocument needing a restart, leaves the sidecar handshaking on time\nwith stale rules, and nothing else tells the two apart.\n\nEmpty for a sidecar that has handled nothing yet, or one too old to\nreport. Empty must read as unknown, never as converged.",
+                    "type": "string",
+                    "example": "applied"
+                },
                 "last_seen_at": {
-                    "description": "Last time this gateway process saw the sidecar. Same lifetime as Version.",
+                    "description": "Last time the sidecar handshook. Empty until it does.",
                     "type": "string"
                 },
                 "name": {
@@ -19703,8 +19816,13 @@ const docTemplate = `{
                     "format": "uuid",
                     "readOnly": true
                 },
+                "served_revision": {
+                    "description": "ServedRevision names the configuration last answered to this sidecar,\nand AppliedRevision the one it says it is running. Equal means the\nsidecar is enforcing what the control plane holds.\n\nBoth are opaque: the control plane issues them and compares them to\nitself. Nothing parses them.",
+                    "type": "string",
+                    "example": "8f14e45fceea167a5a36dedd4bea2543"
+                },
                 "version": {
-                    "description": "Version reported at the last handshake. Held in gateway memory, not\nstored, so it is empty until the sidecar calls and again after a\ngateway restart.",
+                    "description": "Version reported at the last handshake. Empty until the sidecar calls.",
                     "type": "string",
                     "example": "1.0.0"
                 }
@@ -19752,6 +19870,42 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.Review"
                         }
                     ]
+                }
+            }
+        },
+        "openapi.SidecarRuleBinding": {
+            "type": "object",
+            "properties": {
+                "kind": {
+                    "description": "Which feature the rule belongs to: guardrail, datamasking or analyzer",
+                    "type": "string",
+                    "example": "guardrail"
+                },
+                "listener_name": {
+                    "description": "The listener that enforces it",
+                    "type": "string",
+                    "example": "appdb"
+                },
+                "rule_name": {
+                    "description": "The rule's name",
+                    "type": "string",
+                    "example": "no-destructive-sql"
+                }
+            }
+        },
+        "openapi.SidecarRuleTarget": {
+            "type": "object",
+            "properties": {
+                "listener_name": {
+                    "description": "The listener on that sidecar, or empty for every listener it has",
+                    "type": "string",
+                    "example": "appdb"
+                },
+                "sidecar_id": {
+                    "description": "The sidecar that must enforce the rule",
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
                 }
             }
         },

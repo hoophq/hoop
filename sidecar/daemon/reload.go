@@ -51,6 +51,26 @@ const (
 	reloadRetry
 )
 
+// String is the name this outcome travels under. The control plane reads it
+// to tell a sidecar that took a document from one that refused it, so these
+// are a wire vocabulary: rename one and a fleet view starts reading "unknown"
+// for every sidecar that has not been upgraded.
+func (o reloadOutcome) String() string {
+	switch o {
+	case reloadApplied:
+		return "applied"
+	case reloadRestart:
+		return "restart"
+	case reloadRefused:
+		return "refused"
+	case reloadUnchanged:
+		return "unchanged"
+	case reloadRetry:
+		return "retry"
+	}
+	return "unknown"
+}
+
 // laneState is one config generation as the admin endpoints see it: the
 // lanes serving traffic and the generation they came from. Published
 // atomically so /config renders what the data path runs, never the startup
@@ -494,6 +514,17 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 //
 // A JSON render rather than a field-by-field compare, so a new Config field
 // is restart-guarded by default; forgetting it here fails safe.
+// BaselineDoc exposes nonRuleDoc to the control plane, which composes rules
+// into a sidecar's document before serving it and must be able to PROVE the
+// composition never reaches the baseline -- a rule edit that did would turn
+// every rule edit into a fleet restart.
+//
+// Exported for the same reason as CheckLimits: the authority on what this
+// build refuses, and on what it can hot-swap, is this build. A copy of the
+// list on the gateway side would pass its own test and still be wrong the
+// first time a Config field is added here.
+func BaselineDoc(c *Config) ([]byte, error) { return nonRuleDoc(c) }
+
 func nonRuleDoc(c *Config) ([]byte, error) {
 	cp := *c
 	cp.Guardrails, cp.OPA, cp.Mask, cp.Policy = nil, nil, nil, nil

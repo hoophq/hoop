@@ -1,0 +1,21 @@
+package appconfig
+
+// A throwaway self-signed pair, generated once for this test and valid for
+// 100 years. Only its shape matters: tls.X509KeyPair has to accept it.
+const (
+	testCertPEM = `-----BEGIN CERTIFICATE-----
+MIIBFjCBvaADAgECAgEBMAoGCCqGSM49BAMCMBQxEjAQBgNVBAMTCWxvY2FsaG9z
+dDAgFw0yNjA5MTgxMDIyMjZaGA8yMTI2MDgyNTExMjIyNlowFDESMBAGA1UEAxMJ
+bG9jYWxob3N0MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEINFvxgAQUmnXMCFe
+yZEcbl2ZAMRYf68R3IDZcyyad2QwEAgaFKrqdpR0HP1S8OVUyJuJdROsvTLj99oP
+VUC2YjAKBggqhkjOPQQDAgNIADBFAiEAih7h3qUvi53/1CIEuT7QdlkHwIvrQHJG
+DpiJnn+22Z4CIEX8SkQ2LAY9UnDfPgGB8M8D7ZqMMk7+5aN8lZxNwoP5
+-----END CERTIFICATE-----
+`
+	testKeyPEM = `-----BEGIN EC PRIVATE KEY-----
+MHcCAQEEIO+GGhlVUC271FnhpN/X66MeR+Rcf6ojt5ibYgqiAvUioAoGCCqGSM49
+AwEHoUQDQgAEINFvxgAQUmnXMCFeyZEcbl2ZAMRYf68R3IDZcyyad2QwEAgaFKrq
+dpR0HP1S8OVUyJuJdROsvTLj99oPVUC2Yg==
+-----END EC PRIVATE KEY-----
+`
+)

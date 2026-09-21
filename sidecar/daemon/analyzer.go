@@ -889,6 +889,28 @@ func refuseRuleFormHold(high, medium, low, where string) []string {
 	return nil
 }
 
+// ValidateLaneAnalyzerBlock checks one listener's analyzer block the way this
+// process checks it at startup: the risk vocabulary, the send mode, the
+// numeric bounds, and the two prerequisites of a hold -- an approval rule to
+// say who may release a statement, and a protocol whose client sends the
+// statement again.
+//
+// Exported for the control plane, which stores these blocks and distributes
+// them. The same refusal costs a 422 an admin reads at the save, or a fleet
+// that crash-loops at its next restart. Same reason ValidateSSHMasking is
+// exported, and the same contract: this is the authority, not a copy of it.
+//
+// The lane's block ALONE. validateLaneAnalysis also reads the top-level
+// analyzer section, the lane's OPA settings and the deprecated ai_analysis
+// rules; none of those is distributed, and it would refuse over their absence
+// a block the control plane composes correctly.
+func ValidateLaneAnalyzerBlock(la *LaneAnalyzerConfig, lane, protocol string) []string {
+	if la == nil {
+		return nil
+	}
+	return validateLaneBlock(la, lane, protocol)
+}
+
 // validateLaneBlock checks one listener's analyzer block in isolation. The
 // checks mirror the rule-form ones — same failure, same message shape — plus
 // the numeric bounds a rule never carried, which get the same negative

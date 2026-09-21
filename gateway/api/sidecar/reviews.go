@@ -397,7 +397,26 @@ func approvableSidecarRule(rule *models.AccessRequestRule) error {
 func authorizedApprovalRule(db *gorm.DB, sidecar *models.Sidecar, listenerName, ruleName string) (*models.AccessRequestRule, error) {
 	refuse := ruleNotAuthorized{listenerName: listenerName, ruleName: ruleName}
 
-	if !listenerNamesApprovalRule(sidecar, listenerName, ruleName) {
+	// Against the COMPOSED document, which is the one this sidecar was served.
+	// A listener's analyzer block can come from a rule an admin bound in the
+	// control plane, and composition places it on the way out without storing
+	// it -- so the stored row's listener names no approval rule, while the
+	// sidecar is running one and filing reviews under it. Authorizing against
+	// the stored row would refuse every one of them, and the statement would
+	// be denied forever with nothing saying why.
+	//
+	// Composition failing is not an authorization answer: it means the rules
+	// could not be read or do not fit together, so it is reported rather than
+	// rendered as a refusal the admin would look for in their reviewer list.
+	listeners := sidecar.Configuration.Listeners
+	if db != nil {
+		composed, err := services.ComposeSidecarConfiguration(db, sidecar)
+		if err != nil {
+			return nil, fmt.Errorf("failed composing the sidecar configuration: %w", err)
+		}
+		listeners = composed.Listeners
+	}
+	if !listenerNamesApprovalRule(listeners, listenerName, ruleName) {
 		return nil, refuse
 	}
 
@@ -423,16 +442,18 @@ func authorizedApprovalRule(db *gorm.DB, sidecar *models.Sidecar, listenerName, 
 	return rule, nil
 }
 
-// listenerNamesApprovalRule reports whether the sidecar's stored configuration
-// gives this listener this approval rule. Split out, and free of the database,
-// so the whole authorization table can be asserted without Postgres.
-func listenerNamesApprovalRule(sidecar *models.Sidecar, listenerName, ruleName string) bool {
+// listenerNamesApprovalRule reports whether the configuration SERVED to this
+// sidecar gives this listener this approval rule. It takes the listeners
+// rather than the sidecar, and is free of the database, so the whole
+// authorization table can be asserted without Postgres -- and so the caller
+// cannot forget that the document to read is the composed one.
+func listenerNamesApprovalRule(listeners []daemon.ListenerConfig, listenerName, ruleName string) bool {
 	if listenerName == "" || ruleName == "" {
 		return false
 	}
 	var analyzer *daemon.LaneAnalyzerConfig
 	matches := 0
-	for _, listener := range sidecar.Configuration.Listeners {
+	for _, listener := range listeners {
 		if listener.Name != listenerName {
 			continue
 		}

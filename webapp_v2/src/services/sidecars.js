@@ -2,8 +2,13 @@ import api from './api'
 
 // /sidecars — the control plane's fleet. `create` is the only call that
 // returns the token (hsc_…); it is stored hashed and never shown again.
-// `version` and `last_seen_at` are gateway memory written by the sidecar's
-// handshake: absent means "has not connected to this gateway process".
+// `version`, `last_seen_at`, `served_revision`, `applied_revision` and
+// `last_outcome` are written by the sidecar's handshake and stored on the row,
+// so they survive a gateway restart. Absent means the sidecar has never
+// handshaken, or is too old to report that field: read it as unknown, never as
+// converged. `served_revision` is the configuration the plane last answered
+// with and `applied_revision` the one the sidecar says it runs; equal, with a
+// healthy `last_outcome`, is the only combination that means in sync.
 // `configuration` is the daemon.Config the control plane STORES for this
 // sidecar and serves back on the handshake and on every poll. Creating without
 // one stores an empty document; the sidecar then seeds the plane with its own

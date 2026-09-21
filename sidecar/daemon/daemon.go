@@ -1339,6 +1339,10 @@ func buildServer(
 		log.Warn("upstream certificate verification is DISABLED",
 			"listener", ln.name, "upstream", lc.Upstream)
 	}
+	mysqlAuthKey, err := lc.buildMySQLAuthPrivateKey()
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", ln.name, err)
+	}
 
 	downstreamTLS, err := lc.DownstreamTLS.BuildDownstreamTLS()
 	if err != nil {
@@ -1356,24 +1360,25 @@ func buildServer(
 	}
 
 	return proxy.NewServer(proxy.Config{
-		Listen:           lc.Listen,
-		Network:          lc.Network,
-		Upstream:         lc.Upstream,
-		UpstreamTLS:      upstreamTLS,
-		DownstreamTLS:    downstreamTLS,
-		Protocol:         inspect.Protocol(lc.Protocol),
-		Connection:       ln.name,
-		Policy:           ln.policy,
-		Audit:            sink,
-		Masker:           ln.masker,
-		FailOnAuditError: ac.failOnAuditError(),
-		DenyWriter:       proxy.ProtocolDenyWriter{},
-		IdentityFn:       identityFn,
-		CodecFactory:     ln.codecFactory,
-		Metrics:          ln.metrics,
-		IdleTimeout:      time.Duration(lc.IdleTimeoutSec) * time.Second,
-		MaxConns:         lc.MaxConns,
-		Logger:           log.With("listener", ln.name),
+		Listen:              lc.Listen,
+		Network:             lc.Network,
+		Upstream:            lc.Upstream,
+		UpstreamTLS:         upstreamTLS,
+		MySQLAuthPrivateKey: mysqlAuthKey,
+		DownstreamTLS:       downstreamTLS,
+		Protocol:            inspect.Protocol(lc.Protocol),
+		Connection:          ln.name,
+		Policy:              ln.policy,
+		Audit:               sink,
+		Masker:              ln.masker,
+		FailOnAuditError:    ac.failOnAuditError(),
+		DenyWriter:          proxy.ProtocolDenyWriter{},
+		IdentityFn:          identityFn,
+		CodecFactory:        ln.codecFactory,
+		Metrics:             ln.metrics,
+		IdleTimeout:         time.Duration(lc.IdleTimeoutSec) * time.Second,
+		MaxConns:            lc.MaxConns,
+		Logger:              log.With("listener", ln.name),
 	})
 }
 

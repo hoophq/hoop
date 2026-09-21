@@ -2,9 +2,12 @@ package daemon
 
 import (
 	"bytes"
+	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
+	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -224,8 +227,14 @@ type ListenerConfig struct {
 	// Upstream is the real backend.
 	Upstream string `json:"upstream"`
 
-	// UpstreamTLS enables TLS to the backend.
+	// UpstreamTLS enables TLS to the backend. MySQL negotiates this after
+	// its plaintext server greeting; other supported protocols negotiate
+	// before their ordinary message flow.
 	UpstreamTLS *TLSConfig `json:"upstream_tls"`
+	// MySQLAuthKeyFile is an RSA private key whose public half MySQL clients
+	// can pin. It lets the relay decrypt direct RSA password responses before
+	// forwarding the NUL-terminated password inside UpstreamTLS.
+	MySQLAuthKeyFile string `json:"mysql_auth_key_file,omitempty"`
 
 	// DownstreamTLS lets the relay terminate the CLIENT's TLS on this lane.
 	// Requires cert_file and key_file; the other TLSConfig fields describe an
@@ -359,6 +368,45 @@ type TLSConfig struct {
 	// purpose and startup logs a warning when it is on: a proxy built to
 	// inspect sensitive traffic should not silently accept any certificate.
 	InsecureSkipVerify bool `json:"insecure_skip_verify"`
+}
+
+func (l ListenerConfig) buildMySQLAuthPrivateKey() (*rsa.PrivateKey, error) {
+	if l.MySQLAuthKeyFile == "" {
+		return nil, nil
+	}
+	data, err := os.ReadFile(l.MySQLAuthKeyFile)
+	if err != nil {
+		return nil, fmt.Errorf("mysql_auth_key_file: %w", err)
+	}
+	block, _ := pem.Decode(data)
+	if block == nil {
+		return nil, errors.New("mysql_auth_key_file contains no PEM private key")
+	}
+
+	var key *rsa.PrivateKey
+	switch block.Type {
+	case "RSA PRIVATE KEY":
+		key, err = x509.ParsePKCS1PrivateKey(block.Bytes)
+	case "PRIVATE KEY":
+		var parsed any
+		parsed, err = x509.ParsePKCS8PrivateKey(block.Bytes)
+		if err == nil {
+			var ok bool
+			key, ok = parsed.(*rsa.PrivateKey)
+			if !ok {
+				return nil, fmt.Errorf("mysql_auth_key_file contains a %T key, want RSA", parsed)
+			}
+		}
+	default:
+		return nil, fmt.Errorf("mysql_auth_key_file contains unsupported PEM block %q", block.Type)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("mysql_auth_key_file: %w", err)
+	}
+	if err := key.Validate(); err != nil {
+		return nil, fmt.Errorf("mysql_auth_key_file: %w", err)
+	}
+	return key, nil
 }
 
 // Enforcement modes for GuardrailsConfig.Mode.
@@ -1024,6 +1072,17 @@ func (c *Config) Validate() error {
 			// client connection means one failed login per restart and
 			// nothing in the startup log.
 			if _, err := l.DownstreamTLS.BuildDownstreamTLS(); err != nil {
+				problems = append(problems, fmt.Sprintf("%s: %v", name, err))
+			}
+		}
+		if l.MySQLAuthKeyFile != "" {
+			if l.Protocol != string(inspect.MySQL) || l.UpstreamTLS == nil {
+				problems = append(problems, fmt.Sprintf(
+					"%s: mysql_auth_key_file requires a mysql listener with upstream_tls",
+					name,
+				))
+			}
+			if _, err := l.buildMySQLAuthPrivateKey(); err != nil {
 				problems = append(problems, fmt.Sprintf("%s: %v", name, err))
 			}
 		}

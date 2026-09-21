@@ -1,12 +1,16 @@
 package apisidecar
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"slices"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
@@ -15,6 +19,7 @@ import (
 	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/sidecar/daemon"
+	"gorm.io/gorm"
 )
 
 // reservedNames would shadow the static routes registered beside
@@ -29,6 +34,114 @@ var reservedNames = []string{"handshake", "configuration"}
 // license here has to learn that it did nothing.
 const licenseIsNotASidecarKey = `the "license" key does not belong in a sidecar configuration; ` +
 	"the organization's license is served to every sidecar automatically. Set it in Settings -> License"
+
+// configRevision names a served document. It is a hash rather than a counter
+// because the plane holds no per-sidecar sequence and derives the document on
+// every request: two answers built from the same rows must carry the same
+// name, or a sidecar that changed nothing would read as lagging forever.
+//
+// Opaque by contract. The plane issues it, the sidecar echoes it, and the
+// plane compares it to itself; nothing parses it. Truncated to 32 hex
+// characters because the column is VARCHAR(64) and this is an equality key,
+// not a signature.
+func configRevision(served daemon.Config) string {
+	doc, err := json.Marshal(served)
+	if err != nil {
+		// A document that cannot be marshaled is about to fail the response
+		// write anyway. An empty revision reads as "unknown" downstream,
+		// which is the honest answer and never as "converged".
+		return ""
+	}
+	sum := sha256.Sum256(doc)
+	return hex.EncodeToString(sum[:16])
+}
+
+// recordHandshake stores what the sidecar reported and what it is being
+// served. A failure to record is logged and never fails the handshake: the
+// sidecar needs its configuration more than the fleet view needs a row, and
+// the next tick is a minute away.
+func recordHandshake(sidecarID string, req openapi.SidecarHandshakeRequest, servedRevision string) {
+	err := models.RecordSidecarHandshake(models.DB, sidecarID,
+		req.Version, req.AppliedRevision, req.LastOutcome, servedRevision)
+	if err != nil {
+		log.With("sidecar", sidecarID).Warnf("failed recording the sidecar handshake, reason=%v", err)
+	}
+}
+
+// refuseOverCap answers 422 when a configuration authors more rules than the
+// organization's license allows, and reports whether it did.
+//
+// Every write goes through it. The caps are the sidecar's own
+// (sidecar/daemon/limits.go), counted the way the sidecar counts them, so a
+// document this accepts is a document a sidecar boots. Refusing here rather
+// than only when the document is served is the point: a sidecar that already
+// holds an over-cap document keeps its OLD rules and keeps reporting itself
+// recently seen, then exits on its next start -- so the whole fleet looks
+// healthy until a rescheduling event, and then none of it comes back.
+func refuseOverCap(c *gin.Context, orgID string, cfg daemon.Config) bool {
+	licenseData, err := models.GetOrgLicenseData(models.DB, orgID)
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the organization license")
+		return true
+	}
+	if err := services.CheckSidecarConfigurationLimits(cfg, licenseData); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return true
+	}
+	return false
+}
+
+// writeSidecarConfiguration commits a configuration edit and refuses one the
+// sidecar could not serve.
+//
+// One transaction around the write and both checks, because both are about the
+// document AS STORED: the cap counts what it authors, and the bindings name
+// its listeners. Checking either outside the transaction reads a document
+// another writer can replace before the write lands, and then reports on one
+// nobody has.
+//
+// The binding check is the one a listener edit needs. Listener names are the
+// binding key, so removing, renaming, or re-protocoling a bound lane breaks
+// the NEXT handshake -- and it breaks it for the whole sidecar, not for the
+// rule: composition answers an error, and every rule on every other lane stops
+// being delivered with it. The sidecar keeps its last good document and goes
+// on looking healthy while an admin edits rules that no longer reach it.
+func writeSidecarConfiguration(db *gorm.DB, licenseData json.RawMessage, write func(tx *gorm.DB) (*models.Sidecar, error)) (*models.Sidecar, error) {
+	var item *models.Sidecar
+	err := db.Transaction(func(tx *gorm.DB) error {
+		sc, err := write(tx)
+		if err != nil {
+			return err
+		}
+		if err := services.CheckSidecarConfigurationLimits(daemon.Config(sc.Configuration), licenseData); err != nil {
+			return err
+		}
+		if err := services.ValidateSidecarBindingsForConfiguration(tx, sc); err != nil {
+			return err
+		}
+		item = sc
+		return nil
+	})
+	return item, err
+}
+
+// answerSidecarWrite maps what writeSidecarConfiguration refused onto a status.
+// An over-cap document and a broken binding are the admin's to fix and read
+// 422; a check that could not run is ours and reads 500.
+func answerSidecarWrite(c *gin.Context, err error) {
+	var overCap services.ErrSidecarConfigOverCap
+	var broken services.ErrSidecarBindingBroken
+	switch {
+	case errors.Is(err, models.ErrNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"message": "sidecar not found"})
+	case errors.As(err, &overCap):
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": overCap.Error()})
+	case errors.As(err, &broken):
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": broken.Error()})
+	default:
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed writing sidecar configuration")
+	}
+}
 
 // licenseManagedHeader tells a sidecar that this gateway owns the licensing
 // decision, so an absent license in the answer means the organization holds
@@ -82,6 +195,9 @@ func Post(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": licenseIsNotASidecarKey})
 		return
 	}
+	if refuseOverCap(c, ctx.OrgID, cfg) {
+		return
+	}
 
 	rawKey, err := services.GenerateSidecarKey()
 	if err != nil {
@@ -125,11 +241,41 @@ func List(c *gin.Context) {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing sidecars")
 		return
 	}
+	bindings := bindingsBySidecar(ctx.OrgID, "")
 	result := []openapi.SidecarResponse{}
 	for _, item := range items {
-		result = append(result, toResponse(item))
+		resp := toResponse(item)
+		resp.BoundRules = bindings[item.ID]
+		result = append(result, resp)
 	}
 	c.JSON(http.StatusOK, result)
+}
+
+// bindingsBySidecar groups the org's rule bindings by sidecar id, for one
+// sidecar when id is set and for every one otherwise.
+//
+// A failure returns nothing rather than an error: the bindings are a read-side
+// annotation on a page whose subject is the sidecar, and failing the whole
+// request because an annotation could not be built would take the page down
+// over a decoration. The listener then renders without its chips, which is what
+// it did before this field existed.
+func bindingsBySidecar(orgID, sidecarID string) map[string][]openapi.SidecarRuleBinding {
+	out := map[string][]openapi.SidecarRuleBinding{}
+	org, err := uuid.Parse(orgID)
+	if err != nil {
+		return out
+	}
+	rows, err := models.ListSidecarRuleBindings(models.DB, org, sidecarID)
+	if err != nil {
+		log.Warnf("failed listing the rules bound to the organization's sidecars, err=%v", err)
+		return out
+	}
+	for _, r := range rows {
+		out[r.SidecarID] = append(out[r.SidecarID], openapi.SidecarRuleBinding{
+			Kind: r.Kind, RuleName: r.RuleName, ListenerName: r.ListenerName,
+		})
+	}
+	return out
 }
 
 // Get Sidecar
@@ -153,7 +299,9 @@ func Get(c *gin.Context) {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching sidecar")
 		return
 	}
-	c.JSON(http.StatusOK, toResponse(*item))
+	resp := toResponse(*item)
+	resp.BoundRules = bindingsBySidecar(ctx.OrgID, item.ID)[item.ID]
+	c.JSON(http.StatusOK, resp)
 }
 
 // Delete Sidecar
@@ -168,7 +316,7 @@ func Get(c *gin.Context) {
 //	@Router			/sidecars/{nameOrID} [delete]
 func Delete(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	deletedID, err := models.DeleteSidecarByNameOrID(models.DB, ctx.OrgID, c.Param("nameOrID"))
+	_, err := models.DeleteSidecarByNameOrID(models.DB, ctx.OrgID, c.Param("nameOrID"))
 	if err != nil {
 		if errors.Is(err, models.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"message": "sidecar not found"})
@@ -177,7 +325,6 @@ func Delete(c *gin.Context) {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed deleting sidecar")
 		return
 	}
-	forgetRuntime(deletedID)
 	c.Writer.WriteHeader(http.StatusNoContent)
 }
 
@@ -209,14 +356,17 @@ func Put(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": licenseIsNotASidecarKey})
 		return
 	}
-	item, err := models.UpdateSidecarConfiguration(models.DB, ctx.OrgID,
-		c.Param("nameOrID"), models.SidecarConfiguration(cfg))
+	licenseData, err := models.GetOrgLicenseData(models.DB, ctx.OrgID)
 	if err != nil {
-		if errors.Is(err, models.ErrNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"message": "sidecar not found"})
-			return
-		}
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating sidecar")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the organization license")
+		return
+	}
+	item, err := writeSidecarConfiguration(models.DB, licenseData, func(tx *gorm.DB) (*models.Sidecar, error) {
+		return models.UpdateSidecarConfiguration(tx, ctx.OrgID,
+			c.Param("nameOrID"), models.SidecarConfiguration(cfg))
+	})
+	if err != nil {
+		answerSidecarWrite(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, toResponse(*item))
@@ -246,13 +396,21 @@ func Patch(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
-	item, err := models.PatchSidecarConfiguration(models.DB, ctx.OrgID, c.Param("nameOrID"), merge, removeLoadFromDisk)
+	licenseData, err := models.GetOrgLicenseData(models.DB, ctx.OrgID)
 	if err != nil {
-		if errors.Is(err, models.ErrNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"message": "sidecar not found"})
-			return
-		}
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed patching sidecar configuration")
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the organization license")
+		return
+	}
+	// A patch is a partial document: what it authors in total is only known
+	// once the merge has run. So the merge and the checks share one
+	// transaction and a refusal rolls the merge back, rather than the gateway
+	// reading the stored document first and racing another writer between the
+	// read and the write.
+	item, err := writeSidecarConfiguration(models.DB, licenseData, func(tx *gorm.DB) (*models.Sidecar, error) {
+		return models.PatchSidecarConfiguration(tx, ctx.OrgID, c.Param("nameOrID"), merge, removeLoadFromDisk)
+	})
+	if err != nil {
+		answerSidecarWrite(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, toResponse(*item))
@@ -290,27 +448,33 @@ func Handshake(c *gin.Context) {
 		}
 		// Running fine on its own file, so it is recently seen. The 412
 		// below is for a sidecar that cannot run at all.
-		recordRuntime(sidecar.ID, req.Version)
+		//
+		// No revision: the plane does not own this sidecar's document, so it
+		// has nothing to be converged with. The state renders from
+		// load_from_disk instead.
+		recordHandshake(sidecar.ID, req, "")
 		c.Header(licenseManagedHeader, "true")
 		c.JSON(http.StatusOK, diskModeConfig{LoadFromDisk: true, License: string(licenseData)})
 		return
 	}
 	// An empty answer would only kill the caller: the sidecar refuses to
 	// serve a config with no listeners and exits. The 412 lets it import
-	// its local file instead, and skipping recordRuntime keeps a process
+	// its local file instead, and skipping recordHandshake keeps a process
 	// that cannot run from showing up as recently seen.
 	if len(sidecar.Configuration.Listeners) == 0 {
 		c.JSON(http.StatusPreconditionFailed, gin.H{"message": "no configuration is assigned to this sidecar; " +
 			"start the sidecar with its config file to import it, or author the configuration in the control plane"})
 		return
 	}
-	served, err := withOrgLicense(sidecar.OrgID, sidecar.Configuration)
+	served, err := withOrgLicense(sidecar)
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the organization license")
 		return
 	}
-	recordRuntime(sidecar.ID, req.Version)
+	revision := configRevision(served)
+	recordHandshake(sidecar.ID, req, revision)
 	c.Header(licenseManagedHeader, "true")
+	c.Header(daemon.ConfigRevisionHeader, revision)
 	c.JSON(http.StatusOK, served)
 }
 
@@ -332,14 +496,39 @@ func Handshake(c *gin.Context) {
 // no license can name. An expired document still goes out, because the
 // sidecar has its own rule for a term that ended and cannot apply it to a
 // license it never received.
-func withOrgLicense(orgID string, cfg models.SidecarConfiguration) (daemon.Config, error) {
-	licenseData, err := models.GetOrgLicenseData(models.DB, orgID)
+func withOrgLicense(sc *models.Sidecar) (daemon.Config, error) {
+	licenseData, err := models.GetOrgLicenseData(models.DB, sc.OrgID)
 	if err != nil {
 		// Not found is not a missing license, it is a missing org: the
 		// token authenticated against a row that names it.
-		return daemon.Config(cfg), err
+		return daemon.Config(sc.Configuration), err
 	}
-	return servedConfig(cfg, licenseData), nil
+	// The rules an admin bound to this sidecar are folded in here, on the way
+	// out, and never stored: the row keeps what an admin authored and the
+	// answer is derived on every handshake. Composition touches only the
+	// sections the sidecar hot-reloads, so a rule edit reaches a running
+	// process without restarting it.
+	composed, err := services.ComposeSidecarConfiguration(models.DB, sc)
+	if err != nil {
+		return daemon.Config(sc.Configuration), err
+	}
+	// The free tier caps rules PER PROCESS, and it counts what the served
+	// document authors -- so bound rules push the count up even though the
+	// stored configuration passed the same check when it was written.
+	//
+	// This is the backstop, and it exists because of how the sidecar fails
+	// without it: a document over the cap is refused while the process lives
+	// (it keeps the rules it has) and a HARD EXIT on its next boot. The fleet
+	// keeps serving stale rules, keeps reporting itself recently seen, and
+	// then every pod that reschedules -- a helm upgrade, a node drain --
+	// crash-loops at once, hours after the save looked fine.
+	//
+	// Answering the handshake with an error instead is the one failure the
+	// sidecar survives: fetchControlPlaneConfig logs it and keeps running.
+	if err := services.CheckSidecarConfigurationLimits(composed, licenseData); err != nil {
+		return daemon.Config(sc.Configuration), err
+	}
+	return servedConfig(models.SidecarConfiguration(composed), licenseData), nil
 }
 
 // servedConfig is the document itself: the stored configuration with the
@@ -400,6 +589,16 @@ func ImportConfiguration(c *gin.Context) {
 	// hold. The sidecar strips it before pushing; this is the second
 	// barrier, for a client that does not.
 	cfg.License = ""
+	// Checked on the way in, against the ORGANIZATION's license rather than
+	// whatever the sidecar was running under. A file that booted on a
+	// sidecar with its own license can be over the cap for the org that
+	// adopts it, and storing it would make the plane serve a document the
+	// sidecar then refuses on its next start. The sidecar renders this 422
+	// as "the control plane refused the imported config", and keeps running
+	// its local file meanwhile.
+	if refuseOverCap(c, sidecar.OrgID, cfg) {
+		return
+	}
 	// An imported configuration is plane-owned by definition: the sidecar
 	// pushed its file to hand ownership over, so the row records the flag
 	// explicitly off.
@@ -443,7 +642,7 @@ func Configuration(c *gin.Context) {
 		c.JSON(http.StatusOK, diskModeConfig{LoadFromDisk: true, License: string(licenseData)})
 		return
 	}
-	served, err := withOrgLicense(sidecar.OrgID, sidecar.Configuration)
+	served, err := withOrgLicense(sidecar)
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the organization license")
 		return
@@ -476,10 +675,21 @@ func toResponse(s models.Sidecar) openapi.SidecarResponse {
 	// and cannot see the purpose of. The license belongs to the
 	// organization, so it is not part of this document in either direction.
 	resp.Configuration.License = ""
-	if state := loadRuntime(s.ID); state != nil {
-		resp.Version = state.Version
-		lastSeen := state.LastSeen
-		resp.LastSeenAt = &lastSeen
-	}
+	resp.LastSeenAt = s.LastSeenAt
+	// Each stays empty when the column is NULL, so a sidecar that has never
+	// handshaken, and one too old to report, both read as unknown. Rendering
+	// a zero value as a real answer here would report convergence nobody
+	// claimed.
+	resp.Version = derefOrEmpty(s.ReportedVersion)
+	resp.ServedRevision = derefOrEmpty(s.ServedRevision)
+	resp.AppliedRevision = derefOrEmpty(s.AppliedRevision)
+	resp.LastOutcome = derefOrEmpty(s.LastOutcome)
 	return resp
+}
+
+func derefOrEmpty(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }

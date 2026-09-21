@@ -560,6 +560,39 @@ func TestAnSSHRuleDriftKeepsTheRestartPath(t *testing.T) {
 	}
 }
 
+// The restart above is scoped to the lane whose rules moved, not to the
+// document that carries it. A control plane binds rules per listener, so a
+// sidecar fronting a database and a bastion would otherwise have every
+// database rule edit freeze behind the ssh lane -- and an operator reading
+// "restart to apply" on an edit that never touched ssh has no way to tell
+// which lane is stale.
+func TestARelayRuleDriftAppliesBesideAnSSHLane(t *testing.T) {
+	hostKey, trustedCA := writeSSHKeyMaterial(t)
+	base := `{
+  "listeners": [{
+    "name": "appdb", "protocol": "postgres", "listen": "127.0.0.1:0",
+    "upstream": "127.0.0.1:5432",
+    "guardrails": {"mode": "enforce", "rules": [
+      {"name": "r0", "type": "deny_words_list", "words": ["drop table"]}
+    ]}
+  }, {
+    "name": "bastion", "protocol": "ssh", "listen": "127.0.0.1:12222",
+    "ssh": {"host_key": "` + hostKey + `", "trusted_ca": "` + trustedCA + `"}
+  }],
+  "audit": {"file": "-"},
+  "log_level": "info"
+}`
+	rl, buf := testReloader(t, base)
+
+	drifted := editJSON(t, base, `"words": ["drop table"]`, `"words": ["truncate"]`)
+	if got := applyWith(rl, buf, drifted); got != reloadApplied {
+		t.Fatalf("outcome = %v, want applied; log:\n%s", got, buf)
+	}
+	if !strings.Contains(buf.String(), "configuration applied") {
+		t.Errorf("no applied log line:\n%s", buf)
+	}
+}
+
 // In disk mode the same flag with different bytes means the license moved.
 // The file is re-adopted and the rotation publishes the verified document --
 // a renewal must not cost an outage -- with the plane as its source.

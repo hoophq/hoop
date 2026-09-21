@@ -13,9 +13,11 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
+	"github.com/hoophq/hoop/gateway/api/sidecarbind"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
+	"gorm.io/gorm"
 )
 
 func getLicenseType(ctx *storagev2.Context) string {
@@ -100,30 +102,57 @@ func Post(c *gin.Context) {
 		Description: req.Description,
 		Input:       req.Input,
 		Output:      req.Output,
+		SidecarSpec: req.SidecarSpec,
 		CreatedAt:   time.Now().UTC(),
 		UpdatedAt:   time.Now().UTC(),
 	}
 
-	err := models.UpsertGuardRailRuleWithConnections(rule, validConnectionIDs, true)
+	if sidecarbind.Refuse(c, ctx.GetOrgID(), sidecarbind.Request{
+		Kind: services.SidecarRuleGuardrail, Name: req.Name, StoredName: "",
+		Spec: req.SidecarSpec, Targets: req.SidecarTargets,
+	}) {
+		return
+	}
+
+	// One transaction: the rule, its attributes and its sidecar bindings. A
+	// binding that fails after the rule row commits leaves the OLD bindings
+	// serving the NEW spec, which is the pairing sidecarbind.Refuse rejects.
+	var attrErr, bindErr error
+	err := models.DB.Transaction(func(tx *gorm.DB) error {
+		if err := models.UpsertGuardRailRuleWithConnectionsTx(tx, rule, validConnectionIDs, true); err != nil {
+			return err
+		}
+		if attrErr = upsertGuardrailRuleAttributes(tx, ctx, rule.Name, req.Attributes); attrErr != nil {
+			return attrErr
+		}
+		bindErr = sidecarbind.PersistTx(tx, ctx.GetOrgID(), services.SidecarRuleGuardrail, rule.Name, req.SidecarTargets)
+		return bindErr
+	})
+	switch {
+	case attrErr != nil:
+		httputils.AbortWithErr(c, http.StatusInternalServerError, attrErr, "Failed upserting guard rail rule attributes: %v", attrErr)
+		return
+	case bindErr != nil:
+		httputils.AbortWithErr(c, http.StatusInternalServerError, bindErr, "Failed binding the rule to its sidecars: %v", bindErr)
+		return
+	}
 	switch err {
 	case models.ErrAlreadyExists:
 		c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
 		return
 	case nil:
-		if err := upsertGuardrailRuleAttributes(ctx, rule.Name, req.Attributes); err != nil {
-			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed upserting guard rail rule attributes: %v", err)
-			return
-		}
 		c.JSON(http.StatusCreated, &openapi.GuardRailRuleResponse{
-			ID:            rule.ID,
-			Name:          rule.Name,
-			Description:   rule.Description,
-			Input:         rule.Input,
-			Output:        rule.Output,
-			ConnectionIDs: rule.ConnectionIDs,
-			Attributes:    req.Attributes,
-			CreatedAt:     rule.CreatedAt,
-			UpdatedAt:     rule.UpdatedAt,
+			ID:             rule.ID,
+			Name:           rule.Name,
+			Description:    rule.Description,
+			Input:          rule.Input,
+			Output:         rule.Output,
+			ConnectionIDs:  rule.ConnectionIDs,
+			Attributes:     req.Attributes,
+			SidecarSpec:    req.SidecarSpec,
+			SidecarTargets: sidecarbind.Load(ctx.GetOrgID(), services.SidecarRuleGuardrail, rule.Name),
+			CreatedAt:      rule.CreatedAt,
+			UpdatedAt:      rule.UpdatedAt,
 		})
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed creating guard rail rule: %v", err)
@@ -178,6 +207,18 @@ func Put(c *gin.Context) {
 	// Filter out empty connection IDs
 	validConnectionIDs := filterEmptyIDs(req.ConnectionIDs)
 
+	// The sidecar block this write leaves on the rule, which is what the gate
+	// checks and what the row stores. A request that says nothing about it
+	// keeps the stored one rather than clearing it, so an edit to the
+	// description or the connections does not silently disarm a bound rule.
+	bind := sidecarbind.Request{
+		Kind: services.SidecarRuleGuardrail, Name: req.Name, StoredName: existing.Name,
+		Spec: req.SidecarSpec, StoredSpec: existing.SidecarSpec, Targets: req.SidecarTargets,
+	}
+	if sidecarbind.Refuse(c, ctx.GetOrgID(), bind) {
+		return
+	}
+
 	rule := &models.GuardRailRules{
 		OrgID:       ctx.GetOrgID(),
 		ID:          ruleID,
@@ -185,30 +226,48 @@ func Put(c *gin.Context) {
 		Description: req.Description,
 		Input:       req.Input,
 		Output:      req.Output,
+		SidecarSpec: bind.EffectiveSpec(),
 		UpdatedAt:   time.Now().UTC(),
 	}
 
-	// Update guardrail and associate connections in a single transaction
-	err = models.UpsertGuardRailRuleWithConnections(rule, validConnectionIDs, false)
+	// Update the guardrail, its connections, its attributes and its sidecar
+	// bindings in a single transaction.
+	var attrErr, bindErr error
+	err = models.DB.Transaction(func(tx *gorm.DB) error {
+		if err := models.UpsertGuardRailRuleWithConnectionsTx(tx, rule, validConnectionIDs, false); err != nil {
+			return err
+		}
+		if attrErr = upsertGuardrailRuleAttributes(tx, ctx, rule.Name, req.Attributes); attrErr != nil {
+			return attrErr
+		}
+		bindErr = sidecarbind.PersistTx(tx, ctx.GetOrgID(), services.SidecarRuleGuardrail, rule.Name, req.SidecarTargets)
+		return bindErr
+	})
+	switch {
+	case attrErr != nil:
+		httputils.AbortWithErr(c, http.StatusInternalServerError, attrErr, "Failed upserting guard rail rule attributes: %v", attrErr)
+		return
+	case bindErr != nil:
+		httputils.AbortWithErr(c, http.StatusInternalServerError, bindErr, "Failed binding the rule to its sidecars: %v", bindErr)
+		return
+	}
 	switch err {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
 		return
 	case nil:
-		if err := upsertGuardrailRuleAttributes(ctx, rule.Name, req.Attributes); err != nil {
-			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed upserting guard rail rule attributes: %v", err)
-			return
-		}
 		c.JSON(http.StatusOK, &openapi.GuardRailRuleResponse{
-			ID:            rule.ID,
-			Name:          rule.Name,
-			Description:   rule.Description,
-			Input:         rule.Input,
-			Output:        rule.Output,
-			ConnectionIDs: rule.ConnectionIDs,
-			Attributes:    req.Attributes,
-			CreatedAt:     rule.CreatedAt,
-			UpdatedAt:     rule.UpdatedAt,
+			ID:             rule.ID,
+			Name:           rule.Name,
+			Description:    rule.Description,
+			Input:          rule.Input,
+			Output:         rule.Output,
+			ConnectionIDs:  rule.ConnectionIDs,
+			Attributes:     req.Attributes,
+			SidecarSpec:    rule.SidecarSpec,
+			SidecarTargets: sidecarbind.Load(ctx.GetOrgID(), services.SidecarRuleGuardrail, rule.Name),
+			CreatedAt:      rule.CreatedAt,
+			UpdatedAt:      rule.UpdatedAt,
 		})
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "Failed updating guard rail rule: %v", err)
@@ -278,8 +337,13 @@ func Get(c *gin.Context) {
 			Output:        rule.Output,
 			ConnectionIDs: rule.ConnectionIDs,
 			Attributes:    rule.Attributes,
-			CreatedAt:     rule.CreatedAt,
-			UpdatedAt:     rule.UpdatedAt,
+			// Read back on the single-rule route, which is what the edit form
+			// loads. Without it the form opens empty and the next save unbinds
+			// the rule from every sidecar it reached.
+			SidecarSpec:    rule.SidecarSpec,
+			SidecarTargets: sidecarbind.Load(ctx.GetOrgID(), services.SidecarRuleGuardrail, rule.Name),
+			CreatedAt:      rule.CreatedAt,
+			UpdatedAt:      rule.UpdatedAt,
 		})
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed listing guard rail rules: %v", err)
@@ -351,7 +415,7 @@ func filterEmptyIDs(ids []string) []string {
 	return result
 }
 
-func upsertGuardrailRuleAttributes(ctx *storagev2.Context, ruleName string, attributeNames []string) error {
+func upsertGuardrailRuleAttributes(db *gorm.DB, ctx *storagev2.Context, ruleName string, attributeNames []string) error {
 	orgID := uuid.MustParse(ctx.GetOrgID())
-	return models.UpsertGuardrailRuleAttributes(models.DB, orgID, ruleName, attributeNames)
+	return models.UpsertGuardrailRuleAttributes(db, orgID, ruleName, attributeNames)
 }

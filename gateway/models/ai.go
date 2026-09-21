@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -107,7 +108,12 @@ type AISessionAnalyzerRules struct {
 	RiskEvaluation  AISessionAnalyzerRiskEvaluation `gorm:"column:risk_evaluation;type:jsonb;serializer:json"`
 	CustomPrompt    *string                         `gorm:"column:custom_prompt"`
 	Agentic         bool                            `gorm:"column:agentic"`
-	ManagedBy       *string                         `gorm:"column:managed_by"`
+	// SidecarSpec is the listener's analyzer BLOCK as the sidecar reads it:
+	// the trigger, the risk-to-action map in its own vocabulary (allow, warn,
+	// block, defer) and the per-lane cost overrides. NULL on every rule a
+	// gateway writes. See migration 000121.
+	SidecarSpec json.RawMessage `gorm:"column:sidecar_spec"`
+	ManagedBy   *string         `gorm:"column:managed_by"`
 
 	RuleAttributes []AISessionAnalyzerRuleAttribute `gorm:"foreignKey:OrgID,AnalyzerRuleName;references:OrgID,Name"`
 
@@ -222,7 +228,14 @@ func GetAISessionAnalyzerRuleByConnection(db *gorm.DB, orgID uuid.UUID, connecti
 }
 
 func CreateAISessionAnalyzerRule(rule *AISessionAnalyzerRules) error {
-	err := DB.Create(rule).Error
+	return CreateAISessionAnalyzerRuleTx(DB, rule)
+}
+
+// CreateAISessionAnalyzerRuleTx is the transaction-aware variant of
+// CreateAISessionAnalyzerRule. It runs inside the caller's transaction so the
+// rule can be composed atomically with other writes.
+func CreateAISessionAnalyzerRuleTx(tx *gorm.DB, rule *AISessionAnalyzerRules) error {
+	err := tx.Create(rule).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrDuplicatedKey) {
 			return ErrAlreadyExists
@@ -233,7 +246,13 @@ func CreateAISessionAnalyzerRule(rule *AISessionAnalyzerRules) error {
 }
 
 func UpdateAISessionAnalyzerRule(rule *AISessionAnalyzerRules) error {
-	result := DB.Model(rule).
+	return UpdateAISessionAnalyzerRuleTx(DB, rule)
+}
+
+// UpdateAISessionAnalyzerRuleTx is the transaction-aware variant of
+// UpdateAISessionAnalyzerRule.
+func UpdateAISessionAnalyzerRuleTx(tx *gorm.DB, rule *AISessionAnalyzerRules) error {
+	result := tx.Model(rule).
 		Clauses(clause.Returning{}).
 		Where("org_id = ? AND name = ?", rule.OrgID, rule.Name).
 		Updates(map[string]any{
@@ -242,6 +261,7 @@ func UpdateAISessionAnalyzerRule(rule *AISessionAnalyzerRules) error {
 			"risk_evaluation":  rule.RiskEvaluation,
 			"custom_prompt":    rule.CustomPrompt,
 			"agentic":          rule.Agentic,
+			"sidecar_spec":     rule.SidecarSpec,
 		})
 	if result.Error != nil {
 		return result.Error
@@ -253,7 +273,13 @@ func UpdateAISessionAnalyzerRule(rule *AISessionAnalyzerRules) error {
 }
 
 func DeleteAISessionAnalyzerRule(orgID uuid.UUID, name string) error {
-	result := DB.Where("org_id = ? AND name = ?", orgID, name).Delete(&AISessionAnalyzerRules{})
+	return DeleteAISessionAnalyzerRuleTx(DB, orgID, name)
+}
+
+// DeleteAISessionAnalyzerRuleTx deletes inside the caller's transaction, so the
+// rule and the approval rule that releases what it holds go together.
+func DeleteAISessionAnalyzerRuleTx(db *gorm.DB, orgID uuid.UUID, name string) error {
+	result := db.Where("org_id = ? AND name = ?", orgID, name).Delete(&AISessionAnalyzerRules{})
 	if result.Error != nil {
 		return result.Error
 	}

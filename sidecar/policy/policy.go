@@ -542,6 +542,23 @@ type Rules struct {
 // first request that happens to hit it.
 func NewRules(rules []Rule) (*Rules, error) { return newRules(rules, false) }
 
+// ValidateRules reports what this build would refuse about a rule set, without
+// building one.
+//
+// Exported for the control plane, which authors rules for sidecars it cannot
+// run. The authority on what a sidecar accepts is the sidecar, so the control
+// plane calls this rather than keeping a second list that passes its own test
+// and still refuses the wrong thing the first time a rule type is added here.
+// Same reason as daemon.CheckLimits and daemon.BaselineDoc.
+//
+// hasScanner says whether a detector will be attached, which is what decides
+// a pii rule. A real sidecar links one; pass false to validate for a build
+// that does not.
+func ValidateRules(rules []Rule, hasScanner bool) error {
+	_, err := newRules(rules, hasScanner)
+	return err
+}
+
 // newRules is the shared constructor. hasScanner tells PII validation whether
 // a Scanner will be attached, so a PII rule without one fails at startup
 // instead of quietly allowing every statement.

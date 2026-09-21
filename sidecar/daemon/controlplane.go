@@ -61,6 +61,20 @@ const (
 	// in silence rather than fail a build.
 	LicenseManagedHeader = "hoop-sidecar-license-managed"
 
+	// ConfigRevisionHeader carries the plane's name for the document it just
+	// answered with. The sidecar sends it back on the next handshake beside
+	// what it did with it, which is the only way the plane can tell a
+	// sidecar running its rules from one that refused them and kept the old
+	// ones.
+	//
+	// A HEADER for the same reason LicenseManagedHeader is one: the document
+	// is decoded with DisallowUnknownFields, so a new key in it would be a
+	// startup failure on every build that predates this.
+	//
+	// The value is opaque. The plane issues it and compares it to itself;
+	// the sidecar never parses it.
+	ConfigRevisionHeader = "hoop-sidecar-config-revision"
+
 	controlPlaneTimeout = 15 * time.Second
 	// maxControlPlaneConfig bounds the response read. A config is a few KB;
 	// anything near this is a misdirected URL, not a big deployment.
@@ -103,6 +117,14 @@ type controlPlane struct {
 	// which is what every deployment runs; a test sets it so a case about
 	// what a heartbeat does is not also a case about waiting a minute.
 	every time.Duration
+	// revision is the ConfigRevisionHeader of the document this process is
+	// RUNNING, and outcome what handling it concluded. They are reported on
+	// the next handshake so the plane can tell a sidecar that took its
+	// document from one that refused it and kept the old rules. Empty until
+	// the plane says a revision at all -- an older gateway sends none, and
+	// the plane then reports the sidecar as unknown rather than guessing.
+	revision string
+	outcome  string
 
 	// imported reports that this boot seeded the plane with the local
 	// file's document because the plane held none; Run logs it once.
@@ -250,7 +272,11 @@ func resolveConfigSource(local *Config, tokenFlag string) (*Config, error) {
 			"pass the token flag or set %s", urlSource, SidecarTokenEnv)
 	}
 
-	raw, managed, err := fetchControlPlaneConfig(planeURL, token, Version)
+	// The first handshake reports nothing about a previous document: this
+	// process has handled none, and claiming otherwise would let a plane
+	// read a fresh boot as a sidecar that had already applied something.
+	answer, err := fetchControlPlaneConfig(planeURL, token, handshakeRequest{Version: Version})
+	raw, managed := answer.raw, answer.managed
 	var planeDoc Config
 	if err == nil && json.Unmarshal(raw, &planeDoc) == nil &&
 		planeDoc.LoadFromDisk != nil && *planeDoc.LoadFromDisk {
@@ -267,7 +293,8 @@ func resolveConfigSource(local *Config, tokenFlag string) (*Config, error) {
 		// source (resolveLicenseFor), and SetupWith names it as ignored.
 		local.ControlPlaneURL = planeURL
 		local.cp = &controlPlane{url: planeURL, urlSource: urlSource, token: token,
-			lastRaw: raw, diskMode: true, license: planeDoc.License, licenseManaged: managed}
+			lastRaw: raw, diskMode: true, license: planeDoc.License, licenseManaged: managed,
+			revision: answer.revision}
 		return local, nil
 	}
 	imported := false
@@ -276,7 +303,8 @@ func resolveConfigSource(local *Config, tokenFlag string) (*Config, error) {
 	// the plane with the file's document, so the connect journey never
 	// asks anyone to translate their YAML into an API call by hand.
 	if errors.Is(err, errPlaneHasNoConfig) || (err == nil && !rawDeclaresListeners(raw)) {
-		raw, imported, managed, err = importLocalConfig(planeURL, token, local)
+		answer, imported, err = importLocalConfig(planeURL, token, local)
+		raw, managed = answer.raw, answer.managed
 	}
 	if err != nil {
 		return nil, err
@@ -309,83 +337,119 @@ func resolveConfigSource(local *Config, tokenFlag string) (*Config, error) {
 		cfg.License = local.License
 	}
 	cfg.ControlPlaneURL = planeURL
+	// The boot document counts as applied: this process is about to run on
+	// it, and anything that would refuse it (the strict decode above, the
+	// caps in buildLanes) stops the process before it ever handshakes. So a
+	// sidecar that reaches its first heartbeat has, by construction, applied
+	// what it reports here.
 	cfg.cp = &controlPlane{url: planeURL, urlSource: urlSource, token: token,
-		lastRaw: raw, imported: imported, license: planeLicense, licenseManaged: managed}
+		lastRaw: raw, imported: imported, license: planeLicense, licenseManaged: managed,
+		revision: answer.revision, outcome: reloadApplied.String()}
 	if !imported && local != nil {
 		cfg.cp.fileListeners = len(local.Listeners)
 	}
 	return cfg, nil
 }
 
+// handshakeRequest is what a sidecar tells the plane about itself. Every
+// field past version is optional and omitted until the sidecar has actually
+// handled a document, so a plane reading this cannot mistake "nothing has
+// happened yet" for "the last document was applied".
+type handshakeRequest struct {
+	Version string `json:"version"`
+	// AppliedRevision is the ConfigRevisionHeader of the last document this
+	// sidecar HANDLED -- which is not the last one it was served. A document
+	// that was refused or needs a restart leaves this at the revision still
+	// running, which is the honest answer.
+	AppliedRevision string `json:"applied_revision,omitempty"`
+	// LastOutcome is reloadOutcome.String() for that document.
+	LastOutcome string `json:"last_outcome,omitempty"`
+}
+
+// handshakeAnswer is one handshake's result: the document, and the two facts
+// the plane reports beside it rather than inside it.
+type handshakeAnswer struct {
+	raw      []byte
+	managed  bool
+	revision string
+}
+
 // fetchControlPlaneConfig runs one handshake: it presents the token, reports
-// the version, and returns the config document the plane answered with.
-// managed reports whether the plane claimed the licensing decision. It rides
-// beside the document rather than in it, so an older gateway simply does not
-// say it; see licenseManagedHeader.
-func fetchControlPlaneConfig(baseURL, token, version string) (raw []byte, managed bool, err error) {
-	body, merr := json.Marshal(map[string]string{"version": version})
+// what this sidecar is running, and returns the config document the plane
+// answered with.
+//
+// managed reports whether the plane claimed the licensing decision, and
+// revision is the plane's name for this document. Both ride beside the
+// document rather than in it, so an older gateway simply does not say them;
+// see licenseManagedHeader.
+func fetchControlPlaneConfig(baseURL, token string, hs handshakeRequest) (answer handshakeAnswer, err error) {
+	body, merr := json.Marshal(hs)
 	if merr != nil {
-		return nil, false, merr
+		return handshakeAnswer{}, merr
 	}
 	// The base was validated by checkControlPlaneURL; JoinPath keeps a
 	// path prefix (a plane behind /hoop) and normalizes trailing slashes.
 	u, perr := url.Parse(baseURL)
 	if perr != nil {
-		return nil, false, fmt.Errorf("control plane URL %q: %w", baseURL, perr)
+		return handshakeAnswer{}, fmt.Errorf("control plane URL %q: %w", baseURL, perr)
 	}
 	req, rerr := http.NewRequest(http.MethodPost,
 		u.JoinPath(controlPlaneHandshakePath).String(), bytes.NewReader(body))
 	if rerr != nil {
-		return nil, false, fmt.Errorf("control plane request: %w", rerr)
+		return handshakeAnswer{}, fmt.Errorf("control plane request: %w", rerr)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set(sidecarTokenHeader, token)
 
 	resp, derr := controlPlaneHTTPClient().Do(req)
 	if derr != nil {
-		return nil, false, fmt.Errorf("the control plane at %s is unreachable: %w", baseURL, derr)
+		return handshakeAnswer{}, fmt.Errorf("the control plane at %s is unreachable: %w", baseURL, derr)
 	}
 	// The body is always read to completion below; a close error after a
 	// full read carries nothing actionable, so it is dropped on purpose.
 	defer func() { _ = resp.Body.Close() }()
 	raw, aerr := io.ReadAll(io.LimitReader(resp.Body, maxControlPlaneConfig+1))
 	if aerr != nil {
-		return nil, false, fmt.Errorf("reading the control plane response from %s: %w", baseURL, aerr)
+		return handshakeAnswer{}, fmt.Errorf("reading the control plane response from %s: %w", baseURL, aerr)
 	}
 
 	switch resp.StatusCode {
 	case http.StatusOK:
 		if len(raw) > maxControlPlaneConfig {
-			return nil, false, fmt.Errorf("the control plane at %s answered with more than %d bytes; "+
+			return handshakeAnswer{}, fmt.Errorf("the control plane at %s answered with more than %d bytes; "+
 				"check that the URL is the control plane and not something in front of it",
 				baseURL, maxControlPlaneConfig)
 		}
-		return raw, resp.Header.Get(LicenseManagedHeader) == "true", nil
+		return handshakeAnswer{
+			raw:      raw,
+			managed:  resp.Header.Get(LicenseManagedHeader) == "true",
+			revision: resp.Header.Get(ConfigRevisionHeader),
+		}, nil
 	case http.StatusUnauthorized:
 		// Not self-healing: a mistyped token and a deleted sidecar both land
 		// here, and the plane shows the token once at creation, so a lost
 		// one means registering a new sidecar.
-		return nil, false, fmt.Errorf("the control plane at %s rejected the token; "+
+		return handshakeAnswer{}, fmt.Errorf("the control plane at %s rejected the token; "+
 			"check it against the one shown when this sidecar was created", baseURL)
 	case http.StatusPreconditionFailed:
 		// The plane authenticated the token and holds nothing to serve.
 		// resolveConfigSource turns this into an import when the local
 		// file can supply the document; the heartbeat only logs it.
-		return nil, false, fmt.Errorf("%w (at %s): %s", errPlaneHasNoConfig, baseURL, controlPlaneMessage(raw))
+		return handshakeAnswer{}, fmt.Errorf("%w (at %s): %s", errPlaneHasNoConfig, baseURL, controlPlaneMessage(raw))
 	case http.StatusUnprocessableEntity:
 		// An operator misconfiguration on the plane side (say, a connection
 		// type no codec speaks). Retrying never fixes it; the message names
 		// what to change.
-		return nil, false, fmt.Errorf("the control plane at %s cannot build this sidecar's config: %s",
+		return handshakeAnswer{}, fmt.Errorf("the control plane at %s cannot build this sidecar's config: %s",
 			baseURL, controlPlaneMessage(raw))
 	}
 
 	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
-		return nil, false, fmt.Errorf("the control plane at %s redirected to %q; the handshake "+
+		return handshakeAnswer{}, fmt.Errorf("the control plane at %s redirected to %q; the handshake "+
 			"never follows one, so the token was not re-sent. Configure the final URL",
 			baseURL, resp.Header.Get("Location"))
 	}
-	return nil, false, fmt.Errorf("the control plane at %s answered %s: %s",
+	return handshakeAnswer{}, fmt.Errorf("the control plane at %s answered %s: %s",
 		baseURL, resp.Status, controlPlaneMessage(raw))
 }
 
@@ -438,9 +502,9 @@ func rawDeclaresListeners(raw []byte) bool {
 // on every handshake, and a copy stored here would go stale the day it is
 // renewed. The plane refuses the key as well; this keeps the refusal from
 // ever being reached.
-func importLocalConfig(planeURL, token string, local *Config) (raw []byte, pushed, managed bool, err error) {
+func importLocalConfig(planeURL, token string, local *Config) (answer handshakeAnswer, pushed bool, err error) {
 	if local == nil || len(local.Listeners) == 0 {
-		return nil, false, false, fmt.Errorf("the control plane at %s has no configuration for this sidecar; "+
+		return handshakeAnswer{}, false, fmt.Errorf("the control plane at %s has no configuration for this sidecar; "+
 			"author one in the control plane, or restart with a config file whose listeners this "+
 			"process can import", planeURL)
 	}
@@ -450,7 +514,7 @@ func importLocalConfig(planeURL, token string, local *Config) (raw []byte, pushe
 	doc.cp = nil
 	body, err := json.Marshal(doc)
 	if err != nil {
-		return nil, false, false, fmt.Errorf("marshaling the config file for the import: %w", err)
+		return handshakeAnswer{}, false, fmt.Errorf("marshaling the config file for the import: %w", err)
 	}
 	switch err := pushControlPlaneConfig(planeURL, token, body); {
 	case err == nil:
@@ -460,20 +524,20 @@ func importLocalConfig(planeURL, token string, local *Config) (raw []byte, pushe
 		// wins; the fetch below serves it and Run warns about the file's
 		// ignored listeners.
 	default:
-		return nil, false, false, err
+		return handshakeAnswer{}, false, err
 	}
-	raw, managed, err = fetchControlPlaneConfig(planeURL, token, Version)
+	answer, err = fetchControlPlaneConfig(planeURL, token, handshakeRequest{Version: Version})
 	if err != nil {
-		return nil, false, false, fmt.Errorf("the handshake after the configuration import failed: %w", err)
+		return handshakeAnswer{}, false, fmt.Errorf("the handshake after the configuration import failed: %w", err)
 	}
 	// A plane that accepted the import and still answers without listeners
 	// is broken; naming that beats letting the strict decoder blame a
 	// schema mismatch.
-	if !rawDeclaresListeners(raw) {
-		return nil, false, false, fmt.Errorf("the configuration was imported but the control plane at %s "+
+	if !rawDeclaresListeners(answer.raw) {
+		return handshakeAnswer{}, false, fmt.Errorf("the configuration was imported but the control plane at %s "+
 			"still answers without listeners; check the plane's logs", planeURL)
 	}
-	return raw, pushed, managed, nil
+	return answer, pushed, nil
 }
 
 // pushControlPlaneConfig PUTs the document to the plane's configuration
@@ -573,13 +637,32 @@ func (cp *controlPlane) heartbeat(ctx context.Context, log *slog.Logger, rl *rel
 			return
 		case <-t.C:
 		}
-		raw, _, err := fetchControlPlaneConfig(cp.url, cp.token, Version)
+		// What this sidecar did with the LAST document rides on this
+		// request. Reporting it is the whole reason the plane can render a
+		// fleet state at all: a document that was refused, or that needs a
+		// restart, leaves the process serving its old rules while still
+		// handshaking on time, and nothing else distinguishes that from a
+		// sidecar that took the document.
+		answer, err := fetchControlPlaneConfig(cp.url, cp.token, handshakeRequest{
+			Version:         Version,
+			AppliedRevision: cp.revision,
+			LastOutcome:     cp.outcome,
+		})
 		if err != nil {
 			rl.tel.heartbeatFailed()
 			log.Warn("control plane handshake failed; serving the last good config",
 				"url", cp.url, "error", err)
 			continue
 		}
-		rl.handle(log, raw)
+		outcome := rl.handle(log, answer.raw)
+		cp.outcome = outcome.String()
+		// The revision moves only when the document was actually taken on.
+		// reloadUnchanged is the steady state and re-reports what is
+		// running; every other outcome means the running rules are still
+		// the previous revision's, so claiming the new one would report
+		// convergence the process has not reached.
+		if outcome == reloadApplied || outcome == reloadUnchanged {
+			cp.revision = answer.revision
+		}
 	}
 }

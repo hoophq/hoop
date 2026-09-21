@@ -83,6 +83,27 @@ awareness, and adds a Kerberos client and an AD domain controller.
 handshake inside `0x12` PRELOGIN packets that Envoy cannot speak, so the relay
 takes the connection directly and reads through an encrypted login.
 
+[`mysql/`](mysql/README.md) adds a `mysql:8` lane behind a `protocol: mysql`
+listener on Envoy `:3306` (host `:3307`), with no rules of its own: the
+process's one guardrail and one mask rule reach a third protocol. No TLS on
+either hop, because MySQL negotiates it in-band after the server's greeting,
+which neither `tcp_proxy` nor the relay terminates; the codec refuses a
+client that asks to upgrade, and the demo shows the refusal.
+[`../mysql-stack`](../mysql-stack/README.md) is the same lane as a
+standalone stack, without OPA and the other two protocols.
+
+[`clickhouse/`](clickhouse/README.md) puts one `clickhouse-server` behind
+three lanes, one per protocol the relay has a codec for: its MySQL emulation
+on Envoy `:9004` (`protocol: mysql`), its PostgreSQL emulation on `:9005`
+(`protocol: postgres`), and its HTTP interface on `:8446` (TLS, the same OPA
+fat gate, `protocol: http`). The two database lanes inherit the process's
+guardrail and mask rule and the demo proves both against the same table;
+the HTTP lane is an audit lane, because guardrails read the request line
+and ClickHouse puts the SQL in the body, and because it chunks every
+response, which `http` masking cannot rewrite. The native `:9000` has no
+codec and so no lane. The overlay also documents a `mysql` codec gap the
+MySQL 8 CLI exposes against any server without `CLIENT_QUERY_ATTRIBUTES`.
+
 **The running transport.** `/stats` reports the address each lane bound, so
 you can read it off the process instead of the config:
 
