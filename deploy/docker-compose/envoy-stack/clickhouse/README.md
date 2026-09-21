@@ -94,6 +94,75 @@ masking on a compressed result and a denied DELETE surfaced as a native
 Exception. Envoy remains a byte router; policy decisions happen only after
 the sidecar has decoded the Query packet.
 
+## Configure the native lane
+
+`guardrails` and `mask` are policy sections, not fields under `clickhouse`.
+Put them at the top level to inherit them on every database listener, as
+`config-clickhouse.yaml` does, or under `clickhouse-native` to configure only
+the native lane. Listener guardrails run before and concatenate with top-level
+rules; a listener `mode` replaces the top-level mode. Listener mask rules
+replace the top-level mask rules.
+
+This standalone shape denies destructive native queries and deterministically
+redacts two named result columns:
+
+```yaml
+pii:
+  entities: [EMAIL_ADDRESS, BR_CPF]
+
+listeners:
+  - name: clickhouse-native
+    protocol: clickhouse
+    listen: 0.0.0.0:19006
+    upstream: clickhouse:9000
+
+    guardrails:
+      mode: enforce
+      rules:
+        - name: no-destructive-clickhouse
+          type: operation
+          operations: [delete, drop, truncate]
+          message: destructive ClickHouse statements are not permitted
+
+    mask:
+      rules:
+        - name: customer-identifiers
+          columns: [email, taxpayer_id]
+          strategy: redact
+
+    clickhouse:
+      max_frame_bytes: 16777216
+      max_block_bytes: 67108864
+```
+
+Column rules mask the whole cell without relying on detection. To scan every
+supported string column for sensitive values instead, replace the mask rule:
+
+```yaml
+    mask:
+      rules:
+        - name: detected-identifiers
+          entities: [EMAIL_ADDRESS, BR_CPF]
+          strategy: redact
+```
+
+To reject sensitive values in query text instead of operations, replace the
+guardrail rule:
+
+```yaml
+    guardrails:
+      mode: enforce
+      rules:
+        - name: no-cpf-in-query
+          type: pii
+          entities: [BR_CPF]
+          message: do not put a taxpayer id in a query
+```
+
+Use `mode: observe` to record guardrail matches without denying queries.
+The free build accepts one guardrail and one mask rule per resolved lane; one
+rule can list several operations, columns, or entities.
+
 ## ClickHouse configuration
 
 `server/config.d/protocols.yaml` turns on `mysql_port: 9004` and

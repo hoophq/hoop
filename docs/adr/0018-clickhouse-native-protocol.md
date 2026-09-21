@@ -104,6 +104,45 @@ The implementation follows these rules:
 - **Do not add a feature flag.** Selecting `protocol: clickhouse` is the
   operator's explicit opt-in and leaves every existing listener unchanged.
 
+## Guardrails and data masking use the existing configuration
+
+This decision adds no ClickHouse-specific way to define guardrails or data
+masking. A native listener uses the same top-level and per-listener
+`guardrails` and `mask` sections defined by ADR-0011. Listener guardrails run
+before and concatenate with inherited rules; a listener mode replaces the
+inherited mode. Listener mask rules replace inherited mask rules.
+
+The `clickhouse` section configures only codec resource limits:
+
+```yaml
+listeners:
+  - name: warehouse
+    protocol: clickhouse
+    listen: 0.0.0.0:9000
+    upstream: clickhouse:9000
+    guardrails:
+      mode: enforce
+      rules:
+        - name: no-destructive-clickhouse
+          type: operation
+          operations: [delete, drop, truncate]
+          message: destructive ClickHouse statements are not permitted
+    mask:
+      rules:
+        - name: customer-identifiers
+          columns: [email, taxpayer_id]
+          strategy: redact
+    clickhouse:
+      max_frame_bytes: 16777216
+      max_block_bytes: 67108864
+```
+
+No new rule type, masking strategy or policy execution path is introduced.
+The codec emits the existing `Statement` type for the existing guardrail chain
+and uses the existing gate masking callback while rebuilding native result
+blocks. `protocol: clickhouse` opts the listener into native decoding; it does
+not create a separate ClickHouse policy vocabulary.
+
 ## Consequences
 
 Native ClickHouse clients get the same request guardrails, audit records and
