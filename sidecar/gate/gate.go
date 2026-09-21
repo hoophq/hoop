@@ -841,11 +841,28 @@ func (g *Gate) maskByReframing(ctx context.Context, d *Decision, data []byte) {
 		return masked
 	})
 	if err != nil {
-		// A malformed response falls outside masking. Forward what the codec
-		// produced and record it; the upstream's own client is the authority
-		// on its protocol.
 		d.Err = errors.Join(d.Err, err)
 		g.writeAudit(ctx, audit.ErrorEvent(g.sess, err))
+
+		// A reframer returning ErrStreamUnsafe has recognized a response it
+		// cannot rebuild without leaking cleartext or losing packet
+		// boundaries. Treat it like the same error from Decode: deny the
+		// response so the proxy writes the protocol error and closes.
+		if errors.Is(err, inspect.ErrStreamUnsafe) {
+			d.Allowed = false
+			d.Rule = "stream-unsafe"
+			d.Message = err.Error()
+			d.Payload = nil
+			g.mu.Lock()
+			g.denied++
+			g.mu.Unlock()
+			g.countStatement(true, SourceStream)
+			return
+		}
+
+		// Other malformed responses retain the historical behavior: forward
+		// what the codec produced and record the error. The upstream client
+		// remains the authority on malformed protocol bytes.
 	}
 
 	d.Payload = out

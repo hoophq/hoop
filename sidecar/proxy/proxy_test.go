@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -355,6 +356,28 @@ func (c *bufferingResponseCodec) Flush(mask func(string, []byte) []byte) []byte 
 	return out
 }
 
+// unsafeArrayCodec models the libhoop ClickHouse reframer contract for a
+// string-bearing container it cannot safely rebuild while masking.
+type unsafeArrayCodec struct{}
+
+func (*unsafeArrayCodec) Protocol() inspect.Protocol { return inspect.ClickHouse }
+func (*unsafeArrayCodec) Decode(
+	_ inspect.Direction,
+	data []byte,
+) ([]inspect.Statement, int, error) {
+	return nil, len(data), nil
+}
+func (*unsafeArrayCodec) Rewrite(
+	_ []byte,
+	_ func(string, []byte) []byte,
+) ([]byte, inspect.ReframeResult, error) {
+	return nil, inspect.ReframeResult{}, fmt.Errorf(
+		"%w: masking cannot rebuild column \"emails\" with type Array(String)",
+		inspect.ErrStreamUnsafe,
+	)
+}
+func (*unsafeArrayCodec) Flush(func(string, []byte) []byte) []byte { return nil }
+
 func stagedResponseUpstream(t *testing.T, ready <-chan struct{}) string {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -466,6 +489,48 @@ func TestResponseDenialDiscardsBufferedReframedRows(t *testing.T) {
 	case <-discarded:
 	default:
 		t.Fatal("response denial did not reset the reframer")
+	}
+}
+
+func TestUnsafeClickHouseRewriteReturnsNativeDenial(t *testing.T) {
+	const cleartext = "cleartext@example.com"
+	up := newEchoUpstream(t, []byte(cleartext))
+	srv := startServer(t, proxy.Config{
+		Upstream:   up.addr(),
+		Protocol:   inspect.ClickHouse,
+		Masker:     emailMasker{},
+		DenyWriter: proxy.ProtocolDenyWriter{},
+		CodecFactory: func() inspect.Codec {
+			return &unsafeArrayCodec{}
+		},
+	})
+
+	c, err := net.Dial("tcp", srv.Addr().String())
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer c.Close()
+	if _, err := c.Write([]byte{'q'}); err != nil {
+		t.Fatalf("write request: %v", err)
+	}
+
+	_ = c.SetReadDeadline(time.Now().Add(3 * time.Second))
+	got, err := io.ReadAll(c)
+	if err != nil {
+		t.Fatalf("read denial: %v", err)
+	}
+	packetCode, n := binary.Uvarint(got)
+	if n <= 0 || packetCode != 2 {
+		t.Fatalf("response does not start with a ClickHouse Exception packet: %x", got)
+	}
+	if len(got) < n+4 || binary.LittleEndian.Uint32(got[n:n+4]) != 497 {
+		t.Fatalf("response does not carry ClickHouse ACCESS_DENIED 497: %x", got)
+	}
+	if !bytes.Contains(got, []byte("Array(String)")) {
+		t.Fatalf("native denial omitted the unsafe column reason: %q", got)
+	}
+	if bytes.Contains(got, []byte(cleartext)) {
+		t.Fatalf("unsafe response reached the client after the denial: %q", got)
 	}
 }
 
