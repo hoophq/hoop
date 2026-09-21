@@ -61,6 +61,7 @@ import JiraTemplateForm from '@/pages/JiraTemplates/Form'
 import IntegrationsSlack from '@/pages/Integrations/Slack'
 import IntegrationsWebhooks from '@/pages/Integrations/Webhooks'
 import ComplianceReport from '@/pages/ComplianceReport'
+import Reviews from '@/pages/Reviews'
 import Sidecars from '@/pages/Sidecars'
 import SidecarSetup from '@/pages/Sidecars/Setup'
 import SidecarDetailsPage from '@/pages/Sidecars/Details'
@@ -164,19 +165,13 @@ function Router() {
           </Page>
         }
       />
+      {/* Both render the list; the session id opens its drawer, so the Slack
+          link resolves to one review. */}
       <Route
         path="/reviews"
         element={
           <Page role={ROLE_APPROVER}>
-            <NotImplemented
-              title="Reviews"
-              project="Reviews (Human in the Loop)"
-              missing={[
-                'Sessions narrowed to review queries',
-                'Approve and reject from the control plane',
-                'The retry path after approval',
-              ]}
-            />
+            <Reviews />
           </Page>
         }
       />
@@ -184,11 +179,7 @@ function Router() {
         path="/reviews/:sessionId"
         element={
           <Page role={ROLE_APPROVER}>
-            <NotImplemented
-              title="Review"
-              project="Reviews (Human in the Loop)"
-              missing={['Review session detail', 'Approve and reject']}
-            />
+            <Reviews />
           </Page>
         }
       />
