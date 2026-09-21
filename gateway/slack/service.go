@@ -128,21 +128,42 @@ type UserGroup struct {
 	Handle      string
 	Name        string
 	Description string
+	Users       []string // member Slack user IDs
 }
 
-// ListUserGroups lists the workspace user groups visible to the bot token.
-// The Slack app needs the usergroups:read scope; without it Slack answers
-// "missing_scope", which is returned as-is.
+// ListUserGroups lists the workspace user groups visible to the bot token,
+// members included. The Slack app needs the usergroups:read scope; without
+// it Slack answers "missing_scope", which is returned as-is.
 func (s *SlackService) ListUserGroups(ctx context.Context) ([]UserGroup, error) {
-	groups, err := s.apiClient.GetUserGroupsContext(ctx)
+	groups, err := s.apiClient.GetUserGroupsContext(ctx, slack.GetUserGroupsOptionIncludeUsers(true))
 	if err != nil {
 		return nil, fmt.Errorf("failed listing slack user groups, err=%w", err)
 	}
 	out := make([]UserGroup, len(groups))
 	for i, g := range groups {
-		out[i] = UserGroup{ID: g.ID, Handle: g.Handle, Name: g.Name, Description: g.Description}
+		out[i] = UserGroup{ID: g.ID, Handle: g.Handle, Name: g.Name, Description: g.Description, Users: g.Users}
 	}
 	return out, nil
+}
+
+// MapUserGroups pairs each hoop group with the Slack user group whose handle
+// or name equals it, case-insensitive. A handle match wins over a name match.
+// Hoop groups with no match are absent from the result.
+func MapUserGroups(hoopGroups []string, slackGroups []UserGroup) map[string]UserGroup {
+	out := make(map[string]UserGroup, len(hoopGroups))
+	for _, hg := range hoopGroups {
+		if _, ok := out[hg]; ok {
+			continue
+		}
+		idx := slices.IndexFunc(slackGroups, func(g UserGroup) bool { return strings.EqualFold(g.Handle, hg) })
+		if idx < 0 {
+			idx = slices.IndexFunc(slackGroups, func(g UserGroup) bool { return strings.EqualFold(g.Name, hg) })
+		}
+		if idx >= 0 {
+			out[hg] = slackGroups[idx]
+		}
+	}
+	return out
 }
 
 type MessageReviewRequest struct {

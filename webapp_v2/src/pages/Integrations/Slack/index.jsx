@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Stack, Text, Title } from '@mantine/core'
+import { useModeConfig } from '@/modes'
 import Tabs from '@/components/Tabs'
 import Button from '@/components/Button'
 import PageLoader from '@/components/PageLoader'
@@ -10,6 +11,7 @@ import SlackChannelsModal from './components/SlackChannelsModal'
 import SlackConfigurationsTab from './components/SlackConfigurationsTab'
 
 function IntegrationsSlack() {
+  const { id } = useModeConfig()
   const {
     plugin,
     connections,
@@ -19,7 +21,7 @@ function IntegrationsSlack() {
     updateConnectionConfig,
     saveEnvvars,
   } = usePlugin('slack')
-  const [tab, setTab] = useState('connections')
+  const [tab, setTab] = useState(id == 'control-plane' ? 'configurations' : 'connections')
   const [configConnection, setConfigConnection] = useState(null)
 
   const showLoader = useMinDelay(status === 'loading')
@@ -38,7 +40,7 @@ function IntegrationsSlack() {
 
       <Tabs value={tab} onChange={setTab}>
         <Tabs.List>
-          <Tabs.Tab value="connections">Connections</Tabs.Tab>
+          {id !== 'control-plane' && <Tabs.Tab value="connections">Connections</Tabs.Tab>}
           <Tabs.Tab value="configurations">Configurations</Tabs.Tab>
         </Tabs.List>
 
