@@ -212,7 +212,8 @@ type ListenerConfig struct {
 	// which is a fallback rather than a name anyone should rely on.
 	Name string `json:"name"`
 
-	// Protocol selects the codec: postgres, mysql, mssql or http.
+	// Protocol selects the codec, for example postgres, mysql, clickhouse,
+	// mssql or http.
 	Protocol string `json:"protocol"`
 
 	// Listen is the bind address, or a filesystem path when Network is
@@ -240,11 +241,12 @@ type ListenerConfig struct {
 	// Requires cert_file and key_file; the other TLSConfig fields describe an
 	// outbound connection and are ignored here.
 	//
-	// Only `postgres` supports it. pgwire negotiates TLS in-band with an
-	// 8-byte SSLRequest, so a plain TLS listener in front cannot terminate
-	// it. Envoy's own postgres filter can, but it is contrib-only, marked
-	// work-in-progress, and gives up permanently the moment a client asks
-	// for GSS encryption, which is what psql does by default whenever a
+	// Postgres negotiates TLS in-band with an 8-byte SSLRequest, so a plain
+	// TLS listener in front cannot terminate it. ClickHouse starts TLS on the
+	// first byte instead; gRPC and Spanner use their own direct TLS servers.
+	// Envoy's postgres filter can handle pgwire, but it is contrib-only,
+	// marked work-in-progress, and gives up permanently the moment a client
+	// asks for GSS encryption, which is what psql does by default whenever a
 	// Kerberos ticket is present.
 	//
 	// MySQL negotiates in-band too and is still refused, because the relay
@@ -325,6 +327,10 @@ type ListenerConfig struct {
 	// HTTP configures what this lane's HTTP codec captures. Only valid on
 	// an http lane.
 	HTTP *HTTPCodecConfig `json:"http,omitempty"`
+
+	// ClickHouse configures native-protocol decompression limits. Only valid
+	// on a clickhouse lane; absent keeps bounded defaults.
+	ClickHouse *ClickHouseCodecConfig `json:"clickhouse,omitempty"`
 
 	// GRPC configures what this lane's gRPC transport decodes and exposes.
 	// Only valid on a grpc lane. See GRPCCodecConfig.
@@ -1055,18 +1061,14 @@ func (c *Config) Validate() error {
 		}
 
 		// downstream_tls is refused at startup rather than accepted and
-		// ignored, except on the two lanes that terminate it: postgres,
-		// because pgwire negotiates TLS in-band so nothing in front can, and
-		// grpc, because a standalone lane is the HTTP/2 endpoint and must
-		// present the certificate itself (ADR-0013). On any other protocol
-		// the relay never looks, so the lane would come up "green"
-		// presenting a certificate nothing ever offers.
+		// ignored, except on lanes that actually terminate it. Postgres
+		// negotiates in-band; grpc/spanner and ClickHouse use TLS-on-connect.
 		if l.DownstreamTLS != nil && !isSSH(l) {
-			if l.Protocol != string(inspect.Postgres) && !isGRPCTransport(l) {
+			p := inspect.Protocol(l.Protocol)
+			if p != inspect.Postgres && p != inspect.ClickHouse && !isGRPCTransport(l) {
 				problems = append(problems, fmt.Sprintf(
-					"%s: downstream_tls is only supported on postgres, grpc and spanner, not %q "+
-						"(pgwire negotiates in-band, and a grpc-transport lane is its own "+
-						"HTTP/2 endpoint; no other protocol terminates here)", name, l.Protocol))
+					"%s: downstream_tls is only supported on postgres, clickhouse, grpc and spanner, not %q",
+					name, l.Protocol))
 			}
 			// Load the keypair now. Discovering a bad path on the first
 			// client connection means one failed login per restart and
@@ -1131,6 +1133,15 @@ func (c *Config) validateLane(lc ListenerConfig, name string) []string {
 				name, lc.Protocol))
 		}
 		problems = append(problems, lc.HTTP.validate(name)...)
+	}
+
+	if lc.ClickHouse != nil {
+		if inspect.Protocol(lc.Protocol) != inspect.ClickHouse {
+			problems = append(problems, fmt.Sprintf(
+				"%s: a \"clickhouse\" block is only valid on a clickhouse listener, not %s",
+				name, lc.Protocol))
+		}
+		problems = append(problems, lc.ClickHouse.validate(name)...)
 	}
 
 	// The same rule for a grpc block: only a grpc lane reads it, and its

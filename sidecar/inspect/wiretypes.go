@@ -36,11 +36,12 @@ type (
 )
 
 const (
-	Postgres = codectypes.Postgres
-	MSSQL    = codectypes.MSSQL
-	MySQL    = codectypes.MySQL
-	MongoDB  = codectypes.MongoDB
-	HTTP     = codectypes.HTTP
+	Postgres   = codectypes.Postgres
+	MSSQL      = codectypes.MSSQL
+	MySQL      = codectypes.MySQL
+	ClickHouse = codectypes.ClickHouse
+	MongoDB    = codectypes.MongoDB
+	HTTP       = codectypes.HTTP
 	// GRPC is canonical in libhoop like every other protocol, but unlike
 	// them it has no codec to register: the lane terminates HTTP/2 and
 	// enters at parsed statements (ADR-0013).

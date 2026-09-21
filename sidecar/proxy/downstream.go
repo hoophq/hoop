@@ -31,8 +31,9 @@ const (
 // hold a goroutine and a socket without ever authenticating.
 const maxNegotiationRounds = 4
 
-// negotiateDownstream runs the pgwire pre-startup exchange as the SERVER side,
-// returning a connection positioned at the client's StartupMessage.
+// negotiateDownstream terminates the protocol's client-side encryption when
+// configured, then returns a connection positioned at the first native
+// packet. ClickHouse uses TLS-on-connect; pgwire uses its pre-startup exchange.
 //
 // # Why the relay answers these itself
 //
@@ -71,10 +72,22 @@ func negotiateDownstream(
 	tlsCfg *tls.Config,
 	timeout time.Duration,
 ) (net.Conn, string, error) {
+	if proto == inspect.ClickHouse && tlsCfg != nil {
+		if timeout > 0 {
+			if err := conn.SetDeadline(time.Now().Add(timeout)); err != nil {
+				return nil, "", err
+			}
+		}
+		tc := tls.Server(conn, tlsCfg)
+		if err := tc.Handshake(); err != nil {
+			return nil, "", fmt.Errorf("downstream TLS handshake: %w", err)
+		}
+		if err := tc.SetDeadline(time.Time{}); err != nil {
+			return nil, "", err
+		}
+		return tc, "", nil
+	}
 	if proto != inspect.Postgres {
-		// Only pgwire negotiates in-band. TDS 8.0 is TLS-on-connect, which is
-		// for whatever fronts this relay to terminate, and HTTP has no
-		// equivalent exchange.
 		return conn, "", nil
 	}
 

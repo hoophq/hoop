@@ -623,12 +623,17 @@ func (s *Server) pump(
 	dir inspect.Direction,
 	log *slog.Logger,
 ) {
-	// A re-framing codec holds rows back until their result set ends. Every
-	// exit from this loop must release them, or the client silently loses the
-	// tail of its output, which looks like a truncated result rather than a
-	// masking bug. Only the server direction can hold anything.
+	// A re-framing codec holds rows back until its result set ends. Release
+	// them when the server stream ends normally. A response denial writes a
+	// protocol error instead, so held rows must be discarded: appending them
+	// after the error leaks denied data and corrupts the client stream.
+	discardResponse := false
 	if dir == inspect.FromServer {
 		defer func() {
+			if discardResponse {
+				g.DiscardResponse()
+				return
+			}
 			if tail := g.FlushResponse(); len(tail) > 0 {
 				_, _ = dst.Write(tail)
 			}
@@ -695,6 +700,9 @@ func (s *Server) pump(
 			}
 
 			if !d.Allowed {
+				if dir == inspect.FromServer {
+					discardResponse = true
+				}
 				s.denied.Add(1)
 				log.Info("statement denied",
 					"direction", string(dir), "rule", d.Rule, "message", d.Message)

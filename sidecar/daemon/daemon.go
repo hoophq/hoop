@@ -1212,7 +1212,7 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 			name:         name,
 			policy:       pol,
 			masker:       masker,
-			codecFactory: httpCodecFactory(proto, lc.HTTP),
+			codecFactory: laneCodecFactory(proto, lc.HTTP, lc.ClickHouse),
 			captureBody:  lc.HTTP != nil && lc.HTTP.CaptureBody,
 			observing:    gc.observing(),
 			analyzers:    collectAnalyzers(pol),

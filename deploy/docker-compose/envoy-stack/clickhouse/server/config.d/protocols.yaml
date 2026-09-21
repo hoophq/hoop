@@ -1,0 +1,7 @@
+# Merged into /etc/clickhouse-server/config.xml by the server at start.
+#
+# The image ships HTTP :8123 and native :9000 on; the two emulated protocols
+# are commented out in its config.xml. Turn them on. Nothing publishes :9000
+# outside the compose network: there is no codec for it, so there is no lane.
+mysql_port: 9004
+postgresql_port: 9005

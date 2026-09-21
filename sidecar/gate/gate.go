@@ -108,6 +108,26 @@ type Duplex interface {
 	Duplex()
 }
 
+// StreamFilter transforms connection bytes before either inspection or
+// forwarding. It is for negotiation fields that decide every later packet's
+// layout: ClickHouse clamps both advertised revisions here so the peers and
+// decoder all speak the same bounded vocabulary.
+//
+// A filter may hold an incomplete prefix and return no bytes. Any error is
+// fatal: once a filter has retained or changed bytes, forwarding the original
+// chunk cannot reconstruct the stream.
+type StreamFilter interface {
+	Filter(dir inspect.Direction, data []byte) ([]byte, error)
+}
+
+// reassemblySizer lets a codec raise the default inspector buffer to the
+// largest packet its own parser admits. The codec remains the authority on
+// the packet-specific cap; this only prevents the generic 8 MiB guard from
+// rejecting a valid larger frame first.
+type reassemblySizer interface {
+	MaxReassemblyBytes() int
+}
+
 // Config assembles a Gate.
 type Config struct {
 	// Protocol selects the codec. Required.
@@ -251,6 +271,12 @@ type Gate struct {
 	// so the data path does not type-assert per packet.
 	reframer Reframer
 
+	// clientFilter and serverFilter are optional pre-decode wire filters
+	// discovered from their codecs. Duplex codecs may put the same filter in
+	// both fields; each direction still owns its independent stream cursor.
+	clientFilter StreamFilter
+	serverFilter StreamFilter
+
 	// mu guards the counters, which Close reads while a data-path goroutine
 	// may still be incrementing them. The inspectors are not guarded: they
 	// are per-direction and each direction has one reader.
@@ -314,9 +340,17 @@ func New(sess *session.Session, cfg Config) (*Gate, error) {
 
 	client := inspect.NewWithCodec(clientCodec)
 	server := inspect.NewWithCodec(serverCodec)
-	if cfg.MaxBuffer > 0 {
-		client.SetMaxBuffer(cfg.MaxBuffer)
-		server.SetMaxBuffer(cfg.MaxBuffer)
+	maxBuffer := cfg.MaxBuffer
+	if maxBuffer <= 0 {
+		for _, codec := range []inspect.Codec{clientCodec, serverCodec} {
+			if sized, ok := codec.(reassemblySizer); ok && sized.MaxReassemblyBytes() > maxBuffer {
+				maxBuffer = sized.MaxReassemblyBytes()
+			}
+		}
+	}
+	if maxBuffer > 0 {
+		client.SetMaxBuffer(maxBuffer)
+		server.SetMaxBuffer(maxBuffer)
 	}
 
 	sess.Protocol = cfg.Protocol
@@ -329,6 +363,12 @@ func New(sess *session.Session, cfg Config) (*Gate, error) {
 		audit:  cfg.Audit,
 		masker: cfg.Masker,
 		polCtx: sess.PolicyContext(),
+	}
+	if filter, ok := clientCodec.(StreamFilter); ok {
+		g.clientFilter = filter
+	}
+	if filter, ok := serverCodec.(StreamFilter); ok {
+		g.serverFilter = filter
 	}
 	// Discover the optional re-framing capability once, so the data path
 	// does not type-assert per packet. A codec that cannot rebuild its own
@@ -390,13 +430,15 @@ func (g *Gate) Response(ctx context.Context, data []byte) Decision {
 	return g.inspect(ctx, inspect.FromServer, data)
 }
 
-// FlushResponse returns any response bytes the codec is still holding.
+// FlushResponse returns any response bytes the codec is still holding after a
+// normal response-stream completion.
 //
 // A re-framing codec buffers rows until their result set ends, because a row
 // cannot be rebuilt once forwarded. If the connection closes mid-result-set
 // those rows would be dropped, silently truncating the client's output, a
-// worse failure than masking late. The relay MUST call this before it stops
-// pumping, and forward whatever comes back.
+// worse failure than masking late. The relay MUST call this before a normal
+// server pump stops. A denied or unsafe response must call DiscardResponse
+// instead so held rows cannot follow the protocol error.
 //
 // Returns nil when nothing is held or the codec does not re-frame.
 func (g *Gate) FlushResponse() []byte {
@@ -421,8 +463,40 @@ func (g *Gate) FlushResponse() []byte {
 	return out
 }
 
+// DiscardResponse clears response bytes held by a re-framing codec without
+// returning them. A response denial has already replaced the upstream result
+// with a protocol error; releasing earlier rows after that error would leak
+// denied data and corrupt the response stream.
+func (g *Gate) DiscardResponse() {
+	if g.reframer != nil {
+		g.reframer.Flush(nil)
+	}
+}
+
 func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) Decision {
-	d := Decision{Allowed: true, Payload: data}
+	d := Decision{Allowed: true}
+
+	filter := g.clientFilter
+	if dir == inspect.FromServer {
+		filter = g.serverFilter
+	}
+	if filter != nil && len(data) > 0 {
+		filtered, err := filter.Filter(dir, data)
+		if err != nil {
+			d.Allowed = false
+			d.Rule = "stream-filter"
+			d.Message = err.Error()
+			d.Err = fmt.Errorf("filter: %w", err)
+			g.writeAudit(ctx, audit.ErrorEvent(g.sess, d.Err))
+			g.mu.Lock()
+			g.denied++
+			g.mu.Unlock()
+			g.countStatement(true, SourceStream)
+			return d
+		}
+		data = filtered
+	}
+	d.Payload = data
 
 	// A statement gate has no inspectors: its caller builds statements and
 	// enters at EvaluateStatement. Refusing here beats a nil dereference,
@@ -432,6 +506,9 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 		d.Rule = "gate"
 		d.Message = "this gate evaluates statements, not bytes; use EvaluateStatement"
 		d.Payload = nil
+		return d
+	}
+	if len(data) == 0 {
 		return d
 	}
 
@@ -764,11 +841,28 @@ func (g *Gate) maskByReframing(ctx context.Context, d *Decision, data []byte) {
 		return masked
 	})
 	if err != nil {
-		// A malformed response falls outside masking. Forward what the codec
-		// produced and record it; the upstream's own client is the authority
-		// on its protocol.
 		d.Err = errors.Join(d.Err, err)
 		g.writeAudit(ctx, audit.ErrorEvent(g.sess, err))
+
+		// A reframer returning ErrStreamUnsafe has recognized a response it
+		// cannot rebuild without leaking cleartext or losing packet
+		// boundaries. Treat it like the same error from Decode: deny the
+		// response so the proxy writes the protocol error and closes.
+		if errors.Is(err, inspect.ErrStreamUnsafe) {
+			d.Allowed = false
+			d.Rule = "stream-unsafe"
+			d.Message = err.Error()
+			d.Payload = nil
+			g.mu.Lock()
+			g.denied++
+			g.mu.Unlock()
+			g.countStatement(true, SourceStream)
+			return
+		}
+
+		// Other malformed responses retain the historical behavior: forward
+		// what the codec produced and record the error. The upstream client
+		// remains the authority on malformed protocol bytes.
 	}
 
 	d.Payload = out
