@@ -1,6 +1,7 @@
 package slack
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"time"
@@ -15,7 +16,10 @@ import (
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 )
 
-var ErrMissingRequiredCredentials = fmt.Errorf("missing required credentials for slack plugin")
+var (
+	ErrMissingRequiredCredentials = fmt.Errorf("missing required credentials for slack plugin")
+	ErrServiceNotRunning          = fmt.Errorf("slack integration is not configured or not running")
+)
 
 const (
 	PluginConfigEnvVarsParam = "plugin_config"
@@ -171,6 +175,15 @@ func SendApprovedMessage(orgID, slackID, sid, apiURL string) {
 			apiURL, sid)
 		_ = slacksvc.PostMessage(slackID, msg)
 	}
+}
+
+// ListUserGroups lists the Slack workspace user groups of the org's slack integration.
+func ListUserGroups(ctx context.Context, orgID string) ([]slack.UserGroup, error) {
+	slackSvc := slack.GetServiceInstance(orgID)
+	if slackSvc == nil {
+		return nil, ErrServiceNotRunning
+	}
+	return slackSvc.ListUserGroups(ctx)
 }
 
 func (p *slackPlugin) OnConnect(pctx plugintypes.Context) error { return nil }

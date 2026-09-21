@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Anchor, Grid, Group, Stack, Text, Title } from '@mantine/core'
 import { showSnackbar } from '@/utils/snackbar'
 import PasswordInput from '@/components/PasswordInput'
+import TextInput from '@/components/TextInput'
 import Button from '@/components/Button'
 
 const SLACK_DOCS_URL = 'https://hoop.dev/docs/integrations/slack'
@@ -24,17 +25,20 @@ function decodeBase64Safe(value) {
 function SlackConfigurationsTab({ plugin, saving, onSave }) {
   const savedBotToken = plugin?.config?.envvars?.SLACK_BOT_TOKEN
   const savedAppToken = plugin?.config?.envvars?.SLACK_APP_TOKEN
+  const savedSlackChannel = plugin?.config?.envvars?.SLACK_CHANNEL
 
   const [botToken, setBotToken] = useState(() => decodeBase64Safe(savedBotToken))
   const [appToken, setAppToken] = useState(() => decodeBase64Safe(savedAppToken))
+  const [slackChannel, setSlackChannel] = useState(() => decodeBase64Safe(savedSlackChannel))
 
   // Re-sync the inputs when the saved values change (e.g. after a refetch
   // following save) — state-during-render pattern, keyed by the raw values.
-  const [prevSaved, setPrevSaved] = useState({ bot: savedBotToken, app: savedAppToken })
-  if (prevSaved.bot !== savedBotToken || prevSaved.app !== savedAppToken) {
-    setPrevSaved({ bot: savedBotToken, app: savedAppToken })
+  const [prevSaved, setPrevSaved] = useState({ bot: savedBotToken, app: savedAppToken, channel: savedSlackChannel })
+  if (prevSaved.bot !== savedBotToken || prevSaved.app !== savedAppToken || prevSaved.channel !== savedSlackChannel) {
+    setPrevSaved({ bot: savedBotToken, app: savedAppToken, channel: savedSlackChannel })
     setBotToken(decodeBase64Safe(savedBotToken))
     setAppToken(decodeBase64Safe(savedAppToken))
+    setSlackChannel(decodeBase64Safe(savedSlackChannel))
   }
 
   function handleSave() {
@@ -47,6 +51,9 @@ function SlackConfigurationsTab({ plugin, saving, onSave }) {
       payload = {
         SLACK_BOT_TOKEN: btoa(botToken.trim()),
         SLACK_APP_TOKEN: btoa(appToken.trim()),
+      }
+      if (slackChannel.trim()) {
+        payload.SLACK_CHANNEL = btoa(slackChannel.trim())
       }
     } catch {
       showSnackbar({ level: 'error', text: 'Tokens must contain only ASCII characters.' })
@@ -79,6 +86,11 @@ function SlackConfigurationsTab({ plugin, saving, onSave }) {
             label="Slack app token"
             value={appToken}
             onChange={(e) => setAppToken(e.currentTarget.value)}
+          />
+          <TextInput
+            label="Slack channel"
+            value={slackChannel}
+            onChange={(e) => setSlackChannel(e.currentTarget.value)}
           />
           <Group justify="flex-end">
             <Button onClick={handleSave} loading={saving}>
