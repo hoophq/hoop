@@ -114,6 +114,10 @@ function ProtectedRoute({ children, adminOnly = false, role = null, licenseFeatu
     return <AuthPageLoader message="Verifying authentication..." />
   }
 
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />
+  }
+
   if (adminOnly && !isAdmin) {
     return <Navigate to="/" replace />
   }
