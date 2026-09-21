@@ -309,6 +309,84 @@ func (m emailMasker) MaskCell(_ string, value []byte) ([]byte, []string, int) {
 	return m.Mask(value)
 }
 
+// bufferingResponseCodec models a reframer that withholds a result row before
+// a later response statement is denied. Flush with a nil masker is the
+// discard/reset signal; a normal flush receives the configured masker.
+type bufferingResponseCodec struct {
+	held        []byte
+	ready       chan struct{}
+	readyOnce   *sync.Once
+	discarded   chan struct{}
+	discardOnce *sync.Once
+}
+
+func (*bufferingResponseCodec) Protocol() inspect.Protocol { return inspect.HTTP }
+
+func (*bufferingResponseCodec) Decode(
+	dir inspect.Direction,
+	data []byte,
+) ([]inspect.Statement, int, error) {
+	if dir == inspect.FromServer && string(data) == "deny-response" {
+		return []inspect.Statement{{
+			Protocol:  inspect.HTTP,
+			Direction: inspect.FromServer,
+			Operation: inspect.OpDrop,
+			Text:      "DROP TABLE protected",
+		}}, len(data), nil
+	}
+	return nil, len(data), nil
+}
+
+func (c *bufferingResponseCodec) Rewrite(
+	data []byte,
+	_ func(string, []byte) []byte,
+) ([]byte, inspect.ReframeResult, error) {
+	c.held = append(c.held, data...)
+	c.readyOnce.Do(func() { close(c.ready) })
+	return nil, inspect.ReframeResult{}, nil
+}
+
+func (c *bufferingResponseCodec) Flush(mask func(string, []byte) []byte) []byte {
+	if mask == nil {
+		c.discardOnce.Do(func() { close(c.discarded) })
+	}
+	out := append([]byte(nil), c.held...)
+	c.held = nil
+	return out
+}
+
+func stagedResponseUpstream(t *testing.T, ready <-chan struct{}) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("upstream listen: %v", err)
+	}
+	t.Cleanup(func() { ln.Close() })
+
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer c.Close()
+
+		var request [1]byte
+		if _, err := io.ReadFull(c, request[:]); err != nil {
+			return
+		}
+		if _, err := c.Write([]byte("held-row")); err != nil {
+			return
+		}
+		select {
+		case <-ready:
+		case <-time.After(3 * time.Second):
+			return
+		}
+		_, _ = c.Write([]byte("deny-response"))
+	}()
+	return ln.Addr().String()
+}
+
 // Masking runs on HTTP, which carries body length in a header the relay
 // forwards as a unit. The gate refuses it on the length-prefixed binary
 // protocols, where substitution would desynchronize the client. See
@@ -340,6 +418,54 @@ func TestResponseMasking(t *testing.T) {
 	}
 	if !strings.Contains(got, "[REDACTED]") {
 		t.Errorf("response was not masked: %q", got)
+	}
+}
+
+func TestResponseDenialDiscardsBufferedReframedRows(t *testing.T) {
+	ready := make(chan struct{})
+	discarded := make(chan struct{})
+	var readyOnce, discardOnce sync.Once
+
+	srv := startServer(t, proxy.Config{
+		Upstream:   stagedResponseUpstream(t, ready),
+		Protocol:   inspect.HTTP,
+		Policy:     denyDrops(t),
+		Masker:     emailMasker{},
+		DenyWriter: proxy.ProtocolDenyWriter{},
+		CodecFactory: func() inspect.Codec {
+			return &bufferingResponseCodec{
+				ready:       ready,
+				readyOnce:   &readyOnce,
+				discarded:   discarded,
+				discardOnce: &discardOnce,
+			}
+		},
+	})
+
+	c, err := net.Dial("tcp", srv.Addr().String())
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer c.Close()
+	if _, err := c.Write([]byte{'q'}); err != nil {
+		t.Fatalf("write request: %v", err)
+	}
+
+	_ = c.SetReadDeadline(time.Now().Add(3 * time.Second))
+	got, err := io.ReadAll(c)
+	if err != nil {
+		t.Fatalf("read denial: %v", err)
+	}
+	if !bytes.Contains(got, []byte("destructive statements are not permitted")) {
+		t.Fatalf("response omitted the policy denial: %q", got)
+	}
+	if bytes.Contains(got, []byte("held-row")) {
+		t.Fatalf("buffered result row followed the denial: %q", got)
+	}
+	select {
+	case <-discarded:
+	default:
+		t.Fatal("response denial did not reset the reframer")
 	}
 }
 

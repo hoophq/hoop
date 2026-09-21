@@ -430,13 +430,15 @@ func (g *Gate) Response(ctx context.Context, data []byte) Decision {
 	return g.inspect(ctx, inspect.FromServer, data)
 }
 
-// FlushResponse returns any response bytes the codec is still holding.
+// FlushResponse returns any response bytes the codec is still holding after a
+// normal response-stream completion.
 //
 // A re-framing codec buffers rows until their result set ends, because a row
 // cannot be rebuilt once forwarded. If the connection closes mid-result-set
 // those rows would be dropped, silently truncating the client's output, a
-// worse failure than masking late. The relay MUST call this before it stops
-// pumping, and forward whatever comes back.
+// worse failure than masking late. The relay MUST call this before a normal
+// server pump stops. A denied or unsafe response must call DiscardResponse
+// instead so held rows cannot follow the protocol error.
 //
 // Returns nil when nothing is held or the codec does not re-frame.
 func (g *Gate) FlushResponse() []byte {
@@ -459,6 +461,16 @@ func (g *Gate) FlushResponse() []byte {
 	})
 	g.countMasked(masked)
 	return out
+}
+
+// DiscardResponse clears response bytes held by a re-framing codec without
+// returning them. A response denial has already replaced the upstream result
+// with a protocol error; releasing earlier rows after that error would leak
+// denied data and corrupt the response stream.
+func (g *Gate) DiscardResponse() {
+	if g.reframer != nil {
+		g.reframer.Flush(nil)
+	}
 }
 
 func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) Decision {

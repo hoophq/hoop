@@ -23,8 +23,9 @@ docker compose -f docker-compose.yml -f clickhouse/docker-compose.clickhouse.yml
 docker compose -f docker-compose.yml -f clickhouse/docker-compose.clickhouse.yml down -v
 ```
 
-Ports on the host are Envoy's: `8446`, `9000`, `9004`, `9005`. Inside the
-compose network the client dials `envoy:<port>`.
+Envoy publishes HTTPS on host port `8446`. The plaintext database ports
+`9000`, `9004`, and `9005` bind to `127.0.0.1` only. Inside the compose
+network the client containers dial `envoy:<port>`.
 
 ```bash
 C="docker compose -f docker-compose.yml -f clickhouse/docker-compose.clickhouse.yml"
@@ -177,11 +178,11 @@ refuse every login on `:9004`. `seed.sql` runs from
 
 ## TLS on database lanes
 
-The demo uses plaintext inside its isolated compose network. A native
-ClickHouse TLS port uses TLS-on-connect, so `upstream_tls` and
-`downstream_tls` work directly on a `clickhouse` lane. MySQL emulation keeps
-the restrictions in [`../mysql`](../mysql/README.md). PostgreSQL emulation
-uses pgwire's in-band SSLRequest.
+The demo limits plaintext to its isolated compose network and loopback-only
+host mappings. Native ClickHouse TLS uses TLS-on-connect, so
+`upstream_tls` and `downstream_tls` work directly on a `clickhouse` lane.
+MySQL emulation keeps the restrictions in [`../mysql`](../mysql/README.md).
+PostgreSQL emulation uses pgwire's in-band SSLRequest.
 
 ## Known gap: the MySQL 8 CLI on :9004
 
@@ -221,7 +222,7 @@ go-sql-driver, mysql-connector-python.
 
 | Path | What it is |
 |---|---|
-| `docker-compose.clickhouse.yml` | the overlay: ClickHouse clients and server, config swaps, host ports `8446`, `9000`, `9004`, `9005` |
+| `docker-compose.clickhouse.yml` | the overlay: ClickHouse clients and server, HTTPS host port `8446`, and loopback-only database ports `9000`, `9004`, `9005` |
 | `envoy-clickhouse.yaml` | base Envoy config plus the four ClickHouse listeners |
 | `config-clickhouse.yaml` | sidecar config: `appdb`, `httpbin` and four ClickHouse lanes |
 | `server/config.d/protocols.yaml` | turns on the MySQL and PostgreSQL emulation ports |

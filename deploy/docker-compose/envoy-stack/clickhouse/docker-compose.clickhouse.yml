@@ -101,7 +101,7 @@ services:
       - ./clickhouse/envoy-clickhouse.yaml:/etc/envoy/envoy.yaml:ro
       - ./envoy/certs:/etc/envoy/certs:ro
     ports:
-      - "9000:9000"   # TCP lane   -> hoop-inspect (clickhouse codec) -> clickhouse :9000
-      - "8446:8446"   # HTTPS lane -> hoop-inspect (http codec)     -> clickhouse :8123
-      - "9004:9004"   # TCP lane   -> hoop-inspect (mysql codec)    -> clickhouse :9004
-      - "9005:9005"   # TCP lane   -> hoop-inspect (postgres codec) -> clickhouse :9005
+      - "127.0.0.1:9000:9000" # TCP lane   -> hoop-inspect (clickhouse codec) -> clickhouse :9000
+      - "8446:8446"            # HTTPS lane -> hoop-inspect (http codec)       -> clickhouse :8123
+      - "127.0.0.1:9004:9004" # TCP lane   -> hoop-inspect (mysql codec)      -> clickhouse :9004
+      - "127.0.0.1:9005:9005" # TCP lane   -> hoop-inspect (postgres codec)   -> clickhouse :9005

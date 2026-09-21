@@ -4,8 +4,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/hoophq/hoop/sidecar/inspect"
 	_ "github.com/hoophq/hoop/sidecar/codec/all"
+	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
 )
 
@@ -462,6 +462,30 @@ func TestMySQLIsAnalyzedWithTheMySQLDialect(t *testing.T) {
 	// punctuation the delete is reported with no target, and a rule naming
 	// that table never matches.
 	a := inspect.AnalyzeSQL("DELETE FROM `orders`", inspect.MySQL)
+	if a.Operation != inspect.OpDelete || !slices.Contains(a.Tables, "orders") {
+		t.Errorf("backtick identifier: op = %q, tables = %v", a.Operation, a.Tables)
+	}
+}
+
+// ClickHouse has the same policy consequence as MySQL: applying PostgreSQL
+// lexical rules either hides live writes or invents writes from comments and
+// string data. AnalyzeSQL must select the dialect from the native protocol.
+func TestClickHouseIsAnalyzedWithTheClickHouseDialect(t *testing.T) {
+	for _, tc := range []struct {
+		sql  string
+		why  string
+		want inspect.Operation
+	}{
+		{`/* a /* b */ DELETE FROM customers */`, "non-nesting block comment", inspect.OpDelete},
+		{`SELECT 1 # DELETE FROM customers`, "hash comment", inspect.OpSelect},
+		{`SELECT 'a\'; DELETE FROM customers; --'`, "backslash-escaped string", inspect.OpSelect},
+	} {
+		if got := inspect.AnalyzeSQL(tc.sql, inspect.ClickHouse).Operation; got != tc.want {
+			t.Errorf("%s: op = %q, want %q: %s", tc.why, got, tc.want, tc.sql)
+		}
+	}
+
+	a := inspect.AnalyzeSQL("DELETE FROM `orders`", inspect.ClickHouse)
 	if a.Operation != inspect.OpDelete || !slices.Contains(a.Tables, "orders") {
 		t.Errorf("backtick identifier: op = %q, tables = %v", a.Operation, a.Tables)
 	}
