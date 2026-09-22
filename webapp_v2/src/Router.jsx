@@ -39,15 +39,20 @@ import EventRouting from '@/pages/EventRouting'
 import EventRoutingForm from '@/pages/EventRouting/Form'
 import EventRoutingDetail from '@/pages/EventRouting/Detail'
 import DataMasking from '@/pages/Features/DataMasking'
-import DataMaskingForm from '@/pages/Features/DataMasking/Create'
+import GatewayDataMaskingForm from '@/pages/Features/DataMasking/Create/GatewayDataMaskingForm'
+import ControlPlaneDataMaskingForm from '@/pages/Features/DataMasking/Create/ControlPlaneDataMaskingForm'
 import AccessControl from '@/pages/Features/AccessControl'
 import AccessControlForm from '@/pages/Features/AccessControl/Create'
 import AccessRequest from '@/pages/Features/AccessRequest'
 import AccessRequestForm from '@/pages/Features/AccessRequest/Create'
 import AiSessionAnalyzer from '@/pages/Features/AiSessionAnalyzer'
-import AiSessionAnalyzerRuleForm from '@/pages/Features/AiSessionAnalyzer/Create'
+import GatewayAiAnalyzerForm from '@/pages/Features/AiSessionAnalyzer/Create/GatewayAiAnalyzerForm'
+import ControlPlaneAiAnalyzerForm from '@/pages/Features/AiSessionAnalyzer/Create/ControlPlaneAiAnalyzerForm'
+import GatewayAiAnalyzerConfigureTab from '@/pages/Features/AiSessionAnalyzer/GatewayConfigureTab'
+import ControlPlaneAiAnalyzerConfigureTab from '@/pages/Features/AiSessionAnalyzer/ControlPlaneConfigureTab'
 import Guardrails from '@/pages/Guardrails'
-import GuardrailForm from '@/pages/Guardrails/Create'
+import GatewayGuardrailForm from '@/pages/Guardrails/Create/GatewayGuardrailForm'
+import ControlPlaneGuardrailForm from '@/pages/Guardrails/Create/ControlPlaneGuardrailForm'
 import AiAgentsIdentities from '@/pages/AiAgentsIdentities'
 import AiAgentsIdentitiesForm from '@/pages/AiAgentsIdentities/Form'
 import AiAgentsIdentitiesCreated from '@/pages/AiAgentsIdentities/Created'
@@ -56,6 +61,7 @@ import JiraTemplateForm from '@/pages/JiraTemplates/Form'
 import IntegrationsSlack from '@/pages/Integrations/Slack'
 import IntegrationsWebhooks from '@/pages/Integrations/Webhooks'
 import ComplianceReport from '@/pages/ComplianceReport'
+import Reviews from '@/pages/Reviews'
 import Sidecars from '@/pages/Sidecars'
 import SidecarSetup from '@/pages/Sidecars/Setup'
 import SidecarDetailsPage from '@/pages/Sidecars/Details'
@@ -159,19 +165,13 @@ function Router() {
           </Page>
         }
       />
+      {/* Both render the list; the session id opens its drawer, so the Slack
+          link resolves to one review. */}
       <Route
         path="/reviews"
         element={
           <Page role={ROLE_APPROVER}>
-            <NotImplemented
-              title="Reviews"
-              project="Reviews (Human in the Loop)"
-              missing={[
-                'Sessions narrowed to review queries',
-                'Approve and reject from the control plane',
-                'The retry path after approval',
-              ]}
-            />
+            <Reviews />
           </Page>
         }
       />
@@ -179,11 +179,7 @@ function Router() {
         path="/reviews/:sessionId"
         element={
           <Page role={ROLE_APPROVER}>
-            <NotImplemented
-              title="Review"
-              project="Reviews (Human in the Loop)"
-              missing={['Review session detail', 'Approve and reject']}
-            />
+            <Reviews />
           </Page>
         }
       />
@@ -427,7 +423,10 @@ function Router() {
         path="/features/data-masking/new"
         element={
           <Page adminOnly licenseFeature="data-masking">
-            <DataMaskingForm />
+            <ByProduct
+              gateway={<GatewayDataMaskingForm />}
+              controlPlane={<ControlPlaneDataMaskingForm />}
+            />
           </Page>
         }
       />
@@ -435,7 +434,10 @@ function Router() {
         path="/features/data-masking/edit/:id"
         element={
           <Page adminOnly licenseFeature="data-masking">
-            <DataMaskingForm />
+            <ByProduct
+              gateway={<GatewayDataMaskingForm />}
+              controlPlane={<ControlPlaneDataMaskingForm />}
+            />
           </Page>
         }
       />
@@ -508,7 +510,20 @@ function Router() {
         path="/features/ai-session-analyzer"
         element={
           <Page adminOnly licenseFeature="ai-session-analyzer">
-            <AiSessionAnalyzer />
+            {/* The Configure tab is the one part that differs: the gateway
+                stores one provider per organization, a sidecar carries its own
+                and reads its credential off its own disk. */}
+            <ByProduct
+              gateway={
+                <AiSessionAnalyzer ConfigureTab={GatewayAiAnalyzerConfigureTab} />
+              }
+              controlPlane={
+                <AiSessionAnalyzer
+                  ConfigureTab={ControlPlaneAiAnalyzerConfigureTab}
+                  orgWideProvider={false}
+                />
+              }
+            />
           </Page>
         }
       />
@@ -516,7 +531,10 @@ function Router() {
         path="/features/ai-session-analyzer/rules/new"
         element={
           <Page adminOnly licenseFeature="ai-session-analyzer">
-            <AiSessionAnalyzerRuleForm />
+            <ByProduct
+              gateway={<GatewayAiAnalyzerForm />}
+              controlPlane={<ControlPlaneAiAnalyzerForm />}
+            />
           </Page>
         }
       />
@@ -524,7 +542,10 @@ function Router() {
         path="/features/ai-session-analyzer/rules/edit/:ruleName"
         element={
           <Page adminOnly licenseFeature="ai-session-analyzer">
-            <AiSessionAnalyzerRuleForm />
+            <ByProduct
+              gateway={<GatewayAiAnalyzerForm />}
+              controlPlane={<ControlPlaneAiAnalyzerForm />}
+            />
           </Page>
         }
       />
@@ -542,7 +563,10 @@ function Router() {
         path="/guardrails/new"
         element={
           <Page adminOnly licenseFeature="guardrails">
-            <GuardrailForm />
+            <ByProduct
+              gateway={<GatewayGuardrailForm />}
+              controlPlane={<ControlPlaneGuardrailForm />}
+            />
           </Page>
         }
       />
@@ -550,7 +574,10 @@ function Router() {
         path="/guardrails/edit/:id"
         element={
           <Page adminOnly licenseFeature="guardrails">
-            <GuardrailForm />
+            <ByProduct
+              gateway={<GatewayGuardrailForm />}
+              controlPlane={<ControlPlaneGuardrailForm />}
+            />
           </Page>
         }
       />

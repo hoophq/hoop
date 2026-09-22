@@ -83,6 +83,27 @@ awareness, and adds a Kerberos client and an AD domain controller.
 handshake inside `0x12` PRELOGIN packets that Envoy cannot speak, so the relay
 takes the connection directly and reads through an encrypted login.
 
+[`mysql/`](mysql/README.md) adds a `mysql:8` lane behind a `protocol: mysql`
+listener on Envoy `:3306` (host `:3307`), with no rules of its own: the
+process's one guardrail and one mask rule reach a third protocol. No TLS on
+either hop, because MySQL negotiates it in-band after the server's greeting,
+which neither `tcp_proxy` nor the relay terminates; the codec refuses a
+client that asks to upgrade, and the demo shows the refusal.
+[`../mysql-stack`](../mysql-stack/README.md) is the same lane as a
+standalone stack, without OPA and the other two protocols.
+
+[`clickhouse/`](clickhouse/README.md) puts one `clickhouse-server` behind
+three lanes, one per protocol the relay has a codec for: its MySQL emulation
+on Envoy `:9004` (`protocol: mysql`), its PostgreSQL emulation on `:9005`
+(`protocol: postgres`), and its HTTP interface on `:8446` (TLS, the same OPA
+fat gate, `protocol: http`). The two database lanes inherit the process's
+guardrail and mask rule and the demo proves both against the same table;
+the HTTP lane is an audit lane, because guardrails read the request line
+and ClickHouse puts the SQL in the body, and because it chunks every
+response, which `http` masking cannot rewrite. The native `:9000` has no
+codec and so no lane. The overlay also documents a `mysql` codec gap the
+MySQL 8 CLI exposes against any server without `CLIENT_QUERY_ATTRIBUTES`.
+
 **The running transport.** `/stats` reports the address each lane bound, so
 you can read it off the process instead of the config:
 
@@ -370,6 +391,25 @@ On the httpbin lane it also needs an `http:` block with `capture_body: true`.
 Without a body the model sees `POST /anything` and nothing else, and a request
 with no body is skipped rather than classified, so a forgotten flag looks like
 an analyzer that does not fire.
+
+What the model receives is the request as sent, then the resource policy
+matched on, then the body. For `POST /anything/12345?export=all` the text is:
+
+```
+POST /anything/12345?export=all
+Resource: /anything/*
+Content-Type: application/json
+
+{"note": "close the account"}
+```
+
+The raw path and query are there because the model is judging intent, and
+the literal id and `?export=all` are part of it; the resource form exists to
+fold them away for policy. The **cache** keys on the resource, the query
+string and the body, so `/anything/12345?export=all` and
+`/anything/67890?export=all` with the same body are one verdict, while
+`?export=none` is another call: a query value changes what the request does. No header other than
+`Content-Type` ever reaches the model, whatever `http.headers` allowlists.
 
 Verdicts land in the audit trail as `metadata.risk_level` and roll up per
 session. `metadata.ai_status` rides beside it and says what the analyzer did,

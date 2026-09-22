@@ -201,7 +201,7 @@ func TestResponsesAreNotClassified(t *testing.T) {
 // has a status, so there is no denial, no finding and no annotation to read.
 // An MSSQL lane shipped that way once, and the only symptom was silence.
 func TestEveryDatabaseProtocolIsClassified(t *testing.T) {
-	for _, proto := range []inspect.Protocol{inspect.Postgres, inspect.MSSQL, inspect.MySQL, inspect.MongoDB} {
+	for _, proto := range []inspect.Protocol{inspect.Postgres, inspect.MSSQL, inspect.MySQL, inspect.ClickHouse, inspect.MongoDB} {
 		t.Run(string(proto), func(t *testing.T) {
 			p := &stubProvider{level: analyzer.RiskHigh}
 			ev := mustNew(t, analyzer.Config{
@@ -358,23 +358,6 @@ func TestTimeoutBoundsTheProvider(t *testing.T) {
 	}
 }
 
-// require_review is declared in the enum so the schema is stable when review
-// lands, and refused at construction so nobody ships a config that looks like
-// it holds statements for approval and quietly does not.
-func TestRequireReviewIsRefused(t *testing.T) {
-	_, err := analyzer.New(analyzer.Config{
-		Provider: &stubProvider{},
-		Trigger:  deleteTrigger(),
-		Actions:  analyzer.ActionMap{analyzer.RiskHigh: analyzer.ActionRequireReview},
-	})
-	if err == nil {
-		t.Fatal("require_review was accepted by a build that cannot hold a statement")
-	}
-	if !strings.Contains(err.Error(), "require_review") {
-		t.Errorf("error does not name the action: %v", err)
-	}
-}
-
 // send=refuse must deny locally without transmitting anything.
 func TestRefuseSentinelDeniesWithoutCallingProvider(t *testing.T) {
 	p := &stubProvider{level: analyzer.RiskLow}
@@ -434,7 +417,11 @@ func TestHTTPWithoutBodyIsNotClassified(t *testing.T) {
 	}
 }
 
-// An HTTP request WITH a body is classified, and the prompt carries the body.
+// An HTTP request WITH a body is classified, and the prompt carries the verb,
+// the RAW path with its query string, the normalized resource and the body.
+// A model judging intent needs the literal target — the id, the
+// `?export=all`, the client's own escaping and parameter order — that the
+// resource form and the parsed query exist to throw away.
 func TestHTTPWithBodyIsClassified(t *testing.T) {
 	p := &stubProvider{level: analyzer.RiskHigh}
 	ev := mustNew(t, analyzer.Config{
@@ -450,6 +437,8 @@ func TestHTTPWithBodyIsClassified(t *testing.T) {
 		HTTP: &inspect.HTTPDetail{
 			Method:   "POST",
 			Path:     "/users/12345/orders",
+			Target:   "/users/12345/orders?limit=100000&export=all%20",
+			Query:    map[string][]string{"export": {"all "}, "limit": {"100000"}},
 			Resource: "/users/*/orders",
 			Body:     `{"drop":"everything"}`,
 		},
@@ -457,8 +446,66 @@ func TestHTTPWithBodyIsClassified(t *testing.T) {
 	if v := ev.Evaluate(stmt); !v.Denied {
 		t.Fatal("a high-risk request with a body was not denied")
 	}
-	if seen := p.lastSeen(); !strings.Contains(seen, `{"drop":"everything"}`) {
-		t.Errorf("the prompt did not carry the body: %q", seen)
+	seen := p.lastSeen()
+	for _, want := range []string{
+		"POST /users/12345/orders?limit=100000&export=all%20\n",
+		"\nResource: /users/*/orders\n",
+		`{"drop":"everything"}`,
+	} {
+		if !strings.Contains(seen, want) {
+			t.Errorf("the prompt did not carry %q:\n%s", want, seen)
+		}
+	}
+}
+
+// The cache folds requests that differ only in path ids or in the wire
+// spelling of one query, and keeps apart requests that differ in a query
+// name, a query value, or a repeated value: the model sees the values, so a
+// verdict on `?dry_run=true` is not a verdict on `?dry_run=false`.
+func TestHTTPCacheKeyFoldsIdsNotQueryValues(t *testing.T) {
+	build := func(path, target string, query map[string][]string) string {
+		c, ok := analyzer.HTTPBuilder{}.Build(inspect.Statement{
+			Protocol: inspect.HTTP,
+			HTTP: &inspect.HTTPDetail{
+				Method:   "POST",
+				Path:     path,
+				Target:   target,
+				Query:    query,
+				Resource: "/users/*/orders",
+				Body:     `{"n":1}`,
+			},
+		}, 4096)
+		if !ok {
+			t.Fatalf("Build(%q) declined", target)
+		}
+		return c.CacheKey
+	}
+
+	base := build("/users/1/orders", "/users/1/orders?id=1&tag=a&tag=b",
+		map[string][]string{"id": {"1"}, "tag": {"a", "b"}})
+	for name, other := range map[string]string{
+		"a different path id": build("/users/2/orders", "/users/2/orders?id=1&tag=a&tag=b",
+			map[string][]string{"id": {"1"}, "tag": {"a", "b"}}),
+		"parameter order and escaping": build("/users/1/orders", "/users/1/orders?tag=a&id=%31&tag=b",
+			map[string][]string{"id": {"1"}, "tag": {"a", "b"}}),
+	} {
+		if other != base {
+			t.Errorf("%s produced a new cache key", name)
+		}
+	}
+	for name, other := range map[string]string{
+		"an extra query parameter": build("/users/1/orders", "/users/1/orders?id=1&tag=a&tag=b&dry_run=true",
+			map[string][]string{"id": {"1"}, "tag": {"a", "b"}, "dry_run": {"true"}}),
+		"a different query value": build("/users/1/orders", "/users/1/orders?id=2&tag=a&tag=b",
+			map[string][]string{"id": {"2"}, "tag": {"a", "b"}}),
+		"a different repeated value": build("/users/1/orders", "/users/1/orders?id=1&tag=a&tag=c",
+			map[string][]string{"id": {"1"}, "tag": {"a", "c"}}),
+		"a value spelled to alias another query": build("/users/1/orders", "/users/1/orders?id=1%26tag%3Da&tag=b",
+			map[string][]string{"id": {"1&tag=a"}, "tag": {"b"}}),
+	} {
+		if other == base {
+			t.Errorf("%s shared the cache key", name)
+		}
 	}
 }
 

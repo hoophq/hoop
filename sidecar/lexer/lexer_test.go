@@ -438,7 +438,7 @@ func TestAnalyzeDoesNotPanic(t *testing.T) {
 		strings.Repeat("(", 200), strings.Repeat(")", 200),
 		strings.Repeat("with x as (", 50),
 	} {
-		for _, d := range []lexer.Dialect{lexer.Postgres, lexer.MSSQL, lexer.MySQL, lexer.GoogleSQL} {
+		for _, d := range []lexer.Dialect{lexer.Postgres, lexer.MSSQL, lexer.MySQL, lexer.ClickHouse, lexer.GoogleSQL} {
 			lexer.Analyze(sql, d)
 			lexer.Split(sql, d)
 		}
@@ -722,6 +722,31 @@ func TestMySQLDashCommentNeedsWhitespace(t *testing.T) {
 	// must not have been made a global rule.
 	if got := lexer.Split(glued, lexer.Postgres); len(got) != 1 {
 		t.Errorf("postgres Split = %q, want one statement; `--` comments unconditionally there", got)
+	}
+}
+
+func TestClickHouseLexicalRules(t *testing.T) {
+	for _, sql := range []string{
+		"SELECT 1 # DROP TABLE t",
+		"SELECT 1--2; DELETE FROM t",
+		`SELECT 'a\'; DELETE FROM t; --'`,
+		"SELECT 1 /*! DROP TABLE t */",
+	} {
+		a := lexer.Analyze(sql, lexer.ClickHouse)
+		if a.Writes() {
+			t.Errorf("ClickHouse commentary or string content executed as live SQL: effects=%v rels=%v: %s",
+				a.Effects, a.Relations, sql)
+		}
+	}
+
+	for _, sql := range []string{
+		"DELETE FROM `select`",
+		`DELETE FROM "select"`,
+	} {
+		a := lexer.Analyze(sql, lexer.ClickHouse)
+		if got := writes(a); !slices.Equal(got, []string{"select"}) {
+			t.Errorf("writes = %v, want [select]: %s", got, sql)
+		}
 	}
 }
 

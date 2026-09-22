@@ -284,7 +284,7 @@ function DataMaskingFormFields({ rule, id, isEdit }) {
   )
 }
 
-export default function DataMaskingForm() {
+export default function GatewayDataMaskingForm() {
   const { id } = useParams()
   const isEdit = Boolean(id)
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)

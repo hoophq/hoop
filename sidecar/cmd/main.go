@@ -84,6 +84,9 @@ import (
 	_ "github.com/hoophq/hoop/sidecar/analyzer/vertex"
 	configyaml "github.com/hoophq/hoop/sidecar/config/yaml"
 	"github.com/hoophq/hoop/sidecar/daemon"
+	// The gs:// descriptor fetcher, same rule: a grpc lane whose descriptor
+	// set lives in a bucket must not need a different binary.
+	_ "github.com/hoophq/hoop/sidecar/descriptors/gcs"
 	"github.com/hoophq/hoop/sidecar/pii/alcatraz"
 )
 

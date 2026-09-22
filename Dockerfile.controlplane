@@ -1,0 +1,240 @@
+# hoophq/hoopcontrolplane — the hoop control plane image, in two slim flavours.
+#
+# One Dockerfile, two final stages selected with `docker build --target`. They
+# share the `unpack` stage, so release-tarball handling exists in exactly one
+# place:
+#
+#   --target default     -> hoophq/hoopcontrolplane:<version>
+#                           hoophq/hoopcontrolplane:latest
+#   --target distroless  -> hoophq/hoopcontrolplane:<version>-distroless
+#
+# The Ubuntu flavour carries NO SUFFIX: it is the image, and `:latest` points
+# at it. It keeps a shell, so the tag someone reaches for without thinking is
+# the one they can debug. distroless is the deliberate choice and the only one
+# that is named. This is also what the helm chart at
+# deploy/helm-chart/chart/controlplane/ defaults to.
+#
+# A bare `docker build -f Dockerfile.controlplane` with no --target builds the
+# stage declared LAST, `default`: the same flavour the unsuffixed tag points
+# at, and a superset of distroless, so an accidental default is never the
+# restrictive one.
+#
+# ---------------------------------------------------------------------------
+# LICENSE BRIGHT LINE — read before adding a stage
+#
+# hoophq/hoopcontrolplane is a clean-only image repository: no layer published
+# under it may carry an AGPL- or SSPL-licensed component, so that the
+# repository has no such component anywhere in its history. Both flavours here
+# are built from a stock Ubuntu or distroless rootfs plus the `hoop` binary,
+# and carry none.
+#
+# This is why no flavour is built FROM hoophq/agent-tools, and why this image
+# is not ./Dockerfile with a different CMD. That base bundles third-party
+# database clients including an SSPL-licensed MongoDB shell, and deriving from
+# it would put those layers into this repository permanently. The control plane
+# execs no database client: it opens no gRPC transport, brokers no session, and
+# every route that would need one fails with an HTTP error (ADR-0013).
+#
+# Do NOT add a stage here that derives from agent-tools, or that installs
+# database clients, without first checking the license policy in
+# scripts/ci/check-forbidden-licenses.py.
+#
+# ---------------------------------------------------------------------------
+# What this image runs
+#
+# The control plane, as PID 1: `hoop start control-plane`. It serves the HTTP
+# API and the web app and administers a fleet of inspection sidecars. It
+# carries no traffic — no gRPC on :8010, no protocol proxies, no agent
+# controller, and of the six transport plugins only Slack is started. See
+# ADR-0013 for the mode and for the 21 routes that answer with an error here.
+#
+# The `hoop` binary is the same one hoophq/hoop ships; only the default command
+# and the installed packages differ. This image exists so a deployment that
+# runs the control plane and nothing else does not have to override a command,
+# and does not carry the data plane's dependencies.
+#
+# ---------------------------------------------------------------------------
+# The web UI is IN THE BINARY, not on disk
+#
+# `make embed-webapp` stages the built webapp into gateway/webappui/staticui
+# before `make build-go`, so every release binary carries the UI as an embed.FS
+# and serves it with no files in the image. That is what makes a distroless
+# flavour possible at all.
+#
+# So do NOT copy a webapp tree in here, and leave STATIC_UI_PATH UNSET: it
+# overrides the embed, and pointing it at ./Dockerfile's /app/ui/public — a
+# path that does not exist in this image — makes the gateway log
+# "running API-only" and serve the API with no UI.
+#
+# One cosmetic consequence: appruntime.WebAppCommit reads /app/ui/commit.txt,
+# which only ./Dockerfile's layout has, so /api/serverinfo reports no webapp
+# commit here. The UI itself is unaffected.
+#
+# Migrations are embedded in the binary the same way (gateway/migrations with
+# go:embed), so none are copied either. MIGRATION_PATH_FILES has nothing to
+# point at in this image; set it only if you mount your own.
+#
+# ---------------------------------------------------------------------------
+# Choosing a flavour
+#
+#   default      Ubuntu 24.04 LTS rootfs, the `hoop` binary, ca-certificates
+#                and tini.
+#   distroless   Distroless static rootfs + the `hoop` binary and a static tini.
+#
+# Both run tini as PID 1 (ENTRYPOINT), which execs the control plane.
+#
+# Both serve the whole API and the web UI, and run as uid 10001. The flavours
+# differ only in debuggability: distroless carries no OS package manager and no
+# shell, so it reports zero OS-package CVEs and is roughly two thirds the size
+# of the default — at the cost of `kubectl exec <pod> -- sh` being impossible.
+#
+# ---------------------------------------------------------------------------
+# NOT INSTALLED, in either flavour
+#
+# ./Dockerfile installs packages for data-plane paths that never run in this
+# mode. None of them is here:
+#
+#   tesseract-ocr    RDP session-replay analysis runs from
+#                    analyzer.RunSupervisor, which lives in runGateway.
+#   database clients the control plane brokers no session and execs no client.
+#
+#   openssh-client   ssh-keyscan(1). common/runbooks/config.go shells out to it
+#                    to learn github.com and gitlab.com host keys, but ONLY for
+#                    a runbook repository that uses SSH auth AND supplies no
+#                    known-hosts content. Deliberately left out until that is
+#                    shown to be needed here.
+#
+#                    The failure is loud, not silent: the request that
+#                    configures such a repository answers "failed executing
+#                    ssh-keyscan". Supplying the known hosts yourself (the SSH
+#                    known hosts field on the runbook configuration, or
+#                    GIT_SSH_KNOWN_HOSTS) is checked first and skips the exec
+#                    entirely, and HTTPS/token repositories never reach it.
+#
+#                    To add it back, put `openssh-client` in the default
+#                    flavour's apt line below. distroless cannot have it at
+#                    all — no package manager — so that would make the two
+#                    flavours differ in behaviour and not only in
+#                    debuggability. Say so here if you do.
+#
+# ---------------------------------------------------------------------------
+# Build (from the repo root, with release tarballs in dist/binaries/):
+#   make build-webapp embed-webapp
+#   GOOS=linux GOARCH=arm64 make build-go build-tar-files
+#   docker build -f Dockerfile.controlplane --target default -t hoophq/hoopcontrolplane:dev .
+#   docker build -f Dockerfile.controlplane --target distroless -t hoophq/hoopcontrolplane:dev-distroless .
+#
+# A binary built without `make embed-webapp` produces a working image that
+# serves the API and logs "running API-only". That is a build-order mistake,
+# not an image bug.
+
+# Ubuntu 24.04 LTS (noble). Pinned deliberately, same policy as ./Dockerfile
+# and ./Dockerfile.sidecar, so builds are reproducible; bump it in a dedicated
+# PR.
+ARG UBUNTU_IMAGE=ubuntu:noble-20260911
+ARG DISTROLESS_IMAGE=gcr.io/distroless/static-debian12:nonroot
+
+# --- Stage: unpack the release tarball ---------------------------------------
+# A separate stage so the ~200MB of release tarballs in dist/binaries/ never
+# reaches a layer of any published flavour (a `rm -rf` in a later RUN would not
+# shrink it — the COPY layer keeps the bytes forever).
+#
+# Pinned to BUILDPLATFORM and keyed off TARGETARCH rather than `uname -m`:
+# these images are built as single multiarch jobs, and only the runtime stages
+# should be emulated. `make build-tar-files` publishes both the Go-style
+# (amd64/arm64) and uname-style (x86_64/aarch64) archive names, so TARGETARCH
+# matches directly.
+#
+# The tarball also carries `hoop_rs` (the Rust agent that serves RDP); only
+# `hoop` is extracted, since no flavour here ships it and the control plane
+# never execs it. Naming the member explicitly makes a tarball layout change
+# fail the build loudly instead of silently producing an image with no control
+# plane in it.
+FROM --platform=${BUILDPLATFORM} ${UBUNTU_IMAGE} AS unpack
+ARG TARGETARCH
+COPY dist/binaries/ /tmp/binaries/
+RUN mkdir -p /out && \
+    tar -xf /tmp/binaries/hoop_*_Linux_${TARGETARCH}.tar.gz -C /out/ ./hoop && \
+    chown root:root /out/hoop && \
+    chmod 755 /out/hoop
+
+# --- Stage: tini (init shim) -------------------------------------------------
+# Both flavours run tini as PID 1, so the control plane is never PID 1 itself:
+# tini reaps orphaned children and forwards SIGTERM/SIGINT to the process it
+# starts. ./Dockerfile has always done this; these images match it.
+#
+# It earns its place here more than in most images: the control plane installs
+# NO signal handler of its own — gateway/api/server.go ends in gin's blocking
+# route.Run() with no http.Server.Shutdown — so the SIGTERM that stops the
+# container is delivered by tini or not at all.
+#
+# The package ships two binaries. The Ubuntu flavour uses /usr/bin/tini, which
+# is dynamically linked. distroless/static has no libc, so it takes
+# /usr/bin/tini-static instead — the same 0.19.0 upstream, linked statically.
+#
+# NOT pinned to BUILDPLATFORM, unlike `unpack` above, and that is the whole
+# reason this is its own stage. tini is a compiled binary that ends up INSIDE
+# the published image, so it has to be the target architecture. Copying it out
+# of `unpack` would put an amd64 tini in the arm64 image on a cross-build, and
+# the failure is "exec format error" at container start on one architecture
+# only — invisible on the runner that built it.
+FROM ${UBUNTU_IMAGE} AS tini
+RUN apt-get update -y && \
+    apt-get install -y --no-install-recommends tini && \
+    rm -rf /var/lib/apt/lists/* /var/cache/apt/archives
+
+# --- Flavour: distroless -----------------------------------------------------
+# The static rootfs already ships the CA bundle, which this process needs for
+# every outbound hop it makes: the identity provider's discovery document and
+# JWKS, PostgreSQL over TLS, Slack, webhooks and the AI analyzer.
+# Nothing is installed here — the static tini below is copied in, not
+# installed, so this rootfs still carries no OS package and no package manager.
+#
+# uid 10001 is set numerically: distroless has no useradd, and the control
+# plane never resolves a passwd entry.
+FROM ${DISTROLESS_IMAGE} AS distroless
+COPY --from=unpack /out/hoop /app/hoop
+# The statically linked build: this rootfs has no libc for the dynamic one.
+COPY --from=tini /usr/bin/tini-static /app/tini
+ENV PATH="/app:${PATH}"
+EXPOSE 8009
+USER 10001:10001
+# tini is PID 1 and execs the control plane, which installs no signal handler
+# of its own — so the SIGTERM that stops this container is delivered by tini.
+#
+# Absolute path, not "tini": ENTRYPOINT is what a `command:` in a pod spec
+# REPLACES, so anything overriding it drops the init shim. The helm chart at
+# deploy/helm-chart/chart/controlplane/ overrides `args` and not `command` for
+# exactly this reason.
+ENTRYPOINT ["/app/tini", "--"]
+CMD ["hoop", "start", "control-plane"]
+
+# --- Flavour: default (Ubuntu 24.04 LTS) -------------------------------------
+# The unsuffixed image, and what :latest points at. Declared last on purpose:
+# see the note about a bare build at the top.
+FROM ${UBUNTU_IMAGE} AS default
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Two runtime dependencies the binary cannot carry itself:
+#
+#   ca-certificates  the ubuntu base rootfs ships no trust store, and every
+#                    outbound hop above needs one.
+#   tini             the init shim, as PID 1. See the tini stage above.
+#
+# Nothing else — see "NOT INSTALLED" at the top before adding to this line.
+RUN groupadd --gid 10001 hoop && \
+    useradd --uid 10001 --gid 10001 --shell /sbin/nologin hoop && \
+    apt-get update -y && \
+    apt-get install -y --no-install-recommends ca-certificates tini && \
+    rm -rf /var/lib/apt/lists/* /var/cache/apt/archives
+
+# Ownership and mode are already root:root 0755 from the unpack stage.
+COPY --from=unpack /out/hoop /app/hoop
+ENV PATH="/app:${PATH}"
+EXPOSE 8009
+USER hoop
+# The dynamically linked tini from the package, at the path apt installs it.
+# See the override note in the distroless flavour above.
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["hoop", "start", "control-plane"]

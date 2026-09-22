@@ -1,0 +1,381 @@
+# ADR-0017: The sidecar reports usage to Segment through its own stdlib client
+
+- **Status:** Accepted
+- **Date:** 2026-09-16
+- **Author:** @matheusfrancisco
+- **Deciders:** @matheusfrancisco
+- **Supersedes / Superseded by:** —
+
+## Context
+
+The gateway reports product usage to Segment through `gateway/analytics`:
+a write key stamped at build time, events named as constants, properties
+keyed by `org-id`, and an org-level analytics mode (`identified`,
+`anonymous`, `disabled`) read from the database. Nothing equivalent exists
+for the sidecar. A `hoop-inspect` process starts, serves for months and
+stops, and the only trace of it is the control plane's `last_seen`, which a
+standalone sidecar never writes.
+
+Four constraints bound the answer:
+
+- **The root module has exactly one dependency**, `github.com/hoophq/libhoop`
+  (`sidecar/CLAUDE.md`). `github.com/segmentio/analytics-go` would be a
+  second, for a client that is one HTTP POST.
+- **`gateway/analytics` cannot be imported.** It reads `appconfig`,
+  `models`, `services` and the org analytics mode, none of which exist in a
+  sidecar process, and importing it would pull the gateway module into the
+  sidecar's dependency graph.
+- **The sidecar sits in the data path.** Anything added to the per-statement
+  path is paid on every query; anything that can block, error or panic there
+  is an outage. The relay must also run where `api.segment.io` is
+  unreachable — air-gapped networks are a deployment target, not an edge
+  case.
+- **The admin `/config` endpoint already fixed the privacy line**: rule
+  names but never patterns, the analyzer's host but never its prompt or
+  credential, because the endpoint sits beside a read interface to every
+  statement every user ran. Telemetry leaving the process must sit on the
+  same side of that line, and further: not even names.
+
+Two facts about identity shape what can be reported. A plane-connected
+sidecar holds a bearer token the plane issued once; a standalone sidecar
+holds nothing durable — no token, no state directory, no org.
+
+## Options considered
+
+1. **Reuse the gateway's Segment client.** No new code, same event
+   vocabulary. Lost on the second constraint: the package is welded to the
+   gateway's config and models, and the import would end the one-dependency
+   invariant by a wide margin.
+
+2. **Emit from the gateway on the sidecar handshake.** The plane already
+   knows the org, honours the org's analytics mode, and holds a Segment
+   client; extend the heartbeat body and let `recordRuntime` track. Free on
+   the sidecar side, and a standalone sidecar — the whole install funnel,
+   from a bare `hoop-inspect` run to a first config — is invisible to it.
+   Kept as a complement, not the answer.
+
+3. **A Segment sink in the audit chain.** `audit.Sink` already receives
+   every statement; a sink that aggregates and posts would need no new hook
+   in the gate. Lost on two counts. An `audit.Event` carries statement text,
+   identity and rule name: the content that must never leave, one bug away
+   from a network write. And `fail_on_audit_error` turns a failed sink write
+   into a denied statement — correct for a compliance trail, a Segment outage
+   refusing queries for telemetry.
+
+4. **A nested module linking `segmentio/analytics-go`**, the pattern
+   `pii/alcatraz` and `analyzer/vertex` follow. Keeps the root clean and
+   costs a module directory, a `replace` in every consumer's `go.mod`, and
+   an injection seam through `daemon`, for a dependency whose useful surface
+   is `POST /v1/batch` with basic auth.
+
+5. **A stdlib client in the root, with a two-method hook in the gate.**
+   Eighty lines of `net/http` and `encoding/json`. The gate gets a
+   `Metrics` interface (`Statement(denied bool)`, `Masked(values int)`) as
+   a sibling of `Audit` in `gate.Config`; the daemon assembles properties
+   from counts it already computes for `/config`.
+
+## Decision
+
+We will report sidecar usage to Segment through `sidecar/analytics`, a
+stdlib-only client in the root module, fed by the daemon and by a counting
+hook in the gate. Specifically:
+
+- **Six events, named as constants** in `sidecar/analytics/events.go`,
+  following the gateway's `hoop-<noun>-<verb>` convention with a `sidecar-`
+  prefix: `first-run`, `started`, `config-applied`, `usage`, `stopped`,
+  `license-expired`. `Track` takes the `Event` type, not a string, so a
+  name cannot be invented at a call site.
+
+- **Counts and shape, never content.** Properties are assembled in one
+  place, `sidecar/daemon/analytics.go`, from the resolved `lane`, the
+  `Config`, the license verdict and the reload outcome. No statement text,
+  identity subject, rule name or pattern, prompt, token, listener or
+  upstream address. The `/config` endpoint reports rule names; this reports
+  their count. A property that names something an operator wrote does not
+  land.
+
+- **The data path pays one atomic increment.** `gate.judge` and the three
+  masking sites call `Metrics`; the implementation is a per-protocol
+  `LaneCounter` of `atomic.Int64`s. Nothing on the statement path
+  allocates, locks, logs or does I/O for analytics. Events are emitted
+  from lifecycle points only — `Run`, the reloader, the heartbeat,
+  `FirstRun` — and a fifteen-minute ticker for usage deltas.
+
+- **Telemetry cannot fail the relay.** `Track` never blocks: a bounded
+  queue drops the newest and reports the drop count on the next event that
+  gets through. `send` discards every error; request and client are
+  bounded at five seconds. `Close` gives up at three. The sender goroutine
+  recovers from any panic and dies alone. A `Track` after `Close` drops
+  rather than sending on a closed channel. All four are pinned by tests
+  against a refused port, a non-resolving name, a black-hole server and a
+  panicking transport.
+
+- **The write key is stamped at build time**, `-X
+  github.com/hoophq/hoop/sidecar/analytics.writeKey`, from the same
+  `SEGMENT_API_KEY` the gateway uses. A build without it — `go build` from
+  the tree, the compose stack's image — sends nothing. **The operator
+  switches it off with `HOOP_SIDECAR_ANALYTICS=off`**; there is no config
+  key, so a document pushed by a control plane cannot turn it back on.
+  `Run` logs `usage analytics enabled` when, and only when, it will send.
+
+- **Two identities, stable per install and per machine, and only hashes.**
+  Segment bills by distinct `anonymousId` per month, so a fresh id per
+  process is a cost multiplier, not a neutral choice. `sidecar-id`, highest
+  precedence first: an operator's `HOOP_SIDECAR_ID`; the control plane
+  token; the hostname plus the config file's absolute path; the hostname
+  alone. The file path, not its contents, is the standalone identity:
+  renaming a listener, adding one or editing rules keeps the profile, while
+  two processes on one host with two files are two installs. `host-id`
+  answers "how many sidecars on this machine": `HOOP_HOST_ID`; else the OS
+  machine id (`/etc/machine-id`, `IOPlatformUUID`) folded with the hostname,
+  because cloned images that never regenerated their machine-id are common;
+  else the hostname. Every source is hashed before it leaves the process. A
+  random id is the last resort, for a host with no hostname.
+
+- **The audit chain is untouched.** Same events, same sinks, same
+  `fail_on_audit_error` semantics, same `/api/*` query surface. `Metrics`
+  is a second consumer of a fact the gate already established, not a
+  second reader of the audit trail.
+
+## Flow
+
+```mermaid
+flowchart LR
+    subgraph data path
+        G[gate.judge / mask sites] -->|atomic.Add| LC[LaneCounter per protocol]
+    end
+    subgraph lifecycle
+        R[Run · reloader · heartbeat · FirstRun · 15 min ticker] --> T[daemon telemetry.track*]
+        LC -->|Snapshot: deltas| T
+        S[proxy.Server.Stats] -->|connection totals| T
+    end
+    T -->|Properties + common| C[analytics.Client.Track]
+    C -->|non-blocking| Q[queue · 64]
+    Q --> W[sender goroutine]
+    W -->|20 events · 10 s · Close| P[POST /v1/batch]
+    P --> SEG[Segment]
+```
+
+Three places an event is dropped, none where it blocks or errors: the queue
+is full, the client is closed, or the POST fails. A drop is counted and
+rides as `dropped-events` on the next event that gets through.
+
+Every event carries the same common block, added by the client:
+
+```json
+{
+  "version": "1.152.0",
+  "entrypoint": "hoop",
+  "os": "linux",
+  "arch": "amd64",
+  "runtime": "kubernetes",
+  "sidecar-id": "9f2c…",
+  "host-id": "4b81…",
+  "control-plane-connected": true
+}
+```
+
+`entrypoint` is `hoop` (`hoop start sidecar`), `hoop-inspect` (the
+standalone binary) or `embedded` (a caller of `daemon.Run`). `runtime` is
+`linux` (a VM or bare metal), `docker`, `kubernetes`, `macos` or `windows`,
+detected from the environment; it says how far the two identities can be
+trusted. `sidecar-id` names the install, `host-id` the machine; both are
+hashes and `host-id` is omitted when the host reports nothing. The examples
+below show only the event's own properties.
+
+## Events
+
+**`hoop-sidecar-first-run`** — a bare invocation served the default
+redirect page. Emitted when the page stops, so it carries how long the URL
+stayed up.
+
+```json
+{"deprecated-alias": false, "port": "15321", "port-fell-back": false, "duration-seconds": 41}
+```
+
+**`hoop-sidecar-started`** — every lane built, about to serve. Boot facts
+plus the config shape.
+
+```json
+{
+  "config-source": "control_plane",
+  "config-format": "yaml",
+  "deprecated-alias": false,
+  "deprecations-count": 0,
+  "control-plane-imported": true,
+  "file-listeners-ignored": false,
+  "license-state": "valid",
+  "license-type": "enterprise",
+  "license-required": true,
+  "detector-attached": true,
+  "pii-configured": true,
+  "pii-entities": 12,
+
+  "lane-count": 3,
+  "protocols": {"postgres": 2, "http": 1},
+  "lanes-enforcing": 2,
+  "lanes-observing": 1,
+  "lanes-with-rules": 3,
+  "guardrail-rules-total": 7,
+  "lanes-with-opa": 1,
+  "lanes-masking": 2,
+  "mask-rules-total": 4,
+  "lanes-with-analyzer": 1,
+  "analyzer-provider": "vertex",
+  "analyzer-send": "redacted",
+  "analyzer-fail-open": true,
+  "analyzer-custom-prompt": false,
+  "lanes-capture-body": 0,
+  "lanes-identity-header": 1,
+  "lanes-upstream-tls": 2,
+  "lanes-downstream-tls": 0,
+  "audit-sinks": ["jsonl", "query"],
+  "audit-async": true,
+  "fail-on-audit-error": true,
+  "admin-enabled": true,
+  "log-level": "info"
+}
+```
+
+`config-source` is `file`, `control_plane`, or `control_plane_disk` when the
+plane delegated the document to the local file.
+
+**`hoop-sidecar-config-applied`** — a heartbeat delivered a changed document
+and the reloader acted on it. Silent for unchanged and retry outcomes.
+`changed` names the sections that differed from the running generation, from
+the fixed set `guardrails`, `opa`, `mask`, `analyzer`, `pii`, `license`; one
+edit that touches mask and guardrails is one event naming both. The config
+shape block above is attached when the outcome is `applied`.
+
+```json
+{"config-generation": 4, "outcome": "applied", "changed": ["guardrails", "mask"], "lanes-swapped": 1, "lanes-kept": 2, "lane-count": 3, "…": "shape"}
+{"config-generation": 4, "outcome": "restart-required", "lanes-swapped": 0, "lanes-kept": 0}
+{"config-generation": 4, "outcome": "refused", "lanes-swapped": 0, "lanes-kept": 0}
+```
+
+**`hoop-sidecar-usage`** — counters since the previous usage event, every
+fifteen minutes and once at shutdown. `by-protocol` is keyed by protocol,
+never by lane. `denies-by-kind` partitions `statements-denied` by the kind
+of evaluator that refused: a local rule's type (`operation`,
+`pattern_match`, `pii`, `http_resource`, …), `opa`, `analyzer`, `audit`
+(fail-closed sink), `stream` (codec refusal).
+
+```json
+{
+  "interval-seconds": 900,
+  "uptime-seconds": 86400,
+  "connections-total": 412,
+  "connections-active": 9,
+  "connections-denied": 3,
+  "statements-total": 18250,
+  "statements-denied": 17,
+  "statements-masked": 1204,
+  "denies-by-kind": {"operation": 11, "pii": 4, "opa": 2},
+  "analyzer-calls": 320,
+  "analyzer-failures": 2,
+  "analyzer-fail-open-hits": 2,
+  "analyzer-denied": 5,
+  "analyzer-cache-hits": 1480,
+  "audit-write-failures": 0,
+  "heartbeat-failures": 0,
+  "by-protocol": {
+    "postgres": {"statements": 17900, "denied": 15, "masked": 1204, "connections": 380, "connections-denied": 3},
+    "http": {"statements": 350, "denied": 2, "masked": 0, "connections": 32, "connections-denied": 0}
+  }
+}
+```
+
+**`hoop-sidecar-stopped`** — `Run` is returning. The final usage window
+goes out as its own `hoop-sidecar-usage` just before.
+
+```json
+{"reason": "signal", "uptime-seconds": 86412, "reloads-applied": 4, "reloads-restart-required": 1, "reloads-refused": 0}
+{"reason": "listener-failed", "listener-error-kind": "bind", "uptime-seconds": 0, "reloads-applied": 0, "reloads-restart-required": 0, "reloads-refused": 0}
+```
+
+`reason` is `signal`, `listener-failed` or `license-expired`;
+`listener-error-kind` is `bind`, `tls` or `other`, present only on
+`listener-failed`.
+
+**`hoop-sidecar-license-expired`** — the term ended (or, with `over-cap`,
+the entitlement stopped covering the rules) under a config the free tier
+refuses; the process stops for it, and `stopped` follows with `reason:
+license-expired`.
+
+```json
+{"guardrail-rules-total": 7, "mask-rules-total": 4, "uptime-seconds": 2592000, "license-state": "expired", "license-type": "enterprise", "over-cap": false, "expiry-notices-sent": 14, "license-term-days": 365}
+```
+
+## Consequences
+
+Easier: the install funnel is visible for the first time — a bare
+`hoop-inspect` run emits `first-run`, a config that loads emits `started`
+with its shape, a plane import shows as `control-plane-imported`. A dashboard
+reads per-protocol statement volume, deny and mask rates, and which
+features (OPA, masking, analyzer, observe mode) a fleet actually runs. Adding
+an event is a constant, a `track*` method assembling counts, and one call at
+the place the fact becomes true.
+
+Harder: two Segment clients in one repository, by design. They share a write
+key and a naming convention, nothing else; a change to how the gateway
+identifies or groups users does not reach the sidecar, and should not. The
+per-protocol counter keys on `ListenerConfig.Protocol`, so two lanes
+speaking postgres are one row — per-lane usage is deliberately not
+reportable, because lane names are operator data.
+
+Committed to: the privacy line as a review rule, not a test. No test can
+prove a property is not content; `daemon/analytics.go` is the one file to
+read on every change to it. Also committed to the env var as the sole
+runtime switch: a config key would put the decision in a document the
+control plane owns.
+
+Two facts had to be threaded through other packages to be countable, and
+both were done as fixed vocabularies rather than names. `policy.Verdict`
+gained `Source`: a local rule reports its `MatchType`, OPA and the analyzer
+report `SourceOPA` / `SourceAnalyzer`, the gate adds `audit` and `stream`
+for refusals no evaluator made. That is what `denies-by-kind` partitions,
+and it stays out of the audit trail, which keeps `Rule`. And each `lane`
+retains the `*analyzer.Evaluator` instances `buildPolicy` composed into its
+chain, so usage can read their `Stats`; a reload that swaps a lane's
+evaluators starts them from zero, and the deltas are keyed by instance so
+the swap never reads as a negative.
+
+Identity has a bill attached, which is why it is a hash of something fixed
+and never a value per process. Segment's MTU plans count every distinct
+`anonymousId` seen in a month; the first cut minted a random id per
+standalone process, so a sidecar restarted daily would have cost thirty
+tracked users a month on its own. The second cut hashed the listener
+addresses, which made adding a listener a new install. The rule now: one id
+per install, where an install is a file on a host. A control plane token
+gives it directly. Standalone hashes the hostname with the config file's
+absolute path, so every edit to that file — renaming a listener, adding
+one, changing rules or ports — keeps the profile, and two processes on one
+host reading two files are two. First-run hashes the hostname alone. A
+random id is the last resort, for a host that reports no hostname.
+
+The caveat is containers, and it applies to both identities. In Docker the
+hostname is the container id and in Kubernetes it is the pod name, changing
+on every rollout (`sidecar-7d9f-abc12` → `sidecar-7d9f-xyz89`); the
+machine-id a container reads is its own. So a standalone sidecar there mints
+a new `sidecar-id` per deploy, and every pod reports as its own `host-id`,
+unless the operator sets `HOOP_SIDECAR_ID` and `HOOP_HOST_ID`. Both outrank
+every derived source and are hashed like them; on Kubernetes the downward
+API supplies the node name in two lines, and the pod guide in
+`deploy/docker-compose/envoy-stack/sidecar-binary.md` shows them. `runtime`
+is on every event so a dashboard knows which reading applies: on `linux` and
+`macos` an equal `host-id` is the same OS install, on `docker` and
+`kubernetes` it is only as good as what the operator injected. Connecting to
+a control plane fixes `sidecar-id` with no knob at all — the token is the
+one identity a sidecar has that survives everything — but says nothing
+about the machine.
+
+Not covered: attribution to a customer. Option 2 — the plane emitting on
+the handshake with the org id and the org's analytics mode — remains the
+right way to attribute a managed sidecar to an organisation, and would land
+beside this rather than replace it.
+
+Revisit if a customer with a plane-connected sidecar needs their org's
+`disabled` analytics mode honoured on the sidecar side. Today the plane's
+mode governs what the plane emits; the sidecar's env var governs the
+sidecar. Honouring the org mode remotely means the handshake response
+carrying it, which is the versioning problem ADR-0016 describes.

@@ -34,6 +34,12 @@ export const docsUrl = {
     configFile: 'https://hoop.dev/docs/setup/configuration/hoop-sidecar/config-file',
     // The handshake, and how to issue a token for a sidecar.
     connectToControlPlane: 'https://hoop.dev/docs/control-plane/connect-sidecar',
+    // The three rule vocabularies a control plane distributes. They are the
+    // SIDECAR's, not the gateway's: features.guardrails and
+    // features.aiDatamasking above document a different implementation.
+    policyRules: 'https://hoop.dev/docs/setup/configuration/hoop-sidecar/policy-rules',
+    dataMasking: 'https://hoop.dev/docs/features/data-masking',
+    riskAnalysis: 'https://hoop.dev/docs/setup/configuration/hoop-sidecar/risk-analysis',
   },
   setup: {
     agents: 'https://hoop.dev/docs/setup/agents',

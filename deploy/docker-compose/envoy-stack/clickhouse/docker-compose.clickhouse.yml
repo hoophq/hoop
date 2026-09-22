@@ -1,0 +1,107 @@
+# Overlay: ClickHouse behind four lanes, beside the postgres and HTTP ones.
+#
+#   docker compose -f docker-compose.yml -f clickhouse/docker-compose.clickhouse.yml up -d --wait
+#
+# Run it from the envoy-stack directory, after ./run.sh has minted the certs
+# and built the sidecar image at least once. ./clickhouse/demo-clickhouse.sh
+# walks it.
+#
+#   client      ──TLS───────> envoy :8446 ──ext_authz──> hoop-inspect :18123 ──http──> clickhouse :8123
+#   chclient    ──native────> envoy :9000 ─────────────> hoop-inspect :19006 ──tcp───> clickhouse :9000
+#   client      ──plaintext──> envoy :9004 ─────────────> hoop-inspect :19004 ──tcp───> clickhouse :9004
+#   client      ──plaintext──> envoy :9005 ─────────────> hoop-inspect :19005 ──tcp───> clickhouse :9005
+#
+# What it adds:
+#
+#   clickhouse    clickhouse-server with the customers fixture in appdb
+#   client        the base sandbox plus MariaDB CLI
+#   mysqlclient   official MySQL 8 CLI for the emulation compatibility beat
+#   chclient      clickhouse-client for native query, denial and masking proof
+#   envoy :8446   HTTPS + OPA -> the sidecar's HTTP lane
+#   envoy :9000   tcp_proxy   -> the sidecar's native ClickHouse lane
+#   envoy :9004   tcp_proxy   -> the sidecar's MySQL lane
+#   envoy :9005   tcp_proxy   -> the sidecar's PostgreSQL lane
+#
+# The database lanes inherit the process's one guardrail and one mask rule.
+# The native codec processes compressed data block-by-block under explicit
+# frame and block caps; it does not buffer an analytical result.
+
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.3
+    attach: false
+    networks: [inspect]
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+    volumes:
+      - ./clickhouse/server/config.d/protocols.yaml:/etc/clickhouse-server/config.d/protocols.yaml:ro
+      - ./clickhouse/server/users.d/appuser.yaml:/etc/clickhouse-server/users.d/appuser.yaml:ro
+      - ./clickhouse/seed.sql:/docker-entrypoint-initdb.d/seed.sql:ro
+    healthcheck:
+      # Over the native port on localhost as the image's default user, which
+      # is what the entrypoint used to load seed.sql; the emulated ports come
+      # up in the same listen loop, so one probe covers all three.
+      test: ["CMD-SHELL", "clickhouse-client --query 'EXISTS TABLE appdb.customers' | grep -qx 1"]
+      interval: "3s"
+      timeout: "10s"
+      retries: 30
+      start_period: "15s"
+
+  # The sandbox gains the MariaDB CLI. It is the mysql-lane client here
+  # because it does not set CLIENT_QUERY_ATTRIBUTES, so its COM_QUERY reads
+  # the way the codec expects against a server that never offered the flag.
+  client:
+    command:
+      - apk add --no-cache postgresql16-client mariadb-client curl >/dev/null
+        && exec sleep infinity
+    healthcheck:
+      test: ["CMD-SHELL", "command -v psql && command -v mariadb && command -v curl"]
+      interval: "3s"
+      timeout: "10s"
+      retries: 20
+      start_period: "10s"
+
+  # The official MySQL 8 CLI, kept for one beat of the demo: it sets
+  # CLIENT_QUERY_ATTRIBUTES whether or not the server offered it, and the
+  # codec then cannot find the statement text. config-clickhouse.yaml names
+  # the gap.
+  mysqlclient:
+    image: mysql:8
+    networks: [inspect]
+    entrypoint: ["sleep", "infinity"]
+    healthcheck:
+      test: ["CMD-SHELL", "command -v mysql"]
+      interval: "3s"
+      timeout: "10s"
+      retries: 20
+      start_period: "5s"
+
+  # clickhouse-client, from the server image. The demo drives native protocol
+  # masking and denial through envoy:9000.
+  chclient:
+    image: clickhouse/clickhouse-server:25.3
+    networks: [inspect]
+    entrypoint: ["sleep", "infinity"]
+    healthcheck:
+      test: ["CMD-SHELL", "command -v clickhouse-client"]
+      interval: "3s"
+      timeout: "10s"
+      retries: 20
+      start_period: "5s"
+
+  hoop-inspect:
+    volumes:
+      - ./clickhouse/config-clickhouse.yaml:/etc/hoop-inspect/config.yaml:ro
+      - ./upstream/certs/server.crt:/etc/hoop-inspect/certs/appdb.crt:ro
+    depends_on:
+      clickhouse: { condition: service_healthy }
+
+  envoy:
+    volumes:
+      - ./clickhouse/envoy-clickhouse.yaml:/etc/envoy/envoy.yaml:ro
+      - ./envoy/certs:/etc/envoy/certs:ro
+    ports:
+      - "127.0.0.1:9000:9000" # TCP lane   -> hoop-inspect (clickhouse codec) -> clickhouse :9000
+      - "8446:8446"            # HTTPS lane -> hoop-inspect (http codec)       -> clickhouse :8123
+      - "127.0.0.1:9004:9004" # TCP lane   -> hoop-inspect (mysql codec)      -> clickhouse :9004
+      - "127.0.0.1:9005:9005" # TCP lane   -> hoop-inspect (postgres codec)   -> clickhouse :9005

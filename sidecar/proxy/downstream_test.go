@@ -279,6 +279,45 @@ func TestSSLRequestIsTerminatedWhenConfigured(t *testing.T) {
 	}
 }
 
+func TestClickHouseTLSIsTerminatedOnConnect(t *testing.T) {
+	cfg := selfSigned(t)
+	cli, srv := tcpPair(t)
+
+	type result struct {
+		conn net.Conn
+		err  error
+	}
+	res := make(chan result, 1)
+	go func() {
+		c, _, err := negotiateDownstream(srv, inspect.ClickHouse, cfg, 5*time.Second)
+		res <- result{c, err}
+	}()
+
+	tc := tls.Client(cli, &tls.Config{InsecureSkipVerify: true})
+	if err := tc.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if err := tc.Handshake(); err != nil {
+		t.Fatalf("client handshake failed: %v", err)
+	}
+
+	nativeHello := []byte{0, 4, 't', 'e', 's', 't'}
+	if _, err := tc.Write(nativeHello); err != nil {
+		t.Fatal(err)
+	}
+	r := <-res
+	if r.err != nil {
+		t.Fatalf("relay side failed: %v", r.err)
+	}
+	got := make([]byte, len(nativeHello))
+	if _, err := io.ReadFull(r.conn, got); err != nil {
+		t.Fatalf("reading native hello through terminated TLS: %v", err)
+	}
+	if !bytes.Equal(got, nativeHello) {
+		t.Errorf("gate saw %x through TLS, want %x", got, nativeHello)
+	}
+}
+
 // Non-postgres lanes must not have their first bytes touched: TDS 8.0 is
 // already inside TLS by this point and HTTP has no such exchange.
 func TestOtherProtocolsAreNotIntercepted(t *testing.T) {

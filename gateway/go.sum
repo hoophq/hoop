@@ -309,6 +309,12 @@ github.com/hoophq/libhoop v0.0.0-20260911124740-15e4171c522b h1:sKjwfNRVD4yTz4hD
 github.com/hoophq/libhoop v0.0.0-20260911124740-15e4171c522b/go.mod h1:Z28ISSRx1WOOXrN3QO8Lh/jUsJcmO6KXzFm8ujwUjq4=
 github.com/hoophq/libhoop v0.0.0-20260916183132-1443e5d2e2d2 h1:lN6/qxPoIUJZCS1ICy8b0YZDHb0mYkmjG+aI2U7ldHw=
 github.com/hoophq/libhoop v0.0.0-20260916183132-1443e5d2e2d2/go.mod h1:D0ohPkqnVsv8UWbu3CExGU9dgUOCoFGgVZY7X6PK86U=
+github.com/hoophq/libhoop v0.0.0-20260916204722-be8e357544d1 h1:0LEX/zBA4pzwIwKcK5/taHEdmnt+xJi1f+fnaErbco4=
+github.com/hoophq/libhoop v0.0.0-20260916204722-be8e357544d1/go.mod h1:D0ohPkqnVsv8UWbu3CExGU9dgUOCoFGgVZY7X6PK86U=
+github.com/hoophq/libhoop v0.0.0-20260916211013-e28c81bb9dad h1:4uMEkR76fuu1o3NSNmfkZSUgSB+//owe1ddA6rzfxl4=
+github.com/hoophq/libhoop v0.0.0-20260916211013-e28c81bb9dad/go.mod h1:D0ohPkqnVsv8UWbu3CExGU9dgUOCoFGgVZY7X6PK86U=
+github.com/hoophq/libhoop v0.0.0-20260916211709-c49b31f354b0 h1:ElgCEqp9U9hDhaIQBR6JiFoROCb3k20HXkMQW+HCGeo=
+github.com/hoophq/libhoop v0.0.0-20260916211709-c49b31f354b0/go.mod h1:D0ohPkqnVsv8UWbu3CExGU9dgUOCoFGgVZY7X6PK86U=
 github.com/hoophq/mcpproxy v0.1.1 h1:Zj9/vOMAKSOTuGuuSLl/v01iKdQ1+yiYZLNNz2T1npQ=
 github.com/hoophq/mcpproxy v0.1.1/go.mod h1:Wi7Z5bo0hJRwKa/gFaC9vRAWFCy3dxcYS2n28/TTphc=
 github.com/jackc/pgpassfile v1.0.0 h1:/6Hmqy13Ss2zCq62VdNG8tM1wchn8zjSGOBJ6icpsIM=

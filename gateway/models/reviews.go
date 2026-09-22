@@ -1,7 +1,9 @@
 package models
 
 import (
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -68,6 +70,13 @@ type Review struct {
 	SidecarID    sql.NullString `gorm:"column:sidecar_id"`
 	ListenerName sql.NullString `gorm:"column:listener_name"`
 
+	// StatementHash is the SHA-256 of the exact statement bytes, in hex. It
+	// is how a sidecar's retry of a held statement finds the review already
+	// filed for it, so the same bytes are never reviewed twice and an
+	// approval releases those bytes and no others. Empty on a review filed
+	// from a connection.
+	StatementHash sql.NullString `gorm:"column:statement_hash"`
+
 	BlobInputID       sql.NullString    `gorm:"column:blob_input_id"`
 	InputEnvVars      map[string]string `gorm:"column:input_env_vars;serializer:json"`
 	InputClientArgs   pq.StringArray    `gorm:"column:input_client_args;type:text[]"`
@@ -132,6 +141,17 @@ type ReviewJit struct {
 	OwnerEmail        string     `gorm:"column:owner_email"`
 	CreatedAt         time.Time  `gorm:"column:created_at"`
 	RevokedAt         *time.Time `gorm:"column:revoked_at"`
+}
+
+// HashStatement computes Review.StatementHash: the SHA-256 of the exact
+// statement bytes, in hex, as models.HashAPIKey digests a token.
+//
+// The exact bytes, never a normalized form. The partial unique index compares
+// this value, so anything that folded case, whitespace or literals here would
+// widen what a single approval releases.
+func HashStatement(statement []byte) string {
+	sum := sha256.Sum256(statement)
+	return hex.EncodeToString(sum[:])
 }
 
 func generateBlobInputID(reviewID string) string {
@@ -263,57 +283,64 @@ func CountPendingReviews(orgID string, staleBefore time.Time) (pending, stale in
 // and save the input as well.
 func CreateReview(rev *Review, input string) error {
 	return DB.Transaction(func(tx *gorm.DB) error {
-		blobID := generateBlobInputID(rev.ID)
-		if input != "" {
-			rev.BlobInputID = sql.NullString{String: blobID, Valid: true}
+		return createReviewTx(tx, rev, input)
+	})
+}
+
+// createReviewTx is CreateReview's body with the transaction supplied by the
+// caller, so a caller that must write a review alongside other rows gets one
+// rollback boundary instead of two. The behaviour is otherwise unchanged.
+func createReviewTx(tx *gorm.DB, rev *Review, input string) error {
+	blobID := generateBlobInputID(rev.ID)
+	if input != "" {
+		rev.BlobInputID = sql.NullString{String: blobID, Valid: true}
+	}
+	err := tx.Table("private.reviews").
+		Create(rev).
+		Error
+	if err != nil {
+		return err
+	}
+
+	if input != "" {
+		blobInput := Blob{
+			ID:         blobID,
+			OrgID:      rev.OrgID,
+			Type:       "review-input",
+			BlobStream: json.RawMessage(fmt.Sprintf("[%q]", input)),
 		}
-		err := tx.Table("private.reviews").
-			Create(rev).
+		err = tx.Table("private.blobs").
+			Create(blobInput).
 			Error
 		if err != nil {
-			return err
+			return fmt.Errorf("failed creating review blob input, reason=%v", err)
 		}
+	}
 
-		if input != "" {
-			blobInput := Blob{
-				ID:         blobID,
-				OrgID:      rev.OrgID,
-				Type:       "review-input",
-				BlobStream: json.RawMessage(fmt.Sprintf("[%q]", input)),
-			}
-			err = tx.Table("private.blobs").
-				Create(blobInput).
-				Error
-			if err != nil {
-				return fmt.Errorf("failed creating review blob input, reason=%v", err)
-			}
-		}
+	var errs []string
+	for _, rg := range rev.ReviewGroups {
+		err = tx.Table("private.review_groups").
+			Create(map[string]any{
+				"id":             rg.ID,
+				"org_id":         rg.OrgID,
+				"review_id":      rev.ID,
+				"group_name":     rg.GroupName,
+				"status":         rg.Status,
+				"owner_id":       rg.OwnerID,
+				"owner_email":    rg.OwnerEmail,
+				"owner_slack_id": rg.OwnerSlackID,
+				"reviewed_at":    rg.ReviewedAt,
+			}).
+			Error
 
-		var errs []string
-		for _, rg := range rev.ReviewGroups {
-			err = tx.Table("private.review_groups").
-				Create(map[string]any{
-					"id":             rg.ID,
-					"org_id":         rg.OrgID,
-					"review_id":      rev.ID,
-					"group_name":     rg.GroupName,
-					"status":         rg.Status,
-					"owner_id":       rg.OwnerID,
-					"owner_email":    rg.OwnerEmail,
-					"owner_slack_id": rg.OwnerSlackID,
-					"reviewed_at":    rg.ReviewedAt,
-				}).
-				Error
-
-			if err != nil {
-				errs = append(errs, fmt.Sprintf("%v", err))
-			}
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("%v", err))
 		}
-		if len(errs) > 0 {
-			return fmt.Errorf("%v", errs)
-		}
-		return nil
-	})
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("%v", errs)
+	}
+	return nil
 }
 
 // Lookup for the latest review jit approved
@@ -412,6 +439,107 @@ func SetReviewStatusExecutedIfFinished(db *gorm.DB, orgID, sessionID string) (bo
 		ReviewStatusExecuted, orgID, sessionID, ReviewTypeOneTime,
 		ReviewStatusProcessing, ReviewStatusUnknown)
 	return res.RowsAffected > 0, res.Error
+}
+
+// GetLiveSidecarReview returns the review already filed for these exact
+// statement bytes on this listener and rule, or gorm.ErrRecordNotFound.
+//
+// "Live" excludes EXECUTED and nothing else, matching the partial unique index:
+// a consumed approval must not answer the next request, a rejection must keep
+// answering. Groups load as GetReviewByIdOrSid loads them, so a match carries
+// the same policy as a fresh review.
+func GetLiveSidecarReview(db *gorm.DB, orgID, sidecarID, listenerName, ruleName, statementHash string) (*Review, error) {
+	var review Review
+	err := db.Raw(`
+	SELECT
+		id, org_id, session_id, connection_name, sidecar_id, listener_name,
+		statement_hash, type, access_duration_sec, status,
+		blob_input_id, input_env_vars, input_client_args, time_window, access_request_rule_name,
+		force_approval_groups, min_approvals, owner_id, owner_email, owner_name, owner_slack_id,
+		( SELECT jsonb_agg(
+				jsonb_build_object(
+					'id', rg.id,
+					'org_id', rg.org_id,
+					'review_id', rg.review_id,
+					'group_name', rg.group_name,
+					'status', rg.status,
+					'owner_id', rg.owner_id,
+					'owner_email', rg.owner_email,
+					'owner_name', rg.owner_name,
+					'owner_slack_id', rg.owner_slack_id,
+					'reviewed_at', to_char(rg.reviewed_at, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+				)
+			)
+			FROM private.review_groups AS rg
+			WHERE rg.review_id = rv.id
+		) AS review_groups,
+	created_at, revoked_at, rejection_reason
+	FROM private.reviews rv
+	WHERE org_id = ? AND sidecar_id = ? AND listener_name = ?
+	AND access_request_rule_name = ? AND statement_hash = ? AND status <> ?`,
+		orgID, sidecarID, listenerName, ruleName, statementHash, ReviewStatusExecuted).
+		First(&review).
+		Error
+	if err != nil {
+		return nil, err
+	}
+	return &review, nil
+}
+
+// ClaimApprovedSidecarReview consumes an approved review exactly once.
+//
+// Concurrent retries all read APPROVED, but only one conditional UPDATE matches
+// a row, and only its caller may forward. Winner and loser both see EXECUTED
+// afterwards, which is why the answer is returned rather than read off the
+// status. A claim also closes the session (done + ended_at): nothing else ever
+// will, since there is no connection and no agent to report an exit.
+func ClaimApprovedSidecarReview(db *gorm.DB, orgID, reviewID string) (bool, ReviewStatusType, error) {
+	var claimed bool
+	var status string
+	err := db.Transaction(func(tx *gorm.DB) error {
+		res := tx.Exec(`
+		UPDATE private.reviews
+		SET status = ?
+		WHERE org_id = ? AND id = ? AND status = ? AND sidecar_id IS NOT NULL`,
+			ReviewStatusExecuted, orgID, reviewID, ReviewStatusApproved)
+		if res.Error != nil {
+			return res.Error
+		}
+		claimed = res.RowsAffected > 0
+
+		if claimed {
+			err := tx.Exec(`
+			UPDATE private.sessions AS s
+			SET status = 'done', ended_at = ?
+			FROM private.reviews AS r
+			WHERE r.org_id = s.org_id AND r.session_id = s.id
+			AND r.org_id = ? AND r.id = ?`, time.Now().UTC(), orgID, reviewID).Error
+			if err != nil {
+				return err
+			}
+		}
+
+		return tx.Raw(`SELECT status FROM private.reviews WHERE org_id = ? AND id = ?`,
+			orgID, reviewID).Scan(&status).Error
+	})
+	if err != nil {
+		return false, "", err
+	}
+	return claimed, ReviewStatusType(status), nil
+}
+
+// CreateSidecarReview writes the session and the review in one transaction, so
+// a crash between them cannot leave a session no review points at.
+//
+// Returns gorm.ErrDuplicatedKey when a racing request filed for the same bytes
+// first. That is the index doing its job, not a fault: answer from the winner.
+func CreateSidecarReview(db *gorm.DB, sess Session, rev *Review, statement string) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := upsertSessionTx(tx, sess); err != nil {
+			return fmt.Errorf("failed creating session: %w", err)
+		}
+		return createReviewTx(tx, rev, statement)
+	})
 }
 
 // ReconcileStaleReviews settles as EXECUTED every one-time review left in

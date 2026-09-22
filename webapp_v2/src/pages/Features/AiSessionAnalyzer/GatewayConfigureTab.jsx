@@ -44,7 +44,12 @@ const DEFAULT_PROVIDER = 'openai'
 
 const emptyDraft = () => ({ model: '', apiKey: '', apiUrl: '' })
 
-export default function ConfigureTab({ onSaved }) {
+// The GATEWAY's provider, stored once per organization in private.ai_providers
+// and read by gateway/aianalyzer and gateway/transport/client.go. A sidecar
+// reads none of it: its provider lives in its own document, per sidecar, and
+// its credential is a path on its own filesystem. The control plane's sibling
+// of this file says so rather than collecting a key that reaches nobody.
+export default function GatewayConfigureTab({ onSaved }) {
   const provider = useAiSessionAnalyzerStore((s) => s.provider)
   const submitting = useAiSessionAnalyzerStore((s) => s.submitting)
   const saveProvider = useAiSessionAnalyzerStore((s) => s.saveProvider)

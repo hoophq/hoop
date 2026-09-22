@@ -7,10 +7,11 @@ import Switch from '@/components/Switch'
 import Tooltip from '@/components/Tooltip'
 import EmptyState from '@/layout/EmptyState'
 import { useSidecarStore } from '@/stores/useSidecarStore'
+import { formatRelativeTime } from '@/utils/datetime'
 import { showSnackbar } from '@/utils/snackbar'
 import { auditEnabled, configFeatures, hasConfiguration, loadsFromDisk } from '../config'
 import ListenersTable from '../sections/ListenersTable'
-import { formatRelativeTime, sidecarStatus } from '../status'
+import { sidecarStatus } from '../status'
 import SidecarSourceModal from '../sections/SidecarSourceModal'
 import FeaturePills from './FeaturePills'
 
@@ -161,7 +162,7 @@ export default function SidecarDetails({ sidecar, editable, listenerActions }) {
               <Stack gap="sm">
                 <Text fw={600}>Global settings</Text>
                 <Row label="Features">
-                  <FeaturePills features={configFeatures(config)} />
+                  <FeaturePills features={configFeatures(config, sidecar.bound_rules)} />
                 </Row>
                 <Row label="Audit">
                   <Badge variant={auditEnabled(config) ? 'active' : 'inactive'}>

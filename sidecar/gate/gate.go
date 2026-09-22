@@ -108,6 +108,26 @@ type Duplex interface {
 	Duplex()
 }
 
+// StreamFilter transforms connection bytes before either inspection or
+// forwarding. It is for negotiation fields that decide every later packet's
+// layout: ClickHouse clamps both advertised revisions here so the peers and
+// decoder all speak the same bounded vocabulary.
+//
+// A filter may hold an incomplete prefix and return no bytes. Any error is
+// fatal: once a filter has retained or changed bytes, forwarding the original
+// chunk cannot reconstruct the stream.
+type StreamFilter interface {
+	Filter(dir inspect.Direction, data []byte) ([]byte, error)
+}
+
+// reassemblySizer lets a codec raise the default inspector buffer to the
+// largest packet its own parser admits. The codec remains the authority on
+// the packet-specific cap; this only prevents the generic 8 MiB guard from
+// rejecting a valid larger frame first.
+type reassemblySizer interface {
+	MaxReassemblyBytes() int
+}
+
 // Config assembles a Gate.
 type Config struct {
 	// Protocol selects the codec. Required.
@@ -152,7 +172,35 @@ type Config struct {
 	// stateful codec corrupt each other's reassembly buffer, which is the
 	// same reason Register takes a factory rather than an instance.
 	CodecFactory func() inspect.Codec
+
+	// Metrics receives per-statement outcomes for a process-wide counter.
+	// Optional; nil records nothing. Every connection's gate shares one
+	// implementation, so it MUST be safe for concurrent use and MUST cost
+	// no more than an atomic increment: it runs on the data path.
+	Metrics Metrics
 }
+
+// Metrics is the counting hook a Gate reports into. Declared here as a
+// narrow interface rather than imported, so the package that aggregates
+// (analytics) depends on nothing and the gate depends on no aggregator.
+type Metrics interface {
+	// Statement records one judged statement. source is the kind of
+	// evaluator that denied it — a policy.Verdict.Source, or one of the
+	// gate's own Source* values — and empty when it was allowed.
+	Statement(denied bool, source string)
+	// Masked records values rewritten out of one response.
+	Masked(values int)
+	// AuditError records one audit event the sink could not write.
+	AuditError()
+}
+
+// Denial sources the gate reports that no evaluator produced.
+const (
+	// SourceAudit is the fail-closed refusal when the audit sink is down.
+	SourceAudit = "audit"
+	// SourceStream is a codec refusing bytes it cannot safely forward.
+	SourceStream = "stream"
+)
 
 // Decision is the answer for one chunk of bytes.
 type Decision struct {
@@ -223,6 +271,12 @@ type Gate struct {
 	// so the data path does not type-assert per packet.
 	reframer Reframer
 
+	// clientFilter and serverFilter are optional pre-decode wire filters
+	// discovered from their codecs. Duplex codecs may put the same filter in
+	// both fields; each direction still owns its independent stream cursor.
+	clientFilter StreamFilter
+	serverFilter StreamFilter
+
 	// mu guards the counters, which Close reads while a data-path goroutine
 	// may still be incrementing them. The inspectors are not guarded: they
 	// are per-direction and each direction has one reader.
@@ -286,9 +340,17 @@ func New(sess *session.Session, cfg Config) (*Gate, error) {
 
 	client := inspect.NewWithCodec(clientCodec)
 	server := inspect.NewWithCodec(serverCodec)
-	if cfg.MaxBuffer > 0 {
-		client.SetMaxBuffer(cfg.MaxBuffer)
-		server.SetMaxBuffer(cfg.MaxBuffer)
+	maxBuffer := cfg.MaxBuffer
+	if maxBuffer <= 0 {
+		for _, codec := range []inspect.Codec{clientCodec, serverCodec} {
+			if sized, ok := codec.(reassemblySizer); ok && sized.MaxReassemblyBytes() > maxBuffer {
+				maxBuffer = sized.MaxReassemblyBytes()
+			}
+		}
+	}
+	if maxBuffer > 0 {
+		client.SetMaxBuffer(maxBuffer)
+		server.SetMaxBuffer(maxBuffer)
 	}
 
 	sess.Protocol = cfg.Protocol
@@ -301,6 +363,12 @@ func New(sess *session.Session, cfg Config) (*Gate, error) {
 		audit:  cfg.Audit,
 		masker: cfg.Masker,
 		polCtx: sess.PolicyContext(),
+	}
+	if filter, ok := clientCodec.(StreamFilter); ok {
+		g.clientFilter = filter
+	}
+	if filter, ok := serverCodec.(StreamFilter); ok {
+		g.serverFilter = filter
 	}
 	// Discover the optional re-framing capability once, so the data path
 	// does not type-assert per packet. A codec that cannot rebuild its own
@@ -335,7 +403,7 @@ func (g *Gate) Start(ctx context.Context) error {
 	if g.audit == nil {
 		return nil
 	}
-	return g.audit.Write(ctx, audit.SessionStartEvent(g.sess))
+	return g.writeAudit(ctx, audit.SessionStartEvent(g.sess))
 }
 
 // Request inspects bytes travelling client -> upstream and decides whether
@@ -362,13 +430,15 @@ func (g *Gate) Response(ctx context.Context, data []byte) Decision {
 	return g.inspect(ctx, inspect.FromServer, data)
 }
 
-// FlushResponse returns any response bytes the codec is still holding.
+// FlushResponse returns any response bytes the codec is still holding after a
+// normal response-stream completion.
 //
 // A re-framing codec buffers rows until their result set ends, because a row
 // cannot be rebuilt once forwarded. If the connection closes mid-result-set
 // those rows would be dropped, silently truncating the client's output, a
-// worse failure than masking late. The relay MUST call this before it stops
-// pumping, and forward whatever comes back.
+// worse failure than masking late. The relay MUST call this before a normal
+// server pump stops. A denied or unsafe response must call DiscardResponse
+// instead so held rows cannot follow the protocol error.
 //
 // Returns nil when nothing is held or the codec does not re-frame.
 func (g *Gate) FlushResponse() []byte {
@@ -378,17 +448,55 @@ func (g *Gate) FlushResponse() []byte {
 	if g.masker == nil {
 		return g.reframer.Flush(nil)
 	}
-	return g.reframer.Flush(func(column string, value []byte) []byte {
-		out, _, n := g.masker.MaskCell(column, value)
+	// Rows masked here were held back by the codec and never passed through
+	// maskByReframing, so this is their only chance to be counted.
+	masked := 0
+	out := g.reframer.Flush(func(column string, value []byte) []byte {
+		res, _, n := g.masker.MaskCell(column, value)
 		if n == 0 {
 			return value
 		}
-		return out
+		masked += n
+		return res
 	})
+	g.countMasked(masked)
+	return out
+}
+
+// DiscardResponse clears response bytes held by a re-framing codec without
+// returning them. A response denial has already replaced the upstream result
+// with a protocol error; releasing earlier rows after that error would leak
+// denied data and corrupt the response stream.
+func (g *Gate) DiscardResponse() {
+	if g.reframer != nil {
+		g.reframer.Flush(nil)
+	}
 }
 
 func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) Decision {
-	d := Decision{Allowed: true, Payload: data}
+	d := Decision{Allowed: true}
+
+	filter := g.clientFilter
+	if dir == inspect.FromServer {
+		filter = g.serverFilter
+	}
+	if filter != nil && len(data) > 0 {
+		filtered, err := filter.Filter(dir, data)
+		if err != nil {
+			d.Allowed = false
+			d.Rule = "stream-filter"
+			d.Message = err.Error()
+			d.Err = fmt.Errorf("filter: %w", err)
+			g.writeAudit(ctx, audit.ErrorEvent(g.sess, d.Err))
+			g.mu.Lock()
+			g.denied++
+			g.mu.Unlock()
+			g.countStatement(true, SourceStream)
+			return d
+		}
+		data = filtered
+	}
+	d.Payload = data
 
 	// A statement gate has no inspectors: its caller builds statements and
 	// enters at EvaluateStatement. Refusing here beats a nil dereference,
@@ -398,6 +506,9 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 		d.Rule = "gate"
 		d.Message = "this gate evaluates statements, not bytes; use EvaluateStatement"
 		d.Payload = nil
+		return d
+	}
+	if len(data) == 0 {
 		return d
 	}
 
@@ -439,6 +550,7 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 			g.mu.Lock()
 			g.denied++
 			g.mu.Unlock()
+			g.countStatement(true, SourceStream)
 			return d
 		}
 	}
@@ -512,13 +624,6 @@ type judgment struct {
 func (g *Gate) judge(ctx context.Context, stmt inspect.Statement) judgment {
 	verdict := g.evaluate(stmt)
 
-	g.mu.Lock()
-	g.statements++
-	if verdict.Denied {
-		g.denied++
-	}
-	g.mu.Unlock()
-
 	ev := audit.StatementEvent(
 		g.sess, stmt, !verdict.Denied, verdict.Rule, verdict.Message)
 	// An evaluator's annotations (the AI analyzer's risk level) ride
@@ -534,8 +639,25 @@ func (g *Gate) judge(ctx context.Context, stmt inspect.Statement) judgment {
 		}
 	}
 	auditErr := g.writeAudit(ctx, ev)
+	refused := auditErr != nil && g.cfg.FailOnAuditError
 
-	if auditErr != nil && g.cfg.FailOnAuditError {
+	// Counted once, after the audit result is known: a statement the policy
+	// allowed but the fail-closed audit refused is a denial to the client,
+	// and the counters must say what the client saw.
+	denied := verdict.Denied || refused
+	source := verdict.Source
+	if refused {
+		source = SourceAudit
+	}
+	g.mu.Lock()
+	g.statements++
+	if denied {
+		g.denied++
+	}
+	g.mu.Unlock()
+	g.countStatement(denied, source)
+
+	if refused {
 		denied := stmt
 		return judgment{refusal: &Decision{
 			Allowed:         false,
@@ -546,13 +668,12 @@ func (g *Gate) judge(ctx context.Context, stmt inspect.Statement) judgment {
 		}}
 	}
 
-	j := judgment{
+	return judgment{
 		denied:  verdict.Denied,
 		rule:    verdict.Rule,
 		message: verdict.Message,
 		err:     errors.Join(auditErr, verdict.Err),
 	}
-	return j
 }
 
 // NewStatementGate builds a Gate for a caller that constructs statements
@@ -631,6 +752,7 @@ func (g *Gate) RecordMasked(ctx context.Context, entities []string, count int) e
 			unique = append(unique, entity)
 		}
 	}
+	g.countMasked(count)
 	err := g.writeAudit(ctx, audit.MaskedEvent(g.sess, unique, count))
 	if g.cfg.FailOnAuditError {
 		return err
@@ -689,6 +811,7 @@ func (g *Gate) maskBySubstitution(ctx context.Context, d *Decision, data []byte)
 	d.Payload = out
 	d.Masked = entities
 	d.MaskedCount = count
+	g.countMasked(count)
 	g.writeAudit(ctx, audit.MaskedEvent(g.sess, entities, count))
 }
 
@@ -718,11 +841,28 @@ func (g *Gate) maskByReframing(ctx context.Context, d *Decision, data []byte) {
 		return masked
 	})
 	if err != nil {
-		// A malformed response falls outside masking. Forward what the codec
-		// produced and record it; the upstream's own client is the authority
-		// on its protocol.
 		d.Err = errors.Join(d.Err, err)
 		g.writeAudit(ctx, audit.ErrorEvent(g.sess, err))
+
+		// A reframer returning ErrStreamUnsafe has recognized a response it
+		// cannot rebuild without leaking cleartext or losing packet
+		// boundaries. Treat it like the same error from Decode: deny the
+		// response so the proxy writes the protocol error and closes.
+		if errors.Is(err, inspect.ErrStreamUnsafe) {
+			d.Allowed = false
+			d.Rule = "stream-unsafe"
+			d.Message = err.Error()
+			d.Payload = nil
+			g.mu.Lock()
+			g.denied++
+			g.mu.Unlock()
+			g.countStatement(true, SourceStream)
+			return
+		}
+
+		// Other malformed responses retain the historical behavior: forward
+		// what the codec produced and record the error. The upstream client
+		// remains the authority on malformed protocol bytes.
 	}
 
 	d.Payload = out
@@ -730,6 +870,7 @@ func (g *Gate) maskByReframing(ctx context.Context, d *Decision, data []byte) {
 		sort.Strings(entities)
 		d.Masked = entities
 		d.MaskedCount = res.Cells
+		g.countMasked(res.Cells)
 		g.writeAudit(ctx, audit.MaskedEvent(g.sess, entities, res.Cells))
 	}
 }
@@ -804,7 +945,11 @@ func (g *Gate) writeAudit(ctx context.Context, ev audit.Event) error {
 	if g.audit == nil {
 		return nil
 	}
-	return g.audit.Write(ctx, ev)
+	err := g.audit.Write(ctx, ev)
+	if err != nil && g.cfg.Metrics != nil {
+		g.cfg.Metrics.AuditError()
+	}
+	return err
 }
 
 // Close ends the session and records the closing event with totals.
@@ -823,7 +968,7 @@ func (g *Gate) Close(ctx context.Context) error {
 	if g.audit == nil {
 		return nil
 	}
-	return g.audit.Write(ctx, audit.SessionEndEvent(g.sess, statements, denied))
+	return g.writeAudit(ctx, audit.SessionEndEvent(g.sess, statements, denied))
 }
 
 // Stats reports the running totals.
@@ -831,4 +976,19 @@ func (g *Gate) Stats() (statements, denied int) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return g.statements, g.denied
+}
+
+// countStatement and countMasked forward to the configured Metrics. Two
+// one-liners rather than a nil check at every site, so a new call site
+// cannot forget the check.
+func (g *Gate) countStatement(denied bool, source string) {
+	if g.cfg.Metrics != nil {
+		g.cfg.Metrics.Statement(denied, source)
+	}
+}
+
+func (g *Gate) countMasked(values int) {
+	if g.cfg.Metrics != nil {
+		g.cfg.Metrics.Masked(values)
+	}
 }

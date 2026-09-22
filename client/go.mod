@@ -23,9 +23,9 @@ require (
 	github.com/hoophq/hoop/sidecar v0.0.0
 	github.com/hoophq/hoop/sidecar/analyzer/vertex v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/sidecar/config/yaml v0.0.0-00010101000000-000000000000
+	github.com/hoophq/hoop/sidecar/descriptors/gcs v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/sidecar/pii/alcatraz v0.0.0-00010101000000-000000000000
-	github.com/hoophq/libhoop v0.0.0-20260916183132-1443e5d2e2d2
-	github.com/lib/pq v1.12.3
+	github.com/hoophq/libhoop v0.0.0-20260921142807-8a4562b36981
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/crypto v0.56.0
 	golang.org/x/mod v0.38.0
@@ -163,6 +163,7 @@ require (
 	github.com/knights-analytics/ortgenai v0.3.2 // indirect
 	github.com/kr/fs v0.1.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
+	github.com/lib/pq v1.12.3 // indirect
 	github.com/lucasb-eyer/go-colorful v1.4.0 // indirect
 	github.com/lufia/plan9stats v0.0.0-20260330125221-c963978e514e // indirect
 	github.com/mattermost/xml-roundtrip-validator v0.1.0 // indirect
@@ -188,7 +189,7 @@ require (
 	github.com/russellhaering/goxmldsig v1.6.0 // indirect
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
 	github.com/segmentio/analytics-go/v3 v3.3.0 // indirect
-	github.com/segmentio/asm v1.1.3 // indirect
+	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/segmentio/backo-go v1.1.0 // indirect
 	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/sergi/go-diff v1.4.0 // indirect
@@ -311,3 +312,5 @@ replace github.com/hoophq/hoop/sidecar/config/yaml => ../sidecar/config/yaml
 replace github.com/hoophq/hoop/sidecar/pii/alcatraz => ../sidecar/pii/alcatraz
 
 replace github.com/hoophq/hoop/sidecar/analyzer/vertex => ../sidecar/analyzer/vertex
+
+replace github.com/hoophq/hoop/sidecar/descriptors/gcs => ../sidecar/descriptors/gcs

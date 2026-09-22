@@ -355,6 +355,39 @@ func caseName(sql string) string {
 	return strings.ReplaceAll(name, " ", "_")
 }
 
+// ClickHouse syntax cannot be sent to the PostgreSQL parser above: hash
+// comments and backtick identifiers are invalid there. Keep the dialect's
+// independent expected classifications in this conformance module so the
+// protocol-specific rules cannot regress behind package-local tests alone.
+func TestClickHouseDialectCorpus(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		sql    string
+		verb   lexer.Verb
+		writes []string
+	}{
+		{"hash comment", "SELECT 1 # DELETE FROM hidden", lexer.Select, nil},
+		{"dash comment", "SELECT 1--2; DELETE FROM hidden", lexer.Select, nil},
+		{"backtick identifier", "DELETE FROM `orders`", lexer.Delete, []string{"orders"}},
+		{"quoted identifier", `DELETE FROM "Orders"`, lexer.Delete, []string{"orders"}},
+		{"backslash-escaped string", `SELECT 'a\'; DELETE FROM hidden; --'`, lexer.Select, nil},
+		{"non-nesting block comment", "/* a /* b */ DELETE FROM customers */", lexer.Delete, []string{"customers"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := lexer.Analyze(tc.sql, lexer.ClickHouse)
+			if !got.Complete {
+				t.Fatalf("analysis conceded: %s", got.Reason)
+			}
+			if verb := got.Severity(); verb != tc.verb {
+				t.Errorf("verb = %q, want %q", verb, tc.verb)
+			}
+			if writes := scannerWrites(got); !slices.Equal(writes, tc.writes) {
+				t.Errorf("writes = %v, want %v", writes, tc.writes)
+			}
+		})
+	}
+}
+
 func groups() []string {
 	return []string{"regression", "cte", "dml-shapes", "ddl", "orm"}
 }

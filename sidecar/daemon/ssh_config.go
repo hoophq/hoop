@@ -651,6 +651,8 @@ func validateSSHRules(rules []policy.Rule, lane string) []string {
 // can answer for them: MaskConfig.Rules is raw JSON precisely so the daemon
 // links no detector. countMaskRules already decodes these bytes for the
 // same reason.
+func ValidateSSHMasking(mc MaskConfig, lane string) []string { return validateSSHMasking(mc, lane) }
+
 func validateSSHMasking(mc MaskConfig, lane string) []string {
 	if !mc.hasRules() {
 		return nil

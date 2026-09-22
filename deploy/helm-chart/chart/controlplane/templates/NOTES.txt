@@ -1,0 +1,30 @@
+Control plane deployed.
+
+  kubectl logs deploy/{{ include "hoopcontrolplane.fullname" . }}
+{{- if .Values.service.enabled }}
+  kubectl port-forward svc/{{ include "hoopcontrolplane.fullname" . }} 8009:8009
+{{- else }}
+  kubectl port-forward deploy/{{ include "hoopcontrolplane.fullname" . }} 8009:8009
+{{- end }}
+
+Confirm the mode — application_mode must read "control-plane":
+
+  curl -s http://127.0.0.1:8009{{ include "hoopcontrolplane.basePath" . }}/api/publicserverinfo | grep application_mode
+
+This deployment carries no traffic: no gRPC on :8010, no protocol proxies, and
+of the six transport plugins only Slack is started. The routes that need the
+transport answer with an error rather than hanging; see ADR-0013.
+
+Register a sidecar at {{ .Values.config.API_URL }}, copy the token it shows
+once, and install hoopsidecar-chart with controlPlane.url and
+controlPlane.token.
+{{ if gt (int (.Values.replicas | default 1)) 1 }}
+WARNING: replicas is {{ .Values.replicas }}.
+
+  Each replica opens its own Slack socket-mode connection and nothing elects an
+  owner between them. If any organization in this deployment has Slack
+  configured, reviews are posted once per replica and an approval click may be
+  handled by a replica that is not holding the waiting session — the verdict is
+  written and the session is never released. Run one replica, or no Slack.
+{{ end }}
+Documentation: https://hoop.dev/docs/setup

@@ -50,6 +50,13 @@ type Verdict struct {
 	// Empty on allow.
 	Rule string
 
+	// Source names the KIND of evaluator that denied, from a fixed
+	// vocabulary: a local rule's MatchType ("operation", "pattern_match",
+	// "pii", ...), SourceOPA, SourceAnalyzer, or a gate-level refusal. It
+	// exists for counting denials by kind without carrying Rule, which is
+	// operator-written text, out of the process. Empty on allow.
+	Source string
+
 	// Err holds the failure when evaluation itself broke (OPA unreachable,
 	// bad regex). Denied reflects the fail-open/fail-closed choice; Err
 	// records the cause.
@@ -73,9 +80,22 @@ type Verdict struct {
 // Allow is the zero verdict.
 func Allow() Verdict { return Verdict{} }
 
-// Deny builds a denial carrying a user-facing message.
+// Evaluator kinds a Verdict.Source can name, beside the MatchType values a
+// local rule reports. The gate adds its own for refusals no evaluator made.
+const (
+	SourceOPA      = "opa"
+	SourceAnalyzer = "analyzer"
+)
+
+// Deny builds a denial carrying a user-facing message. The caller sets
+// Source; DenyRule does it for a local rule.
 func Deny(rule, msg string) Verdict {
 	return Verdict{Denied: true, Message: msg, Rule: rule}
+}
+
+// DenyRule is Deny for a local rule: the rule's type is the source.
+func DenyRule(rule Rule, msg string) Verdict {
+	return Verdict{Denied: true, Message: msg, Rule: rule.Name, Source: string(rule.Type)}
 }
 
 // Evaluator produces a verdict for a statement. Rules and OPAClient both
@@ -522,6 +542,23 @@ type Rules struct {
 // first request that happens to hit it.
 func NewRules(rules []Rule) (*Rules, error) { return newRules(rules, false) }
 
+// ValidateRules reports what this build would refuse about a rule set, without
+// building one.
+//
+// Exported for the control plane, which authors rules for sidecars it cannot
+// run. The authority on what a sidecar accepts is the sidecar, so the control
+// plane calls this rather than keeping a second list that passes its own test
+// and still refuses the wrong thing the first time a rule type is added here.
+// Same reason as daemon.CheckLimits and daemon.BaselineDoc.
+//
+// hasScanner says whether a detector will be attached, which is what decides
+// a pii rule. A real sidecar links one; pass false to validate for a build
+// that does not.
+func ValidateRules(rules []Rule, hasScanner bool) error {
+	_, err := newRules(rules, hasScanner)
+	return err
+}
+
 // newRules is the shared constructor. hasScanner tells PII validation whether
 // a Scanner will be attached, so a PII rule without one fails at startup
 // instead of quietly allowing every statement.
@@ -667,7 +704,7 @@ func (r *Rules) EvaluateWith(stmt inspect.Statement, ec *EvalContext) Verdict {
 				})
 				continue
 			}
-			return Deny(rule.Name, rule.piiMessage(entities))
+			return DenyRule(rule, rule.piiMessage(entities))
 		}
 
 		matched, err := rule.matches(stmt)
@@ -679,6 +716,7 @@ func (r *Rules) EvaluateWith(stmt inspect.Statement, ec *EvalContext) Verdict {
 				Denied:  true,
 				Message: "policy evaluation failed; denying",
 				Rule:    rule.Name,
+				Source:  string(rule.Type),
 				Err:     err,
 			}
 		}
@@ -689,7 +727,7 @@ func (r *Rules) EvaluateWith(stmt inspect.Statement, ec *EvalContext) Verdict {
 			deferred = recordMatch(deferred, rule, rule.findingValues(stmt))
 			continue
 		}
-		return Deny(rule.Name, rule.messageOr(stmt))
+		return DenyRule(rule, rule.messageOr(stmt))
 	}
 	return Allow()
 }

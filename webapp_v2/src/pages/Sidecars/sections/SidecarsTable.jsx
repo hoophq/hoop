@@ -4,10 +4,10 @@ import ActionMenu from '@/components/ActionMenu'
 import Badge from '@/components/Badge'
 import Table from '@/components/Table'
 import { useConnectionIconGetter } from '@/utils/connectionIcons'
+import { formatRelativeTime } from '@/utils/datetime'
 import { configFeatures, loadsFromDisk, protocolInfo } from '../config'
 import FeaturePills from '../components/FeaturePills'
 import { SidecarStatusBadge } from '../components/SidecarDetails'
-import { formatRelativeTime } from '../status'
 
 // A fleet row is one line per sidecar, so the lane list cannot grow with the
 // sidecar: a relay in front of fifty databases would push every other row off
@@ -127,7 +127,7 @@ export default function SidecarsTable({ sidecars, onDelete }) {
                 /* Icons, like the listener table: three labelled chips push a
                    fleet row to three lines the moment the listener names beside
                    them get long. */
-                <FeaturePills compact features={configFeatures(sidecar.configuration)} />
+                <FeaturePills compact features={configFeatures(sidecar.configuration, sidecar.bound_rules)} />
               )}
             </Table.Td>
             <Table.Td>

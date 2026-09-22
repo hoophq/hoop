@@ -2,9 +2,12 @@ package daemon
 
 import (
 	"bytes"
+	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
+	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -163,6 +166,18 @@ type Config struct {
 	// config key: the file names a URL and does not carry a token or a
 	// verdict about reachability.
 	cp *controlPlane
+
+	// entrypoint, deprecatedAlias and configFormat are facts the entry
+	// point learned about its own invocation, carried here so Run can
+	// report them. Setup fills them from its Options; none is a config
+	// key, because a file cannot know how it was loaded.
+	entrypoint      string
+	deprecatedAlias bool
+	configFormat    string
+	// configPath is the file SetupWith loaded, when there was one. Part of
+	// a standalone install's identity for analytics: two processes on one
+	// host have two files, and one process editing its file keeps it.
+	configPath string
 }
 
 // Licensing reports the license this config runs under. The zero value is a
@@ -197,7 +212,8 @@ type ListenerConfig struct {
 	// which is a fallback rather than a name anyone should rely on.
 	Name string `json:"name"`
 
-	// Protocol selects the codec: postgres, mysql, mssql or http.
+	// Protocol selects the codec, for example postgres, mysql, clickhouse,
+	// mssql or http.
 	Protocol string `json:"protocol"`
 
 	// Listen is the bind address, or a filesystem path when Network is
@@ -212,18 +228,25 @@ type ListenerConfig struct {
 	// Upstream is the real backend.
 	Upstream string `json:"upstream"`
 
-	// UpstreamTLS enables TLS to the backend.
+	// UpstreamTLS enables TLS to the backend. MySQL negotiates this after
+	// its plaintext server greeting; other supported protocols negotiate
+	// before their ordinary message flow.
 	UpstreamTLS *TLSConfig `json:"upstream_tls"`
+	// MySQLAuthKeyFile is an RSA private key whose public half MySQL clients
+	// can pin. It lets the relay decrypt direct RSA password responses before
+	// forwarding the NUL-terminated password inside UpstreamTLS.
+	MySQLAuthKeyFile string `json:"mysql_auth_key_file,omitempty"`
 
 	// DownstreamTLS lets the relay terminate the CLIENT's TLS on this lane.
 	// Requires cert_file and key_file; the other TLSConfig fields describe an
 	// outbound connection and are ignored here.
 	//
-	// Only `postgres` supports it. pgwire negotiates TLS in-band with an
-	// 8-byte SSLRequest, so a plain TLS listener in front cannot terminate
-	// it. Envoy's own postgres filter can, but it is contrib-only, marked
-	// work-in-progress, and gives up permanently the moment a client asks
-	// for GSS encryption, which is what psql does by default whenever a
+	// Postgres negotiates TLS in-band with an 8-byte SSLRequest, so a plain
+	// TLS listener in front cannot terminate it. ClickHouse starts TLS on the
+	// first byte instead; gRPC and Spanner use their own direct TLS servers.
+	// Envoy's postgres filter can handle pgwire, but it is contrib-only,
+	// marked work-in-progress, and gives up permanently the moment a client
+	// asks for GSS encryption, which is what psql does by default whenever a
 	// Kerberos ticket is present.
 	//
 	// MySQL negotiates in-band too and is still refused, because the relay
@@ -305,9 +328,18 @@ type ListenerConfig struct {
 	// an http lane.
 	HTTP *HTTPCodecConfig `json:"http,omitempty"`
 
+	// ClickHouse configures native-protocol decompression limits. Only valid
+	// on a clickhouse lane; absent keeps bounded defaults.
+	ClickHouse *ClickHouseCodecConfig `json:"clickhouse,omitempty"`
+
 	// GRPC configures what this lane's gRPC transport decodes and exposes.
 	// Only valid on a grpc lane. See GRPCCodecConfig.
 	GRPC *GRPCCodecConfig `json:"grpc,omitempty"`
+
+	// Spanner tells a spanner lane which SQL dialect each database speaks,
+	// GoogleSQL or PostgreSQL. Only valid on a spanner lane; absent means
+	// GoogleSQL everywhere. See SpannerConfig.
+	Spanner *SpannerConfig `json:"spanner,omitempty"`
 
 	// SSH configures this lane's SSH endpoint: the keys it trusts, what it
 	// admits, the account it runs as. Required on an ssh lane and a config
@@ -342,6 +374,45 @@ type TLSConfig struct {
 	// purpose and startup logs a warning when it is on: a proxy built to
 	// inspect sensitive traffic should not silently accept any certificate.
 	InsecureSkipVerify bool `json:"insecure_skip_verify"`
+}
+
+func (l ListenerConfig) buildMySQLAuthPrivateKey() (*rsa.PrivateKey, error) {
+	if l.MySQLAuthKeyFile == "" {
+		return nil, nil
+	}
+	data, err := os.ReadFile(l.MySQLAuthKeyFile)
+	if err != nil {
+		return nil, fmt.Errorf("mysql_auth_key_file: %w", err)
+	}
+	block, _ := pem.Decode(data)
+	if block == nil {
+		return nil, errors.New("mysql_auth_key_file contains no PEM private key")
+	}
+
+	var key *rsa.PrivateKey
+	switch block.Type {
+	case "RSA PRIVATE KEY":
+		key, err = x509.ParsePKCS1PrivateKey(block.Bytes)
+	case "PRIVATE KEY":
+		var parsed any
+		parsed, err = x509.ParsePKCS8PrivateKey(block.Bytes)
+		if err == nil {
+			var ok bool
+			key, ok = parsed.(*rsa.PrivateKey)
+			if !ok {
+				return nil, fmt.Errorf("mysql_auth_key_file contains a %T key, want RSA", parsed)
+			}
+		}
+	default:
+		return nil, fmt.Errorf("mysql_auth_key_file contains unsupported PEM block %q", block.Type)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("mysql_auth_key_file: %w", err)
+	}
+	if err := key.Validate(); err != nil {
+		return nil, fmt.Errorf("mysql_auth_key_file: %w", err)
+	}
+	return key, nil
 }
 
 // Enforcement modes for GuardrailsConfig.Mode.
@@ -990,23 +1061,30 @@ func (c *Config) Validate() error {
 		}
 
 		// downstream_tls is refused at startup rather than accepted and
-		// ignored, except on the two lanes that terminate it: postgres,
-		// because pgwire negotiates TLS in-band so nothing in front can, and
-		// grpc, because a standalone lane is the HTTP/2 endpoint and must
-		// present the certificate itself (ADR-0013). On any other protocol
-		// the relay never looks, so the lane would come up "green"
-		// presenting a certificate nothing ever offers.
+		// ignored, except on lanes that actually terminate it. Postgres
+		// negotiates in-band; grpc/spanner and ClickHouse use TLS-on-connect.
 		if l.DownstreamTLS != nil && !isSSH(l) {
-			if l.Protocol != string(inspect.Postgres) && !isGRPCTransport(l) {
+			p := inspect.Protocol(l.Protocol)
+			if p != inspect.Postgres && p != inspect.ClickHouse && !isGRPCTransport(l) {
 				problems = append(problems, fmt.Sprintf(
-					"%s: downstream_tls is only supported on postgres, grpc and spanner, not %q "+
-						"(pgwire negotiates in-band, and a grpc-transport lane is its own "+
-						"HTTP/2 endpoint; no other protocol terminates here)", name, l.Protocol))
+					"%s: downstream_tls is only supported on postgres, clickhouse, grpc and spanner, not %q",
+					name, l.Protocol))
 			}
 			// Load the keypair now. Discovering a bad path on the first
 			// client connection means one failed login per restart and
 			// nothing in the startup log.
 			if _, err := l.DownstreamTLS.BuildDownstreamTLS(); err != nil {
+				problems = append(problems, fmt.Sprintf("%s: %v", name, err))
+			}
+		}
+		if l.MySQLAuthKeyFile != "" {
+			if l.Protocol != string(inspect.MySQL) || l.UpstreamTLS == nil {
+				problems = append(problems, fmt.Sprintf(
+					"%s: mysql_auth_key_file requires a mysql listener with upstream_tls",
+					name,
+				))
+			}
+			if _, err := l.buildMySQLAuthPrivateKey(); err != nil {
 				problems = append(problems, fmt.Sprintf("%s: %v", name, err))
 			}
 		}
@@ -1037,7 +1115,8 @@ func (c *Config) validateLane(lc ListenerConfig, name string) []string {
 	}
 
 	localRules, aiRules := splitAnalyzerRules(gc.Rules)
-	problems = append(problems, validateLaneAnalysis(aiRules, lc.Analyzer, c.Analyzer, opa, name)...)
+	problems = append(problems, validateLaneAnalysis(aiRules, lc.Analyzer, c.Analyzer, opa,
+		name, lc.Protocol)...)
 
 	if opa != nil && opa.URL == "" && !opa.off() {
 		problems = append(problems, name+
@@ -1056,6 +1135,15 @@ func (c *Config) validateLane(lc ListenerConfig, name string) []string {
 		problems = append(problems, lc.HTTP.validate(name)...)
 	}
 
+	if lc.ClickHouse != nil {
+		if inspect.Protocol(lc.Protocol) != inspect.ClickHouse {
+			problems = append(problems, fmt.Sprintf(
+				"%s: a \"clickhouse\" block is only valid on a clickhouse listener, not %s",
+				name, lc.Protocol))
+		}
+		problems = append(problems, lc.ClickHouse.validate(name)...)
+	}
+
 	// The same rule for a grpc block: only a grpc lane reads it, and its
 	// own knobs are checked whatever the protocol so one restart reports
 	// both mistakes.
@@ -1066,6 +1154,17 @@ func (c *Config) validateLane(lc ListenerConfig, name string) []string {
 				name, lc.Protocol))
 		}
 		problems = append(problems, lc.GRPC.validate(name)...)
+	}
+
+	// And for a spanner block: only a spanner lane reads a dialect map,
+	// and on any other protocol it would load and decide nothing.
+	if lc.Spanner != nil {
+		if !isSpanner(lc) {
+			problems = append(problems, fmt.Sprintf(
+				"%s: a \"spanner\" block is only valid on a spanner listener, not %s",
+				name, lc.Protocol))
+		}
+		problems = append(problems, lc.Spanner.validate(name)...)
 	}
 
 	// The same rule for an ssh block, and one more: the block is REQUIRED
@@ -1358,7 +1457,8 @@ func buildPolicy(lane string, gc GuardrailsConfig, la *LaneAnalyzerConfig,
 	// on a plain lane, gate-decided on a gated one.
 	gated := opa.enabled() && opa.Gate
 	if la != nil {
-		ev, err := buildLaneAnalyzer(lane, la, ac, opa.enabled(), gated)
+		ev, err := buildLaneAnalyzer(lane, la, ac, opa.enabled(), gated,
+			ac.reviewerFor(lane, la, gc.observing()))
 		if err != nil {
 			return nil, err
 		}
@@ -1447,6 +1547,13 @@ func analyzerHolds(la *LaneAnalyzerConfig) bool {
 type analyzerDeps struct {
 	cfg      *AnalyzerConfig
 	provider analyzer.Provider
+
+	// cp is the control plane this process reached, nil when it has none.
+	// A lane that holds a statement for approval files the review through
+	// it; every other lane never reads it. Held here rather than passed
+	// down because the reloader rebuilds lanes from these deps, so an
+	// edited approval_rule reaches the lane on the next heartbeat.
+	cp *controlPlane
 
 	// det builds each evaluator's redactor from its EFFECTIVE send mode:
 	// a lane overriding `send` gets its own rewrite function while every

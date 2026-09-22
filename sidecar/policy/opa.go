@@ -99,11 +99,11 @@ type opaRequest struct {
 // Field names are snake_case and stable: they form a public contract with
 // whoever writes the Rego, and renaming one silently breaks their policy.
 type opaInput struct {
-	Protocol  string                  `json:"protocol"`
-	Direction string                  `json:"direction"`
-	Statement string                  `json:"statement"`
-	Operation string                  `json:"operation"`
-	Tables    []string                `json:"tables,omitempty"`
+	Protocol  string   `json:"protocol"`
+	Direction string   `json:"direction"`
+	Statement string   `json:"statement"`
+	Operation string   `json:"operation"`
+	Tables    []string `json:"tables,omitempty"`
 
 	// Effects is every operation the statement performs, and Relations
 	// says which objects it writes versus reads.
@@ -122,10 +122,10 @@ type opaInput struct {
 	// still fires, and `tables` remains the flattened names.
 	Effects   []inspect.Operation `json:"effects,omitempty"`
 	Relations []inspect.Relation  `json:"relations,omitempty"`
-	Database  string                  `json:"database,omitempty"`
+	Database  string              `json:"database,omitempty"`
 	HTTP      *inspect.HTTPDetail `json:"http,omitempty"`
-	Metadata  map[string]string       `json:"metadata,omitempty"`
-	Context   map[string]string       `json:"context,omitempty"`
+	Metadata  map[string]string   `json:"metadata,omitempty"`
+	Context   map[string]string   `json:"context,omitempty"`
 
 	// Phase is "gate", "decide", or absent on a single-call lane.
 	Phase string `json:"phase,omitempty"`
@@ -290,7 +290,7 @@ func (c *OPAClient) evaluate(ctx context.Context, stmt inspect.Statement, ec *Ev
 		if c.FailOpen || c.Phase == PhaseGate {
 			return Allow()
 		}
-		return Deny("opa", "no policy decision matched this statement")
+		return c.deny("no policy decision matched this statement", "")
 	}
 
 	// Bare boolean: `allow := true` queried directly.
@@ -299,7 +299,7 @@ func (c *OPAClient) evaluate(ctx context.Context, stmt inspect.Statement, ec *Ev
 		if boolResult {
 			return Allow()
 		}
-		return Deny("opa", "denied by policy")
+		return c.deny("denied by policy", "")
 	}
 
 	var obj opaResultObject
@@ -326,16 +326,22 @@ func (c *OPAClient) evaluate(ctx context.Context, stmt inspect.Statement, ec *Ev
 	// are present, because an explicit denial is the safer reading.
 	switch {
 	case obj.Denied != nil && *obj.Denied:
-		return Verdict{Denied: true, Message: messageOr(obj.Message, "denied by policy"), Rule: ruleOr(obj.Rule)}
+		return c.deny(messageOr(obj.Message, "denied by policy"), obj.Rule)
 	case obj.Denied != nil && !*obj.Denied:
 		return Allow()
 	case obj.Allow != nil && *obj.Allow:
 		return Allow()
 	case obj.Allow != nil && !*obj.Allow:
-		return Verdict{Denied: true, Message: messageOr(obj.Message, "denied by policy"), Rule: ruleOr(obj.Rule)}
+		return c.deny(messageOr(obj.Message, "denied by policy"), obj.Rule)
 	}
 
 	return c.failure(fmt.Errorf("policy/opa: result carried neither allow nor denied: %s", out.Result))
+}
+
+// deny builds an OPA denial. rule is the policy's own name for the
+// decision, when it gave one.
+func (c *OPAClient) deny(msg, rule string) Verdict {
+	return Verdict{Denied: true, Message: msg, Rule: ruleOr(rule), Source: SourceOPA}
 }
 
 // failure applies the fail-open/fail-closed choice to an evaluation error.
@@ -347,6 +353,7 @@ func (c *OPAClient) failure(err error) Verdict {
 		Denied:  true,
 		Message: "policy engine unavailable; denying",
 		Rule:    "opa",
+		Source:  SourceOPA,
 		Err:     err,
 	}
 }

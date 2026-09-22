@@ -1,0 +1,14 @@
+# Merged into /etc/clickhouse-server/users.xml by the server at start.
+#
+# `password` (plaintext) rather than password_sha256_hex, on purpose: the
+# MySQL emulation authenticates with mysql_native_password, whose scramble
+# is SHA1-based, so the server needs either the plaintext or a double-SHA1
+# (password_double_sha1_hex). A SHA-256 hash would work on :8123 and :9005
+# and refuse every login on :9004. Same credential as the other overlays.
+users:
+  appuser:
+    password: apppass
+    networks:
+      ip: "::/0"
+    profile: default
+    quota: default

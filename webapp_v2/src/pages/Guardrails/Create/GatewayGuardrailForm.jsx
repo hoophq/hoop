@@ -296,7 +296,7 @@ function GuardrailFormFields({ guardrail, id, isEdit }) {
   )
 }
 
-export default function GuardrailForm() {
+export default function GatewayGuardrailForm() {
   const { id } = useParams()
   const isEdit = Boolean(id)
 

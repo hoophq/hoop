@@ -36,6 +36,11 @@ import (
 // The dialect is not cosmetic: '[' opens a quoted identifier in T-SQL and is
 // an array subscript in PostgreSQL, so one set of lexical rules cannot serve
 // both without mangling one of them.
+//
+// Spanner is the protocol whose dialect is NOT a function of the protocol:
+// a database is created as GoogleSQL or PostgreSQL and the data plane does
+// not say which. This function reads it as GoogleSQL, the API's default; a
+// caller that knows the database's dialect uses AnalyzeSQLIn.
 func AnalyzeSQL(sql string, proto Protocol) SQLAnalysis {
 	d := lexer.Postgres
 	switch proto {
@@ -43,8 +48,11 @@ func AnalyzeSQL(sql string, proto Protocol) SQLAnalysis {
 		d = lexer.MSSQL
 	case MySQL:
 		d = lexer.MySQL
+	case ClickHouse:
+		d = lexer.ClickHouse
 	case Spanner:
-		// Spanner payloads carry GoogleSQL (ZetaSQL); see lexer.GoogleSQL.
+		// Spanner payloads carry GoogleSQL (ZetaSQL) unless the database
+		// was created with the PostgreSQL interface; see lexer.GoogleSQL.
 		d = lexer.GoogleSQL
 	case GRPC:
 		// gRPC statements carry protobuf renderings, not SQL. Falling
@@ -76,6 +84,14 @@ func AnalyzeSQL(sql string, proto Protocol) SQLAnalysis {
 			Reason:    "ssh statements carry no SQL to analyze",
 		}
 	}
+	return AnalyzeSQLIn(sql, d)
+}
+
+// AnalyzeSQLIn classifies a statement under an explicit lexical dialect, for
+// the caller that knows more than the protocol does: a Spanner lane that
+// was told which of its databases speak PostgreSQL. The protocol-keyed
+// refusals in AnalyzeSQL (grpc, ssh) do not apply; the caller has SQL.
+func AnalyzeSQLIn(sql string, d lexer.Dialect) SQLAnalysis {
 	a := lexer.Analyze(sql, d)
 
 	// COPY is the one verb whose consequence depends on its direction, and

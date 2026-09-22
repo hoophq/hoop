@@ -18,6 +18,7 @@ package proxy
 
 import (
 	"context"
+	"crypto/rsa"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -73,6 +74,10 @@ type Config struct {
 
 	// UpstreamTLS, when non-nil, wraps the upstream connection.
 	UpstreamTLS *tls.Config
+	// MySQLAuthPrivateKey is the stable relay key that MySQL clients pin when
+	// they send an RSA-encrypted password without first requesting a key.
+	// It is used only on a MySQL lane with UpstreamTLS.
+	MySQLAuthPrivateKey *rsa.PrivateKey
 
 	// DownstreamTLS, when non-nil, lets the relay terminate the CLIENT's TLS.
 	//
@@ -119,6 +124,10 @@ type Config struct {
 	// factory cannot express.
 	CodecFactory func() inspect.Codec
 
+	// Metrics is handed to every connection's Gate. Optional. See
+	// gate.Config.Metrics for the contract it must meet.
+	Metrics gate.Metrics
+
 	// DialTimeout bounds the upstream connect. Default 10s.
 	DialTimeout time.Duration
 
@@ -152,7 +161,9 @@ type Server struct {
 	// config reload can replace both without a restart. Loaded once per
 	// accepted connection: the Gate keeps what it captured, which is what
 	// makes a swap safe under live traffic.
-	rules atomic.Pointer[laneRules]
+	rules               atomic.Pointer[laneRules]
+	mysqlAuth           *mysqlAuthBridge
+	mysqlHandshakeSlots chan struct{}
 
 	mu      sync.Mutex
 	conns   map[net.Conn]struct{}
@@ -189,13 +200,52 @@ func NewServer(cfg Config) (*Server, error) {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
+	if cfg.MySQLAuthPrivateKey != nil &&
+		(cfg.Protocol != inspect.MySQL || cfg.UpstreamTLS == nil) {
+		return nil, errors.New(
+			"sidecar/proxy: MySQL authentication key requires a MySQL lane with upstream TLS",
+		)
+	}
+	var (
+		mysqlAuth           *mysqlAuthBridge
+		mysqlHandshakeSlots chan struct{}
+	)
+	if cfg.Protocol == inspect.MySQL && cfg.UpstreamTLS != nil {
+		var err error
+		mysqlAuth, err = newMySQLAuthBridge(cfg.MySQLAuthPrivateKey)
+		if err != nil {
+			return nil, fmt.Errorf("sidecar/proxy: %w", err)
+		}
+		mysqlHandshakeSlots = make(chan struct{}, mysqlMaxConcurrentHandshakes)
+	}
+	cfg.MySQLAuthPrivateKey = nil
 	s := &Server{
-		cfg:   cfg,
-		log:   cfg.Logger,
-		conns: map[net.Conn]struct{}{},
+		cfg:                 cfg,
+		log:                 cfg.Logger,
+		conns:               map[net.Conn]struct{}{},
+		mysqlAuth:           mysqlAuth,
+		mysqlHandshakeSlots: mysqlHandshakeSlots,
 	}
 	s.rules.Store(&laneRules{policy: cfg.Policy, masker: cfg.Masker})
 	return s, nil
+}
+
+func (s *Server) reserveMySQLHandshake() bool {
+	if s.mysqlHandshakeSlots == nil {
+		return true
+	}
+	select {
+	case s.mysqlHandshakeSlots <- struct{}{}:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Server) releaseMySQLHandshake() {
+	if s.mysqlHandshakeSlots != nil {
+		<-s.mysqlHandshakeSlots
+	}
 }
 
 // SwapRules replaces the policy evaluator and masker for every connection
@@ -297,6 +347,13 @@ func (s *Server) Serve(ctx context.Context) error {
 			continue
 		}
 
+		if !s.reserveMySQLHandshake() {
+			s.log.Warn("MySQL TLS handshake refused, at capacity",
+				"max_handshakes", mysqlMaxConcurrentHandshakes)
+			_ = conn.Close()
+			continue
+		}
+
 		s.track(conn)
 		// The rule generation is pinned HERE, at the accept boundary, not
 		// in the asynchronously scheduled handler: a swap landing between
@@ -368,6 +425,15 @@ func (s *Server) untrack(c net.Conn) {
 // handle relays one connection under rules, the immutable generation Serve
 // pinned at the accept boundary.
 func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) {
+	releaseMySQLHandshake := s.mysqlHandshakeSlots != nil
+	if releaseMySQLHandshake {
+		defer func() {
+			if releaseMySQLHandshake {
+				s.releaseMySQLHandshake()
+			}
+		}()
+	}
+
 	identity := session.Identity{PeerAddr: client.RemoteAddr().String()}
 	if s.cfg.IdentityFn != nil {
 		identity = s.cfg.IdentityFn(client)
@@ -389,6 +455,7 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 		Masker:           rules.masker,
 		FailOnAuditError: s.cfg.FailOnAuditError,
 		CodecFactory:     s.cfg.CodecFactory,
+		Metrics:          s.cfg.Metrics,
 	})
 	if err != nil {
 		log.Error("gate setup failed", "error", err)
@@ -411,11 +478,49 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 	if err != nil {
 		log.Error("upstream dial failed", "upstream", s.cfg.Upstream, "error", err)
 		if s.cfg.Audit != nil {
-			_ = s.cfg.Audit.Write(ctx, audit.ErrorEvent(sess, err))
+			if aerr := s.cfg.Audit.Write(ctx, audit.ErrorEvent(sess, err)); aerr != nil && s.cfg.Metrics != nil {
+				// The one audit write that happens outside a Gate, so it
+				// reports its own failure into the same counter.
+				s.cfg.Metrics.AuditError()
+			}
 		}
 		return
 	}
 	defer upstream.Close()
+	if s.cfg.Protocol == inspect.MySQL && s.cfg.UpstreamTLS != nil {
+		inspectPacket := func(dir inspect.Direction, data []byte) ([]byte, error) {
+			var d gate.Decision
+			if dir == inspect.FromClient {
+				d = g.Request(ctx, data)
+			} else {
+				d = g.Response(ctx, data)
+			}
+			if d.Err != nil {
+				log.Warn("inspection reported an error during MySQL authentication",
+					"direction", string(dir), "error", d.Err)
+			}
+			if !d.Allowed {
+				s.denied.Add(1)
+				return nil, fmt.Errorf("MySQL authentication denied: %s", d.Message)
+			}
+			return d.Payload, nil
+		}
+		client, upstream, err = negotiateMySQLUpstreamTLS(
+			client,
+			upstream,
+			s.cfg.Upstream,
+			s.cfg.UpstreamTLS,
+			s.cfg.DialTimeout,
+			s.mysqlAuth,
+			inspectPacket,
+		)
+		if err != nil {
+			log.Debug("MySQL upstream TLS negotiation failed", "error", err)
+			return
+		}
+		s.releaseMySQLHandshake()
+		releaseMySQLHandshake = false
+	}
 
 	// Answer the pgwire pre-startup exchange before the gate sees a byte. It
 	// decides whether this session is inspectable at all: a client asking for
@@ -478,7 +583,7 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 func (s *Server) dialUpstream(ctx context.Context) (net.Conn, error) {
 	d := &net.Dialer{Timeout: s.cfg.DialTimeout}
 	conn, err := d.DialContext(ctx, "tcp", s.cfg.Upstream)
-	if err != nil || s.cfg.UpstreamTLS == nil {
+	if err != nil || s.cfg.UpstreamTLS == nil || s.cfg.Protocol == inspect.MySQL {
 		return conn, err
 	}
 
@@ -518,12 +623,17 @@ func (s *Server) pump(
 	dir inspect.Direction,
 	log *slog.Logger,
 ) {
-	// A re-framing codec holds rows back until their result set ends. Every
-	// exit from this loop must release them, or the client silently loses the
-	// tail of its output, which looks like a truncated result rather than a
-	// masking bug. Only the server direction can hold anything.
+	// A re-framing codec holds rows back until its result set ends. Release
+	// them when the server stream ends normally. A response denial writes a
+	// protocol error instead, so held rows must be discarded: appending them
+	// after the error leaks denied data and corrupts the client stream.
+	discardResponse := false
 	if dir == inspect.FromServer {
 		defer func() {
+			if discardResponse {
+				g.DiscardResponse()
+				return
+			}
 			if tail := g.FlushResponse(); len(tail) > 0 {
 				_, _ = dst.Write(tail)
 			}
@@ -590,6 +700,9 @@ func (s *Server) pump(
 			}
 
 			if !d.Allowed {
+				if dir == inspect.FromServer {
+					discardResponse = true
+				}
 				s.denied.Add(1)
 				log.Info("statement denied",
 					"direction", string(dir), "rule", d.Rule, "message", d.Message)

@@ -63,20 +63,52 @@ export function protocolInfo(protocol) {
 // spelling; keeping that logic in one place is what stops the chips from
 // disagreeing with the lane detail that renders beside them.
 
-export function listenerFeatures(listener, config) {
-  const on = []
-  if (laneAnalyzer(listener, config).on) on.push('ai-analyzer')
-  if (maskRules(listener, config).length > 0) on.push('data-masking')
-  if (guardrailMatchers(listener, config).length > 0) on.push('guardrails')
-  return on
+// The feature a bound rule turns on. The API's kinds, not ours.
+const BOUND_KIND_FEATURE = {
+  guardrail: 'guardrails',
+  datamasking: 'data-masking',
+  analyzer: 'ai-analyzer',
+}
+
+// The rules the control plane distributes to one lane.
+//
+// They are not in the stored configuration and never will be: composition
+// folds them into the SERVED document on each handshake and stores nothing,
+// which is what makes editing a rule bound to three hundred sidecars one row
+// update. So the chips read the stored document AND this list, or a listener
+// enforcing a distributed rule would render as enforcing nothing.
+export function boundFeatures(boundRules, listenerName) {
+  const on = new Set()
+  for (const b of boundRules ?? []) {
+    if (listenerName != null && b.listener_name !== listenerName) continue
+    const feature = BOUND_KIND_FEATURE[b.kind]
+    if (feature) on.add(feature)
+  }
+  return [...on]
+}
+
+// The rule NAMES a lane gets from the control plane, for the listener detail.
+export function boundRulesFor(boundRules, listenerName) {
+  return (boundRules ?? []).filter((b) => b.listener_name === listenerName)
+}
+
+export function listenerFeatures(listener, config, boundRules) {
+  const on = new Set(boundFeatures(boundRules, listener?.name))
+  if (laneAnalyzer(listener, config).on) on.add('ai-analyzer')
+  if (maskRules(listener, config).length > 0) on.add('data-masking')
+  if (guardrailMatchers(listener, config).length > 0) on.add('guardrails')
+  return FEATURE_ORDER.filter((f) => on.has(f))
 }
 
 // Every feature at least one lane runs with.
-export function configFeatures(config) {
+export function configFeatures(config, boundRules) {
   if (!config) return []
   const listeners = config.listeners ?? []
-  const all = new Set(listeners.flatMap((l) => listenerFeatures(l, config)))
+  const all = new Set(listeners.flatMap((l) => listenerFeatures(l, config, boundRules)))
   if (listeners.length === 0) listenerFeatures(null, config).forEach((f) => all.add(f))
+  // A rule bound to a listener the document no longer has still reaches the
+  // sidecar's answer as a refusal, so the chip is not dropped quietly here.
+  boundFeatures(boundRules).forEach((f) => all.add(f))
   return FEATURE_ORDER.filter((f) => all.has(f))
 }
 

@@ -1,6 +1,6 @@
 import { Box, Divider, Group, Stack, Text } from '@mantine/core'
 import Badge from '@/components/Badge'
-import { MODE_OBSERVE, SOURCE_LISTENER, resolveListener } from '../resolve'
+import { MODE_OBSERVE, SOURCE_DISTRIBUTED, SOURCE_LISTENER, resolveListener } from '../resolve'
 import { supportsGRPCBlock, supportsHTTPBlock } from '../listeners'
 
 // The rule types of sidecar/policy a guardrail list can show. NOT the two in
@@ -133,13 +133,28 @@ function Section({ title, right, children }) {
   )
 }
 
+const SOURCE_LABELS = {
+  [SOURCE_LISTENER]: { label: 'Listener', color: 'indigo' },
+  [SOURCE_DISTRIBUTED]: { label: 'Control plane', color: 'sky' },
+}
+
 function SourceBadge({ source }) {
-  const own = source === SOURCE_LISTENER
+  const { label, color } = SOURCE_LABELS[source] ?? { label: 'Inherited', color: 'gray' }
   return (
-    <Badge tag variant="light" color={own ? 'indigo' : 'gray'}>
-      {own ? 'Listener' : 'Inherited'}
+    <Badge tag variant="light" color={color}>
+      {label}
     </Badge>
   )
+}
+
+// The rules the control plane sends this lane, as rows the panel can render
+// beside the document's own. Only the name: the binding carries no rule body,
+// because a list page has no use for one and shipping every spec to render a
+// row would put the fleet's whole policy on the wire.
+function distributed(boundRules, listenerName, kind) {
+  return (boundRules ?? [])
+    .filter((b) => b.listener_name === listenerName && b.kind === kind)
+    .map((b) => ({ name: b.rule_name, source: SOURCE_DISTRIBUTED }))
 }
 
 function Rule({ name, detail, source, extra }) {
@@ -167,9 +182,16 @@ function Rule({ name, detail, source, extra }) {
  * and OPA replace, and each has a spelling that means "none" rather than
  * "inherit" (resolve.js holds the rules).
  */
-export default function ListenerDetails({ listener, config }) {
+export default function ListenerDetails({ listener, config, boundRules }) {
   const { mode, guardrails, mask, opa, analyzer } = resolveListener(listener, config)
   const observing = mode === MODE_OBSERVE
+  // Rendered beside the document's own rules rather than merged into them: an
+  // empty section that says "everything passes" while the control plane is
+  // distributing a rule to this lane is a false statement about enforcement,
+  // which is the one thing this panel exists to get right.
+  const sentGuardrails = distributed(boundRules, listener?.name, 'guardrail')
+  const sentMask = distributed(boundRules, listener?.name, 'datamasking')
+  const sentAnalyzer = distributed(boundRules, listener?.name, 'analyzer')
 
   return (
     <Box bg="gray.0" p="md">
@@ -192,12 +214,15 @@ export default function ListenerDetails({ listener, config }) {
             </Badge>
           }
         >
-          {guardrails.length === 0 ? (
+          {guardrails.length === 0 && sentGuardrails.length === 0 ? (
             <Text size="xs" c="dimmed">
               {observing ? 'No rules. Nothing is evaluated.' : 'No rules. Everything passes.'}
             </Text>
           ) : (
             <Stack gap={6}>
+              {sentGuardrails.map((r) => (
+                <Rule key={`cp-${r.name}`} name={r.name} source={r.source} />
+              ))}
               {guardrails.map((entry, i) => (
                 <Rule
                   key={`${entry.rule.name}-${i}`}
@@ -223,12 +248,15 @@ export default function ListenerDetails({ listener, config }) {
         <Divider color="gray.2" />
 
         <Section title="Masking">
-          {mask.length === 0 ? (
+          {mask.length === 0 && sentMask.length === 0 ? (
             <Text size="xs" c="dimmed">
               No rules. Responses are returned unchanged.
             </Text>
           ) : (
             <Stack gap={6}>
+              {sentMask.map((r) => (
+                <Rule key={`cp-${r.name}`} name={r.name} source={r.source} />
+              ))}
               {mask.map((entry, i) => {
                 const { rule } = entry
                 const target = join(rule.columns) || join(rule.entities) || rule.entity || null
@@ -251,8 +279,11 @@ export default function ListenerDetails({ listener, config }) {
         <Divider color="gray.2" />
 
         <Section title="AI Analyzer">
-          {analyzer.on ? (
+          {analyzer.on || sentAnalyzer.length > 0 ? (
             <Stack gap={6}>
+              {sentAnalyzer.map((r) => (
+                <Rule key={`cp-${r.name}`} name={r.name} source={r.source} />
+              ))}
               {/* The block is read off the listener, so it is always the
                   lane's own and a Listener badge beside it would say nothing.
                   Only the deprecated rules below can be inherited. */}

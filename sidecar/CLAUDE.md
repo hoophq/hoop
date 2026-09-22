@@ -63,6 +63,7 @@ it is removing a directory.
 | `pii/alcatraz/` | `github.com/hoophq/alcatraz` |
 | `store/sqlite/` | `modernc.org/sqlite`, pure Go because the sidecar is a static binary |
 | `analyzer/vertex/` | `golang.org/x/oauth2`, the only analyzer provider needing one |
+| `descriptors/gcs/` | `golang.org/x/oauth2`, to read a grpc lane's descriptor set from a `gs://` URL |
 | `lexer/conformance/` | PostgreSQL's real parser, test-only |
 
 Adding a dependency to the root still needs a reason. Add a nested module, or
@@ -100,7 +101,7 @@ go test ./...
 go vet ./...
 
 # nested modules are NOT reached by the line above
-for m in cmd config/yaml pii/alcatraz store/sqlite analyzer/vertex lexer/conformance; do
+for m in cmd config/yaml pii/alcatraz store/sqlite analyzer/vertex descriptors/gcs lexer/conformance; do
   (cd "$m" && CGO_ENABLED=0 go test ./...)
 done
 
@@ -240,6 +241,7 @@ The module root holds no Go files: `go.mod`, this file and `README.md` only.
 | `audit/` | the write side of the trail |
 | `store/` | the read side |
 | `pii/` | detectors and maskers |
+| `descriptors/` | resolves `grpc.descriptors` entries that are URLs; fetchers register by scheme, `gcs/` is the one shipped |
 
 ## Conventions
 

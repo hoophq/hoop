@@ -1,7 +1,12 @@
 package daemon
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -64,6 +69,44 @@ func TestLoadValidConfig(t *testing.T) {
 	}
 	if len(cfg.Deprecations) != 0 {
 		t.Errorf("a config in the current spelling warned: %v", cfg.Deprecations)
+	}
+}
+func TestLoadMySQLAuthenticationKey(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyPath := filepath.Join(t.TempDir(), "mysql-auth.pem")
+	if err := os.WriteFile(keyPath, pem.EncodeToMemory(
+		&pem.Block{Type: "PRIVATE KEY", Bytes: der},
+	), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p := writeConfig(t, fmt.Sprintf(`{
+      "listeners": [{
+        "name":"appdb",
+        "protocol":"mysql",
+        "listen":":1",
+        "upstream":"h:3306",
+        "upstream_tls":{"insecure_skip_verify":true},
+        "mysql_auth_key_file":%q
+      }]
+    }`, keyPath))
+
+	cfg, err := LoadConfig(p)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	loaded, err := cfg.Listeners[0].buildMySQLAuthPrivateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.N.Cmp(key.N) != 0 {
+		t.Fatal("mysql_auth_key_file loaded a different RSA key")
 	}
 }
 

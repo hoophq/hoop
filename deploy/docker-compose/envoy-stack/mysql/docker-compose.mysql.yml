@@ -1,0 +1,119 @@
+# Overlay: a MySQL lane beside the postgres and HTTP ones.
+#
+#   docker compose -f docker-compose.yml -f mysql/docker-compose.mysql.yml up -d --wait
+#
+# Run it from the envoy-stack directory, after ./run.sh has minted the certs
+# and built the sidecar image at least once. ./mysql/demo-mysql.sh walks it.
+#
+#   mysqlclient ──plaintext──> envoy :3306 ──tcp──> hoop-inspect :13306 ──TLS──> mysqldb
+#    mysql CLI                 tcp_proxy            mysql codec                  mysql:8
+#
+# What it adds:
+#
+#   mysqldb       mysql:8 with the same customers fixture as appdb
+#   mysqlclient   the official mysql CLI, from the same image
+#   envoy :3306   tcp_proxy to the sidecar's mysql lane; :3307 on the host
+#
+# What does not change: the appdb and httpbin lanes, the policy budget (the
+# mysql lane inherits the process's one guardrail and one mask rule), the
+# audit trail, OPA, and both existing Envoy listeners.
+#
+# TLS follows the same inspection boundary as the postgres lane: plaintext on
+# the client-facing demo leg, verified TLS from hoop-inspect to the database.
+# MySQL requires its server-first SSLRequest exchange, which the relay performs
+# before handing the authenticated stream to the ordinary pumps.
+#
+# The standalone ../mysql-stack is this lane alone, without OPA and the other
+# two protocols.
+
+services:
+  mysqlcerts:
+    image: alpine:3.20
+    networks: [inspect]
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        apk add --no-cache openssl >/dev/null
+        if [ ! -f /certs/ca.crt ]; then
+          openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
+            -keyout /certs/ca.key -out /certs/ca.crt \
+            -subj "/CN=hoop-mysql-demo-ca" >/dev/null 2>&1
+          openssl req -new -newkey rsa:2048 -nodes \
+            -keyout /certs/server.key -out /certs/server.csr \
+            -subj "/CN=mysqldb" >/dev/null 2>&1
+          printf 'subjectAltName=DNS:mysqldb\nextendedKeyUsage=serverAuth\n' >/certs/server.ext
+          openssl x509 -req -days 365 -in /certs/server.csr \
+            -CA /certs/ca.crt -CAkey /certs/ca.key -CAcreateserial \
+            -extfile /certs/server.ext -out /certs/server.crt >/dev/null 2>&1
+        fi
+        chown 999:999 /certs/server.key
+        chmod 600 /certs/server.key
+        chmod 644 /certs/ca.crt /certs/server.crt
+    volumes:
+      - mysql-certs:/certs
+  # mysql:8 rather than MariaDB, deliberately. MariaDB authenticates with
+  # mysql_native_password; the relay bug the e2e suite was built to catch
+  # only appears under caching_sha2_password, MySQL 8's default.
+  mysqldb:
+    image: mysql:8
+    attach: false
+    networks: [inspect]
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: appdb
+      MYSQL_USER: appuser
+      MYSQL_PASSWORD: apppass
+    command:
+      - --require-secure-transport=ON
+      - --ssl-ca=/etc/mysql/certs/ca.crt
+      - --ssl-cert=/etc/mysql/certs/server.crt
+      - --ssl-key=/etc/mysql/certs/server.key
+    volumes:
+      - ./mysql/seed.sql:/docker-entrypoint-initdb.d/seed.sql:ro
+      - mysql-certs:/etc/mysql/certs:ro
+    depends_on:
+      mysqlcerts: { condition: service_completed_successfully }
+    healthcheck:
+      # -h127.0.0.1, not the socket: the entrypoint runs a throwaway server
+      # on the unix socket alone to load seed.sql, and pinging that one
+      # reports healthy a few seconds before it is shut down.
+      test: ["CMD-SHELL", "mysqladmin ping -h127.0.0.1 -uappuser -papppass --ssl-mode=REQUIRED --silent"]
+      interval: "3s"
+      timeout: "10s"
+      retries: 30
+      start_period: "20s"
+
+  # The official CLI, because its wire behaviour is what the lane polices:
+  # since 8.0.23 it negotiates CLIENT_QUERY_ATTRIBUTES and prefixes every
+  # COM_QUERY with an attribute block that go-sql-driver never sends. The
+  # base stack's Alpine client would install MariaDB's client instead.
+  mysqlclient:
+    image: mysql:8
+    networks: [inspect]
+    entrypoint: ["sleep", "infinity"]
+    healthcheck:
+      test: ["CMD-SHELL", "command -v mysql"]
+      interval: "3s"
+      timeout: "10s"
+      retries: 20
+      start_period: "5s"
+
+  hoop-inspect:
+    volumes:
+      - ./mysql/config-mysql.yaml:/etc/hoop-inspect/config.yaml:ro
+      - ./upstream/certs/server.crt:/etc/hoop-inspect/certs/appdb.crt:ro
+      - mysql-certs:/etc/hoop-inspect/mysql-certs:ro
+    depends_on:
+      mysqldb: { condition: service_healthy }
+
+  envoy:
+    volumes:
+      - ./mysql/envoy-mysql.yaml:/etc/envoy/envoy.yaml:ro
+      - ./envoy/certs:/etc/envoy/certs:ro
+    ports:
+      # 3307 on the host, because a developer laptop usually already has
+      # something on 3306.
+      - "3307:3306"   # TCP lane -> hoop-inspect (mysql codec)
+
+volumes:
+  mysql-certs:

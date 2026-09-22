@@ -93,6 +93,14 @@ load with an error naming both artifacts. `strict` requires descriptors;
 strictness about payloads nothing can decode would refuse every RPC, and
 `-validate` says so.
 
+The volume stands in for a bucket. In production a `descriptors` entry
+may be `gs://BUCKET/OBJECT[?generation=N]`: the sidecar fetches it at
+startup and on reload with Application Default Credentials
+(`roles/storage.objectViewer`), URLs and file paths merge together, and
+`-validate` performs the fetch so a wrong object name fails there. A
+bucket also carries a set a ConfigMap cannot (1 MiB cap). Details in
+`sidecar/README.md`, Protocols.
+
 ## What the demo shows
 
 | Beat | Path | What decides |

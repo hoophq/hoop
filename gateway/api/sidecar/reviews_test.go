@@ -59,6 +59,11 @@ func sidecarWithListener(listenerName, ruleName string) *models.Sidecar {
 	return sc
 }
 
+// testStatementHash is what the handler derives for the statement under test.
+// Built through hashStatement rather than written out, so the fixture cannot
+// drift from what the handler would actually store.
+var testStatementHash = models.HashStatement([]byte("DELETE FROM users WHERE id = 1;"))
+
 func testPolicy(t *testing.T, rule *models.AccessRequestRule) *services.ReviewPolicy {
 	t.Helper()
 	policy, err := services.ReviewPolicyFromRule("org-1", rule)
@@ -73,7 +78,7 @@ func TestNewSidecarReviewCarriesTheWholePolicy(t *testing.T) {
 	sc := sidecarWithListener("appdb", "payments-approvers")
 	rule := approvalRule()
 
-	rev := newSidecarReview(sc, "appdb", "session-1", rule, testPolicy(t, rule), time.Now().UTC())
+	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), time.Now().UTC())
 
 	assert.NotNil(t, rev.MinApprovals, "no minimum means every group must approve")
 	assert.Equal(t, 1, *rev.MinApprovals, "the rule's minimum, not a fixed one")
@@ -101,10 +106,22 @@ func TestNewSidecarReviewNamesTheRuleSoTheMinimumIsRead(t *testing.T) {
 	sc := sidecarWithListener("appdb", "payments-approvers")
 	rule := approvalRule()
 
-	rev := newSidecarReview(sc, "appdb", "session-1", rule, testPolicy(t, rule), time.Now().UTC())
+	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), time.Now().UTC())
 
 	assert.NotNil(t, rev.AccessRequestRuleName,
 		"without the rule name the review needs every group and ignores its force approval list")
+}
+
+// Without the hash on the row the partial unique index covers nothing, so every
+// retry files a fresh review and the approval is never reachable.
+func TestNewSidecarReviewCarriesTheStatementHash(t *testing.T) {
+	sc := sidecarWithListener("appdb", "payments-approvers")
+	rule := approvalRule()
+
+	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), time.Now().UTC())
+
+	assert.True(t, rev.StatementHash.Valid, "a NULL hash is excluded from the unique index")
+	assert.Equal(t, testStatementHash, rev.StatementHash.String)
 }
 
 // Authorization comes from the sidecar's stored configuration, never from the
@@ -163,7 +180,7 @@ func TestListenerNamesApprovalRule(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := listenerNamesApprovalRule(tc.sidecar, tc.listenerName, tc.ruleName)
+			got := listenerNamesApprovalRule(tc.sidecar.Configuration.Listeners, tc.listenerName, tc.ruleName)
 			assert.Equal(t, tc.want, got)
 		})
 	}
@@ -211,15 +228,15 @@ func lane(name, ruleName string) daemon.ListenerConfig {
 func TestListenerNamesApprovalRuleFailsClosedOnDuplicateNames(t *testing.T) {
 	sc := sidecarWithListeners(lane("appdb", "lax-approvers"), lane("appdb", "strict-approvers"))
 
-	assert.False(t, listenerNamesApprovalRule(sc, "appdb", "lax-approvers"),
+	assert.False(t, listenerNamesApprovalRule(sc.Configuration.Listeners, "appdb", "lax-approvers"),
 		"the first lane must not authorize a statement the second lane may have held")
-	assert.False(t, listenerNamesApprovalRule(sc, "appdb", "strict-approvers"),
+	assert.False(t, listenerNamesApprovalRule(sc.Configuration.Listeners, "appdb", "strict-approvers"),
 		"neither direction authorizes while the name is ambiguous")
 
 	// A second lane under another name changes nothing: the match is unique.
 	sc = sidecarWithListeners(lane("appdb", "lax-approvers"), lane("reporting", "strict-approvers"))
-	assert.True(t, listenerNamesApprovalRule(sc, "appdb", "lax-approvers"))
-	assert.True(t, listenerNamesApprovalRule(sc, "reporting", "strict-approvers"))
+	assert.True(t, listenerNamesApprovalRule(sc.Configuration.Listeners, "appdb", "lax-approvers"))
+	assert.True(t, listenerNamesApprovalRule(sc.Configuration.Listeners, "reporting", "strict-approvers"))
 }
 
 // The control plane stores a sidecar rule without checking these fields, so a
@@ -396,7 +413,7 @@ func TestPostReviewRefusesAStatementOverTheCap(t *testing.T) {
 func TestNewSlackReviewRequest(t *testing.T) {
 	sc := sidecarWithListener("appdb", "payments-approvers")
 	rule := approvalRule()
-	rev := newSidecarReview(sc, "appdb", "session-1", rule, testPolicy(t, rule), time.Now().UTC())
+	rev := newSidecarReview(sc, "appdb", "session-1", testStatementHash, rule, testPolicy(t, rule), time.Now().UTC())
 	statement := "DELETE FROM users WHERE id = 42;"
 
 	req := newSlackReviewRequest(sc, rev, "appdb", statement)
@@ -418,13 +435,11 @@ func TestNewSlackReviewRequest(t *testing.T) {
 		"Groups renders unconditionally, so it says who may act rather than nothing")
 
 	// The line renders unconditionally, so an empty value would show a broken
-	// link. Until there is a page for one review, it points at the home page.
+	// link. It opens the review the message is about.
 	assert.NotEmpty(t, req.WebappURL, "an empty url renders as a dead More details link")
-	assert.Equal(t, appconfig.Get().FullApiURL(), req.WebappURL)
-	assert.True(t, strings.HasSuffix(req.WebappURL, "/hoop"),
+	assert.Equal(t, appconfig.Get().FullApiURL()+"/reviews/"+rev.SessionID, req.WebappURL)
+	assert.True(t, strings.HasPrefix(req.WebappURL, "http://localhost:8009/hoop/"),
 		"ApiURL drops a configured path prefix and lands the approver outside the app")
-	assert.NotContains(t, req.WebappURL, "/sessions/",
-		"the control plane serves no /sessions route")
 
 	assert.Empty(t, req.SlackChannels, "a sidecar review has no connection, so the org default is the only destination")
 	assert.Nil(t, req.SessionTime, "a sidecar review grants no access window")

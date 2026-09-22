@@ -58,6 +58,18 @@ spec:
         - secretRef:
             name: {{ include "hoopsidecar.extraEnvSecretName" $ }}
         {{- end}}
+        # HOOP_HOST_ID cannot ride in the Secret above: it defaults to the
+        # node name, which only the downward API knows, and a Secret has no
+        # valueFrom. A literal in values replaces the fieldRef.
+        env:
+        - name: HOOP_HOST_ID
+          {{- with .Values.analytics.hostId }}
+          value: {{ . | quote }}
+          {{- else }}
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+          {{- end }}
         # The admin server, and nothing else. Every lane port comes from the
         # config document and differs per deployment, so none is declared
         # here; a containerPort is informational either way, and a lane is

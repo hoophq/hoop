@@ -11,5 +11,9 @@ export const reviewsService = {
    * → [{ id, session, type, status, created_at, review_groups_data, ... }]
    *   status ∈ PENDING | APPROVED | REJECTED | REVOKED | PROCESSING | EXECUTED | UNKNOWN
    */
-  list: () => api.get('/reviews').then((res) => res.data),
+  list: () => api.get('/reviews'),
+  get: (id) => api.get(`/reviews/${encodeURIComponent(id)}`),
+  // status ∈ APPROVED | REJECTED | REVOKED. A sidecar review is `onetime`, and
+  // the gateway refuses REVOKED on anything but `jit`.
+  update: (id, payload) => api.put(`/reviews/${encodeURIComponent(id)}`, payload),
 }

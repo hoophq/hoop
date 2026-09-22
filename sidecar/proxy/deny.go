@@ -7,6 +7,7 @@ import (
 	"unicode/utf16"
 
 	"github.com/hoophq/hoop/sidecar/inspect"
+	codecclickhouse "github.com/hoophq/libhoop/v2/codec/clickhouse"
 	codecmongodb "github.com/hoophq/libhoop/v2/codec/mongodb"
 )
 
@@ -40,6 +41,8 @@ func (ProtocolDenyWriter) Deny(proto inspect.Protocol, dir inspect.Direction, ms
 		return MSSQLError(msg)
 	case inspect.MySQL:
 		return MySQLError(msg)
+	case inspect.ClickHouse:
+		return codecclickhouse.ExceptionFrame(msg)
 	case inspect.HTTP:
 		return HTTPForbidden(msg)
 	case inspect.GRPC:

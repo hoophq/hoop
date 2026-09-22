@@ -428,6 +428,41 @@ func TestAGRPCLaneAnalyzerEditKeepsTheRestartPath(t *testing.T) {
 	}
 }
 
+// A grpc lane's descriptor sets are bound into its endpoint when it is
+// built, the way its callbacks are, so a changed `descriptors` list is
+// drift a live process cannot absorb. The plane must hear "restart", not
+// "applied": applied would report a schema the lane is not decoding with.
+// This is the reload half of the contract the gcs fetcher documents; the
+// other half — a new version behind an unpinned URL — is invisible to a
+// reload by construction, since the document did not move.
+func TestAGRPCDescriptorsEditKeepsTheRestartPath(t *testing.T) {
+	desc := writeGRPCTestDescriptors(t)
+	base := fmt.Sprintf(`{
+  "listeners": [{
+    "name": "g", "protocol": "grpc",
+    "listen": "127.0.0.1:0", "upstream": "h:50051",
+    "grpc": {"capture_payload": true, "descriptors": [%q]}
+  }],
+  "audit": {"file": "-"}
+}`, desc)
+	rl, buf := testReloader(t, base)
+
+	// A second set at a new path: the merge accepts byte-identical files,
+	// so what changes is the list, not the schema's validity.
+	second := writeGRPCTestDescriptors(t)
+	drifted := editJSON(t, base, fmt.Sprintf(`"descriptors": [%q]`, desc),
+		fmt.Sprintf(`"descriptors": [%q, %q]`, desc, second))
+	if got := handleWith(rl, buf, drifted); got != reloadRestart {
+		t.Fatalf("outcome = %v, want restart; log:\n%s", got, buf)
+	}
+	if !strings.Contains(buf.String(), "beyond the rules; restart to apply it") {
+		t.Errorf("no restart log line:\n%s", buf)
+	}
+	if rl.gen != 0 {
+		t.Errorf("generation = %d, want 0: nothing was applied", rl.gen)
+	}
+}
+
 // A refused reload must not leak its candidate detector into the running
 // analyzer dependencies: the pii section was not committed, so a later
 // reload must not combine the uncommitted redaction behavior with the
@@ -522,6 +557,39 @@ func TestAnSSHRuleDriftKeepsTheRestartPath(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), "restart to apply") {
 		t.Errorf("no restart log line:\n%s", buf)
+	}
+}
+
+// The restart above is scoped to the lane whose rules moved, not to the
+// document that carries it. A control plane binds rules per listener, so a
+// sidecar fronting a database and a bastion would otherwise have every
+// database rule edit freeze behind the ssh lane -- and an operator reading
+// "restart to apply" on an edit that never touched ssh has no way to tell
+// which lane is stale.
+func TestARelayRuleDriftAppliesBesideAnSSHLane(t *testing.T) {
+	hostKey, trustedCA := writeSSHKeyMaterial(t)
+	base := `{
+  "listeners": [{
+    "name": "appdb", "protocol": "postgres", "listen": "127.0.0.1:0",
+    "upstream": "127.0.0.1:5432",
+    "guardrails": {"mode": "enforce", "rules": [
+      {"name": "r0", "type": "deny_words_list", "words": ["drop table"]}
+    ]}
+  }, {
+    "name": "bastion", "protocol": "ssh", "listen": "127.0.0.1:12222",
+    "ssh": {"host_key": "` + hostKey + `", "trusted_ca": "` + trustedCA + `"}
+  }],
+  "audit": {"file": "-"},
+  "log_level": "info"
+}`
+	rl, buf := testReloader(t, base)
+
+	drifted := editJSON(t, base, `"words": ["drop table"]`, `"words": ["truncate"]`)
+	if got := applyWith(rl, buf, drifted); got != reloadApplied {
+		t.Fatalf("outcome = %v, want applied; log:\n%s", got, buf)
+	}
+	if !strings.Contains(buf.String(), "configuration applied") {
+		t.Errorf("no applied log line:\n%s", buf)
 	}
 }
 

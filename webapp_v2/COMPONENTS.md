@@ -673,6 +673,24 @@ Props: `value` (names[]), `onChange(names)`, `label` (default "Resource Roles"),
 
 ---
 
+### `SidecarTargetPicker`
+Picks the sidecar listeners a rule is distributed to — the control plane's answer to "configure once, enforce across the fleet". Options are grouped by sidecar, with an **All listeners** row that targets the whole sidecar (the configuration's top-level block, which every lane inherits) above its individual lanes. Reads the fleet from `useSidecarStore`.
+
+Used by the Guardrails, Data Masking and AI Session Analyzer rule editors, each of which renders it only when `Router.jsx` passes `sidecarTargets` through `<ByProduct>` — in the gateway it never mounts, so the fleet endpoint is never called there.
+```jsx
+import SidecarTargetPicker from '@/components/SidecarTargetPicker'
+
+<SidecarTargetPicker
+  value={form.sidecarTargets}          // [{ sidecar_id, listener_name }]
+  onChange={(targets) => setField({ sidecarTargets: targets })}
+/>
+```
+Props: `value` (targets[]), `onChange(targets)`, `label`, `description`. A listener with no name is left out of the list: the name is the only handle the control plane has on a lane, and a binding to a nameless one is refused on save.
+
+**The payload distinction that matters:** an *absent* `sidecar_targets` leaves a rule's bindings alone; `[]` unbinds it from every sidecar. The three `formToPayload` helpers omit the key entirely where the picker did not render, so a gateway save cannot silently unbind a fleet.
+
+---
+
 ### `FeaturePromotion`
 Split-screen promotion panel (marketing copy + feature highlights left, illustration right) shown when a feature is empty or gated. Faithful port of the CLJS generic `feature-promotion`, reused across feature migrations (Live Data Masking, Guardrails, and future Access Control / Runbooks / etc.). Wrap it in `FullBleed` to fill the screen.
 ```jsx

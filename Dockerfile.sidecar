@@ -75,8 +75,11 @@
 # ---------------------------------------------------------------------------
 # Choosing a flavour
 #
-#   default      Ubuntu 24.04 LTS rootfs + the `hoop` binary and nothing else.
-#   distroless   Distroless static rootfs + the `hoop` binary and nothing else.
+#   default      Ubuntu 24.04 LTS rootfs + the `hoop` binary, ca-certificates
+#                and tini.
+#   distroless   Distroless static rootfs + the `hoop` binary and a static tini.
+#
+# Both run tini as PID 1 (ENTRYPOINT), which execs the relay.
 #
 # Both serve every protocol the relay decodes (postgres, mysql, mssql, mongodb,
 # http, grpc, spanner) and run as uid 10001.
@@ -95,7 +98,7 @@
 
 # Ubuntu 24.04 LTS (noble). Pinned deliberately, same policy as ./Dockerfile
 # and ./Dockerfile.agent, so builds are reproducible; bump it in a dedicated PR.
-ARG UBUNTU_IMAGE=ubuntu:noble-20260730.1
+ARG UBUNTU_IMAGE=ubuntu:noble-20260911
 ARG DISTROLESS_IMAGE=gcr.io/distroless/static-debian12:nonroot
 
 # Where both flavours look for the config document. The same path the helm
@@ -126,17 +129,40 @@ RUN mkdir -p /out && \
     chown root:root /out/hoop && \
     chmod 755 /out/hoop
 
+# --- Stage: tini (init shim) -------------------------------------------------
+# Both flavours run tini as PID 1, so the relay is never PID 1 itself: tini
+# reaps orphaned children and forwards SIGTERM/SIGINT to the process it starts.
+# ./Dockerfile has always done this; these images now match it.
+#
+# The package ships two binaries. The Ubuntu flavour uses /usr/bin/tini, which
+# is dynamically linked. distroless/static has no libc, so it takes
+# /usr/bin/tini-static instead — the same 0.19.0 upstream, linked statically.
+#
+# NOT pinned to BUILDPLATFORM, unlike `unpack` above, and that is the whole
+# reason this is its own stage. tini is a compiled binary that ends up INSIDE
+# the published image, so it has to be the target architecture. Copying it out
+# of `unpack` would put an amd64 tini in the arm64 image on a cross-build, and
+# the failure is "exec format error" at container start on one architecture
+# only — invisible on the runner that built it.
+FROM ${UBUNTU_IMAGE} AS tini
+RUN apt-get update -y && \
+    apt-get install -y --no-install-recommends tini && \
+    rm -rf /var/lib/apt/lists/* /var/cache/apt/archives
+
 # --- Flavour: distroless -----------------------------------------------------
 # The static rootfs already ships the CA bundle, which this process needs for
 # three separate hops: an upstream_tls lane where it originates TLS to the
 # database, an analyzer provider over HTTPS, and a control plane over HTTPS.
-# Nothing is installed here.
+# Nothing is installed here — the static tini below is copied in, not
+# installed, so this rootfs still carries no OS package and no package manager.
 #
 # uid 10001 is set numerically: distroless has no useradd, and the relay never
 # resolves a passwd entry.
 FROM ${DISTROLESS_IMAGE} AS distroless
 ARG SIDECAR_CONFIG
 COPY --from=unpack /out/hoop /app/hoop
+# The statically linked build: this rootfs has no libc for the dynamic one.
+COPY --from=tini /usr/bin/tini-static /app/tini
 ENV PATH="/app:${PATH}"
 # --config defaults to this, so the command below takes no arguments and
 # mounting a different ConfigMap is the whole change. Set it EMPTY to take the
@@ -144,8 +170,14 @@ ENV PATH="/app:${PATH}"
 # not exist is an error, not a reason to fall through to the handshake.
 ENV HOOP_SIDECAR_CONFIG=${SIDECAR_CONFIG}
 USER 10001:10001
-# No init shim: the relay is PID 1 and installs its own SIGINT/SIGTERM handler
-# (daemon.Run). It forks no children.
+# tini is PID 1 and execs the relay. The relay installs its own SIGINT/SIGTERM
+# handler (daemon.Run), so tini forwards the signal and the existing shutdown
+# path runs unchanged.
+#
+# Absolute path, not "tini": ENTRYPOINT is what a `command:` in a pod spec
+# REPLACES, so anything overriding it drops the init shim. Keep such an
+# override to a full argv, or leave it alone and override args instead.
+ENTRYPOINT ["/app/tini", "--"]
 CMD ["hoop", "start", "sidecar"]
 
 # --- Flavour: default (Ubuntu 24.04 LTS) -------------------------------------
@@ -156,13 +188,17 @@ ARG SIDECAR_CONFIG
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# ca-certificates is the one runtime dependency the binary cannot carry itself,
-# for the three TLS hops named in the distroless note above — the ubuntu base
-# rootfs does not include a trust store. Nothing else is installed.
+# Two runtime dependencies the binary cannot carry itself:
+#
+#   ca-certificates  for the three TLS hops named in the distroless note above
+#                    — the ubuntu base rootfs ships no trust store.
+#   tini             the init shim, as PID 1. See the tini stage above.
+#
+# Nothing else is installed.
 RUN groupadd --gid 10001 hoop && \
     useradd --uid 10001 --gid 10001 --shell /sbin/nologin hoop && \
     apt-get update -y && \
-    apt-get install -y --no-install-recommends ca-certificates && \
+    apt-get install -y --no-install-recommends ca-certificates tini && \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/archives
 
 # Ownership and mode are already root:root 0755 from the unpack stage.
@@ -170,5 +206,7 @@ COPY --from=unpack /out/hoop /app/hoop
 ENV PATH="/app:${PATH}"
 ENV HOOP_SIDECAR_CONFIG=${SIDECAR_CONFIG}
 USER hoop
-# No init shim (tini is not installed) — see the distroless note above.
+# The dynamically linked tini from the package, at the path apt installs it.
+# See the override note in the distroless flavour above.
+ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["hoop", "start", "sidecar"]

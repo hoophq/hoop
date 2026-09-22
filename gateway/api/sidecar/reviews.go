@@ -80,7 +80,8 @@ func (e ruleNotAuthorized) Error() string {
 //	@Produce		json
 //	@Param			hoop-sidecar-token	header		string							true	"The token returned when the sidecar was created"
 //	@Param			request				body		openapi.SidecarReviewRequest	true	"The request body resource"
-//	@Success		201						{object}	openapi.Review
+//	@Success		200						{object}	openapi.SidecarReviewResponse
+//	@Success		201						{object}	openapi.SidecarReviewResponse
 //	@Failure		400,401,412,413,422,500	{object}	openapi.HTTPError
 //	@Router			/sidecars/reviews [post]
 func PostReview(c *gin.Context) {
@@ -153,15 +154,58 @@ func PostReview(c *gin.Context) {
 		return
 	}
 
-	rev, err := createSidecarReview(sidecar, req.ListenerName, string(statement), rule, policy)
-	if err != nil {
-		// The error is logged and sent to Sentry by AbortWithErr; the caller
-		// gets none of it. A database message names constraints, tables and
-		// columns, and a token holder has no use for any of that.
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating sidecar review")
+	// The exact bytes bind the approval to one statement. The sidecar's analyzer
+	// cache key strips literals, and a key of that shape would let an approval
+	// of `DELETE ... WHERE id = 1` release `id = 999`.
+	statementHash := models.HashStatement(statement)
+
+	// Two passes. A match can be consumed between the read and the insert, and
+	// an insert can lose the index to a racing request whose review is then
+	// consumed before the re-read. Either way one more pass settles it.
+	const attempts = 2
+	for range attempts {
+		rev, err := models.GetLiveSidecarReview(models.DB, sidecar.OrgID, sidecar.ID,
+			req.ListenerName, rule.Name, statementHash)
+		switch {
+		case err == nil:
+			answerExistingReview(c, sidecar, req.ListenerName, rev)
+			return
+		case !errors.Is(err, gorm.ErrRecordNotFound):
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed loading the sidecar review")
+			return
+		}
+
+		rev, err = createSidecarReview(sidecar, req.ListenerName, string(statement), statementHash, rule, policy)
+		switch {
+		case errors.Is(err, gorm.ErrDuplicatedKey):
+			// A racing request filed first. Look again rather than answer: its
+			// review is normally there to answer from, and if it was consumed
+			// in between then nothing is live and this statement needs its own.
+			continue
+		case err != nil:
+			// The error is logged and sent to Sentry by AbortWithErr; the caller
+			// gets none of it. A database message names constraints, tables and
+			// columns, and a token holder has no use for any of that.
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating sidecar review")
+			return
+		}
+
+		answerFiledReview(c, sidecar, req, rule, rev, statement)
 		return
 	}
 
+	// Both passes lost the race. Refuse instead of looping: the statement is
+	// being filed and consumed faster than a request can answer it, and a
+	// non-2xx makes the sidecar deny.
+	httputils.AbortWithErr(c, http.StatusInternalServerError,
+		fmt.Errorf("could not match or file a review in %d attempts", attempts),
+		"failed creating sidecar review")
+}
+
+// answerFiledReview reports a review this request filed. Forward is false: it
+// was filed a moment ago and no human has seen it.
+func answerFiledReview(c *gin.Context, sidecar *models.Sidecar, req openapi.SidecarReviewRequest,
+	rule *models.AccessRequestRule, rev *models.Review, statement []byte) {
 	log.With("sid", rev.SessionID, "review-id", rev.ID, "sidecar", sidecar.Name,
 		"listener", req.ListenerName, "rule", rule.Name).
 		Infof("registered a sidecar review")
@@ -186,7 +230,52 @@ func PostReview(c *gin.Context) {
 	// and visible to an approver either way.
 	go notifySlack(sidecar, rev, req.ListenerName, string(statement))
 
-	c.JSON(http.StatusCreated, toOpenApiSidecarReview(rev))
+	// Forward is false: the review was filed a moment ago and no human has
+	// seen it. The sidecar denies this statement and carries the review id.
+	c.JSON(http.StatusCreated, &openapi.SidecarReviewResponse{
+		Forward: false,
+		Review:  toOpenApiSidecarReview(rev),
+	})
+}
+
+// answerExistingReview answers a retry against the review already filed for its
+// statement. PENDING, REJECTED and REVOKED come back as they stand, so a
+// rejection keeps denying instead of being retried into a fresh review.
+// APPROVED is claimed here, and only the claim's winner may forward.
+func answerExistingReview(c *gin.Context, sidecar *models.Sidecar, listenerName string, rev *models.Review) {
+	forward := false
+	if rev.Status == models.ReviewStatusApproved {
+		claimed, status, err := models.ClaimApprovedSidecarReview(models.DB, sidecar.OrgID, rev.ID)
+		if err != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err,
+				"failed consuming the approved sidecar review")
+			return
+		}
+		// The status the row holds now, so a claim loser reports EXECUTED
+		// rather than the APPROVED it read a moment earlier. It is forward,
+		// not this, that says whether the statement may run.
+		rev.Status = status
+		forward = claimed
+
+		if claimed {
+			log.With("sid", rev.SessionID, "review-id", rev.ID, "sidecar", sidecar.Name,
+				"listener", listenerName).
+				Infof("consumed an approved sidecar review")
+
+			trackClient := analytics.New()
+			defer trackClient.Close()
+			trackClient.TrackEvent(analytics.EventConsumeSidecarReview, map[string]any{
+				"org-id":   sidecar.OrgID,
+				"sidecar":  sidecar.Name,
+				"listener": listenerName,
+			})
+		}
+	}
+
+	c.JSON(http.StatusOK, &openapi.SidecarReviewResponse{
+		Forward: forward,
+		Review:  toOpenApiSidecarReview(rev),
+	})
 }
 
 // notifySlack posts the review to the org's Slack channel, so a human learns it
@@ -245,11 +334,9 @@ func newSlackReviewRequest(sidecar *models.Sidecar, rev *models.Review, listener
 		ApprovalGroups: slackplugin.ParseGroups(rev.ReviewGroups),
 		Script:         statement,
 
-		// /reviews/<sid> exists in the router but renders a placeholder, so
-		// this points at the home page until there is a layout to point at.
 		// FullApiURL, not ApiURL: the latter drops the configured path prefix,
 		// which lands the approver outside the app wherever one is set.
-		WebappURL: appconfig.Get().FullApiURL(),
+		WebappURL: fmt.Sprintf("%s/reviews/%s", appconfig.Get().FullApiURL(), rev.SessionID),
 	}
 }
 
@@ -308,7 +395,26 @@ func approvableSidecarRule(rule *models.AccessRequestRule) error {
 func authorizedApprovalRule(db *gorm.DB, sidecar *models.Sidecar, listenerName, ruleName string) (*models.AccessRequestRule, error) {
 	refuse := ruleNotAuthorized{listenerName: listenerName, ruleName: ruleName}
 
-	if !listenerNamesApprovalRule(sidecar, listenerName, ruleName) {
+	// Against the COMPOSED document, which is the one this sidecar was served.
+	// A listener's analyzer block can come from a rule an admin bound in the
+	// control plane, and composition places it on the way out without storing
+	// it -- so the stored row's listener names no approval rule, while the
+	// sidecar is running one and filing reviews under it. Authorizing against
+	// the stored row would refuse every one of them, and the statement would
+	// be denied forever with nothing saying why.
+	//
+	// Composition failing is not an authorization answer: it means the rules
+	// could not be read or do not fit together, so it is reported rather than
+	// rendered as a refusal the admin would look for in their reviewer list.
+	listeners := sidecar.Configuration.Listeners
+	if db != nil {
+		composed, err := services.ComposeSidecarConfiguration(db, sidecar)
+		if err != nil {
+			return nil, fmt.Errorf("failed composing the sidecar configuration: %w", err)
+		}
+		listeners = composed.Listeners
+	}
+	if !listenerNamesApprovalRule(listeners, listenerName, ruleName) {
 		return nil, refuse
 	}
 
@@ -334,16 +440,18 @@ func authorizedApprovalRule(db *gorm.DB, sidecar *models.Sidecar, listenerName, 
 	return rule, nil
 }
 
-// listenerNamesApprovalRule reports whether the sidecar's stored configuration
-// gives this listener this approval rule. Split out, and free of the database,
-// so the whole authorization table can be asserted without Postgres.
-func listenerNamesApprovalRule(sidecar *models.Sidecar, listenerName, ruleName string) bool {
+// listenerNamesApprovalRule reports whether the configuration SERVED to this
+// sidecar gives this listener this approval rule. It takes the listeners
+// rather than the sidecar, and is free of the database, so the whole
+// authorization table can be asserted without Postgres -- and so the caller
+// cannot forget that the document to read is the composed one.
+func listenerNamesApprovalRule(listeners []daemon.ListenerConfig, listenerName, ruleName string) bool {
 	if listenerName == "" || ruleName == "" {
 		return false
 	}
 	var analyzer *daemon.LaneAnalyzerConfig
 	matches := 0
-	for _, listener := range sidecar.Configuration.Listeners {
+	for _, listener := range listeners {
 		if listener.Name != listenerName {
 			continue
 		}
@@ -367,15 +475,16 @@ func listenerNamesApprovalRule(sidecar *models.Sidecar, listenerName, ruleName s
 }
 
 // createSidecarReview writes the session and the review one statement needs to
-// wait for a human.
-func createSidecarReview(sidecar *models.Sidecar, listenerName, statement string, rule *models.AccessRequestRule, policy *services.ReviewPolicy) (*models.Review, error) {
+// wait for a human. It returns gorm.ErrDuplicatedKey when a racing request
+// filed for the same bytes first.
+func createSidecarReview(sidecar *models.Sidecar, listenerName, statement, statementHash string, rule *models.AccessRequestRule, policy *services.ReviewPolicy) (*models.Review, error) {
 	now := time.Now().UTC()
 	sessionID := uuid.NewString()
 
 	// A review is one per session (private.reviews is UNIQUE on org and
 	// session), and UpdateReview syncs the session's status when the review
 	// settles, so the session is not optional bookkeeping.
-	err := models.UpsertSession(models.Session{
+	sess := models.Session{
 		ID:             sessionID,
 		OrgID:          sidecar.OrgID,
 		BlobInput:      models.BlobInputType(statement),
@@ -387,14 +496,11 @@ func createSidecarReview(sidecar *models.Sidecar, listenerName, statement string
 		UserName:       sidecar.Name,
 		UserEmail:      reviewOwnerEmail,
 		CreatedAt:      now,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed creating session: %w", err)
 	}
 
-	rev := newSidecarReview(sidecar, listenerName, sessionID, rule, policy, now)
-	if err := models.CreateReview(rev, statement); err != nil {
-		return nil, fmt.Errorf("failed creating review: %w", err)
+	rev := newSidecarReview(sidecar, listenerName, sessionID, statementHash, rule, policy, now)
+	if err := models.CreateSidecarReview(models.DB, sess, rev, statement); err != nil {
+		return nil, err
 	}
 	return rev, nil
 }
@@ -403,7 +509,7 @@ func createSidecarReview(sidecar *models.Sidecar, listenerName, statement string
 // named rule describes. Nothing in the review path spells that out, so an
 // omission here is silent: without MinApprovals the review needs every group,
 // and without a group row a role cannot approve at all.
-func newSidecarReview(sidecar *models.Sidecar, listenerName, sessionID string, rule *models.AccessRequestRule, policy *services.ReviewPolicy, now time.Time) *models.Review {
+func newSidecarReview(sidecar *models.Sidecar, listenerName, sessionID, statementHash string, rule *models.AccessRequestRule, policy *services.ReviewPolicy, now time.Time) *models.Review {
 	return &models.Review{
 		ID:        uuid.NewString(),
 		OrgID:     sidecar.OrgID,
@@ -417,6 +523,10 @@ func newSidecarReview(sidecar *models.Sidecar, listenerName, sessionID string, r
 		// a real connection of the same name.
 		SidecarID:    sql.NullString{String: sidecar.ID, Valid: true},
 		ListenerName: sql.NullString{String: listenerName, Valid: listenerName != ""},
+
+		// What a retry of this statement matches on, and the reason the same
+		// bytes are never reviewed twice while this review is live.
+		StatementHash: sql.NullString{String: statementHash, Valid: statementHash != ""},
 
 		OwnerID:    sidecar.ID,
 		OwnerEmail: reviewOwnerEmail,
