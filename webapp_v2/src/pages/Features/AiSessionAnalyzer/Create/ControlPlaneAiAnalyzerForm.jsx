@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Box, Group, Stack, Text } from '@mantine/core'
-import { ArrowLeft, Info } from 'lucide-react'
+import { ArrowLeft, Info, TriangleAlert } from 'lucide-react'
 import Alert from '@/components/Alert'
 import Button from '@/components/Button'
 import DocsBtnCallOut from '@/components/DocsBtnCallOut'
@@ -167,6 +167,17 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
       })
       return
     }
+    // The same refusal the daemon makes at startup, brought forward. Reachable
+    // only by editing a stored rule whose listeners changed protocol under it:
+    // the picker clears a hold the moment the targets stop supporting one.
+    if (holdsSomeLevel(spec) && !holdable) {
+      showSnackbar({
+        level: 'error',
+        text: 'Only a database listener can hold a statement.',
+        description: 'Pick database listeners, or set those risk levels to something else.',
+      })
+      return
+    }
     const payload = {
       name: name.trim(),
       description: description || null,
@@ -308,7 +319,19 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
               allowDeselect={false}
             />
           ))}
-          {holding ? (
+          {/* A stored rule can hold on listeners that can no longer do it: the
+              protocol is edited in the sidecar's config file, not here, so
+              nothing in this form was touched when it changed. Saving it back
+              unchanged would hand that sidecar a configuration it refuses at
+              its next start, taking every other lane with it. */}
+          {holding && !holdable ? (
+            <Alert color="red" variant="light" icon={<TriangleAlert size={16} />} radius="md">
+              <Text size="sm">
+                This rule holds for approval, and not every listener it names can hold a statement. The sidecar refuses
+                this at startup. Pick database listeners, or set those levels to something else.
+              </Text>
+            </Alert>
+          ) : holding ? (
             <Alert color="blue" variant="light" icon={<Info size={16} />} radius="md">
               <Stack gap={4}>
                 <Text size="sm">
