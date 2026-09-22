@@ -10,6 +10,7 @@ import { showSnackbar } from '@/utils/snackbar'
 import SidecarDetails from '../components/SidecarDetails'
 import { listenerLabel, listenerPath, removeListener } from '../listeners'
 import DeleteListenerModal from '../sections/DeleteListenerModal'
+import SidecarSourceSection from '../sections/SidecarSourceSection'
 import { saveErrorMessage } from '../useListenerEditor'
 
 // /sidecars/:id — the details card on its own page, and the listener controls.
@@ -95,7 +96,6 @@ export default function SidecarDetailsPage() {
             <Title order={1}>{selected.name}</Title>
             <SidecarDetails
               sidecar={selected}
-              editable
               listenerActions={{
                 onAdd: () => navigate(`/sidecars/${encodeURIComponent(selected.id)}/listeners/new`),
                 onEdit: (index) => navigate(listenerPath(selected.id, listeners[index], index)),
@@ -106,6 +106,10 @@ export default function SidecarDetailsPage() {
                   setDeleting({ index, listener: listeners[index], label: listenerLabel(listeners[index], index) }),
               }}
             />
+            {/* Last on the page, with Delete's weight and none of its
+                finality: flipping the source retires every rule the plane
+                distributes to this sidecar, so it is not a header control. */}
+            <SidecarSourceSection sidecar={selected} />
           </>
         )
       )}

@@ -110,9 +110,12 @@ export const TABLE_ACCESS = [
   { value: 'write', label: 'Write only' },
 ]
 
+// "Rego" is the language an OPA policy is written in, and naming it here asked
+// an operator to know that before they could pick a row. What the choice is
+// about is whether this rule decides or only reports.
 export const GUARDRAIL_ACTIONS = [
   { value: '', label: 'Deny the statement' },
-  { value: 'defer', label: 'Report a finding, let Rego decide' },
+  { value: 'defer', label: 'Report only (the policy engine decides)' },
 ]
 
 // ---------------------------------------------------------------------------
@@ -199,14 +202,18 @@ export const ANALYZER_ACTIONS = [
   { value: 'allow', label: 'Allow' },
   { value: 'warn', label: 'Warn' },
   { value: 'block', label: 'Block' },
-  { value: 'defer', label: 'Defer to Rego' },
+  { value: 'defer', label: 'Send to the policy engine' },
 ]
 
-// The action that holds a statement for a human, offered only behind the
-// review switch: it is the one action that needs a second object behind it
+// The action that holds a statement for a human.
+//
+// It used to be hidden behind a switch above the three levels, so choosing it
+// took two controls: one that said "Hold for approval" and did nothing on its
+// own, and then the level. The switch is gone — this is an action like the
+// others and it is listed with them. What it still needs is a second object
 // (the rule naming who may release) and a lane whose client resends the
-// statement. Listing it beside the others would let an operator pick a hold
-// that the sidecar refuses at startup.
+// statement; the form writes the first itself and disables the option on a
+// lane that cannot do the second.
 export const REVIEW_ACTION = 'require_review'
 
 // A hold denies the first attempt and releases an identical retry, so it needs
@@ -220,11 +227,28 @@ export function canHold(protocol) {
   return HOLDABLE_PROTOCOLS.includes((protocol ?? '').toLowerCase())
 }
 
-// analyzerActionsFor adds the hold to the list only while the switch is on, so
-// turning the switch off cannot leave an unreachable action selectable.
-export function analyzerActionsFor(hold) {
-  if (!hold) return ANALYZER_ACTIONS
-  return [...ANALYZER_ACTIONS, { value: REVIEW_ACTION, label: 'Hold for approval' }]
+/**
+ * The actions a risk level may take, with the hold always among them.
+ *
+ * `holdable` does not remove it — it disables it and says why. A removed
+ * option is a question an operator cannot ask: they pick an http lane, the
+ * row they were looking for is gone, and nothing on screen connects the two.
+ * Mantine renders a disabled option greyed and unselectable, which answers
+ * the question instead of hiding it.
+ *
+ * The daemon refuses a hold on a lane whose client does not resend the
+ * statement, at startup, taking that sidecar's whole configuration with it.
+ * That refusal is what this reproduces.
+ */
+export function analyzerActionsFor(holdable) {
+  return [
+    ...ANALYZER_ACTIONS,
+    {
+      value: REVIEW_ACTION,
+      label: holdable ? 'Hold for approval' : 'Hold for approval (database listeners only)',
+      disabled: !holdable,
+    },
+  ]
 }
 
 // ---------------------------------------------------------------------------

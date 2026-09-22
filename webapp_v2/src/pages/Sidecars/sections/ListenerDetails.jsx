@@ -1,25 +1,19 @@
 import { Box, Divider, Group, Stack, Text } from '@mantine/core'
 import Badge from '@/components/Badge'
-import { MODE_OBSERVE, SOURCE_DISTRIBUTED, SOURCE_LISTENER, resolveListener } from '../resolve'
+import { guardrailSummary, maskSummary } from '@/pages/sidecarRuleRows'
+import {
+  MODE_OBSERVE,
+  SOURCE_DISTRIBUTED,
+  SOURCE_LISTENER,
+  analyzerOverriddenBy,
+  maskReplacedBy,
+  resolveListener,
+} from '../resolve'
 import { supportsGRPCBlock, supportsHTTPBlock } from '../listeners'
 
-// The rule types of sidecar/policy a guardrail list can show. NOT the two in
-// pages/Guardrails/helpers.js — those belong to the gateway's own guardrails,
-// a different product with a different schema.
-//
-// `ai_analysis` is the ninth and is absent on purpose: resolveListener sorts it
-// out of the guardrails and into the analyzer, the way the daemon does
-// (splitAnalyzerRules), so it is read below by analyzerDetail instead.
-const RULE_TYPE_LABELS = {
-  deny_words_list: 'Deny words',
-  pattern_match: 'Pattern match',
-  operation: 'Operation',
-  table: 'Table',
-  pii: 'PII',
-  http_resource: 'HTTP resource',
-  http_status: 'HTTP status',
-  grpc_status: 'gRPC status',
-}
+// What a rule matches and what it rewrites are described in
+// @/pages/sidecarRuleRows, next to the rule lists that describe the same rules.
+// One reader, so a row here and a row there cannot disagree about one rule.
 
 // LaneAnalyzerConfig.HighRisk/MediumRisk/LowRisk (sidecar/daemon/analyzer.go).
 // An unset level allows, so a level nobody named carries no information and is
@@ -31,41 +25,7 @@ const RISK_ACTIONS = {
   defer: 'reports',
 }
 
-const MASK_STRATEGY_LABELS = {
-  redact: 'Redact',
-  mask: 'Mask',
-  partial: 'Partial',
-  hash: 'Hash',
-}
-
 const join = (v) => (Array.isArray(v) && v.length > 0 ? v.join(', ') : null)
-
-// The part of a rule that says what it matches. Each type reads its own
-// fields and ignores the rest (policy.Rule is one struct for all nine).
-function ruleMatcher(rule) {
-  switch (rule.type) {
-    case 'operation':
-      return join(rule.operations)
-    case 'table': {
-      const tables = join(rule.tables)
-      if (!tables) return null
-      return rule.access ? `${tables} (${rule.access})` : tables
-    }
-    case 'deny_words_list':
-      return join(rule.words)
-    case 'pattern_match':
-      return rule.pattern_regex || null
-    case 'pii':
-      return join(rule.entities)
-    case 'http_resource':
-      return [join(rule.methods), join(rule.resources)].filter(Boolean).join(' ') || null
-    case 'http_status':
-    case 'grpc_status':
-      return [join(rule.methods), join(rule.statuses)].filter(Boolean).join(' ') || null
-    default:
-      return null
-  }
-}
 
 /**
  * What the analyzer classifies, and what it does with the answer.
@@ -119,7 +79,7 @@ function configChips(listener) {
   return chips
 }
 
-function Section({ title, right, children }) {
+function Section({ title, right, note, children }) {
   return (
     <Stack gap="xs">
       <Group gap="sm" align="baseline">
@@ -128,18 +88,36 @@ function Section({ title, right, children }) {
         </Text>
         {right}
       </Group>
+      {note && (
+        <Text size="xs" c="dimmed">
+          {note}
+        </Text>
+      )}
       {children}
     </Stack>
   )
 }
 
+// Where a rule came from, in the words the rest of the app uses. The two
+// document origins both say "Config file" because that is the only place a
+// reader can go to change them: the control plane stores the document, but an
+// operator authored it in a file and the form here does not render these
+// sections at all. The distinction that survives is which SCOPE it was written
+// at, because a default applies to every lane and a listener's own does not.
 const SOURCE_LABELS = {
-  [SOURCE_LISTENER]: { label: 'Listener', color: 'indigo' },
+  [SOURCE_LISTENER]: { label: 'Config file', color: 'indigo' },
   [SOURCE_DISTRIBUTED]: { label: 'Control plane', color: 'sky' },
 }
 
+const INHERITED_LABEL = { label: 'Config file · default', color: 'gray' }
+
+// Said once per section that has one, rather than on every row.
+const CONFIG_FILE_NOTE = 'Rules from the config file are not editable in the control plane.'
+
+const hasConfigFileRule = (entries) => entries.some((e) => e.source !== SOURCE_DISTRIBUTED)
+
 function SourceBadge({ source }) {
-  const { label, color } = SOURCE_LABELS[source] ?? { label: 'Inherited', color: 'gray' }
+  const { label, color } = SOURCE_LABELS[source] ?? INHERITED_LABEL
   return (
     <Badge tag variant="light" color={color}>
       {label}
@@ -157,10 +135,14 @@ function distributed(boundRules, listenerName, kind) {
     .map((b) => ({ name: b.rule_name, source: SOURCE_DISTRIBUTED }))
 }
 
-function Rule({ name, detail, source, extra }) {
+// `retired` is a rule the served document does not run: the fields stay
+// readable, dimmed, because the operator still has to find and fix the file
+// that carries them, and hiding the row would leave them wondering where it
+// went.
+function Rule({ name, detail, source, extra, retired }) {
   return (
     <Group gap="sm" align="baseline" wrap="nowrap">
-      <Text size="xs" fw={600}>
+      <Text size="xs" fw={600} c={retired ? 'dimmed' : undefined} td={retired ? 'line-through' : undefined}>
         {name || 'Unnamed rule'}
       </Text>
       <Text size="xs" c="dimmed" flex={1}>
@@ -193,6 +175,13 @@ export default function ListenerDetails({ listener, config, boundRules }) {
   const sentMask = distributed(boundRules, listener?.name, 'datamasking')
   const sentAnalyzer = distributed(boundRules, listener?.name, 'analyzer')
 
+  // The three sections do NOT combine the same way, and only guardrails add
+  // up. Drawing all three as one list was this panel saying every rule on
+  // screen runs, which for masking is the opposite of the truth.
+  const maskRetiredBy = maskReplacedBy(boundRules, listener?.name)
+  const analyzerDrivenBy = analyzerOverriddenBy(boundRules, listener?.name)
+  const maskRetired = maskRetiredBy.length > 0 && mask.length > 0
+
   return (
     <Box bg="gray.0" p="md">
       <Stack gap="md">
@@ -206,6 +195,10 @@ export default function ListenerDetails({ listener, config, boundRules }) {
 
         <Divider color="gray.2" />
 
+        {/* Guardrails are the one section that adds up: composition appends
+            the control plane's rules to the lane's own (appendGuardrails),
+            and the daemon then concatenates the inherited defaults after
+            those. Every row here really is evaluated. */}
         <Section
           title="Guardrails"
           right={
@@ -213,6 +206,7 @@ export default function ListenerDetails({ listener, config, boundRules }) {
               {observing ? 'Observe' : 'Enforce'}
             </Badge>
           }
+          note={hasConfigFileRule(guardrails) ? CONFIG_FILE_NOTE : undefined}
         >
           {guardrails.length === 0 && sentGuardrails.length === 0 ? (
             <Text size="xs" c="dimmed">
@@ -228,9 +222,7 @@ export default function ListenerDetails({ listener, config, boundRules }) {
                   key={`${entry.rule.name}-${i}`}
                   name={entry.rule.name}
                   source={entry.source}
-                  detail={[RULE_TYPE_LABELS[entry.rule.type] ?? entry.rule.type, ruleMatcher(entry.rule)]
-                    .filter(Boolean)
-                    .join(' · ')}
+                  detail={guardrailSummary(entry.rule)}
                   // action: "defer" reports a finding instead of denying.
                   extra={
                     entry.rule.action === 'defer' && (
@@ -247,7 +239,20 @@ export default function ListenerDetails({ listener, config, boundRules }) {
 
         <Divider color="gray.2" />
 
-        <Section title="Masking">
+        {/* Masking REPLACES. Composition writes the lane's whole `mask` block
+            from the bound rules (foldSidecarRules), and a present block
+            overrides the inherited one — so a control plane rule retires the
+            config file's, defaults included, rather than joining them. */}
+        <Section
+          title="Masking"
+          note={
+            maskRetired
+              ? `Replaced by ${maskRetiredBy.join(', ')}. A listener's mask rules are not merged: the control plane's replace the config file's.`
+              : hasConfigFileRule(mask)
+                ? CONFIG_FILE_NOTE
+                : undefined
+          }
+        >
           {mask.length === 0 && sentMask.length === 0 ? (
             <Text size="xs" c="dimmed">
               No rules. Responses are returned unchanged.
@@ -259,16 +264,20 @@ export default function ListenerDetails({ listener, config, boundRules }) {
               ))}
               {mask.map((entry, i) => {
                 const { rule } = entry
-                const target = join(rule.columns) || join(rule.entities) || rule.entity || null
-                const strategy = MASK_STRATEGY_LABELS[rule.strategy] ?? MASK_STRATEGY_LABELS.redact
-                // keep_last only means anything to the partial strategy; its default is 4.
-                const keepLast = rule.strategy === 'partial' ? `keep last ${rule.keep_last ?? 4}` : null
                 return (
                   <Rule
                     key={`${rule.name}-${i}`}
                     name={rule.name}
                     source={entry.source}
-                    detail={[target, strategy, keepLast].filter(Boolean).join(' · ')}
+                    retired={maskRetired}
+                    detail={maskSummary(rule)}
+                    extra={
+                      maskRetired && (
+                        <Badge tag variant="warning">
+                          Not applied
+                        </Badge>
+                      )
+                    }
                   />
                 )
               })}
@@ -278,7 +287,19 @@ export default function ListenerDetails({ listener, config, boundRules }) {
 
         <Divider color="gray.2" />
 
-        <Section title="AI Analyzer">
+        {/* The analyzer OVERRIDES, field by field. mergeAnalyzerBlock gives
+            the rule the trigger, the three risk actions, the prompt and the
+            message, and leaves the config file `send`, `fail_open` and the
+            cost bounds. Neither side alone says what runs, so printing the
+            block's own trigger under a bound rule states the opposite. */}
+        <Section
+          title="AI Analyzer"
+          note={
+            analyzerDrivenBy.length > 0 && analyzer.block
+              ? `What is classified and what each verdict does come from ${analyzerDrivenBy.join(', ')}. The config file keeps what leaves the process, what happens on a provider outage, and the cost limits.`
+              : undefined
+          }
+        >
           {analyzer.on || sentAnalyzer.length > 0 ? (
             <Stack gap={6}>
               {sentAnalyzer.map((r) => (
@@ -287,7 +308,7 @@ export default function ListenerDetails({ listener, config, boundRules }) {
               {/* The block is read off the listener, so it is always the
                   lane's own and a Listener badge beside it would say nothing.
                   Only the deprecated rules below can be inherited. */}
-              {analyzer.block && (
+              {analyzer.block && analyzerDrivenBy.length === 0 && (
                 <Text size="xs" c="dimmed">
                   {analyzerDetail(analyzer.block)}
                 </Text>

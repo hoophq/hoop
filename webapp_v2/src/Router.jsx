@@ -33,12 +33,14 @@ import SettingsServerLogs from '@/pages/Settings/ServerLogs'
 import GatewayUsers from '@/pages/Organization/Users/GatewayUsers'
 import ControlPlaneUsers from '@/pages/Organization/Users/ControlPlaneUsers'
 import SettingsExperimental from '@/pages/Settings/Experimental'
+import NotFound from '@/pages/NotFound'
 import Rulepacks from '@/pages/Rulepacks'
 import RulepackDetail from '@/pages/Rulepacks/Detail'
 import EventRouting from '@/pages/EventRouting'
 import EventRoutingForm from '@/pages/EventRouting/Form'
 import EventRoutingDetail from '@/pages/EventRouting/Detail'
-import DataMasking from '@/pages/Features/DataMasking'
+import GatewayDataMasking from '@/pages/Features/DataMasking/GatewayDataMasking'
+import ControlPlaneDataMasking from '@/pages/Features/DataMasking/ControlPlaneDataMasking'
 import GatewayDataMaskingForm from '@/pages/Features/DataMasking/Create/GatewayDataMaskingForm'
 import ControlPlaneDataMaskingForm from '@/pages/Features/DataMasking/Create/ControlPlaneDataMaskingForm'
 import AccessControl from '@/pages/Features/AccessControl'
@@ -50,7 +52,8 @@ import GatewayAiAnalyzerForm from '@/pages/Features/AiSessionAnalyzer/Create/Gat
 import ControlPlaneAiAnalyzerForm from '@/pages/Features/AiSessionAnalyzer/Create/ControlPlaneAiAnalyzerForm'
 import GatewayAiAnalyzerConfigureTab from '@/pages/Features/AiSessionAnalyzer/GatewayConfigureTab'
 import ControlPlaneAiAnalyzerConfigureTab from '@/pages/Features/AiSessionAnalyzer/ControlPlaneConfigureTab'
-import Guardrails from '@/pages/Guardrails'
+import GatewayGuardrails from '@/pages/Guardrails/GatewayGuardrails'
+import ControlPlaneGuardrails from '@/pages/Guardrails/ControlPlaneGuardrails'
 import GatewayGuardrailForm from '@/pages/Guardrails/Create/GatewayGuardrailForm'
 import ControlPlaneGuardrailForm from '@/pages/Guardrails/Create/ControlPlaneGuardrailForm'
 import AiAgentsIdentities from '@/pages/AiAgentsIdentities'
@@ -349,12 +352,18 @@ function Router() {
         }
       />
 
-      {/* Rulepacks (gated by experimental.rulepacks feature flag) */}
+      {/* Rulepacks (gated by experimental.rulepacks feature flag).
+          Gateway only, and the one page that is: a rulepack bundles rules and
+          applies them to CONNECTIONS, which a control plane does not have. A
+          control plane distributes a rule by naming sidecar listeners, and
+          Guardrails and Data Masking already do that. Reachable by URL it
+          would render a page whose every control asks for a connection, so
+          this product answers 404 instead. */}
       <Route
         path="/rulepacks"
         element={
           <Page adminOnly licenseFeature="rulepacks">
-            <Rulepacks />
+            <ByProduct gateway={<Rulepacks />} controlPlane={<NotFound />} />
           </Page>
         }
       />
@@ -362,7 +371,7 @@ function Router() {
         path="/rulepacks/:id"
         element={
           <Page adminOnly licenseFeature="rulepacks">
-            <RulepackDetail />
+            <ByProduct gateway={<RulepackDetail />} controlPlane={<NotFound />} />
           </Page>
         }
       />
@@ -415,7 +424,13 @@ function Router() {
         path="/features/data-masking"
         element={
           <Page adminOnly licenseFeature="data-masking">
-            <DataMasking />
+            {/* The gateway masks through a DLP provider on a connection; a
+                sidecar rewrites a decoded frame on a listener. Different
+                filters, different empty state, and one row per rule. */}
+            <ByProduct
+              gateway={<GatewayDataMasking />}
+              controlPlane={<ControlPlaneDataMasking />}
+            />
           </Page>
         }
       />
@@ -555,7 +570,10 @@ function Router() {
         path="/guardrails"
         element={
           <Page adminOnly licenseFeature="guardrails">
-            <Guardrails />
+            <ByProduct
+              gateway={<GatewayGuardrails />}
+              controlPlane={<ControlPlaneGuardrails />}
+            />
           </Page>
         }
       />

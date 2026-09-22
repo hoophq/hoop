@@ -11,7 +11,6 @@ import PageLoader from '@/components/PageLoader'
 import SectionRow from '@/components/SectionRow'
 import Select from '@/components/Select'
 import SidecarTargetPicker from '@/components/SidecarTargetPicker'
-import Switch from '@/components/Switch'
 import TagsInput from '@/components/TagsInput'
 import Textarea from '@/components/Textarea'
 import TextInput from '@/components/TextInput'
@@ -45,11 +44,6 @@ const EMPTY = {
   prompt: '',
   message: '',
   max_calls: '',
-  // Whether this rule holds statements for a human. Not a field of the spec:
-  // the spec carries require_review on a level and approval_rule beside it,
-  // and this is the one switch that puts both there together. Either alone is
-  // a control the sidecar refuses at startup.
-  hold: false,
 }
 
 function specToForm(spec) {
@@ -64,7 +58,6 @@ function specToForm(spec) {
     prompt: spec.prompt ?? '',
     message: spec.message ?? '',
     max_calls: spec.max_calls ?? '',
-    hold: [spec.high, spec.medium, spec.low].includes(REVIEW_ACTION),
   }
 }
 
@@ -85,9 +78,17 @@ function formToSpec(f, ruleName) {
   // the control plane owns both halves and keeps them in step, so there is no
   // second name for an operator to get wrong. The sidecar refuses a hold that
   // names nothing, and the plane refuses a review whose rule it cannot find.
-  if (f.hold) spec.approval_rule = ruleName
+  //
+  // Read off the levels rather than off a switch. The two halves still travel
+  // together — that is the daemon's requirement and it has not moved — but
+  // there is no longer a second control that can disagree with the first.
+  if (holdsSomeLevel(spec)) spec.approval_rule = ruleName
   return spec
 }
+
+// Whether any level holds. One reader, so the form, the save and the payload
+// cannot form three opinions about it.
+const holdsSomeLevel = (spec) => [spec.high, spec.medium, spec.low].includes(REVIEW_ACTION)
 
 function FormFields({ rule: stored, ruleName, isEdit }) {
   const navigate = useNavigate()
@@ -102,15 +103,15 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
   const [form, setForm] = useState(() => specToForm(stored?.sidecar_spec))
   const set = (patch) => setForm((f) => ({ ...f, ...patch }))
 
-  const protocol = useMemo(() => {
+  const lanesByTarget = useMemo(() => {
     const byId = new Map(sidecars.map((sc) => [sc.id, sc]))
-    const first = targets[0]
-    if (!first) return ''
-    const lane = byId.get(first.sidecar_id)?.configuration?.listeners?.find(
-      (l) => l.name === first.listener_name,
-    )
-    return lane?.protocol ?? ''
-  }, [targets, sidecars])
+    return (ts) =>
+      ts.map((t) =>
+        byId.get(t.sidecar_id)?.configuration?.listeners?.find((l) => l.name === t.listener_name)
+      )
+  }, [sidecars])
+
+  const protocol = useMemo(() => lanesByTarget(targets)[0]?.protocol ?? '', [targets, lanesByTarget])
 
   const isHTTP = protocol.toLowerCase() === 'http'
   const operations = useMemo(() => operationsFor(protocol), [protocol])
@@ -118,29 +119,37 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
   // here is the same refusal the sidecar makes at startup, brought forward to
   // the form: bound to an http or ssh lane, this rule would take that
   // sidecar's whole configuration down on its next restart.
-  const holdable = targets.length > 0 && targets.every((t) => {
-    const byId = new Map(sidecars.map((sc) => [sc.id, sc]))
-    const lane = byId
-      .get(t.sidecar_id)
-      ?.configuration?.listeners?.find((l) => l.name === t.listener_name)
-    return canHold(lane?.protocol)
-  })
-  const actions = useMemo(() => analyzerActionsFor(form.hold), [form.hold])
+  const holdableFor = (ts) => ts.length > 0 && lanesByTarget(ts).every((lane) => canHold(lane?.protocol))
+  const holdable = holdableFor(targets)
+  const actions = useMemo(() => analyzerActionsFor(holdable), [holdable])
 
-  // Turning the switch off has to take the action with it, and it fails
-  // CLOSED: a level that was holding becomes block, never allow. Leaving
-  // require_review behind would save a hold with nothing to release it;
-  // dropping to unset would quietly start allowing the statements the
-  // operator had chosen to stop.
-  const setHold = (on) =>
+  /**
+   * Change the bound listeners, and take the hold off any level that can no
+   * longer hold it.
+   *
+   * This is the event that makes a chosen hold unreachable: a rule set on a
+   * postgres lane and then pointed at an http one carries a require_review the
+   * sidecar refuses at startup. It is cleared HERE, in the handler, rather
+   * than at save time — the operator sees the levels change as they change the
+   * listeners, instead of saving something other than what the form showed.
+   *
+   * The clean-up fails CLOSED: a level that was holding becomes block, never
+   * allow. Dropping it to unset would quietly start allowing the statements
+   * the operator chose to stop.
+   */
+  const handleTargets = (next) => {
+    setTargets(next)
+    if (holdableFor(next)) return
     setForm((f) => {
-      if (on) return { ...f, hold: true }
       const cleared = {}
       for (const level of ['high', 'medium', 'low']) {
         if (f[level] === REVIEW_ACTION) cleared[level] = 'block'
       }
-      return { ...f, ...cleared, hold: false }
+      return Object.keys(cleared).length > 0 ? { ...f, ...cleared } : f
     })
+  }
+
+  const holding = [form.high, form.medium, form.low].includes(REVIEW_ACTION)
   const noTrigger =
     form.trigger_operations.length === 0 &&
     form.trigger_tables.length === 0 &&
@@ -155,16 +164,6 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
       showSnackbar({
         level: 'error',
         text: 'Set an action for at least one risk level.',
-      })
-      return
-    }
-    // The two halves of a hold travel together or not at all, and the sidecar
-    // refuses either one alone at startup. Saying so here costs a snackbar;
-    // saving it costs a fleet that will not boot.
-    if (form.hold && ![spec.high, spec.medium, spec.low].includes(REVIEW_ACTION)) {
-      showSnackbar({
-        level: 'error',
-        text: 'Set at least one risk level to hold for approval, or switch it off.',
       })
       return
     }
@@ -238,7 +237,7 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
         title="Distribute to listeners"
         description="One rule per listener, and the listener needs its analyzer switched on first."
       >
-        <SidecarTargetPicker value={targets} onChange={setTargets} />
+        <SidecarTargetPicker value={targets} onChange={handleTargets} />
       </SectionRow>
 
       <SectionRow
@@ -295,17 +294,6 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
         description="A level you leave unset allows."
       >
         <Stack gap="md">
-          <Switch
-            label="Hold for approval"
-            description={
-              holdable
-                ? 'Adds "Hold for approval" to the levels below. The first attempt is denied with a request for review; running the same statement again after approval lets it through.'
-                : 'Only a database listener can hold a statement: the hold denies the first attempt and releases an identical retry, which needs a client that sends it again.'
-            }
-            checked={form.hold}
-            onChange={(e) => setHold(e.currentTarget.checked)}
-            disabled={!holdable && !form.hold}
-          />
           {[
             ['high', 'High risk'],
             ['medium', 'Medium risk'],
@@ -320,6 +308,25 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
               allowDeselect={false}
             />
           ))}
+          {holding ? (
+            <Alert color="blue" variant="light" icon={<Info size={16} />} radius="md">
+              <Stack gap={4}>
+                <Text size="sm">
+                  The first attempt is denied and a review is filed. The client is not held open: nothing waits on the
+                  approval, and closing the session does not cancel it.
+                </Text>
+                <Text size="sm">
+                  Running the same statement again after an approver releases it lets it through.
+                </Text>
+              </Stack>
+            </Alert>
+          ) : (
+            <Text size="xs" c="dimmed">
+              {holdable
+                ? 'Hold for approval denies the first attempt and files a review. Running the same statement again after approval lets it through.'
+                : 'Hold for approval needs a client that sends the statement again, so only a database listener can do it.'}
+            </Text>
+          )}
           <TextInput
             label="Denial message (optional)"
             placeholder="refused by risk analysis"

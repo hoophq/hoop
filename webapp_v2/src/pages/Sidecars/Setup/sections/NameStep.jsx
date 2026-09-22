@@ -1,11 +1,16 @@
 import { useState } from 'react'
 import { Anchor, Grid, Group, Stack, Text, ThemeIcon, Title } from '@mantine/core'
 import { Link } from 'react-router-dom'
+import { Cloud, FileCog } from 'lucide-react'
 import Button from '@/components/Button'
 import CodeSnippet from '@/components/CodeSnippet'
+import SelectionCard from '@/components/SelectionCard'
 import Tabs from '@/components/Tabs'
 import TextInput from '@/components/TextInput'
 import { docsUrl } from '@/utils/docsUrl'
+
+export const SOURCE_CONTROL_PLANE = 'control-plane'
+export const SOURCE_CONFIG_FILE = 'config-file'
 
 function NumberedBlock({ n, title, children }) {
   return (
@@ -100,10 +105,22 @@ volumes:
  * are the documented steps for connecting one, in the documentation's order:
  * point it at the control plane, take the token, start it.
  */
-export default function NameStep({ mode, sidecar, token, controlPlaneUrl, creating, error, onCreate }) {
+export default function NameStep({
+  mode,
+  sidecar,
+  token,
+  controlPlaneUrl,
+  creating,
+  error,
+  onCreate,
+  source,
+  onSourceChange,
+  sourceSaving,
+}) {
   const [name, setName] = useState('')
   const created = !!sidecar
   const isConnect = mode === 'connect'
+  const ownedByPlane = source === SOURCE_CONTROL_PLANE
 
   const handleSubmit = (e) => {
     e.preventDefault()
@@ -114,6 +131,42 @@ export default function NameStep({ mode, sidecar, token, controlPlaneUrl, creati
   // The deploy block only exists in the "create and deploy" flow; everything
   // after it is shared, so the numbering is computed rather than written.
   const blocks = []
+
+  // First, because it decides what every block below means. The choice used to
+  // live only on the details page, after the sidecar was already running and
+  // already owned by the plane — so an operator who wanted to keep their file
+  // found out by watching it be taken over.
+  //
+  // Either way the sidecar needs a config file: the daemon refuses a
+  // configuration with no listeners, and the control plane seeds itself from
+  // that file on the first handshake (importLocalConfig). What the choice
+  // decides is who owns it AFTERWARDS.
+  blocks.push(
+    <NumberedBlock key="source" n={blocks.length + 1} title="Choose where its configuration comes from">
+      <Stack gap="sm" maw={560}>
+        <SelectionCard
+          icon={Cloud}
+          title="Control plane"
+          description="The sidecar imports its config file once, then this control plane owns it. Rules you bind to its listeners are delivered."
+          selected={ownedByPlane}
+          disabled={sourceSaving}
+          onClick={() => onSourceChange(SOURCE_CONTROL_PLANE)}
+        />
+        <SelectionCard
+          icon={FileCog}
+          title="Config file"
+          description="The sidecar keeps reading its own config file. The control plane sends only its license and delivers no rules."
+          selected={!ownedByPlane}
+          disabled={sourceSaving}
+          onClick={() => onSourceChange(SOURCE_CONFIG_FILE)}
+        />
+        <Text size="xs" c="dimmed">
+          You can change this later on the sidecar page.
+        </Text>
+      </Stack>
+    </NumberedBlock>
+  )
+
   if (!isConnect) {
     blocks.push(
       <NumberedBlock key="deploy" n={blocks.length + 1} title="Deploy the sidecar">
@@ -183,9 +236,9 @@ export default function NameStep({ mode, sidecar, token, controlPlaneUrl, creati
         ]}
       />
       <Text size="xs" c="dimmed">
-        {
-          'Run this on the host that reaches your resources. Listeners come from its local file; guardrails, masking and analyzer settings arrive from the control plane.'
-        }
+        {ownedByPlane
+          ? 'Run this on the host that reaches your resources. Its config file seeds the listeners once; guardrails, masking and analyzer rules then arrive from the control plane.'
+          : 'Run this on the host that reaches your resources. Everything it runs comes from its config file; the control plane sends only its license.'}
       </Text>
     </NumberedBlock>
   )

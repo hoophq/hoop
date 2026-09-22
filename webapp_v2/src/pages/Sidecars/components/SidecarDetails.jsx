@@ -1,18 +1,13 @@
-import { useState } from 'react'
 import { Divider, Group, Paper, Stack, Text, Title } from '@mantine/core'
 import { Info, Lock } from 'lucide-react'
 import Alert from '@/components/Alert'
 import Badge from '@/components/Badge'
-import Switch from '@/components/Switch'
 import Tooltip from '@/components/Tooltip'
 import EmptyState from '@/layout/EmptyState'
-import { useSidecarStore } from '@/stores/useSidecarStore'
 import { formatRelativeTime } from '@/utils/datetime'
-import { showSnackbar } from '@/utils/snackbar'
-import { auditEnabled, configFeatures, hasConfiguration, loadsFromDisk } from '../config'
+import { auditEnabled, configFeatures, hasConfiguration, loadsFromConfigFile } from '../config'
 import ListenersTable from '../sections/ListenersTable'
 import { sidecarStatus } from '../status'
-import SidecarSourceModal from '../sections/SidecarSourceModal'
 import FeaturePills from './FeaturePills'
 
 const LABEL_WIDTH = 88
@@ -43,59 +38,32 @@ export function SidecarStatusBadge({ sidecar }) {
  * The "Sidecar Details" card (Figma: wizard Overview and the details page).
  *
  * The control plane answers the sidecar's check-in with the configuration it
- * holds for it (gateway/api/sidecar). This card reads that document and writes
- * two things, each only when the caller hands it somewhere to put the result:
- * which side owns the document, under `editable`, and the listeners inside it,
- * under `listenerActions`. The wizard's Overview step passes neither — it holds
- * its own copy of a sidecar that is still waiting for the first handshake.
+ * holds for it (gateway/api/sidecar). This card READS that document. It writes
+ * one thing, and only when the caller hands it somewhere to put the result:
+ * the listeners inside it, under `listenerActions`. The wizard's Overview step
+ * passes none — it holds its own copy of a sidecar still waiting for the first
+ * handshake.
+ *
+ * Which side OWNS the document is no longer here. It used to be a switch in
+ * this header, one click from the status badge, and it retires every rule the
+ * control plane distributes to this sidecar at once. A control with that reach
+ * does not belong beside a name and a timestamp: it lives in
+ * ../sections/SidecarSourceSection, at the foot of the details page, which is
+ * where the page also keeps Delete.
  */
-export default function SidecarDetails({ sidecar, editable, listenerActions }) {
-  const setLoadFromDisk = useSidecarStore((s) => s.setLoadFromDisk)
+export default function SidecarDetails({ sidecar, listenerActions }) {
   const config = sidecar.configuration
   const configured = hasConfiguration(config)
-  const fromDisk = loadsFromDisk(sidecar)
-  const listeners = config?.listeners ?? []
-  // The value awaiting confirmation, and whether the dialog is up. Two states
-  // rather than one: Mantine keeps the modal mounted through its exit
-  // transition, and a target cleared on close would rewrite the copy of the
-  // dialog the user is watching leave.
-  const [target, setTarget] = useState(false)
-  const [asking, setAsking] = useState(false)
-  const [saving, setSaving] = useState(false)
-
-  const ask = (next) => {
-    setTarget(next)
-    setAsking(true)
-  }
-
-  const confirmSource = async () => {
-    if (!asking) return
-    setSaving(true)
-    try {
-      await setLoadFromDisk(sidecar.id, target)
-      setAsking(false)
-    } catch (error) {
-      // The switch renders the stored value, so it is already back where it
-      // was once the dialog closes.
-      setAsking(false)
-      showSnackbar({
-        level: 'error',
-        text: 'Could not change the configuration source.',
-        description: error.response?.data?.message ?? error.message,
-      })
-    } finally {
-      setSaving(false)
-    }
-  }
+  const fromConfigFile = loadsFromConfigFile(sidecar)
 
   return (
     <Stack gap="md">
-      {fromDisk ? (
+      {fromConfigFile ? (
         <Alert color="blue" variant="light" radius="md" icon={<Lock size={16} />}>
           <Stack gap={4}>
             <Text size="sm">
               {
-                'This sidecar loads its configuration from its own config file, and the control plane sends only its license. A running sidecar picks this up on its next check-in, within a minute.'
+                "This sidecar loads its configuration from its own config file, and the control plane sends only its license. A running sidecar picks this up on its next check-in, within a minute."
               }
             </Text>
             {configured && (
@@ -122,18 +90,7 @@ export default function SidecarDetails({ sidecar, editable, listenerActions }) {
         <Stack gap="lg">
           <Group justify="space-between" align="center">
             <Title order={3}>Sidecar Details</Title>
-            <Group gap="lg" align="center">
-              {editable && (
-                <Switch
-                  label="Load configuration from disk"
-                  labelPosition="left"
-                  checked={fromDisk}
-                  disabled={saving || asking}
-                  onChange={(event) => ask(event.currentTarget.checked)}
-                />
-              )}
-              <SidecarStatusBadge sidecar={sidecar} />
-            </Group>
+            <SidecarStatusBadge sidecar={sidecar} />
           </Group>
 
           <Stack gap="sm">
@@ -173,12 +130,12 @@ export default function SidecarDetails({ sidecar, editable, listenerActions }) {
 
               <Divider />
 
-              {/* Still authorable while the sidecar runs from disk: the stored
-                  document is what the switch above hands back, so it is worth
-                  getting right before the flip, not after. */}
+              {/* Still authorable while the sidecar runs from its config file:
+                  the stored document is what the source section hands back, so
+                  it is worth getting right before the flip, not after. */}
               <ListenersTable sidecar={sidecar} {...listenerActions} />
             </>
-          ) : fromDisk ? (
+          ) : fromConfigFile ? (
             // Nothing stored and nothing to store into: the plane sends this
             // sidecar only its license, so an empty listener table with an Add
             // button would offer an edit that changes nothing it runs.
@@ -192,15 +149,6 @@ export default function SidecarDetails({ sidecar, editable, listenerActions }) {
           )}
         </Stack>
       </Paper>
-
-      <SidecarSourceModal
-        opened={asking}
-        toDisk={target}
-        storedListeners={listeners.length}
-        onClose={() => setAsking(false)}
-        onConfirm={confirmSource}
-        loading={saving}
-      />
     </Stack>
   )
 }

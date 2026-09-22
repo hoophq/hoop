@@ -23,7 +23,7 @@ function uniqueSorted(values) {
   return [...new Set(values)].sort((a, b) => a.localeCompare(b))
 }
 
-export default function DataMasking() {
+export default function GatewayDataMasking() {
   const navigate = useNavigate()
 
   const list = useDataMaskingStore((s) => s.list)

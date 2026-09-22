@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Box, Group, Paper, Stack, Text } from '@mantine/core'
-import { ArrowLeft, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeft, Info, Plus, Trash2 } from 'lucide-react'
 import ActionIcon from '@/components/ActionIcon'
+import Alert from '@/components/Alert'
 import Button from '@/components/Button'
 import DocsBtnCallOut from '@/components/DocsBtnCallOut'
 import MultiSelect from '@/components/MultiSelect'
@@ -304,9 +305,18 @@ function FormFields({ rule: stored, id, isEdit }) {
 
       <SectionRow
         title="Distribute to listeners"
-        description="A listener's mask rules replace the sidecar defaults rather than adding to them."
+        description="Masking does not add up. On every listener you pick, these rules become the whole mask block."
       >
-        <SidecarTargetPicker value={targets} onChange={setTargets} />
+        <Stack gap="sm">
+          <SidecarTargetPicker value={targets} onChange={setTargets} />
+          {targets.length > 0 && (
+            <Alert color="amber" variant="light" icon={<Info size={16} />} radius="md">
+              {
+                "Any mask rules these listeners carry in their config file stop being applied, the sidecar's own defaults included. Guardrails add up; masking replaces."
+              }
+            </Alert>
+          )}
+        </Stack>
       </SectionRow>
 
       <SectionRow

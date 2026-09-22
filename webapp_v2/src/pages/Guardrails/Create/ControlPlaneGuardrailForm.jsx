@@ -234,7 +234,7 @@ function RuleEditor({ rule, index, onChange, onRemove, removable, types, operati
         <Group align="flex-end" gap="sm" wrap="nowrap">
           <TextInput
             label="Denial message"
-            placeholder="destructive statements are not permitted on this lane"
+            placeholder="destructive statements are not permitted on this listener"
             value={rule.message}
             onChange={(e) => set({ message: e.currentTarget.value })}
             flex={1}

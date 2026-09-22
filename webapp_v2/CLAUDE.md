@@ -53,7 +53,11 @@ what a product shows, and ClojureScript exists only in the gateway.**
 - **One route table.** `Router.jsx` registers every React page once, for both products.
   A page absent from a product's sidebar is still reachable by URL. That is a decision,
   not an oversight: while the control plane is in transition, an open URL finds bugs.
-  Closing it later is a filter on the same table.
+  Closing it later is a filter on the same table. One route is already closed:
+  `/rulepacks` answers `NotFound` in the control plane, through the same `<ByProduct>`
+  every other split uses. A rulepack applies rules to CONNECTIONS, which a control plane
+  has not got, so the page has no reading in that product at all — an open URL there
+  finds no bug, only a form nothing can fill.
 - **Three leaves per product**, and only three: `/`, `/onboarding/*` and `/*`. In the
   gateway they are ClojureScript (`ClojureApp`); in the control plane `/` is the
   landing by role (`pages/Home`) and the other two are a 404 (`pages/NotFound`). The

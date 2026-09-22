@@ -133,4 +133,8 @@ export function hasConfiguration(config) {
 // handshake with the license alone and the sidecar runs its own config file
 // (resolveConfigSource, sidecar/daemon/controlplane.go). The stored document
 // below stays readable and is not applied.
-export const loadsFromDisk = (sidecar) => sidecar?.configuration?.load_from_disk === true
+//
+// The wire key stays `load_from_disk` — it is the gateway's, and renaming a
+// field an older sidecar reads is not something a label change may do. Only
+// what this app SAYS is standardised, on "config file".
+export const loadsFromConfigFile = (sidecar) => sidecar?.configuration?.load_from_disk === true

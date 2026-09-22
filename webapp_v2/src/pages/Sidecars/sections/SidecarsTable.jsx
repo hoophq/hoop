@@ -5,7 +5,7 @@ import Badge from '@/components/Badge'
 import Table from '@/components/Table'
 import { useConnectionIconGetter } from '@/utils/connectionIcons'
 import { formatRelativeTime } from '@/utils/datetime'
-import { configFeatures, loadsFromDisk, protocolInfo } from '../config'
+import { configFeatures, loadsFromConfigFile, protocolInfo } from '../config'
 import FeaturePills from '../components/FeaturePills'
 import { SidecarStatusBadge } from '../components/SidecarDetails'
 
@@ -25,7 +25,7 @@ const LANES_SHOWN = 4
 function Listeners({ sidecar, getIcon }) {
   const listeners = sidecar.configuration?.listeners ?? []
 
-  if (loadsFromDisk(sidecar)) {
+  if (loadsFromConfigFile(sidecar)) {
     return (
       <Text size="sm" c="dimmed">
         In its config file
@@ -111,15 +111,15 @@ export default function SidecarsTable({ sidecars, onDelete }) {
               </Group>
             </Table.Td>
             <Table.Td miw={140}>
-              <Badge variant="light" color={loadsFromDisk(sidecar) ? 'gray' : 'blue'} fullLabel>
-                {loadsFromDisk(sidecar) ? 'Config file' : 'Control plane'}
+              <Badge variant="light" color={loadsFromConfigFile(sidecar) ? 'gray' : 'blue'} fullLabel>
+                {loadsFromConfigFile(sidecar) ? 'Config file' : 'Control plane'}
               </Badge>
             </Table.Td>
             <Table.Td>
               <Listeners sidecar={sidecar} getIcon={getIcon} />
             </Table.Td>
             <Table.Td>
-              {loadsFromDisk(sidecar) ? (
+              {loadsFromConfigFile(sidecar) ? (
                 <Text size="sm" c="dimmed">
                   Not delivered
                 </Text>

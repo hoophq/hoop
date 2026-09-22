@@ -8,7 +8,7 @@ import { useSidecarStore } from '@/stores/useSidecarStore'
 import { useUserStore } from '@/stores/useUserStore'
 import { showSnackbar } from '@/utils/snackbar'
 import SidecarDetails from '../components/SidecarDetails'
-import NameStep from './sections/NameStep'
+import NameStep, { SOURCE_CONFIG_FILE, SOURCE_CONTROL_PLANE } from './sections/NameStep'
 import WaitingStep from './sections/WaitingStep'
 
 const LIST_PATH = '/sidecars'
@@ -39,7 +39,7 @@ export default function SidecarSetup({ mode = 'connect' }) {
   const copy = COPY[mode] ?? COPY.connect
   const navigate = useNavigate()
   const apiUrl = useUserStore((s) => s.apiUrl)
-  const { createSidecar, deleteSidecar } = useSidecarStore()
+  const { createSidecar, deleteSidecar, setLoadFromDisk } = useSidecarStore()
 
   const [step, setStep] = useState(0)
   const [sidecar, setSidecar] = useState(null)
@@ -50,6 +50,11 @@ export default function SidecarSetup({ mode = 'connect' }) {
   // True while step 1 is polling. The header button spins on it, so the wizard
   // never offers an action whose outcome is still unknown.
   const [waiting, setWaiting] = useState(false)
+  // Which side will own the configuration. The control plane is the default
+  // because a sidecar created here is one an admin came to manage from here;
+  // the other choice is a real one and it is offered, not hidden.
+  const [source, setSource] = useState(SOURCE_CONTROL_PLANE)
+  const [sourceSaving, setSourceSaving] = useState(false)
 
   const handleCreate = async (name) => {
     setCreating(true)
@@ -62,6 +67,42 @@ export default function SidecarSetup({ mode = 'connect' }) {
       setCreateError(err.response?.data?.message || 'Failed to create the sidecar.')
     } finally {
       setCreating(false)
+    }
+  }
+
+  /**
+   * Record the choice on the sidecar, not just in this component.
+   *
+   * The flip is a PATCH that merges one key, so it cannot clobber a
+   * configuration the sidecar imported meanwhile. It is applied as soon as it
+   * is picked rather than on Finish: the sidecar may hand shake at any moment
+   * between the two, and it must not be told the plane owns its configuration
+   * when the operator has already said otherwise.
+   *
+   * A failure leaves the cards on the stored value, which is what `sidecar`
+   * carries — the same bargain the details page makes.
+   */
+  const handleSource = async (next) => {
+    // The cards render only after the sidecar exists — NameStep gates the whole
+    // block on `created` — so there is always a row to write to. Moving the
+    // selection without a row to write it to would leave the choice on screen
+    // and nowhere else, which is the one outcome this control cannot have.
+    if (!sidecar || next === source || sourceSaving) return
+    const previous = source
+    setSource(next)
+    setSourceSaving(true)
+    try {
+      const updated = await setLoadFromDisk(sidecar.id, next === SOURCE_CONFIG_FILE)
+      setSidecar(updated)
+    } catch (err) {
+      setSource(previous)
+      showSnackbar({
+        level: 'error',
+        text: 'Could not set the configuration source.',
+        description: err.response?.data?.message ?? err.message,
+      })
+    } finally {
+      setSourceSaving(false)
     }
   }
 
@@ -160,6 +201,9 @@ export default function SidecarSetup({ mode = 'connect' }) {
           creating={creating}
           error={createError}
           onCreate={handleCreate}
+          source={source}
+          onSourceChange={handleSource}
+          sourceSaving={sourceSaving}
         />
       )}
 

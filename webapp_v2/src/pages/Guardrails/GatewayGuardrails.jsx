@@ -23,7 +23,7 @@ function uniqueSorted(values) {
   return [...new Set(values)].sort((a, b) => a.localeCompare(b))
 }
 
-export default function Guardrails() {
+export default function GatewayGuardrails() {
   const navigate = useNavigate()
 
   const list = useGuardrailsStore((s) => s.list)

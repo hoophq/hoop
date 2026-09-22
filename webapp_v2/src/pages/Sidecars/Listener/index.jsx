@@ -12,8 +12,8 @@ import { useListenerEditor } from '../useListenerEditor'
 
 // The sidecar this listener belongs to, above its own name. There is no
 // Breadcrumbs component in the app and one consumer does not earn one; this is
-// the shape pages/Rulepacks/Detail uses, as a Button rather than a Group with
-// an onClick so it is reachable from the keyboard.
+// the shape the other back links use, as a Button rather than a Group with an
+// onClick so it is reachable from the keyboard.
 function Parent({ name, onClick }) {
   return (
     <Button

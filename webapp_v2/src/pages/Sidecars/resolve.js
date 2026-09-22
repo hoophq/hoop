@@ -145,3 +145,37 @@ export function resolveListener(listener, config) {
     analyzer: laneAnalyzer(listener, config),
   }
 }
+
+/**
+ * Whether the control plane's own mask rules have taken this lane's block over.
+ *
+ * Composition writes `listeners[i].Mask` WHOLE when a masking rule is bound to
+ * the lane (foldSidecarRules, gateway/services/sidecarconfig.go), and a present
+ * `mask` block replaces the inherited one rather than adding to it. So a bound
+ * masking rule does not join the document's rules — it retires them, top-level
+ * defaults included.
+ *
+ * Returns the rule names that did it, or an empty list. A caller that only
+ * wants the yes/no reads `.length`; the names are what a reader needs to find
+ * the rule that replaced theirs.
+ */
+export function maskReplacedBy(boundRules, listenerName) {
+  return (boundRules ?? [])
+    .filter((b) => b.kind === 'datamasking' && b.listener_name === listenerName)
+    .map((b) => b.rule_name)
+}
+
+/**
+ * Whether a distributed analyzer rule is driving this lane's analyzer block.
+ *
+ * mergeAnalyzerBlock lays the rule over the listener's block: the RULE owns the
+ * trigger, the three risk actions, the prompt and the message; the LISTENER
+ * keeps `send`, `fail_open` and the cost bounds unless the rule names them.
+ * So neither side alone describes what runs, and printing the block's own
+ * trigger while a rule overrides it states the opposite of the truth.
+ */
+export function analyzerOverriddenBy(boundRules, listenerName) {
+  return (boundRules ?? [])
+    .filter((b) => b.kind === 'analyzer' && b.listener_name === listenerName)
+    .map((b) => b.rule_name)
+}
