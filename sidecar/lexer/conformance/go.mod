@@ -18,7 +18,7 @@
 // sit behind `//go:build cgo` and are never reached from here.
 module github.com/hoophq/hoop/sidecar/lexer/conformance
 
-go 1.26.5
+go 1.26.8
 
 require (
 	github.com/hoophq/hoop/sidecar v0.0.0
