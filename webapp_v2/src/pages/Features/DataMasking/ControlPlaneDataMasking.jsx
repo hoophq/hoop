@@ -45,8 +45,12 @@ function Targets({ labels }) {
   }
   return (
     <Group gap="xs">
-      {labels.map((label) => (
-        <Badge key={label} tag chip variant="light" color="gray">
+      {/* The position, not the label: two deleted sidecars both render as
+          "Unknown sidecar", so a label is not unique and React would drop the
+          second chip — hiding a target. The list is derived fresh from the
+          row's own targets and is never reordered, so the index is stable. */}
+      {labels.map((label, i) => (
+        <Badge key={`${label}#${i}`} tag chip variant="light" color="gray">
           {label}
         </Badge>
       ))}

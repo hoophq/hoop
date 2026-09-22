@@ -158,6 +158,20 @@ export function resolveListener(listener, config) {
  * Returns the rule names that did it, or an empty list. A caller that only
  * wants the yes/no reads `.length`; the names are what a reader needs to find
  * the rule that replaced theirs.
+ *
+ * KNOWN GAP, and it needs a field this endpoint does not serve. Composition
+ * skips a binding whose rules are empty (`if len(rules) == 0 { continue }`),
+ * so a masking record bound to this lane while carrying no rules replaces
+ * nothing — and this function would still report it as having. The sidecar
+ * payload carries only {kind, rule_name, listener_name} per binding
+ * (openapi.SidecarRuleBinding, gateway/api/sidecar/sidecar.go), never the
+ * spec, so nothing here can tell the two apart. The rule forms refuse a
+ * zero-rule save, which is what keeps the state off the normal path; closing
+ * it properly means the binding saying whether it carries rules.
+ *
+ * The wrong answer errs toward "your masking is not applied" on a lane where
+ * it is, which is the safe direction to be wrong in — the opposite of what
+ * this function exists to stop.
  */
 export function maskReplacedBy(boundRules, listenerName) {
   return (boundRules ?? [])

@@ -139,7 +139,15 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
    */
   const handleTargets = (next) => {
     setTargets(next)
-    if (holdableFor(next)) return
+    // An EMPTY selection is not a selection that cannot hold. Clearing the
+    // field — the picker is `clearable`, and removing the last pill does it
+    // too — is how an operator starts re-picking, and rewriting their levels
+    // mid-edit loses a hold they never chose to drop: re-selecting the same
+    // listener does not bring it back, and the save then writes `block` with
+    // nothing on screen saying so. holdableFor is false for [] because a rule
+    // bound to nothing cannot hold anything, which is the right answer for the
+    // option list and the wrong one here.
+    if (next.length === 0 || holdableFor(next)) return
     setForm((f) => {
       const cleared = {}
       for (const level of ['high', 'medium', 'low']) {
