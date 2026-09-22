@@ -17,9 +17,10 @@ import (
 // stateful codec corrupt each other's reassembly buffer.
 func newHTTPCodec(cfg HTTPCodecConfig) func() inspect.Codec {
 	opts := codechttp.Options{
-		CaptureBody:  cfg.CaptureBody,
-		MaxBodyBytes: cfg.MaxBodyBytes,
-		Headers:      cfg.Headers,
+		CaptureBody:          cfg.CaptureBody,
+		MaxBodyBytes:         cfg.MaxBodyBytes,
+		Headers:              cfg.Headers,
+		SensitiveQueryParams: cfg.SensitiveQueryParams,
 	}
 	return func() inspect.Codec { return codechttp.New(opts) }
 }
