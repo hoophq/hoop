@@ -815,7 +815,14 @@ func readAhead(src net.Conn, idle time.Duration, end context.CancelCauseFunc) (n
 				_ = src.SetReadDeadline(time.Now().Add(idle))
 			}
 			n, err := src.Read(bufs[i])
-			if err != nil {
+			// A read that returned BYTES ends the connection through the
+			// pump instead, once those bytes have been judged. A legal
+			// final request arrives together with its io.EOF on a socket
+			// the client half-closed, and ending the connection here would
+			// deny that request before it was even filed. A read with
+			// nothing to hand over ends it now: that is the hangup the pump
+			// is waiting to hear about while it holds a statement.
+			if err != nil && n == 0 {
 				end(endCause(inspect.FromClient, err))
 			}
 			select {
