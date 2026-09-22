@@ -11,7 +11,7 @@
 // A binary that does not import this module links no GCP code at all.
 module github.com/hoophq/hoop/sidecar/analyzer/vertex
 
-go 1.26.5
+go 1.26.8
 
 require (
 	github.com/hoophq/hoop/sidecar v0.0.0

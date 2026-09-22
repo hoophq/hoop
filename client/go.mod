@@ -1,6 +1,6 @@
 module github.com/hoophq/hoop/client
 
-go 1.26.5
+go 1.26.8
 
 require (
 	// latest version breaks when using the loader to stderr
@@ -25,11 +25,11 @@ require (
 	github.com/hoophq/hoop/sidecar/config/yaml v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/sidecar/descriptors/gcs v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/sidecar/pii/alcatraz v0.0.0-00010101000000-000000000000
-	github.com/hoophq/libhoop v0.0.0-20260916211709-c49b31f354b0
+	github.com/hoophq/libhoop v0.0.0-20260921142807-8a4562b36981
 	github.com/stretchr/testify v1.11.1
-	golang.org/x/crypto v0.54.0
+	golang.org/x/crypto v0.56.0
 	golang.org/x/mod v0.38.0
-	google.golang.org/grpc v1.83.0
+	google.golang.org/grpc v1.84.0
 	gopkg.in/yaml.v3 v3.0.1
 	mvdan.cc/sh/v3 v3.13.1
 )
@@ -89,7 +89,7 @@ require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/ebitengine/purego v0.10.0 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
-	github.com/felixge/httpsnoop v1.0.4 // indirect
+	github.com/felixge/httpsnoop v1.1.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.1 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.13 // indirect
 	github.com/getkin/kin-openapi v0.144.0 // indirect
@@ -189,7 +189,7 @@ require (
 	github.com/russellhaering/goxmldsig v1.6.0 // indirect
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
 	github.com/segmentio/analytics-go/v3 v3.3.0 // indirect
-	github.com/segmentio/asm v1.1.3 // indirect
+	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/segmentio/backo-go v1.1.0 // indirect
 	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/sergi/go-diff v1.4.0 // indirect
@@ -231,7 +231,7 @@ require (
 	go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin v0.68.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.68.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/host v0.68.0 // indirect
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0 // indirect
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.69.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/runtime v0.68.0 // indirect
 	go.opentelemetry.io/contrib/processors/baggage/baggagetrace v0.1.0 // indirect
 	go.opentelemetry.io/contrib/processors/baggagecopy v0.16.0 // indirect
@@ -264,8 +264,8 @@ require (
 	golang.org/x/tools v0.48.0 // indirect
 	google.golang.org/api v0.283.0 // indirect
 	google.golang.org/genproto v0.0.0-20260610212136-7ab31c22f7ad // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20260610212136-7ab31c22f7ad // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260610212136-7ab31c22f7ad // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20260706201446-f0a921348800 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260706201446-f0a921348800 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gorm.io/driver/postgres v1.6.0 // indirect
@@ -288,9 +288,9 @@ require (
 	github.com/mattn/go-isatty v0.0.21 // indirect
 	github.com/muesli/termenv v0.16.0
 	github.com/spf13/pflag v1.0.10
-	golang.org/x/net v0.57.0 // indirect
+	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/text v0.40.0
+	golang.org/x/text v0.41.0
 	google.golang.org/protobuf v1.36.11 // indirect
 )
 

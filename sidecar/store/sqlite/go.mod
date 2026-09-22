@@ -10,9 +10,9 @@
 // sidecar ships as a static binary and a cgo dependency breaks that build.
 module github.com/hoophq/hoop/sidecar/store/sqlite
 
-go 1.26.5
+go 1.26.8
 
-toolchain go1.26.5
+toolchain go1.26.8
 
 require (
 	github.com/hoophq/hoop/sidecar v0.0.0
