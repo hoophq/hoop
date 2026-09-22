@@ -3,6 +3,7 @@ package analyzer
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
@@ -40,8 +41,38 @@ const (
 	reviewExecuted = "EXECUTED"
 )
 
+// Reviewer is the review backend a hold talks to: the control plane, in the
+// sidecar.
+//
+// Two calls, because waiting must never file. File is the first ask for a
+// statement; Claim is every ask after it, about the review File named. A
+// backend that files on a repeated ask would page approvers again whenever
+// another connection spent the approval mid-wait.
+type Reviewer interface {
+	// File files the statement for approval, or answers from the review
+	// already filed for these exact bytes. It receives the RAW statement
+	// text, never the model input. See hold.
+	File(ctx context.Context, statement string) (ReviewResult, error)
+
+	// Claim answers about one review by id, spending it when it is
+	// approved. It never files.
+	Claim(ctx context.Context, reviewID string) (ReviewResult, error)
+}
+
+// How long a held statement waits on its connection, and how often it asks.
+//
+// Constants, not configuration: a field can be added when a deployment asks
+// for one. Five minutes covers a human answering in Slack; a client that gives
+// up sooner disconnects, which ends the wait without spending the approval.
+// One held statement costs reviewWait/reviewPoll calls, 60 at these values.
+const (
+	reviewWait = 5 * time.Minute
+	reviewPoll = 5 * time.Second
+)
+
 // hold resolves an ActionRequireReview verdict: it files the statement for
-// human approval and forwards only what came back released.
+// human approval, waits on the connection while the review is pending, and
+// forwards only what came back released.
 //
 // It is the one place in this package that talks to anything but the model
 // provider, and it fails closed in every direction. FailOpen is not consulted
@@ -53,19 +84,27 @@ const (
 // approval against the exact bytes a retry sends, so a redacted or truncated
 // rendering would either match nothing or, worse, approve something nobody
 // read.
-func (e *Evaluator) hold(stmt inspect.Statement, notes map[string]string) policy.Verdict {
+//
+// ctx is the connection's. It ends the wait when the client or the upstream
+// goes away, so an approval is never spent on a statement that cannot run.
+func (e *Evaluator) hold(ctx context.Context, stmt inspect.Statement, notes map[string]string) policy.Verdict {
 	if e.cfg.Review == nil {
 		// An observed lane is built without one on purpose, and its
 		// denial is turned back into an allow by policy.Observe. Any
 		// other lane reaching here has no way to file, and a hold that
-		// cannot file has to deny.
+		// cannot file has to deny. It never waits: a rehearsal must not
+		// stall on a human.
 		return e.denyHold(notes, "", "no review backend is configured")
 	}
+	if err := ctx.Err(); err != nil {
+		// Gone before anything was filed: paging a human for a statement
+		// that can no longer run is noise.
+		return e.denyEnded(ctx, notes, "", "the connection ended before the review was filed")
+	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), e.cfg.Timeout)
-	defer cancel()
-
-	res, err := e.cfg.Review(ctx, stmt.Text)
+	res, err := e.ask(ctx, func(c context.Context) (ReviewResult, error) {
+		return e.cfg.Review.File(c, stmt.Text)
+	})
 	if err != nil {
 		e.errs.Add(1)
 		v := e.denyHold(notes, res.ID, "the review could not be filed")
@@ -76,12 +115,100 @@ func (e *Evaluator) hold(stmt inspect.Statement, notes map[string]string) policy
 		notes[MetadataReviewID] = res.ID
 	}
 	if res.Forward {
-		// The backend consumed an approved review for these exact bytes,
-		// which it does once. The statement travels, and the audit record
-		// carries the review that released it.
-		return policy.Verdict{Annotations: notes}
+		return e.release(ctx, notes, res.ID)
 	}
-	return e.denyHold(notes, res.ID, reviewReason(res.Status))
+	if res.Status != reviewPending || res.ID == "" {
+		return e.denyHold(notes, res.ID, reviewReason(res.Status))
+	}
+	return e.wait(ctx, res.ID, notes)
+}
+
+// wait asks about one pending review until it settles, the budget runs out or
+// the connection ends.
+//
+// It asks by id and never files. A statement whose approval another
+// connection spent reads EXECUTED here and stops, rather than filing a fresh
+// review and paging the approvers again from inside a wait.
+//
+// The budget bounds when a poll STARTS, not when one ends: a claim in flight
+// at the deadline may already have spent the approval, so its answer is
+// honored.
+func (e *Evaluator) wait(ctx context.Context, reviewID string, notes map[string]string) policy.Verdict {
+	deadline := time.Now().Add(e.reviewWait)
+	timer := time.NewTimer(e.reviewPoll)
+	defer timer.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+		case <-timer.C:
+		}
+		// Checked after the select too: both cases can be ready at once,
+		// and a claim started for a gone connection can spend the approval.
+		if ctx.Err() != nil {
+			return e.denyEnded(ctx, notes, reviewID, "the connection ended while waiting for approval")
+		}
+
+		res, err := e.ask(ctx, func(c context.Context) (ReviewResult, error) {
+			return e.cfg.Review.Claim(c, reviewID)
+		})
+		if err != nil {
+			e.errs.Add(1)
+			v := e.denyHold(notes, reviewID, "the review could not be checked")
+			v.Err = err
+			return v
+		}
+		if res.Forward {
+			return e.release(ctx, notes, reviewID)
+		}
+		if res.Status != reviewPending {
+			return e.denyHold(notes, reviewID, reviewReason(res.Status))
+		}
+
+		left := time.Until(deadline)
+		if left <= 0 {
+			return e.denyHold(notes, reviewID, fmt.Sprintf(
+				"still waiting for approval after %s; run the statement again once it is approved",
+				e.reviewWait))
+		}
+		timer.Reset(min(e.reviewPoll, left))
+	}
+}
+
+// ask makes one call to the review backend, bounded by the analyzer timeout.
+//
+// The call is detached from the connection's cancellation on purpose. Once a
+// request is out, the plane may spend the approval whether or not anybody
+// reads the answer, and an answer that is read can at least be recorded. The
+// caller checks the connection before starting a call, and release checks it
+// again after a claim.
+func (e *Evaluator) ask(ctx context.Context, call func(context.Context) (ReviewResult, error)) (ReviewResult, error) {
+	callCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), e.cfg.Timeout)
+	defer cancel()
+	return call(callCtx)
+}
+
+// release forwards a statement whose approval the backend just spent, unless
+// the connection ended while the claim was in flight. The approval is gone
+// either way; the record says so, and names the review that was spent.
+func (e *Evaluator) release(ctx context.Context, notes map[string]string, reviewID string) policy.Verdict {
+	if ctx.Err() != nil {
+		return e.denyEnded(ctx, notes, reviewID,
+			"the approval was used, but the connection ended before the statement could run")
+	}
+	// The backend consumed an approved review for these exact bytes, which
+	// it does once. The statement travels, and the audit record carries the
+	// review that released it.
+	return policy.Verdict{Annotations: notes}
+}
+
+// denyEnded refuses a statement whose connection ended during the hold. The
+// client rarely reads this; the audit record does, so the cause travels in
+// the message and on Err.
+func (e *Evaluator) denyEnded(ctx context.Context, notes map[string]string, reviewID, reason string) policy.Verdict {
+	cause := context.Cause(ctx)
+	v := e.denyHold(notes, reviewID, reason+": "+cause.Error())
+	v.Err = cause
+	return v
 }
 
 // denyHold builds the refusal a held statement produces.

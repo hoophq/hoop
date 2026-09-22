@@ -59,7 +59,7 @@ func TestAFiledReviewCarriesTheListenerRuleAndStatement(t *testing.T) {
 	cp, calls := reviewPlane(t, http.StatusCreated,
 		`{"forward":false,"review":{"id":"9f97","status":"PENDING"}}`)
 
-	res, err := cp.reviewer("payments", "payments-approvers")(
+	res, err := cp.reviewer("payments", "payments-approvers").File(
 		context.Background(), "DELETE FROM users WHERE email = 'a@b.c'")
 	if err != nil {
 		t.Fatalf("fileReview: %v", err)
@@ -209,6 +209,84 @@ func TestAPathPrefixedPlaneKeepsItsPrefix(t *testing.T) {
 	}
 }
 
+// A waiting hold asks about the review it was given, by id, and nothing else:
+// no listener, no rule, no statement. That is what stops a poll from ever
+// filing, since the plane has nothing to file from.
+func TestAClaimAsksAboutOneReviewByID(t *testing.T) {
+	cp, calls := reviewPlane(t, http.StatusOK,
+		`{"forward":true,"review":{"id":"9f97","status":"EXECUTED"}}`)
+
+	res, err := cp.reviewer("payments", "payments-approvers").Claim(context.Background(), "9f97")
+	if err != nil {
+		t.Fatalf("claimReview: %v", err)
+	}
+	if !res.Forward {
+		t.Error("a claimed approval did not release the statement")
+	}
+	if len(*calls) != 1 {
+		t.Fatalf("the plane saw %d requests, want 1", len(*calls))
+	}
+	got := (*calls)[0]
+	if want := controlPlaneReviewsPath + "/9f97/claim"; got.path != want {
+		t.Errorf("the claim went to %q, want %q", got.path, want)
+	}
+	if got.token != "hsc_token" {
+		t.Errorf("the claim presented token %q", got.token)
+	}
+	if got.payload != "" || got.listen != "" || got.rule != "" {
+		t.Errorf("the claim carried a filing body: %+v", got)
+	}
+}
+
+// An id is one path segment whatever it carries, so a hostile or broken id
+// cannot steer the claim to another route. Unescaped, JoinPath would clean
+// a/../b into b and claim a review nobody named.
+func TestAClaimEscapesTheReviewID(t *testing.T) {
+	cp, calls := reviewPlane(t, http.StatusOK,
+		`{"forward":false,"review":{"id":"a/../b","status":"PENDING"}}`)
+
+	if _, err := cp.claimReview(context.Background(), "a/../b"); err != nil {
+		t.Fatalf("claimReview: %v", err)
+	}
+	if want := controlPlaneReviewsPath + "/a/../b/claim"; (*calls)[0].path != want {
+		t.Errorf("the claim went to %q, want the escaped id under %q", (*calls)[0].path, want)
+	}
+}
+
+// Every refusal of a claim is an error, so the hold denies. The id check is
+// the claim's own: an answer about another review is not an answer to the
+// question the hold asked.
+func TestEveryClaimRefusalIsAnError(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		code int
+		body string
+		want string
+	}{
+		{"older plane or unknown review", http.StatusNotFound, `404 page not found`, "older than this sidecar"},
+		{"unauthorized", http.StatusUnauthorized, `{"message":"access denied"}`, "rejected the token"},
+		{"not a control plane", http.StatusPreconditionFailed,
+			`{"message":"sidecar reviews are served by the control plane"}`, "does not serve sidecar reviews"},
+		{"another review", http.StatusOK,
+			`{"forward":true,"review":{"id":"other","status":"EXECUTED"}}`, "when asked about"},
+		{"server error", http.StatusInternalServerError, `{"message":"boom"}`, "500"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cp, _ := reviewPlane(t, tc.code, tc.body)
+			res, err := cp.claimReview(context.Background(), "9f97")
+			if err == nil {
+				t.Fatalf("the answer was accepted as %+v", res)
+			}
+			if res.Forward {
+				t.Error("a refused claim released the statement")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error %v does not contain %q", err, tc.want)
+			}
+		})
+	}
+}
+
 // A hold with nowhere to file is refused when the lanes are BUILT, not when
 // the document is validated: a plane-served document carries no
 // control_plane_url, so the document cannot answer this and the connection
@@ -272,8 +350,10 @@ func (highRiskProvider) Classify(context.Context, string, string) (*analyzer.Res
 // operator-chosen one. Passing the wrong name means the plane refuses a
 // review a correct configuration authorized.
 func TestAHoldingLaneFilesUnderTheListenerName(t *testing.T) {
+	// REJECTED so the hold ends on the filing: a pending review would wait
+	// out the whole budget, and this test is about the name, not the wait.
 	cp, calls := reviewPlane(t, http.StatusCreated,
-		`{"forward":false,"review":{"id":"9f97","status":"PENDING"}}`)
+		`{"forward":false,"review":{"id":"9f97","status":"REJECTED"}}`)
 	deps := &analyzerDeps{
 		cfg:      &AnalyzerConfig{Provider: "stub", Model: "m"},
 		provider: highRiskProvider{},

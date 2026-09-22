@@ -622,7 +622,7 @@ type judgment struct {
 // caller forwards, because a crash between the write and the forward must
 // not lose the record of the statement that ran.
 func (g *Gate) judge(ctx context.Context, stmt inspect.Statement) judgment {
-	verdict := g.evaluate(stmt)
+	verdict := g.evaluate(ctx, stmt)
 
 	ev := audit.StatementEvent(
 		g.sess, stmt, !verdict.Denied, verdict.Rule, verdict.Message)
@@ -923,7 +923,10 @@ func substitutionSafe(p inspect.Protocol) bool {
 }
 
 // evaluate runs the policy, defaulting to allow when none is configured.
-func (g *Gate) evaluate(stmt inspect.Statement) policy.Verdict {
+//
+// ctx rides on the evaluation context so an evaluator that waits (the
+// analyzer's hold) stops when the connection ends.
+func (g *Gate) evaluate(ctx context.Context, stmt inspect.Statement) policy.Verdict {
 	if g.policy == nil {
 		return policy.Allow()
 	}
@@ -936,16 +939,22 @@ func (g *Gate) evaluate(stmt inspect.Statement) policy.Verdict {
 	// policy.Chain, which a type assertion for a bare client silently
 	// misses, leaving input.context empty on exactly the lanes that need it.
 	if ce, ok := g.policy.(policy.ContextualEvaluator); ok {
-		return ce.EvaluateWith(stmt, &policy.EvalContext{Context: g.polCtx})
+		return ce.EvaluateWith(stmt, &policy.EvalContext{Context: g.polCtx, ConnCtx: ctx})
 	}
 	return g.policy.Evaluate(stmt)
 }
 
+// writeAudit records ev even when ctx has ended.
+//
+// ctx is the connection's, and a statement's record is written after its
+// verdict: a hold that ended because the client left still owes the trail its
+// outcome. A sink that honors cancellation (SQLite does) would drop exactly
+// that record.
 func (g *Gate) writeAudit(ctx context.Context, ev audit.Event) error {
 	if g.audit == nil {
 		return nil
 	}
-	err := g.audit.Write(ctx, ev)
+	err := g.audit.Write(context.WithoutCancel(ctx), ev)
 	if err != nil && g.cfg.Metrics != nil {
 		g.cfg.Metrics.AuditError()
 	}

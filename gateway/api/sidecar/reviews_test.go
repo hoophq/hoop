@@ -407,6 +407,36 @@ func TestPostReviewRefusesAStatementOverTheCap(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), "larger than")
 }
 
+// The claim reads by id, so it needs the sidecar the token named before it
+// can scope the lookup. Without one it refuses rather than read a nil row.
+func TestClaimReviewRefusesARequestThatSkippedTheMiddleware(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Params = gin.Params{{Key: "id", Value: "9f97c0de-0000-0000-0000-000000000001"}}
+	c.Request = httptest.NewRequest(http.MethodPost,
+		"/api/sidecars/reviews/9f97c0de-0000-0000-0000-000000000001/claim", nil)
+
+	ClaimReview(c)
+
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+}
+
+// A malformed id is answered as not found before the query: the column is a
+// uuid, and the database error would otherwise surface as a 500.
+func TestClaimReviewAnswersAMalformedIDAsNotFound(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Set("sidecar-auth", &models.Sidecar{ID: "sidecar-1", OrgID: "org-1", Name: "sc-a"})
+	c.Params = gin.Params{{Key: "id", Value: "not-a-uuid"}}
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/sidecars/reviews/not-a-uuid/claim", nil)
+
+	ClaimReview(c)
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
 // What a reviewer ends up reading. The message renders Name, Email, Connection
 // and Type whether or not they mean anything for a sidecar review, so each one
 // carries something true rather than an empty label.

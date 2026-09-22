@@ -170,21 +170,19 @@ type Config struct {
 	// statement as-is.
 	Redact func(string) string
 
-	// Review files a statement for human approval and reports what the
-	// backend answered. It is what ActionRequireReview calls.
+	// Review files a statement for human approval and answers about the
+	// review while the statement waits. It is what ActionRequireReview
+	// calls.
 	//
 	// Injected rather than built here because the backend is the control
 	// plane, whose URL and token the daemon resolves: that package imports
-	// this one and must not be imported back. Same reason Redact is a
-	// function rather than a detector.
+	// this one and must not be imported back.
 	//
-	// It receives the RAW statement text, never the model input. See hold.
-	//
-	// Nil files nothing and DENIES. An observed lane is built without one,
-	// so a dry run records what it would have held without paging a human,
-	// and a lane that reached no control plane fails closed rather than
-	// forwarding what it promised to hold.
-	Review func(ctx context.Context, statement string) (ReviewResult, error)
+	// Nil files nothing and DENIES at once. An observed lane is built
+	// without one, so a dry run records what it would have held without
+	// paging or waiting on a human, and a lane that reached no control plane
+	// fails closed rather than forwarding what it promised to hold.
+	Review Reviewer
 }
 
 // Evaluator classifies statements and turns verdicts into policy decisions.
@@ -206,6 +204,12 @@ type Evaluator struct {
 	// prompt produced until the TTL expired, and an operator watching for
 	// their change to take effect would see nothing.
 	promptKey string
+
+	// reviewWait and reviewPoll pace a hold's wait. Fields rather than the
+	// constants read directly, so a test can shorten them; nothing outside
+	// the package can.
+	reviewWait time.Duration
+	reviewPoll time.Duration
 
 	// holds reports that some risk level on this lane waits for a human.
 	//
@@ -258,12 +262,14 @@ func New(cfg Config) (*Evaluator, error) {
 		calls = new(atomic.Int64)
 	}
 	return &Evaluator{
-		cfg:       cfg,
-		cache:     newCache(cfg.CacheSize, cfg.CacheTTL),
-		prompt:    prompt,
-		promptKey: fingerprint(prompt),
-		holds:     holds,
-		calls:     calls,
+		cfg:        cfg,
+		cache:      newCache(cfg.CacheSize, cfg.CacheTTL),
+		prompt:     prompt,
+		promptKey:  fingerprint(prompt),
+		holds:      holds,
+		calls:      calls,
+		reviewWait: reviewWait,
+		reviewPoll: reviewPoll,
 	}, nil
 }
 
@@ -363,7 +369,7 @@ func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext)
 		// collapses classifications, not approvals: the statement in
 		// front of us has not been released, whatever a previous one of
 		// the same shape cost.
-		return e.hold(stmt, notes)
+		return e.hold(connContext(ec), stmt, notes)
 	}
 
 	if action != ActionBlock {
@@ -385,6 +391,17 @@ func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext)
 	v.Source = policy.SourceAnalyzer
 	v.Annotations = notes
 	return v
+}
+
+// connContext returns the context of the connection the statement arrived on,
+// or Background for a caller that supplied none. Only the hold reads it: a
+// classification is bounded by Timeout and costs the same whether or not
+// anybody is still waiting for it.
+func connContext(ec *policy.EvalContext) context.Context {
+	if ec == nil || ec.ConnCtx == nil {
+		return context.Background()
+	}
+	return ec.ConnCtx
 }
 
 // report writes this rule's outcome onto the shared context.

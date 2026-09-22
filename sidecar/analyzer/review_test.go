@@ -18,17 +18,27 @@ import (
 // backend matches an approval against those bytes, so "it was called" is not
 // the property that matters.
 type recordingReviewer struct {
-	mu   sync.Mutex
-	sent []string
+	mu      sync.Mutex
+	sent    []string
+	claimed []string
 
 	res analyzer.ReviewResult
 	err error
 
-	// block holds the call until ctx is done, for the timeout case.
+	// block holds the filing until ctx is done, for the timeout case.
 	block bool
+
+	// claims answers the wait in order, the last one repeating. Empty
+	// answers PENDING for the id asked about.
+	claims   []analyzer.ReviewResult
+	claimErr error
+
+	// onClaim runs inside each claim before it answers, which is where a
+	// test ends the connection mid-wait.
+	onClaim func()
 }
 
-func (r *recordingReviewer) review(ctx context.Context, statement string) (analyzer.ReviewResult, error) {
+func (r *recordingReviewer) File(ctx context.Context, statement string) (analyzer.ReviewResult, error) {
 	r.mu.Lock()
 	r.sent = append(r.sent, statement)
 	r.mu.Unlock()
@@ -39,10 +49,40 @@ func (r *recordingReviewer) review(ctx context.Context, statement string) (analy
 	return r.res, r.err
 }
 
+func (r *recordingReviewer) Claim(_ context.Context, reviewID string) (analyzer.ReviewResult, error) {
+	r.mu.Lock()
+	r.claimed = append(r.claimed, reviewID)
+	n := len(r.claimed)
+	r.mu.Unlock()
+	if r.onClaim != nil {
+		r.onClaim()
+	}
+	if r.claimErr != nil {
+		return analyzer.ReviewResult{}, r.claimErr
+	}
+	if len(r.claims) == 0 {
+		return analyzer.ReviewResult{ID: reviewID, Status: "PENDING"}, nil
+	}
+	return r.claims[min(n, len(r.claims))-1], nil
+}
+
 func (r *recordingReviewer) statements() []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return append([]string(nil), r.sent...)
+}
+
+func (r *recordingReviewer) claimedIDs() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.claimed...)
+}
+
+// fastWait is the pacing every test here runs under. The production budget
+// is minutes; a test that forgot to shorten it would sit out the whole of it.
+func fastWait(ev *analyzer.Evaluator) *analyzer.Evaluator {
+	analyzer.SetReviewPacing(ev, 50*time.Millisecond, 5*time.Millisecond)
+	return ev
 }
 
 // holdingEvaluator maps high risk to a hold, which is the only configuration
@@ -56,12 +96,12 @@ func holdingEvaluator(t *testing.T, rev *recordingReviewer, edit func(*analyzer.
 		Actions:  analyzer.ActionMap{analyzer.RiskHigh: analyzer.ActionRequireReview},
 	}
 	if rev != nil {
-		cfg.Review = rev.review
+		cfg.Review = rev
 	}
 	if edit != nil {
 		edit(&cfg)
 	}
-	return mustNew(t, cfg)
+	return fastWait(mustNew(t, cfg))
 }
 
 func deleteStatement() inspect.Statement {
@@ -95,7 +135,8 @@ func TestAnUnreleasedReviewDeniesAndNamesIt(t *testing.T) {
 	for _, tc := range []struct {
 		name, status, want string
 	}{
-		{"pending", "PENDING", "waiting for approval"},
+		// Pending waits, and a wait nobody answers ends saying so.
+		{"pending", "PENDING", "still waiting for approval"},
 		{"rejected", "REJECTED", "was rejected"},
 		{"revoked", "REVOKED", "was revoked"},
 		{"claim lost", "EXECUTED", "already used"},
@@ -157,15 +198,15 @@ func TestNoReviewBackendDenies(t *testing.T) {
 func TestACachedVerdictStillFilesAReview(t *testing.T) {
 	p := &stubProvider{level: analyzer.RiskHigh}
 	rev := &recordingReviewer{res: analyzer.ReviewResult{ID: "9f97", Status: "PENDING"}}
-	ev := mustNew(t, analyzer.Config{
+	ev := fastWait(mustNew(t, analyzer.Config{
 		Rule:      "payments",
 		Provider:  p,
 		Trigger:   deleteTrigger(),
 		Actions:   analyzer.ActionMap{analyzer.RiskHigh: analyzer.ActionRequireReview},
-		Review:    rev.review,
+		Review:    rev,
 		CacheSize: 16,
 		CacheTTL:  time.Minute,
-	})
+	}))
 
 	ev.Evaluate(deleteStatement())
 	ev.Evaluate(deleteStatement())
@@ -279,13 +320,13 @@ func TestAGatePolicyDecidesWhetherAHoldRunsAtAll(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rev := &recordingReviewer{res: analyzer.ReviewResult{ID: "9f97", Status: "PENDING"}}
-			ev := mustNew(t, analyzer.Config{
+			ev := fastWait(mustNew(t, analyzer.Config{
 				Rule:     "payments",
 				Provider: &stubProvider{level: analyzer.RiskHigh},
 				// No trigger: the gated lane's shape.
 				Actions: analyzer.ActionMap{analyzer.RiskHigh: analyzer.ActionRequireReview},
-				Review:  rev.review,
-			})
+				Review:  rev,
+			}))
 
 			ec := &policy.EvalContext{Requested: map[string]bool{analyzer.Source: tc.requested}}
 			v := ev.EvaluateWith(deleteStatement(), ec)
@@ -315,5 +356,206 @@ func TestTheOperatorMessageSurvivesTheHold(t *testing.T) {
 	}
 	if !strings.Contains(v.Message, "9f97") {
 		t.Errorf("the operator's message replaced the review id: %q", v.Message)
+	}
+}
+
+// The point of the wait: an approval that lands while the connection is open
+// releases the statement on that connection, late, instead of costing the
+// developer their session and a retry.
+func TestAPendingReviewWaitsAndForwardsOnApproval(t *testing.T) {
+	rev := &recordingReviewer{
+		res: analyzer.ReviewResult{ID: "9f97", Status: "PENDING"},
+		claims: []analyzer.ReviewResult{
+			{ID: "9f97", Status: "PENDING"},
+			{Forward: true, ID: "9f97", Status: "EXECUTED"},
+		},
+	}
+	v := holdingEvaluator(t, rev, nil).Evaluate(deleteStatement())
+
+	if v.Denied {
+		t.Fatalf("an approval that landed during the wait did not forward: %q", v.Message)
+	}
+	if got := v.Annotations[analyzer.MetadataReviewID]; got != "9f97" {
+		t.Errorf("the audit record carries review id %q, want 9f97", got)
+	}
+	if got := rev.claimedIDs(); len(got) != 2 || got[0] != "9f97" || got[1] != "9f97" {
+		t.Errorf("the wait asked about %v, want 9f97 twice", got)
+	}
+	if sent := rev.statements(); len(sent) != 1 {
+		t.Errorf("the review was filed %d times, want 1: a wait must never file", len(sent))
+	}
+}
+
+// A settled review ends the wait on the poll that sees it. EXECUTED here is
+// another connection having spent the approval: the wait stops rather than
+// asking for a fresh review.
+func TestASettledReviewEndsTheWait(t *testing.T) {
+	for _, tc := range []struct {
+		name, status, want string
+	}{
+		{"rejected", "REJECTED", "was rejected"},
+		{"revoked", "REVOKED", "was revoked"},
+		{"spent elsewhere", "EXECUTED", "already used"},
+		{"unknown status", "SOMETHING_NEW", "not released"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rev := &recordingReviewer{
+				res:    analyzer.ReviewResult{ID: "9f97", Status: "PENDING"},
+				claims: []analyzer.ReviewResult{{ID: "9f97", Status: tc.status}},
+			}
+			v := holdingEvaluator(t, rev, nil).Evaluate(deleteStatement())
+
+			if !v.Denied {
+				t.Fatal("a settled review forwarded the statement")
+			}
+			if !strings.Contains(v.Message, tc.want) || !strings.Contains(v.Message, "9f97") {
+				t.Errorf("denial %q does not say %q with the review id", v.Message, tc.want)
+			}
+			if got := len(rev.claimedIDs()); got != 1 {
+				t.Errorf("the wait asked %d times, want 1: a settled review ends it", got)
+			}
+		})
+	}
+}
+
+// A poll that fails denies, as the first call does, and fail_open does not
+// reach it: an unreachable plane mid-wait is still a human gate that could
+// not be asked.
+func TestAFailedPollDeniesUnderFailOpen(t *testing.T) {
+	rev := &recordingReviewer{
+		res:      analyzer.ReviewResult{ID: "9f97", Status: "PENDING"},
+		claimErr: errors.New("the control plane is unreachable"),
+	}
+	v := holdingEvaluator(t, rev, func(c *analyzer.Config) { c.FailOpen = true }).
+		Evaluate(deleteStatement())
+
+	if !v.Denied {
+		t.Fatal("a failed poll forwarded the statement")
+	}
+	if v.Err == nil {
+		t.Error("the verdict carries no error, so the trail cannot say why")
+	}
+	if !strings.Contains(v.Message, "could not be checked") || !strings.Contains(v.Message, "9f97") {
+		t.Errorf("denial %q does not say the review could not be checked", v.Message)
+	}
+}
+
+// A wait nobody answers ends with the review still open, and the developer
+// reads that it is open and which one: the retry path still consumes it.
+func TestTheWaitEndsWithTheReviewStillOpen(t *testing.T) {
+	rev := &recordingReviewer{res: analyzer.ReviewResult{ID: "9f97", Status: "PENDING"}}
+	ev := holdingEvaluator(t, rev, nil)
+
+	start := time.Now()
+	v := ev.Evaluate(deleteStatement())
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Errorf("the wait took %v, the budget was 50ms", elapsed)
+	}
+	if !v.Denied {
+		t.Fatal("an unanswered review forwarded the statement")
+	}
+	if !strings.Contains(v.Message, "still waiting for approval") ||
+		!strings.Contains(v.Message, "run the statement again") ||
+		!strings.Contains(v.Message, "9f97") {
+		t.Errorf("denial %q does not say the review is still open", v.Message)
+	}
+	if got := len(rev.claimedIDs()); got < 2 {
+		t.Errorf("the wait asked %d times in its budget, want several", got)
+	}
+}
+
+// The budget bounds when a poll starts. A claim still in flight at the
+// deadline may already have spent the approval, so its release is honored
+// rather than thrown away with the approval.
+func TestAClaimInFlightAtTheDeadlineIsHonored(t *testing.T) {
+	rev := &recordingReviewer{
+		res:     analyzer.ReviewResult{ID: "9f97", Status: "PENDING"},
+		claims:  []analyzer.ReviewResult{{Forward: true, ID: "9f97", Status: "EXECUTED"}},
+		onClaim: func() { time.Sleep(40 * time.Millisecond) },
+	}
+	ev := holdingEvaluator(t, rev, nil)
+	analyzer.SetReviewPacing(ev, 20*time.Millisecond, 20*time.Millisecond)
+
+	if v := ev.Evaluate(deleteStatement()); v.Denied {
+		t.Fatalf("a release that arrived past the deadline was dropped: %q", v.Message)
+	}
+}
+
+// The connection ending ends the wait, and the record says why. Without it a
+// client that gave up would leave the hold polling, and an approval landing
+// later would be spent on a statement with nobody to run it for.
+func TestTheConnectionEndingEndsTheWait(t *testing.T) {
+	gone := errors.New("the client disconnected")
+	ctx, cancel := context.WithCancelCause(context.Background())
+	defer cancel(nil)
+
+	rev := &recordingReviewer{res: analyzer.ReviewResult{ID: "9f97", Status: "PENDING"}}
+	rev.onClaim = func() {
+		if len(rev.claimedIDs()) == 2 {
+			cancel(gone)
+		}
+	}
+	ev := holdingEvaluator(t, rev, nil)
+	analyzer.SetReviewPacing(ev, time.Minute, 5*time.Millisecond)
+
+	start := time.Now()
+	v := ev.EvaluateWith(deleteStatement(), &policy.EvalContext{ConnCtx: ctx})
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Errorf("the wait outlived its connection by %v", elapsed)
+	}
+	if !v.Denied {
+		t.Fatal("a statement whose connection ended was forwarded")
+	}
+	if !errors.Is(v.Err, gone) {
+		t.Errorf("the verdict carries %v, want the cause the connection ended with", v.Err)
+	}
+	if !strings.Contains(v.Message, gone.Error()) || !strings.Contains(v.Message, "9f97") {
+		t.Errorf("denial %q does not name the cause and the review", v.Message)
+	}
+	if got := len(rev.claimedIDs()); got != 2 {
+		t.Errorf("the wait asked %d times, want 2: nothing may be asked after the connection ends", got)
+	}
+}
+
+// A connection gone before the hold starts files nothing: paging a human for
+// a statement that can no longer run is noise.
+func TestAConnectionGoneBeforeTheHoldFilesNothing(t *testing.T) {
+	ctx, cancel := context.WithCancelCause(context.Background())
+	cancel(errors.New("the client disconnected"))
+
+	rev := &recordingReviewer{res: analyzer.ReviewResult{ID: "9f97", Status: "PENDING"}}
+	v := holdingEvaluator(t, rev, nil).EvaluateWith(deleteStatement(), &policy.EvalContext{ConnCtx: ctx})
+
+	if !v.Denied {
+		t.Fatal("a statement with no connection was forwarded")
+	}
+	if sent := rev.statements(); len(sent) != 0 {
+		t.Errorf("the review was filed %d times for a gone connection", len(sent))
+	}
+}
+
+// The race the wait cannot close: the connection ends while a claim is in
+// flight, and the plane spends the approval anyway. The statement must not
+// run with nobody on the connection, and the record has to name the review
+// that was spent, or the approver's decision vanishes from the trail.
+func TestAnApprovalSpentAfterTheConnectionEndedDoesNotRun(t *testing.T) {
+	ctx, cancel := context.WithCancelCause(context.Background())
+	defer cancel(nil)
+
+	rev := &recordingReviewer{
+		res:     analyzer.ReviewResult{ID: "9f97", Status: "PENDING"},
+		claims:  []analyzer.ReviewResult{{Forward: true, ID: "9f97", Status: "EXECUTED"}},
+		onClaim: func() { cancel(errors.New("the client disconnected")) },
+	}
+	v := holdingEvaluator(t, rev, nil).EvaluateWith(deleteStatement(), &policy.EvalContext{ConnCtx: ctx})
+
+	if !v.Denied {
+		t.Fatal("a released statement ran after its connection ended")
+	}
+	if !strings.Contains(v.Message, "approval was used") {
+		t.Errorf("denial %q does not say the approval was spent", v.Message)
+	}
+	if got := v.Annotations[analyzer.MetadataReviewID]; got != "9f97" {
+		t.Errorf("the audit record carries review id %q, want the spent 9f97", got)
 	}
 }
