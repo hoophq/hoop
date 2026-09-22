@@ -204,16 +204,16 @@ export const ANALYZER_ACTIONS = [
 
 // The action that holds a statement for a human, offered only behind the
 // review switch: it is the one action that needs a second object behind it
-// (the rule naming who may release) and a lane whose client resends the
-// statement. Listing it beside the others would let an operator pick a hold
+// (the rule naming who may release) and a lane whose client waits for the
+// review and can resend the statement. Listing it beside the others would let an operator pick a hold
 // that the sidecar refuses at startup.
 export const REVIEW_ACTION = 'require_review'
 
-// A hold denies the first attempt and releases an identical retry, so it needs
-// a client that sends the statement again. A database client does when the
-// developer runs the query once more; an http caller is a program reading a
-// refusal and an ssh session is a shell the denial already ended. The daemon
-// draws the same line in holdableProtocol.
+// A hold waits a few minutes on the connection, then denies and releases a
+// later identical retry, so it needs a client that sits on a statement and can
+// send it again. A database client does both; an http caller is a program with
+// its own deadline and an ssh session is a shell the denial already ended. The
+// daemon draws the same line in holdableProtocol.
 export const HOLDABLE_PROTOCOLS = ['postgres', 'mysql', 'mssql', 'mongodb']
 
 export function canHold(protocol) {
