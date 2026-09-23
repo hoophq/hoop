@@ -284,45 +284,55 @@ func (a *Api) StartAPI() {
 // buildSidecarRoutes registers the sidecar surface. Administering a fleet of
 // sidecars is the control plane's whole job, and the gateway serves the same
 // routes because that is where an operator's connections already live.
+//
+// Every route but the reviews needs a valid Enterprise license: the admin
+// ones through the user's org, the sidecar-authenticated ones through the
+// sidecar's. A fleet whose license lapses stops handshaking until renewed.
 func (api *Api) buildSidecarRoutes(r *apiroutes.Router) {
-	r.POST("/sidecars/handshake", r.SidecarAuthMiddleware, apisidecar.Handshake)
-	r.GET("/sidecars/configuration", r.SidecarAuthMiddleware, apisidecar.Configuration)
+	r.POST("/sidecars/handshake", r.SidecarAuthMiddleware, apiroutes.EnterpriseLicenseOnly, apisidecar.Handshake)
+	r.GET("/sidecars/configuration", r.SidecarAuthMiddleware, apiroutes.EnterpriseLicenseOnly, apisidecar.Configuration)
 	// No TrackRequest: SidecarAuthMiddleware installs an org context with no
 	// user, and TrackRequest requires a user email, so it would be a no-op
 	// that reads as an emitted event.
 	r.POST("/sidecars/reviews", r.SidecarAuthMiddleware, apisidecar.PostReview)
 	r.POST("/sidecars/reviews/:id/claim", r.SidecarAuthMiddleware, apisidecar.ClaimReview)
-	r.PUT("/sidecars/configuration", r.SidecarAuthMiddleware, apisidecar.ImportConfiguration)
+	r.PUT("/sidecars/configuration", r.SidecarAuthMiddleware, apiroutes.EnterpriseLicenseOnly, apisidecar.ImportConfiguration)
 
 	r.POST("/sidecars",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		apiroutes.EnterpriseLicenseOnly,
 		api.AuditMiddleware(),
 		api.TrackRequest(analytics.EventCreateSidecar),
 		apisidecar.Post)
 	r.GET("/sidecars",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		apiroutes.EnterpriseLicenseOnly,
 		apisidecar.List)
 	r.GET("/sidecars/:nameOrID",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		apiroutes.EnterpriseLicenseOnly,
 		apisidecar.Get)
 	r.PUT("/sidecars/:nameOrID",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		apiroutes.EnterpriseLicenseOnly,
 		api.AuditMiddleware(),
 		api.TrackRequest(analytics.EventUpdateSidecar),
 		apisidecar.Put)
 	r.PATCH("/sidecars/:nameOrID",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		apiroutes.EnterpriseLicenseOnly,
 		api.AuditMiddleware(),
 		api.TrackRequest(analytics.EventUpdateSidecar),
 		apisidecar.Patch)
 	r.DELETE("/sidecars/:nameOrID",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
+		apiroutes.EnterpriseLicenseOnly,
 		api.AuditMiddleware(),
 		api.TrackRequest(analytics.EventDeleteSidecar),
 		apisidecar.Delete)

@@ -168,7 +168,7 @@ const licenseManagedHeader = daemon.LicenseManagedHeader
 //	@Produce		json
 //	@Param			request				body		openapi.SidecarRequest	true	"The request body resource"
 //	@Success		201					{object}	openapi.SidecarCreateResponse
-//	@Failure		400,409,422,500		{object}	openapi.HTTPError
+//	@Failure		400,403,409,422,500	{object}	openapi.HTTPError
 //	@Router			/sidecars [post]
 func Post(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -232,7 +232,7 @@ func Post(c *gin.Context) {
 //	@Tags			Sidecars
 //	@Produce		json
 //	@Success		200	{array}		openapi.SidecarResponse
-//	@Failure		500	{object}	openapi.HTTPError
+//	@Failure		403,500	{object}	openapi.HTTPError
 //	@Router			/sidecars [get]
 func List(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -286,7 +286,7 @@ func bindingsBySidecar(orgID, sidecarID string) map[string][]openapi.SidecarRule
 //	@Produce		json
 //	@Param			nameOrID	path		string	true	"Name or UUID of the sidecar"
 //	@Success		200			{object}	openapi.SidecarResponse
-//	@Failure		404,500		{object}	openapi.HTTPError
+//	@Failure		403,404,500	{object}	openapi.HTTPError
 //	@Router			/sidecars/{nameOrID} [get]
 func Get(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -312,7 +312,7 @@ func Get(c *gin.Context) {
 //	@Produce		json
 //	@Param			nameOrID	path	string	true	"Name or UUID of the sidecar"
 //	@Success		204
-//	@Failure		404,500	{object}	openapi.HTTPError
+//	@Failure		403,404,500	{object}	openapi.HTTPError
 //	@Router			/sidecars/{nameOrID} [delete]
 func Delete(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -338,7 +338,7 @@ func Delete(c *gin.Context) {
 //	@Param			nameOrID			path		string							true	"Name or UUID of the sidecar"
 //	@Param			request				body		openapi.SidecarUpdateRequest	true	"The request body resource"
 //	@Success		200					{object}	openapi.SidecarResponse
-//	@Failure		400,404,422,500		{object}	openapi.HTTPError
+//	@Failure		400,403,404,422,500	{object}	openapi.HTTPError
 //	@Router			/sidecars/{nameOrID} [put]
 func Put(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -382,7 +382,7 @@ func Put(c *gin.Context) {
 //	@Param			nameOrID			path		string							true	"Name or UUID of the sidecar"
 //	@Param			request				body		openapi.SidecarPatchRequest		true	"The request body resource"
 //	@Success		200					{object}	openapi.SidecarResponse
-//	@Failure		400,404,422,500		{object}	openapi.HTTPError
+//	@Failure		400,403,404,422,500	{object}	openapi.HTTPError
 //	@Router			/sidecars/{nameOrID} [patch]
 func Patch(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -427,7 +427,7 @@ func Patch(c *gin.Context) {
 //	@Param			request				body		openapi.SidecarHandshakeRequest	true	"The request body resource"
 //	@Success		200				{object}	map[string]interface{}
 //	@Header			200				{string}	hoop-sidecar-license-managed	"Present when this gateway owns the licensing decision, so an answer with no license means the organization holds none. A gateway older than the feature omits it, and the sidecar then keeps its own license sources."
-//	@Failure		400,401,412,500	{object}	openapi.HTTPError
+//	@Failure		400,401,403,412,500	{object}	openapi.HTTPError
 //	@Router			/sidecars/handshake [post]
 func Handshake(c *gin.Context) {
 	sidecar := apiroutes.SidecarFromContext(c)
@@ -561,7 +561,7 @@ func servedConfig(cfg models.SidecarConfiguration, licenseData json.RawMessage) 
 //	@Param			hoop-sidecar-token	header		string	true	"The token returned when the sidecar was created"
 //	@Param			request				body		object	true	"The configuration document, the same shape the handshake answers"
 //	@Success		200					{object}	map[string]interface{}
-//	@Failure		400,401,409,422,500	{object}	openapi.HTTPError
+//	@Failure		400,401,403,409,422,500	{object}	openapi.HTTPError
 //	@Router			/sidecars/configuration [put]
 func ImportConfiguration(c *gin.Context) {
 	sidecar := apiroutes.SidecarFromContext(c)
@@ -624,7 +624,7 @@ func ImportConfiguration(c *gin.Context) {
 //	@Param			hoop-sidecar-token	header		string	true	"The token returned when the sidecar was created"
 //	@Success		200		{object}	map[string]interface{}
 //	@Header			200		{string}	hoop-sidecar-license-managed	"Present when this gateway owns the licensing decision; see the handshake."
-//	@Failure		401,500	{object}	openapi.HTTPError
+//	@Failure		401,403,500	{object}	openapi.HTTPError
 //	@Router			/sidecars/configuration [get]
 func Configuration(c *gin.Context) {
 	sidecar := apiroutes.SidecarFromContext(c)
