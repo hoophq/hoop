@@ -156,14 +156,12 @@ func SetupWith(path string, load Loader, build PluginBuilder, opts ...Option) (*
 	if err != nil {
 		return nil, nil, err
 	}
-	if cfg.cp != nil {
-		// Retained so a pii drift from the plane rebuilds the detector the
-		// way startup would, and so a mid-run handover re-reads the config
-		// file the way startup would. See reloader.
-		cfg.cp.build = build
-		cfg.cp.configPath = path
-		cfg.cp.load = load
-	}
+	// Retained so a pii drift rebuilds the detector the way startup would,
+	// and so a reload re-reads the config file the way startup would: a
+	// standalone process on every edit, a plane-owned one on a mid-run
+	// handover. See reloader.
+	cfg.build = build
+	cfg.load = load
 	if cfg.cp != nil && cfg.cp.licenseManaged {
 		// Recorded before the resolution, not after: a local license is
 		// not consulted at all under a managing plane, so nothing
@@ -733,9 +731,9 @@ func watchLicense(ctx context.Context, st *licenseState, every time.Duration, lo
 				// Same stop as an ended term, for the same reason: the
 				// alternative is deleting a guardrail or a mask rule from
 				// a live proxy, which leaks more than it saves.
-				log.Warn("the control plane's license no longer covers the rules this process "+
+				log.Warn("the license no longer covers the rules this process "+
 					"is serving; stopping so it restarts under the new one",
-					"license", lic.Line())
+					"license", lic.Line(), "source", lic.Source)
 				close(expired)
 				return
 			}
@@ -943,20 +941,22 @@ func Run(cfg *Config, det Plugin) error {
 	view.Store(&laneState{lanes: lanes})
 	tel.trackStarted(cfg, lanes, det)
 
-	if cfg.cp != nil {
-		// The heartbeat keeps the plane's last-seen fresh and hands drift to
-		// the reloader: rule-only changes swap into the servers built above,
-		// everything else keeps the restart log (ADR-0014). It shares the
-		// run context, so shutdown stops it with everything else.
-		byName := make(map[string]*proxy.Server, len(servers))
-		for i, srv := range servers {
-			byName[relayNames[i]] = srv
-		}
-		rl, rerr := newReloader(cfg, lanes, byName, det, analyzerDeps, view, licState)
-		if rerr != nil {
-			return rerr
-		}
-		rl.tel = tel
+	// The reloader swaps rule-only drift into the servers built above and
+	// keeps the restart log for everything else (ADR-0014). One source
+	// feeds it per process: the plane's heartbeat, or the config file's
+	// watcher. Both share the run context, so shutdown stops them with
+	// everything else.
+	byName := make(map[string]*proxy.Server, len(servers))
+	for i, srv := range servers {
+		byName[relayNames[i]] = srv
+	}
+	rl, rerr := newReloader(cfg, lanes, byName, det, analyzerDeps, view, licState)
+	if rerr != nil {
+		return rerr
+	}
+	rl.tel = tel
+	switch {
+	case cfg.cp != nil:
 		log.Info("control plane connected",
 			"url", cfg.cp.url,
 			"source", cfg.cp.urlSource,
@@ -986,7 +986,13 @@ func Run(cfg *Config, det Plugin) error {
 				"hint", "set the organization's license in the control plane")
 		}
 		go cfg.cp.heartbeat(ctx, log, rl)
+	case cfg.configPath != "":
+		log.Info("watching the config file; a rule edit applies without a restart",
+			"path", cfg.configPath,
+			"poll", fileWatchEvery.String(),
+			"hint", "send SIGHUP to re-read it now")
 	}
+	go rl.watchFile(ctx, log)
 
 	if cfg.Admin.Listen != "" {
 		go serveAdmin(ctx, cfg.Admin.Listen, servers, relayNames, endpoints, endpointNames,

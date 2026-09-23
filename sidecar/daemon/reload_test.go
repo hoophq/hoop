@@ -474,10 +474,8 @@ func TestARefusedReloadDoesNotLeakTheDetector(t *testing.T) {
 	}
 	det0 := &stubPlugin{entities: []string{"US_SSN"}}
 	det1 := &stubPlugin{entities: []string{"CREDIT_CARD"}}
-	cfg.cp = &controlPlane{
-		url: "http://plane", token: "hsc_x", lastRaw: []byte(reloadBase),
-		build: func(json.RawMessage) (Plugin, error) { return det1, nil },
-	}
+	cfg.cp = &controlPlane{url: "http://plane", token: "hsc_x", lastRaw: []byte(reloadBase)}
+	cfg.build = func(json.RawMessage) (Plugin, error) { return det1, nil }
 	ac := &analyzerDeps{
 		cfg:      &AnalyzerConfig{Provider: "stub", Model: "m"},
 		provider: stubAnalyzerProvider{},

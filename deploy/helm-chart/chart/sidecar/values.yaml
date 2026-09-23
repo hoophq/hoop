@@ -125,18 +125,19 @@ config: {}
 # `config.yaml` is the document. Mutually exclusive with `config`.
 existingConfigMap: ''
 
-# -- Rollout trigger for `existingConfigMap`. REQUIRED IN PRACTICE THERE.
+# -- Rollout trigger for `existingConfigMap`.
 #
 # The Deployment carries checksums of what this chart renders, so editing
 # `config` above rolls the pods by itself. A ConfigMap you manage is outside
 # the release: the chart cannot see its contents, its checksum here never
 # changes, and `helm upgrade` produces an identical pod template.
 #
-# Nothing else covers the gap. The relay reads its config file once at startup
-# and watches nothing — the hot reload path is control-plane only — so a pod
-# that is not replaced keeps serving the document it booted with, however many
-# times the ConfigMap is edited. The kubelet updates the mounted file and the
-# process never looks at it again.
+# A rule-only edit needs no rollout: the relay watches its config file and
+# the kubelet updates the mounted ConfigMap in place, so guardrails, masking,
+# pii, OPA, a listener's analyzer block and the `license` key apply live.
+# Listeners, audit, admin, log_level and the top-level analyzer section are
+# bound at startup; the relay logs `restart to apply it` and keeps serving
+# what it booted with until the pod is replaced. That is the gap this fills.
 #
 # Put anything that changes with the content here — a digest, the Git SHA that
 # produced it, a timestamp — and change it in the same commit that changes the

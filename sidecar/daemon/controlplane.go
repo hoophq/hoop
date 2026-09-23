@@ -139,17 +139,6 @@ type controlPlane struct {
 	// hot-applies license drift and ownership flips when the documents
 	// allow it, restarting only for drift no reload can absorb.
 	diskMode bool
-	// configPath and load let the reloader re-read the config file when
-	// the plane hands ownership to it mid-run; SetupWith fills them.
-	configPath string
-	load       Loader
-
-	// build is the PluginBuilder SetupWith received, retained so a reload
-	// can rebuild the detector when the pii section drifts. Nil means the
-	// entry point linked no detector; a drifted pii section then stays on
-	// the restart path instead of swapping in rules the running detector
-	// cannot serve.
-	build PluginBuilder
 }
 
 // WithControlPlaneToken supplies the sidecar token from the command line,

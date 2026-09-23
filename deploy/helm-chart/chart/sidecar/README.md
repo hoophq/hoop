@@ -198,14 +198,21 @@ The Deployment carries checksums of everything this chart renders, so editing
 
 `existingConfigMap` is the case that needs your help. That object lives outside
 the release: the chart cannot see its contents, so its checksum here never
-changes and `helm upgrade` produces a byte-identical pod template. Nothing else
-covers the gap — the relay reads its config file once at startup and watches
-nothing, because the hot-reload path is control-plane only. The kubelet updates
-the mounted file and the process never looks at it again, so a pod that is not
-replaced keeps serving the document it booted with.
+changes and `helm upgrade` produces a byte-identical pod template.
 
-`configRevision` is the handle. Put anything that changes with the content in
-it, and change it in the same commit that changes the ConfigMap:
+A rule-only edit does not need one. The relay watches its config file (a
+stat every ten seconds), and the kubelet updates a mounted ConfigMap in place
+on its sync period, so an edit to guardrails, masking, pii, OPA, a
+listener's analyzer block or the `license` key reaches the running pods
+without a rollout; the log says `config file configuration applied`. The
+chart mounts the directory, not a `subPath`, because a `subPath` file is
+never updated.
+
+Everything else — listeners, audit, admin, log_level, the top-level analyzer
+section — is bound at startup. The relay logs `restart to apply it` and
+keeps serving the document it booted with until the pod is replaced.
+`configRevision` is the handle for that. Put anything that changes with the
+content in it, and change it in the same commit that changes the ConfigMap:
 
 ```yaml
 existingConfigMap: my-sidecar-config

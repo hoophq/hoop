@@ -221,6 +221,37 @@ neither signature moves again. `daemon.Setup` briefly took the license as a
 fourth argument, which broke every embedder that upgraded; that is what the
 split is for.
 
+### Editing the config file of a running process
+
+A standalone process watches its config file: it stats the path every ten
+seconds and re-reads it when the size or mtime moves, or at once on `SIGHUP`
+(`kill -HUP <pid>`, `docker kill -s HUP <container>`). An edit that only
+touches rules (guardrails, masking, pii, OPA, a listener's analyzer block,
+the `license` key) is applied in place, logged as `config file configuration
+applied` with a generation number. Connections already open drain under the
+rules they were accepted with; new connections run the new rules, and
+nothing rebinds or drops. An edit beyond the rules (listeners, audit, admin,
+log_level, the top-level analyzer section, adding `control_plane_url`) logs
+`restart to apply it` once and the process keeps serving what it had; a file
+that does not load keeps the running rules, is retried on the next tick, and
+warns once until it loads again. ADR-0014 records the boundary; the control
+plane's heartbeat applies the same one.
+
+`SIGHUP` is a forced reload: the document runs even when its bytes did not
+move. That is how a license file replaced behind an unchanged `license` path
+is picked up — a stat of the config file cannot see it, and a `SIGHUP` (or
+any later rule edit) re-resolves the path and adopts the new document.
+
+On Kubernetes, mount the ConfigMap as a volume, not through `subPath`: the
+kubelet updates a volume in place (an atomic symlink swap the stat sees, on
+its sync period of about a minute) and never updates a `subPath` file.
+
+The `license` key is the lowest of the local sources. While `-license` or
+`HOOP_LICENSE` holds the document in force, editing the key changes nothing
+and the process says so once, the same answer a restart would give. Under a
+control plane the file is not the owner: the heartbeat applies edits made
+there, and `SIGHUP` logs that and does nothing.
+
 ### Connecting it to a Control Plane
 
 A sidecar can fetch its whole configuration from a Hoop Control Plane instead
@@ -269,15 +300,12 @@ handshake. A first handshake that fails stops
 startup, since there is nothing to serve yet.
 
 Once running, a heartbeat repeats the handshake every minute. It keeps the
-plane's last-seen fresh and picks up edits: a change that only touches rules
-(guardrails, masking, pii, OPA, a listener's analyzer block) is applied in
-place, logged as `configuration applied` with a generation number.
-Connections already open drain under the rules they were accepted with; new
-connections run the new rules, and nothing rebinds or drops. A change beyond
-the rules (listeners, audit, admin, log_level, the top-level analyzer
-section) logs `restart to apply it` instead, and a failed heartbeat changes
-nothing, because losing the phone line home must not take the data path down
-with it. ADR-0014 records the boundary.
+plane's last-seen fresh and picks up edits, applying them under the same
+boundary as a file edit: rule-only drift swaps in place, logged as
+`configuration applied` with a generation number; drift beyond the rules
+logs `restart to apply it`. A failed heartbeat changes nothing, because
+losing the phone line home must not take the data path down with it.
+ADR-0014 records the boundary.
 
 ### Usage analytics
 
@@ -291,7 +319,7 @@ prompt, no token, no listener or upstream address — the same line
 |---|---|---|
 | `hoop-sidecar-first-run` | a bare invocation served the default page | port, whether it fell back, how long it stayed up |
 | `hoop-sidecar-started` | every lane built, about to serve | config source and format, license state and type, lane count per protocol, how many lanes enforce / observe / mask / consult OPA / run an analyzer, rule totals, PII entity count, audit sinks |
-| `hoop-sidecar-config-applied` | a control plane edit reached the reloader | generation, outcome (`applied`, `restart-required`, `refused`), which sections changed, lanes swapped and kept |
+| `hoop-sidecar-config-applied` | an edit reached the reloader, from the control plane or the config file | generation, outcome (`applied`, `restart-required`, `refused`), which sections changed, lanes swapped and kept |
 | `hoop-sidecar-usage` | every 15 minutes and at shutdown | connections and statements in the window, denied and masked counts, denials by evaluator kind, analyzer calls and failures, audit write failures, per protocol |
 | `hoop-sidecar-stopped` | the process is exiting | reason (`signal`, `listener-failed`, `license-expired`), failure class, uptime |
 | `hoop-sidecar-license-expired` | the term ended under a config the free tier refuses | rule totals that exceeded it, term length, warnings sent |
