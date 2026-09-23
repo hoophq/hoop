@@ -264,15 +264,12 @@ func TestValidateSpecForLane(t *testing.T) {
 			spec: `{"high":"block"}`,
 		},
 		{
-			// A hold denies the first attempt and releases an identical
-			// retry, so it needs a client that sends the statement again. An
-			// http caller is a program reading a refusal: it never replays
-			// the bytes, so the statement is simply denied forever.
+			// A hold waits on the connection, and an http caller waits
+			// while its own deadline lasts.
 			name: "a hold on an http lane",
 			kind: SidecarRuleAnalyzer,
 			lane: analyzedHTTP,
 			spec: `{"high":"require_review","approval_rule":"payments-review"}`,
-			want: "only a database lane can hold a statement",
 		},
 		{
 			name: "the same hold on a postgres lane",

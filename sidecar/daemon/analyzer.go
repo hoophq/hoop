@@ -979,28 +979,25 @@ func validateLaneBlock(la *LaneAnalyzerConfig, lane, protocol string) []string {
 	if holds {
 		if !holdableProtocol(protocol) {
 			problems = append(problems, fmt.Sprintf(
-				"%s asks for %q on a %s lane, and only a database lane can hold a "+
-					"statement: the hold refuses the first attempt and releases an "+
-					"identical retry, which needs a client that sends the statement "+
-					"again", where, analyzer.ActionRequireReview, protocol))
+				"%s asks for %q on a %s lane, and only a database or http lane can "+
+					"hold a statement: the hold waits on the connection, which needs "+
+					"a client that waits for the answer", where,
+				analyzer.ActionRequireReview, protocol))
 		}
 	}
 	return problems
 }
 
 // holdableProtocol reports whether a lane's protocol may hold a statement for
-// human approval: the four wire-database codecs, and nothing else.
+// human approval: the four wire-database codecs and http.
 //
-// A hold waits a few minutes on the connection and then denies, releasing a
-// later retry that carries the same bytes. So it needs a client that sits
-// on a statement and can send it again, which is what a database client does
-// when a developer runs the query again. An http or grpc caller is a program
-// with its own deadline, and an ssh session is a shell the denial already
-// ended; neither replays a statement byte for byte on its own. EVL-284 draws
-// the line here.
+// A hold waits on the connection and releases the statement in place, so it
+// needs a client that waits for the answer. An http caller does while its own
+// deadline lasts. grpc waits on a decision about requests that never hash the
+// same twice, and an ssh shell produces no statements to hold (EVL-308).
 func holdableProtocol(protocol string) bool {
 	switch inspect.Protocol(protocol) {
-	case inspect.Postgres, inspect.MySQL, inspect.MSSQL, inspect.MongoDB:
+	case inspect.Postgres, inspect.MySQL, inspect.MSSQL, inspect.MongoDB, inspect.HTTP:
 		return true
 	}
 	return false

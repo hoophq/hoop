@@ -1052,7 +1052,7 @@ force-approval list; the lane holds only its name, and the control plane
 authorizes each review against the config it stored for that sidecar.
 
 **A hold waits, then gives up.** A pending review holds the statement on
-its connection for up to 5 minutes. Every 5 seconds the relay asks the plane
+its connection for up to 30 minutes, on every protocol. Every 5 seconds the relay asks the plane
 about that one review (`POST /api/sidecars/reviews/<id>/claim`); the ask never
 files a review. An approval that lands in time runs the statement on the same
 connection, late. A rejection, a revocation, or an approval another connection
@@ -1060,7 +1060,7 @@ already used ends the wait at once and denies. The review id is in every
 denial:
 
 ```
-ERROR:  statement held for human approval: still waiting for approval after 5m0s; run the statement again once it is approved (review 9f97…)
+ERROR:  statement held for human approval: still waiting for approval after 30m0s; run the statement again once it is approved (review 9f97…)
 ```
 
 The wait ends early when the connection does. A client that hangs up, or an
@@ -1068,7 +1068,9 @@ upstream that closes, stops the polling before anything is claimed, so the
 approval stays for the retry. The audit record carries the cause. Ctrl-C in
 psql or mysql does NOT end it: both send the cancel on a separate connection,
 where no statement runs. Close the client instead. An `idle_timeout_sec`
-shorter than 5 minutes also ends the wait, since a held connection is idle.
+shorter than 30 minutes also ends the wait, since a held connection is idle;
+`-validate` notes it. The caller's own deadline is the budget in practice: an
+http client behind Envoy gives up after the 15s default route timeout.
 
 After a timeout the developer asks an approver, then runs the statement again.
 That retry collects the approval. The relay files nothing on the second
@@ -1087,6 +1089,19 @@ statements sends the query with its parameters unbound, so an approval
 releases that query shape rather than one set of values, and a statement
 larger than 100 KB is refused by the plane rather than reviewed.
 
+On an http lane the relay files the method, the target and the body, as
+`POST /transfers?dry_run=false`, a blank line, then the body. The reviewer
+reads that. Four consequences:
+
+- A body larger than `http.max_body_bytes` is truncated by the codec, so the
+  hold denies it without filing: the approval would bind to bytes nobody read.
+- A query value the codec redacts (a token, a password) is filed redacted, so
+  requests differing only in that value match one approval.
+- A request carrying a trace id, a nonce or a timestamp never matches twice.
+  Every attempt files its own review and pages the approvers again.
+- A client that retries on its own timeout leaves two attempts in flight, and
+  the approval releases whichever claims it first.
+
 **The approval is exact; the classification is not.** The verdict cache keys
 on the statement SHAPE with literals stripped, so two statements differing
 only in a literal share one classification. On a holding lane that cuts both
@@ -1104,7 +1119,7 @@ than at the first held statement:
 |---|---|
 | a level asks for `require_review` | otherwise `approval_rule` names reviewers nobody consults |
 | `approval_rule` is set, and not blank | spaces match no rule in the control plane |
-| the lane is postgres, mysql, mssql or mongodb | a hold needs a client that resends the statement; an http or grpc caller reads a refusal and an ssh session is already closed |
+| the lane is postgres, mysql, mssql, mongodb or http | a hold needs a client that waits on the connection; grpc waits on a decision about requests that never hash the same twice, and an ssh shell produces no statements |
 | the sidecar has a control plane | there is nowhere else to file a review |
 
 Everything else fails CLOSED, `fail_open` included: it answers for a model

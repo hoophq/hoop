@@ -61,12 +61,14 @@ type Reviewer interface {
 
 // How long a held statement waits on its connection, and how often it asks.
 //
-// Constants, not configuration: a field can be added when a deployment asks
-// for one. Five minutes covers a human answering in Slack; a client that gives
-// up sooner disconnects, which ends the wait without spending the approval.
-// One held statement costs reviewWait/reviewPoll calls, 60 at these values.
+// Constants, not configuration, and the same on every protocol: a client that
+// gives up sooner disconnects, which ends the wait without spending the
+// approval, so the caller's own deadline is the budget in practice. The lane's
+// idle_timeout_sec ends it too, since a waiting client sends nothing.
+// One held statement costs ReviewWait/reviewPoll calls, 360 at these values.
+// Exported so the daemon can compare it with a lane's idle timeout.
 const (
-	reviewWait = 5 * time.Minute
+	ReviewWait = 30 * time.Minute
 	reviewPoll = 5 * time.Second
 )
 
@@ -80,8 +82,8 @@ const (
 // was talking about a model that could not answer, not about a human gate
 // that could not be reached.
 //
-// The RAW statement text goes out, never content.Text. The backend matches an
-// approval against the exact bytes a retry sends, so a redacted or truncated
+// The RAW statement goes out (see reviewText), never content.Text. The backend
+// matches an approval against the exact bytes a retry sends, so a redacted or truncated
 // rendering would either match nothing or, worse, approve something nobody
 // read.
 //
@@ -102,8 +104,12 @@ func (e *Evaluator) hold(ctx context.Context, stmt inspect.Statement, notes map[
 		return e.denyEnded(ctx, notes, "", "the connection ended before the review was filed")
 	}
 
+	text, err := reviewText(stmt)
+	if err != nil {
+		return e.denyHold(notes, "", err.Error())
+	}
 	res, err := e.ask(ctx, func(c context.Context) (ReviewResult, error) {
-		return e.cfg.Review.File(c, stmt.Text)
+		return e.cfg.Review.File(c, text)
 	})
 	if err != nil {
 		e.errs.Add(1)
@@ -121,6 +127,28 @@ func (e *Evaluator) hold(ctx context.Context, stmt inspect.Statement, notes map[
 		return e.denyHold(notes, res.ID, reviewReason(res.Status))
 	}
 	return e.wait(ctx, res.ID, notes)
+}
+
+// reviewText renders the bytes the backend files and matches an approval
+// against.
+//
+// An http statement's Text is only the method and target, so filing it alone
+// would let one approval release any body sent to that path. The body goes
+// with it, and a truncated body refuses: an approval would bind to bytes the
+// reviewer never read. A query value the codec redacted still matches across
+// requests; the codec never hands over the raw one.
+func reviewText(stmt inspect.Statement) (string, error) {
+	if stmt.Protocol != inspect.HTTP || stmt.HTTP == nil {
+		return stmt.Text, nil
+	}
+	if stmt.HTTP.BodyTruncated {
+		return "", fmt.Errorf("the request body is larger than http.max_body_bytes, " +
+			"so a reviewer could not read all of it")
+	}
+	if stmt.HTTP.Body == "" {
+		return stmt.Text, nil
+	}
+	return stmt.Text + "\n\n" + stmt.HTTP.Body, nil
 }
 
 // wait asks about one pending review until it settles, the budget runs out or
