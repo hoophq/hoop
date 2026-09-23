@@ -1,7 +1,8 @@
 import { defineConfig, devices, type ReporterDescription } from "@playwright/test";
 import { currentsReporter } from "@currents/playwright";
 
-export const CONTROL_PLANE_URL = "http://127.0.0.1:8019";
+import { CONTROL_PLANE_URL } from "./urls";
+import { ADMIN_STATE } from "./tests/admin";
 
 // Fork PRs and local runs have no record key. Report to Currents only when
 // the key is set, so those runs still pass with the local reporters.
@@ -30,6 +31,16 @@ export default defineConfig({
     video: "on",
     screenshot: "on",
   },
+  // "setup" creates the first admin and saves its session; the rest reuse it.
+  projects: [
+    { name: "setup", testMatch: /setup\.spec\.ts/ },
+    {
+      name: "control-plane",
+      testIgnore: /setup\.spec\.ts/,
+      dependencies: ["setup"],
+      use: { storageState: ADMIN_STATE },
+    },
+  ],
   webServer: {
     command: "./scripts/start-hoop.sh",
     url: `${CONTROL_PLANE_URL}/api/healthz`,

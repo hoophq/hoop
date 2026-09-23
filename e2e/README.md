@@ -1,8 +1,14 @@
 # e2e
 
-Browser tests for the control plane (`hoop start control-plane`, `:8019`).
-Each run starts it on a fresh embedded PGlite database and records video,
+Browser tests for the control plane (`hoop start control-plane`, `:8019`)
+and a real sidecar (`hoop start sidecar`) connected to it. Each run starts
+the control plane on a fresh embedded PGlite database and records video,
 trace and screenshots for every test.
+
+- `setup` project: first admin, license intro, saved session.
+- `control-plane` project: starts from that session. `sidecar.spec.ts`
+  creates a sidecar in the UI, starts the sidecar with the issued token and
+  waits until the UI shows it connected.
 
 ## CI
 
