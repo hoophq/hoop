@@ -199,6 +199,39 @@ func TestUnknownGuardrailModeIsRejected(t *testing.T) {
 	}
 }
 
+// identity_header is read by the http relay and the grpc server. On any
+// other lane it used to load, count in analytics, and leave every session
+// anonymous; now the config says so before the process starts.
+func TestIdentityHeaderOffHTTPIsRejected(t *testing.T) {
+	p := writeConfig(t, `{
+      "listeners": [{"protocol":"postgres","listen":":1","upstream":"h:1","identity_header":"x-user"}]
+    }`)
+	got := loadErr(t, p)
+	if !strings.Contains(got, "identity_header is only supported on http, grpc and spanner") {
+		t.Errorf("error does not name the lanes that read the header: %s", got)
+	}
+
+	p = writeConfig(t, `{
+      "listeners": [{"protocol":"http","listen":":1","upstream":"h:1","identity_header":"x-user"}]
+    }`)
+	if _, err := LoadConfig(p); err != nil {
+		t.Errorf("identity_header refused on an http lane: %v", err)
+	}
+}
+
+// `opa: {responses: false}` with no url is a client that cannot be built,
+// not the empty block that switches an inherited endpoint off.
+func TestOPAResponsesWithoutURLIsRejected(t *testing.T) {
+	p := writeConfig(t, `{
+      "opa": {"url": "http://opa:8181/v1/data/hoop"},
+      "listeners": [{"protocol":"grpc","listen":":1","upstream":"h:1","opa":{"responses":false}}]
+    }`)
+	got := loadErr(t, p)
+	if !strings.Contains(got, "opa is set but url is empty") {
+		t.Errorf("error does not say the lane's opa block has no url: %s", got)
+	}
+}
+
 // Masking on a protocol that cannot mask is refused whenever rules are
 // present. Under the old mask.enabled flag this check was skipped for a lane
 // with the flag off, so a config could carry rules that could never fire and

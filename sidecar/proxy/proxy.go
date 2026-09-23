@@ -114,9 +114,20 @@ type Config struct {
 	// anonymous session.
 	//
 	// Per-user deployments hook in here: an Envoy sidecar that has already
-	// authenticated the user passes the subject through a header, mTLS peer
-	// cert, or a credential token, and this function extracts it.
+	// authenticated the user passes the subject through an mTLS peer cert
+	// or a credential token, and this function extracts it. It runs at
+	// accept, before a byte is read, so it cannot see the payload; a
+	// subject carried in an HTTP header is IdentityHeader's job.
 	IdentityFn func(net.Conn) session.Identity
+
+	// IdentityHeader names the request header that carries the
+	// authenticated subject on an http lane. The relay reads it from the
+	// FIRST request on the connection before the session is created, so
+	// the policy context and the session_start audit row both name the
+	// principal; see peekHTTPIdentity for the ordering and the trust model.
+	// When set it overrides the Subject IdentityFn returned. Refused on
+	// any other protocol.
+	IdentityHeader string
 
 	// CodecFactory overrides how each connection's Gate builds its codecs.
 	// Nil uses the registry. See gate.Config.CodecFactory: it exists so a
@@ -204,6 +215,11 @@ func NewServer(cfg Config) (*Server, error) {
 		(cfg.Protocol != inspect.MySQL || cfg.UpstreamTLS == nil) {
 		return nil, errors.New(
 			"sidecar/proxy: MySQL authentication key requires a MySQL lane with upstream TLS",
+		)
+	}
+	if cfg.IdentityHeader != "" && cfg.Protocol != inspect.HTTP {
+		return nil, fmt.Errorf(
+			"sidecar/proxy: identity header is only read on an http lane, not %s", cfg.Protocol,
 		)
 	}
 	var (
@@ -439,6 +455,26 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 		identity = s.cfg.IdentityFn(client)
 		if identity.PeerAddr == "" {
 			identity.PeerAddr = client.RemoteAddr().String()
+		}
+	}
+	if s.cfg.IdentityHeader != "" {
+		// Before session.New on purpose: the gate freezes the policy
+		// context and writes session_start from the identity it is handed,
+		// so a subject learned later would never reach either. Also before
+		// the upstream dial, unlike the pgwire startup peek, for the same
+		// reason. A client that connects and never speaks closes at the
+		// deadline with no session, as a client abandoning a handshake does.
+		var (
+			subject string
+			err     error
+		)
+		client, subject, err = peekHTTPIdentity(client, s.cfg.IdentityHeader, s.cfg.DialTimeout)
+		if err != nil {
+			s.log.Debug("first request not read", "peer", identity.PeerAddr, "error", err)
+			return
+		}
+		if subject != "" {
+			identity.Subject = subject
 		}
 	}
 

@@ -44,6 +44,32 @@ import (
 //
 // An empty Phase is the single-call arrangement: one decision, no
 // `input.findings`, exactly what every lane did before producers reported.
+//
+// # Responses
+//
+// Every statement of an exchange reaches OPA, in both directions, and on a
+// streaming lane that is one round trip PER RESPONSE MESSAGE: a 50k-row
+// BigQuery read is 50k calls in series on the response path, seconds of
+// latency for a policy that only ever looked at the request. Two switches
+// remove them, and both leave the local rules, the audit trail and masking
+// exactly as they were; only the round trip goes.
+//
+//   - SkipResponses, set by the operator: this lane's OPA never sees a
+//     FromServer statement.
+//   - `responses: false` in the result of a FromClient decision: the policy
+//     itself declares it has no opinion on THIS exchange's response side,
+//     per method, per table, per actor — whatever the Rego keys on. It is
+//     recorded on the EvalContext (SkipResponses), and a caller that owns
+//     exactly one exchange (the gRPC lane's per-RPC gate) feeds it back as
+//     a Requested veto on the response statements that follow. Chain's own
+//     vocabulary: `request` asks a producer to run or not; this asks the
+//     same of OPA. A caller serving a whole connection cannot pair
+//     responses with requests and ignores it; the request's audit record
+//     then carries AnnotationResponsesUnscoped.
+//
+// A skipped statement carries AnnotationOPASkipped onto its audit record,
+// so a row that says "allowed, no rule" can be told apart from one OPA
+// actually allowed.
 type OPAClient struct {
 	// URL is the full decision endpoint, e.g.
 	// http://opa:8181/v1/data/hoop/inspect
@@ -75,6 +101,11 @@ type OPAClient struct {
 	// client reads it once per evaluation, so put per-connection facts here
 	// and per-statement facts in the Statement itself.
 	Context map[string]string
+
+	// SkipResponses answers every FromServer statement with an allow and
+	// no round trip. For a lane whose policy is written against requests,
+	// where a response message costs a call that can only ever say yes.
+	SkipResponses bool
 }
 
 // Phase names which of a two-phase lane's OPA calls this is. It reaches Rego
@@ -155,7 +186,24 @@ type opaResultObject struct {
 	// gate phase: true runs one its own configuration would have skipped,
 	// false vetoes one it would have run.
 	Request map[string]bool `json:"request"`
+
+	// Responses, when false on a FromClient decision, declares the policy
+	// has no opinion on the response side of this exchange. Absent or true
+	// changes nothing. Read on every phase, because whichever call the
+	// author keyed the rule on is the one that knows.
+	Responses *bool `json:"responses"`
 }
+
+// AnnotationOPASkipped marks an audit record whose statement OPA never saw.
+// The value names why: "responses" for the operator's SkipResponses or the
+// policy's own `responses: false`.
+const AnnotationOPASkipped = "opa.skipped"
+
+// AnnotationResponsesUnscoped marks a request whose `responses: false` the
+// caller could not honor, because it serves a whole connection and cannot
+// tell which response answers which request. The value names the scope it
+// had: "connection".
+const AnnotationResponsesUnscoped = "opa.responses_unscoped"
 
 // Evaluate implements Evaluator.
 //
@@ -224,6 +272,18 @@ func (c *OPAClient) contextFor(ec *EvalContext) map[string]string {
 }
 
 func (c *OPAClient) evaluate(ctx context.Context, stmt inspect.Statement, ec *EvalContext) Verdict {
+	// Two ways this statement never reaches the endpoint, checked before
+	// the input document is even built. The operator's switch covers the
+	// response side of the lane; a Requested veto covers whatever the
+	// exchange's owner decided, which today is the policy's own
+	// `responses: false` fed back by the gate (see EvalContext.SkipResponses)
+	// and could as well be a gate-phase `request: {"opa": false}`.
+	if c.SkipResponses && stmt.Direction == inspect.FromServer {
+		return c.skipped()
+	}
+	if want, stated := ec.WantsRun(SourceOPA); stated && !want {
+		return c.skipped()
+	}
 	body, err := json.Marshal(opaRequest{Input: opaInput{
 		Protocol:  string(stmt.Protocol),
 		Direction: string(stmt.Direction),
@@ -321,6 +381,15 @@ func (c *OPAClient) evaluate(ctx context.Context, stmt inspect.Statement, ec *Ev
 		}
 	}
 
+	// The policy's word that the response side of this exchange is of no
+	// interest to it. Recorded on a FromClient decision only: a response
+	// statement saying it would be answering a question already asked.
+	// Recorded whether or not this statement was denied, for the same
+	// reason `request` is — although a denied request has no responses.
+	if stmt.Direction == inspect.FromClient && ec != nil && obj.Responses != nil && !*obj.Responses {
+		ec.DeclineResponses(SourceOPA)
+	}
+
 	// Either polarity decodes, so a Rego policy written as `allow` or as
 	// `deny` works without you adapting the caller. `denied` wins when both
 	// are present, because an explicit denial is the safer reading.
@@ -336,6 +405,12 @@ func (c *OPAClient) evaluate(ctx context.Context, stmt inspect.Statement, ec *Ev
 	}
 
 	return c.failure(fmt.Errorf("policy/opa: result carried neither allow nor denied: %s", out.Result))
+}
+
+// skipped is the verdict for a statement OPA was not asked about. An allow,
+// because nothing objected, annotated so the trail does not read as one.
+func (c *OPAClient) skipped() Verdict {
+	return Verdict{Annotations: map[string]string{AnnotationOPASkipped: "responses"}}
 }
 
 // deny builds an OPA denial. rule is the policy's own name for the

@@ -145,6 +145,19 @@ type EvalContext struct {
 	// than only widening it.
 	Requested map[string]bool
 
+	// SkipResponses records sources that, deciding a FromClient statement,
+	// declared no interest in the response side of the exchange it opens.
+	// Keyed by Source; present means declined.
+	//
+	// It is the one field here about statements OTHER than the current
+	// one, which is why it is not folded into Requested: a request's
+	// context is gone by the time its responses arrive. The caller that
+	// owns the exchange (the gate) carries it across and seeds it back as
+	// Requested[source] = false on each response statement, where the
+	// source reads it like any other veto. Nothing in this package holds
+	// state between statements; the hop is the caller's.
+	SkipResponses map[string]bool
+
 	// Context carries per-connection facts an evaluator may need: the
 	// authenticated user, the connection name, a correlation id.
 	//
@@ -317,6 +330,15 @@ func (e *EvalContext) WantsRun(source string) (want, stated bool) {
 	}
 	want, stated = e.Requested[source]
 	return want, stated
+}
+
+// DeclineResponses records that source wants no say over the response side
+// of the exchange the current statement opens. See SkipResponses.
+func (e *EvalContext) DeclineResponses(source string) {
+	if e.SkipResponses == nil {
+		e.SkipResponses = make(map[string]bool, 1)
+	}
+	e.SkipResponses[source] = true
 }
 
 // ContextualEvaluator is an Evaluator that reads what earlier evaluators in
