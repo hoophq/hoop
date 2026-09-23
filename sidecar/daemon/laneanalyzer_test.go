@@ -593,12 +593,46 @@ func TestRequireReviewStartsWhenEveryHalfIsPresent(t *testing.T) {
 	}
 }
 
-// A hold releases a retry that carries the same bytes, so it needs a client
-// that sends the statement twice. A lane whose caller never does could file a
-// review no one could ever collect, which is worth a startup refusal rather
-// than a pending review nobody consumes.
-func TestRequireReviewNeedsADatabaseLane(t *testing.T) {
-	for _, protocol := range []string{"http", "grpc", "spanner", "ssh"} {
+// An http caller waits on its connection while its own deadline lasts, which
+// is all a hold needs since it releases the statement in place.
+func TestRequireReviewStartsOnAnHTTPLane(t *testing.T) {
+	cfg := holdingLane()
+	cfg.Listeners[0].Protocol = "http"
+	cfg.Listeners[0].HTTP = &HTTPCodecConfig{CaptureBody: true}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("a require_review http lane was refused: %v", err)
+	}
+}
+
+// A waiting client sends nothing, so an idle timeout shorter than the review
+// wait ends every hold early. The operator reads that at -validate, not from
+// a denial in production.
+func TestAShortIdleTimeoutOnAHoldingLaneIsNoted(t *testing.T) {
+	for _, tc := range []struct {
+		idle int
+		want bool
+	}{{idle: 0}, {idle: 60, want: true}, {idle: 3600}} {
+		cfg := holdingLane()
+		cfg.Listeners[0].IdleTimeoutSec = tc.idle
+		deps := &analyzerDeps{cfg: cfg.Analyzer, provider: &recordingProvider{}}
+		lanes, err := buildLanes(cfg, nil, deps)
+		if err != nil {
+			t.Fatalf("buildLanes: %v", err)
+		}
+		var found bool
+		for _, n := range lanes[0].notes {
+			found = found || strings.Contains(n, "idle_timeout_sec")
+		}
+		if found != tc.want {
+			t.Errorf("idle_timeout_sec %d: noted %v, want %v: %v", tc.idle, found, tc.want, lanes[0].notes)
+		}
+	}
+}
+
+// grpc and ssh wait on EVL-308's follow-ups. A lane that cannot hold would
+// file a review nobody could collect, so startup refuses it.
+func TestRequireReviewNeedsAHoldableLane(t *testing.T) {
+	for _, protocol := range []string{"grpc", "spanner", "ssh"} {
 		t.Run(protocol, func(t *testing.T) {
 			cfg := holdingLane()
 			cfg.Listeners[0].Protocol = protocol
@@ -606,7 +640,7 @@ func TestRequireReviewNeedsADatabaseLane(t *testing.T) {
 			if err == nil {
 				t.Fatalf("a %s lane was accepted", protocol)
 			}
-			if !strings.Contains(err.Error(), "only a database lane can hold a statement") {
+			if !strings.Contains(err.Error(), "only a database or http lane can hold a statement") {
 				t.Errorf("error %v does not name the reason", err)
 			}
 		})

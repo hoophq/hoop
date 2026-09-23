@@ -241,6 +241,58 @@ func TestTheReviewSendsTheRawStatement(t *testing.T) {
 	}
 }
 
+func postStatement(body string, truncated bool) inspect.Statement {
+	return inspect.Statement{
+		Protocol:  inspect.HTTP,
+		Direction: inspect.FromClient,
+		Text:      "POST /transfers",
+		Operation: inspect.OpPost,
+		HTTP: &inspect.HTTPDetail{
+			Method:        "POST",
+			Path:          "/transfers",
+			Resource:      "/transfers",
+			Body:          body,
+			BodyTruncated: truncated,
+		},
+	}
+}
+
+func postTrigger(c *analyzer.Config) {
+	c.Trigger = analyzer.Trigger{Operations: []inspect.Operation{inspect.OpPost}}
+}
+
+// An http statement's Text is the method and target only. Filed alone, one
+// approval would release any body sent to that path.
+func TestAnHTTPReviewCarriesTheBody(t *testing.T) {
+	rev := &recordingReviewer{res: analyzer.ReviewResult{Forward: true, ID: "9f97", Status: "EXECUTED"}}
+	v := holdingEvaluator(t, rev, postTrigger).Evaluate(postStatement(`{"amount":100}`, false))
+
+	if v.Denied {
+		t.Fatalf("a consumed approval did not forward: %q", v.Message)
+	}
+	want := "POST /transfers\n\n{\"amount\":100}"
+	if sent := rev.statements(); len(sent) != 1 || sent[0] != want {
+		t.Errorf("the review carries %q, want %q", sent, want)
+	}
+}
+
+// A truncated body would bind an approval to bytes the reviewer never read,
+// and to every request sharing that prefix.
+func TestATruncatedHTTPBodyDeniesWithoutFiling(t *testing.T) {
+	rev := &recordingReviewer{res: analyzer.ReviewResult{Forward: true, ID: "9f97", Status: "EXECUTED"}}
+	v := holdingEvaluator(t, rev, postTrigger).Evaluate(postStatement(`{"amount":1`, true))
+
+	if !v.Denied {
+		t.Fatal("a truncated body was released")
+	}
+	if !strings.Contains(v.Message, "max_body_bytes") {
+		t.Errorf("the denial does not name the setting: %q", v.Message)
+	}
+	if sent := rev.statements(); len(sent) != 0 {
+		t.Errorf("the review was filed %d times, want 0", len(sent))
+	}
+}
+
 // A hold sits inline on a proxied connection, so it is bounded by the same
 // timeout the model call is. Without the deadline a plane that never answers
 // would hold the client's socket until something else gave up.

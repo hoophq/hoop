@@ -1246,6 +1246,14 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 				"observe mode files no review: a held statement is recorded as "+
 					policy.AnnotationWouldDeny+" and forwarded, and no approver is asked")
 		}
+		// A waiting client sends nothing, so the idle timeout ends a hold
+		// before the review wait does.
+		if !gc.observing() && analyzerHolds(lc.Analyzer) && lc.IdleTimeoutSec > 0 &&
+			time.Duration(lc.IdleTimeoutSec)*time.Second < analyzer.ReviewWait {
+			ln.notes = append(ln.notes, fmt.Sprintf(
+				"idle_timeout_sec %d ends a held statement's wait before the %s "+
+					"review wait does", lc.IdleTimeoutSec, analyzer.ReviewWait))
+		}
 		if !opa.enabled() && (anyDeferred(gc.Rules) || analyzerDefers(lc.Analyzer)) {
 			ln.notes = append(ln.notes,
 				"defer names a decision this lane has no opa.url for, so a deferred "+

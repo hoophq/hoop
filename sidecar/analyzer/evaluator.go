@@ -268,7 +268,7 @@ func New(cfg Config) (*Evaluator, error) {
 		promptKey:  fingerprint(prompt),
 		holds:      holds,
 		calls:      calls,
-		reviewWait: reviewWait,
+		reviewWait: ReviewWait,
 		reviewPoll: reviewPoll,
 	}, nil
 }

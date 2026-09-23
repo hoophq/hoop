@@ -114,9 +114,9 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
 
   const isHTTP = protocol.toLowerCase() === 'http'
   const operations = useMemo(() => operationsFor(protocol), [protocol])
-  // A hold needs a lane whose client waits on the connection and can send the
-  // statement again. Refusing it here is the same refusal the sidecar makes at
-  // startup, brought forward to the form: bound to an http or ssh lane, this
+  // A hold needs a lane whose client waits on the connection. Refusing it here
+  // is the same refusal the sidecar makes at startup, brought forward to the
+  // form: bound to a grpc or ssh lane, this
   // rule would take that sidecar's whole configuration down on its next restart.
   const holdable = targets.length > 0 && targets.every((t) => {
     const byId = new Map(sidecars.map((sc) => [sc.id, sc]))
@@ -299,8 +299,8 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
             label="Hold for approval"
             description={
               holdable
-                ? 'Adds "Hold for approval" to the levels below. The statement waits up to 5 minutes for a review and runs if it is approved in that time. Otherwise it is denied, and running it again after approval lets it through.'
-                : 'Only a database listener can hold a statement: it needs a client that waits on the connection and can send the statement again.'
+                ? 'Adds "Hold for approval" to the levels below. The statement waits up to 30 minutes for a review and runs if it is approved in that time. A client that times out first ends the wait. Running it again after approval lets it through.'
+                : 'Only a database or HTTP listener can hold a statement: it needs a client that waits on the connection for the review.'
             }
             checked={form.hold}
             onChange={(e) => setHold(e.currentTarget.checked)}
