@@ -1,6 +1,16 @@
-import { useEffect, useMemo } from 'react'
-import { Anchor, Group, Stack, Text } from '@mantine/core'
-import MultiSelect from '@/components/MultiSelect'
+import { useEffect, useMemo, useState } from 'react'
+import {
+  Anchor,
+  Checkbox,
+  Combobox,
+  Group,
+  Pill,
+  PillsInput,
+  ScrollArea,
+  Stack,
+  Text,
+  useCombobox,
+} from '@mantine/core'
 import { usesConfigFile } from '@/pages/Sidecars/config'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 
@@ -30,11 +40,10 @@ function decodeTarget(value) {
 }
 
 function listenerItems(sc, locked) {
-  // Listeners only. There is no "whole sidecar" option, and that is the
-  // point: a sidecar-wide rule writes the document's top-level block,
-  // which a lane carrying its own mask block silently replaces, so the
-  // same rule would apply on some lanes and be ignored on others with
-  // nothing here saying which.
+  // Listeners only. The sidecar row in the tree picks each of these, never
+  // the sidecar itself: a sidecar-wide rule writes the document's top-level
+  // block, which a lane carrying its own mask block silently replaces, so the
+  // same rule would apply on some lanes and be ignored on others.
   //
   // A listener with no name is left out. The name is the only handle the
   // control plane has on a lane, and a binding to a nameless one is
@@ -43,16 +52,65 @@ function listenerItems(sc, locked) {
     .filter((l) => l?.name)
     .map((l) => ({
       value: encodeTarget({ sidecar_id: sc.id, listener_name: l.name }),
-      // The label is the listener name ALONE, because it is also the
-      // chip. "appdb (postgres)" doubles a chip's width to repeat what
-      // the row below already shows, and a rule bound to six listeners
-      // then wraps the field to three lines.
-      label: l.name,
+      name: l.name,
       protocol: l.protocol ?? '',
-      sidecar: sc.name,
       disabled: locked,
-      reason: locked ? CONFIG_FILE_REASON : '',
     }))
+}
+
+// Option values carry which row was clicked, so one submit handler can route
+// a sidecar row and a listener row.
+const SIDECAR_PREFIX = 'sc:'
+const LISTENER_PREFIX = 'ln:'
+
+// One node per sidecar, its listeners under it.
+function buildTree(sidecars) {
+  return sidecars.map((sc) => {
+    const locked = usesConfigFile(sc)
+    return {
+      id: sc.id,
+      name: sc.name,
+      locked,
+      listeners: listenerItems(sc, locked),
+    }
+  })
+}
+
+// Search matches the SIDECAR too, not just the listener. A sidecar whose name
+// matches keeps all its listeners: the operator asked for that sidecar.
+// Otherwise only matching listeners stay, under their sidecar row.
+function filterTree(tree, search) {
+  const q = search.trim().toLowerCase()
+  return tree
+    .map((node) => {
+      if (q === '' || node.name.toLowerCase().includes(q)) {
+        return { ...node, visibleListeners: node.listeners }
+      }
+      const visibleListeners = node.listeners.filter(
+        (l) => l.name.toLowerCase().includes(q) || l.protocol.toLowerCase().includes(q),
+      )
+      return visibleListeners.length > 0 ? { ...node, visibleListeners } : null
+    })
+    .filter(Boolean)
+}
+
+// One pill per sidecar with a target, in the order the targets were picked.
+// A target the fleet no longer lists still counts, so the pill never hides a
+// binding the save would send.
+function pillsFor(tree, selected) {
+  const byId = new Map(tree.map((n) => [n.id, n]))
+  const counts = new Map()
+  for (const v of selected) {
+    const id = v.slice(0, ID_LENGTH)
+    counts.set(id, (counts.get(id) ?? 0) + 1)
+  }
+  return [...counts].map(([id, n]) => {
+    const node = byId.get(id)
+    const total = node ? node.listeners.filter((l) => !l.disabled).length : 0
+    const name = node?.name ?? 'Unknown sidecar'
+    const scope = total > 0 && n === total ? 'all listeners' : `${n} of ${total || n}`
+    return { id, label: `${name} · ${scope}` }
+  })
 }
 
 /**
@@ -70,63 +128,67 @@ function listenerItems(sc, locked) {
  * also what carries the protocol, and the protocol decides which rules and
  * which masking strategies are legal at all.
  *
+ * The dropdown is a tree: a sidecar row selects or clears all its listeners,
+ * and the listener rows under it pick one at a time. The field shows one pill
+ * per sidecar, so a sidecar bound on twelve lanes is one chip, not twelve.
+ *
  * Rendered only in the control plane, where the page is given the prop that
  * asks for it. In the gateway the fleet endpoint is not something a page should
  * be calling, so the component never mounts and never fetches.
  */
+
 export default function SidecarTargetPicker({ value = [], onChange, label, description }) {
   const sidecars = useSidecarStore((s) => s.sidecars)
   const loading = useSidecarStore((s) => s.loading)
   const error = useSidecarStore((s) => s.error)
   const fetchSidecars = useSidecarStore((s) => s.fetchSidecars)
+  const [search, setSearch] = useState('')
+  const combobox = useCombobox({ onDropdownClose: () => combobox.resetSelectedOption() })
 
   useEffect(() => {
     fetchSidecars()
   }, [fetchSidecars])
 
-  const data = useMemo(
-    () =>
-      sidecars.map((sc) => {
-        const locked = usesConfigFile(sc)
-        const items = listenerItems(sc, locked)
-        // Shown even with no listener to offer, so the admin sees the sidecar
-        // and why it is not available.
-        if (locked && items.length === 0) {
-          items.push({
-            value: encodeTarget({ sidecar_id: sc.id, listener_name: '' }),
-            label: sc.name,
-            protocol: '',
-            sidecar: sc.name,
-            disabled: true,
-            reason: CONFIG_FILE_REASON,
-          })
-        }
-        return { group: sc.name, items }
-      }),
-    [sidecars],
-  )
+  const tree = useMemo(() => buildTree(sidecars), [sidecars])
+  const selected = useMemo(() => value.map(encodeTarget), [value])
+  const selectedSet = useMemo(() => new Set(selected), [selected])
+  const visible = useMemo(() => filterTree(tree, search), [tree, search])
 
-  // Search matches the SIDECAR too, not just the listener. "payments" is how an
-  // operator thinks about a fleet, and Mantine's default filter reads the
-  // option label only — so typing a sidecar's name matched nothing, while its
-  // group heading sat right there on screen.
-  const filter = ({ options, search }) => {
-    const q = search.trim().toLowerCase()
-    if (q === '') return options
-    return options
-      .map((group) => {
-        // A group whose sidecar matches keeps ALL its listeners: the operator
-        // asked for that sidecar, and hiding lanes whose names happen not to
-        // contain the query would answer a question they did not ask.
-        if (group.group?.toLowerCase().includes(q)) return group
-        const items = (group.items ?? []).filter(
-          (o) =>
-            o.label.toLowerCase().includes(q) || (o.protocol ?? '').toLowerCase().includes(q),
-        )
-        return items.length > 0 ? { ...group, items } : null
-      })
-      .filter(Boolean)
+  const emit = (values) => onChange(values.map(decodeTarget))
+
+  // A sidecar row adds every listener it can offer, or clears them all once
+  // they are all in. It reads the WHOLE sidecar, not the filtered rows, so a
+  // search never makes a partial pick look like "all listeners".
+  const toggleSidecar = (node) => {
+    const values = node.listeners.filter((l) => !l.disabled).map((l) => l.value)
+    if (values.length === 0) return
+    const all = values.every((v) => selectedSet.has(v))
+    if (all) {
+      const drop = new Set(values)
+      emit(selected.filter((v) => !drop.has(v)))
+      return
+    }
+    emit([...selected, ...values.filter((v) => !selectedSet.has(v))])
   }
+
+  const toggleListener = (val) =>
+    emit(selectedSet.has(val) ? selected.filter((v) => v !== val) : [...selected, val])
+
+  // Every target of one sidecar, known or not: a listener deleted since the
+  // rule was saved still leaves with its sidecar's pill.
+  const removeSidecar = (id) => emit(selected.filter((v) => v.slice(0, ID_LENGTH) !== id))
+
+  const onOptionSubmit = (option) => {
+    if (option.startsWith(SIDECAR_PREFIX)) {
+      const node = tree.find((n) => n.id === option.slice(SIDECAR_PREFIX.length))
+      if (node) toggleSidecar(node)
+    } else {
+      toggleListener(option.slice(LISTENER_PREFIX.length))
+    }
+    setSearch('')
+  }
+
+  const pills = pillsFor(tree, selected)
 
   // A fleet that did not load is not an empty fleet. Rendering the failure as
   // "no sidecars yet" tells an admin their fleet is gone and hides the reason,
@@ -134,50 +196,126 @@ export default function SidecarTargetPicker({ value = [], onChange, label, descr
   // a request that failed.
   const failed = !loading && !!error && sidecars.length === 0
   const empty = !loading && !error && sidecars.length === 0
+  const disabled = empty || failed
+  const placeholder = failed
+    ? 'Sidecars could not be loaded'
+    : empty
+      ? 'No sidecars yet'
+      : 'Search a sidecar or a listener...'
+
+  const options = visible.flatMap((node) => {
+    const offered = node.listeners.filter((l) => !l.disabled)
+    const picked = offered.filter((l) => selectedSet.has(l.value)).length
+    const all = offered.length > 0 && picked === offered.length
+    return [
+      <Combobox.Option
+        key={`sc:${node.id}`}
+        value={SIDECAR_PREFIX + node.id}
+        disabled={offered.length === 0}
+      >
+        <Group justify="space-between" gap="sm" wrap="nowrap">
+          <Group gap="sm" wrap="nowrap">
+            <Checkbox
+              size="xs"
+              readOnly
+              tabIndex={-1}
+              checked={all}
+              indeterminate={picked > 0 && !all}
+              disabled={offered.length === 0}
+              aria-hidden
+              style={{ pointerEvents: 'none' }}
+            />
+            <Text size="sm" fw={600} c={node.locked ? 'dimmed' : undefined}>
+              {node.name}
+            </Text>
+          </Group>
+          <Text size="xs" c="dimmed">
+            {node.locked ? CONFIG_FILE_REASON : 'Sidecar'}
+          </Text>
+        </Group>
+      </Combobox.Option>,
+      ...node.visibleListeners.map((l) => (
+        <Combobox.Option
+          key={`ln:${l.value}`}
+          value={LISTENER_PREFIX + l.value}
+          disabled={l.disabled}
+          pl="xl"
+        >
+          <Group justify="space-between" gap="sm" wrap="nowrap">
+            <Group gap="sm" wrap="nowrap">
+              <Checkbox
+                size="xs"
+                readOnly
+                tabIndex={-1}
+                checked={selectedSet.has(l.value)}
+                disabled={l.disabled}
+                aria-hidden
+                style={{ pointerEvents: 'none' }}
+              />
+              <Text size="sm" c={l.disabled ? 'dimmed' : undefined}>
+                {l.name}
+              </Text>
+            </Group>
+            {l.protocol && (
+              <Text size="xs" c="dimmed" tt="lowercase">
+                {l.protocol}
+              </Text>
+            )}
+          </Group>
+        </Combobox.Option>
+      )),
+    ]
+  })
 
   return (
     <Stack gap="xs">
-      <MultiSelect
-        label={label ?? 'Listeners'}
-        description={description}
-        placeholder={
-          failed
-            ? 'Sidecars could not be loaded'
-            : empty
-              ? 'No sidecars yet'
-              : 'Search a sidecar or a listener...'
-        }
-        data={data}
-        value={value.map(encodeTarget)}
-        onChange={(values) => onChange(values.map(decodeTarget))}
-        // The protocol moves here, where it is read once while choosing,
-        // instead of riding in the chip forever. It is what decides which rule
-        // types and masking strategies the lane can run, so it earns a place
-        // in the row and not in the summary.
-        renderOption={({ option }) => (
-          <Group justify="space-between" gap="sm" wrap="nowrap" w="100%">
-            <Text size="sm" c={option.disabled ? 'dimmed' : undefined}>
-              {option.label}
-            </Text>
-            {option.reason ? (
-              <Text size="xs" c="dimmed">
-                {option.reason}
-              </Text>
-            ) : (
-              option.protocol && (
-                <Text size="xs" c="dimmed" tt="lowercase">
-                  {option.protocol}
-                </Text>
-              )
-            )}
-          </Group>
-        )}
-        filter={filter}
-        error={failed ? error : undefined}
-        disabled={empty || failed}
-        searchable
-        clearable
-      />
+      <Combobox store={combobox} onOptionSubmit={onOptionSubmit} disabled={disabled}>
+        <Combobox.DropdownTarget>
+          <PillsInput
+            label={label ?? 'Listeners'}
+            description={description}
+            error={failed ? error : undefined}
+            disabled={disabled}
+            onClick={() => combobox.openDropdown()}
+          >
+            <Pill.Group>
+              {pills.map((p) => (
+                <Pill key={p.id} withRemoveButton disabled={disabled} onRemove={() => removeSidecar(p.id)}>
+                  {p.label}
+                </Pill>
+              ))}
+              <Combobox.EventsTarget>
+                <PillsInput.Field
+                  value={search}
+                  placeholder={pills.length === 0 ? placeholder : ''}
+                  disabled={disabled}
+                  onFocus={() => combobox.openDropdown()}
+                  onBlur={() => combobox.closeDropdown()}
+                  onChange={(event) => {
+                    combobox.openDropdown()
+                    combobox.updateSelectedOptionIndex()
+                    setSearch(event.currentTarget.value)
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Backspace' && search.length === 0 && pills.length > 0) {
+                      event.preventDefault()
+                      removeSidecar(pills[pills.length - 1].id)
+                    }
+                  }}
+                />
+              </Combobox.EventsTarget>
+            </Pill.Group>
+          </PillsInput>
+        </Combobox.DropdownTarget>
+
+        <Combobox.Dropdown>
+          <Combobox.Options>
+            <ScrollArea.Autosize mah={280} type="auto" offsetScrollbars>
+              {options.length > 0 ? options : <Combobox.Empty>Nothing found</Combobox.Empty>}
+            </ScrollArea.Autosize>
+          </Combobox.Options>
+        </Combobox.Dropdown>
+      </Combobox>
       {empty && (
         <Text size="sm" c="dimmed">
           {'Rules reach a sidecar once one is connected. '}
