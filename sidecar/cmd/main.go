@@ -74,12 +74,13 @@ import (
 	"fmt"
 	"os"
 
-	// Analyzer providers register themselves on import. Linking all three
+	// Analyzer providers register themselves on import. Linking all four
 	// keeps the "one binary, the config decides" rule the package doc
 	// states: an operator turning on Vertex does not also have to swap the
 	// binary. Only vertex costs a dependency, and it is confined to its own
 	// module so the root does not carry it.
 	_ "github.com/hoophq/hoop/sidecar/analyzer/anthropic"
+	_ "github.com/hoophq/hoop/sidecar/analyzer/gemini"
 	_ "github.com/hoophq/hoop/sidecar/analyzer/openai"
 	_ "github.com/hoophq/hoop/sidecar/analyzer/vertex"
 	configyaml "github.com/hoophq/hoop/sidecar/config/yaml"
