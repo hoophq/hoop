@@ -1,9 +1,8 @@
 # e2e
 
-Browser tests for the hoop binary in both modes: `hoop start standalone`
-(gateway + agent, `:8009`) and `hoop start control-plane` (`:8019`). Each run
-starts both on a fresh embedded PGlite database and records video, trace and
-screenshots for every test.
+Browser tests for the control plane (`hoop start control-plane`, `:8019`).
+Each run starts it on a fresh embedded PGlite database and records video,
+trace and screenshots for every test.
 
 ## CI
 
@@ -21,5 +20,5 @@ HOOP_BIN=$PWD/../dist/dev/bin/hoop npm test
 npm run report                                 # open the HTML report
 ```
 
-Ports 8009, 8010 and 8019 must be free. Test data is synthetic: traces hold
-full network requests, and Currents stores them.
+Port 8019 must be free. Test data is synthetic: traces hold full network
+requests, and Currents stores them.

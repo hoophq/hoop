@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   e2e:
-    name: E2E (gateway + control plane)
+    name: E2E (control plane)
     # Adding some other label to a PR that has `e2e` does not rerun it.
     if: >-
       contains(github.event.pull_request.labels.*.name, 'e2e') &&
