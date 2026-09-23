@@ -1287,17 +1287,20 @@ to the audit trail.
 |---|---|---|---|
 | `anthropic` | Claude | Anthropic API key | |
 | `openai` | any Chat Completions endpoint | API key | |
-| `gemini` | Gemini | Google API key | `api: developer` (default) or `api: vertex` |
+| `gemini` | Gemini | Google API key | `api: developer` (default) or `api: vertex` (express mode, global) |
 | `vertex` | Claude or Gemini | GCP identity | `project`, `region`, `publisher: anthropic` (default) or `publisher: google` |
 
 **Gemini** with an API key goes through `provider: gemini`. `api: developer`
 is the Gemini Developer API on `generativelanguage.googleapis.com`, billed to
-a Google account. `api: vertex` is the Vertex AI Gemini API on
+a Google account. `api: vertex` is Vertex AI in express mode on
 `aiplatform.googleapis.com` with a Google Cloud API key, billed to the key's
-project and inside its IAM and region policy. Google documents API keys for
-testing and ADC for production; a static key has no identity to audit and
-no rotation of its own. The key travels in the `x-goog-api-key` header,
-never in the URL.
+project. Express mode is global: the URL names no location and Google routes
+the call, so it offers no region selection and no VPC Service Controls. A
+workload that must stay in one region uses `provider: vertex` with
+`publisher: google` below, where `region` is part of the URL. Google
+documents API keys for testing and ADC for production; a static key has no
+identity to audit and no rotation of its own. The key travels in the
+`x-goog-api-key` header, never in the URL.
 
 **Vertex** authenticates with a GCP OAuth2 bearer minted from a service
 account and refreshed automatically, so `-validate` mints one token to prove

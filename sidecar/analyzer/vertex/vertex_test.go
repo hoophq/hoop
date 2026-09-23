@@ -7,7 +7,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/analyzer/gemini"
@@ -142,5 +144,88 @@ func TestClassifyDefaultPublisherSendsAnthropicBody(t *testing.T) {
 	}
 	if _, ok := body["contents"]; ok {
 		t.Errorf("anthropic path sent a gemini body: %s", gotBody)
+	}
+}
+
+// userCredential renders an authorized_user file, the shape
+// `gcloud auth application-default login` writes, with token_uri pointing at
+// a local server. Its refresh request carries the token source's context;
+// the service-account JWT flow in oauth2 v0.36 does not, so a test built on
+// a service-account key would pass with the bug present.
+func userCredential(tokenURI string) []byte {
+	cred, _ := json.Marshal(map[string]string{
+		"type":          "authorized_user",
+		"client_id":     "cid",
+		"client_secret": "csecret",
+		"refresh_token": "rt",
+		"token_uri":     tokenURI,
+	})
+	return cred
+}
+
+// The daemon cancels the Verify context as soon as validation returns. The
+// token source must outlive it: oauth2 keeps the context it was built with
+// for every refresh, so a source built on the startup context mints once and
+// then fails every refresh an hour later with "context canceled". Workload
+// Identity Federation and gcloud user credentials both refresh this way.
+//
+// expires_in: 1 makes every Token() call a refresh, which stands in for the
+// hour.
+func TestTokenSourceOutlivesVerifyContext(t *testing.T) {
+	var mints atomic.Int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/token", func(w http.ResponseWriter, _ *http.Request) {
+		mints.Add(1)
+		w.Header().Set("content-type", "application/json")
+		_, _ = io.WriteString(w, `{"access_token":"tok","token_type":"Bearer","expires_in":1}`)
+	})
+	mux.HandleFunc("/predict", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("authorization") != "Bearer tok" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		_, _ = io.WriteString(w, `{"candidates":[{"content":{"parts":[{"functionCall":{"name":"report_low_risk","args":{}}}]},"finishReason":"STOP"}]}`)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	p := build(t, analyzer.Options{
+		Endpoint:   srv.URL + "/predict",
+		Credential: analyzer.NewSecret(userCredential(srv.URL + "/token")),
+		Extra:      map[string]string{KeyPublisher: PublisherGoogle},
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if err := p.Verify(ctx); err != nil {
+		cancel()
+		t.Fatalf("Verify: %v", err)
+	}
+	cancel()
+
+	if _, err := p.Classify(context.Background(), "s", "c"); err != nil {
+		t.Fatalf("Classify after the Verify context was canceled: %v", err)
+	}
+	if n := mints.Load(); n != 2 {
+		t.Errorf("token endpoint saw %d mints, want 2 (one for Verify, one refresh for Classify)", n)
+	}
+}
+
+// Verify must return when its context ends, or -validate hangs on a token
+// endpoint that never answers.
+func TestVerifyHonorsContextDeadline(t *testing.T) {
+	release := make(chan struct{})
+	defer close(release)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		<-release
+	}))
+
+	p := build(t, analyzer.Options{
+		Credential: analyzer.NewSecret(userCredential(srv.URL)),
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	err := p.Verify(ctx)
+	if err == nil || !strings.Contains(err.Error(), context.DeadlineExceeded.Error()) {
+		t.Errorf("err = %v, want deadline exceeded", err)
 	}
 }

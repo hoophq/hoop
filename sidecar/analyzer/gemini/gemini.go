@@ -3,10 +3,16 @@
 //
 // Google serves Gemini from two hosts that take the same request body and
 // return the same reply. The Gemini Developer API (generativelanguage) bills
-// a Google account and has no project. The Vertex AI Gemini API
-// (aiplatform) bills a GCP project and sits inside its IAM, VPC Service
-// Controls and region policy. The `api` key in the config picks the host;
-// the encoder does not care.
+// a Google account and has no project. Vertex AI in express mode
+// (aiplatform) takes a Google Cloud API key bound to a project and bills
+// that project. The `api` key in the config picks the host; the encoder does
+// not care.
+//
+// Express mode is global. Its URL names no location and Google routes the
+// call, so an operator who needs a specific region, or VPC Service Controls,
+// has nothing to set here. Regional routing is a property of the
+// project-scoped Vertex URL, which needs a bearer: that is analyzer/vertex
+// with `publisher: google`.
 //
 // The API key is the only credential this package knows. An operator with a
 // GCP identity (a service-account key, Workload Identity, an attached
@@ -42,9 +48,9 @@ const (
 	// APIDeveloper is the Gemini Developer API on generativelanguage.
 	APIDeveloper = "developer"
 
-	// APIVertex is the Vertex AI Gemini API on aiplatform, reached with a
+	// APIVertex is Vertex AI in express mode on aiplatform, reached with a
 	// Google Cloud API key. The key is bound to a project, so the URL
-	// carries no project or location.
+	// carries no project and no location; the endpoint is global.
 	APIVertex = "vertex"
 )
 

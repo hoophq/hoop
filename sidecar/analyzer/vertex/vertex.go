@@ -143,8 +143,17 @@ type Provider struct {
 func (p *Provider) Name() string { return Name }
 
 // tokenSource resolves the credential once.
-func (p *Provider) tokenSource(ctx context.Context) (oauth2.TokenSource, error) {
+//
+// The source is built on context.Background, never on the caller's ctx.
+// oauth2 keeps the context it was built with and uses it for every refresh
+// afterwards. Verify runs under a 15-second startup context that the daemon
+// cancels as soon as validation returns; a source built on it mints the
+// first token and fails every refresh an hour later with "context canceled".
+// The caller's ctx still bounds the Vertex HTTP request in Classify, which is
+// the call that has a deadline to respect.
+func (p *Provider) tokenSource() (oauth2.TokenSource, error) {
 	p.tokenOnce.Do(func() {
+		ctx := context.Background()
 		var creds *google.Credentials
 		var err error
 		if p.saJSON.IsZero() {
@@ -181,11 +190,23 @@ func (p *Provider) tokenSource(ctx context.Context) (oauth2.TokenSource, error) 
 // It deliberately does NOT call the model: that would cost money on every
 // config check and would not test anything minting a token does not.
 func (p *Provider) Verify(ctx context.Context) error {
-	ts, err := p.tokenSource(ctx)
+	ts, err := p.tokenSource()
 	if err != nil {
 		return err
 	}
-	if _, err := ts.Token(); err != nil {
+	// ctx bounds this one mint. oauth2's TokenSource takes no context, so
+	// the bound is a watchdog around the call rather than a deadline on it.
+	done := make(chan error, 1)
+	go func() {
+		_, err := ts.Token()
+		done <- err
+	}()
+	select {
+	case <-ctx.Done():
+		return fmt.Errorf("analyzer/vertex: could not mint a GCP access token: %w", ctx.Err())
+	case err = <-done:
+	}
+	if err != nil {
 		return fmt.Errorf("analyzer/vertex: could not mint a GCP access token "+
 			"(check the service account, its roles/aiplatform.user binding, and the host clock): %w", err)
 	}
@@ -223,7 +244,7 @@ func (p *Provider) url() string {
 
 // Classify implements analyzer.Provider.
 func (p *Provider) Classify(ctx context.Context, systemPrompt, content string) (*analyzer.Result, error) {
-	ts, err := p.tokenSource(ctx)
+	ts, err := p.tokenSource()
 	if err != nil {
 		return nil, err
 	}
