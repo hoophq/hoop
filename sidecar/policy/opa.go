@@ -59,10 +59,13 @@ import (
 //   - `responses: false` in the result of a FromClient decision: the policy
 //     itself declares it has no opinion on THIS exchange's response side,
 //     per method, per table, per actor — whatever the Rego keys on. It is
-//     recorded on the EvalContext (SkipResponses), and the caller that
-//     owns the exchange feeds it back as a Requested veto on the response
-//     statements that follow. Chain's own vocabulary: `request` asks a
-//     producer to run or not; this asks the same of OPA.
+//     recorded on the EvalContext (SkipResponses), and a caller that owns
+//     exactly one exchange (the gRPC lane's per-RPC gate) feeds it back as
+//     a Requested veto on the response statements that follow. Chain's own
+//     vocabulary: `request` asks a producer to run or not; this asks the
+//     same of OPA. A caller serving a whole connection cannot pair
+//     responses with requests and ignores it; the request's audit record
+//     then carries AnnotationResponsesUnscoped.
 //
 // A skipped statement carries AnnotationOPASkipped onto its audit record,
 // so a row that says "allowed, no rule" can be told apart from one OPA
@@ -195,6 +198,12 @@ type opaResultObject struct {
 // The value names why: "responses" for the operator's SkipResponses or the
 // policy's own `responses: false`.
 const AnnotationOPASkipped = "opa.skipped"
+
+// AnnotationResponsesUnscoped marks a request whose `responses: false` the
+// caller could not honor, because it serves a whole connection and cannot
+// tell which response answers which request. The value names the scope it
+// had: "connection".
+const AnnotationResponsesUnscoped = "opa.responses_unscoped"
 
 // Evaluate implements Evaluator.
 //

@@ -2301,16 +2301,25 @@ result := {"allow": true, "responses": false} if {
 }
 ```
 
-That exchange's response statements skip OPA; the next request asks again.
-It is read on every phase and on request statements only — a response
-saying it answers a question nobody will ask. On a two-phase lane one
-answer covers both OPA calls, because the veto is keyed by source, not by
-client. An exchange is one request and the responses that answer it: the
-gate draws the boundary at a `FromClient` statement that follows a
-`FromServer` one, which is the fact every protocol shares. A client-
-streaming RPC re-establishes the opt-out on every request message, at no
-extra cost — every request statement is evaluated in full regardless.
-Absent or `true` changes nothing.
+That RPC's response statements skip OPA; the next RPC asks again. It is
+read on every phase and on request statements only — a response saying it
+answers a question nobody will ask. On a two-phase lane one answer covers
+both OPA calls, because the veto is keyed by source, not by client. A
+client-streaming RPC keeps the opt-out its first request statement gave;
+a later request message that says nothing does not undo it. Absent or
+`true` changes nothing.
+
+**It works on `grpc` and `spanner` lanes only.** Those lanes build one gate
+per RPC, so the gate IS the exchange and knows exactly which responses the
+opt-out covers. A relay lane (`http`, `postgres`, `mysql`, ...) serves a
+whole connection through one gate, and its codecs correlate responses to
+requests — pgwire's extended protocol pipelines, MongoDB answers out of
+order by requestID — without exposing the pairing on the statement. A
+direction flip is not a boundary once two requests are in flight: honoring
+request A's opt-out would silence OPA on request B's response. So a relay
+lane ignores the field and stamps `opa.responses_unscoped: connection` on
+the request's audit record, which is where to look when a rule you wrote
+seems to do nothing. Use the per-lane switch there.
 
 ### Reporting instead of denying
 

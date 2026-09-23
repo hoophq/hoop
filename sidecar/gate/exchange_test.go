@@ -50,9 +50,11 @@ func grpcStmt(dir inspect.Direction, text string) inspect.Statement {
 }
 
 // The policy's `responses: false` on a request must keep OPA off every
-// response of that exchange, and off nothing else: the next exchange asks
-// again. Both OPA clients of a two-phase chain are covered, because the
-// veto is keyed by source, not by client.
+// response of that exchange. A statement gate IS one exchange (the gRPC
+// lane builds one per RPC), so the opt-out lives as long as the gate, and a
+// later request message that says nothing does not undo it. Both OPA
+// clients of a two-phase chain are covered, because the veto is keyed by
+// source, not by client.
 func TestPolicyOptOutSkipsOPAOnTheExchangeResponses(t *testing.T) {
 	url, seen := optOutOPA(t, "/bq.Storage/ReadRows")
 	g, err := gate.NewStatementGate(
@@ -69,10 +71,12 @@ func TestPolicyOptOutSkipsOPAOnTheExchangeResponses(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	// Exchange 1: the policy opts out of responses on the request.
+	// The headers statement opts out; the request message that follows
+	// (a client-streaming RPC) says nothing.
 	g.EvaluateStatement(ctx, grpcStmt(inspect.FromClient, "/bq.Storage/ReadRows"))
-	if n := len(seen()); n != 2 {
-		t.Fatalf("request cost %d OPA calls, want 2 (gate + decide)", n)
+	g.EvaluateStatement(ctx, grpcStmt(inspect.FromClient, "request message"))
+	if n := len(seen()); n != 4 {
+		t.Fatalf("two request statements cost %d OPA calls, want 4 (gate + decide each)", n)
 	}
 	for i := range 3 {
 		d := g.EvaluateStatement(ctx, grpcStmt(inspect.FromServer, "row"))
@@ -80,17 +84,61 @@ func TestPolicyOptOutSkipsOPAOnTheExchangeResponses(t *testing.T) {
 			t.Fatalf("row %d denied: %+v", i, d)
 		}
 	}
-	if n := len(seen()); n != 2 {
-		t.Fatalf("3 response messages cost %d extra OPA calls after the policy opted out", n-2)
+	if n := len(seen()); n != 4 {
+		t.Fatalf("3 response messages cost %d extra OPA calls after the policy opted out", n-4)
+	}
+}
+
+// A connection gate serves many exchanges and cannot tell which response
+// answers which request: HTTP/1.1 pipelining puts request B on the wire
+// before response A. Honoring A's `responses: false` there would silence
+// OPA on B's response, so the gate keeps asking and marks A's record.
+func TestPolicyOptOutIsIgnoredOnAConnectionGate(t *testing.T) {
+	url, seen := optOutOPA(t, "GET /a")
+	sink := &recordingSink{}
+	g, err := gate.New(
+		session.New(inspect.HTTP, session.Identity{Subject: "alice"}),
+		gate.Config{Protocol: inspect.HTTP, Policy: policy.Chain{&policy.OPAClient{URL: url}}, Audit: sink})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	ctx := context.Background()
+
+	// A and B pipelined in one segment; only A opts out.
+	pipelined := "GET /a HTTP/1.1\r\nHost: x\r\n\r\n" + "GET /b HTTP/1.1\r\nHost: x\r\n\r\n"
+	if d := g.Request(ctx, []byte(pipelined)); !d.Allowed || len(d.Statements) != 2 {
+		t.Fatalf("pipelined requests: %+v", d)
+	}
+	responses := "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n" + "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"
+	if d := g.Response(ctx, []byte(responses)); !d.Allowed || len(d.Statements) != 2 {
+		t.Fatalf("pipelined responses: %+v", d)
 	}
 
-	// Exchange 2: a request the policy did not opt out of; its responses
-	// are evaluated again.
-	g.EvaluateStatement(ctx, grpcStmt(inspect.FromClient, "/bq.Storage/CreateSession"))
-	g.EvaluateStatement(ctx, grpcStmt(inspect.FromServer, "session"))
 	got := seen()
-	if len(got) != 6 || got[4] != string(inspect.FromServer) || got[5] != string(inspect.FromServer) {
-		t.Errorf("calls = %v; the opt-out leaked into the next exchange", got)
+	want := []string{"client", "client", "server", "server"}
+	if len(got) != len(want) {
+		t.Fatalf("OPA calls = %v, want %v; B's response must still reach OPA", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("OPA calls = %v, want %v", got, want)
+		}
+	}
+
+	sink.mu.Lock()
+	events := sink.events
+	sink.mu.Unlock()
+	var marked int
+	for _, ev := range events {
+		if ev.Metadata[policy.AnnotationResponsesUnscoped] == "connection" {
+			marked++
+			if ev.Statement != "GET /a" {
+				t.Errorf("record %q marked unscoped; only A's request opted out", ev.Statement)
+			}
+		}
+	}
+	if marked != 1 {
+		t.Errorf("%d records marked opa.responses_unscoped, want 1 (A's request)", marked)
 	}
 }
 
