@@ -1,0 +1,18 @@
+{
+  "name": "hoop-e2e",
+  "private": true,
+  "description": "Browser end-to-end tests for the gateway and control-plane modes of the hoop binary.",
+  "scripts": {
+    "test": "playwright test",
+    "test:gateway": "playwright test --project=gateway",
+    "test:control-plane": "playwright test --project=control-plane",
+    "report": "playwright show-report",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@currents/playwright": "^2.5.0",
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^26.6.2",
+    "typescript": "^7.0.2"
+  }
+}

@@ -1,0 +1,109 @@
+name: E2E
+
+# Browser e2e suite (e2e/). Opt-in: runs only on PRs with the `e2e` label,
+# on the label event and on each push while the label stays.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+
+# Same reason as pullrequest.yml: proxy.golang.org resets HTTP/2 streams.
+env:
+  GODEBUG: http2client=0
+
+concurrency:
+  group: e2e-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: E2E (gateway + control plane)
+    # Adding some other label to a PR that has `e2e` does not rerun it.
+    if: >-
+      contains(github.event.pull_request.labels.*.name, 'e2e') &&
+      (github.event.action != 'labeled' || github.event.label.name == 'e2e')
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # The web UI: CLJS bundle plus the React shell on top, merged into
+      # dist/dev/resources/public (scripts/dev/build-webapp.sh).
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: "zulu"
+          java-version: "21"
+
+      - name: Install clojure tools
+        uses: DeLaGuardo/setup-clojure@12.5
+        with:
+          cli: 1.12.0.1479
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "npm"
+          cache-dependency-path: |
+            webapp/package-lock.json
+            webapp_v2/package-lock.json
+            e2e/package-lock.json
+
+      - name: Build web UI
+        env:
+          # download-connection-metadata.sh reads hoophq/documentation.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: make build-dev-webapp
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.work
+          cache-dependency-path: "**/go.sum"
+
+      # libhoop is a private module fetched from the proxy. GOPRIVATE keeps it
+      # off proxy.golang.org and sum.golang.org; the credential rewrite lets
+      # the direct fetch authenticate as the token.
+      - name: Authenticate private modules
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          echo "GOPRIVATE=github.com/hoophq/libhoop" >> "$GITHUB_ENV"
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/hoophq/".insteadOf "https://github.com/hoophq/"
+
+      - name: Use libhoop PR branch when one is open
+        uses: ./.github/actions/use-libhoop-pr
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+
+      - name: Build hoop binary
+        run: go build -o dist/dev/bin/hoop client/hoop.go
+
+      - name: Install e2e dependencies
+        working-directory: e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      # Without CURRENTS_RECORD_KEY (fork PRs) the suite still runs and the
+      # results stay in the artifact below.
+      - name: Run e2e suite
+        working-directory: e2e
+        env:
+          HOOP_BIN: ${{ github.workspace }}/dist/dev/bin/hoop
+          STATIC_UI_PATH: ${{ github.workspace }}/dist/dev/resources/public
+          CURRENTS_RECORD_KEY: ${{ secrets.CURRENTS_RECORD_KEY }}
+          CURRENTS_CI_BUILD_ID: ${{ github.repository }}-${{ github.run_id }}-${{ github.run_attempt }}
+        run: npx playwright test
+
+      - name: Upload report, videos and traces
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-report
+          path: |
+            e2e/playwright-report/
+            e2e/test-results/
+          retention-days: 14
