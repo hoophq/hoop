@@ -1117,7 +1117,10 @@ reads that. Five consequences:
 
 On a grpc lane the relay files the method path, a newline, then the message
 as protojson. A spanner lane files the SQL alone when it reads SQL from the
-message, and the grpc form otherwise. A hold needs `grpc.capture_payload`:
+message, and the grpc form otherwise. The reviewer reads that SQL, not its
+parameters or the database it runs against, so an approval releases the
+query on any bound values, as with prepared statements on postgres.
+A hold needs `grpc.capture_payload`:
 without it no message reaches the analyzer. The http consequences apply:
 
 - A message larger than `grpc.max_payload_bytes` denies without filing.

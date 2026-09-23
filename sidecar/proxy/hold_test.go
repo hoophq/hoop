@@ -304,7 +304,10 @@ func TestAClickHouseHoldForwardsOnlyWhatIsReleased(t *testing.T) {
 			pol.verdict <- tc.verdict
 
 			if !tc.forward {
-				got, _ := io.ReadAll(c)
+				got, err := io.ReadAll(c)
+				if err != nil {
+					t.Fatalf("read denial after %d bytes: %v", len(got), err)
+				}
 				code, n := binary.Uvarint(got)
 				if n <= 0 || code != 2 || len(got) < n+4 || binary.LittleEndian.Uint32(got[n:n+4]) != 497 {
 					t.Errorf("the client read %x, want a ClickHouse ACCESS_DENIED exception", got)

@@ -66,15 +66,21 @@ func (p *holdPolicy) waitStarted(t *testing.T) {
 	}
 }
 
+// upstreamRead is the first read a grpc upstream made of a request body.
+type upstreamRead struct {
+	n   int
+	err error
+}
+
 // firstReadUpstream is a grpc upstream that reports the first request bytes
 // it reads, so a test can tell "held" from "forwarded".
-func firstReadUpstream(t *testing.T) (addr string, firstRead <-chan int) {
+func firstReadUpstream(t *testing.T) (addr string, firstRead <-chan upstreamRead) {
 	t.Helper()
-	reads := make(chan int, 1)
+	reads := make(chan upstreamRead, 1)
 	addr, stop := startGRPCTestH2C(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		buf := make([]byte, 64)
-		n, _ := io.ReadAtLeast(r.Body, buf, 1)
-		reads <- n
+		n, err := io.ReadAtLeast(r.Body, buf, 1)
+		reads <- upstreamRead{n: n, err: err}
 		_, _ = io.Copy(io.Discard, r.Body)
 		w.Header().Set("Content-Type", "application/grpc")
 		w.Header().Set("Grpc-Status", "0")
@@ -124,8 +130,8 @@ func TestAGRPCHoldForwardsOnlyWhatIsReleased(t *testing.T) {
 				}()
 				pol.waitStarted(t)
 				select {
-				case n := <-firstRead:
-					t.Fatalf("upstream read %d bytes while the message was held", n)
+				case got := <-firstRead:
+					t.Fatalf("upstream read %d bytes (%v) while the message was held", got.n, got.err)
 				case <-time.After(200 * time.Millisecond):
 				}
 				pol.verdict <- tc.verdict
@@ -137,14 +143,18 @@ func TestAGRPCHoldForwardsOnlyWhatIsReleased(t *testing.T) {
 				if got := spannerTestStatus(r.resp); got != tc.status {
 					t.Errorf("grpc-status = %q, want %q", got, tc.status)
 				}
-				var forwarded bool
+				// A released message arrives whole; a refused stream ends
+				// with an error and no bytes, never a clean EOF.
 				select {
-				case n := <-firstRead:
-					forwarded = n > 0
+				case got := <-firstRead:
+					switch {
+					case tc.forward && got.err != nil:
+						t.Errorf("upstream read of the released message failed: %v", got.err)
+					case !tc.forward && (got.n > 0 || got.err == nil):
+						t.Errorf("upstream read %d bytes (%v) of a refused message", got.n, got.err)
+					}
 				case <-time.After(time.Second):
-				}
-				if forwarded != tc.forward {
-					t.Errorf("upstream received the message: %v, want %v", forwarded, tc.forward)
+					t.Error("upstream never observed the request stream")
 				}
 			})
 		}
