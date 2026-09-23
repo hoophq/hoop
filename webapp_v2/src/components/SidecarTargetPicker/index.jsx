@@ -6,7 +6,6 @@ import {
   Group,
   Pill,
   PillsInput,
-  ScrollArea,
   Stack,
   Text,
   useCombobox,
@@ -99,7 +98,11 @@ function filterTree(tree, search) {
 // It names the picked listeners, so the field says what is bound without the
 // dropdown. A target the fleet no longer lists keeps its stored name, so the
 // pill never hides a binding the save would send.
-const PILL_NAMES = 3
+// The pill text stops once it passes this many characters, so a long
+// listener name never pushes the "+N more" out of sight.
+const PILL_CHARS = 32
+// The tooltip lists this many names; the dropdown holds the rest.
+const HINT_NAMES = 10
 
 function pillsFor(tree, selected) {
   const byId = new Map(tree.map((n) => [n.id, n]))
@@ -113,18 +116,45 @@ function pillsFor(tree, selected) {
     const node = byId.get(id)
     const total = node ? node.listeners.filter((l) => !l.disabled).length : 0
     const all = total > 0 && names.length === total
-    const extra = names.length - PILL_NAMES
-    const scope = all
-      ? 'all listeners'
-      : names.slice(0, PILL_NAMES).join(', ') + (extra > 0 ? ` +${extra} more` : '')
+    let shown = 0
+    let length = 0
+    while (shown < names.length && (shown === 0 || length + names[shown].length <= PILL_CHARS)) {
+      length += names[shown].length + 2
+      shown++
+    }
+    const extra = names.length - shown
+    // One name longer than the budget is cut, so the count after it stays in view.
+    const listed = names.slice(0, shown).map((n) => (n.length > PILL_CHARS ? `${n.slice(0, PILL_CHARS - 1)}…` : n))
+    const scope = all ? 'all listeners' : listed.join(', ') + (extra > 0 ? ` +${extra} more` : '')
     return {
       id,
       name: node?.name ?? 'Unknown sidecar',
       scope,
-      // Only a pill that hides a name gets the full list on hover.
-      hint: all || extra > 0 ? names.join(', ') : null,
+      names,
+      // Only a pill that hides a name gets the list on hover.
+      hinted: all || extra > 0,
     }
   })
+}
+
+// The tooltip body: a count, one name per line, and where the rest are.
+function PillHint({ names }) {
+  const rest = names.length - HINT_NAMES
+  return (
+    <Stack gap={2} maw={420}>
+      <Text size="xs" fw={600} mb={4}>
+        {`${names.length} listener${names.length === 1 ? '' : 's'} selected`}
+      </Text>
+      {names.slice(0, HINT_NAMES).map((n) => (
+        <Text key={n} size="xs" truncate="end">
+          {n}
+        </Text>
+      ))}
+      <Text size="xs" c="gray.5" mt={4}>
+        {rest > 0 ? `+${rest} more — click to see all` : 'Click to edit'}
+      </Text>
+    </Stack>
+  )
 }
 
 /**
@@ -204,6 +234,16 @@ export default function SidecarTargetPicker({ value = [], onChange, label, descr
 
   const pills = pillsFor(tree, selected)
 
+  // A pill click opens the list at that sidecar, where every listener it
+  // binds is shown and editable.
+  const showSidecar = (id) => {
+    setSearch('')
+    combobox.openDropdown()
+    requestAnimationFrame(() =>
+      document.querySelector(`[data-sidecar-row="${id}"]`)?.scrollIntoView({ block: 'start' }),
+    )
+  }
+
   // A fleet that did not load is not an empty fleet. Rendering the failure as
   // "no sidecars yet" tells an admin their fleet is gone and hides the reason,
   // and the disabled input then reads as a state of the product rather than as
@@ -225,6 +265,7 @@ export default function SidecarTargetPicker({ value = [], onChange, label, descr
       <Combobox.Option
         key={`sc:${node.id}`}
         value={SIDECAR_PREFIX + node.id}
+        data-sidecar-row={node.id}
         disabled={offered.length === 0}
       >
         <Group justify="space-between" gap="sm" wrap="nowrap">
@@ -256,7 +297,7 @@ export default function SidecarTargetPicker({ value = [], onChange, label, descr
           pl="xl"
         >
           <Group justify="space-between" gap="sm" wrap="nowrap">
-            <Group gap="sm" wrap="nowrap">
+            <Group gap="sm" wrap="nowrap" miw={0}>
               <Checkbox
                 size="xs"
                 readOnly
@@ -264,14 +305,14 @@ export default function SidecarTargetPicker({ value = [], onChange, label, descr
                 checked={selectedSet.has(l.value)}
                 disabled={l.disabled}
                 aria-hidden
-                style={{ pointerEvents: 'none' }}
+                style={{ pointerEvents: 'none', flex: '0 0 auto' }}
               />
-              <Text size="sm" c={l.disabled ? 'dimmed' : undefined}>
+              <Text size="sm" c={l.disabled ? 'dimmed' : undefined} truncate="end" title={l.name}>
                 {l.name}
               </Text>
             </Group>
             {l.protocol && (
-              <Text size="xs" c="dimmed" tt="lowercase">
+              <Text size="xs" c="dimmed" tt="lowercase" flex="0 0 auto">
                 {l.protocol}
               </Text>
             )}
@@ -295,15 +336,25 @@ export default function SidecarTargetPicker({ value = [], onChange, label, descr
             <Pill.Group>
               {pills.map((p) => {
                 const pill = (
-                  <Pill key={p.id} withRemoveButton disabled={disabled} onRemove={() => removeSidecar(p.id)}>
+                  <Pill
+                    key={p.id}
+                    withRemoveButton
+                    disabled={disabled}
+                    onRemove={() => removeSidecar(p.id)}
+                    onClick={(event) => {
+                      if (event.target.closest('button')) return
+                      showSidecar(p.id)
+                    }}
+                    style={{ cursor: 'pointer' }}
+                  >
                     <Text span inherit fw={600}>
                       {p.name}:
                     </Text>{' '}
                     {p.scope}
                   </Pill>
                 )
-                return p.hint ? (
-                  <Tooltip key={p.id} label={p.hint} multiline w={260}>
+                return p.hinted ? (
+                  <Tooltip key={p.id} label={<PillHint names={p.names} />} position="bottom-start">
                     {pill}
                   </Tooltip>
                 ) : (
@@ -335,10 +386,11 @@ export default function SidecarTargetPicker({ value = [], onChange, label, descr
         </Combobox.DropdownTarget>
 
         <Combobox.Dropdown>
-          <Combobox.Options>
-            <ScrollArea.Autosize mah={280} type="auto" offsetScrollbars>
-              {options.length > 0 ? options : <Combobox.Empty>Nothing found</Combobox.Empty>}
-            </ScrollArea.Autosize>
+          {/* Plain overflow, not ScrollArea: its viewport sizes to the
+              content, so a long listener name would scroll sideways instead
+              of truncating. */}
+          <Combobox.Options mah={280} style={{ overflowY: 'auto' }}>
+            {options.length > 0 ? options : <Combobox.Empty>Nothing found</Combobox.Empty>}
           </Combobox.Options>
         </Combobox.Dropdown>
       </Combobox>
