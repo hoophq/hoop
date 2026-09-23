@@ -394,11 +394,8 @@ func validateSpecForLane(kind SidecarRuleKind, ruleName string, spec json.RawMes
 		if err := decodeSpec(spec, &block); err != nil {
 			return fmt.Errorf("analyzer rule %q: %w", ruleName, err)
 		}
-		// The half only the lane can answer. A hold denies the first attempt
-		// and releases an identical retry, so it needs a client that sends the
-		// statement again: a database client does when the developer runs the
-		// query once more, an http caller is a program reading a refusal, and
-		// an ssh session is a shell the denial already ended.
+		// The half only the lane can answer: a hold waits on the connection,
+		// so it needs a lane whose client waits (database or http).
 		// where is already inside each problem, so the rule name is all this
 		// adds: the admin is looking at a rule, not at a listener.
 		if problems := daemon.ValidateLaneAnalyzerBlock(&block, where, lane.Protocol); len(problems) > 0 {
