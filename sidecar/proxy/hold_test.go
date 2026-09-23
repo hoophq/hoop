@@ -3,6 +3,8 @@ package proxy_test
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
+	"encoding/hex"
 	"io"
 	"net"
 	"strings"
@@ -227,6 +229,96 @@ func TestAnHTTPHoldForwardsOnlyWhatIsReleased(t *testing.T) {
 			}
 			if forwarded := len(up.got()) > 0; forwarded != tc.forward {
 				t.Errorf("upstream received the request: %v, want %v", forwarded, tc.forward)
+			}
+		})
+	}
+}
+
+// ClickHouse native packets at revision 54450 (the codec's PinRevision),
+// encoded once with github.com/ClickHouse/ch-go. Checked in as bytes so this
+// module takes no second direct dependency.
+const (
+	chClientHelloHex = "000b746573742d636c69656e740101b2a90305617070646207617070757365720761707070617373"
+	chServerHelloHex = "000a436c69636b486f7573651903b2a903000000"
+	chDeleteQueryHex = "0103712d31010000000000000000000000010000000000b2a90300000000000002001f" +
+		"44454c4554452046524f4d206f7264657273205748455245206964203d2037"
+)
+
+func mustHex(t *testing.T, s string) []byte {
+	t.Helper()
+	b, err := hex.DecodeString(s)
+	if err != nil {
+		t.Fatalf("fixture: %v", err)
+	}
+	return b
+}
+
+// A ClickHouse query held for review reaches the upstream only once released,
+// and a refusal reaches the client as a native ACCESS_DENIED exception.
+func TestAClickHouseHoldForwardsOnlyWhatIsReleased(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		verdict policy.Verdict
+		forward bool
+	}{
+		{name: "approved", verdict: policy.Verdict{}, forward: true},
+		{name: "rejected", verdict: policy.Deny("hold", "the review was rejected")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			hello, query := mustHex(t, chClientHelloHex), mustHex(t, chDeleteQueryHex)
+			up := newEchoUpstream(t, mustHex(t, chServerHelloHex))
+			pol := &decidingPolicy{started: make(chan struct{}, 1), verdict: make(chan policy.Verdict)}
+			srv := startServer(t, proxy.Config{
+				Upstream:   up.addr(),
+				Protocol:   inspect.ClickHouse,
+				Connection: "warehouse",
+				Policy:     pol,
+				DenyWriter: proxy.ProtocolDenyWriter{},
+			})
+
+			c, err := net.Dial("tcp", srv.Addr().String())
+			if err != nil {
+				t.Fatalf("dial: %v", err)
+			}
+			defer c.Close()
+			if err := c.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+				t.Fatalf("set deadline: %v", err)
+			}
+			if _, err := c.Write(hello); err != nil {
+				t.Fatalf("write hello: %v", err)
+			}
+			if _, err := io.ReadFull(c, make([]byte, len(mustHex(t, chServerHelloHex)))); err != nil {
+				t.Fatalf("read server hello: %v", err)
+			}
+			if _, err := c.Write(query); err != nil {
+				t.Fatalf("write query: %v", err)
+			}
+			select {
+			case <-pol.started:
+			case <-time.After(3 * time.Second):
+				t.Fatal("the query never reached the policy")
+			}
+			if got := up.got(); !bytes.Equal(got, hello) {
+				t.Fatalf("upstream received %d bytes past the hello while the query was held", len(got)-len(hello))
+			}
+			pol.verdict <- tc.verdict
+
+			if !tc.forward {
+				got, err := io.ReadAll(c)
+				if err != nil {
+					t.Fatalf("read denial after %d bytes: %v", len(got), err)
+				}
+				code, n := binary.Uvarint(got)
+				if n <= 0 || code != 2 || len(got) < n+4 || binary.LittleEndian.Uint32(got[n:n+4]) != 497 {
+					t.Errorf("the client read %x, want a ClickHouse ACCESS_DENIED exception", got)
+				}
+			}
+			deadline := time.Now().Add(3 * time.Second)
+			for time.Now().Before(deadline) && tc.forward && !bytes.Contains(up.got(), query) {
+				time.Sleep(10 * time.Millisecond)
+			}
+			if forwarded := bytes.Contains(up.got(), query); forwarded != tc.forward {
+				t.Errorf("upstream received the query: %v, want %v", forwarded, tc.forward)
 			}
 		})
 	}

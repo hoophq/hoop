@@ -89,14 +89,9 @@ func ValidateSidecarRuleSpec(kind SidecarRuleKind, ruleName string, spec json.Ra
 		// vocabulary, the send mode, the numeric bounds, and the pairing a
 		// hold needs -- require_review on a level and an approval rule naming
 		// who may release the statement, each refused without the other.
-		//
-		// postgres stands in for the lane, because this pass has none. Every
-		// refusal but one is protocol-independent; the exception is the hold,
-		// which needs a database lane, so a holdable protocol here lets the
-		// pairing answer and validateSpecForLane asks the real protocol once
-		// the rule names a listener.
+		// validateSpecForLane asks the lane half once the rule names a listener.
 		where := fmt.Sprintf("analyzer rule %q", ruleName)
-		if problems := daemon.ValidateLaneAnalyzerBlock(&block, where, "postgres"); len(problems) > 0 {
+		if problems := daemon.ValidateLaneAnalyzerBlock(&block, where); len(problems) > 0 {
 			return errors.New(strings.Join(problems, "; "))
 		}
 	default:
@@ -394,11 +389,11 @@ func validateSpecForLane(kind SidecarRuleKind, ruleName string, spec json.RawMes
 		if err := decodeSpec(spec, &block); err != nil {
 			return fmt.Errorf("analyzer rule %q: %w", ruleName, err)
 		}
-		// The half only the lane can answer: a hold waits on the connection,
-		// so it needs a lane whose client waits (database or http).
+		// The half only the lane can answer: an ssh lane that admits a shell
+		// cannot hold what is typed in it.
 		// where is already inside each problem, so the rule name is all this
 		// adds: the admin is looking at a rule, not at a listener.
-		if problems := daemon.ValidateLaneAnalyzerBlock(&block, where, lane.Protocol); len(problems) > 0 {
+		if problems := daemon.ValidateHoldOnLane(&block, lane, where); len(problems) > 0 {
 			return fmt.Errorf("analyzer rule %q: %s", ruleName, strings.Join(problems, "; "))
 		}
 	}

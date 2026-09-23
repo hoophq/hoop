@@ -12,6 +12,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/inspect"
 
 	"github.com/hoophq/hoop/sidecar/policy"
+	codecssh "github.com/hoophq/libhoop/v2/codec/ssh"
 )
 
 // HTTPCodecConfig controls what a lane's HTTP codec exposes to policy.
@@ -811,12 +812,11 @@ func httpCodecFactory(proto inspect.Protocol, h *HTTPCodecConfig) func() inspect
 // nothing: the exact failure the pii-entity check exists to prevent, applied
 // to a feature that also costs money when it does fire.
 //
-// protocol is read only by the require_review checks: a hold needs a lane
-// whose client resends the statement, and the analyzer block cannot see which
-// lane it is on. The action's OTHER prerequisite, a control plane to file
-// with, is checked in buildLanes; see holdsWithoutAPlane.
+// lc is read only by ValidateHoldOnLane: the analyzer block cannot see which
+// lane it is on. A hold's OTHER prerequisite, a control plane to file with,
+// is checked in buildLanes; see holdsWithoutAPlane.
 func validateLaneAnalysis(rules []policy.Rule, la *LaneAnalyzerConfig,
-	cfg *AnalyzerConfig, opa *OPAConfig, lane, protocol string) []string {
+	cfg *AnalyzerConfig, opa *OPAConfig, lane string, lc ListenerConfig) []string {
 	gated := opa.enabled() && opa.Gate
 
 	if len(rules) == 0 && la == nil {
@@ -843,7 +843,8 @@ func validateLaneAnalysis(rules []policy.Rule, la *LaneAnalyzerConfig,
 	}
 
 	if la != nil {
-		problems = append(problems, validateLaneBlock(la, lane, protocol)...)
+		problems = append(problems, validateLaneBlock(la, lane)...)
+		problems = append(problems, ValidateHoldOnLane(la, lc, lane+": analyzer block")...)
 	}
 
 	for _, r := range rules {
@@ -898,9 +899,8 @@ func refuseRuleFormHold(high, medium, low, where string) []string {
 
 // ValidateLaneAnalyzerBlock checks one listener's analyzer block the way this
 // process checks it at startup: the risk vocabulary, the send mode, the
-// numeric bounds, and the two prerequisites of a hold -- an approval rule to
-// say who may release a statement, and a protocol whose client sends the
-// statement again.
+// numeric bounds, and the pairing a hold needs -- require_review on a level
+// and an approval rule saying who may release the statement.
 //
 // Exported for the control plane, which stores these blocks and distributes
 // them. The same refusal costs a 422 an admin reads at the save, or a fleet
@@ -911,18 +911,35 @@ func refuseRuleFormHold(high, medium, low, where string) []string {
 // analyzer section, the lane's OPA settings and the deprecated ai_analysis
 // rules; none of those is distributed, and it would refuse over their absence
 // a block the control plane composes correctly.
-func ValidateLaneAnalyzerBlock(la *LaneAnalyzerConfig, lane, protocol string) []string {
+func ValidateLaneAnalyzerBlock(la *LaneAnalyzerConfig, lane string) []string {
 	if la == nil {
 		return nil
 	}
-	return validateLaneBlock(la, lane, protocol)
+	return validateLaneBlock(la, lane)
+}
+
+// ValidateHoldOnLane is the half of a hold only the lane answers: an ssh lane
+// that admits a shell. A shell sends no statements (ADR-0015), so a user
+// types in it what exec would have held. Refused rather than noted: the
+// operator asked for a human gate and the shell walks around it.
+//
+// Exported for the control plane, which knows the lane only once a rule is
+// bound to it.
+func ValidateHoldOnLane(la *LaneAnalyzerConfig, lc ListenerConfig, where string) []string {
+	if la == nil || !analyzerHolds(la) || !isSSH(lc) || !lc.SSH.admits(codecssh.CapShell) {
+		return nil
+	}
+	return []string{fmt.Sprintf(
+		"%s asks for %q on an ssh lane that admits shell, and a shell sends no "+
+			"statements, so nothing typed in it is held; drop shell from "+
+			"ssh.capabilities_allowed", where, analyzer.ActionRequireReview)}
 }
 
 // validateLaneBlock checks one listener's analyzer block in isolation. The
 // checks mirror the rule-form ones — same failure, same message shape — plus
 // the numeric bounds a rule never carried, which get the same negative
 // refusal AnalyzerConfig.validate applies to the defaults they override.
-func validateLaneBlock(la *LaneAnalyzerConfig, lane, protocol string) []string {
+func validateLaneBlock(la *LaneAnalyzerConfig, lane string) []string {
 	var problems []string
 	where := lane + ": analyzer block"
 	problems = append(problems, validateRiskActions(
@@ -975,32 +992,7 @@ func validateLaneBlock(la *LaneAnalyzerConfig, lane, protocol string) []string {
 				"level asks for %q, so nothing on this lane would hold one",
 			where, la.ApprovalRule, analyzer.ActionRequireReview))
 	}
-
-	if holds {
-		if !holdableProtocol(protocol) {
-			problems = append(problems, fmt.Sprintf(
-				"%s asks for %q on a %s lane, and only a database or http lane can "+
-					"hold a statement: the hold waits on the connection, which needs "+
-					"a client that waits for the answer", where,
-				analyzer.ActionRequireReview, protocol))
-		}
-	}
 	return problems
-}
-
-// holdableProtocol reports whether a lane's protocol may hold a statement for
-// human approval: the four wire-database codecs and http.
-//
-// A hold waits on the connection and releases the statement in place, so it
-// needs a client that waits for the answer. An http caller does while its own
-// deadline lasts. grpc waits on a decision about requests that never hash the
-// same twice, and an ssh shell produces no statements to hold (EVL-308).
-func holdableProtocol(protocol string) bool {
-	switch inspect.Protocol(protocol) {
-	case inspect.Postgres, inspect.MySQL, inspect.MSSQL, inspect.MongoDB, inspect.HTTP:
-		return true
-	}
-	return false
 }
 
 // validateRiskActions checks a high/medium/low action map, shared by the

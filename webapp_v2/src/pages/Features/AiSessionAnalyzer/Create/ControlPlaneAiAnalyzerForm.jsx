@@ -18,7 +18,7 @@ import TextInput from '@/components/TextInput'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import { docsUrl } from '@/utils/docsUrl'
 import { showSnackbar } from '@/utils/snackbar'
-import { analyzerActionsFor, canHold, operationsFor, REVIEW_ACTION } from '@/pages/sidecarRuleVocabulary'
+import { analyzerActionsFor, operationsFor, REVIEW_ACTION } from '@/pages/sidecarRuleVocabulary'
 import { useAiSessionAnalyzerStore } from '../store'
 
 // The analyzer as a SIDECAR runs it: a per-listener BLOCK, not a rule, and a
@@ -114,17 +114,6 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
 
   const isHTTP = protocol.toLowerCase() === 'http'
   const operations = useMemo(() => operationsFor(protocol), [protocol])
-  // A hold needs a lane whose client waits on the connection. Refusing it here
-  // is the same refusal the sidecar makes at startup, brought forward to the
-  // form: bound to a grpc or ssh lane, this
-  // rule would take that sidecar's whole configuration down on its next restart.
-  const holdable = targets.length > 0 && targets.every((t) => {
-    const byId = new Map(sidecars.map((sc) => [sc.id, sc]))
-    const lane = byId
-      .get(t.sidecar_id)
-      ?.configuration?.listeners?.find((l) => l.name === t.listener_name)
-    return canHold(lane?.protocol)
-  })
   const actions = useMemo(() => analyzerActionsFor(form.hold), [form.hold])
 
   // Turning the switch off has to take the action with it, and it fails
@@ -297,14 +286,9 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
         <Stack gap="md">
           <Switch
             label="Hold for approval"
-            description={
-              holdable
-                ? 'Adds "Hold for approval" to the levels below. The statement waits up to 30 minutes for a review and runs if it is approved in that time. A client that times out first ends the wait. Running it again after approval lets it through.'
-                : 'Only a database or HTTP listener can hold a statement: it needs a client that waits on the connection for the review.'
-            }
+            description='Adds "Hold for approval" to the levels below. The statement waits up to 30 minutes for a review and runs if it is approved in that time. A client that times out first ends the wait. Running it again after approval lets it through. On an SSH listener, drop the shell capability first: a shell sends no statements to hold.'
             checked={form.hold}
             onChange={(e) => setHold(e.currentTarget.checked)}
-            disabled={!holdable && !form.hold}
           />
           {[
             ['high', 'High risk'],

@@ -1128,7 +1128,7 @@ larger than 100 KB is refused by the plane rather than reviewed.
 
 On an http lane the relay files the method, the target and the body, as
 `POST /transfers?dry_run=false`, a blank line, then the body. The reviewer
-reads that. Four consequences:
+reads that. Five consequences:
 
 - A body larger than `http.max_body_bytes` is truncated by the codec, so the
   hold denies it without filing: the approval would bind to bytes nobody read.
@@ -1142,6 +1142,25 @@ reads that. Four consequences:
   before the gate decides: the request line, the headers and the start of the
   body. A denial does not recall them, so a route that acts on headers alone
   runs whatever the reviewer decides (EVL-309).
+
+On a grpc lane the relay files the method path, a newline, then the message
+as protojson. A spanner lane files the SQL alone when it reads SQL from the
+message, and the grpc form otherwise. The reviewer reads that SQL, not its
+parameters or the database it runs against, so an approval releases the
+query on any bound values, as with prepared statements on postgres.
+A hold needs `grpc.capture_payload`:
+without it no message reaches the analyzer. The http consequences apply:
+
+- A message larger than `grpc.max_payload_bytes` denies without filing.
+- A message carrying a request id, a nonce or a transaction id never matches
+  twice. Metadata is not filed, so a trace header does not break a match.
+- The request headers reach the upstream before the gate decides; the message
+  does not. The caller's deadline ends the wait.
+
+On an ssh lane only `exec` holds: the analyzer classifies `exec_line` alone,
+so env and sftp never reach it. A shell sends no statements, so nothing typed
+in one is held. A holding ssh lane must drop `shell` from
+`ssh.capabilities_allowed`.
 
 **The approval is exact; the classification is not.** The verdict cache keys
 on the statement SHAPE with literals stripped, so two statements differing
@@ -1160,7 +1179,7 @@ than at the first held statement:
 |---|---|
 | a level asks for `require_review` | otherwise `approval_rule` names reviewers nobody consults |
 | `approval_rule` is set, and not blank | spaces match no rule in the control plane |
-| the lane is postgres, mysql, mssql, mongodb or http | a hold needs a client that waits on the connection; grpc waits on a decision about requests that never hash the same twice, and an ssh shell produces no statements |
+| an ssh lane does not admit `shell` | a shell sends no statements, so what is typed in it walks around the hold |
 | the sidecar has a control plane | there is nowhere else to file a review |
 
 Everything else fails CLOSED, `fail_open` included: it answers for a model
