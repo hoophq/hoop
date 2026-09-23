@@ -86,7 +86,12 @@ func splitGuardrails(scName string, cfg *daemon.Config, name ruleNamer, out []Im
 			}
 			inheriting = append(inheriting, l.Name)
 		}
+		// A rule no lane inherits enforces nothing, so it is not imported:
+		// a rule item bound nowhere would outlive the sidecar that carried it.
 		for n, r := range top.Rules {
+			if len(inheriting) == 0 {
+				break
+			}
 			item, err := guardrailItem(name(SidecarRuleGuardrail, scName, entryName(r.Name, "guardrail", n)), r, inheriting...)
 			if err != nil {
 				return nil, err
@@ -158,6 +163,9 @@ func splitMask(scName string, cfg *daemon.Config, name ruleNamer, out []Imported
 		return nil, fmt.Errorf("the top-level mask rules are not a list: %w", err)
 	}
 	for n, e := range entries {
+		if len(inheriting) == 0 {
+			break
+		}
 		item, err := maskItem(name(SidecarRuleMask, scName, entryName(rawEntryName(e), "mask", n)), e, inheriting...)
 		if err != nil {
 			return nil, err

@@ -362,7 +362,9 @@ func Put(c *gin.Context) {
 		return
 	}
 	item, err := writeSidecarConfiguration(models.DB, licenseData, func(tx *gorm.DB) (*models.Sidecar, error) {
-		current, err := models.GetSidecarByNameOrID(tx, ctx.OrgID, c.Param("nameOrID"))
+		// Locked, so two owner switches cannot both read the old mode and
+		// each skip the half of the switch the other one did.
+		current, err := models.GetSidecarByNameOrIDForUpdate(tx, ctx.OrgID, c.Param("nameOrID"))
 		if err != nil {
 			return nil, err
 		}
@@ -385,7 +387,11 @@ func Put(c *gin.Context) {
 		answerSidecarWrite(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, toResponse(*item))
+	// With its bindings, as Get answers: the page replaces its record with
+	// this, and the owner-switch dialog counts the rules from it.
+	resp := toResponse(*item)
+	resp.BoundRules = bindingsBySidecar(ctx.OrgID, item.ID)[item.ID]
+	c.JSON(http.StatusOK, resp)
 }
 
 // Patch Sidecar Configuration
@@ -423,7 +429,9 @@ func Patch(c *gin.Context) {
 	// reading the stored document first and racing another writer between the
 	// read and the write.
 	item, err := writeSidecarConfiguration(models.DB, licenseData, func(tx *gorm.DB) (*models.Sidecar, error) {
-		current, err := models.GetSidecarByNameOrID(tx, ctx.OrgID, c.Param("nameOrID"))
+		// Locked, so two owner switches cannot both read the old mode and
+		// each skip the half of the switch the other one did.
+		current, err := models.GetSidecarByNameOrIDForUpdate(tx, ctx.OrgID, c.Param("nameOrID"))
 		if err != nil {
 			return nil, err
 		}
@@ -450,7 +458,11 @@ func Patch(c *gin.Context) {
 		answerSidecarWrite(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, toResponse(*item))
+	// With its bindings, as Get answers: the page replaces its record with
+	// this, and the owner-switch dialog counts the rules from it.
+	resp := toResponse(*item)
+	resp.BoundRules = bindingsBySidecar(ctx.OrgID, item.ID)[item.ID]
+	c.JSON(http.StatusOK, resp)
 }
 
 func usesConfigFile(cfg models.SidecarConfiguration) bool {

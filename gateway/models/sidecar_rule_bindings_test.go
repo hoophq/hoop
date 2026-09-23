@@ -933,3 +933,29 @@ func TestABindingToAConfigFileSidecarIsRefused(t *testing.T) {
 		t.Fatalf("want a refusal naming the config file, got %v", err)
 	}
 }
+
+// The owner-switch read takes the row lock, and still finds the row by name
+// or id and refuses an unknown one.
+func TestGetSidecarByNameOrIDForUpdate(t *testing.T) {
+	startTestDB(t)
+	sc := &models.Sidecar{OrgID: testOrgID, Name: "lock-me", KeyHash: models.HashAPIKey("hsc_lock_me"),
+		CreatedBy: "tests@hoop.dev"}
+	if err := models.CreateSidecar(models.DB, sc); err != nil {
+		t.Fatalf("seed sidecar: %v", err)
+	}
+	err := models.DB.Transaction(func(tx *gorm.DB) error {
+		for _, key := range []string{sc.ID, sc.Name} {
+			got, err := models.GetSidecarByNameOrIDForUpdate(tx, testOrgID, key)
+			if err != nil || got.ID != sc.ID {
+				return fmt.Errorf("lookup by %q: %v, %+v", key, err, got)
+			}
+		}
+		if _, err := models.GetSidecarByNameOrIDForUpdate(tx, testOrgID, "missing"); !errors.Is(err, models.ErrNotFound) {
+			return fmt.Errorf("want ErrNotFound for an unknown sidecar, got %v", err)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}

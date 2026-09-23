@@ -160,6 +160,28 @@ func TestSplitSidecarConfigurationItems(t *testing.T) {
 	}
 }
 
+// A top-level rule every lane opts out of enforces nothing, so no item is made
+// for it: bound nowhere, it would outlive the sidecar that carried it.
+func TestSplitSkipsTopLevelRulesNoLaneInherits(t *testing.T) {
+	cfg := daemon.Config{
+		Guardrails: &daemon.GuardrailsConfig{Rules: []policy.Rule{{Name: "top", Type: "deny_words_list", Words: []string{"x"}}}},
+		Mask:       &daemon.MaskConfig{Rules: json.RawMessage(`[{"name":"emails","entities":["EMAIL_ADDRESS"],"strategy":"redact"}]`)},
+		Listeners: []daemon.ListenerConfig{{Name: "only", Protocol: "postgres",
+			Guardrails: &daemon.GuardrailsConfig{Rules: []policy.Rule{}},
+			Mask:       &daemon.MaskConfig{Rules: json.RawMessage(`[]`)}}},
+	}
+	stripped, items, err := SplitSidecarConfiguration("edge", cfg, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 0 {
+		t.Errorf("want no items for rules no lane inherits, got %+v", items)
+	}
+	if stripped.Guardrails != nil && len(stripped.Guardrails.Rules) != 0 {
+		t.Errorf("the top-level rules must still leave the document: %+v", stripped.Guardrails)
+	}
+}
+
 func TestSlugRuleName(t *testing.T) {
 	for in, want := range map[string]string{
 		"Edge 1-appdb-No DROP!": "edge-1-appdb-no-drop",

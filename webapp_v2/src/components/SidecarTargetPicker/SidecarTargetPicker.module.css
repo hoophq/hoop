@@ -1,0 +1,15 @@
+/* The row owns the click: the checkbox only shows its state. */
+.check {
+  pointer-events: none;
+  flex: 0 0 auto;
+}
+
+.pill {
+  cursor: pointer;
+}
+
+/* Plain overflow, not ScrollArea: its viewport sizes to the content, so a
+   long listener name would scroll sideways instead of truncating. */
+.options {
+  overflow-y: auto;
+}

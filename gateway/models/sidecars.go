@@ -133,6 +133,30 @@ func GetSidecarByNameOrID(db *gorm.DB, orgID, nameOrID string) (*Sidecar, error)
 	return &item, nil
 }
 
+// GetSidecarByNameOrIDForUpdate is GetSidecarByNameOrID with the row locked
+// until the caller's transaction ends.
+func GetSidecarByNameOrIDForUpdate(tx *gorm.DB, orgID, nameOrID string) (*Sidecar, error) {
+	identifierClause := "s.name = ?"
+	if _, err := uuid.Parse(nameOrID); err == nil {
+		identifierClause = "s.id = ?"
+	}
+	var item Sidecar
+	err := tx.Raw(`
+	SELECT`+sidecarColumns+`
+	FROM private.sidecars s
+	WHERE s.org_id = ? AND `+identifierClause+`
+	FOR UPDATE OF s`, orgID, nameOrID).
+		Scan(&item).
+		Error
+	if err != nil {
+		return nil, err
+	}
+	if item.ID == "" {
+		return nil, ErrNotFound
+	}
+	return &item, nil
+}
+
 // GetSidecarByKeyHash resolves the token holder. It is not org scoped: the
 // token identifies the organization.
 func GetSidecarByKeyHash(db *gorm.DB, keyHash string) (*Sidecar, error) {

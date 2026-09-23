@@ -13,6 +13,7 @@ import {
 import Tooltip from '@/components/Tooltip'
 import { usesConfigFile } from '@/pages/Sidecars/config'
 import { useSidecarStore } from '@/stores/useSidecarStore'
+import classes from './SidecarTargetPicker.module.css'
 
 // A target is a sidecar and one of its listeners. MultiSelect carries flat
 // strings, so the pair is encoded into one.
@@ -278,7 +279,7 @@ export default function SidecarTargetPicker({ value = [], onChange, label, descr
               indeterminate={picked > 0 && !all}
               disabled={offered.length === 0}
               aria-hidden
-              style={{ pointerEvents: 'none' }}
+              className={classes.check}
             />
             <Text size="sm" fw={600} c={node.locked ? 'dimmed' : undefined}>
               {node.name}
@@ -305,7 +306,7 @@ export default function SidecarTargetPicker({ value = [], onChange, label, descr
                 checked={selectedSet.has(l.value)}
                 disabled={l.disabled}
                 aria-hidden
-                style={{ pointerEvents: 'none', flex: '0 0 auto' }}
+                className={classes.check}
               />
               <Text size="sm" c={l.disabled ? 'dimmed' : undefined} truncate="end" title={l.name}>
                 {l.name}
@@ -345,12 +346,10 @@ export default function SidecarTargetPicker({ value = [], onChange, label, descr
                       if (event.target.closest('button')) return
                       showSidecar(p.id)
                     }}
-                    style={{ cursor: 'pointer' }}
+                    className={classes.pill}
                   >
-                    <Text span inherit fw={600}>
-                      {p.name}:
-                    </Text>{' '}
-                    {p.scope}
+                    <Text span inherit fw={600}>{`${p.name}:`}</Text>
+                    {` ${p.scope}`}
                   </Pill>
                 )
                 return p.hinted ? (
@@ -386,10 +385,7 @@ export default function SidecarTargetPicker({ value = [], onChange, label, descr
         </Combobox.DropdownTarget>
 
         <Combobox.Dropdown>
-          {/* Plain overflow, not ScrollArea: its viewport sizes to the
-              content, so a long listener name would scroll sideways instead
-              of truncating. */}
-          <Combobox.Options mah={280} style={{ overflowY: 'auto' }}>
+          <Combobox.Options mah={280} className={classes.options}>
             {options.length > 0 ? options : <Combobox.Empty>Nothing found</Combobox.Empty>}
           </Combobox.Options>
         </Combobox.Dropdown>

@@ -1,4 +1,4 @@
-import { Group, List, Stack, Text } from '@mantine/core'
+import { Group, Stack, Text } from '@mantine/core'
 import { TriangleAlert } from 'lucide-react'
 import Alert from '@/components/Alert'
 import Button from '@/components/Button'
@@ -41,11 +41,11 @@ export default function SidecarSourceModal({ opened, toConfigFile, boundRules, o
                 {counts.length > 0 ? (
                   <>
                     <Text size="sm">The rules bound to this sidecar are removed from it:</Text>
-                    <List size="sm">
+                    <Stack gap={0}>
                       {counts.map(([label, n]) => (
-                        <List.Item key={label}>{`${n} ${label} rule${n === 1 ? '' : 's'}`}</List.Item>
+                        <Text key={label} size="sm">{`• ${n} ${label} rule${n === 1 ? '' : 's'}`}</Text>
                       ))}
-                    </List>
+                    </Stack>
                     <Text size="sm">
                       A rule used only by this sidecar is deleted. A rule that other sidecars also use stays for them.
                     </Text>
