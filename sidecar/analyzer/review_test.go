@@ -293,6 +293,58 @@ func TestATruncatedHTTPBodyDeniesWithoutFiling(t *testing.T) {
 	}
 }
 
+func grpcStatement(message string, truncated bool) inspect.Statement {
+	return inspect.Statement{
+		Protocol:  inspect.GRPC,
+		Direction: inspect.FromClient,
+		Text:      "/ledger.v1.Ledger/Transfer\n" + message,
+		Operation: inspect.OpCall,
+		HTTP: &inspect.HTTPDetail{
+			Method:        "POST",
+			Path:          "/ledger.v1.Ledger/Transfer",
+			Resource:      "/ledger.v1.Ledger/Transfer",
+			Body:          message,
+			BodyTruncated: truncated,
+		},
+	}
+}
+
+func callTrigger(c *analyzer.Config) {
+	c.Trigger = analyzer.Trigger{Operations: []inspect.Operation{inspect.OpCall}}
+}
+
+// A grpc statement's Text already carries the message, so it is filed as is:
+// appending the body the way http does would file the message twice.
+func TestAGRPCReviewCarriesTheMessageOnce(t *testing.T) {
+	rev := &recordingReviewer{res: analyzer.ReviewResult{Forward: true, ID: "9f97", Status: "EXECUTED"}}
+	stmt := grpcStatement(`{"amount":"100"}`, false)
+	v := holdingEvaluator(t, rev, callTrigger).Evaluate(stmt)
+
+	if v.Denied {
+		t.Fatalf("a consumed approval did not forward: %q", v.Message)
+	}
+	if sent := rev.statements(); len(sent) != 1 || sent[0] != stmt.Text {
+		t.Errorf("the review carries %q, want %q", sent, stmt.Text)
+	}
+}
+
+// A grpc message cut at the capture budget is the http case again: the
+// approval would bind to a prefix and release every message sharing it.
+func TestATruncatedGRPCMessageDeniesWithoutFiling(t *testing.T) {
+	rev := &recordingReviewer{res: analyzer.ReviewResult{Forward: true, ID: "9f97", Status: "EXECUTED"}}
+	v := holdingEvaluator(t, rev, callTrigger).Evaluate(grpcStatement(`{"amount":"1`, true))
+
+	if !v.Denied {
+		t.Fatal("a truncated message was released")
+	}
+	if !strings.Contains(v.Message, "grpc.max_payload_bytes") {
+		t.Errorf("the denial does not name the setting: %q", v.Message)
+	}
+	if sent := rev.statements(); len(sent) != 0 {
+		t.Errorf("the review was filed %d times, want 0", len(sent))
+	}
+}
+
 // A hold sits inline on a proxied connection, so it is bounded by the same
 // timeout the model call is. Without the deadline a plane that never answers
 // would hold the client's socket until something else gave up.

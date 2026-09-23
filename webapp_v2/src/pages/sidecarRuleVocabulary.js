@@ -204,20 +204,9 @@ export const ANALYZER_ACTIONS = [
 
 // The action that holds a statement for a human, offered only behind the
 // review switch: it is the one action that needs a second object behind it
-// (the rule naming who may release) and a lane whose client waits for the
-// review. Listing it beside the others would let an operator pick a hold that
-// the sidecar refuses at startup.
+// (the rule naming who may release). Listing it beside the others would let
+// an operator pick a hold with nobody able to release it.
 export const REVIEW_ACTION = 'require_review'
-
-// A hold waits on the connection and releases the statement in place, so it
-// needs a client that waits for the answer. A database client does, and an http
-// caller does while its own deadline lasts. The daemon draws the same line in
-// holdableProtocol.
-export const HOLDABLE_PROTOCOLS = ['postgres', 'mysql', 'mssql', 'mongodb', 'http']
-
-export function canHold(protocol) {
-  return HOLDABLE_PROTOCOLS.includes((protocol ?? '').toLowerCase())
-}
 
 // analyzerActionsFor adds the hold to the list only while the switch is on, so
 // turning the switch off cannot leave an unreachable action selectable.

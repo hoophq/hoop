@@ -1152,7 +1152,7 @@ func (c *Config) validateLane(lc ListenerConfig, name string) []string {
 
 	localRules, aiRules := splitAnalyzerRules(gc.Rules)
 	problems = append(problems, validateLaneAnalysis(aiRules, lc.Analyzer, c.Analyzer, opa,
-		name, lc.Protocol)...)
+		name, lc)...)
 
 	if opa != nil && opa.URL == "" && !opa.off() {
 		problems = append(problems, name+

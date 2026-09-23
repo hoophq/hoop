@@ -132,20 +132,26 @@ func (e *Evaluator) hold(ctx context.Context, stmt inspect.Statement, notes map[
 // reviewText renders the bytes the backend files and matches an approval
 // against.
 //
-// An http statement's Text is only the method and target, so filing it alone
-// would let one approval release any body sent to that path. The body goes
-// with it, and a truncated body refuses: an approval would bind to bytes the
-// reviewer never read. A query value the codec redacted still matches across
-// requests; the codec never hands over the raw one.
+// A truncated body refuses on every lane that carries one (http, grpc,
+// spanner): an approval would bind to bytes the reviewer never read, and
+// release any message sharing that prefix. A grpc statement's Text already
+// holds the rendered message. An http statement's Text is only the method and
+// target, so filing it alone would let one approval release any body sent to
+// that path; the body goes with it. A query value the codec redacted still
+// matches across requests; the codec never hands over the raw one.
 func reviewText(stmt inspect.Statement) (string, error) {
-	if stmt.Protocol != inspect.HTTP || stmt.HTTP == nil {
+	if stmt.HTTP == nil {
 		return stmt.Text, nil
 	}
 	if stmt.HTTP.BodyTruncated {
-		return "", fmt.Errorf("the request body is larger than http.max_body_bytes, " +
-			"so a reviewer could not read all of it")
+		budget := "http.max_body_bytes"
+		if stmt.Protocol != inspect.HTTP {
+			budget = "grpc.max_payload_bytes"
+		}
+		return "", fmt.Errorf("the request body is larger than %s, "+
+			"so a reviewer could not read all of it", budget)
 	}
-	if stmt.HTTP.Body == "" {
+	if stmt.Protocol != inspect.HTTP || stmt.HTTP.Body == "" {
 		return stmt.Text, nil
 	}
 	return stmt.Text + "\n\n" + stmt.HTTP.Body, nil

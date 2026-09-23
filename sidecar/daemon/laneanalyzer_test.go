@@ -629,19 +629,52 @@ func TestAShortIdleTimeoutOnAHoldingLaneIsNoted(t *testing.T) {
 	}
 }
 
-// grpc and ssh wait on EVL-308's follow-ups. A lane that cannot hold would
-// file a review nobody could collect, so startup refuses it.
-func TestRequireReviewNeedsAHoldableLane(t *testing.T) {
-	for _, protocol := range []string{"grpc", "spanner", "ssh"} {
+// Every protocol holds: each lane blocks the statement before it forwards
+// (see the per-protocol hold tests), and the client waits while its own
+// deadline lasts.
+func TestRequireReviewStartsOnEveryProtocol(t *testing.T) {
+	descriptors := writeGRPCTestDescriptors(t)
+	hostKey, trustedCA := writeSSHKeyMaterial(t)
+	noShell := Capabilities{"exec", "env", "sftp"}
+	for _, protocol := range []string{"clickhouse", "grpc", "spanner", "ssh"} {
 		t.Run(protocol, func(t *testing.T) {
 			cfg := holdingLane()
-			cfg.Listeners[0].Protocol = protocol
+			lc := &cfg.Listeners[0]
+			lc.Protocol = protocol
+			switch protocol {
+			case "grpc", "spanner":
+				lc.GRPC = &GRPCCodecConfig{Descriptors: DescriptorPaths{descriptors}, CapturePayload: true}
+			case "ssh":
+				lc.Upstream = ""
+				lc.SSH = &SSHConfig{HostKey: hostKey, TrustedCA: trustedCA, CapabilitiesAllowed: &noShell}
+				lc.Analyzer.Trigger = &policy.AITrigger{Operations: []inspect.Operation{inspect.OpExecLine}}
+			}
+			if err := cfg.Validate(); err != nil {
+				t.Fatalf("a require_review %s lane was refused: %v", protocol, err)
+			}
+		})
+	}
+}
+
+// A shell sends no statements, so a holding ssh lane that admits one lets a
+// user type what exec would have held. Omitting capabilities_allowed admits
+// the shell too.
+func TestRequireReviewOnAnSSHLaneRefusesTheShell(t *testing.T) {
+	hostKey, trustedCA := writeSSHKeyMaterial(t)
+	withShell := Capabilities{"shell", "exec"}
+	for name, caps := range map[string]*Capabilities{"omitted": nil, "listed": &withShell} {
+		t.Run(name, func(t *testing.T) {
+			cfg := holdingLane()
+			lc := &cfg.Listeners[0]
+			lc.Protocol, lc.Upstream = "ssh", ""
+			lc.SSH = &SSHConfig{HostKey: hostKey, TrustedCA: trustedCA, CapabilitiesAllowed: caps}
+			lc.Analyzer.Trigger = &policy.AITrigger{Operations: []inspect.Operation{inspect.OpExecLine}}
 			err := cfg.Validate()
 			if err == nil {
-				t.Fatalf("a %s lane was accepted", protocol)
+				t.Fatal("a holding ssh lane that admits shell was accepted")
 			}
-			if !strings.Contains(err.Error(), "only a database or http lane can hold a statement") {
-				t.Errorf("error %v does not name the reason", err)
+			if !strings.Contains(err.Error(), "drop shell from ssh.capabilities_allowed") {
+				t.Errorf("error %v does not name the fix", err)
 			}
 		})
 	}

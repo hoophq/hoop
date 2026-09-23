@@ -198,6 +198,14 @@ func TestValidateSpecForLane(t *testing.T) {
 		Analyzer: &daemon.LaneAnalyzerConfig{MaxCalls: 40}}
 	analyzedHTTP := daemon.ListenerConfig{Name: "api", Protocol: "http",
 		Analyzer: &daemon.LaneAnalyzerConfig{MaxCalls: 40}}
+	analyzedGRPC := daemon.ListenerConfig{Name: "ledger", Protocol: "grpc",
+		Analyzer: &daemon.LaneAnalyzerConfig{MaxCalls: 40}}
+	analyzedShell := daemon.ListenerConfig{Name: "bastion", Protocol: "ssh",
+		Analyzer: &daemon.LaneAnalyzerConfig{MaxCalls: 40}}
+	noShell := daemon.Capabilities{"exec", "sftp"}
+	analyzedExec := daemon.ListenerConfig{Name: "bastion", Protocol: "ssh",
+		SSH:      &daemon.SSHConfig{CapabilitiesAllowed: &noShell},
+		Analyzer: &daemon.LaneAnalyzerConfig{MaxCalls: 40}}
 
 	for _, tt := range []struct {
 		name string
@@ -269,6 +277,27 @@ func TestValidateSpecForLane(t *testing.T) {
 			name: "a hold on an http lane",
 			kind: SidecarRuleAnalyzer,
 			lane: analyzedHTTP,
+			spec: `{"high":"require_review","approval_rule":"payments-review"}`,
+		},
+		{
+			name: "a hold on a grpc lane",
+			kind: SidecarRuleAnalyzer,
+			lane: analyzedGRPC,
+			spec: `{"high":"require_review","approval_rule":"payments-review"}`,
+		},
+		{
+			// A shell sends no statements, so what is typed in it walks
+			// around the hold. An omitted capability list admits it.
+			name: "a hold on an ssh lane that admits shell",
+			kind: SidecarRuleAnalyzer,
+			lane: analyzedShell,
+			spec: `{"high":"require_review","approval_rule":"payments-review"}`,
+			want: "drop shell from ssh.capabilities_allowed",
+		},
+		{
+			name: "a hold on an ssh lane without shell",
+			kind: SidecarRuleAnalyzer,
+			lane: analyzedExec,
 			spec: `{"high":"require_review","approval_rule":"payments-review"}`,
 		},
 		{
