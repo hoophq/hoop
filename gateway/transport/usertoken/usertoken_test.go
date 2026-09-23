@@ -20,14 +20,25 @@ var (
 	errExpired   = fmt.Errorf("failed to parse access token: %w", jwt.ErrTokenExpired)
 	errSignature = errors.New("signature is invalid")
 	errDB        = errors.New("connection refused")
+	errNoRefresh = errors.New("no refresh token available")
 )
 
+const expiredMsg = "access token is expired, try logging in again"
+
+// fakeVerifier answers subject/err for the stored token and looks up
+// refreshed tokens in fresh.
 type fakeVerifier struct {
 	subject string
 	err     error
+	fresh   map[string]string
 }
 
-func (f fakeVerifier) VerifyAccessToken(string) (string, error) { return f.subject, f.err }
+func (f fakeVerifier) VerifyAccessToken(tok string) (string, error) {
+	if sub, ok := f.fresh[tok]; ok {
+		return sub, nil
+	}
+	return f.subject, f.err
+}
 func (f fakeVerifier) VerifyAccessTokenWithUserInfo(string) (*idptypes.ProviderUserInfo, error) {
 	return nil, nil
 }
@@ -43,15 +54,33 @@ func inactiveUser() *models.Context {
 }
 
 // stub replaces the model seams and returns a counter of token reads.
+// The refresh seam fails until stubRefresh replaces it.
 // Tests in this package must not run in parallel.
 func stub(t *testing.T, userCtx *models.Context, userErr error, token *models.UserToken, tokenErr error) *int {
 	t.Helper()
-	prevCtx, prevTok := getUserContext, getUserToken
+	prevCtx, prevTok, prevRefresh := getUserContext, getUserToken, refreshExpiredToken
 	reads := new(int)
 	getUserContext = func(string) (*models.Context, error) { return userCtx, userErr }
 	getUserToken = func(string) (*models.UserToken, error) { *reads++; return token, tokenErr }
-	t.Cleanup(func() { getUserContext, getUserToken = prevCtx, prevTok })
+	refreshExpiredToken = func(idp.TokenVerifier, string) (string, string, error) {
+		return "", "", errNoRefresh
+	}
+	t.Cleanup(func() { getUserContext, getUserToken, refreshExpiredToken = prevCtx, prevTok, prevRefresh })
 	return reads
+}
+
+// stubRefresh makes the refresh return (subject, token, err) and counts calls.
+func stubRefresh(t *testing.T, subject, token string, err error) *int {
+	t.Helper()
+	calls := new(int)
+	refreshExpiredToken = func(_ idp.TokenVerifier, expired string) (string, string, error) {
+		*calls++
+		if expired != "t" {
+			t.Errorf("refresh got %q, want the stored token", expired)
+		}
+		return subject, token, err
+	}
+	return calls
 }
 
 func TestCheckUserToken(t *testing.T) {
@@ -63,12 +92,40 @@ func TestCheckUserToken(t *testing.T) {
 		token      *models.UserToken
 		tokenErr   error
 		verifier   fakeVerifier
+		refreshSub string
+		refreshTok string
+		refreshErr error
 		wantErr    string
 		wantErrIs  error
 		wantNoRead bool
+		wantCalls  int
 	}{
 		{name: "valid token", userCtx: activeUser(), token: tok, verifier: fakeVerifier{subject: subject}},
-		{name: "expired token keeps the session", userCtx: activeUser(), token: tok, verifier: fakeVerifier{err: errExpired}},
+		{
+			name: "expired token refreshed keeps the session", userCtx: activeUser(), token: tok,
+			verifier:   fakeVerifier{err: errExpired, fresh: map[string]string{"new": subject}},
+			refreshSub: subject, refreshTok: "new", wantCalls: 1,
+		},
+		{
+			name: "expired token with failed refresh ends the session", userCtx: activeUser(), token: tok,
+			verifier:   fakeVerifier{err: errExpired},
+			refreshErr: errNoRefresh, wantErr: expiredMsg, wantCalls: 1,
+		},
+		{
+			name: "refresh for another subject ends the session", userCtx: activeUser(), token: tok,
+			verifier:   fakeVerifier{err: errExpired, fresh: map[string]string{"new": "other"}},
+			refreshSub: "other", refreshTok: "new", wantErr: expiredMsg, wantCalls: 1,
+		},
+		{
+			name: "refreshed token that does not verify ends the session", userCtx: activeUser(), token: tok,
+			verifier:   fakeVerifier{err: errExpired},
+			refreshSub: subject, refreshTok: "new", wantErr: expiredMsg, wantCalls: 1,
+		},
+		{
+			name: "refreshed token for another subject ends the session", userCtx: activeUser(), token: tok,
+			verifier:   fakeVerifier{err: errExpired, fresh: map[string]string{"new": "other"}},
+			refreshSub: subject, refreshTok: "new", wantErr: expiredMsg, wantCalls: 1,
+		},
 		{name: "invalid signature", userCtx: activeUser(), token: tok, verifier: fakeVerifier{err: errSignature}, wantErrIs: errSignature},
 		{name: "empty subject", userCtx: activeUser(), token: tok, wantErr: "user subject not found"},
 		{name: "inactive user", userCtx: inactiveUser(), token: tok, wantErr: "user is not active", wantNoRead: true},
@@ -80,6 +137,7 @@ func TestCheckUserToken(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			reads := stub(t, tt.userCtx, tt.userErr, tt.token, tt.tokenErr)
+			calls := stubRefresh(t, tt.refreshSub, tt.refreshTok, tt.refreshErr)
 			err := CheckUserToken(tt.verifier, subject)
 			switch {
 			case tt.wantErrIs != nil:
@@ -97,6 +155,9 @@ func TestCheckUserToken(t *testing.T) {
 			}
 			if tt.wantNoRead && *reads != 0 {
 				t.Fatal("token read for a user that failed the status check")
+			}
+			if *calls != tt.wantCalls {
+				t.Fatalf("want %d refresh calls, got %d", tt.wantCalls, *calls)
 			}
 		})
 	}
@@ -128,13 +189,23 @@ func waitCancelled(t *testing.T, ctx context.Context) error {
 	}
 }
 
-func TestPollUserToken_ExpiredTokenKeepsSession(t *testing.T) {
+func TestPollUserToken_RefreshedTokenKeepsSession(t *testing.T) {
 	stub(t, activeUser(), nil, &models.UserToken{Token: "t"}, nil)
-	ctx := startPoller(t, fakeVerifier{err: errExpired}, time.Millisecond, time.Hour)
+	stubRefresh(t, subject, "new", nil)
+	v := fakeVerifier{err: errExpired, fresh: map[string]string{"new": subject}}
+	ctx := startPoller(t, v, time.Millisecond, time.Hour)
 	select {
 	case <-ctx.Done():
 		t.Fatalf("session ended: %v", context.Cause(ctx))
 	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+func TestPollUserToken_FailedRefreshEndsSession(t *testing.T) {
+	stub(t, activeUser(), nil, &models.UserToken{Token: "t"}, nil)
+	ctx := startPoller(t, fakeVerifier{err: errExpired}, time.Millisecond, time.Hour)
+	if got := waitCancelled(t, ctx); !strings.Contains(got.Error(), expiredMsg) {
+		t.Fatalf("unexpected cause: %v", got)
 	}
 }
 

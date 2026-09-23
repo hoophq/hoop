@@ -24,10 +24,12 @@ var (
 	getUserToken   = func(userID string) (*models.UserToken, error) {
 		return models.GetUserToken(models.DB, userID)
 	}
+	refreshExpiredToken = idp.TryRefreshExpiredToken
 )
 
 // CheckUserToken reports whether userID may hold a session. An expired
-// access token alone does not end one; an inactive user does.
+// access token is refreshed; the session ends if the refresh fails.
+// It may call the IdP and write a new token.
 func CheckUserToken(tokenVerifier idp.UserInfoTokenVerifier, userID string) error {
 	userCtx, err := getUserContext(userID)
 	if err != nil {
@@ -51,12 +53,39 @@ func CheckUserToken(tokenVerifier idp.UserInfoTokenVerifier, userID string) erro
 	subject, err := tokenVerifier.VerifyAccessToken(userToken.Token)
 	switch {
 	case errors.Is(err, jwt.ErrTokenExpired):
+		if err := refreshSessionToken(tokenVerifier, userID, userToken.Token); err != nil {
+			// The CLI and the Postgres proxy show this text to the user.
+			log.With("subject", userID).Warnf("failed to refresh the expired access token: %v", err)
+			return fmt.Errorf("access token is expired, try logging in again")
+		}
 		return nil
 	case err != nil:
 		return err
 	case subject == "":
 		return fmt.Errorf("user subject not found using the access token")
 	}
+	return nil
+}
+
+// refreshSessionToken exchanges the stored refresh token. Only OIDC
+// supports it, so local and SAML sessions end at token expiry.
+func refreshSessionToken(tokenVerifier idp.UserInfoTokenVerifier, userID, expiredToken string) error {
+	subject, newAccessToken, err := refreshExpiredToken(tokenVerifier, expiredToken)
+	if err != nil {
+		return err
+	}
+	// Tokens are stored by subject: a mismatch means another user's token.
+	if subject != userID {
+		return fmt.Errorf("refreshed subject does not match the session subject")
+	}
+	newSubject, err := tokenVerifier.VerifyAccessToken(newAccessToken)
+	if err != nil {
+		return fmt.Errorf("the refreshed access token does not verify: %w", err)
+	}
+	if newSubject != userID {
+		return fmt.Errorf("the refreshed access token is not for the session subject")
+	}
+	log.With("subject", userID).Infof("access token refreshed, the session continues")
 	return nil
 }
 
