@@ -214,9 +214,14 @@ func TestAnHTTPHoldForwardsOnlyWhatIsReleased(t *testing.T) {
 			}
 			pol.verdict <- tc.verdict
 
-			c.SetReadDeadline(time.Now().Add(3 * time.Second))
+			if err := c.SetReadDeadline(time.Now().Add(3 * time.Second)); err != nil {
+				t.Fatalf("set deadline: %v", err)
+			}
 			buf := make([]byte, 512)
-			n, _ := c.Read(buf)
+			n, err := c.Read(buf)
+			if err != nil {
+				t.Fatalf("read: %v", err)
+			}
 			if got := string(buf[:n]); !strings.Contains(got, tc.want) {
 				t.Errorf("the client read %q, want %q", got, tc.want)
 			}

@@ -1096,11 +1096,15 @@ reads that. Four consequences:
 - A body larger than `http.max_body_bytes` is truncated by the codec, so the
   hold denies it without filing: the approval would bind to bytes nobody read.
 - A query value the codec redacts (a token, a password) is filed redacted, so
-  requests differing only in that value match one approval.
+  requests differing only in that value match one approval (EVL-310).
 - A request carrying a trace id, a nonce or a timestamp never matches twice.
   Every attempt files its own review and pages the approvers again.
 - A client that retries on its own timeout leaves two attempts in flight, and
   the approval releases whichever claims it first.
+- A request that arrives in more than one read reaches the upstream in part
+  before the gate decides: the request line, the headers and the start of the
+  body. A denial does not recall them, so a route that acts on headers alone
+  runs whatever the reviewer decides (EVL-309).
 
 **The approval is exact; the classification is not.** The verdict cache keys
 on the statement SHAPE with literals stripped, so two statements differing
