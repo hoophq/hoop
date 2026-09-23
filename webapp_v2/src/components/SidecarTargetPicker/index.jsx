@@ -11,6 +11,7 @@ import {
   Text,
   useCombobox,
 } from '@mantine/core'
+import Tooltip from '@/components/Tooltip'
 import { usesConfigFile } from '@/pages/Sidecars/config'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 
@@ -95,21 +96,34 @@ function filterTree(tree, search) {
 }
 
 // One pill per sidecar with a target, in the order the targets were picked.
-// A target the fleet no longer lists still counts, so the pill never hides a
-// binding the save would send.
+// It names the picked listeners, so the field says what is bound without the
+// dropdown. A target the fleet no longer lists keeps its stored name, so the
+// pill never hides a binding the save would send.
+const PILL_NAMES = 3
+
 function pillsFor(tree, selected) {
   const byId = new Map(tree.map((n) => [n.id, n]))
-  const counts = new Map()
+  const picked = new Map()
   for (const v of selected) {
-    const id = v.slice(0, ID_LENGTH)
-    counts.set(id, (counts.get(id) ?? 0) + 1)
+    const { sidecar_id: id, listener_name: name } = decodeTarget(v)
+    if (!picked.has(id)) picked.set(id, [])
+    picked.get(id).push(name)
   }
-  return [...counts].map(([id, n]) => {
+  return [...picked].map(([id, names]) => {
     const node = byId.get(id)
     const total = node ? node.listeners.filter((l) => !l.disabled).length : 0
-    const name = node?.name ?? 'Unknown sidecar'
-    const scope = total > 0 && n === total ? 'all listeners' : `${n} of ${total || n}`
-    return { id, label: `${name} · ${scope}` }
+    const all = total > 0 && names.length === total
+    const extra = names.length - PILL_NAMES
+    const scope = all
+      ? 'all listeners'
+      : names.slice(0, PILL_NAMES).join(', ') + (extra > 0 ? ` +${extra} more` : '')
+    return {
+      id,
+      name: node?.name ?? 'Unknown sidecar',
+      scope,
+      // Only a pill that hides a name gets the full list on hover.
+      hint: all || extra > 0 ? names.join(', ') : null,
+    }
   })
 }
 
@@ -279,11 +293,23 @@ export default function SidecarTargetPicker({ value = [], onChange, label, descr
             onClick={() => combobox.openDropdown()}
           >
             <Pill.Group>
-              {pills.map((p) => (
-                <Pill key={p.id} withRemoveButton disabled={disabled} onRemove={() => removeSidecar(p.id)}>
-                  {p.label}
-                </Pill>
-              ))}
+              {pills.map((p) => {
+                const pill = (
+                  <Pill key={p.id} withRemoveButton disabled={disabled} onRemove={() => removeSidecar(p.id)}>
+                    <Text span inherit fw={600}>
+                      {p.name}:
+                    </Text>{' '}
+                    {p.scope}
+                  </Pill>
+                )
+                return p.hint ? (
+                  <Tooltip key={p.id} label={p.hint} multiline w={260}>
+                    {pill}
+                  </Tooltip>
+                ) : (
+                  pill
+                )
+              })}
               <Combobox.EventsTarget>
                 <PillsInput.Field
                   value={search}
