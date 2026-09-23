@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -257,5 +258,115 @@ func TestAFileLicenseEditLicensesAnUnlicensedProcess(t *testing.T) {
 	if cur.State() != license.StateValid || cur.Source != fileLicenseSource {
 		t.Errorf("license = %q from %q, want valid from %s; log:\n%s",
 			cur.State(), cur.Source, fileLicenseSource, buf)
+	}
+}
+
+// The file starts naming a control plane. That is a change of owner, which
+// only startup can make: the rules must NOT swap under a log line claiming
+// the document applied, because nothing was fetched from the plane.
+func TestAFileNamingAControlPlaneKeepsTheRestartPath(t *testing.T) {
+	rl, path, buf := testFileReloader(t, reloadBase)
+
+	drifted := editJSON(t, reloadBase, `"words": ["drop table"]`, `"words": ["truncate"]`)
+	drifted = editJSON(t, drifted, `"log_level": "info"`, `"log_level": "info", "control_plane_url": "http://plane"`)
+	editFile(t, path, drifted)
+	pollWith(rl, buf)
+	if rl.gen != 0 {
+		t.Fatalf("generation = %d, want 0: the rules swapped under a new owner; log:\n%s", rl.gen, buf)
+	}
+	if !strings.Contains(buf.String(), "names a control plane; restart to connect to it") {
+		t.Errorf("no restart line:\n%s", buf)
+	}
+	if strings.Contains(buf.String(), "configuration applied") {
+		t.Errorf("the document was reported applied:\n%s", buf)
+	}
+	before := buf.Len()
+	rl.filePending = true
+	pollWith(rl, buf)
+	if buf.Len() != before {
+		t.Errorf("the restart line repeated:\n%s", buf)
+	}
+}
+
+// A renewal dropped onto the same mount: the config's `license` key is a
+// path and does not change, the file behind it does. The string compare
+// cannot see that, so a forced reload re-resolves the path and adopts the
+// new document.
+func TestAReplacedLicenseFileBehindTheSamePathIsAdopted(t *testing.T) {
+	t.Setenv(license.EnvVar, "")
+	licPath := filepath.Join(t.TempDir(), "license.json")
+	first := licensetest.Document(t, licensetest.Enterprise())
+	if err := os.WriteFile(licPath, []byte(first), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rl, _, buf := testFileReloader(t, withLicense(t, reloadBase, licPath))
+	was := rl.lic.get()
+	if was.State() != license.StateValid || was.Source != fileLicenseSource {
+		t.Fatalf("test bug: license = %q from %q", was.State(), was.Source)
+	}
+
+	// licensetest signs under a fresh trust root each time, so this is a
+	// genuinely different document with a different signature.
+	second := licensetest.Document(t, licensetest.Enterprise())
+	if err := os.WriteFile(licPath, []byte(second), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// The config file did not move: a tick sees nothing.
+	pollWith(rl, buf)
+	if got := rl.lic.get(); got.License.Signature != was.License.Signature {
+		t.Fatal("a tick over an untouched config re-read the license; only a forced reload should")
+	}
+	// SIGHUP's path.
+	rl.lastHandled = nil
+	rl.reloadFile(slog.New(slog.NewTextHandler(buf, nil)))
+	got := rl.lic.get()
+	if got.State() != license.StateValid {
+		t.Fatalf("license = %q after the forced reload, want valid; log:\n%s", got.State(), buf)
+	}
+	if got.License.Signature == was.License.Signature {
+		t.Errorf("the running license is still the replaced document; log:\n%s", buf)
+	}
+}
+
+// A narrower license arrives over rules that do not fit: overCap is set and
+// the watchdog will stop the relay. The operator trims the rules before that
+// tick. The compliant generation must clear the flag, or the watchdog stops
+// a relay whose rules its license now covers.
+func TestACompliantReloadClearsOverCap(t *testing.T) {
+	t.Setenv(license.EnvVar, "")
+	overCap := editJSON(t, reloadBase,
+		`"rules": [
+      {"name": "r0", "type": "deny_words_list", "words": ["drop table"]}
+    ]`,
+		`"rules": [
+      {"name": "r0", "type": "deny_words_list", "words": ["drop table"]},
+      {"name": "r1", "type": "deny_words_list", "words": ["truncate"]},
+      {"name": "r2", "type": "deny_words_list", "words": ["delete from"]},
+      {"name": "r3", "type": "deny_words_list", "words": ["alter table"]},
+      {"name": "r4", "type": "deny_words_list", "words": ["grant"]},
+      {"name": "r5", "type": "deny_words_list", "words": ["revoke"]}
+    ]`)
+	doc := licensetest.Document(t, licensetest.Enterprise())
+	rl, path, buf := testFileReloader(t, withLicense(t, overCap, doc))
+
+	// The license key is removed while six rules stay: refused, and the
+	// relay is told to stop.
+	editFile(t, path, overCap)
+	pollWith(rl, buf)
+	if !rl.lic.overCap.Load() {
+		t.Fatalf("overCap not set after the license was removed over six rules; log:\n%s", buf)
+	}
+	if rl.gen != 0 {
+		t.Fatalf("generation = %d, want 0", rl.gen)
+	}
+
+	// Before the watchdog ticks, the rules are trimmed to fit the free tier.
+	editFile(t, path, reloadBase)
+	pollWith(rl, buf)
+	if rl.gen != 1 {
+		t.Fatalf("generation = %d, want 1: the compliant edit did not apply; log:\n%s", rl.gen, buf)
+	}
+	if rl.lic.overCap.Load() {
+		t.Error("overCap still set after a generation the license covers; the watchdog would stop a compliant relay")
 	}
 }

@@ -231,11 +231,16 @@ the `license` key) is applied in place, logged as `config file configuration
 applied` with a generation number. Connections already open drain under the
 rules they were accepted with; new connections run the new rules, and
 nothing rebinds or drops. An edit beyond the rules (listeners, audit, admin,
-log_level, the top-level analyzer section) logs `restart to apply it` once
-and the process keeps serving what it had; a file that does not load keeps
-the running rules, is retried on the next tick, and warns once until it
-loads again. ADR-0014 records the boundary; the control plane's heartbeat
-applies the same one.
+log_level, the top-level analyzer section, adding `control_plane_url`) logs
+`restart to apply it` once and the process keeps serving what it had; a file
+that does not load keeps the running rules, is retried on the next tick, and
+warns once until it loads again. ADR-0014 records the boundary; the control
+plane's heartbeat applies the same one.
+
+`SIGHUP` is a forced reload: the document runs even when its bytes did not
+move. That is how a license file replaced behind an unchanged `license` path
+is picked up — a stat of the config file cannot see it, and a `SIGHUP` (or
+any later rule edit) re-resolves the path and adopts the new document.
 
 On Kubernetes, mount the ConfigMap as a volume, not through `subPath`: the
 kubelet updates a volume in place (an atomic symlink swap the stat sees, on

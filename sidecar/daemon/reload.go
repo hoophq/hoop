@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -332,6 +333,11 @@ func (r *reloader) watchFile(ctx context.Context, log *slog.Logger) {
 				log.Info("SIGHUP ignored: this process was started without a config file")
 			default:
 				log.Info("SIGHUP received; re-reading the config file", "path", r.configPath)
+				// Forced: the dedupe is dropped so the document runs even
+				// when its bytes did not move. That is what makes SIGHUP
+				// the way to pick up a license file replaced behind an
+				// unchanged path, which no stat of the config file sees.
+				r.lastHandled = nil
 				r.filePending = r.reloadFile(log) == reloadRetry
 			}
 		}
@@ -388,6 +394,15 @@ func (r *reloader) reloadFile(log *slog.Logger) reloadOutcome {
 		log.Warn("config compare failed; keeping the running rules", "error", err)
 		return reloadRetry
 	}
+	if local.ControlPlaneURL != "" {
+		// nonRuleDoc drops the URL, because under a plane it is connection
+		// metadata and not a lane fact. Here there is no plane, so the key
+		// is a change of owner: startup would hand the config to the plane
+		// it names, and a running process cannot. Checked before the
+		// baseline compare, or the rules would swap and the log would
+		// report a document applied that was never fetched from anywhere.
+		return r.once(log, raw, r.restartForControlPlane)
+	}
 	return r.once(log, raw, r.applyFile)
 }
 
@@ -395,6 +410,33 @@ func (r *reloader) reloadFile(log *slog.Logger) reloadOutcome {
 // so there is no load_from_disk flag and no ownership flip to consider.
 func (r *reloader) applyFile(log *slog.Logger, raw []byte) reloadOutcome {
 	return r.applyOwned(log, raw, "config file")
+}
+
+// restartForControlPlane answers a standalone file that started naming a
+// control plane: restart-bound drift, logged once through the same dedupe
+// as every other outcome.
+func (r *reloader) restartForControlPlane(log *slog.Logger, _ []byte) reloadOutcome {
+	log.Warn("the config file now names a control plane; restart to connect to it",
+		"path", r.configPath)
+	return reloadRestart
+}
+
+// sameLicenseDoc reports whether two statuses hold the same signed document.
+// The signature identifies it: two documents with one signature are one
+// document, and a re-issued license carries a new one. Two missing licenses
+// are the same missing license.
+func sameLicenseDoc(a, b license.Status) bool {
+	if a.License == nil || b.License == nil {
+		return a.License == nil && b.License == nil
+	}
+	return a.License.KeyID == b.License.KeyID && a.License.Signature == b.License.Signature
+}
+
+// licenseIsPath mirrors license.Load's rule: a value is the document when it
+// starts with "{" and a path otherwise.
+func licenseIsPath(v string) bool {
+	v = strings.TrimSpace(v)
+	return v != "" && v[0] != '{'
 }
 
 // ownerLicenseApplies reports whether a license the owner supplies is the
@@ -545,27 +587,43 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 	}
 
 	// The license the lanes are built against: the one in use, unless the
-	// owner supplied a different document. UseLicense verifies the
-	// signature here the same way startup does, so a plane cannot hand
+	// owner supplied a different document. The reference is re-read and
+	// verified here the same way startup does it, so a plane cannot hand
 	// this process a verdict, only a document.
+	//
+	// Two things count as a new document. The reference moved -- the
+	// plane sent other bytes, the file's key was edited -- which is the
+	// string compare. Or, for a file owner whose key is a PATH, the file
+	// behind an unchanged path was replaced: a renewal dropped onto the
+	// same mount. That one is invisible to the string compare, so the
+	// path is resolved on every file reload and the DOCUMENTS compared.
+	// The plane never names a path, and a legacy plane that manages no
+	// license sends an empty reference that must not read as "removed",
+	// so under a plane only the string compare decides.
 	newCfg.lic = r.lic.get()
-	licRotated := newCfg.License != r.licRaw
-	if licRotated && !r.ownerLicenseApplies() {
+	refChanged := newCfg.License != r.licRaw
+	licRotated := false
+	switch {
+	case refChanged && !r.ownerLicenseApplies():
 		// Said once: the compare moves on so a later rule edit does not
 		// repeat it, and nothing else about the running license changes.
 		r.licRaw = newCfg.License
-		licRotated = false
 		log.Warn("the "+from+"'s license key changed, but "+newCfg.lic.Source+
 			" outranks it; keeping the license in use",
 			"hint", "a restart would read the same precedence")
-	}
-	if licRotated {
-		if err := newCfg.UseLicense(license.Ref{Value: newCfg.License, Source: r.licSource}); err != nil {
+	case refChanged || (!r.planeOwned && r.ownerLicenseApplies() && licenseIsPath(newCfg.License)):
+		next := license.Load(license.Ref{Value: newCfg.License, Source: r.licSource})
+		switch {
+		case next.State() == license.StateInvalid:
 			// Kept, not refused: a license nobody can read must not
 			// also freeze the rules. The caps stay where they were.
 			log.Warn("the "+from+" sent a license this build refuses; keeping the license in use",
-				"error", err)
-			licRotated = false
+				"error", next.Err)
+		case !sameLicenseDoc(next, newCfg.lic):
+			// Same assignment UseLicense makes, after the same Load: the
+			// verdict was earned by the verifier, not assembled here.
+			newCfg.lic = next
+			licRotated = true
 		}
 	}
 	// ac, not r.ac: the staged detector this reload built. A refusal below
@@ -672,14 +730,24 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 	r.det = det
 	r.piiRaw = newCfg.PII
 	if licRotated {
-		r.licRaw = newCfg.License
 		r.lic.set(newCfg.lic)
 		log.Info(newCfg.lic.Line())
 	}
+	// The reference that produced this generation is the one later
+	// documents compare against, rotated or not: a reference that loaded
+	// the same document, or one this build refused and said so, is
+	// handled, and only another edit should raise it again.
+	r.licRaw = newCfg.License
 	// Published on every applied generation, not only on a rotation: rules
 	// added by this reload can push a config past the free tier, and the
 	// watchdog only stops a process that would lose something.
 	r.lic.depends.Store(newCfg.dependsOnLicense())
+	// buildLanes just accepted these rules under the license in force, so
+	// the license covers them. A previous reload may have set overCap when
+	// a narrower license arrived over rules that did not fit; an operator
+	// who then trimmed the rules before the watchdog's next tick has fixed
+	// it, and a stale flag would stop a relay that is now compliant.
+	r.lic.overCap.Store(false)
 	// Which sections moved, for the applied event: compared per lane
 	// against the sections the previous generation resolved, then the
 	// facts that travel outside the lanes.

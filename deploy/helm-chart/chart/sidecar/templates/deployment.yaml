@@ -28,10 +28,11 @@ spec:
         {{- with .Values.configRevision }}
         # The checksums above cover only what this chart renders. An
         # existingConfigMap lives outside the release, so editing it changes
-        # nothing here and the pods keep serving the config they started with —
-        # the relay reads the file once at boot and watches nothing. This value
-        # is the operator's handle for that: change it and the pod template
-        # changes, which is what makes the rollout happen.
+        # nothing here. Rule-only edits reach the pods anyway: the relay
+        # watches the mounted file. Anything bound at startup (listeners,
+        # audit, admin, log_level, top-level analyzer) needs the pod replaced,
+        # and this value is the operator's handle for that: change it and the
+        # pod template changes, which is what makes the rollout happen.
         hoop.dev/config-revision: {{ . | quote }}
         {{- end }}
       {{- with .Values.podAnnotations }}
