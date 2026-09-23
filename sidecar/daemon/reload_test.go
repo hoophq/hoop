@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -916,5 +917,82 @@ func TestTheWatchdogStopsOnAnUncoveredLicense(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), "no longer covers") {
 		t.Errorf("the stop was not explained:\n%s", &buf)
+	}
+}
+
+// The plane empties its document when an admin hands a disk-mode sidecar back
+// to it. The heartbeat's 412 then pushes the config file, and the process
+// becomes plane-owned without a restart.
+func TestAHeartbeat412InDiskModeImportsTheFile(t *testing.T) {
+	rl, buf := testReloader(t, reloadBase)
+	rl.diskMode = true
+	rl.lastHandled = []byte(`{"load_from_disk":true}`)
+	rl.configPath = "sidecar.yaml"
+	rl.load = func(string) (*Config, error) { return LoadConfigBytes([]byte(reloadBase)) }
+
+	var mu sync.Mutex
+	imported := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		switch {
+		case r.Method == http.MethodPut && r.URL.Path == controlPlaneConfigurationPath:
+			imported = true
+			_, _ = w.Write([]byte(`{}`))
+		case r.Method == http.MethodPost && r.URL.Path == controlPlaneHandshakePath:
+			if !imported {
+				w.WriteHeader(http.StatusPreconditionFailed)
+				_, _ = w.Write([]byte(`{"message":"no configuration"}`))
+				return
+			}
+			_, _ = w.Write([]byte(reloadBase))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+	cp := &controlPlane{url: srv.URL, token: "hsc_x", every: time.Millisecond}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	cp.heartbeat(ctx, slog.New(slog.NewTextHandler(buf, nil)), rl)
+
+	mu.Lock()
+	defer mu.Unlock()
+	if !imported {
+		t.Fatalf("the heartbeat did not push the config file; log:\n%s", buf)
+	}
+	if rl.diskMode {
+		t.Fatalf("the process still runs in disk mode after the import; log:\n%s", buf)
+	}
+}
+
+// A plane-owned process has nothing to import: a 412 only logs.
+func TestAHeartbeat412WhenPlaneOwnedDoesNotImport(t *testing.T) {
+	rl, buf := testReloader(t, reloadBase)
+	rl.configPath = "sidecar.yaml"
+	rl.load = func(string) (*Config, error) { return LoadConfigBytes([]byte(reloadBase)) }
+
+	var mu sync.Mutex
+	pushed := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		if r.Method == http.MethodPut {
+			pushed = true
+		}
+		w.WriteHeader(http.StatusPreconditionFailed)
+	}))
+	defer srv.Close()
+	cp := &controlPlane{url: srv.URL, token: "hsc_x", every: time.Millisecond}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	cp.heartbeat(ctx, slog.New(slog.NewTextHandler(buf, nil)), rl)
+
+	mu.Lock()
+	defer mu.Unlock()
+	if pushed {
+		t.Fatalf("a plane-owned process pushed its file on a 412")
 	}
 }

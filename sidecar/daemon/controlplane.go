@@ -456,6 +456,27 @@ func controlPlaneHTTPClient() *http.Client {
 	}
 }
 
+// reimport answers a 412 on the heartbeat. The plane empties its document
+// when an admin hands a disk-mode sidecar back to it, and this process then
+// pushes its config file, the same import startup runs. A plane-owned process
+// has no file to push that the plane did not already refuse, so it only logs.
+func (cp *controlPlane) reimport(log *slog.Logger, rl *reloader) (handshakeAnswer, error) {
+	if !rl.diskMode || rl.configPath == "" || rl.load == nil {
+		return handshakeAnswer{}, fmt.Errorf("%w (at %s)", errPlaneHasNoConfig, cp.url)
+	}
+	local, err := rl.load(rl.configPath)
+	if err != nil {
+		return handshakeAnswer{}, fmt.Errorf("the control plane asks for the config file, "+
+			"but it does not load: %w", err)
+	}
+	answer, _, err := importLocalConfig(cp.url, cp.token, local)
+	if err != nil {
+		return handshakeAnswer{}, err
+	}
+	log.Info("imported the config file into the control plane, which now owns it", "path", rl.configPath)
+	return answer, nil
+}
+
 // errPlaneHasNoConfig marks the handshake's 412: the plane authenticated the
 // token and holds nothing to serve. resolveConfigSource turns it into an
 // import when the local file can supply the document.
@@ -637,6 +658,9 @@ func (cp *controlPlane) heartbeat(ctx context.Context, log *slog.Logger, rl *rel
 			AppliedRevision: cp.revision,
 			LastOutcome:     cp.outcome,
 		})
+		if errors.Is(err, errPlaneHasNoConfig) {
+			answer, err = cp.reimport(log, rl)
+		}
 		if err != nil {
 			rl.tel.heartbeatFailed()
 			log.Warn("control plane handshake failed; serving the last good config",

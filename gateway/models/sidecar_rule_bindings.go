@@ -85,3 +85,56 @@ func ListSidecarRuleBindings(db *gorm.DB, orgID uuid.UUID, sidecarID string) ([]
 		sql.Named("org", orgID), sql.Named("sc", sidecarID)).Scan(&out).Error
 	return out, err
 }
+
+// DetachedSidecarRules names what DetachSidecarRulesTx deleted, per kind.
+type DetachedSidecarRules struct {
+	Guardrails []string
+	Masking    []string
+	Analyzers  []string
+}
+
+// DetachSidecarRulesTx removes every binding to one sidecar, then deletes each
+// rule it unbound that has no target left: no other listener, no connection
+// and no attribute. A rule shared with another target stays, with fewer
+// targets.
+func DetachSidecarRulesTx(tx *gorm.DB, orgID uuid.UUID, sidecarID string) (DetachedSidecarRules, error) {
+	var out DetachedSidecarRules
+	type junction struct {
+		listeners, column, rules, attributes, attrColumn, connections string
+		into                                                          *[]string
+	}
+	for _, j := range []junction{
+		{"private.guardrail_rules_listeners", "guardrail_rule_name", "private.guardrail_rules",
+			"private.guardrail_rules_attributes", "guardrail_rule_name",
+			"EXISTS (SELECT 1 FROM private.guardrail_rules_connections c WHERE c.rule_id = r.id)", &out.Guardrails},
+		{"private.datamasking_rules_listeners", "datamasking_rule_name", "private.datamasking_rules",
+			"private.datamasking_rules_attributes", "datamasking_rule_name",
+			"EXISTS (SELECT 1 FROM private.datamasking_rules_connections c WHERE c.rule_id = r.id)", &out.Masking},
+		{"private.ai_session_analyzer_rules_listeners", "analyzer_rule_name", "private.ai_session_analyzer_rules",
+			"private.ai_session_analyzer_rules_attributes", "analyzer_rule_name",
+			"COALESCE(array_length(r.connection_names, 1), 0) > 0", &out.Analyzers},
+	} {
+		var unbound []string
+		err := tx.Raw(`DELETE FROM `+j.listeners+` WHERE org_id = ? AND sidecar_id = ? RETURNING `+j.column,
+			orgID, sidecarID).Scan(&unbound).Error
+		if err != nil {
+			return out, err
+		}
+		if len(unbound) == 0 {
+			continue
+		}
+		var deleted []string
+		err = tx.Raw(`
+		DELETE FROM `+j.rules+` r
+		WHERE r.org_id = ? AND r.name IN ?
+		  AND NOT EXISTS (SELECT 1 FROM `+j.listeners+` l WHERE l.org_id = r.org_id AND l.`+j.column+` = r.name)
+		  AND NOT EXISTS (SELECT 1 FROM `+j.attributes+` a WHERE a.org_id = r.org_id AND a.`+j.attrColumn+` = r.name)
+		  AND NOT (`+j.connections+`)
+		RETURNING r.name`, orgID, unbound).Scan(&deleted).Error
+		if err != nil {
+			return out, err
+		}
+		*j.into = deleted
+	}
+	return out, nil
+}

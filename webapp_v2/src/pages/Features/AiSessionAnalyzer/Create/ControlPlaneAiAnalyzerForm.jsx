@@ -11,7 +11,6 @@ import PageLoader from '@/components/PageLoader'
 import SectionRow from '@/components/SectionRow'
 import Select from '@/components/Select'
 import SidecarTargetPicker from '@/components/SidecarTargetPicker'
-import Switch from '@/components/Switch'
 import TagsInput from '@/components/TagsInput'
 import Textarea from '@/components/Textarea'
 import TextInput from '@/components/TextInput'
@@ -45,11 +44,6 @@ const EMPTY = {
   prompt: '',
   message: '',
   max_calls: '',
-  // Whether this rule holds statements for a human. Not a field of the spec:
-  // the spec carries require_review on a level and approval_rule beside it,
-  // and this is the one switch that puts both there together. Either alone is
-  // a control the sidecar refuses at startup.
-  hold: false,
 }
 
 function specToForm(spec) {
@@ -64,7 +58,6 @@ function specToForm(spec) {
     prompt: spec.prompt ?? '',
     message: spec.message ?? '',
     max_calls: spec.max_calls ?? '',
-    hold: [spec.high, spec.medium, spec.low].includes(REVIEW_ACTION),
   }
 }
 
@@ -85,7 +78,7 @@ function formToSpec(f, ruleName) {
   // the control plane owns both halves and keeps them in step, so there is no
   // second name for an operator to get wrong. The sidecar refuses a hold that
   // names nothing, and the plane refuses a review whose rule it cannot find.
-  if (f.hold) spec.approval_rule = ruleName
+  if ([spec.high, spec.medium, spec.low].includes(REVIEW_ACTION)) spec.approval_rule = ruleName
   return spec
 }
 
@@ -114,22 +107,7 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
 
   const isHTTP = protocol.toLowerCase() === 'http'
   const operations = useMemo(() => operationsFor(protocol), [protocol])
-  const actions = useMemo(() => analyzerActionsFor(form.hold), [form.hold])
-
-  // Turning the switch off has to take the action with it, and it fails
-  // CLOSED: a level that was holding becomes block, never allow. Leaving
-  // require_review behind would save a hold with nothing to release it;
-  // dropping to unset would quietly start allowing the statements the
-  // operator had chosen to stop.
-  const setHold = (on) =>
-    setForm((f) => {
-      if (on) return { ...f, hold: true }
-      const cleared = {}
-      for (const level of ['high', 'medium', 'low']) {
-        if (f[level] === REVIEW_ACTION) cleared[level] = 'block'
-      }
-      return { ...f, ...cleared, hold: false }
-    })
+  const actions = useMemo(() => analyzerActionsFor(), [])
   const noTrigger =
     form.trigger_operations.length === 0 &&
     form.trigger_tables.length === 0 &&
@@ -144,16 +122,6 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
       showSnackbar({
         level: 'error',
         text: 'Set an action for at least one risk level.',
-      })
-      return
-    }
-    // The two halves of a hold travel together or not at all, and the sidecar
-    // refuses either one alone at startup. Saying so here costs a snackbar;
-    // saving it costs a fleet that will not boot.
-    if (form.hold && ![spec.high, spec.medium, spec.low].includes(REVIEW_ACTION)) {
-      showSnackbar({
-        level: 'error',
-        text: 'Set at least one risk level to hold for approval, or switch it off.',
       })
       return
     }
@@ -281,15 +249,9 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
 
       <SectionRow
         title="What happens per risk level"
-        description="A level you leave unset allows."
+        description="A level you leave unset allows. Hold for approval waits up to 30 minutes for a review; a client that times out first ends the wait, and running it again after approval lets it through. On an SSH listener, drop the shell capability first."
       >
         <Stack gap="md">
-          <Switch
-            label="Hold for approval"
-            description='Adds "Hold for approval" to the levels below. The statement waits up to 30 minutes for a review and runs if it is approved in that time. A client that times out first ends the wait. Running it again after approval lets it through. On an SSH listener, drop the shell capability first: a shell sends no statements to hold.'
-            checked={form.hold}
-            onChange={(e) => setHold(e.currentTarget.checked)}
-          />
           {[
             ['high', 'High risk'],
             ['medium', 'Medium risk'],

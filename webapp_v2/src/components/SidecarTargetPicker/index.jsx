@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from 'react'
 import { Anchor, Group, Stack, Text } from '@mantine/core'
 import MultiSelect from '@/components/MultiSelect'
+import { usesConfigFile } from '@/pages/Sidecars/config'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 
 // A target is a sidecar and one of its listeners. MultiSelect carries flat
@@ -13,6 +14,10 @@ import { useSidecarStore } from '@/stores/useSidecarStore'
 // offset cannot.
 const ID_LENGTH = 36
 
+// Why a sidecar that runs its config file cannot be picked. The control plane
+// does not manage its rules, and the gateway refuses the binding.
+const CONFIG_FILE_REASON = 'Uses config file'
+
 function encodeTarget({ sidecar_id: sidecarID, listener_name: listener }) {
   return `${sidecarID}:${listener ?? ''}`
 }
@@ -22,6 +27,32 @@ function decodeTarget(value) {
     sidecar_id: value.slice(0, ID_LENGTH),
     listener_name: value.slice(ID_LENGTH + 1),
   }
+}
+
+function listenerItems(sc, locked) {
+  // Listeners only. There is no "whole sidecar" option, and that is the
+  // point: a sidecar-wide rule writes the document's top-level block,
+  // which a lane carrying its own mask block silently replaces, so the
+  // same rule would apply on some lanes and be ignored on others with
+  // nothing here saying which.
+  //
+  // A listener with no name is left out. The name is the only handle the
+  // control plane has on a lane, and a binding to a nameless one is
+  // refused on save.
+  return (sc.configuration?.listeners ?? [])
+    .filter((l) => l?.name)
+    .map((l) => ({
+      value: encodeTarget({ sidecar_id: sc.id, listener_name: l.name }),
+      // The label is the listener name ALONE, because it is also the
+      // chip. "appdb (postgres)" doubles a chip's width to repeat what
+      // the row below already shows, and a rule bound to six listeners
+      // then wraps the field to three lines.
+      label: l.name,
+      protocol: l.protocol ?? '',
+      sidecar: sc.name,
+      disabled: locked,
+      reason: locked ? CONFIG_FILE_REASON : '',
+    }))
 }
 
 /**
@@ -55,30 +86,23 @@ export default function SidecarTargetPicker({ value = [], onChange, label, descr
 
   const data = useMemo(
     () =>
-      sidecars.map((sc) => ({
-        group: sc.name,
-        // Listeners only. There is no "whole sidecar" option, and that is the
-        // point: a sidecar-wide rule writes the document's top-level block,
-        // which a lane carrying its own mask block silently replaces, so the
-        // same rule would apply on some lanes and be ignored on others with
-        // nothing here saying which.
-        //
-        // A listener with no name is left out. The name is the only handle the
-        // control plane has on a lane, and a binding to a nameless one is
-        // refused on save.
-        items: (sc.configuration?.listeners ?? [])
-          .filter((l) => l?.name)
-          .map((l) => ({
-            value: encodeTarget({ sidecar_id: sc.id, listener_name: l.name }),
-            // The label is the listener name ALONE, because it is also the
-            // chip. "appdb (postgres)" doubles a chip's width to repeat what
-            // the row below already shows, and a rule bound to six listeners
-            // then wraps the field to three lines.
-            label: l.name,
-            protocol: l.protocol ?? '',
+      sidecars.map((sc) => {
+        const locked = usesConfigFile(sc)
+        const items = listenerItems(sc, locked)
+        // Shown even with no listener to offer, so the admin sees the sidecar
+        // and why it is not available.
+        if (locked && items.length === 0) {
+          items.push({
+            value: encodeTarget({ sidecar_id: sc.id, listener_name: '' }),
+            label: sc.name,
+            protocol: '',
             sidecar: sc.name,
-          })),
-      })),
+            disabled: true,
+            reason: CONFIG_FILE_REASON,
+          })
+        }
+        return { group: sc.name, items }
+      }),
     [sidecars],
   )
 
@@ -132,11 +156,19 @@ export default function SidecarTargetPicker({ value = [], onChange, label, descr
         // in the row and not in the summary.
         renderOption={({ option }) => (
           <Group justify="space-between" gap="sm" wrap="nowrap" w="100%">
-            <Text size="sm">{option.label}</Text>
-            {option.protocol && (
-              <Text size="xs" c="dimmed" tt="lowercase">
-                {option.protocol}
+            <Text size="sm" c={option.disabled ? 'dimmed' : undefined}>
+              {option.label}
+            </Text>
+            {option.reason ? (
+              <Text size="xs" c="dimmed">
+                {option.reason}
               </Text>
+            ) : (
+              option.protocol && (
+                <Text size="xs" c="dimmed" tt="lowercase">
+                  {option.protocol}
+                </Text>
+              )
             )}
           </Group>
         )}

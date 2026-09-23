@@ -125,6 +125,12 @@ func ValidateSidecarRuleTargets(db *gorm.DB, orgID string, kind SidecarRuleKind,
 			if err != nil {
 				return fmt.Errorf("sidecar %q was not found in this organization", t.SidecarID)
 			}
+			// The control plane does not serve rules to a sidecar that runs
+			// its config file, so a binding there would enforce nothing.
+			if sc.Configuration.LoadFromDisk != nil && *sc.Configuration.LoadFromDisk {
+				return fmt.Errorf("sidecar %q uses its config file; the control plane cannot "+
+					"manage its rules", sc.Name)
+			}
 			seen[t.SidecarID] = sc
 			order = append(order, t.SidecarID)
 		}

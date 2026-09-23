@@ -215,6 +215,24 @@ func PatchSidecarConfiguration(db *gorm.DB, orgID, nameOrID string, merge json.R
 	return &item, nil
 }
 
+// ResetSidecarConfigurationTx empties the stored configuration, so the next
+// handshake answers 412 and the sidecar imports its config file again.
+func ResetSidecarConfigurationTx(tx *gorm.DB, orgID, id string) (*Sidecar, error) {
+	var item Sidecar
+	err := tx.Raw(`
+	UPDATE private.sidecars SET configuration = '{}'::jsonb
+	WHERE org_id = ? AND id = ?
+	RETURNING id, org_id, name, created_by, created_at, configuration`, orgID, id).
+		Scan(&item).Error
+	if err != nil {
+		return nil, err
+	}
+	if item.ID == "" {
+		return nil, ErrNotFound
+	}
+	return &item, nil
+}
+
 // AdoptSidecarConfiguration stores the document a sidecar carried locally,
 // but only while the row holds no listeners: the guard runs in the UPDATE
 // itself, so a configuration authored concurrently in the control plane is

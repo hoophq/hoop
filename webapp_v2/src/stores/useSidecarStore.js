@@ -105,12 +105,12 @@ export const useSidecarStore = create((set, get) => ({
 
   // Flip which side owns this sidecar's configuration.
   //
-  // One atomic PATCH merges only `load_from_disk`, so the flip never has to
-  // read the stored document and write it back: a configuration a sidecar
-  // imported meanwhile keeps its listeners instead of being overwritten by a
-  // stale copy.
-  setLoadFromDisk: async (id, loadFromDisk) => {
-    const { data: updated } = await sidecarsService.patch(id, { load_from_disk: loadFromDisk })
+  // One atomic PATCH merges only `load_from_disk`. To the config file, the
+  // gateway deletes the rules bound only to this sidecar; back to the control
+  // plane, it empties the stored document and the sidecar imports its file
+  // again.
+  setUsesConfigFile: async (id, usesConfigFile) => {
+    const { data: updated } = await sidecarsService.patch(id, { load_from_disk: usesConfigFile })
     set((state) => ({
       sidecars: state.sidecars.map((s) => (s.id === updated.id ? updated : s)),
       // Only the record on screen: a flip still in flight when the route

@@ -362,8 +362,24 @@ func Put(c *gin.Context) {
 		return
 	}
 	item, err := writeSidecarConfiguration(models.DB, licenseData, func(tx *gorm.DB) (*models.Sidecar, error) {
-		return models.UpdateSidecarConfiguration(tx, ctx.OrgID,
+		current, err := models.GetSidecarByNameOrID(tx, ctx.OrgID, c.Param("nameOrID"))
+		if err != nil {
+			return nil, err
+		}
+		sc, err := models.UpdateSidecarConfiguration(tx, ctx.OrgID,
 			c.Param("nameOrID"), models.SidecarConfiguration(cfg))
+		if err != nil {
+			return nil, err
+		}
+		// The document replaces the stored one, so a switch back keeps it
+		// rather than importing the file again. A switch to the file still
+		// drops the rules it would no longer apply.
+		if !usesConfigFile(current.Configuration) && usesConfigFile(sc.Configuration) {
+			if _, err := services.DetachSidecarRulesTx(tx, ctx.OrgID, sc.ID); err != nil {
+				return nil, err
+			}
+		}
+		return sc, nil
 	})
 	if err != nil {
 		answerSidecarWrite(c, err)
@@ -375,7 +391,7 @@ func Put(c *gin.Context) {
 // Patch Sidecar Configuration
 //
 //	@Summary		Patch Sidecar Configuration
-//	@Description	Merge a partial configuration into the document a sidecar serves: the keys sent are updated and the rest are left as stored. Unlike PUT it never replaces the whole document, so it cannot overwrite a configuration a sidecar imported meanwhile. load_from_disk false clears the key, handing the document back to the control plane.
+//	@Description	Merge a partial configuration into the document a sidecar serves: the keys sent are updated and the rest are left as stored. Unlike PUT it never replaces the whole document, so it cannot overwrite a configuration a sidecar imported meanwhile. load_from_disk true deletes the control-plane rules bound only to this sidecar and unbinds the rest. load_from_disk false clears the key and the stored document, so the sidecar imports its config file again.
 //	@Tags			Sidecars
 //	@Accept			json
 //	@Produce		json
@@ -407,13 +423,38 @@ func Patch(c *gin.Context) {
 	// reading the stored document first and racing another writer between the
 	// read and the write.
 	item, err := writeSidecarConfiguration(models.DB, licenseData, func(tx *gorm.DB) (*models.Sidecar, error) {
-		return models.PatchSidecarConfiguration(tx, ctx.OrgID, c.Param("nameOrID"), merge, removeLoadFromDisk)
+		current, err := models.GetSidecarByNameOrID(tx, ctx.OrgID, c.Param("nameOrID"))
+		if err != nil {
+			return nil, err
+		}
+		sc, err := models.PatchSidecarConfiguration(tx, ctx.OrgID, c.Param("nameOrID"), merge, removeLoadFromDisk)
+		if err != nil {
+			return nil, err
+		}
+		wasFile, isFile := usesConfigFile(current.Configuration), usesConfigFile(sc.Configuration)
+		if wasFile == isFile {
+			return sc, nil
+		}
+		// A switch of owner. The control-plane rules of this sidecar go: to
+		// the config file, they would no longer apply; from it, the file is
+		// imported again and brings its own.
+		if _, err := services.DetachSidecarRulesTx(tx, ctx.OrgID, sc.ID); err != nil {
+			return nil, err
+		}
+		if isFile {
+			return sc, nil
+		}
+		return models.ResetSidecarConfigurationTx(tx, ctx.OrgID, sc.ID)
 	})
 	if err != nil {
 		answerSidecarWrite(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, toResponse(*item))
+}
+
+func usesConfigFile(cfg models.SidecarConfiguration) bool {
+	return cfg.LoadFromDisk != nil && *cfg.LoadFromDisk
 }
 
 // Sidecar Handshake
@@ -554,7 +595,7 @@ func servedConfig(cfg models.SidecarConfiguration, licenseData json.RawMessage) 
 // Import Sidecar Configuration
 //
 //	@Summary		Import Sidecar Configuration
-//	@Description	Authenticated with the hoop-sidecar-token header. Stores the config document a sidecar carried locally, once: the import is refused with 409 when the control plane already holds a configuration with listeners, or when the sidecar loads its configuration from disk.
+//	@Description	Authenticated with the hoop-sidecar-token header. Stores the config document a sidecar carried locally, once. Each guardrail and mask rule of the file becomes a rule item, and each listener analyzer block an analyzer rule, bound to the listeners that ran it. The import is refused with 409 when the control plane already holds a configuration with listeners, or when the sidecar loads its configuration from disk.
 //	@Tags			Sidecars
 //	@Accept			json
 //	@Produce		json
@@ -604,7 +645,24 @@ func ImportConfiguration(c *gin.Context) {
 	// explicitly off.
 	defaultLoadFromDisk := false
 	cfg.LoadFromDisk = &defaultLoadFromDisk
-	item, err := models.AdoptSidecarConfiguration(models.DB, sidecar.OrgID, sidecar.ID, models.SidecarConfiguration(cfg))
+	// Each rule of the file becomes a rule item on its feature page, bound to
+	// the listeners that ran it. The row keeps the rest; composition folds the
+	// items back, so the served document enforces what the file did.
+	stripped, rules, err := services.SplitSidecarConfiguration(sidecar.Name, cfg,
+		services.ImportedRuleNameTaken(models.DB, sidecar.OrgID))
+	if err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return
+	}
+	var item *models.Sidecar
+	err = models.DB.Transaction(func(tx *gorm.DB) error {
+		var txErr error
+		item, txErr = models.AdoptSidecarConfiguration(tx, sidecar.OrgID, sidecar.ID, models.SidecarConfiguration(stripped))
+		if txErr != nil {
+			return txErr
+		}
+		return services.ImportSidecarRulesTx(tx, sidecar.OrgID, sidecar.ID, rules)
+	})
 	switch {
 	case err == nil:
 		c.JSON(http.StatusOK, item.Configuration)

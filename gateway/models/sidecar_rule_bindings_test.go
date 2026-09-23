@@ -818,3 +818,118 @@ func TestTheHoldSwitchOwnsItsApprovalRule(t *testing.T) {
 		t.Errorf("a rule this feature does not own was deleted: %v", err)
 	}
 }
+
+// TestImportAndDetachSidecarRules runs an import through the real schema, then
+// the switch to the config file: a rule only this sidecar uses is deleted with
+// its approval rule, and a rule another sidecar also uses stays for it.
+func TestImportAndDetachSidecarRules(t *testing.T) {
+	startTestDB(t)
+	orgID := uuid.MustParse(testOrgID)
+
+	newSidecar := func(name string) *models.Sidecar {
+		sc := &models.Sidecar{
+			OrgID: testOrgID, Name: name, KeyHash: models.HashAPIKey("hsc_" + name),
+			CreatedBy: "tests@hoop.dev",
+		}
+		if err := models.CreateSidecar(models.DB, sc); err != nil {
+			t.Fatalf("seed sidecar %s: %v", name, err)
+		}
+		return sc
+	}
+	a, b := newSidecar("detach-a"), newSidecar("detach-b")
+
+	cfg, err := services.ParseSidecarConfiguration([]byte(`{
+		"guardrails": {"rules": [{"name": "shared", "type": "deny_words_list", "words": ["x"]}]},
+		"listeners": [{
+			"name": "appdb", "protocol": "postgres", "listen": ":5432", "upstream": "db:5432",
+			"guardrails": {"rules": [{"name": "own", "type": "deny_words_list", "words": ["y"]}]},
+			"mask": {"rules": [{"name": "emails", "entities": ["EMAIL_ADDRESS"], "strategy": "redact"}]},
+			"analyzer": {"high": "require_review", "approval_rule": "x"}
+		}]}`))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	stripped, rules, err := services.SplitSidecarConfiguration(a.Name, cfg,
+		services.ImportedRuleNameTaken(models.DB, testOrgID))
+	if err != nil {
+		t.Fatalf("split: %v", err)
+	}
+	err = models.DB.Transaction(func(tx *gorm.DB) error {
+		if _, err := models.AdoptSidecarConfiguration(tx, testOrgID, a.ID, models.SidecarConfiguration(stripped)); err != nil {
+			return err
+		}
+		return services.ImportSidecarRulesTx(tx, testOrgID, a.ID, rules)
+	})
+	if err != nil {
+		t.Fatalf("import: %v", err)
+	}
+	stored, err := models.GetSidecarByNameOrID(models.DB, testOrgID, a.ID)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	composed, err := services.ComposeSidecarConfiguration(models.DB, stored)
+	if err != nil {
+		t.Fatalf("compose the imported sidecar: %v", err)
+	}
+	if lane := composed.Listeners[0]; lane.Guardrails == nil || len(lane.Guardrails.Rules) != 2 ||
+		lane.Mask == nil || lane.Analyzer == nil || lane.Analyzer.ApprovalRule != "detach-a-appdb-analyzer" {
+		t.Fatalf("the composed lane lost file rules: %+v", lane)
+	}
+	if _, err := models.GetAccessRequestRuleByName(models.DB, "detach-a-appdb-analyzer", orgID); err != nil {
+		t.Fatalf("the hold's approval rule was not created: %v", err)
+	}
+
+	// The top-level rule is also bound to another sidecar.
+	if err := models.SetGuardrailRuleListeners(models.DB, orgID, "detach-a-shared", []models.SidecarRuleTarget{
+		{SidecarID: a.ID, ListenerName: "appdb"}, {SidecarID: b.ID, ListenerName: "other"},
+	}); err != nil {
+		t.Fatalf("share: %v", err)
+	}
+
+	var detached models.DetachedSidecarRules
+	err = models.DB.Transaction(func(tx *gorm.DB) error {
+		var derr error
+		detached, derr = services.DetachSidecarRulesTx(tx, testOrgID, a.ID)
+		return derr
+	})
+	if err != nil {
+		t.Fatalf("detach: %v", err)
+	}
+	if fmt.Sprint(detached.Guardrails) != "[detach-a-appdb-own]" ||
+		fmt.Sprint(detached.Masking) != "[detach-a-appdb-emails]" ||
+		fmt.Sprint(detached.Analyzers) != "[detach-a-appdb-analyzer]" {
+		t.Fatalf("deleted: %+v", detached)
+	}
+	if bound, _ := models.ListSidecarRuleBindings(models.DB, orgID, a.ID); len(bound) != 0 {
+		t.Fatalf("bindings left on the detached sidecar: %+v", bound)
+	}
+	if targets, _ := models.ListGuardrailRuleTargets(models.DB, orgID, "detach-a-shared"); len(targets) != 1 ||
+		targets[0].SidecarID != b.ID {
+		t.Fatalf("the shared rule must stay bound to the other sidecar, got %+v", targets)
+	}
+	if _, err := models.GetAccessRequestRuleByName(models.DB, "detach-a-appdb-analyzer", orgID); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("the approval rule outlived its analyzer rule: %v", err)
+	}
+}
+
+// A sidecar that runs its config file takes no control-plane rule.
+func TestABindingToAConfigFileSidecarIsRefused(t *testing.T) {
+	startTestDB(t)
+	on := true
+	sc := &models.Sidecar{
+		OrgID: testOrgID, Name: "file-mode", KeyHash: models.HashAPIKey("hsc_file_mode"),
+		CreatedBy: "tests@hoop.dev",
+		Configuration: models.SidecarConfiguration{LoadFromDisk: &on, Listeners: []daemon.ListenerConfig{{
+			Name: "appdb", Protocol: "postgres", Listen: ":5432", Upstream: "db:5432",
+		}}},
+	}
+	if err := models.CreateSidecar(models.DB, sc); err != nil {
+		t.Fatalf("seed sidecar: %v", err)
+	}
+	err := services.ValidateSidecarRuleTargets(models.DB, testOrgID, services.SidecarRuleGuardrail, "r", "",
+		json.RawMessage(`{"rules":[{"name":"r","type":"deny_words_list","words":["x"]}]}`),
+		[]models.SidecarRuleTarget{{SidecarID: sc.ID, ListenerName: "appdb"}})
+	if err == nil || !strings.Contains(err.Error(), "config file") {
+		t.Fatalf("want a refusal naming the config file, got %v", err)
+	}
+}

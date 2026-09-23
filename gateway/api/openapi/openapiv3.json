@@ -21946,7 +21946,7 @@
         ]
       },
       "put": {
-        "description": "Authenticated with the hoop-sidecar-token header. Stores the config document a sidecar carried locally, once: the import is refused with 409 when the control plane already holds a configuration with listeners, or when the sidecar loads its configuration from disk.",
+        "description": "Authenticated with the hoop-sidecar-token header. Stores the config document a sidecar carried locally, once. Each guardrail and mask rule of the file becomes a rule item, and each listener analyzer block an analyzer rule, bound to the listeners that ran it. The import is refused with 409 when the control plane already holds a configuration with listeners, or when the sidecar loads its configuration from disk.",
         "parameters": [
           {
             "description": "The token returned when the sidecar was created",
@@ -22422,7 +22422,7 @@
         ]
       },
       "patch": {
-        "description": "Merge a partial configuration into the document a sidecar serves: the keys sent are updated and the rest are left as stored. Unlike PUT it never replaces the whole document, so it cannot overwrite a configuration a sidecar imported meanwhile. load_from_disk false clears the key, handing the document back to the control plane.",
+        "description": "Merge a partial configuration into the document a sidecar serves: the keys sent are updated and the rest are left as stored. Unlike PUT it never replaces the whole document, so it cannot overwrite a configuration a sidecar imported meanwhile. load_from_disk true deletes the control-plane rules bound only to this sidecar and unbinds the rest. load_from_disk false clears the key and the stored document, so the sidecar imports its config file again.",
         "parameters": [
           {
             "description": "Name or UUID of the sidecar",
