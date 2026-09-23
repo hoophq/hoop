@@ -2,19 +2,31 @@ package daemon
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"log/slog"
+	"os"
+	"os/signal"
 	"sync/atomic"
+	"syscall"
+	"time"
 
 	"github.com/hoophq/hoop/sidecar/license"
 	"github.com/hoophq/hoop/sidecar/proxy"
 )
 
-// This file is the ADR-0014 hot reload: when the control plane's config
-// drifts in rule content only, the running relay lanes swap evaluators and
-// maskers atomically instead of asking for a restart. Connections already
-// open keep the Gate they captured at accept time; connections accepted
-// after the swap run the new rules.
+// This file is the ADR-0014 hot reload: when the running config drifts in
+// rule content only, the running relay lanes swap evaluators and maskers
+// atomically instead of asking for a restart. Connections already open keep
+// the Gate they captured at accept time; connections accepted after the swap
+// run the new rules.
+//
+// Two sources feed it, and a process has exactly one: the control plane's
+// heartbeat when a plane owns the config, the config file otherwise. A
+// standalone process polls the file's size and mtime and re-reads it on a
+// change or on SIGHUP; both paths end in the same applyOwned the heartbeat
+// uses, so a file edit gets the same swap, the same refusal and the same
+// "restart to apply it" a plane edit gets.
 //
 // The boundary is the non-rule document: listener topology, audit, admin,
 // log_level and the analyzer section are bound at startup (sockets, sinks,
@@ -25,10 +37,20 @@ import (
 // unchanged URL is never refetched by a reload — a restart reads it, the
 // same way a restart reads a replaced file.
 //
-// Everything here runs on the heartbeat goroutine alone. Run hands the
-// reloader over before starting it and never touches it again, which is why
-// no field needs a lock; the one cross-goroutine surface is laneState,
-// published through an atomic pointer the admin endpoints load.
+// Everything here runs on one goroutine: the heartbeat under a plane,
+// watchFile otherwise. Run hands the reloader over before starting that
+// goroutine and never touches it again, which is why no field needs a lock;
+// the one cross-goroutine surface is laneState, published through an atomic
+// pointer the admin endpoints load.
+
+// fileWatchEvery is how often a standalone process stats its config file.
+// Ten seconds keeps a Kubernetes ConfigMap edit (which the kubelet itself
+// delivers on a sync period of about a minute) from adding a noticeable
+// wait, and a stat every ten seconds costs nothing. Polling rather than
+// inotify because the root module carries no fsnotify, and because a
+// ConfigMap volume update is an atomic symlink swap that inotify on the
+// file misses while a stat that follows the link sees.
+const fileWatchEvery = 10 * time.Second
 
 // reloadOutcome is what handle concluded, returned so a test asserts the
 // decision rather than parsing log lines.
@@ -116,10 +138,17 @@ type reloader struct {
 	// rotates the organization's license publishes it here, and every
 	// reader sees the same one.
 	lic *licenseState
-	// licRaw is the license document the plane last sent, the compare that
-	// tells a rotation from a rule edit. Empty when the plane sends none.
+	// licRaw is the license document the owner last supplied -- the plane's
+	// under a plane, the file's `license` key otherwise -- the compare that
+	// tells a rotation from a rule edit. Empty when the owner names none.
 	licRaw string
-	det    Plugin
+	// licSource labels a license the owner rotates in: PlaneLicenseSource
+	// or fileLicenseSource. It is also the precedence rule for a file
+	// process: the `license` key is the lowest of the local sources, so a
+	// file edit rotates nothing while the flag or HOOP_LICENSE holds the
+	// document in force -- exactly what a restart would conclude.
+	licSource string
+	det       Plugin
 	// ac is the startup analyzer state, retained whole: the provider and
 	// its credential are restart-guarded, so a reload never rebuilds them.
 	// Only the redactor is replaced, and only when the detector changed.
@@ -132,15 +161,38 @@ type reloader struct {
 	// tick instead of waiting for another edit.
 	lastHandled []byte
 	gen         int
+	// planeOwned reports a control plane owns the running config. The
+	// heartbeat is then the goroutine that owns this struct, and watchFile
+	// touches nothing but this flag.
+	planeOwned bool
 	// diskMode reports the plane delegated the config to the local file:
 	// a drifted answer re-adopts the file (adoptFile), and an ownership
 	// flip runs the incoming owner's document through applyOwned,
 	// flipping this only when it applied.
 	diskMode bool
-	// configPath and load re-read the config file when the plane hands
-	// ownership to it mid-run. An empty path means no file was given.
+	// configPath and load re-read the config file: a standalone process
+	// on every change, a plane-owned one when the plane hands ownership to
+	// the file mid-run. An empty path means no file was given.
 	configPath string
 	load       Loader
+
+	// fileEvery overrides fileWatchEvery; zero means the default. A test
+	// sets it so a case about what an edit does is not a case about
+	// waiting ten seconds.
+	fileEvery time.Duration
+	// fileSize and fileMod are the stat of the file at its last read; a
+	// tick that finds them unchanged reads nothing. filePending forces
+	// the next tick to read anyway: the last read ended in reloadRetry or
+	// in a file that did not load, and either can clear without the file
+	// changing again (an editor finishing its write, a marshal that failed
+	// once).
+	fileSize    int64
+	fileMod     time.Time
+	filePending bool
+	// fileBroken remembers that the file's load failure was logged, so a
+	// file left broken warns once rather than every ten seconds until
+	// someone fixes it. Cleared by a load that succeeds.
+	fileBroken bool
 
 	// tel receives every terminal outcome. Nil in a test that built no
 	// telemetry; its methods accept that.
@@ -171,43 +223,192 @@ func newReloader(cfg *Config, lanes []lane, servers map[string]*proxy.Server,
 		laneSections[ln.name] = sections
 		prevLanes[ln.name] = ln
 	}
-	return &reloader{
-		baseline:    baseline,
-		piiRaw:      cfg.PII,
-		laneDocs:    laneDocs,
-		sections:    laneSections,
-		prevLanes:   prevLanes,
-		servers:     servers,
-		view:        view,
-		lic:         lic,
-		licRaw:      cfg.cp.license,
-		det:         det,
-		ac:          ac,
-		build:       cfg.cp.build,
-		lastHandled: cfg.cp.lastRaw,
-		diskMode:    cfg.cp.diskMode,
-		configPath:  cfg.cp.configPath,
-		load:        cfg.cp.load,
-	}, nil
+	r := &reloader{
+		baseline:   baseline,
+		piiRaw:     cfg.PII,
+		laneDocs:   laneDocs,
+		sections:   laneSections,
+		prevLanes:  prevLanes,
+		servers:    servers,
+		view:       view,
+		lic:        lic,
+		det:        det,
+		ac:         ac,
+		build:      cfg.build,
+		configPath: cfg.configPath,
+		load:       cfg.load,
+	}
+	if cfg.cp != nil {
+		r.planeOwned = true
+		r.licRaw = cfg.cp.license
+		r.licSource = PlaneLicenseSource
+		r.lastHandled = cfg.cp.lastRaw
+		r.diskMode = cfg.cp.diskMode
+		return r, nil
+	}
+	r.licRaw = cfg.License
+	r.licSource = fileLicenseSource
+	if r.configPath != "" {
+		// Seed the compare from the file itself, through the same read the
+		// watcher runs, so the first tick that finds the file untouched is
+		// reloadUnchanged rather than a generation that swapped nothing. A
+		// seed that fails leaves the zero values: the first tick then
+		// applies a document identical to the running one, which keeps
+		// every lane and costs one log line.
+		if local, lerr := r.load(r.configPath); lerr == nil {
+			if raw, merr := json.Marshal(local); merr == nil {
+				r.lastHandled = raw
+			}
+		}
+		if st, serr := os.Stat(r.configPath); serr == nil {
+			r.fileSize, r.fileMod = st.Size(), st.ModTime()
+		}
+	}
+	return r, nil
 }
 
 // handle is the heartbeat's entry: it drops documents already handled and
 // remembers terminal outcomes, so one edit logs once while a retryable
 // failure runs again next tick.
 func (r *reloader) handle(log *slog.Logger, raw []byte) reloadOutcome {
+	return r.once(log, raw, r.apply)
+}
+
+// once is the dedupe both sources share: a document already handled is
+// dropped, a terminal outcome is remembered, a retryable one is not.
+func (r *reloader) once(log *slog.Logger, raw []byte,
+	apply func(*slog.Logger, []byte) reloadOutcome) reloadOutcome {
 	if bytes.Equal(raw, r.lastHandled) {
 		return reloadUnchanged
 	}
-	out := r.apply(log, raw)
+	out := apply(log, raw)
 	if out != reloadRetry {
 		r.lastHandled = raw
 	}
 	if out != reloadApplied {
-		// apply reports the applied case itself, where it still holds the
-		// generation's lanes for the shape properties.
+		// applyOwned reports the applied case itself, where it still holds
+		// the generation's lanes for the shape properties.
 		r.tel.trackReload(reloadReport{outcome: out, gen: r.gen})
 	}
 	return out
+}
+
+// watchFile is the standalone source: it re-reads the config file when its
+// size or mtime moves, and on SIGHUP, and hands the document to the same
+// pipeline the heartbeat feeds. It is started in every mode so SIGHUP has a
+// reader -- unhandled, the signal's default action kills the process, and
+// "SIGHUP reloads the config" must not be true of one deployment shape and
+// fatal in the other. Under a plane it owns nothing: the heartbeat does, and
+// this goroutine only says so.
+func (r *reloader) watchFile(ctx context.Context, log *slog.Logger) {
+	hup := make(chan os.Signal, 1)
+	signal.Notify(hup, syscall.SIGHUP)
+	defer signal.Stop(hup)
+
+	// A nil channel never fires, which is how a plane-owned process or one
+	// with no file keeps the loop and drops the ticker.
+	var tick <-chan time.Time
+	if !r.planeOwned && r.configPath != "" {
+		every := r.fileEvery
+		if every == 0 {
+			every = fileWatchEvery
+		}
+		t := time.NewTicker(every)
+		defer t.Stop()
+		tick = t.C
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick:
+			r.pollFile(log)
+		case <-hup:
+			switch {
+			case r.planeOwned:
+				log.Info("SIGHUP ignored: the control plane owns the configuration",
+					"hint", "edit the configuration in the control plane; the heartbeat applies it")
+			case r.configPath == "":
+				log.Info("SIGHUP ignored: this process was started without a config file")
+			default:
+				log.Info("SIGHUP received; re-reading the config file", "path", r.configPath)
+				r.filePending = r.reloadFile(log) == reloadRetry
+			}
+		}
+	}
+}
+
+// pollFile is one tick: stat the file, read it when the stat moved or the
+// last read asked to be retried.
+func (r *reloader) pollFile(log *slog.Logger) {
+	st, err := os.Stat(r.configPath)
+	if err != nil {
+		// A ConfigMap swap is atomic and an editor's rename is too, so a
+		// missing file is an operator's `rm`, worth one line and no more:
+		// the running rules keep serving until the file is back.
+		if !r.fileBroken {
+			log.Warn("the config file cannot be read; keeping the running rules",
+				"path", r.configPath, "error", err)
+			r.fileBroken = true
+		}
+		return
+	}
+	if !r.filePending && st.Size() == r.fileSize && st.ModTime().Equal(r.fileMod) {
+		return
+	}
+	r.fileSize, r.fileMod = st.Size(), st.ModTime()
+	r.filePending = r.reloadFile(log) == reloadRetry
+}
+
+// reloadFile reads the config file and runs it through the reload. A file
+// that does not load is a retry, not a refusal: the read may have caught an
+// editor mid-write, and the next tick re-reads without waiting for the stat
+// to move again. It is logged once until a read succeeds.
+func (r *reloader) reloadFile(log *slog.Logger) reloadOutcome {
+	local, err := r.load(r.configPath)
+	if err != nil {
+		if !r.fileBroken {
+			log.Warn("the config file does not load; keeping the running rules",
+				"path", r.configPath, "error", err)
+			r.fileBroken = true
+		}
+		return reloadRetry
+	}
+	r.fileBroken = false
+	if local.LoadFromDisk != nil {
+		// The same refusal resolveConfigSource gives the key at startup,
+		// phrased for a process that is already running.
+		log.Warn(`the config file writes "load_from_disk", which is not a config file key; keeping the running rules`,
+			"path", r.configPath,
+			"hint", "it is set on the control plane's sidecar configuration; remove it from the file")
+		return reloadRefused
+	}
+	raw, err := json.Marshal(local)
+	if err != nil {
+		log.Warn("config compare failed; keeping the running rules", "error", err)
+		return reloadRetry
+	}
+	return r.once(log, raw, r.applyFile)
+}
+
+// applyFile is the standalone counterpart of apply: the file is the owner,
+// so there is no load_from_disk flag and no ownership flip to consider.
+func (r *reloader) applyFile(log *slog.Logger, raw []byte) reloadOutcome {
+	return r.applyOwned(log, raw, "config file")
+}
+
+// ownerLicenseApplies reports whether a license the owner supplies is the
+// one this process runs under. A plane's always is. A file's `license` key
+// is the lowest local source: while the flag or HOOP_LICENSE holds the
+// document in force, editing the key changes nothing, on a reload exactly
+// as on a restart. An empty Source is a process running with no license at
+// all, which the key may license.
+func (r *reloader) ownerLicenseApplies() bool {
+	if r.planeOwned {
+		return true
+	}
+	src := r.lic.get().Source
+	return src == "" || src == fileLicenseSource
 }
 
 // apply decides what a drifted document means for the running process and
@@ -344,16 +545,25 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 	}
 
 	// The license the lanes are built against: the one in use, unless the
-	// plane sent a different document. UseLicense verifies the signature
-	// here the same way startup does, so a plane cannot hand this process
-	// a verdict, only a document.
+	// owner supplied a different document. UseLicense verifies the
+	// signature here the same way startup does, so a plane cannot hand
+	// this process a verdict, only a document.
 	newCfg.lic = r.lic.get()
 	licRotated := newCfg.License != r.licRaw
+	if licRotated && !r.ownerLicenseApplies() {
+		// Said once: the compare moves on so a later rule edit does not
+		// repeat it, and nothing else about the running license changes.
+		r.licRaw = newCfg.License
+		licRotated = false
+		log.Warn("the "+from+"'s license key changed, but "+newCfg.lic.Source+
+			" outranks it; keeping the license in use",
+			"hint", "a restart would read the same precedence")
+	}
 	if licRotated {
-		if err := newCfg.UseLicense(license.Ref{Value: newCfg.License, Source: PlaneLicenseSource}); err != nil {
+		if err := newCfg.UseLicense(license.Ref{Value: newCfg.License, Source: r.licSource}); err != nil {
 			// Kept, not refused: a license nobody can read must not
 			// also freeze the rules. The caps stay where they were.
-			log.Warn("the control plane sent a license this build refuses; keeping the license in use",
+			log.Warn("the "+from+" sent a license this build refuses; keeping the license in use",
 				"error", err)
 			licRotated = false
 		}
@@ -379,7 +589,7 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 			r.licRaw = newCfg.License
 			r.lic.set(newCfg.lic)
 			r.lic.overCap.Store(true)
-			log.Warn("the control plane's license no longer covers the running rules; "+
+			log.Warn("the "+from+"'s license no longer covers the running rules; "+
 				"stopping the relay so it restarts under the new one",
 				"license", newCfg.lic.Line(), "error", err)
 			return reloadRefused

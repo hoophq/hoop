@@ -23,8 +23,8 @@ const (
 	// config shape, see daemon.shapeProperties.
 	EventStarted Event = "hoop-sidecar-started"
 
-	// EventConfigApplied: the heartbeat delivered a changed document and
-	// the reloader acted on it. Properties: config-generation, outcome
+	// EventConfigApplied: a changed document reached the reloader, from the
+	// heartbeat or the config file. Properties: config-generation, outcome
 	// (applied|restart-required|refused), lanes-swapped, lanes-kept, plus
 	// the config shape when applied.
 	EventConfigApplied Event = "hoop-sidecar-config-applied"

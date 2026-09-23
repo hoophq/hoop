@@ -103,6 +103,17 @@ session picks up new rules on its next statement) move the atomic load into
 the Gate's per-statement path and are deferred until connection-granular
 proves itself in the field.
 
+The pipeline is source-agnostic, and a process has exactly one source. A
+plane-connected process is fed by the heartbeat. A standalone process is
+fed by its config file: the daemon stats the path every ten seconds and
+re-reads it on a size or mtime change, or at once on `SIGHUP`. Polling
+rather than inotify, because the root module carries no fsnotify and a
+Kubernetes ConfigMap update is an atomic symlink swap a stat sees. Both
+sources end in the same swap-or-restart decision, so a file edit and a
+plane edit get the same outcome for the same drift. The file's `license`
+key rotates the license only when no higher local source (`-license`,
+`HOOP_LICENSE`) holds one, which is what a restart would conclude.
+
 The heartbeat's decision per fetched document:
 
 ```mermaid

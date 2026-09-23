@@ -176,8 +176,16 @@ type Config struct {
 	configFormat    string
 	// configPath is the file SetupWith loaded, when there was one. Part of
 	// a standalone install's identity for analytics: two processes on one
-	// host have two files, and one process editing its file keeps it.
+	// host have two files, and one process editing its file keeps it. It is
+	// also what the reloader re-reads: a standalone process watches it, and
+	// a plane that delegates to disk re-adopts it.
 	configPath string
+	// load and build are the Loader and PluginBuilder SetupWith received,
+	// retained so a reload re-reads the file and rebuilds the detector the
+	// way startup did. A nil build means the entry point linked no
+	// detector; a drifted pii section then stays on the restart path.
+	load  Loader
+	build PluginBuilder
 }
 
 // Licensing reports the license this config runs under. The zero value is a
