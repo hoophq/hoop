@@ -1,17 +1,20 @@
-// Package vertex implements Claude on Google Vertex AI as an analyzer
-// provider.
+// Package vertex implements Claude and Gemini on Google Vertex AI as an
+// analyzer provider.
 //
 // It is a separate module because it is the one provider that needs a
-// dependency. Anthropic and OpenAI authenticate with a static string in a
-// header; Vertex authenticates with a GCP OAuth2 bearer minted from a
+// dependency. Anthropic, OpenAI and Gemini authenticate with a static string
+// in a header; Vertex authenticates with a GCP OAuth2 bearer minted from a
 // service-account key and refreshed before it expires. Signed JWT assertion
 // and token exchange are not worth reimplementing to save a go.mod, so this
 // module takes golang.org/x/oauth2 and the root never links it.
 //
-// The wire format is the Anthropic Messages API with three changes, all of
-// them transport: the model moves into the URL, the API version moves into
-// the body, and auth becomes a bearer. The request and response encoders are
-// therefore imported from analyzer/anthropic rather than copied.
+// The `publisher` extra picks the model family, and with it the wire format.
+// Claude is the Anthropic Messages API with three transport changes: the
+// model moves into the URL, the API version moves into the body, and auth
+// becomes a bearer. Gemini is the generateContent API the analyzer/gemini
+// package speaks, with the same bearer in place of an API key. The request
+// and response encoders are imported from analyzer/anthropic and
+// analyzer/gemini rather than copied.
 //
 // # Credentials
 //
@@ -34,6 +37,7 @@ import (
 
 	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/analyzer/anthropic"
+	"github.com/hoophq/hoop/sidecar/analyzer/gemini"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 )
@@ -49,8 +53,19 @@ const defaultMaxTokens = 1024
 
 // Extra keys this provider reads from the config's analyzer section.
 const (
-	KeyProject = "project"
-	KeyRegion  = "region"
+	KeyProject   = "project"
+	KeyRegion    = "region"
+	KeyPublisher = "publisher"
+)
+
+// Publisher values for KeyPublisher. Empty means PublisherAnthropic, which
+// is what every config written before the key existed meant.
+const (
+	// PublisherAnthropic serves Claude through rawPredict.
+	PublisherAnthropic = "anthropic"
+
+	// PublisherGoogle serves Gemini through generateContent.
+	PublisherGoogle = "google"
 )
 
 func init() {
@@ -66,6 +81,19 @@ func init() {
 		if opts.Model == "" {
 			return nil, fmt.Errorf("analyzer/vertex: no model configured")
 		}
+		publisher := strings.TrimSpace(opts.Extra[KeyPublisher])
+		if publisher == "" {
+			publisher = PublisherAnthropic
+		}
+		switch publisher {
+		case PublisherAnthropic, PublisherGoogle:
+		default:
+			// Refused at config load, where the operator is watching. A
+			// fallback would send a Gemini model to the anthropic path
+			// and the resulting 404 reads like a typo in the model name.
+			return nil, fmt.Errorf("analyzer/vertex: unknown publisher %q (want %q or %q)",
+				publisher, PublisherAnthropic, PublisherGoogle)
+		}
 		maxTokens := opts.MaxOutputTokens
 		if maxTokens <= 0 {
 			maxTokens = defaultMaxTokens
@@ -74,6 +102,7 @@ func init() {
 		p := &Provider{
 			project:   project,
 			region:    region,
+			publisher: publisher,
 			model:     opts.Model,
 			endpoint:  opts.Endpoint,
 			maxTokens: maxTokens,
@@ -84,10 +113,11 @@ func init() {
 	})
 }
 
-// Provider classifies statements with Claude on Vertex AI.
+// Provider classifies statements with Claude or Gemini on Vertex AI.
 type Provider struct {
 	project   string
 	region    string
+	publisher string
 	model     string
 	endpoint  string // overrides the derived URL; empty derives it
 	maxTokens int
@@ -162,7 +192,13 @@ func (p *Provider) Verify(ctx context.Context) error {
 	return nil
 }
 
-// url builds the rawPredict endpoint for the configured model.
+// url builds the prediction endpoint for the configured model.
+//
+// Claude is served by rawPredict, which passes the Anthropic body through.
+// Gemini is served by generateContent, Google's own method. The publisher
+// segment of the path matches the config key by design: Google names its
+// model catalog by publisher, and an operator reading a 404 in the Cloud
+// Console log sees the same word they wrote in the config.
 //
 // The "global" region is spelled differently from a regional one: it uses the
 // unprefixed host. Getting this wrong yields a DNS failure rather than an API
@@ -176,9 +212,13 @@ func (p *Provider) url() string {
 	if p.region == "global" {
 		host = "aiplatform.googleapis.com"
 	}
+	method := "rawPredict"
+	if p.publisher == PublisherGoogle {
+		method = "generateContent"
+	}
 	return fmt.Sprintf(
-		"https://%s/v1/projects/%s/locations/%s/publishers/anthropic/models/%s:rawPredict",
-		host, p.project, p.region, p.model)
+		"https://%s/v1/projects/%s/locations/%s/publishers/%s/models/%s:%s",
+		host, p.project, p.region, p.publisher, p.model, method)
 }
 
 // Classify implements analyzer.Provider.
@@ -194,9 +234,7 @@ func (p *Provider) Classify(ctx context.Context, systemPrompt, content string) (
 		return nil, fmt.Errorf("analyzer/vertex: minting GCP access token: %w", err)
 	}
 
-	// forVertex=true moves the model out of the body and the API version
-	// into it. Everything else is the Anthropic request verbatim.
-	body, err := json.Marshal(anthropic.BuildRequest(p.model, p.maxTokens, systemPrompt, content, true))
+	body, err := p.encode(systemPrompt, content)
 	if err != nil {
 		return nil, fmt.Errorf("analyzer/vertex: encoding request: %w", err)
 	}
@@ -214,8 +252,23 @@ func (p *Provider) Classify(ctx context.Context, systemPrompt, content string) (
 	}
 	defer resp.Body.Close()
 
-	// Vertex returns the same document as the Messages API, so the
-	// Anthropic parser handles it, including the bounded-drain rule that
-	// keeps a provider's error body out of the relay's logs.
+	// Each publisher returns the document its own package parses,
+	// including the bounded-drain rule that keeps a provider's error body
+	// out of the relay's logs.
+	if p.publisher == PublisherGoogle {
+		return gemini.ParseResponse("analyzer/"+Name, resp)
+	}
 	return anthropic.ParseResponse("analyzer/"+Name, resp)
+}
+
+// encode renders the request body for the configured publisher.
+//
+// forVertex=true on the Anthropic encoder moves the model out of the body and
+// the API version into it. The Gemini encoder never carries the model: every
+// Gemini URL names it in the path.
+func (p *Provider) encode(systemPrompt, content string) ([]byte, error) {
+	if p.publisher == PublisherGoogle {
+		return json.Marshal(gemini.BuildRequest(p.maxTokens, systemPrompt, content))
+	}
+	return json.Marshal(anthropic.BuildRequest(p.model, p.maxTokens, systemPrompt, content, true))
 }

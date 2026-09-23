@@ -10,8 +10,8 @@
 //
 // The package holds no provider. A Provider is registered by an
 // implementation package (analyzer/anthropic, analyzer/openai,
-// analyzer/vertex) and resolved by name, which keeps a provider that needs a
-// dependency out of the root.
+// analyzer/gemini, analyzer/vertex) and resolved by name, which keeps a
+// provider that needs a dependency out of the root.
 package analyzer
 
 import (

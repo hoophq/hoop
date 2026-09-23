@@ -1281,10 +1281,40 @@ reports the endpoint host only. An endpoint URL carrying userinfo or a query
 string is refused at startup, because that view sits beside a read interface
 to the audit trail.
 
+**Providers.** Four names, and the credential decides which one you want.
+
+| `provider` | Model | Credential | Extra keys |
+|---|---|---|---|
+| `anthropic` | Claude | Anthropic API key | |
+| `openai` | any Chat Completions endpoint | API key | |
+| `gemini` | Gemini | Google API key | `api: developer` (default) or `api: vertex` |
+| `vertex` | Claude or Gemini | GCP identity | `project`, `region`, `publisher: anthropic` (default) or `publisher: google` |
+
+**Gemini** with an API key goes through `provider: gemini`. `api: developer`
+is the Gemini Developer API on `generativelanguage.googleapis.com`, billed to
+a Google account. `api: vertex` is the Vertex AI Gemini API on
+`aiplatform.googleapis.com` with a Google Cloud API key, billed to the key's
+project and inside its IAM and region policy. Google documents API keys for
+testing and ADC for production; a static key has no identity to audit and
+no rotation of its own. The key travels in the `x-goog-api-key` header,
+never in the URL.
+
 **Vertex** authenticates with a GCP OAuth2 bearer minted from a service
 account and refreshed automatically, so `-validate` mints one token to prove
 the credential, the `roles/aiplatform.user` binding and the host clock before
 anything serves traffic. Prefer Workload Identity and omit `credentials_file`.
+`publisher: google` serves Gemini through the same bearer; the default,
+`publisher: anthropic`, serves Claude. A GKE pod under Workload Identity, a
+GCE or Cloud Run instance with an attached service account, and a pod outside
+GCP holding a service-account key or a Workload Identity Federation
+`external_account` file all reach Gemini this way, with no API key anywhere:
+
+```yaml
+analyzer:
+  provider: vertex
+  model: gemini-2.5-flash
+  extra: {project: my-gcp-project, region: global, publisher: google}
+```
 
 #### Migrating from `type: ai_analysis` rules
 

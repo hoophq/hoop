@@ -82,8 +82,8 @@ func (h *HTTPCodecConfig) validate(lane string) []string {
 // credential surface for a case nobody has asked for; everything else here
 // is a DEFAULT a listener's own analyzer block overrides per lane.
 type AnalyzerConfig struct {
-	// Provider names a registered provider: anthropic, openai, vertex.
-	// Availability depends on what the binary links.
+	// Provider names a registered provider: anthropic, openai, gemini,
+	// vertex. Availability depends on what the binary links.
 	Provider string `json:"provider"`
 
 	// Model names the model. Provider-specific format.
@@ -104,8 +104,8 @@ type AnalyzerConfig struct {
 	// leak or rotate.
 	CredentialsFile string `json:"credentials_file,omitempty"`
 
-	// Extra carries provider-specific settings, such as Vertex's project
-	// and region.
+	// Extra carries provider-specific settings: Vertex's project, region
+	// and publisher; Gemini's api.
 	Extra map[string]string `json:"extra,omitempty"`
 
 	// Prompt replaces the built-in risk guidance for every ai_analysis rule
