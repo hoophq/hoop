@@ -441,16 +441,9 @@ func SetReviewStatusExecutedIfFinished(db *gorm.DB, orgID, sessionID string) (bo
 	return res.RowsAffected > 0, res.Error
 }
 
-// GetLiveSidecarReview returns the review already filed for these exact
-// statement bytes on this listener and rule, or gorm.ErrRecordNotFound.
-//
-// "Live" excludes EXECUTED and nothing else, matching the partial unique index:
-// a consumed approval must not answer the next request, a rejection must keep
-// answering. Groups load as GetReviewByIdOrSid loads them, so a match carries
-// the same policy as a fresh review.
-func GetLiveSidecarReview(db *gorm.DB, orgID, sidecarID, listenerName, ruleName, statementHash string) (*Review, error) {
-	var review Review
-	err := db.Raw(`
+// sidecarReviewSelect reads a sidecar review with its groups, so every lookup
+// answers with the same policy a fresh review carries. Callers add the WHERE.
+const sidecarReviewSelect = `
 	SELECT
 		id, org_id, session_id, connection_name, sidecar_id, listener_name,
 		statement_hash, type, access_duration_sec, status,
@@ -474,10 +467,41 @@ func GetLiveSidecarReview(db *gorm.DB, orgID, sidecarID, listenerName, ruleName,
 			WHERE rg.review_id = rv.id
 		) AS review_groups,
 	created_at, revoked_at, rejection_reason
-	FROM private.reviews rv
+	FROM private.reviews rv`
+
+// GetLiveSidecarReview returns the review already filed for these exact
+// statement bytes on this listener and rule, or gorm.ErrRecordNotFound.
+//
+// "Live" excludes EXECUTED and nothing else, matching the partial unique index:
+// a consumed approval must not answer the next request, a rejection must keep
+// answering. Groups load as GetReviewByIdOrSid loads them, so a match carries
+// the same policy as a fresh review.
+func GetLiveSidecarReview(db *gorm.DB, orgID, sidecarID, listenerName, ruleName, statementHash string) (*Review, error) {
+	var review Review
+	err := db.Raw(sidecarReviewSelect+`
 	WHERE org_id = ? AND sidecar_id = ? AND listener_name = ?
 	AND access_request_rule_name = ? AND statement_hash = ? AND status <> ?`,
 		orgID, sidecarID, listenerName, ruleName, statementHash, ReviewStatusExecuted).
+		First(&review).
+		Error
+	if err != nil {
+		return nil, err
+	}
+	return &review, nil
+}
+
+// GetSidecarReview returns one review this sidecar filed, in any status, or
+// gorm.ErrRecordNotFound.
+//
+// Unlike GetLiveSidecarReview it returns EXECUTED too: a sidecar waiting on a
+// review must learn that another connection spent it, not miss the row and
+// file a new one. The sidecar scope is the authorization: a token reads only
+// its own reviews.
+func GetSidecarReview(db *gorm.DB, orgID, sidecarID, reviewID string) (*Review, error) {
+	var review Review
+	err := db.Raw(sidecarReviewSelect+`
+	WHERE org_id = ? AND sidecar_id = ? AND id = ?`,
+		orgID, sidecarID, reviewID).
 		First(&review).
 		Error
 	if err != nil {

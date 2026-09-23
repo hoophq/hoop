@@ -445,7 +445,7 @@ func (ac *analyzerDeps) budgetFor(key string) *atomic.Int64 {
 	return cell
 }
 
-// reviewerFor returns the call this lane makes to hold a statement for human
+// reviewerFor returns the backend this lane holds statements against for human
 // approval, or nil when nothing should be filed.
 //
 // Nil in three cases, and each one denies rather than forwards:
@@ -456,7 +456,7 @@ func (ac *analyzerDeps) budgetFor(key string) *atomic.Int64 {
 //     turns the hold's denial into an allow annotated would_deny, which is
 //     the record the mode exists to produce.
 //   - The process has no control plane, which is every -validate run.
-func (ac *analyzerDeps) reviewerFor(listener string, la *LaneAnalyzerConfig, observing bool) reviewFunc {
+func (ac *analyzerDeps) reviewerFor(listener string, la *LaneAnalyzerConfig, observing bool) analyzer.Reviewer {
 	if ac == nil || la == nil || la.ApprovalRule == "" || observing {
 		return nil
 	}
@@ -523,7 +523,7 @@ func buildLaneAnalyzer(
 	la *LaneAnalyzerConfig,
 	ac *analyzerDeps,
 	hasOPA, gated bool,
-	review reviewFunc,
+	review analyzer.Reviewer,
 ) (policy.Evaluator, error) {
 	if la == nil {
 		return nil, nil
@@ -564,7 +564,7 @@ func buildAnalyzerEvaluator(
 	la LaneAnalyzerConfig,
 	ac *analyzerDeps,
 	hasOPA, gated bool,
-	review reviewFunc,
+	review analyzer.Reviewer,
 ) (policy.Evaluator, error) {
 	cfg := ac.cfg
 
@@ -991,12 +991,13 @@ func validateLaneBlock(la *LaneAnalyzerConfig, lane, protocol string) []string {
 // holdableProtocol reports whether a lane's protocol may hold a statement for
 // human approval: the four wire-database codecs, and nothing else.
 //
-// A hold is not a pause. It denies the first attempt and releases a retry
-// that carries the same bytes, so it needs a client that sends a statement
-// twice, which is what a database client does when a developer runs the
-// query again. An http or grpc caller is a program reading a refusal, and an
-// ssh session is a shell the denial already ended; neither replays a
-// statement byte for byte on its own. EVL-284 draws the line here.
+// A hold waits a few minutes on the connection and then denies, releasing a
+// later retry that carries the same bytes. So it needs a client that sits
+// on a statement and can send it again, which is what a database client does
+// when a developer runs the query again. An http or grpc caller is a program
+// with its own deadline, and an ssh session is a shell the denial already
+// ended; neither replays a statement byte for byte on its own. EVL-284 draws
+// the line here.
 func holdableProtocol(protocol string) bool {
 	switch inspect.Protocol(protocol) {
 	case inspect.Postgres, inspect.MySQL, inspect.MSSQL, inspect.MongoDB:

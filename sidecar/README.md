@@ -1051,20 +1051,35 @@ may approve. The rule holds the reviewer groups, the approval count and the
 force-approval list; the lane holds only its name, and the control plane
 authorizes each review against the config it stored for that sidecar.
 
-**A hold is not a pause.** Nothing waits on the connection: an approval
-arrives minutes or hours later, long after the client's socket is gone. The
-first attempt is DENIED, with the review id in the error the developer reads:
+**A hold waits, then gives up.** A pending review holds the statement on
+its connection for up to 5 minutes. Every 5 seconds the relay asks the plane
+about that one review (`POST /api/sidecars/reviews/<id>/claim`); the ask never
+files a review. An approval that lands in time runs the statement on the same
+connection, late. A rejection, a revocation, or an approval another connection
+already used ends the wait at once and denies. The review id is in every
+denial:
 
 ```
-ERROR:  statement held for human approval: waiting for approval (review 9f97…)
+ERROR:  statement held for human approval: still waiting for approval after 5m0s; run the statement again once it is approved (review 9f97…)
 ```
 
-They ask an approver, then run the statement again. That retry is what
-collects the approval. The relay files nothing on the second attempt: the
-plane recognizes the same statement, consumes the approved review and answers
-that this one may go through. It answers that ONCE, since the third run of the same
-statement files a fresh review, and a rejection stays, so a refused statement
-is refused every time without paging anyone again.
+The wait ends early when the connection does. A client that hangs up, or an
+upstream that closes, stops the polling before anything is claimed, so the
+approval stays for the retry. The audit record carries the cause. Ctrl-C in
+psql or mysql does NOT end it: both send the cancel on a separate connection,
+where no statement runs. Close the client instead. An `idle_timeout_sec`
+shorter than 5 minutes also ends the wait, since a held connection is idle.
+
+After a timeout the developer asks an approver, then runs the statement again.
+That retry collects the approval. The relay files nothing on the second
+attempt: the plane recognizes the same statement, consumes the approved review
+and answers that this one may go through. It answers that ONCE, since the
+third run of the same statement files a fresh review, and a rejection stays, so
+a refused statement is refused every time without paging anyone again.
+
+The budget and interval are constants, with no config field. A control plane
+older than the relay has no claim route: the relay then denies after the first
+poll, as it did before it could wait.
 
 Matching is on the exact bytes, so the retry must be the same statement, not
 an equivalent one. Two consequences worth knowing: a client using prepared

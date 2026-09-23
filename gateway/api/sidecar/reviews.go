@@ -85,20 +85,8 @@ func (e ruleNotAuthorized) Error() string {
 //	@Failure		400,401,412,413,422,500	{object}	openapi.HTTPError
 //	@Router			/sidecars/reviews [post]
 func PostReview(c *gin.Context) {
-	sidecar := apiroutes.SidecarFromContext(c)
+	sidecar := controlPlaneSidecar(c)
 	if sidecar == nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"message": "access denied"})
-		return
-	}
-
-	// A gateway would take the review and then never be able to settle it:
-	// approval there resolves a connection, and this review has none. Refuse
-	// rather than write a row nobody can act on. Checked after authentication,
-	// so an unauthenticated caller learns nothing about the deployment.
-	if !appconfig.Get().IsControlPlane() {
-		c.JSON(http.StatusPreconditionFailed, gin.H{
-			"message": "sidecar reviews are served by the control plane",
-		})
 		return
 	}
 
@@ -202,6 +190,67 @@ func PostReview(c *gin.Context) {
 		"failed creating sidecar review")
 }
 
+// ClaimReview
+//
+//	@Summary		Claim Sidecar Review
+//	@Description	Answer a sidecar waiting on one review it filed. An approved review is consumed once and releases the statement; any other status is returned as it stands. It never files a review.
+//	@Tags			Sidecars
+//	@Produce		json
+//	@Param			hoop-sidecar-token	header		string	true	"The token returned when the sidecar was created"
+//	@Param			id					path		string	true	"The review id"
+//	@Success		200					{object}	openapi.SidecarReviewResponse
+//	@Failure		401,404,412,500		{object}	openapi.HTTPError
+//	@Router			/sidecars/reviews/{id}/claim [post]
+func ClaimReview(c *gin.Context) {
+	sidecar := controlPlaneSidecar(c)
+	if sidecar == nil {
+		return
+	}
+
+	// Parsed before the query: the column is a uuid, and Postgres answers a
+	// malformed one with an error that would read as a 500.
+	reviewID := c.Param("id")
+	if _, err := uuid.Parse(reviewID); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "review not found"})
+		return
+	}
+
+	// Scoped to the calling sidecar, so a token cannot claim another
+	// sidecar's approval by guessing its id.
+	rev, err := models.GetSidecarReview(models.DB, sidecar.OrgID, sidecar.ID, reviewID)
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"message": "review not found"})
+		return
+	case err != nil:
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed loading the sidecar review")
+		return
+	}
+	answerExistingReview(c, sidecar, rev.ListenerName.String, rev)
+}
+
+// controlPlaneSidecar returns the sidecar the token named, or answers the
+// request and returns nil.
+//
+// A gateway would take a review and then never be able to settle it: approval
+// there resolves a connection, and a sidecar review has none. The mode is
+// checked after authentication, so an unauthenticated caller learns nothing
+// about the deployment.
+func controlPlaneSidecar(c *gin.Context) *models.Sidecar {
+	sidecar := apiroutes.SidecarFromContext(c)
+	if sidecar == nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"message": "access denied"})
+		return nil
+	}
+	if !appconfig.Get().IsControlPlane() {
+		c.JSON(http.StatusPreconditionFailed, gin.H{
+			"message": "sidecar reviews are served by the control plane",
+		})
+		return nil
+	}
+	return sidecar
+}
+
 // answerFiledReview reports a review this request filed. Forward is false: it
 // was filed a moment ago and no human has seen it.
 func answerFiledReview(c *gin.Context, sidecar *models.Sidecar, req openapi.SidecarReviewRequest,
@@ -239,7 +288,8 @@ func answerFiledReview(c *gin.Context, sidecar *models.Sidecar, req openapi.Side
 }
 
 // answerExistingReview answers a retry against the review already filed for its
-// statement. PENDING, REJECTED and REVOKED come back as they stand, so a
+// statement, and a waiting sidecar's claim of it by id (ClaimReview). PENDING,
+// REJECTED, REVOKED and EXECUTED come back as they stand, so a
 // rejection keeps denying instead of being retried into a fresh review.
 // APPROVED is claimed here, and only the claim's winner may forward.
 func answerExistingReview(c *gin.Context, sidecar *models.Sidecar, listenerName string, rev *models.Review) {

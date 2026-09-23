@@ -291,6 +291,7 @@ func (api *Api) buildSidecarRoutes(r *apiroutes.Router) {
 	// user, and TrackRequest requires a user email, so it would be a no-op
 	// that reads as an emitted event.
 	r.POST("/sidecars/reviews", r.SidecarAuthMiddleware, apisidecar.PostReview)
+	r.POST("/sidecars/reviews/:id/claim", r.SidecarAuthMiddleware, apisidecar.ClaimReview)
 	r.PUT("/sidecars/configuration", r.SidecarAuthMiddleware, apisidecar.ImportConfiguration)
 
 	r.POST("/sidecars",

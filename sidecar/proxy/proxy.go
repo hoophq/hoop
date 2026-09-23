@@ -556,6 +556,13 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 
 	log.Info("session opened", "upstream", s.cfg.Upstream)
 
+	// connCtx ends with the connection, and its cause says which side ended
+	// it. ctx is the listener's and outlives every connection, so a hold
+	// waiting on a human under it would outlive the client too, and spend an
+	// approval on a statement nobody is left to run.
+	connCtx, endConn := context.WithCancelCause(ctx)
+	defer endConn(nil)
+
 	// Both directions run concurrently; the first to finish tears down the
 	// other by closing its peer, which unblocks the pending Read.
 	var wg sync.WaitGroup
@@ -564,12 +571,12 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 	go func() {
 		defer wg.Done()
 		defer upstream.Close()
-		s.pump(ctx, g, client, upstream, inspect.FromClient, log)
+		s.pump(connCtx, endConn, g, client, upstream, inspect.FromClient, log)
 	}()
 	go func() {
 		defer wg.Done()
 		defer client.Close()
-		s.pump(ctx, g, upstream, client, inspect.FromServer, log)
+		s.pump(connCtx, endConn, g, upstream, client, inspect.FromServer, log)
 	}()
 
 	wg.Wait()
@@ -616,8 +623,13 @@ func (s *Server) dialUpstream(ctx context.Context) (net.Conn, error) {
 // On a denial it writes the in-protocol error (when a DenyWriter is
 // configured) and returns, which closes both halves via the deferred closes
 // in handle. It forwards nothing.
+//
+// A read error ends the connection's context through end, naming the side
+// that stopped, before anything is closed: whatever waits on the connection
+// learns why before the teardown reaches it.
 func (s *Server) pump(
 	ctx context.Context,
+	end context.CancelCauseFunc,
 	g *gate.Gate,
 	src, dst net.Conn,
 	dir inspect.Direction,
@@ -650,16 +662,18 @@ func (s *Server) pump(
 		sasl = &saslReassembler{}
 	}
 
-	buf := make([]byte, 32*1024)
+	// The client side reads ahead: see readAhead.
+	var read func() ([]byte, error)
+	if dir == inspect.FromClient {
+		next, stop := readAhead(src, s.cfg.IdleTimeout, end)
+		defer stop()
+		read = next
+	} else {
+		read = s.reader(src)
+	}
 	for {
-		if s.cfg.IdleTimeout > 0 {
-			_ = src.SetReadDeadline(time.Now().Add(s.cfg.IdleTimeout))
-		}
-
-		n, readErr := src.Read(buf)
-		if n > 0 {
-			chunk := buf[:n]
-
+		chunk, readErr := read()
+		if len(chunk) > 0 {
 			// The server negotiated TLS with US, not with the client, so it
 			// may offer channel binding the client cannot satisfy. Drop that
 			// mechanism before anything else looks at the bytes; see
@@ -744,12 +758,102 @@ func (s *Server) pump(
 		}
 
 		if readErr != nil {
+			end(endCause(dir, readErr))
 			if readErr != io.EOF && !isClosed(readErr) {
 				log.Debug("read ended", "direction", string(dir), "error", readErr)
 			}
 			return
 		}
 	}
+}
+
+// relayBufSize is one read's worth of bytes.
+const relayBufSize = 32 * 1024
+
+// reader returns a plain read of src, one buffer reused across calls. A chunk
+// is valid until the next call.
+func (s *Server) reader(src net.Conn) func() ([]byte, error) {
+	buf := make([]byte, relayBufSize)
+	return func() ([]byte, error) {
+		if s.cfg.IdleTimeout > 0 {
+			_ = src.SetReadDeadline(time.Now().Add(s.cfg.IdleTimeout))
+		}
+		n, err := src.Read(buf)
+		return buf[:n], err
+	}
+}
+
+// readAhead reads src on its own goroutine, so a client that hangs up is seen
+// while the pump is busy inside the gate.
+//
+// The pump blocks there for as long as a held statement waits on a human, and
+// nothing else reads the client socket. Without this the hangup would go
+// unseen until the wait ran out, and an approval landing in between would be
+// spent on a statement with nobody left to run it for. A read error ends the
+// connection's context the moment it happens, not when the pump gets to it.
+//
+// Two buffers alternate over an unbuffered channel. The reader fills one while
+// the pump works on the other, and it hands the next over only when the pump
+// asks for it, which is when the pump is done with the previous one. So a
+// chunk is valid until the next call, as with reader, and the client is read
+// at most one chunk ahead: a client that pipelined past a held statement is
+// not seen hanging up until the pump drains it.
+//
+// stop releases the goroutine once the pump is gone. It may still be blocked
+// in Read; closing src, which handle does, releases that.
+func readAhead(src net.Conn, idle time.Duration, end context.CancelCauseFunc) (next func() ([]byte, error), stop func()) {
+	type result struct {
+		data []byte
+		err  error
+	}
+	results := make(chan result)
+	quit := make(chan struct{})
+	go func() {
+		bufs := [2][]byte{make([]byte, relayBufSize), make([]byte, relayBufSize)}
+		for i := 0; ; i ^= 1 {
+			if idle > 0 {
+				_ = src.SetReadDeadline(time.Now().Add(idle))
+			}
+			n, err := src.Read(bufs[i])
+			// A read that returned BYTES ends the connection through the
+			// pump instead, once those bytes have been judged. A legal
+			// final request arrives together with its io.EOF on a socket
+			// the client half-closed, and ending the connection here would
+			// deny that request before it was even filed. A read with
+			// nothing to hand over ends it now: that is the hangup the pump
+			// is waiting to hear about while it holds a statement.
+			if err != nil && n == 0 {
+				end(endCause(inspect.FromClient, err))
+			}
+			select {
+			case results <- result{bufs[i][:n], err}:
+			case <-quit:
+				return
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+	next = func() ([]byte, error) {
+		r := <-results
+		return r.data, r.err
+	}
+	return next, func() { close(quit) }
+}
+
+// endCause names the side of a connection that stopped, for whatever was
+// waiting on the connection when it did. It reaches the audit record of a
+// held statement, so it says what happened rather than which error type.
+func endCause(dir inspect.Direction, err error) error {
+	side := "the client"
+	if dir == inspect.FromServer {
+		side = "the upstream"
+	}
+	if errors.Is(err, os.ErrDeadlineExceeded) {
+		return fmt.Errorf("%s sent nothing for longer than the idle timeout", side)
+	}
+	return fmt.Errorf("%s closed the connection", side)
 }
 
 // isClosed suppresses the routine teardown races between the two pump

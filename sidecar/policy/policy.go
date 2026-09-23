@@ -26,6 +26,7 @@
 package policy
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"regexp"
@@ -152,6 +153,14 @@ type EvalContext struct {
 	// them. Copying the client per statement to stamp a user on it scales
 	// with neither.
 	Context map[string]string
+
+	// ConnCtx is the context of the connection the statement arrived on, and
+	// ends when the connection does. Nil means there is none to watch.
+	//
+	// A field rather than an argument because Evaluator takes none and
+	// this struct already lives for exactly one statement. The analyzer's
+	// hold reads it, so a wait for a human ends with the connection.
+	ConnCtx context.Context
 }
 
 // Finding is one producer's contribution to a decision it does not make.

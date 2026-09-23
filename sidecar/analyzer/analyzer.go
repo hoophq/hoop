@@ -188,12 +188,12 @@ const (
 
 	// ActionRequireReview holds the statement for human approval.
 	//
-	// The hold is a denial with a handle: the statement is refused, a
-	// review is filed with the backend Config.Review reaches, and the id
-	// travels back in the message. Nothing waits on the connection for a
-	// human. Approval arrives minutes or hours later, when the client's
-	// socket is long gone, so the release happens on a RETRY, which the
-	// backend matches against the exact bytes it already approved.
+	// A review is filed with the backend Config.Review reaches, and the
+	// statement waits on its connection for a few minutes while the review
+	// is pending. An approval in that window releases it there. After it,
+	// the statement is refused with the review id in the message, and the
+	// release happens on a RETRY, which the backend matches against the
+	// exact bytes it already approved.
 	//
 	// That is why an approval is spent once and why the statement sent for
 	// review is the raw text rather than the model's input: both sides
