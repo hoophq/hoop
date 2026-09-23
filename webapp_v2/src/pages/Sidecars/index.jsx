@@ -5,6 +5,7 @@ import Button from '@/components/Button'
 import PageLoader from '@/components/PageLoader'
 import { useMinDelay } from '@/hooks/useMinDelay'
 import { useSidecarStore } from '@/stores/useSidecarStore'
+import { useUserStore } from '@/stores/useUserStore'
 import { showSnackbar } from '@/utils/snackbar'
 import AddSidecarModal from './components/AddSidecarModal'
 import SidecarMethodCards from './components/SidecarMethodCards'
@@ -19,6 +20,7 @@ import SidecarsTable from './sections/SidecarsTable'
  */
 export default function Sidecars() {
   const { sidecars, loading, error, fetchSidecars, deleteSidecar } = useSidecarStore()
+  const isFreeLicense = useUserStore((s) => s.isFreeLicense)
   const showLoader = useMinDelay(loading, 500)
 
   const [addOpened, { open: openAdd, close: closeAdd }] = useDisclosure(false)
@@ -66,7 +68,11 @@ export default function Sidecars() {
               Connect existing sidecars to this control plane, or create a new one.
             </Text>
           </Stack>
-          {count > 0 && <Button onClick={openAdd}>Add new Sidecar</Button>}
+          {count > 0 && (
+            <Button onClick={openAdd} disabled={isFreeLicense}>
+              Add new Sidecar
+            </Button>
+          )}
         </Group>
 
         <SidecarLicenseNotice />
