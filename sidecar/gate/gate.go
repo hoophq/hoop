@@ -278,12 +278,29 @@ type Gate struct {
 	serverFilter StreamFilter
 
 	// mu guards the counters, which Close reads while a data-path goroutine
-	// may still be incrementing them. The inspectors are not guarded: they
-	// are per-direction and each direction has one reader.
+	// may still be incrementing them, and the exchange state below, which
+	// the two pump goroutines of a byte-path gate write from opposite
+	// directions. The inspectors are not guarded: they are per-direction
+	// and each direction has one reader.
 	mu         sync.Mutex
 	statements int
 	denied     int
 	closed     bool
+
+	// skipResponses is the set of policy sources that, deciding a request
+	// of the current exchange, declined its response side; responded says a
+	// FromServer statement has been seen since the last FromClient one.
+	//
+	// An exchange is one request and the responses that answer it: a pgwire
+	// Query and its rows, an HTTP request and its response, a gRPC call's
+	// headers, messages and trailer. The gate has no protocol notion of
+	// that, so it uses the one fact every protocol shares: a FromClient
+	// statement arriving after a FromServer one is the next exchange, and
+	// the set is cleared. A client-streaming or bidi RPC re-establishes it
+	// on every request message, which costs nothing — every FromClient
+	// statement is evaluated in full regardless.
+	skipResponses map[string]bool
+	responded     bool
 }
 
 // New builds a Gate for a session.
@@ -938,10 +955,57 @@ func (g *Gate) evaluate(ctx context.Context, stmt inspect.Statement) policy.Verd
 	// consults OPA on both sides of the analyzer holds TWO of them inside a
 	// policy.Chain, which a type assertion for a bare client silently
 	// misses, leaving input.context empty on exactly the lanes that need it.
-	if ce, ok := g.policy.(policy.ContextualEvaluator); ok {
-		return ce.EvaluateWith(stmt, &policy.EvalContext{Context: g.polCtx, ConnCtx: ctx})
+	ce, ok := g.policy.(policy.ContextualEvaluator)
+	if !ok {
+		return g.policy.Evaluate(stmt)
 	}
-	return g.policy.Evaluate(stmt)
+	ec := &policy.EvalContext{Context: g.polCtx, ConnCtx: ctx}
+	g.seedExchange(stmt, ec)
+	v := ce.EvaluateWith(stmt, ec)
+	g.recordExchange(stmt, ec)
+	return v
+}
+
+// seedExchange tracks the exchange boundary and, on a response statement,
+// turns every source that declined this exchange's responses into a
+// Requested veto the source reads like any other.
+func (g *Gate) seedExchange(stmt inspect.Statement, ec *policy.EvalContext) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	switch stmt.Direction {
+	case inspect.FromClient:
+		if g.responded {
+			g.responded = false
+			clear(g.skipResponses)
+		}
+	case inspect.FromServer:
+		g.responded = true
+		if len(g.skipResponses) == 0 {
+			return
+		}
+		ec.Requested = make(map[string]bool, len(g.skipResponses))
+		for source := range g.skipResponses {
+			ec.Requested[source] = false
+		}
+	}
+}
+
+// recordExchange keeps what a request decision declined, for the responses
+// that follow it. Sticky within the exchange: a later request statement of
+// the same exchange (a client-streaming message) that says nothing does not
+// undo what the first one said.
+func (g *Gate) recordExchange(stmt inspect.Statement, ec *policy.EvalContext) {
+	if stmt.Direction != inspect.FromClient || len(ec.SkipResponses) == 0 {
+		return
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.skipResponses == nil {
+		g.skipResponses = make(map[string]bool, len(ec.SkipResponses))
+	}
+	for source := range ec.SkipResponses {
+		g.skipResponses[source] = true
+	}
 }
 
 // writeAudit records ev even when ctx has ended.

@@ -32,7 +32,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -51,7 +50,6 @@ import (
 	"github.com/hoophq/hoop/sidecar/license"
 	"github.com/hoophq/hoop/sidecar/policy"
 	"github.com/hoophq/hoop/sidecar/proxy"
-	"github.com/hoophq/hoop/sidecar/session"
 	"github.com/hoophq/hoop/sidecar/store"
 )
 
@@ -1354,11 +1352,6 @@ func buildServer(
 			"reason", "pgwire negotiates TLS in-band, so nothing in front can")
 	}
 
-	var identityFn func(net.Conn) session.Identity
-	if lc.IdentityHeader != "" {
-		identityFn = headerIdentity(lc.IdentityHeader)
-	}
-
 	return proxy.NewServer(proxy.Config{
 		Listen:              lc.Listen,
 		Network:             lc.Network,
@@ -1373,7 +1366,7 @@ func buildServer(
 		Masker:              ln.masker,
 		FailOnAuditError:    ac.failOnAuditError(),
 		DenyWriter:          proxy.ProtocolDenyWriter{},
-		IdentityFn:          identityFn,
+		IdentityHeader:      lc.IdentityHeader,
 		CodecFactory:        ln.codecFactory,
 		Metrics:             ln.metrics,
 		IdleTimeout:         time.Duration(lc.IdleTimeoutSec) * time.Second,
@@ -1735,25 +1728,5 @@ func serveAdmin(
 	log.Info("admin endpoint listening", "listen", addr)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Error("admin endpoint failed", "error", err)
-	}
-}
-
-// headerIdentity extracts the authenticated subject from an HTTP header on
-// the first bytes of a connection.
-//
-// This peeks at the connection without consuming it, which a plain net.Conn
-// cannot do, so only listeners that opt in via IdentityHeader get it. It is
-// safe only when nothing but the authenticating proxy can reach the
-// listener.
-func headerIdentity(header string) func(net.Conn) session.Identity {
-	return func(c net.Conn) session.Identity {
-		// The proxy reads the stream itself; extracting the header here would
-		// require buffering ahead of the relay. Instead of duplicating that
-		// machinery, the gate resolves http identity from the inspected
-		// request, and this function contributes only the peer address.
-		//
-		// It stays a named function so the config surface says where identity
-		// comes from today.
-		return session.Identity{PeerAddr: c.RemoteAddr().String()}
 	}
 }

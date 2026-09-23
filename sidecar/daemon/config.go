@@ -261,7 +261,9 @@ type ListenerConfig struct {
 	DownstreamTLS *TLSConfig `json:"downstream_tls"`
 
 	// IdentityHeader names an HTTP header carrying the authenticated
-	// subject, for the http protocol behind an authenticating proxy.
+	// subject, for the http, grpc and spanner protocols behind an
+	// authenticating proxy. On http it is read from the first request on
+	// the connection; on grpc from each RPC's metadata.
 	//
 	// Trusting a header is safe only when nothing but that proxy can reach
 	// this listener, which the sidecar topology guarantees by binding
@@ -493,6 +495,27 @@ type OPAConfig struct {
 	// refused otherwise, since a gate over nothing is a round trip that
 	// buys nothing.
 	Gate bool `json:"gate"`
+
+	// Responses says whether OPA is consulted on FromServer statements.
+	// Absent or true is today's behaviour: every statement in both
+	// directions. False keeps OPA on the request side only.
+	//
+	// It exists because a streaming lane pays one OPA round trip PER
+	// RESPONSE MESSAGE: a grpc lane with capture_payload on renders every
+	// message of a 50k-row BigQuery read into its own statement, so a
+	// policy that only ever reads input.direction == "request" still costs
+	// 50k serial calls on the response path. Local rules — pii on captured
+	// rows, grpc_status on the trailer — masking and the audit trail are
+	// untouched; only the round trip goes. A response statement OPA never
+	// saw carries opa.skipped on its audit record.
+	//
+	// A pointer so that absent and true can be told apart: the default has
+	// to stay on, and `off()` has to see an empty block.
+	//
+	// The policy can say the same per exchange instead of per lane, by
+	// returning `responses: false` beside its request decision; see the
+	// OPAClient documentation. This switch is the coarse one.
+	Responses *bool `json:"responses,omitempty"`
 }
 
 // client builds an OPA evaluator for one phase of this lane's chain.
@@ -502,10 +525,11 @@ func (o *OPAConfig) client(phase policy.Phase) *policy.OPAClient {
 		timeout = 2 * time.Second
 	}
 	return &policy.OPAClient{
-		URL:      o.URL,
-		Timeout:  timeout,
-		FailOpen: o.FailOpen,
-		Phase:    phase,
+		URL:           o.URL,
+		Timeout:       timeout,
+		FailOpen:      o.FailOpen,
+		Phase:         phase,
+		SkipResponses: o.Responses != nil && !*o.Responses,
 	}
 }
 
@@ -519,7 +543,7 @@ func (o *OPAConfig) enabled() bool { return o != nil && o.URL != "" }
 // a fail_open with no url configures a client that cannot be built, which
 // validateLane refuses separately.
 func (o *OPAConfig) off() bool {
-	return o != nil && o.URL == "" && o.TimeoutSec == 0 && !o.FailOpen && !o.Gate
+	return o != nil && o.URL == "" && o.TimeoutSec == 0 && !o.FailOpen && !o.Gate && o.Responses == nil
 }
 
 // MaskConfig configures response rewriting.
@@ -1075,6 +1099,18 @@ func (c *Config) Validate() error {
 			// nothing in the startup log.
 			if _, err := l.DownstreamTLS.BuildDownstreamTLS(); err != nil {
 				problems = append(problems, fmt.Sprintf("%s: %v", name, err))
+			}
+		}
+
+		// identity_header is read by the http relay and the grpc server and
+		// by nothing else. On any other lane it would load, count in
+		// analytics, and leave every session anonymous, which is how the
+		// http path behaved before it read the header at all.
+		if l.IdentityHeader != "" && !isSSH(l) {
+			if p := inspect.Protocol(l.Protocol); p != inspect.HTTP && !isGRPCTransport(l) {
+				problems = append(problems, fmt.Sprintf(
+					"%s: identity_header is only supported on http, grpc and spanner, not %q",
+					name, l.Protocol))
 			}
 		}
 		if l.MySQLAuthKeyFile != "" {

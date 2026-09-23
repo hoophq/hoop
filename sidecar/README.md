@@ -693,6 +693,15 @@ connection to the backend (see [Upstream TLS](#upstream-tls)),
 sessions, since psql idles between keystrokes), and `max_conns` bounds
 concurrency.
 
+`identity_header` names the request header an authenticating proxy in front
+sets from a verified credential, and is valid on `http`, `grpc` and `spanner`
+lanes only. An http lane reads it from the FIRST request on each connection,
+before the session exists, so the policy context and the `session_start`
+audit row both carry the principal; a later request on the same keep-alive
+connection does not change it. A grpc lane reads it per RPC. The header is
+trusted exactly as far as the network is: nothing but that proxy may be able
+to reach the listener.
+
 ### 2. Know how a listener inherits
 
 | Field | Merge | Why |
@@ -2251,6 +2260,57 @@ requests nothing even under `fail_open: false`. A gate is an optimization over
 a policy someone already wrote, so making its absence deny would mean turning
 the gate on silently blocks every statement until its author writes a second
 rule they never asked for. The decide phase keeps the normal reading.
+
+### Keeping OPA off the response side
+
+Every statement of an exchange reaches OPA, both directions, and on a
+streaming lane that is one round trip PER RESPONSE MESSAGE. A grpc lane with
+`capture_payload: true` renders every message into its own statement, so a
+50k-row BigQuery read against a policy that only ever reads
+`input.direction == "client"` still costs 50k serial calls on the response
+path — seconds of latency for calls that can only say yes. Two switches
+remove them. Both leave the local rules (`pii` on captured rows,
+`grpc_status` on the trailer), masking and the audit trail exactly as they
+were; only the round trip goes. A response statement OPA never saw carries
+`opa.skipped: responses` on its audit record, so "allowed, no rule" can be
+told apart from an allow OPA gave.
+
+**Per lane**, the operator's word:
+
+```yaml
+listeners:
+  - name: bigquery
+    protocol: grpc
+    opa:
+      url: http://opa:8181/v1/data/hoop/inspect/result
+      responses: false        # absent or true: today's behaviour
+```
+
+`responses: false` keeps this lane's OPA on `FromClient` statements only.
+Every `FromServer` statement — response messages AND the trailer — is
+answered locally. A policy that reads `grpc_status` in Rego does not belong
+on such a lane; write it as a local `grpc_status` rule instead.
+
+**Per exchange**, the policy's word: return `responses: false` beside the
+decision on a request statement.
+
+```rego
+result := {"allow": true, "responses": false} if {
+    input.direction == "client"
+    input.metadata["grpc.method"] == "ReadRows"
+}
+```
+
+That exchange's response statements skip OPA; the next request asks again.
+It is read on every phase and on request statements only — a response
+saying it answers a question nobody will ask. On a two-phase lane one
+answer covers both OPA calls, because the veto is keyed by source, not by
+client. An exchange is one request and the responses that answer it: the
+gate draws the boundary at a `FromClient` statement that follows a
+`FromServer` one, which is the fact every protocol shares. A client-
+streaming RPC re-establishes the opt-out on every request message, at no
+extra cost — every request statement is evaluated in full regardless.
+Absent or `true` changes nothing.
 
 ### Reporting instead of denying
 

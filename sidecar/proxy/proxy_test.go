@@ -285,6 +285,84 @@ func TestSessionAuditLifecycle(t *testing.T) {
 	}
 }
 
+// An http lane behind an authenticating proxy names its principal in a
+// header. Before the relay read it, every http session was "anonymous"
+// while the same key on a grpc lane worked, and nothing said why.
+//
+// The head is split across two writes with a pause between them so the
+// peek has to grow past the first segment; the body follows the blank line
+// in the second write so it must reach the upstream intact behind the head.
+func TestHTTPIdentityHeaderNamesThePrincipal(t *testing.T) {
+	up := newEchoUpstream(t, []byte("HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n"))
+	sink := audit.NewMemorySink(64)
+
+	srv := startServer(t, proxy.Config{
+		Upstream:       up.addr(),
+		Protocol:       inspect.HTTP,
+		Connection:     "api",
+		Audit:          sink,
+		IdentityHeader: "X-Forwarded-User",
+	})
+
+	c, err := net.Dial("tcp", srv.Addr().String())
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	const head1 = "POST /users HTTP/1.1\r\nHost: api\r\nx-forwarded-user: alice@example.com\r\n"
+	const head2 = "Content-Type: text/plain\r\nContent-Length: 5\r\n\r\n"
+	const body = "hello"
+	if _, err := c.Write([]byte(head1)); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	time.Sleep(50 * time.Millisecond)
+	if _, err := c.Write([]byte(head2 + body)); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	c.SetReadDeadline(time.Now().Add(2 * time.Second))
+	resp := make([]byte, 512)
+	n, _ := c.Read(resp)
+	if !strings.HasPrefix(string(resp[:n]), "HTTP/1.1 204") {
+		t.Fatalf("response = %q; the request never came back through the relay", resp[:n])
+	}
+	c.Close()
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) && !hasKind(sink.Events(), audit.KindSessionEnd) {
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if got := string(up.got()); got != head1+head2+body {
+		t.Errorf("upstream received %q; the peek must not consume or reorder the request", got)
+	}
+	events := sink.Events()
+	for _, k := range []audit.Kind{audit.KindSessionStart, audit.KindStatement, audit.KindSessionEnd} {
+		if !hasKind(events, k) {
+			t.Errorf("no %s recorded", k)
+		}
+	}
+	for _, ev := range events {
+		if ev.Principal != "alice@example.com" {
+			t.Errorf("event %s has principal %q; the identity header must reach the audit trail",
+				ev.Kind, ev.Principal)
+		}
+	}
+}
+
+// The header is the operator's word for who is calling. On a lane whose
+// relay never reads it, accepting the key would leave every session
+// anonymous with no hint why.
+func TestIdentityHeaderRefusedOffHTTP(t *testing.T) {
+	_, err := proxy.NewServer(proxy.Config{
+		Listen:         "127.0.0.1:0",
+		Upstream:       "127.0.0.1:1",
+		Protocol:       inspect.Postgres,
+		IdentityHeader: "x-user",
+	})
+	if err == nil {
+		t.Fatal("identity header accepted on a postgres lane")
+	}
+}
+
 func hasKind(events []audit.Event, k audit.Kind) bool {
 	for _, e := range events {
 		if e.Kind == k {
