@@ -443,14 +443,6 @@ import Switch from '@/components/Switch'
 <Switch label="Enable integration" checked={enabled} onChange={(e) => setEnabled(e.currentTarget.checked)} />
 ```
 
-### `FileInput`
-File picker: click or drop a file on the field. Clearable, with an upload icon.
-```jsx
-import FileInput from '@/components/FileInput'
-
-<FileInput label="CSV file" accept=".csv,text/csv" value={file} onChange={setFile} />
-```
-
 ### `TextInput`
 Standard text input field.
 ```jsx

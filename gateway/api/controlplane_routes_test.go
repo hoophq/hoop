@@ -11,7 +11,6 @@ import (
 	"github.com/gin-gonic/gin"
 	apiprovisioning "github.com/hoophq/hoop/gateway/api/provisioning"
 	apisidecar "github.com/hoophq/hoop/gateway/api/sidecar"
-	userapi "github.com/hoophq/hoop/gateway/api/user"
 	"github.com/hoophq/hoop/gateway/appconfig"
 )
 
@@ -88,7 +87,6 @@ func TestControlPlaneOnlyRoutesAnswer412OnAGateway(t *testing.T) {
 		{"DELETE /serverconfig/provisioning", apiprovisioning.StopManagingGroups},
 		{"GET /sidecars/:nameOrID/slack-channels", apisidecar.GetSlackChannels},
 		{"PUT /sidecars/:nameOrID/slack-channels", apisidecar.PutSlackChannels},
-		{"POST /users/import", userapi.ImportUsers},
 	} {
 		t.Run(tt.route, func(t *testing.T) {
 			method, path, _ := strings.Cut(tt.route, " ")

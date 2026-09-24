@@ -346,12 +346,12 @@ func notifySlack(sidecar *models.Sidecar, rev *models.Review, listenerName, stat
 	channels, err := models.ResolveSidecarSlackChannels(models.DB, sidecar.OrgID, sidecar.ID, listenerName)
 	if err != nil {
 		log.With("sid", rev.SessionID, "review-id", rev.ID).
-			Warnf("failed reading the sidecar slack channels, posting to the default channel only, reason=%v", err)
+			Warnf("failed reading the listener slack channels, posting to the default channel only, reason=%v", err)
 		channels = nil
 	}
 	if len(channels) == 0 && slackSvc.DefaultChannel() == "" {
 		log.With("sid", rev.SessionID, "review-id", rev.ID).
-			Warnf("no slack channel is set for this sidecar or the org, nobody was notified of this review")
+			Warnf("no slack channel is set for this listener or the org, nobody was notified of this review")
 		return
 	}
 

@@ -16,15 +16,15 @@ function errorMessage(error) {
 }
 
 /**
- * Edits where one sidecar's reviews are posted. The PUT replaces the whole
- * set, so the modal loads it first and sends every field back. An empty
- * listener field inherits the sidecar's channels.
+ * Edits where the reviews of each listener of one sidecar are posted. A
+ * listener is the unit, as for guardrails, data masking and the analyzer. The
+ * PUT replaces the whole set, so the modal loads it first and sends every
+ * listener back.
  */
 function SidecarSlackChannelsModal({ sidecar, listeners, onClose }) {
   const [status, setStatus] = useState('loading')
   const [loadError, setLoadError] = useState(null)
   const [saving, setSaving] = useState(false)
-  const [channels, setChannels] = useState([])
   const [byListener, setByListener] = useState({})
 
   useEffect(() => {
@@ -33,7 +33,6 @@ function SidecarSlackChannelsModal({ sidecar, listeners, onClose }) {
       .slackChannels(sidecar.id)
       .then(({ data }) => {
         if (!current) return
-        setChannels(data?.channels ?? [])
         setByListener(Object.fromEntries((data?.listeners ?? []).map((l) => [l.name, l.channels ?? []])))
         setStatus('ready')
       })
@@ -51,7 +50,6 @@ function SidecarSlackChannelsModal({ sidecar, listeners, onClose }) {
     setSaving(true)
     try {
       await sidecarsService.updateSlackChannels(sidecar.id, {
-        channels,
         listeners: listeners
           .map((l) => ({ name: l.name, channels: byListener[l.name] ?? [] }))
           .filter((l) => l.channels.length > 0),
@@ -80,25 +78,22 @@ function SidecarSlackChannelsModal({ sidecar, listeners, onClose }) {
             </Text>
           </Alert>
 
-          <TagsInput
-            label="Sidecar channels"
-            description="Reviews from every listener of this sidecar."
-            placeholder="C039AQNN5DF"
-            splitChars={SPLIT_CHARS}
-            value={channels}
-            onChange={setChannels}
-            data-autofocus
-          />
+          {listeners.length === 0 && (
+            <Text size="sm" c="dimmed">
+              This sidecar has no named listener.
+            </Text>
+          )}
 
-          {listeners.map((listener) => (
+          {listeners.map((listener, index) => (
             <TagsInput
               key={listener.name}
               label={`Listener ${listener.name}`}
-              description="Replaces the sidecar channels for this listener. Empty inherits them."
+              description="Reviews this listener holds. Empty sends them to the default channel only."
               placeholder="C031T9LDGAH"
               splitChars={SPLIT_CHARS}
               value={byListener[listener.name] ?? []}
               onChange={(value) => setByListener((prev) => ({ ...prev, [listener.name]: value }))}
+              data-autofocus={index === 0 || undefined}
             />
           ))}
 

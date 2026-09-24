@@ -403,13 +403,6 @@ func (api *Api) buildRoutes(r *apiroutes.Router, mode appconfig.AppMode) {
 		r.AuthMiddleware,
 		api.AuditMiddleware(),
 		userapi.Create)
-	// The control plane's file import of users and groups (ADR-0019). Both
-	// modes register it; a gateway answers 412.
-	r.POST("/users/import",
-		apiroutes.AdminOnlyAccessRole,
-		r.AuthMiddleware,
-		api.AuditMiddleware(),
-		userapi.ImportUsers)
 	r.PUT("/users/:emailOrID",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,

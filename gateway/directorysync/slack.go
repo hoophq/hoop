@@ -6,13 +6,12 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"sync"
 
 	slackservice "github.com/hoophq/hoop/gateway/slack"
 )
 
-// ErrSlackNotConfigured refuses a Slack sync for an org whose Slack app is not
-// running.
+// ErrSlackNotConfigured refuses a Slack import for an org whose Slack app is
+// not running.
 var ErrSlackNotConfigured = errors.New("the Slack integration is not configured or not running; set it up on the Slack page first")
 
 // slackDirectory is the part of the Slack service the import reads.
@@ -21,171 +20,134 @@ type slackDirectory interface {
 	ListUserGroups(ctx context.Context) ([]slackservice.UserGroup, error)
 }
 
-// slackProvider reads Slack user groups as the directory. Group names are the
-// user group handle: @dba-leads is the hoop group dba-leads.
-//
-// One run makes one users.list and one usergroups.list call, whatever the
-// number of groups picked.
-type slackProvider struct {
-	api slackDirectory
-
-	once    sync.Once
-	loadErr error
-	users   map[string]slackservice.DirectoryUser
-	groups  map[string]slackservice.UserGroup
-}
-
-// NewSlackProvider reads the org's running Slack app. It stores no credential:
-// the app's bot token is the Slack integration's own.
-func NewSlackProvider(orgID string) (Provider, error) {
+// openSlack returns the org's running Slack app. The import stores no
+// credential: the app's bot token is the Slack integration's own. Tests
+// replace it.
+var openSlack = func(orgID string) (slackDirectory, error) {
 	ss := slackservice.GetServiceInstance(orgID)
 	if ss == nil {
 		return nil, ErrSlackNotConfigured
 	}
-	return &slackProvider{api: ss}, nil
+	return ss, nil
 }
 
-func (p *slackProvider) load(ctx context.Context) error {
-	p.once.Do(func() {
-		users, err := p.api.ListUsers(ctx)
-		if err != nil {
-			p.loadErr = err
-			return
-		}
-		groups, err := p.api.ListUserGroups(ctx)
-		if err != nil {
-			p.loadErr = err
-			return
-		}
-		p.users = make(map[string]slackservice.DirectoryUser, len(users))
-		for _, u := range users {
-			p.users[u.ID] = u
-		}
-		p.groups = make(map[string]slackservice.UserGroup, len(groups))
-		for _, g := range groups {
-			if g.IsExternal {
-				// A group shared from another organization is edited there.
-				continue
-			}
-			p.groups[g.ID] = g
-		}
-	})
-	return p.loadErr
+// workspace is one read of Slack: one users.list and one usergroups.list
+// call, whatever the number of groups picked.
+type workspace struct {
+	users  map[string]slackservice.DirectoryUser
+	groups map[string]slackservice.UserGroup
 }
 
-func (p *slackProvider) ListGroups(ctx context.Context) ([]Group, error) {
-	if err := p.load(ctx); err != nil {
+func readWorkspace(ctx context.Context, api slackDirectory) (*workspace, error) {
+	users, err := api.ListUsers(ctx)
+	if err != nil {
 		return nil, err
 	}
-	out := make([]Group, 0, len(p.groups))
-	for _, g := range p.groups {
-		out = append(out, Group{ID: g.ID, Name: strings.TrimPrefix(g.Handle, "@")})
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
-	return out, nil
-}
-
-// ListMembers returns the members Slack still vouches for: not deactivated,
-// not a bot, not a guest and not from another organization.
-func (p *slackProvider) ListMembers(ctx context.Context, groupID string) ([]User, error) {
-	if err := p.load(ctx); err != nil {
+	groups, err := api.ListUserGroups(ctx)
+	if err != nil {
 		return nil, err
 	}
-	g, ok := p.groups[groupID]
-	if !ok {
-		return nil, fmt.Errorf("slack user group %s not found", groupID)
+	w := &workspace{
+		users:  make(map[string]slackservice.DirectoryUser, len(users)),
+		groups: make(map[string]slackservice.UserGroup, len(groups)),
 	}
-	var out []User
-	for _, id := range g.Users {
-		u, ok := p.users[id]
-		if !ok || !vouched(u) {
+	for _, u := range users {
+		w.users[u.ID] = u
+	}
+	for _, g := range groups {
+		if g.IsExternal {
+			// A group shared from another organization is edited there.
 			continue
 		}
-		out = append(out, User{
-			ExternalID: u.ID,
-			Email:      strings.ToLower(strings.TrimSpace(u.Email)),
-			Name:       u.Name,
-		})
+		w.groups[g.ID] = g
 	}
-	return out, nil
+	return w, nil
+}
+
+// groupName is the hoop group name of a user group: its handle, without the
+// @. @dba-leads is the group dba-leads.
+func groupName(g slackservice.UserGroup) string {
+	return strings.TrimPrefix(g.Handle, "@")
+}
+
+// members returns the members Slack still vouches for: not deactivated, not a
+// bot, not a guest and not from another organization.
+func (w *workspace) members(g slackservice.UserGroup) []slackservice.DirectoryUser {
+	var out []slackservice.DirectoryUser
+	for _, id := range g.Users {
+		if u, ok := w.users[id]; ok && vouched(u) {
+			out = append(out, u)
+		}
+	}
+	return out
 }
 
 func vouched(u slackservice.DirectoryUser) bool {
 	return !u.Deleted && !u.IsBot && !u.IsRestricted && !u.IsUltraRestricted && !u.IsStranger
 }
 
-// CheckGroups refuses a user group whose last editor is not a workspace admin
-// or owner. hoop cannot restrict who edits user groups, and Slack does not say
-// whether the identity provider manages a group, so the last editor is the
-// only signal. allowMemberManaged is the admin's explicit opt out.
-func (p *slackProvider) CheckGroups(ctx context.Context, groupIDs []string, allowMemberManaged bool) error {
-	if allowMemberManaged {
-		return nil
+// adminManaged reports whether the last editor of the group is a workspace
+// admin or owner. hoop cannot restrict who edits user groups, and Slack does
+// not say whether the identity provider manages a group, so the last editor
+// is the only signal.
+func (w *workspace) adminManaged(g slackservice.UserGroup) bool {
+	editor := g.UpdatedBy
+	if editor == "" {
+		editor = g.CreatedBy
 	}
-	if err := p.load(ctx); err != nil {
-		return err
-	}
-	var refused []string
-	for _, id := range groupIDs {
-		g, ok := p.groups[id]
-		if !ok {
-			continue
-		}
-		editor := g.UpdatedBy
-		if editor == "" {
-			editor = g.CreatedBy
-		}
-		if e, ok := p.users[editor]; ok && (e.IsAdmin || e.IsOwner) {
-			continue
-		}
-		refused = append(refused, "@"+strings.TrimPrefix(g.Handle, "@"))
-	}
-	if len(refused) == 0 {
-		return nil
-	}
-	sort.Strings(refused)
-	return fmt.Errorf("user group(s) %s were last edited by a member who is not a Slack workspace admin or owner; "+
-		"restrict user group editing to admins in the Slack workspace settings, or allow member-managed groups",
-		strings.Join(refused, ", "))
+	e, ok := w.users[editor]
+	return ok && (e.IsAdmin || e.IsOwner)
 }
 
-// DeletedUsers returns the Slack ids of deactivated members.
-func (p *slackProvider) DeletedUsers(ctx context.Context) (map[string]bool, error) {
-	if err := p.load(ctx); err != nil {
-		return nil, err
-	}
-	out := map[string]bool{}
-	for id, u := range p.users {
-		if u.Deleted {
-			out[id] = true
+// selected returns the picked groups, or why the run must not use them: a
+// group that is gone, or one a member edited last while allowMemberManaged is
+// off.
+func (w *workspace) selected(groupIDs []string, allowMemberManaged bool) ([]slackservice.UserGroup, error) {
+	var out []slackservice.UserGroup
+	var refused []string
+	for _, id := range groupIDs {
+		g, ok := w.groups[id]
+		if !ok {
+			return nil, fmt.Errorf("slack user group %s no longer exists; remove it from the import", id)
 		}
+		if !allowMemberManaged && !w.adminManaged(g) {
+			refused = append(refused, "@"+groupName(g))
+		}
+		out = append(out, g)
+	}
+	if len(refused) > 0 {
+		sort.Strings(refused)
+		return nil, fmt.Errorf("user group(s) %s were last edited by a member who is not a Slack workspace admin or owner; "+
+			"restrict user group editing to admins in the Slack workspace settings, or allow member-managed groups",
+			strings.Join(refused, ", "))
 	}
 	return out, nil
 }
 
-func (p *slackProvider) LinksSlackID() bool { return true }
-
-// GovernedGroup is a group with whether its last editor may be trusted.
-type GovernedGroup struct {
-	Group
+// Group is a Slack user group an admin can pick.
+type Group struct {
+	ID   string
+	Name string
+	// AdminManaged is false when a member who is not a workspace admin or
+	// owner edited the group last: the import refuses it unless member-managed
+	// groups are allowed.
 	AdminManaged bool
 }
 
-// ListGroupsWithGovernance lists the provider's groups, each marked with
-// whether the run would accept it without allowing member-managed groups.
-func ListGroupsWithGovernance(ctx context.Context, p Provider) ([]GovernedGroup, error) {
-	groups, err := p.ListGroups(ctx)
+// ListGroups lists the org's Slack user groups, for choosing which to import.
+func ListGroups(ctx context.Context, orgID string) ([]Group, error) {
+	api, err := openSlack(orgID)
 	if err != nil {
 		return nil, err
 	}
-	guard, hasGuard := p.(groupGuard)
-	out := make([]GovernedGroup, 0, len(groups))
-	for _, g := range groups {
-		adminManaged := true
-		if hasGuard {
-			adminManaged = guard.CheckGroups(ctx, []string{g.ID}, false) == nil
-		}
-		out = append(out, GovernedGroup{Group: g, AdminManaged: adminManaged})
+	w, err := readWorkspace(ctx, api)
+	if err != nil {
+		return nil, err
 	}
+	out := make([]Group, 0, len(w.groups))
+	for _, g := range w.groups {
+		out = append(out, Group{ID: g.ID, Name: groupName(g), AdminManaged: w.adminManaged(g)})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
 }

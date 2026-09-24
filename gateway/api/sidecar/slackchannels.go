@@ -37,12 +37,8 @@ func slackChannelsSidecar(c *gin.Context) *models.Sidecar {
 }
 
 func toOpenAPISlackChannels(rows []models.SidecarSlackChannels) openapi.SidecarSlackChannels {
-	out := openapi.SidecarSlackChannels{Channels: []string{}, Listeners: []openapi.SidecarListenerSlackChannels{}}
+	out := openapi.SidecarSlackChannels{Listeners: []openapi.SidecarListenerSlackChannels{}}
 	for _, r := range rows {
-		if r.ListenerName == "" {
-			out.Channels = []string(r.Channels)
-			continue
-		}
 		out.Listeners = append(out.Listeners, openapi.SidecarListenerSlackChannels{
 			Name: r.ListenerName, Channels: []string(r.Channels),
 		})
@@ -76,7 +72,7 @@ func slackChannelRows(sidecar *models.Sidecar, req openapi.SidecarSlackChannels)
 			known[l.Name] = true
 		}
 	}
-	rows := []models.SidecarSlackChannels{{ListenerName: "", Channels: normalizeChannels(req.Channels)}}
+	rows := []models.SidecarSlackChannels{}
 	seen := map[string]bool{}
 	for _, l := range req.Listeners {
 		name := strings.TrimSpace(l.Name)
@@ -95,7 +91,7 @@ func slackChannelRows(sidecar *models.Sidecar, req openapi.SidecarSlackChannels)
 // GetSlackChannels
 //
 //	@Summary		Get Sidecar Slack Channels
-//	@Description	Where the sidecar's reviews are posted in Slack. Control plane only.
+//	@Description	Where the reviews of each listener of the sidecar are posted in Slack. Control plane only.
 //	@Tags			Sidecars
 //	@Produce		json
 //	@Param			nameOrID		path		string	true	"Name or UUID of the sidecar"
@@ -118,7 +114,7 @@ func GetSlackChannels(c *gin.Context) {
 // PutSlackChannels
 //
 //	@Summary		Set Sidecar Slack Channels
-//	@Description	Replace where the sidecar's reviews are posted in Slack. A listener's channels replace the sidecar's; an empty list inherits. Control plane only.
+//	@Description	Replace where the reviews of each listener of the sidecar are posted in Slack. A listener left out has no channels; the org's default channel still receives every review. Control plane only.
 //	@Tags			Sidecars
 //	@Accept			json
 //	@Produce		json

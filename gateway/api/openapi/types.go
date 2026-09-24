@@ -295,13 +295,10 @@ type SidecarRequest struct {
 	Configuration json.RawMessage `json:"configuration,omitempty" swaggertype:"object"`
 }
 
-// SidecarSlackChannels is where the reviews of a sidecar are posted in Slack.
-// A listener's channels replace the sidecar's; with neither, the org's default
-// channel applies, and that channel receives every review regardless.
+// SidecarSlackChannels is where the reviews of each listener of a sidecar are
+// posted in Slack. The org's default channel receives every review regardless.
 type SidecarSlackChannels struct {
-	// Slack channel ids for every listener of the sidecar
-	Channels []string `json:"channels" example:"C0123456789"`
-	// Channels for one listener, replacing the sidecar's
+	// The channels of each listener; a listener left out has none
 	Listeners []SidecarListenerSlackChannels `json:"listeners"`
 }
 
@@ -3012,10 +3009,8 @@ type ServerAuthConfig struct {
 // Slack user groups (ADR-0019). It uses the org's Slack app and stores no
 // credential.
 type DirectorySyncConfig struct {
-	// Whether a directory sync is configured
+	// Whether a Slack import is configured
 	Enabled bool `json:"enabled"`
-	// The directory
-	Provider string `json:"provider" enums:"slack" example:"slack"`
 	// The Slack ids of the user groups whose members are synced
 	GroupIDs []string `json:"group_ids"`
 	// Minutes between two runs
@@ -3055,50 +3050,6 @@ type ProvisioningStatus struct {
 	// True when the Slack import has written users or groups. Login and the
 	// Users page then change only the admin group.
 	GroupsManaged bool `json:"groups_managed"`
-}
-
-// UsersImportRow is one user of a file import.
-type UsersImportRow struct {
-	// The user's email; it is how a Slack click finds them
-	Email string `json:"email" binding:"required" example:"ana@example.com"`
-	// The user's display name
-	Name string `json:"name" example:"Ana"`
-	// The groups the user is in; the import makes these the complete member
-	// list of each group it names
-	Groups []string `json:"groups" example:"dba-leads"`
-}
-
-// UsersImportRequest imports users and their groups. A CSV upload
-// (multipart field "file", columns email,name,groups with groups separated
-// by ";") is the same request.
-type UsersImportRequest struct {
-	// The users to import
-	Rows []UsersImportRow `json:"rows" binding:"required"`
-	// Deactivate users a previous file import created who are not in this one.
-	// Administrators are never deactivated.
-	DeactivateMissing bool `json:"deactivate_missing"`
-}
-
-// UsersImportRowError is why one row was not imported.
-type UsersImportRowError struct {
-	// The 1-based row number; the CSV header is not counted
-	Row int `json:"row" example:"3"`
-	// The row's email, when it had one
-	Email string `json:"email,omitempty" example:"ana@example.com"`
-	// Why the row failed
-	Message string `json:"message" example:"the group name is reserved by hoop: admin"`
-}
-
-// UsersImportResponse is the outcome of a file import.
-type UsersImportResponse struct {
-	// Users created
-	Created int `json:"created"`
-	// Existing users updated
-	Updated int `json:"updated"`
-	// Users deactivated by deactivate_missing
-	Deactivated int `json:"deactivated"`
-	// Rows that failed; the other rows were imported
-	Errors []UsersImportRowError `json:"errors"`
 }
 
 // ServerMcpAuthConfig configures the OAuth 2.1 Resource Server profile for the

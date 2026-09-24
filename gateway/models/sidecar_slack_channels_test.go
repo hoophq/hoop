@@ -9,8 +9,8 @@ import (
 	"github.com/lib/pq"
 )
 
-// A listener's channels replace the sidecar's, the sidecar's apply to every
-// other listener, and a listener that is gone takes its channels with it.
+// Each listener has its own channels, and a listener that is gone takes its
+// channels with it.
 func TestSidecarSlackChannels(t *testing.T) {
 	startTestDB(t)
 	sidecarID := uuid.NewString()
@@ -33,9 +33,9 @@ func TestSidecarSlackChannels(t *testing.T) {
 	}
 
 	err := models.ReplaceSidecarSlackChannels(models.DB, testOrgID, sidecarID, []models.SidecarSlackChannels{
-		{ListenerName: "", Channels: pq.StringArray{"C-SIDECAR"}},
 		{ListenerName: "pg", Channels: pq.StringArray{"C-PG", "C-DBA"}},
-		{ListenerName: "mysql", Channels: pq.StringArray{}},
+		{ListenerName: "mysql", Channels: pq.StringArray{"C-MYSQL"}},
+		{ListenerName: "redis", Channels: pq.StringArray{}},
 	})
 	if err != nil {
 		t.Fatalf("replace: %v", err)
@@ -43,20 +43,20 @@ func TestSidecarSlackChannels(t *testing.T) {
 	if got := resolve("pg"); !slices.Equal(got, []string{"C-PG", "C-DBA"}) {
 		t.Errorf("pg = %v, want its own channels", got)
 	}
-	if got := resolve("mysql"); !slices.Equal(got, []string{"C-SIDECAR"}) {
-		t.Errorf("mysql = %v, want the sidecar's: an empty list inherits", got)
+	if got := resolve("redis"); len(got) != 0 {
+		t.Errorf("redis = %v, want none: an empty list is no row", got)
 	}
-	if got := resolve(""); !slices.Equal(got, []string{"C-SIDECAR"}) {
-		t.Errorf("no listener = %v, want the sidecar's", got)
+	if got := resolve(""); len(got) != 0 {
+		t.Errorf("no listener = %v, want none", got)
 	}
 
-	// The configuration dropped "pg": its row goes, the sidecar's stays.
+	// The configuration dropped "pg": its row goes, mysql's stays.
 	if err := models.PruneSidecarSlackChannels(models.DB, testOrgID, sidecarID, []string{"mysql"}); err != nil {
 		t.Fatalf("prune: %v", err)
 	}
 	rows, err := models.ListSidecarSlackChannels(models.DB, testOrgID, sidecarID)
-	if err != nil || len(rows) != 1 || rows[0].ListenerName != "" {
-		t.Fatalf("after prune: %+v err %v; want only the sidecar row", rows, err)
+	if err != nil || len(rows) != 1 || rows[0].ListenerName != "mysql" {
+		t.Fatalf("after prune: %+v err %v; want only the mysql row", rows, err)
 	}
 
 	// Deleting the sidecar cascades.

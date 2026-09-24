@@ -6,12 +6,12 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	idptypes "github.com/hoophq/hoop/gateway/idp/types"
 	"github.com/hoophq/hoop/gateway/models"
 	modelsbootstrap "github.com/hoophq/hoop/gateway/models/bootstrap"
 	"github.com/hoophq/hoop/gateway/pglite"
-	"github.com/hoophq/hoop/gateway/services"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"gorm.io/gorm"
 )
@@ -78,25 +78,22 @@ func TestSyncSingleTenantUserKeepsProvisionedGroups(t *testing.T) {
 		t.Fatalf("groups = %v; want the claim's", got)
 	}
 
-	// Once the Slack import provisions the org, the provisioned groups stay.
-	// The source sends mixed case; the login sends lower case and must still
-	// find the same user.
-	var johnID string
+	// Once the Slack import owns a group, the imported groups stay. The
+	// import stores the email lower case with a placeholder subject; the
+	// login must find that user and keep one.
+	johnID := uuid.NewString()
 	err = models.DB.Transaction(func(tx *gorm.DB) error {
-		var err error
-		johnID, err = services.UpsertProvisionedUser(tx, orgID, models.ProvisioningSourceSlack, "",
-			services.ProvisionedUser{ExternalID: "U-JOHN", UserName: "John.Doe@Corp.com",
-				Email: "John.Doe@Corp.com", Name: "John", Active: true})
-		if err != nil {
+		if err := tx.Exec(`INSERT INTO private.users (id, org_id, subject, email, name, status, slack_id)
+			VALUES (?, ?, 'slack|U-JOHN', 'john.doe@corp.com', 'John', 'active', 'U-JOHN')`, johnID, orgID).Error; err != nil {
 			return err
 		}
-		if _, err := services.CreateProvisionedGroup(tx, orgID, models.ProvisioningSourceSlack, "dba-leads", "S-DBA"); err != nil {
+		if err := tx.Create(&models.DirectoryGroup{OrgID: orgID, ExternalID: "S-DBA", DisplayName: "dba-leads"}).Error; err != nil {
 			return err
 		}
-		return services.SetGroupMembers(tx, orgID, "dba-leads", []string{johnID})
+		return tx.Exec(`INSERT INTO private.user_groups (org_id, user_id, name) VALUES (?, ?, 'dba-leads')`, orgID, johnID).Error
 	})
 	if err != nil {
-		t.Fatalf("provision john: %v", err)
+		t.Fatalf("import john: %v", err)
 	}
 
 	loginAs := func(email, subject string) []string {

@@ -22,7 +22,6 @@ import Select from '@/components/Select'
 import Switch from '@/components/Switch'
 import TagsInput from '@/components/TagsInput'
 import CopyButton from '@/components/CopyButton'
-import UserImportForm from '@/features/UserImport'
 import { usersService } from '@/services/users'
 import { authService } from '@/services/auth'
 import { provisioningService } from '@/services/provisioning'
@@ -35,9 +34,8 @@ import { STATUS_OPTIONS, generatePassword, statusVariant } from './shared'
  * The control plane's Users page, sibling of GatewayUsers.jsx.
  *
  * Groups name reviewers (ADR-0019). This page edits them for every auth
- * method, and imports them from a CSV, unless the Slack import manages
- * them: then it shows them and edits only the admin switch, and the backend
- * refuses anything else. Administrator is hoop's own group and stays a switch.
+ * method, unless the Slack import manages them: then it shows them and edits
+ * only the admin switch, and the backend refuses anything else. Administrator is hoop's own group and stays a switch.
  */
 
 function UserFormModal({ opened, onClose, formType, user, isLocalAuth, groupsManaged, onSaved }) {
@@ -240,7 +238,6 @@ export default function ControlPlaneUsers() {
   const [error, setError] = useState(null)
   const [isLocalAuth, setIsLocalAuth] = useState(false)
   const [groupsManaged, setGroupsManaged] = useState(false)
-  const [importOpened, { open: openImport, close: closeImport }] = useDisclosure(false)
   const [selectedUser, setSelectedUser] = useState(null)
   const [formType, setFormType] = useState('create')
   const [opened, { open, close }] = useDisclosure(false)
@@ -300,21 +297,16 @@ export default function ControlPlaneUsers() {
             <Text size="sm" c="dimmed">
               {groupsManaged
                 ? 'The Slack import manages the groups. See '
-                : 'Reviewers come from Slack, a file, or the groups you set here. See '}
+                : 'Reviewers come from Slack or the groups you set here. See '}
               <Anchor component={Link} to="/settings/provisioning" size="sm">
                 Provisioning
               </Anchor>
               {'.'}
             </Text>
           </Stack>
-          <Group gap="sm">
-            {!groupsManaged && (
-              <Button variant="outline" onClick={openImport}>
-                Import CSV
-              </Button>
-            )}
-            {users.length !== 1 && <Button onClick={handleAdd}>Add User</Button>}
-          </Group>
+          {users.length !== 1 && (
+            <Button onClick={handleAdd}>Add User</Button>
+          )}
         </Group>
 
         {users.length === 0 ? (
@@ -406,10 +398,6 @@ export default function ControlPlaneUsers() {
         groupsManaged={groupsManaged}
         onSaved={fetchAll}
       />
-
-      <Modal opened={importOpened} onClose={closeImport} title="Import users from a CSV" size="lg">
-        <UserImportForm onImported={fetchAll} />
-      </Modal>
     </>
   )
 }

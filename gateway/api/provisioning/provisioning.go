@@ -1,6 +1,6 @@
 // Package apiprovisioning configures how a control plane learns its reviewers
-// without anyone logging in (ADR-0019): the Slack directory sync, and the
-// switch that hands groups back to login and the Users page.
+// without anyone logging in (ADR-0019): the Slack import, and the switch that
+// hands groups back to login and the Users page.
 package apiprovisioning
 
 import (
@@ -39,7 +39,6 @@ func controlPlaneOnly(c *gin.Context) bool {
 func toOpenAPIDirectorySync(cfg *models.DirectorySyncConfig) openapi.DirectorySyncConfig {
 	if cfg == nil {
 		return openapi.DirectorySyncConfig{
-			Provider:        models.ProvisioningSourceSlack,
 			IntervalMinutes: defaultIntervalMinutes,
 			GroupIDs:        []string{},
 		}
@@ -50,7 +49,6 @@ func toOpenAPIDirectorySync(cfg *models.DirectorySyncConfig) openapi.DirectorySy
 	}
 	return openapi.DirectorySyncConfig{
 		Enabled:                  true,
-		Provider:                 cfg.Provider,
 		GroupIDs:                 groupIDs,
 		IntervalMinutes:          cfg.IntervalMinutes,
 		AllowMemberManagedGroups: cfg.AllowMemberManagedGroups,
@@ -124,7 +122,6 @@ func PutDirectorySync(c *gin.Context) {
 
 	cfg := &models.DirectorySyncConfig{
 		OrgID:                    ctx.OrgID,
-		Provider:                 models.ProvisioningSourceSlack,
 		GroupIDs:                 req.GroupIDs,
 		IntervalMinutes:          req.IntervalMinutes,
 		AllowMemberManagedGroups: req.AllowMemberManagedGroups,
@@ -216,18 +213,13 @@ func ListDirectorySyncGroups(c *gin.Context) {
 		return
 	}
 	ctx := storagev2.ParseContext(c)
-	provider, err := directorysync.NewSlackProvider(ctx.OrgID)
+	reqCtx, cancel := context.WithTimeout(c.Request.Context(), listGroupsTimeout)
+	defer cancel()
+	groups, err := directorysync.ListGroups(reqCtx, ctx.OrgID)
 	if errors.Is(err, directorysync.ErrSlackNotConfigured) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
-	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed opening the slack directory")
-		return
-	}
-	reqCtx, cancel := context.WithTimeout(c.Request.Context(), listGroupsTimeout)
-	defer cancel()
-	groups, err := directorysync.ListGroupsWithGovernance(reqCtx, provider)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"message": err.Error()})
 		return

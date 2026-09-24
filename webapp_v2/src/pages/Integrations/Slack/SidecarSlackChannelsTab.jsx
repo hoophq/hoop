@@ -14,7 +14,7 @@ function namedListeners(sidecar) {
 
 /**
  * The control plane's counterpart of the gateway's Connections tab: reviews a
- * sidecar holds go to the channels set here, per sidecar or per listener.
+ * listener holds go to the channels set here for that listener.
  */
 function SidecarSlackChannelsTab() {
   const sidecars = useSidecarStore((s) => s.sidecars)

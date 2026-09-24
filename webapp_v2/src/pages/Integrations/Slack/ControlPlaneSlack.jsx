@@ -13,7 +13,7 @@ import SlackConfigurationsTab from './components/SlackConfigurationsTab'
 // The control plane's Slack page, sibling of GatewaySlack.jsx. A click on
 // Approve is matched to a Hoop user by Slack ID, then by the email Slack holds
 // for the clicker, which needs scopes the gateway's Slack app never asked for. Reviews go
-// to the channels set per sidecar or listener, and to the default channel.
+// to the channels set per listener, and to the default channel.
 function ControlPlaneSlack() {
   const { plugin, status, mutating, saveEnvvars } = usePlugin('slack')
   const [tab, setTab] = useState('sidecars')

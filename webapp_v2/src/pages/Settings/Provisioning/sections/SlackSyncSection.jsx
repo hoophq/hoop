@@ -90,7 +90,7 @@ export default function SlackSyncSection({ disabled }) {
         badge={
           <Badge variant={sync?.enabled ? 'active' : 'inactive'}>{sync?.enabled ? 'Enabled' : 'Disabled'}</Badge>
         }
-        description="Members of these Slack user groups become hoop users. The group handle is the hoop group name: @dba-leads is the group dba-leads, which you name as reviewers on a rule."
+        description="Members of these Slack user groups become hoop users. The group handle is the hoop group name: @dba-leads is the group dba-leads, which you name as reviewers on a rule. A handle renamed in Slack keeps its first name here."
       >
         <Stack gap="md">
           <Text size="sm" c="dimmed">

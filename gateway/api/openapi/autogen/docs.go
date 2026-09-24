@@ -10781,7 +10781,7 @@ const docTemplate = `{
         },
         "/sidecars/{nameOrID}/slack-channels": {
             "get": {
-                "description": "Where the sidecar's reviews are posted in Slack. Control plane only.",
+                "description": "Where the reviews of each listener of the sidecar are posted in Slack. Control plane only.",
                 "produces": [
                     "application/json"
                 ],
@@ -10826,7 +10826,7 @@ const docTemplate = `{
                 }
             },
             "put": {
-                "description": "Replace where the sidecar's reviews are posted in Slack. A listener's channels replace the sidecar's; an empty list inherits. Control plane only.",
+                "description": "Replace where the reviews of each listener of the sidecar are posted in Slack. A listener left out has no channels; the org's default channel still receives every review. Control plane only.",
                 "consumes": [
                     "application/json"
                 ],
@@ -11366,71 +11366,6 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "{\"message\": \"server\terror\"}",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    }
-                }
-            }
-        },
-        "/users/import": {
-            "post": {
-                "description": "Create or update users and their groups from a file, for a control plane whose groups the Slack import does not manage. Send JSON, or a CSV as the multipart field \"file\" with the columns email,name,groups (groups separated by \";\") and an optional deactivate_missing field. A bad row fails that row, not the file. Every group the file names gets exactly the users that list it; the admin group cannot be named. Control plane only.",
-                "consumes": [
-                    "application/json",
-                    "multipart/form-data"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "User Management"
-                ],
-                "summary": "Import Users",
-                "parameters": [
-                    {
-                        "description": "The request body resource",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/openapi.UsersImportRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.UsersImportResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "409": {
-                        "description": "Conflict",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "412": {
-                        "description": "Precondition Failed",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "413": {
-                        "description": "Request Entity Too Large",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -15092,7 +15027,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "enabled": {
-                    "description": "Whether a directory sync is configured",
+                    "description": "Whether a Slack import is configured",
                     "type": "boolean"
                 },
                 "group_ids": {
@@ -15114,14 +15049,6 @@ const docTemplate = `{
                 "last_run_at": {
                     "description": "When the sync last ran",
                     "type": "string"
-                },
-                "provider": {
-                    "description": "The directory",
-                    "type": "string",
-                    "enum": [
-                        "slack"
-                    ],
-                    "example": "slack"
                 }
             }
         },
@@ -20614,18 +20541,8 @@ const docTemplate = `{
         "openapi.SidecarSlackChannels": {
             "type": "object",
             "properties": {
-                "channels": {
-                    "description": "Slack channel ids for every listener of the sidecar",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "example": [
-                        "C0123456789"
-                    ]
-                },
                 "listeners": {
-                    "description": "Channels for one listener, replacing the sidecar's",
+                    "description": "The channels of each listener; a listener left out has none",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/openapi.SidecarListenerSlackChannels"
@@ -21003,97 +20920,6 @@ const docTemplate = `{
                     "description": "Free text detail. Required when origin is \"other\", ignored and stored as\nnull for every other option.",
                     "type": "string",
                     "example": "Saw it in a conference talk"
-                }
-            }
-        },
-        "openapi.UsersImportRequest": {
-            "type": "object",
-            "required": [
-                "rows"
-            ],
-            "properties": {
-                "deactivate_missing": {
-                    "description": "Deactivate users a previous file import created who are not in this one.\nAdministrators are never deactivated.",
-                    "type": "boolean"
-                },
-                "rows": {
-                    "description": "The users to import",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/openapi.UsersImportRow"
-                    }
-                }
-            }
-        },
-        "openapi.UsersImportResponse": {
-            "type": "object",
-            "properties": {
-                "created": {
-                    "description": "Users created",
-                    "type": "integer"
-                },
-                "deactivated": {
-                    "description": "Users deactivated by deactivate_missing",
-                    "type": "integer"
-                },
-                "errors": {
-                    "description": "Rows that failed; the other rows were imported",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/openapi.UsersImportRowError"
-                    }
-                },
-                "updated": {
-                    "description": "Existing users updated",
-                    "type": "integer"
-                }
-            }
-        },
-        "openapi.UsersImportRow": {
-            "type": "object",
-            "required": [
-                "email"
-            ],
-            "properties": {
-                "email": {
-                    "description": "The user's email; it is how a Slack click finds them",
-                    "type": "string",
-                    "example": "ana@example.com"
-                },
-                "groups": {
-                    "description": "The groups the user is in; the import makes these the complete member\nlist of each group it names",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "example": [
-                        "dba-leads"
-                    ]
-                },
-                "name": {
-                    "description": "The user's display name",
-                    "type": "string",
-                    "example": "Ana"
-                }
-            }
-        },
-        "openapi.UsersImportRowError": {
-            "type": "object",
-            "properties": {
-                "email": {
-                    "description": "The row's email, when it had one",
-                    "type": "string",
-                    "example": "ana@example.com"
-                },
-                "message": {
-                    "description": "Why the row failed",
-                    "type": "string",
-                    "example": "the group name is reserved by hoop: admin"
-                },
-                "row": {
-                    "description": "The 1-based row number; the CSV header is not counted",
-                    "type": "integer",
-                    "example": 3
                 }
             }
         },

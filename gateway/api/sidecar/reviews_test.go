@@ -472,7 +472,7 @@ func TestNewSlackReviewRequest(t *testing.T) {
 	assert.True(t, strings.HasPrefix(req.WebappURL, "http://localhost:8009/hoop/"),
 		"ApiURL drops a configured path prefix and lands the approver outside the app")
 
-	assert.Empty(t, req.SlackChannels, "notifySlack sets the channels from the sidecar or listener")
+	assert.Empty(t, req.SlackChannels, "notifySlack sets the channels from the listener")
 	assert.Nil(t, req.SessionTime, "a sidecar review grants no access window")
 }
 
@@ -481,16 +481,13 @@ func TestSlackChannelsResponse(t *testing.T) {
 	assert.Equal(t, []string{}, normalizeChannels(nil))
 
 	out := toOpenAPISlackChannels([]models.SidecarSlackChannels{
-		{ListenerName: "", Channels: []string{"C-ALL"}},
 		{ListenerName: "pg", Channels: []string{"C-PG"}},
 	})
-	assert.Equal(t, []string{"C-ALL"}, out.Channels)
 	assert.Len(t, out.Listeners, 1)
 	assert.Equal(t, "pg", out.Listeners[0].Name)
 	assert.Equal(t, []string{"C-PG"}, out.Listeners[0].Channels)
 
 	empty := toOpenAPISlackChannels(nil)
-	assert.NotNil(t, empty.Channels)
 	assert.NotNil(t, empty.Listeners)
 }
 
@@ -499,13 +496,12 @@ func TestSlackChannelRows(t *testing.T) {
 	sc.Configuration.Listeners = []daemon.ListenerConfig{{Name: "pg"}, {Name: "mysql"}, {Name: ""}}
 
 	rows, msg := slackChannelRows(sc, openapi.SidecarSlackChannels{
-		Channels:  []string{" C-ALL "},
-		Listeners: []openapi.SidecarListenerSlackChannels{{Name: "pg", Channels: []string{"C-PG"}}},
+		Listeners: []openapi.SidecarListenerSlackChannels{{Name: "pg", Channels: []string{" C-PG "}}},
 	})
 	assert.Empty(t, msg)
-	assert.Len(t, rows, 2)
-	assert.Equal(t, []string{"C-ALL"}, []string(rows[0].Channels))
-	assert.Equal(t, "pg", rows[1].ListenerName)
+	assert.Len(t, rows, 1)
+	assert.Equal(t, "pg", rows[0].ListenerName)
+	assert.Equal(t, []string{"C-PG"}, []string(rows[0].Channels))
 
 	_, msg = slackChannelRows(sc, openapi.SidecarSlackChannels{
 		Listeners: []openapi.SidecarListenerSlackChannels{{Name: "redis", Channels: []string{"C1"}}},

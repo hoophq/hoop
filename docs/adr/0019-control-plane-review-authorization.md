@@ -3,7 +3,7 @@
 - **Status:** Proposed
 - **Date:** 2026-09-24
 - **Author:** Rogerio Moura
-- **Code:** [`gateway/transport/plugins/slack/events_controlplane.go`](../../gateway/transport/plugins/slack/events_controlplane.go), [`gateway/services/provisioning.go`](../../gateway/services/provisioning.go), [`gateway/directorysync/`](../../gateway/directorysync/), [`gateway/api/user/import.go`](../../gateway/api/user/import.go), [`gateway/services/analyzerapproval.go`](../../gateway/services/analyzerapproval.go), [`gateway/api/user/user.go`](../../gateway/api/user/user.go), [`gateway/api/sidecar/slackchannels.go`](../../gateway/api/sidecar/slackchannels.go)
+- **Code:** [`gateway/transport/plugins/slack/events_controlplane.go`](../../gateway/transport/plugins/slack/events_controlplane.go), [`gateway/directorysync/`](../../gateway/directorysync/), [`gateway/services/analyzerapproval.go`](../../gateway/services/analyzerapproval.go), [`gateway/api/user/user.go`](../../gateway/api/user/user.go), [`gateway/api/sidecar/slackchannels.go`](../../gateway/api/sidecar/slackchannels.go)
 - **Related:** ADR-0013 (control plane mode), #1834 (Slack user groups), EVL-242 (approver role)
 - **Supersedes / Superseded by:** —
 
@@ -37,11 +37,13 @@ requester.
    only, and "Other" has nothing to call.
 3. **Require one SSO login per reviewer.** Generic, but the reviewer who only
    ever clicks in Slack must first open an app they never use.
-4. **An admin creates or imports users with their groups.** Always works, with
-   no setup and no vendor. Loses: the list goes stale the day someone leaves.
+4. **An admin adds users with their groups.** Always works, with no setup and
+   no vendor. Loses: the list goes stale the day someone leaves. Kept as the
+   fallback, on the Users page. A CSV import of the same data was written and
+   removed: no customer needs it yet.
 5. **Slack as the directory.** Import the members of chosen Slack user groups
-   on an interval. Chosen for the first version, with a file import and the
-   Users page beside it.
+   on an interval. Chosen for the first version, with the Users page beside
+   it.
 6. **Pull from each identity provider's directory** (Google Workspace, Auth0,
    Cognito). Loses: one adapter and one stored credential per vendor, for
    customers who mostly already manage Slack from that same identity provider.
@@ -52,14 +54,14 @@ requester.
 
 ## Decision
 
-**Users and groups reach `users` and `user_groups` from three sources**, all
-through `gateway/services/provisioning.go`, in this order of preference:
+**Users and groups reach `users` and `user_groups` from two sources:**
 
-- **Slack import** (default). The control plane reads `users.list` and
-  `usergroups.list` through the org's Slack app and imports the members of the
-  user groups an admin picks. The group handle is the hoop group name:
-  `@dba-leads` is the group `dba-leads`. It writes `users.slack_id`.
-- **File import**: a CSV of `email,name,groups`.
+- **Slack import** (default, `gateway/directorysync/`). The control plane
+  reads `users.list` and `usergroups.list` through the org's Slack app and
+  imports the members of the user groups an admin picks. The group handle at
+  the first import is the hoop group name: `@dba-leads` is the group
+  `dba-leads`. It writes `users.slack_id`, which is the only link between a
+  hoop user and Slack.
 - **Manual**: the Users page adds users and edits groups for every auth
   method.
 
@@ -72,13 +74,13 @@ one. So a run refuses a user group whose last editor is not a workspace admin
 or owner, unless the admin allows member-managed groups; the Provisioning page
 says to restrict user group editing to admins in Slack.
 
-The Slack import manages the groups: while it has written a user or a group,
-SSO login stops rewriting groups and the Users page changes only the admin
-group. An explicit "stop managing groups" hands them back. A file
-import is an admin's own edit and does not manage them. A user who leaves every
-synced group keeps the account and loses those groups; only Slack deactivates
-a user (`deleted`), and a sync never deactivates an administrator. No source
-may write a group named `admin`, `auditor` or `approver`. No secret is stored.
+The Slack import manages the groups: while it owns a group, SSO login stops
+rewriting groups and the Users page changes only the admin group. An explicit
+"stop managing groups" hands them back. A user who leaves every imported
+group keeps the account and loses those groups; only Slack deactivates a user
+(`deleted`), and an import never deactivates an administrator or reactivates
+a user an admin deactivated. The import refuses a group named `admin`,
+`auditor` or `approver`. No secret is stored.
 
 **A Slack click names its approver by Slack ID, then email.** The control
 plane looks up the hoop user linked to the clicking Slack user; with none, it
@@ -92,9 +94,9 @@ a guest, a user from another organization, and an unconfirmed email.
 the `approver` role when their groups meet any sidecar rule's
 `reviewers_groups`, which is what opens the Reviews page to them.
 
-**Slack channels are set per sidecar or per listener.** A listener's channels
-replace its sidecar's; with neither, the org default applies. The default
-channel keeps receiving every review, as on the gateway.
+**Slack channels are set per listener**, as guardrails, data masking and the
+analyzer bind to a listener. The default channel keeps receiving every review,
+as on the gateway.
 
 **The gateway does not change.** Every branch sits behind `IsControlPlane()`,
 or in a `ControlPlane*` file of the web app. ADR-0013 keeps one route tree for
@@ -106,11 +108,10 @@ only a control plane has.
 ## Consequences
 
 - A reviewer never logs in to the control plane. An admin picks a Slack user
-  group, uploads a file, or adds the user, and the next Slack click works.
-- A group renamed at the source is renamed in `user_groups`, in the access
-  request rules that name it (`reviewers_groups`, `force_approval_groups`,
-  `approval_required_groups`, `skip_review_groups`) and in the groups of
-  pending reviews. Settled reviews keep the name they were decided under.
+  group or adds the user, and the next Slack click works.
+- A user group renamed in Slack keeps its hoop name, so the rules that name it
+  and pending reviews keep working. The import writes no table the gateway
+  reads for rules or reviews.
 - Every Slack import run writes one audit entry with what changed.
 - The Slack app needs `users:read`, `users:read.email` and `usergroups:read`.
   Without the first two, only users with a Slack ID link can approve.
@@ -129,9 +130,9 @@ from this change to keep it small; it is in the history of PR #1850 (commits
 
 - A bearer token per org, stored as a hash, rotated with one `PUT`, and
   audited with the admin who generated it as the actor.
-- The same write seam (`gateway/services/provisioning.go`) with a `scim`
-  source, added to the sources that manage groups, and only one of SCIM and
-  the Slack import active per org.
+- The Slack import's write path (`gateway/directorysync/write.go`) moved to a
+  shared place, a table linking hoop users to SCIM ids, and only one of SCIM
+  and the Slack import active per org.
 - A unique index on `lower(user_name)` per source (RFC 7643), a unique
   violation answered as 409, and reserved group names answered as 400
   `invalidValue`.

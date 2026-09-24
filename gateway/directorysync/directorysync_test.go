@@ -12,7 +12,6 @@ import (
 	"github.com/hoophq/hoop/gateway/models"
 	modelsbootstrap "github.com/hoophq/hoop/gateway/models/bootstrap"
 	"github.com/hoophq/hoop/gateway/pglite"
-	"github.com/hoophq/hoop/gateway/services"
 	slackservice "github.com/hoophq/hoop/gateway/slack"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -35,7 +34,13 @@ func (f *fakeSlack) ListUserGroups(context.Context) ([]slackservice.UserGroup, e
 	return f.groups, f.err
 }
 
-func (f *fakeSlack) provider() *slackProvider { return &slackProvider{api: f} }
+// use makes the import read f instead of the org's Slack app.
+func (f *fakeSlack) use(t *testing.T) {
+	t.Helper()
+	orig := openSlack
+	openSlack = func(string) (slackDirectory, error) { return f, nil }
+	t.Cleanup(func() { openSlack = orig })
+}
 
 func (f *fakeSlack) user(id string) *slackservice.DirectoryUser {
 	for i := range f.users {
@@ -62,7 +67,7 @@ func member(id, email string) slackservice.DirectoryUser {
 	}
 }
 
-func workspace() *fakeSlack {
+func slackWorkspace() *fakeSlack {
 	admin := member("U-ADMIN", "root@corp.com")
 	admin.IsAdmin = true
 	bot := member("U-BOT", "bot@corp.com")
@@ -86,65 +91,62 @@ func workspace() *fakeSlack {
 	}
 }
 
-func TestSlackProvider(t *testing.T) {
+func TestSlackWorkspace(t *testing.T) {
 	ctx := context.Background()
-	f := workspace()
-	p := f.provider()
+	f := slackWorkspace()
+	f.use(t)
 
-	groups, err := p.ListGroups(ctx)
+	groups, err := ListGroups(ctx, syncOrgID)
 	if err != nil {
 		t.Fatalf("list groups: %v", err)
 	}
 	var names []string
 	for _, g := range groups {
 		names = append(names, g.Name)
+		// dba-leads and admin were last edited by an admin; sre only ever
+		// by a member.
+		if want := g.Name != "sre"; g.AdminManaged != want {
+			t.Errorf("%s admin_managed = %v, want %v", g.Name, g.AdminManaged, want)
+		}
 	}
 	if !slices.Equal(names, []string{"admin", "dba-leads", "sre"}) {
 		t.Errorf("groups = %v; want handles, without the external group", names)
 	}
 
-	members, err := p.ListMembers(ctx, "S-DBA")
+	w, err := readWorkspace(ctx, f)
 	if err != nil {
-		t.Fatalf("list members: %v", err)
+		t.Fatalf("read: %v", err)
 	}
-	var emails []string
-	for _, m := range members {
-		emails = append(emails, m.Email)
+	var ids []string
+	for _, m := range w.members(w.groups["S-DBA"]) {
+		ids = append(ids, m.ID)
 	}
-	if !slices.Equal(emails, []string{"root@corp.com", "ana@corp.com", "bob@corp.com"}) {
-		t.Errorf("members = %v; want no bot, guest or stranger, emails lower case", emails)
+	if !slices.Equal(ids, []string{"U-ADMIN", "U-ANA", "U-BOB"}) {
+		t.Errorf("members = %v; want no bot, guest or stranger", ids)
 	}
 
-	// dba-leads was last edited by an admin; sre only ever by a member.
-	if err := p.CheckGroups(ctx, []string{"S-DBA"}, false); err != nil {
+	if _, err := w.selected([]string{"S-DBA"}, false); err != nil {
 		t.Errorf("admin-managed group refused: %v", err)
 	}
-	err = p.CheckGroups(ctx, []string{"S-DBA", "S-SRE"}, false)
+	_, err = w.selected([]string{"S-DBA", "S-SRE"}, false)
 	if err == nil || !strings.Contains(err.Error(), "@sre") || strings.Contains(err.Error(), "@dba-leads") {
 		t.Errorf("member-managed group: err = %v; want @sre named", err)
 	}
-	if err := p.CheckGroups(ctx, []string{"S-SRE"}, true); err != nil {
+	if _, err := w.selected([]string{"S-SRE"}, true); err != nil {
 		t.Errorf("allowed member-managed group refused: %v", err)
 	}
-
-	governed, err := ListGroupsWithGovernance(ctx, f.provider())
-	if err != nil {
-		t.Fatalf("governance: %v", err)
-	}
-	for _, g := range governed {
-		if want := g.Name != "sre"; g.AdminManaged != want {
-			t.Errorf("%s admin_managed = %v, want %v", g.Name, g.AdminManaged, want)
-		}
+	if _, err := w.selected([]string{"S-SHARED"}, true); err == nil {
+		t.Errorf("an external group was accepted")
 	}
 
-	f.user("U-BOB").Deleted = true
-	deleted, err := f.provider().DeletedUsers(ctx)
-	if err != nil || !deleted["U-BOB"] || len(deleted) != 1 {
-		t.Errorf("deleted = %v err %v; want only U-BOB", deleted, err)
-	}
-
-	if _, err := (&fakeSlack{err: errors.New("slack down")}).provider().ListGroups(ctx); err == nil {
+	if _, err := readWorkspace(ctx, &fakeSlack{err: errors.New("slack down")}); err == nil {
 		t.Errorf("want the Slack error")
+	}
+	orig := openSlack
+	openSlack = func(string) (slackDirectory, error) { return nil, ErrSlackNotConfigured }
+	defer func() { openSlack = orig }()
+	if _, err := ListGroups(ctx, syncOrgID); !errors.Is(err, ErrSlackNotConfigured) {
+		t.Errorf("err = %v; want ErrSlackNotConfigured", err)
 	}
 }
 
@@ -172,13 +174,14 @@ func startSyncDB(t *testing.T) {
 
 type userRow struct {
 	Status  string
+	Subject string
 	SlackID *string
 }
 
 func userByEmail(t *testing.T, email string) userRow {
 	t.Helper()
 	var row userRow
-	if err := models.DB.Raw(`SELECT status, slack_id FROM private.users WHERE org_id = ? AND email = ?`,
+	if err := models.DB.Raw(`SELECT status, subject, slack_id FROM private.users WHERE org_id = ? AND email = ?`,
 		syncOrgID, email).Scan(&row).Error; err != nil {
 		t.Fatalf("load %s: %v", email, err)
 	}
@@ -197,14 +200,12 @@ func groupsOf(t *testing.T, email string) []string {
 }
 
 func syncConfig(groupIDs ...string) *models.DirectorySyncConfig {
-	return &models.DirectorySyncConfig{OrgID: syncOrgID, Provider: models.ProvisioningSourceSlack,
-		GroupIDs: pq.StringArray(groupIDs), IntervalMinutes: 15}
+	return &models.DirectorySyncConfig{OrgID: syncOrgID, GroupIDs: pq.StringArray(groupIDs), IntervalMinutes: 15}
 }
 
 func TestReconcileSlack(t *testing.T) {
 	startSyncDB(t)
 	ctx := context.Background()
-	src := models.ProvisioningSourceSlack
 
 	// The org's admin, who logged in before the sync existed and is also a
 	// Slack workspace admin in dba-leads.
@@ -217,8 +218,8 @@ func TestReconcileSlack(t *testing.T) {
 		t.Fatalf("seed admin group: %v", err)
 	}
 
-	f := workspace()
-	diff, err := reconcile(ctx, models.DB, syncOrgID, src, f.provider(), syncConfig("S-DBA"))
+	f := slackWorkspace()
+	diff, err := reconcile(ctx, models.DB, syncOrgID, f, syncConfig("S-DBA"))
 	if err != nil {
 		t.Fatalf("first run: %v", err)
 	}
@@ -236,13 +237,19 @@ func TestReconcileSlack(t *testing.T) {
 	if got := groupsOf(t, "root@corp.com"); !slices.Equal(got, []string{types.GroupAdmin, "dba-leads"}) {
 		t.Errorf("root groups = %v; the admin row must stay", got)
 	}
+	if got := userByEmail(t, "ana@corp.com"); got.Subject != "slack|U-ANA" {
+		t.Errorf("ana subject = %q; want the placeholder the first login replaces", got.Subject)
+	}
+	if got := userByEmail(t, "root@corp.com"); got.Subject != "idp|root" {
+		t.Errorf("root subject = %q; adopting a user must keep their login", got.Subject)
+	}
 	managed, err := models.GroupsManagedByProvisioning(models.DB, syncOrgID)
 	if err != nil || !managed {
 		t.Errorf("after a slack run: managed=%v err=%v; want true", managed, err)
 	}
 
 	t.Run("a member-managed group refuses the whole run", func(t *testing.T) {
-		_, err := reconcile(ctx, models.DB, syncOrgID, src, f.provider(), syncConfig("S-DBA", "S-SRE"))
+		_, err := reconcile(ctx, models.DB, syncOrgID, f, syncConfig("S-DBA", "S-SRE"))
 		if err == nil || !strings.Contains(err.Error(), "@sre") {
 			t.Fatalf("err = %v; want the governance refusal", err)
 		}
@@ -251,7 +258,7 @@ func TestReconcileSlack(t *testing.T) {
 		}
 		cfg := syncConfig("S-DBA", "S-SRE")
 		cfg.AllowMemberManagedGroups = true
-		if _, err := reconcile(ctx, models.DB, syncOrgID, src, f.provider(), cfg); err != nil {
+		if _, err := reconcile(ctx, models.DB, syncOrgID, f, cfg); err != nil {
 			t.Fatalf("allowed: %v", err)
 		}
 		if got := groupsOf(t, "eve@corp.com"); !slices.Equal(got, []string{"sre"}) {
@@ -260,8 +267,8 @@ func TestReconcileSlack(t *testing.T) {
 	})
 
 	t.Run("a group named admin is refused and admins keep their row", func(t *testing.T) {
-		_, err := reconcile(ctx, models.DB, syncOrgID, src, f.provider(), syncConfig("S-DBA", "S-ADMIN"))
-		if !errors.Is(err, services.ErrReservedGroupName) {
+		_, err := reconcile(ctx, models.DB, syncOrgID, f, syncConfig("S-DBA", "S-ADMIN"))
+		if !errors.Is(err, ErrReservedGroupName) {
 			t.Fatalf("err = %v; want ErrReservedGroupName", err)
 		}
 		if got := groupsOf(t, "eve@corp.com"); slices.Contains(got, types.GroupAdmin) {
@@ -272,10 +279,42 @@ func TestReconcileSlack(t *testing.T) {
 		}
 	})
 
+	t.Run("a renamed handle keeps the hoop group name", func(t *testing.T) {
+		f.group("S-DBA").Handle = "dba"
+		cfg := syncConfig("S-DBA", "S-SRE")
+		cfg.AllowMemberManagedGroups = true
+		if _, err := reconcile(ctx, models.DB, syncOrgID, f, cfg); err != nil {
+			t.Fatalf("run: %v", err)
+		}
+		if got := groupsOf(t, "ana@corp.com"); !slices.Equal(got, []string{"dba-leads"}) {
+			t.Errorf("ana groups = %v; a rule naming dba-leads must keep working", got)
+		}
+		f.group("S-DBA").Handle = "dba-leads"
+	})
+
+	t.Run("a user found twice by email refuses the run", func(t *testing.T) {
+		for _, subject := range []string{"idp|carl-1", "idp|carl-2"} {
+			if err := models.DB.Exec(`INSERT INTO private.users (id, org_id, subject, email, name, status)
+				VALUES (?, ?, ?, 'carl@corp.com', 'Carl', 'active')`, uuid.NewString(), syncOrgID, subject).Error; err != nil {
+				t.Fatalf("seed carl: %v", err)
+			}
+		}
+		f.users = append(f.users, member("U-CARL", "carl@corp.com"))
+		g := f.group("S-DBA")
+		g.Users = append(g.Users, "U-CARL")
+		t.Cleanup(func() {
+			g.Users = slices.DeleteFunc(g.Users, func(id string) bool { return id == "U-CARL" })
+		})
+		_, err := reconcile(ctx, models.DB, syncOrgID, f, syncConfig("S-DBA"))
+		if !errors.Is(err, ErrAmbiguousUser) {
+			t.Fatalf("err = %v; want ErrAmbiguousUser", err)
+		}
+	})
+
 	t.Run("a member who leaves keeps the account and loses the group", func(t *testing.T) {
 		g := f.group("S-DBA")
 		g.Users = slices.DeleteFunc(g.Users, func(id string) bool { return id == "U-BOB" })
-		diff, err := reconcile(ctx, models.DB, syncOrgID, src, f.provider(), syncConfig("S-DBA"))
+		diff, err := reconcile(ctx, models.DB, syncOrgID, f, syncConfig("S-DBA"))
 		if err != nil {
 			t.Fatalf("run: %v", err)
 		}
@@ -296,7 +335,7 @@ func TestReconcileSlack(t *testing.T) {
 	t.Run("a user deleted in Slack is deactivated, an admin is not", func(t *testing.T) {
 		f.user("U-ANA").Deleted = true
 		f.user("U-ADMIN").Deleted = true
-		diff, err := reconcile(ctx, models.DB, syncOrgID, src, f.provider(), syncConfig("S-DBA"))
+		diff, err := reconcile(ctx, models.DB, syncOrgID, f, syncConfig("S-DBA"))
 		if err != nil {
 			t.Fatalf("run: %v", err)
 		}
@@ -317,10 +356,7 @@ func TestReconcileSlack(t *testing.T) {
 
 func TestRunRecordsResultAndAudit(t *testing.T) {
 	startSyncDB(t)
-	f := workspace()
-	orig := newProvider
-	newProvider = func(string, *models.DirectorySyncConfig) (Provider, error) { return f.provider(), nil }
-	t.Cleanup(func() { newProvider = orig })
+	slackWorkspace().use(t)
 
 	if err := models.UpsertDirectorySyncConfig(models.DB, syncConfig("S-DBA")); err != nil {
 		t.Fatalf("store config: %v", err)

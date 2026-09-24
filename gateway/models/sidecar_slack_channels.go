@@ -7,8 +7,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// SidecarSlackChannels is where the reviews of one sidecar, or of one of its
-// listeners, are posted in Slack. ListenerName "" is the whole sidecar.
+// SidecarSlackChannels is where the reviews of one sidecar listener are
+// posted in Slack.
 type SidecarSlackChannels struct {
 	OrgID        string         `gorm:"column:org_id;primaryKey"`
 	SidecarID    string         `gorm:"column:sidecar_id;primaryKey"`
@@ -20,7 +20,7 @@ type SidecarSlackChannels struct {
 
 func (SidecarSlackChannels) TableName() string { return "private.sidecar_slack_channels" }
 
-// ListSidecarSlackChannels returns the sidecar's rows, the sidecar's own first.
+// ListSidecarSlackChannels returns the rows of the sidecar's listeners.
 func ListSidecarSlackChannels(db *gorm.DB, orgID, sidecarID string) ([]SidecarSlackChannels, error) {
 	var out []SidecarSlackChannels
 	err := db.Where("org_id = ? AND sidecar_id = ?", orgID, sidecarID).
@@ -29,7 +29,7 @@ func ListSidecarSlackChannels(db *gorm.DB, orgID, sidecarID string) ([]SidecarSl
 }
 
 // ReplaceSidecarSlackChannels makes rows the sidecar's complete set. A row
-// without channels is skipped: no row is what "inherit" means.
+// without channels is skipped.
 func ReplaceSidecarSlackChannels(tx *gorm.DB, orgID, sidecarID string, rows []SidecarSlackChannels) error {
 	if err := tx.Where("org_id = ? AND sidecar_id = ?", orgID, sidecarID).
 		Delete(&SidecarSlackChannels{}).Error; err != nil {
@@ -49,29 +49,25 @@ func ReplaceSidecarSlackChannels(tx *gorm.DB, orgID, sidecarID string, rows []Si
 }
 
 // ResolveSidecarSlackChannels returns the channels a review from this
-// listener goes to: the listener's own, else the sidecar's, else none.
+// listener goes to, or none.
 func ResolveSidecarSlackChannels(db *gorm.DB, orgID, sidecarID, listenerName string) ([]string, error) {
-	rows, err := ListSidecarSlackChannels(db, orgID, sidecarID)
-	if err != nil {
+	if listenerName == "" {
+		return nil, nil
+	}
+	var rows []SidecarSlackChannels
+	err := db.Where("org_id = ? AND sidecar_id = ? AND listener_name = ?", orgID, sidecarID, listenerName).
+		Find(&rows).Error
+	if err != nil || len(rows) == 0 {
 		return nil, err
 	}
-	var sidecarWide []string
-	for _, r := range rows {
-		if listenerName != "" && r.ListenerName == listenerName {
-			return r.Channels, nil
-		}
-		if r.ListenerName == "" {
-			sidecarWide = r.Channels
-		}
-	}
-	return sidecarWide, nil
+	return rows[0].Channels, nil
 }
 
 // PruneSidecarSlackChannels drops the rows of listeners that are not in keep,
 // so a removed or renamed listener does not leave channels behind for a
 // future listener that happens to take its name.
 func PruneSidecarSlackChannels(tx *gorm.DB, orgID, sidecarID string, keep []string) error {
-	q := tx.Where("org_id = ? AND sidecar_id = ? AND listener_name <> ''", orgID, sidecarID)
+	q := tx.Where("org_id = ? AND sidecar_id = ?", orgID, sidecarID)
 	if len(keep) > 0 {
 		q = q.Where("listener_name NOT IN ?", keep)
 	}

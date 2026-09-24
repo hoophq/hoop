@@ -39,8 +39,8 @@ const (
 //
 // The Slack ID link comes first: a Slack import writes it for every member it
 // provisions, and so does an admin on the Users page. The email Slack holds for
-// the clicking user is the fallback, for users added by a file import or
-// by hand who were never imported from Slack. Nobody has to log in for either.
+// the clicking user is the fallback, for users added by hand who were never
+// imported from Slack. Nobody has to log in for either.
 func (p *slackPlugin) resolveControlPlaneApprover(ev *event) *storagev2.Context {
 	sid := ev.msg.SessionID
 	linked, err := models.GetUserByOrgIDAndSlackID(ev.orgID, ev.msg.SlackID)

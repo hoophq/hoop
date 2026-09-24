@@ -114,7 +114,7 @@ what a product shows, and ClojureScript exists only in the gateway.**
   **approver** reaches Reviews, anything else lands on the dead end at `/`. Admin is a
   reserved group name, from `/serverinfo` (`admin_role_name`), never a literal. Approver
   is derived by the backend: a user whose groups meet the `reviewers_groups` of any
-  sidecar approval rule (ADR-0019). Groups come from the Slack import, a CSV import
+  sidecar approval rule (ADR-0019). Groups come from the Slack import
   or the Users page; while the Slack import manages them, the Users page edits only
   the admin switch.
   `standard` is the absence of a role and is never stored as a group. Gate a route with

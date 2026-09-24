@@ -1,25 +1,18 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { Group, Stack, Text, Title } from '@mantine/core'
 import Button from '@/components/Button'
 import PageLoader from '@/components/PageLoader'
 import SectionRow from '@/components/SectionRow'
-import SegmentedControl from '@/components/SegmentedControl'
 import { useMinDelay } from '@/hooks/useMinDelay'
 import { showSnackbar } from '@/utils/snackbar'
-import FileSection from './sections/FileSection'
 import SlackSyncSection from './sections/SlackSyncSection'
 import { useProvisioningStore } from './store'
 
-const METHODS = [
-  { value: 'slack', label: 'Slack' },
-  { value: 'file', label: 'File' },
-]
-
 /**
- * Where the control plane's reviewers come from (ADR-0019): Slack user groups
- * by default, or a file. The Users page also edits groups while the Slack
- * import does not manage them. Nobody has to log in for a Slack approval to
- * recognize them. SCIM is the next source.
+ * Where the control plane's reviewers come from (ADR-0019): Slack user groups.
+ * The Users page also edits groups while the Slack import does not manage
+ * them. Nobody has to log in for a Slack approval to recognize them. SCIM is
+ * the next source.
  */
 export default function SettingsProvisioning() {
   const status = useProvisioningStore((s) => s.status)
@@ -28,7 +21,6 @@ export default function SettingsProvisioning() {
   const saving = useProvisioningStore((s) => s.saving)
   const load = useProvisioningStore((s) => s.load)
   const stopManagingGroups = useProvisioningStore((s) => s.stopManagingGroups)
-  const [method, setMethod] = useState('slack')
 
   useEffect(() => {
     load()
@@ -49,15 +41,12 @@ export default function SettingsProvisioning() {
       <Stack gap="xs">
         <Title order={1}>Provisioning</Title>
         <Text c="dimmed">
-          Bring reviewers and their groups from Slack or a file. Reviewers approve in Slack without signing in
-          to the control plane.
+          Bring reviewers and their groups from Slack user groups. Reviewers approve in Slack without signing
+          in to the control plane.
         </Text>
       </Stack>
 
-      <SegmentedControl data={METHODS} value={method} onChange={setMethod} />
-
-      {method === 'slack' && <SlackSyncSection key={sync?.enabled ? 'on' : 'off'} />}
-      {method === 'file' && <FileSection groupsManaged={groupsManaged} />}
+      <SlackSyncSection key={sync?.enabled ? 'on' : 'off'} />
 
       {groupsManaged && (
         <SectionRow

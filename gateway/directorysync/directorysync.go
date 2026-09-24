@@ -1,8 +1,7 @@
-// Package directorysync pulls users and groups into the control plane from a
-// directory that does not push them (ADR-0019). Today that directory is Slack:
-// the members of the user groups an admin picks become hoop users in hoop
-// groups of the same handle. Every run writes through gateway/services
-// provisioning, the same path the file import uses.
+// Package directorysync imports the control plane's reviewers from Slack
+// (ADR-0019): the members of the user groups an admin picks become hoop users
+// in hoop groups named after the group handle. A Slack click then finds them
+// by Slack ID, and nobody has to log in. The gateway never runs it.
 package directorysync
 
 import (
@@ -10,58 +9,14 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/audit"
 	"github.com/hoophq/hoop/gateway/models"
-	"github.com/hoophq/hoop/gateway/services"
-	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"gorm.io/gorm"
 )
-
-// Group is a group of the directory. Name is what hoop stores as the group
-// name, and what a rule's reviewers_groups must say.
-type Group struct {
-	ID   string
-	Name string
-}
-
-// User is an active member of a group. ExternalID is the directory's id for
-// the person.
-type User struct {
-	ExternalID string
-	Email      string
-	Name       string
-}
-
-// Provider reads one directory. ListMembers returns active members only; a
-// member the directory deactivated is reported by DeletedUsers instead, when
-// the provider implements deletionReporter.
-type Provider interface {
-	ListGroups(ctx context.Context) ([]Group, error)
-	ListMembers(ctx context.Context, groupID string) ([]User, error)
-}
-
-// groupGuard is implemented by a provider that can tell whether the groups
-// picked may be trusted as reviewers, and refuses the run when not.
-type groupGuard interface {
-	CheckGroups(ctx context.Context, groupIDs []string, allowMemberManaged bool) error
-}
-
-// deletionReporter is implemented by a provider that knows which people it
-// deactivated, by external id. Only they are deactivated in hoop.
-type deletionReporter interface {
-	DeletedUsers(ctx context.Context) (map[string]bool, error)
-}
-
-// slackLinker is implemented by a provider whose external ids are Slack user
-// ids, so a run also writes users.slack_id.
-type slackLinker interface {
-	LinksSlackID() bool
-}
 
 // Actor is who a run is recorded against in the audit log.
 type Actor struct {
@@ -71,12 +26,12 @@ type Actor struct {
 }
 
 // SystemActor is the actor of a run the scheduler started.
-var SystemActor = Actor{Subject: "system", Name: "directory sync"}
+var SystemActor = Actor{Subject: "system", Name: "slack import"}
 
 // ErrSyncRunning refuses a run while another one for the same org is writing.
-var ErrSyncRunning = errors.New("a directory sync is already running for this organization")
+var ErrSyncRunning = errors.New("a Slack import is already running for this organization")
 
-// runTimeout bounds one run: a directory that stops answering must not hold
+// runTimeout bounds one run: a Slack API that stops answering must not hold
 // the org's lock forever.
 const runTimeout = 10 * time.Minute
 
@@ -104,15 +59,7 @@ func release(orgID string) {
 	delete(running, orgID)
 }
 
-// newProvider builds the provider of a sync config. Tests replace it.
-var newProvider = func(orgID string, cfg *models.DirectorySyncConfig) (Provider, error) {
-	if cfg.Provider != models.ProvisioningSourceSlack {
-		return nil, fmt.Errorf("unknown directory sync provider %q", cfg.Provider)
-	}
-	return NewSlackProvider(orgID)
-}
-
-// Run syncs one organization now, records the outcome on its config and
+// Run imports one organization now, records the outcome on its config and
 // writes one audit entry with what changed.
 func Run(ctx context.Context, db *gorm.DB, orgID string, actor Actor) error {
 	if !claim(orgID) {
@@ -130,11 +77,11 @@ func Run(ctx context.Context, db *gorm.DB, orgID string, actor Actor) error {
 	started := time.Now().UTC()
 	var diff *runDiff
 	runErr := func() error {
-		provider, err := newProvider(orgID, cfg)
+		api, err := openSlack(orgID)
 		if err != nil {
 			return err
 		}
-		diff, err = reconcile(ctx, db, orgID, cfg.Provider, provider, cfg)
+		diff, err = reconcile(ctx, db, orgID, api, cfg)
 		return err
 	}()
 	if errors.Is(runErr, ErrSyncRunning) {
@@ -145,68 +92,32 @@ func Run(ctx context.Context, db *gorm.DB, orgID string, actor Actor) error {
 	if runErr != nil {
 		msg := runErr.Error()
 		errMsg = &msg
-		log.With("org", orgID, "provider", cfg.Provider).Warnf("directory sync failed, reason=%v", runErr)
+		log.With("org", orgID).Warnf("slack import failed, reason=%v", runErr)
 	} else {
-		log.With("org", orgID, "provider", cfg.Provider).Infof("directory sync finished in %v, %s",
+		log.With("org", orgID).Infof("slack import finished in %v, %s",
 			time.Since(started).Round(time.Millisecond), diff.summary())
 	}
 	if err := models.SetDirectorySyncResult(db, orgID, started, errMsg); err != nil {
-		log.With("org", orgID).Warnf("failed recording the directory sync result, reason=%v", err)
+		log.With("org", orgID).Warnf("failed recording the slack import result, reason=%v", err)
 	}
-	recordRun(orgID, cfg.Provider, actor, diff, runErr)
+	recordRun(orgID, actor, diff, runErr)
 	return runErr
 }
 
-type fetchedGroup struct {
-	group   Group
-	members []User
-}
-
-// reconcile makes hoop match the directory for the selected groups.
+// reconcile makes hoop match Slack for the selected groups.
 //
-// Everything is read before anything is written, and the writes are one
-// transaction: a directory error mid-run leaves hoop exactly as the last good
-// run left it.
-func reconcile(ctx context.Context, db *gorm.DB, orgID, source string, p Provider, cfg *models.DirectorySyncConfig) (*runDiff, error) {
-	all, err := p.ListGroups(ctx)
+// Slack is read before anything is written, and the writes are one
+// transaction: a Slack error mid-run leaves hoop exactly as the last good run
+// left it.
+func reconcile(ctx context.Context, db *gorm.DB, orgID string, api slackDirectory, cfg *models.DirectorySyncConfig) (*runDiff, error) {
+	w, err := readWorkspace(ctx, api)
 	if err != nil {
-		return nil, fmt.Errorf("failed listing groups: %w", err)
+		return nil, fmt.Errorf("failed reading slack: %w", err)
 	}
-	byID := make(map[string]Group, len(all))
-	for _, g := range all {
-		byID[g.ID] = g
+	selected, err := w.selected(cfg.GroupIDs, cfg.AllowMemberManagedGroups)
+	if err != nil {
+		return nil, err
 	}
-	for _, id := range cfg.GroupIDs {
-		g, ok := byID[id]
-		if !ok {
-			return nil, fmt.Errorf("group %s no longer exists in %s; remove it from the sync", id, source)
-		}
-		if services.IsReservedGroupName(g.Name) {
-			return nil, fmt.Errorf("group %s: %w", g.Name, services.ErrReservedGroupName)
-		}
-	}
-	if guard, ok := p.(groupGuard); ok {
-		if err := guard.CheckGroups(ctx, cfg.GroupIDs, cfg.AllowMemberManagedGroups); err != nil {
-			return nil, err
-		}
-	}
-	var fetched []fetchedGroup
-	for _, id := range cfg.GroupIDs {
-		members, err := p.ListMembers(ctx, id)
-		if err != nil {
-			return nil, fmt.Errorf("failed listing members of group %s: %w", byID[id].Name, err)
-		}
-		fetched = append(fetched, fetchedGroup{group: byID[id], members: members})
-	}
-	deleted := map[string]bool{}
-	if r, ok := p.(deletionReporter); ok {
-		if deleted, err = r.DeletedUsers(ctx); err != nil {
-			return nil, fmt.Errorf("failed listing deactivated users: %w", err)
-		}
-	}
-	linker, _ := p.(slackLinker)
-	linkSlack := linker != nil && linker.LinksSlackID()
-
 	diff := newRunDiff()
 	err = db.Transaction(func(tx *gorm.DB) error {
 		var locked bool
@@ -217,150 +128,12 @@ func reconcile(ctx context.Context, db *gorm.DB, orgID, source string, p Provide
 		if !locked {
 			return ErrSyncRunning
 		}
-		return write(tx, orgID, source, fetched, deleted, linkSlack, diff)
+		return write(tx, orgID, w, selected, diff)
 	})
 	if err != nil {
 		return nil, err
 	}
 	return diff, nil
-}
-
-func write(tx *gorm.DB, orgID, source string, fetched []fetchedGroup, deleted map[string]bool, linkSlack bool, diff *runDiff) error {
-	userIDs := map[string]string{} // member key -> hoop user id
-	for _, fg := range fetched {
-		for _, m := range fg.members {
-			key := memberKey(m)
-			if key == "" {
-				continue
-			}
-			if _, seen := userIDs[key]; seen {
-				continue
-			}
-			pu := services.ProvisionedUser{
-				ExternalID: key,
-				UserName:   m.Email,
-				Email:      m.Email,
-				Name:       m.Name,
-				Active:     true,
-			}
-			if linkSlack {
-				pu.SlackID = m.ExternalID
-			}
-			res, err := services.UpsertProvisionedUserResult(tx, orgID, source, "", pu)
-			if errors.Is(err, services.ErrProvisionedUserEmailRequired) {
-				log.With("org", orgID, "provider", source).Warnf("skipping member %s: no email", key)
-				continue
-			}
-			if err != nil {
-				return fmt.Errorf("member %s: %w", m.Email, err)
-			}
-			userIDs[key] = res.UserID
-			if res.Created {
-				diff.UsersCreated = append(diff.UsersCreated, strings.ToLower(m.Email))
-			}
-		}
-	}
-
-	selected := map[string]bool{}
-	for _, fg := range fetched {
-		g, err := services.EnsureProvisionedGroup(tx, orgID, source, fg.group.Name, fg.group.ID)
-		if err != nil {
-			return fmt.Errorf("group %s: %w", fg.group.Name, err)
-		}
-		selected[g.ID] = true
-		before, err := models.ListGroupMemberIDs(tx, orgID, g.DisplayName)
-		if err != nil {
-			return err
-		}
-		var members []string
-		for _, m := range fg.members {
-			if id, ok := userIDs[memberKey(m)]; ok {
-				members = append(members, id)
-			}
-		}
-		if err := services.SetGroupMembers(tx, orgID, g.DisplayName, members); err != nil {
-			return err
-		}
-		if err := diff.recordMembership(tx, g.DisplayName, before, members); err != nil {
-			return err
-		}
-	}
-
-	seenUsers := map[string]bool{}
-	for _, id := range userIDs {
-		seenUsers[id] = true
-	}
-	links, err := models.ListDirectoryUsers(tx, orgID, source)
-	if err != nil {
-		return err
-	}
-	for _, link := range links {
-		if seenUsers[link.UserID] {
-			continue
-		}
-		gone := link.ExternalID != nil && deleted[*link.ExternalID]
-		deactivated, err := leaveScope(tx, orgID, link.UserID, gone)
-		if err != nil {
-			return err
-		}
-		if deactivated {
-			diff.UsersDeactivated = append(diff.UsersDeactivated, strings.ToLower(link.UserName))
-		}
-	}
-
-	groups, err := models.ListDirectoryGroups(tx, orgID, source)
-	if err != nil {
-		return err
-	}
-	for i := range groups {
-		if selected[groups[i].ID] {
-			continue
-		}
-		if err := services.DeleteProvisionedGroup(tx, orgID, &groups[i]); err != nil {
-			return err
-		}
-		diff.GroupsRemoved = append(diff.GroupsRemoved, groups[i].DisplayName)
-	}
-	return nil
-}
-
-// leaveScope handles a user the run did not see in any selected group. They
-// keep their account and lose only the groups the sync owns: leaving a user
-// group in Slack is not leaving the company. They are deactivated only when
-// the directory says so (deleted), and never when they are an admin, so a
-// sync cannot lock the org out of the control plane.
-func leaveScope(tx *gorm.DB, orgID, userID string, deletedInSource bool) (deactivated bool, err error) {
-	if deletedInSource {
-		admin, err := isAdmin(tx, orgID, userID)
-		if err != nil {
-			return false, err
-		}
-		if !admin {
-			return true, services.DeactivateProvisionedUser(tx, orgID, userID)
-		}
-	}
-	return false, tx.Exec(`
-		DELETE FROM private.user_groups
-		WHERE org_id = @org AND user_id::TEXT = @user
-		AND name IN (SELECT display_name FROM private.directory_groups WHERE org_id = @org)`,
-		map[string]any{"org": orgID, "user": userID}).Error
-}
-
-func isAdmin(tx *gorm.DB, orgID, userID string) (bool, error) {
-	var admin bool
-	err := tx.Raw(`SELECT EXISTS (
-		SELECT 1 FROM private.user_groups WHERE org_id = ? AND user_id::TEXT = ? AND name = ?)`,
-		orgID, userID, types.GroupAdmin).Scan(&admin).Error
-	return admin, err
-}
-
-// memberKey identifies a member across runs: the directory's id, else the
-// email.
-func memberKey(u User) string {
-	if u.ExternalID != "" {
-		return u.ExternalID
-	}
-	return strings.ToLower(strings.TrimSpace(u.Email))
 }
 
 // runDiff is what a run changed, for its audit entry.
@@ -435,7 +208,7 @@ func (d *runDiff) summary() string {
 		len(d.UsersCreated), len(d.UsersDeactivated), added, removed, len(d.GroupsRemoved))
 }
 
-func (d *runDiff) payload(source string) map[string]any {
+func (d *runDiff) payload() map[string]any {
 	capList := func(v []string) []string {
 		if len(v) > auditListCap {
 			return v[:auditListCap]
@@ -450,7 +223,6 @@ func (d *runDiff) payload(source string) map[string]any {
 		return out
 	}
 	return map[string]any{
-		"source":              source,
 		"users_created":       capList(d.UsersCreated),
 		"users_deactivated":   capList(d.UsersDeactivated),
 		"memberships_added":   capMap(d.MembershipsAdded),
@@ -461,7 +233,7 @@ func (d *runDiff) payload(source string) map[string]any {
 
 // recordRun writes one security audit entry for the run: what changed on
 // success, why it failed otherwise.
-func recordRun(orgID, source string, actor Actor, diff *runDiff, runErr error) {
+func recordRun(orgID string, actor Actor, diff *runDiff, runErr error) {
 	row := &models.SecurityAuditLog{
 		OrgID:        orgID,
 		ActorSubject: actor.Subject,
@@ -473,17 +245,16 @@ func recordRun(orgID, source string, actor Actor, diff *runDiff, runErr error) {
 	}
 	if runErr != nil {
 		row.ErrorMessage = runErr.Error()
-		row.RequestPayloadRedacted = map[string]any{"source": source}
 	} else {
-		row.RequestPayloadRedacted = diff.payload(source)
+		row.RequestPayloadRedacted = diff.payload()
 	}
 	if err := models.CreateSecurityAuditLog(row); err != nil {
-		log.With("org", orgID).Warnf("failed writing the directory sync audit entry, reason=%v", err)
+		log.With("org", orgID).Warnf("failed writing the slack import audit entry, reason=%v", err)
 	}
 }
 
-// Start runs every organization's sync on its interval until ctx is done. The
-// control plane starts it; the gateway never does.
+// Start runs every organization's import on its interval until ctx is done.
+// The control plane starts it; the gateway never does.
 func Start(ctx context.Context, db *gorm.DB) {
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
@@ -500,7 +271,7 @@ func Start(ctx context.Context, db *gorm.DB) {
 func runDue(ctx context.Context, db *gorm.DB, now time.Time) {
 	configs, err := models.ListDirectorySyncConfigs(db)
 	if err != nil {
-		log.Warnf("failed listing directory syncs, reason=%v", err)
+		log.Warnf("failed listing slack imports, reason=%v", err)
 		return
 	}
 	for _, cfg := range configs {
