@@ -144,14 +144,14 @@ func Create(c *gin.Context) {
 		trackClient.Close()
 	}()
 
-	newUser.Role = newRoleResolver(ctx.OrgID).role(newUser)
+	newUser.Role = toRole(newUser)
 	c.JSON(http.StatusCreated, newUser)
 }
 
 // UpdateUser
 //
 //	@Summary		Update User
-//	@Description	Updates an existing user. In a control plane whose groups the Slack import manages, only the admin group may change; a request that changes other groups answers 422.
+//	@Description	Updates an existing user
 //	@Tags			User Management
 //	@Accept			json
 //	@Produce		json
@@ -196,21 +196,6 @@ func Update(c *gin.Context) {
 		}
 	}
 
-	// A control plane whose groups a source manages (ADR-0019) changes only
-	// the admin group here; the Slack import owns the rest.
-	if appconfig.Get().IsControlPlane() {
-		groups, status, msg, err := managedGroupsUpdate(ctx.OrgID, existingUser.ID, req.Groups)
-		switch {
-		case err != nil:
-			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed checking the managed groups")
-			return
-		case status != 0:
-			c.JSON(status, gin.H{"message": msg})
-			return
-		}
-		req.Groups = groups
-	}
-
 	existingUser.Name = req.Name
 	existingUser.Picture = req.Picture
 	existingUser.Status = string(req.Status)
@@ -250,49 +235,11 @@ func Update(c *gin.Context) {
 		Email:    existingUser.Email,
 		Status:   openapi.StatusType(existingUser.Status),
 		Verified: existingUser.Verified, // DEPRECATED in flavor of role
-		Role:     newRoleResolver(ctx.OrgID).role(req),
+		Role:     toRole(req),
 		SlackID:  existingUser.SlackID,
 		Picture:  existingUser.Picture,
 		Groups:   req.Groups,
 	})
-}
-
-// managedGroupsUpdate returns the groups a PUT may write when a source manages
-// the org's groups: the user's current groups, with the admin group as the
-// request has it. A request that changes any other group answers 422, so the
-// caller learns the change did not happen instead of seeing it undone by the
-// next sync. Without a managing source the request's groups go through.
-func managedGroupsUpdate(orgID, userID string, requested []string) (groups []string, status int, msg string, err error) {
-	managed, err := models.GroupsManagedByProvisioning(models.DB, orgID)
-	if err != nil || !managed {
-		return requested, 0, "", err
-	}
-	rows, err := models.GetUserGroupsByUserID(userID)
-	if err != nil {
-		return nil, 0, "", err
-	}
-	current := []string{}
-	for _, r := range rows {
-		if r.Name != types.GroupAdmin {
-			current = append(current, r.Name)
-		}
-	}
-	wanted := []string{}
-	for _, g := range requested {
-		if g != types.GroupAdmin && !slices.Contains(wanted, g) {
-			wanted = append(wanted, g)
-		}
-	}
-	slices.Sort(current)
-	slices.Sort(wanted)
-	if !slices.Equal(current, wanted) {
-		return nil, http.StatusUnprocessableEntity,
-			"groups are managed by the Slack import; only the administrator switch can change here", nil
-	}
-	if slices.Contains(requested, types.GroupAdmin) {
-		current = append(current, types.GroupAdmin)
-	}
-	return current, 0, "", nil
 }
 
 // ListUsers
@@ -319,7 +266,6 @@ func List(c *gin.Context) {
 	}
 
 	// map users from db to openapi.User
-	roles := newRoleResolver(ctx.OrgID)
 	usersList := []openapi.User{}
 	for i, u := range users {
 		usersList = append(usersList,
@@ -338,7 +284,7 @@ func List(c *gin.Context) {
 				usersList[i].Groups = append(usersList[i].Groups, ug.Name)
 			}
 		}
-		usersList[i].Role = roles.role(usersList[i])
+		usersList[i].Role = toRole(usersList[i])
 	}
 
 	c.JSON(http.StatusOK, usersList)
@@ -431,7 +377,7 @@ func GetUserByEmailOrID(c *gin.Context) {
 	for _, ug := range userGroups {
 		userResponse.Groups = append(userResponse.Groups, ug.Name)
 	}
-	userResponse.Role = newRoleResolver(ctx.OrgID).role(userResponse)
+	userResponse.Role = toRole(userResponse)
 
 	c.JSON(http.StatusOK, userResponse)
 }
@@ -497,7 +443,7 @@ func GetUserInfo(c *gin.Context) {
 		roleName = openapi.RoleUnregisteredType
 	case ctx.IsAdminUser():
 		roleName = openapi.RoleAdminType
-	case newRoleResolver(ctx.OrgID).isApprover(ctx.UserGroups):
+	case ctx.IsApproverUser():
 		roleName = openapi.RoleApproverType
 	case ctx.IsAuditorUser():
 		roleName = openapi.RoleAuditorType
@@ -828,60 +774,11 @@ func isValidMailAddress(email string) bool {
 	return err == nil
 }
 
-// roleResolver decides the role /users and /userinfo report.
-//
-// A gateway reads the reserved approver group. A control plane has no such
-// group of its own: its groups come from the identity provider (ADR-0019), so
-// a user is an approver when their groups meet the reviewers of any sidecar
-// approval rule. That is what opens the Reviews page to them; the route
-// middleware treats the role as standard either way.
-type roleResolver struct {
-	controlPlane   bool
-	reviewerGroups map[string]bool
-}
-
-// newRoleResolver reads the reviewer groups once per request. A failed read
-// reports nobody as an approver rather than failing the request: the role only
-// decides which pages the web app shows.
-func newRoleResolver(orgID string) roleResolver {
-	r := roleResolver{controlPlane: appconfig.Get().IsControlPlane()}
-	if !r.controlPlane {
-		return r
-	}
-	orgUUID, err := uuid.Parse(orgID)
-	if err != nil {
-		log.With("org", orgID).Warnf("failed parsing the org id to resolve approvers, reason=%v", err)
-		return r
-	}
-	groups, err := models.ListSidecarReviewerGroups(models.DB, orgUUID)
-	if err != nil {
-		log.With("org", orgID).Warnf("failed listing the reviewer groups, reason=%v", err)
-		return r
-	}
-	r.reviewerGroups = make(map[string]bool, len(groups))
-	for _, g := range groups {
-		r.reviewerGroups[g] = true
-	}
-	return r
-}
-
-func (r roleResolver) isApprover(groups []string) bool {
-	if !r.controlPlane {
-		return slices.Contains(groups, types.GroupApprover)
-	}
-	for _, g := range groups {
-		if r.reviewerGroups[g] {
-			return true
-		}
-	}
-	return false
-}
-
-func (r roleResolver) role(user openapi.User) string {
+func toRole(user openapi.User) string {
 	if slices.Contains(user.Groups, types.GroupAdmin) {
 		return string(openapi.RoleAdminType)
 	}
-	if r.isApprover(user.Groups) {
+	if slices.Contains(user.Groups, types.GroupApprover) {
 		return string(openapi.RoleApproverType)
 	}
 	return string(openapi.RoleStandardType)

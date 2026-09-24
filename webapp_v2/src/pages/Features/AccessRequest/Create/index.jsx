@@ -114,10 +114,14 @@ function RuleFormFields({ rule, isEdit, defaultReviewerRoles }) {
   const deleteRule = useAccessRequestStore((s) => s.deleteRule)
 
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
-  // Roles (utils/roles) a new rule names as reviewers, given by the route
-  // table. The group name comes from /serverinfo: a deployment may rename it.
+  // Roles (utils/roles) a new rule names as reviewers, given by the route table:
+  // the control plane passes the approver, the gateway none. The group name
+  // comes from /serverinfo: a deployment may rename it.
   const adminRoleName = useUserStore((s) => s.adminRoleName)
-  const defaultReviewerGroups = defaultReviewerRoles.flatMap((role) => roleToGroups(role, adminRoleName))
+  const approverRoleName = useUserStore((s) => s.approverRoleName)
+  const defaultReviewerGroups = defaultReviewerRoles.flatMap((role) =>
+    roleToGroups(role, adminRoleName, approverRoleName),
+  )
 
   // Rules that Hoop manages as part of a protection profile: the API accepts
   // changes to approval settings and group lists only, and refuses to delete

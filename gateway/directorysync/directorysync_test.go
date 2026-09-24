@@ -203,9 +203,17 @@ func syncConfig(groupIDs ...string) *models.DirectorySyncConfig {
 	return &models.DirectorySyncConfig{OrgID: syncOrgID, GroupIDs: pq.StringArray(groupIDs), IntervalMinutes: 15}
 }
 
+// importWith stores cfg as the org's import and runs it against f.
+func importWith(t *testing.T, f *fakeSlack, cfg *models.DirectorySyncConfig) (*runDiff, error) {
+	t.Helper()
+	if err := models.UpsertDirectorySyncConfig(models.DB, cfg); err != nil {
+		t.Fatalf("store config: %v", err)
+	}
+	return reconcile(context.Background(), models.DB, syncOrgID, f, cfg)
+}
+
 func TestReconcileSlack(t *testing.T) {
 	startSyncDB(t)
-	ctx := context.Background()
 
 	// The org's admin, who logged in before the sync existed and is also a
 	// Slack workspace admin in dba-leads.
@@ -219,7 +227,7 @@ func TestReconcileSlack(t *testing.T) {
 	}
 
 	f := slackWorkspace()
-	diff, err := reconcile(ctx, models.DB, syncOrgID, f, syncConfig("S-DBA"))
+	diff, err := importWith(t, f, syncConfig("S-DBA"))
 	if err != nil {
 		t.Fatalf("first run: %v", err)
 	}
@@ -249,7 +257,7 @@ func TestReconcileSlack(t *testing.T) {
 	}
 
 	t.Run("a member-managed group refuses the whole run", func(t *testing.T) {
-		_, err := reconcile(ctx, models.DB, syncOrgID, f, syncConfig("S-DBA", "S-SRE"))
+		_, err := importWith(t, f, syncConfig("S-DBA", "S-SRE"))
 		if err == nil || !strings.Contains(err.Error(), "@sre") {
 			t.Fatalf("err = %v; want the governance refusal", err)
 		}
@@ -258,7 +266,7 @@ func TestReconcileSlack(t *testing.T) {
 		}
 		cfg := syncConfig("S-DBA", "S-SRE")
 		cfg.AllowMemberManagedGroups = true
-		if _, err := reconcile(ctx, models.DB, syncOrgID, f, cfg); err != nil {
+		if _, err := importWith(t, f, cfg); err != nil {
 			t.Fatalf("allowed: %v", err)
 		}
 		if got := groupsOf(t, "eve@corp.com"); !slices.Equal(got, []string{"sre"}) {
@@ -267,7 +275,7 @@ func TestReconcileSlack(t *testing.T) {
 	})
 
 	t.Run("a group named admin is refused and admins keep their row", func(t *testing.T) {
-		_, err := reconcile(ctx, models.DB, syncOrgID, f, syncConfig("S-DBA", "S-ADMIN"))
+		_, err := importWith(t, f, syncConfig("S-DBA", "S-ADMIN"))
 		if !errors.Is(err, ErrReservedGroupName) {
 			t.Fatalf("err = %v; want ErrReservedGroupName", err)
 		}
@@ -283,7 +291,7 @@ func TestReconcileSlack(t *testing.T) {
 		f.group("S-DBA").Handle = "dba"
 		cfg := syncConfig("S-DBA", "S-SRE")
 		cfg.AllowMemberManagedGroups = true
-		if _, err := reconcile(ctx, models.DB, syncOrgID, f, cfg); err != nil {
+		if _, err := importWith(t, f, cfg); err != nil {
 			t.Fatalf("run: %v", err)
 		}
 		if got := groupsOf(t, "ana@corp.com"); !slices.Equal(got, []string{"dba-leads"}) {
@@ -305,7 +313,7 @@ func TestReconcileSlack(t *testing.T) {
 		t.Cleanup(func() {
 			g.Users = slices.DeleteFunc(g.Users, func(id string) bool { return id == "U-CARL" })
 		})
-		_, err := reconcile(ctx, models.DB, syncOrgID, f, syncConfig("S-DBA"))
+		_, err := importWith(t, f, syncConfig("S-DBA"))
 		if !errors.Is(err, ErrAmbiguousUser) {
 			t.Fatalf("err = %v; want ErrAmbiguousUser", err)
 		}
@@ -314,7 +322,7 @@ func TestReconcileSlack(t *testing.T) {
 	t.Run("a member who leaves keeps the account and loses the group", func(t *testing.T) {
 		g := f.group("S-DBA")
 		g.Users = slices.DeleteFunc(g.Users, func(id string) bool { return id == "U-BOB" })
-		diff, err := reconcile(ctx, models.DB, syncOrgID, f, syncConfig("S-DBA"))
+		diff, err := importWith(t, f, syncConfig("S-DBA"))
 		if err != nil {
 			t.Fatalf("run: %v", err)
 		}
@@ -335,7 +343,7 @@ func TestReconcileSlack(t *testing.T) {
 	t.Run("a user deleted in Slack is deactivated, an admin is not", func(t *testing.T) {
 		f.user("U-ANA").Deleted = true
 		f.user("U-ADMIN").Deleted = true
-		diff, err := reconcile(ctx, models.DB, syncOrgID, f, syncConfig("S-DBA"))
+		diff, err := importWith(t, f, syncConfig("S-DBA"))
 		if err != nil {
 			t.Fatalf("run: %v", err)
 		}
@@ -350,6 +358,35 @@ func TestReconcileSlack(t *testing.T) {
 		}
 		if got := groupsOf(t, "root@corp.com"); !slices.Equal(got, []string{types.GroupAdmin}) {
 			t.Errorf("root groups = %v; want only admin", got)
+		}
+	})
+
+	t.Run("removing the import keeps users and groups and stops managing them", func(t *testing.T) {
+		g := f.group("S-DBA")
+		g.Users = append(g.Users, "U-BOB")
+		if _, err := importWith(t, f, syncConfig("S-DBA")); err != nil {
+			t.Fatalf("run: %v", err)
+		}
+		if err := Remove(models.DB, syncOrgID); err != nil {
+			t.Fatalf("remove: %v", err)
+		}
+		if _, err := models.GetDirectorySyncConfig(models.DB, syncOrgID); err == nil {
+			t.Errorf("the import config survived")
+		}
+		if managed, err := models.GroupsManagedByProvisioning(models.DB, syncOrgID); err != nil || managed {
+			t.Errorf("after remove: managed=%v err=%v; want false", managed, err)
+		}
+		if got := groupsOf(t, "bob@corp.com"); !slices.Equal(got, []string{"dba-leads"}) {
+			t.Errorf("bob groups = %v; removing the import keeps them", got)
+		}
+
+		// A run that read Slack before the removal writes nothing.
+		_, err := reconcile(context.Background(), models.DB, syncOrgID, f, syncConfig("S-DBA"))
+		if !errors.Is(err, errImportRemoved) {
+			t.Fatalf("err = %v; want errImportRemoved", err)
+		}
+		if managed, _ := models.GroupsManagedByProvisioning(models.DB, syncOrgID); managed {
+			t.Errorf("a run after remove made the groups managed again")
 		}
 	})
 }

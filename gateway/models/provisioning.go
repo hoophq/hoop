@@ -74,9 +74,7 @@ func SetDirectorySyncResult(db *gorm.DB, orgID string, runAt time.Time, errMsg *
 }
 
 // GroupsManagedByProvisioning reports whether the Slack import owns the org's
-// groups: it has recorded a group. It reads the rows, not the import config,
-// so removing the import does not hand groups back to login behind the
-// admin's back; ClearProvisioningLinks does.
+// groups: it has recorded a group. Removing the import clears the records.
 func GroupsManagedByProvisioning(db *gorm.DB, orgID string) (bool, error) {
 	var managed bool
 	err := db.Raw(`SELECT EXISTS (SELECT 1 FROM private.directory_groups WHERE org_id = ?)`, orgID).
@@ -84,9 +82,8 @@ func GroupsManagedByProvisioning(db *gorm.DB, orgID string) (bool, error) {
 	return managed, err
 }
 
-// ClearProvisioningLinks stops the Slack import from managing the org's
-// groups. It deletes only its records: users and their user_groups rows stay,
-// and from then on login and the Users page own them again.
+// ClearProvisioningLinks forgets which groups the Slack import owns. Users and
+// their user_groups rows stay, and from then on login owns them again.
 func ClearProvisioningLinks(tx *gorm.DB, orgID string) error {
 	return tx.Where("org_id = ?", orgID).Delete(&DirectoryGroup{}).Error
 }

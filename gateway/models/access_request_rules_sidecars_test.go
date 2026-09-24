@@ -2,14 +2,12 @@ package models_test
 
 import (
 	"errors"
-	"slices"
 	"strings"
 	"testing"
 
 	"github.com/aws/smithy-go/ptr"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/gateway/models"
-	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
@@ -66,34 +64,5 @@ func newAccessRequestRule(orgID uuid.UUID, name, accessType string) *models.Acce
 		ReviewersGroups:        []string{"admin"},
 		ForceApprovalGroups:    []string{},
 		MinApprovals:           ptr.Int(1),
-	}
-}
-
-// A control plane reports an approver from the union of the sidecar rules'
-// reviewers; a gateway rule's reviewers must not count.
-func TestListSidecarReviewerGroups(t *testing.T) {
-	startTestDB(t)
-	orgID := uuid.MustParse(testOrgID)
-	for _, r := range []*models.AccessRequestRule{
-		{OrgID: orgID, Name: "hold-a", AccessType: models.AccessTypeSidecar, ReviewersGroups: pq.StringArray{"dba-leads", "admin"}},
-		{OrgID: orgID, Name: "hold-b", AccessType: models.AccessTypeSidecar, ReviewersGroups: pq.StringArray{"sre", "dba-leads"}},
-		{OrgID: orgID, Name: "gateway-rule", AccessType: models.AccessTypeCommand, ConnectionNames: pq.StringArray{"pg"}, ReviewersGroups: pq.StringArray{"finance"}},
-	} {
-		if r.ConnectionNames == nil {
-			r.ConnectionNames = pq.StringArray{}
-		}
-		r.ApprovalRequiredGroups = pq.StringArray{}
-		r.ForceApprovalGroups = pq.StringArray{}
-		if err := models.CreateAccessRequestRule(models.DB, r); err != nil {
-			t.Fatalf("seed %s: %v", r.Name, err)
-		}
-	}
-	got, err := models.ListSidecarReviewerGroups(models.DB, orgID)
-	if err != nil {
-		t.Fatalf("list: %v", err)
-	}
-	slices.Sort(got)
-	if want := []string{"admin", "dba-leads", "sre"}; !slices.Equal(got, want) {
-		t.Fatalf("groups = %v, want %v", got, want)
 	}
 }

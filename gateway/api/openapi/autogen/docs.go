@@ -8641,7 +8641,7 @@ const docTemplate = `{
                 }
             },
             "delete": {
-                "description": "Stop the directory sync. Synced users and groups stay as they are, and stay managed until groups are released with DELETE /serverconfig/provisioning. Control plane only.",
+                "description": "Remove the Slack import. Imported users and their groups stay, and SSO login manages groups again. Control plane only.",
                 "tags": [
                     "Server Management"
                 ],
@@ -8925,68 +8925,6 @@ const docTemplate = `{
                     },
                     "403": {
                         "description": "Forbidden",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    }
-                }
-            }
-        },
-        "/serverconfig/provisioning": {
-            "get": {
-                "description": "Report whether the Slack import owns the org's groups. While it does, login and the Users page change only the admin group. Control plane only.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Server Management"
-                ],
-                "summary": "Get Provisioning Status",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.ProvisioningStatus"
-                        }
-                    },
-                    "412": {
-                        "description": "Precondition Failed",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    }
-                }
-            },
-            "delete": {
-                "description": "Hand the org's groups back to login and the Users page. It deletes only the links between users and their source; users and their groups stay. Refused while the directory sync exists, since its next run would take the groups back. Control plane only.",
-                "tags": [
-                    "Server Management"
-                ],
-                "summary": "Stop Managing Groups",
-                "responses": {
-                    "204": {
-                        "description": "No Content"
-                    },
-                    "409": {
-                        "description": "Conflict",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "412": {
-                        "description": "Precondition Failed",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -11524,7 +11462,7 @@ const docTemplate = `{
                 }
             },
             "put": {
-                "description": "Updates an existing user. In a control plane whose groups the Slack import manages, only the admin group may change; a request that changes other groups answers 422.",
+                "description": "Updates an existing user",
                 "consumes": [
                     "application/json"
                 ],
@@ -17040,15 +16978,6 @@ const docTemplate = `{
                 "user_email": {
                     "type": "string",
                     "example": "johnwick@bad.org"
-                }
-            }
-        },
-        "openapi.ProvisioningStatus": {
-            "type": "object",
-            "properties": {
-                "groups_managed": {
-                    "description": "True when the Slack import has written users or groups. Login and the\nUsers page then change only the admin group.",
-                    "type": "boolean"
                 }
             }
         },

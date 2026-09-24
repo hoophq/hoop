@@ -41,8 +41,8 @@ export const decidedGroups = (review) =>
 // so the button is what has to refuse it. `groups` is what /userinfo reports,
 // the same list the backend intersects; the role is the fallback for a gateway
 // that answers none.
-export function canApprove(review, { groups, role, adminRoleName }) {
-  const mine = groups?.length ? groups : roleToGroups(role, adminRoleName)
+export function canApprove(review, { groups, role, adminRoleName, approverRoleName }) {
+  const mine = groups?.length ? groups : roleToGroups(role, adminRoleName, approverRoleName)
   return (review?.review_groups_data ?? []).some((g) => mine.includes(g.group))
 }
 

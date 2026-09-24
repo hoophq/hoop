@@ -24,7 +24,6 @@ import TagsInput from '@/components/TagsInput'
 import CopyButton from '@/components/CopyButton'
 import { usersService } from '@/services/users'
 import { authService } from '@/services/auth'
-import { provisioningService } from '@/services/provisioning'
 import { useUserStore } from '@/stores/useUserStore'
 import { docsUrl } from '@/utils/docsUrl'
 import { showSnackbar } from '@/utils/snackbar'
@@ -34,11 +33,11 @@ import { STATUS_OPTIONS, generatePassword, statusVariant } from './shared'
  * The control plane's Users page, sibling of GatewayUsers.jsx.
  *
  * Groups name reviewers (ADR-0019). This page edits them for every auth
- * method, unless the Slack import manages them: then it shows them and edits
- * only the admin switch, and the backend refuses anything else. Administrator is hoop's own group and stays a switch.
+ * method; the Slack import resets the groups it imports on every run.
+ * Administrator is hoop's own group and stays a switch.
  */
 
-function UserFormModal({ opened, onClose, formType, user, isLocalAuth, groupsManaged, onSaved }) {
+function UserFormModal({ opened, onClose, formType, user, isLocalAuth, onSaved }) {
   // ADMIN_USERNAME renames the admin group, so its name comes from /serverinfo.
   const adminRoleName = useUserStore((s) => s.adminRoleName)
   const currentEmail = useUserStore((s) => s.user?.email)
@@ -65,7 +64,7 @@ function UserFormModal({ opened, onClose, formType, user, isLocalAuth, groupsMan
   }, [opened, user, adminRoleName])
 
   useEffect(() => {
-    if (!opened || groupsManaged) return
+    if (!opened) return
     let cancelled = false
     usersService
       .listGroups()
@@ -77,7 +76,7 @@ function UserFormModal({ opened, onClose, formType, user, isLocalAuth, groupsMan
     return () => {
       cancelled = true
     }
-  }, [opened, groupsManaged, adminRoleName])
+  }, [opened, adminRoleName])
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -91,9 +90,7 @@ function UserFormModal({ opened, onClose, formType, user, isLocalAuth, groupsMan
     }
     setSaving(true)
     try {
-      // PUT /users replaces the whole list. While groups are managed the
-      // other groups travel back untouched with the admin switch, which is
-      // the only change the backend accepts then.
+      // PUT /users replaces the whole list.
       const groups = [...(isAdmin || isSelf ? [adminRoleName] : []), ...otherGroups]
       const payload = { name, groups, slack_id: slackId, email }
       if (formType === 'update') {
@@ -152,40 +149,14 @@ function UserFormModal({ opened, onClose, formType, user, isLocalAuth, groupsMan
             disabled={isSelf}
             onChange={(e) => setIsAdmin(e.currentTarget.checked)}
           />
-          {!groupsManaged ? (
-            <TagsInput
-              label="Groups"
-              description="Name these groups as reviewers on an analyzer rule."
-              placeholder="Select or type a group"
-              data={groupOptions}
-              value={otherGroups}
-              onChange={setOtherGroups}
-            />
-          ) : (
-            formType === 'update' && (
-              <Stack gap={4}>
-                <Text size="sm" fw={500}>
-                  Groups
-                </Text>
-                {otherGroups.length > 0 ? (
-                  <Group gap="xs">
-                    {otherGroups.map((g) => (
-                      <Badge key={g} variant="light" color="gray">
-                        {g}
-                      </Badge>
-                    ))}
-                  </Group>
-                ) : (
-                  <Text size="sm" c="dimmed">
-                    No groups.
-                  </Text>
-                )}
-                <Text size="xs" c="dimmed">
-                  Managed by the Slack import in Settings, Provisioning.
-                </Text>
-              </Stack>
-            )
-          )}
+          <TagsInput
+            label="Groups"
+            description="Name these groups as reviewers on an analyzer rule. The Slack import resets the groups it imports on every run."
+            placeholder="Select or type a group"
+            data={groupOptions}
+            value={otherGroups}
+            onChange={setOtherGroups}
+          />
           {formType === 'update' && (
             <Select
               label="Status"
@@ -237,7 +208,6 @@ export default function ControlPlaneUsers() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [isLocalAuth, setIsLocalAuth] = useState(false)
-  const [groupsManaged, setGroupsManaged] = useState(false)
   const [selectedUser, setSelectedUser] = useState(null)
   const [formType, setFormType] = useState('create')
   const [opened, { open, close }] = useDisclosure(false)
@@ -251,14 +221,12 @@ export default function ControlPlaneUsers() {
 
   async function fetchAll() {
     try {
-      const [usersRes, serverInfo, provisioning] = await Promise.all([
+      const [usersRes, serverInfo] = await Promise.all([
         usersService.list(),
         authService.getPublicServerInfo(),
-        provisioningService.getStatus(),
       ])
       setUsers(usersRes.data ?? [])
       setIsLocalAuth(serverInfo?.auth_method === 'local')
-      setGroupsManaged(!!provisioning.data?.groups_managed)
     } catch {
       setError('Failed to load users.')
     } finally {
@@ -295,9 +263,7 @@ export default function ControlPlaneUsers() {
               {users.length} {users.length === 1 ? 'Member' : 'Members'}
             </Text>
             <Text size="sm" c="dimmed">
-              {groupsManaged
-                ? 'The Slack import manages the groups. See '
-                : 'Reviewers come from Slack or the groups you set here. See '}
+              {'Reviewers come from the Slack import or the groups you set here. See '}
               <Anchor component={Link} to="/settings/provisioning" size="sm">
                 Provisioning
               </Anchor>
@@ -395,7 +361,6 @@ export default function ControlPlaneUsers() {
         formType={formType}
         user={selectedUser}
         isLocalAuth={isLocalAuth}
-        groupsManaged={groupsManaged}
         onSaved={fetchAll}
       />
     </>

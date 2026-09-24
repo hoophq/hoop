@@ -3,7 +3,7 @@
 - **Status:** Proposed
 - **Date:** 2026-09-24
 - **Author:** Rogerio Moura
-- **Code:** [`gateway/transport/plugins/slack/events_controlplane.go`](../../gateway/transport/plugins/slack/events_controlplane.go), [`gateway/directorysync/`](../../gateway/directorysync/), [`gateway/services/analyzerapproval.go`](../../gateway/services/analyzerapproval.go), [`gateway/api/user/user.go`](../../gateway/api/user/user.go), [`gateway/api/sidecar/slackchannels.go`](../../gateway/api/sidecar/slackchannels.go)
+- **Code:** [`gateway/transport/plugins/slack/events_controlplane.go`](../../gateway/transport/plugins/slack/events_controlplane.go), [`gateway/directorysync/`](../../gateway/directorysync/), [`gateway/services/analyzerapproval.go`](../../gateway/services/analyzerapproval.go), [`gateway/api/sidecar/slackchannels.go`](../../gateway/api/sidecar/slackchannels.go)
 - **Related:** ADR-0013 (control plane mode), #1834 (Slack user groups), EVL-242 (approver role)
 - **Supersedes / Superseded by:** —
 
@@ -74,13 +74,13 @@ one. So a run refuses a user group whose last editor is not a workspace admin
 or owner, unless the admin allows member-managed groups; the Provisioning page
 says to restrict user group editing to admins in Slack.
 
-The Slack import manages the groups: while it owns a group, SSO login stops
-rewriting groups and the Users page changes only the admin group. An explicit
-"stop managing groups" hands them back. A user who leaves every imported
-group keeps the account and loses those groups; only Slack deactivates a user
-(`deleted`), and an import never deactivates an administrator or reactivates
-a user an admin deactivated. The import refuses a group named `admin`,
-`auditor` or `approver`. No secret is stored.
+While the Slack import owns a group, SSO login stops rewriting groups.
+Removing the import hands them back; users and their groups stay. The Users
+page always edits groups, and a run resets only the groups it imports. A user
+who leaves every imported group keeps the account and loses those groups;
+only Slack deactivates a user (`deleted`), and an import never deactivates an
+administrator or reactivates a user an admin deactivated. The import refuses
+a group named `admin`, `auditor` or `approver`. No secret is stored.
 
 **A Slack click names its approver by Slack ID, then email.** The control
 plane looks up the hoop user linked to the clicking Slack user; with none, it
@@ -90,9 +90,9 @@ their groups must contain the clicked group. It refuses a deleted user, a bot,
 a guest, a user from another organization, and an unconfirmed email.
 
 **Reviewer groups are chosen on the rule.** The analyzer's hold switch takes
-`reviewers_groups`; with none it names the admin group. A user is reported with
-the `approver` role when their groups meet any sidecar rule's
-`reviewers_groups`, which is what opens the Reviews page to them.
+`reviewers_groups`; with none it names the admin group. These groups are not
+roles: their members approve in Slack. The `approver` role keeps its meaning,
+the reserved group, which opens the Reviews page.
 
 **Slack channels are set per listener**, as guardrails, data masking and the
 analyzer bind to a listener. The default channel keeps receiving every review,

@@ -1365,9 +1365,8 @@ func (api *Api) buildRoutes(r *apiroutes.Router, mode appconfig.AppMode) {
 		apiserverconfig.UpdateMcpAuthConfig,
 	)
 
-	// Provisioning (ADR-0019): the Slack directory sync and the switch that
-	// hands groups back to login. The routes exist in both modes, as every
-	// route does, and answer 412 on a gateway.
+	// Provisioning (ADR-0019): the Slack import. The routes exist in both
+	// modes, as every route does, and answer 412 on a gateway.
 	r.GET("/serverconfig/directory-sync",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
@@ -1395,17 +1394,6 @@ func (api *Api) buildRoutes(r *apiroutes.Router, mode appconfig.AppMode) {
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		apiprovisioning.ListDirectorySyncGroups,
-	)
-	r.GET("/serverconfig/provisioning",
-		apiroutes.AdminOnlyAccessRole,
-		r.AuthMiddleware,
-		apiprovisioning.GetProvisioningStatus,
-	)
-	r.DELETE("/serverconfig/provisioning",
-		apiroutes.AdminOnlyAccessRole,
-		r.AuthMiddleware,
-		api.AuditMiddleware(),
-		apiprovisioning.StopManagingGroups,
 	)
 
 	r.GET("/search",

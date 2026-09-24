@@ -21,7 +21,7 @@ function formatDate(value) {
  * hoop users in hoop groups named after the group handle. It reads through the
  * org's Slack app, so there is nothing to configure but the groups.
  */
-export default function SlackSyncSection({ disabled }) {
+export default function SlackSyncSection() {
   const sync = useProvisioningStore((s) => s.sync)
   const groups = useProvisioningStore((s) => s.groups)
   const groupsStatus = useProvisioningStore((s) => s.groupsStatus)
@@ -72,7 +72,7 @@ export default function SlackSyncSection({ disabled }) {
 
   async function handleDelete() {
     const { ok, error } = await deleteSync()
-    if (ok) showSnackbar({ level: 'success', text: 'Slack import removed. Imported users and groups stay.' })
+    if (ok) showSnackbar({ level: 'success', text: 'Slack import removed. Imported users and groups stay, and SSO login manages groups again.' })
     else showSnackbar({ level: 'error', text: 'Failed to remove the Slack import.', description: error })
   }
 
@@ -109,7 +109,6 @@ export default function SlackSyncSection({ disabled }) {
             value={groupIds}
             onChange={setGroupIds}
             searchable
-            disabled={disabled}
           />
           {groupsError && (
             <Group gap="sm">
@@ -126,7 +125,6 @@ export default function SlackSyncSection({ disabled }) {
             description="Accept user groups last edited by a workspace member who is not an admin or owner. Anyone who can edit such a group can make themselves a reviewer."
             checked={allowMemberManaged}
             onChange={(e) => setAllowMemberManaged(e.currentTarget.checked)}
-            disabled={disabled}
           />
           {memberManagedPicked && !allowMemberManaged && (
             <Text size="sm" c="red">
@@ -139,7 +137,6 @@ export default function SlackSyncSection({ disabled }) {
             min={5}
             value={intervalMinutes}
             onChange={setIntervalMinutes}
-            disabled={disabled}
           />
         </Stack>
       </SectionRow>
@@ -165,7 +162,7 @@ export default function SlackSyncSection({ disabled }) {
             </Button>
           </>
         )}
-        <Button onClick={handleSave} loading={saving} disabled={disabled}>
+        <Button onClick={handleSave} loading={saving}>
           Save
         </Button>
       </Group>

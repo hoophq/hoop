@@ -31,6 +31,9 @@ var SystemActor = Actor{Subject: "system", Name: "slack import"}
 // ErrSyncRunning refuses a run while another one for the same org is writing.
 var ErrSyncRunning = errors.New("a Slack import is already running for this organization")
 
+// errImportRemoved stops a run whose import was removed while it read Slack.
+var errImportRemoved = errors.New("the Slack import was removed")
+
 // runTimeout bounds one run: a Slack API that stops answering must not hold
 // the org's lock forever.
 const runTimeout = 10 * time.Minute
@@ -127,6 +130,16 @@ func reconcile(ctx context.Context, db *gorm.DB, orgID string, api slackDirector
 		}
 		if !locked {
 			return ErrSyncRunning
+		}
+		// The import may have been removed while Slack was read. The row lock
+		// also makes Remove wait for this write, so Remove clears what it wrote.
+		var found []string
+		if err := tx.Raw(`SELECT org_id::TEXT FROM private.directory_sync_configs WHERE org_id = ? FOR UPDATE`,
+			orgID).Scan(&found).Error; err != nil {
+			return err
+		}
+		if len(found) == 0 {
+			return errImportRemoved
 		}
 		return write(tx, orgID, w, selected, diff)
 	})
@@ -251,6 +264,17 @@ func recordRun(orgID string, actor Actor, diff *runDiff, runErr error) {
 	if err := models.CreateSecurityAuditLog(row); err != nil {
 		log.With("org", orgID).Warnf("failed writing the slack import audit entry, reason=%v", err)
 	}
+}
+
+// Remove deletes the org's Slack import and forgets which groups it owns.
+// Imported users and their groups stay, and SSO login manages groups again.
+func Remove(db *gorm.DB, orgID string) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := models.DeleteDirectorySyncConfig(tx, orgID); err != nil {
+			return err
+		}
+		return models.ClearProvisioningLinks(tx, orgID)
+	})
 }
 
 // Start runs every organization's import on its interval until ctx is done.

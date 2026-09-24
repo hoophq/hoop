@@ -5393,15 +5393,6 @@
         },
         "type": "object"
       },
-      "openapi.ProvisioningStatus": {
-        "properties": {
-          "groups_managed": {
-            "description": "True when the Slack import has written users or groups. Login and the\nUsers page then change only the admin group.",
-            "type": "boolean"
-          }
-        },
-        "type": "object"
-      },
       "openapi.ProxyManagerRequest": {
         "properties": {
           "access_duration": {
@@ -20215,7 +20206,7 @@
     },
     "/serverconfig/directory-sync": {
       "delete": {
-        "description": "Stop the directory sync. Synced users and groups stay as they are, and stay managed until groups are released with DELETE /serverconfig/provisioning. Control plane only.",
+        "description": "Remove the Slack import. Imported users and their groups stay, and SSO login manages groups again. Control plane only.",
         "responses": {
           "204": {
             "description": "No Content"
@@ -20711,89 +20702,6 @@
           }
         },
         "summary": "Update Server Miscellaneous Configuration",
-        "tags": [
-          "Server Management"
-        ]
-      }
-    },
-    "/serverconfig/provisioning": {
-      "delete": {
-        "description": "Hand the org's groups back to login and the Users page. It deletes only the links between users and their source; users and their groups stay. Refused while the directory sync exists, since its next run would take the groups back. Control plane only.",
-        "responses": {
-          "204": {
-            "description": "No Content"
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/openapi.HTTPError"
-                }
-              }
-            },
-            "description": "Conflict"
-          },
-          "412": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/openapi.HTTPError"
-                }
-              }
-            },
-            "description": "Precondition Failed"
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/openapi.HTTPError"
-                }
-              }
-            },
-            "description": "Internal Server Error"
-          }
-        },
-        "summary": "Stop Managing Groups",
-        "tags": [
-          "Server Management"
-        ]
-      },
-      "get": {
-        "description": "Report whether the Slack import owns the org's groups. While it does, login and the Users page change only the admin group. Control plane only.",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/openapi.ProvisioningStatus"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "412": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/openapi.HTTPError"
-                }
-              }
-            },
-            "description": "Precondition Failed"
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/openapi.HTTPError"
-                }
-              }
-            },
-            "description": "Internal Server Error"
-          }
-        },
-        "summary": "Get Provisioning Status",
         "tags": [
           "Server Management"
         ]
@@ -24131,7 +24039,7 @@
         ]
       },
       "put": {
-        "description": "Updates an existing user. In a control plane whose groups the Slack import manages, only the admin group may change; a request that changes other groups answers 422.",
+        "description": "Updates an existing user",
         "parameters": [
           {
             "description": "The subject identifier of the user",

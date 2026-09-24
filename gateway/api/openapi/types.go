@@ -3045,13 +3045,6 @@ type DirectoryGroup struct {
 	AdminManaged bool `json:"admin_managed"`
 }
 
-// ProvisioningStatus reports whether a source owns the org's groups.
-type ProvisioningStatus struct {
-	// True when the Slack import has written users or groups. Login and the
-	// Users page then change only the admin group.
-	GroupsManaged bool `json:"groups_managed"`
-}
-
 // ServerMcpAuthConfig configures the OAuth 2.1 Resource Server profile for the
 // /mcp endpoint per the MCP 2025-11-25 authorization specification. When
 // disabled (the default), /mcp continues to accept Hoop-issued bearer tokens

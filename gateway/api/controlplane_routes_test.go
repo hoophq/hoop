@@ -83,8 +83,6 @@ func TestControlPlaneOnlyRoutesAnswer412OnAGateway(t *testing.T) {
 		{"DELETE /serverconfig/directory-sync", apiprovisioning.DeleteDirectorySync},
 		{"POST /serverconfig/directory-sync/run", apiprovisioning.RunDirectorySync},
 		{"GET /serverconfig/directory-sync/groups", apiprovisioning.ListDirectorySyncGroups},
-		{"GET /serverconfig/provisioning", apiprovisioning.GetProvisioningStatus},
-		{"DELETE /serverconfig/provisioning", apiprovisioning.StopManagingGroups},
 		{"GET /sidecars/:nameOrID/slack-channels", apisidecar.GetSlackChannels},
 		{"PUT /sidecars/:nameOrID/slack-channels", apisidecar.PutSlackChannels},
 	} {

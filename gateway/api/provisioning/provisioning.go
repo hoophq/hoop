@@ -1,6 +1,5 @@
 // Package apiprovisioning configures how a control plane learns its reviewers
-// without anyone logging in (ADR-0019): the Slack import, and the switch that
-// hands groups back to login and the Users page.
+// without anyone logging in (ADR-0019): the Slack import.
 package apiprovisioning
 
 import (
@@ -140,7 +139,7 @@ func PutDirectorySync(c *gin.Context) {
 // DeleteDirectorySync
 //
 //	@Summary		Delete Directory Sync
-//	@Description	Stop the directory sync. Synced users and groups stay as they are, and stay managed until groups are released with DELETE /serverconfig/provisioning. Control plane only.
+//	@Description	Remove the Slack import. Imported users and their groups stay, and SSO login manages groups again. Control plane only.
 //	@Tags			Server Management
 //	@Success		204
 //	@Failure		412,500	{object}	openapi.HTTPError
@@ -150,7 +149,7 @@ func DeleteDirectorySync(c *gin.Context) {
 		return
 	}
 	ctx := storagev2.ParseContext(c)
-	if err := models.DeleteDirectorySyncConfig(models.DB, ctx.OrgID); err != nil {
+	if err := directorysync.Remove(models.DB, ctx.OrgID); err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed deleting the directory sync")
 		return
 	}
@@ -230,58 +229,3 @@ func ListDirectorySyncGroups(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, out)
 }
-
-// GetProvisioningStatus
-//
-//	@Summary		Get Provisioning Status
-//	@Description	Report whether the Slack import owns the org's groups. While it does, login and the Users page change only the admin group. Control plane only.
-//	@Tags			Server Management
-//	@Produce		json
-//	@Success		200			{object}	openapi.ProvisioningStatus
-//	@Failure		412,500		{object}	openapi.HTTPError
-//	@Router			/serverconfig/provisioning [get]
-func GetProvisioningStatus(c *gin.Context) {
-	if !controlPlaneOnly(c) {
-		return
-	}
-	ctx := storagev2.ParseContext(c)
-	managed, err := models.GroupsManagedByProvisioning(models.DB, ctx.OrgID)
-	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed checking the provisioning status")
-		return
-	}
-	c.JSON(http.StatusOK, openapi.ProvisioningStatus{GroupsManaged: managed})
-}
-
-// StopManagingGroups
-//
-//	@Summary		Stop Managing Groups
-//	@Description	Hand the org's groups back to login and the Users page. It deletes only the links between users and their source; users and their groups stay. Refused while the directory sync exists, since its next run would take the groups back. Control plane only.
-//	@Tags			Server Management
-//	@Success		204
-//	@Failure		409,412,500	{object}	openapi.HTTPError
-//	@Router			/serverconfig/provisioning [delete]
-func StopManagingGroups(c *gin.Context) {
-	if !controlPlaneOnly(c) {
-		return
-	}
-	ctx := storagev2.ParseContext(c)
-	err := models.DB.Transaction(func(tx *gorm.DB) error {
-		if _, err := models.GetDirectorySyncConfig(tx, ctx.OrgID); err == nil {
-			return errSourceActive
-		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return err
-		}
-		return models.ClearProvisioningLinks(tx, ctx.OrgID)
-	})
-	switch {
-	case errors.Is(err, errSourceActive):
-		c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
-	case err != nil:
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed releasing the managed groups")
-	default:
-		c.Status(http.StatusNoContent)
-	}
-}
-
-var errSourceActive = errors.New("remove the Slack import first; its next run would manage the groups again")

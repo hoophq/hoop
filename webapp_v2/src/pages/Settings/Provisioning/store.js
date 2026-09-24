@@ -4,8 +4,6 @@ import { useAuthStore } from '@/stores/useAuthStore'
 
 const EMPTY = {
   sync: null,
-  // Whether the Slack import manages the org's groups.
-  groupsManaged: false,
   // 'idle' | 'loading' | 'success' | 'error'
   status: 'idle',
   groups: [],
@@ -27,26 +25,10 @@ export const useProvisioningStore = create((set, get) => ({
   load: async () => {
     set({ status: 'loading' })
     try {
-      const [sync, status] = await Promise.all([
-        provisioningService.getDirectorySync(),
-        provisioningService.getStatus(),
-      ])
-      set({
-        sync: sync.data,
-        groupsManaged: !!status.data?.groups_managed,
-        status: 'success',
-      })
+      const { data } = await provisioningService.getDirectorySync()
+      set({ sync: data, status: 'success' })
     } catch {
       set({ status: 'error' })
-    }
-  },
-
-  refreshStatus: async () => {
-    try {
-      const { data } = await provisioningService.getStatus()
-      set({ groupsManaged: !!data?.groups_managed })
-    } catch {
-      // The page keeps the last known state; the next load retries.
     }
   },
 
@@ -80,7 +62,6 @@ export const useProvisioningStore = create((set, get) => ({
     try {
       const { data } = await provisioningService.runDirectorySync()
       set({ running: false, sync: data })
-      get().refreshStatus()
       return { ok: !data?.last_error, error: data?.last_error }
     } catch (error) {
       set({ running: false })
@@ -96,18 +77,6 @@ export const useProvisioningStore = create((set, get) => ({
       set({ groups: Array.isArray(data) ? data : [], groupsStatus: 'success' })
     } catch (error) {
       set({ groupsStatus: 'error', groupsError: message(error) })
-    }
-  },
-
-  stopManagingGroups: async () => {
-    set({ saving: true })
-    try {
-      await provisioningService.stopManagingGroups()
-      set({ saving: false, groupsManaged: false })
-      return { ok: true }
-    } catch (error) {
-      set({ saving: false })
-      return { ok: false, error: message(error) }
     }
   },
 }))
