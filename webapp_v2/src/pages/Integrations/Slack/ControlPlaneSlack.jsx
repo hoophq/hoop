@@ -11,8 +11,8 @@ import SidecarSlackChannelsTab from './SidecarSlackChannelsTab'
 import SlackConfigurationsTab from './components/SlackConfigurationsTab'
 
 // The control plane's Slack page, sibling of GatewaySlack.jsx. A click on
-// Approve is matched to a Hoop user by the email Slack holds for the clicker,
-// which needs two scopes the gateway's Slack app never asked for. Reviews go
+// Approve is matched to a Hoop user by Slack ID, then by the email Slack holds
+// for the clicker, which needs scopes the gateway's Slack app never asked for. Reviews go
 // to the channels set per sidecar or listener, and to the default channel.
 function ControlPlaneSlack() {
   const { plugin, status, mutating, saveEnvvars } = usePlugin('slack')
@@ -32,9 +32,13 @@ function ControlPlaneSlack() {
 
       <Alert color="blue" variant="light" icon={<Info size={16} />} radius="md">
         <Text size="sm">
-          Approvers are matched to Hoop users by their Slack email. Add the <Code>users:read</Code>{' '}
-          and <Code>users:read.email</Code> scopes to your Slack App and reinstall it. Without them,
-          only users whose Slack ID is set on the Users page can approve.
+          {'Approvers are matched to Hoop users by their Slack ID, then by their Slack email. Add the '}
+          <Code>users:read</Code>
+          {', '}
+          <Code>users:read.email</Code>
+          {' and '}
+          <Code>usergroups:read</Code>
+          {' scopes to your Slack App and reinstall it. The last one lets Settings, Provisioning import reviewers from Slack user groups.'}
         </Text>
       </Alert>
 

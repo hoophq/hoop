@@ -2,11 +2,11 @@ export const ROLE_ADMIN = 'admin'
 export const ROLE_APPROVER = 'approver'
 export const ROLE_STANDARD = 'standard'
 
-// standard is the absence of a reserved group, never a group itself. Names come
-// from /serverinfo because ADMIN_USERNAME renames the admin one.
-export function roleToGroups(role, adminRoleName, approverRoleName) {
+// Only admin maps to a group: its name comes from /serverinfo because
+// ADMIN_USERNAME renames it. Approver is derived from a user's groups
+// (ADR-0019), so it names none, and standard is the absence of both.
+export function roleToGroups(role, adminRoleName) {
   if (role === ROLE_ADMIN) return [adminRoleName]
-  if (role === ROLE_APPROVER) return [approverRoleName]
   return []
 }
 

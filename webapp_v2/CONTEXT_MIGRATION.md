@@ -90,6 +90,7 @@ dead end), `/onboarding/*` and `/*` (gateway: CLJS; control plane: 404).
 | `/agents/new` | React | Done |
 | `/settings/infrastructure` | React | Done |
 | `/settings/license` | React | Done |
+| `/settings/provisioning` | React | Done — control plane only in the nav: Slack import, SCIM and file import of reviewers (ADR-0019) |
 | `/settings/api-keys` | React | Done |
 | `/settings/api-keys/new` | React | Done |
 | `/settings/api-keys/created` | React | Done |
@@ -120,7 +121,7 @@ dead end), `/onboarding/*` and `/*` (gateway: CLJS; control plane: 404).
 | `/jira-templates/new` | React | Done |
 | `/jira-templates/edit/:id` | React | Done |
 | `/settings/jira` | React | Done — absorbed into `/jira-templates?tab=configuration` |
-| `/integrations/slack` | React | Done |
+| `/integrations/slack` | React | Done — `GatewaySlack` / `ControlPlaneSlack` via `ByProduct` |
 | `/integrations/webhooks` | React | Done |
 | `/guardrails` | React | Done |
 | `/guardrails/new` | React | Done |

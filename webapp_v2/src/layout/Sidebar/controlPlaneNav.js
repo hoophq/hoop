@@ -78,8 +78,8 @@ const QUICK_ACCESS_ITEMS = [
   { id: 'guardrails', label: 'Guardrails', description: 'Configure guardrails', icon: ShieldCheck, path: '/guardrails', adminOnly: true, licenseFeature: 'guardrails' },
   { id: 'ai-analyzer', label: 'AI Analyzer', description: 'Configure the AI session analyzer', icon: Sparkles, path: '/features/ai-session-analyzer', adminOnly: true, licenseFeature: 'ai-session-analyzer' },
   { id: 'review-slack', label: 'Slack', description: 'Where approvals are delivered', icon: MessageSquare, path: '/integrations/slack', adminOnly: true },
-  { id: 'provisioning', label: 'Provisioning', description: 'Users and groups from your identity provider', icon: Fingerprint, path: '/settings/provisioning', adminOnly: true },
-  { id: 'users', label: 'Users', description: 'Invite and manage administrators and approvers', icon: Users, path: '/organization/users', adminOnly: true },
+  { id: 'provisioning', label: 'Provisioning', description: 'Reviewers and groups from Slack, SCIM or a file', icon: Fingerprint, path: '/settings/provisioning', adminOnly: true },
+  { id: 'users', label: 'Users', description: 'Invite administrators; reviewers come from Slack or your identity provider.', icon: Users, path: '/organization/users', adminOnly: true },
   { id: 'license', label: 'License', description: 'License management', icon: KeyRound, path: '/settings/license', adminOnly: true },
 ]
 

@@ -22,8 +22,10 @@ import Select from '@/components/Select'
 import Switch from '@/components/Switch'
 import TagsInput from '@/components/TagsInput'
 import CopyButton from '@/components/CopyButton'
+import UserImportForm from '@/features/UserImport'
 import { usersService } from '@/services/users'
 import { authService } from '@/services/auth'
+import { provisioningService } from '@/services/provisioning'
 import { useUserStore } from '@/stores/useUserStore'
 import { docsUrl } from '@/utils/docsUrl'
 import { showSnackbar } from '@/utils/snackbar'
@@ -32,13 +34,13 @@ import { STATUS_OPTIONS, generatePassword, statusVariant } from './shared'
 /**
  * The control plane's Users page, sibling of GatewayUsers.jsx.
  *
- * Groups come from the identity provider (ADR-0019): SCIM, a directory sync or
- * the login claim writes them, so this page shows them and does not edit them.
- * The one exception is local auth, which has no identity provider and keeps
- * editing groups here. Administrator is hoop's own group and stays a switch.
+ * Groups name reviewers (ADR-0019). This page edits them for every auth
+ * method, and imports them from a CSV, unless the Slack import or SCIM manages
+ * them: then it shows them and edits only the admin switch, and the backend
+ * refuses anything else. Administrator is hoop's own group and stays a switch.
  */
 
-function UserFormModal({ opened, onClose, formType, user, isLocalAuth, onSaved }) {
+function UserFormModal({ opened, onClose, formType, user, isLocalAuth, groupsManaged, onSaved }) {
   // ADMIN_USERNAME renames the admin group, so its name comes from /serverinfo.
   const adminRoleName = useUserStore((s) => s.adminRoleName)
   const currentEmail = useUserStore((s) => s.user?.email)
@@ -65,7 +67,7 @@ function UserFormModal({ opened, onClose, formType, user, isLocalAuth, onSaved }
   }, [opened, user, adminRoleName])
 
   useEffect(() => {
-    if (!opened || !isLocalAuth) return
+    if (!opened || groupsManaged) return
     let cancelled = false
     usersService
       .listGroups()
@@ -77,7 +79,7 @@ function UserFormModal({ opened, onClose, formType, user, isLocalAuth, onSaved }
     return () => {
       cancelled = true
     }
-  }, [opened, isLocalAuth, adminRoleName])
+  }, [opened, groupsManaged, adminRoleName])
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -91,8 +93,9 @@ function UserFormModal({ opened, onClose, formType, user, isLocalAuth, onSaved }
     }
     setSaving(true)
     try {
-      // PUT /users replaces the whole list, so the groups this page does not
-      // edit travel back untouched with the admin switch.
+      // PUT /users replaces the whole list. While groups are managed the
+      // other groups travel back untouched with the admin switch, which is
+      // the only change the backend accepts then.
       const groups = [...(isAdmin || isSelf ? [adminRoleName] : []), ...otherGroups]
       const payload = { name, groups, slack_id: slackId, email }
       if (formType === 'update') {
@@ -151,7 +154,7 @@ function UserFormModal({ opened, onClose, formType, user, isLocalAuth, onSaved }
             disabled={isSelf}
             onChange={(e) => setIsAdmin(e.currentTarget.checked)}
           />
-          {isLocalAuth ? (
+          {!groupsManaged ? (
             <TagsInput
               label="Groups"
               description="Name these groups as reviewers on an analyzer rule."
@@ -180,7 +183,7 @@ function UserFormModal({ opened, onClose, formType, user, isLocalAuth, onSaved }
                   </Text>
                 )}
                 <Text size="xs" c="dimmed">
-                  Groups come from your identity provider.
+                  Managed by the Slack import or SCIM in Settings, Provisioning.
                 </Text>
               </Stack>
             )
@@ -196,7 +199,7 @@ function UserFormModal({ opened, onClose, formType, user, isLocalAuth, onSaved }
           )}
           <TextInput
             label="Slack ID"
-            description="Only needed when the Slack app cannot read emails."
+            description="The Slack import sets it. Set it by hand when the Slack app cannot read emails."
             placeholder="U12345678"
             value={slackId}
             onChange={(e) => setSlackId(e.currentTarget.value)}
@@ -236,6 +239,8 @@ export default function ControlPlaneUsers() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [isLocalAuth, setIsLocalAuth] = useState(false)
+  const [groupsManaged, setGroupsManaged] = useState(false)
+  const [importOpened, { open: openImport, close: closeImport }] = useDisclosure(false)
   const [selectedUser, setSelectedUser] = useState(null)
   const [formType, setFormType] = useState('create')
   const [opened, { open, close }] = useDisclosure(false)
@@ -249,12 +254,14 @@ export default function ControlPlaneUsers() {
 
   async function fetchAll() {
     try {
-      const [usersRes, serverInfo] = await Promise.all([
+      const [usersRes, serverInfo, provisioning] = await Promise.all([
         usersService.list(),
         authService.getPublicServerInfo(),
+        provisioningService.getStatus(),
       ])
       setUsers(usersRes.data ?? [])
       setIsLocalAuth(serverInfo?.auth_method === 'local')
+      setGroupsManaged(!!provisioning.data?.groups_managed)
     } catch {
       setError('Failed to load users.')
     } finally {
@@ -290,19 +297,24 @@ export default function ControlPlaneUsers() {
             <Text c="dimmed" size="lg">
               {users.length} {users.length === 1 ? 'Member' : 'Members'}
             </Text>
-            {!isLocalAuth && (
-              <Text size="sm" c="dimmed">
-                {'Reviewers and their groups come from your identity provider. Set it up in '}
-                <Anchor component={Link} to="/settings/provisioning" size="sm">
-                  Provisioning
-                </Anchor>
-                {'.'}
-              </Text>
-            )}
+            <Text size="sm" c="dimmed">
+              {groupsManaged
+                ? 'The Slack import or SCIM manages the groups. See '
+                : 'Reviewers come from Slack, your identity provider, a file, or the groups you set here. See '}
+              <Anchor component={Link} to="/settings/provisioning" size="sm">
+                Provisioning
+              </Anchor>
+              {'.'}
+            </Text>
           </Stack>
-          {users.length !== 1 && (
-            <Button onClick={handleAdd}>Add User</Button>
-          )}
+          <Group gap="sm">
+            {!groupsManaged && (
+              <Button variant="outline" onClick={openImport}>
+                Import CSV
+              </Button>
+            )}
+            {users.length !== 1 && <Button onClick={handleAdd}>Add User</Button>}
+          </Group>
         </Group>
 
         {users.length === 0 ? (
@@ -367,7 +379,7 @@ export default function ControlPlaneUsers() {
               <Stack flex={1} mih="30vh" align="center" py="xxl">
                 <Stack flex={1} align="center" justify="center" gap="lg">
                   <Text size="sm" c="dimmed" ta="center" maw={400}>
-                    Invite administrators to manage sidecars. Reviewers come from your identity provider.
+                    Invite administrators; reviewers come from Slack or your identity provider.
                   </Text>
                   <Button onClick={handleAdd}>Invite Users</Button>
                 </Stack>
@@ -391,8 +403,13 @@ export default function ControlPlaneUsers() {
         formType={formType}
         user={selectedUser}
         isLocalAuth={isLocalAuth}
+        groupsManaged={groupsManaged}
         onSaved={fetchAll}
       />
+
+      <Modal opened={importOpened} onClose={closeImport} title="Import users from a CSV" size="lg">
+        <UserImportForm onImported={fetchAll} />
+      </Modal>
     </>
   )
 }

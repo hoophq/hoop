@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { Group, List, Stack, Text } from '@mantine/core'
 import { KeyRound } from 'lucide-react'
 import Alert from '@/components/Alert'
@@ -20,6 +21,10 @@ export default function ScimSection({ disabled }) {
   const saving = useProvisioningStore((s) => s.saving)
   const generateToken = useProvisioningStore((s) => s.generateToken)
   const deleteToken = useProvisioningStore((s) => s.deleteToken)
+  const clearNewToken = useProvisioningStore((s) => s.clearNewToken)
+
+  // The token is shown once, to the view that generated it.
+  useEffect(() => clearNewToken, [clearNewToken])
 
   async function handleGenerate() {
     const { ok, error } = await generateToken()
@@ -89,6 +94,7 @@ export default function ScimSection({ disabled }) {
           <List.Item>
             Users are matched by email. A user who already signed in is taken over, not duplicated.
           </List.Item>
+          <List.Item>A group named like a hoop group (admin, auditor, approver) is refused.</List.Item>
         </List>
       </SectionRow>
     </Stack>

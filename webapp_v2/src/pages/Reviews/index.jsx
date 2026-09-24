@@ -45,8 +45,7 @@ export default function Reviews() {
   const isAdmin = useUserStore((s) => s.isAdmin)
   const groups = useUserStore((s) => s.user?.groups)
   const adminRoleName = useUserStore((s) => s.adminRoleName)
-  const approverRoleName = useUserStore((s) => s.approverRoleName)
-  const user = { role, isAdmin, groups, adminRoleName, approverRoleName }
+  const user = { role, isAdmin, groups, adminRoleName }
 
   const [filter, setFilter] = useState('all')
   // The review being rejected, held here rather than read from `selected` at

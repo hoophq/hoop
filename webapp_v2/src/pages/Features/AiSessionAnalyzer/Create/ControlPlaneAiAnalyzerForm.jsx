@@ -287,7 +287,7 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
           {ownHold && (
             <TagsInput
               label="Reviewers"
-              description="Groups from your identity provider whose members may approve, in Slack or on the Reviews page. Empty leaves it to the administrators."
+              description="Groups whose members may approve, in Slack or on the Reviews page. Empty leaves it to the administrators."
               placeholder="Select or type a group"
               data={groupOptions}
               value={reviewers}

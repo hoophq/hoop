@@ -83,8 +83,7 @@ what a product shows, and ClojureScript exists only in the gateway.**
 - **A page that differs is chosen in `Router.jsx`** with `<ByProduct gateway={…}
   controlPlane={…} />` (`modes/ByProduct.jsx`, the one component that reads the
   product). `grep ByProduct src/Router.jsx` lists every such page. A shared page may
-  take a prop (`AccessRequest/Create` takes `defaultReviewerRoles`, passed through
-  `ByProduct`), never know the mode.
+  take a prop (`UserMenu` takes `versionLabel`), never know the mode.
 - **Auth is one gate.** `components/ProtectedRoute` (token, `/userinfo`, `/serverinfo`,
   flags, `adminOnly`, `role`, `licenseFeature`) serves both. Each product adds its own
   redirect through the `onReady` hook: `GatewayProtectedRoute` the onboarding,
@@ -115,8 +114,9 @@ what a product shows, and ClojureScript exists only in the gateway.**
   **approver** reaches Reviews, anything else lands on the dead end at `/`. Admin is a
   reserved group name, from `/serverinfo` (`admin_role_name`), never a literal. Approver
   is derived by the backend: a user whose groups meet the `reviewers_groups` of any
-  sidecar approval rule (ADR-0019). Groups come from the identity provider, so the
-  Users page shows them and edits only the admin switch, except under local auth.
+  sidecar approval rule (ADR-0019). Groups come from the Slack import, SCIM, a CSV
+  import or the Users page; while the Slack import or SCIM manages them, the Users
+  page edits only the admin switch.
   `standard` is the absence of a role and is never stored as a group. Gate a route with
   `<Page role={ROLE_APPROVER}>` and a nav or palette item with `role:`; `hasRole` in
   `utils/roles.js` is the single decision and admin passes every gate. `adminOnly` is the gate both products share. This gates pages, not
