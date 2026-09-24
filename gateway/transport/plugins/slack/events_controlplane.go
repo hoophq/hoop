@@ -22,6 +22,7 @@ const (
 		"Ask an admin to import you from Slack, " +
 		"or to set your Slack ID, on the Users page."
 	cpNotVerifiedMsg     = "Hoop could not verify your Slack user. Try again."
+	cpNoUsersScopeMsg    = "Hoop could not verify your Slack user. Ask an admin to add the users:read scope to the Slack app and reinstall it."
 	cpLookupFailedMsg    = "failed obtaining approver's information"
 	cpGroupsFailedMsg    = "failed obtaining approver's groups"
 	cpInactiveMsg        = "Your Hoop user is not active. Ask an admin to reactivate it on the Users page."
@@ -41,12 +42,20 @@ const (
 // provisions, and so does an admin on the Users page. The email Slack holds for
 // the clicking user is the fallback, for users added by hand who were never
 // imported from Slack. Nobody has to log in for either.
+//
+// Slack vouches for the clicking user on both paths: a link does not outlive
+// the Slack account being deactivated, made a guest, or moved out of the
+// workspace.
 func (p *slackPlugin) resolveControlPlaneApprover(ev *event) *storagev2.Context {
 	sid := ev.msg.SessionID
 	linked, err := models.GetUserByOrgIDAndSlackID(ev.orgID, ev.msg.SlackID)
 	if err != nil {
 		log.With("sid", sid).Errorf("failed obtaining approver by slack id, err=%v", err)
 		_ = ev.ss.PostEphemeralMessage(ev.msg, "%s", cpLookupFailedMsg)
+		return nil
+	}
+	slackUser := readSlackUser(ev, linked != nil)
+	if slackUser == nil {
 		return nil
 	}
 	if linked != nil {
@@ -58,13 +67,14 @@ func (p *slackPlugin) resolveControlPlaneApprover(ev *event) *storagev2.Context 
 		}
 		return p.controlPlaneApproverContext(ev, linked)
 	}
-	return p.resolveEmailApprover(ev)
+	return p.resolveEmailApprover(ev, slackUser)
 }
 
-// resolveEmailApprover names the approver by the email Slack holds for the
-// clicking user. Returns nil after telling the Slack user why the click was
-// refused.
-func (p *slackPlugin) resolveEmailApprover(ev *event) *storagev2.Context {
+// readSlackUser reads the clicking user from Slack and checks that Slack
+// vouches for them. Returns nil after telling the Slack user why the click was
+// refused. linked is true when a hoop user holds the Slack ID: the email is
+// not needed then.
+func readSlackUser(ev *event, linked bool) *slackservice.SlackUser {
 	sid := ev.msg.SessionID
 	ctx, cancel := context.WithTimeout(context.Background(), slackAPITimeout)
 	defer cancel()
@@ -73,20 +83,33 @@ func (p *slackPlugin) resolveEmailApprover(ev *event) *storagev2.Context {
 		// Only a missing scope means the org has not updated its Slack app;
 		// anything else is Slack failing, and a retry may work.
 		msg := cpNotVerifiedMsg
-		if slackservice.IsMissingScope(err) {
+		switch {
+		case slackservice.IsMissingScope(err) && linked:
+			msg = cpNoUsersScopeMsg
+		case slackservice.IsMissingScope(err):
 			msg = cpNotLinkedMsg
 		}
 		log.With("sid", sid).Warnf("failed reading slack user %s, reason=%v", ev.msg.SlackID, err)
 		_ = ev.ss.PostEphemeralMessage(ev.msg, "%s", msg)
 		return nil
 	}
-
-	if refusal := checkSlackUser(slackUser, ev.ss.TeamID(), ev.ss.EnterpriseID()); refusal != "" {
+	refusal := checkSlackIdentity(slackUser, ev.ss.TeamID(), ev.ss.EnterpriseID())
+	if refusal == "" && !linked {
+		refusal = checkSlackEmail(slackUser)
+	}
+	if refusal != "" {
 		log.With("sid", sid).Infof("refused slack user %s: %s", ev.msg.SlackID, refusal)
 		_ = ev.ss.PostEphemeralMessage(ev.msg, "%s", refusal)
 		return nil
 	}
+	return slackUser
+}
 
+// resolveEmailApprover names the approver by the email Slack holds for the
+// clicking user, whom readSlackUser already checked. Returns nil after
+// telling the Slack user why the click was refused.
+func (p *slackPlugin) resolveEmailApprover(ev *event, slackUser *slackservice.SlackUser) *storagev2.Context {
+	sid := ev.msg.SessionID
 	users, err := models.ListApproverUsersByEmailAndOrg(models.DB, ev.orgID, slackUser.Email)
 	if err != nil {
 		log.With("sid", sid).Errorf("failed obtaining approver by email, err=%v", err)
@@ -105,11 +128,20 @@ func (p *slackPlugin) resolveEmailApprover(ev *event) *storagev2.Context {
 // checkSlackUser returns why Slack does not vouch for the clicking user, or ""
 // when it does. The identity checks come before the empty email: a deleted
 // user, a bot or a guest is refused whatever scopes the app has.
+func checkSlackUser(u *slackservice.SlackUser, botTeamID, botEnterpriseID string) string {
+	if refusal := checkSlackIdentity(u, botTeamID, botEnterpriseID); refusal != "" {
+		return refusal
+	}
+	return checkSlackEmail(u)
+}
+
+// checkSlackIdentity refuses a deleted user, a bot, a guest, and a user from
+// outside the workspace. It applies to linked users too.
 //
 // botTeamID and botEnterpriseID are the workspace and grid the bot token
 // belongs to. A user of another workspace in the same Enterprise Grid org is
 // accepted; one from outside it is not.
-func checkSlackUser(u *slackservice.SlackUser, botTeamID, botEnterpriseID string) string {
+func checkSlackIdentity(u *slackservice.SlackUser, botTeamID, botEnterpriseID string) string {
 	switch {
 	case u.Deleted:
 		return cpDeactivatedMsg
@@ -121,6 +153,13 @@ func checkSlackUser(u *slackservice.SlackUser, botTeamID, botEnterpriseID string
 		return cpOtherWorkspaceMsg
 	case !sameWorkspace(u, botTeamID, botEnterpriseID):
 		return cpOtherWorkspaceMsg
+	}
+	return ""
+}
+
+// checkSlackEmail refuses an email hoop cannot match a user by.
+func checkSlackEmail(u *slackservice.SlackUser) string {
+	switch {
 	case u.Email == "":
 		// Slack answers an empty email when the app lacks users:read.email.
 		return cpNotLinkedMsg

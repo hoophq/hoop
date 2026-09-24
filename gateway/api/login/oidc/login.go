@@ -167,7 +167,7 @@ func (h *handler) LoginCallback(c *gin.Context) {
 	// due to the user subject when it's created inside hoop is changed after that user
 	// logs in with the IDP. The email should always come from the IDP as a design of how
 	// we handle users in hoop.
-	dbUser, err := models.GetUserByEmail(uinfo.Email)
+	dbUser, err := loginUserByEmail(uinfo.Email)
 	if err != nil {
 		login.Outcome = fmt.Sprintf("failed fetching user by email=%s, reason=%v", uinfo.Email, err)
 		log.Error(login.Outcome)
@@ -361,6 +361,17 @@ func registerMultiTenantUser(uinfo idptypes.ProviderUserInfo, slackID string) (i
 		return false, nil
 	}
 	return true, nil
+}
+
+// loginUserByEmail finds the user a login belongs to. The control plane
+// ignores case: its Slack import stores emails lower case, and an identity
+// provider may send another case for the same person. The gateway keeps its
+// exact match.
+func loginUserByEmail(email string) (*models.User, error) {
+	if appconfig.Get().IsControlPlane() {
+		return models.GetUserByEmailFold(email)
+	}
+	return models.GetUserByEmail(email)
 }
 
 func syncSingleTenantUser(ctx *models.Context, uinfo idptypes.ProviderUserInfo) (isNewUser bool, err error) {

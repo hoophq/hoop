@@ -34,6 +34,15 @@ var ErrSyncRunning = errors.New("a Slack import is already running for this orga
 // errImportRemoved stops a run whose import was removed while it read Slack.
 var errImportRemoved = errors.New("the Slack import was removed")
 
+// ErrImportChanged stops a run whose import was saved again while it read
+// Slack: it read the groups of the old settings. The next run uses the new
+// ones.
+var ErrImportChanged = errors.New("the Slack import changed during the run; run it again")
+
+// ErrNotRecorded wraps a failure to write a run's result or its audit entry.
+// The run itself may have succeeded.
+var ErrNotRecorded = errors.New("the Slack import result was not recorded")
+
 // runTimeout bounds one run: a Slack API that stops answering must not hold
 // the org's lock forever.
 const runTimeout = 10 * time.Minute
@@ -100,11 +109,18 @@ func Run(ctx context.Context, db *gorm.DB, orgID string, actor Actor) error {
 		log.With("org", orgID).Infof("slack import finished in %v, %s",
 			time.Since(started).Round(time.Millisecond), diff.summary())
 	}
-	if err := models.SetDirectorySyncResult(db, orgID, started, errMsg); err != nil {
+	// The result is written only to the settings this run read: a changed or
+	// recreated import keeps its own.
+	var recordErr error
+	if err := models.SetDirectorySyncResult(db, orgID, cfg.UpdatedAt, started, errMsg); err != nil {
 		log.With("org", orgID).Warnf("failed recording the slack import result, reason=%v", err)
+		recordErr = fmt.Errorf("%w: %v", ErrNotRecorded, err)
 	}
-	recordRun(orgID, actor, diff, runErr)
-	return runErr
+	if err := recordRun(orgID, actor, diff, runErr); err != nil {
+		log.With("org", orgID).Warnf("failed writing the slack import audit entry, reason=%v", err)
+		recordErr = errors.Join(recordErr, fmt.Errorf("%w: audit entry: %v", ErrNotRecorded, err))
+	}
+	return errors.Join(runErr, recordErr)
 }
 
 // reconcile makes hoop match Slack for the selected groups.
@@ -131,15 +147,19 @@ func reconcile(ctx context.Context, db *gorm.DB, orgID string, api slackDirector
 		if !locked {
 			return ErrSyncRunning
 		}
-		// The import may have been removed while Slack was read. The row lock
-		// also makes Remove wait for this write, so Remove clears what it wrote.
-		var found []string
-		if err := tx.Raw(`SELECT org_id::TEXT FROM private.directory_sync_configs WHERE org_id = ? FOR UPDATE`,
+		// The import may have been removed or saved again while Slack was
+		// read. The row lock also makes Remove and a save wait for this write,
+		// so neither interleaves with it.
+		var found []struct{ UpdatedAt time.Time }
+		if err := tx.Raw(`SELECT updated_at FROM private.directory_sync_configs WHERE org_id = ? FOR UPDATE`,
 			orgID).Scan(&found).Error; err != nil {
 			return err
 		}
-		if len(found) == 0 {
+		switch {
+		case len(found) == 0:
 			return errImportRemoved
+		case !found[0].UpdatedAt.Equal(cfg.UpdatedAt):
+			return ErrImportChanged
 		}
 		return write(tx, orgID, w, selected, diff)
 	})
@@ -246,7 +266,7 @@ func (d *runDiff) payload() map[string]any {
 
 // recordRun writes one security audit entry for the run: what changed on
 // success, why it failed otherwise.
-func recordRun(orgID string, actor Actor, diff *runDiff, runErr error) {
+func recordRun(orgID string, actor Actor, diff *runDiff, runErr error) error {
 	row := &models.SecurityAuditLog{
 		OrgID:        orgID,
 		ActorSubject: actor.Subject,
@@ -261,9 +281,7 @@ func recordRun(orgID string, actor Actor, diff *runDiff, runErr error) {
 	} else {
 		row.RequestPayloadRedacted = diff.payload()
 	}
-	if err := models.CreateSecurityAuditLog(row); err != nil {
-		log.With("org", orgID).Warnf("failed writing the slack import audit entry, reason=%v", err)
-	}
+	return models.CreateSecurityAuditLog(row)
 }
 
 // Remove deletes the org's Slack import and forgets which groups it owns.
@@ -292,19 +310,31 @@ func Start(ctx context.Context, db *gorm.DB) {
 	}
 }
 
+// maxConcurrentRuns bounds how many organizations import at once, so one slow
+// Slack workspace does not hold up the others.
+const maxConcurrentRuns = 4
+
 func runDue(ctx context.Context, db *gorm.DB, now time.Time) {
 	configs, err := models.ListDirectorySyncConfigs(db)
 	if err != nil {
 		log.Warnf("failed listing slack imports, reason=%v", err)
 		return
 	}
+	slots := make(chan struct{}, maxConcurrentRuns)
+	var wg sync.WaitGroup
 	for _, cfg := range configs {
 		if !due(cfg, now) {
 			continue
 		}
-		// Run logs and records every failure on the config.
-		_ = Run(ctx, db, cfg.OrgID, SystemActor)
+		slots <- struct{}{}
+		wg.Add(1)
+		go func(orgID string) {
+			defer func() { <-slots; wg.Done() }()
+			// Run logs every failure and records it on the config.
+			_ = Run(ctx, db, orgID, SystemActor)
+		}(cfg.OrgID)
 	}
+	wg.Wait()
 }
 
 func due(cfg models.DirectorySyncConfig, now time.Time) bool {

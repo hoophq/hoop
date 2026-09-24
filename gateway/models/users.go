@@ -121,6 +121,23 @@ func GetUserByEmail(email string) (*User, error) {
 	return user, nil
 }
 
+// GetUserByEmailFold is GetUserByEmail ignoring case. The control plane's
+// Slack import stores emails lower case, and an identity provider may send
+// another case for the same person.
+func GetUserByEmailFold(email string) (*User, error) {
+	var user *User
+	err := DB.Where("lower(email) = lower(?)", email).
+		Order("CASE WHEN status = 'active' THEN 0 WHEN status = 'invited' THEN 1 ELSE 2 END, id").
+		First(&user).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return user, nil
+}
+
 func GetUserBySubject(subject string) (*User, error) {
 	var user *User
 	err := DB.Where("subject = ?", subject).

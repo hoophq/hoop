@@ -204,6 +204,10 @@ func TestResolveControlPlaneApprover(t *testing.T) {
 	seedApprover(t, "linked@corp.com", "active", "U-LINK-ACTIVE", "dba")
 	seedApprover(t, "invited@corp.com", "invited", "U-LINK-INVITED", "dba")
 	seedApprover(t, "gone@corp.com", "inactive", "U-LINK-INACTIVE", "dba")
+	seedApprover(t, "left@corp.com", "active", "U-LINK-DELETED", "dba")
+	seedApprover(t, "guest@corp.com", "active", "U-LINK-GUEST", "dba")
+	seedApprover(t, "scope@corp.com", "active", "U-LINK-SCOPE", "dba")
+	seedApprover(t, "noemail@corp.com", "active", "U-LINK-NOEMAIL", "dba")
 	seedApprover(t, "email@corp.com", "active", "", "dba")
 	seedApprover(t, "pending@corp.com", "invited", "", "dba")
 	seedApprover(t, "dup@corp.com", "active", "", "dba")
@@ -212,18 +216,25 @@ func TestResolveControlPlaneApprover(t *testing.T) {
 
 	f := &fakeSlack{
 		users: map[string]map[string]any{
-			"U-EMAIL":      slackUserJSON("U-EMAIL", botTeamID, "Email@Corp.com", nil),
-			"U-PENDING":    slackUserJSON("U-PENDING", botTeamID, "pending@corp.com", nil),
-			"U-STRANGER":   slackUserJSON("U-STRANGER", "T9", "email@corp.com", func(u map[string]any) { u["is_stranger"] = true }),
-			"U-OTHERTEAM":  slackUserJSON("U-OTHERTEAM", "T2", "email@corp.com", nil),
-			"U-GUEST":      slackUserJSON("U-GUEST", botTeamID, "email@corp.com", func(u map[string]any) { u["is_restricted"] = true }),
-			"U-NOEMAIL":    slackUserJSON("U-NOEMAIL", botTeamID, "", nil),
-			"U-NOBODY":     slackUserJSON("U-NOBODY", botTeamID, "nobody@corp.com", nil),
-			"U-DUP":        slackUserJSON("U-DUP", botTeamID, "dup@corp.com", nil),
-			"U-NOGROUP":    slackUserJSON("U-NOGROUP", botTeamID, "nogroup@corp.com", nil),
-			"U-OTHERGROUP": slackUserJSON("U-OTHERGROUP", botTeamID, "email@corp.com", nil),
+			"U-LINK-ACTIVE":   slackUserJSON("U-LINK-ACTIVE", botTeamID, "linked@corp.com", nil),
+			"U-LINK-INVITED":  slackUserJSON("U-LINK-INVITED", botTeamID, "invited@corp.com", nil),
+			"U-LINK-INACTIVE": slackUserJSON("U-LINK-INACTIVE", botTeamID, "gone@corp.com", nil),
+			"U-LINK-DELETED":  slackUserJSON("U-LINK-DELETED", botTeamID, "left@corp.com", func(u map[string]any) { u["deleted"] = true }),
+			"U-LINK-GUEST":    slackUserJSON("U-LINK-GUEST", botTeamID, "guest@corp.com", func(u map[string]any) { u["is_restricted"] = true }),
+			// A linked user needs no email: the app may lack users:read.email.
+			"U-LINK-NOEMAIL": slackUserJSON("U-LINK-NOEMAIL", botTeamID, "", nil),
+			"U-EMAIL":        slackUserJSON("U-EMAIL", botTeamID, "Email@Corp.com", nil),
+			"U-PENDING":      slackUserJSON("U-PENDING", botTeamID, "pending@corp.com", nil),
+			"U-STRANGER":     slackUserJSON("U-STRANGER", "T9", "email@corp.com", func(u map[string]any) { u["is_stranger"] = true }),
+			"U-OTHERTEAM":    slackUserJSON("U-OTHERTEAM", "T2", "email@corp.com", nil),
+			"U-GUEST":        slackUserJSON("U-GUEST", botTeamID, "email@corp.com", func(u map[string]any) { u["is_restricted"] = true }),
+			"U-NOEMAIL":      slackUserJSON("U-NOEMAIL", botTeamID, "", nil),
+			"U-NOBODY":       slackUserJSON("U-NOBODY", botTeamID, "nobody@corp.com", nil),
+			"U-DUP":          slackUserJSON("U-DUP", botTeamID, "dup@corp.com", nil),
+			"U-NOGROUP":      slackUserJSON("U-NOGROUP", botTeamID, "nogroup@corp.com", nil),
+			"U-OTHERGROUP":   slackUserJSON("U-OTHERGROUP", botTeamID, "email@corp.com", nil),
 		},
-		errors: map[string]string{"U-SCOPE": "missing_scope"},
+		errors: map[string]string{"U-SCOPE": "missing_scope", "U-LINK-SCOPE": "missing_scope"},
 		broken: map[string]bool{"U-APIERR": true},
 	}
 	ss := newFakeSlackService(t, f)
@@ -239,6 +250,10 @@ func TestResolveControlPlaneApprover(t *testing.T) {
 		{name: "linked slack id, active", slackID: "U-LINK-ACTIVE", group: "dba", wantEmail: "linked@corp.com"},
 		{name: "linked slack id, invited", slackID: "U-LINK-INVITED", group: "dba", wantEmail: "invited@corp.com"},
 		{name: "linked slack id, inactive", slackID: "U-LINK-INACTIVE", group: "dba", wantMsg: cpInactiveMsg},
+		{name: "linked slack id, deactivated in slack", slackID: "U-LINK-DELETED", group: "dba", wantMsg: cpDeactivatedMsg},
+		{name: "linked slack id, now a guest", slackID: "U-LINK-GUEST", group: "dba", wantMsg: cpGuestMsg},
+		{name: "linked slack id, missing users:read", slackID: "U-LINK-SCOPE", group: "dba", wantMsg: cpNoUsersScopeMsg},
+		{name: "linked slack id, no email", slackID: "U-LINK-NOEMAIL", group: "dba", wantEmail: "noemail@corp.com"},
 		{name: "no link, email matches ignoring case", slackID: "U-EMAIL", group: "dba", wantEmail: "email@corp.com"},
 		{name: "no link, email matches an invited user", slackID: "U-PENDING", group: "dba", wantEmail: "pending@corp.com"},
 		{name: "stranger", slackID: "U-STRANGER", group: "dba", wantMsg: cpOtherWorkspaceMsg},

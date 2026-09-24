@@ -208,7 +208,13 @@ func (h *handler) SamlLoginCallback(c *gin.Context) {
 	// parse and validate user information in the database
 	uinfo := parseToUserInfo(saml, *assertionInfo)
 	log = log.With("email", uinfo.Email)
-	usr, err := models.GetUserByEmailV2(uinfo.Email)
+	// The control plane ignores case: its Slack import stores emails lower
+	// case, and the identity provider may send another case.
+	lookup := models.GetUserByEmailV2
+	if appconfig.Get().IsControlPlane() {
+		lookup = models.GetUserByEmailFoldV2
+	}
+	usr, err := lookup(uinfo.Email)
 	switch err {
 	case models.ErrNotFound:
 	case nil:

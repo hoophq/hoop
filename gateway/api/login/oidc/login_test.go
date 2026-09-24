@@ -98,7 +98,7 @@ func TestSyncSingleTenantUserKeepsProvisionedGroups(t *testing.T) {
 
 	loginAs := func(email, subject string) []string {
 		t.Helper()
-		dbUser, err := models.GetUserByEmail(email)
+		dbUser, err := loginUserByEmail(email)
 		if err != nil || dbUser == nil {
 			t.Fatalf("login lookup of %s: user %v err %v", email, dbUser, err)
 		}
@@ -119,7 +119,8 @@ func TestSyncSingleTenantUserKeepsProvisionedGroups(t *testing.T) {
 		slices.Sort(groups)
 		return groups
 	}
-	if got := loginAs("john.doe@corp.com", "idp|john"); !slices.Equal(got, []string{"dba-leads"}) {
+	// The identity provider sends another case than the import stored.
+	if got := loginAs("John.Doe@Corp.com", "idp|john"); !slices.Equal(got, []string{"dba-leads"}) {
 		t.Fatalf("john groups = %v; want the provisioned group kept", got)
 	}
 	var johns int64

@@ -89,3 +89,13 @@ func CreateUserGroupWithoutUser(orgID string, name string) error {
 		orgID, name,
 	).Error
 }
+
+// ListGroupMemberIDs returns the ids of the users in a group, by name.
+func ListGroupMemberIDs(db *gorm.DB, orgID, name string) ([]string, error) {
+	var ids []string
+	err := db.Raw(`
+		SELECT user_id::TEXT FROM private.user_groups
+		WHERE org_id = ? AND name = ? AND user_id IS NOT NULL
+		ORDER BY user_id`, orgID, name).Scan(&ids).Error
+	return ids, err
+}

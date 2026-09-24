@@ -20,6 +20,17 @@ type UserV2 struct {
 }
 
 func GetUserByEmailV2(email string) (*UserV2, error) {
+	return getUserV2Where(`u.email = ?`, email)
+}
+
+// GetUserByEmailFoldV2 is GetUserByEmailV2 ignoring case, for the control
+// plane: its Slack import stores emails lower case, and an identity provider
+// may send another case for the same person.
+func GetUserByEmailFoldV2(email string) (*UserV2, error) {
+	return getUserV2Where(`lower(u.email) = lower(?)`, email)
+}
+
+func getUserV2Where(where string, email string) (*UserV2, error) {
 	var user *UserV2
 	err := DB.Raw(`
 	SELECT
@@ -30,7 +41,7 @@ func GetUserByEmailV2(email string) (*UserV2, error) {
 		), ARRAY[]::TEXT[]) AS groups,
 		slack_id, picture, hashed_password
 	FROM private.users u
-	WHERE u.email = ?`, email).
+	WHERE `+where, email).
 		First(&user).Error
 	if err == gorm.ErrRecordNotFound {
 		return nil, ErrNotFound

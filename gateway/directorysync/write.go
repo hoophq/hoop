@@ -27,7 +27,7 @@ var (
 	ErrAmbiguousUser = errors.New("more than one hoop user matches this Slack user")
 
 	errInvalidGroupName = errors.New("the group name must have 1 to 100 characters")
-	errNoEmail          = errors.New("the Slack user has no email")
+	errNoEmail          = errors.New("slack returned no email for the user; add the users:read.email scope to the Slack app and reinstall it")
 )
 
 // isReservedGroupName reports whether name is one of hoop's own groups: admin
@@ -58,11 +58,9 @@ func write(tx *gorm.DB, orgID string, w *workspace, selected []slackservice.User
 			if _, done := userIDs[m.ID]; done {
 				continue
 			}
+			// A member without an email fails the run rather than being
+			// skipped: skipping would drop them from every imported group.
 			id, created, err := upsertMember(tx, orgID, m)
-			if errors.Is(err, errNoEmail) {
-				log.With("org", orgID).Warnf("skipping slack user %s: no email", m.ID)
-				continue
-			}
 			if err != nil {
 				return fmt.Errorf("slack user %s: %w", m.ID, err)
 			}
@@ -171,12 +169,10 @@ func normalizeEmail(email string) string {
 // a login that sends another case finds the same user.
 //
 // An existing user keeps their status: the import never reactivates a user an
-// admin deactivated.
+// admin deactivated. A user linked by Slack ID needs no email; any other one
+// does, and Slack sends none without users:read.email.
 func upsertMember(tx *gorm.DB, orgID string, m slackservice.DirectoryUser) (string, bool, error) {
 	email := normalizeEmail(m.Email)
-	if email == "" {
-		return "", false, errNoEmail
-	}
 	name := strings.TrimSpace(m.Name)
 
 	var users []models.User
@@ -184,6 +180,9 @@ func upsertMember(tx *gorm.DB, orgID string, m slackservice.DirectoryUser) (stri
 		return "", false, err
 	}
 	if len(users) == 0 {
+		if email == "" {
+			return "", false, errNoEmail
+		}
 		if err := tx.Where("org_id = ? AND lower(email) = ?", orgID, email).Find(&users).Error; err != nil {
 			return "", false, err
 		}
@@ -216,15 +215,18 @@ func upsertMember(tx *gorm.DB, orgID string, m slackservice.DirectoryUser) (stri
 	}
 
 	user := users[0]
-	updates := map[string]any{"email": email, "slack_id": m.ID}
+	updates := map[string]any{"slack_id": m.ID}
+	if email != "" {
+		updates["email"] = email
+	}
 	if name != "" {
 		updates["name"] = name
 	}
 	if err := tx.Model(&models.User{}).Where("id = ?", user.ID).Updates(updates).Error; err != nil {
-		return "", false, fmt.Errorf("failed updating user %s: %w", email, err)
+		return "", false, fmt.Errorf("failed updating user %s: %w", user.Email, err)
 	}
 	if user.SlackID != "" && user.SlackID != m.ID {
-		log.With("org", orgID).Infof("slack id of user %s changed from %s to %s", email, user.SlackID, m.ID)
+		log.With("org", orgID).Infof("slack id of user %s changed from %s to %s", user.Email, user.SlackID, m.ID)
 	}
 	return user.ID, false, nil
 }

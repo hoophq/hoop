@@ -184,8 +184,12 @@ func RunDirectorySync(c *gin.Context) {
 	// waiting for still has to finish or roll back as a whole.
 	actor := directorysync.Actor{Subject: ctx.UserID, Email: ctx.UserEmail, Name: ctx.UserName}
 	err := directorysync.Run(context.Background(), models.DB, ctx.OrgID, actor)
-	if errors.Is(err, directorysync.ErrSyncRunning) {
+	switch {
+	case errors.Is(err, directorysync.ErrSyncRunning), errors.Is(err, directorysync.ErrImportChanged):
 		c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
+		return
+	case errors.Is(err, directorysync.ErrNotRecorded):
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
 	// Any other failure is recorded on the config and returned in last_error.

@@ -346,7 +346,7 @@ export default function ControlPlaneUsers() {
                 </Table>
 
                 {users.length === 1 && (
-                  <Stack flex={1} mih="30vh" align="center" py="xxl">
+                  <Stack flex={1} mih="30vh" align="center" py="xxlAlt">
                     <Stack flex={1} align="center" justify="center" gap="lg">
                       <Text size="sm" c="dimmed" ta="center" maw={400}>
                         Invite administrators; reviewers come from Slack or the groups you set here.

@@ -8,7 +8,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/aianalyzer"
 	"github.com/hoophq/hoop/gateway/analytics"
 	"github.com/hoophq/hoop/gateway/api/httputils"
@@ -427,7 +426,12 @@ func CreateSessionAnalyzerRule(c *gin.Context) {
 		})
 		out := toSessionAnalyzerRuleResponse(rule)
 		out.SidecarTargets = sidecarbind.Load(ctx.GetOrgID(), services.SidecarRuleAnalyzer, rule.Name)
-		out.ReviewersGroups = holdReviewersOf(orgID, rule.Name)
+		reviewers, err := storedHoldReviewers(orgID, rule.Name)
+		if err != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "the rule was saved, but reading its reviewer groups failed: %v", err)
+			return
+		}
+		out.ReviewersGroups = reviewers
 		c.JSON(http.StatusCreated, out)
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating AI session analyzer rule: %v", err)
@@ -557,7 +561,12 @@ func UpdateSessionAnalyzerRule(c *gin.Context) {
 
 		out := toSessionAnalyzerRuleResponse(rule)
 		out.SidecarTargets = sidecarbind.Load(ctx.GetOrgID(), services.SidecarRuleAnalyzer, rule.Name)
-		out.ReviewersGroups = holdReviewersOf(orgID, rule.Name)
+		reviewers, err := storedHoldReviewers(orgID, rule.Name)
+		if err != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "the rule was saved, but reading its reviewer groups failed: %v", err)
+			return
+		}
+		out.ReviewersGroups = reviewers
 		c.JSON(http.StatusOK, out)
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating AI session analyzer rule: %v", err)
@@ -698,19 +707,8 @@ func holdReviewers(req openapi.AISessionAnalyzerRuleRequest) *[]string {
 	return req.ReviewersGroups
 }
 
-// holdReviewersOf reads back who may release what the rule holds, for the
-// edit form. It is nil when the rule does not hold, and outside a control
-// plane.
-func holdReviewersOf(orgID uuid.UUID, ruleName string) []string {
-	groups, err := storedHoldReviewers(orgID, ruleName)
-	if err != nil {
-		log.With("org", orgID, "rule", ruleName).Warnf("failed reading the hold's reviewer groups, reason=%v", err)
-		return nil
-	}
-	return groups
-}
-
-// storedHoldReviewers is holdReviewersOf, returning a failed read.
+// storedHoldReviewers reads back who may release what the rule holds, for
+// the response. Only the control plane stores reviewer groups on a rule.
 func storedHoldReviewers(orgID uuid.UUID, ruleName string) ([]string, error) {
 	if !appconfig.Get().IsControlPlane() {
 		return nil, nil

@@ -35,6 +35,8 @@ function sameChannels(a = [], b = []) {
  *
  * The API stores a sidecar's listeners as one set, so a row saves its own
  * change on top of what is stored for its sidecar, never other rows' drafts.
+ * One save runs at a time: a second one built before the first answered would
+ * send the old set and undo it.
  */
 function SidecarSlackChannelsTab() {
   const sidecars = useSidecarStore((s) => s.sidecars)
@@ -92,6 +94,7 @@ function SidecarSlackChannelsTab() {
   }, [sidecars, search])
 
   async function handleSave(sidecar, listener, key) {
+    if (savingKey !== null) return
     const channels = { ...(saved[sidecar.id] ?? {}), [listener]: drafts[key] ?? [] }
     setSavingKey(key)
     try {
@@ -181,7 +184,7 @@ function SidecarSlackChannelsTab() {
                     <Button
                       variant="default"
                       size="xs"
-                      disabled={sameChannels(value, stored)}
+                      disabled={sameChannels(value, stored) || (savingKey !== null && savingKey !== key)}
                       loading={savingKey === key}
                       onClick={() => handleSave(sidecar, listener.name, key)}
                     >

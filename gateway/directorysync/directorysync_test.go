@@ -199,7 +199,11 @@ func importWith(t *testing.T, f *fakeSlack, cfg *models.DirectorySyncConfig) (*r
 	if err := models.UpsertDirectorySyncConfig(models.DB, cfg); err != nil {
 		t.Fatalf("store config: %v", err)
 	}
-	return reconcile(context.Background(), models.DB, syncOrgID, f, cfg)
+	stored, err := models.GetDirectorySyncConfig(models.DB, syncOrgID)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	return reconcile(context.Background(), models.DB, syncOrgID, f, stored)
 }
 
 func TestReconcileSlack(t *testing.T) {
@@ -442,5 +446,67 @@ func TestDue(t *testing.T) {
 		if got := due(tt.cfg, now); got != tt.want {
 			t.Errorf("%s: due = %v, want %v", tt.name, got, tt.want)
 		}
+	}
+}
+
+// A run that read Slack before the import was saved again writes nothing,
+// and does not stamp its result on the new settings.
+func TestAStaleRunWritesNothing(t *testing.T) {
+	startSyncDB(t)
+	f := slackWorkspace()
+	f.use(t)
+
+	if err := models.UpsertDirectorySyncConfig(models.DB, syncConfig("S-DBA")); err != nil {
+		t.Fatalf("store config: %v", err)
+	}
+	stale, err := models.GetDirectorySyncConfig(models.DB, syncOrgID)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if err := models.UpsertDirectorySyncConfig(models.DB, syncConfig("S-SRE")); err != nil {
+		t.Fatalf("save again: %v", err)
+	}
+
+	if _, err := reconcile(context.Background(), models.DB, syncOrgID, f, stale); !errors.Is(err, ErrImportChanged) {
+		t.Fatalf("err = %v; want ErrImportChanged", err)
+	}
+	if got := groupsOf(t, "ana@corp.com"); len(got) != 0 {
+		t.Errorf("ana groups = %v; a stale run must write nothing", got)
+	}
+	if err := models.SetDirectorySyncResult(models.DB, syncOrgID, stale.UpdatedAt, time.Now().UTC(), nil); err != nil {
+		t.Fatalf("set result: %v", err)
+	}
+	if cfg, _ := models.GetDirectorySyncConfig(models.DB, syncOrgID); cfg.LastRunAt != nil {
+		t.Errorf("last_run_at = %v; a stale run must not stamp the new settings", cfg.LastRunAt)
+	}
+}
+
+// Slack sends no email without users:read.email. A member linked by Slack ID
+// keeps their groups; an unlinked one fails the run instead of being dropped
+// from every imported group.
+func TestAMemberWithoutEmail(t *testing.T) {
+	startSyncDB(t)
+	f := slackWorkspace()
+	f.use(t)
+
+	if _, err := importWith(t, f, syncConfig("S-DBA")); err != nil {
+		t.Fatalf("first run: %v", err)
+	}
+	f.user("U-ANA").Email = ""
+	if _, err := importWith(t, f, syncConfig("S-DBA")); err != nil {
+		t.Fatalf("linked member without email: %v", err)
+	}
+	if got := groupsOf(t, "ana@corp.com"); !slices.Equal(got, []string{"dba-leads"}) {
+		t.Errorf("ana groups = %v; a linked member keeps the group", got)
+	}
+
+	f.group("S-DBA").Users = append(f.group("S-DBA").Users, "U-EVE")
+	f.user("U-EVE").Email = ""
+	_, err := importWith(t, f, syncConfig("S-DBA"))
+	if !errors.Is(err, errNoEmail) || !strings.Contains(err.Error(), "U-EVE") {
+		t.Fatalf("err = %v; want errNoEmail naming U-EVE", err)
+	}
+	if got := groupsOf(t, "ana@corp.com"); !slices.Equal(got, []string{"dba-leads"}) {
+		t.Errorf("ana groups = %v; a failed run writes nothing", got)
 	}
 }
