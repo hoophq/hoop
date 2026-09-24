@@ -138,8 +138,8 @@ function SlackImportForm({ sync, onSynced }) {
         <Group justify="space-between" gap="sm">
           <Group gap="sm">
             {enabled && (
-              <Button variant="subtle" color="red" onClick={handleRemove} loading={saving}>
-                Remove
+              <Button variant="default" onClick={handleRun} loading={running} disabled={!sync.group_ids?.length}>
+                Sync now
               </Button>
             )}
           </Group>
@@ -150,8 +150,8 @@ function SlackImportForm({ sync, onSynced }) {
               </Button>
             )}
             {enabled && (
-              <Button variant="default" onClick={handleRun} loading={running} disabled={!sync.group_ids?.length}>
-                Sync now
+              <Button variant="subtle" color="red" onClick={handleRemove} loading={saving}>
+                Remove
               </Button>
             )}
             <Button onClick={handleSave} loading={saving}>
