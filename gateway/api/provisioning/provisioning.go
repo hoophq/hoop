@@ -92,7 +92,7 @@ func GetDirectorySync(c *gin.Context) {
 // PutDirectorySync
 //
 //	@Summary		Configure Directory Sync
-//	@Description	Configure the Slack import: the user groups to import and the interval. It uses the org's Slack app. A user group last edited by a member who is not a workspace admin or owner is refused at the run. Control plane only.
+//	@Description	Configure the Slack import: the user groups to import and the interval. It uses the org's Slack app. Control plane only.
 //	@Tags			Server Management
 //	@Accept			json
 //	@Produce		json
@@ -199,7 +199,7 @@ func RunDirectorySync(c *gin.Context) {
 // ListDirectorySyncGroups
 //
 //	@Summary		List Directory Groups
-//	@Description	List the Slack user groups the directory sync can read, for choosing which ones to sync. admin_managed is false for a user group a member who is not a workspace admin or owner edited last; the import refuses it. Control plane only.
+//	@Description	List the Slack user groups the directory sync can read, for choosing which ones to sync. Control plane only.
 //	@Tags			Server Management
 //	@Produce		json
 //	@Success		200					{array}		openapi.DirectoryGroup
@@ -223,7 +223,7 @@ func ListDirectorySyncGroups(c *gin.Context) {
 	}
 	out := make([]openapi.DirectoryGroup, 0, len(groups))
 	for _, g := range groups {
-		out = append(out, openapi.DirectoryGroup{ID: g.ID, Name: g.Name, AdminManaged: g.AdminManaged})
+		out = append(out, openapi.DirectoryGroup{ID: g.ID, Name: g.Name})
 	}
 	c.JSON(http.StatusOK, out)
 }

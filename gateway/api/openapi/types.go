@@ -3035,8 +3035,6 @@ type DirectoryGroup struct {
 	ID string `json:"id" example:"S0614TZR7"`
 	// The group name hoop stores: the user group handle without the @
 	Name string `json:"name" example:"dba-leads"`
-	// Whether a workspace admin or owner edited the user group last
-	AdminManaged bool `json:"admin_managed"`
 }
 
 // ServerMcpAuthConfig configures the OAuth 2.1 Resource Server profile for the

@@ -8585,7 +8585,7 @@ const docTemplate = `{
                 }
             },
             "put": {
-                "description": "Configure the Slack import: the user groups to import and the interval. It uses the org's Slack app. A user group last edited by a member who is not a workspace admin or owner is refused at the run. Control plane only.",
+                "description": "Configure the Slack import: the user groups to import and the interval. It uses the org's Slack app. Control plane only.",
                 "consumes": [
                     "application/json"
                 ],
@@ -8667,7 +8667,7 @@ const docTemplate = `{
         },
         "/serverconfig/directory-sync/groups": {
             "get": {
-                "description": "List the Slack user groups the directory sync can read, for choosing which ones to sync. admin_managed is false for a user group a member who is not a workspace admin or owner edited last; the import refuses it. Control plane only.",
+                "description": "List the Slack user groups the directory sync can read, for choosing which ones to sync. Control plane only.",
                 "produces": [
                     "application/json"
                 ],
@@ -14941,10 +14941,6 @@ const docTemplate = `{
         "openapi.DirectoryGroup": {
             "type": "object",
             "properties": {
-                "admin_managed": {
-                    "description": "Whether a workspace admin or owner edited the user group last",
-                    "type": "boolean"
-                },
                 "id": {
                     "description": "The Slack id of the user group",
                     "type": "string",

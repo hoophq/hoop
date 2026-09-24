@@ -49,9 +49,6 @@ function LastRun({ sync }) {
  * The Slack import (ADR-0020): the members of the Slack user groups an admin
  * picks become users, in groups named after the handle. The page says the
  * least it can; the docs carry the rest.
- *
- * A group a workspace member edited last is refused by the import, so it is
- * offered disabled rather than accepted and failed at the next run.
  */
 function SlackImportForm({ sync, onSynced }) {
   const groups = useSlackImportStore((s) => s.groups)
@@ -72,11 +69,7 @@ function SlackImportForm({ sync, onSynced }) {
   }, [groupsStatus, loadGroups])
 
   const groupOptions = useMemo(() => {
-    const known = groups.map((g) => ({
-      value: g.id,
-      label: g.admin_managed ? `@${g.name}` : `@${g.name} · edited by a member`,
-      disabled: !g.admin_managed && !groupIds.includes(g.id),
-    }))
+    const known = groups.map((g) => ({ value: g.id, label: `@${g.name}` }))
     const missing = groupIds
       .filter((id) => !groups.some((g) => g.id === id))
       .map((id) => ({ value: id, label: id }))

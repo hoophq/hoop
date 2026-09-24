@@ -86,40 +86,17 @@ func vouched(u slackservice.DirectoryUser) bool {
 	return !u.Deleted && !u.IsBot && !u.IsRestricted && !u.IsUltraRestricted && !u.IsStranger
 }
 
-// adminManaged reports whether the last editor of the group is a workspace
-// admin or owner. hoop cannot restrict who edits user groups, and Slack does
-// not say whether the identity provider manages a group, so the last editor
-// is the only signal.
-func (w *workspace) adminManaged(g slackservice.UserGroup) bool {
-	editor := g.UpdatedBy
-	if editor == "" {
-		editor = g.CreatedBy
-	}
-	e, ok := w.users[editor]
-	return ok && (e.IsAdmin || e.IsOwner)
-}
-
-// selected returns the picked groups, or why the run must not use them: a
-// group that is gone, or one a member who is not a workspace admin or owner
-// edited last.
+// selected returns the picked groups, or an error for a group that is gone.
+// Who may edit a user group is a Slack workspace setting (ADR-0020): hoop
+// trusts the groups as it trusts an identity provider's groups claim.
 func (w *workspace) selected(groupIDs []string) ([]slackservice.UserGroup, error) {
-	var out []slackservice.UserGroup
-	var refused []string
+	out := make([]slackservice.UserGroup, 0, len(groupIDs))
 	for _, id := range groupIDs {
 		g, ok := w.groups[id]
 		if !ok {
 			return nil, fmt.Errorf("slack user group %s no longer exists; remove it from the import", id)
 		}
-		if !w.adminManaged(g) {
-			refused = append(refused, "@"+groupName(g))
-		}
 		out = append(out, g)
-	}
-	if len(refused) > 0 {
-		sort.Strings(refused)
-		return nil, fmt.Errorf("user group(s) %s were last edited by a member who is not a Slack workspace admin or owner; "+
-			"have an admin edit them, and restrict user group editing to admins in the Slack workspace settings",
-			strings.Join(refused, ", "))
 	}
 	return out, nil
 }
@@ -128,9 +105,6 @@ func (w *workspace) selected(groupIDs []string) ([]slackservice.UserGroup, error
 type Group struct {
 	ID   string
 	Name string
-	// AdminManaged is false when a member who is not a workspace admin or
-	// owner edited the group last: the import refuses it.
-	AdminManaged bool
 }
 
 // ListGroups lists the org's Slack user groups, for choosing which to import.
@@ -145,7 +119,7 @@ func ListGroups(ctx context.Context, orgID string) ([]Group, error) {
 	}
 	out := make([]Group, 0, len(w.groups))
 	for _, g := range w.groups {
-		out = append(out, Group{ID: g.ID, Name: groupName(g), AdminManaged: w.adminManaged(g)})
+		out = append(out, Group{ID: g.ID, Name: groupName(g)})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil

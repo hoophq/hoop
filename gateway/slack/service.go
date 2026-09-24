@@ -197,21 +197,15 @@ func (s *SlackService) GetUserInfo(ctx context.Context, slackID string) (*SlackU
 // (users.list).
 type DirectoryUser struct {
 	SlackUser
-	Name    string
-	IsAdmin bool
-	IsOwner bool
+	Name string
 }
 
-// UserGroup is a Slack user group (usergroups.list). CreatedBy and UpdatedBy
-// are Slack user ids: who may edit a user group is a workspace setting hoop
-// cannot see, so the import checks who edited it last.
+// UserGroup is a Slack user group (usergroups.list).
 type UserGroup struct {
 	ID         string
 	Handle     string
 	Name       string
 	IsExternal bool
-	CreatedBy  string
-	UpdatedBy  string
 	Users      []string
 }
 
@@ -241,9 +235,7 @@ func (s *SlackService) ListUsers(ctx context.Context) ([]DirectoryUser, error) {
 				IsStranger:        u.IsStranger,
 				IsEmailConfirmed:  u.IsEmailConfirmed,
 			},
-			Name:    name,
-			IsAdmin: u.IsAdmin,
-			IsOwner: u.IsOwner,
+			Name: name,
 		})
 	}
 	return out, nil
@@ -265,8 +257,6 @@ func (s *SlackService) ListUserGroups(ctx context.Context) ([]UserGroup, error) 
 			Handle:     g.Handle,
 			Name:       g.Name,
 			IsExternal: g.IsExternal,
-			CreatedBy:  g.CreatedBy,
-			UpdatedBy:  g.UpdatedBy,
 			Users:      g.Users,
 		})
 	}

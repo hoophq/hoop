@@ -68,10 +68,14 @@ requester.
 Slack is the default because the click and the directory are the same
 identity: the person who clicks Approve is the Slack user the import read.
 Deactivation flows from the identity provider through Slack, which most
-workspaces provision from it. The trade-off: hoop cannot enforce who edits a
-user group, and the Slack API has no flag saying the identity provider manages
-one. So a run refuses a user group whose last editor is not a workspace admin
-or owner, and the docs say to restrict user group editing to admins in Slack.
+workspaces provision from it. The trade-off: whoever can edit a picked user
+group names reviewers. hoop trusts the groups, as it trusts an identity
+provider's groups claim, and the docs say to restrict user group editing to
+admins in Slack. Every run writes an audit entry with who entered and left
+each group. A first version refused a group whose last editor was not a
+workspace admin: it was removed, because Slack reports only the last editor
+(an admin edit hid a member's), and one refused group stopped the whole run,
+deactivations included.
 
 While the Slack import owns a group, SSO login stops rewriting groups.
 Removing the import hands them back; users and their groups stay. The Users

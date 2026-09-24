@@ -69,7 +69,6 @@ func member(id, email string) slackservice.DirectoryUser {
 
 func slackWorkspace() *fakeSlack {
 	admin := member("U-ADMIN", "root@corp.com")
-	admin.IsAdmin = true
 	bot := member("U-BOT", "bot@corp.com")
 	bot.IsBot = true
 	guest := member("U-GUEST", "guest@corp.com")
@@ -82,11 +81,11 @@ func slackWorkspace() *fakeSlack {
 			bot, guest, stranger,
 		},
 		groups: []slackservice.UserGroup{
-			{ID: "S-DBA", Handle: "dba-leads", CreatedBy: "U-EVE", UpdatedBy: "U-ADMIN",
+			{ID: "S-DBA", Handle: "dba-leads",
 				Users: []string{"U-ADMIN", "U-ANA", "U-BOB", "U-BOT", "U-GUEST", "U-STRANGER"}},
-			{ID: "S-SRE", Handle: "sre", CreatedBy: "U-EVE", Users: []string{"U-EVE"}},
-			{ID: "S-ADMIN", Handle: "admin", CreatedBy: "U-ADMIN", Users: []string{"U-EVE"}},
-			{ID: "S-SHARED", Handle: "partners", CreatedBy: "U-ADMIN", IsExternal: true, Users: []string{"U-ANA"}},
+			{ID: "S-SRE", Handle: "sre", Users: []string{"U-EVE"}},
+			{ID: "S-ADMIN", Handle: "admin", Users: []string{"U-EVE"}},
+			{ID: "S-SHARED", Handle: "partners", IsExternal: true, Users: []string{"U-ANA"}},
 		},
 	}
 }
@@ -103,11 +102,6 @@ func TestSlackWorkspace(t *testing.T) {
 	var names []string
 	for _, g := range groups {
 		names = append(names, g.Name)
-		// dba-leads and admin were last edited by an admin; sre only ever
-		// by a member.
-		if want := g.Name != "sre"; g.AdminManaged != want {
-			t.Errorf("%s admin_managed = %v, want %v", g.Name, g.AdminManaged, want)
-		}
 	}
 	if !slices.Equal(names, []string{"admin", "dba-leads", "sre"}) {
 		t.Errorf("groups = %v; want handles, without the external group", names)
@@ -125,12 +119,11 @@ func TestSlackWorkspace(t *testing.T) {
 		t.Errorf("members = %v; want no bot, guest or stranger", ids)
 	}
 
-	if _, err := w.selected([]string{"S-DBA"}); err != nil {
-		t.Errorf("admin-managed group refused: %v", err)
+	if got, err := w.selected([]string{"S-DBA", "S-SRE"}); err != nil || len(got) != 2 {
+		t.Errorf("selected = %v, err = %v; want both groups", got, err)
 	}
-	_, err = w.selected([]string{"S-DBA", "S-SRE"})
-	if err == nil || !strings.Contains(err.Error(), "@sre") || strings.Contains(err.Error(), "@dba-leads") {
-		t.Errorf("member-managed group: err = %v; want @sre named", err)
+	if _, err := w.selected([]string{"S-DBA", "S-GONE"}); err == nil || !strings.Contains(err.Error(), "S-GONE") {
+		t.Errorf("missing group: err = %v; want S-GONE named", err)
 	}
 	if _, err := w.selected([]string{"S-SHARED"}); err == nil {
 		t.Errorf("an external group was accepted")
@@ -253,18 +246,16 @@ func TestReconcileSlack(t *testing.T) {
 		t.Errorf("after a slack run: managed=%v err=%v; want true", managed, err)
 	}
 
-	t.Run("a member-managed group refuses the whole run", func(t *testing.T) {
-		_, err := importWith(t, f, syncConfig("S-DBA", "S-SRE"))
-		if err == nil || !strings.Contains(err.Error(), "@sre") {
-			t.Fatalf("err = %v; want the governance refusal", err)
+	t.Run("a missing group refuses the whole run", func(t *testing.T) {
+		_, err := importWith(t, f, syncConfig("S-SRE", "S-GONE"))
+		if err == nil || !strings.Contains(err.Error(), "S-GONE") {
+			t.Fatalf("err = %v; want S-GONE named", err)
 		}
 		if got := groupsOf(t, "eve@corp.com"); len(got) != 0 {
 			t.Errorf("eve groups = %v; nothing may be written", got)
 		}
-		// An admin edits the group in Slack: it is accepted from then on.
-		f.group("S-SRE").UpdatedBy = "U-ADMIN"
 		if _, err := importWith(t, f, syncConfig("S-DBA", "S-SRE")); err != nil {
-			t.Fatalf("after an admin edit: %v", err)
+			t.Fatalf("run: %v", err)
 		}
 		if got := groupsOf(t, "eve@corp.com"); !slices.Equal(got, []string{"sre"}) {
 			t.Errorf("eve groups = %v; want sre", got)
@@ -415,14 +406,14 @@ func TestRunRecordsResultAndAudit(t *testing.T) {
 	}
 
 	// A refused run records the error on the config and in the audit log.
-	if err := models.UpsertDirectorySyncConfig(models.DB, syncConfig("S-SRE")); err != nil {
+	if err := models.UpsertDirectorySyncConfig(models.DB, syncConfig("S-GONE")); err != nil {
 		t.Fatalf("store config: %v", err)
 	}
 	if err := Run(context.Background(), models.DB, syncOrgID, SystemActor); err == nil {
-		t.Fatalf("want the governance refusal")
+		t.Fatalf("want the missing group refusal")
 	}
 	cfg, _ = models.GetDirectorySyncConfig(models.DB, syncOrgID)
-	if cfg.LastError == nil || !strings.Contains(*cfg.LastError, "@sre") {
+	if cfg.LastError == nil || !strings.Contains(*cfg.LastError, "S-GONE") {
 		t.Errorf("last_error = %v; want the refusal", cfg.LastError)
 	}
 	var failed int64
