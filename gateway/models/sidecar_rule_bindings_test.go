@@ -796,7 +796,8 @@ func TestTheHoldSwitchOwnsItsApprovalRule(t *testing.T) {
 	if err := models.CreateAccessRequestRule(models.DB, handMade); err != nil {
 		t.Fatalf("seed a hand-made rule: %v", err)
 	}
-	err = services.SyncAnalyzerApprovalRule(models.DB, orgID, "ops-review", json.RawMessage(holding))
+	err = services.SyncAnalyzerApprovalRule(models.DB, orgID, "ops-review",
+		json.RawMessage(`{"high":"require_review","approval_rule":"ops-review"}`))
 	if err == nil {
 		t.Fatal("a hold must not take over an access request rule it did not create")
 	}
@@ -957,5 +958,187 @@ func TestGetSidecarByNameOrIDForUpdate(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+// importFile runs the whole import the handler runs: split, adopt, write the
+// items, all in one transaction.
+func importFile(t *testing.T, sc *models.Sidecar, doc string) {
+	t.Helper()
+	cfg, err := services.ParseSidecarConfiguration([]byte(doc))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	stripped, rules, err := services.SplitSidecarConfiguration(sc.Name, cfg,
+		services.ImportedRuleNameTaken(models.DB, testOrgID))
+	if err != nil {
+		t.Fatalf("split: %v", err)
+	}
+	err = models.DB.Transaction(func(tx *gorm.DB) error {
+		if _, err := models.AdoptSidecarConfiguration(tx, testOrgID, sc.ID, models.SidecarConfiguration(stripped)); err != nil {
+			return err
+		}
+		return services.ImportSidecarRulesTx(tx, testOrgID, sc.ID, rules)
+	})
+	if err != nil {
+		t.Fatalf("import: %v", err)
+	}
+}
+
+func composedLane(t *testing.T, sc *models.Sidecar, lane string) daemon.ListenerConfig {
+	t.Helper()
+	stored, err := models.GetSidecarByNameOrID(models.DB, testOrgID, sc.ID)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	composed, err := services.ComposeSidecarConfiguration(models.DB, stored)
+	if err != nil {
+		t.Fatalf("compose: %v", err)
+	}
+	for _, l := range composed.Listeners {
+		if l.Name == lane {
+			return l
+		}
+	}
+	t.Fatalf("lane %q is gone", lane)
+	return daemon.ListenerConfig{}
+}
+
+func newTestSidecar(t *testing.T, name string) *models.Sidecar {
+	t.Helper()
+	sc := &models.Sidecar{OrgID: testOrgID, Name: name, KeyHash: models.HashAPIKey("hsc_" + name),
+		CreatedBy: "tests@hoop.dev"}
+	if err := models.CreateSidecar(models.DB, sc); err != nil {
+		t.Fatalf("seed sidecar %s: %v", name, err)
+	}
+	return sc
+}
+
+// The daemon runs rules in order and the first match wins, so the composed
+// lane must list them as the file did: the lane's own rules, then the
+// top-level ones, and mask entries as written.
+func TestAnImportKeepsTheFileOrder(t *testing.T) {
+	startTestDB(t)
+	sc := newTestSidecar(t, "order-edge")
+	importFile(t, sc, `{
+		"guardrails": {"rules": [{"name": "aaa-top", "type": "deny_words_list", "words": ["x"]}]},
+		"listeners": [{
+			"name": "appdb", "protocol": "postgres", "listen": ":5432", "upstream": "db:5432",
+			"guardrails": {"rules": [{"name": "zzz-lane", "type": "deny_words_list", "words": ["y"]}]},
+			"mask": {"rules": [
+				{"name": "zeta", "entities": ["EMAIL_ADDRESS"], "strategy": "redact"},
+				{"name": "alpha", "entities": ["US_SSN"], "strategy": "redact"},
+				{"entities": ["CREDIT_CARD"], "strategy": "redact"}, {"entities": ["IBAN_CODE"], "strategy": "redact"},
+				{"entities": ["PHONE_NUMBER"], "strategy": "redact"}, {"entities": ["IP_ADDRESS"], "strategy": "redact"},
+				{"entities": ["URL"], "strategy": "redact"}, {"entities": ["PERSON"], "strategy": "redact"},
+				{"entities": ["LOCATION"], "strategy": "redact"}, {"entities": ["BR_CPF"], "strategy": "redact"}
+			]}
+		}]}`)
+	lane := composedLane(t, sc, "appdb")
+
+	var names []string
+	for _, r := range lane.Guardrails.Rules {
+		names = append(names, r.Name)
+	}
+	if fmt.Sprint(names) != "[zzz-lane aaa-top]" {
+		t.Errorf("guardrail order = %v, want [zzz-lane aaa-top]", names)
+	}
+	var entries []struct {
+		Name     string   `json:"name"`
+		Entities []string `json:"entities"`
+	}
+	if err := json.Unmarshal(lane.Mask.Rules, &entries); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, e := range entries {
+		got = append(got, e.Name+"/"+strings.Join(e.Entities, ","))
+	}
+	want := "[zeta/EMAIL_ADDRESS alpha/US_SSN /CREDIT_CARD /IBAN_CODE /PHONE_NUMBER /IP_ADDRESS /URL /PERSON /LOCATION /BR_CPF]"
+	if fmt.Sprint(got) != want {
+		t.Errorf("mask order = %v\nwant %s", got, want)
+	}
+}
+
+// A hold keeps the approval rule the file names when the control plane has
+// it: the reviewers and the count an admin chose stay the ones that release.
+func TestAnImportKeepsAnExistingApprovalRule(t *testing.T) {
+	startTestDB(t)
+	orgID := uuid.MustParse(testOrgID)
+	two := 2
+	if err := models.CreateAccessRequestRule(models.DB, &models.AccessRequestRule{
+		OrgID: orgID, Name: "dba", AccessType: models.AccessTypeSidecar,
+		ConnectionNames: []string{}, ApprovalRequiredGroups: []string{},
+		ReviewersGroups: []string{"dba-team"}, ForceApprovalGroups: []string{}, MinApprovals: &two,
+	}); err != nil {
+		t.Fatalf("seed approval rule: %v", err)
+	}
+	sc := newTestSidecar(t, "hold-edge")
+	importFile(t, sc, `{"listeners": [{
+		"name": "appdb", "protocol": "postgres", "listen": ":5432", "upstream": "db:5432",
+		"analyzer": {"high": "require_review", "approval_rule": "dba"}}]}`)
+
+	if got := composedLane(t, sc, "appdb").Analyzer.ApprovalRule; got != "dba" {
+		t.Errorf("approval_rule = %q, want the file's %q", got, "dba")
+	}
+	if _, err := models.GetAccessRequestRuleByName(models.DB, "hold-edge-appdb-analyzer", orgID); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Errorf("a managed approval rule was created beside the file's: %v", err)
+	}
+	dba, err := models.GetAccessRequestRuleByName(models.DB, "dba", orgID)
+	if err != nil || dba.MinApprovals == nil || *dba.MinApprovals != 2 || fmt.Sprint(dba.ReviewersGroups) != "[dba-team]" {
+		t.Errorf("the file's approval rule changed: %+v, %v", dba, err)
+	}
+}
+
+// An analyzer block with only overrides decides nothing, so it stays in the
+// lane rather than becoming a rule that allows everything.
+func TestAnImportKeepsAnOverrideOnlyAnalyzerBlock(t *testing.T) {
+	startTestDB(t)
+	sc := newTestSidecar(t, "budget-edge")
+	importFile(t, sc, `{"listeners": [{
+		"name": "appdb", "protocol": "postgres", "listen": ":5432", "upstream": "db:5432",
+		"analyzer": {"max_calls": 40}}]}`)
+
+	if bound, _ := models.ListSidecarRuleBindings(models.DB, uuid.MustParse(testOrgID), sc.ID); len(bound) != 0 {
+		t.Errorf("want no rule for an override-only block, got %+v", bound)
+	}
+	if a := composedLane(t, sc, "appdb").Analyzer; a == nil || a.MaxCalls != 40 {
+		t.Errorf("the lane lost its block: %+v", a)
+	}
+}
+
+// An admin's rule goes after the imported ones, and saving it again keeps its
+// place rather than moving it to the end.
+func TestABoundRuleKeepsItsPlace(t *testing.T) {
+	startTestDB(t)
+	orgID := uuid.MustParse(testOrgID)
+	sc := newTestSidecar(t, "place-edge")
+	importFile(t, sc, `{"listeners": [{
+		"name": "appdb", "protocol": "postgres", "listen": ":5432", "upstream": "db:5432",
+		"guardrails": {"rules": [{"name": "first", "type": "deny_words_list", "words": ["x"]}]}}]}`)
+
+	for _, name := range []string{"aaa-admin", "bbb-admin"} {
+		rule := &models.GuardRailRules{OrgID: testOrgID, ID: uuid.NewString(), Name: name,
+			Input: map[string]any{}, Output: map[string]any{},
+			SidecarSpec: json.RawMessage(`{"rules":[{"name":"` + name + `","type":"deny_words_list","words":["z"]}]}`)}
+		if err := models.UpsertGuardRailRuleWithConnections(rule, nil, true); err != nil {
+			t.Fatalf("seed %s: %v", name, err)
+		}
+		if err := models.SetGuardrailRuleListeners(models.DB, orgID, name,
+			[]models.SidecarRuleTarget{{SidecarID: sc.ID, ListenerName: "appdb"}}); err != nil {
+			t.Fatalf("bind %s: %v", name, err)
+		}
+	}
+	// Saved again: it must not jump behind bbb-admin.
+	if err := models.SetGuardrailRuleListeners(models.DB, orgID, "aaa-admin",
+		[]models.SidecarRuleTarget{{SidecarID: sc.ID, ListenerName: "appdb"}}); err != nil {
+		t.Fatalf("rebind: %v", err)
+	}
+	var names []string
+	for _, r := range composedLane(t, sc, "appdb").Guardrails.Rules {
+		names = append(names, r.Name)
+	}
+	if fmt.Sprint(names) != "[first aaa-admin bbb-admin]" {
+		t.Errorf("order = %v, want [first aaa-admin bbb-admin]", names)
 	}
 }

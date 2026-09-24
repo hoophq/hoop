@@ -44,6 +44,7 @@ const EMPTY = {
   prompt: '',
   message: '',
   max_calls: '',
+  approval_rule: '',
 }
 
 function specToForm(spec) {
@@ -58,6 +59,7 @@ function specToForm(spec) {
     prompt: spec.prompt ?? '',
     message: spec.message ?? '',
     max_calls: spec.max_calls ?? '',
+    approval_rule: spec.approval_rule ?? '',
   }
 }
 
@@ -78,7 +80,11 @@ function formToSpec(f, ruleName) {
   // the control plane owns both halves and keeps them in step, so there is no
   // second name for an operator to get wrong. The sidecar refuses a hold that
   // names nothing, and the plane refuses a review whose rule it cannot find.
-  if ([spec.high, spec.medium, spec.low].includes(REVIEW_ACTION)) spec.approval_rule = ruleName
+  // A stored approval rule that names another rule is an admin's choice of
+  // reviewers (an imported file keeps its own), so it stays.
+  if ([spec.high, spec.medium, spec.low].includes(REVIEW_ACTION)) {
+    spec.approval_rule = f.approval_rule && f.approval_rule !== ruleName ? f.approval_rule : ruleName
+  }
   return spec
 }
 

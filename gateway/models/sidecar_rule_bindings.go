@@ -29,6 +29,9 @@ import (
 type SidecarRuleTarget struct {
 	SidecarID    string `json:"sidecar_id"`
 	ListenerName string `json:"listener_name"`
+	// Position is the rule's place in its listener, where the first match
+	// wins. Nil keeps the stored place, or puts a new target last.
+	Position *int `json:"-"`
 }
 
 // BoundRule is a rule the control plane must fold into one sidecar's served
@@ -137,4 +140,52 @@ func DetachSidecarRulesTx(tx *gorm.DB, orgID uuid.UUID, sidecarID string) (Detac
 		*j.into = deleted
 	}
 	return out, nil
+}
+
+// setRuleListenersTx replaces one rule's targets in one junction table.
+//
+// A target the rule already had keeps its position, so saving a rule does not
+// move it to the end of its listener. A new target without a position goes
+// last. The junction column names come from the callers, never from input.
+func setRuleListenersTx(tx *gorm.DB, table, ruleColumn string, orgID uuid.UUID, ruleName string, targets []SidecarRuleTarget) error {
+	var stored []struct {
+		SidecarID    string
+		ListenerName string
+		Position     int
+	}
+	err := tx.Raw(`SELECT sidecar_id, listener_name, position FROM `+table+
+		` WHERE org_id = ? AND `+ruleColumn+` = ?`, orgID, ruleName).Scan(&stored).Error
+	if err != nil {
+		return err
+	}
+	kept := map[string]int{}
+	for _, s := range stored {
+		kept[s.SidecarID+"/"+s.ListenerName] = s.Position
+	}
+	err = tx.Exec(`DELETE FROM `+table+` WHERE org_id = ? AND `+ruleColumn+` = ?`, orgID, ruleName).Error
+	if err != nil {
+		return err
+	}
+	for _, t := range targets {
+		var pos int
+		switch p, ok := kept[t.SidecarID+"/"+t.ListenerName]; {
+		case t.Position != nil:
+			pos = *t.Position
+		case ok:
+			pos = p
+		default:
+			err = tx.Raw(`SELECT COALESCE(MAX(position), -1) + 1 FROM `+table+
+				` WHERE org_id = ? AND sidecar_id = ? AND listener_name = ?`,
+				orgID, t.SidecarID, t.ListenerName).Scan(&pos).Error
+			if err != nil {
+				return err
+			}
+		}
+		err = tx.Exec(`INSERT INTO `+table+` (org_id, `+ruleColumn+`, sidecar_id, listener_name, position)
+		VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`, orgID, ruleName, t.SidecarID, t.ListenerName, pos).Error
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }

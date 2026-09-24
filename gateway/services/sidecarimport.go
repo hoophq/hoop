@@ -2,12 +2,14 @@ package services
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/hoophq/hoop/sidecar/policy"
@@ -17,10 +19,18 @@ import (
 // ImportedRule is one rule of an imported config file, as a control-plane rule
 // item: its kind, its name, its sidecar_spec and the listeners it binds to.
 type ImportedRule struct {
-	Kind      SidecarRuleKind
-	Name      string
-	Spec      json.RawMessage
-	Listeners []string
+	Kind    SidecarRuleKind
+	Name    string
+	Spec    json.RawMessage
+	Targets []ImportedTarget
+}
+
+// ImportedTarget is one listener an imported rule binds to, and the rule's
+// place in it. The sidecar runs rules in order and the first match wins, so
+// the place is the file's order and composition must keep it.
+type ImportedTarget struct {
+	Listener string
+	Position int
 }
 
 // SplitSidecarConfiguration moves the rules of an imported file out of the
@@ -62,13 +72,18 @@ type ruleNamer func(kind SidecarRuleKind, parts ...string) string
 // splitGuardrails: a lane evaluates its own rules, then the top-level ones,
 // unless it opts out with `rules: []` (daemon config.go resolve).
 func splitGuardrails(scName string, cfg *daemon.Config, name ruleNamer, out []ImportedRule) ([]ImportedRule, error) {
+	// The daemon runs a lane's own rules, then the top-level ones, so a
+	// top-level rule sits after however many rules that lane has.
+	own := map[string]int{}
 	for i := range cfg.Listeners {
 		l := &cfg.Listeners[i]
 		if l.Guardrails == nil || len(l.Guardrails.Rules) == 0 {
 			continue
 		}
+		own[l.Name] = len(l.Guardrails.Rules)
 		for n, r := range l.Guardrails.Rules {
-			item, err := guardrailItem(name(SidecarRuleGuardrail, scName, l.Name, entryName(r.Name, "guardrail", n)), r, l.Name)
+			item, err := guardrailItem(name(SidecarRuleGuardrail, scName, l.Name, entryName(r.Name, "guardrail", n)), r,
+				ImportedTarget{Listener: l.Name, Position: n})
 			if err != nil {
 				return nil, err
 			}
@@ -92,7 +107,11 @@ func splitGuardrails(scName string, cfg *daemon.Config, name ruleNamer, out []Im
 			if len(inheriting) == 0 {
 				break
 			}
-			item, err := guardrailItem(name(SidecarRuleGuardrail, scName, entryName(r.Name, "guardrail", n)), r, inheriting...)
+			targets := make([]ImportedTarget, 0, len(inheriting))
+			for _, lane := range inheriting {
+				targets = append(targets, ImportedTarget{Listener: lane, Position: own[lane] + n})
+			}
+			item, err := guardrailItem(name(SidecarRuleGuardrail, scName, entryName(r.Name, "guardrail", n)), r, targets...)
 			if err != nil {
 				return nil, err
 			}
@@ -112,12 +131,12 @@ func optsOutOfGuardrails(l daemon.ListenerConfig) bool {
 	return l.Guardrails != nil && l.Guardrails.Rules != nil && len(l.Guardrails.Rules) == 0
 }
 
-func guardrailItem(ruleName string, r policy.Rule, listeners ...string) (ImportedRule, error) {
+func guardrailItem(ruleName string, r policy.Rule, targets ...ImportedTarget) (ImportedRule, error) {
 	spec, err := json.Marshal(daemon.GuardrailsConfig{Rules: []policy.Rule{r}})
 	if err != nil {
 		return ImportedRule{}, fmt.Errorf("failed rendering guardrail rule %q: %w", ruleName, err)
 	}
-	return ImportedRule{Kind: SidecarRuleGuardrail, Name: ruleName, Spec: spec, Listeners: listeners}, nil
+	return ImportedRule{Kind: SidecarRuleGuardrail, Name: ruleName, Spec: spec, Targets: targets}, nil
 }
 
 // splitMask: a lane with a non-empty `rules` value replaces the top-level list
@@ -142,7 +161,8 @@ func splitMask(scName string, cfg *daemon.Config, name ruleNamer, out []Imported
 			return nil, fmt.Errorf("listener %q: the mask rules are not a list: %w", l.Name, err)
 		}
 		for n, e := range entries {
-			item, err := maskItem(name(SidecarRuleMask, scName, l.Name, entryName(rawEntryName(e), "mask", n)), e, l.Name)
+			item, err := maskItem(name(SidecarRuleMask, scName, l.Name, entryName(rawEntryName(e), "mask", n)), e,
+				ImportedTarget{Listener: l.Name, Position: n})
 			if err != nil {
 				return nil, err
 			}
@@ -166,7 +186,11 @@ func splitMask(scName string, cfg *daemon.Config, name ruleNamer, out []Imported
 		if len(inheriting) == 0 {
 			break
 		}
-		item, err := maskItem(name(SidecarRuleMask, scName, entryName(rawEntryName(e), "mask", n)), e, inheriting...)
+		targets := make([]ImportedTarget, 0, len(inheriting))
+		for _, lane := range inheriting {
+			targets = append(targets, ImportedTarget{Listener: lane, Position: n})
+		}
+		item, err := maskItem(name(SidecarRuleMask, scName, entryName(rawEntryName(e), "mask", n)), e, targets...)
 		if err != nil {
 			return nil, err
 		}
@@ -180,20 +204,21 @@ func splitMask(scName string, cfg *daemon.Config, name ruleNamer, out []Imported
 	return out, nil
 }
 
-func maskItem(ruleName string, entry json.RawMessage, listeners ...string) (ImportedRule, error) {
+func maskItem(ruleName string, entry json.RawMessage, targets ...ImportedTarget) (ImportedRule, error) {
 	spec, err := json.Marshal(struct {
 		Rules []json.RawMessage `json:"rules"`
 	}{Rules: []json.RawMessage{entry}})
 	if err != nil {
 		return ImportedRule{}, fmt.Errorf("failed rendering data masking rule %q: %w", ruleName, err)
 	}
-	return ImportedRule{Kind: SidecarRuleMask, Name: ruleName, Spec: spec, Listeners: listeners}, nil
+	return ImportedRule{Kind: SidecarRuleMask, Name: ruleName, Spec: spec, Targets: targets}, nil
 }
 
 // splitAnalyzer moves each lane's risk DECISION into a rule: the fields
 // mergeAnalyzerBlock replaces. The lane keeps the rest as the base the rule
-// merges over. A hold names the approval rule after the new rule, which
-// ImportSidecarRulesTx creates.
+// merges over. A block that decides nothing (only overrides such as
+// max_calls) stays in the lane: as a rule it would allow everything. The
+// file's approval_rule travels with the rule; ImportSidecarRulesTx checks it.
 func splitAnalyzer(scName string, cfg *daemon.Config, name ruleNamer, out []ImportedRule) ([]ImportedRule, error) {
 	for i := range cfg.Listeners {
 		l := &cfg.Listeners[i]
@@ -201,19 +226,25 @@ func splitAnalyzer(scName string, cfg *daemon.Config, name ruleNamer, out []Impo
 			continue
 		}
 		base := *l.Analyzer
-		ruleName := name(SidecarRuleAnalyzer, scName, l.Name, "analyzer")
 		rule := daemon.LaneAnalyzerConfig{
 			Trigger: base.Trigger, HighRisk: base.HighRisk, MediumRisk: base.MediumRisk,
 			LowRisk: base.LowRisk, Prompt: base.Prompt, Message: base.Message,
+			ApprovalRule: base.ApprovalRule,
 		}
-		if base.ApprovalRule != "" || holds(rule) {
+		if rule.Trigger == nil && rule.HighRisk == "" && rule.MediumRisk == "" && rule.LowRisk == "" &&
+			rule.Prompt == "" && rule.Message == "" {
+			continue
+		}
+		ruleName := name(SidecarRuleAnalyzer, scName, l.Name, "analyzer")
+		if rule.ApprovalRule == "" && holds(rule) {
 			rule.ApprovalRule = ruleName
 		}
 		spec, err := json.Marshal(rule)
 		if err != nil {
 			return nil, fmt.Errorf("failed rendering analyzer rule %q: %w", ruleName, err)
 		}
-		out = append(out, ImportedRule{Kind: SidecarRuleAnalyzer, Name: ruleName, Spec: spec, Listeners: []string{l.Name}})
+		out = append(out, ImportedRule{Kind: SidecarRuleAnalyzer, Name: ruleName, Spec: spec,
+			Targets: []ImportedTarget{{Listener: l.Name}}})
 
 		base.Trigger = nil
 		base.HighRisk, base.MediumRisk, base.LowRisk = "", "", ""
@@ -240,9 +271,10 @@ func ImportSidecarRulesTx(tx *gorm.DB, orgID, sidecarID string, rules []Imported
 		return err
 	}
 	for _, r := range rules {
-		targets := make([]models.SidecarRuleTarget, 0, len(r.Listeners))
-		for _, l := range r.Listeners {
-			targets = append(targets, models.SidecarRuleTarget{SidecarID: sidecarID, ListenerName: l})
+		targets := make([]models.SidecarRuleTarget, 0, len(r.Targets))
+		for _, t := range r.Targets {
+			pos := t.Position
+			targets = append(targets, models.SidecarRuleTarget{SidecarID: sidecarID, ListenerName: t.Listener, Position: &pos})
 		}
 		description := "Imported from the sidecar configuration file."
 		switch r.Kind {
@@ -267,6 +299,9 @@ func ImportSidecarRulesTx(tx *gorm.DB, orgID, sidecarID string, rules []Imported
 			}
 			err = models.SetDataMaskingRuleListenersTx(tx, org, r.Name, targets)
 		case SidecarRuleAnalyzer:
+			if r.Spec, err = resolveImportedApprovalRule(tx, org, r.Name, r.Spec); err != nil {
+				return err
+			}
 			row := &models.AISessionAnalyzerRules{
 				OrgID: org, Name: r.Name, Description: &description,
 				ConnectionNames: []string{}, SidecarSpec: r.Spec,
@@ -291,6 +326,32 @@ func ImportSidecarRulesTx(tx *gorm.DB, orgID, sidecarID string, rules []Imported
 		}
 	}
 	return nil
+}
+
+// resolveImportedApprovalRule keeps the approval rule the file names when the
+// control plane has it as a sidecar rule, so the reviewers and the count an
+// admin chose stay the ones that release a hold. A name the control plane
+// does not have is replaced by the imported rule's own name, which
+// SyncAnalyzerApprovalRule then creates.
+func resolveImportedApprovalRule(tx *gorm.DB, orgID uuid.UUID, ruleName string, spec json.RawMessage) (json.RawMessage, error) {
+	var block daemon.LaneAnalyzerConfig
+	if err := decodeSpec(spec, &block); err != nil {
+		return nil, fmt.Errorf("analyzer rule %q: %w", ruleName, err)
+	}
+	if block.ApprovalRule == "" || block.ApprovalRule == ruleName {
+		return spec, nil
+	}
+	existing, err := models.GetAccessRequestRuleByName(tx, block.ApprovalRule, orgID)
+	switch {
+	case err == nil && existing.AccessType == models.AccessTypeSidecar:
+		return spec, nil
+	case err != nil && !errors.Is(err, gorm.ErrRecordNotFound):
+		return nil, fmt.Errorf("failed reading approval rule %q: %w", block.ApprovalRule, err)
+	}
+	log.Infof("analyzer rule %q: the file names approval rule %q, which the control plane has not; "+
+		"a managed rule named %q replaces it", ruleName, block.ApprovalRule, ruleName)
+	block.ApprovalRule = ruleName
+	return json.Marshal(block)
 }
 
 // DetachSidecarRulesTx unbinds every rule from one sidecar and deletes the

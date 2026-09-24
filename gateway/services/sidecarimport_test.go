@@ -3,6 +3,7 @@ package services
 import (
 	"encoding/json"
 	"reflect"
+	"sort"
 	"testing"
 
 	"github.com/hoophq/hoop/gateway/models"
@@ -89,18 +90,36 @@ func TestSplitSidecarConfigurationServesTheSameDocument(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var guardrails, masking, analyzers []models.BoundRule
+	// Bound the way the database returns them: by listener, then position.
+	type placed struct {
+		models.BoundRule
+		kind     SidecarRuleKind
+		position int
+	}
+	var all []placed
 	for _, it := range items {
-		for _, l := range it.Listeners {
-			b := models.BoundRule{RuleName: it.Name, ListenerName: l, Spec: it.Spec}
-			switch it.Kind {
-			case SidecarRuleGuardrail:
-				guardrails = append(guardrails, b)
-			case SidecarRuleMask:
-				masking = append(masking, b)
-			case SidecarRuleAnalyzer:
-				analyzers = append(analyzers, b)
-			}
+		for _, tg := range it.Targets {
+			all = append(all, placed{models.BoundRule{RuleName: it.Name, ListenerName: tg.Listener, Spec: it.Spec}, it.Kind, tg.Position})
+		}
+	}
+	sort.SliceStable(all, func(i, j int) bool {
+		if all[i].ListenerName != all[j].ListenerName {
+			return all[i].ListenerName < all[j].ListenerName
+		}
+		if all[i].position != all[j].position {
+			return all[i].position < all[j].position
+		}
+		return all[i].RuleName < all[j].RuleName
+	})
+	var guardrails, masking, analyzers []models.BoundRule
+	for _, p := range all {
+		switch p.kind {
+		case SidecarRuleGuardrail:
+			guardrails = append(guardrails, p.BoundRule)
+		case SidecarRuleMask:
+			masking = append(masking, p.BoundRule)
+		case SidecarRuleAnalyzer:
+			analyzers = append(analyzers, p.BoundRule)
 		}
 	}
 	// Nothing enforces from the stripped document alone.
@@ -125,10 +144,11 @@ func TestSplitSidecarConfigurationServesTheSameDocument(t *testing.T) {
 		}
 	}
 
-	// The analyzer keeps its decision, and the hold points at the new rule.
+	// The analyzer keeps its decision and the file's approval rule; the
+	// import checks that rule against the database.
 	a := got["appdb"].Analyzer
 	if a == nil || a.HighRisk != "require_review" || a.MaxCalls != 40 || a.Prompt != "p" ||
-		a.Trigger == nil || a.ApprovalRule != "edge-appdb-analyzer" {
+		a.Trigger == nil || a.ApprovalRule != "dba" {
 		t.Errorf("appdb analyzer after the fold: %+v", a)
 	}
 	if stripped.Guardrails == nil || stripped.Guardrails.Mode != "observe" {
@@ -145,7 +165,11 @@ func TestSplitSidecarConfigurationItems(t *testing.T) {
 	}
 	got := map[string][]string{}
 	for _, it := range items {
-		got[string(it.Kind)+" "+it.Name] = it.Listeners
+		var lanes []string
+		for _, tg := range it.Targets {
+			lanes = append(lanes, tg.Listener)
+		}
+		got[string(it.Kind)+" "+it.Name] = lanes
 	}
 	want := map[string][]string{
 		"guardrail edge-1-appdb-lane-a":       {"appdb"},
