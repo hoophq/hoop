@@ -692,6 +692,10 @@ func ImportConfiguration(c *gin.Context) {
 	err = models.DB.Transaction(func(tx *gorm.DB) error {
 		stripped, rules, err := services.SplitSidecarConfiguration(sidecar.Name, cfg,
 			services.ImportedRuleNameTaken(tx, sidecar.OrgID))
+		var check services.ErrImportedRuleNameCheck
+		if errors.As(err, &check) {
+			return err
+		}
 		if err != nil {
 			return services.ErrImportedRuleInvalid{Err: err}
 		}

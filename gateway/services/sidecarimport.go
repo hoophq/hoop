@@ -38,21 +38,33 @@ type ImportedTarget struct {
 // analyzer). The stripped document plus the items, folded by foldSidecarRules,
 // serve what the file served.
 //
-// taken reports a name already used in the organization for that kind.
-func SplitSidecarConfiguration(sidecarName string, cfg daemon.Config, taken func(SidecarRuleKind, string) bool) (daemon.Config, []ImportedRule, error) {
+// taken reports a name already used in the organization for that kind. Its
+// error, and a name no try finds free, end the split with an
+// ErrImportedRuleNameCheck.
+func SplitSidecarConfiguration(sidecarName string, cfg daemon.Config, taken func(SidecarRuleKind, string) (bool, error)) (daemon.Config, []ImportedRule, error) {
 	listeners := make([]daemon.ListenerConfig, len(cfg.Listeners))
 	copy(listeners, cfg.Listeners)
 	cfg.Listeners = listeners
 
 	used := map[string]bool{}
-	name := func(kind SidecarRuleKind, parts ...string) string {
+	name := func(kind SidecarRuleKind, parts ...string) (string, error) {
 		base := slugRuleName(strings.Join(parts, "-"))
 		candidate := base
-		for i := 2; used[string(kind)+"/"+candidate] || (taken != nil && taken(kind, candidate)); i++ {
+		for i := 2; i < maxNameTries+2; i++ {
+			busy := used[string(kind)+"/"+candidate]
+			if !busy && taken != nil {
+				var err error
+				if busy, err = taken(kind, candidate); err != nil {
+					return "", ErrImportedRuleNameCheck{fmt.Errorf("checking %s rule name %q: %w", kind, candidate, err)}
+				}
+			}
+			if !busy {
+				used[string(kind)+"/"+candidate] = true
+				return candidate, nil
+			}
 			candidate = base + "-" + strconv.Itoa(i)
 		}
-		used[string(kind)+"/"+candidate] = true
-		return candidate
+		return "", ErrImportedRuleNameCheck{fmt.Errorf("no free %s rule name for %q after %d tries", kind, base, maxNameTries)}
 	}
 
 	var out []ImportedRule
@@ -67,7 +79,7 @@ func SplitSidecarConfiguration(sidecarName string, cfg daemon.Config, taken func
 	return cfg, out, err
 }
 
-type ruleNamer func(kind SidecarRuleKind, parts ...string) string
+type ruleNamer func(kind SidecarRuleKind, parts ...string) (string, error)
 
 // splitGuardrails: a lane evaluates its own rules, then the top-level ones,
 // unless it opts out with `rules: []` (daemon config.go resolve).
@@ -82,8 +94,11 @@ func splitGuardrails(scName string, cfg *daemon.Config, name ruleNamer, out []Im
 		}
 		own[l.Name] = len(l.Guardrails.Rules)
 		for n, r := range l.Guardrails.Rules {
-			item, err := guardrailItem(name(SidecarRuleGuardrail, scName, l.Name, entryName(r.Name, "guardrail", n)), r,
-				ImportedTarget{Listener: l.Name, Position: n})
+			ruleName, err := name(SidecarRuleGuardrail, scName, l.Name, entryName(r.Name, "guardrail", n))
+			if err != nil {
+				return nil, err
+			}
+			item, err := guardrailItem(ruleName, r, ImportedTarget{Listener: l.Name, Position: n})
 			if err != nil {
 				return nil, err
 			}
@@ -111,7 +126,11 @@ func splitGuardrails(scName string, cfg *daemon.Config, name ruleNamer, out []Im
 			for _, lane := range inheriting {
 				targets = append(targets, ImportedTarget{Listener: lane, Position: own[lane] + n})
 			}
-			item, err := guardrailItem(name(SidecarRuleGuardrail, scName, entryName(r.Name, "guardrail", n)), r, targets...)
+			ruleName, err := name(SidecarRuleGuardrail, scName, entryName(r.Name, "guardrail", n))
+			if err != nil {
+				return nil, err
+			}
+			item, err := guardrailItem(ruleName, r, targets...)
 			if err != nil {
 				return nil, err
 			}
@@ -161,8 +180,11 @@ func splitMask(scName string, cfg *daemon.Config, name ruleNamer, out []Imported
 			return nil, fmt.Errorf("listener %q: the mask rules are not a list: %w", l.Name, err)
 		}
 		for n, e := range entries {
-			item, err := maskItem(name(SidecarRuleMask, scName, l.Name, entryName(rawEntryName(e), "mask", n)), e,
-				ImportedTarget{Listener: l.Name, Position: n})
+			ruleName, err := name(SidecarRuleMask, scName, l.Name, entryName(rawEntryName(e), "mask", n))
+			if err != nil {
+				return nil, err
+			}
+			item, err := maskItem(ruleName, e, ImportedTarget{Listener: l.Name, Position: n})
 			if err != nil {
 				return nil, err
 			}
@@ -190,7 +212,11 @@ func splitMask(scName string, cfg *daemon.Config, name ruleNamer, out []Imported
 		for _, lane := range inheriting {
 			targets = append(targets, ImportedTarget{Listener: lane, Position: n})
 		}
-		item, err := maskItem(name(SidecarRuleMask, scName, entryName(rawEntryName(e), "mask", n)), e, targets...)
+		ruleName, err := name(SidecarRuleMask, scName, entryName(rawEntryName(e), "mask", n))
+		if err != nil {
+			return nil, err
+		}
+		item, err := maskItem(ruleName, e, targets...)
 		if err != nil {
 			return nil, err
 		}
@@ -235,7 +261,10 @@ func splitAnalyzer(scName string, cfg *daemon.Config, name ruleNamer, out []Impo
 			rule.Prompt == "" && rule.Message == "" {
 			continue
 		}
-		ruleName := name(SidecarRuleAnalyzer, scName, l.Name, "analyzer")
+		ruleName, err := name(SidecarRuleAnalyzer, scName, l.Name, "analyzer")
+		if err != nil {
+			return nil, err
+		}
 		if rule.ApprovalRule == "" && holds(rule) {
 			rule.ApprovalRule = ruleName
 		}
@@ -397,8 +426,8 @@ func DetachSidecarRulesTx(tx *gorm.DB, orgID, sidecarID string) (models.Detached
 // ImportedRuleNameTaken reports a name the import cannot use: a rule of that
 // kind already has it, or, for an analyzer rule, an access request rule does
 // (SyncAnalyzerApprovalRule creates one with the same name).
-func ImportedRuleNameTaken(db *gorm.DB, orgID string) func(SidecarRuleKind, string) bool {
-	return func(kind SidecarRuleKind, name string) bool {
+func ImportedRuleNameTaken(db *gorm.DB, orgID string) func(SidecarRuleKind, string) (bool, error) {
+	return func(kind SidecarRuleKind, name string) (bool, error) {
 		var tables []string
 		switch kind {
 		case SidecarRuleGuardrail:
@@ -410,13 +439,17 @@ func ImportedRuleNameTaken(db *gorm.DB, orgID string) func(SidecarRuleKind, stri
 		}
 		for _, t := range tables {
 			var n int64
-			// A failed read counts as taken: the next candidate is tried, and
-			// the insert still refuses a real duplicate.
-			if err := db.Table(t).Where("org_id = ? AND name = ?", orgID, name).Count(&n).Error; err != nil || n > 0 {
-				return true
+			// A failed read is returned, not counted as taken: inside a
+			// transaction every later read fails too, so no candidate would
+			// ever be free.
+			if err := db.Table(t).Where("org_id = ? AND name = ?", orgID, name).Count(&n).Error; err != nil {
+				return false, err
+			}
+			if n > 0 {
+				return true, nil
 			}
 		}
-		return false
+		return false, nil
 	}
 }
 
@@ -471,3 +504,13 @@ type ErrImportedRuleInvalid struct{ Err error }
 
 func (e ErrImportedRuleInvalid) Error() string { return e.Err.Error() }
 func (e ErrImportedRuleInvalid) Unwrap() error { return e.Err }
+
+// maxNameTries bounds the search for a free imported rule name.
+const maxNameTries = 100
+
+// ErrImportedRuleNameCheck is a name the import could not settle: the check
+// failed, or no try was free. It is the plane's fault, not the file's.
+type ErrImportedRuleNameCheck struct{ Err error }
+
+func (e ErrImportedRuleNameCheck) Error() string { return e.Err.Error() }
+func (e ErrImportedRuleNameCheck) Unwrap() error { return e.Err }

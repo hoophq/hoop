@@ -2,9 +2,11 @@ package services
 
 import (
 	"encoding/json"
+	"errors"
 	"reflect"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/sidecar/daemon"
@@ -157,8 +159,8 @@ func TestSplitSidecarConfigurationServesTheSameDocument(t *testing.T) {
 }
 
 func TestSplitSidecarConfigurationItems(t *testing.T) {
-	_, items, err := SplitSidecarConfiguration("Edge 1", importFixture(), func(kind SidecarRuleKind, name string) bool {
-		return kind == SidecarRuleGuardrail && name == "edge-1-top-a"
+	_, items, err := SplitSidecarConfiguration("Edge 1", importFixture(), func(kind SidecarRuleKind, name string) (bool, error) {
+		return kind == SidecarRuleGuardrail && name == "edge-1-top-a", nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -215,5 +217,37 @@ func TestSlugRuleName(t *testing.T) {
 		if got := slugRuleName(in); got != want {
 			t.Errorf("slugRuleName(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// Every candidate taken (a failed read in an aborted transaction reads so)
+// must end the split with an error, not loop.
+func TestSplitStopsWhenEveryNameIsTaken(t *testing.T) {
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := SplitSidecarConfiguration("edge", importFixture(),
+			func(SidecarRuleKind, string) (bool, error) { return true, nil })
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		var check ErrImportedRuleNameCheck
+		if !errors.As(err, &check) {
+			t.Fatalf("want ErrImportedRuleNameCheck when every name is taken, got %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the split never returned")
+	}
+}
+
+// A failed name check ends the split with that error, so the import's
+// transaction rolls back instead of trying names in an aborted one.
+func TestSplitReturnsAFailedNameCheck(t *testing.T) {
+	boom := errors.New("boom")
+	_, items, err := SplitSidecarConfiguration("edge", importFixture(),
+		func(SidecarRuleKind, string) (bool, error) { return false, boom })
+	var check ErrImportedRuleNameCheck
+	if !errors.Is(err, boom) || !errors.As(err, &check) || items != nil {
+		t.Fatalf("want the check's error as ErrImportedRuleNameCheck and no items, got %v, %d items", err, len(items))
 	}
 }
