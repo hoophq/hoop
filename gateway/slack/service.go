@@ -122,48 +122,35 @@ func (s *SlackService) BotToken() string { return s.slackBotToken }
 // destination is posting into nothing.
 func (s *SlackService) DefaultChannel() string { return s.slackChannel }
 
-// UserGroup is a Slack workspace user group (usergroups.list).
-type UserGroup struct {
-	ID          string
-	Handle      string
-	Name        string
-	Description string
-	Users       []string // member Slack user IDs
+// SlackUser is what an approval needs to know about the Slack user who
+// clicked: who they are by email, and whether Slack still vouches for them.
+type SlackUser struct {
+	ID                string
+	Email             string
+	Deleted           bool
+	IsBot             bool
+	IsRestricted      bool
+	IsUltraRestricted bool
+	IsEmailConfirmed  bool
 }
 
-// ListUserGroups lists the workspace user groups visible to the bot token,
-// members included. The Slack app needs the usergroups:read scope; without
-// it Slack answers "missing_scope", which is returned as-is.
-func (s *SlackService) ListUserGroups(ctx context.Context) ([]UserGroup, error) {
-	groups, err := s.apiClient.GetUserGroupsContext(ctx, slack.GetUserGroupsOptionIncludeUsers(true))
+// GetUserInfo reads one Slack user (users.info). The Slack app needs the
+// users:read scope, and users:read.email for the email: without the second
+// one Slack answers the user with an empty email rather than an error.
+func (s *SlackService) GetUserInfo(ctx context.Context, slackID string) (*SlackUser, error) {
+	u, err := s.apiClient.GetUserInfoContext(ctx, slackID)
 	if err != nil {
-		return nil, fmt.Errorf("failed listing slack user groups, err=%w", err)
+		return nil, fmt.Errorf("failed obtaining slack user %s, err=%w", slackID, err)
 	}
-	out := make([]UserGroup, len(groups))
-	for i, g := range groups {
-		out[i] = UserGroup{ID: g.ID, Handle: g.Handle, Name: g.Name, Description: g.Description, Users: g.Users}
-	}
-	return out, nil
-}
-
-// MapUserGroups pairs each hoop group with the Slack user group whose handle
-// or name equals it, case-insensitive. A handle match wins over a name match.
-// Hoop groups with no match are absent from the result.
-func MapUserGroups(hoopGroups []string, slackGroups []UserGroup) map[string]UserGroup {
-	out := make(map[string]UserGroup, len(hoopGroups))
-	for _, hg := range hoopGroups {
-		if _, ok := out[hg]; ok {
-			continue
-		}
-		idx := slices.IndexFunc(slackGroups, func(g UserGroup) bool { return strings.EqualFold(g.Handle, hg) })
-		if idx < 0 {
-			idx = slices.IndexFunc(slackGroups, func(g UserGroup) bool { return strings.EqualFold(g.Name, hg) })
-		}
-		if idx >= 0 {
-			out[hg] = slackGroups[idx]
-		}
-	}
-	return out
+	return &SlackUser{
+		ID:                u.ID,
+		Email:             u.Profile.Email,
+		Deleted:           u.Deleted,
+		IsBot:             u.IsBot,
+		IsRestricted:      u.IsRestricted,
+		IsUltraRestricted: u.IsUltraRestricted,
+		IsEmailConfirmed:  u.IsEmailConfirmed,
+	}, nil
 }
 
 type MessageReviewRequest struct {

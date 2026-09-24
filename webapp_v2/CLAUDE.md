@@ -74,7 +74,8 @@ what a product shows, and ClojureScript exists only in the gateway.**
   `controlPlaneNav.js`, `CommandPalette/GatewayCommandPalette`/
   `ControlPlaneCommandPalette`, `GatewayPage`/`ControlPlanePage`,
   `GatewayProtectedRoute`/`ControlPlaneProtectedRoute`,
-  `Organization/Users/GatewayUsers`/`ControlPlaneUsers`. What they still share stays
+  `Organization/Users/GatewayUsers`/`ControlPlaneUsers`,
+  `Integrations/Slack/GatewaySlack`/`ControlPlaneSlack`. What they still share stays
   un-prefixed next to them (`UserMenu`, `NavItem`, `helpers`, the CSS modules,
   `Users/shared.js`). A shared file may take a prop (`UserMenu` takes `versionLabel`),
   never know the mode. A file only one product has keeps a plain name (`Sidecars`,

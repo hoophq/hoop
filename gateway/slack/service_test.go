@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -230,17 +229,17 @@ func TestUpdateReviewMessageTracking(t *testing.T) {
 	}
 }
 
-// Members are requested in the same call (include_users=true); team is
-// dropped. A Slack API error (e.g. missing usergroups:read) surfaces as-is.
-func TestListUserGroups(t *testing.T) {
-	body := `{"ok":true,"usergroups":[{"id":"S01","team_id":"T1","is_usergroup":true,"name":"DBAs","description":"database team","handle":"dba","user_count":3,"users":["U1","U2","U3"]}]}`
+// The fields an approval checks come from users.info. Without users:read.email
+// Slack answers the user with no email, and an API error surfaces as-is.
+func TestGetUserInfo(t *testing.T) {
+	body := `{"ok":true,"user":{"id":"U1","deleted":false,"is_bot":false,"is_restricted":true,"is_ultra_restricted":false,"is_email_confirmed":true,"profile":{"email":"Ana@Example.com"}}}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/usergroups.list" {
+		if r.URL.Path != "/users.info" {
 			t.Errorf("unexpected path %s", r.URL.Path)
 		}
 		_ = r.ParseForm()
-		if r.FormValue("include_users") != "true" {
-			t.Errorf("include_users=%q, want true", r.FormValue("include_users"))
+		if r.FormValue("user") != "U1" {
+			t.Errorf("user=%q, want U1", r.FormValue("user"))
 		}
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, body)
@@ -248,46 +247,23 @@ func TestListUserGroups(t *testing.T) {
 	defer srv.Close()
 	s := &SlackService{apiClient: slack.New("xoxb-test", slack.OptionAPIURL(srv.URL+"/"))}
 
-	got, err := s.ListUserGroups(context.Background())
+	got, err := s.GetUserInfo(context.Background(), "U1")
 	if err != nil {
-		t.Fatalf("ListUserGroups failed: %v", err)
+		t.Fatalf("GetUserInfo failed: %v", err)
 	}
-	if len(got) != 1 {
-		t.Fatalf("got %d groups, want 1", len(got))
+	want := SlackUser{ID: "U1", Email: "Ana@Example.com", IsRestricted: true, IsEmailConfirmed: true}
+	if *got != want {
+		t.Fatalf("got %+v, want %+v", *got, want)
 	}
-	g := got[0]
-	if g.ID != "S01" || g.Handle != "dba" || g.Name != "DBAs" || g.Description != "database team" ||
-		!slices.Equal(g.Users, []string{"U1", "U2", "U3"}) {
-		t.Fatalf("got %+v", g)
+
+	body = `{"ok":true,"user":{"id":"U1","profile":{}}}`
+	got, err = s.GetUserInfo(context.Background(), "U1")
+	if err != nil || got.Email != "" {
+		t.Fatalf("missing email scope: got %+v, err %v; want empty email, no error", got, err)
 	}
 
 	body = `{"ok":false,"error":"missing_scope"}`
-	if _, err := s.ListUserGroups(context.Background()); err == nil || !strings.Contains(err.Error(), "missing_scope") {
+	if _, err := s.GetUserInfo(context.Background(), "U1"); err == nil || !strings.Contains(err.Error(), "missing_scope") {
 		t.Fatalf("want missing_scope error, got %v", err)
-	}
-}
-
-func TestMapUserGroups(t *testing.T) {
-	slackGroups := []UserGroup{
-		{ID: "S1", Handle: "admins", Name: "Admin"},
-		{ID: "S2", Handle: "approver", Name: "Approvers"},
-		{ID: "S3", Handle: "DBA", Name: "Database"},
-		{ID: "S4", Handle: "other", Name: "DBA"},
-	}
-	got := MapUserGroups([]string{"admin", "approver", "dba", "nobody"}, slackGroups)
-	want := map[string]string{"admin": "S1", "approver": "S2", "dba": "S3"}
-	if len(got) != len(want) {
-		t.Fatalf("got %d mappings, want %d: %+v", len(got), len(want), got)
-	}
-	for hg, id := range want {
-		if got[hg].ID != id {
-			t.Errorf("%s -> %q, want %q", hg, got[hg].ID, id)
-		}
-	}
-	if _, ok := got["nobody"]; ok {
-		t.Errorf("nobody should have no mapping")
-	}
-	if m := MapUserGroups(nil, nil); m == nil || len(m) != 0 {
-		t.Errorf("empty inputs: got %v, want empty non-nil map", m)
 	}
 }
