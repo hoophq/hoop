@@ -196,7 +196,7 @@ func TestSCIM(t *testing.T) {
 	if got := memberGroups(t, "bob@example.com"); len(got) != 0 {
 		t.Fatalf("deactivated bob holds %v", got)
 	}
-	if users, _ := models.ListActiveUsersByEmailAndOrg(models.DB, scimOrgID, "bob@example.com"); len(users) != 0 {
+	if users, _ := models.ListApproverUsersByEmailAndOrg(models.DB, scimOrgID, "bob@example.com"); len(users) != 0 {
 		t.Fatalf("bob is still active")
 	}
 	patched := call(t, srv, http.MethodPatch, "/Users/"+anaID, `{

@@ -78,13 +78,18 @@ func GetUserByEmailAndOrg(email, orgID string) (*User, error) {
 	return user, nil
 }
 
-// ListActiveUsersByEmailAndOrg returns every active user of the org with this
-// email, ignoring case. It returns all of them, not the first: users.email has
-// no unique index, and a caller that must identify one person has to see a
-// duplicate to refuse it.
-func ListActiveUsersByEmailAndOrg(db *gorm.DB, orgID, email string) ([]User, error) {
+// ApproverStatuses are the user statuses that may settle a review from Slack.
+// An invited user was provisioned but has not logged in yet, and a reviewer
+// who only ever clicks in Slack never will.
+var ApproverStatuses = []string{"active", "invited"}
+
+// ListApproverUsersByEmailAndOrg returns every user of the org with this email
+// and an approver status, ignoring case. It returns all of them, not the
+// first: users.email has no unique index, and a caller that must identify one
+// person has to see a duplicate to refuse it.
+func ListApproverUsersByEmailAndOrg(db *gorm.DB, orgID, email string) ([]User, error) {
 	var users []User
-	err := db.Where("org_id = ? AND lower(email) = lower(?) AND status = ?", orgID, email, "active").
+	err := db.Where("org_id = ? AND lower(email) = lower(?) AND status IN ?", orgID, email, ApproverStatuses).
 		Order("id").
 		Find(&users).Error
 	return users, err

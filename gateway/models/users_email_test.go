@@ -7,8 +7,9 @@ import (
 )
 
 // A Slack approval names its approver by email, so the lookup must ignore
-// case, skip anyone not active, and return a duplicate instead of hiding it.
-func TestListActiveUsersByEmailAndOrg(t *testing.T) {
+// case, skip anyone neither active nor invited, and return a duplicate
+// instead of hiding it.
+func TestListApproverUsersByEmailAndOrg(t *testing.T) {
 	startTestDB(t)
 
 	for _, u := range []struct{ subject, email, status string }{
@@ -34,10 +35,10 @@ func TestListActiveUsersByEmailAndOrg(t *testing.T) {
 		{"ANA@EXAMPLE.COM", 1},
 		{"bob@example.com", 0},
 		{"carla@example.com", 2},
-		{"dan@example.com", 0},
+		{"dan@example.com", 1},
 		{"nobody@example.com", 0},
 	} {
-		got, err := models.ListActiveUsersByEmailAndOrg(models.DB, testOrgID, tt.email)
+		got, err := models.ListApproverUsersByEmailAndOrg(models.DB, testOrgID, tt.email)
 		if err != nil {
 			t.Fatalf("%s: %v", tt.email, err)
 		}
@@ -46,7 +47,7 @@ func TestListActiveUsersByEmailAndOrg(t *testing.T) {
 		}
 	}
 
-	got, err := models.ListActiveUsersByEmailAndOrg(models.DB, "00000000-0000-0000-0000-0000000000ff", "ana@example.com")
+	got, err := models.ListApproverUsersByEmailAndOrg(models.DB, "00000000-0000-0000-0000-0000000000ff", "ana@example.com")
 	if err != nil || len(got) != 0 {
 		t.Errorf("other org: got %d users, err %v; want none", len(got), err)
 	}

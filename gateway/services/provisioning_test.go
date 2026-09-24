@@ -81,7 +81,7 @@ func TestProvisioning(t *testing.T) {
 		if err != nil {
 			t.Fatalf("upsert: %v", err)
 		}
-		users, err := models.ListActiveUsersByEmailAndOrg(db, provisioningOrgID, "ana@example.com")
+		users, err := models.ListApproverUsersByEmailAndOrg(db, provisioningOrgID, "ana@example.com")
 		if err != nil || len(users) != 1 || users[0].ID != id {
 			t.Fatalf("got %+v err %v; want one active user %s", users, err, id)
 		}
@@ -94,7 +94,7 @@ func TestProvisioning(t *testing.T) {
 		if err != nil || again != id {
 			t.Fatalf("second upsert by external id: got %s err %v; want %s", again, err, id)
 		}
-		users, _ = models.ListActiveUsersByEmailAndOrg(db, provisioningOrgID, "ana.new@example.com")
+		users, _ = models.ListApproverUsersByEmailAndOrg(db, provisioningOrgID, "ana.new@example.com")
 		if len(users) != 1 || users[0].Name != "Ana" {
 			t.Fatalf("email change: got %+v; want the same user, name kept", users)
 		}
@@ -140,7 +140,7 @@ func TestProvisioning(t *testing.T) {
 
 	var dbaGroup *models.DirectoryGroup
 	anaID := func() string {
-		users, _ := models.ListActiveUsersByEmailAndOrg(db, provisioningOrgID, "ana.new@example.com")
+		users, _ := models.ListApproverUsersByEmailAndOrg(db, provisioningOrgID, "ana.new@example.com")
 		if len(users) != 1 {
 			t.Fatalf("ana not found")
 		}
@@ -229,7 +229,7 @@ func TestProvisioning(t *testing.T) {
 		if got := userGroupNames(t, existingID); !slices.Equal(got, []string{"admin"}) {
 			t.Fatalf("carla groups = %v; want only the manual admin group", got)
 		}
-		if users, _ := models.ListActiveUsersByEmailAndOrg(db, provisioningOrgID, "carla@example.com"); len(users) != 0 {
+		if users, _ := models.ListApproverUsersByEmailAndOrg(db, provisioningOrgID, "carla@example.com"); len(users) != 0 {
 			t.Fatalf("carla is still active")
 		}
 	})
