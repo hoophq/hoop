@@ -1,6 +1,6 @@
 # ADR-0017: The control plane composes rules into the served sidecar config
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-09-17
 - **Author:** @rogerio
 - **Deciders:** @rogerio

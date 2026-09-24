@@ -1,6 +1,6 @@
 # ADR-0018: Clamp ClickHouse native protocol revisions at the sidecar
 
-- **Status:** Proposed
+- **Status:** Accepted (implemented in PR #1830)
 - **Date:** 2026-09-17
 - **Author:** @matheusfrancisco
 - **Deciders:** TBD

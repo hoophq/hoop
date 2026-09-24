@@ -8,7 +8,7 @@
 > ignored. And the exposure of the signed document to any sidecar token holder
 > is recorded below as a consequence we accepted rather than one we missed.
 
-- **Status:** Proposed (amended 2026-09-14)
+- **Status:** Accepted (amended 2026-09-14; implemented in PR #1812)
 - **Date:** 2026-09-11
 - **Author:** @rogerio
 - **Deciders:** @rogerio, @chico, @felipe

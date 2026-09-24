@@ -1,6 +1,6 @@
 # ADR-0004: Protocol-aware MCP gateway as a first-class connection type
 
-- **Status:** Proposed
+- **Status:** Accepted (implemented behind `experimental.mcp_gateway`; reviews phase and agent-side OAuth token source pending)
 - **Date:** 2026-07-27
 - **Related:** `libhoop/agent/httpproxy` (current MCP path), `gateway/api/connections/connection_mcp_oauth.go` (existing OAuth brokering), external module `github.com/hoophq/mcpproxy`
 

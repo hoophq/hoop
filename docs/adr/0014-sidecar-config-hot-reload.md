@@ -1,6 +1,6 @@
 # ADR-0014: Sidecar config hot reload for rule-only drift
 
-- **Status:** Proposed
+- **Status:** Accepted (implemented in PR #1799; standalone file source in DEP-255)
 - **Date:** 2026-09-08
 - **Author:** @matheusfrancisco
 - **Deciders:** TBD
