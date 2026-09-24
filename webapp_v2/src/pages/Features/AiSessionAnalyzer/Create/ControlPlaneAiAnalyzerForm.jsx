@@ -101,8 +101,8 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
   const [targets, setTargets] = useState(stored?.sidecar_targets ?? [])
   const [form, setForm] = useState(() => specToForm(stored?.sidecar_spec))
   const set = (patch) => setForm((f) => ({ ...f, ...patch }))
-  // Who may release what this rule holds: groups the identity provider
-  // provisions (ADR-0019). Empty leaves it to the administrators.
+  // Who may release what this rule holds: groups from the Slack import or the
+  // Users page (ADR-0019). Empty leaves it to the administrators.
   const [reviewers, setReviewers] = useState(stored?.reviewers_groups ?? [])
   const [groupOptions, setGroupOptions] = useState([])
 
@@ -284,16 +284,6 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
         description="A level you leave unset allows. Hold for approval waits up to 30 minutes for a review; a client that times out first ends the wait, and running it again after approval lets it through. On an SSH listener, drop the shell capability first."
       >
         <Stack gap="md">
-          {ownHold && (
-            <TagsInput
-              label="Reviewers"
-              description="Groups whose members may approve, in Slack or on the Reviews page. Empty leaves it to the administrators."
-              placeholder="Select or type a group"
-              data={groupOptions}
-              value={reviewers}
-              onChange={setReviewers}
-            />
-          )}
           {[
             ['high', 'High risk'],
             ['medium', 'Medium risk'],
@@ -308,6 +298,16 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
               allowDeselect={false}
             />
           ))}
+          {ownHold && (
+            <TagsInput
+              label="Reviewers"
+              description="Groups whose members may approve, in Slack or on the Reviews page. Empty leaves it to the administrators."
+              placeholder="Select or type a group"
+              data={groupOptions}
+              value={reviewers}
+              onChange={setReviewers}
+            />
+          )}
           <TextInput
             label="Denial message (optional)"
             placeholder="refused by risk analysis"

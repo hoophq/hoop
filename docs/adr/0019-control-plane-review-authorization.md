@@ -126,7 +126,7 @@ groups: Okta, Entra ID, OneLogin, JumpCloud, Ping. It is the right authority
 when the identity provider does not manage Slack, and it adds deactivation at
 the source (`active=false`). A first implementation was written and removed
 from this change to keep it small; it is in the history of PR #1850 (commits
-`67ed654` and `cdc2218`). What it needs:
+`a0af561` and `f5e28f7`). What it needs:
 
 - A bearer token per org, stored as a hash, rotated with one `PUT`, and
   audited with the admin who generated it as the actor.
