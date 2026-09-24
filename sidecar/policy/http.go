@@ -159,10 +159,13 @@ func matchResource(pattern, resource string) bool {
 	if pattern == resource {
 		return true
 	}
+	// Detect the suffix on the pattern as written. Trimming first would turn
+	// "/**/" into "**" and make a malformed pattern match every resource.
+	deep := strings.HasSuffix(pattern, "/**")
 	pSegs := strings.Split(strings.Trim(pattern, "/"), "/")
 	rSegs := strings.Split(strings.Trim(resource, "/"), "/")
 
-	if pSegs[len(pSegs)-1] == "**" {
+	if deep {
 		pSegs = pSegs[:len(pSegs)-1]
 		if len(rSegs) < len(pSegs) {
 			return false

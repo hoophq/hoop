@@ -94,6 +94,26 @@ func TestHTTPResourceDoubleStarAfterWildcard(t *testing.T) {
 	}
 }
 
+func TestHTTPResourceMalformedDoubleStar(t *testing.T) {
+	// "/**" is a trailing suffix, detected on the pattern as written. A
+	// pattern ending in "/**/" is not that suffix, and trimming slashes
+	// before looking for it would turn "/**/" into a match for everything.
+	for _, pattern := range []string{"/**/", "/admin/**/"} {
+		rules, err := policy.NewRules([]policy.Rule{
+			policy.Rule{Name: "malformed", Type: policy.MatchHTTPResource}.
+				WithResources(pattern),
+		})
+		if err != nil {
+			t.Fatalf("NewRules(%q): %v", pattern, err)
+		}
+		for _, res := range []string{"/", "/admin", "/admin/users", "/users/*/ssn"} {
+			if rules.Evaluate(httpStmt(&inspect.HTTPDetail{Resource: res})).Denied {
+				t.Errorf("%q denied %s; a pattern ending in /**/ is not a trailing wildcard", pattern, res)
+			}
+		}
+	}
+}
+
 func TestHTTPResourceMethodNarrowing(t *testing.T) {
 	rules, _ := policy.NewRules([]policy.Rule{
 		policy.Rule{Name: "no-writes", Type: policy.MatchHTTPResource, Message: "read only"}.
