@@ -1,6 +1,6 @@
 # ADR-0015: SSH terminates at the sidecar, with its endpoint in libhoop, and no guardrails on an interactive shell
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-09-10
 - **Author:** @sandro
 - **Deciders:** —
