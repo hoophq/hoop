@@ -16,11 +16,11 @@ const slackAPITimeout = 10 * time.Second
 
 // Refusals a control plane click can answer with. The gateway's association
 // page does not exist in the control plane web app, so each one names what an
-// admin can change: the Users page or Settings -> Provisioning.
+// admin can change on the Users page, which also holds the Slack import.
 const (
 	cpNotLinkedMsg = "Hoop could not read the email of your Slack user. " +
-		"Ask an admin to import you from Slack in Settings -> Provisioning, " +
-		"or to set your Slack ID on the Users page."
+		"Ask an admin to import you from Slack, " +
+		"or to set your Slack ID, on the Users page."
 	cpNotVerifiedMsg     = "Hoop could not verify your Slack user. Try again."
 	cpLookupFailedMsg    = "failed obtaining approver's information"
 	cpGroupsFailedMsg    = "failed obtaining approver's groups"
@@ -30,9 +30,9 @@ const (
 	cpGuestMsg           = "Slack guests cannot approve a review."
 	cpOtherWorkspaceMsg  = "Users from another Slack workspace cannot approve a review."
 	cpUnconfirmedMsg     = "Confirm the email of your Slack user before approving a review."
-	cpNoUserMsgFormat    = "No Hoop user has the email %s. Ask an admin to add you on the Users page or in Settings -> Provisioning."
+	cpNoUserMsgFormat    = "No Hoop user has the email %s. Ask an admin to add you on the Users page."
 	cpAmbiguousMsgFormat = "More than one Hoop user has the email %s. Ask an admin to fix it on the Users page."
-	cpNotInGroupFormat   = "You do not belong to group %q. Ask an admin to add you on the Users page or in Settings -> Provisioning."
+	cpNotInGroupFormat   = "You do not belong to group %q. Ask an admin to add you on the Users page."
 )
 
 // resolveControlPlaneApprover names the approver of a control plane click.
