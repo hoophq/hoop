@@ -1,7 +1,7 @@
 import api from './api'
 
 // How a control plane learns its reviewers without anyone logging in
-// (ADR-0019): the Slack import, which the control plane runs on an interval.
+// (ADR-0020): the Slack import, which the control plane runs on an interval.
 // SCIM is the next source. Deleting the import keeps the users and groups it
 // wrote, and hands the groups back to SSO login.
 export const provisioningService = {

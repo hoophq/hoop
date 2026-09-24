@@ -1,5 +1,5 @@
 // Package directorysync imports the control plane's reviewers from Slack
-// (ADR-0019): the members of the user groups an admin picks become hoop users
+// (ADR-0020): the members of the user groups an admin picks become hoop users
 // in hoop groups named after the group handle. A Slack click then finds them
 // by Slack ID, and nobody has to log in. The gateway never runs it.
 package directorysync

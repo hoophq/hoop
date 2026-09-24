@@ -259,7 +259,7 @@ func runControlPlane(tlsConfig *tls.Config) {
 	}
 	startPlugins(controlPlanePlugins(g.ReleaseConnectionOnReview))
 	go reconcileStaleReviews(models.DB)
-	// The Slack directory sync that pulls reviewers (ADR-0019). Only the
+	// The Slack directory sync that pulls reviewers (ADR-0020). Only the
 	// control plane runs it.
 	go directorysync.Start(context.Background(), models.DB)
 

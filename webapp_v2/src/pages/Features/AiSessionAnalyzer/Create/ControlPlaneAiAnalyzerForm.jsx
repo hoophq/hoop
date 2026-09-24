@@ -102,7 +102,7 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
   const [form, setForm] = useState(() => specToForm(stored?.sidecar_spec))
   const set = (patch) => setForm((f) => ({ ...f, ...patch }))
   // Who may release what this rule holds: groups from the Slack import or the
-  // Users page (ADR-0019). Empty leaves it to the administrators.
+  // Users page (ADR-0020). Empty leaves it to the administrators.
   const [reviewers, setReviewers] = useState(stored?.reviewers_groups ?? [])
   const [groupOptions, setGroupOptions] = useState([])
 

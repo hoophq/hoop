@@ -11,7 +11,7 @@ import (
 // the groups claim of their token.
 //
 // It may not in a control plane whose groups are managed by the Slack import
-// (ADR-0019): the two would overwrite each other, and the claim often names
+// (ADR-0020): the two would overwrite each other, and the claim often names
 // groups differently (Entra ID sends object ids, Slack user group handles).
 // The gateway always syncs, as it did before.
 //

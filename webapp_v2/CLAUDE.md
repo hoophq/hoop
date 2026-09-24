@@ -115,7 +115,7 @@ what a product shows, and ClojureScript exists only in the gateway.**
   **approver** reaches Reviews, anything else lands on the dead end at `/`. A role is a
   reserved group name; `standard` is the absence of one and is never stored as a group.
   The group names come from `/serverinfo` (`admin_role_name`, `approver_role_name`),
-  never a literal. Groups a rule names as reviewers (ADR-0019) are not roles: those
+  never a literal. Groups a rule names as reviewers (ADR-0020) are not roles: those
   reviewers approve in Slack. Gate a route with `<Page role={ROLE_APPROVER}>` and a nav
   or palette item with `role:`; `hasRole` in `utils/roles.js` is the single decision and
   admin passes every gate. `adminOnly` is the gate both products share. This gates pages, not

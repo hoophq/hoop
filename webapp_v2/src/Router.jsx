@@ -251,7 +251,7 @@ function Router() {
         }
       />
 
-      {/* Control plane only: where reviewers come from (ADR-0019). */}
+      {/* Control plane only: where reviewers come from (ADR-0020). */}
       <Route
         path="/settings/provisioning"
         element={

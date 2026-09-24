@@ -17,7 +17,7 @@ import (
 )
 
 // A control plane whose groups are provisioned must keep them on login
-// (ADR-0019). appconfig.Load is one shot, so this binary runs as one.
+// (ADR-0020). appconfig.Load is one shot, so this binary runs as one.
 func TestMain(m *testing.M) {
 	os.Setenv("API_URL", "http://localhost:8009")
 	if err := appconfig.Load(appconfig.AppModeControlPlane); err != nil {

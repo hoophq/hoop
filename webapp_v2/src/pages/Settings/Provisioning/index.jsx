@@ -6,7 +6,7 @@ import SlackSyncSection from './sections/SlackSyncSection'
 import { useProvisioningStore } from './store'
 
 /**
- * Where the control plane's reviewers come from (ADR-0019): Slack user groups.
+ * Where the control plane's reviewers come from (ADR-0020): Slack user groups.
  * The Users page also edits groups. Nobody has to log in for a Slack approval
  * to recognize them. SCIM is the next source.
  */

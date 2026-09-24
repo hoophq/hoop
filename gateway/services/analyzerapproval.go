@@ -29,7 +29,7 @@ import (
 // created beside the analyzer rule, under the same name, and removed with it.
 //
 // The admin names the reviewer groups on the analyzer rule, from the groups
-// the identity provider provisions (ADR-0019), and one approval releases.
+// the identity provider provisions (ADR-0020), and one approval releases.
 // Naming none leaves the admin group as the reviewer, so the switch alone is
 // still a complete control.
 

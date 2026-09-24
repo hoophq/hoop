@@ -32,7 +32,7 @@ import { STATUS_OPTIONS, generatePassword, statusVariant } from './shared'
 /**
  * The control plane's Users page, sibling of GatewayUsers.jsx.
  *
- * Groups name reviewers (ADR-0019). This page edits them for every auth
+ * Groups name reviewers (ADR-0020). This page edits them for every auth
  * method; the Slack import resets the groups it imports on every run.
  * Administrator is hoop's own group and stays a switch.
  */

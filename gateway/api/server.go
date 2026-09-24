@@ -327,7 +327,7 @@ func (api *Api) buildSidecarRoutes(r *apiroutes.Router) {
 		api.AuditMiddleware(),
 		api.TrackRequest(analytics.EventDeleteSidecar),
 		apisidecar.Delete)
-	// Where the sidecar's reviews are posted in Slack (ADR-0019). Both modes
+	// Where the sidecar's reviews are posted in Slack (ADR-0020). Both modes
 	// register them; a gateway answers 412.
 	r.GET("/sidecars/:nameOrID/slack-channels",
 		apiroutes.AdminOnlyAccessRole,
@@ -1365,7 +1365,7 @@ func (api *Api) buildRoutes(r *apiroutes.Router, mode appconfig.AppMode) {
 		apiserverconfig.UpdateMcpAuthConfig,
 	)
 
-	// Provisioning (ADR-0019): the Slack import. The routes exist in both
+	// Provisioning (ADR-0020): the Slack import. The routes exist in both
 	// modes, as every route does, and answer 412 on a gateway.
 	r.GET("/serverconfig/directory-sync",
 		apiroutes.AdminOnlyAccessRole,

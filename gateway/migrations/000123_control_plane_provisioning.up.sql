@@ -3,7 +3,7 @@ BEGIN;
 SET search_path TO private;
 
 -- How a control plane learns who its reviewers are without anyone logging in
--- (ADR-0019): it imports the members of Slack user groups into users and
+-- (ADR-0020): it imports the members of Slack user groups into users and
 -- user_groups, which is what every approval reads. users.slack_id links a
 -- user to Slack. No secret is stored: the import reads Slack through the
 -- org's Slack app.

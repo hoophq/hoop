@@ -1,5 +1,5 @@
 // Package apiprovisioning configures how a control plane learns its reviewers
-// without anyone logging in (ADR-0019): the Slack import.
+// without anyone logging in (ADR-0020): the Slack import.
 package apiprovisioning
 
 import (

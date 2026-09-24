@@ -1,4 +1,4 @@
-# ADR-0019: The control plane names reviewers without a login
+# ADR-0020: The control plane names reviewers without a login
 
 - **Status:** Proposed
 - **Date:** 2026-09-24

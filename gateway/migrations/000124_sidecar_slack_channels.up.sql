@@ -2,7 +2,7 @@ BEGIN;
 
 SET search_path TO private;
 
--- Where the reviews of one sidecar listener are posted in Slack (ADR-0019),
+-- Where the reviews of one sidecar listener are posted in Slack (ADR-0020),
 -- as guardrails, data masking and the analyzer bind to a listener. The org's
 -- default channel receives every review anyway, as on the gateway.
 -- listener_name is not a foreign key: a listener is an element of

@@ -60,7 +60,7 @@ func TestControlPlaneHealthzIsOKWithoutGRPC(t *testing.T) {
 }
 
 // Every route whose data only a control plane has answers 412 on a gateway
-// (ADR-0019), so the gateway behaves as it did before those routes existed.
+// (ADR-0020), so the gateway behaves as it did before those routes existed.
 // The table is checked against the registered routes: a route that moves to
 // another handler fails here instead of silently losing its guard.
 func TestControlPlaneOnlyRoutesAnswer412OnAGateway(t *testing.T) {

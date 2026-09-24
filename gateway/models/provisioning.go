@@ -7,7 +7,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// DirectorySyncConfig is the org's Slack import (ADR-0019): the Slack user
+// DirectorySyncConfig is the org's Slack import (ADR-0020): the Slack user
 // groups whose members become hoop users, and how often it runs.
 //
 // AllowMemberManagedGroups accepts user groups a workspace member who is not

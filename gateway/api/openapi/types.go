@@ -3006,7 +3006,7 @@ type ServerAuthConfig struct {
 }
 
 // DirectorySyncConfig is how the control plane pulls users and groups from
-// Slack user groups (ADR-0019). It uses the org's Slack app and stores no
+// Slack user groups (ADR-0020). It uses the org's Slack app and stores no
 // credential.
 type DirectorySyncConfig struct {
 	// Whether a Slack import is configured
