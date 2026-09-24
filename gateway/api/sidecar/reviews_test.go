@@ -13,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/aws/smithy-go/ptr"
+	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/services"
@@ -491,4 +492,34 @@ func TestSlackChannelsResponse(t *testing.T) {
 	empty := toOpenAPISlackChannels(nil)
 	assert.NotNil(t, empty.Channels)
 	assert.NotNil(t, empty.Listeners)
+}
+
+func TestSlackChannelRows(t *testing.T) {
+	sc := &models.Sidecar{Name: "payments"}
+	sc.Configuration.Listeners = []daemon.ListenerConfig{{Name: "pg"}, {Name: "mysql"}, {Name: ""}}
+
+	rows, msg := slackChannelRows(sc, openapi.SidecarSlackChannels{
+		Channels:  []string{" C-ALL "},
+		Listeners: []openapi.SidecarListenerSlackChannels{{Name: "pg", Channels: []string{"C-PG"}}},
+	})
+	assert.Empty(t, msg)
+	assert.Len(t, rows, 2)
+	assert.Equal(t, []string{"C-ALL"}, []string(rows[0].Channels))
+	assert.Equal(t, "pg", rows[1].ListenerName)
+
+	_, msg = slackChannelRows(sc, openapi.SidecarSlackChannels{
+		Listeners: []openapi.SidecarListenerSlackChannels{{Name: "redis", Channels: []string{"C1"}}},
+	})
+	assert.Contains(t, msg, `no listener named "redis"`)
+
+	_, msg = slackChannelRows(sc, openapi.SidecarSlackChannels{
+		Listeners: []openapi.SidecarListenerSlackChannels{{Name: "pg"}, {Name: " pg "}},
+	})
+	assert.Contains(t, msg, "repeated")
+
+	// An unnamed listener cannot be addressed.
+	_, msg = slackChannelRows(sc, openapi.SidecarSlackChannels{
+		Listeners: []openapi.SidecarListenerSlackChannels{{Name: ""}},
+	})
+	assert.NotEmpty(t, msg)
 }

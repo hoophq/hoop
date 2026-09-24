@@ -202,14 +202,26 @@ func PersistTx(tx *gorm.DB, orgID string, kind services.SidecarRuleKind, ruleNam
 
 // Load renders back where a rule is bound, so a round-trip through the API
 // returns what was saved. Without it an edit form opens with the picker empty
-// and the next save unbinds the rule from every sidecar it reached.
+// and the next save unbinds the rule from every sidecar it reached. A failed
+// read is logged and reads as no targets; LoadStrict returns it instead.
 func Load(orgID string, kind services.SidecarRuleKind, ruleName string) []openapi.SidecarRuleTarget {
-	if !appconfig.Get().IsControlPlane() {
+	out, err := LoadStrict(orgID, kind, ruleName)
+	if err != nil {
+		log.Warnf("failed reading the sidecar targets of %s rule %q, reason=%v", kind, ruleName, err)
 		return nil
+	}
+	return out
+}
+
+// LoadStrict is Load, returning a failed read so the caller can refuse to
+// answer with a rule that looks bound nowhere.
+func LoadStrict(orgID string, kind services.SidecarRuleKind, ruleName string) ([]openapi.SidecarRuleTarget, error) {
+	if !appconfig.Get().IsControlPlane() {
+		return nil, nil
 	}
 	org, err := uuid.Parse(orgID)
 	if err != nil {
-		return nil
+		return nil, nil
 	}
 	var rows []models.SidecarRuleTarget
 	switch kind {
@@ -221,14 +233,13 @@ func Load(orgID string, kind services.SidecarRuleKind, ruleName string) []openap
 		rows, err = models.ListAnalyzerRuleTargets(models.DB, org, ruleName)
 	}
 	if err != nil {
-		log.Warnf("failed reading the sidecar targets of %s rule %q, reason=%v", kind, ruleName, err)
-		return nil
+		return nil, err
 	}
 	out := make([]openapi.SidecarRuleTarget, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, openapi.SidecarRuleTarget{SidecarID: r.SidecarID, ListenerName: r.ListenerName})
 	}
-	return out
+	return out, nil
 }
 
 // storedTargets is where the rule is bound today.

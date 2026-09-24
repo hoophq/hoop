@@ -353,6 +353,25 @@ func escapeSlackText(s string) string {
 var slackTextEscaper = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
 
 func (s *SlackService) SendMessageReview(msg *MessageReviewRequest) (result string) {
+	return s.PostMessageReview(msg).String()
+}
+
+// ReviewPostResult is where a review message was posted: every channel it was
+// sent to, how many accepted it, and why the others did not.
+type ReviewPostResult struct {
+	Channels int
+	Posted   int
+	Errors   []string
+}
+
+// String is the line SendMessageReview has always returned and callers log.
+func (r ReviewPostResult) String() string {
+	return fmt.Sprintf("success sent channels %v/%v, errors=%v", r.Channels, r.Posted, r.Errors)
+}
+
+// PostMessageReview is SendMessageReview, returning the counts so a caller can
+// tell a review nobody received from one that reached its channels.
+func (s *SlackService) PostMessageReview(msg *MessageReviewRequest) ReviewPostResult {
 	title := "Hoop Review"
 
 	header := slack.NewHeaderBlock(&slack.TextBlockObject{
@@ -486,7 +505,7 @@ func (s *SlackService) SendMessageReview(msg *MessageReviewRequest) (result stri
 		time.Sleep(time.Millisecond * 1200)
 	}
 	s.trackSentReviewMessages(msg.ID, sent)
-	return fmt.Sprintf("success sent channels %v/%v, errors=%v", len(slackChannels), len(slackChannels)-len(errs), errs)
+	return ReviewPostResult{Channels: len(slackChannels), Posted: len(slackChannels) - len(errs), Errors: errs}
 }
 
 // sentReviewMessage records where a review message landed so it can be

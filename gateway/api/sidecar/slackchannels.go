@@ -65,6 +65,33 @@ func normalizeChannels(channels []string) []string {
 	return out
 }
 
+var errInvalidChannels = errors.New("invalid slack channels")
+
+// slackChannelRows turns the request into the rows to store, or says why it
+// cannot: a listener the sidecar does not have, or one named twice.
+func slackChannelRows(sidecar *models.Sidecar, req openapi.SidecarSlackChannels) ([]models.SidecarSlackChannels, string) {
+	known := map[string]bool{}
+	for _, l := range sidecar.Configuration.Listeners {
+		if l.Name != "" {
+			known[l.Name] = true
+		}
+	}
+	rows := []models.SidecarSlackChannels{{ListenerName: "", Channels: normalizeChannels(req.Channels)}}
+	seen := map[string]bool{}
+	for _, l := range req.Listeners {
+		name := strings.TrimSpace(l.Name)
+		if !known[name] {
+			return nil, fmt.Sprintf("sidecar %s has no listener named %q", sidecar.Name, name)
+		}
+		if seen[name] {
+			return nil, fmt.Sprintf("listener %q is repeated", name)
+		}
+		seen[name] = true
+		rows = append(rows, models.SidecarSlackChannels{ListenerName: name, Channels: normalizeChannels(l.Channels)})
+	}
+	return rows, ""
+}
+
 // GetSlackChannels
 //
 //	@Summary		Get Sidecar Slack Channels
@@ -113,33 +140,30 @@ func PutSlackChannels(c *gin.Context) {
 
 	// A listener must exist in the stored configuration: channels set for a
 	// name no listener has would never be read, and would silently start
-	// applying to whatever listener takes that name later.
-	known := map[string]bool{}
-	for _, l := range sidecar.Configuration.Listeners {
-		if l.Name != "" {
-			known[l.Name] = true
-		}
-	}
-	rows := []models.SidecarSlackChannels{{ListenerName: "", Channels: normalizeChannels(req.Channels)}}
-	seen := map[string]bool{}
-	for _, l := range req.Listeners {
-		name := strings.TrimSpace(l.Name)
-		if !known[name] {
-			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": fmt.Sprintf("sidecar %s has no listener named %q", sidecar.Name, name)})
-			return
-		}
-		if seen[name] {
-			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": fmt.Sprintf("listener %q is repeated", name)})
-			return
-		}
-		seen[name] = true
-		rows = append(rows, models.SidecarSlackChannels{ListenerName: name, Channels: normalizeChannels(l.Channels)})
-	}
-
+	// applying to whatever listener takes that name later. The configuration
+	// is re-read with a row lock, so a listener removed by a concurrent write
+	// cannot slip in between the check and the write.
+	var invalid string
 	err := models.DB.Transaction(func(tx *gorm.DB) error {
+		locked, err := models.GetSidecarByNameOrIDForUpdate(tx, sidecar.OrgID, sidecar.ID)
+		if err != nil {
+			return err
+		}
+		rows, msg := slackChannelRows(locked, req)
+		if msg != "" {
+			invalid = msg
+			return errInvalidChannels
+		}
 		return models.ReplaceSidecarSlackChannels(tx, sidecar.OrgID, sidecar.ID, rows)
 	})
-	if err != nil {
+	switch {
+	case errors.Is(err, errInvalidChannels):
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": invalid})
+		return
+	case errors.Is(err, models.ErrNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"message": "sidecar not found"})
+		return
+	case err != nil:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed storing sidecar slack channels")
 		return
 	}

@@ -102,16 +102,16 @@ func BaseURL() string {
 // Handler serves every SCIM request under /api/scim/v2. It runs behind
 // SCIMAuthMiddleware, which names the organization.
 //
-// A gateway answers 412 after authentication, as /sidecars/reviews does: its
-// groups are not provisioned, and no SCIM token can be created there.
+// A gateway answers 412: its groups are not provisioned, and no SCIM token
+// can be created there, so SCIMAuthMiddleware already refuses every request.
 func Handler(c *gin.Context) {
+	if !appconfig.Get().IsControlPlane() {
+		abort(c, http.StatusPreconditionFailed, "SCIM provisioning is served by the control plane")
+		return
+	}
 	orgID := apiroutes.SCIMOrgFromContext(c)
 	if orgID == "" {
 		abort(c, http.StatusUnauthorized, "access denied")
-		return
-	}
-	if !appconfig.Get().IsControlPlane() {
-		abort(c, http.StatusPreconditionFailed, "SCIM provisioning is served by the control plane")
 		return
 	}
 	if server == nil {

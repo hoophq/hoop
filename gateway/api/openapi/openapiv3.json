@@ -9333,6 +9333,97 @@
         ],
         "type": "object"
       },
+      "openapi.UsersImportRequest": {
+        "properties": {
+          "deactivate_missing": {
+            "description": "Deactivate users a previous file import created who are not in this one.\nAdministrators are never deactivated.",
+            "type": "boolean"
+          },
+          "rows": {
+            "description": "The users to import",
+            "items": {
+              "$ref": "#/components/schemas/openapi.UsersImportRow"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "rows"
+        ],
+        "type": "object"
+      },
+      "openapi.UsersImportResponse": {
+        "properties": {
+          "created": {
+            "description": "Users created",
+            "type": "integer"
+          },
+          "deactivated": {
+            "description": "Users deactivated by deactivate_missing",
+            "type": "integer"
+          },
+          "errors": {
+            "description": "Rows that failed; the other rows were imported",
+            "items": {
+              "$ref": "#/components/schemas/openapi.UsersImportRowError"
+            },
+            "type": "array"
+          },
+          "updated": {
+            "description": "Existing users updated",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.UsersImportRow": {
+        "properties": {
+          "email": {
+            "description": "The user's email; it is how a Slack click finds them",
+            "example": "ana@example.com",
+            "type": "string"
+          },
+          "groups": {
+            "description": "The groups the user is in; the import makes these the complete member\nlist of each group it names",
+            "example": [
+              "dba-leads"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "description": "The user's display name",
+            "example": "Ana",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "type": "object"
+      },
+      "openapi.UsersImportRowError": {
+        "properties": {
+          "email": {
+            "description": "The row's email, when it had one",
+            "example": "ana@example.com",
+            "type": "string"
+          },
+          "message": {
+            "description": "Why the row failed",
+            "example": "the group name is reserved by hoop: admin",
+            "type": "string"
+          },
+          "row": {
+            "description": "The 1-based row number; the CSV header is not counted",
+            "example": 3,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "openapi.WebhooksDashboardResponse": {
         "properties": {
           "url": {
@@ -24079,6 +24170,94 @@
         ]
       }
     },
+    "/users/import": {
+      "post": {
+        "description": "Create or update users and their groups from a file, for a control plane with no Slack import or SCIM. Send JSON, or a CSV as the multipart field \"file\" with the columns email,name,groups (groups separated by \";\") and an optional deactivate_missing field. A bad row fails that row, not the file. Every group the file names gets exactly the users that list it; the admin group cannot be named. Control plane only.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/openapi.UsersImportRequest"
+              }
+            },
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/openapi.UsersImportRequest"
+              }
+            }
+          },
+          "description": "The request body resource",
+          "required": true,
+          "x-originalParamName": "request"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.UsersImportResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Precondition Failed"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Import Users",
+        "tags": [
+          "User Management"
+        ]
+      }
+    },
     "/users/self/signup-origin": {
       "post": {
         "description": "Record how the authenticated user heard about Hoop. Each user may answer only once; a second attempt returns 409.",
@@ -24323,7 +24502,7 @@
         ]
       },
       "put": {
-        "description": "Updates an existing user",
+        "description": "Updates an existing user. In a control plane whose groups the Slack import or SCIM manages, only the admin group may change; a request that changes other groups answers 422.",
         "parameters": [
           {
             "description": "The subject identifier of the user",

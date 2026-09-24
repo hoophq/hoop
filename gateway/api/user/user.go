@@ -151,7 +151,7 @@ func Create(c *gin.Context) {
 // UpdateUser
 //
 //	@Summary		Update User
-//	@Description	Updates an existing user
+//	@Description	Updates an existing user. In a control plane whose groups the Slack import or SCIM manages, only the admin group may change; a request that changes other groups answers 422.
 //	@Tags			User Management
 //	@Accept			json
 //	@Produce		json
@@ -194,6 +194,21 @@ func Update(c *gin.Context) {
 			c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "cannot deactivate yourself"})
 			return
 		}
+	}
+
+	// A control plane whose groups a source manages (ADR-0019) changes only
+	// the admin group here; the Slack import or SCIM owns the rest.
+	if appconfig.Get().IsControlPlane() {
+		groups, status, msg, err := managedGroupsUpdate(ctx.OrgID, existingUser.ID, req.Groups)
+		switch {
+		case err != nil:
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed checking the managed groups")
+			return
+		case status != 0:
+			c.JSON(status, gin.H{"message": msg})
+			return
+		}
+		req.Groups = groups
 	}
 
 	existingUser.Name = req.Name
@@ -240,6 +255,44 @@ func Update(c *gin.Context) {
 		Picture:  existingUser.Picture,
 		Groups:   req.Groups,
 	})
+}
+
+// managedGroupsUpdate returns the groups a PUT may write when a source manages
+// the org's groups: the user's current groups, with the admin group as the
+// request has it. A request that changes any other group answers 422, so the
+// caller learns the change did not happen instead of seeing it undone by the
+// next sync. Without a managing source the request's groups go through.
+func managedGroupsUpdate(orgID, userID string, requested []string) (groups []string, status int, msg string, err error) {
+	managed, err := models.GroupsManagedByProvisioning(models.DB, orgID)
+	if err != nil || !managed {
+		return requested, 0, "", err
+	}
+	rows, err := models.GetUserGroupsByUserID(userID)
+	if err != nil {
+		return nil, 0, "", err
+	}
+	current := []string{}
+	for _, r := range rows {
+		if r.Name != types.GroupAdmin {
+			current = append(current, r.Name)
+		}
+	}
+	wanted := []string{}
+	for _, g := range requested {
+		if g != types.GroupAdmin && !slices.Contains(wanted, g) {
+			wanted = append(wanted, g)
+		}
+	}
+	slices.Sort(current)
+	slices.Sort(wanted)
+	if !slices.Equal(current, wanted) {
+		return nil, http.StatusUnprocessableEntity,
+			"groups are managed by the Slack import or SCIM; only the administrator switch can change here", nil
+	}
+	if slices.Contains(requested, types.GroupAdmin) {
+		current = append(current, types.GroupAdmin)
+	}
+	return current, 0, "", nil
 }
 
 // ListUsers

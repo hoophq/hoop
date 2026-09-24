@@ -340,7 +340,7 @@ func notifySlack(sidecar *models.Sidecar, rev *models.Review, listenerName, stat
 	}
 
 	// The listener's channels, else the sidecar's. The org default channel is
-	// added by SendMessageReview whenever it is set, as on the gateway. With
+	// added by PostMessageReview whenever it is set, as on the gateway. With
 	// none of them, say so: otherwise a misconfigured org gets silence that
 	// looks like success. A failed read still leaves the default channel.
 	channels, err := models.ResolveSidecarSlackChannels(models.DB, sidecar.OrgID, sidecar.ID, listenerName)
@@ -365,7 +365,14 @@ func notifySlack(sidecar *models.Sidecar, rev *models.Review, listenerName, stat
 		return
 	}
 
-	result := slackSvc.SendMessageReview(req)
+	result := slackSvc.PostMessageReview(req)
+	if result.Posted == 0 {
+		// Every channel refused it: a wrong id, or a private channel the app
+		// was not invited to. Nobody can act on this review from Slack.
+		log.With("sid", rev.SessionID, "review-id", rev.ID).
+			Warnf("no slack channel accepted the review message, nobody was notified, %v", result)
+		return
+	}
 	log.With("sid", rev.SessionID, "review-id", rev.ID).Infof("slack review message, %v", result)
 }
 

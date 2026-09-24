@@ -11471,6 +11471,71 @@ const docTemplate = `{
                 }
             }
         },
+        "/users/import": {
+            "post": {
+                "description": "Create or update users and their groups from a file, for a control plane with no Slack import or SCIM. Send JSON, or a CSV as the multipart field \"file\" with the columns email,name,groups (groups separated by \";\") and an optional deactivate_missing field. A bad row fails that row, not the file. Every group the file names gets exactly the users that list it; the admin group cannot be named. Control plane only.",
+                "consumes": [
+                    "application/json",
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "User Management"
+                ],
+                "summary": "Import Users",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.UsersImportRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.UsersImportResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "412": {
+                        "description": "Precondition Failed",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/users/self/signup-origin": {
             "post": {
                 "description": "Record how the authenticated user heard about Hoop. Each user may answer only once; a second attempt returns 409.",
@@ -11622,7 +11687,7 @@ const docTemplate = `{
                 }
             },
             "put": {
-                "description": "Updates an existing user",
+                "description": "Updates an existing user. In a control plane whose groups the Slack import or SCIM manages, only the admin group may change; a request that changes other groups answers 422.",
                 "consumes": [
                     "application/json"
                 ],
@@ -21078,6 +21143,97 @@ const docTemplate = `{
                     "description": "Free text detail. Required when origin is \"other\", ignored and stored as\nnull for every other option.",
                     "type": "string",
                     "example": "Saw it in a conference talk"
+                }
+            }
+        },
+        "openapi.UsersImportRequest": {
+            "type": "object",
+            "required": [
+                "rows"
+            ],
+            "properties": {
+                "deactivate_missing": {
+                    "description": "Deactivate users a previous file import created who are not in this one.\nAdministrators are never deactivated.",
+                    "type": "boolean"
+                },
+                "rows": {
+                    "description": "The users to import",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.UsersImportRow"
+                    }
+                }
+            }
+        },
+        "openapi.UsersImportResponse": {
+            "type": "object",
+            "properties": {
+                "created": {
+                    "description": "Users created",
+                    "type": "integer"
+                },
+                "deactivated": {
+                    "description": "Users deactivated by deactivate_missing",
+                    "type": "integer"
+                },
+                "errors": {
+                    "description": "Rows that failed; the other rows were imported",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.UsersImportRowError"
+                    }
+                },
+                "updated": {
+                    "description": "Existing users updated",
+                    "type": "integer"
+                }
+            }
+        },
+        "openapi.UsersImportRow": {
+            "type": "object",
+            "required": [
+                "email"
+            ],
+            "properties": {
+                "email": {
+                    "description": "The user's email; it is how a Slack click finds them",
+                    "type": "string",
+                    "example": "ana@example.com"
+                },
+                "groups": {
+                    "description": "The groups the user is in; the import makes these the complete member\nlist of each group it names",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "dba-leads"
+                    ]
+                },
+                "name": {
+                    "description": "The user's display name",
+                    "type": "string",
+                    "example": "Ana"
+                }
+            }
+        },
+        "openapi.UsersImportRowError": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "description": "The row's email, when it had one",
+                    "type": "string",
+                    "example": "ana@example.com"
+                },
+                "message": {
+                    "description": "Why the row failed",
+                    "type": "string",
+                    "example": "the group name is reserved by hoop: admin"
+                },
+                "row": {
+                    "description": "The 1-based row number; the CSV header is not counted",
+                    "type": "integer",
+                    "example": 3
                 }
             }
         },
