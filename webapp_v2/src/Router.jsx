@@ -74,10 +74,6 @@ import SidecarListenerPage from '@/pages/Sidecars/Listener'
 // only — no reason to put that in the bundle every user downloads.
 const Dashboard = lazy(() => import('@/pages/Dashboard'))
 
-// A review rule created in the control plane names the approver group as
-// reviewer; the form maps the role to the group name through /serverinfo.
-const CONTROL_PLANE_REVIEWER_ROLES = [ROLE_APPROVER]
-
 /**
  * One route table for both products (src/modes). Every React route below exists
  * in the gateway and in the control plane; the sidebar of each product says what
@@ -497,10 +493,7 @@ function Router() {
         path="/features/access-request/new"
         element={
           <Page adminOnly licenseFeature="access-requests">
-            <ByProduct
-              gateway={<AccessRequestForm />}
-              controlPlane={<AccessRequestForm defaultReviewerRoles={CONTROL_PLANE_REVIEWER_ROLES} />}
-            />
+            <AccessRequestForm />
           </Page>
         }
       />
@@ -508,10 +501,7 @@ function Router() {
         path="/features/access-request/edit/:ruleName"
         element={
           <Page adminOnly licenseFeature="access-requests">
-            <ByProduct
-              gateway={<AccessRequestForm />}
-              controlPlane={<AccessRequestForm defaultReviewerRoles={CONTROL_PLANE_REVIEWER_ROLES} />}
-            />
+            <AccessRequestForm />
           </Page>
         }
       />

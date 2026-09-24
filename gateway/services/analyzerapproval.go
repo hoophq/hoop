@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/gateway/models"
@@ -27,9 +28,10 @@ import (
 // approve. This file is what makes the switch a complete control: the rule is
 // created beside the analyzer rule, under the same name, and removed with it.
 //
-// The reviewer groups are fixed, and one approval releases. There is nowhere
-// to configure them and nothing here reads a request field, which is the point:
-// the admin flips one switch and the plane owns the rest.
+// The admin names the reviewer groups on the analyzer rule, from the groups
+// the identity provider provisions (ADR-0019), and one approval releases.
+// Naming none leaves the admin group as the reviewer, so the switch alone is
+// still a complete control.
 
 // analyzerApprovalManagedBy marks the rules this file owns.
 //
@@ -39,19 +41,50 @@ import (
 const analyzerApprovalManagedBy = "ai-session-analyzer"
 
 // analyzerApprovalMinApprovals releases a held statement on one approval, from
-// either reviewer group. approvableSidecarRule refuses a minimum above the
-// number of groups, so this moves with reviewerGroups.
+// any reviewer group. approvableSidecarRule refuses a minimum above the number
+// of groups, and a rule always names at least one.
 const analyzerApprovalMinApprovals = 1
 
-// reviewerGroups is who may release a held statement.
+// defaultReviewerGroups is who may release a held statement when the analyzer
+// rule names nobody: the admin group, which every control plane has.
 //
 // Resolved, never spelled. types.GroupAdmin is "admin" only by default: it
 // follows ADMIN_USERNAME and the server config's AdminRoleName, so an
 // organization that renamed the role would get a rule naming a group nobody is
 // in -- and every review under it would sit pending forever, which is the
 // silent failure this whole path exists to avoid.
-func reviewerGroups() []string {
-	return []string{types.GroupApprover, types.GroupAdmin}
+func defaultReviewerGroups() []string {
+	return []string{types.GroupAdmin}
+}
+
+// NormalizeReviewerGroups trims the names and drops blanks and repeats,
+// keeping the order. approvableSidecarRule refuses a rule with either when a
+// review is filed, which would deny every held statement with no review to
+// approve, so they never reach the rule.
+func NormalizeReviewerGroups(groups []string) []string {
+	out := make([]string, 0, len(groups))
+	seen := make(map[string]struct{}, len(groups))
+	for _, g := range groups {
+		g = strings.TrimSpace(g)
+		if g == "" {
+			continue
+		}
+		if _, dup := seen[g]; dup {
+			continue
+		}
+		seen[g] = struct{}{}
+		out = append(out, g)
+	}
+	return out
+}
+
+// reviewersOrDefault is the list a rule stores: the admin's choice, or the
+// admin group when that choice names nobody.
+func reviewersOrDefault(groups []string) []string {
+	if n := NormalizeReviewerGroups(groups); len(n) > 0 {
+		return n
+	}
+	return defaultReviewerGroups()
 }
 
 // AnalyzerRuleHolds reports whether a stored analyzer spec asks to hold a
@@ -90,16 +123,36 @@ const analyzerReviewAction = "require_review"
 // SyncAnalyzerApprovalRule makes the approval rule match what the analyzer rule
 // now asks for: present while the rule holds, gone once it stops.
 //
+// reviewers are the groups the request names. nil means the request said
+// nothing about them: a new rule gets the admin group and an existing one
+// keeps what it has, so an edit that only touches the prompt, from a script or
+// another page, does not reset the reviewers someone chose.
+//
 // Called inside the caller's transaction, so the two rules commit together. A
 // rule that held statements and lost its approval rule halfway would deny
 // every matching statement with no way to release one.
-func SyncAnalyzerApprovalRule(tx *gorm.DB, orgID uuid.UUID, ruleName string, spec json.RawMessage) error {
+func SyncAnalyzerApprovalRule(tx *gorm.DB, orgID uuid.UUID, ruleName string, spec json.RawMessage, reviewers *[]string) error {
 	// Only a hold that names this rule's own approval rule is ours to keep.
 	// One naming another rule leaves that rule alone, as an admin wrote it.
 	if AnalyzerRuleHolds(spec) && specApprovalRule(spec) == ruleName {
-		return upsertAnalyzerApprovalRule(tx, orgID, ruleName)
+		return upsertAnalyzerApprovalRule(tx, orgID, ruleName, reviewers)
 	}
 	return DeleteAnalyzerApprovalRule(tx, orgID, ruleName)
+}
+
+// AnalyzerApprovalReviewers returns the reviewer groups of the approval rule an
+// analyzer rule manages, or nil when it has none.
+func AnalyzerApprovalReviewers(db *gorm.DB, orgID uuid.UUID, ruleName string) ([]string, error) {
+	rule, err := models.GetAccessRequestRuleByName(db, ruleName, orgID)
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		return nil, nil
+	case err != nil:
+		return nil, err
+	case rule.ManagedBy == nil || *rule.ManagedBy != analyzerApprovalManagedBy:
+		return nil, nil
+	}
+	return []string(rule.ReviewersGroups), nil
 }
 
 // upsertAnalyzerApprovalRule creates the rule, or refreshes the fields this
@@ -108,7 +161,7 @@ func SyncAnalyzerApprovalRule(tx *gorm.DB, orgID uuid.UUID, ruleName string, spe
 // A rule of the same name that this file did not create is left ALONE and
 // reported. Overwriting it would silently replace whoever an admin chose as
 // reviewers for something else with these two groups.
-func upsertAnalyzerApprovalRule(tx *gorm.DB, orgID uuid.UUID, ruleName string) error {
+func upsertAnalyzerApprovalRule(tx *gorm.DB, orgID uuid.UUID, ruleName string, reviewers *[]string) error {
 	existing, err := models.GetAccessRequestRuleByName(tx, ruleName, orgID)
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
@@ -127,7 +180,7 @@ func upsertAnalyzerApprovalRule(tx *gorm.DB, orgID uuid.UUID, ruleName string) e
 			// a control plane. A listener is not a connection.
 			ConnectionNames:        []string{},
 			ApprovalRequiredGroups: []string{},
-			ReviewersGroups:        reviewerGroups(),
+			ReviewersGroups:        reviewersOrDefault(derefGroups(reviewers)),
 			ForceApprovalGroups:    []string{},
 			MinApprovals:           &minApprovals,
 		})
@@ -139,11 +192,13 @@ func upsertAnalyzerApprovalRule(tx *gorm.DB, orgID uuid.UUID, ruleName string) e
 			"first", ruleName)
 	}
 
-	// Ours: bring the groups back in step. They are resolved from the server's
-	// own role names, so a rule written before an admin role was renamed would
-	// otherwise keep naming a group nobody is in.
+	// Ours: take the groups the request names, or keep the stored ones.
 	minApprovals := analyzerApprovalMinApprovals
-	existing.ReviewersGroups = reviewerGroups()
+	groups := []string(existing.ReviewersGroups)
+	if reviewers != nil {
+		groups = *reviewers
+	}
+	existing.ReviewersGroups = reviewersOrDefault(groups)
 	existing.MinApprovals = &minApprovals
 	existing.AllGroupsMustApprove = false
 	return models.UpdateAccessRequestRule(tx, existing)
@@ -166,4 +221,11 @@ func DeleteAnalyzerApprovalRule(tx *gorm.DB, orgID uuid.UUID, ruleName string) e
 		return nil
 	}
 	return models.DeleteAccessRequestRuleByName(tx, ruleName, orgID)
+}
+
+func derefGroups(groups *[]string) []string {
+	if groups == nil {
+		return nil
+	}
+	return *groups
 }

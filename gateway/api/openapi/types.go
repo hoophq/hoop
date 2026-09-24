@@ -3947,6 +3947,13 @@ type AISessionAnalyzerRuleRequest struct {
 	// the field -- a script fixing a typo, the gateway's own UI, an MCP call --
 	// would silently unbind a rule from the whole fleet.
 	SidecarTargets *[]SidecarRuleTarget `json:"sidecar_targets,omitempty"`
+
+	// ReviewersGroups are the identity provider groups whose members may
+	// release a statement this rule holds for approval. Absent keeps the
+	// groups already set; with none set the admin group reviews.
+	//
+	// A control plane field, read only while sidecar_spec holds a statement.
+	ReviewersGroups *[]string `json:"reviewers_groups,omitempty" example:"dba-leads"`
 }
 
 type AISessionAnalyzerRule struct {
@@ -3971,6 +3978,9 @@ type AISessionAnalyzerRule struct {
 	SidecarSpec json.RawMessage `json:"sidecar_spec,omitempty" swaggertype:"object"`
 	// The sidecar listeners this rule is bound to, and therefore distributed to
 	SidecarTargets []SidecarRuleTarget `json:"sidecar_targets,omitempty"`
+	// The groups whose members may release a statement this rule holds.
+	// Present only in a control plane, while the rule holds.
+	ReviewersGroups []string `json:"reviewers_groups,omitempty" example:"dba-leads"`
 
 	// Set to "hoop" when the rule is materialized and lifecycle-managed by a
 	// protection profile; managed rules are read-only through this API
