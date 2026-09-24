@@ -150,18 +150,28 @@ func MatchResource(pattern, resource string) bool {
 // trailing segments. Both sides arrive normalized, so a pattern written with
 // a literal id ("/users/12345") will not match. That forces patterns to be
 // written against the stable resource form.
+//
+// The "/**" case walks segments too, rather than comparing a string prefix:
+// "/api/v1/namespaces/*/secrets/**" has a "*" in front of the "/**", and a
+// prefix compare would look for the literal "*" and match nothing. A rule
+// that matches less than it reads fails open.
 func matchResource(pattern, resource string) bool {
 	if pattern == resource {
 		return true
 	}
-	if strings.HasSuffix(pattern, "/**") {
-		prefix := strings.TrimSuffix(pattern, "/**")
-		return resource == prefix || strings.HasPrefix(resource, prefix+"/")
-	}
-
+	// Detect the suffix on the pattern as written. Trimming first would turn
+	// "/**/" into "**" and make a malformed pattern match every resource.
+	deep := strings.HasSuffix(pattern, "/**")
 	pSegs := strings.Split(strings.Trim(pattern, "/"), "/")
 	rSegs := strings.Split(strings.Trim(resource, "/"), "/")
-	if len(pSegs) != len(rSegs) {
+
+	if deep {
+		pSegs = pSegs[:len(pSegs)-1]
+		if len(rSegs) < len(pSegs) {
+			return false
+		}
+		rSegs = rSegs[:len(pSegs)]
+	} else if len(pSegs) != len(rSegs) {
 		return false
 	}
 	for i := range pSegs {
