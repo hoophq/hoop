@@ -3,8 +3,8 @@ BEGIN;
 SET search_path TO private;
 
 -- Where the reviews of one sidecar listener are posted in Slack (ADR-0020),
--- as guardrails, data masking and the analyzer bind to a listener. The org's
--- default channel receives every review anyway, as on the gateway.
+-- as guardrails, data masking and the analyzer bind to a listener. A listener
+-- with no row falls back to the org's default channel.
 -- listener_name is not a foreign key: a listener is an element of
 -- sidecars.configuration, and a configuration write drops the rows of
 -- listeners it removed. An empty list is no row.
