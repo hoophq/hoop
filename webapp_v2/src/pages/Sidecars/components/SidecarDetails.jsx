@@ -215,7 +215,6 @@ export default function SidecarDetails({ sidecar, editable, listenerActions }) {
         opened={asking}
         toConfigFile={target}
         boundRules={sidecar.bound_rules ?? []}
-        supportsReimport={Boolean(sidecar.supports_config_reimport)}
         onClose={() => setAsking(false)}
         onConfirm={confirmSource}
         loading={saving}

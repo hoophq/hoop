@@ -16,8 +16,4 @@ ALTER TABLE guardrail_rules ADD COLUMN IF NOT EXISTS imported_from_sidecar UUID 
 ALTER TABLE datamasking_rules ADD COLUMN IF NOT EXISTS imported_from_sidecar UUID NULL;
 ALTER TABLE ai_session_analyzer_rules ADD COLUMN IF NOT EXISTS imported_from_sidecar UUID NULL;
 
--- The sidecar re-imports its file on a heartbeat 412. An older one does not,
--- so the switch back to the control plane keeps its stored document.
-ALTER TABLE sidecars ADD COLUMN IF NOT EXISTS supports_config_reimport BOOLEAN NOT NULL DEFAULT false;
-
 COMMIT;

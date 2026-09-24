@@ -348,10 +348,6 @@ type SidecarResponse struct {
 	// that switched. Deleted rules came from this sidecar's file; unbound
 	// rules stay for their other targets.
 	DetachedRules *SidecarDetachedRules `json:"detached_rules,omitempty"`
-	// SupportsConfigReimport reports whether this sidecar pushes its file
-	// again on the switch back to the control plane. Without it the switch
-	// keeps the stored document.
-	SupportsConfigReimport bool `json:"supports_config_reimport"`
 	// Version reported at the last handshake. Empty until the sidecar calls.
 	Version string `json:"version,omitempty" example:"1.0.0"`
 	// Last time the sidecar handshook. Empty until it does.
@@ -454,10 +450,6 @@ type SidecarReviewResponse struct {
 type SidecarHandshakeRequest struct {
 	// Version of the sidecar binary
 	Version string `json:"version" binding:"required" example:"1.0.0"`
-	// SupportsConfigReimport is set by a sidecar that pushes its config file
-	// again when the handshake answers 412. Optional; an older sidecar omits
-	// it, and the switch back to the control plane then keeps its document.
-	SupportsConfigReimport bool `json:"supports_config_reimport,omitempty"`
 	// AppliedRevision is the hoop-sidecar-config-revision of the last
 	// configuration this sidecar actually took on, which is not necessarily
 	// the last one it was served: a document it refused, or one needing a

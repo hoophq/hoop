@@ -119,8 +119,8 @@ export const useSidecarStore = create((set, get) => ({
   // One atomic PATCH merges only `load_from_disk`. To the config file, the
   // gateway deletes the rules imported from this sidecar that nothing else
   // uses and unbinds the rest; `detached_rules` lists them. Back to the
-  // control plane, a sidecar that reports `supports_config_reimport` has its
-  // stored document emptied and imports its file again.
+  // control plane, the stored document is emptied and the sidecar imports its
+  // file again.
   setUsesConfigFile: async (id, usesConfigFile) => {
     const { data: updated } = await sidecarsService.patch(id, { load_from_disk: usesConfigFile })
     set((state) => ({

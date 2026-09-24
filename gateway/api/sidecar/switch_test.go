@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -47,11 +46,10 @@ func startSwitchDB(t *testing.T) {
 }
 
 // importedSidecar is a sidecar that pushed switchFile, through the handler.
-func importedSidecar(t *testing.T, name string, reimport bool) *models.Sidecar {
+func importedSidecar(t *testing.T, name string) *models.Sidecar {
 	t.Helper()
 	sc := &models.Sidecar{OrgID: switchOrgID, Name: name, KeyHash: models.HashAPIKey("hsc_" + name), CreatedBy: "tests@hoop.dev"}
 	require.NoError(t, models.CreateSidecar(models.DB, sc))
-	require.NoError(t, models.DB.Exec(`UPDATE private.sidecars SET supports_config_reimport = ? WHERE id = ?`, reimport, sc.ID).Error)
 
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
@@ -84,7 +82,7 @@ func callAdmin(t *testing.T, handler gin.HandlerFunc, method, nameOrID, config s
 
 func TestTheImportWritesTheRulesAndTheirBindings(t *testing.T) {
 	startSwitchDB(t)
-	sc := importedSidecar(t, "imp-edge", true)
+	sc := importedSidecar(t, "imp-edge")
 
 	bound, err := models.ListSidecarRuleBindings(models.DB, uuid.MustParse(switchOrgID), sc.ID)
 	require.NoError(t, err)
@@ -107,7 +105,8 @@ func TestTheImportWritesTheRulesAndTheirBindings(t *testing.T) {
 
 func TestAPatchToTheFileReportsWhatItDetached(t *testing.T) {
 	startSwitchDB(t)
-	sc := importedSidecar(t, "to-file", true)
+	sc := importedSidecar(t, "to-file")
+	require.NoError(t, models.RecordSidecarHandshake(models.DB, sc.ID, "1.2.3", "", "", ""))
 
 	w, resp := callAdmin(t, Patch, http.MethodPatch, sc.ID, `{"load_from_disk": true}`)
 	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body)
@@ -115,28 +114,19 @@ func TestAPatchToTheFileReportsWhatItDetached(t *testing.T) {
 	assert.Equal(t, []string{"to-file-appdb-own"}, resp.DetachedRules.Deleted.Guardrails)
 	assert.Equal(t, []string{"to-file-appdb-emails"}, resp.DetachedRules.Deleted.DataMasking)
 	assert.Empty(t, resp.BoundRules)
-	assert.True(t, resp.SupportsConfigReimport, "the answer carries the runtime columns, as Get does")
+	assert.Equal(t, "1.2.3", resp.Version, "the answer carries the runtime columns, as Get does")
 }
 
-func TestAPatchBackResetsOnlyASidecarThatReimports(t *testing.T) {
-	for _, reimport := range []bool{true, false} {
-		t.Run(fmt.Sprint("reimport=", reimport), func(t *testing.T) {
-			startSwitchDB(t)
-			sc := importedSidecar(t, "back-edge", reimport)
-			w, _ := callAdmin(t, Patch, http.MethodPatch, sc.ID, `{"load_from_disk": true}`)
-			require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body)
+func TestAPatchBackResetsTheDocument(t *testing.T) {
+	startSwitchDB(t)
+	sc := importedSidecar(t, "back-edge")
+	w, _ := callAdmin(t, Patch, http.MethodPatch, sc.ID, `{"load_from_disk": true}`)
+	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body)
 
-			w, resp := callAdmin(t, Patch, http.MethodPatch, sc.ID, `{"load_from_disk": false}`)
-			require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body)
-			if reimport {
-				assert.Empty(t, resp.Configuration.Listeners, "the file replaces the stored document")
-				assert.NotNil(t, resp.DetachedRules)
-			} else {
-				assert.Len(t, resp.Configuration.Listeners, 1, "an old sidecar keeps its stored document")
-				assert.Nil(t, resp.DetachedRules)
-			}
-		})
-	}
+	w, resp := callAdmin(t, Patch, http.MethodPatch, sc.ID, `{"load_from_disk": false}`)
+	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body)
+	assert.Empty(t, resp.Configuration.Listeners, "the file replaces the stored document")
+	assert.NotNil(t, resp.DetachedRules)
 }
 
 func TestAPatchBackRefusesOtherKeys(t *testing.T) {
@@ -148,7 +138,7 @@ func TestAPatchBackRefusesOtherKeys(t *testing.T) {
 
 func TestPutRefusesALoadFromDiskChange(t *testing.T) {
 	startSwitchDB(t)
-	sc := importedSidecar(t, "put-edge", true)
+	sc := importedSidecar(t, "put-edge")
 
 	w, _ := callAdmin(t, Put, http.MethodPut, sc.ID, `{"load_from_disk": true, "listeners": [
 		{"name": "appdb", "protocol": "postgres", "listen": ":5432", "upstream": "db:5432"}]}`)

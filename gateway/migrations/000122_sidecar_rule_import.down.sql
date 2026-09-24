@@ -2,8 +2,6 @@ BEGIN;
 
 SET search_path TO private;
 
-ALTER TABLE sidecars DROP COLUMN IF EXISTS supports_config_reimport;
-
 ALTER TABLE ai_session_analyzer_rules DROP COLUMN IF EXISTS imported_from_sidecar;
 ALTER TABLE datamasking_rules DROP COLUMN IF EXISTS imported_from_sidecar;
 ALTER TABLE guardrail_rules DROP COLUMN IF EXISTS imported_from_sidecar;

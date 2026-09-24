@@ -63,7 +63,7 @@ func configRevision(served daemon.Config) string {
 // the next tick is a minute away.
 func recordHandshake(sidecarID string, req openapi.SidecarHandshakeRequest, servedRevision string) {
 	err := models.RecordSidecarHandshake(models.DB, sidecarID,
-		req.Version, req.AppliedRevision, req.LastOutcome, servedRevision, req.SupportsConfigReimport)
+		req.Version, req.AppliedRevision, req.LastOutcome, servedRevision)
 	if err != nil {
 		log.With("sidecar", sidecarID).Warnf("failed recording the sidecar handshake, reason=%v", err)
 	}
@@ -397,7 +397,7 @@ func Put(c *gin.Context) {
 // Patch Sidecar Configuration
 //
 //	@Summary		Patch Sidecar Configuration
-//	@Description	Merge a partial configuration into the document a sidecar serves: the keys sent are updated and the rest are left as stored. Unlike PUT it never replaces the whole document, so it cannot overwrite a configuration a sidecar imported meanwhile. load_from_disk true deletes the rules imported from this sidecar that nothing else uses and unbinds the rest; detached_rules lists them. load_from_disk false must be sent alone. It clears the stored document, so the sidecar imports its config file again; a sidecar without supports_config_reimport keeps its stored document.
+//	@Description	Merge a partial configuration into the document a sidecar serves: the keys sent are updated and the rest are left as stored. Unlike PUT it never replaces the whole document, so it cannot overwrite a configuration a sidecar imported meanwhile. load_from_disk true deletes the rules imported from this sidecar that nothing else uses and unbinds the rest; detached_rules lists them. load_from_disk false must be sent alone. It clears the stored document, so the sidecar imports its config file again.
 //	@Tags			Sidecars
 //	@Accept			json
 //	@Produce		json
@@ -448,11 +448,6 @@ func Patch(c *gin.Context) {
 		}
 		wasFile, isFile := usesConfigFile(current.Configuration), usesConfigFile(sc.Configuration)
 		if wasFile == isFile {
-			return sc, nil
-		}
-		// A sidecar too old to import its file again keeps the stored
-		// document on the way back: an empty one would leave it nothing.
-		if !isFile && !current.SupportsConfigReimport {
 			return sc, nil
 		}
 		// A switch of owner. The control-plane rules of this sidecar go: to
@@ -789,7 +784,6 @@ func toResponse(s models.Sidecar) openapi.SidecarResponse {
 	resp.ServedRevision = derefOrEmpty(s.ServedRevision)
 	resp.AppliedRevision = derefOrEmpty(s.AppliedRevision)
 	resp.LastOutcome = derefOrEmpty(s.LastOutcome)
-	resp.SupportsConfigReimport = s.SupportsConfigReimport
 	return resp
 }
 
