@@ -339,9 +339,8 @@ func notifySlack(sidecar *models.Sidecar, rev *models.Review, listenerName, stat
 		return
 	}
 
-	// The listener's channels, else the sidecar's. The org default channel is
-	// added by PostMessageReview whenever it is set, as on the gateway. With
-	// none of them, say so: otherwise a misconfigured org gets silence that
+	// The listener's channels, else the org default channel as a fallback.
+	// With neither, say so: otherwise a misconfigured org gets silence that
 	// looks like success. A failed read still leaves the default channel.
 	channels, err := models.ResolveSidecarSlackChannels(models.DB, sidecar.OrgID, sidecar.ID, listenerName)
 	if err != nil {
@@ -357,6 +356,7 @@ func notifySlack(sidecar *models.Sidecar, rev *models.Review, listenerName, stat
 
 	req := newSlackReviewRequest(sidecar, rev, listenerName, statement)
 	req.SlackChannels = channels
+	req.DefaultChannelAsFallback = true
 	// The same ceiling both existing senders apply. Two groups today, but a
 	// message with no buttons is a notification nobody can act on.
 	if len(req.ApprovalGroups) == 0 || len(req.ApprovalGroups) >= slackplugin.SlackMaxButtons {

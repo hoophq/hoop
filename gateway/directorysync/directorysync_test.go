@@ -125,17 +125,14 @@ func TestSlackWorkspace(t *testing.T) {
 		t.Errorf("members = %v; want no bot, guest or stranger", ids)
 	}
 
-	if _, err := w.selected([]string{"S-DBA"}, false); err != nil {
+	if _, err := w.selected([]string{"S-DBA"}); err != nil {
 		t.Errorf("admin-managed group refused: %v", err)
 	}
-	_, err = w.selected([]string{"S-DBA", "S-SRE"}, false)
+	_, err = w.selected([]string{"S-DBA", "S-SRE"})
 	if err == nil || !strings.Contains(err.Error(), "@sre") || strings.Contains(err.Error(), "@dba-leads") {
 		t.Errorf("member-managed group: err = %v; want @sre named", err)
 	}
-	if _, err := w.selected([]string{"S-SRE"}, true); err != nil {
-		t.Errorf("allowed member-managed group refused: %v", err)
-	}
-	if _, err := w.selected([]string{"S-SHARED"}, true); err == nil {
+	if _, err := w.selected([]string{"S-SHARED"}); err == nil {
 		t.Errorf("an external group was accepted")
 	}
 
@@ -264,10 +261,10 @@ func TestReconcileSlack(t *testing.T) {
 		if got := groupsOf(t, "eve@corp.com"); len(got) != 0 {
 			t.Errorf("eve groups = %v; nothing may be written", got)
 		}
-		cfg := syncConfig("S-DBA", "S-SRE")
-		cfg.AllowMemberManagedGroups = true
-		if _, err := importWith(t, f, cfg); err != nil {
-			t.Fatalf("allowed: %v", err)
+		// An admin edits the group in Slack: it is accepted from then on.
+		f.group("S-SRE").UpdatedBy = "U-ADMIN"
+		if _, err := importWith(t, f, syncConfig("S-DBA", "S-SRE")); err != nil {
+			t.Fatalf("after an admin edit: %v", err)
 		}
 		if got := groupsOf(t, "eve@corp.com"); !slices.Equal(got, []string{"sre"}) {
 			t.Errorf("eve groups = %v; want sre", got)
@@ -289,9 +286,7 @@ func TestReconcileSlack(t *testing.T) {
 
 	t.Run("a renamed handle keeps the hoop group name", func(t *testing.T) {
 		f.group("S-DBA").Handle = "dba"
-		cfg := syncConfig("S-DBA", "S-SRE")
-		cfg.AllowMemberManagedGroups = true
-		if _, err := importWith(t, f, cfg); err != nil {
+		if _, err := importWith(t, f, syncConfig("S-DBA", "S-SRE")); err != nil {
 			t.Fatalf("run: %v", err)
 		}
 		if got := groupsOf(t, "ana@corp.com"); !slices.Equal(got, []string{"dba-leads"}) {

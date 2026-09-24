@@ -100,9 +100,9 @@ func (w *workspace) adminManaged(g slackservice.UserGroup) bool {
 }
 
 // selected returns the picked groups, or why the run must not use them: a
-// group that is gone, or one a member edited last while allowMemberManaged is
-// off.
-func (w *workspace) selected(groupIDs []string, allowMemberManaged bool) ([]slackservice.UserGroup, error) {
+// group that is gone, or one a member who is not a workspace admin or owner
+// edited last.
+func (w *workspace) selected(groupIDs []string) ([]slackservice.UserGroup, error) {
 	var out []slackservice.UserGroup
 	var refused []string
 	for _, id := range groupIDs {
@@ -110,7 +110,7 @@ func (w *workspace) selected(groupIDs []string, allowMemberManaged bool) ([]slac
 		if !ok {
 			return nil, fmt.Errorf("slack user group %s no longer exists; remove it from the import", id)
 		}
-		if !allowMemberManaged && !w.adminManaged(g) {
+		if !w.adminManaged(g) {
 			refused = append(refused, "@"+groupName(g))
 		}
 		out = append(out, g)
@@ -118,7 +118,7 @@ func (w *workspace) selected(groupIDs []string, allowMemberManaged bool) ([]slac
 	if len(refused) > 0 {
 		sort.Strings(refused)
 		return nil, fmt.Errorf("user group(s) %s were last edited by a member who is not a Slack workspace admin or owner; "+
-			"restrict user group editing to admins in the Slack workspace settings, or allow member-managed groups",
+			"have an admin edit them, and restrict user group editing to admins in the Slack workspace settings",
 			strings.Join(refused, ", "))
 	}
 	return out, nil
@@ -129,8 +129,7 @@ type Group struct {
 	ID   string
 	Name string
 	// AdminManaged is false when a member who is not a workspace admin or
-	// owner edited the group last: the import refuses it unless member-managed
-	// groups are allowed.
+	// owner edited the group last: the import refuses it.
 	AdminManaged bool
 }
 

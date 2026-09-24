@@ -292,6 +292,10 @@ type MessageReviewRequest struct {
 	// set AIExplanation instead; the builder falls back to it.
 	AISummary     string
 	AIExplanation string
+	// DefaultChannelAsFallback posts to the default channel only when
+	// SlackChannels is empty. The control plane sets it; the gateway posts to
+	// the default channel always.
+	DefaultChannelAsFallback bool
 }
 
 type MessageReviewResponse struct {
@@ -367,6 +371,20 @@ type ReviewPostResult struct {
 // String is the line SendMessageReview has always returned and callers log.
 func (r ReviewPostResult) String() string {
 	return fmt.Sprintf("success sent channels %v/%v, errors=%v", r.Channels, r.Posted, r.Errors)
+}
+
+// reviewChannels returns the channels a review is posted to: the request's
+// channels and the default channel, or the default channel alone when it is a
+// fallback and the request names none.
+func reviewChannels(msg *MessageReviewRequest, defaultChannel string) []string {
+	channels := slices.Clone(msg.SlackChannels)
+	if defaultChannel == "" || slices.Contains(channels, defaultChannel) {
+		return channels
+	}
+	if msg.DefaultChannelAsFallback && len(channels) > 0 {
+		return channels
+	}
+	return append(channels, defaultChannel)
 }
 
 // PostMessageReview is SendMessageReview, returning the counts so a caller can
@@ -480,10 +498,7 @@ func (s *SlackService) PostMessageReview(msg *MessageReviewRequest) ReviewPostRe
 		},
 	})
 
-	slackChannels := msg.SlackChannels
-	if s.slackChannel != "" && !slices.Contains(slackChannels, s.slackChannel) {
-		slackChannels = append(slackChannels, s.slackChannel)
-	}
+	slackChannels := reviewChannels(msg, s.slackChannel)
 
 	var errs []string
 	var sent []sentReviewMessage

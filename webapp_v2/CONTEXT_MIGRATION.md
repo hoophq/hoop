@@ -78,7 +78,7 @@ dead end), `/onboarding/*` and `/*` (gateway: CLJS; control plane: 404).
 | `/sidecars`, `/sidecars/connect`, `/sidecars/new`, `/sidecars/:id` | React | Done — control plane fleet on `/api/sidecars` (list, connect/create wizard with the one-time token, details) |
 | `/onboarding/license` | React | Done — control plane first-access license screen (`ControlPlaneProtectedRoute` sends a free-plan admin with no sidecar there) |
 | `/reviews`, `/reviews/:sessionId` | React | Placeholder (control plane page; `NotImplemented`) |
-| `/organization/users` | React | Done — `GatewayUsers` / `ControlPlaneUsers` via `ByProduct` |
+| `/organization/users` | React | Done — `GatewayUsers` / `ControlPlaneUsers` via `ByProduct`; the control plane adds a Slack import tab (ADR-0020) |
 | `/login` | React | Done |
 | `/register` | React | Done (local auth signup) |
 | `/signup` | React | Done (IDP org setup) |
@@ -90,7 +90,6 @@ dead end), `/onboarding/*` and `/*` (gateway: CLJS; control plane: 404).
 | `/agents/new` | React | Done |
 | `/settings/infrastructure` | React | Done |
 | `/settings/license` | React | Done |
-| `/settings/provisioning` | React | Done — control plane only in the nav: Slack import of reviewers (ADR-0020) |
 | `/settings/api-keys` | React | Done |
 | `/settings/api-keys/new` | React | Done |
 | `/settings/api-keys/created` | React | Done |

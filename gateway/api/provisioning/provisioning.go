@@ -47,12 +47,11 @@ func toOpenAPIDirectorySync(cfg *models.DirectorySyncConfig) openapi.DirectorySy
 		groupIDs = []string{}
 	}
 	return openapi.DirectorySyncConfig{
-		Enabled:                  true,
-		GroupIDs:                 groupIDs,
-		IntervalMinutes:          cfg.IntervalMinutes,
-		AllowMemberManagedGroups: cfg.AllowMemberManagedGroups,
-		LastRunAt:                cfg.LastRunAt,
-		LastError:                cfg.LastError,
+		Enabled:         true,
+		GroupIDs:        groupIDs,
+		IntervalMinutes: cfg.IntervalMinutes,
+		LastRunAt:       cfg.LastRunAt,
+		LastError:       cfg.LastError,
 	}
 }
 
@@ -93,7 +92,7 @@ func GetDirectorySync(c *gin.Context) {
 // PutDirectorySync
 //
 //	@Summary		Configure Directory Sync
-//	@Description	Configure the Slack directory sync: the user groups to sync, the interval, and whether member-managed user groups are accepted. It uses the org's Slack app. Control plane only.
+//	@Description	Configure the Slack import: the user groups to import and the interval. It uses the org's Slack app. A user group last edited by a member who is not a workspace admin or owner is refused at the run. Control plane only.
 //	@Tags			Server Management
 //	@Accept			json
 //	@Produce		json
@@ -120,10 +119,9 @@ func PutDirectorySync(c *gin.Context) {
 	}
 
 	cfg := &models.DirectorySyncConfig{
-		OrgID:                    ctx.OrgID,
-		GroupIDs:                 req.GroupIDs,
-		IntervalMinutes:          req.IntervalMinutes,
-		AllowMemberManagedGroups: req.AllowMemberManagedGroups,
+		OrgID:           ctx.OrgID,
+		GroupIDs:        req.GroupIDs,
+		IntervalMinutes: req.IntervalMinutes,
 	}
 	if err := models.UpsertDirectorySyncConfig(models.DB, cfg); err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed storing the directory sync")
@@ -201,7 +199,7 @@ func RunDirectorySync(c *gin.Context) {
 // ListDirectorySyncGroups
 //
 //	@Summary		List Directory Groups
-//	@Description	List the Slack user groups the directory sync can read, for choosing which ones to sync. admin_managed is false for a user group a member who is not a workspace admin or owner edited last; the sync refuses it unless member-managed groups are allowed. Control plane only.
+//	@Description	List the Slack user groups the directory sync can read, for choosing which ones to sync. admin_managed is false for a user group a member who is not a workspace admin or owner edited last; the import refuses it. Control plane only.
 //	@Tags			Server Management
 //	@Produce		json
 //	@Success		200					{array}		openapi.DirectoryGroup

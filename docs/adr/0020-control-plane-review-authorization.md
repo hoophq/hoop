@@ -71,8 +71,7 @@ Deactivation flows from the identity provider through Slack, which most
 workspaces provision from it. The trade-off: hoop cannot enforce who edits a
 user group, and the Slack API has no flag saying the identity provider manages
 one. So a run refuses a user group whose last editor is not a workspace admin
-or owner, unless the admin allows member-managed groups; the Provisioning page
-says to restrict user group editing to admins in Slack.
+or owner, and the docs say to restrict user group editing to admins in Slack.
 
 While the Slack import owns a group, SSO login stops rewriting groups.
 Removing the import hands them back; users and their groups stay. The Users
@@ -95,8 +94,8 @@ roles: their members approve in Slack. The `approver` role keeps its meaning,
 the reserved group, which opens the Reviews page.
 
 **Slack channels are set per listener**, as guardrails, data masking and the
-analyzer bind to a listener. The default channel keeps receiving every review,
-as on the gateway.
+analyzer bind to a listener. The default channel is the fallback for a listener
+with none; on the gateway it receives every review.
 
 **The gateway does not change.** Every branch sits behind `IsControlPlane()`,
 or in a `ControlPlane*` file of the web app. ADR-0013 keeps one route tree for

@@ -296,7 +296,7 @@ type SidecarRequest struct {
 }
 
 // SidecarSlackChannels is where the reviews of each listener of a sidecar are
-// posted in Slack. The org's default channel receives every review regardless.
+// posted in Slack. A listener with no channel falls back to the org's default channel.
 type SidecarSlackChannels struct {
 	// The channels of each listener; a listener left out has none
 	Listeners []SidecarListenerSlackChannels `json:"listeners"`
@@ -3015,8 +3015,6 @@ type DirectorySyncConfig struct {
 	GroupIDs []string `json:"group_ids"`
 	// Minutes between two runs
 	IntervalMinutes int `json:"interval_minutes" example:"15"`
-	// Accept user groups last edited by a workspace member who is not an admin or owner
-	AllowMemberManagedGroups bool `json:"allow_member_managed_groups"`
 	// When the sync last ran
 	LastRunAt *time.Time `json:"last_run_at,omitempty"`
 	// Why the last run failed; empty when it succeeded
@@ -3029,10 +3027,6 @@ type DirectorySyncRequest struct {
 	GroupIDs []string `json:"group_ids"`
 	// Minutes between two runs, at least 5. Defaults to 15
 	IntervalMinutes int `json:"interval_minutes" example:"15"`
-	// Accept user groups last edited by a workspace member who is not an admin
-	// or owner. hoop cannot restrict who edits user groups; restrict it to
-	// admins in the Slack workspace settings instead when you can.
-	AllowMemberManagedGroups bool `json:"allow_member_managed_groups"`
 }
 
 // DirectoryGroup is a Slack user group the directory sync can read.

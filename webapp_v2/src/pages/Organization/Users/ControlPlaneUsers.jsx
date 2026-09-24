@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Link } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
 import {
   Anchor,
   Button,
@@ -21,6 +21,7 @@ import PasswordInput from '@/components/PasswordInput'
 import Select from '@/components/Select'
 import Switch from '@/components/Switch'
 import TagsInput from '@/components/TagsInput'
+import Tabs from '@/components/Tabs'
 import CopyButton from '@/components/CopyButton'
 import { usersService } from '@/services/users'
 import { authService } from '@/services/auth'
@@ -28,14 +29,18 @@ import { useUserStore } from '@/stores/useUserStore'
 import { docsUrl } from '@/utils/docsUrl'
 import { showSnackbar } from '@/utils/snackbar'
 import { STATUS_OPTIONS, generatePassword, statusVariant } from './shared'
+import SlackImportTab from './SlackImportTab'
 
 /**
  * The control plane's Users page, sibling of GatewayUsers.jsx.
  *
  * Groups name reviewers (ADR-0020). This page edits them for every auth
  * method; the Slack import resets the groups it imports on every run.
- * Administrator is hoop's own group and stays a switch.
+ * Administrator is hoop's own group and stays a switch. The Slack import
+ * lives in its own tab here, so an admin sees its result in Members.
  */
+
+const TABS = ['members', 'slack']
 
 function UserFormModal({ opened, onClose, formType, user, isLocalAuth, onSaved }) {
   // ADMIN_USERNAME renames the admin group, so its name comes from /serverinfo.
@@ -216,6 +221,9 @@ export default function ControlPlaneUsers() {
   // password — is computed once for the lifetime of the page.
   const [formKey, setFormKey] = useState(0)
   const openForm = () => { setFormKey((n) => n + 1); open() }
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tab = TABS.includes(searchParams.get('tab')) ? searchParams.get('tab') : 'members'
+  const setTab = (value) => setSearchParams(value === 'members' ? {} : { tab: value }, { replace: true })
 
   const showLoader = useMinDelay(loading)
 
@@ -262,96 +270,102 @@ export default function ControlPlaneUsers() {
             <Text c="dimmed" size="lg">
               {users.length} {users.length === 1 ? 'Member' : 'Members'}
             </Text>
-            <Text size="sm" c="dimmed">
-              {'Reviewers come from the Slack import or the groups you set here. See '}
-              <Anchor component={Link} to="/settings/provisioning" size="sm">
-                Provisioning
-              </Anchor>
-              {'.'}
-            </Text>
           </Stack>
-          {users.length !== 1 && (
+          {tab === 'members' && users.length !== 1 && (
             <Button onClick={handleAdd}>Add User</Button>
           )}
         </Group>
 
-        {users.length === 0 ? (
-          <EmptyState
-            title="No users yet"
-            description="Add your first user to get started."
-            action={{ label: 'Add User', onClick: handleAdd }}
-          />
-        ) : (
-          <>
-            <Table>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>Name</Table.Th>
-                  <Table.Th>Email</Table.Th>
-                  <Table.Th>Groups</Table.Th>
-                  <Table.Th>Status</Table.Th>
-                  <Table.Th w={80} />
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {[...users]
-                  .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''))
-                  .map((user) => {
-                    const groups = user.groups ?? []
-                    const others = groups.filter((g) => g !== adminRoleName)
-                    return (
-                      <Table.Tr key={user.id}>
-                        <Table.Td>
-                          <Group gap="xs" wrap="nowrap">
-                            <Text size="sm">{user.name ?? '—'}</Text>
-                            {groups.includes(adminRoleName) && (
-                              <Badge variant="light" color="indigo">
-                                Admin
-                              </Badge>
-                            )}
-                          </Group>
-                        </Table.Td>
-                        <Table.Td>{user.email ?? '—'}</Table.Td>
-                        <Table.Td>
-                          <Text size="sm" c="dimmed">
-                            {others.length > 0 ? others.join(', ') : '—'}
-                          </Text>
-                        </Table.Td>
-                        <Table.Td>
-                          <Badge variant={statusVariant(user.status)}>
-                            {user.status ?? '—'}
-                          </Badge>
-                        </Table.Td>
-                        <Table.Td>
-                          <Button variant="subtle" color="gray" size="sm" onClick={() => handleEdit(user)}>
-                            Edit
-                          </Button>
-                        </Table.Td>
-                      </Table.Tr>
-                    )
-                  })}
-              </Table.Tbody>
-            </Table>
+        <Tabs value={tab} onChange={setTab}>
+          <Tabs.List>
+            <Tabs.Tab value="members">Members</Tabs.Tab>
+            <Tabs.Tab value="slack">Slack import</Tabs.Tab>
+          </Tabs.List>
 
-            {users.length === 1 && (
-              <Stack flex={1} mih="30vh" align="center" py="xxl">
-                <Stack flex={1} align="center" justify="center" gap="lg">
-                  <Text size="sm" c="dimmed" ta="center" maw={400}>
-                    Invite administrators; reviewers come from Slack or the groups you set here.
-                  </Text>
-                  <Button onClick={handleAdd}>Invite Users</Button>
-                </Stack>
-                <Text mt="auto" size="sm" c="dimmed" ta="center">
-                  {'Need more information? Check out '}
-                  <Anchor href={docsUrl.clients.webApp.userManagement} target="_blank" size="sm">
-                    User Management documentation
-                  </Anchor>
-                  {'.'}
-                </Text>
-              </Stack>
+          <Tabs.Panel value="slack" pt="lg">
+            <SlackImportTab onSynced={fetchAll} />
+          </Tabs.Panel>
+
+          <Tabs.Panel value="members" pt="lg">
+            {users.length === 0 ? (
+              <EmptyState
+                title="No users yet"
+                description="Add your first user to get started."
+                action={{ label: 'Add User', onClick: handleAdd }}
+              />
+            ) : (
+              <>
+                <Table>
+                  <Table.Thead>
+                    <Table.Tr>
+                      <Table.Th>Name</Table.Th>
+                      <Table.Th>Email</Table.Th>
+                      <Table.Th>Groups</Table.Th>
+                      <Table.Th>Status</Table.Th>
+                      <Table.Th w={80} />
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {[...users]
+                      .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''))
+                      .map((user) => {
+                        const groups = user.groups ?? []
+                        const others = groups.filter((g) => g !== adminRoleName)
+                        return (
+                          <Table.Tr key={user.id}>
+                            <Table.Td>
+                              <Group gap="xs" wrap="nowrap">
+                                <Text size="sm">{user.name ?? '—'}</Text>
+                                {groups.includes(adminRoleName) && (
+                                  <Badge variant="light" color="indigo">
+                                    Admin
+                                  </Badge>
+                                )}
+                              </Group>
+                            </Table.Td>
+                            <Table.Td>{user.email ?? '—'}</Table.Td>
+                            <Table.Td>
+                              <Text size="sm" c="dimmed">
+                                {others.length > 0 ? others.join(', ') : '—'}
+                              </Text>
+                            </Table.Td>
+                            <Table.Td>
+                              <Badge variant={statusVariant(user.status)}>
+                                {user.status ?? '—'}
+                              </Badge>
+                            </Table.Td>
+                            <Table.Td>
+                              <Button variant="subtle" color="gray" size="sm" onClick={() => handleEdit(user)}>
+                                Edit
+                              </Button>
+                            </Table.Td>
+                          </Table.Tr>
+                        )
+                      })}
+                  </Table.Tbody>
+                </Table>
+
+                {users.length === 1 && (
+                  <Stack flex={1} mih="30vh" align="center" py="xxl">
+                    <Stack flex={1} align="center" justify="center" gap="lg">
+                      <Text size="sm" c="dimmed" ta="center" maw={400}>
+                        Invite administrators; reviewers come from Slack or the groups you set here.
+                      </Text>
+                      <Button onClick={handleAdd}>Invite Users</Button>
+                    </Stack>
+                    <Text mt="auto" size="sm" c="dimmed" ta="center">
+                      {'Need more information? Check out '}
+                      <Anchor href={docsUrl.clients.webApp.userManagement} target="_blank" size="sm">
+                        User Management documentation
+                      </Anchor>
+                      {'.'}
+                    </Text>
+                  </Stack>
+                )}
+              </>
             )}
-          </>
-        )}
+          </Tabs.Panel>
+        </Tabs>
       </Stack>
 
       <UserFormModal

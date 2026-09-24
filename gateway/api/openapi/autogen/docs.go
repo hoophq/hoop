@@ -8585,7 +8585,7 @@ const docTemplate = `{
                 }
             },
             "put": {
-                "description": "Configure the Slack directory sync: the user groups to sync, the interval, and whether member-managed user groups are accepted. It uses the org's Slack app. Control plane only.",
+                "description": "Configure the Slack import: the user groups to import and the interval. It uses the org's Slack app. A user group last edited by a member who is not a workspace admin or owner is refused at the run. Control plane only.",
                 "consumes": [
                     "application/json"
                 ],
@@ -8667,7 +8667,7 @@ const docTemplate = `{
         },
         "/serverconfig/directory-sync/groups": {
             "get": {
-                "description": "List the Slack user groups the directory sync can read, for choosing which ones to sync. admin_managed is false for a user group a member who is not a workspace admin or owner edited last; the sync refuses it unless member-managed groups are allowed. Control plane only.",
+                "description": "List the Slack user groups the directory sync can read, for choosing which ones to sync. admin_managed is false for a user group a member who is not a workspace admin or owner edited last; the import refuses it. Control plane only.",
                 "produces": [
                     "application/json"
                 ],
@@ -10764,7 +10764,7 @@ const docTemplate = `{
                 }
             },
             "put": {
-                "description": "Replace where the reviews of each listener of the sidecar are posted in Slack. A listener left out has no channels; the org's default channel still receives every review. Control plane only.",
+                "description": "Replace where the reviews of each listener of the sidecar are posted in Slack. A listener left out has no channels and uses the org's default channel. Control plane only.",
                 "consumes": [
                     "application/json"
                 ],
@@ -14960,10 +14960,6 @@ const docTemplate = `{
         "openapi.DirectorySyncConfig": {
             "type": "object",
             "properties": {
-                "allow_member_managed_groups": {
-                    "description": "Accept user groups last edited by a workspace member who is not an admin or owner",
-                    "type": "boolean"
-                },
                 "enabled": {
                     "description": "Whether a Slack import is configured",
                     "type": "boolean"
@@ -14993,10 +14989,6 @@ const docTemplate = `{
         "openapi.DirectorySyncRequest": {
             "type": "object",
             "properties": {
-                "allow_member_managed_groups": {
-                    "description": "Accept user groups last edited by a workspace member who is not an admin\nor owner. hoop cannot restrict who edits user groups; restrict it to\nadmins in the Slack workspace settings instead when you can.",
-                    "type": "boolean"
-                },
                 "group_ids": {
                     "description": "The Slack ids of the user groups whose members are synced",
                     "type": "array",

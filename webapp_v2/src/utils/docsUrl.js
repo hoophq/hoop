@@ -41,6 +41,11 @@ export const docsUrl = {
     dataMasking: 'https://hoop.dev/docs/features/data-masking',
     riskAnalysis: 'https://hoop.dev/docs/setup/configuration/hoop-sidecar/risk-analysis',
   },
+  controlPlane: {
+    // Slack app, channels per listener and the Slack import of reviewers
+    // (ADR-0020). The page is still to be written.
+    slack: 'https://hoop.dev/docs/control-plane/slack',
+  },
   setup: {
     agents: 'https://hoop.dev/docs/setup/agents',
     architecture: 'https://hoop.dev/docs/setup/architecture',

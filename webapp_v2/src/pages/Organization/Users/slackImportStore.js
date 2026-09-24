@@ -17,7 +17,7 @@ function message(error) {
   return error?.response?.data?.message || error?.message
 }
 
-export const useProvisioningStore = create((set, get) => ({
+export const useSlackImportStore = create((set, get) => ({
   ...EMPTY,
 
   reset: () => set({ ...EMPTY }),
@@ -85,6 +85,6 @@ export const useProvisioningStore = create((set, get) => ({
 // same tab must not see it.
 useAuthStore.subscribe((state, prev) => {
   if (prev.isAuthenticated && !state.isAuthenticated) {
-    useProvisioningStore.getState().reset()
+    useSlackImportStore.getState().reset()
   }
 })

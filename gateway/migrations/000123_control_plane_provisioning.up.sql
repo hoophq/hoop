@@ -9,17 +9,15 @@ SET search_path TO private;
 -- org's Slack app.
 
 -- One Slack import per organization. group_ids are the Slack ids of the user
--- groups whose members are imported. allow_member_managed_groups accepts
--- groups a workspace member who is not an admin edited last.
+-- groups whose members are imported.
 CREATE TABLE IF NOT EXISTS directory_sync_configs (
-    org_id                      UUID PRIMARY KEY REFERENCES orgs(id) ON DELETE CASCADE,
-    group_ids                   TEXT[] NOT NULL DEFAULT '{}',
-    interval_minutes            INTEGER NOT NULL DEFAULT 15 CHECK (interval_minutes >= 5),
-    allow_member_managed_groups BOOLEAN NOT NULL DEFAULT FALSE,
-    last_run_at                 TIMESTAMPTZ NULL,
-    last_error                  TEXT NULL,
-    created_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    org_id           UUID PRIMARY KEY REFERENCES orgs(id) ON DELETE CASCADE,
+    group_ids        TEXT[] NOT NULL DEFAULT '{}',
+    interval_minutes INTEGER NOT NULL DEFAULT 15 CHECK (interval_minutes >= 5),
+    last_run_at      TIMESTAMPTZ NULL,
+    last_error       TEXT NULL,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- The hoop groups the import owns, one per Slack user group. external_id is

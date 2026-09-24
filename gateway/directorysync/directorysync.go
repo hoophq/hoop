@@ -117,7 +117,7 @@ func reconcile(ctx context.Context, db *gorm.DB, orgID string, api slackDirector
 	if err != nil {
 		return nil, fmt.Errorf("failed reading slack: %w", err)
 	}
-	selected, err := w.selected(cfg.GroupIDs, cfg.AllowMemberManagedGroups)
+	selected, err := w.selected(cfg.GroupIDs)
 	if err != nil {
 		return nil, err
 	}

@@ -114,7 +114,7 @@ func GetSlackChannels(c *gin.Context) {
 // PutSlackChannels
 //
 //	@Summary		Set Sidecar Slack Channels
-//	@Description	Replace where the reviews of each listener of the sidecar are posted in Slack. A listener left out has no channels; the org's default channel still receives every review. Control plane only.
+//	@Description	Replace where the reviews of each listener of the sidecar are posted in Slack. A listener left out has no channels and uses the org's default channel. Control plane only.
 //	@Tags			Sidecars
 //	@Accept			json
 //	@Produce		json
