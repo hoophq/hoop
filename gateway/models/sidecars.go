@@ -133,6 +133,30 @@ func GetSidecarByNameOrID(db *gorm.DB, orgID, nameOrID string) (*Sidecar, error)
 	return &item, nil
 }
 
+// GetSidecarByNameOrIDForUpdate is GetSidecarByNameOrID with the row locked
+// until the caller's transaction ends.
+func GetSidecarByNameOrIDForUpdate(tx *gorm.DB, orgID, nameOrID string) (*Sidecar, error) {
+	identifierClause := "s.name = ?"
+	if _, err := uuid.Parse(nameOrID); err == nil {
+		identifierClause = "s.id = ?"
+	}
+	var item Sidecar
+	err := tx.Raw(`
+	SELECT`+sidecarColumns+`
+	FROM private.sidecars s
+	WHERE s.org_id = ? AND `+identifierClause+`
+	FOR UPDATE OF s`, orgID, nameOrID).
+		Scan(&item).
+		Error
+	if err != nil {
+		return nil, err
+	}
+	if item.ID == "" {
+		return nil, ErrNotFound
+	}
+	return &item, nil
+}
+
 // GetSidecarByKeyHash resolves the token holder. It is not org scoped: the
 // token identifies the organization.
 func GetSidecarByKeyHash(db *gorm.DB, keyHash string) (*Sidecar, error) {
@@ -206,6 +230,24 @@ func PatchSidecarConfiguration(db *gorm.DB, orgID, nameOrID string, merge json.R
 		string(merge), orgID, nameOrID).
 		Scan(&item).
 		Error
+	if err != nil {
+		return nil, err
+	}
+	if item.ID == "" {
+		return nil, ErrNotFound
+	}
+	return &item, nil
+}
+
+// ResetSidecarConfigurationTx empties the stored configuration, so the next
+// handshake answers 412 and the sidecar imports its config file again.
+func ResetSidecarConfigurationTx(tx *gorm.DB, orgID, id string) (*Sidecar, error) {
+	var item Sidecar
+	err := tx.Raw(`
+	UPDATE private.sidecars SET configuration = '{}'::jsonb
+	WHERE org_id = ? AND id = ?
+	RETURNING id, org_id, name, created_by, created_at, configuration`, orgID, id).
+		Scan(&item).Error
 	if err != nil {
 		return nil, err
 	}

@@ -10020,7 +10020,7 @@ const docTemplate = `{
                 }
             },
             "put": {
-                "description": "Authenticated with the hoop-sidecar-token header. Stores the config document a sidecar carried locally, once: the import is refused with 409 when the control plane already holds a configuration with listeners, or when the sidecar loads its configuration from disk.",
+                "description": "Authenticated with the hoop-sidecar-token header. Stores the config document a sidecar carried locally, once. Each guardrail and mask rule of the file becomes a rule item, and each listener analyzer block an analyzer rule, bound to the listeners that ran it. The import is refused with 409 when the control plane already holds a configuration with listeners, or when the sidecar loads its configuration from disk.",
                 "consumes": [
                     "application/json"
                 ],
@@ -10346,7 +10346,7 @@ const docTemplate = `{
                 }
             },
             "put": {
-                "description": "Replace the configuration a sidecar serves. The sidecar picks it up on its next heartbeat.",
+                "description": "Replace the configuration a sidecar serves. The sidecar picks it up on its next heartbeat. A change of load_from_disk is refused: use PATCH.",
                 "consumes": [
                     "application/json"
                 ],
@@ -10445,7 +10445,7 @@ const docTemplate = `{
                 }
             },
             "patch": {
-                "description": "Merge a partial configuration into the document a sidecar serves: the keys sent are updated and the rest are left as stored. Unlike PUT it never replaces the whole document, so it cannot overwrite a configuration a sidecar imported meanwhile. load_from_disk false clears the key, handing the document back to the control plane.",
+                "description": "Merge a partial configuration into the document a sidecar serves: the keys sent are updated and the rest are left as stored. Unlike PUT it never replaces the whole document, so it cannot overwrite a configuration a sidecar imported meanwhile. load_from_disk true deletes the rules imported from this sidecar that nothing else uses and unbinds the rest; detached_rules lists them. load_from_disk false must be sent alone. It clears the stored document, so the sidecar imports its config file again.",
                 "consumes": [
                     "application/json"
                 ],
@@ -19729,6 +19729,14 @@ const docTemplate = `{
                     "description": "Subject of the admin who created it",
                     "type": "string"
                 },
+                "detached_rules": {
+                    "description": "DetachedRules names the rules an owner switch removed, on the PATCH\nthat switched. Deleted rules came from this sidecar's file; unbound\nrules stay for their other targets.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.SidecarDetachedRules"
+                        }
+                    ]
+                },
                 "id": {
                     "description": "Unique identifier",
                     "type": "string",
@@ -19769,6 +19777,27 @@ const docTemplate = `{
                     "description": "Version reported at the last handshake. Empty until the sidecar calls.",
                     "type": "string",
                     "example": "1.0.0"
+                }
+            }
+        },
+        "openapi.SidecarDetachedRules": {
+            "type": "object",
+            "properties": {
+                "deleted": {
+                    "description": "Rules deleted: imported from this sidecar's file, with no target left.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.SidecarRuleNames"
+                        }
+                    ]
+                },
+                "unbound": {
+                    "description": "Rules only unbound from this sidecar.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.SidecarRuleNames"
+                        }
+                    ]
                 }
             }
         },
@@ -19849,6 +19878,14 @@ const docTemplate = `{
                 "created_by": {
                     "description": "Subject of the admin who created it",
                     "type": "string"
+                },
+                "detached_rules": {
+                    "description": "DetachedRules names the rules an owner switch removed, on the PATCH\nthat switched. Deleted rules came from this sidecar's file; unbound\nrules stay for their other targets.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.SidecarDetachedRules"
+                        }
+                    ]
                 },
                 "id": {
                     "description": "Unique identifier",
@@ -19950,6 +19987,29 @@ const docTemplate = `{
                     "description": "The rule's name",
                     "type": "string",
                     "example": "no-destructive-sql"
+                }
+            }
+        },
+        "openapi.SidecarRuleNames": {
+            "type": "object",
+            "properties": {
+                "analyzers": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "data_masking": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "guardrails": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },

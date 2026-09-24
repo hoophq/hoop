@@ -5,7 +5,6 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 // The guardrail junction, and the calls that bind it. One file per junction so
@@ -17,6 +16,7 @@ type GuardrailRuleListener struct {
 	RuleName     string    `gorm:"column:guardrail_rule_name;primaryKey"`
 	SidecarID    string    `gorm:"column:sidecar_id;primaryKey"`
 	ListenerName string    `gorm:"column:listener_name;primaryKey"`
+	Position     int       `gorm:"column:position"`
 	CreatedAt    time.Time `gorm:"column:created_at;autoCreateTime"`
 }
 
@@ -33,7 +33,7 @@ func ListGuardrailRulesForSidecar(db *gorm.DB, orgID uuid.UUID, sidecarID string
 	FROM private.guardrail_rules_listeners b
 	JOIN private.guardrail_rules r ON r.org_id = b.org_id AND r.name = b.guardrail_rule_name
 	WHERE b.org_id = ? AND b.sidecar_id = ?
-	ORDER BY b.listener_name, r.name`, orgID, sidecarID).Scan(&out).Error
+	ORDER BY b.listener_name, b.position, r.name`, orgID, sidecarID).Scan(&out).Error
 	return out, err
 }
 
@@ -57,22 +57,7 @@ func SetGuardrailRuleListeners(db *gorm.DB, orgID uuid.UUID, ruleName string, ta
 // commits before its bindings fail leaves the OLD bindings serving the NEW
 // spec -- the one combination the gate refuses.
 func SetGuardrailRuleListenersTx(tx *gorm.DB, orgID uuid.UUID, ruleName string, targets []SidecarRuleTarget) error {
-	err := tx.Where("org_id = ? AND guardrail_rule_name = ?", orgID, ruleName).
-		Delete(&GuardrailRuleListener{}).Error
-	if err != nil {
-		return err
-	}
-	if len(targets) == 0 {
-		return nil
-	}
-	rows := make([]GuardrailRuleListener, 0, len(targets))
-	for _, t := range targets {
-		rows = append(rows, GuardrailRuleListener{
-			OrgID: orgID, RuleName: ruleName,
-			SidecarID: t.SidecarID, ListenerName: t.ListenerName,
-		})
-	}
-	return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error
+	return setRuleListenersTx(tx, "private.guardrail_rules_listeners", "guardrail_rule_name", orgID, ruleName, targets)
 }
 
 // ListGuardrailRuleTargets returns where one rule is bound, for the API to

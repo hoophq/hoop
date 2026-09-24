@@ -82,6 +82,17 @@ export const useSidecarStore = create((set, get) => ({
     }
   },
 
+  // Re-read one sidecar in place, with no loading state, so a dialog that
+  // opens on it counts what the gateway holds now.
+  refreshSidecar: async (id) => {
+    const { data } = await sidecarsService.get(id)
+    set((state) => ({
+      sidecars: state.sidecars.map((s) => (s.id === data.id ? data : s)),
+      selected: state.selected?.id === data.id ? data : state.selected,
+    }))
+    return data
+  },
+
   // The selected record belongs to one page view, not to the app: a details
   // page that unmounts drops it. Keeping it would let the next visit to the
   // same URL paint a record minutes old — or one already deleted — before the
@@ -105,12 +116,13 @@ export const useSidecarStore = create((set, get) => ({
 
   // Flip which side owns this sidecar's configuration.
   //
-  // One atomic PATCH merges only `load_from_disk`, so the flip never has to
-  // read the stored document and write it back: a configuration a sidecar
-  // imported meanwhile keeps its listeners instead of being overwritten by a
-  // stale copy.
-  setLoadFromDisk: async (id, loadFromDisk) => {
-    const { data: updated } = await sidecarsService.patch(id, { load_from_disk: loadFromDisk })
+  // One atomic PATCH merges only `load_from_disk`. To the config file, the
+  // gateway deletes the rules imported from this sidecar that nothing else
+  // uses and unbinds the rest; `detached_rules` lists them. Back to the
+  // control plane, the stored document is emptied and the sidecar imports its
+  // file again.
+  setUsesConfigFile: async (id, usesConfigFile) => {
+    const { data: updated } = await sidecarsService.patch(id, { load_from_disk: usesConfigFile })
     set((state) => ({
       sidecars: state.sidecars.map((s) => (s.id === updated.id ? updated : s)),
       // Only the record on screen: a flip still in flight when the route

@@ -74,6 +74,16 @@ func AnalyzerRuleHolds(spec json.RawMessage) bool {
 	return false
 }
 
+// specApprovalRule reads the approval_rule a spec names, empty when it does
+// not decode.
+func specApprovalRule(spec json.RawMessage) string {
+	var block daemon.LaneAnalyzerConfig
+	if err := decodeSpec(spec, &block); err != nil {
+		return ""
+	}
+	return block.ApprovalRule
+}
+
 // analyzerReviewAction is the daemon's own spelling, quoted once.
 const analyzerReviewAction = "require_review"
 
@@ -84,7 +94,9 @@ const analyzerReviewAction = "require_review"
 // rule that held statements and lost its approval rule halfway would deny
 // every matching statement with no way to release one.
 func SyncAnalyzerApprovalRule(tx *gorm.DB, orgID uuid.UUID, ruleName string, spec json.RawMessage) error {
-	if AnalyzerRuleHolds(spec) {
+	// Only a hold that names this rule's own approval rule is ours to keep.
+	// One naming another rule leaves that rule alone, as an admin wrote it.
+	if AnalyzerRuleHolds(spec) && specApprovalRule(spec) == ruleName {
 		return upsertAnalyzerApprovalRule(tx, orgID, ruleName)
 	}
 	return DeleteAnalyzerApprovalRule(tx, orgID, ruleName)

@@ -5,7 +5,6 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 // The data masking junction, and the calls that bind it. One file per junction
@@ -17,6 +16,7 @@ type DatamaskingRuleListener struct {
 	RuleName     string    `gorm:"column:datamasking_rule_name;primaryKey"`
 	SidecarID    string    `gorm:"column:sidecar_id;primaryKey"`
 	ListenerName string    `gorm:"column:listener_name;primaryKey"`
+	Position     int       `gorm:"column:position"`
 	CreatedAt    time.Time `gorm:"column:created_at;autoCreateTime"`
 }
 
@@ -29,7 +29,7 @@ func ListDataMaskingRulesForSidecar(db *gorm.DB, orgID uuid.UUID, sidecarID stri
 	FROM private.datamasking_rules_listeners b
 	JOIN private.datamasking_rules r ON r.org_id = b.org_id AND r.name = b.datamasking_rule_name
 	WHERE b.org_id = ? AND b.sidecar_id = ?
-	ORDER BY b.listener_name, r.name`, orgID, sidecarID).Scan(&out).Error
+	ORDER BY b.listener_name, b.position, r.name`, orgID, sidecarID).Scan(&out).Error
 	return out, err
 }
 
@@ -40,19 +40,7 @@ func SetDataMaskingRuleListeners(db *gorm.DB, orgID uuid.UUID, ruleName string, 
 }
 
 func SetDataMaskingRuleListenersTx(tx *gorm.DB, orgID uuid.UUID, ruleName string, targets []SidecarRuleTarget) error {
-	err := tx.Where("org_id = ? AND datamasking_rule_name = ?", orgID, ruleName).
-		Delete(&DatamaskingRuleListener{}).Error
-	if err != nil || len(targets) == 0 {
-		return err
-	}
-	rows := make([]DatamaskingRuleListener, 0, len(targets))
-	for _, t := range targets {
-		rows = append(rows, DatamaskingRuleListener{
-			OrgID: orgID, RuleName: ruleName,
-			SidecarID: t.SidecarID, ListenerName: t.ListenerName,
-		})
-	}
-	return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&rows).Error
+	return setRuleListenersTx(tx, "private.datamasking_rules_listeners", "datamasking_rule_name", orgID, ruleName, targets)
 }
 
 func ListDataMaskingRuleTargets(db *gorm.DB, orgID uuid.UUID, ruleName string) ([]SidecarRuleTarget, error) {

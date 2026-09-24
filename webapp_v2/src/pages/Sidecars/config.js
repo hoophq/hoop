@@ -131,6 +131,6 @@ export function hasConfiguration(config) {
 
 // The control plane released this sidecar's configuration: it answers the
 // handshake with the license alone and the sidecar runs its own config file
-// (resolveConfigSource, sidecar/daemon/controlplane.go). The stored document
-// below stays readable and is not applied.
-export const loadsFromDisk = (sidecar) => sidecar?.configuration?.load_from_disk === true
+// (resolveConfigSource, sidecar/daemon/controlplane.go). The API key keeps its
+// wire name, load_from_disk.
+export const usesConfigFile = (sidecar) => sidecar?.configuration?.load_from_disk === true

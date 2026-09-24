@@ -306,6 +306,22 @@ type SidecarPatchRequest struct {
 	Configuration json.RawMessage `json:"configuration" binding:"required" swaggertype:"object"`
 }
 
+// SidecarDetachedRules lists what an owner switch did to the rules of one
+// sidecar, by feature.
+type SidecarDetachedRules struct {
+	// Rules deleted: imported from this sidecar's file, with no target left.
+	Deleted SidecarRuleNames `json:"deleted"`
+	// Rules only unbound from this sidecar.
+	Unbound SidecarRuleNames `json:"unbound"`
+}
+
+// SidecarRuleNames names rules by feature.
+type SidecarRuleNames struct {
+	Guardrails  []string `json:"guardrails"`
+	DataMasking []string `json:"data_masking"`
+	Analyzers   []string `json:"analyzers"`
+}
+
 type SidecarResponse struct {
 	// Unique identifier
 	ID string `json:"id" readonly:"true" format:"uuid"`
@@ -328,6 +344,10 @@ type SidecarResponse struct {
 	// has to exist — a page reading Configuration alone shows a listener
 	// enforcing nothing while the sidecar enforces the rule.
 	BoundRules []SidecarRuleBinding `json:"bound_rules,omitempty"`
+	// DetachedRules names the rules an owner switch removed, on the PATCH
+	// that switched. Deleted rules came from this sidecar's file; unbound
+	// rules stay for their other targets.
+	DetachedRules *SidecarDetachedRules `json:"detached_rules,omitempty"`
 	// Version reported at the last handshake. Empty until the sidecar calls.
 	Version string `json:"version,omitempty" example:"1.0.0"`
 	// Last time the sidecar handshook. Empty until it does.

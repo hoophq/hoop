@@ -796,7 +796,8 @@ func TestTheHoldSwitchOwnsItsApprovalRule(t *testing.T) {
 	if err := models.CreateAccessRequestRule(models.DB, handMade); err != nil {
 		t.Fatalf("seed a hand-made rule: %v", err)
 	}
-	err = services.SyncAnalyzerApprovalRule(models.DB, orgID, "ops-review", json.RawMessage(holding))
+	err = services.SyncAnalyzerApprovalRule(models.DB, orgID, "ops-review",
+		json.RawMessage(`{"high":"require_review","approval_rule":"ops-review"}`))
 	if err == nil {
 		t.Fatal("a hold must not take over an access request rule it did not create")
 	}
@@ -816,5 +817,468 @@ func TestTheHoldSwitchOwnsItsApprovalRule(t *testing.T) {
 	}
 	if _, err := models.GetAccessRequestRuleByName(models.DB, "ops-review", orgID); err != nil {
 		t.Errorf("a rule this feature does not own was deleted: %v", err)
+	}
+}
+
+// TestImportAndDetachSidecarRules runs an import through the real schema, then
+// the switch to the config file: a rule only this sidecar uses is deleted with
+// its approval rule, and a rule another sidecar also uses stays for it.
+func TestImportAndDetachSidecarRules(t *testing.T) {
+	startTestDB(t)
+	orgID := uuid.MustParse(testOrgID)
+
+	newSidecar := func(name string) *models.Sidecar {
+		sc := &models.Sidecar{
+			OrgID: testOrgID, Name: name, KeyHash: models.HashAPIKey("hsc_" + name),
+			CreatedBy: "tests@hoop.dev",
+		}
+		if err := models.CreateSidecar(models.DB, sc); err != nil {
+			t.Fatalf("seed sidecar %s: %v", name, err)
+		}
+		return sc
+	}
+	a, b := newSidecar("detach-a"), newSidecar("detach-b")
+
+	cfg, err := services.ParseSidecarConfiguration([]byte(`{
+		"guardrails": {"rules": [{"name": "shared", "type": "deny_words_list", "words": ["x"]}]},
+		"listeners": [{
+			"name": "appdb", "protocol": "postgres", "listen": ":5432", "upstream": "db:5432",
+			"guardrails": {"rules": [{"name": "own", "type": "deny_words_list", "words": ["y"]}]},
+			"mask": {"rules": [{"name": "emails", "entities": ["EMAIL_ADDRESS"], "strategy": "redact"}]},
+			"analyzer": {"high": "require_review", "approval_rule": "x"}
+		}]}`))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	stripped, rules, err := services.SplitSidecarConfiguration(a.Name, cfg,
+		services.ImportedRuleNameTaken(models.DB, testOrgID))
+	if err != nil {
+		t.Fatalf("split: %v", err)
+	}
+	err = models.DB.Transaction(func(tx *gorm.DB) error {
+		if _, err := models.AdoptSidecarConfiguration(tx, testOrgID, a.ID, models.SidecarConfiguration(stripped)); err != nil {
+			return err
+		}
+		return services.ImportSidecarRulesTx(tx, testOrgID, a.ID, rules)
+	})
+	if err != nil {
+		t.Fatalf("import: %v", err)
+	}
+	stored, err := models.GetSidecarByNameOrID(models.DB, testOrgID, a.ID)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	composed, err := services.ComposeSidecarConfiguration(models.DB, stored)
+	if err != nil {
+		t.Fatalf("compose the imported sidecar: %v", err)
+	}
+	if lane := composed.Listeners[0]; lane.Guardrails == nil || len(lane.Guardrails.Rules) != 2 ||
+		lane.Mask == nil || lane.Analyzer == nil || lane.Analyzer.ApprovalRule != "detach-a-appdb-analyzer" {
+		t.Fatalf("the composed lane lost file rules: %+v", lane)
+	}
+	if _, err := models.GetAccessRequestRuleByName(models.DB, "detach-a-appdb-analyzer", orgID); err != nil {
+		t.Fatalf("the hold's approval rule was not created: %v", err)
+	}
+
+	// The top-level rule is also bound to another sidecar.
+	if err := models.SetGuardrailRuleListeners(models.DB, orgID, "detach-a-shared", []models.SidecarRuleTarget{
+		{SidecarID: a.ID, ListenerName: "appdb"}, {SidecarID: b.ID, ListenerName: "other"},
+	}); err != nil {
+		t.Fatalf("share: %v", err)
+	}
+
+	var detached models.DetachedSidecarRules
+	err = models.DB.Transaction(func(tx *gorm.DB) error {
+		var derr error
+		detached, derr = services.DetachSidecarRulesTx(tx, testOrgID, a.ID)
+		return derr
+	})
+	if err != nil {
+		t.Fatalf("detach: %v", err)
+	}
+	if fmt.Sprint(detached.Guardrails) != "[detach-a-appdb-own]" ||
+		fmt.Sprint(detached.Masking) != "[detach-a-appdb-emails]" ||
+		fmt.Sprint(detached.Analyzers) != "[detach-a-appdb-analyzer]" {
+		t.Fatalf("deleted: %+v", detached)
+	}
+	if fmt.Sprint(detached.Unbound.Guardrails) != "[detach-a-shared]" {
+		t.Fatalf("unbound: %+v", detached.Unbound)
+	}
+	if bound, _ := models.ListSidecarRuleBindings(models.DB, orgID, a.ID); len(bound) != 0 {
+		t.Fatalf("bindings left on the detached sidecar: %+v", bound)
+	}
+	if targets, _ := models.ListGuardrailRuleTargets(models.DB, orgID, "detach-a-shared"); len(targets) != 1 ||
+		targets[0].SidecarID != b.ID {
+		t.Fatalf("the shared rule must stay bound to the other sidecar, got %+v", targets)
+	}
+	if _, err := models.GetAccessRequestRuleByName(models.DB, "detach-a-appdb-analyzer", orgID); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("the approval rule outlived its analyzer rule: %v", err)
+	}
+}
+
+// A sidecar that runs its config file takes no control-plane rule.
+func TestABindingToAConfigFileSidecarIsRefused(t *testing.T) {
+	startTestDB(t)
+	on := true
+	sc := &models.Sidecar{
+		OrgID: testOrgID, Name: "file-mode", KeyHash: models.HashAPIKey("hsc_file_mode"),
+		CreatedBy: "tests@hoop.dev",
+		Configuration: models.SidecarConfiguration{LoadFromDisk: &on, Listeners: []daemon.ListenerConfig{{
+			Name: "appdb", Protocol: "postgres", Listen: ":5432", Upstream: "db:5432",
+		}}},
+	}
+	if err := models.CreateSidecar(models.DB, sc); err != nil {
+		t.Fatalf("seed sidecar: %v", err)
+	}
+	err := services.ValidateSidecarRuleTargets(models.DB, testOrgID, services.SidecarRuleGuardrail, "r", "",
+		json.RawMessage(`{"rules":[{"name":"r","type":"deny_words_list","words":["x"]}]}`),
+		[]models.SidecarRuleTarget{{SidecarID: sc.ID, ListenerName: "appdb"}})
+	if err == nil || !strings.Contains(err.Error(), "config file") {
+		t.Fatalf("want a refusal naming the config file, got %v", err)
+	}
+}
+
+// The owner-switch read takes the row lock, and still finds the row by name
+// or id and refuses an unknown one.
+func TestGetSidecarByNameOrIDForUpdate(t *testing.T) {
+	startTestDB(t)
+	sc := &models.Sidecar{OrgID: testOrgID, Name: "lock-me", KeyHash: models.HashAPIKey("hsc_lock_me"),
+		CreatedBy: "tests@hoop.dev"}
+	if err := models.CreateSidecar(models.DB, sc); err != nil {
+		t.Fatalf("seed sidecar: %v", err)
+	}
+	err := models.DB.Transaction(func(tx *gorm.DB) error {
+		for _, key := range []string{sc.ID, sc.Name} {
+			got, err := models.GetSidecarByNameOrIDForUpdate(tx, testOrgID, key)
+			if err != nil || got.ID != sc.ID {
+				return fmt.Errorf("lookup by %q: %v, %+v", key, err, got)
+			}
+		}
+		if _, err := models.GetSidecarByNameOrIDForUpdate(tx, testOrgID, "missing"); !errors.Is(err, models.ErrNotFound) {
+			return fmt.Errorf("want ErrNotFound for an unknown sidecar, got %v", err)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// importFile runs the whole import the handler runs: split, adopt, write the
+// items, all in one transaction.
+func importFile(t *testing.T, sc *models.Sidecar, doc string) {
+	t.Helper()
+	cfg, err := services.ParseSidecarConfiguration([]byte(doc))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	stripped, rules, err := services.SplitSidecarConfiguration(sc.Name, cfg,
+		services.ImportedRuleNameTaken(models.DB, testOrgID))
+	if err != nil {
+		t.Fatalf("split: %v", err)
+	}
+	err = models.DB.Transaction(func(tx *gorm.DB) error {
+		if _, err := models.AdoptSidecarConfiguration(tx, testOrgID, sc.ID, models.SidecarConfiguration(stripped)); err != nil {
+			return err
+		}
+		return services.ImportSidecarRulesTx(tx, testOrgID, sc.ID, rules)
+	})
+	if err != nil {
+		t.Fatalf("import: %v", err)
+	}
+}
+
+func composedLane(t *testing.T, sc *models.Sidecar, lane string) daemon.ListenerConfig {
+	t.Helper()
+	stored, err := models.GetSidecarByNameOrID(models.DB, testOrgID, sc.ID)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	composed, err := services.ComposeSidecarConfiguration(models.DB, stored)
+	if err != nil {
+		t.Fatalf("compose: %v", err)
+	}
+	for _, l := range composed.Listeners {
+		if l.Name == lane {
+			return l
+		}
+	}
+	t.Fatalf("lane %q is gone", lane)
+	return daemon.ListenerConfig{}
+}
+
+func newTestSidecar(t *testing.T, name string) *models.Sidecar {
+	t.Helper()
+	sc := &models.Sidecar{OrgID: testOrgID, Name: name, KeyHash: models.HashAPIKey("hsc_" + name),
+		CreatedBy: "tests@hoop.dev"}
+	if err := models.CreateSidecar(models.DB, sc); err != nil {
+		t.Fatalf("seed sidecar %s: %v", name, err)
+	}
+	return sc
+}
+
+// The daemon runs rules in order and the first match wins, so the composed
+// lane must list them as the file did: the lane's own rules, then the
+// top-level ones, and mask entries as written.
+func TestAnImportKeepsTheFileOrder(t *testing.T) {
+	startTestDB(t)
+	sc := newTestSidecar(t, "order-edge")
+	importFile(t, sc, `{
+		"guardrails": {"rules": [{"name": "aaa-top", "type": "deny_words_list", "words": ["x"]}]},
+		"listeners": [{
+			"name": "appdb", "protocol": "postgres", "listen": ":5432", "upstream": "db:5432",
+			"guardrails": {"rules": [{"name": "zzz-lane", "type": "deny_words_list", "words": ["y"]}]},
+			"mask": {"rules": [
+				{"name": "zeta", "entities": ["EMAIL_ADDRESS"], "strategy": "redact"},
+				{"name": "alpha", "entities": ["US_SSN"], "strategy": "redact"},
+				{"entities": ["CREDIT_CARD"], "strategy": "redact"}, {"entities": ["IBAN_CODE"], "strategy": "redact"},
+				{"entities": ["PHONE_NUMBER"], "strategy": "redact"}, {"entities": ["IP_ADDRESS"], "strategy": "redact"},
+				{"entities": ["URL"], "strategy": "redact"}, {"entities": ["PERSON"], "strategy": "redact"},
+				{"entities": ["LOCATION"], "strategy": "redact"}, {"entities": ["BR_CPF"], "strategy": "redact"}
+			]}
+		}]}`)
+	lane := composedLane(t, sc, "appdb")
+
+	var names []string
+	for _, r := range lane.Guardrails.Rules {
+		names = append(names, r.Name)
+	}
+	if fmt.Sprint(names) != "[zzz-lane aaa-top]" {
+		t.Errorf("guardrail order = %v, want [zzz-lane aaa-top]", names)
+	}
+	var entries []struct {
+		Name     string   `json:"name"`
+		Entities []string `json:"entities"`
+	}
+	if err := json.Unmarshal(lane.Mask.Rules, &entries); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, e := range entries {
+		got = append(got, e.Name+"/"+strings.Join(e.Entities, ","))
+	}
+	want := "[zeta/EMAIL_ADDRESS alpha/US_SSN /CREDIT_CARD /IBAN_CODE /PHONE_NUMBER /IP_ADDRESS /URL /PERSON /LOCATION /BR_CPF]"
+	if fmt.Sprint(got) != want {
+		t.Errorf("mask order = %v\nwant %s", got, want)
+	}
+}
+
+// A hold keeps the approval rule the file names when the control plane has
+// it: the reviewers and the count an admin chose stay the ones that release.
+func TestAnImportKeepsAnExistingApprovalRule(t *testing.T) {
+	startTestDB(t)
+	orgID := uuid.MustParse(testOrgID)
+	two := 2
+	if err := models.CreateAccessRequestRule(models.DB, &models.AccessRequestRule{
+		OrgID: orgID, Name: "dba", AccessType: models.AccessTypeSidecar,
+		ConnectionNames: []string{}, ApprovalRequiredGroups: []string{},
+		ReviewersGroups: []string{"dba-team"}, ForceApprovalGroups: []string{}, MinApprovals: &two,
+	}); err != nil {
+		t.Fatalf("seed approval rule: %v", err)
+	}
+	sc := newTestSidecar(t, "hold-edge")
+	importFile(t, sc, `{"listeners": [{
+		"name": "appdb", "protocol": "postgres", "listen": ":5432", "upstream": "db:5432",
+		"analyzer": {"high": "require_review", "approval_rule": "dba"}}]}`)
+
+	if got := composedLane(t, sc, "appdb").Analyzer.ApprovalRule; got != "dba" {
+		t.Errorf("approval_rule = %q, want the file's %q", got, "dba")
+	}
+	if _, err := models.GetAccessRequestRuleByName(models.DB, "hold-edge-appdb-analyzer", orgID); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Errorf("a managed approval rule was created beside the file's: %v", err)
+	}
+	dba, err := models.GetAccessRequestRuleByName(models.DB, "dba", orgID)
+	if err != nil || dba.MinApprovals == nil || *dba.MinApprovals != 2 || fmt.Sprint(dba.ReviewersGroups) != "[dba-team]" {
+		t.Errorf("the file's approval rule changed: %+v, %v", dba, err)
+	}
+}
+
+// An analyzer block with only overrides decides nothing, so it stays in the
+// lane rather than becoming a rule that allows everything.
+func TestAnImportKeepsAnOverrideOnlyAnalyzerBlock(t *testing.T) {
+	startTestDB(t)
+	sc := newTestSidecar(t, "budget-edge")
+	importFile(t, sc, `{"listeners": [{
+		"name": "appdb", "protocol": "postgres", "listen": ":5432", "upstream": "db:5432",
+		"analyzer": {"max_calls": 40}}]}`)
+
+	if bound, _ := models.ListSidecarRuleBindings(models.DB, uuid.MustParse(testOrgID), sc.ID); len(bound) != 0 {
+		t.Errorf("want no rule for an override-only block, got %+v", bound)
+	}
+	if a := composedLane(t, sc, "appdb").Analyzer; a == nil || a.MaxCalls != 40 {
+		t.Errorf("the lane lost its block: %+v", a)
+	}
+}
+
+// An admin's rule goes after the imported ones, and saving it again keeps its
+// place rather than moving it to the end.
+func TestABoundRuleKeepsItsPlace(t *testing.T) {
+	startTestDB(t)
+	orgID := uuid.MustParse(testOrgID)
+	sc := newTestSidecar(t, "place-edge")
+	importFile(t, sc, `{"listeners": [{
+		"name": "appdb", "protocol": "postgres", "listen": ":5432", "upstream": "db:5432",
+		"guardrails": {"rules": [{"name": "first", "type": "deny_words_list", "words": ["x"]}]}}]}`)
+
+	for _, name := range []string{"aaa-admin", "bbb-admin"} {
+		rule := &models.GuardRailRules{OrgID: testOrgID, ID: uuid.NewString(), Name: name,
+			Input: map[string]any{}, Output: map[string]any{},
+			SidecarSpec: json.RawMessage(`{"rules":[{"name":"` + name + `","type":"deny_words_list","words":["z"]}]}`)}
+		if err := models.UpsertGuardRailRuleWithConnections(rule, nil, true); err != nil {
+			t.Fatalf("seed %s: %v", name, err)
+		}
+		if err := models.SetGuardrailRuleListeners(models.DB, orgID, name,
+			[]models.SidecarRuleTarget{{SidecarID: sc.ID, ListenerName: "appdb"}}); err != nil {
+			t.Fatalf("bind %s: %v", name, err)
+		}
+	}
+	// Saved again: it must not jump behind bbb-admin.
+	if err := models.SetGuardrailRuleListeners(models.DB, orgID, "aaa-admin",
+		[]models.SidecarRuleTarget{{SidecarID: sc.ID, ListenerName: "appdb"}}); err != nil {
+		t.Fatalf("rebind: %v", err)
+	}
+	var names []string
+	for _, r := range composedLane(t, sc, "appdb").Guardrails.Rules {
+		names = append(names, r.Name)
+	}
+	if fmt.Sprint(names) != "[first aaa-admin bbb-admin]" {
+		t.Errorf("order = %v, want [first aaa-admin bbb-admin]", names)
+	}
+}
+
+// The switch to the config file deletes only a rule the file brought. A rule
+// an admin wrote, and one a rulepack owns, are only unbound.
+func TestADetachDeletesOnlyImportedRules(t *testing.T) {
+	startTestDB(t)
+	orgID := uuid.MustParse(testOrgID)
+	sc := newTestSidecar(t, "keep-edge")
+	importFile(t, sc, `{"listeners": [{
+		"name": "appdb", "protocol": "postgres", "listen": ":5432", "upstream": "db:5432",
+		"guardrails": {"rules": [
+			{"name": "own", "type": "deny_words_list", "words": ["x"]},
+			{"name": "packed", "type": "deny_words_list", "words": ["y"]}
+		]}}]}`)
+	var packID string
+	if err := models.DB.Raw(`INSERT INTO private.rulepacks (org_id, display_name) VALUES (?, 'pack') RETURNING id`,
+		testOrgID).Scan(&packID).Error; err != nil {
+		t.Fatalf("seed rulepack: %v", err)
+	}
+	if err := models.DB.Exec(`UPDATE private.guardrail_rules SET rulepack_id = ? WHERE org_id = ? AND name = 'keep-edge-appdb-packed'`,
+		packID, testOrgID).Error; err != nil {
+		t.Fatalf("own by rulepack: %v", err)
+	}
+	hand := &models.GuardRailRules{OrgID: testOrgID, ID: uuid.NewString(), Name: "hand",
+		Input: map[string]any{"rules": []any{}}, Output: map[string]any{"rules": []any{}},
+		SidecarSpec: json.RawMessage(`{"rules":[{"name":"hand","type":"deny_words_list","words":["z"]}]}`)}
+	if err := models.UpsertGuardRailRuleWithConnections(hand, nil, true); err != nil {
+		t.Fatalf("seed hand-written rule: %v", err)
+	}
+	if err := models.SetGuardrailRuleListeners(models.DB, orgID, "hand",
+		[]models.SidecarRuleTarget{{SidecarID: sc.ID, ListenerName: "appdb"}}); err != nil {
+		t.Fatalf("bind hand-written rule: %v", err)
+	}
+
+	var out models.DetachedSidecarRules
+	err := models.DB.Transaction(func(tx *gorm.DB) error {
+		var derr error
+		out, derr = services.DetachSidecarRulesTx(tx, testOrgID, sc.ID)
+		return derr
+	})
+	if err != nil {
+		t.Fatalf("detach: %v", err)
+	}
+	if fmt.Sprint(out.Guardrails) != "[keep-edge-appdb-own]" {
+		t.Errorf("deleted = %v, want only the imported rule", out.Guardrails)
+	}
+	if fmt.Sprint(out.Unbound.Guardrails) != "[hand keep-edge-appdb-packed]" {
+		t.Errorf("unbound = %v, want the hand-written and the rulepack rule", out.Unbound.Guardrails)
+	}
+	for _, name := range []string{"hand", "keep-edge-appdb-packed"} {
+		var n int64
+		models.DB.Raw(`SELECT count(*) FROM private.guardrail_rules WHERE org_id = ? AND name = ?`, testOrgID, name).Scan(&n)
+		if n != 1 {
+			t.Errorf("rule %q did not survive the detach", name)
+		}
+	}
+}
+
+// A rule bound to a sidecar before it moved to its config file stays
+// editable with that binding. Only a new binding there is refused.
+func TestAnEditKeepsABindingToAConfigFileSidecar(t *testing.T) {
+	startTestDB(t)
+	orgID := uuid.MustParse(testOrgID)
+	lanes := []daemon.ListenerConfig{
+		{Name: "appdb", Protocol: "postgres", Listen: ":5432", Upstream: "db:5432"},
+		{Name: "other", Protocol: "postgres", Listen: ":5433", Upstream: "db:5432"},
+	}
+	sc := &models.Sidecar{OrgID: testOrgID, Name: "held-edge", KeyHash: models.HashAPIKey("hsc_held_edge"),
+		CreatedBy: "tests@hoop.dev", Configuration: models.SidecarConfiguration{Listeners: lanes}}
+	if err := models.CreateSidecar(models.DB, sc); err != nil {
+		t.Fatalf("seed sidecar: %v", err)
+	}
+	spec := json.RawMessage(`{"rules":[{"name":"held","type":"deny_words_list","words":["x"]}]}`)
+	rule := &models.GuardRailRules{OrgID: testOrgID, ID: uuid.NewString(), Name: "held",
+		Input: map[string]any{"rules": []any{}}, Output: map[string]any{"rules": []any{}}, SidecarSpec: spec}
+	if err := models.UpsertGuardRailRuleWithConnections(rule, nil, true); err != nil {
+		t.Fatalf("seed rule: %v", err)
+	}
+	if err := models.SetGuardrailRuleListeners(models.DB, orgID, "held",
+		[]models.SidecarRuleTarget{{SidecarID: sc.ID, ListenerName: "appdb"}}); err != nil {
+		t.Fatalf("bind: %v", err)
+	}
+	on := true
+	if _, err := models.UpdateSidecarConfiguration(models.DB, testOrgID, sc.ID,
+		models.SidecarConfiguration{LoadFromDisk: &on, Listeners: lanes}); err != nil {
+		t.Fatalf("switch to the file: %v", err)
+	}
+
+	old := models.SidecarRuleTarget{SidecarID: sc.ID, ListenerName: "appdb"}
+	if err := services.ValidateSidecarRuleTargets(models.DB, testOrgID, services.SidecarRuleGuardrail,
+		"held", "held", spec, []models.SidecarRuleTarget{old}); err != nil {
+		t.Fatalf("an edit that keeps the old binding was refused: %v", err)
+	}
+	err := services.ValidateSidecarRuleTargets(models.DB, testOrgID, services.SidecarRuleGuardrail,
+		"held", "held", spec, []models.SidecarRuleTarget{old, {SidecarID: sc.ID, ListenerName: "other"}})
+	if err == nil || !strings.Contains(err.Error(), "config file") {
+		t.Fatalf("want a new binding refused, got %v", err)
+	}
+}
+
+// A name another writer took between the split and the insert is a conflict
+// the sidecar can retry, not a server error.
+func TestAnImportNamesATakenRuleAsAConflict(t *testing.T) {
+	startTestDB(t)
+	sc := newTestSidecar(t, "race-edge")
+	spec := json.RawMessage(`{"rules":[{"name":"taken","type":"deny_words_list","words":["x"]}]}`)
+	taken := &models.GuardRailRules{OrgID: testOrgID, ID: uuid.NewString(), Name: "taken",
+		Input: map[string]any{"rules": []any{}}, Output: map[string]any{"rules": []any{}}, SidecarSpec: spec}
+	if err := models.UpsertGuardRailRuleWithConnections(taken, nil, true); err != nil {
+		t.Fatalf("seed rule: %v", err)
+	}
+	err := models.DB.Transaction(func(tx *gorm.DB) error {
+		return services.ImportSidecarRulesTx(tx, testOrgID, sc.ID, []services.ImportedRule{{
+			Kind: services.SidecarRuleGuardrail, Name: "taken", Spec: spec,
+			Targets: []services.ImportedTarget{{Listener: "appdb"}},
+		}})
+	})
+	if !errors.Is(err, services.ErrImportedRuleConflict) {
+		t.Fatalf("want ErrImportedRuleConflict, got %v", err)
+	}
+}
+
+// The import stores only a spec the rule pages would accept, so an imported
+// rule stays editable.
+func TestAnImportRefusesASpecTheGatewayRejects(t *testing.T) {
+	startTestDB(t)
+	sc := newTestSidecar(t, "bad-edge")
+	err := models.DB.Transaction(func(tx *gorm.DB) error {
+		return services.ImportSidecarRulesTx(tx, testOrgID, sc.ID, []services.ImportedRule{{
+			Kind: services.SidecarRuleGuardrail, Name: "bad-edge-empty", Spec: json.RawMessage(`{"rules":[]}`),
+			Targets: []services.ImportedTarget{{Listener: "appdb"}},
+		}})
+	})
+	var invalid services.ErrImportedRuleInvalid
+	if !errors.As(err, &invalid) || !strings.Contains(err.Error(), "bad-edge-empty") {
+		t.Fatalf("want ErrImportedRuleInvalid naming the rule, got %v", err)
 	}
 }

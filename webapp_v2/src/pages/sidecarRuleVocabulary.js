@@ -202,16 +202,13 @@ export const ANALYZER_ACTIONS = [
   { value: 'defer', label: 'Defer to Rego' },
 ]
 
-// The action that holds a statement for a human, offered only behind the
-// review switch: it is the one action that needs a second object behind it
-// (the rule naming who may release). Listing it beside the others would let
-// an operator pick a hold with nobody able to release it.
+// The action that holds a statement for a human. It needs a second object
+// behind it (the rule naming who may release), which the form writes beside
+// it. Every protocol holds (EVL-312).
 export const REVIEW_ACTION = 'require_review'
 
-// analyzerActionsFor adds the hold to the list only while the switch is on, so
-// turning the switch off cannot leave an unreachable action selectable.
-export function analyzerActionsFor(hold) {
-  if (!hold) return ANALYZER_ACTIONS
+// analyzerActionsFor lists the level actions, the hold included.
+export function analyzerActionsFor() {
   return [...ANALYZER_ACTIONS, { value: REVIEW_ACTION, label: 'Hold for approval' }]
 }
 

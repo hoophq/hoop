@@ -1,15 +1,15 @@
 import { useState } from 'react'
 import { Divider, Group, Paper, Stack, Text, Title } from '@mantine/core'
 import { Info, Lock } from 'lucide-react'
+import ActionMenu from '@/components/ActionMenu'
 import Alert from '@/components/Alert'
 import Badge from '@/components/Badge'
-import Switch from '@/components/Switch'
 import Tooltip from '@/components/Tooltip'
 import EmptyState from '@/layout/EmptyState'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import { formatRelativeTime } from '@/utils/datetime'
 import { showSnackbar } from '@/utils/snackbar'
-import { auditEnabled, configFeatures, hasConfiguration, loadsFromDisk } from '../config'
+import { auditEnabled, configFeatures, hasConfiguration, usesConfigFile } from '../config'
 import ListenersTable from '../sections/ListenersTable'
 import { sidecarStatus } from '../status'
 import SidecarSourceModal from '../sections/SidecarSourceModal'
@@ -39,6 +39,21 @@ export function SidecarStatusBadge({ sidecar }) {
   )
 }
 
+// What an owner switch deleted and unbound, for the snackbar. Empty when it
+// touched no rule.
+function detachedSummary(detached) {
+  if (!detached) return ''
+  const names = (group) => [...(group?.guardrails ?? []), ...(group?.data_masking ?? []), ...(group?.analyzers ?? [])]
+  const deleted = names(detached.deleted)
+  const unbound = names(detached.unbound)
+  return [
+    deleted.length > 0 && `Deleted: ${deleted.join(', ')}.`,
+    unbound.length > 0 && `Removed from this sidecar: ${unbound.join(', ')}.`,
+  ]
+    .filter(Boolean)
+    .join(' ')
+}
+
 /**
  * The "Sidecar Details" card (Figma: wizard Overview and the details page).
  *
@@ -50,11 +65,11 @@ export function SidecarStatusBadge({ sidecar }) {
  * its own copy of a sidecar that is still waiting for the first handshake.
  */
 export default function SidecarDetails({ sidecar, editable, listenerActions }) {
-  const setLoadFromDisk = useSidecarStore((s) => s.setLoadFromDisk)
+  const setUsesConfigFile = useSidecarStore((s) => s.setUsesConfigFile)
+  const refreshSidecar = useSidecarStore((s) => s.refreshSidecar)
   const config = sidecar.configuration
   const configured = hasConfiguration(config)
-  const fromDisk = loadsFromDisk(sidecar)
-  const listeners = config?.listeners ?? []
+  const fromFile = usesConfigFile(sidecar)
   // The value awaiting confirmation, and whether the dialog is up. Two states
   // rather than one: Mantine keeps the modal mounted through its exit
   // transition, and a target cleared on close would rewrite the copy of the
@@ -66,17 +81,20 @@ export default function SidecarDetails({ sidecar, editable, listenerActions }) {
   const ask = (next) => {
     setTarget(next)
     setAsking(true)
+    // The counts must be what the gateway holds now, not what this page
+    // loaded. A failed refresh leaves the loaded record on screen.
+    refreshSidecar(sidecar.id).catch(() => {})
   }
 
   const confirmSource = async () => {
     if (!asking) return
     setSaving(true)
     try {
-      await setLoadFromDisk(sidecar.id, target)
+      const updated = await setUsesConfigFile(sidecar.id, target)
       setAsking(false)
+      const summary = detachedSummary(updated.detached_rules)
+      if (summary) showSnackbar({ level: 'success', text: 'Configuration source changed.', description: summary })
     } catch (error) {
-      // The switch renders the stored value, so it is already back where it
-      // was once the dialog closes.
       setAsking(false)
       showSnackbar({
         level: 'error',
@@ -90,7 +108,7 @@ export default function SidecarDetails({ sidecar, editable, listenerActions }) {
 
   return (
     <Stack gap="md">
-      {fromDisk ? (
+      {fromFile ? (
         <Alert color="blue" variant="light" radius="md" icon={<Lock size={16} />}>
           <Stack gap={4}>
             <Text size="sm">
@@ -123,16 +141,18 @@ export default function SidecarDetails({ sidecar, editable, listenerActions }) {
           <Group justify="space-between" align="center">
             <Title order={3}>Sidecar Details</Title>
             <Group gap="lg" align="center">
-              {editable && (
-                <Switch
-                  label="Load configuration from disk"
-                  labelPosition="left"
-                  checked={fromDisk}
-                  disabled={saving || asking}
-                  onChange={(event) => ask(event.currentTarget.checked)}
-                />
-              )}
               <SidecarStatusBadge sidecar={sidecar} />
+              {editable && (
+                <ActionMenu disabled={saving || asking} width={240}>
+                  {fromFile ? (
+                    <ActionMenu.Item onClick={() => ask(false)}>Use the control plane</ActionMenu.Item>
+                  ) : (
+                    <ActionMenu.Item danger onClick={() => ask(true)}>
+                      Use the configuration file
+                    </ActionMenu.Item>
+                  )}
+                </ActionMenu>
+              )}
             </Group>
           </Group>
 
@@ -173,12 +193,10 @@ export default function SidecarDetails({ sidecar, editable, listenerActions }) {
 
               <Divider />
 
-              {/* Still authorable while the sidecar runs from disk: the stored
-                  document is what the switch above hands back, so it is worth
-                  getting right before the flip, not after. */}
-              <ListenersTable sidecar={sidecar} {...listenerActions} />
+              {/* The file owns the listeners, so an edit here would change nothing it runs. */}
+              <ListenersTable sidecar={sidecar} {...(fromFile ? {} : listenerActions)} />
             </>
-          ) : fromDisk ? (
+          ) : fromFile ? (
             // Nothing stored and nothing to store into: the plane sends this
             // sidecar only its license, so an empty listener table with an Add
             // button would offer an edit that changes nothing it runs.
@@ -195,8 +213,8 @@ export default function SidecarDetails({ sidecar, editable, listenerActions }) {
 
       <SidecarSourceModal
         opened={asking}
-        toDisk={target}
-        storedListeners={listeners.length}
+        toConfigFile={target}
+        boundRules={sidecar.bound_rules ?? []}
         onClose={() => setAsking(false)}
         onConfirm={confirmSource}
         loading={saving}
