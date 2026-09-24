@@ -353,6 +353,10 @@ type handshakeRequest struct {
 	AppliedRevision string `json:"applied_revision,omitempty"`
 	// LastOutcome is reloadOutcome.String() for that document.
 	LastOutcome string `json:"last_outcome,omitempty"`
+	// ConfigKeys and Protocols are what this build accepts, so the plane can
+	// refuse a document this sidecar would refuse whole.
+	ConfigKeys []string `json:"config_keys,omitempty"`
+	Protocols  []string `json:"protocols,omitempty"`
 }
 
 // handshakeAnswer is one handshake's result: the document, and the two facts
@@ -372,6 +376,7 @@ type handshakeAnswer struct {
 // document rather than in it, so an older gateway simply does not say them;
 // see licenseManagedHeader.
 func fetchControlPlaneConfig(baseURL, token string, hs handshakeRequest) (answer handshakeAnswer, err error) {
+	hs.ConfigKeys, hs.Protocols = ConfigKeys(), Protocols()
 	body, merr := json.Marshal(hs)
 	if merr != nil {
 		return handshakeAnswer{}, merr

@@ -56,17 +56,17 @@ type GRPCCodecConfig struct {
 	// Required for any payload work: schema-less protobuf walking loses
 	// values as a function of their bytes, so no capture, masking or PII
 	// scanning happens without it (ADR-0013).
-	Descriptors DescriptorPaths `json:"descriptors,omitempty"`
+	Descriptors DescriptorPaths `json:"descriptors,omitempty" label:"Descriptors" placeholder:"/etc/hoop-inspect/api.pb" help:"Protobuf descriptor sets, as paths on the sidecar host or gs:// URLs. Sets merge."`
 
 	// CapturePayload renders decoded request and response messages into
 	// per-message Statements so payload-matching rules (pii, pattern_match)
 	// and OPA can read them. Requires Descriptors.
-	CapturePayload bool `json:"capture_payload"`
+	CapturePayload bool `json:"capture_payload" label:"Capture the payload" help:"Needed for masking, PII and AI analysis on this listener."`
 
 	// MaxPayloadBytes truncates a captured rendering. Zero uses the lane
 	// default. Masking does not read this: it rewrites decoded fields
 	// whatever their size.
-	MaxPayloadBytes int `json:"max_payload_bytes,omitempty"`
+	MaxPayloadBytes int `json:"max_payload_bytes,omitempty" label:"Max payload bytes" help:"0 uses the lane default."`
 
 	// Strict refuses an RPC whose payload cannot be read: a method the
 	// descriptor set does not define is refused before the upstream is
@@ -75,13 +75,13 @@ type GRPCCodecConfig struct {
 	// payloads are forwarded with method-level inspection only, and each
 	// degradation is logged. A lane with mask rules fails closed either
 	// way: a redactor must not forward what it cannot decode.
-	Strict bool `json:"strict,omitempty"`
+	Strict bool `json:"strict,omitempty" label:"Strict decoding" help:"Refuses an RPC whose payload the descriptors cannot read."`
 
 	// Metadata names the request metadata headers to expose to policy,
 	// matched case-insensitively. There is no capture-all, and the same
 	// headers HTTPCodecConfig refuses are refused here; authorization is
 	// where a gRPC bearer token lives.
-	Metadata []string `json:"metadata,omitempty"`
+	Metadata []string `json:"metadata,omitempty" label:"Metadata" help:"Allowlist exposed to policy. The same four headers HTTP refuses are refused here."`
 }
 
 func (g *GRPCCodecConfig) validate(lane string) []string {

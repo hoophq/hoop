@@ -77,12 +77,12 @@ type SpannerConfig struct {
 	// Dialect is the lane default: googlesql (the API default, and what an
 	// absent block means), postgresql, or per_database. Under per_database
 	// a database absent from Databases is not guessed at.
-	Dialect string `json:"dialect,omitempty"`
+	Dialect string `json:"dialect,omitempty" label:"Dialect" enum:"googlesql,postgresql,per_database" default:"googlesql" help:"The lane default. Under per_database, a database not listed below is not guessed at."`
 
 	// Databases maps a database resource name
 	// (projects/P/instances/I/databases/D) to googlesql or postgresql,
 	// overriding Dialect for that database.
-	Databases map[string]string `json:"databases,omitempty"`
+	Databases map[string]string `json:"databases,omitempty" label:"Databases" enum:"googlesql,postgresql" placeholder:"projects/P/instances/I/databases/D" help:"A database resource name and the dialect it speaks."`
 }
 
 func (s *SpannerConfig) validate(lane string) []string {

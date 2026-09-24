@@ -218,32 +218,32 @@ type ListenerConfig struct {
 	// It is the operator-facing resource name: audit queries key on it and
 	// the physical Upstream may change under it. Defaults to listener[i],
 	// which is a fallback rather than a name anyone should rely on.
-	Name string `json:"name"`
+	Name string `json:"name" label:"Name" placeholder:"appdb" help:"Follows this listener into every log line and audit event, so renaming it splits that history." ui:"required,basic"`
 
 	// Protocol selects the codec, for example postgres, mysql, clickhouse,
 	// mssql or http.
-	Protocol string `json:"protocol"`
+	Protocol string `json:"protocol" label:"Protocol" help:"Picks the codec that reads this listener's traffic." ui:"required,basic"`
 
 	// Listen is the bind address, or a filesystem path when Network is
 	// "unix".
-	Listen string `json:"listen"`
+	Listen string `json:"listen" label:"Listen on" placeholder:"0.0.0.0:15432" help:"Where clients reach the sidecar: host:port, or a socket path on a unix transport." ui:"required,basic"`
 
 	// Network is "tcp" (default) or "unix". Pick a unix socket for a sandbox
 	// with no network egress: filesystem permissions decide who can reach the
 	// proxy.
-	Network string `json:"network"`
+	Network string `json:"network" label:"Transport" enum:"tcp,unix" default:"tcp" help:"A unix socket opens no port, so filesystem permissions decide who can connect." ui:"basic"`
 
 	// Upstream is the real backend.
-	Upstream string `json:"upstream"`
+	Upstream string `json:"upstream" label:"Upstream" placeholder:"appdb:5432" help:"Where the sidecar reaches your resource." protocols:"!ssh" ui:"required,basic"`
 
 	// UpstreamTLS enables TLS to the backend. MySQL negotiates this after
 	// its plaintext server greeting; other supported protocols negotiate
 	// before their ordinary message flow.
-	UpstreamTLS *TLSConfig `json:"upstream_tls"`
+	UpstreamTLS *TLSConfig `json:"upstream_tls" label:"Upstream TLS" help:"Encrypts the hop to the backend. The sidecar is the TLS client there, so it still reads the traffic." protocols:"!ssh" ui:"presence"`
 	// MySQLAuthKeyFile is an RSA private key whose public half MySQL clients
 	// can pin. It lets the relay decrypt direct RSA password responses before
 	// forwarding the NUL-terminated password inside UpstreamTLS.
-	MySQLAuthKeyFile string `json:"mysql_auth_key_file,omitempty"`
+	MySQLAuthKeyFile string `json:"mysql_auth_key_file,omitempty" label:"MySQL auth key file" help:"RSA private key clients can pin, so the relay can read RSA password exchanges. Needs upstream TLS. A path on the sidecar host." protocols:"mysql"`
 
 	// DownstreamTLS lets the relay terminate the CLIENT's TLS on this lane.
 	// Requires cert_file and key_file; the other TLSConfig fields describe an
@@ -266,7 +266,7 @@ type ListenerConfig struct {
 	//
 	// Omitting it keeps the documented posture: the relay terminates no
 	// downstream TLS and whatever fronts it owns that leg.
-	DownstreamTLS *TLSConfig `json:"downstream_tls"`
+	DownstreamTLS *TLSConfig `json:"downstream_tls" label:"Downstream TLS" help:"Terminates the client's TLS on this listener. Leave both empty when something in front already does." protocols:"postgres,clickhouse,grpc,spanner" fields:"cert_file,key_file"`
 
 	// IdentityHeader names an HTTP header carrying the authenticated
 	// subject, for the http, grpc and spanner protocols behind an
@@ -277,15 +277,15 @@ type ListenerConfig struct {
 	// this listener, which the sidecar topology guarantees by binding
 	// loopback or a unix socket. Set this on a listener reachable from
 	// anywhere else and a caller can assert any identity.
-	IdentityHeader string `json:"identity_header"`
+	IdentityHeader string `json:"identity_header" label:"Identity header" placeholder:"x-forwarded-user" help:"The header carrying the authenticated subject. Only trust it when nothing but your proxy can reach this listener." protocols:"http,grpc,spanner"`
 
 	// IdleTimeoutSec closes a connection with no traffic. Zero disables it.
 	// Interactive sessions idle between keystrokes, so a short value breaks
 	// psql; leaving it unset is the safe default.
-	IdleTimeoutSec int `json:"idle_timeout_sec"`
+	IdleTimeoutSec int `json:"idle_timeout_sec" label:"Idle timeout (seconds)" help:"0 disables it. A short value breaks interactive sessions."`
 
 	// MaxConns bounds concurrency. Zero is unlimited.
-	MaxConns int `json:"max_conns"`
+	MaxConns int `json:"max_conns" label:"Max connections" help:"0 is unlimited."`
 
 	// Guardrails overrides the top-level default for this listener.
 	//
@@ -297,7 +297,7 @@ type ListenerConfig struct {
 	//
 	// Mode REPLACES when set. A lane rolling out behind an enforcing default
 	// means it when it says observe.
-	Guardrails *GuardrailsConfig `json:"guardrails,omitempty"`
+	Guardrails *GuardrailsConfig `json:"guardrails,omitempty" ui:"-"`
 
 	// OPA overrides the top-level default for this listener, and REPLACES
 	// rather than merging: two decision endpoints cannot become one.
@@ -306,7 +306,7 @@ type ListenerConfig struct {
 	// the top level configures one. Without that spelling a top-level
 	// endpoint reaches every lane with no way to opt out, which `mask` has
 	// through `rules: []` and `guardrails` has through `mode: observe`.
-	OPA *OPAConfig `json:"opa,omitempty"`
+	OPA *OPAConfig `json:"opa,omitempty" ui:"-"`
 
 	// Mask overrides the top-level default for this listener.
 	//
@@ -314,7 +314,7 @@ type ListenerConfig struct {
 	// concatenating two lists produces two rewrites competing for one entity
 	// with slice order picking the winner. An empty list, `rules: []`, is how
 	// a lane switches inherited masking off.
-	Mask *MaskConfig `json:"mask,omitempty"`
+	Mask *MaskConfig `json:"mask,omitempty" ui:"-"`
 
 	// Analyzer is this listener's own AI analyzer block: the trigger, the
 	// risk-to-action map and the prompt for this lane, plus overrides of
@@ -332,58 +332,58 @@ type ListenerConfig struct {
 	// guardrails.rules — still loads and still works; normalize records a
 	// deprecation naming this block. Both can coexist on one lane during a
 	// migration, each becoming its own evaluator.
-	Analyzer *LaneAnalyzerConfig `json:"analyzer,omitempty"`
+	Analyzer *LaneAnalyzerConfig `json:"analyzer,omitempty" ui:"-"`
 
 	// HTTP configures what this lane's HTTP codec captures. Only valid on
 	// an http lane.
-	HTTP *HTTPCodecConfig `json:"http,omitempty"`
+	HTTP *HTTPCodecConfig `json:"http,omitempty" label:"HTTP" help:"What this listener's codec reads out of a request." protocols:"http"`
 
 	// ClickHouse configures native-protocol decompression limits. Only valid
 	// on a clickhouse lane; absent keeps bounded defaults.
-	ClickHouse *ClickHouseCodecConfig `json:"clickhouse,omitempty"`
+	ClickHouse *ClickHouseCodecConfig `json:"clickhouse,omitempty" label:"ClickHouse" help:"Decompression limits. 0 keeps the codec defaults." protocols:"clickhouse"`
 
 	// GRPC configures what this lane's gRPC transport decodes and exposes.
 	// Only valid on a grpc lane. See GRPCCodecConfig.
-	GRPC *GRPCCodecConfig `json:"grpc,omitempty"`
+	GRPC *GRPCCodecConfig `json:"grpc,omitempty" label:"gRPC" help:"What this listener decodes and exposes to policy." protocols:"grpc,spanner"`
 
 	// Spanner tells a spanner lane which SQL dialect each database speaks,
 	// GoogleSQL or PostgreSQL. Only valid on a spanner lane; absent means
 	// GoogleSQL everywhere. See SpannerConfig.
-	Spanner *SpannerConfig `json:"spanner,omitempty"`
+	Spanner *SpannerConfig `json:"spanner,omitempty" label:"Spanner" help:"The SQL dialect each database speaks." protocols:"spanner"`
 
 	// SSH configures this lane's SSH endpoint: the keys it trusts, what it
 	// admits, the account it runs as. Required on an ssh lane and a config
 	// error anywhere else. See SSHConfig.
-	SSH *SSHConfig `json:"ssh,omitempty"`
+	SSH *SSHConfig `json:"ssh,omitempty" label:"SSH" help:"The keys this listener trusts and what a session may do." protocols:"ssh" ui:"required"`
 
 	// Connection is the DEPRECATED second name for this lane. normalize
 	// folds it onto Name, which now fills the audit key and
 	// input.context.connection on its own.
-	Connection string `json:"connection,omitempty"`
+	Connection string `json:"connection,omitempty" ui:"-"`
 
 	// Policy is the DEPRECATED pre-ADR-0011 spelling of Guardrails and OPA
 	// combined. normalize empties it.
-	Policy *PolicyConfig `json:"policy,omitempty"`
+	Policy *PolicyConfig `json:"policy,omitempty" ui:"-"`
 }
 
 // TLSConfig configures an upstream TLS connection.
 type TLSConfig struct {
 	// CAFile is a PEM bundle that verifies the upstream. Empty falls back to
 	// the host trust store.
-	CAFile string `json:"ca_file"`
+	CAFile string `json:"ca_file" label:"CA file" placeholder:"/etc/hoop-inspect/ca.pem" help:"Verifies the backend. Empty uses the host trust store. A path on the sidecar host."`
 
 	// CertFile and KeyFile enable client certificates (mTLS).
-	CertFile string `json:"cert_file"`
-	KeyFile  string `json:"key_file"`
+	CertFile string `json:"cert_file" label:"Certificate file" placeholder:"/etc/hoop-inspect/tls.crt" help:"A path on the sidecar host. Upstream, it is the client certificate for mTLS."`
+	KeyFile  string `json:"key_file" label:"Key file" placeholder:"/etc/hoop-inspect/tls.key" help:"A path on the sidecar host."`
 
 	// ServerName overrides SNI when the dial address differs from the
 	// certificate's name.
-	ServerName string `json:"server_name"`
+	ServerName string `json:"server_name" label:"Server name" help:"Overrides SNI when the dial address differs from the certificate name."`
 
 	// InsecureSkipVerify disables verification. The name is verbose on
 	// purpose and startup logs a warning when it is on: a proxy built to
 	// inspect sensitive traffic should not silently accept any certificate.
-	InsecureSkipVerify bool `json:"insecure_skip_verify"`
+	InsecureSkipVerify bool `json:"insecure_skip_verify" label:"Skip certificate verification" help:"The sidecar logs a warning at startup. Do not ship this."`
 }
 
 func (l ListenerConfig) buildMySQLAuthPrivateKey() (*rsa.PrivateKey, error) {

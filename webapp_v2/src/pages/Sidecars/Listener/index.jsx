@@ -34,7 +34,7 @@ function Parent({ name, onClick }) {
 // state is seeded from a listener that exists, rather than from null on the
 // first render and patched by an effect afterwards.
 function Editor({ sidecar, index, onDone }) {
-  const { form, setField, errors, saving, save, isNew } = useListenerEditor({ sidecar, index })
+  const { form, setField, errors, saving, save, support, isNew } = useListenerEditor({ sidecar, index })
 
   const handleSave = async () => {
     if (await save()) onDone()
@@ -53,7 +53,7 @@ function Editor({ sidecar, index, onDone }) {
           </Text>
         </Stack>
 
-        <ListenerForm form={form} setField={setField} errors={errors} />
+        <ListenerForm form={form} setField={setField} errors={errors} support={support} />
       </Stack>
 
       {/* Pinned, because the form runs past the fold as soon as Advanced is

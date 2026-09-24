@@ -63,7 +63,7 @@ func configRevision(served daemon.Config) string {
 // the next tick is a minute away.
 func recordHandshake(sidecarID string, req openapi.SidecarHandshakeRequest, servedRevision string) {
 	err := models.RecordSidecarHandshake(models.DB, sidecarID,
-		req.Version, req.AppliedRevision, req.LastOutcome, servedRevision)
+		req.Version, req.AppliedRevision, req.LastOutcome, servedRevision, req.ConfigKeys, req.Protocols)
 	if err != nil {
 		log.With("sidecar", sidecarID).Warnf("failed recording the sidecar handshake, reason=%v", err)
 	}
@@ -132,11 +132,14 @@ func writeSidecarConfiguration(db *gorm.DB, licenseData json.RawMessage, write f
 func answerSidecarWrite(c *gin.Context, err error) {
 	var overCap services.ErrSidecarConfigOverCap
 	var broken services.ErrSidecarBindingBroken
+	var unsupported services.ErrSidecarUnsupported
 	switch {
 	case errors.Is(err, models.ErrNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"message": "sidecar not found"})
 	case errors.As(err, &overCap):
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": overCap.Error()})
+	case errors.As(err, &unsupported):
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": unsupported.Error()})
 	case errors.As(err, &broken):
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": broken.Error()})
 	case errors.Is(err, errSwitchNeedsPatch):
@@ -376,6 +379,9 @@ func Put(c *gin.Context) {
 		if usesConfigFile(current.Configuration) != usesConfigFile(models.SidecarConfiguration(cfg)) {
 			return nil, errSwitchNeedsPatch
 		}
+		if err := services.CheckSidecarSupports(current.ReportedConfigKeys, current.ReportedProtocols, cfg); err != nil {
+			return nil, err
+		}
 		return models.UpdateSidecarConfiguration(tx, ctx.OrgID,
 			c.Param("nameOrID"), models.SidecarConfiguration(cfg))
 	})
@@ -444,6 +450,9 @@ func Patch(c *gin.Context) {
 		}
 		sc, err := models.PatchSidecarConfiguration(tx, ctx.OrgID, c.Param("nameOrID"), merge, removeLoadFromDisk)
 		if err != nil {
+			return nil, err
+		}
+		if err := services.CheckSidecarSupports(current.ReportedConfigKeys, current.ReportedProtocols, daemon.Config(sc.Configuration)); err != nil {
 			return nil, err
 		}
 		wasFile, isFile := usesConfigFile(current.Configuration), usesConfigFile(sc.Configuration)
@@ -788,6 +797,8 @@ func toResponse(s models.Sidecar) openapi.SidecarResponse {
 	resp.ServedRevision = derefOrEmpty(s.ServedRevision)
 	resp.AppliedRevision = derefOrEmpty(s.AppliedRevision)
 	resp.LastOutcome = derefOrEmpty(s.LastOutcome)
+	resp.SupportedConfigKeys = s.ReportedConfigKeys
+	resp.SupportedProtocols = s.ReportedProtocols
 	return resp
 }
 

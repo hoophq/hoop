@@ -29,21 +29,21 @@ import (
 // where an analyzer is configured, a third party.
 type HTTPCodecConfig struct {
 	// CaptureBody includes request and response bodies in the Statement.
-	CaptureBody bool `json:"capture_body"`
+	CaptureBody bool `json:"capture_body" label:"Capture the request body" help:"Needed by AI analysis on an HTTP listener."`
 
 	// MaxBodyBytes truncates a captured body. Zero uses the codec default.
-	MaxBodyBytes int `json:"max_body_bytes,omitempty"`
+	MaxBodyBytes int `json:"max_body_bytes,omitempty" label:"Max body bytes" help:"0 uses the codec default of 64 KiB."`
 
 	// Headers names the headers to expose, matched case-insensitively.
 	// There is no capture-all.
-	Headers []string `json:"headers,omitempty"`
+	Headers []string `json:"headers,omitempty" label:"Headers" help:"Allowlist exposed to policy. Authorization, cookie, proxy-authorization and set-cookie are always refused."`
 
 	// SensitiveQueryParams adds query parameter names whose value the codec
 	// redacts before anything sees the request: the audit trail, OPA, the
 	// analyzer. The codec already redacts the common credential names
 	// (access_token, api_key, sig, X-Amz-Signature, ...); this list widens
 	// that for a deployment's own spelling. There is no way to narrow it.
-	SensitiveQueryParams []string `json:"sensitive_query_params,omitempty"`
+	SensitiveQueryParams []string `json:"sensitive_query_params,omitempty" label:"Sensitive query parameters" help:"Extra parameter names whose value is redacted before anything sees the request."`
 }
 
 // forbiddenHeaders are never allowlistable.

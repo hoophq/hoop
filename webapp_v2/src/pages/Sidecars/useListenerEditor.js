@@ -7,8 +7,10 @@ import {
   hasErrors,
   listenerToForm,
   replaceListener,
+  setPath,
   validateListener,
 } from './listeners'
+import { sidecarSupport } from './schema'
 
 // Worth knowing before you add copy here: a listener change is NOT applied to a
 // running sidecar. reload.go:167 compares the document with the rule sections
@@ -30,13 +32,14 @@ export const saveErrorMessage = (error) =>
  * name lookup would make it a delete plus an insert.
  *
  * Saving is a read-modify-write of the WHOLE configuration: there is no
- * per-listener endpoint. The listener the form opened with is passed back to
- * formToListener so the sections this form does not render survive.
+ * per-listener endpoint. The form state is a copy of the listener, so the
+ * sections this form does not render survive.
  */
 export function useListenerEditor({ sidecar, index }) {
   const listeners = sidecar?.configuration?.listeners ?? []
   const original = index === null ? null : (listeners[index] ?? null)
   const others = listeners.filter((_, i) => i !== index)
+  const support = sidecarSupport(sidecar)
 
   const [form, setForm] = useState(() => (original ? listenerToForm(original) : emptyListener()))
   const [errors, setErrors] = useState({})
@@ -45,28 +48,28 @@ export function useListenerEditor({ sidecar, index }) {
 
   // Errors are raised by a save and cleared by any edit, so a message never
   // outlives the value it was about.
-  const setField = (patch) => {
-    setForm((f) => ({ ...f, ...patch }))
+  const setField = (path, value) => {
+    setForm((f) => setPath(f, path, value))
     setErrors({})
   }
 
   const save = async () => {
-    const found = validateListener(form, others, original, sidecar?.configuration)
+    const found = validateListener(form, others, original, sidecar?.configuration, support)
     if (hasErrors(found)) {
       setErrors(found)
       return null
     }
     setSaving(true)
-    const configuration = replaceListener(sidecar.configuration, index, formToListener(original, form))
+    const configuration = replaceListener(sidecar.configuration, index, formToListener(form))
     const { ok, sidecar: updated, error } = await updateSidecar(sidecar.id, configuration)
     setSaving(false)
     if (!ok) {
       showSnackbar({ level: 'error', text: 'Failed to save the listener.', description: saveErrorMessage(error) })
       return null
     }
-    showSnackbar({ level: 'success', text: `Listener "${form.name.trim()}" saved.` })
+    showSnackbar({ level: 'success', text: `Listener "${String(form.name ?? '').trim()}" saved.` })
     return updated
   }
 
-  return { form, setField, errors, saving, save, isNew: index === null }
+  return { form, setField, errors, saving, save, support, isNew: index === null }
 }

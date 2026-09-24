@@ -1,0 +1,414 @@
+{
+  "protocols": [
+    {
+      "value": "clickhouse",
+      "label": "ClickHouse"
+    },
+    {
+      "value": "grpc",
+      "label": "gRPC"
+    },
+    {
+      "value": "http",
+      "label": "HTTP"
+    },
+    {
+      "value": "mongodb",
+      "label": "MongoDB"
+    },
+    {
+      "value": "mssql",
+      "label": "SQL Server"
+    },
+    {
+      "value": "mysql",
+      "label": "MySQL"
+    },
+    {
+      "value": "postgres",
+      "label": "PostgreSQL"
+    },
+    {
+      "value": "spanner",
+      "label": "Cloud Spanner"
+    },
+    {
+      "value": "ssh",
+      "label": "SSH"
+    }
+  ],
+  "fields": [
+    {
+      "key": "name",
+      "type": "string",
+      "label": "Name",
+      "help": "Follows this listener into every log line and audit event, so renaming it splits that history.",
+      "placeholder": "appdb",
+      "required": true,
+      "basic": true
+    },
+    {
+      "key": "protocol",
+      "type": "string",
+      "label": "Protocol",
+      "help": "Picks the codec that reads this listener's traffic.",
+      "required": true,
+      "basic": true
+    },
+    {
+      "key": "listen",
+      "type": "string",
+      "label": "Listen on",
+      "help": "Where clients reach the sidecar: host:port, or a socket path on a unix transport.",
+      "placeholder": "0.0.0.0:15432",
+      "required": true,
+      "basic": true
+    },
+    {
+      "key": "network",
+      "type": "string",
+      "label": "Transport",
+      "help": "A unix socket opens no port, so filesystem permissions decide who can connect.",
+      "basic": true,
+      "enum": [
+        "tcp",
+        "unix"
+      ],
+      "default": "tcp"
+    },
+    {
+      "key": "upstream",
+      "type": "string",
+      "label": "Upstream",
+      "help": "Where the sidecar reaches your resource.",
+      "placeholder": "appdb:5432",
+      "required": true,
+      "basic": true,
+      "except_protocols": [
+        "ssh"
+      ]
+    },
+    {
+      "key": "upstream_tls",
+      "type": "object",
+      "label": "Upstream TLS",
+      "help": "Encrypts the hop to the backend. The sidecar is the TLS client there, so it still reads the traffic.",
+      "presence": true,
+      "except_protocols": [
+        "ssh"
+      ],
+      "fields": [
+        {
+          "key": "ca_file",
+          "type": "string",
+          "label": "CA file",
+          "help": "Verifies the backend. Empty uses the host trust store. A path on the sidecar host.",
+          "placeholder": "/etc/hoop-inspect/ca.pem"
+        },
+        {
+          "key": "cert_file",
+          "type": "string",
+          "label": "Certificate file",
+          "help": "A path on the sidecar host. Upstream, it is the client certificate for mTLS.",
+          "placeholder": "/etc/hoop-inspect/tls.crt"
+        },
+        {
+          "key": "key_file",
+          "type": "string",
+          "label": "Key file",
+          "help": "A path on the sidecar host.",
+          "placeholder": "/etc/hoop-inspect/tls.key"
+        },
+        {
+          "key": "server_name",
+          "type": "string",
+          "label": "Server name",
+          "help": "Overrides SNI when the dial address differs from the certificate name."
+        },
+        {
+          "key": "insecure_skip_verify",
+          "type": "boolean",
+          "label": "Skip certificate verification",
+          "help": "The sidecar logs a warning at startup. Do not ship this."
+        }
+      ]
+    },
+    {
+      "key": "mysql_auth_key_file",
+      "type": "string",
+      "label": "MySQL auth key file",
+      "help": "RSA private key clients can pin, so the relay can read RSA password exchanges. Needs upstream TLS. A path on the sidecar host.",
+      "protocols": [
+        "mysql"
+      ]
+    },
+    {
+      "key": "downstream_tls",
+      "type": "object",
+      "label": "Downstream TLS",
+      "help": "Terminates the client's TLS on this listener. Leave both empty when something in front already does.",
+      "protocols": [
+        "postgres",
+        "clickhouse",
+        "grpc",
+        "spanner"
+      ],
+      "fields": [
+        {
+          "key": "cert_file",
+          "type": "string",
+          "label": "Certificate file",
+          "help": "A path on the sidecar host. Upstream, it is the client certificate for mTLS.",
+          "placeholder": "/etc/hoop-inspect/tls.crt"
+        },
+        {
+          "key": "key_file",
+          "type": "string",
+          "label": "Key file",
+          "help": "A path on the sidecar host.",
+          "placeholder": "/etc/hoop-inspect/tls.key"
+        }
+      ]
+    },
+    {
+      "key": "identity_header",
+      "type": "string",
+      "label": "Identity header",
+      "help": "The header carrying the authenticated subject. Only trust it when nothing but your proxy can reach this listener.",
+      "placeholder": "x-forwarded-user",
+      "protocols": [
+        "http",
+        "grpc",
+        "spanner"
+      ]
+    },
+    {
+      "key": "idle_timeout_sec",
+      "type": "integer",
+      "label": "Idle timeout (seconds)",
+      "help": "0 disables it. A short value breaks interactive sessions."
+    },
+    {
+      "key": "max_conns",
+      "type": "integer",
+      "label": "Max connections",
+      "help": "0 is unlimited."
+    },
+    {
+      "key": "http",
+      "type": "object",
+      "label": "HTTP",
+      "help": "What this listener's codec reads out of a request.",
+      "protocols": [
+        "http"
+      ],
+      "fields": [
+        {
+          "key": "capture_body",
+          "type": "boolean",
+          "label": "Capture the request body",
+          "help": "Needed by AI analysis on an HTTP listener."
+        },
+        {
+          "key": "max_body_bytes",
+          "type": "integer",
+          "label": "Max body bytes",
+          "help": "0 uses the codec default of 64 KiB."
+        },
+        {
+          "key": "headers",
+          "type": "list",
+          "label": "Headers",
+          "help": "Allowlist exposed to policy. Authorization, cookie, proxy-authorization and set-cookie are always refused."
+        },
+        {
+          "key": "sensitive_query_params",
+          "type": "list",
+          "label": "Sensitive query parameters",
+          "help": "Extra parameter names whose value is redacted before anything sees the request."
+        }
+      ]
+    },
+    {
+      "key": "clickhouse",
+      "type": "object",
+      "label": "ClickHouse",
+      "help": "Decompression limits. 0 keeps the codec defaults.",
+      "protocols": [
+        "clickhouse"
+      ],
+      "fields": [
+        {
+          "key": "max_frame_bytes",
+          "type": "integer",
+          "label": "Max frame bytes",
+          "help": "0 keeps the default of 16 MiB."
+        },
+        {
+          "key": "max_block_bytes",
+          "type": "integer",
+          "label": "Max block bytes",
+          "help": "0 keeps the default of 64 MiB."
+        }
+      ]
+    },
+    {
+      "key": "grpc",
+      "type": "object",
+      "label": "gRPC",
+      "help": "What this listener decodes and exposes to policy.",
+      "protocols": [
+        "grpc",
+        "spanner"
+      ],
+      "fields": [
+        {
+          "key": "descriptors",
+          "type": "list",
+          "label": "Descriptors",
+          "help": "Protobuf descriptor sets, as paths on the sidecar host or gs:// URLs. Sets merge.",
+          "placeholder": "/etc/hoop-inspect/api.pb"
+        },
+        {
+          "key": "capture_payload",
+          "type": "boolean",
+          "label": "Capture the payload",
+          "help": "Needed for masking, PII and AI analysis on this listener."
+        },
+        {
+          "key": "max_payload_bytes",
+          "type": "integer",
+          "label": "Max payload bytes",
+          "help": "0 uses the lane default."
+        },
+        {
+          "key": "strict",
+          "type": "boolean",
+          "label": "Strict decoding",
+          "help": "Refuses an RPC whose payload the descriptors cannot read."
+        },
+        {
+          "key": "metadata",
+          "type": "list",
+          "label": "Metadata",
+          "help": "Allowlist exposed to policy. The same four headers HTTP refuses are refused here."
+        }
+      ]
+    },
+    {
+      "key": "spanner",
+      "type": "object",
+      "label": "Spanner",
+      "help": "The SQL dialect each database speaks.",
+      "protocols": [
+        "spanner"
+      ],
+      "fields": [
+        {
+          "key": "dialect",
+          "type": "string",
+          "label": "Dialect",
+          "help": "The lane default. Under per_database, a database not listed below is not guessed at.",
+          "enum": [
+            "googlesql",
+            "postgresql",
+            "per_database"
+          ],
+          "default": "googlesql"
+        },
+        {
+          "key": "databases",
+          "type": "map",
+          "label": "Databases",
+          "help": "A database resource name and the dialect it speaks.",
+          "placeholder": "projects/P/instances/I/databases/D",
+          "enum": [
+            "googlesql",
+            "postgresql"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "ssh",
+      "type": "object",
+      "label": "SSH",
+      "help": "The keys this listener trusts and what a session may do.",
+      "required": true,
+      "protocols": [
+        "ssh"
+      ],
+      "fields": [
+        {
+          "key": "host_key",
+          "type": "string",
+          "label": "Host key",
+          "help": "The private host key this listener presents. A path on the sidecar host.",
+          "placeholder": "/etc/hoop-inspect/ssh_host_ed25519_key",
+          "required": true
+        },
+        {
+          "key": "trusted_ca",
+          "type": "string",
+          "label": "Trusted CA",
+          "help": "authorized_keys file naming the CA keys a user certificate must be signed by. A path on the sidecar host.",
+          "placeholder": "/etc/hoop-inspect/user_ca.pub",
+          "required": true
+        },
+        {
+          "key": "capabilities_allowed",
+          "type": "list",
+          "label": "Restrict capabilities",
+          "help": "Off admits every capability below. On admits only the ones picked, and picking none admits none.",
+          "presence": true,
+          "enum": [
+            "shell",
+            "pty",
+            "exec",
+            "env",
+            "sftp"
+          ]
+        },
+        {
+          "key": "destinations_allowed",
+          "type": "list",
+          "label": "Forward destinations",
+          "help": "network[:port] entries, or any. Empty denies every forward.",
+          "placeholder": "10.0.0.0/8:5432"
+        },
+        {
+          "key": "identity",
+          "type": "object",
+          "label": "Identity mapping",
+          "help": "Which certificate field fills each identity slot: key_id, principals or extensions.\u003cname\u003e. Empty uses the key id as the subject.",
+          "fields": [
+            {
+              "key": "subject",
+              "type": "string",
+              "label": "Subject",
+              "placeholder": "key_id"
+            },
+            {
+              "key": "email",
+              "type": "string",
+              "label": "Email",
+              "placeholder": "extensions.email"
+            },
+            {
+              "key": "groups",
+              "type": "string",
+              "label": "Groups",
+              "placeholder": "principals"
+            },
+            {
+              "key": "attributes",
+              "type": "list",
+              "label": "Attributes",
+              "help": "Certificate extensions surfaced to policy verbatim."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
