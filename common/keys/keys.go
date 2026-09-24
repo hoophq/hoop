@@ -100,7 +100,7 @@ func VerifySessionClaims(tokenString string, pubKey ed25519.PublicKey) (*Session
 		return pubKey, nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse access token: %v", err)
+		return nil, fmt.Errorf("failed to parse access token: %w", err)
 	}
 	if !token.Valid {
 		return nil, fmt.Errorf("access token is invalid")
@@ -152,7 +152,7 @@ func VerifyAccessToken(tokenString string, pubKey ed25519.PublicKey) (subject st
 		return pubKey, nil
 	})
 	if err != nil {
-		return "", fmt.Errorf("failed to parse access token: %v", err)
+		return "", fmt.Errorf("failed to parse access token: %w", err)
 	}
 	if !token.Valid {
 		return "", fmt.Errorf("access token is invalid")

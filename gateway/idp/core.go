@@ -99,6 +99,8 @@ var (
 	refreshGroup singleflight.Group
 )
 
+const refreshTimeout = 30 * time.Second
+
 // LoadServerAuthConfig loads the server authentication configuration and returns it along with the provider type.
 // It retrieves the configuration from the database and determines the provider type based on the auth method.
 // The provider type fallbacks to environment variables in case there's no configuration in the database.
@@ -217,7 +219,10 @@ func refreshForSubject(tokenVerifier TokenVerifier, subject, mode string) (strin
 			return nil, fmt.Errorf("token refresh not supported by this provider")
 		}
 
-		newToken, err := refresher.RefreshAccessToken(context.Background(), *userToken.RefreshToken)
+		// Bounded: session pollers and session start wait on this call.
+		ctx, cancel := context.WithTimeout(context.Background(), refreshTimeout)
+		defer cancel()
+		newToken, err := refresher.RefreshAccessToken(ctx, *userToken.RefreshToken)
 		if err != nil {
 			return nil, fmt.Errorf("failed to refresh access token: %w", err)
 		}
