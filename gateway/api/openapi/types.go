@@ -52,7 +52,9 @@ const (
 	RoleAdminType RoleType = "admin"
 	// RoleAuditorType grants read-only access to all routes
 	RoleAuditorType RoleType = "auditor"
-	// RoleApproverType is reported for a user in the approver group; no route names it
+	// RoleApproverType is reported for a user in the approver group on a gateway, and
+	// on a control plane for a user in a group some sidecar approval rule names as
+	// reviewers. No route names it
 	RoleApproverType RoleType = "approver"
 	// RoleStandardType will grant access to standard routes
 	RoleStandardType RoleType = "standard"

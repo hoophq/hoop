@@ -144,7 +144,7 @@ func Create(c *gin.Context) {
 		trackClient.Close()
 	}()
 
-	newUser.Role = toRole(newUser)
+	newUser.Role = newRoleResolver(ctx.OrgID).role(newUser)
 	c.JSON(http.StatusCreated, newUser)
 }
 
@@ -235,7 +235,7 @@ func Update(c *gin.Context) {
 		Email:    existingUser.Email,
 		Status:   openapi.StatusType(existingUser.Status),
 		Verified: existingUser.Verified, // DEPRECATED in flavor of role
-		Role:     toRole(req),
+		Role:     newRoleResolver(ctx.OrgID).role(req),
 		SlackID:  existingUser.SlackID,
 		Picture:  existingUser.Picture,
 		Groups:   req.Groups,
@@ -266,6 +266,7 @@ func List(c *gin.Context) {
 	}
 
 	// map users from db to openapi.User
+	roles := newRoleResolver(ctx.OrgID)
 	usersList := []openapi.User{}
 	for i, u := range users {
 		usersList = append(usersList,
@@ -284,7 +285,7 @@ func List(c *gin.Context) {
 				usersList[i].Groups = append(usersList[i].Groups, ug.Name)
 			}
 		}
-		usersList[i].Role = toRole(usersList[i])
+		usersList[i].Role = roles.role(usersList[i])
 	}
 
 	c.JSON(http.StatusOK, usersList)
@@ -377,7 +378,7 @@ func GetUserByEmailOrID(c *gin.Context) {
 	for _, ug := range userGroups {
 		userResponse.Groups = append(userResponse.Groups, ug.Name)
 	}
-	userResponse.Role = toRole(userResponse)
+	userResponse.Role = newRoleResolver(ctx.OrgID).role(userResponse)
 
 	c.JSON(http.StatusOK, userResponse)
 }
@@ -443,7 +444,7 @@ func GetUserInfo(c *gin.Context) {
 		roleName = openapi.RoleUnregisteredType
 	case ctx.IsAdminUser():
 		roleName = openapi.RoleAdminType
-	case ctx.IsApproverUser():
+	case newRoleResolver(ctx.OrgID).isApprover(ctx.UserGroups):
 		roleName = openapi.RoleApproverType
 	case ctx.IsAuditorUser():
 		roleName = openapi.RoleAuditorType
@@ -774,11 +775,60 @@ func isValidMailAddress(email string) bool {
 	return err == nil
 }
 
-func toRole(user openapi.User) string {
+// roleResolver decides the role /users and /userinfo report.
+//
+// A gateway reads the reserved approver group. A control plane has no such
+// group of its own: its groups come from the identity provider (ADR-0019), so
+// a user is an approver when their groups meet the reviewers of any sidecar
+// approval rule. That is what opens the Reviews page to them; the route
+// middleware treats the role as standard either way.
+type roleResolver struct {
+	controlPlane   bool
+	reviewerGroups map[string]bool
+}
+
+// newRoleResolver reads the reviewer groups once per request. A failed read
+// reports nobody as an approver rather than failing the request: the role only
+// decides which pages the web app shows.
+func newRoleResolver(orgID string) roleResolver {
+	r := roleResolver{controlPlane: appconfig.Get().IsControlPlane()}
+	if !r.controlPlane {
+		return r
+	}
+	orgUUID, err := uuid.Parse(orgID)
+	if err != nil {
+		log.With("org", orgID).Warnf("failed parsing the org id to resolve approvers, reason=%v", err)
+		return r
+	}
+	groups, err := models.ListSidecarReviewerGroups(models.DB, orgUUID)
+	if err != nil {
+		log.With("org", orgID).Warnf("failed listing the reviewer groups, reason=%v", err)
+		return r
+	}
+	r.reviewerGroups = make(map[string]bool, len(groups))
+	for _, g := range groups {
+		r.reviewerGroups[g] = true
+	}
+	return r
+}
+
+func (r roleResolver) isApprover(groups []string) bool {
+	if !r.controlPlane {
+		return slices.Contains(groups, types.GroupApprover)
+	}
+	for _, g := range groups {
+		if r.reviewerGroups[g] {
+			return true
+		}
+	}
+	return false
+}
+
+func (r roleResolver) role(user openapi.User) string {
 	if slices.Contains(user.Groups, types.GroupAdmin) {
 		return string(openapi.RoleAdminType)
 	}
-	if slices.Contains(user.Groups, types.GroupApprover) {
+	if r.isApprover(user.Groups) {
 		return string(openapi.RoleApproverType)
 	}
 	return string(openapi.RoleStandardType)

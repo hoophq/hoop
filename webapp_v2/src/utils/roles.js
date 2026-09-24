@@ -2,26 +2,6 @@ export const ROLE_ADMIN = 'admin'
 export const ROLE_APPROVER = 'approver'
 export const ROLE_STANDARD = 'standard'
 
-export const ROLE_OPTIONS = [
-  { value: ROLE_ADMIN, label: 'Administrator', description: 'Full access to the control plane' },
-  { value: ROLE_APPROVER, label: 'Approver', description: 'Reviews only' }
-]
-
-// standard is observed, never assigned: it is the absence of a reserved group.
-const OBSERVED_ROLES = [
-  { value: ROLE_STANDARD, label: 'Standard', description: 'No role in this app', disabled: true }
-]
-
-export function roleLabel(role) {
-  return [...ROLE_OPTIONS, ...OBSERVED_ROLES].find((r) => r.value === role)?.label ?? '—'
-}
-
-// A Select whose value is missing from its data renders empty.
-export function roleOptions(currentRole) {
-  const observed = OBSERVED_ROLES.find((r) => r.value === currentRole)
-  return observed ? [...ROLE_OPTIONS, observed] : ROLE_OPTIONS
-}
-
 // standard is the absence of a reserved group, never a group itself. Names come
 // from /serverinfo because ADMIN_USERNAME renames the admin one.
 export function roleToGroups(role, adminRoleName, approverRoleName) {

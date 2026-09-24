@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import {
   Anchor,
   Button,
@@ -18,45 +19,65 @@ import Modal from '@/components/Modal'
 import TextInput from '@/components/TextInput'
 import PasswordInput from '@/components/PasswordInput'
 import Select from '@/components/Select'
+import Switch from '@/components/Switch'
+import TagsInput from '@/components/TagsInput'
 import CopyButton from '@/components/CopyButton'
 import { usersService } from '@/services/users'
 import { authService } from '@/services/auth'
 import { useUserStore } from '@/stores/useUserStore'
 import { docsUrl } from '@/utils/docsUrl'
-import { ROLE_ADMIN, roleLabel, roleOptions, roleToGroups } from '@/utils/roles'
 import { showSnackbar } from '@/utils/snackbar'
 import { STATUS_OPTIONS, generatePassword, statusVariant } from './shared'
 
 /**
- * The control plane's Users page, sibling of GatewayUsers.jsx. The gateway edits
- * free-form groups; here a user has one role (utils/roles) and every other
- * group is round-tripped untouched, so an IdP-synced group survives an edit.
+ * The control plane's Users page, sibling of GatewayUsers.jsx.
+ *
+ * Groups come from the identity provider (ADR-0019): SCIM, a directory sync or
+ * the login claim writes them, so this page shows them and does not edit them.
+ * The one exception is local auth, which has no identity provider and keeps
+ * editing groups here. Administrator is hoop's own group and stays a switch.
  */
 
 function UserFormModal({ opened, onClose, formType, user, isLocalAuth, onSaved }) {
-  // The group names that carry the roles come from /serverinfo: ADMIN_USERNAME
-  // renames the admin one.
+  // ADMIN_USERNAME renames the admin group, so its name comes from /serverinfo.
   const adminRoleName = useUserStore((s) => s.adminRoleName)
-  const approverRoleName = useUserStore((s) => s.approverRoleName)
+  const currentEmail = useUserStore((s) => s.user?.email)
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
-  const [role, setRole] = useState(ROLE_ADMIN)
+  const [isAdmin, setIsAdmin] = useState(true)
   const [otherGroups, setOtherGroups] = useState([])
+  const [groupOptions, setGroupOptions] = useState([])
   const [status, setStatus] = useState('active')
   const [slackId, setSlackId] = useState('')
   const [password] = useState(() => generatePassword())
   const [saving, setSaving] = useState(false)
+  const isSelf = formType === 'update' && user?.email === currentEmail
 
   useEffect(() => {
     if (opened) {
       setName(user?.name ?? '')
       setEmail(user?.email ?? '')
-      setRole(user?.role ?? ROLE_ADMIN)
-      setOtherGroups((user?.groups ?? []).filter((g) => g !== adminRoleName && g !== approverRoleName))
+      setIsAdmin(user ? (user.groups ?? []).includes(adminRoleName) : true)
+      setOtherGroups((user?.groups ?? []).filter((g) => g !== adminRoleName))
       setStatus(user?.status ?? 'active')
       setSlackId(user?.slack_id ?? '')
     }
-  }, [opened, user, adminRoleName, approverRoleName])
+  }, [opened, user, adminRoleName])
+
+  useEffect(() => {
+    if (!opened || !isLocalAuth) return
+    let cancelled = false
+    usersService
+      .listGroups()
+      .then(({ data }) => {
+        if (!cancelled) setGroupOptions((Array.isArray(data) ? data : []).filter((g) => g !== adminRoleName))
+      })
+      // A group can still be typed without the list.
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [opened, isLocalAuth, adminRoleName])
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -70,7 +91,9 @@ function UserFormModal({ opened, onClose, formType, user, isLocalAuth, onSaved }
     }
     setSaving(true)
     try {
-      const groups = [...roleToGroups(role, adminRoleName, approverRoleName), ...otherGroups]
+      // PUT /users replaces the whole list, so the groups this page does not
+      // edit travel back untouched with the admin switch.
+      const groups = [...(isAdmin || isSelf ? [adminRoleName] : []), ...otherGroups]
       const payload = { name, groups, slack_id: slackId, email }
       if (formType === 'update') {
         payload.id = user.id
@@ -111,13 +134,6 @@ function UserFormModal({ opened, onClose, formType, user, isLocalAuth, onSaved }
             onChange={(e) => setName(e.currentTarget.value)}
             required
           />
-          <Select
-            label="Role"
-            data={roleOptions(role)}
-            value={role}
-            onChange={setRole}
-            required
-          />
           {formType === 'create' && (
             <TextInput
               label="Email"
@@ -127,6 +143,47 @@ function UserFormModal({ opened, onClose, formType, user, isLocalAuth, onSaved }
               onChange={(e) => setEmail(e.currentTarget.value)}
               required
             />
+          )}
+          <Switch
+            label="Administrator"
+            description={isSelf ? 'You cannot remove your own administrator access.' : 'Full access to the control plane.'}
+            checked={isAdmin || isSelf}
+            disabled={isSelf}
+            onChange={(e) => setIsAdmin(e.currentTarget.checked)}
+          />
+          {isLocalAuth ? (
+            <TagsInput
+              label="Groups"
+              description="Name these groups as reviewers on an analyzer rule."
+              placeholder="Select or type a group"
+              data={groupOptions}
+              value={otherGroups}
+              onChange={setOtherGroups}
+            />
+          ) : (
+            formType === 'update' && (
+              <Stack gap={4}>
+                <Text size="sm" fw={500}>
+                  Groups
+                </Text>
+                {otherGroups.length > 0 ? (
+                  <Group gap="xs">
+                    {otherGroups.map((g) => (
+                      <Badge key={g} variant="light" color="gray">
+                        {g}
+                      </Badge>
+                    ))}
+                  </Group>
+                ) : (
+                  <Text size="sm" c="dimmed">
+                    No groups.
+                  </Text>
+                )}
+                <Text size="xs" c="dimmed">
+                  Groups come from your identity provider.
+                </Text>
+              </Stack>
+            )
           )}
           {formType === 'update' && (
             <Select
@@ -139,6 +196,7 @@ function UserFormModal({ opened, onClose, formType, user, isLocalAuth, onSaved }
           )}
           <TextInput
             label="Slack ID"
+            description="Only needed when the Slack app cannot read emails."
             placeholder="U12345678"
             value={slackId}
             onChange={(e) => setSlackId(e.currentTarget.value)}
@@ -173,6 +231,7 @@ function UserFormModal({ opened, onClose, formType, user, isLocalAuth, onSaved }
 }
 
 export default function ControlPlaneUsers() {
+  const adminRoleName = useUserStore((s) => s.adminRoleName)
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -231,6 +290,15 @@ export default function ControlPlaneUsers() {
             <Text c="dimmed" size="lg">
               {users.length} {users.length === 1 ? 'Member' : 'Members'}
             </Text>
+            {!isLocalAuth && (
+              <Text size="sm" c="dimmed">
+                {'Reviewers and their groups come from your identity provider. Set it up in '}
+                <Anchor component={Link} to="/settings/provisioning" size="sm">
+                  Provisioning
+                </Anchor>
+                {'.'}
+              </Text>
+            )}
           </Stack>
           {users.length !== 1 && (
             <Button onClick={handleAdd}>Add User</Button>
@@ -250,7 +318,7 @@ export default function ControlPlaneUsers() {
                 <Table.Tr>
                   <Table.Th>Name</Table.Th>
                   <Table.Th>Email</Table.Th>
-                  <Table.Th>Role</Table.Th>
+                  <Table.Th>Groups</Table.Th>
                   <Table.Th>Status</Table.Th>
                   <Table.Th w={80} />
                 </Table.Tr>
@@ -258,27 +326,40 @@ export default function ControlPlaneUsers() {
               <Table.Tbody>
                 {[...users]
                   .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''))
-                  .map((user) => (
-                    <Table.Tr key={user.id}>
-                      <Table.Td>{user.name ?? '—'}</Table.Td>
-                      <Table.Td>{user.email ?? '—'}</Table.Td>
-                      <Table.Td>
-                        <Text size="sm" c="dimmed">
-                          {roleLabel(user.role)}
-                        </Text>
-                      </Table.Td>
-                      <Table.Td>
-                        <Badge variant={statusVariant(user.status)}>
-                          {user.status ?? '—'}
-                        </Badge>
-                      </Table.Td>
-                      <Table.Td>
-                        <Button variant="subtle" color="gray" size="sm" onClick={() => handleEdit(user)}>
-                          Edit
-                        </Button>
-                      </Table.Td>
-                    </Table.Tr>
-                  ))}
+                  .map((user) => {
+                    const groups = user.groups ?? []
+                    const others = groups.filter((g) => g !== adminRoleName)
+                    return (
+                      <Table.Tr key={user.id}>
+                        <Table.Td>
+                          <Group gap="xs" wrap="nowrap">
+                            <Text size="sm">{user.name ?? '—'}</Text>
+                            {groups.includes(adminRoleName) && (
+                              <Badge variant="light" color="indigo">
+                                Admin
+                              </Badge>
+                            )}
+                          </Group>
+                        </Table.Td>
+                        <Table.Td>{user.email ?? '—'}</Table.Td>
+                        <Table.Td>
+                          <Text size="sm" c="dimmed">
+                            {others.length > 0 ? others.join(', ') : '—'}
+                          </Text>
+                        </Table.Td>
+                        <Table.Td>
+                          <Badge variant={statusVariant(user.status)}>
+                            {user.status ?? '—'}
+                          </Badge>
+                        </Table.Td>
+                        <Table.Td>
+                          <Button variant="subtle" color="gray" size="sm" onClick={() => handleEdit(user)}>
+                            Edit
+                          </Button>
+                        </Table.Td>
+                      </Table.Tr>
+                    )
+                  })}
               </Table.Tbody>
             </Table>
 
@@ -286,7 +367,7 @@ export default function ControlPlaneUsers() {
               <Stack flex={1} mih="30vh" align="center" py="xxl">
                 <Stack flex={1} align="center" justify="center" gap="lg">
                   <Text size="sm" c="dimmed" ta="center" maw={400}>
-                    Invite administrators and approvers to manage sidecars and review access
+                    Invite administrators to manage sidecars. Reviewers come from your identity provider.
                   </Text>
                   <Button onClick={handleAdd}>Invite Users</Button>
                 </Stack>

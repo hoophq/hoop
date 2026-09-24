@@ -254,7 +254,15 @@ func (h *handler) SamlLoginCallback(c *gin.Context) {
 	usr.Subject = uinfo.Subject
 	usr.Name = uinfo.Profile
 	if uinfo.MustSyncGroups && idp.LoginSyncsGroups(usr.OrgID) {
-		usr.Groups = uinfo.Groups
+		groups := uinfo.Groups
+		// A control plane keeps a user's admin group across logins, as the
+		// OIDC login does: the group is hoop's, and the identity provider's
+		// claim not naming it must not lock an admin out.
+		if appconfig.Get().IsControlPlane() && slices.Contains(usr.Groups, types.GroupAdmin) &&
+			!slices.Contains(groups, types.GroupAdmin) {
+			groups = append(groups, types.GroupAdmin)
+		}
+		usr.Groups = groups
 	}
 
 	var slackID *string

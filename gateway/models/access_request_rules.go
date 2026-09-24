@@ -172,3 +172,14 @@ func GetRequestRulesByAttributes(db *gorm.DB, orgID uuid.UUID, attributes []stri
 
 	return &accessRequestRule, nil
 }
+
+// ListSidecarReviewerGroups returns every group some sidecar approval rule
+// names as reviewers. A control plane reports a user as an approver when their
+// groups meet this list (ADR-0019).
+func ListSidecarReviewerGroups(db *gorm.DB, orgID uuid.UUID) ([]string, error) {
+	var groups []string
+	err := db.Raw(`
+		SELECT DISTINCT unnest(reviewers_groups) FROM private.access_request_rules
+		WHERE org_id = ? AND access_type = ?`, orgID, AccessTypeSidecar).Scan(&groups).Error
+	return groups, err
+}

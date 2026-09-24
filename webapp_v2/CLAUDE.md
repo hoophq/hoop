@@ -112,12 +112,14 @@ what a product shows, and ClojureScript exists only in the gateway.**
   frame with the gateway's tokens; that is accepted rather than gated on
   `appModeLoaded`.
 - **Roles (control plane).** `/userinfo` reports `role`: **admin** reaches every page,
-  **approver** reaches Reviews, anything else lands on the dead end at `/`. A role is a
-  reserved group name; `standard` is the absence of one and is never stored as a group.
-  The group names come from `/serverinfo` (`admin_role_name`, `approver_role_name`),
-  never a literal. Gate a route with `<Page role={ROLE_APPROVER}>` and a nav or palette
-  item with `role:`; `hasRole` in `utils/roles.js` is the single decision and admin
-  passes every gate. `adminOnly` is the gate both products share. This gates pages, not
+  **approver** reaches Reviews, anything else lands on the dead end at `/`. Admin is a
+  reserved group name, from `/serverinfo` (`admin_role_name`), never a literal. Approver
+  is derived by the backend: a user whose groups meet the `reviewers_groups` of any
+  sidecar approval rule (ADR-0019). Groups come from the identity provider, so the
+  Users page shows them and edits only the admin switch, except under local auth.
+  `standard` is the absence of a role and is never stored as a group. Gate a route with
+  `<Page role={ROLE_APPROVER}>` and a nav or palette item with `role:`; `hasRole` in
+  `utils/roles.js` is the single decision and admin passes every gate. `adminOnly` is the gate both products share. This gates pages, not
   data: the backend serves the same routes in both modes, so the route's own middleware
   in `gateway/api/server.go` is the authority on what a request returns.
 
