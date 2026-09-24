@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"sync"
 
 	"github.com/elimity-com/scim"
 	scimerrors "github.com/elimity-com/scim/errors"
@@ -21,6 +20,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/services"
+	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 )
 
@@ -35,11 +35,8 @@ func orgFromRequest(r *http.Request) string {
 	return orgID
 }
 
-var (
-	serverOnce sync.Once
-	server     scim.Server
-	serverErr  error
-)
+// server is built once by Init, when the control plane starts.
+var server *scim.Server
 
 func newServer() (scim.Server, error) {
 	// Entra ID sends booleans such as "active" as the strings "True" and
@@ -85,6 +82,18 @@ func newServer() (scim.Server, error) {
 	)
 }
 
+// Init builds the SCIM server. The control plane calls it at startup and
+// refuses to start when it fails, rather than answering every SCIM request
+// with an error.
+func Init() error {
+	srv, err := newServer()
+	if err != nil {
+		return fmt.Errorf("failed building the scim server: %w", err)
+	}
+	server = &srv
+	return nil
+}
+
 // BaseURL is the SCIM base URL an identity provider is configured with.
 func BaseURL() string {
 	return appconfig.Get().FullApiURL() + "/api/scim/v2"
@@ -105,16 +114,15 @@ func Handler(c *gin.Context) {
 		abort(c, http.StatusPreconditionFailed, "SCIM provisioning is served by the control plane")
 		return
 	}
-	serverOnce.Do(func() { server, serverErr = newServer() })
-	if serverErr != nil {
-		log.Errorf("failed building the scim server, err=%v", serverErr)
+	if server == nil {
+		log.Errorf("the scim server was not initialized")
 		abort(c, http.StatusInternalServerError, "internal server error")
 		return
 	}
 
 	req := c.Request.Clone(context.WithValue(c.Request.Context(), orgKey{}, orgID))
-	// The library routes on paths that start with /v2.
-	req.URL.Path = "/v2" + c.Param("path")
+	// The library routes on the path below the base URL (/Users, /Groups).
+	req.URL.Path = c.Param("path")
 	req.URL.RawPath = ""
 	server.ServeHTTP(c.Writer, req)
 }
@@ -141,9 +149,25 @@ func toSCIMError(id string, err error) error {
 		return e
 	case errors.Is(err, services.ErrProvisionedUserEmailRequired):
 		return scimerrors.ScimErrorBadRequest(err.Error())
+	case errors.Is(err, services.ErrReservedGroupName),
+		errors.Is(err, services.ErrInvalidGroupName):
+		e := scimerrors.ScimErrorInvalidValue
+		e.Detail = err.Error()
+		return e
+	case isUniqueViolation(err):
+		e := scimerrors.ScimErrorUniqueness
+		e.Detail = "a user or group with this value already exists"
+		return e
 	}
 	log.Errorf("scim request failed, id=%s, err=%v", id, err)
 	return scimerrors.ScimError{Status: http.StatusInternalServerError, Detail: "internal server error"}
+}
+
+// isUniqueViolation reports a unique index refusing the write, for example two
+// SCIM users whose user names differ only in case.
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.Is(err, gorm.ErrDuplicatedKey) || (errors.As(err, &pgErr) && pgErr.Code == "23505")
 }
 
 // page applies a list request's filter and window to resources that were

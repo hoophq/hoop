@@ -193,6 +193,86 @@ func (s *SlackService) GetUserInfo(ctx context.Context, slackID string) (*SlackU
 	}, nil
 }
 
+// DirectoryUser is a Slack workspace member as the Slack import reads it
+// (users.list).
+type DirectoryUser struct {
+	SlackUser
+	Name    string
+	IsAdmin bool
+	IsOwner bool
+}
+
+// UserGroup is a Slack user group (usergroups.list). CreatedBy and UpdatedBy
+// are Slack user ids: who may edit a user group is a workspace setting hoop
+// cannot see, so the import checks who edited it last.
+type UserGroup struct {
+	ID         string
+	Handle     string
+	Name       string
+	IsExternal bool
+	CreatedBy  string
+	UpdatedBy  string
+	Users      []string
+}
+
+// ListUsers reads every member of the workspace (users.list), page by page.
+// It needs users:read, and users:read.email for the emails.
+func (s *SlackService) ListUsers(ctx context.Context) ([]DirectoryUser, error) {
+	users, err := s.apiClient.GetUsersContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed listing slack users, err=%w", err)
+	}
+	out := make([]DirectoryUser, 0, len(users))
+	for _, u := range users {
+		name := u.RealName
+		if name == "" {
+			name = u.Profile.RealName
+		}
+		out = append(out, DirectoryUser{
+			SlackUser: SlackUser{
+				ID:                u.ID,
+				TeamID:            u.TeamID,
+				EnterpriseID:      u.Enterprise.EnterpriseID,
+				Email:             u.Profile.Email,
+				Deleted:           u.Deleted,
+				IsBot:             u.IsBot || u.IsAppUser,
+				IsRestricted:      u.IsRestricted,
+				IsUltraRestricted: u.IsUltraRestricted,
+				IsStranger:        u.IsStranger,
+				IsEmailConfirmed:  u.IsEmailConfirmed,
+			},
+			Name:    name,
+			IsAdmin: u.IsAdmin,
+			IsOwner: u.IsOwner,
+		})
+	}
+	return out, nil
+}
+
+// ListUserGroups reads the workspace's enabled user groups with their members
+// (usergroups.list). It needs usergroups:read.
+func (s *SlackService) ListUserGroups(ctx context.Context) ([]UserGroup, error) {
+	groups, err := s.apiClient.GetUserGroupsContext(ctx,
+		slack.GetUserGroupsOptionIncludeUsers(true),
+		slack.GetUserGroupsOptionIncludeDisabled(false))
+	if err != nil {
+		return nil, fmt.Errorf("failed listing slack user groups, err=%w", err)
+	}
+	out := make([]UserGroup, 0, len(groups))
+	for _, g := range groups {
+		out = append(out, UserGroup{
+			ID:         g.ID,
+			Handle:     g.Handle,
+			Name:       g.Name,
+			IsExternal: g.IsExternal,
+			CreatedBy:  g.CreatedBy,
+			UpdatedBy:  g.UpdatedBy,
+			Users:      g.Users,
+		})
+	}
+	return out, nil
+}
+
 type MessageReviewRequest struct {
 	ID             string
 	Name           string

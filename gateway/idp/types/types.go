@@ -1,19 +1,6 @@
 package idptypes
 
-import (
-	"encoding/json"
-	"errors"
-)
-
-// ErrDirectoryGroupsUnsupported is returned when the configured provider
-// cannot list the directory groups with the configured client credentials.
-var ErrDirectoryGroupsUnsupported = errors.New("directory group listing is not supported by this provider")
-
-// DirectoryGroup is one group of the identity provider directory.
-type DirectoryGroup struct {
-	ID   string
-	Name string
-}
+import "encoding/json"
 
 type ProviderType string
 

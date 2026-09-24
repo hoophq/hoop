@@ -79,15 +79,6 @@ type SessionRenewer interface {
 	RenewAccessToken(currentToken string, tokenDuration, maxSessionAge time.Duration) (string, error)
 }
 
-// DirectoryGroupLister is an optional interface for providers that can list
-// every group of the identity provider directory using the configured
-// client credentials (client-credentials grant).
-type DirectoryGroupLister interface {
-	ListDirectoryGroups(ctx context.Context) ([]idptypes.DirectoryGroup, error)
-}
-
-var _ DirectoryGroupLister = (*oidcprovider.Provider)(nil)
-
 var (
 	singletonStore         = memory.New()
 	singletonStoreKey      = "1"
@@ -149,15 +140,6 @@ func (v userInfoTokenVerifier) RenewAccessToken(currentToken string, tokenDurati
 		return sr.RenewAccessToken(currentToken, tokenDuration, maxSessionAge)
 	}
 	return "", fmt.Errorf("session renewal not supported by this provider")
-}
-
-// ListDirectoryGroups delegates to the underlying provider if it can list
-// the identity provider directory groups.
-func (v userInfoTokenVerifier) ListDirectoryGroups(ctx context.Context) ([]idptypes.DirectoryGroup, error) {
-	if lister, ok := v.UserInfoTokenVerifier.(DirectoryGroupLister); ok {
-		return lister.ListDirectoryGroups(ctx)
-	}
-	return nil, idptypes.ErrDirectoryGroupsUnsupported
 }
 
 // TryRefreshExpiredToken validates the signature of an expired JWT, extracts

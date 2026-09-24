@@ -4,17 +4,149 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/gateway/models"
 	modelsbootstrap "github.com/hoophq/hoop/gateway/models/bootstrap"
 	"github.com/hoophq/hoop/gateway/pglite"
+	"github.com/hoophq/hoop/gateway/services"
+	slackservice "github.com/hoophq/hoop/gateway/slack"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/lib/pq"
 )
 
 const syncOrgID = "00000000-0000-0000-0000-0000000000c1"
+
+// fakeSlack is a workspace as users.list and usergroups.list report it.
+type fakeSlack struct {
+	users  []slackservice.DirectoryUser
+	groups []slackservice.UserGroup
+	err    error
+}
+
+func (f *fakeSlack) ListUsers(context.Context) ([]slackservice.DirectoryUser, error) {
+	return f.users, f.err
+}
+func (f *fakeSlack) ListUserGroups(context.Context) ([]slackservice.UserGroup, error) {
+	return f.groups, f.err
+}
+
+func (f *fakeSlack) provider() *slackProvider { return &slackProvider{api: f} }
+
+func (f *fakeSlack) user(id string) *slackservice.DirectoryUser {
+	for i := range f.users {
+		if f.users[i].ID == id {
+			return &f.users[i]
+		}
+	}
+	return nil
+}
+
+func (f *fakeSlack) group(id string) *slackservice.UserGroup {
+	for i := range f.groups {
+		if f.groups[i].ID == id {
+			return &f.groups[i]
+		}
+	}
+	return nil
+}
+
+func member(id, email string) slackservice.DirectoryUser {
+	return slackservice.DirectoryUser{
+		SlackUser: slackservice.SlackUser{ID: id, Email: email, IsEmailConfirmed: true},
+		Name:      strings.Split(email, "@")[0],
+	}
+}
+
+func workspace() *fakeSlack {
+	admin := member("U-ADMIN", "root@corp.com")
+	admin.IsAdmin = true
+	bot := member("U-BOT", "bot@corp.com")
+	bot.IsBot = true
+	guest := member("U-GUEST", "guest@corp.com")
+	guest.IsRestricted = true
+	stranger := member("U-STRANGER", "stranger@other.com")
+	stranger.IsStranger = true
+	return &fakeSlack{
+		users: []slackservice.DirectoryUser{
+			admin, member("U-ANA", "Ana@Corp.com"), member("U-BOB", "bob@corp.com"), member("U-EVE", "eve@corp.com"),
+			bot, guest, stranger,
+		},
+		groups: []slackservice.UserGroup{
+			{ID: "S-DBA", Handle: "dba-leads", CreatedBy: "U-EVE", UpdatedBy: "U-ADMIN",
+				Users: []string{"U-ADMIN", "U-ANA", "U-BOB", "U-BOT", "U-GUEST", "U-STRANGER"}},
+			{ID: "S-SRE", Handle: "sre", CreatedBy: "U-EVE", Users: []string{"U-EVE"}},
+			{ID: "S-ADMIN", Handle: "admin", CreatedBy: "U-ADMIN", Users: []string{"U-EVE"}},
+			{ID: "S-SHARED", Handle: "partners", CreatedBy: "U-ADMIN", IsExternal: true, Users: []string{"U-ANA"}},
+		},
+	}
+}
+
+func TestSlackProvider(t *testing.T) {
+	ctx := context.Background()
+	f := workspace()
+	p := f.provider()
+
+	groups, err := p.ListGroups(ctx)
+	if err != nil {
+		t.Fatalf("list groups: %v", err)
+	}
+	var names []string
+	for _, g := range groups {
+		names = append(names, g.Name)
+	}
+	if !slices.Equal(names, []string{"admin", "dba-leads", "sre"}) {
+		t.Errorf("groups = %v; want handles, without the external group", names)
+	}
+
+	members, err := p.ListMembers(ctx, "S-DBA")
+	if err != nil {
+		t.Fatalf("list members: %v", err)
+	}
+	var emails []string
+	for _, m := range members {
+		emails = append(emails, m.Email)
+	}
+	if !slices.Equal(emails, []string{"root@corp.com", "ana@corp.com", "bob@corp.com"}) {
+		t.Errorf("members = %v; want no bot, guest or stranger, emails lower case", emails)
+	}
+
+	// dba-leads was last edited by an admin; sre only ever by a member.
+	if err := p.CheckGroups(ctx, []string{"S-DBA"}, false); err != nil {
+		t.Errorf("admin-managed group refused: %v", err)
+	}
+	err = p.CheckGroups(ctx, []string{"S-DBA", "S-SRE"}, false)
+	if err == nil || !strings.Contains(err.Error(), "@sre") || strings.Contains(err.Error(), "@dba-leads") {
+		t.Errorf("member-managed group: err = %v; want @sre named", err)
+	}
+	if err := p.CheckGroups(ctx, []string{"S-SRE"}, true); err != nil {
+		t.Errorf("allowed member-managed group refused: %v", err)
+	}
+
+	governed, err := ListGroupsWithGovernance(ctx, f.provider())
+	if err != nil {
+		t.Fatalf("governance: %v", err)
+	}
+	for _, g := range governed {
+		if want := g.Name != "sre"; g.AdminManaged != want {
+			t.Errorf("%s admin_managed = %v, want %v", g.Name, g.AdminManaged, want)
+		}
+	}
+
+	f.user("U-BOB").Deleted = true
+	deleted, err := f.provider().DeletedUsers(ctx)
+	if err != nil || !deleted["U-BOB"] || len(deleted) != 1 {
+		t.Errorf("deleted = %v err %v; want only U-BOB", deleted, err)
+	}
+
+	if _, err := (&fakeSlack{err: errors.New("slack down")}).provider().ListGroups(ctx); err == nil {
+		t.Errorf("want the Slack error")
+	}
+}
 
 func startSyncDB(t *testing.T) {
 	t.Helper()
@@ -38,25 +170,19 @@ func startSyncDB(t *testing.T) {
 	}
 }
 
-type fakeProvider struct {
-	groups  []Group
-	members map[string][]User
-	err     error
+type userRow struct {
+	Status  string
+	SlackID *string
 }
 
-func (f *fakeProvider) ListGroups(context.Context) ([]Group, error) { return f.groups, f.err }
-func (f *fakeProvider) ListMembers(_ context.Context, id string) ([]User, error) {
-	return f.members[id], f.err
-}
-
-func activeEmails(t *testing.T) []string {
+func userByEmail(t *testing.T, email string) userRow {
 	t.Helper()
-	var emails []string
-	if err := models.DB.Raw(`SELECT email FROM private.users WHERE org_id = ? AND status = 'active' ORDER BY email`,
-		syncOrgID).Scan(&emails).Error; err != nil {
-		t.Fatalf("list users: %v", err)
+	var row userRow
+	if err := models.DB.Raw(`SELECT status, slack_id FROM private.users WHERE org_id = ? AND email = ?`,
+		syncOrgID, email).Scan(&row).Error; err != nil {
+		t.Fatalf("load %s: %v", email, err)
 	}
-	return emails
+	return row
 }
 
 func groupsOf(t *testing.T, email string) []string {
@@ -70,85 +196,192 @@ func groupsOf(t *testing.T, email string) []string {
 	return names
 }
 
-func TestReconcile(t *testing.T) {
+func syncConfig(groupIDs ...string) *models.DirectorySyncConfig {
+	return &models.DirectorySyncConfig{OrgID: syncOrgID, Provider: models.ProvisioningSourceSlack,
+		GroupIDs: pq.StringArray(groupIDs), IntervalMinutes: 15}
+}
+
+func TestReconcileSlack(t *testing.T) {
 	startSyncDB(t)
 	ctx := context.Background()
-	src := models.ProvisioningSourceGoogle
+	src := models.ProvisioningSourceSlack
 
-	// An admin who logged in before the sync existed.
-	adminID := uuid.NewString()
+	// The org's admin, who logged in before the sync existed and is also a
+	// Slack workspace admin in dba-leads.
+	rootID := uuid.NewString()
 	if err := models.DB.Exec(`INSERT INTO private.users (id, org_id, subject, email, name, status)
-		VALUES (?, ?, 'idp|root', 'root@example.com', 'Root', 'active')`, adminID, syncOrgID).Error; err != nil {
+		VALUES (?, ?, 'idp|root', 'root@corp.com', 'Root', 'active')`, rootID, syncOrgID).Error; err != nil {
 		t.Fatalf("seed admin: %v", err)
 	}
-	if err := models.InsertUserGroups([]models.UserGroup{{OrgID: syncOrgID, UserID: adminID, Name: types.GroupAdmin}}); err != nil {
+	if err := models.InsertUserGroups([]models.UserGroup{{OrgID: syncOrgID, UserID: rootID, Name: types.GroupAdmin}}); err != nil {
 		t.Fatalf("seed admin group: %v", err)
 	}
 
-	p := &fakeProvider{
-		groups: []Group{{ID: "g1", Name: "dba@example.com"}, {ID: "g2", Name: "sre@example.com"}, {ID: "g3", Name: "other@example.com"}},
-		members: map[string][]User{
-			"g1": {
-				{ExternalID: "u1", Email: "ana@example.com", Name: "Ana", Active: true},
-				{ExternalID: "u2", Email: "bob@example.com", Name: "Bob", Active: false},
-				{ExternalID: "root", Email: "root@example.com", Name: "Root", Active: true},
-			},
-			"g2": {{ExternalID: "u1", Email: "ana@example.com", Name: "Ana", Active: true}},
-		},
-	}
-
-	if err := reconcile(ctx, models.DB, syncOrgID, src, p, []string{"g1", "g2"}); err != nil {
+	f := workspace()
+	diff, err := reconcile(ctx, models.DB, syncOrgID, src, f.provider(), syncConfig("S-DBA"))
+	if err != nil {
 		t.Fatalf("first run: %v", err)
 	}
-	if got := activeEmails(t); !slices.Equal(got, []string{"ana@example.com", "root@example.com"}) {
-		t.Fatalf("active users = %v; want ana and root, bob is suspended", got)
+	if !slices.Equal(diff.UsersCreated, []string{"ana@corp.com", "bob@corp.com"}) {
+		t.Errorf("created = %v; root existed already", diff.UsersCreated)
 	}
-	if got := groupsOf(t, "ana@example.com"); !slices.Equal(got, []string{"dba@example.com", "sre@example.com"}) {
-		t.Fatalf("ana groups = %v", got)
+	for email, slackID := range map[string]string{"ana@corp.com": "U-ANA", "bob@corp.com": "U-BOB", "root@corp.com": "U-ADMIN"} {
+		if got := userByEmail(t, email); got.Status != "active" || got.SlackID == nil || *got.SlackID != slackID {
+			t.Errorf("%s = %+v; want active with slack id %s", email, got, slackID)
+		}
+		if got := groupsOf(t, email); !slices.Contains(got, "dba-leads") {
+			t.Errorf("%s groups = %v; want dba-leads", email, got)
+		}
 	}
-	if got := groupsOf(t, "bob@example.com"); len(got) != 0 {
-		t.Fatalf("suspended bob holds %v", got)
+	if got := groupsOf(t, "root@corp.com"); !slices.Equal(got, []string{types.GroupAdmin, "dba-leads"}) {
+		t.Errorf("root groups = %v; the admin row must stay", got)
 	}
-
-	// A provider error mid-run must not touch anyone.
-	failing := &fakeProvider{groups: p.groups, err: errors.New("directory unavailable")}
-	if err := reconcile(ctx, models.DB, syncOrgID, src, failing, []string{"g1"}); err == nil {
-		t.Fatalf("want the provider error")
-	}
-	if got := activeEmails(t); !slices.Equal(got, []string{"ana@example.com", "root@example.com"}) {
-		t.Fatalf("after a failed run, active users = %v; want unchanged", got)
-	}
-
-	// A selected group that vanished from the provider fails the run.
-	if err := reconcile(ctx, models.DB, syncOrgID, src, p, []string{"g1", "missing"}); err == nil {
-		t.Fatalf("want an error for a missing group")
+	managed, err := models.GroupsManagedByProvisioning(models.DB, syncOrgID)
+	if err != nil || !managed {
+		t.Errorf("after a slack run: managed=%v err=%v; want true", managed, err)
 	}
 
-	// Narrow the selection to g2 and rename it upstream: ana stays, root (an
-	// admin) keeps access but loses the synced group, g1 disappears.
-	p.groups[1].Name = "site-reliability@example.com"
-	if err := reconcile(ctx, models.DB, syncOrgID, src, p, []string{"g2"}); err != nil {
-		t.Fatalf("narrowed run: %v", err)
+	t.Run("a member-managed group refuses the whole run", func(t *testing.T) {
+		_, err := reconcile(ctx, models.DB, syncOrgID, src, f.provider(), syncConfig("S-DBA", "S-SRE"))
+		if err == nil || !strings.Contains(err.Error(), "@sre") {
+			t.Fatalf("err = %v; want the governance refusal", err)
+		}
+		if got := groupsOf(t, "eve@corp.com"); len(got) != 0 {
+			t.Errorf("eve groups = %v; nothing may be written", got)
+		}
+		cfg := syncConfig("S-DBA", "S-SRE")
+		cfg.AllowMemberManagedGroups = true
+		if _, err := reconcile(ctx, models.DB, syncOrgID, src, f.provider(), cfg); err != nil {
+			t.Fatalf("allowed: %v", err)
+		}
+		if got := groupsOf(t, "eve@corp.com"); !slices.Equal(got, []string{"sre"}) {
+			t.Errorf("eve groups = %v; want sre", got)
+		}
+	})
+
+	t.Run("a group named admin is refused and admins keep their row", func(t *testing.T) {
+		_, err := reconcile(ctx, models.DB, syncOrgID, src, f.provider(), syncConfig("S-DBA", "S-ADMIN"))
+		if !errors.Is(err, services.ErrReservedGroupName) {
+			t.Fatalf("err = %v; want ErrReservedGroupName", err)
+		}
+		if got := groupsOf(t, "eve@corp.com"); slices.Contains(got, types.GroupAdmin) {
+			t.Errorf("eve became admin: %v", got)
+		}
+		if got := groupsOf(t, "root@corp.com"); !slices.Contains(got, types.GroupAdmin) {
+			t.Errorf("root lost admin: %v", got)
+		}
+	})
+
+	t.Run("a member who leaves keeps the account and loses the group", func(t *testing.T) {
+		g := f.group("S-DBA")
+		g.Users = slices.DeleteFunc(g.Users, func(id string) bool { return id == "U-BOB" })
+		diff, err := reconcile(ctx, models.DB, syncOrgID, src, f.provider(), syncConfig("S-DBA"))
+		if err != nil {
+			t.Fatalf("run: %v", err)
+		}
+		if got := userByEmail(t, "bob@corp.com"); got.Status != "active" {
+			t.Errorf("bob = %+v; leaving a group is not leaving the company", got)
+		}
+		if got := groupsOf(t, "bob@corp.com"); len(got) != 0 {
+			t.Errorf("bob groups = %v; want none", got)
+		}
+		if got := diff.MembershipsRemoved["dba-leads"]; !slices.Contains(got, "bob@corp.com") {
+			t.Errorf("removed = %v; want bob in the diff", diff.MembershipsRemoved)
+		}
+		if !slices.Contains(diff.GroupsRemoved, "sre") {
+			t.Errorf("groups removed = %v; sre is no longer selected", diff.GroupsRemoved)
+		}
+	})
+
+	t.Run("a user deleted in Slack is deactivated, an admin is not", func(t *testing.T) {
+		f.user("U-ANA").Deleted = true
+		f.user("U-ADMIN").Deleted = true
+		diff, err := reconcile(ctx, models.DB, syncOrgID, src, f.provider(), syncConfig("S-DBA"))
+		if err != nil {
+			t.Fatalf("run: %v", err)
+		}
+		if got := userByEmail(t, "ana@corp.com"); got.Status != "inactive" {
+			t.Errorf("ana = %+v; want inactive", got)
+		}
+		if !slices.Equal(diff.UsersDeactivated, []string{"ana@corp.com"}) {
+			t.Errorf("deactivated = %v; want only ana", diff.UsersDeactivated)
+		}
+		if got := userByEmail(t, "root@corp.com"); got.Status != "active" {
+			t.Errorf("root = %+v; an admin is never deactivated by a sync", got)
+		}
+		if got := groupsOf(t, "root@corp.com"); !slices.Equal(got, []string{types.GroupAdmin}) {
+			t.Errorf("root groups = %v; want only admin", got)
+		}
+	})
+}
+
+func TestRunRecordsResultAndAudit(t *testing.T) {
+	startSyncDB(t)
+	f := workspace()
+	orig := newProvider
+	newProvider = func(string, *models.DirectorySyncConfig) (Provider, error) { return f.provider(), nil }
+	t.Cleanup(func() { newProvider = orig })
+
+	if err := models.UpsertDirectorySyncConfig(models.DB, syncConfig("S-DBA")); err != nil {
+		t.Fatalf("store config: %v", err)
 	}
-	if got := activeEmails(t); !slices.Equal(got, []string{"ana@example.com", "root@example.com"}) {
-		t.Fatalf("active users = %v; the admin must stay active", got)
+	actor := Actor{Subject: "idp|root", Email: "root@corp.com", Name: "Root"}
+	if err := Run(context.Background(), models.DB, syncOrgID, actor); err != nil {
+		t.Fatalf("run: %v", err)
 	}
-	if got := groupsOf(t, "root@example.com"); !slices.Equal(got, []string{types.GroupAdmin}) {
-		t.Fatalf("root groups = %v; want only admin", got)
-	}
-	if got := groupsOf(t, "ana@example.com"); !slices.Equal(got, []string{"site-reliability@example.com"}) {
-		t.Fatalf("ana groups = %v; want the renamed group only", got)
-	}
-	if _, err := models.GetDirectoryGroupByName(models.DB, syncOrgID, "dba@example.com"); err == nil {
-		t.Fatalf("the deselected group survived")
+	cfg, err := models.GetDirectorySyncConfig(models.DB, syncOrgID)
+	if err != nil || cfg.LastRunAt == nil || cfg.LastError != nil {
+		t.Fatalf("config = %+v err %v; want a successful last run", cfg, err)
 	}
 
-	// Ana leaves g2: she is out of scope and deactivated.
-	p.members["g2"] = nil
-	if err := reconcile(ctx, models.DB, syncOrgID, src, p, []string{"g2"}); err != nil {
-		t.Fatalf("empty run: %v", err)
+	var rows []models.SecurityAuditLog
+	if err := models.DB.Where("org_id = ? AND resource_type = 'provisioning'", syncOrgID).Find(&rows).Error; err != nil {
+		t.Fatalf("audit: %v", err)
 	}
-	if got := activeEmails(t); !slices.Equal(got, []string{"root@example.com"}) {
-		t.Fatalf("active users = %v; want only root", got)
+	if len(rows) != 1 || !rows[0].Outcome || rows[0].Action != "sync" || rows[0].ActorEmail != "root@corp.com" {
+		t.Fatalf("audit rows = %+v; want one successful sync by root", rows)
+	}
+	created, _ := rows[0].RequestPayloadRedacted["users_created"].([]any)
+	if len(created) != 3 {
+		t.Errorf("audit payload users_created = %v; want the three members", rows[0].RequestPayloadRedacted)
+	}
+
+	// A refused run records the error on the config and in the audit log.
+	if err := models.UpsertDirectorySyncConfig(models.DB, syncConfig("S-SRE")); err != nil {
+		t.Fatalf("store config: %v", err)
+	}
+	if err := Run(context.Background(), models.DB, syncOrgID, SystemActor); err == nil {
+		t.Fatalf("want the governance refusal")
+	}
+	cfg, _ = models.GetDirectorySyncConfig(models.DB, syncOrgID)
+	if cfg.LastError == nil || !strings.Contains(*cfg.LastError, "@sre") {
+		t.Errorf("last_error = %v; want the refusal", cfg.LastError)
+	}
+	var failed int64
+	models.DB.Model(&models.SecurityAuditLog{}).
+		Where("org_id = ? AND resource_type = 'provisioning' AND outcome = false AND actor_subject = 'system'", syncOrgID).
+		Count(&failed)
+	if failed != 1 {
+		t.Errorf("failed audit rows = %d; want 1", failed)
+	}
+}
+
+func TestDue(t *testing.T) {
+	now := time.Now().UTC()
+	recent := now.Add(-5 * time.Minute)
+	old := now.Add(-20 * time.Minute)
+	for _, tt := range []struct {
+		name string
+		cfg  models.DirectorySyncConfig
+		want bool
+	}{
+		{"no groups", models.DirectorySyncConfig{IntervalMinutes: 15}, false},
+		{"never ran", models.DirectorySyncConfig{GroupIDs: pq.StringArray{"S1"}, IntervalMinutes: 15}, true},
+		{"ran recently", models.DirectorySyncConfig{GroupIDs: pq.StringArray{"S1"}, IntervalMinutes: 15, LastRunAt: &recent}, false},
+		{"interval passed", models.DirectorySyncConfig{GroupIDs: pq.StringArray{"S1"}, IntervalMinutes: 15, LastRunAt: &old}, true},
+	} {
+		if got := due(tt.cfg, now); got != tt.want {
+			t.Errorf("%s: due = %v, want %v", tt.name, got, tt.want)
+		}
 	}
 }

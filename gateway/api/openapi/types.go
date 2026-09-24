@@ -3031,46 +3031,97 @@ type SCIMToken struct {
 	BaseURL string `json:"base_url" example:"https://hoop.example.com/api/scim/v2"`
 }
 
-// DirectorySyncConfig is how the control plane pulls users and groups from an
-// identity provider that does not push SCIM (ADR-0019).
+// DirectorySyncConfig is how the control plane pulls users and groups from
+// Slack user groups (ADR-0019). It uses the org's Slack app and stores no
+// credential.
 type DirectorySyncConfig struct {
 	// Whether a directory sync is configured
 	Enabled bool `json:"enabled"`
-	// The identity provider
-	Provider string `json:"provider" enums:"google,auth0,cognito" example:"google"`
-	// The provider's settings. Secrets are returned as "********"; sending that value back keeps the stored secret.
-	//  google: service_account_json, admin_email, customer
-	//  auth0: domain, client_id, client_secret
-	//  cognito: region, user_pool_id, access_key_id, secret_access_key
-	Settings map[string]any `json:"settings"`
-	// The provider's ids of the groups whose members are synced
+	// The directory
+	Provider string `json:"provider" enums:"slack" example:"slack"`
+	// The Slack ids of the user groups whose members are synced
 	GroupIDs []string `json:"group_ids"`
 	// Minutes between two runs
 	IntervalMinutes int `json:"interval_minutes" example:"15"`
+	// Accept user groups last edited by a workspace member who is not an admin or owner
+	AllowMemberManagedGroups bool `json:"allow_member_managed_groups"`
 	// When the sync last ran
 	LastRunAt *time.Time `json:"last_run_at,omitempty"`
 	// Why the last run failed; empty when it succeeded
 	LastError *string `json:"last_error,omitempty"`
 }
 
-// DirectorySyncRequest configures the directory sync.
+// DirectorySyncRequest configures the Slack directory sync.
 type DirectorySyncRequest struct {
-	// The identity provider
-	Provider string `json:"provider" binding:"required" enums:"google,auth0,cognito" example:"google"`
-	// The provider's settings; see DirectorySyncConfig
-	Settings map[string]any `json:"settings" binding:"required"`
-	// The provider's ids of the groups whose members are synced
+	// The Slack ids of the user groups whose members are synced
 	GroupIDs []string `json:"group_ids"`
 	// Minutes between two runs, at least 5. Defaults to 15
 	IntervalMinutes int `json:"interval_minutes" example:"15"`
+	// Accept user groups last edited by a workspace member who is not an admin
+	// or owner. hoop cannot restrict who edits user groups; restrict it to
+	// admins in the Slack workspace settings instead when you can.
+	AllowMemberManagedGroups bool `json:"allow_member_managed_groups"`
 }
 
-// DirectoryGroup is a group of the identity provider a directory sync can read.
+// DirectoryGroup is a Slack user group the directory sync can read.
 type DirectoryGroup struct {
-	// The provider's id of the group
-	ID string `json:"id" example:"03x8tuzt1b9wqa4"`
-	// The group name hoop stores
-	Name string `json:"name" example:"dba-leads@example.com"`
+	// The Slack id of the user group
+	ID string `json:"id" example:"S0614TZR7"`
+	// The group name hoop stores: the user group handle without the @
+	Name string `json:"name" example:"dba-leads"`
+	// Whether a workspace admin or owner edited the user group last
+	AdminManaged bool `json:"admin_managed"`
+}
+
+// ProvisioningStatus reports whether a source owns the org's groups.
+type ProvisioningStatus struct {
+	// True when the Slack import or SCIM has written users or groups. Login
+	// and the Users page then change only the admin group.
+	GroupsManaged bool `json:"groups_managed"`
+}
+
+// UsersImportRow is one user of a file import.
+type UsersImportRow struct {
+	// The user's email; it is how a Slack click finds them
+	Email string `json:"email" binding:"required" example:"ana@example.com"`
+	// The user's display name
+	Name string `json:"name" example:"Ana"`
+	// The groups the user is in; the import makes these the complete member
+	// list of each group it names
+	Groups []string `json:"groups" example:"dba-leads"`
+}
+
+// UsersImportRequest imports users and their groups. A CSV upload
+// (multipart field "file", columns email,name,groups with groups separated
+// by ";") is the same request.
+type UsersImportRequest struct {
+	// The users to import
+	Rows []UsersImportRow `json:"rows" binding:"required"`
+	// Deactivate users a previous file import created who are not in this one.
+	// Administrators are never deactivated.
+	DeactivateMissing bool `json:"deactivate_missing"`
+}
+
+// UsersImportRowError is why one row was not imported.
+type UsersImportRowError struct {
+	// The 1-based row number; the CSV header is not counted
+	Row int `json:"row" example:"3"`
+	// The row's email, when it had one
+	Email string `json:"email,omitempty" example:"ana@example.com"`
+	// Why the row failed
+	Message string `json:"message" example:"the group name is reserved by hoop: admin"`
+}
+
+// UsersImportResponse is the outcome of a file import.
+type UsersImportResponse struct {
+	// Users created
+	Created int `json:"created"`
+	// Existing users updated
+	Updated int `json:"updated"`
+	// Users deactivated by deactivate_missing
+	Deactivated int `json:"deactivated"`
+	// Rows that failed; the other rows were imported
+	Errors []UsersImportRowError `json:"errors"`
 }
 
 // ServerMcpAuthConfig configures the OAuth 2.1 Resource Server profile for the

@@ -11,7 +11,9 @@ import (
 	"github.com/hoophq/hoop/gateway/models"
 	modelsbootstrap "github.com/hoophq/hoop/gateway/models/bootstrap"
 	"github.com/hoophq/hoop/gateway/pglite"
+	"github.com/hoophq/hoop/gateway/services"
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"gorm.io/gorm"
 )
 
 // A control plane whose groups are provisioned must keep them on login
@@ -76,18 +78,70 @@ func TestSyncSingleTenantUserKeepsProvisionedGroups(t *testing.T) {
 		t.Fatalf("groups = %v; want the claim's", got)
 	}
 
-	// With a SCIM token the provisioned groups stay.
-	if err := models.DB.Exec(`DELETE FROM private.user_groups`).Error; err != nil {
-		t.Fatal(err)
+	// Once SCIM provisions the org, the provisioned groups stay. The SCIM
+	// create sends mixed case; the login sends lower case and must still find
+	// the same user.
+	var johnID string
+	err = models.DB.Transaction(func(tx *gorm.DB) error {
+		var err error
+		johnID, err = services.UpsertProvisionedUser(tx, orgID, models.ProvisioningSourceSCIM, "",
+			services.ProvisionedUser{ExternalID: "okta-john", UserName: "John.Doe@Corp.com",
+				Email: "John.Doe@Corp.com", Name: "John", Active: true})
+		if err != nil {
+			return err
+		}
+		if _, err := services.CreateProvisionedGroup(tx, orgID, models.ProvisioningSourceSCIM, "dba-leads", ""); err != nil {
+			return err
+		}
+		return services.SetGroupMembers(tx, orgID, "dba-leads", []string{johnID})
+	})
+	if err != nil {
+		t.Fatalf("provision john: %v", err)
 	}
-	if err := models.DB.Exec(`INSERT INTO private.user_groups (org_id, user_id, name)
-		SELECT org_id, id, 'dba-leads' FROM private.users WHERE subject = 'idp|ana'`).Error; err != nil {
-		t.Fatalf("seed provisioned group: %v", err)
+
+	loginAs := func(email, subject string) []string {
+		t.Helper()
+		dbUser, err := models.GetUserByEmail(email)
+		if err != nil || dbUser == nil {
+			t.Fatalf("login lookup of %s: user %v err %v", email, dbUser, err)
+		}
+		userCtx, err := models.GetUserContext(dbUser.Subject)
+		if err != nil {
+			t.Fatalf("user context: %v", err)
+		}
+		uinfo := idptypes.ProviderUserInfo{Subject: subject, Email: email,
+			Groups: []string{"claim-group"}, MustSyncGroups: true}
+		if _, err := syncSingleTenantUser(userCtx, uinfo); err != nil {
+			t.Fatalf("sync: %v", err)
+		}
+		after, err := models.GetUserContext(subject)
+		if err != nil {
+			t.Fatalf("user context: %v", err)
+		}
+		groups := slices.Clone(after.UserGroups)
+		slices.Sort(groups)
+		return groups
 	}
-	if err := models.ReplaceSCIMToken(models.DB, orgID, "hash", "admin@example.com"); err != nil {
-		t.Fatalf("seed token: %v", err)
+	if got := loginAs("john.doe@corp.com", "idp|john"); !slices.Equal(got, []string{"dba-leads"}) {
+		t.Fatalf("john groups = %v; want the provisioned group kept", got)
 	}
-	if got := login(); !slices.Equal(got, []string{"dba-leads"}) {
-		t.Fatalf("groups = %v; want the provisioned group kept", got)
+	var johns int64
+	models.DB.Model(&models.User{}).Where("org_id = ? AND lower(email) = 'john.doe@corp.com'", orgID).Count(&johns)
+	if johns != 1 {
+		t.Fatalf("%d users with john's email; the login must adopt the provisioned one", johns)
+	}
+
+	// Ana was never provisioned, but the org's groups are managed now: her
+	// claim no longer rewrites them either.
+	if got := login(); !slices.Equal(got, []string{"claim-group"}) {
+		t.Fatalf("ana groups = %v; want the groups she had", got)
+	}
+
+	// Releasing the groups hands them back to the claim.
+	if err := models.ClearProvisioningLinks(models.DB, orgID); err != nil {
+		t.Fatalf("release: %v", err)
+	}
+	if got := loginAs("john.doe@corp.com", "idp|john"); !slices.Equal(got, []string{"claim-group"}) {
+		t.Fatalf("john groups = %v; want the claim's after release", got)
 	}
 }

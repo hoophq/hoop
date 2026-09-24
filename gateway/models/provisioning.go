@@ -1,21 +1,25 @@
 package models
 
 import (
-	"encoding/json"
 	"time"
 
 	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
-// Where a provisioned user or group came from (ADR-0019). SCIM is pushed by
-// the identity provider; the others are pulled by a directory sync.
+// Where a provisioned user or group came from (ADR-0019). Slack is pulled by
+// the directory sync, SCIM is pushed by the identity provider, and a file is
+// an admin's one-off import.
 const (
-	ProvisioningSourceSCIM    = "scim"
-	ProvisioningSourceGoogle  = "google"
-	ProvisioningSourceAuth0   = "auth0"
-	ProvisioningSourceCognito = "cognito"
+	ProvisioningSourceSlack = "slack"
+	ProvisioningSourceSCIM  = "scim"
+	ProvisioningSourceFile  = "file"
 )
+
+// managingSources are the sources that own the groups they write: while an
+// org has any of their rows, login and the Users page leave groups alone. A
+// file import is an admin's own edit, like the Users page, so it does not.
+var managingSources = []string{ProvisioningSourceSlack, ProvisioningSourceSCIM}
 
 // SCIMToken is the bearer token an identity provider authenticates its SCIM
 // requests with. Only the hash is stored.
@@ -73,18 +77,24 @@ func TouchSCIMToken(db *gorm.DB, orgID string) error {
 		orgID).Error
 }
 
-// DirectorySyncConfig is how the control plane pulls users and groups from an
-// identity provider that does not push SCIM.
+// DirectorySyncConfig is how the control plane pulls users and groups from
+// Slack user groups. Provider is always "slack" today; the column stays so a
+// second source is a new value, not a new table.
+//
+// AllowMemberManagedGroups accepts user groups a workspace member who is not
+// an admin or owner edited last. Off by default: hoop cannot restrict who
+// edits a user group, and a member-edited group would let anyone make
+// themselves a reviewer.
 type DirectorySyncConfig struct {
-	OrgID           string          `gorm:"column:org_id;primaryKey"`
-	Provider        string          `gorm:"column:provider"`
-	Settings        json.RawMessage `gorm:"column:settings;type:jsonb"`
-	GroupIDs        pq.StringArray  `gorm:"column:group_ids;type:text[]"`
-	IntervalMinutes int             `gorm:"column:interval_minutes"`
-	LastRunAt       *time.Time      `gorm:"column:last_run_at"`
-	LastError       *string         `gorm:"column:last_error"`
-	CreatedAt       time.Time       `gorm:"column:created_at"`
-	UpdatedAt       time.Time       `gorm:"column:updated_at"`
+	OrgID                    string         `gorm:"column:org_id;primaryKey"`
+	Provider                 string         `gorm:"column:provider"`
+	GroupIDs                 pq.StringArray `gorm:"column:group_ids;type:text[]"`
+	IntervalMinutes          int            `gorm:"column:interval_minutes"`
+	AllowMemberManagedGroups bool           `gorm:"column:allow_member_managed_groups"`
+	LastRunAt                *time.Time     `gorm:"column:last_run_at"`
+	LastError                *string        `gorm:"column:last_error"`
+	CreatedAt                time.Time      `gorm:"column:created_at"`
+	UpdatedAt                time.Time      `gorm:"column:updated_at"`
 }
 
 func (DirectorySyncConfig) TableName() string { return "private.directory_sync_configs" }
@@ -105,24 +115,22 @@ func ListDirectorySyncConfigs(db *gorm.DB) ([]DirectorySyncConfig, error) {
 	return out, err
 }
 
-// UpsertDirectorySyncConfig stores the sync's provider, credentials, groups
-// and interval. The last run and its error are left as they are.
+// UpsertDirectorySyncConfig stores the sync's provider, groups, interval and
+// governance choice. The last run and its error are left as they are.
 func UpsertDirectorySyncConfig(db *gorm.DB, c *DirectorySyncConfig) error {
-	settings := c.Settings
-	if len(settings) == 0 {
-		settings = json.RawMessage(`{}`)
-	}
 	groupIDs := c.GroupIDs
 	if groupIDs == nil {
 		groupIDs = pq.StringArray{}
 	}
 	return db.Exec(`
-		INSERT INTO private.directory_sync_configs (org_id, provider, settings, group_ids, interval_minutes)
+		INSERT INTO private.directory_sync_configs
+			(org_id, provider, group_ids, interval_minutes, allow_member_managed_groups)
 		VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT (org_id) DO UPDATE
-		SET provider = EXCLUDED.provider, settings = EXCLUDED.settings, group_ids = EXCLUDED.group_ids,
-			interval_minutes = EXCLUDED.interval_minutes, updated_at = NOW()`,
-		c.OrgID, c.Provider, string(settings), groupIDs, c.IntervalMinutes).Error
+		SET provider = EXCLUDED.provider, group_ids = EXCLUDED.group_ids,
+			interval_minutes = EXCLUDED.interval_minutes,
+			allow_member_managed_groups = EXCLUDED.allow_member_managed_groups, updated_at = NOW()`,
+		c.OrgID, c.Provider, groupIDs, c.IntervalMinutes, c.AllowMemberManagedGroups).Error
 }
 
 // DeleteDirectorySyncConfig removes the org's sync. Absent is not an error.
@@ -137,16 +145,27 @@ func SetDirectorySyncResult(db *gorm.DB, orgID string, runAt time.Time, errMsg *
 		runAt, errMsg, orgID).Error
 }
 
-// GroupsManagedByProvisioning reports whether the identity provider owns the
-// org's groups: a SCIM token or a directory sync exists. Login must then leave
-// user_groups alone, or it and the provisioning would overwrite each other.
+// GroupsManagedByProvisioning reports whether a source owns the org's groups:
+// the Slack import or SCIM has written a user or a group. It reads the rows,
+// not the token or the sync config, so revoking a token does not hand groups
+// back to login behind the admin's back; ClearProvisioningLinks does.
 func GroupsManagedByProvisioning(db *gorm.DB, orgID string) (bool, error) {
 	var managed bool
 	err := db.Raw(`
-		SELECT EXISTS (SELECT 1 FROM private.scim_tokens WHERE org_id = @org)
-			OR EXISTS (SELECT 1 FROM private.directory_sync_configs WHERE org_id = @org)`,
-		map[string]any{"org": orgID}).Scan(&managed).Error
+		SELECT EXISTS (SELECT 1 FROM private.directory_users WHERE org_id = @org AND source IN @sources)
+			OR EXISTS (SELECT 1 FROM private.directory_groups WHERE org_id = @org AND source IN @sources)`,
+		map[string]any{"org": orgID, "sources": managingSources}).Scan(&managed).Error
 	return managed, err
+}
+
+// ClearProvisioningLinks stops every source from managing the org's groups.
+// It deletes only the links: users and their user_groups rows stay, and from
+// then on login and the Users page own them again.
+func ClearProvisioningLinks(tx *gorm.DB, orgID string) error {
+	if err := tx.Where("org_id = ?", orgID).Delete(&DirectoryUser{}).Error; err != nil {
+		return err
+	}
+	return tx.Where("org_id = ?", orgID).Delete(&DirectoryGroup{}).Error
 }
 
 // DirectoryUser links a hoop user to the identity provider record it came from.

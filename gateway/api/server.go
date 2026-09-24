@@ -1366,18 +1366,19 @@ func (api *Api) buildRoutes(r *apiroutes.Router, mode appconfig.AppMode) {
 		apiserverconfig.UpdateMcpAuthConfig,
 	)
 
-	// Provisioning from the identity provider (ADR-0019). The routes exist in
-	// both modes, as every route does, and answer 412 on a gateway.
+	// Provisioning (ADR-0019): the Slack directory sync, SCIM and the switch
+	// that hands groups back to login. The routes exist in both modes, as
+	// every route does, and answer 412 on a gateway.
 	r.GET("/serverconfig/scim",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		apiprovisioning.GetSCIMConfig,
 	)
-	r.POST("/serverconfig/scim",
+	r.PUT("/serverconfig/scim",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
 		api.AuditMiddleware(),
-		apiprovisioning.CreateSCIMToken,
+		apiprovisioning.PutSCIMToken,
 	)
 	r.DELETE("/serverconfig/scim",
 		apiroutes.AdminOnlyAccessRole,
@@ -1402,10 +1403,10 @@ func (api *Api) buildRoutes(r *apiroutes.Router, mode appconfig.AppMode) {
 		api.AuditMiddleware(),
 		apiprovisioning.DeleteDirectorySync,
 	)
+	// No audit middleware: the run writes its own entry, with what changed.
 	r.POST("/serverconfig/directory-sync/run",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
-		api.AuditMiddleware(),
 		apiprovisioning.RunDirectorySync,
 	)
 	r.GET("/serverconfig/directory-sync/groups",
@@ -1413,9 +1414,21 @@ func (api *Api) buildRoutes(r *apiroutes.Router, mode appconfig.AppMode) {
 		r.AuthMiddleware,
 		apiprovisioning.ListDirectorySyncGroups,
 	)
+	r.GET("/serverconfig/provisioning",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiprovisioning.GetProvisioningStatus,
+	)
+	r.DELETE("/serverconfig/provisioning",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		apiprovisioning.StopManagingGroups,
+	)
 	// The identity provider's SCIM client authenticates with the SCIM token,
-	// never a user session.
-	r.Any("/scim/v2/*path", r.SCIMAuthMiddleware, apiscim.Handler)
+	// never a user session. The audit entry names the admin who generated the
+	// token as the actor.
+	r.Any("/scim/v2/*path", r.SCIMAuthMiddleware, api.AuditMiddleware(), apiscim.Handler)
 
 	r.GET("/search",
 		apiroutes.ReadOnlyAccessRole,

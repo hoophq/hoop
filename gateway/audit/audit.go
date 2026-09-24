@@ -34,6 +34,7 @@ const (
 	ResourceAISessionAnalyzerProvider ResourceType = "ai_session_analyzer_providers"
 	ResourceAttribute                 ResourceType = "attributes"
 	ResourceOrgFeature                ResourceType = "org_features"
+	ResourceProvisioning              ResourceType = "provisioning"
 )
 
 // Action is the operation performed.
@@ -44,6 +45,7 @@ const (
 	ActionUpdate Action = "update"
 	ActionDelete Action = "delete"
 	ActionRevoke Action = "revoke"
+	ActionSync   Action = "sync"
 )
 
 // outcome represents success or failure (stored as boolean in DB).

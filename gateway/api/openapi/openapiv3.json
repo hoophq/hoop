@@ -3352,14 +3352,18 @@
       },
       "openapi.DirectoryGroup": {
         "properties": {
+          "admin_managed": {
+            "description": "Whether a workspace admin or owner edited the user group last",
+            "type": "boolean"
+          },
           "id": {
-            "description": "The provider's id of the group",
-            "example": "03x8tuzt1b9wqa4",
+            "description": "The Slack id of the user group",
+            "example": "S0614TZR7",
             "type": "string"
           },
           "name": {
-            "description": "The group name hoop stores",
-            "example": "dba-leads@example.com",
+            "description": "The group name hoop stores: the user group handle without the @",
+            "example": "dba-leads",
             "type": "string"
           }
         },
@@ -3367,12 +3371,16 @@
       },
       "openapi.DirectorySyncConfig": {
         "properties": {
+          "allow_member_managed_groups": {
+            "description": "Accept user groups last edited by a workspace member who is not an admin or owner",
+            "type": "boolean"
+          },
           "enabled": {
             "description": "Whether a directory sync is configured",
             "type": "boolean"
           },
           "group_ids": {
-            "description": "The provider's ids of the groups whose members are synced",
+            "description": "The Slack ids of the user groups whose members are synced",
             "items": {
               "type": "string"
             },
@@ -3392,27 +3400,24 @@
             "type": "string"
           },
           "provider": {
-            "description": "The identity provider",
+            "description": "The directory",
             "enum": [
-              "google",
-              "auth0",
-              "cognito"
+              "slack"
             ],
-            "example": "google",
+            "example": "slack",
             "type": "string"
-          },
-          "settings": {
-            "additionalProperties": {},
-            "description": "The provider's settings. Secrets are returned as \"********\"; sending that value back keeps the stored secret.\n google: service_account_json, admin_email, customer\n auth0: domain, client_id, client_secret\n cognito: region, user_pool_id, access_key_id, secret_access_key",
-            "type": "object"
           }
         },
         "type": "object"
       },
       "openapi.DirectorySyncRequest": {
         "properties": {
+          "allow_member_managed_groups": {
+            "description": "Accept user groups last edited by a workspace member who is not an admin\nor owner. hoop cannot restrict who edits user groups; restrict it to\nadmins in the Slack workspace settings instead when you can.",
+            "type": "boolean"
+          },
           "group_ids": {
-            "description": "The provider's ids of the groups whose members are synced",
+            "description": "The Slack ids of the user groups whose members are synced",
             "items": {
               "type": "string"
             },
@@ -3422,27 +3427,8 @@
             "description": "Minutes between two runs, at least 5. Defaults to 15",
             "example": 15,
             "type": "integer"
-          },
-          "provider": {
-            "description": "The identity provider",
-            "enum": [
-              "google",
-              "auth0",
-              "cognito"
-            ],
-            "example": "google",
-            "type": "string"
-          },
-          "settings": {
-            "additionalProperties": {},
-            "description": "The provider's settings; see DirectorySyncConfig",
-            "type": "object"
           }
         },
-        "required": [
-          "provider",
-          "settings"
-        ],
         "type": "object"
       },
       "openapi.ExecRequest": {
@@ -5411,6 +5397,15 @@
           "user_email": {
             "example": "johnwick@bad.org",
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.ProvisioningStatus": {
+        "properties": {
+          "groups_managed": {
+            "description": "True when the Slack import or SCIM has written users or groups. Login\nand the Users page then change only the admin group.",
+            "type": "boolean"
           }
         },
         "type": "object"
@@ -20280,7 +20275,7 @@
     },
     "/serverconfig/directory-sync": {
       "delete": {
-        "description": "Stop the directory sync. Provisioned users and groups stay as they are. Control plane only.",
+        "description": "Stop the directory sync. Synced users and groups stay as they are, and stay managed until groups are released with DELETE /serverconfig/provisioning. Control plane only.",
         "responses": {
           "204": {
             "description": "No Content"
@@ -20312,7 +20307,7 @@
         ]
       },
       "get": {
-        "description": "Get the directory sync that pulls users and groups from Google Workspace, Auth0 or Cognito. Secrets are redacted. Control plane only.",
+        "description": "Get the directory sync that pulls users and groups from Slack user groups. Control plane only.",
         "responses": {
           "200": {
             "content": {
@@ -20351,7 +20346,7 @@
         ]
       },
       "put": {
-        "description": "Configure the directory sync. A secret sent as \"********\" keeps the stored one. Control plane only.",
+        "description": "Configure the Slack directory sync: the user groups to sync, the interval, and whether member-managed user groups are accepted. It uses the org's Slack app. Control plane only.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -20434,7 +20429,7 @@
     },
     "/serverconfig/directory-sync/groups": {
       "get": {
-        "description": "List the groups the configured directory sync can read, for choosing which ones to sync. Control plane only.",
+        "description": "List the Slack user groups the directory sync can read, for choosing which ones to sync. admin_managed is false for a user group a member who is not a workspace admin or owner edited last; the sync refuses it unless member-managed groups are allowed. Control plane only.",
         "responses": {
           "200": {
             "content": {
@@ -20449,16 +20444,6 @@
             },
             "description": "OK"
           },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/openapi.HTTPError"
-                }
-              }
-            },
-            "description": "Not Found"
-          },
           "412": {
             "content": {
               "application/json": {
@@ -20468,6 +20453,16 @@
               }
             },
             "description": "Precondition Failed"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
           },
           "500": {
             "content": {
@@ -20498,7 +20493,7 @@
     },
     "/serverconfig/directory-sync/run": {
       "post": {
-        "description": "Run the directory sync now and return its outcome in last_run_at and last_error. Control plane only.",
+        "description": "Run the directory sync now and return its outcome in last_run_at and last_error. Every run writes one audit entry with what changed. Control plane only.",
         "responses": {
           "200": {
             "content": {
@@ -20791,9 +20786,92 @@
         ]
       }
     },
+    "/serverconfig/provisioning": {
+      "delete": {
+        "description": "Hand the org's groups back to login and the Users page. It deletes only the links between users and their source; users and their groups stay. Refused while a SCIM token or a directory sync exists, since the next push or run would take the groups back. Control plane only.",
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Precondition Failed"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Stop Managing Groups",
+        "tags": [
+          "Server Management"
+        ]
+      },
+      "get": {
+        "description": "Report whether a source (the Slack import or SCIM) owns the org's groups. While it does, login and the Users page change only the admin group. Control plane only.",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.ProvisioningStatus"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Precondition Failed"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get Provisioning Status",
+        "tags": [
+          "Server Management"
+        ]
+      }
+    },
     "/serverconfig/scim": {
       "delete": {
-        "description": "Revoke the SCIM token. Provisioned users and groups stay as they are. Control plane only.",
+        "description": "Revoke the SCIM token. Provisioned users and groups stay as they are, and stay managed until groups are released with DELETE /serverconfig/provisioning. Control plane only.",
         "responses": {
           "204": {
             "description": "No Content"
@@ -20863,10 +20941,10 @@
           "Server Management"
         ]
       },
-      "post": {
-        "description": "Generate the bearer token an identity provider pushes SCIM requests with, replacing the previous one. The token is returned once. Control plane only.",
+      "put": {
+        "description": "Generate the bearer token an identity provider pushes SCIM requests with. A second call rotates it: the new hash replaces the old one in one write, so there is no moment without a token. The token is returned once. Control plane only.",
         "responses": {
-          "201": {
+          "200": {
             "content": {
               "application/json": {
                 "schema": {
@@ -20874,7 +20952,7 @@
                 }
               }
             },
-            "description": "Created"
+            "description": "OK"
           },
           "409": {
             "content": {
@@ -20907,7 +20985,7 @@
             "description": "Internal Server Error"
           }
         },
-        "summary": "Generate SCIM Token",
+        "summary": "Generate or Rotate SCIM Token",
         "tags": [
           "Server Management"
         ]

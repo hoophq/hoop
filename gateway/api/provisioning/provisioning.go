@@ -1,10 +1,10 @@
 // Package apiprovisioning configures how a control plane learns its reviewers
-// from the identity provider: a SCIM token, or a directory sync (ADR-0019).
+// without anyone logging in (ADR-0019): a Slack directory sync, a SCIM token,
+// and the switch that hands groups back to login and the Users page.
 package apiprovisioning
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"time"
@@ -30,7 +30,7 @@ const (
 const errOneMethod = "only one provisioning method may be active; remove the other one first"
 
 // controlPlaneOnly answers 412 outside the control plane: a gateway's groups
-// are not provisioned from the identity provider.
+// are not provisioned.
 func controlPlaneOnly(c *gin.Context) bool {
 	if appconfig.Get().IsControlPlane() {
 		return true
@@ -70,16 +70,16 @@ func GetSCIMConfig(c *gin.Context) {
 	c.JSON(http.StatusOK, out)
 }
 
-// CreateSCIMToken
+// PutSCIMToken
 //
-//	@Summary		Generate SCIM Token
-//	@Description	Generate the bearer token an identity provider pushes SCIM requests with, replacing the previous one. The token is returned once. Control plane only.
+//	@Summary		Generate or Rotate SCIM Token
+//	@Description	Generate the bearer token an identity provider pushes SCIM requests with. A second call rotates it: the new hash replaces the old one in one write, so there is no moment without a token. The token is returned once. Control plane only.
 //	@Tags			Server Management
 //	@Produce		json
-//	@Success		201				{object}	openapi.SCIMToken
+//	@Success		200				{object}	openapi.SCIMToken
 //	@Failure		409,412,500		{object}	openapi.HTTPError
-//	@Router			/serverconfig/scim [post]
-func CreateSCIMToken(c *gin.Context) {
+//	@Router			/serverconfig/scim [put]
+func PutSCIMToken(c *gin.Context) {
 	if !controlPlaneOnly(c) {
 		return
 	}
@@ -103,13 +103,13 @@ func CreateSCIMToken(c *gin.Context) {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed storing the scim token")
 		return
 	}
-	c.JSON(http.StatusCreated, openapi.SCIMToken{Token: token, BaseURL: apiscim.BaseURL()})
+	c.JSON(http.StatusOK, openapi.SCIMToken{Token: token, BaseURL: apiscim.BaseURL()})
 }
 
 // DeleteSCIMToken
 //
 //	@Summary		Delete SCIM Token
-//	@Description	Revoke the SCIM token. Provisioned users and groups stay as they are. Control plane only.
+//	@Description	Revoke the SCIM token. Provisioned users and groups stay as they are, and stay managed until groups are released with DELETE /serverconfig/provisioning. Control plane only.
 //	@Tags			Server Management
 //	@Success		204
 //	@Failure		412,500	{object}	openapi.HTTPError
@@ -128,25 +128,24 @@ func DeleteSCIMToken(c *gin.Context) {
 
 func toOpenAPIDirectorySync(cfg *models.DirectorySyncConfig) openapi.DirectorySyncConfig {
 	if cfg == nil {
-		return openapi.DirectorySyncConfig{IntervalMinutes: defaultIntervalMinutes, Settings: map[string]any{}, GroupIDs: []string{}}
-	}
-	var settings map[string]any
-	_ = json.Unmarshal(directorysync.RedactSettings(cfg.Provider, cfg.Settings), &settings)
-	if settings == nil {
-		settings = map[string]any{}
+		return openapi.DirectorySyncConfig{
+			Provider:        models.ProvisioningSourceSlack,
+			IntervalMinutes: defaultIntervalMinutes,
+			GroupIDs:        []string{},
+		}
 	}
 	groupIDs := []string(cfg.GroupIDs)
 	if groupIDs == nil {
 		groupIDs = []string{}
 	}
 	return openapi.DirectorySyncConfig{
-		Enabled:         true,
-		Provider:        cfg.Provider,
-		Settings:        settings,
-		GroupIDs:        groupIDs,
-		IntervalMinutes: cfg.IntervalMinutes,
-		LastRunAt:       cfg.LastRunAt,
-		LastError:       cfg.LastError,
+		Enabled:                  true,
+		Provider:                 cfg.Provider,
+		GroupIDs:                 groupIDs,
+		IntervalMinutes:          cfg.IntervalMinutes,
+		AllowMemberManagedGroups: cfg.AllowMemberManagedGroups,
+		LastRunAt:                cfg.LastRunAt,
+		LastError:                cfg.LastError,
 	}
 }
 
@@ -166,7 +165,7 @@ func loadSync(c *gin.Context, orgID string) (*models.DirectorySyncConfig, bool) 
 // GetDirectorySync
 //
 //	@Summary		Get Directory Sync
-//	@Description	Get the directory sync that pulls users and groups from Google Workspace, Auth0 or Cognito. Secrets are redacted. Control plane only.
+//	@Description	Get the directory sync that pulls users and groups from Slack user groups. Control plane only.
 //	@Tags			Server Management
 //	@Produce		json
 //	@Success		200			{object}	openapi.DirectorySyncConfig
@@ -187,7 +186,7 @@ func GetDirectorySync(c *gin.Context) {
 // PutDirectorySync
 //
 //	@Summary		Configure Directory Sync
-//	@Description	Configure the directory sync. A secret sent as "********" keeps the stored one. Control plane only.
+//	@Description	Configure the Slack directory sync: the user groups to sync, the interval, and whether member-managed user groups are accepted. It uses the org's Slack app. Control plane only.
 //	@Tags			Server Management
 //	@Accept			json
 //	@Produce		json
@@ -203,10 +202,6 @@ func PutDirectorySync(c *gin.Context) {
 	var req openapi.DirectorySyncRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
-		return
-	}
-	if !directorysync.IsProvider(req.Provider) {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "provider must be google, auth0 or cognito"})
 		return
 	}
 	if req.IntervalMinutes == 0 {
@@ -227,31 +222,12 @@ func PutDirectorySync(c *gin.Context) {
 		return
 	}
 
-	stored, ok := loadSync(c, ctx.OrgID)
-	if !ok {
-		return
-	}
-	incoming, err := json.Marshal(req.Settings)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
-		return
-	}
-	settings, err := directorysync.MergeSettings(req.Provider, incoming, stored)
-	if err != nil {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
-		return
-	}
-	if err := directorysync.ValidateSettings(req.Provider, settings); err != nil {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
-		return
-	}
-
 	cfg := &models.DirectorySyncConfig{
-		OrgID:           ctx.OrgID,
-		Provider:        req.Provider,
-		Settings:        settings,
-		GroupIDs:        req.GroupIDs,
-		IntervalMinutes: req.IntervalMinutes,
+		OrgID:                    ctx.OrgID,
+		Provider:                 models.ProvisioningSourceSlack,
+		GroupIDs:                 req.GroupIDs,
+		IntervalMinutes:          req.IntervalMinutes,
+		AllowMemberManagedGroups: req.AllowMemberManagedGroups,
 	}
 	if err := models.UpsertDirectorySyncConfig(models.DB, cfg); err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed storing the directory sync")
@@ -267,7 +243,7 @@ func PutDirectorySync(c *gin.Context) {
 // DeleteDirectorySync
 //
 //	@Summary		Delete Directory Sync
-//	@Description	Stop the directory sync. Provisioned users and groups stay as they are. Control plane only.
+//	@Description	Stop the directory sync. Synced users and groups stay as they are, and stay managed until groups are released with DELETE /serverconfig/provisioning. Control plane only.
 //	@Tags			Server Management
 //	@Success		204
 //	@Failure		412,500	{object}	openapi.HTTPError
@@ -287,7 +263,7 @@ func DeleteDirectorySync(c *gin.Context) {
 // RunDirectorySync
 //
 //	@Summary		Run Directory Sync
-//	@Description	Run the directory sync now and return its outcome in last_run_at and last_error. Control plane only.
+//	@Description	Run the directory sync now and return its outcome in last_run_at and last_error. Every run writes one audit entry with what changed. Control plane only.
 //	@Tags			Server Management
 //	@Produce		json
 //	@Success		200					{object}	openapi.DirectorySyncConfig
@@ -312,7 +288,8 @@ func RunDirectorySync(c *gin.Context) {
 	}
 	// Detached from the request: a sync that the admin's browser stopped
 	// waiting for still has to finish or roll back as a whole.
-	err := directorysync.Run(context.Background(), models.DB, ctx.OrgID)
+	actor := directorysync.Actor{Subject: ctx.UserID, Email: ctx.UserEmail, Name: ctx.UserName}
+	err := directorysync.Run(context.Background(), models.DB, ctx.OrgID, actor)
 	if errors.Is(err, directorysync.ErrSyncRunning) {
 		c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
 		return
@@ -328,40 +305,96 @@ func RunDirectorySync(c *gin.Context) {
 // ListDirectorySyncGroups
 //
 //	@Summary		List Directory Groups
-//	@Description	List the groups the configured directory sync can read, for choosing which ones to sync. Control plane only.
+//	@Description	List the Slack user groups the directory sync can read, for choosing which ones to sync. admin_managed is false for a user group a member who is not a workspace admin or owner edited last; the sync refuses it unless member-managed groups are allowed. Control plane only.
 //	@Tags			Server Management
 //	@Produce		json
 //	@Success		200					{array}		openapi.DirectoryGroup
-//	@Failure		404,412,500,502		{object}	openapi.HTTPError
+//	@Failure		412,422,500,502		{object}	openapi.HTTPError
 //	@Router			/serverconfig/directory-sync/groups [get]
 func ListDirectorySyncGroups(c *gin.Context) {
 	if !controlPlaneOnly(c) {
 		return
 	}
 	ctx := storagev2.ParseContext(c)
-	cfg, ok := loadSync(c, ctx.OrgID)
-	if !ok {
+	provider, err := directorysync.NewSlackProvider(ctx.OrgID)
+	if errors.Is(err, directorysync.ErrSlackNotConfigured) {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
-	if cfg == nil {
-		c.JSON(http.StatusNotFound, gin.H{"message": "no directory sync is configured"})
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed opening the slack directory")
 		return
 	}
 	reqCtx, cancel := context.WithTimeout(c.Request.Context(), listGroupsTimeout)
 	defer cancel()
-	provider, err := directorysync.NewProvider(reqCtx, cfg.Provider, cfg.Settings)
-	if err != nil {
-		c.JSON(http.StatusBadGateway, gin.H{"message": err.Error()})
-		return
-	}
-	groups, err := provider.ListGroups(reqCtx)
+	groups, err := directorysync.ListGroupsWithGovernance(reqCtx, provider)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"message": err.Error()})
 		return
 	}
 	out := make([]openapi.DirectoryGroup, 0, len(groups))
 	for _, g := range groups {
-		out = append(out, openapi.DirectoryGroup{ID: g.ID, Name: g.Name})
+		out = append(out, openapi.DirectoryGroup{ID: g.ID, Name: g.Name, AdminManaged: g.AdminManaged})
 	}
 	c.JSON(http.StatusOK, out)
 }
+
+// GetProvisioningStatus
+//
+//	@Summary		Get Provisioning Status
+//	@Description	Report whether a source (the Slack import or SCIM) owns the org's groups. While it does, login and the Users page change only the admin group. Control plane only.
+//	@Tags			Server Management
+//	@Produce		json
+//	@Success		200			{object}	openapi.ProvisioningStatus
+//	@Failure		412,500		{object}	openapi.HTTPError
+//	@Router			/serverconfig/provisioning [get]
+func GetProvisioningStatus(c *gin.Context) {
+	if !controlPlaneOnly(c) {
+		return
+	}
+	ctx := storagev2.ParseContext(c)
+	managed, err := models.GroupsManagedByProvisioning(models.DB, ctx.OrgID)
+	if err != nil {
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed checking the provisioning status")
+		return
+	}
+	c.JSON(http.StatusOK, openapi.ProvisioningStatus{GroupsManaged: managed})
+}
+
+// StopManagingGroups
+//
+//	@Summary		Stop Managing Groups
+//	@Description	Hand the org's groups back to login and the Users page. It deletes only the links between users and their source; users and their groups stay. Refused while a SCIM token or a directory sync exists, since the next push or run would take the groups back. Control plane only.
+//	@Tags			Server Management
+//	@Success		204
+//	@Failure		409,412,500	{object}	openapi.HTTPError
+//	@Router			/serverconfig/provisioning [delete]
+func StopManagingGroups(c *gin.Context) {
+	if !controlPlaneOnly(c) {
+		return
+	}
+	ctx := storagev2.ParseContext(c)
+	err := models.DB.Transaction(func(tx *gorm.DB) error {
+		if _, err := models.GetSCIMToken(tx, ctx.OrgID); err == nil {
+			return errSourceActive
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		if _, err := models.GetDirectorySyncConfig(tx, ctx.OrgID); err == nil {
+			return errSourceActive
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		return models.ClearProvisioningLinks(tx, ctx.OrgID)
+	})
+	switch {
+	case errors.Is(err, errSourceActive):
+		c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
+	case err != nil:
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed releasing the managed groups")
+	default:
+		c.Status(http.StatusNoContent)
+	}
+}
+
+var errSourceActive = errors.New("remove the SCIM token and the directory sync first; they would manage the groups again")

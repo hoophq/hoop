@@ -192,8 +192,20 @@ func updateUser(orgID, id string, change func(u *services.ProvisionedUser)) (sci
 // Okta replaces with no path and a value object; Entra ID addresses each
 // attribute by path, emails included. Removing one of these attributes is
 // ignored: hoop keeps a user's email and name, and deactivation is "active".
+//
+// A given or family name alone replaces that half of the stored name. It is
+// ignored when the same PATCH also sets the whole name (displayName or
+// name.formatted), which is the more specific of the two.
 func applyUserPatch(u *services.ProvisionedUser, ops []scim.PatchOperation) {
-	var given, family string
+	storedGiven, storedFamily := splitName(u.Name)
+	var given, family *string
+	wholeName := false
+	setWhole := func(name string) {
+		if name = strings.TrimSpace(name); name != "" {
+			u.Name = name
+			wholeName = true
+		}
+	}
 	for _, op := range ops {
 		if op.Op == scim.PatchOperationRemove {
 			continue
@@ -201,17 +213,21 @@ func applyUserPatch(u *services.ProvisionedUser, ops []scim.PatchOperation) {
 		if op.Path == nil {
 			values, _ := op.Value.(map[string]any)
 			applyUserAttributes(u, values)
+			if displayName(values) != "" {
+				wholeName = true
+			}
 			for k, v := range values {
 				s, _ := v.(string)
+				s = strings.TrimSpace(s)
 				switch strings.ToLower(k) {
 				case "name.givenname":
-					given = s
+					given = &s
 				case "name.familyname":
-					family = s
+					family = &s
 				case "name.formatted":
-					u.Name = strings.TrimSpace(s)
+					setWhole(s)
 				case `emails[type eq "work"].value`:
-					u.Email = strings.TrimSpace(s)
+					u.Email = s
 				}
 			}
 			continue
@@ -231,9 +247,7 @@ func applyUserPatch(u *services.ProvisionedUser, ops []scim.PatchOperation) {
 				u.UserName = s
 			}
 		case "displayname":
-			if s != "" {
-				u.Name = s
-			}
+			setWhole(s)
 		case "externalid":
 			if s != "" {
 				u.ExternalID = s
@@ -247,25 +261,38 @@ func applyUserPatch(u *services.ProvisionedUser, ops []scim.PatchOperation) {
 		case "name":
 			switch sub {
 			case "givenname":
-				given = s
+				given = &s
 			case "familyname":
-				family = s
+				family = &s
 			case "formatted":
-				if s != "" {
-					u.Name = s
-				}
+				setWhole(s)
 			case "":
 				if m, ok := op.Value.(map[string]any); ok {
-					if n := displayName(map[string]any{"name": m}); n != "" {
-						u.Name = n
-					}
+					setWhole(displayName(map[string]any{"name": m}))
 				}
 			}
 		}
 	}
-	if n := strings.TrimSpace(given + " " + family); n != "" && (given != "" || family != "") {
+	if wholeName || (given == nil && family == nil) {
+		return
+	}
+	g, f := storedGiven, storedFamily
+	if given != nil {
+		g = *given
+	}
+	if family != nil {
+		f = *family
+	}
+	if n := strings.TrimSpace(g + " " + f); n != "" {
 		u.Name = n
 	}
+}
+
+// splitName splits a stored name into a given and a family part at the first
+// space, which is how a given+family PATCH composed it.
+func splitName(name string) (given, family string) {
+	given, family, _ = strings.Cut(strings.TrimSpace(name), " ")
+	return given, strings.TrimSpace(family)
 }
 
 func (userHandler) Delete(r *http.Request, id string) error {

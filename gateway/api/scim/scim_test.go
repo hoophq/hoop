@@ -12,11 +12,13 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
 	modelsbootstrap "github.com/hoophq/hoop/gateway/models/bootstrap"
 	"github.com/hoophq/hoop/gateway/pglite"
+	"github.com/hoophq/hoop/gateway/storagev2/types"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
@@ -27,6 +29,9 @@ const scimOrgID = "00000000-0000-0000-0000-0000000000d1"
 func TestMain(m *testing.M) {
 	os.Setenv("API_URL", "http://localhost:8009")
 	if err := appconfig.Load(appconfig.AppModeControlPlane); err != nil {
+		panic(err)
+	}
+	if err := Init(); err != nil {
 		panic(err)
 	}
 	os.Exit(m.Run())
@@ -54,6 +59,15 @@ func startSCIM(t *testing.T) *httptest.Server {
 	}
 	if err := models.ReplaceSCIMToken(models.DB, scimOrgID, models.HashAPIKey("secret-token"), "admin@example.com"); err != nil {
 		t.Fatalf("seed token: %v", err)
+	}
+	// The org's admin, who must keep the admin group whatever SCIM sends.
+	rootID := uuid.NewString()
+	if err := models.DB.Exec(`INSERT INTO private.users (id, org_id, subject, email, name, status)
+		VALUES (?, ?, 'idp|root', 'root@example.com', 'Root', 'active')`, rootID, scimOrgID).Error; err != nil {
+		t.Fatalf("seed admin: %v", err)
+	}
+	if err := models.InsertUserGroups([]models.UserGroup{{OrgID: scimOrgID, UserID: rootID, Name: types.GroupAdmin}}); err != nil {
+		t.Fatalf("seed admin group: %v", err)
 	}
 
 	gin.SetMode(gin.TestMode)
@@ -187,6 +201,88 @@ func TestSCIM(t *testing.T) {
 	if groups["totalResults"] != float64(1) {
 		t.Fatalf("filter by displayName: %v", groups)
 	}
+
+	// Okta renames with no path and a value object.
+	call(t, srv, http.MethodPatch, "/Groups/"+groupID, `{
+		"schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+		"Operations": [{"op": "replace", "value": {"id": "`+groupID+`", "displayName": "db-leads"}}]
+	}`, http.StatusOK)
+	if got := memberGroups(t, "bob@example.com"); !slices.Equal(got, []string{"db-leads"}) {
+		t.Fatalf("bob groups after the okta rename = %v", got)
+	}
+
+	t.Run("an unfiltered listing pages by the server maximum", func(t *testing.T) {
+		all := call(t, srv, http.MethodGet, "/Users", "", http.StatusOK)
+		if all["itemsPerPage"] != float64(100) || all["totalResults"] != float64(3) {
+			t.Fatalf("listing = itemsPerPage %v totalResults %v; want 100 and 3", all["itemsPerPage"], all["totalResults"])
+		}
+	})
+
+	t.Run("a group named like a hoop group is refused", func(t *testing.T) {
+		for _, name := range []string{"admin", "Admin", " auditor ", "approver"} {
+			resp := call(t, srv, http.MethodPost, "/Groups", `{
+				"schemas": ["urn:ietf:params:scim:schemas:core:2.0:Group"],
+				"displayName": "`+name+`",
+				"members": [{"value": "`+bobID+`"}]
+			}`, http.StatusBadRequest)
+			if resp["scimType"] != "invalidValue" {
+				t.Errorf("%q: %v; want invalidValue", name, resp)
+			}
+		}
+		call(t, srv, http.MethodPatch, "/Groups/"+groupID, `{
+			"schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+			"Operations": [{"op": "replace", "path": "displayName", "value": "admin"}]
+		}`, http.StatusBadRequest)
+		if got := memberGroups(t, "bob@example.com"); !slices.Equal(got, []string{"db-leads"}) {
+			t.Errorf("bob groups = %v; the rename must not happen", got)
+		}
+		if got := memberGroups(t, "root@example.com"); !slices.Equal(got, []string{types.GroupAdmin}) {
+			t.Errorf("root groups = %v; the admin keeps the row", got)
+		}
+	})
+
+	t.Run("a user name that differs only in case is a conflict", func(t *testing.T) {
+		call(t, srv, http.MethodPatch, "/Users/"+bobID, `{
+			"schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+			"Operations": [{"op": "replace", "path": "userName", "value": "ANA@EXAMPLE.COM"}]
+		}`, http.StatusConflict)
+	})
+
+	t.Run("emails are stored lower case", func(t *testing.T) {
+		carl := call(t, srv, http.MethodPost, "/Users", `{
+			"schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
+			"userName": "Carl.Doe@Example.COM",
+			"emails": [{"primary": true, "value": "Carl.Doe@Example.COM"}]
+		}`, http.StatusCreated)
+		var email string
+		models.DB.Raw(`SELECT email FROM private.users WHERE id = ?`, carl["id"]).Scan(&email)
+		if email != "carl.doe@example.com" {
+			t.Fatalf("email = %q; want lower case", email)
+		}
+	})
+
+	t.Run("entra patches the given name alone", func(t *testing.T) {
+		call(t, srv, http.MethodPatch, "/Users/"+anaID, `{
+			"schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+			"Operations": [{"op": "Replace", "path": "name.givenName", "value": "Anna"}]
+		}`, http.StatusOK)
+		var name string
+		models.DB.Raw(`SELECT name FROM private.users WHERE id = ?`, anaID).Scan(&name)
+		if name != "Anna Lima" {
+			t.Fatalf("name = %q; want the stored family name kept", name)
+		}
+		call(t, srv, http.MethodPatch, "/Users/"+anaID, `{
+			"schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+			"Operations": [
+				{"op": "Replace", "path": "name.givenName", "value": "A."},
+				{"op": "Replace", "path": "displayName", "value": "Ana Maria Lima"}
+			]
+		}`, http.StatusOK)
+		models.DB.Raw(`SELECT name FROM private.users WHERE id = ?`, anaID).Scan(&name)
+		if name != "Ana Maria Lima" {
+			t.Fatalf("name = %q; the whole name wins over a half", name)
+		}
+	})
 
 	// Okta deactivates with a value object and no path; Entra with "False".
 	call(t, srv, http.MethodPatch, "/Users/"+bobID, `{

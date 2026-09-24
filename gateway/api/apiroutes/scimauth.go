@@ -16,8 +16,10 @@ import (
 const scimOrgContextKey = "scim-org"
 
 // SCIMAuthMiddleware authenticates an identity provider's SCIM request by its
-// bearer token and installs an org-scoped context with no user (ADR-0019).
-// Errors are SCIM error documents, which is what a SCIM client parses.
+// bearer token and installs an org-scoped context (ADR-0019). The context's
+// user is the admin who generated the token, so the audit entry of a SCIM
+// write names who let the identity provider in. Errors are SCIM error
+// documents, which is what a SCIM client parses.
 func (r *Router) SCIMAuthMiddleware(c *gin.Context) {
 	header := c.GetHeader("Authorization")
 	token := ""
@@ -44,7 +46,10 @@ func (r *Router) SCIMAuthMiddleware(c *gin.Context) {
 	}
 
 	c.Set(scimOrgContextKey, scimToken.OrgID)
-	c.Set(storagev2.ContextKey, storagev2.NewOrganizationContext(scimToken.OrgID).WithApiURL(r.apiURL))
+	ctx := storagev2.NewContext("scim-token", scimToken.OrgID).WithApiURL(r.apiURL)
+	ctx.UserEmail = scimToken.CreatedBy
+	ctx.UserName = "SCIM"
+	c.Set(storagev2.ContextKey, ctx)
 	c.Next()
 }
 
