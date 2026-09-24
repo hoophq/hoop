@@ -531,8 +531,14 @@ func canonicalResourceURI(s string) string {
 	return canonical
 }
 
+// userInfoTimeout bounds the userinfo call: session pollers, session start
+// and the post-refresh group sync wait on it.
+var userInfoTimeout = 30 * time.Second
+
 func (p *Provider) userInfoEndpoint(accessToken string) (*idptypes.ProviderUserInfo, error) {
-	user, err := p.oidcProvider.UserInfo(context.Background(), &UserInfoToken{token: &oauth2.Token{
+	ctx, cancel := context.WithTimeout(context.Background(), userInfoTimeout)
+	defer cancel()
+	user, err := p.oidcProvider.UserInfo(ctx, &UserInfoToken{token: &oauth2.Token{
 		AccessToken: accessToken,
 		TokenType:   "Bearer",
 	}})
