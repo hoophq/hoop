@@ -295,6 +295,24 @@ type SidecarRequest struct {
 	Configuration json.RawMessage `json:"configuration,omitempty" swaggertype:"object"`
 }
 
+// SidecarSlackChannels is where the reviews of a sidecar are posted in Slack.
+// A listener's channels replace the sidecar's; with neither, the org's default
+// channel applies, and that channel receives every review regardless.
+type SidecarSlackChannels struct {
+	// Slack channel ids for every listener of the sidecar
+	Channels []string `json:"channels" example:"C0123456789"`
+	// Channels for one listener, replacing the sidecar's
+	Listeners []SidecarListenerSlackChannels `json:"listeners"`
+}
+
+// SidecarListenerSlackChannels is the channels of one listener.
+type SidecarListenerSlackChannels struct {
+	// The listener name
+	Name string `json:"name" example:"payments-pg"`
+	// Slack channel ids
+	Channels []string `json:"channels" example:"C0987654321"`
+}
+
 type SidecarUpdateRequest struct {
 	// The daemon configuration this sidecar serves. Replaces the stored
 	// document entirely.

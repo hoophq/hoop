@@ -16,6 +16,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -119,6 +120,19 @@ func writeSidecarConfiguration(db *gorm.DB, licenseData json.RawMessage, write f
 		}
 		if err := services.ValidateSidecarBindingsForConfiguration(tx, sc); err != nil {
 			return err
+		}
+		// A listener this write removed or renamed takes its Slack channels
+		// with it, so they never apply to a listener that takes its name later.
+		if appconfig.Get().IsControlPlane() {
+			var names []string
+			for _, l := range sc.Configuration.Listeners {
+				if l.Name != "" {
+					names = append(names, l.Name)
+				}
+			}
+			if err := models.PruneSidecarSlackChannels(tx, sc.OrgID, sc.ID, names); err != nil {
+				return err
+			}
 		}
 		item = sc
 		return nil

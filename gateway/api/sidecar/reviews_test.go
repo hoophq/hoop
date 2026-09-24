@@ -471,6 +471,24 @@ func TestNewSlackReviewRequest(t *testing.T) {
 	assert.True(t, strings.HasPrefix(req.WebappURL, "http://localhost:8009/hoop/"),
 		"ApiURL drops a configured path prefix and lands the approver outside the app")
 
-	assert.Empty(t, req.SlackChannels, "a sidecar review has no connection, so the org default is the only destination")
+	assert.Empty(t, req.SlackChannels, "notifySlack sets the channels from the sidecar or listener")
 	assert.Nil(t, req.SessionTime, "a sidecar review grants no access window")
+}
+
+func TestSlackChannelsResponse(t *testing.T) {
+	assert.Equal(t, []string{"C1", "C2"}, normalizeChannels([]string{" C1 ", "", "C2", "C1"}))
+	assert.Equal(t, []string{}, normalizeChannels(nil))
+
+	out := toOpenAPISlackChannels([]models.SidecarSlackChannels{
+		{ListenerName: "", Channels: []string{"C-ALL"}},
+		{ListenerName: "pg", Channels: []string{"C-PG"}},
+	})
+	assert.Equal(t, []string{"C-ALL"}, out.Channels)
+	assert.Len(t, out.Listeners, 1)
+	assert.Equal(t, "pg", out.Listeners[0].Name)
+	assert.Equal(t, []string{"C-PG"}, out.Listeners[0].Channels)
+
+	empty := toOpenAPISlackChannels(nil)
+	assert.NotNil(t, empty.Channels)
+	assert.NotNil(t, empty.Listeners)
 }

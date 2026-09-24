@@ -328,6 +328,17 @@ func (api *Api) buildSidecarRoutes(r *apiroutes.Router) {
 		api.AuditMiddleware(),
 		api.TrackRequest(analytics.EventDeleteSidecar),
 		apisidecar.Delete)
+	// Where the sidecar's reviews are posted in Slack (ADR-0019). Both modes
+	// register them; a gateway answers 412.
+	r.GET("/sidecars/:nameOrID/slack-channels",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apisidecar.GetSlackChannels)
+	r.PUT("/sidecars/:nameOrID/slack-channels",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		apisidecar.PutSlackChannels)
 }
 
 func (api *Api) buildRoutes(r *apiroutes.Router, mode appconfig.AppMode) {

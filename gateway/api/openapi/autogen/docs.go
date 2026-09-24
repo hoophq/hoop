@@ -8553,6 +8553,221 @@ const docTemplate = `{
                 }
             }
         },
+        "/serverconfig/directory-sync": {
+            "get": {
+                "description": "Get the directory sync that pulls users and groups from Google Workspace, Auth0 or Cognito. Secrets are redacted. Control plane only.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Management"
+                ],
+                "summary": "Get Directory Sync",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.DirectorySyncConfig"
+                        }
+                    },
+                    "412": {
+                        "description": "Precondition Failed",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Configure the directory sync. A secret sent as \"********\" keeps the stored one. Control plane only.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Management"
+                ],
+                "summary": "Configure Directory Sync",
+                "parameters": [
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.DirectorySyncRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.DirectorySyncConfig"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "412": {
+                        "description": "Precondition Failed",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Stop the directory sync. Provisioned users and groups stay as they are. Control plane only.",
+                "tags": [
+                    "Server Management"
+                ],
+                "summary": "Delete Directory Sync",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "412": {
+                        "description": "Precondition Failed",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/serverconfig/directory-sync/groups": {
+            "get": {
+                "description": "List the groups the configured directory sync can read, for choosing which ones to sync. Control plane only.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Management"
+                ],
+                "summary": "List Directory Groups",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/openapi.DirectoryGroup"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "412": {
+                        "description": "Precondition Failed",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "502": {
+                        "description": "Bad Gateway",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/serverconfig/directory-sync/run": {
+            "post": {
+                "description": "Run the directory sync now and return its outcome in last_run_at and last_error. Control plane only.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Management"
+                ],
+                "summary": "Run Directory Sync",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.DirectorySyncConfig"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "412": {
+                        "description": "Precondition Failed",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/serverconfig/mcp-auth": {
             "get": {
                 "description": "Returns the per-org MCP OAuth Resource Server settings. When disabled (default), /mcp accepts Hoop-issued bearer tokens only.",
@@ -8716,6 +8931,98 @@ const docTemplate = `{
                     },
                     "403": {
                         "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/serverconfig/scim": {
+            "get": {
+                "description": "Report whether an identity provider can push users and groups over SCIM. Control plane only.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Management"
+                ],
+                "summary": "Get SCIM Configuration",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SCIMConfig"
+                        }
+                    },
+                    "412": {
+                        "description": "Precondition Failed",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Generate the bearer token an identity provider pushes SCIM requests with, replacing the previous one. The token is returned once. Control plane only.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Server Management"
+                ],
+                "summary": "Generate SCIM Token",
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SCIMToken"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "412": {
+                        "description": "Precondition Failed",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Revoke the SCIM token. Provisioned users and groups stay as they are. Control plane only.",
+                "tags": [
+                    "Server Management"
+                ],
+                "summary": "Delete SCIM Token",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "412": {
+                        "description": "Precondition Failed",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -10508,6 +10815,122 @@ const docTemplate = `{
                 }
             }
         },
+        "/sidecars/{nameOrID}/slack-channels": {
+            "get": {
+                "description": "Where the sidecar's reviews are posted in Slack. Control plane only.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sidecars"
+                ],
+                "summary": "Get Sidecar Slack Channels",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the sidecar",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SidecarSlackChannels"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "412": {
+                        "description": "Precondition Failed",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Replace where the sidecar's reviews are posted in Slack. A listener's channels replace the sidecar's; an empty list inherits. Control plane only.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sidecars"
+                ],
+                "summary": "Set Sidecar Slack Channels",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the sidecar",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SidecarSlackChannels"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SidecarSlackChannels"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "412": {
+                        "description": "Precondition Failed",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/signup": {
             "post": {
                 "description": "Signup anonymous authenticated user. This endpoint is only used for multi tenant setups.",
@@ -11767,6 +12190,16 @@ const docTemplate = `{
                     "type": "string",
                     "example": "block-dangerous-queries"
                 },
+                "reviewers_groups": {
+                    "description": "The groups whose members may release a statement this rule holds.\nPresent only in a control plane, while the rule holds.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "dba-leads"
+                    ]
+                },
                 "risk_evaluation": {
                     "description": "Risk evaluation actions per level",
                     "allOf": [
@@ -11832,6 +12265,16 @@ const docTemplate = `{
                     "description": "Unique name for the rule",
                     "type": "string",
                     "example": "block-dangerous-queries"
+                },
+                "reviewers_groups": {
+                    "description": "ReviewersGroups are the identity provider groups whose members may\nrelease a statement this rule holds for approval. Absent keeps the\ngroups already set; with none set the admin group reviews.\n\nA control plane field, read only while sidecar_spec holds a statement.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "dba-leads"
+                    ]
                 },
                 "risk_evaluation": {
                     "description": "Risk evaluation actions per level",
@@ -14590,6 +15033,101 @@ const docTemplate = `{
                     "type": "string",
                     "readOnly": true,
                     "example": "2023-08-15T14:30:45Z"
+                }
+            }
+        },
+        "openapi.DirectoryGroup": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "description": "The provider's id of the group",
+                    "type": "string",
+                    "example": "03x8tuzt1b9wqa4"
+                },
+                "name": {
+                    "description": "The group name hoop stores",
+                    "type": "string",
+                    "example": "dba-leads@example.com"
+                }
+            }
+        },
+        "openapi.DirectorySyncConfig": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "description": "Whether a directory sync is configured",
+                    "type": "boolean"
+                },
+                "group_ids": {
+                    "description": "The provider's ids of the groups whose members are synced",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "interval_minutes": {
+                    "description": "Minutes between two runs",
+                    "type": "integer",
+                    "example": 15
+                },
+                "last_error": {
+                    "description": "Why the last run failed; empty when it succeeded",
+                    "type": "string"
+                },
+                "last_run_at": {
+                    "description": "When the sync last ran",
+                    "type": "string"
+                },
+                "provider": {
+                    "description": "The identity provider",
+                    "type": "string",
+                    "enum": [
+                        "google",
+                        "auth0",
+                        "cognito"
+                    ],
+                    "example": "google"
+                },
+                "settings": {
+                    "description": "The provider's settings. Secrets are returned as \"********\"; sending that value back keeps the stored secret.\n google: service_account_json, admin_email, customer\n auth0: domain, client_id, client_secret\n cognito: region, user_pool_id, access_key_id, secret_access_key",
+                    "type": "object",
+                    "additionalProperties": {}
+                }
+            }
+        },
+        "openapi.DirectorySyncRequest": {
+            "type": "object",
+            "required": [
+                "provider",
+                "settings"
+            ],
+            "properties": {
+                "group_ids": {
+                    "description": "The provider's ids of the groups whose members are synced",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "interval_minutes": {
+                    "description": "Minutes between two runs, at least 5. Defaults to 15",
+                    "type": "integer",
+                    "example": 15
+                },
+                "provider": {
+                    "description": "The identity provider",
+                    "type": "string",
+                    "enum": [
+                        "google",
+                        "auth0",
+                        "cognito"
+                    ],
+                    "example": "google"
+                },
+                "settings": {
+                    "description": "The provider's settings; see DirectorySyncConfig",
+                    "type": "object",
+                    "additionalProperties": {}
                 }
             }
         },
@@ -18269,6 +18807,48 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.SCIMConfig": {
+            "type": "object",
+            "properties": {
+                "base_url": {
+                    "description": "The SCIM base URL to configure in the identity provider",
+                    "type": "string",
+                    "example": "https://hoop.example.com/api/scim/v2"
+                },
+                "created_at": {
+                    "description": "When the current token was generated",
+                    "type": "string"
+                },
+                "created_by": {
+                    "description": "Who generated the current token",
+                    "type": "string",
+                    "example": "admin@example.com"
+                },
+                "enabled": {
+                    "description": "Whether a SCIM token exists",
+                    "type": "boolean"
+                },
+                "last_used_at": {
+                    "description": "When the identity provider last used the token",
+                    "type": "string"
+                }
+            }
+        },
+        "openapi.SCIMToken": {
+            "type": "object",
+            "properties": {
+                "base_url": {
+                    "description": "The SCIM base URL to configure in the identity provider",
+                    "type": "string",
+                    "example": "https://hoop.example.com/api/scim/v2"
+                },
+                "token": {
+                    "description": "The bearer token to configure in the identity provider",
+                    "type": "string",
+                    "example": "hscim_4k2..."
+                }
+            }
+        },
         "openapi.SSHServerConfig": {
             "type": "object",
             "properties": {
@@ -19824,6 +20404,26 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.SidecarListenerSlackChannels": {
+            "type": "object",
+            "properties": {
+                "channels": {
+                    "description": "Slack channel ids",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "C0987654321"
+                    ]
+                },
+                "name": {
+                    "description": "The listener name",
+                    "type": "string",
+                    "example": "payments-pg"
+                }
+            }
+        },
         "openapi.SidecarPatchRequest": {
             "type": "object",
             "required": [
@@ -20026,6 +20626,28 @@ const docTemplate = `{
                     "type": "string",
                     "format": "uuid",
                     "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                }
+            }
+        },
+        "openapi.SidecarSlackChannels": {
+            "type": "object",
+            "properties": {
+                "channels": {
+                    "description": "Slack channel ids for every listener of the sidecar",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "C0123456789"
+                    ]
+                },
+                "listeners": {
+                    "description": "Channels for one listener, replacing the sidecar's",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.SidecarListenerSlackChannels"
+                    }
                 }
             }
         },
