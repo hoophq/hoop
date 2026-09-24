@@ -1243,3 +1243,42 @@ func TestAnEditKeepsABindingToAConfigFileSidecar(t *testing.T) {
 		t.Fatalf("want a new binding refused, got %v", err)
 	}
 }
+
+// A name another writer took between the split and the insert is a conflict
+// the sidecar can retry, not a server error.
+func TestAnImportNamesATakenRuleAsAConflict(t *testing.T) {
+	startTestDB(t)
+	sc := newTestSidecar(t, "race-edge")
+	spec := json.RawMessage(`{"rules":[{"name":"taken","type":"deny_words_list","words":["x"]}]}`)
+	taken := &models.GuardRailRules{OrgID: testOrgID, ID: uuid.NewString(), Name: "taken",
+		Input: map[string]any{"rules": []any{}}, Output: map[string]any{"rules": []any{}}, SidecarSpec: spec}
+	if err := models.UpsertGuardRailRuleWithConnections(taken, nil, true); err != nil {
+		t.Fatalf("seed rule: %v", err)
+	}
+	err := models.DB.Transaction(func(tx *gorm.DB) error {
+		return services.ImportSidecarRulesTx(tx, testOrgID, sc.ID, []services.ImportedRule{{
+			Kind: services.SidecarRuleGuardrail, Name: "taken", Spec: spec,
+			Targets: []services.ImportedTarget{{Listener: "appdb"}},
+		}})
+	})
+	if !errors.Is(err, services.ErrImportedRuleConflict) {
+		t.Fatalf("want ErrImportedRuleConflict, got %v", err)
+	}
+}
+
+// The import stores only a spec the rule pages would accept, so an imported
+// rule stays editable.
+func TestAnImportRefusesASpecTheGatewayRejects(t *testing.T) {
+	startTestDB(t)
+	sc := newTestSidecar(t, "bad-edge")
+	err := models.DB.Transaction(func(tx *gorm.DB) error {
+		return services.ImportSidecarRulesTx(tx, testOrgID, sc.ID, []services.ImportedRule{{
+			Kind: services.SidecarRuleGuardrail, Name: "bad-edge-empty", Spec: json.RawMessage(`{"rules":[]}`),
+			Targets: []services.ImportedTarget{{Listener: "appdb"}},
+		}})
+	})
+	var invalid services.ErrImportedRuleInvalid
+	if !errors.As(err, &invalid) || !strings.Contains(err.Error(), "bad-edge-empty") {
+		t.Fatalf("want ErrImportedRuleInvalid naming the rule, got %v", err)
+	}
+}

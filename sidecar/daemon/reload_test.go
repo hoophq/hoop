@@ -974,12 +974,14 @@ func TestAHeartbeat412WhenPlaneOwnedDoesNotImport(t *testing.T) {
 	rl.load = func(string) (*Config, error) { return LoadConfigBytes([]byte(reloadBase)) }
 
 	var mu sync.Mutex
-	pushed := false
+	pushed, handshakes := false, 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		defer mu.Unlock()
 		if r.Method == http.MethodPut {
 			pushed = true
+		} else {
+			handshakes++
 		}
 		w.WriteHeader(http.StatusPreconditionFailed)
 	}))
@@ -992,6 +994,11 @@ func TestAHeartbeat412WhenPlaneOwnedDoesNotImport(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
+	// Without a handshake the loop never met the 412, and the test proves
+	// nothing.
+	if handshakes == 0 {
+		t.Fatalf("the heartbeat never reached the plane")
+	}
 	if pushed {
 		t.Fatalf("a plane-owned process pushed its file on a 412")
 	}

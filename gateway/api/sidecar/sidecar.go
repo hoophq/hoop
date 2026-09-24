@@ -690,24 +690,29 @@ func ImportConfiguration(c *gin.Context) {
 	// Each rule of the file becomes a rule item on its feature page, bound to
 	// the listeners that ran it. The row keeps the rest; composition folds the
 	// items back, so the served document enforces what the file did.
-	stripped, rules, err := services.SplitSidecarConfiguration(sidecar.Name, cfg,
-		services.ImportedRuleNameTaken(models.DB, sidecar.OrgID))
-	if err != nil {
-		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
-		return
-	}
+	// The names are picked inside the transaction that writes them, so a
+	// writer racing the import meets a unique key and not a stale check.
 	var item *models.Sidecar
+	var invalid services.ErrImportedRuleInvalid
 	err = models.DB.Transaction(func(tx *gorm.DB) error {
-		var txErr error
-		item, txErr = models.AdoptSidecarConfiguration(tx, sidecar.OrgID, sidecar.ID, models.SidecarConfiguration(stripped))
-		if txErr != nil {
-			return txErr
+		stripped, rules, err := services.SplitSidecarConfiguration(sidecar.Name, cfg,
+			services.ImportedRuleNameTaken(tx, sidecar.OrgID))
+		if err != nil {
+			return services.ErrImportedRuleInvalid{Err: err}
+		}
+		item, err = models.AdoptSidecarConfiguration(tx, sidecar.OrgID, sidecar.ID, models.SidecarConfiguration(stripped))
+		if err != nil {
+			return err
 		}
 		return services.ImportSidecarRulesTx(tx, sidecar.OrgID, sidecar.ID, rules)
 	})
 	switch {
 	case err == nil:
 		c.JSON(http.StatusOK, item.Configuration)
+	case errors.As(err, &invalid):
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": invalid.Error()})
+	case errors.Is(err, services.ErrImportedRuleConflict):
+		c.JSON(http.StatusConflict, gin.H{"message": services.ErrImportedRuleConflict.Error()})
 	case errors.Is(err, models.ErrAlreadyExists):
 		c.JSON(http.StatusConflict, gin.H{"message": "the control plane already holds a configuration for this sidecar; edit it there"})
 	default:

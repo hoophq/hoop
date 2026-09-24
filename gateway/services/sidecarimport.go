@@ -270,6 +270,20 @@ func ImportSidecarRulesTx(tx *gorm.DB, orgID, sidecarID string, rules []Imported
 	if err != nil {
 		return err
 	}
+	// Checked before any write: a spec the rule pages refuse would store a
+	// rule nobody can save again.
+	for _, r := range rules {
+		if err := ValidateSidecarRuleSpec(r.Kind, r.Name, r.Spec); err != nil {
+			return ErrImportedRuleInvalid{err}
+		}
+	}
+	// A name the split found free and another writer took since.
+	conflict := func(err error, kind SidecarRuleKind, name string) error {
+		if errors.Is(err, models.ErrAlreadyExists) {
+			return fmt.Errorf("%w: %s rule %q", ErrImportedRuleConflict, kind, name)
+		}
+		return fmt.Errorf("%s rule %q: %w", kind, name, err)
+	}
 	for _, r := range rules {
 		targets := make([]models.SidecarRuleTarget, 0, len(r.Targets))
 		for _, t := range r.Targets {
@@ -284,7 +298,7 @@ func ImportSidecarRulesTx(tx *gorm.DB, orgID, sidecarID string, rules []Imported
 				Input: map[string]any{}, Output: map[string]any{}, SidecarSpec: r.Spec,
 			}
 			if err := models.UpsertGuardRailRuleWithConnectionsTx(tx, row, nil, true); err != nil {
-				return fmt.Errorf("guardrail rule %q: %v", r.Name, err)
+				return conflict(err, r.Kind, r.Name)
 			}
 			if err = models.MarkImportedRuleTx(tx, "private.guardrail_rules", org, r.Name, sidecarID); err == nil {
 				err = models.SetGuardrailRuleListenersTx(tx, org, r.Name, targets)
@@ -297,7 +311,7 @@ func ImportSidecarRulesTx(tx *gorm.DB, orgID, sidecarID string, rules []Imported
 				SidecarSpec:          r.Spec,
 			}
 			if err := models.CreateDataMaskingRuleTx(tx, row); err != nil {
-				return fmt.Errorf("data masking rule %q: %v", r.Name, err)
+				return conflict(err, r.Kind, r.Name)
 			}
 			if err = models.MarkImportedRuleTx(tx, "private.datamasking_rules", org, r.Name, sidecarID); err == nil {
 				err = models.SetDataMaskingRuleListenersTx(tx, org, r.Name, targets)
@@ -316,7 +330,7 @@ func ImportSidecarRulesTx(tx *gorm.DB, orgID, sidecarID string, rules []Imported
 				},
 			}
 			if err := models.CreateAISessionAnalyzerRuleTx(tx, row); err != nil {
-				return fmt.Errorf("analyzer rule %q: %v", r.Name, err)
+				return conflict(err, r.Kind, r.Name)
 			}
 			if err := SyncAnalyzerApprovalRule(tx, org, r.Name, r.Spec); err != nil {
 				return err
@@ -448,3 +462,12 @@ func isEmptyList(raw json.RawMessage) bool {
 	var v []json.RawMessage
 	return json.Unmarshal(raw, &v) == nil && len(v) == 0
 }
+
+// ErrImportedRuleConflict is a rule name another writer took during the import.
+var ErrImportedRuleConflict = errors.New("a rule name was taken during the import; retry")
+
+// ErrImportedRuleInvalid is an imported rule whose spec the gateway refuses.
+type ErrImportedRuleInvalid struct{ Err error }
+
+func (e ErrImportedRuleInvalid) Error() string { return e.Err.Error() }
+func (e ErrImportedRuleInvalid) Unwrap() error { return e.Err }

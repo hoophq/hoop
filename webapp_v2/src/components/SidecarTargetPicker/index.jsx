@@ -115,8 +115,11 @@ function pillsFor(tree, selected) {
   }
   return [...picked].map(([id, names]) => {
     const node = byId.get(id)
-    const total = node ? node.listeners.filter((l) => !l.disabled).length : 0
-    const all = total > 0 && names.length === total
+    // Every enabled listener is picked, compared by name: a stored target the
+    // fleet no longer lists must not stand in for a missing one.
+    const enabled = node ? node.listeners.filter((l) => !l.disabled).map((l) => l.name) : []
+    const pickedNames = new Set(names)
+    const all = enabled.length > 0 && enabled.every((n) => pickedNames.has(n))
     let shown = 0
     let length = 0
     while (shown < names.length && (shown === 0 || length + names[shown].length <= PILL_CHARS)) {
@@ -373,9 +376,11 @@ export default function SidecarTargetPicker({ value = [], onChange, label, descr
                     setSearch(event.currentTarget.value)
                   }}
                   onKeyDown={(event) => {
-                    if (event.key === 'Backspace' && search.length === 0 && pills.length > 0) {
+                    // One listener per keypress, the last one picked, as a
+                    // plain multiselect does.
+                    if (event.key === 'Backspace' && search.length === 0 && selected.length > 0) {
                       event.preventDefault()
-                      removeSidecar(pills[pills.length - 1].id)
+                      emit(selected.slice(0, -1))
                     }
                   }}
                 />
