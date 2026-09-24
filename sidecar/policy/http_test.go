@@ -70,6 +70,30 @@ func TestHTTPResourceDoubleStar(t *testing.T) {
 	}
 }
 
+func TestHTTPResourceDoubleStarAfterWildcard(t *testing.T) {
+	rules, _ := policy.NewRules([]policy.Rule{
+		policy.Rule{Name: "no-secrets", Type: policy.MatchHTTPResource}.
+			WithResources("/api/v1/namespaces/*/secrets/**"),
+	})
+
+	for _, res := range []string{
+		"/api/v1/namespaces/kube-system/secrets",
+		"/api/v1/namespaces/kube-system/secrets/bootstrap-token",
+	} {
+		if !rules.Evaluate(httpStmt(&inspect.HTTPDetail{Resource: res})).Denied {
+			t.Errorf("%s was allowed; a * before /** must match one segment", res)
+		}
+	}
+	for _, res := range []string{
+		"/api/v1/namespaces/kube-system/configmaps/foo",
+		"/api/v1/namespaces/secrets",
+	} {
+		if rules.Evaluate(httpStmt(&inspect.HTTPDetail{Resource: res})).Denied {
+			t.Errorf("%s was denied by /api/v1/namespaces/*/secrets/**", res)
+		}
+	}
+}
+
 func TestHTTPResourceMethodNarrowing(t *testing.T) {
 	rules, _ := policy.NewRules([]policy.Rule{
 		policy.Rule{Name: "no-writes", Type: policy.MatchHTTPResource, Message: "read only"}.
