@@ -1,0 +1,101 @@
+# hoop-inspect with a Kubernetes API server behind an http lane.
+#
+#   envoy :8443 --cluster hoop_inspect_http---> :18080  lane "httpbin"
+#   envoy :5432 --cluster hoop_inspect_pg-----> :15432  lane "appdb"
+#   envoy :8447 --cluster hoop_inspect_k8s----> :16443  lane "kubernetes"  http codec
+#
+# The appdb and httpbin lanes are the LIVE parts of ../sidecar/config.yaml.
+# The kubernetes lane adds NO rules: this process has one guardrail and one
+# masking rule in the defaults below, and the lane inherits both.
+#
+# Validate without starting anything:
+#   cd sidecar/cmd && go run . -validate \
+#     -config ../../deploy/docker-compose/envoy-stack/kubernetes/config-kubernetes.yaml
+
+log_level: info
+
+admin:
+  listen: 0.0.0.0:19000
+
+audit:
+  file: "-"
+  memory_buffer: 256
+  async_queue_size: 1024
+  query_sessions: 500
+
+pii:
+  entities:
+    - EMAIL_ADDRESS
+    - US_SSN
+    - CREDIT_CARD
+    - BR_CPF
+    - IBAN_CODE
+
+guardrails:
+  mode: enforce
+  rules:
+    - name: no-cpf-in-query
+      type: pii
+      entities: [BR_CPF]
+      message: do not put a taxpayer id in a query; it lands in the database's own logs
+
+mask:
+  rules:
+    - {name: emails, entities: [EMAIL_ADDRESS], strategy: redact}
+
+listeners:
+  - name: appdb
+    protocol: postgres
+    listen: 0.0.0.0:15432
+    upstream: appdb:5432
+    upstream_tls:
+      ca_file: /etc/hoop-inspect/certs/appdb.crt
+      server_name: appdb
+
+  - name: httpbin
+    protocol: http
+    listen: 0.0.0.0:18080
+    upstream: httpbin:8080
+
+  # kube-apiserver. Two request shapes cross this one lane:
+  #
+  #   - Plain HTTP/1.1: kubectl get, apply, delete. The request line is
+  #     what the guardrail scans, so a resource name carrying a taxpayer id
+  #     is refused with a 403 before the apiserver sees it.
+  #   - WebSocket: kubectl exec, attach, port-forward. The relay records
+  #     the GET .../exec that opened it, the 101 that answered it and, via
+  #     the headers below, the subprotocol the connection became. What it
+  #     records AFTER the 101 depends on the http codec in the libhoop
+  #     checkout this stack builds from: the pinned codec treats the frames
+  #     as opaque bytes and forwards them; a WebSocket-aware codec turns
+  #     each message into a ws_message row. README.md here has both.
+  #
+  # Masking is off on this lane, explicitly, because neither shape gives
+  # it a body it can rewrite: the apiserver answers every request with
+  # Transfer-Encoding: chunked, which http substitution cannot re-length
+  # (gate/contentlength.go), and exec's frames are binary. Inheriting the
+  # emails rule would load clean and fire on nothing.
+  #
+  # Upstream TLS is verified against the cluster CA that the k3s-ca service
+  # copies out of k3s's volume. No ALPN is offered on that hop, so the
+  # apiserver answers in HTTP/1.1, the only dialect the codec reads.
+  #
+  # Authorization is never allowlisted; the relay refuses it at load. The
+  # bearer token therefore never reaches the audit trail, OPA, or a prompt.
+  # X-Hoop-User is the principal OPA resolved from that token and wrote
+  # back onto the request; it is the one identity field the audit row gets.
+  - name: kubernetes
+    protocol: http
+    listen: 0.0.0.0:16443
+    upstream: k3s:6443
+    upstream_tls:
+      ca_file: /etc/hoop-inspect/k3s/server-ca.crt
+      server_name: k3s
+    mask:
+      rules: []
+    http:
+      headers:
+        - X-Hoop-User
+        - Upgrade
+        - Sec-WebSocket-Protocol
+        - X-Stream-Protocol-Version

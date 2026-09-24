@@ -104,6 +104,16 @@ response, which `http` masking cannot rewrite. The native `:9000` has no
 codec and so no lane. The overlay also documents a `mysql` codec gap the
 MySQL 8 CLI exposes against any server without `CLIENT_QUERY_ATTRIBUTES`.
 
+[`kubernetes/`](kubernetes/README.md) puts a one-node k3s cluster behind a
+`protocol: http` lane on Envoy `:8447` (TLS, the same OPA fat gate) and
+shows two request shapes on one listener: plain `kubectl get`, where the
+process's guardrail refuses a taxpayer id on the request line, and the
+WebSocket `kubectl exec` opens, admitted by Envoy's `upgrade_configs` and
+recorded by the relay as the GET, the 101 and the subprotocol selected.
+kubectl cannot add a header, so on that port OPA reads the identity off
+the bearer token instead of `X-Hoop-User`. The apiserver chunks every
+response, so masking is off on the lane rather than inherited and idle.
+
 **The running transport.** `/stats` reports the address each lane bound, so
 you can read it off the process instead of the config:
 
