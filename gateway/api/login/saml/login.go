@@ -253,7 +253,7 @@ func (h *handler) SamlLoginCallback(c *gin.Context) {
 	// sync attributes
 	usr.Subject = uinfo.Subject
 	usr.Name = uinfo.Profile
-	if uinfo.MustSyncGroups {
+	if uinfo.MustSyncGroups && idp.LoginSyncsGroups(usr.OrgID) {
 		usr.Groups = uinfo.Groups
 	}
 

@@ -1,5 +1,6 @@
 import {
   Container,
+  Fingerprint,
   KeyRound,
   MessageSquare,
   Settings,
@@ -40,10 +41,12 @@ const ACTIVITY_ITEMS = [
   { label: 'Reviews', path: '/reviews', icon: View, role: ROLE_APPROVER },
 ]
 
-// The Settings group: where approvals are delivered (Slack) and the
-// organization (Users, License — an attribute of the org, PUT /orgs/license).
+// The Settings group: where approvals are delivered (Slack), where reviewers
+// come from (Provisioning) and the organization (Users, License — an attribute
+// of the org, PUT /orgs/license).
 const SETTINGS_ITEMS = [
   { label: 'Slack', path: '/integrations/slack', adminOnly: true },
+  { label: 'Provisioning', path: '/settings/provisioning', adminOnly: true },
   { label: 'Users', path: '/organization/users', adminOnly: true },
   { label: 'License', path: '/settings/license', adminOnly: true },
 ]
@@ -75,6 +78,7 @@ const QUICK_ACCESS_ITEMS = [
   { id: 'guardrails', label: 'Guardrails', description: 'Configure guardrails', icon: ShieldCheck, path: '/guardrails', adminOnly: true, licenseFeature: 'guardrails' },
   { id: 'ai-analyzer', label: 'AI Analyzer', description: 'Configure the AI session analyzer', icon: Sparkles, path: '/features/ai-session-analyzer', adminOnly: true, licenseFeature: 'ai-session-analyzer' },
   { id: 'review-slack', label: 'Slack', description: 'Where approvals are delivered', icon: MessageSquare, path: '/integrations/slack', adminOnly: true },
+  { id: 'provisioning', label: 'Provisioning', description: 'Users and groups from your identity provider', icon: Fingerprint, path: '/settings/provisioning', adminOnly: true },
   { id: 'users', label: 'Users', description: 'Invite and manage administrators and approvers', icon: Users, path: '/organization/users', adminOnly: true },
   { id: 'license', label: 'License', description: 'License management', icon: KeyRound, path: '/settings/license', adminOnly: true },
 ]

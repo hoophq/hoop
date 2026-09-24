@@ -25,6 +25,7 @@ import (
 	reviewapi "github.com/hoophq/hoop/gateway/api/review"
 	apiserverconfig "github.com/hoophq/hoop/gateway/api/serverconfig"
 	"github.com/hoophq/hoop/gateway/appconfig"
+	"github.com/hoophq/hoop/gateway/directorysync"
 	"github.com/hoophq/hoop/gateway/eventrouting"
 	"github.com/hoophq/hoop/gateway/externaljwt"
 	_ "github.com/hoophq/hoop/gateway/federation/gcpiam"
@@ -258,6 +259,9 @@ func runControlPlane(tlsConfig *tls.Config) {
 	}
 	startPlugins(controlPlanePlugins(g.ReleaseConnectionOnReview))
 	go reconcileStaleReviews(models.DB)
+	// Pulls reviewers from identity providers that do not push SCIM
+	// (ADR-0019). Only the control plane runs it.
+	go directorysync.Start(context.Background(), models.DB)
 
 	bootstrap.Phase("Starting API")
 	apiStep := bootstrap.Step("HTTP API")

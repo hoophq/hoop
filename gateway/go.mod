@@ -19,6 +19,7 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.41.5
 	github.com/aws/aws-sdk-go-v2/config v1.32.14
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.14
+	github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider v1.60.0
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.297.0
 	github.com/aws/aws-sdk-go-v2/service/iam v1.53.7
 	github.com/aws/aws-sdk-go-v2/service/organizations v1.51.1
@@ -27,6 +28,7 @@ require (
 	github.com/aws/session-manager-plugin v0.0.0-20260401221635-b79d06c1d3a2
 	github.com/aws/smithy-go v1.24.3
 	github.com/coreos/go-oidc/v3 v3.20.0
+	github.com/elimity-com/scim v0.0.0-20260728105928-2641426a1539
 	github.com/getkin/kin-openapi v0.144.0
 	github.com/getsentry/sentry-go v0.45.1
 	github.com/getsentry/sentry-go/gin v0.45.1
@@ -50,6 +52,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/russellhaering/gosaml2 v0.11.0
 	github.com/russellhaering/goxmldsig v1.6.0
+	github.com/scim2/filter-parser/v2 v2.3.1
 	github.com/segmentio/analytics-go/v3 v3.3.0
 	github.com/slack-go/slack v0.27.0
 	github.com/stretchr/testify v1.11.1
@@ -194,6 +197,8 @@ require (
 	github.com/pjbgf/sha1cd v0.6.0 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
+	github.com/q-uint/parser v0.3.1 // indirect
+	github.com/q-uint/xsd-datetime v1.0.0 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/quic-go/quic-go v0.59.1 // indirect
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect

@@ -201,7 +201,7 @@ func syncMcpUser(orgID string, uinfo idptypes.ProviderUserInfo) (*models.Context
 	if err := models.CreateUser(newUser); err != nil {
 		return nil, fmt.Errorf("failed creating mcp user: %w", err)
 	}
-	if uinfo.MustSyncGroups && len(uinfo.Groups) > 0 {
+	if uinfo.MustSyncGroups && len(uinfo.Groups) > 0 && idp.LoginSyncsGroups(resolvedOrgID) {
 		groupRows := make([]models.UserGroup, 0, len(uinfo.Groups))
 		for _, g := range uinfo.Groups {
 			groupRows = append(groupRows, models.UserGroup{
@@ -230,7 +230,7 @@ func refreshExistingUser(ctx *models.Context, uinfo idptypes.ProviderUserInfo) e
 	}
 
 	existingGroups := ctx.UserGroups
-	if uinfo.MustSyncGroups {
+	if uinfo.MustSyncGroups && idp.LoginSyncsGroups(ctx.OrgID) {
 		existingGroups = mergeAdmin(uinfo.Groups, ctx)
 	}
 

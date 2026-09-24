@@ -269,6 +269,9 @@ func syncUserGroupsFromUserInfo(tokenVerifier TokenVerifier, subject, accessToke
 		log.With("subject", subject).Warnf("failed to get user context for group sync: %v", err)
 		return
 	}
+	if !LoginSyncsGroups(ctx.OrgID) {
+		return
+	}
 
 	userGroups := uinfo.Groups
 	if ctx.IsAdmin() {

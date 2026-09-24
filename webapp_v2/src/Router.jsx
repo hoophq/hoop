@@ -59,6 +59,7 @@ import AiAgentsIdentitiesCreated from '@/pages/AiAgentsIdentities/Created'
 import JiraTemplates from '@/pages/JiraTemplates'
 import JiraTemplateForm from '@/pages/JiraTemplates/Form'
 import GatewaySlack from '@/pages/Integrations/Slack/GatewaySlack'
+import SettingsProvisioning from '@/pages/Settings/Provisioning'
 import ControlPlaneSlack from '@/pages/Integrations/Slack/ControlPlaneSlack'
 import IntegrationsWebhooks from '@/pages/Integrations/Webhooks'
 import ComplianceReport from '@/pages/ComplianceReport'
@@ -246,6 +247,16 @@ function Router() {
         element={
           <Page adminOnly>
             <SettingsLicense />
+          </Page>
+        }
+      />
+
+      {/* Control plane only: where reviewers come from (ADR-0019). */}
+      <Route
+        path="/settings/provisioning"
+        element={
+          <Page adminOnly>
+            <SettingsProvisioning />
           </Page>
         }
       />

@@ -1,0 +1,424 @@
+package services
+
+import (
+	"crypto/rand"
+	"encoding/base64"
+	"errors"
+	"fmt"
+	"strings"
+
+	"github.com/google/uuid"
+	"github.com/hoophq/hoop/common/log"
+	"github.com/hoophq/hoop/gateway/models"
+	"gorm.io/gorm"
+)
+
+// Provisioning writes the users and groups an identity provider describes
+// into users and user_groups (ADR-0019). SCIM and the directory sync both go
+// through here, so a Slack approval reads the same rows whichever wrote them.
+
+var (
+	// ErrProvisionedUserExists answers a SCIM create for a user name already
+	// provisioned. The client is expected to look it up and update it instead.
+	ErrProvisionedUserExists = errors.New("a user with this user name is already provisioned")
+	// ErrProvisionedGroupExists answers a create or rename to a group name
+	// another provisioned group already has.
+	ErrProvisionedGroupExists = errors.New("a group with this name is already provisioned")
+	// ErrAmbiguousEmail refuses to guess which of several hoop users with one
+	// email the identity provider means.
+	ErrAmbiguousEmail = errors.New("more than one user has this email")
+	// ErrProvisionedUserEmailRequired refuses a user with nothing to be
+	// matched by: a Slack approval finds the approver by email.
+	ErrProvisionedUserEmailRequired = errors.New("the user has no email and its user name is not an email")
+)
+
+// ProvisionedUser is a user as the identity provider describes it.
+type ProvisionedUser struct {
+	ExternalID string
+	UserName   string
+	Email      string
+	Name       string
+	Active     bool
+}
+
+// email is the address the user is matched by: the provider's email, or the
+// user name when that is an address, as it is for Okta and Entra ID.
+func (u ProvisionedUser) email() string {
+	if e := strings.TrimSpace(u.Email); e != "" {
+		return e
+	}
+	if n := strings.TrimSpace(u.UserName); strings.Contains(n, "@") {
+		return n
+	}
+	return ""
+}
+
+// GenerateSCIMToken returns a new random SCIM bearer token. Only its hash is
+// stored, like a sidecar key.
+func GenerateSCIMToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("failed generating scim token: %w", err)
+	}
+	return "hscim_" + base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+// UpsertProvisionedUser writes the user and returns its hoop id.
+//
+// With a userID it updates that user. Without one it looks the user up by the
+// provider's id, then by email, and creates it when neither matches. Matching
+// by email is what adopts a user who already logged in or was invited: the
+// provider takes over the account instead of creating a second one with the
+// same email, which a Slack approval would refuse as ambiguous.
+//
+// A user made inactive loses every provisioned group, so neither a login nor a
+// Slack click can act with them.
+func UpsertProvisionedUser(tx *gorm.DB, orgID, source, userID string, u ProvisionedUser) (string, error) {
+	email := u.email()
+	if email == "" {
+		return "", ErrProvisionedUserEmailRequired
+	}
+	userName := strings.TrimSpace(u.UserName)
+	if userName == "" {
+		userName = email
+	}
+
+	var user *models.User
+	switch {
+	case userID != "":
+		var existing models.User
+		if err := tx.Where("org_id = ? AND id = ?", orgID, userID).First(&existing).Error; err != nil {
+			return "", err
+		}
+		user = &existing
+	default:
+		found, err := findProvisionedUser(tx, orgID, source, u.ExternalID, email)
+		if err != nil {
+			return "", err
+		}
+		user = found
+	}
+
+	status := "inactive"
+	if u.Active {
+		status = "active"
+	}
+	name := strings.TrimSpace(u.Name)
+
+	if user == nil {
+		subjectID := u.ExternalID
+		if subjectID == "" {
+			subjectID = uuid.NewString()
+		}
+		if name == "" {
+			name = email
+		}
+		// The subject is a placeholder until the user's first login: the
+		// login finds the user by email and replaces it with the identity
+		// provider's own subject.
+		user = &models.User{
+			ID:       uuid.NewString(),
+			OrgID:    orgID,
+			Subject:  fmt.Sprintf("%s|%s", source, subjectID),
+			Name:     name,
+			Email:    email,
+			Verified: true,
+			Status:   status,
+		}
+		if err := tx.Create(user).Error; err != nil {
+			return "", fmt.Errorf("failed creating provisioned user %s: %w", email, err)
+		}
+	} else {
+		updates := map[string]any{"email": email, "status": status}
+		if name != "" {
+			updates["name"] = name
+		}
+		if err := tx.Model(&models.User{}).Where("id = ?", user.ID).Updates(updates).Error; err != nil {
+			return "", fmt.Errorf("failed updating provisioned user %s: %w", email, err)
+		}
+	}
+
+	var externalID *string
+	if u.ExternalID != "" {
+		externalID = &u.ExternalID
+	}
+	if err := models.UpsertDirectoryUser(tx, &models.DirectoryUser{
+		UserID:     user.ID,
+		OrgID:      orgID,
+		Source:     source,
+		ExternalID: externalID,
+		UserName:   userName,
+	}); err != nil {
+		return "", fmt.Errorf("failed linking provisioned user %s: %w", email, err)
+	}
+
+	if !u.Active {
+		if err := removeProvisionedGroups(tx, orgID, user.ID); err != nil {
+			return "", err
+		}
+	}
+	return user.ID, nil
+}
+
+func findProvisionedUser(tx *gorm.DB, orgID, source, externalID, email string) (*models.User, error) {
+	if externalID != "" {
+		link, err := models.GetDirectoryUserByExternalID(tx, orgID, source, externalID)
+		switch {
+		case err == nil:
+			var user models.User
+			if err := tx.Where("org_id = ? AND id = ?", orgID, link.UserID).First(&user).Error; err != nil {
+				return nil, err
+			}
+			return &user, nil
+		case !errors.Is(err, gorm.ErrRecordNotFound):
+			return nil, err
+		}
+	}
+
+	var users []models.User
+	if err := tx.Where("org_id = ? AND lower(email) = lower(?)", orgID, email).Find(&users).Error; err != nil {
+		return nil, err
+	}
+	switch len(users) {
+	case 0:
+		return nil, nil
+	case 1:
+		return &users[0], nil
+	default:
+		return nil, fmt.Errorf("%w: %s", ErrAmbiguousEmail, email)
+	}
+}
+
+// ProvisionedUserNameTaken reports whether source already provisioned a user
+// with this user name, ignoring case.
+func ProvisionedUserNameTaken(tx *gorm.DB, orgID, source, userName string) (bool, error) {
+	var count int64
+	err := tx.Model(&models.DirectoryUser{}).
+		Where("org_id = ? AND source = ? AND lower(user_name) = lower(?)", orgID, source, userName).
+		Count(&count).Error
+	return count > 0, err
+}
+
+// DeactivateProvisionedUser marks the user inactive and removes them from
+// every provisioned group.
+func DeactivateProvisionedUser(tx *gorm.DB, orgID, userID string) error {
+	res := tx.Model(&models.User{}).Where("org_id = ? AND id = ?", orgID, userID).Update("status", "inactive")
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return removeProvisionedGroups(tx, orgID, userID)
+}
+
+func removeProvisionedGroups(tx *gorm.DB, orgID, userID string) error {
+	return tx.Exec(`
+		DELETE FROM private.user_groups
+		WHERE org_id = @org AND user_id = @user
+		AND name IN (SELECT display_name FROM private.directory_groups WHERE org_id = @org)`,
+		map[string]any{"org": orgID, "user": userID}).Error
+}
+
+// CreateProvisionedGroup records a new group. A name another provisioned group
+// already has is refused; a name that only exists as a manual group is
+// adopted, and from then on the identity provider owns its members.
+func CreateProvisionedGroup(tx *gorm.DB, orgID, source, displayName, externalID string) (*models.DirectoryGroup, error) {
+	displayName = strings.TrimSpace(displayName)
+	if displayName == "" {
+		return nil, errors.New("the group has no display name")
+	}
+	_, err := models.GetDirectoryGroupByName(tx, orgID, displayName)
+	switch {
+	case err == nil:
+		return nil, ErrProvisionedGroupExists
+	case !errors.Is(err, gorm.ErrRecordNotFound):
+		return nil, err
+	}
+	g := &models.DirectoryGroup{
+		ID:          uuid.NewString(),
+		OrgID:       orgID,
+		Source:      source,
+		DisplayName: displayName,
+		ExternalID:  optionalString(externalID),
+	}
+	if err := tx.Create(g).Error; err != nil {
+		return nil, fmt.Errorf("failed creating provisioned group %s: %w", displayName, err)
+	}
+	if err := ensureGroupRow(tx, orgID, displayName); err != nil {
+		return nil, err
+	}
+	return g, nil
+}
+
+// EnsureProvisionedGroup returns the group a directory sync reports, creating
+// it, or renaming it when the provider renamed it since the last run.
+func EnsureProvisionedGroup(tx *gorm.DB, orgID, source, displayName, externalID string) (*models.DirectoryGroup, error) {
+	var existing models.DirectoryGroup
+	err := tx.Where("org_id = ? AND source = ? AND external_id = ?", orgID, source, externalID).First(&existing).Error
+	switch {
+	case err == nil:
+		if existing.DisplayName != displayName {
+			if err := RenameProvisionedGroup(tx, orgID, &existing, displayName); err != nil {
+				return nil, err
+			}
+		}
+		return &existing, nil
+	case !errors.Is(err, gorm.ErrRecordNotFound):
+		return nil, err
+	}
+	return CreateProvisionedGroup(tx, orgID, source, displayName, externalID)
+}
+
+// RenameProvisionedGroup renames the group everywhere its name is load
+// bearing: the members' rows and the approval rules that name it as reviewers
+// or force approvers. Without the rules, a rename in the identity provider
+// would leave every review under them with a group nobody is in.
+func RenameProvisionedGroup(tx *gorm.DB, orgID string, g *models.DirectoryGroup, newName string) error {
+	newName = strings.TrimSpace(newName)
+	oldName := g.DisplayName
+	if newName == "" || newName == oldName {
+		return nil
+	}
+	_, err := models.GetDirectoryGroupByName(tx, orgID, newName)
+	switch {
+	case err == nil:
+		return ErrProvisionedGroupExists
+	case !errors.Is(err, gorm.ErrRecordNotFound):
+		return err
+	}
+
+	args := map[string]any{"org": orgID, "old": oldName, "new": newName}
+	for _, stmt := range []string{
+		// A user already in a group of the new name keeps that row.
+		`DELETE FROM private.user_groups a USING private.user_groups b
+		 WHERE a.org_id = @org AND a.name = @old AND b.org_id = @org AND b.name = @new AND a.user_id = b.user_id`,
+		`DELETE FROM private.user_groups
+		 WHERE org_id = @org AND name = @old AND user_id IS NULL AND service_account_id IS NULL`,
+		`UPDATE private.user_groups SET name = @new WHERE org_id = @org AND name = @old`,
+		`UPDATE private.access_request_rules
+		 SET reviewers_groups = array_replace(reviewers_groups, @old, @new),
+			 force_approval_groups = array_replace(force_approval_groups, @old, @new),
+			 updated_at = NOW()
+		 WHERE org_id = @org AND (@old = ANY(reviewers_groups) OR @old = ANY(force_approval_groups))`,
+		`UPDATE private.directory_groups SET display_name = @new, updated_at = NOW()
+		 WHERE org_id = @org AND display_name = @old`,
+	} {
+		if err := tx.Exec(stmt, args).Error; err != nil {
+			return fmt.Errorf("failed renaming group %s to %s: %w", oldName, newName, err)
+		}
+	}
+	if err := ensureGroupRow(tx, orgID, newName); err != nil {
+		return err
+	}
+	g.DisplayName = newName
+	return nil
+}
+
+// DeleteProvisionedGroup removes the group and its members' rows. Rules that
+// name it keep the name, so an admin sees what they referenced.
+func DeleteProvisionedGroup(tx *gorm.DB, orgID string, g *models.DirectoryGroup) error {
+	if err := tx.Exec(`DELETE FROM private.user_groups WHERE org_id = ? AND name = ?`,
+		orgID, g.DisplayName).Error; err != nil {
+		return err
+	}
+	return tx.Where("org_id = ? AND id = ?", orgID, g.ID).Delete(&models.DirectoryGroup{}).Error
+}
+
+// SetGroupMembers makes userIDs the complete member list of the group.
+func SetGroupMembers(tx *gorm.DB, orgID, name string, userIDs []string) error {
+	ids, err := orgUserIDs(tx, orgID, userIDs)
+	if err != nil {
+		return err
+	}
+	del := tx.Where("org_id = ? AND name = ? AND user_id IS NOT NULL", orgID, name)
+	if len(ids) > 0 {
+		del = del.Where("user_id NOT IN ?", ids)
+	}
+	if err := del.Delete(&models.UserGroup{}).Error; err != nil {
+		return err
+	}
+	return insertMembers(tx, orgID, name, ids)
+}
+
+// AddGroupMembers adds userIDs to the group, keeping its other members.
+func AddGroupMembers(tx *gorm.DB, orgID, name string, userIDs []string) error {
+	ids, err := orgUserIDs(tx, orgID, userIDs)
+	if err != nil {
+		return err
+	}
+	return insertMembers(tx, orgID, name, ids)
+}
+
+// RemoveGroupMembers removes userIDs from the group.
+func RemoveGroupMembers(tx *gorm.DB, orgID, name string, userIDs []string) error {
+	if len(userIDs) == 0 {
+		return nil
+	}
+	return tx.Where("org_id = ? AND name = ? AND user_id::TEXT IN ?", orgID, name, userIDs).
+		Delete(&models.UserGroup{}).Error
+}
+
+// RemoveAllGroupMembers empties the group, keeping the group itself.
+func RemoveAllGroupMembers(tx *gorm.DB, orgID, name string) error {
+	return tx.Where("org_id = ? AND name = ? AND user_id IS NOT NULL", orgID, name).
+		Delete(&models.UserGroup{}).Error
+}
+
+func insertMembers(tx *gorm.DB, orgID, name string, ids []string) error {
+	for _, id := range ids {
+		if err := tx.Exec(`
+			INSERT INTO private.user_groups (org_id, user_id, name)
+			VALUES (?, ?, ?) ON CONFLICT DO NOTHING`, orgID, id, name).Error; err != nil {
+			return err
+		}
+	}
+	return ensureGroupRow(tx, orgID, name)
+}
+
+// orgUserIDs keeps the ids that are users of the org. An id the identity
+// provider sends for a user it never provisioned is skipped with a warning
+// rather than failing the whole request, which would leave every other member
+// of the group unwritten.
+func orgUserIDs(tx *gorm.DB, orgID string, userIDs []string) ([]string, error) {
+	var wanted []string
+	for _, id := range userIDs {
+		if _, err := uuid.Parse(id); err == nil {
+			wanted = append(wanted, id)
+		} else {
+			log.With("org", orgID).Warnf("skipping group member %q: not a hoop user id", id)
+		}
+	}
+	if len(wanted) == 0 {
+		return nil, nil
+	}
+	var found []string
+	if err := tx.Raw(`SELECT id::TEXT FROM private.users WHERE org_id = ? AND id::TEXT IN ?`,
+		orgID, wanted).Scan(&found).Error; err != nil {
+		return nil, err
+	}
+	if len(found) != len(wanted) {
+		log.With("org", orgID).Warnf("skipping %d group member(s) that are not users of the org",
+			len(wanted)-len(found))
+	}
+	return found, nil
+}
+
+// ensureGroupRow keeps a member-less row for the group, so GET /users/groups
+// lists it even while nobody is in it.
+func ensureGroupRow(tx *gorm.DB, orgID, name string) error {
+	return tx.Exec(`
+		INSERT INTO private.user_groups (org_id, name)
+		SELECT @org, @name
+		WHERE NOT EXISTS (
+			SELECT 1 FROM private.user_groups
+			WHERE org_id = @org AND name = @name AND user_id IS NULL AND service_account_id IS NULL)`,
+		map[string]any{"org": orgID, "name": name}).Error
+}
+
+func optionalString(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}

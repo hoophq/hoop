@@ -46,6 +46,7 @@ import (
 	apiorgs "github.com/hoophq/hoop/gateway/api/orgs"
 	apipluginconnections "github.com/hoophq/hoop/gateway/api/pluginconnections"
 	apiplugins "github.com/hoophq/hoop/gateway/api/plugins"
+	apiprovisioning "github.com/hoophq/hoop/gateway/api/provisioning"
 	apiproxymanager "github.com/hoophq/hoop/gateway/api/proxymanager"
 	apipublicserverinfo "github.com/hoophq/hoop/gateway/api/publicserverinfo"
 	apireports "github.com/hoophq/hoop/gateway/api/reports"
@@ -53,6 +54,7 @@ import (
 	reviewapi "github.com/hoophq/hoop/gateway/api/review"
 	apirulepacks "github.com/hoophq/hoop/gateway/api/rulepacks"
 	apirunbooks "github.com/hoophq/hoop/gateway/api/runbooks"
+	apiscim "github.com/hoophq/hoop/gateway/api/scim"
 	searchapi "github.com/hoophq/hoop/gateway/api/search"
 	apiserverconfig "github.com/hoophq/hoop/gateway/api/serverconfig"
 	apiserverinfo "github.com/hoophq/hoop/gateway/api/serverinfo"
@@ -1352,6 +1354,57 @@ func (api *Api) buildRoutes(r *apiroutes.Router, mode appconfig.AppMode) {
 		api.AuditMiddleware(),
 		apiserverconfig.UpdateMcpAuthConfig,
 	)
+
+	// Provisioning from the identity provider (ADR-0019). The routes exist in
+	// both modes, as every route does, and answer 412 on a gateway.
+	r.GET("/serverconfig/scim",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiprovisioning.GetSCIMConfig,
+	)
+	r.POST("/serverconfig/scim",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		apiprovisioning.CreateSCIMToken,
+	)
+	r.DELETE("/serverconfig/scim",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		apiprovisioning.DeleteSCIMToken,
+	)
+	r.GET("/serverconfig/directory-sync",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiprovisioning.GetDirectorySync,
+	)
+	r.PUT("/serverconfig/directory-sync",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		apiprovisioning.PutDirectorySync,
+	)
+	r.DELETE("/serverconfig/directory-sync",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		apiprovisioning.DeleteDirectorySync,
+	)
+	r.POST("/serverconfig/directory-sync/run",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		api.AuditMiddleware(),
+		apiprovisioning.RunDirectorySync,
+	)
+	r.GET("/serverconfig/directory-sync/groups",
+		apiroutes.AdminOnlyAccessRole,
+		r.AuthMiddleware,
+		apiprovisioning.ListDirectorySyncGroups,
+	)
+	// The identity provider's SCIM client authenticates with the SCIM token,
+	// never a user session.
+	r.Any("/scim/v2/*path", r.SCIMAuthMiddleware, apiscim.Handler)
 
 	r.GET("/search",
 		apiroutes.ReadOnlyAccessRole,

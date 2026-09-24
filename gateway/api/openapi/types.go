@@ -2988,6 +2988,71 @@ type ServerAuthConfig struct {
 	AuditorRoleName string `json:"auditor_role_name" default:"auditor"`
 }
 
+// SCIMConfig reports whether an identity provider can push users and groups
+// to this control plane over SCIM (ADR-0019).
+type SCIMConfig struct {
+	// Whether a SCIM token exists
+	Enabled bool `json:"enabled"`
+	// The SCIM base URL to configure in the identity provider
+	BaseURL string `json:"base_url" example:"https://hoop.example.com/api/scim/v2"`
+	// Who generated the current token
+	CreatedBy string `json:"created_by,omitempty" example:"admin@example.com"`
+	// When the current token was generated
+	CreatedAt *time.Time `json:"created_at,omitempty"`
+	// When the identity provider last used the token
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+}
+
+// SCIMToken is a newly generated SCIM token. It is shown once.
+type SCIMToken struct {
+	// The bearer token to configure in the identity provider
+	Token string `json:"token" example:"hscim_4k2..."`
+	// The SCIM base URL to configure in the identity provider
+	BaseURL string `json:"base_url" example:"https://hoop.example.com/api/scim/v2"`
+}
+
+// DirectorySyncConfig is how the control plane pulls users and groups from an
+// identity provider that does not push SCIM (ADR-0019).
+type DirectorySyncConfig struct {
+	// Whether a directory sync is configured
+	Enabled bool `json:"enabled"`
+	// The identity provider
+	Provider string `json:"provider" enums:"google,auth0,cognito" example:"google"`
+	// The provider's settings. Secrets are returned as "********"; sending that value back keeps the stored secret.
+	//  google: service_account_json, admin_email, customer
+	//  auth0: domain, client_id, client_secret
+	//  cognito: region, user_pool_id, access_key_id, secret_access_key
+	Settings map[string]any `json:"settings"`
+	// The provider's ids of the groups whose members are synced
+	GroupIDs []string `json:"group_ids"`
+	// Minutes between two runs
+	IntervalMinutes int `json:"interval_minutes" example:"15"`
+	// When the sync last ran
+	LastRunAt *time.Time `json:"last_run_at,omitempty"`
+	// Why the last run failed; empty when it succeeded
+	LastError *string `json:"last_error,omitempty"`
+}
+
+// DirectorySyncRequest configures the directory sync.
+type DirectorySyncRequest struct {
+	// The identity provider
+	Provider string `json:"provider" binding:"required" enums:"google,auth0,cognito" example:"google"`
+	// The provider's settings; see DirectorySyncConfig
+	Settings map[string]any `json:"settings" binding:"required"`
+	// The provider's ids of the groups whose members are synced
+	GroupIDs []string `json:"group_ids"`
+	// Minutes between two runs, at least 5. Defaults to 15
+	IntervalMinutes int `json:"interval_minutes" example:"15"`
+}
+
+// DirectoryGroup is a group of the identity provider a directory sync can read.
+type DirectoryGroup struct {
+	// The provider's id of the group
+	ID string `json:"id" example:"03x8tuzt1b9wqa4"`
+	// The group name hoop stores
+	Name string `json:"name" example:"dba-leads@example.com"`
+}
+
 // ServerMcpAuthConfig configures the OAuth 2.1 Resource Server profile for the
 // /mcp endpoint per the MCP 2025-11-25 authorization specification. When
 // disabled (the default), /mcp continues to accept Hoop-issued bearer tokens

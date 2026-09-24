@@ -364,6 +364,11 @@ func registerMultiTenantUser(uinfo idptypes.ProviderUserInfo, slackID string) (i
 }
 
 func syncSingleTenantUser(ctx *models.Context, uinfo idptypes.ProviderUserInfo) (isNewUser bool, err error) {
+	// A control plane whose groups the identity provider provisions keeps
+	// them as provisioned: the claim must not overwrite them (ADR-0019).
+	if uinfo.MustSyncGroups && !idp.LoginSyncsGroups(ctx.OrgID) {
+		uinfo.MustSyncGroups = false
+	}
 	// if the user exists, sync the groups and the slack id
 	userGroups := ctx.UserGroups
 	if uinfo.MustSyncGroups {
