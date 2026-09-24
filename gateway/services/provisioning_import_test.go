@@ -104,9 +104,9 @@ func TestImportUsers(t *testing.T) {
 		}
 	})
 
-	t.Run("a file import is refused while SCIM manages the groups", func(t *testing.T) {
-		if _, err := UpsertProvisionedUser(db, provisioningOrgID, models.ProvisioningSourceSCIM, "",
-			ProvisionedUser{ExternalID: "okta-dan", UserName: "dan@example.com", Active: true}); err != nil {
+	t.Run("a file import is refused while the Slack import manages the groups", func(t *testing.T) {
+		if _, err := UpsertProvisionedUser(db, provisioningOrgID, models.ProvisioningSourceSlack, "",
+			ProvisionedUser{ExternalID: "U-DAN", UserName: "dan@example.com", Active: true}); err != nil {
 			t.Fatalf("provision dan: %v", err)
 		}
 		_, err := ImportUsers(db, provisioningOrgID, []ImportRow{{Row: 1, Email: "fay@example.com"}}, false)

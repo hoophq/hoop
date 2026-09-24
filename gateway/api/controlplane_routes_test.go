@@ -10,7 +10,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	apiprovisioning "github.com/hoophq/hoop/gateway/api/provisioning"
-	apiscim "github.com/hoophq/hoop/gateway/api/scim"
 	apisidecar "github.com/hoophq/hoop/gateway/api/sidecar"
 	userapi "github.com/hoophq/hoop/gateway/api/user"
 	"github.com/hoophq/hoop/gateway/appconfig"
@@ -80,9 +79,6 @@ func TestControlPlaneOnlyRoutesAnswer412OnAGateway(t *testing.T) {
 		route   string
 		handler gin.HandlerFunc
 	}{
-		{"GET /serverconfig/scim", apiprovisioning.GetSCIMConfig},
-		{"PUT /serverconfig/scim", apiprovisioning.PutSCIMToken},
-		{"DELETE /serverconfig/scim", apiprovisioning.DeleteSCIMToken},
 		{"GET /serverconfig/directory-sync", apiprovisioning.GetDirectorySync},
 		{"PUT /serverconfig/directory-sync", apiprovisioning.PutDirectorySync},
 		{"DELETE /serverconfig/directory-sync", apiprovisioning.DeleteDirectorySync},
@@ -90,8 +86,6 @@ func TestControlPlaneOnlyRoutesAnswer412OnAGateway(t *testing.T) {
 		{"GET /serverconfig/directory-sync/groups", apiprovisioning.ListDirectorySyncGroups},
 		{"GET /serverconfig/provisioning", apiprovisioning.GetProvisioningStatus},
 		{"DELETE /serverconfig/provisioning", apiprovisioning.StopManagingGroups},
-		{"GET /scim/v2/*path", apiscim.Handler},
-		{"POST /scim/v2/*path", apiscim.Handler},
 		{"GET /sidecars/:nameOrID/slack-channels", apisidecar.GetSlackChannels},
 		{"PUT /sidecars/:nameOrID/slack-channels", apisidecar.PutSlackChannels},
 		{"POST /users/import", userapi.ImportUsers},

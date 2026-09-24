@@ -3,8 +3,8 @@ import SectionRow from '@/components/SectionRow'
 import UserImportForm from '@/features/UserImport'
 
 /**
- * File import: an admin uploads users and their groups, for an org with no
- * Slack import or SCIM. It is refused while one of them manages the groups.
+ * File import: an admin uploads users and their groups, for an org without the
+ * Slack import. It is refused while the Slack import manages the groups.
  */
 export default function FileSection({ groupsManaged }) {
   return (
@@ -15,7 +15,7 @@ export default function FileSection({ groupsManaged }) {
       <Stack gap="md">
         {groupsManaged && (
           <Text size="sm" c="red">
-            The Slack import or SCIM manages the groups. Stop managing them below before importing a file.
+            The Slack import manages the groups. Stop managing them below before importing a file.
           </Text>
         )}
         <UserImportForm disabled={groupsManaged} />

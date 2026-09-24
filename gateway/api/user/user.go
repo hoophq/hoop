@@ -151,7 +151,7 @@ func Create(c *gin.Context) {
 // UpdateUser
 //
 //	@Summary		Update User
-//	@Description	Updates an existing user. In a control plane whose groups the Slack import or SCIM manages, only the admin group may change; a request that changes other groups answers 422.
+//	@Description	Updates an existing user. In a control plane whose groups the Slack import manages, only the admin group may change; a request that changes other groups answers 422.
 //	@Tags			User Management
 //	@Accept			json
 //	@Produce		json
@@ -197,7 +197,7 @@ func Update(c *gin.Context) {
 	}
 
 	// A control plane whose groups a source manages (ADR-0019) changes only
-	// the admin group here; the Slack import or SCIM owns the rest.
+	// the admin group here; the Slack import owns the rest.
 	if appconfig.Get().IsControlPlane() {
 		groups, status, msg, err := managedGroupsUpdate(ctx.OrgID, existingUser.ID, req.Groups)
 		switch {
@@ -287,7 +287,7 @@ func managedGroupsUpdate(orgID, userID string, requested []string) (groups []str
 	slices.Sort(wanted)
 	if !slices.Equal(current, wanted) {
 		return nil, http.StatusUnprocessableEntity,
-			"groups are managed by the Slack import or SCIM; only the administrator switch can change here", nil
+			"groups are managed by the Slack import; only the administrator switch can change here", nil
 	}
 	if slices.Contains(requested, types.GroupAdmin) {
 		current = append(current, types.GroupAdmin)

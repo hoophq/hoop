@@ -78,19 +78,19 @@ func TestSyncSingleTenantUserKeepsProvisionedGroups(t *testing.T) {
 		t.Fatalf("groups = %v; want the claim's", got)
 	}
 
-	// Once SCIM provisions the org, the provisioned groups stay. The SCIM
-	// create sends mixed case; the login sends lower case and must still find
-	// the same user.
+	// Once the Slack import provisions the org, the provisioned groups stay.
+	// The source sends mixed case; the login sends lower case and must still
+	// find the same user.
 	var johnID string
 	err = models.DB.Transaction(func(tx *gorm.DB) error {
 		var err error
-		johnID, err = services.UpsertProvisionedUser(tx, orgID, models.ProvisioningSourceSCIM, "",
-			services.ProvisionedUser{ExternalID: "okta-john", UserName: "John.Doe@Corp.com",
+		johnID, err = services.UpsertProvisionedUser(tx, orgID, models.ProvisioningSourceSlack, "",
+			services.ProvisionedUser{ExternalID: "U-JOHN", UserName: "John.Doe@Corp.com",
 				Email: "John.Doe@Corp.com", Name: "John", Active: true})
 		if err != nil {
 			return err
 		}
-		if _, err := services.CreateProvisionedGroup(tx, orgID, models.ProvisioningSourceSCIM, "dba-leads", ""); err != nil {
+		if _, err := services.CreateProvisionedGroup(tx, orgID, models.ProvisioningSourceSlack, "dba-leads", "S-DBA"); err != nil {
 			return err
 		}
 		return services.SetGroupMembers(tx, orgID, "dba-leads", []string{johnID})

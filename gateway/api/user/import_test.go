@@ -86,7 +86,7 @@ func TestManagedGroupsUpdate(t *testing.T) {
 		t.Fatalf("unmanaged = %v %d %v; want the request's groups", got, status, err)
 	}
 
-	if _, err := services.UpsertProvisionedUser(models.DB, orgID, models.ProvisioningSourceSCIM, anaID,
+	if _, err := services.UpsertProvisionedUser(models.DB, orgID, models.ProvisioningSourceSlack, anaID,
 		services.ProvisionedUser{UserName: "ana@example.com", Active: true}); err != nil {
 		t.Fatalf("provision ana: %v", err)
 	}

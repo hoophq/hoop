@@ -1,8 +1,6 @@
 package services
 
 import (
-	"crypto/rand"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"strings"
@@ -15,22 +13,20 @@ import (
 )
 
 // Provisioning writes the users and groups a source describes into users and
-// user_groups (ADR-0019). The Slack import, SCIM and the file import all go
-// through here, so a Slack approval reads the same rows whichever wrote them.
+// user_groups (ADR-0019). The Slack import and the file import go through
+// here, and so will SCIM, so a Slack approval reads the same rows whichever
+// wrote them.
 
 // maxGroupNameLength is the width of user_groups.name and
 // review_groups.group_name.
 const maxGroupNameLength = 100
 
 var (
-	// ErrProvisionedUserExists answers a SCIM create for a user name already
-	// provisioned. The client is expected to look it up and update it instead.
-	ErrProvisionedUserExists = errors.New("a user with this user name is already provisioned")
 	// ErrProvisionedGroupExists answers a create or rename to a group name
 	// another provisioned group already has.
 	ErrProvisionedGroupExists = errors.New("a group with this name is already provisioned")
 	// ErrAmbiguousEmail refuses to guess which of several hoop users with one
-	// email the identity provider means.
+	// email the source means.
 	ErrAmbiguousEmail = errors.New("more than one user has this email")
 	// ErrProvisionedUserEmailRequired refuses a user with nothing to be
 	// matched by: a Slack approval finds the approver by email.
@@ -104,16 +100,6 @@ func normalizeEmail(email string) string {
 type UpsertResult struct {
 	UserID  string
 	Created bool
-}
-
-// GenerateSCIMToken returns a new random SCIM bearer token. Only its hash is
-// stored, like a sidecar key.
-func GenerateSCIMToken() (string, error) {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("failed generating scim token: %w", err)
-	}
-	return "hscim_" + base64.RawURLEncoding.EncodeToString(b), nil
 }
 
 // UpsertProvisionedUser writes the user and returns its hoop id.
@@ -293,16 +279,6 @@ func findProvisionedUser(tx *gorm.DB, orgID, source, externalID, email string) (
 	}
 }
 
-// ProvisionedUserNameTaken reports whether source already provisioned a user
-// with this user name, ignoring case.
-func ProvisionedUserNameTaken(tx *gorm.DB, orgID, source, userName string) (bool, error) {
-	var count int64
-	err := tx.Model(&models.DirectoryUser{}).
-		Where("org_id = ? AND source = ? AND lower(user_name) = lower(?)", orgID, source, userName).
-		Count(&count).Error
-	return count > 0, err
-}
-
 // DeactivateProvisionedUser marks the user inactive and removes them from
 // every provisioned group.
 func DeactivateProvisionedUser(tx *gorm.DB, orgID, userID string) error {
@@ -326,7 +302,7 @@ func removeProvisionedGroups(tx *gorm.DB, orgID, userID string) error {
 
 // CreateProvisionedGroup records a new group. A name another provisioned group
 // already has is refused; a name that only exists as a manual group is
-// adopted, and from then on the identity provider owns its members.
+// adopted, and from then on the source owns its members.
 func CreateProvisionedGroup(tx *gorm.DB, orgID, source, displayName, externalID string) (*models.DirectoryGroup, error) {
 	displayName, err := ValidateProvisionedGroupName(displayName)
 	if err != nil {
@@ -461,30 +437,6 @@ func SetGroupMembers(tx *gorm.DB, orgID, name string, userIDs []string) error {
 		return err
 	}
 	return insertMembers(tx, orgID, name, ids)
-}
-
-// AddGroupMembers adds userIDs to the group, keeping its other members.
-func AddGroupMembers(tx *gorm.DB, orgID, name string, userIDs []string) error {
-	ids, err := orgUserIDs(tx, orgID, userIDs)
-	if err != nil {
-		return err
-	}
-	return insertMembers(tx, orgID, name, ids)
-}
-
-// RemoveGroupMembers removes userIDs from the group.
-func RemoveGroupMembers(tx *gorm.DB, orgID, name string, userIDs []string) error {
-	if len(userIDs) == 0 {
-		return nil
-	}
-	return tx.Where("org_id = ? AND name = ? AND user_id::TEXT IN ?", orgID, name, userIDs).
-		Delete(&models.UserGroup{}).Error
-}
-
-// RemoveAllGroupMembers empties the group, keeping the group itself.
-func RemoveAllGroupMembers(tx *gorm.DB, orgID, name string) error {
-	return tx.Where("org_id = ? AND name = ? AND user_id IS NOT NULL", orgID, name).
-		Delete(&models.UserGroup{}).Error
 }
 
 func insertMembers(tx *gorm.DB, orgID, name string, ids []string) error {

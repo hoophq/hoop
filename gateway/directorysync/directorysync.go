@@ -2,7 +2,7 @@
 // directory that does not push them (ADR-0019). Today that directory is Slack:
 // the members of the user groups an admin picks become hoop users in hoop
 // groups of the same handle. Every run writes through gateway/services
-// provisioning, the same path SCIM and the file import use.
+// provisioning, the same path the file import uses.
 package directorysync
 
 import (

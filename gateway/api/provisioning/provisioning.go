@@ -1,6 +1,6 @@
 // Package apiprovisioning configures how a control plane learns its reviewers
-// without anyone logging in (ADR-0019): a Slack directory sync, a SCIM token,
-// and the switch that hands groups back to login and the Users page.
+// without anyone logging in (ADR-0019): the Slack directory sync, and the
+// switch that hands groups back to login and the Users page.
 package apiprovisioning
 
 import (
@@ -12,11 +12,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
-	apiscim "github.com/hoophq/hoop/gateway/api/scim"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/directorysync"
 	"github.com/hoophq/hoop/gateway/models"
-	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"gorm.io/gorm"
 )
@@ -27,8 +25,6 @@ const (
 	listGroupsTimeout      = 30 * time.Second
 )
 
-const errOneMethod = "only one provisioning method may be active; remove the other one first"
-
 // controlPlaneOnly answers 412 outside the control plane: a gateway's groups
 // are not provisioned.
 func controlPlaneOnly(c *gin.Context) bool {
@@ -38,92 +34,6 @@ func controlPlaneOnly(c *gin.Context) bool {
 	c.AbortWithStatusJSON(http.StatusPreconditionFailed,
 		gin.H{"message": "provisioning is served by the control plane"})
 	return false
-}
-
-// GetSCIMConfig
-//
-//	@Summary		Get SCIM Configuration
-//	@Description	Report whether an identity provider can push users and groups over SCIM. Control plane only.
-//	@Tags			Server Management
-//	@Produce		json
-//	@Success		200			{object}	openapi.SCIMConfig
-//	@Failure		412,500		{object}	openapi.HTTPError
-//	@Router			/serverconfig/scim [get]
-func GetSCIMConfig(c *gin.Context) {
-	if !controlPlaneOnly(c) {
-		return
-	}
-	ctx := storagev2.ParseContext(c)
-	out := openapi.SCIMConfig{BaseURL: apiscim.BaseURL()}
-	token, err := models.GetSCIMToken(models.DB, ctx.OrgID)
-	switch {
-	case errors.Is(err, gorm.ErrRecordNotFound):
-	case err != nil:
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed loading the scim token")
-		return
-	default:
-		out.Enabled = true
-		out.CreatedBy = token.CreatedBy
-		out.CreatedAt = &token.CreatedAt
-		out.LastUsedAt = token.LastUsedAt
-	}
-	c.JSON(http.StatusOK, out)
-}
-
-// PutSCIMToken
-//
-//	@Summary		Generate or Rotate SCIM Token
-//	@Description	Generate the bearer token an identity provider pushes SCIM requests with. A second call rotates it: the new hash replaces the old one in one write, so there is no moment without a token. The token is returned once. Control plane only.
-//	@Tags			Server Management
-//	@Produce		json
-//	@Success		200				{object}	openapi.SCIMToken
-//	@Failure		409,412,500		{object}	openapi.HTTPError
-//	@Router			/serverconfig/scim [put]
-func PutSCIMToken(c *gin.Context) {
-	if !controlPlaneOnly(c) {
-		return
-	}
-	ctx := storagev2.ParseContext(c)
-	_, err := models.GetDirectorySyncConfig(models.DB, ctx.OrgID)
-	switch {
-	case err == nil:
-		c.JSON(http.StatusConflict, gin.H{"message": errOneMethod})
-		return
-	case !errors.Is(err, gorm.ErrRecordNotFound):
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed loading the directory sync")
-		return
-	}
-
-	token, err := services.GenerateSCIMToken()
-	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed generating the scim token")
-		return
-	}
-	if err := models.ReplaceSCIMToken(models.DB, ctx.OrgID, models.HashAPIKey(token), ctx.UserEmail); err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed storing the scim token")
-		return
-	}
-	c.JSON(http.StatusOK, openapi.SCIMToken{Token: token, BaseURL: apiscim.BaseURL()})
-}
-
-// DeleteSCIMToken
-//
-//	@Summary		Delete SCIM Token
-//	@Description	Revoke the SCIM token. Provisioned users and groups stay as they are, and stay managed until groups are released with DELETE /serverconfig/provisioning. Control plane only.
-//	@Tags			Server Management
-//	@Success		204
-//	@Failure		412,500	{object}	openapi.HTTPError
-//	@Router			/serverconfig/scim [delete]
-func DeleteSCIMToken(c *gin.Context) {
-	if !controlPlaneOnly(c) {
-		return
-	}
-	ctx := storagev2.ParseContext(c)
-	if err := models.DeleteSCIMToken(models.DB, ctx.OrgID); err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed deleting the scim token")
-		return
-	}
-	c.Status(http.StatusNoContent)
 }
 
 func toOpenAPIDirectorySync(cfg *models.DirectorySyncConfig) openapi.DirectorySyncConfig {
@@ -192,7 +102,7 @@ func GetDirectorySync(c *gin.Context) {
 //	@Produce		json
 //	@Param			request				body		openapi.DirectorySyncRequest	true	"The request body resource"
 //	@Success		200					{object}	openapi.DirectorySyncConfig
-//	@Failure		400,409,412,422,500	{object}	openapi.HTTPError
+//	@Failure		400,412,422,500	{object}	openapi.HTTPError
 //	@Router			/serverconfig/directory-sync [put]
 func PutDirectorySync(c *gin.Context) {
 	if !controlPlaneOnly(c) {
@@ -209,16 +119,6 @@ func PutDirectorySync(c *gin.Context) {
 	}
 	if req.IntervalMinutes < minIntervalMinutes {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": "interval_minutes must be at least 5"})
-		return
-	}
-
-	_, err := models.GetSCIMToken(models.DB, ctx.OrgID)
-	switch {
-	case err == nil:
-		c.JSON(http.StatusConflict, gin.H{"message": errOneMethod})
-		return
-	case !errors.Is(err, gorm.ErrRecordNotFound):
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed loading the scim token")
 		return
 	}
 
@@ -342,7 +242,7 @@ func ListDirectorySyncGroups(c *gin.Context) {
 // GetProvisioningStatus
 //
 //	@Summary		Get Provisioning Status
-//	@Description	Report whether a source (the Slack import or SCIM) owns the org's groups. While it does, login and the Users page change only the admin group. Control plane only.
+//	@Description	Report whether the Slack import owns the org's groups. While it does, login and the Users page change only the admin group. Control plane only.
 //	@Tags			Server Management
 //	@Produce		json
 //	@Success		200			{object}	openapi.ProvisioningStatus
@@ -364,7 +264,7 @@ func GetProvisioningStatus(c *gin.Context) {
 // StopManagingGroups
 //
 //	@Summary		Stop Managing Groups
-//	@Description	Hand the org's groups back to login and the Users page. It deletes only the links between users and their source; users and their groups stay. Refused while a SCIM token or a directory sync exists, since the next push or run would take the groups back. Control plane only.
+//	@Description	Hand the org's groups back to login and the Users page. It deletes only the links between users and their source; users and their groups stay. Refused while the directory sync exists, since its next run would take the groups back. Control plane only.
 //	@Tags			Server Management
 //	@Success		204
 //	@Failure		409,412,500	{object}	openapi.HTTPError
@@ -375,11 +275,6 @@ func StopManagingGroups(c *gin.Context) {
 	}
 	ctx := storagev2.ParseContext(c)
 	err := models.DB.Transaction(func(tx *gorm.DB) error {
-		if _, err := models.GetSCIMToken(tx, ctx.OrgID); err == nil {
-			return errSourceActive
-		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return err
-		}
 		if _, err := models.GetDirectorySyncConfig(tx, ctx.OrgID); err == nil {
 			return errSourceActive
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -397,4 +292,4 @@ func StopManagingGroups(c *gin.Context) {
 	}
 }
 
-var errSourceActive = errors.New("remove the SCIM token and the directory sync first; they would manage the groups again")
+var errSourceActive = errors.New("remove the Slack import first; its next run would manage the groups again")

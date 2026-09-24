@@ -161,8 +161,6 @@ github.com/ebitengine/purego v0.10.0 h1:QIw4xfpWT6GWTzaW5XEKy3HXoqrJGx1ijYHzTF0/
 github.com/ebitengine/purego v0.10.0/go.mod h1:iIjxzd6CiRiOG0UyXP+V1+jWqUXVjPKLAI0mRfJZTmQ=
 github.com/elazarl/goproxy v1.7.2 h1:Y2o6urb7Eule09PjlhQRGNsqRfPmYI3KKQLFpCAV3+o=
 github.com/elazarl/goproxy v1.7.2/go.mod h1:82vkLNir0ALaW14Rc399OTTjyNREgmdL2cVoIbS6XaE=
-github.com/elimity-com/scim v0.0.0-20260728105928-2641426a1539 h1:xZWHbTeRWqbowyZgmf6NYgCa6gw94g+ekG4f8TfIp3Q=
-github.com/elimity-com/scim v0.0.0-20260728105928-2641426a1539/go.mod h1:dpiTnMjNr1HGBYKa+Rm6nljbWfApPKBFLIdOdK8fXnE=
 github.com/emirpasic/gods v1.18.1 h1:FXtiHYKDGKCW2KzwZKx0iC0PQmdlorYgdFG9jPXJ1Bc=
 github.com/emirpasic/gods v1.18.1/go.mod h1:8tpGGwCnJ5H4r6BWwaV6OrWmMoPhUl5jm/FMNAnJvWQ=
 github.com/envoyproxy/go-control-plane v0.14.0 h1:hbG2kr4RuFj222B6+7T83thSPqLjwBIfQawTkC++2HA=
@@ -317,7 +315,6 @@ github.com/hoophq/libhoop v0.0.0-20260916211013-e28c81bb9dad h1:4uMEkR76fuu1o3NS
 github.com/hoophq/libhoop v0.0.0-20260916211013-e28c81bb9dad/go.mod h1:D0ohPkqnVsv8UWbu3CExGU9dgUOCoFGgVZY7X6PK86U=
 github.com/hoophq/libhoop v0.0.0-20260916211709-c49b31f354b0 h1:ElgCEqp9U9hDhaIQBR6JiFoROCb3k20HXkMQW+HCGeo=
 github.com/hoophq/libhoop v0.0.0-20260916211709-c49b31f354b0/go.mod h1:D0ohPkqnVsv8UWbu3CExGU9dgUOCoFGgVZY7X6PK86U=
-github.com/hoophq/libhoop v0.0.0-20260921142807-8a4562b36981/go.mod h1:nHA5Pm/wX+iz3JHQR+aJm236TzmZ2RYUo2x3SgwJhWo=
 github.com/hoophq/mcpproxy v0.1.1 h1:Zj9/vOMAKSOTuGuuSLl/v01iKdQ1+yiYZLNNz2T1npQ=
 github.com/hoophq/mcpproxy v0.1.1/go.mod h1:Wi7Z5bo0hJRwKa/gFaC9vRAWFCy3dxcYS2n28/TTphc=
 github.com/jackc/pgpassfile v1.0.0 h1:/6Hmqy13Ss2zCq62VdNG8tM1wchn8zjSGOBJ6icpsIM=
@@ -432,10 +429,6 @@ github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 h1:Jamvg5psRI
 github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 h1:o4JXh1EVt9k/+g42oCprj/FisM4qX9L3sZB3upGN2ZU=
 github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55/go.mod h1:OmDBASR4679mdNQnz2pUhc2G8CO2JrUAVFDRBDP/hJE=
-github.com/q-uint/parser v0.3.1 h1:VCHob90UXy0L5oMgny5EjbDC2YeEGNc6qahWa8+tUhQ=
-github.com/q-uint/parser v0.3.1/go.mod h1:+Ds4ucT1DM1SwDpzgz7glN+rnrzxMAXgiYpt4aRUUY8=
-github.com/q-uint/xsd-datetime v1.0.0 h1:D2LCjbiDGeh121e1EH0XdOMPjDs/mmSq9yurbIYNWYY=
-github.com/q-uint/xsd-datetime v1.0.0/go.mod h1:ZiZOJFx47KCuqNEe7bFIZlmDAFw4qLNcpJm8Dr8sQ+s=
 github.com/quic-go/qpack v0.6.0 h1:g7W+BMYynC1LbYLSqRt8PBg5Tgwxn214ZZR34VIOjz8=
 github.com/quic-go/qpack v0.6.0/go.mod h1:lUpLKChi8njB4ty2bFLX2x4gzDqXwUpaO1DP9qMDZII=
 github.com/quic-go/quic-go v0.59.1 h1:0Gmua0HW1Tv7ANR7hUYwRyD0MG5OJfgvYSZasGZzBic=
@@ -452,13 +445,10 @@ github.com/russellhaering/goxmldsig v1.6.0 h1:8fdWXEPh2k/NZNQBPFNoVfS3JmzS4ZprY/
 github.com/russellhaering/goxmldsig v1.6.0/go.mod h1:TrnaquDcYxWXfJrOjeMBTX4mLBeYAqaHEyUeWPxZlBM=
 github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 h1:KRzFb2m7YtdldCEkzs6KqmJw4nqEVZGK7IN2kJkjTuQ=
 github.com/santhosh-tekuri/jsonschema/v6 v6.0.2/go.mod h1:JXeL+ps8p7/KNMjDQk3TCwPpBy0wYklyWTfbkIzdIFU=
-github.com/scim2/filter-parser/v2 v2.3.1 h1:o24v+z9drjtWoF6XLtXOFWpkmo1GGfBKZqrAjy6npQM=
-github.com/scim2/filter-parser/v2 v2.3.1/go.mod h1:R5u/HUG8vO+TVvtmBzUX2LSuEej27v+ckcJqjIa4d8E=
 github.com/segmentio/analytics-go/v3 v3.3.0 h1:8VOMaVGBW03pdBrj1CMFfY9o/rnjJC+1wyQHlVxjw5o=
 github.com/segmentio/analytics-go/v3 v3.3.0/go.mod h1:p8owAF8X+5o27jmvUognuXxdtqvSGtD0ZrfY2kcS9bE=
 github.com/segmentio/asm v1.1.3 h1:WM03sfUOENvvKexOLp+pCqgb/WDjsi7EK8gIsICtzhc=
 github.com/segmentio/asm v1.1.3/go.mod h1:Ld3L4ZXGNcSLRg4JBsZ3//1+f/TjYl0Mzen/DQy1EJg=
-github.com/segmentio/asm v1.2.1/go.mod h1:BqMnlJP91P8d+4ibuonYZw9mfnzI9HfxselHZr5aAcs=
 github.com/segmentio/backo-go v1.1.0 h1:cJIfHQUdmLsd8t9IXqf5J8SdrOMn9vMa7cIvOavHAhc=
 github.com/segmentio/backo-go v1.1.0/go.mod h1:ckenwdf+v/qbyhVdNPWHnqh2YdJBED1O9cidYyM5J18=
 github.com/segmentio/encoding v0.5.4 h1:OW1VRern8Nw6ITAtwSZ7Idrl3MXCFwXHPgqESYfvNt0=

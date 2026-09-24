@@ -17,9 +17,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// A group renamed in the identity provider while a review waits on it must
-// still let its members approve that review (ADR-0019): the rename reaches
-// the pending review's groups, not only the rules.
+// A group renamed at the source (a Slack user group handle) while a review
+// waits on it must still let its members approve that review (ADR-0019): the
+// rename reaches the pending review's groups, not only the rules.
 func TestRenamedGroupStillApprovesAPendingReview(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping embedded database test in -short mode")
@@ -36,17 +36,17 @@ func TestRenamedGroupStillApprovesAPendingReview(t *testing.T) {
 	sc := &models.Sidecar{OrgID: orgID, Name: "payments", KeyHash: models.HashAPIKey("hsc_payments"), CreatedBy: "tests@hoop.dev"}
 	require.NoError(t, models.CreateSidecar(models.DB, sc))
 
-	// Ana is in dba, provisioned by SCIM.
+	// Ana is in dba, imported from Slack.
 	var anaID string
 	var group *models.DirectoryGroup
 	require.NoError(t, models.DB.Transaction(func(tx *gorm.DB) error {
 		var err error
-		anaID, err = services.UpsertProvisionedUser(tx, orgID, models.ProvisioningSourceSCIM, "",
-			services.ProvisionedUser{ExternalID: "okta-ana", UserName: "ana@example.com", Active: true})
+		anaID, err = services.UpsertProvisionedUser(tx, orgID, models.ProvisioningSourceSlack, "",
+			services.ProvisionedUser{ExternalID: "U-ANA", UserName: "ana@example.com", Active: true})
 		if err != nil {
 			return err
 		}
-		if group, err = services.CreateProvisionedGroup(tx, orgID, models.ProvisioningSourceSCIM, "dba", ""); err != nil {
+		if group, err = services.CreateProvisionedGroup(tx, orgID, models.ProvisioningSourceSlack, "dba", "S-DBA"); err != nil {
 			return err
 		}
 		return services.SetGroupMembers(tx, orgID, "dba", []string{anaID})

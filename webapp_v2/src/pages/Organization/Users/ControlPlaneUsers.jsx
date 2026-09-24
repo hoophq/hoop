@@ -35,7 +35,7 @@ import { STATUS_OPTIONS, generatePassword, statusVariant } from './shared'
  * The control plane's Users page, sibling of GatewayUsers.jsx.
  *
  * Groups name reviewers (ADR-0019). This page edits them for every auth
- * method, and imports them from a CSV, unless the Slack import or SCIM manages
+ * method, and imports them from a CSV, unless the Slack import manages
  * them: then it shows them and edits only the admin switch, and the backend
  * refuses anything else. Administrator is hoop's own group and stays a switch.
  */
@@ -183,7 +183,7 @@ function UserFormModal({ opened, onClose, formType, user, isLocalAuth, groupsMan
                   </Text>
                 )}
                 <Text size="xs" c="dimmed">
-                  Managed by the Slack import or SCIM in Settings, Provisioning.
+                  Managed by the Slack import in Settings, Provisioning.
                 </Text>
               </Stack>
             )
@@ -299,8 +299,8 @@ export default function ControlPlaneUsers() {
             </Text>
             <Text size="sm" c="dimmed">
               {groupsManaged
-                ? 'The Slack import or SCIM manages the groups. See '
-                : 'Reviewers come from Slack, your identity provider, a file, or the groups you set here. See '}
+                ? 'The Slack import manages the groups. See '
+                : 'Reviewers come from Slack, a file, or the groups you set here. See '}
               <Anchor component={Link} to="/settings/provisioning" size="sm">
                 Provisioning
               </Anchor>
@@ -379,7 +379,7 @@ export default function ControlPlaneUsers() {
               <Stack flex={1} mih="30vh" align="center" py="xxl">
                 <Stack flex={1} align="center" justify="center" gap="lg">
                   <Text size="sm" c="dimmed" ta="center" maw={400}>
-                    Invite administrators; reviewers come from Slack or your identity provider.
+                    Invite administrators; reviewers come from Slack or the groups you set here.
                   </Text>
                   <Button onClick={handleAdd}>Invite Users</Button>
                 </Stack>

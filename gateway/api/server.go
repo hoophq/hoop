@@ -54,7 +54,6 @@ import (
 	reviewapi "github.com/hoophq/hoop/gateway/api/review"
 	apirulepacks "github.com/hoophq/hoop/gateway/api/rulepacks"
 	apirunbooks "github.com/hoophq/hoop/gateway/api/runbooks"
-	apiscim "github.com/hoophq/hoop/gateway/api/scim"
 	searchapi "github.com/hoophq/hoop/gateway/api/search"
 	apiserverconfig "github.com/hoophq/hoop/gateway/api/serverconfig"
 	apiserverinfo "github.com/hoophq/hoop/gateway/api/serverinfo"
@@ -1373,26 +1372,9 @@ func (api *Api) buildRoutes(r *apiroutes.Router, mode appconfig.AppMode) {
 		apiserverconfig.UpdateMcpAuthConfig,
 	)
 
-	// Provisioning (ADR-0019): the Slack directory sync, SCIM and the switch
-	// that hands groups back to login. The routes exist in both modes, as
-	// every route does, and answer 412 on a gateway.
-	r.GET("/serverconfig/scim",
-		apiroutes.AdminOnlyAccessRole,
-		r.AuthMiddleware,
-		apiprovisioning.GetSCIMConfig,
-	)
-	r.PUT("/serverconfig/scim",
-		apiroutes.AdminOnlyAccessRole,
-		r.AuthMiddleware,
-		api.AuditMiddleware(),
-		apiprovisioning.PutSCIMToken,
-	)
-	r.DELETE("/serverconfig/scim",
-		apiroutes.AdminOnlyAccessRole,
-		r.AuthMiddleware,
-		api.AuditMiddleware(),
-		apiprovisioning.DeleteSCIMToken,
-	)
+	// Provisioning (ADR-0019): the Slack directory sync and the switch that
+	// hands groups back to login. The routes exist in both modes, as every
+	// route does, and answer 412 on a gateway.
 	r.GET("/serverconfig/directory-sync",
 		apiroutes.AdminOnlyAccessRole,
 		r.AuthMiddleware,
@@ -1432,10 +1414,6 @@ func (api *Api) buildRoutes(r *apiroutes.Router, mode appconfig.AppMode) {
 		api.AuditMiddleware(),
 		apiprovisioning.StopManagingGroups,
 	)
-	// The identity provider's SCIM client authenticates with the SCIM token,
-	// never a user session. The audit entry names the admin who generated the
-	// token as the actor.
-	r.Any("/scim/v2/*path", r.SCIMAuthMiddleware, api.AuditMiddleware(), apiscim.Handler)
 
 	r.GET("/search",
 		apiroutes.ReadOnlyAccessRole,

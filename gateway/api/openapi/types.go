@@ -3008,29 +3008,6 @@ type ServerAuthConfig struct {
 	AuditorRoleName string `json:"auditor_role_name" default:"auditor"`
 }
 
-// SCIMConfig reports whether an identity provider can push users and groups
-// to this control plane over SCIM (ADR-0019).
-type SCIMConfig struct {
-	// Whether a SCIM token exists
-	Enabled bool `json:"enabled"`
-	// The SCIM base URL to configure in the identity provider
-	BaseURL string `json:"base_url" example:"https://hoop.example.com/api/scim/v2"`
-	// Who generated the current token
-	CreatedBy string `json:"created_by,omitempty" example:"admin@example.com"`
-	// When the current token was generated
-	CreatedAt *time.Time `json:"created_at,omitempty"`
-	// When the identity provider last used the token
-	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
-}
-
-// SCIMToken is a newly generated SCIM token. It is shown once.
-type SCIMToken struct {
-	// The bearer token to configure in the identity provider
-	Token string `json:"token" example:"hscim_4k2..."`
-	// The SCIM base URL to configure in the identity provider
-	BaseURL string `json:"base_url" example:"https://hoop.example.com/api/scim/v2"`
-}
-
 // DirectorySyncConfig is how the control plane pulls users and groups from
 // Slack user groups (ADR-0019). It uses the org's Slack app and stores no
 // credential.
@@ -3075,8 +3052,8 @@ type DirectoryGroup struct {
 
 // ProvisioningStatus reports whether a source owns the org's groups.
 type ProvisioningStatus struct {
-	// True when the Slack import or SCIM has written users or groups. Login
-	// and the Users page then change only the admin group.
+	// True when the Slack import has written users or groups. Login and the
+	// Users page then change only the admin group.
 	GroupsManaged bool `json:"groups_managed"`
 }
 

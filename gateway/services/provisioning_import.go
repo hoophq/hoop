@@ -12,9 +12,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// ErrGroupsManaged refuses a file import while the Slack import or SCIM owns
-// the org's groups: the next sync or push would undo it.
-var ErrGroupsManaged = errors.New("groups are managed by the Slack import or SCIM; stop managing them before importing a file")
+// ErrGroupsManaged refuses a file import while the Slack import owns the
+// org's groups: its next run would undo it.
+var ErrGroupsManaged = errors.New("groups are managed by the Slack import; stop managing them before importing a file")
 
 // ImportRow is one user of a file import. Row is its 1-based position, for
 // error reports.
@@ -41,7 +41,7 @@ type ImportResult struct {
 }
 
 // ImportUsers writes the users of a file and their groups, through the same
-// seam the Slack import and SCIM use, with source "file".
+// seam the Slack import uses, with source "file".
 //
 // Each row is written on its own, so a bad row fails that row and not the
 // file. Every group the file names then gets exactly the imported users who

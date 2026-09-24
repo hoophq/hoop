@@ -18,8 +18,6 @@ var root = buildRoutes([]struct {
 }{
 	{[]string{"users", "groups"}, ResourceUserGroup},
 	{[]string{"users", "import"}, ResourceProvisioning},
-	{[]string{"scim"}, ResourceProvisioning},
-	{[]string{"serverconfig", "scim"}, ResourceProvisioning},
 	{[]string{"serverconfig", "directory-sync"}, ResourceProvisioning},
 	{[]string{"serverconfig", "provisioning"}, ResourceProvisioning},
 	{[]string{"access-requests", "rules"}, ResourceAccessRequestRule},

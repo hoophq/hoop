@@ -3,15 +3,11 @@ import { provisioningService } from '@/services/provisioning'
 import { useAuthStore } from '@/stores/useAuthStore'
 
 const EMPTY = {
-  scim: null,
   sync: null,
-  // Whether the Slack import or SCIM manages the org's groups.
+  // Whether the Slack import manages the org's groups.
   groupsManaged: false,
   // 'idle' | 'loading' | 'success' | 'error'
   status: 'idle',
-  // Shown once, right after it is generated; cleared on every load and when
-  // the SCIM section unmounts, so it never outlives the view that showed it.
-  newToken: null,
   groups: [],
   groupsStatus: 'idle',
   groupsError: null,
@@ -28,18 +24,14 @@ export const useProvisioningStore = create((set, get) => ({
 
   reset: () => set({ ...EMPTY }),
 
-  clearNewToken: () => set({ newToken: null }),
-
   load: async () => {
-    set({ status: 'loading', newToken: null })
+    set({ status: 'loading' })
     try {
-      const [scim, sync, status] = await Promise.all([
-        provisioningService.getScim(),
+      const [sync, status] = await Promise.all([
         provisioningService.getDirectorySync(),
         provisioningService.getStatus(),
       ])
       set({
-        scim: scim.data,
         sync: sync.data,
         groupsManaged: !!status.data?.groups_managed,
         status: 'success',
@@ -55,32 +47,6 @@ export const useProvisioningStore = create((set, get) => ({
       set({ groupsManaged: !!data?.groups_managed })
     } catch {
       // The page keeps the last known state; the next load retries.
-    }
-  },
-
-  generateToken: async () => {
-    set({ saving: true })
-    try {
-      const { data } = await provisioningService.putScimToken()
-      const { data: scim } = await provisioningService.getScim()
-      set({ saving: false, newToken: data.token, scim })
-      return { ok: true }
-    } catch (error) {
-      set({ saving: false })
-      return { ok: false, error: message(error) }
-    }
-  },
-
-  deleteToken: async () => {
-    set({ saving: true })
-    try {
-      await provisioningService.deleteScim()
-      const { data: scim } = await provisioningService.getScim()
-      set({ saving: false, newToken: null, scim })
-      return { ok: true }
-    } catch (error) {
-      set({ saving: false })
-      return { ok: false, error: message(error) }
     }
   },
 
@@ -146,8 +112,8 @@ export const useProvisioningStore = create((set, get) => ({
   },
 }))
 
-// The token and the sync belong to the organization that loaded them; the
-// next user in the same tab must not see them.
+// The sync belongs to the organization that loaded it; the next user in the
+// same tab must not see it.
 useAuthStore.subscribe((state, prev) => {
   if (prev.isAuthenticated && !state.isAuthenticated) {
     useProvisioningStore.getState().reset()

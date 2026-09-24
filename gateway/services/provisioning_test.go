@@ -72,12 +72,12 @@ func TestProvisioning(t *testing.T) {
 
 	managed, err := models.GroupsManagedByProvisioning(db, provisioningOrgID)
 	if err != nil || managed {
-		t.Fatalf("before any token: managed=%v err=%v; want false", managed, err)
+		t.Fatalf("before any import: managed=%v err=%v; want false", managed, err)
 	}
 
 	t.Run("creates a user with a placeholder subject", func(t *testing.T) {
-		id, err := UpsertProvisionedUser(db, provisioningOrgID, models.ProvisioningSourceSCIM, "",
-			ProvisionedUser{ExternalID: "okta-ana", UserName: "ana@example.com", Name: "Ana", Active: true})
+		id, err := UpsertProvisionedUser(db, provisioningOrgID, models.ProvisioningSourceSlack, "",
+			ProvisionedUser{ExternalID: "U-ANA", UserName: "ana@example.com", Name: "Ana", Active: true})
 		if err != nil {
 			t.Fatalf("upsert: %v", err)
 		}
@@ -85,12 +85,12 @@ func TestProvisioning(t *testing.T) {
 		if err != nil || len(users) != 1 || users[0].ID != id {
 			t.Fatalf("got %+v err %v; want one active user %s", users, err, id)
 		}
-		if users[0].Subject != "scim|okta-ana" || users[0].Name != "Ana" {
+		if users[0].Subject != "slack|U-ANA" || users[0].Name != "Ana" {
 			t.Fatalf("got subject %q name %q", users[0].Subject, users[0].Name)
 		}
 
-		again, err := UpsertProvisionedUser(db, provisioningOrgID, models.ProvisioningSourceSCIM, "",
-			ProvisionedUser{ExternalID: "okta-ana", UserName: "ana@example.com", Email: "ana.new@example.com", Active: true})
+		again, err := UpsertProvisionedUser(db, provisioningOrgID, models.ProvisioningSourceSlack, "",
+			ProvisionedUser{ExternalID: "U-ANA", UserName: "ana@example.com", Email: "ana.new@example.com", Active: true})
 		if err != nil || again != id {
 			t.Fatalf("second upsert by external id: got %s err %v; want %s", again, err, id)
 		}
@@ -101,18 +101,14 @@ func TestProvisioning(t *testing.T) {
 	})
 
 	t.Run("adopts the user who already logged in", func(t *testing.T) {
-		id, err := UpsertProvisionedUser(db, provisioningOrgID, models.ProvisioningSourceSCIM, "",
-			ProvisionedUser{ExternalID: "okta-carla", UserName: "carla@example.com", Active: true})
+		id, err := UpsertProvisionedUser(db, provisioningOrgID, models.ProvisioningSourceSlack, "",
+			ProvisionedUser{ExternalID: "U-CARLA", UserName: "carla@example.com", Active: true})
 		if err != nil || id != existingID {
 			t.Fatalf("got %s err %v; want the existing user %s", id, err, existingID)
 		}
 		var u models.User
 		if err := db.Where("id = ?", existingID).First(&u).Error; err != nil || u.Subject != "idp|carla" {
 			t.Fatalf("subject changed to %q (err %v); the login's subject must stay", u.Subject, err)
-		}
-		taken, err := ProvisionedUserNameTaken(db, provisioningOrgID, models.ProvisioningSourceSCIM, "CARLA@example.com")
-		if err != nil || !taken {
-			t.Fatalf("user name taken = %v, err %v; want true", taken, err)
 		}
 	})
 
@@ -123,7 +119,7 @@ func TestProvisioning(t *testing.T) {
 				t.Fatalf("seed dup: %v", err)
 			}
 		}
-		_, err := UpsertProvisionedUser(db, provisioningOrgID, models.ProvisioningSourceSCIM, "",
+		_, err := UpsertProvisionedUser(db, provisioningOrgID, models.ProvisioningSourceSlack, "",
 			ProvisionedUser{UserName: "dup@example.com", Active: true})
 		if !errors.Is(err, ErrAmbiguousEmail) {
 			t.Fatalf("err = %v; want ErrAmbiguousEmail", err)
@@ -131,7 +127,7 @@ func TestProvisioning(t *testing.T) {
 	})
 
 	t.Run("refuses a user with no email", func(t *testing.T) {
-		_, err := UpsertProvisionedUser(db, provisioningOrgID, models.ProvisioningSourceSCIM, "",
+		_, err := UpsertProvisionedUser(db, provisioningOrgID, models.ProvisioningSourceSlack, "",
 			ProvisionedUser{UserName: "not-an-email", Active: true})
 		if !errors.Is(err, ErrProvisionedUserEmailRequired) {
 			t.Fatalf("err = %v; want ErrProvisionedUserEmailRequired", err)
@@ -149,11 +145,11 @@ func TestProvisioning(t *testing.T) {
 
 	t.Run("groups and members", func(t *testing.T) {
 		var err error
-		dbaGroup, err = CreateProvisionedGroup(db, provisioningOrgID, models.ProvisioningSourceSCIM, "dba-leads", "okta-g1")
+		dbaGroup, err = CreateProvisionedGroup(db, provisioningOrgID, models.ProvisioningSourceSlack, "dba-leads", "S-DBA")
 		if err != nil {
 			t.Fatalf("create group: %v", err)
 		}
-		if _, err := CreateProvisionedGroup(db, provisioningOrgID, models.ProvisioningSourceSCIM, "dba-leads", ""); !errors.Is(err, ErrProvisionedGroupExists) {
+		if _, err := CreateProvisionedGroup(db, provisioningOrgID, models.ProvisioningSourceSlack, "dba-leads", ""); !errors.Is(err, ErrProvisionedGroupExists) {
 			t.Fatalf("duplicate group: err = %v; want ErrProvisionedGroupExists", err)
 		}
 
@@ -165,14 +161,14 @@ func TestProvisioning(t *testing.T) {
 			t.Fatalf("members = %v; want ana and carla, unknown ids skipped", members)
 		}
 
-		if err := RemoveGroupMembers(db, provisioningOrgID, "dba-leads", []string{existingID}); err != nil {
-			t.Fatalf("remove member: %v", err)
+		if err := SetGroupMembers(db, provisioningOrgID, "dba-leads", []string{anaID}); err != nil {
+			t.Fatalf("narrow members: %v", err)
 		}
 		if got := userGroupNames(t, existingID); !slices.Equal(got, []string{"admin"}) {
-			t.Fatalf("carla groups = %v; want only admin", got)
+			t.Fatalf("carla groups = %v; want only admin, the admin row is not the group's", got)
 		}
-		if err := AddGroupMembers(db, provisioningOrgID, "dba-leads", []string{existingID}); err != nil {
-			t.Fatalf("add member: %v", err)
+		if err := SetGroupMembers(db, provisioningOrgID, "dba-leads", []string{anaID, existingID}); err != nil {
+			t.Fatalf("widen members: %v", err)
 		}
 		if got := userGroupNames(t, existingID); !slices.Equal(got, []string{"admin", "dba-leads"}) {
 			t.Fatalf("carla groups = %v; want admin and dba-leads", got)
@@ -222,7 +218,7 @@ func TestProvisioning(t *testing.T) {
 	})
 
 	t.Run("an inactive user loses provisioned groups only", func(t *testing.T) {
-		if _, err := UpsertProvisionedUser(db, provisioningOrgID, models.ProvisioningSourceSCIM, existingID,
+		if _, err := UpsertProvisionedUser(db, provisioningOrgID, models.ProvisioningSourceSlack, existingID,
 			ProvisionedUser{UserName: "carla@example.com", Active: false}); err != nil {
 			t.Fatalf("deactivate: %v", err)
 		}
@@ -246,11 +242,17 @@ func TestProvisioning(t *testing.T) {
 		}
 	})
 
-	if err := models.ReplaceSCIMToken(db, provisioningOrgID, "hash", "admin@example.com"); err != nil {
-		t.Fatalf("store token: %v", err)
-	}
+	// The Slack rows written above manage the groups until an admin releases
+	// them.
 	managed, err = models.GroupsManagedByProvisioning(db, provisioningOrgID)
 	if err != nil || !managed {
-		t.Fatalf("with a token: managed=%v err=%v; want true", managed, err)
+		t.Fatalf("after a slack import: managed=%v err=%v; want true", managed, err)
+	}
+	if err := models.ClearProvisioningLinks(db, provisioningOrgID); err != nil {
+		t.Fatalf("release: %v", err)
+	}
+	managed, err = models.GroupsManagedByProvisioning(db, provisioningOrgID)
+	if err != nil || managed {
+		t.Fatalf("after release: managed=%v err=%v; want false", managed, err)
 	}
 }

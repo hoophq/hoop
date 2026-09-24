@@ -90,7 +90,7 @@ dead end), `/onboarding/*` and `/*` (gateway: CLJS; control plane: 404).
 | `/agents/new` | React | Done |
 | `/settings/infrastructure` | React | Done |
 | `/settings/license` | React | Done |
-| `/settings/provisioning` | React | Done — control plane only in the nav: Slack import, SCIM and file import of reviewers (ADR-0019) |
+| `/settings/provisioning` | React | Done — control plane only in the nav: Slack import and file import of reviewers (ADR-0019) |
 | `/settings/api-keys` | React | Done |
 | `/settings/api-keys/new` | React | Done |
 | `/settings/api-keys/created` | React | Done |

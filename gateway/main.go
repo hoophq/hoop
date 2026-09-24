@@ -23,7 +23,6 @@ import (
 
 	apiorgs "github.com/hoophq/hoop/gateway/api/orgs"
 	reviewapi "github.com/hoophq/hoop/gateway/api/review"
-	apiscim "github.com/hoophq/hoop/gateway/api/scim"
 	apiserverconfig "github.com/hoophq/hoop/gateway/api/serverconfig"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/directorysync"
@@ -260,12 +259,8 @@ func runControlPlane(tlsConfig *tls.Config) {
 	}
 	startPlugins(controlPlanePlugins(g.ReleaseConnectionOnReview))
 	go reconcileStaleReviews(models.DB)
-	// The SCIM endpoint an identity provider pushes reviewers to, and the
-	// Slack directory sync that pulls them (ADR-0019). Only the control plane
-	// runs them; a SCIM server that cannot be built stops the start.
-	if err := apiscim.Init(); err != nil {
-		log.Fatal(err)
-	}
+	// The Slack directory sync that pulls reviewers (ADR-0019). Only the
+	// control plane runs it.
 	go directorysync.Start(context.Background(), models.DB)
 
 	bootstrap.Phase("Starting API")

@@ -8,74 +8,16 @@ import (
 )
 
 // Where a provisioned user or group came from (ADR-0019). Slack is pulled by
-// the directory sync, SCIM is pushed by the identity provider, and a file is
-// an admin's one-off import.
+// the directory sync, and a file is an admin's one-off import.
 const (
 	ProvisioningSourceSlack = "slack"
-	ProvisioningSourceSCIM  = "scim"
 	ProvisioningSourceFile  = "file"
 )
 
 // managingSources are the sources that own the groups they write: while an
 // org has any of their rows, login and the Users page leave groups alone. A
 // file import is an admin's own edit, like the Users page, so it does not.
-var managingSources = []string{ProvisioningSourceSlack, ProvisioningSourceSCIM}
-
-// SCIMToken is the bearer token an identity provider authenticates its SCIM
-// requests with. Only the hash is stored.
-type SCIMToken struct {
-	OrgID      string     `gorm:"column:org_id;primaryKey"`
-	TokenHash  string     `gorm:"column:token_hash"`
-	CreatedBy  string     `gorm:"column:created_by"`
-	CreatedAt  time.Time  `gorm:"column:created_at"`
-	LastUsedAt *time.Time `gorm:"column:last_used_at"`
-}
-
-func (SCIMToken) TableName() string { return "private.scim_tokens" }
-
-// GetSCIMToken returns the org's token, or gorm.ErrRecordNotFound.
-func GetSCIMToken(db *gorm.DB, orgID string) (*SCIMToken, error) {
-	var t SCIMToken
-	if err := db.Where("org_id = ?", orgID).First(&t).Error; err != nil {
-		return nil, err
-	}
-	return &t, nil
-}
-
-// GetSCIMTokenByHash returns the token with this hash, or gorm.ErrRecordNotFound.
-func GetSCIMTokenByHash(db *gorm.DB, tokenHash string) (*SCIMToken, error) {
-	var t SCIMToken
-	if err := db.Where("token_hash = ?", tokenHash).First(&t).Error; err != nil {
-		return nil, err
-	}
-	return &t, nil
-}
-
-// ReplaceSCIMToken stores a new token hash for the org, discarding the old one.
-func ReplaceSCIMToken(db *gorm.DB, orgID, tokenHash, createdBy string) error {
-	return db.Exec(`
-		INSERT INTO private.scim_tokens (org_id, token_hash, created_by, created_at, last_used_at)
-		VALUES (?, ?, ?, NOW(), NULL)
-		ON CONFLICT (org_id) DO UPDATE
-		SET token_hash = EXCLUDED.token_hash, created_by = EXCLUDED.created_by,
-			created_at = EXCLUDED.created_at, last_used_at = NULL`,
-		orgID, tokenHash, createdBy).Error
-}
-
-// DeleteSCIMToken removes the org's token. Absent is not an error.
-func DeleteSCIMToken(db *gorm.DB, orgID string) error {
-	return db.Where("org_id = ?", orgID).Delete(&SCIMToken{}).Error
-}
-
-// TouchSCIMToken records that the token was just used. It writes at most once
-// a minute: an identity provider sends many requests in a burst, and the
-// admin page only needs to know the token is alive.
-func TouchSCIMToken(db *gorm.DB, orgID string) error {
-	return db.Exec(`
-		UPDATE private.scim_tokens SET last_used_at = NOW()
-		WHERE org_id = ? AND (last_used_at IS NULL OR last_used_at < NOW() - INTERVAL '1 minute')`,
-		orgID).Error
-}
+var managingSources = []string{ProvisioningSourceSlack}
 
 // DirectorySyncConfig is how the control plane pulls users and groups from
 // Slack user groups. Provider is always "slack" today; the column stays so a
@@ -146,9 +88,9 @@ func SetDirectorySyncResult(db *gorm.DB, orgID string, runAt time.Time, errMsg *
 }
 
 // GroupsManagedByProvisioning reports whether a source owns the org's groups:
-// the Slack import or SCIM has written a user or a group. It reads the rows,
-// not the token or the sync config, so revoking a token does not hand groups
-// back to login behind the admin's back; ClearProvisioningLinks does.
+// the Slack import has written a user or a group. It reads the rows, not the
+// sync config, so removing the sync does not hand groups back to login behind
+// the admin's back; ClearProvisioningLinks does.
 func GroupsManagedByProvisioning(db *gorm.DB, orgID string) (bool, error) {
 	var managed bool
 	err := db.Raw(`
@@ -168,7 +110,7 @@ func ClearProvisioningLinks(tx *gorm.DB, orgID string) error {
 	return tx.Where("org_id = ?", orgID).Delete(&DirectoryGroup{}).Error
 }
 
-// DirectoryUser links a hoop user to the identity provider record it came from.
+// DirectoryUser links a hoop user to the source record it came from.
 type DirectoryUser struct {
 	UserID     string    `gorm:"column:user_id;primaryKey"`
 	OrgID      string    `gorm:"column:org_id"`
@@ -219,7 +161,7 @@ func UpsertDirectoryUser(db *gorm.DB, u *DirectoryUser) error {
 		u.UserID, u.OrgID, u.Source, u.ExternalID, u.UserName).Error
 }
 
-// DirectoryGroup is a group the identity provider describes. DisplayName is
+// DirectoryGroup is a group a source describes. DisplayName is
 // the name user_groups and the rules' reviewers_groups carry.
 type DirectoryGroup struct {
 	ID          string    `gorm:"column:id;primaryKey"`

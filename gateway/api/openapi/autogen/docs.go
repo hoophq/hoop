@@ -8620,12 +8620,6 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
                     },
-                    "409": {
-                        "description": "Conflict",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
                     "412": {
                         "description": "Precondition Failed",
                         "schema": {
@@ -8946,7 +8940,7 @@ const docTemplate = `{
         },
         "/serverconfig/provisioning": {
             "get": {
-                "description": "Report whether a source (the Slack import or SCIM) owns the org's groups. While it does, login and the Users page change only the admin group. Control plane only.",
+                "description": "Report whether the Slack import owns the org's groups. While it does, login and the Users page change only the admin group. Control plane only.",
                 "produces": [
                     "application/json"
                 ],
@@ -8976,7 +8970,7 @@ const docTemplate = `{
                 }
             },
             "delete": {
-                "description": "Hand the org's groups back to login and the Users page. It deletes only the links between users and their source; users and their groups stay. Refused while a SCIM token or a directory sync exists, since the next push or run would take the groups back. Control plane only.",
+                "description": "Hand the org's groups back to login and the Users page. It deletes only the links between users and their source; users and their groups stay. Refused while the directory sync exists, since its next run would take the groups back. Control plane only.",
                 "tags": [
                     "Server Management"
                 ],
@@ -8990,98 +8984,6 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
-                    },
-                    "412": {
-                        "description": "Precondition Failed",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    }
-                }
-            }
-        },
-        "/serverconfig/scim": {
-            "get": {
-                "description": "Report whether an identity provider can push users and groups over SCIM. Control plane only.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Server Management"
-                ],
-                "summary": "Get SCIM Configuration",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.SCIMConfig"
-                        }
-                    },
-                    "412": {
-                        "description": "Precondition Failed",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    }
-                }
-            },
-            "put": {
-                "description": "Generate the bearer token an identity provider pushes SCIM requests with. A second call rotates it: the new hash replaces the old one in one write, so there is no moment without a token. The token is returned once. Control plane only.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Server Management"
-                ],
-                "summary": "Generate or Rotate SCIM Token",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.SCIMToken"
-                        }
-                    },
-                    "409": {
-                        "description": "Conflict",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "412": {
-                        "description": "Precondition Failed",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
-                        }
-                    }
-                }
-            },
-            "delete": {
-                "description": "Revoke the SCIM token. Provisioned users and groups stay as they are, and stay managed until groups are released with DELETE /serverconfig/provisioning. Control plane only.",
-                "tags": [
-                    "Server Management"
-                ],
-                "summary": "Delete SCIM Token",
-                "responses": {
-                    "204": {
-                        "description": "No Content"
                     },
                     "412": {
                         "description": "Precondition Failed",
@@ -11473,7 +11375,7 @@ const docTemplate = `{
         },
         "/users/import": {
             "post": {
-                "description": "Create or update users and their groups from a file, for a control plane with no Slack import or SCIM. Send JSON, or a CSV as the multipart field \"file\" with the columns email,name,groups (groups separated by \";\") and an optional deactivate_missing field. A bad row fails that row, not the file. Every group the file names gets exactly the users that list it; the admin group cannot be named. Control plane only.",
+                "description": "Create or update users and their groups from a file, for a control plane whose groups the Slack import does not manage. Send JSON, or a CSV as the multipart field \"file\" with the columns email,name,groups (groups separated by \";\") and an optional deactivate_missing field. A bad row fails that row, not the file. Every group the file names gets exactly the users that list it; the admin group cannot be named. Control plane only.",
                 "consumes": [
                     "application/json",
                     "multipart/form-data"
@@ -11687,7 +11589,7 @@ const docTemplate = `{
                 }
             },
             "put": {
-                "description": "Updates an existing user. In a control plane whose groups the Slack import or SCIM manages, only the admin group may change; a request that changes other groups answers 422.",
+                "description": "Updates an existing user. In a control plane whose groups the Slack import manages, only the admin group may change; a request that changes other groups answers 422.",
                 "consumes": [
                     "application/json"
                 ],
@@ -17218,7 +17120,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "groups_managed": {
-                    "description": "True when the Slack import or SCIM has written users or groups. Login\nand the Users page then change only the admin group.",
+                    "description": "True when the Slack import has written users or groups. Login and the\nUsers page then change only the admin group.",
                     "type": "boolean"
                 }
             }
@@ -18926,48 +18828,6 @@ const docTemplate = `{
                     "description": "Repository name",
                     "type": "string",
                     "example": "github.com/myorg/myrunbooks"
-                }
-            }
-        },
-        "openapi.SCIMConfig": {
-            "type": "object",
-            "properties": {
-                "base_url": {
-                    "description": "The SCIM base URL to configure in the identity provider",
-                    "type": "string",
-                    "example": "https://hoop.example.com/api/scim/v2"
-                },
-                "created_at": {
-                    "description": "When the current token was generated",
-                    "type": "string"
-                },
-                "created_by": {
-                    "description": "Who generated the current token",
-                    "type": "string",
-                    "example": "admin@example.com"
-                },
-                "enabled": {
-                    "description": "Whether a SCIM token exists",
-                    "type": "boolean"
-                },
-                "last_used_at": {
-                    "description": "When the identity provider last used the token",
-                    "type": "string"
-                }
-            }
-        },
-        "openapi.SCIMToken": {
-            "type": "object",
-            "properties": {
-                "base_url": {
-                    "description": "The SCIM base URL to configure in the identity provider",
-                    "type": "string",
-                    "example": "https://hoop.example.com/api/scim/v2"
-                },
-                "token": {
-                    "description": "The bearer token to configure in the identity provider",
-                    "type": "string",
-                    "example": "hscim_4k2..."
                 }
             }
         },

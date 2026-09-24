@@ -27,7 +27,7 @@ const (
 // ImportUsers
 //
 //	@Summary		Import Users
-//	@Description	Create or update users and their groups from a file, for a control plane with no Slack import or SCIM. Send JSON, or a CSV as the multipart field "file" with the columns email,name,groups (groups separated by ";") and an optional deactivate_missing field. A bad row fails that row, not the file. Every group the file names gets exactly the users that list it; the admin group cannot be named. Control plane only.
+//	@Description	Create or update users and their groups from a file, for a control plane whose groups the Slack import does not manage. Send JSON, or a CSV as the multipart field "file" with the columns email,name,groups (groups separated by ";") and an optional deactivate_missing field. A bad row fails that row, not the file. Every group the file names gets exactly the users that list it; the admin group cannot be named. Control plane only.
 //	@Tags			User Management
 //	@Accept			json,mpfd
 //	@Produce		json
