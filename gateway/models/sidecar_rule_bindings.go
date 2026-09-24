@@ -3,6 +3,7 @@ package models
 import (
 	"database/sql"
 	"encoding/json"
+	"slices"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -89,33 +90,43 @@ func ListSidecarRuleBindings(db *gorm.DB, orgID uuid.UUID, sidecarID string) ([]
 	return out, err
 }
 
-// DetachedSidecarRules names what DetachSidecarRulesTx deleted, per kind.
+// DetachedSidecarRules names what DetachSidecarRulesTx did, per kind: the
+// rules it deleted and the rules it only unbound.
 type DetachedSidecarRules struct {
 	Guardrails []string
 	Masking    []string
 	Analyzers  []string
+	Unbound    struct {
+		Guardrails []string
+		Masking    []string
+		Analyzers  []string
+	}
 }
 
-// DetachSidecarRulesTx removes every binding to one sidecar, then deletes each
-// rule it unbound that has no target left: no other listener, no connection
-// and no attribute. A rule shared with another target stays, with fewer
-// targets.
+// DetachSidecarRulesTx removes every binding to one sidecar. It deletes a
+// rule only when that sidecar's config file brought it (imported_from_sidecar),
+// no rulepack owns it, and no target is left: no other listener, no
+// connection and no attribute. Every other rule is only unbound, so a rule an
+// admin wrote survives the switch.
 func DetachSidecarRulesTx(tx *gorm.DB, orgID uuid.UUID, sidecarID string) (DetachedSidecarRules, error) {
 	var out DetachedSidecarRules
 	type junction struct {
-		listeners, column, rules, attributes, attrColumn, connections string
-		into                                                          *[]string
+		listeners, column, rules, attributes, attrColumn, connections, rulepack string
+		deleted, unbound                                                       *[]string
 	}
 	for _, j := range []junction{
 		{"private.guardrail_rules_listeners", "guardrail_rule_name", "private.guardrail_rules",
 			"private.guardrail_rules_attributes", "guardrail_rule_name",
-			"EXISTS (SELECT 1 FROM private.guardrail_rules_connections c WHERE c.rule_id = r.id)", &out.Guardrails},
+			"EXISTS (SELECT 1 FROM private.guardrail_rules_connections c WHERE c.rule_id = r.id)",
+			"r.rulepack_id IS NULL", &out.Guardrails, &out.Unbound.Guardrails},
 		{"private.datamasking_rules_listeners", "datamasking_rule_name", "private.datamasking_rules",
 			"private.datamasking_rules_attributes", "datamasking_rule_name",
-			"EXISTS (SELECT 1 FROM private.datamasking_rules_connections c WHERE c.rule_id = r.id)", &out.Masking},
+			"EXISTS (SELECT 1 FROM private.datamasking_rules_connections c WHERE c.rule_id = r.id)",
+			"r.rulepack_id IS NULL", &out.Masking, &out.Unbound.Masking},
 		{"private.ai_session_analyzer_rules_listeners", "analyzer_rule_name", "private.ai_session_analyzer_rules",
 			"private.ai_session_analyzer_rules_attributes", "analyzer_rule_name",
-			"COALESCE(array_length(r.connection_names, 1), 0) > 0", &out.Analyzers},
+			"COALESCE(array_length(r.connection_names, 1), 0) > 0",
+			"TRUE", &out.Analyzers, &out.Unbound.Analyzers},
 	} {
 		var unbound []string
 		err := tx.Raw(`DELETE FROM `+j.listeners+` WHERE org_id = ? AND sidecar_id = ? RETURNING `+j.column,
@@ -129,17 +140,37 @@ func DetachSidecarRulesTx(tx *gorm.DB, orgID uuid.UUID, sidecarID string) (Detac
 		var deleted []string
 		err = tx.Raw(`
 		DELETE FROM `+j.rules+` r
-		WHERE r.org_id = ? AND r.name IN ?
+		WHERE r.org_id = ? AND r.name IN ? AND r.imported_from_sidecar = ? AND `+j.rulepack+`
 		  AND NOT EXISTS (SELECT 1 FROM `+j.listeners+` l WHERE l.org_id = r.org_id AND l.`+j.column+` = r.name)
 		  AND NOT EXISTS (SELECT 1 FROM `+j.attributes+` a WHERE a.org_id = r.org_id AND a.`+j.attrColumn+` = r.name)
 		  AND NOT (`+j.connections+`)
-		RETURNING r.name`, orgID, unbound).Scan(&deleted).Error
+		RETURNING r.name`, orgID, unbound, sidecarID).Scan(&deleted).Error
 		if err != nil {
 			return out, err
 		}
-		*j.into = deleted
+		// Sorted, so the answer the admin reads is stable.
+		slices.Sort(deleted)
+		slices.Sort(unbound)
+		*j.deleted = deleted
+		gone := map[string]bool{}
+		for _, n := range deleted {
+			gone[n] = true
+		}
+		seen := map[string]bool{}
+		for _, n := range unbound {
+			if !gone[n] && !seen[n] {
+				seen[n] = true
+				*j.unbound = append(*j.unbound, n)
+			}
+		}
 	}
 	return out, nil
+}
+
+// MarkImportedRuleTx records the sidecar whose config file brought a rule.
+func MarkImportedRuleTx(tx *gorm.DB, table string, orgID uuid.UUID, ruleName, sidecarID string) error {
+	return tx.Exec(`UPDATE `+table+` SET imported_from_sidecar = ? WHERE org_id = ? AND name = ?`,
+		sidecarID, orgID, ruleName).Error
 }
 
 // setRuleListenersTx replaces one rule's targets in one junction table.

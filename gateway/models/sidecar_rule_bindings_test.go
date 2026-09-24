@@ -901,6 +901,9 @@ func TestImportAndDetachSidecarRules(t *testing.T) {
 		fmt.Sprint(detached.Analyzers) != "[detach-a-appdb-analyzer]" {
 		t.Fatalf("deleted: %+v", detached)
 	}
+	if fmt.Sprint(detached.Unbound.Guardrails) != "[detach-a-shared]" {
+		t.Fatalf("unbound: %+v", detached.Unbound)
+	}
 	if bound, _ := models.ListSidecarRuleBindings(models.DB, orgID, a.ID); len(bound) != 0 {
 		t.Fatalf("bindings left on the detached sidecar: %+v", bound)
 	}
@@ -1140,5 +1143,103 @@ func TestABoundRuleKeepsItsPlace(t *testing.T) {
 	}
 	if fmt.Sprint(names) != "[first aaa-admin bbb-admin]" {
 		t.Errorf("order = %v, want [first aaa-admin bbb-admin]", names)
+	}
+}
+
+// The switch to the config file deletes only a rule the file brought. A rule
+// an admin wrote, and one a rulepack owns, are only unbound.
+func TestADetachDeletesOnlyImportedRules(t *testing.T) {
+	startTestDB(t)
+	orgID := uuid.MustParse(testOrgID)
+	sc := newTestSidecar(t, "keep-edge")
+	importFile(t, sc, `{"listeners": [{
+		"name": "appdb", "protocol": "postgres", "listen": ":5432", "upstream": "db:5432",
+		"guardrails": {"rules": [
+			{"name": "own", "type": "deny_words_list", "words": ["x"]},
+			{"name": "packed", "type": "deny_words_list", "words": ["y"]}
+		]}}]}`)
+	var packID string
+	if err := models.DB.Raw(`INSERT INTO private.rulepacks (org_id, display_name) VALUES (?, 'pack') RETURNING id`,
+		testOrgID).Scan(&packID).Error; err != nil {
+		t.Fatalf("seed rulepack: %v", err)
+	}
+	if err := models.DB.Exec(`UPDATE private.guardrail_rules SET rulepack_id = ? WHERE org_id = ? AND name = 'keep-edge-appdb-packed'`,
+		packID, testOrgID).Error; err != nil {
+		t.Fatalf("own by rulepack: %v", err)
+	}
+	hand := &models.GuardRailRules{OrgID: testOrgID, ID: uuid.NewString(), Name: "hand",
+		Input: map[string]any{"rules": []any{}}, Output: map[string]any{"rules": []any{}},
+		SidecarSpec: json.RawMessage(`{"rules":[{"name":"hand","type":"deny_words_list","words":["z"]}]}`)}
+	if err := models.UpsertGuardRailRuleWithConnections(hand, nil, true); err != nil {
+		t.Fatalf("seed hand-written rule: %v", err)
+	}
+	if err := models.SetGuardrailRuleListeners(models.DB, orgID, "hand",
+		[]models.SidecarRuleTarget{{SidecarID: sc.ID, ListenerName: "appdb"}}); err != nil {
+		t.Fatalf("bind hand-written rule: %v", err)
+	}
+
+	var out models.DetachedSidecarRules
+	err := models.DB.Transaction(func(tx *gorm.DB) error {
+		var derr error
+		out, derr = services.DetachSidecarRulesTx(tx, testOrgID, sc.ID)
+		return derr
+	})
+	if err != nil {
+		t.Fatalf("detach: %v", err)
+	}
+	if fmt.Sprint(out.Guardrails) != "[keep-edge-appdb-own]" {
+		t.Errorf("deleted = %v, want only the imported rule", out.Guardrails)
+	}
+	if fmt.Sprint(out.Unbound.Guardrails) != "[hand keep-edge-appdb-packed]" {
+		t.Errorf("unbound = %v, want the hand-written and the rulepack rule", out.Unbound.Guardrails)
+	}
+	for _, name := range []string{"hand", "keep-edge-appdb-packed"} {
+		var n int64
+		models.DB.Raw(`SELECT count(*) FROM private.guardrail_rules WHERE org_id = ? AND name = ?`, testOrgID, name).Scan(&n)
+		if n != 1 {
+			t.Errorf("rule %q did not survive the detach", name)
+		}
+	}
+}
+
+// A rule bound to a sidecar before it moved to its config file stays
+// editable with that binding. Only a new binding there is refused.
+func TestAnEditKeepsABindingToAConfigFileSidecar(t *testing.T) {
+	startTestDB(t)
+	orgID := uuid.MustParse(testOrgID)
+	lanes := []daemon.ListenerConfig{
+		{Name: "appdb", Protocol: "postgres", Listen: ":5432", Upstream: "db:5432"},
+		{Name: "other", Protocol: "postgres", Listen: ":5433", Upstream: "db:5432"},
+	}
+	sc := &models.Sidecar{OrgID: testOrgID, Name: "held-edge", KeyHash: models.HashAPIKey("hsc_held_edge"),
+		CreatedBy: "tests@hoop.dev", Configuration: models.SidecarConfiguration{Listeners: lanes}}
+	if err := models.CreateSidecar(models.DB, sc); err != nil {
+		t.Fatalf("seed sidecar: %v", err)
+	}
+	spec := json.RawMessage(`{"rules":[{"name":"held","type":"deny_words_list","words":["x"]}]}`)
+	rule := &models.GuardRailRules{OrgID: testOrgID, ID: uuid.NewString(), Name: "held",
+		Input: map[string]any{"rules": []any{}}, Output: map[string]any{"rules": []any{}}, SidecarSpec: spec}
+	if err := models.UpsertGuardRailRuleWithConnections(rule, nil, true); err != nil {
+		t.Fatalf("seed rule: %v", err)
+	}
+	if err := models.SetGuardrailRuleListeners(models.DB, orgID, "held",
+		[]models.SidecarRuleTarget{{SidecarID: sc.ID, ListenerName: "appdb"}}); err != nil {
+		t.Fatalf("bind: %v", err)
+	}
+	on := true
+	if _, err := models.UpdateSidecarConfiguration(models.DB, testOrgID, sc.ID,
+		models.SidecarConfiguration{LoadFromDisk: &on, Listeners: lanes}); err != nil {
+		t.Fatalf("switch to the file: %v", err)
+	}
+
+	old := models.SidecarRuleTarget{SidecarID: sc.ID, ListenerName: "appdb"}
+	if err := services.ValidateSidecarRuleTargets(models.DB, testOrgID, services.SidecarRuleGuardrail,
+		"held", "held", spec, []models.SidecarRuleTarget{old}); err != nil {
+		t.Fatalf("an edit that keeps the old binding was refused: %v", err)
+	}
+	err := services.ValidateSidecarRuleTargets(models.DB, testOrgID, services.SidecarRuleGuardrail,
+		"held", "held", spec, []models.SidecarRuleTarget{old, {SidecarID: sc.ID, ListenerName: "other"}})
+	if err == nil || !strings.Contains(err.Error(), "config file") {
+		t.Fatalf("want a new binding refused, got %v", err)
 	}
 }

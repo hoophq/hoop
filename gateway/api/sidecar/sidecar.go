@@ -1,6 +1,7 @@
 package apisidecar
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -62,7 +63,7 @@ func configRevision(served daemon.Config) string {
 // the next tick is a minute away.
 func recordHandshake(sidecarID string, req openapi.SidecarHandshakeRequest, servedRevision string) {
 	err := models.RecordSidecarHandshake(models.DB, sidecarID,
-		req.Version, req.AppliedRevision, req.LastOutcome, servedRevision)
+		req.Version, req.AppliedRevision, req.LastOutcome, servedRevision, req.SupportsConfigReimport)
 	if err != nil {
 		log.With("sidecar", sidecarID).Warnf("failed recording the sidecar handshake, reason=%v", err)
 	}
@@ -138,6 +139,8 @@ func answerSidecarWrite(c *gin.Context, err error) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": overCap.Error()})
 	case errors.As(err, &broken):
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": broken.Error()})
+	case errors.Is(err, errSwitchNeedsPatch):
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed writing sidecar configuration")
 	}
@@ -331,7 +334,7 @@ func Delete(c *gin.Context) {
 // Update Sidecar
 //
 //	@Summary		Update Sidecar
-//	@Description	Replace the configuration a sidecar serves. The sidecar picks it up on its next heartbeat.
+//	@Description	Replace the configuration a sidecar serves. The sidecar picks it up on its next heartbeat. A change of load_from_disk is refused: use PATCH.
 //	@Tags			Sidecars
 //	@Accept			json
 //	@Produce		json
@@ -368,27 +371,24 @@ func Put(c *gin.Context) {
 		if err != nil {
 			return nil, err
 		}
-		sc, err := models.UpdateSidecarConfiguration(tx, ctx.OrgID,
+		// The owner switch deletes rules and resets documents, which a full
+		// replace would do without saying so. PATCH does it and reports it.
+		if usesConfigFile(current.Configuration) != usesConfigFile(models.SidecarConfiguration(cfg)) {
+			return nil, errSwitchNeedsPatch
+		}
+		return models.UpdateSidecarConfiguration(tx, ctx.OrgID,
 			c.Param("nameOrID"), models.SidecarConfiguration(cfg))
-		if err != nil {
-			return nil, err
-		}
-		// The document replaces the stored one, so a switch back keeps it
-		// rather than importing the file again. A switch to the file still
-		// drops the rules it would no longer apply.
-		if !usesConfigFile(current.Configuration) && usesConfigFile(sc.Configuration) {
-			if _, err := services.DetachSidecarRulesTx(tx, ctx.OrgID, sc.ID); err != nil {
-				return nil, err
-			}
-		}
-		return sc, nil
 	})
 	if err != nil {
 		answerSidecarWrite(c, err)
 		return
 	}
-	// With its bindings, as Get answers: the page replaces its record with
-	// this, and the owner-switch dialog counts the rules from it.
+	// With its bindings and runtime columns, as Get answers: the page replaces
+	// its record with this, and the owner-switch dialog reads it. The write
+	// returns only the configuration columns.
+	if full, err := models.GetSidecarByNameOrID(models.DB, ctx.OrgID, item.ID); err == nil {
+		item = full
+	}
 	resp := toResponse(*item)
 	resp.BoundRules = bindingsBySidecar(ctx.OrgID, item.ID)[item.ID]
 	c.JSON(http.StatusOK, resp)
@@ -397,7 +397,7 @@ func Put(c *gin.Context) {
 // Patch Sidecar Configuration
 //
 //	@Summary		Patch Sidecar Configuration
-//	@Description	Merge a partial configuration into the document a sidecar serves: the keys sent are updated and the rest are left as stored. Unlike PUT it never replaces the whole document, so it cannot overwrite a configuration a sidecar imported meanwhile. load_from_disk true deletes the control-plane rules bound only to this sidecar and unbinds the rest. load_from_disk false clears the key and the stored document, so the sidecar imports its config file again.
+//	@Description	Merge a partial configuration into the document a sidecar serves: the keys sent are updated and the rest are left as stored. Unlike PUT it never replaces the whole document, so it cannot overwrite a configuration a sidecar imported meanwhile. load_from_disk true deletes the rules imported from this sidecar that nothing else uses and unbinds the rest; detached_rules lists them. load_from_disk false must be sent alone. It clears the stored document, so the sidecar imports its config file again; a sidecar without supports_config_reimport keeps its stored document.
 //	@Tags			Sidecars
 //	@Accept			json
 //	@Produce		json
@@ -418,6 +418,12 @@ func Patch(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return
 	}
+	// The switch back can replace the stored document, so keys merged into
+	// it in the same call could be lost without notice.
+	if removeLoadFromDisk && !bytes.Equal(bytes.TrimSpace(merge), []byte("{}")) {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": switchBackAlone})
+		return
+	}
 	licenseData, err := models.GetOrgLicenseData(models.DB, ctx.OrgID)
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the organization license")
@@ -428,6 +434,7 @@ func Patch(c *gin.Context) {
 	// transaction and a refusal rolls the merge back, rather than the gateway
 	// reading the stored document first and racing another writer between the
 	// read and the write.
+	var detached *openapi.SidecarDetachedRules
 	item, err := writeSidecarConfiguration(models.DB, licenseData, func(tx *gorm.DB) (*models.Sidecar, error) {
 		// Locked, so two owner switches cannot both read the old mode and
 		// each skip the half of the switch the other one did.
@@ -443,12 +450,19 @@ func Patch(c *gin.Context) {
 		if wasFile == isFile {
 			return sc, nil
 		}
+		// A sidecar too old to import its file again keeps the stored
+		// document on the way back: an empty one would leave it nothing.
+		if !isFile && !current.SupportsConfigReimport {
+			return sc, nil
+		}
 		// A switch of owner. The control-plane rules of this sidecar go: to
 		// the config file, they would no longer apply; from it, the file is
 		// imported again and brings its own.
-		if _, err := services.DetachSidecarRulesTx(tx, ctx.OrgID, sc.ID); err != nil {
+		out, err := services.DetachSidecarRulesTx(tx, ctx.OrgID, sc.ID)
+		if err != nil {
 			return nil, err
 		}
+		detached = toDetachedRules(out)
 		if isFile {
 			return sc, nil
 		}
@@ -458,11 +472,27 @@ func Patch(c *gin.Context) {
 		answerSidecarWrite(c, err)
 		return
 	}
-	// With its bindings, as Get answers: the page replaces its record with
-	// this, and the owner-switch dialog counts the rules from it.
+	// With its bindings and runtime columns, as Get answers: the page replaces
+	// its record with this, and the owner-switch dialog reads it. The write
+	// returns only the configuration columns.
+	if full, err := models.GetSidecarByNameOrID(models.DB, ctx.OrgID, item.ID); err == nil {
+		item = full
+	}
 	resp := toResponse(*item)
 	resp.BoundRules = bindingsBySidecar(ctx.OrgID, item.ID)[item.ID]
+	resp.DetachedRules = detached
 	c.JSON(http.StatusOK, resp)
+}
+
+var errSwitchNeedsPatch = errors.New("load_from_disk cannot change here: use PATCH")
+
+const switchBackAlone = "send load_from_disk false alone: the switch back replaces the stored document"
+
+func toDetachedRules(d models.DetachedSidecarRules) *openapi.SidecarDetachedRules {
+	return &openapi.SidecarDetachedRules{
+		Deleted: openapi.SidecarRuleNames{Guardrails: d.Guardrails, DataMasking: d.Masking, Analyzers: d.Analyzers},
+		Unbound: openapi.SidecarRuleNames{Guardrails: d.Unbound.Guardrails, DataMasking: d.Unbound.Masking, Analyzers: d.Unbound.Analyzers},
+	}
 }
 
 func usesConfigFile(cfg models.SidecarConfiguration) bool {
@@ -754,6 +784,7 @@ func toResponse(s models.Sidecar) openapi.SidecarResponse {
 	resp.ServedRevision = derefOrEmpty(s.ServedRevision)
 	resp.AppliedRevision = derefOrEmpty(s.AppliedRevision)
 	resp.LastOutcome = derefOrEmpty(s.LastOutcome)
+	resp.SupportsConfigReimport = s.SupportsConfigReimport
 	return resp
 }
 

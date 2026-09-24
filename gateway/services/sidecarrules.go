@@ -125,12 +125,6 @@ func ValidateSidecarRuleTargets(db *gorm.DB, orgID string, kind SidecarRuleKind,
 			if err != nil {
 				return fmt.Errorf("sidecar %q was not found in this organization", t.SidecarID)
 			}
-			// The control plane does not serve rules to a sidecar that runs
-			// its config file, so a binding there would enforce nothing.
-			if sc.Configuration.LoadFromDisk != nil && *sc.Configuration.LoadFromDisk {
-				return fmt.Errorf("sidecar %q uses its config file; the control plane cannot "+
-					"manage its rules", sc.Name)
-			}
 			seen[t.SidecarID] = sc
 			order = append(order, t.SidecarID)
 		}
@@ -140,6 +134,20 @@ func ValidateSidecarRuleTargets(db *gorm.DB, orgID string, kind SidecarRuleKind,
 		// applying on some lanes and ignored on others, with nothing saying
 		// which. The listener is also what carries the protocol, and this
 		// function's whole second half needs it.
+		// The control plane does not serve rules to a sidecar that runs its
+		// config file, so a NEW binding there would enforce nothing. One the
+		// rule already had (from before the switch deleted bindings) stays
+		// savable, or every edit of the rule would be refused.
+		if sc.Configuration.LoadFromDisk != nil && *sc.Configuration.LoadFromDisk {
+			held, err := heldTargets(db, orgID, kind, storedName)
+			if err != nil {
+				return err
+			}
+			if !held[t.SidecarID+"/"+t.ListenerName] {
+				return fmt.Errorf("sidecar %q uses its config file; the control plane cannot "+
+					"manage its rules", sc.Name)
+			}
+		}
 		if t.ListenerName == "" {
 			return fmt.Errorf("a rule bound to sidecar %q names no listener; bind it to the "+
 				"listeners that must enforce it, because a listener's protocol decides which "+
@@ -445,4 +453,33 @@ func (r maskRule) validate() error {
 		return fmt.Errorf("sets keep_last to %d", *r.KeepLast)
 	}
 	return nil
+}
+
+// heldTargets is the set of targets a stored rule has today, keyed
+// sidecar/listener. Empty for a new rule.
+func heldTargets(db *gorm.DB, orgID string, kind SidecarRuleKind, storedName string) (map[string]bool, error) {
+	out := map[string]bool{}
+	if storedName == "" {
+		return out, nil
+	}
+	org, err := uuid.Parse(orgID)
+	if err != nil {
+		return nil, err
+	}
+	var rows []models.SidecarRuleTarget
+	switch kind {
+	case SidecarRuleGuardrail:
+		rows, err = models.ListGuardrailRuleTargets(db, org, storedName)
+	case SidecarRuleMask:
+		rows, err = models.ListDataMaskingRuleTargets(db, org, storedName)
+	case SidecarRuleAnalyzer:
+		rows, err = models.ListAnalyzerRuleTargets(db, org, storedName)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrSidecarRulesUnavailable, err)
+	}
+	for _, r := range rows {
+		out[r.SidecarID+"/"+r.ListenerName] = true
+	}
+	return out, nil
 }

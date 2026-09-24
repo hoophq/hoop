@@ -39,6 +39,21 @@ export function SidecarStatusBadge({ sidecar }) {
   )
 }
 
+// What an owner switch deleted and unbound, for the snackbar. Empty when it
+// touched no rule.
+function detachedSummary(detached) {
+  if (!detached) return ''
+  const names = (group) => [...(group?.guardrails ?? []), ...(group?.data_masking ?? []), ...(group?.analyzers ?? [])]
+  const deleted = names(detached.deleted)
+  const unbound = names(detached.unbound)
+  return [
+    deleted.length > 0 && `Deleted: ${deleted.join(', ')}.`,
+    unbound.length > 0 && `Removed from this sidecar: ${unbound.join(', ')}.`,
+  ]
+    .filter(Boolean)
+    .join(' ')
+}
+
 /**
  * The "Sidecar Details" card (Figma: wizard Overview and the details page).
  *
@@ -51,6 +66,7 @@ export function SidecarStatusBadge({ sidecar }) {
  */
 export default function SidecarDetails({ sidecar, editable, listenerActions }) {
   const setUsesConfigFile = useSidecarStore((s) => s.setUsesConfigFile)
+  const refreshSidecar = useSidecarStore((s) => s.refreshSidecar)
   const config = sidecar.configuration
   const configured = hasConfiguration(config)
   const fromFile = usesConfigFile(sidecar)
@@ -65,14 +81,19 @@ export default function SidecarDetails({ sidecar, editable, listenerActions }) {
   const ask = (next) => {
     setTarget(next)
     setAsking(true)
+    // The counts must be what the gateway holds now, not what this page
+    // loaded. A failed refresh leaves the loaded record on screen.
+    refreshSidecar(sidecar.id).catch(() => {})
   }
 
   const confirmSource = async () => {
     if (!asking) return
     setSaving(true)
     try {
-      await setUsesConfigFile(sidecar.id, target)
+      const updated = await setUsesConfigFile(sidecar.id, target)
       setAsking(false)
+      const summary = detachedSummary(updated.detached_rules)
+      if (summary) showSnackbar({ level: 'success', text: 'Configuration source changed.', description: summary })
     } catch (error) {
       setAsking(false)
       showSnackbar({
@@ -172,7 +193,8 @@ export default function SidecarDetails({ sidecar, editable, listenerActions }) {
 
               <Divider />
 
-              <ListenersTable sidecar={sidecar} {...listenerActions} />
+              {/* The file owns the listeners, so an edit here would change nothing it runs. */}
+              <ListenersTable sidecar={sidecar} {...(fromFile ? {} : listenerActions)} />
             </>
           ) : fromFile ? (
             // Nothing stored and nothing to store into: the plane sends this
@@ -193,6 +215,7 @@ export default function SidecarDetails({ sidecar, editable, listenerActions }) {
         opened={asking}
         toConfigFile={target}
         boundRules={sidecar.bound_rules ?? []}
+        supportsReimport={Boolean(sidecar.supports_config_reimport)}
         onClose={() => setAsking(false)}
         onConfirm={confirmSource}
         loading={saving}

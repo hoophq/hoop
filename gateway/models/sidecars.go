@@ -67,11 +67,15 @@ type Sidecar struct {
 	ServedRevision  *string    `gorm:"column:served_revision"`
 	AppliedRevision *string    `gorm:"column:applied_revision"`
 	LastOutcome     *string    `gorm:"column:last_outcome"`
+	// SupportsConfigReimport is what the last handshake reported: this
+	// sidecar pushes its file again on a 412.
+	SupportsConfigReimport bool `gorm:"column:supports_config_reimport"`
 }
 
 const sidecarColumns = `
 	s.id, s.org_id, s.name, s.created_by, s.created_at, s.configuration,
-	s.last_seen_at, s.reported_version, s.served_revision, s.applied_revision, s.last_outcome`
+	s.last_seen_at, s.reported_version, s.served_revision, s.applied_revision, s.last_outcome,
+	s.supports_config_reimport`
 
 func CreateSidecar(db *gorm.DB, s *Sidecar) error {
 	if s.ID == "" {
@@ -318,13 +322,14 @@ func DeleteSidecarByNameOrID(db *gorm.DB, orgID, nameOrID string) (string, error
 // Called from the handshake only. The configuration poll deliberately records
 // nothing, so a sidecar that polls between handshakes cannot overwrite what it
 // last reported about itself.
-func RecordSidecarHandshake(db *gorm.DB, sidecarID, version, appliedRevision, lastOutcome, servedRevision string) error {
+func RecordSidecarHandshake(db *gorm.DB, sidecarID, version, appliedRevision, lastOutcome, servedRevision string, supportsReimport bool) error {
 	return db.Exec(`
 	UPDATE private.sidecars SET
 		last_seen_at = NOW(),
 		reported_version = NULLIF(?, ''),
 		applied_revision = NULLIF(?, ''),
 		last_outcome = NULLIF(?, ''),
-		served_revision = NULLIF(?, '')
-	WHERE id = ?`, version, appliedRevision, lastOutcome, servedRevision, sidecarID).Error
+		served_revision = NULLIF(?, ''),
+		supports_config_reimport = ?
+	WHERE id = ?`, version, appliedRevision, lastOutcome, servedRevision, supportsReimport, sidecarID).Error
 }

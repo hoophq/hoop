@@ -82,6 +82,17 @@ export const useSidecarStore = create((set, get) => ({
     }
   },
 
+  // Re-read one sidecar in place, with no loading state, so a dialog that
+  // opens on it counts what the gateway holds now.
+  refreshSidecar: async (id) => {
+    const { data } = await sidecarsService.get(id)
+    set((state) => ({
+      sidecars: state.sidecars.map((s) => (s.id === data.id ? data : s)),
+      selected: state.selected?.id === data.id ? data : state.selected,
+    }))
+    return data
+  },
+
   // The selected record belongs to one page view, not to the app: a details
   // page that unmounts drops it. Keeping it would let the next visit to the
   // same URL paint a record minutes old — or one already deleted — before the
@@ -106,9 +117,10 @@ export const useSidecarStore = create((set, get) => ({
   // Flip which side owns this sidecar's configuration.
   //
   // One atomic PATCH merges only `load_from_disk`. To the config file, the
-  // gateway deletes the rules bound only to this sidecar; back to the control
-  // plane, it empties the stored document and the sidecar imports its file
-  // again.
+  // gateway deletes the rules imported from this sidecar that nothing else
+  // uses and unbinds the rest; `detached_rules` lists them. Back to the
+  // control plane, a sidecar that reports `supports_config_reimport` has its
+  // stored document emptied and imports its file again.
   setUsesConfigFile: async (id, usesConfigFile) => {
     const { data: updated } = await sidecarsService.patch(id, { load_from_disk: usesConfigFile })
     set((state) => ({

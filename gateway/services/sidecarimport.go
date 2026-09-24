@@ -286,7 +286,9 @@ func ImportSidecarRulesTx(tx *gorm.DB, orgID, sidecarID string, rules []Imported
 			if err := models.UpsertGuardRailRuleWithConnectionsTx(tx, row, nil, true); err != nil {
 				return fmt.Errorf("guardrail rule %q: %v", r.Name, err)
 			}
-			err = models.SetGuardrailRuleListenersTx(tx, org, r.Name, targets)
+			if err = models.MarkImportedRuleTx(tx, "private.guardrail_rules", org, r.Name, sidecarID); err == nil {
+				err = models.SetGuardrailRuleListenersTx(tx, org, r.Name, targets)
+			}
 		case SidecarRuleMask:
 			row := &models.DataMaskingRule{
 				ID: uuid.NewString(), OrgID: orgID, Name: r.Name, Description: description,
@@ -297,7 +299,9 @@ func ImportSidecarRulesTx(tx *gorm.DB, orgID, sidecarID string, rules []Imported
 			if err := models.CreateDataMaskingRuleTx(tx, row); err != nil {
 				return fmt.Errorf("data masking rule %q: %v", r.Name, err)
 			}
-			err = models.SetDataMaskingRuleListenersTx(tx, org, r.Name, targets)
+			if err = models.MarkImportedRuleTx(tx, "private.datamasking_rules", org, r.Name, sidecarID); err == nil {
+				err = models.SetDataMaskingRuleListenersTx(tx, org, r.Name, targets)
+			}
 		case SidecarRuleAnalyzer:
 			if r.Spec, err = resolveImportedApprovalRule(tx, org, r.Name, r.Spec); err != nil {
 				return err
@@ -317,7 +321,9 @@ func ImportSidecarRulesTx(tx *gorm.DB, orgID, sidecarID string, rules []Imported
 			if err := SyncAnalyzerApprovalRule(tx, org, r.Name, r.Spec); err != nil {
 				return err
 			}
-			err = models.SetAnalyzerRuleListenersTx(tx, org, r.Name, targets)
+			if err = models.MarkImportedRuleTx(tx, "private.ai_session_analyzer_rules", org, r.Name, sidecarID); err == nil {
+				err = models.SetAnalyzerRuleListenersTx(tx, org, r.Name, targets)
+			}
 		default:
 			return fmt.Errorf("unknown sidecar rule kind %q", r.Kind)
 		}
@@ -354,8 +360,9 @@ func resolveImportedApprovalRule(tx *gorm.DB, orgID uuid.UUID, ruleName string, 
 	return json.Marshal(block)
 }
 
-// DetachSidecarRulesTx unbinds every rule from one sidecar and deletes the
-// rules left with no target, with the approval rules the analyzer ones own.
+// DetachSidecarRulesTx unbinds every rule from one sidecar. It deletes the
+// rules that sidecar's file brought and nothing now targets, with the
+// approval rules the analyzer ones own; every other rule is only unbound.
 func DetachSidecarRulesTx(tx *gorm.DB, orgID, sidecarID string) (models.DetachedSidecarRules, error) {
 	org, err := uuid.Parse(orgID)
 	if err != nil {

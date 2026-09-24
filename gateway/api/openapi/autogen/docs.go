@@ -10346,7 +10346,7 @@ const docTemplate = `{
                 }
             },
             "put": {
-                "description": "Replace the configuration a sidecar serves. The sidecar picks it up on its next heartbeat.",
+                "description": "Replace the configuration a sidecar serves. The sidecar picks it up on its next heartbeat. A change of load_from_disk is refused: use PATCH.",
                 "consumes": [
                     "application/json"
                 ],
@@ -10445,7 +10445,7 @@ const docTemplate = `{
                 }
             },
             "patch": {
-                "description": "Merge a partial configuration into the document a sidecar serves: the keys sent are updated and the rest are left as stored. Unlike PUT it never replaces the whole document, so it cannot overwrite a configuration a sidecar imported meanwhile. load_from_disk true deletes the control-plane rules bound only to this sidecar and unbinds the rest. load_from_disk false clears the key and the stored document, so the sidecar imports its config file again.",
+                "description": "Merge a partial configuration into the document a sidecar serves: the keys sent are updated and the rest are left as stored. Unlike PUT it never replaces the whole document, so it cannot overwrite a configuration a sidecar imported meanwhile. load_from_disk true deletes the rules imported from this sidecar that nothing else uses and unbinds the rest; detached_rules lists them. load_from_disk false must be sent alone. It clears the stored document, so the sidecar imports its config file again; a sidecar without supports_config_reimport keeps its stored document.",
                 "consumes": [
                     "application/json"
                 ],
@@ -19729,6 +19729,14 @@ const docTemplate = `{
                     "description": "Subject of the admin who created it",
                     "type": "string"
                 },
+                "detached_rules": {
+                    "description": "DetachedRules names the rules an owner switch removed, on the PATCH\nthat switched. Deleted rules came from this sidecar's file; unbound\nrules stay for their other targets.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.SidecarDetachedRules"
+                        }
+                    ]
+                },
                 "id": {
                     "description": "Unique identifier",
                     "type": "string",
@@ -19760,6 +19768,10 @@ const docTemplate = `{
                     "type": "string",
                     "example": "8f14e45fceea167a5a36dedd4bea2543"
                 },
+                "supports_config_reimport": {
+                    "description": "SupportsConfigReimport reports whether this sidecar pushes its file\nagain on the switch back to the control plane. Without it the switch\nkeeps the stored document.",
+                    "type": "boolean"
+                },
                 "token": {
                     "description": "The generated token, sent in the hoop-sidecar-token header. This is the\nonly time it is shown; it is stored hashed and cannot be recovered.",
                     "type": "string",
@@ -19769,6 +19781,27 @@ const docTemplate = `{
                     "description": "Version reported at the last handshake. Empty until the sidecar calls.",
                     "type": "string",
                     "example": "1.0.0"
+                }
+            }
+        },
+        "openapi.SidecarDetachedRules": {
+            "type": "object",
+            "properties": {
+                "deleted": {
+                    "description": "Rules deleted: imported from this sidecar's file, with no target left.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.SidecarRuleNames"
+                        }
+                    ]
+                },
+                "unbound": {
+                    "description": "Rules only unbound from this sidecar.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.SidecarRuleNames"
+                        }
+                    ]
                 }
             }
         },
@@ -19787,6 +19820,10 @@ const docTemplate = `{
                     "description": "LastOutcome is what this sidecar concluded about that configuration:\napplied, restart, refused, unchanged or retry. It is the only way to\ntell a sidecar enforcing the current rules from one that refused them\nand kept the old ones while still handshaking on time.\n\nOptional, for the same reason as AppliedRevision.",
                     "type": "string",
                     "example": "applied"
+                },
+                "supports_config_reimport": {
+                    "description": "SupportsConfigReimport is set by a sidecar that pushes its config file\nagain when the handshake answers 412. Optional; an older sidecar omits\nit, and the switch back to the control plane then keeps its document.",
+                    "type": "boolean"
                 },
                 "version": {
                     "description": "Version of the sidecar binary",
@@ -19850,6 +19887,14 @@ const docTemplate = `{
                     "description": "Subject of the admin who created it",
                     "type": "string"
                 },
+                "detached_rules": {
+                    "description": "DetachedRules names the rules an owner switch removed, on the PATCH\nthat switched. Deleted rules came from this sidecar's file; unbound\nrules stay for their other targets.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.SidecarDetachedRules"
+                        }
+                    ]
+                },
                 "id": {
                     "description": "Unique identifier",
                     "type": "string",
@@ -19880,6 +19925,10 @@ const docTemplate = `{
                     "description": "ServedRevision names the configuration last answered to this sidecar,\nand AppliedRevision the one it says it is running. Equal means the\nsidecar is enforcing what the control plane holds.\n\nBoth are opaque: the control plane issues them and compares them to\nitself. Nothing parses them.",
                     "type": "string",
                     "example": "8f14e45fceea167a5a36dedd4bea2543"
+                },
+                "supports_config_reimport": {
+                    "description": "SupportsConfigReimport reports whether this sidecar pushes its file\nagain on the switch back to the control plane. Without it the switch\nkeeps the stored document.",
+                    "type": "boolean"
                 },
                 "version": {
                     "description": "Version reported at the last handshake. Empty until the sidecar calls.",
@@ -19950,6 +19999,29 @@ const docTemplate = `{
                     "description": "The rule's name",
                     "type": "string",
                     "example": "no-destructive-sql"
+                }
+            }
+        },
+        "openapi.SidecarRuleNames": {
+            "type": "object",
+            "properties": {
+                "analyzers": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "data_masking": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "guardrails": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },

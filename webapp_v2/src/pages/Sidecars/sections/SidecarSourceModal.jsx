@@ -19,9 +19,18 @@ function countRules(boundRules) {
 }
 
 // Which side owns a sidecar's configuration. To the configuration file, the
-// gateway deletes the control-plane rules bound only to this sidecar. Back to
-// the control plane, the sidecar imports its configuration file again.
-export default function SidecarSourceModal({ opened, toConfigFile, boundRules, onClose, onConfirm, loading }) {
+// gateway deletes the rules imported from this sidecar that nothing else uses,
+// and unbinds the rest. Back to the control plane, a sidecar that supports it
+// imports its configuration file again; an older one keeps the stored document.
+export default function SidecarSourceModal({
+  opened,
+  toConfigFile,
+  boundRules,
+  supportsReimport,
+  onClose,
+  onConfirm,
+  loading,
+}) {
   const counts = countRules(boundRules)
   return (
     <Modal
@@ -47,7 +56,8 @@ export default function SidecarSourceModal({ opened, toConfigFile, boundRules, o
                       ))}
                     </Stack>
                     <Text size="sm">
-                      A rule used only by this sidecar is deleted. A rule that other sidecars also use stays for them.
+                      A rule imported from this sidecar&apos;s configuration file, and used by nothing else, is deleted.
+                      Every other rule is only removed from this sidecar.
                     </Text>
                   </>
                 ) : (
@@ -62,13 +72,18 @@ export default function SidecarSourceModal({ opened, toConfigFile, boundRules, o
           </>
         ) : (
           <Stack gap={4}>
-            <Text size="sm">
-              The sidecar sends its configuration file to the control plane on its next check-in. Each rule in the file
-              becomes a rule in Guardrails, Data Masking and AI Session Analyzer.
-            </Text>
-            <Text size="sm" c="dimmed">
-              An older sidecar sends its file when it restarts.
-            </Text>
+            {supportsReimport ? (
+              <Text size="sm">
+                The configuration file replaces the stored document. The sidecar sends its file to the control plane on
+                its next check-in. Each rule in the file becomes a rule in Guardrails, Data Masking and AI Session
+                Analyzer.
+              </Text>
+            ) : (
+              <Text size="sm">
+                This sidecar is too old to send its file again. The control plane serves the stored document as it is
+                now. Upgrade the sidecar to import the file.
+              </Text>
+            )}
           </Stack>
         )}
         <Group justify="flex-end" mt="xs">
