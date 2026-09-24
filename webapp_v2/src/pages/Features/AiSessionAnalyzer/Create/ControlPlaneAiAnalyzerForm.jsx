@@ -225,7 +225,7 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
 
       <SectionRow
         title="Distribute to listeners"
-        description="One rule per listener, and the listener needs its analyzer switched on first."
+        description="One rule per listener. The sidecar needs its analyzer section (provider and model) in its config."
       >
         <SidecarTargetPicker value={targets} onChange={setTargets} />
       </SectionRow>

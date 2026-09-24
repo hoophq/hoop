@@ -255,10 +255,10 @@ func foldSidecarRules(cfg daemon.Config, guardrails, masking, analyzers []models
 // is visible anywhere: the document still validates and the lane still
 // reports an analyzer.
 //
-// A nil base cannot happen through the API -- ValidateSidecarRuleTargets
-// refuses a rule bound to a lane with the analyzer off -- and is handled
-// rather than dereferenced, because composition also runs over rows written
-// before that guard existed.
+// A nil base is a lane with no analyzer block of its own. The rule's block is
+// then the lane's, and the controls it leaves out inherit the sidecar's
+// top-level analyzer section. ValidateSidecarRuleTargets refuses the binding
+// when that section is missing.
 func mergeAnalyzerBlock(base *daemon.LaneAnalyzerConfig, rule daemon.LaneAnalyzerConfig) *daemon.LaneAnalyzerConfig {
 	if base == nil {
 		return &rule

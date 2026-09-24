@@ -656,6 +656,77 @@ func TestABoundAnalyzerRuleCarriesItsApprovalRuleIntoTheServedConfig(t *testing.
 	}
 }
 
+// A listener with no analyzer block of its own takes an analyzer rule when
+// the sidecar's config has the analyzer section: the rule's block becomes the
+// lane's. Without the section the sidecar would refuse the whole document, so
+// the save is refused instead.
+func TestAnAnalyzerRuleReachesALaneWithoutItsOwnBlock(t *testing.T) {
+	startTestDB(t)
+	orgID := uuid.MustParse(testOrgID)
+
+	newSidecar := func(name string, section *daemon.AnalyzerConfig) *models.Sidecar {
+		t.Helper()
+		sc := &models.Sidecar{
+			OrgID:     testOrgID,
+			Name:      name,
+			KeyHash:   models.HashAPIKey("hsc_" + name),
+			CreatedBy: "tests@hoop.dev",
+			Configuration: models.SidecarConfiguration{
+				Analyzer: section,
+				Listeners: []daemon.ListenerConfig{{
+					Name: "appdb", Protocol: "postgres", Listen: ":5432", Upstream: "db:5432",
+				}},
+			},
+		}
+		if err := models.CreateSidecar(models.DB, sc); err != nil {
+			t.Fatalf("seed sidecar %s: %v", name, err)
+		}
+		return sc
+	}
+	without := newSidecar("no-analyzer-section", nil)
+	with := newSidecar("analyzer-section", &daemon.AnalyzerConfig{Provider: "anthropic", Model: "claude-sonnet-4-5"})
+
+	const spec = `{"trigger":{"operations":["delete"]},"high":"block","max_calls":25}`
+	rule := &models.AISessionAnalyzerRules{
+		OrgID: orgID, Name: "block-deletes", ConnectionNames: pq.StringArray{},
+		SidecarSpec: json.RawMessage(spec),
+	}
+	if err := models.CreateAISessionAnalyzerRule(rule); err != nil {
+		t.Fatalf("seed analyzer rule: %v", err)
+	}
+
+	err := services.ValidateSidecarRuleTargets(models.DB, testOrgID, services.SidecarRuleAnalyzer,
+		rule.Name, "", json.RawMessage(spec), []models.SidecarRuleTarget{{SidecarID: without.ID, ListenerName: "appdb"}})
+	if err == nil || !strings.Contains(err.Error(), "has no analyzer section") {
+		t.Fatalf("err = %v; want the missing analyzer section named", err)
+	}
+
+	targets := []models.SidecarRuleTarget{{SidecarID: with.ID, ListenerName: "appdb"}}
+	err = services.ValidateSidecarRuleTargets(models.DB, testOrgID, services.SidecarRuleAnalyzer,
+		rule.Name, "", json.RawMessage(spec), targets)
+	if err != nil {
+		t.Fatalf("a lane without a block on a sidecar with the analyzer section was refused: %v", err)
+	}
+	if err := models.SetAnalyzerRuleListeners(models.DB, orgID, rule.Name, targets); err != nil {
+		t.Fatalf("bind: %v", err)
+	}
+
+	composed, err := services.ComposeSidecarConfiguration(models.DB, with)
+	if err != nil {
+		t.Fatalf("compose: %v", err)
+	}
+	block := composed.Listeners[0].Analyzer
+	if block == nil {
+		t.Fatal("the served listener has no analyzer block")
+	}
+	if block.HighRisk != "block" || block.MaxCalls != 25 {
+		t.Errorf("served block = high %q, max_calls %d; want the rule's", block.HighRisk, block.MaxCalls)
+	}
+	if block.Trigger == nil || len(block.Trigger.Operations) != 1 || block.Trigger.Operations[0] != "delete" {
+		t.Errorf("served trigger = %+v; want the rule's", block.Trigger)
+	}
+}
+
 // TestAFailedBindingLeavesTheRuleUnchanged pins the rule row and its bindings
 // to ONE transaction, which is how the three rule APIs now write them.
 //

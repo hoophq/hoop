@@ -98,8 +98,10 @@ when it carries: a guardrail output rule or a rule type outside
 `deny_words_list`/`pattern_match`; a `pattern_regex` Go's RE2 cannot compile;
 a custom entity type; `require_access_request` (the sidecar declares
 `require_review` and refuses it at startup — EVL-289); a listener with no
-analyzer block; a listener name that does not resolve to exactly one lane; or
-a second threshold on a sidecar that already has one. The guards re-run on
+analyzer block on a sidecar whose config has no analyzer section (amended:
+when the section is there, the rule's block becomes the lane's); a listener
+name that does not resolve to exactly one lane; or a second threshold on a
+sidecar that already has one. The guards re-run on
 every write while a binding exists, because editing a compliant rule into a
 non-compliant one would otherwise walk straight past them.
 
