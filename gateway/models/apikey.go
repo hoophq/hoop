@@ -70,13 +70,22 @@ func ListAPIKeys(orgID string) ([]APIKey, error) {
 }
 
 func GetAPIKeyByNameOrID(orgID, nameOrID string) (*APIKey, error) {
+	return getAPIKeyByNameOrID(DB, orgID, nameOrID)
+}
+
+// GetAPIKeyByID loads an API key using the supplied database handle.
+func GetAPIKeyByID(db *gorm.DB, orgID, id string) (*APIKey, error) {
+	return getAPIKeyByNameOrID(db, orgID, id)
+}
+
+func getAPIKeyByNameOrID(db *gorm.DB, orgID, nameOrID string) (*APIKey, error) {
 	var item APIKey
 	identifierClause := "ak.name = ?"
 	if _, err := uuid.Parse(nameOrID); err == nil {
 		identifierClause = "ak.id = ?"
 	}
 
-	err := DB.Raw(`
+	err := db.Raw(`
 	SELECT ak.id, ak.org_id, ak.name, ak.masked_key, ak.status,
 	ak.created_by, ak.deactivated_by, ak.created_at, ak.deactivated_at, ak.last_used_at,
 	COALESCE((
