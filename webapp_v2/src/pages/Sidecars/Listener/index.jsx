@@ -131,5 +131,6 @@ export default function SidecarListenerPage() {
     )
   }
 
-  return <Editor sidecar={sidecar} index={index} onDone={back} />
+  // Keyed by the route: a link to another listener must not keep this form.
+  return <Editor key={name ?? 'new'} sidecar={sidecar} index={index} onDone={back} />
 }
