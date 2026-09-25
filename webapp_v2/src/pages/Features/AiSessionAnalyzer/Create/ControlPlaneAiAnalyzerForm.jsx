@@ -113,7 +113,7 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
       .then(({ data }) => {
         if (!cancelled) setGroupOptions(Array.isArray(data) ? data : [])
       })
-      // The field still takes a typed group name without the list.
+      // Without the list the field still shows the groups already stored.
       .catch(() => {})
     return () => {
       cancelled = true
@@ -139,6 +139,12 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
     form.trigger_resources.length === 0
 
   const canSubmit = name.trim() !== '' && !submitting
+  // Every group of the org, plus the stored ones, so a group nobody holds
+  // any more still shows and can be removed.
+  const reviewerOptions = useMemo(
+    () => [...new Set([...groupOptions, ...reviewers])].sort(),
+    [groupOptions, reviewers],
+  )
   // Reviewers belong to the approval rule this page keeps beside the analyzer
   // rule. A hold that names another rule (an imported file's) keeps that
   // rule's reviewers, so the field is not shown for it.
@@ -299,11 +305,13 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
             />
           ))}
           {ownHold && (
-            <TagsInput
+            <MultiSelect
               label="Reviewers"
               description="Groups whose members may approve. Empty leaves it to the administrators."
-              placeholder="Select or type a group"
-              data={groupOptions}
+              placeholder="Select groups"
+              searchable
+              nothingFoundMessage="No user groups defined yet."
+              data={reviewerOptions}
               value={reviewers}
               onChange={setReviewers}
             />
