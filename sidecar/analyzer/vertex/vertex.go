@@ -1,5 +1,5 @@
-// Package vertex implements Claude and Gemini on Google Vertex AI as an
-// analyzer provider.
+// Package vertex implements Claude, Gemini and the Model Garden open models
+// on Google Vertex AI as an analyzer provider.
 //
 // It is a separate module because it is the one provider that needs a
 // dependency. Anthropic, OpenAI and Gemini authenticate with a static string
@@ -12,9 +12,12 @@
 // Claude is the Anthropic Messages API with three transport changes: the
 // model moves into the URL, the API version moves into the body, and auth
 // becomes a bearer. Gemini is the generateContent API the analyzer/gemini
-// package speaks, with the same bearer in place of an API key. The request
-// and response encoders are imported from analyzer/anthropic and
-// analyzer/gemini rather than copied.
+// package speaks, with the same bearer in place of an API key. The Model
+// Garden open models (Llama, DeepSeek, Qwen, gpt-oss) use the Chat
+// Completions API the analyzer/openai package speaks, on Vertex's
+// OpenAI-compatible endpoint. This package imports the request and response
+// encoders from analyzer/anthropic, analyzer/gemini and analyzer/openai and
+// keeps no copy of them.
 //
 // # Credentials
 //
@@ -38,6 +41,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/analyzer/anthropic"
 	"github.com/hoophq/hoop/sidecar/analyzer/gemini"
+	"github.com/hoophq/hoop/sidecar/analyzer/openai"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 )
@@ -66,6 +70,17 @@ const (
 
 	// PublisherGoogle serves Gemini through generateContent.
 	PublisherGoogle = "google"
+
+	// PublisherOpenAPI serves the Model Garden open models through Vertex's
+	// OpenAI-compatible Chat Completions endpoint. All publishers share
+	// that endpoint, so the model name carries the real publisher:
+	// `meta/llama-4-maverick-17b-128e-instruct-maas`. The value matches the
+	// `endpoints/openapi` URL segment and has no relation to OpenAI.
+	//
+	// The classifier forces a tool call, so a model without function
+	// calling fails each statement with the same "called no risk tool"
+	// error the other providers return.
+	PublisherOpenAPI = "openapi"
 )
 
 func init() {
@@ -87,12 +102,20 @@ func init() {
 		}
 		switch publisher {
 		case PublisherAnthropic, PublisherGoogle:
+		case PublisherOpenAPI:
+			// Vertex routes the shared endpoint on the prefix. This check
+			// reports a bare name at config load, where the operator is
+			// watching, instead of as an API error on the first statement.
+			if !strings.Contains(opts.Model, "/") {
+				return nil, fmt.Errorf("analyzer/vertex: publisher %q needs the model as <publisher>/<model>, e.g. meta/llama-4-maverick-17b-128e-instruct-maas; got %q",
+					PublisherOpenAPI, opts.Model)
+			}
 		default:
 			// Refused at config load, where the operator is watching. A
 			// fallback would send a Gemini model to the anthropic path
 			// and the resulting 404 reads like a typo in the model name.
-			return nil, fmt.Errorf("analyzer/vertex: unknown publisher %q (want %q or %q)",
-				publisher, PublisherAnthropic, PublisherGoogle)
+			return nil, fmt.Errorf("analyzer/vertex: unknown publisher %q (want %q, %q or %q)",
+				publisher, PublisherAnthropic, PublisherGoogle, PublisherOpenAPI)
 		}
 		maxTokens := opts.MaxOutputTokens
 		if maxTokens <= 0 {
@@ -219,7 +242,9 @@ func (p *Provider) Verify(ctx context.Context) error {
 // Gemini is served by generateContent, Google's own method. The publisher
 // segment of the path matches the config key by design: Google names its
 // model catalog by publisher, and an operator reading a 404 in the Cloud
-// Console log sees the same word they wrote in the config.
+// Console log sees the same word they wrote in the config. The open models
+// share one Chat Completions endpoint with no model in its path. The body
+// carries the model, and `openapi` is again the word in the path.
 //
 // The "global" region is spelled differently from a regional one: it uses the
 // unprefixed host. Getting this wrong yields a DNS failure rather than an API
@@ -233,13 +258,15 @@ func (p *Provider) url() string {
 	if p.region == "global" {
 		host = "aiplatform.googleapis.com"
 	}
-	method := "rawPredict"
-	if p.publisher == PublisherGoogle {
-		method = "generateContent"
+	base := fmt.Sprintf("https://%s/v1/projects/%s/locations/%s", host, p.project, p.region)
+	switch p.publisher {
+	case PublisherOpenAPI:
+		return base + "/endpoints/openapi/chat/completions"
+	case PublisherGoogle:
+		return base + "/publishers/google/models/" + p.model + ":generateContent"
+	default:
+		return base + "/publishers/anthropic/models/" + p.model + ":rawPredict"
 	}
-	return fmt.Sprintf(
-		"https://%s/v1/projects/%s/locations/%s/publishers/%s/models/%s:%s",
-		host, p.project, p.region, p.publisher, p.model, method)
 }
 
 // Classify implements analyzer.Provider.
@@ -276,20 +303,29 @@ func (p *Provider) Classify(ctx context.Context, systemPrompt, content string) (
 	// Each publisher returns the document its own package parses,
 	// including the bounded-drain rule that keeps a provider's error body
 	// out of the relay's logs.
-	if p.publisher == PublisherGoogle {
+	switch p.publisher {
+	case PublisherGoogle:
 		return gemini.ParseResponse("analyzer/"+Name, resp)
+	case PublisherOpenAPI:
+		return openai.ParseResponse("analyzer/"+Name, resp)
+	default:
+		return anthropic.ParseResponse("analyzer/"+Name, resp)
 	}
-	return anthropic.ParseResponse("analyzer/"+Name, resp)
 }
 
 // encode renders the request body for the configured publisher.
 //
 // forVertex=true on the Anthropic encoder moves the model out of the body and
 // the API version into it. The Gemini encoder never carries the model: every
-// Gemini URL names it in the path.
+// Gemini URL names it in the path. forVertex=true on the OpenAI encoder
+// spells the output limit max_tokens, the only name Vertex documents.
 func (p *Provider) encode(systemPrompt, content string) ([]byte, error) {
-	if p.publisher == PublisherGoogle {
+	switch p.publisher {
+	case PublisherGoogle:
 		return json.Marshal(gemini.BuildRequest(p.maxTokens, systemPrompt, content))
+	case PublisherOpenAPI:
+		return json.Marshal(openai.BuildRequest(p.model, p.maxTokens, systemPrompt, content, true))
+	default:
+		return json.Marshal(anthropic.BuildRequest(p.model, p.maxTokens, systemPrompt, content, true))
 	}
-	return json.Marshal(anthropic.BuildRequest(p.model, p.maxTokens, systemPrompt, content, true))
 }
