@@ -1,11 +1,8 @@
 package slack
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"slices"
-	"time"
 
 	"github.com/aws/smithy-go/ptr"
 	"github.com/hoophq/hoop/common/log"
@@ -15,8 +12,6 @@ import (
 	slackservice "github.com/hoophq/hoop/gateway/slack"
 	"github.com/hoophq/hoop/gateway/storagev2"
 )
-
-const slackAPITimeout = 10 * time.Second
 
 type event struct {
 	ss    *slackservice.SlackService
@@ -50,14 +45,12 @@ func (p *slackPlugin) processEventResponse(ev *event) {
 }
 
 // resolveApprover returns the reviewer context, or nil after the Slack user
-// was told why the click was refused. In the control plane the Slack user
-// group mapped to the clicked review group decides; a group with no mapping
-// falls back to the hoop user_groups check the gateway uses.
+// was told why the click was refused. The gateway names the approver by the
+// Slack ID a hoop user linked to their account; the control plane also matches
+// the email Slack holds for them (resolveControlPlaneApprover).
 func (p *slackPlugin) resolveApprover(ev *event) *storagev2.Context {
 	if appconfig.Get().IsControlPlane() {
-		if ctx, decided := p.resolveSlackGroupApprover(ev); decided {
-			return ctx
-		}
+		return p.resolveControlPlaneApprover(ev)
 	}
 	return p.resolveHoopApprover(ev)
 }
@@ -115,74 +108,6 @@ func (p *slackPlugin) resolveHoopApprover(ev *event) *storagev2.Context {
 	userContext.UserEmail = slackApprover.Email
 	userContext.SlackID = slackApprover.SlackID
 	return userContext
-}
-
-// resolveSlackGroupApprover authorizes the click by Slack user group
-// membership. decided=false means the caller must fall back to the hoop
-// user_groups check.
-func (p *slackPlugin) resolveSlackGroupApprover(ev *event) (userContext *storagev2.Context, decided bool) {
-	sid := ev.msg.SessionID
-	slackApprover, ok := p.approverBySlackID(ev)
-	if !ok {
-		return nil, true
-	}
-
-	rev, err := models.GetReviewByIdOrSid(ev.orgID, ev.msg.ID)
-	switch {
-	case errors.Is(err, models.ErrNotFound):
-		// let the fallback path and DoReview report it
-		log.With("sid", sid).Infof("slack group check skipped, review %s not found", ev.msg.ID)
-		return nil, false
-	case err != nil:
-		log.With("sid", sid).Errorf("failed loading review %s, err=%v", ev.msg.ID, err)
-		_ = ev.ss.PostEphemeralMessage(ev.msg, "failed obtaining review information, try again")
-		return nil, true
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), slackAPITimeout)
-	defer cancel()
-	slackGroups, err := ev.ss.ListUserGroups(ctx)
-	if err != nil {
-		log.With("sid", sid).Warnf("failed listing slack user groups, falling back to hoop user groups, reason=%v", err)
-		return nil, false
-	}
-
-	hoopGroups := ParseGroups(rev.ReviewGroups)
-	mapping := slackservice.MapUserGroups(hoopGroups, slackGroups)
-	handles := make(map[string]string, len(mapping))
-	for hg, sg := range mapping {
-		handles[hg] = "@" + sg.Handle
-	}
-	log.With("sid", sid).Infof("slack group mapping for review %s: %v", ev.msg.ID, handles)
-
-	clicked, ok := mapping[ev.msg.GroupName]
-	if !ok {
-		log.With("sid", sid).Infof("group %q has no slack user group, falling back to hoop user groups", ev.msg.GroupName)
-		return nil, false
-	}
-	if !slices.Contains(clicked.Users, ev.msg.SlackID) {
-		log.With("sid", sid).Infof("approver %s is not a member of slack group @%s (group %q)",
-			ev.msg.SlackID, clicked.Handle, ev.msg.GroupName)
-		_ = ev.ss.PostEphemeralMessage(ev.msg, "You do not belong to the Slack group @%s mapped to group %q.",
-			clicked.Handle, ev.msg.GroupName)
-		return nil, true
-	}
-
-	var userGroups []string
-	for _, g := range hoopGroups {
-		if sg, ok := mapping[g]; ok && slices.Contains(sg.Users, ev.msg.SlackID) {
-			userGroups = append(userGroups, g)
-		}
-	}
-
-	log.With("sid", sid).Infof("found a valid slack group approver user=%s, slackid=%s, groups=%v",
-		slackApprover.Email, ev.msg.SlackID, userGroups)
-	userContext = storagev2.NewContext(slackApprover.Subject, ev.orgID)
-	userContext.UserGroups = userGroups
-	userContext.UserName = slackApprover.Name
-	userContext.UserEmail = slackApprover.Email
-	userContext.SlackID = slackApprover.SlackID
-	return userContext, true
 }
 
 func (p *slackPlugin) performReview(ev *event, ctx *storagev2.Context, status models.ReviewStatusType) {

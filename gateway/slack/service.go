@@ -2,6 +2,7 @@ package slack
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -18,6 +19,8 @@ import (
 type SlackService struct {
 	apiClient     *slack.Client
 	socketClient  *socketmode.Client
+	teamID        string
+	enterpriseID  string
 	slackChannel  string
 	slackBotToken string
 	instanceID    string
@@ -89,7 +92,7 @@ func New(slackBotToken, slackAppToken, slackChannel, instanceID, apiURL string) 
 		// slack.OptionLog(log.New(os.Stdout, "api: ", log.Lshortfile|log.LstdFlags)),
 		slack.OptionAppLevelToken(slackAppToken),
 	)
-	_, err := apiClient.AuthTest()
+	auth, err := apiClient.AuthTest()
 	if err != nil {
 		return nil, fmt.Errorf("fail to validate slack bot token authentication, err=%v", err)
 	}
@@ -102,6 +105,8 @@ func New(slackBotToken, slackAppToken, slackChannel, instanceID, apiURL string) 
 	return &SlackService{
 		apiClient:          apiClient,
 		socketClient:       socketClient,
+		teamID:             auth.TeamID,
+		enterpriseID:       auth.EnterpriseID,
 		slackChannel:       slackChannel,
 		slackBotToken:      slackBotToken,
 		instanceID:         instanceID,
@@ -114,6 +119,22 @@ func New(slackBotToken, slackAppToken, slackChannel, instanceID, apiURL string) 
 
 }
 
+// NewWithAPIClient builds a service that calls the Web API through apiClient
+// and opens no socket connection, so it receives no events. Tests use it to
+// point the service at a fake Slack API.
+func NewWithAPIClient(apiClient *slack.Client, teamID, slackChannel string) *SlackService {
+	ctx, cancelFn := context.WithCancel(context.Background())
+	return &SlackService{
+		apiClient:          apiClient,
+		teamID:             teamID,
+		slackChannel:       slackChannel,
+		ctx:                ctx,
+		cancelFn:           cancelFn,
+		pendingRejectItems: make(map[string]slack.InteractionCallback),
+		sentReviewItems:    make(map[string][]sentReviewMessage),
+	}
+}
+
 func (s *SlackService) Close()           { s.cancelFn() }
 func (s *SlackService) BotToken() string { return s.slackBotToken }
 
@@ -122,48 +143,54 @@ func (s *SlackService) BotToken() string { return s.slackBotToken }
 // destination is posting into nothing.
 func (s *SlackService) DefaultChannel() string { return s.slackChannel }
 
-// UserGroup is a Slack workspace user group (usergroups.list).
-type UserGroup struct {
-	ID          string
-	Handle      string
-	Name        string
-	Description string
-	Users       []string // member Slack user IDs
+// TeamID is the workspace the bot token belongs to, from the auth.test call
+// New makes. EnterpriseID is its Enterprise Grid org, empty outside a grid.
+func (s *SlackService) TeamID() string       { return s.teamID }
+func (s *SlackService) EnterpriseID() string { return s.enterpriseID }
+
+// IsMissingScope reports whether Slack refused a call because the app lacks
+// the scope it needs. An app installed before hoop asked for users:read gets
+// this until an admin reinstalls it.
+func IsMissingScope(err error) bool {
+	var slackErr slack.SlackErrorResponse
+	return errors.As(err, &slackErr) && slackErr.Err == "missing_scope"
 }
 
-// ListUserGroups lists the workspace user groups visible to the bot token,
-// members included. The Slack app needs the usergroups:read scope; without
-// it Slack answers "missing_scope", which is returned as-is.
-func (s *SlackService) ListUserGroups(ctx context.Context) ([]UserGroup, error) {
-	groups, err := s.apiClient.GetUserGroupsContext(ctx, slack.GetUserGroupsOptionIncludeUsers(true))
+// SlackUser is what an approval needs to know about the Slack user who
+// clicked: who they are by email, and whether Slack still vouches for them.
+type SlackUser struct {
+	ID                string
+	TeamID            string
+	EnterpriseID      string
+	Email             string
+	Deleted           bool
+	IsBot             bool
+	IsRestricted      bool
+	IsUltraRestricted bool
+	IsStranger        bool
+	IsEmailConfirmed  bool
+}
+
+// GetUserInfo reads one Slack user (users.info). The Slack app needs the
+// users:read scope, and users:read.email for the email: without the second
+// one Slack answers the user with an empty email rather than an error.
+func (s *SlackService) GetUserInfo(ctx context.Context, slackID string) (*SlackUser, error) {
+	u, err := s.apiClient.GetUserInfoContext(ctx, slackID)
 	if err != nil {
-		return nil, fmt.Errorf("failed listing slack user groups, err=%w", err)
+		return nil, fmt.Errorf("failed obtaining slack user %s, err=%w", slackID, err)
 	}
-	out := make([]UserGroup, len(groups))
-	for i, g := range groups {
-		out[i] = UserGroup{ID: g.ID, Handle: g.Handle, Name: g.Name, Description: g.Description, Users: g.Users}
-	}
-	return out, nil
-}
-
-// MapUserGroups pairs each hoop group with the Slack user group whose handle
-// or name equals it, case-insensitive. A handle match wins over a name match.
-// Hoop groups with no match are absent from the result.
-func MapUserGroups(hoopGroups []string, slackGroups []UserGroup) map[string]UserGroup {
-	out := make(map[string]UserGroup, len(hoopGroups))
-	for _, hg := range hoopGroups {
-		if _, ok := out[hg]; ok {
-			continue
-		}
-		idx := slices.IndexFunc(slackGroups, func(g UserGroup) bool { return strings.EqualFold(g.Handle, hg) })
-		if idx < 0 {
-			idx = slices.IndexFunc(slackGroups, func(g UserGroup) bool { return strings.EqualFold(g.Name, hg) })
-		}
-		if idx >= 0 {
-			out[hg] = slackGroups[idx]
-		}
-	}
-	return out
+	return &SlackUser{
+		ID:                u.ID,
+		TeamID:            u.TeamID,
+		EnterpriseID:      u.Enterprise.EnterpriseID,
+		Email:             u.Profile.Email,
+		Deleted:           u.Deleted,
+		IsBot:             u.IsBot,
+		IsRestricted:      u.IsRestricted,
+		IsUltraRestricted: u.IsUltraRestricted,
+		IsStranger:        u.IsStranger,
+		IsEmailConfirmed:  u.IsEmailConfirmed,
+	}, nil
 }
 
 type MessageReviewRequest struct {

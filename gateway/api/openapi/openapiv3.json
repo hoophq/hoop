@@ -503,6 +503,16 @@
             "example": "block-dangerous-queries",
             "type": "string"
           },
+          "reviewers_groups": {
+            "description": "The groups whose members may release a statement this rule holds.\nPresent only in a control plane, while the rule holds.",
+            "example": [
+              "dba-leads"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "risk_evaluation": {
             "allOf": [
               {
@@ -563,6 +573,16 @@
             "description": "Unique name for the rule",
             "example": "block-dangerous-queries",
             "type": "string"
+          },
+          "reviewers_groups": {
+            "description": "ReviewersGroups are the groups whose members may release a statement\nthis rule holds for approval. Absent keeps the groups already set; with\nnone set the admin group reviews.\n\nA control plane field, read only while sidecar_spec holds a statement.",
+            "example": [
+              "dba-leads"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "risk_evaluation": {
             "allOf": [

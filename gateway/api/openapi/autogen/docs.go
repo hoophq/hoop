@@ -11821,6 +11821,16 @@ const docTemplate = `{
                     "type": "string",
                     "example": "block-dangerous-queries"
                 },
+                "reviewers_groups": {
+                    "description": "The groups whose members may release a statement this rule holds.\nPresent only in a control plane, while the rule holds.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "dba-leads"
+                    ]
+                },
                 "risk_evaluation": {
                     "description": "Risk evaluation actions per level",
                     "allOf": [
@@ -11886,6 +11896,16 @@ const docTemplate = `{
                     "description": "Unique name for the rule",
                     "type": "string",
                     "example": "block-dangerous-queries"
+                },
+                "reviewers_groups": {
+                    "description": "ReviewersGroups are the groups whose members may release a statement\nthis rule holds for approval. Absent keeps the groups already set; with\nnone set the admin group reviews.\n\nA control plane field, read only while sidecar_spec holds a statement.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "dba-leads"
+                    ]
                 },
                 "risk_evaluation": {
                     "description": "Risk evaluation actions per level",
