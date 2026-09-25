@@ -225,6 +225,9 @@ func UpdateSlackMessage(rev *models.Review) error {
 		IsApproved:  rev.Status == models.ReviewStatusApproved,
 		IsRejected:  rev.Status == models.ReviewStatusRejected,
 		TotalGroups: len(rev.ReviewGroups),
+		// Shown on the message, so a reviewer in Slack sees why, whether the
+		// rejection came from Slack, the web app or the API.
+		RejectionReason: ptr.ToString(rev.RejectionReason),
 	}
 	for _, rg := range rev.ReviewGroups {
 		if rg.Status == models.ReviewStatusPending {

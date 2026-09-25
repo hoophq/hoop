@@ -538,6 +538,8 @@ type UpdateReviewMessageRequest struct {
 	IsRejected     bool
 	ReviewedGroups []ReviewedGroup
 	TotalGroups    int
+	// RejectionReason is what the reviewer typed when rejecting; empty for none.
+	RejectionReason string
 }
 
 // HasTrackedReviewMessages reports whether the review's posted messages are
@@ -668,13 +670,27 @@ func rebuildReviewBlocks(m *sentReviewMessage, req *UpdateReviewMessageRequest, 
 				Type: slack.MarkdownType,
 				Text: text,
 			}, nil, nil))
-	case !req.IsRejected:
+	case req.IsRejected:
+		if req.RejectionReason != "" {
+			blocks = append(blocks, slack.NewDividerBlock(), rejectionReasonSection(req.RejectionReason))
+		}
+	default:
 		blocks = append(blocks, slack.NewContextBlock("",
 			slack.NewTextBlockObject(slack.MarkdownType,
 				fmt.Sprintf("_Approved by %d of %d required group(s)_", len(req.ReviewedGroups), req.TotalGroups), false, false),
 		))
 	}
 	return blocks
+}
+
+// rejectionReasonSection shows the reason a reviewer gave, quoted and escaped:
+// it is text a person typed, so it must not render as Slack markup.
+func rejectionReasonSection(reason string) *slack.SectionBlock {
+	quoted := "> " + strings.ReplaceAll(escapeSlackText(reason), "\n", "\n> ")
+	return slack.NewSectionBlock(&slack.TextBlockObject{
+		Type: slack.MarkdownType,
+		Text: "*Rejection reason:*\n" + quoted,
+	}, nil, nil)
 }
 
 // reviewGroupFromBlockID extracts the group name from an action block id in
@@ -717,6 +733,8 @@ func (s *SlackService) UpdateMessage(msg *MessageReviewResponse, isApproved bool
 				Type: slack.MarkdownType,
 				Text: text,
 			}, nil, nil))
+	} else if msg.RejectionReason != "" {
+		blocks = append(blocks, slack.NewDividerBlock(), rejectionReasonSection(msg.RejectionReason))
 	}
 
 	_, _, err := s.apiClient.PostMessage(msg.item.Channel.ID,

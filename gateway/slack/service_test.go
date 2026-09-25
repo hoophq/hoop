@@ -161,6 +161,19 @@ func TestRebuildReviewBlocks(t *testing.T) {
 		t.Errorf("rejected: got %d blocks, want 3", len(blocks))
 	}
 
+	// a rejection with a reason shows it, quoted and escaped
+	req.RejectionReason = "not in prod <@U1>"
+	blocks = rebuildReviewBlocks(m, req, reviewed)
+	if len(blocks) != 5 {
+		t.Fatalf("rejected with reason: got %d blocks, want 5", len(blocks))
+	}
+	reason, ok := blocks[4].(*slack.SectionBlock)
+	if !ok || !strings.Contains(reason.Text.Text, "Rejection reason") ||
+		!strings.Contains(reason.Text.Text, "> not in prod &lt;@U1&gt;") {
+		t.Errorf("rejected with reason: unexpected block %T %+v", blocks[4], reason)
+	}
+	req.RejectionReason = ""
+
 	// synthetic reviewed group (admin/owner rejection, forced approval) matches
 	// no action block: its outcome must still be rendered, never a silent drop
 	synthetic := ReviewedGroup{Name: "owner-veto", Status: "REJECTED", ReviewerEmail: "b@b.com", ReviewedAt: reviewedAt}
