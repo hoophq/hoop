@@ -218,10 +218,19 @@ func TestUpdateReviewMessageTracking(t *testing.T) {
 		t.Fatalf("consumed entry must not be rewritten again, calls=%d err=%v", updateCalls, err)
 	}
 
+	// a message a post loop sends after the review settled is not tracked:
+	// the caller gets the terminal state to rewrite it with
+	if final := s.trackSentReviewMessage("rev-1", sentReviewMessage{channelID: "C3", timestamp: "3.0"}); final == nil || !final.IsApproved {
+		t.Fatalf("a post after settlement must get the terminal state, got %+v", final)
+	}
+	if _, ok := s.sentReviewItems["rev-1"]; ok {
+		t.Errorf("a settled review must not be tracked again")
+	}
+
 	// eviction drops entries older than the retention window on new sends
 	stale := time.Now().UTC().Add(-sentReviewRetention - time.Hour)
 	s.sentReviewItems["rev-old"] = []sentReviewMessage{{channelID: "C1", timestamp: "1.0", sentAt: stale}}
-	s.trackSentReviewMessages("rev-new", []sentReviewMessage{{channelID: "C2", timestamp: "2.0", sentAt: time.Now().UTC()}})
+	s.trackSentReviewMessage("rev-new", sentReviewMessage{channelID: "C2", timestamp: "2.0", sentAt: time.Now().UTC()})
 	if _, ok := s.sentReviewItems["rev-old"]; ok {
 		t.Errorf("expired entry survived eviction")
 	}

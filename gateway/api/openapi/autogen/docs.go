@@ -10609,7 +10609,7 @@ const docTemplate = `{
                 }
             },
             "put": {
-                "description": "Replace where the reviews of each listener of the sidecar are posted in Slack. A listener left out has no channels and uses the org's default channel. Control plane only.",
+                "description": "Set where the reviews of the listeners in the body are posted in Slack. A listener with no channels uses the fallback channel; a listener left out keeps its channels. Control plane only.",
                 "consumes": [
                     "application/json"
                 ],

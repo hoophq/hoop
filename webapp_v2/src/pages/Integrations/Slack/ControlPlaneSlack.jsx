@@ -4,9 +4,9 @@ import PageLoader from '@/components/PageLoader'
 import Tabs from '@/components/Tabs'
 import { useMinDelay } from '@/hooks/useMinDelay'
 import { docsUrl } from '@/utils/docsUrl'
-import { usePlugin } from '../usePlugin'
-import SidecarSlackChannelsTab from './SidecarSlackChannelsTab'
-import SlackConfigurationsTab from './components/SlackConfigurationsTab'
+import { usePlugin } from '@/pages/Integrations/usePlugin'
+import SidecarSlackChannelsTab from '@/pages/Integrations/Slack/SidecarSlackChannelsTab'
+import SlackConfigurationsTab from '@/pages/Integrations/Slack/components/SlackConfigurationsTab'
 
 // The control plane's Slack page, sibling of GatewaySlack.jsx. Reviews go to
 // each listener's channels; the Configurations channel is the fallback for a

@@ -95,16 +95,18 @@ function SidecarSlackChannelsTab() {
 
   async function handleSave(sidecar, listener, key) {
     if (savingKey !== null) return
-    const channels = { ...(saved[sidecar.id] ?? {}), [listener]: drafts[key] ?? [] }
+    // Only this listener: the server leaves the others as they are, so a
+    // save never undoes another admin's edit of a different row.
+    const submitted = drafts[key] ?? []
     setSavingKey(key)
     try {
       const { data } = await sidecarsService.updateSlackChannels(sidecar.id, {
-        listeners: Object.entries(channels)
-          .filter(([, list]) => list.length > 0)
-          .map(([name, list]) => ({ name, channels: list })),
+        listeners: [{ name: listener, channels: submitted }],
       })
       setSaved((prev) => ({ ...prev, [sidecar.id]: toMap(data) }))
+      // An edit typed while the save ran is newer than what was saved: keep it.
       setDrafts((prev) => {
+        if (!sameChannels(prev[key] ?? [], submitted)) return prev
         const next = { ...prev }
         delete next[key]
         return next

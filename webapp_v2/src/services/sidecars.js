@@ -27,8 +27,9 @@ import api from './api'
 // of `listeners`, and writes all of it back. With no ETag, two admins editing
 // at once means the second write wins silently.
 //
-// `slackChannels` and `updateSlackChannels` read and replace where the reviews
-// of each listener are posted: `{ listeners: [{ name, channels }] }`.
+// `slackChannels` reads where the reviews of each listener are posted:
+// `{ listeners: [{ name, channels }] }`. `updateSlackChannels` sets only the
+// listeners in the body; the others keep their channels.
 export const sidecarsService = {
   list: () => api.get('/sidecars'),
   get: (nameOrId) => api.get(`/sidecars/${encodeURIComponent(nameOrId)}`),

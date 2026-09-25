@@ -39,6 +39,16 @@ type SlackService struct {
 	// removed on terminal updates and expire after sentReviewRetention.
 	sentReviewMu    sync.Mutex
 	sentReviewItems map[string][]sentReviewMessage
+	// settledReviews keeps the terminal rewrite of a review, so a message a
+	// post loop still sends after the review settled is rewritten, and the
+	// loop posts no more active buttons. Guarded by sentReviewMu.
+	settledReviews map[string]settledReview
+}
+
+// settledReview is the terminal state UpdateReviewMessage applied.
+type settledReview struct {
+	req *UpdateReviewMessageRequest
+	at  time.Time
 }
 
 // instances tracks the running SlackService per organization. Registered by
@@ -421,26 +431,41 @@ func (s *SlackService) PostMessageReview(msg *MessageReviewRequest) ReviewPostRe
 	slackChannels := reviewChannels(msg, s.slackChannel)
 
 	var errs []string
-	var sent []sentReviewMessage
-	for _, slackChannel := range slackChannels {
+	posted := 0
+	for i, slackChannel := range slackChannels {
+		// A review settled while the loop slept takes no more buttons.
+		if s.settledReview(msg.ID) != nil {
+			errs = append(errs, fmt.Sprintf("review settled, %d channels skipped", len(slackChannels)-i))
+			break
+		}
 		channelID, timestamp, err := s.apiClient.PostMessage(slackChannel, slack.MsgOptionBlocks(blocks...), metadata)
 		if err != nil {
 			errs = append(errs, fmt.Sprintf(`"%v - %v"`, slackChannel, err))
 		} else {
-			sent = append(sent, sentReviewMessage{
+			posted++
+			m := sentReviewMessage{
 				channelID: channelID,
 				timestamp: timestamp,
 				eventKind: eventKind,
 				blocks:    blocks,
 				sentAt:    time.Now().UTC(),
-			})
+			}
+			// Tracked at once, so a click on it rewrites every channel posted
+			// so far. One that settled while this post was in flight is
+			// rewritten here instead.
+			if final := s.trackSentReviewMessage(msg.ID, m); final != nil {
+				if err := s.rewriteReviewMessages([]sentReviewMessage{m}, final); err != nil {
+					log.Warnf("failed rewriting a review message posted after it settled, review=%s, err=%v", msg.ID, err)
+				}
+			}
 		}
 
 		// Slack allows 1 post message per second. reference: https://api.slack.com/apis/rate-limits
-		time.Sleep(time.Millisecond * 1200)
+		if i < len(slackChannels)-1 {
+			time.Sleep(time.Millisecond * 1200)
+		}
 	}
-	s.trackSentReviewMessages(msg.ID, sent)
-	return ReviewPostResult{Channels: len(slackChannels), Posted: len(slackChannels) - len(errs), Errors: errs}
+	return ReviewPostResult{Channels: len(slackChannels), Posted: posted, Errors: errs}
 }
 
 // sentReviewMessage records where a review message landed so it can be
@@ -455,20 +480,45 @@ type sentReviewMessage struct {
 	sentAt time.Time
 }
 
-func (s *SlackService) trackSentReviewMessages(reviewID string, sent []sentReviewMessage) {
-	if reviewID == "" || len(sent) == 0 {
-		return
+// trackSentReviewMessage adds one posted message to the review's tracked set.
+// It returns the terminal state instead when the review already settled: the
+// caller rewrites the message with it, and it is not tracked.
+func (s *SlackService) trackSentReviewMessage(reviewID string, m sentReviewMessage) *UpdateReviewMessageRequest {
+	if reviewID == "" {
+		return nil
 	}
 	now := time.Now().UTC()
 	s.sentReviewMu.Lock()
 	defer s.sentReviewMu.Unlock()
-	// lazy eviction keeps the map bounded without a janitor goroutine
+	// lazy eviction keeps the maps bounded without a janitor goroutine
 	for id, items := range s.sentReviewItems {
 		if len(items) > 0 && now.Sub(items[0].sentAt) > sentReviewRetention {
 			delete(s.sentReviewItems, id)
 		}
 	}
-	s.sentReviewItems[reviewID] = sent
+	for id, sr := range s.settledReviews {
+		if now.Sub(sr.at) > sentReviewRetention {
+			delete(s.settledReviews, id)
+		}
+	}
+	if sr, ok := s.settledReviews[reviewID]; ok {
+		return sr.req
+	}
+	if s.sentReviewItems == nil {
+		s.sentReviewItems = make(map[string][]sentReviewMessage)
+	}
+	s.sentReviewItems[reviewID] = append(s.sentReviewItems[reviewID], m)
+	return nil
+}
+
+// settledReview returns the terminal state of a review that settled, or nil.
+func (s *SlackService) settledReview(reviewID string) *UpdateReviewMessageRequest {
+	s.sentReviewMu.Lock()
+	defer s.sentReviewMu.Unlock()
+	if sr, ok := s.settledReviews[reviewID]; ok {
+		return sr.req
+	}
+	return nil
 }
 
 // ReviewedGroup describes one approver group's recorded outcome, used to
@@ -512,8 +562,17 @@ func (s *SlackService) UpdateReviewMessage(req *UpdateReviewMessageRequest) erro
 	items := s.sentReviewItems[req.ReviewID]
 	if done {
 		delete(s.sentReviewItems, req.ReviewID)
+		if s.settledReviews == nil {
+			s.settledReviews = make(map[string]settledReview)
+		}
+		s.settledReviews[req.ReviewID] = settledReview{req: req, at: time.Now().UTC()}
 	}
 	s.sentReviewMu.Unlock()
+	return s.rewriteReviewMessages(items, req)
+}
+
+// rewriteReviewMessages applies the review state to the given messages.
+func (s *SlackService) rewriteReviewMessages(items []sentReviewMessage, req *UpdateReviewMessageRequest) error {
 	if len(items) == 0 {
 		return nil
 	}

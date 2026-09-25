@@ -114,7 +114,7 @@ func GetSlackChannels(c *gin.Context) {
 // PutSlackChannels
 //
 //	@Summary		Set Sidecar Slack Channels
-//	@Description	Replace where the reviews of each listener of the sidecar are posted in Slack. A listener left out has no channels and uses the org's default channel. Control plane only.
+//	@Description	Set where the reviews of the listeners in the body are posted in Slack. A listener with no channels uses the fallback channel; a listener left out keeps its channels. Control plane only.
 //	@Tags			Sidecars
 //	@Accept			json
 //	@Produce		json
@@ -150,7 +150,7 @@ func PutSlackChannels(c *gin.Context) {
 			invalid = msg
 			return errInvalidChannels
 		}
-		return models.ReplaceSidecarSlackChannels(tx, sidecar.OrgID, sidecar.ID, rows)
+		return models.SetSidecarSlackChannels(tx, sidecar.OrgID, sidecar.ID, rows)
 	})
 	switch {
 	case errors.Is(err, errInvalidChannels):
