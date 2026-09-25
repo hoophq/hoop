@@ -111,7 +111,7 @@ what a product shows, and ClojureScript exists only in the gateway.**
   frame with the gateway's tokens; that is accepted rather than gated on
   `appModeLoaded`.
 - **Roles (control plane).** `/userinfo` reports `role`: **admin** reaches every page,
-  **approver** reaches Reviews, anything else lands on the dead end at `/`. A role is a
+  and every other signed-in user reaches Reviews, where `/` sends them. A role is a
   reserved group name; `standard` is the absence of one and is never stored as a group.
   The group names come from `/serverinfo` (`admin_role_name`, `approver_role_name`),
   never a literal. Gate a route with `<Page role={ROLE_APPROVER}>` and a nav or palette

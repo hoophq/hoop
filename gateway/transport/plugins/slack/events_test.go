@@ -75,15 +75,15 @@ func TestSameWorkspace(t *testing.T) {
 }
 
 func TestPickApprover(t *testing.T) {
-	if _, refusal := pickApprover(nil, "ana@example.com"); !strings.Contains(refusal, "No Hoop user") {
+	if _, refusal := pickApprover(nil, "ana@example.com", ""); !strings.Contains(refusal, "No Hoop user") {
 		t.Errorf("no user: %q", refusal)
 	}
 	one := []models.User{{ID: "u1"}}
-	if u, refusal := pickApprover(one, "ana@example.com"); refusal != "" || u.ID != "u1" {
+	if u, refusal := pickApprover(one, "ana@example.com", ""); refusal != "" || u.ID != "u1" {
 		t.Errorf("one user: %v %q", u, refusal)
 	}
 	two := []models.User{{ID: "u1"}, {ID: "u2"}}
-	if _, refusal := pickApprover(two, "ana@example.com"); !strings.Contains(refusal, "More than one") {
+	if _, refusal := pickApprover(two, "ana@example.com", ""); !strings.Contains(refusal, "More than one") {
 		t.Errorf("two users: %q", refusal)
 	}
 }

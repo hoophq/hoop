@@ -70,8 +70,7 @@ with `<ByProduct>`. See `CLAUDE.md`, "Application modes".
 ### Routing Split (Router.jsx)
 
 One table for both products. The three product leaves: `/` (gateway: CLJS; control
-plane: role → `/sidecars` or `/reviews`, others the "Administrators and approvers only"
-dead end), `/onboarding/*` and `/*` (gateway: CLJS; control plane: 404).
+plane: admin → `/sidecars`, everyone else → `/reviews`), `/onboarding/*` and `/*` (gateway: CLJS; control plane: 404).
 
 | Route | Handler | Status |
 |-------|---------|--------|

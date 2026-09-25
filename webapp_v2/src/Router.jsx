@@ -115,8 +115,8 @@ function Router() {
       <Route path="/" element={Home} />
 
       {/* Control plane pages. The sidecar fleet (list, the connect/create wizard,
-          a details page) runs on /api/sidecars; Reviews holds its place until Human
-          in the Loop lands and is the one surface an approver reaches. */}
+          a details page) runs on /api/sidecars; Reviews is the one surface a
+          reviewer reaches. */}
       <Route
         path="/sidecars"
         element={
@@ -166,21 +166,25 @@ function Router() {
         }
       />
       {/* Both render the list; the session id opens its drawer, so the Slack
-          link resolves to one review. */}
+          link resolves to one review. In the control plane every signed-in
+          user reaches it: a reviewer's groups come from the identity provider,
+          not from a role. */}
       <Route
         path="/reviews"
         element={
-          <Page role={ROLE_APPROVER}>
-            <Reviews />
-          </Page>
+          <ByProduct
+            gateway={<Page role={ROLE_APPROVER}><Reviews /></Page>}
+            controlPlane={<Page><Reviews /></Page>}
+          />
         }
       />
       <Route
         path="/reviews/:sessionId"
         element={
-          <Page role={ROLE_APPROVER}>
-            <Reviews />
-          </Page>
+          <ByProduct
+            gateway={<Page role={ROLE_APPROVER}><Reviews /></Page>}
+            controlPlane={<Page><Reviews /></Page>}
+          />
         }
       />
 

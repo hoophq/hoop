@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/hoophq/hoop/common/log"
@@ -116,7 +117,7 @@ func (p *slackPlugin) resolveEmailApprover(ev *event, slackUser *slackservice.Sl
 		_ = ev.ss.PostEphemeralMessage(ev.msg, "%s", cpLookupFailedMsg)
 		return nil
 	}
-	approver, refusal := pickApprover(users, slackUser.Email)
+	approver, refusal := pickApprover(users, slackUser.Email, p.loginURL())
 	if refusal != "" {
 		log.With("sid", sid).Infof("refused slack user %s (%s): %s", ev.msg.SlackID, slackUser.Email, refusal)
 		_ = ev.ss.PostEphemeralMessage(ev.msg, "%s", refusal)
@@ -178,11 +179,11 @@ func sameWorkspace(u *slackservice.SlackUser, botTeamID, botEnterpriseID string)
 
 // pickApprover requires exactly one hoop user for the email. More than one
 // means hoop cannot tell which person clicked, so it refuses rather than
-// guess.
-func pickApprover(users []models.User, email string) (*models.User, string) {
+// guess. loginURL, when set, goes under the refusal a login fixes.
+func pickApprover(users []models.User, email, loginURL string) (*models.User, string) {
 	switch len(users) {
 	case 0:
-		return nil, fmt.Sprintf(cpNoUserMsgFormat, email)
+		return nil, withLoginLink(fmt.Sprintf(cpNoUserMsgFormat, email), loginURL)
 	case 1:
 		return &users[0], ""
 	default:
@@ -207,7 +208,8 @@ func (p *slackPlugin) controlPlaneApproverContext(ev *event, approver *models.Us
 	}
 	if !slices.Contains(groups, ev.msg.GroupName) {
 		log.With("sid", sid).Infof("approver %s is not on group %q", approver.Email, ev.msg.GroupName)
-		_ = ev.ss.PostEphemeralMessage(ev.msg, cpNotInGroupFormat, ev.msg.GroupName)
+		msg := withLoginLink(fmt.Sprintf(cpNotInGroupFormat, ev.msg.GroupName), p.loginURL())
+		_ = ev.ss.PostEphemeralMessage(ev.msg, "%s", msg)
 		return nil
 	}
 
@@ -218,4 +220,22 @@ func (p *slackPlugin) controlPlaneApproverContext(ev *event, approver *models.Us
 	userContext.UserEmail = approver.Email
 	userContext.SlackID = ev.msg.SlackID
 	return userContext
+}
+
+// loginURL is the control plane's login page, where a login creates the hoop
+// user or refreshes their groups. Empty when the plugin has no API URL.
+func (p *slackPlugin) loginURL() string {
+	if p.apiURL == "" {
+		return ""
+	}
+	return strings.TrimSuffix(p.apiURL, "/") + "/login"
+}
+
+// withLoginLink puts the login URL under a refusal, as the gateway puts its
+// association link.
+func withLoginLink(msg, loginURL string) string {
+	if loginURL == "" {
+		return msg
+	}
+	return msg + "\n" + loginURL
 }

@@ -9,7 +9,6 @@ import {
   VenetianMask,
   View,
 } from 'lucide-react'
-import { ROLE_APPROVER } from '@/utils/roles'
 
 /**
  * The control plane navigation: an admin manages a fleet of sidecars, configures
@@ -34,10 +33,10 @@ const POLICY_ITEMS = [
   { label: 'Guardrails', path: '/guardrails', icon: ShieldCheck, adminOnly: true, licenseFeature: 'guardrails' },
 ]
 
-// Two roles (utils/roles): admin reaches every page, approver reaches Reviews.
+// Admin reaches every page. Every signed-in user reaches Reviews.
 const ACTIVITY_ITEMS = [
   { label: 'AI Analyzer', path: '/features/ai-session-analyzer', icon: Sparkles, adminOnly: true, licenseFeature: 'ai-session-analyzer' },
-  { label: 'Reviews', path: '/reviews', icon: View, role: ROLE_APPROVER },
+  { label: 'Reviews', path: '/reviews', icon: View },
 ]
 
 // The Settings group: where approvals are delivered (Slack) and the
@@ -67,7 +66,7 @@ export const FOOTER_NAV = {
 // Gating flags mirror the nav entries above — keep both lists in sync.
 const SUGGESTION_ITEMS = [
   { id: 'sidecars', label: 'Sidecars', description: 'Manage sidecars', icon: Container, path: '/sidecars', adminOnly: true },
-  { id: 'reviews', label: 'Reviews', description: 'Pending approvals', icon: View, path: '/reviews', role: ROLE_APPROVER },
+  { id: 'reviews', label: 'Reviews', description: 'Pending approvals', icon: View, path: '/reviews' },
 ]
 
 const QUICK_ACCESS_ITEMS = [
