@@ -14,6 +14,12 @@
 > below stands; read **"Amended 2026-09-09"** in the Decision section for what
 > changed and why it is not a hole in the rule.
 
+> **Note (2026-09-25):** ADR-0020 changes how the Slack plugin names an
+> approver in control plane mode: by the clicker's Slack ID, then email. It
+> also adds the `/sidecars/{nameOrID}/slack-channels` routes, which answer 412
+> on a gateway, as `/sidecars/reviews` already does. The boot paths and the
+> single route tree described here are unchanged.
+
 ## Context
 
 `controlplane/frontend` (PR #1754) administers a fleet of sidecars and has no

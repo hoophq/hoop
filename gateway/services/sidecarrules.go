@@ -107,7 +107,8 @@ func ValidateSidecarRuleSpec(kind SidecarRuleKind, ruleName string, spec json.Ra
 // The protocol check is the half a rule editor cannot do on its own. An ssh
 // lane refuses `table`, `http_resource`, `http_status` and `grpc_status`
 // rules, and every masking strategy but `mask`; an analyzer block needs the
-// lane's own analyzer enabled. All four are startup refusals on the sidecar,
+// sidecar's analyzer section to supply the model. All four are startup
+// refusals on the sidecar,
 // which means a rule saved without this check bricks a fleet at its next
 // restart rather than at the save.
 // storedName is the name the rule's bindings currently sit under, so the
@@ -165,7 +166,7 @@ func ValidateSidecarRuleTargets(db *gorm.DB, orgID string, kind SidecarRuleKind,
 			return fmt.Errorf("sidecar %q has %d listeners named %q; a rule must name exactly one",
 				sc.Name, matches, t.ListenerName)
 		}
-		if err := validateSpecForLane(kind, ruleName, spec, sc.Name, *lane); err != nil {
+		if err := validateSpecForLane(kind, ruleName, spec, sc.Name, *lane, sc.Configuration.Analyzer != nil); err != nil {
 			return err
 		}
 		candidates[t.SidecarID] = append(candidates[t.SidecarID], models.BoundRule{
@@ -333,7 +334,7 @@ func ValidateSidecarBindingsForConfiguration(db *gorm.DB, sc *models.Sidecar) er
 					break
 				}
 			}
-			if err := validateSpecForLane(kind, b.RuleName, b.Spec, sc.Name, lane); err != nil {
+			if err := validateSpecForLane(kind, b.RuleName, b.Spec, sc.Name, lane, sc.Configuration.Analyzer != nil); err != nil {
 				return ErrSidecarBindingBroken{Reason: err.Error()}
 			}
 		}
@@ -355,7 +356,10 @@ func listBoundRules(db *gorm.DB, kind SidecarRuleKind, orgID uuid.UUID, sidecarI
 
 // validateSpecForLane runs the refusals that depend on which lane the rule
 // lands on. Everything here is a startup refusal on the sidecar.
-func validateSpecForLane(kind SidecarRuleKind, ruleName string, spec json.RawMessage, sidecarName string, lane daemon.ListenerConfig) error {
+//
+// hasAnalyzer reports whether the sidecar's configuration has its top-level
+// analyzer section: the provider, the model and the credential.
+func validateSpecForLane(kind SidecarRuleKind, ruleName string, spec json.RawMessage, sidecarName string, lane daemon.ListenerConfig, hasAnalyzer bool) error {
 	where := fmt.Sprintf("listener %q on sidecar %q", lane.Name, sidecarName)
 	isSSH := strings.EqualFold(lane.Protocol, "ssh")
 
@@ -390,14 +394,16 @@ func validateSpecForLane(kind SidecarRuleKind, ruleName string, spec json.RawMes
 			return fmt.Errorf("data masking rule %q: %s", ruleName, strings.Join(problems, "; "))
 		}
 	case SidecarRuleAnalyzer:
-		// A lane without its analyzer enabled has no provider and no call
-		// budget. The sidecar refuses a config whose listener carries an
-		// analyzer block with no top-level analyzer section, and a lane the
-		// operator never opted in has neither.
-		if lane.Analyzer == nil {
-			return fmt.Errorf("analyzer rule %q is bound to %s, which has the analyzer turned "+
-				"off; enable it on that listener first, so it carries a trigger and a call budget",
-				ruleName, where)
+		// The sidecar refuses a listener analyzer block when its config has
+		// no top-level analyzer section to supply the provider. A lane with no
+		// block of its own takes the rule's block, and the rule carries the
+		// trigger and the call budget; what it leaves out comes from that
+		// section. A lane that has its own block keeps it under the rule, as
+		// it did before the section was checked.
+		if lane.Analyzer == nil && !hasAnalyzer {
+			return fmt.Errorf("analyzer rule %q is bound to %s, and that sidecar has no analyzer "+
+				"section to supply the model; add the analyzer section (provider, model and "+
+				"credential) to the sidecar's config first", ruleName, where)
 		}
 		var block daemon.LaneAnalyzerConfig
 		if err := decodeSpec(spec, &block); err != nil {

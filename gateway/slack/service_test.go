@@ -161,6 +161,19 @@ func TestRebuildReviewBlocks(t *testing.T) {
 		t.Errorf("rejected: got %d blocks, want 3", len(blocks))
 	}
 
+	// a rejection with a reason shows it, quoted and escaped
+	req.RejectionReason = "not in prod <@U1>"
+	blocks = rebuildReviewBlocks(m, req, reviewed)
+	if len(blocks) != 5 {
+		t.Fatalf("rejected with reason: got %d blocks, want 5", len(blocks))
+	}
+	reason, ok := blocks[4].(*slack.SectionBlock)
+	if !ok || !strings.Contains(reason.Text.Text, "Rejection reason") ||
+		!strings.Contains(reason.Text.Text, "> not in prod &lt;@U1&gt;") {
+		t.Errorf("rejected with reason: unexpected block %T %+v", blocks[4], reason)
+	}
+	req.RejectionReason = ""
+
 	// synthetic reviewed group (admin/owner rejection, forced approval) matches
 	// no action block: its outcome must still be rendered, never a silent drop
 	synthetic := ReviewedGroup{Name: "owner-veto", Status: "REJECTED", ReviewerEmail: "b@b.com", ReviewedAt: reviewedAt}
@@ -218,10 +231,19 @@ func TestUpdateReviewMessageTracking(t *testing.T) {
 		t.Fatalf("consumed entry must not be rewritten again, calls=%d err=%v", updateCalls, err)
 	}
 
+	// a message a post loop sends after the review settled is not tracked:
+	// the caller gets the terminal state to rewrite it with
+	if final := s.trackSentReviewMessage("rev-1", sentReviewMessage{channelID: "C3", timestamp: "3.0"}); final == nil || !final.IsApproved {
+		t.Fatalf("a post after settlement must get the terminal state, got %+v", final)
+	}
+	if _, ok := s.sentReviewItems["rev-1"]; ok {
+		t.Errorf("a settled review must not be tracked again")
+	}
+
 	// eviction drops entries older than the retention window on new sends
 	stale := time.Now().UTC().Add(-sentReviewRetention - time.Hour)
 	s.sentReviewItems["rev-old"] = []sentReviewMessage{{channelID: "C1", timestamp: "1.0", sentAt: stale}}
-	s.trackSentReviewMessages("rev-new", []sentReviewMessage{{channelID: "C2", timestamp: "2.0", sentAt: time.Now().UTC()}})
+	s.trackSentReviewMessage("rev-new", sentReviewMessage{channelID: "C2", timestamp: "2.0", sentAt: time.Now().UTC()})
 	if _, ok := s.sentReviewItems["rev-old"]; ok {
 		t.Errorf("expired entry survived eviction")
 	}
@@ -230,17 +252,17 @@ func TestUpdateReviewMessageTracking(t *testing.T) {
 	}
 }
 
-// Members are requested in the same call (include_users=true); team is
-// dropped. A Slack API error (e.g. missing usergroups:read) surfaces as-is.
-func TestListUserGroups(t *testing.T) {
-	body := `{"ok":true,"usergroups":[{"id":"S01","team_id":"T1","is_usergroup":true,"name":"DBAs","description":"database team","handle":"dba","user_count":3,"users":["U1","U2","U3"]}]}`
+// The fields an approval checks come from users.info. Without users:read.email
+// Slack answers the user with no email, and an API error surfaces as-is.
+func TestGetUserInfo(t *testing.T) {
+	body := `{"ok":true,"user":{"id":"U1","deleted":false,"is_bot":false,"is_restricted":true,"is_ultra_restricted":false,"is_email_confirmed":true,"profile":{"email":"Ana@Example.com"}}}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/usergroups.list" {
+		if r.URL.Path != "/users.info" {
 			t.Errorf("unexpected path %s", r.URL.Path)
 		}
 		_ = r.ParseForm()
-		if r.FormValue("include_users") != "true" {
-			t.Errorf("include_users=%q, want true", r.FormValue("include_users"))
+		if r.FormValue("user") != "U1" {
+			t.Errorf("user=%q, want U1", r.FormValue("user"))
 		}
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, body)
@@ -248,46 +270,45 @@ func TestListUserGroups(t *testing.T) {
 	defer srv.Close()
 	s := &SlackService{apiClient: slack.New("xoxb-test", slack.OptionAPIURL(srv.URL+"/"))}
 
-	got, err := s.ListUserGroups(context.Background())
+	got, err := s.GetUserInfo(context.Background(), "U1")
 	if err != nil {
-		t.Fatalf("ListUserGroups failed: %v", err)
+		t.Fatalf("GetUserInfo failed: %v", err)
 	}
-	if len(got) != 1 {
-		t.Fatalf("got %d groups, want 1", len(got))
+	want := SlackUser{ID: "U1", Email: "Ana@Example.com", IsRestricted: true, IsEmailConfirmed: true}
+	if *got != want {
+		t.Fatalf("got %+v, want %+v", *got, want)
 	}
-	g := got[0]
-	if g.ID != "S01" || g.Handle != "dba" || g.Name != "DBAs" || g.Description != "database team" ||
-		!slices.Equal(g.Users, []string{"U1", "U2", "U3"}) {
-		t.Fatalf("got %+v", g)
+
+	body = `{"ok":true,"user":{"id":"U1","profile":{}}}`
+	got, err = s.GetUserInfo(context.Background(), "U1")
+	if err != nil || got.Email != "" {
+		t.Fatalf("missing email scope: got %+v, err %v; want empty email, no error", got, err)
 	}
 
 	body = `{"ok":false,"error":"missing_scope"}`
-	if _, err := s.ListUserGroups(context.Background()); err == nil || !strings.Contains(err.Error(), "missing_scope") {
+	if _, err := s.GetUserInfo(context.Background(), "U1"); err == nil || !strings.Contains(err.Error(), "missing_scope") {
 		t.Fatalf("want missing_scope error, got %v", err)
 	}
 }
 
-func TestMapUserGroups(t *testing.T) {
-	slackGroups := []UserGroup{
-		{ID: "S1", Handle: "admins", Name: "Admin"},
-		{ID: "S2", Handle: "approver", Name: "Approvers"},
-		{ID: "S3", Handle: "DBA", Name: "Database"},
-		{ID: "S4", Handle: "other", Name: "DBA"},
-	}
-	got := MapUserGroups([]string{"admin", "approver", "dba", "nobody"}, slackGroups)
-	want := map[string]string{"admin": "S1", "approver": "S2", "dba": "S3"}
-	if len(got) != len(want) {
-		t.Fatalf("got %d mappings, want %d: %+v", len(got), len(want), got)
-	}
-	for hg, id := range want {
-		if got[hg].ID != id {
-			t.Errorf("%s -> %q, want %q", hg, got[hg].ID, id)
-		}
-	}
-	if _, ok := got["nobody"]; ok {
-		t.Errorf("nobody should have no mapping")
-	}
-	if m := MapUserGroups(nil, nil); m == nil || len(m) != 0 {
-		t.Errorf("empty inputs: got %v, want empty non-nil map", m)
+func TestReviewChannels(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		msg      MessageReviewRequest
+		fallback string
+		want     []string
+	}{
+		{"gateway adds the default channel", MessageReviewRequest{SlackChannels: []string{"C1"}}, "CD", []string{"C1", "CD"}},
+		{"gateway with no channels", MessageReviewRequest{}, "CD", []string{"CD"}},
+		{"no repeat", MessageReviewRequest{SlackChannels: []string{"CD"}}, "CD", []string{"CD"}},
+		{"fallback skipped when channels are set", MessageReviewRequest{SlackChannels: []string{"C1"}, DefaultChannelAsFallback: true}, "CD", []string{"C1"}},
+		{"fallback used when no channel is set", MessageReviewRequest{DefaultChannelAsFallback: true}, "CD", []string{"CD"}},
+		{"no default channel", MessageReviewRequest{SlackChannels: []string{"C1"}}, "", []string{"C1"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := reviewChannels(&tt.msg, tt.fallback); !slices.Equal(got, tt.want) {
+				t.Errorf("channels = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }

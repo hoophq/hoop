@@ -1,4 +1,4 @@
-// What GatewayUsers.jsx and ControlPlaneUsers.jsx have in common.
+// Helpers of the Users page.
 
 export const STATUS_OPTIONS = [
   { value: 'active', label: 'Active' },

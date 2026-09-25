@@ -18,45 +18,58 @@ import Modal from '@/components/Modal'
 import TextInput from '@/components/TextInput'
 import PasswordInput from '@/components/PasswordInput'
 import Select from '@/components/Select'
+import MultiSelect from '@/components/MultiSelect'
 import CopyButton from '@/components/CopyButton'
 import { usersService } from '@/services/users'
 import { authService } from '@/services/auth'
-import { useUserStore } from '@/stores/useUserStore'
 import { docsUrl } from '@/utils/docsUrl'
-import { ROLE_ADMIN, roleLabel, roleOptions, roleToGroups } from '@/utils/roles'
 import { showSnackbar } from '@/utils/snackbar'
 import { STATUS_OPTIONS, generatePassword, statusVariant } from './shared'
 
-/**
- * The control plane's Users page, sibling of GatewayUsers.jsx. The gateway edits
- * free-form groups; here a user has one role (utils/roles) and every other
- * group is round-tripped untouched, so an IdP-synced group survives an edit.
- */
+const CREATE_PREFIX = '__new__:'
 
-function UserFormModal({ opened, onClose, formType, user, isLocalAuth, onSaved }) {
-  // The group names that carry the roles come from /serverinfo: ADMIN_USERNAME
-  // renames the admin one.
-  const adminRoleName = useUserStore((s) => s.adminRoleName)
-  const approverRoleName = useUserStore((s) => s.approverRoleName)
+function UserFormModal({ opened, onClose, formType, user, groups, isLocalAuth, onSaved }) {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
-  const [role, setRole] = useState(ROLE_ADMIN)
-  const [otherGroups, setOtherGroups] = useState([])
+  const [selectedGroups, setSelectedGroups] = useState([])
   const [status, setStatus] = useState('active')
   const [slackId, setSlackId] = useState('')
   const [password] = useState(() => generatePassword())
   const [saving, setSaving] = useState(false)
+  const [groupOptions, setGroupOptions] = useState([])
+  const [groupSearch, setGroupSearch] = useState('')
 
   useEffect(() => {
     if (opened) {
       setName(user?.name ?? '')
       setEmail(user?.email ?? '')
-      setRole(user?.role ?? ROLE_ADMIN)
-      setOtherGroups((user?.groups ?? []).filter((g) => g !== adminRoleName && g !== approverRoleName))
+      setSelectedGroups(user?.groups ?? [])
       setStatus(user?.status ?? 'active')
       setSlackId(user?.slack_id ?? '')
+      setGroupOptions(groups.map((g) => ({ value: g.name ?? g, label: g.name ?? g })))
+      setGroupSearch('')
     }
-  }, [opened, user, adminRoleName, approverRoleName])
+  }, [opened, user, groups])
+
+  const exactMatch = groupOptions.some((o) => o.value === groupSearch)
+  const creatableGroupData = groupSearch && !exactMatch
+    ? [...groupOptions, { value: `${CREATE_PREFIX}${groupSearch}`, label: `+ Create "${groupSearch}"` }]
+    : groupOptions
+
+  function handleGroupChange(values) {
+    const resolved = []
+    for (const v of values) {
+      if (v.startsWith(CREATE_PREFIX)) {
+        const created = v.slice(CREATE_PREFIX.length)
+        setGroupOptions((prev) => [...prev, { value: created, label: created }])
+        resolved.push(created)
+      } else {
+        resolved.push(v)
+      }
+    }
+    setSelectedGroups(resolved)
+    setGroupSearch('')
+  }
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -70,8 +83,7 @@ function UserFormModal({ opened, onClose, formType, user, isLocalAuth, onSaved }
     }
     setSaving(true)
     try {
-      const groups = [...roleToGroups(role, adminRoleName, approverRoleName), ...otherGroups]
-      const payload = { name, groups, slack_id: slackId, email }
+      const payload = { name, groups: selectedGroups, slack_id: slackId, email }
       if (formType === 'update') {
         payload.id = user.id
         payload.status = status
@@ -111,12 +123,16 @@ function UserFormModal({ opened, onClose, formType, user, isLocalAuth, onSaved }
             onChange={(e) => setName(e.currentTarget.value)}
             required
           />
-          <Select
-            label="Role"
-            data={roleOptions(role)}
-            value={role}
-            onChange={setRole}
-            required
+          <MultiSelect
+            label="Groups"
+            placeholder="Select groups…"
+            data={creatableGroupData}
+            value={selectedGroups}
+            onChange={handleGroupChange}
+            searchable
+            clearable
+            searchValue={groupSearch}
+            onSearchChange={setGroupSearch}
           />
           {formType === 'create' && (
             <TextInput
@@ -172,8 +188,11 @@ function UserFormModal({ opened, onClose, formType, user, isLocalAuth, onSaved }
   )
 }
 
-export default function ControlPlaneUsers() {
+// The Users page of both products: free-form groups. A login through an
+// identity provider replaces them with the groups the provider sends.
+export default function Users() {
   const [users, setUsers] = useState([])
+  const [groups, setGroups] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [isLocalAuth, setIsLocalAuth] = useState(false)
@@ -190,11 +209,13 @@ export default function ControlPlaneUsers() {
 
   async function fetchAll() {
     try {
-      const [usersRes, serverInfo] = await Promise.all([
+      const [usersRes, groupsRes, serverInfo] = await Promise.all([
         usersService.list(),
+        usersService.listGroups(),
         authService.getPublicServerInfo(),
       ])
       setUsers(usersRes.data ?? [])
+      setGroups(groupsRes.data ?? [])
       setIsLocalAuth(serverInfo?.auth_method === 'local')
     } catch {
       setError('Failed to load users.')
@@ -250,7 +271,7 @@ export default function ControlPlaneUsers() {
                 <Table.Tr>
                   <Table.Th>Name</Table.Th>
                   <Table.Th>Email</Table.Th>
-                  <Table.Th>Role</Table.Th>
+                  <Table.Th>Groups</Table.Th>
                   <Table.Th>Status</Table.Th>
                   <Table.Th w={80} />
                 </Table.Tr>
@@ -264,7 +285,7 @@ export default function ControlPlaneUsers() {
                       <Table.Td>{user.email ?? '—'}</Table.Td>
                       <Table.Td>
                         <Text size="sm" c="dimmed">
-                          {roleLabel(user.role)}
+                          {(user.groups ?? []).join(', ') || '—'}
                         </Text>
                       </Table.Td>
                       <Table.Td>
@@ -286,7 +307,7 @@ export default function ControlPlaneUsers() {
               <Stack flex={1} mih="30vh" align="center" py="xxl">
                 <Stack flex={1} align="center" justify="center" gap="lg">
                   <Text size="sm" c="dimmed" ta="center" maw={400}>
-                    Invite administrators and approvers to manage sidecars and review access
+                    Invite users and setup team-based permissions and approval workflows for secure resource access
                   </Text>
                   <Button onClick={handleAdd}>Invite Users</Button>
                 </Stack>
@@ -309,6 +330,7 @@ export default function ControlPlaneUsers() {
         onClose={close}
         formType={formType}
         user={selectedUser}
+        groups={groups}
         isLocalAuth={isLocalAuth}
         onSaved={fetchAll}
       />

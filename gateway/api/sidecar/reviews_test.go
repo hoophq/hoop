@@ -13,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/aws/smithy-go/ptr"
+	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/services"
@@ -471,6 +472,50 @@ func TestNewSlackReviewRequest(t *testing.T) {
 	assert.True(t, strings.HasPrefix(req.WebappURL, "http://localhost:8009/hoop/"),
 		"ApiURL drops a configured path prefix and lands the approver outside the app")
 
-	assert.Empty(t, req.SlackChannels, "a sidecar review has no connection, so the org default is the only destination")
+	assert.Empty(t, req.SlackChannels, "notifySlack sets the channels from the listener")
 	assert.Nil(t, req.SessionTime, "a sidecar review grants no access window")
+}
+
+func TestSlackChannelsResponse(t *testing.T) {
+	assert.Equal(t, []string{"C1", "C2"}, normalizeChannels([]string{" C1 ", "", "C2", "C1"}))
+	assert.Equal(t, []string{}, normalizeChannels(nil))
+
+	out := toOpenAPISlackChannels([]models.SidecarSlackChannels{
+		{ListenerName: "pg", Channels: []string{"C-PG"}},
+	})
+	assert.Len(t, out.Listeners, 1)
+	assert.Equal(t, "pg", out.Listeners[0].Name)
+	assert.Equal(t, []string{"C-PG"}, out.Listeners[0].Channels)
+
+	empty := toOpenAPISlackChannels(nil)
+	assert.NotNil(t, empty.Listeners)
+}
+
+func TestSlackChannelRows(t *testing.T) {
+	sc := &models.Sidecar{Name: "payments"}
+	sc.Configuration.Listeners = []daemon.ListenerConfig{{Name: "pg"}, {Name: "mysql"}, {Name: ""}}
+
+	rows, msg := slackChannelRows(sc, openapi.SidecarSlackChannels{
+		Listeners: []openapi.SidecarListenerSlackChannels{{Name: "pg", Channels: []string{" C-PG "}}},
+	})
+	assert.Empty(t, msg)
+	assert.Len(t, rows, 1)
+	assert.Equal(t, "pg", rows[0].ListenerName)
+	assert.Equal(t, []string{"C-PG"}, []string(rows[0].Channels))
+
+	_, msg = slackChannelRows(sc, openapi.SidecarSlackChannels{
+		Listeners: []openapi.SidecarListenerSlackChannels{{Name: "redis", Channels: []string{"C1"}}},
+	})
+	assert.Contains(t, msg, `no listener named "redis"`)
+
+	_, msg = slackChannelRows(sc, openapi.SidecarSlackChannels{
+		Listeners: []openapi.SidecarListenerSlackChannels{{Name: "pg"}, {Name: " pg "}},
+	})
+	assert.Contains(t, msg, "repeated")
+
+	// An unnamed listener cannot be addressed.
+	_, msg = slackChannelRows(sc, openapi.SidecarSlackChannels{
+		Listeners: []openapi.SidecarListenerSlackChannels{{Name: ""}},
+	})
+	assert.NotEmpty(t, msg)
 }

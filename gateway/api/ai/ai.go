@@ -14,6 +14,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/api/sidecarbind"
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/services"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -297,8 +298,15 @@ func GetSessionAnalyzerRule(c *gin.Context) {
 		out := toSessionAnalyzerRuleResponse(rule)
 		// Read back on the single-rule route, which is what the edit form
 		// loads. Without it the form opens with the picker empty and the next
-		// save unbinds the rule from every sidecar it reached.
+		// save unbinds the rule from every sidecar it reached. The same holds
+		// for the reviewers, so a failed read of them answers 500.
 		out.SidecarTargets = sidecarbind.Load(ctx.GetOrgID(), services.SidecarRuleAnalyzer, rule.Name)
+		reviewers, err := storedHoldReviewers(orgID, rule.Name)
+		if err != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the reviewer groups of the rule")
+			return
+		}
+		out.ReviewersGroups = reviewers
 		c.JSON(http.StatusOK, out)
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching AI session analyzer rule: %v", err)
@@ -386,7 +394,7 @@ func CreateSessionAnalyzerRule(c *gin.Context) {
 		// The rule that says who may release a statement this one holds. In
 		// the same transaction, because a rule that holds and cannot release
 		// denies every matching statement with no review anyone can approve.
-		if holdErr = services.SyncAnalyzerApprovalRule(tx, orgID, rule.Name, rule.SidecarSpec); holdErr != nil {
+		if holdErr = services.SyncAnalyzerApprovalRule(tx, orgID, rule.Name, rule.SidecarSpec, holdReviewers(req)); holdErr != nil {
 			return holdErr
 		}
 		bindErr = sidecarbind.PersistTx(tx, ctx.GetOrgID(), services.SidecarRuleAnalyzer, rule.Name, req.SidecarTargets)
@@ -412,6 +420,12 @@ func CreateSessionAnalyzerRule(c *gin.Context) {
 		})
 		out := toSessionAnalyzerRuleResponse(rule)
 		out.SidecarTargets = sidecarbind.Load(ctx.GetOrgID(), services.SidecarRuleAnalyzer, rule.Name)
+		reviewers, err := storedHoldReviewers(orgID, rule.Name)
+		if err != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "the rule was saved, but reading its reviewer groups failed: %v", err)
+			return
+		}
+		out.ReviewersGroups = reviewers
 		c.JSON(http.StatusCreated, out)
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating AI session analyzer rule: %v", err)
@@ -514,7 +528,7 @@ func UpdateSessionAnalyzerRule(c *gin.Context) {
 		// Present while the rule holds, gone once it stops: switching the hold
 		// off has to take the approval rule with it, or the fleet keeps a
 		// reviewer list for a statement nothing holds any more.
-		if holdErr = services.SyncAnalyzerApprovalRule(tx, orgID, rule.Name, rule.SidecarSpec); holdErr != nil {
+		if holdErr = services.SyncAnalyzerApprovalRule(tx, orgID, rule.Name, rule.SidecarSpec, holdReviewers(req)); holdErr != nil {
 			return holdErr
 		}
 		bindErr = sidecarbind.PersistTx(tx, ctx.GetOrgID(), services.SidecarRuleAnalyzer, rule.Name, req.SidecarTargets)
@@ -541,6 +555,12 @@ func UpdateSessionAnalyzerRule(c *gin.Context) {
 
 		out := toSessionAnalyzerRuleResponse(rule)
 		out.SidecarTargets = sidecarbind.Load(ctx.GetOrgID(), services.SidecarRuleAnalyzer, rule.Name)
+		reviewers, err := storedHoldReviewers(orgID, rule.Name)
+		if err != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "the rule was saved, but reading its reviewer groups failed: %v", err)
+			return
+		}
+		out.ReviewersGroups = reviewers
 		c.JSON(http.StatusOK, out)
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed updating AI session analyzer rule: %v", err)
@@ -670,4 +690,22 @@ func GetSessionAnalyzerSystemPrompt(c *gin.Context) {
 	c.JSON(http.StatusOK, openapi.AISessionAnalyzerSystemPrompt{
 		Prompt: aianalyzer.SessionAnalyzerSystemPrompt,
 	})
+}
+
+// holdReviewers is the reviewer groups the request names for the rule's hold.
+// Only a control plane holds statements; a gateway always passes nil.
+func holdReviewers(req openapi.AISessionAnalyzerRuleRequest) *[]string {
+	if !appconfig.Get().IsControlPlane() {
+		return nil
+	}
+	return req.ReviewersGroups
+}
+
+// storedHoldReviewers reads back who may release what the rule holds, for
+// the response. Only the control plane stores reviewer groups on a rule.
+func storedHoldReviewers(orgID uuid.UUID, ruleName string) ([]string, error) {
+	if !appconfig.Get().IsControlPlane() {
+		return nil, nil
+	}
+	return services.AnalyzerApprovalReviewers(models.DB, orgID, ruleName)
 }

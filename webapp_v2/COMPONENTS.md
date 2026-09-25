@@ -329,7 +329,7 @@ A route that exists in the information architecture but has no backend yet (the 
 The current product manifest (`modes/gateway.jsx` or `modes/controlPlane.jsx`): `id`, `theme`, `postLoginPath`, `postSetupPath`, `Page`, `Guard`, `Home`, `Onboarding`, `CatchAll`. Read by `Router.jsx`, `ByProduct`, `ModeThemeProvider` and the auth pages only. Pages and layout never use them — see `CLAUDE.md`, "Application modes".
 
 ### `ByProduct` (`src/modes/`)
-`<ByProduct gateway={<GatewayUsers />} controlPlane={<ControlPlaneUsers />} />` — renders one of two elements by product. Used in `Router.jsx` only; `grep ByProduct` lists every page that differs between the products.
+`<ByProduct gateway={<GatewayDataMaskingForm />} controlPlane={<ControlPlaneDataMaskingForm />} />` — renders one of two elements by product. Used in `Router.jsx` only; `grep ByProduct` lists every page that differs between the products.
 
 ### `ModeThemeProvider` (`src/modes/`)
 The app's `MantineProvider`, fed by the product's `theme` slot. Mounted once in `main.jsx`.

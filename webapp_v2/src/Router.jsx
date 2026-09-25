@@ -30,8 +30,7 @@ import OnboardingProtectionRules from '@/pages/Onboarding/ProtectionRules'
 import OnboardingLicense from '@/pages/Onboarding/License'
 import SettingsAuditLogs from '@/pages/Settings/AuditLogs'
 import SettingsServerLogs from '@/pages/Settings/ServerLogs'
-import GatewayUsers from '@/pages/Organization/Users/GatewayUsers'
-import ControlPlaneUsers from '@/pages/Organization/Users/ControlPlaneUsers'
+import Users from '@/pages/Organization/Users'
 import SettingsExperimental from '@/pages/Settings/Experimental'
 import Rulepacks from '@/pages/Rulepacks'
 import RulepackDetail from '@/pages/Rulepacks/Detail'
@@ -58,7 +57,8 @@ import AiAgentsIdentitiesForm from '@/pages/AiAgentsIdentities/Form'
 import AiAgentsIdentitiesCreated from '@/pages/AiAgentsIdentities/Created'
 import JiraTemplates from '@/pages/JiraTemplates'
 import JiraTemplateForm from '@/pages/JiraTemplates/Form'
-import IntegrationsSlack from '@/pages/Integrations/Slack'
+import GatewaySlack from '@/pages/Integrations/Slack/GatewaySlack'
+import ControlPlaneSlack from '@/pages/Integrations/Slack/ControlPlaneSlack'
 import IntegrationsWebhooks from '@/pages/Integrations/Webhooks'
 import ComplianceReport from '@/pages/ComplianceReport'
 import Reviews from '@/pages/Reviews'
@@ -115,8 +115,8 @@ function Router() {
       <Route path="/" element={Home} />
 
       {/* Control plane pages. The sidecar fleet (list, the connect/create wizard,
-          a details page) runs on /api/sidecars; Reviews holds its place until Human
-          in the Loop lands and is the one surface an approver reaches. */}
+          a details page) runs on /api/sidecars; Reviews is the one surface a
+          reviewer reaches. */}
       <Route
         path="/sidecars"
         element={
@@ -166,21 +166,25 @@ function Router() {
         }
       />
       {/* Both render the list; the session id opens its drawer, so the Slack
-          link resolves to one review. */}
+          link resolves to one review. In the control plane every signed-in
+          user reaches it: a reviewer's groups come from the identity provider,
+          not from a role. */}
       <Route
         path="/reviews"
         element={
-          <Page role={ROLE_APPROVER}>
-            <Reviews />
-          </Page>
+          <ByProduct
+            gateway={<Page role={ROLE_APPROVER}><Reviews /></Page>}
+            controlPlane={<Page><Reviews /></Page>}
+          />
         }
       />
       <Route
         path="/reviews/:sessionId"
         element={
-          <Page role={ROLE_APPROVER}>
-            <Reviews />
-          </Page>
+          <ByProduct
+            gateway={<Page role={ROLE_APPROVER}><Reviews /></Page>}
+            controlPlane={<Page><Reviews /></Page>}
+          />
         }
       />
 
@@ -344,7 +348,7 @@ function Router() {
         path="/organization/users"
         element={
           <Page adminOnly>
-            <ByProduct gateway={<GatewayUsers />} controlPlane={<ControlPlaneUsers />} />
+            <Users />
           </Page>
         }
       />
@@ -667,7 +671,7 @@ function Router() {
         path="/integrations/slack"
         element={
           <Page adminOnly>
-            <IntegrationsSlack />
+            <ByProduct gateway={<GatewaySlack />} controlPlane={<ControlPlaneSlack />} />
           </Page>
         }
       />

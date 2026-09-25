@@ -14,6 +14,7 @@ import SidecarTargetPicker from '@/components/SidecarTargetPicker'
 import TagsInput from '@/components/TagsInput'
 import Textarea from '@/components/Textarea'
 import TextInput from '@/components/TextInput'
+import { usersService } from '@/services/users'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import { docsUrl } from '@/utils/docsUrl'
 import { showSnackbar } from '@/utils/snackbar'
@@ -100,6 +101,24 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
   const [targets, setTargets] = useState(stored?.sidecar_targets ?? [])
   const [form, setForm] = useState(() => specToForm(stored?.sidecar_spec))
   const set = (patch) => setForm((f) => ({ ...f, ...patch }))
+  // Who may release what this rule holds: hoop groups, which each login syncs
+  // from the identity provider. Empty leaves it to the administrators.
+  const [reviewers, setReviewers] = useState(stored?.reviewers_groups ?? [])
+  const [groupOptions, setGroupOptions] = useState([])
+
+  useEffect(() => {
+    let cancelled = false
+    usersService
+      .listGroups()
+      .then(({ data }) => {
+        if (!cancelled) setGroupOptions(Array.isArray(data) ? data : [])
+      })
+      // Without the list the field still shows the groups already stored.
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const protocol = useMemo(() => {
     const byId = new Map(sidecars.map((sc) => [sc.id, sc]))
@@ -120,6 +139,18 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
     form.trigger_resources.length === 0
 
   const canSubmit = name.trim() !== '' && !submitting
+  // Every group of the org, plus the stored ones, so a group nobody holds
+  // any more still shows and can be removed.
+  const reviewerOptions = useMemo(
+    () => [...new Set([...groupOptions, ...reviewers])].sort(),
+    [groupOptions, reviewers],
+  )
+  // Reviewers belong to the approval rule this page keeps beside the analyzer
+  // rule. A hold that names another rule (an imported file's) keeps that
+  // rule's reviewers, so the field is not shown for it.
+  const ownHold =
+    [form.high, form.medium, form.low].includes(REVIEW_ACTION) &&
+    (!form.approval_rule || form.approval_rule === name.trim())
 
   const handleSave = async () => {
     if (!canSubmit) return
@@ -145,6 +176,7 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
       agentic: false,
       sidecar_spec: spec,
       sidecar_targets: targets,
+      reviewers_groups: ownHold ? reviewers : undefined,
     }
     const { ok, error } = isEdit ? await updateRule(ruleName, payload) : await createRule(payload)
     if (ok) {
@@ -199,7 +231,7 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
 
       <SectionRow
         title="Distribute to listeners"
-        description="One rule per listener, and the listener needs its analyzer switched on first."
+        description="One rule per listener. The sidecar needs its analyzer section (provider and model) in its config."
       >
         <SidecarTargetPicker value={targets} onChange={setTargets} />
       </SectionRow>
@@ -272,6 +304,18 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
               allowDeselect={false}
             />
           ))}
+          {ownHold && (
+            <MultiSelect
+              label="Reviewers"
+              description="Groups whose members may approve. Empty leaves it to the administrators."
+              placeholder="Select groups"
+              searchable
+              nothingFoundMessage="No user groups defined yet."
+              data={reviewerOptions}
+              value={reviewers}
+              onChange={setReviewers}
+            />
+          )}
           <TextInput
             label="Denial message (optional)"
             placeholder="refused by risk analysis"

@@ -656,6 +656,77 @@ func TestABoundAnalyzerRuleCarriesItsApprovalRuleIntoTheServedConfig(t *testing.
 	}
 }
 
+// A listener with no analyzer block of its own takes an analyzer rule when
+// the sidecar's config has the analyzer section: the rule's block becomes the
+// lane's. Without the section the sidecar would refuse the whole document, so
+// the save is refused instead.
+func TestAnAnalyzerRuleReachesALaneWithoutItsOwnBlock(t *testing.T) {
+	startTestDB(t)
+	orgID := uuid.MustParse(testOrgID)
+
+	newSidecar := func(name string, section *daemon.AnalyzerConfig) *models.Sidecar {
+		t.Helper()
+		sc := &models.Sidecar{
+			OrgID:     testOrgID,
+			Name:      name,
+			KeyHash:   models.HashAPIKey("hsc_" + name),
+			CreatedBy: "tests@hoop.dev",
+			Configuration: models.SidecarConfiguration{
+				Analyzer: section,
+				Listeners: []daemon.ListenerConfig{{
+					Name: "appdb", Protocol: "postgres", Listen: ":5432", Upstream: "db:5432",
+				}},
+			},
+		}
+		if err := models.CreateSidecar(models.DB, sc); err != nil {
+			t.Fatalf("seed sidecar %s: %v", name, err)
+		}
+		return sc
+	}
+	without := newSidecar("no-analyzer-section", nil)
+	with := newSidecar("analyzer-section", &daemon.AnalyzerConfig{Provider: "anthropic", Model: "claude-sonnet-4-5"})
+
+	const spec = `{"trigger":{"operations":["delete"]},"high":"block","max_calls":25}`
+	rule := &models.AISessionAnalyzerRules{
+		OrgID: orgID, Name: "block-deletes", ConnectionNames: pq.StringArray{},
+		SidecarSpec: json.RawMessage(spec),
+	}
+	if err := models.CreateAISessionAnalyzerRule(rule); err != nil {
+		t.Fatalf("seed analyzer rule: %v", err)
+	}
+
+	err := services.ValidateSidecarRuleTargets(models.DB, testOrgID, services.SidecarRuleAnalyzer,
+		rule.Name, "", json.RawMessage(spec), []models.SidecarRuleTarget{{SidecarID: without.ID, ListenerName: "appdb"}})
+	if err == nil || !strings.Contains(err.Error(), "has no analyzer section") {
+		t.Fatalf("err = %v; want the missing analyzer section named", err)
+	}
+
+	targets := []models.SidecarRuleTarget{{SidecarID: with.ID, ListenerName: "appdb"}}
+	err = services.ValidateSidecarRuleTargets(models.DB, testOrgID, services.SidecarRuleAnalyzer,
+		rule.Name, "", json.RawMessage(spec), targets)
+	if err != nil {
+		t.Fatalf("a lane without a block on a sidecar with the analyzer section was refused: %v", err)
+	}
+	if err := models.SetAnalyzerRuleListeners(models.DB, orgID, rule.Name, targets); err != nil {
+		t.Fatalf("bind: %v", err)
+	}
+
+	composed, err := services.ComposeSidecarConfiguration(models.DB, with)
+	if err != nil {
+		t.Fatalf("compose: %v", err)
+	}
+	block := composed.Listeners[0].Analyzer
+	if block == nil {
+		t.Fatal("the served listener has no analyzer block")
+	}
+	if block.HighRisk != "block" || block.MaxCalls != 25 {
+		t.Errorf("served block = high %q, max_calls %d; want the rule's", block.HighRisk, block.MaxCalls)
+	}
+	if block.Trigger == nil || len(block.Trigger.Operations) != 1 || block.Trigger.Operations[0] != "delete" {
+		t.Errorf("served trigger = %+v; want the rule's", block.Trigger)
+	}
+}
+
 // TestAFailedBindingLeavesTheRuleUnchanged pins the rule row and its bindings
 // to ONE transaction, which is how the three rule APIs now write them.
 //
@@ -744,9 +815,9 @@ func TestTheHoldSwitchOwnsItsApprovalRule(t *testing.T) {
 	const holding = `{"high":"require_review","approval_rule":"hold-writes"}`
 	const notHolding = `{"high":"block"}`
 
-	// Switched on: the rule appears, with the resolved role names rather than
-	// the literal "admin", and one approval releases.
-	err := services.SyncAnalyzerApprovalRule(models.DB, orgID, "hold-writes", json.RawMessage(holding))
+	// Switched on naming nobody: the rule appears with the resolved admin
+	// group rather than the literal "admin", and one approval releases.
+	err := services.SyncAnalyzerApprovalRule(models.DB, orgID, "hold-writes", json.RawMessage(holding), nil)
 	if err != nil {
 		t.Fatalf("turning the hold on: %v", err)
 	}
@@ -760,14 +831,8 @@ func TestTheHoldSwitchOwnsItsApprovalRule(t *testing.T) {
 	if len(rule.ConnectionNames) != 0 {
 		t.Errorf("a sidecar rule gates no connection, got %v", rule.ConnectionNames)
 	}
-	want := map[string]bool{types.GroupApprover: true, types.GroupAdmin: true}
-	if len(rule.ReviewersGroups) != len(want) {
-		t.Fatalf("reviewers = %v, want the approver and admin groups", rule.ReviewersGroups)
-	}
-	for _, g := range rule.ReviewersGroups {
-		if !want[g] {
-			t.Errorf("reviewers carry %q, which is not a role this server resolves", g)
-		}
+	if len(rule.ReviewersGroups) != 1 || rule.ReviewersGroups[0] != types.GroupAdmin {
+		t.Fatalf("reviewers = %v, want only the admin group", rule.ReviewersGroups)
 	}
 	if rule.MinApprovals == nil || *rule.MinApprovals != 1 {
 		t.Errorf("min approvals = %v, want 1", rule.MinApprovals)
@@ -778,8 +843,39 @@ func TestTheHoldSwitchOwnsItsApprovalRule(t *testing.T) {
 		t.Errorf("min approvals %d exceeds %d reviewer groups", *rule.MinApprovals, len(rule.ReviewersGroups))
 	}
 
+	// The admin names identity provider groups: they replace the default,
+	// cleaned of blanks and repeats that would make every review unsettleable.
+	named := []string{" dba-leads ", "", "sre", "dba-leads"}
+	err = services.SyncAnalyzerApprovalRule(models.DB, orgID, "hold-writes", json.RawMessage(holding), &named)
+	if err != nil {
+		t.Fatalf("naming reviewers: %v", err)
+	}
+	rule, _ = models.GetAccessRequestRuleByName(models.DB, "hold-writes", orgID)
+	if got := []string(rule.ReviewersGroups); len(got) != 2 || got[0] != "dba-leads" || got[1] != "sre" {
+		t.Fatalf("reviewers = %v, want [dba-leads sre]", got)
+	}
+
+	// An edit that does not mention them keeps them.
+	err = services.SyncAnalyzerApprovalRule(models.DB, orgID, "hold-writes", json.RawMessage(holding), nil)
+	if err != nil {
+		t.Fatalf("editing without reviewers: %v", err)
+	}
+	if got, _ := services.AnalyzerApprovalReviewers(models.DB, orgID, "hold-writes"); len(got) != 2 {
+		t.Fatalf("reviewers after an edit = %v, want them kept", got)
+	}
+
+	// Naming nobody explicitly falls back to the admin group.
+	empty := []string{}
+	err = services.SyncAnalyzerApprovalRule(models.DB, orgID, "hold-writes", json.RawMessage(holding), &empty)
+	if err != nil {
+		t.Fatalf("clearing reviewers: %v", err)
+	}
+	if got, _ := services.AnalyzerApprovalReviewers(models.DB, orgID, "hold-writes"); len(got) != 1 || got[0] != types.GroupAdmin {
+		t.Fatalf("reviewers after clearing = %v, want the admin group", got)
+	}
+
 	// Switched off: the rule goes with it.
-	err = services.SyncAnalyzerApprovalRule(models.DB, orgID, "hold-writes", json.RawMessage(notHolding))
+	err = services.SyncAnalyzerApprovalRule(models.DB, orgID, "hold-writes", json.RawMessage(notHolding), nil)
 	if err != nil {
 		t.Fatalf("turning the hold off: %v", err)
 	}
@@ -797,7 +893,7 @@ func TestTheHoldSwitchOwnsItsApprovalRule(t *testing.T) {
 		t.Fatalf("seed a hand-made rule: %v", err)
 	}
 	err = services.SyncAnalyzerApprovalRule(models.DB, orgID, "ops-review",
-		json.RawMessage(`{"high":"require_review","approval_rule":"ops-review"}`))
+		json.RawMessage(`{"high":"require_review","approval_rule":"ops-review"}`), nil)
 	if err == nil {
 		t.Fatal("a hold must not take over an access request rule it did not create")
 	}

@@ -75,9 +75,10 @@ export default function ControlPlaneConfigureTab() {
           </Stack>
 
           <Text size="sm" c="dimmed">
-            A listener needs its own analyzer block before a rule can reach it.
-            Rules then carry the trigger, the action per risk level and the
-            prompt.
+            With this section in place, a rule can reach any listener of the
+            sidecar. The rule carries the trigger, the action per risk level,
+            the prompt and the call budget. A listener that has its own
+            analyzer block keeps its limits under the rule.
           </Text>
 
           <Button variant="light" w="fit-content" onClick={() => navigate('/sidecars')}>
