@@ -106,13 +106,14 @@ MySQL 8 CLI exposes against any server without `CLIENT_QUERY_ATTRIBUTES`.
 
 [`kubernetes/`](kubernetes/README.md) puts a one-node k3s cluster behind a
 `protocol: http` lane on Envoy `:8447` (TLS, the same OPA fat gate) and
-shows two request shapes on one listener: plain `kubectl get`, where the
-process's guardrail refuses a taxpayer id on the request line, and the
-WebSocket `kubectl exec` opens, admitted by Envoy's `upgrade_configs` and
-recorded by the relay as the GET, the 101 and the subprotocol selected.
-kubectl cannot add a header, so on that port OPA reads the identity off
-the bearer token instead of `X-Hoop-User`. The apiserver chunks every
-response, so masking is off on the lane rather than inherited and idle.
+shows what the relay does with requests that have no body: an
+`http_header` guardrail reads kubectl's `Accept` header to let a Secret be
+listed and refuse it being read, a `columns: [data]` mask rule redacts every
+`data` value in the apiserver's chunked JSON responses by key path, and the
+WebSocket `kubectl exec` opens is admitted by Envoy's `upgrade_configs` and
+recorded as the GET, the 101 and one row per frame after it. kubectl cannot
+add a header, so on that port OPA reads the identity off the bearer token
+instead of `X-Hoop-User`.
 
 **The running transport.** `/stats` reports the address each lane bound, so
 you can read it off the process instead of the config:
@@ -397,10 +398,10 @@ nothing. The **cache** keys on the statement shape, so `WHERE id = 1` and
 `WHERE id = 2` are one verdict. The analyzer runs after the free local
 rules, so anything they already refused never reaches a model.
 
-On the httpbin lane it also needs an `http:` block with `capture_body: true`.
-Without a body the model sees `POST /anything` and nothing else, and a request
-with no body is skipped rather than classified, so a forgotten flag looks like
-an analyzer that does not fire.
+On the httpbin lane, `capture_body: true` in the `http:` block is what puts
+a POST's payload in front of the model. A request with no body is still
+classified from its request line and the headers the lane allowlists; a
+`GET` is judged by its path, which on a REST API is the operation.
 
 What the model receives is the request as sent, then the resource policy
 matched on, then the body. For `POST /anything/12345?export=all` the text is:

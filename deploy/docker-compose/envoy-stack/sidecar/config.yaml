@@ -286,10 +286,10 @@ listeners:
         #   type: http_status
         #   statuses: ["5xx"]
         #   message: upstream failure suppressed by policy
-    # Needs the http block below: without capture_body the analyzer sees
-    # "POST /anything" and no payload, which tells a model nothing. With
-    # it, the model receives the request line as sent, the resource the
-    # trigger matched, and the body:
+    # The http block below is what the model gets to see. Without it the
+    # analyzer judges "POST /anything" from the request line alone; with
+    # capture_body it also receives the body, and with headers the
+    # allowlisted headers, in name order:
     #
     #   POST /anything/12345?export=all
     #   Resource: /anything/*
@@ -297,17 +297,16 @@ listeners:
     #
     #   {"note": "close the account"}
     #
-    # The cache keys on the resource, the query string and the body, so
-    # another id with the same query and body is the same verdict, and a
-    # different value for export is another call.
+    # The cache keys on the resource, the query string, the headers and the
+    # body, so another id with the same query and body is the same verdict,
+    # and a different value for export is another call.
     # analyzer:
     #   trigger: {resources: ["/anything"]}
     #   high: block
     #   medium: warn
     # Off by default: everything captured reaches policy, the audit trail and,
-    # with an analyzer configured, a third party. authorization, cookie and
-    # proxy-authorization cannot be allowlisted, and no header ever reaches
-    # the model.
+    # with an analyzer configured, a third party. authorization, cookie,
+    # proxy-authorization and set-cookie cannot be allowlisted.
     # http:
     #   capture_body: true
     #   max_body_bytes: 8192

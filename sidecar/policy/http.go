@@ -2,6 +2,7 @@ package policy
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/hoophq/hoop/sidecar/inspect"
@@ -27,24 +28,47 @@ const (
 	// Envoy's ext_authz cannot express this rule, because it decides before
 	// the upstream is called.
 	MatchHTTPStatus MatchType = "http_status"
+
+	// MatchHTTPHeader denies when the message carries EVERY header named in
+	// Headers with a value matching one of the patterns listed for it.
+	// Methods and Resources narrow it as they narrow http_resource.
+	//
+	// It exists for the request whose intent is in its headers rather
+	// than its path: kubectl asks for a Secret's table view with
+	// `Accept: application/json;as=Table;...` and for its contents with
+	// `Accept: application/json`, on the same GET. Only headers the lane
+	// allowlists (`http.headers`) reach the statement, so a rule naming
+	// any other header can never match; the daemon refuses that config.
+	MatchHTTPHeader MatchType = "http_header"
 )
 
 // HTTP-specific Rule fields. They live on the same Rule struct so a single
 // ordered rule set can mix SQL and HTTP matchers, sparing a chain in front of
 // a mixed workload from running two evaluators.
 type httpRuleFields struct {
-	// Resources for MatchHTTPResource. Compared against
-	// Statement.HTTP.Resource. Supports a trailing "/**" wildcard.
+	// Resources for MatchHTTPResource, and a SCOPE for MatchHTTPHeader.
+	// Compared against Statement.HTTP.Resource. Supports a trailing "/**"
+	// wildcard.
 	Resources []string `json:"resources,omitempty"`
 
 	// Methods narrows any HTTP rule to these methods. Empty means every
-	// method. Applies to MatchHTTPResource and MatchHTTPStatus.
+	// method. Applies to MatchHTTPResource, MatchHTTPStatus and
+	// MatchHTTPHeader.
 	Methods []string `json:"methods,omitempty"`
 
 	// Statuses for MatchHTTPStatus or MatchGRPCStatus. HTTP accepts exact
 	// codes and classes ("404", "4xx"); gRPC accepts canonical names and
 	// codes ("permission_denied", "7").
 	Statuses []string `json:"statuses,omitempty"`
+
+	// Headers for MatchHTTPHeader: header name to the value patterns that
+	// match it, ANDed across names and ORed within one. Names are compared
+	// case-insensitively; values case-insensitively too, with `*` matching
+	// any run of characters and `\*` a literal star. An empty list means
+	// the header is present with any value. A header the codec captured
+	// with several values arrives joined with ", ", and a pattern matches
+	// that whole string.
+	Headers map[string][]string `json:"headers,omitempty"`
 }
 
 // validateHTTP checks the HTTP-specific fields of a rule at construction.
@@ -63,15 +87,39 @@ func (r Rule) validateHTTP() error {
 				return fmt.Errorf("%s: invalid status %q (want a code like 404 or a class like 4xx)", r.Name, s)
 			}
 		}
+	case MatchHTTPHeader:
+		if len(r.Headers) == 0 {
+			return fmt.Errorf("%s: http_header rule with no headers", r.Name)
+		}
+		for name := range r.Headers {
+			if strings.TrimSpace(name) == "" {
+				return fmt.Errorf("%s: http_header rule with an empty header name", r.Name)
+			}
+		}
 	}
 	return nil
+}
+
+// HeaderNames returns the header names a MatchHTTPHeader rule reads,
+// lowercased and sorted, so a configuration layer can check them against
+// what the lane's codec captures. Empty for any other rule type.
+func (r Rule) HeaderNames() []string {
+	if r.Type != MatchHTTPHeader {
+		return nil
+	}
+	names := make([]string, 0, len(r.Headers))
+	for name := range r.Headers {
+		names = append(names, strings.ToLower(strings.TrimSpace(name)))
+	}
+	sort.Strings(names)
+	return names
 }
 
 // matchesHTTP evaluates the HTTP rule types. ok reports whether this rule type
 // belongs here, leaving everything else to the SQL matcher.
 func (r Rule) matchesHTTP(stmt inspect.Statement) (matched, ok bool) {
 	switch r.Type {
-	case MatchHTTPResource, MatchHTTPStatus:
+	case MatchHTTPResource, MatchHTTPStatus, MatchHTTPHeader:
 	default:
 		return false, false
 	}
@@ -117,8 +165,90 @@ func (r Rule) matchesHTTP(stmt inspect.Statement) (matched, ok bool) {
 			}
 		}
 		return false, true
+
+	case MatchHTTPHeader:
+		if !r.methodAllowed(d.Method) || !r.resourceAllowed(d.Resource) {
+			return false, true
+		}
+		for name, patterns := range r.Headers {
+			value, present := d.Headers[strings.ToLower(strings.TrimSpace(name))]
+			if !present || !anyWildcard(patterns, value) {
+				return false, true
+			}
+		}
+		return true, true
 	}
 	return false, true
+}
+
+// resourceAllowed applies Resources as a scope: empty means every resource.
+func (r Rule) resourceAllowed(resource string) bool {
+	if len(r.Resources) == 0 {
+		return true
+	}
+	for _, pattern := range r.Resources {
+		if matchResource(pattern, resource) {
+			return true
+		}
+	}
+	return false
+}
+
+// anyWildcard reports whether value matches one of patterns. No patterns
+// means any value.
+func anyWildcard(patterns []string, value string) bool {
+	if len(patterns) == 0 {
+		return true
+	}
+	for _, p := range patterns {
+		if matchWildcard(p, value) {
+			return true
+		}
+	}
+	return false
+}
+
+// matchWildcard compares value against a pattern where `*` matches any run
+// of characters and `\*` is a literal star, case-insensitively. It is the
+// whole pattern language for a header value: an operator writing
+// `application/json;as=Table*` should not have to know which of those
+// characters a regex would eat, and one writing `\*/\*` for an Accept
+// header gets the header.
+func matchWildcard(pattern, value string) bool {
+	p, v := strings.ToLower(pattern), strings.ToLower(value)
+	// literal returns the byte p[pi] stands for and how many pattern bytes
+	// it spans, or ok=false when p[pi] is a wildcard.
+	literal := func(pi int) (c byte, n int, ok bool) {
+		if p[pi] == '\\' && pi+1 < len(p) && p[pi+1] == '*' {
+			return '*', 2, true
+		}
+		return p[pi], 1, p[pi] != '*'
+	}
+	// Iterative glob: remember the last star and where in v it was tried,
+	// so a mismatch after a star retries with the star eating one more byte.
+	pi, vi, star, mark := 0, 0, -1, 0
+	for vi < len(v) {
+		if pi < len(p) {
+			if c, n, ok := literal(pi); !ok {
+				star, mark = pi, vi
+				pi++
+				continue
+			} else if c == v[vi] {
+				pi += n
+				vi++
+				continue
+			}
+		}
+		if star < 0 {
+			return false
+		}
+		mark++
+		pi, vi = star+1, mark
+	}
+	for pi < len(p) && p[pi] == '*' {
+		pi++
+	}
+	return pi == len(p)
 }
 
 func (r Rule) methodAllowed(method string) bool {

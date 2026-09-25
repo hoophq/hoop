@@ -376,12 +376,11 @@ func TestTheCallBudgetSurvivesAnEvaluatorRebuild(t *testing.T) {
 	}
 }
 
-// An ai_analysis rule on an HTTP lane with no body capture classifies nothing:
-// the codec leaves Body empty, and the builder skips a bodiless request. The
-// rule would load, evaluate and never fire.
-func TestHTTPAIRuleWithoutCaptureBodyIsRefused(t *testing.T) {
-	mk := func(h *HTTPCodecConfig) *Config {
-		return &Config{
+// An analyzer on an HTTP lane no longer needs body capture: a bodiless
+// request is judged from its path and headers. The lane loads either way.
+func TestHTTPAIRuleLoadsWithoutCaptureBody(t *testing.T) {
+	for _, h := range []*HTTPCodecConfig{nil, {Headers: []string{"Accept"}}, {CaptureBody: true}} {
+		cfg := &Config{
 			Analyzer: &AnalyzerConfig{Provider: "stub", Model: "m"},
 			Listeners: []ListenerConfig{{
 				Name: "api", Protocol: "http", Listen: ":1", Upstream: "h:1",
@@ -389,29 +388,48 @@ func TestHTTPAIRuleWithoutCaptureBodyIsRefused(t *testing.T) {
 				Guardrails: &GuardrailsConfig{Rules: []policy.Rule{aiRule("risky")}},
 			}},
 		}
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("http=%+v: %v", h, err)
+		}
+	}
+}
+
+// An http_header rule reads only what the lane's codec captures. Naming a
+// header outside `http.headers` is refused, with the header in the message;
+// an inherited top-level rule is checked against each http lane the same
+// way, and a lane of another protocol is left alone.
+func TestHTTPHeaderRuleMustNameCapturedHeaders(t *testing.T) {
+	accept := policy.Rule{Name: "no-secret-contents", Type: policy.MatchHTTPHeader}.
+		WithHeaders(map[string][]string{"Accept": {"application/json"}})
+	lane := func(h *HTTPCodecConfig, rules ...policy.Rule) ListenerConfig {
+		lc := ListenerConfig{Name: "api", Protocol: "http", Listen: ":1", Upstream: "h:1", HTTP: h}
+		if len(rules) > 0 {
+			lc.Guardrails = &GuardrailsConfig{Rules: rules}
+		}
+		return lc
 	}
 
-	for _, tc := range []struct {
-		name string
-		http *HTTPCodecConfig
-	}{
-		{"no http block at all", nil},
-		{"http block with capture off", &HTTPCodecConfig{Headers: []string{"Content-Type"}}},
-		{"capture explicitly false", &HTTPCodecConfig{CaptureBody: false}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			err := mk(tc.http).Validate()
-			if err == nil {
-				t.Fatal("an http ai_analysis rule without body capture was accepted")
-			}
-			if !strings.Contains(err.Error(), "capture_body") {
-				t.Errorf("the error does not name the missing setting: %v", err)
-			}
-		})
+	err := (&Config{Listeners: []ListenerConfig{lane(&HTTPCodecConfig{Headers: []string{"X-Hoop-User"}}, accept)}}).Validate()
+	if err == nil || !strings.Contains(err.Error(), `header "accept"`) {
+		t.Fatalf("a rule on an uncaptured header was accepted or not named: %v", err)
+	}
+	if err := (&Config{Listeners: []ListenerConfig{lane(nil, accept)}}).Validate(); err == nil {
+		t.Fatal("a rule on a lane with no http block was accepted")
+	}
+	if err := (&Config{Listeners: []ListenerConfig{lane(&HTTPCodecConfig{Headers: []string{"accept"}}, accept)}}).Validate(); err != nil {
+		t.Errorf("a rule on a captured header was refused: %v", err)
 	}
 
-	if err := mk(&HTTPCodecConfig{CaptureBody: true}).Validate(); err != nil {
-		t.Errorf("capture_body: true was still refused: %v", err)
+	inherited := &Config{
+		Guardrails: &GuardrailsConfig{Rules: []policy.Rule{accept}},
+		Listeners:  []ListenerConfig{lane(nil)},
+	}
+	if err := inherited.Validate(); err == nil {
+		t.Fatal("an inherited rule on an uncaptured header was accepted")
+	}
+	pg := pgLane(accept)
+	if err := pg.Validate(); err != nil {
+		t.Errorf("an http_header rule on a postgres lane was refused: %v", err)
 	}
 }
 

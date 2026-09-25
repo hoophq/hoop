@@ -1,9 +1,10 @@
 # Applied by k3s at start from /var/lib/rancher/k3s/server/manifests.
 #
 # The pod is the target of kubectl exec, the lane's WebSocket beat. The
-# ConfigMap carries the same customers fixture as ../../upstream/seed.sql,
-# so the process's one mask rule has an email to find in an apiserver
-# response.
+# ConfigMap carries the same customers fixture as ../../upstream/seed.sql;
+# its `data` is what the lane's one mask rule redacts in an apiserver
+# response. The Secret is what the lane's one guardrail refuses to hand
+# over: listing it is fine, reading its contents is not.
 apiVersion: v1
 kind: Pod
 metadata:
@@ -24,3 +25,13 @@ data:
   ada: "Ada Lovelace,ada@example.com,123-45-6789,111.444.777-35,GB82WEST12345698765432"
   grace: "Grace Hopper,grace@example.com,987-65-4321,529.982.247-25,DE89370400440532013000"
   alan: "Alan Turing,alan@example.com,555-12-3456,390.533.447-05,FR1420041010050500013M02606"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: db-credentials
+  namespace: default
+type: Opaque
+stringData:
+  username: appuser
+  password: hunter2-do-not-read-me

@@ -349,13 +349,14 @@ func TestSSHMaskStrategyMustPreserveLength(t *testing.T) {
 	}
 }
 
-// Four rule types have nothing on an SSH lane to read. A rule that loads,
+// Five rule types have nothing on an SSH lane to read. A rule that loads,
 // evaluates and never fires is worse than one that refuses.
 func TestSSHRefusedRuleTypes(t *testing.T) {
 	cases := []struct{ rule, want string }{
 		{`{"name":"r","type":"table","tables":["users"]}`, "SSH has no relations"},
 		{`{"name":"r","type":"http_resource","resources":["/x"]}`, "there is no request path"},
 		{`{"name":"r","type":"http_status","statuses":["500"]}`, "there is no response status"},
+		{`{"name":"r","type":"http_header","headers":{"accept":[]}}`, "there is no request header"},
 		{`{"name":"r","type":"grpc_status","statuses":["7"]}`, "there is no RPC"},
 	}
 	for _, tc := range cases {

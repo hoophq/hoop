@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"unicode"
@@ -109,9 +110,15 @@ type Rule struct {
 	// ["ssn"]} and keeps the same audit label.
 	Entity string `json:"entity,omitempty"`
 
-	// Columns names result-set columns to mask outright, compared
-	// case-insensitively. Ignored for protocols that do not name their
-	// values; a rule with only Columns therefore never fires on HTTP.
+	// Columns names values to mask outright, compared case-insensitively:
+	// result-set columns where the protocol names its values, and JSON keys
+	// in an HTTP response body or WebSocket text message, where the codec
+	// hands each value over under its dotted key path (`data.password`;
+	// array indices do not appear). A name matches a key path when its
+	// segments occur in order and adjacent in the path: `password` masks
+	// every value keyed password at any depth, `data` masks every value
+	// under a data object, `data.password` only that one. Ignored for
+	// protocols that name nothing.
 	//
 	// The whole cell is rewritten, not a span within it: if the operator
 	// says the column is sensitive, its contents are sensitive whether or
@@ -180,6 +187,11 @@ type Masker struct {
 	// by MaskCell: a protocol that does not name its values cannot match
 	// these, and Mask over an opaque blob never sees a column.
 	byColumn map[string]columnRule
+
+	// byPath is byColumn split on dots, for matching a JSON key path by
+	// segment. Built once; MaskCell walks it only for a column carrying a
+	// dot, so a result-set column costs one map lookup as before.
+	byPath []pathRule
 }
 
 // NewMasker compiles a rule set against a detector's engine.
@@ -315,11 +327,17 @@ func NewMasker(d *Detector, rules []Rule) (*Masker, error) {
 	opts := d.opts
 	opts.Entities = entities
 
+	byPath := make([]pathRule, 0, len(byColumn))
+	for key, cr := range byColumn {
+		byPath = append(byPath, pathRule{segs: strings.Split(key, "."), rule: cr})
+	}
+
 	return &Masker{
 		eng:      d.eng,
 		opts:     opts,
 		entities: entities,
 		byColumn: byColumn,
+		byPath:   byPath,
 		cfg: anonymizer.Config{
 			// Every entity has an explicit rule, so the default is only
 			// reached if alcatraz reports a type we did not ask for. Redact
@@ -336,6 +354,12 @@ type columnRule struct {
 	op     anonymizer.Operator
 	entity string
 	rule   string
+}
+
+// pathRule is a columnRule split on dots, matched against a key path.
+type pathRule struct {
+	segs []string
+	rule columnRule
 }
 
 // operator turns one rule into the anonymizer Operator that renders it.
@@ -472,7 +496,7 @@ func (m *Masker) MaskCell(column string, value []byte) ([]byte, []string, int) {
 		return value, nil, 0
 	}
 
-	if cr, ok := m.byColumn[strings.ToLower(column)]; ok {
+	if cr, ok := m.columnRule(column); ok {
 		return []byte(cr.op(cr.entity, string(value))), []string{cr.entity}, 1
 	}
 
@@ -481,6 +505,50 @@ func (m *Masker) MaskCell(column string, value []byte) ([]byte, []string, int) {
 	}
 	out, res := m.Mask(value)
 	return out, res.Entities, res.Count
+}
+
+// columnRule finds the column rule for a name or a dotted key path. The
+// exact name wins; a key path then matches the rule whose segments occur in
+// it in order and adjacent, so `data` covers `data.password` and
+// `items.data.token`, and `data.password` covers the first but not the
+// second. Where several match, the longest run wins, so a rule naming a
+// specific path outranks one naming a segment of it; among equal runs the
+// one nearest the leaf wins, so on `data.password` a `password` rule
+// outranks a `data` rule: the leaf key is what the value is called.
+func (m *Masker) columnRule(column string) (columnRule, bool) {
+	key := strings.ToLower(column)
+	if cr, ok := m.byColumn[key]; ok {
+		return cr, true
+	}
+	if len(m.byPath) == 0 || strings.IndexByte(key, '.') < 0 {
+		return columnRule{}, false
+	}
+	path := strings.Split(key, ".")
+	var (
+		best               columnRule
+		bestLen, bestStart = 0, -1
+	)
+	for _, pr := range m.byPath {
+		at := lastRun(path, pr.segs)
+		if at < 0 {
+			continue
+		}
+		if len(pr.segs) > bestLen || (len(pr.segs) == bestLen && at > bestStart) {
+			best, bestLen, bestStart = pr.rule, len(pr.segs), at
+		}
+	}
+	return best, bestLen > 0
+}
+
+// lastRun returns the highest index at which run occurs in path as adjacent
+// segments, -1 when it does not.
+func lastRun(path, run []string) int {
+	for i := len(path) - len(run); i >= 0; i-- {
+		if slices.Equal(path[i:i+len(run)], run) {
+			return i
+		}
+	}
+	return -1
 }
 
 // Columns returns the column names this Masker rewrites outright, sorted.

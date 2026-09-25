@@ -20,22 +20,25 @@ import (
 // It exists because the codec's capture options are a per-lane decision the
 // registry cannot express: codec/http registers a factory taking no
 // arguments, so every lane in the process shared one zero-value Options and
-// no lane could see a request body. An AI analyzer on an HTTP lane needs the
-// body ("POST /anything" with no body tells a model nothing), so the option
-// had to become reachable from the config file.
+// no lane could see a request body or a header.
 //
 // The defaults still expose nothing. Turning capture on is an explicit act,
 // because everything captured reaches the policy engine, the audit trail and,
-// where an analyzer is configured, a third party.
+// where an analyzer is configured, a third party: the analyzer renders the
+// allowlisted headers into its prompt beside the request line and the body.
 type HTTPCodecConfig struct {
 	// CaptureBody includes request and response bodies in the Statement.
+	// An analyzer on the lane judges a bodiless request from its path and
+	// headers either way; without this it never sees what a POST or a PUT
+	// carries.
 	CaptureBody bool `json:"capture_body"`
 
 	// MaxBodyBytes truncates a captured body. Zero uses the codec default.
 	MaxBodyBytes int `json:"max_body_bytes,omitempty"`
 
 	// Headers names the headers to expose, matched case-insensitively.
-	// There is no capture-all.
+	// There is no capture-all. An http_header rule on the lane may only
+	// name headers listed here; the config is refused otherwise.
 	Headers []string `json:"headers,omitempty"`
 
 	// SensitiveQueryParams adds query parameter names whose value the codec
@@ -44,6 +47,41 @@ type HTTPCodecConfig struct {
 	// (access_token, api_key, sig, X-Amz-Signature, ...); this list widens
 	// that for a deployment's own spelling. There is no way to narrow it.
 	SensitiveQueryParams []string `json:"sensitive_query_params,omitempty"`
+}
+
+// captures reports whether the lane's codec exposes a header to policy.
+func (h *HTTPCodecConfig) captures(header string) bool {
+	if h == nil {
+		return false
+	}
+	for _, name := range h.Headers {
+		if strings.EqualFold(strings.TrimSpace(name), header) {
+			return true
+		}
+	}
+	return false
+}
+
+// validateHTTPHeaderRules refuses an http_header rule on an http lane that
+// names a header the lane does not capture. The codec drops every header
+// outside `http.headers`, so such a rule would load and never match; this
+// is the same bargain the config strikes for a pii rule on a grpc lane
+// without capture_payload. The message names the header to allowlist,
+// because that is the fix.
+func validateHTTPHeaderRules(rules []policy.Rule, h *HTTPCodecConfig, lane string) []string {
+	var problems []string
+	for _, r := range rules {
+		for _, header := range r.HeaderNames() {
+			if h.captures(header) {
+				continue
+			}
+			problems = append(problems, fmt.Sprintf(
+				"%s: rule %q reads header %q, which the listener does not capture, "+
+					"so it would never match; add it to the listener's http.headers",
+				lane, r.Name, header))
+		}
+	}
+	return problems
 }
 
 // forbiddenHeaders are never allowlistable.

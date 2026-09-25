@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"net/http"
 	"net/url"
 	"slices"
 	"sort"
@@ -280,7 +281,8 @@ type HTTPBuilder struct{}
 // Protocol implements Builder.
 func (HTTPBuilder) Protocol() inspect.Protocol { return inspect.HTTP }
 
-// Build renders the request line, the normalized resource and the body.
+// Build renders the request line, the normalized resource, the captured
+// headers and the body.
 //
 // The request line carries the request-target as the client sent it, not
 // the normalized resource. The resource is for policy, where /users/12345
@@ -294,21 +296,26 @@ func (HTTPBuilder) Protocol() inspect.Protocol { return inspect.HTTP }
 // as identifiers in the body: `send: redacted` runs the detector over this
 // whole text, and the prompt contract forbids quoting a literal back.
 //
-// Headers are deliberately excluded even when a lane allowlists them for
-// policy. An allowlist that is safe for a local rule is not automatically
-// safe to hand a third-party model, and the one header anyone would want
-// here is the one that must never leave.
+// A request with no body is still rendered. On a REST API the path IS the
+// operation — `GET /api/v1/namespaces/prod/secrets/db-root` says what a
+// kubectl user is about to read without a byte of body — and the headers
+// the lane allowlisted carry what the path does not: kubectl asks for a
+// listing with `Accept: ...;as=Table` and for the contents with
+// `Accept: application/json`. Those headers reach the model under the
+// lane's `http.headers` allowlist, which is the operator's one decision on
+// what leaves the process for policy, the audit trail and, here, a
+// provider; the credential headers cannot be allowlisted at all. The
+// trigger and the cache bound what this costs.
 //
-// A request with no body returns ok=false. "POST /anything" with no body
-// tells a model nothing, and paying for that verdict is the failure mode this
-// whole package is built to avoid.
+// A response with no body, or a WebSocket message without one (a close
+// frame), returns ok=false: there is nothing to judge but a status line.
 func (HTTPBuilder) Build(stmt inspect.Statement, maxBytes int) (Content, bool) {
 	d := stmt.HTTP
-	if d == nil {
+	if d == nil || d.Method == "" {
 		return Content{}, false
 	}
 	body := strings.TrimSpace(d.Body)
-	if body == "" {
+	if body == "" && (d.StatusCode != 0 || stmt.Metadata["http.proto"] == "websocket") {
 		return Content{}, false
 	}
 
@@ -324,19 +331,42 @@ func (HTTPBuilder) Build(stmt inspect.Statement, maxBytes int) (Content, bool) {
 		sb.WriteString("\nContent-Type: ")
 		sb.WriteString(d.ContentType)
 	}
+	headers := sortedHeaders(d.Headers)
+	for _, name := range headers {
+		sb.WriteString("\n")
+		sb.WriteString(http.CanonicalHeaderKey(name))
+		sb.WriteString(": ")
+		sb.WriteString(d.Headers[name])
+	}
 	if d.BodyTruncated {
 		// The codec already cut this body. Say so, or the model reasons
 		// about a JSON document that stops mid-key and reports the
 		// malformation rather than the risk.
 		sb.WriteString("\n(body truncated by the proxy)")
 	}
-	sb.WriteString("\n\n")
-	sb.WriteString(Truncate(body, maxBytes))
+	if body != "" {
+		sb.WriteString("\n\n")
+		sb.WriteString(Truncate(body, maxBytes))
+	}
 
 	return Content{
 		Text:     sb.String(),
-		CacheKey: httpCacheKey(stmt, body),
+		CacheKey: httpCacheKey(stmt, body, headers),
 	}, true
+}
+
+// sortedHeaders returns the captured header names in a stable order, so
+// the prompt and the cache key do not depend on map iteration.
+func sortedHeaders(h map[string]string) []string {
+	if len(h) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(h))
+	for name := range h {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // httpTarget is the request line's target. Target is the wire form the codec
@@ -357,7 +387,8 @@ func httpTarget(d *inspect.HTTPDetail) string {
 	return path + "?" + url.Values(d.Query).Encode()
 }
 
-// httpCacheKey hashes method, normalized resource, the query and body shape.
+// httpCacheKey hashes method, normalized resource, the query, the captured
+// headers and body shape.
 //
 // Resource rather than Path is what makes this cache work: /users/12345/orders
 // and /users/67890/orders are one shape, and the codec already collapsed the
@@ -367,8 +398,13 @@ func httpTarget(d *inspect.HTTPDetail) string {
 // and folding them would hand the second the first's verdict without a
 // provider call. url.Values.Encode is the canonical form: sorted by name, so
 // parameter order alone never misses the cache, and escaped, so a value
-// containing `&` or `=` cannot alias another query.
-func httpCacheKey(stmt inspect.Statement, body string) string {
+// containing `&` or `=` cannot alias another query. Headers go in for the
+// same reason the query does: the model sees them, and `Accept:
+// application/json` against `Accept: ...;as=Table` is the difference
+// between reading a secret and listing one. A lane that allowlists a
+// per-request header (a session id) pays a model call per request; that is
+// the allowlist's cost, and -validate's per-statement note covers it.
+func httpCacheKey(stmt inspect.Statement, body string, headers []string) string {
 	d := stmt.HTTP
 	target := d.Resource
 	if target == "" {
@@ -383,6 +419,13 @@ func httpCacheKey(stmt inspect.Statement, body string) string {
 	h.Write([]byte(target))
 	h.Write([]byte{0})
 	h.Write([]byte(url.Values(d.Query).Encode()))
+	h.Write([]byte{0})
+	for _, name := range headers {
+		h.Write([]byte(name))
+		h.Write([]byte{'='})
+		h.Write([]byte(d.Headers[name]))
+		h.Write([]byte{0})
+	}
 	h.Write([]byte{0})
 	h.Write([]byte(normalizeSpace(body)))
 	return hex.EncodeToString(h.Sum(nil)[:16])

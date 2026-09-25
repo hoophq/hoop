@@ -1,10 +1,13 @@
 package gate_test
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
+	"io"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -920,10 +923,13 @@ func TestMaskingAppliesToHTTP(t *testing.T) {
 	}
 }
 
-// A body that arrives without its header block cannot have Content-Length
-// corrected, because the header already went out. Masking it anyway grows the
-// body past the length the client was told to read, so the client stops
-// mid-token and reports a corrupt upstream.
+// A header block and its body arriving in separate reads must never leave the
+// client with a body longer than the Content-Length it was told. Two codecs
+// satisfy that two ways, and this test accepts either: the pinned libhoop
+// codec cannot mask a body whose header already went out, so it forwards the
+// body unmasked at the declared length; the WebSocket-aware codec holds the
+// header until the body is whole and masks both under a corrected length.
+// What is refused is the third outcome, a masked body behind a stale header.
 //
 // This was a live bug: about 3-10% of responses through the Envoy stack came
 // back truncated, whenever the upstream's header and body landed in separate
@@ -935,23 +941,33 @@ func TestMaskingSkipsBodyWhoseLengthCannotBeCorrected(t *testing.T) {
 			Masker:   stubMasker{find: "ada@example.com", replace: "[REDACTED:email]"},
 		})
 
-	// The header block, forwarded on its own. Content-Length is now committed.
 	head := []byte("HTTP/1.1 200 OK\r\nContent-Length: 15\r\n\r\n")
-	if d := g.Response(context.Background(), head); !bytes.Equal(d.Payload, head) {
-		t.Fatalf("header block was rewritten: %q", d.Payload)
+	first := g.Response(context.Background(), head)
+	if len(first.Payload) != 0 && !bytes.Equal(first.Payload, head) {
+		t.Fatalf("header block was rewritten: %q", first.Payload)
 	}
-
-	// The body, in the next read. Masking would take it from 15 bytes to 16.
 	body := []byte("ada@example.com")
-	d := g.Response(context.Background(), body)
+	second := g.Response(context.Background(), body)
 
-	if len(d.Payload) != 15 {
-		t.Errorf("payload is %d bytes but the client will read 15, truncating it: %q",
-			len(d.Payload), d.Payload)
+	wire := append(append([]byte(nil), first.Payload...), second.Payload...)
+	wire = append(wire, g.FlushResponse()...)
+	resp, err := http.ReadResponse(bufio.NewReader(bytes.NewReader(wire)), &http.Request{Method: "GET"})
+	if err != nil {
+		t.Fatalf("the client cannot parse what went out: %v\n%q", err, wire)
 	}
-	if d.MaskedCount != 0 {
-		t.Errorf("MaskedCount = %d: reported masking a body it could not safely rewrite",
-			d.MaskedCount)
+	got, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("the client cannot read the body: %v\n%q", err, wire)
+	}
+	if int64(len(got)) != resp.ContentLength {
+		t.Fatalf("Content-Length %d, body %d bytes: the client truncates it\n%q", resp.ContentLength, len(got), wire)
+	}
+	masked := first.MaskedCount + second.MaskedCount
+	switch {
+	case masked == 0 && string(got) != "ada@example.com":
+		t.Errorf("body changed without a masked count: %q", got)
+	case masked > 0 && string(got) != "[REDACTED:email]":
+		t.Errorf("masked count %d but the body is %q", masked, got)
 	}
 }
 

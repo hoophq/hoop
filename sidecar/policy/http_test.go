@@ -68,6 +68,24 @@ func TestHTTPResourceDoubleStar(t *testing.T) {
 	if rules.Evaluate(httpStmt(&inspect.HTTPDetail{Resource: "/administration"})).Denied {
 		t.Error("/administration matched /admin/**; prefix matching must respect segment boundaries")
 	}
+
+	// A wildcard segment before the trailing /** is still a wildcard: one
+	// rule covers a collection in every namespace and everything under it.
+	deep, _ := policy.NewRules([]policy.Rule{
+		policy.Rule{Name: "no-secrets", Type: policy.MatchHTTPResource}.
+			WithResources("/api/v1/namespaces/*/secrets/**"),
+	})
+	for _, res := range []string{
+		"/api/v1/namespaces/default/secrets",
+		"/api/v1/namespaces/kube-system/secrets/k3s-serving",
+	} {
+		if !deep.Evaluate(httpStmt(&inspect.HTTPDetail{Resource: res})).Denied {
+			t.Errorf("%s was allowed by /api/v1/namespaces/*/secrets/**", res)
+		}
+	}
+	if deep.Evaluate(httpStmt(&inspect.HTTPDetail{Resource: "/api/v1/namespaces/default/configmaps/x"})).Denied {
+		t.Error("a configmap matched the secrets pattern")
+	}
 }
 
 func TestHTTPResourceDoubleStarAfterWildcard(t *testing.T) {
@@ -129,6 +147,82 @@ func TestHTTPResourceMethodNarrowing(t *testing.T) {
 		Method: "GET", Resource: "/users/*",
 	})).Denied {
 		t.Error("GET was denied by a POST/DELETE rule")
+	}
+}
+
+// A request whose intent is in its headers: kubectl fetches a Secret's
+// contents with `Accept: application/json` and its table view with
+// `Accept: application/json;as=Table;...`, on the same GET. The rule names
+// the header and the values that mean "the contents", scoped to one secret,
+// and lets the listing through.
+func TestHTTPHeaderRule(t *testing.T) {
+	rules, err := policy.NewRules([]policy.Rule{
+		policy.Rule{Name: "no-secret-contents", Type: policy.MatchHTTPHeader,
+			Message: "reading a secret is not permitted"}.
+			WithResources("/api/v1/namespaces/*/secrets/*").
+			WithMethods("GET").
+			WithHeaders(map[string][]string{"Accept": {"application/json", "application/yaml", `\*/\*`}}),
+	})
+	if err != nil {
+		t.Fatalf("NewRules: %v", err)
+	}
+	secret := func(accept string) inspect.Statement {
+		return httpStmt(&inspect.HTTPDetail{
+			Method: "GET", Resource: "/api/v1/namespaces/default/secrets/db",
+			Headers: map[string]string{"accept": accept},
+		})
+	}
+
+	v := rules.Evaluate(secret("application/json"))
+	if !v.Denied || v.Message != "reading a secret is not permitted" {
+		t.Errorf("GET secret with Accept: application/json was allowed: %+v", v)
+	}
+	if !rules.Evaluate(secret("Application/YAML")).Denied {
+		t.Error("header values must match case-insensitively")
+	}
+	if rules.Evaluate(secret("application/json;as=Table;v=v1;g=meta.k8s.io,application/json")).Denied {
+		t.Error("the table view was denied; a pattern without * is an exact match on the whole value")
+	}
+	if rules.Evaluate(httpStmt(&inspect.HTTPDetail{
+		Method: "GET", Resource: "/api/v1/namespaces/default/secrets",
+		Headers: map[string]string{"accept": "application/json"},
+	})).Denied {
+		t.Error("listing secrets was denied; resources scope the rule")
+	}
+	if rules.Evaluate(httpStmt(&inspect.HTTPDetail{
+		Method: "GET", Resource: "/api/v1/namespaces/default/secrets/db",
+	})).Denied {
+		t.Error("a request without the header was denied; the codec did not capture it, so the rule cannot read it")
+	}
+}
+
+// Several headers in one rule must all match; several values for one header
+// are alternatives; `*` matches any run; an empty list means present.
+func TestHTTPHeaderRuleCombinators(t *testing.T) {
+	rules, _ := policy.NewRules([]policy.Rule{
+		policy.Rule{Name: "no-kubectl-delete", Type: policy.MatchHTTPHeader}.
+			WithHeaders(map[string][]string{
+				"kubectl-command": {"kubectl delete*", "kubectl drain"},
+				"x-hoop-user":     {},
+			}),
+	})
+	stmt := func(h map[string]string) inspect.Statement {
+		return httpStmt(&inspect.HTTPDetail{Method: "DELETE", Resource: "/api/v1/namespaces/*/pods/*", Headers: h})
+	}
+	for name, tc := range map[string]struct {
+		headers map[string]string
+		denied  bool
+	}{
+		"delete with a user":      {map[string]string{"kubectl-command": "kubectl delete", "x-hoop-user": "alice"}, true},
+		"delete flags, wildcard":  {map[string]string{"kubectl-command": "kubectl delete --all", "x-hoop-user": "alice"}, true},
+		"drain, second pattern":   {map[string]string{"kubectl-command": "kubectl drain", "x-hoop-user": "bob"}, true},
+		"delete without the user": {map[string]string{"kubectl-command": "kubectl delete"}, false},
+		"get, not a listed value": {map[string]string{"kubectl-command": "kubectl get", "x-hoop-user": "alice"}, false},
+		"prefix without wildcard": {map[string]string{"kubectl-command": "kubectl drain --force", "x-hoop-user": "alice"}, false},
+	} {
+		if got := rules.Evaluate(stmt(tc.headers)).Denied; got != tc.denied {
+			t.Errorf("%s: denied = %v, want %v", name, got, tc.denied)
+		}
 	}
 }
 
@@ -222,6 +316,8 @@ func TestInvalidHTTPRulesRejected(t *testing.T) {
 		"no resources": {Name: "r", Type: policy.MatchHTTPResource},
 		"no statuses":  {Name: "r", Type: policy.MatchHTTPStatus},
 		"bad status":   policy.Rule{Name: "r", Type: policy.MatchHTTPStatus}.WithStatuses("nope"),
+		"no headers":   {Name: "r", Type: policy.MatchHTTPHeader},
+		"empty header": policy.Rule{Name: "r", Type: policy.MatchHTTPHeader}.WithHeaders(map[string][]string{" ": nil}),
 	}
 	for name, rule := range cases {
 		if _, err := policy.NewRules([]policy.Rule{rule}); err == nil {

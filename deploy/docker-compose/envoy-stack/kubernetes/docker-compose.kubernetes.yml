@@ -13,14 +13,16 @@
 # What it adds:
 #
 #   k3s           a one-node k3s cluster; static bearer tokens for alice and bob,
-#                 a demo pod and a customers ConfigMap auto-deployed at start
+#                 a demo pod, a customers ConfigMap and a db-credentials Secret
+#                 auto-deployed at start
 #   k3s-ca        copies the cluster CA out of k3s's 0700 tls directory so the
 #                 non-root sidecar can verify the upstream leg
 #   client        the base sandbox plus kubectl and a kubeconfig aimed at envoy
 #   envoy :8447   HTTPS + OPA -> the sidecar's kubernetes lane
 #
-# The lane adds no rules: it inherits the process's one guardrail and one
-# mask rule. kubectl authenticates with a bearer token, so OPA reads the
+# The lane carries the process's one guardrail (an http_header rule: list
+# secrets, do not read one) and its one mask rule (the `data` key of a JSON
+# response). kubectl authenticates with a bearer token, so OPA reads the
 # identity off Authorization on this listener instead of X-Hoop-User.
 
 services:
@@ -51,7 +53,8 @@ services:
       - k3s-server:/var/lib/rancher/k3s
       - ./kubernetes/tokens.csv:/etc/k3s/tokens.csv:ro
       # k3s applies whatever lands in this directory. The pod is what
-      # kubectl exec targets; the ConfigMap is what masking rewrites.
+      # kubectl exec targets, the ConfigMap is what masking rewrites, the
+      # Secret is what the guardrail refuses to hand over.
       - ./kubernetes/manifests/demo.yaml:/var/lib/rancher/k3s/server/manifests/demo.yaml:ro
     healthcheck:
       # Healthy means the demo pod runs, not just that the apiserver answers:
