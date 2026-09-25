@@ -10562,6 +10562,122 @@ const docTemplate = `{
                 }
             }
         },
+        "/sidecars/{nameOrID}/slack-channels": {
+            "get": {
+                "description": "Where the reviews of each listener of the sidecar are posted in Slack. Control plane only.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sidecars"
+                ],
+                "summary": "Get Sidecar Slack Channels",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the sidecar",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SidecarSlackChannels"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "412": {
+                        "description": "Precondition Failed",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Replace where the reviews of each listener of the sidecar are posted in Slack. A listener left out has no channels and uses the org's default channel. Control plane only.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sidecars"
+                ],
+                "summary": "Set Sidecar Slack Channels",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the sidecar",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SidecarSlackChannels"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SidecarSlackChannels"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "412": {
+                        "description": "Precondition Failed",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/signup": {
             "post": {
                 "description": "Signup anonymous authenticated user. This endpoint is only used for multi tenant setups.",
@@ -19898,6 +20014,26 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.SidecarListenerSlackChannels": {
+            "type": "object",
+            "properties": {
+                "channels": {
+                    "description": "Slack channel ids",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "C0987654321"
+                    ]
+                },
+                "name": {
+                    "description": "The listener name",
+                    "type": "string",
+                    "example": "payments-pg"
+                }
+            }
+        },
         "openapi.SidecarPatchRequest": {
             "type": "object",
             "required": [
@@ -20100,6 +20236,18 @@ const docTemplate = `{
                     "type": "string",
                     "format": "uuid",
                     "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                }
+            }
+        },
+        "openapi.SidecarSlackChannels": {
+            "type": "object",
+            "properties": {
+                "listeners": {
+                    "description": "The channels of each listener; a listener left out has none",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.SidecarListenerSlackChannels"
+                    }
                 }
             }
         },

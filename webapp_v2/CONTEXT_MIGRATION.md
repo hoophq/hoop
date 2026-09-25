@@ -120,7 +120,7 @@ dead end), `/onboarding/*` and `/*` (gateway: CLJS; control plane: 404).
 | `/jira-templates/new` | React | Done |
 | `/jira-templates/edit/:id` | React | Done |
 | `/settings/jira` | React | Done — absorbed into `/jira-templates?tab=configuration` |
-| `/integrations/slack` | React | Done |
+| `/integrations/slack` | React | Done — `GatewaySlack` / `ControlPlaneSlack` via `ByProduct` |
 | `/integrations/webhooks` | React | Done |
 | `/guardrails` | React | Done |
 | `/guardrails/new` | React | Done |

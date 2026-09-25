@@ -8581,6 +8581,26 @@
         ],
         "type": "object"
       },
+      "openapi.SidecarListenerSlackChannels": {
+        "properties": {
+          "channels": {
+            "description": "Slack channel ids",
+            "example": [
+              "C0987654321"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "description": "The listener name",
+            "example": "payments-pg",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "openapi.SidecarPatchRequest": {
         "properties": {
           "configuration": {
@@ -8782,6 +8802,18 @@
             "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7",
             "format": "uuid",
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.SidecarSlackChannels": {
+        "properties": {
+          "listeners": {
+            "description": "The channels of each listener; a listener left out has none",
+            "items": {
+              "$ref": "#/components/schemas/openapi.SidecarListenerSlackChannels"
+            },
+            "type": "array"
           }
         },
         "type": "object"
@@ -22751,6 +22783,160 @@
           }
         },
         "summary": "Update Sidecar",
+        "tags": [
+          "Sidecars"
+        ]
+      }
+    },
+    "/sidecars/{nameOrID}/slack-channels": {
+      "get": {
+        "description": "Where the reviews of each listener of the sidecar are posted in Slack. Control plane only.",
+        "parameters": [
+          {
+            "description": "Name or UUID of the sidecar",
+            "in": "path",
+            "name": "nameOrID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.SidecarSlackChannels"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Precondition Failed"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get Sidecar Slack Channels",
+        "tags": [
+          "Sidecars"
+        ]
+      },
+      "put": {
+        "description": "Replace where the reviews of each listener of the sidecar are posted in Slack. A listener left out has no channels and uses the org's default channel. Control plane only.",
+        "parameters": [
+          {
+            "description": "Name or UUID of the sidecar",
+            "in": "path",
+            "name": "nameOrID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/openapi.SidecarSlackChannels"
+              }
+            }
+          },
+          "description": "The request body resource",
+          "required": true,
+          "x-originalParamName": "request"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.SidecarSlackChannels"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Precondition Failed"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Set Sidecar Slack Channels",
         "tags": [
           "Sidecars"
         ]

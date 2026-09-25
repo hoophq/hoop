@@ -57,7 +57,8 @@ import AiAgentsIdentitiesForm from '@/pages/AiAgentsIdentities/Form'
 import AiAgentsIdentitiesCreated from '@/pages/AiAgentsIdentities/Created'
 import JiraTemplates from '@/pages/JiraTemplates'
 import JiraTemplateForm from '@/pages/JiraTemplates/Form'
-import IntegrationsSlack from '@/pages/Integrations/Slack'
+import GatewaySlack from '@/pages/Integrations/Slack/GatewaySlack'
+import ControlPlaneSlack from '@/pages/Integrations/Slack/ControlPlaneSlack'
 import IntegrationsWebhooks from '@/pages/Integrations/Webhooks'
 import ComplianceReport from '@/pages/ComplianceReport'
 import Reviews from '@/pages/Reviews'
@@ -666,7 +667,7 @@ function Router() {
         path="/integrations/slack"
         element={
           <Page adminOnly>
-            <IntegrationsSlack />
+            <ByProduct gateway={<GatewaySlack />} controlPlane={<ControlPlaneSlack />} />
           </Page>
         }
       />

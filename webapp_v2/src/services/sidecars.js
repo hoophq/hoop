@@ -26,6 +26,9 @@ import api from './api'
 // is no per-listener endpoint, so it reads the configuration, edits one element
 // of `listeners`, and writes all of it back. With no ETag, two admins editing
 // at once means the second write wins silently.
+//
+// `slackChannels` and `updateSlackChannels` read and replace where the reviews
+// of each listener are posted: `{ listeners: [{ name, channels }] }`.
 export const sidecarsService = {
   list: () => api.get('/sidecars'),
   get: (nameOrId) => api.get(`/sidecars/${encodeURIComponent(nameOrId)}`),
@@ -33,4 +36,7 @@ export const sidecarsService = {
   patch: (nameOrId, configuration) => api.patch(`/sidecars/${encodeURIComponent(nameOrId)}`, { configuration }),
   update: (nameOrId, configuration) => api.put(`/sidecars/${encodeURIComponent(nameOrId)}`, { configuration }),
   delete: (nameOrId) => api.delete(`/sidecars/${encodeURIComponent(nameOrId)}`),
+  slackChannels: (nameOrId) => api.get(`/sidecars/${encodeURIComponent(nameOrId)}/slack-channels`),
+  updateSlackChannels: (nameOrId, body) =>
+    api.put(`/sidecars/${encodeURIComponent(nameOrId)}/slack-channels`, body),
 }

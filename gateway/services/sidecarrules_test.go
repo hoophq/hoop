@@ -213,6 +213,8 @@ func TestValidateSpecForLane(t *testing.T) {
 		lane daemon.ListenerConfig
 		spec string
 		want string
+		// hasAnalyzer is the sidecar's top-level analyzer section.
+		hasAnalyzer bool
 	}{
 		{
 			// SSH has no relations, so the rule would load, evaluate and match
@@ -259,11 +261,20 @@ func TestValidateSpecForLane(t *testing.T) {
 			spec: `{"rules":[{"name":"e","entities":["EMAIL_ADDRESS"],"strategy":"redact"}]}`,
 		},
 		{
-			name: "an analyzer rule on a lane with the analyzer off",
+			// The sidecar refuses a lane analyzer block with no provider.
+			name: "an analyzer rule on a lane without a block, on a sidecar without the analyzer section",
 			kind: SidecarRuleAnalyzer,
 			lane: pg,
 			spec: `{"high":"block"}`,
-			want: "analyzer turned off",
+			want: "has no analyzer section",
+		},
+		{
+			// The rule's block becomes the lane's.
+			name:        "an analyzer rule on a lane without a block, on a sidecar with the analyzer section",
+			kind:        SidecarRuleAnalyzer,
+			lane:        pg,
+			spec:        `{"high":"block"}`,
+			hasAnalyzer: true,
 		},
 		{
 			name: "an analyzer rule on a lane that opted in",
@@ -308,7 +319,7 @@ func TestValidateSpecForLane(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateSpecForLane(tt.kind, "my-rule", json.RawMessage(tt.spec), "payments", tt.lane)
+			err := validateSpecForLane(tt.kind, "my-rule", json.RawMessage(tt.spec), "payments", tt.lane, tt.hasAnalyzer)
 			switch {
 			case tt.want == "" && err != nil:
 				t.Fatalf("want the binding accepted, got %v", err)

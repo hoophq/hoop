@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -265,5 +266,27 @@ func TestGetUserInfo(t *testing.T) {
 	body = `{"ok":false,"error":"missing_scope"}`
 	if _, err := s.GetUserInfo(context.Background(), "U1"); err == nil || !strings.Contains(err.Error(), "missing_scope") {
 		t.Fatalf("want missing_scope error, got %v", err)
+	}
+}
+
+func TestReviewChannels(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		msg      MessageReviewRequest
+		fallback string
+		want     []string
+	}{
+		{"gateway adds the default channel", MessageReviewRequest{SlackChannels: []string{"C1"}}, "CD", []string{"C1", "CD"}},
+		{"gateway with no channels", MessageReviewRequest{}, "CD", []string{"CD"}},
+		{"no repeat", MessageReviewRequest{SlackChannels: []string{"CD"}}, "CD", []string{"CD"}},
+		{"fallback skipped when channels are set", MessageReviewRequest{SlackChannels: []string{"C1"}, DefaultChannelAsFallback: true}, "CD", []string{"C1"}},
+		{"fallback used when no channel is set", MessageReviewRequest{DefaultChannelAsFallback: true}, "CD", []string{"CD"}},
+		{"no default channel", MessageReviewRequest{SlackChannels: []string{"C1"}}, "", []string{"C1"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := reviewChannels(&tt.msg, tt.fallback); !slices.Equal(got, tt.want) {
+				t.Errorf("channels = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
