@@ -70,15 +70,14 @@ with `<ByProduct>`. See `CLAUDE.md`, "Application modes".
 ### Routing Split (Router.jsx)
 
 One table for both products. The three product leaves: `/` (gateway: CLJS; control
-plane: role → `/sidecars` or `/reviews`, others the "Administrators and approvers only"
-dead end), `/onboarding/*` and `/*` (gateway: CLJS; control plane: 404).
+plane: admin → `/sidecars`, everyone else → `/reviews`), `/onboarding/*` and `/*` (gateway: CLJS; control plane: 404).
 
 | Route | Handler | Status |
 |-------|---------|--------|
 | `/sidecars`, `/sidecars/connect`, `/sidecars/new`, `/sidecars/:id` | React | Done — control plane fleet on `/api/sidecars` (list, connect/create wizard with the one-time token, details) |
 | `/onboarding/license` | React | Done — control plane first-access license screen (`ControlPlaneProtectedRoute` sends a free-plan admin with no sidecar there) |
 | `/reviews`, `/reviews/:sessionId` | React | Placeholder (control plane page; `NotImplemented`) |
-| `/organization/users` | React | Done — `GatewayUsers` / `ControlPlaneUsers` via `ByProduct` |
+| `/organization/users` | React | Done — one page for both products, with free-form groups |
 | `/login` | React | Done |
 | `/register` | React | Done (local auth signup) |
 | `/signup` | React | Done (IDP org setup) |
@@ -120,7 +119,7 @@ dead end), `/onboarding/*` and `/*` (gateway: CLJS; control plane: 404).
 | `/jira-templates/new` | React | Done |
 | `/jira-templates/edit/:id` | React | Done |
 | `/settings/jira` | React | Done — absorbed into `/jira-templates?tab=configuration` |
-| `/integrations/slack` | React | Done |
+| `/integrations/slack` | React | Done — `GatewaySlack` / `ControlPlaneSlack` via `ByProduct` |
 | `/integrations/webhooks` | React | Done |
 | `/guardrails` | React | Done |
 | `/guardrails/new` | React | Done |

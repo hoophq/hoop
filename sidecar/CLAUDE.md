@@ -193,7 +193,7 @@ done
   protocol also needs a label in `daemon/schema.go` `protocolLabels`.
 
 - **A new `ListenerConfig` field needs a UI tag.** The control plane renders
-  its listener form from `daemon/schema.json` (ADR-0020). Tag the field
+  its listener form from `daemon/schema.json` (ADR-0021). Tag the field
   `label:"..."`, or `ui:"-"` to keep it out of the form, then regenerate:
   `go test ./daemon -run TestListenerSchemaIsCurrent -update`.
 

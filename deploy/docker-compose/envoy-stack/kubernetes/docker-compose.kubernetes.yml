@@ -1,0 +1,122 @@
+# Overlay: a Kubernetes API server behind an HTTP lane, beside the postgres
+# and httpbin ones. Plain requests and WebSocket upgrades cross the same lane.
+#
+#   docker compose -f docker-compose.yml -f kubernetes/docker-compose.kubernetes.yml up -d --wait
+#
+# Run it from the envoy-stack directory, after ./run.sh has minted the certs
+# and built the sidecar image at least once. ./kubernetes/demo-kubernetes.sh
+# walks it.
+#
+#   kubectl ──TLS──> envoy :8447 ──ext_authz──> hoop-inspect :16443 ──TLS──> k3s :6443
+#                    websocket upgrade allowed   http codec                 kube-apiserver
+#
+# What it adds:
+#
+#   k3s           a one-node k3s cluster; static bearer tokens for alice and bob,
+#                 a demo pod, a customers ConfigMap and a db-credentials Secret
+#                 auto-deployed at start
+#   k3s-ca        copies the cluster CA out of k3s's 0700 tls directory so the
+#                 non-root sidecar can verify the upstream leg
+#   client        the base sandbox plus kubectl and a kubeconfig aimed at envoy
+#   envoy :8447   HTTPS + OPA -> the sidecar's kubernetes lane
+#
+# The lane carries the process's one guardrail (an http_header rule: list
+# secrets, do not read one) and its one mask rule (the `data` key of a JSON
+# response). kubectl authenticates with a bearer token, so OPA reads the
+# identity off Authorization on this listener instead of X-Hoop-User.
+
+services:
+  # k3s in a container needs privileges: it runs containerd and a kubelet.
+  # The apiserver's own TLS stays on; the sidecar is its TLS client and
+  # verifies the cluster CA that k3s-ca copies out below. --tls-san puts the
+  # compose hostname in the serving certificate so that verification names
+  # the right peer.
+  k3s:
+    image: rancher/k3s:v1.33.9-k3s1
+    attach: false
+    hostname: k3s
+    networks: [inspect]
+    privileged: true
+    tmpfs: [/run, /var/run]
+    ulimits:
+      nproc: 65535
+      nofile: { soft: 65535, hard: 65535 }
+    command:
+      - server
+      - --node-name=k3s
+      - --tls-san=k3s
+      - --disable=traefik,servicelb,metrics-server,local-storage
+      # Static tokens: token,user,uid,"groups". alice is cluster-admin via
+      # system:masters. bob is denied at tier 1 and never reaches this file.
+      - --kube-apiserver-arg=token-auth-file=/etc/k3s/tokens.csv
+    volumes:
+      - k3s-server:/var/lib/rancher/k3s
+      - ./kubernetes/tokens.csv:/etc/k3s/tokens.csv:ro
+      # k3s applies whatever lands in this directory. The pod is what
+      # kubectl exec targets, the ConfigMap is what masking rewrites, the
+      # Secret is what the guardrail refuses to hand over.
+      - ./kubernetes/manifests/demo.yaml:/var/lib/rancher/k3s/server/manifests/demo.yaml:ro
+    healthcheck:
+      # Healthy means the demo pod runs, not just that the apiserver answers:
+      # kubectl exec has nothing to attach to before that.
+      test: ["CMD-SHELL", "kubectl get pod demo -o jsonpath='{.status.phase}' 2>/dev/null | grep -q Running"]
+      interval: "5s"
+      timeout: "10s"
+      retries: 60
+      start_period: "30s"
+
+  # The cluster CA lives in a root-only directory inside the k3s volume and
+  # the sidecar runs as uid 10001. This copies the one file it needs into a
+  # volume it can read, then exits. Runs once per `up`.
+  k3s-ca:
+    image: alpine:3.20
+    networks: [inspect]
+    volumes:
+      - k3s-server:/k3s:ro
+      - k3s-ca:/ca
+    command:
+      - /bin/sh
+      - -c
+      - |
+        until [ -s /k3s/server/tls/server-ca.crt ]; do sleep 1; done
+        cp /k3s/server/tls/server-ca.crt /ca/server-ca.crt && chmod 0644 /ca/server-ca.crt
+    depends_on:
+      k3s: { condition: service_started }
+
+  # The sandbox gains kubectl. Its kubeconfig points at envoy:8447 and
+  # verifies Envoy's certificate; the tokens in it are the ones k3s knows.
+  client:
+    command:
+      - apk add --no-cache postgresql16-client curl kubectl >/dev/null
+        && exec sleep infinity
+    environment:
+      KUBECONFIG: /etc/kube/kubeconfig.yaml
+    volumes:
+      - ./kubernetes/kubeconfig.yaml:/etc/kube/kubeconfig.yaml:ro
+      - ./envoy/certs/server.crt:/etc/envoy/certs/server.crt:ro
+    healthcheck:
+      test: ["CMD-SHELL", "command -v psql && command -v curl && command -v kubectl"]
+      interval: "3s"
+      timeout: "10s"
+      retries: 30
+      start_period: "10s"
+
+  hoop-inspect:
+    volumes:
+      - ./kubernetes/config-kubernetes.yaml:/etc/hoop-inspect/config.yaml:ro
+      - ./upstream/certs/server.crt:/etc/hoop-inspect/certs/appdb.crt:ro
+      - k3s-ca:/etc/hoop-inspect/k3s:ro
+    depends_on:
+      k3s: { condition: service_healthy }
+      k3s-ca: { condition: service_completed_successfully }
+
+  envoy:
+    volumes:
+      - ./kubernetes/envoy-kubernetes.yaml:/etc/envoy/envoy.yaml:ro
+      - ./envoy/certs:/etc/envoy/certs:ro
+    ports:
+      - "8447:8447" # HTTPS lane -> hoop-inspect (http codec) -> k3s :6443
+
+volumes:
+  k3s-server:
+  k3s-ca:

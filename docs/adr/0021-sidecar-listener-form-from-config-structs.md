@@ -1,4 +1,4 @@
-# ADR-0020: The daemon's config structs drive the sidecar listener form and its validation
+# ADR-0021: The daemon's config structs drive the sidecar listener form and its validation
 
 - **Status:** Proposed
 - **Date:** 2026-09-24

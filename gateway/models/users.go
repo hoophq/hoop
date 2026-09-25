@@ -78,6 +78,22 @@ func GetUserByEmailAndOrg(email, orgID string) (*User, error) {
 	return user, nil
 }
 
+// ApproverStatuses are the user statuses that may settle a review from Slack.
+// An invited user was added by an admin and has not logged in yet.
+var ApproverStatuses = []string{"active", "invited"}
+
+// ListApproverUsersByEmailAndOrg returns every user of the org with this email
+// and an approver status, ignoring case. It returns all of them, not the
+// first: users.email has no unique index, and a caller that must identify one
+// person has to see a duplicate to refuse it.
+func ListApproverUsersByEmailAndOrg(db *gorm.DB, orgID, email string) ([]User, error) {
+	var users []User
+	err := db.Where("org_id = ? AND lower(email) = lower(?) AND status IN ?", orgID, email, ApproverStatuses).
+		Order("id").
+		Find(&users).Error
+	return users, err
+}
+
 func GetInvitedUserByEmailAndOrg(email, orgID string) (*User, error) {
 	var user *User
 	if err := DB.Where("org_id = ? AND email = ? AND status = 'invited'", orgID, email).First(&user).Error; err != nil {

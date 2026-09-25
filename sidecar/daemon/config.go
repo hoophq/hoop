@@ -1263,7 +1263,7 @@ func (c *Config) validateLane(lc ListenerConfig, name string, onHost bool) []str
 	// A pii guardrail on a grpc lane scans Statement.Text, and Text holds
 	// only the method path unless the lane captures payloads. The rule
 	// would load, evaluate and never fire: refuse it, the same bargain the
-	// ai_analysis/capture_body check strikes for http below.
+	// http_header/http.headers check strikes for http below.
 	if isGRPCTransport(lc) && anyPII(gc.Rules) &&
 		(lc.GRPC == nil || !lc.GRPC.CapturePayload) {
 		problems = append(problems, fmt.Sprintf(
@@ -1288,25 +1288,17 @@ func (c *Config) validateLane(lc ListenerConfig, name string, onHost bool) []str
 				"\"grpc\" block with capture_payload: true and descriptors", name))
 	}
 
-	// A lane's analyzer — the block or a DEPRECATED ai_analysis rule — on
-	// an HTTP lane with no body capture classifies nothing:
-	// HTTPBuilder.Build returns ok=false on an empty body, and the codec
-	// leaves Body empty unless the lane asked for it. It would load,
-	// evaluate and never fire: the same silent failure the config refuses
-	// everywhere else, on a control that also costs money when it does
-	// work.
-	//
-	// This asserts only that the proxy COULD capture a body. A request that
-	// carries no body is still skipped at runtime, deliberately: paying for
-	// a verdict on "POST /orders" with no payload is what that skip avoids.
-	analyzing := len(aiRules) > 0 || lc.Analyzer != nil
-	if analyzing && inspect.Protocol(lc.Protocol) == inspect.HTTP &&
-		(lc.HTTP == nil || !lc.HTTP.CaptureBody) {
-		problems = append(problems, fmt.Sprintf(
-			"%s: has an analyzer on an http listener but http.capture_body "+
-				"is not set, so every request would be skipped; add an \"http\" "+
-				"block with capture_body: true", name))
+	// An http_header rule reads Statement.HTTP.Headers, and the codec
+	// fills that from the lane's `http.headers` allowlist alone. A rule
+	// naming a header the lane does not capture would load, evaluate and
+	// never fire: refuse it, and say which header to allowlist. Only an
+	// http lane is checked; on any other protocol the rule matches nothing
+	// by design, as http_resource does.
+	if inspect.Protocol(lc.Protocol) == inspect.HTTP {
+		problems = append(problems, validateHTTPHeaderRules(localRules, lc.HTTP, name)...)
 	}
+
+	analyzing := len(aiRules) > 0 || lc.Analyzer != nil
 
 	if analyzing && isGRPCTransport(lc) &&
 		(lc.GRPC == nil || !lc.GRPC.CapturePayload) {

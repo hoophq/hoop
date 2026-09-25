@@ -3,7 +3,7 @@ import { useModeConfig } from '@/modes'
 /**
  * The one place a page choice depends on the product. Used in Router.jsx only:
  *
- *   <ByProduct gateway={<GatewayUsers />} controlPlane={<ControlPlaneUsers />} />
+ *   <ByProduct gateway={<GatewayDataMaskingForm />} controlPlane={<ControlPlaneDataMaskingForm />} />
  *
  * `grep ByProduct src/Router.jsx` lists every page that differs between the
  * two products. Pages themselves never read the mode.

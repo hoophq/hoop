@@ -659,7 +659,7 @@ func newRules(rules []Rule, hasScanner bool) (*Rules, error) {
 			// loads, evaluates and matches nothing.
 			problems = append(problems, r.Name+
 				": ai_analysis rules are evaluated by the analyzer, not by the local rule set")
-		case MatchHTTPResource, MatchHTTPStatus:
+		case MatchHTTPResource, MatchHTTPStatus, MatchHTTPHeader:
 			if err := r.validateHTTP(); err != nil {
 				problems = append(problems, err.Error())
 			}

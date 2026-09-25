@@ -207,7 +207,7 @@
           "key": "capture_body",
           "type": "boolean",
           "label": "Capture the request body",
-          "help": "Needed by AI analysis on an HTTP listener."
+          "help": "Lets policy and the AI analyzer read what a POST or PUT carries."
         },
         {
           "key": "max_body_bytes",
@@ -219,7 +219,7 @@
           "key": "headers",
           "type": "list",
           "label": "Headers",
-          "help": "Allowlist exposed to policy. Authorization, cookie, proxy-authorization and set-cookie are always refused."
+          "help": "Allowlist exposed to policy; an http_header rule may only name these. Authorization, cookie, proxy-authorization and set-cookie are always refused."
         },
         {
           "key": "sensitive_query_params",

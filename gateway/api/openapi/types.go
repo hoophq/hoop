@@ -301,6 +301,21 @@ type SidecarRequest struct {
 	Configuration json.RawMessage `json:"configuration,omitempty" swaggertype:"object"`
 }
 
+// SidecarSlackChannels is where the reviews of each listener of a sidecar are
+// posted in Slack. A listener with no channel falls back to the org's default channel.
+type SidecarSlackChannels struct {
+	// The channels of each listener; a listener left out has none
+	Listeners []SidecarListenerSlackChannels `json:"listeners"`
+}
+
+// SidecarListenerSlackChannels is the channels of one listener.
+type SidecarListenerSlackChannels struct {
+	// The listener name
+	Name string `json:"name" example:"payments-pg"`
+	// Slack channel ids
+	Channels []string `json:"channels" example:"C0987654321"`
+}
+
 type SidecarUpdateRequest struct {
 	// The daemon configuration this sidecar serves. Replaces the stored
 	// document entirely.
@@ -3890,6 +3905,13 @@ type AISessionAnalyzerRuleRequest struct {
 	// the field -- a script fixing a typo, the gateway's own UI, an MCP call --
 	// would silently unbind a rule from the whole fleet.
 	SidecarTargets *[]SidecarRuleTarget `json:"sidecar_targets,omitempty"`
+
+	// ReviewersGroups are the groups whose members may release a statement
+	// this rule holds for approval. Absent keeps the groups already set; with
+	// none set the admin group reviews.
+	//
+	// A control plane field, read only while sidecar_spec holds a statement.
+	ReviewersGroups *[]string `json:"reviewers_groups,omitempty" example:"dba-leads"`
 }
 
 type AISessionAnalyzerRule struct {
@@ -3914,6 +3936,9 @@ type AISessionAnalyzerRule struct {
 	SidecarSpec json.RawMessage `json:"sidecar_spec,omitempty" swaggertype:"object"`
 	// The sidecar listeners this rule is bound to, and therefore distributed to
 	SidecarTargets []SidecarRuleTarget `json:"sidecar_targets,omitempty"`
+	// The groups whose members may release a statement this rule holds.
+	// Present only in a control plane, while the rule holds.
+	ReviewersGroups []string `json:"reviewers_groups,omitempty" example:"dba-leads"`
 
 	// Set to "hoop" when the rule is materialized and lifecycle-managed by a
 	// protection profile; managed rules are read-only through this API

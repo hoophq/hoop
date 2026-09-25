@@ -393,27 +393,65 @@ func TestRedactRewritesTransmittedContent(t *testing.T) {
 	}
 }
 
-// An HTTP request with no body is not worth a verdict: "POST /anything" tells
-// a model nothing, and paying for that is the failure this package avoids.
-func TestHTTPWithoutBodyIsNotClassified(t *testing.T) {
+// A request with no body is still classified: on a REST API the path is the
+// operation, and the allowlisted headers carry what the path does not. The
+// prompt shows the verb, the target, the resource and the headers in a
+// stable order.
+func TestHTTPWithoutBodyIsClassifiedFromPathAndHeaders(t *testing.T) {
 	p := &stubProvider{level: analyzer.RiskHigh}
 	ev := mustNew(t, analyzer.Config{
 		Provider: p,
-		Trigger:  analyzer.Trigger{Resources: []string{"/**"}},
+		Trigger:  analyzer.Trigger{Resources: []string{"/api/v1/namespaces/*/secrets/*"}},
 		Actions:  analyzer.ActionMap{analyzer.RiskHigh: analyzer.ActionBlock},
 	})
 
 	stmt := inspect.Statement{
 		Protocol:  inspect.HTTP,
 		Direction: inspect.FromClient,
-		Operation: inspect.OpPost,
-		HTTP:      &inspect.HTTPDetail{Method: "POST", Path: "/anything", Resource: "/anything"},
+		Operation: inspect.OpGet,
+		HTTP: &inspect.HTTPDetail{
+			Method:   "GET",
+			Path:     "/api/v1/namespaces/prod/secrets/db-root",
+			Target:   "/api/v1/namespaces/prod/secrets/db-root",
+			Resource: "/api/v1/namespaces/prod/secrets/db-root",
+			Headers:  map[string]string{"x-hoop-user": "alice", "accept": "application/json"},
+		},
 	}
-	if v := ev.Evaluate(stmt); v.Denied {
-		t.Fatal("a bodiless request was denied")
+	if v := ev.Evaluate(stmt); !v.Denied {
+		t.Fatal("a high-risk bodiless request was not denied")
+	}
+	want := "GET /api/v1/namespaces/prod/secrets/db-root\nAccept: application/json\nX-Hoop-User: alice"
+	if got := p.lastSeen(); got != want {
+		t.Errorf("prompt:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+// A response with no body has nothing to judge but a status line, and a
+// WebSocket close frame nothing at all: neither costs a model call.
+func TestHTTPBodilessResponsesAreNotClassified(t *testing.T) {
+	p := &stubProvider{level: analyzer.RiskHigh}
+	ev := mustNew(t, analyzer.Config{
+		Provider: p,
+		Trigger:  analyzer.Trigger{Resources: []string{"/**"}},
+		Actions:  analyzer.ActionMap{analyzer.RiskHigh: analyzer.ActionBlock},
+	})
+	for name, stmt := range map[string]inspect.Statement{
+		"a 204": {
+			Protocol: inspect.HTTP, Direction: inspect.FromServer, Operation: inspect.OpDelete,
+			HTTP: &inspect.HTTPDetail{Method: "DELETE", Path: "/x", Resource: "/x", StatusCode: 204},
+		},
+		"a close frame": {
+			Protocol: inspect.HTTP, Direction: inspect.FromServer,
+			Metadata: map[string]string{"http.proto": "websocket"},
+			HTTP:     &inspect.HTTPDetail{Method: "GET", Path: "/exec", Resource: "/exec"},
+		},
+	} {
+		if v := ev.Evaluate(stmt); v.Denied {
+			t.Errorf("%s was denied", name)
+		}
 	}
 	if got := p.calls.Load(); got != 0 {
-		t.Errorf("provider called %d times for a bodiless request", got)
+		t.Errorf("provider called %d times for bodiless responses", got)
 	}
 }
 
@@ -505,6 +543,57 @@ func TestHTTPCacheKeyFoldsIdsNotQueryValues(t *testing.T) {
 	} {
 		if other == base {
 			t.Errorf("%s shared the cache key", name)
+		}
+	}
+}
+
+// A header value the model sees is part of the shape: `Accept:
+// application/json` and `Accept: ...;as=Table` on one GET are a read and a
+// listing, and one verdict must not serve both. Header order is not.
+func TestHTTPCacheKeyCoversHeaders(t *testing.T) {
+	build := func(h map[string]string) string {
+		c, ok := analyzer.HTTPBuilder{}.Build(inspect.Statement{
+			Protocol: inspect.HTTP,
+			HTTP:     &inspect.HTTPDetail{Method: "GET", Path: "/s/db", Resource: "/s/db", Headers: h},
+		}, 4096)
+		if !ok {
+			t.Fatal("Build declined a bodiless GET")
+		}
+		return c.CacheKey
+	}
+	table := build(map[string]string{"accept": "application/json;as=Table", "x-hoop-user": "alice"})
+	if build(map[string]string{"x-hoop-user": "alice", "accept": "application/json;as=Table"}) != table {
+		t.Error("the same headers produced a new cache key")
+	}
+	if build(map[string]string{"accept": "application/json", "x-hoop-user": "alice"}) == table {
+		t.Error("a different Accept value shared the cache key")
+	}
+	if build(nil) == table {
+		t.Error("a request without headers shared the cache key")
+	}
+}
+
+// max_input_bytes bounds everything that leaves the process. A header is
+// client input like a body, so a huge allowlisted header cannot grow the
+// prompt past the budget, with or without a body.
+func TestHTTPContentBudgetCoversHeaders(t *testing.T) {
+	huge := strings.Repeat("x", 4096)
+	for name, body := range map[string]string{"bodiless": "", "with a body": `{"n":1}`} {
+		c, ok := analyzer.HTTPBuilder{}.Build(inspect.Statement{
+			Protocol: inspect.HTTP,
+			HTTP: &inspect.HTTPDetail{
+				Method: "GET", Path: "/x", Resource: "/x", Body: body,
+				Headers: map[string]string{"x-big": huge},
+			},
+		}, 512)
+		if !ok {
+			t.Fatalf("%s: Build declined", name)
+		}
+		if len(c.Text) > 512+len("\n...[truncated]") {
+			t.Errorf("%s: content is %d bytes for a 512-byte budget", name, len(c.Text))
+		}
+		if !strings.HasSuffix(c.Text, "[truncated]") {
+			t.Errorf("%s: an over-budget prompt carries no truncation marker", name)
 		}
 	}
 }

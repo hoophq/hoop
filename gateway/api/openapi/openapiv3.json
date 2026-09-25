@@ -503,6 +503,16 @@
             "example": "block-dangerous-queries",
             "type": "string"
           },
+          "reviewers_groups": {
+            "description": "The groups whose members may release a statement this rule holds.\nPresent only in a control plane, while the rule holds.",
+            "example": [
+              "dba-leads"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "risk_evaluation": {
             "allOf": [
               {
@@ -563,6 +573,16 @@
             "description": "Unique name for the rule",
             "example": "block-dangerous-queries",
             "type": "string"
+          },
+          "reviewers_groups": {
+            "description": "ReviewersGroups are the groups whose members may release a statement\nthis rule holds for approval. Absent keeps the groups already set; with\nnone set the admin group reviews.\n\nA control plane field, read only while sidecar_spec holds a statement.",
+            "example": [
+              "dba-leads"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "risk_evaluation": {
             "allOf": [
@@ -8580,6 +8600,26 @@
         ],
         "type": "object"
       },
+      "openapi.SidecarListenerSlackChannels": {
+        "properties": {
+          "channels": {
+            "description": "Slack channel ids",
+            "example": [
+              "C0987654321"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "description": "The listener name",
+            "example": "payments-pg",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "openapi.SidecarPatchRequest": {
         "properties": {
           "configuration": {
@@ -8781,6 +8821,18 @@
             "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7",
             "format": "uuid",
             "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.SidecarSlackChannels": {
+        "properties": {
+          "listeners": {
+            "description": "The channels of each listener; a listener left out has none",
+            "items": {
+              "$ref": "#/components/schemas/openapi.SidecarListenerSlackChannels"
+            },
+            "type": "array"
           }
         },
         "type": "object"
@@ -21876,6 +21928,16 @@
             },
             "description": "OK"
           },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
           "500": {
             "content": {
               "application/json": {
@@ -21926,6 +21988,16 @@
               }
             },
             "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Forbidden"
           },
           "409": {
             "content": {
@@ -22008,6 +22080,16 @@
             },
             "description": "Unauthorized"
           },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
           "500": {
             "content": {
               "application/json": {
@@ -22080,6 +22162,16 @@
               }
             },
             "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Forbidden"
           },
           "409": {
             "content": {
@@ -22183,6 +22275,16 @@
               }
             },
             "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Forbidden"
           },
           "412": {
             "content": {
@@ -22424,6 +22526,16 @@
           "204": {
             "description": "No Content"
           },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
           "404": {
             "content": {
               "application/json": {
@@ -22473,6 +22585,16 @@
               }
             },
             "description": "OK"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Forbidden"
           },
           "404": {
             "content": {
@@ -22545,6 +22667,16 @@
               }
             },
             "description": "Bad Request"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Forbidden"
           },
           "404": {
             "content": {
@@ -22628,6 +22760,16 @@
             },
             "description": "Bad Request"
           },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
           "404": {
             "content": {
               "application/json": {
@@ -22660,6 +22802,160 @@
           }
         },
         "summary": "Update Sidecar",
+        "tags": [
+          "Sidecars"
+        ]
+      }
+    },
+    "/sidecars/{nameOrID}/slack-channels": {
+      "get": {
+        "description": "Where the reviews of each listener of the sidecar are posted in Slack. Control plane only.",
+        "parameters": [
+          {
+            "description": "Name or UUID of the sidecar",
+            "in": "path",
+            "name": "nameOrID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.SidecarSlackChannels"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Precondition Failed"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get Sidecar Slack Channels",
+        "tags": [
+          "Sidecars"
+        ]
+      },
+      "put": {
+        "description": "Set where the reviews of the listeners in the body are posted in Slack. A listener with no channels uses the fallback channel; a listener left out keeps its channels. Control plane only.",
+        "parameters": [
+          {
+            "description": "Name or UUID of the sidecar",
+            "in": "path",
+            "name": "nameOrID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/openapi.SidecarSlackChannels"
+              }
+            }
+          },
+          "description": "The request body resource",
+          "required": true,
+          "x-originalParamName": "request"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.SidecarSlackChannels"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Precondition Failed"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Set Sidecar Slack Channels",
         "tags": [
           "Sidecars"
         ]

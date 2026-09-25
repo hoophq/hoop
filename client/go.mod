@@ -25,7 +25,7 @@ require (
 	github.com/hoophq/hoop/sidecar/config/yaml v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/sidecar/descriptors/gcs v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/sidecar/pii/alcatraz v0.0.0-00010101000000-000000000000
-	github.com/hoophq/libhoop v0.0.0-20260921142807-8a4562b36981
+	github.com/hoophq/libhoop v0.0.0-20260925162911-6724f4eda8b2
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/crypto v0.56.0
 	golang.org/x/mod v0.38.0

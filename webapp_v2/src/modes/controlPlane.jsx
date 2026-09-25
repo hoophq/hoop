@@ -23,7 +23,7 @@ const notFound = (
 export default {
   id: 'control-plane',
   theme: { theme, cssVariablesResolver },
-  // '/' sends each role to its page and shows everyone else the dead end.
+  // '/' sends an admin to Sidecars and everyone else to Reviews.
   postLoginPath: '/',
   postSetupPath: '/',
   Page: ControlPlanePage,

@@ -377,38 +377,11 @@ func TestValidateReportsTheAnalyzerAsAComponent(t *testing.T) {
 	}
 }
 
-// The block on an HTTP lane needs body capture for the same reason the rule
-// form did: a bodiless request is skipped, so the analyzer would never fire.
-func TestHTTPLaneAnalyzerWithoutCaptureBodyIsRefused(t *testing.T) {
-	cfg := &Config{
-		Analyzer: &AnalyzerConfig{Provider: "stub", Model: "m"},
-		Listeners: []ListenerConfig{{
-			Name: "api", Protocol: "http", Listen: ":1", Upstream: "h:1",
-			Analyzer: &LaneAnalyzerConfig{
-				Trigger:  &policy.AITrigger{Resources: []string{"/orders/**"}},
-				HighRisk: "block",
-			},
-		}},
-	}
-	err := cfg.Validate()
-	if err == nil {
-		t.Fatal("an http lane analyzer with no capture_body was accepted")
-	}
-	if !strings.Contains(err.Error(), "capture_body") {
-		t.Errorf("the error does not name capture_body: %v", err)
-	}
-
-	cfg.Listeners[0].HTTP = &HTTPCodecConfig{CaptureBody: true}
-	if err := cfg.Validate(); err != nil {
-		t.Fatalf("the same lane with capture_body was refused: %v", err)
-	}
-}
-
 // An ssh lane classifies exec_line and nothing else, so a trigger naming
 // env_set or an sftp operation describes a call that is never made: the
 // trigger matches, the builder declines, and the statement is allowed
 // carrying a `skipped` finding that reads exactly like an unmatched trigger.
-// The same bargain the http capture_body check strikes one level up.
+// The same bargain the grpc capture_payload check strikes one level up.
 func TestSSHAnalyzerTriggerOnAnUnclassifiedOperationIsRefused(t *testing.T) {
 	hostKey, trustedCA := writeSSHKeyMaterial(t)
 	sshLane := func(ops ...inspect.Operation) *Config {

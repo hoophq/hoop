@@ -19,8 +19,9 @@ const SidecarTokenHeader = "hoop-sidecar-token"
 const sidecarContextKey = "sidecar-auth"
 
 // SidecarAuthMiddleware authenticates a sidecar and installs an org-scoped
-// context with no user. It records nothing: reporting what a sidecar last
-// said is the handlers' job.
+// context with no user, carrying the organization's license so
+// EnterpriseLicenseOnly can run after it. It records nothing: reporting what
+// a sidecar last said is the handlers' job.
 func (r *Router) SidecarAuthMiddleware(c *gin.Context) {
 	token := c.GetHeader(SidecarTokenHeader)
 	if token == "" {
@@ -38,9 +39,17 @@ func (r *Router) SidecarAuthMiddleware(c *gin.Context) {
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"message": "internal server error"})
 		return
 	}
+	licenseData, err := models.GetOrgLicenseData(models.DB, sidecar.OrgID)
+	if err != nil {
+		log.Errorf("failed reading the organization license, err=%v", err)
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"message": "internal server error"})
+		return
+	}
 
 	c.Set(sidecarContextKey, sidecar)
-	c.Set(storagev2.ContextKey, storagev2.NewOrganizationContext(sidecar.OrgID).WithApiURL(r.apiURL))
+	c.Set(storagev2.ContextKey, storagev2.NewOrganizationContext(sidecar.OrgID).
+		WithOrgLicenseData(licenseData).
+		WithApiURL(r.apiURL))
 	c.Next()
 }
 

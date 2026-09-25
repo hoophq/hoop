@@ -361,7 +361,7 @@ func ImportSidecarRulesTx(tx *gorm.DB, orgID, sidecarID string, rules []Imported
 			if err := models.CreateAISessionAnalyzerRuleTx(tx, row); err != nil {
 				return conflict(err, r.Kind, r.Name)
 			}
-			if err := SyncAnalyzerApprovalRule(tx, org, r.Name, r.Spec); err != nil {
+			if err := SyncAnalyzerApprovalRule(tx, org, r.Name, r.Spec, nil); err != nil {
 				return err
 			}
 			if err = models.MarkImportedRuleTx(tx, "private.ai_session_analyzer_rules", org, r.Name, sidecarID); err == nil {

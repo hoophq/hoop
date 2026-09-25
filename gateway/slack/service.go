@@ -2,6 +2,7 @@ package slack
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -18,6 +19,8 @@ import (
 type SlackService struct {
 	apiClient     *slack.Client
 	socketClient  *socketmode.Client
+	teamID        string
+	enterpriseID  string
 	slackChannel  string
 	slackBotToken string
 	instanceID    string
@@ -36,6 +39,16 @@ type SlackService struct {
 	// removed on terminal updates and expire after sentReviewRetention.
 	sentReviewMu    sync.Mutex
 	sentReviewItems map[string][]sentReviewMessage
+	// settledReviews keeps the terminal rewrite of a review, so a message a
+	// post loop still sends after the review settled is rewritten, and the
+	// loop posts no more active buttons. Guarded by sentReviewMu.
+	settledReviews map[string]settledReview
+}
+
+// settledReview is the terminal state UpdateReviewMessage applied.
+type settledReview struct {
+	req *UpdateReviewMessageRequest
+	at  time.Time
 }
 
 // instances tracks the running SlackService per organization. Registered by
@@ -89,7 +102,7 @@ func New(slackBotToken, slackAppToken, slackChannel, instanceID, apiURL string) 
 		// slack.OptionLog(log.New(os.Stdout, "api: ", log.Lshortfile|log.LstdFlags)),
 		slack.OptionAppLevelToken(slackAppToken),
 	)
-	_, err := apiClient.AuthTest()
+	auth, err := apiClient.AuthTest()
 	if err != nil {
 		return nil, fmt.Errorf("fail to validate slack bot token authentication, err=%v", err)
 	}
@@ -102,6 +115,8 @@ func New(slackBotToken, slackAppToken, slackChannel, instanceID, apiURL string) 
 	return &SlackService{
 		apiClient:          apiClient,
 		socketClient:       socketClient,
+		teamID:             auth.TeamID,
+		enterpriseID:       auth.EnterpriseID,
 		slackChannel:       slackChannel,
 		slackBotToken:      slackBotToken,
 		instanceID:         instanceID,
@@ -114,6 +129,22 @@ func New(slackBotToken, slackAppToken, slackChannel, instanceID, apiURL string) 
 
 }
 
+// NewWithAPIClient builds a service that calls the Web API through apiClient
+// and opens no socket connection, so it receives no events. Tests use it to
+// point the service at a fake Slack API.
+func NewWithAPIClient(apiClient *slack.Client, teamID, slackChannel string) *SlackService {
+	ctx, cancelFn := context.WithCancel(context.Background())
+	return &SlackService{
+		apiClient:          apiClient,
+		teamID:             teamID,
+		slackChannel:       slackChannel,
+		ctx:                ctx,
+		cancelFn:           cancelFn,
+		pendingRejectItems: make(map[string]slack.InteractionCallback),
+		sentReviewItems:    make(map[string][]sentReviewMessage),
+	}
+}
+
 func (s *SlackService) Close()           { s.cancelFn() }
 func (s *SlackService) BotToken() string { return s.slackBotToken }
 
@@ -122,48 +153,54 @@ func (s *SlackService) BotToken() string { return s.slackBotToken }
 // destination is posting into nothing.
 func (s *SlackService) DefaultChannel() string { return s.slackChannel }
 
-// UserGroup is a Slack workspace user group (usergroups.list).
-type UserGroup struct {
-	ID          string
-	Handle      string
-	Name        string
-	Description string
-	Users       []string // member Slack user IDs
+// TeamID is the workspace the bot token belongs to, from the auth.test call
+// New makes. EnterpriseID is its Enterprise Grid org, empty outside a grid.
+func (s *SlackService) TeamID() string       { return s.teamID }
+func (s *SlackService) EnterpriseID() string { return s.enterpriseID }
+
+// IsMissingScope reports whether Slack refused a call because the app lacks
+// the scope it needs. An app installed before hoop asked for users:read gets
+// this until an admin reinstalls it.
+func IsMissingScope(err error) bool {
+	var slackErr slack.SlackErrorResponse
+	return errors.As(err, &slackErr) && slackErr.Err == "missing_scope"
 }
 
-// ListUserGroups lists the workspace user groups visible to the bot token,
-// members included. The Slack app needs the usergroups:read scope; without
-// it Slack answers "missing_scope", which is returned as-is.
-func (s *SlackService) ListUserGroups(ctx context.Context) ([]UserGroup, error) {
-	groups, err := s.apiClient.GetUserGroupsContext(ctx, slack.GetUserGroupsOptionIncludeUsers(true))
+// SlackUser is what an approval needs to know about the Slack user who
+// clicked: who they are by email, and whether Slack still vouches for them.
+type SlackUser struct {
+	ID                string
+	TeamID            string
+	EnterpriseID      string
+	Email             string
+	Deleted           bool
+	IsBot             bool
+	IsRestricted      bool
+	IsUltraRestricted bool
+	IsStranger        bool
+	IsEmailConfirmed  bool
+}
+
+// GetUserInfo reads one Slack user (users.info). The Slack app needs the
+// users:read scope, and users:read.email for the email: without the second
+// one Slack answers the user with an empty email rather than an error.
+func (s *SlackService) GetUserInfo(ctx context.Context, slackID string) (*SlackUser, error) {
+	u, err := s.apiClient.GetUserInfoContext(ctx, slackID)
 	if err != nil {
-		return nil, fmt.Errorf("failed listing slack user groups, err=%w", err)
+		return nil, fmt.Errorf("failed obtaining slack user %s, err=%w", slackID, err)
 	}
-	out := make([]UserGroup, len(groups))
-	for i, g := range groups {
-		out[i] = UserGroup{ID: g.ID, Handle: g.Handle, Name: g.Name, Description: g.Description, Users: g.Users}
-	}
-	return out, nil
-}
-
-// MapUserGroups pairs each hoop group with the Slack user group whose handle
-// or name equals it, case-insensitive. A handle match wins over a name match.
-// Hoop groups with no match are absent from the result.
-func MapUserGroups(hoopGroups []string, slackGroups []UserGroup) map[string]UserGroup {
-	out := make(map[string]UserGroup, len(hoopGroups))
-	for _, hg := range hoopGroups {
-		if _, ok := out[hg]; ok {
-			continue
-		}
-		idx := slices.IndexFunc(slackGroups, func(g UserGroup) bool { return strings.EqualFold(g.Handle, hg) })
-		if idx < 0 {
-			idx = slices.IndexFunc(slackGroups, func(g UserGroup) bool { return strings.EqualFold(g.Name, hg) })
-		}
-		if idx >= 0 {
-			out[hg] = slackGroups[idx]
-		}
-	}
-	return out
+	return &SlackUser{
+		ID:                u.ID,
+		TeamID:            u.TeamID,
+		EnterpriseID:      u.Enterprise.EnterpriseID,
+		Email:             u.Profile.Email,
+		Deleted:           u.Deleted,
+		IsBot:             u.IsBot,
+		IsRestricted:      u.IsRestricted,
+		IsUltraRestricted: u.IsUltraRestricted,
+		IsStranger:        u.IsStranger,
+		IsEmailConfirmed:  u.IsEmailConfirmed,
+	}, nil
 }
 
 type MessageReviewRequest struct {
@@ -185,6 +222,10 @@ type MessageReviewRequest struct {
 	// set AIExplanation instead; the builder falls back to it.
 	AISummary     string
 	AIExplanation string
+	// DefaultChannelAsFallback posts to the default channel only when
+	// SlackChannels is empty. The control plane sets it; the gateway posts to
+	// the default channel always.
+	DefaultChannelAsFallback bool
 }
 
 type MessageReviewResponse struct {
@@ -246,6 +287,39 @@ func escapeSlackText(s string) string {
 var slackTextEscaper = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
 
 func (s *SlackService) SendMessageReview(msg *MessageReviewRequest) (result string) {
+	return s.PostMessageReview(msg).String()
+}
+
+// ReviewPostResult is where a review message was posted: every channel it was
+// sent to, how many accepted it, and why the others did not.
+type ReviewPostResult struct {
+	Channels int
+	Posted   int
+	Errors   []string
+}
+
+// String is the line SendMessageReview has always returned and callers log.
+func (r ReviewPostResult) String() string {
+	return fmt.Sprintf("success sent channels %v/%v, errors=%v", r.Channels, r.Posted, r.Errors)
+}
+
+// reviewChannels returns the channels a review is posted to: the request's
+// channels and the default channel, or the default channel alone when it is a
+// fallback and the request names none.
+func reviewChannels(msg *MessageReviewRequest, defaultChannel string) []string {
+	channels := slices.Clone(msg.SlackChannels)
+	if defaultChannel == "" || slices.Contains(channels, defaultChannel) {
+		return channels
+	}
+	if msg.DefaultChannelAsFallback && len(channels) > 0 {
+		return channels
+	}
+	return append(channels, defaultChannel)
+}
+
+// PostMessageReview is SendMessageReview, returning the counts so a caller can
+// tell a review nobody received from one that reached its channels.
+func (s *SlackService) PostMessageReview(msg *MessageReviewRequest) ReviewPostResult {
 	title := "Hoop Review"
 
 	header := slack.NewHeaderBlock(&slack.TextBlockObject{
@@ -354,32 +428,44 @@ func (s *SlackService) SendMessageReview(msg *MessageReviewRequest) (result stri
 		},
 	})
 
-	slackChannels := msg.SlackChannels
-	if s.slackChannel != "" && !slices.Contains(slackChannels, s.slackChannel) {
-		slackChannels = append(slackChannels, s.slackChannel)
-	}
+	slackChannels := reviewChannels(msg, s.slackChannel)
 
 	var errs []string
-	var sent []sentReviewMessage
-	for _, slackChannel := range slackChannels {
+	posted := 0
+	for i, slackChannel := range slackChannels {
+		// A review settled while the loop slept takes no more buttons.
+		if s.settledReview(msg.ID) != nil {
+			errs = append(errs, fmt.Sprintf("review settled, %d channels skipped", len(slackChannels)-i))
+			break
+		}
 		channelID, timestamp, err := s.apiClient.PostMessage(slackChannel, slack.MsgOptionBlocks(blocks...), metadata)
 		if err != nil {
 			errs = append(errs, fmt.Sprintf(`"%v - %v"`, slackChannel, err))
 		} else {
-			sent = append(sent, sentReviewMessage{
+			posted++
+			m := sentReviewMessage{
 				channelID: channelID,
 				timestamp: timestamp,
 				eventKind: eventKind,
 				blocks:    blocks,
 				sentAt:    time.Now().UTC(),
-			})
+			}
+			// Tracked at once, so a click on it rewrites every channel posted
+			// so far. One that settled while this post was in flight is
+			// rewritten here instead.
+			if final := s.trackSentReviewMessage(msg.ID, m); final != nil {
+				if err := s.rewriteReviewMessages([]sentReviewMessage{m}, final); err != nil {
+					log.Warnf("failed rewriting a review message posted after it settled, review=%s, err=%v", msg.ID, err)
+				}
+			}
 		}
 
 		// Slack allows 1 post message per second. reference: https://api.slack.com/apis/rate-limits
-		time.Sleep(time.Millisecond * 1200)
+		if i < len(slackChannels)-1 {
+			time.Sleep(time.Millisecond * 1200)
+		}
 	}
-	s.trackSentReviewMessages(msg.ID, sent)
-	return fmt.Sprintf("success sent channels %v/%v, errors=%v", len(slackChannels), len(slackChannels)-len(errs), errs)
+	return ReviewPostResult{Channels: len(slackChannels), Posted: posted, Errors: errs}
 }
 
 // sentReviewMessage records where a review message landed so it can be
@@ -394,20 +480,45 @@ type sentReviewMessage struct {
 	sentAt time.Time
 }
 
-func (s *SlackService) trackSentReviewMessages(reviewID string, sent []sentReviewMessage) {
-	if reviewID == "" || len(sent) == 0 {
-		return
+// trackSentReviewMessage adds one posted message to the review's tracked set.
+// It returns the terminal state instead when the review already settled: the
+// caller rewrites the message with it, and it is not tracked.
+func (s *SlackService) trackSentReviewMessage(reviewID string, m sentReviewMessage) *UpdateReviewMessageRequest {
+	if reviewID == "" {
+		return nil
 	}
 	now := time.Now().UTC()
 	s.sentReviewMu.Lock()
 	defer s.sentReviewMu.Unlock()
-	// lazy eviction keeps the map bounded without a janitor goroutine
+	// lazy eviction keeps the maps bounded without a janitor goroutine
 	for id, items := range s.sentReviewItems {
 		if len(items) > 0 && now.Sub(items[0].sentAt) > sentReviewRetention {
 			delete(s.sentReviewItems, id)
 		}
 	}
-	s.sentReviewItems[reviewID] = sent
+	for id, sr := range s.settledReviews {
+		if now.Sub(sr.at) > sentReviewRetention {
+			delete(s.settledReviews, id)
+		}
+	}
+	if sr, ok := s.settledReviews[reviewID]; ok {
+		return sr.req
+	}
+	if s.sentReviewItems == nil {
+		s.sentReviewItems = make(map[string][]sentReviewMessage)
+	}
+	s.sentReviewItems[reviewID] = append(s.sentReviewItems[reviewID], m)
+	return nil
+}
+
+// settledReview returns the terminal state of a review that settled, or nil.
+func (s *SlackService) settledReview(reviewID string) *UpdateReviewMessageRequest {
+	s.sentReviewMu.Lock()
+	defer s.sentReviewMu.Unlock()
+	if sr, ok := s.settledReviews[reviewID]; ok {
+		return sr.req
+	}
+	return nil
 }
 
 // ReviewedGroup describes one approver group's recorded outcome, used to
@@ -427,6 +538,8 @@ type UpdateReviewMessageRequest struct {
 	IsRejected     bool
 	ReviewedGroups []ReviewedGroup
 	TotalGroups    int
+	// RejectionReason is what the reviewer typed when rejecting; empty for none.
+	RejectionReason string
 }
 
 // HasTrackedReviewMessages reports whether the review's posted messages are
@@ -451,8 +564,17 @@ func (s *SlackService) UpdateReviewMessage(req *UpdateReviewMessageRequest) erro
 	items := s.sentReviewItems[req.ReviewID]
 	if done {
 		delete(s.sentReviewItems, req.ReviewID)
+		if s.settledReviews == nil {
+			s.settledReviews = make(map[string]settledReview)
+		}
+		s.settledReviews[req.ReviewID] = settledReview{req: req, at: time.Now().UTC()}
 	}
 	s.sentReviewMu.Unlock()
+	return s.rewriteReviewMessages(items, req)
+}
+
+// rewriteReviewMessages applies the review state to the given messages.
+func (s *SlackService) rewriteReviewMessages(items []sentReviewMessage, req *UpdateReviewMessageRequest) error {
 	if len(items) == 0 {
 		return nil
 	}
@@ -548,13 +670,27 @@ func rebuildReviewBlocks(m *sentReviewMessage, req *UpdateReviewMessageRequest, 
 				Type: slack.MarkdownType,
 				Text: text,
 			}, nil, nil))
-	case !req.IsRejected:
+	case req.IsRejected:
+		if req.RejectionReason != "" {
+			blocks = append(blocks, slack.NewDividerBlock(), rejectionReasonSection(req.RejectionReason))
+		}
+	default:
 		blocks = append(blocks, slack.NewContextBlock("",
 			slack.NewTextBlockObject(slack.MarkdownType,
 				fmt.Sprintf("_Approved by %d of %d required group(s)_", len(req.ReviewedGroups), req.TotalGroups), false, false),
 		))
 	}
 	return blocks
+}
+
+// rejectionReasonSection shows the reason a reviewer gave, quoted and escaped:
+// it is text a person typed, so it must not render as Slack markup.
+func rejectionReasonSection(reason string) *slack.SectionBlock {
+	quoted := "> " + strings.ReplaceAll(escapeSlackText(reason), "\n", "\n> ")
+	return slack.NewSectionBlock(&slack.TextBlockObject{
+		Type: slack.MarkdownType,
+		Text: "*Rejection reason:*\n" + quoted,
+	}, nil, nil)
 }
 
 // reviewGroupFromBlockID extracts the group name from an action block id in
@@ -597,6 +733,8 @@ func (s *SlackService) UpdateMessage(msg *MessageReviewResponse, isApproved bool
 				Type: slack.MarkdownType,
 				Text: text,
 			}, nil, nil))
+	} else if msg.RejectionReason != "" {
+		blocks = append(blocks, slack.NewDividerBlock(), rejectionReasonSection(msg.RejectionReason))
 	}
 
 	_, _, err := s.apiClient.PostMessage(msg.item.Channel.ID,

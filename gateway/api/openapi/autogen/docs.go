@@ -9907,6 +9907,12 @@ const docTemplate = `{
                             }
                         }
                     },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -9947,6 +9953,12 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -10011,6 +10023,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
                     },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -10065,6 +10083,12 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -10143,6 +10167,12 @@ const docTemplate = `{
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -10331,6 +10361,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.SidecarResponse"
                         }
                     },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
                     "404": {
                         "description": "Not Found",
                         "schema": {
@@ -10388,6 +10424,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
                     },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
                     "404": {
                         "description": "Not Found",
                         "schema": {
@@ -10429,6 +10471,12 @@ const docTemplate = `{
                 "responses": {
                     "204": {
                         "description": "No Content"
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
                     },
                     "404": {
                         "description": "Not Found",
@@ -10487,6 +10535,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
                     },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
                     "404": {
                         "description": "Not Found",
                         "schema": {
@@ -10497,6 +10551,122 @@ const docTemplate = `{
                         "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/openapi.SidecarConfigError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/sidecars/{nameOrID}/slack-channels": {
+            "get": {
+                "description": "Where the reviews of each listener of the sidecar are posted in Slack. Control plane only.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sidecars"
+                ],
+                "summary": "Get Sidecar Slack Channels",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the sidecar",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SidecarSlackChannels"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "412": {
+                        "description": "Precondition Failed",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Set where the reviews of the listeners in the body are posted in Slack. A listener with no channels uses the fallback channel; a listener left out keeps its channels. Control plane only.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sidecars"
+                ],
+                "summary": "Set Sidecar Slack Channels",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Name or UUID of the sidecar",
+                        "name": "nameOrID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "The request body resource",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SidecarSlackChannels"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SidecarSlackChannels"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "412": {
+                        "description": "Precondition Failed",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
                         }
                     },
                     "500": {
@@ -11767,6 +11937,16 @@ const docTemplate = `{
                     "type": "string",
                     "example": "block-dangerous-queries"
                 },
+                "reviewers_groups": {
+                    "description": "The groups whose members may release a statement this rule holds.\nPresent only in a control plane, while the rule holds.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "dba-leads"
+                    ]
+                },
                 "risk_evaluation": {
                     "description": "Risk evaluation actions per level",
                     "allOf": [
@@ -11832,6 +12012,16 @@ const docTemplate = `{
                     "description": "Unique name for the rule",
                     "type": "string",
                     "example": "block-dangerous-queries"
+                },
+                "reviewers_groups": {
+                    "description": "ReviewersGroups are the groups whose members may release a statement\nthis rule holds for approval. Absent keeps the groups already set; with\nnone set the admin group reviews.\n\nA control plane field, read only while sidecar_spec holds a statement.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "dba-leads"
+                    ]
                 },
                 "risk_evaluation": {
                     "description": "Risk evaluation actions per level",
@@ -19843,6 +20033,26 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.SidecarListenerSlackChannels": {
+            "type": "object",
+            "properties": {
+                "channels": {
+                    "description": "Slack channel ids",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "C0987654321"
+                    ]
+                },
+                "name": {
+                    "description": "The listener name",
+                    "type": "string",
+                    "example": "payments-pg"
+                }
+            }
+        },
         "openapi.SidecarPatchRequest": {
             "type": "object",
             "required": [
@@ -20045,6 +20255,18 @@ const docTemplate = `{
                     "type": "string",
                     "format": "uuid",
                     "example": "15B5A2FD-0706-4A47-B1CF-B93CCFC5B3D7"
+                }
+            }
+        },
+        "openapi.SidecarSlackChannels": {
+            "type": "object",
+            "properties": {
+                "listeners": {
+                    "description": "The channels of each listener; a listener left out has none",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/openapi.SidecarListenerSlackChannels"
+                    }
                 }
             }
         },

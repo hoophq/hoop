@@ -1,19 +1,17 @@
 import { useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
-import { Box, Group, SimpleGrid, Stack, Text, Title } from '@mantine/core'
+import { Box, SimpleGrid, Stack, Text, Title } from '@mantine/core'
 import Button from '@/components/Button'
 import PasswordInput from '@/components/PasswordInput'
 import { useUserStore } from '@/stores/useUserStore'
-import { skipLicenseIntro } from '@/utils/licenseIntro'
 import classes from './License.module.css'
 
 const SIDECARS_PATH = '/sidecars'
 
 /**
- * The control plane's first-access screen (Figma: Control-Plane-UI, "First Time
- * - Option B"). ControlPlaneProtectedRoute sends an admin on the free plan with
- * no sidecar here; Confirm installs an Enterprise license, "I don't have a
- * license" remembers the skip for this user and goes on to Sidecars.
+ * The control plane's license screen (Figma: Control-Plane-UI, "First Time -
+ * Option B"). ControlPlaneProtectedRoute sends every admin without a valid
+ * Enterprise license here; Confirm installs one and goes on to Sidecars.
  *
  * Chrome-less like the other onboarding routes. Same save sequence as
  * features/ProtectionProfiles/AddLicenseModal.
@@ -21,7 +19,6 @@ const SIDECARS_PATH = '/sidecars'
 function LicenseIntro() {
   const navigate = useNavigate()
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
-  const userId = useUserStore((s) => s.user?.id)
   const installLicense = useUserStore((s) => s.installLicense)
 
   const [licenseKey, setLicenseKey] = useState('')
@@ -30,13 +27,6 @@ function LicenseIntro() {
 
   // A bookmark after licensing must not strand anyone here.
   if (!isFreeLicense) return <Navigate to={SIDECARS_PATH} replace />
-
-  const handleSkip = () => {
-    // Written before navigating: /sidecars mounts a new gate that runs onReady
-    // again and reads this key.
-    skipLicenseIntro(userId)
-    navigate(SIDECARS_PATH, { replace: true })
-  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -111,14 +101,9 @@ function LicenseIntro() {
                 required
               />
 
-              <Group gap="md">
-                <Button type="submit" loading={saving} disabled={!licenseKey.trim()}>
-                  Confirm
-                </Button>
-                <Button variant="subtle" onClick={handleSkip} disabled={saving}>
-                  {"I don't have a license"}
-                </Button>
-              </Group>
+              <Button type="submit" loading={saving} disabled={!licenseKey.trim()}>
+                Confirm
+              </Button>
             </Stack>
           </form>
         </Box>

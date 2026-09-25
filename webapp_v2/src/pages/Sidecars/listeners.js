@@ -170,10 +170,6 @@ export function validateListener(form, others = [], original = null, config = nu
   const masking = maskConfigured(original, config)
   const ruleTypes = new Set(guardrailMatchers(original, config).map((e) => e.rule?.type))
 
-  if (listenerAccepts(l.protocol, 'http') && analyzing && !l.http?.capture_body) {
-    errors['http.capture_body'] = 'This listener runs the AI analyzer, which reads the request body.'
-  }
-
   if (listenerAccepts(l.protocol, 'grpc')) {
     const hasDescriptors = (l.grpc?.descriptors ?? []).length > 0
     const capture = l.grpc?.capture_payload === true

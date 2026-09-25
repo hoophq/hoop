@@ -3,9 +3,13 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	apisidecar "github.com/hoophq/hoop/gateway/api/sidecar"
 	"github.com/hoophq/hoop/gateway/appconfig"
 )
 
@@ -51,5 +55,47 @@ func TestControlPlaneHealthzIsOKWithoutGRPC(t *testing.T) {
 	engine.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/healthz", nil))
 	if w.Code != http.StatusOK {
 		t.Fatalf("got status %d, want %d (body=%s)", w.Code, http.StatusOK, w.Body.String())
+	}
+}
+
+// Every route whose data only a control plane has answers 412 on a gateway,
+// so the gateway behaves as it did before those routes existed.
+// The table is checked against the registered routes: a route that moves to
+// another handler fails here instead of silently losing its guard.
+func TestControlPlaneOnlyRoutesAnswer412OnAGateway(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	if appconfig.Get().IsControlPlane() {
+		t.Fatal("this test binary must run as a gateway")
+	}
+	registered := map[string]string{}
+	for _, r := range (&Api{}).buildEngine(appconfig.AppModeGateway).Routes() {
+		registered[r.Method+" "+r.Path] = r.Handler
+	}
+
+	apiPrefix := "/api"
+	for _, tt := range []struct {
+		route   string
+		handler gin.HandlerFunc
+	}{
+		{"GET /sidecars/:nameOrID/slack-channels", apisidecar.GetSlackChannels},
+		{"PUT /sidecars/:nameOrID/slack-channels", apisidecar.PutSlackChannels},
+	} {
+		t.Run(tt.route, func(t *testing.T) {
+			method, path, _ := strings.Cut(tt.route, " ")
+			got, ok := registered[method+" "+apiPrefix+path]
+			if !ok {
+				t.Fatalf("route %s %s is not registered", method, apiPrefix+path)
+			}
+			if want := runtime.FuncForPC(reflect.ValueOf(tt.handler).Pointer()).Name(); got != want {
+				t.Fatalf("route handler = %s, want %s", got, want)
+			}
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			c.Request = httptest.NewRequest(method, apiPrefix+path, nil)
+			tt.handler(c)
+			if w.Code != http.StatusPreconditionFailed {
+				t.Errorf("status = %d, want 412: %s", w.Code, w.Body.String())
+			}
+		})
 	}
 }

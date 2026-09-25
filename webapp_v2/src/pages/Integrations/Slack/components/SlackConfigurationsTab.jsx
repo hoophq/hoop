@@ -20,9 +20,17 @@ function decodeBase64Safe(value) {
 
 /**
  * Slack App token configuration: pre-fills the decoded tokens and saves
- * them base64-encoded via PUT /plugins/slack/config.
+ * them base64-encoded via PUT /plugins/slack/config. The control plane names
+ * the channel a fallback and links its own docs.
  */
-function SlackConfigurationsTab({ plugin, saving, onSave }) {
+function SlackConfigurationsTab({
+  plugin,
+  saving,
+  onSave,
+  channelLabel = 'Slack channel',
+  channelDescription,
+  docsHref = SLACK_DOCS_URL,
+}) {
   const savedBotToken = plugin?.config?.envvars?.SLACK_BOT_TOKEN
   const savedAppToken = plugin?.config?.envvars?.SLACK_APP_TOKEN
   const savedSlackChannel = plugin?.config?.envvars?.SLACK_CHANNEL
@@ -69,7 +77,7 @@ function SlackConfigurationsTab({ plugin, saving, onSave }) {
           <Title order={4}>Slack App Configurations</Title>
           <Text size="sm" c="dimmed">
             {'Here you will integrate with your Slack App. Please visit our doc to '}
-            <Anchor href={SLACK_DOCS_URL} target="_blank" size="sm" fw={600} underline="always">
+            <Anchor href={docsHref} target="_blank" size="sm" fw={600} underline="always">
               learn how to create a Slack App.
             </Anchor>
           </Text>
@@ -88,7 +96,8 @@ function SlackConfigurationsTab({ plugin, saving, onSave }) {
             onChange={(e) => setAppToken(e.currentTarget.value)}
           />
           <TextInput
-            label="Slack channel"
+            label={channelLabel}
+            description={channelDescription}
             value={slackChannel}
             onChange={(e) => setSlackChannel(e.currentTarget.value)}
           />

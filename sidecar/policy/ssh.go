@@ -25,12 +25,14 @@ import (
 //   - table: SSH has no relations. An sftp path is not a table, and reading
 //     it as one would make `table: /etc` match by accident rather than by
 //     design. Paths are pattern_match's job.
-//   - http_resource, http_status: there is no request and no response code.
+//   - http_resource, http_status, http_header: there is no request, no
+//     response code and no header.
 //   - grpc_status: there is no RPC.
 var sshRefusedRuleTypes = []MatchType{
 	MatchTable,
 	MatchHTTPResource,
 	MatchHTTPStatus,
+	MatchHTTPHeader,
 	MatchGRPCStatus,
 }
 
@@ -71,6 +73,8 @@ func sshRefusalReason(t MatchType) string {
 		return "there is no request path; match a command or a path with pattern_match"
 	case MatchHTTPStatus:
 		return "there is no response status"
+	case MatchHTTPHeader:
+		return "there is no request header"
 	case MatchGRPCStatus:
 		return "there is no RPC"
 	}

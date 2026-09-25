@@ -1,10 +1,13 @@
 package gate_test
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
+	"io"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -379,9 +382,8 @@ func (m stubMasker) MaskCell(_ string, value []byte) ([]byte, []string, int) {
 
 func TestResponseMaskingRewritesAndAudits(t *testing.T) {
 	sink := &recordingSink{}
-	// HTTP here, because byte substitution changes payload length and would
-	// corrupt a length-prefixed binary frame. Postgres takes the re-framing
-	// path; see TestMaskingReframesLengthPrefixedProtocols.
+	// HTTP here; Postgres takes the same re-framing path with its own
+	// framing, see TestMaskingReframesLengthPrefixedProtocols.
 	sess := session.New(inspect.HTTP, session.Identity{Subject: "alice@example.com"})
 	sess.Connection = "api"
 	g, _ := gate.New(sess, gate.Config{
@@ -792,6 +794,28 @@ func (*plainCodec) Decode(_ inspect.Direction, data []byte) ([]inspect.Statement
 	return nil, len(data), nil
 }
 
+// A CodecFactory can hand the gate a codec the registry never saw, so the
+// load-time MaskSupported check cannot vouch for it. A masker on a codec
+// that cannot re-frame would be skipped silently on every response; the
+// gate refuses to be built instead.
+func TestMaskerOnNonReframingCodecIsRefused(t *testing.T) {
+	_, err := gate.New(newSession(), gate.Config{
+		Protocol:     inspect.Postgres,
+		Masker:       stubMasker{find: "secret", replace: "[REDACTED]"},
+		CodecFactory: func() inspect.Codec { return &plainCodec{} },
+	})
+	if err == nil || !strings.Contains(err.Error(), "cannot re-frame") {
+		t.Fatalf("New = %v, want a refusal naming the codec's missing capability", err)
+	}
+	// Without a masker the same codec is fine: there is nothing to skip.
+	if _, err := gate.New(newSession(), gate.Config{
+		Protocol:     inspect.Postgres,
+		CodecFactory: func() inspect.Codec { return &plainCodec{} },
+	}); err != nil {
+		t.Fatalf("New without a masker: %v", err)
+	}
+}
+
 // The gate must carry session identity into the policy input, or a Rego rule
 // cannot reference the actor.
 func TestPolicyContextCarriesIdentity(t *testing.T) {
@@ -900,8 +924,8 @@ func TestMaskingReframesLengthPrefixedProtocols(t *testing.T) {
 	}
 }
 
-// HTTP bodies are delimited by Content-Length or chunked framing that the
-// relay forwards as a unit, so substitution is safe there.
+// The HTTP codec re-frames a response around the masked body: a whole
+// response in one read is masked and its Content-Length corrected.
 func TestMaskingAppliesToHTTP(t *testing.T) {
 	sess := session.New(inspect.HTTP, session.Identity{Subject: "alice"})
 	g, _ := gate.New(sess, gate.Config{
@@ -920,43 +944,47 @@ func TestMaskingAppliesToHTTP(t *testing.T) {
 	}
 }
 
-// A body that arrives without its header block cannot have Content-Length
-// corrected, because the header already went out. Masking it anyway grows the
-// body past the length the client was told to read, so the client stops
-// mid-token and reports a corrupt upstream.
+// A header block and its body arriving in separate reads. The codec holds
+// the header until the body is whole, then emits both, masked, under a
+// corrected Content-Length: what the client reads is consistent and
+// protected. The outcome refused here is a masked body behind a stale
+// header, which the client truncates.
 //
 // This was a live bug: about 3-10% of responses through the Envoy stack came
 // back truncated, whenever the upstream's header and body landed in separate
 // TCP reads.
-func TestMaskingSkipsBodyWhoseLengthCannotBeCorrected(t *testing.T) {
+func TestMaskingHoldsHeaderUntilBodyIsWhole(t *testing.T) {
 	g, _ := gate.New(session.New(inspect.HTTP, session.Identity{Subject: "alice"}),
 		gate.Config{
 			Protocol: inspect.HTTP,
 			Masker:   stubMasker{find: "ada@example.com", replace: "[REDACTED:email]"},
 		})
 
-	// The header block, forwarded on its own. Content-Length is now committed.
 	head := []byte("HTTP/1.1 200 OK\r\nContent-Length: 15\r\n\r\n")
-	if d := g.Response(context.Background(), head); !bytes.Equal(d.Payload, head) {
-		t.Fatalf("header block was rewritten: %q", d.Payload)
+	first := g.Response(context.Background(), head)
+	if len(first.Payload) != 0 {
+		t.Fatalf("header block went out before the body: %q", first.Payload)
+	}
+	second := g.Response(context.Background(), []byte("ada@example.com"))
+	if second.MaskedCount != 1 {
+		t.Fatalf("MaskedCount = %d, want 1", second.MaskedCount)
 	}
 
-	// The body, in the next read. Masking would take it from 15 bytes to 16.
-	body := []byte("ada@example.com")
-	d := g.Response(context.Background(), body)
-
-	if len(d.Payload) != 15 {
-		t.Errorf("payload is %d bytes but the client will read 15, truncating it: %q",
-			len(d.Payload), d.Payload)
+	wire := append(append([]byte(nil), first.Payload...), second.Payload...)
+	resp, err := http.ReadResponse(bufio.NewReader(bytes.NewReader(wire)), &http.Request{Method: "GET"})
+	if err != nil {
+		t.Fatalf("the client cannot parse what went out: %v\n%q", err, wire)
 	}
-	if d.MaskedCount != 0 {
-		t.Errorf("MaskedCount = %d: reported masking a body it could not safely rewrite",
-			d.MaskedCount)
+	got, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("the client cannot read the body: %v\n%q", err, wire)
+	}
+	if int64(len(got)) != resp.ContentLength || string(got) != "[REDACTED:email]" {
+		t.Fatalf("Content-Length %d, body %q", resp.ContentLength, got)
 	}
 }
 
-// The same buffer, whole, MUST still be masked and retagged: the skip above
-// is about what the gate cannot correct, never a blanket retreat.
+// The same buffer, whole, is masked and retagged in one read.
 func TestMaskingStillAppliesWhenHeaderAndBodyArriveTogether(t *testing.T) {
 	g, _ := gate.New(session.New(inspect.HTTP, session.Identity{Subject: "alice"}),
 		gate.Config{

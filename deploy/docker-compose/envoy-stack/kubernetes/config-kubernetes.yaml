@@ -1,0 +1,182 @@
+# hoop-inspect with a Kubernetes API server behind an http lane.
+#
+#   envoy :8443 --cluster hoop_inspect_http---> :18080  lane "httpbin"
+#   envoy :5432 --cluster hoop_inspect_pg-----> :15432  lane "appdb"
+#   envoy :8447 --cluster hoop_inspect_k8s----> :16443  lane "kubernetes"  http codec
+#
+# The appdb and httpbin lanes are the LIVE parts of ../sidecar/config.yaml,
+# minus their rules: this build enforces at most ONE guardrail and ONE mask
+# rule per process, and this overlay spends both on the kubernetes lane, so
+# the process defaults below author none. The parent stack's demo.sh is not
+# the walk here; ./demo-kubernetes.sh is.
+#
+# Validate without starting anything:
+#   cd sidecar/cmd && go run . -validate \
+#     -config ../../deploy/docker-compose/envoy-stack/kubernetes/config-kubernetes.yaml
+
+log_level: info
+
+admin:
+  listen: 0.0.0.0:19000
+
+audit:
+  file: "-"
+  memory_buffer: 256
+  async_queue_size: 1024
+  query_sessions: 500
+
+pii:
+  entities:
+    - EMAIL_ADDRESS
+    - US_SSN
+    - CREDIT_CARD
+    - BR_CPF
+    - IBAN_CODE
+
+# ------------------------------------------------------------------ analyzer
+# Off: it needs a credential and spends money per request shape. The
+# kubernetes lane below carries its own commented analyzer: block; this is
+# the process-wide half it inherits. Uncomment both, fill in the provider,
+# and kubectl's GETs reach the model as their request line, resource and
+# the headers allowlisted on the lane. See the lane for what that reads like.
+#
+# analyzer:
+#   provider: anthropic         # anthropic | openai | gemini | vertex
+#   model: claude-sonnet-4-5
+#   credentials_file: /run/secrets/anthropic-api-key   # a PATH, mode 0600
+#   timeout_sec: 10
+#   fail_open: true
+#   send: redacted
+#   max_input_bytes: 8192
+#   cache: {size: 4096, ttl_sec: 900}
+#   max_calls: 500
+
+# ---------------------------------------------------------------- defaults
+# No rules here on purpose; see the header. mode: enforce still reaches every
+# lane, so the kubernetes lane's rule denies rather than reports.
+guardrails:
+  mode: enforce
+  rules: []
+
+mask:
+  rules: []
+
+listeners:
+  - name: appdb
+    protocol: postgres
+    listen: 0.0.0.0:15432
+    upstream: appdb:5432
+    upstream_tls:
+      ca_file: /etc/hoop-inspect/certs/appdb.crt
+      server_name: appdb
+
+  - name: httpbin
+    protocol: http
+    listen: 0.0.0.0:18080
+    upstream: httpbin:8080
+
+  # kube-apiserver. Two request shapes cross this one lane:
+  #
+  #   - Plain HTTP/1.1: kubectl get, apply, delete. Headers, path and query;
+  #     a GET carries no body, and on this API the path IS the operation.
+  #   - WebSocket: kubectl exec, attach, port-forward. The relay records the
+  #     GET .../exec that opened it, the 101 that answered it and, with the
+  #     WebSocket-aware http codec, one ws_message row per frame on the
+  #     connection, keyed on that GET. exec's v5.channel.k8s.io frames are
+  #     binary: the audit trail records them, no masker sees them.
+  #
+  # Upstream TLS is verified against the cluster CA that the k3s-ca service
+  # copies out of k3s's volume. No ALPN is offered on that hop, so the
+  # apiserver answers in HTTP/1.1, the only dialect the codec reads.
+  #
+  # Authorization is never allowlisted; the relay refuses it at load. The
+  # bearer token therefore never reaches the audit trail, OPA, or a prompt.
+  # X-Hoop-User is the principal OPA resolved from that token and wrote
+  # back onto the request; identity_header makes it the audit row's
+  # principal, and the header allowlist below keeps it on the statement too.
+  - name: kubernetes
+    protocol: http
+    listen: 0.0.0.0:16443
+    upstream: k3s:6443
+    identity_header: X-Hoop-User
+    upstream_tls:
+      ca_file: /etc/hoop-inspect/k3s/server-ca.crt
+      server_name: k3s
+
+    # The process's one guardrail. kubectl asks for a Secret's table view
+    # with `Accept: application/json;as=Table;v=v1;g=meta.k8s.io,...` and
+    # for its contents (-o yaml, -o json, -o jsonpath) with
+    # `Accept: application/json`, on the same GET. Listing secrets is fine;
+    # reading one is not. headers_not names the ONE safe shape, so every
+    # other request on a secret is refused: the object forms kubectl sends,
+    # `Accept: application/json;q=1`, Protobuf, and a curl with no Accept
+    # at all. Written the other way round, as a list of unsafe values, the
+    # shape the list does not know would pass. The rule reads the header
+    # the lane allowlists below; naming one it does not capture is refused
+    # at load. A bare * matches any run of characters.
+    guardrails:
+      rules:
+        - name: no-secret-contents
+          type: http_header
+          methods: [GET]
+          resources: ["/api/v1/secrets", "/api/v1/namespaces/*/secrets/**"]
+          headers_not:
+            accept: ["application/json;as=Table;*"]
+          message: listing secrets is fine; reading one is not permitted through this proxy
+
+    # The process's one mask rule, and a column rule rather than an entity
+    # rule: the codec walks a JSON response value by value and hands each to
+    # the masker under its key path (data.ada, items.data.password), so
+    # `columns: [data]` masks every value under a `data` object -- a
+    # ConfigMap's, a Secret's -- whatever it holds and whether or not a
+    # detector recognizes it. The apiserver answers with Transfer-Encoding:
+    # chunked; the codec re-chunks what it rewrote, so that framing is no
+    # longer the reason a value comes back in the clear.
+    mask:
+      rules:
+        - name: k8s-data
+          columns: [data]
+          entities: [K8S_DATA]
+          strategy: redact
+
+    # What the codec exposes to the rule above, the audit trail, OPA and --
+    # once the block below is on -- the model. accept is what the guardrail
+    # reads; kubectl-command is the subcommand kubectl stamps on every
+    # request (`kubectl get`, `kubectl exec`), the best one-line statement
+    # of intent this API offers. Kubectl-Session, a fresh UUID per
+    # invocation, is deliberately absent: the analyzer's cache keys on the
+    # headers it sees, and a per-request value would make every GET a model
+    # call.
+    http:
+      headers:
+        - X-Hoop-User
+        - Accept
+        - Kubectl-Command
+        - Upgrade
+        - Sec-WebSocket-Protocol
+        - X-Stream-Protocol-Version
+
+    # A request with no body is still classified: the model gets the request
+    # line, the resource and the headers above. For `kubectl get secret
+    # db-credentials -o json` that reads
+    #
+    #   GET /api/v1/namespaces/default/secrets/db-credentials
+    #   Accept: application/json
+    #   Kubectl-Command: kubectl get
+    #   X-Hoop-User: alice
+    #
+    # and the same GET with the Table accept header is another shape, so a
+    # listing and a read are two verdicts. The trigger keeps the bill to
+    # secrets; the guardrail above already refused the plain read for free,
+    # so what reaches the model is what the guardrail let through.
+    # Uncomment with the process-wide analyzer: section at the top.
+    # analyzer:
+    #   trigger: {resources: ["/api/v1/namespaces/*/secrets/**", "/api/v1/secrets"]}
+    #   high: block
+    #   medium: warn
+    #   prompt: |
+    #     You are classifying kubectl requests to a production Kubernetes API
+    #     server on behalf of an automated agent. Reading the contents of a
+    #     Secret is high risk; listing Secrets by name is low risk. A request
+    #     is described by its method, path, resource and headers: the Accept
+    #     header says whether the caller wants the table view or the object.
