@@ -433,6 +433,33 @@ func TestHTTPHeaderRuleMustNameCapturedHeaders(t *testing.T) {
 	}
 }
 
+// The validator and the codec must read the same allowlist. A name with
+// stray whitespace that the validator accepted but the codec never
+// captured would leave a rule that loads and cannot match: the codec gets
+// the normalized names, and it captures the header.
+func TestHeaderAllowlistIsNormalizedForTheCodec(t *testing.T) {
+	h := &HTTPCodecConfig{Headers: []string{"  Accept ", "Kubectl-Command"}}
+	rule := policy.Rule{Name: "r", Type: policy.MatchHTTPHeader}.
+		WithHeadersNot(map[string][]string{"accept": {"application/json;as=Table;*"}})
+	cfg := &Config{Listeners: []ListenerConfig{{
+		Name: "api", Protocol: "http", Listen: ":1", Upstream: "h:1", HTTP: h,
+		Guardrails: &GuardrailsConfig{Rules: []policy.Rule{rule}},
+	}}}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+
+	codec := newHTTPCodec(*h)()
+	stmts, _, err := codec.Decode(inspect.FromClient, []byte("GET /x HTTP/1.1\r\nHost: h\r\nAccept: application/json\r\nKubectl-Command: kubectl get\r\n\r\n"))
+	if err != nil || len(stmts) != 1 {
+		t.Fatalf("Decode: %d statements, %v", len(stmts), err)
+	}
+	got := stmts[0].HTTP.Headers
+	if got["accept"] != "application/json" || got["kubectl-command"] != "kubectl get" {
+		t.Fatalf("codec captured %v; the padded allowlist entry was not normalized", got)
+	}
+}
+
 // The same rule on a postgres lane needs nothing extra: statement text is
 // always there.
 func TestPostgresAIRuleNeedsNoCaptureBody(t *testing.T) {

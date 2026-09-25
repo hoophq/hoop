@@ -349,8 +349,13 @@ func (HTTPBuilder) Build(stmt inspect.Statement, maxBytes int) (Content, bool) {
 		sb.WriteString(Truncate(body, maxBytes))
 	}
 
+	// The budget bounds what leaves the process, and a header is client
+	// input the same as a body: a caller who can set an allowlisted header
+	// must not be able to grow the prompt past it. The body was cut to the
+	// budget on its own above so its marker lands where the body ends; this
+	// second cut only fires when the headers pushed the whole past it.
 	return Content{
-		Text:     sb.String(),
+		Text:     Truncate(sb.String(), maxBytes),
 		CacheKey: httpCacheKey(stmt, body, headers),
 	}, true
 }

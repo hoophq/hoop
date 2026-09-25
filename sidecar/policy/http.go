@@ -29,9 +29,12 @@ const (
 	// the upstream is called.
 	MatchHTTPStatus MatchType = "http_status"
 
-	// MatchHTTPHeader denies when the message carries EVERY header named in
-	// Headers with a value matching one of the patterns listed for it.
-	// Methods and Resources narrow it as they narrow http_resource.
+	// MatchHTTPHeader denies a REQUEST by its headers: every header named
+	// in Headers must be present with a value matching one of its
+	// patterns, and every header named in HeadersNot must be absent or
+	// match none of its patterns. Methods and Resources narrow it as they
+	// narrow http_resource. A response never matches: its headers are the
+	// server's, and this rule reads the client's intent.
 	//
 	// It exists for the request whose intent is in its headers rather
 	// than its path: kubectl asks for a Secret's table view with
@@ -39,6 +42,12 @@ const (
 	// `Accept: application/json`, on the same GET. Only headers the lane
 	// allowlists (`http.headers`) reach the statement, so a rule naming
 	// any other header can never match; the daemon refuses that config.
+	//
+	// A rule that protects something should be written with HeadersNot,
+	// naming the one safe shape: "deny unless Accept asks for the table".
+	// Written with Headers it lists the unsafe shapes it knows, and the
+	// request that omits the header, adds a parameter, or asks for
+	// Protobuf is an unsafe shape it does not know.
 	MatchHTTPHeader MatchType = "http_header"
 )
 
@@ -69,6 +78,15 @@ type httpRuleFields struct {
 	// with several values arrives joined with ", ", and a pattern matches
 	// that whole string.
 	Headers map[string][]string `json:"headers,omitempty"`
+
+	// HeadersNot for MatchHTTPHeader: header name to the value patterns
+	// that EXEMPT a request. The rule matches when each named header is
+	// absent or matches none of its patterns; a header present with a
+	// matching value lets the request through. An empty list means the
+	// header must be absent. Same pattern language as Headers. This is the
+	// fail-closed form: name the one shape that is safe and every other
+	// shape, including a missing header, is denied.
+	HeadersNot map[string][]string `json:"headers_not,omitempty"`
 }
 
 // validateHTTP checks the HTTP-specific fields of a rule at construction.
@@ -88,28 +106,38 @@ func (r Rule) validateHTTP() error {
 			}
 		}
 	case MatchHTTPHeader:
-		if len(r.Headers) == 0 {
-			return fmt.Errorf("%s: http_header rule with no headers", r.Name)
+		if len(r.Headers) == 0 && len(r.HeadersNot) == 0 {
+			return fmt.Errorf("%s: http_header rule with neither headers nor headers_not", r.Name)
 		}
-		for name := range r.Headers {
-			if strings.TrimSpace(name) == "" {
-				return fmt.Errorf("%s: http_header rule with an empty header name", r.Name)
+		for _, m := range []map[string][]string{r.Headers, r.HeadersNot} {
+			for name := range m {
+				if strings.TrimSpace(name) == "" {
+					return fmt.Errorf("%s: http_header rule with an empty header name", r.Name)
+				}
 			}
 		}
 	}
 	return nil
 }
 
-// HeaderNames returns the header names a MatchHTTPHeader rule reads,
-// lowercased and sorted, so a configuration layer can check them against
-// what the lane's codec captures. Empty for any other rule type.
+// HeaderNames returns the header names a MatchHTTPHeader rule reads, from
+// both Headers and HeadersNot, lowercased, deduplicated and sorted, so a
+// configuration layer can check them against what the lane's codec
+// captures. Empty for any other rule type.
 func (r Rule) HeaderNames() []string {
 	if r.Type != MatchHTTPHeader {
 		return nil
 	}
-	names := make([]string, 0, len(r.Headers))
-	for name := range r.Headers {
-		names = append(names, strings.ToLower(strings.TrimSpace(name)))
+	seen := make(map[string]bool, len(r.Headers)+len(r.HeadersNot))
+	names := make([]string, 0, len(r.Headers)+len(r.HeadersNot))
+	for _, m := range []map[string][]string{r.Headers, r.HeadersNot} {
+		for name := range m {
+			key := strings.ToLower(strings.TrimSpace(name))
+			if !seen[key] {
+				seen[key] = true
+				names = append(names, key)
+			}
+		}
 	}
 	sort.Strings(names)
 	return names
@@ -167,6 +195,9 @@ func (r Rule) matchesHTTP(stmt inspect.Statement) (matched, ok bool) {
 		return false, true
 
 	case MatchHTTPHeader:
+		if d.StatusCode != 0 || stmt.Direction == inspect.FromServer {
+			return false, true // a response; this rule reads the request
+		}
 		if !r.methodAllowed(d.Method) || !r.resourceAllowed(d.Resource) {
 			return false, true
 		}
@@ -174,6 +205,12 @@ func (r Rule) matchesHTTP(stmt inspect.Statement) (matched, ok bool) {
 			value, present := d.Headers[strings.ToLower(strings.TrimSpace(name))]
 			if !present || !anyWildcard(patterns, value) {
 				return false, true
+			}
+		}
+		for name, patterns := range r.HeadersNot {
+			value, present := d.Headers[strings.ToLower(strings.TrimSpace(name))]
+			if present && anyWildcard(patterns, value) {
+				return false, true // the exempting shape
 			}
 		}
 		return true, true

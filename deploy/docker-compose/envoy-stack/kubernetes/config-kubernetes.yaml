@@ -107,17 +107,21 @@ listeners:
     # with `Accept: application/json;as=Table;v=v1;g=meta.k8s.io,...` and
     # for its contents (-o yaml, -o json, -o jsonpath) with
     # `Accept: application/json`, on the same GET. Listing secrets is fine;
-    # reading one is not. The rule reads the header the lane allowlists
-    # below; naming one it does not capture is refused at load. `\*/\*`
-    # is a literal Accept: */* -- a bare * matches any run of characters.
+    # reading one is not. headers_not names the ONE safe shape, so every
+    # other request on a secret is refused: the object forms kubectl sends,
+    # `Accept: application/json;q=1`, Protobuf, and a curl with no Accept
+    # at all. Written the other way round, as a list of unsafe values, the
+    # shape the list does not know would pass. The rule reads the header
+    # the lane allowlists below; naming one it does not capture is refused
+    # at load. A bare * matches any run of characters.
     guardrails:
       rules:
         - name: no-secret-contents
           type: http_header
           methods: [GET]
-          resources: ["/api/v1/namespaces/*/secrets/*"]
-          headers:
-            accept: ["application/json", "application/yaml", "\\*/\\*"]
+          resources: ["/api/v1/secrets", "/api/v1/namespaces/*/secrets/**"]
+          headers_not:
+            accept: ["application/json;as=Table;*"]
           message: listing secrets is fine; reading one is not permitted through this proxy
 
     # The process's one mask rule, and a column rule rather than an entity

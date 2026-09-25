@@ -1,8 +1,8 @@
 package daemon
 
 import (
-	"github.com/hoophq/hoop/sidecar/inspect"
 	codechttp "github.com/hoophq/hoop/sidecar/codec/http"
+	"github.com/hoophq/hoop/sidecar/inspect"
 )
 
 // newHTTPCodec returns a factory producing HTTP codecs with the lane's
@@ -19,7 +19,7 @@ func newHTTPCodec(cfg HTTPCodecConfig) func() inspect.Codec {
 	opts := codechttp.Options{
 		CaptureBody:          cfg.CaptureBody,
 		MaxBodyBytes:         cfg.MaxBodyBytes,
-		Headers:              cfg.Headers,
+		Headers:              cfg.headerNames(), // normalized once, the same list validate checked
 		SensitiveQueryParams: cfg.SensitiveQueryParams,
 	}
 	return func() inspect.Codec { return codechttp.New(opts) }

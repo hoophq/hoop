@@ -49,13 +49,25 @@ type HTTPCodecConfig struct {
 	SensitiveQueryParams []string `json:"sensitive_query_params,omitempty"`
 }
 
+// headerNames is the allowlist as the codec receives it: trimmed and
+// lowercased. One normalization serves the validator, the refusal list and
+// the codec, so a name with stray whitespace cannot pass the first and be
+// dropped by the last.
+func (h *HTTPCodecConfig) headerNames() []string {
+	if h == nil {
+		return nil
+	}
+	out := make([]string, 0, len(h.Headers))
+	for _, name := range h.Headers {
+		out = append(out, strings.ToLower(strings.TrimSpace(name)))
+	}
+	return out
+}
+
 // captures reports whether the lane's codec exposes a header to policy.
 func (h *HTTPCodecConfig) captures(header string) bool {
-	if h == nil {
-		return false
-	}
-	for _, name := range h.Headers {
-		if strings.EqualFold(strings.TrimSpace(name), header) {
+	for _, name := range h.headerNames() {
+		if name == header {
 			return true
 		}
 	}

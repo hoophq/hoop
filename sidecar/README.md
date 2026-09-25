@@ -2197,7 +2197,7 @@ policy.NewRules([]policy.Rule{
     policy.Rule{Name: "no-secret-contents", Type: policy.MatchHTTPHeader}.
         WithResources("/api/v1/namespaces/*/secrets/*").
         WithMethods("GET").
-        WithHeaders(map[string][]string{"Accept": {"application/json", "application/yaml"}}).
+        WithHeadersNot(map[string][]string{"Accept": {"application/json;as=Table;*"}}).
         WithMessage("listing secrets is fine; reading one is not"),
 })
 ```
@@ -2208,20 +2208,32 @@ cannot deny the wrong protocol.
 **An `http_header` rule reads the request whose intent is in its headers.**
 kubectl fetches a Secret's table view with
 `Accept: application/json;as=Table;v=v1;g=meta.k8s.io,application/json` and
-its contents with `Accept: application/json`, on the same `GET`; the rule
-above lets the listing through and refuses the read. `headers` maps a header
-name to the values that match it: every named header must match (AND), any
-listed value will do (OR), an empty list means present with any value. Values
-compare case-insensitively; `*` matches any run of characters and `\*` a
-literal star, so `kubectl delete*` catches every `Kubectl-Command` that
-starts that way and `\*/\*` is an `Accept` header. `methods` and `resources`
-scope the rule as they scope `http_resource`; a `*` segment before a trailing
-`/**` is still a wildcard, so `/api/v1/namespaces/*/secrets/**` covers the
-collection in every namespace and everything under it. The codec fills
-`http.headers` on a statement from the listener's `http.headers` allowlist
-and nothing else, so a rule naming a header the lane does not capture is
-refused at load with the name to add: a rule that loads and can never match
-is the failure this file refuses everywhere.
+its contents with `Accept: application/json`, on the same `GET`. Two forms:
+
+- `headers_not` names the shapes that are SAFE: the rule matches unless every
+  named header is present with a matching value. The rule above lets the
+  table view through and refuses everything else on a secret: `-o yaml`,
+  `Accept: application/json;q=1`, Protobuf, and a curl that sends no
+  `Accept` at all. This is the form for a rule that protects something,
+  because the request it did not think of is denied.
+- `headers` names the shapes that are UNSAFE: the rule matches when every
+  named header is present with a matching value. `kubectl-command:
+  ["kubectl delete*"]` refuses a delete however kubectl spells the path. A
+  request without the header cannot match this form.
+
+Both map a header name to value patterns: every named header must satisfy
+its map (AND), any listed value will do (OR), an empty list means present
+(`headers`) or absent (`headers_not`). Values compare case-insensitively;
+`*` matches any run of characters and `\*` a literal star. Only a REQUEST
+matches: a response carries the server's headers, and this rule reads the
+client's intent. `methods` and `resources` scope the rule as they scope
+`http_resource`; a `*` segment before a trailing `/**` is still a wildcard,
+so `/api/v1/namespaces/*/secrets/**` covers the collection in every namespace
+and everything under it. The codec fills `http.headers` on a statement from
+the listener's `http.headers` allowlist and nothing else, so a rule naming a
+header the lane does not capture, in either map, is refused at load with the
+name to add: a rule that loads and can never match is the failure this file
+refuses everywhere.
 
 **A `table` rule keys on the access.** `access: write` means "nothing writes
 to customers" and stops firing on

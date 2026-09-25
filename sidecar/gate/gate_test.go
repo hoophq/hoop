@@ -794,6 +794,28 @@ func (*plainCodec) Decode(_ inspect.Direction, data []byte) ([]inspect.Statement
 	return nil, len(data), nil
 }
 
+// A CodecFactory can hand the gate a codec the registry never saw, so the
+// load-time MaskSupported check cannot vouch for it. A masker on a codec
+// that cannot re-frame would be skipped silently on every response; the
+// gate refuses to be built instead.
+func TestMaskerOnNonReframingCodecIsRefused(t *testing.T) {
+	_, err := gate.New(newSession(), gate.Config{
+		Protocol:     inspect.Postgres,
+		Masker:       stubMasker{find: "secret", replace: "[REDACTED]"},
+		CodecFactory: func() inspect.Codec { return &plainCodec{} },
+	})
+	if err == nil || !strings.Contains(err.Error(), "cannot re-frame") {
+		t.Fatalf("New = %v, want a refusal naming the codec's missing capability", err)
+	}
+	// Without a masker the same codec is fine: there is nothing to skip.
+	if _, err := gate.New(newSession(), gate.Config{
+		Protocol:     inspect.Postgres,
+		CodecFactory: func() inspect.Codec { return &plainCodec{} },
+	}); err != nil {
+		t.Fatalf("New without a masker: %v", err)
+	}
+}
+
 // The gate must carry session identity into the policy input, or a Rego rule
 // cannot reference the actor.
 func TestPolicyContextCarriesIdentity(t *testing.T) {

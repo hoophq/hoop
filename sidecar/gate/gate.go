@@ -383,13 +383,19 @@ func New(sess *session.Session, cfg Config) (*Gate, error) {
 		g.serverFilter = filter
 	}
 	// Discover the re-framing capability once, so the data path does not
-	// type-assert per packet. A codec that cannot rebuild its own frames
-	// leaves this nil and masks nothing; MaskSupported refuses the config.
+	// type-assert per packet. MaskSupported asks the registry's codec for
+	// it at load; this asks the codec actually built, because a
+	// CodecFactory can hand over anything. A masker on a codec that cannot
+	// rebuild its own frames would be forwarded around silently, which is
+	// the failure the load-time check exists to refuse.
 	if rf, ok := server.Codec().(Reframer); ok {
 		g.reframer = rf
 		if activator, ok := rf.(rewriteActivator); ok && cfg.Masker != nil {
 			activator.EnableRewrite()
 		}
+	} else if cfg.Masker != nil {
+		return nil, fmt.Errorf("sidecar/gate: a masker is configured but the %s codec (%T) cannot re-frame responses, so it could never mask them",
+			cfg.Protocol, serverCodec)
 	}
 	return g, nil
 }

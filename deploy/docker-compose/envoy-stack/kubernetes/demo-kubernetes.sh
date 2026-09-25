@@ -61,8 +61,8 @@ $KUBECTL get secrets 2>&1 | sed 's/^/  /'
 h "HTTP / denied -- reading one is not"
 note "The same GET on one secret with -o yaml carries Accept: application/json,"
 note "the request for the object itself. no-secret-contents, the process's one"
-note "guardrail, is an http_header rule scoped to GET /api/v1/namespaces/*/"
-note "secrets/*; it matches and the relay answers 403. The apiserver never saw"
+note "guardrail, is an http_header rule on GET /api/v1/namespaces/*/secrets/**"
+note "that refuses every Accept but the table view. The apiserver never saw"
 note "the request, and neither did a model."
 $KUBECTL get secret db-credentials -o yaml 2>&1 | sed 's/^/  /'
 

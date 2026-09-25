@@ -573,6 +573,31 @@ func TestHTTPCacheKeyCoversHeaders(t *testing.T) {
 	}
 }
 
+// max_input_bytes bounds everything that leaves the process. A header is
+// client input like a body, so a huge allowlisted header cannot grow the
+// prompt past the budget, with or without a body.
+func TestHTTPContentBudgetCoversHeaders(t *testing.T) {
+	huge := strings.Repeat("x", 4096)
+	for name, body := range map[string]string{"bodiless": "", "with a body": `{"n":1}`} {
+		c, ok := analyzer.HTTPBuilder{}.Build(inspect.Statement{
+			Protocol: inspect.HTTP,
+			HTTP: &inspect.HTTPDetail{
+				Method: "GET", Path: "/x", Resource: "/x", Body: body,
+				Headers: map[string]string{"x-big": huge},
+			},
+		}, 512)
+		if !ok {
+			t.Fatalf("%s: Build declined", name)
+		}
+		if len(c.Text) > 512+len("\n...[truncated]") {
+			t.Errorf("%s: content is %d bytes for a 512-byte budget", name, len(c.Text))
+		}
+		if !strings.HasSuffix(c.Text, "[truncated]") {
+			t.Errorf("%s: an over-budget prompt carries no truncation marker", name)
+		}
+	}
+}
+
 // The analyzer composes into a Chain, and a local rule denying first must
 // keep the statement away from the provider. That ordering is the reason the
 // feature is affordable.

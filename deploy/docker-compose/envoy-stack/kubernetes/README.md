@@ -65,10 +65,12 @@ done, and the three controls on the lane read exactly that:
   `kubectl get secret X -o yaml` asks for the object with
   `Accept: application/json`. Same path, different intent, and the
   difference is one header. `no-secret-contents` is an `http_header` rule
-  scoped to `GET /api/v1/namespaces/*/secrets/*` that matches the second
-  form: listing secrets is fine, reading one is refused with the relay's
-  403. The rule can only read headers the lane allowlists under
-  `http.headers`; naming one it does not capture is refused at load.
+  on `GET /api/v1/secrets` and `/api/v1/namespaces/*/secrets/**` whose
+  `headers_not` names the table view as the one safe `Accept`; every other
+  shape is refused with the relay's 403: `-o yaml`, `;q=1`, Protobuf, and a
+  curl that sends no `Accept` at all. The rule can only read headers the
+  lane allowlists under `http.headers`; naming one it does not capture is
+  refused at load.
 - **Masking by JSON key.** `k8s-data` is a `columns: [data]` rule. The
   http codec walks a JSON response value by value and hands each to the
   masker under its key path (`data.ada`, `items.data.password`), so a column
