@@ -683,7 +683,7 @@ function Router() {
       {/* Onboarding — no shell (mirrors :auth layout in the legacy app). The two
           React routes exist in both products; the rest of the CLJS onboarding is
           a gateway leaf and the control plane answers 404. The control plane gate
-          (ControlPlaneProtectedRoute) sends a free-plan admin with no sidecar to
+          (ControlPlaneProtectedRoute) sends a free-plan admin to
           /onboarding/license. */}
       <Route
         path="/onboarding/protection-rules"
