@@ -73,11 +73,9 @@ what a product shows, and ClojureScript exists only in the gateway.**
   `Sidebar/GatewaySidebar*`/`ControlPlaneSidebar*`, `Sidebar/gatewayNav.js`/
   `controlPlaneNav.js`, `CommandPalette/GatewayCommandPalette`/
   `ControlPlaneCommandPalette`, `GatewayPage`/`ControlPlanePage`,
-  `GatewayProtectedRoute`/`ControlPlaneProtectedRoute`,
-  `Organization/Users/GatewayUsers`/`ControlPlaneUsers`. What they still share stays
-  un-prefixed next to them (`UserMenu`, `NavItem`, `helpers`, the CSS modules,
-  `Users/shared.js`). A shared file may take a prop (`UserMenu` takes `versionLabel`),
-  never know the mode. A file only one product has keeps a plain name (`Sidecars`,
+  `GatewayProtectedRoute`/`ControlPlaneProtectedRoute`. What they still share stays
+  un-prefixed next to them (`UserMenu`, `NavItem`, `helpers`, the CSS modules). A
+  shared file may take a prop (`UserMenu` takes `versionLabel`), never know the mode. A file only one product has keeps a plain name (`Sidecars`,
   `Onboarding/License`, `Home`, `NotFound`, `NativeConnections`, `ConfigStatus`).
 - **A page that differs is chosen in `Router.jsx`** with `<ByProduct gateway={…}
   controlPlane={…} />` (`modes/ByProduct.jsx`, the one component that reads the

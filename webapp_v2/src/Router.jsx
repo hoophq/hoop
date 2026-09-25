@@ -30,8 +30,7 @@ import OnboardingProtectionRules from '@/pages/Onboarding/ProtectionRules'
 import OnboardingLicense from '@/pages/Onboarding/License'
 import SettingsAuditLogs from '@/pages/Settings/AuditLogs'
 import SettingsServerLogs from '@/pages/Settings/ServerLogs'
-import GatewayUsers from '@/pages/Organization/Users/GatewayUsers'
-import ControlPlaneUsers from '@/pages/Organization/Users/ControlPlaneUsers'
+import Users from '@/pages/Organization/Users'
 import SettingsExperimental from '@/pages/Settings/Experimental'
 import Rulepacks from '@/pages/Rulepacks'
 import RulepackDetail from '@/pages/Rulepacks/Detail'
@@ -344,7 +343,7 @@ function Router() {
         path="/organization/users"
         element={
           <Page adminOnly>
-            <ByProduct gateway={<GatewayUsers />} controlPlane={<ControlPlaneUsers />} />
+            <Users />
           </Page>
         }
       />
