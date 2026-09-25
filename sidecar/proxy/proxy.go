@@ -482,7 +482,14 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 	sess.Connection = s.cfg.Connection
 	sess.Upstream = s.cfg.Upstream
 
-	log := s.log.With("session", string(sess.ID), "principal", identity.Principal())
+	// Rebuilt, not extended, when the principal changes. slog.With APPENDS,
+	// so extending it with a second "principal" leaves both on every record
+	// and the JSON handler writes the key twice.
+	sessionLog := func() *slog.Logger {
+		return s.log.With("session", string(sess.ID),
+			"principal", sess.Identity.Principal())
+	}
+	log := sessionLog()
 
 	g, err := gate.New(sess, gate.Config{
 		Protocol:         s.cfg.Protocol,
@@ -587,7 +594,7 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 	// a verified subject from the fronting proxy and this is a client claim.
 	if claimedUser != "" && sess.Identity.Subject == "" {
 		sess.Identity.Subject = claimedUser
-		log = log.With("principal", claimedUser)
+		log = sessionLog()
 	}
 
 	log.Info("session opened", "upstream", s.cfg.Upstream)
