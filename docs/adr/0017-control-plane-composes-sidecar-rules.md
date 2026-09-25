@@ -1,10 +1,18 @@
 # ADR-0017: The control plane composes rules into the served sidecar config
 
-- **Status:** Accepted
+- **Status:** Accepted (amended 2026-09-25 — an analyzer rule reaches a listener with no analyzer block; see "Amendment" below)
 - **Date:** 2026-09-17
 - **Author:** @rogerio
 - **Deciders:** @rogerio
 - **Supersedes / Superseded by:** amends ADR-0009
+
+> **Amendment (2026-09-25, PR #1855):** the guard that refused an analyzer
+> rule on a listener with no analyzer block is narrower. The refusal now
+> applies only when the sidecar's config also has no top-level analyzer
+> section, which supplies the provider, the model and the credential. With the
+> section, the rule's block becomes the lane's block, and the controls it
+> leaves out come from that section. A listener that has its own block keeps
+> it under the rule, as before. The rest of this ADR stands.
 
 ## Context
 
@@ -98,7 +106,9 @@ when it carries: a guardrail output rule or a rule type outside
 `deny_words_list`/`pattern_match`; a `pattern_regex` Go's RE2 cannot compile;
 a custom entity type; `require_access_request` (the sidecar declares
 `require_review` and refuses it at startup — EVL-289); a listener with no
-analyzer block; a listener name that does not resolve to exactly one lane; or
+analyzer block on a sidecar whose config has no analyzer section (amended
+2026-09-25: with the section, the rule's block becomes the lane's); a listener
+name that does not resolve to exactly one lane; or
 a second threshold on a sidecar that already has one. The guards re-run on
 every write while a binding exists, because editing a compliant rule into a
 non-compliant one would otherwise walk straight past them.
