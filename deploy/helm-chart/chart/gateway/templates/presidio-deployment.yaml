@@ -25,6 +25,9 @@ spec:
     metadata:
       labels:
         app: presidio-analyzer
+      {{- with omit .Values.dataMasking.analyzer.podLabels "app" }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       annotations:
         checksum/gunicorn-config: {{ .Values.dataMasking.analyzer.gunicornConfigFile | sha256sum }}
     spec:
@@ -92,6 +95,9 @@ spec:
     metadata:
       labels:
         app: presidio-anonymizer
+      {{- with omit .Values.dataMasking.anonymizer.podLabels "app" }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       annotations:
         checksum/gunicorn-config: {{ .Values.dataMasking.anonymizer.gunicornConfigFile | sha256sum }}
     spec:
