@@ -10,7 +10,6 @@ import {
   setPath,
   validateListener,
 } from './listeners'
-import { sidecarSupport } from './schema'
 
 // Worth knowing before you add copy here: a listener change is NOT applied to a
 // running sidecar. reload.go:167 compares the document with the rule sections
@@ -39,7 +38,6 @@ export function useListenerEditor({ sidecar, index }) {
   const listeners = sidecar?.configuration?.listeners ?? []
   const original = index === null ? null : (listeners[index] ?? null)
   const others = listeners.filter((_, i) => i !== index)
-  const support = sidecarSupport(sidecar)
 
   const [form, setForm] = useState(() => (original ? listenerToForm(original) : emptyListener()))
   const [errors, setErrors] = useState({})
@@ -54,7 +52,7 @@ export function useListenerEditor({ sidecar, index }) {
   }
 
   const save = async () => {
-    const found = validateListener(form, others, original, sidecar?.configuration, support)
+    const found = validateListener(form, others, original, sidecar?.configuration)
     if (hasErrors(found)) {
       setErrors(found)
       return null
@@ -71,5 +69,5 @@ export function useListenerEditor({ sidecar, index }) {
     return updated
   }
 
-  return { form, setField, errors, saving, save, support, isNew: index === null }
+  return { form, setField, errors, saving, save, isNew: index === null }
 }

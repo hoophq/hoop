@@ -1,5 +1,5 @@
 import { guardrailMatchers, laneAnalyzer, maskConfigured } from './resolve'
-import { ALL_SUPPORTED, LISTENER_FIELDS, PROTOCOLS, appliesTo, listenerAccepts } from './schema'
+import { LISTENER_FIELDS, PROTOCOLS, appliesTo, listenerAccepts } from './schema'
 
 /**
  * Authoring one listener of a sidecar's configuration.
@@ -11,19 +11,10 @@ import { ALL_SUPPORTED, LISTENER_FIELDS, PROTOCOLS, appliesTo, listenerAccepts }
  * empty and non-empty mean different things for those sections.
  */
 
-export const UNSUPPORTED = 'This sidecar does not accept this setting. Clear it or upgrade the sidecar.'
-
 const str = (v) => (typeof v === 'string' ? v : '')
 
-export function protocolOptions(current, support = ALL_SUPPORTED) {
-  const options = PROTOCOLS.map((p) => {
-    const ok = support.protocol(p.value)
-    return {
-      value: p.value,
-      label: ok ? p.label : `${p.label} (not supported by this sidecar)`,
-      disabled: !ok && p.value !== current,
-    }
-  })
+export function protocolOptions(current) {
+  const options = PROTOCOLS.map((p) => ({ value: p.value, label: p.label }))
   // A Select whose value matches no option renders blank, one keystroke from
   // rewriting a working lane.
   if (current && !PROTOCOLS.some((p) => p.value === current)) {
@@ -113,16 +104,15 @@ export function formToListener(form) {
   return prune(form, LISTENER_FIELDS, form.protocol)
 }
 
-function schemaErrors(obj, fields, protocol, prefix, support, errors) {
+function schemaErrors(obj, fields, protocol, prefix, errors) {
   for (const f of fields) {
     if (!appliesTo(f, protocol)) continue
     const path = prefix ? `${prefix}.${f.key}` : f.key
     const value = obj?.[f.key]
     if (f.required && f.type !== 'object' && value === undefined) errors[path] = 'Required.'
     if (f.type === 'integer' && Number(value) < 0) errors[path] = 'Cannot be negative.'
-    if (value !== undefined && !support.key(path)) errors[path] = UNSUPPORTED
     if (f.type === 'object' && (value !== undefined || f.required)) {
-      schemaErrors(value ?? {}, f.fields ?? [], protocol, path, support, errors)
+      schemaErrors(value ?? {}, f.fields ?? [], protocol, path, errors)
     }
   }
 }
@@ -141,10 +131,10 @@ const forbiddenHeader = (values) =>
  * save succeeds and the sidecar refuses to start. They read the sections this
  * form does not render off `original` and `config`.
  */
-export function validateListener(form, others = [], original = null, config = null, support = ALL_SUPPORTED) {
+export function validateListener(form, others = [], original = null, config = null) {
   const l = formToListener(form)
   const errors = {}
-  schemaErrors(l, LISTENER_FIELDS, l.protocol, '', support, errors)
+  schemaErrors(l, LISTENER_FIELDS, l.protocol, '', errors)
 
   if (l.name && others.some((o) => o.name === l.name)) {
     errors.name = 'Another listener already uses this name.'
@@ -154,8 +144,6 @@ export function validateListener(form, others = [], original = null, config = nu
 
   if (l.protocol && !PROTOCOLS.some((p) => p.value === l.protocol)) {
     errors.protocol = `The sidecar does not support "${l.protocol}".`
-  } else if (l.protocol && !support.protocol(l.protocol)) {
-    errors.protocol = 'This sidecar does not accept this protocol. Pick another or upgrade the sidecar.'
   }
 
   const network = l.network === 'unix' ? 'unix' : 'tcp'

@@ -6,7 +6,6 @@ import (
 	"reflect"
 	"slices"
 	"strings"
-	"sync"
 
 	"github.com/hoophq/hoop/sidecar/inspect"
 )
@@ -22,96 +21,10 @@ func Protocols() []string {
 	return slices.Compact(out)
 }
 
-// ConfigKeys lists every key this build decodes, as dotted paths such as
-// "listeners.ssh.capabilities_allowed". A sidecar reports it on the handshake
-// so the control plane refuses a key the sidecar would refuse the whole
-// document over.
-func ConfigKeys() []string { return slices.Clone(configKeys()) }
-
-var configKeys = sync.OnceValue(func() []string {
-	var keys []string
-	var walk func(t reflect.Type, prefix string)
-	walk = func(t reflect.Type, prefix string) {
-		for _, f := range jsonFields(t) {
-			path := joinKey(prefix, f.name)
-			keys = append(keys, path)
-			if st := structOf(f.typ); st != nil {
-				walk(st, path)
-			}
-		}
-	}
-	walk(reflect.TypeFor[Config](), "")
-	slices.Sort(keys)
-	return keys
-})
-
-// DocumentKeys lists the keys cfg writes with content, in ConfigKeys' form.
-// Zero scalars are left out: they read as absent to any sidecar that knows
-// the key. A present pointer, slice or map counts even when empty, because
-// `upstream_tls: {}` and `rules: []` are settings.
-func DocumentKeys(cfg Config) []string {
-	seen := map[string]bool{}
-	var walk func(v reflect.Value, prefix string) bool
-	walk = func(v reflect.Value, prefix string) bool {
-		found := false
-		for _, f := range jsonFields(v.Type()) {
-			fv, err := v.FieldByIndexErr(f.index)
-			if err != nil {
-				continue
-			}
-			path := joinKey(prefix, f.name)
-			if valueKeys(fv, path, walk) {
-				seen[path] = true
-				found = true
-			}
-		}
-		return found
-	}
-	walk(reflect.ValueOf(cfg), "")
-	keys := make([]string, 0, len(seen))
-	for k := range seen {
-		keys = append(keys, k)
-	}
-	slices.Sort(keys)
-	return keys
-}
-
-func valueKeys(v reflect.Value, path string, walk func(reflect.Value, string) bool) bool {
-	switch v.Kind() {
-	case reflect.Pointer:
-		if v.IsNil() {
-			return false
-		}
-		if v.Elem().Kind() == reflect.Struct {
-			walk(v.Elem(), path)
-		}
-		return true
-	case reflect.Slice:
-		if v.IsNil() {
-			return false
-		}
-		if structOf(v.Type()) != nil {
-			for i := range v.Len() {
-				if e := reflect.Indirect(v.Index(i)); e.Kind() == reflect.Struct {
-					walk(e, path)
-				}
-			}
-		}
-		return true
-	case reflect.Map:
-		return !v.IsNil()
-	case reflect.Struct:
-		return walk(v, path)
-	default:
-		return !v.IsZero()
-	}
-}
-
 type jsonField struct {
-	name  string
-	index []int
-	typ   reflect.Type
-	tag   reflect.StructTag
+	name string
+	typ  reflect.Type
+	tag  reflect.StructTag
 }
 
 // jsonFields lists a struct's fields the way encoding/json names them,
@@ -126,10 +39,7 @@ func jsonFields(t reflect.Type) []jsonField {
 		}
 		if name == "" && f.Anonymous {
 			if st := structOf(f.Type); st != nil {
-				for _, inner := range jsonFields(st) {
-					inner.index = append([]int{i}, inner.index...)
-					out = append(out, inner)
-				}
+				out = append(out, jsonFields(st)...)
 				continue
 			}
 		}
@@ -139,7 +49,7 @@ func jsonFields(t reflect.Type) []jsonField {
 		if name == "" {
 			name = f.Name
 		}
-		out = append(out, jsonField{name: name, index: []int{i}, typ: f.Type, tag: f.Tag})
+		out = append(out, jsonField{name: name, typ: f.Type, tag: f.Tag})
 	}
 	return out
 }

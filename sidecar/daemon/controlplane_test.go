@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -1024,27 +1023,6 @@ func TestHandshakeReportsWhatTheSidecarIsRunning(t *testing.T) {
 	}
 	if got[0].Version != "1.2.3" || got[0].AppliedRevision != "rev-1" || got[0].LastOutcome != "refused" {
 		t.Errorf("the request did not carry what this sidecar is running: %+v", got[0])
-	}
-}
-
-// The plane refuses a key this sidecar did not report, so every handshake
-// has to carry the list.
-func TestHandshakeReportsWhatTheSidecarAccepts(t *testing.T) {
-	var got handshakeRequest
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewDecoder(r.Body).Decode(&got)
-		_, _ = w.Write([]byte(`{"listeners":[]}`))
-	}))
-	defer srv.Close()
-
-	if _, err := fetchControlPlaneConfig(srv.URL, "hsc_token", handshakeRequest{Version: "1.2.3"}); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !slices.Contains(got.ConfigKeys, "listeners.ssh.capabilities_allowed") {
-		t.Errorf("config_keys does not carry the listener keys: %v", got.ConfigKeys)
-	}
-	if !slices.Contains(got.Protocols, "postgres") || !slices.Contains(got.Protocols, "ssh") {
-		t.Errorf("protocols = %v, want the registry and the codec-less lanes", got.Protocols)
 	}
 }
 

@@ -106,7 +106,7 @@ func TestTheImportWritesTheRulesAndTheirBindings(t *testing.T) {
 func TestAPatchToTheFileReportsWhatItDetached(t *testing.T) {
 	startSwitchDB(t)
 	sc := importedSidecar(t, "to-file")
-	require.NoError(t, models.RecordSidecarHandshake(models.DB, sc.ID, "1.2.3", "", "", "", nil, nil))
+	require.NoError(t, models.RecordSidecarHandshake(models.DB, sc.ID, "1.2.3", "", "", ""))
 
 	w, resp := callAdmin(t, Patch, http.MethodPatch, sc.ID, `{"load_from_disk": true}`)
 	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body)

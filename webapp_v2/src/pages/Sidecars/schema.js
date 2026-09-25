@@ -19,16 +19,3 @@ export function listenerAccepts(protocol, key) {
   const field = LISTENER_FIELDS.find((f) => f.key === key)
   return !!field && appliesTo(field, protocol)
 }
-
-// What a sidecar reported it accepts. A sidecar that reported nothing has not
-// connected yet, or predates the report, and nothing is refused for it.
-export function sidecarSupport(sidecar) {
-  const keys = sidecar?.supported_config_keys?.length ? new Set(sidecar.supported_config_keys) : null
-  const protocols = sidecar?.supported_protocols?.length ? new Set(sidecar.supported_protocols) : null
-  return {
-    key: (path) => !keys || keys.has(`listeners.${path}`),
-    protocol: (value) => !protocols || protocols.has(value),
-  }
-}
-
-export const ALL_SUPPORTED = sidecarSupport(null)

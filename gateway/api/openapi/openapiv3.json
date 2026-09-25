@@ -8504,25 +8504,6 @@
             "example": "8f14e45fceea167a5a36dedd4bea2543",
             "type": "string"
           },
-          "supported_config_keys": {
-            "description": "The configuration keys and protocols the sidecar reported it accepts.\nEmpty is unknown: nothing is refused for it.",
-            "example": [
-              "listeners.name"
-            ],
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "supported_protocols": {
-            "example": [
-              "postgres"
-            ],
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
           "token": {
             "description": "The generated token, sent in the hoop-sidecar-token header. This is the\nonly time it is shown; it is stored hashed and cannot be recovered.",
             "example": "hsc_Ab3fX9kL...",
@@ -8564,29 +8545,10 @@
             "example": "8f14e45fceea167a5a36dedd4bea2543",
             "type": "string"
           },
-          "config_keys": {
-            "description": "ConfigKeys and Protocols are what this sidecar build accepts, as dotted\nconfiguration paths and protocol names. Optional: a sidecar too old to\nsend them is not gated.",
-            "example": [
-              "listeners.name"
-            ],
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
           "last_outcome": {
             "description": "LastOutcome is what this sidecar concluded about that configuration:\napplied, restart, refused, unchanged or retry. It is the only way to\ntell a sidecar enforcing the current rules from one that refused them\nand kept the old ones while still handshaking on time.\n\nOptional, for the same reason as AppliedRevision.",
             "example": "applied",
             "type": "string"
-          },
-          "protocols": {
-            "example": [
-              "postgres"
-            ],
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
           },
           "version": {
             "description": "Version of the sidecar binary",
@@ -8691,25 +8653,6 @@
             "description": "ServedRevision names the configuration last answered to this sidecar,\nand AppliedRevision the one it says it is running. Equal means the\nsidecar is enforcing what the control plane holds.\n\nBoth are opaque: the control plane issues them and compares them to\nitself. Nothing parses them.",
             "example": "8f14e45fceea167a5a36dedd4bea2543",
             "type": "string"
-          },
-          "supported_config_keys": {
-            "description": "The configuration keys and protocols the sidecar reported it accepts.\nEmpty is unknown: nothing is refused for it.",
-            "example": [
-              "listeners.name"
-            ],
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "supported_protocols": {
-            "example": [
-              "postgres"
-            ],
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
           },
           "version": {
             "description": "Version reported at the last handshake. Empty until the sidecar calls.",

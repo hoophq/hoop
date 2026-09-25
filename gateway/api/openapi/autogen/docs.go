@@ -19768,25 +19768,6 @@ const docTemplate = `{
                     "type": "string",
                     "example": "8f14e45fceea167a5a36dedd4bea2543"
                 },
-                "supported_config_keys": {
-                    "description": "The configuration keys and protocols the sidecar reported it accepts.\nEmpty is unknown: nothing is refused for it.",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "example": [
-                        "listeners.name"
-                    ]
-                },
-                "supported_protocols": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "example": [
-                        "postgres"
-                    ]
-                },
                 "token": {
                     "description": "The generated token, sent in the hoop-sidecar-token header. This is the\nonly time it is shown; it is stored hashed and cannot be recovered.",
                     "type": "string",
@@ -19831,29 +19812,10 @@ const docTemplate = `{
                     "type": "string",
                     "example": "8f14e45fceea167a5a36dedd4bea2543"
                 },
-                "config_keys": {
-                    "description": "ConfigKeys and Protocols are what this sidecar build accepts, as dotted\nconfiguration paths and protocol names. Optional: a sidecar too old to\nsend them is not gated.",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "example": [
-                        "listeners.name"
-                    ]
-                },
                 "last_outcome": {
                     "description": "LastOutcome is what this sidecar concluded about that configuration:\napplied, restart, refused, unchanged or retry. It is the only way to\ntell a sidecar enforcing the current rules from one that refused them\nand kept the old ones while still handshaking on time.\n\nOptional, for the same reason as AppliedRevision.",
                     "type": "string",
                     "example": "applied"
-                },
-                "protocols": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "example": [
-                        "postgres"
-                    ]
                 },
                 "version": {
                     "description": "Version of the sidecar binary",
@@ -19955,25 +19917,6 @@ const docTemplate = `{
                     "description": "ServedRevision names the configuration last answered to this sidecar,\nand AppliedRevision the one it says it is running. Equal means the\nsidecar is enforcing what the control plane holds.\n\nBoth are opaque: the control plane issues them and compares them to\nitself. Nothing parses them.",
                     "type": "string",
                     "example": "8f14e45fceea167a5a36dedd4bea2543"
-                },
-                "supported_config_keys": {
-                    "description": "The configuration keys and protocols the sidecar reported it accepts.\nEmpty is unknown: nothing is refused for it.",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "example": [
-                        "listeners.name"
-                    ]
-                },
-                "supported_protocols": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "example": [
-                        "postgres"
-                    ]
                 },
                 "version": {
                     "description": "Version reported at the last handshake. Empty until the sidecar calls.",

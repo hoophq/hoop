@@ -35,8 +35,7 @@ func TestRecordSidecarHandshake(t *testing.T) {
 	}
 
 	const revision = "8f14e45fceea167a5a36dedd4bea2543"
-	if err := models.RecordSidecarHandshake(models.DB, sc.ID, "1.2.3", "", "", revision,
-		[]string{"listeners", "listeners.name"}, []string{"postgres"}); err != nil {
+	if err := models.RecordSidecarHandshake(models.DB, sc.ID, "1.2.3", "", "", revision); err != nil {
 		t.Fatalf("record the first handshake: %v", err)
 	}
 	got, err := models.GetSidecarByNameOrID(models.DB, testOrgID, sc.Name)
@@ -52,9 +51,6 @@ func TestRecordSidecarHandshake(t *testing.T) {
 	if got.ServedRevision == nil || *got.ServedRevision != revision {
 		t.Errorf("served_revision = %v, want %s", got.ServedRevision, revision)
 	}
-	if len(got.ReportedConfigKeys) != 2 || len(got.ReportedProtocols) != 1 || got.ReportedProtocols[0] != "postgres" {
-		t.Errorf("reported support = %v / %v, want the two keys and postgres", got.ReportedConfigKeys, got.ReportedProtocols)
-	}
 	// The sidecar reported nothing about a previous document, so these stay
 	// NULL. An empty string stored here would read as a real answer.
 	if got.AppliedRevision != nil || got.LastOutcome != nil {
@@ -63,7 +59,7 @@ func TestRecordSidecarHandshake(t *testing.T) {
 	}
 
 	// The next handshake reports what was done with that document.
-	if err := models.RecordSidecarHandshake(models.DB, sc.ID, "1.2.3", revision, "applied", revision, nil, nil); err != nil {
+	if err := models.RecordSidecarHandshake(models.DB, sc.ID, "1.2.3", revision, "applied", revision); err != nil {
 		t.Fatalf("record the second handshake: %v", err)
 	}
 	got, err = models.GetSidecarByNameOrID(models.DB, testOrgID, sc.Name)
@@ -75,9 +71,5 @@ func TestRecordSidecarHandshake(t *testing.T) {
 	}
 	if got.LastOutcome == nil || *got.LastOutcome != "applied" {
 		t.Errorf("last_outcome = %v, want applied", got.LastOutcome)
-	}
-	// A build that reports nothing reads as unknown, not as the last list.
-	if got.ReportedConfigKeys != nil || got.ReportedProtocols != nil {
-		t.Errorf("a handshake reporting no support must clear it, got %v / %v", got.ReportedConfigKeys, got.ReportedProtocols)
 	}
 }

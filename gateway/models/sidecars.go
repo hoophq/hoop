@@ -10,7 +10,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/sidecar/daemon"
-	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
@@ -68,16 +67,11 @@ type Sidecar struct {
 	ServedRevision  *string    `gorm:"column:served_revision"`
 	AppliedRevision *string    `gorm:"column:applied_revision"`
 	LastOutcome     *string    `gorm:"column:last_outcome"`
-
-	// What the sidecar reported it accepts. Nil is unknown and gates nothing.
-	ReportedConfigKeys pq.StringArray `gorm:"column:reported_config_keys;type:text[]"`
-	ReportedProtocols  pq.StringArray `gorm:"column:reported_protocols;type:text[]"`
 }
 
 const sidecarColumns = `
 	s.id, s.org_id, s.name, s.created_by, s.created_at, s.configuration,
-	s.last_seen_at, s.reported_version, s.served_revision, s.applied_revision, s.last_outcome,
-	s.reported_config_keys, s.reported_protocols`
+	s.last_seen_at, s.reported_version, s.served_revision, s.applied_revision, s.last_outcome`
 
 func CreateSidecar(db *gorm.DB, s *Sidecar) error {
 	if s.ID == "" {
@@ -324,26 +318,13 @@ func DeleteSidecarByNameOrID(db *gorm.DB, orgID, nameOrID string) (string, error
 // Called from the handshake only. The configuration poll deliberately records
 // nothing, so a sidecar that polls between handshakes cannot overwrite what it
 // last reported about itself.
-//
-// An empty configKeys or protocols stores NULL: a build too old to report
-// them must read as unknown, not as accepting nothing.
-func RecordSidecarHandshake(db *gorm.DB, sidecarID, version, appliedRevision, lastOutcome, servedRevision string, configKeys, protocols []string) error {
+func RecordSidecarHandshake(db *gorm.DB, sidecarID, version, appliedRevision, lastOutcome, servedRevision string) error {
 	return db.Exec(`
 	UPDATE private.sidecars SET
 		last_seen_at = NOW(),
 		reported_version = NULLIF(?, ''),
 		applied_revision = NULLIF(?, ''),
 		last_outcome = NULLIF(?, ''),
-		served_revision = NULLIF(?, ''),
-		reported_config_keys = ?,
-		reported_protocols = ?
-	WHERE id = ?`, version, appliedRevision, lastOutcome, servedRevision,
-		nullableArray(configKeys), nullableArray(protocols), sidecarID).Error
-}
-
-func nullableArray(values []string) pq.StringArray {
-	if len(values) == 0 {
-		return nil
-	}
-	return pq.StringArray(values)
+		served_revision = NULLIF(?, '')
+	WHERE id = ?`, version, appliedRevision, lastOutcome, servedRevision, sidecarID).Error
 }

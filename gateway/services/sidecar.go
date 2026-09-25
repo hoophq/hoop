@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/hoophq/hoop/sidecar/daemon"
@@ -206,48 +205,4 @@ func CheckSidecarConfigurationLimits(cfg daemon.Config, licenseData json.RawMess
 		return ErrSidecarConfigOverCap{Problems: problems}
 	}
 	return nil
-}
-
-// ErrSidecarUnsupported names what a write uses that its sidecar did not
-// report accepting. The sidecar would refuse the whole document over it.
-type ErrSidecarUnsupported struct {
-	Keys      []string
-	Protocols []string
-}
-
-func (e ErrSidecarUnsupported) Error() string {
-	var parts []string
-	if len(e.Keys) > 0 {
-		parts = append(parts, "the keys "+strings.Join(e.Keys, ", "))
-	}
-	if len(e.Protocols) > 0 {
-		parts = append(parts, "the protocols "+strings.Join(e.Protocols, ", "))
-	}
-	return "this sidecar does not accept " + strings.Join(parts, " or ") +
-		"; upgrade the sidecar or remove them"
-}
-
-// CheckSidecarSupports refuses a configuration that uses a key or protocol
-// the sidecar did not report. A sidecar that reported nothing is not gated,
-// so one that never connected can still be authored.
-func CheckSidecarSupports(reportedKeys, reportedProtocols []string, cfg daemon.Config) error {
-	var e ErrSidecarUnsupported
-	if len(reportedKeys) > 0 {
-		for _, key := range daemon.DocumentKeys(cfg) {
-			if !slices.Contains(reportedKeys, key) {
-				e.Keys = append(e.Keys, key)
-			}
-		}
-	}
-	if len(reportedProtocols) > 0 {
-		for _, l := range cfg.Listeners {
-			if l.Protocol != "" && !slices.Contains(reportedProtocols, l.Protocol) && !slices.Contains(e.Protocols, l.Protocol) {
-				e.Protocols = append(e.Protocols, l.Protocol)
-			}
-		}
-	}
-	if len(e.Keys) == 0 && len(e.Protocols) == 0 {
-		return nil
-	}
-	return e
 }

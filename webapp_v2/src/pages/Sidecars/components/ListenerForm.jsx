@@ -13,7 +13,7 @@ import Switch from '@/components/Switch'
 import TagsInput from '@/components/TagsInput'
 import TextInput from '@/components/TextInput'
 import { getPath, protocolOptions } from '../listeners'
-import { ALL_SUPPORTED, LISTENER_FIELDS, appliesTo } from '../schema'
+import { LISTENER_FIELDS, appliesTo } from '../schema'
 
 // Inside Advanced the fields keep their own labels: the accordion is already
 // one visual block, and a second 2/5 grid nested in it would indent twice.
@@ -35,9 +35,7 @@ function Block({ title, description, children }) {
   )
 }
 
-const isBlank = (v) => v === undefined || v === '' || v === false || (Array.isArray(v) && v.length === 0)
-
-function MapInput({ field, value, onChange, disabled, ...wrapper }) {
+function MapInput({ field, value, onChange, ...wrapper }) {
   // Rows live here so a row whose key is still empty survives a keystroke.
   const [rows, setRows] = useState(() => Object.entries(value ?? {}))
   const commit = (next) => {
@@ -56,7 +54,6 @@ function MapInput({ field, value, onChange, disabled, ...wrapper }) {
               flex={1}
               placeholder={field.placeholder}
               value={k}
-              disabled={disabled}
               onChange={(e) => setRow(i, [e.currentTarget.value, v])}
             />
             {field.enum ? (
@@ -64,18 +61,16 @@ function MapInput({ field, value, onChange, disabled, ...wrapper }) {
                 w={160}
                 data={field.enum}
                 value={v || null}
-                disabled={disabled}
                 allowDeselect={false}
                 onChange={(next) => setRow(i, [k, next])}
               />
             ) : (
-              <TextInput w={160} value={v} disabled={disabled} onChange={(e) => setRow(i, [k, e.currentTarget.value])} />
+              <TextInput w={160} value={v} onChange={(e) => setRow(i, [k, e.currentTarget.value])} />
             )}
             <ActionIcon
               variant="subtle"
               color="gray"
               aria-label="Remove"
-              disabled={disabled}
               onClick={() => commit(rows.filter((_, j) => j !== i))}
             >
               <Trash2 size={16} />
@@ -87,7 +82,6 @@ function MapInput({ field, value, onChange, disabled, ...wrapper }) {
           size="compact-sm"
           w="fit-content"
           leftSection={<Plus size={14} />}
-          disabled={disabled}
           onClick={() => commit([...rows, ['', field.enum?.[0] ?? '']])}
         >
           Add
@@ -102,22 +96,17 @@ function ListInput({ field, value, onChange, ...props }) {
   return <TagsInput placeholder={field.placeholder} value={value ?? []} onChange={onChange} {...props} />
 }
 
-/**
- * One schema field. A key the sidecar did not report is disabled while it is
- * empty, and stays editable when set so the operator can clear it.
- */
-function Field({ field, path, form, setField, errors, support }) {
+// One schema field, with the input its type calls for.
+function Field({ field, path, form, setField, errors }) {
   const value = getPath(form, path)
   const set = (v) => setField(path, v)
-  const supported = support.key(path)
-  const description = supported ? field.help : [field.help, 'Not supported by this sidecar.'].filter(Boolean).join(' ')
-  const common = { label: field.label, description, error: errors[path], disabled: !supported && isBlank(value) }
+  const common = { label: field.label, description: field.help, error: errors[path] }
 
   if (field.type === 'object') {
-    const inner = <Fields fields={field.fields ?? []} prefix={path} form={form} setField={setField} errors={errors} support={support} />
+    const inner = <Fields fields={field.fields ?? []} prefix={path} form={form} setField={setField} errors={errors} />
     if (!field.presence) {
       return (
-        <Block title={field.label} description={description}>
+        <Block title={field.label} description={field.help}>
           {inner}
         </Block>
       )
@@ -125,23 +114,14 @@ function Field({ field, path, form, setField, errors, support }) {
     const on = value !== undefined
     return (
       <Stack gap="md">
-        <Switch {...common} disabled={!supported && !on} checked={on} onChange={(e) => set(e.currentTarget.checked ? {} : undefined)} />
+        <Switch {...common} checked={on} onChange={(e) => set(e.currentTarget.checked ? {} : undefined)} />
         {on && inner}
       </Stack>
     )
   }
 
   if (path === 'protocol') {
-    return (
-      <Select
-        {...common}
-        required
-        data={protocolOptions(value, support)}
-        value={value || null}
-        onChange={set}
-        allowDeselect={false}
-      />
-    )
+    return <Select {...common} required data={protocolOptions(value)} value={value || null} onChange={set} allowDeselect={false} />
   }
 
   switch (field.type) {
@@ -154,7 +134,6 @@ function Field({ field, path, form, setField, errors, support }) {
               w="fit-content"
               value={value || field.default || field.enum[0]}
               onChange={set}
-              disabled={common.disabled}
               data={field.enum.map((v) => ({ value: v, label: v }))}
             />
           </Input.Wrapper>
@@ -181,8 +160,8 @@ function Field({ field, path, form, setField, errors, support }) {
         const on = value !== undefined
         return (
           <Stack gap="xs">
-            <Switch {...common} disabled={!supported && !on} checked={on} onChange={(e) => set(e.currentTarget.checked ? [] : undefined)} />
-            {on && <ListInput field={field} value={value} onChange={set} disabled={common.disabled} />}
+            <Switch {...common} checked={on} onChange={(e) => set(e.currentTarget.checked ? [] : undefined)} />
+            {on && <ListInput field={field} value={value} onChange={set} />}
           </Stack>
         )
       }
@@ -214,11 +193,10 @@ function Fields({ fields, prefix, form, ...rest }) {
 
 /**
  * The fields of one listener, rendered from the sidecar schema, with no
- * chrome of its own. `form` and `errors` come from ../listeners; `support` is
- * what the sidecar reported it accepts (../schema sidecarSupport).
+ * chrome of its own. `form` and `errors` come from ../listeners.
  */
-export default function ListenerForm({ form, setField, errors, support = ALL_SUPPORTED }) {
-  const ctx = { form, setField, errors, support }
+export default function ListenerForm({ form, setField, errors }) {
+  const ctx = { form, setField, errors }
   const visible = LISTENER_FIELDS.filter((f) => appliesTo(f, form.protocol))
   const basic = visible.filter((f) => f.basic)
   // A required block (ssh) holds required fields, which must not hide in Advanced.

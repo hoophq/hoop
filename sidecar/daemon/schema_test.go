@@ -143,49 +143,6 @@ func tagAllows(tag reflect.StructTag, protocol string) bool {
 	return slices.Contains(ps, protocol)
 }
 
-func TestConfigKeysNameEveryDecodedKey(t *testing.T) {
-	keys := ConfigKeys()
-	for _, want := range []string{
-		"listeners",
-		"listeners.ssh.capabilities_allowed",
-		"listeners.ssh.identity.subject",
-		"listeners.http.sensitive_query_params",
-		"listeners.guardrails.rules.pattern_regex",
-		"audit.fail_open",
-		"pii",
-	} {
-		if !slices.Contains(keys, want) {
-			t.Errorf("ConfigKeys is missing %q", want)
-		}
-	}
-	for _, key := range keys {
-		if strings.Contains(key, "Deprecations") || strings.HasPrefix(key, "pii.") || strings.HasPrefix(key, "listeners.spanner.databases.") {
-			t.Errorf("%q is not a decoded key", key)
-		}
-	}
-}
-
-func TestDocumentKeysCountContentNotZeroValues(t *testing.T) {
-	var cfg Config
-	raw := `{"listeners":[{"name":"a","protocol":"postgres","listen":":1","upstream":"h:1",
-		"identity_header":"","idle_timeout_sec":0,"upstream_tls":{},
-		"ssh":{"host_key":"k","trusted_ca":"c","capabilities_allowed":[]}}]}`
-	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
-		t.Fatal(err)
-	}
-	got := DocumentKeys(cfg)
-	for _, want := range []string{"listeners", "listeners.upstream_tls", "listeners.ssh.capabilities_allowed", "listeners.ssh.host_key"} {
-		if !slices.Contains(got, want) {
-			t.Errorf("DocumentKeys is missing %q: %v", want, got)
-		}
-	}
-	for _, zero := range []string{"listeners.identity_header", "listeners.idle_timeout_sec", "listeners.upstream_tls.ca_file", "audit"} {
-		if slices.Contains(got, zero) {
-			t.Errorf("DocumentKeys counts the zero value %q: %v", zero, got)
-		}
-	}
-}
-
 func tlsKeypairFiles(t *testing.T) (cert, key string) {
 	t.Helper()
 	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)

@@ -371,10 +371,6 @@ type SidecarResponse struct {
 	// Empty for a sidecar that has handled nothing yet, or one too old to
 	// report. Empty must read as unknown, never as converged.
 	LastOutcome string `json:"last_outcome,omitempty" example:"applied"`
-	// The configuration keys and protocols the sidecar reported it accepts.
-	// Empty is unknown: nothing is refused for it.
-	SupportedConfigKeys []string `json:"supported_config_keys,omitempty" example:"listeners.name"`
-	SupportedProtocols  []string `json:"supported_protocols,omitempty" example:"postgres"`
 }
 
 // SidecarRuleTarget is one place a rule is enforced: a sidecar, and either one
@@ -470,11 +466,6 @@ type SidecarHandshakeRequest struct {
 	//
 	// Optional, for the same reason as AppliedRevision.
 	LastOutcome string `json:"last_outcome,omitempty" example:"applied"`
-	// ConfigKeys and Protocols are what this sidecar build accepts, as dotted
-	// configuration paths and protocol names. Optional: a sidecar too old to
-	// send them is not gated.
-	ConfigKeys []string `json:"config_keys,omitempty" example:"listeners.name"`
-	Protocols  []string `json:"protocols,omitempty" example:"postgres"`
 }
 
 // AgentSPIFFEMapping ties a SPIFFE identity (exact ID or prefix) to a Hoop
