@@ -819,7 +819,7 @@ func (c *Config) normalize() error {
 	}
 
 	if len(conflicts) > 0 {
-		return fmt.Errorf("invalid config:\n  - %s", strings.Join(conflicts, "\n  - "))
+		return ConfigProblems(conflicts)
 	}
 	return nil
 }
@@ -994,7 +994,36 @@ func (c *Config) resolve(lc ListenerConfig) (GuardrailsConfig, *OPAConfig, MaskC
 }
 
 // Validate checks the config, returning every problem found.
-func (c *Config) Validate() error {
+func (c *Config) Validate() error { return c.validate(true) }
+
+// ConfigProblems is every problem a config check found, so a caller can list
+// them one by one. Each starts with the listener it is about, when it is.
+type ConfigProblems []string
+
+func (p ConfigProblems) Error() string {
+	return "invalid config:\n  - " + strings.Join(p, "\n  - ")
+}
+
+// CheckConfigBytes runs what LoadConfigBytes runs, minus what only the
+// sidecar's host can answer: the files a config names, and whether it has any
+// listener yet. The control plane runs it on every write, so a document the
+// sidecar would refuse is refused when it is saved.
+func CheckConfigBytes(data []byte) error {
+	var cfg Config
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&cfg); err != nil {
+		return fmt.Errorf("parse config: %w", err)
+	}
+	if err := cfg.normalize(); err != nil {
+		return err
+	}
+	return cfg.validate(false)
+}
+
+// validate is Validate. Off the sidecar host (onHost false) the files a config
+// names do not exist, and a control-plane document may still be empty.
+func (c *Config) validate(onHost bool) error {
 	var problems []string
 
 	// A file that names a control plane may still carry listeners: they
@@ -1002,7 +1031,7 @@ func (c *Config) Validate() error {
 	// loud) once it does. Either way the plane supplies the running set,
 	// and resolveConfigSource checks that what it sent has at least one,
 	// so an empty config still cannot start.
-	if len(c.Listeners) == 0 && !c.controlPlaneConfigured() {
+	if onHost && len(c.Listeners) == 0 && !c.controlPlaneConfigured() {
 		problems = append(problems, "no listeners configured")
 	}
 
@@ -1105,7 +1134,11 @@ func (c *Config) Validate() error {
 			// Load the keypair now. Discovering a bad path on the first
 			// client connection means one failed login per restart and
 			// nothing in the startup log.
-			if _, err := l.DownstreamTLS.BuildDownstreamTLS(); err != nil {
+			err := l.DownstreamTLS.downstreamKeypairNamed()
+			if err == nil && onHost {
+				_, err = l.DownstreamTLS.BuildDownstreamTLS()
+			}
+			if err != nil {
 				problems = append(problems, fmt.Sprintf("%s: %v", name, err))
 			}
 		}
@@ -1128,16 +1161,18 @@ func (c *Config) Validate() error {
 					name,
 				))
 			}
-			if _, err := l.buildMySQLAuthPrivateKey(); err != nil {
-				problems = append(problems, fmt.Sprintf("%s: %v", name, err))
+			if onHost {
+				if _, err := l.buildMySQLAuthPrivateKey(); err != nil {
+					problems = append(problems, fmt.Sprintf("%s: %v", name, err))
+				}
 			}
 		}
 
-		problems = append(problems, c.validateLane(l, name)...)
+		problems = append(problems, c.validateLane(l, name, onHost)...)
 	}
 
 	if len(problems) > 0 {
-		return fmt.Errorf("invalid config:\n  - %s", strings.Join(problems, "\n  - "))
+		return ConfigProblems(problems)
 	}
 	return nil
 }
@@ -1147,7 +1182,7 @@ func (c *Config) Validate() error {
 // Checking the resolved form rather than the two halves separately gives the
 // operator "this lane is broken" instead of "some default you inherited
 // conflicts with something you set".
-func (c *Config) validateLane(lc ListenerConfig, name string) []string {
+func (c *Config) validateLane(lc ListenerConfig, name string, onHost bool) []string {
 	var problems []string
 	gc, opa, mc := c.resolve(lc)
 
@@ -1216,7 +1251,7 @@ func (c *Config) validateLane(lc ListenerConfig, name string) []string {
 	// inspects less; a missing ssh block leaves one with no host key and no
 	// trusted CA, which cannot complete a handshake at all.
 	if isSSH(lc) {
-		problems = append(problems, lc.SSH.validate(name)...)
+		problems = append(problems, lc.SSH.validate(name, onHost)...)
 		problems = append(problems, validateSSHRules(localRules, name)...)
 		problems = append(problems, validateSSHMasking(mc, name)...)
 	} else if lc.SSH != nil {
@@ -1664,8 +1699,8 @@ func (t *TLSConfig) BuildDownstreamTLS() (*tls.Config, error) {
 	if t == nil {
 		return nil, nil
 	}
-	if t.CertFile == "" || t.KeyFile == "" {
-		return nil, fmt.Errorf("downstream_tls needs both cert_file and key_file")
+	if err := t.downstreamKeypairNamed(); err != nil {
+		return nil, err
 	}
 	cert, err := tls.LoadX509KeyPair(t.CertFile, t.KeyFile)
 	if err != nil {
@@ -1675,6 +1710,14 @@ func (t *TLSConfig) BuildDownstreamTLS() (*tls.Config, error) {
 		Certificates: []tls.Certificate{cert},
 		MinVersion:   tls.VersionTLS12,
 	}, nil
+}
+
+// downstreamKeypairNamed is the part of BuildDownstreamTLS that reads no file.
+func (t *TLSConfig) downstreamKeypairNamed() error {
+	if t.CertFile == "" || t.KeyFile == "" {
+		return fmt.Errorf("downstream_tls needs both cert_file and key_file")
+	}
+	return nil
 }
 
 // analyzerTriggerOperations lists every operation a lane's analyzer is

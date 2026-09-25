@@ -64,11 +64,11 @@ type SSHConfig struct {
 	// where CapabilitiesAllowed does not, because a forward leaves the
 	// sidecar's reach the moment it is dialled: nothing downstream inspects
 	// those bytes, so the destination list is the whole control.
-	DestinationsAllowed []string `json:"destinations_allowed,omitempty" label:"Forward destinations" placeholder:"10.0.0.0/8:5432" help:"network[:port] entries, or any. Empty denies every forward."`
+	DestinationsAllowed []string `json:"destinations_allowed,omitempty" label:"Forward destinations" placeholder:"10.0.0.0/8:5432" enum:"@ssh_destinations" help:"A network prefix with an optional port, such as 10.0.0.0/8:5432 or 10.0.0.5/32, or any. Empty denies every forward." ui:"open"`
 
 	// Identity maps certificate fields onto the session identity policy and
 	// audit read. Absent takes the key id as the subject.
-	Identity *SSHIdentityConfig `json:"identity,omitempty" label:"Identity mapping" help:"Which certificate field fills each identity slot: key_id, principals or extensions.<name>. Empty uses the key id as the subject."`
+	Identity *SSHIdentityConfig `json:"identity,omitempty" label:"Identity mapping" help:"Which field of the user's certificate fills each identity slot that policy and the audit trail read. Empty uses the key id as the subject."`
 }
 
 // SSHIdentityConfig names which certificate field fills each identity slot.
@@ -78,10 +78,10 @@ type SSHConfig struct {
 // "key_id", "principals", or "extensions.<name>" — and Attributes names
 // extensions to surface to policy verbatim.
 type SSHIdentityConfig struct {
-	Subject    string   `json:"subject,omitempty" label:"Subject" placeholder:"key_id"`
-	Email      string   `json:"email,omitempty" label:"Email" placeholder:"extensions.email"`
-	Groups     string   `json:"groups,omitempty" label:"Groups" placeholder:"principals"`
-	Attributes []string `json:"attributes,omitempty" label:"Attributes" help:"Certificate extensions surfaced to policy verbatim."`
+	Subject    string   `json:"subject,omitempty" label:"Subject" placeholder:"key_id" enum:"@ssh_identity_sources" help:"The certificate field holding the user's name: key_id, principals or extensions.<name>." ui:"open"`
+	Email      string   `json:"email,omitempty" label:"Email" placeholder:"extensions.email" enum:"@ssh_identity_sources" help:"The certificate field holding the user's email." ui:"open"`
+	Groups     string   `json:"groups,omitempty" label:"Groups" placeholder:"principals" enum:"@ssh_identity_sources" help:"The certificate field holding the user's groups. Not hoop groups: the ones the certificate carries." ui:"open"`
+	Attributes []string `json:"attributes,omitempty" label:"Certificate extensions" help:"Extensions whose values reach policy and the audit trail, such as permit-pty. Not hoop attributes."`
 }
 
 // Identity source spellings. Anything else is a config error: a source this
@@ -467,7 +467,7 @@ func canBecome(runAs codecssh.RunAs) error {
 // validate checks one lane's ssh block. lane is the operator-facing listener
 // name; every message begins with it because a config with two ssh lanes
 // reports both in one run.
-func (s *SSHConfig) validate(lane string) []string {
+func (s *SSHConfig) validate(lane string, onHost bool) []string {
 	var problems []string
 	p := func(format string, args ...any) {
 		problems = append(problems, lane+": "+fmt.Sprintf(format, args...))
@@ -492,12 +492,12 @@ func (s *SSHConfig) validate(lane string) []string {
 	// listener that refuses everyone and cannot say why. What the bytes
 	// CONTAIN is libhoop's to judge, at NewServer, so this does not open a
 	// second copy of key parsing on this side of the seam.
-	if path := strings.TrimSpace(s.HostKey); path != "" {
+	if path := strings.TrimSpace(s.HostKey); onHost && path != "" {
 		if err := readable(path); err != nil {
 			p("ssh.host_key: %v", err)
 		}
 	}
-	if path := strings.TrimSpace(s.TrustedCA); path != "" {
+	if path := strings.TrimSpace(s.TrustedCA); onHost && path != "" {
 		if err := readable(path); err != nil {
 			p("ssh.trusted_ca: %v", err)
 		}

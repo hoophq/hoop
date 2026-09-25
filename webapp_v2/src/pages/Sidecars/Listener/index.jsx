@@ -8,6 +8,7 @@ import PageLoader from '@/components/PageLoader'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import ListenerForm from '../components/ListenerForm'
 import { listenerIndexByLabel, listenerLabel } from '../listeners'
+import SaveProblems from '../sections/SaveProblems'
 import { useListenerEditor } from '../useListenerEditor'
 
 // The sidecar this listener belongs to, above its own name. There is no
@@ -34,7 +35,7 @@ function Parent({ name, onClick }) {
 // state is seeded from a listener that exists, rather than from null on the
 // first render and patched by an effect afterwards.
 function Editor({ sidecar, index, onDone }) {
-  const { form, setField, errors, saving, save, isNew } = useListenerEditor({ sidecar, index })
+  const { form, setField, errors, refused, saving, save, isNew } = useListenerEditor({ sidecar, index })
 
   const handleSave = async () => {
     if (await save()) onDone()
@@ -53,6 +54,7 @@ function Editor({ sidecar, index, onDone }) {
           </Text>
         </Stack>
 
+        <SaveProblems refused={refused} sidecarId={sidecar.id} listeners={sidecar.configuration?.listeners} />
         <ListenerForm form={form} setField={setField} errors={errors} />
       </Stack>
 

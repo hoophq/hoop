@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -92,11 +93,14 @@ func ListenerSchema() ([]byte, error) {
 		return nil, err
 	}
 	doc.Fields = fields
-	out, err := json.MarshalIndent(doc, "", "  ")
-	if err != nil {
+	var out bytes.Buffer
+	enc := json.NewEncoder(&out)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(doc); err != nil {
 		return nil, err
 	}
-	return append(out, '\n'), nil
+	return out.Bytes(), nil
 }
 
 var protocolLabels = map[string]string{
@@ -111,8 +115,8 @@ var protocolLabels = map[string]string{
 	"ssh":        "SSH",
 }
 
-// enumSources lets an `enum:"@name"` tag point at the list the daemon
-// validates against instead of copying it.
+// enumSources lets an `enum:"@name"` tag point at the values the daemon
+// validates against instead of copying them.
 var enumSources = map[string]func() []string{
 	"ssh_capabilities": func() []string {
 		out := make([]string, len(sshDeliveredCapabilities))
@@ -121,6 +125,10 @@ var enumSources = map[string]func() []string{
 		}
 		return out
 	},
+	"ssh_identity_sources": func() []string {
+		return []string{identitySourceKeyID, identitySourcePrincipals, identitySourceExtPrefix}
+	},
+	"ssh_destinations": func() []string { return []string{sshDestinationAny} },
 }
 
 type listenerSchema struct {
@@ -143,6 +151,7 @@ type schemaField struct {
 	Basic           bool          `json:"basic,omitempty"`
 	Presence        bool          `json:"presence,omitempty"`
 	Enum            []string      `json:"enum,omitempty"`
+	Open            bool          `json:"open,omitempty"`
 	Default         string        `json:"default,omitempty"`
 	Protocols       []string      `json:"protocols,omitempty"`
 	ExceptProtocols []string      `json:"except_protocols,omitempty"`
@@ -188,6 +197,7 @@ func schemaFieldFor(f jsonField, path string, flags, protocols []string) (schema
 		Required:    slices.Contains(flags, "required"),
 		Basic:       slices.Contains(flags, "basic"),
 		Presence:    slices.Contains(flags, "presence"),
+		Open:        slices.Contains(flags, "open"),
 		Default:     f.tag.Get("default"),
 	}
 	if sf.Label == "" {
@@ -215,6 +225,10 @@ func schemaFieldFor(f jsonField, path string, flags, protocols []string) (schema
 		return sf, fmt.Errorf("%s: %w", path, err)
 	}
 	sf.Enum = enum
+	// open: the enum values are suggestions and any other value is allowed.
+	if sf.Open && len(sf.Enum) == 0 {
+		return sf, fmt.Errorf(`%s: ui:"open" needs an enum to suggest`, path)
+	}
 	if sf.Default != "" && !slices.Contains(sf.Enum, sf.Default) {
 		return sf, fmt.Errorf("%s: default %q is not in enum", path, sf.Default)
 	}

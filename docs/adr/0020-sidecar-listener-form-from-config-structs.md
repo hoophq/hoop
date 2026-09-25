@@ -36,6 +36,19 @@ The generator refuses a field with neither `label` nor `ui:"-"`. A test fails
 when `schema.json` is stale, and another sets each field on every protocol to
 check that `Validate` agrees with its `protocols` tag.
 
+A Go type cannot say that a string takes a fixed set of values, so those
+fields declare `enum`, pointing with `@name` at the list the validation uses.
+`ui:"open"` marks a set of suggestions that also accepts free text, such as
+`extensions.<name>` for the SSH identity fields.
+
+Every write (POST, PUT, PATCH) runs the daemon's own validation through
+`daemon.CheckConfigBytes` and answers 422 with its message. It skips only what
+the sidecar's host answers: the files a config names, and whether it has a
+listener yet. Before this, the gateway checked keys and not values, so a form
+could save a value every sidecar version refuses. The 422 lists each problem
+(`problems`), prefixed with its listener, so the form shows them in place and
+names another listener when that one is the invalid one.
+
 ## Consequences
 
 A new listener field reaches the form with a tag in the same PR. An untagged
@@ -43,7 +56,11 @@ field fails the build.
 
 Rule sections and top-level settings are not in the form: rule sections
 belong to the rule pages (ADR-0017), and top-level settings have no UI.
-Cross-field checks stay hand-written in the UI.
+The UI keeps a few inline checks for faster feedback; the gateway's check is
+the authority.
+
+A stored document that is already invalid refuses every later write of its
+sidecar until it is fixed. The sidecar refuses that document anyway.
 
 Version skew is not handled, as before. The form offers every field the
 control plane knows, and a sidecar older than a field it receives refuses the

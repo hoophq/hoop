@@ -373,38 +373,63 @@
           "key": "destinations_allowed",
           "type": "list",
           "label": "Forward destinations",
-          "help": "network[:port] entries, or any. Empty denies every forward.",
-          "placeholder": "10.0.0.0/8:5432"
+          "help": "A network prefix with an optional port, such as 10.0.0.0/8:5432 or 10.0.0.5/32, or any. Empty denies every forward.",
+          "placeholder": "10.0.0.0/8:5432",
+          "enum": [
+            "any"
+          ],
+          "open": true
         },
         {
           "key": "identity",
           "type": "object",
           "label": "Identity mapping",
-          "help": "Which certificate field fills each identity slot: key_id, principals or extensions.\u003cname\u003e. Empty uses the key id as the subject.",
+          "help": "Which field of the user's certificate fills each identity slot that policy and the audit trail read. Empty uses the key id as the subject.",
           "fields": [
             {
               "key": "subject",
               "type": "string",
               "label": "Subject",
-              "placeholder": "key_id"
+              "help": "The certificate field holding the user's name: key_id, principals or extensions.<name>.",
+              "placeholder": "key_id",
+              "enum": [
+                "key_id",
+                "principals",
+                "extensions."
+              ],
+              "open": true
             },
             {
               "key": "email",
               "type": "string",
               "label": "Email",
-              "placeholder": "extensions.email"
+              "help": "The certificate field holding the user's email.",
+              "placeholder": "extensions.email",
+              "enum": [
+                "key_id",
+                "principals",
+                "extensions."
+              ],
+              "open": true
             },
             {
               "key": "groups",
               "type": "string",
               "label": "Groups",
-              "placeholder": "principals"
+              "help": "The certificate field holding the user's groups. Not hoop groups: the ones the certificate carries.",
+              "placeholder": "principals",
+              "enum": [
+                "key_id",
+                "principals",
+                "extensions."
+              ],
+              "open": true
             },
             {
               "key": "attributes",
               "type": "list",
-              "label": "Attributes",
-              "help": "Certificate extensions surfaced to policy verbatim."
+              "label": "Certificate extensions",
+              "help": "Extensions whose values reach policy and the audit trail, such as permit-pty. Not hoop attributes."
             }
           ]
         }

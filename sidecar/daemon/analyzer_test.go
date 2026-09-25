@@ -453,7 +453,7 @@ func TestAIRuleOnALaneWithNoBuilderIsRefused(t *testing.T) {
 	lc := cfg.Listeners[0]
 	lc.Protocol = "relay-only"
 
-	problems := strings.Join(cfg.validateLane(lc, "relay"), "\n")
+	problems := strings.Join(cfg.validateLane(lc, "relay", true), "\n")
 	if !strings.Contains(problems, "content builder") {
 		t.Fatalf("an ai_analysis rule on a lane with no content builder was accepted: %q", problems)
 	}

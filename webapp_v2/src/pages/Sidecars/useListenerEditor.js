@@ -4,6 +4,7 @@ import { showSnackbar } from '@/utils/snackbar'
 import {
   emptyListener,
   formToListener,
+  groupSaveProblems,
   hasErrors,
   listenerToForm,
   replaceListener,
@@ -41,6 +42,7 @@ export function useListenerEditor({ sidecar, index }) {
 
   const [form, setForm] = useState(() => (original ? listenerToForm(original) : emptyListener()))
   const [errors, setErrors] = useState({})
+  const [refused, setRefused] = useState(null)
   const [saving, setSaving] = useState(false)
   const updateSidecar = useSidecarStore((s) => s.updateSidecar)
 
@@ -49,6 +51,7 @@ export function useListenerEditor({ sidecar, index }) {
   const setField = (path, value) => {
     setForm((f) => setPath(f, path, value))
     setErrors({})
+    setRefused(null)
   }
 
   const save = async () => {
@@ -61,6 +64,12 @@ export function useListenerEditor({ sidecar, index }) {
     const configuration = replaceListener(sidecar.configuration, index, formToListener(form))
     const { ok, sidecar: updated, error } = await updateSidecar(sidecar.id, configuration)
     setSaving(false)
+    const problems = error?.response?.data?.problems
+    if (!ok && problems?.length) {
+      setRefused(groupSaveProblems(problems, String(form.name ?? '').trim(), others.map((l) => l.name)))
+      showSnackbar({ level: 'error', text: 'Failed to save the listener.', description: 'The sidecar would refuse it. The problems are listed at the top of the page.' })
+      return null
+    }
     if (!ok) {
       showSnackbar({ level: 'error', text: 'Failed to save the listener.', description: saveErrorMessage(error) })
       return null
@@ -69,5 +78,5 @@ export function useListenerEditor({ sidecar, index }) {
     return updated
   }
 
-  return { form, setField, errors, saving, save, isNew: index === null }
+  return { form, setField, errors, refused, saving, save, isNew: index === null }
 }

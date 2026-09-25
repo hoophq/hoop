@@ -202,6 +202,25 @@ export function validateListener(form, others = [], original = null, config = nu
 export const hasErrors = (errors) => Object.keys(errors).length > 0
 
 /**
+ * The problems of a refused save (the 422's `problems`), split between the
+ * listener being saved and the others. Every save checks the whole document,
+ * so a listener saved invalid earlier refuses this one too. The daemon starts a
+ * listener's problem with its name, or with `listener "<name>"`.
+ */
+export function groupSaveProblems(problems, ownName, otherNames) {
+  const names = [ownName, ...otherNames].filter(Boolean).sort((a, b) => b.length - a.length)
+  const own = []
+  const others = new Map()
+  for (const problem of problems) {
+    const name = names.find((n) => problem.startsWith(`${n}: `) || problem.startsWith(`listener "${n}": `))
+    const text = name ? problem.slice(problem.indexOf(': ') + 2) : problem
+    if (!name || name === ownName) own.push(text)
+    else others.set(name, [...(others.get(name) ?? []), text])
+  }
+  return { own, others: [...others].map(([name, list]) => ({ name, problems: list })) }
+}
+
+/**
  * What to call a listener that may not have said.
  *
  * `name` is optional in the document, and a config seeded from a file often

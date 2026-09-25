@@ -9960,7 +9960,7 @@ const docTemplate = `{
                     "422": {
                         "description": "Unprocessable Entity",
                         "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
+                            "$ref": "#/definitions/openapi.SidecarConfigError"
                         }
                     },
                     "500": {
@@ -10397,7 +10397,7 @@ const docTemplate = `{
                     "422": {
                         "description": "Unprocessable Entity",
                         "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
+                            "$ref": "#/definitions/openapi.SidecarConfigError"
                         }
                     },
                     "500": {
@@ -10496,7 +10496,7 @@ const docTemplate = `{
                     "422": {
                         "description": "Unprocessable Entity",
                         "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
+                            "$ref": "#/definitions/openapi.SidecarConfigError"
                         }
                     },
                     "500": {
@@ -19700,6 +19700,25 @@ const docTemplate = `{
                     "example": {
                         "reason": "fix-issue"
                     }
+                }
+            }
+        },
+        "openapi.SidecarConfigError": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "example": "invalid config: ..."
+                },
+                "problems": {
+                    "description": "Every problem the sidecar's own validation found, one per entry. Each\nstarts with the listener it is about, when it is about one.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "newdb: ssh.destinations_allowed: \"10.30.10:1234\" is not a network"
+                    ]
                 }
             }
         },

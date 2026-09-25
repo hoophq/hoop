@@ -1,8 +1,9 @@
 import { Fragment, useState } from 'react'
-import { Divider, Group, Input, Stack, Text } from '@mantine/core'
+import { Divider, Group, Input, Stack, Text, Title } from '@mantine/core'
 import { Plus, Trash2 } from 'lucide-react'
 import Accordion from '@/components/Accordion'
 import ActionIcon from '@/components/ActionIcon'
+import Autocomplete from '@/components/Autocomplete'
 import Button from '@/components/Button'
 import MultiSelect from '@/components/MultiSelect'
 import NumberInput from '@/components/NumberInput'
@@ -15,17 +16,17 @@ import TextInput from '@/components/TextInput'
 import { getPath, protocolOptions } from '../listeners'
 import { LISTENER_FIELDS, appliesTo } from '../schema'
 
-// Inside Advanced the fields keep their own labels: the accordion is already
-// one visual block, and a second 2/5 grid nested in it would indent twice.
+// A group inside a section. Its title sits between the section title (18px)
+// and the field labels (14px/700), or it reads as one more label.
 function Block({ title, description, children }) {
   return (
-    <Stack gap="sm">
-      <Stack gap={2}>
-        <Text fw={600} size="sm">
+    <Stack gap="md">
+      <Stack gap={4}>
+        <Title order={5} fw={600}>
           {title}
-        </Text>
+        </Title>
         {description && (
-          <Text size="xs" c="dimmed">
+          <Text size="sm" c="dimmed">
             {description}
           </Text>
         )}
@@ -91,9 +92,29 @@ function MapInput({ field, value, onChange, ...wrapper }) {
   )
 }
 
+// An open enum suggests its values and accepts any other.
 function ListInput({ field, value, onChange, ...props }) {
-  if (field.enum) return <MultiSelect data={field.enum} value={value ?? []} onChange={onChange} {...props} />
-  return <TagsInput placeholder={field.placeholder} value={value ?? []} onChange={onChange} {...props} />
+  if (field.enum && !field.open) return <MultiSelect data={field.enum} value={value ?? []} onChange={onChange} {...props} />
+  return <TagsInput placeholder={field.placeholder} data={field.enum} value={value ?? []} onChange={onChange} {...props} />
+}
+
+// An object's fields. A presence block adds the switch that creates or removes it.
+function ObjectBody({ field, path, form, setField, errors }) {
+  const inner = <Fields fields={field.fields ?? []} prefix={path} form={form} setField={setField} errors={errors} />
+  if (!field.presence) return inner
+  const on = getPath(form, path) !== undefined
+  return (
+    <Stack gap="md">
+      <Switch
+        label={field.label}
+        description={field.help}
+        error={errors[path]}
+        checked={on}
+        onChange={(e) => setField(path, e.currentTarget.checked ? {} : undefined)}
+      />
+      {on && inner}
+    </Stack>
+  )
 }
 
 // One schema field, with the input its type calls for.
@@ -103,20 +124,12 @@ function Field({ field, path, form, setField, errors }) {
   const common = { label: field.label, description: field.help, error: errors[path] }
 
   if (field.type === 'object') {
-    const inner = <Fields fields={field.fields ?? []} prefix={path} form={form} setField={setField} errors={errors} />
-    if (!field.presence) {
-      return (
-        <Block title={field.label} description={field.help}>
-          {inner}
-        </Block>
-      )
-    }
-    const on = value !== undefined
+    const body = <ObjectBody field={field} path={path} form={form} setField={setField} errors={errors} />
+    if (field.presence) return body
     return (
-      <Stack gap="md">
-        <Switch {...common} checked={on} onChange={(e) => set(e.currentTarget.checked ? {} : undefined)} />
-        {on && inner}
-      </Stack>
+      <Block title={field.label} description={field.help}>
+        {body}
+      </Block>
     )
   }
 
@@ -126,6 +139,18 @@ function Field({ field, path, form, setField, errors }) {
 
   switch (field.type) {
     case 'string':
+      if (field.enum && field.open) {
+        return (
+          <Autocomplete
+            {...common}
+            required={field.required}
+            placeholder={field.placeholder}
+            data={field.enum}
+            value={value ?? ''}
+            onChange={set}
+          />
+        )
+      }
       if (field.enum?.length <= 3) {
         return (
           <Input.Wrapper {...common} required={field.required}>
@@ -199,8 +224,14 @@ export default function ListenerForm({ form, setField, errors }) {
   const ctx = { form, setField, errors }
   const visible = LISTENER_FIELDS.filter((f) => appliesTo(f, form.protocol))
   const basic = visible.filter((f) => f.basic)
-  // A required block (ssh) holds required fields, which must not hide in Advanced.
+  // A required block (ssh) is part of what makes the listener work: its fields
+  // join the Listener section, and its own blocks get a section each.
   const required = visible.filter((f) => !f.basic && f.type === 'object' && f.required)
+  const subBlocks = required.flatMap((f) =>
+    (f.fields ?? [])
+      .filter((c) => c.type === 'object' && appliesTo(c, form.protocol))
+      .map((c) => ({ field: c, path: `${f.key}.${c.key}` })),
+  )
   const advanced = visible.filter((f) => !f.basic && !required.includes(f))
   const scalars = advanced.filter((f) => f.type !== 'object')
   const blocks = advanced.filter((f) => f.type === 'object')
@@ -211,12 +242,17 @@ export default function ListenerForm({ form, setField, errors }) {
         title="Listener"
         description="Where clients reach the sidecar, where the sidecar reaches your resource, and the protocol between them."
       >
-        <Fields fields={basic} prefix="" {...ctx} />
+        <Stack gap="md">
+          <Fields fields={basic} prefix="" {...ctx} />
+          {required.map((f) => (
+            <Fields key={f.key} fields={(f.fields ?? []).filter((c) => c.type !== 'object')} prefix={f.key} {...ctx} />
+          ))}
+        </Stack>
       </SectionRow>
 
-      {required.map((f) => (
-        <SectionRow key={f.key} title={f.label} description={f.help}>
-          <Fields fields={f.fields ?? []} prefix={f.key} {...ctx} />
+      {subBlocks.map(({ field, path }) => (
+        <SectionRow key={path} title={field.label} description={field.help}>
+          <ObjectBody field={field} path={path} {...ctx} />
         </SectionRow>
       ))}
 
