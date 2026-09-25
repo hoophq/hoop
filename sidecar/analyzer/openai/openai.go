@@ -69,7 +69,7 @@ func (p *Provider) Name() string { return Name }
 
 // Classify implements analyzer.Provider.
 func (p *Provider) Classify(ctx context.Context, systemPrompt, content string) (*analyzer.Result, error) {
-	body, err := json.Marshal(p.buildRequest(systemPrompt, content))
+	body, err := json.Marshal(BuildRequest(p.model, p.maxTokens, systemPrompt, content, false))
 	if err != nil {
 		return nil, fmt.Errorf("analyzer/openai: encoding request: %w", err)
 	}
@@ -87,56 +87,78 @@ func (p *Provider) Classify(ctx context.Context, systemPrompt, content string) (
 	}
 	defer resp.Body.Close()
 
-	return parseResponse(resp)
+	return ParseResponse("analyzer/"+Name, resp)
 }
 
-type request struct {
-	Model      string    `json:"model"`
-	MaxTokens  int       `json:"max_completion_tokens"`
-	Messages   []message `json:"messages"`
-	Tools      []tool    `json:"tools"`
+// --- wire format, shared with Vertex ---------------------------------------
+
+// Request is the Chat Completions request body.
+//
+// analyzer/vertex reuses this encoder for the Model Garden open models on
+// Vertex's OpenAI-compatible endpoint, so no second copy can drift from it.
+type Request struct {
+	Model string `json:"model"`
+
+	// BuildRequest fills one of these two limits: the one its target reads.
+	MaxCompletionTokens int `json:"max_completion_tokens,omitempty"`
+	MaxTokens           int `json:"max_tokens,omitempty"`
+
+	Messages   []Message `json:"messages"`
+	Tools      []Tool    `json:"tools"`
 	ToolChoice string    `json:"tool_choice"`
 }
 
-type message struct {
+// Message is one turn.
+type Message struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
 }
 
-type tool struct {
+// Tool is a callable the model may invoke.
+type Tool struct {
 	Type     string       `json:"type"`
-	Function functionSpec `json:"function"`
+	Function FunctionSpec `json:"function"`
 }
 
-type functionSpec struct {
+// FunctionSpec names a tool and its arguments.
+type FunctionSpec struct {
 	Name        string     `json:"name"`
 	Description string     `json:"description"`
-	Parameters  parameters `json:"parameters"`
+	Parameters  Parameters `json:"parameters"`
 }
 
-type parameters struct {
+// Parameters is a tool's JSON Schema.
+type Parameters struct {
 	Type       string              `json:"type"`
-	Properties map[string]property `json:"properties"`
+	Properties map[string]Property `json:"properties"`
 	Required   []string            `json:"required"`
 }
 
-type property struct {
+// Property is one schema field.
+type Property struct {
 	Type        string `json:"type"`
 	Description string `json:"description"`
 }
 
-func (p *Provider) buildRequest(systemPrompt, content string) request {
+// BuildRequest renders a classification request.
+//
+// forVertex switches the spelling of the output limit. OpenAI deprecated
+// max_tokens for max_completion_tokens, and its reasoning models reject the
+// old name. Vertex documents only max_tokens for its open models. Llama on
+// Vertex returns empty text when the request has no limit it reads, and
+// empty text carries no verdict.
+func BuildRequest(model string, maxTokens int, systemPrompt, content string, forVertex bool) Request {
 	specs := analyzer.ToolSpecs()
-	tools := make([]tool, 0, len(specs))
+	tools := make([]Tool, 0, len(specs))
 	for _, s := range specs {
-		tools = append(tools, tool{
+		tools = append(tools, Tool{
 			Type: "function",
-			Function: functionSpec{
+			Function: FunctionSpec{
 				Name:        s.Name,
 				Description: s.Description,
-				Parameters: parameters{
+				Parameters: Parameters{
 					Type: "object",
-					Properties: map[string]property{
+					Properties: map[string]Property{
 						"title": {
 							Type:        "string",
 							Description: "Under 80 characters. Shown to the user when the statement is blocked. Never quote a value from the statement.",
@@ -152,10 +174,9 @@ func (p *Provider) buildRequest(systemPrompt, content string) request {
 		})
 	}
 
-	return request{
-		Model:     p.model,
-		MaxTokens: p.maxTokens,
-		Messages: []message{
+	req := Request{
+		Model: model,
+		Messages: []Message{
 			{Role: "system", Content: systemPrompt},
 			{Role: "user", Content: content},
 		},
@@ -165,6 +186,12 @@ func (p *Provider) buildRequest(systemPrompt, content string) request {
 		// prose and the verdict becomes a parsing problem.
 		ToolChoice: "required",
 	}
+	if forVertex {
+		req.MaxTokens = maxTokens
+	} else {
+		req.MaxCompletionTokens = maxTokens
+	}
+	return req
 }
 
 type response struct {
@@ -186,23 +213,27 @@ type response struct {
 
 const maxErrorBytes = 4 << 10
 
-// parseResponse turns an HTTP response into a Result.
+// ParseResponse turns an HTTP response into a Result.
+//
+// analyzer/vertex reuses it, because Vertex's OpenAI-compatible endpoint
+// returns the same document. provider names the caller in each error, so a
+// Vertex operator does not go looking for an openai block their config lacks.
 //
 // As with Anthropic, a non-2xx body is drained and discarded rather than
 // propagated: these APIs echo the offending request often enough that
 // forwarding the body would copy the statement into the relay's logs.
-func parseResponse(resp *http.Response) (*analyzer.Result, error) {
+func ParseResponse(provider string, resp *http.Response) (*analyzer.Result, error) {
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		_, _ = io.CopyN(io.Discard, resp.Body, maxErrorBytes)
-		return nil, fmt.Errorf("analyzer/openai: provider returned %s", resp.Status)
+		return nil, fmt.Errorf("%s: provider returned %s", provider, resp.Status)
 	}
 
 	var out response
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out); err != nil {
-		return nil, fmt.Errorf("analyzer/openai: decoding response: %w", err)
+		return nil, fmt.Errorf("%s: decoding response: %w", provider, err)
 	}
 	if out.Error != nil {
-		return nil, fmt.Errorf("analyzer/openai: provider error: %s", out.Error.Type)
+		return nil, fmt.Errorf("%s: provider error: %s", provider, out.Error.Type)
 	}
 
 	for _, choice := range out.Choices {
@@ -226,5 +257,5 @@ func parseResponse(resp *http.Response) (*analyzer.Result, error) {
 			}, nil
 		}
 	}
-	return nil, fmt.Errorf("analyzer/openai: model called no risk tool")
+	return nil, fmt.Errorf("%s: model called no risk tool", provider)
 }

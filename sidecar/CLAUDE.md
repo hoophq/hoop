@@ -62,7 +62,7 @@ it is removing a directory.
 | `config/yaml/` | `gopkg.in/yaml.v3` |
 | `pii/alcatraz/` | `github.com/hoophq/alcatraz` |
 | `store/sqlite/` | `modernc.org/sqlite`, pure Go because the sidecar is a static binary |
-| `analyzer/vertex/` | `golang.org/x/oauth2`, the only analyzer provider needing one. It wraps the `anthropic` and `gemini` encoders from the root under a GCP bearer; the API-key providers stay in the root |
+| `analyzer/vertex/` | `golang.org/x/oauth2`, the only analyzer provider needing one. It wraps the `anthropic`, `gemini` and `openai` encoders from the root under a GCP bearer; the API-key providers stay in the root |
 | `descriptors/gcs/` | `golang.org/x/oauth2`, to read a grpc lane's descriptor set from a `gs://` URL |
 | `lexer/conformance/` | PostgreSQL's real parser, test-only |
 
