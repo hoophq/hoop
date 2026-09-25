@@ -128,18 +128,15 @@ exec or watch stream stays open as long as the user does.
 
 The relay is a byte relay: it forwards what it is given whether or not the
 codec produced a statement for it, so the exec session works regardless of
-what the codec makes of the frames. The http codec in the libhoop checkout
-this stack builds from (`../sidecar/Dockerfile` takes it from
-`../../../../libhoop`) reads RFC 6455 frames after the 101: each message
-becomes a `ws_message` row and the close frame a `ws_close` row, both
-carrying the opening GET's path and resource, with `http.proto: websocket`.
-exec's `v5.channel.k8s.io` frames are binary — one channel byte, then the
-stream's bytes — and are recorded as such; only text messages are ever
-handed to a masker. Under the older pinned codec (`sidecar/go.mod`) the
-frames are opaque: the GET and the 101 are recorded, nothing after them.
+what the codec makes of the frames. The http codec reads RFC 6455 frames
+after the 101: each message becomes a `ws_message` row and the close frame a
+`ws_close` row, both carrying the opening GET's path and resource, with
+`http.proto: websocket`. exec's `v5.channel.k8s.io` frames are binary — one
+channel byte, then the stream's bytes — and are recorded as such; only text
+messages are ever handed to a masker.
 
-`./kubernetes/demo-kubernetes.sh` prints the trail; read the exec session's
-rows to see which one you have.
+`./kubernetes/demo-kubernetes.sh` prints the trail; the exec session's rows
+are the last block.
 
 ## Files
 

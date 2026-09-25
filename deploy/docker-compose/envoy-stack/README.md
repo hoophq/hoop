@@ -93,16 +93,16 @@ client that asks to upgrade, and the demo shows the refusal.
 standalone stack, without OPA and the other two protocols.
 
 [`clickhouse/`](clickhouse/README.md) puts one `clickhouse-server` behind
-three lanes, one per protocol the relay has a codec for: its MySQL emulation
-on Envoy `:9004` (`protocol: mysql`), its PostgreSQL emulation on `:9005`
-(`protocol: postgres`), and its HTTP interface on `:8446` (TLS, the same OPA
-fat gate, `protocol: http`). The two database lanes inherit the process's
-guardrail and mask rule and the demo proves both against the same table;
-the HTTP lane is an audit lane, because guardrails read the request line
-and ClickHouse puts the SQL in the body, and because it chunks every
-response, which `http` masking cannot rewrite. The native `:9000` has no
-codec and so no lane. The overlay also documents a `mysql` codec gap the
-MySQL 8 CLI exposes against any server without `CLIENT_QUERY_ATTRIBUTES`.
+four lanes, one per protocol it exposes: native on Envoy `:9000`
+(`protocol: clickhouse`), its MySQL emulation on `:9004` (`protocol:
+mysql`), its PostgreSQL emulation on `:9005` (`protocol: postgres`), and its
+HTTP interface on `:8446` (TLS, the same OPA fat gate, `protocol: http`).
+All four inherit the process's guardrail and mask rule. The three database
+lanes enforce both; the HTTP lane masks the result set, re-chunking what
+ClickHouse streams, and enforces nothing on the SQL, because guardrails
+read the request line and ClickHouse puts the SQL in the body. The overlay
+also documents a `mysql` codec gap the MySQL 8 CLI exposes against any
+server without `CLIENT_QUERY_ATTRIBUTES`.
 
 [`kubernetes/`](kubernetes/README.md) puts a one-node k3s cluster behind a
 `protocol: http` lane on Envoy `:8447` (TLS, the same OPA fat gate) and

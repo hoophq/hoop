@@ -2525,41 +2525,39 @@ Requests are never rewritten. Changing the statement the upstream executes is a
 correctness change wearing a privacy label, so a value the client put in a
 `WHERE` clause is a matter for a `pii` policy rule instead.
 
-Two mechanisms carry it, and the gate picks per protocol by asking the codec
-rather than by consulting a list of protocol names:
+One mechanism carries it, and the gate finds it by asking the codec rather
+than by consulting a list of protocol names: the codec **re-frames** the
+response around the new values, because only the codec knows where a value
+ends and what declares its length.
 
-- **Re-framing**, where the codec rebuilds its own framing around the new
-  values. Postgres, MySQL and MSSQL, whose every row and column carries a
-  length prefix: each changed row is rebuilt around the new values, because
-  substituting bytes there desynchronizes the client and `psql` reports
-  "lost synchronization with server". MySQL's binary rows are the one partial
-  case: a value that is not already a length-encoded string is measured and
-  forwarded unchanged, because a redaction token written over a four-byte
-  integer is a protocol error rather than a mask. HTTP, with a WebSocket-aware
-  `libhoop` codec: a JSON body is walked value by value, each string and number
-  handed to the masker under its dotted key path, so a `columns` rule names a
-  JSON key the way it names a result-set column (`columns: [data]` masks every
+- Postgres, MySQL and MSSQL: every row and column carries a length prefix,
+  and each changed row is rebuilt around the new values. Substituting bytes
+  there desynchronizes the client and `psql` reports "lost synchronization
+  with server". MySQL's binary rows are the one partial case: a value that
+  is not already a length-encoded string is measured and forwarded
+  unchanged, because a redaction token written over a four-byte integer is
+  a protocol error rather than a mask.
+- HTTP: a JSON body is walked value by value, each string and number handed
+  to the masker under its dotted key path, so a `columns` rule names a JSON
+  key the way it names a result-set column (`columns: [data]` masks every
   value under a Kubernetes Secret's `data`, `data.password` one of them,
-  `password` that key at any depth); a text body is one cell; a WebSocket text
-  message is one cell. `Content-Length` is corrected, a chunked body is
-  re-chunked and streams — each complete top-level JSON value, or each chunk
-  of text, goes out as soon as it is whole, so a `kubectl get -w` or a
-  `kubectl logs -f` is not held to its end — and a gzip body is inflated
-  around the masker and compressed again. A body this codec cannot read
-  (binary, an unknown encoding) is forwarded as it arrives; one it can read
-  but that outgrows `MaxMessageBytes` goes out unmasked and the next response
-  is masked again.
-- **Substitution**, for the `libhoop` pin before that codec: the whole HTTP
-  payload is scanned and rewritten in place, and the `Content-Length`
-  retagged. It needs the header block and the body in one buffer, so a
-  chunked response or one whose head arrived in an earlier read goes out
-  unmasked, recorded as an error event in the trail.
+  `password` that key at any depth); a text body is masked as text; a
+  WebSocket text message is one cell. `Content-Length` is corrected, a
+  chunked body is re-chunked and streams — each complete top-level JSON
+  value, or each text line, goes out as soon as it is whole, so a `kubectl
+  get -w` or a `kubectl logs -f` is not held to its end — and a gzip or
+  deflate body is undone around the masker and compressed again. A binary
+  body is forwarded as it arrives. A text or JSON body under an encoding
+  the codec cannot undo (zstd, br, lz4) is refused with a 403 and an error
+  event rather than forwarded unmasked. A body the codec is holding that
+  outgrows `MaxMessageBytes` goes out unmasked and the next response is
+  masked again.
 
-A codec offering neither gets its `mask.rules` refused at startup, because
-accepting a masking config that can never fire is the failure that ends with
-an unmasked SSN in a screenshot. That check is unconditional now that
-`mask.enabled` is gone, so a lane that used to load by omitting the flag
-refuses to start.
+A codec that cannot re-frame gets its `mask.rules` refused at startup,
+because accepting a masking config that can never fire is the failure that
+ends with an unmasked SSN in a screenshot. That check is unconditional now
+that `mask.enabled` is gone, so a lane that used to load by omitting the
+flag refuses to start.
 
 Detection and rewriting both come from
 [alcatraz](https://github.com/hoophq/alcatraz): 51 entity types across 12

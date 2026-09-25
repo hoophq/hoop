@@ -116,7 +116,7 @@ bucket also carries a set a ConfigMap cannot (1 MiB cap). Details in
 The lane adds **no rules**. The free tier's one guardrail and one mask rule
 are spent in the defaults, and the gRPC lane inherits both — the same
 budget now covering a third protocol and second masking mechanism
-(re-encoding, like postgres reframing; unlike HTTP byte substitution).
+(re-encoding, like postgres and HTTP re-framing).
 `config-grpc.yaml` carries the lane's own would-be rules commented out:
 `no-bulk-export` (`http_resource` matching the RPC path) and a
 `grpc_status` outcome rule.
