@@ -16,6 +16,26 @@ the control plane and holds the connection (EVL-307). `Evaluator.hold` asks
 `POST /api/sidecars/reviews/:id/claim` every 5 seconds for up to 30 minutes
 and sends nothing to the client in the meantime.
 
+```mermaid
+sequenceDiagram
+    participant A as Client or agent
+    participant S as Sidecar lane
+    participant CP as Control plane
+    participant H as Approver
+    A->>S: statement (bytes X)
+    S->>CP: POST /sidecars/reviews {X}
+    CP-->>S: 201 PENDING, review R
+    CP-)H: Slack message / review page
+    loop every 5s, up to 30 min
+        S->>CP: POST /sidecars/reviews/R/claim
+        CP-->>S: PENDING
+    end
+    H->>CP: approve R
+    S->>CP: POST /sidecars/reviews/R/claim
+    CP-->>S: forward=true (R spent)
+    S->>A: result, after minutes of silence
+```
+
 That fits a human at `psql`. It does not fit an AI agent:
 
 - The agent sees a statement that hangs, with no review id and no reason.
@@ -121,6 +141,73 @@ same as the listener ports.
 **No approving, listing or executing over this MCP.** Approval stays with
 humans in the control plane and Slack. Executing statements over MCP is MCP
 Bridge scope. There is no list tool until a sidecar review has a requester.
+
+### The agent flow
+
+```mermaid
+sequenceDiagram
+    participant A as AI agent
+    participant S as Sidecar lane (return mode)
+    participant M as Sidecar MCP
+    participant CP as Control plane
+    participant H as Approver
+    A->>S: statement (bytes X)
+    S->>CP: POST /sidecars/reviews {X}
+    CP-->>S: 201 PENDING, review R
+    CP-)H: Slack message / review page
+    S-->>A: deny: held for approval (review R)
+    A->>M: review_wait {id: R, timeout: 60}
+    loop every 2s, with progress notifications
+        M->>CP: GET /sidecars/reviews/R
+        CP-->>M: PENDING
+    end
+    M-->>A: timed_out=true, PENDING
+    A->>M: review_wait {id: R}
+    H->>CP: approve R
+    M->>CP: GET /sidecars/reviews/R
+    CP-->>M: APPROVED
+    M-->>A: APPROVED, resend the identical statement
+    A->>S: statement (bytes X)
+    S->>CP: POST /sidecars/reviews {X}
+    CP-->>S: forward=true (R spent)
+    S->>A: result
+```
+
+MCP only carries status. The statement still runs through the lane, so the
+analyzer, audit and masking apply as they do today.
+
+### Components
+
+```mermaid
+flowchart LR
+    subgraph host["Agent host"]
+        AG["AI agent"]
+    end
+    subgraph sc["Sidecar"]
+        L["Listener lane<br/>mode: listener default<br/>or client opt-in"]
+        MCP["MCP server (nested module)<br/>review_status, review_wait"]
+        CPC["Control plane client<br/>hoop-sidecar-token"]
+    end
+    subgraph cp["Control plane"]
+        POST["POST /api/sidecars/reviews<br/>file or match, spend once"]
+        GET["GET /api/sidecars/reviews/:id<br/>new, read-only"]
+        DB[("private.reviews")]
+        UI["Review page and Slack"]
+    end
+    UP[("Database or HTTP upstream")]
+    AG -- "wire protocol" --> L
+    AG -- "MCP, streamable HTTP" --> MCP
+    L --> CPC
+    MCP --> CPC
+    CPC -- "outbound only" --> POST
+    CPC -- "outbound only" --> GET
+    POST --> DB
+    GET --> DB
+    UI --> DB
+    L -- "released statement" --> UP
+```
+
+Nothing new dials into the sidecar, and agents reach no control plane route.
 
 ## Consequences
 
