@@ -35,6 +35,23 @@ func (r Rule) WithStatuses(statuses ...string) Rule {
 	return r
 }
 
+// WithHeaders sets the header patterns for a MatchHTTPHeader rule: header
+// name to the values that match it, `*` matching any run of characters. An
+// empty list means present with any value.
+func (r Rule) WithHeaders(headers map[string][]string) Rule {
+	r.Headers = headers
+	return r
+}
+
+// WithHeadersNot sets the exempting header patterns for a MatchHTTPHeader
+// rule: the rule matches unless every named header is present with a
+// matching value. Name the one safe shape and every other request, a
+// missing header included, is denied.
+func (r Rule) WithHeadersNot(headers map[string][]string) Rule {
+	r.HeadersNot = headers
+	return r
+}
+
 // WithMessage sets the user-facing denial message.
 func (r Rule) WithMessage(msg string) Rule {
 	r.Message = msg

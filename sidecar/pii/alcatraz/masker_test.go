@@ -290,6 +290,38 @@ func TestColumnLabelNeedsNoRecognizer(t *testing.T) {
 	}
 }
 
+// The HTTP codec hands a JSON value over under its dotted key path. A
+// column rule matches the path by segment: a bare name covers that key at
+// any depth, a path covers the object under it, the longer rule wins where
+// both apply and, at equal length, the one nearest the leaf. `metadata` does
+// not match `data`: segments are whole.
+func TestColumnRuleMatchesJSONKeyPath(t *testing.T) {
+	d := newDet(t, alcatraz.Options{Entities: []string{alcz.USSSN}})
+	m := newMask(t, d,
+		alcatraz.Rule{Name: "secret", Entities: []string{"K8S_SECRET"}, Columns: []string{"data"}},
+		alcatraz.Rule{Name: "tok", Entities: []string{"TOKEN"}, Columns: []string{"data.token"}},
+		alcatraz.Rule{Name: "pw", Entities: []string{"PASSWORD"}, Columns: []string{"password"}},
+	)
+	for path, want := range map[string]string{
+		"data.password":        "PASSWORD", // equal runs: the leaf key names the value
+		"items.data.username":  "K8S_SECRET",
+		"data.token":           "TOKEN",
+		"spec.password":        "PASSWORD",
+		"metadata.name":        "",
+		"data":                 "K8S_SECRET",
+		"stringdata.password":  "PASSWORD",
+		"metadata.annotations": "",
+	} {
+		_, names, n := m.MaskCell(path, []byte("v"))
+		switch {
+		case want == "" && n != 0:
+			t.Errorf("%s: masked as %v, want left alone", path, names)
+		case want != "" && (n != 1 || !slices.Equal(names, []string{want})):
+			t.Errorf("%s: reported %v/%d, want %s", path, names, n, want)
+		}
+	}
+}
+
 // The duplicate check spans the whole rule set, not one rule, so an entity
 // claimed through the plural still collides with one claimed through the
 // singular. The anonymizer keys operators by entity type and the second would

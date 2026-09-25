@@ -11,8 +11,8 @@
 #   ./run.sh
 #   docker compose -f docker-compose.yml -f clickhouse/docker-compose.clickhouse.yml up -d --wait
 #
-# Every database lane inherits the process's one guardrail rule and one mask
-# rule. The HTTP lane is audit-only and switches masking off.
+# Every lane inherits the process's one guardrail rule and one mask rule.
+# The HTTP lane enforces nothing on the SQL and masks the result set.
 
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -78,14 +78,19 @@ note "bob has no grant on \"clickhouse\" (../opa/authz.rego keys the service"
 note "on Envoy's listener port, 8446). hoop-inspect never saw the request."
 $CURL -H 'X-Hoop-User: bob' -w ' [%{http_code}]\n' --data-binary 'SELECT 1' 2>&1 | sed 's/^/  /'
 
-h "HTTP :8446 / tier 2 -- an audit lane, and only that"
+h "HTTP :8446 / tier 2 -- audited SQL, masked result"
 note "alice is granted. The SQL rides in the POST body; capture_body puts it"
 note "in the audit record below. It does NOT put it in front of the guardrail:"
-note "guardrails scan the request line, and masking substitutes bytes only"
-note "under a Content-Length, which ClickHouse never sends (it chunks). So"
-note "the emails come back in the clear here, and the config switches the"
-note "mask rule off on this lane rather than carry one that never fires."
+note "guardrails scan the request line. The result set IS masked: ClickHouse"
+note "chunks every response and the codec re-chunks what it rewrote, one"
+note "JSONEachRow row at a time, each value under its column name."
 $CURL -H 'X-Hoop-User: alice' --data-binary 'SELECT id, name, email FROM appdb.customers FORMAT JSONEachRow' 2>&1 | sed 's/^/  /'
+note ""
+note "A client that negotiates a compression the codec cannot undo would be"
+note "the one unmasked response, so the relay refuses it instead:"
+$COMPOSE exec -T client curl -sk 'https://envoy:8446/?enable_http_compression=1' \
+    -H X-ClickHouse-User:appuser -H X-ClickHouse-Key:apppass -H 'X-Hoop-User: alice' -H 'Accept-Encoding: zstd' \
+    -w ' [%{http_code}]\n' --data-binary 'SELECT email FROM appdb.customers FORMAT TSV' 2>&1 | sed 's/^/  /'
 note ""
 note "The request LINE is scanned. ClickHouse binds ?param_x= into {x:Type}"
 note "in the SQL, so a taxpayer id passed that way sits on the line, and the"
@@ -133,18 +138,21 @@ note "MySQL before 8.0.23 -- is enforced only for clients that do not set it."
 # ------------------------------------------------------------------- audit
 h "AUDIT / what hoop-inspect recorded"
 sleep 1
-note "The LEAK line below is expected on this overlay and is the point of"
-note "the http beat: capture_body records request AND response bodies, the"
-note "http lane does not mask, so the result set is in the trail in the"
-note "clear. The relay has no request-only capture; until it does, an http"
-note "lane in front of a database API copies every result into its audit"
-note "log. The mysql and pg lanes leak nothing: their rows were masked."
+note "The LEAK line below is expected on this overlay: capture_body records"
+note "request AND response bodies as the SERVER sent them, so the trail holds"
+note "the original result set even though the client received it masked. The"
+note "relay has no request-only capture; until it does, an http lane in front"
+note "of a database API copies every result into its audit log. The mysql and"
+note "pg lanes leak nothing: their audit rows carry columns and counts, not"
+note "values."
 $COMPOSE logs hoop-inspect --since "$DEMO_START" 2>/dev/null | ./sidecar/read-audit.py
 
 h "Summary"
 cat <<'EOF'
-  One ClickHouse, four front doors, one process. Native, MySQL and PostgreSQL
-  lanes enforced the same SQL and masking rules; the native lane did so over
-  bounded, block-at-a-time LZ4 decoding. HTTP kept its explicit audit-only
-  posture. The MySQL 8 CLI beat still names the emulation codec gap.
+  One ClickHouse, four front doors, one process. All four lanes masked the
+  same email column; the native lane did so over bounded, block-at-a-time
+  LZ4 decoding, the HTTP lane by re-chunking JSONEachRow. Only the three
+  database lanes enforced the SQL rule: HTTP carries the SQL in a body the
+  guardrail does not read. The MySQL 8 CLI beat still names the emulation
+  codec gap.
 EOF

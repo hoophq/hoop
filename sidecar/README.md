@@ -945,7 +945,7 @@ listeners:
     protocol: http
     listen: 0.0.0.0:18080
     upstream: httpbin:8080
-    http:                      # REQUIRED for HTTP analysis, see below
+    http:                      # what the codec exposes; see below
       capture_body: true
       max_body_bytes: 8192
       headers: [Content-Type]
@@ -965,21 +965,29 @@ Provider, model, endpoint and credential are not per lane: a second provider
 per lane would double the credential surface, so those stay in the top-level
 section.
 
-**An HTTP lane needs `capture_body: true`.** The codec exposes nothing by
-default, so without it the analyzer sees `POST /anything` and no body, which
-tells a model nothing. A request with no body is skipped rather than
-classified, so an unset flag shows up as an analyzer that never fires.
-`authorization`, `cookie` and `proxy-authorization` cannot be allowlisted;
-headers never reach the model regardless.
+**A request with no body is still classified.** On a REST API the path is
+the operation: `GET /api/v1/namespaces/prod/secrets/db-root` says what a
+kubectl user is about to read without a byte of body. The headers the lane
+allowlists under `http.headers` go into the prompt beside it, because they
+carry what the path does not — kubectl asks for a listing with
+`Accept: application/json;as=Table;...` and for the contents with
+`Accept: application/json`, on the same GET. That allowlist is the one
+decision on what leaves the process for policy, the audit trail and, here,
+a provider; `authorization`, `cookie`, `proxy-authorization` and
+`set-cookie` cannot be allowlisted at all. `capture_body: true` is what
+puts a POST's payload in front of the model; without it a write is judged
+from its request line alone. A bodiless RESPONSE (a 204, a 101) is never
+classified: there is nothing to judge but a status line.
 
 **What the model sees** is the request line as the client sent it — verb,
 raw path and query string — then the normalized resource where it differs,
-the content type, and the body:
+the content type, the allowlisted headers in name order, and the body:
 
 ```
 POST /users/12345/orders?export=all
 Resource: /users/*/orders
 Content-Type: application/json
+X-Hoop-User: alice
 
 {"format": "csv"}
 ```
@@ -988,9 +996,12 @@ The raw target is deliberate, as the client spelled it. The resource is the
 policy key, where every id must fold into one rule; the model is judging
 intent, and `?export=all` or a `?limit=100000` is part of it. Identifiers in
 the path are covered by the same `send: redacted` pass as identifiers in the
-body. The CACHE keys on the resource plus the whole query, names and values,
-so `/users/1` and `/users/2` with the same body cost one call, not one per
-id, while `?dry_run=true` and `?dry_run=false` are two verdicts.
+body. The CACHE keys on the resource plus the whole query and the headers,
+names and values, so `/users/1` and `/users/2` with the same body cost one
+call, not one per id, while `?dry_run=true` and `?dry_run=false` are two
+verdicts, and so are the two `Accept` values above. Allowlisting a
+per-request header (a session id) therefore costs a call per request; the
+`-validate` per-statement note is the reminder.
 
 **A credential in the query string never leaves the codec.** The value of
 `access_token`, `api_key`, `key`, `sig`, `X-Amz-Signature` and the other
@@ -1609,10 +1620,10 @@ text — a command line for `exec_line`, a variable name for `env_set`, a path
 for every `sftp_*` — so a pattern written for one of them has to say which.
 Unscoped, it is evaluated against all three.
 
-**Four rule types are refused at load**: `table`, `http_resource`,
-`http_status` and `grpc_status`. SSH has no relations, no request path and no
-RPC, so each would load and never fire. An sftp path is matched with
-`pattern_match`, not with `table`.
+**Five rule types are refused at load**: `table`, `http_resource`,
+`http_status`, `http_header` and `grpc_status`. SSH has no relations, no
+request path, no header and no RPC, so each would load and never fire. An
+sftp path is matched with `pattern_match`, not with `table`.
 
 **`capabilities_allowed` is tri-state.** Omitted admits the five capabilities
 this version delivers; `[]` admits none, which is how a jump host drops the
@@ -2164,11 +2175,12 @@ and never leave the process, and an `opa` block with no `guardrails.rules`
 hands every statement to Rego.
 
 **The local rule types.** SQL: `deny_words_list`, `pattern_match` (RE2),
-`operation`, `table`. HTTP: `http_resource`, `http_status`. Cross-protocol:
-`pii` (see [Masking and PII](#masking-and-pii)). The AI analyzer joins the
-same chain from its own listener block (see [Analyzing statements with a
-model](#analyzing-statements-with-a-model)). One ordered set can mix the rule
-types, so a deployment fronting a database and an API needs one evaluator:
+`operation`, `table`. HTTP: `http_resource`, `http_status`, `http_header`.
+Cross-protocol: `pii` (see [Masking and PII](#masking-and-pii)). The AI
+analyzer joins the same chain from its own listener block (see [Analyzing
+statements with a model](#analyzing-statements-with-a-model)). One ordered
+set can mix the rule types, so a deployment fronting a database and an API
+needs one evaluator:
 
 ```go
 policy.NewRules([]policy.Rule{
@@ -2181,11 +2193,47 @@ policy.NewRules([]policy.Rule{
     policy.Rule{Name: "no-5xx-leak", Type: policy.MatchHTTPStatus}.
         WithStatuses("5xx").
         WithMessage("upstream failure suppressed by policy"),
+
+    policy.Rule{Name: "no-secret-contents", Type: policy.MatchHTTPHeader}.
+        WithResources("/api/v1/namespaces/*/secrets/*").
+        WithMethods("GET").
+        WithHeadersNot(map[string][]string{"Accept": {"application/json;as=Table;*"}}).
+        WithMessage("listing secrets is fine; reading one is not"),
 })
 ```
 
 An HTTP rule never matches a SQL statement and vice versa, so a mixed set
 cannot deny the wrong protocol.
+
+**An `http_header` rule reads the request whose intent is in its headers.**
+kubectl fetches a Secret's table view with
+`Accept: application/json;as=Table;v=v1;g=meta.k8s.io,application/json` and
+its contents with `Accept: application/json`, on the same `GET`. Two forms:
+
+- `headers_not` names the shapes that are SAFE: the rule matches unless every
+  named header is present with a matching value. The rule above lets the
+  table view through and refuses everything else on a secret: `-o yaml`,
+  `Accept: application/json;q=1`, Protobuf, and a curl that sends no
+  `Accept` at all. This is the form for a rule that protects something,
+  because the request it did not think of is denied.
+- `headers` names the shapes that are UNSAFE: the rule matches when every
+  named header is present with a matching value. `kubectl-command:
+  ["kubectl delete*"]` refuses a delete however kubectl spells the path. A
+  request without the header cannot match this form.
+
+Both map a header name to value patterns: every named header must satisfy
+its map (AND), any listed value will do (OR), an empty list means present
+(`headers`) or absent (`headers_not`). Values compare case-insensitively;
+`*` matches any run of characters and `\*` a literal star. Only a REQUEST
+matches: a response carries the server's headers, and this rule reads the
+client's intent. `methods` and `resources` scope the rule as they scope
+`http_resource`; a `*` segment before a trailing `/**` is still a wildcard,
+so `/api/v1/namespaces/*/secrets/**` covers the collection in every namespace
+and everything under it. The codec fills `http.headers` on a statement from
+the listener's `http.headers` allowlist and nothing else, so a rule naming a
+header the lane does not capture, in either map, is refused at load with the
+name to add: a rule that loads and can never match is the failure this file
+refuses everywhere.
 
 **A `table` rule keys on the access.** `access: write` means "nothing writes
 to customers" and stops firing on
@@ -2489,26 +2537,39 @@ Requests are never rewritten. Changing the statement the upstream executes is a
 correctness change wearing a privacy label, so a value the client put in a
 `WHERE` clause is a matter for a `pii` policy rule instead.
 
-Two mechanisms carry it, and the gate picks per protocol by asking the codec
-rather than by consulting a list of protocol names:
+One mechanism carries it, and the gate finds it by asking the codec rather
+than by consulting a list of protocol names: the codec **re-frames** the
+response around the new values, because only the codec knows where a value
+ends and what declares its length.
 
-- **Substitution**, where the payload length is declared in a header the gate
-  can find and correct. HTTP, whose `Content-Length` is retagged after the
-  rewrite. Leave it stale and the client reads the old count and stops
-  mid-document, which reads as a corrupt upstream rather than a masking bug.
-- **Re-framing**, where every row and column carries its own length prefix.
-  Postgres, MySQL and MSSQL, whose codecs rebuild each changed row around the
-  new values. Substituting bytes there desynchronizes the client, and `psql`
-  reports "lost synchronization with server". MySQL's binary rows are the one
-  partial case: a value that is not already a length-encoded string is
-  measured and forwarded unchanged, because a redaction token written over a
-  four-byte integer is a protocol error rather than a mask.
+- Postgres, MySQL and MSSQL: every row and column carries a length prefix,
+  and each changed row is rebuilt around the new values. Substituting bytes
+  there desynchronizes the client and `psql` reports "lost synchronization
+  with server". MySQL's binary rows are the one partial case: a value that
+  is not already a length-encoded string is measured and forwarded
+  unchanged, because a redaction token written over a four-byte integer is
+  a protocol error rather than a mask.
+- HTTP: a JSON body is walked value by value, each string and number handed
+  to the masker under its dotted key path, so a `columns` rule names a JSON
+  key the way it names a result-set column (`columns: [data]` masks every
+  value under a Kubernetes Secret's `data`, `data.password` one of them,
+  `password` that key at any depth); a text body is masked as text; a
+  WebSocket text message is one cell. `Content-Length` is corrected, a
+  chunked body is re-chunked and streams — each complete top-level JSON
+  value, or each text line, goes out as soon as it is whole, so a `kubectl
+  get -w` or a `kubectl logs -f` is not held to its end — and a gzip or
+  deflate body is undone around the masker and compressed again. A binary
+  body is forwarded as it arrives. A text or JSON body under an encoding
+  the codec cannot undo (zstd, br, lz4) is refused with a 403 and an error
+  event rather than forwarded unmasked. A body the codec is holding that
+  outgrows `MaxMessageBytes` goes out unmasked and the next response is
+  masked again.
 
-A codec offering neither gets its `mask.rules` refused at startup, because
-accepting a masking config that can never fire is the failure that ends with
-an unmasked SSN in a screenshot. That check is unconditional now that
-`mask.enabled` is gone, so a lane that used to load by omitting the flag
-refuses to start.
+A codec that cannot re-frame gets its `mask.rules` refused at startup,
+because accepting a masking config that can never fire is the failure that
+ends with an unmasked SSN in a screenshot. That check is unconditional now
+that `mask.enabled` is gone, so a lane that used to load by omitting the
+flag refuses to start.
 
 Detection and rewriting both come from
 [alcatraz](https://github.com/hoophq/alcatraz): 51 entity types across 12
@@ -2599,10 +2660,16 @@ every HTTP response body and `DATE_TIME` every row with a timestamp.
 `alcatraz.Noisy` records those seven with their rates, and it is the list
 `pii.ignored` was written against. Reach for a `columns:` rule where the
 protocol names the value, because a column rule masks what is in the column
-whatever it looks like. Name one entity beside the columns and the audit rows
-read `US_SSN` rather than `column:ssn`; name none and `column:ssn` is what
-they carry. The entity is a label there and nothing else — it enables no
-detection, and two of them are refused because a masked cell gets one name.
+whatever it looks like. A result-set column is one such name; so is a JSON
+key in an HTTP response, which the codec hands over as a dotted path
+(`data.password`, arrays left out) — `columns: [data]` masks every value
+under a Kubernetes Secret's `data`, `data.password` one of them, and
+`password` that key wherever it sits; where two rules apply the longer path
+wins and, at equal length, the one nearest the leaf. Name one entity beside
+the columns and the audit rows read `US_SSN` rather than `column:ssn`; name
+none and `column:ssn` is what they carry. The entity is a label there and
+nothing else — it enables no detection, and two of them are refused because
+a masked cell gets one name.
 
 The same validation cuts the other way, which will bite you in a demo:
 alcatraz **declines** `123-45-6789` and `987-65-4321`, rejecting sequential

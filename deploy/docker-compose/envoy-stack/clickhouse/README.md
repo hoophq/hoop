@@ -4,8 +4,8 @@
 
 An overlay on the stack in the parent directory: one `clickhouse-server`
 behind four lanes, one per wire protocol it exposes. The lanes add no rules;
-the three database lanes inherit the process's one guardrail and one mask
-rule, and the HTTP lane is audit-only.
+all four inherit the process's one guardrail and one mask rule. The HTTP
+lane masks the result set and enforces nothing on the SQL.
 
 ```
 client   ──TLS───────> envoy :8446 ──OPA──> hoop-inspect :18123 ──http──> clickhouse :8123   http codec
@@ -58,7 +58,7 @@ ClickHouse has four front doors and all four become explicit lanes:
 | 9000 | native | `clickhouse` | `clickhouse-native` | statement text, guardrails, bounded LZ4 block decoding, row masking |
 | 9004 | MySQL emulation | `mysql` | `clickhouse-mysql` | statement text, guardrails, row masking |
 | 9005 | PostgreSQL emulation | `postgres` | `clickhouse-pg` | statement text, guardrails, row masking |
-| 8123 | HTTP | `http` | `clickhouse-http` | fat gate, request line guardrails, audit with the SQL; no masking |
+| 8123 | HTTP | `http` | `clickhouse-http` | fat gate, request line guardrails, audit with the SQL, result masking by re-chunking |
 
 **Prefer :9000.** It is ClickHouse's own protocol. The codec clamps both
 hello revisions to 54450 so peers and inspector use one known packet layout,
@@ -69,23 +69,32 @@ and scratch space is reused block by block. The overlay sets 16 MiB per frame
 and 64 MiB per block; `clickhouse.max_frame_bytes` and
 `clickhouse.max_block_bytes` are the per-listener controls.
 
-**:8446 is an audit lane.** Two documented facts about the relay decide that.
-Guardrails scan `Statement.Text`, which on `http` is the request line
-(`sidecar/policy/pii.go`); ClickHouse takes the SQL as the POST body, so a
-rule never sees it. And `http` masking substitutes bytes under a
-`Content-Length` the gate corrects (`sidecar/gate/contentlength.go`);
-ClickHouse always answers `Transfer-Encoding: chunked`, so the body passes
-unmasked. The lane sets `mask: {rules: []}` so the config says so, rather
-than inheriting a rule that loads clean and never fires. What the lane does
-give: OPA's fat gate on `X-Hoop-User` (port `8446` is the `clickhouse`
-service in `../opa/authz.rego`), an audit record per request carrying the
-SQL (`capture_body`), and the request line scanned, which covers
-`?param_x=` values ClickHouse binds into `{x:Type}`, and `?query=` on a
-GET, which ClickHouse makes read-only.
+**:8446 enforces nothing on the SQL.** Guardrails scan `Statement.Text`,
+which on `http` is the request line (`sidecar/policy/pii.go`); ClickHouse
+takes the SQL as the POST body, so a rule never sees it. The request line is
+still scanned, which covers `?param_x=` values ClickHouse binds into
+`{x:Type}`, and `?query=` on a GET, which ClickHouse makes read-only. OPA's
+fat gate on `X-Hoop-User` sits in front (port `8446` is the `clickhouse`
+service in `../opa/authz.rego`), and every request is recorded with its SQL
+(`capture_body`).
+
+**:8446 does mask the result set.** ClickHouse always answers
+`Transfer-Encoding: chunked`, and the WebSocket-aware `http` codec re-chunks
+what it rewrites: TSV and CSV rows are lines and stream line by line;
+`JSONEachRow` is NDJSON and streams row by row, each value handed to the
+masker under its column name, so a `columns: [email]` rule names the column
+the way it does on the database lanes; `FORMAT JSON` is one document with
+the rows under `data`. `RowBinary` and `Native` are binary and pass
+untouched. gzip and deflate (`enable_http_compression=1` with an
+`Accept-Encoding`) are undone around the masker. A client that negotiates
+zstd, br or lz4 for a text or JSON result is answered 403 and the trail gets
+an error row: with a masker on the lane, that response would be the one
+that leaked.
 
 `capture_body` records both directions, and the relay has no request-only
-setting. With no masking on the lane, every result set lands in the audit
-trail in the clear, up to `max_body_bytes`. `../sidecar/read-audit.py`
+setting. The audit row is built from the bytes the server sent, so the
+original result set lands in the trail in the clear, up to `max_body_bytes`,
+even though the client received it masked. `../sidecar/read-audit.py`
 reports that as a `LEAK` on this overlay; it is right, and the demo says so
 before printing it.
 

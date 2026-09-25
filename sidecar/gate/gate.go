@@ -242,13 +242,6 @@ type Decision struct {
 	Err error
 }
 
-// errMaskSkippedStaleLength records a response body forwarded unmasked
-// because its Content-Length could not be corrected. See maskBySubstitution.
-var errMaskSkippedStaleLength = errors.New(
-	"sidecar/gate: response body forwarded unmasked: its header block is " +
-		"not in this buffer, so Content-Length cannot be corrected and a " +
-		"masked body would be truncated by the client")
-
 // Gate inspects one connection.
 //
 // It is stateful, because the underlying codec reassembles messages across
@@ -389,15 +382,20 @@ func New(sess *session.Session, cfg Config) (*Gate, error) {
 	if filter, ok := serverCodec.(StreamFilter); ok {
 		g.serverFilter = filter
 	}
-	// Discover the optional re-framing capability once, so the data path
-	// does not type-assert per packet. A codec that cannot rebuild its own
-	// frames leaves this nil and masking falls back to substitution, which
-	// MaskSupported gates.
+	// Discover the re-framing capability once, so the data path does not
+	// type-assert per packet. MaskSupported asks the registry's codec for
+	// it at load; this asks the codec actually built, because a
+	// CodecFactory can hand over anything. A masker on a codec that cannot
+	// rebuild its own frames would be forwarded around silently, which is
+	// the failure the load-time check exists to refuse.
 	if rf, ok := server.Codec().(Reframer); ok {
 		g.reframer = rf
 		if activator, ok := rf.(rewriteActivator); ok && cfg.Masker != nil {
 			activator.EnableRewrite()
 		}
+	} else if cfg.Masker != nil {
+		return nil, fmt.Errorf("sidecar/gate: a masker is configured but the %s codec (%T) cannot re-frame responses, so it could never mask them",
+			cfg.Protocol, serverCodec)
 	}
 	return g, nil
 }
@@ -599,20 +597,14 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 	// change the statement the upstream executes, which breaks correctness
 	// instead of protecting privacy.
 	//
-	// Two mechanisms, because two kinds of framing:
-	//
-	//   - Byte substitution, for a payload whose length is declared in a
-	//     header the gate can find and correct (HTTP's Content-Length).
-	//   - Re-framing, for a length-prefixed binary protocol where every row
-	//     and column carries its own size. Substituting bytes there
-	//     desynchronizes the client; the codec rebuilds the frames instead.
-	if dir == inspect.FromServer && g.masker != nil && len(data) > 0 {
-		switch {
-		case g.reframer != nil:
-			g.maskByReframing(ctx, &d, data)
-		case substitutionSafe(g.cfg.Protocol):
-			g.maskBySubstitution(ctx, &d, data)
-		}
+	// The codec does the rewriting, because only it knows the framing: a
+	// Postgres DataRow carries its own lengths, an HTTP response its
+	// Content-Length or chunk sizes, a WebSocket message its frames.
+	// Substituting bytes in any of them desynchronizes the client. A codec
+	// with no Reframer masks nothing here, and MaskSupported refuses the
+	// config for it at load.
+	if dir == inspect.FromServer && g.masker != nil && g.reframer != nil && len(data) > 0 {
+		g.maskByReframing(ctx, &d, data)
 	}
 
 	return d
@@ -799,42 +791,6 @@ func (g *Gate) RecordActivity(ctx context.Context, activity string, attrs map[st
 	return nil
 }
 
-// maskBySubstitution rewrites the payload in place and corrects the declared
-// length. HTTP only.
-//
-// Masking and retagging are one decision, not two. If the length cannot be
-// corrected the ORIGINAL bytes go out unmasked, because a masked body behind
-// a stale Content-Length is read to the old length and stops mid-token: the
-// client sees a corrupt response rather than a protected one.
-func (g *Gate) maskBySubstitution(ctx context.Context, d *Decision, data []byte) {
-	out, entities, count := g.masker.Mask(data)
-	if count == 0 {
-		return
-	}
-	// Masking changes the body LENGTH, and for HTTP the length is also
-	// declared in a header the masker never looked at. Leaving Content-Length
-	// stale makes the client read exactly that many bytes and stop
-	// mid-document. The truncated response looks like a corrupt upstream
-	// rather than a masking bug.
-	out, ok := retagContentLength(out, len(out)-len(data))
-	if !ok {
-		// Commonly a body chunk whose header block already went out, which
-		// happens whenever the upstream's header and body land in separate
-		// TCP reads. Nothing here can move the number the client was given.
-		//
-		// Audited, never silent: this is sensitive data going out in the
-		// clear, and an operator comparing a masked response against an
-		// unmasked one needs the reason in the same trail as everything else.
-		g.writeAudit(ctx, audit.ErrorEvent(g.sess, errMaskSkippedStaleLength))
-		return
-	}
-	d.Payload = out
-	d.Masked = entities
-	d.MaskedCount = count
-	g.countMasked(count)
-	g.writeAudit(ctx, audit.MaskedEvent(g.sess, entities, count))
-}
-
 // maskByReframing hands the stream to the codec, which masks each cell and
 // rebuilds the frames around the results.
 //
@@ -895,29 +851,19 @@ func (g *Gate) maskByReframing(ctx context.Context, d *Decision, data []byte) {
 	}
 }
 
-// MaskSupported reports whether a protocol's response payload can be masked
-// by either mechanism.
+// MaskSupported reports whether a protocol's response payload can be masked.
 //
-// Two ways a payload can be rewritten safely:
-//
-//   - Substitution, when the length is declared in a header the gate can
-//     correct. HTTP's Content-Length; see retagContentLength.
-//   - Re-framing, when the codec can rebuild its own frames around the new
-//     values. Postgres, whose every row and column is length-prefixed; see
-//     the Reframer interface.
-//
-// MaskSupported asks the codec instead of listing protocols, so adding a
-// re-framing codec does not require also remembering to edit this.
+// The codec rebuilds its own frames around the new values: a Postgres
+// DataRow, a MySQL or TDS row, an HTTP response body (Content-Length
+// retagged, chunks re-chunked) or a WebSocket message. MaskSupported asks
+// the codec for the Reframer capability instead of listing protocols, so a
+// new re-framing codec does not require also remembering to edit this.
 //
 // Exported so a configuration layer can REFUSE masking on a protocol that
-// supports neither, instead of accepting the setting and silently never
+// cannot re-frame, instead of accepting the setting and silently never
 // masking. One predicate, so the config check and the data path cannot drift.
 func MaskSupported(p inspect.Protocol) bool {
-	if p == inspect.HTTP {
-		return true
-	}
-	// A third way, and the reason this is not simply "ask the codec": SSH
-	// has no codec to ask. It rewrites a byte stream IN PLACE, with no
+	// SSH has no codec to ask. It rewrites a byte stream IN PLACE, with no
 	// length header to correct and no frame to rebuild, which is safe for
 	// exactly one reason — the replacement is the same size as what it
 	// replaced. The daemon refuses every other mask strategy on an ssh lane
@@ -934,12 +880,6 @@ func MaskSupported(p inspect.Protocol) bool {
 	}
 	_, ok := insp.Codec().(Reframer)
 	return ok
-}
-
-// substitutionSafe reports whether the byte-substitution path applies. The
-// data path asks this after finding no reframer.
-func substitutionSafe(p inspect.Protocol) bool {
-	return p == inspect.HTTP
 }
 
 // evaluate runs the policy, defaulting to allow when none is configured.

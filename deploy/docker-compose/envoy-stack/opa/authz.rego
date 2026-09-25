@@ -17,6 +17,10 @@
 # JWT subject that Envoy's jwt_authn filter drops into dynamic metadata
 # (input.attributes.metadataContext.filterMetadata). A header keeps the stack
 # honest about the shape without dragging an IdP into docker-compose.
+#
+# The kubernetes listener is the exception: kubectl cannot add a header, so
+# there the bearer token it already sends is the identity, looked up in a
+# static map. Same stand-in, different carrier.
 
 package envoy.authz
 
@@ -27,8 +31,20 @@ default allow := false
 http := input.attributes.request.http
 
 user := u if {
+	service != "kubernetes"
 	u := http.headers["x-hoop-user"]
 	u != ""
+}
+
+user := token_users[bearer_token] if service == "kubernetes"
+
+bearer_token := trim_prefix(http.headers.authorization, "Bearer ")
+
+# The tokens ../kubernetes/tokens.csv hands the apiserver. A token absent
+# from this map yields no user and a 401, before the apiserver sees it.
+token_users := {
+	"alice-token": "alice",
+	"bob-token": "bob",
 }
 
 # Service catalogue. In production this is data pushed by the policy bundle,
@@ -36,16 +52,17 @@ user := u if {
 # grant, so a typo fails closed rather than falling back to a shared service
 # account (the exact Teleport behaviour Matt objects to).
 grants := {
-	"alice": ["httpbin", "ledger", "spanner", "clickhouse"],
+	"alice": ["httpbin", "ledger", "spanner", "clickhouse", "kubernetes"],
 	"bob": [],
 }
 
 # One listener, one service. The base stack has a single ext_authz caller
 # (:8443 -> httpbin); the grpc/ overlay adds :8444 -> ledger, the spanner/
-# overlay :8445 -> spanner and the clickhouse/ overlay :8446 -> clickhouse,
-# and keying on the destination port keeps this file the one policy all
-# four stacks load. A port none of the rules name yields an undefined
-# service, and the grant check fails closed on it.
+# overlay :8445 -> spanner, the clickhouse/ overlay :8446 -> clickhouse and
+# the kubernetes/ overlay :8447 -> kubernetes, and keying on the destination
+# port keeps this file the one policy all five stacks load. A port none of
+# the rules name yields an undefined service, and the grant check fails
+# closed on it.
 listener_port := input.attributes.destination.address.socketAddress.portValue
 
 service := "ledger" if listener_port == 8444
@@ -54,7 +71,9 @@ service := "spanner" if listener_port == 8445
 
 service := "clickhouse" if listener_port == 8446
 
-service := "httpbin" if not listener_port in {8444, 8445, 8446}
+service := "kubernetes" if listener_port == 8447
+
+service := "httpbin" if not listener_port in {8444, 8445, 8446, 8447}
 
 allow if {
 	some svc in grants[user]
@@ -71,6 +90,14 @@ headers["x-hoop-correlation-id"] := http.headers["x-request-id"] if {
 	http.headers["x-request-id"]
 }
 
+# On the kubernetes listener the identity arrived as a token. Write the user
+# it resolved to into the header every other lane carries, so Envoy's access
+# log and the sidecar's audit row name the same principal.
+headers["x-hoop-user"] := user if {
+	allow
+	service == "kubernetes"
+}
+
 # ------------------------------------------------------------------- denials
 status_code := 200 if {
 	allow
@@ -78,7 +105,15 @@ status_code := 200 if {
 	not user
 } else := 403
 
-body := "missing X-Hoop-User header" if status_code == 401
+body := "missing X-Hoop-User header" if {
+	status_code == 401
+	service != "kubernetes"
+}
+
+body := "missing or unknown bearer token" if {
+	status_code == 401
+	service == "kubernetes"
+}
 
 body := sprintf("user %q is not granted access to %q by the fat gate (tier 1)", [user, service]) if {
 	status_code == 403

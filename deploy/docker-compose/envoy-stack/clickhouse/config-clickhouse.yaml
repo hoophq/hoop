@@ -15,8 +15,9 @@
 #
 # The appdb and httpbin lanes are the LIVE parts of ../sidecar/config.yaml.
 # The ClickHouse lanes add NO rules: this process has one guardrail and one
-# masking rule in the defaults below. All three database lanes inherit both.
-# The HTTP lane remains audit-only and switches masking off explicitly.
+# masking rule in the defaults below, and all four ClickHouse-facing lanes
+# inherit both. The HTTP lane enforces nothing on the SQL (see its comment)
+# but does mask what comes back.
 #
 # Validate without starting anything:
 #   cd sidecar/cmd && go run . -validate \
@@ -67,37 +68,42 @@ listeners:
     listen: 0.0.0.0:18080
     upstream: httpbin:8080
 
-  # ClickHouse's HTTP interface, as an AUDIT lane: OPA's fat gate in front,
-  # every request recorded with the SQL it carried, nothing enforced on the
-  # SQL itself. Two facts about the relay decide that, both documented in
-  # sidecar/:
+  # ClickHouse's HTTP interface. OPA's fat gate in front, every request
+  # recorded with the SQL it carried, the result set masked on the way back,
+  # nothing enforced on the SQL itself. That last part is a fact about the
+  # relay, documented in sidecar/: guardrails scan Statement.Text, which on
+  # http is the request line (policy/pii.go). ClickHouse takes the SQL as
+  # the POST body, so a guardrail never sees it. Only a GET ?query= is
+  # scanned, and ClickHouse makes GET read-only, so the one shape a rule
+  # can refuse is a shape that could not write. For enforcement, point the
+  # client at :9000, :9004 or :9005.
   #
-  #   - Guardrails scan Statement.Text, which on http is the request line
-  #     (policy/pii.go). ClickHouse takes the SQL as the POST body, so a
-  #     guardrail never sees it. Only a GET ?query= is scanned, and
-  #     ClickHouse makes GET read-only, so the one shape a rule can refuse
-  #     is a shape that could not write.
-  #   - Response masking on http substitutes bytes and corrects
-  #     Content-Length (gate/contentlength.go). ClickHouse answers with
-  #     Transfer-Encoding: chunked, always, so the body passes unmasked.
-  #     mask: {rules: []} says so here instead of inheriting a rule that
-  #     would load clean and mask nothing.
+  # Masking works here with the WebSocket-aware http codec: ClickHouse
+  # answers Transfer-Encoding: chunked, always, and the codec re-chunks what
+  # it rewrites. TSV and CSV rows are lines and go out line by line;
+  # JSONEachRow is NDJSON and goes out row by row, each value under its
+  # column name, so a `columns: [email]` rule would name the column; FORMAT
+  # JSON is one document with the rows under `data`. RowBinary and Native
+  # are binary and pass untouched. gzip and deflate (enable_http_compression
+  # with Accept-Encoding) are undone around the masker; a client that
+  # negotiates zstd, br or lz4 for a text or JSON result gets a 403 and an
+  # error row, because forwarding that would be the one unmasked response.
   #
   # capture_body is what puts the SQL into the audit trail (http.body on
   # the statement record) and in front of an AI analyzer, should one be
   # configured; without it the lane records "POST /" and nothing else. It
-  # captures BOTH directions and there is no request-only setting, so with
-  # no masking on this lane every result set lands in the trail in the
-  # clear, up to max_body_bytes. ../sidecar/read-audit.py reports that as a
-  # LEAK on this overlay, correctly. The headers list is an allowlist.
-  # X-ClickHouse-Key is the password and stays off it, same as Authorization
-  # on any http lane. For enforcement, point the client at :9004 or :9005.
+  # captures BOTH directions and there is no request-only setting, so the
+  # ORIGINAL result set still lands in the trail in the clear, up to
+  # max_body_bytes, even though the client received it masked: the audit
+  # row is built from the bytes the server sent, the client gets the
+  # rewritten ones. ../sidecar/read-audit.py reports that as a LEAK on this
+  # overlay, correctly. The headers list is an allowlist. X-ClickHouse-Key
+  # is the password and stays off it, same as Authorization on any http
+  # lane.
   - name: clickhouse-http
     protocol: http
     listen: 0.0.0.0:18123
     upstream: clickhouse:8123
-    mask:
-      rules: []
     http:
       capture_body: true
       max_body_bytes: 65536

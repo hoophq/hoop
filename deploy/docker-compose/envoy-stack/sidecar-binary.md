@@ -393,8 +393,8 @@ The HTTP codec exposes nothing by default. Without a body the model sees `POST
       high: block
 ```
 
-A request with no body is skipped rather than classified, so a forgotten
-`capture_body` looks like an analyzer that never fires.
+A request with no body is classified from its request line and the headers
+the lane allowlists; `capture_body` is what adds a POST's payload.
 
 With it on, `POST /orders/12345?export=all` reaches the model as the request
 line the client sent, the resource the trigger matched, and the body:
@@ -557,11 +557,12 @@ recognizing the value, and the detector deliberately refuses obvious fixtures
 like `123-45-6789`. Use a column rule when the protocol names the value, an
 entity rule when it does not.
 
-**The analyzer on an HTTP lane needs `capture_body: true`.** The HTTP codec
-exposes no body by default, and a request with no body is skipped rather than
-classified, so the symptom is an analyzer that does not fire rather than an
-error. The same block on a postgres lane needs nothing extra, because the
-statement text is there either way.
+**The analyzer on an HTTP lane sees what the `http:` block exposes.** The
+codec exposes no body and no header by default, so a POST reaches the model
+as its request line alone until `capture_body: true`, and a GET carries only
+its path until `headers:` lists what else to show. The same block on a
+postgres lane needs nothing extra, because the statement text is there
+either way.
 
 ---
 

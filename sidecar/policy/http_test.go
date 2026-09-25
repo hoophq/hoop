@@ -68,6 +68,24 @@ func TestHTTPResourceDoubleStar(t *testing.T) {
 	if rules.Evaluate(httpStmt(&inspect.HTTPDetail{Resource: "/administration"})).Denied {
 		t.Error("/administration matched /admin/**; prefix matching must respect segment boundaries")
 	}
+
+	// A wildcard segment before the trailing /** is still a wildcard: one
+	// rule covers a collection in every namespace and everything under it.
+	deep, _ := policy.NewRules([]policy.Rule{
+		policy.Rule{Name: "no-secrets", Type: policy.MatchHTTPResource}.
+			WithResources("/api/v1/namespaces/*/secrets/**"),
+	})
+	for _, res := range []string{
+		"/api/v1/namespaces/default/secrets",
+		"/api/v1/namespaces/kube-system/secrets/k3s-serving",
+	} {
+		if !deep.Evaluate(httpStmt(&inspect.HTTPDetail{Resource: res})).Denied {
+			t.Errorf("%s was allowed by /api/v1/namespaces/*/secrets/**", res)
+		}
+	}
+	if deep.Evaluate(httpStmt(&inspect.HTTPDetail{Resource: "/api/v1/namespaces/default/configmaps/x"})).Denied {
+		t.Error("a configmap matched the secrets pattern")
+	}
 }
 
 func TestHTTPResourceDoubleStarAfterWildcard(t *testing.T) {
@@ -129,6 +147,135 @@ func TestHTTPResourceMethodNarrowing(t *testing.T) {
 		Method: "GET", Resource: "/users/*",
 	})).Denied {
 		t.Error("GET was denied by a POST/DELETE rule")
+	}
+}
+
+// A request whose intent is in its headers: kubectl fetches a Secret's
+// table view with `Accept: application/json;as=Table;...` and its contents
+// with `Accept: application/json`, on the same GET. The fail-closed rule
+// names the one safe shape with headers_not: everything else on that
+// resource is denied, the request that omits the header included.
+func TestHTTPHeaderRuleDeniesUnlessSafeShape(t *testing.T) {
+	rules, err := policy.NewRules([]policy.Rule{
+		policy.Rule{Name: "no-secret-contents", Type: policy.MatchHTTPHeader,
+			Message: "reading a secret is not permitted"}.
+			WithResources("/api/v1/namespaces/*/secrets/*").
+			WithMethods("GET").
+			WithHeadersNot(map[string][]string{"Accept": {"application/json;as=Table;*"}}),
+	})
+	if err != nil {
+		t.Fatalf("NewRules: %v", err)
+	}
+	secret := func(h map[string]string) inspect.Statement {
+		return httpStmt(&inspect.HTTPDetail{
+			Method: "GET", Resource: "/api/v1/namespaces/default/secrets/db", Headers: h,
+		})
+	}
+	for name, tc := range map[string]struct {
+		headers map[string]string
+		denied  bool
+	}{
+		"kubectl -o yaml":          {map[string]string{"accept": "application/json"}, true},
+		"quality parameter":        {map[string]string{"accept": "application/json;q=1"}, true},
+		"protobuf":                 {map[string]string{"accept": "application/vnd.kubernetes.protobuf"}, true},
+		"any":                      {map[string]string{"accept": "*/*"}, true},
+		"no Accept at all (curl)":  {nil, true},
+		"table view, kubectl get":  {map[string]string{"accept": "application/json;as=Table;v=v1;g=meta.k8s.io,application/json"}, false},
+		"table view, other casing": {map[string]string{"accept": "Application/JSON;as=Table;v=v1;g=meta.k8s.io"}, false},
+	} {
+		v := rules.Evaluate(secret(tc.headers))
+		if v.Denied != tc.denied {
+			t.Errorf("%s: denied = %v, want %v", name, v.Denied, tc.denied)
+		}
+		if v.Denied && v.Message != "reading a secret is not permitted" {
+			t.Errorf("%s: Message = %q", name, v.Message)
+		}
+	}
+	if rules.Evaluate(httpStmt(&inspect.HTTPDetail{
+		Method: "GET", Resource: "/api/v1/namespaces/default/secrets",
+		Headers: map[string]string{"accept": "application/json"},
+	})).Denied {
+		t.Error("listing secrets was denied; resources scope the rule")
+	}
+}
+
+// The positive form: headers lists the unsafe shapes it knows. It cannot
+// deny a shape it does not list, which is why the fail-closed form exists.
+func TestHTTPHeaderRulePositiveForm(t *testing.T) {
+	rules, _ := policy.NewRules([]policy.Rule{
+		policy.Rule{Name: "r", Type: policy.MatchHTTPHeader}.
+			WithHeaders(map[string][]string{"Accept": {"application/json", "application/yaml", `\*/\*`}}),
+	})
+	get := func(h map[string]string) inspect.Statement {
+		return httpStmt(&inspect.HTTPDetail{Method: "GET", Resource: "/x", Headers: h})
+	}
+	if !rules.Evaluate(get(map[string]string{"accept": "Application/YAML"})).Denied {
+		t.Error("header values must match case-insensitively")
+	}
+	if !rules.Evaluate(get(map[string]string{"accept": "*/*"})).Denied {
+		t.Error(`\*/\* must match a literal */*`)
+	}
+	if rules.Evaluate(get(map[string]string{"accept": "application/json;q=1"})).Denied {
+		t.Error("a pattern without * is an exact match on the whole value")
+	}
+	if rules.Evaluate(get(nil)).Denied {
+		t.Error("a request without the header cannot match a positive rule")
+	}
+}
+
+// The rule reads the client's intent. A response carries the server's
+// headers, and an allowlisted Content-Type on a 200 must not turn into a
+// denial after the fact.
+func TestHTTPHeaderRuleIgnoresResponses(t *testing.T) {
+	rules, _ := policy.NewRules([]policy.Rule{
+		policy.Rule{Name: "r", Type: policy.MatchHTTPHeader}.
+			WithHeaders(map[string][]string{"content-type": {"application/json*"}}),
+		policy.Rule{Name: "n", Type: policy.MatchHTTPHeader}.
+			WithHeadersNot(map[string][]string{"x-safe": {"yes"}}),
+	})
+	resp := httpStmt(&inspect.HTTPDetail{
+		Method: "GET", Resource: "/x", StatusCode: 200,
+		Headers: map[string]string{"content-type": "application/json; charset=utf-8"},
+	})
+	if v := rules.Evaluate(resp); v.Denied {
+		t.Fatalf("a response was denied by an http_header rule: %+v", v)
+	}
+	req := httpStmt(&inspect.HTTPDetail{
+		Method: "GET", Resource: "/x",
+		Headers: map[string]string{"content-type": "application/json"},
+	})
+	if !rules.Evaluate(req).Denied {
+		t.Fatal("the same headers on a request were not denied")
+	}
+}
+
+// Several headers in one rule must all match; several values for one header
+// are alternatives; `*` matches any run; an empty list means present.
+func TestHTTPHeaderRuleCombinators(t *testing.T) {
+	rules, _ := policy.NewRules([]policy.Rule{
+		policy.Rule{Name: "no-kubectl-delete", Type: policy.MatchHTTPHeader}.
+			WithHeaders(map[string][]string{
+				"kubectl-command": {"kubectl delete*", "kubectl drain"},
+				"x-hoop-user":     {},
+			}),
+	})
+	stmt := func(h map[string]string) inspect.Statement {
+		return httpStmt(&inspect.HTTPDetail{Method: "DELETE", Resource: "/api/v1/namespaces/*/pods/*", Headers: h})
+	}
+	for name, tc := range map[string]struct {
+		headers map[string]string
+		denied  bool
+	}{
+		"delete with a user":      {map[string]string{"kubectl-command": "kubectl delete", "x-hoop-user": "alice"}, true},
+		"delete flags, wildcard":  {map[string]string{"kubectl-command": "kubectl delete --all", "x-hoop-user": "alice"}, true},
+		"drain, second pattern":   {map[string]string{"kubectl-command": "kubectl drain", "x-hoop-user": "bob"}, true},
+		"delete without the user": {map[string]string{"kubectl-command": "kubectl delete"}, false},
+		"get, not a listed value": {map[string]string{"kubectl-command": "kubectl get", "x-hoop-user": "alice"}, false},
+		"prefix without wildcard": {map[string]string{"kubectl-command": "kubectl drain --force", "x-hoop-user": "alice"}, false},
+	} {
+		if got := rules.Evaluate(stmt(tc.headers)).Denied; got != tc.denied {
+			t.Errorf("%s: denied = %v, want %v", name, got, tc.denied)
+		}
 	}
 }
 
@@ -222,6 +369,8 @@ func TestInvalidHTTPRulesRejected(t *testing.T) {
 		"no resources": {Name: "r", Type: policy.MatchHTTPResource},
 		"no statuses":  {Name: "r", Type: policy.MatchHTTPStatus},
 		"bad status":   policy.Rule{Name: "r", Type: policy.MatchHTTPStatus}.WithStatuses("nope"),
+		"no headers":   {Name: "r", Type: policy.MatchHTTPHeader},
+		"empty header": policy.Rule{Name: "r", Type: policy.MatchHTTPHeader}.WithHeaders(map[string][]string{" ": nil}),
 	}
 	for name, rule := range cases {
 		if _, err := policy.NewRules([]policy.Rule{rule}); err == nil {
