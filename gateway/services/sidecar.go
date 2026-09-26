@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -162,6 +163,38 @@ func ParseSidecarConfigurationPatch(raw json.RawMessage) (merge json.RawMessage,
 		return nil, false, err
 	}
 	return merged, removeLoadFromDisk, nil
+}
+
+// ErrSidecarConfigInvalid is a configuration the sidecar would refuse to load.
+// The message and the problems are the sidecar's own.
+type ErrSidecarConfigInvalid struct {
+	Err      error
+	Problems []string
+}
+
+func (e ErrSidecarConfigInvalid) Error() string { return e.Err.Error() }
+
+// CheckSidecarConfiguration refuses a configuration the sidecar would refuse,
+// with the daemon's own validation. The files it names live on the sidecar's
+// host, so only the sidecar checks those. A load_from_disk document is not
+// served, so it is not checked.
+func CheckSidecarConfiguration(cfg daemon.Config) error {
+	if cfg.LoadFromDisk != nil && *cfg.LoadFromDisk {
+		return nil
+	}
+	raw, err := json.Marshal(cfg)
+	if err != nil {
+		return err
+	}
+	if err := daemon.CheckConfigBytes(raw); err != nil {
+		invalid := ErrSidecarConfigInvalid{Err: err, Problems: []string{err.Error()}}
+		var problems daemon.ConfigProblems
+		if errors.As(err, &problems) {
+			invalid.Problems = problems
+		}
+		return invalid
+	}
+	return nil
 }
 
 // ErrSidecarConfigOverCap is returned when a configuration authors more rules

@@ -66,6 +66,11 @@ export default defineConfig([
       ],
     },
   },
+  // The Vite config runs in Node, not the browser.
+  {
+    files: ['vite.config.js'],
+    languageOptions: { globals: globals.node },
+  },
   // Which product the bundle renders as is read in src/modes only. Pages, layout
   // and features never branch on it; a difference is a sibling file instead.
   {

@@ -189,7 +189,13 @@ done
   `inspect/wiretypes.go`. Every one of those fails QUIETLY when it is missing:
   the wrong dialect misreads a statement, a missing deny frame closes the
   socket with no message, a missing builder makes `ai_analysis` rules
-  classify nothing. README.md's Protocols section carries the table.
+  classify nothing. README.md's Protocols section carries the table. A new
+  protocol also needs a label in `daemon/schema.go` `protocolLabels`.
+
+- **A new `ListenerConfig` field needs a UI tag.** The control plane renders
+  its listener form from `daemon/schema.json` (ADR-0021). Tag the field
+  `label:"..."`, or `ui:"-"` to keep it out of the form, then regenerate:
+  `go test ./daemon -run TestListenerSchemaIsCurrent -update`.
 
 - **Construct codecs through the seam, never libhoop directly.** A decoder
   built with the zero `Options` has no classifier: it reports statement text

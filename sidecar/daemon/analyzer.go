@@ -31,22 +31,22 @@ type HTTPCodecConfig struct {
 	// An analyzer on the lane judges a bodiless request from its path and
 	// headers either way; without this it never sees what a POST or a PUT
 	// carries.
-	CaptureBody bool `json:"capture_body"`
+	CaptureBody bool `json:"capture_body" label:"Capture the request body" help:"Lets policy and the AI analyzer read what a POST or PUT carries."`
 
 	// MaxBodyBytes truncates a captured body. Zero uses the codec default.
-	MaxBodyBytes int `json:"max_body_bytes,omitempty"`
+	MaxBodyBytes int `json:"max_body_bytes,omitempty" label:"Max body bytes" help:"0 uses the codec default of 64 KiB."`
 
 	// Headers names the headers to expose, matched case-insensitively.
 	// There is no capture-all. An http_header rule on the lane may only
 	// name headers listed here; the config is refused otherwise.
-	Headers []string `json:"headers,omitempty"`
+	Headers []string `json:"headers,omitempty" label:"Headers" help:"Allowlist exposed to policy; an http_header rule may only name these. Authorization, cookie, proxy-authorization and set-cookie are always refused."`
 
 	// SensitiveQueryParams adds query parameter names whose value the codec
 	// redacts before anything sees the request: the audit trail, OPA, the
 	// analyzer. The codec already redacts the common credential names
 	// (access_token, api_key, sig, X-Amz-Signature, ...); this list widens
 	// that for a deployment's own spelling. There is no way to narrow it.
-	SensitiveQueryParams []string `json:"sensitive_query_params,omitempty"`
+	SensitiveQueryParams []string `json:"sensitive_query_params,omitempty" label:"Sensitive query parameters" help:"Extra parameter names whose value is redacted before anything sees the request."`
 }
 
 // headerNames is the allowlist as the codec receives it: trimmed and

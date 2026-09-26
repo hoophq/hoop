@@ -12,8 +12,8 @@ import (
 // from these values. Both are bytes. Zero keeps the codec defaults (16 MiB per
 // frame, 64 MiB per decompressed block).
 type ClickHouseCodecConfig struct {
-	MaxFrameBytes int `json:"max_frame_bytes,omitempty"`
-	MaxBlockBytes int `json:"max_block_bytes,omitempty"`
+	MaxFrameBytes int `json:"max_frame_bytes,omitempty" label:"Max frame bytes" help:"0 keeps the default of 16 MiB."`
+	MaxBlockBytes int `json:"max_block_bytes,omitempty" label:"Max block bytes" help:"0 keeps the default of 64 MiB."`
 }
 
 func (c *ClickHouseCodecConfig) validate(lane string) []string {

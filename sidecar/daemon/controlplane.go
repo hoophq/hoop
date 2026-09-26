@@ -300,13 +300,13 @@ func resolveConfigSource(local *Config, tokenFlag string) (*Config, error) {
 	}
 
 	// The same strict decode, deprecation folding and validation the file
-	// path gets. The gateway round-trips through this decoder before
-	// answering, so a refusal here means the two builds disagree on the
-	// schema, which the error should say out loud.
+	// path gets. The gateway runs CheckConfigBytes on every write, so a
+	// refusal here is a file only this host can check, a document stored
+	// before that check, or two builds that disagree on the schema.
 	cfg, err := LoadConfigBytes(raw)
 	if err != nil {
 		return nil, fmt.Errorf("the control plane at %s sent a config this build cannot load "+
-			"(the two versions may disagree on the schema): %w", planeURL, err)
+			"(an invalid value, or a key this version does not know): %w", planeURL, err)
 	}
 	// Validate relaxes the listener check whenever a plane is configured,
 	// which includes this process. Listener-less answers were routed into

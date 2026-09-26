@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig, searchForWorkspaceRoot } from 'vite';
 import react from '@vitejs/plugin-react';
 import fs from 'fs';
 import path from 'path';
@@ -10,6 +10,8 @@ import path from 'path';
 // them from disk means `npm run dev` works without shadow-cljs (the control
 // plane never loads the CLJS bundle); only /js and /css still go to :8280.
 const CLJS_PUBLIC_DIR = path.resolve(__dirname, '../webapp/resources/public');
+// The sidecar listener schema, generated from the daemon's struct tags.
+const SIDECAR_SCHEMA = path.resolve(__dirname, '../sidecar/daemon/schema.json');
 const CLJS_STATIC_PREFIXES = ['/images/', '/icons/', '/data/'];
 const CONTENT_TYPES = {
   '.svg': 'image/svg+xml',
@@ -67,7 +69,8 @@ export default defineConfig({
   plugins: [react(), cljsStaticAssets()],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src')
+      '@': path.resolve(__dirname, './src'),
+      '@sidecar-schema': SIDECAR_SCHEMA
     }
   },
   build: {
@@ -76,6 +79,9 @@ export default defineConfig({
     emptyOutDir: true
   },
   server: {
+    fs: {
+      allow: [searchForWorkspaceRoot(process.cwd()), SIDECAR_SCHEMA]
+    },
     proxy: {
       // API requests → gateway backend.
       // Reads API_URL from .env — same variable the CLJS build uses via shadow-cljs closure-defines.

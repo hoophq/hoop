@@ -13,6 +13,14 @@ type HTTPError struct {
 	Message string `json:"message" example:"the error description"`
 }
 
+// SidecarConfigError is a sidecar configuration the sidecar would refuse.
+type SidecarConfigError struct {
+	Message string `json:"message" example:"invalid config: ..."`
+	// Every problem the sidecar's own validation found, one per entry. Each
+	// starts with the listener it is about, when it is about one.
+	Problems []string `json:"problems,omitempty" example:"newdb: ssh.destinations_allowed: \"10.30.10:1234\" is not a network"`
+}
+
 type HTTPSuccess struct {
 	Message string `json:"message" example:"operation completed successfully"`
 }
