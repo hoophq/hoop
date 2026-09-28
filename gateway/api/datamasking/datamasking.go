@@ -28,18 +28,37 @@ import (
 // server has no DLP provider configured (the invariant and remediation text
 // live in services.CheckRedactProvider). Read/list/delete stay available so
 // existing rules remain visible and removable.
+//
+// The control plane skips it here and runs requireControlPlaneProvider once
+// the rule's sidecar spec is known.
 func requireRedactProvider(c *gin.Context) bool {
-	if err := redactProviderError(appconfig.Get().IsControlPlane()); err != nil {
+	if appconfig.Get().IsControlPlane() {
+		return true
+	}
+	if err := services.CheckRedactProvider(); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return false
 	}
 	return true
 }
 
-// redactProviderError skips the check on the control plane: sidecars mask
-// in-process (sidecar/pii/alcatraz) and never call a gateway DLP provider.
-func redactProviderError(controlPlane bool) error {
-	if controlPlane {
+// requireControlPlaneProvider is the control plane's provider check. It does
+// nothing on the gateway.
+func requireControlPlaneProvider(c *gin.Context, spec json.RawMessage) bool {
+	if !appconfig.Get().IsControlPlane() {
+		return true
+	}
+	if err := controlPlaneProviderError(spec); err != nil {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
+		return false
+	}
+	return true
+}
+
+// controlPlaneProviderError lets a rule with a sidecar spec skip the DLP
+// check, because sidecars mask in-process. A rule without one keeps it.
+func controlPlaneProviderError(spec json.RawMessage) error {
+	if len(spec) > 0 && string(spec) != "null" {
 		return nil
 	}
 	return services.CheckRedactProvider()
@@ -251,6 +270,9 @@ func Post(c *gin.Context) {
 	supportedEntityTypes := payload.SupportedEntityTypes
 	customEntityTypes := payload.CustomEntityTypes
 
+	if !requireControlPlaneProvider(c, req.SidecarSpec) {
+		return
+	}
 	if sidecarbind.Refuse(c, ctx.GetOrgID(), sidecarbind.Request{
 		Kind: services.SidecarRuleMask, Name: req.Name, StoredName: "",
 		Spec: req.SidecarSpec, Targets: req.SidecarTargets,
@@ -383,6 +405,9 @@ func Put(c *gin.Context) {
 	bind := sidecarbind.Request{
 		Kind: services.SidecarRuleMask, Name: req.Name, StoredName: existing.Name,
 		Spec: req.SidecarSpec, StoredSpec: existing.SidecarSpec, Targets: req.SidecarTargets,
+	}
+	if !requireControlPlaneProvider(c, bind.EffectiveSpec()) {
+		return
 	}
 	if sidecarbind.Refuse(c, ctx.GetOrgID(), bind) {
 		return

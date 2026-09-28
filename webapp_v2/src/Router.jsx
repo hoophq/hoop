@@ -563,7 +563,11 @@ function Router() {
         path="/guardrails"
         element={
           <Page adminOnly licenseFeature="guardrails">
-            <Guardrails />
+            {/* Sidecars enforce guardrails without a DLP provider. */}
+            <ByProduct
+              gateway={<Guardrails />}
+              controlPlane={<Guardrails providerRequired={false} />}
+            />
           </Page>
         }
       />

@@ -5,6 +5,7 @@ package apigdatamasking
 // DLP provider configured.
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -68,15 +69,31 @@ func TestHandlersRejectedBeforeTouchingDatabase(t *testing.T) {
 	}
 }
 
-// The control plane stores rules for sidecars, which mask in-process, so it
-// accepts them without a gateway DLP provider. The gateway still refuses.
-func TestRedactProviderErrorByMode(t *testing.T) {
+// On the control plane, a rule with a sidecar spec needs no DLP provider. A
+// rule without one keeps the check.
+func TestControlPlaneProviderError(t *testing.T) {
 	loadNoProviderConfig(t)
 
-	if err := redactProviderError(true); err != nil {
-		t.Errorf("control plane: expected no error, got %v", err)
+	if err := controlPlaneProviderError(json.RawMessage(`{"rules":[{"name":"email"}]}`)); err != nil {
+		t.Errorf("rule with a sidecar spec: expected no error, got %v", err)
 	}
-	if err := redactProviderError(false); err == nil {
-		t.Error("gateway: expected an error without a DLP provider")
+	for _, spec := range []json.RawMessage{nil, json.RawMessage("null")} {
+		if err := controlPlaneProviderError(spec); err == nil {
+			t.Errorf("sidecar spec %q: expected an error without a DLP provider", spec)
+		}
+	}
+}
+
+// The control plane check must not change the gateway: it writes nothing and
+// lets the handler continue.
+func TestControlPlaneProviderIsNoOpOnGateway(t *testing.T) {
+	loadNoProviderConfig(t)
+
+	c, rec := testContext()
+	if !requireControlPlaneProvider(c, nil) {
+		t.Fatal("expected requireControlPlaneProvider to pass on the gateway")
+	}
+	if c.Writer.Written() || rec.Body.Len() > 0 {
+		t.Errorf("expected no response on the gateway, got %d (body: %s)", rec.Code, rec.Body.String())
 	}
 }
