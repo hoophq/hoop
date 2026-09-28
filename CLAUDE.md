@@ -5,7 +5,7 @@
 A Go workspace (`go.work`) for the hoop gateway, agent, and CLI.
 
 - Product modules: `gateway/`, `agent/`, `client/`, `common/`, `tunnel/`.
-- `sidecar/` adds seven more workspace entries (the module plus six nested ones). It was `hoopinspect/` until the CLI command became `hoop start sidecar`.
+- `sidecar/` adds nine more workspace entries (the module plus eight nested ones). It was `hoopinspect/` until the CLI command became `hoop start sidecar`.
 - `agentrs/` — Rust companion binary for RDP/TLS proxy workloads.
 - `webapp/` — legacy ClojureScript SPA; see `webapp/CLAUDE.md` for its own conventions.
 - `webapp_v2/` — React frontend that is replacing it.
@@ -90,7 +90,7 @@ A Go workspace (`go.work`) for the hoop gateway, agent, and CLI.
 ### sidecar (`sidecar/`)
 - Pure function over bytes: turns database wire-protocol bytes into statements, and statements into allow/deny verdicts. Opens no socket, terminates no TLS.
 - The module root holds no Go files. `inspect/` is the core (bytes to statements, codec registry) and `daemon/` assembles the relay from config and carries the CLI entry point.
-- Root module depends on `github.com/hoophq/libhoop` (private) and nothing else. Six nested modules isolate the heavier dependencies: `analyzer/vertex`, `cmd` (the `hoop-inspect` relay binary), `config/yaml`, `lexer/conformance`, `pii/alcatraz`, `store/sqlite`.
+- Root module depends on `github.com/hoophq/libhoop` (private) and nothing else. Eight nested modules isolate the heavier dependencies: `analyzer/vertex`, `cmd` (the `hoop-inspect` relay binary), `config/yaml`, `descriptors/gcs`, `lexer/conformance`, `mcp` (review status MCP server), `pii/alcatraz`, `store/sqlite`.
 - CI reaches it through `make test-sidecar`, which `make test-oss` depends on: `go test github.com/hoophq/hoop/...` matches no module here, so the target walks every `go.mod` under `sidecar/` instead.
 - Read `sidecar/CLAUDE.md` before changing anything under it; `sidecar/README.md` has the API and the relay/sidecar deployment.
 

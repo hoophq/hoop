@@ -76,6 +76,11 @@ type Config struct {
 	// Admin serves health and stats. Disabled when Listen is empty.
 	Admin AdminConfig `json:"admin"`
 
+	// MCP serves review status to agents over MCP (ADR-0021). Absent means
+	// off. The server lives in the nested sidecar/mcp module; checkMCP
+	// refuses the block in a build that did not link it.
+	MCP *MCPConfig `json:"mcp,omitempty"`
+
 	// PII configures the optional detector plugin. This package decodes it
 	// without interpreting it: knowing what an alcatraz Options looks like
 	// would drag back the dependency the split exists to keep out.
@@ -1020,6 +1025,8 @@ func (c *Config) Validate() error {
 	// LoadConfigBytes, before Setup has seen the license flag or
 	// HOOP_LICENSE, so a cap here would refuse a licensed config for a
 	// limit its license lifts. buildLanes is the single site instead.
+
+	problems = append(problems, c.MCP.validate()...)
 
 	seen := map[string]bool{}
 	for i, l := range c.Listeners {
