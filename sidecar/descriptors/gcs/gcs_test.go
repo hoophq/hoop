@@ -2,11 +2,18 @@ package gcs
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/json"
+	"encoding/pem"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -41,7 +48,7 @@ func fetch(t *testing.T, entry string) ([]byte, error) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return Fetch(context.Background(), u)
+	return Fetch(context.Background(), u, http.DefaultClient)
 }
 
 // realFindCredentials is the resolver as shipped, captured before any test
@@ -254,7 +261,7 @@ func TestDeadlineBoundsCredentialDiscoveryAndMinting(t *testing.T) {
 		findCredentials = find
 		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 		start := time.Now()
-		_, err := Fetch(ctx, u)
+		_, err := Fetch(ctx, u, http.DefaultClient)
 		cancel()
 		if !errors.Is(err, context.DeadlineExceeded) {
 			t.Errorf("%s: error = %v, want the deadline", name, err)
@@ -268,6 +275,81 @@ func TestDeadlineBoundsCredentialDiscoveryAndMinting(t *testing.T) {
 	}
 	if len(*got) != 0 {
 		t.Fatalf("%d requests reached the API", len(*got))
+	}
+}
+
+// serviceAccountKey renders a service-account key whose token_uri is a
+// local server. The key is real: the JWT flow signs its assertion before it
+// posts, so a placeholder fails before any request is made.
+func serviceAccountKey(t *testing.T, tokenURI string) string {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(map[string]string{
+		"type":         "service_account",
+		"client_email": "reader@p.iam.gserviceaccount.com",
+		"private_key":  string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})),
+		"token_uri":    tokenURI,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw)
+}
+
+// Behind an egress proxy that re-signs TLS, the caller's client is the only
+// one that trusts the proxy. The token exchange must ride it as well as the
+// object read: a mint on http.DefaultClient fails verification and no
+// descriptor set ever loads. The stand-in's certificate is trusted only by
+// srv.Client(), so the default client standing in for the injected one is
+// refused at the token endpoint.
+func TestFetchSendsTheTokenExchangeAndTheReadThroughTheCallersClient(t *testing.T) {
+	var mints atomic.Int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/token", func(w http.ResponseWriter, _ *http.Request) {
+		mints.Add(1)
+		w.Header().Set("content-type", "application/json")
+		_, _ = io.WriteString(w, `{"access_token":"minted","token_type":"Bearer","expires_in":3600}`)
+	})
+	mux.HandleFunc("/storage/v1/b/b/o/o", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("authorization") != "Bearer minted" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		_, _ = io.WriteString(w, "set")
+	})
+	srv := httptest.NewTLSServer(mux)
+	t.Cleanup(srv.Close)
+
+	prevEndpoint, prevFind, prevToken := endpoint, findCredentials, token
+	t.Cleanup(func() { endpoint, findCredentials, token = prevEndpoint, prevFind, prevToken })
+	endpoint, findCredentials, token = srv.URL, realFindCredentials, nil
+	t.Setenv(CredentialsJSONEnv, serviceAccountKey(t, srv.URL+"/token"))
+
+	u, err := url.Parse("gs://b/o")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Fetch(context.Background(), u, http.DefaultClient); err == nil ||
+		!strings.Contains(err.Error(), "certificate") {
+		t.Fatalf("a mint over the default client = %v, want a certificate error", err)
+	}
+	if n := mints.Load(); n != 0 {
+		t.Fatalf("token endpoint saw %d mints over an untrusting client", n)
+	}
+
+	blob, err := Fetch(context.Background(), u, srv.Client())
+	if err != nil {
+		t.Fatalf("Fetch through the trusting client: %v", err)
+	}
+	if string(blob) != "set" || mints.Load() != 1 {
+		t.Fatalf("blob = %q after %d mints, want %q after 1", blob, mints.Load(), "set")
 	}
 }
 
