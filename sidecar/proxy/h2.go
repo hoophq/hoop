@@ -174,6 +174,15 @@ type h2Lane struct {
 	srv    *http.Server
 	ln     *memListener
 	tlsCfg *tls.Config // nil on a plaintext lane
+
+	// bridges maps each connection the lane's server is serving to its
+	// bridge, for ConnContext and ConnState. It is a map and not a wrapper
+	// type around the connection because net/http up to Go 1.26 serves h2
+	// only on a connection whose dynamic type IS *tls.Conn: a wrapper
+	// embedding one is read as plaintext HTTP/1, which this server refuses,
+	// so every TLS h2 client got its connection closed.
+	mu      sync.Mutex
+	bridges map[net.Conn]*h2Bridge
 }
 
 // h2BridgeKey is the connection-context key for the h2Bridge that owns a
@@ -181,7 +190,7 @@ type h2Lane struct {
 type h2BridgeKey struct{}
 
 func newH2Lane(s *Server) *h2Lane {
-	l := &h2Lane{s: s, ln: newMemListener()}
+	l := &h2Lane{s: s, ln: newMemListener(), bridges: map[net.Conn]*h2Bridge{}}
 	protocols := new(http.Protocols)
 	if s.cfg.DownstreamTLS != nil {
 		// Cloned so the operator's config is not mutated: the relay owns
@@ -234,8 +243,8 @@ func newH2Lane(s *Server) *h2Lane {
 		MaxHeaderBytes: maxH2HeaderBytes,
 		ErrorLog:       errLog,
 		ConnContext: func(ctx context.Context, c net.Conn) context.Context {
-			if bc, ok := c.(bridgedClient); ok {
-				return context.WithValue(ctx, h2BridgeKey{}, bc.bridge())
+			if b := l.bridge(c, false); b != nil {
+				return context.WithValue(ctx, h2BridgeKey{}, b)
 			}
 			return ctx
 		},
@@ -246,8 +255,8 @@ func newH2Lane(s *Server) *h2Lane {
 			if st != http.StateClosed && st != http.StateHijacked {
 				return
 			}
-			if bc, ok := c.(bridgedClient); ok {
-				bc.bridge().finish()
+			if b := l.bridge(c, true); b != nil {
+				b.finish()
 			}
 		},
 	}
@@ -272,15 +281,29 @@ func (l *h2Lane) close() {
 	_ = l.srv.Close()
 }
 
+// bridge returns the bridge registered for c, nil when none; forget drops
+// the registration, for a connection the server is done with.
+func (l *h2Lane) bridge(c net.Conn, forget bool) *h2Bridge {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	b := l.bridges[c]
+	if forget {
+		delete(l.bridges, c)
+	}
+	return b
+}
+
 // run hands one h2 connection to the lane's server and waits for it to end.
+// conn goes to the server as it is, a *tls.Conn on a TLS lane, for the
+// reason on h2Lane.bridges.
 func (l *h2Lane) run(ctx context.Context, conn net.Conn) {
 	b := newH2Bridge(ctx, l.s, conn)
-	var served net.Conn = &h2cConn{Conn: conn, b: b}
-	if tc, ok := conn.(*tls.Conn); ok {
-		served = &h2TLSConn{Conn: tc, b: b}
-	}
+	l.mu.Lock()
+	l.bridges[conn] = b
+	l.mu.Unlock()
 	l.s.log.Debug("h2 connection bridged", "peer", conn.RemoteAddr().String())
-	if err := l.ln.push(served); err != nil {
+	if err := l.ln.push(conn); err != nil {
+		l.bridge(conn, true)
 		b.finish()
 		return
 	}
@@ -496,31 +519,6 @@ type bridgedConn struct {
 
 func (c *bridgedConn) RemoteAddr() net.Addr { return c.remote }
 func (c *bridgedConn) LocalAddr() net.Addr  { return c.local }
-
-// bridgedClient is an accepted h2 connection inside the lane's server; it
-// carries the bridge that ConnContext and ConnState look up.
-type bridgedClient interface {
-	bridge() *h2Bridge
-}
-
-// h2cConn and h2TLSConn are two types, not one, because net/http decides
-// TLS from the dynamic type: a conn with ConnectionState is served as TLS,
-// and one without it as h2c. The embedded *tls.Conn promotes exactly the
-// methods it looks for; the handshake is already done, so the server's own
-// HandshakeContext call returns at once.
-type h2cConn struct {
-	net.Conn
-	b *h2Bridge
-}
-
-func (c *h2cConn) bridge() *h2Bridge { return c.b }
-
-type h2TLSConn struct {
-	*tls.Conn
-	b *h2Bridge
-}
-
-func (c *h2TLSConn) bridge() *h2Bridge { return c.b }
 
 // memListener is the in-process listener the lane's h2 server accepts
 // from. The relay's own listener stays the only socket: serveHTTPLane
