@@ -40,6 +40,18 @@ type tools struct {
 	reviews daemon.ReviewStatusReader
 	// poll is pollInterval outside tests.
 	poll time.Duration
+	// life ends every call when the server stops. Nil means no bound.
+	life context.Context
+}
+
+// bound cancels ctx when the server stops.
+func (t *tools) bound(ctx context.Context) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(ctx)
+	if t.life == nil {
+		return ctx, cancel
+	}
+	stop := context.AfterFunc(t.life, cancel)
+	return ctx, func() { stop(); cancel() }
 }
 
 type statusInput struct {
@@ -89,6 +101,8 @@ func (t *tools) status(ctx context.Context, _ *sdk.CallToolRequest, in statusInp
 	if in.ID == "" {
 		return nil, reviewOutput{}, errors.New("id is required")
 	}
+	ctx, cancel := t.bound(ctx)
+	defer cancel()
 	rev, err := t.read(ctx, in.ID)
 	if err != nil {
 		return nil, reviewOutput{}, err
@@ -100,6 +114,8 @@ func (t *tools) wait(ctx context.Context, req *sdk.CallToolRequest, in waitInput
 	if in.ID == "" {
 		return nil, reviewOutput{}, errors.New("id is required")
 	}
+	ctx, cancel := t.bound(ctx)
+	defer cancel()
 	timeout := resolveWaitTimeout(in.TimeoutSeconds)
 	progress := progressNotifier(ctx, req, timeout)
 

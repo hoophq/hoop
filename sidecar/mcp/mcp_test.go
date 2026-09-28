@@ -235,3 +235,56 @@ func TestServeFailsOnABusyPortAndStopsWithItsContext(t *testing.T) {
 		t.Fatal("the server did not stop with its context")
 	}
 }
+
+// Shutdown does not cancel requests on its own. Without the run context on
+// them, a wait in flight would keep polling the plane after the process was
+// told to stop.
+func TestShutdownStopsAWaitInFlight(t *testing.T) {
+	reviews := &fakeReviews{statuses: []string{statusPending}}
+	asked := func() int { reviews.mu.Lock(); defer reviews.mu.Unlock(); return len(reviews.asked) }
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	served := make(chan error, 1)
+	go func() {
+		served <- serve(ctx, ln, newHandler(&tools{reviews: reviews, poll: 10 * time.Millisecond, life: ctx}),
+			slog.New(slog.NewTextHandler(io.Discard, nil)))
+	}()
+
+	client := sdk.NewClient(&sdk.Implementation{Name: "test"}, nil)
+	cs, err := client.Connect(context.Background(), &sdk.StreamableClientTransport{
+		Endpoint: "http://" + ln.Addr().String() + Path, DisableStandaloneSSE: true, MaxRetries: -1}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cs.Close()
+	go func() {
+		_, _ = cs.CallTool(context.Background(), &sdk.CallToolParams{Name: "review_wait",
+			Arguments: map[string]any{"id": "r1", "timeout_seconds": 300}})
+	}()
+
+	for deadline := time.Now().Add(5 * time.Second); asked() < 3; {
+		if time.Now().After(deadline) {
+			t.Fatal("the wait never started polling")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	select {
+	case err := <-served:
+		if err != nil {
+			t.Fatalf("serve returned %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("serve did not return: a request outlived shutdown")
+	}
+	after := asked()
+	time.Sleep(100 * time.Millisecond)
+	if n := asked(); n != after {
+		t.Errorf("the wait polled %d more times after shutdown", n-after)
+	}
+}
