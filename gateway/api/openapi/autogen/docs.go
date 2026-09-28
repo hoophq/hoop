@@ -17476,6 +17476,12 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": "default-access-request-rule"
                 },
+                "connection_name": {
+                    "description": "The connection (role) this review points at. On a sidecar review, the role its listener is stored as (experimental.sidecar_resources)",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "payments.appdb"
+                },
                 "created_at": {
                     "description": "The time the resource was created",
                     "type": "string",
@@ -17517,6 +17523,12 @@ const docTemplate = `{
                     "type": "string",
                     "readOnly": true,
                     "example": "This command is not allowed in production."
+                },
+                "resource_name": {
+                    "description": "The resource of that connection. On a sidecar review, the resource its sidecar is stored as (experimental.sidecar_resources)",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "payments"
                 },
                 "review_groups_data": {
                     "description": "Contains the groups that requires to approve this review",

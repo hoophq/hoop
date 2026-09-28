@@ -601,6 +601,8 @@ func toOpenApiReview(r *models.Review) *openapi.Review {
 		RejectionReason:       r.RejectionReason,
 		SidecarID:             nullStringPtr(r.SidecarID),
 		ListenerName:          nullStringPtr(r.ListenerName),
+		ConnectionName:        nullStringPtr(sql.NullString{String: r.ConnectionName, Valid: true}),
+		ResourceName:          nullStringPtr(r.ResourceName),
 	}
 }
 

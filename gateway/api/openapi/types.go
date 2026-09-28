@@ -1432,6 +1432,10 @@ type Review struct {
 	SidecarID *string `json:"sidecar_id,omitempty" format:"uuid" readonly:"true" example:"5F5E5C6E-6C3A-4E9A-9E8B-2D6A7F1B0C4D"`
 	// The sidecar listener this review is bound to. Absent on a review that came from a connection
 	ListenerName *string `json:"listener_name,omitempty" readonly:"true" example:"appdb"`
+	// The connection (role) this review points at. On a sidecar review, the role its listener is stored as (experimental.sidecar_resources)
+	ConnectionName *string `json:"connection_name,omitempty" readonly:"true" example:"payments.appdb"`
+	// The resource of that connection. On a sidecar review, the resource its sidecar is stored as (experimental.sidecar_resources)
+	ResourceName *string `json:"resource_name,omitempty" readonly:"true" example:"payments"`
 }
 
 type ReviewOwner struct {

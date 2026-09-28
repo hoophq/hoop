@@ -5958,6 +5958,12 @@
             "readOnly": true,
             "type": "string"
           },
+          "connection_name": {
+            "description": "The connection (role) this review points at. On a sidecar review, the role its listener is stored as (experimental.sidecar_resources)",
+            "example": "payments.appdb",
+            "readOnly": true,
+            "type": "string"
+          },
           "created_at": {
             "description": "The time the resource was created",
             "example": "2024-07-25T15:56:35.317601Z",
@@ -5997,6 +6003,12 @@
           "rejection_reason": {
             "description": "The reason provided by the reviewer when rejecting this review",
             "example": "This command is not allowed in production.",
+            "readOnly": true,
+            "type": "string"
+          },
+          "resource_name": {
+            "description": "The resource of that connection. On a sidecar review, the resource its sidecar is stored as (experimental.sidecar_resources)",
+            "example": "payments",
             "readOnly": true,
             "type": "string"
           },

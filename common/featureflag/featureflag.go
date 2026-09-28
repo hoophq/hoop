@@ -61,6 +61,13 @@ var catalog = map[string]Flag{
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway},
 	},
+	"experimental.sidecar_resources": {
+		Name:        "experimental.sidecar_resources",
+		Description: "Control plane only (ADR-0022 prototype). Store each sidecar as a resource and each listener as a role, and link new sidecar reviews to the listener's role. The sidecar, the UI and the served configuration do not change.",
+		Default:     false,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentGateway},
+	},
 	"experimental.db_exec_driver": {
 		Name:        "experimental.db_exec_driver",
 		Description: "Run Postgres/MySQL/MSSQL/Oracle exec commands through in-process Go database drivers instead of spawning the vendor CLI (psql/mysql/sqlcmd/sqlplus). Eliminates client meta-command shell escapes (e.g. psql \\!, sqlplus HOST) and keeps the connection credential out of any user-reachable process.",

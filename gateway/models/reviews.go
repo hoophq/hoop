@@ -63,6 +63,11 @@ type Review struct {
 	ConnectionName string           `gorm:"column:connection_name"`
 	ConnectionID   sql.NullString   `gorm:"column:connection_id"`
 
+	// ResourceName is the resource of the connection the review points at.
+	// Read only. A sidecar review has one when the ADR-0022 prototype stored
+	// its listener as a role.
+	ResourceName sql.NullString `gorm:"column:resource_name;->"`
+
 	// SidecarID and ListenerName bind a review to a sidecar's listener, in
 	// place of the connection a gateway review points at. SidecarID is nulled
 	// if the sidecar is deleted; the listener is what the review is about, so
@@ -187,7 +192,9 @@ func GetReviewByIdOrSid(orgID, id string) (*Review, error) {
 	var review Review
 	err := DB.Raw(`
 	SELECT
-		id, org_id, session_id, connection_name, sidecar_id, listener_name,
+		id, org_id, session_id, connection_name, connection_id, sidecar_id, listener_name,
+		( SELECT c.resource_name FROM private.connections c
+		  WHERE c.org_id = rv.org_id AND c.id = rv.connection_id ) AS resource_name,
 		type, access_duration_sec, status,
 		blob_input_id, input_env_vars, input_client_args, time_window, access_request_rule_name,
 		force_approval_groups, min_approvals, owner_id, owner_email, owner_name, owner_slack_id,
@@ -223,7 +230,9 @@ func ListReviews(orgID string) (*[]Review, error) {
 	var reviews []Review
 	err := DB.Raw(`
 	SELECT
-		id, org_id, session_id, connection_name, sidecar_id, listener_name,
+		id, org_id, session_id, connection_name, connection_id, sidecar_id, listener_name,
+		( SELECT c.resource_name FROM private.connections c
+		  WHERE c.org_id = rv.org_id AND c.id = rv.connection_id ) AS resource_name,
 		type, access_duration_sec, status,
 		blob_input_id, input_env_vars, input_client_args, access_request_rule_name,
 		force_approval_groups, min_approvals, owner_id, owner_email, owner_name, owner_slack_id,

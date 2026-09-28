@@ -600,10 +600,34 @@ func createSidecarReview(sidecar *models.Sidecar, listenerName, statement, state
 	}
 
 	rev := newSidecarReview(sidecar, listenerName, sessionID, statementHash, rule, policy, now)
+	if err := linkSidecarReviewRole(sidecar, listenerName, &sess, rev); err != nil {
+		return nil, err
+	}
 	if err := models.CreateSidecarReview(models.DB, sess, rev, statement); err != nil {
 		return nil, err
 	}
 	return rev, nil
+}
+
+// linkSidecarReviewRole points the review and its session at the role the
+// listener is stored as, when the ADR-0022 prototype is on and the listener
+// has one. Otherwise both stay unlinked, as before.
+func linkSidecarReviewRole(sidecar *models.Sidecar, listenerName string, sess *models.Session, rev *models.Review) error {
+	if listenerName == "" || !services.SidecarResourcesEnabled(sidecar.OrgID) {
+		return nil
+	}
+	role, err := models.GetSidecarListenerRole(models.DB, sidecar.OrgID, sidecar.ID, listenerName)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		// Not projected yet: the next configuration write stores it.
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	sess.Connection = role.ConnectionName
+	rev.ConnectionName = role.ConnectionName
+	rev.ConnectionID = sql.NullString{String: role.ConnectionID, Valid: true}
+	return nil
 }
 
 // newSidecarReview builds the row, and with it the whole approval policy the
@@ -618,10 +642,10 @@ func newSidecarReview(sidecar *models.Sidecar, listenerName, sessionID, statemen
 		Status:    models.ReviewStatusPending,
 		SessionID: sessionID,
 
-		// The listener this statement arrived on, in place of a connection.
-		// connection_name is NOT NULL and stays empty: a sidecar review never
-		// resolves one, and a listener name in that column could collide with
-		// a real connection of the same name.
+		// The listener this statement arrived on. connection_name is NOT NULL
+		// and stays empty unless linkSidecarReviewRole sets the listener's
+		// role: a listener name in that column could collide with a real
+		// connection, and a role name cannot, since the role owns it.
 		SidecarID:    sql.NullString{String: sidecar.ID, Valid: true},
 		ListenerName: sql.NullString{String: listenerName, Valid: listenerName != ""},
 

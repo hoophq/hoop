@@ -142,6 +142,32 @@ is a sidecar change and a later ADR. The role-level junctions
 FK. `listener_name` stays readable during the transition so an old sidecar's
 review filing (which names the listener) resolves to the row.
 
+## Prototype
+
+A first cut runs behind `experimental.sidecar_resources` (default off), on
+reviews only. It maps **sidecar = resource, listener = role**: each sidecar is
+a `resources` row and each listener a `connections` row under it, both
+`managed_by='sidecar'` with `agent_id` NULL. Resource and role are storage
+only; the UI, the handshake, the first-boot import and the Sidecars pages
+still speak sidecar and listener, and `sidecars.configuration` stays the
+source of the served document.
+
+- Migration 000125 adds `resources.managed_by`, `sidecars.resource_name` (FK
+  to `resources`) and `sidecar_listener_roles` (listener to role, FKs on both
+  sides).
+- `services.ProjectSidecarTx` writes the rows inside every configuration write
+  (create, PUT, PATCH, import) and removes the roles of dropped listeners. A
+  row with the same name and another owner is refused with 422, never adopted.
+- A new sidecar review points `connection_name`/`connection_id` at the
+  listener's role, and `GET /reviews` reports `connection_name` and
+  `resource_name`. Dedupe and claim still key on `(sidecar_id,
+  listener_name)`.
+- A test pins that the served revision does not change when the rows are
+  written.
+
+This does not yet move composition or rule bindings onto the rows (steps 1 to
+3 below).
+
 ## Migration plan
 
 Each step ships on its own and leaves the system consistent.

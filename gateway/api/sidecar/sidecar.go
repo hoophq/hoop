@@ -137,10 +137,22 @@ func writeSidecarConfiguration(db *gorm.DB, licenseData json.RawMessage, write f
 				return err
 			}
 		}
+		if err := projectSidecar(tx, sc); err != nil {
+			return err
+		}
 		item = sc
 		return nil
 	})
 	return item, err
+}
+
+// projectSidecar stores the sidecar as a resource and its listeners as roles
+// when the ADR-0022 prototype is on. It changes nothing the sidecar is served.
+func projectSidecar(tx *gorm.DB, sc *models.Sidecar) error {
+	if !appconfig.Get().IsControlPlane() || !services.SidecarResourcesEnabled(sc.OrgID) {
+		return nil
+	}
+	return services.ProjectSidecarTx(tx, sc)
 }
 
 // answerSidecarWrite maps what writeSidecarConfiguration refused onto a status.
@@ -151,6 +163,7 @@ func answerSidecarWrite(c *gin.Context, err error) {
 	var broken services.ErrSidecarBindingBroken
 	var missing services.ErrSidecarCapabilityMissing
 	var invalid services.ErrSidecarAnalyzerInvalid
+	var projection services.ErrSidecarProjectionInvalid
 	switch {
 	case errors.Is(err, models.ErrNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"message": "sidecar not found"})
@@ -162,6 +175,8 @@ func answerSidecarWrite(c *gin.Context, err error) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": missing.Error()})
 	case errors.As(err, &invalid):
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": invalid.Error()})
+	case errors.As(err, &projection):
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": projection.Error()})
 	case errors.Is(err, errSwitchNeedsPatch):
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 	default:
@@ -238,7 +253,14 @@ func Post(c *gin.Context) {
 		CreatedBy:     ctx.UserEmail,
 	}
 
-	switch err := models.CreateSidecar(models.DB, sidecar); {
+	var projection services.ErrSidecarProjectionInvalid
+	err = models.DB.Transaction(func(tx *gorm.DB) error {
+		if err := models.CreateSidecar(tx, sidecar); err != nil {
+			return err
+		}
+		return projectSidecar(tx, sidecar)
+	})
+	switch {
 	case err == nil:
 		c.JSON(http.StatusCreated, openapi.SidecarCreateResponse{
 			SidecarResponse: toResponse(*sidecar),
@@ -246,6 +268,8 @@ func Post(c *gin.Context) {
 		})
 	case errors.Is(err, models.ErrAlreadyExists):
 		c.JSON(http.StatusConflict, gin.H{"message": "a sidecar with this name already exists"})
+	case errors.As(err, &projection):
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": projection.Error()})
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed creating sidecar")
 	}
@@ -342,7 +366,19 @@ func Get(c *gin.Context) {
 //	@Router			/sidecars/{nameOrID} [delete]
 func Delete(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
-	_, err := models.DeleteSidecarByNameOrID(models.DB, ctx.OrgID, c.Param("nameOrID"))
+	err := models.DB.Transaction(func(tx *gorm.DB) error {
+		sc, err := models.GetSidecarByNameOrID(tx, ctx.OrgID, c.Param("nameOrID"))
+		if err != nil {
+			return err
+		}
+		// Unconditional: rows stored while the prototype was on must not
+		// outlive the sidecar after it is turned off.
+		if err := models.DeleteSidecarStorage(tx, ctx.OrgID, sc.ID); err != nil {
+			return err
+		}
+		_, err = models.DeleteSidecarByNameOrID(tx, ctx.OrgID, sc.ID)
+		return err
+	})
 	if err != nil {
 		if errors.Is(err, models.ErrNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"message": "sidecar not found"})
@@ -732,6 +768,7 @@ func ImportConfiguration(c *gin.Context) {
 	// writer racing the import meets a unique key and not a stale check.
 	var item *models.Sidecar
 	var invalid services.ErrImportedRuleInvalid
+	var projection services.ErrSidecarProjectionInvalid
 	err = models.DB.Transaction(func(tx *gorm.DB) error {
 		stripped, rules, err := services.SplitSidecarConfiguration(sidecar.Name, cfg,
 			services.ImportedRuleNameTaken(tx, sidecar.OrgID))
@@ -746,13 +783,18 @@ func ImportConfiguration(c *gin.Context) {
 		if err != nil {
 			return err
 		}
-		return services.ImportSidecarRulesTx(tx, sidecar.OrgID, sidecar.ID, rules)
+		if err := services.ImportSidecarRulesTx(tx, sidecar.OrgID, sidecar.ID, rules); err != nil {
+			return err
+		}
+		return projectSidecar(tx, item)
 	})
 	switch {
 	case err == nil:
 		c.JSON(http.StatusOK, item.Configuration)
 	case errors.As(err, &invalid):
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": invalid.Error()})
+	case errors.As(err, &projection):
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": projection.Error()})
 	case errors.Is(err, services.ErrImportedRuleConflict):
 		c.JSON(http.StatusConflict, gin.H{"message": services.ErrImportedRuleConflict.Error()})
 	case errors.Is(err, models.ErrAlreadyExists):
