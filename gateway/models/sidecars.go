@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/sidecar/daemon"
+	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
@@ -67,11 +68,17 @@ type Sidecar struct {
 	ServedRevision  *string    `gorm:"column:served_revision"`
 	AppliedRevision *string    `gorm:"column:applied_revision"`
 	LastOutcome     *string    `gorm:"column:last_outcome"`
+
+	// Capabilities is what the last handshake reported in
+	// daemon.CapabilitiesHeader. Nil until the sidecar handshakes; empty for
+	// a build too old to send the header.
+	Capabilities pq.StringArray `gorm:"column:capabilities;type:text[]"`
 }
 
 const sidecarColumns = `
 	s.id, s.org_id, s.name, s.created_by, s.created_at, s.configuration,
-	s.last_seen_at, s.reported_version, s.served_revision, s.applied_revision, s.last_outcome`
+	s.last_seen_at, s.reported_version, s.served_revision, s.applied_revision, s.last_outcome,
+	s.capabilities`
 
 func CreateSidecar(db *gorm.DB, s *Sidecar) error {
 	if s.ID == "" {
@@ -189,7 +196,7 @@ func UpdateSidecarConfiguration(db *gorm.DB, orgID, nameOrID string, configurati
 	UPDATE private.sidecars
 	SET configuration = ?
 	WHERE org_id = ? AND `+identifierClause+`
-	RETURNING id, org_id, name, created_by, created_at, configuration`,
+	RETURNING id, org_id, name, created_by, created_at, configuration, capabilities`,
 		configuration, orgID, nameOrID).
 		Scan(&item).
 		Error
@@ -226,7 +233,7 @@ func PatchSidecarConfiguration(db *gorm.DB, orgID, nameOrID string, merge json.R
 	UPDATE private.sidecars
 	SET configuration = `+expr+`
 	WHERE org_id = ? AND `+identifierClause+`
-	RETURNING id, org_id, name, created_by, created_at, configuration`,
+	RETURNING id, org_id, name, created_by, created_at, configuration, capabilities`,
 		string(merge), orgID, nameOrID).
 		Scan(&item).
 		Error
@@ -318,13 +325,32 @@ func DeleteSidecarByNameOrID(db *gorm.DB, orgID, nameOrID string) (string, error
 // Called from the handshake only. The configuration poll deliberately records
 // nothing, so a sidecar that polls between handshakes cannot overwrite what it
 // last reported about itself.
-func RecordSidecarHandshake(db *gorm.DB, sidecarID, version, appliedRevision, lastOutcome, servedRevision string) error {
+//
+// capabilities is stored as an array even when empty, so a build too old to
+// report reads apart from a sidecar that never handshaked.
+func RecordSidecarHandshake(db *gorm.DB, sidecarID, version, appliedRevision, lastOutcome, servedRevision string, capabilities []string) error {
+	if capabilities == nil {
+		capabilities = []string{}
+	}
 	return db.Exec(`
 	UPDATE private.sidecars SET
 		last_seen_at = NOW(),
 		reported_version = NULLIF(?, ''),
 		applied_revision = NULLIF(?, ''),
 		last_outcome = NULLIF(?, ''),
-		served_revision = NULLIF(?, '')
-	WHERE id = ?`, version, appliedRevision, lastOutcome, servedRevision, sidecarID).Error
+		served_revision = NULLIF(?, ''),
+		capabilities = ?
+	WHERE id = ?`, version, appliedRevision, lastOutcome, servedRevision,
+		pq.StringArray(capabilities), sidecarID).Error
+}
+
+// RecordSidecarCapabilities stores what a sidecar reported when its handshake
+// was refused. It leaves last_seen_at alone: a sidecar that cannot run must not
+// read as recently seen.
+func RecordSidecarCapabilities(db *gorm.DB, sidecarID string, capabilities []string) error {
+	if capabilities == nil {
+		capabilities = []string{}
+	}
+	return db.Exec(`UPDATE private.sidecars SET capabilities = ? WHERE id = ?`,
+		pq.StringArray(capabilities), sidecarID).Error
 }

@@ -663,3 +663,94 @@ func TestAnApprovalSpentAfterTheConnectionEndedDoesNotRun(t *testing.T) {
 		t.Errorf("the audit record carries review id %q, want the spent 9f97", got)
 	}
 }
+
+func returnMode(c *analyzer.Config) { c.ReviewMode = analyzer.ReviewReturn }
+
+// Return mode answers a pending review at once, with the id and the retry
+// contract, and never enters the wait: an agent's tool call ends long before
+// a human answers.
+func TestReturnModeDeniesAPendingReviewAtOnce(t *testing.T) {
+	rev := &recordingReviewer{res: analyzer.ReviewResult{ID: "9f97", Status: "PENDING"}}
+	v := holdingEvaluator(t, rev, returnMode).Evaluate(deleteStatement())
+
+	if !v.Denied {
+		t.Fatal("a pending review was forwarded")
+	}
+	for _, want := range []string{"9f97", "waiting for approval", "resend the identical statement"} {
+		if !strings.Contains(v.Message, want) {
+			t.Errorf("denial %q does not say %q", v.Message, want)
+		}
+	}
+	if got := rev.claimedIDs(); len(got) != 0 {
+		t.Errorf("return mode claimed %v; it must not wait", got)
+	}
+	if got := v.Annotations[analyzer.MetadataReviewMode]; got != "return" {
+		t.Errorf("review_mode is %q, want return", got)
+	}
+	if got := v.Annotations[analyzer.MetadataReviewModeSource]; got != "listener" {
+		t.Errorf("review_mode_source is %q, want listener", got)
+	}
+}
+
+// A settled review denies with its status in return mode as in hold mode.
+func TestReturnModeNamesASettledReview(t *testing.T) {
+	for status, want := range map[string]string{
+		"REJECTED": "was rejected",
+		"REVOKED":  "was revoked",
+	} {
+		t.Run(status, func(t *testing.T) {
+			rev := &recordingReviewer{res: analyzer.ReviewResult{ID: "9f97", Status: status}}
+			v := holdingEvaluator(t, rev, returnMode).Evaluate(deleteStatement())
+
+			if !v.Denied || !strings.Contains(v.Message, want) || !strings.Contains(v.Message, "9f97") {
+				t.Errorf("denied=%v message=%q, want a denial saying %q with the id", v.Denied, v.Message, want)
+			}
+			if strings.Contains(v.Message, "resend") {
+				t.Errorf("a settled review tells the client to resend: %q", v.Message)
+			}
+		})
+	}
+}
+
+// The retry after approval is the release: the backend spends the approval
+// on the filing call and the statement travels once.
+func TestReturnModeForwardsAnApprovedRetry(t *testing.T) {
+	rev := &recordingReviewer{res: analyzer.ReviewResult{Forward: true, ID: "9f97", Status: "EXECUTED"}}
+	v := holdingEvaluator(t, rev, returnMode).Evaluate(deleteStatement())
+
+	if v.Denied {
+		t.Fatalf("an approved retry was denied: %q", v.Message)
+	}
+	if got := v.Annotations[analyzer.MetadataReviewID]; got != "9f97" {
+		t.Errorf("review_id is %q, want 9f97", got)
+	}
+	if got := len(rev.statements()); got != 1 {
+		t.Errorf("filed %d times, want 1", got)
+	}
+}
+
+// Hold stays the default, and the record says so.
+func TestHoldIsTheDefaultReviewMode(t *testing.T) {
+	rev := &recordingReviewer{
+		res:    analyzer.ReviewResult{ID: "9f97", Status: "PENDING"},
+		claims: []analyzer.ReviewResult{{ID: "9f97", Status: "REJECTED"}},
+	}
+	v := holdingEvaluator(t, rev, nil).Evaluate(deleteStatement())
+
+	if got := rev.claimedIDs(); len(got) == 0 {
+		t.Error("the default mode did not wait")
+	}
+	if got := v.Annotations[analyzer.MetadataReviewMode]; got != "hold" {
+		t.Errorf("review_mode is %q, want hold", got)
+	}
+}
+
+func TestAnUnknownReviewModeIsRefused(t *testing.T) {
+	_, err := analyzer.New(analyzer.Config{
+		Provider:   &stubProvider{level: analyzer.RiskHigh},
+		ReviewMode: "later",
+	})
+	if err == nil || !strings.Contains(err.Error(), "later") {
+		t.Fatalf("New accepted review mode %q: err=%v", "later", err)
+	}
+}

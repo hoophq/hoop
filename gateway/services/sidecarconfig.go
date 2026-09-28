@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/gateway/models"
@@ -297,6 +298,9 @@ func mergeAnalyzerBlock(base *daemon.LaneAnalyzerConfig, rule daemon.LaneAnalyze
 	if rule.ApprovalRule != "" {
 		out.ApprovalRule = rule.ApprovalRule
 	}
+	if rule.ReviewMode != "" {
+		out.ReviewMode = rule.ReviewMode
+	}
 	return &out
 }
 
@@ -327,4 +331,62 @@ func appendGuardrails(gc *daemon.GuardrailsConfig, rules []policy.Rule) *daemon.
 	out := *gc
 	out.Rules = append(append([]policy.Rule{}, gc.Rules...), rules...)
 	return &out
+}
+
+// ErrSidecarCapabilityMissing marks a document the sidecar's build cannot
+// decode. It is the admin's to fix, so it reads 422.
+type ErrSidecarCapabilityMissing struct{ Reason string }
+
+func (e ErrSidecarCapabilityMissing) Error() string { return e.Reason }
+
+// CheckSidecarCapabilities refuses a composed document that the sidecar's last
+// handshake says it cannot decode. A sidecar that never handshaked passes: its
+// support is unknown, and the handshake refuses to serve it instead.
+func CheckSidecarCapabilities(sc *models.Sidecar, composed daemon.Config) error {
+	if sc.Capabilities == nil {
+		return nil
+	}
+	if err := daemon.CheckServable(composed, sc.Capabilities); err != nil {
+		return ErrSidecarCapabilityMissing{Reason: fmt.Sprintf("sidecar %q: %v", sc.Name, err)}
+	}
+	return nil
+}
+
+// ErrSidecarAnalyzerInvalid marks a composed analyzer block the sidecar would
+// refuse. It is the admin's to fix, so it reads 422.
+type ErrSidecarAnalyzerInvalid struct{ Reason string }
+
+func (e ErrSidecarAnalyzerInvalid) Error() string { return e.Reason }
+
+// validateComposedAnalyzers runs the sidecar's own check on every lane's
+// analyzer block AS SERVED. A rule and a listener block are each valid alone
+// and can compose into one the sidecar refuses, such as review_mode on a lane
+// whose bound rule holds nothing; the sidecar then refuses the whole document.
+func validateComposedAnalyzers(cfg daemon.Config) error {
+	var problems []string
+	for _, l := range cfg.Listeners {
+		problems = append(problems, daemon.ValidateLaneAnalyzerBlock(l.Analyzer, l.Name)...)
+	}
+	if len(problems) > 0 {
+		return ErrSidecarAnalyzerInvalid{Reason: strings.Join(problems, "; ")}
+	}
+	return nil
+}
+
+// CheckComposedSidecarConfiguration refuses a configuration write whose served
+// document a sidecar could not run: an analyzer block the sidecar refuses, or
+// a feature its last handshake did not report. It composes, because a rule
+// bound to a lane can be what breaks the block.
+func CheckComposedSidecarConfiguration(db *gorm.DB, sc *models.Sidecar) error {
+	composed, err := ComposeSidecarConfiguration(db, sc)
+	if err != nil {
+		if errors.Is(err, ErrSidecarRulesUnavailable) {
+			return err
+		}
+		return ErrSidecarBindingBroken{Reason: err.Error()}
+	}
+	if err := validateComposedAnalyzers(composed); err != nil {
+		return err
+	}
+	return CheckSidecarCapabilities(sc, composed)
 }

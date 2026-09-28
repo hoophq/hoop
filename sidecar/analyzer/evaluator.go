@@ -183,6 +183,10 @@ type Config struct {
 	// paging or waiting on a human, and a lane that reached no control plane
 	// fails closed rather than forwarding what it promised to hold.
 	Review Reviewer
+
+	// ReviewMode decides what a PENDING review does to its statement. Empty
+	// is ReviewHold.
+	ReviewMode ReviewMode
 }
 
 // Evaluator classifies statements and turns verdicts into policy decisions.
@@ -243,6 +247,9 @@ func New(cfg Config) (*Evaluator, error) {
 	}
 	if cfg.MaxInputBytes <= 0 {
 		cfg.MaxInputBytes = DefaultMaxInputBytes
+	}
+	if !cfg.ReviewMode.Valid() {
+		return nil, fmt.Errorf("sidecar/analyzer: unknown review mode %q", cfg.ReviewMode)
 	}
 	holds := false
 	for level, action := range cfg.Actions {

@@ -352,3 +352,28 @@ func TestASpecWithAnUnknownKeyIsRefused(t *testing.T) {
 		t.Fatal("want a refusal for a spec carrying a key no sidecar declares")
 	}
 }
+
+// The rule owns review_mode when it names one, like approval_rule; otherwise
+// the listener's own mode stays.
+func TestAnAnalyzerRuleReviewModeWinsWhenSet(t *testing.T) {
+	base := &daemon.LaneAnalyzerConfig{ReviewMode: "return"}
+	if got := mergeAnalyzerBlock(base, daemon.LaneAnalyzerConfig{}); got.ReviewMode != "return" {
+		t.Errorf("a rule naming no mode dropped the listener's: %q", got.ReviewMode)
+	}
+	if got := mergeAnalyzerBlock(base, daemon.LaneAnalyzerConfig{ReviewMode: "hold"}); got.ReviewMode != "hold" {
+		t.Errorf("the rule's mode did not win: %q", got.ReviewMode)
+	}
+}
+
+// A return lane bound to a rule that holds nothing composes into a block the
+// sidecar refuses; the plane refuses it first.
+func TestAComposedBlockTheSidecarRefusesIsReported(t *testing.T) {
+	cfg := daemon.Config{Listeners: []daemon.ListenerConfig{{
+		Name:     "agents",
+		Analyzer: mergeAnalyzerBlock(&daemon.LaneAnalyzerConfig{ReviewMode: "return"}, daemon.LaneAnalyzerConfig{HighRisk: "block"}),
+	}}}
+	err := validateComposedAnalyzers(cfg)
+	if err == nil || !strings.Contains(err.Error(), "nothing on this lane would hold one") {
+		t.Fatalf("the composed block was accepted: %v", err)
+	}
+}

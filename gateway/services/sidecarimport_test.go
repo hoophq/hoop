@@ -72,7 +72,7 @@ func importFixture() daemon.Config {
 			{Name: "appdb", Protocol: "postgres",
 				Guardrails: &daemon.GuardrailsConfig{Rules: []policy.Rule{gr("lane-a")}},
 				Analyzer: &daemon.LaneAnalyzerConfig{
-					HighRisk: "require_review", ApprovalRule: "dba", MaxCalls: 40,
+					HighRisk: "require_review", ApprovalRule: "dba", ReviewMode: "return", MaxCalls: 40,
 					Trigger: &policy.AITrigger{Tables: []string{"payments"}}, Prompt: "p",
 				}},
 			{Name: "optout", Protocol: "mysql",
@@ -150,8 +150,15 @@ func TestSplitSidecarConfigurationServesTheSameDocument(t *testing.T) {
 	// import checks that rule against the database.
 	a := got["appdb"].Analyzer
 	if a == nil || a.HighRisk != "require_review" || a.MaxCalls != 40 || a.Prompt != "p" ||
-		a.Trigger == nil || a.ApprovalRule != "dba" {
+		a.Trigger == nil || a.ApprovalRule != "dba" || a.ReviewMode != "return" {
 		t.Errorf("appdb analyzer after the fold: %+v", a)
+	}
+	// review_mode travels with the decision: left in the base, the base
+	// would name a mode on a lane that holds nothing.
+	for _, l := range stripped.Listeners {
+		if l.Analyzer != nil && l.Analyzer.ReviewMode != "" {
+			t.Errorf("lane %q base kept review_mode %q", l.Name, l.Analyzer.ReviewMode)
+		}
 	}
 	if stripped.Guardrails == nil || stripped.Guardrails.Mode != "observe" {
 		t.Errorf("the top-level guardrails mode must stay in the document: %+v", stripped.Guardrails)
