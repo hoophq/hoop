@@ -80,7 +80,8 @@ time, as ADR-0017 already does for rules.
 ```
 sidecars           id, org_id, name, key_hash, process config (admin, audit,
                    log_level, top-level analyzer), handshake state
-resources          existing table; agent_id NULL for sidecar-served resources
+resources          existing table; managed_by='sidecar', agent_id NULL,
+                   type = the control-plane protocol
 sidecar_listeners  id, org_id, sidecar_id FK ON DELETE CASCADE,
                    resource_id FK ON DELETE RESTRICT, name, protocol, listen,
                    network, upstream, upstream_tls, downstream_tls,
@@ -88,8 +89,16 @@ sidecar_listeners  id, org_id, sidecar_id FK ON DELETE CASCADE,
                    UNIQUE (sidecar_id, name)
 connections        existing table used as a ROLE of the resource: the database
                    principal allowed through the lane (pg/mysql/mssql user, ssh
-                   principal). Credentials optional and not required.
+                   principal). No credentials: the client authenticates end
+                   to end. managed_by='sidecar', agent_id NULL.
 ```
+
+- `managed_by='sidecar'` marks a resource or role as control-plane owned.
+  Gateway pages and forms filter it out.
+- `type` holds the control-plane protocol (postgres, mysql, mssql, http, grpc,
+  ssh, mongodb, clickhouse, spanner). It selects the edit form. Control-plane
+  types are not gateway connection types, and gateway code must not branch on
+  them.
 
 - **Resource** is what the listener protects. One resource may sit behind
   several listeners (two regions, two sidecars). Replicas of one deployment
@@ -100,16 +109,18 @@ connections        existing table used as a ROLE of the resource: the database
 
 ### Rule binding
 
-Rules bind through the existing `*_rules_connections` and `*_rules_attributes`
-junctions. `*_rules_listeners` is retired after step 3.
+Rules bind to the **resource**. `*_rules_listeners` becomes
+`*_rules_resources`, with a foreign key to `resources`.
 
 The sidecar loads a lane's rules when it accepts the connection
 (`sidecar/proxy/proxy.go:378`), before it knows the database user. So a lane
-still enforces one rule set. Compose therefore takes the rules bound to the
-roles of the listener's resource, and a write that gives two roles of one
-sidecar-served resource different rule sets is refused with 422. Per-role
-rule sets need the sidecar to pick rules after the startup message. That is a
-sidecar change and a later ADR.
+enforces one rule set. A resource is exactly what its listeners protect, so a
+resource binding has the same granularity as today's listener binding. No
+write can express a rule set the sidecar cannot enforce.
+
+Rules per role need the sidecar to pick rules after the startup message. That
+is a sidecar change and a later ADR. The role-level junctions
+(`*_rules_connections`, `*_rules_attributes`) stay gateway-only until then.
 
 ### Composition and import
 
@@ -140,20 +151,34 @@ Each step ships on its own and leaves the system consistent.
    `sidecar_listener_id` to the four junction tables and `reviews`; backfill;
    compose reads rows. The JSON `listeners` key is kept but no longer read.
    Gain: real FKs, `ValidateListenerNames` and prune code can go.
-2. **Resources.** Create one `resources` row per distinct listener target and
-   set `sidecar_listeners.resource_id`. Name collisions with gateway
-   resources in the same org are resolved by suffix, reported in the
-   migration log, never merged silently.
-3. **Roles and rule junctions.** Move `*_rules_listeners` bindings onto the
-   resource's roles (a default role per resource when the lane has no known
-   principal). Retire `*_rules_listeners`. Drop `configuration.listeners`.
-4. **Features.** Access control, JIT, access-request and runbook rules on
-   roles, reusing the gateway handlers. Out of scope of this ADR's migration;
-   each feature states its own design.
+2. **Resources.** Create one `resources` row per listener
+   (`managed_by='sidecar'`, `agent_id` NULL) and set
+   `sidecar_listeners.resource_id`. Name collisions with gateway resources in
+   the same org are resolved by suffix, reported in the migration log, never
+   merged silently.
+3. **Rule junctions.** Copy each `*_rules_listeners` row to
+   `*_rules_resources` on the listener's resource. Retire `*_rules_listeners`.
+   Drop `configuration.listeners`.
+4. **Roles and features.** Roles, access control, JIT, access-request and
+   runbook rules, reusing the gateway handlers. Out of scope of this ADR's
+   migration; each feature states its own design.
 
-Every step needs `.up.sql` and `.down.sql`, and a test that composes the same
-document before and after for every fixture in
-`gateway/services/sidecarconfig_test.go`.
+### No sidecar sees the migration
+
+The served revision is the SHA-256 of the composed document
+(`configRevision`, `gateway/api/sidecar/sidecar.go:49`). A migration that
+composes a byte-equal document keeps the revision, so a running sidecar sees
+no drift, reloads nothing and drops no connection.
+
+This is enforced, not assumed:
+
+- Each step's migration test composes every sidecar before and after and
+  requires equal revisions. It covers every fixture in
+  `gateway/services/sidecarconfig_test.go`.
+- The Go migration that runs the backfill does the same check per sidecar at
+  startup. A sidecar whose revision would change fails the migration and stops
+  startup. It is never served a different document.
+- Every step has `.up.sql` and `.down.sql`.
 
 ## Consequences
 
@@ -188,12 +213,11 @@ document before and after for every fixture in
 
 **Open questions**
 
-- Is the rule-set-per-resource restriction (422 on divergence) acceptable
-  until the sidecar can select rules per role?
-- Do resources served by a sidecar carry a `managed_by` value, or is
-  `agent_id IS NULL` plus a listener row enough to tell them apart?
-- Does a role without credentials need a new connection `type`, or does the
-  existing type/subtype of the resource apply?
+- `*_rules_resources` adds three junction tables beside the gateway's
+  role-level ones. Could the gateway's `*_rules_attributes` path (attributes
+  on resources) replace them instead?
+- Where does the backfill's byte-equality check run for a control plane that
+  shares its database with a gateway (ADR-0013)?
 
 **Revisit** if step 1 alone removes enough cost that steps 2 and 3 are not
 worth their migrations. Step 1 is useful without them.
