@@ -95,7 +95,10 @@ func connectionTablesHandler(ctx context.Context, _ *mcp.CallToolRequest, args c
 	}
 
 	connType := pb.ToConnectionType(conn.Type, conn.SubType.String)
-	script := apiconnections.TablesQueryFor(connType, args.Database)
+	script, scriptErr := apiconnections.TablesQueryFor(connType, args.Database)
+	if scriptErr != nil {
+		return errResult(scriptErr.Error()), nil, nil
+	}
 	if script == "" {
 		return errResult(fmt.Sprintf("listing tables is not supported for connection type %q", connType)), nil, nil
 	}
@@ -137,7 +140,10 @@ func connectionColumnsHandler(ctx context.Context, _ *mcp.CallToolRequest, args 
 			schema = args.Database
 		}
 	}
-	script := apiconnections.ColumnsQueryFor(connType, args.Database, args.Table, schema)
+	script, scriptErr := apiconnections.ColumnsQueryFor(connType, args.Database, args.Table, schema)
+	if scriptErr != nil {
+		return errResult(scriptErr.Error()), nil, nil
+	}
 	if script == "" {
 		return errResult(fmt.Sprintf("listing columns is not supported for connection type %q", connType)), nil, nil
 	}
