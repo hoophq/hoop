@@ -736,8 +736,7 @@ session that sent its request. The header value is lifted out of the
 statement, so it reaches policy input and the audit trail only when
 `http.headers` names it. A grpc lane reads it per RPC. The header is trusted
 exactly as far as the network is: nothing but that proxy may be able to reach
-the listener. [ADR-0022](../docs/adr/0022-http-lanes-resolve-identity-per-request.md)
-records the per-request choice.
+the listener.
 
 **`google_identity: {}` names the caller from Google's own bearer**, for an
 http lane with no authenticating proxy in front. The lane verifies the
@@ -2961,7 +2960,6 @@ that client connection alone, so policy, the 403 deny, masking, audit,
 per-request identity and Via apply to it exactly as to an HTTP/1.1 client.
 The upstream hop is HTTP/1.1. Teaching the codec HPACK and stream framing
 would duplicate every enforcement path for a second wire format.
-[ADR-0023](../docs/adr/0023-http-lanes-terminate-http2.md) records the choice.
 
 - Streams do not count toward `max_conns`. The client connection was admitted
   once, and its streams are bounded by HTTP/2's concurrent-stream limit.
@@ -2969,6 +2967,10 @@ would duplicate every enforcement path for a second wire format.
 - kubectl `exec`, `attach` and `port-forward` negotiate an HTTP/1.1
   `Upgrade`, which a client attempts only on an HTTP/1.1 connection, so they
   keep the plain relay path.
+- An Envoy with an h2 upstream to the lane turns an `Upgrade` into an HTTP/2
+  extended CONNECT, which gets the 501. Route requests carrying an `Upgrade`
+  header to an HTTP/1.1 cluster for the same port, as
+  `deploy/docker-compose/envoy-stack/gke/envoy-gke.yaml` does.
 
 ### The pgwire problem
 
