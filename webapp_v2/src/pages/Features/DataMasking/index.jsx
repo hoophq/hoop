@@ -23,7 +23,9 @@ function uniqueSorted(values) {
   return [...new Set(values)].sort((a, b) => a.localeCompare(b))
 }
 
-export default function DataMasking() {
+// providerRequired comes from Router.jsx through <ByProduct>: false on the
+// control plane, where sidecars mask without a DLP provider.
+export default function DataMasking({ providerRequired = true }) {
   const navigate = useNavigate()
 
   const list = useDataMaskingStore((s) => s.list)
@@ -89,6 +91,7 @@ export default function DataMasking() {
       <FullBleed>
         <DataMaskingPromotion
           redactProvider={redactProvider}
+          providerRequired={providerRequired}
           onConfigure={goCreate}
         />
       </FullBleed>
