@@ -272,6 +272,9 @@ func checkComposedWithRule(db *gorm.DB, sc *models.Sidecar, kind SidecarRuleKind
 		}
 		return fmt.Errorf("binding %s rule %q to sidecar %q: %w", kind, ruleName, sc.Name, err)
 	}
+	if err := validateComposedAnalyzers(withRule); err != nil {
+		return fmt.Errorf("binding %s rule %q to sidecar %q: %w", kind, ruleName, sc.Name, err)
+	}
 	if err := CheckSidecarCapabilities(sc, withRule); err != nil {
 		return err
 	}

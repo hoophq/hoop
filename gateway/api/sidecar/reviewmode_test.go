@@ -102,3 +102,47 @@ func TestSettingReturnOnAnOldSidecarIsRefused(t *testing.T) {
 	w, _ = callAdmin(t, Put, http.MethodPut, sc.ID, reviewModeConfig("hold"))
 	require.Equal(t, http.StatusOK, w.Code, "a hold lane stays savable: %s", w.Body)
 }
+
+// The plane runs the sidecar's own analyzer check before storing, so a block
+// every sidecar would refuse is a 422 at the save and not a refused document.
+func TestAnAnalyzerBlockTheSidecarRefusesIsNotSaved(t *testing.T) {
+	startSwitchDB(t)
+	sc := &models.Sidecar{OrgID: switchOrgID, Name: "typo-edge",
+		KeyHash: models.HashAPIKey("hsc_typo"), CreatedBy: "tests@hoop.dev"}
+	require.NoError(t, models.CreateSidecar(models.DB, sc))
+
+	w, _ := callAdmin(t, Put, http.MethodPut, sc.ID, reviewModeConfig("Return"))
+	require.Equal(t, http.StatusUnprocessableEntity, w.Code, "body: %s", w.Body)
+	assert.Contains(t, w.Body.String(), "unknown review_mode")
+
+	w, _ = callAdmin(t, Put, http.MethodPut, sc.ID, `{"analyzer": {"provider": "anthropic", "model": "m"}, "listeners": [{
+		"name": "agents", "protocol": "postgres", "listen": ":5432", "upstream": "db:5432",
+		"analyzer": {"high": "block", "review_mode": "return"}}]}`)
+	require.Equal(t, http.StatusUnprocessableEntity, w.Code, "body: %s", w.Body)
+	assert.Contains(t, w.Body.String(), "nothing on this lane would hold one")
+}
+
+// A refused handshake still records what the build reported, so the next save
+// knows it is too old.
+func TestARefusedHandshakeRecordsTheCapabilities(t *testing.T) {
+	startSwitchDB(t)
+	sc := &models.Sidecar{OrgID: switchOrgID, Name: "first-edge",
+		KeyHash: models.HashAPIKey("hsc_first"), CreatedBy: "tests@hoop.dev"}
+	require.NoError(t, models.CreateSidecar(models.DB, sc))
+	w, _ := callAdmin(t, Put, http.MethodPut, sc.ID, reviewModeConfig("return"))
+	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body)
+	stored, err := models.GetSidecarByNameOrID(models.DB, switchOrgID, sc.ID)
+	require.NoError(t, err)
+
+	w = handshake(t, stored, "")
+	require.Equal(t, http.StatusUnprocessableEntity, w.Code, "body: %s", w.Body)
+
+	got, err := models.GetSidecarByNameOrID(models.DB, switchOrgID, sc.ID)
+	require.NoError(t, err)
+	assert.NotNil(t, got.Capabilities, "a refused build reads as known, not as never seen")
+	assert.Empty(t, got.Capabilities)
+	assert.Nil(t, got.LastSeenAt, "a sidecar that cannot run is not recently seen")
+
+	w, _ = callAdmin(t, Put, http.MethodPut, sc.ID, reviewModeConfig("return"))
+	require.Equal(t, http.StatusUnprocessableEntity, w.Code, "body: %s", w.Body)
+}

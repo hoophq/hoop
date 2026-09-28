@@ -343,3 +343,14 @@ func RecordSidecarHandshake(db *gorm.DB, sidecarID, version, appliedRevision, la
 	WHERE id = ?`, version, appliedRevision, lastOutcome, servedRevision,
 		pq.StringArray(capabilities), sidecarID).Error
 }
+
+// RecordSidecarCapabilities stores what a sidecar reported when its handshake
+// was refused. It leaves last_seen_at alone: a sidecar that cannot run must not
+// read as recently seen.
+func RecordSidecarCapabilities(db *gorm.DB, sidecarID string, capabilities []string) error {
+	if capabilities == nil {
+		capabilities = []string{}
+	}
+	return db.Exec(`UPDATE private.sidecars SET capabilities = ? WHERE id = ?`,
+		pq.StringArray(capabilities), sidecarID).Error
+}

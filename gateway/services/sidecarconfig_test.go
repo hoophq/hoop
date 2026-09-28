@@ -364,3 +364,16 @@ func TestAnAnalyzerRuleReviewModeWinsWhenSet(t *testing.T) {
 		t.Errorf("the rule's mode did not win: %q", got.ReviewMode)
 	}
 }
+
+// A return lane bound to a rule that holds nothing composes into a block the
+// sidecar refuses; the plane refuses it first.
+func TestAComposedBlockTheSidecarRefusesIsReported(t *testing.T) {
+	cfg := daemon.Config{Listeners: []daemon.ListenerConfig{{
+		Name:     "agents",
+		Analyzer: mergeAnalyzerBlock(&daemon.LaneAnalyzerConfig{ReviewMode: "return"}, daemon.LaneAnalyzerConfig{HighRisk: "block"}),
+	}}}
+	err := validateComposedAnalyzers(cfg)
+	if err == nil || !strings.Contains(err.Error(), "nothing on this lane would hold one") {
+		t.Fatalf("the composed block was accepted: %v", err)
+	}
+}

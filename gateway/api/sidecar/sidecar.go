@@ -121,7 +121,7 @@ func writeSidecarConfiguration(db *gorm.DB, licenseData json.RawMessage, write f
 		if err := services.ValidateSidecarBindingsForConfiguration(tx, sc); err != nil {
 			return err
 		}
-		if err := services.CheckSidecarConfigurationCapabilities(tx, sc); err != nil {
+		if err := services.CheckComposedSidecarConfiguration(tx, sc); err != nil {
 			return err
 		}
 		// A listener this write removed or renamed takes its Slack channels
@@ -150,6 +150,7 @@ func answerSidecarWrite(c *gin.Context, err error) {
 	var overCap services.ErrSidecarConfigOverCap
 	var broken services.ErrSidecarBindingBroken
 	var missing services.ErrSidecarCapabilityMissing
+	var invalid services.ErrSidecarAnalyzerInvalid
 	switch {
 	case errors.Is(err, models.ErrNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"message": "sidecar not found"})
@@ -159,6 +160,8 @@ func answerSidecarWrite(c *gin.Context, err error) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": broken.Error()})
 	case errors.As(err, &missing):
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": missing.Error()})
+	case errors.As(err, &invalid):
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": invalid.Error()})
 	case errors.Is(err, errSwitchNeedsPatch):
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 	default:
@@ -568,6 +571,15 @@ func Handshake(c *gin.Context) {
 	}
 	served, err := withOrgLicense(sidecar, capabilities)
 	if err != nil {
+		// Recorded even on refusal, so a later write knows this build is
+		// too old instead of reading it as never seen. Only the
+		// capabilities: a sidecar that cannot run is not recently seen.
+		var missing services.ErrSidecarCapabilityMissing
+		if errors.As(err, &missing) {
+			if rerr := models.RecordSidecarCapabilities(models.DB, sidecar.ID, capabilities); rerr != nil {
+				log.With("sidecar", sidecar.ID).Warnf("failed recording the sidecar capabilities, reason=%v", rerr)
+			}
+		}
 		answerServeError(c, err)
 		return
 	}
