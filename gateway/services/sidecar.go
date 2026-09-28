@@ -176,8 +176,9 @@ func (e ErrSidecarConfigInvalid) Error() string { return e.Err.Error() }
 
 // CheckSidecarConfiguration refuses a configuration the sidecar would refuse,
 // with the daemon's own validation. The files it names live on the sidecar's
-// host, so only the sidecar checks those. A load_from_disk document is not
-// served, so it is not checked.
+// host, and its analyzer providers and descriptor fetchers are linked into the
+// sidecar's binary, so only the sidecar checks those. A load_from_disk
+// document is not served, so it is not checked.
 func CheckSidecarConfiguration(cfg daemon.Config) error {
 	if cfg.LoadFromDisk != nil && *cfg.LoadFromDisk {
 		return nil

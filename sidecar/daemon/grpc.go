@@ -84,7 +84,7 @@ type GRPCCodecConfig struct {
 	Metadata []string `json:"metadata,omitempty" label:"Metadata" help:"Allowlist exposed to policy. The same four headers HTTP refuses are refused here."`
 }
 
-func (g *GRPCCodecConfig) validate(lane string) []string {
+func (g *GRPCCodecConfig) validate(lane string, onHost bool) []string {
 	if g == nil {
 		return nil
 	}
@@ -110,8 +110,9 @@ func (g *GRPCCodecConfig) validate(lane string) []string {
 		}
 		// Decided here, not at the fetch: a scheme nobody linked must be a
 		// validate failure naming the module, not a startup "no such file"
-		// for a path that starts with gs://.
-		if scheme := descriptors.Scheme(p); scheme != "" && !descriptors.Linked(scheme) {
+		// for a path that starts with gs://. Only the sidecar binary knows
+		// what it links.
+		if scheme := descriptors.Scheme(p); scheme != "" && onHost && !descriptors.Linked(scheme) {
 			problems = append(problems, fmt.Sprintf(
 				"listener %q: grpc.descriptors %q uses scheme %q, which this binary does not "+
 					"link (%s)", lane, p, scheme, describeLinkedFetchers()))

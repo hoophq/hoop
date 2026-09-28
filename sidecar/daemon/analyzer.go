@@ -340,8 +340,9 @@ func (a *AnalyzerConfig) failOpen() bool {
 	return *a.FailOpen
 }
 
-// validate checks the analyzer section in isolation.
-func (a *AnalyzerConfig) validate(hasScanner bool) []string {
+// validate checks the analyzer section in isolation. Off the sidecar host it
+// skips whether the provider is linked: only the sidecar binary knows that.
+func (a *AnalyzerConfig) validate(hasScanner, onHost bool) []string {
 	if a == nil {
 		return nil
 	}
@@ -349,7 +350,7 @@ func (a *AnalyzerConfig) validate(hasScanner bool) []string {
 
 	if a.Provider == "" {
 		problems = append(problems, "analyzer: no provider set")
-	} else if !providerLinked(a.Provider) {
+	} else if onHost && !providerLinked(a.Provider) {
 		problems = append(problems, fmt.Sprintf(
 			"analyzer: provider %q is not linked into this binary (linked: %s)",
 			a.Provider, strings.Join(analyzer.RegisteredProviders(), ", ")))
@@ -764,7 +765,7 @@ func setupAnalyzer(cfg *Config, det Plugin) (*analyzerDeps, error) {
 	if cfg == nil || cfg.Analyzer == nil {
 		return nil, nil
 	}
-	if problems := cfg.Analyzer.validate(det != nil); len(problems) > 0 {
+	if problems := cfg.Analyzer.validate(det != nil, true); len(problems) > 0 {
 		return nil, fmt.Errorf("invalid config:\n  - %s", strings.Join(problems, "\n  - "))
 	}
 

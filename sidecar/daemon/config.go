@@ -1005,8 +1005,8 @@ func (p ConfigProblems) Error() string {
 }
 
 // CheckConfigBytes runs what LoadConfigBytes runs, minus what only the
-// sidecar's host can answer: the files a config names, and whether it has any
-// listener yet. The control plane runs it on every write, so a document the
+// sidecar's host can answer: the files a config names, the analyzer providers
+// and descriptor fetchers its binary links, and whether it has any listener yet. The control plane runs it on every write, so a document the
 // sidecar would refuse is refused when it is saved.
 func CheckConfigBytes(data []byte) error {
 	var cfg Config
@@ -1022,7 +1022,8 @@ func CheckConfigBytes(data []byte) error {
 }
 
 // validate is Validate. Off the sidecar host (onHost false) the files a config
-// names do not exist, and a control-plane document may still be empty.
+// names do not exist, the sidecar binary's providers and descriptor fetchers
+// are not linked, and a control-plane document may still be empty.
 func (c *Config) validate(onHost bool) error {
 	var problems []string
 
@@ -1043,7 +1044,7 @@ func (c *Config) validate(onHost bool) error {
 	//
 	// Detection is always available now, so the analyzer's redacting send
 	// modes always have a scanner to use.
-	problems = append(problems, c.Analyzer.validate(true)...)
+	problems = append(problems, c.Analyzer.validate(true, onHost)...)
 
 	// The feature caps are NOT checked here. This runs inside
 	// LoadConfigBytes, before Setup has seen the license flag or
@@ -1232,7 +1233,7 @@ func (c *Config) validateLane(lc ListenerConfig, name string, onHost bool) []str
 				"%s: a \"grpc\" block is only valid on a grpc or spanner listener, not %s",
 				name, lc.Protocol))
 		}
-		problems = append(problems, lc.GRPC.validate(name)...)
+		problems = append(problems, lc.GRPC.validate(name, onHost)...)
 	}
 
 	// And for a spanner block: only a spanner lane reads a dialect map,

@@ -7,8 +7,9 @@ import (
 )
 
 // The control plane checks a document off the sidecar host, where the files
-// it names do not exist. Only those checks, and the listener count, may be
-// skipped; everything else must refuse what the sidecar would refuse.
+// it names do not exist and the sidecar binary's plugins are not linked. Only
+// those checks, and the listener count, may be skipped; everything else must
+// refuse what the sidecar would refuse.
 func TestCheckConfigBytesSkipsOnlyWhatTheHostAnswers(t *testing.T) {
 	missingFiles := `{"listeners":[
 		{"name":"jump","protocol":"ssh","listen":":2222",
@@ -25,6 +26,19 @@ func TestCheckConfigBytesSkipsOnlyWhatTheHostAnswers(t *testing.T) {
 	}
 	if err := CheckConfigBytes([]byte(`{}`)); err != nil {
 		t.Fatalf("a control-plane document may have no listener yet: %v", err)
+	}
+
+	unlinked := `{"analyzer":{"provider":"definitely-not-linked","model":"m"},
+		"listeners":[{"name":"api","protocol":"grpc","listen":":8443","upstream":"svc:443",
+		 "grpc":{"descriptors":["nolink://bucket/api.pb"]}}]}`
+	if err := CheckConfigBytes([]byte(unlinked)); err != nil {
+		t.Fatalf("what the sidecar binary links must not be checked: %v", err)
+	}
+	_, loadErr := LoadConfigBytes([]byte(unlinked))
+	for _, want := range []string{`provider "definitely-not-linked" is not linked`, `uses scheme "nolink"`} {
+		if loadErr == nil || !strings.Contains(loadErr.Error(), want) {
+			t.Errorf("the sidecar itself must still refuse %s: %v", want, loadErr)
+		}
 	}
 
 	err := CheckConfigBytes([]byte(`{"listeners":[
