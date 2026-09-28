@@ -229,6 +229,42 @@ func ClaimReview(c *gin.Context) {
 	answerExistingReview(c, sidecar, rev.ListenerName.String, rev)
 }
 
+// GetReview
+//
+//	@Summary		Get Sidecar Review Status
+//	@Description	Read the status of one review the calling sidecar filed. It never changes the review: an approved review stays approved until the sidecar resends the statement.
+//	@Tags			Sidecars
+//	@Produce		json
+//	@Param			hoop-sidecar-token	header		string	true	"The token returned when the sidecar was created"
+//	@Param			id					path		string	true	"The review id"
+//	@Success		200					{object}	openapi.SidecarReviewStatus
+//	@Failure		401,404,412,500		{object}	openapi.HTTPError
+//	@Router			/sidecars/reviews/{id} [get]
+func GetReview(c *gin.Context) {
+	sidecar := controlPlaneSidecar(c)
+	if sidecar == nil {
+		return
+	}
+
+	reviewID := c.Param("id")
+	if _, err := uuid.Parse(reviewID); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "review not found"})
+		return
+	}
+
+	// Another sidecar's review reads as not found, so a token cannot probe ids.
+	rev, err := models.GetSidecarReview(models.DB, sidecar.OrgID, sidecar.ID, reviewID)
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"message": "review not found"})
+		return
+	case err != nil:
+		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed loading the sidecar review")
+		return
+	}
+	c.JSON(http.StatusOK, toSidecarReviewStatus(rev))
+}
+
 // controlPlaneSidecar returns the sidecar the token named, or answers the
 // request and returns nil.
 //
@@ -634,4 +670,35 @@ func toOpenApiSidecarReview(r *models.Review) *openapi.Review {
 		AccessRequestRuleName: r.AccessRequestRuleName,
 		ForceApprovalGroups:   r.ForceApprovalGroups,
 	}
+}
+
+func toSidecarReviewStatus(r *models.Review) *openapi.SidecarReviewStatus {
+	return &openapi.SidecarReviewStatus{
+		ID:              r.ID,
+		Status:          openapi.ReviewStatusType(r.Status),
+		ListenerName:    r.ListenerName.String,
+		ApprovalRule:    ptr.ToString(r.AccessRequestRuleName),
+		CreatedAt:       r.CreatedAt,
+		DecidedAt:       reviewDecidedAt(r),
+		RejectionReason: r.RejectionReason,
+	}
+}
+
+// reviewDecidedAt is the latest group decision. private.reviews stores no
+// decision time, so this can trail the status flip when a group decides after
+// the minimum was met.
+func reviewDecidedAt(r *models.Review) *time.Time {
+	if r.Status == models.ReviewStatusPending {
+		return nil
+	}
+	var decided *time.Time
+	for _, rg := range r.ReviewGroups {
+		if rg.Status == models.ReviewStatusPending || rg.ReviewedAt == nil {
+			continue
+		}
+		if decided == nil || rg.ReviewedAt.After(*decided) {
+			decided = rg.ReviewedAt
+		}
+	}
+	return decided
 }
