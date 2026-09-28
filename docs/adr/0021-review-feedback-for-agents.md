@@ -228,6 +228,12 @@ Nothing new dials into the sidecar, and agents reach no control plane route.
 - The MCP endpoint answers anybody who can reach it. It exposes review
   status and the rule and listener names for a known review id, and no
   statement text. Operators bind it where only agents reach it.
+- **An agent adds one MCP entry per sidecar it uses**, for example
+  `claude mcp add --transport http hoop-reviews http://<sidecar>:8765/mcp`.
+  The token scopes to the sidecar, so one entry covers all its listeners
+  and replicas. An agent that uses many sidecars adds one entry for each; a
+  central entry point is future work. The deny message cannot install the
+  MCP, so this setup is a human step.
 - A sidecar newer than its control plane gets 404 from the status route. The
   tool must report an old control plane, not a missing review.
 - MCP Bridge phase 2 plans a sidecar-native MCP. Its server should extend
