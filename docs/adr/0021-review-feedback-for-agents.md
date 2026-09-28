@@ -1,9 +1,9 @@
 # ADR-0021: A held statement answers an agent at once, and the sidecar tells it when the review settles
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-09-25
 - **Author:** @p3rotto
-- **Deciders:** TBD
+- **Deciders:** @p3rotto, @EmanuelJr, @luanlorenzo
 - **Linear:** EVL-318 (project: Reviews over MCP)
 - **Code:** [`sidecar/analyzer/review.go`](../../sidecar/analyzer/review.go), [`sidecar/daemon/review.go`](../../sidecar/daemon/review.go), [`gateway/api/sidecar/reviews.go`](../../gateway/api/sidecar/reviews.go)
 - **Related:** [ADR-0013](0013-gateway-control-plane-mode.md) (control-plane mode), [ADR-0015](0015-listener-analyzer-block.md) (listener analyzer block), [ADR-0017](0017-control-plane-composes-sidecar-rules.md) (composed rules), ADR-0019 "sidecar identity from the network" (proposed, PR #1851)
