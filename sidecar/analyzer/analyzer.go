@@ -85,6 +85,12 @@ const (
 	// human made somewhere else entirely.
 	MetadataReviewID = "review_id"
 
+	// MetadataReviewMode records how a held statement waited, and
+	// MetadataReviewModeSource who chose that. An agent's statement denied at
+	// once and a human's held for minutes read the same without them.
+	MetadataReviewMode       = "review_mode"
+	MetadataReviewModeSource = "review_mode_source"
+
 	// MetadataAIStatus records what the analyzer did. It is the key that
 	// separates "rated low" from "never asked", "provider down" and
 	// "budget spent". All four look like an absent risk_level to anything

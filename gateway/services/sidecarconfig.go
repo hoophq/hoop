@@ -297,6 +297,9 @@ func mergeAnalyzerBlock(base *daemon.LaneAnalyzerConfig, rule daemon.LaneAnalyze
 	if rule.ApprovalRule != "" {
 		out.ApprovalRule = rule.ApprovalRule
 	}
+	if rule.ReviewMode != "" {
+		out.ReviewMode = rule.ReviewMode
+	}
 	return &out
 }
 
@@ -327,4 +330,41 @@ func appendGuardrails(gc *daemon.GuardrailsConfig, rules []policy.Rule) *daemon.
 	out := *gc
 	out.Rules = append(append([]policy.Rule{}, gc.Rules...), rules...)
 	return &out
+}
+
+// ErrSidecarCapabilityMissing marks a document the sidecar's build cannot
+// decode. It is the admin's to fix, so it reads 422.
+type ErrSidecarCapabilityMissing struct{ Reason string }
+
+func (e ErrSidecarCapabilityMissing) Error() string { return e.Reason }
+
+// CheckSidecarCapabilities refuses a composed document that the sidecar's last
+// handshake says it cannot decode. A sidecar that never handshaked passes: its
+// support is unknown, and the handshake refuses to serve it instead.
+func CheckSidecarCapabilities(sc *models.Sidecar, composed daemon.Config) error {
+	if sc.Capabilities == nil {
+		return nil
+	}
+	if err := daemon.CheckServable(composed, sc.Capabilities); err != nil {
+		return ErrSidecarCapabilityMissing{Reason: fmt.Sprintf("sidecar %q: %v", sc.Name, err)}
+	}
+	return nil
+}
+
+// CheckSidecarConfigurationCapabilities is CheckSidecarCapabilities for a
+// configuration write. It composes, because a rule bound to a lane can be what
+// sets review_mode; without this an old sidecar learns of the edit only as a
+// refused handshake, and keeps its old rules.
+func CheckSidecarConfigurationCapabilities(db *gorm.DB, sc *models.Sidecar) error {
+	if sc.Capabilities == nil {
+		return nil
+	}
+	composed, err := ComposeSidecarConfiguration(db, sc)
+	if err != nil {
+		if errors.Is(err, ErrSidecarRulesUnavailable) {
+			return err
+		}
+		return ErrSidecarBindingBroken{Reason: err.Error()}
+	}
+	return CheckSidecarCapabilities(sc, composed)
 }

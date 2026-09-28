@@ -292,6 +292,19 @@ type LaneAnalyzerConfig struct {
 	// because either one alone is a control nothing reads.
 	ApprovalRule string `json:"approval_rule,omitempty"`
 
+	// ReviewMode is what a held statement does while its review is
+	// pending: "hold" (the default) waits on the connection, "return"
+	// denies at once with the review id so an agent can resend the
+	// identical statement after approval. It applies to every client on
+	// the lane, humans included (ADR-0021).
+	//
+	// omitempty is load-bearing: a build that predates the field decodes
+	// the served document strictly, so a hold lane must never carry the
+	// key. The control plane refuses to serve "return" to such a build;
+	// see RequiredCapabilities. Retire it through normalize and
+	// Deprecations, never by deleting it.
+	ReviewMode analyzer.ReviewMode `json:"review_mode,omitempty"`
+
 	// The rest override the top-level analyzer defaults for this lane.
 	// A zero value inherits; see the field of the same name on
 	// AnalyzerConfig for what each bounds.
@@ -695,6 +708,7 @@ func buildAnalyzerEvaluator(
 		Budget:        ac.budgetFor(budgetKey),
 		Redact:        redactorFor(send, ac.det),
 		Review:        review,
+		ReviewMode:    la.ReviewMode,
 	})
 }
 
@@ -1041,6 +1055,19 @@ func validateLaneBlock(la *LaneAnalyzerConfig, lane string) []string {
 			"%s: approval_rule %q names who may approve a statement, and no risk "+
 				"level asks for %q, so nothing on this lane would hold one",
 			where, la.ApprovalRule, analyzer.ActionRequireReview))
+	}
+
+	// Same pairing as approval_rule: a mode on a lane that holds nothing is
+	// read by nobody.
+	switch {
+	case !la.ReviewMode.Valid():
+		problems = append(problems, fmt.Sprintf(
+			"%s: unknown review_mode %q (hold or return)", where, la.ReviewMode))
+	case la.ReviewMode != "" && !holds:
+		problems = append(problems, fmt.Sprintf(
+			"%s: review_mode %q decides how a held statement waits, and no risk "+
+				"level asks for %q, so nothing on this lane would hold one",
+			where, la.ReviewMode, analyzer.ActionRequireReview))
 	}
 	return problems
 }
