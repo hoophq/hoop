@@ -1318,7 +1318,7 @@ to the audit trail.
 | `anthropic` | Claude | Anthropic API key | |
 | `openai` | any Chat Completions endpoint | API key | |
 | `gemini` | Gemini | Google API key | `api: developer` (default) or `api: vertex` (express mode, global) |
-| `vertex` | Claude or Gemini | GCP identity | `project`, `region`, `publisher: anthropic` (default) or `publisher: google` |
+| `vertex` | Claude, Gemini, or a Model Garden open model | GCP identity | `project`, `region`, `publisher: anthropic` (default), `publisher: google` or `publisher: openapi` |
 
 **Gemini** with an API key goes through `provider: gemini`. `api: developer`
 is the Gemini Developer API on `generativelanguage.googleapis.com`, billed to
@@ -1347,6 +1347,21 @@ analyzer:
   provider: vertex
   model: gemini-2.5-flash
   extra: {project: my-gcp-project, region: global, publisher: google}
+```
+
+`publisher: openapi` sends Model Garden open models, such as Llama, DeepSeek,
+Qwen and gpt-oss, to Vertex's OpenAI-compatible Chat Completions endpoint
+under the same bearer. Enable the model on its Model Garden card first.
+Vertex routes that shared endpoint by the model's publisher prefix, so the
+relay refuses a bare name at load. The analyzer forces a tool call
+(`tool_choice: required`), so pick a model with function calling; a model
+without it fails each statement with "called no risk tool".
+
+```yaml
+analyzer:
+  provider: vertex
+  model: meta/llama-4-maverick-17b-128e-instruct-maas
+  extra: {project: my-gcp-project, region: us-east5, publisher: openapi}
 ```
 
 #### Migrating from `type: ai_analysis` rules

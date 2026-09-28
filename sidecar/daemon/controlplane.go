@@ -389,6 +389,7 @@ func fetchControlPlaneConfig(baseURL, token string, hs handshakeRequest) (answer
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set(sidecarTokenHeader, token)
+	req.Header.Set(CapabilitiesHeader, strings.Join(SidecarCapabilities(), ","))
 
 	resp, derr := controlPlaneHTTPClient().Do(req)
 	if derr != nil {

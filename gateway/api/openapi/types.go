@@ -470,6 +470,32 @@ type SidecarReviewResponse struct {
 	Review *Review `json:"review"`
 }
 
+// SidecarReviewStatus is a read-only view of one sidecar review.
+//
+// It has no forward flag, no statement text and no reviewer identities: a status
+// read never releases a statement, and an agent polling it needs neither.
+type SidecarReviewStatus struct {
+	// Resource identifier
+	ID string `json:"id" format:"uuid" readonly:"true" example:"9F9745B4-C77B-4D52-84D3-E24F67E3623C"`
+	// The status of the review
+	// * PENDING - Waiting for a reviewer
+	// * APPROVED - Approved and not yet consumed; resend the identical statement
+	// * REJECTED - Rejected; the statement will not run
+	// * REVOKED - Revoked after approval
+	// * EXECUTED - The approval was consumed by a resent statement
+	Status ReviewStatusType `json:"status" readonly:"true"`
+	// The sidecar listener this review is bound to
+	ListenerName string `json:"listener_name" readonly:"true" example:"appdb"`
+	// The access request rule the review was filed under
+	ApprovalRule string `json:"approval_rule" readonly:"true" example:"payments-approvers"`
+	// The time the review was created
+	CreatedAt time.Time `json:"created_at" readonly:"true" example:"2024-07-25T15:56:35.317601Z"`
+	// The time of the last reviewer decision. Null while the review is pending
+	DecidedAt *time.Time `json:"decided_at" readonly:"true" example:"2024-07-25T16:01:12.000Z"`
+	// The reason the reviewer gave when rejecting the review
+	RejectionReason *string `json:"rejection_reason,omitempty" readonly:"true" example:"Not during business hours."`
+}
+
 type SidecarHandshakeRequest struct {
 	// Version of the sidecar binary
 	Version string `json:"version" binding:"required" example:"1.0.0"`

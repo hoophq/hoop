@@ -48,17 +48,32 @@ func build(t *testing.T, opts analyzer.Options) *Provider {
 // method wrong yields a 404 that reads like a typo in the model name.
 func TestURLPerPublisher(t *testing.T) {
 	for _, tc := range []struct {
-		publisher, region, want string
+		publisher, region, model, want string
 	}{
-		{"", "us-central1", "https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1/publishers/anthropic/models/m:rawPredict"},
-		{PublisherAnthropic, "global", "https://aiplatform.googleapis.com/v1/projects/proj/locations/global/publishers/anthropic/models/m:rawPredict"},
-		{PublisherGoogle, "us-central1", "https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1/publishers/google/models/m:generateContent"},
-		{PublisherGoogle, "global", "https://aiplatform.googleapis.com/v1/projects/proj/locations/global/publishers/google/models/m:generateContent"},
+		{"", "us-central1", "m", "https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1/publishers/anthropic/models/m:rawPredict"},
+		{PublisherAnthropic, "global", "m", "https://aiplatform.googleapis.com/v1/projects/proj/locations/global/publishers/anthropic/models/m:rawPredict"},
+		{PublisherGoogle, "us-central1", "m", "https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1/publishers/google/models/m:generateContent"},
+		{PublisherGoogle, "global", "m", "https://aiplatform.googleapis.com/v1/projects/proj/locations/global/publishers/google/models/m:generateContent"},
+		{PublisherOpenAPI, "us-central1", "meta/m", "https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1/endpoints/openapi/chat/completions"},
+		{PublisherOpenAPI, "global", "meta/m", "https://aiplatform.googleapis.com/v1/projects/proj/locations/global/endpoints/openapi/chat/completions"},
 	} {
-		p := build(t, analyzer.Options{Extra: map[string]string{KeyPublisher: tc.publisher, KeyRegion: tc.region}})
+		p := build(t, analyzer.Options{Model: tc.model, Extra: map[string]string{KeyPublisher: tc.publisher, KeyRegion: tc.region}})
 		if got := p.url(); got != tc.want {
 			t.Errorf("publisher %q region %q: url = %q, want %q", tc.publisher, tc.region, got, tc.want)
 		}
+	}
+}
+
+// All publishers share the OpenAI-compatible endpoint, and Vertex routes it
+// on the model's prefix. A bare name must fail at load, before the first
+// statement.
+func TestOpenAPIPublisherNeedsPrefixedModel(t *testing.T) {
+	_, err := analyzer.NewProvider(Name, analyzer.Options{
+		Model: "llama-4-maverick-17b-128e-instruct-maas",
+		Extra: map[string]string{KeyProject: "p", KeyRegion: "r", KeyPublisher: PublisherOpenAPI},
+	})
+	if err == nil || !strings.Contains(err.Error(), "<publisher>/<model>") {
+		t.Errorf("err = %v", err)
 	}
 }
 
@@ -112,6 +127,59 @@ func TestClassifyGooglePublisherSendsBearerAndGeminiBody(t *testing.T) {
 	}
 	if req.SystemInstruction.Parts[0].Text != "system" || req.Contents[0].Parts[0].Text != "SELECT 1" {
 		t.Errorf("body = %s", gotBody)
+	}
+}
+
+// The open models use the openai encoder under a bearer. Vertex documents
+// only max_tokens, and Llama answers with empty text when it gets no limit it
+// reads, so this path must not send the OpenAI spelling.
+func TestClassifyOpenAPIPublisherSendsBearerAndChatBody(t *testing.T) {
+	var got *http.Request
+	var gotBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Clone(r.Context())
+		gotBody, _ = io.ReadAll(r.Body)
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"role":"assistant","tool_calls":[
+		  {"type":"function","function":{"name":"report_high_risk","arguments":"{\"title\":\"Unbounded delete\",\"explanation\":\"No WHERE.\"}"}}
+		]},"finish_reason":"tool_calls"}]}`)
+	}))
+	defer srv.Close()
+
+	const model = "meta/llama-4-maverick-17b-128e-instruct-maas"
+	p := build(t, analyzer.Options{
+		Endpoint:        srv.URL,
+		Model:           model,
+		MaxOutputTokens: 256,
+		Extra:           map[string]string{KeyPublisher: PublisherOpenAPI},
+	})
+	withToken(p, "tok")
+
+	res, err := p.Classify(context.Background(), "system", "DELETE FROM t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.RiskLevel != analyzer.RiskHigh || res.Title != "Unbounded delete" {
+		t.Errorf("result = %+v", res)
+	}
+	if auth := got.Header.Get("authorization"); auth != "Bearer tok" {
+		t.Errorf("authorization = %q, want Bearer tok", auth)
+	}
+
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal(gotBody, &body); err != nil {
+		t.Fatal(err)
+	}
+	if string(body["model"]) != `"`+model+`"` {
+		t.Errorf("model = %s, want %q", body["model"], model)
+	}
+	if string(body["max_tokens"]) != "256" {
+		t.Errorf("max_tokens = %s, want 256: %s", body["max_tokens"], gotBody)
+	}
+	if _, ok := body["max_completion_tokens"]; ok {
+		t.Errorf("vertex path sent max_completion_tokens: %s", gotBody)
+	}
+	if string(body["tool_choice"]) != `"required"` {
+		t.Errorf("tool_choice = %s, want required", body["tool_choice"])
 	}
 }
 

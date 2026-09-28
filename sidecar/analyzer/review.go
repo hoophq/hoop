@@ -41,6 +41,48 @@ const (
 	reviewExecuted = "EXECUTED"
 )
 
+// ReviewMode decides what a PENDING review does to its statement.
+type ReviewMode string
+
+const (
+	// ReviewHold waits on the connection until the review settles. The
+	// default, and the only mode before return existed.
+	ReviewHold ReviewMode = "hold"
+
+	// ReviewReturn denies at once with the review id. The client resends the
+	// identical bytes after approval, and the backend releases them once.
+	// For agents, whose tool calls end long before a human answers
+	// (ADR-0021).
+	ReviewReturn ReviewMode = "return"
+)
+
+// Valid reports whether m is a mode this build knows. Empty is ReviewHold.
+func (m ReviewMode) Valid() bool {
+	switch m {
+	case "", ReviewHold, ReviewReturn:
+		return true
+	}
+	return false
+}
+
+// reviewModeListener is the only source of a review mode today. A client
+// opt-in (EVL-321) adds a second one in reviewMode.
+const reviewModeListener = "listener"
+
+// reviewMode resolves how this statement waits, and who chose it. One
+// function, so a new source is a case here and not a branch in hold.
+func (e *Evaluator) reviewMode() (ReviewMode, string) {
+	if e.cfg.ReviewMode == ReviewReturn {
+		return ReviewReturn, reviewModeListener
+	}
+	return ReviewHold, reviewModeListener
+}
+
+// returnReason is the clause a return-mode denial carries. The retry must be
+// byte-identical: the backend matches an approval against exact bytes, and a
+// reformatted statement files a new review.
+const returnReason = "waiting for approval; resend the identical statement once it is approved"
+
 // Reviewer is the review backend a hold talks to: the control plane, in the
 // sidecar.
 //
@@ -73,8 +115,8 @@ const (
 )
 
 // hold resolves an ActionRequireReview verdict: it files the statement for
-// human approval, waits on the connection while the review is pending, and
-// forwards only what came back released.
+// human approval, waits on the connection while the review is pending (or, in
+// ReviewReturn, denies at once), and forwards only what came back released.
 //
 // It is the one place in this package that talks to anything but the model
 // provider, and it fails closed in every direction. FailOpen is not consulted
@@ -90,6 +132,10 @@ const (
 // ctx is the connection's. It ends the wait when the client or the upstream
 // goes away, so an approval is never spent on a statement that cannot run.
 func (e *Evaluator) hold(ctx context.Context, stmt inspect.Statement, notes map[string]string) policy.Verdict {
+	mode, source := e.reviewMode()
+	notes[MetadataReviewMode] = string(mode)
+	notes[MetadataReviewModeSource] = source
+
 	if e.cfg.Review == nil {
 		// An observed lane is built without one on purpose, and its
 		// denial is turned back into an allow by policy.Observe. Any
@@ -125,6 +171,9 @@ func (e *Evaluator) hold(ctx context.Context, stmt inspect.Statement, notes map[
 	}
 	if res.Status != reviewPending || res.ID == "" {
 		return e.denyHold(notes, res.ID, reviewReason(res.Status))
+	}
+	if mode == ReviewReturn {
+		return e.denyHold(notes, res.ID, returnReason)
 	}
 	return e.wait(ctx, res.ID, notes)
 }

@@ -22,9 +22,10 @@ const planeConfig = `{"listeners":[{"name":"appdb","protocol":"postgres","listen
 // handshakeCall records what the fake plane saw, so a test can assert the
 // token and version that arrived rather than only the outcome.
 type handshakeCall struct {
-	token   string
-	version string
-	path    string
+	token        string
+	version      string
+	path         string
+	capabilities string
 }
 
 // planeServer serves the handshake with body, capturing each call. A nil
@@ -53,9 +54,10 @@ func planeServerWith(t *testing.T, status int, body string, managesLicense bool)
 		}
 		_ = json.NewDecoder(r.Body).Decode(&req)
 		*calls = append(*calls, handshakeCall{
-			token:   r.Header.Get(sidecarTokenHeader),
-			version: req.Version,
-			path:    r.URL.Path,
+			token:        r.Header.Get(sidecarTokenHeader),
+			version:      req.Version,
+			path:         r.URL.Path,
+			capabilities: r.Header.Get(CapabilitiesHeader),
 		})
 		if managesLicense && status == http.StatusOK {
 			w.Header().Set(LicenseManagedHeader, "true")
@@ -95,6 +97,11 @@ func TestSetupFetchesTheConfigFromTheControlPlane(t *testing.T) {
 	}
 	if got.path != controlPlaneHandshakePath {
 		t.Errorf("path = %q", got.path)
+	}
+	// The plane refuses to serve review_mode to a build that does not say
+	// it decodes the key.
+	if got.capabilities != CapabilityReviewMode {
+		t.Errorf("capabilities = %q, want %q", got.capabilities, CapabilityReviewMode)
 	}
 }
 

@@ -62,9 +62,9 @@ func configRevision(served daemon.Config) string {
 // served. A failure to record is logged and never fails the handshake: the
 // sidecar needs its configuration more than the fleet view needs a row, and
 // the next tick is a minute away.
-func recordHandshake(sidecarID string, req openapi.SidecarHandshakeRequest, servedRevision string) {
+func recordHandshake(sidecarID string, req openapi.SidecarHandshakeRequest, servedRevision string, capabilities []string) {
 	err := models.RecordSidecarHandshake(models.DB, sidecarID,
-		req.Version, req.AppliedRevision, req.LastOutcome, servedRevision)
+		req.Version, req.AppliedRevision, req.LastOutcome, servedRevision, capabilities)
 	if err != nil {
 		log.With("sidecar", sidecarID).Warnf("failed recording the sidecar handshake, reason=%v", err)
 	}
@@ -124,6 +124,9 @@ func writeSidecarConfiguration(db *gorm.DB, licenseData json.RawMessage, write f
 		if err := services.ValidateSidecarBindingsForConfiguration(tx, sc); err != nil {
 			return err
 		}
+		if err := services.CheckComposedSidecarConfiguration(tx, sc); err != nil {
+			return err
+		}
 		// A listener this write removed or renamed takes its Slack channels
 		// with it, so they never apply to a listener that takes its name later.
 		if appconfig.Get().IsControlPlane() {
@@ -149,16 +152,22 @@ func writeSidecarConfiguration(db *gorm.DB, licenseData json.RawMessage, write f
 func answerSidecarWrite(c *gin.Context, err error) {
 	var overCap services.ErrSidecarConfigOverCap
 	var broken services.ErrSidecarBindingBroken
-	var invalid services.ErrSidecarConfigInvalid
+	var configInvalid services.ErrSidecarConfigInvalid
+	var missing services.ErrSidecarCapabilityMissing
+	var invalid services.ErrSidecarAnalyzerInvalid
 	switch {
 	case errors.Is(err, models.ErrNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"message": "sidecar not found"})
-	case errors.As(err, &invalid):
-		c.JSON(http.StatusUnprocessableEntity, openapi.SidecarConfigError{Message: invalid.Error(), Problems: invalid.Problems})
+	case errors.As(err, &configInvalid):
+		c.JSON(http.StatusUnprocessableEntity, openapi.SidecarConfigError{Message: configInvalid.Error(), Problems: configInvalid.Problems})
 	case errors.As(err, &overCap):
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": overCap.Error()})
 	case errors.As(err, &broken):
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": broken.Error()})
+	case errors.As(err, &missing):
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": missing.Error()})
+	case errors.As(err, &invalid):
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": invalid.Error()})
 	case errors.Is(err, errSwitchNeedsPatch):
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 	default:
@@ -259,7 +268,7 @@ func Post(c *gin.Context) {
 //	@Description	List all sidecars for the organization
 //	@Tags			Sidecars
 //	@Produce		json
-//	@Success		200	{array}		openapi.SidecarResponse
+//	@Success		200		{array}		openapi.SidecarResponse
 //	@Failure		403,500	{object}	openapi.HTTPError
 //	@Router			/sidecars [get]
 func List(c *gin.Context) {
@@ -427,8 +436,8 @@ func Put(c *gin.Context) {
 //	@Tags			Sidecars
 //	@Accept			json
 //	@Produce		json
-//	@Param			nameOrID			path		string							true	"Name or UUID of the sidecar"
-//	@Param			request				body		openapi.SidecarPatchRequest		true	"The request body resource"
+//	@Param			nameOrID			path		string						true	"Name or UUID of the sidecar"
+//	@Param			request				body		openapi.SidecarPatchRequest	true	"The request body resource"
 //	@Success		200					{object}	openapi.SidecarResponse
 //	@Failure		400,403,404,500		{object}	openapi.HTTPError
 //	@Failure		422					{object}	openapi.SidecarConfigError
@@ -524,15 +533,16 @@ func usesConfigFile(cfg models.SidecarConfiguration) bool {
 // Sidecar Handshake
 //
 //	@Summary		Sidecar Handshake
-//	@Description	Authenticated with the hoop-sidecar-token header. Records the reported version and returns the configuration the sidecar must serve. A sidecar whose stored configuration sets load_from_disk receives only that flag and its license, and runs its own config file. Answers 412 while no configuration with listeners is assigned, recording nothing: a sidecar that cannot run must not show up as recently seen. The answer carries the organization's license in its "license" key; the sidecar verifies that signature itself and the license is never stored per sidecar.
+//	@Description	Authenticated with the hoop-sidecar-token header. Records the reported version and returns the configuration the sidecar must serve. A sidecar whose stored configuration sets load_from_disk receives only that flag and its license, and runs its own config file. Answers 412 while no configuration with listeners is assigned, recording nothing: a sidecar that cannot run must not show up as recently seen. Answers 422 when the configuration uses a feature the hoop-sidecar-capabilities header does not list. The answer carries the organization's license in its "license" key; the sidecar verifies that signature itself and the license is never stored per sidecar.
 //	@Tags			Sidecars
 //	@Accept			json
 //	@Produce		json
-//	@Param			hoop-sidecar-token	header		string							true	"The token returned when the sidecar was created"
-//	@Param			request				body		openapi.SidecarHandshakeRequest	true	"The request body resource"
-//	@Success		200				{object}	map[string]interface{}
-//	@Header			200				{string}	hoop-sidecar-license-managed	"Present when this gateway owns the licensing decision, so an answer with no license means the organization holds none. A gateway older than the feature omits it, and the sidecar then keeps its own license sources."
-//	@Failure		400,401,403,412,500	{object}	openapi.HTTPError
+//	@Param			hoop-sidecar-token			header		string							true	"The token returned when the sidecar was created"
+//	@Param			hoop-sidecar-capabilities	header		string							false	"Comma-separated served-document features this sidecar decodes, such as review_mode. Absent means a build too old to report."
+//	@Param			request						body		openapi.SidecarHandshakeRequest	true	"The request body resource"
+//	@Success		200							{object}	map[string]interface{}
+//	@Header			200							{string}	hoop-sidecar-license-managed	"Present when this gateway owns the licensing decision, so an answer with no license means the organization holds none. A gateway older than the feature omits it, and the sidecar then keeps its own license sources."
+//	@Failure		400,401,403,412,422,500		{object}	openapi.HTTPError
 //	@Router			/sidecars/handshake [post]
 func Handshake(c *gin.Context) {
 	sidecar := apiroutes.SidecarFromContext(c)
@@ -545,6 +555,7 @@ func Handshake(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
+	capabilities := daemon.ParseCapabilities(c.GetHeader(daemon.CapabilitiesHeader))
 	if sidecar.Configuration.LoadFromDisk != nil && *sidecar.Configuration.LoadFromDisk {
 		licenseData, err := models.GetOrgLicenseData(models.DB, sidecar.OrgID)
 		if err != nil {
@@ -557,7 +568,7 @@ func Handshake(c *gin.Context) {
 		// No revision: the plane does not own this sidecar's document, so it
 		// has nothing to be converged with. The state renders from
 		// load_from_disk instead.
-		recordHandshake(sidecar.ID, req, "")
+		recordHandshake(sidecar.ID, req, "", capabilities)
 		c.Header(licenseManagedHeader, "true")
 		c.JSON(http.StatusOK, diskModeConfig{LoadFromDisk: true, License: string(licenseData)})
 		return
@@ -571,13 +582,22 @@ func Handshake(c *gin.Context) {
 			"start the sidecar with its config file to import it, or author the configuration in the control plane"})
 		return
 	}
-	served, err := withOrgLicense(sidecar)
+	served, err := withOrgLicense(sidecar, capabilities)
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the organization license")
+		// Recorded even on refusal, so a later write knows this build is
+		// too old instead of reading it as never seen. Only the
+		// capabilities: a sidecar that cannot run is not recently seen.
+		var missing services.ErrSidecarCapabilityMissing
+		if errors.As(err, &missing) {
+			if rerr := models.RecordSidecarCapabilities(models.DB, sidecar.ID, capabilities); rerr != nil {
+				log.With("sidecar", sidecar.ID).Warnf("failed recording the sidecar capabilities, reason=%v", rerr)
+			}
+		}
+		answerServeError(c, err)
 		return
 	}
 	revision := configRevision(served)
-	recordHandshake(sidecar.ID, req, revision)
+	recordHandshake(sidecar.ID, req, revision, capabilities)
 	c.Header(licenseManagedHeader, "true")
 	c.Header(daemon.ConfigRevisionHeader, revision)
 	c.JSON(http.StatusOK, served)
@@ -601,7 +621,11 @@ func Handshake(c *gin.Context) {
 // no license can name. An expired document still goes out, because the
 // sidecar has its own rule for a term that ended and cannot apply it to a
 // license it never received.
-func withOrgLicense(sc *models.Sidecar) (daemon.Config, error) {
+//
+// capabilities is what the requesting sidecar reported. A document it cannot
+// decode is refused rather than served: a strict decode would refuse the whole
+// of it, at startup or on reload.
+func withOrgLicense(sc *models.Sidecar, capabilities []string) (daemon.Config, error) {
 	licenseData, err := models.GetOrgLicenseData(models.DB, sc.OrgID)
 	if err != nil {
 		// Not found is not a missing license, it is a missing org: the
@@ -633,6 +657,9 @@ func withOrgLicense(sc *models.Sidecar) (daemon.Config, error) {
 	if err := services.CheckSidecarConfigurationLimits(composed, licenseData); err != nil {
 		return daemon.Config(sc.Configuration), err
 	}
+	if err := daemon.CheckServable(composed, capabilities); err != nil {
+		return daemon.Config(sc.Configuration), services.ErrSidecarCapabilityMissing{Reason: err.Error()}
+	}
 	return servedConfig(models.SidecarConfiguration(composed), licenseData), nil
 }
 
@@ -641,7 +668,9 @@ func withOrgLicense(sc *models.Sidecar) (daemon.Config, error) {
 // row the middleware loaded, and a sidecar's row must not grow a license
 // because something read it.
 func servedConfig(cfg models.SidecarConfiguration, licenseData json.RawMessage) daemon.Config {
-	served := daemon.Config(cfg)
+	// ServedForm drops review_mode where it holds the default, so a hold
+	// lane never carries a key an older build refuses.
+	served := daemon.ServedForm(daemon.Config(cfg))
 	// Assigned unconditionally, so an organization with no license serves
 	// none. A row written before this feature can carry a `license` of its
 	// own -- the write routes only started refusing one here -- and letting
@@ -663,9 +692,9 @@ func servedConfig(cfg models.SidecarConfiguration, licenseData json.RawMessage) 
 //	@Tags			Sidecars
 //	@Accept			json
 //	@Produce		json
-//	@Param			hoop-sidecar-token	header		string	true	"The token returned when the sidecar was created"
-//	@Param			request				body		object	true	"The configuration document, the same shape the handshake answers"
-//	@Success		200					{object}	map[string]interface{}
+//	@Param			hoop-sidecar-token		header		string	true	"The token returned when the sidecar was created"
+//	@Param			request					body		object	true	"The configuration document, the same shape the handshake answers"
+//	@Success		200						{object}	map[string]interface{}
 //	@Failure		400,401,403,409,422,500	{object}	openapi.HTTPError
 //	@Router			/sidecars/configuration [put]
 func ImportConfiguration(c *gin.Context) {
@@ -752,10 +781,11 @@ func ImportConfiguration(c *gin.Context) {
 //	@Description	Authenticated with the hoop-sidecar-token header. Returns the configuration the sidecar must serve, carrying the organization's license in its "license" key, or only the load_from_disk flag and the license when the sidecar loads its configuration from disk. Unlike the handshake it records nothing, so a poll never overwrites what the sidecar last reported about itself.
 //	@Tags			Sidecars
 //	@Produce		json
-//	@Param			hoop-sidecar-token	header		string	true	"The token returned when the sidecar was created"
-//	@Success		200		{object}	map[string]interface{}
-//	@Header			200		{string}	hoop-sidecar-license-managed	"Present when this gateway owns the licensing decision; see the handshake."
-//	@Failure		401,403,500	{object}	openapi.HTTPError
+//	@Param			hoop-sidecar-token			header		string	true	"The token returned when the sidecar was created"
+//	@Param			hoop-sidecar-capabilities	header		string	false	"See the handshake."
+//	@Success		200							{object}	map[string]interface{}
+//	@Header			200							{string}	hoop-sidecar-license-managed	"Present when this gateway owns the licensing decision; see the handshake."
+//	@Failure		401,403,422,500				{object}	openapi.HTTPError
 //	@Router			/sidecars/configuration [get]
 func Configuration(c *gin.Context) {
 	sidecar := apiroutes.SidecarFromContext(c)
@@ -773,13 +803,25 @@ func Configuration(c *gin.Context) {
 		c.JSON(http.StatusOK, diskModeConfig{LoadFromDisk: true, License: string(licenseData)})
 		return
 	}
-	served, err := withOrgLicense(sidecar)
+	served, err := withOrgLicense(sidecar, daemon.ParseCapabilities(c.GetHeader(daemon.CapabilitiesHeader)))
 	if err != nil {
-		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the organization license")
+		answerServeError(c, err)
 		return
 	}
 	c.Header(licenseManagedHeader, "true")
 	c.JSON(http.StatusOK, served)
+}
+
+// answerServeError answers a document the plane will not serve. A missing
+// capability is 422, which a sidecar reports as a config it cannot build and
+// survives by keeping its current rules; the refusal names the upgrade.
+func answerServeError(c *gin.Context, err error) {
+	var missing services.ErrSidecarCapabilityMissing
+	if errors.As(err, &missing) {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": missing.Error()})
+		return
+	}
+	httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the organization license")
 }
 
 // diskModeConfig is the whole answer a released sidecar receives: the

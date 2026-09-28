@@ -10001,6 +10001,12 @@ const docTemplate = `{
                         "name": "hoop-sidecar-token",
                         "in": "header",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "See the handshake.",
+                        "name": "hoop-sidecar-capabilities",
+                        "in": "header"
                     }
                 ],
                 "responses": {
@@ -10025,6 +10031,12 @@ const docTemplate = `{
                     },
                     "403": {
                         "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -10116,7 +10128,7 @@ const docTemplate = `{
         },
         "/sidecars/handshake": {
             "post": {
-                "description": "Authenticated with the hoop-sidecar-token header. Records the reported version and returns the configuration the sidecar must serve. A sidecar whose stored configuration sets load_from_disk receives only that flag and its license, and runs its own config file. Answers 412 while no configuration with listeners is assigned, recording nothing: a sidecar that cannot run must not show up as recently seen. The answer carries the organization's license in its \"license\" key; the sidecar verifies that signature itself and the license is never stored per sidecar.",
+                "description": "Authenticated with the hoop-sidecar-token header. Records the reported version and returns the configuration the sidecar must serve. A sidecar whose stored configuration sets load_from_disk receives only that flag and its license, and runs its own config file. Answers 412 while no configuration with listeners is assigned, recording nothing: a sidecar that cannot run must not show up as recently seen. Answers 422 when the configuration uses a feature the hoop-sidecar-capabilities header does not list. The answer carries the organization's license in its \"license\" key; the sidecar verifies that signature itself and the license is never stored per sidecar.",
                 "consumes": [
                     "application/json"
                 ],
@@ -10134,6 +10146,12 @@ const docTemplate = `{
                         "name": "hoop-sidecar-token",
                         "in": "header",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Comma-separated served-document features this sidecar decodes, such as review_mode. Absent means a build too old to report.",
+                        "name": "hoop-sidecar-capabilities",
+                        "in": "header"
                     },
                     {
                         "description": "The request body resource",
@@ -10179,6 +10197,12 @@ const docTemplate = `{
                     },
                     "412": {
                         "description": "Precondition Failed",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -10262,6 +10286,66 @@ const docTemplate = `{
                     },
                     "422": {
                         "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
+        "/sidecars/reviews/{id}": {
+            "get": {
+                "description": "Read the status of one review the calling sidecar filed. It never changes the review: an approved review stays approved until the sidecar resends the statement.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sidecars"
+                ],
+                "summary": "Get Sidecar Review Status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The token returned when the sidecar was created",
+                        "name": "hoop-sidecar-token",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "The review id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SidecarReviewStatus"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "412": {
+                        "description": "Precondition Failed",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -20196,6 +20280,57 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.Review"
                         }
                     ]
+                }
+            }
+        },
+        "openapi.SidecarReviewStatus": {
+            "type": "object",
+            "properties": {
+                "approval_rule": {
+                    "description": "The access request rule the review was filed under",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "payments-approvers"
+                },
+                "created_at": {
+                    "description": "The time the review was created",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2024-07-25T15:56:35.317601Z"
+                },
+                "decided_at": {
+                    "description": "The time of the last reviewer decision. Null while the review is pending",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2024-07-25T16:01:12.000Z"
+                },
+                "id": {
+                    "description": "Resource identifier",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true,
+                    "example": "9F9745B4-C77B-4D52-84D3-E24F67E3623C"
+                },
+                "listener_name": {
+                    "description": "The sidecar listener this review is bound to",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "appdb"
+                },
+                "rejection_reason": {
+                    "description": "The reason the reviewer gave when rejecting the review",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "Not during business hours."
+                },
+                "status": {
+                    "description": "The status of the review\n* PENDING - Waiting for a reviewer\n* APPROVED - Approved and not yet consumed; resend the identical statement\n* REJECTED - Rejected; the statement will not run\n* REVOKED - Revoked after approval\n* EXECUTED - The approval was consumed by a resent statement",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.ReviewStatusType"
+                        }
+                    ],
+                    "readOnly": true
                 }
             }
         },
