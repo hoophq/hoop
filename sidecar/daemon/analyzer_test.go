@@ -252,12 +252,9 @@ func TestFailOpenDefaultsTrue(t *testing.T) {
 	}
 }
 
-// A lane with capture off must keep the registry default, so every lane that
-// did not ask for anything follows the original code path.
-func TestCodecFactoryIsNilWithoutHTTPConfig(t *testing.T) {
-	if f := httpCodecFactory(inspect.HTTP, nil); f != nil {
-		t.Error("a lane with no http block got a custom codec factory")
-	}
+// Only an http lane gets an http codec factory. It gets one even with no
+// http block, to capture the review mode header; see httpCodecFactory.
+func TestCodecFactoryIsNilForOtherProtocols(t *testing.T) {
 	if f := httpCodecFactory(inspect.Postgres, &HTTPCodecConfig{CaptureBody: true}); f != nil {
 		t.Error("a postgres lane got an http codec factory")
 	}

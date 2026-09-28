@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -857,15 +858,28 @@ func redactorFor(mode SendMode, det Plugin) func(string) string {
 // without qualification.
 const refuseSentinel = analyzer.RefuseSentinel
 
-// httpCodecFactory builds a codec factory for a lane's capture settings.
-//
-// Returns nil when the lane wants the registry default, which keeps the Gate
-// on its original path for every lane that did not ask for anything.
+// httpCodecFactory builds a codec factory for an http lane's capture
+// settings. Every http lane gets one, even with no http block: the codec must
+// expose analyzer.HeaderReviewMode whether or not the lane holds today, since
+// a reload can turn holding on while the running codec stays.
 func httpCodecFactory(proto inspect.Protocol, h *HTTPCodecConfig) func() inspect.Codec {
-	if h == nil || proto != inspect.HTTP {
+	if proto != inspect.HTTP {
 		return nil
 	}
-	return newHTTPCodec(*h)
+	return newHTTPCodec(withReviewModeHeader(h))
+}
+
+// withReviewModeHeader adds analyzer.HeaderReviewMode to a lane's http block,
+// so a client can opt into return per request (ADR-0021). The codec records
+// only headers the client sent, so other requests keep their audit shape. It
+// copies: h is the stored config, which validation reads.
+func withReviewModeHeader(h *HTTPCodecConfig) HTTPCodecConfig {
+	var c HTTPCodecConfig
+	if h != nil {
+		c = *h
+	}
+	c.Headers = append(slices.Clip(c.Headers), analyzer.HeaderReviewMode)
+	return c
 }
 
 // validateLaneAnalysis checks a lane's analyzer surface — its own analyzer

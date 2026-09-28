@@ -368,6 +368,12 @@ func sortedHeaders(h map[string]string) []string {
 	}
 	names := make([]string, 0, len(h))
 	for name := range h {
+		// Control data, not request content. Kept out of the prompt, where a
+		// client would write free text the operator never allowlisted, and
+		// out of the cache key, so hold and return share a classification.
+		if name == HeaderReviewMode {
+			continue
+		}
 		names = append(names, name)
 	}
 	sort.Strings(names)
