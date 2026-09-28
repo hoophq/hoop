@@ -31,7 +31,11 @@ func startStatusTestDB(t *testing.T) {
 	ctx := context.Background()
 	inst, err := pglite.Start(ctx, t.TempDir())
 	require.NoError(t, err)
-	t.Cleanup(func() { inst.Close(ctx) })
+	t.Cleanup(func() {
+		if err := inst.Close(ctx); err != nil {
+			t.Errorf("close embedded database: %v", err)
+		}
+	})
 
 	require.NoError(t, modelsbootstrap.MigrateDB(inst.MigrateDSN(), ""))
 	// The embedded backend serves one session at a time.
