@@ -16,6 +16,7 @@ import (
 	"github.com/hoophq/hoop/gateway/api/httputils"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/api/sidecarbind"
+	"github.com/hoophq/hoop/gateway/appconfig"
 	"github.com/hoophq/hoop/gateway/audit"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/services"
@@ -28,11 +29,20 @@ import (
 // live in services.CheckRedactProvider). Read/list/delete stay available so
 // existing rules remain visible and removable.
 func requireRedactProvider(c *gin.Context) bool {
-	if err := services.CheckRedactProvider(); err != nil {
+	if err := redactProviderError(appconfig.Get().IsControlPlane()); err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": err.Error()})
 		return false
 	}
 	return true
+}
+
+// redactProviderError skips the check on the control plane: sidecars mask
+// in-process (sidecar/pii/alcatraz) and never call a gateway DLP provider.
+func redactProviderError(controlPlane bool) error {
+	if controlPlane {
+		return nil
+	}
+	return services.CheckRedactProvider()
 }
 
 func getLicenseType(ctx *storagev2.Context) string {

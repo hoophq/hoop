@@ -7,6 +7,8 @@ import { docsUrl } from '@/utils/docsUrl'
 //     both drive masking from data-masking rules.
 //   - gcp → docs link + deprecated-provider warning, no create path.
 //   - unset → docs link only; there is no provider to call deprecated.
+// providerRequired=false (control plane) skips the gate: sidecars mask
+// in-process and need no DLP provider.
 const FEATURE_ITEMS = [
   {
     icon: <FolderLock size={20} />,
@@ -35,8 +37,14 @@ const DEPRECATED_GCP_INFO =
 // sent straight into the create flow.
 const RULE_DRIVEN_PROVIDERS = ['mspresidio', 'alcatraz']
 
-export default function DataMaskingPromotion({ redactProvider, onConfigure }) {
-  const providerProps = RULE_DRIVEN_PROVIDERS.includes(redactProvider)
+export default function DataMaskingPromotion({
+  redactProvider,
+  providerRequired = true,
+  onConfigure,
+}) {
+  const canConfigure =
+    !providerRequired || RULE_DRIVEN_PROVIDERS.includes(redactProvider)
+  const providerProps = canConfigure
     ? {
         onPrimaryClick: onConfigure,
         primaryText: 'Configure Live Data Masking',

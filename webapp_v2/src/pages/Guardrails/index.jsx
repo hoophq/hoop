@@ -33,9 +33,6 @@ export default function Guardrails() {
   const fetchAttributes = useGuardrailsStore((s) => s.fetchAttributes)
 
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
-  // A DLP provider (gcp or mspresidio) is required to enforce guardrails;
-  // has_redact_credentials is true only when one of those is configured.
-  const hasRedactCredentials = useUserStore((s) => s.hasRedactCredentials)
 
   const [selectedRole, setSelectedRole] = useState(null)
   const [selectedAttribute, setSelectedAttribute] = useState(null)
@@ -84,20 +81,10 @@ export default function Guardrails() {
     return <PageLoader error h={300} message="Failed to load guardrails." />
   }
 
-  // Without a DLP provider guardrails cannot be enforced, so the requirement
-  // screen replaces the list even when guardrails already exist.
-  if (!hasRedactCredentials) {
-    return (
-      <FullBleed>
-        <GuardrailsPromotion dlpAvailable={false} onCreate={goCreate} />
-      </FullBleed>
-    )
-  }
-
   if (list.length === 0) {
     return (
       <FullBleed>
-        <GuardrailsPromotion dlpAvailable onCreate={goCreate} />
+        <GuardrailsPromotion onCreate={goCreate} />
       </FullBleed>
     )
   }

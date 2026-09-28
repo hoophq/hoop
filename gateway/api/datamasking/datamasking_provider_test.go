@@ -67,3 +67,16 @@ func TestHandlersRejectedBeforeTouchingDatabase(t *testing.T) {
 		t.Errorf("Put without provider: expected 422, got %d (body: %s)", rec.Code, rec.Body.String())
 	}
 }
+
+// The control plane stores rules for sidecars, which mask in-process, so it
+// accepts them without a gateway DLP provider. The gateway still refuses.
+func TestRedactProviderErrorByMode(t *testing.T) {
+	loadNoProviderConfig(t)
+
+	if err := redactProviderError(true); err != nil {
+		t.Errorf("control plane: expected no error, got %v", err)
+	}
+	if err := redactProviderError(false); err == nil {
+		t.Error("gateway: expected an error without a DLP provider")
+	}
+}

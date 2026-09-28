@@ -419,7 +419,11 @@ function Router() {
         path="/features/data-masking"
         element={
           <Page adminOnly licenseFeature="data-masking">
-            <DataMasking />
+            {/* Sidecars mask in-process, so the control plane needs no DLP provider. */}
+            <ByProduct
+              gateway={<DataMasking />}
+              controlPlane={<DataMasking providerRequired={false} />}
+            />
           </Page>
         }
       />
