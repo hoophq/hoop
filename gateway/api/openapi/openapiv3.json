@@ -8747,6 +8747,57 @@
         },
         "type": "object"
       },
+      "openapi.SidecarReviewStatus": {
+        "properties": {
+          "approval_rule": {
+            "description": "The access request rule the review was filed under",
+            "example": "payments-approvers",
+            "readOnly": true,
+            "type": "string"
+          },
+          "created_at": {
+            "description": "The time the review was created",
+            "example": "2024-07-25T15:56:35.317601Z",
+            "readOnly": true,
+            "type": "string"
+          },
+          "decided_at": {
+            "description": "The time of the last reviewer decision. Null while the review is pending",
+            "example": "2024-07-25T16:01:12.000Z",
+            "readOnly": true,
+            "type": "string"
+          },
+          "id": {
+            "description": "Resource identifier",
+            "example": "9F9745B4-C77B-4D52-84D3-E24F67E3623C",
+            "format": "uuid",
+            "readOnly": true,
+            "type": "string"
+          },
+          "listener_name": {
+            "description": "The sidecar listener this review is bound to",
+            "example": "appdb",
+            "readOnly": true,
+            "type": "string"
+          },
+          "rejection_reason": {
+            "description": "The reason the reviewer gave when rejecting the review",
+            "example": "Not during business hours.",
+            "readOnly": true,
+            "type": "string"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/openapi.ReviewStatusType"
+              }
+            ],
+            "description": "The status of the review\n* PENDING - Waiting for a reviewer\n* APPROVED - Approved and not yet consumed; resend the identical statement\n* REJECTED - Rejected; the statement will not run\n* REVOKED - Revoked after approval\n* EXECUTED - The approval was consumed by a resent statement",
+            "readOnly": true
+          }
+        },
+        "type": "object"
+      },
       "openapi.SidecarRuleBinding": {
         "properties": {
           "kind": {
@@ -22403,6 +22454,87 @@
           }
         },
         "summary": "Create Sidecar Review",
+        "tags": [
+          "Sidecars"
+        ]
+      }
+    },
+    "/sidecars/reviews/{id}": {
+      "get": {
+        "description": "Read the status of one review the calling sidecar filed. It never changes the review: an approved review stays approved until the sidecar resends the statement.",
+        "parameters": [
+          {
+            "description": "The token returned when the sidecar was created",
+            "in": "header",
+            "name": "hoop-sidecar-token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The review id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.SidecarReviewStatus"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Precondition Failed"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get Sidecar Review Status",
         "tags": [
           "Sidecars"
         ]

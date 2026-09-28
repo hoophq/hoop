@@ -10275,6 +10275,66 @@ const docTemplate = `{
                 }
             }
         },
+        "/sidecars/reviews/{id}": {
+            "get": {
+                "description": "Read the status of one review the calling sidecar filed. It never changes the review: an approved review stays approved until the sidecar resends the statement.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Sidecars"
+                ],
+                "summary": "Get Sidecar Review Status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The token returned when the sidecar was created",
+                        "name": "hoop-sidecar-token",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "The review id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.SidecarReviewStatus"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "412": {
+                        "description": "Precondition Failed",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    }
+                }
+            }
+        },
         "/sidecars/reviews/{id}/claim": {
             "post": {
                 "description": "Answer a sidecar waiting on one review it filed. An approved review is consumed once and releases the statement; any other status is returned as it stands. It never files a review.",
@@ -20177,6 +20237,57 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.Review"
                         }
                     ]
+                }
+            }
+        },
+        "openapi.SidecarReviewStatus": {
+            "type": "object",
+            "properties": {
+                "approval_rule": {
+                    "description": "The access request rule the review was filed under",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "payments-approvers"
+                },
+                "created_at": {
+                    "description": "The time the review was created",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2024-07-25T15:56:35.317601Z"
+                },
+                "decided_at": {
+                    "description": "The time of the last reviewer decision. Null while the review is pending",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2024-07-25T16:01:12.000Z"
+                },
+                "id": {
+                    "description": "Resource identifier",
+                    "type": "string",
+                    "format": "uuid",
+                    "readOnly": true,
+                    "example": "9F9745B4-C77B-4D52-84D3-E24F67E3623C"
+                },
+                "listener_name": {
+                    "description": "The sidecar listener this review is bound to",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "appdb"
+                },
+                "rejection_reason": {
+                    "description": "The reason the reviewer gave when rejecting the review",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "Not during business hours."
+                },
+                "status": {
+                    "description": "The status of the review\n* PENDING - Waiting for a reviewer\n* APPROVED - Approved and not yet consumed; resend the identical statement\n* REJECTED - Rejected; the statement will not run\n* REVOKED - Revoked after approval\n* EXECUTED - The approval was consumed by a resent statement",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.ReviewStatusType"
+                        }
+                    ],
+                    "readOnly": true
                 }
             }
         },

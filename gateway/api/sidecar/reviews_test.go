@@ -3,6 +3,7 @@ package apisidecar
 import (
 	"database/sql"
 	"encoding/base64"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -24,7 +25,7 @@ import (
 // The handler refuses outside the control plane, so a test reaching past that
 // guard has to run as one. appconfig.Load is one-shot (it returns early once
 // loaded), so a test binary gets a single mode and the gateway-mode refusal is
-// covered by booting a real gateway rather than from here.
+// covered in the gatewaymodetest package.
 func TestMain(m *testing.M) {
 	// With a bare origin the two url accessors return the same string, so the
 	// WebappURL assertion below would hold whichever one the code calls. The
@@ -436,6 +437,94 @@ func TestClaimReviewAnswersAMalformedIDAsNotFound(t *testing.T) {
 	ClaimReview(c)
 
 	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestGetReviewRefusesARequestThatSkippedTheMiddleware(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Params = gin.Params{{Key: "id", Value: "9f97c0de-0000-0000-0000-000000000001"}}
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/sidecars/reviews/9f97c0de-0000-0000-0000-000000000001", nil)
+
+	GetReview(c)
+
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+}
+
+func TestGetReviewAnswersAMalformedIDAsNotFound(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Set("sidecar-auth", &models.Sidecar{ID: "sidecar-1", OrgID: "org-1", Name: "sc-a"})
+	c.Params = gin.Params{{Key: "id", Value: "not-a-uuid"}}
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/sidecars/reviews/not-a-uuid", nil)
+
+	GetReview(c)
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestToSidecarReviewStatusOmitsStatementAndReviewers(t *testing.T) {
+	decided := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
+	rev := &models.Review{
+		ID:                    "review-1",
+		SessionID:             "session-1",
+		Status:                models.ReviewStatusRejected,
+		ListenerName:          sql.NullString{String: "appdb", Valid: true},
+		StatementHash:         sql.NullString{String: "abc", Valid: true},
+		OwnerEmail:            reviewOwnerEmail,
+		AccessRequestRuleName: ptr.String("payments-approvers"),
+		RejectionReason:       ptr.String("not now"),
+		ReviewGroups: []models.ReviewGroups{{
+			GroupName:  "dba",
+			Status:     models.ReviewStatusRejected,
+			OwnerEmail: ptr.String("alice@example.com"),
+			ReviewedAt: &decided,
+		}},
+	}
+
+	body, err := json.Marshal(toSidecarReviewStatus(rev))
+	assert.NoError(t, err)
+
+	assert.JSONEq(t, `{
+		"id": "review-1",
+		"status": "REJECTED",
+		"listener_name": "appdb",
+		"approval_rule": "payments-approvers",
+		"created_at": "0001-01-01T00:00:00Z",
+		"decided_at": "2026-09-28T12:00:00Z",
+		"rejection_reason": "not now"
+	}`, string(body))
+}
+
+func TestReviewDecidedAt(t *testing.T) {
+	early := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
+	late := early.Add(time.Minute)
+	group := func(status models.ReviewStatusType, at *time.Time) models.ReviewGroups {
+		return models.ReviewGroups{Status: status, ReviewedAt: at}
+	}
+
+	tests := []struct {
+		name   string
+		status models.ReviewStatusType
+		groups []models.ReviewGroups
+		want   *time.Time
+	}{
+		{"pending has no decision", models.ReviewStatusPending,
+			[]models.ReviewGroups{group(models.ReviewStatusApproved, &early)}, nil},
+		{"latest decided group wins", models.ReviewStatusApproved,
+			[]models.ReviewGroups{group(models.ReviewStatusApproved, &early), group(models.ReviewStatusApproved, &late)}, &late},
+		{"pending groups are ignored", models.ReviewStatusRejected,
+			[]models.ReviewGroups{group(models.ReviewStatusRejected, &early), group(models.ReviewStatusPending, &late)}, &early},
+		{"no group timestamps", models.ReviewStatusExecuted,
+			[]models.ReviewGroups{group(models.ReviewStatusApproved, nil)}, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := reviewDecidedAt(&models.Review{Status: tt.status, ReviewGroups: tt.groups})
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }
 
 // What a reviewer ends up reading. The message renders Name, Email, Connection
