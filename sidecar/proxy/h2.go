@@ -13,6 +13,8 @@ import (
 	"net/http/httputil"
 	"sync"
 	"time"
+
+	"github.com/hoophq/hoop/sidecar/session"
 )
 
 // HTTP/2 on an http lane is terminated here and bridged into the HTTP/1
@@ -380,7 +382,14 @@ type h2Bridge struct {
 	// dialled it, so it must not end with that request's context.
 	ctx           context.Context
 	remote, local net.Addr
-	transport     *http.Transport
+	// identity is the client connection's own identity, IdentityFn's
+	// answer on the accepted connection (the *tls.Conn on a TLS lane),
+	// taken once here. Each relay connection this client opens starts from
+	// it: IdentityFn run on a pipe would see no peer certificate, and an h2
+	// client would get a different identity than the same client on
+	// HTTP/1.1.
+	identity  session.Identity
+	transport *http.Transport
 
 	mu     sync.Mutex
 	pipes  map[*bridgePipe]struct{}
@@ -392,12 +401,13 @@ type h2Bridge struct {
 
 func newH2Bridge(ctx context.Context, s *Server, client net.Conn) *h2Bridge {
 	b := &h2Bridge{
-		s:      s,
-		ctx:    ctx,
-		remote: client.RemoteAddr(),
-		local:  client.LocalAddr(),
-		pipes:  map[*bridgePipe]struct{}{},
-		done:   make(chan struct{}),
+		s:        s,
+		ctx:      ctx,
+		remote:   client.RemoteAddr(),
+		local:    client.LocalAddr(),
+		identity: s.connIdentity(client),
+		pipes:    map[*bridgePipe]struct{}{},
+		done:     make(chan struct{}),
 	}
 	protocols := new(http.Protocols)
 	protocols.SetHTTP1(true)
@@ -422,7 +432,7 @@ var errBridgeClosed = errors.New("sidecar/proxy: h2 connection closed")
 // end is served by handle exactly as an accepted HTTP/1 connection is.
 func (b *h2Bridge) dial(context.Context, string, string) (net.Conn, error) {
 	near, far := net.Pipe()
-	relayEnd := &bridgedConn{Conn: far, remote: b.remote, local: b.local}
+	relayEnd := &bridgedConn{Conn: far, remote: b.remote, local: b.local, identity: b.identity}
 	pipe := &bridgePipe{Conn: near, b: b}
 
 	b.mu.Lock()
@@ -509,12 +519,13 @@ func (p *bridgePipe) Close() error {
 }
 
 // bridgedConn is the relay's end of a bridged connection. It reports the h2
-// client's addresses instead of net.Pipe's, so the session's PeerAddr and
-// every log line name the real peer. An IdentityFn sees this connection,
-// not the client's *tls.Conn.
+// client's addresses instead of net.Pipe's, so every log line names the real
+// peer, and carries the client connection's identity, which handle uses in
+// place of calling IdentityFn on the pipe.
 type bridgedConn struct {
 	net.Conn
 	remote, local net.Addr
+	identity      session.Identity
 }
 
 func (c *bridgedConn) RemoteAddr() net.Addr { return c.remote }

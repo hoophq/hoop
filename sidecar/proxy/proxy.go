@@ -497,13 +497,16 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 		}()
 	}
 
-	base := session.Identity{PeerAddr: client.RemoteAddr().String()}
-	if s.cfg.IdentityFn != nil {
-		base = s.cfg.IdentityFn(client)
-		if base.PeerAddr == "" {
-			base.PeerAddr = client.RemoteAddr().String()
-		}
+	// A bridged h2 stream arrives on a pipe; its connection identity was
+	// taken once, from the client's own connection, when the h2 connection
+	// was accepted (see h2Bridge.identity).
+	var base session.Identity
+	if bc, ok := client.(*bridgedConn); ok {
+		base = bc.identity
+	} else {
+		base = s.connIdentity(client)
 	}
+
 	identity := base
 	var requestIdentity gate.RequestIdentity
 	if s.cfg.CredentialHeader != "" {
@@ -674,6 +677,19 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 	}()
 
 	wg.Wait()
+}
+
+// connIdentity is the identity an accepted connection carries before any
+// byte is read: IdentityFn's answer, with the peer address always set.
+func (s *Server) connIdentity(c net.Conn) session.Identity {
+	if s.cfg.IdentityFn == nil {
+		return session.Identity{PeerAddr: c.RemoteAddr().String()}
+	}
+	id := s.cfg.IdentityFn(c)
+	if id.PeerAddr == "" {
+		id.PeerAddr = c.RemoteAddr().String()
+	}
+	return id
 }
 
 // dialUpstream connects to the backend, negotiating TLS when configured.

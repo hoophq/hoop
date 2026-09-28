@@ -683,6 +683,15 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 		}
 	}
 
+	// A final response keeps its request outstanding until this whole call
+	// is done with it: judged, audited, masked. Releasing it before its
+	// judge would let a request racing in on the other pump see nothing
+	// outstanding, rotate the session, and have this response evaluated and
+	// recorded under the next caller.
+	var finals int
+	if g.creds != nil && dir == inspect.FromServer {
+		defer func() { g.releaseResponses(finals) }()
+	}
 	for i, stmt := range stmts {
 		if g.creds != nil {
 			switch {
@@ -695,11 +704,7 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 				g.outstanding++
 				g.mu.Unlock()
 			case isFinalHTTPResponse(stmt):
-				g.mu.Lock()
-				if g.outstanding > 0 {
-					g.outstanding--
-				}
-				g.mu.Unlock()
+				finals++
 			}
 		}
 		j := g.judge(ctx, stmt)
@@ -1186,6 +1191,17 @@ func (g *Gate) identify(ctx context.Context, stmt inspect.Statement, credential 
 // Attributes describe the connection or the claim, not who the caller is.
 func sameIdentity(a, b session.Identity) bool {
 	return a.Subject == b.Subject && a.Email == b.Email
+}
+
+// releaseResponses marks n requests answered, once their final responses
+// have been judged, audited and masked.
+func (g *Gate) releaseResponses(n int) {
+	if n == 0 {
+		return
+	}
+	g.mu.Lock()
+	g.outstanding = max(0, g.outstanding-n)
+	g.mu.Unlock()
 }
 
 // rotate ends the running session and opens one for id on the same

@@ -296,3 +296,68 @@ func TestRequestIdentityNeedsACodecThatLiftsTheCredential(t *testing.T) {
 		t.Fatal("gate.New accepted RequestIdentity with a codec that lifts no credential")
 	}
 }
+
+// heldResponses allows everything but holds each response's evaluation
+// until released, so a test can put a request on the other pump while a
+// response is mid-judgment. It records the principal each response was
+// judged under.
+type heldResponses struct {
+	entered, release chan struct{}
+	mu               sync.Mutex
+	seen             []string
+}
+
+func (p *heldResponses) Evaluate(inspect.Statement) policy.Verdict { return policy.Allow() }
+
+func (p *heldResponses) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext) policy.Verdict {
+	if stmt.Direction == inspect.FromServer {
+		p.entered <- struct{}{}
+		<-p.release
+		p.mu.Lock()
+		p.seen = append(p.seen, ec.Context["principal"])
+		p.mu.Unlock()
+	}
+	return policy.Allow()
+}
+
+// A response is its request's until it has been judged and audited. A new
+// caller arriving while alice's response is still being judged must not
+// rotate the session under it: the request is refused, and the response is
+// judged and recorded as alice's. Once the response is done, the new caller
+// rotates normally.
+func TestResponseInJudgmentKeepsItsCaller(t *testing.T) {
+	ctx := context.Background()
+	sink := &recordingSink{}
+	pol := &heldResponses{entered: make(chan struct{}), release: make(chan struct{})}
+	g := identityGate(t, sink, pol, "alice@example.com")
+
+	mustAllow(t, g.Request(ctx, []byte("REQ tok-alice\n")))
+	resp := make(chan gate.Decision, 1)
+	go func() { resp <- g.Response(ctx, []byte("RESP 200\n")) }()
+	<-pol.entered
+
+	if d := g.Request(ctx, []byte("REQ tok-bob\n")); d.Allowed {
+		t.Fatal("bob rotated the session while alice's response was being judged")
+	}
+	close(pol.release)
+	mustAllow(t, <-resp)
+
+	pol.mu.Lock()
+	seen := append([]string(nil), pol.seen...)
+	pol.mu.Unlock()
+	if len(seen) != 1 || seen[0] != "alice@example.com" {
+		t.Fatalf("alice's response was judged under %v", seen)
+	}
+	sink.mu.Lock()
+	for _, ev := range sink.events {
+		if ev.Kind == audit.KindStatement && ev.Statement == "200" && ev.Principal != "alice@example.com" {
+			t.Errorf("alice's response was recorded under %q", ev.Principal)
+		}
+	}
+	sink.mu.Unlock()
+
+	mustAllow(t, g.Request(ctx, []byte("REQ tok-bob\n")))
+	if p := g.Session().Identity.Principal(); p != "bob@example.com" {
+		t.Errorf("after the response, the session is %q, want bob's", p)
+	}
+}

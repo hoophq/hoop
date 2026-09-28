@@ -25,18 +25,27 @@
 #                (the MITM :443) and 8449 (the loop)
 
 services:
+  # Two volumes, so a mount hands out only what its reader needs:
+  #   gke-pki  each endpoint's certificate and key, the key 0600 and owned by
+  #            the one uid that serves it (envoy 101, fake-google 10001)
+  #   gke-ca   the customer CA certificate alone, for the clients that
+  #            verify with it (kubectl, curl, the sidecar's trust.ca_file)
+  # The CA key is deleted once both leaves are signed: nothing after this
+  # step signs anything, so nothing may read it.
   gke-pki:
     image: alpine:3.20
     networks: [inspect]
     volumes:
       - gke-pki:/pki
+      - gke-ca:/ca
     command:
       - /bin/sh
       - -ec
       - |
-        [ -s /pki/fake-google.crt ] && exit 0
+        [ -s /pki/fake-google.crt ] && [ -s /ca/ca.crt ] && [ ! -e /pki/ca.key ] && exit 0
         apk add --no-cache openssl >/dev/null
         cd /pki
+        rm -f ./*
         openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes \
           -keyout ca.key -out ca.crt -days 30 -subj "/CN=customer-mitm-ca" \
           -addext basicConstraints=critical,CA:TRUE -addext keyUsage=critical,keyCertSign,cRLSign 2>/dev/null
@@ -47,11 +56,12 @@ services:
           openssl x509 -req -in "$$1.csr" -CA ca.crt -CAkey ca.key -CAcreateserial \
             -days 30 -extfile "$$1.ext" -out "$$1.crt" 2>/dev/null
           rm -f "$$1.csr" "$$1.ext"
+          chown "$$3:$$3" "$$1.key" && chmod 0600 "$$1.key" && chmod 0644 "$$1.crt"
         }
-        leaf envoy-mitm DNS:connectgateway.googleapis.com
-        leaf fake-google DNS:connectgateway.googleapis.com,DNS:oauth2.googleapis.com,DNS:fake-google
-        # Demo keys, readable by the non-root envoy, sidecar and fake-google users.
-        chmod 0644 /pki/*.key /pki/*.crt
+        leaf envoy-mitm DNS:connectgateway.googleapis.com 101
+        leaf fake-google DNS:connectgateway.googleapis.com,DNS:oauth2.googleapis.com,DNS:fake-google 10001
+        cp ca.crt /ca/ca.crt && chmod 0644 /ca/ca.crt
+        rm -f ca.key ca.srl ca.crt
 
   fake-google:
     build: ./gke/fakegoogle
@@ -127,7 +137,8 @@ services:
     volumes:
       - ./gke/kubeconfig.yaml:/etc/kube/kubeconfig.yaml:ro
       # The corporate cabundle: kubectl and curl trust the MITM through it.
-      - gke-pki:/etc/gke-pki:ro
+      # The CA certificate only; no key reaches the sandbox.
+      - gke-ca:/etc/gke-pki:ro
     healthcheck:
       test: ["CMD-SHELL", "command -v psql && command -v curl && command -v kubectl"]
       interval: "3s"
@@ -139,7 +150,7 @@ services:
     volumes:
       - ./gke/config-gke.yaml:/etc/hoop-inspect/config.yaml:ro
       - ./upstream/certs/server.crt:/etc/hoop-inspect/certs/appdb.crt:ro
-      - gke-pki:/etc/hoop-inspect/gke-pki:ro
+      - gke-ca:/etc/hoop-inspect/gke-pki:ro
     depends_on:
       gke-pki: { condition: service_completed_successfully }
       fake-google: { condition: service_healthy }
@@ -160,5 +171,6 @@ services:
 
 volumes:
   gke-pki:
+  gke-ca:
   k3s-server:
   k3s-ca:

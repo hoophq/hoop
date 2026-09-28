@@ -21,9 +21,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hoophq/hoop/sidecar/audit"
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
 	"github.com/hoophq/hoop/sidecar/proxy"
+	"github.com/hoophq/hoop/sidecar/session"
 )
 
 // seenRequest is what an HTTP/1 upstream observed of one request.
@@ -576,4 +578,61 @@ func TestDownstreamTLSIsRefusedWhereNothingTerminatesIt(t *testing.T) {
 	if _, err := proxy.NewServer(cfg); err == nil {
 		t.Error("mysql: downstream TLS accepted on a lane that never terminates it")
 	}
+}
+
+// An IdentityFn reads the connection it is handed: a TLS lane's is the
+// *tls.Conn, with the peer's certificate on it. An h2 client's streams are
+// relayed over pipes, and must still start from what IdentityFn said about
+// the client's own connection, or the same caller gets one identity on
+// HTTP/1.1 and another on HTTP/2.
+func TestH2StreamsKeepTheClientConnectionsIdentity(t *testing.T) {
+	up := newH1Upstream(t)
+	serverTLS, roots := relayCert(t)
+	sink := audit.NewMemorySink(64)
+	srv := startServer(t, proxy.Config{
+		Upstream: up.addr(), Protocol: inspect.HTTP, DownstreamTLS: serverTLS, Audit: sink,
+		IdentityFn: func(c net.Conn) session.Identity {
+			if _, ok := c.(*tls.Conn); ok {
+				return session.Identity{Subject: "tls-peer"}
+			}
+			return session.Identity{Subject: "not-the-client-connection"}
+		},
+	})
+	url := "https://" + srv.Addr().String()
+
+	for _, h2 := range []bool{true, false} {
+		p := new(http.Protocols)
+		p.SetHTTP2(h2)
+		p.SetHTTP1(!h2)
+		tr := &http.Transport{Protocols: p, TLSClientConfig: &tls.Config{RootCAs: roots}}
+		resp := get(t, &http.Client{Transport: tr, Timeout: 10 * time.Second}, url+"/x", "api.example")
+		readAll(t, resp.Body)
+		if want := map[bool]int{true: 2, false: 1}[h2]; resp.ProtoMajor != want {
+			t.Fatalf("client spoke %s, want HTTP/%d", resp.Proto, want)
+		}
+		tr.CloseIdleConnections()
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) && countStarts(sink.Events()) < 2 {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if n := countStarts(sink.Events()); n < 2 {
+		t.Fatalf("%d sessions started, want one per client", n)
+	}
+	for _, ev := range sink.Events() {
+		if ev.Principal != "tls-peer" {
+			t.Errorf("%s event names %q, want the identity of the client's own connection", ev.Kind, ev.Principal)
+		}
+	}
+}
+
+func countStarts(events []audit.Event) int {
+	n := 0
+	for _, e := range events {
+		if e.Kind == audit.KindSessionStart {
+			n++
+		}
+	}
+	return n
 }
