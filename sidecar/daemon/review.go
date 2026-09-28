@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/hoophq/hoop/sidecar/analyzer"
 )
@@ -225,6 +226,13 @@ func (cp *controlPlane) reviewRequest(ctx context.Context, method string, body [
 // GET /api/sidecars/reviews/<id>, the read-only route. It never calls claim:
 // claim spends the approval, and the agent's resend would then read EXECUTED.
 func (cp *controlPlane) ReviewStatus(ctx context.Context, reviewID string) (ReviewStatus, error) {
+	// The plane issues canonical UUIDs and answers anything else as not
+	// found. Checking here keeps an id like ".." or "a/b" off the wire: the
+	// URL would miss the route, and its plain 404 would read as an old plane.
+	reviewID = strings.ToLower(reviewID)
+	if !canonicalUUID(reviewID) {
+		return ReviewStatus{}, ErrReviewNotFound
+	}
 	resp, raw, err := cp.reviewRequest(ctx, http.MethodGet, nil,
 		controlPlaneReviewsPath, url.PathEscape(reviewID))
 	if err != nil {
@@ -248,6 +256,27 @@ func (cp *controlPlane) ReviewStatus(ctx context.Context, reviewID string) (Revi
 		return ReviewStatus{}, ErrPlaneTooOld
 	}
 	return ReviewStatus{}, cp.reviewError(resp, raw)
+}
+
+// canonicalUUID reports a lowercase 8-4-4-4-12 hex UUID, the only form the
+// plane issues.
+func canonicalUUID(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	for i, c := range s {
+		switch i {
+		case 8, 13, 18, 23:
+			if c != '-' {
+				return false
+			}
+		default:
+			if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // planeNotFound tells the status route's own 404 from a plane that has no

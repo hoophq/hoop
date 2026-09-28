@@ -29,7 +29,13 @@ func (m *MCPConfig) validate() []string {
 	if m.Listen == "" {
 		return []string{`mcp: "listen" is required; remove the block to turn the MCP server off`}
 	}
-	if _, _, err := net.SplitHostPort(m.Listen); err != nil {
+	_, port, err := net.SplitHostPort(m.Listen)
+	if err != nil {
+		return []string{fmt.Sprintf("mcp: listen %q: %v", m.Listen, err)}
+	}
+	// SplitHostPort accepts any port text; a bad one would pass here and
+	// only fail at bind, after the plane had already stored the document.
+	if _, err := net.LookupPort("tcp", port); err != nil {
 		return []string{fmt.Sprintf("mcp: listen %q: %v", m.Listen, err)}
 	}
 	return nil

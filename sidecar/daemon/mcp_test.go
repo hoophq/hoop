@@ -25,10 +25,11 @@ func statusPlane(t *testing.T, status int, body string) (*controlPlane, *[]strin
 }
 
 func TestAStatusReadIsOneGetAndNeverAClaim(t *testing.T) {
-	cp, calls := statusPlane(t, http.StatusOK, `{"id":"r 1","status":"APPROVED",`+
+	cp, calls := statusPlane(t, http.StatusOK, `{"id":"9f97c0de-0000-4000-8000-000000000001","status":"APPROVED",`+
 		`"listener_name":"appdb","approval_rule":"dba","created_at":"2026-09-28T10:00:00Z",`+
 		`"decided_at":"2026-09-28T10:05:00Z"}`)
-	got, err := cp.ReviewStatus(context.Background(), "r 1")
+	// Upper case is the same id: the plane answers in lower case.
+	got, err := cp.ReviewStatus(context.Background(), "9F97C0DE-0000-4000-8000-000000000001")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +37,7 @@ func TestAStatusReadIsOneGetAndNeverAClaim(t *testing.T) {
 		got.DecidedAt == nil {
 		t.Errorf("status decoded as %+v", got)
 	}
-	if want := "GET /api/sidecars/reviews/r 1 hsc_token"; len(*calls) != 1 || (*calls)[0] != want {
+	if want := "GET /api/sidecars/reviews/9f97c0de-0000-4000-8000-000000000001 hsc_token"; len(*calls) != 1 || (*calls)[0] != want {
 		t.Errorf("plane saw %q, want exactly %q", *calls, want)
 	}
 }
@@ -46,11 +47,11 @@ func TestAStatusReadIsOneGetAndNeverAClaim(t *testing.T) {
 // still approve.
 func TestAStatus404TellsAnOldPlaneFromAMissingReview(t *testing.T) {
 	cp, _ := statusPlane(t, http.StatusNotFound, `{"message":"review not found"}`)
-	if _, err := cp.ReviewStatus(context.Background(), "r1"); !errors.Is(err, ErrReviewNotFound) {
+	if _, err := cp.ReviewStatus(context.Background(), testReviewID); !errors.Is(err, ErrReviewNotFound) {
 		t.Errorf("the route's own 404 read as %v", err)
 	}
 	cp, _ = statusPlane(t, http.StatusNotFound, `404 page not found`)
-	if _, err := cp.ReviewStatus(context.Background(), "r1"); !errors.Is(err, ErrPlaneTooOld) {
+	if _, err := cp.ReviewStatus(context.Background(), testReviewID); !errors.Is(err, ErrPlaneTooOld) {
 		t.Errorf("an old plane's 404 read as %v", err)
 	}
 }
@@ -70,11 +71,28 @@ func TestEveryStatusRefusalIsAnError(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cp, _ := statusPlane(t, tc.code, tc.body)
-			_, err := cp.ReviewStatus(context.Background(), "r1")
+			_, err := cp.ReviewStatus(context.Background(), testReviewID)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("error %v does not contain %q", err, tc.want)
 			}
 		})
+	}
+}
+
+const testReviewID = "9f97c0de-0000-4000-8000-000000000001"
+
+// An id the plane could not have issued never reaches it. Sent, ".." or
+// "a/b" would miss the route, and Gin's plain 404 would read as an old plane.
+func TestAMalformedIDIsNotFoundWithoutAskingThePlane(t *testing.T) {
+	cp, calls := statusPlane(t, http.StatusOK, `{}`)
+	for _, id := range []string{"", "..", ".", "a/b", "r1", testReviewID + "/claim",
+		"9f97c0de00004000800000000000000001", "{" + testReviewID + "}"} {
+		if _, err := cp.ReviewStatus(context.Background(), id); !errors.Is(err, ErrReviewNotFound) {
+			t.Errorf("id %q read as %v", id, err)
+		}
+	}
+	if len(*calls) != 0 {
+		t.Errorf("malformed ids reached the plane: %q", *calls)
 	}
 }
 
@@ -85,6 +103,8 @@ func TestAnMCPBlockNeedsAValidListenAddress(t *testing.T) {
 	}{
 		{"", `"listen" is required`},
 		{"8765", "missing port"},
+		{"127.0.0.1:notaport", "unknown port"},
+		{"127.0.0.1:70000", "invalid port"},
 	} {
 		problems := (&MCPConfig{Listen: tc.listen}).validate()
 		if len(problems) != 1 || !strings.Contains(problems[0], tc.want) {

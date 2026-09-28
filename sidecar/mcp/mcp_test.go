@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"math"
 	"net"
 	"net/http/httptest"
 	"strings"
@@ -200,6 +201,9 @@ func TestTheWaitTimeoutIsClamped(t *testing.T) {
 		1:    pollInterval,
 		90:   90 * time.Second,
 		3600: maxWaitTimeout,
+		// Would overflow time.Duration if multiplied before the cap.
+		9223372037:  maxWaitTimeout,
+		math.MaxInt: maxWaitTimeout,
 	} {
 		if got := resolveWaitTimeout(in); got != want {
 			t.Errorf("resolveWaitTimeout(%d) = %v, want %v", in, got, want)

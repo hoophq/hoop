@@ -199,8 +199,10 @@ func resolveWaitTimeout(seconds int) time.Duration {
 	if seconds <= 0 {
 		return defaultWaitTimeout
 	}
-	d := time.Duration(seconds) * time.Second
-	return min(max(d, pollInterval), maxWaitTimeout)
+	// Clamp the seconds before converting: a huge value would overflow
+	// time.Duration and wrap negative.
+	seconds = min(seconds, int(maxWaitTimeout/time.Second))
+	return max(time.Duration(seconds)*time.Second, pollInterval)
 }
 
 // progressNotifier reports elapsed seconds on the call's own response
