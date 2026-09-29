@@ -365,6 +365,23 @@ func parseSSHTargetKey(raw string) (*sshRelayTarget, error) {
 		}
 		return t, nil
 	}
+	// A NAME REACHING HERE MUST NOT STILL HOLD A COLON.
+	//
+	// This is the fallback branch: net.SplitHostPort refused the key, so
+	// host is the whole of it. A destination host never contains a colon —
+	// an IPv6 literal was taken by ParseAddr above, and host:port by the
+	// branch above that — so "db:22:1" would become an exact name nothing
+	// can ever equal. It would load without complaint, match no destination,
+	// and every session to that host would fall through to the blind-carry
+	// path: no statements, no guardrails, no masking, and nothing in the
+	// trail saying the target was never used. Carrying a forward blind is a
+	// choice this schema makes visible; it must not also be what a typo
+	// does quietly.
+	if strings.Contains(host, ":") {
+		return nil, fmt.Errorf("%q is not a host, a host:port, an address or a "+
+			"network. An IPv6 address with a port is written in brackets, "+
+			"[2001:db8::1]:22", key)
+	}
 	t.kind, t.glob = sshTargetExact, host
 	return t, nil
 }

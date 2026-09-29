@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -320,6 +321,26 @@ func buildSSHRelay(lane string, sc *SSHConfig, log *slog.Logger) (*sshRelay, err
 	if rc == nil {
 		return nil, nil
 	}
+
+	// validate runs HERE as well, not only from Config.Validate.
+	//
+	// Validate is reached through LoadConfigBytes, and a caller that supplies
+	// its own Loader to Setup builds a Config without ever passing through
+	// it — the same caller setupAnalyzer keeps its own call for. What this
+	// function checked on its own was strictly less: a private key was read
+	// and parsed but its PERMISSIONS were not looked at, so a mode 0644
+	// credential loaded; known_hosts had to be non-empty but was never
+	// opened, so a path that is a directory loaded; and an empty target map
+	// built a relay that terminates nothing, which is a listener the
+	// operator believes is inspecting and is not.
+	//
+	// Calling validate rather than repeating those three is what stops the
+	// two paths drifting apart again. The cost is one extra pass over the
+	// files at startup.
+	if problems := rc.validate(lane, sc.resolveCapabilities()); len(problems) > 0 {
+		return nil, errors.New(problems[0])
+	}
+
 	r := &sshRelay{lane: lane, identityDir: strings.TrimSpace(rc.Identities)}
 
 	// The overlay is a DIRECTORY and nothing more is read here: keys are

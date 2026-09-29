@@ -597,6 +597,110 @@ func TestRelayTargetKeyRefusesTheWildcard(t *testing.T) {
 	}
 }
 
+// TestRelayTargetKeyRefusesAMalformedHostPort keeps a typo from turning
+// inspection off.
+//
+// A key that is neither a host, a host:port, an address nor a network used to
+// fall through to the EXACT-NAME branch carrying whatever it was. A
+// destination host never contains a colon, so "db-01.prod:22:1" became a name
+// nothing could equal: it loaded without complaint, matched no destination,
+// and every session to that host went down the blind-carry path — no
+// statements, no guardrails, no masking, and nothing in the trail saying the
+// target was never used. Carrying a forward blind is a choice this schema
+// makes visible; it must not also be what a typo does quietly.
+func TestRelayTargetKeyRefusesAMalformedHostPort(t *testing.T) {
+	for _, key := range []string{
+		"db-01.prod:22:1",     // one field too many
+		"db-01.prod:notaport", // a port that is not a number
+		"db-01.prod:0",        // port zero
+		"db-01.prod:22:",      // a trailing colon after a port
+	} {
+		if got, err := parseSSHTargetKey(key); err == nil {
+			t.Errorf("%q was accepted as kind=%v name=%q; nothing can match it",
+				key, got.kind, got.glob)
+		}
+	}
+
+	// And the spellings that ARE meant still work, including the bracketed
+	// form the refusal points at.
+	for _, key := range []string{
+		"db-01.prod",
+		"db-01.prod:22",
+		"*.prod",
+		"10.0.0.5",
+		"10.0.0.0/24",
+		"[2001:db8::1]:22",
+		"2001:db8::1",
+	} {
+		if _, err := parseSSHTargetKey(key); err != nil {
+			t.Errorf("%q is a legitimate key and was refused: %v", key, err)
+		}
+	}
+}
+
+// TestRelayBuilderValidatesWithoutConfigValidate pins the load checks to the
+// BUILDER, not to the path that happens to reach it.
+//
+// Config.Validate runs inside LoadConfigBytes, and a caller that supplies its
+// own Loader to Setup builds a Config that never passes through it — the same
+// caller setupAnalyzer keeps its own call for. What buildSSHRelay checked on
+// its own was strictly less than validate, so that caller could load a
+// credential readable by the world, a known_hosts path that is a directory,
+// or a relay that terminates nothing.
+func TestRelayBuilderValidatesWithoutConfigValidate(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	t.Run("a private key readable by group or other", func(t *testing.T) {
+		f := newRelayFixture(t)
+		loose := filepath.Join(t.TempDir(), "id")
+		raw, err := os.ReadFile(f.key)
+		if err != nil {
+			t.Fatalf("read key: %v", err)
+		}
+		if err := os.WriteFile(loose, raw, 0o644); err != nil {
+			t.Fatalf("write key: %v", err)
+		}
+		sc := laneWith(f, f.config(map[string]*SSHRelayTarget{
+			"db-01.prod": {PrivateKey: loose},
+		}), nil)
+		if _, err := buildSSHRelay("lane", sc, log); err == nil {
+			t.Fatal("a mode 0644 private key was loaded")
+		}
+	})
+
+	t.Run("a known_hosts path that is a directory", func(t *testing.T) {
+		f := newRelayFixture(t)
+		rc := f.config(map[string]*SSHRelayTarget{"db-01.prod": {PrivateKey: f.key}})
+		rc.KnownHosts = f.dir // a directory, not a file
+		if _, err := buildSSHRelay("lane", laneWith(f, rc, nil), log); err == nil {
+			t.Fatal("a known_hosts path that is a directory was loaded")
+		}
+	})
+
+	t.Run("a relay that terminates nothing", func(t *testing.T) {
+		f := newRelayFixture(t)
+		rc := f.config(nil)
+		r, err := buildSSHRelay("lane", laneWith(f, rc, nil), log)
+		if err == nil {
+			t.Fatalf("a relay with no targets was built: %d targets", len(r.targets))
+		}
+	})
+
+	t.Run("and a good config still builds", func(t *testing.T) {
+		f := newRelayFixture(t)
+		sc := laneWith(f, f.config(map[string]*SSHRelayTarget{
+			"db-01.prod": {PrivateKey: f.key},
+		}), nil)
+		r, err := buildSSHRelay("lane", sc, log)
+		if err != nil {
+			t.Fatalf("a valid relay was refused: %v", err)
+		}
+		if len(r.targets) != 1 {
+			t.Fatalf("expected one target, got %d", len(r.targets))
+		}
+	})
+}
+
 // TestRelayHostKeyCheckSpelling pins the three settings and the default.
 func TestRelayHostKeyCheckSpelling(t *testing.T) {
 	f := newRelayFixture(t)
