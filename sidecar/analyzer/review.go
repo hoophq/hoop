@@ -74,6 +74,12 @@ func (m ReviewMode) Valid() bool {
 // moves.
 const HeaderReviewMode = "x-hoop-review-mode"
 
+// ConnectAttrReviewMode is the same opt-in for a MySQL connection: a
+// connection attribute in the handshake, since MySQL has no per-statement
+// header. It applies to every statement on the connection. sidecar/codec/mysql
+// keeps it on every MySQL lane.
+const ConnectAttrReviewMode = "hoop_review_mode"
+
 // Where a review mode came from, recorded as MetadataReviewModeSource.
 const (
 	reviewModeListener = "listener"
@@ -86,11 +92,16 @@ const (
 // A client value outside hold and return falls back to the listener: a typo
 // must not turn an agent's call into one that waits for a human.
 func (e *Evaluator) reviewMode(stmt inspect.Statement) (ReviewMode, string) {
-	if stmt.HTTP != nil {
-		switch m := ReviewMode(strings.ToLower(strings.TrimSpace(stmt.HTTP.Headers[HeaderReviewMode]))); m {
-		case ReviewHold, ReviewReturn:
-			return m, reviewModeClient
-		}
+	var asked string
+	switch {
+	case stmt.HTTP != nil:
+		asked = stmt.HTTP.Headers[HeaderReviewMode]
+	case stmt.Protocol == inspect.MySQL:
+		asked = stmt.Metadata[inspect.MetadataMySQLConnectAttrPrefix+ConnectAttrReviewMode]
+	}
+	switch m := ReviewMode(strings.ToLower(strings.TrimSpace(asked))); m {
+	case ReviewHold, ReviewReturn:
+		return m, reviewModeClient
 	}
 	if e.cfg.ReviewMode == ReviewReturn {
 		return ReviewReturn, reviewModeListener
