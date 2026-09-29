@@ -102,7 +102,7 @@
           "key": "ca_file",
           "type": "string",
           "label": "CA file",
-          "help": "Verifies the backend. Empty uses the host trust store. A path on the sidecar host.",
+          "help": "When set, the only bundle that verifies the backend. Empty uses the host trust store, plus the trust section's bundle outside gRPC. A path on the sidecar host.",
           "placeholder": "/etc/hoop-inspect/ca.pem"
         },
         {
@@ -150,6 +150,7 @@
       "protocols": [
         "postgres",
         "clickhouse",
+        "http",
         "grpc",
         "spanner"
       ],

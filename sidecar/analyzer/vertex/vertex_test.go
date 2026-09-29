@@ -2,7 +2,11 @@ package vertex
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -295,5 +299,82 @@ func TestVerifyHonorsContextDeadline(t *testing.T) {
 	err := p.Verify(ctx)
 	if err == nil || !strings.Contains(err.Error(), context.DeadlineExceeded.Error()) {
 		t.Errorf("err = %v, want deadline exceeded", err)
+	}
+}
+
+// serviceAccountKey renders a service-account key whose token_uri is a
+// local server. The key is real: the JWT flow signs its assertion before it
+// posts, so a placeholder fails before any request is made.
+func serviceAccountKey(t *testing.T, tokenURI string) []byte {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(map[string]string{
+		"type":         "service_account",
+		"client_email": "analyzer@p.iam.gserviceaccount.com",
+		"private_key":  string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})),
+		"token_uri":    tokenURI,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
+// Behind an egress proxy that re-signs TLS, Options.HTTPClient is the only
+// client that trusts the proxy, and the token mint has to ride it as well as
+// the model call: a mint on http.DefaultClient fails verification and every
+// statement is denied. The stand-in's certificate is trusted only by
+// srv.Client(); a provider without it must be refused at the token endpoint.
+func TestTokenMintAndModelCallRideTheInjectedClient(t *testing.T) {
+	var mints atomic.Int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/token", func(w http.ResponseWriter, _ *http.Request) {
+		mints.Add(1)
+		w.Header().Set("content-type", "application/json")
+		_, _ = io.WriteString(w, `{"access_token":"minted","token_type":"Bearer","expires_in":3600}`)
+	})
+	mux.HandleFunc("/predict", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("authorization") != "Bearer minted" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		_, _ = io.WriteString(w, `{"candidates":[{"content":{"parts":[{"functionCall":{"name":"report_low_risk","args":{}}}]},"finishReason":"STOP"}]}`)
+	})
+	srv := httptest.NewTLSServer(mux)
+	defer srv.Close()
+	opts := func(client *http.Client) analyzer.Options {
+		return analyzer.Options{
+			Endpoint:   srv.URL + "/predict",
+			Credential: analyzer.NewSecret(serviceAccountKey(t, srv.URL+"/token")),
+			Extra:      map[string]string{KeyPublisher: PublisherGoogle},
+			HTTPClient: client,
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := build(t, opts(nil)).Verify(ctx); err == nil || !strings.Contains(err.Error(), "certificate") {
+		t.Fatalf("Verify with no injected client = %v, want a certificate error", err)
+	}
+	if n := mints.Load(); n != 0 {
+		t.Fatalf("token endpoint saw %d mints over an untrusting client", n)
+	}
+
+	p := build(t, opts(srv.Client()))
+	if err := p.Verify(ctx); err != nil {
+		t.Fatalf("Verify through the injected client: %v", err)
+	}
+	if _, err := p.Classify(ctx, "s", "c"); err != nil {
+		t.Fatalf("Classify through the injected client: %v", err)
+	}
+	if n := mints.Load(); n != 1 {
+		t.Errorf("token endpoint saw %d mints, want 1", n)
 	}
 }

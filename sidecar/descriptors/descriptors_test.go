@@ -2,6 +2,7 @@ package descriptors
 
 import (
 	"context"
+	"net/http"
 	"net/url"
 	"strings"
 	"testing"
@@ -32,11 +33,12 @@ func TestSchemeSeparatesURLsFromPaths(t *testing.T) {
 }
 
 func TestFetchRefusesAnUnlinkedSchemeAndNamesWhatIsLinked(t *testing.T) {
-	Register("testlinked", func(context.Context, *url.URL) ([]byte, error) {
+	Register("testlinked", func(context.Context, *url.URL, *http.Client) ([]byte, error) {
 		return []byte("set"), nil
 	})
 
-	_, err := Fetch(context.Background(), "nolink://bucket/api.pb")
+	client := &http.Client{}
+	_, err := Fetch(context.Background(), "nolink://bucket/api.pb", client)
 	if err == nil {
 		t.Fatal("an unlinked scheme fetched")
 	}
@@ -46,12 +48,18 @@ func TestFetchRefusesAnUnlinkedSchemeAndNamesWhatIsLinked(t *testing.T) {
 		}
 	}
 
-	blob, err := Fetch(context.Background(), "TESTLINKED://bucket/api.pb")
+	blob, err := Fetch(context.Background(), "TESTLINKED://bucket/api.pb", client)
 	if err != nil || string(blob) != "set" {
 		t.Fatalf("linked fetch = %q, %v", blob, err)
 	}
 
-	if _, err := Fetch(context.Background(), "/etc/hoop/api.pb"); err == nil {
+	if _, err := Fetch(context.Background(), "/etc/hoop/api.pb", client); err == nil {
 		t.Fatal("a local path fetched")
+	}
+
+	// No client is refused, not read as http.DefaultClient: the default
+	// would fetch past the process trust roots without a sign.
+	if _, err := Fetch(context.Background(), "testlinked://bucket/api.pb", nil); err == nil {
+		t.Fatal("a fetch with no client ran")
 	}
 }

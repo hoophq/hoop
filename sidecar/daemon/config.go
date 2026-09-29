@@ -102,6 +102,11 @@ type Config struct {
 	// stays out via the analyzer registry, not via an opaque section.
 	Analyzer *AnalyzerConfig `json:"analyzer,omitempty"`
 
+	// Trust adds CA certificates to the host trust store for every outbound
+	// TLS client this process builds. See TrustConfig. Absent is the host
+	// trust store alone, which is every config written before the key.
+	Trust *TrustConfig `json:"trust,omitempty"`
+
 	// LogLevel is debug, info, warn or error. Default info.
 	LogLevel string `json:"log_level"`
 
@@ -252,6 +257,9 @@ type ListenerConfig struct {
 	// Postgres negotiates TLS in-band with an 8-byte SSLRequest, so a plain
 	// TLS listener in front cannot terminate it. ClickHouse starts TLS on the
 	// first byte instead; gRPC and Spanner use their own direct TLS servers.
+	// HTTP offers h2 and http/1.1 through ALPN: an h2 client is terminated
+	// in-process and bridged into the HTTP/1 relay, an http/1.1 one goes
+	// through the relay directly.
 	// Envoy's postgres filter can handle pgwire, but it is contrib-only,
 	// marked work-in-progress, and gives up permanently the moment a client
 	// asks for GSS encryption, which is what psql does by default whenever a
@@ -266,18 +274,33 @@ type ListenerConfig struct {
 	//
 	// Omitting it keeps the documented posture: the relay terminates no
 	// downstream TLS and whatever fronts it owns that leg.
-	DownstreamTLS *TLSConfig `json:"downstream_tls" label:"Downstream TLS" help:"Terminates the client's TLS on this listener. Leave both empty when something in front already does." protocols:"postgres,clickhouse,grpc,spanner" fields:"cert_file,key_file"`
+	DownstreamTLS *TLSConfig `json:"downstream_tls" label:"Downstream TLS" help:"Terminates the client's TLS on this listener. Leave both empty when something in front already does." protocols:"postgres,clickhouse,http,grpc,spanner" fields:"cert_file,key_file"`
 
 	// IdentityHeader names an HTTP header carrying the authenticated
 	// subject, for the http, grpc and spanner protocols behind an
-	// authenticating proxy. On http it is read from the first request on
-	// the connection; on grpc from each RPC's metadata.
+	// authenticating proxy. On http it is read from every request, and a
+	// request naming a different subject opens a new session, because a
+	// fronting proxy pools one upstream connection across users; on grpc
+	// it is read from each RPC's metadata.
 	//
 	// Trusting a header is safe only when nothing but that proxy can reach
 	// this listener, which the sidecar topology guarantees by binding
 	// loopback or a unix socket. Set this on a listener reachable from
 	// anywhere else and a caller can assert any identity.
 	IdentityHeader string `json:"identity_header" label:"Identity header" placeholder:"x-forwarded-user" help:"The header carrying the authenticated subject. Only trust it when nothing but your proxy can reach this listener." protocols:"http,grpc,spanner"`
+
+	// GoogleIdentity names the caller from the Google OAuth2 bearer in the
+	// request's own Authorization header, verified with Google's tokeninfo
+	// endpoint, instead of from a header a fronting proxy has to set. http
+	// lanes only, and exclusive with identity_header: one lane, one
+	// authority for who the caller is.
+	//
+	// It is for traffic to Google APIs (GKE Connect Gateway above all),
+	// where every request already carries that bearer and a proxy in front
+	// would otherwise need ext_authz just to learn the name the token
+	// already holds. The upstream still authorizes the request; this names
+	// who sent it.
+	GoogleIdentity *GoogleIdentityConfig `json:"google_identity" ui:"-"`
 
 	// IdleTimeoutSec closes a connection with no traffic. Zero disables it.
 	// Interactive sessions idle between keystrokes, so a short value breaks
@@ -368,9 +391,12 @@ type ListenerConfig struct {
 
 // TLSConfig configures an upstream TLS connection.
 type TLSConfig struct {
-	// CAFile is a PEM bundle that verifies the upstream. Empty falls back to
-	// the host trust store.
-	CAFile string `json:"ca_file" label:"CA file" placeholder:"/etc/hoop-inspect/ca.pem" help:"Verifies the backend. Empty uses the host trust store. A path on the sidecar host."`
+	// CAFile is a PEM bundle that verifies the upstream, and the ONLY one:
+	// it pins the upstream. Empty falls back to the host trust store plus
+	// the trust section's bundle. A grpc-transport lane is the exception:
+	// libhoop loads its TLS from file paths and builds its own pool, so the
+	// trust section does not reach it and empty there is the host store.
+	CAFile string `json:"ca_file" label:"CA file" placeholder:"/etc/hoop-inspect/ca.pem" help:"When set, the only bundle that verifies the backend. Empty uses the host trust store, plus the trust section's bundle outside gRPC. A path on the sidecar host."`
 
 	// CertFile and KeyFile enable client certificates (mTLS).
 	CertFile string `json:"cert_file" label:"Certificate file" placeholder:"/etc/hoop-inspect/tls.crt" help:"A path on the sidecar host. Upstream, it is the client certificate for mTLS."`
@@ -1046,6 +1072,13 @@ func (c *Config) validate(onHost bool) error {
 	// modes always have a scanner to use.
 	problems = append(problems, c.Analyzer.validate(true, onHost)...)
 
+	// Loaded, not merely checked for a path: a bundle with no certificate in
+	// it must fail here, where -validate reports it, and not at the first
+	// intercepted call.
+	if _, err := loadTrustRoots(c.Trust); err != nil {
+		problems = append(problems, err.Error())
+	}
+
 	// The feature caps are NOT checked here. This runs inside
 	// LoadConfigBytes, before Setup has seen the license flag or
 	// HOOP_LICENSE, so a cap here would refuse a licensed config for a
@@ -1124,12 +1157,13 @@ func (c *Config) validate(onHost bool) error {
 
 		// downstream_tls is refused at startup rather than accepted and
 		// ignored, except on lanes that actually terminate it. Postgres
-		// negotiates in-band; grpc/spanner and ClickHouse use TLS-on-connect.
+		// negotiates in-band; grpc/spanner, ClickHouse and http use
+		// TLS-on-connect, http with ALPN.
 		if l.DownstreamTLS != nil && !isSSH(l) {
 			p := inspect.Protocol(l.Protocol)
-			if p != inspect.Postgres && p != inspect.ClickHouse && !isGRPCTransport(l) {
+			if p != inspect.Postgres && p != inspect.ClickHouse && p != inspect.HTTP && !isGRPCTransport(l) {
 				problems = append(problems, fmt.Sprintf(
-					"%s: downstream_tls is only supported on postgres, clickhouse, grpc and spanner, not %q",
+					"%s: downstream_tls is only supported on postgres, clickhouse, http, grpc and spanner, not %q",
 					name, l.Protocol))
 			}
 			// Load the keypair now. Discovering a bad path on the first
@@ -1153,6 +1187,19 @@ func (c *Config) validate(onHost bool) error {
 				problems = append(problems, fmt.Sprintf(
 					"%s: identity_header is only supported on http, grpc and spanner, not %q",
 					name, l.Protocol))
+			}
+		}
+		if l.GoogleIdentity != nil {
+			if inspect.Protocol(l.Protocol) != inspect.HTTP || isGRPCTransport(l) || isSSH(l) {
+				problems = append(problems, fmt.Sprintf(
+					"%s: google_identity is only supported on http, not %q", name, l.Protocol))
+			}
+			if l.IdentityHeader != "" {
+				problems = append(problems, fmt.Sprintf(
+					"%s: google_identity and identity_header both name the caller; keep one", name))
+			}
+			if err := l.GoogleIdentity.validate(); err != nil {
+				problems = append(problems, fmt.Sprintf("%s: google_identity: %v", name, err))
 			}
 		}
 		if l.MySQLAuthKeyFile != "" {
@@ -1647,7 +1694,13 @@ type analyzerDeps struct {
 }
 
 // BuildTLS turns a TLSConfig into a *tls.Config.
-func (t *TLSConfig) BuildTLS() (*tls.Config, error) {
+//
+// roots is the process trust pool (loadTrustRoots) and applies only when
+// ca_file is empty. An explicit ca_file pins the upstream to that bundle
+// alone, as it always has: an operator who named the CA for one backend did
+// not ask for it to also accept whatever the egress proxy signs. Nil roots
+// is the host trust store.
+func (t *TLSConfig) BuildTLS(roots *x509.CertPool) (*tls.Config, error) {
 	if t == nil {
 		return nil, nil
 	}
@@ -1655,6 +1708,7 @@ func (t *TLSConfig) BuildTLS() (*tls.Config, error) {
 		ServerName:         t.ServerName,
 		InsecureSkipVerify: t.InsecureSkipVerify,
 		MinVersion:         tls.VersionTLS12,
+		RootCAs:            roots,
 	}
 	if t.CAFile != "" {
 		pem, err := os.ReadFile(t.CAFile)

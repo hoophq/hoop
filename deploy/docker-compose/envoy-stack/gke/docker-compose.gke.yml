@@ -1,0 +1,176 @@
+# Overlay: kubectl through a fake GKE Connect Gateway, behind a transparent
+# MITM Envoy, with no Google account and nothing created on Google Cloud.
+#
+#   docker compose -f docker-compose.yml -f gke/docker-compose.gke.yml up -d --build --wait
+#
+# Run it from the envoy-stack directory, after `./run.sh --rebuild` has
+# minted the parent certs and built the sidecar image from this tree.
+# ./gke/demo-gke.sh walks it.
+#
+#   kubectl ──TLS h2──> envoy :443 (MITM) ──h2c──> hoop-inspect :16443 ──TLS──> fake-google ──TLS──> k3s :6443
+#                        customer CA                 google_identity         connect gateway
+#                                                      └──TLS──> fake-google /tokeninfo
+#
+# What it adds:
+#
+#   gke-pki      mints the "customer CA" and two certificates it signs: Envoy's
+#                MITM certificate for connectgateway.googleapis.com, and
+#                fake-google's for connectgateway + oauth2.googleapis.com
+#   fake-google  tokeninfo + a Connect Gateway stand-in in front of k3s
+#                (gke/fakegoogle); answers as oauth2.googleapis.com
+#   k3s, k3s-ca  the cluster from ../kubernetes, unchanged
+#   client       the base sandbox plus kubectl, a Connect Gateway kubeconfig
+#                and the customer CA
+#   envoy        answers as connectgateway.googleapis.com; host ports 8448
+#                (the MITM :443) and 8449 (the loop)
+
+services:
+  # Two volumes, so a mount hands out only what its reader needs:
+  #   gke-pki  each endpoint's certificate and key, the key 0600 and owned by
+  #            the one uid that serves it (envoy 101, fake-google 10001)
+  #   gke-ca   the customer CA certificate alone, for the clients that
+  #            verify with it (kubectl, curl, the sidecar's trust.ca_file)
+  # The CA key is deleted once both leaves are signed: nothing after this
+  # step signs anything, so nothing may read it.
+  gke-pki:
+    image: alpine:3.20
+    networks: [inspect]
+    volumes:
+      - gke-pki:/pki
+      - gke-ca:/ca
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        [ -s /pki/fake-google.crt ] && [ -s /ca/ca.crt ] && [ ! -e /pki/ca.key ] && exit 0
+        apk add --no-cache openssl >/dev/null
+        cd /pki
+        rm -f ./*
+        openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes \
+          -keyout ca.key -out ca.crt -days 30 -subj "/CN=customer-mitm-ca" \
+          -addext basicConstraints=critical,CA:TRUE -addext keyUsage=critical,keyCertSign,cRLSign 2>/dev/null
+        leaf() {
+          printf 'subjectAltName=%s\nextendedKeyUsage=serverAuth\nkeyUsage=critical,digitalSignature\n' "$$2" > "$$1.ext"
+          openssl req -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes \
+            -keyout "$$1.key" -out "$$1.csr" -subj "/CN=$$1" 2>/dev/null
+          openssl x509 -req -in "$$1.csr" -CA ca.crt -CAkey ca.key -CAcreateserial \
+            -days 30 -extfile "$$1.ext" -out "$$1.crt" 2>/dev/null
+          rm -f "$$1.csr" "$$1.ext"
+          chown "$$3:$$3" "$$1.key" && chmod 0600 "$$1.key" && chmod 0644 "$$1.crt"
+        }
+        leaf envoy-mitm DNS:connectgateway.googleapis.com 101
+        leaf fake-google DNS:connectgateway.googleapis.com,DNS:oauth2.googleapis.com,DNS:fake-google 10001
+        cp ca.crt /ca/ca.crt && chmod 0644 /ca/ca.crt
+        rm -f ca.key ca.srl ca.crt
+
+  fake-google:
+    build: ./gke/fakegoogle
+    image: hoop-fake-google:local
+    networks:
+      inspect:
+        aliases: [oauth2.googleapis.com]
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: 0
+    volumes:
+      - gke-pki:/pki:ro
+      - k3s-ca:/k3s:ro
+    depends_on:
+      gke-pki: { condition: service_completed_successfully }
+      k3s-ca: { condition: service_completed_successfully }
+      k3s: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/fakegoogle", "-check"]
+      interval: "2s"
+      timeout: "5s"
+      retries: 15
+
+  # The cluster from ../kubernetes: static tokens alice-token (system:masters)
+  # and bob-token (developers, no RBAC), plus the demo pod, ConfigMap and Secret.
+  k3s:
+    image: rancher/k3s:v1.33.9-k3s1
+    attach: false
+    hostname: k3s
+    networks: [inspect]
+    privileged: true
+    tmpfs: [/run, /var/run]
+    ulimits:
+      nproc: 65535
+      nofile: { soft: 65535, hard: 65535 }
+    command:
+      - server
+      - --node-name=k3s
+      - --tls-san=k3s
+      - --disable=traefik,servicelb,metrics-server,local-storage
+      - --kube-apiserver-arg=token-auth-file=/etc/k3s/tokens.csv
+    volumes:
+      - k3s-server:/var/lib/rancher/k3s
+      - ./kubernetes/tokens.csv:/etc/k3s/tokens.csv:ro
+      - ./kubernetes/manifests/demo.yaml:/var/lib/rancher/k3s/server/manifests/demo.yaml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "kubectl get pod demo -o jsonpath='{.status.phase}' 2>/dev/null | grep -q Running"]
+      interval: "5s"
+      timeout: "10s"
+      retries: 60
+      start_period: "30s"
+
+  k3s-ca:
+    image: alpine:3.20
+    networks: [inspect]
+    volumes:
+      - k3s-server:/k3s:ro
+      - k3s-ca:/ca
+    command:
+      - /bin/sh
+      - -c
+      - |
+        until [ -s /k3s/server/tls/server-ca.crt ]; do sleep 1; done
+        cp /k3s/server/tls/server-ca.crt /ca/server-ca.crt && chmod 0644 /ca/server-ca.crt
+    depends_on:
+      k3s: { condition: service_started }
+
+  client:
+    command:
+      - apk add --no-cache postgresql16-client curl kubectl >/dev/null
+        && exec sleep infinity
+    environment:
+      KUBECONFIG: /etc/kube/kubeconfig.yaml
+    volumes:
+      - ./gke/kubeconfig.yaml:/etc/kube/kubeconfig.yaml:ro
+      # The corporate cabundle: kubectl and curl trust the MITM through it.
+      # The CA certificate only; no key reaches the sandbox.
+      - gke-ca:/etc/gke-pki:ro
+    healthcheck:
+      test: ["CMD-SHELL", "command -v psql && command -v curl && command -v kubectl"]
+      interval: "3s"
+      timeout: "10s"
+      retries: 30
+      start_period: "10s"
+
+  hoop-inspect:
+    volumes:
+      - ./gke/config-gke.yaml:/etc/hoop-inspect/config.yaml:ro
+      - ./upstream/certs/server.crt:/etc/hoop-inspect/certs/appdb.crt:ro
+      - gke-ca:/etc/hoop-inspect/gke-pki:ro
+    depends_on:
+      gke-pki: { condition: service_completed_successfully }
+      fake-google: { condition: service_healthy }
+
+  envoy:
+    networks:
+      inspect:
+        aliases: [connectgateway.googleapis.com]
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: 0
+    volumes:
+      - ./gke/envoy-gke.yaml:/etc/envoy/envoy.yaml:ro
+      - ./envoy/certs:/etc/envoy/certs:ro
+      - gke-pki:/etc/envoy/gke-pki:ro
+    ports:
+      - "8448:443"  # MITM connectgateway.googleapis.com -> hoop-inspect :16443
+      - "8449:8449" # the same MITM with no bypass -> hoop-inspect :16445
+
+volumes:
+  gke-pki:
+  gke-ca:
+  k3s-server:
+  k3s-ca:

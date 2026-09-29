@@ -583,7 +583,7 @@ var (
 func registerTestBucket(t *testing.T) {
 	t.Helper()
 	testBucketOnce.Do(func() {
-		descriptors.Register("testbucket", func(_ context.Context, u *url.URL) ([]byte, error) {
+		descriptors.Register("testbucket", func(_ context.Context, u *url.URL, _ *http.Client) ([]byte, error) {
 			testBucketHits.Add(1)
 			testBucketMu.Lock()
 			defer testBucketMu.Unlock()

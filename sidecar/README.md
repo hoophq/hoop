@@ -13,8 +13,10 @@ into allow/deny verdicts.
 socket, terminates no TLS, and routes nothing. You hand it bytes you already
 have, and whatever holds the connection keeps holding it.
 
-**The daemon owns protocol transports.** Database and HTTP/1 lanes accept one
-connection, dial one upstream, and pump bytes through a codec-backed gate.
+**The daemon owns protocol transports.** Database and HTTP lanes accept one
+connection, dial one upstream, and pump bytes through a codec-backed gate. An
+http lane that receives HTTP/2 bridges each stream into that same HTTP/1.1
+relay rather than inspecting a second wire format.
 The gRPC lane is the deliberate exception: it terminates HTTP/2 in-process,
 applies policy and descriptor-backed protobuf masking per stream, then proxies
 the RPC upstream. This keeps one denied stream from closing unrelated RPCs on
@@ -723,12 +725,37 @@ concurrency.
 
 `identity_header` names the request header an authenticating proxy in front
 sets from a verified credential, and is valid on `http`, `grpc` and `spanner`
-lanes only. An http lane reads it from the FIRST request on each connection,
-before the session exists, so the policy context and the `session_start`
-audit row both carry the principal; a later request on the same keep-alive
-connection does not change it. A grpc lane reads it per RPC. The header is
-trusted exactly as far as the network is: nothing but that proxy may be able
-to reach the listener.
+lanes only. An http lane reads it on EVERY request, because Envoy pools
+upstream connections and sends requests from different callers down one
+keep-alive connection. A request naming a different principal ends the
+session (`session_end`) and opens a new one on the same connection
+(`session_start`), so the policy context and the audit rows of each request
+carry its own caller. A caller change while an earlier response on the
+connection is still outstanding is refused: that response belongs to the
+session that sent its request. The header value is lifted out of the
+statement, so it reaches policy input and the audit trail only when
+`http.headers` names it. A grpc lane reads it per RPC. The header is trusted
+exactly as far as the network is: nothing but that proxy may be able to reach
+the listener.
+
+**`google_identity: {}` names the caller from Google's own bearer**, for an
+http lane with no authenticating proxy in front. The lane verifies the
+request's `Authorization: Bearer` token (kubectl through GKE Connect Gateway
+sends a Google OAuth2 access token) with a POST to
+`https://oauth2.googleapis.com/tokeninfo`, never a query string, because a
+URL is what every proxy on the path logs. The principal is the verified email,
+else the account's `sub`. A verified answer is cached under the token's
+SHA-256 for the token's lifetime, at most five minutes; a rejected token for
+30 seconds; an unreachable Google never. Any failure (no bearer, a token Google
+rejects, Google unreachable) refuses that request with a 403, so a caller that
+cannot be verified is never served under the identity the connection had
+before. The token reaches no audit row, no policy input and no analyzer
+prompt. `http` lanes only, and exclusive with `identity_header`.
+`tokeninfo_url` overrides the endpoint for Private Service Connect or a
+`private.googleapis.com` VIP and must be `https`. The result names who holds
+the token, not what it may do: Connect Gateway still checks the same token
+against IAM and RBAC. The example is in [kubectl through GKE Connect
+Gateway](#kubectl-through-gke-connect-gateway).
 
 ### 2. Know how a listener inherits
 
@@ -739,7 +766,7 @@ to reach the listener.
 | `opa` | replace when set | One lane has one decision endpoint. An explicitly empty `opa: {}` on a listener drops an inherited one. |
 | `mask.rules` | replace when set | A rule owns an entity or a column, and two concatenated lists leave two rewrites of one value. `mask.rules: []` is how a lane opts out of an inherited set. |
 | `analyzer` (listener block) | listener-only; fields inherit the top-level `analyzer` defaults | The trigger, risk actions and prompt are per lane; the provider, model and credential stay in the top-level section, whose `send`/`fail_open`/`timeout_sec`/`max_input_bytes`/`max_calls`/`cache` values the block overrides field by field. |
-| `pii`, `analyzer` (top level), `audit`, `admin` | process-wide | One detector engine and one provider per process. |
+| `pii`, `analyzer` (top level), `audit`, `admin`, `trust` | process-wide | One detector engine, one provider and one trust pool per process. |
 
 ### 3. Validate before you deploy
 
@@ -991,6 +1018,10 @@ X-Hoop-User: alice
 
 {"format": "csv"}
 ```
+
+Through GKE Connect Gateway the `Resource:` line is the Kubernetes path with
+the cluster prefix removed, while the request line keeps it (see [kubectl
+through GKE Connect Gateway](#kubectl-through-gke-connect-gateway)).
 
 The raw target is deliberate, as the client spelled it. The resource is the
 policy key, where every id must fold into one rule; the model is judging
@@ -1336,6 +1367,9 @@ identity to audit and no rotation of its own. The key travels in the
 account and refreshed automatically, so `-validate` mints one token to prove
 the credential, the `roles/aiplatform.user` binding and the host clock before
 anything serves traffic. Prefer Workload Identity and omit `credentials_file`.
+The model calls and the token mint both verify against the process trust
+pool, so behind an egress proxy that re-signs TLS, add its CA with
+[`trust.ca_file`](#adding-a-ca-to-the-trust-store) rather than `SSL_CERT_FILE`.
 `publisher: google` serves Gemini through the same bearer; the default,
 `publisher: anthropic`, serves Claude. A GKE pod under Workload Identity, a
 GCE or Cloud Run instance with an attached service account, and a pod outside
@@ -1453,7 +1487,7 @@ gaps named above are the narrow ones; Envoy is not blind here.
 | `mysql` | `COM_QUERY` (0x03), `COM_STMT_PREPARE` (0x16) and the prepared-statement commands (0x17, 0x19, 0x1a, 0x1c); handshake read for the negotiated capabilities, not skipped | column definitions and both row encodings, text and binary, for masking; the terminator that ends a result set | yes |
 | `mongodb` | `OP_MSG` commands and the legacy `OP_QUERY` hello; document-sequence sections are reassembled into the command | cursor `firstBatch`/`nextBatch`, `findAndModify.value`, distinct values and inline map-reduce results for masking | yes |
 | `mssql` | `SQLBatch` (0x01) and `RPCRequest` (0x03), reassembled across packets; login forwarded untouched | `COLMETADATA` (0x81), `ROW` (0xD1), `NBCROW` (0xD2) for masking; login replies scanned for a routing redirect | yes |
-| `http` | HTTP/1.x requests | HTTP/1.x responses | no |
+| `http` | HTTP/1.x requests; HTTP/2 streams, each bridged into one HTTP/1.1 request | HTTP/1.x responses | no |
 | `grpc` | request headers; decoded messages when capture is on | response trailers; decoded messages when capture or masking is on | yes, per HTTP/2 stream |
 | `spanner` | like `grpc`, plus one SQL statement per query or DDL string extracted from known Cloud Spanner methods | as `grpc` | yes, per HTTP/2 stream |
 | `ssh` | the command of an `exec`, the name of an `env`, the path of each file operation | none — the lane rewrites output in flight and records none of it | yes, per connection |
@@ -2145,16 +2179,26 @@ what keeps its dependencies out of the root, test dependencies included:
 Two entry points, because HTTP arrives in two shapes:
 
 ```go
+import codechttp "github.com/hoophq/hoop/sidecar/codec/http"
+
 // Inside an HTTP pipeline (libhoop's ReverseProxy, an ext_proc server):
 // no re-parsing, no second copy of the body.
-insp := http.New(http.Options{CaptureBody: true})
+insp := codechttp.New(codechttp.Options{CaptureBody: true}) // *codechttp.Codec
 stmt := insp.InspectRequest(r, bufferedBody)   // in inspectHandler
 stmt := insp.InspectResponse(resp, req, body)  // in modifyResponse
 
-// Holding a socket instead:
+// Holding a socket instead (with codec/http imported for its registration):
 i, _ := inspect.New(inspect.HTTP)
 stmts, _ := i.Inspect(inspect.FromClient, packetBytes)
 ```
+
+**Build it through the seam.** `codec/http.New` returns `*Codec`, libhoop's
+Inspector with the relay's additions around it: Connect Gateway
+normalization on every entry point, and on the byte path the Via marker and
+the lifting of `Options.CredentialHeader`. `InspectRequest` does not lift the
+credential, since a caller holding the `*http.Request` already has the
+header; it still keeps it out of `HTTP.Headers` unless `Options.Headers`
+names it.
 
 **Normalized resources.** `/users/12345/orders/98765` becomes
 `/users/*/orders/*`, so one rule replaces a regex per endpoint. A short slug
@@ -2165,6 +2209,61 @@ keeping segments, so a policy comes out too narrow rather than too broad.
 **Data exposure is opt-in.** Bodies and headers are NOT captured by default.
 A policy engine's decision log is a copy of everything you send it, and
 `Options.Headers` is an allowlist with no "capture all" switch.
+
+**Every request carries the sidecar's Via.** Each http lane appends
+`Via: <request version> hoop-<16 hex>` as the last request header, where the
+pseudonym is random per process, so the upstream sees one extra header. RFC
+9110 requires a proxy to announce itself, and the same field detects a loop:
+behind a transparent MITM proxy the sidecar's own upstream connection can be
+routed back into its listener, and every lap would look like a fresh client.
+A request that already carries this process's pseudonym is refused with a
+403 whose message starts `request loop:`. After a request with `Upgrade` or a
+`CONNECT`, the rest of that connection is another protocol and is no longer
+marked.
+
+### kubectl through GKE Connect Gateway
+
+**The cluster prefix is removed before policy sees the resource.** Connect
+Gateway fronts a registered cluster's API server at
+`/v1/projects/P/locations/L/gkeMemberships/M/api/v1/namespaces/N/secrets/S`,
+while a rule is written against the Kubernetes path. On host
+`connectgateway.googleapis.com` or a regional
+`*-connectgateway.googleapis.com` (port ignored), a normalized resource that
+starts `<v1|v1beta1|v1alpha1>/projects/*/locations/*/<gkeMemberships|memberships>/*`
+loses those seven segments, so `/api/v1/namespaces/*/secrets/*` matches
+through the gateway as it does against the API server. Without it such a rule
+matches nothing and kubectl through the gateway passes it untouched. The path,
+the target and the statement text stay as sent, and
+`metadata["http.resource_prefix"]` records what was removed. Any other host
+or shape is left alone.
+
+The lane below names each caller from kubectl's own Google bearer with
+[`google_identity`](#1-write-the-file), and serves kubectl's h2 over ALPN (see
+[http: h2c prior knowledge, or TLS with
+ALPN](#http-h2c-prior-knowledge-or-tls-with-alpn)):
+
+```yaml
+listeners:
+  - name: gke
+    protocol: http
+    listen: 0.0.0.0:8443
+    upstream: connectgateway.googleapis.com:443
+    downstream_tls:
+      cert_file: /etc/hoop-inspect/certs/relay.crt
+      key_file:  /etc/hoop-inspect/certs/relay.key
+    upstream_tls: {}
+    google_identity: {}         # the caller is whoever holds kubectl's bearer
+    http:
+      headers: [Accept]
+    guardrails:
+      rules:
+        - name: no-secret-contents
+          type: http_header
+          resources: ["/api/v1/namespaces/*/secrets/*"]
+          methods: [GET]
+          headers_not: {Accept: ["application/json;as=Table;*"]}
+          message: listing secrets is fine; reading one is not
+```
 
 ## Guardrails and OPA
 
@@ -2249,6 +2348,10 @@ the listener's `http.headers` allowlist and nothing else, so a rule naming a
 header the lane does not capture, in either map, is refused at load with the
 name to add: a rule that loads and can never match is the failure this file
 refuses everywhere.
+
+Through GKE Connect Gateway these rules match the Kubernetes path, because
+the cluster prefix is gone before policy reads the resource: see [kubectl
+through GKE Connect Gateway](#kubectl-through-gke-connect-gateway).
 
 **A `table` rule keys on the access.** `access: write` means "nothing writes
 to customers" and stops firing on
@@ -2824,8 +2927,9 @@ split a client's connections between them at random.
 ## Downstream TLS, and the GSS refusal
 
 The relay terminates no client TLS by default: whatever fronts it owns that
-leg. Postgres is one exception, because pgwire leaves no one else able to. A
-gRPC lane is the other: standalone clients require an HTTP/2 TLS endpoint.
+leg. Postgres is one exception, because pgwire leaves no one else able to.
+gRPC and http lanes are the others: they terminate HTTP/2 themselves, so they
+own its TLS too.
 
 ### gRPC: TLS on connect, or explicit h2c
 
@@ -2839,6 +2943,34 @@ The lane also owns upstream HTTP/2. `upstream_tls` means TLS plus ALPN `h2`;
 omitting it means h2c prior knowledge. Interposition cannot preserve end-to-end
 client-certificate authentication: the backend sees the lane's client
 certificate, not the caller's.
+
+### http: h2c prior knowledge, or TLS with ALPN
+
+An http lane accepts HTTP/2 beside HTTP/1.1. Without `downstream_tls` it
+serves h2c by prior knowledge: a connection that opens with the HTTP/2
+preface is HTTP/2, so Envoy can forward h2 without downgrading it. With
+`downstream_tls` it offers `h2` and `http/1.1` through ALPN and the client
+picks; kubectl picks h2 from anything that offers it. HTTP/1.1's
+`Upgrade: h2c` is not honoured: that request goes through the relay like any
+other.
+
+**Each h2 stream is bridged into the unchanged HTTP/1.1 relay.** The stream
+is re-serialized as one HTTP/1.1 request on a relay connection pooled for
+that client connection alone, so policy, the 403 deny, masking, audit,
+per-request identity and Via apply to it exactly as to an HTTP/1.1 client.
+The upstream hop is HTTP/1.1. Teaching the codec HPACK and stream framing
+would duplicate every enforcement path for a second wire format.
+
+- Streams do not count toward `max_conns`. The client connection was admitted
+  once, and its streams are bounded by HTTP/2's concurrent-stream limit.
+- An h2 `CONNECT` gets `501`.
+- kubectl `exec`, `attach` and `port-forward` negotiate an HTTP/1.1
+  `Upgrade`, which a client attempts only on an HTTP/1.1 connection, so they
+  keep the plain relay path.
+- An Envoy with an h2 upstream to the lane turns an `Upgrade` into an HTTP/2
+  extended CONNECT, which gets the 501. Route requests carrying an `Upgrade`
+  header to an HTTP/1.1 cluster for the same port, as
+  `deploy/docker-compose/envoy-stack/gke/envoy-gke.yaml` does.
 
 ### The pgwire problem
 
@@ -2879,7 +3011,7 @@ through with sequence numbers translated around the inserted SSLRequest.
 ```yaml
 listeners:
   - name: appdb
-    protocol: postgres            # ClickHouse, gRPC and Spanner also accept downstream_tls
+    protocol: postgres            # ClickHouse, HTTP, gRPC and Spanner also accept downstream_tls
     downstream_tls:
       cert_file: /etc/hoop-inspect/certs/relay.crt
       key_file:  /etc/hoop-inspect/certs/relay.key
@@ -2901,10 +3033,11 @@ openssl pkey -in mysql-auth.key -pubout -out mysql-auth.pub
 ```
 
 
-The sidecar accepts `downstream_tls` on Postgres, ClickHouse, gRPC and Spanner
-lanes and refuses it on every other protocol at startup. ClickHouse starts TLS
-on the first byte; Postgres uses the in-band exchange above. The sidecar loads
-the keypair at startup, so a bad path fails before the first client connection.
+The sidecar accepts `downstream_tls` on Postgres, ClickHouse, HTTP, gRPC and
+Spanner lanes and refuses it on every other protocol at startup. ClickHouse
+and HTTP start TLS on the first byte; Postgres uses the in-band exchange
+above. The sidecar loads the keypair at startup, so a bad path fails before
+the first client connection.
 
 ### GSS encryption draws a refusal
 
@@ -2946,7 +3079,7 @@ listeners:
     listen: 0.0.0.0:15432
     upstream: appdb:5432
     upstream_tls:
-      ca_file: /etc/hoop-inspect/certs/appdb.crt   # omit to use the host trust store
+      ca_file: /etc/hoop-inspect/certs/appdb.crt   # omit to use the host trust store plus trust.ca_file
       server_name: appdb                           # defaults to the upstream host
       # cert_file / key_file    for mTLS
       # insecure_skip_verify    logs a warning; do not ship it
@@ -2958,10 +3091,11 @@ without TLS. Encryption protects the bytes crossing the network, not the bytes
 the relay was built to read. A relay that could not read them would have
 nothing to mask.
 
-Do not confuse this with the client's leg. Relay lanes cannot inspect TLS
-that stays end to end; their plaintext must come from a front proxy or the
-Postgres terminator above. A gRPC lane is deliberately different: it terminates
-downstream HTTP/2 TLS itself, as [ADR-0013](../docs/adr/0013-grpc-terminates-http2-in-process.md) records.
+Do not confuse this with the client's leg. A relay cannot inspect TLS that
+stays end to end; its plaintext comes from a front proxy or from a lane that
+terminates the client's TLS itself: Postgres and ClickHouse above, http with
+ALPN, and gRPC and Spanner, which terminate downstream HTTP/2 TLS as
+[ADR-0013](../docs/adr/0013-grpc-terminates-http2-in-process.md) records.
 
 **Postgres negotiates in-band.** A TLS-on-connect dial fails against it: the
 server expects an 8-byte `SSLRequest` and a one-byte `S`/`N` reply before any
@@ -2983,6 +3117,30 @@ so relaying the offer fails the connection outright. The relay removes that
 one mechanism, leaving plain `SCRAM-SHA-256`, which authenticates the same
 password against the same verifier. If you need channel binding end to end,
 you need a path with no inspection in it.
+
+### Adding a CA to the trust store
+
+**`trust.ca_file` adds certificate authorities to the host trust store**, for
+a network that re-signs egress TLS: a transparent MITM proxy in front of
+Google's APIs is the usual case. The bundle is APPENDED to the system pool.
+Go's own `SSL_CERT_FILE` REPLACES it, so a CA added that way costs every
+public root, and each endpoint the proxy does not intercept then fails
+verification.
+
+```yaml
+trust:
+  ca_file: /etc/hoop-inspect/certs/egress-proxy-ca.pem   # one or more PEM certificates
+```
+
+The pool reaches `upstream_tls` without a `ca_file` (an explicit `ca_file`
+still pins that upstream to its own bundle alone), every analyzer provider
+including Vertex token minting, the `gcs` descriptor fetch, and
+`google_identity`'s tokeninfo calls. It does NOT reach the upstream TLS of a
+grpc or spanner lane, because libhoop builds that pool from
+`upstream_tls.ca_file` itself: set the file there, and the startup log says
+so. Nor does it reach OPA, the Control Plane or the analytics client. A
+missing file, or one with no certificate in it, fails validation naming the
+path. The section is bound at startup; a change needs a restart.
 
 ## Limits
 
@@ -3012,15 +3170,19 @@ Read these before writing a policy against it.
   takes NER, which this module does not wire, and a caller can split a value
   across two responses. Masking raises the cost of accidental exposure. It
   does not replace withholding access to the table.
-- **HTTP/1.x only for stream decoding.** HTTP/2 and HTTP/3 framing belongs to
-  whatever terminated the connection; by then it has a `*http.Request`, so
-  use `InspectRequest`.
+- **The codec decodes HTTP/1.1 only.** An http lane terminates HTTP/2 itself
+  and bridges each stream into the HTTP/1.1 relay (see [http: h2c prior
+  knowledge, or TLS with ALPN](#http-h2c-prior-knowledge-or-tls-with-alpn));
+  HTTP/3 is not served. A pipeline that already holds a `*http.Request` uses
+  `InspectRequest`, whatever framing it arrived in.
 - **Path normalization is conservative.** Numeric, UUID, hex and long opaque
   segments collapse; short slugs do not. A policy comes out too narrow rather
   than too broad.
-- **Plaintext DOWNSTREAM only.** If the client negotiates TLS end-to-end past
-  the relay, there is nothing to parse; terminating that leg is your problem,
-  and Envoy is the usual answer. The UPSTREAM leg may be TLS: the relay
+- **No end-to-end client TLS.** If the client negotiates TLS end-to-end past
+  the relay, there is nothing to parse. A lane that accepts `downstream_tls`
+  terminates that leg itself (see [Downstream
+  TLS](#downstream-tls-and-the-gss-refusal)); on the others a front proxy owns
+  it, and Envoy is the usual answer. The UPSTREAM leg may be TLS: the relay
   originates it and still inspects. See [Upstream TLS](#upstream-tls).
 - **Statements are not transactions.** The gate evaluates each one
   independently, with no cross-statement session state.
