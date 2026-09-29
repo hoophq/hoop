@@ -141,6 +141,31 @@ func TestPolicyContextShape(t *testing.T) {
 	}
 }
 
+// ReservedContextKey is what keeps a client-supplied metadata value off the
+// actor fields. A key PolicyContext starts writing without being added there
+// is one a lane lifting client values can collide with, handing the client
+// that field; this fails the day the two lists drift.
+func TestEveryRelayWrittenContextKeyIsReserved(t *testing.T) {
+	s := session.New(inspect.Postgres, session.Identity{
+		Subject:  "alice",
+		Email:    "alice@example.com",
+		Groups:   []string{"eng"},
+		PeerAddr: "10.0.0.7:51234",
+	})
+	s.Connection = "appdb"
+	s.Upstream = "db.internal:5432"
+	s.CorrelationID = "ticket-4711"
+
+	for key := range s.PolicyContext() {
+		if !session.ReservedContextKey(key) {
+			t.Errorf("PolicyContext writes %q, which ReservedContextKey does not reserve", key)
+		}
+	}
+	if session.ReservedContextKey("claude.session.id") {
+		t.Error("an operator's tracing key is reserved")
+	}
+}
+
 // Absent facts must be omitted rather than present as empty strings: a Rego
 // rule written as `input.context.connection == ""` should not match every
 // session that never set one.

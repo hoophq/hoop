@@ -76,6 +76,11 @@ type Config struct {
 	// Admin serves health and stats. Disabled when Listen is empty.
 	Admin AdminConfig `json:"admin"`
 
+	// MCP serves review status to agents over MCP (ADR-0021). Absent means
+	// off. The server lives in the nested sidecar/mcp module; checkMCP
+	// refuses the block in a build that did not link it.
+	MCP *MCPConfig `json:"mcp,omitempty"`
+
 	// PII configures the optional detector plugin. This package decodes it
 	// without interpreting it: knowing what an alcatraz Options looks like
 	// would drag back the dependency the split exists to keep out.
@@ -364,6 +369,11 @@ type ListenerConfig struct {
 	// ClickHouse configures native-protocol decompression limits. Only valid
 	// on a clickhouse lane; absent keeps bounded defaults.
 	ClickHouse *ClickHouseCodecConfig `json:"clickhouse,omitempty"`
+
+	// Postgres configures what a postgres lane reads from the client's
+	// StartupMessage beyond the user. Only valid on a postgres lane. See
+	// PostgresConfig.
+	Postgres *PostgresConfig `json:"postgres,omitempty"`
 
 	// GRPC configures what this lane's gRPC transport decodes and exposes.
 	// Only valid on a grpc lane. See GRPCCodecConfig.
@@ -1054,6 +1064,8 @@ func (c *Config) Validate() error {
 	// HOOP_LICENSE, so a cap here would refuse a licensed config for a
 	// limit its license lifts. buildLanes is the single site instead.
 
+	problems = append(problems, c.MCP.validate()...)
+
 	seen := map[string]bool{}
 	for i, l := range c.Listeners {
 		name := l.displayName(i)
@@ -1233,6 +1245,17 @@ func (c *Config) validateLane(lc ListenerConfig, name string) []string {
 				name, lc.Protocol))
 		}
 		problems = append(problems, lc.ClickHouse.validate(name)...)
+	}
+
+	// A postgres block reads a StartupMessage, which only a pgwire lane
+	// receives; anywhere else it would load and record nothing.
+	if lc.Postgres != nil {
+		if inspect.Protocol(lc.Protocol) != inspect.Postgres {
+			problems = append(problems, fmt.Sprintf(
+				"%s: a \"postgres\" block is only valid on a postgres listener, not %s",
+				name, lc.Protocol))
+		}
+		problems = append(problems, lc.Postgres.validate(name)...)
 	}
 
 	// The same rule for a grpc block: only a grpc lane reads it, and its
@@ -1644,6 +1667,10 @@ type analyzerDeps struct {
 	// redactor because the mode is per lane now. Nil in a build with no
 	// detector, which sends raw.
 	det Plugin
+
+	// mcp is true when this process serves the review MCP tools. Set at
+	// startup: a reload does not start or stop the MCP server.
+	mcp bool
 
 	// budgets hands every generation of an evaluator the same call
 	// counter, so MaxCalls bounds the spend across hot reloads: a

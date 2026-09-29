@@ -2,9 +2,11 @@ package daemon
 
 import (
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/inspect"
 )
 
@@ -54,6 +56,11 @@ type laneStatements struct {
 
 	metadataAllow []string // lower-cased header allowlist
 	baseMeta      map[string]string
+
+	// reviewMode is the call's analyzer.HeaderReviewMode, when the lane
+	// exposes it. The analyzer holds request messages, which carry no
+	// headers, so message copies this one onto them.
+	reviewMode string
 }
 
 func newLaneStatements(r *http.Request, service, methodName string, allow []string, proto inspect.Protocol, spanner *SpannerConfig) *laneStatements {
@@ -85,6 +92,9 @@ func newLaneStatements(r *http.Request, service, methodName string, allow []stri
 		meta[inspect.MetadataGRPCUserAgent] = v
 	}
 	s.baseMeta = meta
+	if slices.Contains(allow, analyzer.HeaderReviewMode) {
+		s.reviewMode = r.Header.Get(analyzer.HeaderReviewMode)
+	}
 	return s
 }
 
@@ -154,6 +164,9 @@ func (s *laneStatements) message(dir inspect.Direction, rendered string, truncat
 	stmt.HTTP.Body = rendered
 	stmt.HTTP.BodyTruncated = truncated
 	stmt.Metadata[inspect.MetadataGRPCMessageIndex] = strconv.Itoa(index)
+	if dir == inspect.FromClient && s.reviewMode != "" {
+		stmt.HTTP.Headers = map[string]string{analyzer.HeaderReviewMode: s.reviewMode}
+	}
 	return stmt
 }
 

@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"github.com/hoophq/hoop/sidecar/analyzer"
 	codechttp "github.com/hoophq/hoop/sidecar/codec/http"
 	"github.com/hoophq/hoop/sidecar/inspect"
 )
@@ -17,12 +18,19 @@ import (
 // gets its own factory, because the Via loop marker and the Connect Gateway
 // resource normalization apply to every http lane, capture or not.
 //
+// Every http lane captures analyzer.HeaderReviewMode, so a client can opt
+// into return per request (ADR-0021). Holding or not: a reload can turn
+// holding on and keep this codec. The codec records only headers the client
+// sent, so other requests keep their audit shape.
+//
 // The factory returns a FRESH codec per call. Two connections sharing one
 // stateful codec corrupt each other's reassembly buffer, and would trade
 // each other's credentials.
 func newHTTPCodec(cfg *HTTPCodecConfig, credentialHeader string) func() inspect.Codec {
 	opts := codechttp.Options{
-		Headers:          cfg.headerNames(), // normalized once, the same list validate checked; nil-safe
+		// headerNames is normalized once, the same list validate checked,
+		// nil-safe, and a fresh slice, so the append leaves cfg alone.
+		Headers:          append(cfg.headerNames(), analyzer.HeaderReviewMode),
 		CredentialHeader: credentialHeader,
 	}
 	if cfg != nil {

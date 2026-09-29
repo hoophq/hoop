@@ -88,6 +88,8 @@ import (
 	// The gs:// descriptor fetcher, same rule: a grpc lane whose descriptor
 	// set lives in a bucket must not need a different binary.
 	_ "github.com/hoophq/hoop/sidecar/descriptors/gcs"
+	// The MCP server an "mcp" block turns on (ADR-0021), same rule again.
+	_ "github.com/hoophq/hoop/sidecar/mcp"
 	"github.com/hoophq/hoop/sidecar/pii/alcatraz"
 )
 

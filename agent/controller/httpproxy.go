@@ -22,6 +22,10 @@ import (
 // When off, the agent leaves request headers untouched.
 const httpProxyClientAuthorizationFlag = "experimental.httpproxy_client_authorization"
 
+// httpProxyHostPortFlag makes libhoop keep a non-default upstream port in Host
+// (DEP-258). When off, the agent keeps the legacy Host without the port.
+const httpProxyHostPortFlag = "experimental.httpproxy_host_port"
+
 // httpProxyResponseChunkSize bounds the size of each gRPC packet emitted for an
 // HTTP proxy response. libhoop fully buffers a response and writes it to the
 // client stream in a single Write; without chunking, a large response (e.g. a
@@ -150,6 +154,9 @@ func (a *Agent) handleHttpProxyWrite(pkt *pb.Packet) {
 	// header (superseding any header_* configured on the connection).
 	if connenv.httpProxyAllowClientAuth && a.flags.IsEnabled(httpProxyClientAuthorizationFlag) {
 		connenv.httpProxyHeaders["allow_client_authorization"] = "true"
+	}
+	if featureflagstate.IsEnabled(httpProxyHostPortFlag) {
+		connenv.httpProxyHeaders["preserve_host_port"] = "true"
 	}
 
 	// add default values for kubernetes type

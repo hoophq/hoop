@@ -286,7 +286,7 @@ manual run above is the integration test for now.
 
 ## See also
 
-- [`docs/adr/0001-tunnel-addressing.md`](../docs/adr/0001-tunnel-addressing.md) — locked-in design decisions.
+- [ADR-0001](https://github.com/hoophq/adr/blob/main/0001-tunnel-addressing.md) — locked-in design decisions.
 - [hoophq/hsh](https://github.com/hoophq/hsh) — the unprivileged user-facing CLI / tray that drives this daemon.
 - RD-214 — daemon rename and release-train integration.
 - RD-215 / RD-216 — local IPC control plane and OAuth flow (in flight).

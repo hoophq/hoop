@@ -78,6 +78,11 @@ type SessionRecord struct {
 	// that after the fact means re-reading the whole timeline.
 	RiskLevel string `json:"risk_level,omitempty"`
 
+	// Metadata is the session's own metadata, taken from session_start and
+	// replaced by session_end's, never from a statement: a statement's
+	// metadata carries codec and verdict keys about that one statement. A
+	// pgwire session's startup_metadata keys therefore appear once the
+	// session has ended; before that, its statement events carry them.
 	Metadata map[string]string `json:"metadata,omitempty"`
 }
 

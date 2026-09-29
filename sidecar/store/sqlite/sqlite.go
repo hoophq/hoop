@@ -265,6 +265,18 @@ func upsertSession(ctx context.Context, tx *sql.Tx, ev audit.Event) error {
 
 	risk := ev.Metadata["risk_level"]
 
+	// The row's metadata is the SESSION's: session_start fills it and
+	// session_end replaces it, because a lane can learn session facts after
+	// the start is written (a pgwire lane reads its StartupMessage only
+	// then). A statement's metadata is never used: it mixes in codec keys
+	// such as pg.message that describe one statement. MemoryStore folds the
+	// same way; see applyEvent.
+	var rowMeta string
+	if ev.Kind == audit.KindSessionStart || ev.Kind == audit.KindSessionEnd {
+		rowMeta = encodeJSON(ev.Metadata)
+	}
+	endMeta := ev.Kind == audit.KindSessionEnd && rowMeta != ""
+
 	// RETURNING gives the post-upsert counters, so the verdict below costs no
 	// extra read.
 	var denied, errCount int
@@ -282,7 +294,9 @@ ON CONFLICT(id) DO UPDATE SET
 	protocol   = CASE WHEN sessions.protocol   = '' THEN excluded.protocol   ELSE sessions.protocol   END,
 	connection = CASE WHEN sessions.connection = '' THEN excluded.connection ELSE sessions.connection END,
 	upstream   = CASE WHEN sessions.upstream   = '' THEN excluded.upstream   ELSE sessions.upstream   END,
-	metadata   = CASE WHEN sessions.metadata   = '' THEN excluded.metadata   ELSE sessions.metadata   END,
+	metadata   = CASE WHEN ? = 1 THEN excluded.metadata
+	                  WHEN sessions.metadata = '' THEN excluded.metadata
+	                  ELSE sessions.metadata END,
 
 	-- An out-of-order event must not move the start later than the earliest
 	-- timestamp seen, or the session sorts into the wrong place in the list.
@@ -311,8 +325,9 @@ RETURNING denied_count, error_count`,
 		string(ev.SessionID), ev.Principal, string(ev.Protocol), ev.Connection,
 		ev.Metadata["upstream"], micros(ev.Timestamp), endedAt, durationMS,
 		stmtDelta, deniedDelta, maskedDelta, errorDelta,
-		store.ClassifyVerdict(deniedDelta, errorDelta), risk, encodeJSON(ev.Metadata),
+		store.ClassifyVerdict(deniedDelta, errorDelta), risk, rowMeta,
 		// UPDATE parameters, in the order the CASE expressions consume them.
+		boolInt(endMeta),
 		endedAt, endedAt,
 		durationMS, durationMS,
 		finalStmts, finalStmts, stmtDelta,

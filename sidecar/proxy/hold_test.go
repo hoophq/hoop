@@ -5,12 +5,14 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"io"
 	"net"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/audit"
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
@@ -382,4 +384,118 @@ func waitForViolation(t *testing.T, sink *audit.MemorySink, want string) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatal("the held statement left no record")
+}
+
+// highRisk rates every statement high, so a lane mapping high to
+// require_review holds it.
+type highRisk struct{}
+
+func (highRisk) Name() string { return "stub" }
+
+func (highRisk) Classify(context.Context, string, string) (*analyzer.Result, error) {
+	return &analyzer.Result{RiskLevel: analyzer.RiskHigh}, nil
+}
+
+// pendingReviewer leaves every review PENDING and signals each filing.
+type pendingReviewer struct{ filed chan struct{} }
+
+func (r pendingReviewer) File(context.Context, string) (analyzer.ReviewResult, error) {
+	select {
+	case r.filed <- struct{}{}:
+	default:
+	}
+	return analyzer.ReviewResult{ID: "9f97", Status: "PENDING"}, nil
+}
+
+func (pendingReviewer) Claim(_ context.Context, id string) (analyzer.ReviewResult, error) {
+	return analyzer.ReviewResult{ID: id, Status: "PENDING"}, nil
+}
+
+// pgStartup builds a v3 StartupMessage with the application_name psql sends.
+func pgStartup(applicationName string) []byte {
+	var params []byte
+	for _, kv := range [][2]string{{"user", "agent"}, {"database", "appdb"}, {"application_name", applicationName}} {
+		params = append(params, kv[0]...)
+		params = append(params, 0)
+		params = append(params, kv[1]...)
+		params = append(params, 0)
+	}
+	params = append(params, 0)
+	out := make([]byte, 8, 8+len(params))
+	binary.BigEndian.PutUint32(out[0:4], uint32(8+len(params)))
+	binary.BigEndian.PutUint32(out[4:8], 3<<16)
+	return append(out, params...)
+}
+
+// On a hold lane, a Postgres client that opts into return in its
+// application_name is denied at once, and one that does not is held.
+func TestAPostgresClientOptsIntoReturnWithItsApplicationName(t *testing.T) {
+	for _, tc := range []struct {
+		appName string
+		held    bool
+	}{
+		{appName: "my-agent hoop-review=return"},
+		{appName: "psql", held: true},
+	} {
+		t.Run(tc.appName, func(t *testing.T) {
+			rev := pendingReviewer{filed: make(chan struct{}, 1)}
+			ev, err := analyzer.New(analyzer.Config{
+				Rule:     "payments",
+				Provider: highRisk{},
+				Trigger:  analyzer.Trigger{Operations: []inspect.Operation{inspect.OpDelete}},
+				Actions:  analyzer.ActionMap{analyzer.RiskHigh: analyzer.ActionRequireReview},
+				Review:   rev,
+			})
+			if err != nil {
+				t.Fatalf("analyzer.New: %v", err)
+			}
+			up := newEchoUpstream(t, nil)
+			srv := startServer(t, proxy.Config{
+				Upstream:   up.addr(),
+				Protocol:   inspect.Postgres,
+				Connection: "appdb",
+				Policy:     ev,
+				DenyWriter: proxy.ProtocolDenyWriter{},
+			})
+
+			c, err := net.Dial("tcp", srv.Addr().String())
+			if err != nil {
+				t.Fatalf("dial: %v", err)
+			}
+			defer c.Close()
+			if err := c.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+				t.Fatalf("set deadline: %v", err)
+			}
+			if _, err := c.Write(append(pgStartup(tc.appName), pgQuery("DELETE FROM customers")...)); err != nil {
+				t.Fatalf("write: %v", err)
+			}
+
+			select {
+			case <-rev.filed:
+			case <-time.After(3 * time.Second):
+				t.Fatal("the statement was not filed for review")
+			}
+			if tc.held {
+				// A held statement gets no answer until the review settles.
+				if err := c.SetReadDeadline(time.Now().Add(300 * time.Millisecond)); err != nil {
+					t.Fatalf("set deadline: %v", err)
+				}
+				var ne net.Error
+				if n, err := c.Read(make([]byte, 64)); !errors.As(err, &ne) || !ne.Timeout() {
+					t.Fatalf("the client read %d bytes (err=%v), want the statement held", n, err)
+				}
+			} else {
+				got, err := io.ReadAll(c)
+				if err != nil {
+					t.Fatalf("read the denial: %v", err)
+				}
+				if !strings.Contains(string(got), "resend") {
+					t.Errorf("the client read %q, want an immediate return denial", got)
+				}
+			}
+			if bytes.Contains(up.got(), []byte("DELETE")) {
+				t.Error("the upstream received the denied statement")
+			}
+		})
+	}
 }
