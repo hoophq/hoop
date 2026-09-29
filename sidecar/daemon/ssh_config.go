@@ -32,7 +32,7 @@ type SSHConfig struct {
 	// HostKey is the private host key this listener presents, the same file
 	// a real sshd would hold. Required: an SSH server with no identity of
 	// its own cannot complete a handshake.
-	HostKey string `json:"host_key"`
+	HostKey string `json:"host_key" label:"Host key" placeholder:"/etc/hoop-inspect/ssh_host_ed25519_key" help:"The private host key this listener presents. A path on the sidecar host." ui:"required"`
 
 	// TrustedCA is an authorized_keys-format file naming the CA public
 	// key(s) a user certificate must be signed by. Required, and the only
@@ -41,7 +41,7 @@ type SSHConfig struct {
 	// There is no password method and no authorized-keys list to fall back
 	// on, so an unreadable file here is a listener that refuses everyone.
 	// It is loaded at validation for that reason.
-	TrustedCA string `json:"trusted_ca"`
+	TrustedCA string `json:"trusted_ca" label:"Trusted CA" placeholder:"/etc/hoop-inspect/user_ca.pub" help:"authorized_keys file naming the CA keys a user certificate must be signed by. A path on the sidecar host." ui:"required"`
 
 	// CapabilitiesAllowed is which session capabilities this listener
 	// admits, and it is TRI-STATE. That is why it is a pointer:
@@ -55,7 +55,7 @@ type SSHConfig struct {
 	// shell. resolveCapabilities collapses the three states to one set, at
 	// load, and the set is what crosses the seam — so the tri-state exists
 	// in exactly one place and libhoop is never asked to guess a default.
-	CapabilitiesAllowed *Capabilities `json:"capabilities_allowed,omitempty"`
+	CapabilitiesAllowed *Capabilities `json:"capabilities_allowed,omitempty" label:"Restrict capabilities" enum:"@ssh_capabilities" help:"Off admits every capability below. On admits only the ones picked, and picking none admits none." ui:"presence"`
 
 	// DestinationsAllowed is where a client-opened forward may be carried,
 	// as network[:port] entries or the single word "any".
@@ -64,11 +64,11 @@ type SSHConfig struct {
 	// where CapabilitiesAllowed does not, because a forward leaves the
 	// sidecar's reach the moment it is dialled: nothing downstream inspects
 	// those bytes, so the destination list is the whole control.
-	DestinationsAllowed []string `json:"destinations_allowed,omitempty"`
+	DestinationsAllowed []string `json:"destinations_allowed,omitempty" label:"Forward destinations" placeholder:"10.0.0.0/8:5432" enum:"@ssh_destinations" help:"A network prefix with an optional port, such as 10.0.0.0/8:5432 or 10.0.0.5/32, or any. Empty denies every forward." ui:"open"`
 
 	// Identity maps certificate fields onto the session identity policy and
 	// audit read. Absent takes the key id as the subject.
-	Identity *SSHIdentityConfig `json:"identity,omitempty"`
+	Identity *SSHIdentityConfig `json:"identity,omitempty" label:"Identity mapping" help:"Which field of the user's certificate fills each identity slot that policy and the audit trail read. Empty uses the key id as the subject."`
 }
 
 // SSHIdentityConfig names which certificate field fills each identity slot.
@@ -78,10 +78,10 @@ type SSHConfig struct {
 // "key_id", "principals", or "extensions.<name>" — and Attributes names
 // extensions to surface to policy verbatim.
 type SSHIdentityConfig struct {
-	Subject    string   `json:"subject,omitempty"`
-	Email      string   `json:"email,omitempty"`
-	Groups     string   `json:"groups,omitempty"`
-	Attributes []string `json:"attributes,omitempty"`
+	Subject    string   `json:"subject,omitempty" label:"Subject" placeholder:"key_id" enum:"@ssh_identity_sources" help:"The certificate field holding the user's name: key_id, principals or extensions.<name>." ui:"open"`
+	Email      string   `json:"email,omitempty" label:"Email" placeholder:"extensions.email" enum:"@ssh_identity_sources" help:"The certificate field holding the user's email." ui:"open"`
+	Groups     string   `json:"groups,omitempty" label:"Groups" placeholder:"principals" enum:"@ssh_identity_sources" help:"The certificate field holding the user's groups. Not hoop groups: the ones the certificate carries." ui:"open"`
+	Attributes []string `json:"attributes,omitempty" label:"Certificate extensions" help:"Extensions whose values reach policy and the audit trail, such as permit-pty. Not hoop attributes."`
 }
 
 // Identity source spellings. Anything else is a config error: a source this
@@ -467,7 +467,7 @@ func canBecome(runAs codecssh.RunAs) error {
 // validate checks one lane's ssh block. lane is the operator-facing listener
 // name; every message begins with it because a config with two ssh lanes
 // reports both in one run.
-func (s *SSHConfig) validate(lane string) []string {
+func (s *SSHConfig) validate(lane string, onHost bool) []string {
 	var problems []string
 	p := func(format string, args ...any) {
 		problems = append(problems, lane+": "+fmt.Sprintf(format, args...))
@@ -492,12 +492,12 @@ func (s *SSHConfig) validate(lane string) []string {
 	// listener that refuses everyone and cannot say why. What the bytes
 	// CONTAIN is libhoop's to judge, at NewServer, so this does not open a
 	// second copy of key parsing on this side of the seam.
-	if path := strings.TrimSpace(s.HostKey); path != "" {
+	if path := strings.TrimSpace(s.HostKey); onHost && path != "" {
 		if err := readable(path); err != nil {
 			p("ssh.host_key: %v", err)
 		}
 	}
-	if path := strings.TrimSpace(s.TrustedCA); path != "" {
+	if path := strings.TrimSpace(s.TrustedCA); onHost && path != "" {
 		if err := readable(path); err != nil {
 			p("ssh.trusted_ca: %v", err)
 		}

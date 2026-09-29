@@ -8460,6 +8460,25 @@
         },
         "type": "object"
       },
+      "openapi.SidecarConfigError": {
+        "properties": {
+          "message": {
+            "example": "invalid config: ...",
+            "type": "string"
+          },
+          "problems": {
+            "description": "Every problem the sidecar's own validation found, one per entry. Each\nstarts with the listener it is about, when it is about one.",
+            "example": [
+              "newdb: ssh.destinations_allowed: \"10.30.10:1234\" is not a network"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "openapi.SidecarCreateResponse": {
         "properties": {
           "applied_revision": {
@@ -22045,7 +22064,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/openapi.HTTPError"
+                  "$ref": "#/components/schemas/openapi.SidecarConfigError"
                 }
               }
             },
@@ -22841,7 +22860,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/openapi.HTTPError"
+                  "$ref": "#/components/schemas/openapi.SidecarConfigError"
                 }
               }
             },
@@ -22933,7 +22952,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/openapi.HTTPError"
+                  "$ref": "#/components/schemas/openapi.SidecarConfigError"
                 }
               }
             },
