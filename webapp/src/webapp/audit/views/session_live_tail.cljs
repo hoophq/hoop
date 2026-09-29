@@ -18,6 +18,7 @@
    [reagent.core :as r]
    [webapp.audit.views.empty-event-stream :as empty-event-stream]
    [webapp.audit.views.pg-wire :as pg-wire]
+   [webapp.audit.views.terminal-decoder :as terminal-decoder]
    [webapp.utilities :as utilities]))
 
 ;; ─── Helpers ───────────────────────────────────────────────────────────────
@@ -318,9 +319,10 @@
               ;; Concatenate output frames only ("o"/"e"); the PTY echoes input
               ;; back as output, so including "i" would duplicate every keystroke.
               terminal-text (when terminal?
-                              (->> rows
-                                   (filter #(contains? #{"o" "e"} (:event-type %)))
-                                   (map :text)
+                              (->> (terminal-decoder/decode-events event-stream
+                                                                    (= stream-state :ended))
+                                   (filter #(contains? #{"o" "e"} (second %)))
+                                   (map #(nth % 2))
                                    (string/join "")))
               query-count (count (filter #(= :query (:kind %)) rows))
               has-protocol-rows? (some #(= :protocol (:kind %)) rows)

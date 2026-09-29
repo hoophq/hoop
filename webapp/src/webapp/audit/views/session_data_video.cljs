@@ -7,6 +7,7 @@
    [webapp.audit.views.empty-event-stream :as empty-event-stream]
    [webapp.components.tabs :as tabs]
    [webapp.components.loaders :as loaders]
+   [webapp.audit.views.terminal-decoder :as terminal-decoder]
    [webapp.utilities :as utilities]))
 
 (defn- asciinema-player-container [event-stream]
@@ -52,24 +53,6 @@
     "Loading logs for this session"]
    [loaders/simple-loader {:size 4}]])
 
-(defn- b64->bytes [b64]
-  (let [bin (js/atob b64)
-        out (js/Uint8Array. (.-length bin))]
-    (dotimes [i (.-length bin)]
-      (aset out i (.charCodeAt bin i)))
-    out))
-
-;; atob returns one JS char per byte (Latin-1). asciinema-player expects text,
-;; so decode UTF-8. One streaming decoder keeps a multibyte character that is
-;; split across two events intact.
-(defn- decode-event-stream [event-stream]
-  (let [decoder (js/TextDecoder. "utf-8")]
-    (mapv (fn [e]
-            [(first e)
-             (second e)
-             (.decode decoder (b64->bytes (nth e 2)) #js {:stream true})])
-          event-stream)))
-
 (defn- tab-container [_ session-id]
   (let [selected-tab (r/atom "Logs")
         session-logs (rf/subscribe [:audit->session-logs])
@@ -107,7 +90,7 @@
                    [empty-event-stream/main])
 
           "Video" [asciinema-player-container
-                   (decode-event-stream event-stream)])]])))
+                   (terminal-decoder/decode-events event-stream)])]])))
 
 (defn main [event-stream session-id]
   [:div
