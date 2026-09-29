@@ -673,3 +673,42 @@ func TestCompressedSessionsAreRefused(t *testing.T) {
 		})
 	}
 }
+
+// A client's hoop_review_mode connection attribute, sent the way a real
+// driver sends it, reaches every statement of the connection. The analyzer
+// reads it from there (ADR-0021); the audit record is where this suite can
+// see it without a control plane. A connection without it records nothing.
+func TestReviewModeConnectionAttributeReachesTheStatement(t *testing.T) {
+	up := startMySQL(t)
+	s := startSidecar(t, up, maskingConfig)
+	const key = "mysql.connect_attr.hoop_review_mode"
+
+	opted := s.dial(t, "connectionAttributes=hoop_review_mode:return")
+	if _, err := opted.Exec("UPDATE customers SET name = 'Ada' WHERE id = 1"); err != nil {
+		t.Fatalf("update with the attribute: %v", err)
+	}
+	ev := s.waitForAudit(t, "the opted-in UPDATE", func(ev auditEvent) bool {
+		return ev.Kind == "statement" && ev.Direction == "client" &&
+			strings.HasPrefix(ev.Statement, "UPDATE customers SET name = 'Ada'")
+	})
+	if got := ev.Metadata[key]; got != "return" {
+		t.Errorf("%s = %q, want return", key, got)
+	}
+	for k := range ev.Metadata {
+		if strings.HasPrefix(k, "mysql.connect_attr.") && k != key {
+			t.Errorf("recorded %s, which nothing asked for", k)
+		}
+	}
+
+	plain := s.dial(t, "")
+	if _, err := plain.Exec("UPDATE customers SET name = 'Grace' WHERE id = 2"); err != nil {
+		t.Fatalf("update without the attribute: %v", err)
+	}
+	ev = s.waitForAudit(t, "the plain UPDATE", func(ev auditEvent) bool {
+		return ev.Kind == "statement" && ev.Direction == "client" &&
+			strings.HasPrefix(ev.Statement, "UPDATE customers SET name = 'Grace'")
+	})
+	if got, ok := ev.Metadata[key]; ok {
+		t.Errorf("%s = %q on a connection that did not send it", key, got)
+	}
+}

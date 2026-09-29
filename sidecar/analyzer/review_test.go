@@ -847,3 +847,65 @@ func TestTheReviewModeHeaderStaysOutOfTheAnalysis(t *testing.T) {
 		t.Error("the header changed the cache key")
 	}
 }
+
+// mysqlDelete is deleteStatement as the MySQL codec reports it on a
+// connection that sent hoop_review_mode=value in its handshake.
+func mysqlDelete(value string) inspect.Statement {
+	stmt := deleteStatement()
+	stmt.Protocol = inspect.MySQL
+	stmt.Metadata = map[string]string{
+		"mysql.command": "COM_QUERY",
+		inspect.MetadataMySQLConnectAttrPrefix + analyzer.ConnectAttrReviewMode: value,
+	}
+	return stmt
+}
+
+// A MySQL connection opts in with a connection attribute, the same way and
+// with the same record as the header.
+func TestAMySQLConnectionAttributeSetsTheReviewMode(t *testing.T) {
+	for name, tc := range map[string]struct {
+		value, want, source string
+		edit                func(*analyzer.Config)
+	}{
+		"return on a hold lane":  {"return", "return", "client", nil},
+		"hold on a return lane":  {" Hold ", "hold", "client", returnMode},
+		"unknown on a hold lane": {"later", "hold", "listener", nil},
+		"empty on a return lane": {"", "return", "listener", returnMode},
+	} {
+		t.Run(name, func(t *testing.T) {
+			rev := &recordingReviewer{
+				res:    analyzer.ReviewResult{ID: "9f97", Status: "PENDING"},
+				claims: []analyzer.ReviewResult{{ID: "9f97", Status: "REJECTED"}},
+			}
+			v := holdingEvaluator(t, rev, tc.edit).Evaluate(mysqlDelete(tc.value))
+
+			if !v.Denied {
+				t.Fatal("an unapproved statement was forwarded")
+			}
+			if got := v.Annotations[analyzer.MetadataReviewMode]; got != tc.want {
+				t.Errorf("review_mode is %q, want %s", got, tc.want)
+			}
+			if got := v.Annotations[analyzer.MetadataReviewModeSource]; got != tc.source {
+				t.Errorf("review_mode_source is %q, want %s", got, tc.source)
+			}
+			if waited := len(rev.claimedIDs()) > 0; waited != (tc.want == "hold") {
+				t.Errorf("waited=%v under %s", waited, tc.want)
+			}
+		})
+	}
+}
+
+// The attribute key means something only on MySQL. Another protocol's
+// statement carrying it keeps the listener's mode.
+func TestTheConnectionAttributeIsMySQLOnly(t *testing.T) {
+	stmt := mysqlDelete("return")
+	stmt.Protocol = inspect.Postgres
+	v := holdingEvaluator(t, &recordingReviewer{
+		res:    analyzer.ReviewResult{ID: "9f97", Status: "PENDING"},
+		claims: []analyzer.ReviewResult{{ID: "9f97", Status: "REJECTED"}},
+	}, nil).Evaluate(stmt)
+
+	if got := v.Annotations[analyzer.MetadataReviewModeSource]; got != "listener" {
+		t.Errorf("review_mode_source is %q, want listener", got)
+	}
+}
