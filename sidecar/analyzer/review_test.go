@@ -692,8 +692,8 @@ func TestReturnModeDeniesAPendingReviewAtOnce(t *testing.T) {
 	}
 }
 
-// With the MCP tools served, the return-mode denial names review_wait and
-// leads with the id, which a truncating client must not cut.
+// With the MCP tools served, the return-mode denial names review_wait, and
+// the id and the instruction survive a client that keeps 512 bytes.
 func TestReturnModeNamesTheMCPToolWhenServed(t *testing.T) {
 	rev := &recordingReviewer{res: analyzer.ReviewResult{ID: "9f97", Status: "PENDING"}}
 	v := holdingEvaluator(t, rev, func(c *analyzer.Config) {
@@ -705,12 +705,14 @@ func TestReturnModeNamesTheMCPToolWhenServed(t *testing.T) {
 	if !v.Denied {
 		t.Fatal("a pending review was forwarded")
 	}
-	if !strings.HasPrefix(v.Message, "review 9f97: ") {
-		t.Errorf("denial %q does not lead with the review id", v.Message)
+	// The mysql client keeps 512 bytes; the long operator message goes last.
+	kept := v.Message[:min(len(v.Message), 512)]
+	if !strings.HasPrefix(kept, "review 9f97: ") {
+		t.Errorf("denial %q does not lead with the review id", kept)
 	}
-	for _, want := range []string{"review_wait", "resend the identical statement"} {
-		if !strings.Contains(v.Message, want) {
-			t.Errorf("denial %q does not say %q", v.Message, want)
+	for _, want := range []string{"review_wait", "resend the identical statement once it is approved"} {
+		if !strings.Contains(kept, want) {
+			t.Errorf("the first 512 bytes %q do not say %q", kept, want)
 		}
 	}
 }

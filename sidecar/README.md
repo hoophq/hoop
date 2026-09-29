@@ -1169,11 +1169,11 @@ identical statement after approval. If the config has an `mcp:` block, the
 denial leads with the review id and names the MCP tool that waits:
 
 ```
-ERROR:  review 9f97…: statement held for human approval: waiting for approval; call the MCP tool review_wait with the review id, then resend the identical statement once it is approved
+ERROR:  review 9f97…: waiting for approval; call the MCP tool review_wait with the review id, then resend the identical statement once it is approved (statement held for human approval)
 ```
 
-The id leads because the mysql client keeps only the first 512 bytes of an
-error.
+The operator message goes last because the mysql client keeps only the
+first 512 bytes of an error.
 
 Matching is on the exact bytes, so the retry must be the same statement, not
 an equivalent one. Two consequences worth knowing: a client using prepared
