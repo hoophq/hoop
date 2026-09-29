@@ -1162,11 +1162,25 @@ The budget and interval are constants, with no config field. A control plane
 older than the relay has no claim route: the relay then denies after the first
 poll, as it did before it could wait.
 
-**`review_mode: return` denies at once.** A lane with `review_mode: return`,
-or an http or grpc call with the header `x-hoop-review-mode: return`, files
-the review and denies without waiting (ADR-0021). The client resends the
-identical statement after approval. If the config has an `mcp:` block, the
-denial leads with the review id and names the MCP tool that waits:
+**`review_mode: return` denies at once.** It files the review and denies
+without waiting, so an agent whose tool call ends in seconds gets the review
+id instead of a hang (ADR-0021). The client resends the identical statement
+after approval.
+
+```yaml
+    analyzer:
+      trigger: {operations: [delete, update]}
+      high: require_review
+      approval_rule: payments-approvers
+      review_mode: return   # hold (the default) or return
+```
+
+```
+ERROR:  statement held for human approval: waiting for approval; resend the identical statement once it is approved (review 9f97…)
+```
+
+If the config has an `mcp:` block, the denial leads with the review id and
+names the MCP tool that waits:
 
 ```
 ERROR:  review 9f97…: waiting for approval; call the MCP tool review_wait with the review id, then resend the identical statement once it is approved (statement held for human approval)
@@ -1174,6 +1188,64 @@ ERROR:  review 9f97…: waiting for approval; call the MCP tool review_wait with
 
 The operator message goes last because the mysql client keeps only the
 first 512 bytes of an error.
+
+`review_mode` is valid only where a risk level asks for `require_review`;
+elsewhere startup refuses it. A control plane serves `return` only to a
+sidecar at 1.191.0 or later, and refuses the config for an older one.
+
+**`return` applies to every client on the listener**, humans included. A
+developer in psql gets the denial too, and has to run the statement again
+after approval. Pick one:
+
+- Give agents their own listener with `review_mode: return`.
+- Keep `hold` on a shared listener and let each agent opt in.
+
+**A client can pick its own mode.** It asks for `hold` or `return`, and that
+overrides the listener for its statements:
+
+| Protocol | How the client asks | Scope |
+|---|---|---|
+| http | header `x-hoop-review-mode: return` | one request |
+| grpc, spanner | metadata `x-hoop-review-mode: return` | one call |
+| postgres | `application_name` ends in `hoop-review=return` | the connection |
+| mysql | connection attribute `hoop_review_mode=return` | the connection |
+
+```bash
+PGAPPNAME='billing-agent hoop-review=return' psql -h relay -p 15432 appdb
+```
+
+```
+user:pass@tcp(relay:13306)/appdb?connectionAttributes=hoop_review_mode:return
+```
+
+The postgres token is the whole `application_name`, or follows a space or a
+`;`, so the client keeps its own name in front. A value other than `hold` or
+`return` is ignored and the listener mode applies: a typo must not turn an
+agent's call into one that waits for a human.
+
+Leaving the choice to the client is safe: both modes need the approval, only
+the wait moves. The audit record carries `review_mode` and
+`review_mode_source` (`listener` or `client`). Every http lane captures the
+header, even with no `http:` block; a grpc or spanner lane that holds adds it
+to the metadata allowlist. The header reaches policy and audit. It is kept
+out of the analyzer prompt and the verdict cache key, so hold and return
+share one classification.
+
+**The retry contract.** An agent in return mode follows four rules:
+
+1. **Resend the identical bytes.** The plane matches an approval on the exact
+   statement. A reformatted statement (other whitespace, other quoting, a new
+   comment, a new trace id) files a new review and pages the approvers again.
+2. **Resend once, after approval.** Wait with the MCP tool `review_wait`, or
+   poll `review_status`. An approval releases one run.
+3. **Do not resend a rejected or revoked review.** The decision is final for
+   that review. A resend files a new review and pages the approvers again, so
+   only a person asks again.
+4. **Run a holdable statement in autocommit.** On postgres, mysql, mssql and
+   mongodb a denial closes the connection, and the database rolls back any
+   open transaction with it. The earlier statements of that transaction are
+   lost, and the retry runs on a new connection. This holds for every denial:
+   return mode, a hold that times out, a rejection.
 
 Matching is on the exact bytes, so the retry must be the same statement, not
 an equivalent one. Two consequences worth knowing: a client using prepared
