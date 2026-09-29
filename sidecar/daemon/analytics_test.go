@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 
@@ -218,6 +219,113 @@ func TestRetiredAnalyzersReachTheNextUsageEvent(t *testing.T) {
 	got = tel.usageProperties(nil, []lane{{analyzers: []*analyzer.Evaluator{fresh}}})
 	if got["analyzer-calls"] != int64(0) {
 		t.Fatalf("second window analyzer-calls = %v, want 0", got["analyzer-calls"])
+	}
+}
+
+// A grpc RPC opened before a reload keeps its gate, and so its analyzer,
+// after the lane swaps. What that analyzer does after the swap must still
+// reach usage: counted while the RPC is open, banked once when it closes,
+// and never counted again after that.
+func TestAnAnalyzerStillOpenAcrossAReloadIsCounted(t *testing.T) {
+	desc := writeGRPCTestDescriptors(t)
+	base := fmt.Sprintf(`{
+  "analyzer": {"provider": "stub", "model": "m"},
+  "listeners": [{
+    "name": "g", "protocol": "grpc",
+    "listen": "127.0.0.1:0", "upstream": "h:50051",
+    "grpc": {"capture_payload": true, "descriptors": [%q]},
+    "analyzer": {"trigger": {"resources": ["/test.v1.Echo/**"]}, "high": "block", "cache": {"size": 16, "ttl_sec": 60}}
+  }],
+  "audit": {"file": "-"}
+}`, desc)
+	cfg, err := LoadConfigBytes([]byte(base))
+	if err != nil {
+		t.Fatalf("LoadConfigBytes: %v", err)
+	}
+	cfg.cp = &controlPlane{url: "http://plane", token: "hsc_x", lastRaw: []byte(base)}
+	ac, err := setupAnalyzer(cfg, nil)
+	if err != nil {
+		t.Fatalf("setupAnalyzer: %v", err)
+	}
+	lanes, err := buildLanes(cfg, nil, ac)
+	if err != nil {
+		t.Fatalf("buildLanes: %v", err)
+	}
+	if len(lanes[0].analyzers) == 0 {
+		t.Fatal("fixture: the lane built no analyzer")
+	}
+	old := lanes[0].analyzers[0]
+	rules := newLiveRules(lanes[0])
+	view := &atomic.Pointer[laneState]{}
+	view.Store(&laneState{lanes: lanes})
+	rl, err := newReloader(cfg, lanes, map[string]ruleSwapper{"g": rules}, nil, ac, view,
+		newLicenseState(cfg.lic, cfg.dependsOnLicense()))
+	if err != nil {
+		t.Fatalf("newReloader: %v", err)
+	}
+	tel := &telemetry{
+		client:    &analytics.Client{}, // disabled; we read the properties directly
+		counters:  analytics.NewCounters(),
+		conns:     map[string]connSnapshot{},
+		analyzers: map[*analyzer.Evaluator]analyzer.Stats{},
+	}
+	rl.tel = tel
+
+	// An RPC opened under the first generation.
+	_, release := rules.acquire()
+
+	var buf bytes.Buffer
+	drifted := strings.Replace(base, `"high": "block"`, `"high": "warn"`, 1)
+	if got := handleWith(rl, &buf, drifted); got != reloadApplied {
+		t.Fatalf("outcome = %v, want applied; log:\n%s", got, &buf)
+	}
+	live := view.Load().lanes
+	fresh := live[0].analyzers[0]
+	if fresh == old {
+		t.Fatal("fixture: the reload did not rebuild the evaluator")
+	}
+	window := func() analytics.Properties { return tel.usageProperties(nil, live) }
+
+	// The open RPC evaluates a message through its old gate, and a new RPC
+	// one through the new gate. The two instances share the lane's call
+	// counter, so this window holds two calls, not three or four.
+	msg := inspect.Statement{
+		Protocol: inspect.GRPC, Direction: inspect.FromClient,
+		HTTP: &inspect.HTTPDetail{Resource: "/test.v1.Echo/Say", Body: `{"a":1}`},
+	}
+	other := msg
+	other.HTTP = &inspect.HTTPDetail{Resource: "/test.v1.Echo/Say", Body: `{"a":2}`}
+	old.Evaluate(msg)
+	fresh.Evaluate(other)
+	if old.Stats().Calls != 2 {
+		t.Fatal("fixture: old and new evaluator do not share one call counter")
+	}
+	if got := window()["analyzer-calls"]; got != int64(2) {
+		t.Fatalf("window with the RPC open: analyzer-calls = %v, want 2", got)
+	}
+
+	// The open RPC repeats its message: a cache hit on the OLD instance,
+	// which only the drain keeps readable. Then the RPC ends.
+	old.Evaluate(msg)
+	if old.Stats().CacheHits != 1 {
+		t.Fatal("fixture: the repeated message was not a cache hit")
+	}
+	release()
+	got := window()
+	if got["analyzer-cache-hits"] != int64(1) || got["analyzer-calls"] != int64(0) {
+		t.Fatalf("window after the RPC closed: cache-hits = %v, calls = %v; want 1, 0",
+			got["analyzer-cache-hits"], got["analyzer-calls"])
+	}
+	if _, still := tel.analyzers[old]; still {
+		t.Fatal("the drained evaluator is still tracked")
+	}
+	if _, still := tel.draining[old]; still {
+		t.Fatal("the drained evaluator is still draining")
+	}
+	got = window()
+	if got["analyzer-cache-hits"] != int64(0) || got["analyzer-calls"] != int64(0) {
+		t.Fatalf("window after it was banked: cache-hits = %v, calls = %v; want 0, 0",
+			got["analyzer-cache-hits"], got["analyzer-calls"])
 	}
 }
 
