@@ -1155,8 +1155,8 @@ After a timeout the developer asks an approver, then runs the statement again.
 That retry collects the approval. The relay files nothing on the second
 attempt: the plane recognizes the same statement, consumes the approved review
 and answers that this one may go through. It answers that ONCE, since the
-third run of the same statement files a fresh review, and a rejection stays, so
-a refused statement is refused every time without paging anyone again.
+third run of the same statement files a fresh review. A rejection or a
+revocation ends that one review: running the statement again files a new one.
 
 The budget and interval are constants, with no config field. A control plane
 older than the relay has no claim route: the relay then denies after the first

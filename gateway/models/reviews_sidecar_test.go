@@ -96,6 +96,59 @@ func TestGetSidecarReviewFindsASpentReview(t *testing.T) {
 	}
 }
 
+// A refusal is final for one review, not for the statement. The resend must
+// file a new review, and the index must accept it.
+func TestRefusedSidecarReviewIsNotLive(t *testing.T) {
+	for _, status := range []models.ReviewStatusType{models.ReviewStatusRejected, models.ReviewStatusRevoked} {
+		t.Run(string(status), func(t *testing.T) {
+			startTestDB(t)
+			sc := seedSidecar(t, "refused")
+			const statement = "DELETE FROM x;"
+			hash := models.HashStatement([]byte(statement))
+			rev := seedSidecarReview(t, sc, statement)
+
+			if err := models.UpdateReviewStatus(testOrgID, rev.ID, status); err != nil {
+				t.Fatalf("refuse the review: %v", err)
+			}
+			_, err := models.GetLiveSidecarReview(models.DB, testOrgID, sc.ID, "appdb", "payments-approvers", hash)
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				t.Fatalf("the live lookup returned a %s review: err=%v", status, err)
+			}
+
+			next := seedSidecarReview(t, sc, statement)
+			got, err := models.GetLiveSidecarReview(models.DB, testOrgID, sc.ID, "appdb", "payments-approvers", hash)
+			if err != nil {
+				t.Fatalf("the live lookup lost the new review: %v", err)
+			}
+			if got.ID != next.ID {
+				t.Errorf("live review = %s, want the new one %s", got.ID, next.ID)
+			}
+		})
+	}
+}
+
+// A second PENDING review for the same statement must still be refused, so
+// racing first requests cannot both file.
+func TestPendingSidecarReviewBlocksADuplicate(t *testing.T) {
+	startTestDB(t)
+	sc := seedSidecar(t, "duplicate")
+	const statement = "DELETE FROM x;"
+	first := seedSidecarReview(t, sc, statement)
+
+	dup := *first
+	dup.ID = uuid.NewString()
+	dup.SessionID = uuid.NewString()
+	sess := models.Session{
+		ID: dup.SessionID, OrgID: testOrgID, BlobInput: models.BlobInputType(statement),
+		ConnectionType: "custom", Verb: "exec", Status: "open",
+		UserID: sc.ID, UserName: sc.Name, UserEmail: "hoop@hoop.dev", CreatedAt: time.Now().UTC(),
+	}
+	err := models.CreateSidecarReview(models.DB, sess, &dup, statement)
+	if !errors.Is(err, gorm.ErrDuplicatedKey) {
+		t.Fatalf("a second pending review was filed: err=%v", err)
+	}
+}
+
 // The token is the authorization. Another sidecar in the same org that
 // learns a review id must not be able to read or claim it.
 func TestGetSidecarReviewIsScopedToTheSidecar(t *testing.T) {

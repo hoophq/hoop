@@ -348,8 +348,8 @@ func holdMessage(operator, reviewID, reason string) string {
 // reviewReason turns a review's status into the clause a developer reads.
 //
 // The distinction that matters to them is whether waiting will help. Pending
-// says retry later; rejected and revoked say stop, because the backend keeps
-// a refusal and files nothing new for the same statement.
+// says retry later; rejected and revoked say stop, because a resend files a
+// new review and pages the approvers again.
 func reviewReason(status string) string {
 	switch status {
 	case reviewPending:
