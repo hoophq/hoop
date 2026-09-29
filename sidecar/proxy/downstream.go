@@ -72,7 +72,7 @@ func negotiateDownstream(
 	proto inspect.Protocol,
 	tlsCfg *tls.Config,
 	timeout time.Duration,
-) (net.Conn, map[string]string, error) {
+) (net.Conn, startupPacket, error) {
 	if proto == inspect.ClickHouse && tlsCfg != nil {
 		if timeout > 0 {
 			if err := conn.SetDeadline(time.Now().Add(timeout)); err != nil {
@@ -200,16 +200,19 @@ const maxStartupPacket = 10000
 // that rode beside it, so a value lifted from them is a label for tracing
 // and never an identity.
 //
-// # Duplicates
+// # Duplicates and order
 //
-// The last occurrence wins, because that is what the backend does: each
-// `user`, `database` and `options` read in ProcessStartupPacket overwrites
-// the one before it, and a repeated setting is applied in order. Keeping the
-// first would let a client audit as one user and log in as another.
+// Parameters are kept in packet order, repeats included, because that is how
+// the backend resolves them: each `user`, `database` and `options` read in
+// ProcessStartupPacket overwrites the one before it, and the remaining
+// parameters are applied as settings in order, a setting name matching
+// case-insensitively. A map would lose both, and keeping the first `user`
+// would let a client audit as one user and log in as another. See
+// startupPacket.get and pgEffectiveOptionSettings.
 //
 // Returns nil when the packet is not a v3 StartupMessage (a cancel request,
 // or a protocol version this relay does not recognize) or is malformed.
-func startupParams(br *bufio.Reader, length uint32) map[string]string {
+func startupParams(br *bufio.Reader, length uint32) startupPacket {
 	if length < 9 || length > maxStartupPacket {
 		return nil
 	}
@@ -223,7 +226,7 @@ func startupParams(br *bufio.Reader, length uint32) map[string]string {
 	}
 
 	// NUL-terminated key/value pairs, ending with an empty key.
-	params := make(map[string]string)
+	var params startupPacket
 	rest := pkt[8:]
 	for {
 		k, after, ok := bytes.Cut(rest, []byte{0})
@@ -237,16 +240,35 @@ func startupParams(br *bufio.Reader, length uint32) map[string]string {
 		if !ok {
 			return nil
 		}
-		params[string(k)] = string(v)
+		params = append(params, startupParam{name: string(k), value: string(v)})
 		rest = after
 	}
+}
+
+// startupParam is one StartupMessage parameter.
+type startupParam struct{ name, value string }
+
+// startupPacket is a StartupMessage's parameters in packet order, repeats
+// included. See startupParams for why the order is kept.
+type startupPacket []startupParam
+
+// get returns the value of the LAST parameter named exactly name: the one
+// ProcessStartupPacket keeps for user, database and options, which it
+// compares with strcmp.
+func (p startupPacket) get(name string) (string, bool) {
+	for i := len(p) - 1; i >= 0; i-- {
+		if p[i].name == name {
+			return p[i].value, true
+		}
+	}
+	return "", false
 }
 
 // finishNegotiation clears the handshake deadline and hands back a connection
 // that reads through the buffer the negotiation filled.
 func finishNegotiation(
-	conn net.Conn, br *bufio.Reader, timeout time.Duration, params map[string]string,
-) (net.Conn, map[string]string, error) {
+	conn net.Conn, br *bufio.Reader, timeout time.Duration, params startupPacket,
+) (net.Conn, startupPacket, error) {
 	if timeout > 0 {
 		// The relay's own IdleTimeout governs from here; leaving the
 		// handshake deadline set would kill a long-running query.

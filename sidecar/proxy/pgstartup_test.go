@@ -76,12 +76,21 @@ func TestOptionSettingsReadTheWayTheBackendDoes(t *testing.T) {
 	}
 }
 
-func TestStartupMetadataLiftsOnlyWhatWasConfigured(t *testing.T) {
-	params := map[string]string{
-		"user":             "alice",
-		"application_name": "claude-code",
-		"options":          "-c claude.session.id=xyz1234678 -c search_path=private",
+// packet builds a startupPacket from name/value pairs, in order.
+func packet(kv ...string) startupPacket {
+	var p startupPacket
+	for i := 0; i+1 < len(kv); i += 2 {
+		p = append(p, startupParam{name: kv[i], value: kv[i+1]})
 	}
+	return p
+}
+
+func TestStartupMetadataLiftsOnlyWhatWasConfigured(t *testing.T) {
+	params := packet(
+		"user", "alice",
+		"application_name", "claude-code",
+		"options", "-c claude.session.id=xyz1234678 -c search_path=private",
+	)
 	got := startupMetadata(params, []StartupMetadata{
 		{Option: "Claude.Session.Id", Key: "claude.session.id"},
 		{Parameter: "application_name"},
@@ -103,11 +112,11 @@ func TestStartupMetadataLiftsOnlyWhatWasConfigured(t *testing.T) {
 // prefix, so a client-chosen name cannot reach a key the relay owns: here
 // `principal` becomes postgres.option.principal, never input.context.principal.
 func TestAllStartupOptionsRecordsEverySettingUnderItsPrefix(t *testing.T) {
-	params := map[string]string{
-		"user":             "alice",
-		"application_name": "claude-code",
-		"options":          "-c claude.session.id=xyz -c Search-Path=private --principal=mallory",
-	}
+	params := packet(
+		"user", "alice",
+		"application_name", "claude-code",
+		"options", "-c claude.session.id=xyz -c Search-Path=private --principal=mallory",
+	)
 	got := startupMetadata(params, nil, true)
 	want := map[string]string{
 		"postgres.option.claude.session.id": "xyz",
@@ -117,15 +126,43 @@ func TestAllStartupOptionsRecordsEverySettingUnderItsPrefix(t *testing.T) {
 	if !maps.Equal(got, want) {
 		t.Fatalf("metadata = %v, want %v", got, want)
 	}
-	if got := startupMetadata(map[string]string{"user": "alice"}, nil, true); got != nil {
+	if got := startupMetadata(packet("user", "alice"), nil, true); got != nil {
 		t.Fatalf("no options recorded %v, want nothing", got)
+	}
+}
+
+// The backend applies `options` first and the other parameters after, in
+// packet order, matching the setting name case-insensitively. A setting sent
+// both ways runs with the separate parameter's value, so that is the one
+// recorded, or the trail would name a trace id the session never had. A
+// parameter `options` did not assign is not picked up: the default records
+// options, not every setting a driver sends.
+func TestDirectParameterOverridesTheOptionsSetting(t *testing.T) {
+	params := packet(
+		"user", "alice",
+		"options", "-c claude.session.id=first -c claude.agent.id=a1",
+		"claude.session.id", "second",
+		"Claude.Session.Id", "third",
+		"client_encoding", "UTF8",
+		"_pq_.claude.agent.id", "protocol-extension",
+	)
+	want := map[string]string{
+		"postgres.option.claude.session.id": "third",
+		"postgres.option.claude.agent.id":   "a1",
+	}
+	if got := startupMetadata(params, nil, true); !maps.Equal(got, want) {
+		t.Fatalf("every option: metadata = %v, want %v", got, want)
+	}
+	got := startupMetadata(params, []StartupMetadata{{Option: "claude.session.id", Key: "trace"}}, false)
+	if got["trace"] != "third" {
+		t.Fatalf("named option: trace = %q, want third, the value the backend runs with", got["trace"])
 	}
 }
 
 // Narrowing a lane from every option to a list must keep the key a dashboard
 // already queries, so a field with no `as` writes what the default wrote.
 func TestFieldWithoutKeyWritesTheDefaultKey(t *testing.T) {
-	params := map[string]string{"options": "-c Claude.Session-Id=xyz"}
+	params := packet("options", "-c Claude.Session-Id=xyz")
 	all := startupMetadata(params, nil, true)
 	one := startupMetadata(params, []StartupMetadata{{Option: "claude.session_id"}}, false)
 	if !maps.Equal(all, one) {
@@ -142,7 +179,7 @@ func TestFieldWithoutKeyWritesTheDefaultKey(t *testing.T) {
 func TestStartupMetadataValueIsBounded(t *testing.T) {
 	long := strings.Repeat("a", maxStartupMetadataValue-1) + "é" + "tail"
 	got := startupMetadata(
-		map[string]string{"application_name": long},
+		packet("application_name", long),
 		[]StartupMetadata{{Parameter: "application_name", Key: "app"}},
 		false,
 	)["app"]

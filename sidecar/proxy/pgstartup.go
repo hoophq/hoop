@@ -121,12 +121,12 @@ func validateStartupMetadata(fields []StartupMetadata) error {
 // out of one StartupMessage, which startupParams refuses above
 // maxStartupPacket, so what one session can add to each of its records is
 // bounded by that packet.
-func startupMetadata(params map[string]string, fields []StartupMetadata, all bool) map[string]string {
+func startupMetadata(params startupPacket, fields []StartupMetadata, all bool) map[string]string {
 	if len(params) == 0 {
 		return nil
 	}
 	if all {
-		settings := pgOptionSettings(params["options"])
+		settings := pgEffectiveOptionSettings(params)
 		if len(settings) == 0 {
 			return nil
 		}
@@ -150,10 +150,10 @@ func startupMetadata(params map[string]string, fields []StartupMetadata, all boo
 			ok bool
 		)
 		if f.Parameter != "" {
-			v, ok = params[f.Parameter]
+			v, ok = params.get(f.Parameter)
 		} else {
 			if !optsRead {
-				opts, optsRead = pgOptionSettings(params["options"]), true
+				opts, optsRead = pgEffectiveOptionSettings(params), true
 			}
 			v, ok = opts[pgSettingName(f.Option)]
 		}
@@ -166,6 +166,58 @@ func startupMetadata(params map[string]string, fields []StartupMetadata, all boo
 		out[f.MetadataKey()] = truncateUTF8(v, maxStartupMetadataValue)
 	}
 	return out
+}
+
+// pgEffectiveOptionSettings is pgOptionSettings with each value replaced by
+// the one the session actually runs with.
+//
+// A client can assign one setting twice in a StartupMessage: inside
+// `options` (-c claude.session.id=first) and as a parameter of its own
+// (claude.session.id=second). process_startup_options applies the `options`
+// switches first and the other parameters after, in packet order, so the
+// separate parameter wins. Reading `options` alone would record `first`
+// while the database, and anything reading current_setting, runs with
+// `second`: a trace id the session never had.
+//
+// Only settings `options` assigns are overridden. A lane recording every
+// option must not start recording every parameter a driver sends
+// (client_encoding, DateStyle, TimeZone), which were never options.
+//
+// Parameters are walked in packet order, so of two spellings of one setting
+// (claude.session.id, then Claude.Session.Id) the later wins, as it does in
+// the backend.
+func pgEffectiveOptionSettings(params startupPacket) map[string]string {
+	options, _ := params.get("options")
+	settings := pgOptionSettings(options)
+	if len(settings) == 0 {
+		return settings
+	}
+	for _, p := range params {
+		if !pgStartupSetting(p.name) {
+			continue
+		}
+		// The GUC lookup ignores case. Unlike a switch, a parameter name is
+		// not passed through ParseLongOption, so '-' stays '-': a name
+		// spelled that way is not a valid setting, and the backend refuses
+		// the connection before any statement runs.
+		name := strings.ToLower(p.name)
+		if _, ok := settings[name]; ok {
+			settings[name] = p.value
+		}
+	}
+	return settings
+}
+
+// pgStartupSetting reports whether a StartupMessage parameter is applied as a
+// setting. ProcessStartupPacket consumes user, database, options and
+// replication itself, and a `_pq_.` name is a protocol extension; every other
+// parameter becomes a setting.
+func pgStartupSetting(name string) bool {
+	switch name {
+	case "user", "database", "options", "replication":
+		return false
+	}
+	return !strings.HasPrefix(name, "_pq_.")
 }
 
 // pgOptionSettings returns the settings an `options` startup parameter

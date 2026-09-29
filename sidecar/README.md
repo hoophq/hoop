@@ -1808,7 +1808,10 @@ opposite of what it looks like.
   `--name=value`. Names are recorded lowercase with `-` read as `_`, and the
   last assignment wins. Reading stops where the backend would refuse the
   connection (a non-switch word, `--`, an unknown switch), because no statement
-  can run under what follows.
+  can run under what follows. A setting the client also sends as a startup
+  parameter of its own (`claude.session.id=...` beside `options`) records that
+  parameter's value, because the backend applies it after `options`; of two
+  such parameters, the later wins, names compared case-insensitively.
 - **`option`** names one setting, matched the same way. **`parameter`** names a
   StartupMessage parameter, matched exactly; parameters are only recorded when
   a list names them.

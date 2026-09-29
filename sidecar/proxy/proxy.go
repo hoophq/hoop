@@ -700,7 +700,7 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 	// a policy context that lacks it. An IdentityFn the operator supplied
 	// wins, because it saw a verified subject from the fronting proxy and
 	// this is a client claim.
-	claimedUser := startup["user"]
+	claimedUser, _ := startup.get("user")
 	md := startupMetadata(startup, s.cfg.StartupMetadata, s.cfg.AllStartupOptions)
 	if claimedUser != "" || len(md) > 0 {
 		if err := g.Adopt(claimedUser, md); err != nil {
