@@ -1074,9 +1074,11 @@ func (c *Config) validate(onHost bool) error {
 
 	// Loaded, not merely checked for a path: a bundle with no certificate in
 	// it must fail here, where -validate reports it, and not at the first
-	// intercepted call.
-	if _, err := loadTrustRoots(c.Trust); err != nil {
-		problems = append(problems, err.Error())
+	// intercepted call. Only on the sidecar host, where the file lives.
+	if onHost {
+		if _, err := loadTrustRoots(c.Trust); err != nil {
+			problems = append(problems, err.Error())
+		}
 	}
 
 	// The feature caps are NOT checked here. This runs inside

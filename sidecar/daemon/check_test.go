@@ -11,7 +11,7 @@ import (
 // those checks, and the listener count, may be skipped; everything else must
 // refuse what the sidecar would refuse.
 func TestCheckConfigBytesSkipsOnlyWhatTheHostAnswers(t *testing.T) {
-	missingFiles := `{"listeners":[
+	missingFiles := `{"trust":{"ca_file":"/nope/egress-ca.pem"},"listeners":[
 		{"name":"jump","protocol":"ssh","listen":":2222",
 		 "ssh":{"host_key":"/nope/host_key","trusted_ca":"/nope/ca.pub"}},
 		{"name":"pg","protocol":"postgres","listen":":5432","upstream":"db:5432",
@@ -21,8 +21,8 @@ func TestCheckConfigBytesSkipsOnlyWhatTheHostAnswers(t *testing.T) {
 	if err := CheckConfigBytes([]byte(missingFiles)); err != nil {
 		t.Fatalf("files on the sidecar host must not be checked: %v", err)
 	}
-	if _, err := LoadConfigBytes([]byte(missingFiles)); err == nil {
-		t.Fatal("the sidecar itself must still refuse the missing files")
+	if _, err := LoadConfigBytes([]byte(missingFiles)); err == nil || !strings.Contains(err.Error(), "trust.ca_file") {
+		t.Fatalf("the sidecar itself must still refuse the missing files: %v", err)
 	}
 	if err := CheckConfigBytes([]byte(`{}`)); err != nil {
 		t.Fatalf("a control-plane document may have no listener yet: %v", err)
