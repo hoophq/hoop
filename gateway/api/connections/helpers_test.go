@@ -261,6 +261,45 @@ func TestCleanMongoOutput(t *testing.T) {
 			input:    "你好世界[1,2,3]",
 			expected: "[1,2,3]",
 		},
+		{
+			// Verbatim from a mongosh 2.x replica set. The "[primary]" in the
+			// prompt precedes the payload, and the shell writes another prompt
+			// after it.
+			name: "replica set prompt brackets before and after the payload",
+			input: "mongodb [primary] lyric> \n" +
+				"mongodb [primary] lyric> \n" +
+				"mongodb [primary] lyric> [{\"database_name\":\"lyric\"}]\n\n" +
+				"mongodb [primary] lyric> ",
+			expected: `[{"database_name":"lyric"}]`,
+		},
+		{
+			name:     "prompt with no payload",
+			input:    "mongodb [primary] lyric> \nmongodb [primary] lyric> ",
+			expected: "",
+		},
+		{
+			name:     "trailing prompt is dropped from an object payload",
+			input:    `test> {"schema_name":"lyric"}` + "\ntest> ",
+			expected: `{"schema_name":"lyric"}`,
+		},
+		{
+			// The columns script echoes a prompt per line and prints two
+			// function handles, so the payload sits behind ~25 bracket
+			// candidates. Verbatim from mongosh 2.x.
+			name: "function handles and prompts before an empty array payload",
+			input: "mongodb [primary] lyric> \n" +
+				"mongodb [primary] lyric> 0\n" +
+				"mongodb [primary] lyric> ... ... [Function: getMongoType]\n" +
+				"mongodb [primary] lyric> ... ... [Function: getSchemaFromDoc]\n" +
+				"mongodb [primary] lyric> []\n\n" +
+				"mongodb [primary] lyric> ",
+			expected: "[]",
+		},
+		{
+			name:     "more bracket noise than the candidate cap",
+			input:    strings.Repeat("[x] ", 1100) + `[{"a":1}]`,
+			expected: "",
+		},
 	}
 
 	for _, tt := range tests {

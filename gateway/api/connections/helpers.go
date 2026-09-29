@@ -459,38 +459,44 @@ func validateObjectName(name string, d nameDialect) error {
 	}
 }
 
+// cleanMongoOutput extracts the first JSON value from a mongo shell response.
+//
+// The shell interleaves its prompt with the script output, and a replica set
+// prompt carries brackets of its own, so the first '[' in the stream is not
+// necessarily the start of the payload:
+//
+//	mongodb [primary] lyric> [{"database_name":"lyric"}]
+//
+// Every '[' or '{' is tried in turn until one decodes, and only that value is
+// returned, which also drops the prompt the shell writes after it.
 func cleanMongoOutput(output string) string {
-	// If the string is empty,
-	if len(output) == 0 {
-		return ""
-	}
-
 	output = strings.TrimSpace(output)
-	startJSON := -1
 
-	// Addicional protection after TrimSpace
-	if len(output) == 0 {
-		return ""
-	}
+	// A response with many brackets but no valid value costs one decode per
+	// candidate, so the scan is bounded. The shell echoes a prompt per script
+	// line and every replica set prompt carries a "[primary]", which puts the
+	// real floor at the longest script (72 lines today); the cap is an order of
+	// magnitude above that and only ever trips on pathological output.
+	const maxCandidates = 1024
 
+	attempts := 0
 	for i, char := range output {
-		if char == '[' || char == '{' {
-			startJSON = i
-			break
+		if char != '[' && char != '{' {
+			continue
+		}
+		attempts++
+		if attempts > maxCandidates {
+			return ""
+		}
+
+		decoder := json.NewDecoder(strings.NewReader(output[i:]))
+		var value json.RawMessage
+		if err := decoder.Decode(&value); err == nil {
+			return output[i : i+int(decoder.InputOffset())]
 		}
 	}
 
-	// If don't find the start of JSON, return empty string
-	if startJSON < 0 {
-		return ""
-	}
-
-	// Ensure we don't have a panic with the slice
-	if startJSON >= len(output) {
-		return ""
-	}
-
-	return output[startJSON:]
+	return ""
 }
 
 // parseMongoDBColumns parses MongoDB output and returns a slice of ConnectionColumns
