@@ -1823,18 +1823,34 @@ opposite of what it looks like.
   longer than 256 bytes is cut at a character boundary. The default records as
   many settings as the client sends, bounded by the 10000-byte StartupMessage.
 
+Where the values appear:
+
+| Place | Carries them |
+|---|---|
+| each `statement` / `violation` event, and `session_end` | yes |
+| `session_start` | no: it is written before the StartupMessage is read |
+| the session row in `GET /api/sessions` and `/api/sessions/{id}` | once the session ends; the row takes `session_end`'s metadata, never a statement's |
+| OPA `input.context` | yes, from the first statement |
+| the `session opened` / `session closed` log lines | yes, under one `metadata` object |
+
+```json
+{"msg":"session opened","session":"de2f…","principal":"alice",
+ "metadata":{"postgres.option.claude.agent.id":"agent-7","postgres.option.claude.session.id":"xyz1234678"}}
+```
+
 **These values are claims.** Postgres authenticates the user, not the options
 beside it, so a lifted value is a label for tracing and never an identity. It
-lands in `metadata`, not in `identity`. `session_start` does not carry it:
-that record is written before the StartupMessage is read. PgBouncer in front of
+lands in `metadata`, not in `identity`. PgBouncer in front of
 the backend refuses an unknown `options` parameter unless
 `ignore_startup_parameters` lists it, and listing it drops the value before the
 database sees it.
 
 **The default records whatever the client puts in `options`**, `search_path` and
-application settings included, in the audit trail and in what OPA receives.
-`audit.redact_statements` covers statement text, not metadata. A lane whose clients may
-carry a secret in `options` should name the settings it wants, or write `[]`.
+application settings included, in the audit trail, in what OPA receives and in
+the process log, which your log pipeline ships with its own retention and
+access rules. `audit.redact_statements` covers statement text, not metadata. A
+lane whose clients may carry a secret in `options` should name the settings it
+wants, or write `[]`.
 
 ### MySQL, and the three ways a session goes dark
 

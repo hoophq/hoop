@@ -27,8 +27,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net"
 	"os"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -576,9 +578,22 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 	// Rebuilt, not extended, when the principal changes. slog.With APPENDS,
 	// so extending it with a second "principal" leaves both on every record
 	// and the JSON handler writes the key twice.
+	//
+	// Session metadata rides as one "metadata" group rather than as top-level
+	// attributes. Its keys come from config (`as`) and from client-chosen
+	// setting names, so a top-level `msg` or `session` would repeat a key the
+	// line already has, the same defect the rebuild above avoids. Sorted, so
+	// two lines of one session list the keys in one order.
 	sessionLog := func() *slog.Logger {
-		return s.log.With("session", string(sess.ID),
-			"principal", sess.Identity.Principal())
+		attrs := []any{"session", string(sess.ID), "principal", sess.Identity.Principal()}
+		if len(sess.Metadata) > 0 {
+			md := make([]any, 0, len(sess.Metadata))
+			for _, k := range slices.Sorted(maps.Keys(sess.Metadata)) {
+				md = append(md, slog.String(k, sess.Metadata[k]))
+			}
+			attrs = append(attrs, slog.Group("metadata", md...))
+		}
+		return s.log.With(attrs...)
 	}
 	log := sessionLog()
 
