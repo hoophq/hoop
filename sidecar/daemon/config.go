@@ -1668,6 +1668,10 @@ type analyzerDeps struct {
 	// detector, which sends raw.
 	det Plugin
 
+	// mcp is true when this process serves the review MCP tools. Set at
+	// startup: a reload does not start or stop the MCP server.
+	mcp bool
+
 	// budgets hands every generation of an evaluator the same call
 	// counter, so MaxCalls bounds the spend across hot reloads: a
 	// draining generation and its replacement pay from one purse. Keyed

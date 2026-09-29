@@ -187,6 +187,12 @@ type Config struct {
 	// ReviewMode decides what a PENDING review does to its statement. Empty
 	// is ReviewHold.
 	ReviewMode ReviewMode
+
+	// ReturnNext is what an agent does before it resends a statement a
+	// return-mode denial refused, such as the MCP tool to wait on. The
+	// daemon supplies it because this package does not know which tools
+	// the process serves. Empty keeps the plain retry message.
+	ReturnNext string
 }
 
 // Evaluator classifies statements and turns verdicts into policy decisions.

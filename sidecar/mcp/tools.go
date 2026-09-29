@@ -89,7 +89,7 @@ func (t *tools) register(server *sdk.Server) {
 		Annotations: readOnly,
 	}, t.status)
 	sdk.AddTool(server, &sdk.Tool{
-		Name: "review_wait",
+		Name: daemon.ReviewWaitTool,
 		Description: "Wait until a review is decided or the timeout elapses (default 60s, max 300s). " +
 			"timed_out=true is not an error: call again to keep waiting. The result's next " +
 			"field says what to do: wait, resend_identical_statement, or stop.",
