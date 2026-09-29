@@ -100,7 +100,8 @@ export default function SidecarsTable({ sidecars, onDelete }) {
                 {sidecar.name}
               </Text>
             </Table.Td>
-            <Table.Td miw={200}>
+            {/* "CONFIG REFUSED" plus "12 minutes ago" on one line. */}
+            <Table.Td miw={220}>
               <Group gap="xs" wrap="nowrap">
                 <SidecarStatusBadge sidecar={sidecar} />
                 {sidecar.last_seen_at && (

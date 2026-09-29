@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Divider, Group, Paper, Stack, Text, Title } from '@mantine/core'
-import { Info, Lock } from 'lucide-react'
+import { Info, Lock, TriangleAlert } from 'lucide-react'
 import ActionMenu from '@/components/ActionMenu'
 import Alert from '@/components/Alert'
 import Badge from '@/components/Badge'
@@ -11,15 +11,16 @@ import { formatRelativeTime } from '@/utils/datetime'
 import { showSnackbar } from '@/utils/snackbar'
 import { auditEnabled, configFeatures, hasConfiguration, usesConfigFile } from '../config'
 import ListenersTable from '../sections/ListenersTable'
-import { sidecarStatus } from '../status'
+import { configState, sidecarStatus } from '../status'
 import SidecarSourceModal from '../sections/SidecarSourceModal'
 import FeaturePills from './FeaturePills'
 
-const LABEL_WIDTH = 88
+// Wide enough for "Configuration", the longest label.
+const LABEL_WIDTH = 96
 
-function Row({ label, children }) {
+function Row({ label, align = 'center', children }) {
   return (
-    <Group gap="sm" align="center" wrap="nowrap">
+    <Group gap="sm" align={align} wrap="nowrap">
       <Text size="sm" c="dimmed" w={LABEL_WIDTH} flex="0 0 auto">
         {label}
       </Text>
@@ -28,10 +29,24 @@ function Row({ label, children }) {
   )
 }
 
+// The reason a sidecar gave is its own words, so it renders as code under the
+// sentence rather than inside it.
+function StatusHint({ status }) {
+  if (!status.detail) return status.hint
+  return (
+    <Stack gap={4}>
+      <Text size="sm">{status.hint}</Text>
+      <Text size="xs" ff="monospace">
+        {status.detail}
+      </Text>
+    </Stack>
+  )
+}
+
 export function SidecarStatusBadge({ sidecar }) {
   const status = sidecarStatus(sidecar)
   return (
-    <Tooltip label={status.hint} multiline w={260}>
+    <Tooltip label={<StatusHint status={status} />} multiline w={status.detail ? 340 : 260}>
       <Badge variant={status.badge} flex="0 0 auto">
         {status.label}
       </Badge>
@@ -70,6 +85,8 @@ export default function SidecarDetails({ sidecar, editable, listenerActions }) {
   const config = sidecar.configuration
   const configured = hasConfiguration(config)
   const fromFile = usesConfigFile(sidecar)
+  const configuration = configState(sidecar)
+  const deprecations = sidecar.deprecations ?? []
   // The value awaiting confirmation, and whether the dialog is up. Two states
   // rather than one: Mantine keeps the modal mounted through its exit
   // transition, and a target cleared on close would rewrite the copy of the
@@ -173,7 +190,35 @@ export default function SidecarDetails({ sidecar, editable, listenerActions }) {
                 <Text size="sm">{sidecar.version}</Text>
               </Row>
             )}
+            {configuration && (
+              <Row label="Configuration" align={configuration.detail ? 'flex-start' : 'center'}>
+                <Stack gap={2}>
+                  <Text size="sm">{configuration.label}</Text>
+                  {configuration.detail && (
+                    <Text size="xs" c="dimmed" ff="monospace">
+                      {configuration.detail}
+                    </Text>
+                  )}
+                </Stack>
+              </Row>
+            )}
           </Stack>
+
+          {deprecations.length > 0 && (
+            <Alert color="amber" variant="light" radius="md" icon={<TriangleAlert size={16} />}>
+              <Stack gap={4}>
+                <Text size="sm">
+                  This configuration uses deprecated keys. The sidecar still accepts them; rewrite them before they
+                  are removed.
+                </Text>
+                {deprecations.map((line) => (
+                  <Text key={line} size="sm">
+                    {line}
+                  </Text>
+                ))}
+              </Stack>
+            </Alert>
+          )}
 
           <Divider />
 
