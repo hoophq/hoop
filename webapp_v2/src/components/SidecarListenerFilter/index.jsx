@@ -117,7 +117,11 @@ export default function SidecarListenerFilter({ selected, onSelect, onClear }) {
   // Offering it would match rules against bindings that may have changed since,
   // so a pending read shows the loader and a failed one the error, whatever the
   // store still holds. A fleet that did not load is not an empty fleet either.
-  const failed = !loading && !!error
+  //
+  // The fleet can also load without its bindings (bound_rules_unavailable).
+  // Every rule would then read as bound nowhere, so that is a failure too.
+  const bindingsUnavailable = sidecars.some((sc) => sc.bound_rules_unavailable)
+  const failed = !loading && (!!error || bindingsUnavailable)
 
   let body
   if (loading) {
@@ -130,7 +134,7 @@ export default function SidecarListenerFilter({ selected, onSelect, onClear }) {
     body = (
       <Stack gap={4} px="sm" py="md">
         <Text size="xs" c="dimmed">
-          Sidecars could not be loaded.
+          {error ? 'Sidecars could not be loaded.' : 'The rules bound to each sidecar could not be loaded.'}
         </Text>
         <Anchor component="button" type="button" size="xs" onClick={() => fetchSidecars()}>
           Try again

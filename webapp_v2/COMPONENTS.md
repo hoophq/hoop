@@ -692,7 +692,7 @@ Props: `value` (targets[]), `onChange(targets)`, `label`, `description`. A liste
 ---
 
 ### `SidecarListenerFilter`
-The filter bar of the control plane's rule lists (Guardrails, Data Masking, AI Analyzer), in place of the gateway's Resource Role and Attribute filters. A sidecar row selects every listener of that sidecar; a listener row selects that one. Same trigger as `ValueFilter`. Loads the fleet from `useSidecarStore` on mount.
+The filter bar of the control plane's rule lists (Guardrails, Data Masking, AI Analyzer), in place of the gateway's Resource Role and Attribute filters. A sidecar row selects every listener of that sidecar; a listener row selects that one. Same trigger as `ValueFilter`. Loads the fleet from `useSidecarStore` on mount, and shows the loader or the error instead of the tree while that read is pending or failed, or when a sidecar reports `bound_rules_unavailable` (the gateway could not read the bindings, so every rule would read as unbound).
 
 The rule list answers carry no targets, but `GET /sidecars` carries every binding (`bound_rules`), so the page matches its rules with `boundRuleNames` from `pages/Sidecars/config.js`. The kind is the API's: `guardrail`, `datamasking` or `analyzer`.
 ```jsx
