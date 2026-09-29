@@ -359,6 +359,10 @@ type SidecarResponse struct {
 	// has to exist — a page reading Configuration alone shows a listener
 	// enforcing nothing while the sidecar enforces the rule.
 	BoundRules []SidecarRuleBinding `json:"bound_rules,omitempty"`
+	// BoundRulesUnavailable is true when the bindings could not be read.
+	// BoundRules is then empty because it is unknown, not because nothing is
+	// bound, and a page must not read it as "no rules".
+	BoundRulesUnavailable bool `json:"bound_rules_unavailable,omitempty"`
 	// DetachedRules names the rules an owner switch removed, on the PATCH
 	// that switched. Deleted rules came from this sidecar's file; unbound
 	// rules stay for their other targets.

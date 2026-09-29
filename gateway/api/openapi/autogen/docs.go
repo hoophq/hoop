@@ -19991,6 +19991,10 @@ const docTemplate = `{
                         "$ref": "#/definitions/openapi.SidecarRuleBinding"
                     }
                 },
+                "bound_rules_unavailable": {
+                    "description": "BoundRulesUnavailable is true when the bindings could not be read.\nBoundRules is then empty because it is unknown, not because nothing is\nbound, and a page must not read it as \"no rules\".",
+                    "type": "boolean"
+                },
                 "configuration": {
                     "description": "The stored daemon configuration.",
                     "type": "object"
@@ -20160,6 +20164,10 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/openapi.SidecarRuleBinding"
                     }
+                },
+                "bound_rules_unavailable": {
+                    "description": "BoundRulesUnavailable is true when the bindings could not be read.\nBoundRules is then empty because it is unknown, not because nothing is\nbound, and a page must not read it as \"no rules\".",
+                    "type": "boolean"
                 },
                 "configuration": {
                     "description": "The stored daemon configuration.",
