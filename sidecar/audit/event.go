@@ -232,6 +232,12 @@ func SessionStartEvent(s *session.Session) Event {
 }
 
 // SessionEndEvent builds the closing record with totals.
+//
+// It carries the session's metadata like the opening record does, and for a
+// pgwire lane it is the only session-level record that can: session_start is
+// written before the StartupMessage is read, so what the lane lifted from it
+// reaches the trail on statements and here. Copied, like statementMetadata,
+// so a buffering sink never shares the session's map.
 func SessionEndEvent(s *session.Session, statements, denied int) Event {
 	return Event{
 		Kind:           KindSessionEnd,
@@ -243,6 +249,7 @@ func SessionEndEvent(s *session.Session, statements, denied int) Event {
 		Duration:       s.Duration(),
 		StatementCount: statements,
 		DeniedCount:    denied,
+		Metadata:       maps.Clone(s.Metadata),
 	}
 }
 

@@ -400,7 +400,7 @@ func negotiateTwo(t *testing.T, send []byte) (gateSaw []byte, user string, reply
 	go func() {
 		defer close(done)
 		conn, u, err := negotiateDownstream(srv, inspect.Postgres, nil, 2*time.Second)
-		got = u
+		got = u["user"]
 		if err != nil {
 			return
 		}

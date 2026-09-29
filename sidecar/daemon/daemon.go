@@ -1429,6 +1429,7 @@ func buildServer(
 		CredentialHeader:    lc.credentialHeader(),
 		RequestIdentity:     requestIdentity,
 		CodecFactory:        ln.codecFactory,
+		StartupMetadata:     lc.Postgres.startupMetadata(),
 		Metrics:             ln.metrics,
 		IdleTimeout:         time.Duration(lc.IdleTimeoutSec) * time.Second,
 		MaxConns:            lc.MaxConns,

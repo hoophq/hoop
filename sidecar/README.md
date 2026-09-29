@@ -1757,6 +1757,63 @@ what ADR-0015 refuses.
 Everything that is not a statement is written as `kind: activity`, with what
 happened in `metadata.activity`.
 
+### Postgres: trace ids from the startup packet
+
+A postgres lane reads the client's StartupMessage before the gate sees a byte.
+It records `user` as the principal. The `postgres` block can also lift other
+values onto the session's metadata, so every statement record, the
+`session_end` record and OPA's `input.context` carry them:
+
+```yaml
+listeners:
+  - name: appdb
+    protocol: postgres
+    listen: 127.0.0.1:15432
+    upstream: appdb:5432
+    postgres:
+      startup_metadata:
+        - option: claude.session.id     # from options "-c claude.session.id=..."
+          as: claude.session.id         # the metadata key; see below for the default
+        - parameter: application_name   # a plain startup parameter
+```
+
+The client needs nothing but libpq. Postgres accepts a dotted setting name as a
+custom setting, so the backend runs with it too and
+`current_setting('claude.session.id', true)` reads it inside the database:
+
+```bash
+PGOPTIONS='-c claude.session.id=xyz1234678' psql -h 127.0.0.1 -p 15432 appdb
+# DSN form: postgres://u@host:15432/appdb?options=-c%20claude.session.id%3Dxyz1234678
+```
+
+```json
+{"kind":"statement","principal":"alice","statement":"SELECT 1",
+ "metadata":{"claude.session.id":"xyz1234678","postgres.parameter.application_name":"psql"}}
+```
+
+- **`option`** reads `options` the way the backend does: words split on
+  whitespace with `\` escaping, then `-c name=value`, `-cname=value` or
+  `--name=value`. Names match case-insensitively with `-` read as `_`, and the
+  last assignment wins. Reading stops where the backend would refuse the
+  connection (a non-switch word, `--`, an unknown switch), because no statement
+  can run under what follows.
+- **`parameter`** names a StartupMessage parameter, matched exactly.
+- **`as`** is the metadata key. Absent, it is `postgres.option.<option>` or
+  `postgres.parameter.<parameter>`. A key the relay writes into
+  `input.context` itself (`principal`, `subject`, `session_id`, and the rest)
+  is refused at load: the value is the client's, and that key would let the
+  client name its own principal.
+- A source the client did not send records no key, not an empty value. A value
+  longer than 256 bytes is cut at a character boundary.
+
+**These values are claims.** Postgres authenticates the user, not the options
+beside it, so a lifted value is a label for tracing and never an identity. It
+lands in `metadata`, not in `identity`. `session_start` does not carry it:
+that record is written before the StartupMessage is read. PgBouncer in front of
+the backend refuses an unknown `options` parameter unless
+`ignore_startup_parameters` lists it, and listing it drops the value before the
+database sees it.
+
 ### MySQL, and the three ways a session goes dark
 
 MySQL is stateful for a harder reason than Postgres. A pgwire message is
@@ -2498,7 +2555,9 @@ result := {"allow": true, "request": {"ai_analysis": true}} if {
 `input.context` is whatever the caller attached. The relay fills it from the
 session: `principal`, `session_id`, `connection`, and `subject`, `email`,
 `groups`, `peer_addr`, `upstream`, `correlation_id` where the identity carries
-them. `context.connection` keeps its key and changes its source: the
+them, plus the session's metadata keys, such as the ones a postgres lane's
+`startup_metadata` lifts. On a postgres lane, `principal` is the StartupMessage
+`user`. `context.connection` keeps its key and changes its source: the
 listener's `name` fills it now that `listeners[].connection` is gone. A
 deployment that set the two fields to different strings sees every Rego rule
 and every audit row key on the new value, so rename the listener before
