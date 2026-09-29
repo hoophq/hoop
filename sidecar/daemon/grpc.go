@@ -62,7 +62,7 @@ type GRPCCodecConfig struct {
 	// CapturePayload renders decoded request and response messages into
 	// per-message Statements so payload-matching rules (pii, pattern_match)
 	// and OPA can read them. Requires Descriptors.
-	CapturePayload bool `json:"capture_payload" label:"Capture the payload" help:"Needed for masking, PII and AI analysis on this listener."`
+	CapturePayload bool `json:"capture_payload,omitempty" label:"Capture the payload" help:"Needed for masking, PII and AI analysis on this listener."`
 
 	// MaxPayloadBytes truncates a captured rendering. Zero uses the lane
 	// default. Masking does not read this: it rewrites decoded fields

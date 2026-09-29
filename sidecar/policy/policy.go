@@ -393,6 +393,18 @@ const (
 	MatchAIAnalysis MatchType = "ai_analysis"
 )
 
+// RuleTypes lists every rule type newRules constructs, in a stable order. A
+// sidecar reports them to its control plane, which then refuses to bind a
+// rule of any other type to it, so this list and the switch in newRules must
+// agree; TestRuleTypesMatchNewRules holds them together.
+func RuleTypes() []MatchType {
+	return []MatchType{
+		MatchDenyWords, MatchPattern, MatchOperation, MatchTable, MatchPII,
+		MatchAIAnalysis, MatchHTTPResource, MatchHTTPStatus, MatchHTTPHeader,
+		MatchGRPCStatus,
+	}
+}
+
 // AITrigger narrows which statements an ai_analysis rule sends to a model.
 //
 // It is declared here rather than in the analyzer package so the config
@@ -420,10 +432,10 @@ func (t *AITrigger) IsZero() bool {
 // Rule is one local matcher.
 type Rule struct {
 	// Name identifies the rule in Verdict.Rule and in audit output.
-	Name string `json:"name"`
+	Name string `json:"name,omitempty"`
 
 	// Type selects the matching strategy.
-	Type MatchType `json:"type"`
+	Type MatchType `json:"type,omitempty"`
 
 	// Words for MatchDenyWords.
 	Words []string `json:"words,omitempty"`
@@ -668,6 +680,8 @@ func newRules(rules []Rule, hasScanner bool) (*Rules, error) {
 				problems = append(problems, err.Error())
 			}
 		default:
+			// A new case here goes in RuleTypes too, or no control plane
+			// ever serves it to this build.
 			problems = append(problems, fmt.Sprintf("%s: unknown rule type %q", r.Name, r.Type))
 		}
 		out = append(out, r)

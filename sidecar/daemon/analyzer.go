@@ -31,7 +31,7 @@ type HTTPCodecConfig struct {
 	// An analyzer on the lane judges a bodiless request from its path and
 	// headers either way; without this it never sees what a POST or a PUT
 	// carries.
-	CaptureBody bool `json:"capture_body" label:"Capture the request body" help:"Lets policy and the AI analyzer read what a POST or PUT carries."`
+	CaptureBody bool `json:"capture_body,omitempty" label:"Capture the request body" help:"Lets policy and the AI analyzer read what a POST or PUT carries."`
 
 	// MaxBodyBytes truncates a captured body. Zero uses the codec default.
 	MaxBodyBytes int `json:"max_body_bytes,omitempty" label:"Max body bytes" help:"0 uses the codec default of 64 KiB."`
@@ -135,10 +135,10 @@ func (h *HTTPCodecConfig) validate(lane string) []string {
 type AnalyzerConfig struct {
 	// Provider names a registered provider: anthropic, openai, gemini,
 	// vertex. Availability depends on what the binary links.
-	Provider string `json:"provider"`
+	Provider string `json:"provider,omitempty"`
 
 	// Model names the model. Provider-specific format.
-	Model string `json:"model"`
+	Model string `json:"model,omitempty"`
 
 	// Endpoint overrides the provider's default URL. Empty uses the
 	// provider default.
@@ -193,7 +193,7 @@ type AnalyzerConfig struct {
 	MaxInputBytes int `json:"max_input_bytes,omitempty"`
 
 	// Cache configures the verdict cache.
-	Cache AnalyzerCacheConfig `json:"cache,omitempty"`
+	Cache AnalyzerCacheConfig `json:"cache,omitzero"`
 
 	// MaxCalls bounds classifications for the process lifetime. Zero is
 	// unbounded. A backstop against a pathological workload, not a quota.
@@ -300,10 +300,11 @@ type LaneAnalyzerConfig struct {
 	//
 	// omitempty is load-bearing: a build that predates the field decodes
 	// the served document strictly, so a hold lane must never carry the
-	// key. The control plane refuses to serve "return" to such a build;
-	// see RequiredCapabilities. Retire it through normalize and
-	// Deprecations, never by deleting it.
-	ReviewMode analyzer.ReviewMode `json:"review_mode,omitempty"`
+	// key. The cap tag names what a build reports on its handshake, so the
+	// control plane refuses to serve "return" to a build without it; see
+	// CheckServable. Retire it through normalize and Deprecations, never by
+	// deleting it.
+	ReviewMode analyzer.ReviewMode `json:"review_mode,omitempty" cap:"review_mode"`
 
 	// The rest override the top-level analyzer defaults for this lane.
 	// A zero value inherits; see the field of the same name on
