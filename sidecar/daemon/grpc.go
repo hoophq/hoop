@@ -216,27 +216,28 @@ const grpcPermissionDenied = 7
 
 // grpcMetadataAllowlist is the lower-cased metadata a grpc lane exposes to
 // policy and audit. A lane that holds adds analyzer.HeaderReviewMode, the same
-// opt-in as an http lane. Holding-only is safe here: an analyzer change
-// restarts a grpc lane, so this list is rebuilt with it.
-func grpcMetadataAllowlist(gc GRPCCodecConfig, la *LaneAnalyzerConfig) []string {
+// opt-in as an http lane. The analyzer block swaps on a reload, so the lane
+// builds both lists and picks one per RPC from its live rules.
+func grpcMetadataAllowlist(gc GRPCCodecConfig, holds bool) []string {
 	out := make([]string, 0, len(gc.Metadata)+1)
 	for _, name := range gc.Metadata {
 		out = append(out, strings.ToLower(strings.TrimSpace(name)))
 	}
-	if analyzerHolds(la) {
+	if holds {
 		out = append(out, analyzer.HeaderReviewMode)
 	}
 	return out
 }
 
 // buildGRPCServer resolves one grpc lane's transport facts and builds the
-// reusable libhoop endpoint with sidecar-owned RPC callbacks.
+// reusable libhoop endpoint with sidecar-owned RPC callbacks. The returned
+// liveRules is the lane's reload target: every RPC reads its rules there.
 func buildGRPCServer(
 	ln lane,
 	ac AuditConfig,
 	sink audit.Sink,
 	log *slog.Logger,
-) (GRPCServer, error) {
+) (GRPCServer, *liveRules, error) {
 	lc := ln.cfg
 	var gc GRPCCodecConfig
 	if lc.GRPC != nil {
@@ -244,7 +245,9 @@ func buildGRPCServer(
 	}
 
 	laneLog := log.With("listener", ln.name)
-	allowedMetadata := grpcMetadataAllowlist(gc, lc.Analyzer)
+	metadataPlain := grpcMetadataAllowlist(gc, false)
+	metadataHeld := grpcMetadataAllowlist(gc, true)
+	rules := newLiveRules(ln)
 	failOnAuditError := ac.failOnAuditError()
 
 	// libhoop convention: configuration travels as a map[string]string the
@@ -269,7 +272,7 @@ func buildGRPCServer(
 	// the codec's. The merged schema is handed over already loaded.
 	schema, err := loadGRPCSchema(gc.Descriptors, ln.trustRoots)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", ln.name, err)
+		return nil, nil, fmt.Errorf("%s: %w", ln.name, err)
 	}
 	if gc.CapturePayload {
 		opts["capture_payload"] = "true"
@@ -330,11 +333,18 @@ func buildGRPCServer(
 		sess := session.New(proto, identity)
 		sess.Connection = ln.name
 		sess.Upstream = lc.Upstream
+		// Loaded once per RPC: the gate keeps this generation for the RPC's
+		// whole life, and the next RPC reads what a reload swapped in.
+		live := rules.load()
+		allowedMetadata := metadataPlain
+		if live.holds {
+			allowedMetadata = metadataHeld
+		}
 		g, err := gate.NewStatementGate(sess, gate.Config{
 			Protocol:         proto,
-			Policy:           ln.policy,
+			Policy:           live.policy,
 			Audit:            sink,
-			Masker:           ln.masker,
+			Masker:           live.masker,
 			FailOnAuditError: failOnAuditError,
 			Metrics:          ln.metrics,
 		})
@@ -368,9 +378,9 @@ func buildGRPCServer(
 
 	srv, err := codecgrpc.NewServerWithSchema(opts, schema, open, laneLog)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", ln.name, err)
+		return nil, nil, fmt.Errorf("%s: %w", ln.name, err)
 	}
-	return srv, nil
+	return srv, rules, nil
 }
 
 // grpcDescriptorFetchTimeout bounds one remote descriptor fetch. Generous,

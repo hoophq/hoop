@@ -15,7 +15,6 @@ import (
 
 	"github.com/hoophq/hoop/sidecar/license"
 	"github.com/hoophq/hoop/sidecar/license/licensetest"
-	"github.com/hoophq/hoop/sidecar/proxy"
 )
 
 // testFileReloader builds a reloader the way a STANDALONE Run does: no
@@ -36,13 +35,13 @@ func testFileReloader(t *testing.T, raw string) (*reloader, string, *bytes.Buffe
 	if err != nil {
 		t.Fatalf("buildLanes: %v", err)
 	}
-	servers := map[string]*proxy.Server{}
+	servers := map[string]ruleSwapper{}
 	for _, ln := range lanes {
 		srv, serr := buildServer(ln, cfg.Audit, nil, slog.Default())
 		if serr != nil {
 			t.Fatalf("buildServer: %v", serr)
 		}
-		servers[ln.name] = srv
+		servers[ln.name] = relayRules{srv}
 	}
 	view := &atomic.Pointer[laneState]{}
 	view.Store(&laneState{lanes: lanes})

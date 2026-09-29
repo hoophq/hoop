@@ -53,18 +53,19 @@ type SSHServer interface {
 }
 
 // buildSSHServer resolves one ssh lane and builds the libhoop endpoint with
-// sidecar-owned callbacks.
+// sidecar-owned callbacks. The returned liveRules is the lane's reload
+// target: every connection reads its policy and masker there.
 //
-// Everything decided here is decided ONCE, at build: the capability set, the
-// destination list, the account. A connection's OpenFunc reads resolved
-// values and never re-parses config text, so a typo cannot become a user's
-// problem on the hot path.
+// Everything else decided here is decided ONCE, at build: the capability
+// set, the destination list, the account. A connection's OpenFunc reads
+// resolved values and never re-parses config text, so a typo cannot become a
+// user's problem on the hot path.
 func buildSSHServer(
 	ln lane,
 	ac AuditConfig,
 	sink audit.Sink,
 	log *slog.Logger,
-) (SSHServer, error) {
+) (SSHServer, *liveRules, error) {
 	lc := ln.cfg
 	sc := lc.SSH
 	if sc == nil {
@@ -72,12 +73,12 @@ func buildSSHServer(
 		// Go rather than loaded from a file. Loud, not nil: a lane with no
 		// host key and no trusted CA would refuse everyone and be unable to
 		// say why.
-		return nil, fmt.Errorf("%s: protocol is ssh but there is no ssh block", ln.name)
+		return nil, nil, fmt.Errorf("%s: protocol is ssh but there is no ssh block", ln.name)
 	}
 
 	destinations, err := parseSSHDestinations(sc.DestinationsAllowed)
 	if err != nil {
-		return nil, fmt.Errorf("%s: ssh.destinations_allowed: %w", ln.name, err)
+		return nil, nil, fmt.Errorf("%s: ssh.destinations_allowed: %w", ln.name, err)
 	}
 
 	// A lane that admits no session capability forwards and nothing else:
@@ -89,6 +90,7 @@ func buildSSHServer(
 	laneLog := log.With("listener", ln.name)
 	failOnAuditError := ac.failOnAuditError()
 	stmts := sshStatements{}
+	rules := newLiveRules(ln)
 
 	// libhoop convention: configuration travels as a map[string]string the
 	// server validates, with unknown keys refused. Key material rides as
@@ -123,11 +125,15 @@ func buildSSHServer(
 
 		sess := session.New(inspect.SSH, identity)
 		sess.Connection = ln.name
+		// Loaded once per connection: the gate keeps this generation for
+		// the connection's whole life, and the next one reads what a
+		// reload swapped in.
+		live := rules.load()
 		g, err := gate.NewStatementGate(sess, gate.Config{
 			Protocol:         inspect.SSH,
-			Policy:           ln.policy,
+			Policy:           live.policy,
 			Audit:            sink,
-			Masker:           ln.masker,
+			Masker:           live.masker,
 			FailOnAuditError: failOnAuditError,
 			Metrics:          ln.metrics,
 		})
@@ -200,9 +206,9 @@ func buildSSHServer(
 
 	srv, err := codecssh.NewServer(opts, open, laneLog)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", ln.name, err)
+		return nil, nil, fmt.Errorf("%s: %w", ln.name, err)
 	}
-	return srv, nil
+	return srv, rules, nil
 }
 
 // resolveSessionAccount picks the OS account one connection's sessions run
@@ -763,15 +769,15 @@ func sshLaneNotes(sc *SSHConfig) []string {
 	return notes
 }
 
-// isEndpointLane reports whether a lane's policy stack is CAPTURED by a
-// running server rather than swappable underneath it.
+// isEndpointLane reports whether a lane TERMINATES its protocol in-process
+// (the grpc transport or the ssh endpoint) rather than relaying bytes.
 //
-// An endpoint lane builds its evaluator once and closes over it, so a hot
-// reload cannot move the rules without rebuilding the server. Both the grpc
-// transport and the ssh endpoint work this way, and the reload path has to
-// treat them alike: swapping the view lane while the serving closure keeps
-// the old evaluator would leave an operator looking at rules that are not
-// the rules being enforced, with nothing saying so.
+// Its rules swap on a reload like a relay lane's, through liveRules. What an
+// endpoint lane cannot absorb is masking turned on or off: that sets a
+// libhoop option when the server is built (mask_responses, mask_output), so
+// the server decodes, or does not decode, output for masking for its whole
+// life. Swapping a masker into a server built without it would show an
+// operator masking that is not happening.
 func isEndpointLane(lc ListenerConfig) bool {
 	return isGRPCTransport(lc) || isSSH(lc)
 }

@@ -236,8 +236,11 @@ nothing rebinds or drops. An edit beyond the rules (listeners, audit, admin,
 log_level, the top-level analyzer section, adding `control_plane_url`) logs
 `restart to apply it` once and the process keeps serving what it had; a file
 that does not load keeps the running rules, is retried on the next tick, and
-warns once until it loads again. ADR-0014 records the boundary; the control
-plane's heartbeat applies the same one.
+warns once until it loads again. gRPC, Spanner and SSH lanes swap rules the
+same way, per RPC or per connection; turning masking on or off on one of them
+is the exception and logs `restart to apply it`, because it is a server option
+fixed at build. ADR-0014 records the boundary; the control plane's heartbeat
+applies the same one.
 
 `SIGHUP` is a forced reload: the document runs even when its bytes did not
 move. That is how a license file replaced behind an unchanged `license` path
@@ -1550,7 +1553,7 @@ parameter, or one the URL parser cannot decode, is refused, so a typo
 cannot read the current version while the config appears pinned. The
 fetch happens once, when the lane's endpoint is built, under the same
 two-minute budget for credential discovery, the token exchange and the
-read: the schema is bound into the server like the lane's rules, so a
+read: the schema is bound into the server when it is built, so a
 changed `descriptors` list is restart-bound drift on the heartbeat, and a
 new version published behind an unpinned URL is applied by a restart, the
 way a replaced file is. `-validate` performs the fetch, so a wrong object
