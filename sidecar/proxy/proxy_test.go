@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/hoophq/hoop/sidecar/audit"
 	_ "github.com/hoophq/hoop/sidecar/codec/all"
+	httpcodec "github.com/hoophq/hoop/sidecar/codec/http"
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
 	"github.com/hoophq/hoop/sidecar/proxy"
@@ -285,6 +287,26 @@ func TestSessionAuditLifecycle(t *testing.T) {
 	}
 }
 
+// identityLane is an http lane that names its caller from X-Forwarded-User,
+// with the codec lifting the same header the relay peeks.
+func identityLane(upstream string, sink audit.Sink) proxy.Config {
+	return proxy.Config{
+		Upstream:   upstream,
+		Protocol:   inspect.HTTP,
+		Connection: "api",
+		Audit:      sink,
+		CodecFactory: func() inspect.Codec {
+			return httpcodec.New(httpcodec.Options{CredentialHeader: "X-Forwarded-User"})
+		},
+		CredentialHeader: "X-Forwarded-User",
+		RequestIdentity:  proxy.HeaderIdentity{},
+	}
+}
+
+// viaLine matches the Via header the relay adds to every request it
+// forwards, so a test can compare the rest of the bytes exactly.
+var viaLine = regexp.MustCompile(`Via: 1\.1 hoop-[0-9a-f]+\r\n`)
+
 // An http lane behind an authenticating proxy names its principal in a
 // header. Before the relay read it, every http session was "anonymous"
 // while the same key on a grpc lane worked, and nothing said why.
@@ -296,13 +318,7 @@ func TestHTTPIdentityHeaderNamesThePrincipal(t *testing.T) {
 	up := newEchoUpstream(t, []byte("HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n"))
 	sink := audit.NewMemorySink(64)
 
-	srv := startServer(t, proxy.Config{
-		Upstream:       up.addr(),
-		Protocol:       inspect.HTTP,
-		Connection:     "api",
-		Audit:          sink,
-		IdentityHeader: "X-Forwarded-User",
-	})
+	srv := startServer(t, identityLane(up.addr(), sink))
 
 	c, err := net.Dial("tcp", srv.Addr().String())
 	if err != nil {
@@ -331,7 +347,11 @@ func TestHTTPIdentityHeaderNamesThePrincipal(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	if got := string(up.got()); got != head1+head2+body {
+	got := string(up.got())
+	if !viaLine.MatchString(got) {
+		t.Errorf("upstream received %q with no Via from the relay", got)
+	}
+	if got := viaLine.ReplaceAllString(got, ""); got != head1+head2+body {
 		t.Errorf("upstream received %q; the peek must not consume or reorder the request", got)
 	}
 	events := sink.Events()
@@ -346,6 +366,66 @@ func TestHTTPIdentityHeaderNamesThePrincipal(t *testing.T) {
 				ev.Kind, ev.Principal)
 		}
 	}
+}
+
+// Envoy pools upstream connections, so alice's and bob's requests arrive on
+// one socket. Each must be recorded under its own caller, in its own
+// session, with the connection left open between them.
+func TestHTTPPooledConnectionAttributesEachCaller(t *testing.T) {
+	const ok = "HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n"
+	up := newEchoUpstream(t, []byte(ok))
+	sink := audit.NewMemorySink(64)
+	srv := startServer(t, identityLane(up.addr(), sink))
+
+	c, err := net.Dial("tcp", srv.Addr().String())
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer c.Close()
+	for _, user := range []string{"alice@example.com", "bob@example.com"} {
+		req := "GET /api/v1/namespaces/prod/secrets HTTP/1.1\r\nHost: api\r\nX-Forwarded-User: " + user + "\r\n\r\n"
+		if _, err := c.Write([]byte(req)); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+		c.SetReadDeadline(time.Now().Add(2 * time.Second))
+		buf := make([]byte, len(ok))
+		if _, err := io.ReadFull(c, buf); err != nil || string(buf) != ok {
+			t.Fatalf("%s: response %q, %v", user, buf, err)
+		}
+	}
+	c.Close()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) && countKind(sink.Events(), audit.KindSessionEnd) < 2 {
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	sessions := map[session.ID]string{}
+	for _, ev := range sink.Events() {
+		if ev.Kind != audit.KindStatement {
+			continue
+		}
+		if p, seen := sessions[ev.SessionID]; seen && p != ev.Principal {
+			t.Errorf("session %s holds statements from %q and %q", ev.SessionID, p, ev.Principal)
+		}
+		sessions[ev.SessionID] = ev.Principal
+	}
+	principals := map[string]bool{}
+	for _, p := range sessions {
+		principals[p] = true
+	}
+	if len(sessions) != 2 || !principals["alice@example.com"] || !principals["bob@example.com"] {
+		t.Errorf("statement sessions = %v, want one for alice and one for bob", sessions)
+	}
+}
+
+func countKind(events []audit.Event, k audit.Kind) int {
+	n := 0
+	for _, e := range events {
+		if e.Kind == k {
+			n++
+		}
+	}
+	return n
 }
 
 // Turning identity_header on must refuse no request the lane accepted
@@ -388,10 +468,7 @@ func TestHTTPIdentityPeekAcceptsWhatTheCodecAccepts(t *testing.T) {
 	t.Run("200 KiB head is accepted with its principal", func(t *testing.T) {
 		up := newEchoUpstream(t, reply)
 		sink := audit.NewMemorySink(64)
-		srv := startServer(t, proxy.Config{
-			Upstream: up.addr(), Protocol: inspect.HTTP, Connection: "api",
-			Audit: sink, IdentityHeader: "X-Forwarded-User",
-		})
+		srv := startServer(t, identityLane(up.addr(), sink))
 		got, ok := send(t, srv.Addr().String(), padded(200<<10))
 		if !ok || !strings.HasPrefix(got, "HTTP/1.1 204") {
 			t.Fatalf("response = %q; a head the codec accepts was refused by the identity peek", got)
@@ -409,10 +486,7 @@ func TestHTTPIdentityPeekAcceptsWhatTheCodecAccepts(t *testing.T) {
 
 	t.Run("head past 1 MiB is refused", func(t *testing.T) {
 		up := newEchoUpstream(t, reply)
-		srv := startServer(t, proxy.Config{
-			Upstream: up.addr(), Protocol: inspect.HTTP, Connection: "api",
-			IdentityHeader: "X-Forwarded-User",
-		})
+		srv := startServer(t, identityLane(up.addr(), nil))
 		got, ok := send(t, srv.Addr().String(), padded((1<<20)+4096))
 		if ok && strings.HasPrefix(got, "HTTP/1.1 204") {
 			t.Fatalf("an oversized head reached the upstream and was answered")
@@ -426,15 +500,28 @@ func TestHTTPIdentityPeekAcceptsWhatTheCodecAccepts(t *testing.T) {
 // The header is the operator's word for who is calling. On a lane whose
 // relay never reads it, accepting the key would leave every session
 // anonymous with no hint why.
-func TestIdentityHeaderRefusedOffHTTP(t *testing.T) {
+func TestCredentialHeaderRefusedOffHTTP(t *testing.T) {
 	_, err := proxy.NewServer(proxy.Config{
-		Listen:         "127.0.0.1:0",
-		Upstream:       "127.0.0.1:1",
-		Protocol:       inspect.Postgres,
-		IdentityHeader: "x-user",
+		Listen:           "127.0.0.1:0",
+		Upstream:         "127.0.0.1:1",
+		Protocol:         inspect.Postgres,
+		CredentialHeader: "x-user",
+		RequestIdentity:  proxy.HeaderIdentity{},
 	})
 	if err == nil {
-		t.Fatal("identity header accepted on a postgres lane")
+		t.Fatal("credential header accepted on a postgres lane")
+	}
+}
+
+// If the codec lifted one header and the relay peeked another, the first
+// request and every later one would resolve different callers, and each
+// connection would rotate sessions on its second request.
+func TestCredentialHeaderMustMatchTheCodec(t *testing.T) {
+	cfg := identityLane("127.0.0.1:1", nil)
+	cfg.Listen = "127.0.0.1:0"
+	cfg.CredentialHeader = "Authorization"
+	if _, err := proxy.NewServer(cfg); err == nil {
+		t.Fatal("a relay peeking Authorization accepted a codec lifting X-Forwarded-User")
 	}
 }
 

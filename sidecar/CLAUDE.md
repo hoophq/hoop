@@ -170,11 +170,14 @@ done
   defined there and aliased here, so its codecs satisfy `Codec` structurally.
 
 - **`sidecar/codec/*` is the registration seam, not a decoder.** libhoop
-  cannot call `Register`, so these thin packages do it, and they are also
-  where `AnalyzeSQL` and the lexer get injected into a decoder. Import
-  `codec/all` for postgres, mysql, mssql and http, or one package for one
-  protocol so a binary fronting Postgres never links the TDS, MySQL and HTTP
-  machinery.
+  cannot call `Register`, so these packages do it, and they are also where
+  `AnalyzeSQL` and the lexer get injected into a decoder. `codec/http` is
+  not thin: its `*Codec` embeds libhoop's Inspector and adds the relay
+  concerns libhoop has no reason to know (Connect Gateway resource
+  normalization, credential lifting for per-request identity, the Via loop
+  marker). Import `codec/all` for postgres, mysql, mssql and http, or one
+  package for one protocol so a binary fronting Postgres never links the
+  TDS, MySQL and HTTP machinery.
 
 - **gRPC deliberately has no `inspect.Codec`.** Its HTTP/2 endpoint and
   reusable protocol mechanics live in `libhoop/v2/codec/grpc`; `daemon/`
@@ -230,7 +233,7 @@ The module root holds no Go files: `go.mod`, this file and `README.md` only.
 |---|---|
 | `inspect/` | bytes to statements, plus the codec registry; the wire vocabulary every other package names |
 | `lexer/` | SQL text to an effect and a relation list, without a grammar |
-| `codec/` | registration seam: wires libhoop's decoders to the classifier |
+| `codec/` | registration seam: wires libhoop's decoders to the classifier; `codec/http` also wraps the Inspector with the relay's HTTP additions |
 | `policy/` | statement to verdict; local rules, then OPA |
 | `license/` | verifies the signed license that lifts the rule caps; a stdlib twin of `common/license`. `internal/trust` owns the key, `licensetest` signs for tests |
 | `analyzer/` | the model-backed evaluator, third in the policy chain |
@@ -238,6 +241,7 @@ The module root holds no Go files: `go.mod`, this file and `README.md` only.
 | `proxy/` | TCP relay that pumps both directions through a Gate |
 | `daemon/` | assembles the relay from config — sinks, evaluators, listeners — and is the CLI entry point |
 | `session/` | one inspected connection and the identity behind it |
+| `identity/` | resolves a request credential to the identity behind it; `google/` verifies a Google OAuth2 bearer with tokeninfo |
 | `audit/` | the write side of the trail |
 | `store/` | the read side |
 | `pii/` | detectors and maskers |

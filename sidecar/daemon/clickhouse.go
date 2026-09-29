@@ -43,9 +43,14 @@ func clickhouseCodecFactory(proto inspect.Protocol, cfg *ClickHouseCodecConfig) 
 
 // laneCodecFactory selects the one protocol-specific factory a listener may
 // need. Nil deliberately preserves the registry path for default settings.
-func laneCodecFactory(proto inspect.Protocol, http *HTTPCodecConfig, clickhouse *ClickHouseCodecConfig) func() inspect.Codec {
-	if f := httpCodecFactory(proto, http); f != nil {
-		return f
+//
+// An http lane is the exception and always gets its own: the registry's
+// codec has no way to learn the lane's credential header, and a lane that
+// lifts none still needs its capture settings. credentialHeader is ""
+// for a lane that resolves no identity from a request header.
+func laneCodecFactory(proto inspect.Protocol, http *HTTPCodecConfig, clickhouse *ClickHouseCodecConfig, credentialHeader string) func() inspect.Codec {
+	if proto == inspect.HTTP {
+		return newHTTPCodec(http, credentialHeader)
 	}
 	return clickhouseCodecFactory(proto, clickhouse)
 }

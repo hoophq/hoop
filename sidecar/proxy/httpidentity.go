@@ -3,12 +3,19 @@ package proxy
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
+	"strings"
 	"time"
+
+	"github.com/hoophq/hoop/sidecar/gate"
+	"github.com/hoophq/hoop/sidecar/inspect"
+	"github.com/hoophq/hoop/sidecar/session"
 )
 
 // maxRequestHead bounds how much of the first request is read while looking
@@ -29,7 +36,9 @@ const initialHeadBuffer = 4 << 10
 
 // peekHTTPIdentity reads the head of the first HTTP/1 request on conn
 // WITHOUT consuming it and returns the value of header, or "" when the
-// request does not carry one.
+// request does not carry one. Repeated header lines come back joined with
+// ", ", the way the HTTP codec renders them, so the peek and the per-request
+// identity check resolve the same string.
 //
 // # Why the relay reads ahead of the gate
 //
@@ -48,17 +57,17 @@ const initialHeadBuffer = 4 << 10
 //
 // # What the value is worth
 //
-// Everything. The header is trusted exactly as far as the network is: an
-// authenticating proxy that is the only thing able to reach this listener
-// set it from a verified credential, and nothing here can tell that from a
-// caller who typed it. The lane documents that condition; this function
-// does not check it, because it cannot.
+// For an identity header, everything. The header is trusted exactly as far
+// as the network is: an authenticating proxy that is the only thing able to
+// reach this listener set it from a verified credential, and nothing here
+// can tell that from a caller who typed it. The lane documents that
+// condition; this function does not check it, because it cannot. For
+// Authorization the value is a bearer the lane's resolver verifies.
 //
-// The first request names the connection. A keep-alive connection that
-// carries a second request with a different header keeps the first
-// identity, the same way an mTLS peer does. Per-request identity would
-// mean a mutable session under both pump goroutines, and no proxy this
-// lane is designed for multiplexes users on one TCP connection.
+// The first request names the SESSION, not the connection. The gate reads
+// every later request's credential too (gate.Config.RequestIdentity) and
+// opens a new session when the caller changes, because a fronting proxy
+// pools upstream connections and sends several users down one of them.
 //
 // A head that is not HTTP/1 is handed through unread with no identity. The
 // codec refuses it with the protocol's own error, which tells the user more
@@ -108,11 +117,11 @@ func peekHTTPIdentity(
 		}
 	}
 
-	var subject string
+	var value string
 	// The slice ends at the blank line, so ReadRequest sees every header
 	// and no body; a body it would otherwise wait for is still in buf.
 	if req, perr := http.ReadRequest(bufio.NewReader(bytes.NewReader(buf[:head]))); perr == nil {
-		subject = req.Header.Get(header)
+		value = strings.Join(req.Header.Values(header), ", ")
 	}
 	if timeout > 0 {
 		// The relay's own IdleTimeout governs from here.
@@ -120,7 +129,7 @@ func peekHTTPIdentity(
 			return nil, "", err
 		}
 	}
-	return &prefixConn{Conn: conn, prefix: buf}, subject, nil
+	return &prefixConn{Conn: conn, prefix: buf}, value, nil
 }
 
 // prefixConn replays bytes the peek already read before reading from the
@@ -142,4 +151,71 @@ func (c *prefixConn) Read(b []byte) (int, error) {
 		return n, nil
 	}
 	return c.Conn.Read(b)
+}
+
+// HeaderIdentity resolves an identity header's value to the subject it
+// names, for a lane behind an authenticating proxy that sets the header
+// from a login it verified. An absent header resolves to anonymous, which
+// keeps whatever identity the connection itself carried.
+type HeaderIdentity struct{}
+
+// Resolve returns the trimmed value as the Subject. It never fails: the
+// value is trusted as far as the network is, see peekHTTPIdentity.
+func (HeaderIdentity) Resolve(_ context.Context, value string) (session.Identity, error) {
+	return session.Identity{Subject: strings.TrimSpace(value)}, nil
+}
+
+// credentialCodec is what NewServer asks of a lane's codec when the lane
+// reads a credential: it must name the header it lifts.
+type credentialCodec interface {
+	CredentialHeader() string
+}
+
+// checkCredentialConfig refuses a credential lane whose parts disagree. The
+// relay peeks CredentialHeader on the first request and the codec lifts its
+// own header on every request; if those differ, the first request and the
+// rest resolve different values and the gate rotates sessions on every
+// connection. Checking one codec at startup is enough because the factory
+// builds them all from one option set.
+func checkCredentialConfig(cfg Config) error {
+	if (cfg.CredentialHeader == "") != (cfg.RequestIdentity == nil) {
+		return errors.New("sidecar/proxy: CredentialHeader and RequestIdentity are set together or not at all")
+	}
+	if cfg.CredentialHeader == "" {
+		return nil
+	}
+	if cfg.Protocol != inspect.HTTP {
+		return fmt.Errorf("sidecar/proxy: a credential header is only read on an http lane, not %s", cfg.Protocol)
+	}
+	if cfg.CodecFactory == nil {
+		return errors.New("sidecar/proxy: a credential header needs a CodecFactory whose codec lifts it")
+	}
+	cc, ok := cfg.CodecFactory().(credentialCodec)
+	if !ok || !strings.EqualFold(cc.CredentialHeader(), cfg.CredentialHeader) {
+		return fmt.Errorf("sidecar/proxy: the lane's codec does not lift the %s header the relay reads", cfg.CredentialHeader)
+	}
+	return nil
+}
+
+// requestIdentity wraps the configured resolver so every identity it
+// returns keeps the connection's facts: the peer address always, and the
+// whole connection identity (an IdentityFn's mTLS subject) when the request
+// named nobody.
+func (s *Server) requestIdentity(base session.Identity) gate.RequestIdentity {
+	return gate.RequestIdentityFunc(func(ctx context.Context, credential string) (session.Identity, error) {
+		id, err := s.cfg.RequestIdentity.Resolve(ctx, credential)
+		if err != nil {
+			return session.Identity{}, err
+		}
+		if id.IsAnonymous() {
+			return base, nil
+		}
+		id.PeerAddr = base.PeerAddr
+		if len(base.Attributes) > 0 {
+			attrs := maps.Clone(base.Attributes)
+			maps.Copy(attrs, id.Attributes)
+			id.Attributes = attrs
+		}
+		return id, nil
+	})
 }

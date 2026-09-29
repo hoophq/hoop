@@ -1,0 +1,112 @@
+# hoop-inspect behind a transparent MITM Envoy, in front of a fake GKE
+# Connect Gateway.
+#
+#   kubectl --TLS h2--> envoy :443  (MITM, "customer CA") --h2c--> :16443 lane "gke"
+#   "gke" --TLS--> fake-google:443 (connectgateway.googleapis.com) --> k3s :6443
+#   "gke" --TLS--> oauth2.googleapis.com/tokeninfo (fake-google)
+#
+#   curl ---TLS----> envoy :8449 (MITM without a bypass) --h2c--> :16445 lane "gke-loop"
+#   "gke-loop" --TLS--> envoy :8449 --> "gke-loop" again: refused, Via loop
+#
+# The appdb and httpbin lanes are the parent stack's, with no rules: this
+# build enforces at most ONE guardrail and ONE mask rule per process, and
+# the gke lane spends both.
+#
+# Validate without starting anything:
+#   cd sidecar/cmd && go run . -validate \
+#     -config ../../deploy/docker-compose/envoy-stack/gke/config-gke.yaml
+
+log_level: info
+
+admin:
+  listen: 0.0.0.0:19000
+
+audit:
+  file: "-"
+  memory_buffer: 256
+  async_queue_size: 1024
+  query_sessions: 500
+
+# The customer's MITM CA, ADDED to the system roots. Both Google hops below
+# (Connect Gateway and tokeninfo) present certificates it signed; nothing on
+# either lane names a ca_file.
+trust:
+  ca_file: /etc/hoop-inspect/gke-pki/ca.crt
+
+guardrails:
+  mode: enforce
+  rules: []
+
+mask:
+  rules: []
+
+listeners:
+  - name: appdb
+    protocol: postgres
+    listen: 0.0.0.0:15432
+    upstream: appdb:5432
+    upstream_tls:
+      ca_file: /etc/hoop-inspect/certs/appdb.crt
+      server_name: appdb
+
+  - name: httpbin
+    protocol: http
+    listen: 0.0.0.0:18080
+    upstream: httpbin:8080
+
+  # kubectl through Connect Gateway. Envoy sends h2c (no downgrade) for
+  # ordinary requests and HTTP/1.1 for the upgrades kubectl exec opens; the
+  # lane serves both on one port.
+  #
+  # The upstream is fake-google directly: Envoy intercepts every
+  # connectgateway.googleapis.com connection, so the sidecar's own egress has
+  # to bypass it (the loop lane below shows what happens when it does not).
+  # server_name keeps the real hostname, which is what the certificate names.
+  - name: gke
+    protocol: http
+    listen: 0.0.0.0:16443
+    upstream: fake-google:443
+    upstream_tls:
+      server_name: connectgateway.googleapis.com
+
+    # The caller is the Google identity in kubectl's own bearer, checked with
+    # tokeninfo (default URL; compose resolves oauth2.googleapis.com to
+    # fake-google). Envoy sets no identity header and runs no ext_authz.
+    google_identity: {}
+
+    http:
+      headers:
+        - Accept
+        - Kubectl-Command
+        - Upgrade
+        - Sec-WebSocket-Protocol
+        - X-Stream-Protocol-Version
+
+    # Plain Kubernetes paths. The lane removes the
+    # /v1/projects/*/locations/*/gkeMemberships/* prefix before rules see it.
+    guardrails:
+      rules:
+        - name: no-secret-contents
+          type: http_header
+          methods: [GET]
+          resources: ["/api/v1/secrets", "/api/v1/namespaces/*/secrets/**"]
+          headers_not:
+            accept: ["application/json;as=Table;*"]
+          message: listing secrets is fine; reading one is not permitted through this proxy
+
+    mask:
+      rules:
+        - name: k8s-data
+          columns: [data]
+          entities: [K8S_DATA]
+          strategy: redact
+
+  # A lane whose upstream is the intercepting Envoy itself: the misrouting a
+  # transparent MITM produces when nothing exempts the sidecar's egress. Each
+  # pass adds the sidecar's Via; the second pass sees its own and refuses.
+  - name: gke-loop
+    protocol: http
+    listen: 0.0.0.0:16445
+    upstream: envoy:8449
+    upstream_tls:
+      server_name: connectgateway.googleapis.com

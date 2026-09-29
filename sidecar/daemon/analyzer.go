@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"crypto/x509"
 	"fmt"
 	"net/url"
 	"strings"
@@ -9,7 +10,6 @@ import (
 	"time"
 
 	"github.com/hoophq/hoop/sidecar/analyzer"
-	"github.com/hoophq/hoop/sidecar/inspect"
 
 	"github.com/hoophq/hoop/sidecar/policy"
 	codecssh "github.com/hoophq/libhoop/v2/codec/ssh"
@@ -453,8 +453,9 @@ func (a *AnalyzerConfig) endpointHost() string {
 // buildAnalyzer constructs the shared provider from the analyzer section.
 //
 // It is called once per process, not per lane: one provider, one credential
-// read, one token source.
-func buildAnalyzer(cfg *AnalyzerConfig) (analyzer.Provider, error) {
+// read, one token source. roots is the process trust pool; the provider
+// sends its model calls and any token mint through a client built on it.
+func buildAnalyzer(cfg *AnalyzerConfig, roots *x509.CertPool) (analyzer.Provider, error) {
 	if cfg == nil {
 		return nil, nil
 	}
@@ -474,6 +475,7 @@ func buildAnalyzer(cfg *AnalyzerConfig) (analyzer.Provider, error) {
 		Credential:      cred,
 		Extra:           cfg.Extra,
 		MaxOutputTokens: cfg.MaxOutputTokens,
+		HTTPClient:      outboundHTTPClient(roots),
 	})
 }
 
@@ -768,7 +770,11 @@ func setupAnalyzer(cfg *Config, det Plugin) (*analyzerDeps, error) {
 		return nil, fmt.Errorf("invalid config:\n  - %s", strings.Join(problems, "\n  - "))
 	}
 
-	provider, err := buildAnalyzer(cfg.Analyzer)
+	roots, err := loadTrustRoots(cfg.Trust)
+	if err != nil {
+		return nil, err
+	}
+	provider, err := buildAnalyzer(cfg.Analyzer, roots)
 	if err != nil {
 		return nil, err
 	}
@@ -856,17 +862,6 @@ func redactorFor(mode SendMode, det Plugin) func(string) string {
 // refuseSentinel is analyzer.RefuseSentinel, aliased so this file reads
 // without qualification.
 const refuseSentinel = analyzer.RefuseSentinel
-
-// httpCodecFactory builds a codec factory for a lane's capture settings.
-//
-// Returns nil when the lane wants the registry default, which keeps the Gate
-// on its original path for every lane that did not ask for anything.
-func httpCodecFactory(proto inspect.Protocol, h *HTTPCodecConfig) func() inspect.Codec {
-	if h == nil || proto != inspect.HTTP {
-		return nil
-	}
-	return newHTTPCodec(*h)
-}
 
 // validateLaneAnalysis checks a lane's analyzer surface — its own analyzer
 // block and any DEPRECATED ai_analysis rules — against the top-level

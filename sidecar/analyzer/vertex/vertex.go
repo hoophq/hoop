@@ -130,7 +130,7 @@ func init() {
 			endpoint:  opts.Endpoint,
 			maxTokens: maxTokens,
 			saJSON:    opts.Credential,
-			client:    &http.Client{},
+			client:    opts.Client(),
 		}
 		return p, nil
 	})
@@ -174,9 +174,19 @@ func (p *Provider) Name() string { return Name }
 // first token and fails every refresh an hour later with "context canceled".
 // The caller's ctx still bounds the Vertex HTTP request in Classify, which is
 // the call that has a deadline to respect.
+//
+// That context carries p.client under oauth2.HTTPClient, because the kept
+// context is also where oauth2 looks up the client for each exchange: the
+// service-account JWT flow (jwt.jwtSource.Token, oauth2.NewClient on its
+// stored ctx) and the refresh-token flows (internal.RetrieveToken,
+// ContextClient) both read it on every mint, first and refresh alike. Left
+// out, token minting rides http.DefaultClient while model calls ride the
+// trust roots, and a proxy that re-signs oauth2.googleapis.com fails the
+// mint. The metadata-server source (Workload Identity) uses its own client
+// over plain HTTP to a link-local address, where no certificate is checked.
 func (p *Provider) tokenSource() (oauth2.TokenSource, error) {
 	p.tokenOnce.Do(func() {
-		ctx := context.Background()
+		ctx := context.WithValue(context.Background(), oauth2.HTTPClient, p.client)
 		var creds *google.Credentials
 		var err error
 		if p.saJSON.IsZero() {
