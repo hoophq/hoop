@@ -961,3 +961,67 @@ func TestTheConnectionAttributeIsMySQLOnly(t *testing.T) {
 		t.Errorf("review_mode_source is %q, want listener", got)
 	}
 }
+
+// A Postgres client asks once, in its application_name, at the end so it keeps
+// its own name in front.
+func TestApplicationNameReviewMode(t *testing.T) {
+	for name, want := range map[string]analyzer.ReviewMode{
+		"hoop-review=return":            analyzer.ReviewReturn,
+		"my-agent hoop-review=return":   analyzer.ReviewReturn,
+		"etl;hoop-review=hold":          analyzer.ReviewHold,
+		" My-Agent HOOP-REVIEW=Return ": analyzer.ReviewReturn,
+		"":                              "",
+		"psql":                          "",
+		"xhoop-review=return":           "",
+		"hoop-review=later":             "",
+		"hoop-review=return now":        "",
+		"hoop-review=":                  "",
+	} {
+		if got := analyzer.ApplicationNameReviewMode(name); got != want {
+			t.Errorf("ApplicationNameReviewMode(%q) = %q, want %q", name, got, want)
+		}
+	}
+}
+
+// The connection carries the opt-in to every statement on it, the same two
+// ways as the header, and the record says the client chose.
+func TestAConnectionReviewModeOverridesTheListener(t *testing.T) {
+	for name, tc := range map[string]struct {
+		asked    analyzer.ReviewMode
+		edit     func(*analyzer.Config)
+		wantWait bool
+	}{
+		"return on a hold lane": {analyzer.ReviewReturn, nil, false},
+		"hold on a return lane": {analyzer.ReviewHold, returnMode, true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			rev := &recordingReviewer{
+				res:    analyzer.ReviewResult{ID: "9f97", Status: "PENDING"},
+				claims: []analyzer.ReviewResult{{ID: "9f97", Status: "REJECTED"}},
+			}
+			ctx := analyzer.WithClientReviewMode(context.Background(), tc.asked)
+			v := holdingEvaluator(t, rev, tc.edit).EvaluateWith(deleteStatement(), &policy.EvalContext{ConnCtx: ctx})
+
+			if waited := len(rev.claimedIDs()) > 0; waited != tc.wantWait {
+				t.Errorf("waited=%v, want %v", waited, tc.wantWait)
+			}
+			if got := v.Annotations[analyzer.MetadataReviewMode]; got != string(tc.asked) {
+				t.Errorf("review_mode is %q, want %q", got, tc.asked)
+			}
+			if got := v.Annotations[analyzer.MetadataReviewModeSource]; got != "client" {
+				t.Errorf("review_mode_source is %q, want client", got)
+			}
+		})
+	}
+}
+
+// No application_name opt-in leaves the connection to the listener.
+func TestNoConnectionReviewModeUsesTheListener(t *testing.T) {
+	rev := &recordingReviewer{res: analyzer.ReviewResult{ID: "9f97", Status: "PENDING"}}
+	ctx := analyzer.WithClientReviewMode(context.Background(), analyzer.ApplicationNameReviewMode("psql"))
+	v := holdingEvaluator(t, rev, returnMode).EvaluateWith(deleteStatement(), &policy.EvalContext{ConnCtx: ctx})
+
+	if got := v.Annotations[analyzer.MetadataReviewModeSource]; got != "listener" {
+		t.Errorf("review_mode_source is %q, want listener", got)
+	}
+}

@@ -35,6 +35,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/audit"
 	"github.com/hoophq/hoop/sidecar/gate"
 	"github.com/hoophq/hoop/sidecar/inspect"
@@ -716,7 +717,12 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 	// it. ctx is the listener's and outlives every connection, so a hold
 	// waiting on a human under it would outlive the client too, and spend an
 	// approval on a statement nobody is left to run.
-	connCtx, endConn := context.WithCancelCause(ctx)
+	//
+	// It also carries the review mode a pgwire client asked for in its
+	// application_name, the SQL form of the http header (ADR-0021).
+	appName, _ := startup.get("application_name")
+	connCtx, endConn := context.WithCancelCause(analyzer.WithClientReviewMode(
+		ctx, analyzer.ApplicationNameReviewMode(appName)))
 	defer endConn(nil)
 
 	// Both directions run concurrently; the first to finish tears down the
