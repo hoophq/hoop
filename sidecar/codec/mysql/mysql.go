@@ -11,6 +11,7 @@
 package mysql
 
 import (
+	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/lexer"
 	codecmysql "github.com/hoophq/libhoop/v2/codec/mysql"
@@ -29,10 +30,16 @@ import (
 // OpUnknown, which fails closed rather than waving traffic through. Nothing
 // should construct the libhoop codec directly for production use; go through
 // here so the classifier is always attached.
+//
+// It keeps one connection attribute, analyzer.ConnectAttrReviewMode, so a
+// client can opt into a review mode (ADR-0021). On every lane, holding or
+// not, because the registry codec cannot see the lane. A lane that does not
+// hold never reads it.
 func New() inspect.Codec {
 	return codecmysql.New(codecmysql.Options{
-		Analyze: inspect.AnalyzeSQL,
-		Split:   split,
+		Analyze:      inspect.AnalyzeSQL,
+		Split:        split,
+		ConnectAttrs: []string{analyzer.ConnectAttrReviewMode},
 	})
 }
 

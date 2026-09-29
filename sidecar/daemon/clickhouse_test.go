@@ -29,30 +29,30 @@ func TestClickHouseCodecConfigValidation(t *testing.T) {
 		Name: "warehouse", Protocol: "clickhouse", Listen: ":9000", Upstream: "db:9000",
 		ClickHouse: &ClickHouseCodecConfig{MaxFrameBytes: 1 << 20, MaxBlockBytes: 8 << 20},
 	}
-	if problems := (&Config{}).validateLane(valid, valid.Name); len(problems) != 0 {
+	if problems := (&Config{}).validateLane(valid, valid.Name, true); len(problems) != 0 {
 		t.Fatalf("valid config problems = %v", problems)
 	}
 
 	negative := valid
 	negative.ClickHouse = &ClickHouseCodecConfig{MaxFrameBytes: -1, MaxBlockBytes: -1}
-	problems := strings.Join((&Config{}).validateLane(negative, negative.Name), "\n")
+	problems := strings.Join((&Config{}).validateLane(negative, negative.Name, true), "\n")
 	if !strings.Contains(problems, "max_frame_bytes") || !strings.Contains(problems, "max_block_bytes") {
 		t.Fatalf("negative limits problems = %q", problems)
 	}
 
 	wrong := valid
 	wrong.Protocol = "postgres"
-	problems = strings.Join((&Config{}).validateLane(wrong, wrong.Name), "\n")
+	problems = strings.Join((&Config{}).validateLane(wrong, wrong.Name, true), "\n")
 	if !strings.Contains(problems, "only valid on a clickhouse listener") {
 		t.Fatalf("wrong-protocol problems = %q", problems)
 	}
 }
 
 func TestLaneCodecFactoryKeepsRegistryDefaults(t *testing.T) {
-	if f := laneCodecFactory(inspect.ClickHouse, nil, nil); f != nil {
+	if f := laneCodecFactory(inspect.ClickHouse, nil, nil, ""); f != nil {
 		t.Fatal("unconfigured ClickHouse lane bypassed the registry default")
 	}
-	if f := laneCodecFactory(inspect.Postgres, nil, &ClickHouseCodecConfig{}); f != nil {
+	if f := laneCodecFactory(inspect.Postgres, nil, &ClickHouseCodecConfig{}, ""); f != nil {
 		t.Fatal("ClickHouse options affected a postgres lane")
 	}
 }

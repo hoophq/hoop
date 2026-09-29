@@ -114,6 +114,10 @@ const (
 	// MetadataSQLIncomplete names the metadata key carrying why a scan could
 	// not finish. Present only when Operation is OpUnknown for that reason.
 	MetadataSQLIncomplete = codectypes.MetadataSQLIncomplete
+
+	// MetadataMySQLConnectAttrPrefix prefixes the metadata key of a MySQL
+	// connection attribute the codec keeps, followed by the attribute name.
+	MetadataMySQLConnectAttrPrefix = codectypes.MetadataMySQLConnectAttrPrefix
 )
 
 // ErrStreamUnsafe means the codec recognized bytes that would take the

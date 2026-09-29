@@ -115,6 +115,14 @@ recorded as the GET, the 101 and one row per frame after it. kubectl cannot
 add a header, so on that port OPA reads the identity off the bearer token
 instead of `X-Hoop-User`.
 
+[`gke/`](gke/README.md) is the same cluster reached the GKE way: kubectl keeps
+a real Connect Gateway URL, Envoy intercepts it as a transparent MITM with a
+"customer CA" and sends h2c to the sidecar, and `fake-google` stands in for
+tokeninfo and Connect Gateway, so nothing touches Google. It shows
+`google_identity`, `trust.ca_file`, plain `/api/v1/...` rules through the
+gateway prefix, `kubectl exec` over the HTTP/1.1 route, and the `Via` loop
+refusal when the MITM also catches the sidecar's own egress.
+
 **The running transport.** `/stats` reports the address each lane bound, so
 you can read it off the process instead of the config:
 
@@ -133,7 +141,7 @@ or `"network":"unix"` per lane.
 
 For the code path behind these commands, a per-command runbook and a
 troubleshooting table, read
-[docs/adr/0005-sidecar-flow.md](../../../docs/adr/0005-sidecar-flow.md).
+[ADR-0005](https://github.com/hoophq/adr/blob/main/0005-sidecar-flow.md).
 
 `run.sh` builds `hoop-inspect:local` from `../../../sidecar` on first run
 and reuses it afterwards. After a library change:
@@ -438,7 +446,7 @@ This evaluator **fails open** by default. It depends on a third-party API, and
 refusing every statement during a vendor outage is a larger incident than the
 one it guards against. OPA and the local rules still fail closed. Full
 reference in [`sidecar/README.md`](../../../sidecar/README.md) and
-[`docs/adr/0005-sidecar-flow.md`](../../../docs/adr/0005-sidecar-flow.md#risk-analysis-the-ai-session-analyzer).
+[ADR-0005](https://github.com/hoophq/adr/blob/main/0005-sidecar-flow.md#risk-analysis-the-ai-session-analyzer).
 
 ## Identity
 

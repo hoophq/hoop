@@ -55,7 +55,7 @@ func init() {
 			model:     opts.Model,
 			key:       opts.Credential,
 			maxTokens: pickMaxTokens(opts.MaxOutputTokens),
-			client:    &http.Client{Timeout: 0}, // the caller's ctx owns the deadline
+			client:    opts.Client(), // no timeout: the caller's ctx owns the deadline
 		}, nil
 	})
 }

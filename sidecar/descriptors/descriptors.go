@@ -20,7 +20,9 @@ package descriptors
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"sort"
 	"strings"
@@ -31,7 +33,12 @@ import (
 // its scheme matched to the fetcher; the fetcher owns everything past that —
 // credentials, the object-store API, size limits — and returns the raw
 // FileDescriptorSet bytes for libhoop to index.
-type Fetcher func(ctx context.Context, u *url.URL) ([]byte, error)
+//
+// client carries every HTTP request the fetch makes, the credential exchange
+// included. It is the caller's, never nil, and set up with the process trust
+// roots: a fetcher that fell back to http.DefaultClient would fail
+// verification behind an egress proxy that re-signs TLS.
+type Fetcher func(ctx context.Context, u *url.URL, client *http.Client) ([]byte, error)
 
 var (
 	mu       sync.RWMutex
@@ -107,7 +114,14 @@ func Linked(scheme string) bool {
 // what IS linked, because the common failure is a config asking for a
 // scheme this build does not carry, and "unknown scheme gs" without that
 // list sends an operator to the wrong file.
-func Fetch(ctx context.Context, entry string) ([]byte, error) {
+//
+// client is handed to the fetcher; see Fetcher. Nil is refused rather than
+// read as http.DefaultClient, because the default would drop the trust
+// roots without a sign.
+func Fetch(ctx context.Context, entry string, client *http.Client) ([]byte, error) {
+	if client == nil {
+		return nil, errors.New("sidecar/descriptors: Fetch needs an *http.Client")
+	}
 	scheme := Scheme(entry)
 	if scheme == "" {
 		return nil, fmt.Errorf("sidecar/descriptors: %q is not a URL", entry)
@@ -123,7 +137,7 @@ func Fetch(ctx context.Context, entry string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", entry, err)
 	}
-	blob, err := f(ctx, u)
+	blob, err := f(ctx, u, client)
 	if err != nil {
 		// The URL is the source name; the caller prefixes the setting.
 		return nil, fmt.Errorf("%s: %w", entry, err)

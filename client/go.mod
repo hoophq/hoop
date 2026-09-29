@@ -287,6 +287,7 @@ require (
 require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/fatih/color v1.19.0 // indirect
+	github.com/hoophq/hoop/sidecar/mcp v0.0.0
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.21 // indirect
@@ -318,3 +319,5 @@ replace github.com/hoophq/hoop/sidecar/pii/alcatraz => ../sidecar/pii/alcatraz
 replace github.com/hoophq/hoop/sidecar/analyzer/vertex => ../sidecar/analyzer/vertex
 
 replace github.com/hoophq/hoop/sidecar/descriptors/gcs => ../sidecar/descriptors/gcs
+
+replace github.com/hoophq/hoop/sidecar/mcp => ../sidecar/mcp

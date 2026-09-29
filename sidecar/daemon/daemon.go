@@ -26,6 +26,7 @@ package daemon
 
 import (
 	"context"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -440,7 +441,7 @@ func ReportDeprecations(w io.Writer, notes []string) {
 	}
 	if len(notes) > 0 {
 		fmt.Fprintln(w, "warn: these fields keep working for now and are removed in a "+
-			"future release. See docs/adr/0011-sidecar-config-schema.md")
+			"future release. See ADR-0011 in hoophq/adr.")
 	}
 }
 
@@ -559,6 +560,9 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 	if err := checkPIIPlugin(cfg, det); err != nil {
 		return nil, err
 	}
+	if err := checkMCP(cfg); err != nil {
+		return nil, err
+	}
 	ac, err := setupAnalyzer(cfg, det)
 	if err != nil {
 		return nil, err
@@ -583,7 +587,7 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 		// — what it admits, where it will carry a forward, the account it
 		// will run as — come from.
 		if isGRPCTransport(ln.cfg) {
-			srv, err := buildGRPCServer(ln, cfg.Audit, nil, validationLog)
+			srv, _, err := buildGRPCServer(ln, cfg.Audit, nil, validationLog)
 			if err != nil {
 				return nil, fmt.Errorf("%s: %w", ln.name, err)
 			}
@@ -591,7 +595,7 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 			_ = srv.Close()
 		}
 		if isSSH(ln.cfg) {
-			srv, err := buildSSHServer(ln, cfg.Audit, nil, validationLog)
+			srv, _, err := buildSSHServer(ln, cfg.Audit, nil, validationLog)
 			if err != nil {
 				return nil, fmt.Errorf("%s: %w", ln.name, err)
 			}
@@ -798,6 +802,15 @@ func Run(cfg *Config, det Plugin) error {
 	if err := checkPIIPlugin(cfg, det); err != nil {
 		return err
 	}
+	if err := checkMCP(cfg); err != nil {
+		return err
+	}
+	if cfg.MCP != nil && cfg.cp == nil {
+		// checkMCP accepts a plane the file only names, which is right for
+		// -validate. A running process must hold the connection itself.
+		return errors.New(`config has an "mcp" block but this process has no control plane ` +
+			"connection; start it through Setup so the plane is reached first")
+	}
 	log := newLogger(cfg.LogLevel)
 	reportLicense(log, cfg.lic)
 	limit := capsFor(cfg.lic)
@@ -880,24 +893,28 @@ func Run(cfg *Config, det Plugin) error {
 	// statSources pairs every server with its lane's protocol, so usage
 	// can report connections per protocol without naming a lane.
 	statSources := make([]statSource, 0, len(lanes))
+	// swappers are the reload targets, one per lane of either shape.
+	swappers := make(map[string]ruleSwapper, len(lanes))
 	for _, ln := range lanes {
 		switch {
 		case isGRPCTransport(ln.cfg):
-			gsrv, serr := buildGRPCServer(ln, cfg.Audit, auditSink, log)
+			gsrv, rules, serr := buildGRPCServer(ln, cfg.Audit, auditSink, log)
 			if serr != nil {
 				return serr
 			}
 			endpoints = append(endpoints, gsrv)
 			endpointNames = append(endpointNames, ln.name)
 			statSources = append(statSources, statSource{ln.cfg.Protocol, gsrv})
+			swappers[ln.name] = rules
 		case isSSH(ln.cfg):
-			ssrv, serr := buildSSHServer(ln, cfg.Audit, auditSink, log)
+			ssrv, rules, serr := buildSSHServer(ln, cfg.Audit, auditSink, log)
 			if serr != nil {
 				return serr
 			}
 			endpoints = append(endpoints, ssrv)
 			endpointNames = append(endpointNames, ln.name)
 			statSources = append(statSources, statSource{ln.cfg.Protocol, ssrv})
+			swappers[ln.name] = rules
 		default:
 			srv, serr := buildServer(ln, cfg.Audit, auditSink, log)
 			if serr != nil {
@@ -906,6 +923,7 @@ func Run(cfg *Config, det Plugin) error {
 			servers = append(servers, srv)
 			relayNames = append(relayNames, ln.name)
 			statSources = append(statSources, statSource{ln.cfg.Protocol, srv})
+			swappers[ln.name] = relayRules{srv}
 		}
 
 		// One line per lane naming what it enforces. The config file does not
@@ -946,11 +964,7 @@ func Run(cfg *Config, det Plugin) error {
 	// feeds it per process: the plane's heartbeat, or the config file's
 	// watcher. Both share the run context, so shutdown stops them with
 	// everything else.
-	byName := make(map[string]*proxy.Server, len(servers))
-	for i, srv := range servers {
-		byName[relayNames[i]] = srv
-	}
-	rl, rerr := newReloader(cfg, lanes, byName, det, analyzerDeps, view, licState)
+	rl, rerr := newReloader(cfg, lanes, swappers, det, analyzerDeps, view, licState)
 	if rerr != nil {
 		return rerr
 	}
@@ -1017,7 +1031,7 @@ func Run(cfg *Config, det Plugin) error {
 	}()
 
 	var wg sync.WaitGroup
-	errCh := make(chan error, len(servers)+len(endpoints))
+	errCh := make(chan error, len(servers)+len(endpoints)+1)
 	for i, srv := range servers {
 		wg.Add(1)
 		go func(s *proxy.Server, name string) {
@@ -1037,6 +1051,21 @@ func Run(cfg *Config, det Plugin) error {
 				errCh <- serr
 			}
 		}(srv, endpointNames[i])
+	}
+	if cfg.MCP != nil {
+		// checkMCP proved a server is linked, and the check above that
+		// cfg.cp is set.
+		serve := registeredMCPServer()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			// A bind failure stops the process like a listener failure: an
+			// operator who configured the block expects agents to reach it.
+			if serr := serve(ctx, cfg.MCP.Listen, cfg.cp, log); serr != nil {
+				log.Error("mcp server failed", "listen", cfg.MCP.Listen, "error", serr)
+				errCh <- serr
+			}
+		}()
 	}
 	var (
 		stoppedByLicense bool
@@ -1121,7 +1150,8 @@ type lane struct {
 	masker gate.Masker
 
 	// codecFactory overrides the registry for this lane. Nil means the
-	// registry default, which is every lane that did not configure capture.
+	// registry default: every non-http lane that did not configure its
+	// codec. An http lane always has one; see laneCodecFactory.
 	codecFactory func() inspect.Codec
 
 	// rules and opaURL are the resolved facts the startup log and the
@@ -1162,6 +1192,13 @@ type lane struct {
 	// keyed by protocol. Run sets it after buildLanes; a lane built by
 	// Validate or a test leaves it nil and counts nothing.
 	metrics gate.Metrics
+
+	// trustRoots is the process trust pool (the trust section) every
+	// outbound TLS client this lane builds verifies against. Nil is the
+	// host trust store, a real value: see loadTrustRoots. Carried per lane
+	// rather than read from the config at each use so one build of the
+	// lanes sees one read of the bundle.
+	trustRoots *x509.CertPool
 }
 
 // buildLanes resolves and builds every listener's stack.
@@ -1178,6 +1215,14 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 	// or HOOP_LICENSE, so it would refuse a config for a limit its license
 	// lifts. Every caller that runs or validates a sidecar reaches this.
 	problems = append(problems, cfg.checkLimits(cfg.lic)...)
+
+	// Validate refused an unusable bundle already; this fails for a caller
+	// that assembled the Config by hand, or a bundle replaced on disk since.
+	// Reported with the rest rather than ahead of them, as the caps are.
+	roots, err := loadTrustRoots(cfg.Trust)
+	if err != nil {
+		problems = append(problems, err.Error())
+	}
 
 	for i, lc := range cfg.Listeners {
 		name := lc.displayName(i)
@@ -1216,10 +1261,11 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 			name:         name,
 			policy:       pol,
 			masker:       masker,
-			codecFactory: laneCodecFactory(proto, lc.HTTP, lc.ClickHouse),
+			codecFactory: laneCodecFactory(proto, lc.HTTP, lc.ClickHouse, lc.credentialHeader()),
 			captureBody:  lc.HTTP != nil && lc.HTTP.CaptureBody,
 			observing:    gc.observing(),
 			analyzers:    collectAnalyzers(pol),
+			trustRoots:   roots,
 		}
 		// Reported whether or not the lane enforces. An observing lane runs
 		// every one of these, and a reader of the startup log needs to see
@@ -1237,6 +1283,16 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 		}
 		if isSSH(lc) {
 			ln.notes = append(ln.notes, sshLaneNotes(lc.SSH)...)
+		}
+		// Said, not silently skipped: libhoop builds this lane's upstream
+		// pool from file paths, so the trust bundle cannot reach it, and an
+		// operator who added it for this upstream would otherwise learn
+		// that from a failed handshake.
+		if roots != nil && isGRPCTransport(lc) && lc.UpstreamTLS != nil && lc.UpstreamTLS.CAFile == "" {
+			ln.notes = append(ln.notes,
+				"trust.ca_file does not apply to a grpc-transport lane's upstream_tls; "+
+					"it verifies against the host trust store. Set upstream_tls.ca_file "+
+					"to the bundle this upstream needs")
 		}
 		if gc.observing() {
 			ln.notes = append(ln.notes,
@@ -1341,7 +1397,7 @@ func buildServer(
 	log *slog.Logger,
 ) (*proxy.Server, error) {
 	lc := ln.cfg
-	upstreamTLS, err := lc.UpstreamTLS.BuildTLS()
+	upstreamTLS, err := lc.UpstreamTLS.BuildTLS(ln.trustRoots)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", ln.name, err)
 	}
@@ -1361,9 +1417,27 @@ func buildServer(
 		return nil, fmt.Errorf("%s: %w", ln.name, err)
 	}
 	if downstreamTLS != nil {
+		// Validate admits downstream_tls on this path for these three
+		// protocols only; grpc and spanner lanes build their own server.
+		var reason string
+		switch inspect.Protocol(lc.Protocol) {
+		case inspect.Postgres:
+			reason = "pgwire negotiates TLS in-band, so nothing in front can"
+		case inspect.ClickHouse:
+			reason = "serves ClickHouse TLS on connect"
+		case inspect.HTTP:
+			reason = "serves h2 and http/1.1 via ALPN"
+		default:
+			return nil, fmt.Errorf("%s: downstream_tls is not terminated on a %s lane", ln.name, lc.Protocol)
+		}
 		log.Info("terminating the client's TLS on this lane",
 			"listener", ln.name,
-			"reason", "pgwire negotiates TLS in-band, so nothing in front can")
+			"reason", reason)
+	}
+
+	requestIdentity, err := buildRequestIdentity(lc, ln.trustRoots)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", ln.name, err)
 	}
 
 	return proxy.NewServer(proxy.Config{
@@ -1380,12 +1454,18 @@ func buildServer(
 		Masker:              ln.masker,
 		FailOnAuditError:    ac.failOnAuditError(),
 		DenyWriter:          proxy.ProtocolDenyWriter{},
-		IdentityHeader:      lc.IdentityHeader,
+		CredentialHeader:    lc.credentialHeader(),
+		RequestIdentity:     requestIdentity,
 		CodecFactory:        ln.codecFactory,
-		Metrics:             ln.metrics,
-		IdleTimeout:         time.Duration(lc.IdleTimeoutSec) * time.Second,
-		MaxConns:            lc.MaxConns,
-		Logger:              log.With("listener", ln.name),
+		StartupMetadata:     lc.Postgres.startupMetadata(),
+		// The product default: a postgres lane with no startup_metadata list
+		// records every option the client sends. See PostgresConfig.
+		AllStartupOptions: inspect.Protocol(lc.Protocol) == inspect.Postgres &&
+			lc.Postgres.recordsAllOptions(),
+		Metrics:     ln.metrics,
+		IdleTimeout: time.Duration(lc.IdleTimeoutSec) * time.Second,
+		MaxConns:    lc.MaxConns,
+		Logger:      log.With("listener", ln.name),
 	})
 }
 

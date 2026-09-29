@@ -2,6 +2,7 @@ package analyzer
 
 import (
 	"fmt"
+	"net/http"
 	"sort"
 	"sync"
 
@@ -42,6 +43,22 @@ type Options struct {
 	// MaxOutputTokens bounds the model's reply. Zero uses the provider
 	// default.
 	MaxOutputTokens int
+
+	// HTTPClient carries every request the provider makes: model calls,
+	// and for a provider that mints its own token, the token exchange. The
+	// daemon sets it up with the process trust roots, so a model endpoint
+	// behind an egress proxy that re-signs TLS verifies. Nil is the
+	// provider's own default client, the host trust store. It carries no
+	// timeout of its own: the caller's ctx owns each call's deadline.
+	HTTPClient *http.Client
+}
+
+// Client returns HTTPClient, or a fresh default client when it is nil.
+func (o Options) Client() *http.Client {
+	if o.HTTPClient != nil {
+		return o.HTTPClient
+	}
+	return &http.Client{}
 }
 
 // Register makes a provider available to NewProvider.

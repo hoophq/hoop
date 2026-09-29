@@ -110,6 +110,13 @@ var catalog = map[string]Flag{
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentAgent},
 	},
+	"experimental.httpproxy_host_port": {
+		Name:        "experimental.httpproxy_host_port",
+		Description: "Send the upstream port in the Host header of native HTTP resources (httpproxy/kubernetes/claude-code) when the connection URL names a non-default port (e.g. https://app.internal:8443), as browsers and curl do, so upstreams that build redirects or same-origin checks from Host work on that port. IPv6 hosts keep their brackets, and WebSocket upgrades send the same Host. When off, HTTP requests send the host without its port and WebSocket upgrades send the URL authority as configured, as before.",
+		Default:     false,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentAgent},
+	},
 	"experimental.claude_code_vertex": {
 		Name:        "experimental.claude_code_vertex",
 		Description: "Allow claude-code connections to authenticate against Google Vertex AI: the connection stores a GCP service-account key and the agent mints a short-lived, auto-refreshing OAuth bearer that it injects as the upstream Authorization header while transparently proxying Claude Code traffic to Vertex. Claude Code runs in Vertex mode (CLAUDE_CODE_USE_VERTEX) pointed at the hoop proxy. When off, the Vertex provider is hidden in the connection form and the agent does not mint GCP tokens.",

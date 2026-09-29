@@ -96,9 +96,9 @@ func refuseOverCap(c *gin.Context, orgID string, cfg daemon.Config) bool {
 // writeSidecarConfiguration commits a configuration edit and refuses one the
 // sidecar could not serve.
 //
-// One transaction around the write and both checks, because both are about the
-// document AS STORED: the cap counts what it authors, and the bindings name
-// its listeners. Checking either outside the transaction reads a document
+// One transaction around the write and its checks, because they are about the
+// document AS STORED: the sidecar's validation reads its values, the cap counts
+// what it authors, and the bindings name its listeners. Checking either outside the transaction reads a document
 // another writer can replace before the write lands, and then reports on one
 // nobody has.
 //
@@ -113,6 +113,9 @@ func writeSidecarConfiguration(db *gorm.DB, licenseData json.RawMessage, write f
 	err := db.Transaction(func(tx *gorm.DB) error {
 		sc, err := write(tx)
 		if err != nil {
+			return err
+		}
+		if err := services.CheckSidecarConfiguration(daemon.Config(sc.Configuration)); err != nil {
 			return err
 		}
 		if err := services.CheckSidecarConfigurationLimits(daemon.Config(sc.Configuration), licenseData); err != nil {
@@ -149,11 +152,14 @@ func writeSidecarConfiguration(db *gorm.DB, licenseData json.RawMessage, write f
 func answerSidecarWrite(c *gin.Context, err error) {
 	var overCap services.ErrSidecarConfigOverCap
 	var broken services.ErrSidecarBindingBroken
+	var configInvalid services.ErrSidecarConfigInvalid
 	var missing services.ErrSidecarCapabilityMissing
 	var invalid services.ErrSidecarAnalyzerInvalid
 	switch {
 	case errors.Is(err, models.ErrNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"message": "sidecar not found"})
+	case errors.As(err, &configInvalid):
+		c.JSON(http.StatusUnprocessableEntity, openapi.SidecarConfigError{Message: configInvalid.Error(), Problems: configInvalid.Problems})
 	case errors.As(err, &overCap):
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": overCap.Error()})
 	case errors.As(err, &broken):
@@ -194,7 +200,8 @@ const licenseManagedHeader = daemon.LicenseManagedHeader
 //	@Produce		json
 //	@Param			request				body		openapi.SidecarRequest	true	"The request body resource"
 //	@Success		201					{object}	openapi.SidecarCreateResponse
-//	@Failure		400,403,409,422,500	{object}	openapi.HTTPError
+//	@Failure		400,403,409,500		{object}	openapi.HTTPError
+//	@Failure		422					{object}	openapi.SidecarConfigError
 //	@Router			/sidecars [post]
 func Post(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -219,6 +226,10 @@ func Post(c *gin.Context) {
 	}
 	if cfg.License != "" {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": licenseIsNotASidecarKey})
+		return
+	}
+	if err := services.CheckSidecarConfiguration(cfg); err != nil {
+		answerSidecarWrite(c, err)
 		return
 	}
 	if refuseOverCap(c, ctx.OrgID, cfg) {
@@ -364,7 +375,8 @@ func Delete(c *gin.Context) {
 //	@Param			nameOrID			path		string							true	"Name or UUID of the sidecar"
 //	@Param			request				body		openapi.SidecarUpdateRequest	true	"The request body resource"
 //	@Success		200					{object}	openapi.SidecarResponse
-//	@Failure		400,403,404,422,500	{object}	openapi.HTTPError
+//	@Failure		400,403,404,500		{object}	openapi.HTTPError
+//	@Failure		422					{object}	openapi.SidecarConfigError
 //	@Router			/sidecars/{nameOrID} [put]
 func Put(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -427,7 +439,8 @@ func Put(c *gin.Context) {
 //	@Param			nameOrID			path		string						true	"Name or UUID of the sidecar"
 //	@Param			request				body		openapi.SidecarPatchRequest	true	"The request body resource"
 //	@Success		200					{object}	openapi.SidecarResponse
-//	@Failure		400,403,404,422,500	{object}	openapi.HTTPError
+//	@Failure		400,403,404,500		{object}	openapi.HTTPError
+//	@Failure		422					{object}	openapi.SidecarConfigError
 //	@Router			/sidecars/{nameOrID} [patch]
 func Patch(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)

@@ -1,5 +1,6 @@
 import { ShieldCheck, Sparkles, VenetianMask } from 'lucide-react'
 import { guardrailMatchers, laneAnalyzer, maskRules } from './resolve'
+import { protocolLabel } from './schema'
 
 // Reading a sidecar's stored configuration (daemon.Config,
 // sidecar/daemon/config.go), the document the control plane holds and serves to
@@ -17,44 +18,20 @@ export const FEATURES = {
 
 const FEATURE_ORDER = ['ai-analyzer', 'data-masking', 'guardrails']
 
-// Every protocol a listener can declare, which is the codec registry
-// (sidecar/codec/all) plus grpc and spanner — those two have no codec on
-// purpose (ADR-0013) and are carved out of the daemon's own validation.
-//
-// `subtype` is a connections-metadata key, only for the protocols that are
-// also a hoop connection type. grpc and spanner are not, so they carry none
-// and render without an icon rather than falling back to an unrelated one.
-const PROTOCOLS = {
-  postgres: { label: 'PostgreSQL', subtype: 'postgres' },
-  mysql: { label: 'MySQL', subtype: 'mysql' },
-  mssql: { label: 'SQL Server', subtype: 'mssql' },
-  mongodb: { label: 'MongoDB', subtype: 'mongodb' },
-  http: { label: 'HTTP', subtype: 'httpproxy' },
-  grpc: { label: 'gRPC', subtype: null },
-  spanner: { label: 'Cloud Spanner', subtype: null },
+// The connections-metadata subtype that gives a protocol its icon, for the
+// protocols that are also a hoop connection type. The rest render without one
+// rather than with the fallback, which belongs to something unrelated.
+const ICON_SUBTYPES = {
+  postgres: 'postgres',
+  mysql: 'mysql',
+  mssql: 'mssql',
+  mongodb: 'mongodb',
+  http: 'httpproxy',
+  ssh: 'ssh',
 }
 
-// What the picker offers, and it deliberately trails the schema.
-//
-// The published reference (setup/configuration/hoop-sidecar/config-file, the
-// Listeners table) names six protocols. `spanner` is the seventh and the daemon
-// accepts it, but the docs still carry it as unreleased, so offering it here
-// would put a choice in front of an operator that the documentation denies.
-// The frontend stays behind on purpose: when the docs gain it, this list does
-// too, in the same change.
-//
-// This is ONLY about what a new lane may choose. PROTOCOLS above still knows
-// every protocol so an existing lane renders with its real name, and nothing in
-// listeners.js narrows what it will WRITE — a lane the docs do not mention must
-// still round-trip byte for byte.
-export const PROTOCOLS_ORDER = ['postgres', 'mysql', 'mssql', 'mongodb', 'http', 'grpc']
-
-// Every protocol the daemon accepts, offered or not. The write path reads this
-// one, so a lane already on an unlisted protocol keeps its blocks.
-export const PROTOCOLS_SUPPORTED = ['postgres', 'mysql', 'mssql', 'mongodb', 'http', 'grpc', 'spanner']
-
 export function protocolInfo(protocol) {
-  return PROTOCOLS[protocol] ?? { label: protocol, subtype: protocol }
+  return { label: protocolLabel(protocol), subtype: ICON_SUBTYPES[protocol] ?? null }
 }
 
 // Whether a lane runs a feature is a question about its RESOLVED rules, so both

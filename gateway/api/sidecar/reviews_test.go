@@ -462,6 +462,9 @@ func TestGetReviewAnswersAMalformedIDAsNotFound(t *testing.T) {
 	GetReview(c)
 
 	assert.Equal(t, http.StatusNotFound, rec.Code)
+	// The sidecar reads a JSON 404 as "not found" and any other 404 as a
+	// plane too old to have this route (daemon.planeNotFound).
+	assert.JSONEq(t, `{"message":"review not found"}`, rec.Body.String())
 }
 
 func TestToSidecarReviewStatusOmitsStatementAndReviewers(t *testing.T) {

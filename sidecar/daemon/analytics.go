@@ -75,11 +75,22 @@ type telemetry struct {
 	// analyzers is the Stats each evaluator reported at the previous usage
 	// event, keyed by instance. A reload that swaps a lane's evaluators
 	// starts them from zero, and keying by pointer keeps that from reading
-	// as a negative delta.
+	// as a negative delta. Its Calls field is not read: see callBase.
 	analyzers map[*analyzer.Evaluator]analyzer.Stats
+	// callBase is Stats.Calls at the previous usage event, keyed by
+	// Evaluator.CallsKey. The call counter is the lane's budget and outlives
+	// a reload, so the old and new instance of one lane share it; keying by
+	// instance would count every call made before the reload again.
+	callBase map[any]int64
 	// banked is the final delta of evaluators retired since the previous
 	// usage event, carried into the next one. Under usageMu.
 	banked analyzerDelta
+	// draining holds evaluators a reload swapped out of a lane while a gate
+	// built from them may still be open: a grpc RPC or an ssh connection
+	// accepted before the swap. trackUsage keeps reading them until
+	// retireAnalyzers banks them. The count is how many swapped-out
+	// generations hold the instance. Under usageMu.
+	draining map[*analyzer.Evaluator]int
 }
 
 // analyzerDelta is one window's worth of analyzer counters, either read
@@ -88,10 +99,10 @@ type analyzerDelta struct {
 	calls, failures, failOpen, denied, cacheHits int64
 }
 
-// analyzerDeltaSince is what an evaluator did between a baseline and now.
-func analyzerDeltaSince(ev *analyzer.Evaluator, now, prev analyzer.Stats) analyzerDelta {
+// instanceDelta is what an evaluator's own counters did between a baseline
+// and now. Calls are not here: they are counted per CallsKey.
+func instanceDelta(ev *analyzer.Evaluator, now, prev analyzer.Stats) analyzerDelta {
 	d := analyzerDelta{
-		calls:     now.Calls - prev.Calls,
 		denied:    now.Denied - prev.Denied,
 		cacheHits: int64(now.CacheHits - prev.CacheHits),
 		failures:  now.Errors - prev.Errors,
@@ -102,10 +113,36 @@ func analyzerDeltaSince(ev *analyzer.Evaluator, now, prev analyzer.Stats) analyz
 	return d
 }
 
-// retireAnalyzers banks the final delta of evaluators a reload is about to
-// drop, so their last window's work reaches the next usage event instead of
-// vanishing with the instance. Called by the reloader before it publishes
-// the swapped lanes; the usage lock keeps it from racing a snapshot.
+func (d *analyzerDelta) add(o analyzerDelta) {
+	d.calls += o.calls
+	d.failures += o.failures
+	d.failOpen += o.failOpen
+	d.denied += o.denied
+	d.cacheHits += o.cacheHits
+}
+
+// drainAnalyzers keeps evaluators a reload is swapping out in the usage walk,
+// so work their still-open gates do after the swap is counted. Called by the
+// reloader before the swap; retireAnalyzers ends it.
+func (t *telemetry) drainAnalyzers(evs []*analyzer.Evaluator) {
+	if t == nil || len(evs) == 0 {
+		return
+	}
+	t.usageMu.Lock()
+	defer t.usageMu.Unlock()
+	if t.draining == nil {
+		t.draining = make(map[*analyzer.Evaluator]int)
+	}
+	for _, ev := range evs {
+		t.draining[ev]++
+	}
+}
+
+// retireAnalyzers banks the final delta of evaluators whose last gate has
+// closed, so their last window's work reaches the next usage event instead
+// of vanishing with the instance. Called once per drainAnalyzers, when the
+// swapped-out generation has no open gate; the usage lock keeps it from
+// racing a snapshot.
 func (t *telemetry) retireAnalyzers(evs []*analyzer.Evaluator) {
 	if t == nil {
 		return
@@ -113,18 +150,30 @@ func (t *telemetry) retireAnalyzers(evs []*analyzer.Evaluator) {
 	t.usageMu.Lock()
 	defer t.usageMu.Unlock()
 	for _, ev := range evs {
+		if n := t.draining[ev]; n > 1 {
+			// Another swapped-out generation still holds it.
+			t.draining[ev] = n - 1
+			continue
+		}
+		delete(t.draining, ev)
 		prev, tracked := t.analyzers[ev]
 		if !tracked {
 			// Installed and retired inside one window: nothing was
 			// baselined, so everything it did is the delta.
 			prev = analyzer.Stats{}
 		}
-		d := analyzerDeltaSince(ev, ev.Stats(), prev)
-		t.banked.calls += d.calls
-		t.banked.failures += d.failures
-		t.banked.failOpen += d.failOpen
-		t.banked.denied += d.denied
-		t.banked.cacheHits += d.cacheHits
+		now := ev.Stats()
+		d := instanceDelta(ev, now, prev)
+		// The counter may be shared with a live instance. Bank what it did
+		// since the last read and move the baseline to now, so the live
+		// instance's next read counts only what comes after.
+		if t.callBase == nil {
+			t.callBase = make(map[any]int64)
+		}
+		k := ev.CallsKey()
+		d.calls = now.Calls - t.callBase[k]
+		t.callBase[k] = now.Calls
+		t.banked.add(d)
 		delete(t.analyzers, ev)
 	}
 }
@@ -484,30 +533,42 @@ func (t *telemetry) usageProperties(sources []statSource, lanes []lane) analytic
 	}
 	t.conns = cur
 
-	// Analyzer: deltas per evaluator instance, summed, plus whatever
-	// retireAnalyzers banked from instances a reload swapped out since the
-	// last window. A newly installed instance has no baseline and starts
-	// from its own zero.
-	calls, failures, failOpen, denied, cacheHits :=
-		t.banked.calls, t.banked.failures, t.banked.failOpen, t.banked.denied, t.banked.cacheHits
+	// Analyzer: instance counters per evaluator, calls per call counter,
+	// summed, plus whatever retireAnalyzers banked from instances whose last
+	// gate closed since the last window. Instances still draining are read
+	// like live ones, so an RPC or ssh connection that outlived a reload
+	// keeps being counted. A newly installed instance has no baseline and
+	// starts from its own zero; its call counter may not, see callBase.
+	total := t.banked
 	t.banked = analyzerDelta{}
 	seen := make(map[*analyzer.Evaluator]analyzer.Stats)
+	seenCalls := make(map[any]int64)
+	read := func(ev *analyzer.Evaluator) {
+		if _, dup := seen[ev]; dup {
+			return
+		}
+		s := ev.Stats()
+		seen[ev] = s
+		total.add(instanceDelta(ev, s, t.analyzers[ev]))
+		k := ev.CallsKey()
+		if _, dup := seenCalls[k]; dup {
+			return
+		}
+		seenCalls[k] = s.Calls
+		total.calls += s.Calls - t.callBase[k]
+	}
 	for _, ln := range lanes {
 		for _, ev := range ln.analyzers {
-			if _, dup := seen[ev]; dup {
-				continue
-			}
-			s := ev.Stats()
-			d := analyzerDeltaSince(ev, s, t.analyzers[ev])
-			seen[ev] = s
-			calls += d.calls
-			denied += d.denied
-			cacheHits += d.cacheHits
-			failures += d.failures
-			failOpen += d.failOpen
+			read(ev)
 		}
 	}
+	for ev := range t.draining {
+		read(ev)
+	}
 	t.analyzers = seen
+	t.callBase = seenCalls
+	calls, failures, failOpen, denied, cacheHits :=
+		total.calls, total.failures, total.failOpen, total.denied, total.cacheHits
 
 	p := analytics.Properties{
 		"interval-seconds":        int64(now.Sub(t.lastUsage).Seconds()),

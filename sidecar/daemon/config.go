@@ -76,6 +76,11 @@ type Config struct {
 	// Admin serves health and stats. Disabled when Listen is empty.
 	Admin AdminConfig `json:"admin"`
 
+	// MCP serves review status to agents over MCP (ADR-0021). Absent means
+	// off. The server lives in the nested sidecar/mcp module; checkMCP
+	// refuses the block in a build that did not link it.
+	MCP *MCPConfig `json:"mcp,omitempty"`
+
 	// PII configures the optional detector plugin. This package decodes it
 	// without interpreting it: knowing what an alcatraz Options looks like
 	// would drag back the dependency the split exists to keep out.
@@ -101,6 +106,11 @@ type Config struct {
 	// holds. A provider needing a dependency (Vertex needs GCP OAuth2)
 	// stays out via the analyzer registry, not via an opaque section.
 	Analyzer *AnalyzerConfig `json:"analyzer,omitempty"`
+
+	// Trust adds CA certificates to the host trust store for every outbound
+	// TLS client this process builds. See TrustConfig. Absent is the host
+	// trust store alone, which is every config written before the key.
+	Trust *TrustConfig `json:"trust,omitempty"`
 
 	// LogLevel is debug, info, warn or error. Default info.
 	LogLevel string `json:"log_level"`
@@ -218,32 +228,32 @@ type ListenerConfig struct {
 	// It is the operator-facing resource name: audit queries key on it and
 	// the physical Upstream may change under it. Defaults to listener[i],
 	// which is a fallback rather than a name anyone should rely on.
-	Name string `json:"name"`
+	Name string `json:"name" label:"Name" placeholder:"appdb" help:"Follows this listener into every log line and audit event, so renaming it splits that history." ui:"required,basic"`
 
 	// Protocol selects the codec, for example postgres, mysql, clickhouse,
 	// mssql or http.
-	Protocol string `json:"protocol"`
+	Protocol string `json:"protocol" label:"Protocol" help:"Picks the codec that reads this listener's traffic." ui:"required,basic"`
 
 	// Listen is the bind address, or a filesystem path when Network is
 	// "unix".
-	Listen string `json:"listen"`
+	Listen string `json:"listen" label:"Listen on" placeholder:"0.0.0.0:15432" help:"Where clients reach the sidecar: host:port, or a socket path on a unix transport." ui:"required,basic"`
 
 	// Network is "tcp" (default) or "unix". Pick a unix socket for a sandbox
 	// with no network egress: filesystem permissions decide who can reach the
 	// proxy.
-	Network string `json:"network"`
+	Network string `json:"network" label:"Transport" enum:"tcp,unix" default:"tcp" help:"A unix socket opens no port, so filesystem permissions decide who can connect." ui:"basic"`
 
 	// Upstream is the real backend.
-	Upstream string `json:"upstream"`
+	Upstream string `json:"upstream" label:"Upstream" placeholder:"appdb:5432" help:"Where the sidecar reaches your resource." protocols:"!ssh" ui:"required,basic"`
 
 	// UpstreamTLS enables TLS to the backend. MySQL negotiates this after
 	// its plaintext server greeting; other supported protocols negotiate
 	// before their ordinary message flow.
-	UpstreamTLS *TLSConfig `json:"upstream_tls"`
+	UpstreamTLS *TLSConfig `json:"upstream_tls" label:"Upstream TLS" help:"Encrypts the hop to the backend. The sidecar is the TLS client there, so it still reads the traffic." protocols:"!ssh" ui:"presence"`
 	// MySQLAuthKeyFile is an RSA private key whose public half MySQL clients
 	// can pin. It lets the relay decrypt direct RSA password responses before
 	// forwarding the NUL-terminated password inside UpstreamTLS.
-	MySQLAuthKeyFile string `json:"mysql_auth_key_file,omitempty"`
+	MySQLAuthKeyFile string `json:"mysql_auth_key_file,omitempty" label:"MySQL auth key file" help:"RSA private key clients can pin, so the relay can read RSA password exchanges. Needs upstream TLS. A path on the sidecar host." protocols:"mysql"`
 
 	// DownstreamTLS lets the relay terminate the CLIENT's TLS on this lane.
 	// Requires cert_file and key_file; the other TLSConfig fields describe an
@@ -252,6 +262,9 @@ type ListenerConfig struct {
 	// Postgres negotiates TLS in-band with an 8-byte SSLRequest, so a plain
 	// TLS listener in front cannot terminate it. ClickHouse starts TLS on the
 	// first byte instead; gRPC and Spanner use their own direct TLS servers.
+	// HTTP offers h2 and http/1.1 through ALPN: an h2 client is terminated
+	// in-process and bridged into the HTTP/1 relay, an http/1.1 one goes
+	// through the relay directly.
 	// Envoy's postgres filter can handle pgwire, but it is contrib-only,
 	// marked work-in-progress, and gives up permanently the moment a client
 	// asks for GSS encryption, which is what psql does by default whenever a
@@ -266,26 +279,41 @@ type ListenerConfig struct {
 	//
 	// Omitting it keeps the documented posture: the relay terminates no
 	// downstream TLS and whatever fronts it owns that leg.
-	DownstreamTLS *TLSConfig `json:"downstream_tls"`
+	DownstreamTLS *TLSConfig `json:"downstream_tls" label:"Downstream TLS" help:"Terminates the client's TLS on this listener. Leave both empty when something in front already does." protocols:"postgres,clickhouse,http,grpc,spanner" fields:"cert_file,key_file"`
 
 	// IdentityHeader names an HTTP header carrying the authenticated
 	// subject, for the http, grpc and spanner protocols behind an
-	// authenticating proxy. On http it is read from the first request on
-	// the connection; on grpc from each RPC's metadata.
+	// authenticating proxy. On http it is read from every request, and a
+	// request naming a different subject opens a new session, because a
+	// fronting proxy pools one upstream connection across users; on grpc
+	// it is read from each RPC's metadata.
 	//
 	// Trusting a header is safe only when nothing but that proxy can reach
 	// this listener, which the sidecar topology guarantees by binding
 	// loopback or a unix socket. Set this on a listener reachable from
 	// anywhere else and a caller can assert any identity.
-	IdentityHeader string `json:"identity_header"`
+	IdentityHeader string `json:"identity_header" label:"Identity header" placeholder:"x-forwarded-user" help:"The header carrying the authenticated subject. Only trust it when nothing but your proxy can reach this listener." protocols:"http,grpc,spanner"`
+
+	// GoogleIdentity names the caller from the Google OAuth2 bearer in the
+	// request's own Authorization header, verified with Google's tokeninfo
+	// endpoint, instead of from a header a fronting proxy has to set. http
+	// lanes only, and exclusive with identity_header: one lane, one
+	// authority for who the caller is.
+	//
+	// It is for traffic to Google APIs (GKE Connect Gateway above all),
+	// where every request already carries that bearer and a proxy in front
+	// would otherwise need ext_authz just to learn the name the token
+	// already holds. The upstream still authorizes the request; this names
+	// who sent it.
+	GoogleIdentity *GoogleIdentityConfig `json:"google_identity" ui:"-"`
 
 	// IdleTimeoutSec closes a connection with no traffic. Zero disables it.
 	// Interactive sessions idle between keystrokes, so a short value breaks
 	// psql; leaving it unset is the safe default.
-	IdleTimeoutSec int `json:"idle_timeout_sec"`
+	IdleTimeoutSec int `json:"idle_timeout_sec" label:"Idle timeout (seconds)" help:"0 disables it. A short value breaks interactive sessions."`
 
 	// MaxConns bounds concurrency. Zero is unlimited.
-	MaxConns int `json:"max_conns"`
+	MaxConns int `json:"max_conns" label:"Max connections" help:"0 is unlimited."`
 
 	// Guardrails overrides the top-level default for this listener.
 	//
@@ -297,7 +325,7 @@ type ListenerConfig struct {
 	//
 	// Mode REPLACES when set. A lane rolling out behind an enforcing default
 	// means it when it says observe.
-	Guardrails *GuardrailsConfig `json:"guardrails,omitempty"`
+	Guardrails *GuardrailsConfig `json:"guardrails,omitempty" ui:"-"`
 
 	// OPA overrides the top-level default for this listener, and REPLACES
 	// rather than merging: two decision endpoints cannot become one.
@@ -306,7 +334,7 @@ type ListenerConfig struct {
 	// the top level configures one. Without that spelling a top-level
 	// endpoint reaches every lane with no way to opt out, which `mask` has
 	// through `rules: []` and `guardrails` has through `mode: observe`.
-	OPA *OPAConfig `json:"opa,omitempty"`
+	OPA *OPAConfig `json:"opa,omitempty" ui:"-"`
 
 	// Mask overrides the top-level default for this listener.
 	//
@@ -314,7 +342,7 @@ type ListenerConfig struct {
 	// concatenating two lists produces two rewrites competing for one entity
 	// with slice order picking the winner. An empty list, `rules: []`, is how
 	// a lane switches inherited masking off.
-	Mask *MaskConfig `json:"mask,omitempty"`
+	Mask *MaskConfig `json:"mask,omitempty" ui:"-"`
 
 	// Analyzer is this listener's own AI analyzer block: the trigger, the
 	// risk-to-action map and the prompt for this lane, plus overrides of
@@ -332,58 +360,66 @@ type ListenerConfig struct {
 	// guardrails.rules — still loads and still works; normalize records a
 	// deprecation naming this block. Both can coexist on one lane during a
 	// migration, each becoming its own evaluator.
-	Analyzer *LaneAnalyzerConfig `json:"analyzer,omitempty"`
+	Analyzer *LaneAnalyzerConfig `json:"analyzer,omitempty" ui:"-"`
 
 	// HTTP configures what this lane's HTTP codec captures. Only valid on
 	// an http lane.
-	HTTP *HTTPCodecConfig `json:"http,omitempty"`
+	HTTP *HTTPCodecConfig `json:"http,omitempty" label:"HTTP" help:"What this listener's codec reads out of a request." protocols:"http"`
 
 	// ClickHouse configures native-protocol decompression limits. Only valid
 	// on a clickhouse lane; absent keeps bounded defaults.
-	ClickHouse *ClickHouseCodecConfig `json:"clickhouse,omitempty"`
+	ClickHouse *ClickHouseCodecConfig `json:"clickhouse,omitempty" label:"ClickHouse" help:"Decompression limits. 0 keeps the codec defaults." protocols:"clickhouse"`
+
+	// Postgres configures what a postgres lane reads from the client's
+	// StartupMessage beyond the user. Only valid on a postgres lane. See
+	// PostgresConfig.
+	Postgres *PostgresConfig `json:"postgres,omitempty" ui:"-"`
 
 	// GRPC configures what this lane's gRPC transport decodes and exposes.
 	// Only valid on a grpc lane. See GRPCCodecConfig.
-	GRPC *GRPCCodecConfig `json:"grpc,omitempty"`
+	GRPC *GRPCCodecConfig `json:"grpc,omitempty" label:"gRPC" help:"What this listener decodes and exposes to policy." protocols:"grpc,spanner"`
 
 	// Spanner tells a spanner lane which SQL dialect each database speaks,
 	// GoogleSQL or PostgreSQL. Only valid on a spanner lane; absent means
 	// GoogleSQL everywhere. See SpannerConfig.
-	Spanner *SpannerConfig `json:"spanner,omitempty"`
+	Spanner *SpannerConfig `json:"spanner,omitempty" label:"Spanner" help:"The SQL dialect each database speaks." protocols:"spanner"`
 
 	// SSH configures this lane's SSH endpoint: the keys it trusts, what it
 	// admits, the account it runs as. Required on an ssh lane and a config
 	// error anywhere else. See SSHConfig.
-	SSH *SSHConfig `json:"ssh,omitempty"`
+	SSH *SSHConfig `json:"ssh,omitempty" label:"SSH" help:"The keys this listener trusts and what a session may do." protocols:"ssh" ui:"required"`
 
 	// Connection is the DEPRECATED second name for this lane. normalize
 	// folds it onto Name, which now fills the audit key and
 	// input.context.connection on its own.
-	Connection string `json:"connection,omitempty"`
+	Connection string `json:"connection,omitempty" ui:"-"`
 
 	// Policy is the DEPRECATED pre-ADR-0011 spelling of Guardrails and OPA
 	// combined. normalize empties it.
-	Policy *PolicyConfig `json:"policy,omitempty"`
+	Policy *PolicyConfig `json:"policy,omitempty" ui:"-"`
 }
 
 // TLSConfig configures an upstream TLS connection.
 type TLSConfig struct {
-	// CAFile is a PEM bundle that verifies the upstream. Empty falls back to
-	// the host trust store.
-	CAFile string `json:"ca_file"`
+	// CAFile is a PEM bundle that verifies the upstream, and the ONLY one:
+	// it pins the upstream. Empty falls back to the host trust store plus
+	// the trust section's bundle. A grpc-transport lane is the exception:
+	// libhoop loads its TLS from file paths and builds its own pool, so the
+	// trust section does not reach it and empty there is the host store.
+	CAFile string `json:"ca_file" label:"CA file" placeholder:"/etc/hoop-inspect/ca.pem" help:"When set, the only bundle that verifies the backend. Empty uses the host trust store, plus the trust section's bundle outside gRPC. A path on the sidecar host."`
 
 	// CertFile and KeyFile enable client certificates (mTLS).
-	CertFile string `json:"cert_file"`
-	KeyFile  string `json:"key_file"`
+	CertFile string `json:"cert_file" label:"Certificate file" placeholder:"/etc/hoop-inspect/tls.crt" help:"A path on the sidecar host. Upstream, it is the client certificate for mTLS."`
+	KeyFile  string `json:"key_file" label:"Key file" placeholder:"/etc/hoop-inspect/tls.key" help:"A path on the sidecar host."`
 
 	// ServerName overrides SNI when the dial address differs from the
 	// certificate's name.
-	ServerName string `json:"server_name"`
+	ServerName string `json:"server_name" label:"Server name" help:"Overrides SNI when the dial address differs from the certificate name."`
 
 	// InsecureSkipVerify disables verification. The name is verbose on
 	// purpose and startup logs a warning when it is on: a proxy built to
 	// inspect sensitive traffic should not silently accept any certificate.
-	InsecureSkipVerify bool `json:"insecure_skip_verify"`
+	InsecureSkipVerify bool `json:"insecure_skip_verify" label:"Skip certificate verification" help:"The sidecar logs a warning at startup. Do not ship this."`
 }
 
 func (l ListenerConfig) buildMySQLAuthPrivateKey() (*rsa.PrivateKey, error) {
@@ -819,7 +855,7 @@ func (c *Config) normalize() error {
 	}
 
 	if len(conflicts) > 0 {
-		return fmt.Errorf("invalid config:\n  - %s", strings.Join(conflicts, "\n  - "))
+		return ConfigProblems(conflicts)
 	}
 	return nil
 }
@@ -994,7 +1030,37 @@ func (c *Config) resolve(lc ListenerConfig) (GuardrailsConfig, *OPAConfig, MaskC
 }
 
 // Validate checks the config, returning every problem found.
-func (c *Config) Validate() error {
+func (c *Config) Validate() error { return c.validate(true) }
+
+// ConfigProblems is every problem a config check found, so a caller can list
+// them one by one. Each starts with the listener it is about, when it is.
+type ConfigProblems []string
+
+func (p ConfigProblems) Error() string {
+	return "invalid config:\n  - " + strings.Join(p, "\n  - ")
+}
+
+// CheckConfigBytes runs what LoadConfigBytes runs, minus what only the
+// sidecar's host can answer: the files a config names, the analyzer providers
+// and descriptor fetchers its binary links, and whether it has any listener yet. The control plane runs it on every write, so a document the
+// sidecar would refuse is refused when it is saved.
+func CheckConfigBytes(data []byte) error {
+	var cfg Config
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&cfg); err != nil {
+		return fmt.Errorf("parse config: %w", err)
+	}
+	if err := cfg.normalize(); err != nil {
+		return err
+	}
+	return cfg.validate(false)
+}
+
+// validate is Validate. Off the sidecar host (onHost false) the files a config
+// names do not exist, the sidecar binary's providers and descriptor fetchers
+// are not linked, and a control-plane document may still be empty.
+func (c *Config) validate(onHost bool) error {
 	var problems []string
 
 	// A file that names a control plane may still carry listeners: they
@@ -1002,7 +1068,7 @@ func (c *Config) Validate() error {
 	// loud) once it does. Either way the plane supplies the running set,
 	// and resolveConfigSource checks that what it sent has at least one,
 	// so an empty config still cannot start.
-	if len(c.Listeners) == 0 && !c.controlPlaneConfigured() {
+	if onHost && len(c.Listeners) == 0 && !c.controlPlaneConfigured() {
 		problems = append(problems, "no listeners configured")
 	}
 
@@ -1014,12 +1080,23 @@ func (c *Config) Validate() error {
 	//
 	// Detection is always available now, so the analyzer's redacting send
 	// modes always have a scanner to use.
-	problems = append(problems, c.Analyzer.validate(true)...)
+	problems = append(problems, c.Analyzer.validate(true, onHost)...)
+
+	// Loaded, not merely checked for a path: a bundle with no certificate in
+	// it must fail here, where -validate reports it, and not at the first
+	// intercepted call. Only on the sidecar host, where the file lives.
+	if onHost {
+		if _, err := loadTrustRoots(c.Trust); err != nil {
+			problems = append(problems, err.Error())
+		}
+	}
 
 	// The feature caps are NOT checked here. This runs inside
 	// LoadConfigBytes, before Setup has seen the license flag or
 	// HOOP_LICENSE, so a cap here would refuse a licensed config for a
 	// limit its license lifts. buildLanes is the single site instead.
+
+	problems = append(problems, c.MCP.validate()...)
 
 	seen := map[string]bool{}
 	for i, l := range c.Listeners {
@@ -1094,18 +1171,23 @@ func (c *Config) Validate() error {
 
 		// downstream_tls is refused at startup rather than accepted and
 		// ignored, except on lanes that actually terminate it. Postgres
-		// negotiates in-band; grpc/spanner and ClickHouse use TLS-on-connect.
+		// negotiates in-band; grpc/spanner, ClickHouse and http use
+		// TLS-on-connect, http with ALPN.
 		if l.DownstreamTLS != nil && !isSSH(l) {
 			p := inspect.Protocol(l.Protocol)
-			if p != inspect.Postgres && p != inspect.ClickHouse && !isGRPCTransport(l) {
+			if p != inspect.Postgres && p != inspect.ClickHouse && p != inspect.HTTP && !isGRPCTransport(l) {
 				problems = append(problems, fmt.Sprintf(
-					"%s: downstream_tls is only supported on postgres, clickhouse, grpc and spanner, not %q",
+					"%s: downstream_tls is only supported on postgres, clickhouse, http, grpc and spanner, not %q",
 					name, l.Protocol))
 			}
 			// Load the keypair now. Discovering a bad path on the first
 			// client connection means one failed login per restart and
 			// nothing in the startup log.
-			if _, err := l.DownstreamTLS.BuildDownstreamTLS(); err != nil {
+			err := l.DownstreamTLS.downstreamKeypairNamed()
+			if err == nil && onHost {
+				_, err = l.DownstreamTLS.BuildDownstreamTLS()
+			}
+			if err != nil {
 				problems = append(problems, fmt.Sprintf("%s: %v", name, err))
 			}
 		}
@@ -1121,6 +1203,19 @@ func (c *Config) Validate() error {
 					name, l.Protocol))
 			}
 		}
+		if l.GoogleIdentity != nil {
+			if inspect.Protocol(l.Protocol) != inspect.HTTP || isGRPCTransport(l) || isSSH(l) {
+				problems = append(problems, fmt.Sprintf(
+					"%s: google_identity is only supported on http, not %q", name, l.Protocol))
+			}
+			if l.IdentityHeader != "" {
+				problems = append(problems, fmt.Sprintf(
+					"%s: google_identity and identity_header both name the caller; keep one", name))
+			}
+			if err := l.GoogleIdentity.validate(); err != nil {
+				problems = append(problems, fmt.Sprintf("%s: google_identity: %v", name, err))
+			}
+		}
 		if l.MySQLAuthKeyFile != "" {
 			if l.Protocol != string(inspect.MySQL) || l.UpstreamTLS == nil {
 				problems = append(problems, fmt.Sprintf(
@@ -1128,16 +1223,18 @@ func (c *Config) Validate() error {
 					name,
 				))
 			}
-			if _, err := l.buildMySQLAuthPrivateKey(); err != nil {
-				problems = append(problems, fmt.Sprintf("%s: %v", name, err))
+			if onHost {
+				if _, err := l.buildMySQLAuthPrivateKey(); err != nil {
+					problems = append(problems, fmt.Sprintf("%s: %v", name, err))
+				}
 			}
 		}
 
-		problems = append(problems, c.validateLane(l, name)...)
+		problems = append(problems, c.validateLane(l, name, onHost)...)
 	}
 
 	if len(problems) > 0 {
-		return fmt.Errorf("invalid config:\n  - %s", strings.Join(problems, "\n  - "))
+		return ConfigProblems(problems)
 	}
 	return nil
 }
@@ -1147,7 +1244,7 @@ func (c *Config) Validate() error {
 // Checking the resolved form rather than the two halves separately gives the
 // operator "this lane is broken" instead of "some default you inherited
 // conflicts with something you set".
-func (c *Config) validateLane(lc ListenerConfig, name string) []string {
+func (c *Config) validateLane(lc ListenerConfig, name string, onHost bool) []string {
 	var problems []string
 	gc, opa, mc := c.resolve(lc)
 
@@ -1188,6 +1285,17 @@ func (c *Config) validateLane(lc ListenerConfig, name string) []string {
 		problems = append(problems, lc.ClickHouse.validate(name)...)
 	}
 
+	// A postgres block reads a StartupMessage, which only a pgwire lane
+	// receives; anywhere else it would load and record nothing.
+	if lc.Postgres != nil {
+		if inspect.Protocol(lc.Protocol) != inspect.Postgres {
+			problems = append(problems, fmt.Sprintf(
+				"%s: a \"postgres\" block is only valid on a postgres listener, not %s",
+				name, lc.Protocol))
+		}
+		problems = append(problems, lc.Postgres.validate(name)...)
+	}
+
 	// The same rule for a grpc block: only a grpc lane reads it, and its
 	// own knobs are checked whatever the protocol so one restart reports
 	// both mistakes.
@@ -1197,7 +1305,7 @@ func (c *Config) validateLane(lc ListenerConfig, name string) []string {
 				"%s: a \"grpc\" block is only valid on a grpc or spanner listener, not %s",
 				name, lc.Protocol))
 		}
-		problems = append(problems, lc.GRPC.validate(name)...)
+		problems = append(problems, lc.GRPC.validate(name, onHost)...)
 	}
 
 	// And for a spanner block: only a spanner lane reads a dialect map,
@@ -1216,7 +1324,7 @@ func (c *Config) validateLane(lc ListenerConfig, name string) []string {
 	// inspects less; a missing ssh block leaves one with no host key and no
 	// trusted CA, which cannot complete a handshake at all.
 	if isSSH(lc) {
-		problems = append(problems, lc.SSH.validate(name)...)
+		problems = append(problems, lc.SSH.validate(name, onHost)...)
 		problems = append(problems, validateSSHRules(localRules, name)...)
 		problems = append(problems, validateSSHMasking(mc, name)...)
 	} else if lc.SSH != nil {
@@ -1598,6 +1706,10 @@ type analyzerDeps struct {
 	// detector, which sends raw.
 	det Plugin
 
+	// mcp is true when this process serves the review MCP tools. Set at
+	// startup: a reload does not start or stop the MCP server.
+	mcp bool
+
 	// budgets hands every generation of an evaluator the same call
 	// counter, so MaxCalls bounds the spend across hot reloads: a
 	// draining generation and its replacement pay from one purse. Keyed
@@ -1611,7 +1723,13 @@ type analyzerDeps struct {
 }
 
 // BuildTLS turns a TLSConfig into a *tls.Config.
-func (t *TLSConfig) BuildTLS() (*tls.Config, error) {
+//
+// roots is the process trust pool (loadTrustRoots) and applies only when
+// ca_file is empty. An explicit ca_file pins the upstream to that bundle
+// alone, as it always has: an operator who named the CA for one backend did
+// not ask for it to also accept whatever the egress proxy signs. Nil roots
+// is the host trust store.
+func (t *TLSConfig) BuildTLS(roots *x509.CertPool) (*tls.Config, error) {
 	if t == nil {
 		return nil, nil
 	}
@@ -1619,6 +1737,7 @@ func (t *TLSConfig) BuildTLS() (*tls.Config, error) {
 		ServerName:         t.ServerName,
 		InsecureSkipVerify: t.InsecureSkipVerify,
 		MinVersion:         tls.VersionTLS12,
+		RootCAs:            roots,
 	}
 	if t.CAFile != "" {
 		pem, err := os.ReadFile(t.CAFile)
@@ -1656,8 +1775,8 @@ func (t *TLSConfig) BuildDownstreamTLS() (*tls.Config, error) {
 	if t == nil {
 		return nil, nil
 	}
-	if t.CertFile == "" || t.KeyFile == "" {
-		return nil, fmt.Errorf("downstream_tls needs both cert_file and key_file")
+	if err := t.downstreamKeypairNamed(); err != nil {
+		return nil, err
 	}
 	cert, err := tls.LoadX509KeyPair(t.CertFile, t.KeyFile)
 	if err != nil {
@@ -1667,6 +1786,14 @@ func (t *TLSConfig) BuildDownstreamTLS() (*tls.Config, error) {
 		Certificates: []tls.Certificate{cert},
 		MinVersion:   tls.VersionTLS12,
 	}, nil
+}
+
+// downstreamKeypairNamed is the part of BuildDownstreamTLS that reads no file.
+func (t *TLSConfig) downstreamKeypairNamed() error {
+	if t.CertFile == "" || t.KeyFile == "" {
+		return fmt.Errorf("downstream_tls needs both cert_file and key_file")
+	}
+	return nil
 }
 
 // analyzerTriggerOperations lists every operation a lane's analyzer is

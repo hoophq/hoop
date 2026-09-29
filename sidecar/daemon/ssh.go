@@ -53,18 +53,19 @@ type SSHServer interface {
 }
 
 // buildSSHServer resolves one ssh lane and builds the libhoop endpoint with
-// sidecar-owned callbacks.
+// sidecar-owned callbacks. The returned liveRules is the lane's reload
+// target: every connection reads its policy and masker there.
 //
-// Everything decided here is decided ONCE, at build: the capability set, the
-// destination list, the account. A connection's OpenFunc reads resolved
-// values and never re-parses config text, so a typo cannot become a user's
-// problem on the hot path.
+// Everything else decided here is decided ONCE, at build: the capability
+// set, the destination list, the account. A connection's OpenFunc reads
+// resolved values and never re-parses config text, so a typo cannot become a
+// user's problem on the hot path.
 func buildSSHServer(
 	ln lane,
 	ac AuditConfig,
 	sink audit.Sink,
 	log *slog.Logger,
-) (SSHServer, error) {
+) (SSHServer, *liveRules, error) {
 	lc := ln.cfg
 	sc := lc.SSH
 	if sc == nil {
@@ -72,12 +73,12 @@ func buildSSHServer(
 		// Go rather than loaded from a file. Loud, not nil: a lane with no
 		// host key and no trusted CA would refuse everyone and be unable to
 		// say why.
-		return nil, fmt.Errorf("%s: protocol is ssh but there is no ssh block", ln.name)
+		return nil, nil, fmt.Errorf("%s: protocol is ssh but there is no ssh block", ln.name)
 	}
 
 	destinations, err := parseSSHDestinations(sc.DestinationsAllowed)
 	if err != nil {
-		return nil, fmt.Errorf("%s: ssh.destinations_allowed: %w", ln.name, err)
+		return nil, nil, fmt.Errorf("%s: ssh.destinations_allowed: %w", ln.name, err)
 	}
 
 	// The relay block resolves ONCE, here: every key read, every identity
@@ -86,7 +87,7 @@ func buildSSHServer(
 	// problem on the hot path.
 	relayCfg, err := buildSSHRelay(ln.name, sc, log)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// A lane that admits no session capability forwards and nothing else:
@@ -105,6 +106,7 @@ func buildSSHServer(
 	laneLog := log.With("listener", ln.name)
 	failOnAuditError := ac.failOnAuditError()
 	stmts := sshStatements{}
+	rules := newLiveRules(ln)
 
 	// libhoop convention: configuration travels as a map[string]string the
 	// server validates, with unknown keys refused. Key material rides as
@@ -142,15 +144,21 @@ func buildSSHServer(
 
 		sess := session.New(inspect.SSH, identity)
 		sess.Connection = ln.name
+		// Acquired once per connection: the gate keeps this generation for
+		// the connection's whole life, and the next one reads what a
+		// reload swapped in. The release runs when the gate closes.
+		live, release := rules.acquire()
 		g, err := gate.NewStatementGate(sess, gate.Config{
 			Protocol:         inspect.SSH,
-			Policy:           ln.policy,
+			Policy:           live.policy,
 			Audit:            sink,
-			Masker:           ln.masker,
+			Masker:           live.masker,
 			FailOnAuditError: failOnAuditError,
 			Metrics:          ln.metrics,
 		})
 		if err != nil {
+			// No handler, so libhoop calls no Close: release here.
+			release()
 			return nil, nil, err
 		}
 
@@ -159,6 +167,7 @@ func buildSSHServer(
 			stmts:        stmts,
 			destinations: destinations,
 			log:          laneLog,
+			release:      release,
 			relay:        relayCfg,
 			subject:      identity.Subject,
 		}
@@ -177,6 +186,11 @@ func buildSSHServer(
 				// is a session with no credential path and no explanation.
 				laneLog.Error("ssh terminated hop names a target this listener no "+
 					"longer has", "target", info.RelayTargetName)
+				// No handler, so libhoop calls no Close and c.release never
+				// runs: release here, exactly as the gate error above does.
+				// Nothing is owed the trail — this returns before g.Start,
+				// so no audit session was ever opened.
+				release()
 				return nil, codecssh.Refuse("this host is not available"), nil
 			}
 		}
@@ -239,15 +253,19 @@ func buildSSHServer(
 
 	srv, err := codecssh.NewServer(opts, open, laneLog)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", ln.name, err)
+		return nil, nil, fmt.Errorf("%s: %w", ln.name, err)
 	}
 	if relayCfg == nil {
-		return srv, nil
+		return srv, rules, nil
 	}
 	// The relay block's notes are the consumer's: libhoop knows the
 	// listener admits nothing and would report a jump host, which is the
 	// opposite of what this lane does.
-	return &sshRelayServer{SSHServer: srv, relay: relayCfg}, nil
+	//
+	// rules travels unchanged. The wrapper adds -validate output and
+	// nothing else, so hot reload reaches a relay lane exactly as it
+	// reaches every other one.
+	return &sshRelayServer{SSHServer: srv, relay: relayCfg}, rules, nil
 }
 
 // sshRelayServer is the endpoint plus the relay block's own -validate
@@ -317,6 +335,9 @@ type sshConnState struct {
 	stmts        sshStatements
 	destinations []sshDestination
 	log          *slog.Logger
+	// release returns the connection's rule generation to its liveRules.
+	// libhoop calls Close for every connection that got a handler.
+	release func()
 
 	// relay is the lane's resolved relay block, nil on a lane that
 	// terminates nothing.
@@ -561,6 +582,8 @@ func (c *sshConnState) close(ctx context.Context, s codecssh.Stats) error {
 	c.event(ctx, "connection_close", attrs)
 
 	err := c.gate.Close(ctx)
+	// After Close: the gate's last statement has been evaluated.
+	c.release()
 	if err != nil {
 		c.log.Warn("ssh session end not recorded", "error", err)
 	}
@@ -885,15 +908,15 @@ func sshLaneNotes(sc *SSHConfig) []string {
 	return notes
 }
 
-// isEndpointLane reports whether a lane's policy stack is CAPTURED by a
-// running server rather than swappable underneath it.
+// isEndpointLane reports whether a lane TERMINATES its protocol in-process
+// (the grpc transport or the ssh endpoint) rather than relaying bytes.
 //
-// An endpoint lane builds its evaluator once and closes over it, so a hot
-// reload cannot move the rules without rebuilding the server. Both the grpc
-// transport and the ssh endpoint work this way, and the reload path has to
-// treat them alike: swapping the view lane while the serving closure keeps
-// the old evaluator would leave an operator looking at rules that are not
-// the rules being enforced, with nothing saying so.
+// Its rules swap on a reload like a relay lane's, through liveRules. What an
+// endpoint lane cannot absorb is masking turned on or off: that sets a
+// libhoop option when the server is built (mask_responses, mask_output), so
+// the server decodes, or does not decode, output for masking for its whole
+// life. Swapping a masker into a server built without it would show an
+// operator masking that is not happening.
 func isEndpointLane(lc ListenerConfig) bool {
 	return isGRPCTransport(lc) || isSSH(lc)
 }

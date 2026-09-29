@@ -29,6 +29,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"sort"
 	"sync"
 
@@ -178,6 +179,55 @@ type Config struct {
 	// implementation, so it MUST be safe for concurrent use and MUST cost
 	// no more than an atomic increment: it runs on the data path.
 	Metrics Metrics
+
+	// RequestIdentity re-derives the caller from every HTTP request instead
+	// of trusting the identity the connection opened with. Optional; nil
+	// keeps one identity per connection, which is every lane but http.
+	//
+	// It exists because a fronting proxy pools upstream connections: Envoy
+	// sends alice's request and then bob's down one keep-alive socket, and a
+	// connection-scoped identity files bob's request under alice. With this
+	// set, a request naming a different principal ends the running session
+	// and opens one for the new caller, so the trail and the policy context
+	// always name who sent the request being judged.
+	//
+	// The codec supplies the credential: it MUST implement
+	// CredentialSource, and New refuses a codec that does not, because a
+	// resolver handed nothing would resolve every request to anonymous.
+	RequestIdentity RequestIdentity
+}
+
+// CredentialSource is implemented by a codec that lifts a caller credential
+// out of every request it decodes, the HTTP codec for the lane's identity
+// header or Authorization.
+//
+// The codec keeps the value and puts only a handle on the statement, so the
+// credential never reaches a policy input, an audit row or a model prompt
+// even if something reads the statement before the gate does.
+type CredentialSource interface {
+	// TakeCredential returns the credential the codec lifted from this
+	// request statement and removes every trace of it from stmt. ok is
+	// false when stmt carries none.
+	TakeCredential(stmt *inspect.Statement) (credential string, ok bool)
+}
+
+// RequestIdentity turns one request's credential into the identity behind
+// it. credential is "" when the request did not carry one. An error refuses
+// the request: a credential that cannot be verified must not be served
+// under whichever identity the connection had before.
+//
+// Implementations are shared across connections and MUST be safe for
+// concurrent use.
+type RequestIdentity interface {
+	Resolve(ctx context.Context, credential string) (session.Identity, error)
+}
+
+// RequestIdentityFunc adapts a function to RequestIdentity.
+type RequestIdentityFunc func(ctx context.Context, credential string) (session.Identity, error)
+
+// Resolve calls f.
+func (f RequestIdentityFunc) Resolve(ctx context.Context, credential string) (session.Identity, error) {
+	return f(ctx, credential)
 }
 
 // Metrics is the counting hook a Gate reports into. Declared here as a
@@ -200,6 +250,9 @@ const (
 	SourceAudit = "audit"
 	// SourceStream is a codec refusing bytes it cannot safely forward.
 	SourceStream = "stream"
+	// SourceIdentity is a request refused because its credential did not
+	// resolve, or because its caller changed with a response outstanding.
+	SourceIdentity = "identity"
 )
 
 // Decision is the answer for one chunk of bytes.
@@ -279,6 +332,25 @@ type Gate struct {
 	statements int
 	denied     int
 	closed     bool
+
+	// sess and polCtx are guarded by mu too, because RequestIdentity can
+	// replace both mid-connection while the other pump is judging a
+	// response. Read them through session() and policyContext().
+	//
+	// sessionStatements and sessionDenied are the totals at the moment the
+	// running session began, so its session_end row counts its own
+	// statements and not the whole connection's.
+	sessionStatements int
+	sessionDenied     int
+
+	// creds is the client codec's credential seam, set only when
+	// Config.RequestIdentity is. outstanding counts the requests judged
+	// on this connection that have no final response yet: an identity
+	// change is refused while it is non-zero, because a response still
+	// in flight belongs to the session that sent its request, and
+	// rotating under it would file that response under the next caller.
+	creds       CredentialSource
+	outstanding int
 
 	// oneExchange says this gate lives exactly as long as one request and
 	// the responses that answer it, which is true of a gate from
@@ -397,11 +469,69 @@ func New(sess *session.Session, cfg Config) (*Gate, error) {
 		return nil, fmt.Errorf("sidecar/gate: a masker is configured but the %s codec (%T) cannot re-frame responses, so it could never mask them",
 			cfg.Protocol, serverCodec)
 	}
+	if cfg.RequestIdentity != nil {
+		cs, ok := clientCodec.(CredentialSource)
+		if !ok {
+			return nil, fmt.Errorf("sidecar/gate: RequestIdentity is set but the %s codec (%T) lifts no credential, so every request would resolve to anonymous",
+				cfg.Protocol, clientCodec)
+		}
+		g.creds = cs
+	}
 	return g, nil
 }
 
-// Session returns the session this gate is inspecting.
-func (g *Gate) Session() *session.Session { return g.sess }
+// Session returns the session this gate is inspecting now. With
+// RequestIdentity set it can change between requests; see rotate.
+func (g *Gate) Session() *session.Session { return g.session() }
+
+func (g *Gate) session() *session.Session {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.sess
+}
+
+func (g *Gate) policyContext() map[string]string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.polCtx
+}
+
+// ErrSessionStarted is returned by Adopt once the gate has judged a
+// statement.
+var ErrSessionStarted = errors.New("sidecar/gate: session facts are fixed once a statement has been judged")
+
+// Adopt records what a lane learned about the session between New and the
+// first statement: the subject a pgwire StartupMessage claimed, and the
+// metadata the lane lifted from it. The policy context is rebuilt so OPA
+// reads the same facts the audit trail records.
+//
+// subject fills Identity.Subject only when nothing else has; an identity the
+// operator's IdentityFn resolved saw a verified subject and outranks a claim.
+// metadata is merged over the session's own, copied rather than aliased.
+//
+// It refuses once a statement has been judged: a policy context that changed
+// mid-session would evaluate two statements of one session against two
+// different actors, and the first one's verdict could not be explained.
+func (g *Gate) Adopt(subject string, metadata map[string]string) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.statements > 0 {
+		return ErrSessionStarted
+	}
+	if subject != "" && g.sess.Identity.Subject == "" {
+		g.sess.Identity.Subject = subject
+	}
+	if len(metadata) > 0 {
+		md := maps.Clone(g.sess.Metadata)
+		if md == nil {
+			md = make(map[string]string, len(metadata))
+		}
+		maps.Copy(md, metadata)
+		g.sess.Metadata = md
+	}
+	g.polCtx = g.sess.PolicyContext()
+	return nil
+}
 
 // Start records the session-start event. Calling it is optional but makes an
 // abandoned connection visible in the audit trail; without it a session that
@@ -420,7 +550,7 @@ func (g *Gate) Start(ctx context.Context) error {
 	if g.audit == nil {
 		return nil
 	}
-	return g.writeAudit(ctx, audit.SessionStartEvent(g.sess))
+	return g.writeAudit(ctx, audit.SessionStartEvent(g.session()))
 }
 
 // Request inspects bytes travelling client -> upstream and decides whether
@@ -504,7 +634,7 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 			d.Rule = "stream-filter"
 			d.Message = err.Error()
 			d.Err = fmt.Errorf("filter: %w", err)
-			g.writeAudit(ctx, audit.ErrorEvent(g.sess, d.Err))
+			g.writeAudit(ctx, audit.ErrorEvent(g.session(), d.Err))
 			g.mu.Lock()
 			g.denied++
 			g.mu.Unlock()
@@ -536,13 +666,31 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 
 	stmts, err := insp.Inspect(dir, data)
 	d.Statements = stmts
+
+	// Lift every request's credential off its statement before anything
+	// else can read it, including the error path below and a denial that
+	// stops the loop early: the codec holds each value until it is taken.
+	var (
+		credentials []string
+		lifted      []bool
+	)
+	if g.creds != nil && dir == inspect.FromClient {
+		credentials = make([]string, len(stmts))
+		lifted = make([]bool, len(stmts))
+		for i := range stmts {
+			if isHTTPRequest(stmts[i]) {
+				credentials[i], lifted[i] = g.creds.TakeCredential(&stmts[i])
+			}
+		}
+	}
+
 	if err != nil {
 		// A malformed stream falls outside policy. Report it and let the
 		// caller decide whether to tear the connection down; forwarding
 		// bytes the gate could not parse is the honest default, because the
 		// upstream's own parser is the authority on its protocol.
 		d.Err = fmt.Errorf("inspect: %w", err)
-		g.writeAudit(ctx, audit.ErrorEvent(g.sess, d.Err))
+		g.writeAudit(ctx, audit.ErrorEvent(g.session(), d.Err))
 
 		// ErrStreamUnsafe is the exception to that default, and it inverts
 		// it. The codec parsed these bytes and is reporting that forwarding
@@ -572,7 +720,30 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 		}
 	}
 
-	for _, stmt := range stmts {
+	// A final response keeps its request outstanding until this whole call
+	// is done with it: judged, audited, masked. Releasing it before its
+	// judge would let a request racing in on the other pump see nothing
+	// outstanding, rotate the session, and have this response evaluated and
+	// recorded under the next caller.
+	var finals int
+	if g.creds != nil && dir == inspect.FromServer {
+		defer func() { g.releaseResponses(finals) }()
+	}
+	for i, stmt := range stmts {
+		if g.creds != nil {
+			switch {
+			case isHTTPRequest(stmt):
+				if r := g.identify(ctx, stmt, credentials[i], lifted[i]); r != nil {
+					r.Statements = stmts
+					return *r
+				}
+				g.mu.Lock()
+				g.outstanding++
+				g.mu.Unlock()
+			case isFinalHTTPResponse(stmt):
+				finals++
+			}
+		}
 		j := g.judge(ctx, stmt)
 		if j.refusal != nil {
 			r := *j.refusal
@@ -636,7 +807,7 @@ func (g *Gate) judge(ctx context.Context, stmt inspect.Statement) judgment {
 	verdict := g.evaluate(ctx, stmt)
 
 	ev := audit.StatementEvent(
-		g.sess, stmt, !verdict.Denied, verdict.Rule, verdict.Message)
+		g.session(), stmt, !verdict.Denied, verdict.Rule, verdict.Message)
 	// An evaluator's annotations (the AI analyzer's risk level) ride
 	// onto the event here rather than through StatementEvent, because
 	// they belong to the VERDICT and not to the statement: the same
@@ -765,7 +936,7 @@ func (g *Gate) RecordMasked(ctx context.Context, entities []string, count int) e
 		}
 	}
 	g.countMasked(count)
-	err := g.writeAudit(ctx, audit.MaskedEvent(g.sess, unique, count))
+	err := g.writeAudit(ctx, audit.MaskedEvent(g.session(), unique, count))
 	if g.cfg.FailOnAuditError {
 		return err
 	}
@@ -784,7 +955,7 @@ func (g *Gate) RecordMasked(ctx context.Context, entities []string, count int) e
 //
 // attrs is flat metadata and must never carry session content.
 func (g *Gate) RecordActivity(ctx context.Context, activity string, attrs map[string]string) error {
-	err := g.writeAudit(ctx, audit.ActivityEvent(g.sess, activity, attrs))
+	err := g.writeAudit(ctx, audit.ActivityEvent(g.session(), activity, attrs))
 	if g.cfg.FailOnAuditError {
 		return err
 	}
@@ -818,7 +989,7 @@ func (g *Gate) maskByReframing(ctx context.Context, d *Decision, data []byte) {
 	})
 	if err != nil {
 		d.Err = errors.Join(d.Err, err)
-		g.writeAudit(ctx, audit.ErrorEvent(g.sess, err))
+		g.writeAudit(ctx, audit.ErrorEvent(g.session(), err))
 
 		// A reframer returning ErrStreamUnsafe has recognized a response it
 		// cannot rebuild without leaking cleartext or losing packet
@@ -847,7 +1018,7 @@ func (g *Gate) maskByReframing(ctx context.Context, d *Decision, data []byte) {
 		d.Masked = entities
 		d.MaskedCount = res.Cells
 		g.countMasked(res.Cells)
-		g.writeAudit(ctx, audit.MaskedEvent(g.sess, entities, res.Cells))
+		g.writeAudit(ctx, audit.MaskedEvent(g.session(), entities, res.Cells))
 	}
 }
 
@@ -902,7 +1073,7 @@ func (g *Gate) evaluate(ctx context.Context, stmt inspect.Statement) policy.Verd
 	if !ok {
 		return g.policy.Evaluate(stmt)
 	}
-	ec := &policy.EvalContext{Context: g.polCtx, ConnCtx: ctx}
+	ec := &policy.EvalContext{Context: g.policyContext(), ConnCtx: ctx}
 	g.seedExchange(stmt, ec)
 	v := ce.EvaluateWith(stmt, ec)
 	g.recordExchange(stmt, ec, &v)
@@ -975,8 +1146,8 @@ func (g *Gate) writeAudit(ctx context.Context, ev audit.Event) error {
 	return err
 }
 
-// Close ends the session and records the closing event with totals.
-// Idempotent.
+// Close ends the session and records the closing event with the running
+// session's totals. Idempotent.
 func (g *Gate) Close(ctx context.Context) error {
 	g.mu.Lock()
 	if g.closed {
@@ -984,21 +1155,183 @@ func (g *Gate) Close(ctx context.Context) error {
 		return nil
 	}
 	g.closed = true
-	statements, denied := g.statements, g.denied
+	sess := g.sess
+	statements, denied := g.statements-g.sessionStatements, g.denied-g.sessionDenied
 	g.mu.Unlock()
 
-	g.sess.End()
+	sess.End()
 	if g.audit == nil {
 		return nil
 	}
-	return g.writeAudit(ctx, audit.SessionEndEvent(g.sess, statements, denied))
+	return g.writeAudit(ctx, audit.SessionEndEvent(sess, statements, denied))
 }
 
-// Stats reports the running totals.
+// Stats reports the running totals for the whole connection, across every
+// session RequestIdentity opened on it.
 func (g *Gate) Stats() (statements, denied int) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return g.statements, g.denied
+}
+
+// isHTTPRequest reports whether stmt is an HTTP request line, the unit a
+// credential and an identity belong to. WebSocket messages the client sends
+// after an upgrade are FromClient too, but carry no headers and belong to
+// the request that opened the socket.
+func isHTTPRequest(stmt inspect.Statement) bool {
+	return stmt.Direction == inspect.FromClient && stmt.HTTP != nil &&
+		stmt.HTTP.WebSocket == nil && stmt.HTTP.StatusCode == 0
+}
+
+// isFinalHTTPResponse reports whether stmt ends the exchange its request
+// opened: any status of 200 and up, or the 101 after which nothing HTTP
+// follows. A 1xx interim response leaves the request outstanding.
+func isFinalHTTPResponse(stmt inspect.Statement) bool {
+	return stmt.Direction == inspect.FromServer && stmt.HTTP != nil && stmt.HTTP.WebSocket == nil &&
+		(stmt.HTTP.StatusCode >= 200 || stmt.HTTP.StatusCode == 101)
+}
+
+// identify resolves the credential one request carried and, when it names
+// someone other than the running session, rotates to a session for them. A
+// non-nil Decision refuses the request.
+//
+// A refused request is filed under the caller it claimed (anonymous when
+// the credential did not resolve), never under the running session: that
+// would put a stranger's attempt in the previous caller's trail.
+func (g *Gate) identify(ctx context.Context, stmt inspect.Statement, credential string, lifted bool) *Decision {
+	peer := g.session().Identity.PeerAddr
+	if !lifted {
+		// New checked the codec implements the seam, so this is a codec
+		// that stopped lifting mid-connection. Serving the request under
+		// the old identity is the failure this whole path exists to stop.
+		return g.refuseAs(ctx, stmt, session.Identity{PeerAddr: peer},
+			"request refused: the codec lifted no credential from it")
+	}
+	id, err := g.cfg.RequestIdentity.Resolve(ctx, credential)
+	if err != nil {
+		return g.refuseAs(ctx, stmt, session.Identity{PeerAddr: peer}, "request refused: "+err.Error())
+	}
+	if sameIdentity(g.session().Identity, id) {
+		return nil
+	}
+	g.mu.Lock()
+	outstanding := g.outstanding
+	g.mu.Unlock()
+	if outstanding > 0 {
+		return g.refuseAs(ctx, stmt, id,
+			"request refused: the caller changed while an earlier response on this connection is still outstanding")
+	}
+	return g.rotate(ctx, id)
+}
+
+// sameIdentity compares the fields that name a principal. PeerAddr and
+// Attributes describe the connection or the claim, not who the caller is.
+func sameIdentity(a, b session.Identity) bool {
+	return a.Subject == b.Subject && a.Email == b.Email
+}
+
+// releaseResponses marks n requests answered, once their final responses
+// have been judged, audited and masked.
+func (g *Gate) releaseResponses(n int) {
+	if n == 0 {
+		return
+	}
+	g.mu.Lock()
+	g.outstanding = max(0, g.outstanding-n)
+	g.mu.Unlock()
+}
+
+// rotate ends the running session and opens one for id on the same
+// connection: session_end for the old caller with its own totals, then
+// session_start for the new one, then the policy context every later
+// statement sees. Connection facts (name, upstream, correlation id,
+// metadata) carry over; only the caller changes.
+//
+// A failed audit write under FailOnAuditError refuses the request, like
+// any other statement the trail could not record.
+func (g *Gate) rotate(ctx context.Context, id session.Identity) *Decision {
+	g.mu.Lock()
+	prev := g.sess
+	next := g.sibling(id)
+	statements, denied := g.statements-g.sessionStatements, g.denied-g.sessionDenied
+	g.sess = next
+	g.polCtx = next.PolicyContext()
+	g.sessionStatements, g.sessionDenied = g.statements, g.denied
+	started := g.started
+	g.mu.Unlock()
+
+	prev.End()
+	if g.audit == nil {
+		return nil
+	}
+	err := g.writeAudit(ctx, audit.SessionEndEvent(prev, statements, denied))
+	if started {
+		err = errors.Join(err, g.writeAudit(ctx, audit.SessionStartEvent(next)))
+	}
+	if err != nil && g.cfg.FailOnAuditError {
+		g.mu.Lock()
+		g.denied++
+		g.mu.Unlock()
+		g.countStatement(true, SourceAudit)
+		return &Decision{
+			Allowed: false,
+			Message: "audit trail unavailable; statement refused",
+			Rule:    "audit",
+			Err:     err,
+		}
+	}
+	return nil
+}
+
+// sibling returns a new session for id on this gate's connection, carrying
+// the connection facts (name, upstream, correlation id, metadata) of the
+// running one. Called with mu held.
+func (g *Gate) sibling(id session.Identity) *session.Session {
+	next := session.New(g.sess.Protocol, id)
+	next.Connection = g.sess.Connection
+	next.Upstream = g.sess.Upstream
+	next.CorrelationID = g.sess.CorrelationID
+	next.Metadata = maps.Clone(g.sess.Metadata)
+	return next
+}
+
+// refuseAs denies stmt for a reason the gate itself decided and records it
+// under id, so the trail and the counters say what the client saw and who
+// asked. When id is not the running session's caller, the refusal gets a
+// session of its own (start, the denied statement, end) and the running
+// session's totals do not count it.
+func (g *Gate) refuseAs(ctx context.Context, stmt inspect.Statement, id session.Identity, message string) *Decision {
+	const rule = "identity"
+	g.mu.Lock()
+	sess := g.sess
+	own := sameIdentity(sess.Identity, id)
+	if !own {
+		sess = g.sibling(id)
+		g.sessionStatements++
+		g.sessionDenied++
+	}
+	g.statements++
+	g.denied++
+	g.mu.Unlock()
+	g.countStatement(true, SourceIdentity)
+
+	var err error
+	if !own {
+		err = g.writeAudit(ctx, audit.SessionStartEvent(sess))
+	}
+	err = errors.Join(err, g.writeAudit(ctx, audit.StatementEvent(sess, stmt, false, rule, message)))
+	if !own {
+		sess.End()
+		err = errors.Join(err, g.writeAudit(ctx, audit.SessionEndEvent(sess, 1, 1)))
+	}
+	denied := stmt
+	return &Decision{
+		Allowed:         false,
+		Message:         message,
+		Rule:            rule,
+		DeniedStatement: &denied,
+		Err:             err,
+	}
 }
 
 // countStatement and countMasked forward to the configured Metrics. Two

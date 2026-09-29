@@ -7,7 +7,7 @@ injects identity, statement, policy, audit, and masking behavior. Policy
 turns either form into allow/deny verdicts, masked responses and an audit trail.
 
 The root `CLAUDE.md` does not cover this directory. It describes the product
-modules under `go.work`; `sidecar/` contributes seven more entries and follows
+modules under `go.work`; `sidecar/` contributes nine more entries and follows
 different rules. This file governs everything under `sidecar/`.
 
 The directory was called `hoopinspect/` until the CLI command became
@@ -64,6 +64,7 @@ it is removing a directory.
 | `store/sqlite/` | `modernc.org/sqlite`, pure Go because the sidecar is a static binary |
 | `analyzer/vertex/` | `golang.org/x/oauth2`, the only analyzer provider needing one. It wraps the `anthropic`, `gemini` and `openai` encoders from the root under a GCP bearer; the API-key providers stay in the root |
 | `descriptors/gcs/` | `golang.org/x/oauth2`, to read a grpc lane's descriptor set from a `gs://` URL |
+| `mcp/` | `github.com/modelcontextprotocol/go-sdk`, for the review status MCP server an `mcp:` block turns on (ADR-0021) |
 | `lexer/conformance/` | PostgreSQL's real parser, test-only |
 
 Adding a dependency to the root still needs a reason. Add a nested module, or
@@ -101,7 +102,7 @@ go test ./...
 go vet ./...
 
 # nested modules are NOT reached by the line above
-for m in cmd config/yaml pii/alcatraz store/sqlite analyzer/vertex descriptors/gcs lexer/conformance; do
+for m in cmd config/yaml pii/alcatraz store/sqlite analyzer/vertex descriptors/gcs mcp lexer/conformance; do
   (cd "$m" && CGO_ENABLED=0 go test ./...)
 done
 
@@ -170,11 +171,14 @@ done
   defined there and aliased here, so its codecs satisfy `Codec` structurally.
 
 - **`sidecar/codec/*` is the registration seam, not a decoder.** libhoop
-  cannot call `Register`, so these thin packages do it, and they are also
-  where `AnalyzeSQL` and the lexer get injected into a decoder. Import
-  `codec/all` for postgres, mysql, mssql and http, or one package for one
-  protocol so a binary fronting Postgres never links the TDS, MySQL and HTTP
-  machinery.
+  cannot call `Register`, so these packages do it, and they are also where
+  `AnalyzeSQL` and the lexer get injected into a decoder. `codec/http` is
+  not thin: its `*Codec` embeds libhoop's Inspector and adds the relay
+  concerns libhoop has no reason to know (Connect Gateway resource
+  normalization, credential lifting for per-request identity, the Via loop
+  marker). Import `codec/all` for postgres, mysql, mssql and http, or one
+  package for one protocol so a binary fronting Postgres never links the
+  TDS, MySQL and HTTP machinery.
 
 - **gRPC deliberately has no `inspect.Codec`.** Its HTTP/2 endpoint and
   reusable protocol mechanics live in `libhoop/v2/codec/grpc`; `daemon/`
@@ -189,7 +193,13 @@ done
   `inspect/wiretypes.go`. Every one of those fails QUIETLY when it is missing:
   the wrong dialect misreads a statement, a missing deny frame closes the
   socket with no message, a missing builder makes `ai_analysis` rules
-  classify nothing. README.md's Protocols section carries the table.
+  classify nothing. README.md's Protocols section carries the table. A new
+  protocol also needs a label in `daemon/schema.go` `protocolLabels`.
+
+- **A new `ListenerConfig` field needs a UI tag.** The control plane renders
+  its listener form from `daemon/schema.json`. Tag the field
+  `label:"..."`, or `ui:"-"` to keep it out of the form, then regenerate:
+  `go test ./daemon -run TestListenerSchemaIsCurrent -update`.
 
 - **Construct codecs through the seam, never libhoop directly.** A decoder
   built with the zero `Options` has no classifier: it reports statement text
@@ -230,7 +240,7 @@ The module root holds no Go files: `go.mod`, this file and `README.md` only.
 |---|---|
 | `inspect/` | bytes to statements, plus the codec registry; the wire vocabulary every other package names |
 | `lexer/` | SQL text to an effect and a relation list, without a grammar |
-| `codec/` | registration seam: wires libhoop's decoders to the classifier |
+| `codec/` | registration seam: wires libhoop's decoders to the classifier; `codec/http` also wraps the Inspector with the relay's HTTP additions |
 | `policy/` | statement to verdict; local rules, then OPA |
 | `license/` | verifies the signed license that lifts the rule caps; a stdlib twin of `common/license`. `internal/trust` owns the key, `licensetest` signs for tests |
 | `analyzer/` | the model-backed evaluator, third in the policy chain |
@@ -238,6 +248,7 @@ The module root holds no Go files: `go.mod`, this file and `README.md` only.
 | `proxy/` | TCP relay that pumps both directions through a Gate |
 | `daemon/` | assembles the relay from config — sinks, evaluators, listeners — and is the CLI entry point |
 | `session/` | one inspected connection and the identity behind it |
+| `identity/` | resolves a request credential to the identity behind it; `google/` verifies a Google OAuth2 bearer with tokeninfo |
 | `audit/` | the write side of the trail |
 | `store/` | the read side |
 | `pii/` | detectors and maskers |

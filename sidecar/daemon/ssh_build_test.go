@@ -66,7 +66,7 @@ func buildSSHTestServer(t *testing.T, sc *SSHConfig) (SSHServer, error) {
 	if sc.TrustedCA == "" {
 		sc.TrustedCA = trustedCA
 	}
-	return buildSSHServer(lane{
+	srv, _, err := buildSSHServer(lane{
 		cfg: ListenerConfig{
 			Name:     "jump",
 			Protocol: "ssh",
@@ -75,6 +75,7 @@ func buildSSHTestServer(t *testing.T, sc *SSHConfig) (SSHServer, error) {
 		},
 		name: "jump",
 	}, AuditConfig{}, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	return srv, err
 }
 
 // An end-hop with no capability list admits the delivered set. This is the

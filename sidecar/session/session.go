@@ -206,6 +206,23 @@ func (s *Session) PolicyContext() map[string]string {
 	return ctx
 }
 
+// ReservedContextKey reports whether PolicyContext writes key itself.
+//
+// PolicyContext copies Metadata over its own keys, so a metadata key spelled
+// `principal` would replace the actor a Rego policy reads. That is harmless
+// while every metadata key is a fact the operator wrote. It is not once a
+// lane lifts metadata VALUES from a client-sent packet: the key stays the
+// operator's, but a key that collides hands the client the actor column. A
+// lane that records client-supplied metadata must refuse these keys at load.
+func ReservedContextKey(key string) bool {
+	switch key {
+	case "session_id", "principal", "subject", "email", "peer_addr",
+		"connection", "upstream", "correlation_id", "groups":
+		return true
+	}
+	return false
+}
+
 func joinComma(items []string) string {
 	out := ""
 	for i, s := range items {

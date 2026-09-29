@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -17,7 +18,6 @@ import (
 
 	"github.com/hoophq/hoop/sidecar/license"
 	"github.com/hoophq/hoop/sidecar/license/licensetest"
-	"github.com/hoophq/hoop/sidecar/proxy"
 )
 
 // reloadBase is the running config every reload test starts from: one
@@ -67,18 +67,19 @@ func testReloader(t *testing.T, raw string) (*reloader, *bytes.Buffer) {
 	if err != nil {
 		t.Fatalf("buildLanes: %v", err)
 	}
-	servers := map[string]*proxy.Server{}
+	servers := map[string]ruleSwapper{}
 	for _, ln := range lanes {
-		// An endpoint lane runs its own server, not a proxy.Server, so
-		// there is nothing here to build a relay for.
+		// An endpoint lane's swap target is the rule slot its server reads,
+		// not a proxy.Server; the slot alone is enough to swap into.
 		if isEndpointLane(ln.cfg) {
+			servers[ln.name] = newLiveRules(ln)
 			continue
 		}
 		srv, serr := buildServer(ln, cfg.Audit, nil, slog.Default())
 		if serr != nil {
 			t.Fatalf("buildServer: %v", serr)
 		}
-		servers[ln.name] = srv
+		servers[ln.name] = relayRules{srv}
 	}
 	view := &atomic.Pointer[laneState]{}
 	view.Store(&laneState{lanes: lanes})
@@ -375,57 +376,84 @@ func TestAnAppliedReloadPublishesWhetherTheConfigNeedsALicense(t *testing.T) {
 	}
 }
 
-// An analyzer edit on a gRPC-transport lane cannot swap (its callbacks bind
-// at server construction), so the whole document keeps the restart path:
-// swapping the other lanes and logging "applied" would leave the gRPC lane
-// serving old rules under a log line that says otherwise.
-func TestAGRPCLaneAnalyzerEditKeepsTheRestartPath(t *testing.T) {
-	desc := writeGRPCTestDescriptors(t)
+// A rule edit on a running grpc lane reaches the next RPC without a restart:
+// the endpoint reads its rules per RPC, so a reload that reports "applied"
+// is the rule the lane enforces from then on.
+func TestAGRPCRuleEditReachesTheNextRPC(t *testing.T) {
+	upstreamAddr, stopUpstream := startGRPCTestH2C(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.Header().Set("Content-Type", "application/grpc")
+		w.Header().Set("Trailer", "Grpc-Status")
+		w.WriteHeader(http.StatusOK)
+		w.Header().Set("Grpc-Status", "0")
+	}))
+	defer stopUpstream()
+
 	base := fmt.Sprintf(`{
-  "analyzer": {"provider": "stub", "model": "m"},
   "listeners": [{
     "name": "g", "protocol": "grpc",
-    "listen": "127.0.0.1:0", "upstream": "h:50051",
-    "grpc": {"capture_payload": true, "descriptors": [%q]},
-    "analyzer": {"trigger": {"operations": ["delete"]}, "high": "block"}
+    "listen": "127.0.0.1:0", "upstream": %q,
+    "guardrails": {"mode": "enforce", "rules": [
+      {"name": "r0", "type": "deny_words_list", "words": ["nothing matches this"]}
+    ]}
   }],
   "audit": {"file": "-"}
-}`, desc)
-
+}`, upstreamAddr)
 	cfg, err := LoadConfigBytes([]byte(base))
 	if err != nil {
 		t.Fatalf("LoadConfigBytes: %v", err)
 	}
 	cfg.cp = &controlPlane{url: "http://plane", token: "hsc_x", lastRaw: []byte(base)}
-	ac, err := setupAnalyzer(cfg, nil)
-	if err != nil {
-		t.Fatalf("setupAnalyzer: %v", err)
-	}
-	lanes, err := buildLanes(cfg, nil, ac)
+	lanes, err := buildLanes(cfg, nil, nil)
 	if err != nil {
 		t.Fatalf("buildLanes: %v", err)
 	}
+	server, rules, err := buildGRPCServer(lanes[0], cfg.Audit, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("buildGRPCServer: %v", err)
+	}
+	laneAddr, stopLane := startGRPCTestServer(t, server)
+	defer stopLane()
 	view := &atomic.Pointer[laneState]{}
 	view.Store(&laneState{lanes: lanes})
-	rl, err := newReloader(cfg, lanes, map[string]*proxy.Server{}, nil, ac, view,
+	rl, err := newReloader(cfg, lanes, map[string]ruleSwapper{"g": rules}, nil, nil, view,
 		newLicenseState(cfg.lic, cfg.dependsOnLicense()))
 	if err != nil {
 		t.Fatalf("newReloader: %v", err)
 	}
-	var buf bytes.Buffer
 
-	drifted := editJSON(t, base, `"high": "block"`, `"high": "warn"`)
-	if got := handleWith(rl, &buf, drifted); got != reloadRestart {
-		t.Fatalf("outcome = %v, want restart; log:\n%s", got, &buf)
+	transport := grpcTestTransport()
+	defer transport.CloseIdleConnections()
+	status := func() string {
+		t.Helper()
+		req, rerr := http.NewRequest(http.MethodPost, "http://"+laneAddr+"/test.v1.Echo/Say",
+			bytes.NewReader(grpcTestFrame(0, nil)))
+		if rerr != nil {
+			t.Fatal(rerr)
+		}
+		req.Header.Set("Content-Type", "application/grpc")
+		resp, rerr := transport.RoundTrip(req)
+		if rerr != nil {
+			t.Fatal(rerr)
+		}
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+		if s := resp.Header.Get("Grpc-Status"); s != "" {
+			return s
+		}
+		return resp.Trailer.Get("Grpc-Status")
 	}
-	if !strings.Contains(buf.String(), "restart to apply them") {
-		t.Errorf("no restart log line:\n%s", &buf)
+
+	if got := status(); got != "0" {
+		t.Fatalf("before the reload: grpc-status = %q, want the upstream's 0", got)
 	}
-	if strings.Contains(buf.String(), "configuration applied") {
-		t.Errorf("a document a grpc lane cannot absorb was reported applied:\n%s", &buf)
+	var buf bytes.Buffer
+	drifted := editJSON(t, base, `"nothing matches this"`, `"echo/say"`)
+	if got := handleWith(rl, &buf, drifted); got != reloadApplied {
+		t.Fatalf("outcome = %v, want applied; log:\n%s", got, &buf)
 	}
-	if rl.gen != 0 {
-		t.Errorf("generation = %d, want 0: nothing was applied", rl.gen)
+	if got := status(); got != "7" {
+		t.Fatalf("after the reload: grpc-status = %q, want 7 from the new rule", got)
 	}
 }
 
@@ -486,13 +514,13 @@ func TestARefusedReloadDoesNotLeakTheDetector(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildLanes: %v", err)
 	}
-	servers := map[string]*proxy.Server{}
+	servers := map[string]ruleSwapper{}
 	for _, ln := range lanes {
 		srv, serr := buildServer(ln, cfg.Audit, nil, slog.Default())
 		if serr != nil {
 			t.Fatalf("buildServer: %v", serr)
 		}
-		servers[ln.name] = srv
+		servers[ln.name] = relayRules{srv}
 	}
 	view := &atomic.Pointer[laneState]{}
 	view.Store(&laneState{lanes: lanes})
@@ -532,39 +560,93 @@ func TestARefusedReloadDoesNotLeakTheDetector(t *testing.T) {
 	}
 }
 
-// An ssh lane closes over its evaluator when the endpoint is built, the same
-// way a grpc lane does. Swapping the view alone would show an operator rules
-// that are not the rules being enforced, and nothing would say so.
-func TestAnSSHRuleDriftKeepsTheRestartPath(t *testing.T) {
+// One document that edits both a relay lane's rules and an ssh lane's rules
+// swaps both. The ssh endpoint reads its rules per connection, so neither
+// lane has to wait for a restart behind the other.
+func TestAnSSHRuleDriftSwapsBesideARelayLane(t *testing.T) {
+	hostKey, trustedCA := writeSSHKeyMaterial(t)
+	base := `{
+  "listeners": [{
+    "name": "appdb", "protocol": "postgres", "listen": "127.0.0.1:0",
+    "upstream": "127.0.0.1:5432",
+    "guardrails": {"mode": "enforce", "rules": [
+      {"name": "r0", "type": "deny_words_list", "words": ["drop table"]}
+    ]}
+  }, {
+    "name": "jump", "protocol": "ssh", "listen": "127.0.0.1:12222",
+    "ssh": {"host_key": "` + hostKey + `", "trusted_ca": "` + trustedCA + `"},
+    "guardrails": {"mode": "enforce", "rules": [
+      {"name": "s0", "type": "deny_words_list", "words": ["rm -rf"]}
+    ]}
+  }],
+  "audit": {"file": "-"},
+  "log_level": "info"
+}`
+	// Two guardrail rules exceed the free tier.
+	base = withLicense(t, base, licensetest.Document(t, licensetest.Enterprise()))
+	rl, buf := testReloader(t, base)
+
+	drifted := editJSON(t, base, `"words": ["drop table"]`, `"words": ["truncate"]`)
+	drifted = editJSON(t, drifted, `"words": ["rm -rf"]`, `"words": ["shutdown"]`)
+	if got := applyWith(rl, buf, drifted); got != reloadApplied {
+		t.Fatalf("outcome = %v, want applied; log:\n%s", got, buf)
+	}
+	if !strings.Contains(buf.String(), "swapped=2") {
+		t.Errorf("both lanes should swap:\n%s", buf)
+	}
+}
+
+// Masking on or off is a libhoop option an ssh endpoint is built with, so a
+// document that turns it on cannot swap: the server would hold a masker it
+// never calls. The whole document keeps the restart path, and no lane swaps.
+func TestTurningMaskingOnOnAnSSHLaneKeepsTheRestartPath(t *testing.T) {
 	hostKey, trustedCA := writeSSHKeyMaterial(t)
 	base := `{
   "listeners": [{
     "name": "jump", "protocol": "ssh", "listen": "127.0.0.1:0",
     "ssh": {"host_key": "` + hostKey + `", "trusted_ca": "` + trustedCA + `"},
     "guardrails": {"mode": "enforce", "rules": [
-      {"name": "r0", "type": "deny_words_list", "words": ["drop table"]}
+      {"name": "s0", "type": "deny_words_list", "words": ["rm -rf"]}
     ]}
   }],
   "audit": {"file": "-"},
   "log_level": "info"
 }`
-	rl, buf := testReloader(t, base)
+	cfg, err := LoadConfigBytes([]byte(base))
+	if err != nil {
+		t.Fatalf("LoadConfigBytes: %v", err)
+	}
+	cfg.cp = &controlPlane{url: "http://plane", token: "hsc_x", lastRaw: []byte(base)}
+	det := &stubPlugin{entities: []string{"EMAIL_ADDRESS"}}
+	lanes, err := buildLanes(cfg, det, nil)
+	if err != nil {
+		t.Fatalf("buildLanes: %v", err)
+	}
+	view := &atomic.Pointer[laneState]{}
+	view.Store(&laneState{lanes: lanes})
+	rl, err := newReloader(cfg, lanes, map[string]ruleSwapper{"jump": newLiveRules(lanes[0])}, det, nil, view,
+		newLicenseState(cfg.lic, cfg.dependsOnLicense()))
+	if err != nil {
+		t.Fatalf("newReloader: %v", err)
+	}
+	buf := &bytes.Buffer{}
 
-	drifted := editJSON(t, base, `"words": ["drop table"]`, `"words": ["truncate"]`)
+	drifted := editJSON(t, base, `"guardrails"`,
+		`"mask": {"rules": [{"name": "emails", "entities": ["EMAIL_ADDRESS"], "strategy": "mask"}]},
+    "guardrails"`)
+	drifted = editJSON(t, drifted, `"words": ["rm -rf"]`, `"words": ["shutdown"]`)
 	if got := applyWith(rl, buf, drifted); got != reloadRestart {
 		t.Fatalf("outcome = %v, want restart; log:\n%s", got, buf)
 	}
-	if !strings.Contains(buf.String(), "restart to apply") {
-		t.Errorf("no restart log line:\n%s", buf)
+	if !strings.Contains(buf.String(), "masking was turned on or off") {
+		t.Errorf("no masking restart log line:\n%s", buf)
+	}
+	if rl.gen != 0 {
+		t.Errorf("generation = %d, want 0: nothing was applied", rl.gen)
 	}
 }
 
-// The restart above is scoped to the lane whose rules moved, not to the
-// document that carries it. A control plane binds rules per listener, so a
-// sidecar fronting a database and a bastion would otherwise have every
-// database rule edit freeze behind the ssh lane -- and an operator reading
-// "restart to apply" on an edit that never touched ssh has no way to tell
-// which lane is stale.
+// A relay rule edit beside an ssh lane whose rules did not move applies too.
 func TestARelayRuleDriftAppliesBesideAnSSHLane(t *testing.T) {
 	hostKey, trustedCA := writeSSHKeyMaterial(t)
 	base := `{

@@ -117,6 +117,40 @@ func TestSessionLifecycleCounters(t *testing.T) {
 	}
 }
 
+// The row's metadata is the session's: session_start fills it, session_end
+// replaces it, and a statement never touches it. A pgwire session learns its
+// startup metadata after session_start, and its first statement carries
+// pg.message, which describes that statement and not the session. A
+// session_end with no metadata keeps what session_start wrote.
+func TestSessionMetadataComesFromTheSessionRecords(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	trace := map[string]string{"postgres.option.claude.session.id": "xyz"}
+
+	write(t, s, audit.Event{Kind: audit.KindSessionStart, SessionID: "pg", Timestamp: base,
+		Principal: "anonymous", Protocol: inspect.Postgres})
+	write(t, s, audit.Event{Kind: audit.KindStatement, SessionID: "pg", Timestamp: base.Add(time.Second),
+		Principal: "alice", Allowed: true,
+		Metadata: map[string]string{"pg.message": "Query", "postgres.option.claude.session.id": "xyz"}})
+	if rec, _ := s.Session(ctx, "pg"); len(rec.Metadata) != 0 {
+		t.Fatalf("open session row metadata = %v, want none from a statement", rec.Metadata)
+	}
+	write(t, s, audit.Event{Kind: audit.KindSessionEnd, SessionID: "pg", Timestamp: base.Add(2 * time.Second),
+		Principal: "alice", Metadata: trace})
+	if rec, _ := s.Session(ctx, "pg"); !reflect.DeepEqual(rec.Metadata, trace) {
+		t.Fatalf("ended session row metadata = %v, want %v", rec.Metadata, trace)
+	}
+
+	start := map[string]string{"region": "us-east-1"}
+	write(t, s, audit.Event{Kind: audit.KindSessionStart, SessionID: "http", Timestamp: base,
+		Principal: "bob", Metadata: start})
+	write(t, s, audit.Event{Kind: audit.KindSessionEnd, SessionID: "http", Timestamp: base.Add(time.Second),
+		Principal: "bob"})
+	if rec, _ := s.Session(ctx, "http"); !reflect.DeepEqual(rec.Metadata, start) {
+		t.Fatalf("row metadata = %v after a bare session_end, want session_start's %v", rec.Metadata, start)
+	}
+}
+
 func TestVerdictPrecedence(t *testing.T) {
 	cases := []struct {
 		name string

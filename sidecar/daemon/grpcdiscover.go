@@ -60,7 +60,11 @@ func DiscoverGRPC(ctx context.Context, cfg *Config, name, out string, w io.Write
 			name, strings.Join(grpcNames, ", "))
 	}
 
-	tlsConf, err := lc.UpstreamTLS.BuildTLS()
+	// Nil roots, not the trust section: the runtime lane hands libhoop file
+	// paths and libhoop builds its own pool, so the trust bundle never
+	// reaches it. Discovery trusting more than the lane would succeed here
+	// and leave the lane failing its first handshake.
+	tlsConf, err := lc.UpstreamTLS.BuildTLS(nil)
 	if err != nil {
 		return fmt.Errorf("%s: upstream_tls: %w", name, err)
 	}

@@ -60,9 +60,10 @@ func sshTestMaskConnSink(
 		t.Fatal(err)
 	}
 	return &sshConnState{
-		gate:  g,
-		stmts: sshStatements{},
-		log:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+		gate:    g,
+		release: func() {},
+		stmts:   sshStatements{},
+		log:     slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 }
 

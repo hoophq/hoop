@@ -472,16 +472,17 @@ const sidecarReviewSelect = `
 // GetLiveSidecarReview returns the review already filed for these exact
 // statement bytes on this listener and rule, or gorm.ErrRecordNotFound.
 //
-// "Live" excludes EXECUTED and nothing else, matching the partial unique index:
-// a consumed approval must not answer the next request, a rejection must keep
-// answering. Groups load as GetReviewByIdOrSid loads them, so a match carries
-// the same policy as a fresh review.
+// "Live" excludes EXECUTED, REJECTED and REVOKED, matching the partial unique
+// index: a spent approval or a refusal is final for that review, and the next
+// request files a new one. Groups load as GetReviewByIdOrSid loads them, so a
+// match carries the same policy as a fresh review.
 func GetLiveSidecarReview(db *gorm.DB, orgID, sidecarID, listenerName, ruleName, statementHash string) (*Review, error) {
 	var review Review
 	err := db.Raw(sidecarReviewSelect+`
 	WHERE org_id = ? AND sidecar_id = ? AND listener_name = ?
-	AND access_request_rule_name = ? AND statement_hash = ? AND status <> ?`,
-		orgID, sidecarID, listenerName, ruleName, statementHash, ReviewStatusExecuted).
+	AND access_request_rule_name = ? AND statement_hash = ? AND status NOT IN (?, ?, ?)`,
+		orgID, sidecarID, listenerName, ruleName, statementHash,
+		ReviewStatusExecuted, ReviewStatusRejected, ReviewStatusRevoked).
 		First(&review).
 		Error
 	if err != nil {
@@ -493,9 +494,9 @@ func GetLiveSidecarReview(db *gorm.DB, orgID, sidecarID, listenerName, ruleName,
 // GetSidecarReview returns one review this sidecar filed, in any status, or
 // gorm.ErrRecordNotFound.
 //
-// Unlike GetLiveSidecarReview it returns EXECUTED too: a sidecar waiting on a
-// review must learn that another connection spent it, not miss the row and
-// file a new one. The sidecar scope is the authorization: a token reads only
+// Unlike GetLiveSidecarReview it returns every status: a sidecar waiting on a
+// review must learn that it was spent or refused, not miss the row and file a
+// new one. The sidecar scope is the authorization: a token reads only
 // its own reviews.
 func GetSidecarReview(db *gorm.DB, orgID, sidecarID, reviewID string) (*Review, error) {
 	var review Review

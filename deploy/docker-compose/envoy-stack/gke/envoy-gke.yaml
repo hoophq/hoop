@@ -1,0 +1,253 @@
+# Base ../envoy/envoy.yaml plus the customer's transparent MITM for Google
+# APIs. Compose resolves connectgateway.googleapis.com to this container, so
+# kubectl keeps the real Connect Gateway URL and never learns a proxy exists;
+# it trusts the certificate below because the "customer CA" signed it.
+#
+#   :8443  HTTPS -> ext_authz(OPA) -> hoop-inspect (http codec)  -> httpbin
+#   :5432  TCP   -> hoop-inspect (postgres codec)                -> appdb
+#   :443   HTTPS (MITM connectgateway.googleapis.com) -> hoop-inspect :16443
+#          h2c for requests, HTTP/1.1 for upgrades (kubectl exec)
+#   :8449  HTTPS (the same MITM with no bypass)       -> hoop-inspect :16445
+#
+# No ext_authz on :443: the sidecar names the caller from kubectl's Google
+# bearer itself (google_identity), and Connect Gateway authorizes.
+
+admin:
+  address:
+    socket_address: { address: 0.0.0.0, port_value: 9901 }
+
+static_resources:
+  listeners:
+    # ---------------------------------------------------------------- L7 lane
+    # HTTPS -> hoop-inspect -> httpbin. Unchanged from the base stack.
+    - name: https_ingress
+      address:
+        socket_address: { address: 0.0.0.0, port_value: 8443 }
+      filter_chains:
+        - transport_socket:
+            name: envoy.transport_sockets.tls
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+              common_tls_context:
+                tls_certificates:
+                  - certificate_chain: { filename: /etc/envoy/certs/server.crt }
+                    private_key: { filename: /etc/envoy/certs/server.key }
+          filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: ingress_https
+                codec_type: AUTO
+                route_config:
+                  name: local_route
+                  virtual_hosts:
+                    - name: inspect
+                      domains: ["*"]
+                      routes:
+                        - match: { prefix: "/" }
+                          route: { cluster: hoop_inspect_http, timeout: 60s }
+                http_filters:
+                  - name: envoy.filters.http.ext_authz
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthz
+                      transport_api_version: V3
+                      failure_mode_allow: false
+                      grpc_service:
+                        envoy_grpc: { cluster_name: opa }
+                        timeout: 2s
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+    # ---------------------------------------------------------------- L4 lane
+    - name: postgres_ingress
+      address:
+        socket_address: { address: 0.0.0.0, port_value: 5432 }
+      filter_chains:
+        - filters:
+            - name: envoy.filters.network.tcp_proxy
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy
+                stat_prefix: ingress_pg
+                cluster: hoop_inspect_pg
+
+    # ------------------------------------------------- MITM: Connect Gateway
+    # The customer's Envoy: terminates TLS for connectgateway.googleapis.com
+    # with a certificate the customer CA signed and hands the plaintext to
+    # the sidecar. ALPN offers h2, so kubectl speaks HTTP/2 here.
+    #
+    # Two upstream clusters to the SAME sidecar port. Ordinary requests go as
+    # h2c: the lane terminates HTTP/2 itself, so nothing is downgraded. An
+    # Upgrade (kubectl exec, attach, port-forward) goes as HTTP/1.1, because
+    # Envoy would turn it into an HTTP/2 extended CONNECT on an h2 cluster,
+    # and the lane answers extended CONNECT with 501.
+    - name: google_mitm
+      address:
+        socket_address: { address: 0.0.0.0, port_value: 443 }
+      filter_chains:
+        - transport_socket:
+            name: envoy.transport_sockets.tls
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+              common_tls_context:
+                alpn_protocols: ["h2", "http/1.1"]
+                tls_certificates:
+                  - certificate_chain: { filename: /etc/envoy/gke-pki/envoy-mitm.crt }
+                    private_key: { filename: /etc/envoy/gke-pki/envoy-mitm.key }
+          filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: google_mitm
+                codec_type: AUTO
+                upgrade_configs:
+                  - upgrade_type: websocket
+                  - upgrade_type: spdy/3.1
+                access_log:
+                  - name: envoy.access_loggers.stdout
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
+                      log_format:
+                        text_format: "[envoy] mitm %PROTOCOL% %REQ(:METHOD)% %REQ(:AUTHORITY)%%REQ(:PATH)% -> %RESPONSE_CODE% upstream=%UPSTREAM_CLUSTER% %DURATION%ms\n"
+                route_config:
+                  name: google_mitm
+                  virtual_hosts:
+                    - name: connectgateway
+                      domains: ["connectgateway.googleapis.com", "connectgateway.googleapis.com:*"]
+                      routes:
+                        - match:
+                            prefix: "/"
+                            headers: [{ name: upgrade, present_match: true }]
+                          route: { cluster: hoop_inspect_gke_h1, timeout: 0s }
+                        - match: { prefix: "/" }
+                          route: { cluster: hoop_inspect_gke_h2c, timeout: 0s }
+                http_filters:
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+    # ------------------------------------------- MITM without a bypass: loop
+    # The same interception on another port, routed to the gke-loop lane,
+    # whose upstream is THIS listener. That is what a transparent MITM does
+    # to the sidecar's own egress when nothing exempts it.
+    - name: google_mitm_loop
+      address:
+        socket_address: { address: 0.0.0.0, port_value: 8449 }
+      filter_chains:
+        - transport_socket:
+            name: envoy.transport_sockets.tls
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+              common_tls_context:
+                alpn_protocols: ["h2", "http/1.1"]
+                tls_certificates:
+                  - certificate_chain: { filename: /etc/envoy/gke-pki/envoy-mitm.crt }
+                    private_key: { filename: /etc/envoy/gke-pki/envoy-mitm.key }
+          filters:
+            - name: envoy.filters.network.http_connection_manager
+              typed_config:
+                "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+                stat_prefix: google_mitm_loop
+                codec_type: AUTO
+                access_log:
+                  - name: envoy.access_loggers.stdout
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.access_loggers.stream.v3.StdoutAccessLog
+                      log_format:
+                        text_format: "[envoy] loop %PROTOCOL% %REQ(:METHOD)% %REQ(:PATH)% via=%REQ(VIA)% -> %RESPONSE_CODE% %DURATION%ms\n"
+                route_config:
+                  name: google_mitm_loop
+                  virtual_hosts:
+                    - name: connectgateway
+                      domains: ["*"]
+                      routes:
+                        - match: { prefix: "/" }
+                          route: { cluster: hoop_inspect_gke_loop, timeout: 15s }
+                http_filters:
+                  - name: envoy.filters.http.router
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+  clusters:
+    - name: opa
+      type: STRICT_DNS
+      connect_timeout: 2s
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          explicit_http_config:
+            http2_protocol_options: {}
+      load_assignment:
+        cluster_name: opa
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address: { address: opa, port_value: 9191 }
+
+    - name: hoop_inspect_http
+      type: STRICT_DNS
+      connect_timeout: 5s
+      load_assignment:
+        cluster_name: hoop_inspect_http
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address: { address: hoop-inspect, port_value: 18080 }
+
+    - name: hoop_inspect_pg
+      type: STRICT_DNS
+      connect_timeout: 5s
+      load_assignment:
+        cluster_name: hoop_inspect_pg
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address: { address: hoop-inspect, port_value: 15432 }
+
+    # h2c prior knowledge to the gke lane: no HTTP/1.1 downgrade.
+    - name: hoop_inspect_gke_h2c
+      type: STRICT_DNS
+      connect_timeout: 5s
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          explicit_http_config:
+            http2_protocol_options: {}
+      load_assignment:
+        cluster_name: hoop_inspect_gke_h2c
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address: { address: hoop-inspect, port_value: 16443 }
+
+    # HTTP/1.1 to the same lane, for upgrades only.
+    - name: hoop_inspect_gke_h1
+      type: STRICT_DNS
+      connect_timeout: 5s
+      load_assignment:
+        cluster_name: hoop_inspect_gke_h1
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address: { address: hoop-inspect, port_value: 16443 }
+
+    - name: hoop_inspect_gke_loop
+      type: STRICT_DNS
+      connect_timeout: 5s
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          explicit_http_config:
+            http2_protocol_options: {}
+      load_assignment:
+        cluster_name: hoop_inspect_gke_loop
+        endpoints:
+          - lb_endpoints:
+              - endpoint:
+                  address:
+                    socket_address: { address: hoop-inspect, port_value: 16445 }

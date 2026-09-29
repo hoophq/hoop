@@ -1,7 +1,7 @@
 import { Box, Divider, Group, Stack, Text } from '@mantine/core'
 import Badge from '@/components/Badge'
 import { MODE_OBSERVE, SOURCE_DISTRIBUTED, SOURCE_LISTENER, resolveListener } from '../resolve'
-import { supportsGRPCBlock, supportsHTTPBlock } from '../listeners'
+import { listenerAccepts } from '../schema'
 
 // The rule types of sidecar/policy a guardrail list can show. NOT the two in
 // pages/Guardrails/helpers.js — those belong to the gateway's own guardrails,
@@ -107,8 +107,8 @@ function configChips(listener) {
   if (listener.downstream_tls) chips.push({ label: 'Client TLS' })
   if (listener.max_conns) chips.push({ label: `max ${listener.max_conns} conns` })
   if (listener.idle_timeout_sec) chips.push({ label: `idle ${listener.idle_timeout_sec}s` })
-  if (supportsHTTPBlock(listener.protocol) && listener.http?.capture_body) chips.push({ label: 'Body captured' })
-  if (supportsGRPCBlock(listener.protocol) && listener.grpc?.capture_payload) chips.push({ label: 'Payload captured' })
+  if (listenerAccepts(listener.protocol, 'http') && listener.http?.capture_body) chips.push({ label: 'Body captured' })
+  if (listenerAccepts(listener.protocol, 'grpc') && listener.grpc?.capture_payload) chips.push({ label: 'Payload captured' })
   // Not a neutral fact, and it lands right after "Upstream TLS", which reads as
   // reassurance. A lane that accepts any upstream certificate has to look
   // different from one that checks, because scanning this strip for exactly
