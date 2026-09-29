@@ -10,7 +10,6 @@ import (
 	redactortypes "github.com/hoophq/libhoop/redactor/types"
 	"strings"
 
-	"github.com/hoophq/hoop/agent/controller/featureflagstate"
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
@@ -149,7 +148,7 @@ func (a *Agent) handleHttpProxyWrite(pkt *pb.Packet) {
 	// ALLOW_CLIENT_AUTHORIZATION=true, so libhoop promotes a client-supplied
 	// X-Hoop-Upstream-Authorization header to the upstream Authorization
 	// header (superseding any header_* configured on the connection).
-	if connenv.httpProxyAllowClientAuth && featureflagstate.IsEnabled(httpProxyClientAuthorizationFlag) {
+	if connenv.httpProxyAllowClientAuth && a.flags.IsEnabled(httpProxyClientAuthorizationFlag) {
 		connenv.httpProxyHeaders["allow_client_authorization"] = "true"
 	}
 
@@ -169,7 +168,7 @@ func (a *Agent) handleHttpProxyWrite(pkt *pb.Packet) {
 	// Authorization header so Claude Code (running in Vertex mode) reaches
 	// Vertex as the connection's GCP identity. The bearer supersedes any
 	// static API-key header configured on the connection.
-	if connenv.gcpServiceAccountJSON != "" && featureflagstate.IsEnabled(claudeCodeVertexFlag) {
+	if connenv.gcpServiceAccountJSON != "" && a.flags.IsEnabled(claudeCodeVertexFlag) {
 		token, err := a.gcpVertexBearer(sessionID, connenv.gcpServiceAccountJSON)
 		if err != nil {
 			log.Infof("failed obtaining gcp vertex credentials, err=%v", err)
