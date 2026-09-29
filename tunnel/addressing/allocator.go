@@ -1,5 +1,5 @@
 // Package addressing implements the deterministic name -> IP mapping used by
-// `hsh tunnel`. See docs/adr/0001-tunnel-addressing.md for the design.
+// `hsh tunnel`. See ADR-0001 (hoophq/adr) for the design.
 //
 // An Allocator owns a single /48 ULA IPv6 prefix AND a per-session IPv4
 // CGNAT (100.64.0.0/10) range, both derived from a session-stable seed.

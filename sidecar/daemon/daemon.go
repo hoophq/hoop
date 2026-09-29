@@ -441,7 +441,7 @@ func ReportDeprecations(w io.Writer, notes []string) {
 	}
 	if len(notes) > 0 {
 		fmt.Fprintln(w, "warn: these fields keep working for now and are removed in a "+
-			"future release. See docs/adr/0011-sidecar-config-schema.md")
+			"future release. See ADR-0011 in hoophq/adr.")
 	}
 }
 
