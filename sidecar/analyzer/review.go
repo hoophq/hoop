@@ -3,6 +3,7 @@ package analyzer
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/hoophq/hoop/sidecar/inspect"
@@ -65,13 +66,32 @@ func (m ReviewMode) Valid() bool {
 	return false
 }
 
-// reviewModeListener is the only source of a review mode today. A client
-// opt-in (EVL-321) adds a second one in reviewMode.
-const reviewModeListener = "listener"
+// HeaderReviewMode lets an HTTP request or a gRPC call pick its own review
+// mode. Lower-cased, the form HTTPDetail.Headers keys use. The daemon adds it
+// to the codec allowlist on a lane that holds, or it never reaches here.
+//
+// Safe to leave to the client: both modes need the approval, only the wait
+// moves.
+const HeaderReviewMode = "x-hoop-review-mode"
+
+// Where a review mode came from, recorded as MetadataReviewModeSource.
+const (
+	reviewModeListener = "listener"
+	reviewModeClient   = "client"
+)
 
 // reviewMode resolves how this statement waits, and who chose it. One
 // function, so a new source is a case here and not a branch in hold.
-func (e *Evaluator) reviewMode() (ReviewMode, string) {
+//
+// A client value outside hold and return falls back to the listener: a typo
+// must not turn an agent's call into one that waits for a human.
+func (e *Evaluator) reviewMode(stmt inspect.Statement) (ReviewMode, string) {
+	if stmt.HTTP != nil {
+		switch m := ReviewMode(strings.ToLower(strings.TrimSpace(stmt.HTTP.Headers[HeaderReviewMode]))); m {
+		case ReviewHold, ReviewReturn:
+			return m, reviewModeClient
+		}
+	}
 	if e.cfg.ReviewMode == ReviewReturn {
 		return ReviewReturn, reviewModeListener
 	}
@@ -132,7 +152,7 @@ const (
 // ctx is the connection's. It ends the wait when the client or the upstream
 // goes away, so an approval is never spent on a statement that cannot run.
 func (e *Evaluator) hold(ctx context.Context, stmt inspect.Statement, notes map[string]string) policy.Verdict {
-	mode, source := e.reviewMode()
+	mode, source := e.reviewMode(stmt)
 	notes[MetadataReviewMode] = string(mode)
 	notes[MetadataReviewModeSource] = source
 

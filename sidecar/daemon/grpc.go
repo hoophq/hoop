@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/audit"
 	"github.com/hoophq/hoop/sidecar/descriptors"
 	"github.com/hoophq/hoop/sidecar/gate"
@@ -213,6 +214,21 @@ func isGRPCTransport(lc ListenerConfig) bool {
 
 const grpcPermissionDenied = 7
 
+// grpcMetadataAllowlist is the lower-cased metadata a grpc lane exposes to
+// policy and audit. A lane that holds adds analyzer.HeaderReviewMode, the same
+// opt-in as an http lane. Holding-only is safe here: an analyzer change
+// restarts a grpc lane, so this list is rebuilt with it.
+func grpcMetadataAllowlist(gc GRPCCodecConfig, la *LaneAnalyzerConfig) []string {
+	out := make([]string, 0, len(gc.Metadata)+1)
+	for _, name := range gc.Metadata {
+		out = append(out, strings.ToLower(strings.TrimSpace(name)))
+	}
+	if analyzerHolds(la) {
+		out = append(out, analyzer.HeaderReviewMode)
+	}
+	return out
+}
+
 // buildGRPCServer resolves one grpc lane's transport facts and builds the
 // reusable libhoop endpoint with sidecar-owned RPC callbacks.
 func buildGRPCServer(
@@ -228,10 +244,7 @@ func buildGRPCServer(
 	}
 
 	laneLog := log.With("listener", ln.name)
-	allowedMetadata := make([]string, 0, len(gc.Metadata))
-	for _, name := range gc.Metadata {
-		allowedMetadata = append(allowedMetadata, strings.ToLower(strings.TrimSpace(name)))
-	}
+	allowedMetadata := grpcMetadataAllowlist(gc, lc.Analyzer)
 	failOnAuditError := ac.failOnAuditError()
 
 	// libhoop convention: configuration travels as a map[string]string the

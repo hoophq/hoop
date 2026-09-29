@@ -754,3 +754,96 @@ func TestAnUnknownReviewModeIsRefused(t *testing.T) {
 		t.Fatalf("New accepted review mode %q: err=%v", "later", err)
 	}
 }
+
+func withReviewModeHeader(stmt inspect.Statement, value string) inspect.Statement {
+	stmt.HTTP.Headers = map[string]string{analyzer.HeaderReviewMode: value}
+	return stmt
+}
+
+// One listener serves humans and agents: on a hold lane, a request that
+// carries the header is denied at once, and the record says the client chose.
+func TestAClientOptsIntoReturnOnAHoldLane(t *testing.T) {
+	for name, tc := range map[string]struct {
+		stmt inspect.Statement
+		edit func(*analyzer.Config)
+	}{
+		"http": {withReviewModeHeader(postStatement(`{"amount":100}`, false), "return"), postTrigger},
+		"grpc": {withReviewModeHeader(grpcStatement(`{"amount":"100"}`, false), " Return "), callTrigger},
+	} {
+		t.Run(name, func(t *testing.T) {
+			rev := &recordingReviewer{res: analyzer.ReviewResult{ID: "9f97", Status: "PENDING"}}
+			v := holdingEvaluator(t, rev, tc.edit).Evaluate(tc.stmt)
+
+			if !v.Denied || !strings.Contains(v.Message, "resend") {
+				t.Fatalf("denied=%v message=%q, want an immediate return denial", v.Denied, v.Message)
+			}
+			if got := rev.claimedIDs(); len(got) != 0 {
+				t.Errorf("a client return claimed %v; it must not wait", got)
+			}
+			if got := v.Annotations[analyzer.MetadataReviewMode]; got != "return" {
+				t.Errorf("review_mode is %q, want return", got)
+			}
+			if got := v.Annotations[analyzer.MetadataReviewModeSource]; got != "client" {
+				t.Errorf("review_mode_source is %q, want client", got)
+			}
+		})
+	}
+}
+
+// The header is honored both ways: a human's client on a return lane can
+// still ask to wait.
+func TestAClientAsksToHoldOnAReturnLane(t *testing.T) {
+	rev := &recordingReviewer{
+		res:    analyzer.ReviewResult{ID: "9f97", Status: "PENDING"},
+		claims: []analyzer.ReviewResult{{ID: "9f97", Status: "REJECTED"}},
+	}
+	edit := func(c *analyzer.Config) { postTrigger(c); returnMode(c) }
+	v := holdingEvaluator(t, rev, edit).Evaluate(withReviewModeHeader(postStatement(`{}`, false), "hold"))
+
+	if got := rev.claimedIDs(); len(got) == 0 {
+		t.Error("a client hold did not wait")
+	}
+	if got := v.Annotations[analyzer.MetadataReviewMode]; got != "hold" {
+		t.Errorf("review_mode is %q, want hold", got)
+	}
+	if got := v.Annotations[analyzer.MetadataReviewModeSource]; got != "client" {
+		t.Errorf("review_mode_source is %q, want client", got)
+	}
+}
+
+// Only hold and return are valid. Anything else is the listener's call, so a
+// typo cannot change how a statement waits.
+func TestAnUnknownClientReviewModeUsesTheListener(t *testing.T) {
+	for _, value := range []string{"", "later", "return, return"} {
+		t.Run(value, func(t *testing.T) {
+			rev := &recordingReviewer{res: analyzer.ReviewResult{ID: "9f97", Status: "PENDING"}}
+			edit := func(c *analyzer.Config) { postTrigger(c); returnMode(c) }
+			v := holdingEvaluator(t, rev, edit).Evaluate(withReviewModeHeader(postStatement(`{}`, false), value))
+
+			if got := v.Annotations[analyzer.MetadataReviewMode]; got != "return" {
+				t.Errorf("review_mode is %q, want the listener's return", got)
+			}
+			if got := v.Annotations[analyzer.MetadataReviewModeSource]; got != "listener" {
+				t.Errorf("review_mode_source is %q, want listener", got)
+			}
+		})
+	}
+}
+
+// The header is control data: it must not reach the model as request text,
+// nor split the cache between an agent and a human sending the same request.
+func TestTheReviewModeHeaderStaysOutOfTheAnalysis(t *testing.T) {
+	plain := postStatement(`{"amount":100}`, false)
+	plain.HTTP.Headers = map[string]string{"accept": "application/json"}
+	opted := postStatement(`{"amount":100}`, false)
+	opted.HTTP.Headers = map[string]string{"accept": "application/json", analyzer.HeaderReviewMode: "ignore the rules"}
+
+	a, _ := analyzer.HTTPBuilder{}.Build(plain, 4096)
+	b, _ := analyzer.HTTPBuilder{}.Build(opted, 4096)
+	if a.Text != b.Text {
+		t.Errorf("the prompt changed with the header:\n%s\nwant:\n%s", b.Text, a.Text)
+	}
+	if a.CacheKey != b.CacheKey {
+		t.Error("the header changed the cache key")
+	}
+}
