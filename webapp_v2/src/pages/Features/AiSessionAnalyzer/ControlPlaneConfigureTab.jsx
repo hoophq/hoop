@@ -1,6 +1,4 @@
-import { useNavigate } from 'react-router-dom'
 import { Group, Stack, Text } from '@mantine/core'
-import Button from '@/components/Button'
 import DocsBtnCallOut from '@/components/DocsBtnCallOut'
 import { docsUrl } from '@/utils/docsUrl'
 import SectionRow from './components/SectionRow'
@@ -24,7 +22,8 @@ import SectionRow from './components/SectionRow'
 // The gateway's sibling of this file saves an api_key into private.ai_providers,
 // which only gateway/aianalyzer and the transport read. Rendering it here would
 // take a provider, a model and a key from an admin and reach no sidecar with
-// any of them.
+// any of them. No link to the Sidecars page either: nothing there sets this
+// section.
 
 const FIELDS = [
   ['provider', 'vertex, anthropic or openai — whichever the binary links'],
@@ -37,8 +36,6 @@ const FIELDS = [
 ]
 
 export default function ControlPlaneConfigureTab() {
-  const navigate = useNavigate()
-
   return (
     <Stack gap="xxlAlt" pb="xl">
       <SectionRow
@@ -80,10 +77,6 @@ export default function ControlPlaneConfigureTab() {
             the prompt and the call budget. A listener that has its own
             analyzer block keeps its limits under the rule.
           </Text>
-
-          <Button variant="light" w="fit-content" onClick={() => navigate('/sidecars')}>
-            Go to Sidecars
-          </Button>
         </Stack>
       </SectionRow>
     </Stack>
