@@ -597,6 +597,114 @@ func TestRelayTargetKeyRefusesTheWildcard(t *testing.T) {
 	}
 }
 
+// TestRelayMatchesTheRootLabel keeps a fully qualified name from being a way
+// out of inspection.
+//
+// ssh(1) passes the name through to the direct-tcpip request exactly as it
+// was typed, and "host.prod." is the same host to DNS, to ssh and to
+// known_hosts. Matching the raw string made one trailing dot miss every name
+// and glob target, so the forward was carried BLIND: the same host, no
+// statements, no guardrails, no masking, and only the destination in the
+// trail — one character away from the spelling the operator wrote their
+// targets against.
+func TestRelayMatchesTheRootLabel(t *testing.T) {
+	dialing := netip.MustParseAddrPort("10.0.0.5:22")
+
+	for _, key := range []string{"db-01.prod", "*.prod"} {
+		target, err := parseSSHTargetKey(key)
+		if err != nil {
+			t.Fatalf("%q: %v", key, err)
+		}
+		for _, typed := range []string{"db-01.prod", "db-01.prod.", "DB-01.PROD."} {
+			if !target.matches(typed, dialing) {
+				t.Errorf("target %q does not cover %q, so it is carried blind", key, typed)
+			}
+		}
+	}
+
+	// A bare dot is not a spelling of anything, and must not become the
+	// empty string and match a glob that way.
+	target, err := parseSSHTargetKey("*.prod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, typed := range []string{"db-01.prod..", "other.dev", "."} {
+		if target.matches(typed, dialing) {
+			t.Errorf("target %q wrongly covers %q", "*.prod", typed)
+		}
+	}
+}
+
+// TestRelayWarnsWhenAddressesAreNotCovered states the gap between the two
+// vocabularies a lane writes destinations in.
+//
+// destinations_allowed admits by ADDRESS; targets are usually written by
+// NAME, because a name is what the client types. A client that types the
+// address instead matches no name target, passes destinations_allowed on the
+// resolved address, and is carried blind to the same host. It is a warning
+// rather than a refusal: whether an uncovered destination should be carried
+// at all is ADR-0021's model, and a config that works today must not stop
+// starting on an upgrade.
+func TestRelayWarnsWhenAddressesAreNotCovered(t *testing.T) {
+	nameOnly := []*sshRelayTarget{mustTargetKey(t, "*.prod")}
+
+	t.Run("a network no address target covers", func(t *testing.T) {
+		got := uninspectedByAddress([]string{"172.31.78.0/24:22"}, nameOnly)
+		if len(got) != 1 {
+			t.Fatalf("expected one warning, got %v", got)
+		}
+		if !strings.Contains(got[0], "CARRIED BLIND") {
+			t.Fatalf("the warning does not say what is lost: %q", got[0])
+		}
+	})
+
+	t.Run("any is covered by nothing", func(t *testing.T) {
+		if got := uninspectedByAddress([]string{"any"}, nameOnly); len(got) != 1 {
+			t.Fatalf("expected one warning for %q, got %v", "any", got)
+		}
+	})
+
+	t.Run("a network target covering it is silent", func(t *testing.T) {
+		covered := []*sshRelayTarget{
+			mustTargetKey(t, "*.prod"),
+			mustTargetKey(t, "172.31.78.0/24:22"),
+		}
+		if got := uninspectedByAddress([]string{"172.31.78.0/24:22"}, covered); len(got) != 0 {
+			t.Fatalf("a covered network still warned: %v", got)
+		}
+	})
+
+	t.Run("a wider target covers a narrower destination", func(t *testing.T) {
+		covered := []*sshRelayTarget{mustTargetKey(t, "10.0.0.0/8")}
+		if got := uninspectedByAddress([]string{"10.1.2.0/24"}, covered); len(got) != 0 {
+			t.Fatalf("a contained network still warned: %v", got)
+		}
+	})
+
+	t.Run("a narrower target does NOT cover a wider destination", func(t *testing.T) {
+		partial := []*sshRelayTarget{mustTargetKey(t, "10.1.2.0/24")}
+		if got := uninspectedByAddress([]string{"10.0.0.0/8"}, partial); len(got) != 1 {
+			t.Fatalf("a partially covered network was treated as covered: %v", got)
+		}
+	})
+
+	t.Run("a relay with no targets says nothing", func(t *testing.T) {
+		if got := uninspectedByAddress([]string{"any"}, nil); len(got) != 0 {
+			t.Fatalf("a lane with no relay warned: %v", got)
+		}
+	})
+}
+
+// mustTargetKey parses a target key or fails the test.
+func mustTargetKey(t *testing.T, key string) *sshRelayTarget {
+	t.Helper()
+	target, err := parseSSHTargetKey(key)
+	if err != nil {
+		t.Fatalf("%q: %v", key, err)
+	}
+	return target
+}
+
 // TestRelayTargetKeyRefusesAMalformedHostPort keeps a typo from turning
 // inspection off.
 //

@@ -430,5 +430,93 @@ func buildSSHRelay(lane string, sc *SSHConfig, log *slog.Logger) (*sshRelay, err
 		r.targets = append(r.targets, t)
 	}
 	sortTargets(r.targets)
+
+	for _, line := range uninspectedByAddress(sc.DestinationsAllowed, r.targets) {
+		log.Warn(line, "listener", lane)
+	}
 	return r, nil
+}
+
+// uninspectedByAddress finds the gap between the two vocabularies a lane
+// writes destinations in.
+//
+// destinations_allowed says where a forward may be CARRIED and is written in
+// addresses. relay.targets says which destinations are TERMINATED and is
+// usually written in names, because a name is what the client types, what
+// known_hosts records and what HostKeyAlias stands in for. Nothing
+// reconciles the two, and the fallthrough for an uncovered destination is to
+// carry it blind.
+//
+// So a lane admitting 10.0.0.0/24 and terminating "*.prod" has an
+// uninspected door onto every one of those hosts: a client that types the
+// ADDRESS matches no name target, passes destinations_allowed on the
+// resolved address, and reaches the same host with no statements, no
+// guardrails, no masking and nothing in the trail but the destination. On an
+// agent_identity target the client's own certificate opens it, because that
+// target trusts the CA rather than a credential this host holds.
+//
+// A warning and not a refusal. Whether an uncovered destination should be
+// carried blind at all is ADR-0021's model, not something to change from
+// here — and a config that works today must not stop starting on an upgrade.
+// What load owes the operator is that the gap is stated once, at the moment
+// they can still choose.
+func uninspectedByAddress(destinations []string, targets []*sshRelayTarget) []string {
+	if len(targets) == 0 {
+		return nil
+	}
+	parsed, err := parseSSHDestinations(destinations)
+	if err != nil {
+		// Malformed entries are validate's to report, with the spelling.
+		return nil
+	}
+
+	var warnings []string
+	for i, d := range parsed {
+		if coveredByAddressTarget(d, targets) {
+			continue
+		}
+		where := destinations[i]
+		if d.any {
+			where = sshDestinationAny
+		}
+		warnings = append(warnings, fmt.Sprintf(
+			"ssh: destinations_allowed admits %s but no relay target names an address "+
+				"or network covering it, so a client that types an ADDRESS in that range "+
+				"reaches the host with the forward CARRIED BLIND: no statements, no "+
+				"guardrails, no masking, and only the destination in the trail. Add a "+
+				"network target covering it, or narrow destinations_allowed to what the "+
+				"name targets resolve to", where))
+	}
+	return warnings
+}
+
+// coveredByAddressTarget reports whether some address or network target
+// covers every address this destination admits.
+//
+// Name and glob targets cannot count. They are matched on the string the
+// client typed, and the client that types an address never presents one.
+func coveredByAddressTarget(d sshDestination, targets []*sshRelayTarget) bool {
+	if d.any {
+		// No prefix contains every address, so nothing can cover it.
+		return false
+	}
+	for _, t := range targets {
+		// A target bound to one port covers a destination only if the
+		// destination is bound to the same one. An unported destination
+		// admits every port, and a ported target leaves the rest open.
+		if t.port != 0 && t.port != d.port {
+			continue
+		}
+		switch t.kind {
+		case sshTargetAddress:
+			if d.prefix.Addr() == t.addr && d.prefix.Bits() == t.addr.BitLen() {
+				return true
+			}
+		case sshTargetPrefix:
+			if t.prefix.Bits() <= d.prefix.Bits() && t.prefix.Contains(d.prefix.Addr()) {
+				return true
+			}
+		}
+	}
+	return false
 }

@@ -58,7 +58,9 @@ services:
       - ./keys/prod:/etc/hoop-inspect/keys/prod:ro
       - ./keys/legacy:/etc/hoop-inspect/keys/legacy:ro
       # The per-user overlay. A DIRECTORY mount: run.sh enrols into it, and
-      # the sidecar reads it once at startup.
+      # the sidecar reads the subject's key from it per session, so an
+      # enrolment takes effect on the next connection. Read-only, because
+      # write access here is SSH to every target the overlay reaches.
       - ./identities:/etc/hoop-inspect/identities:ro
       - ./keys/known_hosts:/etc/hoop-inspect/known_hosts:ro
       # legacy-01's own known_hosts lives in a DIRECTORY mount, and that is

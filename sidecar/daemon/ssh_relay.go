@@ -397,15 +397,34 @@ func (t *sshRelayTarget) matches(host string, dialing netip.AddrPort) bool {
 	}
 	switch t.kind {
 	case sshTargetExact:
-		return strings.EqualFold(t.glob, host)
+		return strings.EqualFold(t.glob, canonicalSSHHost(host))
 	case sshTargetGlob:
-		ok, err := path.Match(strings.ToLower(t.glob), strings.ToLower(host))
+		name := strings.ToLower(canonicalSSHHost(host))
+		ok, err := path.Match(strings.ToLower(t.glob), name)
 		return err == nil && ok
 	case sshTargetAddress:
 		return t.addr == dialing.Addr().Unmap()
 	default:
 		return t.prefix.Contains(dialing.Addr().Unmap())
 	}
+}
+
+// canonicalSSHHost drops the root label a fully qualified name may carry.
+//
+// "host.prod." and "host.prod" are the same host to DNS, to ssh(1) and to
+// known_hosts, and ssh passes the name through to the direct-tcpip request
+// exactly as it was typed. Matching the raw string made the dot a way to
+// miss every name and glob target and be carried BLIND instead — the same
+// host reached with no statements, no guardrails, no masking and nothing in
+// the trail but the destination, one character away from the spelling an
+// operator wrote their targets against.
+//
+// One dot only. "host.prod.." is not a spelling of anything.
+func canonicalSSHHost(host string) string {
+	if len(host) > 1 && strings.HasSuffix(host, ".") {
+		return host[:len(host)-1]
+	}
+	return host
 }
 
 // match finds the target covering one destination, or nil to carry it blind.

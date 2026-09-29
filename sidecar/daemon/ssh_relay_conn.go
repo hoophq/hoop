@@ -69,10 +69,11 @@ func (c *sshConnState) relayForward(t *sshRelayTarget) func(context.Context, cod
 // relayCredential answers, for HOP 2, what this person authenticates to the
 // target with.
 //
-// It runs where the subject is known, and it is a MAP LOOKUP against a
-// directory read at load — never a path built out of a field the certificate
-// carries. That is why the traversal problem a per-session search would have
-// is absent rather than guarded.
+// It runs where the subject is known, and credentialFor reads the subject's
+// key from the identities directory PER SESSION, so the subject the
+// certificate carries does become a path. identityPathFor is the guard that
+// keeps it a plain filename inside that directory; the traversal problem is
+// guarded, not absent, and that guard must not be removed.
 func (c *sshConnState) relayCredential(ctx context.Context) (*codecssh.RelayCredential, *codecssh.Refusal) {
 	key, source, fellBack, err := c.relay.credentialFor(c.target, c.subject)
 	if err != nil {

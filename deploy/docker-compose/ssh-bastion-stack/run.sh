@@ -111,9 +111,11 @@ chmod 600 keys/user keys/*_host_key keys/ca keys/prod keys/legacy \
 c_ok "minted 2 certificates (alice@example.com enrolled, mallory@example.com not)"
 
 # ENROLMENT. One file per certificate subject, holding that person's upstream
-# key, and NOTHING ELSE in the directory. The filename IS the subject: nothing
-# the certificate carries is ever joined onto a path, so this directory is
-# enumerated at load and looked up as a map.
+# key, and NOTHING ELSE in the directory. The filename IS the subject: the
+# bastion joins the certificate's subject onto this directory and reads the key
+# PER SESSION, so enrolling or removing someone takes effect on their next
+# connection. A subject that is not a plain filename (a separator, a dot name,
+# a leading dot) is refused before it becomes a path.
 #
 # The public half is kept in keys/ rather than beside the private one.
 # ssh-keygen writes them as a pair, and a stray .pub here would be read as an
