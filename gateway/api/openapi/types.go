@@ -394,6 +394,20 @@ type SidecarResponse struct {
 	// Empty for a sidecar that has handled nothing yet, or one too old to
 	// report. Empty must read as unknown, never as converged.
 	LastOutcome string `json:"last_outcome,omitempty" example:"applied"`
+	// LastError is the reason the sidecar gave with a refused or restart
+	// outcome. Empty otherwise.
+	LastError string `json:"last_error,omitempty" example:"the control plane sent a config this build refuses: parse config: json: unknown field \"future_key\""`
+	// ConfigState is what the sidecar runs, read from the fields above and
+	// the clock: applied, applying (served under a heartbeat ago, not
+	// reported yet), not_applied (served longer ago and never reported, the
+	// shape of a sidecar that exits at boot on it), refused, restart, or
+	// unknown (a build too old to report). Empty while nothing was served,
+	// before the first handshake, and for a sidecar running its own file.
+	ConfigState string `json:"config_state,omitempty" example:"applied"`
+	// Deprecations lists the deprecated spellings the stored configuration
+	// still uses, phrased for an operator. The sidecar folds them on load,
+	// where nobody reads the warning.
+	Deprecations []string `json:"deprecations,omitempty"`
 }
 
 // SidecarRuleTarget is one place a rule is enforced: a sidecar, and either one
@@ -515,6 +529,11 @@ type SidecarHandshakeRequest struct {
 	//
 	// Optional, for the same reason as AppliedRevision.
 	LastOutcome string `json:"last_outcome,omitempty" example:"applied"`
+	// LastError is the reason, when LastOutcome is refused or restart. Shown
+	// on the sidecar page so an admin reads it without the sidecar's log.
+	//
+	// Optional. A build from before the field sends nothing.
+	LastError string `json:"last_error,omitempty" example:"the control plane sent a config this build refuses: parse config: json: unknown field \"future_key\""`
 }
 
 // AgentSPIFFEMapping ties a SPIFFE identity (exact ID or prefix) to a Hoop

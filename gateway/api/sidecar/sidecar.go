@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"slices"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -64,7 +65,7 @@ func configRevision(served daemon.Config) string {
 // the next tick is a minute away.
 func recordHandshake(sidecarID string, req openapi.SidecarHandshakeRequest, servedRevision string, capabilities []string) {
 	err := models.RecordSidecarHandshake(models.DB, sidecarID,
-		req.Version, req.AppliedRevision, req.LastOutcome, servedRevision, capabilities)
+		req.Version, req.AppliedRevision, req.LastOutcome, req.LastError, servedRevision, capabilities)
 	if err != nil {
 		log.With("sidecar", sidecarID).Warnf("failed recording the sidecar handshake, reason=%v", err)
 	}
@@ -857,7 +858,26 @@ func toResponse(s models.Sidecar) openapi.SidecarResponse {
 	resp.ServedRevision = derefOrEmpty(s.ServedRevision)
 	resp.AppliedRevision = derefOrEmpty(s.AppliedRevision)
 	resp.LastOutcome = derefOrEmpty(s.LastOutcome)
+	resp.LastError = derefOrEmpty(s.LastError)
+	resp.ConfigState = configState(s, time.Now())
+	resp.Deprecations = configDeprecations(s.Configuration)
 	return resp
+}
+
+// configDeprecations names the deprecated spellings a stored document uses,
+// through the daemon's own fold. A document the fold refuses, one written in
+// both spellings, reports that refusal as its one line: the sidecar will say
+// the same and keep its old rules.
+func configDeprecations(cfg models.SidecarConfiguration) []string {
+	raw, err := json.Marshal(cfg)
+	if err != nil {
+		return nil
+	}
+	deps, err := daemon.Deprecations(raw)
+	if err != nil {
+		return []string{err.Error()}
+	}
+	return deps
 }
 
 func derefOrEmpty(s *string) string {

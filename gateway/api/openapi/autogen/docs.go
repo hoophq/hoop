@@ -20010,6 +20010,11 @@ const docTemplate = `{
                         "$ref": "#/definitions/openapi.SidecarRuleBinding"
                     }
                 },
+                "config_state": {
+                    "description": "ConfigState is what the sidecar runs, read from the fields above and\nthe clock: applied, applying (served under a heartbeat ago, not\nreported yet), not_applied (served longer ago and never reported, the\nshape of a sidecar that exits at boot on it), refused, restart, or\nunknown (a build too old to report). Empty while nothing was served,\nbefore the first handshake, and for a sidecar running its own file.",
+                    "type": "string",
+                    "example": "applied"
+                },
                 "configuration": {
                     "description": "The stored daemon configuration.",
                     "type": "object"
@@ -20021,6 +20026,13 @@ const docTemplate = `{
                 "created_by": {
                     "description": "Subject of the admin who created it",
                     "type": "string"
+                },
+                "deprecations": {
+                    "description": "Deprecations lists the deprecated spellings the stored configuration\nstill uses, phrased for an operator. The sidecar folds them on load,\nwhere nobody reads the warning.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "detached_rules": {
                     "description": "DetachedRules names the rules an owner switch removed, on the PATCH\nthat switched. Deleted rules came from this sidecar's file; unbound\nrules stay for their other targets.",
@@ -20035,6 +20047,11 @@ const docTemplate = `{
                     "type": "string",
                     "format": "uuid",
                     "readOnly": true
+                },
+                "last_error": {
+                    "description": "LastError is the reason the sidecar gave with a refused or restart\noutcome. Empty otherwise.",
+                    "type": "string",
+                    "example": "the control plane sent a config this build refuses: parse config: json: unknown field \"future_key\""
                 },
                 "last_outcome": {
                     "description": "LastOutcome is what the sidecar did with the last configuration it\nhandled: applied, unchanged, restart, refused or retry.\n\nIt is the field that separates a sidecar enforcing the current rules\nfrom one that refused them and kept the old ones. A refusal, or a\ndocument needing a restart, leaves the sidecar handshaking on time\nwith stale rules, and nothing else tells the two apart.\n\nEmpty for a sidecar that has handled nothing yet, or one too old to\nreport. Empty must read as unknown, never as converged.",
@@ -20104,6 +20121,11 @@ const docTemplate = `{
                     "description": "AppliedRevision is the hoop-sidecar-config-revision of the last\nconfiguration this sidecar actually took on, which is not necessarily\nthe last one it was served: a document it refused, or one needing a\nrestart, leaves this at the revision still running.\n\nOptional. A sidecar too old to report it, or one that has handled no\ndocument yet, sends nothing and is reported as unknown rather than as\nconverged.",
                     "type": "string",
                     "example": "8f14e45fceea167a5a36dedd4bea2543"
+                },
+                "last_error": {
+                    "description": "LastError is the reason, when LastOutcome is refused or restart. Shown\non the sidecar page so an admin reads it without the sidecar's log.\n\nOptional. A build from before the field sends nothing.",
+                    "type": "string",
+                    "example": "the control plane sent a config this build refuses: parse config: json: unknown field \"future_key\""
                 },
                 "last_outcome": {
                     "description": "LastOutcome is what this sidecar concluded about that configuration:\napplied, restart, refused, unchanged or retry. It is the only way to\ntell a sidecar enforcing the current rules from one that refused them\nand kept the old ones while still handshaking on time.\n\nOptional, for the same reason as AppliedRevision.",
@@ -20180,6 +20202,11 @@ const docTemplate = `{
                         "$ref": "#/definitions/openapi.SidecarRuleBinding"
                     }
                 },
+                "config_state": {
+                    "description": "ConfigState is what the sidecar runs, read from the fields above and\nthe clock: applied, applying (served under a heartbeat ago, not\nreported yet), not_applied (served longer ago and never reported, the\nshape of a sidecar that exits at boot on it), refused, restart, or\nunknown (a build too old to report). Empty while nothing was served,\nbefore the first handshake, and for a sidecar running its own file.",
+                    "type": "string",
+                    "example": "applied"
+                },
                 "configuration": {
                     "description": "The stored daemon configuration.",
                     "type": "object"
@@ -20191,6 +20218,13 @@ const docTemplate = `{
                 "created_by": {
                     "description": "Subject of the admin who created it",
                     "type": "string"
+                },
+                "deprecations": {
+                    "description": "Deprecations lists the deprecated spellings the stored configuration\nstill uses, phrased for an operator. The sidecar folds them on load,\nwhere nobody reads the warning.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "detached_rules": {
                     "description": "DetachedRules names the rules an owner switch removed, on the PATCH\nthat switched. Deleted rules came from this sidecar's file; unbound\nrules stay for their other targets.",
@@ -20205,6 +20239,11 @@ const docTemplate = `{
                     "type": "string",
                     "format": "uuid",
                     "readOnly": true
+                },
+                "last_error": {
+                    "description": "LastError is the reason the sidecar gave with a refused or restart\noutcome. Empty otherwise.",
+                    "type": "string",
+                    "example": "the control plane sent a config this build refuses: parse config: json: unknown field \"future_key\""
                 },
                 "last_outcome": {
                     "description": "LastOutcome is what the sidecar did with the last configuration it\nhandled: applied, unchanged, restart, refused or retry.\n\nIt is the field that separates a sidecar enforcing the current rules\nfrom one that refused them and kept the old ones. A refusal, or a\ndocument needing a restart, leaves the sidecar handshaking on time\nwith stale rules, and nothing else tells the two apart.\n\nEmpty for a sidecar that has handled nothing yet, or one too old to\nreport. Empty must read as unknown, never as converged.",

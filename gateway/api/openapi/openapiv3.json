@@ -8492,6 +8492,11 @@
             },
             "type": "array"
           },
+          "config_state": {
+            "description": "ConfigState is what the sidecar runs, read from the fields above and\nthe clock: applied, applying (served under a heartbeat ago, not\nreported yet), not_applied (served longer ago and never reported, the\nshape of a sidecar that exits at boot on it), refused, restart, or\nunknown (a build too old to report). Empty while nothing was served,\nbefore the first handshake, and for a sidecar running its own file.",
+            "example": "applied",
+            "type": "string"
+          },
           "configuration": {
             "description": "The stored daemon configuration.",
             "type": "object"
@@ -8503,6 +8508,13 @@
           "created_by": {
             "description": "Subject of the admin who created it",
             "type": "string"
+          },
+          "deprecations": {
+            "description": "Deprecations lists the deprecated spellings the stored configuration\nstill uses, phrased for an operator. The sidecar folds them on load,\nwhere nobody reads the warning.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "detached_rules": {
             "allOf": [
@@ -8516,6 +8528,11 @@
             "description": "Unique identifier",
             "format": "uuid",
             "readOnly": true,
+            "type": "string"
+          },
+          "last_error": {
+            "description": "LastError is the reason the sidecar gave with a refused or restart\noutcome. Empty otherwise.",
+            "example": "the control plane sent a config this build refuses: parse config: json: unknown field \"future_key\"",
             "type": "string"
           },
           "last_outcome": {
@@ -8582,6 +8599,11 @@
           "applied_revision": {
             "description": "AppliedRevision is the hoop-sidecar-config-revision of the last\nconfiguration this sidecar actually took on, which is not necessarily\nthe last one it was served: a document it refused, or one needing a\nrestart, leaves this at the revision still running.\n\nOptional. A sidecar too old to report it, or one that has handled no\ndocument yet, sends nothing and is reported as unknown rather than as\nconverged.",
             "example": "8f14e45fceea167a5a36dedd4bea2543",
+            "type": "string"
+          },
+          "last_error": {
+            "description": "LastError is the reason, when LastOutcome is refused or restart. Shown\non the sidecar page so an admin reads it without the sidecar's log.\n\nOptional. A build from before the field sends nothing.",
+            "example": "the control plane sent a config this build refuses: parse config: json: unknown field \"future_key\"",
             "type": "string"
           },
           "last_outcome": {
@@ -8662,6 +8684,11 @@
             },
             "type": "array"
           },
+          "config_state": {
+            "description": "ConfigState is what the sidecar runs, read from the fields above and\nthe clock: applied, applying (served under a heartbeat ago, not\nreported yet), not_applied (served longer ago and never reported, the\nshape of a sidecar that exits at boot on it), refused, restart, or\nunknown (a build too old to report). Empty while nothing was served,\nbefore the first handshake, and for a sidecar running its own file.",
+            "example": "applied",
+            "type": "string"
+          },
           "configuration": {
             "description": "The stored daemon configuration.",
             "type": "object"
@@ -8673,6 +8700,13 @@
           "created_by": {
             "description": "Subject of the admin who created it",
             "type": "string"
+          },
+          "deprecations": {
+            "description": "Deprecations lists the deprecated spellings the stored configuration\nstill uses, phrased for an operator. The sidecar folds them on load,\nwhere nobody reads the warning.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "detached_rules": {
             "allOf": [
@@ -8686,6 +8720,11 @@
             "description": "Unique identifier",
             "format": "uuid",
             "readOnly": true,
+            "type": "string"
+          },
+          "last_error": {
+            "description": "LastError is the reason the sidecar gave with a refused or restart\noutcome. Empty otherwise.",
+            "example": "the control plane sent a config this build refuses: parse config: json: unknown field \"future_key\"",
             "type": "string"
           },
           "last_outcome": {

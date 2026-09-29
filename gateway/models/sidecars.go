@@ -68,6 +68,11 @@ type Sidecar struct {
 	ServedRevision  *string    `gorm:"column:served_revision"`
 	AppliedRevision *string    `gorm:"column:applied_revision"`
 	LastOutcome     *string    `gorm:"column:last_outcome"`
+	// LastError is the reason the sidecar gave with a refused or restart
+	// outcome. ServedRevisionAt is when ServedRevision last changed, so a
+	// document served a moment ago reads apart from one nobody applied.
+	LastError        *string    `gorm:"column:last_error"`
+	ServedRevisionAt *time.Time `gorm:"column:served_revision_at"`
 
 	// Capabilities is what the last handshake reported in
 	// daemon.CapabilitiesHeader. Nil until the sidecar handshakes; empty for
@@ -78,7 +83,7 @@ type Sidecar struct {
 const sidecarColumns = `
 	s.id, s.org_id, s.name, s.created_by, s.created_at, s.configuration,
 	s.last_seen_at, s.reported_version, s.served_revision, s.applied_revision, s.last_outcome,
-	s.capabilities`
+	s.last_error, s.served_revision_at, s.capabilities`
 
 func CreateSidecar(db *gorm.DB, s *Sidecar) error {
 	if s.ID == "" {
@@ -328,20 +333,35 @@ func DeleteSidecarByNameOrID(db *gorm.DB, orgID, nameOrID string) (string, error
 //
 // capabilities is stored as an array even when empty, so a build too old to
 // report reads apart from a sidecar that never handshaked.
-func RecordSidecarHandshake(db *gorm.DB, sidecarID, version, appliedRevision, lastOutcome, servedRevision string, capabilities []string) error {
+//
+// A refused or restart outcome is HELD, with its revision and reason, through
+// a handshake that reports nothing and through one that reports "unchanged".
+// A boot on a refused document exits before it can report anything, and a
+// build from before ADR-0022 decays its refusal into "unchanged" after one
+// tick; either would otherwise read as converged. Any other outcome replaces
+// what is held.
+func RecordSidecarHandshake(db *gorm.DB, sidecarID, version, appliedRevision, lastOutcome, lastError, servedRevision string, capabilities []string) error {
 	if capabilities == nil {
 		capabilities = []string{}
 	}
 	return db.Exec(`
 	UPDATE private.sidecars SET
 		last_seen_at = NOW(),
-		reported_version = NULLIF(?, ''),
-		applied_revision = NULLIF(?, ''),
-		last_outcome = NULLIF(?, ''),
-		served_revision = NULLIF(?, ''),
-		capabilities = ?
-	WHERE id = ?`, version, appliedRevision, lastOutcome, servedRevision,
-		pq.StringArray(capabilities), sidecarID).Error
+		reported_version = NULLIF(@version, ''),
+		applied_revision = CASE WHEN @outcome = '' OR (@outcome = 'unchanged' AND last_outcome IN ('refused', 'restart'))
+			THEN applied_revision ELSE NULLIF(@applied, '') END,
+		last_error = CASE WHEN @outcome = '' OR (@outcome = 'unchanged' AND last_outcome IN ('refused', 'restart'))
+			THEN last_error ELSE NULLIF(@error, '') END,
+		last_outcome = CASE WHEN @outcome = '' OR (@outcome = 'unchanged' AND last_outcome IN ('refused', 'restart'))
+			THEN last_outcome ELSE NULLIF(@outcome, '') END,
+		served_revision_at = CASE WHEN served_revision IS DISTINCT FROM NULLIF(@served, '')
+			THEN NOW() ELSE served_revision_at END,
+		served_revision = NULLIF(@served, ''),
+		capabilities = @capabilities
+	WHERE id = @id`, map[string]any{
+		"version": version, "applied": appliedRevision, "outcome": lastOutcome, "error": lastError,
+		"served": servedRevision, "capabilities": pq.StringArray(capabilities), "id": sidecarID,
+	}).Error
 }
 
 // RecordSidecarCapabilities stores what a sidecar reported when its handshake
