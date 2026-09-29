@@ -496,6 +496,43 @@ func (g *Gate) policyContext() map[string]string {
 	return g.polCtx
 }
 
+// ErrSessionStarted is returned by Adopt once the gate has judged a
+// statement.
+var ErrSessionStarted = errors.New("sidecar/gate: session facts are fixed once a statement has been judged")
+
+// Adopt records what a lane learned about the session between New and the
+// first statement: the subject a pgwire StartupMessage claimed, and the
+// metadata the lane lifted from it. The policy context is rebuilt so OPA
+// reads the same facts the audit trail records.
+//
+// subject fills Identity.Subject only when nothing else has; an identity the
+// operator's IdentityFn resolved saw a verified subject and outranks a claim.
+// metadata is merged over the session's own, copied rather than aliased.
+//
+// It refuses once a statement has been judged: a policy context that changed
+// mid-session would evaluate two statements of one session against two
+// different actors, and the first one's verdict could not be explained.
+func (g *Gate) Adopt(subject string, metadata map[string]string) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.statements > 0 {
+		return ErrSessionStarted
+	}
+	if subject != "" && g.sess.Identity.Subject == "" {
+		g.sess.Identity.Subject = subject
+	}
+	if len(metadata) > 0 {
+		md := maps.Clone(g.sess.Metadata)
+		if md == nil {
+			md = make(map[string]string, len(metadata))
+		}
+		maps.Copy(md, metadata)
+		g.sess.Metadata = md
+	}
+	g.polCtx = g.sess.PolicyContext()
+	return nil
+}
+
 // Start records the session-start event. Calling it is optional but makes an
 // abandoned connection visible in the audit trail; without it a session that
 // never issues a statement leaves no record.

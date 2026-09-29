@@ -74,6 +74,12 @@ func (m ReviewMode) Valid() bool {
 // moves.
 const HeaderReviewMode = "x-hoop-review-mode"
 
+// ConnectAttrReviewMode is the same opt-in for a MySQL connection: a
+// connection attribute in the handshake, since MySQL has no per-statement
+// header. It applies to every statement on the connection. sidecar/codec/mysql
+// keeps it on every MySQL lane.
+const ConnectAttrReviewMode = "hoop_review_mode"
+
 // applicationNameToken is how a SQL client picks its review mode: the token,
 // then hold or return, at the end of its application_name. At the end, so a
 // client keeps its own name in front of it.
@@ -122,11 +128,16 @@ const (
 // A client value outside hold and return falls back to the listener: a typo
 // must not turn an agent's call into one that waits for a human.
 func (e *Evaluator) reviewMode(ctx context.Context, stmt inspect.Statement) (ReviewMode, string) {
-	if stmt.HTTP != nil {
-		switch m := ReviewMode(strings.ToLower(strings.TrimSpace(stmt.HTTP.Headers[HeaderReviewMode]))); m {
-		case ReviewHold, ReviewReturn:
-			return m, reviewModeClient
-		}
+	var asked string
+	switch {
+	case stmt.HTTP != nil:
+		asked = stmt.HTTP.Headers[HeaderReviewMode]
+	case stmt.Protocol == inspect.MySQL:
+		asked = stmt.Metadata[inspect.MetadataMySQLConnectAttrPrefix+ConnectAttrReviewMode]
+	}
+	switch m := ReviewMode(strings.ToLower(strings.TrimSpace(asked))); m {
+	case ReviewHold, ReviewReturn:
+		return m, reviewModeClient
 	}
 	if m, ok := ctx.Value(clientReviewModeKey{}).(ReviewMode); ok {
 		return m, reviewModeClient
@@ -387,8 +398,8 @@ func holdMessage(operator, reviewID, reason string) string {
 // reviewReason turns a review's status into the clause a developer reads.
 //
 // The distinction that matters to them is whether waiting will help. Pending
-// says retry later; rejected and revoked say stop, because the backend keeps
-// a refusal and files nothing new for the same statement.
+// says retry later; rejected and revoked say stop, because a resend files a
+// new review and pages the approvers again.
 func reviewReason(status string) string {
 	switch status {
 	case reviewPending:
