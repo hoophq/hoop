@@ -78,7 +78,8 @@ function Row({ label, hint, strong, indent, selected, onClick }) {
  * the whole sidecar, or null. The fleet comes from useSidecarStore, which this
  * loads on mount and offers only once that read answers; the caller matches
  * its rules against the same fleet with `boundRuleNames`
- * (pages/Sidecars/config.js).
+ * (pages/Sidecars/config.js). A fleet that fails later clears the selection
+ * through `onClear`.
  */
 export default function SidecarListenerFilter({ selected, onSelect, onClear }) {
   const sidecars = useSidecarStore((s) => s.sidecars)
@@ -122,6 +123,12 @@ export default function SidecarListenerFilter({ selected, onSelect, onClear }) {
   // Every rule would then read as bound nowhere, so that is a failure too.
   const bindingsUnavailable = sidecars.some((sc) => sc.bound_rules_unavailable)
   const failed = !loading && (!!error || bindingsUnavailable)
+
+  // A selection made before a refresh that then fails is dropped, so the list
+  // does not read "no rules match" off bindings the fleet no longer has.
+  useEffect(() => {
+    if (selected && failed) onClear()
+  }, [selected, failed, onClear])
 
   let body
   if (loading) {
