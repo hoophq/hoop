@@ -1044,6 +1044,20 @@ const (
 	SessionEventStreamRawQueriesType SessionEventStreamType = "raw-queries"
 )
 
+// SessionRecordingFormat tells a viewer how to render the event stream.
+type SessionRecordingFormat string
+
+const (
+	// Output of a PTY: replay it with a terminal emulator.
+	SessionRecordingFormatPTY SessionRecordingFormat = "pty"
+	// Output of a command without a TTY: plain text.
+	SessionRecordingFormatExec SessionRecordingFormat = "exec"
+	// RDP frames.
+	SessionRecordingFormatRDP SessionRecordingFormat = "rdp"
+	// Protocol bytes (HTTP, SSH, TCP, databases): never a terminal stream.
+	SessionRecordingFormatRaw SessionRecordingFormat = "raw"
+)
+
 type SessionGetByIDParams struct {
 	// The file extension to donwload the session as a file content.
 	// * `csv` - it will parse the content to format in csv format
@@ -1212,6 +1226,12 @@ type Session struct {
 	// * exec - Is an ad-hoc shell execution
 	// * connect - Interactive execution, protocol port forwarding or interactive shell session
 	Verb string `json:"verb" enums:"connect,exec"`
+	// How to render the event stream
+	// * pty - terminal output, replay it with a terminal emulator
+	// * exec - plain text output of a command without a TTY
+	// * rdp - RDP frames
+	// * raw - protocol bytes, do not interpret them as terminal output
+	RecordingFormat SessionRecordingFormat `json:"recording_format" enums:"pty,exec,rdp,raw"`
 	// Status of the resource
 	// * ready - the resource is ready to be executed, after being approved by a user
 	// * open - the session started and it's running

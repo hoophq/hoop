@@ -64,36 +64,21 @@
            "Download"
            [:> Download {:size 16}]])]]]]))
 
-(defmulti ^:private session-event-stream identity)
-(defmethod ^:private session-event-stream "command-line"
-  [_ session]
-  (let [event-stream (:event_stream session)
-        session-id (:id session)
-        start-date (:start_date session)]
-    [session-data-video/main event-stream session-id start-date]))
+;; The gateway derives :recording_format from the protocol the session ran.
+;; Only a PTY stream goes to the terminal player: HTTP, SSH and TCP bytes
+;; replayed as terminal output render as garbage.
+(defmulti ^:private session-event-stream :recording_format)
+(defmethod ^:private session-event-stream "pty"
+  [session]
+  [session-data-video/main (:event_stream session) (:id session)])
 
-(defmethod ^:private session-event-stream "application"
-  [_ session]
-  (let [event-stream (:event_stream session)
-        session-id (:id session)
-        start-date (:start_date session)]
-    [session-data-video/main event-stream session-id start-date]))
-
-(defmethod ^:private session-event-stream "custom"
-  [_ session]
-  (let [event-stream (:event_stream session)
-        session-id (:id session)
-        connection-subtype (:connection_subtype session)
-        metrics (:metrics session)]
-    (if (= connection-subtype "rdp")
-      [session-data-rdp/main event-stream session-id metrics]
-      [session-data-video/main event-stream session-id])))
+(defmethod ^:private session-event-stream "rdp"
+  [session]
+  [session-data-rdp/main (:event_stream session) (:id session) (:metrics session)])
 
 (defmethod ^:private session-event-stream :default
-  [_ session]
-  (let [start-date (:start_date session)
-        event-stream (:event_stream session)]
-    [session-data-raw/main event-stream start-date]))
+  [session]
+  [session-data-raw/main (:event_stream session) (:start_date session)])
 
 (defmulti ^:private review-status-icon identity)
 (defmethod ^:private review-status-icon "PENDING" [] "waiting-circle-yellow")
@@ -402,7 +387,7 @@
                              :has-large-payload? has-large-payload?}]])))
 
                     ;; connect: session-event-stream unchanged (video player, raw, etc.)
-                    [session-event-stream (:type session) session])])])
+                    [session-event-stream session])])])
 
             ;; action buttons section
             (when can-review?

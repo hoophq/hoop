@@ -19440,6 +19440,20 @@ const docTemplate = `{
                     "format": "uuid",
                     "example": "0CD7F941-2BB8-4F9F-93B0-11620D4652AB"
                 },
+                "recording_format": {
+                    "description": "How to render the event stream\n* pty - terminal output, replay it with a terminal emulator\n* exec - plain text output of a command without a TTY\n* rdp - RDP frames\n* raw - protocol bytes, do not interpret them as terminal output",
+                    "enum": [
+                        "pty",
+                        "exec",
+                        "rdp",
+                        "raw"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.SessionRecordingFormat"
+                        }
+                    ]
+                },
                 "resource_name": {
                     "description": "The resource name associated with this connection",
                     "type": "string",
@@ -19798,6 +19812,21 @@ const docTemplate = `{
                     "example": 12
                 }
             }
+        },
+        "openapi.SessionRecordingFormat": {
+            "type": "string",
+            "enum": [
+                "pty",
+                "exec",
+                "rdp",
+                "raw"
+            ],
+            "x-enum-varnames": [
+                "SessionRecordingFormatPTY",
+                "SessionRecordingFormatExec",
+                "SessionRecordingFormatRDP",
+                "SessionRecordingFormatRaw"
+            ]
         },
         "openapi.SessionReport": {
             "type": "object",

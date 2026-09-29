@@ -298,12 +298,10 @@
         (let [start-date (:start_date session)
               connection-subtype (:connection_subtype session)
               postgres? (= connection-subtype "postgres")
-              ;; PTY connections (shell/ssh/…) — the set that uses the asciinema
-              ;; view once finished. Rendered as a terminal; everything else keeps
-              ;; the per-event row list.
-              terminal? (and (contains? #{"custom" "command-line" "application"}
-                                        (:type session))
-                             (not= connection-subtype "rdp"))
+              ;; Only a PTY stream renders as a terminal, the same rule as the
+              ;; finished-session view; everything else keeps the per-event
+              ;; row list.
+              terminal? (= "pty" (:recording_format session))
               ;; Derive the stream pill state. We prefer whatever the SSE
               ;; effect handler wrote, but if the session has already moved
               ;; to "done" (e.g. we re-opened a previously-live modal) we

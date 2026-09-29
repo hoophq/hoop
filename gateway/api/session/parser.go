@@ -57,6 +57,7 @@ func toOpenApiSession(s *models.Session, hasInputExpanded bool) *openapi.Session
 		ConnectionTags:       s.ConnectionTags,
 		Review:               topOpenApiReview(s.Review),
 		Verb:                 s.Verb,
+		RecordingFormat:      recordingFormat(s),
 		Status:               openapi.SessionStatusType(s.Status),
 		ExitCode:             s.ExitCode,
 		EventStream:          blobStream,
@@ -70,6 +71,23 @@ func toOpenApiSession(s *models.Session, hasInputExpanded bool) *openapi.Session
 		IdentityType:         s.IdentityType,
 		MachineIdentityID:    s.MachineIdentityID,
 	}
+}
+
+// recordingFormat derives the format from the protocol the client and agent
+// select for the session (client/cmd/connect.go, agent/controller/agent.go).
+// Only connect on a command-line connection allocates a PTY; every other
+// protocol records its own wire bytes, SSH included (sshtypes framing).
+func recordingFormat(s *models.Session) openapi.SessionRecordingFormat {
+	connType := proto.ToConnectionType(s.ConnectionType, s.ConnectionSubtype)
+	switch {
+	case connType == proto.ConnectionTypeRDP:
+		return openapi.SessionRecordingFormatRDP
+	case s.Verb != proto.ClientVerbConnect:
+		return openapi.SessionRecordingFormatExec
+	case connType == proto.ConnectionTypeCommandLine:
+		return openapi.SessionRecordingFormatPTY
+	}
+	return openapi.SessionRecordingFormatRaw
 }
 
 func toOpenApiSessionGuardRailsInfo(items []models.SessionGuardRailsInfo) []openapi.SessionGuardRailsInfo {

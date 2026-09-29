@@ -7922,6 +7922,20 @@
             "format": "uuid",
             "type": "string"
           },
+          "recording_format": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/openapi.SessionRecordingFormat"
+              }
+            ],
+            "description": "How to render the event stream\n* pty - terminal output, replay it with a terminal emulator\n* exec - plain text output of a command without a TTY\n* rdp - RDP frames\n* raw - protocol bytes, do not interpret them as terminal output",
+            "enum": [
+              "pty",
+              "exec",
+              "rdp",
+              "raw"
+            ]
+          },
           "resource_name": {
             "description": "The resource name associated with this connection",
             "example": "my-resource",
@@ -8281,6 +8295,21 @@
           }
         },
         "type": "object"
+      },
+      "openapi.SessionRecordingFormat": {
+        "enum": [
+          "pty",
+          "exec",
+          "rdp",
+          "raw"
+        ],
+        "type": "string",
+        "x-enum-varnames": [
+          "SessionRecordingFormatPTY",
+          "SessionRecordingFormatExec",
+          "SessionRecordingFormatRDP",
+          "SessionRecordingFormatRaw"
+        ]
       },
       "openapi.SessionReport": {
         "properties": {
