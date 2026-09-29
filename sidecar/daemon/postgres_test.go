@@ -16,7 +16,7 @@ func TestPostgresStartupMetadataConfigValidation(t *testing.T) {
 			StartupMetadataConfig{Parameter: "application_name"},
 		)},
 	}
-	if problems := (&Config{}).validateLane(valid, valid.Name); len(problems) != 0 {
+	if problems := (&Config{}).validateLane(valid, valid.Name, true); len(problems) != 0 {
 		t.Fatalf("valid config problems = %v", problems)
 	}
 
@@ -55,7 +55,7 @@ func TestPostgresStartupMetadataConfigValidation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			lc := valid
 			tc.mutate(&lc)
-			problems := strings.Join((&Config{}).validateLane(lc, lc.Name), "\n")
+			problems := strings.Join((&Config{}).validateLane(lc, lc.Name, true), "\n")
 			for _, w := range tc.want {
 				if !strings.Contains(problems, w) {
 					t.Errorf("problems = %q, want one mentioning %q", problems, w)

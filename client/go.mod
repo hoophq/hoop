@@ -25,7 +25,8 @@ require (
 	github.com/hoophq/hoop/sidecar/config/yaml v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/sidecar/descriptors/gcs v0.0.0-00010101000000-000000000000
 	github.com/hoophq/hoop/sidecar/pii/alcatraz v0.0.0-00010101000000-000000000000
-	github.com/hoophq/libhoop v0.0.0-20260925162911-6724f4eda8b2
+	github.com/hoophq/libhoop v0.0.0-20260929214837-7bf5e47c42a8
+	github.com/lib/pq v1.12.3
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/crypto v0.56.0
 	golang.org/x/mod v0.38.0
@@ -166,7 +167,6 @@ require (
 	github.com/knights-analytics/ortgenai v0.3.2 // indirect
 	github.com/kr/fs v0.1.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
-	github.com/lib/pq v1.12.3 // indirect
 	github.com/lucasb-eyer/go-colorful v1.4.0 // indirect
 	github.com/lufia/plan9stats v0.0.0-20260330125221-c963978e514e // indirect
 	github.com/mattermost/xml-roundtrip-validator v0.1.0 // indirect

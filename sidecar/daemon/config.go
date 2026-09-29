@@ -373,7 +373,7 @@ type ListenerConfig struct {
 	// Postgres configures what a postgres lane reads from the client's
 	// StartupMessage beyond the user. Only valid on a postgres lane. See
 	// PostgresConfig.
-	Postgres *PostgresConfig `json:"postgres,omitempty"`
+	Postgres *PostgresConfig `json:"postgres,omitempty" ui:"-"`
 
 	// GRPC configures what this lane's gRPC transport decodes and exposes.
 	// Only valid on a grpc lane. See GRPCCodecConfig.
