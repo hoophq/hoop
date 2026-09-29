@@ -76,8 +76,9 @@ function Row({ label, hint, strong, indent, selected, onClick }) {
  *
  * `selected` is `{ sidecarId, listenerName }`, with an empty listener name for
  * the whole sidecar, or null. The fleet comes from useSidecarStore, which this
- * loads on mount; the caller matches its rules against the same fleet with
- * `boundRuleNames` (pages/Sidecars/config.js).
+ * loads on mount and offers only once that read answers; the caller matches
+ * its rules against the same fleet with `boundRuleNames`
+ * (pages/Sidecars/config.js).
  */
 export default function SidecarListenerFilter({ selected, onSelect, onClear }) {
   const sidecars = useSidecarStore((s) => s.sidecars)
@@ -112,11 +113,14 @@ export default function SidecarListenerFilter({ selected, onSelect, onClear }) {
   const isSelected = (sidecarId, listenerName) =>
     selected?.sidecarId === sidecarId && (selected?.listenerName ?? '') === listenerName
 
-  // A fleet that did not load is not an empty fleet.
-  const failed = !loading && !!error && sidecars.length === 0
+  // The store keeps the last fleet through a refresh and after a failed one.
+  // Offering it would match rules against bindings that may have changed since,
+  // so a pending read shows the loader and a failed one the error, whatever the
+  // store still holds. A fleet that did not load is not an empty fleet either.
+  const failed = !loading && !!error
 
   let body
-  if (loading && sidecars.length === 0) {
+  if (loading) {
     body = (
       <Group justify="center" py="md">
         <Loader size="xs" />
