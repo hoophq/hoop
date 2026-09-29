@@ -74,6 +74,42 @@ func (m ReviewMode) Valid() bool {
 // moves.
 const HeaderReviewMode = "x-hoop-review-mode"
 
+// applicationNameToken is how a SQL client picks its review mode: the token,
+// then hold or return, at the end of its application_name. At the end, so a
+// client keeps its own name in front of it.
+const applicationNameToken = "hoop-review="
+
+// ApplicationNameReviewMode reads the mode a Postgres client asked for in its
+// application_name, or "" when it asked for none.
+//
+// The token is the whole value, or follows a space or ";". A name that only
+// contains the token inside a word, like "xhoop-review=return", is the
+// client's own name and not a request.
+func ApplicationNameReviewMode(name string) ReviewMode {
+	name = strings.ToLower(strings.TrimSpace(name))
+	i := strings.LastIndex(name, applicationNameToken)
+	if i < 0 || (i > 0 && !strings.ContainsRune(" ;", rune(name[i-1]))) {
+		return ""
+	}
+	switch m := ReviewMode(name[i+len(applicationNameToken):]); m {
+	case ReviewHold, ReviewReturn:
+		return m
+	}
+	return ""
+}
+
+type clientReviewModeKey struct{}
+
+// WithClientReviewMode carries a connection's own review mode to every
+// statement on it. For protocols that ask once per connection, where a
+// statement has no header to carry it. An unknown mode leaves ctx as is.
+func WithClientReviewMode(ctx context.Context, m ReviewMode) context.Context {
+	if m != ReviewHold && m != ReviewReturn {
+		return ctx
+	}
+	return context.WithValue(ctx, clientReviewModeKey{}, m)
+}
+
 // Where a review mode came from, recorded as MetadataReviewModeSource.
 const (
 	reviewModeListener = "listener"
@@ -85,12 +121,15 @@ const (
 //
 // A client value outside hold and return falls back to the listener: a typo
 // must not turn an agent's call into one that waits for a human.
-func (e *Evaluator) reviewMode(stmt inspect.Statement) (ReviewMode, string) {
+func (e *Evaluator) reviewMode(ctx context.Context, stmt inspect.Statement) (ReviewMode, string) {
 	if stmt.HTTP != nil {
 		switch m := ReviewMode(strings.ToLower(strings.TrimSpace(stmt.HTTP.Headers[HeaderReviewMode]))); m {
 		case ReviewHold, ReviewReturn:
 			return m, reviewModeClient
 		}
+	}
+	if m, ok := ctx.Value(clientReviewModeKey{}).(ReviewMode); ok {
+		return m, reviewModeClient
 	}
 	if e.cfg.ReviewMode == ReviewReturn {
 		return ReviewReturn, reviewModeListener
@@ -152,7 +191,7 @@ const (
 // ctx is the connection's. It ends the wait when the client or the upstream
 // goes away, so an approval is never spent on a statement that cannot run.
 func (e *Evaluator) hold(ctx context.Context, stmt inspect.Statement, notes map[string]string) policy.Verdict {
-	mode, source := e.reviewMode(stmt)
+	mode, source := e.reviewMode(ctx, stmt)
 	notes[MetadataReviewMode] = string(mode)
 	notes[MetadataReviewModeSource] = source
 

@@ -33,6 +33,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/audit"
 	"github.com/hoophq/hoop/sidecar/gate"
 	"github.com/hoophq/hoop/sidecar/inspect"
@@ -638,7 +639,7 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 	// A negotiation failure is neither a policy denial nor a protocol error
 	// worth an audit event: it is a connection that never became a session.
 	// It closes quietly, the same as a client hanging up mid-handshake.
-	client, claimedUser, negErr := negotiateDownstream(
+	client, startup, negErr := negotiateDownstream(
 		client, s.cfg.Protocol, s.cfg.DownstreamTLS, s.cfg.DialTimeout)
 	if negErr != nil {
 		log.Debug("downstream negotiation failed", "error", negErr)
@@ -653,8 +654,8 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 	// Written here, before the pumps start, so the two pump goroutines only
 	// ever read it. An IdentityFn the operator supplied wins, because it saw
 	// a verified subject from the fronting proxy and this is a client claim.
-	if claimedUser != "" && sess.Identity.Subject == "" {
-		sess.Identity.Subject = claimedUser
+	if startup.user != "" && sess.Identity.Subject == "" {
+		sess.Identity.Subject = startup.user
 		log = sessionLog()
 	}
 
@@ -664,7 +665,11 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 	// it. ctx is the listener's and outlives every connection, so a hold
 	// waiting on a human under it would outlive the client too, and spend an
 	// approval on a statement nobody is left to run.
-	connCtx, endConn := context.WithCancelCause(ctx)
+	//
+	// It also carries the review mode a pgwire client asked for in its
+	// application_name, the SQL form of the http header (ADR-0021).
+	connCtx, endConn := context.WithCancelCause(analyzer.WithClientReviewMode(
+		ctx, analyzer.ApplicationNameReviewMode(startup.applicationName)))
 	defer endConn(nil)
 
 	// Both directions run concurrently; the first to finish tears down the
