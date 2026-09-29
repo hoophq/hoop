@@ -84,17 +84,55 @@ func TestStartupMetadataLiftsOnlyWhatWasConfigured(t *testing.T) {
 	}
 	got := startupMetadata(params, []StartupMetadata{
 		{Option: "Claude.Session.Id", Key: "claude.session.id"},
-		{Parameter: "application_name", Key: "postgres.parameter.application_name"},
+		{Parameter: "application_name"},
 		// Configured but not sent: no key, rather than an empty value a
 		// policy could not tell from "sent empty".
 		{Option: "claude.agent.id", Key: "claude.agent.id"},
-	})
+	}, false)
 	want := map[string]string{
 		"claude.session.id":                   "xyz1234678",
 		"postgres.parameter.application_name": "claude-code",
 	}
 	if !maps.Equal(got, want) {
 		t.Fatalf("metadata = %v, want %v", got, want)
+	}
+}
+
+// The default a lane takes with no list: every setting `options` assigns, and
+// nothing else from the packet. Keys carry the normalized name under one
+// prefix, so a client-chosen name cannot reach a key the relay owns: here
+// `principal` becomes postgres.option.principal, never input.context.principal.
+func TestAllStartupOptionsRecordsEverySettingUnderItsPrefix(t *testing.T) {
+	params := map[string]string{
+		"user":             "alice",
+		"application_name": "claude-code",
+		"options":          "-c claude.session.id=xyz -c Search-Path=private --principal=mallory",
+	}
+	got := startupMetadata(params, nil, true)
+	want := map[string]string{
+		"postgres.option.claude.session.id": "xyz",
+		"postgres.option.search_path":       "private",
+		"postgres.option.principal":         "mallory",
+	}
+	if !maps.Equal(got, want) {
+		t.Fatalf("metadata = %v, want %v", got, want)
+	}
+	if got := startupMetadata(map[string]string{"user": "alice"}, nil, true); got != nil {
+		t.Fatalf("no options recorded %v, want nothing", got)
+	}
+}
+
+// Narrowing a lane from every option to a list must keep the key a dashboard
+// already queries, so a field with no `as` writes what the default wrote.
+func TestFieldWithoutKeyWritesTheDefaultKey(t *testing.T) {
+	params := map[string]string{"options": "-c Claude.Session-Id=xyz"}
+	all := startupMetadata(params, nil, true)
+	one := startupMetadata(params, []StartupMetadata{{Option: "claude.session_id"}}, false)
+	if !maps.Equal(all, one) {
+		t.Fatalf("default wrote %v, the field wrote %v; want the same key", all, one)
+	}
+	if k := (StartupMetadata{Parameter: "application_name"}).MetadataKey(); k != "postgres.parameter.application_name" {
+		t.Fatalf("parameter default key = %q", k)
 	}
 }
 
@@ -106,6 +144,7 @@ func TestStartupMetadataValueIsBounded(t *testing.T) {
 	got := startupMetadata(
 		map[string]string{"application_name": long},
 		[]StartupMetadata{{Parameter: "application_name", Key: "app"}},
+		false,
 	)["app"]
 	if len(got) > maxStartupMetadataValue {
 		t.Fatalf("value is %d bytes, want at most %d", len(got), maxStartupMetadataValue)
@@ -129,7 +168,6 @@ func TestStartupMetadataRefusesUnusableFields(t *testing.T) {
 		{"reserved key", StartupMetadata{Option: "claude.user", Key: "principal"}, "reserved"},
 		{"no source", StartupMetadata{Key: "k"}, "neither"},
 		{"two sources", StartupMetadata{Option: "a.b", Parameter: "application_name", Key: "k"}, "both"},
-		{"no key", StartupMetadata{Option: "a.b"}, "no key"},
 		{"option carries a value", StartupMetadata{Option: "a.b=1", Key: "k"}, "not a setting name"},
 		{"option carries a space", StartupMetadata{Option: "a b", Key: "k"}, "not a setting name"},
 	} {

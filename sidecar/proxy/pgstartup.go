@@ -11,7 +11,7 @@ import (
 
 // StartupMetadata lifts one value out of a pgwire StartupMessage into the
 // session's metadata, so every statement the session runs carries it on its
-// audit record and in the OPA input as input.context.<Key>.
+// audit record and in the OPA input as input.context.<key>.
 //
 // It exists for end-to-end tracing. A client that knows which task or agent
 // run it serves (PGOPTIONS='-c claude.session.id=...') can stamp that on the
@@ -33,8 +33,34 @@ type StartupMetadata struct {
 	// matched exactly. Exclusive with Option.
 	Parameter string
 
-	// Key is the session metadata key the value is recorded under.
+	// Key is the session metadata key the value is recorded under. Empty
+	// records it under MetadataKey's default.
 	Key string
+}
+
+// Metadata key prefixes for a value recorded without an operator-chosen key.
+// No codec and no PolicyContext field writes under either, so a key built from
+// a client-chosen setting name cannot land on anything the relay owns.
+const (
+	MetadataOptionPrefix    = "postgres.option."
+	MetadataParameterPrefix = "postgres.parameter."
+)
+
+// MetadataKey is the key this field writes: Key when set, otherwise
+// postgres.option.<name> with the name normalized as Postgres reads it, or
+// postgres.parameter.<parameter>. The option spelling matches what
+// AllStartupOptions records for the same setting, so narrowing a lane from
+// every option to a list keeps the keys a dashboard already queries.
+func (f StartupMetadata) MetadataKey() string {
+	switch {
+	case f.Key != "":
+		return f.Key
+	case f.Option != "":
+		return MetadataOptionPrefix + pgSettingName(f.Option)
+	case f.Parameter != "":
+		return MetadataParameterPrefix + f.Parameter
+	}
+	return ""
 }
 
 // maxStartupMetadataValue bounds one lifted value, in bytes. The value is
@@ -45,19 +71,18 @@ const maxStartupMetadataValue = 256
 
 // Validate reports a field that cannot be applied.
 func (f StartupMetadata) Validate() error {
+	key := f.MetadataKey()
 	switch {
 	case f.Option == "" && f.Parameter == "":
 		return errors.New("startup metadata names neither an option nor a parameter")
 	case f.Option != "" && f.Parameter != "":
 		return fmt.Errorf("startup metadata names both option %q and parameter %q; keep one",
 			f.Option, f.Parameter)
-	case f.Key == "":
-		return errors.New("startup metadata has no key")
-	case session.ReservedContextKey(f.Key):
+	case session.ReservedContextKey(key):
 		// The value is the client's, so letting it land on a key the
 		// policy context owns would let a client name its own principal.
 		return fmt.Errorf("startup metadata key %q is reserved: input.context.%s is set by the relay",
-			f.Key, f.Key)
+			key, key)
 	}
 	if f.Option != "" && strings.ContainsAny(f.Option, "= \t\r\n\v\f\\\x00") {
 		return fmt.Errorf("startup metadata option %q is not a setting name", f.Option)
@@ -77,19 +102,41 @@ func validateStartupMetadata(fields []StartupMetadata) error {
 		if err := f.Validate(); err != nil {
 			return err
 		}
-		if seen[f.Key] {
-			return fmt.Errorf("startup metadata key %q is written by two fields", f.Key)
+		key := f.MetadataKey()
+		if seen[key] {
+			return fmt.Errorf("startup metadata key %q is written by two fields", key)
 		}
-		seen[f.Key] = true
+		seen[key] = true
 	}
 	return nil
 }
 
-// startupMetadata resolves fields against the parameters a StartupMessage
-// carried. A field whose source is absent records nothing: no key rather than
-// an empty value, so a policy can tell "not sent" from "sent empty".
-func startupMetadata(params map[string]string, fields []StartupMetadata) map[string]string {
-	if len(params) == 0 || len(fields) == 0 {
+// startupMetadata resolves what a StartupMessage carried into session
+// metadata. With all set it records every setting `options` assigns, under
+// MetadataOptionPrefix; otherwise only fields. A source that is absent records
+// nothing: no key rather than an empty value, so a policy can tell "not sent"
+// from "sent empty".
+//
+// All mode has no count limit of its own. It needs none: every setting came
+// out of one StartupMessage, which startupParams refuses above
+// maxStartupPacket, so what one session can add to each of its records is
+// bounded by that packet.
+func startupMetadata(params map[string]string, fields []StartupMetadata, all bool) map[string]string {
+	if len(params) == 0 {
+		return nil
+	}
+	if all {
+		settings := pgOptionSettings(params["options"])
+		if len(settings) == 0 {
+			return nil
+		}
+		out := make(map[string]string, len(settings))
+		for name, v := range settings {
+			out[MetadataOptionPrefix+name] = truncateUTF8(v, maxStartupMetadataValue)
+		}
+		return out
+	}
+	if len(fields) == 0 {
 		return nil
 	}
 	var (
@@ -116,7 +163,7 @@ func startupMetadata(params map[string]string, fields []StartupMetadata) map[str
 		if out == nil {
 			out = make(map[string]string, len(fields))
 		}
-		out[f.Key] = truncateUTF8(v, maxStartupMetadataValue)
+		out[f.MetadataKey()] = truncateUTF8(v, maxStartupMetadataValue)
 	}
 	return out
 }

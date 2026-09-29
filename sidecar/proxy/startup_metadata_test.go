@@ -27,92 +27,105 @@ func pgStartupWith(kv ...string) []byte {
 }
 
 // A client that sets PGOPTIONS='-c claude.session.id=...' gets that id on
-// every statement it runs and on the session's closing record, and the
-// startup packet still reaches the upstream byte for byte: the backend has to
-// see the same options, or the setting the database reads and the one the
-// trail records could differ.
+// every statement it runs and on the session's closing record, whether the
+// lane records every option or names this one, and the startup packet still
+// reaches the upstream byte for byte: the backend has to see the same
+// options, or the setting the database reads and the one the trail records
+// could differ.
 func TestStartupOptionReachesTheTrail(t *testing.T) {
-	up := newEchoUpstream(t, nil)
-	sink := audit.NewMemorySink(64)
-	srv := startServer(t, proxy.Config{
-		Upstream:   up.addr(),
-		Protocol:   inspect.Postgres,
-		Connection: "appdb",
-		Audit:      sink,
-		StartupMetadata: []proxy.StartupMetadata{
+	for _, tc := range []struct {
+		name string
+		cfg  proxy.Config
+		key  string
+	}{
+		{"every option", proxy.Config{AllStartupOptions: true}, "postgres.option.claude.session.id"},
+		{"a named option", proxy.Config{StartupMetadata: []proxy.StartupMetadata{
 			{Option: "claude.session.id", Key: "claude.session.id"},
-		},
-	})
+		}}, "claude.session.id"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			up := newEchoUpstream(t, nil)
+			sink := audit.NewMemorySink(64)
+			cfg := tc.cfg
+			cfg.Upstream, cfg.Protocol, cfg.Connection, cfg.Audit = up.addr(), inspect.Postgres, "appdb", sink
+			srv := startServer(t, cfg)
 
-	startup := pgStartupWith(
-		"user", "alice", "database", "appdb",
-		"options", "-c claude.session.id=xyz1234678")
-	c, err := net.Dial("tcp", srv.Addr().String())
-	if err != nil {
-		t.Fatalf("dial: %v", err)
-	}
-	if _, err := c.Write(startup); err != nil {
-		t.Fatalf("startup: %v", err)
-	}
-	if _, err := c.Write(pgQuery("SELECT 1")); err != nil {
-		t.Fatalf("query: %v", err)
-	}
-	c.SetReadDeadline(time.Now().Add(2 * time.Second))
-	if _, err := c.Read(make([]byte, 512)); err != nil {
-		t.Fatalf("read: %v", err)
-	}
-	c.Close()
-
-	var stmt, end *audit.Event
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) && (stmt == nil || end == nil) {
-		for _, ev := range sink.Events() {
-			switch {
-			case ev.Kind == audit.KindStatement && strings.Contains(ev.Statement, "SELECT 1"):
-				stmt = &ev
-			case ev.Kind == audit.KindSessionEnd:
-				end = &ev
+			startup := pgStartupWith(
+				"user", "alice", "database", "appdb",
+				"options", "-c claude.session.id=xyz1234678")
+			c, err := net.Dial("tcp", srv.Addr().String())
+			if err != nil {
+				t.Fatalf("dial: %v", err)
 			}
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	if stmt == nil || end == nil {
-		t.Fatalf("statement=%v session_end=%v; want both recorded", stmt != nil, end != nil)
-	}
-	for _, ev := range []*audit.Event{stmt, end} {
-		if got := ev.Metadata["claude.session.id"]; got != "xyz1234678" {
-			t.Errorf("%s metadata[claude.session.id] = %q, want xyz1234678", ev.Kind, got)
-		}
-		if ev.Principal != "alice" {
-			t.Errorf("%s principal = %q, want alice", ev.Kind, ev.Principal)
-		}
-	}
-	if !strings.HasPrefix(string(up.got()), string(startup)) {
-		t.Error("the upstream did not receive the startup packet intact")
+			if _, err := c.Write(startup); err != nil {
+				t.Fatalf("startup: %v", err)
+			}
+			if _, err := c.Write(pgQuery("SELECT 1")); err != nil {
+				t.Fatalf("query: %v", err)
+			}
+			c.SetReadDeadline(time.Now().Add(2 * time.Second))
+			if _, err := c.Read(make([]byte, 512)); err != nil {
+				t.Fatalf("read: %v", err)
+			}
+			c.Close()
+
+			var stmt, end *audit.Event
+			deadline := time.Now().Add(3 * time.Second)
+			for time.Now().Before(deadline) && (stmt == nil || end == nil) {
+				for _, ev := range sink.Events() {
+					switch {
+					case ev.Kind == audit.KindStatement && strings.Contains(ev.Statement, "SELECT 1"):
+						stmt = &ev
+					case ev.Kind == audit.KindSessionEnd:
+						end = &ev
+					}
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+			if stmt == nil || end == nil {
+				t.Fatalf("statement=%v session_end=%v; want both recorded", stmt != nil, end != nil)
+			}
+			for _, ev := range []*audit.Event{stmt, end} {
+				if got := ev.Metadata[tc.key]; got != "xyz1234678" {
+					t.Errorf("%s metadata[%s] = %q, want xyz1234678", ev.Kind, tc.key, got)
+				}
+				if ev.Principal != "alice" {
+					t.Errorf("%s principal = %q, want alice", ev.Kind, ev.Principal)
+				}
+			}
+			if !strings.HasPrefix(string(up.got()), string(startup)) {
+				t.Error("the upstream did not receive the startup packet intact")
+			}
+		})
 	}
 }
 
 // Startup metadata is read from a pgwire StartupMessage. On another lane it
-// would load and record nothing, and a key the policy context owns would let
-// the client name its own principal; both are refused at construction.
+// would load and record nothing, a key the policy context owns would let the
+// client name its own principal, and asking for every option and a list at
+// once leaves one deciding what the other meant; all refused at construction.
 func TestStartupMetadataIsRefusedWhereItCannotApply(t *testing.T) {
+	named := []proxy.StartupMetadata{{Option: "claude.session.id", Key: "claude.session.id"}}
 	for _, tc := range []struct {
-		name  string
-		proto inspect.Protocol
-		field proxy.StartupMetadata
-		want  string
+		name   string
+		proto  inspect.Protocol
+		fields []proxy.StartupMetadata
+		all    bool
+		want   string
 	}{
-		{"not postgres", inspect.MySQL,
-			proxy.StartupMetadata{Option: "claude.session.id", Key: "claude.session.id"}, "not a mysql lane"},
+		{"list off postgres", inspect.MySQL, named, false, "not a mysql lane"},
+		{"every option off postgres", inspect.MySQL, nil, true, "not a mysql lane"},
 		{"reserved key", inspect.Postgres,
-			proxy.StartupMetadata{Option: "claude.user", Key: "principal"}, "reserved"},
+			[]proxy.StartupMetadata{{Option: "claude.user", Key: "principal"}}, false, "reserved"},
+		{"both modes", inspect.Postgres, named, true, "keep one"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := proxy.NewServer(proxy.Config{
-				Listen:          "127.0.0.1:0",
-				Upstream:        "127.0.0.1:1",
-				Protocol:        tc.proto,
-				StartupMetadata: []proxy.StartupMetadata{tc.field},
+				Listen:            "127.0.0.1:0",
+				Upstream:          "127.0.0.1:1",
+				Protocol:          tc.proto,
+				StartupMetadata:   tc.fields,
+				AllStartupOptions: tc.all,
 			})
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("NewServer = %v, want an error mentioning %q", err, tc.want)

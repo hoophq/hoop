@@ -155,6 +155,16 @@ type Config struct {
 	// StartupMetadata.
 	StartupMetadata []StartupMetadata
 
+	// AllStartupOptions records every setting the StartupMessage's `options`
+	// parameter assigns, each under postgres.option.<name>. Exclusive with
+	// StartupMetadata, which names the few a lane wants instead. Postgres
+	// lanes only.
+	//
+	// Off in the zero Config: a library caller opts in. The daemon turns it on
+	// for a postgres lane that configures no startup_metadata list, because
+	// that default is the product's decision, not this package's.
+	AllStartupOptions bool
+
 	// Metrics is handed to every connection's Gate. Optional. See
 	// gate.Config.Metrics for the contract it must meet.
 	Metrics gate.Metrics
@@ -257,11 +267,17 @@ func NewServer(cfg Config) (*Server, error) {
 			cfg.Protocol,
 		)
 	}
-	if len(cfg.StartupMetadata) > 0 {
+	if len(cfg.StartupMetadata) > 0 || cfg.AllStartupOptions {
 		if cfg.Protocol != inspect.Postgres {
 			return nil, fmt.Errorf(
 				"sidecar/proxy: startup metadata is read from a pgwire StartupMessage, not a %s lane",
 				cfg.Protocol)
+		}
+		if cfg.AllStartupOptions && len(cfg.StartupMetadata) > 0 {
+			// Both would leave one of them deciding what the other
+			// recorded; a lane that wants every option names none.
+			return nil, errors.New(
+				"sidecar/proxy: AllStartupOptions and StartupMetadata both select what is recorded; keep one")
 		}
 		if err := validateStartupMetadata(cfg.StartupMetadata); err != nil {
 			return nil, fmt.Errorf("sidecar/proxy: %w", err)
@@ -670,7 +686,7 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 	// wins, because it saw a verified subject from the fronting proxy and
 	// this is a client claim.
 	claimedUser := startup["user"]
-	md := startupMetadata(startup, s.cfg.StartupMetadata)
+	md := startupMetadata(startup, s.cfg.StartupMetadata, s.cfg.AllStartupOptions)
 	if claimedUser != "" || len(md) > 0 {
 		if err := g.Adopt(claimedUser, md); err != nil {
 			log.Error("startup facts not adopted", "error", err)
