@@ -124,6 +124,11 @@ const (
 	ClientVerbExec      = "exec"
 	ClientVerbPlainExec = "plain-exec"
 
+	RecordingFormatPTY  = "pty"
+	RecordingFormatExec = "exec"
+	RecordingFormatRDP  = "rdp"
+	RecordingFormatRaw  = "raw"
+
 	// SessionOrigin* are the product-level origins of a session. They are
 	// persisted on the session record (sessions.origin) and emitted on the
 	// session analytics events so we can tell how a session was initiated.

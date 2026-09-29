@@ -18,6 +18,7 @@
    [reagent.core :as r]
    [webapp.audit.views.empty-event-stream :as empty-event-stream]
    [webapp.audit.views.pg-wire :as pg-wire]
+   [webapp.audit.views.session-format :as session-format]
    [webapp.audit.views.terminal-decoder :as terminal-decoder]
    [webapp.utilities :as utilities]))
 
@@ -299,10 +300,9 @@
         (let [start-date (:start_date session)
               connection-subtype (:connection_subtype session)
               postgres? (= connection-subtype "postgres")
-              ;; Only a PTY stream renders as a terminal, the same rule as the
-              ;; finished-session view; everything else keeps the per-event
-              ;; row list.
-              terminal? (= "pty" (:recording_format session))
+              ;; Historical sessions keep the viewer selected before the
+              ;; recording format was persisted.
+              terminal? (= "pty" (session-format/recording-format session))
               ;; Derive the stream pill state. We prefer whatever the SSE
               ;; effect handler wrote, but if the session has already moved
               ;; to "done" (e.g. we re-opened a previously-live modal) we

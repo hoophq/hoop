@@ -13,6 +13,7 @@
    [webapp.audit.views.session-data-video :as session-data-video]
    [webapp.audit.views.session-data-rdp :as session-data-rdp]
    [webapp.audit.views.session-live-tail :as session-live-tail]
+   [webapp.audit.views.session-format :as session-format]
    [webapp.audit.views.data-masking-analytics :as data-masking-analytics]
    [webapp.audit.views.guardrails-info :as guardrails-info]
    [webapp.features.ai-session-analyzer.views.session-analysis :as session-analysis]
@@ -64,10 +65,9 @@
            "Download"
            [:> Download {:size 16}]])]]]]))
 
-;; The gateway derives :recording_format from the protocol the session ran.
-;; Only a PTY stream goes to the terminal player: HTTP, SSH and TCP bytes
-;; replayed as terminal output render as garbage.
-(defmulti ^:private session-event-stream :recording_format)
+;; New sessions declare their byte format; historical sessions keep the viewer
+;; selected when they were recorded.
+(defmulti ^:private session-event-stream session-format/recording-format)
 (defmethod ^:private session-event-stream "pty"
   [session]
   [session-data-video/main (:event_stream session) (:id session)])
