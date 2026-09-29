@@ -574,8 +574,8 @@ either way.
   a runnable stack: Envoy terminating TLS, OPA answering reachability, the
   relay behind it, Postgres and an HTTP service behind that. `./run.sh` then
   `./demo.sh`.
-- [`docs/adr/0005-sidecar-flow.md`](../docs/adr/0005-sidecar-flow.md) — the code
+- [ADR-0005](https://github.com/hoophq/adr/blob/main/0005-sidecar-flow.md) — the code
   path behind each command, a per-command runbook and a troubleshooting table.
-  [Risk analysis](../docs/adr/0005-sidecar-flow.md#risk-analysis-the-ai-session-analyzer)
+  [Risk analysis](https://github.com/hoophq/adr/blob/main/0005-sidecar-flow.md#risk-analysis-the-ai-session-analyzer)
   covers the fail-open default, the cache key, and the half of the prompt a
   config cannot replace.

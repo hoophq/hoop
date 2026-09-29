@@ -140,7 +140,7 @@ The hop from the sidecar to `appdb` IS encrypted, and separately so. See
 
 For the code path behind each command, a per-command runbook and a
 troubleshooting table, read
-[docs/adr/0005-sidecar-flow.md](../docs/adr/0005-sidecar-flow.md).
+[ADR-0005](https://github.com/hoophq/adr/blob/main/0005-sidecar-flow.md).
 
 ## Running the relay yourself
 
@@ -1499,7 +1499,7 @@ reusable protocol mechanics live in `libhoop/v2/codec/grpc`, but it has no
 and masking callbacks, so one denied RPC does not close sibling streams and
 masked protobuf messages are re-encoded with correct lengths. A
 descriptor set is mandatory for capture or masking; method-only policy works
-without one. See [ADR-0013](../docs/adr/0013-grpc-terminates-http2-in-process.md).
+without one. See [ADR-0013](https://github.com/hoophq/adr/blob/main/0013-grpc-terminates-http2-in-process.md).
 
 ```yaml
 listeners:
@@ -1627,7 +1627,7 @@ nothing in the middle can read a command — to see one at all the sidecar has
 to BE one end of it. The lane terminates the handshake, verifies the client's
 certificate against a CA it trusts, and runs each admitted capability itself.
 libhoop owns the mechanics; this module owns every decision. See
-[ADR-0015](../docs/adr/0015-ssh-terminates-at-the-sidecar.md).
+[ADR-0015](https://github.com/hoophq/adr/blob/main/0015-ssh-terminates-at-the-sidecar.md).
 
 ```yaml
 listeners:
@@ -3095,7 +3095,7 @@ Do not confuse this with the client's leg. A relay cannot inspect TLS that
 stays end to end; its plaintext comes from a front proxy or from a lane that
 terminates the client's TLS itself: Postgres and ClickHouse above, http with
 ALPN, and gRPC and Spanner, which terminate downstream HTTP/2 TLS as
-[ADR-0013](../docs/adr/0013-grpc-terminates-http2-in-process.md) records.
+[ADR-0013](https://github.com/hoophq/adr/blob/main/0013-grpc-terminates-http2-in-process.md) records.
 
 **Postgres negotiates in-band.** A TLS-on-connect dial fails against it: the
 server expects an 8-byte `SSLRequest` and a one-byte `S`/`N` reply before any

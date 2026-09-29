@@ -141,7 +141,7 @@ or `"network":"unix"` per lane.
 
 For the code path behind these commands, a per-command runbook and a
 troubleshooting table, read
-[docs/adr/0005-sidecar-flow.md](../../../docs/adr/0005-sidecar-flow.md).
+[ADR-0005](https://github.com/hoophq/adr/blob/main/0005-sidecar-flow.md).
 
 `run.sh` builds `hoop-inspect:local` from `../../../sidecar` on first run
 and reuses it afterwards. After a library change:
@@ -446,7 +446,7 @@ This evaluator **fails open** by default. It depends on a third-party API, and
 refusing every statement during a vendor outage is a larger incident than the
 one it guards against. OPA and the local rules still fail closed. Full
 reference in [`sidecar/README.md`](../../../sidecar/README.md) and
-[`docs/adr/0005-sidecar-flow.md`](../../../docs/adr/0005-sidecar-flow.md#risk-analysis-the-ai-session-analyzer).
+[ADR-0005](https://github.com/hoophq/adr/blob/main/0005-sidecar-flow.md#risk-analysis-the-ai-session-analyzer).
 
 ## Identity
 
