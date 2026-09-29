@@ -69,7 +69,22 @@ type SSHConfig struct {
 	// Identity maps certificate fields onto the session identity policy and
 	// audit read. Absent takes the key id as the subject.
 	Identity *SSHIdentityConfig `json:"identity,omitempty"`
+
+	// Relay turns this listener into a TERMINATING BASTION, and its
+	// presence is the whole mode switch (ADR-0021). Absent, the listener is
+	// exactly ADR-0015's.
+	//
+	// It changes what CapabilitiesAllowed above means. On a plain listener
+	// that list is what a session ON THIS HOST admits; with a relay block
+	// it is the CEILING a target narrows, and the listener itself serves no
+	// session at all. A terminating bastion has no accounts and no shell —
+	// it exists to inspect sessions to its targets — so admitting one here
+	// would hand out a shell on the host holding every target's credential.
+	Relay *SSHRelayConfig `json:"relay,omitempty"`
 }
+
+// terminates reports whether this lane is a terminating bastion.
+func (s *SSHConfig) terminates() bool { return s != nil && s.Relay != nil }
 
 // SSHIdentityConfig names which certificate field fills each identity slot.
 //
@@ -510,6 +525,7 @@ func (s *SSHConfig) validate(lane string) []string {
 	}
 
 	problems = append(problems, s.Identity.validate(lane)...)
+	problems = append(problems, s.Relay.validate(lane, s.resolveCapabilities())...)
 	return problems
 }
 

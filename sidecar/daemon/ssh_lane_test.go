@@ -288,10 +288,10 @@ func TestSSHForwardWritesNoStatement(t *testing.T) {
 // There is no default account and no fallback to the sidecar's own user:
 // either would hand a session an account nobody chose for it.
 func TestSSHSessionAccountRefusesWhenNothingResolves(t *testing.T) {
-	if _, r := resolveSessionAccount(""); r == nil {
+	if _, r, _ := resolveSessionAccount(""); r == nil {
 		t.Error("a connection that named no login was admitted")
 	}
-	if _, r := resolveSessionAccount("no-such-account-here-4711"); r == nil {
+	if _, r, _ := resolveSessionAccount("no-such-account-here-4711"); r == nil {
 		t.Error("a login that is not an account was admitted")
 	}
 }
@@ -407,7 +407,7 @@ func TestSSHBastionAdmitsAConnectionWithNoLocalAccount(t *testing.T) {
 // The end-hop keeps the opposite rule: it spawns, so a login that resolves
 // to no account is refused rather than run as somebody.
 func TestSSHEndHopStillRequiresAnAccount(t *testing.T) {
-	if _, r := resolveSessionAccount("no-such-account-here-4711"); r == nil {
+	if _, r, _ := resolveSessionAccount("no-such-account-here-4711"); r == nil {
 		t.Error("an end-hop admitted a login that is not an account")
 	}
 }

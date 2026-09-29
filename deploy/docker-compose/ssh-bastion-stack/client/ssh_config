@@ -1,0 +1,76 @@
+# THE WHOLE CLIENT COST OF THIS TOPOLOGY.
+#
+# Two stanzas. Neither names a host, so adding a target to the fleet changes
+# nothing here — which is the property that makes an evaluation across twelve
+# hosts a config change on one box rather than twelve installs.
+
+# The host NO target covers. The bastion carries this forward blind — it
+# relays bytes it cannot read — so the certificate verified at the far end is
+# the client's own, and this host has to trust the CA itself.
+#
+# It must come FIRST, and that ordering is the whole difference between the
+# two modes expressed in client config. ssh takes the first value it finds
+# for each keyword, so a blind destination listed in the stanza below would
+# inherit HostKeyAlias hoop-bastion — and then store blind-01's OWN host key
+# under the bastion's name, which collides with the bastion's key the moment
+# any terminated host is used. The symptom is REMOTE HOST IDENTIFICATION HAS
+# CHANGED on a stack where nothing changed.
+#
+# So: HostKeyAlias is for destinations the bastion TERMINATES, because those
+# are the ones where the bastion's key answers in the target's place.
+Host blind-01
+    ProxyJump jump@172.31.78.10:2222
+    User devuser
+
+Host *.prod legacy-01
+    # ProxyJump is the mechanism. It does not log in to the bastion and run
+    # ssh there: it opens a forwarded channel and speaks SSH over it, and the
+    # literal string you typed — "host-a.prod" — travels in that channel-open
+    # request. That is the one place in the SSH protocol where an unmodified
+    # client tells an intermediary the exact host it wants. There is no SNI.
+    #
+    # `jump@` is a NAME, not an account. The bastion has no accounts at all;
+    # it checks the name against the certificate's principals and never looks
+    # it up in a user database, because no session runs there. The account on
+    # the TARGET is the User below — or a per-target `login` override.
+    ProxyJump jump@172.31.78.10:2222
+
+    # HostKeyAlias points every target's host-key lookup at ONE name, so the
+    # bastion's own key answers for all of them and one known_hosts entry
+    # covers the fleet.
+    #
+    # It is necessary rather than convenient: the bastion terminates hop 2,
+    # so it presents ITS key where the target's would be, and without this
+    # every connection is a host-key mismatch. The cost is real and named in
+    # the ADR — a user who bypasses the bastion gets a first-contact prompt
+    # rather than a mismatch warning, so network policy has to carry what
+    # host-key checking no longer does.
+    HostKeyAlias hoop-bastion
+    User devuser
+
+# The one target that authenticates with the user's OWN certificate. One
+# extra line, and it is the line that puts a person's name in that host's
+# auth.log instead of an account's.
+#
+# ForwardAgent is offered on HOP 2, inside the terminated session, because
+# ProxyJump opens no session channel on the bastion and the agent request is
+# a session request. The bastion CONSUMES the agent to sign its upstream
+# handshake and never forwards the channel onward to the target.
+Host host-c.prod
+    ForwardAgent yes
+
+Host *
+    StrictHostKeyChecking accept-new
+    # /tmp, because ~/.ssh holds read-only bind mounts and docker creates
+    # that directory root-owned: the client cannot write a known_hosts into
+    # it, and ssh then warns on every single command.
+    UserKnownHostsFile /tmp/known_hosts
+    IdentitiesOnly yes
+    IdentityFile ~/.ssh/id_ed25519
+    CertificateFile ~/.ssh/id_ed25519-cert.pub
+    # INFO, not ERROR. A refused channel — a capability a target does not
+    # admit, a forward outside the allowlist, a credential that did not
+    # resolve — is reported by the client at this level and SWALLOWED at
+    # ERROR. On a stack whose whole subject is refusals, hiding them makes
+    # every denial look like a hang.
+    LogLevel INFO
