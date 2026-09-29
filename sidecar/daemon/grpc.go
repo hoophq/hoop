@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -266,7 +267,7 @@ func buildGRPCServer(
 	// Descriptor sets do not travel as a setting: an entry may be a URL, and
 	// resolving it — a fetch with credentials — is this package's job, not
 	// the codec's. The merged schema is handed over already loaded.
-	schema, err := loadGRPCSchema(gc.Descriptors)
+	schema, err := loadGRPCSchema(gc.Descriptors, ln.trustRoots)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", ln.name, err)
 	}
@@ -385,17 +386,21 @@ const grpcDescriptorFetchTimeout = 2 * time.Minute
 // Local files are read here rather than by passing paths to libhoop so one
 // merge sees every set: conflict detection between a file and a bucket
 // artifact needs both in the same call.
-func loadGRPCSchema(entries DescriptorPaths) (*codecgrpc.Schema, error) {
+//
+// roots is the process trust pool. It reaches the object-store fetch and its
+// credential exchange, not the lane's upstream: that TLS is libhoop's.
+func loadGRPCSchema(entries DescriptorPaths, roots *x509.CertPool) (*codecgrpc.Schema, error) {
 	if len(entries) == 0 {
 		return nil, nil
 	}
 	sources := make([]codecgrpc.SchemaSource, 0, len(entries))
+	client := outboundHTTPClient(roots)
 	for _, entry := range entries {
 		var blob []byte
 		var err error
 		if descriptors.Scheme(entry) != "" {
 			ctx, cancel := context.WithTimeout(context.Background(), grpcDescriptorFetchTimeout)
-			blob, err = descriptors.Fetch(ctx, entry)
+			blob, err = descriptors.Fetch(ctx, entry, client)
 			cancel()
 		} else {
 			blob, err = os.ReadFile(entry)

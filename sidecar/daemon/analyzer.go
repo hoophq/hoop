@@ -2,15 +2,14 @@ package daemon
 
 import (
 	"context"
+	"crypto/x509"
 	"fmt"
 	"net/url"
-	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/hoophq/hoop/sidecar/analyzer"
-	"github.com/hoophq/hoop/sidecar/inspect"
 
 	"github.com/hoophq/hoop/sidecar/policy"
 	codecssh "github.com/hoophq/libhoop/v2/codec/ssh"
@@ -454,8 +453,9 @@ func (a *AnalyzerConfig) endpointHost() string {
 // buildAnalyzer constructs the shared provider from the analyzer section.
 //
 // It is called once per process, not per lane: one provider, one credential
-// read, one token source.
-func buildAnalyzer(cfg *AnalyzerConfig) (analyzer.Provider, error) {
+// read, one token source. roots is the process trust pool; the provider
+// sends its model calls and any token mint through a client built on it.
+func buildAnalyzer(cfg *AnalyzerConfig, roots *x509.CertPool) (analyzer.Provider, error) {
 	if cfg == nil {
 		return nil, nil
 	}
@@ -475,6 +475,7 @@ func buildAnalyzer(cfg *AnalyzerConfig) (analyzer.Provider, error) {
 		Credential:      cred,
 		Extra:           cfg.Extra,
 		MaxOutputTokens: cfg.MaxOutputTokens,
+		HTTPClient:      outboundHTTPClient(roots),
 	})
 }
 
@@ -769,7 +770,11 @@ func setupAnalyzer(cfg *Config, det Plugin) (*analyzerDeps, error) {
 		return nil, fmt.Errorf("invalid config:\n  - %s", strings.Join(problems, "\n  - "))
 	}
 
-	provider, err := buildAnalyzer(cfg.Analyzer)
+	roots, err := loadTrustRoots(cfg.Trust)
+	if err != nil {
+		return nil, err
+	}
+	provider, err := buildAnalyzer(cfg.Analyzer, roots)
 	if err != nil {
 		return nil, err
 	}
@@ -857,30 +862,6 @@ func redactorFor(mode SendMode, det Plugin) func(string) string {
 // refuseSentinel is analyzer.RefuseSentinel, aliased so this file reads
 // without qualification.
 const refuseSentinel = analyzer.RefuseSentinel
-
-// httpCodecFactory builds a codec factory for an http lane's capture
-// settings. Every http lane gets one, even with no http block: the codec must
-// expose analyzer.HeaderReviewMode whether or not the lane holds today, since
-// a reload can turn holding on while the running codec stays.
-func httpCodecFactory(proto inspect.Protocol, h *HTTPCodecConfig) func() inspect.Codec {
-	if proto != inspect.HTTP {
-		return nil
-	}
-	return newHTTPCodec(withReviewModeHeader(h))
-}
-
-// withReviewModeHeader adds analyzer.HeaderReviewMode to a lane's http block,
-// so a client can opt into return per request (ADR-0021). The codec records
-// only headers the client sent, so other requests keep their audit shape. It
-// copies: h is the stored config, which validation reads.
-func withReviewModeHeader(h *HTTPCodecConfig) HTTPCodecConfig {
-	var c HTTPCodecConfig
-	if h != nil {
-		c = *h
-	}
-	c.Headers = append(slices.Clip(c.Headers), analyzer.HeaderReviewMode)
-	return c
-}
 
 // validateLaneAnalysis checks a lane's analyzer surface — its own analyzer
 // block and any DEPRECATED ai_analysis rules — against the top-level

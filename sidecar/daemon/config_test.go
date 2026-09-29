@@ -219,6 +219,36 @@ func TestIdentityHeaderOffHTTPIsRejected(t *testing.T) {
 	}
 }
 
+// google_identity names the caller from the request's bearer. Each refusal
+// below is a config that would otherwise load and name nobody, or name the
+// caller twice, or send bearers somewhere unencrypted.
+func TestGoogleIdentityIsRefusedWhereItCannotWork(t *testing.T) {
+	for _, tc := range []struct{ name, listener, want string }{
+		{"off http", `"protocol":"postgres","google_identity":{}`,
+			"google_identity is only supported on http"},
+		{"beside identity_header", `"protocol":"http","identity_header":"x-user","google_identity":{}`,
+			"google_identity and identity_header both name the caller"},
+		{"plaintext tokeninfo", `"protocol":"http","google_identity":{"tokeninfo_url":"http://oauth2.googleapis.com/tokeninfo"}`,
+			"must be an absolute https URL"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := writeConfig(t, `{"listeners": [{"listen":":1","upstream":"h:1",`+tc.listener+`}]}`)
+			if got := loadErr(t, p); !strings.Contains(got, tc.want) {
+				t.Errorf("error %q does not say %q", got, tc.want)
+			}
+		})
+	}
+
+	p := writeConfig(t, `{"listeners": [{"protocol":"http","listen":":1","upstream":"h:1","google_identity":{}}]}`)
+	cfg, err := LoadConfig(p)
+	if err != nil {
+		t.Fatalf("google_identity refused on an http lane: %v", err)
+	}
+	if got := cfg.Listeners[0].credentialHeader(); got != "authorization" {
+		t.Errorf("credential header = %q, want the bearer's", got)
+	}
+}
+
 // `opa: {responses: false}` with no url is a client that cannot be built,
 // not the empty block that switches an inherited endpoint off.
 func TestOPAResponsesWithoutURLIsRejected(t *testing.T) {
@@ -509,7 +539,7 @@ func TestEmptyOPABlockDisablesAnInheritedEndpoint(t *testing.T) {
 func TestBuildTLS(t *testing.T) {
 	t.Run("nil is nil", func(t *testing.T) {
 		var c *TLSConfig
-		got, err := c.BuildTLS()
+		got, err := c.BuildTLS(nil)
 		if err != nil || got != nil {
 			t.Errorf("BuildTLS() = %v, %v; want nil, nil", got, err)
 		}
@@ -517,14 +547,14 @@ func TestBuildTLS(t *testing.T) {
 
 	t.Run("cert without key is refused", func(t *testing.T) {
 		c := &TLSConfig{CertFile: "/tmp/nope.crt"}
-		if _, err := c.BuildTLS(); err == nil {
+		if _, err := c.BuildTLS(nil); err == nil {
 			t.Error("a certificate with no key was accepted")
 		}
 	})
 
 	t.Run("insecure_skip_verify survives", func(t *testing.T) {
 		c := &TLSConfig{InsecureSkipVerify: true, ServerName: "db.internal"}
-		got, err := c.BuildTLS()
+		got, err := c.BuildTLS(nil)
 		if err != nil {
 			t.Fatalf("BuildTLS: %v", err)
 		}
@@ -538,7 +568,7 @@ func TestBuildTLS(t *testing.T) {
 
 	t.Run("missing ca_file is an error", func(t *testing.T) {
 		c := &TLSConfig{CAFile: "/nonexistent/ca.pem"}
-		if _, err := c.BuildTLS(); err == nil {
+		if _, err := c.BuildTLS(nil); err == nil {
 			t.Error("a missing ca_file was accepted")
 		}
 	})

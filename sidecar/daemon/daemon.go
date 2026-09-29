@@ -26,6 +26,7 @@ package daemon
 
 import (
 	"context"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -1121,7 +1122,8 @@ type lane struct {
 	masker gate.Masker
 
 	// codecFactory overrides the registry for this lane. Nil means the
-	// registry default, which is every lane that did not configure capture.
+	// registry default: every non-http lane that did not configure its
+	// codec. An http lane always has one; see laneCodecFactory.
 	codecFactory func() inspect.Codec
 
 	// rules and opaURL are the resolved facts the startup log and the
@@ -1162,6 +1164,13 @@ type lane struct {
 	// keyed by protocol. Run sets it after buildLanes; a lane built by
 	// Validate or a test leaves it nil and counts nothing.
 	metrics gate.Metrics
+
+	// trustRoots is the process trust pool (the trust section) every
+	// outbound TLS client this lane builds verifies against. Nil is the
+	// host trust store, a real value: see loadTrustRoots. Carried per lane
+	// rather than read from the config at each use so one build of the
+	// lanes sees one read of the bundle.
+	trustRoots *x509.CertPool
 }
 
 // buildLanes resolves and builds every listener's stack.
@@ -1178,6 +1187,14 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 	// or HOOP_LICENSE, so it would refuse a config for a limit its license
 	// lifts. Every caller that runs or validates a sidecar reaches this.
 	problems = append(problems, cfg.checkLimits(cfg.lic)...)
+
+	// Validate refused an unusable bundle already; this fails for a caller
+	// that assembled the Config by hand, or a bundle replaced on disk since.
+	// Reported with the rest rather than ahead of them, as the caps are.
+	roots, err := loadTrustRoots(cfg.Trust)
+	if err != nil {
+		problems = append(problems, err.Error())
+	}
 
 	for i, lc := range cfg.Listeners {
 		name := lc.displayName(i)
@@ -1216,10 +1233,11 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 			name:         name,
 			policy:       pol,
 			masker:       masker,
-			codecFactory: laneCodecFactory(proto, lc.HTTP, lc.ClickHouse),
+			codecFactory: laneCodecFactory(proto, lc.HTTP, lc.ClickHouse, lc.credentialHeader()),
 			captureBody:  lc.HTTP != nil && lc.HTTP.CaptureBody,
 			observing:    gc.observing(),
 			analyzers:    collectAnalyzers(pol),
+			trustRoots:   roots,
 		}
 		// Reported whether or not the lane enforces. An observing lane runs
 		// every one of these, and a reader of the startup log needs to see
@@ -1237,6 +1255,16 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 		}
 		if isSSH(lc) {
 			ln.notes = append(ln.notes, sshLaneNotes(lc.SSH)...)
+		}
+		// Said, not silently skipped: libhoop builds this lane's upstream
+		// pool from file paths, so the trust bundle cannot reach it, and an
+		// operator who added it for this upstream would otherwise learn
+		// that from a failed handshake.
+		if roots != nil && isGRPCTransport(lc) && lc.UpstreamTLS != nil && lc.UpstreamTLS.CAFile == "" {
+			ln.notes = append(ln.notes,
+				"trust.ca_file does not apply to a grpc-transport lane's upstream_tls; "+
+					"it verifies against the host trust store. Set upstream_tls.ca_file "+
+					"to the bundle this upstream needs")
 		}
 		if gc.observing() {
 			ln.notes = append(ln.notes,
@@ -1341,7 +1369,7 @@ func buildServer(
 	log *slog.Logger,
 ) (*proxy.Server, error) {
 	lc := ln.cfg
-	upstreamTLS, err := lc.UpstreamTLS.BuildTLS()
+	upstreamTLS, err := lc.UpstreamTLS.BuildTLS(ln.trustRoots)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", ln.name, err)
 	}
@@ -1361,9 +1389,27 @@ func buildServer(
 		return nil, fmt.Errorf("%s: %w", ln.name, err)
 	}
 	if downstreamTLS != nil {
+		// Validate admits downstream_tls on this path for these three
+		// protocols only; grpc and spanner lanes build their own server.
+		var reason string
+		switch inspect.Protocol(lc.Protocol) {
+		case inspect.Postgres:
+			reason = "pgwire negotiates TLS in-band, so nothing in front can"
+		case inspect.ClickHouse:
+			reason = "serves ClickHouse TLS on connect"
+		case inspect.HTTP:
+			reason = "serves h2 and http/1.1 via ALPN"
+		default:
+			return nil, fmt.Errorf("%s: downstream_tls is not terminated on a %s lane", ln.name, lc.Protocol)
+		}
 		log.Info("terminating the client's TLS on this lane",
 			"listener", ln.name,
-			"reason", "pgwire negotiates TLS in-band, so nothing in front can")
+			"reason", reason)
+	}
+
+	requestIdentity, err := buildRequestIdentity(lc, ln.trustRoots)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", ln.name, err)
 	}
 
 	return proxy.NewServer(proxy.Config{
@@ -1380,7 +1426,8 @@ func buildServer(
 		Masker:              ln.masker,
 		FailOnAuditError:    ac.failOnAuditError(),
 		DenyWriter:          proxy.ProtocolDenyWriter{},
-		IdentityHeader:      lc.IdentityHeader,
+		CredentialHeader:    lc.credentialHeader(),
+		RequestIdentity:     requestIdentity,
 		CodecFactory:        ln.codecFactory,
 		Metrics:             ln.metrics,
 		IdleTimeout:         time.Duration(lc.IdleTimeoutSec) * time.Second,

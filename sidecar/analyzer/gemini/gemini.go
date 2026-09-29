@@ -86,7 +86,7 @@ func init() {
 			endpoint:  endpoint,
 			key:       opts.Credential,
 			maxTokens: maxTokens,
-			client:    &http.Client{Timeout: 0}, // the caller's ctx owns the deadline
+			client:    opts.Client(), // no timeout: the caller's ctx owns the deadline
 		}, nil
 	})
 }

@@ -50,7 +50,7 @@ func init() {
 			model:     opts.Model,
 			key:       opts.Credential,
 			maxTokens: maxTokens,
-			client:    &http.Client{},
+			client:    opts.Client(),
 		}, nil
 	})
 }

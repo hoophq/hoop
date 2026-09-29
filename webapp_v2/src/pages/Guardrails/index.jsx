@@ -23,7 +23,9 @@ function uniqueSorted(values) {
   return [...new Set(values)].sort((a, b) => a.localeCompare(b))
 }
 
-export default function Guardrails() {
+// providerRequired comes from Router.jsx through <ByProduct>: false on the
+// control plane, where sidecars enforce guardrails without a DLP provider.
+export default function Guardrails({ providerRequired = true }) {
   const navigate = useNavigate()
 
   const list = useGuardrailsStore((s) => s.list)
@@ -86,7 +88,7 @@ export default function Guardrails() {
 
   // Without a DLP provider guardrails cannot be enforced, so the requirement
   // screen replaces the list even when guardrails already exist.
-  if (!hasRedactCredentials) {
+  if (providerRequired && !hasRedactCredentials) {
     return (
       <FullBleed>
         <GuardrailsPromotion dlpAvailable={false} onCreate={goCreate} />

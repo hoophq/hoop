@@ -109,7 +109,15 @@ func init() {
 
 // Fetch downloads one object. The URL was parsed by the descriptors package
 // from a gs://BUCKET/OBJECT[?generation=N] entry.
-func Fetch(ctx context.Context, u *url.URL) ([]byte, error) {
+//
+// client carries the object read AND the token exchange: oauth2 takes its
+// HTTP client from the context under oauth2.HTTPClient, so the key-file and
+// external-account flows post to the token endpoint through it. Without that
+// the exchange would ride http.DefaultClient and fail verification behind an
+// egress proxy the object read was set up to trust. The metadata-server
+// source (GCE, Workload Identity) uses its own client over plain HTTP to a
+// link-local address, where no certificate is verified.
+func Fetch(ctx context.Context, u *url.URL, client *http.Client) ([]byte, error) {
 	bucket := u.Host
 	object := strings.TrimPrefix(u.Path, "/")
 	if bucket == "" || object == "" {
@@ -138,6 +146,7 @@ func Fetch(ctx context.Context, u *url.URL) ([]byte, error) {
 		query.Set("generation", values[0])
 	}
 
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, client)
 	tok, err := accessToken(ctx)
 	if err != nil {
 		return nil, err
@@ -149,7 +158,7 @@ func Fetch(ctx context.Context, u *url.URL) ([]byte, error) {
 		return nil, err
 	}
 	tok.SetAuthHeader(req)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}

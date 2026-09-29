@@ -8,9 +8,12 @@
 // # Scope
 //
 // One listener, one upstream, one protocol. It balances no load, routes
-// nothing, and terminates no downstream TLS. A deployment that needs routing
-// puts Envoy in front, the topology this library assumes throughout: Envoy
+// nothing, and terminates downstream TLS only on a lane whose
+// Config.DownstreamTLS asks for it. A deployment that needs routing puts
+// Envoy in front, the topology this library assumes throughout: Envoy
 // owns the network path and hoop-inspect owns the payload.
+//
+// An http lane also accepts HTTP/2 and relays it as HTTP/1.1; see h2.go.
 //
 // Upstream TLS IS supported, because a proxy that can only talk plaintext to
 // the database is unusable in the environments that care about any of this.
@@ -81,11 +84,16 @@ type Config struct {
 
 	// DownstreamTLS, when non-nil, lets the relay terminate the CLIENT's TLS.
 	//
-	// Only pgwire uses it today, and only because pgwire leaves no one else
-	// able to: its TLS is negotiated in-band with an 8-byte SSLRequest, so a
+	// Three lanes use it, each because nothing in front can do the job as
+	// well. pgwire negotiates TLS in-band with an 8-byte SSLRequest, so a
 	// plain TLS listener in front cannot terminate it, and Envoy's own
 	// postgres filter is contrib-only, marked work-in-progress, and gives up
-	// permanently the moment a client asks for GSS encryption.
+	// permanently the moment a client asks for GSS encryption. ClickHouse
+	// starts TLS on the first byte. HTTP negotiates the application
+	// protocol inside the handshake (ALPN), and a client that picks h2 there
+	// must be answered by whoever holds the key; see serveHTTPLane. Any other
+	// protocol refuses it at NewServer, because a certificate nothing ever
+	// offers would report the lane healthy.
 	//
 	// Leaving it nil keeps the documented posture — the relay terminates no
 	// downstream TLS and something in front owns that leg. Setting it moves
@@ -117,17 +125,24 @@ type Config struct {
 	// authenticated the user passes the subject through an mTLS peer cert
 	// or a credential token, and this function extracts it. It runs at
 	// accept, before a byte is read, so it cannot see the payload; a
-	// subject carried in an HTTP header is IdentityHeader's job.
+	// subject carried in an HTTP request is CredentialHeader's job.
 	IdentityFn func(net.Conn) session.Identity
 
-	// IdentityHeader names the request header that carries the
-	// authenticated subject on an http lane. The relay reads it from the
-	// FIRST request on the connection before the session is created, so
-	// the policy context and the session_start audit row both name the
-	// principal; see peekHTTPIdentity for the ordering and the trust model.
-	// When set it overrides the Subject IdentityFn returned. Refused on
-	// any other protocol.
-	IdentityHeader string
+	// CredentialHeader names the request header that carries the caller's
+	// credential on an http lane: an identity header a fronting proxy set
+	// from a verified login, or Authorization for a lane that verifies the
+	// bearer itself. RequestIdentity turns its value into the identity.
+	//
+	// The relay reads it from the FIRST request before the session is
+	// created, so the policy context and the session_start row name the
+	// principal (see peekHTTPIdentity), and the gate reads it again on
+	// every later request, opening a new session when the caller changes.
+	// A resolved identity overrides what IdentityFn returned; an anonymous
+	// one keeps it. Both fields or neither; refused on any other protocol.
+	// The codec CodecFactory builds MUST lift the same header (see
+	// NewServer), so CodecFactory is required with it.
+	CredentialHeader string
+	RequestIdentity  gate.RequestIdentity
 
 	// CodecFactory overrides how each connection's Gate builds its codecs.
 	// Nil uses the registry. See gate.Config.CodecFactory: it exists so a
@@ -183,6 +198,16 @@ type Server struct {
 	active atomic.Int64
 	total  atomic.Int64
 	denied atomic.Int64
+
+	// bridged counts the relay sessions an h2 connection opened for its
+	// streams. They are inside active, because they are sessions this
+	// relay runs, and outside the MaxConns check, because the client
+	// connection that carries them was already admitted; see h2Bridge.
+	bridged atomic.Int64
+
+	// h2 terminates HTTP/2 on an http lane and feeds it to handle as
+	// HTTP/1.1. Nil on every other protocol.
+	h2 *h2Lane
 }
 
 // NewServer validates the config and returns a Server. It does not listen
@@ -217,9 +242,14 @@ func NewServer(cfg Config) (*Server, error) {
 			"sidecar/proxy: MySQL authentication key requires a MySQL lane with upstream TLS",
 		)
 	}
-	if cfg.IdentityHeader != "" && cfg.Protocol != inspect.HTTP {
+	if err := checkCredentialConfig(cfg); err != nil {
+		return nil, err
+	}
+	if cfg.DownstreamTLS != nil && cfg.Protocol != inspect.Postgres &&
+		cfg.Protocol != inspect.ClickHouse && cfg.Protocol != inspect.HTTP {
 		return nil, fmt.Errorf(
-			"sidecar/proxy: identity header is only read on an http lane, not %s", cfg.Protocol,
+			"sidecar/proxy: downstream TLS is terminated on postgres, clickhouse and http lanes, not %s",
+			cfg.Protocol,
 		)
 	}
 	var (
@@ -243,6 +273,9 @@ func NewServer(cfg Config) (*Server, error) {
 		mysqlHandshakeSlots: mysqlHandshakeSlots,
 	}
 	s.rules.Store(&laneRules{policy: cfg.Policy, masker: cfg.Masker})
+	if cfg.Protocol == inspect.HTTP {
+		s.h2 = newH2Lane(s)
+	}
 	return s, nil
 }
 
@@ -342,6 +375,10 @@ func (s *Server) Serve(ctx context.Context) error {
 		_ = s.Close()
 	}()
 
+	if s.h2 != nil {
+		go s.h2.serve()
+	}
+
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
@@ -354,7 +391,10 @@ func (s *Server) Serve(ctx context.Context) error {
 			return fmt.Errorf("sidecar/proxy: accept: %w", err)
 		}
 
-		if s.cfg.MaxConns > 0 && int(s.active.Load()) >= s.cfg.MaxConns {
+		// Bridged h2 streams are subtracted: they belong to a connection
+		// this check already admitted, and counting them would let one
+		// busy kubectl turn every other client away.
+		if s.cfg.MaxConns > 0 && int(s.active.Load()-s.bridged.Load()) >= s.cfg.MaxConns {
 			// Refuse rather than queue: an unbounded accept queue turns a
 			// connection flood into memory exhaustion, and a closed connection
 			// gives the client a faster, clearer failure.
@@ -378,6 +418,10 @@ func (s *Server) Serve(ctx context.Context) error {
 		rules := s.rules.Load()
 		go func() {
 			defer s.untrack(conn)
+			if s.h2 != nil {
+				s.serveHTTPLane(ctx, conn, rules)
+				return
+			}
 			s.handle(ctx, conn, rules)
 		}()
 	}
@@ -416,6 +460,9 @@ func (s *Server) Close() error {
 	if ln != nil {
 		_ = ln.Close()
 	}
+	if s.h2 != nil {
+		s.h2.close()
+	}
 	for _, c := range conns {
 		_ = c.Close()
 	}
@@ -450,31 +497,44 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 		}()
 	}
 
-	identity := session.Identity{PeerAddr: client.RemoteAddr().String()}
-	if s.cfg.IdentityFn != nil {
-		identity = s.cfg.IdentityFn(client)
-		if identity.PeerAddr == "" {
-			identity.PeerAddr = client.RemoteAddr().String()
-		}
+	// A bridged h2 stream arrives on a pipe; its connection identity was
+	// taken once, from the client's own connection, when the h2 connection
+	// was accepted (see h2Bridge.identity).
+	var base session.Identity
+	if bc, ok := client.(*bridgedConn); ok {
+		base = bc.identity
+	} else {
+		base = s.connIdentity(client)
 	}
-	if s.cfg.IdentityHeader != "" {
-		// Before session.New on purpose: the gate freezes the policy
-		// context and writes session_start from the identity it is handed,
-		// so a subject learned later would never reach either. Also before
-		// the upstream dial, unlike the pgwire startup peek, for the same
-		// reason. A client that connects and never speaks closes at the
-		// deadline with no session, as a client abandoning a handshake does.
+
+	identity := base
+	var requestIdentity gate.RequestIdentity
+	if s.cfg.CredentialHeader != "" {
+		requestIdentity = s.requestIdentity(base)
+		// Before session.New on purpose: the gate writes session_start
+		// from the identity it is handed, so a first caller learned later
+		// would leave an anonymous session in front of every connection.
+		// Also before the upstream dial, unlike the pgwire startup peek, for
+		// the same reason. A client that connects and never speaks closes at
+		// the deadline with no session, as a client abandoning a handshake
+		// does.
 		var (
-			subject string
-			err     error
+			credential string
+			err        error
 		)
-		client, subject, err = peekHTTPIdentity(client, s.cfg.IdentityHeader, s.cfg.DialTimeout)
+		client, credential, err = peekHTTPIdentity(client, s.cfg.CredentialHeader, s.cfg.DialTimeout)
 		if err != nil {
-			s.log.Debug("first request not read", "peer", identity.PeerAddr, "error", err)
+			s.log.Debug("first request not read", "peer", base.PeerAddr, "error", err)
 			return
 		}
-		if subject != "" {
-			identity.Subject = subject
+		// A credential that does not resolve leaves the session with the
+		// connection's own identity; the gate resolves the same request
+		// again, fails the same way, and refuses it in-protocol, which a
+		// closed socket here could not.
+		if id, rerr := requestIdentity.Resolve(ctx, credential); rerr == nil {
+			identity = id
+		} else {
+			s.log.Debug("first request's credential did not resolve", "peer", base.PeerAddr, "error", rerr)
 		}
 	}
 
@@ -499,6 +559,7 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 		FailOnAuditError: s.cfg.FailOnAuditError,
 		CodecFactory:     s.cfg.CodecFactory,
 		Metrics:          s.cfg.Metrics,
+		RequestIdentity:  requestIdentity,
 	})
 	if err != nil {
 		log.Error("gate setup failed", "error", err)
@@ -514,7 +575,7 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 		stmts, denied := g.Stats()
 		log.Info("session closed",
 			"statements", stmts, "denied", denied,
-			"duration", sess.Duration().String())
+			"duration", time.Since(sess.StartedAt).String())
 	}()
 
 	upstream, err := s.dialUpstream(ctx)
@@ -623,6 +684,19 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 	}()
 
 	wg.Wait()
+}
+
+// connIdentity is the identity an accepted connection carries before any
+// byte is read: IdentityFn's answer, with the peer address always set.
+func (s *Server) connIdentity(c net.Conn) session.Identity {
+	if s.cfg.IdentityFn == nil {
+		return session.Identity{PeerAddr: c.RemoteAddr().String()}
+	}
+	id := s.cfg.IdentityFn(c)
+	if id.PeerAddr == "" {
+		id.PeerAddr = c.RemoteAddr().String()
+	}
+	return id
 }
 
 // dialUpstream connects to the backend, negotiating TLS when configured.

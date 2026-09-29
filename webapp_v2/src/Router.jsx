@@ -419,7 +419,11 @@ function Router() {
         path="/features/data-masking"
         element={
           <Page adminOnly licenseFeature="data-masking">
-            <DataMasking />
+            {/* Sidecars mask in-process, so the control plane needs no DLP provider. */}
+            <ByProduct
+              gateway={<DataMasking />}
+              controlPlane={<DataMasking providerRequired={false} />}
+            />
           </Page>
         }
       />
@@ -559,7 +563,11 @@ function Router() {
         path="/guardrails"
         element={
           <Page adminOnly licenseFeature="guardrails">
-            <Guardrails />
+            {/* Sidecars enforce guardrails without a DLP provider. */}
+            <ByProduct
+              gateway={<Guardrails />}
+              controlPlane={<Guardrails providerRequired={false} />}
+            />
           </Page>
         }
       />
