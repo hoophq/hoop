@@ -8,7 +8,6 @@ import (
 	redactortypes "github.com/hoophq/libhoop/redactor/types"
 	"strings"
 
-	"github.com/hoophq/hoop/agent/controller/featureflagstate"
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	pbclient "github.com/hoophq/hoop/common/proto/client"
@@ -148,8 +147,8 @@ func (a *Agent) processSSHProtocol(pkt *pb.Packet) {
 		// options through) when EITHER is enabled, then tell the proxy which
 		// concern to enforce. With both off no options are set, no redactor
 		// client is built, and the proxy runs without validation (unchanged).
-		execOutputEnabled := featureflagstate.IsEnabled(sshGuardrailsFlag)
-		inputEnabled := featureflagstate.IsEnabled(sshInputGuardrailsFlag)
+		execOutputEnabled := a.flags.IsEnabled(sshGuardrailsFlag)
+		inputEnabled := a.flags.IsEnabled(sshInputGuardrailsFlag)
 		if execOutputEnabled || inputEnabled {
 			addGuardRailsOpts(opts, connParams)
 			if execOutputEnabled {
