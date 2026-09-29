@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/hoophq/hoop/agent/controller/featureflagstate"
 	"github.com/hoophq/hoop/common/featureflag"
 	"github.com/hoophq/hoop/common/memory"
 	pb "github.com/hoophq/hoop/common/proto"
@@ -29,12 +28,6 @@ func TestHttpProxyHostPortFlag(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prevState, err := json.Marshal(featureflagstate.Snapshot())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { featureflagstate.Update(map[string][]byte{pb.SpecFeatureFlagsKey: prevState}) })
-
 	for _, tt := range []struct {
 		name   string
 		enable bool // false: the org never sets the flag, so the catalog default applies
@@ -54,10 +47,9 @@ func TestHttpProxyHostPortFlag(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			featureflagstate.Update(map[string][]byte{pb.SpecFeatureFlagsKey: snapshot})
-
 			sid := orgID
 			a := &Agent{client: &loopTransport{}, connStore: memory.New()}
+			a.flags.Update(map[string][]byte{pb.SpecFeatureFlagsKey: snapshot})
 			a.connStore.Set(sid, &pb.AgentConnectionParams{
 				ConnectionType: pb.ConnectionTypeHttpProxy.String(),
 				EnvVars: map[string]any{

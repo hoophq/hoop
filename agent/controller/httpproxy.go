@@ -155,7 +155,7 @@ func (a *Agent) handleHttpProxyWrite(pkt *pb.Packet) {
 	if connenv.httpProxyAllowClientAuth && a.flags.IsEnabled(httpProxyClientAuthorizationFlag) {
 		connenv.httpProxyHeaders["allow_client_authorization"] = "true"
 	}
-	if featureflagstate.IsEnabled(httpProxyHostPortFlag) {
+	if a.flags.IsEnabled(httpProxyHostPortFlag) {
 		connenv.httpProxyHeaders["preserve_host_port"] = "true"
 	}
 
