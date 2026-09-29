@@ -27,8 +27,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net"
 	"os"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -150,6 +152,21 @@ type Config struct {
 	// factory cannot express.
 	CodecFactory func() inspect.Codec
 
+	// StartupMetadata lifts values the client sent in its pgwire
+	// StartupMessage into the session's metadata. Postgres lanes only; see
+	// StartupMetadata.
+	StartupMetadata []StartupMetadata
+
+	// AllStartupOptions records every setting the StartupMessage's `options`
+	// parameter assigns, each under postgres.option.<name>. Exclusive with
+	// StartupMetadata, which names the few a lane wants instead. Postgres
+	// lanes only.
+	//
+	// Off in the zero Config: a library caller opts in. The daemon turns it on
+	// for a postgres lane that configures no startup_metadata list, because
+	// that default is the product's decision, not this package's.
+	AllStartupOptions bool
+
 	// Metrics is handed to every connection's Gate. Optional. See
 	// gate.Config.Metrics for the contract it must meet.
 	Metrics gate.Metrics
@@ -251,6 +268,22 @@ func NewServer(cfg Config) (*Server, error) {
 			"sidecar/proxy: downstream TLS is terminated on postgres, clickhouse and http lanes, not %s",
 			cfg.Protocol,
 		)
+	}
+	if len(cfg.StartupMetadata) > 0 || cfg.AllStartupOptions {
+		if cfg.Protocol != inspect.Postgres {
+			return nil, fmt.Errorf(
+				"sidecar/proxy: startup metadata is read from a pgwire StartupMessage, not a %s lane",
+				cfg.Protocol)
+		}
+		if cfg.AllStartupOptions && len(cfg.StartupMetadata) > 0 {
+			// Both would leave one of them deciding what the other
+			// recorded; a lane that wants every option names none.
+			return nil, errors.New(
+				"sidecar/proxy: AllStartupOptions and StartupMetadata both select what is recorded; keep one")
+		}
+		if err := validateStartupMetadata(cfg.StartupMetadata); err != nil {
+			return nil, fmt.Errorf("sidecar/proxy: %w", err)
+		}
 	}
 	var (
 		mysqlAuth           *mysqlAuthBridge
@@ -545,9 +578,22 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 	// Rebuilt, not extended, when the principal changes. slog.With APPENDS,
 	// so extending it with a second "principal" leaves both on every record
 	// and the JSON handler writes the key twice.
+	//
+	// Session metadata rides as one "metadata" group rather than as top-level
+	// attributes. Its keys come from config (`as`) and from client-chosen
+	// setting names, so a top-level `msg` or `session` would repeat a key the
+	// line already has, the same defect the rebuild above avoids. Sorted, so
+	// two lines of one session list the keys in one order.
 	sessionLog := func() *slog.Logger {
-		return s.log.With("session", string(sess.ID),
-			"principal", sess.Identity.Principal())
+		attrs := []any{"session", string(sess.ID), "principal", sess.Identity.Principal()}
+		if len(sess.Metadata) > 0 {
+			md := make([]any, 0, len(sess.Metadata))
+			for _, k := range slices.Sorted(maps.Keys(sess.Metadata)) {
+				md = append(md, slog.String(k, sess.Metadata[k]))
+			}
+			attrs = append(attrs, slog.Group("metadata", md...))
+		}
+		return s.log.With(attrs...)
 	}
 	log := sessionLog()
 
@@ -638,7 +684,7 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 	// A negotiation failure is neither a policy denial nor a protocol error
 	// worth an audit event: it is a connection that never became a session.
 	// It closes quietly, the same as a client hanging up mid-handshake.
-	client, claimedUser, negErr := negotiateDownstream(
+	client, startup, negErr := negotiateDownstream(
 		client, s.cfg.Protocol, s.cfg.DownstreamTLS, s.cfg.DialTimeout)
 	if negErr != nil {
 		log.Debug("downstream negotiation failed", "error", negErr)
@@ -650,11 +696,17 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 	// cannot: under integrated auth the name lives inside the encrypted
 	// ticket, and reading it would mean implementing Kerberos.
 	//
-	// Written here, before the pumps start, so the two pump goroutines only
-	// ever read it. An IdentityFn the operator supplied wins, because it saw
-	// a verified subject from the fronting proxy and this is a client claim.
-	if claimedUser != "" && sess.Identity.Subject == "" {
-		sess.Identity.Subject = claimedUser
+	// Adopted here, before the pumps start, so no statement is judged under
+	// a policy context that lacks it. An IdentityFn the operator supplied
+	// wins, because it saw a verified subject from the fronting proxy and
+	// this is a client claim.
+	claimedUser, _ := startup.get("user")
+	md := startupMetadata(startup, s.cfg.StartupMetadata, s.cfg.AllStartupOptions)
+	if claimedUser != "" || len(md) > 0 {
+		if err := g.Adopt(claimedUser, md); err != nil {
+			log.Error("startup facts not adopted", "error", err)
+			return
+		}
 		log = sessionLog()
 	}
 

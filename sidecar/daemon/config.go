@@ -370,6 +370,11 @@ type ListenerConfig struct {
 	// on a clickhouse lane; absent keeps bounded defaults.
 	ClickHouse *ClickHouseCodecConfig `json:"clickhouse,omitempty"`
 
+	// Postgres configures what a postgres lane reads from the client's
+	// StartupMessage beyond the user. Only valid on a postgres lane. See
+	// PostgresConfig.
+	Postgres *PostgresConfig `json:"postgres,omitempty"`
+
 	// GRPC configures what this lane's gRPC transport decodes and exposes.
 	// Only valid on a grpc lane. See GRPCCodecConfig.
 	GRPC *GRPCCodecConfig `json:"grpc,omitempty"`
@@ -1240,6 +1245,17 @@ func (c *Config) validateLane(lc ListenerConfig, name string) []string {
 				name, lc.Protocol))
 		}
 		problems = append(problems, lc.ClickHouse.validate(name)...)
+	}
+
+	// A postgres block reads a StartupMessage, which only a pgwire lane
+	// receives; anywhere else it would load and record nothing.
+	if lc.Postgres != nil {
+		if inspect.Protocol(lc.Protocol) != inspect.Postgres {
+			problems = append(problems, fmt.Sprintf(
+				"%s: a \"postgres\" block is only valid on a postgres listener, not %s",
+				name, lc.Protocol))
+		}
+		problems = append(problems, lc.Postgres.validate(name)...)
 	}
 
 	// The same rule for a grpc block: only a grpc lane reads it, and its

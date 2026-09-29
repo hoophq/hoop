@@ -441,7 +441,7 @@ func ReportDeprecations(w io.Writer, notes []string) {
 	}
 	if len(notes) > 0 {
 		fmt.Fprintln(w, "warn: these fields keep working for now and are removed in a "+
-			"future release. See docs/adr/0011-sidecar-config-schema.md")
+			"future release. See ADR-0011 in hoophq/adr.")
 	}
 }
 
@@ -1456,10 +1456,15 @@ func buildServer(
 		CredentialHeader:    lc.credentialHeader(),
 		RequestIdentity:     requestIdentity,
 		CodecFactory:        ln.codecFactory,
-		Metrics:             ln.metrics,
-		IdleTimeout:         time.Duration(lc.IdleTimeoutSec) * time.Second,
-		MaxConns:            lc.MaxConns,
-		Logger:              log.With("listener", ln.name),
+		StartupMetadata:     lc.Postgres.startupMetadata(),
+		// The product default: a postgres lane with no startup_metadata list
+		// records every option the client sends. See PostgresConfig.
+		AllStartupOptions: inspect.Protocol(lc.Protocol) == inspect.Postgres &&
+			lc.Postgres.recordsAllOptions(),
+		Metrics:     ln.metrics,
+		IdleTimeout: time.Duration(lc.IdleTimeoutSec) * time.Second,
+		MaxConns:    lc.MaxConns,
+		Logger:      log.With("listener", ln.name),
 	})
 }
 

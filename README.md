@@ -177,13 +177,12 @@ hoop.dev began as a gateway for human access to infrastructure. The sidecar and 
 | `tunnel/` | Client-side tunnel daemon. |
 | `common/` | Shared protocol definitions and utilities. |
 | `webapp/`, `webapp_v2/` | The gateway web UI. Frozen. |
-| `docs/adr/` | Architecture decision records. Start here for the reasoning. |
 
 **The gateway still ships and is still supported.** It covers human access: RBAC, session recording and replay, runbooks, a web terminal, and connectors for Kubernetes, SSH, RDP, and more. If you run it today, nothing changes. [Gateway documentation →](https://hoop.dev/docs)
 
 ## Contributing
 
-Policy rule types, masking strategies, protocol coverage, documentation. Start with [the docs](https://hoop.dev/docs), and read [`docs/adr/`](docs/adr/) for how the pieces fit together.
+Policy rule types, masking strategies, protocol coverage, documentation. Start with [the docs](https://hoop.dev/docs).
 
 The wire protocol codecs live in a private module (`github.com/hoophq/libhoop`). Building the `sidecar/` module needs `GOPRIVATE=github.com/hoophq/libhoop` and credentials for it. Everything else in this repository builds without them.
 
