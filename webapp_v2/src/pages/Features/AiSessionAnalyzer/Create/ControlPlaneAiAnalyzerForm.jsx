@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Box, Group, Stack, Text } from '@mantine/core'
+import { Box, Group, Stack, Text, Title } from '@mantine/core'
+import { useDisclosure, useInViewport } from '@mantine/hooks'
 import { ArrowLeft, Info } from 'lucide-react'
 import Alert from '@/components/Alert'
 import Button from '@/components/Button'
 import DocsBtnCallOut from '@/components/DocsBtnCallOut'
+import Modal from '@/components/Modal'
 import MultiSelect from '@/components/MultiSelect'
 import NumberInput from '@/components/NumberInput'
 import PageLoader from '@/components/PageLoader'
@@ -14,12 +16,14 @@ import SidecarTargetPicker from '@/components/SidecarTargetPicker'
 import TagsInput from '@/components/TagsInput'
 import Textarea from '@/components/Textarea'
 import TextInput from '@/components/TextInput'
+import { PAGE_PADDING } from '@/layout/PageLayout'
 import { usersService } from '@/services/users'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import { docsUrl } from '@/utils/docsUrl'
 import { showSnackbar } from '@/utils/snackbar'
 import { analyzerActionsFor, operationsFor, REVIEW_ACTION } from '@/pages/sidecarRuleVocabulary'
 import { useAiSessionAnalyzerStore } from '../store'
+import classes from './Create.module.css'
 
 // The analyzer as a SIDECAR runs it: a per-listener BLOCK, not a rule, and a
 // different vocabulary from the gateway's. Its actions are allow, warn, block
@@ -91,9 +95,12 @@ function formToSpec(f, ruleName) {
 
 function FormFields({ rule: stored, ruleName, isEdit }) {
   const navigate = useNavigate()
+  const { ref: sentinelRef, inViewport: headerInView } = useInViewport()
+  const [deleteOpened, deleteModal] = useDisclosure(false)
   const submitting = useAiSessionAnalyzerStore((s) => s.submitting)
   const createRule = useAiSessionAnalyzerStore((s) => s.createRule)
   const updateRule = useAiSessionAnalyzerStore((s) => s.updateRule)
+  const deleteRule = useAiSessionAnalyzerStore((s) => s.deleteRule)
   const sidecars = useSidecarStore((s) => s.sidecars)
 
   const [name, setName] = useState(stored?.name ?? '')
@@ -190,8 +197,24 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
     })
   }
 
+  // The gateway deletes the approval rule this one keeps beside it, so the
+  // reviewers of a hold go with the rule.
+  const handleDelete = async () => {
+    const { ok, error } = await deleteRule(ruleName)
+    deleteModal.close()
+    if (ok) {
+      showSnackbar({ level: 'success', text: 'Rule deleted.' })
+      navigate('/features/ai-session-analyzer')
+      return
+    }
+    showSnackbar({
+      level: 'error',
+      text: error?.response?.data?.message || 'Failed to delete the rule.',
+    })
+  }
+
   return (
-    <Stack gap="xxlAlt">
+    <Stack gap={0}>
       <Box>
         <Button
           variant="transparent"
@@ -200,150 +223,199 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
           onClick={() => navigate('/features/ai-session-analyzer')}
           px={0}
           w="fit-content"
+          mb="xl"
         >
           Back
         </Button>
       </Box>
 
-      <SectionRow
-        title="Set rule information"
-        description="Used to identify this analysis across the fleet."
+      {/* The header of the gateway sibling: pulled up by the shell header's
+          height, since useInViewport takes no rootMargin. */}
+      <Box
+        ref={sentinelRef}
+        aria-hidden="true"
+        pos="relative"
+        top="calc(-1 * var(--app-shell-header-offset, 0rem))"
+      />
+      <Group
+        justify="space-between"
+        align="center"
+        pos="sticky"
+        top="var(--app-shell-header-offset, 0rem)"
+        bg="var(--mantine-color-body)"
+        py="md"
+        mb="xl"
+        mx={-PAGE_PADDING}
+        px={PAGE_PADDING}
+        className={classes.stickyHeader}
+        data-scrolled={!headerInView || undefined}
       >
-        <Stack gap="md">
-          <TextInput
-            label="Name"
-            placeholder="risky-writes"
-            value={name}
-            onChange={(e) => setName(e.currentTarget.value)}
-            required
-            disabled={isEdit}
-            description={isEdit ? 'A rule is addressed by name, so it cannot be renamed.' : undefined}
-            autoFocus={!isEdit}
-          />
-          <TextInput
-            label="Description (Optional)"
-            placeholder="Describe what this watches"
-            value={description}
-            onChange={(e) => setDescription(e.currentTarget.value)}
-          />
-        </Stack>
-      </SectionRow>
-
-      <SectionRow
-        title="Distribute to listeners"
-        description="One rule per listener. The sidecar needs its analyzer section (provider and model) in its config."
-      >
-        <SidecarTargetPicker value={targets} onChange={setTargets} />
-      </SectionRow>
-
-      <SectionRow
-        title="What gets classified"
-        description="This is the only check that leaves the process and costs money per statement. Narrow it."
-        callout={
-          <DocsBtnCallOut text="See our docs for triggers and costs" href={docsUrl.sidecar.riskAnalysis} variant="indigo" />
-        }
-      >
-        <Stack gap="md">
-          {isHTTP ? (
-            <TagsInput
-              label="Resources"
-              placeholder="/orders/**"
-              value={form.trigger_resources}
-              onChange={(v) => set({ trigger_resources: v })}
-            />
-          ) : (
-            <>
-              <MultiSelect
-                label="Operations"
-                placeholder="Select operations..."
-                data={operations}
-                value={form.trigger_operations}
-                onChange={(v) => set({ trigger_operations: v })}
-                searchable
-                clearable
-              />
-              <TagsInput
-                label="Tables (optional)"
-                placeholder="customers"
-                value={form.trigger_tables}
-                onChange={(v) => set({ trigger_tables: v })}
-              />
-            </>
+        <Title order={2} lts="-0.00625em">
+          {isEdit ? 'Edit AI Analyzer rule' : 'Create new AI Analyzer rule'}
+        </Title>
+        <Group gap="sm">
+          {isEdit && (
+            <Button variant="subtle" color="red" onClick={deleteModal.open} disabled={submitting}>
+              Delete
+            </Button>
           )}
-          {noTrigger && (
-            <Alert color="amber" variant="light" icon={<Info size={16} />} radius="md">
-              With no trigger, every statement on this listener is sent to the model.
-            </Alert>
-          )}
-          <NumberInput
-            label="Call budget (optional)"
-            placeholder="Inherit the sidecar’s"
-            value={form.max_calls}
-            onChange={(v) => set({ max_calls: v })}
-            min={0}
-          />
-        </Stack>
-      </SectionRow>
-
-      <SectionRow
-        title="What happens per risk level"
-        description="A level you leave unset allows. Hold for approval waits up to 30 minutes for a review; a client that times out first ends the wait, and running it again after approval lets it through. On an SSH listener, drop the shell capability first."
-      >
-        <Stack gap="md">
-          {[
-            ['high', 'High risk'],
-            ['medium', 'Medium risk'],
-            ['low', 'Low risk'],
-          ].map(([level, label]) => (
-            <Select
-              key={level}
-              label={label}
-              data={actions}
-              value={form[level]}
-              onChange={(v) => set({ [level]: v ?? '' })}
-              allowDeselect={false}
-            />
-          ))}
-          {ownHold && (
-            <MultiSelect
-              label="Reviewers"
-              description="Groups whose members may approve. Empty leaves it to the administrators."
-              placeholder="Select groups"
-              searchable
-              nothingFoundMessage="No user groups defined yet."
-              data={reviewerOptions}
-              value={reviewers}
-              onChange={setReviewers}
-            />
-          )}
-          <TextInput
-            label="Denial message (optional)"
-            placeholder="refused by risk analysis"
-            value={form.message}
-            onChange={(e) => set({ message: e.currentTarget.value })}
-          />
-        </Stack>
-      </SectionRow>
-
-      <SectionRow
-        title="Custom analysis prompt"
-        description="Replaces the default risk guidance for this listener."
-      >
-        <Textarea
-          label="Your prompt (Optional)"
-          placeholder="e.g. Treat any statement touching the payments schema as high risk."
-          minRows={6}
-          maxRows={12}
-          value={form.prompt}
-          onChange={(e) => set({ prompt: e.currentTarget.value })}
-        />
-      </SectionRow>
-
-      <Group justify="flex-end">
-        <Button onClick={handleSave} disabled={!canSubmit} loading={submitting}>
-          Save
-        </Button>
+          <Button onClick={handleSave} disabled={!canSubmit} loading={submitting}>
+            Save
+          </Button>
+        </Group>
       </Group>
+
+      <Stack gap="xxlAlt">
+        <SectionRow
+          title="Set rule information"
+          description="Used to identify this analysis across the fleet."
+        >
+          <Stack gap="md">
+            <TextInput
+              label="Name"
+              placeholder="risky-writes"
+              value={name}
+              onChange={(e) => setName(e.currentTarget.value)}
+              required
+              disabled={isEdit}
+              description={isEdit ? 'A rule is addressed by name, so it cannot be renamed.' : undefined}
+              autoFocus={!isEdit}
+            />
+            <TextInput
+              label="Description (Optional)"
+              placeholder="Describe what this watches"
+              value={description}
+              onChange={(e) => setDescription(e.currentTarget.value)}
+            />
+          </Stack>
+        </SectionRow>
+
+        <SectionRow
+          title="Distribute to listeners"
+          description="One rule per listener. The sidecar needs its analyzer section (provider and model) in its config."
+        >
+          <SidecarTargetPicker value={targets} onChange={setTargets} />
+        </SectionRow>
+
+        <SectionRow
+          title="What gets classified"
+          description="This is the only check that leaves the process and costs money per statement. Narrow it."
+          callout={
+            <DocsBtnCallOut text="See our docs for triggers and costs" href={docsUrl.sidecar.riskAnalysis} variant="indigo" />
+          }
+        >
+          <Stack gap="md">
+            {isHTTP ? (
+              <TagsInput
+                label="Resources"
+                placeholder="/orders/**"
+                value={form.trigger_resources}
+                onChange={(v) => set({ trigger_resources: v })}
+              />
+            ) : (
+              <>
+                <MultiSelect
+                  label="Operations"
+                  placeholder="Select operations..."
+                  data={operations}
+                  value={form.trigger_operations}
+                  onChange={(v) => set({ trigger_operations: v })}
+                  searchable
+                  clearable
+                />
+                <TagsInput
+                  label="Tables (optional)"
+                  placeholder="customers"
+                  value={form.trigger_tables}
+                  onChange={(v) => set({ trigger_tables: v })}
+                />
+              </>
+            )}
+            {noTrigger && (
+              <Alert color="amber" variant="light" icon={<Info size={16} />} radius="md">
+                With no trigger, every statement on this listener is sent to the model.
+              </Alert>
+            )}
+            <NumberInput
+              label="Call budget (optional)"
+              placeholder="Inherit the sidecar’s"
+              value={form.max_calls}
+              onChange={(v) => set({ max_calls: v })}
+              min={0}
+            />
+          </Stack>
+        </SectionRow>
+
+        <SectionRow
+          title="What happens per risk level"
+          description="A level you leave unset allows. Hold for approval waits up to 30 minutes for a review; a client that times out first ends the wait, and running it again after approval lets it through. On an SSH listener, drop the shell capability first."
+        >
+          <Stack gap="md">
+            {[
+              ['high', 'High risk'],
+              ['medium', 'Medium risk'],
+              ['low', 'Low risk'],
+            ].map(([level, label]) => (
+              <Select
+                key={level}
+                label={label}
+                data={actions}
+                value={form[level]}
+                onChange={(v) => set({ [level]: v ?? '' })}
+                allowDeselect={false}
+              />
+            ))}
+            {ownHold && (
+              <MultiSelect
+                label="Reviewers"
+                description="Groups whose members may approve. Empty leaves it to the administrators."
+                placeholder="Select groups"
+                searchable
+                nothingFoundMessage="No user groups defined yet."
+                data={reviewerOptions}
+                value={reviewers}
+                onChange={setReviewers}
+              />
+            )}
+            <TextInput
+              label="Denial message (optional)"
+              placeholder="refused by risk analysis"
+              value={form.message}
+              onChange={(e) => set({ message: e.currentTarget.value })}
+            />
+          </Stack>
+        </SectionRow>
+
+        <SectionRow
+          title="Custom analysis prompt"
+          description="Replaces the default risk guidance for this listener."
+        >
+          <Textarea
+            label="Your prompt (Optional)"
+            placeholder="e.g. Treat any statement touching the payments schema as high risk."
+            minRows={6}
+            maxRows={12}
+            value={form.prompt}
+            onChange={(e) => set({ prompt: e.currentTarget.value })}
+          />
+        </SectionRow>
+      </Stack>
+
+      <Modal opened={deleteOpened} onClose={deleteModal.close} title="Delete rule">
+        <Stack gap="lg">
+          <Text size="sm">
+            {`Are you sure you want to delete the rule "${ruleName}"? Every listener it is distributed to stops running it. This action cannot be undone.`}
+          </Text>
+          <Group justify="flex-end" gap="sm">
+            <Button variant="subtle" color="gray" onClick={deleteModal.close}>
+              Cancel
+            </Button>
+            <Button color="red" onClick={handleDelete} loading={submitting}>
+              Delete
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
     </Stack>
   )
 }
