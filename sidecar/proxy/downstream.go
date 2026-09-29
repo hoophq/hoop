@@ -63,37 +63,38 @@ const maxNegotiationRounds = 4
 // pgwire has no server greeting: the backend sends nothing until it has read a
 // startup packet. Blocking for the client's first bytes is therefore the
 // protocol's own ordering, not an assumption imposed on it.
-// It also returns the `user` the client named in its StartupMessage, which the
-// caller records as the session principal. See startupUser for what that name
-// is worth.
+// It also returns the parameters the client sent in its StartupMessage: the
+// caller records `user` as the session principal and lifts the operator's
+// startup_metadata fields from the rest. See startupParams for what those
+// values are worth.
 func negotiateDownstream(
 	conn net.Conn,
 	proto inspect.Protocol,
 	tlsCfg *tls.Config,
 	timeout time.Duration,
-) (net.Conn, string, error) {
+) (net.Conn, startupPacket, error) {
 	if proto == inspect.ClickHouse && tlsCfg != nil {
 		if timeout > 0 {
 			if err := conn.SetDeadline(time.Now().Add(timeout)); err != nil {
-				return nil, "", err
+				return nil, nil, err
 			}
 		}
 		tc := tls.Server(conn, tlsCfg)
 		if err := tc.Handshake(); err != nil {
-			return nil, "", fmt.Errorf("downstream TLS handshake: %w", err)
+			return nil, nil, fmt.Errorf("downstream TLS handshake: %w", err)
 		}
 		if err := tc.SetDeadline(time.Time{}); err != nil {
-			return nil, "", err
+			return nil, nil, err
 		}
-		return tc, "", nil
+		return tc, nil, nil
 	}
 	if proto != inspect.Postgres {
-		return conn, "", nil
+		return conn, nil, nil
 	}
 
 	if timeout > 0 {
 		if err := conn.SetDeadline(time.Now().Add(timeout)); err != nil {
-			return nil, "", err
+			return nil, nil, err
 		}
 	}
 
@@ -109,9 +110,9 @@ func negotiateDownstream(
 		hdr, err := br.Peek(pgNegotiateLen)
 		if err != nil {
 			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-				return nil, "", fmt.Errorf("client closed during negotiation: %w", err)
+				return nil, nil, fmt.Errorf("client closed during negotiation: %w", err)
 			}
-			return nil, "", fmt.Errorf("reading the client's first packet: %w", err)
+			return nil, nil, fmt.Errorf("reading the client's first packet: %w", err)
 		}
 
 		length := binary.BigEndian.Uint32(hdr[0:4])
@@ -121,40 +122,40 @@ func negotiateDownstream(
 		// Anything else is the StartupMessage, so it belongs to the caller and
 		// stays in the buffer unread.
 		if length != pgNegotiateLen {
-			return finishNegotiation(conn, br, timeout, startupUser(br, length))
+			return finishNegotiation(conn, br, timeout, startupParams(br, length))
 		}
 
 		switch code {
 		case pgGSSEncRequestCode:
 			if _, err := br.Discard(pgNegotiateLen); err != nil {
-				return nil, "", err
+				return nil, nil, err
 			}
 			if _, err := conn.Write([]byte{'N'}); err != nil {
-				return nil, "", fmt.Errorf("refusing GSS encryption: %w", err)
+				return nil, nil, fmt.Errorf("refusing GSS encryption: %w", err)
 			}
 
 		case pgSSLRequestCode:
 			if _, err := br.Discard(pgNegotiateLen); err != nil {
-				return nil, "", err
+				return nil, nil, err
 			}
 			if tlsCfg == nil {
 				if _, err := conn.Write([]byte{'N'}); err != nil {
-					return nil, "", fmt.Errorf("refusing SSL: %w", err)
+					return nil, nil, fmt.Errorf("refusing SSL: %w", err)
 				}
 				continue
 			}
 			if _, err := conn.Write([]byte{'S'}); err != nil {
-				return nil, "", fmt.Errorf("accepting SSL: %w", err)
+				return nil, nil, fmt.Errorf("accepting SSL: %w", err)
 			}
 			// Anything still buffered here would be a client that spoke
 			// before our 'S' reached it, which no client does and a hostile
 			// one could use to smuggle plaintext into the TLS session.
 			if br.Buffered() > 0 {
-				return nil, "", errors.New("client sent data before the TLS handshake")
+				return nil, nil, errors.New("client sent data before the TLS handshake")
 			}
 			tc := tls.Server(conn, tlsCfg)
 			if err := tc.Handshake(); err != nil {
-				return nil, "", fmt.Errorf("downstream TLS handshake: %w", err)
+				return nil, nil, fmt.Errorf("downstream TLS handshake: %w", err)
 			}
 			// The exchange restarts inside TLS: the client sends its startup
 			// packet, and may legitimately negotiate again first.
@@ -164,27 +165,27 @@ func negotiateDownstream(
 		case pgCancelRequestCode:
 			// A cancel carries no session. Hand it through; the upstream
 			// answers it and closes.
-			return finishNegotiation(conn, br, timeout, "")
+			return finishNegotiation(conn, br, timeout, nil)
 
 		default:
-			return finishNegotiation(conn, br, timeout, "")
+			return finishNegotiation(conn, br, timeout, nil)
 		}
 	}
 
-	return nil, "", errors.New("client kept renegotiating without sending a startup packet")
+	return nil, nil, errors.New("client kept renegotiating without sending a startup packet")
 }
 
-// maxStartupPacket bounds how much of a StartupMessage is inspected for the
-// user parameter. Postgres itself refuses a startup packet above 10000 bytes.
+// maxStartupPacket bounds how much of a StartupMessage is inspected for its
+// parameters. Postgres itself refuses a startup packet above 10000 bytes.
 const maxStartupPacket = 10000
 
-// startupUser reads the `user` parameter out of the StartupMessage waiting in
-// br, WITHOUT consuming it: the gate still needs the packet whole.
+// startupParams reads the parameters out of the StartupMessage waiting in br,
+// WITHOUT consuming it: the gate still needs the packet whole.
 //
-// # What this name is worth
+// # What these values are worth
 //
-// At this instant it is a CLAIM. The client has asserted who it wants to be
-// and has proved nothing. It becomes true when the backend answers
+// At this instant every one is a CLAIM. The client has asserted who it wants
+// to be and has proved nothing. `user` becomes true when the backend answers
 // AuthenticationOk, because Postgres validated the credential against this
 // exact name, and under `gss` that means a Kerberos ticket for this principal.
 //
@@ -194,52 +195,88 @@ const maxStartupPacket = 10000
 // is a login that failed, and the name on it is what the client wanted rather
 // than what it proved.
 //
-// Returns "" when the packet is not a v3 StartupMessage (a cancel request, or
-// a protocol version this relay does not recognize) or carries no user.
-func startupUser(br *bufio.Reader, length uint32) string {
+// Every OTHER parameter stays a claim for the life of the session. Postgres
+// authenticates the user, not the `options` string or `application_name`
+// that rode beside it, so a value lifted from them is a label for tracing
+// and never an identity.
+//
+// # Duplicates and order
+//
+// Parameters are kept in packet order, repeats included, because that is how
+// the backend resolves them: each `user`, `database` and `options` read in
+// ProcessStartupPacket overwrites the one before it, and the remaining
+// parameters are applied as settings in order, a setting name matching
+// case-insensitively. A map would lose both, and keeping the first `user`
+// would let a client audit as one user and log in as another. See
+// startupPacket.get and pgEffectiveOptionSettings.
+//
+// Returns nil when the packet is not a v3 StartupMessage (a cancel request,
+// or a protocol version this relay does not recognize) or is malformed.
+func startupParams(br *bufio.Reader, length uint32) startupPacket {
 	if length < 9 || length > maxStartupPacket {
-		return ""
+		return nil
 	}
 	pkt, err := br.Peek(int(length))
 	if err != nil {
-		return ""
+		return nil
 	}
 	// Only protocol 3.x lays out parameters this way.
 	if binary.BigEndian.Uint32(pkt[4:8])>>16 != 3 {
-		return ""
+		return nil
 	}
 
 	// NUL-terminated key/value pairs, ending with an empty key.
-	params := pkt[8:]
+	var params startupPacket
+	rest := pkt[8:]
 	for {
-		k, rest, ok := bytes.Cut(params, []byte{0})
-		if !ok || len(k) == 0 {
-			return ""
-		}
-		v, rest, ok := bytes.Cut(rest, []byte{0})
+		k, after, ok := bytes.Cut(rest, []byte{0})
 		if !ok {
-			return ""
+			return nil
 		}
-		if string(k) == "user" {
-			return string(v)
+		if len(k) == 0 {
+			return params
 		}
-		params = rest
+		v, after, ok := bytes.Cut(after, []byte{0})
+		if !ok {
+			return nil
+		}
+		params = append(params, startupParam{name: string(k), value: string(v)})
+		rest = after
 	}
+}
+
+// startupParam is one StartupMessage parameter.
+type startupParam struct{ name, value string }
+
+// startupPacket is a StartupMessage's parameters in packet order, repeats
+// included. See startupParams for why the order is kept.
+type startupPacket []startupParam
+
+// get returns the value of the LAST parameter named exactly name: the one
+// ProcessStartupPacket keeps for user, database and options, which it
+// compares with strcmp.
+func (p startupPacket) get(name string) (string, bool) {
+	for i := len(p) - 1; i >= 0; i-- {
+		if p[i].name == name {
+			return p[i].value, true
+		}
+	}
+	return "", false
 }
 
 // finishNegotiation clears the handshake deadline and hands back a connection
 // that reads through the buffer the negotiation filled.
 func finishNegotiation(
-	conn net.Conn, br *bufio.Reader, timeout time.Duration, user string,
-) (net.Conn, string, error) {
+	conn net.Conn, br *bufio.Reader, timeout time.Duration, params startupPacket,
+) (net.Conn, startupPacket, error) {
 	if timeout > 0 {
 		// The relay's own IdleTimeout governs from here; leaving the
 		// handshake deadline set would kill a long-running query.
 		if err := conn.SetDeadline(time.Time{}); err != nil {
-			return nil, "", err
+			return nil, nil, err
 		}
 	}
-	return &bufferedConn{Conn: conn, r: br}, user, nil
+	return &bufferedConn{Conn: conn, r: br}, params, nil
 }
 
 // bufferedConn reads through a bufio.Reader while keeping the underlying

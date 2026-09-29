@@ -1456,10 +1456,15 @@ func buildServer(
 		CredentialHeader:    lc.credentialHeader(),
 		RequestIdentity:     requestIdentity,
 		CodecFactory:        ln.codecFactory,
-		Metrics:             ln.metrics,
-		IdleTimeout:         time.Duration(lc.IdleTimeoutSec) * time.Second,
-		MaxConns:            lc.MaxConns,
-		Logger:              log.With("listener", ln.name),
+		StartupMetadata:     lc.Postgres.startupMetadata(),
+		// The product default: a postgres lane with no startup_metadata list
+		// records every option the client sends. See PostgresConfig.
+		AllStartupOptions: inspect.Protocol(lc.Protocol) == inspect.Postgres &&
+			lc.Postgres.recordsAllOptions(),
+		Metrics:     ln.metrics,
+		IdleTimeout: time.Duration(lc.IdleTimeoutSec) * time.Second,
+		MaxConns:    lc.MaxConns,
+		Logger:      log.With("listener", ln.name),
 	})
 }
 

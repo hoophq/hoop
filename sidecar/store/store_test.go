@@ -304,6 +304,31 @@ func TestRiskLevelTakesTheMaximum(t *testing.T) {
 	}
 }
 
+// A pgwire session learns its startup metadata after session_start is
+// written, so the row takes it from session_end. A statement's metadata never
+// reaches the row: it carries keys such as pg.message that describe one
+// statement, and the first statement would otherwise stamp its own on the
+// whole session.
+func TestSessionMetadataComesFromTheSessionRecords(t *testing.T) {
+	s := store.NewMemoryStore(10)
+	trace := map[string]string{"postgres.option.claude.session.id": "xyz"}
+	s.Write(ctx(), audit.Event{Kind: audit.KindSessionStart, Timestamp: time.Now().UTC(),
+		SessionID: "m", Principal: "anonymous"})
+	s.Write(ctx(), audit.Event{Kind: audit.KindStatement, Timestamp: time.Now().UTC(),
+		SessionID: "m", Principal: "alice", Allowed: true,
+		Metadata: map[string]string{"pg.message": "Query", "postgres.option.claude.session.id": "xyz"}})
+
+	if rec, _ := s.Session(ctx(), "m"); len(rec.Metadata) != 0 {
+		t.Fatalf("open session row metadata = %v, want none from a statement", rec.Metadata)
+	}
+	s.Write(ctx(), audit.Event{Kind: audit.KindSessionEnd, Timestamp: time.Now().UTC(),
+		SessionID: "m", Principal: "alice", Metadata: trace})
+	rec, _ := s.Session(ctx(), "m")
+	if len(rec.Metadata) != 1 || rec.Metadata["postgres.option.claude.session.id"] != "xyz" {
+		t.Fatalf("ended session row metadata = %v, want %v", rec.Metadata, trace)
+	}
+}
+
 // Eviction must drop a whole session, never half its timeline, or the detail
 // view renders a truncated session as a whole one.
 func TestEvictionDropsWholeSessions(t *testing.T) {

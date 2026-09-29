@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 	"sync"
@@ -99,7 +100,6 @@ func (m *MemoryStore) Write(_ context.Context, ev audit.Event) error {
 			Protocol:   ev.Protocol,
 			Connection: ev.Connection,
 			StartedAt:  ev.Timestamp,
-			Metadata:   ev.Metadata,
 		}
 		m.sessions[ev.SessionID] = rec
 		m.order = append(m.order, ev.SessionID)
@@ -120,11 +120,21 @@ func applyEvent(rec *SessionRecord, ev audit.Event) {
 	case audit.KindSessionStart:
 		rec.StartedAt = ev.Timestamp
 		if ev.Metadata != nil {
-			rec.Metadata = ev.Metadata
+			rec.Metadata = maps.Clone(ev.Metadata)
 		}
 	case audit.KindSessionEnd:
 		rec.EndedAt = ev.Timestamp
 		rec.DurationMS = ev.Duration.Milliseconds()
+		// The row's metadata is the SESSION's, so it comes from the two
+		// records that carry nothing else: session_start and session_end.
+		// A statement's metadata mixes in codec keys (pg.message) and
+		// verdict annotations that describe one statement, not the
+		// session. session_end supersedes session_start because a lane can
+		// learn session facts after the start is written: a pgwire lane
+		// reads its StartupMessage only then.
+		if ev.Metadata != nil {
+			rec.Metadata = maps.Clone(ev.Metadata)
+		}
 		// Trust the end event's totals over the running counts. The end
 		// event is authoritative, and a sink attached mid-session may have
 		// missed earlier statements.

@@ -1757,6 +1757,104 @@ what ADR-0015 refuses.
 Everything that is not a statement is written as `kind: activity`, with what
 happened in `metadata.activity`.
 
+### Postgres: trace ids from the startup packet
+
+A postgres lane reads the client's StartupMessage before the gate sees a byte.
+It records `user` as the principal, and **by default every setting the client
+sends in `options`** onto the session's metadata, so every statement record,
+the `session_end` record and OPA's `input.context` carry them. No config is
+needed:
+
+```bash
+PGOPTIONS='-c claude.session.id=xyz1234678' psql -h 127.0.0.1 -p 15432 appdb
+# DSN form: postgres://u@host:15432/appdb?options=-c%20claude.session.id%3Dxyz1234678
+```
+
+```json
+{"kind":"statement","principal":"alice","statement":"SELECT 1",
+ "metadata":{"postgres.option.claude.session.id":"xyz1234678"}}
+```
+
+Postgres accepts a dotted setting name as a custom setting, so the backend runs
+with it too and `current_setting('claude.session.id', true)` reads it inside the
+database.
+
+The `postgres` block narrows or turns off the default:
+
+```yaml
+listeners:
+  - name: appdb
+    protocol: postgres
+    listen: 127.0.0.1:15432
+    upstream: appdb:5432
+    postgres:
+      startup_metadata:                 # a list records ONLY these
+        - option: claude.session.id     # from options "-c claude.session.id=..."
+          as: claude.session.id         # the metadata key; absent, postgres.option.<name>
+        - parameter: application_name   # a plain startup parameter
+```
+
+| `startup_metadata` | Records |
+|---|---|
+| absent (or no `postgres` block) | every `options` setting, as `postgres.option.<name>` |
+| a list | only those fields |
+| `[]` | nothing |
+
+`startup_metadata:` with no value is refused: it reads as absent, which is the
+opposite of what it looks like.
+
+- **Options are read the way the backend reads them**: words split on
+  whitespace with `\` escaping, then `-c name=value`, `-cname=value` or
+  `--name=value`. Names are recorded lowercase with `-` read as `_`, and the
+  last assignment wins. Reading stops where the backend would refuse the
+  connection (a non-switch word, `--`, an unknown switch), because no statement
+  can run under what follows. A setting the client also sends as a startup
+  parameter of its own (`claude.session.id=...` beside `options`) records that
+  parameter's value, because the backend applies it after `options`; of two
+  such parameters, the later wins, names compared case-insensitively.
+- **`option`** names one setting, matched the same way. **`parameter`** names a
+  StartupMessage parameter, matched exactly; parameters are only recorded when
+  a list names them.
+- **`as`** is the metadata key. Absent, it is `postgres.option.<name>` or
+  `postgres.parameter.<parameter>`, the key the default writes, so narrowing a
+  lane keeps the keys a dashboard queries. A key the relay writes into
+  `input.context` itself (`principal`, `subject`, `session_id`, and the rest)
+  is refused at load: the value is the client's, and that key would let the
+  client name its own principal. The default's keys all sit under
+  `postgres.option.`, so a client-chosen setting name cannot reach one.
+- A source the client did not send records no key, not an empty value. A value
+  longer than 256 bytes is cut at a character boundary. The default records as
+  many settings as the client sends, bounded by the 10000-byte StartupMessage.
+
+Where the values appear:
+
+| Place | Carries them |
+|---|---|
+| each `statement` / `violation` event, and `session_end` | yes |
+| `session_start` | no: it is written before the StartupMessage is read |
+| the session row in `GET /api/sessions` and `/api/sessions/{id}` | once the session ends; the row takes `session_end`'s metadata, never a statement's |
+| OPA `input.context` | yes, from the first statement |
+| the `session opened` / `session closed` log lines | yes, under one `metadata` object |
+
+```json
+{"msg":"session opened","session":"de2f…","principal":"alice",
+ "metadata":{"postgres.option.claude.agent.id":"agent-7","postgres.option.claude.session.id":"xyz1234678"}}
+```
+
+**These values are claims.** Postgres authenticates the user, not the options
+beside it, so a lifted value is a label for tracing and never an identity. It
+lands in `metadata`, not in `identity`. PgBouncer in front of
+the backend refuses an unknown `options` parameter unless
+`ignore_startup_parameters` lists it, and listing it drops the value before the
+database sees it.
+
+**The default records whatever the client puts in `options`**, `search_path` and
+application settings included, in the audit trail, in what OPA receives and in
+the process log, which your log pipeline ships with its own retention and
+access rules. `audit.redact_statements` covers statement text, not metadata. A
+lane whose clients may carry a secret in `options` should name the settings it
+wants, or write `[]`.
+
 ### MySQL, and the three ways a session goes dark
 
 MySQL is stateful for a harder reason than Postgres. A pgwire message is
@@ -2498,7 +2596,10 @@ result := {"allow": true, "request": {"ai_analysis": true}} if {
 `input.context` is whatever the caller attached. The relay fills it from the
 session: `principal`, `session_id`, `connection`, and `subject`, `email`,
 `groups`, `peer_addr`, `upstream`, `correlation_id` where the identity carries
-them. `context.connection` keeps its key and changes its source: the
+them, plus the session's metadata keys, such as the `postgres.option.<name>`
+keys a postgres lane records from the client's `options`. On a postgres lane,
+`principal` is the StartupMessage `user`. `context.connection` keeps its key
+and changes its source: the
 listener's `name` fills it now that `listeners[].connection` is gone. A
 deployment that set the two fields to different strings sees every Rego rule
 and every audit row key on the new value, so rename the listener before
