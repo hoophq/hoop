@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/gateway/migrations"
 	"github.com/hoophq/hoop/gateway/models"
 	"gorm.io/gorm"
 )
@@ -124,6 +125,52 @@ func TestRefusedSidecarReviewIsNotLive(t *testing.T) {
 				t.Errorf("live review = %s, want the new one %s", got.ID, next.ID)
 			}
 		})
+	}
+}
+
+// The down migration restores the old index, which allows one refused row per
+// statement. A refiled statement must not block it, and no row is deleted.
+func TestRefileMigrationRollsBack(t *testing.T) {
+	startTestDB(t)
+	sc := seedSidecar(t, "rollback")
+	const statement = "DELETE FROM x;"
+	old := seedSidecarReview(t, sc, statement)
+	if err := models.UpdateReviewStatus(testOrgID, old.ID, models.ReviewStatusRejected); err != nil {
+		t.Fatalf("reject the review: %v", err)
+	}
+	next := seedSidecarReview(t, sc, statement)
+
+	down, err := migrations.FS.ReadFile("000125_sidecar_review_refile_refused.down.sql")
+	if err != nil {
+		t.Fatalf("read the down migration: %v", err)
+	}
+	if err := models.DB.Exec(string(down)).Error; err != nil {
+		t.Fatalf("the down migration failed: %v", err)
+	}
+
+	hashes := map[string]sql.NullString{}
+	rows, err := models.DB.Raw(`SELECT id, statement_hash FROM private.reviews WHERE id IN (?, ?)`,
+		old.ID, next.ID).Rows()
+	if err != nil {
+		t.Fatalf("read the reviews: %v", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		var hash sql.NullString
+		if err := rows.Scan(&id, &hash); err != nil {
+			t.Fatalf("scan: %v", err)
+		}
+		hashes[id] = hash
+	}
+	if len(hashes) != 2 {
+		t.Fatalf("got %d reviews after rollback, want 2", len(hashes))
+	}
+	if hashes[old.ID].Valid {
+		t.Errorf("the older review kept its hash")
+	}
+	if !hashes[next.ID].Valid {
+		t.Errorf("the newest review lost its hash")
 	}
 }
 
