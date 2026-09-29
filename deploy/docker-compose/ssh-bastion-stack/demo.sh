@@ -142,16 +142,33 @@ after=$(dc logs host-c 2>&1 | grep -c "Accepted certificate" || true)
 ok "and the target was never reached with a substitute" "$before" "$after"
 
 # ssh-agent is started and stopped inside ONE shell so nothing survives the
-# check, and the whole thing is bounded: a hung agent would otherwise stall
-# the run rather than fail it.
+# check, and the timeout is a backstop rather than the bound: the elapsed
+# time is asserted below, so a session that only finishes because it was
+# killed FAILS instead of passing on its output.
 out=$(dc exec -T client sh -c '
     eval $(ssh-agent -s) >/dev/null 2>&1
     ssh-add ~/.ssh/id_ed25519 >/dev/null 2>&1
+    s=$(date +%s)
     timeout 25 ssh -o ForwardAgent=yes host-c.prod hostname 2>&1 \
         | grep -v "Permanently added"
+    e=$(date +%s)
+    echo "elapsed=$((e-s))"
     ssh-agent -k >/dev/null 2>&1
     exit 0' 2>&1)
 ok "with an agent, the session runs" "$out" "host-c"
+
+# The agent channel is opened by the BASTION, so only the bastion can close
+# it, and a client waiting on it does not exit however finished its command
+# is. It is closed when the upstream handshake ends, which is the last moment
+# the agent is needed. Without that the command above still prints host-c and
+# then hangs until timeout kills it — which is why this asserts the clock and
+# not only the output.
+elapsed=$(printf '%s\n' "$out" | sed -n 's/^elapsed=//p' | tail -1)
+if [ "${elapsed:-99}" -le 5 ]; then
+    ok "and the client exits on its own, not on a timeout" "under 5s" "under 5s"
+else
+    ok "and the client exits on its own, not on a timeout" "took ${elapsed}s" "under 5s"
+fi
 
 out=$(dc logs host-c 2>&1 | grep "Accepted certificate" | tail -1)
 ok "and the TARGET's own log names the person" "$out" "alice@example.com"
