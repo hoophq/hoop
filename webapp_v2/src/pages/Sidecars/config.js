@@ -15,7 +15,7 @@ export const FEATURES = {
   guardrails: { key: 'guardrails', label: 'Guardrails', icon: ShieldCheck, color: 'indigo' },
 }
 
-const FEATURE_ORDER = ['ai-analyzer', 'data-masking', 'guardrails']
+export const FEATURE_ORDER = ['ai-analyzer', 'data-masking', 'guardrails']
 
 // Every protocol a listener can declare, which is the codec registry
 // (sidecar/codec/all) plus grpc and spanner — those two have no codec on

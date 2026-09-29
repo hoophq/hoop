@@ -1,4 +1,4 @@
-import { Checkbox, Divider, Grid, Stack, Text } from '@mantine/core'
+import { Checkbox, Divider, Grid, Group, Stack, Text } from '@mantine/core'
 import Accordion from '@/components/Accordion'
 import NumberInput from '@/components/NumberInput'
 import SectionRow from '@/components/SectionRow'
@@ -126,7 +126,14 @@ export default function ListenerForm({ form, setField, errors }) {
 
       <Accordion>
         <Accordion.Item value="advanced">
-          <Accordion.Control>Advanced</Accordion.Control>
+          <Accordion.Control>
+            <Group justify="space-between" wrap="nowrap" pr="sm">
+              <Text fw={600}>Advanced settings</Text>
+              <Text size="sm" c="dimmed">
+                Optional
+              </Text>
+            </Group>
+          </Accordion.Control>
           <Accordion.Panel>
             <Stack gap="lg" pt="xs">
               <Block title="Limits">

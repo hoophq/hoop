@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Stack, Text, Title } from '@mantine/core'
 import { ArrowLeft } from 'lucide-react'
@@ -6,9 +6,11 @@ import Button from '@/components/Button'
 import FormFooter, { FORM_FOOTER_CLEARANCE } from '@/components/FormFooter'
 import PageLoader from '@/components/PageLoader'
 import { useSidecarStore } from '@/stores/useSidecarStore'
+import { showSnackbar } from '@/utils/snackbar'
 import ListenerForm from '../components/ListenerForm'
-import { listenerIndexByLabel, listenerLabel } from '../listeners'
-import { useListenerEditor } from '../useListenerEditor'
+import { listenerIndexByLabel, listenerLabel, removeListener } from '../listeners'
+import DeleteListenerModal from '../sections/DeleteListenerModal'
+import { saveErrorMessage, useListenerEditor } from '../useListenerEditor'
 
 // The sidecar this listener belongs to, above its own name. There is no
 // Breadcrumbs component in the app and one consumer does not earn one; this is
@@ -25,7 +27,7 @@ function Parent({ name, onClick }) {
       w="fit-content"
       size="compact-sm"
     >
-      {name}
+      {`Back to ${name}`}
     </Button>
   )
 }
@@ -35,17 +37,47 @@ function Parent({ name, onClick }) {
 // first render and patched by an effect afterwards.
 function Editor({ sidecar, index, onDone }) {
   const { form, setField, errors, saving, save, isNew } = useListenerEditor({ sidecar, index })
+  const updateSidecar = useSidecarStore((s) => s.updateSidecar)
+  const [deleting, setDeleting] = useState(false)
+  const [deletingBusy, setDeletingBusy] = useState(false)
+  const listeners = sidecar.configuration?.listeners ?? []
+  const label = isNew ? null : listenerLabel(listeners[index], index)
 
   const handleSave = async () => {
     if (await save()) onDone()
   }
 
+  // Deleting is the same read-modify-write as saving: the whole document goes
+  // back with one element fewer.
+  const confirmDelete = async () => {
+    setDeletingBusy(true)
+    const configuration = removeListener(sidecar.configuration, index)
+    const { ok, error } = await updateSidecar(sidecar.id, configuration)
+    setDeletingBusy(false)
+    if (!ok) {
+      showSnackbar({ level: 'error', text: 'Failed to delete the listener.', description: saveErrorMessage(error) })
+      return
+    }
+    setDeleting(false)
+    showSnackbar({ level: 'success', text: `Listener "${label}" deleted.` })
+    onDone()
+  }
+
   return (
     <>
+      <DeleteListenerModal
+        label={label}
+        lastOne={listeners.length === 1}
+        opened={deleting}
+        onClose={() => setDeleting(false)}
+        onConfirm={confirmDelete}
+        loading={deletingBusy}
+      />
+
       <Stack gap="xl" pb={FORM_FOOTER_CLEARANCE}>
         <Stack gap="xs">
           <Parent name={sidecar.name} onClick={onDone} />
-          <Title order={1}>{isNew ? 'Add listener' : form.name || listenerLabel(null, index)}</Title>
+          <Title order={1}>{isNew ? 'Add listener' : form.name || label}</Title>
           <Text c="dimmed">
             {isNew
               ? `A new listener on ${sidecar.name}: one upstream, one protocol, its own bind address.`
@@ -58,7 +90,15 @@ function Editor({ sidecar, index, onDone }) {
 
       {/* Pinned, because the form runs past the fold as soon as Advanced is
           open and the page header already carries the search. */}
-      <FormFooter>
+      <FormFooter
+        left={
+          !isNew && (
+            <Button variant="subtle" color="red" onClick={() => setDeleting(true)} disabled={saving}>
+              Delete listener
+            </Button>
+          )
+        }
+      >
         <Button variant="subtle" color="gray" onClick={onDone} disabled={saving}>
           Cancel
         </Button>

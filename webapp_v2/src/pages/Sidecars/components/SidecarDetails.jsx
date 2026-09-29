@@ -4,16 +4,17 @@ import { Info, Lock } from 'lucide-react'
 import ActionMenu from '@/components/ActionMenu'
 import Alert from '@/components/Alert'
 import Badge from '@/components/Badge'
+import Button from '@/components/Button'
 import Tooltip from '@/components/Tooltip'
 import EmptyState from '@/layout/EmptyState'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import { formatRelativeTime } from '@/utils/datetime'
 import { showSnackbar } from '@/utils/snackbar'
-import { auditEnabled, configFeatures, hasConfiguration, usesConfigFile } from '../config'
+import { auditEnabled, hasConfiguration, usesConfigFile } from '../config'
 import ListenersTable from '../sections/ListenersTable'
 import { sidecarStatus } from '../status'
 import SidecarSourceModal from '../sections/SidecarSourceModal'
-import FeaturePills from './FeaturePills'
+import FeatureAccordions from './FeatureAccordions'
 
 const LABEL_WIDTH = 88
 
@@ -54,17 +55,72 @@ function detachedSummary(detached) {
     .join(' ')
 }
 
+// The banner above the card says which side owns the document, and carries
+// the one action that changes it (Figma: "Change config").
+function SourceBanner({ fromFile, configured, editable, onSwitch }) {
+  if (fromFile) {
+    return (
+      <Alert color="blue" variant="light" radius="md" icon={<Lock size={16} />}>
+        <Group justify="space-between" align="center" wrap="nowrap" gap="md">
+          <Stack gap={4}>
+            <Text size="sm">
+              {
+                'This sidecar loads its configuration from its own config file, and the control plane sends only its license. A running sidecar picks this up on its next check-in, within a minute.'
+              }
+            </Text>
+            {configured && (
+              <Text size="sm">The configuration below is stored in the control plane and is not applied.</Text>
+            )}
+          </Stack>
+          {editable && (
+            <Button variant="light" size="sm" onClick={() => onSwitch(false)} flex="0 0 auto">
+              Use the control plane
+            </Button>
+          )}
+        </Group>
+      </Alert>
+    )
+  }
+  if (configured) {
+    return (
+      <Alert color="blue" variant="light" radius="md" icon={<Lock size={16} />}>
+        <Group justify="space-between" align="center" wrap="nowrap" gap="md">
+          <Text size="sm">
+            {
+              "The control plane owns this sidecar's configuration and serves it on every check-in. Edit it here, not in the sidecar's own file."
+            }
+          </Text>
+          {editable && (
+            <Button variant="light" size="sm" onClick={() => onSwitch(true)} flex="0 0 auto">
+              Change config
+            </Button>
+          )}
+        </Group>
+      </Alert>
+    )
+  }
+  return (
+    <Alert color="gray" variant="light" radius="md" icon={<Info size={16} />}>
+      <Text size="sm">
+        The control plane stores no listeners for this sidecar yet. The sidecar imports its own config file on its
+        first handshake, and the control plane owns it from then on.
+      </Text>
+    </Alert>
+  )
+}
+
 /**
  * The "Sidecar Details" card (Figma: wizard Overview and the details page).
  *
  * The control plane answers the sidecar's check-in with the configuration it
  * holds for it (gateway/api/sidecar). This card reads that document and writes
- * two things, each only when the caller hands it somewhere to put the result:
- * which side owns the document, under `editable`, and the listeners inside it,
- * under `listenerActions`. The wizard's Overview step passes neither — it holds
- * its own copy of a sidecar that is still waiting for the first handshake.
+ * one thing, only when the caller hands it somewhere to put the result: which
+ * side owns the document, under `editable`. Listeners are authored through
+ * `listenerActions`, the sidecar is deleted through `onDelete`. The wizard's
+ * Overview step passes none of them — it holds its own copy of a sidecar that
+ * is still waiting for the first handshake.
  */
-export default function SidecarDetails({ sidecar, editable, listenerActions }) {
+export default function SidecarDetails({ sidecar, editable, listenerActions, onDelete }) {
   const setUsesConfigFile = useSidecarStore((s) => s.setUsesConfigFile)
   const refreshSidecar = useSidecarStore((s) => s.refreshSidecar)
   const config = sidecar.configuration
@@ -108,33 +164,7 @@ export default function SidecarDetails({ sidecar, editable, listenerActions }) {
 
   return (
     <Stack gap="md">
-      {fromFile ? (
-        <Alert color="blue" variant="light" radius="md" icon={<Lock size={16} />}>
-          <Stack gap={4}>
-            <Text size="sm">
-              {
-                'This sidecar loads its configuration from its own config file, and the control plane sends only its license. A running sidecar picks this up on its next check-in, within a minute.'
-              }
-            </Text>
-            {configured && (
-              <Text size="sm">The configuration below is stored in the control plane and is not applied.</Text>
-            )}
-          </Stack>
-        </Alert>
-      ) : configured ? (
-        <Alert color="blue" variant="light" radius="md" icon={<Lock size={16} />}>
-          <Text size="sm">
-            {"The control plane delivers this sidecar's whole configuration, listeners included."}
-          </Text>
-        </Alert>
-      ) : (
-        <Alert color="gray" variant="light" radius="md" icon={<Info size={16} />}>
-          <Text size="sm">
-            The control plane stores no listeners for this sidecar yet. The sidecar imports its own config file on its
-            first handshake, and the control plane owns it from then on.
-          </Text>
-        </Alert>
-      )}
+      <SourceBanner fromFile={fromFile} configured={configured} editable={editable && !saving && !asking} onSwitch={ask} />
 
       <Paper withBorder radius="md" p="lg">
         <Stack gap="lg">
@@ -142,21 +172,18 @@ export default function SidecarDetails({ sidecar, editable, listenerActions }) {
             <Title order={3}>Sidecar Details</Title>
             <Group gap="lg" align="center">
               <SidecarStatusBadge sidecar={sidecar} />
-              {editable && (
-                <ActionMenu disabled={saving || asking} width={240}>
-                  {fromFile ? (
-                    <ActionMenu.Item onClick={() => ask(false)}>Use the control plane</ActionMenu.Item>
-                  ) : (
-                    <ActionMenu.Item danger onClick={() => ask(true)}>
-                      Use the configuration file
-                    </ActionMenu.Item>
-                  )}
+              {onDelete && (
+                <ActionMenu width={200}>
+                  <ActionMenu.Item danger onClick={onDelete}>
+                    Delete sidecar
+                  </ActionMenu.Item>
                 </ActionMenu>
               )}
             </Group>
           </Group>
 
           <Stack gap="sm">
+            <Text fw={600}>Global settings</Text>
             <Row label="Name">
               <Text size="sm" fw={600}>
                 {sidecar.name}
@@ -173,22 +200,32 @@ export default function SidecarDetails({ sidecar, editable, listenerActions }) {
                 <Text size="sm">{sidecar.version}</Text>
               </Row>
             )}
-          </Stack>
-
-          <Divider />
-
-          {configured ? (
-            <>
-              <Stack gap="sm">
-                <Text fw={600}>Global settings</Text>
-                <Row label="Features">
-                  <FeaturePills features={configFeatures(config, sidecar.bound_rules)} />
+            {configured && (
+              <>
+                {/* AdminConfig.Listen: the health and stats endpoint, off when empty. */}
+                <Row label="Admin">
+                  <Text size="sm" ff={config.admin?.listen ? 'monospace' : undefined}>
+                    {config.admin?.listen || 'Off'}
+                  </Text>
+                </Row>
+                {/* Config.LogLevel defaults to info when the document names none. */}
+                <Row label="Log level">
+                  <Text size="sm">{config.log_level || 'info'}</Text>
                 </Row>
                 <Row label="Audit">
                   <Badge variant={auditEnabled(config) ? 'active' : 'inactive'}>
                     {auditEnabled(config) ? 'Active' : 'Off'}
                   </Badge>
                 </Row>
+              </>
+            )}
+          </Stack>
+
+          {configured ? (
+            <>
+              <Stack gap="sm">
+                <Text fw={600}>Features</Text>
+                <FeatureAccordions config={config} boundRules={sidecar.bound_rules} />
               </Stack>
 
               <Divider />
@@ -200,13 +237,19 @@ export default function SidecarDetails({ sidecar, editable, listenerActions }) {
             // Nothing stored and nothing to store into: the plane sends this
             // sidecar only its license, so an empty listener table with an Add
             // button would offer an edit that changes nothing it runs.
-            <EmptyState
-              compact
-              title="This sidecar runs the configuration in its own config file"
-              description="The control plane stores no listeners for it and sends only its license."
-            />
+            <>
+              <Divider />
+              <EmptyState
+                compact
+                title="This sidecar runs the configuration in its own config file"
+                description="The control plane stores no listeners for it and sends only its license."
+              />
+            </>
           ) : (
-            <ListenersTable sidecar={sidecar} {...listenerActions} />
+            <>
+              <Divider />
+              <ListenersTable sidecar={sidecar} {...listenerActions} />
+            </>
           )}
         </Stack>
       </Paper>

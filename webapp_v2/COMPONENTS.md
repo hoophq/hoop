@@ -948,11 +948,13 @@ Non-obvious notes only:
   which falls back to `listener[i]` exactly as the daemon's `displayName` does, so a
   listener that never named itself is still reachable and reads the way its own audit
   rows do.
-  `sections/ListenerDetails.jsx` is the expanded row: a short chip strip of the
-  operational facts, then what the lane RESOLVES to — guardrails, masking and OPA, each
-  rule marked Listener or Inherited. Those rules appear nowhere else in the app, which
-  is what the expansion is for; certificate paths and codec switches are the form's job
-  and were deliberately left out.
+  `components/FeatureAccordions.jsx` is the expanded row and the card's Features
+  block: one accordion per feature (AI Analyzer, Data Masking, Guardrails) listing what
+  the lane RESOLVES to, each rule marked Listener, Inherited or Control plane. Without
+  a listener it reads the sidecar's top-level defaults. `pages/Sidecars/features.js`
+  builds those rows. Those rules appear nowhere else in the app, which is what the
+  expansion is for; certificate paths and codec switches are the form's job and were
+  deliberately left out.
   `pages/Sidecars/resolve.js` is the one port of `Config.resolve`, and both the Features
   chips (`config.js`) and the expanded row read it. Guardrail `rules` absent — **or
   `null`, which is what commenting them out in YAML leaves** — inherits, `[]` runs none,

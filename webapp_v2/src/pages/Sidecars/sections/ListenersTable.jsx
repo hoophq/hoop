@@ -1,28 +1,24 @@
 import { useState } from 'react'
-import { Group, Image, Stack, Text } from '@mantine/core'
-import { ArrowRightFromLine, ArrowRightToLine, ChevronDown, ChevronRight, Plus } from 'lucide-react'
+import { Box, Group, Image, Stack, Text } from '@mantine/core'
+import { ArrowRightFromLine, ArrowRightToLine, ChevronDown, ChevronRight, Pencil, Plus, Search } from 'lucide-react'
 import ActionIcon from '@/components/ActionIcon'
-import ActionMenu from '@/components/ActionMenu'
 import Badge from '@/components/Badge'
 import Button from '@/components/Button'
 import Table from '@/components/Table'
+import TextInput from '@/components/TextInput'
 import { useConnectionIconGetter } from '@/utils/connectionIcons'
-import { listenerFeatures, protocolInfo } from '../config'
+import { protocolInfo } from '../config'
+import { listenerPolicies } from '../features'
 import { listenerLabel } from '../listeners'
+import FeatureAccordions from '../components/FeatureAccordions'
 import FeaturePills from '../components/FeaturePills'
-import ListenerDetails from './ListenerDetails'
 
 // Figma draws the two addresses as chips with a direction on them rather than
-// as bare text, which is what stops a fleet table from reading like a
-// spreadsheet. Inbound is where clients arrive, outbound is where the sidecar
+// as bare text. Inbound is where clients arrive, outbound is where the sidecar
 // dials your resource.
 //
-// A Badge, not a Pill. Pill's label is a block box with a line-height, which
-// centres a bare string and nothing else: a flex child inside it — an icon
-// beside text — lands at the top of the box instead, three pixels above the
-// chip's own centre. Badge's root is a grid that centres both tracks, so the
-// icon and the text sit right whatever their heights. Every other table in this
-// app already puts a Badge in its cells; the only standalone Pills were here.
+// A Badge, not a Pill: Pill's label is a block box that centres a bare string
+// and nothing else, so an icon beside text lands above the chip's centre.
 function AddressChip({ value, inbound }) {
   const Icon = inbound ? ArrowRightToLine : ArrowRightFromLine
   return (
@@ -32,37 +28,60 @@ function AddressChip({ value, inbound }) {
   )
 }
 
-function ProtocolCell({ protocol, getIcon }) {
+function ProtocolChip({ protocol, getIcon }) {
   const info = protocolInfo(protocol)
+  // grpc and spanner are not hoop connection types and have no icon of their
+  // own; the fallback would show something unrelated.
+  const icon = info.subtype ? (
+    <Image src={getIcon({ subtype: info.subtype })} alt="" w={14} h={14} fit="contain" />
+  ) : undefined
   return (
-    <Group gap={6} wrap="nowrap">
-      {/* grpc and spanner are not hoop connection types and have no icon of
-          their own; the fallback would show something unrelated. */}
-      {info.subtype && <Image src={getIcon({ subtype: info.subtype })} alt="" w={16} h={16} fit="contain" />}
-      <Text size="sm">{info.label}</Text>
-    </Group>
+    <Badge tag chip variant="light" color="gray" icon={icon}>
+      {info.label}
+    </Badge>
   )
 }
+
+// Chips when the lane carries a rule of its own; "Inherited policy" when it
+// only runs the sidecar's defaults, which is how the Figma row tells the two
+// apart.
+function PoliciesCell({ listener, config, boundRules }) {
+  const { features, inheritedOnly } = listenerPolicies(listener, config, boundRules)
+  if (features.length > 0) return <FeaturePills compact features={features} />
+  return (
+    <Text size="sm" c="dimmed">
+      {inheritedOnly ? 'Inherited policy' : 'No policies configured'}
+    </Text>
+  )
+}
+
+const matches = (listener, label, query) =>
+  [label, listener.protocol, protocolInfo(listener.protocol).label, listener.listen, listener.upstream].some((v) =>
+    String(v ?? '')
+      .toLowerCase()
+      .includes(query),
+  )
 
 /**
  * The lanes the control plane serves this sidecar, with the controls to author
  * them when a caller passes some.
  *
- * Without `onAdd`/`onEdit`/`onDelete` it renders the same rows read-only. The
- * wizard's Overview step is that caller: it holds its own copy of a sidecar
- * that has not finished connecting, so there is nowhere to put a result.
- * Expanding a row works either way — reading a lane is not authoring it.
+ * Without `onAdd`/`onEdit` it renders the same rows read-only. The wizard's
+ * Overview step is that caller: it holds its own copy of a sidecar that has not
+ * finished connecting, so there is nowhere to put a result. Expanding a row
+ * works either way — reading a lane is not authoring it.
  *
  * A listener is addressed by its POSITION in the document. There is no id: the
  * listener is an element of the configuration JSON, not a row, and the name is
- * editable.
+ * editable. The search filters what is shown, never what an index points at.
  */
-export default function ListenersTable({ sidecar, onAdd, onEdit, onDelete }) {
+export default function ListenersTable({ sidecar, onAdd, onEdit }) {
   const getIcon = useConnectionIconGetter()
   const [expanded, setExpanded] = useState(() => new Set())
+  const [query, setQuery] = useState('')
   const config = sidecar.configuration
   const listeners = config?.listeners ?? []
-  const editable = Boolean(onAdd || onEdit || onDelete)
+  const editable = Boolean(onAdd || onEdit)
 
   // Keyed by position, like every other reference to a listener here.
   const toggle = (index) =>
@@ -73,20 +92,37 @@ export default function ListenersTable({ sidecar, onAdd, onEdit, onDelete }) {
       return next
     })
 
-  // The chevron, the five data columns, and the action menu when there is one.
+  const needle = query.trim().toLowerCase()
+  const rows = listeners
+    .map((listener, index) => ({ listener, index, label: listenerLabel(listener, index) }))
+    .filter(({ listener, label }) => needle === '' || matches(listener, label, needle))
+
+  // The chevron, the five data columns, and the edit column when there is one.
   const columnCount = 6 + (editable ? 1 : 0)
 
   return (
     <Stack gap="md">
       <Group justify="space-between" align="center">
-        <Group gap="sm" align="baseline">
-          <Text fw={600}>Listeners</Text>
-          <Text size="sm" c="dimmed">
-            {`${listeners.length} ${listeners.length === 1 ? 'listener' : 'listeners'}`}
-          </Text>
+        <Group gap="md" align="center">
+          <Group gap="sm" align="baseline">
+            <Text fw={600}>Listeners</Text>
+            <Text size="sm" c="dimmed">
+              {`${listeners.length} ${listeners.length === 1 ? 'listener' : 'listeners'}`}
+            </Text>
+          </Group>
+          {listeners.length > 0 && (
+            <TextInput
+              placeholder="Search listeners"
+              aria-label="Search listeners"
+              leftSection={<Search size={16} />}
+              value={query}
+              onChange={(e) => setQuery(e.currentTarget.value)}
+              w={240}
+            />
+          )}
         </Group>
         {editable && (
-          <Button size="xs" leftSection={<Plus size={14} />} onClick={onAdd}>
+          <Button variant="light" leftSection={<Plus size={16} />} onClick={onAdd}>
             Add listener
           </Button>
         )}
@@ -98,6 +134,10 @@ export default function ListenersTable({ sidecar, onAdd, onEdit, onDelete }) {
             ? 'No listeners yet. A sidecar needs at least one to start.'
             : 'No listeners here. A connected sidecar reads them from its own config file.'}
         </Text>
+      ) : rows.length === 0 ? (
+        <Text size="sm" c="dimmed">
+          {`No listener matches "${query.trim()}".`}
+        </Text>
       ) : (
         <Table scrollable>
           <Table.Thead>
@@ -107,19 +147,15 @@ export default function ListenersTable({ sidecar, onAdd, onEdit, onDelete }) {
               <Table.Th>Protocol</Table.Th>
               <Table.Th>Listen</Table.Th>
               <Table.Th>Upstream</Table.Th>
-              <Table.Th>Features</Table.Th>
-              {editable && <Table.Th aria-label="Actions" w={56} />}
+              <Table.Th>Policies</Table.Th>
+              {editable && <Table.Th aria-label="Actions" w={96} />}
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
             {/* An array of two rows, not a fragment, so both stay direct
-                children of Tbody (pages/Settings/AuditLogs does the same). The
-                toggle is on the chevron rather than the whole row: the row
-                carries a menu, and a click that both opens a menu and collapses
-                what is under it reads as a bug. */}
-            {listeners.map((listener, index) => {
+                children of Tbody (pages/Settings/AuditLogs does the same). */}
+            {rows.map(({ listener, index, label }) => {
               const open = expanded.has(index)
-              const label = listenerLabel(listener, index)
               return [
                 <Table.Tr key={`${label}-${index}`}>
                   <Table.Td>
@@ -141,44 +177,37 @@ export default function ListenersTable({ sidecar, onAdd, onEdit, onDelete }) {
                     </Text>
                   </Table.Td>
                   <Table.Td miw={140}>
-                    <ProtocolCell protocol={listener.protocol} getIcon={getIcon} />
+                    <ProtocolChip protocol={listener.protocol} getIcon={getIcon} />
                   </Table.Td>
-                  {/* A floor, not a cap. One long upstream would otherwise
-                      squeeze its neighbour until `0.0.0.0:15432` truncates to
-                      `0.0.…`; past the floor the whole table scrolls, which
-                      the surface already handles. */}
+                  {/* A floor, not a cap: past it the whole table scrolls. */}
                   <Table.Td miw={170}>
                     <AddressChip value={listener.listen} inbound />
                   </Table.Td>
                   <Table.Td miw={200}>
                     <AddressChip value={listener.upstream} />
                   </Table.Td>
-                  <Table.Td>
-                    <FeaturePills
-                      compact
-                      features={listenerFeatures(listener, config, sidecar.bound_rules)}
-                    />
+                  <Table.Td miw={150}>
+                    <PoliciesCell listener={listener} config={config} boundRules={sidecar.bound_rules} />
                   </Table.Td>
                   {editable && (
                     <Table.Td>
-                      <ActionMenu>
-                        <ActionMenu.Item onClick={() => onEdit(index)}>Edit</ActionMenu.Item>
-                        <ActionMenu.Divider />
-                        <ActionMenu.Item danger onClick={() => onDelete(index)}>
-                          Delete
-                        </ActionMenu.Item>
-                      </ActionMenu>
+                      <Button
+                        variant="subtle"
+                        size="compact-sm"
+                        leftSection={<Pencil size={14} />}
+                        onClick={() => onEdit(index)}
+                      >
+                        Edit
+                      </Button>
                     </Table.Td>
                   )}
                 </Table.Tr>,
                 open && (
                   <Table.Tr key={`${label}-${index}-details`}>
                     <Table.Td colSpan={columnCount} p={0}>
-                      <ListenerDetails
-                        listener={listener}
-                        config={config}
-                        boundRules={sidecar.bound_rules}
-                      />
+                      <Box p="md" bg="gray.0">
+                        <FeatureAccordions listener={listener} config={config} boundRules={sidecar.bound_rules} />
+                      </Box>
                     </Table.Td>
                   </Table.Tr>
                 ),
