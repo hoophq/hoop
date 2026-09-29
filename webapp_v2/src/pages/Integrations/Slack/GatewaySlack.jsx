@@ -8,6 +8,7 @@ import { usePlugin } from '../usePlugin'
 import PluginConnectionsList from '../components/PluginConnectionsList'
 import SlackChannelsModal from './components/SlackChannelsModal'
 import SlackConfigurationsTab from './components/SlackConfigurationsTab'
+import { slackAppConfigured } from './helpers'
 
 // The gateway's Slack page, sibling of ControlPlaneSlack.jsx: reviews reach
 // the channels set on each connection.
@@ -21,7 +22,13 @@ function GatewaySlack() {
     updateConnectionConfig,
     saveEnvvars,
   } = usePlugin('slack')
-  const [tab, setTab] = useState('connections')
+  // Chosen once, when the plugin answers: the Slack App before it is set up,
+  // since nothing on the list works without it, and the list after. A save
+  // does not move the admin off the tab they are on.
+  const [tab, setTab] = useState(null)
+  if (tab === null && status === 'ready') {
+    setTab(slackAppConfigured(plugin) ? 'connections' : 'configurations')
+  }
   const [configConnection, setConfigConnection] = useState(null)
 
   const showLoader = useMinDelay(status === 'loading')
