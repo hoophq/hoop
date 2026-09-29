@@ -46,8 +46,9 @@ That fits a human at `psql`. It does not fit an AI agent:
 
 The control plane already supports an answer that does not wait.
 `POST /api/sidecars/reviews` matches a statement to the live review for the
-same bytes (`models.HashStatement`), returns PENDING, REJECTED or REVOKED as
-they stand, and spends an APPROVED review once. A retry of identical bytes
+same bytes (`models.HashStatement`), returns PENDING as it stands, and spends
+an APPROVED review once. A REJECTED or REVOKED review is not live, so the
+same bytes file a new one. A retry of identical bytes
 is therefore a status check, and after approval it is the release.
 
 Four facts limit the design:
