@@ -282,8 +282,9 @@ func holdTestSSHConn(t *testing.T, pol policy.Evaluator) *sshConnState {
 		t.Fatalf("gate: %v", err)
 	}
 	return &sshConnState{
-		gate:  g,
-		stmts: sshStatements{},
-		log:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+		gate:    g,
+		release: func() {},
+		stmts:   sshStatements{},
+		log:     slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 }

@@ -705,10 +705,13 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 			log.Warn("no running server for a reloaded lane", "listener", ln.name)
 			continue
 		}
-		// The outgoing generation's analyzers stop being read after this
-		// swap; bank what they did since the last usage event first.
-		r.tel.retireAnalyzers(r.prevLanes[ln.name].analyzers)
-		target.swapLane(ln)
+		// The outgoing generation's analyzers may still be read by gates
+		// opened before this swap. Keep them in the usage walk, and bank
+		// their final delta only once the last of those gates closes.
+		outgoing := r.prevLanes[ln.name].analyzers
+		r.tel.drainAnalyzers(outgoing)
+		tel := r.tel
+		target.swapLane(ln, func() { tel.retireAnalyzers(outgoing) })
 		r.laneDocs[ln.name] = doc
 		r.prevLanes[ln.name] = ln
 		viewLanes = append(viewLanes, ln)

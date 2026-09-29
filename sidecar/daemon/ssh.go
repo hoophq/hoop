@@ -125,10 +125,10 @@ func buildSSHServer(
 
 		sess := session.New(inspect.SSH, identity)
 		sess.Connection = ln.name
-		// Loaded once per connection: the gate keeps this generation for
+		// Acquired once per connection: the gate keeps this generation for
 		// the connection's whole life, and the next one reads what a
-		// reload swapped in.
-		live := rules.load()
+		// reload swapped in. The release runs when the gate closes.
+		live, release := rules.acquire()
 		g, err := gate.NewStatementGate(sess, gate.Config{
 			Protocol:         inspect.SSH,
 			Policy:           live.policy,
@@ -138,6 +138,8 @@ func buildSSHServer(
 			Metrics:          ln.metrics,
 		})
 		if err != nil {
+			// No handler, so libhoop calls no Close: release here.
+			release()
 			return nil, nil, err
 		}
 
@@ -146,6 +148,7 @@ func buildSSHServer(
 			stmts:        stmts,
 			destinations: destinations,
 			log:          laneLog,
+			release:      release,
 		}
 		handler := state.callbacks()
 
@@ -257,6 +260,9 @@ type sshConnState struct {
 	stmts        sshStatements
 	destinations []sshDestination
 	log          *slog.Logger
+	// release returns the connection's rule generation to its liveRules.
+	// libhoop calls Close for every connection that got a handler.
+	release func()
 }
 
 func (c *sshConnState) callbacks() *codecssh.ConnHandler {
@@ -477,6 +483,8 @@ func (c *sshConnState) close(ctx context.Context, s codecssh.Stats) error {
 	c.event(ctx, "connection_close", attrs)
 
 	err := c.gate.Close(ctx)
+	// After Close: the gate's last statement has been evaluated.
+	c.release()
 	if err != nil {
 		c.log.Warn("ssh session end not recorded", "error", err)
 	}

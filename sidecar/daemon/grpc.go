@@ -333,9 +333,11 @@ func buildGRPCServer(
 		sess := session.New(proto, identity)
 		sess.Connection = ln.name
 		sess.Upstream = lc.Upstream
-		// Loaded once per RPC: the gate keeps this generation for the RPC's
-		// whole life, and the next RPC reads what a reload swapped in.
-		live := rules.load()
+		// Acquired once per RPC: the gate keeps this generation for the RPC's
+		// whole life, and the next RPC reads what a reload swapped in. The
+		// release runs when the gate closes, which is what tells a reload
+		// the outgoing generation's analyzers are no longer reachable.
+		live, release := rules.acquire()
 		allowedMetadata := metadataPlain
 		if live.holds {
 			allowedMetadata = metadataHeld
@@ -349,13 +351,16 @@ func buildGRPCServer(
 			Metrics:          ln.metrics,
 		})
 		if err != nil {
+			// No handler, so libhoop calls no Close: release here.
+			release()
 			return nil, nil, err
 		}
 
 		state := &grpcRPCState{
-			gate:  g,
-			stmts: newLaneStatements(info.Request, info.Service, info.Method, allowedMetadata, proto, lc.Spanner),
-			log:   laneLog,
+			gate:    g,
+			stmts:   newLaneStatements(info.Request, info.Service, info.Method, allowedMetadata, proto, lc.Spanner),
+			log:     laneLog,
+			release: release,
 		}
 		handler := state.callbacks()
 		if err := g.Start(ctx); err != nil {
@@ -435,6 +440,9 @@ type grpcRPCState struct {
 	gate  *gate.Gate
 	stmts *laneStatements
 	log   *slog.Logger
+	// release returns the RPC's rule generation to its liveRules. libhoop
+	// calls Close for every RPC that got a handler, refused or not.
+	release func()
 }
 
 func (r *grpcRPCState) callbacks() *codecgrpc.RPCHandler {
@@ -557,6 +565,8 @@ func (r *grpcRPCState) recordMasked(ctx context.Context, entities []string, coun
 
 func (r *grpcRPCState) close(ctx context.Context) error {
 	err := r.gate.Close(context.WithoutCancel(ctx))
+	// After Close: the gate's last statement has been evaluated.
+	r.release()
 	if err != nil {
 		r.log.Warn("grpc session end not recorded", "error", err)
 	}

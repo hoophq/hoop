@@ -75,6 +75,7 @@ func sshTestConn(t *testing.T, rules []policy.Rule, destinations []string) (*ssh
 	}
 	return &sshConnState{
 		gate:         g,
+		release:      func() {},
 		stmts:        sshStatements{},
 		destinations: dests,
 		log:          slog.New(slog.NewTextHandler(io.Discard, nil)),
