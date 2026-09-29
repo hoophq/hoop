@@ -419,10 +419,11 @@ function Router() {
         path="/features/data-masking"
         element={
           <Page adminOnly licenseFeature="data-masking">
-            {/* Sidecars mask in-process, so the control plane needs no DLP provider. */}
+            {/* Sidecars mask in-process, so the control plane needs no DLP
+                provider, and its rules bind to listeners, so it filters by them. */}
             <ByProduct
               gateway={<DataMasking />}
-              controlPlane={<DataMasking providerRequired={false} />}
+              controlPlane={<DataMasking providerRequired={false} filterBySidecar />}
             />
           </Page>
         }
@@ -529,6 +530,7 @@ function Router() {
                 <AiSessionAnalyzer
                   ConfigureTab={ControlPlaneAiAnalyzerConfigureTab}
                   orgWideProvider={false}
+                  filterBySidecar
                 />
               }
             />
@@ -563,10 +565,11 @@ function Router() {
         path="/guardrails"
         element={
           <Page adminOnly licenseFeature="guardrails">
-            {/* Sidecars enforce guardrails without a DLP provider. */}
+            {/* Sidecars enforce guardrails without a DLP provider, and the
+                rules bind to listeners, so the list filters by them. */}
             <ByProduct
               gateway={<Guardrails />}
-              controlPlane={<Guardrails providerRequired={false} />}
+              controlPlane={<Guardrails providerRequired={false} filterBySidecar />}
             />
           </Page>
         }

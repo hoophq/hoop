@@ -17,14 +17,20 @@ import AiSessionAnalyzerPromotion from './components/AiSessionAnalyzerPromotion'
 // what "seen" means.
 const PROMOTION_SEEN_STORAGE_KEY = 'ai-session-analyzer-promotion-seen'
 
-// ConfigureTab and orgWideProvider come from Router.jsx through <ByProduct>, so
-// this page serves both products without reading the mode.
+// ConfigureTab, orgWideProvider and filterBySidecar come from Router.jsx
+// through <ByProduct>, so this page serves both products without reading the
+// mode.
 //
 // orgWideProvider is false where the provider is a property of each sidecar
 // rather than of the organization. The empty state reads it: pushing a control
 // plane admin at "Configure AI Session Analyzer" would send them to a tab that
-// has nothing to save.
-export default function AiSessionAnalyzer({ ConfigureTab, orgWideProvider = true }) {
+// has nothing to save. filterBySidecar filters the rules by sidecar and
+// listener, where they bind, instead of by resource role.
+export default function AiSessionAnalyzer({
+  ConfigureTab,
+  orgWideProvider = true,
+  filterBySidecar = false,
+}) {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
 
@@ -122,6 +128,7 @@ export default function AiSessionAnalyzer({ ConfigureTab, orgWideProvider = true
           <RulesTab
             providerConfigured={!orgWideProvider || Boolean(provider)}
             onGoConfigure={() => setTab('configure')}
+            filterBySidecar={filterBySidecar}
           />
         </Tabs.Panel>
         <Tabs.Panel value="configure" pt="xl">
