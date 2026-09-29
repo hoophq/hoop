@@ -136,7 +136,8 @@ progress notifications, the same numbers as the gateway's `reviews_wait`.
 Each result says what to do next: wait again, resend the identical
 statement, or stop. The server lives in its own nested module, because the
 sidecar root module depends on libhoop only. It has no authentication, the
-same as the listener ports.
+same as the listener ports. With the block on, a return-mode deny leads with
+the review id and tells the agent to call `review_wait`, then resend (EVL-323).
 
 **No approving, listing or executing over this MCP.** Approval stays with
 humans in the control plane and Slack. Executing statements over MCP is MCP

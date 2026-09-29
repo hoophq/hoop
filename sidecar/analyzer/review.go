@@ -101,7 +101,14 @@ func (e *Evaluator) reviewMode(stmt inspect.Statement) (ReviewMode, string) {
 // returnReason is the clause a return-mode denial carries. The retry must be
 // byte-identical: the backend matches an approval against exact bytes, and a
 // reformatted statement files a new review.
-const returnReason = "waiting for approval; resend the identical statement once it is approved"
+const returnReason = returnWaiting + "; " + returnResend
+
+// The two halves of every return-mode reason, shared so the plain and the
+// ReturnNext wording cannot drift.
+const (
+	returnWaiting = "waiting for approval"
+	returnResend  = "resend the identical statement once it is approved"
+)
 
 // Reviewer is the review backend a hold talks to: the control plane, in the
 // sidecar.
@@ -193,7 +200,7 @@ func (e *Evaluator) hold(ctx context.Context, stmt inspect.Statement, notes map[
 		return e.denyHold(notes, res.ID, reviewReason(res.Status))
 	}
 	if mode == ReviewReturn {
-		return e.denyHold(notes, res.ID, returnReason)
+		return e.denyReturn(notes, res.ID)
 	}
 	return e.wait(ctx, res.ID, notes)
 }
@@ -321,11 +328,29 @@ func (e *Evaluator) denyEnded(ctx context.Context, notes map[string]string, revi
 // different questions: the operator says what to do about it, the reason says
 // what the statement is waiting on.
 func (e *Evaluator) denyHold(notes map[string]string, reviewID, reason string) policy.Verdict {
+	return e.deny(notes, holdMessage(e.cfg.Message, reviewID, reason))
+}
+
+func (e *Evaluator) deny(notes map[string]string, msg string) policy.Verdict {
 	e.denied.Add(1)
-	v := policy.Deny(e.cfg.Rule, holdMessage(e.cfg.Message, reviewID, reason))
+	v := policy.Deny(e.cfg.Rule, msg)
 	v.Source = policy.SourceAnalyzer
 	v.Annotations = notes
 	return v
+}
+
+// denyReturn refuses a pending review in return mode.
+//
+// With no ReturnNext it is an ordinary hold denial. With one, the id leads:
+// the agent needs it for the next step, and the mysql client keeps only the
+// first 512 bytes of an error (MYSQL_ERRMSG_SIZE), while the operator
+// message has no length limit.
+func (e *Evaluator) denyReturn(notes map[string]string, reviewID string) policy.Verdict {
+	if e.cfg.ReturnNext == "" {
+		return e.denyHold(notes, reviewID, returnReason)
+	}
+	reason := returnWaiting + "; " + e.cfg.ReturnNext + ", then " + returnResend
+	return e.deny(notes, "review "+reviewID+": "+holdMessage(e.cfg.Message, "", reason))
 }
 
 // holdMessage renders what the developer reads in their client.

@@ -711,7 +711,17 @@ func buildAnalyzerEvaluator(
 		Redact:        redactorFor(send, ac.det),
 		Review:        review,
 		ReviewMode:    la.ReviewMode,
+		ReturnNext:    returnNext(ac.mcp),
 	})
+}
+
+// returnNext is the step a return-mode denial names before the resend: the
+// MCP wait, when this process serves it.
+func returnNext(mcp bool) string {
+	if !mcp {
+		return ""
+	}
+	return "call the MCP tool " + ReviewWaitTool + " with the review id"
 }
 
 func triggerFrom(t *policy.AITrigger) analyzer.Trigger {
@@ -783,6 +793,7 @@ func setupAnalyzer(cfg *Config, det Plugin) (*analyzerDeps, error) {
 		provider: provider,
 		cp:       cfg.cp,
 		det:      det,
+		mcp:      cfg.MCP != nil,
 	}, nil
 }
 

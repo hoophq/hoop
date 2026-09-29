@@ -692,6 +692,56 @@ func TestReturnModeDeniesAPendingReviewAtOnce(t *testing.T) {
 	}
 }
 
+// With the MCP tools served, the return-mode denial names review_wait and
+// leads with the id, which a truncating client must not cut.
+func TestReturnModeNamesTheMCPToolWhenServed(t *testing.T) {
+	rev := &recordingReviewer{res: analyzer.ReviewResult{ID: "9f97", Status: "PENDING"}}
+	v := holdingEvaluator(t, rev, func(c *analyzer.Config) {
+		returnMode(c)
+		c.ReturnNext = "call the MCP tool review_wait with the review id"
+		c.Message = strings.Repeat("x", 600)
+	}).Evaluate(deleteStatement())
+
+	if !v.Denied {
+		t.Fatal("a pending review was forwarded")
+	}
+	if !strings.HasPrefix(v.Message, "review 9f97: ") {
+		t.Errorf("denial %q does not lead with the review id", v.Message)
+	}
+	for _, want := range []string{"review_wait", "resend the identical statement"} {
+		if !strings.Contains(v.Message, want) {
+			t.Errorf("denial %q does not say %q", v.Message, want)
+		}
+	}
+}
+
+// Hold mode and a settled review keep their message when the tools are
+// served: only a pending return-mode denial has something to wait on.
+func TestOnlyAPendingReturnNamesTheMCPTool(t *testing.T) {
+	for name, tc := range map[string]struct {
+		status string
+		mode   analyzer.ReviewMode
+	}{
+		"hold":            {"PENDING", analyzer.ReviewHold},
+		"return rejected": {"REJECTED", analyzer.ReviewReturn},
+	} {
+		t.Run(name, func(t *testing.T) {
+			rev := &recordingReviewer{
+				res:    analyzer.ReviewResult{ID: "9f97", Status: tc.status},
+				claims: []analyzer.ReviewResult{{ID: "9f97", Status: "REJECTED"}},
+			}
+			v := holdingEvaluator(t, rev, func(c *analyzer.Config) {
+				c.ReviewMode = tc.mode
+				c.ReturnNext = "call the MCP tool review_wait with the review id"
+			}).Evaluate(deleteStatement())
+
+			if !v.Denied || strings.Contains(v.Message, "review_wait") {
+				t.Errorf("denied=%v message=%q, want a denial without the MCP clause", v.Denied, v.Message)
+			}
+		})
+	}
+}
+
 // A settled review denies with its status in return mode as in hold mode.
 func TestReturnModeNamesASettledReview(t *testing.T) {
 	for status, want := range map[string]string{
