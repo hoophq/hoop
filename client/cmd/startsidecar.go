@@ -21,6 +21,8 @@ import (
 	// The gs:// descriptor fetcher, same rule as the providers above.
 	_ "github.com/hoophq/hoop/sidecar/descriptors/gcs"
 	"github.com/hoophq/hoop/sidecar/license"
+	// The MCP server an "mcp" block turns on (ADR-0021), same rule again.
+	_ "github.com/hoophq/hoop/sidecar/mcp"
 	"github.com/hoophq/hoop/sidecar/pii/alcatraz"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"

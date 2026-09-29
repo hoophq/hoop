@@ -560,6 +560,9 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 	if err := checkPIIPlugin(cfg, det); err != nil {
 		return nil, err
 	}
+	if err := checkMCP(cfg); err != nil {
+		return nil, err
+	}
 	ac, err := setupAnalyzer(cfg, det)
 	if err != nil {
 		return nil, err
@@ -799,6 +802,15 @@ func Run(cfg *Config, det Plugin) error {
 	if err := checkPIIPlugin(cfg, det); err != nil {
 		return err
 	}
+	if err := checkMCP(cfg); err != nil {
+		return err
+	}
+	if cfg.MCP != nil && cfg.cp == nil {
+		// checkMCP accepts a plane the file only names, which is right for
+		// -validate. A running process must hold the connection itself.
+		return errors.New(`config has an "mcp" block but this process has no control plane ` +
+			"connection; start it through Setup so the plane is reached first")
+	}
 	log := newLogger(cfg.LogLevel)
 	reportLicense(log, cfg.lic)
 	limit := capsFor(cfg.lic)
@@ -1018,7 +1030,7 @@ func Run(cfg *Config, det Plugin) error {
 	}()
 
 	var wg sync.WaitGroup
-	errCh := make(chan error, len(servers)+len(endpoints))
+	errCh := make(chan error, len(servers)+len(endpoints)+1)
 	for i, srv := range servers {
 		wg.Add(1)
 		go func(s *proxy.Server, name string) {
@@ -1038,6 +1050,21 @@ func Run(cfg *Config, det Plugin) error {
 				errCh <- serr
 			}
 		}(srv, endpointNames[i])
+	}
+	if cfg.MCP != nil {
+		// checkMCP proved a server is linked, and the check above that
+		// cfg.cp is set.
+		serve := registeredMCPServer()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			// A bind failure stops the process like a listener failure: an
+			// operator who configured the block expects agents to reach it.
+			if serr := serve(ctx, cfg.MCP.Listen, cfg.cp, log); serr != nil {
+				log.Error("mcp server failed", "listen", cfg.MCP.Listen, "error", serr)
+				errCh <- serr
+			}
+		}()
 	}
 	var (
 		stoppedByLicense bool

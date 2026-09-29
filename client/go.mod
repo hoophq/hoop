@@ -41,6 +41,7 @@ require (
 	cloud.google.com/go/dlp v1.36.0 // indirect
 	dario.cat/mergo v1.0.2 // indirect
 	filippo.io/edwards25519 v1.2.0 // indirect
+	github.com/ClickHouse/ch-go v0.71.0 // indirect
 	github.com/KyleBanks/depth v1.2.1 // indirect
 	github.com/MicahParks/keyfunc/v2 v2.1.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
@@ -99,6 +100,8 @@ require (
 	github.com/gin-contrib/zap v1.1.7 // indirect
 	github.com/gin-gonic/gin v1.12.0 // indirect
 	github.com/go-errors/errors v1.5.1 // indirect
+	github.com/go-faster/city v1.0.1 // indirect
+	github.com/go-faster/errors v0.7.1 // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
 	github.com/go-git/go-billy/v5 v5.9.0 // indirect
 	github.com/go-git/go-git/v5 v5.19.2 // indirect
@@ -177,6 +180,7 @@ require (
 	github.com/oasdiff/yaml3 v0.0.14 // indirect
 	github.com/openai/openai-go v1.12.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.3.0 // indirect
+	github.com/pierrec/lz4/v4 v4.1.30 // indirect
 	github.com/pjbgf/sha1cd v0.6.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pkg/sftp v1.13.11 // indirect
@@ -283,6 +287,7 @@ require (
 require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/fatih/color v1.19.0 // indirect
+	github.com/hoophq/hoop/sidecar/mcp v0.0.0
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.21 // indirect
@@ -314,3 +319,5 @@ replace github.com/hoophq/hoop/sidecar/pii/alcatraz => ../sidecar/pii/alcatraz
 replace github.com/hoophq/hoop/sidecar/analyzer/vertex => ../sidecar/analyzer/vertex
 
 replace github.com/hoophq/hoop/sidecar/descriptors/gcs => ../sidecar/descriptors/gcs
+
+replace github.com/hoophq/hoop/sidecar/mcp => ../sidecar/mcp

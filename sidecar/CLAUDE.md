@@ -7,7 +7,7 @@ injects identity, statement, policy, audit, and masking behavior. Policy
 turns either form into allow/deny verdicts, masked responses and an audit trail.
 
 The root `CLAUDE.md` does not cover this directory. It describes the product
-modules under `go.work`; `sidecar/` contributes seven more entries and follows
+modules under `go.work`; `sidecar/` contributes nine more entries and follows
 different rules. This file governs everything under `sidecar/`.
 
 The directory was called `hoopinspect/` until the CLI command became
@@ -64,6 +64,7 @@ it is removing a directory.
 | `store/sqlite/` | `modernc.org/sqlite`, pure Go because the sidecar is a static binary |
 | `analyzer/vertex/` | `golang.org/x/oauth2`, the only analyzer provider needing one. It wraps the `anthropic`, `gemini` and `openai` encoders from the root under a GCP bearer; the API-key providers stay in the root |
 | `descriptors/gcs/` | `golang.org/x/oauth2`, to read a grpc lane's descriptor set from a `gs://` URL |
+| `mcp/` | `github.com/modelcontextprotocol/go-sdk`, for the review status MCP server an `mcp:` block turns on (ADR-0021) |
 | `lexer/conformance/` | PostgreSQL's real parser, test-only |
 
 Adding a dependency to the root still needs a reason. Add a nested module, or
@@ -101,7 +102,7 @@ go test ./...
 go vet ./...
 
 # nested modules are NOT reached by the line above
-for m in cmd config/yaml pii/alcatraz store/sqlite analyzer/vertex descriptors/gcs lexer/conformance; do
+for m in cmd config/yaml pii/alcatraz store/sqlite analyzer/vertex descriptors/gcs mcp lexer/conformance; do
   (cd "$m" && CGO_ENABLED=0 go test ./...)
 done
 
