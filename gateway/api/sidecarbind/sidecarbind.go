@@ -203,32 +203,26 @@ func PersistTx(tx *gorm.DB, orgID string, kind services.SidecarRuleKind, ruleNam
 // Load renders back where a rule is bound, so a round-trip through the API
 // returns what was saved. Without it an edit form opens with the picker empty
 // and the next save unbinds the rule from every sidecar it reached.
-func Load(orgID string, kind services.SidecarRuleKind, ruleName string) []openapi.SidecarRuleTarget {
+//
+// A failed read is returned, never an empty list: an empty list is that same
+// empty picker, and the same unbinding save.
+func Load(db *gorm.DB, orgID string, kind services.SidecarRuleKind, ruleName string) ([]openapi.SidecarRuleTarget, error) {
 	if !appconfig.Get().IsControlPlane() {
-		return nil
+		return nil, nil
 	}
 	org, err := uuid.Parse(orgID)
 	if err != nil {
-		return nil
+		return nil, err
 	}
-	var rows []models.SidecarRuleTarget
-	switch kind {
-	case services.SidecarRuleGuardrail:
-		rows, err = models.ListGuardrailRuleTargets(models.DB, org, ruleName)
-	case services.SidecarRuleMask:
-		rows, err = models.ListDataMaskingRuleTargets(models.DB, org, ruleName)
-	case services.SidecarRuleAnalyzer:
-		rows, err = models.ListAnalyzerRuleTargets(models.DB, org, ruleName)
-	}
+	rows, err := listTargets(db, kind, org, ruleName)
 	if err != nil {
-		log.Warnf("failed reading the sidecar targets of %s rule %q, reason=%v", kind, ruleName, err)
-		return nil
+		return nil, fmt.Errorf("failed reading the sidecar targets of %s rule %q: %w", kind, ruleName, err)
 	}
 	out := make([]openapi.SidecarRuleTarget, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, openapi.SidecarRuleTarget{SidecarID: r.SidecarID, ListenerName: r.ListenerName})
 	}
-	return out
+	return out, nil
 }
 
 // storedTargets is where the rule is bound today.
@@ -236,13 +230,17 @@ func storedTargets(kind services.SidecarRuleKind, orgID uuid.UUID, ruleName stri
 	if ruleName == "" {
 		return nil, nil
 	}
+	return listTargets(models.DB, kind, orgID, ruleName)
+}
+
+func listTargets(db *gorm.DB, kind services.SidecarRuleKind, orgID uuid.UUID, ruleName string) ([]models.SidecarRuleTarget, error) {
 	switch kind {
 	case services.SidecarRuleGuardrail:
-		return models.ListGuardrailRuleTargets(models.DB, orgID, ruleName)
+		return models.ListGuardrailRuleTargets(db, orgID, ruleName)
 	case services.SidecarRuleMask:
-		return models.ListDataMaskingRuleTargets(models.DB, orgID, ruleName)
+		return models.ListDataMaskingRuleTargets(db, orgID, ruleName)
 	case services.SidecarRuleAnalyzer:
-		return models.ListAnalyzerRuleTargets(models.DB, orgID, ruleName)
+		return models.ListAnalyzerRuleTargets(db, orgID, ruleName)
 	}
 	return nil, fmt.Errorf("unknown sidecar rule kind %q", kind)
 }

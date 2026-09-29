@@ -141,6 +141,11 @@ func Post(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"message": err.Error()})
 		return
 	case nil:
+		targets, loadErr := sidecarbind.Load(models.DB, ctx.GetOrgID(), services.SidecarRuleGuardrail, rule.Name)
+		if loadErr != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, loadErr, "the rule was saved, but reading its sidecar targets failed: %v", loadErr)
+			return
+		}
 		c.JSON(http.StatusCreated, &openapi.GuardRailRuleResponse{
 			ID:             rule.ID,
 			Name:           rule.Name,
@@ -150,7 +155,7 @@ func Post(c *gin.Context) {
 			ConnectionIDs:  rule.ConnectionIDs,
 			Attributes:     req.Attributes,
 			SidecarSpec:    req.SidecarSpec,
-			SidecarTargets: sidecarbind.Load(ctx.GetOrgID(), services.SidecarRuleGuardrail, rule.Name),
+			SidecarTargets: targets,
 			CreatedAt:      rule.CreatedAt,
 			UpdatedAt:      rule.UpdatedAt,
 		})
@@ -256,6 +261,11 @@ func Put(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"message": err.Error()})
 		return
 	case nil:
+		targets, loadErr := sidecarbind.Load(models.DB, ctx.GetOrgID(), services.SidecarRuleGuardrail, rule.Name)
+		if loadErr != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, loadErr, "the rule was saved, but reading its sidecar targets failed: %v", loadErr)
+			return
+		}
 		c.JSON(http.StatusOK, &openapi.GuardRailRuleResponse{
 			ID:             rule.ID,
 			Name:           rule.Name,
@@ -265,7 +275,7 @@ func Put(c *gin.Context) {
 			ConnectionIDs:  rule.ConnectionIDs,
 			Attributes:     req.Attributes,
 			SidecarSpec:    rule.SidecarSpec,
-			SidecarTargets: sidecarbind.Load(ctx.GetOrgID(), services.SidecarRuleGuardrail, rule.Name),
+			SidecarTargets: targets,
 			CreatedAt:      rule.CreatedAt,
 			UpdatedAt:      rule.UpdatedAt,
 		})
@@ -328,20 +338,26 @@ func Get(c *gin.Context) {
 	case models.ErrNotFound:
 		c.JSON(http.StatusNotFound, gin.H{"message": "resource not found"})
 	case nil:
+		// Read back on the single-rule route, which is what the edit form
+		// loads. Without it the form opens empty and the next save unbinds
+		// the rule from every sidecar it reached, so a failed read answers
+		// 500 rather than a rule bound nowhere.
+		targets, loadErr := sidecarbind.Load(models.DB, ctx.GetOrgID(), services.SidecarRuleGuardrail, rule.Name)
+		if loadErr != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, loadErr, "failed reading the sidecar targets of the rule")
+			return
+		}
 		c.JSON(http.StatusOK, &openapi.GuardRailRuleResponse{
-			ID:            rule.ID,
-			Name:          rule.Name,
-			Description:   rule.Description,
-			ManagedBy:     rule.ManagedBy,
-			Input:         rule.Input,
-			Output:        rule.Output,
-			ConnectionIDs: rule.ConnectionIDs,
-			Attributes:    rule.Attributes,
-			// Read back on the single-rule route, which is what the edit form
-			// loads. Without it the form opens empty and the next save unbinds
-			// the rule from every sidecar it reached.
+			ID:             rule.ID,
+			Name:           rule.Name,
+			Description:    rule.Description,
+			ManagedBy:      rule.ManagedBy,
+			Input:          rule.Input,
+			Output:         rule.Output,
+			ConnectionIDs:  rule.ConnectionIDs,
+			Attributes:     rule.Attributes,
 			SidecarSpec:    rule.SidecarSpec,
-			SidecarTargets: sidecarbind.Load(ctx.GetOrgID(), services.SidecarRuleGuardrail, rule.Name),
+			SidecarTargets: targets,
 			CreatedAt:      rule.CreatedAt,
 			UpdatedAt:      rule.UpdatedAt,
 		})
