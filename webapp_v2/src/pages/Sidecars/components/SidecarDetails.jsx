@@ -10,6 +10,7 @@ import { useSidecarStore } from '@/stores/useSidecarStore'
 import { formatRelativeTime } from '@/utils/datetime'
 import { showSnackbar } from '@/utils/snackbar'
 import { auditEnabled, hasConfiguration, usesConfigFile } from '../config'
+import { opaSummary, resolveOPA } from '../features'
 import ListenersTable from '../sections/ListenersTable'
 import { sidecarStatus } from '../status'
 import SidecarSourceModal from '../sections/SidecarSourceModal'
@@ -144,6 +145,7 @@ export default function SidecarDetails({ sidecar, editable, listenerActions, onD
   const config = sidecar.configuration
   const configured = hasConfiguration(config)
   const fromFile = usesConfigFile(sidecar)
+  const opa = configured ? resolveOPA(null, config) : null
   // The value awaiting confirmation, and whether the dialog is up. Two states
   // rather than one: Mantine keeps the modal mounted through its exit
   // transition, and a target cleared on close would rewrite the copy of the
@@ -234,6 +236,9 @@ export default function SidecarDetails({ sidecar, editable, listenerActions, onD
                 {/* Config.LogLevel defaults to info when the document names none. */}
                 <Row label="Log level">
                   <Text size="sm">{config.log_level || 'info'}</Text>
+                </Row>
+                <Row label="OPA">
+                  <Text size="sm">{opa ? opaSummary(opa) : 'Off'}</Text>
                 </Row>
                 <Row label="Audit">
                   <Badge variant={auditEnabled(config) ? 'active' : 'inactive'}>

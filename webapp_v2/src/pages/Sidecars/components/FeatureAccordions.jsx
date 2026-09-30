@@ -1,7 +1,7 @@
 import { Divider, Group, Stack, Text } from '@mantine/core'
 import Accordion from '@/components/Accordion'
 import Badge from '@/components/Badge'
-import { featureList, resolveOPA } from '../features'
+import { featureList, opaSummary, overridesOPA, resolveOPA } from '../features'
 import { MODE_OBSERVE, SOURCE_DISTRIBUTED, SOURCE_LISTENER } from '../resolve'
 import classes from './FeatureAccordions.module.css'
 
@@ -48,7 +48,10 @@ function RuleRow({ rule }) {
  */
 export default function FeatureAccordions({ listener = null, config, boundRules }) {
   const features = featureList(listener, config, boundRules)
-  const opa = resolveOPA(listener, config)
+  // The sidecar's own endpoint is a Global settings row; a lane only says
+  // something here when it departs from it.
+  const ownOPA = overridesOPA(listener)
+  const opa = ownOPA ? resolveOPA(listener, config) : null
 
   return (
     <Stack gap="sm">
@@ -110,12 +113,9 @@ export default function FeatureAccordions({ listener = null, config, boundRules 
           )
         })}
       </Accordion>
-      {/* Not a feature chip, but the one other thing a lane enforces. */}
-      {opa && (
+      {ownOPA && (
         <Text size="sm" c="dimmed">
-          {[`OPA ${opa.url}`, opa.fail_open ? 'allows on failure' : 'denies on failure', opa.gate && 'gates the analyzer']
-            .filter(Boolean)
-            .join(' · ')}
+          {opa ? `OPA on this listener: ${opaSummary(opa)}` : 'OPA is off on this listener.'}
         </Text>
       )}
     </Stack>

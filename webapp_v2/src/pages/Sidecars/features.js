@@ -218,6 +218,17 @@ export function featureList(listener, config, boundRules) {
 
 export { resolveOPA }
 
+// One line for an OPA endpoint: where, and what an outage does.
+export function opaSummary(opa) {
+  return [opa.url, opa.fail_open ? 'allows on failure' : 'denies on failure', opa.gate && 'gates the analyzer']
+    .filter(Boolean)
+    .join(' · ')
+}
+
+// Whether a lane writes its own `opa` key. Null inherits like an absent key
+// (resolve.js); `{}` is the opt-out, so it counts as the lane's own.
+export const overridesOPA = (listener) => listener?.opa !== undefined && listener?.opa !== null
+
 /**
  * What the Policies cell says about a lane.
  *
