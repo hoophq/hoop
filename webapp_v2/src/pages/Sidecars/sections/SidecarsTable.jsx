@@ -1,12 +1,11 @@
 import { Link } from 'react-router-dom'
-import { Group, Image, Text } from '@mantine/core'
+import { Image, Text } from '@mantine/core'
 import Avatar from '@/components/Avatar'
 import Badge from '@/components/Badge'
 import Button from '@/components/Button'
 import Table from '@/components/Table'
 import Tooltip from '@/components/Tooltip'
 import { useConnectionIconGetter } from '@/utils/connectionIcons'
-import { formatRelativeTime } from '@/utils/datetime'
 import { configFeatures, usesConfigFile, protocolInfo } from '../config'
 import { listenerLabel } from '../listeners'
 import FeaturePills from '../components/FeaturePills'
@@ -133,14 +132,7 @@ export default function SidecarsTable({ sidecars }) {
                 </Text>
               </Table.Td>
               <Table.Td miw={200}>
-                <Group gap="xs" wrap="nowrap">
-                  <SidecarStatusBadge sidecar={sidecar} />
-                  {sidecar.last_seen_at && (
-                    <Text size="xs" c="dimmed">
-                      {formatRelativeTime(sidecar.last_seen_at)}
-                    </Text>
-                  )}
-                </Group>
+                <SidecarStatusBadge sidecar={sidecar} />
               </Table.Td>
               <Table.Td miw={140}>
                 <Badge variant="light" color={usesConfigFile(sidecar) ? 'gray' : 'blue'} fullLabel>
