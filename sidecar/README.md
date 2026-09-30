@@ -325,7 +325,7 @@ prompt, no token, no listener or upstream address — the same line
 | `hoop-sidecar-first-run` | a bare invocation served the default page | port, whether it fell back, how long it stayed up |
 | `hoop-sidecar-started` | every lane built, about to serve | config source and format, license state and type, lane count per protocol, how many lanes enforce / observe / mask / consult OPA / run an analyzer, rule totals, PII entity count, audit sinks |
 | `hoop-sidecar-config-applied` | an edit reached the reloader, from the control plane or the config file | generation, outcome (`applied`, `restart-required`, `refused`), which sections changed, lanes swapped and kept |
-| `hoop-sidecar-usage` | every 15 minutes and at shutdown | connections and statements in the window, denied and masked counts, denials by evaluator kind, analyzer calls and failures, audit write failures, per protocol |
+| `hoop-sidecar-usage` | every 15 minutes and at shutdown | connections and statements in the window, denied and masked counts, denials by evaluator kind, analyzer calls, failures and rate-limited statements, audit write failures, per protocol |
 | `hoop-sidecar-stopped` | the process is exiting | reason (`signal`, `listener-failed`, `license-expired`), failure class, uptime |
 | `hoop-sidecar-license-expired` | the term ended under a config the free tier refuses | rule totals that exceeded it, term length, warnings sent |
 
@@ -961,7 +961,11 @@ analyzer:                      # one provider serves every lane; the rest are
   send: redacted               # raw | redacted | refuse
   max_input_bytes: 8192
   cache: {size: 4096, ttl_sec: 900}
-  max_calls: 500
+  max_calls: 500               # lifetime ceiling; resets only on restart
+  rate_limit:                  # how fast; refills, so a spike passes
+    calls: 30                  #   30 calls...
+    per_sec: 60                #   ...per 60 s
+    burst: 30                  #   optional, defaults to calls
 
 listeners:
   - name: appdb
@@ -988,16 +992,43 @@ listeners:
       trigger: {resources: ["/anything", "/users/*/orders"]}
       high: block
       send: refuse             # overrides the inherited redacted, this lane only
+      rate_limit: {calls: 10}  # per_sec and burst still inherited
 ```
 
 **What the block may override.** `send`, `fail_open`, `timeout_sec`,
-`max_input_bytes`, `max_calls` and `cache` all default to the top-level value
-and replace it when the block names them. `max_calls` on a block bounds that
-LANE's spend, and its budget keys on the listener name, so a hot reload that
-edits the block continues the running count rather than re-arming it.
+`max_input_bytes`, `max_calls`, `rate_limit` and `cache` all default to the
+top-level value and replace it when the block names them; `rate_limit` and
+`cache` merge field by field. `max_calls` and `rate_limit` on a block bound
+that LANE's spend, and both key on the listener name, so a hot reload that
+edits the block continues the running count and the running bucket rather
+than re-arming them.
 Provider, model, endpoint and credential are not per lane: a second provider
 per lane would double the credential surface, so those stay in the top-level
 section.
+
+**`max_calls` and `rate_limit` are two different bounds.** A call must pass
+both, and a cache hit spends neither.
+
+- `max_calls` caps the TOTAL since the process started. It never refills: once
+  spent, the lane reports `budget_exhausted` until a restart.
+- `rate_limit` caps the SPEED. It is a token bucket: `burst` calls may go out
+  back to back, then one every `per_sec / calls` seconds. An empty bucket
+  reports `rate_limited`, and the lane classifies again as it refills. A call
+  the rate refuses does not spend `max_calls`.
+- When both are spent, the status is `budget_exhausted`, the one that lasts.
+- `rate_limit` needs `calls` and `per_sec` together, after inheritance.
+  `burst` sets how much of a spike passes: a migration that sends 500
+  DELETEs in 10 s is throttled after the first `burst`.
+
+`-validate` prints what each lane may spend in any 24 h at its rate, and how
+long `max_calls` lasts at the full rate. A `max_calls` at or below `burst`
+means the rate never fires, and the note says so. The process log gets one
+warning when a lane's bucket first runs empty and one line with the refused
+count when it grants again. The usage event counts throttled statements as
+`analyzer-rate-limited`.
+
+A sidecar older than 1.198.0 cannot decode `rate_limit`, so the control plane
+refuses to serve a document that carries it to one.
 
 **A request with no body is still classified.** On a REST API the path is
 the operation: `GET /api/v1/namespaces/prod/secrets/db-root` says what a
@@ -1320,8 +1351,9 @@ than at the first held statement:
 Everything else fails CLOSED, `fail_open` included: it answers for a model
 vendor's outage, not for a human gate. A control plane that times out, refuses
 or answers something unreadable denies, and so does a statement that could not
-be classified at all, whether the provider failed or `max_calls` ran out. On a
-lane that only warns or blocks, a spent budget still allows.
+be classified at all, whether the provider failed, `max_calls` ran out or
+`rate_limit` throttled it. On a lane that only warns or blocks, a spent budget
+or an empty bucket still allows.
 
 `mode: observe` is the one exception, and it files NOTHING. A dry run that
 paged approvers about statements it then forwarded would be a dry run with
@@ -1413,7 +1445,7 @@ curl -s localhost:19000/config | python3 -m json.tool   # what each lane sends
 Verdicts land in the audit trail as `metadata.risk_level`, which rolls up to a
 session's highest risk in `GET /api/sessions` and `GET /api/stats`. Beside it,
 `metadata.ai_status` records what the analyzer did: `ok`, `cached`, `skipped`,
-`budget_exhausted`, `refused` or `error`. It merges most-degraded-wins across
+`budget_exhausted`, `rate_limited`, `refused` or `error`. It merges most-degraded-wins across
 evaluators, so a second analyzer that succeeded cannot hide the first one's
 outage. `metadata.ai_rule` names what produced the level — the LISTENER name
 for an analyzer block, the rule name for the deprecated rule form — and
@@ -1423,8 +1455,9 @@ dashboards and policies keyed on them keep working.
 
 `ai_status` and `ai_rule` are the analyzer's OWN audit vocabulary, not the
 finding it publishes to policy. The trail keeps the specific word, because an
-operator tuning `max_calls` and one tuning `send: refuse` are chasing
-different things. The finding maps both onto the generic `unavailable` and
+operator tuning `max_calls`, one tuning `rate_limit` and one tuning
+`send: refuse` are chasing different things. The finding maps all three onto
+the generic `unavailable` and
 puts the word in `reason`, so a Rego author never has to learn this package's
 statuses to write a policy.
 
@@ -2753,7 +2786,7 @@ keys as `ai_analysis`. Every entry has one shape:
 - `status` is always set, and is one of `ok`, `cached`, `skipped`,
   `unavailable`, `error`. Only `ok` and `cached` mean the source answered.
 - `reason` narrows a non-ok status where the producer has more to say. The
-  analyzer's `unavailable` carries `budget_exhausted` or `refused`.
+  analyzer's `unavailable` carries `budget_exhausted`, `rate_limited` or `refused`.
 - `values` is the producer's own: `risk_level` under `ai_analysis`,
   `entities` under `pii`, `words` under `deny_words_list`. Read a key only
   under a source you know writes it.

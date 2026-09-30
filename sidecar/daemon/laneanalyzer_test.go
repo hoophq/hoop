@@ -2,9 +2,11 @@ package daemon
 
 import (
 	"context"
+	"math"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/inspect"
@@ -176,6 +178,9 @@ func TestLaneAnalyzerNegativeNumericsAreRefused(t *testing.T) {
 		{"max_calls", LaneAnalyzerConfig{MaxCalls: -1}},
 		{"cache.size", LaneAnalyzerConfig{Cache: &AnalyzerCacheConfig{Size: -1}}},
 		{"cache.ttl_sec", LaneAnalyzerConfig{Cache: &AnalyzerCacheConfig{TTLSec: -1}}},
+		{"rate_limit.calls", LaneAnalyzerConfig{RateLimit: &AnalyzerRateLimitConfig{Calls: -1}}},
+		{"rate_limit.per_sec", LaneAnalyzerConfig{RateLimit: &AnalyzerRateLimitConfig{PerSec: -1}}},
+		{"rate_limit.burst", LaneAnalyzerConfig{RateLimit: &AnalyzerRateLimitConfig{Burst: -1}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			la := laneBlock()
@@ -277,6 +282,85 @@ func TestLaneAnalyzerOverridesAndBudgetKeyOnTheLane(t *testing.T) {
 	other.Evaluate(stmt)
 	if got := other.(*analyzer.Evaluator).Stats().Calls; got != 1 {
 		t.Fatalf("a second lane's budget = %d, want its own count of 1", got)
+	}
+}
+
+// A rate names calls per period, and the pair is what bounds anything. The
+// EFFECTIVE pair is checked, so a block naming only calls inherits the
+// period, while one that inherits nothing to pair with is refused rather
+// than running unlimited under a config that reads as limited.
+func TestLaneRateLimitIsValidatedAsResolved(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		top   *AnalyzerRateLimitConfig
+		block *AnalyzerRateLimitConfig
+		want  string // empty: accepted
+	}{
+		{"whole block", nil, &AnalyzerRateLimitConfig{Calls: 30, PerSec: 60}, ""},
+		{"calls inherit the period", &AnalyzerRateLimitConfig{Calls: 30, PerSec: 60},
+			&AnalyzerRateLimitConfig{Calls: 5}, ""},
+		{"calls with no period anywhere", nil, &AnalyzerRateLimitConfig{Calls: 30}, "needs both calls and per_sec"},
+		{"burst with no rate", nil, &AnalyzerRateLimitConfig{Burst: 5}, "burst needs calls and per_sec"},
+		{"empty block", &AnalyzerRateLimitConfig{Calls: 30, PerSec: 60}, &AnalyzerRateLimitConfig{},
+			"limits nothing"},
+		{"half-set top level", &AnalyzerRateLimitConfig{PerSec: 60}, nil, "needs both calls and per_sec"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			la := laneBlock()
+			la.RateLimit = tc.block
+			cfg := blockLane(la)
+			cfg.Analyzer.RateLimit = tc.top
+			err := cfg.Validate()
+			switch {
+			case tc.want == "" && err != nil:
+				t.Errorf("refused: %v", err)
+			case tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)):
+				t.Errorf("error = %v, want it to contain %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// The lane's rate merges over the top-level one field by field, and its
+// bucket keys on the LANE like max_calls does: a rebuilt block continues the
+// running bucket, and another lane draws on its own.
+func TestLaneRateLimitMergesAndItsBucketKeysOnTheLane(t *testing.T) {
+	deps := &analyzerDeps{
+		cfg: &AnalyzerConfig{Provider: "stub", Model: "m",
+			RateLimit: &AnalyzerRateLimitConfig{Calls: 1, PerSec: 3600}},
+		provider: stubAnalyzerProvider{},
+	}
+	la := laneBlock()
+	la.RateLimit = &AnalyzerRateLimitConfig{Calls: 2} // per_sec inherited
+	stmt := inspect.Statement{
+		Protocol:  inspect.Postgres,
+		Direction: inspect.FromClient,
+		Text:      "DELETE FROM t",
+		Operation: inspect.OpDelete,
+	}
+	aiStatus := func(ev policy.Evaluator) string {
+		return ev.Evaluate(stmt).Annotations[analyzer.MetadataAIStatus]
+	}
+	build := func(lane string) policy.Evaluator {
+		t.Helper()
+		ev, err := buildLaneAnalyzer(lane, la, deps, false, false, nil)
+		if err != nil {
+			t.Fatalf("buildLaneAnalyzer: %v", err)
+		}
+		return ev
+	}
+
+	gen1 := build("appdb")
+	for i := range 2 {
+		if s := aiStatus(gen1); s != analyzer.StatusOK {
+			t.Fatalf("call %d within the lane's burst of 2 = %q, want ok", i+1, s)
+		}
+	}
+	if s := aiStatus(build("appdb")); s != analyzer.StatusRateLimited {
+		t.Errorf("the rebuilt lane = %q, want rate_limited: the rebuild refilled the bucket", s)
+	}
+	if s := aiStatus(build("payments")); s != analyzer.StatusOK {
+		t.Errorf("another lane = %q, want ok from its own bucket", s)
 	}
 }
 
@@ -836,5 +920,53 @@ func TestRefuseRunsOnCacheHits(t *testing.T) {
 		if strings.Contains(sent, pan) {
 			t.Fatalf("the detected value left the process:\n%s", sent)
 		}
+	}
+}
+
+// per_sec becomes a time.Duration, and a value past its range wraps. Just
+// past the limit wraps negative; about twice the limit wraps back to a small
+// positive period, which would enforce 30 calls per 0.29 s under a config
+// that reads as 30 per 584 years. Both are refused on either block, and the
+// largest representable value still loads.
+func TestRateLimitPerSecPastTheDurationRangeIsRefused(t *testing.T) {
+	const maxPerSec = math.MaxInt64 / int64(time.Second)
+	for _, tc := range []struct {
+		name   string
+		perSec int64
+		ok     bool
+	}{
+		{"largest representable", maxPerSec, true},
+		{"wraps negative", maxPerSec + 1, false},
+		{"wraps back to positive", 2*maxPerSec + 2, false},
+	} {
+		for _, where := range []string{"top level", "lane"} {
+			t.Run(tc.name+"/"+where, func(t *testing.T) {
+				rate := &AnalyzerRateLimitConfig{Calls: 30, PerSec: int(tc.perSec)}
+				la := laneBlock()
+				cfg := blockLane(la)
+				if where == "lane" {
+					la.RateLimit = rate
+				} else {
+					cfg.Analyzer.RateLimit = rate
+				}
+				err := cfg.Validate()
+				switch {
+				case tc.ok && err != nil:
+					t.Errorf("refused: %v", err)
+				case !tc.ok && (err == nil || !strings.Contains(err.Error(), "rate_limit.per_sec")):
+					t.Errorf("error = %v, want a refusal naming rate_limit.per_sec", err)
+				}
+			})
+		}
+	}
+
+	// A Config assembled in Go skips Validate, so the lane build refuses too
+	// instead of building an evaluator on a wrapped period.
+	la := laneBlock()
+	la.RateLimit = &AnalyzerRateLimitConfig{Calls: 30, PerSec: int(2*maxPerSec + 2)}
+	deps := &analyzerDeps{cfg: &AnalyzerConfig{Provider: "stub", Model: "m"}, provider: stubAnalyzerProvider{}}
+	if _, err := buildLaneAnalyzer("appdb", la, deps, false, false, nil); err == nil ||
+		!strings.Contains(err.Error(), "rate_limit.per_sec") {
+		t.Errorf("the lane build accepted a wrapping per_sec: %v", err)
 	}
 }

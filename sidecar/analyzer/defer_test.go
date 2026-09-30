@@ -339,6 +339,19 @@ func TestUnavailableSplitsTheTrailFromTheFinding(t *testing.T) {
 			word: analyzer.StatusBudget,
 		},
 		{
+			name: "rate limited",
+			build: func(t *testing.T) (*analyzer.Evaluator, inspect.Statement) {
+				ev := mustNew(t, analyzer.Config{
+					Rule: "risky", Provider: &stubProvider{level: analyzer.RiskHigh},
+					Trigger: deleteTrigger(), RateLimit: analyzer.RateLimit{Calls: 1, Per: time.Hour},
+					Actions: analyzer.ActionMap{analyzer.RiskHigh: analyzer.ActionDefer},
+				})
+				ev.Evaluate(deleteStmt)
+				return ev, sqlStmt("DELETE FROM orders", inspect.OpDelete, "orders")
+			},
+			word: analyzer.StatusRateLimited,
+		},
+		{
 			name: "refused before sending",
 			build: func(t *testing.T) (*analyzer.Evaluator, inspect.Statement) {
 				return mustNew(t, analyzer.Config{

@@ -24,16 +24,21 @@ const CapabilitiesHeader = "hoop-sidecar-capabilities"
 // review_mode.
 const CapabilityReviewMode = "review_mode"
 
+// CapabilityAnalyzerRateLimit means this build decodes analyzer rate_limit,
+// on the top-level section and on a listener's block.
+const CapabilityAnalyzerRateLimit = "analyzer_rate_limit"
+
 // capabilitySince names the first release that sends each capability, for
 // the refusal an admin reads. A hoop release, because `hoop start sidecar`
 // is the shipped binary.
 var capabilitySince = map[string]string{
-	CapabilityReviewMode: "1.191.0",
+	CapabilityReviewMode:        "1.191.0",
+	CapabilityAnalyzerRateLimit: "1.198.0",
 }
 
 // SidecarCapabilities is what this build sends in CapabilitiesHeader.
 func SidecarCapabilities() []string {
-	return []string{CapabilityReviewMode}
+	return []string{CapabilityReviewMode, CapabilityAnalyzerRateLimit}
 }
 
 // ParseCapabilities reads a CapabilitiesHeader value. It never returns nil,
@@ -51,8 +56,22 @@ func ParseCapabilities(header string) []string {
 // CheckServable refuses a document that a sidecar reporting caps cannot
 // decode. The error names the listener and the release that adds support.
 func CheckServable(cfg Config, caps []string) error {
+	rateLimits := slices.Contains(caps, CapabilityAnalyzerRateLimit)
+	if !rateLimits && cfg.Analyzer != nil && cfg.Analyzer.RateLimit != nil {
+		return fmt.Errorf("the analyzer section sets rate_limit, and this sidecar does not "+
+			"support it; upgrade the sidecar to %s or later, or remove rate_limit",
+			capabilitySince[CapabilityAnalyzerRateLimit])
+	}
 	for _, l := range cfg.Listeners {
-		if l.Analyzer == nil || l.Analyzer.ReviewMode != analyzer.ReviewReturn {
+		if l.Analyzer == nil {
+			continue
+		}
+		if !rateLimits && l.Analyzer.RateLimit != nil {
+			return fmt.Errorf("listener %q sets analyzer rate_limit, and this sidecar does not "+
+				"support it; upgrade the sidecar to %s or later, or remove rate_limit",
+				l.Name, capabilitySince[CapabilityAnalyzerRateLimit])
+		}
+		if l.Analyzer.ReviewMode != analyzer.ReviewReturn {
 			continue
 		}
 		if !slices.Contains(caps, CapabilityReviewMode) {

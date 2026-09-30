@@ -295,6 +295,26 @@ func mergeAnalyzerBlock(base *daemon.LaneAnalyzerConfig, rule daemon.LaneAnalyze
 	if rule.Cache != nil {
 		out.Cache = rule.Cache
 	}
+	// Field by field, as the sidecar merges a block over its top-level
+	// default: a rule naming only calls keeps the listener's per_sec and
+	// burst, where replacing the struct would drop them and serve a rate
+	// the sidecar refuses or one with another burst.
+	if rule.RateLimit != nil {
+		var rate daemon.AnalyzerRateLimitConfig
+		if base.RateLimit != nil {
+			rate = *base.RateLimit
+		}
+		if rule.RateLimit.Calls != 0 {
+			rate.Calls = rule.RateLimit.Calls
+		}
+		if rule.RateLimit.PerSec != 0 {
+			rate.PerSec = rule.RateLimit.PerSec
+		}
+		if rule.RateLimit.Burst != 0 {
+			rate.Burst = rule.RateLimit.Burst
+		}
+		out.RateLimit = &rate
+	}
 	if rule.ApprovalRule != "" {
 		out.ApprovalRule = rule.ApprovalRule
 	}

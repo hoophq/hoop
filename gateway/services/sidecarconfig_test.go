@@ -365,6 +365,26 @@ func TestAnAnalyzerRuleReviewModeWinsWhenSet(t *testing.T) {
 	}
 }
 
+// A rule spec that names rate_limit sets the lane's rate field by field, as
+// the sidecar merges a block over its default; one that names none keeps the
+// listener's.
+func TestAnAnalyzerRuleRateLimitMergesFieldByField(t *testing.T) {
+	base := &daemon.LaneAnalyzerConfig{RateLimit: &daemon.AnalyzerRateLimitConfig{Calls: 30, PerSec: 60, Burst: 10}}
+	if got := mergeAnalyzerBlock(base, daemon.LaneAnalyzerConfig{}); got.RateLimit == nil ||
+		*got.RateLimit != *base.RateLimit {
+		t.Errorf("a rule naming no rate dropped the listener's: %+v", got.RateLimit)
+	}
+	rule := daemon.LaneAnalyzerConfig{RateLimit: &daemon.AnalyzerRateLimitConfig{Calls: 5}}
+	got := mergeAnalyzerBlock(base, rule)
+	want := daemon.AnalyzerRateLimitConfig{Calls: 5, PerSec: 60, Burst: 10}
+	if got.RateLimit == nil || *got.RateLimit != want {
+		t.Errorf("merged rate = %+v, want %+v", got.RateLimit, want)
+	}
+	if base.RateLimit.Calls != 30 {
+		t.Error("the merge wrote back into the listener's block")
+	}
+}
+
 // A return lane bound to a rule that holds nothing composes into a block the
 // sidecar refuses; the plane refuses it first.
 func TestAComposedBlockTheSidecarRefusesIsReported(t *testing.T) {

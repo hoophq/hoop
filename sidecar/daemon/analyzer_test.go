@@ -544,6 +544,9 @@ func TestNegativeNumericsAreRefused(t *testing.T) {
 		{"cache ttl", "cache.ttl_sec", AnalyzerConfig{Cache: AnalyzerCacheConfig{TTLSec: -1}}},
 		{"timeout", "timeout_sec", AnalyzerConfig{TimeoutSec: -1}},
 		{"max_input_bytes", "max_input_bytes", AnalyzerConfig{MaxInputBytes: -1}},
+		{"rate_limit calls", "rate_limit.calls", AnalyzerConfig{RateLimit: &AnalyzerRateLimitConfig{Calls: -1, PerSec: 60}}},
+		{"rate_limit per_sec", "rate_limit.per_sec", AnalyzerConfig{RateLimit: &AnalyzerRateLimitConfig{Calls: 30, PerSec: -1}}},
+		{"rate_limit burst", "rate_limit.burst", AnalyzerConfig{RateLimit: &AnalyzerRateLimitConfig{Calls: 30, PerSec: 60, Burst: -1}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := tc.cfg

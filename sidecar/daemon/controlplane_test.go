@@ -98,10 +98,11 @@ func TestSetupFetchesTheConfigFromTheControlPlane(t *testing.T) {
 	if got.path != controlPlaneHandshakePath {
 		t.Errorf("path = %q", got.path)
 	}
-	// The plane refuses to serve review_mode to a build that does not say
-	// it decodes the key.
-	if got.capabilities != CapabilityReviewMode {
-		t.Errorf("capabilities = %q, want %q", got.capabilities, CapabilityReviewMode)
+	// The plane refuses to serve review_mode or rate_limit to a build that
+	// does not say it decodes the key.
+	want := CapabilityReviewMode + "," + CapabilityAnalyzerRateLimit
+	if got.capabilities != want {
+		t.Errorf("capabilities = %q, want %q", got.capabilities, want)
 	}
 }
 

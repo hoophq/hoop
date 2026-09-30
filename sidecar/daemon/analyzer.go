@@ -4,9 +4,9 @@ import (
 	"context"
 	"crypto/x509"
 	"fmt"
+	"math"
 	"net/url"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/hoophq/hoop/sidecar/analyzer"
@@ -199,6 +199,12 @@ type AnalyzerConfig struct {
 	// unbounded. A backstop against a pathological workload, not a quota.
 	MaxCalls int `json:"max_calls,omitempty"`
 
+	// RateLimit bounds how fast classifications are spent. Nil is no
+	// limit. It sits beside MaxCalls: a call passes both, and a spike the
+	// rate throttles resumes on its own where a spent max_calls lasts until
+	// a restart.
+	RateLimit *AnalyzerRateLimitConfig `json:"rate_limit,omitempty"`
+
 	// MaxOutputTokens bounds the model's reply. Zero uses the provider
 	// default.
 	MaxOutputTokens int `json:"max_output_tokens,omitempty"`
@@ -232,6 +238,155 @@ type AnalyzerCacheConfig struct {
 	// TTLSec expires an entry. Zero disables the cache, because an entry
 	// that never expires outlives a prompt or model change.
 	TTLSec int `json:"ttl_sec,omitempty"`
+}
+
+// AnalyzerRateLimitConfig bounds how fast an analyzer spends: calls per
+// per_sec seconds, drawn from a bucket holding at most burst.
+//
+// A POINTER wherever it appears, so an omitted limit writes no key. The
+// control plane serves these documents to builds that decode strictly, and
+// a `"rate_limit":{}` an older build cannot read would refuse the whole
+// document; see CheckServable.
+type AnalyzerRateLimitConfig struct {
+	Calls  int `json:"calls,omitempty"`
+	PerSec int `json:"per_sec,omitempty"`
+
+	// Burst is how many calls may go out back to back after a quiet
+	// period. Zero uses calls.
+	Burst int `json:"burst,omitempty"`
+}
+
+// maxRateLimitPerSec is the largest per_sec a time.Duration holds, about 292
+// years. limit multiplies by time.Second, and past this the product wraps:
+// just past it goes negative, and near twice it wraps back to a small
+// positive period that enforces a far faster rate than the config says.
+const maxRateLimitPerSec = math.MaxInt64 / int64(time.Second)
+
+// limit is the analyzer's form of the config. It refuses a per_sec past
+// maxRateLimitPerSec itself rather than trusting validate ran first: a
+// Config assembled in Go reaches the lane build without LoadConfigBytes.
+func (r AnalyzerRateLimitConfig) limit() (analyzer.RateLimit, error) {
+	if int64(r.PerSec) > maxRateLimitPerSec {
+		return analyzer.RateLimit{}, fmt.Errorf(
+			"rate_limit.per_sec %d is past the largest period this build holds (%d)",
+			r.PerSec, maxRateLimitPerSec)
+	}
+	return analyzer.RateLimit{
+		Calls: r.Calls,
+		Per:   time.Duration(r.PerSec) * time.Second,
+		Burst: r.Burst,
+	}, nil
+}
+
+// validate checks one rate_limit block as written: negatives, and a block
+// that names nothing. Whether calls and per_sec arrive together is a fact
+// about the EFFECTIVE limit, since a lane may name one and inherit the
+// other; validateEffective answers that.
+func (r *AnalyzerRateLimitConfig) validate(where string) []string {
+	if r == nil {
+		return nil
+	}
+	var problems []string
+	for _, f := range [...]struct {
+		name string
+		v    int
+	}{{"calls", r.Calls}, {"per_sec", r.PerSec}, {"burst", r.Burst}} {
+		if f.v < 0 {
+			problems = append(problems, fmt.Sprintf("%s: rate_limit.%s is negative", where, f.name))
+		}
+	}
+	if _, err := r.limit(); err != nil {
+		problems = append(problems, where+": "+err.Error())
+	}
+	if *r == (AnalyzerRateLimitConfig{}) {
+		problems = append(problems, where+
+			": rate_limit names none of calls, per_sec or burst, so it limits nothing")
+	}
+	return problems
+}
+
+// validateEffective refuses a resolved limit that would load and bound
+// nothing: a rate with no period, a period with no rate, a burst with
+// neither. Negatives are validate's to report.
+func (r AnalyzerRateLimitConfig) validateEffective(where string) []string {
+	if r.Calls < 0 || r.PerSec < 0 || r.Burst < 0 {
+		return nil
+	}
+	switch {
+	case (r.Calls > 0) != (r.PerSec > 0):
+		return []string{where + ": rate_limit needs both calls and per_sec"}
+	case r.Burst > 0 && r.Calls == 0:
+		return []string{where + ": rate_limit.burst needs calls and per_sec"}
+	}
+	return nil
+}
+
+// resolveRateLimit is a lane's EFFECTIVE rate: the top-level default with
+// each field the lane block names laid over it. Field by field, like cache,
+// so a block naming only calls keeps the inherited period.
+func resolveRateLimit(cfg *AnalyzerConfig, la *LaneAnalyzerConfig) AnalyzerRateLimitConfig {
+	var out AnalyzerRateLimitConfig
+	if cfg != nil && cfg.RateLimit != nil {
+		out = *cfg.RateLimit
+	}
+	if la == nil || la.RateLimit == nil {
+		return out
+	}
+	if la.RateLimit.Calls != 0 {
+		out.Calls = la.RateLimit.Calls
+	}
+	if la.RateLimit.PerSec != 0 {
+		out.PerSec = la.RateLimit.PerSec
+	}
+	if la.RateLimit.Burst != 0 {
+		out.Burst = la.RateLimit.Burst
+	}
+	return out
+}
+
+// resolveMaxCalls is a lane's effective max_calls: the block's, else the
+// top-level default.
+func resolveMaxCalls(cfg *AnalyzerConfig, la *LaneAnalyzerConfig) int {
+	if la != nil && la.MaxCalls != 0 {
+		return la.MaxCalls
+	}
+	if cfg == nil {
+		return 0
+	}
+	return cfg.MaxCalls
+}
+
+// rateLimitNotes says what an analyzer may spend at its effective rate, and
+// where that rate meets max_calls: a cap the rate reaches in a few hours
+// turns the throttle into an outage, and a cap below the burst means the
+// rate never fires. who names the analyzer in the note.
+func rateLimitNotes(cfg *AnalyzerConfig, la *LaneAnalyzerConfig, who string) []string {
+	rate := resolveRateLimit(cfg, la)
+	lim, err := rate.limit()
+	if err != nil || !lim.Enabled() {
+		return nil
+	}
+	burst := lim.Capacity()
+	// The bucket starts full and refills at the rate, so a day can spend
+	// the burst plus a day of refill and never more.
+	perDay := int64(burst) + int64(rate.Calls)*86400/int64(rate.PerSec)
+	notes := []string{fmt.Sprintf(
+		"%s spends at most %d model calls in any 24h: rate_limit %d per %ds, burst %d",
+		who, perDay, rate.Calls, rate.PerSec, burst)}
+
+	switch maxCalls := resolveMaxCalls(cfg, la); {
+	case maxCalls == 0:
+	case maxCalls <= burst:
+		notes = append(notes, fmt.Sprintf(
+			"%s: max_calls %d is at or below the rate_limit burst %d, so the rate "+
+				"limit never refuses a call", who, maxCalls, burst))
+	default:
+		left := time.Duration(float64(maxCalls-burst) * float64(lim.Per) / float64(rate.Calls))
+		notes = append(notes, fmt.Sprintf(
+			"%s: at the full rate, max_calls %d runs out after %s; after that "+
+				"nothing is classified until a restart", who, maxCalls, left.Round(time.Second)))
+	}
+	return notes
 }
 
 // LaneAnalyzerConfig is one listener's own analyzer block: what this lane
@@ -308,12 +463,13 @@ type LaneAnalyzerConfig struct {
 	// The rest override the top-level analyzer defaults for this lane.
 	// A zero value inherits; see the field of the same name on
 	// AnalyzerConfig for what each bounds.
-	TimeoutSec    int                  `json:"timeout_sec,omitempty"`
-	FailOpen      *bool                `json:"fail_open,omitempty"`
-	Send          SendMode             `json:"send,omitempty"`
-	MaxInputBytes int                  `json:"max_input_bytes,omitempty"`
-	MaxCalls      int                  `json:"max_calls,omitempty"`
-	Cache         *AnalyzerCacheConfig `json:"cache,omitempty"`
+	TimeoutSec    int                      `json:"timeout_sec,omitempty"`
+	FailOpen      *bool                    `json:"fail_open,omitempty"`
+	Send          SendMode                 `json:"send,omitempty"`
+	MaxInputBytes int                      `json:"max_input_bytes,omitempty"`
+	MaxCalls      int                      `json:"max_calls,omitempty"`
+	RateLimit     *AnalyzerRateLimitConfig `json:"rate_limit,omitempty"`
+	Cache         *AnalyzerCacheConfig     `json:"cache,omitempty"`
 }
 
 // specFromRule maps a DEPRECATED ai_analysis rule onto the lane block
@@ -393,6 +549,12 @@ func (a *AnalyzerConfig) validate(hasScanner, onHost bool) []string {
 	// runaway workload, and -1 would disable it while looking set.
 	if a.MaxCalls < 0 {
 		problems = append(problems, "analyzer: max_calls is negative")
+	}
+	// The top level is the effective limit for every lane that names none,
+	// the deprecated rule form included, so it has to stand on its own.
+	if a.RateLimit != nil {
+		problems = append(problems, a.RateLimit.validate("analyzer")...)
+		problems = append(problems, a.RateLimit.validateEffective("analyzer")...)
 	}
 	if a.MaxOutputTokens < 0 {
 		problems = append(problems, "analyzer: max_output_tokens is negative")
@@ -496,20 +658,36 @@ func splitAnalyzerRules(rules []policy.Rule) (local, ai []policy.Rule) {
 	return local, ai
 }
 
-// budgetFor returns the process-lifetime call counter for one budget key,
-// creating it on first sight. Keys are namespaced by analyzer form — see
-// the budget key prefixes — and the sharing contract lives on
-// analyzerDeps.budgets.
-func (ac *analyzerDeps) budgetFor(key string) *atomic.Int64 {
+// budgetFor returns the process-lifetime purse for one budget key, creating
+// it on first sight. Keys are namespaced by analyzer form — see the budget
+// key prefixes — and the sharing contract lives on analyzerDeps.budgets.
+func (ac *analyzerDeps) budgetFor(key string) *analyzer.Budget {
 	if ac.budgets == nil {
-		ac.budgets = map[string]*atomic.Int64{}
+		ac.budgets = map[string]*analyzer.Budget{}
 	}
 	cell, ok := ac.budgets[key]
 	if !ok {
-		cell = new(atomic.Int64)
+		cell = new(analyzer.Budget)
 		ac.budgets[key] = cell
 	}
 	return cell
+}
+
+// rateLimitLog reports an analyzer's rate-limit edges on the process log:
+// the first refused call, and the first call granted after it. Nil without
+// a logger, which is every build that never serves (-validate, tests).
+func (ac *analyzerDeps) rateLimitLog(name string) func(limited bool, refused int64) {
+	if ac.log == nil {
+		return nil
+	}
+	log := ac.log.With("analyzer", name)
+	return func(limited bool, refused int64) {
+		if limited {
+			log.Warn("analyzer rate limit reached; statements are not classified until it refills")
+			return
+		}
+		log.Info("analyzer rate limit cleared", "refused", refused)
+	}
 }
 
 // reviewerFor returns the backend this lane holds statements against for human
@@ -661,9 +839,10 @@ func buildAnalyzerEvaluator(
 	if maxInput == 0 {
 		maxInput = cfg.MaxInputBytes
 	}
-	maxCalls := la.MaxCalls
-	if maxCalls == 0 {
-		maxCalls = cfg.MaxCalls
+	maxCalls := resolveMaxCalls(cfg, &la)
+	rate, err := resolveRateLimit(cfg, &la).limit()
+	if err != nil {
+		return nil, err
 	}
 	// Cache fields merge INDIVIDUALLY, like every other override here: a
 	// block naming only ttl_sec keeps the inherited size. Replacing the
@@ -708,6 +887,8 @@ func buildAnalyzerEvaluator(
 		CacheSize:     cache.Size,
 		CacheTTL:      time.Duration(cache.TTLSec) * time.Second,
 		MaxCalls:      maxCalls,
+		RateLimit:     rate,
+		OnRateLimit:   ac.rateLimitLog(name),
 		Budget:        ac.budgetFor(budgetKey),
 		Redact:        redactorFor(send, ac.det),
 		Review:        review,
@@ -916,6 +1097,12 @@ func validateLaneAnalysis(rules []policy.Rule, la *LaneAnalyzerConfig,
 	if la != nil {
 		problems = append(problems, validateLaneBlock(la, lane)...)
 		problems = append(problems, ValidateHoldOnLane(la, lc, lane+": analyzer block")...)
+		// Only where the block names a rate: otherwise the effective one
+		// is the top level's, which AnalyzerConfig.validate already said.
+		if la.RateLimit != nil {
+			problems = append(problems, resolveRateLimit(cfg, la).validateEffective(
+				lane+": analyzer block")...)
+		}
 	}
 
 	for _, r := range rules {
@@ -1031,6 +1218,7 @@ func validateLaneBlock(la *LaneAnalyzerConfig, lane string) []string {
 	if la.MaxCalls < 0 {
 		problems = append(problems, where+": max_calls is negative")
 	}
+	problems = append(problems, la.RateLimit.validate(where)...)
 	if la.Cache != nil {
 		if la.Cache.Size < 0 {
 			problems = append(problems, where+": cache.size is negative")
