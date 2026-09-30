@@ -102,11 +102,13 @@ generate-wasm:
 
 test: test-oss test-enterprise
 
+# gateway/models starts an isolated PGlite instance and runs migrations per test.
+# Its full suite can exceed Go's default 10-minute per-package timeout in CI.
 test-oss: generate-wasm test-sidecar
-	env CGO_ENABLED=0 go test -json -v github.com/hoophq/hoop/...
+	env CGO_ENABLED=0 go test -timeout 15m -json -v github.com/hoophq/hoop/...
 
 test-enterprise: generate-wasm
-	env CGO_ENABLED=0 go test -json -v github.com/hoophq/hoop/...
+	env CGO_ENABLED=0 go test -timeout 15m -json -v github.com/hoophq/hoop/...
 
 # `github.com/hoophq/hoop/...` now matches the sidecar module too, since it
 # was renamed to sit under the repository path. What it does NOT do is prove
