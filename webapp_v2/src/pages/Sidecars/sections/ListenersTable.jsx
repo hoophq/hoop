@@ -177,7 +177,15 @@ export default function ListenersTable({ sidecar, onAdd, onEdit }) {
                     <AddressChip value={listener.listen} inbound />
                   </Table.Td>
                   <Table.Td miw={200}>
-                    <AddressChip value={listener.upstream} />
+                    <Group gap="xs" wrap="nowrap">
+                      <AddressChip value={listener.upstream} />
+                      {/* A lane that accepts any upstream certificate must not look like one that checks. */}
+                      {listener.upstream_tls?.insecure_skip_verify && (
+                        <Badge tag variant="warning">
+                          Verification off
+                        </Badge>
+                      )}
+                    </Group>
                   </Table.Td>
                   <Table.Td miw={150}>
                     <PoliciesCell listener={listener} config={config} boundRules={sidecar.bound_rules} />

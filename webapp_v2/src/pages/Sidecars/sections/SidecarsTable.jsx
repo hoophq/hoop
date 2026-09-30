@@ -94,7 +94,7 @@ function Listeners({ sidecar, getIcon }) {
         </Tooltip>
       ))}
       {hidden > 0 && (
-        <Tooltip label={listeners.slice(LANES_SHOWN).map(listenerLabel).join(', ')}>
+        <Tooltip label={listeners.slice(LANES_SHOWN).map((l, i) => listenerLabel(l, LANES_SHOWN + i)).join(', ')}>
           <Avatar size={AVATAR_SIZE} bg="gray.0" color="gray" variant="light" fw={700}>
             {`+${hidden}`}
           </Avatar>

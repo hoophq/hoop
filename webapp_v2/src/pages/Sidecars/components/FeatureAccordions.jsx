@@ -1,13 +1,14 @@
 import { Divider, Group, Stack, Text } from '@mantine/core'
 import Accordion from '@/components/Accordion'
 import Badge from '@/components/Badge'
-import { featureList, opaSummary, overridesOPA, resolveOPA } from '../features'
+import { SOURCE_SIDECAR, featureList, opaSummary, overridesOPA, resolveOPA } from '../features'
 import { MODE_OBSERVE, SOURCE_DISTRIBUTED, SOURCE_LISTENER } from '../resolve'
 import classes from './FeatureAccordions.module.css'
 
 const SOURCE_LABELS = {
   [SOURCE_LISTENER]: { label: 'Listener', color: 'indigo' },
   [SOURCE_DISTRIBUTED]: { label: 'Control plane', color: 'sky' },
+  [SOURCE_SIDECAR]: { label: 'Sidecar', color: 'gray' },
 }
 
 // Every rule says where it came from, because the merge is not a union:
@@ -115,7 +116,7 @@ export default function FeatureAccordions({ listener = null, config, boundRules,
       </Accordion>
       {ownOPA && (
         <Text size="sm" c="dimmed">
-          {opa ? `OPA on this listener: ${opaSummary(opa)}` : 'OPA is off on this listener.'}
+          {opa?.url ? `OPA on this listener: ${opaSummary(opa)}` : 'OPA is off on this listener.'}
         </Text>
       )}
     </Stack>

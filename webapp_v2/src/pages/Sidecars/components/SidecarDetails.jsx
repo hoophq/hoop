@@ -220,7 +220,7 @@ export default function SidecarDetails({ sidecar, editable, listenerActions, onD
                   <Text size="sm">{config.log_level || 'info'}</Text>
                 </Row>
                 <Row label="OPA">
-                  <Text size="sm">{opa ? opaSummary(opa) : 'Off'}</Text>
+                  <Text size="sm">{opa?.url ? opaSummary(opa) : 'Off'}</Text>
                 </Row>
                 <Row label="Audit">
                   <Badge variant={auditEnabled(config) ? 'active' : 'inactive'}>

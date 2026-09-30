@@ -111,6 +111,10 @@ function analyzerDetail(spec) {
 // must not fall through to the sidecar-wide list.
 const scopeOf = (listener) => (listener == null ? null : listener.name || '')
 
+// Seen from the sidecar itself, its top-level rules are its own, not inherited.
+export const SOURCE_SIDECAR = 'sidecar'
+const sourceOf = (listener, source) => (listener == null && source === SOURCE_INHERITED ? SOURCE_SIDECAR : source)
+
 // The binding carries no rule body, so a row is the name and where it goes.
 function distributedRules(boundRules, listener, kind) {
   const scope = scopeOf(listener)
@@ -137,7 +141,7 @@ function guardrailRows(listener, config, boundRules) {
     id: `${entry.rule.name}-${i}`,
     name: entry.rule.name,
     detail: guardrailDetail(entry.rule),
-    source: entry.source,
+    source: sourceOf(listener, entry.source),
     // action: "defer" reports a finding instead of denying.
     flag: entry.rule.action === 'defer' ? 'Report only' : null,
   }))
@@ -149,7 +153,7 @@ function maskRows(listener, config, boundRules) {
     id: `${entry.rule.name}-${i}`,
     name: entry.rule.name,
     detail: maskDetail(entry.rule),
-    source: entry.source,
+    source: sourceOf(listener, entry.source),
   }))
   return [...distributedRules(boundRules, listener, FEATURE_KIND['data-masking']), ...own]
 }
@@ -165,7 +169,7 @@ function analyzerRows(listener, config, boundRules) {
       id: `${entry.rule.name}-${i}`,
       name: entry.rule.name,
       detail: analyzerDetail(entry.rule),
-      source: entry.source,
+      source: sourceOf(listener, entry.source),
       // Still runs, through the same builder the block does. Marked because
       // the rule form carries no per-lane overrides and the block does.
       flag: 'Deprecated',

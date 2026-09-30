@@ -36,7 +36,7 @@ function Parent({ name, onClick }) {
 // The form, once the sidecar it edits is on hand. Split out so the editor's
 // state is seeded from a listener that exists, rather than from null on the
 // first render and patched by an effect afterwards.
-function Editor({ sidecar, index, onDone }) {
+function Editor({ sidecar, index, onDone, onLeave }) {
   const { form, setField, errors, refused, saving, save, isNew } = useListenerEditor({ sidecar, index })
   const updateSidecar = useSidecarStore((s) => s.updateSidecar)
   const [deleting, setDeleting] = useState(false)
@@ -45,16 +45,20 @@ function Editor({ sidecar, index, onDone }) {
   const label = isNew ? null : listenerLabel(listeners[index], index)
 
   const handleSave = async () => {
+    onLeave(true)
     if (await save()) onDone()
+    else onLeave(false)
   }
 
   const confirmDelete = async () => {
     setDeletingBusy(true)
+    onLeave(true)
     const configuration = removeListener(sidecar.configuration, index)
     const { ok, error } = await updateSidecar(sidecar.id, configuration)
     setDeletingBusy(false)
     if (!ok) {
       showSnackbar({ level: 'error', text: 'Failed to delete the listener.', description: saveErrorMessage(error) })
+      onLeave(false)
       return
     }
     setDeleting(false)
@@ -123,6 +127,9 @@ export default function SidecarListenerPage() {
   const error = useSidecarStore((s) => s.selectedError)
   const fetchSidecar = useSidecarStore((s) => s.fetchSidecar)
   const clearSelected = useSidecarStore((s) => s.clearSelected)
+  // A save or a delete replaces the document before the route moves on, so
+  // the stale label must not flash the not-found state in between.
+  const [leaving, setLeaving] = useState(false)
 
   // Through the store, not a request of this page's own: the store owns the
   // loading flag, the error and the cancellation, and hand-rolling them here
@@ -156,7 +163,7 @@ export default function SidecarListenerPage() {
   // A label that is not in the document is an error, not an empty form: saving
   // one would add a second listener under a name the operator thinks they are
   // editing.
-  if (!isNew && index === -1) {
+  if (!isNew && index === -1 && !leaving) {
     return (
       <Stack gap="xl">
         <Parent name={sidecar.name} onClick={back} />
@@ -166,5 +173,5 @@ export default function SidecarListenerPage() {
   }
 
   // Keyed by the route: a link to another listener must not keep this form.
-  return <Editor key={name ?? 'new'} sidecar={sidecar} index={index} onDone={back} />
+  return <Editor key={name ?? 'new'} sidecar={sidecar} index={index} onDone={back} onLeave={setLeaving} />
 }

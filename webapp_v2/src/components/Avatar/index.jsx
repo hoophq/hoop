@@ -1,8 +1,8 @@
 import { Avatar as MantineAvatar } from '@mantine/core'
 import classes from './Avatar.module.css'
 
-function Avatar({ radius = 'xl', classNames = {}, ...props }) {
-  return <MantineAvatar radius={radius} classNames={{ root: classes.root, ...classNames }} {...props} />
+function Avatar({ radius = 'xl', ...props }) {
+  return <MantineAvatar radius={radius} {...props} classNames={{ root: classes.root }} />
 }
 
 function Group({ spacing = 6, ...props }) {
