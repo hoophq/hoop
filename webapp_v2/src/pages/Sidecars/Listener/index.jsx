@@ -82,11 +82,6 @@ function Editor({ sidecar, index, onDone }) {
           <Stack gap="xs">
             <Parent name={sidecar.name} onClick={onDone} />
             <Title order={1}>{isNew ? 'Add listener' : form.name || label}</Title>
-            <Text c="dimmed">
-              {isNew
-                ? `A new listener on ${sidecar.name}: one upstream, one protocol, its own bind address.`
-                : `Listener on ${sidecar.name}.`}
-            </Text>
           </Stack>
           <Group gap="sm" wrap="nowrap" flex="0 0 auto">
             {!isNew && (

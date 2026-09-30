@@ -1,5 +1,5 @@
 import { Fragment, useState } from 'react'
-import { Divider, Group, Input, Stack, Text, Title } from '@mantine/core'
+import { Box, Divider, Group, Input, Stack, Text, Title } from '@mantine/core'
 import { Plus, Trash2 } from 'lucide-react'
 import Accordion from '@/components/Accordion'
 import ActionIcon from '@/components/ActionIcon'
@@ -159,13 +159,15 @@ function Field({ field, path, form, setField, errors }) {
       if (field.enum?.length <= 3) {
         return (
           <Input.Wrapper {...common} required={field.required}>
-            <SegmentedControl
-              mt={4}
-              w="fit-content"
-              value={value || field.default || field.enum[0]}
-              onChange={set}
-              data={field.enum.map((v) => ({ value: v, label: ENUM_LABELS[path]?.[v] ?? v }))}
-            />
+            {/* A block, or the control shares the label's line. */}
+            <Box mt={4}>
+              <SegmentedControl
+                w="fit-content"
+                value={value || field.default || field.enum[0]}
+                onChange={set}
+                data={field.enum.map((v) => ({ value: v, label: ENUM_LABELS[path]?.[v] ?? v }))}
+              />
+            </Box>
           </Input.Wrapper>
         )
       }
