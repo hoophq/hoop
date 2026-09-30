@@ -133,6 +133,8 @@ func TestSidecarReviewTTL(t *testing.T) {
 	t.Run("GatewayReviewHasNoDeadline", testGatewayReviewHasNoDeadline)
 	t.Run("ReviewStatusLabelsLeaveOutOnlyExpired", testReviewStatusLabelsLeaveOutOnlyExpired)
 	t.Run("PendingCountSkipsALapsedSidecarReview", testPendingCountSkipsALapsedSidecarReview)
+	// Last: it drops the columns every other case needs.
+	t.Run("ReviewTTLMigrationRollsBack", testReviewTTLMigrationRollsBack)
 }
 
 // The compliance report counts reviews awaiting a decision; nobody can decide a
@@ -730,8 +732,7 @@ func testReviewStatusLabelsLeaveOutOnlyExpired(t *testing.T) {
 
 // The down migration settles what an older binary would release, keeps every
 // row and leaves the 000125 index working.
-func TestReviewTTLMigrationRollsBack(t *testing.T) {
-	startTestDB(t)
+func testReviewTTLMigrationRollsBack(t *testing.T) {
 	sc := seedSidecar(t, "ttl-rollback")
 	const lapsedStatement = "DELETE FROM lapsed;"
 	lapsed := seedApprovedSidecarReview(t, sc, lapsedStatement)

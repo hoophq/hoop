@@ -28,13 +28,17 @@ func decodeReviewResponse(t *testing.T, rec *httptest.ResponseRecorder) openapi.
 	return resp
 }
 
-// setRuleTTLs sets the limits of payments-approvers, the rule
-// seedReviewingSidecar stores. A review copies them when it is filed.
+// setRuleTTLs sets the limits of payments-approvers, the rule the cases share,
+// until the case ends. A review copies them when it is filed.
 func setRuleTTLs(t *testing.T, pending, approval *int) {
 	t.Helper()
-	require.NoError(t, models.DB.Exec(`
-	UPDATE private.access_request_rules SET pending_ttl_sec = ?, approval_ttl_sec = ?
-	WHERE org_id = ? AND name = 'payments-approvers'`, pending, approval, statusTestOrgID).Error)
+	set := func(pending, approval *int) error {
+		return models.DB.Exec(`
+		UPDATE private.access_request_rules SET pending_ttl_sec = ?, approval_ttl_sec = ?
+		WHERE org_id = ? AND name = 'payments-approvers'`, pending, approval, statusTestOrgID).Error
+	}
+	require.NoError(t, set(pending, approval))
+	t.Cleanup(func() { require.NoError(t, set(nil, nil)) })
 }
 
 // pastDeadline moves a review's deadline a minute into the past and returns it.
@@ -86,8 +90,22 @@ func uniqueStatement() []byte {
 	return []byte("DELETE FROM users WHERE id = '" + uuid.NewString() + "';")
 }
 
-func TestPostReviewRefilesAnExpiredReview(t *testing.T) {
+// One database for these cases: a PGlite instance keeps its memory until the
+// test binary exits. Each case seeds its own sidecar.
+func TestSidecarReviewTTLRoutes(t *testing.T) {
 	startStatusTestDB(t)
+	t.Run("PostReviewRefilesAnExpiredReview", testPostReviewRefilesAnExpiredReview)
+	t.Run("PostReviewNeverReleasesAnExpiredApproval", testPostReviewNeverReleasesAnExpiredApproval)
+	t.Run("ClaimReviewAnswersExpired", testClaimReviewAnswersExpired)
+	t.Run("ClaimAfterALateApprovalReleases", testClaimAfterALateApprovalReleases)
+	t.Run("GetReviewReportsExpiryWithoutWriting", testGetReviewReportsExpiryWithoutWriting)
+	t.Run("PutReviewRefusesAnExpiredReview", testPutReviewRefusesAnExpiredReview)
+	t.Run("PutReviewAfterTheRowExpired", testPutReviewAfterTheRowExpired)
+	t.Run("PutReviewStartsTheApprovalClock", testPutReviewStartsTheApprovalClock)
+	t.Run("ReviewsWithoutTTLKeepTodaysAnswers", testReviewsWithoutTTLKeepTodaysAnswers)
+}
+
+func testPostReviewRefilesAnExpiredReview(t *testing.T) {
 	sc := seedReviewingSidecar(t, "refiler")
 	setRuleTTLs(t, ptr.Int(900), nil)
 	raw := uniqueStatement()
@@ -114,8 +132,7 @@ func TestPostReviewRefilesAnExpiredReview(t *testing.T) {
 	assert.Equal(t, "done", old.SessionStatus)
 }
 
-func TestPostReviewNeverReleasesAnExpiredApproval(t *testing.T) {
-	startStatusTestDB(t)
+func testPostReviewNeverReleasesAnExpiredApproval(t *testing.T) {
 	sc := seedReviewingSidecar(t, "late-resend")
 	setRuleTTLs(t, ptr.Int(900), ptr.Int(600))
 	raw := uniqueStatement()
@@ -132,8 +149,7 @@ func TestPostReviewNeverReleasesAnExpiredApproval(t *testing.T) {
 	assert.Equal(t, string(models.ReviewStatusExpired), readStoredReview(t, first.Review.ID).Status)
 }
 
-func TestClaimReviewAnswersExpired(t *testing.T) {
-	startStatusTestDB(t)
+func testClaimReviewAnswersExpired(t *testing.T) {
 	sc := seedReviewingSidecar(t, "claimer")
 	setRuleTTLs(t, ptr.Int(900), ptr.Int(600))
 
@@ -173,8 +189,7 @@ func TestClaimReviewAnswersExpired(t *testing.T) {
 
 // An approval that checked its deadline in time commits after the claim read
 // the review as lapsed. The claim must release it, not answer it as final.
-func TestClaimAfterALateApprovalReleases(t *testing.T) {
-	startStatusTestDB(t)
+func testClaimAfterALateApprovalReleases(t *testing.T) {
 	sc := seedReviewingSidecar(t, "late-approval")
 	setRuleTTLs(t, ptr.Int(900), ptr.Int(600))
 	first := fileReview(t, sc, uniqueStatement())
@@ -201,8 +216,7 @@ func TestClaimAfterALateApprovalReleases(t *testing.T) {
 	assert.Equal(t, string(models.ReviewStatusExecuted), readStoredReview(t, first.Review.ID).Status)
 }
 
-func TestGetReviewReportsExpiryWithoutWriting(t *testing.T) {
-	startStatusTestDB(t)
+func testGetReviewReportsExpiryWithoutWriting(t *testing.T) {
 	sc := seedStatusSidecar(t, "expiry-reader")
 
 	for _, status := range []models.ReviewStatusType{models.ReviewStatusPending, models.ReviewStatusApproved} {
@@ -242,8 +256,7 @@ func TestGetReviewReportsExpiryWithoutWriting(t *testing.T) {
 	})
 }
 
-func TestPutReviewRefusesAnExpiredReview(t *testing.T) {
-	startStatusTestDB(t)
+func testPutReviewRefusesAnExpiredReview(t *testing.T) {
 	sc := seedStatusSidecar(t, "expired-decider")
 
 	for _, tc := range []struct {
@@ -302,8 +315,7 @@ func TestPutReviewRefusesAnExpiredReview(t *testing.T) {
 	})
 }
 
-func TestPutReviewAfterTheRowExpired(t *testing.T) {
-	startStatusTestDB(t)
+func testPutReviewAfterTheRowExpired(t *testing.T) {
 	sc := seedStatusSidecar(t, "recorded-expiry")
 	rev := seedStatusReview(t, sc, models.ReviewStatusPending)
 	pastDeadline(t, rev.ID)
@@ -319,8 +331,7 @@ func TestPutReviewAfterTheRowExpired(t *testing.T) {
 	assert.JSONEq(t, before, reviewSnapshot(t, rev))
 }
 
-func TestPutReviewStartsTheApprovalClock(t *testing.T) {
-	startStatusTestDB(t)
+func testPutReviewStartsTheApprovalClock(t *testing.T) {
 	sc := seedReviewingSidecar(t, "approval-clock")
 
 	t.Run("an approval limit", func(t *testing.T) {
@@ -357,8 +368,7 @@ func TestPutReviewStartsTheApprovalClock(t *testing.T) {
 
 // With no limit on the rule, nothing a sidecar reads carries the new keys, and
 // an old approval stays claimable.
-func TestReviewsWithoutTTLKeepTodaysAnswers(t *testing.T) {
-	startStatusTestDB(t)
+func testReviewsWithoutTTLKeepTodaysAnswers(t *testing.T) {
 	sc := seedReviewingSidecar(t, "no-limit")
 	raw := uniqueStatement()
 	newKeys := []string{"expires_at", "approval_ttl_sec"}
