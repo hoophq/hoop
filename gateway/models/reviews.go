@@ -382,7 +382,7 @@ func UpdateReview(rev *Review) error {
 func UpdateSidecarReview(db *gorm.DB, rev *Review, fromStatus ReviewStatusType) error {
 	return db.Transaction(func(tx *gorm.DB) error {
 		res := tx.Table("private.reviews").
-			Where("org_id = ? AND status = ? AND listener_name IS NOT NULL", rev.OrgID, fromStatus).
+			Where("org_id = ? AND id = ? AND status = ? AND listener_name IS NOT NULL", rev.OrgID, rev.ID, fromStatus).
 			Updates(rev)
 		if res.Error != nil {
 			return res.Error

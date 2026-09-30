@@ -312,3 +312,78 @@ func TestReviewChannels(t *testing.T) {
 		})
 	}
 }
+
+// A revoke rewrites the message the approval settled: the outcome says
+// revoked, no button is left, and the ready line is gone.
+func TestRebuildReviewBlocksRevoked(t *testing.T) {
+	const revID = "rev-1"
+	original := []slack.Block{
+		slack.NewHeaderBlock(&slack.TextBlockObject{Type: slack.PlainTextType, Text: "Hoop Review"}),
+		slack.NewSectionBlock(&slack.TextBlockObject{Type: slack.MarkdownType, Text: "*Approver groups:* admin"}, nil, nil),
+		slack.NewActionBlock(revID + ":admin:0"),
+	}
+	m := &sentReviewMessage{eventKind: EventKindOneTime, blocks: original}
+	revoked := ReviewedGroup{Name: "admin", Status: "REVOKED", ReviewerEmail: "a@a.com",
+		ReviewedAt: time.Date(2026, 9, 30, 10, 0, 0, 0, time.UTC)}
+	req := &UpdateReviewMessageRequest{ReviewID: revID, IsRevoked: true,
+		ReviewedGroups: []ReviewedGroup{revoked}, TotalGroups: 1}
+	blocks := rebuildReviewBlocks(m, req, map[string]ReviewedGroup{"admin": revoked})
+
+	var outcome, notice bool
+	for _, b := range blocks {
+		if _, ok := b.(*slack.ActionBlock); ok {
+			t.Errorf("a revoked message must not keep buttons")
+		}
+		sec, ok := b.(*slack.SectionBlock)
+		if !ok || sec.Text == nil {
+			continue
+		}
+		if strings.Contains(sec.Text.Text, "Session ready") {
+			t.Errorf("a revoked message must not say the session is ready")
+		}
+		outcome = outcome || strings.Contains(sec.Text.Text, "`revoked`")
+		notice = notice || strings.Contains(sec.Text.Text, "Approval revoked")
+	}
+	if !outcome || !notice {
+		t.Errorf("revoked outcome=%v notice=%v, want both", outcome, notice)
+	}
+}
+
+// An approval drops the tracked messages but keeps them for a revoke, which
+// rewrites them once more. Other terminal states keep nothing.
+func TestUpdateReviewMessageRevokeAfterApproval(t *testing.T) {
+	var updates int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		updates++
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"ok":true,"channel":"C1","ts":"1.0"}`)
+	}))
+	defer srv.Close()
+	s := &SlackService{sentReviewItems: make(map[string][]sentReviewMessage),
+		apiClient: slack.New("xoxb-test", slack.OptionAPIURL(srv.URL+"/"))}
+
+	s.sentReviewItems["rev-1"] = []sentReviewMessage{{channelID: "C1", timestamp: "1.0"}}
+	if err := s.UpdateReviewMessage(&UpdateReviewMessageRequest{ReviewID: "rev-1", IsApproved: true}); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	if err := s.UpdateReviewMessage(&UpdateReviewMessageRequest{ReviewID: "rev-1", IsRevoked: true}); err != nil {
+		t.Fatalf("revoke: %v", err)
+	}
+	if updates != 2 {
+		t.Fatalf("chat.update calls = %d, want 2: the approval, then the revoke", updates)
+	}
+	if final := s.settledReview("rev-1"); final == nil || !final.IsRevoked {
+		t.Errorf("settled state = %+v, want the revoke", final)
+	}
+	if err := s.UpdateReviewMessage(&UpdateReviewMessageRequest{ReviewID: "rev-1", IsRevoked: true}); err != nil || updates != 2 {
+		t.Errorf("a second revoke rewrote again: calls=%d err=%v", updates, err)
+	}
+
+	s.sentReviewItems["rev-2"] = []sentReviewMessage{{channelID: "C1", timestamp: "2.0"}}
+	if err := s.UpdateReviewMessage(&UpdateReviewMessageRequest{ReviewID: "rev-2", IsRejected: true}); err != nil {
+		t.Fatalf("reject: %v", err)
+	}
+	if err := s.UpdateReviewMessage(&UpdateReviewMessageRequest{ReviewID: "rev-2", IsRevoked: true}); err != nil || updates != 3 {
+		t.Errorf("a revoke after a rejection rewrote a message: calls=%d err=%v", updates, err)
+	}
+}

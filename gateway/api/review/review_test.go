@@ -842,3 +842,34 @@ func TestIsSidecarDecision(t *testing.T) {
 		})
 	}
 }
+
+func TestSlackReviewUpdate(t *testing.T) {
+	listener := sql.NullString{String: "appdb", Valid: true}
+	revoker := models.ReviewGroups{GroupName: "admin", Status: models.ReviewStatusRevoked, OwnerEmail: ptr.String("a@a.com")}
+
+	t.Run("a sidecar revoke rewrites the message", func(t *testing.T) {
+		req := slackReviewUpdate(&models.Review{ID: "r1", Status: models.ReviewStatusRevoked,
+			ListenerName: listener, ReviewGroups: []models.ReviewGroups{revoker}})
+		if assert.NotNil(t, req) {
+			assert.True(t, req.IsRevoked)
+			assert.False(t, req.IsApproved)
+			assert.False(t, req.IsRejected)
+			assert.Len(t, req.ReviewedGroups, 1)
+			assert.Equal(t, "REVOKED", req.ReviewedGroups[0].Status)
+		}
+	})
+	t.Run("a gateway revoke leaves the message as it is", func(t *testing.T) {
+		assert.Nil(t, slackReviewUpdate(&models.Review{ID: "r2", Status: models.ReviewStatusRevoked,
+			ReviewGroups: []models.ReviewGroups{revoker}}))
+	})
+	t.Run("an approval is terminal and not a revoke", func(t *testing.T) {
+		req := slackReviewUpdate(&models.Review{ID: "r3", Status: models.ReviewStatusApproved, ListenerName: listener})
+		if assert.NotNil(t, req) {
+			assert.True(t, req.IsApproved)
+			assert.False(t, req.IsRevoked)
+		}
+	})
+	t.Run("a used approval sends nothing", func(t *testing.T) {
+		assert.Nil(t, slackReviewUpdate(&models.Review{ID: "r4", Status: models.ReviewStatusExecuted, ListenerName: listener}))
+	})
+}

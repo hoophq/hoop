@@ -322,6 +322,25 @@ func TestUpdateSidecarReview(t *testing.T) {
 		}
 	})
 
+	t.Run("leaves another review in the same status alone", func(t *testing.T) {
+		other := seedApprovedSidecarReview(t, sc, "DELETE FROM d;")
+		rev := seedApprovedSidecarReview(t, sc, "DELETE FROM e;")
+		before := sessionStatus(t, other.SessionID)
+		if err := models.UpdateSidecarReview(models.DB, revokedByAdmin(rev), models.ReviewStatusApproved); err != nil {
+			t.Fatalf("revoke: %v", err)
+		}
+		got, err := models.GetSidecarReview(models.DB, testOrgID, sc.ID, other.ID)
+		if err != nil {
+			t.Fatalf("reload: %v", err)
+		}
+		if got.Status != models.ReviewStatusApproved || got.SessionID != other.SessionID {
+			t.Errorf("other review = %s on session %s, want APPROVED on %s", got.Status, got.SessionID, other.SessionID)
+		}
+		if s := sessionStatus(t, other.SessionID); s != before {
+			t.Errorf("other session status = %q, want %q", s, before)
+		}
+	})
+
 	t.Run("refuses a review without a listener", func(t *testing.T) {
 		rev := seedApprovedSidecarReview(t, sc, "DELETE FROM c;")
 		if err := models.DB.Exec(`UPDATE private.reviews SET listener_name = NULL WHERE id = ?`, rev.ID).Error; err != nil {

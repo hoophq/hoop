@@ -377,7 +377,7 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
             {holds && (
               <Select
                 label="While held for approval"
-                description="Return answers the client at once with the review id; it runs the statement again after approval. A client can also ask for either mode itself."
+                description="Return denies the statement at once with the review id; after approval, the client must send the identical statement again. A client can also ask for either mode itself."
                 data={REVIEW_MODES}
                 value={form.review_mode || REVIEW_MODE_HOLD}
                 onChange={(v) => set({ review_mode: !v || v === REVIEW_MODE_HOLD ? '' : v })}

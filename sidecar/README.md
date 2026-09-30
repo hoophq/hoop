@@ -1268,7 +1268,10 @@ as `\xNN` and a backslash as `\\`. The match stays on the raw bytes.
 
 On an http lane the relay files the method, the target and the body, as
 `POST /transfers?dry_run=false`, a blank line, then the body. The reviewer
-reads that. Five consequences:
+reads that. A statement that is not printable text, such as a kubectl
+protobuf body, reaches the reviewer as a notice line, then `\xNN` for each
+byte that is not printable; the match stays on the raw bytes. Five
+consequences:
 
 - A body larger than `http.max_body_bytes` is truncated by the codec, so the
   hold denies it without filing: the approval would bind to bytes nobody read.

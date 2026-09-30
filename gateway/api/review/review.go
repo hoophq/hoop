@@ -214,9 +214,22 @@ func UpdateSlackMessage(rev *models.Review) error {
 	if slackSvc == nil {
 		return nil
 	}
+	req := slackReviewUpdate(rev)
+	if req == nil {
+		return nil
+	}
+	return slackSvc.UpdateReviewMessage(req)
+}
 
+// slackReviewUpdate is the rewrite a review state asks for, or nil for none.
+func slackReviewUpdate(rev *models.Review) *slackservice.UpdateReviewMessageRequest {
 	switch rev.Status {
 	case models.ReviewStatusPending, models.ReviewStatusApproved, models.ReviewStatusRejected:
+	case models.ReviewStatusRevoked:
+		// A gateway message keeps its approval; only a sidecar revokes one.
+		if !rev.ListenerName.Valid || rev.ListenerName.String == "" {
+			return nil
+		}
 	default:
 		return nil
 	}
@@ -225,6 +238,7 @@ func UpdateSlackMessage(rev *models.Review) error {
 		ReviewID:    rev.ID,
 		IsApproved:  rev.Status == models.ReviewStatusApproved,
 		IsRejected:  rev.Status == models.ReviewStatusRejected,
+		IsRevoked:   rev.Status == models.ReviewStatusRevoked,
 		TotalGroups: len(rev.ReviewGroups),
 		// Shown on the message, so a reviewer in Slack sees why, whether the
 		// rejection came from Slack, the web app or the API.
@@ -245,7 +259,7 @@ func UpdateSlackMessage(rev *models.Review) error {
 			ReviewedAt:    reviewedAt,
 		})
 	}
-	return slackSvc.UpdateReviewMessage(req)
+	return req
 }
 
 // DoReview updates the status of a review identified by reviewIdOrSid. The hasForced parameter
