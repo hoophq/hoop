@@ -7,6 +7,11 @@
   overflow: hidden;
 }
 
+/* Mantine spaces sibling items by md whatever the variant. */
+.item + .item {
+  margin-top: 0;
+}
+
 .item[data-feature='ai-analyzer'] {
   --fa-tint: var(--mantine-color-pink-0);
   --fa-tint-deep: var(--mantine-color-pink-1);
