@@ -1,5 +1,6 @@
-/* One flat stack, no borders and no gaps: the header on the feature's
-   lightest shade, the panel a step deeper. */
+/* One flat stack, no borders and no gaps: the header on a wash of the
+   feature's lightest shade, the panel a step deeper. The palette's shade 0 is
+   already stronger than the design, so both are mixed down towards the body. */
 .item {
   background-color: transparent;
   border: 0;
@@ -7,34 +8,34 @@
   overflow: hidden;
 }
 
-/* Mantine spaces sibling items by md whatever the variant. */
 .item + .item {
   margin-top: 0;
 }
 
 .item[data-feature='ai-analyzer'] {
   --fa-tint: var(--mantine-color-pink-0);
-  --fa-tint-deep: var(--mantine-color-pink-1);
 }
 
 .item[data-feature='data-masking'] {
   --fa-tint: var(--mantine-color-violet-0);
-  --fa-tint-deep: var(--mantine-color-violet-1);
 }
 
 .item[data-feature='guardrails'] {
   --fa-tint: var(--mantine-color-indigo-0);
-  --fa-tint-deep: var(--mantine-color-indigo-1);
 }
 
 .control {
-  background-color: var(--fa-tint);
-  padding-block: var(--mantine-spacing-xs);
+  background-color: color-mix(in srgb, var(--fa-tint) 50%, var(--mantine-color-body));
 }
 
 .control:hover,
 .panel {
-  background-color: color-mix(in srgb, var(--fa-tint) 60%, var(--fa-tint-deep));
+  background-color: color-mix(in srgb, var(--fa-tint) 80%, var(--mantine-color-body));
+}
+
+/* Mantine pads the label by sm; the design wants 16px. */
+.label {
+  padding-block: var(--mantine-spacing-md);
 }
 
 .content {

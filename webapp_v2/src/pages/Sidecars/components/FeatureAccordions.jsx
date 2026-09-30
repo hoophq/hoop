@@ -55,7 +55,7 @@ export default function FeatureAccordions({ listener = null, config, boundRules 
       <Accordion
         variant="filled"
         multiple
-        classNames={{ item: classes.item, control: classes.control, panel: classes.panel, content: classes.content }}
+        classNames={{ item: classes.item, control: classes.control, label: classes.label, panel: classes.panel, content: classes.content }}
       >
         {features.map((feature) => {
           const Icon = feature.icon
