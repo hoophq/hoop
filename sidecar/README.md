@@ -1261,6 +1261,11 @@ statements sends the query with its parameters unbound, so an approval
 releases that query shape rather than one set of values, and a statement
 larger than 100 KB is refused by the plane rather than reviewed.
 
+A statement that is not printable text, such as the protobuf body kubectl
+sends for create, auth can-i and auth whoami, reaches the reviewer as a notice
+line with its byte count, then the bytes: each byte that is not printable shows
+as `\xNN` and a backslash as `\\`. The match stays on the raw bytes.
+
 On an http lane the relay files the method, the target and the body, as
 `POST /transfers?dry_run=false`, a blank line, then the body. The reviewer
 reads that. Five consequences:

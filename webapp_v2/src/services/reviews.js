@@ -13,7 +13,7 @@ export const reviewsService = {
    */
   list: () => api.get('/reviews'),
   get: (id) => api.get(`/reviews/${encodeURIComponent(id)}`),
-  // status ∈ APPROVED | REJECTED | REVOKED. A sidecar review is `onetime`, and
-  // the gateway refuses REVOKED on anything but `jit`.
+  // status ∈ APPROVED | REJECTED | REVOKED. REVOKED takes an APPROVED review
+  // that is `jit`, or one a sidecar filed, until the sidecar uses it.
   update: (id, payload) => api.put(`/reviews/${encodeURIComponent(id)}`, payload),
 }

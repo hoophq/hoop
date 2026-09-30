@@ -96,9 +96,8 @@ func PostReview(c *gin.Context) {
 		return
 	}
 
-	// Decoded here so a human never sees base64. The statement is stored as
-	// text and read back verbatim into the Slack message a reviewer approves
-	// from, and nothing further down this path decodes anything.
+	// Decoded here so a human never sees base64. The raw bytes are capped and
+	// hashed; the blobs and Slack get displayStatement(raw).
 	statement, err := base64.StdEncoding.DecodeString(req.Payload)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Sprintf("payload is not valid base64: %v", err)})
@@ -147,6 +146,9 @@ func PostReview(c *gin.Context) {
 	// of `DELETE ... WHERE id = 1` release `id = 999`.
 	statementHash := models.HashStatement(statement)
 
+	// What the reviewer reads. The match stays on statementHash.
+	display := displayStatement(statement)
+
 	// Two passes. A match can be consumed between the read and the insert, and
 	// an insert can lose the index to a racing request whose review is then
 	// consumed before the re-read. Either way one more pass settles it.
@@ -163,7 +165,7 @@ func PostReview(c *gin.Context) {
 			return
 		}
 
-		rev, err = createSidecarReview(sidecar, req.ListenerName, string(statement), statementHash, rule, policy)
+		rev, err = createSidecarReview(sidecar, req.ListenerName, display, statementHash, rule, policy)
 		switch {
 		case errors.Is(err, gorm.ErrDuplicatedKey):
 			// A racing request filed first. Look again rather than answer: its
@@ -178,7 +180,7 @@ func PostReview(c *gin.Context) {
 			return
 		}
 
-		answerFiledReview(c, sidecar, req, rule, rev, statement)
+		answerFiledReview(c, sidecar, req, rule, rev, display)
 		return
 	}
 
@@ -290,7 +292,7 @@ func controlPlaneSidecar(c *gin.Context) *models.Sidecar {
 // answerFiledReview reports a review this request filed. Forward is false: it
 // was filed a moment ago and no human has seen it.
 func answerFiledReview(c *gin.Context, sidecar *models.Sidecar, req openapi.SidecarReviewRequest,
-	rule *models.AccessRequestRule, rev *models.Review, statement []byte) {
+	rule *models.AccessRequestRule, rev *models.Review, display string) {
 	log.With("sid", rev.SessionID, "review-id", rev.ID, "sidecar", sidecar.Name,
 		"listener", req.ListenerName, "rule", rule.Name).
 		Infof("registered a sidecar review")
@@ -313,7 +315,7 @@ func answerFiledReview(c *gin.Context, sidecar *models.Sidecar, req openapi.Side
 	//
 	// Nothing in the response depends on it: the review is already persisted
 	// and visible to an approver either way.
-	go notifySlack(sidecar, rev, req.ListenerName, string(statement))
+	go notifySlack(sidecar, rev, req.ListenerName, display)
 
 	// Forward is false: the review was filed a moment ago and no human has
 	// seen it. The sidecar denies this statement and carries the review id.
@@ -369,7 +371,7 @@ func answerExistingReview(c *gin.Context, sidecar *models.Sidecar, listenerName 
 //
 // Slack is optional everywhere else in this codebase and stays optional here:
 // an org that has not configured it gets no message and no error.
-func notifySlack(sidecar *models.Sidecar, rev *models.Review, listenerName, statement string) {
+func notifySlack(sidecar *models.Sidecar, rev *models.Review, listenerName, display string) {
 	slackSvc := slackservice.GetServiceInstance(sidecar.OrgID)
 	if slackSvc == nil {
 		return
@@ -390,7 +392,7 @@ func notifySlack(sidecar *models.Sidecar, rev *models.Review, listenerName, stat
 		return
 	}
 
-	req := newSlackReviewRequest(sidecar, rev, listenerName, statement)
+	req := newSlackReviewRequest(sidecar, rev, listenerName, display)
 	req.SlackChannels = channels
 	req.DefaultChannelAsFallback = true
 	// The same ceiling both existing senders apply. Two groups today, but a
@@ -414,7 +416,7 @@ func notifySlack(sidecar *models.Sidecar, rev *models.Review, listenerName, stat
 
 // newSlackReviewRequest is what a reviewer ends up reading. Split out so the
 // message can be asserted without a Slack workspace.
-func newSlackReviewRequest(sidecar *models.Sidecar, rev *models.Review, listenerName, statement string) *slackservice.MessageReviewRequest {
+func newSlackReviewRequest(sidecar *models.Sidecar, rev *models.Review, listenerName, display string) *slackservice.MessageReviewRequest {
 	return &slackservice.MessageReviewRequest{
 		// ID is load bearing: it becomes the message metadata and the button
 		// ids, and it is how a click finds its way back to this review.
@@ -433,7 +435,7 @@ func newSlackReviewRequest(sidecar *models.Sidecar, rev *models.Review, listener
 		ConnectionType: reviewSlackType,
 
 		ApprovalGroups: slackplugin.ParseGroups(rev.ReviewGroups),
-		Script:         statement,
+		Script:         display,
 
 		// FullApiURL, not ApiURL: the latter drops the configured path prefix,
 		// which lands the approver outside the app wherever one is set.
@@ -578,7 +580,7 @@ func listenerNamesApprovalRule(listeners []daemon.ListenerConfig, listenerName, 
 // createSidecarReview writes the session and the review one statement needs to
 // wait for a human. It returns gorm.ErrDuplicatedKey when a racing request
 // filed for the same bytes first.
-func createSidecarReview(sidecar *models.Sidecar, listenerName, statement, statementHash string, rule *models.AccessRequestRule, policy *services.ReviewPolicy) (*models.Review, error) {
+func createSidecarReview(sidecar *models.Sidecar, listenerName, display, statementHash string, rule *models.AccessRequestRule, policy *services.ReviewPolicy) (*models.Review, error) {
 	now := time.Now().UTC()
 	sessionID := uuid.NewString()
 
@@ -588,7 +590,7 @@ func createSidecarReview(sidecar *models.Sidecar, listenerName, statement, state
 	sess := models.Session{
 		ID:             sessionID,
 		OrgID:          sidecar.OrgID,
-		BlobInput:      models.BlobInputType(statement),
+		BlobInput:      models.BlobInputType(display),
 		Connection:     "",
 		ConnectionType: reviewConnectionType,
 		Verb:           pb.ClientVerbExec,
@@ -600,7 +602,7 @@ func createSidecarReview(sidecar *models.Sidecar, listenerName, statement, state
 	}
 
 	rev := newSidecarReview(sidecar, listenerName, sessionID, statementHash, rule, policy, now)
-	if err := models.CreateSidecarReview(models.DB, sess, rev, statement); err != nil {
+	if err := models.CreateSidecarReview(models.DB, sess, rev, display); err != nil {
 		return nil, err
 	}
 	return rev, nil
