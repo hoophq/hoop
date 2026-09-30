@@ -46,6 +46,7 @@ const EMPTY = {
   message: '',
   max_calls: '',
   approval_rule: '',
+  review_mode: '',
 }
 
 function specToForm(spec) {
@@ -61,6 +62,7 @@ function specToForm(spec) {
     message: spec.message ?? '',
     max_calls: spec.max_calls ?? '',
     approval_rule: spec.approval_rule ?? '',
+    review_mode: spec.review_mode ?? '',
   }
 }
 
@@ -85,6 +87,9 @@ function formToSpec(f, ruleName) {
   // reviewers (an imported file keeps its own), so it stays.
   if ([spec.high, spec.medium, spec.low].includes(REVIEW_ACTION)) {
     spec.approval_rule = f.approval_rule && f.approval_rule !== ruleName ? f.approval_rule : ruleName
+    // No field edits it, so keep what an import or the API stored. Only on a
+    // lane that holds: the sidecar refuses a mode nothing reads.
+    if (f.review_mode !== '') spec.review_mode = f.review_mode
   }
   return spec
 }
