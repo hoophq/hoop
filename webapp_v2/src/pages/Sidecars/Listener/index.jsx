@@ -48,8 +48,6 @@ function Editor({ sidecar, index, onDone }) {
     if (await save()) onDone()
   }
 
-  // Deleting is the same read-modify-write as saving: the whole document goes
-  // back with one element fewer.
   const confirmDelete = async () => {
     setDeletingBusy(true)
     const configuration = removeListener(sidecar.configuration, index)

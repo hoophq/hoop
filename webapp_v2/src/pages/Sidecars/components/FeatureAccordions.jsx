@@ -48,8 +48,7 @@ function RuleRow({ rule }) {
  */
 export default function FeatureAccordions({ listener = null, config, boundRules, flush = false }) {
   const features = featureList(listener, config, boundRules)
-  // The sidecar's own endpoint is a Global settings row; a lane only says
-  // something here when it departs from it.
+  // The sidecar's endpoint is a Global settings row; a lane speaks only on override.
   const ownOPA = overridesOPA(listener)
   const opa = ownOPA ? resolveOPA(listener, config) : null
 

@@ -10,14 +10,8 @@ import {
   resolveOPA,
 } from './resolve'
 
-/**
- * The rules behind each feature chip, as rows a panel can render.
- *
- * `listener` null reads the sidecar's own defaults: the top-level blocks every
- * lane inherits, plus every rule the control plane distributes to any lane.
- * With a listener it is what that lane resolves to (resolve.js) plus the rules
- * distributed to it by name.
- */
+// `listener` null reads the sidecar's defaults plus every distributed rule;
+// a listener reads what that lane resolves to plus the rules bound to its name.
 
 // The rule types of sidecar/policy a guardrail list can show. NOT the two in
 // pages/Guardrails/helpers.js — those belong to the gateway's own guardrails,
@@ -49,7 +43,6 @@ const MASK_STRATEGY_LABELS = {
   hash: 'Hash',
 }
 
-// The API's binding kinds, by feature.
 const FEATURE_KIND = {
   'ai-analyzer': 'analyzer',
   'data-masking': 'datamasking',
@@ -118,8 +111,7 @@ function analyzerDetail(spec) {
 // must not fall through to the sidecar-wide list.
 const scopeOf = (listener) => (listener == null ? null : listener.name || '')
 
-// The rules the control plane sends, as rows beside the document's own. The
-// binding carries no rule body, so a row is the name and where it goes.
+// The binding carries no rule body, so a row is the name and where it goes.
 function distributedRules(boundRules, listener, kind) {
   const scope = scopeOf(listener)
   if (scope === '') return []
@@ -127,7 +119,6 @@ function distributedRules(boundRules, listener, kind) {
   if (scope !== null) {
     return rows.map((b) => ({ id: `cp-${b.rule_name}`, name: b.rule_name, source: SOURCE_DISTRIBUTED }))
   }
-  // Sidecar-wide: one row per rule, naming the lanes it reaches.
   const lanes = new Map()
   for (const b of rows) {
     if (!lanes.has(b.rule_name)) lanes.set(b.rule_name, [])
@@ -201,7 +192,6 @@ function summary(key, rules) {
   return `${rules.length} ${rules.length === 1 ? 'rule' : 'rules'}`
 }
 
-// One entry per feature, in display order, with its rows and the header summary.
 export function featureList(listener, config, boundRules) {
   return FEATURE_ORDER.map((key) => {
     const rules = ROWS[key](listener, config, boundRules)
@@ -210,7 +200,6 @@ export function featureList(listener, config, boundRules) {
       rules,
       summary: summary(key, rules),
       empty: EMPTY[key],
-      // Only guardrails carry an enforcement mode.
       mode: key === 'guardrails' ? guardrailMode(listener, config) : null,
     }
   })
@@ -218,7 +207,6 @@ export function featureList(listener, config, boundRules) {
 
 export { resolveOPA }
 
-// One line for an OPA endpoint: where, and what an outage does.
 export function opaSummary(opa) {
   return [opa.url, opa.fail_open ? 'allows on failure' : 'denies on failure', opa.gate && 'gates the analyzer']
     .filter(Boolean)
@@ -229,15 +217,8 @@ export function opaSummary(opa) {
 // (resolve.js); `{}` is the opt-out, so it counts as the lane's own.
 export const overridesOPA = (listener) => listener?.opa !== undefined && listener?.opa !== null
 
-/**
- * What the Policies cell says about a lane.
- *
- * Chips when the lane carries a rule of its own or one the control plane
- * distributes to it. "Inherited policy" when everything it runs comes from the
- * sidecar's top-level defaults, and nothing when it runs none at all. The
- * distinction is the row's whole point: two lanes with the same chips can be
- * one that was configured and one that merely inherits.
- */
+// Chips only when the lane has a rule of its own or a distributed one; a lane
+// running nothing but the sidecar's defaults reads "Inherited policy".
 export function listenerPolicies(listener, config, boundRules) {
   const on = featureList(listener, config, boundRules).filter((f) => f.rules.length > 0)
   const own = on.some((f) => f.rules.some((r) => r.source !== SOURCE_INHERITED))

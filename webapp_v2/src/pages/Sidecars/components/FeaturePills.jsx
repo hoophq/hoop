@@ -7,11 +7,7 @@ import { FEATURES } from '../config'
 const AVATAR_SIZE = 24
 const ICON_SIZE = 14
 
-/**
- * `features` is a list of keys from ../config.js. `compact` renders one
- * overlapping round icon per feature with the label in a tooltip: a table row
- * has one narrow column for this, and three labelled chips wrap there.
- */
+// `compact` is the table form: overlapping icons, the label in a tooltip.
 export default function FeaturePills({ features, compact, emptyLabel = 'No features configured' }) {
   if (!features || features.length === 0) {
     // A row with no features says so by staying empty. The sentence is for the

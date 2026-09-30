@@ -22,7 +22,6 @@ const SEMANTIC_MAP = {
   danger: { color: 'red', variant: 'filled' },
 }
 
-// The dot form: one neutral pill for every state, the state as the dot colour.
 const DOT_COLORS = {
   active: 'green.5',
   inactive: 'gray.4',
@@ -49,8 +48,7 @@ const TAG_PROPS = { tt: 'none', fw: 500 }
  * `chip` picks the taller content-chip size from theme.js. Use it for anything
  * carrying an icon or a phrase; leave it off for a status word.
  *
- * `dot` renders a semantic variant as a neutral pill with a coloured dot, the
- * control plane's status style. The text stays a word, not a shout.
+ * `dot` renders a semantic variant as a neutral pill with a coloured dot.
  */
 export default function Badge({
   variant = 'filled',

@@ -120,7 +120,6 @@ function ObjectBody({ field, path, form, setField, errors }) {
 function Field({ field, path, form, setField, errors }) {
   const value = getPath(form, path)
   const set = (v) => setField(path, v)
-  // The hint reads under the input, as a consequence of what was typed.
   const common = {
     label: field.label,
     description: field.help,
@@ -244,9 +243,6 @@ function Section({ title, description, children }) {
   )
 }
 
-// The basic fields split into two captions. Anything the schema marks basic
-// that neither list names joins the addresses.
-// Enum values the schema spells for the daemon, worded for the form.
 const ENUM_LABELS = { network: { tcp: 'TCP port', unix: 'Unix socket' } }
 
 const IDENTITY = ['name', 'protocol']
@@ -254,11 +250,10 @@ const ADDRESSES = ['network', 'listen', 'upstream']
 const pick = (fields, keys) => keys.map((k) => fields.find((f) => f.key === k)).filter(Boolean)
 
 /**
- * The fields of one listener, rendered from the sidecar schema. `form` and
- * `errors` come from ../listeners. `children` renders after the advanced
- * settings, for the sections the schema does not describe.
+ * The fields of one listener, rendered from the sidecar schema, with no
+ * chrome of its own. `form` and `errors` come from ../listeners.
  */
-export default function ListenerForm({ form, setField, errors, children }) {
+export default function ListenerForm({ form, setField, errors }) {
   const ctx = { form, setField, errors }
   const visible = LISTENER_FIELDS.filter((f) => appliesTo(f, form.protocol))
   const basic = visible.filter((f) => f.basic)
@@ -328,8 +323,6 @@ export default function ListenerForm({ form, setField, errors, children }) {
           </Accordion.Item>
         </Accordion>
       )}
-
-      {children}
     </Stack>
   )
 }

@@ -56,7 +56,6 @@ function detachedSummary(detached) {
     .join(' ')
 }
 
-// Which side owns the document, and the one action that changes it.
 function SourceCallout({ fromFile, configured, editable, onSwitch }) {
   if (fromFile) {
     return (
@@ -212,13 +211,11 @@ export default function SidecarDetails({ sidecar, editable, listenerActions, onD
             )}
             {configured && (
               <>
-                {/* AdminConfig.Listen: the health and stats endpoint, off when empty. */}
                 <Row label="Admin">
                   <Text size="sm" ff={config.admin?.listen ? 'monospace' : undefined}>
                     {config.admin?.listen || 'Off'}
                   </Text>
                 </Row>
-                {/* Config.LogLevel defaults to info when the document names none. */}
                 <Row label="Log level">
                   <Text size="sm">{config.log_level || 'info'}</Text>
                 </Row>

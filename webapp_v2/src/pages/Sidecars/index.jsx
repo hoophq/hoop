@@ -11,8 +11,6 @@ import SidecarMethodCards from './components/SidecarMethodCards'
 import SidecarLicenseNotice from './sections/SidecarLicenseNotice'
 import SidecarsTable from './sections/SidecarsTable'
 
-// Empty, the two ways in; filled, the table. A sidecar is deleted from its
-// details page.
 export default function Sidecars() {
   const { sidecars, loading, error, fetchSidecars } = useSidecarStore()
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
