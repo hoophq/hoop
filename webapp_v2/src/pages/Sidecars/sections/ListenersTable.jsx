@@ -179,7 +179,7 @@ export default function ListenersTable({ sidecar, onAdd, onEdit }) {
                   <Table.Td miw={200}>
                     <AddressChip value={listener.upstream} />
                   </Table.Td>
-                  <Table.Td miw={180}>
+                  <Table.Td miw={150}>
                     <PoliciesCell listener={listener} config={config} boundRules={sidecar.bound_rules} />
                   </Table.Td>
                   {editable && (
