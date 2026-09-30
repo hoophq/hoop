@@ -120,12 +120,9 @@ function ObjectBody({ field, path, form, setField, errors }) {
 function Field({ field, path, form, setField, errors }) {
   const value = getPath(form, path)
   const set = (v) => setField(path, v)
-  const common = {
-    label: field.label,
-    description: field.help,
-    error: errors[path],
-    inputWrapperOrder: ['label', 'input', 'description', 'error'],
-  }
+  const common = { label: field.label, description: field.help, error: errors[path] }
+  // Hint under the input. Not for Switch, which forwards unknown props to the DOM.
+  const hinted = { ...common, inputWrapperOrder: ['label', 'input', 'description', 'error'] }
 
   if (field.type === 'object') {
     const body = <ObjectBody field={field} path={path} form={form} setField={setField} errors={errors} />
@@ -138,7 +135,7 @@ function Field({ field, path, form, setField, errors }) {
   }
 
   if (path === 'protocol') {
-    return <Select {...common} required data={protocolOptions(value)} value={value || null} onChange={set} allowDeselect={false} />
+    return <Select {...hinted} required data={protocolOptions(value)} value={value || null} onChange={set} allowDeselect={false} />
   }
 
   switch (field.type) {
@@ -146,7 +143,7 @@ function Field({ field, path, form, setField, errors }) {
       if (field.enum && field.open) {
         return (
           <Autocomplete
-            {...common}
+            {...hinted}
             required={field.required}
             placeholder={field.placeholder}
             data={field.enum}
@@ -157,7 +154,7 @@ function Field({ field, path, form, setField, errors }) {
       }
       if (field.enum?.length <= 3) {
         return (
-          <Input.Wrapper {...common} required={field.required}>
+          <Input.Wrapper {...hinted} required={field.required}>
             {/* A block, or the control shares the label's line. */}
             <Box mt={4}>
               <SegmentedControl
@@ -171,11 +168,11 @@ function Field({ field, path, form, setField, errors }) {
         )
       }
       if (field.enum) {
-        return <Select {...common} data={field.enum} value={value || field.default || null} onChange={set} allowDeselect={false} />
+        return <Select {...hinted} data={field.enum} value={value || field.default || null} onChange={set} allowDeselect={false} />
       }
       return (
         <TextInput
-          {...common}
+          {...hinted}
           required={field.required}
           placeholder={field.placeholder}
           value={value ?? ''}
@@ -183,7 +180,7 @@ function Field({ field, path, form, setField, errors }) {
         />
       )
     case 'integer':
-      return <NumberInput {...common} min={0} value={value ?? 0} onChange={(v) => set(Number(v) || 0)} />
+      return <NumberInput {...hinted} min={0} value={value ?? 0} onChange={(v) => set(Number(v) || 0)} />
     case 'boolean':
       return <Switch {...common} checked={value === true} onChange={(e) => set(e.currentTarget.checked)} />
     case 'list':
@@ -196,9 +193,9 @@ function Field({ field, path, form, setField, errors }) {
           </Stack>
         )
       }
-      return <ListInput field={field} value={value} onChange={set} {...common} />
+      return <ListInput field={field} value={value} onChange={set} {...hinted} />
     case 'map':
-      return <MapInput field={field} value={value} onChange={set} {...common} />
+      return <MapInput field={field} value={value} onChange={set} {...hinted} />
     default:
       return (
         <Input.Wrapper
