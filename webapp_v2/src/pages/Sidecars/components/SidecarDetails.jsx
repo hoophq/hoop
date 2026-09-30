@@ -15,7 +15,7 @@ import ListenersTable from '../sections/ListenersTable'
 import { sidecarStatus } from '../status'
 import SidecarSourceModal from '../sections/SidecarSourceModal'
 import Callout from './Callout'
-import FeatureAccordions from './FeatureAccordions'
+import FeatureRules from './FeatureRules'
 
 const LABEL_WIDTH = 88
 
@@ -235,7 +235,8 @@ export default function SidecarDetails({ sidecar, editable, listenerActions, onD
             <>
               <Stack gap="sm">
                 <Text fw={600}>Features</Text>
-                <FeatureAccordions config={config} boundRules={sidecar.bound_rules} />
+                {/* The file owns the rules too: nothing bound here would reach the sidecar. */}
+                <FeatureRules sidecar={sidecar} editable={editable && !fromFile} />
               </Stack>
 
               <Divider />

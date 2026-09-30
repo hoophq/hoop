@@ -458,6 +458,14 @@ import Switch from '@/components/Switch'
 <Switch label="Enable integration" checked={enabled} onChange={(e) => setEnabled(e.currentTarget.checked)} />
 ```
 
+### `Checkbox`
+Checkbox for opt-in lists and selections. `radius` defaults to `xs`; `label` and `description` render beside the box.
+```jsx
+import Checkbox from '@/components/Checkbox'
+
+<Checkbox label="Select all" checked={all} indeterminate={some && !all} onChange={toggleAll} />
+```
+
 ### `TextInput`
 Standard text input field.
 ```jsx
@@ -989,6 +997,12 @@ Non-obvious notes only:
   builds those rows. Those rules appear nowhere else in the app, which is what the
   expansion is for; certificate paths and codec switches are the form's job and were
   deliberately left out.
+  `components/FeatureRules.jsx` wraps the accordions with their Add and Edit and owns
+  the two dialogs: `sections/RulePickerModal.jsx` binds existing rules (one PUT per
+  changed rule, the whole `sidecar_targets` set each time; `pages/Sidecars/rules.js`
+  does the target math) and `sections/RuleFormModal.jsx` opens the sidecar rule forms
+  (`Sidecar*Fields` + `useSidecar*Editor` under each rule page's `Create/`) with this
+  sidecar or listener preselected. Nothing renders in config-file mode.
   `pages/Sidecars/resolve.js` is the one port of `Config.resolve`, and both the Features
   chips (`config.js`) and the expanded row read it. Guardrail `rules` absent — **or
   `null`, which is what commenting them out in YAML leaves** — inherits, `[]` runs none,

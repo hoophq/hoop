@@ -240,6 +240,17 @@ function Section({ title, description, children }) {
   )
 }
 
+function Heading({ title }) {
+  return (
+    <Group justify="space-between" wrap="nowrap" pr="sm">
+      <Text fw={600}>{title}</Text>
+      <Text size="sm" c="dimmed">
+        Optional
+      </Text>
+    </Group>
+  )
+}
+
 const ENUM_LABELS = { network: { tcp: 'TCP port', unix: 'Unix socket' } }
 
 const IDENTITY = ['name', 'protocol']
@@ -249,8 +260,11 @@ const pick = (fields, keys) => keys.map((k) => fields.find((f) => f.key === k)).
 /**
  * The fields of one listener, rendered from the sidecar schema, with no
  * chrome of its own. `form` and `errors` come from ../listeners.
+ *
+ * `features` is the Feature settings panel: what the lane runs, which the
+ * caller builds because it reads the stored document rather than the form.
  */
-export default function ListenerForm({ form, setField, errors }) {
+export default function ListenerForm({ form, setField, errors, features }) {
   const ctx = { form, setField, errors }
   const visible = LISTENER_FIELDS.filter((f) => appliesTo(f, form.protocol))
   const basic = visible.filter((f) => f.basic)
@@ -295,29 +309,36 @@ export default function ListenerForm({ form, setField, errors }) {
         </Section>
       ))}
 
-      {advanced.length > 0 && (
-        <Accordion>
-          <Accordion.Item value="advanced">
-            <Accordion.Control>
-              <Group justify="space-between" wrap="nowrap" pr="sm">
-                <Text fw={600}>Advanced settings</Text>
-                <Text size="sm" c="dimmed">
-                  Optional
-                </Text>
-              </Group>
-            </Accordion.Control>
-            <Accordion.Panel>
-              <Stack gap="lg" pt="xs">
-                {scalars.length > 0 && <Fields fields={scalars} prefix="" {...ctx} />}
-                {blocks.map((f, i) => (
-                  <Fragment key={f.key}>
-                    {(i > 0 || scalars.length > 0) && <Divider />}
-                    <Field field={f} path={f.key} {...ctx} />
-                  </Fragment>
-                ))}
-              </Stack>
-            </Accordion.Panel>
-          </Accordion.Item>
+      {(advanced.length > 0 || features) && (
+        <Accordion multiple defaultValue={['features']}>
+          {advanced.length > 0 && (
+            <Accordion.Item value="advanced">
+              <Accordion.Control>
+                <Heading title="Advanced settings" />
+              </Accordion.Control>
+              <Accordion.Panel>
+                <Stack gap="lg" pt="xs">
+                  {scalars.length > 0 && <Fields fields={scalars} prefix="" {...ctx} />}
+                  {blocks.map((f, i) => (
+                    <Fragment key={f.key}>
+                      {(i > 0 || scalars.length > 0) && <Divider />}
+                      <Field field={f} path={f.key} {...ctx} />
+                    </Fragment>
+                  ))}
+                </Stack>
+              </Accordion.Panel>
+            </Accordion.Item>
+          )}
+          {features && (
+            <Accordion.Item value="features">
+              <Accordion.Control>
+                <Heading title="Feature settings" />
+              </Accordion.Control>
+              <Accordion.Panel>
+                <Box pt="xs">{features}</Box>
+              </Accordion.Panel>
+            </Accordion.Item>
+          )}
         </Accordion>
       )}
     </Stack>

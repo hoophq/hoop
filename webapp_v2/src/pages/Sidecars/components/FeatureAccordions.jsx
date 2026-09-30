@@ -1,6 +1,8 @@
 import { Divider, Group, Stack, Text } from '@mantine/core'
+import { CirclePlus, SquarePen } from 'lucide-react'
 import Accordion from '@/components/Accordion'
 import Badge from '@/components/Badge'
+import Button from '@/components/Button'
 import { SOURCE_SIDECAR, featureList, opaSummary, overridesOPA, resolveOPA } from '../features'
 import { MODE_OBSERVE, SOURCE_DISTRIBUTED, SOURCE_LISTENER } from '../resolve'
 import classes from './FeatureAccordions.module.css'
@@ -23,9 +25,9 @@ function SourceBadge({ source }) {
   )
 }
 
-function RuleRow({ rule }) {
+function RuleRow({ rule, onEdit }) {
   return (
-    <Group gap="sm" align="baseline" wrap="nowrap" py="xs">
+    <Group gap="sm" align="center" wrap="nowrap" py="xs">
       <Text size="xs" fw={700}>
         {rule.name || 'Unnamed rule'}
       </Text>
@@ -38,6 +40,11 @@ function RuleRow({ rule }) {
         </Badge>
       )}
       <SourceBadge source={rule.source} />
+      {onEdit && (
+        <Button variant="subtle" size="compact-xs" leftSection={<SquarePen size={14} />} onClick={onEdit}>
+          Edit
+        </Button>
+      )}
     </Group>
   )
 }
@@ -46,8 +53,12 @@ function RuleRow({ rule }) {
  * Without a `listener` it reads the sidecar's defaults, the top-level blocks
  * every lane inherits; with one, what that lane resolves to. Both include the
  * rules the control plane distributes, which are never in the stored document.
+ *
+ * `actions` ({ onAdd(featureKey), onEdit(featureKey, rule) }) puts an Add on
+ * each feature and an Edit on the rules the control plane distributes. A rule
+ * embedded in the stored document has no form here and stays read-only.
  */
-export default function FeatureAccordions({ listener = null, config, boundRules, flush = false }) {
+export default function FeatureAccordions({ listener = null, config, boundRules, flush = false, actions }) {
   const features = featureList(listener, config, boundRules)
   // The sidecar's endpoint is a Global settings row; a lane speaks only on override.
   const ownOPA = overridesOPA(listener)
@@ -84,14 +95,26 @@ export default function FeatureAccordions({ listener = null, config, boundRules,
               </Accordion.Control>
               <Accordion.Panel>
                 <Stack gap={4}>
-                  <Group gap="sm" align="center">
-                    <Text size="xs" fw={700}>
-                      Rules
-                    </Text>
-                    {observing && (
-                      <Badge tag variant="warning">
-                        Observe
-                      </Badge>
+                  <Group justify="space-between" align="center" wrap="nowrap">
+                    <Group gap="sm" align="center">
+                      <Text size="xs" fw={700}>
+                        Rules
+                      </Text>
+                      {observing && (
+                        <Badge tag variant="warning">
+                          Observe
+                        </Badge>
+                      )}
+                    </Group>
+                    {actions && (
+                      <Button
+                        variant="subtle"
+                        size="compact-xs"
+                        leftSection={<CirclePlus size={14} />}
+                        onClick={() => actions.onAdd(feature.key)}
+                      >
+                        Add
+                      </Button>
                     )}
                   </Group>
                   {feature.rules.length === 0 ? (
@@ -103,7 +126,14 @@ export default function FeatureAccordions({ listener = null, config, boundRules,
                       {feature.rules.map((rule, i) => (
                         <div key={rule.id}>
                           {i > 0 && <Divider color="gray.2" />}
-                          <RuleRow rule={rule} />
+                          <RuleRow
+                            rule={rule}
+                            onEdit={
+                              actions && rule.source === SOURCE_DISTRIBUTED
+                                ? () => actions.onEdit(feature.key, rule)
+                                : undefined
+                            }
+                          />
                         </div>
                       ))}
                     </Stack>
