@@ -10,7 +10,6 @@ import { showSnackbar } from '@/utils/snackbar'
 import ListenerForm from '../components/ListenerForm'
 import { listenerIndexByLabel, listenerLabel, removeListener } from '../listeners'
 import DeleteListenerModal from '../sections/DeleteListenerModal'
-import ListenerFeatureSettings from '../sections/ListenerFeatureSettings'
 import SaveProblems from '../sections/SaveProblems'
 import { saveErrorMessage, useListenerEditor } from '../useListenerEditor'
 
@@ -43,8 +42,7 @@ function Editor({ sidecar, index, onDone }) {
   const [deleting, setDeleting] = useState(false)
   const [deletingBusy, setDeletingBusy] = useState(false)
   const listeners = sidecar.configuration?.listeners ?? []
-  const original = isNew ? null : listeners[index]
-  const label = isNew ? null : listenerLabel(original, index)
+  const label = isNew ? null : listenerLabel(listeners[index], index)
 
   const handleSave = async () => {
     if (await save()) onDone()
@@ -103,9 +101,7 @@ function Editor({ sidecar, index, onDone }) {
         <SaveProblems refused={refused} sidecarId={sidecar.id} listeners={sidecar.configuration?.listeners} />
 
         <Paper withBorder radius="md" p="lg">
-          <ListenerForm form={form} setField={setField} errors={errors}>
-            <ListenerFeatureSettings sidecar={sidecar} listener={original} />
-          </ListenerForm>
+          <ListenerForm form={form} setField={setField} errors={errors} />
         </Paper>
       </Stack>
     </>
