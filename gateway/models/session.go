@@ -10,6 +10,7 @@ import (
 
 	"github.com/aws/smithy-go/ptr"
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/common/proto"
 	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
@@ -185,6 +186,7 @@ type Session struct {
 	ConnectionSubtype    string                  `gorm:"column:connection_subtype"`
 	ConnectionTags       map[string]string       `gorm:"column:connection_tags;serializer:json"`
 	Verb                 string                  `gorm:"column:verb"`
+	RecordingFormat      *string                 `gorm:"column:recording_format"`
 	Labels               map[string]string       `gorm:"column:labels;serializer:json"`
 	Metadata             map[string]any          `gorm:"column:metadata;serializer:json"`
 	IntegrationsMetadata map[string]any          `gorm:"column:integrations_metadata;serializer:json"`
@@ -322,7 +324,7 @@ func GetSessionByID(orgID, sid string) (*Session, error) {
 	session := &Session{}
 	err := DB.Raw(`
 	SELECT
-		s.id, s.org_id, s.connection, s.connection_type, s.connection_subtype, s.connection_tags, s.verb, s.labels, s.exit_code,
+		s.id, s.org_id, s.connection, s.connection_type, s.connection_subtype, s.connection_tags, s.verb, s.recording_format, s.labels, s.exit_code,
 		s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics, s.session_batch_id,
 		s.machine_identity_id, s.identity_type, s.correlation_id, s.origin,
 		metrics->>'event_size' AS blob_stream_size, s.blob_input_id, s.ai_analysis, s.guardrails_info,
@@ -697,7 +699,7 @@ func ListSessions(orgID string, userId string, isAuditorOrAdmin bool, opt Sessio
 			OFFSET @offset
 		)
 		SELECT
-			s.id, s.org_id, s.connection, s.connection_type, s.connection_subtype, s.connection_tags, s.verb, s.labels, s.exit_code,
+			s.id, s.org_id, s.connection, s.connection_type, s.connection_subtype, s.connection_tags, s.verb, s.recording_format, s.labels, s.exit_code,
 			s.user_id, s.user_name, s.user_email, s.status, s.metadata, s.integrations_metadata, s.metrics, s.session_batch_id,
 			s.machine_identity_id, s.identity_type, s.correlation_id,
 			metrics->>'event_size' AS blob_stream_size, s.blob_input_id, s.blob_stream_id, s.guardrails_info,
@@ -787,6 +789,23 @@ func upsertSessionTx(tx *gorm.DB, sess Session) error {
 	if sess.IdentityType == "" {
 		sess.IdentityType = "user"
 	}
+	if sess.RecordingFormat == nil {
+		var existing struct{ RecordingFormat *string }
+		err := tx.Table("private.sessions").
+			Select("recording_format").
+			Where("org_id = ? AND id = ?", sess.OrgID, sess.ID).
+			Take(&existing).Error
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			format := proto.SessionRecordingFormat(sess.ConnectionType, sess.ConnectionSubtype, sess.Verb)
+			sess.RecordingFormat = &format
+		case err != nil:
+			return fmt.Errorf("failed reading session recording format: %w", err)
+		default:
+			// Keep NULL for sessions created before the format was recorded.
+			sess.RecordingFormat = existing.RecordingFormat
+		}
+	}
 	// generate deterministic uuid based on the session id to avoid duplicates
 	blobInputID := sql.NullString{
 		String: uuid.NewSHA1(uuid.NameSpaceURL, fmt.Appendf(nil, "blobinput:%s", sess.ID)).String(),
@@ -822,6 +841,7 @@ func upsertSessionTx(tx *gorm.DB, sess Session) error {
 			ConnectionSubtype:    sess.ConnectionSubtype,
 			ConnectionTags:       sess.ConnectionTags,
 			Verb:                 sess.Verb,
+			RecordingFormat:      sess.RecordingFormat,
 			UserID:               sess.UserID,
 			UserName:             sess.UserName,
 			UserEmail:            sess.UserEmail,

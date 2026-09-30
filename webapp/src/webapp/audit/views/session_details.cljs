@@ -13,6 +13,7 @@
    [webapp.audit.views.session-data-video :as session-data-video]
    [webapp.audit.views.session-data-rdp :as session-data-rdp]
    [webapp.audit.views.session-live-tail :as session-live-tail]
+   [webapp.audit.views.session-format :as session-format]
    [webapp.audit.views.data-masking-analytics :as data-masking-analytics]
    [webapp.audit.views.guardrails-info :as guardrails-info]
    [webapp.features.ai-session-analyzer.views.session-analysis :as session-analysis]
@@ -64,36 +65,20 @@
            "Download"
            [:> Download {:size 16}]])]]]]))
 
-(defmulti ^:private session-event-stream identity)
-(defmethod ^:private session-event-stream "command-line"
-  [_ session]
-  (let [event-stream (:event_stream session)
-        session-id (:id session)
-        start-date (:start_date session)]
-    [session-data-video/main event-stream session-id start-date]))
+;; New sessions declare their byte format; historical sessions keep the viewer
+;; selected when they were recorded.
+(defmulti ^:private session-event-stream session-format/recording-format)
+(defmethod ^:private session-event-stream "pty"
+  [session]
+  [session-data-video/main (:event_stream session) (:id session)])
 
-(defmethod ^:private session-event-stream "application"
-  [_ session]
-  (let [event-stream (:event_stream session)
-        session-id (:id session)
-        start-date (:start_date session)]
-    [session-data-video/main event-stream session-id start-date]))
-
-(defmethod ^:private session-event-stream "custom"
-  [_ session]
-  (let [event-stream (:event_stream session)
-        session-id (:id session)
-        connection-subtype (:connection_subtype session)
-        metrics (:metrics session)]
-    (if (= connection-subtype "rdp")
-      [session-data-rdp/main event-stream session-id metrics]
-      [session-data-video/main event-stream session-id])))
+(defmethod ^:private session-event-stream "rdp"
+  [session]
+  [session-data-rdp/main (:event_stream session) (:id session) (:metrics session)])
 
 (defmethod ^:private session-event-stream :default
-  [_ session]
-  (let [start-date (:start_date session)
-        event-stream (:event_stream session)]
-    [session-data-raw/main event-stream start-date]))
+  [session]
+  [session-data-raw/main (:event_stream session) (:start_date session)])
 
 (defmulti ^:private review-status-icon identity)
 (defmethod ^:private review-status-icon "PENDING" [] "waiting-circle-yellow")
@@ -402,7 +387,7 @@
                              :has-large-payload? has-large-payload?}]])))
 
                     ;; connect: session-event-stream unchanged (video player, raw, etc.)
-                    [session-event-stream (:type session) session])])])
+                    [session-event-stream session])])])
 
             ;; action buttons section
             (when can-review?

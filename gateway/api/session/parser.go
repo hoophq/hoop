@@ -36,6 +36,11 @@ func toOpenApiSession(s *models.Session, hasInputExpanded bool) *openapi.Session
 	if hasInputExpanded {
 		blobInputStream = openapi.SessionScriptType{"data": string(s.BlobInput)}
 	}
+	var recordingFormat *openapi.SessionRecordingFormat
+	if s.RecordingFormat != nil {
+		format := openapi.SessionRecordingFormat(*s.RecordingFormat)
+		recordingFormat = &format
+	}
 
 	return &openapi.Session{
 		ID:                   s.ID,
@@ -57,6 +62,7 @@ func toOpenApiSession(s *models.Session, hasInputExpanded bool) *openapi.Session
 		ConnectionTags:       s.ConnectionTags,
 		Review:               topOpenApiReview(s.Review),
 		Verb:                 s.Verb,
+		RecordingFormat:      recordingFormat,
 		Status:               openapi.SessionStatusType(s.Status),
 		ExitCode:             s.ExitCode,
 		EventStream:          blobStream,

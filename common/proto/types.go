@@ -388,3 +388,20 @@ func ToConnectionType(connectionType, subtype string) ConnectionType {
 	}
 	return ConnectionType(connectionType)
 }
+
+// SessionRecordingFormat describes the bytes produced by the protocol selected
+// when a session starts. Persist it: resolving an old subtype with newer
+// ToConnectionType rules could misclassify an existing recording.
+func SessionRecordingFormat(connectionType, subtype, verb string) string {
+	connType := ToConnectionType(connectionType, subtype)
+	switch {
+	case connType == ConnectionTypeRDP:
+		return RecordingFormatRDP
+	case verb != ClientVerbConnect:
+		return RecordingFormatExec
+	case connType == ConnectionTypeCommandLine:
+		return RecordingFormatPTY
+	default:
+		return RecordingFormatRaw
+	}
+}

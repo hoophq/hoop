@@ -71,7 +71,7 @@
   },
   "devDependencies": {
     "@tailwindcss/forms": "^0.5.7",
-    "asciinema-player": "^3.0.1",
+    "asciinema-player": "^3.17.0",
     "autoprefixer": "^10.4.19",
     "cssnano": "^5.0.15",
     "karma": "6.3.16",
