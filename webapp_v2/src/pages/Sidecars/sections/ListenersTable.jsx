@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Box, Group, Image, Stack, Text } from '@mantine/core'
+import { Group, Image, Stack, Text } from '@mantine/core'
 import { ArrowRightFromLine, ArrowRightToLine, ChevronDown, ChevronRight, Pencil, Plus, Search } from 'lucide-react'
 import ActionIcon from '@/components/ActionIcon'
 import Badge from '@/components/Badge'
@@ -198,9 +198,7 @@ export default function ListenersTable({ sidecar, onAdd, onEdit }) {
                 open && (
                   <Table.Tr key={`${label}-${index}-details`}>
                     <Table.Td colSpan={columnCount} p={0}>
-                      <Box p="md" bg="gray.0">
-                        <FeatureAccordions listener={listener} config={config} boundRules={sidecar.bound_rules} />
-                      </Box>
+                      <FeatureAccordions flush listener={listener} config={config} boundRules={sidecar.bound_rules} />
                     </Table.Td>
                   </Table.Tr>
                 ),

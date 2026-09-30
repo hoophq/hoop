@@ -46,7 +46,7 @@ function RuleRow({ rule }) {
  * every lane inherits; with one, what that lane resolves to. Both include the
  * rules the control plane distributes, which are never in the stored document.
  */
-export default function FeatureAccordions({ listener = null, config, boundRules }) {
+export default function FeatureAccordions({ listener = null, config, boundRules, flush = false }) {
   const features = featureList(listener, config, boundRules)
   // The sidecar's own endpoint is a Global settings row; a lane only says
   // something here when it departs from it.
@@ -57,6 +57,7 @@ export default function FeatureAccordions({ listener = null, config, boundRules 
     <Stack gap="sm">
       <Accordion
         variant="filled"
+        radius={flush ? 0 : 'md'}
         multiple
         classNames={{ item: classes.item, control: classes.control, label: classes.label, panel: classes.panel, content: classes.content }}
       >

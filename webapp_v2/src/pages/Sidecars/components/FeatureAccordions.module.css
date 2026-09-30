@@ -4,7 +4,7 @@
 .item {
   background-color: transparent;
   border: 0;
-  border-radius: var(--mantine-radius-md);
+  border-radius: var(--accordion-radius);
   overflow: hidden;
 }
 
