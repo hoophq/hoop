@@ -3,6 +3,7 @@ import Accordion from '@/components/Accordion'
 import Badge from '@/components/Badge'
 import { featureList, resolveOPA } from '../features'
 import { MODE_OBSERVE, SOURCE_DISTRIBUTED, SOURCE_LISTENER } from '../resolve'
+import classes from './FeatureAccordions.module.css'
 
 const SOURCE_LABELS = {
   [SOURCE_LISTENER]: { label: 'Listener', color: 'indigo' },
@@ -24,10 +25,10 @@ function SourceBadge({ source }) {
 function RuleRow({ rule }) {
   return (
     <Group gap="sm" align="baseline" wrap="nowrap" py="xs">
-      <Text size="sm" fw={600}>
+      <Text size="xs" fw={700}>
         {rule.name || 'Unnamed rule'}
       </Text>
-      <Text size="sm" c="dimmed" flex={1}>
+      <Text size="xs" flex={1}>
         {rule.detail}
       </Text>
       {rule.flag && (
@@ -51,12 +52,16 @@ export default function FeatureAccordions({ listener = null, config, boundRules 
 
   return (
     <Stack gap="sm">
-      <Accordion variant="separated" multiple>
+      <Accordion
+        variant="filled"
+        multiple
+        classNames={{ item: classes.item, control: classes.control, panel: classes.panel, content: classes.content }}
+      >
         {features.map((feature) => {
           const Icon = feature.icon
           const observing = feature.mode === MODE_OBSERVE
           return (
-            <Accordion.Item key={feature.key} value={feature.key} bg={`${feature.color}.0`}>
+            <Accordion.Item key={feature.key} value={feature.key} data-feature={feature.key}>
               <Accordion.Control
                 icon={
                   <Text span c={`${feature.color}.6`} lh={1}>
@@ -65,10 +70,10 @@ export default function FeatureAccordions({ listener = null, config, boundRules 
                 }
               >
                 <Group justify="space-between" wrap="nowrap" pr="sm">
-                  <Text size="sm" fw={600}>
+                  <Text size="xs" fw={700}>
                     {feature.label}
                   </Text>
-                  <Text size="sm" c="dimmed">
+                  <Text size="xs" fw={500}>
                     {feature.summary}
                   </Text>
                 </Group>
@@ -76,7 +81,7 @@ export default function FeatureAccordions({ listener = null, config, boundRules 
               <Accordion.Panel>
                 <Stack gap={4}>
                   <Group gap="sm" align="center">
-                    <Text size="xs" fw={600} c="dimmed">
+                    <Text size="xs" fw={700}>
                       Rules
                     </Text>
                     {observing && (
@@ -86,7 +91,7 @@ export default function FeatureAccordions({ listener = null, config, boundRules 
                     )}
                   </Group>
                   {feature.rules.length === 0 ? (
-                    <Text size="sm" c="dimmed">
+                    <Text size="xs" c="dimmed">
                       {observing ? 'No rules. Nothing is evaluated.' : feature.empty}
                     </Text>
                   ) : (

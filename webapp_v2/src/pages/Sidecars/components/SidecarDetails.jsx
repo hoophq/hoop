@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { Divider, Group, Paper, Stack, Text, Title } from '@mantine/core'
 import { Info, Lock } from 'lucide-react'
 import ActionMenu from '@/components/ActionMenu'
-import Alert from '@/components/Alert'
 import Badge from '@/components/Badge'
 import Button from '@/components/Button'
 import Tooltip from '@/components/Tooltip'
@@ -55,56 +54,76 @@ function detachedSummary(detached) {
     .join(' ')
 }
 
+// The icon sits in a box as tall as one line of the text, so it centres on
+// the first line whatever the copy wraps to.
+function Callout({ icon: Icon, color, action, children }) {
+  return (
+    <Group gap="xs" align="flex-start" wrap="nowrap" p="sm" bg={color} bdrs="md">
+      <Group h={20} align="center" flex="0 0 auto">
+        <Icon size={16} aria-hidden="true" />
+      </Group>
+      <Stack gap={4} flex={1}>
+        {children}
+      </Stack>
+      {action}
+    </Group>
+  )
+}
+
 // Which side owns the document, and the one action that changes it.
-function SourceBanner({ fromFile, configured, editable, onSwitch }) {
+function SourceCallout({ fromFile, configured, editable, onSwitch }) {
   if (fromFile) {
     return (
-      <Alert color="blue" variant="light" radius="md" icon={<Lock size={16} />}>
-        <Group justify="space-between" align="center" wrap="nowrap" gap="md">
-          <Stack gap={4}>
-            <Text size="sm">
-              {
-                'This sidecar loads its configuration from its own config file, and the control plane sends only its license. A running sidecar picks this up on its next check-in, within a minute.'
-              }
-            </Text>
-            {configured && (
-              <Text size="sm">The configuration below is stored in the control plane and is not applied.</Text>
-            )}
-          </Stack>
-          {editable && (
-            <Button variant="light" size="sm" onClick={() => onSwitch(false)} flex="0 0 auto">
+      <Callout
+        icon={Lock}
+        color="indigo.0"
+        action={
+          editable && (
+            <Button variant="light" size="xs" onClick={() => onSwitch(false)} flex="0 0 auto">
               Use the control plane
             </Button>
-          )}
-        </Group>
-      </Alert>
+          )
+        }
+      >
+        <Text size="sm">
+          {
+            'This sidecar loads its configuration from its own config file, and the control plane sends only its license. A running sidecar picks this up on its next check-in, within a minute.'
+          }
+        </Text>
+        {configured && (
+          <Text size="sm">The configuration below is stored in the control plane and is not applied.</Text>
+        )}
+      </Callout>
     )
   }
   if (configured) {
     return (
-      <Alert color="blue" variant="light" radius="md" icon={<Lock size={16} />}>
-        <Group justify="space-between" align="center" wrap="nowrap" gap="md">
-          <Text size="sm">
-            {
-              "The control plane owns this sidecar's configuration and serves it on every check-in. Edit it here, not in the sidecar's own file."
-            }
-          </Text>
-          {editable && (
-            <Button variant="light" size="sm" onClick={() => onSwitch(true)} flex="0 0 auto">
+      <Callout
+        icon={Lock}
+        color="indigo.0"
+        action={
+          editable && (
+            <Button variant="light" size="xs" onClick={() => onSwitch(true)} flex="0 0 auto">
               Change config
             </Button>
-          )}
-        </Group>
-      </Alert>
+          )
+        }
+      >
+        <Text size="sm">
+          {
+            "The control plane owns this sidecar's configuration and serves it on every check-in. Edit it here, not in the sidecar's own file."
+          }
+        </Text>
+      </Callout>
     )
   }
   return (
-    <Alert color="gray" variant="light" radius="md" icon={<Info size={16} />}>
+    <Callout icon={Info} color="gray.0">
       <Text size="sm">
         The control plane stores no listeners for this sidecar yet. The sidecar imports its own config file on its
         first handshake, and the control plane owns it from then on.
       </Text>
-    </Alert>
+    </Callout>
   )
 }
 
@@ -162,11 +181,16 @@ export default function SidecarDetails({ sidecar, editable, listenerActions, onD
   }
 
   return (
-    <Stack gap="md">
-      <SourceBanner fromFile={fromFile} configured={configured} editable={editable && !saving && !asking} onSwitch={ask} />
-
+    <>
       <Paper withBorder radius="md" p="lg">
         <Stack gap="lg">
+          <SourceCallout
+            fromFile={fromFile}
+            configured={configured}
+            editable={editable && !saving && !asking}
+            onSwitch={ask}
+          />
+
           <Group justify="space-between" align="center">
             <Title order={3}>Sidecar Details</Title>
             <Group gap="lg" align="center">
@@ -261,6 +285,6 @@ export default function SidecarDetails({ sidecar, editable, listenerActions, onD
         onConfirm={confirmSource}
         loading={saving}
       />
-    </Stack>
+    </>
   )
 }

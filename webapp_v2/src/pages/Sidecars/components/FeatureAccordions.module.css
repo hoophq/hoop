@@ -1,0 +1,37 @@
+/* One flat stack, no borders and no gaps: the header on the feature's
+   lightest shade, the panel a step deeper. */
+.item {
+  background-color: transparent;
+  border: 0;
+  border-radius: var(--mantine-radius-md);
+  overflow: hidden;
+}
+
+.item[data-feature='ai-analyzer'] {
+  --fa-tint: var(--mantine-color-pink-0);
+  --fa-tint-deep: var(--mantine-color-pink-1);
+}
+
+.item[data-feature='data-masking'] {
+  --fa-tint: var(--mantine-color-violet-0);
+  --fa-tint-deep: var(--mantine-color-violet-1);
+}
+
+.item[data-feature='guardrails'] {
+  --fa-tint: var(--mantine-color-indigo-0);
+  --fa-tint-deep: var(--mantine-color-indigo-1);
+}
+
+.control {
+  background-color: var(--fa-tint);
+  padding-block: var(--mantine-spacing-xs);
+}
+
+.control:hover,
+.panel {
+  background-color: color-mix(in srgb, var(--fa-tint) 60%, var(--fa-tint-deep));
+}
+
+.content {
+  padding: var(--mantine-spacing-sm) var(--mantine-spacing-md);
+}
