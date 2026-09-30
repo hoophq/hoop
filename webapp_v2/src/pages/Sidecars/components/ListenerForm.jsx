@@ -7,7 +7,6 @@ import Autocomplete from '@/components/Autocomplete'
 import Button from '@/components/Button'
 import MultiSelect from '@/components/MultiSelect'
 import NumberInput from '@/components/NumberInput'
-import SectionRow from '@/components/SectionRow'
 import SegmentedControl from '@/components/SegmentedControl'
 import Select from '@/components/Select'
 import Switch from '@/components/Switch'
@@ -216,16 +215,46 @@ function Fields({ fields, prefix, form, ...rest }) {
   )
 }
 
+// A caption over its fields, single column: the form sits in a card, so the
+// two-column SectionRow the other pages use would leave the fields a narrow
+// strip on the right.
+function Section({ title, description, children }) {
+  return (
+    <Stack gap="md">
+      <Stack gap={4}>
+        <Text size="sm" fw={500} c="dimmed" tt="uppercase">
+          {title}
+        </Text>
+        {description && (
+          <Text size="sm" c="dimmed">
+            {description}
+          </Text>
+        )}
+      </Stack>
+      {children}
+    </Stack>
+  )
+}
+
+// The basic fields split into two captions. Anything the schema marks basic
+// that neither list names joins the addresses.
+const IDENTITY = ['name', 'protocol']
+const ADDRESSES = ['network', 'listen', 'upstream']
+const pick = (fields, keys) => keys.map((k) => fields.find((f) => f.key === k)).filter(Boolean)
+
 /**
- * The fields of one listener, rendered from the sidecar schema, with no
- * chrome of its own. `form` and `errors` come from ../listeners.
+ * The fields of one listener, rendered from the sidecar schema. `form` and
+ * `errors` come from ../listeners. `children` renders after the advanced
+ * settings, for the sections the schema does not describe.
  */
-export default function ListenerForm({ form, setField, errors }) {
+export default function ListenerForm({ form, setField, errors, children }) {
   const ctx = { form, setField, errors }
   const visible = LISTENER_FIELDS.filter((f) => appliesTo(f, form.protocol))
   const basic = visible.filter((f) => f.basic)
+  const identity = pick(basic, IDENTITY)
+  const addresses = [...pick(basic, ADDRESSES), ...basic.filter((f) => ![...IDENTITY, ...ADDRESSES].includes(f.key))]
   // A required block (ssh) is part of what makes the listener work: its fields
-  // join the Listener section, and its own blocks get a section each.
+  // join the addresses, and its own blocks get a section each.
   const required = visible.filter((f) => !f.basic && f.type === 'object' && f.required)
   const subBlocks = required.flatMap((f) =>
     (f.fields ?? [])
@@ -237,23 +266,30 @@ export default function ListenerForm({ form, setField, errors }) {
   const blocks = advanced.filter((f) => f.type === 'object')
 
   return (
-    <Stack gap="xxlAlt">
-      <SectionRow
-        title="Listener"
-        description="Where clients reach the sidecar, where the sidecar reaches your resource, and the protocol between them."
+    <Stack gap="xl">
+      <Section
+        title="Identity"
+        description="The name follows this listener into every log line and audit event, so renaming it splits that history. The protocol picks the codec that reads its traffic."
+      >
+        <Fields fields={identity} prefix="" {...ctx} />
+      </Section>
+
+      <Section
+        title="Addresses"
+        description="Two ends of one listener: where clients reach the sidecar, and where the sidecar reaches your resource. A unix socket opens no port, so filesystem permissions decide who can connect."
       >
         <Stack gap="md">
-          <Fields fields={basic} prefix="" {...ctx} />
+          <Fields fields={addresses} prefix="" {...ctx} />
           {required.map((f) => (
             <Fields key={f.key} fields={(f.fields ?? []).filter((c) => c.type !== 'object')} prefix={f.key} {...ctx} />
           ))}
         </Stack>
-      </SectionRow>
+      </Section>
 
       {subBlocks.map(({ field, path }) => (
-        <SectionRow key={path} title={field.label} description={field.help}>
+        <Section key={path} title={field.label} description={field.help}>
           <ObjectBody field={field} path={path} {...ctx} />
-        </SectionRow>
+        </Section>
       ))}
 
       {advanced.length > 0 && (
@@ -281,6 +317,8 @@ export default function ListenerForm({ form, setField, errors }) {
           </Accordion.Item>
         </Accordion>
       )}
+
+      {children}
     </Stack>
   )
 }

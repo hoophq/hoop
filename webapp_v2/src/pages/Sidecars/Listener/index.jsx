@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Stack, Text, Title } from '@mantine/core'
+import { Group, Paper, Stack, Text, Title } from '@mantine/core'
 import { ArrowLeft } from 'lucide-react'
+import ActionMenu from '@/components/ActionMenu'
 import Button from '@/components/Button'
-import FormFooter, { FORM_FOOTER_CLEARANCE } from '@/components/FormFooter'
 import PageLoader from '@/components/PageLoader'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import { showSnackbar } from '@/utils/snackbar'
 import ListenerForm from '../components/ListenerForm'
 import { listenerIndexByLabel, listenerLabel, removeListener } from '../listeners'
 import DeleteListenerModal from '../sections/DeleteListenerModal'
+import ListenerFeatureSettings from '../sections/ListenerFeatureSettings'
 import SaveProblems from '../sections/SaveProblems'
 import { saveErrorMessage, useListenerEditor } from '../useListenerEditor'
 
@@ -42,7 +43,8 @@ function Editor({ sidecar, index, onDone }) {
   const [deleting, setDeleting] = useState(false)
   const [deletingBusy, setDeletingBusy] = useState(false)
   const listeners = sidecar.configuration?.listeners ?? []
-  const label = isNew ? null : listenerLabel(listeners[index], index)
+  const original = isNew ? null : listeners[index]
+  const label = isNew ? null : listenerLabel(original, index)
 
   const handleSave = async () => {
     if (await save()) onDone()
@@ -75,39 +77,42 @@ function Editor({ sidecar, index, onDone }) {
         loading={deletingBusy}
       />
 
-      <Stack gap="xl" pb={FORM_FOOTER_CLEARANCE}>
-        <Stack gap="xs">
-          <Parent name={sidecar.name} onClick={onDone} />
-          <Title order={1}>{isNew ? 'Add listener' : form.name || label}</Title>
-          <Text c="dimmed">
-            {isNew
-              ? `A new listener on ${sidecar.name}: one upstream, one protocol, its own bind address.`
-              : `Listener on ${sidecar.name}.`}
-          </Text>
-        </Stack>
+      <Stack gap="xl">
+        <Group justify="space-between" align="flex-start" wrap="nowrap">
+          <Stack gap="xs">
+            <Parent name={sidecar.name} onClick={onDone} />
+            <Title order={1}>{isNew ? 'Add listener' : form.name || label}</Title>
+            <Text c="dimmed">
+              {isNew
+                ? `A new listener on ${sidecar.name}: one upstream, one protocol, its own bind address.`
+                : `Listener on ${sidecar.name}.`}
+            </Text>
+          </Stack>
+          <Group gap="sm" wrap="nowrap" flex="0 0 auto">
+            {!isNew && (
+              <ActionMenu width={200} disabled={saving}>
+                <ActionMenu.Item danger onClick={() => setDeleting(true)}>
+                  Delete listener
+                </ActionMenu.Item>
+              </ActionMenu>
+            )}
+            <Button variant="default" onClick={onDone} disabled={saving}>
+              Cancel
+            </Button>
+            <Button onClick={handleSave} loading={saving}>
+              {isNew ? 'Add listener' : 'Save'}
+            </Button>
+          </Group>
+        </Group>
 
         <SaveProblems refused={refused} sidecarId={sidecar.id} listeners={sidecar.configuration?.listeners} />
-        <ListenerForm form={form} setField={setField} errors={errors} />
-      </Stack>
 
-      {/* Pinned, because the form runs past the fold as soon as Advanced is
-          open and the page header already carries the search. */}
-      <FormFooter
-        left={
-          !isNew && (
-            <Button variant="subtle" color="red" onClick={() => setDeleting(true)} disabled={saving}>
-              Delete listener
-            </Button>
-          )
-        }
-      >
-        <Button variant="subtle" color="gray" onClick={onDone} disabled={saving}>
-          Cancel
-        </Button>
-        <Button onClick={handleSave} loading={saving}>
-          {isNew ? 'Add listener' : 'Save listener'}
-        </Button>
-      </FormFooter>
+        <Paper withBorder radius="md" p="lg">
+          <ListenerForm form={form} setField={setField} errors={errors}>
+            <ListenerFeatureSettings sidecar={sidecar} listener={original} />
+          </ListenerForm>
+        </Paper>
+      </Stack>
     </>
   )
 }

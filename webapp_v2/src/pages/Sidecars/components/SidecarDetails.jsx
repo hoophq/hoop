@@ -14,6 +14,7 @@ import { opaSummary, resolveOPA } from '../features'
 import ListenersTable from '../sections/ListenersTable'
 import { sidecarStatus } from '../status'
 import SidecarSourceModal from '../sections/SidecarSourceModal'
+import Callout from './Callout'
 import FeatureAccordions from './FeatureAccordions'
 
 const LABEL_WIDTH = 88
@@ -53,22 +54,6 @@ function detachedSummary(detached) {
   ]
     .filter(Boolean)
     .join(' ')
-}
-
-// The icon sits in a box as tall as one line of the text, so it centres on
-// the first line whatever the copy wraps to.
-function Callout({ icon: Icon, color, action, children }) {
-  return (
-    <Group gap="xs" align="flex-start" wrap="nowrap" p="sm" bg={color} bdrs="md">
-      <Group h={20} align="center" flex="0 0 auto">
-        <Icon size={16} aria-hidden="true" />
-      </Group>
-      <Stack gap={4} flex={1}>
-        {children}
-      </Stack>
-      {action}
-    </Group>
-  )
 }
 
 // Which side owns the document, and the one action that changes it.
