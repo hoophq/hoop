@@ -98,6 +98,22 @@ The admin Service is separate and unaffected — always ClusterIP, always 19000.
 > when something in front of it does. `loadBalancerSourceRanges` narrows who
 > can reach it; it does not encrypt.
 
+**The review MCP server** (`mcp.listen` in the sidecar config) is published
+the same way, and only on ClusterIP: it has no authentication. Bind it to
+`0.0.0.0:8765` and add one entry:
+
+```yaml
+laneServices:
+  mcp:
+    enabled: true
+    ports:
+      - {name: mcp, port: 8765}
+```
+
+Agents then use `http://<fullname>-mcp.<namespace>.svc:8765/mcp`, where
+`<fullname>` is the chart's full name (`kubectl get svc` shows it).
+See "Agents over MCP" in `sidecar/README.md`.
+
 A hand-written Service still works for anything the block does not cover — the
 selector is `app.kubernetes.io/name: hoopsidecar` plus
 `app.kubernetes.io/instance: <release>`.
@@ -113,6 +129,7 @@ under `deploy/docker-compose/` binds:
 | 11433 | mssql |
 | 18443 | grpc |
 | 29010 | spanner |
+| 8765 | review MCP server (`mcp.listen`), ClusterIP only |
 
 `mysql` and `mongodb` have no established number here — pick your own.
 

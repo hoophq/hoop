@@ -644,6 +644,10 @@ license: /etc/hoop-inspect/license.json
 admin:
   listen: 127.0.0.1:19000   # /healthz /stats /config /events /api/*
 
+# Review status for agents; needs a control plane. See "Agents over MCP".
+# mcp:
+#   listen: 127.0.0.1:8765
+
 audit:
   file: "-"                 # stdout as JSON lines; a path appends to that file
   async_queue_size: 1024    # a slow sink must not block a user's query
@@ -1165,11 +1169,25 @@ The budget and interval are constants, with no config field. A control plane
 older than the relay has no claim route: the relay then denies after the first
 poll, as it did before it could wait.
 
-**`review_mode: return` denies at once.** A lane with `review_mode: return`,
-or an http or grpc call with the header `x-hoop-review-mode: return`, files
-the review and denies without waiting (ADR-0021). The client resends the
-identical statement after approval. If the config has an `mcp:` block, the
-denial leads with the review id and names the MCP tool that waits:
+**`review_mode: return` denies at once.** It files the review and denies
+without waiting, so an agent whose tool call ends in seconds gets the review
+id instead of a hang (ADR-0021). The client resends the identical statement
+after approval.
+
+```yaml
+    analyzer:
+      trigger: {operations: [delete, update]}
+      high: require_review
+      approval_rule: payments-approvers
+      review_mode: return   # hold (the default) or return
+```
+
+```
+ERROR:  statement held for human approval: waiting for approval; resend the identical statement once it is approved (review 9f97…)
+```
+
+If the config has an `mcp:` block, the denial leads with the review id and
+names the MCP tool that waits:
 
 ```
 ERROR:  review 9f97…: waiting for approval; call the MCP tool review_wait with the review id, then resend the identical statement once it is approved (statement held for human approval)
@@ -1177,6 +1195,65 @@ ERROR:  review 9f97…: waiting for approval; call the MCP tool review_wait with
 
 The operator message goes last because the mysql client keeps only the
 first 512 bytes of an error.
+
+`review_mode` is valid only where a risk level asks for `require_review`;
+elsewhere startup refuses it. A control plane serves `return` only to a
+sidecar at 1.191.0 or later, and refuses the config for an older one.
+
+**`return` applies to every client on the listener**, humans included. A
+developer in psql gets the denial too, and has to run the statement again
+after approval. Pick one:
+
+- Give agents their own listener with `review_mode: return`.
+- Keep `hold` on a shared listener and let each agent opt in.
+
+**A client can pick its own mode.** It asks for `hold` or `return`, and that
+overrides the listener for its statements:
+
+| Protocol | How the client asks | Scope |
+|---|---|---|
+| http | header `x-hoop-review-mode: return` | one request |
+| grpc, spanner | metadata `x-hoop-review-mode: return` | one call |
+| postgres | `application_name` ends in `hoop-review=return` | the connection |
+| mysql | connection attribute `hoop_review_mode=return` | the connection |
+
+```bash
+PGAPPNAME='billing-agent hoop-review=return' psql -h relay -p 15432 appdb
+```
+
+```
+user:pass@tcp(relay:13306)/appdb?connectionAttributes=hoop_review_mode:return
+```
+
+The postgres token is the whole `application_name`, or follows a space or a
+`;`, so the client keeps its own name in front. A value other than `hold` or
+`return` is ignored and the listener mode applies: a typo must not turn an
+agent's call into one that waits for a human.
+
+Leaving the choice to the client is safe: both modes need the approval, only
+the wait moves. The audit record carries `review_mode` and
+`review_mode_source` (`listener` or `client`). Every http lane captures the
+header, even with no `http:` block; a grpc or spanner lane that holds adds it
+to the metadata allowlist. The header reaches policy and audit. It is kept
+out of the analyzer prompt and the verdict cache key, so hold and return
+share one classification.
+
+**The retry contract.** An agent in return mode follows four rules:
+
+1. **Resend the identical bytes.** The plane matches an approval on the exact
+   statement. A reformatted statement (other whitespace, other quoting, a new
+   comment, a new trace id) files a new review and pages the approvers again.
+2. **Resend once, after approval.** Wait with the MCP tool `review_wait`, or
+   poll `review_status` (see [Agents over MCP](#agents-over-mcp)). An
+   approval releases one run.
+3. **Do not resend a rejected or revoked review.** The decision is final for
+   that review. A resend files a new review and pages the approvers again, so
+   only a person asks again.
+4. **Run a holdable statement in autocommit.** On postgres, mysql, mssql and
+   mongodb a denial closes the connection, and the database rolls back any
+   open transaction with it. The earlier statements of that transaction are
+   lost, and the retry runs on a new connection. This holds for every denial:
+   return mode, a hold that times out, a rejection.
 
 Matching is on the exact bytes, so the retry must be the same statement, not
 an equivalent one. Two consequences worth knowing: a client using prepared
@@ -1469,6 +1546,137 @@ different prompts) keeps them until it can express itself as one block;
 ```
 appdb            postgres  enforcing 2 rule(s) + ai analyzer (and 1 deprecated ai rule(s))
 ```
+
+### Agents over MCP
+
+An agent that drew a `return` denial must learn when a person decides. The
+`mcp:` block starts an MCP server with two read-only tools for that
+(ADR-0021).
+
+```yaml
+mcp:
+  listen: 127.0.0.1:8765    # the endpoint is http://<host>:8765/mcp
+```
+
+- `listen` is required. Remove the block to turn the server off.
+- It needs a control plane, because review status comes from there. A config
+  with the block and no plane is refused at startup, and so is a build that
+  does not link the server. `hoop-inspect` and `hoop start sidecar` link it;
+  a relay you embed through `daemon.Run` imports `sidecar/mcp` itself.
+- Put the block next to the listeners: in the document the plane holds for
+  this sidecar. The local file carries it only when it seeds the plane or
+  the plane answers `load_from_disk`.
+- A reload does not start, stop or move the server. Restart the process
+  after you add, remove or change the block.
+- A bind failure stops the process, as a listener's does.
+
+**The endpoint has no authentication**, the same as the listener ports. A
+caller with a review id reads its status, listener name and approval rule,
+never the statement. Bind it where only the agent reaches it: loopback when
+the agent runs on the same host, a ClusterIP Service on Kubernetes, never a
+public load balancer. The server refuses cross-origin browser requests, so a
+web page cannot drive it from a victim's browser.
+
+**Two tools.**
+
+| Tool | Input | Does |
+|---|---|---|
+| `review_status` | `id` | reads the review once |
+| `review_wait` | `id`, `timeout_seconds` (default 60, max 300) | reads every 2 seconds until a person decides or the timeout ends |
+
+Both return one review and what to do next:
+
+```json
+{
+  "id": "9f97…",
+  "status": "APPROVED",
+  "listener_name": "payments",
+  "approval_rule": "payments-approvers",
+  "created_at": "2026-09-29T14:02:11Z",
+  "decided_at": "2026-09-29T14:03:40Z",
+  "next": "resend_identical_statement",
+  "instruction": "Approved. Resend the identical statement, byte for byte, to listener payments. It runs once.",
+  "timed_out": false,
+  "waited_seconds": 42
+}
+```
+
+| `status` | `next` |
+|---|---|
+| `PENDING` | `wait`: call `review_wait` again, do not resend |
+| `APPROVED` | `resend_identical_statement` |
+| `REJECTED`, `REVOKED`, `EXECUTED`, any other | `stop` |
+
+`rejection_reason` is set on a rejection that gave one. `timed_out` and
+`waited_seconds` come from `review_wait` only, and `timed_out: true` is not
+an error: call again. Keep the 60 second default, because some clients drop
+a tool call that blocks past 60 to 120 seconds. `review_wait` sends a
+progress notification every 2 seconds to a client that asks for them.
+
+Two answers are errors. "Not found on this sidecar" means stop: the plane
+scopes the read to this sidecar's token, so another sidecar's review reads
+the same as a wrong id. "The control plane is older than this sidecar" means
+a person checks the review in the control plane.
+
+The server never approves, lists or claims a review. The resend runs
+through the lane like any statement, so the analyzer, audit and masking
+apply, and the resend spends the approval.
+
+**Add it to the agent next to the DSN.** One entry per sidecar the agent
+uses. One entry covers every listener and replica of that sidecar: the
+server keeps no session, so it can sit behind a load balancer.
+
+| The agent connects to | The agent's MCP entry |
+|---|---|
+| `postgres://agent@payments-sidecar:15432/payments?application_name=claude%20hoop-review%3Dreturn` | `hoop-reviews` at `http://payments-sidecar:8765/mcp` |
+
+Claude Code, for one developer:
+
+```bash
+claude mcp add --transport http hoop-reviews http://payments-sidecar:8765/mcp
+```
+
+For a team, commit `.mcp.json` at the repository root
+(`claude mcp add --scope project` writes it):
+
+```json
+{
+  "mcpServers": {
+    "hoop-reviews": {
+      "type": "http",
+      "url": "http://payments-sidecar:8765/mcp"
+    }
+  }
+}
+```
+
+Cursor reads the same shape without `type`, from `.cursor/mcp.json` in the
+project or `~/.cursor/mcp.json`. Any other client that speaks the Streamable
+HTTP transport takes the same URL.
+
+An agent that uses two sidecars needs two entries, for example
+`hoop-reviews-payments` and `hoop-reviews-ledger`. The denial does not name
+the sidecar, so name each entry after the DSN it pairs with, and tell the
+agent to call the entry of the sidecar that denied.
+
+**On Kubernetes**, set `listen: 0.0.0.0:8765` in the plane's document, so
+the Service reaches the pod, and publish the port on the sidecar's Service.
+With the chart, that is one `laneServices` entry:
+
+```yaml
+laneServices:
+  mcp:
+    enabled: true           # ClusterIP by default; keep it
+    ports:
+      - {name: mcp, port: 8765}
+```
+
+The agent's URL is then `http://<fullname>-mcp.<namespace>.svc:8765/mcp`.
+`<fullname>` is `<release>-hoopsidecar`, or the release name alone when it
+already contains `hoopsidecar`; `kubectl get svc` shows it.
+Every pod in the cluster can reach a ClusterIP Service; a NetworkPolicy
+narrows that to the agent. See the chart's
+[README](../deploy/helm-chart/chart/sidecar/README.md#ports).
 
 ## Overlap with Envoy
 
