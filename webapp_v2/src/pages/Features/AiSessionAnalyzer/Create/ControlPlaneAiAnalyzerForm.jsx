@@ -21,7 +21,13 @@ import { usersService } from '@/services/users'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import { docsUrl } from '@/utils/docsUrl'
 import { showSnackbar } from '@/utils/snackbar'
-import { analyzerActionsFor, operationsFor, REVIEW_ACTION } from '@/pages/sidecarRuleVocabulary'
+import {
+  analyzerActionsFor,
+  operationsFor,
+  REVIEW_ACTION,
+  REVIEW_MODE_HOLD,
+  REVIEW_MODES,
+} from '@/pages/sidecarRuleVocabulary'
 import { useAiSessionAnalyzerStore } from '../store'
 import classes from './Create.module.css'
 
@@ -91,8 +97,7 @@ function formToSpec(f, ruleName) {
   // reviewers (an imported file keeps its own), so it stays.
   if ([spec.high, spec.medium, spec.low].includes(REVIEW_ACTION)) {
     spec.approval_rule = f.approval_rule && f.approval_rule !== ruleName ? f.approval_rule : ruleName
-    // No field edits it, so keep what an import or the API stored. Only on a
-    // lane that holds: the sidecar refuses a mode nothing reads.
+    // Only on a lane that holds: the sidecar refuses a mode nothing reads.
     if (f.review_mode !== '') spec.review_mode = f.review_mode
   }
   return spec
@@ -160,9 +165,8 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
   // Reviewers belong to the approval rule this page keeps beside the analyzer
   // rule. A hold that names another rule (an imported file's) keeps that
   // rule's reviewers, so the field is not shown for it.
-  const ownHold =
-    [form.high, form.medium, form.low].includes(REVIEW_ACTION) &&
-    (!form.approval_rule || form.approval_rule === name.trim())
+  const holds = [form.high, form.medium, form.low].includes(REVIEW_ACTION)
+  const ownHold = holds && (!form.approval_rule || form.approval_rule === name.trim())
 
   const handleSave = async () => {
     if (!canSubmit) return
@@ -370,6 +374,16 @@ function FormFields({ rule: stored, ruleName, isEdit }) {
                 allowDeselect={false}
               />
             ))}
+            {holds && (
+              <Select
+                label="While held for approval"
+                description="Return answers the client at once with the review id; it runs the statement again after approval. A client can also ask for either mode itself."
+                data={REVIEW_MODES}
+                value={form.review_mode || REVIEW_MODE_HOLD}
+                onChange={(v) => set({ review_mode: !v || v === REVIEW_MODE_HOLD ? '' : v })}
+                allowDeselect={false}
+              />
+            )}
             {ownHold && (
               <MultiSelect
                 label="Reviewers"

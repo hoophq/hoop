@@ -212,6 +212,14 @@ export function analyzerActionsFor() {
   return [...ANALYZER_ACTIONS, { value: REVIEW_ACTION, label: 'Hold for approval' }]
 }
 
+// How a held statement answers its client. Hold is the sidecar's default, so
+// the form stores nothing for it.
+export const REVIEW_MODE_HOLD = 'hold'
+export const REVIEW_MODES = [
+  { value: REVIEW_MODE_HOLD, label: 'Wait for the decision (hold)' },
+  { value: 'return', label: 'Deny at once, run again after approval (return)' },
+]
+
 // ---------------------------------------------------------------------------
 // Shared
 // ---------------------------------------------------------------------------
