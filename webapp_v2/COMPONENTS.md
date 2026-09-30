@@ -691,6 +691,25 @@ Props: `value` (targets[]), `onChange(targets)`, `label`, `description`. A liste
 
 ---
 
+### `SidecarListenerFilter`
+The filter bar of the control plane's rule lists (Guardrails, Data Masking, AI Analyzer), in place of the gateway's Resource Role and Attribute filters. A sidecar row selects every listener of that sidecar; a listener row selects that one. Same trigger as `ValueFilter`. Loads the fleet from `useSidecarStore` on mount, and shows the loader or the error instead of the tree while that read is pending or failed, or when a sidecar reports `bound_rules_unavailable` (the gateway could not read the bindings, so every rule would read as unbound). A selection made before such a failure is cleared through `onClear`.
+
+The rule list answers carry no targets, but `GET /sidecars` carries every binding (`bound_rules`), so the page matches its rules with `boundRuleNames` from `pages/Sidecars/config.js`. The kind is the API's: `guardrail`, `datamasking` or `analyzer`.
+```jsx
+import SidecarListenerFilter from '@/components/SidecarListenerFilter'
+import { boundRuleNames } from '@/pages/Sidecars/config'
+
+const sidecars = useSidecarStore((s) => s.sidecars)
+const [target, setTarget] = useState(null) // { sidecarId, listenerName } | null
+const names = target && boundRuleNames(sidecars, target, 'guardrail') // a Set of rule names
+const shown = names ? rules.filter((r) => names.has(r.name)) : rules
+
+<SidecarListenerFilter selected={target} onSelect={setTarget} onClear={() => setTarget(null)} />
+```
+Rendered only where `Router.jsx` passes `filterBySidecar` through `<ByProduct>`, so the gateway never calls the fleet endpoint.
+
+---
+
 ### `FeaturePromotion`
 Split-screen promotion panel (marketing copy + feature highlights left, illustration right) shown when a feature is empty or gated. Faithful port of the CLJS generic `feature-promotion`, reused across feature migrations (Live Data Masking, Guardrails, and future Access Control / Runbooks / etc.). Wrap it in `FullBleed` to fill the screen.
 ```jsx

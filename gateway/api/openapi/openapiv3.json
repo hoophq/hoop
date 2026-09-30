@@ -7922,6 +7922,20 @@
             "format": "uuid",
             "type": "string"
           },
+          "recording_format": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/openapi.SessionRecordingFormat"
+              }
+            ],
+            "description": "How to render the event stream. Absent for recordings created before\nthis field was persisted; clients should keep their legacy viewer.\n* pty - terminal output, replay it with a terminal emulator\n* exec - plain text output of a command without a TTY\n* rdp - RDP frames\n* raw - protocol bytes, do not interpret them as terminal output",
+            "enum": [
+              "pty",
+              "exec",
+              "rdp",
+              "raw"
+            ]
+          },
           "resource_name": {
             "description": "The resource name associated with this connection",
             "example": "my-resource",
@@ -8282,6 +8296,21 @@
         },
         "type": "object"
       },
+      "openapi.SessionRecordingFormat": {
+        "enum": [
+          "pty",
+          "exec",
+          "rdp",
+          "raw"
+        ],
+        "type": "string",
+        "x-enum-varnames": [
+          "SessionRecordingFormatPTY",
+          "SessionRecordingFormatExec",
+          "SessionRecordingFormatRDP",
+          "SessionRecordingFormatRaw"
+        ]
+      },
       "openapi.SessionReport": {
         "properties": {
           "items": {
@@ -8492,6 +8521,10 @@
             },
             "type": "array"
           },
+          "bound_rules_unavailable": {
+            "description": "BoundRulesUnavailable is true when the bindings could not be read.\nBoundRules is then empty because it is unknown, not because nothing is\nbound, and a page must not read it as \"no rules\".",
+            "type": "boolean"
+          },
           "config_state": {
             "description": "ConfigState is what the sidecar runs, read from the fields above and\nthe clock: applied, applying (served under a heartbeat ago, not\nreported yet), not_applied (served longer ago and never reported, the\nshape of a sidecar that exits at boot on it), refused, restart, or\nunknown (a build too old to report). Empty while nothing was served,\nbefore the first handshake, and for a sidecar running its own file.",
             "example": "applied",
@@ -8683,6 +8716,10 @@
               "$ref": "#/components/schemas/openapi.SidecarRuleBinding"
             },
             "type": "array"
+          },
+          "bound_rules_unavailable": {
+            "description": "BoundRulesUnavailable is true when the bindings could not be read.\nBoundRules is then empty because it is unknown, not because nothing is\nbound, and a page must not read it as \"no rules\".",
+            "type": "boolean"
           },
           "config_state": {
             "description": "ConfigState is what the sidecar runs, read from the fields above and\nthe clock: applied, applying (served under a heartbeat ago, not\nreported yet), not_applied (served longer ago and never reported, the\nshape of a sidecar that exits at boot on it), refused, restart, or\nunknown (a build too old to report). Empty while nothing was served,\nbefore the first handshake, and for a sidecar running its own file.",

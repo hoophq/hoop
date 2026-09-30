@@ -19440,6 +19440,20 @@ const docTemplate = `{
                     "format": "uuid",
                     "example": "0CD7F941-2BB8-4F9F-93B0-11620D4652AB"
                 },
+                "recording_format": {
+                    "description": "How to render the event stream. Absent for recordings created before\nthis field was persisted; clients should keep their legacy viewer.\n* pty - terminal output, replay it with a terminal emulator\n* exec - plain text output of a command without a TTY\n* rdp - RDP frames\n* raw - protocol bytes, do not interpret them as terminal output",
+                    "enum": [
+                        "pty",
+                        "exec",
+                        "rdp",
+                        "raw"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.SessionRecordingFormat"
+                        }
+                    ]
+                },
                 "resource_name": {
                     "description": "The resource name associated with this connection",
                     "type": "string",
@@ -19799,6 +19813,21 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.SessionRecordingFormat": {
+            "type": "string",
+            "enum": [
+                "pty",
+                "exec",
+                "rdp",
+                "raw"
+            ],
+            "x-enum-varnames": [
+                "SessionRecordingFormatPTY",
+                "SessionRecordingFormatExec",
+                "SessionRecordingFormatRDP",
+                "SessionRecordingFormatRaw"
+            ]
+        },
         "openapi.SessionReport": {
             "type": "object",
             "properties": {
@@ -20010,6 +20039,10 @@ const docTemplate = `{
                         "$ref": "#/definitions/openapi.SidecarRuleBinding"
                     }
                 },
+                "bound_rules_unavailable": {
+                    "description": "BoundRulesUnavailable is true when the bindings could not be read.\nBoundRules is then empty because it is unknown, not because nothing is\nbound, and a page must not read it as \"no rules\".",
+                    "type": "boolean"
+                },
                 "config_state": {
                     "description": "ConfigState is what the sidecar runs, read from the fields above and\nthe clock: applied, applying (served under a heartbeat ago, not\nreported yet), not_applied (served longer ago and never reported, the\nshape of a sidecar that exits at boot on it), refused, restart, or\nunknown (a build too old to report). Empty while nothing was served,\nbefore the first handshake, and for a sidecar running its own file.",
                     "type": "string",
@@ -20201,6 +20234,10 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/openapi.SidecarRuleBinding"
                     }
+                },
+                "bound_rules_unavailable": {
+                    "description": "BoundRulesUnavailable is true when the bindings could not be read.\nBoundRules is then empty because it is unknown, not because nothing is\nbound, and a page must not read it as \"no rules\".",
+                    "type": "boolean"
                 },
                 "config_state": {
                     "description": "ConfigState is what the sidecar runs, read from the fields above and\nthe clock: applied, applying (served under a heartbeat ago, not\nreported yet), not_applied (served longer ago and never reported, the\nshape of a sidecar that exits at boot on it), refused, restart, or\nunknown (a build too old to report). Empty while nothing was served,\nbefore the first handshake, and for a sidecar running its own file.",

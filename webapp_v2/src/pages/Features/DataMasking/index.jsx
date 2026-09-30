@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Box, Group, Stack, Text, Title } from '@mantine/core'
 import { ListVideo, Rotate3d } from 'lucide-react'
+import { useSidecarStore } from '@/stores/useSidecarStore'
 import { useUserStore } from '@/stores/useUserStore'
 import { useMinDelay } from '@/hooks/useMinDelay'
 import { usePaginatedConnections } from '@/hooks/usePaginatedConnections'
@@ -12,6 +13,8 @@ import Button from '@/components/Button'
 import ValueFilter from '@/components/ValueFilter'
 import AsyncValueFilter from '@/components/AsyncValueFilter'
 import FreeLicenseCallout from '@/components/FreeLicenseCallout'
+import SidecarListenerFilter from '@/components/SidecarListenerFilter'
+import { boundRuleNames } from '@/pages/Sidecars/config'
 import { useDataMaskingStore } from './store'
 import RuleListItem from './components/RuleListItem'
 import DataMaskingPromotion from './components/DataMaskingPromotion'
@@ -23,9 +26,11 @@ function uniqueSorted(values) {
   return [...new Set(values)].sort((a, b) => a.localeCompare(b))
 }
 
-// providerRequired comes from Router.jsx through <ByProduct>: false on the
-// control plane, where sidecars mask without a DLP provider.
-export default function DataMasking({ providerRequired = true }) {
+// providerRequired and filterBySidecar come from Router.jsx through
+// <ByProduct>: on the control plane sidecars mask without a DLP provider, and
+// a rule reaches them through listeners, not resource roles or attributes, so
+// the list filters by sidecar and listener instead.
+export default function DataMasking({ providerRequired = true, filterBySidecar = false }) {
   const navigate = useNavigate()
 
   const list = useDataMaskingStore((s) => s.list)
@@ -33,19 +38,21 @@ export default function DataMasking({ providerRequired = true }) {
   const attributes = useDataMaskingStore((s) => s.attributes)
   const fetchList = useDataMaskingStore((s) => s.fetchList)
   const fetchAttributes = useDataMaskingStore((s) => s.fetchAttributes)
+  const sidecars = useSidecarStore((s) => s.sidecars)
 
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
   const redactProvider = useUserStore((s) => s.redactProvider)
 
   const [selectedRole, setSelectedRole] = useState(null)
   const [selectedAttribute, setSelectedAttribute] = useState(null)
+  const [selectedTarget, setSelectedTarget] = useState(null)
 
   const roleFilter = usePaginatedConnections({ pageSize: 50 })
 
   useEffect(() => {
     fetchList()
-    fetchAttributes()
-  }, [fetchList, fetchAttributes])
+    if (!filterBySidecar) fetchAttributes()
+  }, [fetchList, fetchAttributes, filterBySidecar])
 
   const attributeFilterValues = useMemo(
     () => uniqueSorted(attributes.map((a) => a.name)),
@@ -54,6 +61,10 @@ export default function DataMasking({ providerRequired = true }) {
 
   const filteredRules = useMemo(() => {
     let rules = list
+    if (selectedTarget) {
+      const names = boundRuleNames(sidecars, selectedTarget, 'datamasking')
+      rules = rules.filter((rule) => names.has(rule.name))
+    }
     if (selectedRole) {
       rules = rules.filter((rule) =>
         (rule.connection_ids ?? []).includes(selectedRole.value),
@@ -65,12 +76,13 @@ export default function DataMasking({ providerRequired = true }) {
       )
     }
     return rules
-  }, [list, selectedRole, selectedAttribute])
+  }, [list, sidecars, selectedTarget, selectedRole, selectedAttribute])
 
   const atFreeLimit = isFreeLicense && list.length >= 1
   const loading = listStatus === 'loading'
   const showLoader = useMinDelay(loading && list.length === 0, 500)
-  const activeFilterCount = (selectedRole ? 1 : 0) + (selectedAttribute ? 1 : 0)
+  const activeFilterCount =
+    (selectedRole ? 1 : 0) + (selectedAttribute ? 1 : 0) + (selectedTarget ? 1 : 0)
 
   const goCreate = () => navigate('/features/data-masking/new')
 
@@ -117,29 +129,39 @@ export default function DataMasking({ providerRequired = true }) {
       )}
 
       <Group gap="sm">
-        <AsyncValueFilter
-          icon={Rotate3d}
-          label="Resource Role"
-          placeholder="Search resource roles"
-          selected={selectedRole}
-          onSelect={setSelectedRole}
-          onClear={() => setSelectedRole(null)}
-          options={roleFilter.options}
-          loading={roleFilter.loading}
-          hasMore={roleFilter.hasMore}
-          onLoadMore={roleFilter.loadMore}
-          searchValue={roleFilter.searchValue}
-          onSearchChange={roleFilter.setSearch}
-          onOpen={roleFilter.ensureLoaded}
-        />
-        <ValueFilter
-          icon={ListVideo}
-          label="Attribute"
-          values={attributeFilterValues}
-          selected={selectedAttribute}
-          onSelect={setSelectedAttribute}
-          onClear={() => setSelectedAttribute(null)}
-        />
+        {filterBySidecar ? (
+          <SidecarListenerFilter
+            selected={selectedTarget}
+            onSelect={setSelectedTarget}
+            onClear={() => setSelectedTarget(null)}
+          />
+        ) : (
+          <>
+            <AsyncValueFilter
+              icon={Rotate3d}
+              label="Resource Role"
+              placeholder="Search resource roles"
+              selected={selectedRole}
+              onSelect={setSelectedRole}
+              onClear={() => setSelectedRole(null)}
+              options={roleFilter.options}
+              loading={roleFilter.loading}
+              hasMore={roleFilter.hasMore}
+              onLoadMore={roleFilter.loadMore}
+              searchValue={roleFilter.searchValue}
+              onSearchChange={roleFilter.setSearch}
+              onOpen={roleFilter.ensureLoaded}
+            />
+            <ValueFilter
+              icon={ListVideo}
+              label="Attribute"
+              values={attributeFilterValues}
+              selected={selectedAttribute}
+              onSelect={setSelectedAttribute}
+              onClear={() => setSelectedAttribute(null)}
+            />
+          </>
+        )}
       </Group>
 
       {filteredRules.length === 0 ? (

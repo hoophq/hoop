@@ -298,9 +298,14 @@ func GetSessionAnalyzerRule(c *gin.Context) {
 		out := toSessionAnalyzerRuleResponse(rule)
 		// Read back on the single-rule route, which is what the edit form
 		// loads. Without it the form opens with the picker empty and the next
-		// save unbinds the rule from every sidecar it reached. The same holds
-		// for the reviewers, so a failed read of them answers 500.
-		out.SidecarTargets = sidecarbind.Load(ctx.GetOrgID(), services.SidecarRuleAnalyzer, rule.Name)
+		// save unbinds the rule from every sidecar it reached, so a failed read
+		// answers 500. The same holds for the reviewers.
+		targets, err := sidecarbind.Load(models.DB, ctx.GetOrgID(), services.SidecarRuleAnalyzer, rule.Name)
+		if err != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the sidecar targets of the rule")
+			return
+		}
+		out.SidecarTargets = targets
 		reviewers, err := storedHoldReviewers(orgID, rule.Name)
 		if err != nil {
 			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed reading the reviewer groups of the rule")
@@ -419,7 +424,12 @@ func CreateSessionAnalyzerRule(c *gin.Context) {
 			"high-risk-action":   rule.RiskEvaluation.Tier(models.RiskLevelKeyHigh).Action,
 		})
 		out := toSessionAnalyzerRuleResponse(rule)
-		out.SidecarTargets = sidecarbind.Load(ctx.GetOrgID(), services.SidecarRuleAnalyzer, rule.Name)
+		targets, err := sidecarbind.Load(models.DB, ctx.GetOrgID(), services.SidecarRuleAnalyzer, rule.Name)
+		if err != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "the rule was saved, but reading its sidecar targets failed: %v", err)
+			return
+		}
+		out.SidecarTargets = targets
 		reviewers, err := storedHoldReviewers(orgID, rule.Name)
 		if err != nil {
 			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "the rule was saved, but reading its reviewer groups failed: %v", err)
@@ -554,7 +564,12 @@ func UpdateSessionAnalyzerRule(c *gin.Context) {
 		})
 
 		out := toSessionAnalyzerRuleResponse(rule)
-		out.SidecarTargets = sidecarbind.Load(ctx.GetOrgID(), services.SidecarRuleAnalyzer, rule.Name)
+		targets, err := sidecarbind.Load(models.DB, ctx.GetOrgID(), services.SidecarRuleAnalyzer, rule.Name)
+		if err != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "the rule was saved, but reading its sidecar targets failed: %v", err)
+			return
+		}
+		out.SidecarTargets = targets
 		reviewers, err := storedHoldReviewers(orgID, rule.Name)
 		if err != nil {
 			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "the rule was saved, but reading its reviewer groups failed: %v", err)

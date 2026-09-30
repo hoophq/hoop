@@ -1,0 +1,21 @@
+# A host that trusts the USER CA directly, and holds no per-user state at
+# all — no authorized_keys, nothing provisioned, nothing removed when someone
+# leaves.
+#
+# This is the target shape `agent_identity` exists for. The bastion holds no
+# credential that reaches this host: the client's forwarded agent signs the
+# upstream handshake with the user's own certificate, and what lands in this
+# host's auth.log is the verified person rather than an account.
+
+Port 22
+HostKey /etc/ssh/ssh_host_ed25519_key
+
+# The whole configuration. One line, and the same CA the bastion trusts.
+TrustedUserCAKeys /etc/ssh/hoop_ca.pub
+
+PasswordAuthentication no
+PermitRootLogin no
+PubkeyAuthentication yes
+AllowTcpForwarding yes
+
+LogLevel VERBOSE

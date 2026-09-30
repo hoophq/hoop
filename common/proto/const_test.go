@@ -32,3 +32,29 @@ func TestSessionOriginFromUserAgent(t *testing.T) {
 		}
 	}
 }
+
+func TestSessionRecordingFormat(t *testing.T) {
+	for _, tt := range []struct {
+		connType, subtype, verb string
+		want                    string
+	}{
+		{"custom", "", ClientVerbConnect, RecordingFormatPTY},
+		{"command-line", "", ClientVerbConnect, RecordingFormatPTY},
+		{"application", "python", ClientVerbConnect, RecordingFormatPTY},
+		{"custom", "", ClientVerbExec, RecordingFormatExec},
+		{"database", "postgres", ClientVerbExec, RecordingFormatExec},
+		{"custom", "kubernetes", ClientVerbConnect, RecordingFormatRaw},
+		{"custom", "kubernetes-eks", ClientVerbConnect, RecordingFormatRaw},
+		{"custom", "kubernetes-token", ClientVerbConnect, RecordingFormatRaw},
+		{"custom", "httpproxy", ClientVerbConnect, RecordingFormatRaw},
+		{"custom", "aws-ssm", ClientVerbConnect, RecordingFormatRaw},
+		{"application", "ssh", ClientVerbConnect, RecordingFormatRaw},
+		{"application", "tcp", ClientVerbConnect, RecordingFormatRaw},
+		{"database", "postgres", ClientVerbConnect, RecordingFormatRaw},
+		{"custom", "rdp", ClientVerbConnect, RecordingFormatRDP},
+	} {
+		if got := SessionRecordingFormat(tt.connType, tt.subtype, tt.verb); got != tt.want {
+			t.Errorf("SessionRecordingFormat(%s/%s, %s) = %q, want %q", tt.connType, tt.subtype, tt.verb, got, tt.want)
+		}
+	}
+}

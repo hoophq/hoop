@@ -13,6 +13,7 @@ use (
 	./sidecar/config/yaml
 	./sidecar/descriptors/gcs
 	./sidecar/lexer/conformance
+	./sidecar/mcp
 	./sidecar/pii/alcatraz
 	./sidecar/store/sqlite
 	./tunnel

@@ -131,3 +131,69 @@ func TestPostgresSessionLogNamesThePrincipalOnce(t *testing.T) {
 			checked, logs.String())
 	}
 }
+
+// The lifecycle lines carry the session's metadata, so a log search for a
+// trace id finds the connection. The keys ride under one "metadata" object:
+// an operator's `as: msg` must not repeat the line's own "msg" key, and a
+// client-chosen setting name must not either.
+func TestPostgresSessionLogCarriesTheMetadata(t *testing.T) {
+	up := newEchoUpstream(t, nil)
+	logs := &syncBuffer{}
+	srv := startServer(t, proxy.Config{
+		Upstream:   up.addr(),
+		Protocol:   inspect.Postgres,
+		Connection: "appdb",
+		Logger:     slog.New(slog.NewJSONHandler(logs, nil)),
+		StartupMetadata: []proxy.StartupMetadata{
+			{Option: "claude.session.id", Key: "msg"},
+			{Option: "claude.agent.id"},
+		},
+	})
+
+	c, err := net.Dial("tcp", srv.Addr().String())
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	if _, err := c.Write(pgStartupWith("user", "alice", "database", "appdb",
+		"options", "-c claude.session.id=xyz -c claude.agent.id=agent-7")); err != nil {
+		t.Fatalf("startup: %v", err)
+	}
+	if _, err := c.Write(pgQuery("SELECT 1")); err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	c.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if _, err := c.Read(make([]byte, 512)); err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	c.Close()
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) && !strings.Contains(logs.String(), "session closed") {
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	want := map[string]string{"msg": "xyz", "postgres.option.claude.agent.id": "agent-7"}
+	var checked int
+	for _, line := range strings.Split(strings.TrimSpace(logs.String()), "\n") {
+		if !strings.Contains(line, `"session opened"`) && !strings.Contains(line, `"session closed"`) {
+			continue
+		}
+		checked++
+		if got := topLevelValues(t, line, "msg"); len(got) != 1 {
+			t.Errorf("top-level msg keys = %q on %s; want the line's own, once", got, line)
+		}
+		var rec struct {
+			Metadata map[string]string `json:"metadata"`
+		}
+		if err := json.Unmarshal([]byte(line), &rec); err != nil {
+			t.Fatalf("log line is not JSON: %v", err)
+		}
+		if len(rec.Metadata) != len(want) || rec.Metadata["msg"] != want["msg"] ||
+			rec.Metadata["postgres.option.claude.agent.id"] != want["postgres.option.claude.agent.id"] {
+			t.Errorf("metadata = %v on %s; want %v", rec.Metadata, line, want)
+		}
+	}
+	if checked != 2 {
+		t.Fatalf("saw %d session lifecycle log lines, want 2:\n%s", checked, logs.String())
+	}
+}

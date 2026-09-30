@@ -14,14 +14,15 @@ import (
 	"time"
 
 	"github.com/hoophq/hoop/sidecar/license"
-	"github.com/hoophq/hoop/sidecar/proxy"
 )
 
 // This file is the ADR-0014 hot reload: when the running config drifts in
-// rule content only, the running relay lanes swap evaluators and maskers
-// atomically instead of asking for a restart. Connections already open keep
-// the Gate they captured at accept time; connections accepted after the swap
-// run the new rules.
+// rule content only, the running lanes swap evaluators and maskers
+// atomically instead of asking for a restart. Connections (and, on a grpc
+// lane, RPCs) already open keep the Gate they captured at accept time; those
+// accepted after the swap run the new rules. On an endpoint lane (grpc,
+// spanner, ssh) turning masking on or off is still restart-bound: it sets a
+// libhoop option when the server is built.
 //
 // Two sources feed it, and a process has exactly one: the control plane's
 // heartbeat when a plane owns the config, the config file otherwise. A
@@ -128,9 +129,9 @@ type reloader struct {
 	// published generation renders the truth for swapped and kept lanes
 	// alike.
 	prevLanes map[string]lane
-	// servers maps relay lane names to their running servers, the swap
-	// targets.
-	servers map[string]*proxy.Server
+	// servers maps every lane name to its running swap target: a relay
+	// lane's proxy.Server or an endpoint lane's liveRules.
+	servers map[string]ruleSwapper
 	// view is where an applied generation is published for the admin
 	// endpoints.
 	view *atomic.Pointer[laneState]
@@ -208,7 +209,7 @@ type reloader struct {
 }
 
 // newReloader captures the startup state handle compares against.
-func newReloader(cfg *Config, lanes []lane, servers map[string]*proxy.Server,
+func newReloader(cfg *Config, lanes []lane, servers map[string]ruleSwapper,
 	det Plugin, ac *analyzerDeps, view *atomic.Pointer[laneState],
 	lic *licenseState) (*reloader, error) {
 	baseline, err := nonRuleDoc(cfg)
@@ -685,10 +686,10 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 	}
 
 	// Pre-pass: render every lane's rule document BEFORE anything swaps.
-	// Two reasons. A gRPC-transport lane cannot swap (ADR-0013 binds its
-	// callbacks at server construction), so drift there makes the whole
-	// document restart-bound: swapping the relay lanes and reporting the
-	// generation applied would leave a lane silently serving old rules
+	// Two reasons. An endpoint lane (grpc, spanner, ssh) fixes masking on
+	// or off when its server is built, so a document that toggles it there
+	// is restart-bound as a whole: swapping the other lanes and reporting
+	// the generation applied would leave that lane serving a masking state
 	// under a log line that says otherwise. And a render failure must
 	// surface before any lane swapped, so a retry re-runs the whole
 	// document rather than half of it.
@@ -701,12 +702,11 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 			return reloadRetry
 		}
 		docs[ln.name] = doc
-		// An endpoint lane closes over its evaluator when the server is
-		// built, so its rules cannot be swapped in place. Restarting is the
-		// honest answer: applying the swap to the view alone would show an
-		// operator rules that are not the rules being enforced.
-		if isEndpointLane(ln.cfg) && !bytes.Equal(doc, r.laneDocs[ln.name]) {
-			log.Warn("endpoint lane rules changed on the "+from+"; restart to apply them",
+		// The running lane's masker presence is the build-time one: this
+		// check refuses every document that would change it, so no swap
+		// ever moves it.
+		if isEndpointLane(ln.cfg) && (ln.masker != nil) != (r.prevLanes[ln.name].masker != nil) {
+			log.Warn("masking was turned on or off on an endpoint lane on the "+from+"; restart to apply it",
 				"listener", ln.name, "protocol", ln.cfg.Protocol)
 			return r.keep(reloadRestart, fmt.Sprintf("the rules of endpoint lane %q changed; restart to apply them", ln.name))
 		}
@@ -716,12 +716,6 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 	viewLanes := make([]lane, 0, len(lanes))
 	for _, ln := range lanes {
 		doc := docs[ln.name]
-		if isEndpointLane(ln.cfg) {
-			// Unchanged by the pre-pass check above; the view keeps the
-			// serving lane.
-			viewLanes = append(viewLanes, r.prevLanes[ln.name])
-			continue
-		}
 		if !detChanged && bytes.Equal(doc, r.laneDocs[ln.name]) {
 			// This lane's rules did not move, so its running evaluators
 			// keep serving: analyzer call budgets, verdict caches and
@@ -731,17 +725,20 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 			kept++
 			continue
 		}
-		srv, ok := r.servers[ln.name]
+		target, ok := r.servers[ln.name]
 		if !ok {
 			// The baseline compare guarantees the same listener set, so a
 			// miss is a bug worth a line, not a silent skip.
 			log.Warn("no running server for a reloaded lane", "listener", ln.name)
 			continue
 		}
-		// The outgoing generation's analyzers stop being read after this
-		// swap; bank what they did since the last usage event first.
-		r.tel.retireAnalyzers(r.prevLanes[ln.name].analyzers)
-		srv.SwapRules(ln.policy, ln.masker)
+		// The outgoing generation's analyzers may still be read by gates
+		// opened before this swap. Keep them in the usage walk, and bank
+		// their final delta only once the last of those gates closes.
+		outgoing := r.prevLanes[ln.name].analyzers
+		r.tel.drainAnalyzers(outgoing)
+		tel := r.tel
+		target.swapLane(ln, func() { tel.retireAnalyzers(outgoing) })
 		r.laneDocs[ln.name] = doc
 		r.prevLanes[ln.name] = ln
 		viewLanes = append(viewLanes, ln)

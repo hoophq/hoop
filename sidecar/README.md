@@ -140,7 +140,7 @@ The hop from the sidecar to `appdb` IS encrypted, and separately so. See
 
 For the code path behind each command, a per-command runbook and a
 troubleshooting table, read
-[docs/adr/0005-sidecar-flow.md](../docs/adr/0005-sidecar-flow.md).
+[ADR-0005](https://github.com/hoophq/adr/blob/main/0005-sidecar-flow.md).
 
 ## Running the relay yourself
 
@@ -236,8 +236,11 @@ nothing rebinds or drops. An edit beyond the rules (listeners, audit, admin,
 log_level, the top-level analyzer section, adding `control_plane_url`) logs
 `restart to apply it` once and the process keeps serving what it had; a file
 that does not load keeps the running rules, is retried on the next tick, and
-warns once until it loads again. ADR-0014 records the boundary; the control
-plane's heartbeat applies the same one.
+warns once until it loads again. gRPC, Spanner and SSH lanes swap rules the
+same way, per RPC or per connection; turning masking on or off on one of them
+is the exception and logs `restart to apply it`, because it is a server option
+fixed at build. ADR-0014 records the boundary; the control plane's heartbeat
+applies the same one.
 
 `SIGHUP` is a forced reload: the document runs even when its bytes did not
 move. That is how a license file replaced behind an unchanged `license` path
@@ -640,6 +643,10 @@ license: /etc/hoop-inspect/license.json
 
 admin:
   listen: 127.0.0.1:19000   # /healthz /stats /config /events /api/*
+
+# Review status for agents; needs a control plane. See "Agents over MCP".
+# mcp:
+#   listen: 127.0.0.1:8765
 
 audit:
   file: "-"                 # stdout as JSON lines; a path appends to that file
@@ -1155,12 +1162,98 @@ After a timeout the developer asks an approver, then runs the statement again.
 That retry collects the approval. The relay files nothing on the second
 attempt: the plane recognizes the same statement, consumes the approved review
 and answers that this one may go through. It answers that ONCE, since the
-third run of the same statement files a fresh review, and a rejection stays, so
-a refused statement is refused every time without paging anyone again.
+third run of the same statement files a fresh review. A rejection or a
+revocation ends that one review: running the statement again files a new one.
 
 The budget and interval are constants, with no config field. A control plane
 older than the relay has no claim route: the relay then denies after the first
 poll, as it did before it could wait.
+
+**`review_mode: return` denies at once.** It files the review and denies
+without waiting, so an agent whose tool call ends in seconds gets the review
+id instead of a hang (ADR-0021). The client resends the identical statement
+after approval.
+
+```yaml
+    analyzer:
+      trigger: {operations: [delete, update]}
+      high: require_review
+      approval_rule: payments-approvers
+      review_mode: return   # hold (the default) or return
+```
+
+```
+ERROR:  statement held for human approval: waiting for approval; resend the identical statement once it is approved (review 9f97…)
+```
+
+If the config has an `mcp:` block, the denial leads with the review id and
+names the MCP tool that waits:
+
+```
+ERROR:  review 9f97…: waiting for approval; call the MCP tool review_wait with the review id, then resend the identical statement once it is approved (statement held for human approval)
+```
+
+The operator message goes last because the mysql client keeps only the
+first 512 bytes of an error.
+
+`review_mode` is valid only where a risk level asks for `require_review`;
+elsewhere startup refuses it. A control plane serves `return` only to a
+sidecar at 1.191.0 or later, and refuses the config for an older one.
+
+**`return` applies to every client on the listener**, humans included. A
+developer in psql gets the denial too, and has to run the statement again
+after approval. Pick one:
+
+- Give agents their own listener with `review_mode: return`.
+- Keep `hold` on a shared listener and let each agent opt in.
+
+**A client can pick its own mode.** It asks for `hold` or `return`, and that
+overrides the listener for its statements:
+
+| Protocol | How the client asks | Scope |
+|---|---|---|
+| http | header `x-hoop-review-mode: return` | one request |
+| grpc, spanner | metadata `x-hoop-review-mode: return` | one call |
+| postgres | `application_name` ends in `hoop-review=return` | the connection |
+| mysql | connection attribute `hoop_review_mode=return` | the connection |
+
+```bash
+PGAPPNAME='billing-agent hoop-review=return' psql -h relay -p 15432 appdb
+```
+
+```
+user:pass@tcp(relay:13306)/appdb?connectionAttributes=hoop_review_mode:return
+```
+
+The postgres token is the whole `application_name`, or follows a space or a
+`;`, so the client keeps its own name in front. A value other than `hold` or
+`return` is ignored and the listener mode applies: a typo must not turn an
+agent's call into one that waits for a human.
+
+Leaving the choice to the client is safe: both modes need the approval, only
+the wait moves. The audit record carries `review_mode` and
+`review_mode_source` (`listener` or `client`). Every http lane captures the
+header, even with no `http:` block; a grpc or spanner lane that holds adds it
+to the metadata allowlist. The header reaches policy and audit. It is kept
+out of the analyzer prompt and the verdict cache key, so hold and return
+share one classification.
+
+**The retry contract.** An agent in return mode follows four rules:
+
+1. **Resend the identical bytes.** The plane matches an approval on the exact
+   statement. A reformatted statement (other whitespace, other quoting, a new
+   comment, a new trace id) files a new review and pages the approvers again.
+2. **Resend once, after approval.** Wait with the MCP tool `review_wait`, or
+   poll `review_status` (see [Agents over MCP](#agents-over-mcp)). An
+   approval releases one run.
+3. **Do not resend a rejected or revoked review.** The decision is final for
+   that review. A resend files a new review and pages the approvers again, so
+   only a person asks again.
+4. **Run a holdable statement in autocommit.** On postgres, mysql, mssql and
+   mongodb a denial closes the connection, and the database rolls back any
+   open transaction with it. The earlier statements of that transaction are
+   lost, and the retry runs on a new connection. This holds for every denial:
+   return mode, a hold that times out, a rejection.
 
 Matching is on the exact bytes, so the retry must be the same statement, not
 an equivalent one. Two consequences worth knowing: a client using prepared
@@ -1454,6 +1547,137 @@ different prompts) keeps them until it can express itself as one block;
 appdb            postgres  enforcing 2 rule(s) + ai analyzer (and 1 deprecated ai rule(s))
 ```
 
+### Agents over MCP
+
+An agent that drew a `return` denial must learn when a person decides. The
+`mcp:` block starts an MCP server with two read-only tools for that
+(ADR-0021).
+
+```yaml
+mcp:
+  listen: 127.0.0.1:8765    # the endpoint is http://<host>:8765/mcp
+```
+
+- `listen` is required. Remove the block to turn the server off.
+- It needs a control plane, because review status comes from there. A config
+  with the block and no plane is refused at startup, and so is a build that
+  does not link the server. `hoop-inspect` and `hoop start sidecar` link it;
+  a relay you embed through `daemon.Run` imports `sidecar/mcp` itself.
+- Put the block next to the listeners: in the document the plane holds for
+  this sidecar. The local file carries it only when it seeds the plane or
+  the plane answers `load_from_disk`.
+- A reload does not start, stop or move the server. Restart the process
+  after you add, remove or change the block.
+- A bind failure stops the process, as a listener's does.
+
+**The endpoint has no authentication**, the same as the listener ports. A
+caller with a review id reads its status, listener name and approval rule,
+never the statement. Bind it where only the agent reaches it: loopback when
+the agent runs on the same host, a ClusterIP Service on Kubernetes, never a
+public load balancer. The server refuses cross-origin browser requests, so a
+web page cannot drive it from a victim's browser.
+
+**Two tools.**
+
+| Tool | Input | Does |
+|---|---|---|
+| `review_status` | `id` | reads the review once |
+| `review_wait` | `id`, `timeout_seconds` (default 60, max 300) | reads every 2 seconds until a person decides or the timeout ends |
+
+Both return one review and what to do next:
+
+```json
+{
+  "id": "9f97…",
+  "status": "APPROVED",
+  "listener_name": "payments",
+  "approval_rule": "payments-approvers",
+  "created_at": "2026-09-29T14:02:11Z",
+  "decided_at": "2026-09-29T14:03:40Z",
+  "next": "resend_identical_statement",
+  "instruction": "Approved. Resend the identical statement, byte for byte, to listener payments. It runs once.",
+  "timed_out": false,
+  "waited_seconds": 42
+}
+```
+
+| `status` | `next` |
+|---|---|
+| `PENDING` | `wait`: call `review_wait` again, do not resend |
+| `APPROVED` | `resend_identical_statement` |
+| `REJECTED`, `REVOKED`, `EXECUTED`, any other | `stop` |
+
+`rejection_reason` is set on a rejection that gave one. `timed_out` and
+`waited_seconds` come from `review_wait` only, and `timed_out: true` is not
+an error: call again. Keep the 60 second default, because some clients drop
+a tool call that blocks past 60 to 120 seconds. `review_wait` sends a
+progress notification every 2 seconds to a client that asks for them.
+
+Two answers are errors. "Not found on this sidecar" means stop: the plane
+scopes the read to this sidecar's token, so another sidecar's review reads
+the same as a wrong id. "The control plane is older than this sidecar" means
+a person checks the review in the control plane.
+
+The server never approves, lists or claims a review. The resend runs
+through the lane like any statement, so the analyzer, audit and masking
+apply, and the resend spends the approval.
+
+**Add it to the agent next to the DSN.** One entry per sidecar the agent
+uses. One entry covers every listener and replica of that sidecar: the
+server keeps no session, so it can sit behind a load balancer.
+
+| The agent connects to | The agent's MCP entry |
+|---|---|
+| `postgres://agent@payments-sidecar:15432/payments?application_name=claude%20hoop-review%3Dreturn` | `hoop-reviews` at `http://payments-sidecar:8765/mcp` |
+
+Claude Code, for one developer:
+
+```bash
+claude mcp add --transport http hoop-reviews http://payments-sidecar:8765/mcp
+```
+
+For a team, commit `.mcp.json` at the repository root
+(`claude mcp add --scope project` writes it):
+
+```json
+{
+  "mcpServers": {
+    "hoop-reviews": {
+      "type": "http",
+      "url": "http://payments-sidecar:8765/mcp"
+    }
+  }
+}
+```
+
+Cursor reads the same shape without `type`, from `.cursor/mcp.json` in the
+project or `~/.cursor/mcp.json`. Any other client that speaks the Streamable
+HTTP transport takes the same URL.
+
+An agent that uses two sidecars needs two entries, for example
+`hoop-reviews-payments` and `hoop-reviews-ledger`. The denial does not name
+the sidecar, so name each entry after the DSN it pairs with, and tell the
+agent to call the entry of the sidecar that denied.
+
+**On Kubernetes**, set `listen: 0.0.0.0:8765` in the plane's document, so
+the Service reaches the pod, and publish the port on the sidecar's Service.
+With the chart, that is one `laneServices` entry:
+
+```yaml
+laneServices:
+  mcp:
+    enabled: true           # ClusterIP by default; keep it
+    ports:
+      - {name: mcp, port: 8765}
+```
+
+The agent's URL is then `http://<fullname>-mcp.<namespace>.svc:8765/mcp`.
+`<fullname>` is `<release>-hoopsidecar`, or the release name alone when it
+already contains `hoopsidecar`; `kubectl get svc` shows it.
+Every pod in the cluster can reach a ClusterIP Service; a NetworkPolicy
+narrows that to the agent. See the chart's
+[README](../deploy/helm-chart/chart/sidecar/README.md#ports).
+
 ## Overlap with Envoy
 
 Envoy already parses some of this.
@@ -1499,7 +1723,7 @@ reusable protocol mechanics live in `libhoop/v2/codec/grpc`, but it has no
 and masking callbacks, so one denied RPC does not close sibling streams and
 masked protobuf messages are re-encoded with correct lengths. A
 descriptor set is mandatory for capture or masking; method-only policy works
-without one. See [ADR-0013](../docs/adr/0013-grpc-terminates-http2-in-process.md).
+without one. See [ADR-0013](https://github.com/hoophq/adr/blob/main/0013-grpc-terminates-http2-in-process.md).
 
 ```yaml
 listeners:
@@ -1550,7 +1774,7 @@ parameter, or one the URL parser cannot decode, is refused, so a typo
 cannot read the current version while the config appears pinned. The
 fetch happens once, when the lane's endpoint is built, under the same
 two-minute budget for credential discovery, the token exchange and the
-read: the schema is bound into the server like the lane's rules, so a
+read: the schema is bound into the server when it is built, so a
 changed `descriptors` list is restart-bound drift on the heartbeat, and a
 new version published behind an unpinned URL is applied by a restart, the
 way a replaced file is. `-validate` performs the fetch, so a wrong object
@@ -1627,7 +1851,7 @@ nothing in the middle can read a command — to see one at all the sidecar has
 to BE one end of it. The lane terminates the handshake, verifies the client's
 certificate against a CA it trusts, and runs each admitted capability itself.
 libhoop owns the mechanics; this module owns every decision. See
-[ADR-0015](../docs/adr/0015-ssh-terminates-at-the-sidecar.md).
+[ADR-0015](https://github.com/hoophq/adr/blob/main/0015-ssh-terminates-at-the-sidecar.md).
 
 ```yaml
 listeners:
@@ -1756,6 +1980,104 @@ what ADR-0015 refuses.
 
 Everything that is not a statement is written as `kind: activity`, with what
 happened in `metadata.activity`.
+
+### Postgres: trace ids from the startup packet
+
+A postgres lane reads the client's StartupMessage before the gate sees a byte.
+It records `user` as the principal, and **by default every setting the client
+sends in `options`** onto the session's metadata, so every statement record,
+the `session_end` record and OPA's `input.context` carry them. No config is
+needed:
+
+```bash
+PGOPTIONS='-c claude.session.id=xyz1234678' psql -h 127.0.0.1 -p 15432 appdb
+# DSN form: postgres://u@host:15432/appdb?options=-c%20claude.session.id%3Dxyz1234678
+```
+
+```json
+{"kind":"statement","principal":"alice","statement":"SELECT 1",
+ "metadata":{"postgres.option.claude.session.id":"xyz1234678"}}
+```
+
+Postgres accepts a dotted setting name as a custom setting, so the backend runs
+with it too and `current_setting('claude.session.id', true)` reads it inside the
+database.
+
+The `postgres` block narrows or turns off the default:
+
+```yaml
+listeners:
+  - name: appdb
+    protocol: postgres
+    listen: 127.0.0.1:15432
+    upstream: appdb:5432
+    postgres:
+      startup_metadata:                 # a list records ONLY these
+        - option: claude.session.id     # from options "-c claude.session.id=..."
+          as: claude.session.id         # the metadata key; absent, postgres.option.<name>
+        - parameter: application_name   # a plain startup parameter
+```
+
+| `startup_metadata` | Records |
+|---|---|
+| absent (or no `postgres` block) | every `options` setting, as `postgres.option.<name>` |
+| a list | only those fields |
+| `[]` | nothing |
+
+`startup_metadata:` with no value is refused: it reads as absent, which is the
+opposite of what it looks like.
+
+- **Options are read the way the backend reads them**: words split on
+  whitespace with `\` escaping, then `-c name=value`, `-cname=value` or
+  `--name=value`. Names are recorded lowercase with `-` read as `_`, and the
+  last assignment wins. Reading stops where the backend would refuse the
+  connection (a non-switch word, `--`, an unknown switch), because no statement
+  can run under what follows. A setting the client also sends as a startup
+  parameter of its own (`claude.session.id=...` beside `options`) records that
+  parameter's value, because the backend applies it after `options`; of two
+  such parameters, the later wins, names compared case-insensitively.
+- **`option`** names one setting, matched the same way. **`parameter`** names a
+  StartupMessage parameter, matched exactly; parameters are only recorded when
+  a list names them.
+- **`as`** is the metadata key. Absent, it is `postgres.option.<name>` or
+  `postgres.parameter.<parameter>`, the key the default writes, so narrowing a
+  lane keeps the keys a dashboard queries. A key the relay writes into
+  `input.context` itself (`principal`, `subject`, `session_id`, and the rest)
+  is refused at load: the value is the client's, and that key would let the
+  client name its own principal. The default's keys all sit under
+  `postgres.option.`, so a client-chosen setting name cannot reach one.
+- A source the client did not send records no key, not an empty value. A value
+  longer than 256 bytes is cut at a character boundary. The default records as
+  many settings as the client sends, bounded by the 10000-byte StartupMessage.
+
+Where the values appear:
+
+| Place | Carries them |
+|---|---|
+| each `statement` / `violation` event, and `session_end` | yes |
+| `session_start` | no: it is written before the StartupMessage is read |
+| the session row in `GET /api/sessions` and `/api/sessions/{id}` | once the session ends; the row takes `session_end`'s metadata, never a statement's |
+| OPA `input.context` | yes, from the first statement |
+| the `session opened` / `session closed` log lines | yes, under one `metadata` object |
+
+```json
+{"msg":"session opened","session":"de2f…","principal":"alice",
+ "metadata":{"postgres.option.claude.agent.id":"agent-7","postgres.option.claude.session.id":"xyz1234678"}}
+```
+
+**These values are claims.** Postgres authenticates the user, not the options
+beside it, so a lifted value is a label for tracing and never an identity. It
+lands in `metadata`, not in `identity`. PgBouncer in front of
+the backend refuses an unknown `options` parameter unless
+`ignore_startup_parameters` lists it, and listing it drops the value before the
+database sees it.
+
+**The default records whatever the client puts in `options`**, `search_path` and
+application settings included, in the audit trail, in what OPA receives and in
+the process log, which your log pipeline ships with its own retention and
+access rules. `audit.redact_statements` covers statement text, not metadata. A
+lane whose clients may carry a secret in `options` should name the settings it
+wants, or write `[]`.
 
 ### MySQL, and the three ways a session goes dark
 
@@ -2498,7 +2820,10 @@ result := {"allow": true, "request": {"ai_analysis": true}} if {
 `input.context` is whatever the caller attached. The relay fills it from the
 session: `principal`, `session_id`, `connection`, and `subject`, `email`,
 `groups`, `peer_addr`, `upstream`, `correlation_id` where the identity carries
-them. `context.connection` keeps its key and changes its source: the
+them, plus the session's metadata keys, such as the `postgres.option.<name>`
+keys a postgres lane records from the client's `options`. On a postgres lane,
+`principal` is the StartupMessage `user`. `context.connection` keeps its key
+and changes its source: the
 listener's `name` fills it now that `listeners[].connection` is gone. A
 deployment that set the two fields to different strings sees every Rego rule
 and every audit row key on the new value, so rename the listener before
@@ -3095,7 +3420,7 @@ Do not confuse this with the client's leg. A relay cannot inspect TLS that
 stays end to end; its plaintext comes from a front proxy or from a lane that
 terminates the client's TLS itself: Postgres and ClickHouse above, http with
 ALPN, and gRPC and Spanner, which terminate downstream HTTP/2 TLS as
-[ADR-0013](../docs/adr/0013-grpc-terminates-http2-in-process.md) records.
+[ADR-0013](https://github.com/hoophq/adr/blob/main/0013-grpc-terminates-http2-in-process.md) records.
 
 **Postgres negotiates in-band.** A TLS-on-connect dial fails against it: the
 server expects an 8-byte `SSLRequest` and a one-byte `S`/`N` reply before any

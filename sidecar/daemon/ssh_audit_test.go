@@ -123,8 +123,13 @@ func TestSSHRefusedCapabilityLeavesOneEvent(t *testing.T) {
 func TestSSHRefusedConnectionIsRecordedWithItsReason(t *testing.T) {
 	c, sink := sshTestConn(t, nil, nil)
 
-	in := codecssh.Refuse("login %q is not an account on this host", "ghost")
-	out := c.refuse(context.Background(), in, "ghost")
+	// The client's line and the trail's reason are DIFFERENT here, which is
+	// the case worth pinning: the client is told a login is unavailable
+	// without learning whether the account exists, and the trail keeps the
+	// distinction the operator needs.
+	in := codecssh.Refuse("login %q is not available on this host", "ghost")
+	out := c.refuse(context.Background(), in, "ghost",
+		`login "ghost" is not an account on this host: no such user`)
 	if out != in {
 		t.Error("refuse did not return the refusal it was given")
 	}
@@ -138,6 +143,17 @@ func TestSSHRefusedConnectionIsRecordedWithItsReason(t *testing.T) {
 	}
 	if !strings.Contains(got[0].Metadata["reason"], "not an account") {
 		t.Errorf("the record does not say why: %v", got[0].Metadata)
+	}
+	if strings.Contains(in.String(), "not an account") {
+		t.Error("the CLIENT was told whether the account exists")
+	}
+
+	// And an empty detail means the two are the same, which is the common
+	// case and must not record an empty reason.
+	c2, sink2 := sshTestConn(t, nil, nil)
+	c2.refuse(context.Background(), codecssh.Refuse("no"), "ghost", "")
+	if r := activities(sink2.snapshot(), "connection_refused")[0].Metadata["reason"]; r != "no" {
+		t.Errorf("an empty detail did not fall back to the refusal: %q", r)
 	}
 	// The reason belongs in metadata, not in a statement: nothing was run.
 	for _, ev := range sink.snapshot() {

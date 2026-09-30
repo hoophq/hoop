@@ -7,6 +7,7 @@
    [webapp.audit.views.empty-event-stream :as empty-event-stream]
    [webapp.components.tabs :as tabs]
    [webapp.components.loaders :as loaders]
+   [webapp.audit.views.terminal-decoder :as terminal-decoder]
    [webapp.utilities :as utilities]))
 
 (defn- asciinema-player-container [event-stream]
@@ -89,11 +90,7 @@
                    [empty-event-stream/main])
 
           "Video" [asciinema-player-container
-                   (map
-                    (fn [e]
-                      [(first e)
-                       (second e)
-                       (js/atob (nth e 2))]) event-stream)])]])))
+                   (terminal-decoder/decode-events event-stream)])]])))
 
 (defn main [event-stream session-id]
   [:div

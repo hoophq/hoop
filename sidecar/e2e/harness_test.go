@@ -164,9 +164,12 @@ var buildSidecar = sync.OnceValues(func() (string, error) {
 
 // sidecar is a running relay and the audit trail it produced.
 type sidecar struct {
-	addr   string
-	mu     sync.Mutex
-	events []auditEvent
+	addr string
+	// mcpAddr is where the MCP server listens, empty when the config has no
+	// {{mcp}} placeholder.
+	mcpAddr string
+	mu      sync.Mutex
+	events  []auditEvent
 }
 
 // auditEvent is the subset of the relay's JSONL audit output these tests
@@ -185,13 +188,21 @@ type auditEvent struct {
 	Metadata  map[string]string `json:"metadata"`
 }
 
+// sidecarOption changes how startSidecar launches the relay.
+type sidecarOption func(*sidecarLaunch)
+
+type sidecarLaunch struct {
+	body string
+	env  []string
+}
+
 // startSidecar launches the relay in front of upstream with the given config
 // body and blocks until its listener accepts.
 //
-// config is the YAML with two placeholders substituted: {{listen}} and
-// {{upstream}}. Ports are allocated by the OS rather than hardcoded so
-// parallel tests and a busy CI runner cannot collide.
-func startSidecar(t *testing.T, upstream, config string) *sidecar {
+// config is the YAML with placeholders substituted: {{listen}},
+// {{upstream}} and, when present, {{mcp}}. Ports are allocated by the OS
+// rather than hardcoded so parallel tests and a busy CI runner cannot collide.
+func startSidecar(t *testing.T, upstream, config string, opts ...sidecarOption) *sidecar {
 	t.Helper()
 
 	bin, err := buildSidecar()
@@ -200,18 +211,27 @@ func startSidecar(t *testing.T, upstream, config string) *sidecar {
 	}
 
 	bind, dial := freePort(t)
-	body := strings.NewReplacer(
+	var mcpBind, mcpDial string
+	if strings.Contains(config, "{{mcp}}") {
+		mcpBind, mcpDial = freePort(t)
+	}
+	launch := sidecarLaunch{body: strings.NewReplacer(
 		"{{listen}}", bind,
 		"{{upstream}}", upstream,
-	).Replace(config)
+		"{{mcp}}", mcpBind,
+	).Replace(config)}
+	for _, o := range opts {
+		o(&launch)
+	}
 
 	path := filepath.Join(t.TempDir(), "config.yaml")
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(launch.body), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(ctx, bin, "-config", path)
+	cmd.Env = append(os.Environ(), launch.env...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		cancel()
@@ -223,7 +243,7 @@ func startSidecar(t *testing.T, upstream, config string) *sidecar {
 		t.Fatalf("start sidecar: %v", err)
 	}
 
-	s := &sidecar{addr: dial}
+	s := &sidecar{addr: dial, mcpAddr: mcpDial}
 
 	// The audit trail goes to stdout as JSONL (audit.file: "-"). Draining it
 	// on a goroutine doubles as backpressure relief: a full pipe buffer would
@@ -260,6 +280,9 @@ func startSidecar(t *testing.T, upstream, config string) *sidecar {
 	})
 
 	waitForListener(t, dial)
+	if mcpDial != "" {
+		waitForListener(t, mcpDial)
+	}
 	return s
 }
 

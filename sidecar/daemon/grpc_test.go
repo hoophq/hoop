@@ -1180,7 +1180,7 @@ func buildGRPCTestServer(
 	sink audit.Sink,
 ) GRPCServer {
 	t.Helper()
-	server, err := buildGRPCServer(lane{
+	server, _, err := buildGRPCServer(lane{
 		cfg: ListenerConfig{
 			Name:     name,
 			Protocol: "grpc",

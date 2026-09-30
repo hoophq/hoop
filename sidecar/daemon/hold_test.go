@@ -233,7 +233,7 @@ func TestAnSSHExecHoldReturnsOnlyOnTheVerdict(t *testing.T) {
 
 func buildHoldTestServer(t *testing.T, protocol, upstream, descriptors string, pol policy.Evaluator) GRPCServer {
 	t.Helper()
-	server, err := buildGRPCServer(lane{
+	server, _, err := buildGRPCServer(lane{
 		cfg: ListenerConfig{
 			Name:     "hold-" + protocol,
 			Protocol: protocol,
@@ -282,8 +282,9 @@ func holdTestSSHConn(t *testing.T, pol policy.Evaluator) *sshConnState {
 		t.Fatalf("gate: %v", err)
 	}
 	return &sshConnState{
-		gate:  g,
-		stmts: sshStatements{},
-		log:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+		gate:    g,
+		release: func() {},
+		stmts:   sshStatements{},
+		log:     slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 }
