@@ -34,8 +34,7 @@ const DOT_COLORS = {
 // every badge, which reads as a state machine ("ACTIVE", "WAITING") and turns a
 // written label into shouting. `tag` is the opt-out, and it lives here so no
 // call site has to repeat the two props.
-// Mantine also spaces badge letters by 0.25px, tuned for the uppercase form.
-const TAG_PROPS = { tt: 'none', fw: 500, lts: 0 }
+const TAG_PROPS = { tt: 'none', fw: 500 }
 
 /**
  * `icon` is a leading icon, and it is a prop rather than a bare `leftSection`
