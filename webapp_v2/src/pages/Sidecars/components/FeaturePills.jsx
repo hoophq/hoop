@@ -1,19 +1,13 @@
 import { Group, Text } from '@mantine/core'
+import Avatar from '@/components/Avatar'
 import Badge from '@/components/Badge'
 import Tooltip from '@/components/Tooltip'
 import { FEATURES } from '../config'
 
-/**
- * The feature chips of the Figma "Sidecar Details": AI Analyzer, Data Masking,
- * Guardrails, each with its icon and color. `features` is a list of keys from
- * ../config.js; nothing on means "No features configured".
- *
- * `compact` drops the labels and keeps the icons, which the Badge wrapper then
- * renders as a square chip. A table row has one narrow column for this, and
- * three labelled chips wrap onto three lines there — tripling the height of
- * every row on a sidecar that has fifty listeners. The label moves to a tooltip
- * rather than disappearing.
- */
+const AVATAR_SIZE = 24
+const ICON_SIZE = 14
+
+// `compact` is the table form: overlapping icons, the label in a tooltip.
 export default function FeaturePills({ features, compact, emptyLabel = 'No features configured' }) {
   if (!features || features.length === 0) {
     // A row with no features says so by staying empty. The sentence is for the
@@ -24,33 +18,36 @@ export default function FeaturePills({ features, compact, emptyLabel = 'No featu
       </Text>
     )
   }
+
+  if (compact) {
+    return (
+      <Avatar.Group>
+        {features.map((key) => {
+          const feature = FEATURES[key]
+          if (!feature) return null
+          const Icon = feature.icon
+          return (
+            <Tooltip key={key} label={feature.label}>
+              <Avatar size={AVATAR_SIZE} color={feature.color} variant="light" aria-label={feature.label}>
+                <Icon size={ICON_SIZE} aria-hidden="true" />
+              </Avatar>
+            </Tooltip>
+          )
+        })}
+      </Avatar.Group>
+    )
+  }
+
   return (
-    <Group gap="xs" wrap={compact ? 'nowrap' : 'wrap'}>
+    <Group gap="xs" wrap="wrap">
       {features.map((key) => {
         const feature = FEATURES[key]
         if (!feature) return null
         const Icon = feature.icon
-        const badge = (
-          <Badge
-            key={key}
-            tag
-            chip
-            variant="light"
-            color={feature.color}
-            icon={<Icon size={12} aria-hidden="true" />}
-            aria-label={compact ? feature.label : undefined}
-          >
-            {compact ? null : feature.label}
+        return (
+          <Badge key={key} tag chip variant="light" color={feature.color} icon={<Icon size={12} aria-hidden="true" />}>
+            {feature.label}
           </Badge>
-        )
-        // Tooltip takes over the key because it becomes the listed element; the
-        // one on the badge is then the harmless key of a single child.
-        return compact ? (
-          <Tooltip key={key} label={feature.label}>
-            {badge}
-          </Tooltip>
-        ) : (
-          badge
         )
       })}
     </Group>

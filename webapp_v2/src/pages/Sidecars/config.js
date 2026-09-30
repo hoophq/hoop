@@ -16,7 +16,7 @@ export const FEATURES = {
   guardrails: { key: 'guardrails', label: 'Guardrails', icon: ShieldCheck, color: 'indigo' },
 }
 
-const FEATURE_ORDER = ['ai-analyzer', 'data-masking', 'guardrails']
+export const FEATURE_ORDER = ['ai-analyzer', 'data-masking', 'guardrails']
 
 // The connections-metadata subtype that gives a protocol its icon, for the
 // protocols that are also a hoop connection type. The rest render without one

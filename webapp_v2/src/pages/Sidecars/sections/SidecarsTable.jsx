@@ -1,19 +1,41 @@
-import { useNavigate } from 'react-router-dom'
-import { Group, Image, Text } from '@mantine/core'
-import ActionMenu from '@/components/ActionMenu'
+import { Link } from 'react-router-dom'
+import { Image, Text } from '@mantine/core'
+import Avatar from '@/components/Avatar'
 import Badge from '@/components/Badge'
+import Button from '@/components/Button'
 import Table from '@/components/Table'
+import Tooltip from '@/components/Tooltip'
 import { useConnectionIconGetter } from '@/utils/connectionIcons'
-import { formatRelativeTime } from '@/utils/datetime'
 import { configFeatures, usesConfigFile, protocolInfo } from '../config'
+import { listenerLabel } from '../listeners'
 import FeaturePills from '../components/FeaturePills'
 import { SidecarStatusBadge } from '../components/SidecarDetails'
 
 // A fleet row is one line per sidecar, so the lane list cannot grow with the
 // sidecar: a relay in front of fifty databases would push every other row off
-// the screen. Four names say what kind of sidecar this is, which is what the
-// fleet view answers; the rest are one click away in its own table.
+// the screen. Four protocol icons say what kind of sidecar this is, which is
+// what the fleet view answers; the names are one click away in its own table.
 const LANES_SHOWN = 4
+
+const AVATAR_SIZE = 24
+const ICON_SIZE = 14
+
+// `others` carries the ref and hover handlers Tooltip clones onto its child;
+// dropping them is a tooltip that never opens.
+function ProtocolAvatar({ protocol, getIcon, ...others }) {
+  const info = protocolInfo(protocol)
+  // grpc and spanner are not hoop connection types and have no icon of their
+  // own; the fallback would show something unrelated, so they show letters.
+  return (
+    <Avatar size={AVATAR_SIZE} bg="gray.1" color="gray" variant="light" aria-label={info.label} {...others}>
+      {info.subtype ? (
+        <Image src={getIcon({ subtype: info.subtype })} alt="" w={ICON_SIZE} h={ICON_SIZE} fit="contain" />
+      ) : (
+        info.label.slice(0, 2)
+      )}
+    </Avatar>
+  )
+}
 
 // The lanes of the configuration the control plane stores for this sidecar. A
 // sidecar with none has nothing to serve and refuses to start, so the empty
@@ -27,122 +49,125 @@ function Listeners({ sidecar, getIcon }) {
 
   if (usesConfigFile(sidecar)) {
     return (
-      <Text size="sm" c="dimmed">
+      <Text size="xs" fw={500} c="gray.5">
         In its config file
       </Text>
     )
   }
   if (listeners.length === 0) {
     return (
-      <Text size="sm" c="dimmed">
+      <Text size="xs" fw={500} c="gray.5">
         Not configured
       </Text>
     )
   }
-  const hidden = listeners.length - LANES_SHOWN
-  return (
-    <Group gap="xs">
-      {listeners.slice(0, LANES_SHOWN).map((listener) => (
+  if (listeners.length === 1) {
+    const [listener] = listeners
+    const info = protocolInfo(listener.protocol)
+    return (
+      <Tooltip label={listenerLabel(listener, 0)}>
         <Badge
-          key={listener.name}
           tag
           chip
           variant="light"
           color="gray"
           icon={
-            <Image
-              src={getIcon({ subtype: protocolInfo(listener.protocol).subtype })}
-              alt=""
-              w={14}
-              h={14}
-              fit="contain"
-            />
+            info.subtype ? (
+              <Image src={getIcon({ subtype: info.subtype })} alt="" w={14} h={14} fit="contain" />
+            ) : undefined
           }
         >
-          {listener.name}
+          {info.label}
         </Badge>
+      </Tooltip>
+    )
+  }
+  const hidden = listeners.length - LANES_SHOWN
+  return (
+    <Avatar.Group>
+      {listeners.slice(0, LANES_SHOWN).map((listener, index) => (
+        <Tooltip
+          key={`${listenerLabel(listener, index)}-${index}`}
+          label={`${listenerLabel(listener, index)} · ${protocolInfo(listener.protocol).label}`}
+        >
+          <ProtocolAvatar protocol={listener.protocol} getIcon={getIcon} />
+        </Tooltip>
       ))}
       {hidden > 0 && (
-        <Text size="xs" c="dimmed">
-          {`+${hidden} more`}
-        </Text>
+        <Tooltip label={listeners.slice(LANES_SHOWN).map((l, i) => listenerLabel(l, LANES_SHOWN + i)).join(', ')}>
+          <Avatar size={AVATAR_SIZE} bg="gray.0" color="gray" variant="light" fw={700}>
+            {`+${hidden}`}
+          </Avatar>
+        </Tooltip>
       )}
-    </Group>
+    </Avatar.Group>
   )
 }
 
-// Figma: "License has sidecards" table. No Edit on the row: a listener is
-// authored on the sidecar's own page, so a row opens its details and the fleet
-// stays one line per sidecar.
-export default function SidecarsTable({ sidecars, onDelete }) {
-  const navigate = useNavigate()
+export default function SidecarsTable({ sidecars }) {
   const getIcon = useConnectionIconGetter()
 
   return (
-    <Table>
+    <Table verticalSpacing="md">
       <Table.Thead>
         <Table.Tr>
           <Table.Th>Sidecar</Table.Th>
           <Table.Th>Status</Table.Th>
           <Table.Th>Source</Table.Th>
           <Table.Th>Listeners</Table.Th>
-          <Table.Th>Features</Table.Th>
-          <Table.Th aria-label="Actions" w={56} />
+          <Table.Th>Policies</Table.Th>
+          <Table.Th aria-label="Actions" w={96} />
         </Table.Tr>
       </Table.Thead>
       <Table.Tbody>
-        {sidecars.map((sidecar) => (
-          <Table.Tr key={sidecar.id}>
-            {/* A hyphenated name is a legal break point, so a narrower cell
-                splits "payments-sidecar" across two lines. */}
-            <Table.Td miw={190}>
-              <Text size="sm" fw={600}>
-                {sidecar.name}
-              </Text>
-            </Table.Td>
-            <Table.Td miw={200}>
-              <Group gap="xs" wrap="nowrap">
+        {sidecars.map((sidecar) => {
+          const features = usesConfigFile(sidecar) ? [] : configFeatures(sidecar.configuration, sidecar.bound_rules)
+          return (
+            <Table.Tr key={sidecar.id}>
+              {/* A hyphenated name is a legal break point, so a narrower cell
+                  splits "payments-sidecar" across two lines. */}
+              <Table.Td miw={190}>
+                <Text size="sm" fw={500}>
+                  {sidecar.name}
+                </Text>
+              </Table.Td>
+              <Table.Td miw={200}>
                 <SidecarStatusBadge sidecar={sidecar} />
-                {sidecar.last_seen_at && (
-                  <Text size="xs" c="dimmed">
-                    {formatRelativeTime(sidecar.last_seen_at)}
+              </Table.Td>
+              <Table.Td miw={140}>
+                <Badge variant="light" color={usesConfigFile(sidecar) ? 'gray' : 'blue'} fullLabel>
+                  {usesConfigFile(sidecar) ? 'Config file' : 'Control plane'}
+                </Badge>
+              </Table.Td>
+              <Table.Td>
+                <Listeners sidecar={sidecar} getIcon={getIcon} />
+              </Table.Td>
+              <Table.Td miw={150}>
+                {usesConfigFile(sidecar) ? (
+                  <Text size="xs" fw={500} c="gray.5">
+                    Not delivered
+                  </Text>
+                ) : features.length > 0 ? (
+                  <FeaturePills compact features={features} />
+                ) : (
+                  <Text size="xs" fw={500} c="gray.5">
+                    No policies configured
                   </Text>
                 )}
-              </Group>
-            </Table.Td>
-            <Table.Td miw={140}>
-              <Badge variant="light" color={usesConfigFile(sidecar) ? 'gray' : 'blue'} fullLabel>
-                {usesConfigFile(sidecar) ? 'Config file' : 'Control plane'}
-              </Badge>
-            </Table.Td>
-            <Table.Td>
-              <Listeners sidecar={sidecar} getIcon={getIcon} />
-            </Table.Td>
-            <Table.Td>
-              {usesConfigFile(sidecar) ? (
-                <Text size="sm" c="dimmed">
-                  Not delivered
-                </Text>
-              ) : (
-                /* Icons, like the listener table: three labelled chips push a
-                   fleet row to three lines the moment the listener names beside
-                   them get long. */
-                <FeaturePills compact features={configFeatures(sidecar.configuration, sidecar.bound_rules)} />
-              )}
-            </Table.Td>
-            <Table.Td>
-              <ActionMenu>
-                <ActionMenu.Item onClick={() => navigate(`/sidecars/${encodeURIComponent(sidecar.id)}`)}>
-                  Details
-                </ActionMenu.Item>
-                <ActionMenu.Divider />
-                <ActionMenu.Item danger onClick={() => onDelete(sidecar)}>
-                  Delete
-                </ActionMenu.Item>
-              </ActionMenu>
-            </Table.Td>
-          </Table.Tr>
-        ))}
+              </Table.Td>
+              <Table.Td>
+                <Button
+                  component={Link}
+                  to={`/sidecars/${encodeURIComponent(sidecar.id)}`}
+                  variant="subtle"
+                  size="compact-sm"
+                >
+                  Edit
+                </Button>
+              </Table.Td>
+            </Table.Tr>
+          )
+        })}
       </Table.Tbody>
     </Table>
   )

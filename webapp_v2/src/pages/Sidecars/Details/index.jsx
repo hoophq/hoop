@@ -8,15 +8,15 @@ import { useMinDelay } from '@/hooks/useMinDelay'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import { showSnackbar } from '@/utils/snackbar'
 import SidecarDetails from '../components/SidecarDetails'
-import { listenerLabel, listenerPath, removeListener } from '../listeners'
-import DeleteListenerModal from '../sections/DeleteListenerModal'
-import { saveErrorMessage } from '../useListenerEditor'
+import { listenerPath } from '../listeners'
+import DeleteSidecarModal from '../sections/DeleteSidecarModal'
 
 // /sidecars/:id — the details card on its own page, and the listener controls.
 // The request, its error and its cancellation live in useSidecarStore; this
-// file only asks for an id. A save needs no callback back into the page either:
-// updateSidecar writes the stored document into `selected`, so the card renders
-// what the plane now holds rather than what the form hoped it wrote.
+// file only asks for an id. A listener save needs no callback back into the
+// page either: updateSidecar writes the stored document into `selected`, so
+// the card renders what the plane now holds rather than what the form hoped it
+// wrote.
 export default function SidecarDetailsPage() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -26,9 +26,9 @@ export default function SidecarDetailsPage() {
   const error = useSidecarStore((s) => s.selectedError)
   const fetchSidecar = useSidecarStore((s) => s.fetchSidecar)
   const clearSelected = useSidecarStore((s) => s.clearSelected)
-  const updateSidecar = useSidecarStore((s) => s.updateSidecar)
+  const deleteSidecar = useSidecarStore((s) => s.deleteSidecar)
 
-  const [deleting, setDeleting] = useState(null)
+  const [deleting, setDeleting] = useState(false)
   const [deletingBusy, setDeletingBusy] = useState(false)
 
   // Two conditions, and both are needed.
@@ -50,15 +50,14 @@ export default function SidecarDetailsPage() {
 
   const confirmDelete = async () => {
     setDeletingBusy(true)
-    const configuration = removeListener(selected.configuration, deleting.index)
-    const { ok, error: err } = await updateSidecar(selected.id, configuration)
-    setDeletingBusy(false)
-    if (!ok) {
-      showSnackbar({ level: 'error', text: 'Failed to delete the listener.', description: saveErrorMessage(err) })
-      return
+    try {
+      await deleteSidecar(selected.id)
+      showSnackbar({ level: 'success', text: `Sidecar "${selected.name}" removed.` })
+      navigate('/sidecars')
+    } catch (err) {
+      showSnackbar({ level: 'error', text: 'Failed to delete the sidecar.', description: err.response?.data?.message })
+      setDeletingBusy(false)
     }
-    setDeleting(null)
-    showSnackbar({ level: 'success', text: `Listener "${deleting.label}" deleted.` })
   }
 
   if (loading || showLoader) return <PageLoader h={400} />
@@ -67,11 +66,10 @@ export default function SidecarDetailsPage() {
 
   return (
     <Stack gap="xl">
-      <DeleteListenerModal
-        label={deleting?.label}
-        lastOne={listeners.length === 1}
-        opened={deleting !== null}
-        onClose={() => setDeleting(null)}
+      <DeleteSidecarModal
+        sidecar={selected}
+        opened={deleting}
+        onClose={() => setDeleting(false)}
         onConfirm={confirmDelete}
         loading={deletingBusy}
       />
@@ -83,8 +81,9 @@ export default function SidecarDetailsPage() {
         onClick={() => navigate('/sidecars')}
         px={0}
         w="fit-content"
+        size="compact-sm"
       >
-        Back
+        Back to Sidecars list
       </Button>
 
       {error ? (
@@ -92,18 +91,14 @@ export default function SidecarDetailsPage() {
       ) : (
         selected && (
           <>
-            <Title order={1}>{selected.name}</Title>
+            <Title order={1}>{`${selected.name} details`}</Title>
             <SidecarDetails
               sidecar={selected}
               editable
+              onDelete={() => setDeleting(true)}
               listenerActions={{
                 onAdd: () => navigate(`/sidecars/${encodeURIComponent(selected.id)}/listeners/new`),
                 onEdit: (index) => navigate(listenerPath(selected.id, listeners[index], index)),
-                // The label, not listener.name: `name` is optional in the
-                // document, and the daemon's own fallback is what the row, the
-                // logs and the audit rows already call this listener.
-                onDelete: (index) =>
-                  setDeleting({ index, listener: listeners[index], label: listenerLabel(listeners[index], index) }),
               }}
             />
           </>

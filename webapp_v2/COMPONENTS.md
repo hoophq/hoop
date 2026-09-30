@@ -354,7 +354,22 @@ import Badge from '@/components/Badge'
 <Badge variant="danger">Failed</Badge>       // red filled
 // Standard Mantine props also work:
 <Badge color="indigo" variant="outline">Custom</Badge>
+// The dot form (Figma "Badge" with `_Dot`): one neutral pill, the state as a
+// coloured dot before the word. The control plane's sidecar status uses it.
+<Badge variant="active" dot>Active</Badge>
 ```
+
+### `Avatar`
+Round tile for an icon, an image or a short label, and `Avatar.Group` to overlap several (Figma "Avatar Group": 24px circles, 8px overlap, a 1px ring in the body colour). Used for the listeners and the policies of a sidecar row.
+```jsx
+import Avatar from '@/components/Avatar'
+
+<Avatar.Group>
+  <Avatar size={24} color="pink" variant="light"><Sparkles size={14} /></Avatar>
+  <Avatar size={24} bg="gray.0" color="gray" variant="light">+2</Avatar>
+</Avatar.Group>
+```
+`radius` defaults to `xl`; `Avatar.Group` overlaps by 6px unless `spacing` says otherwise. Wrap an avatar in `Tooltip` for its label, since a 24px circle carries none.
 
 ### `ActionMenu`
 Dropdown action menu for table rows and cards. Uses a `MoreHorizontal` icon trigger.
@@ -967,11 +982,13 @@ Non-obvious notes only:
   which falls back to `listener[i]` exactly as the daemon's `displayName` does, so a
   listener that never named itself is still reachable and reads the way its own audit
   rows do.
-  `sections/ListenerDetails.jsx` is the expanded row: a short chip strip of the
-  operational facts, then what the lane RESOLVES to — guardrails, masking and OPA, each
-  rule marked Listener or Inherited. Those rules appear nowhere else in the app, which
-  is what the expansion is for; certificate paths and codec switches are the form's job
-  and were deliberately left out.
+  `components/FeatureAccordions.jsx` is the expanded row and the card's Features
+  block: one accordion per feature (AI Analyzer, Data Masking, Guardrails) listing what
+  the lane RESOLVES to, each rule marked Listener, Inherited or Control plane. Without
+  a listener it reads the sidecar's top-level defaults. `pages/Sidecars/features.js`
+  builds those rows. Those rules appear nowhere else in the app, which is what the
+  expansion is for; certificate paths and codec switches are the form's job and were
+  deliberately left out.
   `pages/Sidecars/resolve.js` is the one port of `Config.resolve`, and both the Features
   chips (`config.js`) and the expanded row read it. Guardrail `rules` absent — **or
   `null`, which is what commenting them out in YAML leaves** — inherits, `[]` runs none,
