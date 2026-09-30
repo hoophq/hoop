@@ -7,28 +7,14 @@ import Button from '@/components/Button'
 import Tooltip from '@/components/Tooltip'
 import EmptyState from '@/layout/EmptyState'
 import { useSidecarStore } from '@/stores/useSidecarStore'
-import { formatRelativeTime } from '@/utils/datetime'
 import { showSnackbar } from '@/utils/snackbar'
-import { auditEnabled, hasConfiguration, usesConfigFile } from '../config'
-import { opaSummary, resolveOPA } from '../features'
+import { hasConfiguration, usesConfigFile } from '../config'
+import GlobalSettings from '../sections/GlobalSettings'
 import ListenersTable from '../sections/ListenersTable'
 import { sidecarStatus } from '../status'
 import SidecarSourceModal from '../sections/SidecarSourceModal'
 import Callout from './Callout'
 import FeatureAccordions from './FeatureAccordions'
-
-const LABEL_WIDTH = 88
-
-function Row({ label, children }) {
-  return (
-    <Group gap="sm" align="center" wrap="nowrap">
-      <Text size="sm" c="dimmed" w={LABEL_WIDTH} flex="0 0 auto">
-        {label}
-      </Text>
-      {children}
-    </Group>
-  )
-}
 
 export function SidecarStatusBadge({ sidecar }) {
   const status = sidecarStatus(sidecar)
@@ -117,11 +103,12 @@ function SourceCallout({ fromFile, configured, editable, onSwitch }) {
  *
  * The control plane answers the sidecar's check-in with the configuration it
  * holds for it (gateway/api/sidecar). This card reads that document and writes
- * one thing, only when the caller hands it somewhere to put the result: which
- * side owns the document, under `editable`. Listeners are authored through
- * `listenerActions`, the sidecar is deleted through `onDelete`. The wizard's
- * Overview step passes none of them — it holds its own copy of a sidecar that
- * is still waiting for the first handshake.
+ * to it only when the caller hands it somewhere to put the result, under
+ * `editable`: which side owns the document, and the Global settings rows.
+ * Listeners are authored through `listenerActions`, the sidecar is deleted
+ * through `onDelete`. The wizard's Overview step passes none of them — it
+ * holds its own copy of a sidecar that is still waiting for the first
+ * handshake.
  */
 export default function SidecarDetails({ sidecar, editable, listenerActions, onDelete }) {
   const setUsesConfigFile = useSidecarStore((s) => s.setUsesConfigFile)
@@ -129,7 +116,6 @@ export default function SidecarDetails({ sidecar, editable, listenerActions, onD
   const config = sidecar.configuration
   const configured = hasConfiguration(config)
   const fromFile = usesConfigFile(sidecar)
-  const opa = configured ? resolveOPA(null, config) : null
   // The value awaiting confirmation, and whether the dialog is up. Two states
   // rather than one: Mantine keeps the modal mounted through its exit
   // transition, and a target cleared on close would rewrite the copy of the
@@ -191,45 +177,8 @@ export default function SidecarDetails({ sidecar, editable, listenerActions, onD
             </Group>
           </Group>
 
-          <Stack gap="sm">
-            <Text fw={600}>Global settings</Text>
-            <Row label="Name">
-              <Text size="sm" fw={600}>
-                {sidecar.name}
-              </Text>
-            </Row>
-            <Row label="Created">
-              <Text size="sm">{`${new Date(sidecar.created_at).toLocaleString()} by ${sidecar.created_by}`}</Text>
-            </Row>
-            <Row label="Last seen">
-              <Text size="sm">{sidecar.last_seen_at ? formatRelativeTime(sidecar.last_seen_at) : 'Never'}</Text>
-            </Row>
-            {sidecar.version && (
-              <Row label="Version">
-                <Text size="sm">{sidecar.version}</Text>
-              </Row>
-            )}
-            {configured && (
-              <>
-                <Row label="Admin">
-                  <Text size="sm" ff={config.admin?.listen ? 'monospace' : undefined}>
-                    {config.admin?.listen || 'Off'}
-                  </Text>
-                </Row>
-                <Row label="Log level">
-                  <Text size="sm">{config.log_level || 'info'}</Text>
-                </Row>
-                <Row label="OPA">
-                  <Text size="sm">{opa?.url ? opaSummary(opa) : 'Off'}</Text>
-                </Row>
-                <Row label="Audit">
-                  <Badge variant={auditEnabled(config) ? 'active' : 'inactive'}>
-                    {auditEnabled(config) ? 'Active' : 'Off'}
-                  </Badge>
-                </Row>
-              </>
-            )}
-          </Stack>
+          {/* The file owns these settings too: an edit here would change nothing it runs. */}
+          <GlobalSettings sidecar={sidecar} editable={editable && !fromFile} />
 
           {configured ? (
             <>

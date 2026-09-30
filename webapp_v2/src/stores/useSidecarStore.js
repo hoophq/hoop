@@ -133,6 +133,23 @@ export const useSidecarStore = create((set, get) => ({
     return updated
   },
 
+  // Merge a few keys into the stored document and leave the rest as stored.
+  // `{ ok, error }` like updateSidecar, so a row can show the refusal in place.
+  patchSidecar: async (nameOrId, configuration) => {
+    try {
+      const { data: updated } = await sidecarsService.patch(nameOrId, configuration)
+      set((state) => ({
+        sidecars: state.sidecars.map((s) => (s.id === updated.id ? updated : s)),
+        selected: state.selected?.id === updated.id ? updated : state.selected,
+        listRequestId: state.listRequestId + 1,
+        selectedRequestId: state.selectedRequestId + 1,
+      }))
+      return { ok: true, sidecar: updated }
+    } catch (error) {
+      return { ok: false, error }
+    }
+  },
+
   /**
    * Replace a sidecar's whole configuration document.
    *
