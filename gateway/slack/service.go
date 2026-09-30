@@ -49,8 +49,8 @@ type SlackService struct {
 type settledReview struct {
 	req *UpdateReviewMessageRequest
 	at  time.Time
-	// items are the messages an approval rewrote, kept so a revoke can rewrite
-	// them again. Empty for every other terminal state.
+	// items are the messages an approval rewrote, kept so a revoke or an expiry
+	// can rewrite them again. Empty for every other terminal state.
 	items []sentReviewMessage
 }
 
@@ -96,6 +96,10 @@ const (
 	// sentReviewRetention bounds how long a posted review message is tracked
 	// for out-of-band updates. Reviews expire well before this.
 	sentReviewRetention = 48 * time.Hour
+	// reviewDeadlineBlockID marks the decision deadline block, so a terminal rewrite drops it.
+	reviewDeadlineBlockID = "review-deadline"
+	// expiredReviewText closes a sidecar review that passed its deadline.
+	expiredReviewText = "*Review expired.* Nothing was released. Running the statement again files a new review."
 )
 
 func New(slackBotToken, slackAppToken, slackChannel, instanceID, apiURL string) (*SlackService, error) {
@@ -229,6 +233,8 @@ type MessageReviewRequest struct {
 	// SlackChannels is empty. The control plane sets it; the gateway posts to
 	// the default channel always.
 	DefaultChannelAsFallback bool
+	// ExpiresAt is a sidecar review's decision deadline. The gateway never sets it.
+	ExpiresAt *time.Time
 }
 
 type MessageReviewResponse struct {
@@ -353,6 +359,11 @@ func (s *SlackService) PostMessageReview(msg *MessageReviewRequest) ReviewPostRe
 	blocks := []slack.Block{
 		header,
 		metaSection1,
+	}
+	if msg.ExpiresAt != nil {
+		blocks = append(blocks, slack.NewContextBlock(reviewDeadlineBlockID,
+			slack.NewTextBlockObject(slack.MarkdownType,
+				fmt.Sprintf("_Decide before %s; after it the review expires._", msg.ExpiresAt.UTC().Format(time.RFC1123)), false, false)))
 	}
 	// script at the maximum slack allowed size
 	if script != "" {
@@ -545,6 +556,15 @@ type UpdateReviewMessageRequest struct {
 	TotalGroups    int
 	// RejectionReason is what the reviewer typed when rejecting; empty for none.
 	RejectionReason string
+	// IsExpired and ExpiresAt (the approval deadline) are set only for a
+	// sidecar review.
+	IsExpired bool
+	ExpiresAt *time.Time
+}
+
+// isDone reports a terminal state: the message takes no more input.
+func (r *UpdateReviewMessageRequest) isDone() bool {
+	return r.IsApproved || r.IsRejected || r.IsExpired || r.IsRevoked
 }
 
 // HasTrackedReviewMessages reports whether the review's posted messages are
@@ -564,11 +584,11 @@ func (s *SlackService) HasTrackedReviewMessages(reviewID string) bool {
 // effort: messages posted by another gateway instance or before a restart are
 // not tracked and are silently skipped.
 func (s *SlackService) UpdateReviewMessage(req *UpdateReviewMessageRequest) error {
-	done := req.IsApproved || req.IsRejected || req.IsRevoked
+	done := req.isDone()
 	s.sentReviewMu.Lock()
 	items := s.sentReviewItems[req.ReviewID]
-	if req.IsRevoked {
-		// The approval already consumed the tracked messages.
+	if req.IsRevoked || req.IsExpired {
+		// An approval already consumed the tracked messages.
 		items = append(items, s.settledReviews[req.ReviewID].items...)
 	}
 	if done {
@@ -635,12 +655,16 @@ func reviewOutcomeSection(rg ReviewedGroup) *slack.SectionBlock {
 // terminal rejection is never rendered without attribution. Never mutates
 // m.blocks.
 func rebuildReviewBlocks(m *sentReviewMessage, req *UpdateReviewMessageRequest, reviewed map[string]ReviewedGroup) []slack.Block {
-	done := req.IsApproved || req.IsRejected || req.IsRevoked
+	done := req.isDone()
 	matched := make(map[string]bool, len(reviewed))
 	blocks := make([]slack.Block, 0, len(m.blocks)+2)
 	for _, b := range m.blocks {
 		ab, ok := b.(*slack.ActionBlock)
 		if !ok {
+			// a settled review has no decision deadline left
+			if cb, ok := b.(*slack.ContextBlock); ok && done && cb.BlockID == reviewDeadlineBlockID {
+				continue
+			}
 			blocks = append(blocks, b)
 			continue
 		}
@@ -672,10 +696,21 @@ func rebuildReviewBlocks(m *sentReviewMessage, req *UpdateReviewMessageRequest, 
 	}
 
 	switch {
+	case req.IsExpired:
+		blocks = append(blocks,
+			slack.NewDividerBlock(),
+			slack.NewSectionBlock(&slack.TextBlockObject{
+				Type: slack.MarkdownType,
+				Text: expiredReviewText,
+			}, nil, nil))
 	case req.IsApproved:
 		text := "*Session ready to be executed!*\n"
 		if m.eventKind == EventKindJit {
 			text = "*Interactive session ready!*\n"
+		}
+		if req.ExpiresAt != nil {
+			text += fmt.Sprintf("_The approval expires at %s if the statement does not run again._",
+				req.ExpiresAt.UTC().Format(time.RFC1123))
 		}
 		blocks = append(blocks,
 			slack.NewDividerBlock(),
@@ -859,6 +894,10 @@ func (s *SlackService) OpenModalError(msg *MessageReviewResponse, message string
 }
 
 func (s *SlackService) UpdateMessageStatus(msg *MessageReviewResponse, message string) error {
+	// a modal reject with no pending item carries the view callback, which has no block action
+	if len(msg.item.ActionCallback.BlockActions) == 0 {
+		return nil
+	}
 	blockID := msg.item.ActionCallback.BlockActions[0].BlockID
 	blocks := msg.item.Message.Blocks.BlockSet
 	for i, b := range blocks {

@@ -40,6 +40,7 @@ const (
 	reviewRejected = "REJECTED"
 	reviewRevoked  = "REVOKED"
 	reviewExecuted = "EXECUTED"
+	reviewExpired  = "EXPIRED"
 )
 
 // ReviewMode decides what a PENDING review does to its statement.
@@ -428,8 +429,10 @@ func operatorMessage(operator string) string {
 // reviewReason turns a review's status into the clause a developer reads.
 //
 // The distinction that matters to them is whether waiting will help. Pending
-// says retry later; rejected and revoked say stop, because a resend files a
-// new review and pages the approvers again.
+// says retry later; rejected, revoked and expired say stop, because a resend
+// files a new review and pages the approvers again. An expiry comes from a
+// time limit on the control plane's approval rule: nobody decided in time, or
+// the approval was not used in time.
 func reviewReason(status string) string {
 	switch status {
 	case reviewPending:
@@ -443,6 +446,8 @@ func reviewReason(status string) string {
 		// consumed this approval a moment ago. An approval releases one
 		// statement once, so this one needs a new review.
 		return "the approval was already used"
+	case reviewExpired:
+		return "the review expired; running the statement again files a new review"
 	}
 	return "the statement was not released"
 }

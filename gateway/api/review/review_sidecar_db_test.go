@@ -68,7 +68,8 @@ func seedApprovedSidecarReview(t *testing.T) *models.Review {
 	sess := models.Session{ID: sessionID, OrgID: decisionTestOrgID, BlobInput: models.BlobInputType(statement),
 		ConnectionType: "custom", Verb: "exec", Status: "open", UserID: sc.ID, UserName: sc.Name,
 		UserEmail: "hoop@hoop.dev", CreatedAt: time.Now().UTC()}
-	require.NoError(t, models.CreateSidecarReview(models.DB, sess, rev, statement))
+	_, err := models.CreateSidecarReview(models.DB, sess, rev, statement)
+	require.NoError(t, err)
 	require.NoError(t, models.UpdateReviewStatus(decisionTestOrgID, rev.ID, models.ReviewStatusApproved))
 
 	got, err := models.GetReviewByIdOrSid(decisionTestOrgID, rev.ID)
@@ -91,7 +92,7 @@ func TestPersistDecisionLosesToTheClaim(t *testing.T) {
 		decided, err := doReview(admin, rev, nil, models.ReviewStatusRevoked, false)
 		require.NoError(t, err)
 
-		claimed, _, err := models.ClaimApprovedSidecarReview(models.DB, decisionTestOrgID, rev.ID)
+		claimed, _, err := models.ClaimApprovedSidecarReview(models.DB, decisionTestOrgID, rev.ID, time.Now().UTC())
 		require.NoError(t, err)
 		require.True(t, claimed)
 
@@ -114,4 +115,64 @@ func TestPersistDecisionLosesToTheClaim(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, models.ReviewStatusRevoked, got.Status)
 	})
+}
+
+// setDecisionDeadline moves a review's deadline. The column has no time zone,
+// so the value is bound in UTC.
+func setDecisionDeadline(t *testing.T, reviewID string, at time.Time) {
+	t.Helper()
+	require.NoError(t, models.DB.Exec(`UPDATE private.reviews SET expires_at = ? WHERE id = ?`,
+		at.UTC(), reviewID).Error)
+}
+
+func storedDecisionRow(t *testing.T, reviewID string) (status string, hash sql.NullString) {
+	t.Helper()
+	row := struct {
+		Status        string
+		StatementHash sql.NullString
+	}{}
+	require.NoError(t, models.DB.Raw(`SELECT status, statement_hash FROM private.reviews WHERE id = ?`,
+		reviewID).Scan(&row).Error)
+	return row.Status, row.StatementHash
+}
+
+// The deadline passes between DoReview's read and its write. The decision must
+// answer expired, not wrong state, and record the expiry.
+func TestPersistDecisionRefusesAnExpiredReview(t *testing.T) {
+	startDecisionTestDB(t)
+	admin := newFakeContext(uuid.NewString(), "admin@hoop.dev", []string{types.GroupAdmin})
+	admin.OrgID = decisionTestOrgID
+
+	for name, readPast := range map[string]bool{
+		// UpdateSidecarReview's SQL predicate refuses the write.
+		"the stored deadline passes after the read": false,
+		// UpdateSidecarReview refuses before it writes.
+		"the read deadline passes before the write": true,
+	} {
+		t.Run(name, func(t *testing.T) {
+			seeded := seedApprovedSidecarReview(t)
+			setDecisionDeadline(t, seeded.ID, time.Now().UTC().Add(time.Hour))
+			rev, err := models.GetReviewByIdOrSid(decisionTestOrgID, seeded.ID)
+			require.NoError(t, err)
+			require.Equal(t, models.ReviewStatusApproved, rev.Status)
+			fromStatus := rev.Status
+
+			decided, err := doReview(admin, rev, nil, models.ReviewStatusRevoked, false)
+			require.NoError(t, err)
+
+			past := time.Now().UTC().Add(-time.Minute)
+			setDecisionDeadline(t, seeded.ID, past)
+			if readPast {
+				decided.ExpiresAt = &past
+			}
+
+			assert.Equal(t, ErrExpired, persistDecision(decided, nil, fromStatus))
+			status, hash := storedDecisionRow(t, seeded.ID)
+			assert.Equal(t, string(models.ReviewStatusExpired), status)
+			assert.False(t, hash.Valid, "an expired review frees its statement")
+			got, err := models.GetReviewByIdOrSid(decisionTestOrgID, seeded.ID)
+			require.NoError(t, err)
+			assert.Len(t, got.ReviewGroups, 1, "a lost decision writes no group row")
+		})
+	}
 }

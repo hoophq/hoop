@@ -59,6 +59,11 @@ function formToSpec(f, ruleName) {
   return spec
 }
 
+// The API stores seconds; the form shows minutes. An emptied field sends 0,
+// which clears the stored limit.
+const secToMinutes = (s) => (s ? s / 60 : '')
+const minutesToSec = (m) => (m === '' || m == null ? 0 : Math.round(Number(m) * 60))
+
 // Shared by the rule page and the sidecar dialog. `targets` seeds a new rule's listeners.
 export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, targets: seed = [], onSaved, onDeleted }) {
   const submitting = useAiSessionAnalyzerStore((s) => s.submitting)
@@ -74,6 +79,20 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
   const set = (patch) => setForm((f) => ({ ...f, ...patch }))
   // Hoop groups; empty leaves the hold to the administrators.
   const [reviewers, setReviewers] = useState(stored?.reviewers_groups ?? [])
+  // A limit is sent only after an edit, so a save that does not touch it keeps
+  // the stored value.
+  const [pendingMinutes, setPendingMinutes] = useState(secToMinutes(stored?.pending_ttl_sec))
+  const [approvalMinutes, setApprovalMinutes] = useState(secToMinutes(stored?.approval_ttl_sec))
+  const [pendingTouched, setPendingTouched] = useState(false)
+  const [approvalTouched, setApprovalTouched] = useState(false)
+  const editPendingMinutes = (v) => {
+    setPendingMinutes(v)
+    setPendingTouched(true)
+  }
+  const editApprovalMinutes = (v) => {
+    setApprovalMinutes(v)
+    setApprovalTouched(true)
+  }
   const [groupOptions, setGroupOptions] = useState([])
 
   useEffect(() => {
@@ -134,6 +153,8 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
       sidecar_spec: spec,
       sidecar_targets: targets,
       reviewers_groups: ownHold ? reviewers : undefined,
+      pending_ttl_sec: ownHold && pendingTouched ? minutesToSec(pendingMinutes) : undefined,
+      approval_ttl_sec: ownHold && approvalTouched ? minutesToSec(approvalMinutes) : undefined,
     }
     const { ok, error } = isEdit ? await updateRule(ruleName, payload) : await createRule(payload)
     if (ok) {
@@ -169,6 +190,10 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
     reviewers,
     setReviewers,
     reviewerOptions,
+    pendingMinutes,
+    editPendingMinutes,
+    approvalMinutes,
+    editApprovalMinutes,
     holds,
     ownHold,
     isHTTP,

@@ -2,7 +2,7 @@ import { Stack, Text } from '@mantine/core'
 import Badge from '@/components/Badge'
 import Table from '@/components/Table'
 import { formatRelativeTime } from '@/utils/datetime'
-import { reviewSource, statusLabel } from '../helpers'
+import { STATUS, reviewSource, statusLabel } from '../helpers'
 import classes from './ReviewsTable.module.css'
 
 export default function ReviewsTable({ reviews, sidecarsById, selectedId, onSelect }) {
@@ -20,6 +20,7 @@ export default function ReviewsTable({ reviews, sidecarsById, selectedId, onSele
         {reviews.map((review) => {
           const source = reviewSource(review, sidecarsById)
           const status = statusLabel(review.status)
+          const live = review.status === STATUS.PENDING || review.status === STATUS.APPROVED
           return (
             <Table.Tr
               key={review.id}
@@ -45,9 +46,16 @@ export default function ReviewsTable({ reviews, sidecarsById, selectedId, onSele
                 </Text>
               </Table.Td>
               <Table.Td miw={120}>
-                <Badge variant="light" color={status.color} fullLabel>
-                  {status.label}
-                </Badge>
+                <Stack gap={0} align="flex-start">
+                  <Badge variant="light" color={status.color} fullLabel>
+                    {status.label}
+                  </Badge>
+                  {live && review.expires_at && (
+                    <Text size="xs" c="dimmed">
+                      {`expires ${formatRelativeTime(review.expires_at)}`}
+                    </Text>
+                  )}
+                </Stack>
               </Table.Td>
               <Table.Td miw={120}>
                 <Text size="sm" c="dimmed">

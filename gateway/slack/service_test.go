@@ -1,10 +1,14 @@
 package slack
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -211,8 +215,11 @@ func TestUpdateReviewMessageTracking(t *testing.T) {
 
 	// terminal update rewrites the message once and consumes the tracked entry
 	var updateCalls int
+	var lastBlocks string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		updateCalls++
+		_ = r.ParseForm()
+		lastBlocks = r.FormValue("blocks")
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{"ok":true,"channel":"C1","ts":"1.0"}`)
 	}))
@@ -249,6 +256,23 @@ func TestUpdateReviewMessageTracking(t *testing.T) {
 	}
 	if _, ok := s.sentReviewItems["rev-new"]; !ok {
 		t.Errorf("fresh entry was not tracked")
+	}
+
+	// an expiry is terminal: it consumes the entry, and a late post gets it
+	updateCalls = 0
+	s.sentReviewItems["rev-exp"] = []sentReviewMessage{{channelID: "C1", timestamp: "1.0", sentAt: time.Now().UTC()}}
+	expired := &UpdateReviewMessageRequest{ReviewID: "rev-exp", IsExpired: true}
+	if err := s.UpdateReviewMessage(expired); err != nil {
+		t.Fatalf("tracked expiry failed: %v", err)
+	}
+	if updateCalls != 1 || !strings.Contains(lastBlocks, "Review expired.") {
+		t.Fatalf("chat.update calls=%d blocks=%s, want one expired rewrite", updateCalls, lastBlocks)
+	}
+	if s.HasTrackedReviewMessages("rev-exp") {
+		t.Errorf("an expiry must consume the tracked entry")
+	}
+	if final := s.trackSentReviewMessage("rev-exp", sentReviewMessage{channelID: "C4", timestamp: "4.0"}); final != expired {
+		t.Errorf("a post after the expiry must get the expired state, got %+v", final)
 	}
 }
 
@@ -310,6 +334,178 @@ func TestReviewChannels(t *testing.T) {
 				t.Errorf("channels = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+// reviewDeadline is a non-UTC time, so the tests pin the UTC rendering.
+var reviewDeadline = time.Date(2026, 9, 29, 10, 0, 0, 0, time.FixedZone("x", -3*3600))
+
+func deadlineBlock() *slack.ContextBlock {
+	return slack.NewContextBlock(reviewDeadlineBlockID,
+		slack.NewTextBlockObject(slack.MarkdownType, "_Decide before Tue, 29 Sep 2026 13:00:00 UTC; after it the review expires._", false, false))
+}
+
+// An expired review takes no more input: the buttons and the deadline go, and
+// the recorded outcomes stay.
+func TestRebuildReviewBlocksExpired(t *testing.T) {
+	const revID = "rev-1"
+	label := func(group string) *slack.SectionBlock {
+		return slack.NewSectionBlock(&slack.TextBlockObject{
+			Type: slack.MarkdownType, Text: "*Approver groups:* " + group,
+		}, nil, nil)
+	}
+	deadline := deadlineBlock()
+	m := &sentReviewMessage{eventKind: EventKindOneTime, blocks: []slack.Block{
+		slack.NewHeaderBlock(&slack.TextBlockObject{Type: slack.PlainTextType, Text: "Hoop Review"}),
+		deadline,
+		label("admin"),
+		slack.NewActionBlock(revID + ":admin:0"),
+		label("sre"),
+		slack.NewActionBlock(revID + ":sre:1"),
+	}}
+	rg := ReviewedGroup{Name: "admin", Status: "APPROVED", ReviewerEmail: "a@a.com", ReviewedAt: reviewDeadline}
+	reviewed := map[string]ReviewedGroup{"admin": rg}
+
+	partial := &UpdateReviewMessageRequest{ReviewID: revID, ReviewedGroups: []ReviewedGroup{rg}, TotalGroups: 2}
+	if blocks := rebuildReviewBlocks(m, partial, reviewed); !slices.ContainsFunc(blocks, func(b slack.Block) bool { return b == deadline }) {
+		t.Errorf("a partial approval dropped the deadline: %+v", blocks)
+	}
+
+	req := &UpdateReviewMessageRequest{ReviewID: revID, IsExpired: true, ReviewedGroups: []ReviewedGroup{rg}, TotalGroups: 2}
+	blocks := rebuildReviewBlocks(m, req, reviewed)
+	if len(blocks) != 5 {
+		t.Fatalf("got %d blocks, want header, admin label, outcome, divider, expired: %+v", len(blocks), blocks)
+	}
+	for _, b := range blocks {
+		switch b := b.(type) {
+		case *slack.ActionBlock:
+			t.Errorf("an expired review kept a button: %s", b.BlockID)
+		case *slack.ContextBlock:
+			t.Errorf("an expired review kept a context block: %s", b.BlockID)
+		case *slack.SectionBlock:
+			if strings.Contains(b.Text.Text, "sre") {
+				t.Errorf("orphaned label for the dropped sre button: %s", b.Text.Text)
+			}
+		}
+	}
+	if sec, ok := blocks[2].(*slack.SectionBlock); !ok || !strings.Contains(sec.Text.Text, "a@a.com") {
+		t.Errorf("the reviewed group was dropped: %T %+v", blocks[2], blocks[2])
+	}
+	if _, ok := blocks[3].(*slack.DividerBlock); !ok {
+		t.Errorf("block 3 = %T, want a divider", blocks[3])
+	}
+	if sec, ok := blocks[4].(*slack.SectionBlock); !ok || sec.Text.Text != expiredReviewText {
+		t.Errorf("block 4 = %+v, want the expired section", blocks[4])
+	}
+	if _, ok := m.blocks[1].(*slack.ContextBlock); !ok || len(m.blocks) != 6 {
+		t.Errorf("the posted block set was mutated")
+	}
+
+	// the expired text wins over a stale approval flag
+	req.IsApproved = true
+	if blocks := rebuildReviewBlocks(m, req, reviewed); blocks[len(blocks)-1].(*slack.SectionBlock).Text.Text != expiredReviewText {
+		t.Errorf("an expired review rendered as approved")
+	}
+}
+
+// With no deadline the approved message is today's; with one it names it.
+func TestRebuildReviewBlocksApprovedShowsTheApprovalDeadline(t *testing.T) {
+	header := slack.NewHeaderBlock(&slack.TextBlockObject{Type: slack.PlainTextType, Text: "Hoop Review"})
+	rg := ReviewedGroup{Name: "sre", Status: "APPROVED", ReviewerEmail: "a@a.com", ReviewedAt: reviewDeadline}
+	reviewed := map[string]ReviewedGroup{"sre": rg}
+	ready := func(text string) []slack.Block {
+		return []slack.Block{
+			header,
+			reviewOutcomeSection(rg),
+			slack.NewDividerBlock(),
+			slack.NewSectionBlock(&slack.TextBlockObject{Type: slack.MarkdownType, Text: text}, nil, nil),
+		}
+	}
+
+	m := &sentReviewMessage{eventKind: EventKindOneTime, blocks: []slack.Block{header, slack.NewActionBlock("rev-1:sre:0")}}
+	req := &UpdateReviewMessageRequest{ReviewID: "rev-1", IsApproved: true, ReviewedGroups: []ReviewedGroup{rg}, TotalGroups: 1}
+	if got, want := rebuildReviewBlocks(m, req, reviewed), ready("*Session ready to be executed!*\n"); !reflect.DeepEqual(got, want) {
+		t.Errorf("approved without a deadline changed\ngot:  %+v\nwant: %+v", got, want)
+	}
+
+	m.blocks = []slack.Block{header, deadlineBlock(), slack.NewActionBlock("rev-1:sre:0")}
+	req.ExpiresAt = &reviewDeadline
+	want := ready("*Session ready to be executed!*\n_The approval expires at Tue, 29 Sep 2026 13:00:00 UTC if the statement does not run again._")
+	if got := rebuildReviewBlocks(m, req, reviewed); !reflect.DeepEqual(got, want) {
+		t.Errorf("approved with a deadline\ngot:  %+v\nwant: %+v", got, want)
+	}
+}
+
+// The decision deadline is one context block right after the metadata; no
+// other block changes.
+func TestPostMessageReviewShowsTheDeadline(t *testing.T) {
+	golden, err := os.ReadFile(gatewayReviewBlocksGolden)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var want []json.RawMessage
+	if err := json.Unmarshal(golden, &want); err != nil {
+		t.Fatal(err)
+	}
+	decode := func(raw string) []json.RawMessage {
+		var got []json.RawMessage
+		if err := json.Unmarshal([]byte(raw), &got); err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+
+	without := decode(postedBlocks(t, gatewayReviewRequest())[0])
+	if len(without) != len(want) {
+		t.Fatalf("without a deadline: got %d blocks, want %d", len(without), len(want))
+	}
+
+	msg := gatewayReviewRequest()
+	msg.ExpiresAt = &reviewDeadline
+	got := decode(postedBlocks(t, msg)[0])
+	if len(got) != len(want)+1 {
+		t.Fatalf("got %d blocks, want %d", len(got), len(want)+1)
+	}
+	var deadline struct {
+		Type     string `json:"type"`
+		BlockID  string `json:"block_id"`
+		Elements []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"elements"`
+	}
+	if err := json.Unmarshal(got[2], &deadline); err != nil {
+		t.Fatal(err)
+	}
+	if deadline.Type != "context" || deadline.BlockID != reviewDeadlineBlockID || len(deadline.Elements) != 1 ||
+		deadline.Elements[0].Type != slack.MarkdownType ||
+		deadline.Elements[0].Text != "_Decide before Tue, 29 Sep 2026 13:00:00 UTC; after it the review expires._" {
+		t.Errorf("block 2 is not the deadline: %s", got[2])
+	}
+	rest := append(slices.Clone(got[:2]), got[3:]...)
+	for i := range want {
+		if !bytes.Equal(compactJSON(t, rest[i]), compactJSON(t, want[i])) {
+			t.Errorf("block %d changed\ngot:  %s\nwant: %s", i, rest[i], want[i])
+		}
+	}
+}
+
+// A callback with no block action names no message to rewrite.
+func TestUpdateMessageStatusWithoutBlockActions(t *testing.T) {
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"ok":true,"channel":"C1","ts":"1.0"}`)
+	}))
+	defer srv.Close()
+	s := NewWithAPIClient(slack.New("xoxb-test", slack.OptionAPIURL(srv.URL+"/")), "T1", "")
+
+	if err := s.UpdateMessageStatus(&MessageReviewResponse{ID: "rev-1"}, expiredReviewText); err != nil {
+		t.Fatalf("got %v, want nil", err)
+	}
+	if calls != 0 {
+		t.Errorf("slack was called %d times, want 0", calls)
 	}
 }
 
@@ -385,5 +581,32 @@ func TestUpdateReviewMessageRevokeAfterApproval(t *testing.T) {
 	}
 	if err := s.UpdateReviewMessage(&UpdateReviewMessageRequest{ReviewID: "rev-2", IsRevoked: true}); err != nil || updates != 3 {
 		t.Errorf("a revoke after a rejection rewrote a message: calls=%d err=%v", updates, err)
+	}
+}
+
+// An approval that lapses rewrites the message the approval settled.
+func TestUpdateReviewMessageExpiryAfterApproval(t *testing.T) {
+	var updates int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		updates++
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"ok":true,"channel":"C1","ts":"1.0"}`)
+	}))
+	defer srv.Close()
+	s := &SlackService{sentReviewItems: make(map[string][]sentReviewMessage),
+		apiClient: slack.New("xoxb-test", slack.OptionAPIURL(srv.URL+"/"))}
+
+	s.sentReviewItems["rev-1"] = []sentReviewMessage{{channelID: "C1", timestamp: "1.0"}}
+	if err := s.UpdateReviewMessage(&UpdateReviewMessageRequest{ReviewID: "rev-1", IsApproved: true}); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
+	if err := s.UpdateReviewMessage(&UpdateReviewMessageRequest{ReviewID: "rev-1", IsExpired: true}); err != nil {
+		t.Fatalf("expire: %v", err)
+	}
+	if updates != 2 {
+		t.Fatalf("chat.update calls = %d, want 2: the approval, then the expiry", updates)
+	}
+	if final := s.settledReview("rev-1"); final == nil || !final.IsExpired {
+		t.Errorf("settled state = %+v, want the expiry", final)
 	}
 }

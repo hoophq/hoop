@@ -1,0 +1,122 @@
+[
+  {
+    "type": "header",
+    "text": {
+      "type": "plain_text",
+      "text": "Hoop Review"
+    }
+  },
+  {
+    "type": "section",
+    "fields": [
+      {
+        "type": "mrkdwn",
+        "text": "*Name:* Ana"
+      },
+      {
+        "type": "mrkdwn",
+        "text": "*Groups:* admin, sre"
+      },
+      {
+        "type": "mrkdwn",
+        "text": "*Email:* ana@example.com"
+      },
+      {
+        "type": "mrkdwn",
+        "text": "*Session time:* 1.50 hour(s)"
+      },
+      {
+        "type": "mrkdwn",
+        "text": "*Connection:* pg-prod"
+      },
+      {
+        "type": "mrkdwn",
+        "text": "*Type:* database"
+      },
+      {
+        "type": "mrkdwn",
+        "text": "*\u003chttps://hoop.example/sessions/sid-1|More details\u003e*"
+      }
+    ]
+  },
+  {
+    "type": "section",
+    "text": {
+      "type": "mrkdwn",
+      "text": "_script_\n```SELECT 1 \u0026 \u003cx\u003e```"
+    }
+  },
+  {
+    "type": "section",
+    "text": {
+      "type": "mrkdwn",
+      "text": "*AI Analysis* :red_circle: *HIGH Risk* — Drops \u0026lt;!channel\u0026gt;\nIt reads one row \u0026amp; exits."
+    }
+  },
+  {
+    "type": "section",
+    "text": {
+      "type": "mrkdwn",
+      "text": "*Approver groups:* sre"
+    }
+  },
+  {
+    "type": "actions",
+    "block_id": "rev-1:sre:0",
+    "elements": [
+      {
+        "type": "button",
+        "text": {
+          "type": "plain_text",
+          "text": "Approve"
+        },
+        "action_id": "review-approved",
+        "value": "rev-1:sre",
+        "style": "primary"
+      },
+      {
+        "type": "button",
+        "text": {
+          "type": "plain_text",
+          "text": "Reject"
+        },
+        "action_id": "review-rejected",
+        "value": "rev-1:sre",
+        "style": "danger"
+      }
+    ]
+  },
+  {
+    "type": "section",
+    "text": {
+      "type": "mrkdwn",
+      "text": "*Approver groups:* dba"
+    }
+  },
+  {
+    "type": "actions",
+    "block_id": "rev-1:dba:1",
+    "elements": [
+      {
+        "type": "button",
+        "text": {
+          "type": "plain_text",
+          "text": "Approve"
+        },
+        "action_id": "review-approved",
+        "value": "rev-1:dba",
+        "style": "primary"
+      },
+      {
+        "type": "button",
+        "text": {
+          "type": "plain_text",
+          "text": "Reject"
+        },
+        "action_id": "review-rejected",
+        "value": "rev-1:dba",
+        "style": "danger"
+      }
+    ]
+  }
+]

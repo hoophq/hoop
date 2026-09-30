@@ -34,6 +34,7 @@ const (
 	statusRejected = "REJECTED"
 	statusRevoked  = "REVOKED"
 	statusExecuted = "EXECUTED"
+	statusExpired  = "EXPIRED"
 )
 
 type tools struct {
@@ -72,6 +73,7 @@ type reviewOutput struct {
 	CreatedAt       time.Time  `json:"created_at"`
 	DecidedAt       *time.Time `json:"decided_at,omitempty"`
 	RejectionReason string     `json:"rejection_reason,omitempty"`
+	ExpiresAt       *time.Time `json:"expires_at,omitempty"`
 	Next            string     `json:"next" jsonschema:"wait, resend_identical_statement or stop"`
 	Instruction     string     `json:"instruction"`
 	// TimedOut and WaitedSeconds are set by review_wait only.
@@ -173,16 +175,23 @@ func describe(r daemon.ReviewStatus) reviewOutput {
 		CreatedAt:       r.CreatedAt,
 		DecidedAt:       r.DecidedAt,
 		RejectionReason: r.RejectionReason,
+		ExpiresAt:       r.ExpiresAt,
 	}
 	switch r.Status {
 	case statusPending:
 		out.Next = nextWait
 		out.Instruction = "No reviewer has decided yet. Call review_wait with this id. Do not " +
 			"resend the statement now, and never reformat it: different bytes file a new review."
+		if r.ExpiresAt != nil {
+			out.Instruction += fmt.Sprintf(" It expires at %s if nobody decides.", deadline(r.ExpiresAt))
+		}
 	case statusApproved:
 		out.Next = nextResend
 		out.Instruction = fmt.Sprintf("Approved. Resend the identical statement, byte for byte, "+
 			"to listener %s. It runs once.", r.ListenerName)
+		if r.ExpiresAt != nil {
+			out.Instruction += fmt.Sprintf(" Resend it before %s, when the approval expires.", deadline(r.ExpiresAt))
+		}
 	case statusRejected:
 		out.Next = nextStop
 		out.Instruction = "Rejected. The statement will not run; do not resend it."
@@ -196,11 +205,22 @@ func describe(r daemon.ReviewStatus) reviewOutput {
 		out.Next = nextStop
 		out.Instruction = "The approval was already used by a resent statement. Running it " +
 			"again needs a new review."
+	case statusExpired:
+		out.Next = nextStop
+		out.Instruction = "The review expired before it was decided or used. The statement did " +
+			"not run. Resending the identical statement files a new review and asks the " +
+			"approvers again; do that only if a human asks for it."
 	default:
 		out.Next = nextStop
 		out.Instruction = fmt.Sprintf("Unknown review status %q. Stop and ask a human.", r.Status)
 	}
 	return out
+}
+
+// deadline spells a review deadline for an agent: UTC, so every agent reads
+// the same instant whatever the host's zone.
+func deadline(t *time.Time) string {
+	return t.UTC().Format(time.RFC3339)
 }
 
 func withWait(out reviewOutput, timedOut bool, elapsed time.Duration) reviewOutput {

@@ -916,6 +916,104 @@ func TestTheHoldSwitchOwnsItsApprovalRule(t *testing.T) {
 	}
 }
 
+// The limits live on the approval rule the switch owns: absent keeps, 0 clears,
+// and a rule the switch does not own never takes one.
+func TestTheHoldSwitchSetsItsTTLs(t *testing.T) {
+	startTestDB(t)
+	orgID := uuid.MustParse(testOrgID)
+	n := func(v int) *int { return &v }
+	limits := func(name string) (pending, approval *int) {
+		t.Helper()
+		rule, err := models.GetAccessRequestRuleByName(models.DB, name, orgID)
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		return rule.PendingTTLSec, rule.ApprovalTTLSec
+	}
+	want := func(step, name string, pending, approval *int) {
+		t.Helper()
+		gotP, gotA := limits(name)
+		same := func(a, b *int) bool { return (a == nil && b == nil) || (a != nil && b != nil && *a == *b) }
+		if !same(gotP, pending) || !same(gotA, approval) {
+			t.Fatalf("%s: limits = %s/%s, want %s/%s", step, fmtTTL(gotP), fmtTTL(gotA), fmtTTL(pending), fmtTTL(approval))
+		}
+	}
+	apply := func(name string, pending, approval *int) error {
+		return services.ApplyAnalyzerApprovalTTLs(models.DB, orgID, name, pending, approval)
+	}
+
+	const holding = `{"high":"require_review","approval_rule":"hold-writes"}`
+	if err := services.SyncAnalyzerApprovalRule(models.DB, orgID, "hold-writes", json.RawMessage(holding), nil); err != nil {
+		t.Fatalf("turning the hold on: %v", err)
+	}
+	want("a new hold", "hold-writes", nil, nil)
+
+	if err := apply("hold-writes", n(900), n(600)); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	want("set", "hold-writes", n(900), n(600))
+
+	if err := apply("hold-writes", nil, n(1200)); err != nil {
+		t.Fatalf("keep: %v", err)
+	}
+	want("an absent limit keeps", "hold-writes", n(900), n(1200))
+
+	if err := apply("hold-writes", n(0), nil); err != nil {
+		t.Fatalf("clear: %v", err)
+	}
+	want("0 clears", "hold-writes", nil, n(1200))
+
+	err := apply("hold-writes", n(30), n(600))
+	if err == nil || !strings.Contains(err.Error(), "pending_ttl_sec") {
+		t.Fatalf("30 s must be refused naming pending_ttl_sec, got %v", err)
+	}
+	err = apply("hold-writes", nil, n(604801))
+	if err == nil || !strings.Contains(err.Error(), "approval_ttl_sec") {
+		t.Fatalf("604801 s must be refused naming approval_ttl_sec, got %v", err)
+	}
+	want("a refused limit writes nothing", "hold-writes", nil, n(1200))
+
+	// The analyzer handlers run the sync before the limits on every save.
+	named := []string{"dba-leads"}
+	if err := services.SyncAnalyzerApprovalRule(models.DB, orgID, "hold-writes", json.RawMessage(holding), &named); err != nil {
+		t.Fatalf("editing the reviewers: %v", err)
+	}
+	want("a sync keeps the limits", "hold-writes", nil, n(1200))
+
+	// A hold that names another rule has no approval rule of its own.
+	const holdsOther = `{"high":"require_review","approval_rule":"hold-writes"}`
+	if err := services.SyncAnalyzerApprovalRule(models.DB, orgID, "hold-other", json.RawMessage(holdsOther), nil); err != nil {
+		t.Fatalf("a hold on another rule: %v", err)
+	}
+	if err := apply("hold-other", n(300), n(300)); err != nil {
+		t.Fatalf("limits on a hold of another rule: %v", err)
+	}
+	if _, err := models.GetAccessRequestRuleByName(models.DB, "hold-other", orgID); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Errorf("the limits created a rule for a hold on another rule, err = %v", err)
+	}
+	want("the other hold leaves the named rule alone", "hold-writes", nil, n(1200))
+
+	handMade := &models.AccessRequestRule{
+		OrgID: orgID, Name: "ops-review", AccessType: models.AccessTypeSidecar,
+		ConnectionNames: pq.StringArray{}, ApprovalRequiredGroups: pq.StringArray{},
+		ReviewersGroups: pq.StringArray{"sre"}, ForceApprovalGroups: pq.StringArray{},
+	}
+	if err := models.CreateAccessRequestRule(models.DB, handMade); err != nil {
+		t.Fatalf("seed a hand-made rule: %v", err)
+	}
+	if err := apply("ops-review", n(900), n(900)); err != nil {
+		t.Fatalf("limits on a hand-made rule: %v", err)
+	}
+	want("a hand-made rule is untouched", "ops-review", nil, nil)
+}
+
+func fmtTTL(v *int) string {
+	if v == nil {
+		return "nil"
+	}
+	return fmt.Sprint(*v)
+}
+
 // TestImportAndDetachSidecarRules runs an import through the real schema, then
 // the switch to the config file: a rule only this sidecar uses is deleted with
 // its approval rule, and a rule another sidecar also uses stays for it.

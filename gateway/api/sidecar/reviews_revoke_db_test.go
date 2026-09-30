@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -91,7 +92,7 @@ func TestPutReviewOnASidecarReview(t *testing.T) {
 			assert.Equal(t, openapi.ReviewStatusType(models.ReviewStatusRevoked), claim.Review.Status)
 
 			_, err = models.GetLiveSidecarReview(models.DB, statusTestOrgID, sc.ID, "appdb",
-				"payments-approvers", rev.StatementHash.String)
+				"payments-approvers", rev.StatementHash.String, time.Now().UTC())
 			assert.True(t, errors.Is(err, gorm.ErrRecordNotFound), "a resend must file a new review, err=%v", err)
 		})
 	}
@@ -165,7 +166,7 @@ func TestPutReviewOnASidecarReview(t *testing.T) {
 				return
 			}
 			fired = true
-			claimed, _, err := models.ClaimApprovedSidecarReview(models.DB, statusTestOrgID, rev.ID)
+			claimed, _, err := models.ClaimApprovedSidecarReview(models.DB, statusTestOrgID, rev.ID, time.Now().UTC())
 			require.NoError(t, err)
 			require.True(t, claimed)
 		}))

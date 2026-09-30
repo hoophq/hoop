@@ -930,6 +930,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
                     },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
@@ -1024,6 +1030,12 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -7349,7 +7361,7 @@ const docTemplate = `{
                 }
             },
             "put": {
-                "description": "Update the status of a review resource by its resource ID or session ID. This endpoint is used to approve, reject, or revoke reviews for session execution requests.\n\n## Overview\n\nWhen a user interacts with a session, a review resource is automatically created containing the configured review groups, each initially set to ` + "`" + `PENDING` + "`" + ` status. **All groups must be approved before the session can be executed.**\n\nThe review status updates affect each review group based on the caller's context. Once all groups are ` + "`" + `APPROVED` + "`" + `, or if any group becomes ` + "`" + `REJECTED` + "`" + ` or ` + "`" + `REVOKED` + "`" + `, the overall resource status updates accordingly.\n\n## Review Groups\n\nReview groups contain individual review entries that must be completed by authorized users from specific groups. Each entry represents a required approval from a designated reviewer group.\n\n### Initial State\n\nWhen a review is created, each group entry is populated with the following structure:\n\n` + "`" + `` + "`" + `` + "`" + `json\n{\n    \"id\": \"aaa257be-5cc9-401d-ae7e-18ae806d366a\",\n    \"group\": \"banking\",\n    \"status\": \"PENDING\",\n    \"reviewed_by\": null,\n    \"review_date\": null\n}\n` + "`" + `` + "`" + `` + "`" + `\n\n### Completed Review State\n\nAfter a review is completed, the entry includes the status, review timestamp, and reviewer information:\n\n` + "`" + `` + "`" + `` + "`" + `json\n{\n    \"id\": \"a546dfba-d917-4c2b-bc38-7852a7932573\",\n    \"group\": \"banking\",\n    \"status\": \"REJECTED\",\n    \"reviewed_by\": {\n        \"id\": \"17e4ff1a-104c-482c-be68-3c01bfc7028e\",\n        \"name\": \"John Doe\",\n        \"email\": \"john.doe@domain.tld\",\n        \"slack_id\": \"\"\n    },\n    \"review_date\": \"2025-05-27T16:40:05.519754143Z\"\n}\n` + "`" + `` + "`" + `` + "`" + `\n\n## Review States\n\n### User-Controlled States\n\nThese states are set directly by reviewers:\n\n- **` + "`" + `APPROVED` + "`" + `** - The resource has been approved by the reviewer\n- **` + "`" + `REJECTED` + "`" + `** - The resource is rejected and cannot be updated further\n- **` + "`" + `REVOKED` + "`" + `** - The resource is revoked and cannot be updated further\n\n### System-Controlled States\n\nThese states are managed automatically by the gateway:\n\n- **` + "`" + `PENDING` + "`" + `** - Initial state when the review is created\n- **` + "`" + `PROCESSING` + "`" + `** - Session is being executed; review cannot be updated\n- **` + "`" + `EXECUTED` + "`" + `** - Session completed successfully; review cannot be updated\n- **` + "`" + `UNKNOWN` + "`" + `** - Session executed but outcome is indeterminate\n\n## General Rules\n\n### Review Permissions\n\n- Reviews can only be performed when the resource status is ` + "`" + `PENDING` + "`" + ` or ` + "`" + `APPROVED` + "`" + `\n- **Resource owners cannot self-approve** - approval requires another member of the same group\n- Users are only eligible to review if they are **not the resource owner** or are **administrators**\n\n### Multi-Group Reviews\n\n- If a user belongs to multiple groups, separate review entries are updated for each group\n- All group reviews must be completed before session execution\n\n### Status Transitions\n\n- Setting any review to ` + "`" + `REJECTED` + "`" + ` immediately changes the overall resource status and prevents further updates\n- ` + "`" + `APPROVED` + "`" + ` reviews can still be changed to ` + "`" + `REJECTED` + "`" + ` at any time by the resource owner or administrators\n- ` + "`" + `REVOKED` + "`" + ` applies only to an ` + "`" + `APPROVED` + "`" + ` review of type ` + "`" + `jit` + "`" + `, or to an ` + "`" + `APPROVED` + "`" + ` review a sidecar filed (it has a ` + "`" + `listener_name` + "`" + `). A sidecar review can be revoked until the sidecar uses the approval; after that it is ` + "`" + `EXECUTED` + "`" + ` and the request answers ` + "`" + `400` + "`" + `\n- Once a review reaches ` + "`" + `REJECTED` + "`" + ` or ` + "`" + `REVOKED` + "`" + ` the resource is considered as immutable and it cannot be updated again\n\n### Final States\n\nReviews in ` + "`" + `PROCESSING` + "`" + `, ` + "`" + `EXECUTED` + "`" + `, or ` + "`" + `UNKNOWN` + "`" + ` states are immutable and cannot be modified.",
+                "description": "Update the status of a review resource by its resource ID or session ID. This endpoint is used to approve, reject, or revoke reviews for session execution requests.\n\n## Overview\n\nWhen a user interacts with a session, a review resource is automatically created containing the configured review groups, each initially set to ` + "`" + `PENDING` + "`" + ` status. **All groups must be approved before the session can be executed.**\n\nThe review status updates affect each review group based on the caller's context. Once all groups are ` + "`" + `APPROVED` + "`" + `, or if any group becomes ` + "`" + `REJECTED` + "`" + ` or ` + "`" + `REVOKED` + "`" + `, the overall resource status updates accordingly.\n\n## Review Groups\n\nReview groups contain individual review entries that must be completed by authorized users from specific groups. Each entry represents a required approval from a designated reviewer group.\n\n### Initial State\n\nWhen a review is created, each group entry is populated with the following structure:\n\n` + "`" + `` + "`" + `` + "`" + `json\n{\n    \"id\": \"aaa257be-5cc9-401d-ae7e-18ae806d366a\",\n    \"group\": \"banking\",\n    \"status\": \"PENDING\",\n    \"reviewed_by\": null,\n    \"review_date\": null\n}\n` + "`" + `` + "`" + `` + "`" + `\n\n### Completed Review State\n\nAfter a review is completed, the entry includes the status, review timestamp, and reviewer information:\n\n` + "`" + `` + "`" + `` + "`" + `json\n{\n    \"id\": \"a546dfba-d917-4c2b-bc38-7852a7932573\",\n    \"group\": \"banking\",\n    \"status\": \"REJECTED\",\n    \"reviewed_by\": {\n        \"id\": \"17e4ff1a-104c-482c-be68-3c01bfc7028e\",\n        \"name\": \"John Doe\",\n        \"email\": \"john.doe@domain.tld\",\n        \"slack_id\": \"\"\n    },\n    \"review_date\": \"2025-05-27T16:40:05.519754143Z\"\n}\n` + "`" + `` + "`" + `` + "`" + `\n\n## Review States\n\n### User-Controlled States\n\nThese states are set directly by reviewers:\n\n- **` + "`" + `APPROVED` + "`" + `** - The resource has been approved by the reviewer\n- **` + "`" + `REJECTED` + "`" + `** - The resource is rejected and cannot be updated further\n- **` + "`" + `REVOKED` + "`" + `** - The resource is revoked and cannot be updated further\n\n### System-Controlled States\n\nThese states are managed automatically by the gateway:\n\n- **` + "`" + `PENDING` + "`" + `** - Initial state when the review is created\n- **` + "`" + `PROCESSING` + "`" + `** - Session is being executed; review cannot be updated\n- **` + "`" + `EXECUTED` + "`" + `** - Session completed successfully; review cannot be updated\n- **` + "`" + `UNKNOWN` + "`" + `** - Session executed but outcome is indeterminate\n- **` + "`" + `EXPIRED` + "`" + `** - A sidecar review passed its ` + "`" + `expires_at` + "`" + ` before it was decided or used; nothing was released. Only a control plane sets it\n\n## General Rules\n\n### Review Permissions\n\n- Reviews can only be performed when the resource status is ` + "`" + `PENDING` + "`" + ` or ` + "`" + `APPROVED` + "`" + `\n- **Resource owners cannot self-approve** - approval requires another member of the same group\n- Users are only eligible to review if they are **not the resource owner** or are **administrators**\n\n### Multi-Group Reviews\n\n- If a user belongs to multiple groups, separate review entries are updated for each group\n- All group reviews must be completed before session execution\n\n### Status Transitions\n\n- Setting any review to ` + "`" + `REJECTED` + "`" + ` immediately changes the overall resource status and prevents further updates\n- ` + "`" + `APPROVED` + "`" + ` reviews can still be changed to ` + "`" + `REJECTED` + "`" + ` at any time by the resource owner or administrators\n- ` + "`" + `REVOKED` + "`" + ` applies only to an ` + "`" + `APPROVED` + "`" + ` review of type ` + "`" + `jit` + "`" + `, or to an ` + "`" + `APPROVED` + "`" + ` review a sidecar filed (it has a ` + "`" + `listener_name` + "`" + `). A sidecar review can be revoked until the sidecar uses the approval; after that it is ` + "`" + `EXECUTED` + "`" + ` and the request answers ` + "`" + `400` + "`" + `\n- Once a review reaches ` + "`" + `REJECTED` + "`" + ` or ` + "`" + `REVOKED` + "`" + ` the resource is considered as immutable and it cannot be updated again\n- A decision on a sidecar review past its ` + "`" + `expires_at` + "`" + ` answers ` + "`" + `400` + "`" + ` (` + "`" + `review expired` + "`" + `), and the review is ` + "`" + `EXPIRED` + "`" + `\n\n### Final States\n\nReviews in ` + "`" + `PROCESSING` + "`" + `, ` + "`" + `EXECUTED` + "`" + `, ` + "`" + `UNKNOWN` + "`" + `, or ` + "`" + `EXPIRED` + "`" + ` states are immutable and cannot be modified.",
                 "consumes": [
                     "application/json"
                 ],
@@ -9771,7 +9783,7 @@ const docTemplate = `{
         },
         "/sessions/{session_id}/review": {
             "put": {
-                "description": "Update the status of a review resource by its resource ID or session ID. This endpoint is used to approve, reject, or revoke reviews for session execution requests.\n\n## Overview\n\nWhen a user interacts with a session, a review resource is automatically created containing the configured review groups, each initially set to ` + "`" + `PENDING` + "`" + ` status. **All groups must be approved before the session can be executed.**\n\nThe review status updates affect each review group based on the caller's context. Once all groups are ` + "`" + `APPROVED` + "`" + `, or if any group becomes ` + "`" + `REJECTED` + "`" + ` or ` + "`" + `REVOKED` + "`" + `, the overall resource status updates accordingly.\n\n## Review Groups\n\nReview groups contain individual review entries that must be completed by authorized users from specific groups. Each entry represents a required approval from a designated reviewer group.\n\n### Initial State\n\nWhen a review is created, each group entry is populated with the following structure:\n\n` + "`" + `` + "`" + `` + "`" + `json\n{\n    \"id\": \"aaa257be-5cc9-401d-ae7e-18ae806d366a\",\n    \"group\": \"banking\",\n    \"status\": \"PENDING\",\n    \"reviewed_by\": null,\n    \"review_date\": null\n}\n` + "`" + `` + "`" + `` + "`" + `\n\n### Completed Review State\n\nAfter a review is completed, the entry includes the status, review timestamp, and reviewer information:\n\n` + "`" + `` + "`" + `` + "`" + `json\n{\n    \"id\": \"a546dfba-d917-4c2b-bc38-7852a7932573\",\n    \"group\": \"banking\",\n    \"status\": \"REJECTED\",\n    \"reviewed_by\": {\n        \"id\": \"17e4ff1a-104c-482c-be68-3c01bfc7028e\",\n        \"name\": \"John Doe\",\n        \"email\": \"john.doe@domain.tld\",\n        \"slack_id\": \"\"\n    },\n    \"review_date\": \"2025-05-27T16:40:05.519754143Z\"\n}\n` + "`" + `` + "`" + `` + "`" + `\n\n## Review States\n\n### User-Controlled States\n\nThese states are set directly by reviewers:\n\n- **` + "`" + `APPROVED` + "`" + `** - The resource has been approved by the reviewer\n- **` + "`" + `REJECTED` + "`" + `** - The resource is rejected and cannot be updated further\n- **` + "`" + `REVOKED` + "`" + `** - The resource is revoked and cannot be updated further\n\n### System-Controlled States\n\nThese states are managed automatically by the gateway:\n\n- **` + "`" + `PENDING` + "`" + `** - Initial state when the review is created\n- **` + "`" + `PROCESSING` + "`" + `** - Session is being executed; review cannot be updated\n- **` + "`" + `EXECUTED` + "`" + `** - Session completed successfully; review cannot be updated\n- **` + "`" + `UNKNOWN` + "`" + `** - Session executed but outcome is indeterminate\n\n## General Rules\n\n### Review Permissions\n\n- Reviews can only be performed when the resource status is ` + "`" + `PENDING` + "`" + ` or ` + "`" + `APPROVED` + "`" + `\n- **Resource owners cannot self-approve** - approval requires another member of the same group\n- Users are only eligible to review if they are **not the resource owner** or are **administrators**\n\n### Multi-Group Reviews\n\n- If a user belongs to multiple groups, separate review entries are updated for each group\n- All group reviews must be completed before session execution\n\n### Status Transitions\n\n- Setting any review to ` + "`" + `REJECTED` + "`" + ` immediately changes the overall resource status and prevents further updates\n- ` + "`" + `APPROVED` + "`" + ` reviews can still be changed to ` + "`" + `REJECTED` + "`" + ` at any time by the resource owner or administrators\n- ` + "`" + `REVOKED` + "`" + ` applies only to an ` + "`" + `APPROVED` + "`" + ` review of type ` + "`" + `jit` + "`" + `, or to an ` + "`" + `APPROVED` + "`" + ` review a sidecar filed (it has a ` + "`" + `listener_name` + "`" + `). A sidecar review can be revoked until the sidecar uses the approval; after that it is ` + "`" + `EXECUTED` + "`" + ` and the request answers ` + "`" + `400` + "`" + `\n- Once a review reaches ` + "`" + `REJECTED` + "`" + ` or ` + "`" + `REVOKED` + "`" + ` the resource is considered as immutable and it cannot be updated again\n\n### Final States\n\nReviews in ` + "`" + `PROCESSING` + "`" + `, ` + "`" + `EXECUTED` + "`" + `, or ` + "`" + `UNKNOWN` + "`" + ` states are immutable and cannot be modified.",
+                "description": "Update the status of a review resource by its resource ID or session ID. This endpoint is used to approve, reject, or revoke reviews for session execution requests.\n\n## Overview\n\nWhen a user interacts with a session, a review resource is automatically created containing the configured review groups, each initially set to ` + "`" + `PENDING` + "`" + ` status. **All groups must be approved before the session can be executed.**\n\nThe review status updates affect each review group based on the caller's context. Once all groups are ` + "`" + `APPROVED` + "`" + `, or if any group becomes ` + "`" + `REJECTED` + "`" + ` or ` + "`" + `REVOKED` + "`" + `, the overall resource status updates accordingly.\n\n## Review Groups\n\nReview groups contain individual review entries that must be completed by authorized users from specific groups. Each entry represents a required approval from a designated reviewer group.\n\n### Initial State\n\nWhen a review is created, each group entry is populated with the following structure:\n\n` + "`" + `` + "`" + `` + "`" + `json\n{\n    \"id\": \"aaa257be-5cc9-401d-ae7e-18ae806d366a\",\n    \"group\": \"banking\",\n    \"status\": \"PENDING\",\n    \"reviewed_by\": null,\n    \"review_date\": null\n}\n` + "`" + `` + "`" + `` + "`" + `\n\n### Completed Review State\n\nAfter a review is completed, the entry includes the status, review timestamp, and reviewer information:\n\n` + "`" + `` + "`" + `` + "`" + `json\n{\n    \"id\": \"a546dfba-d917-4c2b-bc38-7852a7932573\",\n    \"group\": \"banking\",\n    \"status\": \"REJECTED\",\n    \"reviewed_by\": {\n        \"id\": \"17e4ff1a-104c-482c-be68-3c01bfc7028e\",\n        \"name\": \"John Doe\",\n        \"email\": \"john.doe@domain.tld\",\n        \"slack_id\": \"\"\n    },\n    \"review_date\": \"2025-05-27T16:40:05.519754143Z\"\n}\n` + "`" + `` + "`" + `` + "`" + `\n\n## Review States\n\n### User-Controlled States\n\nThese states are set directly by reviewers:\n\n- **` + "`" + `APPROVED` + "`" + `** - The resource has been approved by the reviewer\n- **` + "`" + `REJECTED` + "`" + `** - The resource is rejected and cannot be updated further\n- **` + "`" + `REVOKED` + "`" + `** - The resource is revoked and cannot be updated further\n\n### System-Controlled States\n\nThese states are managed automatically by the gateway:\n\n- **` + "`" + `PENDING` + "`" + `** - Initial state when the review is created\n- **` + "`" + `PROCESSING` + "`" + `** - Session is being executed; review cannot be updated\n- **` + "`" + `EXECUTED` + "`" + `** - Session completed successfully; review cannot be updated\n- **` + "`" + `UNKNOWN` + "`" + `** - Session executed but outcome is indeterminate\n- **` + "`" + `EXPIRED` + "`" + `** - A sidecar review passed its ` + "`" + `expires_at` + "`" + ` before it was decided or used; nothing was released. Only a control plane sets it\n\n## General Rules\n\n### Review Permissions\n\n- Reviews can only be performed when the resource status is ` + "`" + `PENDING` + "`" + ` or ` + "`" + `APPROVED` + "`" + `\n- **Resource owners cannot self-approve** - approval requires another member of the same group\n- Users are only eligible to review if they are **not the resource owner** or are **administrators**\n\n### Multi-Group Reviews\n\n- If a user belongs to multiple groups, separate review entries are updated for each group\n- All group reviews must be completed before session execution\n\n### Status Transitions\n\n- Setting any review to ` + "`" + `REJECTED` + "`" + ` immediately changes the overall resource status and prevents further updates\n- ` + "`" + `APPROVED` + "`" + ` reviews can still be changed to ` + "`" + `REJECTED` + "`" + ` at any time by the resource owner or administrators\n- ` + "`" + `REVOKED` + "`" + ` applies only to an ` + "`" + `APPROVED` + "`" + ` review of type ` + "`" + `jit` + "`" + `, or to an ` + "`" + `APPROVED` + "`" + ` review a sidecar filed (it has a ` + "`" + `listener_name` + "`" + `). A sidecar review can be revoked until the sidecar uses the approval; after that it is ` + "`" + `EXECUTED` + "`" + ` and the request answers ` + "`" + `400` + "`" + `\n- Once a review reaches ` + "`" + `REJECTED` + "`" + ` or ` + "`" + `REVOKED` + "`" + ` the resource is considered as immutable and it cannot be updated again\n- A decision on a sidecar review past its ` + "`" + `expires_at` + "`" + ` answers ` + "`" + `400` + "`" + ` (` + "`" + `review expired` + "`" + `), and the review is ` + "`" + `EXPIRED` + "`" + `\n\n### Final States\n\nReviews in ` + "`" + `PROCESSING` + "`" + `, ` + "`" + `EXECUTED` + "`" + `, ` + "`" + `UNKNOWN` + "`" + `, or ` + "`" + `EXPIRED` + "`" + ` states are immutable and cannot be modified.",
                 "consumes": [
                     "application/json"
                 ],
@@ -10218,7 +10230,7 @@ const docTemplate = `{
         },
         "/sidecars/reviews": {
             "post": {
-                "description": "Register a review for a statement a sidecar held. The sidecar is taken from the token, never the body.",
+                "description": "Register a review for a statement a sidecar held. The sidecar is taken from the token, never the body. A review of the same bytes past its deadline is expired and a new one is filed.",
                 "consumes": [
                     "application/json"
                 ],
@@ -10301,7 +10313,7 @@ const docTemplate = `{
         },
         "/sidecars/reviews/{id}": {
             "get": {
-                "description": "Read the status of one review the calling sidecar filed. It never changes the review: an approved review stays approved until the sidecar resends the statement.",
+                "description": "Read the status of one review the calling sidecar filed. It never changes the review: an approved review stays approved until the sidecar resends the statement or its approval expires. A review past its deadline reads EXPIRED.",
                 "produces": [
                     "application/json"
                 ],
@@ -10361,7 +10373,7 @@ const docTemplate = `{
         },
         "/sidecars/reviews/{id}/claim": {
             "post": {
-                "description": "Answer a sidecar waiting on one review it filed. An approved review is consumed once and releases the statement; any other status is returned as it stands. It never files a review.",
+                "description": "Answer a sidecar waiting on one review it filed. An approved review is consumed once and releases the statement; a review past its deadline is expired and never releases it; any other status is returned as it stands. It never files a review.",
                 "produces": [
                     "application/json"
                 ],
@@ -11976,6 +11988,11 @@ const docTemplate = `{
                     "type": "boolean",
                     "example": false
                 },
+                "approval_ttl_sec": {
+                    "description": "Seconds an approval lasts from the approval. Present as pending_ttl_sec is",
+                    "type": "integer",
+                    "example": 600
+                },
                 "connection_names": {
                     "description": "Connection names this rule applies to",
                     "type": "array",
@@ -12020,6 +12037,11 @@ const docTemplate = `{
                     "description": "Unique name for the rule",
                     "type": "string",
                     "example": "block-dangerous-queries"
+                },
+                "pending_ttl_sec": {
+                    "description": "Seconds a held statement's review may wait for a decision. Present only in a control plane, while the\nrule holds and the limit is set",
+                    "type": "integer",
+                    "example": 900
                 },
                 "reviewers_groups": {
                     "description": "The groups whose members may release a statement this rule holds.\nPresent only in a control plane, while the rule holds.",
@@ -12071,6 +12093,11 @@ const docTemplate = `{
                     "type": "boolean",
                     "example": false
                 },
+                "approval_ttl_sec": {
+                    "description": "Seconds an approval lasts from the approval, 60 to 604800. The same rules as pending_ttl_sec",
+                    "type": "integer",
+                    "example": 600
+                },
                 "connection_names": {
                     "description": "Connection names this rule applies to",
                     "type": "array",
@@ -12096,6 +12123,11 @@ const docTemplate = `{
                     "description": "Unique name for the rule",
                     "type": "string",
                     "example": "block-dangerous-queries"
+                },
+                "pending_ttl_sec": {
+                    "description": "Seconds a held statement's review may wait for a decision, 60 to 604800. Control plane, read only while\nsidecar_spec holds under its own approval rule. Absent keeps, 0 clears",
+                    "type": "integer",
+                    "example": 900
                 },
                 "reviewers_groups": {
                     "description": "ReviewersGroups are the groups whose members may release a statement\nthis rule holds for approval. Absent keeps the groups already set; with\nnone set the admin group reviews.\n\nA control plane field, read only while sidecar_spec holds a statement.",
@@ -12496,6 +12528,11 @@ const docTemplate = `{
                         "analysts"
                     ]
                 },
+                "approval_ttl_sec": {
+                    "description": "Seconds a sidecar approval lasts from the approval, 60 to 604800, or 0 for none. The same rules as\npending_ttl_sec",
+                    "type": "integer",
+                    "example": 600
+                },
                 "attributes": {
                     "description": "Attributes associated with this access request rule",
                     "type": "array",
@@ -12561,6 +12598,11 @@ const docTemplate = `{
                     "description": "The name of the access request rule",
                     "type": "string",
                     "example": "default-access-request-rule"
+                },
+                "pending_ttl_sec": {
+                    "description": "Seconds a sidecar review may wait for a decision, 60 to 604800, or 0 for none. Control plane sidecar rules\nonly; on update absent keeps. A gateway and a managed rule ignore it: set it on the analyzer rule",
+                    "type": "integer",
+                    "example": 900
                 },
                 "reviewers_groups": {
                     "description": "Groups that can review sessions",
@@ -12634,6 +12676,11 @@ const docTemplate = `{
                         "analysts"
                     ]
                 },
+                "approval_ttl_sec": {
+                    "description": "Seconds a sidecar approval lasts from the approval, 60 to 604800, or 0 for none. The same rules as\npending_ttl_sec",
+                    "type": "integer",
+                    "example": 600
+                },
                 "attributes": {
                     "description": "Attributes associated with this access request rule",
                     "type": "array",
@@ -12680,6 +12727,11 @@ const docTemplate = `{
                     "description": "The name of the access request rule",
                     "type": "string",
                     "example": "default-access-request-rule"
+                },
+                "pending_ttl_sec": {
+                    "description": "Seconds a sidecar review may wait for a decision, 60 to 604800, or 0 for none. Control plane sidecar rules\nonly; on update absent keeps. A gateway and a managed rule ignore it: set it on the analyzer rule",
+                    "type": "integer",
+                    "example": 900
                 },
                 "reviewers_groups": {
                     "description": "Groups that can review sessions",
@@ -17476,11 +17528,23 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": "default-access-request-rule"
                 },
+                "approval_ttl_sec": {
+                    "description": "The time a sidecar approval lasts, in seconds, copied from the rule at\nfiling. Absent with no limit or on a review from a connection",
+                    "type": "integer",
+                    "readOnly": true,
+                    "example": 600
+                },
                 "created_at": {
                     "description": "The time the resource was created",
                     "type": "string",
                     "readOnly": true,
                     "example": "2024-07-25T15:56:35.317601Z"
+                },
+                "expires_at": {
+                    "description": "The deadline of a sidecar review: to decide while PENDING, to use the\napproval once APPROVED. Absent with no limit or on a review from a connection",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2024-07-25T16:11:35.000Z"
                 },
                 "force_approval_groups": {
                     "description": "Groups that can force approve sessions for this review",
@@ -17547,7 +17611,7 @@ const docTemplate = `{
                     "example": "5F5E5C6E-6C3A-4E9A-9E8B-2D6A7F1B0C4D"
                 },
                 "status": {
-                    "description": "The status of the review\n* PENDING - The resource is waiting to be reviewed\n* APPROVED - The resource is fully approved\n* REJECTED - The resource is fully rejected\n* REVOKED - The resource was revoked after being approved\n* PROCESSING - The review is being executed\n* EXECUTED - The review was executed\n* UNKNOWN - Unable to know the status of the review",
+                    "description": "The status of the review\n* PENDING - The resource is waiting to be reviewed\n* APPROVED - The resource is fully approved\n* REJECTED - The resource is fully rejected\n* REVOKED - The resource was revoked after being approved\n* PROCESSING - The review is being executed\n* EXECUTED - The review was executed\n* UNKNOWN - Unable to know the status of the review\n* EXPIRED - A sidecar review passed its deadline; it never releases the statement",
                     "allOf": [
                         {
                             "$ref": "#/definitions/openapi.ReviewStatusType"
@@ -17735,7 +17799,8 @@ const docTemplate = `{
                 "REVOKED",
                 "PROCESSING",
                 "EXECUTED",
-                "UNKNOWN"
+                "UNKNOWN",
+                "EXPIRED"
             ],
             "x-enum-varnames": [
                 "ReviewStatusPending",
@@ -17744,7 +17809,8 @@ const docTemplate = `{
                 "ReviewStatusRevoked",
                 "ReviewStatusProcessing",
                 "ReviewStatusExecuted",
-                "ReviewStatusUnknown"
+                "ReviewStatusUnknown",
+                "ReviewStatusExpired"
             ]
         },
         "openapi.ReviewTimeWindowType": {
@@ -20345,7 +20411,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "forward": {
-                    "description": "Whether the sidecar may release the statement it held\n\nTrue only on the request that consumed an approved review, and only\nonce per review. False while the review waits, and false forever once\nit is rejected or revoked.",
+                    "description": "Whether the sidecar may release the statement it held\n\nTrue only on the request that consumed an approved review, and only\nonce per review. False while the review waits, and false forever once\nit is rejected, revoked or expired.",
                     "type": "boolean",
                     "example": false
                 },
@@ -20380,6 +20446,12 @@ const docTemplate = `{
                     "readOnly": true,
                     "example": "2024-07-25T16:01:12.000Z"
                 },
+                "expires_at": {
+                    "description": "The decision deadline while PENDING, the approval deadline once APPROVED,\nthe deadline that passed when EXPIRED. Absent with no limit",
+                    "type": "string",
+                    "readOnly": true,
+                    "example": "2024-07-25T16:11:35.000Z"
+                },
                 "id": {
                     "description": "Resource identifier",
                     "type": "string",
@@ -20400,7 +20472,7 @@ const docTemplate = `{
                     "example": "Not during business hours."
                 },
                 "status": {
-                    "description": "The status of the review\n* PENDING - Waiting for a reviewer\n* APPROVED - Approved and not yet consumed; resend the identical statement\n* REJECTED - Rejected; the statement will not run\n* REVOKED - Revoked after approval\n* EXECUTED - The approval was consumed by a resent statement",
+                    "description": "The status of the review\n* PENDING - Waiting for a reviewer\n* APPROVED - Approved and not yet consumed; resend the identical statement\n* REJECTED - Rejected; the statement will not run\n* REVOKED - Revoked after approval\n* EXECUTED - The approval was consumed by a resent statement\n* EXPIRED - The review passed its deadline; it never releases the statement",
                     "allOf": [
                         {
                             "$ref": "#/definitions/openapi.ReviewStatusType"

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 // statusPlane answers every request with one canned response and records the
@@ -39,6 +40,30 @@ func TestAStatusReadIsOneGetAndNeverAClaim(t *testing.T) {
 	}
 	if want := "GET /api/sidecars/reviews/9f97c0de-0000-4000-8000-000000000001 hsc_token"; len(*calls) != 1 || (*calls)[0] != want {
 		t.Errorf("plane saw %q, want exactly %q", *calls, want)
+	}
+}
+
+// A plane with review limits sends the deadline; an older one never does.
+func TestAStatusReadCarriesTheDeadline(t *testing.T) {
+	cp, _ := statusPlane(t, http.StatusOK, `{"id":"9f97c0de-0000-4000-8000-000000000001","status":"PENDING",`+
+		`"listener_name":"appdb","approval_rule":"dba","created_at":"2026-09-28T10:00:00Z",`+
+		`"decided_at":null,"expires_at":"2026-09-28T10:15:00Z"}`)
+	got, err := cp.ReviewStatus(context.Background(), testReviewID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := time.Date(2026, 9, 28, 10, 15, 0, 0, time.UTC); got.ExpiresAt == nil || !got.ExpiresAt.Equal(want) {
+		t.Errorf("expires_at decoded as %v, want %v", got.ExpiresAt, want)
+	}
+
+	cp, _ = statusPlane(t, http.StatusOK, `{"id":"9f97c0de-0000-4000-8000-000000000001","status":"PENDING",`+
+		`"listener_name":"appdb","approval_rule":"dba","created_at":"2026-09-28T10:00:00Z","decided_at":null}`)
+	got, err = cp.ReviewStatus(context.Background(), testReviewID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ExpiresAt != nil {
+		t.Errorf("an answer with no deadline decoded expires_at %v", got.ExpiresAt)
 	}
 }
 

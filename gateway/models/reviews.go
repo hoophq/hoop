@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -26,10 +27,16 @@ const (
 	ReviewStatusProcessing ReviewStatusType = "PROCESSING"
 	ReviewStatusExecuted   ReviewStatusType = "EXECUTED"
 	ReviewStatusUnknown    ReviewStatusType = "UNKNOWN"
+	// ReviewStatusExpired is a sidecar review past its deadline. It is terminal.
+	// Only expireSidecarReviewsTx writes it, always with statement_hash NULL.
+	ReviewStatusExpired ReviewStatusType = "EXPIRED"
 
 	ReviewTypeJit     ReviewType = "jit"
 	ReviewTypeOneTime ReviewType = "onetime"
 )
+
+// ErrSidecarReviewExpired is a decision on a sidecar review past its deadline.
+var ErrSidecarReviewExpired = errors.New("the review expired")
 
 func (t ReviewStatusType) Str() string { return string(t) }
 
@@ -37,7 +44,7 @@ func (t ReviewStatusType) Str() string { return string(t) }
 // can tell a real status from arbitrary input before comparing against the enum
 // column: casting a non-label to enum_reviews_status is an error, not an empty
 // result. Keep it in sync when the enum gains a value — an omission only costs
-// the index, never correctness.
+// the index, never correctness. EXPIRED is left out, so the session filter SQL stays.
 var reviewStatusLabels = map[ReviewStatusType]struct{}{
 	ReviewStatusPending:    {},
 	ReviewStatusApproved:   {},
@@ -95,6 +102,63 @@ type Review struct {
 	RevokedAt       *time.Time        `gorm:"column:revoked_at"`
 	TimeWindow      *ReviewTimeWindow `gorm:"column:time_window;serializer:json;"`
 	RejectionReason *string           `gorm:"column:rejection_reason"`
+
+	// ExpiresAt ends the live status of a sidecar review; nil is no limit. ApprovalTTLSec is copied
+	// from the rule at filing. A gateway review sets neither.
+	ExpiresAt      *time.Time `gorm:"column:expires_at"`
+	ApprovalTTLSec *int       `gorm:"column:approval_ttl_sec"`
+}
+
+// SidecarReviewDeadline returns from + ttlSec, or nil for no limit.
+func SidecarReviewDeadline(from time.Time, ttlSec *int) *time.Time {
+	if ttlSec == nil || *ttlSec <= 0 {
+		return nil
+	}
+	t := from.UTC().Add(time.Duration(*ttlSec) * time.Second)
+	return &t
+}
+
+func (r *Review) isSidecar() bool {
+	return r.ListenerName.Valid && r.ListenerName.String != ""
+}
+
+// PastSidecarDeadline reports a live sidecar review whose deadline passed at now.
+func (r *Review) PastSidecarDeadline(now time.Time) bool {
+	if !r.isSidecar() || r.ExpiresAt == nil {
+		return false
+	}
+	if r.Status != ReviewStatusPending && r.Status != ReviewStatusApproved {
+		return false
+	}
+	return !now.Before(*r.ExpiresAt)
+}
+
+// SidecarExpiresAt returns the deadline an API response shows, or nil.
+func (r *Review) SidecarExpiresAt() *time.Time {
+	if !r.isSidecar() {
+		return nil
+	}
+	switch r.Status {
+	case ReviewStatusPending, ReviewStatusApproved, ReviewStatusExpired:
+		return r.ExpiresAt
+	}
+	return nil
+}
+
+// SidecarApprovalTTLSec returns the approval limit an API response shows, or nil.
+func (r *Review) SidecarApprovalTTLSec() *int {
+	if !r.isSidecar() {
+		return nil
+	}
+	return r.ApprovalTTLSec
+}
+
+// reportSidecarExpiry shows a lapsed sidecar review as EXPIRED. It writes
+// nothing: a claim, a refile or a decision records the expiry.
+func (r *Review) reportSidecarExpiry(now time.Time) {
+	if r.PastSidecarDeadline(now) {
+		r.Status = ReviewStatusExpired
+	}
 }
 
 type ReviewTimeWindow struct {
@@ -208,13 +272,16 @@ func GetReviewByIdOrSid(orgID, id string) (*Review, error) {
 			FROM private.review_groups AS rg
 			WHERE rg.review_id = rv.id
 		) AS review_groups,
-	created_at, revoked_at, rejection_reason
+	created_at, revoked_at, rejection_reason, expires_at, approval_ttl_sec
 	FROM private.reviews rv
 	WHERE org_id = ? AND (id = ? OR session_id = ?)`, orgID, id, id).
 		First(&review).
 		Error
 	if err == gorm.ErrRecordNotFound {
 		return nil, ErrNotFound
+	}
+	if err == nil {
+		review.reportSidecarExpiry(time.Now().UTC())
 	}
 	return &review, err
 }
@@ -244,7 +311,7 @@ func ListReviews(orgID string) (*[]Review, error) {
 			FROM private.review_groups AS rg
 			WHERE rg.review_id = rv.id
 		) AS review_groups,
-	created_at, revoked_at, rejection_reason
+	created_at, revoked_at, rejection_reason, expires_at, approval_ttl_sec
 	FROM private.reviews rv
 	WHERE org_id = ?`, orgID).
 		Find(&reviews).
@@ -252,14 +319,17 @@ func ListReviews(orgID string) (*[]Review, error) {
 	if err != nil {
 		return nil, err
 	}
-
+	now := time.Now().UTC()
+	for i := range reviews {
+		reviews[i].reportSidecarExpiry(now)
+	}
 	return &reviews, nil
 }
 
 // CountPendingReviews returns how many reviews of an org are still awaiting a
 // decision, and how many of those were created before staleBefore. Callers
 // that only need the figures must use this instead of ListReviews, which reads
-// every review row of the org along with its review groups.
+// every review row of the org along with its review groups. A lapsed sidecar review awaits nothing.
 func CountPendingReviews(orgID string, staleBefore time.Time) (pending, stale int, err error) {
 	var counts struct {
 		Pending int `gorm:"column:pending"`
@@ -270,7 +340,9 @@ func CountPendingReviews(orgID string, staleBefore time.Time) (pending, stale in
 		COUNT(*) AS pending,
 		COUNT(*) FILTER (WHERE created_at < ?) AS stale
 	FROM private.reviews
-	WHERE org_id = ? AND status = ?`, staleBefore, orgID, ReviewStatusPending).
+	WHERE org_id = ? AND status = ?
+	AND NOT (listener_name IS NOT NULL AND expires_at IS NOT NULL AND expires_at <= ?)`,
+		staleBefore, orgID, ReviewStatusPending, time.Now().UTC()).
 		Scan(&counts).
 		Error
 	if err != nil {
@@ -377,18 +449,41 @@ func UpdateReview(rev *Review) error {
 	})
 }
 
-// UpdateSidecarReview writes a decision only while the review still holds
-// fromStatus. It returns gorm.ErrRecordNotFound when the sidecar's claim won.
-func UpdateSidecarReview(db *gorm.DB, rev *Review, fromStatus ReviewStatusType) error {
+// UpdateSidecarReview writes a decision only while the review holds fromStatus inside its deadline, else
+// ErrSidecarReviewExpired or gorm.ErrRecordNotFound (a claim or an expiry won). An approval starts its clock.
+func UpdateSidecarReview(db *gorm.DB, rev *Review, fromStatus ReviewStatusType, now time.Time) error {
+	now = now.UTC()
+	read := Review{Status: fromStatus, ExpiresAt: rev.ExpiresAt, ListenerName: rev.ListenerName}
+	if read.PastSidecarDeadline(now) {
+		return ErrSidecarReviewExpired
+	}
+	approvedNow := fromStatus == ReviewStatusPending && rev.Status == ReviewStatusApproved
+	if approvedNow {
+		rev.ExpiresAt = SidecarReviewDeadline(now, rev.ApprovalTTLSec)
+	}
 	return db.Transaction(func(tx *gorm.DB) error {
 		res := tx.Table("private.reviews").
-			Where("org_id = ? AND id = ? AND status = ? AND listener_name IS NOT NULL", rev.OrgID, rev.ID, fromStatus).
+			Where("org_id = ? AND id = ? AND status = ? AND listener_name IS NOT NULL AND (expires_at IS NULL OR expires_at > ?)",
+				rev.OrgID, rev.ID, fromStatus, now).
 			Updates(rev)
 		if res.Error != nil {
 			return res.Error
 		}
 		if res.RowsAffected == 0 {
 			return gorm.ErrRecordNotFound
+		}
+		if approvedNow {
+			// Updates(struct) skips a nil pointer, so no approval limit clears it here.
+			var deadline any = gorm.Expr("NULL")
+			if rev.ExpiresAt != nil {
+				deadline = *rev.ExpiresAt
+			}
+			err := tx.Table("private.reviews").
+				Where("org_id = ? AND id = ?", rev.OrgID, rev.ID).
+				UpdateColumn("expires_at", deadline).Error
+			if err != nil {
+				return err
+			}
 		}
 		return saveReviewDecisionTx(tx, rev)
 	})
@@ -489,7 +584,7 @@ const sidecarReviewSelect = `
 			FROM private.review_groups AS rg
 			WHERE rg.review_id = rv.id
 		) AS review_groups,
-	created_at, revoked_at, rejection_reason
+	created_at, revoked_at, rejection_reason, expires_at, approval_ttl_sec
 	FROM private.reviews rv`
 
 // GetLiveSidecarReview returns the review already filed for these exact
@@ -498,14 +593,18 @@ const sidecarReviewSelect = `
 // "Live" excludes EXECUTED, REJECTED and REVOKED, matching the partial unique
 // index: a spent approval or a refusal is final for that review, and the next
 // request files a new one. Groups load as GetReviewByIdOrSid loads them, so a
-// match carries the same policy as a fresh review.
-func GetLiveSidecarReview(db *gorm.DB, orgID, sidecarID, listenerName, ruleName, statementHash string) (*Review, error) {
+// match carries the same policy as a fresh review. A lapsed PENDING or APPROVED holder is not live;
+// CreateSidecarReview expires exactly those, so no lapsed holder blocks the insert.
+func GetLiveSidecarReview(db *gorm.DB, orgID, sidecarID, listenerName, ruleName, statementHash string, now time.Time) (*Review, error) {
+	now = now.UTC()
 	var review Review
 	err := db.Raw(sidecarReviewSelect+`
 	WHERE org_id = ? AND sidecar_id = ? AND listener_name = ?
-	AND access_request_rule_name = ? AND statement_hash = ? AND status NOT IN (?, ?, ?)`,
+	AND access_request_rule_name = ? AND statement_hash = ? AND status NOT IN (?, ?, ?, ?)
+	AND (status NOT IN (?, ?) OR expires_at IS NULL OR expires_at > ?)`,
 		orgID, sidecarID, listenerName, ruleName, statementHash,
-		ReviewStatusExecuted, ReviewStatusRejected, ReviewStatusRevoked).
+		ReviewStatusExecuted, ReviewStatusRejected, ReviewStatusRevoked, ReviewStatusExpired,
+		ReviewStatusPending, ReviewStatusApproved, now).
 		First(&review).
 		Error
 	if err != nil {
@@ -531,6 +630,7 @@ func GetSidecarReview(db *gorm.DB, orgID, sidecarID, reviewID string) (*Review, 
 	if err != nil {
 		return nil, err
 	}
+	review.reportSidecarExpiry(time.Now().UTC())
 	return &review, nil
 }
 
@@ -540,16 +640,19 @@ func GetSidecarReview(db *gorm.DB, orgID, sidecarID, reviewID string) (*Review, 
 // a row, and only its caller may forward. Winner and loser both see EXECUTED
 // afterwards, which is why the answer is returned rather than read off the
 // status. A claim also closes the session (done + ended_at): nothing else ever
-// will, since there is no connection and no agent to report an exit.
-func ClaimApprovedSidecarReview(db *gorm.DB, orgID, reviewID string) (bool, ReviewStatusType, error) {
+// will, since there is no connection and no agent to report an exit. An
+// approval past its deadline is never claimed.
+func ClaimApprovedSidecarReview(db *gorm.DB, orgID, reviewID string, now time.Time) (bool, ReviewStatusType, error) {
+	now = now.UTC()
 	var claimed bool
 	var status string
 	err := db.Transaction(func(tx *gorm.DB) error {
 		res := tx.Exec(`
 		UPDATE private.reviews
 		SET status = ?
-		WHERE org_id = ? AND id = ? AND status = ? AND sidecar_id IS NOT NULL`,
-			ReviewStatusExecuted, orgID, reviewID, ReviewStatusApproved)
+		WHERE org_id = ? AND id = ? AND status = ? AND sidecar_id IS NOT NULL
+		AND (expires_at IS NULL OR expires_at > ?)`,
+			ReviewStatusExecuted, orgID, reviewID, ReviewStatusApproved, now)
 		if res.Error != nil {
 			return res.Error
 		}
@@ -561,7 +664,7 @@ func ClaimApprovedSidecarReview(db *gorm.DB, orgID, reviewID string) (bool, Revi
 			SET status = 'done', ended_at = ?
 			FROM private.reviews AS r
 			WHERE r.org_id = s.org_id AND r.session_id = s.id
-			AND r.org_id = ? AND r.id = ?`, time.Now().UTC(), orgID, reviewID).Error
+			AND r.org_id = ? AND r.id = ?`, now, orgID, reviewID).Error
 			if err != nil {
 				return err
 			}
@@ -582,14 +685,89 @@ func ClaimApprovedSidecarReview(db *gorm.DB, orgID, reviewID string) (bool, Revi
 // Returns gorm.ErrDuplicatedKey when a racing request filed for the same bytes
 // first. That is the index doing its job, not a fault: answer from the winner.
 // display is the reviewer's text (apisidecar displayStatement): raw binary bytes
-// fail the JSONB blob write. The approval binds to rev.StatementHash.
-func CreateSidecarReview(db *gorm.DB, sess Session, rev *Review, display string) error {
-	return db.Transaction(func(tx *gorm.DB) error {
+// fail the JSONB blob write. The approval binds to rev.StatementHash. A lapsed holder of the same key
+// is expired first in the transaction, and its ids are returned.
+func CreateSidecarReview(db *gorm.DB, sess Session, rev *Review, display string) ([]string, error) {
+	// CreatedAt is the expiry clock: a zero one would expire no lapsed holder.
+	if rev.CreatedAt.IsZero() {
+		return nil, errors.New("a sidecar review needs its creation time")
+	}
+	var expired []string
+	err := db.Transaction(func(tx *gorm.DB) error {
+		var err error
+		expired, err = expireSidecarReviewsTx(tx, rev.CreatedAt, expireScopeStatement,
+			rev.OrgID, rev.SidecarID, rev.ListenerName, rev.AccessRequestRuleName, rev.StatementHash)
+		if err != nil {
+			return fmt.Errorf("failed expiring the previous review: %w", err)
+		}
 		if err := upsertSessionTx(tx, sess); err != nil {
 			return fmt.Errorf("failed creating session: %w", err)
 		}
 		return createReviewTx(tx, rev, display)
 	})
+	if err != nil {
+		return nil, err
+	}
+	return expired, nil
+}
+
+// The scopes expireSidecarReviewsTx accepts. No input reaches the SQL text.
+const (
+	expireScopeReview    = `org_id = ? AND id = ?`
+	expireScopeStatement = `org_id = ? AND sidecar_id = ? AND listener_name = ? AND access_request_rule_name = ? AND statement_hash = ?`
+)
+
+// expireSidecarReviewsTx records EXPIRED on the lapsed live sidecar reviews in
+// scope and closes their sessions. Clearing the hash frees the statement.
+func expireSidecarReviewsTx(tx *gorm.DB, now time.Time, scope string, args ...any) ([]string, error) {
+	if scope != expireScopeReview && scope != expireScopeStatement {
+		return nil, fmt.Errorf("unknown expiry scope")
+	}
+	now = now.UTC()
+	var ids []string
+	err := tx.Raw(`
+	UPDATE private.reviews SET status = ?, statement_hash = NULL
+	WHERE listener_name IS NOT NULL AND status IN (?, ?)
+	AND expires_at IS NOT NULL AND expires_at <= ? AND `+scope+`
+	RETURNING id`,
+		append([]any{ReviewStatusExpired, ReviewStatusPending, ReviewStatusApproved, now}, args...)...).
+		Scan(&ids).Error
+	if err != nil || len(ids) == 0 {
+		return nil, err
+	}
+	// The close a rejection does. ended_at stays NULL: nothing ran.
+	err = tx.Exec(`
+	UPDATE private.sessions AS s SET status = 'done'
+	FROM private.reviews AS r
+	WHERE r.org_id = s.org_id AND r.session_id = s.id
+	AND r.id IN ? AND s.status <> 'done'`, ids).Error
+	if err != nil {
+		return nil, err
+	}
+	return ids, nil
+}
+
+// ExpireSidecarReview records EXPIRED on one lapsed sidecar review and returns
+// its status after. expired is true only for the call that moved the row.
+func ExpireSidecarReview(db *gorm.DB, orgID, reviewID string, now time.Time) (bool, ReviewStatusType, error) {
+	var expired bool
+	var status ReviewStatusType
+	err := db.Transaction(func(tx *gorm.DB) error {
+		ids, err := expireSidecarReviewsTx(tx, now, expireScopeReview, orgID, reviewID)
+		if err != nil {
+			return err
+		}
+		expired = len(ids) > 0
+		var row struct{ Status ReviewStatusType }
+		err = tx.Table("private.reviews").Select("status").
+			Where("org_id = ? AND id = ?", orgID, reviewID).Take(&row).Error
+		status = row.Status
+		return err
+	})
+	if err != nil {
+		return false, "", err
+	}
+	return expired, status, nil
 }
 
 // ReconcileStaleReviews settles as EXECUTED every one-time review left in
