@@ -843,6 +843,7 @@ func Run(cfg *Config, det Plugin) error {
 		return err
 	}
 	if analyzerDeps != nil {
+		analyzerDeps.log = log
 		log.Info("risk analyzer attached",
 			"provider", cfg.Analyzer.Provider,
 			"model", cfg.Analyzer.Model,
@@ -1330,15 +1331,27 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 				ln.notes = append(ln.notes,
 					"the analyzer block has no trigger, so every statement on this "+
 						"lane is classified: a model call per statement shape, bounded "+
-						"only by the cache and max_calls. Add a trigger to narrow it")
+						"only by the cache, max_calls and rate_limit. Add a trigger to narrow it")
 			}
 			for _, r := range gc.Rules {
 				if r.Type == policy.MatchAIAnalysis && r.Trigger.IsZero() {
 					ln.notes = append(ln.notes, fmt.Sprintf(
 						"ai_analysis rule %q has no trigger, so every statement on this "+
 							"lane is classified: a model call per statement shape, bounded "+
-							"only by the cache and max_calls. Add a trigger to narrow it", r.Name))
+							"only by the cache, max_calls and rate_limit. Add a trigger to narrow it", r.Name))
 				}
+			}
+		}
+		// What the rate lets the lane spend, said where -validate and the
+		// startup log both read it, the way the untriggered cost is.
+		if lc.Analyzer != nil {
+			ln.notes = append(ln.notes,
+				rateLimitNotes(cfg.Analyzer, lc.Analyzer, "the analyzer block")...)
+		}
+		for _, r := range gc.Rules {
+			if r.Type == policy.MatchAIAnalysis {
+				ln.notes = append(ln.notes, rateLimitNotes(cfg.Analyzer, nil,
+					fmt.Sprintf("ai_analysis rule %q", r.Name))...)
 			}
 		}
 		out = append(out, ln)

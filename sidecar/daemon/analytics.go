@@ -96,16 +96,17 @@ type telemetry struct {
 // analyzerDelta is one window's worth of analyzer counters, either read
 // from live instances or banked from instances a reload retired.
 type analyzerDelta struct {
-	calls, failures, failOpen, denied, cacheHits int64
+	calls, failures, failOpen, denied, cacheHits, rateLimited int64
 }
 
 // instanceDelta is what an evaluator's own counters did between a baseline
 // and now. Calls are not here: they are counted per CallsKey.
 func instanceDelta(ev *analyzer.Evaluator, now, prev analyzer.Stats) analyzerDelta {
 	d := analyzerDelta{
-		denied:    now.Denied - prev.Denied,
-		cacheHits: int64(now.CacheHits - prev.CacheHits),
-		failures:  now.Errors - prev.Errors,
+		denied:      now.Denied - prev.Denied,
+		cacheHits:   int64(now.CacheHits - prev.CacheHits),
+		failures:    now.Errors - prev.Errors,
+		rateLimited: now.RateLimited - prev.RateLimited,
 	}
 	if ev.FailOpen() {
 		d.failOpen = d.failures
@@ -119,6 +120,7 @@ func (d *analyzerDelta) add(o analyzerDelta) {
 	d.failOpen += o.failOpen
 	d.denied += o.denied
 	d.cacheHits += o.cacheHits
+	d.rateLimited += o.rateLimited
 }
 
 // drainAnalyzers keeps evaluators a reload is swapping out in the usage walk,
@@ -585,6 +587,7 @@ func (t *telemetry) usageProperties(sources []statSource, lanes []lane) analytic
 		"analyzer-fail-open-hits": failOpen,
 		"analyzer-denied":         denied,
 		"analyzer-cache-hits":     cacheHits,
+		"analyzer-rate-limited":   total.rateLimited,
 		"audit-write-failures":    u.AuditErrors,
 		"heartbeat-failures":      u.HeartbeatFailures,
 		"by-protocol":             byProto,

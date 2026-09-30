@@ -35,7 +35,7 @@ func handshake(t *testing.T, sc *models.Sidecar, capabilities string) *httptest.
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/sidecars/handshake",
-		bytes.NewReader([]byte(`{"version": "1.196.0"}`)))
+		bytes.NewReader([]byte(`{"version": "1.191.0"}`)))
 	c.Request.Header.Set("Content-Type", "application/json")
 	if capabilities != "" {
 		c.Request.Header.Set(daemon.CapabilitiesHeader, capabilities)

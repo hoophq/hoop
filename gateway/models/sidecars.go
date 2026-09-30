@@ -201,7 +201,7 @@ func UpdateSidecarConfiguration(db *gorm.DB, orgID, nameOrID string, configurati
 	UPDATE private.sidecars
 	SET configuration = ?
 	WHERE org_id = ? AND `+identifierClause+`
-	RETURNING id, org_id, name, created_by, created_at, configuration, capabilities`,
+	RETURNING id, org_id, name, created_by, created_at, configuration, capabilities, reported_version`,
 		configuration, orgID, nameOrID).
 		Scan(&item).
 		Error
@@ -238,7 +238,7 @@ func PatchSidecarConfiguration(db *gorm.DB, orgID, nameOrID string, merge json.R
 	UPDATE private.sidecars
 	SET configuration = `+expr+`
 	WHERE org_id = ? AND `+identifierClause+`
-	RETURNING id, org_id, name, created_by, created_at, configuration, capabilities`,
+	RETURNING id, org_id, name, created_by, created_at, configuration, capabilities, reported_version`,
 		string(merge), orgID, nameOrID).
 		Scan(&item).
 		Error
@@ -258,7 +258,7 @@ func ResetSidecarConfigurationTx(tx *gorm.DB, orgID, id string) (*Sidecar, error
 	err := tx.Raw(`
 	UPDATE private.sidecars SET configuration = '{}'::jsonb
 	WHERE org_id = ? AND id = ?
-	RETURNING id, org_id, name, created_by, created_at, configuration`, orgID, id).
+	RETURNING id, org_id, name, created_by, created_at, configuration, capabilities, reported_version`, orgID, id).
 		Scan(&item).Error
 	if err != nil {
 		return nil, err
@@ -283,7 +283,7 @@ func AdoptSidecarConfiguration(db *gorm.DB, orgID, id string, configuration Side
 	WHERE org_id = ? AND id = ?
 	  AND (jsonb_typeof(configuration->'listeners') IS DISTINCT FROM 'array'
 	       OR jsonb_array_length(configuration->'listeners') = 0)
-	RETURNING id, org_id, name, created_by, created_at, configuration`,
+	RETURNING id, org_id, name, created_by, created_at, configuration, capabilities, reported_version`,
 		configuration, orgID, id).
 		Scan(&item).
 		Error
@@ -364,13 +364,19 @@ func RecordSidecarHandshake(db *gorm.DB, sidecarID, version, appliedRevision, la
 	}).Error
 }
 
-// RecordSidecarCapabilities stores what a sidecar reported when its handshake
-// was refused. It leaves last_seen_at alone: a sidecar that cannot run must not
-// read as recently seen.
-func RecordSidecarCapabilities(db *gorm.DB, sidecarID string, capabilities []string) error {
+// RecordSidecarServeRefusal stores what a sidecar reported when the plane
+// refused to serve it, and why, so the page shows the refusal with its reason
+// and a later write knows this build is too old. It leaves last_seen_at
+// alone: a sidecar that cannot run must not read as recently seen.
+func RecordSidecarServeRefusal(db *gorm.DB, sidecarID, version string, capabilities []string, reason string) error {
 	if capabilities == nil {
 		capabilities = []string{}
 	}
-	return db.Exec(`UPDATE private.sidecars SET capabilities = ? WHERE id = ?`,
-		pq.StringArray(capabilities), sidecarID).Error
+	return db.Exec(`
+	UPDATE private.sidecars SET
+		reported_version = NULLIF(?, ''),
+		capabilities = ?,
+		last_outcome = 'refused',
+		last_error = NULLIF(?, '')
+	WHERE id = ?`, version, pq.StringArray(capabilities), reason, sidecarID).Error
 }

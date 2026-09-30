@@ -149,8 +149,8 @@ type Config struct {
 	CacheSize int
 	CacheTTL  time.Duration
 
-	// MaxCallsPerSession bounds classifications charged to this rule's
-	// budget. Zero means unbounded.
+	// MaxCalls bounds classifications charged to this rule's budget for
+	// the life of the Budget. Zero means unbounded.
 	//
 	// An Evaluator is shared across connections, so this is a process-wide
 	// budget rather than a per-connection one. It is a backstop against a
@@ -159,12 +159,24 @@ type Config struct {
 	// generations.
 	MaxCalls int
 
-	// Budget optionally supplies the call counter itself. A hot reload
-	// that rebuilds an evaluator hands the replacement the SAME cell, so
-	// the draining generation and the new one together never exceed
-	// MaxCalls; independent counters would let each generation spend the
-	// full budget. Nil allocates a private counter.
-	Budget *atomic.Int64
+	// RateLimit bounds how fast the budget is spent. The zero value is no
+	// limit. A call has to pass MaxCalls AND the rate; a call the rate
+	// refuses hands its MaxCalls slot back, so throttling never spends the
+	// lifetime budget.
+	RateLimit RateLimit
+
+	// OnRateLimit is told when the rate limit starts refusing calls
+	// (limited true) and when it grants one again (limited false, with how
+	// many it refused meanwhile). Edges only, so a throttled lane logs two
+	// lines rather than one per statement. Nil reports nothing.
+	OnRateLimit func(limited bool, refused int64)
+
+	// Budget optionally supplies the purse itself. A hot reload that
+	// rebuilds an evaluator hands the replacement the SAME Budget, so the
+	// draining generation and the new one together never exceed MaxCalls
+	// or the rate; independent budgets would let each generation spend in
+	// full. Nil allocates a private one.
+	Budget *Budget
 
 	// Redact rewrites content before it leaves the process. Nil sends the
 	// statement as-is.
@@ -230,9 +242,10 @@ type Evaluator struct {
 	// fixed at construction.
 	holds bool
 
-	calls  *atomic.Int64
-	denied atomic.Int64
-	errs   atomic.Int64
+	budget      *Budget
+	denied      atomic.Int64
+	errs        atomic.Int64
+	rateLimited atomic.Int64
 
 	// budgetLogged ensures the "budget exhausted" line is logged once
 	// rather than on every statement after the limit.
@@ -257,6 +270,9 @@ func New(cfg Config) (*Evaluator, error) {
 	if !cfg.ReviewMode.Valid() {
 		return nil, fmt.Errorf("sidecar/analyzer: unknown review mode %q", cfg.ReviewMode)
 	}
+	if err := cfg.RateLimit.validate(); err != nil {
+		return nil, err
+	}
 	holds := false
 	for level, action := range cfg.Actions {
 		if !level.Valid() {
@@ -270,9 +286,9 @@ func New(cfg Config) (*Evaluator, error) {
 		}
 	}
 	prompt := BuildSystemPrompt(cfg.Guidance)
-	calls := cfg.Budget
-	if calls == nil {
-		calls = new(atomic.Int64)
+	budget := cfg.Budget
+	if budget == nil {
+		budget = new(Budget)
 	}
 	return &Evaluator{
 		cfg:        cfg,
@@ -280,7 +296,7 @@ func New(cfg Config) (*Evaluator, error) {
 		prompt:     prompt,
 		promptKey:  fingerprint(prompt),
 		holds:      holds,
-		calls:      calls,
+		budget:     budget,
 		reviewWait: ReviewWait,
 		reviewPoll: reviewPoll,
 	}, nil
@@ -321,6 +337,12 @@ func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext)
 		action = e.cfg.Actions.actionFor(level)
 	}
 	e.report(ec, status, level)
+	// The trail's ai_status is the folded one, not this evaluation's own.
+	// Chain merges annotations last-write-wins, so writing our own word
+	// would let a second analyzer that answered overwrite a first one's
+	// throttling or outage, leaving the record at "ok" while the policy
+	// was told "unavailable".
+	trail := trailStatus(ec, status)
 
 	switch status {
 	case StatusRefused:
@@ -335,7 +357,7 @@ func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext)
 		}
 		v := policy.Deny(e.cfg.Rule, msg)
 		v.Source = policy.SourceAnalyzer
-		v.Annotations = e.notes(status, "", string(ActionBlock))
+		v.Annotations = e.notes(trail, "", string(ActionBlock))
 		return v
 
 	case StatusError:
@@ -343,28 +365,32 @@ func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext)
 		// travels, so a decide-phase policy can refuse a statement the
 		// model never saw instead of reading a missing level as low.
 		v := e.failure(err)
-		v.Annotations = e.notes(status, "", "")
+		v.Annotations = e.notes(trail, "", "")
 		return v
 
-	case StatusBudget:
+	case StatusBudget, StatusRateLimited:
 		// A spent budget is not a provider failure, and on a lane that
 		// only warns or blocks it falls through to allow like an
 		// unmatched trigger does. A lane that HOLDS cannot: no
 		// classification means no risk level, and forwarding on a
 		// missing level would retire the human gate the moment
-		// max_calls ran out and leave it retired until a restart.
+		// max_calls ran out and leave it retired until a restart, or
+		// open it for every statement a spike pushed past the rate.
 		if e.holds {
-			return e.denyUnclassified(status,
-				"the risk analysis budget is spent and this lane holds "+
-					"statements for approval")
+			what := "the risk analysis budget is spent"
+			if status == StatusRateLimited {
+				what = "the risk analysis rate limit is reached"
+			}
+			return e.denyUnclassified(trail,
+				what+" and this lane holds statements for approval")
 		}
-		return policy.Verdict{Annotations: e.notes(status, "", "")}
+		return policy.Verdict{Annotations: e.notes(trail, "", "")}
 
 	case StatusSkipped:
 		// The trigger did not match, or the statement carries nothing to
 		// classify. Both are the operator's own narrowing, so this is
 		// the same outcome as a lane with no analyzer.
-		return policy.Verdict{Annotations: e.notes(status, "", "")}
+		return policy.Verdict{Annotations: e.notes(trail, "", "")}
 	}
 
 	// The risk level rides on every classified statement, allowed or not.
@@ -375,7 +401,7 @@ func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext)
 	// Title and explanation stay OUT of the trail: they are model prose,
 	// audit redaction does not reach Metadata, and a model that quotes the
 	// statement back would write the value into the record verbatim.
-	notes := e.notes(status, string(level), string(action))
+	notes := e.notes(trail, string(level), string(action))
 
 	if action == ActionRequireReview {
 		// A CACHED verdict reaches here like any other. The cache
@@ -464,6 +490,20 @@ func (e *Evaluator) report(ec *policy.EvalContext, status string, level RiskLeve
 		ec.Findings = make(map[string]policy.Finding, 1)
 	}
 	ec.Findings[Source] = f
+}
+
+// trailStatus is the ai_status an evaluation writes: the word behind the
+// finding report folded, most degraded first, across every analyzer on the
+// statement. Without a context there is nothing to fold with.
+func trailStatus(ec *policy.EvalContext, status string) string {
+	f, ok := ec.Finding(Source)
+	if !ok {
+		return status
+	}
+	if f.Reason != "" {
+		return f.Reason
+	}
+	return f.Status
 }
 
 func prevLevel(f policy.Finding) RiskLevel {
@@ -556,27 +596,31 @@ func (e *Evaluator) classify(
 	if cached, hit := e.cache.get(cacheKey); hit {
 		return cached, StatusCached, nil
 	}
-	// Reserve a slot atomically.
+	// Reserve a slot atomically, against max_calls and the rate together.
 	//
 	// One Evaluator is shared by every connection on the lane, so reading a
 	// counter and incrementing it in two steps leaves a window where every
 	// goroutine in flight reads the same under-budget value and every one of
 	// them calls the provider. A budget of 100 becomes 100 plus however many
 	// connections were concurrent, which is exactly the runaway the budget
-	// exists to bound.
-	//
-	// Add returns the post-increment value, so exactly one goroutine can
-	// observe each slot. An over-budget reservation is handed back, keeping
-	// Stats.Calls a count of provider calls made rather than of attempts,
-	// which is the number that tracks the bill.
-	if n := e.calls.Add(1); e.cfg.MaxCalls > 0 && n > int64(e.cfg.MaxCalls) {
-		e.calls.Add(-1)
+	// exists to bound. Budget.take decides both under one lock and counts
+	// only granted calls, so Stats.Calls is the number of provider calls
+	// made, which is the number that tracks the bill.
+	status, edge, refused := e.budget.take(e.cfg.MaxCalls, e.cfg.RateLimit)
+	if edge != edgeNone && e.cfg.OnRateLimit != nil {
+		e.cfg.OnRateLimit(edge == edgeStarted, refused)
+	}
+	switch status {
+	case StatusBudget:
 		e.budgetLogged.Do(func() {
 			if e.onBudget != nil {
 				e.onBudget()
 			}
 		})
 		return Result{}, StatusBudget, nil
+	case StatusRateLimited:
+		e.rateLimited.Add(1)
+		return Result{}, StatusRateLimited, nil
 	}
 
 	callCtx, cancel := context.WithTimeout(ctx, e.cfg.Timeout)
@@ -640,12 +684,13 @@ func (e *Evaluator) denyUnclassified(status, reason string) policy.Verdict {
 	return v
 }
 
-// Stats reports what the analyzer has done. It backs the /stats admin
-// endpoint, where an operator watches the hit rate before enforcing.
+// Stats reports what the analyzer has done. It backs the usage event, which
+// reports each window's calls, failures, denials and rate-limited statements.
 type Stats struct {
 	Calls       int64  `json:"calls"`
 	Denied      int64  `json:"denied"`
 	Errors      int64  `json:"errors"`
+	RateLimited int64  `json:"rate_limited"`
 	CacheHits   uint64 `json:"cache_hits"`
 	CacheMisses uint64 `json:"cache_misses"`
 }
@@ -654,9 +699,10 @@ type Stats struct {
 func (e *Evaluator) Stats() Stats {
 	hits, misses := e.cache.stats()
 	return Stats{
-		Calls:       e.calls.Load(),
+		Calls:       e.budget.calls.Load(),
 		Denied:      e.denied.Load(),
 		Errors:      e.errs.Load(),
+		RateLimited: e.rateLimited.Load(),
 		CacheHits:   hits,
 		CacheMisses: misses,
 	}
@@ -665,10 +711,10 @@ func (e *Evaluator) Stats() Stats {
 // CallsKey identifies the counter behind Stats.Calls. Evaluators built with
 // one Config.Budget share it, so across a reload the old and new instance
 // of one lane report the SAME Calls: a usage reader must count calls per
-// key, not per instance, or it counts them twice. Denied, Errors and the
-// cache counters are per instance. Opaque on purpose: the counter itself
-// is the budget and must not be written from outside.
-func (e *Evaluator) CallsKey() any { return e.calls }
+// key, not per instance, or it counts them twice. Denied, Errors,
+// RateLimited and the cache counters are per instance. Opaque on purpose:
+// the Budget must not be written from outside.
+func (e *Evaluator) CallsKey() any { return e.budget }
 
 // Rule reports the rule name this analyzer denies under.
 func (e *Evaluator) Rule() string { return e.cfg.Rule }

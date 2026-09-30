@@ -64,14 +64,14 @@ func rulesLane(rules ...policy.Rule) Config {
 func TestAnOldHeaderKeepsTheBaselineVocabulary(t *testing.T) {
 	cfg := rulesLane(policy.Rule{Name: "hdr", Type: policy.MatchHTTPHeader})
 	for _, caps := range [][]string{nil, {}, {CapabilityReviewMode}} {
-		if err := CheckServable(cfg, caps); err != nil {
+		if err := CheckServable(cfg, Handshake{Capabilities: caps}); err != nil {
 			t.Errorf("capabilities %v were refused today's vocabulary: %v", caps, err)
 		}
 	}
 
 	future := rulesLane(policy.Rule{Name: "next", Type: "future_type"})
 	for _, caps := range [][]string{nil, {}, {CapabilityReviewMode}, {"rule:operation"}} {
-		err := CheckServable(future, caps)
+		err := CheckServable(future, Handshake{Capabilities: caps})
 		if err == nil {
 			t.Fatalf("capabilities %v were served a rule type they do not list", caps)
 		}
@@ -81,7 +81,7 @@ func TestAnOldHeaderKeepsTheBaselineVocabulary(t *testing.T) {
 			}
 		}
 	}
-	if err := CheckServable(future, []string{"rule:future_type"}); err != nil {
+	if err := CheckServable(future, Handshake{Capabilities: []string{"rule:future_type"}}); err != nil {
 		t.Errorf("a build that reports the type was refused it: %v", err)
 	}
 }
@@ -93,7 +93,7 @@ func TestARuleTypeNeedsItsEntryOnceTheHeaderListsAny(t *testing.T) {
 		policy.Rule{Name: "words", Type: policy.MatchDenyWords, Words: []string{"drop"}},
 		policy.Rule{Name: "hdr", Type: policy.MatchHTTPHeader},
 	)
-	err := CheckServable(cfg, []string{"rule:deny_words_list", "protocol:postgres"})
+	err := CheckServable(cfg, Handshake{Capabilities: []string{"rule:deny_words_list", "protocol:postgres"}})
 	if err == nil || !strings.Contains(err.Error(), `binds the http_header rule "hdr"`) {
 		t.Errorf("a missing rule type was not refused by name: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestARuleTypeNeedsItsEntryOnceTheHeaderListsAny(t *testing.T) {
 	// The deprecated policy spelling is still a rule list the plane can hold.
 	cfg.Listeners[0].Guardrails = nil
 	cfg.Listeners[0].Policy = &PolicyConfig{Rules: []policy.Rule{{Name: "old", Type: policy.MatchTable}}}
-	err = CheckServable(cfg, []string{"rule:deny_words_list", "protocol:postgres"})
+	err = CheckServable(cfg, Handshake{Capabilities: []string{"rule:deny_words_list", "protocol:postgres"}})
 	if err == nil || !strings.Contains(err.Error(), `"old"`) {
 		t.Errorf("a rule under the deprecated policy key was not checked: %v", err)
 	}
@@ -111,10 +111,10 @@ func TestARuleTypeNeedsItsEntryOnceTheHeaderListsAny(t *testing.T) {
 
 func TestAProtocolNeedsItsEntryOnceTheHeaderListsAny(t *testing.T) {
 	cfg := *pgLane()
-	if err := CheckServable(cfg, []string{"protocol:postgres"}); err != nil {
+	if err := CheckServable(cfg, Handshake{Capabilities: []string{"protocol:postgres"}}); err != nil {
 		t.Errorf("a listed protocol was refused: %v", err)
 	}
-	err := CheckServable(cfg, []string{"protocol:mysql"})
+	err := CheckServable(cfg, Handshake{Capabilities: []string{"protocol:mysql"}})
 	if err == nil || !strings.Contains(err.Error(), `listener "appdb" speaks postgres`) {
 		t.Errorf("a missing protocol was not refused by name: %v", err)
 	}
@@ -128,13 +128,13 @@ func TestAProtocolNeedsItsEntryOnceTheHeaderListsAny(t *testing.T) {
 func TestACapTaggedFieldIsRefusedOnlyWhenSet(t *testing.T) {
 	cfg := *holdingLane()
 	cfg.Listeners[0].Analyzer.ReviewMode = "return"
-	err := CheckServable(cfg, []string{"rule:operation", "protocol:postgres"})
+	err := CheckServable(cfg, Handshake{Capabilities: []string{"rule:operation", "protocol:postgres"}})
 	if err == nil || !strings.Contains(err.Error(), `listener "appdb" sets analyzer.review_mode`) ||
-		!strings.Contains(err.Error(), capabilitySince[CapabilityReviewMode]) {
+		!strings.Contains(err.Error(), capabilitySince()[CapabilityReviewMode]) {
 		t.Errorf("a set cap field was not refused by path and release: %v", err)
 	}
 	cfg.Listeners[0].Analyzer.ReviewMode = "hold"
-	if err := CheckServable(cfg, []string{"rule:operation", "protocol:postgres"}); err != nil {
+	if err := CheckServable(cfg, Handshake{Capabilities: []string{"rule:operation", "protocol:postgres"}}); err != nil {
 		t.Errorf("the default was refused: %v", err)
 	}
 }

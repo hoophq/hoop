@@ -9,10 +9,10 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"slices"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/hoophq/hoop/sidecar/analyzer"
@@ -1727,16 +1727,20 @@ type analyzerDeps struct {
 	// startup: a reload does not start or stop the MCP server.
 	mcp bool
 
-	// budgets hands every generation of an evaluator the same call
-	// counter, so MaxCalls bounds the spend across hot reloads: a
-	// draining generation and its replacement pay from one purse. Keyed
-	// by the evaluator's name — the rule name for the DEPRECATED rule
-	// form, the LANE name for an analyzer block — which is the identity
-	// an operator edits. Two lanes naming one rule share a budget too,
-	// which is what "process-wide" already promised. Entries are never
-	// dropped, and single-goroutine access (startup builds, then only
-	// the heartbeat) needs no lock.
-	budgets map[string]*atomic.Int64
+	// budgets hands every generation of an evaluator the same purse, so
+	// MaxCalls and the rate limit bound the spend across hot reloads: a
+	// draining generation and its replacement pay from one budget and
+	// draw on one bucket. Keyed by the evaluator's name — the rule name
+	// for the DEPRECATED rule form, the LANE name for an analyzer block —
+	// which is the identity an operator edits. Two lanes naming one rule
+	// share a budget too, which is what "process-wide" already promised.
+	// Entries are never dropped, and single-goroutine access (startup
+	// builds, then only the heartbeat) needs no lock.
+	budgets map[string]*analyzer.Budget
+
+	// log is the process logger, for the rate-limit edges an evaluator
+	// reports. Nil in a build that never serves, which logs nothing.
+	log *slog.Logger
 }
 
 // BuildTLS turns a TLSConfig into a *tls.Config.

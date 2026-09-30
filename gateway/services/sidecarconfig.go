@@ -295,6 +295,26 @@ func mergeAnalyzerBlock(base *daemon.LaneAnalyzerConfig, rule daemon.LaneAnalyze
 	if rule.Cache != nil {
 		out.Cache = rule.Cache
 	}
+	// Field by field, as the sidecar merges a block over its top-level
+	// default: a rule naming only calls keeps the listener's per_sec and
+	// burst, where replacing the struct would drop them and serve a rate
+	// the sidecar refuses or one with another burst.
+	if rule.RateLimit != nil {
+		var rate daemon.AnalyzerRateLimitConfig
+		if base.RateLimit != nil {
+			rate = *base.RateLimit
+		}
+		if rule.RateLimit.Calls != 0 {
+			rate.Calls = rule.RateLimit.Calls
+		}
+		if rule.RateLimit.PerSec != 0 {
+			rate.PerSec = rule.RateLimit.PerSec
+		}
+		if rule.RateLimit.Burst != 0 {
+			rate.Burst = rule.RateLimit.Burst
+		}
+		out.RateLimit = &rate
+	}
 	if rule.ApprovalRule != "" {
 		out.ApprovalRule = rule.ApprovalRule
 	}
@@ -346,7 +366,7 @@ func CheckSidecarCapabilities(sc *models.Sidecar, composed daemon.Config) error 
 	if sc.Capabilities == nil {
 		return nil
 	}
-	if err := daemon.CheckServable(composed, sc.Capabilities); err != nil {
+	if err := daemon.CheckServable(composed, daemon.Handshake{Version: reportedVersion(sc), Capabilities: sc.Capabilities}); err != nil {
 		return ErrSidecarCapabilityMissing{Reason: fmt.Sprintf("sidecar %q: %v", sc.Name, err)}
 	}
 	return nil
@@ -389,4 +409,12 @@ func CheckComposedSidecarConfiguration(db *gorm.DB, sc *models.Sidecar) error {
 		return err
 	}
 	return CheckSidecarCapabilities(sc, composed)
+}
+
+// reportedVersion is the release the sidecar last reported, or empty.
+func reportedVersion(sc *models.Sidecar) string {
+	if sc.ReportedVersion == nil {
+		return ""
+	}
+	return *sc.ReportedVersion
 }

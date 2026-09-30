@@ -593,15 +593,16 @@ func Handshake(c *gin.Context) {
 			"start the sidecar with its config file to import it, or author the configuration in the control plane"})
 		return
 	}
-	served, err := withOrgLicense(sidecar, capabilities)
+	served, err := withOrgLicense(sidecar, daemon.Handshake{Version: req.Version, Capabilities: capabilities})
 	if err != nil {
-		// Recorded even on refusal, so a later write knows this build is
-		// too old instead of reading it as never seen. Only the
-		// capabilities: a sidecar that cannot run is not recently seen.
+		// Recorded even on refusal, with the reason: a later write knows
+		// this build is too old instead of reading it as never seen, and
+		// the page shows why the plane refused. Not last_seen_at: a sidecar
+		// that cannot run is not recently seen.
 		var missing services.ErrSidecarCapabilityMissing
 		if errors.As(err, &missing) {
-			if rerr := models.RecordSidecarCapabilities(models.DB, sidecar.ID, capabilities); rerr != nil {
-				log.With("sidecar", sidecar.ID).Warnf("failed recording the sidecar capabilities, reason=%v", rerr)
+			if rerr := models.RecordSidecarServeRefusal(models.DB, sidecar.ID, req.Version, capabilities, missing.Error()); rerr != nil {
+				log.With("sidecar", sidecar.ID).Warnf("failed recording the refused handshake, reason=%v", rerr)
 			}
 		}
 		answerServeError(c, err)
@@ -636,7 +637,7 @@ func Handshake(c *gin.Context) {
 // capabilities is what the requesting sidecar reported. A document it cannot
 // decode is refused rather than served: a strict decode would refuse the whole
 // of it, at startup or on reload.
-func withOrgLicense(sc *models.Sidecar, capabilities []string) (daemon.Config, error) {
+func withOrgLicense(sc *models.Sidecar, hs daemon.Handshake) (daemon.Config, error) {
 	licenseData, err := models.GetOrgLicenseData(models.DB, sc.OrgID)
 	if err != nil {
 		// Not found is not a missing license, it is a missing org: the
@@ -668,7 +669,7 @@ func withOrgLicense(sc *models.Sidecar, capabilities []string) (daemon.Config, e
 	if err := services.CheckSidecarConfigurationLimits(composed, licenseData); err != nil {
 		return daemon.Config(sc.Configuration), err
 	}
-	if err := daemon.CheckServable(composed, capabilities); err != nil {
+	if err := daemon.CheckServable(composed, hs); err != nil {
 		return daemon.Config(sc.Configuration), services.ErrSidecarCapabilityMissing{Reason: err.Error()}
 	}
 	return servedConfig(models.SidecarConfiguration(composed), licenseData), nil
@@ -814,7 +815,7 @@ func Configuration(c *gin.Context) {
 		c.JSON(http.StatusOK, diskModeConfig{LoadFromDisk: true, License: string(licenseData)})
 		return
 	}
-	served, err := withOrgLicense(sidecar, daemon.ParseCapabilities(c.GetHeader(daemon.CapabilitiesHeader)))
+	served, err := withOrgLicense(sidecar, daemon.Handshake{Version: derefOrEmpty(sidecar.ReportedVersion), Capabilities: daemon.ParseCapabilities(c.GetHeader(daemon.CapabilitiesHeader))})
 	if err != nil {
 		answerServeError(c, err)
 		return

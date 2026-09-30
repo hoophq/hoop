@@ -210,9 +210,13 @@ done
   field that is safe when absent needs nothing more. One whose value an
   older build cannot decode gets `cap:"<name>"`: the header the sidecar
   sends on its handshake is generated from the tag, and the plane refuses
-  to serve a document that sets it to a build without the entry. Rule types
-  and protocols reach the header on their own, through `policy.RuleTypes`
-  and `daemon.Protocols`. Never add to `baselineCapabilities`.
+  to serve a document that sets it to a build without the entry. A field
+  that already shipped also carries `since:"<release>"`, the release read
+  from the git tags, so a build from before the header is refused it by
+  its reported version; a new field leaves `since` off until its release
+  exists. Rule types and protocols reach the header on their own, through
+  `policy.RuleTypes` and `daemon.Protocols`. Never add to
+  `baselineCapabilities`.
 
 - **Construct codecs through the seam, never libhoop directly.** A decoder
   built with the zero `Options` has no classifier: it reports statement text
