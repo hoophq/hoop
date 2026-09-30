@@ -8,7 +8,7 @@ function Avatar({ radius = 'xl', classNames = {}, ...props }) {
   return <MantineAvatar radius={radius} classNames={{ root: classes.root, ...classNames }} {...props} />
 }
 
-function Group({ spacing = 8, ...props }) {
+function Group({ spacing = 6, ...props }) {
   return <MantineAvatar.Group spacing={spacing} {...props} />
 }
 
