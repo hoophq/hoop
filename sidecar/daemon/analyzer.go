@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/x509"
 	"fmt"
+	"math"
 	"net/url"
 	"strings"
 	"time"
@@ -255,13 +256,26 @@ type AnalyzerRateLimitConfig struct {
 	Burst int `json:"burst,omitempty"`
 }
 
-// limit is the analyzer's form of the config.
-func (r AnalyzerRateLimitConfig) limit() analyzer.RateLimit {
+// maxRateLimitPerSec is the largest per_sec a time.Duration holds, about 292
+// years. limit multiplies by time.Second, and past this the product wraps:
+// just past it goes negative, and near twice it wraps back to a small
+// positive period that enforces a far faster rate than the config says.
+const maxRateLimitPerSec = math.MaxInt64 / int64(time.Second)
+
+// limit is the analyzer's form of the config. It refuses a per_sec past
+// maxRateLimitPerSec itself rather than trusting validate ran first: a
+// Config assembled in Go reaches the lane build without LoadConfigBytes.
+func (r AnalyzerRateLimitConfig) limit() (analyzer.RateLimit, error) {
+	if int64(r.PerSec) > maxRateLimitPerSec {
+		return analyzer.RateLimit{}, fmt.Errorf(
+			"rate_limit.per_sec %d is past the largest period this build holds (%d)",
+			r.PerSec, maxRateLimitPerSec)
+	}
 	return analyzer.RateLimit{
 		Calls: r.Calls,
 		Per:   time.Duration(r.PerSec) * time.Second,
 		Burst: r.Burst,
-	}
+	}, nil
 }
 
 // validate checks one rate_limit block as written: negatives, and a block
@@ -280,6 +294,9 @@ func (r *AnalyzerRateLimitConfig) validate(where string) []string {
 		if f.v < 0 {
 			problems = append(problems, fmt.Sprintf("%s: rate_limit.%s is negative", where, f.name))
 		}
+	}
+	if _, err := r.limit(); err != nil {
+		problems = append(problems, where+": "+err.Error())
 	}
 	if *r == (AnalyzerRateLimitConfig{}) {
 		problems = append(problems, where+
@@ -345,8 +362,8 @@ func resolveMaxCalls(cfg *AnalyzerConfig, la *LaneAnalyzerConfig) int {
 // rate never fires. who names the analyzer in the note.
 func rateLimitNotes(cfg *AnalyzerConfig, la *LaneAnalyzerConfig, who string) []string {
 	rate := resolveRateLimit(cfg, la)
-	lim := rate.limit()
-	if !lim.Enabled() {
+	lim, err := rate.limit()
+	if err != nil || !lim.Enabled() {
 		return nil
 	}
 	burst := lim.Capacity()
@@ -823,7 +840,10 @@ func buildAnalyzerEvaluator(
 		maxInput = cfg.MaxInputBytes
 	}
 	maxCalls := resolveMaxCalls(cfg, &la)
-	rate := resolveRateLimit(cfg, &la)
+	rate, err := resolveRateLimit(cfg, &la).limit()
+	if err != nil {
+		return nil, err
+	}
 	// Cache fields merge INDIVIDUALLY, like every other override here: a
 	// block naming only ttl_sec keeps the inherited size. Replacing the
 	// struct wholesale would zero the field the block did not write, and a
@@ -867,7 +887,7 @@ func buildAnalyzerEvaluator(
 		CacheSize:     cache.Size,
 		CacheTTL:      time.Duration(cache.TTLSec) * time.Second,
 		MaxCalls:      maxCalls,
-		RateLimit:     rate.limit(),
+		RateLimit:     rate,
 		OnRateLimit:   ac.rateLimitLog(name),
 		Budget:        ac.budgetFor(budgetKey),
 		Redact:        redactorFor(send, ac.det),

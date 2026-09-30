@@ -2,9 +2,11 @@ package daemon
 
 import (
 	"context"
+	"math"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/hoophq/hoop/sidecar/analyzer"
 	"github.com/hoophq/hoop/sidecar/inspect"
@@ -918,5 +920,53 @@ func TestRefuseRunsOnCacheHits(t *testing.T) {
 		if strings.Contains(sent, pan) {
 			t.Fatalf("the detected value left the process:\n%s", sent)
 		}
+	}
+}
+
+// per_sec becomes a time.Duration, and a value past its range wraps. Just
+// past the limit wraps negative; about twice the limit wraps back to a small
+// positive period, which would enforce 30 calls per 0.29 s under a config
+// that reads as 30 per 584 years. Both are refused on either block, and the
+// largest representable value still loads.
+func TestRateLimitPerSecPastTheDurationRangeIsRefused(t *testing.T) {
+	const maxPerSec = math.MaxInt64 / int64(time.Second)
+	for _, tc := range []struct {
+		name   string
+		perSec int64
+		ok     bool
+	}{
+		{"largest representable", maxPerSec, true},
+		{"wraps negative", maxPerSec + 1, false},
+		{"wraps back to positive", 2*maxPerSec + 2, false},
+	} {
+		for _, where := range []string{"top level", "lane"} {
+			t.Run(tc.name+"/"+where, func(t *testing.T) {
+				rate := &AnalyzerRateLimitConfig{Calls: 30, PerSec: int(tc.perSec)}
+				la := laneBlock()
+				cfg := blockLane(la)
+				if where == "lane" {
+					la.RateLimit = rate
+				} else {
+					cfg.Analyzer.RateLimit = rate
+				}
+				err := cfg.Validate()
+				switch {
+				case tc.ok && err != nil:
+					t.Errorf("refused: %v", err)
+				case !tc.ok && (err == nil || !strings.Contains(err.Error(), "rate_limit.per_sec")):
+					t.Errorf("error = %v, want a refusal naming rate_limit.per_sec", err)
+				}
+			})
+		}
+	}
+
+	// A Config assembled in Go skips Validate, so the lane build refuses too
+	// instead of building an evaluator on a wrapped period.
+	la := laneBlock()
+	la.RateLimit = &AnalyzerRateLimitConfig{Calls: 30, PerSec: int(2*maxPerSec + 2)}
+	deps := &analyzerDeps{cfg: &AnalyzerConfig{Provider: "stub", Model: "m"}, provider: stubAnalyzerProvider{}}
+	if _, err := buildLaneAnalyzer("appdb", la, deps, false, false, nil); err == nil ||
+		!strings.Contains(err.Error(), "rate_limit.per_sec") {
+		t.Errorf("the lane build accepted a wrapping per_sec: %v", err)
 	}
 }
