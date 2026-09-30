@@ -29,3 +29,9 @@
 .iconOnlySection {
   margin-inline-end: 0;
 }
+
+/* The dot badge: flat gray-0 instead of the light variant's translucent tint. */
+.dot {
+  background-color: var(--mantine-color-gray-0);
+  border: 1px solid var(--mantine-color-gray-0);
+}

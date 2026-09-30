@@ -29,7 +29,7 @@ const STATUS = {
   // for it, or the sidecar runs its own config file.
   [SIDECAR_STATUS.CONNECTED]: {
     key: SIDECAR_STATUS.CONNECTED,
-    label: 'Connected',
+    label: 'Active',
     badge: 'active',
     hint: 'Last check-in with this control plane. The sidecar asks for its configuration; nothing is pushed to it.',
   },
@@ -40,7 +40,7 @@ const STATUS = {
 const CONFIG_STATE = {
   [SIDECAR_STATUS.APPLIED]: {
     key: SIDECAR_STATUS.APPLIED,
-    label: 'Connected',
+    label: 'Active',
     badge: 'active',
     config: 'Applied',
     hint: 'Runs the configuration this control plane last served. It checks in every minute; nothing is pushed to it.',
@@ -77,7 +77,7 @@ const CONFIG_STATE = {
   },
   [SIDECAR_STATUS.UNKNOWN]: {
     key: SIDECAR_STATUS.UNKNOWN,
-    label: 'Connected',
+    label: 'Active',
     badge: 'active',
     config: 'Unknown',
     hint: 'Checked in, but this sidecar build is too old to report whether it applied the served configuration. Upgrade it to see the configuration state.',
@@ -91,7 +91,7 @@ function withError(state, sidecar) {
   return detail ? { ...state, detail } : state
 }
 
-// A state this build does not know reads as Connected: the sidecar did check
+// A state this build does not know reads as Active: the sidecar did check
 // in, and that is the only claim the badge can make about it.
 export function sidecarStatus(sidecar) {
   if (!sidecar?.last_seen_at) return STATUS[SIDECAR_STATUS.WAITING]

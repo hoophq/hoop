@@ -1,15 +1,17 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Stack, Text, Title } from '@mantine/core'
+import { Group, Paper, Stack, Text, Title } from '@mantine/core'
 import { ArrowLeft } from 'lucide-react'
+import ActionMenu from '@/components/ActionMenu'
 import Button from '@/components/Button'
-import FormFooter, { FORM_FOOTER_CLEARANCE } from '@/components/FormFooter'
 import PageLoader from '@/components/PageLoader'
 import { useSidecarStore } from '@/stores/useSidecarStore'
+import { showSnackbar } from '@/utils/snackbar'
 import ListenerForm from '../components/ListenerForm'
-import { listenerIndexByLabel, listenerLabel } from '../listeners'
+import { listenerIndexByLabel, listenerLabel, removeListener } from '../listeners'
+import DeleteListenerModal from '../sections/DeleteListenerModal'
 import SaveProblems from '../sections/SaveProblems'
-import { useListenerEditor } from '../useListenerEditor'
+import { saveErrorMessage, useListenerEditor } from '../useListenerEditor'
 
 // The sidecar this listener belongs to, above its own name. There is no
 // Breadcrumbs component in the app and one consumer does not earn one; this is
@@ -26,7 +28,7 @@ function Parent({ name, onClick }) {
       w="fit-content"
       size="compact-sm"
     >
-      {name}
+      {`Back to ${name}`}
     </Button>
   )
 }
@@ -34,40 +36,76 @@ function Parent({ name, onClick }) {
 // The form, once the sidecar it edits is on hand. Split out so the editor's
 // state is seeded from a listener that exists, rather than from null on the
 // first render and patched by an effect afterwards.
-function Editor({ sidecar, index, onDone }) {
+function Editor({ sidecar, index, onDone, onLeave }) {
   const { form, setField, errors, refused, saving, save, isNew } = useListenerEditor({ sidecar, index })
+  const updateSidecar = useSidecarStore((s) => s.updateSidecar)
+  const [deleting, setDeleting] = useState(false)
+  const [deletingBusy, setDeletingBusy] = useState(false)
+  const listeners = sidecar.configuration?.listeners ?? []
+  const label = isNew ? null : listenerLabel(listeners[index], index)
 
   const handleSave = async () => {
+    onLeave(true)
     if (await save()) onDone()
+    else onLeave(false)
+  }
+
+  const confirmDelete = async () => {
+    setDeletingBusy(true)
+    onLeave(true)
+    const configuration = removeListener(sidecar.configuration, index)
+    const { ok, error } = await updateSidecar(sidecar.id, configuration)
+    setDeletingBusy(false)
+    if (!ok) {
+      showSnackbar({ level: 'error', text: 'Failed to delete the listener.', description: saveErrorMessage(error) })
+      onLeave(false)
+      return
+    }
+    setDeleting(false)
+    showSnackbar({ level: 'success', text: `Listener "${label}" deleted.` })
+    onDone()
   }
 
   return (
     <>
-      <Stack gap="xl" pb={FORM_FOOTER_CLEARANCE}>
-        <Stack gap="xs">
-          <Parent name={sidecar.name} onClick={onDone} />
-          <Title order={1}>{isNew ? 'Add listener' : form.name || listenerLabel(null, index)}</Title>
-          <Text c="dimmed">
-            {isNew
-              ? `A new listener on ${sidecar.name}: one upstream, one protocol, its own bind address.`
-              : `Listener on ${sidecar.name}.`}
-          </Text>
-        </Stack>
+      <DeleteListenerModal
+        label={label}
+        lastOne={listeners.length === 1}
+        opened={deleting}
+        onClose={() => setDeleting(false)}
+        onConfirm={confirmDelete}
+        loading={deletingBusy}
+      />
+
+      <Stack gap="xl">
+        <Group justify="space-between" align="flex-start" wrap="nowrap">
+          <Stack gap="xs">
+            <Parent name={sidecar.name} onClick={onDone} />
+            <Title order={1}>{isNew ? 'Add listener' : form.name || label}</Title>
+          </Stack>
+          <Group gap="sm" wrap="nowrap" flex="0 0 auto">
+            {!isNew && (
+              <ActionMenu width={200} disabled={saving}>
+                <ActionMenu.Item danger onClick={() => setDeleting(true)}>
+                  Delete listener
+                </ActionMenu.Item>
+              </ActionMenu>
+            )}
+            <Button variant="default" onClick={onDone} disabled={saving}>
+              Cancel
+            </Button>
+            <Button onClick={handleSave} loading={saving}>
+              {isNew ? 'Add listener' : 'Save'}
+            </Button>
+          </Group>
+        </Group>
 
         <SaveProblems refused={refused} sidecarId={sidecar.id} listeners={sidecar.configuration?.listeners} />
-        <ListenerForm form={form} setField={setField} errors={errors} />
-      </Stack>
 
-      {/* Pinned, because the form runs past the fold as soon as Advanced is
-          open and the page header already carries the search. */}
-      <FormFooter>
-        <Button variant="subtle" color="gray" onClick={onDone} disabled={saving}>
-          Cancel
-        </Button>
-        <Button onClick={handleSave} loading={saving}>
-          {isNew ? 'Add listener' : 'Save listener'}
-        </Button>
-      </FormFooter>
+        <Paper withBorder radius="md" p="lg">
+          <ListenerForm form={form} setField={setField} errors={errors} />
+        </Paper>
+      </Stack>
     </>
   )
 }
@@ -89,6 +127,9 @@ export default function SidecarListenerPage() {
   const error = useSidecarStore((s) => s.selectedError)
   const fetchSidecar = useSidecarStore((s) => s.fetchSidecar)
   const clearSelected = useSidecarStore((s) => s.clearSelected)
+  // A save or a delete replaces the document before the route moves on, so
+  // the stale label must not flash the not-found state in between.
+  const [leaving, setLeaving] = useState(false)
 
   // Through the store, not a request of this page's own: the store owns the
   // loading flag, the error and the cancellation, and hand-rolling them here
@@ -122,7 +163,7 @@ export default function SidecarListenerPage() {
   // A label that is not in the document is an error, not an empty form: saving
   // one would add a second listener under a name the operator thinks they are
   // editing.
-  if (!isNew && index === -1) {
+  if (!isNew && index === -1 && !leaving) {
     return (
       <Stack gap="xl">
         <Parent name={sidecar.name} onClick={back} />
@@ -132,5 +173,5 @@ export default function SidecarListenerPage() {
   }
 
   // Keyed by the route: a link to another listener must not keep this form.
-  return <Editor key={name ?? 'new'} sidecar={sidecar} index={index} onDone={back} />
+  return <Editor key={name ?? 'new'} sidecar={sidecar} index={index} onDone={back} onLeave={setLeaving} />
 }

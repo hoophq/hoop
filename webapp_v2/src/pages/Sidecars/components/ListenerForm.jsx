@@ -1,5 +1,5 @@
 import { Fragment, useState } from 'react'
-import { Divider, Group, Input, Stack, Text, Title } from '@mantine/core'
+import { Box, Divider, Group, Input, Stack, Text, Title } from '@mantine/core'
 import { Plus, Trash2 } from 'lucide-react'
 import Accordion from '@/components/Accordion'
 import ActionIcon from '@/components/ActionIcon'
@@ -7,7 +7,6 @@ import Autocomplete from '@/components/Autocomplete'
 import Button from '@/components/Button'
 import MultiSelect from '@/components/MultiSelect'
 import NumberInput from '@/components/NumberInput'
-import SectionRow from '@/components/SectionRow'
 import SegmentedControl from '@/components/SegmentedControl'
 import Select from '@/components/Select'
 import Switch from '@/components/Switch'
@@ -122,6 +121,8 @@ function Field({ field, path, form, setField, errors }) {
   const value = getPath(form, path)
   const set = (v) => setField(path, v)
   const common = { label: field.label, description: field.help, error: errors[path] }
+  // Hint under the input. Not for Switch, which forwards unknown props to the DOM.
+  const hinted = { ...common, inputWrapperOrder: ['label', 'input', 'description', 'error'] }
 
   if (field.type === 'object') {
     const body = <ObjectBody field={field} path={path} form={form} setField={setField} errors={errors} />
@@ -134,7 +135,7 @@ function Field({ field, path, form, setField, errors }) {
   }
 
   if (path === 'protocol') {
-    return <Select {...common} required data={protocolOptions(value)} value={value || null} onChange={set} allowDeselect={false} />
+    return <Select {...hinted} required data={protocolOptions(value)} value={value || null} onChange={set} allowDeselect={false} />
   }
 
   switch (field.type) {
@@ -142,7 +143,7 @@ function Field({ field, path, form, setField, errors }) {
       if (field.enum && field.open) {
         return (
           <Autocomplete
-            {...common}
+            {...hinted}
             required={field.required}
             placeholder={field.placeholder}
             data={field.enum}
@@ -153,23 +154,25 @@ function Field({ field, path, form, setField, errors }) {
       }
       if (field.enum?.length <= 3) {
         return (
-          <Input.Wrapper {...common} required={field.required}>
-            <SegmentedControl
-              mt={4}
-              w="fit-content"
-              value={value || field.default || field.enum[0]}
-              onChange={set}
-              data={field.enum.map((v) => ({ value: v, label: v }))}
-            />
+          <Input.Wrapper {...hinted} required={field.required}>
+            {/* A block, or the control shares the label's line. */}
+            <Box mt={4}>
+              <SegmentedControl
+                w="fit-content"
+                value={value || field.default || field.enum[0]}
+                onChange={set}
+                data={field.enum.map((v) => ({ value: v, label: ENUM_LABELS[path]?.[v] ?? v }))}
+              />
+            </Box>
           </Input.Wrapper>
         )
       }
       if (field.enum) {
-        return <Select {...common} data={field.enum} value={value || field.default || null} onChange={set} allowDeselect={false} />
+        return <Select {...hinted} data={field.enum} value={value || field.default || null} onChange={set} allowDeselect={false} />
       }
       return (
         <TextInput
-          {...common}
+          {...hinted}
           required={field.required}
           placeholder={field.placeholder}
           value={value ?? ''}
@@ -177,7 +180,7 @@ function Field({ field, path, form, setField, errors }) {
         />
       )
     case 'integer':
-      return <NumberInput {...common} min={0} value={value ?? 0} onChange={(v) => set(Number(v) || 0)} />
+      return <NumberInput {...hinted} min={0} value={value ?? 0} onChange={(v) => set(Number(v) || 0)} />
     case 'boolean':
       return <Switch {...common} checked={value === true} onChange={(e) => set(e.currentTarget.checked)} />
     case 'list':
@@ -190,9 +193,9 @@ function Field({ field, path, form, setField, errors }) {
           </Stack>
         )
       }
-      return <ListInput field={field} value={value} onChange={set} {...common} />
+      return <ListInput field={field} value={value} onChange={set} {...hinted} />
     case 'map':
-      return <MapInput field={field} value={value} onChange={set} {...common} />
+      return <MapInput field={field} value={value} onChange={set} {...hinted} />
     default:
       return (
         <Input.Wrapper
@@ -216,6 +219,33 @@ function Fields({ fields, prefix, form, ...rest }) {
   )
 }
 
+// A caption over its fields, single column: the form sits in a card, so the
+// two-column SectionRow the other pages use would leave the fields a narrow
+// strip on the right.
+function Section({ title, description, children }) {
+  return (
+    <Stack gap="md">
+      <Stack gap={4}>
+        <Text size="sm" fw={500} c="dimmed" tt="uppercase">
+          {title}
+        </Text>
+        {description && (
+          <Text size="sm" c="dimmed">
+            {description}
+          </Text>
+        )}
+      </Stack>
+      {children}
+    </Stack>
+  )
+}
+
+const ENUM_LABELS = { network: { tcp: 'TCP port', unix: 'Unix socket' } }
+
+const IDENTITY = ['name', 'protocol']
+const ADDRESSES = ['network', 'listen', 'upstream']
+const pick = (fields, keys) => keys.map((k) => fields.find((f) => f.key === k)).filter(Boolean)
+
 /**
  * The fields of one listener, rendered from the sidecar schema, with no
  * chrome of its own. `form` and `errors` come from ../listeners.
@@ -224,8 +254,10 @@ export default function ListenerForm({ form, setField, errors }) {
   const ctx = { form, setField, errors }
   const visible = LISTENER_FIELDS.filter((f) => appliesTo(f, form.protocol))
   const basic = visible.filter((f) => f.basic)
+  const identity = pick(basic, IDENTITY)
+  const addresses = [...pick(basic, ADDRESSES), ...basic.filter((f) => ![...IDENTITY, ...ADDRESSES].includes(f.key))]
   // A required block (ssh) is part of what makes the listener work: its fields
-  // join the Listener section, and its own blocks get a section each.
+  // join the addresses, and its own blocks get a section each.
   const required = visible.filter((f) => !f.basic && f.type === 'object' && f.required)
   const subBlocks = required.flatMap((f) =>
     (f.fields ?? [])
@@ -237,29 +269,43 @@ export default function ListenerForm({ form, setField, errors }) {
   const blocks = advanced.filter((f) => f.type === 'object')
 
   return (
-    <Stack gap="xxlAlt">
-      <SectionRow
-        title="Listener"
-        description="Where clients reach the sidecar, where the sidecar reaches your resource, and the protocol between them."
+    <Stack gap="xl">
+      <Section
+        title="Identity"
+        description="The name follows this listener into every log line and audit event, so renaming it splits that history. The protocol picks the codec that reads its traffic."
+      >
+        <Fields fields={identity} prefix="" {...ctx} />
+      </Section>
+
+      <Section
+        title="Addresses"
+        description="Two ends of one listener: where clients reach the sidecar, and where the sidecar reaches your resource. A unix socket opens no port, so filesystem permissions decide who can connect."
       >
         <Stack gap="md">
-          <Fields fields={basic} prefix="" {...ctx} />
+          <Fields fields={addresses} prefix="" {...ctx} />
           {required.map((f) => (
             <Fields key={f.key} fields={(f.fields ?? []).filter((c) => c.type !== 'object')} prefix={f.key} {...ctx} />
           ))}
         </Stack>
-      </SectionRow>
+      </Section>
 
       {subBlocks.map(({ field, path }) => (
-        <SectionRow key={path} title={field.label} description={field.help}>
+        <Section key={path} title={field.label} description={field.help}>
           <ObjectBody field={field} path={path} {...ctx} />
-        </SectionRow>
+        </Section>
       ))}
 
       {advanced.length > 0 && (
         <Accordion>
           <Accordion.Item value="advanced">
-            <Accordion.Control>Advanced</Accordion.Control>
+            <Accordion.Control>
+              <Group justify="space-between" wrap="nowrap" pr="sm">
+                <Text fw={600}>Advanced settings</Text>
+                <Text size="sm" c="dimmed">
+                  Optional
+                </Text>
+              </Group>
+            </Accordion.Control>
             <Accordion.Panel>
               <Stack gap="lg" pt="xs">
                 {scalars.length > 0 && <Fields fields={scalars} prefix="" {...ctx} />}
