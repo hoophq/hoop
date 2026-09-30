@@ -86,23 +86,46 @@ type Budget struct {
 // clock, which is what the zero value does.
 func NewBudget(now func() time.Time) *Budget { return &Budget{now: now} }
 
-// rateEdge names a change in whether a Budget is refusing draws.
+// rateEdge names a change in whether a Budget is refusing calls.
 type rateEdge int
 
 const (
 	edgeNone rateEdge = iota
-	// edgeStarted: this draw was the first one refused.
+	// edgeStarted: this call was the first one the rate refused.
 	edgeStarted
-	// edgeEnded: this draw was the first one granted after a refusal.
+	// edgeEnded: this call was the first one granted after a refusal.
 	edgeEnded
 )
 
-// draw takes one token under r. It reports whether the call may go out, and
-// whether this draw started or ended a limited episode, with the number of
-// draws the episode refused.
-func (b *Budget) draw(r RateLimit) (ok bool, edge rateEdge, refused int64) {
+// take decides one call against maxCalls and r, and spends from the budget
+// only when both grant it. It returns "" for a granted call, StatusBudget or
+// StatusRateLimited for a refused one, and whether this call started or
+// ended a rate-limited episode, with how many calls the episode refused.
+//
+// Both checks run under one lock, and the lifetime count moves only for a
+// granted call. Reserving the slot first and handing it back on a rate
+// refusal would leave a window where a concurrent call reads the inflated
+// count and reports max_calls spent when it is not, which on a holding lane
+// is a denial.
+//
+// The lifetime check runs first, so a spent max_calls reports
+// budget_exhausted even when the bucket is empty too: that one lasts until
+// a restart, which is the more useful thing to say. A call with no rate
+// closes a running episode without touching the bucket, so a reload that
+// removes the limit logs the clearing edge, and one that puts it back finds
+// the bucket where it was left.
+func (b *Budget) take(maxCalls int, r RateLimit) (status string, edge rateEdge, refused int64) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+
+	if maxCalls > 0 && b.calls.Load() >= int64(maxCalls) {
+		return StatusBudget, edgeNone, 0
+	}
+	if !r.Enabled() {
+		edge, refused = b.endEpisode()
+		b.calls.Add(1)
+		return "", edge, refused
+	}
 
 	now := time.Now()
 	if b.now != nil {
@@ -129,16 +152,23 @@ func (b *Budget) draw(r RateLimit) (ok bool, edge rateEdge, refused int64) {
 	if b.tokens < 1 {
 		b.refused++
 		if b.limited {
-			return false, edgeNone, b.refused
+			return StatusRateLimited, edgeNone, b.refused
 		}
 		b.limited = true
-		return false, edgeStarted, b.refused
+		return StatusRateLimited, edgeStarted, b.refused
 	}
 	b.tokens--
+	edge, refused = b.endEpisode()
+	b.calls.Add(1)
+	return "", edge, refused
+}
+
+// endEpisode closes a running rate-limited episode. Called with b.mu held.
+func (b *Budget) endEpisode() (rateEdge, int64) {
 	if !b.limited {
-		return true, edgeNone, 0
+		return edgeNone, 0
 	}
-	refused = b.refused
+	refused := b.refused
 	b.limited, b.refused = false, 0
-	return true, edgeEnded, refused
+	return edgeEnded, refused
 }

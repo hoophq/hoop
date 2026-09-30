@@ -337,6 +337,12 @@ func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext)
 		action = e.cfg.Actions.actionFor(level)
 	}
 	e.report(ec, status, level)
+	// The trail's ai_status is the folded one, not this evaluation's own.
+	// Chain merges annotations last-write-wins, so writing our own word
+	// would let a second analyzer that answered overwrite a first one's
+	// throttling or outage, leaving the record at "ok" while the policy
+	// was told "unavailable".
+	trail := trailStatus(ec, status)
 
 	switch status {
 	case StatusRefused:
@@ -351,7 +357,7 @@ func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext)
 		}
 		v := policy.Deny(e.cfg.Rule, msg)
 		v.Source = policy.SourceAnalyzer
-		v.Annotations = e.notes(status, "", string(ActionBlock))
+		v.Annotations = e.notes(trail, "", string(ActionBlock))
 		return v
 
 	case StatusError:
@@ -359,7 +365,7 @@ func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext)
 		// travels, so a decide-phase policy can refuse a statement the
 		// model never saw instead of reading a missing level as low.
 		v := e.failure(err)
-		v.Annotations = e.notes(status, "", "")
+		v.Annotations = e.notes(trail, "", "")
 		return v
 
 	case StatusBudget, StatusRateLimited:
@@ -375,16 +381,16 @@ func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext)
 			if status == StatusRateLimited {
 				what = "the risk analysis rate limit is reached"
 			}
-			return e.denyUnclassified(status,
+			return e.denyUnclassified(trail,
 				what+" and this lane holds statements for approval")
 		}
-		return policy.Verdict{Annotations: e.notes(status, "", "")}
+		return policy.Verdict{Annotations: e.notes(trail, "", "")}
 
 	case StatusSkipped:
 		// The trigger did not match, or the statement carries nothing to
 		// classify. Both are the operator's own narrowing, so this is
 		// the same outcome as a lane with no analyzer.
-		return policy.Verdict{Annotations: e.notes(status, "", "")}
+		return policy.Verdict{Annotations: e.notes(trail, "", "")}
 	}
 
 	// The risk level rides on every classified statement, allowed or not.
@@ -395,7 +401,7 @@ func (e *Evaluator) EvaluateWith(stmt inspect.Statement, ec *policy.EvalContext)
 	// Title and explanation stay OUT of the trail: they are model prose,
 	// audit redaction does not reach Metadata, and a model that quotes the
 	// statement back would write the value into the record verbatim.
-	notes := e.notes(status, string(level), string(action))
+	notes := e.notes(trail, string(level), string(action))
 
 	if action == ActionRequireReview {
 		// A CACHED verdict reaches here like any other. The cache
@@ -484,6 +490,20 @@ func (e *Evaluator) report(ec *policy.EvalContext, status string, level RiskLeve
 		ec.Findings = make(map[string]policy.Finding, 1)
 	}
 	ec.Findings[Source] = f
+}
+
+// trailStatus is the ai_status an evaluation writes: the word behind the
+// finding report folded, most degraded first, across every analyzer on the
+// statement. Without a context there is nothing to fold with.
+func trailStatus(ec *policy.EvalContext, status string) string {
+	f, ok := ec.Finding(Source)
+	if !ok {
+		return status
+	}
+	if f.Reason != "" {
+		return f.Reason
+	}
+	return f.Status
 }
 
 func prevLevel(f policy.Finding) RiskLevel {
@@ -576,43 +596,31 @@ func (e *Evaluator) classify(
 	if cached, hit := e.cache.get(cacheKey); hit {
 		return cached, StatusCached, nil
 	}
-	// Reserve a slot atomically.
+	// Reserve a slot atomically, against max_calls and the rate together.
 	//
 	// One Evaluator is shared by every connection on the lane, so reading a
 	// counter and incrementing it in two steps leaves a window where every
 	// goroutine in flight reads the same under-budget value and every one of
 	// them calls the provider. A budget of 100 becomes 100 plus however many
 	// connections were concurrent, which is exactly the runaway the budget
-	// exists to bound.
-	//
-	// Add returns the post-increment value, so exactly one goroutine can
-	// observe each slot. An over-budget reservation is handed back, keeping
-	// Stats.Calls a count of provider calls made rather than of attempts,
-	// which is the number that tracks the bill.
-	if n := e.budget.calls.Add(1); e.cfg.MaxCalls > 0 && n > int64(e.cfg.MaxCalls) {
-		e.budget.calls.Add(-1)
+	// exists to bound. Budget.take decides both under one lock and counts
+	// only granted calls, so Stats.Calls is the number of provider calls
+	// made, which is the number that tracks the bill.
+	status, edge, refused := e.budget.take(e.cfg.MaxCalls, e.cfg.RateLimit)
+	if edge != edgeNone && e.cfg.OnRateLimit != nil {
+		e.cfg.OnRateLimit(edge == edgeStarted, refused)
+	}
+	switch status {
+	case StatusBudget:
 		e.budgetLogged.Do(func() {
 			if e.onBudget != nil {
 				e.onBudget()
 			}
 		})
 		return Result{}, StatusBudget, nil
-	}
-	// The rate runs after the lifetime slot, so a spent max_calls reports
-	// budget_exhausted: that one lasts until a restart, which is the more
-	// useful thing to say. A refused draw hands the slot back, keeping
-	// Stats.Calls a count of calls made and the lifetime budget unspent by
-	// throttling.
-	if e.cfg.RateLimit.Enabled() {
-		ok, edge, refused := e.budget.draw(e.cfg.RateLimit)
-		if edge != edgeNone && e.cfg.OnRateLimit != nil {
-			e.cfg.OnRateLimit(edge == edgeStarted, refused)
-		}
-		if !ok {
-			e.budget.calls.Add(-1)
-			e.rateLimited.Add(1)
-			return Result{}, StatusRateLimited, nil
-		}
+	case StatusRateLimited:
+		e.rateLimited.Add(1)
+		return Result{}, StatusRateLimited, nil
 	}
 
 	callCtx, cancel := context.WithTimeout(ctx, e.cfg.Timeout)

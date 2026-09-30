@@ -261,3 +261,113 @@ func TestACacheHitDrawsNoToken(t *testing.T) {
 		t.Errorf("provider calls = %d, want 1", n)
 	}
 }
+
+// A throttled call must never touch the lifetime count, even for a moment:
+// a concurrent call reading the count in that window would report a spent
+// max_calls that is not spent, and deny on a lane that holds.
+func TestThrottledCallsNeverReportAFalseBudgetExhausted(t *testing.T) {
+	clock := newFakeClock()
+	ev, _ := rateLimited(t, analyzer.NewBudget(clock.now),
+		analyzer.RateLimit{Calls: 1, Per: time.Hour},
+		func(c *analyzer.Config) { c.MaxCalls = 2 })
+	ev.Evaluate(deleteStatement()) // spends the only token; one call of two made
+
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	got := map[string]int{}
+	for range 64 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 50 {
+				s := status(ev.Evaluate(deleteStatement()))
+				mu.Lock()
+				got[s]++
+				mu.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
+	if got[analyzer.StatusBudget] != 0 || got[analyzer.StatusRateLimited] != 64*50 {
+		t.Errorf("statuses = %v, want only rate_limited: one of two calls was made", got)
+	}
+}
+
+// A reload that removes the rate must close a running episode, or the log
+// says "reached" and never "cleared". Removing it must not refill the bucket
+// either: a limit put back before it refilled starts a new episode at once.
+func TestRemovingTheRateClosesTheEpisodeWithoutRefilling(t *testing.T) {
+	clock := newFakeClock()
+	budget := analyzer.NewBudget(clock.now)
+	type event struct {
+		gen     int
+		limited bool
+		refused int64
+	}
+	var events []event
+	build := func(gen int, rate analyzer.RateLimit) *analyzer.Evaluator {
+		ev, _ := rateLimited(t, budget, rate, func(c *analyzer.Config) {
+			c.OnRateLimit = func(limited bool, refused int64) {
+				events = append(events, event{gen, limited, refused})
+			}
+		})
+		return ev
+	}
+	perMin := analyzer.RateLimit{Calls: 1, Per: time.Minute}
+
+	gen1 := build(1, perMin)
+	gen1.Evaluate(deleteStatement())
+	gen1.Evaluate(deleteStatement()) // refused: the episode starts
+
+	gen2 := build(2, analyzer.RateLimit{})
+	if s := status(gen2.Evaluate(deleteStatement())); s != analyzer.StatusOK {
+		t.Fatalf("a lane with the rate removed = %q, want ok", s)
+	}
+
+	gen3 := build(3, perMin)
+	if s := status(gen3.Evaluate(deleteStatement())); s != analyzer.StatusRateLimited {
+		t.Errorf("the rate put back = %q, want rate_limited: removing it refilled the bucket", s)
+	}
+
+	want := []event{{1, true, 1}, {2, false, 1}, {3, true, 1}}
+	if len(events) != len(want) {
+		t.Fatalf("events = %+v, want %+v", events, want)
+	}
+	for i := range want {
+		if events[i] != want[i] {
+			t.Errorf("events = %+v, want %+v", events, want)
+			break
+		}
+	}
+}
+
+// ai_status on the audit record folds like the finding: a second analyzer
+// that answered must not overwrite the first one's throttling, or the trail
+// reads "ok" while the policy was told "unavailable".
+func TestAThrottledStatusSurvivesALaterAnalyzerThatAnswered(t *testing.T) {
+	clock := newFakeClock()
+	throttled := func(t *testing.T) *analyzer.Evaluator {
+		ev, _ := rateLimited(t, analyzer.NewBudget(clock.now),
+			analyzer.RateLimit{Calls: 1, Per: time.Hour}, nil)
+		ev.Evaluate(deleteStatement()) // spends the only token
+		return ev
+	}
+	working := func(t *testing.T) *analyzer.Evaluator {
+		ev, _ := rateLimited(t, nil, analyzer.RateLimit{}, nil)
+		return ev
+	}
+	for _, tc := range []struct {
+		name          string
+		first, second func(*testing.T) *analyzer.Evaluator
+	}{
+		{"throttled first", throttled, working},
+		{"throttled second", working, throttled},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			v := policy.Chain{tc.first(t), tc.second(t)}.Evaluate(deleteStatement())
+			if got := status(v); got != analyzer.StatusRateLimited {
+				t.Errorf("ai_status = %q, want %q", got, analyzer.StatusRateLimited)
+			}
+		})
+	}
+}
