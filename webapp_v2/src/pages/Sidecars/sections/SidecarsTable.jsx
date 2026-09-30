@@ -109,7 +109,7 @@ export default function SidecarsTable({ sidecars }) {
   const getIcon = useConnectionIconGetter()
 
   return (
-    <Table>
+    <Table verticalSpacing="md">
       <Table.Thead>
         <Table.Tr>
           <Table.Th>Sidecar</Table.Th>

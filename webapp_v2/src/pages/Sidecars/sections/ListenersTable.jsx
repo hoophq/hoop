@@ -32,7 +32,7 @@ function ProtocolChip({ protocol, getIcon }) {
     <Image src={getIcon({ subtype: info.subtype })} alt="" w={14} h={14} fit="contain" />
   ) : undefined
   return (
-    <Badge tag chip variant="light" color="gray" icon={icon}>
+    <Badge tag chip variant="light" color="gray" icon={icon} fullLabel>
       {info.label}
     </Badge>
   )
@@ -132,7 +132,7 @@ export default function ListenersTable({ sidecar, onAdd, onEdit }) {
           {`No listener matches "${query.trim()}".`}
         </Text>
       ) : (
-        <Table scrollable>
+        <Table scrollable verticalSpacing="md">
           <Table.Thead>
             <Table.Tr>
               <Table.Th aria-label="Expand" w={40} />
@@ -179,7 +179,7 @@ export default function ListenersTable({ sidecar, onAdd, onEdit }) {
                   <Table.Td miw={200}>
                     <AddressChip value={listener.upstream} />
                   </Table.Td>
-                  <Table.Td miw={150}>
+                  <Table.Td miw={180}>
                     <PoliciesCell listener={listener} config={config} boundRules={sidecar.bound_rules} />
                   </Table.Td>
                   {editable && (
