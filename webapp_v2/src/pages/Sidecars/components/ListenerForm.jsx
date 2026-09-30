@@ -120,7 +120,13 @@ function ObjectBody({ field, path, form, setField, errors }) {
 function Field({ field, path, form, setField, errors }) {
   const value = getPath(form, path)
   const set = (v) => setField(path, v)
-  const common = { label: field.label, description: field.help, error: errors[path] }
+  // The hint reads under the input, as a consequence of what was typed.
+  const common = {
+    label: field.label,
+    description: field.help,
+    error: errors[path],
+    inputWrapperOrder: ['label', 'input', 'description', 'error'],
+  }
 
   if (field.type === 'object') {
     const body = <ObjectBody field={field} path={path} form={form} setField={setField} errors={errors} />
@@ -158,7 +164,7 @@ function Field({ field, path, form, setField, errors }) {
               w="fit-content"
               value={value || field.default || field.enum[0]}
               onChange={set}
-              data={field.enum.map((v) => ({ value: v, label: v }))}
+              data={field.enum.map((v) => ({ value: v, label: ENUM_LABELS[path]?.[v] ?? v }))}
             />
           </Input.Wrapper>
         )
@@ -238,6 +244,9 @@ function Section({ title, description, children }) {
 
 // The basic fields split into two captions. Anything the schema marks basic
 // that neither list names joins the addresses.
+// Enum values the schema spells for the daemon, worded for the form.
+const ENUM_LABELS = { network: { tcp: 'TCP port', unix: 'Unix socket' } }
+
 const IDENTITY = ['name', 'protocol']
 const ADDRESSES = ['network', 'listen', 'upstream']
 const pick = (fields, keys) => keys.map((k) => fields.find((f) => f.key === k)).filter(Boolean)
