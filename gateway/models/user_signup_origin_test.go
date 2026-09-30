@@ -38,6 +38,16 @@ func startTestDB(t *testing.T) {
 	if err := models.InitDatabaseConnection(inst.DSN(), 1); err != nil {
 		t.Fatalf("open gorm connection: %v", err)
 	}
+	sqlDB, err := models.DB.DB()
+	if err != nil {
+		t.Fatalf("get test database pool: %v", err)
+	}
+	// Cleanup runs in reverse order: close the pool before shutting down PGlite.
+	t.Cleanup(func() {
+		if err := sqlDB.Close(); err != nil {
+			t.Errorf("close test database pool: %v", err)
+		}
+	})
 	if err := models.DB.Exec(
 		`INSERT INTO private.orgs (id, name) VALUES (?, 'origin-survey-test')`, testOrgID).Error; err != nil {
 		t.Fatalf("seed org: %v", err)
