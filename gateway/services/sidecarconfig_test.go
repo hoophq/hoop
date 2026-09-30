@@ -365,6 +365,19 @@ func TestAnAnalyzerRuleReviewModeWinsWhenSet(t *testing.T) {
 	}
 }
 
+// A rule spec that names rate_limit sets the lane's rate, as it does
+// max_calls; one that names none keeps the listener's.
+func TestAnAnalyzerRuleRateLimitWinsWhenSet(t *testing.T) {
+	base := &daemon.LaneAnalyzerConfig{RateLimit: &daemon.AnalyzerRateLimitConfig{Calls: 30, PerSec: 60}}
+	if got := mergeAnalyzerBlock(base, daemon.LaneAnalyzerConfig{}); got.RateLimit == nil || got.RateLimit.Calls != 30 {
+		t.Errorf("a rule naming no rate dropped the listener's: %+v", got.RateLimit)
+	}
+	rule := daemon.LaneAnalyzerConfig{RateLimit: &daemon.AnalyzerRateLimitConfig{Calls: 5, PerSec: 60}}
+	if got := mergeAnalyzerBlock(base, rule); got.RateLimit == nil || got.RateLimit.Calls != 5 {
+		t.Errorf("the rule's rate did not win: %+v", got.RateLimit)
+	}
+}
+
 // A return lane bound to a rule that holds nothing composes into a block the
 // sidecar refuses; the plane refuses it first.
 func TestAComposedBlockTheSidecarRefusesIsReported(t *testing.T) {

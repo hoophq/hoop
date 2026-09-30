@@ -110,10 +110,10 @@ const (
 const Source = string(policy.MatchAIAnalysis)
 
 // Statuses this producer reports. They refine policy's generic set rather
-// than replacing it: Budget and Refused are both policy.FindingUnavailable
-// with a reason, and the trail keeps the specific word because an operator
-// tuning max_calls and an operator tuning send: refuse are chasing different
-// things.
+// than replacing it: Budget, RateLimited and Refused are all
+// policy.FindingUnavailable with a reason, and the trail keeps the specific
+// word because an operator tuning max_calls, one tuning rate_limit and one
+// tuning send: refuse are chasing different things.
 const (
 	StatusOK      = policy.FindingOK
 	StatusCached  = policy.FindingCached
@@ -122,6 +122,10 @@ const (
 
 	// StatusBudget means the process-wide call budget was spent.
 	StatusBudget = "budget_exhausted"
+
+	// StatusRateLimited means the rate limit's bucket was empty. Unlike a
+	// spent budget it clears by itself as the bucket refills.
+	StatusRateLimited = "rate_limited"
 
 	// StatusRefused means the content carried a detected entity and
 	// send=refuse forbade transmitting it.
@@ -133,7 +137,7 @@ const (
 // package's reasons, and read `reason` when they care which.
 func findingStatus(status string) string {
 	switch status {
-	case StatusBudget, StatusRefused:
+	case StatusBudget, StatusRateLimited, StatusRefused:
 		return policy.FindingUnavailable
 	}
 	return status
@@ -143,7 +147,7 @@ func findingStatus(status string) string {
 // status already says everything.
 func statusReason(status string) string {
 	switch status {
-	case StatusBudget, StatusRefused:
+	case StatusBudget, StatusRateLimited, StatusRefused:
 		return status
 	}
 	return ""

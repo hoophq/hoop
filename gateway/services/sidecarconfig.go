@@ -295,6 +295,9 @@ func mergeAnalyzerBlock(base *daemon.LaneAnalyzerConfig, rule daemon.LaneAnalyze
 	if rule.Cache != nil {
 		out.Cache = rule.Cache
 	}
+	if rule.RateLimit != nil {
+		out.RateLimit = rule.RateLimit
+	}
 	if rule.ApprovalRule != "" {
 		out.ApprovalRule = rule.ApprovalRule
 	}

@@ -176,6 +176,9 @@ func TestLaneAnalyzerNegativeNumericsAreRefused(t *testing.T) {
 		{"max_calls", LaneAnalyzerConfig{MaxCalls: -1}},
 		{"cache.size", LaneAnalyzerConfig{Cache: &AnalyzerCacheConfig{Size: -1}}},
 		{"cache.ttl_sec", LaneAnalyzerConfig{Cache: &AnalyzerCacheConfig{TTLSec: -1}}},
+		{"rate_limit.calls", LaneAnalyzerConfig{RateLimit: &AnalyzerRateLimitConfig{Calls: -1}}},
+		{"rate_limit.per_sec", LaneAnalyzerConfig{RateLimit: &AnalyzerRateLimitConfig{PerSec: -1}}},
+		{"rate_limit.burst", LaneAnalyzerConfig{RateLimit: &AnalyzerRateLimitConfig{Burst: -1}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			la := laneBlock()
@@ -277,6 +280,85 @@ func TestLaneAnalyzerOverridesAndBudgetKeyOnTheLane(t *testing.T) {
 	other.Evaluate(stmt)
 	if got := other.(*analyzer.Evaluator).Stats().Calls; got != 1 {
 		t.Fatalf("a second lane's budget = %d, want its own count of 1", got)
+	}
+}
+
+// A rate names calls per period, and the pair is what bounds anything. The
+// EFFECTIVE pair is checked, so a block naming only calls inherits the
+// period, while one that inherits nothing to pair with is refused rather
+// than running unlimited under a config that reads as limited.
+func TestLaneRateLimitIsValidatedAsResolved(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		top   *AnalyzerRateLimitConfig
+		block *AnalyzerRateLimitConfig
+		want  string // empty: accepted
+	}{
+		{"whole block", nil, &AnalyzerRateLimitConfig{Calls: 30, PerSec: 60}, ""},
+		{"calls inherit the period", &AnalyzerRateLimitConfig{Calls: 30, PerSec: 60},
+			&AnalyzerRateLimitConfig{Calls: 5}, ""},
+		{"calls with no period anywhere", nil, &AnalyzerRateLimitConfig{Calls: 30}, "needs both calls and per_sec"},
+		{"burst with no rate", nil, &AnalyzerRateLimitConfig{Burst: 5}, "burst needs calls and per_sec"},
+		{"empty block", &AnalyzerRateLimitConfig{Calls: 30, PerSec: 60}, &AnalyzerRateLimitConfig{},
+			"limits nothing"},
+		{"half-set top level", &AnalyzerRateLimitConfig{PerSec: 60}, nil, "needs both calls and per_sec"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			la := laneBlock()
+			la.RateLimit = tc.block
+			cfg := blockLane(la)
+			cfg.Analyzer.RateLimit = tc.top
+			err := cfg.Validate()
+			switch {
+			case tc.want == "" && err != nil:
+				t.Errorf("refused: %v", err)
+			case tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)):
+				t.Errorf("error = %v, want it to contain %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// The lane's rate merges over the top-level one field by field, and its
+// bucket keys on the LANE like max_calls does: a rebuilt block continues the
+// running bucket, and another lane draws on its own.
+func TestLaneRateLimitMergesAndItsBucketKeysOnTheLane(t *testing.T) {
+	deps := &analyzerDeps{
+		cfg: &AnalyzerConfig{Provider: "stub", Model: "m",
+			RateLimit: &AnalyzerRateLimitConfig{Calls: 1, PerSec: 3600}},
+		provider: stubAnalyzerProvider{},
+	}
+	la := laneBlock()
+	la.RateLimit = &AnalyzerRateLimitConfig{Calls: 2} // per_sec inherited
+	stmt := inspect.Statement{
+		Protocol:  inspect.Postgres,
+		Direction: inspect.FromClient,
+		Text:      "DELETE FROM t",
+		Operation: inspect.OpDelete,
+	}
+	aiStatus := func(ev policy.Evaluator) string {
+		return ev.Evaluate(stmt).Annotations[analyzer.MetadataAIStatus]
+	}
+	build := func(lane string) policy.Evaluator {
+		t.Helper()
+		ev, err := buildLaneAnalyzer(lane, la, deps, false, false, nil)
+		if err != nil {
+			t.Fatalf("buildLaneAnalyzer: %v", err)
+		}
+		return ev
+	}
+
+	gen1 := build("appdb")
+	for i := range 2 {
+		if s := aiStatus(gen1); s != analyzer.StatusOK {
+			t.Fatalf("call %d within the lane's burst of 2 = %q, want ok", i+1, s)
+		}
+	}
+	if s := aiStatus(build("appdb")); s != analyzer.StatusRateLimited {
+		t.Errorf("the rebuilt lane = %q, want rate_limited: the rebuild refilled the bucket", s)
+	}
+	if s := aiStatus(build("payments")); s != analyzer.StatusOK {
+		t.Errorf("another lane = %q, want ok from its own bucket", s)
 	}
 }
 
