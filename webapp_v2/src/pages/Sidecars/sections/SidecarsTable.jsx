@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { Group, Image, Text } from '@mantine/core'
+import Avatar from '@/components/Avatar'
 import Badge from '@/components/Badge'
 import Button from '@/components/Button'
 import Table from '@/components/Table'
@@ -17,29 +18,23 @@ import { SidecarStatusBadge } from '../components/SidecarDetails'
 // what the fleet view answers; the names are one click away in its own table.
 const LANES_SHOWN = 4
 
+const AVATAR_SIZE = 24
+const ICON_SIZE = 14
+
 // `others` carries the ref and hover handlers Tooltip clones onto its child;
 // dropping them is a tooltip that never opens.
-function ProtocolIcon({ protocol, getIcon, ...others }) {
+function ProtocolAvatar({ protocol, getIcon, ...others }) {
   const info = protocolInfo(protocol)
   // grpc and spanner are not hoop connection types and have no icon of their
-  // own; the fallback would show something unrelated, so they keep their label.
-  if (!info.subtype) {
-    return (
-      <Badge tag chip variant="light" color="gray" {...others}>
-        {info.label}
-      </Badge>
-    )
-  }
+  // own; the fallback would show something unrelated, so they show letters.
   return (
-    <Badge
-      tag
-      chip
-      variant="light"
-      color="gray"
-      icon={<Image src={getIcon({ subtype: info.subtype })} alt="" w={14} h={14} fit="contain" />}
-      aria-label={info.label}
-      {...others}
-    />
+    <Avatar size={AVATAR_SIZE} bg="gray.1" color="gray" variant="light" aria-label={info.label} {...others}>
+      {info.subtype ? (
+        <Image src={getIcon({ subtype: info.subtype })} alt="" w={ICON_SIZE} h={ICON_SIZE} fit="contain" />
+      ) : (
+        info.label.slice(0, 2)
+      )}
+    </Avatar>
   )
 }
 
@@ -55,19 +50,18 @@ function Listeners({ sidecar, getIcon }) {
 
   if (usesConfigFile(sidecar)) {
     return (
-      <Text size="sm" c="dimmed">
+      <Text size="xs" fw={500} c="gray.5">
         In its config file
       </Text>
     )
   }
   if (listeners.length === 0) {
     return (
-      <Text size="sm" c="dimmed">
+      <Text size="xs" fw={500} c="gray.5">
         Not configured
       </Text>
     )
   }
-  // One lane reads as its protocol (Figma: "PostgreSQL"); more read as icons.
   if (listeners.length === 1) {
     const [listener] = listeners
     const info = protocolInfo(listener.protocol)
@@ -91,26 +85,26 @@ function Listeners({ sidecar, getIcon }) {
   }
   const hidden = listeners.length - LANES_SHOWN
   return (
-    <Group gap={4} wrap="nowrap">
+    <Avatar.Group>
       {listeners.slice(0, LANES_SHOWN).map((listener, index) => (
         <Tooltip
           key={`${listenerLabel(listener, index)}-${index}`}
           label={`${listenerLabel(listener, index)} · ${protocolInfo(listener.protocol).label}`}
         >
-          <ProtocolIcon protocol={listener.protocol} getIcon={getIcon} />
+          <ProtocolAvatar protocol={listener.protocol} getIcon={getIcon} />
         </Tooltip>
       ))}
       {hidden > 0 && (
-        <Text size="xs" c="dimmed">
-          {`+${hidden}`}
-        </Text>
+        <Tooltip label={listeners.slice(LANES_SHOWN).map(listenerLabel).join(', ')}>
+          <Avatar size={AVATAR_SIZE} bg="gray.0" color="gray" variant="light" fw={700}>
+            {`+${hidden}`}
+          </Avatar>
+        </Tooltip>
       )}
-    </Group>
+    </Avatar.Group>
   )
 }
 
-// Figma: "Sidecars" table. A row opens its details; listeners and the sidecar
-// itself are authored on that page, so the fleet stays one line per sidecar.
 export default function SidecarsTable({ sidecars }) {
   const getIcon = useConnectionIconGetter()
 
@@ -134,7 +128,7 @@ export default function SidecarsTable({ sidecars }) {
               {/* A hyphenated name is a legal break point, so a narrower cell
                   splits "payments-sidecar" across two lines. */}
               <Table.Td miw={190}>
-                <Text size="sm" fw={600}>
+                <Text size="sm" fw={500}>
                   {sidecar.name}
                 </Text>
               </Table.Td>
@@ -149,7 +143,7 @@ export default function SidecarsTable({ sidecars }) {
                 </Group>
               </Table.Td>
               <Table.Td miw={140}>
-                <Badge variant="light" color={usesConfigFile(sidecar) ? 'gray' : 'blue'} fullLabel>
+                <Badge tag variant="light" color={usesConfigFile(sidecar) ? 'gray' : 'blue'} fullLabel>
                   {usesConfigFile(sidecar) ? 'Config file' : 'Control plane'}
                 </Badge>
               </Table.Td>
@@ -158,13 +152,13 @@ export default function SidecarsTable({ sidecars }) {
               </Table.Td>
               <Table.Td miw={150}>
                 {usesConfigFile(sidecar) ? (
-                  <Text size="sm" c="dimmed">
+                  <Text size="xs" fw={500} c="gray.5">
                     Not delivered
                   </Text>
                 ) : features.length > 0 ? (
                   <FeaturePills compact features={features} />
                 ) : (
-                  <Text size="sm" c="dimmed">
+                  <Text size="xs" fw={500} c="gray.5">
                     No policies configured
                   </Text>
                 )}
@@ -176,7 +170,7 @@ export default function SidecarsTable({ sidecars }) {
                   variant="subtle"
                   size="compact-sm"
                 >
-                  Details
+                  Edit
                 </Button>
               </Table.Td>
             </Table.Tr>

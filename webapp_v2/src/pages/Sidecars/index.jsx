@@ -11,11 +11,8 @@ import SidecarMethodCards from './components/SidecarMethodCards'
 import SidecarLicenseNotice from './sections/SidecarLicenseNotice'
 import SidecarsTable from './sections/SidecarsTable'
 
-/**
- * The control plane landing page for every admin: the fleet of sidecars
- * (Figma: "Sidecars"). Empty, it offers the two ways in; filled, the table and
- * "Add new Sidecar". Deleting one happens on its details page.
- */
+// Empty, the two ways in; filled, the table. A sidecar is deleted from its
+// details page.
 export default function Sidecars() {
   const { sidecars, loading, error, fetchSidecars } = useSidecarStore()
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
@@ -57,7 +54,7 @@ export default function Sidecars() {
           <SidecarMethodCards />
         ) : (
           <Stack gap="sm">
-            <Text size="sm" fw={600}>
+            <Text size="lg" fw={700}>
               {`${count} ${count === 1 ? 'Sidecar' : 'Sidecars'}`}
             </Text>
             <SidecarsTable sidecars={sidecars} />

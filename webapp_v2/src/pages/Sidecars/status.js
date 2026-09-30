@@ -21,7 +21,7 @@ const STATUS = {
   },
   [SIDECAR_STATUS.CONNECTED]: {
     key: SIDECAR_STATUS.CONNECTED,
-    label: 'Connected',
+    label: 'Active',
     badge: 'active',
     hint: 'Last check-in with this control plane. The sidecar asks for its configuration; nothing is pushed to it.',
   },

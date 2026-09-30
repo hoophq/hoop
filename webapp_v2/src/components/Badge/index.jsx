@@ -1,4 +1,4 @@
-import { Badge as MantineBadge } from '@mantine/core'
+import { Badge as MantineBadge, Box } from '@mantine/core'
 import classes from './Badge.module.css'
 
 /**
@@ -22,11 +22,20 @@ const SEMANTIC_MAP = {
   danger: { color: 'red', variant: 'filled' },
 }
 
+// The dot form: one neutral pill for every state, the state as the dot colour.
+const DOT_COLORS = {
+  active: 'green.5',
+  inactive: 'gray.4',
+  warning: 'amber.5',
+  danger: 'red.5',
+}
+
 // A badge carrying a phrase rather than a status. Mantine upper-cases and bolds
 // every badge, which reads as a state machine ("ACTIVE", "WAITING") and turns a
 // written label into shouting. `tag` is the opt-out, and it lives here so no
 // call site has to repeat the two props.
-const TAG_PROPS = { tt: 'none', fw: 500 }
+// Mantine also spaces badge letters by 0.25px, tuned for the uppercase form.
+const TAG_PROPS = { tt: 'none', fw: 500, lts: 0 }
 
 /**
  * `icon` is a leading icon, and it is a prop rather than a bare `leftSection`
@@ -40,6 +49,9 @@ const TAG_PROPS = { tt: 'none', fw: 500 }
  *
  * `chip` picks the taller content-chip size from theme.js. Use it for anything
  * carrying an icon or a phrase; leave it off for a status word.
+ *
+ * `dot` renders a semantic variant as a neutral pill with a coloured dot, the
+ * control plane's status style. The text stays a word, not a shout.
  */
 export default function Badge({
   variant = 'filled',
@@ -47,6 +59,7 @@ export default function Badge({
   color,
   tag,
   chip,
+  dot,
   icon,
   fullLabel = false,
   classNames = {},
@@ -54,27 +67,30 @@ export default function Badge({
   ...props
 }) {
   const semantic = SEMANTIC_MAP[variant]
-  const resolvedColor = semantic?.color ?? color
-  const resolvedVariant = semantic?.variant ?? variant
+  const dotColor = dot ? (DOT_COLORS[variant] ?? color ?? 'gray.4') : null
+  const resolvedColor = dot ? 'gray' : (semantic?.color ?? color)
+  const resolvedVariant = dot ? 'light' : (semantic?.variant ?? variant)
   const iconOnly = Boolean(icon) && children == null
   // Least specific first, so a call site's own classNames still win over both
   // of the opt-ins this component owns.
   const merged = {
     ...(iconOnly ? { root: classes.iconOnly, section: classes.iconOnlySection } : null),
     ...(fullLabel ? { label: classes.fullLabel } : null),
+    ...(dot ? { root: classes.dot } : null),
     ...classNames,
   }
+  const leftSection = dot ? <Box component="span" w={8} h={8} bdrs="50%" bg={dotColor} /> : icon
 
   return (
     <MantineBadge
       variant={resolvedVariant}
       color={resolvedColor}
-      c={semantic?.c}
-      size={chip ? 'chip' : size}
+      c={dot ? 'var(--mantine-color-text)' : semantic?.c}
+      size={chip || dot ? 'chip' : size}
       radius="sm"
-      leftSection={icon}
+      leftSection={leftSection}
       classNames={merged}
-      {...(tag ? TAG_PROPS : null)}
+      {...(tag || dot ? TAG_PROPS : null)}
       {...props}
     >
       {children}

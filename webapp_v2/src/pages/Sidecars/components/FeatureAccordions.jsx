@@ -41,10 +41,6 @@ function RuleRow({ rule }) {
 }
 
 /**
- * The three feature rows of the Figma "Sidecar Details": AI Analyzer, Data
- * Masking, Guardrails, each an accordion whose header carries a summary and
- * whose body lists the rules.
- *
  * Without a `listener` it reads the sidecar's defaults, the top-level blocks
  * every lane inherits; with one, what that lane resolves to. Both include the
  * rules the control plane distributes, which are never in the stored document.

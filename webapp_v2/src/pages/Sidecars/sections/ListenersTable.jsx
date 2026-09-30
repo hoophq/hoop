@@ -13,10 +13,6 @@ import { listenerLabel } from '../listeners'
 import FeatureAccordions from '../components/FeatureAccordions'
 import FeaturePills from '../components/FeaturePills'
 
-// Figma draws the two addresses as chips with a direction on them rather than
-// as bare text. Inbound is where clients arrive, outbound is where the sidecar
-// dials your resource.
-//
 // A Badge, not a Pill: Pill's label is a block box that centres a bare string
 // and nothing else, so an icon beside text lands above the chip's centre.
 function AddressChip({ value, inbound }) {
@@ -42,14 +38,11 @@ function ProtocolChip({ protocol, getIcon }) {
   )
 }
 
-// Chips when the lane carries a rule of its own; "Inherited policy" when it
-// only runs the sidecar's defaults, which is how the Figma row tells the two
-// apart.
 function PoliciesCell({ listener, config, boundRules }) {
   const { features, inheritedOnly } = listenerPolicies(listener, config, boundRules)
   if (features.length > 0) return <FeaturePills compact features={features} />
   return (
-    <Text size="sm" c="dimmed">
+    <Text size="xs" fw={500} c="gray.5">
       {inheritedOnly ? 'Inherited policy' : 'No policies configured'}
     </Text>
   )

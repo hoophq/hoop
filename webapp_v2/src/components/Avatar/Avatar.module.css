@@ -1,0 +1,5 @@
+/* Overlapping avatars separate with a thin ring in the body colour. Mantine
+   sets a 2px border for a grouped avatar, too much at 24px. */
+.root[data-within-group] {
+  border: 1px solid var(--mantine-color-body);
+}

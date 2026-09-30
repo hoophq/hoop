@@ -201,10 +201,7 @@ function summary(key, rules) {
   return `${rules.length} ${rules.length === 1 ? 'rule' : 'rules'}`
 }
 
-/**
- * One entry per feature, in display order, each with its rows and the header
- * summary (Figma: "Configured", "3 Rules", "No rule configured").
- */
+// One entry per feature, in display order, with its rows and the header summary.
 export function featureList(listener, config, boundRules) {
   return FEATURE_ORDER.map((key) => {
     const rules = ROWS[key](listener, config, boundRules)

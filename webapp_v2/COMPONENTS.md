@@ -354,7 +354,22 @@ import Badge from '@/components/Badge'
 <Badge variant="danger">Failed</Badge>       // red filled
 // Standard Mantine props also work:
 <Badge color="indigo" variant="outline">Custom</Badge>
+// The dot form (Figma "Badge" with `_Dot`): one neutral pill, the state as a
+// coloured dot before the word. The control plane's sidecar status uses it.
+<Badge variant="active" dot>Active</Badge>
 ```
+
+### `Avatar`
+Round tile for an icon, an image or a short label, and `Avatar.Group` to overlap several (Figma "Avatar Group": 24px circles, 8px overlap, a 1px ring in the body colour). Used for the listeners and the policies of a sidecar row.
+```jsx
+import Avatar from '@/components/Avatar'
+
+<Avatar.Group>
+  <Avatar size={24} color="pink" variant="light"><Sparkles size={14} /></Avatar>
+  <Avatar size={24} bg="gray.0" color="gray" variant="light">+2</Avatar>
+</Avatar.Group>
+```
+`radius` defaults to `xl`; `Avatar.Group` overlaps by 8px unless `spacing` says otherwise. Wrap an avatar in `Tooltip` for its label, since a 24px circle carries none.
 
 ### `ActionMenu`
 Dropdown action menu for table rows and cards. Uses a `MoreHorizontal` icon trigger.

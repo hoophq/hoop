@@ -33,7 +33,7 @@ export function SidecarStatusBadge({ sidecar }) {
   const status = sidecarStatus(sidecar)
   return (
     <Tooltip label={status.hint} multiline w={260}>
-      <Badge variant={status.badge} flex="0 0 auto">
+      <Badge variant={status.badge} dot flex="0 0 auto">
         {status.label}
       </Badge>
     </Tooltip>
@@ -55,8 +55,7 @@ function detachedSummary(detached) {
     .join(' ')
 }
 
-// The banner above the card says which side owns the document, and carries
-// the one action that changes it (Figma: "Change config").
+// Which side owns the document, and the one action that changes it.
 function SourceBanner({ fromFile, configured, editable, onSwitch }) {
   if (fromFile) {
     return (
@@ -110,7 +109,7 @@ function SourceBanner({ fromFile, configured, editable, onSwitch }) {
 }
 
 /**
- * The "Sidecar Details" card (Figma: wizard Overview and the details page).
+ * The "Sidecar Details" card, shared by the wizard Overview and the details page.
  *
  * The control plane answers the sidecar's check-in with the configuration it
  * holds for it (gateway/api/sidecar). This card reads that document and writes
