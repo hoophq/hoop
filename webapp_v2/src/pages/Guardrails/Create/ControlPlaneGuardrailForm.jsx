@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Box, Group, Paper, Stack, Text } from '@mantine/core'
+import { Box, Group, Paper, Stack, Text, Title } from '@mantine/core'
+import { useDisclosure, useInViewport } from '@mantine/hooks'
 import { ArrowLeft, Plus, Trash2 } from 'lucide-react'
 import ActionIcon from '@/components/ActionIcon'
 import DocsBtnCallOut from '@/components/DocsBtnCallOut'
 import Button from '@/components/Button'
+import Modal from '@/components/Modal'
 import MultiSelect from '@/components/MultiSelect'
 import PageLoader from '@/components/PageLoader'
 import SectionRow from '@/components/SectionRow'
@@ -13,6 +15,7 @@ import SidecarTargetPicker from '@/components/SidecarTargetPicker'
 import Switch from '@/components/Switch'
 import TagsInput from '@/components/TagsInput'
 import TextInput from '@/components/TextInput'
+import { PAGE_PADDING } from '@/layout/PageLayout'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import { docsUrl } from '@/utils/docsUrl'
 import { showSnackbar } from '@/utils/snackbar'
@@ -23,6 +26,7 @@ import {
   ruleTypesFor,
 } from '@/pages/sidecarRuleVocabulary'
 import { useGuardrailsStore } from '../store'
+import classes from './Create.module.css'
 
 // Guardrails as a SIDECAR runs them, which is a different rule engine from the
 // gateway's and shares only two of its seven rule types.
@@ -255,9 +259,12 @@ function RuleEditor({ rule, index, onChange, onRemove, removable, types, operati
 
 function FormFields({ guardrail, id, isEdit }) {
   const navigate = useNavigate()
+  const { ref: sentinelRef, inViewport: headerInView } = useInViewport()
+  const [deleteOpened, deleteModal] = useDisclosure(false)
   const submitting = useGuardrailsStore((s) => s.submitting)
   const createGuardrail = useGuardrailsStore((s) => s.createGuardrail)
   const updateGuardrail = useGuardrailsStore((s) => s.updateGuardrail)
+  const deleteGuardrail = useGuardrailsStore((s) => s.deleteGuardrail)
   const sidecars = useSidecarStore((s) => s.sidecars)
 
   const [name, setName] = useState(guardrail?.name ?? '')
@@ -319,8 +326,22 @@ function FormFields({ guardrail, id, isEdit }) {
     })
   }
 
+  const handleDelete = async () => {
+    const { ok, error } = await deleteGuardrail(id)
+    deleteModal.close()
+    if (ok) {
+      showSnackbar({ level: 'success', text: 'Guardrail deleted.' })
+      navigate('/guardrails')
+      return
+    }
+    showSnackbar({
+      level: 'error',
+      text: error?.response?.data?.message || 'Failed to delete the guardrail.',
+    })
+  }
+
   return (
-    <Stack gap="xxlAlt">
+    <Stack gap={0}>
       <Box>
         <Button
           variant="transparent"
@@ -329,76 +350,127 @@ function FormFields({ guardrail, id, isEdit }) {
           onClick={() => navigate('/guardrails')}
           px={0}
           w="fit-content"
+          mb="xl"
         >
           Back
         </Button>
       </Box>
 
-      <SectionRow
-        title="Set Guardrail information"
-        description="Used to identify this guardrail across the fleet."
+      {/* The header of the gateway sibling: pulled up by the shell header's
+          height, since useInViewport takes no rootMargin. */}
+      <Box
+        ref={sentinelRef}
+        aria-hidden="true"
+        pos="relative"
+        top="calc(-1 * var(--app-shell-header-offset, 0rem))"
+      />
+      <Group
+        justify="space-between"
+        align="center"
+        pos="sticky"
+        top="var(--app-shell-header-offset, 0rem)"
+        bg="var(--mantine-color-body)"
+        py="md"
+        mb="xl"
+        mx={-PAGE_PADDING}
+        px={PAGE_PADDING}
+        className={classes.stickyHeader}
+        data-scrolled={!headerInView || undefined}
       >
-        <Stack gap="md">
-          <TextInput
-            label="Name"
-            placeholder="no-destructive-sql"
-            value={name}
-            onChange={(e) => setName(e.currentTarget.value)}
-            required
-            autoFocus
-          />
-          <TextInput
-            label="Description (Optional)"
-            placeholder="Describe what this protects"
-            value={description}
-            onChange={(e) => setDescription(e.currentTarget.value)}
-          />
-        </Stack>
-      </SectionRow>
-
-      <SectionRow
-        title="Distribute to listeners"
-        description="Pick these first: the rule types below narrow to what every listener you choose can run."
-      >
-        <SidecarTargetPicker value={targets} onChange={setTargets} />
-      </SectionRow>
-
-      <SectionRow
-        title="Configure rules"
-        description="Evaluated in order. The first rule that denies wins."
-        callout={
-          <DocsBtnCallOut text="See our docs for every rule type" href={docsUrl.sidecar.policyRules} variant="indigo" />
-        }
-      >
-        <Stack gap="md">
-          {rules.map((rule, i) => (
-            <RuleEditor
-              key={rule.key}
-              rule={rule}
-              index={i}
-              types={types}
-              operations={operations}
-              removable={rules.length > 1}
-              onChange={(next) => setRules(rules.map((r, j) => (j === i ? next : r)))}
-              onRemove={() => setRules(rules.filter((_, j) => j !== i))}
-            />
-          ))}
-          <Button
-            variant="light"
-            leftSection={<Plus size={16} />}
-            onClick={() => setRules([...rules, emptyRule()])}
-            w="fit-content"
-          >
-            Add rule
+        <Title order={2} lts="-0.00625em">
+          {isEdit ? 'Configure Guardrail' : 'Create a new Guardrail'}
+        </Title>
+        <Group gap="sm">
+          {isEdit && (
+            <Button variant="subtle" color="red" onClick={deleteModal.open} disabled={submitting}>
+              Delete
+            </Button>
+          )}
+          <Button onClick={handleSave} disabled={!canSubmit} loading={submitting}>
+            Save
           </Button>
-        </Stack>
-      </SectionRow>
-
-      <Group justify="flex-end">
-        <Button onClick={handleSave} disabled={!canSubmit} loading={submitting}>
-          Save
-        </Button>
+        </Group>
       </Group>
+
+      <Stack gap="xxlAlt">
+        <SectionRow
+          title="Set Guardrail information"
+          description="Used to identify this guardrail across the fleet."
+        >
+          <Stack gap="md">
+            <TextInput
+              label="Name"
+              placeholder="no-destructive-sql"
+              value={name}
+              onChange={(e) => setName(e.currentTarget.value)}
+              required
+              autoFocus
+            />
+            <TextInput
+              label="Description (Optional)"
+              placeholder="Describe what this protects"
+              value={description}
+              onChange={(e) => setDescription(e.currentTarget.value)}
+            />
+          </Stack>
+        </SectionRow>
+
+        <SectionRow
+          title="Distribute to listeners"
+          description="Pick these first: the rule types below narrow to what every listener you choose can run."
+        >
+          <SidecarTargetPicker value={targets} onChange={setTargets} />
+        </SectionRow>
+
+        <SectionRow
+          title="Configure rules"
+          description="Evaluated in order. The first rule that denies wins."
+          callout={
+            <DocsBtnCallOut text="See our docs for every rule type" href={docsUrl.sidecar.policyRules} variant="indigo" />
+          }
+        >
+          <Stack gap="md">
+            {rules.map((rule, i) => (
+              <RuleEditor
+                key={rule.key}
+                rule={rule}
+                index={i}
+                types={types}
+                operations={operations}
+                removable={rules.length > 1}
+                onChange={(next) => setRules(rules.map((r, j) => (j === i ? next : r)))}
+                onRemove={() => setRules(rules.filter((_, j) => j !== i))}
+              />
+            ))}
+            <Button
+              variant="light"
+              leftSection={<Plus size={16} />}
+              onClick={() => setRules([...rules, emptyRule()])}
+              w="fit-content"
+            >
+              Add rule
+            </Button>
+          </Stack>
+        </SectionRow>
+      </Stack>
+
+      <Modal opened={deleteOpened} onClose={deleteModal.close} title="Delete Guardrail?">
+        <Stack gap="lg">
+          <Text size="sm">
+            This action will permanently delete this Guardrail and cannot be undone. Every
+            listener it is distributed to stops enforcing it. Are you sure you want to
+            proceed?
+          </Text>
+          <Group justify="flex-end" gap="sm">
+            <Button variant="subtle" color="gray" onClick={deleteModal.close}>
+              Cancel
+            </Button>
+            <Button color="red" onClick={handleDelete} loading={submitting}>
+              Delete
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
     </Stack>
   )
 }

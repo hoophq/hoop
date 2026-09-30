@@ -69,6 +69,20 @@ export function boundRulesFor(boundRules, listenerName) {
   return (boundRules ?? []).filter((b) => b.listener_name === listenerName)
 }
 
+// The names of the rules of one kind (guardrail, datamasking or analyzer) the
+// control plane distributes to a SidecarListenerFilter selection: every
+// listener of the sidecar, or only the one named. The rule list answers carry
+// no targets, so the rule pages filter on the fleet's bindings instead.
+export function boundRuleNames(sidecars, selection, kind) {
+  const sidecar = (sidecars ?? []).find((sc) => sc.id === selection?.sidecarId)
+  const listener = selection?.listenerName
+  return new Set(
+    (sidecar?.bound_rules ?? [])
+      .filter((b) => b.kind === kind && (!listener || b.listener_name === listener))
+      .map((b) => b.rule_name),
+  )
+}
+
 export function listenerFeatures(listener, config, boundRules) {
   const on = new Set(boundFeatures(boundRules, listener?.name))
   if (laneAnalyzer(listener, config).on) on.add('ai-analyzer')
