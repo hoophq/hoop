@@ -190,7 +190,7 @@ func TestEndpointCarryingCredentialsIsRefused(t *testing.T) {
 		"https://llm.internal/v1/messages?api_key=secret",
 	} {
 		cfg := &AnalyzerConfig{Provider: "stub", Model: "m", Endpoint: endpoint}
-		if problems := cfg.validate(false); len(problems) == 0 {
+		if problems := cfg.validate(false, true); len(problems) == 0 {
 			t.Errorf("endpoint %q was accepted", endpoint)
 		}
 	}
@@ -209,7 +209,7 @@ func TestEndpointHostRendersHostOnly(t *testing.T) {
 // promises otherwise.
 func TestRedactedSendWithoutDetectorIsRefused(t *testing.T) {
 	cfg := &AnalyzerConfig{Provider: "stub", Model: "m", Send: SendRedacted}
-	problems := cfg.validate(false)
+	problems := cfg.validate(false, true)
 	if len(problems) == 0 {
 		t.Fatal("send=redacted with no pii section was accepted")
 	}
@@ -220,7 +220,7 @@ func TestRedactedSendWithoutDetectorIsRefused(t *testing.T) {
 
 func TestRedactedSendWithDetectorIsAccepted(t *testing.T) {
 	cfg := &AnalyzerConfig{Provider: "stub", Model: "m", Send: SendRedacted}
-	for _, p := range cfg.validate(true) {
+	for _, p := range cfg.validate(true, true) {
 		if strings.Contains(p, "pii") {
 			t.Errorf("send=redacted was refused despite a detector: %v", p)
 		}
@@ -232,7 +232,7 @@ func TestRedactedSendWithDetectorIsAccepted(t *testing.T) {
 // that omitted it, and the bare name sends an operator to the wrong file.
 func TestUnlinkedProviderNamesWhatIsLinked(t *testing.T) {
 	cfg := &AnalyzerConfig{Provider: "definitely-not-linked", Model: "m"}
-	problems := cfg.validate(false)
+	problems := cfg.validate(false, true)
 	if len(problems) == 0 {
 		t.Fatal("an unlinked provider was accepted")
 	}
@@ -519,7 +519,7 @@ func TestAIRuleOnALaneWithNoBuilderIsRefused(t *testing.T) {
 	lc := cfg.Listeners[0]
 	lc.Protocol = "relay-only"
 
-	problems := strings.Join(cfg.validateLane(lc, "relay"), "\n")
+	problems := strings.Join(cfg.validateLane(lc, "relay", true), "\n")
 	if !strings.Contains(problems, "content builder") {
 		t.Fatalf("an ai_analysis rule on a lane with no content builder was accepted: %q", problems)
 	}
@@ -548,7 +548,7 @@ func TestNegativeNumericsAreRefused(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			c := tc.cfg
 			c.Provider, c.Model = "stub", "m"
-			problems := c.validate(false)
+			problems := c.validate(false, true)
 			if len(problems) == 0 {
 				t.Fatalf("a negative %s was accepted", tc.key)
 			}
@@ -562,7 +562,7 @@ func TestNegativeNumericsAreRefused(t *testing.T) {
 // Zero stays legal: it is how each of these is turned off.
 func TestZeroNumericsAreAccepted(t *testing.T) {
 	c := AnalyzerConfig{Provider: "stub", Model: "m"}
-	for _, p := range c.validate(false) {
+	for _, p := range c.validate(false, true) {
 		if strings.Contains(p, "negative") {
 			t.Errorf("a zero value was refused as negative: %v", p)
 		}

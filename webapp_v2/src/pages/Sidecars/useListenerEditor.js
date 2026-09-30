@@ -4,9 +4,11 @@ import { showSnackbar } from '@/utils/snackbar'
 import {
   emptyListener,
   formToListener,
+  groupSaveProblems,
   hasErrors,
   listenerToForm,
   replaceListener,
+  setPath,
   validateListener,
 } from './listeners'
 
@@ -30,8 +32,8 @@ export const saveErrorMessage = (error) =>
  * name lookup would make it a delete plus an insert.
  *
  * Saving is a read-modify-write of the WHOLE configuration: there is no
- * per-listener endpoint. The listener the form opened with is passed back to
- * formToListener so the sections this form does not render survive.
+ * per-listener endpoint. The form state is a copy of the listener, so the
+ * sections this form does not render survive.
  */
 export function useListenerEditor({ sidecar, index }) {
   const listeners = sidecar?.configuration?.listeners ?? []
@@ -40,14 +42,16 @@ export function useListenerEditor({ sidecar, index }) {
 
   const [form, setForm] = useState(() => (original ? listenerToForm(original) : emptyListener()))
   const [errors, setErrors] = useState({})
+  const [refused, setRefused] = useState(null)
   const [saving, setSaving] = useState(false)
   const updateSidecar = useSidecarStore((s) => s.updateSidecar)
 
   // Errors are raised by a save and cleared by any edit, so a message never
   // outlives the value it was about.
-  const setField = (patch) => {
-    setForm((f) => ({ ...f, ...patch }))
+  const setField = (path, value) => {
+    setForm((f) => setPath(f, path, value))
     setErrors({})
+    setRefused(null)
   }
 
   const save = async () => {
@@ -57,16 +61,22 @@ export function useListenerEditor({ sidecar, index }) {
       return null
     }
     setSaving(true)
-    const configuration = replaceListener(sidecar.configuration, index, formToListener(original, form))
+    const configuration = replaceListener(sidecar.configuration, index, formToListener(form))
     const { ok, sidecar: updated, error } = await updateSidecar(sidecar.id, configuration)
     setSaving(false)
+    const problems = error?.response?.data?.problems
+    if (!ok && problems?.length) {
+      setRefused(groupSaveProblems(problems, String(form.name ?? '').trim(), others.map((l) => l.name)))
+      showSnackbar({ level: 'error', text: 'Failed to save the listener.', description: 'The sidecar would refuse it. The problems are listed at the top of the page.' })
+      return null
+    }
     if (!ok) {
       showSnackbar({ level: 'error', text: 'Failed to save the listener.', description: saveErrorMessage(error) })
       return null
     }
-    showSnackbar({ level: 'success', text: `Listener "${form.name.trim()}" saved.` })
+    showSnackbar({ level: 'success', text: `Listener "${String(form.name ?? '').trim()}" saved.` })
     return updated
   }
 
-  return { form, setField, errors, saving, save, isNew: index === null }
+  return { form, setField, errors, refused, saving, save, isNew: index === null }
 }

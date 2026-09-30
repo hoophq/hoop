@@ -41,9 +41,10 @@ func TestAnHTTPLaneCapturesTheReviewModeHeader(t *testing.T) {
 }
 
 // A grpc lane that holds nothing keeps its metadata as the operator wrote it.
-// An analyzer change restarts a grpc lane, so no reload can leave it stale.
+// The lane picks this list per RPC from its live rules, so a reload that
+// turns holding on or off reaches the next RPC.
 func TestAGRPCLaneThatHoldsNothingCapturesNoReviewModeHeader(t *testing.T) {
-	if got := grpcMetadataAllowlist(GRPCCodecConfig{Metadata: []string{" X-Tenant "}}, laneBlock()); !slices.Equal(got, []string{"x-tenant"}) {
+	if got := grpcMetadataAllowlist(GRPCCodecConfig{Metadata: []string{" X-Tenant "}}, analyzerHolds(laneBlock())); !slices.Equal(got, []string{"x-tenant"}) {
 		t.Errorf("grpc allowlist is %v, want only the operator's", got)
 	}
 }
@@ -52,7 +53,7 @@ func TestAGRPCLaneThatHoldsNothingCapturesNoReviewModeHeader(t *testing.T) {
 // their own, so the call's review mode rides on them. Only that header: the
 // operator's metadata stays on the request statement, as before.
 func TestAHoldingGRPCLaneCarriesTheReviewModeOntoRequestMessages(t *testing.T) {
-	allow := grpcMetadataAllowlist(GRPCCodecConfig{Metadata: []string{"X-Tenant"}}, holdingBlock())
+	allow := grpcMetadataAllowlist(GRPCCodecConfig{Metadata: []string{"X-Tenant"}}, analyzerHolds(holdingBlock()))
 	if !slices.Equal(allow, []string{"x-tenant", analyzer.HeaderReviewMode}) {
 		t.Fatalf("grpc allowlist is %v", allow)
 	}

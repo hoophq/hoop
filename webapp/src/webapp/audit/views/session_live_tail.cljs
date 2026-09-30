@@ -18,6 +18,8 @@
    [reagent.core :as r]
    [webapp.audit.views.empty-event-stream :as empty-event-stream]
    [webapp.audit.views.pg-wire :as pg-wire]
+   [webapp.audit.views.session-format :as session-format]
+   [webapp.audit.views.terminal-decoder :as terminal-decoder]
    [webapp.utilities :as utilities]))
 
 ;; ─── Helpers ───────────────────────────────────────────────────────────────
@@ -298,12 +300,9 @@
         (let [start-date (:start_date session)
               connection-subtype (:connection_subtype session)
               postgres? (= connection-subtype "postgres")
-              ;; PTY connections (shell/ssh/…) — the set that uses the asciinema
-              ;; view once finished. Rendered as a terminal; everything else keeps
-              ;; the per-event row list.
-              terminal? (and (contains? #{"custom" "command-line" "application"}
-                                        (:type session))
-                             (not= connection-subtype "rdp"))
+              ;; Historical sessions keep the viewer selected before the
+              ;; recording format was persisted.
+              terminal? (= "pty" (session-format/recording-format session))
               ;; Derive the stream pill state. We prefer whatever the SSE
               ;; effect handler wrote, but if the session has already moved
               ;; to "done" (e.g. we re-opened a previously-live modal) we
@@ -320,9 +319,10 @@
               ;; Concatenate output frames only ("o"/"e"); the PTY echoes input
               ;; back as output, so including "i" would duplicate every keystroke.
               terminal-text (when terminal?
-                              (->> rows
-                                   (filter #(contains? #{"o" "e"} (:event-type %)))
-                                   (map :text)
+                              (->> (terminal-decoder/decode-events event-stream
+                                                                    (= stream-state :ended))
+                                   (filter #(contains? #{"o" "e"} (second %)))
+                                   (map #(nth % 2))
                                    (string/join "")))
               query-count (count (filter #(= :query (:kind %)) rows))
               has-protocol-rows? (some #(= :protocol (:kind %)) rows)

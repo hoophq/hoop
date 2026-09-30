@@ -10,6 +10,11 @@ import (
 	"time"
 )
 
+// ReviewWaitTool names the MCP tool that waits on a review. A return-mode
+// denial tells the agent to call it, so sidecar/mcp registers it under this
+// name and the two cannot drift.
+const ReviewWaitTool = "review_wait"
+
 // MCPConfig is the top-level "mcp" block: an MCP server that answers agents
 // about the reviews this sidecar filed (ADR-0021).
 //

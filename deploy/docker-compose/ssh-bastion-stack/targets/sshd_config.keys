@@ -1,0 +1,24 @@
+# An ordinary key-authenticated host. The bastion's own credential is in the
+# account's authorized_keys, and that is the entire integration.
+#
+# Whose key is in there is the per-target decision hoop makes: a shared key
+# for the fleet entry, one key per person for the enrolled host. sshd cannot
+# tell the difference and does not need to.
+
+Port 22
+HostKey /etc/ssh/ssh_host_ed25519_key
+AuthorizedKeysFile .ssh/authorized_keys
+
+PasswordAuthentication no
+PermitRootLogin no
+PubkeyAuthentication yes
+
+# Default on a stock sshd, written out because the walkthrough depends on it:
+# a forward opened inside a terminated session is carried on the BASTION's
+# connection, so this host is the one that dials it. A host hardened with
+# `AllowTcpForwarding no` refuses, and that refusal is the target's to make.
+AllowTcpForwarding yes
+PermitOpen any
+
+# So a session's own record is visible with `docker compose logs`.
+LogLevel VERBOSE

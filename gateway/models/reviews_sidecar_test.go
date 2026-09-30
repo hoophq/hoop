@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/gateway/migrations"
 	"github.com/hoophq/hoop/gateway/models"
 	"gorm.io/gorm"
 )
@@ -93,6 +94,105 @@ func TestGetSidecarReviewFindsASpentReview(t *testing.T) {
 	}
 	if got.ListenerName.String != "appdb" {
 		t.Errorf("listener = %q, want appdb", got.ListenerName.String)
+	}
+}
+
+// A refusal is final for one review, not for the statement. The resend must
+// file a new review, and the index must accept it.
+func TestRefusedSidecarReviewIsNotLive(t *testing.T) {
+	for _, status := range []models.ReviewStatusType{models.ReviewStatusRejected, models.ReviewStatusRevoked} {
+		t.Run(string(status), func(t *testing.T) {
+			startTestDB(t)
+			sc := seedSidecar(t, "refused")
+			const statement = "DELETE FROM x;"
+			hash := models.HashStatement([]byte(statement))
+			rev := seedSidecarReview(t, sc, statement)
+
+			if err := models.UpdateReviewStatus(testOrgID, rev.ID, status); err != nil {
+				t.Fatalf("refuse the review: %v", err)
+			}
+			_, err := models.GetLiveSidecarReview(models.DB, testOrgID, sc.ID, "appdb", "payments-approvers", hash)
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				t.Fatalf("the live lookup returned a %s review: err=%v", status, err)
+			}
+
+			next := seedSidecarReview(t, sc, statement)
+			got, err := models.GetLiveSidecarReview(models.DB, testOrgID, sc.ID, "appdb", "payments-approvers", hash)
+			if err != nil {
+				t.Fatalf("the live lookup lost the new review: %v", err)
+			}
+			if got.ID != next.ID {
+				t.Errorf("live review = %s, want the new one %s", got.ID, next.ID)
+			}
+		})
+	}
+}
+
+// The down migration restores the old index, which allows one refused row per
+// statement. A refiled statement must not block it, and no row is deleted.
+func TestRefileMigrationRollsBack(t *testing.T) {
+	startTestDB(t)
+	sc := seedSidecar(t, "rollback")
+	const statement = "DELETE FROM x;"
+	old := seedSidecarReview(t, sc, statement)
+	if err := models.UpdateReviewStatus(testOrgID, old.ID, models.ReviewStatusRejected); err != nil {
+		t.Fatalf("reject the review: %v", err)
+	}
+	next := seedSidecarReview(t, sc, statement)
+
+	down, err := migrations.FS.ReadFile("000125_sidecar_review_refile_refused.down.sql")
+	if err != nil {
+		t.Fatalf("read the down migration: %v", err)
+	}
+	if err := models.DB.Exec(string(down)).Error; err != nil {
+		t.Fatalf("the down migration failed: %v", err)
+	}
+
+	hashes := map[string]sql.NullString{}
+	rows, err := models.DB.Raw(`SELECT id, statement_hash FROM private.reviews WHERE id IN (?, ?)`,
+		old.ID, next.ID).Rows()
+	if err != nil {
+		t.Fatalf("read the reviews: %v", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		var hash sql.NullString
+		if err := rows.Scan(&id, &hash); err != nil {
+			t.Fatalf("scan: %v", err)
+		}
+		hashes[id] = hash
+	}
+	if len(hashes) != 2 {
+		t.Fatalf("got %d reviews after rollback, want 2", len(hashes))
+	}
+	if hashes[old.ID].Valid {
+		t.Errorf("the older review kept its hash")
+	}
+	if !hashes[next.ID].Valid {
+		t.Errorf("the newest review lost its hash")
+	}
+}
+
+// A second PENDING review for the same statement must still be refused, so
+// racing first requests cannot both file.
+func TestPendingSidecarReviewBlocksADuplicate(t *testing.T) {
+	startTestDB(t)
+	sc := seedSidecar(t, "duplicate")
+	const statement = "DELETE FROM x;"
+	first := seedSidecarReview(t, sc, statement)
+
+	dup := *first
+	dup.ID = uuid.NewString()
+	dup.SessionID = uuid.NewString()
+	sess := models.Session{
+		ID: dup.SessionID, OrgID: testOrgID, BlobInput: models.BlobInputType(statement),
+		ConnectionType: "custom", Verb: "exec", Status: "open",
+		UserID: sc.ID, UserName: sc.Name, UserEmail: "hoop@hoop.dev", CreatedAt: time.Now().UTC(),
+	}
+	err := models.CreateSidecarReview(models.DB, sess, &dup, statement)
+	if !errors.Is(err, gorm.ErrDuplicatedKey) {
+		t.Fatalf("a second pending review was filed: err=%v", err)
 	}
 }
 

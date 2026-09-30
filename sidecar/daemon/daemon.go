@@ -441,7 +441,7 @@ func ReportDeprecations(w io.Writer, notes []string) {
 	}
 	if len(notes) > 0 {
 		fmt.Fprintln(w, "warn: these fields keep working for now and are removed in a "+
-			"future release. See docs/adr/0011-sidecar-config-schema.md")
+			"future release. See ADR-0011 in hoophq/adr.")
 	}
 }
 
@@ -587,7 +587,7 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 		// — what it admits, where it will carry a forward, the account it
 		// will run as — come from.
 		if isGRPCTransport(ln.cfg) {
-			srv, err := buildGRPCServer(ln, cfg.Audit, nil, validationLog)
+			srv, _, err := buildGRPCServer(ln, cfg.Audit, nil, validationLog)
 			if err != nil {
 				return nil, fmt.Errorf("%s: %w", ln.name, err)
 			}
@@ -595,7 +595,7 @@ func Validate(cfg *Config, det Plugin) ([]LaneInfo, error) {
 			_ = srv.Close()
 		}
 		if isSSH(ln.cfg) {
-			srv, err := buildSSHServer(ln, cfg.Audit, nil, validationLog)
+			srv, _, err := buildSSHServer(ln, cfg.Audit, nil, validationLog)
 			if err != nil {
 				return nil, fmt.Errorf("%s: %w", ln.name, err)
 			}
@@ -893,24 +893,28 @@ func Run(cfg *Config, det Plugin) error {
 	// statSources pairs every server with its lane's protocol, so usage
 	// can report connections per protocol without naming a lane.
 	statSources := make([]statSource, 0, len(lanes))
+	// swappers are the reload targets, one per lane of either shape.
+	swappers := make(map[string]ruleSwapper, len(lanes))
 	for _, ln := range lanes {
 		switch {
 		case isGRPCTransport(ln.cfg):
-			gsrv, serr := buildGRPCServer(ln, cfg.Audit, auditSink, log)
+			gsrv, rules, serr := buildGRPCServer(ln, cfg.Audit, auditSink, log)
 			if serr != nil {
 				return serr
 			}
 			endpoints = append(endpoints, gsrv)
 			endpointNames = append(endpointNames, ln.name)
 			statSources = append(statSources, statSource{ln.cfg.Protocol, gsrv})
+			swappers[ln.name] = rules
 		case isSSH(ln.cfg):
-			ssrv, serr := buildSSHServer(ln, cfg.Audit, auditSink, log)
+			ssrv, rules, serr := buildSSHServer(ln, cfg.Audit, auditSink, log)
 			if serr != nil {
 				return serr
 			}
 			endpoints = append(endpoints, ssrv)
 			endpointNames = append(endpointNames, ln.name)
 			statSources = append(statSources, statSource{ln.cfg.Protocol, ssrv})
+			swappers[ln.name] = rules
 		default:
 			srv, serr := buildServer(ln, cfg.Audit, auditSink, log)
 			if serr != nil {
@@ -919,6 +923,7 @@ func Run(cfg *Config, det Plugin) error {
 			servers = append(servers, srv)
 			relayNames = append(relayNames, ln.name)
 			statSources = append(statSources, statSource{ln.cfg.Protocol, srv})
+			swappers[ln.name] = relayRules{srv}
 		}
 
 		// One line per lane naming what it enforces. The config file does not
@@ -959,11 +964,7 @@ func Run(cfg *Config, det Plugin) error {
 	// feeds it per process: the plane's heartbeat, or the config file's
 	// watcher. Both share the run context, so shutdown stops them with
 	// everything else.
-	byName := make(map[string]*proxy.Server, len(servers))
-	for i, srv := range servers {
-		byName[relayNames[i]] = srv
-	}
-	rl, rerr := newReloader(cfg, lanes, byName, det, analyzerDeps, view, licState)
+	rl, rerr := newReloader(cfg, lanes, swappers, det, analyzerDeps, view, licState)
 	if rerr != nil {
 		return rerr
 	}
@@ -1456,10 +1457,15 @@ func buildServer(
 		CredentialHeader:    lc.credentialHeader(),
 		RequestIdentity:     requestIdentity,
 		CodecFactory:        ln.codecFactory,
-		Metrics:             ln.metrics,
-		IdleTimeout:         time.Duration(lc.IdleTimeoutSec) * time.Second,
-		MaxConns:            lc.MaxConns,
-		Logger:              log.With("listener", ln.name),
+		StartupMetadata:     lc.Postgres.startupMetadata(),
+		// The product default: a postgres lane with no startup_metadata list
+		// records every option the client sends. See PostgresConfig.
+		AllStartupOptions: inspect.Protocol(lc.Protocol) == inspect.Postgres &&
+			lc.Postgres.recordsAllOptions(),
+		Metrics:     ln.metrics,
+		IdleTimeout: time.Duration(lc.IdleTimeoutSec) * time.Second,
+		MaxConns:    lc.MaxConns,
+		Logger:      log.With("listener", ln.name),
 	})
 }
 

@@ -187,6 +187,12 @@ type Config struct {
 	// ReviewMode decides what a PENDING review does to its statement. Empty
 	// is ReviewHold.
 	ReviewMode ReviewMode
+
+	// ReturnNext is what an agent does before it resends a statement a
+	// return-mode denial refused, such as the MCP tool to wait on. The
+	// daemon supplies it because this package does not know which tools
+	// the process serves. Empty keeps the plain retry message.
+	ReturnNext string
 }
 
 // Evaluator classifies statements and turns verdicts into policy decisions.
@@ -655,6 +661,14 @@ func (e *Evaluator) Stats() Stats {
 		CacheMisses: misses,
 	}
 }
+
+// CallsKey identifies the counter behind Stats.Calls. Evaluators built with
+// one Config.Budget share it, so across a reload the old and new instance
+// of one lane report the SAME Calls: a usage reader must count calls per
+// key, not per instance, or it counts them twice. Denied, Errors and the
+// cache counters are per instance. Opaque on purpose: the counter itself
+// is the budget and must not be written from outside.
+func (e *Evaluator) CallsKey() any { return e.calls }
 
 // Rule reports the rule name this analyzer denies under.
 func (e *Evaluator) Rule() string { return e.cfg.Rule }

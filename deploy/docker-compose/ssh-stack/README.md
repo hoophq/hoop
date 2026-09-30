@@ -36,6 +36,13 @@ at the end, so what sits in front changes nothing about what is enforced.
 Topology 3 is the strongest form of it, because the bastion there is stock
 OpenSSH that has never heard of hoop.
 
+> **A fourth topology lives next door.** Everything here rests on a precondition
+> ADR-0015 states plainly: a hoop sidecar runs on every host you want to
+> inspect. Where that does not hold — appliances, managed images, hosts under
+> change-freeze — ADR-0021 moves the endpoint INTO the bastion and leaves the
+> target running nothing. See [`../ssh-bastion-stack/`](../ssh-bastion-stack/).
+> It inverts this stack's security story rather than extending it, and says so.
+
 ```bash
 ./run.sh      # mint a CA and one certificate, build, bring up
 ./demo.sh     # run every check below and assert the result

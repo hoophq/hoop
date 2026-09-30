@@ -53,6 +53,8 @@ WORKDIR /src
 # and prior build outputs via .dockerignore).
 COPY webapp/ ./webapp/
 COPY webapp_v2/ ./webapp_v2/
+# The sidecar listener form is rendered from this generated schema.
+COPY sidecar/daemon/schema.json ./sidecar/daemon/schema.json
 # CLJS bundle (downloads connection metadata from the public docs repo).
 RUN cd webapp && npm install && npm run release:hoop-ui
 # React shell.

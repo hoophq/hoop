@@ -1,0 +1,304 @@
+# ONE BASTION, FOUR STOCK sshd HOSTS, AND NOTHING INSTALLED ON ANY OF THEM.
+#
+#   client ──> bastion (TERMINATES hop 2) ──upstream──> stock sshd
+#
+# ADR-0015's three topologies all put the inspecting endpoint on the TARGET,
+# which needs a hoop sidecar on every host you want to inspect. This stack is
+# ADR-0021's answer to the hosts where that does not hold: appliances that
+# take configuration but not binaries, managed instances whose image we do not
+# control, hosts under change-freeze, and an evaluation where "inspect these
+# twelve hosts by Friday" cannot mean twelve installs.
+#
+# The four targets differ in ONE thing each, so a result has one cause:
+#
+#   host-a.prod   matched by a GLOB, one shared key, exec and env only
+#   host-b.prod   matched by NAME, a key PER PERSON, shell and a forward
+#   host-c.prod   the user's OWN certificate, via a forwarded agent
+#   legacy-01     a different login, its own known_hosts, accept_new
+#
+# Bring up:  ./run.sh
+# Prove it:  ./demo.sh
+# Learn it:  README.md, which walks it one command at a time.
+
+name: hoop-ssh-bastion-stack
+
+# Static addresses, because one of the things under test is a policy WRITTEN
+# against an address: destinations_allowed names 172.31.78.0/24:22 and a DHCP
+# lease would turn that into a guess.
+networks:
+  bastionnet:
+    ipam:
+      config:
+        - subnet: 172.31.78.0/24
+
+services:
+  # ------------------------------------------------------------- THE BASTION
+  #
+  # The only hoop component in the stack. It holds the plaintext of every
+  # session behind it and a credential that reaches most of them — the trade
+  # this topology asks you to accept, stated here rather than buried.
+  bastion:
+    build:
+      context: ../../../sidecar
+      dockerfile: ../deploy/docker-compose/ssh-bastion-stack/bastion/Dockerfile
+      # sidecar's codecs live in libhoop, a PRIVATE module, so the build
+      # takes it from the local checkout through a second context.
+      additional_contexts:
+        libhoop: ../../../libhoop
+    image: hoop-ssh-bastion:local
+    networks:
+      bastionnet:
+        ipv4_address: 172.31.78.10
+    volumes:
+      - ./bastion/config.yaml:/etc/hoop-inspect/config.yaml:ro
+      - ./keys/bastion_host_key:/etc/hoop-inspect/keys/bastion_host_key:ro
+      - ./keys/ca.pub:/etc/hoop-inspect/keys/ca.pub:ro
+      # The two upstream credentials this bastion holds. Their public halves
+      # are in the targets' authorized_keys.
+      - ./keys/prod:/etc/hoop-inspect/keys/prod:ro
+      - ./keys/legacy:/etc/hoop-inspect/keys/legacy:ro
+      # The per-user overlay. A DIRECTORY mount: run.sh enrols into it, and
+      # the sidecar reads the subject's key from it per session, so an
+      # enrolment takes effect on the next connection. Read-only, because
+      # write access here is SSH to every target the overlay reaches.
+      - ./identities:/etc/hoop-inspect/identities:ro
+      - ./keys/known_hosts:/etc/hoop-inspect/known_hosts:ro
+      # legacy-01's own known_hosts lives in a DIRECTORY mount, and that is
+      # not a stylistic choice.
+      #
+      # accept_new turns known_hosts into a state file, and a key is learned
+      # by renaming a new file over the old one. A single file bind-mounted
+      # into a container REFUSES that rename with EBUSY however writable it
+      # looks — so the file has to sit in a directory the container mounts,
+      # where the rename is an ordinary directory operation. This is the
+      # "writable volume rather than the read-only config mount a container
+      # usually gets" the ADR asks for, in its concrete form.
+      - ./state:/var/lib/hoop-inspect:rw
+    ports:
+      # Published so you can also drive it from the host, with the same
+      # commands the client container runs.
+      - "2322:2222"
+      - "19190:9090"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9090/healthz || exit 1"]
+      interval: "2s"
+      timeout: "10s"
+      retries: 15
+
+  # ----------------------------------------------------- the bastion's DECOY
+  #
+  # A service on the BASTION's own 127.0.0.1:5432, sharing its network
+  # namespace.
+  #
+  # It exists to make one rejected design visible. `ssh -L 5432:127.0.0.1:5432
+  # host-b.prod` must reach host-b's loopback; had the bastion dialled the
+  # destination itself — the obvious implementation, since it already resolves
+  # and dials for an ordinary forward — "127.0.0.1" would have meant THIS
+  # process's loopback, and the user would have silently reached a different
+  # and probably more privileged service. This is that service, and the
+  # walkthrough proves you never reach it.
+  bastion-decoy:
+    image: alpine/socat:1.8.0.0
+    network_mode: "service:bastion"
+    depends_on:
+      bastion:
+        condition: service_started
+    command:
+      - -d
+      - TCP-LISTEN:5432,bind=127.0.0.1,fork,reuseaddr
+      - SYSTEM:'echo IF-YOU-SEE-THIS-THE-BASTION-DIALLED-IT'
+
+  # -------------------------------------------------------------- host-a.prod
+  #
+  # THE FLEET HOST. It is covered by the `*.prod` glob and named nowhere in
+  # the config, which is the property that makes adding the next one free.
+  # One shared key reaches it, so its auth.log names an account and hoop's
+  # trail is the only place the person appears.
+  host-a:
+    build:
+      context: ./targets
+    image: hoop-ssh-bastion-target:local
+    hostname: host-a
+    networks:
+      bastionnet:
+        ipv4_address: 172.31.78.20
+        aliases: [host-a.prod]
+    volumes:
+      - ./targets/sshd_config.keys:/etc/ssh/sshd_config:ro
+      - ./keys/host-a_host_key:/etc/ssh/ssh_host_ed25519_key:ro
+      # The PUBLIC half of the bastion's shared key. This is the entire hoop
+      # footprint on this host.
+      - ./keys/authorized_keys.prod:/home/devuser/.ssh/authorized_keys:ro
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 22 || exit 1"]
+      interval: "2s"
+      timeout: "10s"
+      retries: 15
+
+  # -------------------------------------------------------------- host-b.prod
+  #
+  # THE ENROLLED HOST. Its target entry names it exactly, which beats the
+  # glob, and carries no shared key: only subjects with a key in the
+  # identities directory reach it, and each arrives under their own public
+  # key. It also admits a shell and one forward.
+  host-b:
+    image: hoop-ssh-bastion-target:local
+    depends_on:
+      host-a:
+        condition: service_healthy
+    hostname: host-b
+    networks:
+      bastionnet:
+        ipv4_address: 172.31.78.21
+        aliases: [host-b.prod]
+    volumes:
+      - ./targets/sshd_config.keys:/etc/ssh/sshd_config:ro
+      - ./keys/host-b_host_key:/etc/ssh/ssh_host_ed25519_key:ro
+      # ONE LINE PER PERSON, which is the provisioning bill an identity key
+      # carries and the reason `identities` is a bridge rather than a
+      # destination: for N people and M hosts this is a table maintained by
+      # hand.
+      - ./keys/authorized_keys.identities:/home/devuser/.ssh/authorized_keys:ro
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 22 || exit 1"]
+      interval: "2s"
+      timeout: "10s"
+      retries: 15
+
+  # ------------------------------------------- a real service on host-b's lo
+  #
+  # Postgres in host-b's network namespace, so it genuinely listens on
+  # host-b's 127.0.0.1:5432 and on no address the bastion can reach.
+  #
+  # This is the case `local_forward` exists for: much of what people reach a
+  # host for does not listen on the network at all.
+  host-b-db:
+    image: postgres:16-alpine
+    network_mode: "service:host-b"
+    depends_on:
+      host-b:
+        condition: service_healthy
+    environment:
+      POSTGRES_PASSWORD: demo
+      POSTGRES_USER: demo
+      POSTGRES_DB: demo
+    command: ["postgres", "-c", "listen_addresses=127.0.0.1"]
+
+  # -------------------------------------------------------------- host-c.prod
+  #
+  # THE CERTIFICATE HOST. It holds no per-user state at all: one
+  # TrustedUserCAKeys line and nothing else. The bastion has no credential
+  # that reaches it — the client's own agent signs the upstream handshake, so
+  # this host's auth.log names the verified person.
+  host-c:
+    image: hoop-ssh-bastion-target:local
+    depends_on:
+      host-a:
+        condition: service_healthy
+    hostname: host-c
+    networks:
+      bastionnet:
+        ipv4_address: 172.31.78.22
+        aliases: [host-c.prod]
+    volumes:
+      - ./targets/sshd_config.ca:/etc/ssh/sshd_config:ro
+      - ./keys/host-c_host_key:/etc/ssh/ssh_host_ed25519_key:ro
+      - ./keys/ca.pub:/etc/ssh/hoop_ca.pub:ro
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 22 || exit 1"]
+      interval: "2s"
+      timeout: "10s"
+      retries: 15
+
+  # ---------------------------------------------------------------- legacy-01
+  #
+  # THE AWKWARD HOST every fleet has. A different account name, its own
+  # known_hosts file, and a host-key check relaxed to accept_new — in writing,
+  # per target, with the choice in the trail.
+  legacy:
+    image: hoop-ssh-bastion-target:local
+    depends_on:
+      host-a:
+        condition: service_healthy
+    hostname: legacy-01
+    networks:
+      bastionnet:
+        ipv4_address: 172.31.78.23
+        aliases: [legacy-01]
+    volumes:
+      - ./targets/sshd_config.keys:/etc/ssh/sshd_config:ro
+      - ./keys/legacy_host_key:/etc/ssh/ssh_host_ed25519_key:ro
+      - ./keys/authorized_keys.legacy:/home/ec2-user/.ssh/authorized_keys:ro
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 22 || exit 1"]
+      interval: "2s"
+      timeout: "10s"
+      retries: 15
+
+  # ---------------------------------------------------------------- blind-01
+  #
+  # THE HOST THAT IS NOT INSPECTED, and it is here to make that a visible
+  # choice rather than the only behaviour.
+  #
+  # destinations_allowed carries a forward to it, and relay.targets does not
+  # name it — so the bastion relays bytes it cannot read and the client's own
+  # certificate is verified HERE, at the end, exactly as ADR-0015 describes.
+  # Same bastion, same client config, same certificate: one destination is
+  # decrypted and one is a tunnel, and the difference is four lines of config.
+  #
+  # Its name deliberately does not end in .prod, because the `*.prod` glob
+  # would otherwise terminate it.
+  blind:
+    image: hoop-ssh-bastion-target:local
+    depends_on:
+      host-a:
+        condition: service_healthy
+    hostname: blind-01
+    networks:
+      bastionnet:
+        ipv4_address: 172.31.78.24
+        aliases: [blind-01]
+    volumes:
+      # It trusts the USER CA, because nothing terminates in front of it: the
+      # certificate that reaches this host is the client's own.
+      - ./targets/sshd_config.ca:/etc/ssh/sshd_config:ro
+      - ./keys/blind_host_key:/etc/ssh/ssh_host_ed25519_key:ro
+      - ./keys/ca.pub:/etc/ssh/hoop_ca.pub:ro
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 22 || exit 1"]
+      interval: "2s"
+      timeout: "10s"
+      retries: 15
+
+  # ------------------------------------------------------------------ client
+  #
+  # An ordinary OpenSSH client holding one certificate and two ssh_config
+  # stanzas.
+  client:
+    build:
+      context: ./client
+    image: hoop-ssh-bastion-client:local
+    depends_on:
+      bastion:
+        condition: service_healthy
+      host-a:
+        condition: service_healthy
+      host-b:
+        condition: service_healthy
+      host-c:
+        condition: service_healthy
+      legacy:
+        condition: service_healthy
+      blind:
+        condition: service_healthy
+    networks:
+      bastionnet:
+        ipv4_address: 172.31.78.40
+    volumes:
+      - ./keys/user:/home/rider/.ssh/id_ed25519:ro
+      - ./keys/user-cert.pub:/home/rider/.ssh/id_ed25519-cert.pub:ro
+      - ./client/ssh_config:/home/rider/.ssh/config:ro
+      # A SECOND identity, for the person who is not enrolled on host-b. Same
+      # CA, same principals, a different key id — which is what the subject
+      # is read from.
+      - ./keys/probe:/home/rider/probe:ro

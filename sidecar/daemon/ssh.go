@@ -53,18 +53,19 @@ type SSHServer interface {
 }
 
 // buildSSHServer resolves one ssh lane and builds the libhoop endpoint with
-// sidecar-owned callbacks.
+// sidecar-owned callbacks. The returned liveRules is the lane's reload
+// target: every connection reads its policy and masker there.
 //
-// Everything decided here is decided ONCE, at build: the capability set, the
-// destination list, the account. A connection's OpenFunc reads resolved
-// values and never re-parses config text, so a typo cannot become a user's
-// problem on the hot path.
+// Everything else decided here is decided ONCE, at build: the capability
+// set, the destination list, the account. A connection's OpenFunc reads
+// resolved values and never re-parses config text, so a typo cannot become a
+// user's problem on the hot path.
 func buildSSHServer(
 	ln lane,
 	ac AuditConfig,
 	sink audit.Sink,
 	log *slog.Logger,
-) (SSHServer, error) {
+) (SSHServer, *liveRules, error) {
 	lc := ln.cfg
 	sc := lc.SSH
 	if sc == nil {
@@ -72,23 +73,40 @@ func buildSSHServer(
 		// Go rather than loaded from a file. Loud, not nil: a lane with no
 		// host key and no trusted CA would refuse everyone and be unable to
 		// say why.
-		return nil, fmt.Errorf("%s: protocol is ssh but there is no ssh block", ln.name)
+		return nil, nil, fmt.Errorf("%s: protocol is ssh but there is no ssh block", ln.name)
 	}
 
 	destinations, err := parseSSHDestinations(sc.DestinationsAllowed)
 	if err != nil {
-		return nil, fmt.Errorf("%s: ssh.destinations_allowed: %w", ln.name, err)
+		return nil, nil, fmt.Errorf("%s: ssh.destinations_allowed: %w", ln.name, err)
+	}
+
+	// The relay block resolves ONCE, here: every key read, every identity
+	// enumerated, every target ordered. A connection reads resolved values
+	// and never re-parses config text, so a typo cannot become a user's
+	// problem on the hot path.
+	relayCfg, err := buildSSHRelay(ln.name, sc, log)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	// A lane that admits no session capability forwards and nothing else:
 	// destinations_allowed carries the jump, and this flag drops the shell.
 	// Resolved once here rather than per connection, because it is a
 	// property of the config and not of the client.
-	noSession := sc.admitsNothing()
+	//
+	// A TERMINATING BASTION is always such a lane. Its capabilities_allowed
+	// is the ceiling a target narrows, not a list of what runs here: this
+	// host has no accounts to become and exists to inspect sessions to its
+	// targets, so admitting one would hand out a shell on the box holding
+	// every target's credential and the plaintext of every session behind
+	// it. The per-target sets travel separately, on each RelayTarget.
+	noSession := sc.admitsNothing() || relayCfg != nil
 
 	laneLog := log.With("listener", ln.name)
 	failOnAuditError := ac.failOnAuditError()
 	stmts := sshStatements{}
+	rules := newLiveRules(ln)
 
 	// libhoop convention: configuration travels as a map[string]string the
 	// server validates, with unknown keys refused. Key material rides as
@@ -104,6 +122,9 @@ func buildSSHServer(
 		// unable to guess a default, so an empty value here means "no
 		// session" and a missing key is a construction error.
 		"capabilities": joinCapabilities(sc.resolveCapabilities()),
+	}
+	if relayCfg != nil {
+		opts["capabilities"] = ""
 	}
 	if lc.Network != "" {
 		opts["network"] = lc.Network
@@ -123,15 +144,21 @@ func buildSSHServer(
 
 		sess := session.New(inspect.SSH, identity)
 		sess.Connection = ln.name
+		// Acquired once per connection: the gate keeps this generation for
+		// the connection's whole life, and the next one reads what a
+		// reload swapped in. The release runs when the gate closes.
+		live, release := rules.acquire()
 		g, err := gate.NewStatementGate(sess, gate.Config{
 			Protocol:         inspect.SSH,
-			Policy:           ln.policy,
+			Policy:           live.policy,
 			Audit:            sink,
-			Masker:           ln.masker,
+			Masker:           live.masker,
 			FailOnAuditError: failOnAuditError,
 			Metrics:          ln.metrics,
 		})
 		if err != nil {
+			// No handler, so libhoop calls no Close: release here.
+			release()
 			return nil, nil, err
 		}
 
@@ -140,6 +167,32 @@ func buildSSHServer(
 			stmts:        stmts,
 			destinations: destinations,
 			log:          laneLog,
+			release:      release,
+			relay:        relayCfg,
+			subject:      identity.Subject,
+		}
+		// WHICH HOP THIS IS decides what the handler carries. Hop 1 answers
+		// "is this destination terminated?", from the destination alone.
+		// Hop 2 answers "what does this person authenticate upstream with?",
+		// which needs the subject and is not knowable before it.
+		if relayCfg != nil {
+			if info.RelayTargetName == "" {
+				state.bastion = true
+			} else if t := relayCfg.byKey(info.RelayTargetName); t != nil {
+				state.target = t
+			} else {
+				// Unreachable: the name came from a target this process
+				// resolved. Loud rather than nil, because the alternative
+				// is a session with no credential path and no explanation.
+				laneLog.Error("ssh terminated hop names a target this listener no "+
+					"longer has", "target", info.RelayTargetName)
+				// No handler, so libhoop calls no Close and c.release never
+				// runs: release here, exactly as the gate error above does.
+				// Nothing is owed the trail — this returns before g.Start,
+				// so no audit session was ever opened.
+				release()
+				return nil, codecssh.Refuse("this host is not available"), nil
+			}
 		}
 		handler := state.callbacks()
 
@@ -170,7 +223,7 @@ func buildSSHServer(
 			laneLog.Warn("ssh certificate carries no identity; refusing the connection",
 				"reads", sshIdentitySources(sc.Identity),
 				"login", info.LoginName, "peer", info.RemoteAddr)
-			return handler, state.refuse(ctx, anonymous, info.LoginName), nil
+			return handler, state.refuse(ctx, anonymous, info.LoginName, ""), nil
 		}
 
 		// The account is resolved BEFORE anything is admitted, and a
@@ -186,12 +239,12 @@ func buildSSHServer(
 		// session across the seam; such a lane has none, and forwarding
 		// never reads it.
 		if !noSession {
-			runAs, refusal := resolveSessionAccount(info.LoginName)
+			runAs, refusal, detail := resolveSessionAccount(info.LoginName)
 			if refusal != nil {
 				// Returned with the handler, not instead of it: libhoop
 				// closes a handler even when the connection is refused, so
 				// the audit session started above still gets its Close.
-				return handler, state.refuse(ctx, refusal, info.LoginName), nil
+				return handler, state.refuse(ctx, refusal, info.LoginName, detail), nil
 			}
 			handler.RunAs = runAs
 		}
@@ -200,9 +253,30 @@ func buildSSHServer(
 
 	srv, err := codecssh.NewServer(opts, open, laneLog)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", ln.name, err)
+		return nil, nil, fmt.Errorf("%s: %w", ln.name, err)
 	}
-	return srv, nil
+	if relayCfg == nil {
+		return srv, rules, nil
+	}
+	// The relay block's notes are the consumer's: libhoop knows the
+	// listener admits nothing and would report a jump host, which is the
+	// opposite of what this lane does.
+	//
+	// rules travels unchanged. The wrapper adds -validate output and
+	// nothing else, so hot reload reaches a relay lane exactly as it
+	// reaches every other one.
+	return &sshRelayServer{SSHServer: srv, relay: relayCfg}, rules, nil
+}
+
+// sshRelayServer is the endpoint plus the relay block's own -validate
+// output. It adds nothing at runtime; every other method is the endpoint's.
+type sshRelayServer struct {
+	SSHServer
+	relay *sshRelay
+}
+
+func (s *sshRelayServer) Notes() []string {
+	return append(s.SSHServer.Notes(), s.relay.notes()...)
 }
 
 // resolveSessionAccount picks the OS account one connection's sessions run
@@ -217,21 +291,31 @@ func buildSSHServer(
 // sidecar's own account hands a session to whoever the process happens to
 // be, and a fixed default makes the principals check decorative. This is
 // the rule sshd has, arrived at for the same reason.
-func resolveSessionAccount(loginName string) (codecssh.RunAs, *codecssh.Refusal) {
+func resolveSessionAccount(loginName string) (codecssh.RunAs, *codecssh.Refusal, string) {
 	if loginName == "" {
 		return codecssh.RunAs{}, codecssh.Refuse(
-			"this connection named no login, and there is no account to use instead")
+			"this connection named no login, and there is no account to use instead"), ""
 	}
+	// ONE MESSAGE FOR BOTH FAILURES, deliberately. Separating "that account
+	// does not exist" from "that account exists and this process cannot
+	// become it" answers a question the client did not get to ask: anyone
+	// holding a certificate could walk a name list and learn which accounts
+	// are real.
+	//
+	// Which of the two it was is returned as DETAIL and recorded, so the
+	// operator keeps the distinction the client loses.
 	runAs, err := resolveRunAs(loginName)
 	if err != nil {
 		return codecssh.RunAs{}, codecssh.Refuse(
-			"login %q is not an account on this host", loginName)
+				"login %q is not available on this host", loginName),
+			fmt.Sprintf("login %q is not an account on this host: %v", loginName, err)
 	}
 	if err := canBecome(runAs); err != nil {
 		return codecssh.RunAs{}, codecssh.Refuse(
-			"this host cannot run a session as %q", loginName)
+				"login %q is not available on this host", loginName),
+			fmt.Sprintf("this host cannot run a session as %q: %v", loginName, err)
 	}
-	return runAs, nil
+	return runAs, nil, ""
 }
 
 // joinCapabilities renders the resolved set for the options map. An empty set
@@ -251,6 +335,23 @@ type sshConnState struct {
 	stmts        sshStatements
 	destinations []sshDestination
 	log          *slog.Logger
+	// release returns the connection's rule generation to its liveRules.
+	// libhoop calls Close for every connection that got a handler.
+	release func()
+
+	// relay is the lane's resolved relay block, nil on a lane that
+	// terminates nothing.
+	relay *sshRelay
+
+	// bastion marks HOP 1 — the jump, where a forward is matched against
+	// the target map. target marks HOP 2, the session that reached one.
+	// Exactly one is ever set, and only on a relay lane.
+	bastion bool
+	target  *sshRelayTarget
+
+	// subject is the verified identity this connection reports, and on hop
+	// 2 it is what selects a per-user upstream key.
+	subject string
 }
 
 func (c *sshConnState) callbacks() *codecssh.ConnHandler {
@@ -262,6 +363,16 @@ func (c *sshConnState) callbacks() *codecssh.ConnHandler {
 		Forward: c.forward,
 		Event:   c.event,
 		Close:   c.close,
+	}
+	// Wired per hop, and never both. A bastion that also answered for
+	// credentials would be answering about a person it has not
+	// authenticated; a terminated session that also decided what to
+	// terminate would be a second bastion inside the first.
+	switch {
+	case c.bastion:
+		h.Relay = c.relayTarget
+	case c.target != nil:
+		h.RelayCredential = c.relayCredential
 	}
 	// The rewrite hooks are wired only when this lane masks. Nil is not the
 	// same as an identity function on the libhoop side: the file-transfer
@@ -471,6 +582,8 @@ func (c *sshConnState) close(ctx context.Context, s codecssh.Stats) error {
 	c.event(ctx, "connection_close", attrs)
 
 	err := c.gate.Close(ctx)
+	// After Close: the gate's last statement has been evaluated.
+	c.release()
 	if err != nil {
 		c.log.Warn("ssh session end not recorded", "error", err)
 	}
@@ -492,10 +605,20 @@ func (c *sshConnState) close(ctx context.Context, s codecssh.Stats) error {
 // The audit-unavailable refusal above is deliberately not recorded here.
 // The sink that just failed to take the session_start is the sink this
 // record would go to.
-func (c *sshConnState) refuse(ctx context.Context, r *codecssh.Refusal, login string) *codecssh.Refusal {
+// refuse records a refused connection and returns the refusal.
+//
+// detail is what the TRAIL gets; r is what the CLIENT gets. They differ
+// wherever the honest reason would answer a question the client did not get
+// to ask — which account exists, where a file lives, what a target is called.
+// An empty detail means the two are the same, which is the common case.
+func (c *sshConnState) refuse(ctx context.Context, r *codecssh.Refusal, login, detail string) *codecssh.Refusal {
+	reason := detail
+	if reason == "" {
+		reason = r.String()
+	}
 	c.event(ctx, "connection_refused", map[string]string{
 		"login":  login,
-		"reason": r.String(),
+		"reason": reason,
 	})
 	return r
 }
@@ -622,6 +745,16 @@ func sshIdentityRefusal(cfg *SSHIdentityConfig, id session.Identity) *codecssh.R
 			"cannot attribute is refused rather than recorded as anonymous",
 		sshIdentitySources(cfg))
 }
+
+// Naming the certificate fields this listener reads is a DELIBERATE
+// exception to the rule the refusals above follow.
+//
+// It is reachable only by a party whose certificate already passed CA
+// validation, so it is not something an unauthorised caller can provoke; and
+// the holder of a misissued certificate cannot act on "your certificate is
+// missing something" without being told which field. The list is a mapping
+// from the config, not a path, an address or an account — the facts the
+// other refusals withhold.
 
 // sshIdentitySources lists the fields that could have named this session, for
 // a refusal the holder of the certificate can act on: it says which field to
@@ -751,10 +884,22 @@ func sshLaneNotes(sc *SSHConfig) []string {
 			strings.Join(sc.DestinationsAllowed, ", ")))
 	}
 
-	if !sc.admitsNothing() {
+	if !sc.admitsNothing() && !sc.terminates() {
 		notes = append(notes,
 			"ssh: every session runs as the login name the certificate admitted, and "+
 				"a login that is not an account on this host is refused")
+	}
+	if sc.terminates() {
+		// The relay block's own notes need the RESOLVED form — which keys
+		// were read, which subjects enrolled — so they are produced where
+		// the server is built. What belongs here is the one sentence an
+		// operator has to read before anything else about this lane.
+		notes = append(notes,
+			"ssh: this listener TERMINATES matching forwards, so it decrypts every "+
+				"session to its targets and holds a credential that reaches them; a "+
+				"destination no target covers is still carried blind",
+			"ssh: capabilities_allowed is the CEILING each target narrows, not what "+
+				"runs here: a terminating bastion serves no session of its own")
 	}
 	// sftp is the other account fact worth stating at load — it is served
 	// in this process, so it reaches one account and no other — and the
@@ -763,15 +908,15 @@ func sshLaneNotes(sc *SSHConfig) []string {
 	return notes
 }
 
-// isEndpointLane reports whether a lane's policy stack is CAPTURED by a
-// running server rather than swappable underneath it.
+// isEndpointLane reports whether a lane TERMINATES its protocol in-process
+// (the grpc transport or the ssh endpoint) rather than relaying bytes.
 //
-// An endpoint lane builds its evaluator once and closes over it, so a hot
-// reload cannot move the rules without rebuilding the server. Both the grpc
-// transport and the ssh endpoint work this way, and the reload path has to
-// treat them alike: swapping the view lane while the serving closure keeps
-// the old evaluator would leave an operator looking at rules that are not
-// the rules being enforced, with nothing saying so.
+// Its rules swap on a reload like a relay lane's, through liveRules. What an
+// endpoint lane cannot absorb is masking turned on or off: that sets a
+// libhoop option when the server is built (mask_responses, mask_output), so
+// the server decodes, or does not decode, output for masking for its whole
+// life. Swapping a masker into a server built without it would show an
+// operator masking that is not happening.
 func isEndpointLane(lc ListenerConfig) bool {
 	return isGRPCTransport(lc) || isSSH(lc)
 }

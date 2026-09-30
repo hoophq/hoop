@@ -705,7 +705,7 @@ func TestGRPCDescriptorPathsAcceptStringAndList(t *testing.T) {
 
 	// An empty element is a config mistake, named at validation.
 	bad := &GRPCCodecConfig{Descriptors: DescriptorPaths{" "}}
-	problems := bad.validate("lane")
+	problems := bad.validate("lane", true)
 	if len(problems) != 1 || !strings.Contains(problems[0], "empty path") {
 		t.Fatalf("problems = %v", problems)
 	}
@@ -864,7 +864,7 @@ func TestGRPCServerStrictAloneInspects(t *testing.T) {
 	// is a misconfiguration, named at validation.
 	t.Run("strict without descriptors refused at validation", func(t *testing.T) {
 		bad := &GRPCCodecConfig{Strict: true}
-		problems := bad.validate("lane")
+		problems := bad.validate("lane", true)
 		if len(problems) != 1 || !strings.Contains(problems[0], "grpc.strict needs grpc.descriptors") {
 			t.Fatalf("problems = %v", problems)
 		}
@@ -1180,7 +1180,7 @@ func buildGRPCTestServer(
 	sink audit.Sink,
 ) GRPCServer {
 	t.Helper()
-	server, err := buildGRPCServer(lane{
+	server, _, err := buildGRPCServer(lane{
 		cfg: ListenerConfig{
 			Name:     name,
 			Protocol: "grpc",

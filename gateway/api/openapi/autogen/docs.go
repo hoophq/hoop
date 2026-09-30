@@ -9972,7 +9972,7 @@ const docTemplate = `{
                     "422": {
                         "description": "Unprocessable Entity",
                         "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
+                            "$ref": "#/definitions/openapi.SidecarConfigError"
                         }
                     },
                     "500": {
@@ -10523,7 +10523,7 @@ const docTemplate = `{
                     "422": {
                         "description": "Unprocessable Entity",
                         "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
+                            "$ref": "#/definitions/openapi.SidecarConfigError"
                         }
                     },
                     "500": {
@@ -10634,7 +10634,7 @@ const docTemplate = `{
                     "422": {
                         "description": "Unprocessable Entity",
                         "schema": {
-                            "$ref": "#/definitions/openapi.HTTPError"
+                            "$ref": "#/definitions/openapi.SidecarConfigError"
                         }
                     },
                     "500": {
@@ -19440,6 +19440,20 @@ const docTemplate = `{
                     "format": "uuid",
                     "example": "0CD7F941-2BB8-4F9F-93B0-11620D4652AB"
                 },
+                "recording_format": {
+                    "description": "How to render the event stream. Absent for recordings created before\nthis field was persisted; clients should keep their legacy viewer.\n* pty - terminal output, replay it with a terminal emulator\n* exec - plain text output of a command without a TTY\n* rdp - RDP frames\n* raw - protocol bytes, do not interpret them as terminal output",
+                    "enum": [
+                        "pty",
+                        "exec",
+                        "rdp",
+                        "raw"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/openapi.SessionRecordingFormat"
+                        }
+                    ]
+                },
                 "resource_name": {
                     "description": "The resource name associated with this connection",
                     "type": "string",
@@ -19799,6 +19813,21 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.SessionRecordingFormat": {
+            "type": "string",
+            "enum": [
+                "pty",
+                "exec",
+                "rdp",
+                "raw"
+            ],
+            "x-enum-varnames": [
+                "SessionRecordingFormatPTY",
+                "SessionRecordingFormatExec",
+                "SessionRecordingFormatRDP",
+                "SessionRecordingFormatRaw"
+            ]
+        },
         "openapi.SessionReport": {
             "type": "object",
             "properties": {
@@ -19977,6 +20006,25 @@ const docTemplate = `{
                 }
             }
         },
+        "openapi.SidecarConfigError": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "example": "invalid config: ..."
+                },
+                "problems": {
+                    "description": "Every problem the sidecar's own validation found, one per entry. Each\nstarts with the listener it is about, when it is about one.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "example": [
+                        "newdb: ssh.destinations_allowed: \"10.30.10:1234\" is not a network"
+                    ]
+                }
+            }
+        },
         "openapi.SidecarCreateResponse": {
             "type": "object",
             "properties": {
@@ -19990,6 +20038,10 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/openapi.SidecarRuleBinding"
                     }
+                },
+                "bound_rules_unavailable": {
+                    "description": "BoundRulesUnavailable is true when the bindings could not be read.\nBoundRules is then empty because it is unknown, not because nothing is\nbound, and a page must not read it as \"no rules\".",
+                    "type": "boolean"
                 },
                 "configuration": {
                     "description": "The stored daemon configuration.",
@@ -20160,6 +20212,10 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/openapi.SidecarRuleBinding"
                     }
+                },
+                "bound_rules_unavailable": {
+                    "description": "BoundRulesUnavailable is true when the bindings could not be read.\nBoundRules is then empty because it is unknown, not because nothing is\nbound, and a page must not read it as \"no rules\".",
+                    "type": "boolean"
                 },
                 "configuration": {
                     "description": "The stored daemon configuration.",

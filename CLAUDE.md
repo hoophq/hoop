@@ -202,12 +202,12 @@ See `DEV.md` "Feature Flags" section for the full developer guide and file refer
 
 Before a structural change — one that spans modules, is expensive to
 reverse, changes the gateway↔agent wire contract, or picks between real
-alternatives — check whether it needs an ADR under `docs/adr/`. Most
+alternatives — check whether it needs an ADR in the `hoophq/adr` repo. Most
 changes don't: a new protocol handler that follows the existing
 `agent/controller/` pattern, a routine schema change, or a bug fix are
 not ADR material.
 
-See `docs/adr/README.md` for the full policy and worked examples from
+See `README.md` in `hoophq/adr` for the full policy and worked examples from
 this codebase.
 
 ## Coding Conventions
@@ -319,7 +319,7 @@ When merging `main` into a feature branch:
 | Role definitions | `gateway/api/apiroutes/roles.go` |
 | Plugin registration | `gateway/main.go` (search `RegisteredPlugins`) |
 | SQL migrations | `gateway/migrations/` |
-| ADR policy & index | `docs/adr/README.md` |
+| ADR policy & index | `hoophq/adr` repo, `README.md` |
 | Dev run script | `scripts/dev/run.sh` |
 | Env sample | `.env.sample` |
 | Webapp entry (legacy CLJS) | `webapp/src/webapp/core.cljs` |

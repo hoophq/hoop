@@ -1,0 +1,135 @@
+# THE TERMINATING BASTION (ADR-0021, mode 4).
+#
+# Every other SSH topology hoop ships puts the inspecting endpoint on the
+# TARGET. This one puts it in the middle: the bastion accepts the client's
+# forward and, instead of dialling the target and relaying bytes, runs an SSH
+# server inside that channel and opens its own connection to a stock sshd.
+# Everything between the two is plaintext here, which is what makes the
+# guardrails, the analyzer, the audit trail and the masking apply to a host
+# that has never heard of hoop.
+#
+# The cost is stated plainly because it does not go away: this process
+# decrypts every session for every host behind it and holds credentials that
+# reach all of them. A blind bastion holds neither.
+#
+# The mode switch is `ssh.relay` below. Delete that block and this file is an
+# ordinary ADR-0015 jump host again.
+
+listeners:
+  - name: prod-bastion
+    protocol: ssh
+    listen: 0.0.0.0:2222
+
+    ssh:
+      host_key: /etc/hoop-inspect/keys/bastion_host_key
+      trusted_ca: /etc/hoop-inspect/keys/ca.pub
+
+      # THE CEILING, not what runs here. With a relay block this listener
+      # serves no session of its own — it has no accounts and no shell — and
+      # this list is the most any target may narrow to.
+      capabilities_allowed: [shell, pty, exec, env]
+
+      # Reachability, unchanged from ADR-0015: default-deny, matched on the
+      # RESOLVED address, and checked BEFORE the relay decision. A target the
+      # relay map names but this list does not cover can never be reached, so
+      # reachability stays decided in one place.
+      destinations_allowed:
+        - 172.31.78.0/24:22
+
+      identity:
+        subject: key_id          # the CA writes the human here
+        groups: principals
+
+      relay:
+        # Required. This bastion is the only component positioned to notice
+        # that a host behind it was replaced: the client verified only THIS
+        # listener's key, so its own check is what remains of host identity
+        # in the whole path.
+        known_hosts: /etc/hoop-inspect/known_hosts
+        host_key_check: strict
+
+        # The per-user overlay. Filenames are certificate subjects, and a
+        # key is read from disk PER SESSION — so enrolling or removing
+        # somebody takes effect on their next connection, with no restart.
+        #
+        # The trade that comes with it: write access to this directory is
+        # equivalent to granting SSH to every target the overlay reaches.
+        # Mount it read-only from wherever enrolment actually lives. A
+        # subject that is not a plain filename is refused before it becomes
+        # a path, so the directory is a boundary and not a suggestion.
+        identities: /etc/hoop-inspect/identities
+
+        targets:
+          # THE FLEET ENTRY. Everything matching this glob is terminated
+          # with one shared key and admits commands but no shell. Adding a
+          # host that this covers needs no config change at all.
+          "*.prod":
+            private_key: /etc/hoop-inspect/keys/prod
+            capabilities_allowed: [exec, env]
+
+          # An EXACT NAME beats the glob above, always — precedence is
+          # total and fixed, so map iteration never decides which rule
+          # applied.
+          #
+          # No private_key: enrolled subjects only. An unenrolled subject is
+          # REFUSED rather than admitted as somebody shared, which is what
+          # makes the target's own auth.log name a person.
+          host-b.prod:
+            # Tri-state, exactly like the listener's: absent inherits the
+            # ceiling above, [] admits nothing, and a list admits those and
+            # refuses the rest.
+            capabilities_allowed: [exec, env, pty, shell, local_forward]
+            # Required by local_forward above. THE TARGET dials these, so
+            # 127.0.0.1 is host-b's loopback and not this bastion's.
+            forwards_allowed:
+              - 127.0.0.1:5432
+
+          # Certificate only. Nothing here holds a credential for this host:
+          # the client's forwarded agent signs the upstream handshake with
+          # the user's OWN certificate, so host-c verifies the real person
+          # against its TrustedUserCAKeys.
+          host-c.prod:
+            agent_identity: true
+            capabilities_allowed: [exec, env, pty, shell]
+
+          # The awkward host every fleet has: a different account, its own
+          # known_hosts, and a check relaxed in writing rather than by
+          # accident.
+          legacy-01:
+            private_key: /etc/hoop-inspect/keys/legacy
+            login: ec2-user
+            # A DIRECTORY the container can write in, not a bind-mounted
+            # file: accept_new replaces this file by renaming a new one over
+            # it, and a bind-mounted file refuses that rename.
+            known_hosts: /var/lib/hoop-inspect/known_hosts.legacy
+            host_key_check: accept_new
+            capabilities_allowed: [exec, env]
+
+    # The rules live OUTSIDE the relay block and gain no per-target form, so
+    # they apply to every target without exception. Nothing inside `relay`
+    # can subtract from the policy; it can only narrow the surface the policy
+    # applies to.
+    guardrails:
+      rules:
+        - name: protected-paths
+          type: pattern_match
+          pattern_regex: '(secrets\.env|/etc/shadow|\.aws/credentials)'
+          operations: [exec_line]
+          message: this path is not readable through hoop
+
+    mask:
+      rules:
+        # Length-preserving, because an ssh lane rewrites a byte stream in
+        # place. `mask` is the only strategy this lane accepts, and mask_char
+        # is a rune VALUE — 42 is '*'.
+        - entities: [EMAIL_ADDRESS]
+          strategy: mask
+          mask_char: 42
+
+audit:
+  file: /tmp/audit.jsonl
+
+admin:
+  listen: 0.0.0.0:9090
+
+log_level: info

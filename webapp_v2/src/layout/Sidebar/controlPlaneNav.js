@@ -1,6 +1,8 @@
 import {
   Container,
+  Key,
   KeyRound,
+  Logs,
   MessageSquare,
   Settings,
   ShieldCheck,
@@ -39,12 +41,15 @@ const ACTIVITY_ITEMS = [
   { label: 'Reviews', path: '/reviews', icon: View },
 ]
 
-// The Settings group: where approvals are delivered (Slack) and the
-// organization (Users, License — an attribute of the org, PUT /orgs/license).
+// The Settings group: where approvals are delivered (Slack), the organization
+// (Users, License — an attribute of the org, PUT /orgs/license), programmatic
+// access (API Keys) and the control plane's own logs (Server Logs).
 const SETTINGS_ITEMS = [
   { label: 'Slack', path: '/integrations/slack', adminOnly: true },
   { label: 'Users', path: '/organization/users', adminOnly: true },
+  { label: 'API Keys', path: '/settings/api-keys', adminOnly: true },
   { label: 'License', path: '/settings/license', adminOnly: true },
+  { label: 'Server Logs', path: '/settings/server-logs', adminOnly: true },
 ]
 
 // Sidebar sections, top to bottom. A section whose items are all hidden by
@@ -75,7 +80,9 @@ const QUICK_ACCESS_ITEMS = [
   { id: 'ai-analyzer', label: 'AI Analyzer', description: 'Configure the AI session analyzer', icon: Sparkles, path: '/features/ai-session-analyzer', adminOnly: true, licenseFeature: 'ai-session-analyzer' },
   { id: 'review-slack', label: 'Slack', description: 'Where approvals are delivered', icon: MessageSquare, path: '/integrations/slack', adminOnly: true },
   { id: 'users', label: 'Users', description: 'Invite and manage administrators and approvers', icon: Users, path: '/organization/users', adminOnly: true },
+  { id: 'settings-api-keys', label: 'API Keys', description: 'Manage API keys', icon: Key, path: '/settings/api-keys', adminOnly: true },
   { id: 'license', label: 'License', description: 'License management', icon: KeyRound, path: '/settings/license', adminOnly: true },
+  { id: 'settings-server-logs', label: 'Server Logs', description: 'Stream the control plane logs', icon: Logs, path: '/settings/server-logs', adminOnly: true },
 ]
 
 export const PALETTE = { suggestions: SUGGESTION_ITEMS, quickAccess: QUICK_ACCESS_ITEMS }

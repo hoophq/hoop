@@ -338,7 +338,11 @@ func Post(c *gin.Context) {
 		// The response type embeds the request, so this field is the optional
 		// pointer. Always set on a read-back: the rule's real bindings, which
 		// is what a round-trip must return whatever the write said.
-		bound := sidecarbind.Load(ctx.GetOrgID(), services.SidecarRuleMask, rule.Name)
+		bound, loadErr := sidecarbind.Load(models.DB, ctx.GetOrgID(), services.SidecarRuleMask, rule.Name)
+		if loadErr != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, loadErr, "the rule was saved, but reading its sidecar targets failed: %v", loadErr)
+			return
+		}
 		out.SidecarTargets = &bound
 		c.JSON(http.StatusCreated, out)
 	default:
@@ -462,7 +466,11 @@ func Put(c *gin.Context) {
 	case nil:
 		rule.Attributes = req.Attributes
 		out := toOpenApi(rule)
-		bound := sidecarbind.Load(ctx.GetOrgID(), services.SidecarRuleMask, rule.Name)
+		bound, loadErr := sidecarbind.Load(models.DB, ctx.GetOrgID(), services.SidecarRuleMask, rule.Name)
+		if loadErr != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, loadErr, "the rule was saved, but reading its sidecar targets failed: %v", loadErr)
+			return
+		}
 		out.SidecarTargets = &bound
 		c.JSON(http.StatusOK, out)
 	default:
@@ -516,8 +524,13 @@ func Get(c *gin.Context) {
 		out := toOpenApi(rule)
 		// Read back on the single-rule route, which is what the edit form
 		// loads. Without it the form opens with the picker empty and the next
-		// save unbinds the rule from every sidecar it reached.
-		bound := sidecarbind.Load(ctx.GetOrgID(), services.SidecarRuleMask, rule.Name)
+		// save unbinds the rule from every sidecar it reached, so a failed
+		// read answers 500 rather than a rule bound nowhere.
+		bound, loadErr := sidecarbind.Load(models.DB, ctx.GetOrgID(), services.SidecarRuleMask, rule.Name)
+		if loadErr != nil {
+			httputils.AbortWithErr(c, http.StatusInternalServerError, loadErr, "failed reading the sidecar targets of the rule")
+			return
+		}
 		out.SidecarTargets = &bound
 		c.JSON(http.StatusOK, out)
 	default:

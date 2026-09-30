@@ -58,17 +58,17 @@ type GRPCCodecConfig struct {
 	// Required for any payload work: schema-less protobuf walking loses
 	// values as a function of their bytes, so no capture, masking or PII
 	// scanning happens without it (ADR-0013).
-	Descriptors DescriptorPaths `json:"descriptors,omitempty"`
+	Descriptors DescriptorPaths `json:"descriptors,omitempty" label:"Descriptors" placeholder:"/etc/hoop-inspect/api.pb" help:"Protobuf descriptor sets, as paths on the sidecar host or gs:// URLs. Sets merge."`
 
 	// CapturePayload renders decoded request and response messages into
 	// per-message Statements so payload-matching rules (pii, pattern_match)
 	// and OPA can read them. Requires Descriptors.
-	CapturePayload bool `json:"capture_payload"`
+	CapturePayload bool `json:"capture_payload" label:"Capture the payload" help:"Needed for masking, PII and AI analysis on this listener."`
 
 	// MaxPayloadBytes truncates a captured rendering. Zero uses the lane
 	// default. Masking does not read this: it rewrites decoded fields
 	// whatever their size.
-	MaxPayloadBytes int `json:"max_payload_bytes,omitempty"`
+	MaxPayloadBytes int `json:"max_payload_bytes,omitempty" label:"Max payload bytes" help:"0 uses the lane default."`
 
 	// Strict refuses an RPC whose payload cannot be read: a method the
 	// descriptor set does not define is refused before the upstream is
@@ -77,16 +77,16 @@ type GRPCCodecConfig struct {
 	// payloads are forwarded with method-level inspection only, and each
 	// degradation is logged. A lane with mask rules fails closed either
 	// way: a redactor must not forward what it cannot decode.
-	Strict bool `json:"strict,omitempty"`
+	Strict bool `json:"strict,omitempty" label:"Strict decoding" help:"Refuses an RPC whose payload the descriptors cannot read."`
 
 	// Metadata names the request metadata headers to expose to policy,
 	// matched case-insensitively. There is no capture-all, and the same
 	// headers HTTPCodecConfig refuses are refused here; authorization is
 	// where a gRPC bearer token lives.
-	Metadata []string `json:"metadata,omitempty"`
+	Metadata []string `json:"metadata,omitempty" label:"Metadata" help:"Allowlist exposed to policy. The same four headers HTTP refuses are refused here."`
 }
 
-func (g *GRPCCodecConfig) validate(lane string) []string {
+func (g *GRPCCodecConfig) validate(lane string, onHost bool) []string {
 	if g == nil {
 		return nil
 	}
@@ -112,8 +112,9 @@ func (g *GRPCCodecConfig) validate(lane string) []string {
 		}
 		// Decided here, not at the fetch: a scheme nobody linked must be a
 		// validate failure naming the module, not a startup "no such file"
-		// for a path that starts with gs://.
-		if scheme := descriptors.Scheme(p); scheme != "" && !descriptors.Linked(scheme) {
+		// for a path that starts with gs://. Only the sidecar binary knows
+		// what it links.
+		if scheme := descriptors.Scheme(p); scheme != "" && onHost && !descriptors.Linked(scheme) {
 			problems = append(problems, fmt.Sprintf(
 				"listener %q: grpc.descriptors %q uses scheme %q, which this binary does not "+
 					"link (%s)", lane, p, scheme, describeLinkedFetchers()))
@@ -216,27 +217,28 @@ const grpcPermissionDenied = 7
 
 // grpcMetadataAllowlist is the lower-cased metadata a grpc lane exposes to
 // policy and audit. A lane that holds adds analyzer.HeaderReviewMode, the same
-// opt-in as an http lane. Holding-only is safe here: an analyzer change
-// restarts a grpc lane, so this list is rebuilt with it.
-func grpcMetadataAllowlist(gc GRPCCodecConfig, la *LaneAnalyzerConfig) []string {
+// opt-in as an http lane. The analyzer block swaps on a reload, so the lane
+// builds both lists and picks one per RPC from its live rules.
+func grpcMetadataAllowlist(gc GRPCCodecConfig, holds bool) []string {
 	out := make([]string, 0, len(gc.Metadata)+1)
 	for _, name := range gc.Metadata {
 		out = append(out, strings.ToLower(strings.TrimSpace(name)))
 	}
-	if analyzerHolds(la) {
+	if holds {
 		out = append(out, analyzer.HeaderReviewMode)
 	}
 	return out
 }
 
 // buildGRPCServer resolves one grpc lane's transport facts and builds the
-// reusable libhoop endpoint with sidecar-owned RPC callbacks.
+// reusable libhoop endpoint with sidecar-owned RPC callbacks. The returned
+// liveRules is the lane's reload target: every RPC reads its rules there.
 func buildGRPCServer(
 	ln lane,
 	ac AuditConfig,
 	sink audit.Sink,
 	log *slog.Logger,
-) (GRPCServer, error) {
+) (GRPCServer, *liveRules, error) {
 	lc := ln.cfg
 	var gc GRPCCodecConfig
 	if lc.GRPC != nil {
@@ -244,7 +246,9 @@ func buildGRPCServer(
 	}
 
 	laneLog := log.With("listener", ln.name)
-	allowedMetadata := grpcMetadataAllowlist(gc, lc.Analyzer)
+	metadataPlain := grpcMetadataAllowlist(gc, false)
+	metadataHeld := grpcMetadataAllowlist(gc, true)
+	rules := newLiveRules(ln)
 	failOnAuditError := ac.failOnAuditError()
 
 	// libhoop convention: configuration travels as a map[string]string the
@@ -269,7 +273,7 @@ func buildGRPCServer(
 	// the codec's. The merged schema is handed over already loaded.
 	schema, err := loadGRPCSchema(gc.Descriptors, ln.trustRoots)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", ln.name, err)
+		return nil, nil, fmt.Errorf("%s: %w", ln.name, err)
 	}
 	if gc.CapturePayload {
 		opts["capture_payload"] = "true"
@@ -330,22 +334,34 @@ func buildGRPCServer(
 		sess := session.New(proto, identity)
 		sess.Connection = ln.name
 		sess.Upstream = lc.Upstream
+		// Acquired once per RPC: the gate keeps this generation for the RPC's
+		// whole life, and the next RPC reads what a reload swapped in. The
+		// release runs when the gate closes, which is what tells a reload
+		// the outgoing generation's analyzers are no longer reachable.
+		live, release := rules.acquire()
+		allowedMetadata := metadataPlain
+		if live.holds {
+			allowedMetadata = metadataHeld
+		}
 		g, err := gate.NewStatementGate(sess, gate.Config{
 			Protocol:         proto,
-			Policy:           ln.policy,
+			Policy:           live.policy,
 			Audit:            sink,
-			Masker:           ln.masker,
+			Masker:           live.masker,
 			FailOnAuditError: failOnAuditError,
 			Metrics:          ln.metrics,
 		})
 		if err != nil {
+			// No handler, so libhoop calls no Close: release here.
+			release()
 			return nil, nil, err
 		}
 
 		state := &grpcRPCState{
-			gate:  g,
-			stmts: newLaneStatements(info.Request, info.Service, info.Method, allowedMetadata, proto, lc.Spanner),
-			log:   laneLog,
+			gate:    g,
+			stmts:   newLaneStatements(info.Request, info.Service, info.Method, allowedMetadata, proto, lc.Spanner),
+			log:     laneLog,
+			release: release,
 		}
 		handler := state.callbacks()
 		if err := g.Start(ctx); err != nil {
@@ -368,9 +384,9 @@ func buildGRPCServer(
 
 	srv, err := codecgrpc.NewServerWithSchema(opts, schema, open, laneLog)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", ln.name, err)
+		return nil, nil, fmt.Errorf("%s: %w", ln.name, err)
 	}
-	return srv, nil
+	return srv, rules, nil
 }
 
 // grpcDescriptorFetchTimeout bounds one remote descriptor fetch. Generous,
@@ -425,6 +441,9 @@ type grpcRPCState struct {
 	gate  *gate.Gate
 	stmts *laneStatements
 	log   *slog.Logger
+	// release returns the RPC's rule generation to its liveRules. libhoop
+	// calls Close for every RPC that got a handler, refused or not.
+	release func()
 }
 
 func (r *grpcRPCState) callbacks() *codecgrpc.RPCHandler {
@@ -547,6 +566,8 @@ func (r *grpcRPCState) recordMasked(ctx context.Context, entities []string, coun
 
 func (r *grpcRPCState) close(ctx context.Context) error {
 	err := r.gate.Close(context.WithoutCancel(ctx))
+	// After Close: the gate's last statement has been evaluated.
+	r.release()
 	if err != nil {
 		r.log.Warn("grpc session end not recorded", "error", err)
 	}

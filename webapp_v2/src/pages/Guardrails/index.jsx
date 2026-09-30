@@ -6,11 +6,14 @@ import AsyncValueFilter from '@/components/AsyncValueFilter'
 import Button from '@/components/Button'
 import FreeLicenseCallout from '@/components/FreeLicenseCallout'
 import PageLoader from '@/components/PageLoader'
+import SidecarListenerFilter from '@/components/SidecarListenerFilter'
 import ValueFilter from '@/components/ValueFilter'
 import { useMinDelay } from '@/hooks/useMinDelay'
 import { usePaginatedConnections } from '@/hooks/usePaginatedConnections'
 import EmptyState from '@/layout/EmptyState'
 import FullBleed from '@/layout/FullBleed'
+import { boundRuleNames } from '@/pages/Sidecars/config'
+import { useSidecarStore } from '@/stores/useSidecarStore'
 import { useUserStore } from '@/stores/useUserStore'
 import { useGuardrailsStore } from './store'
 import GuardrailListItem from './components/GuardrailListItem'
@@ -23,9 +26,11 @@ function uniqueSorted(values) {
   return [...new Set(values)].sort((a, b) => a.localeCompare(b))
 }
 
-// providerRequired comes from Router.jsx through <ByProduct>: false on the
-// control plane, where sidecars enforce guardrails without a DLP provider.
-export default function Guardrails({ providerRequired = true }) {
+// providerRequired and filterBySidecar come from Router.jsx through
+// <ByProduct>: on the control plane sidecars enforce guardrails without a DLP
+// provider, and a rule reaches them through listeners, not resource roles or
+// attributes, so the list filters by sidecar and listener instead.
+export default function Guardrails({ providerRequired = true, filterBySidecar = false }) {
   const navigate = useNavigate()
 
   const list = useGuardrailsStore((s) => s.list)
@@ -33,6 +38,7 @@ export default function Guardrails({ providerRequired = true }) {
   const attributes = useGuardrailsStore((s) => s.attributes)
   const fetchList = useGuardrailsStore((s) => s.fetchList)
   const fetchAttributes = useGuardrailsStore((s) => s.fetchAttributes)
+  const sidecars = useSidecarStore((s) => s.sidecars)
 
   const isFreeLicense = useUserStore((s) => s.isFreeLicense)
   // A DLP provider (gcp or mspresidio) is required to enforce guardrails;
@@ -41,13 +47,14 @@ export default function Guardrails({ providerRequired = true }) {
 
   const [selectedRole, setSelectedRole] = useState(null)
   const [selectedAttribute, setSelectedAttribute] = useState(null)
+  const [selectedTarget, setSelectedTarget] = useState(null)
 
   const roleFilter = usePaginatedConnections({ pageSize: 50 })
 
   useEffect(() => {
     fetchList()
-    fetchAttributes()
-  }, [fetchList, fetchAttributes])
+    if (!filterBySidecar) fetchAttributes()
+  }, [fetchList, fetchAttributes, filterBySidecar])
 
   const attributeFilterValues = useMemo(
     () => uniqueSorted(attributes.map((a) => a.name)),
@@ -56,6 +63,10 @@ export default function Guardrails({ providerRequired = true }) {
 
   const filteredGuardrails = useMemo(() => {
     let guardrails = list
+    if (selectedTarget) {
+      const names = boundRuleNames(sidecars, selectedTarget, 'guardrail')
+      guardrails = guardrails.filter((guardrail) => names.has(guardrail.name))
+    }
     if (selectedRole) {
       guardrails = guardrails.filter((guardrail) =>
         (guardrail.connection_ids ?? []).includes(selectedRole.value),
@@ -67,12 +78,13 @@ export default function Guardrails({ providerRequired = true }) {
       )
     }
     return guardrails
-  }, [list, selectedRole, selectedAttribute])
+  }, [list, sidecars, selectedTarget, selectedRole, selectedAttribute])
 
   const atFreeLimit = isFreeLicense && list.length >= 1
   const loading = listStatus === 'loading'
   const showLoader = useMinDelay(loading && list.length === 0, 500)
-  const activeFilterCount = (selectedRole ? 1 : 0) + (selectedAttribute ? 1 : 0)
+  const activeFilterCount =
+    (selectedRole ? 1 : 0) + (selectedAttribute ? 1 : 0) + (selectedTarget ? 1 : 0)
 
   const goCreate = () => navigate('/guardrails/new')
 
@@ -123,29 +135,39 @@ export default function Guardrails({ providerRequired = true }) {
       )}
 
       <Group gap="sm">
-        <AsyncValueFilter
-          icon={Rotate3d}
-          label="Resource Role"
-          placeholder="Search resource roles"
-          selected={selectedRole}
-          onSelect={setSelectedRole}
-          onClear={() => setSelectedRole(null)}
-          options={roleFilter.options}
-          loading={roleFilter.loading}
-          hasMore={roleFilter.hasMore}
-          onLoadMore={roleFilter.loadMore}
-          searchValue={roleFilter.searchValue}
-          onSearchChange={roleFilter.setSearch}
-          onOpen={roleFilter.ensureLoaded}
-        />
-        <ValueFilter
-          icon={ListVideo}
-          label="Attribute"
-          values={attributeFilterValues}
-          selected={selectedAttribute}
-          onSelect={setSelectedAttribute}
-          onClear={() => setSelectedAttribute(null)}
-        />
+        {filterBySidecar ? (
+          <SidecarListenerFilter
+            selected={selectedTarget}
+            onSelect={setSelectedTarget}
+            onClear={() => setSelectedTarget(null)}
+          />
+        ) : (
+          <>
+            <AsyncValueFilter
+              icon={Rotate3d}
+              label="Resource Role"
+              placeholder="Search resource roles"
+              selected={selectedRole}
+              onSelect={setSelectedRole}
+              onClear={() => setSelectedRole(null)}
+              options={roleFilter.options}
+              loading={roleFilter.loading}
+              hasMore={roleFilter.hasMore}
+              onLoadMore={roleFilter.loadMore}
+              searchValue={roleFilter.searchValue}
+              onSearchChange={roleFilter.setSearch}
+              onOpen={roleFilter.ensureLoaded}
+            />
+            <ValueFilter
+              icon={ListVideo}
+              label="Attribute"
+              values={attributeFilterValues}
+              selected={selectedAttribute}
+              onSelect={setSelectedAttribute}
+              onClear={() => setSelectedAttribute(null)}
+            />
+          </>
+        )}
       </Group>
 
       {filteredGuardrails.length === 0 ? (

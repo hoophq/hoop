@@ -7,13 +7,20 @@ import { docsUrl } from '@/utils/docsUrl'
 import { usePlugin } from '@/pages/Integrations/usePlugin'
 import SidecarSlackChannelsTab from '@/pages/Integrations/Slack/SidecarSlackChannelsTab'
 import SlackConfigurationsTab from '@/pages/Integrations/Slack/components/SlackConfigurationsTab'
+import { slackAppConfigured } from '@/pages/Integrations/Slack/helpers'
 
 // The control plane's Slack page, sibling of GatewaySlack.jsx. Reviews go to
 // each listener's channels; the Configurations channel is the fallback for a
 // listener with none. The scopes and the approver match live in the docs.
 function ControlPlaneSlack() {
   const { plugin, status, mutating, saveEnvvars } = usePlugin('slack')
-  const [tab, setTab] = useState('listeners')
+  // Chosen once, when the plugin answers: the Slack App before it is set up,
+  // since nothing on the list works without it, and the list after. A save
+  // does not move the admin off the tab they are on.
+  const [tab, setTab] = useState(null)
+  if (tab === null && status === 'ready') {
+    setTab(slackAppConfigured(plugin) ? 'listeners' : 'configurations')
+  }
 
   const showLoader = useMinDelay(status === 'loading')
 
