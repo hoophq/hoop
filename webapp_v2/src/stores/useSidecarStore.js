@@ -47,10 +47,13 @@ export const useSidecarStore = create((set, get) => ({
   listRequestId: 0,
   selectedRequestId: 0,
   refreshRequestId: 0,
+  // Moves on logout, so a write that answers after it is dropped.
+  session: 0,
 
   reset: () =>
     set((state) => ({
       ...EMPTY,
+      session: state.session + 1,
       listRequestId: state.listRequestId + 1,
       selectedRequestId: state.selectedRequestId + 1,
       refreshRequestId: state.refreshRequestId + 1,
@@ -159,8 +162,9 @@ export const useSidecarStore = create((set, get) => ({
   // Shallow merge of the keys sent; `{ ok, error }` like updateSidecar.
   patchSidecar: async (nameOrId, configuration) => {
     try {
+      const session = get().session
       const { data: updated } = await sidecarsService.patch(nameOrId, configuration)
-      set((state) => written(state, updated))
+      set((state) => (state.session === session ? written(state, updated) : {}))
       return { ok: true, sidecar: updated }
     } catch (error) {
       return { ok: false, error }
@@ -176,8 +180,9 @@ export const useSidecarStore = create((set, get) => ({
    */
   updateSidecar: async (nameOrId, configuration) => {
     try {
+      const session = get().session
       const { data: updated } = await sidecarsService.update(nameOrId, configuration)
-      set((state) => written(state, updated))
+      set((state) => (state.session === session ? written(state, updated) : {}))
       return { ok: true, sidecar: updated }
     } catch (error) {
       return { ok: false, error }
