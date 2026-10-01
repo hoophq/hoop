@@ -43,10 +43,12 @@ func toOpenApiSession(s *models.Session, hasInputExpanded bool) *openapi.Session
 	}
 
 	return &openapi.Session{
-		ID:                   s.ID,
-		OrgID:                s.OrgID,
-		Script:               blobInputStream,
-		ScriptSize:           s.BlobInputSize,
+		ID:         s.ID,
+		OrgID:      s.OrgID,
+		Script:     blobInputStream,
+		ScriptSize: s.BlobInputSize,
+		// The review modal reads the sidecar filer (sidecar.requester.*) from here.
+		// apisidecar's DB tests pin it; removing it hides who filed a review.
 		Labels:               s.Labels,
 		IntegrationsMetadata: s.IntegrationsMetadata,
 		Metadata:             s.Metadata,

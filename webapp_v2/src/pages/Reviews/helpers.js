@@ -84,3 +84,67 @@ export function sortByNewest(reviews) {
     (a, b) => new Date(b.created_at ?? 0) - new Date(a.created_at ?? 0),
   )
 }
+
+// The session labels a control plane writes for the caller who filed a sidecar review.
+export const REQUESTER_LABEL = {
+  subject: 'sidecar.requester.subject',
+  email: 'sidecar.requester.email',
+  peerAddr: 'sidecar.requester.peer_addr',
+  method: 'sidecar.requester.method',
+}
+
+// How the sidecar established the filer. Keep the descriptions in sync with
+// requesterMethodLabel in gateway/api/sidecar/requester.go.
+export const REQUESTER_METHOD = {
+  google_identity: {
+    label: 'Google token',
+    color: 'blue',
+    description: 'Google token holder, checked with Google by the sidecar (audience not checked)',
+  },
+  ssh_certificate: {
+    label: 'SSH certificate',
+    color: 'blue',
+    description: "SSH certificate signed by the listener's trusted CA, checked by the sidecar",
+  },
+  database_user: {
+    label: 'Database login claim',
+    color: 'yellow',
+    description: 'Login name the client claimed before authenticating, not checked',
+  },
+  identity_header: {
+    label: 'Proxy header',
+    color: 'yellow',
+    description:
+      'Header value; any client that can reach the listener can set it unless a proxy strips it',
+  },
+  tls_client_certificate: {
+    label: 'TLS name',
+    color: 'yellow',
+    description: 'TLS certificate name, not verified',
+  },
+  unspecified: { label: 'Not reported', color: 'yellow', description: 'Identity source not reported' },
+  peer_address: { label: 'Address only', color: 'gray', description: 'Network address only, no identity' },
+}
+
+// The filer from GET /sessions/:id labels, or null when the review names none.
+export function requesterFromLabels(labels) {
+  if (!labels || typeof labels !== 'object') return null
+  const requester = {
+    subject: labels[REQUESTER_LABEL.subject] ?? '',
+    email: labels[REQUESTER_LABEL.email] ?? '',
+    peerAddr: labels[REQUESTER_LABEL.peerAddr] ?? '',
+    method: labels[REQUESTER_LABEL.method] ?? '',
+  }
+  return Object.values(requester).some(Boolean) ? requester : null
+}
+
+export const requesterName = (requester) =>
+  requester?.subject || requester?.email || requester?.peerAddr || 'Unknown caller'
+
+// A missing method reads as not reported; an unknown one is shown as sent.
+// hasOwn, so a method named like an Object.prototype key is unknown too.
+export function requesterMethod(method) {
+  const key = method || 'unspecified'
+  if (Object.hasOwn(REQUESTER_METHOD, key)) return REQUESTER_METHOD[key]
+  return { label: `Reported as ${key}`, color: 'yellow', description: `Source reported as ${key}` }
+}

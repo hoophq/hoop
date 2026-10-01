@@ -29,11 +29,8 @@ import (
 )
 
 const (
-	// reviewOwnerEmail stands in for the requester a sidecar review does not
-	// have. The control plane registers no ordinary users, so nothing here
-	// identifies a person. Known debt: every sidecar review shows the same
-	// requester until there is something real to record, which is where the
-	// database user or the source address behind the statement will go.
+	// reviewOwnerEmail: Owner* and the session user stay the sidecar, as OwnerID decides
+	// self-approval and owner-may-reject. The filer is in session labels and decides nothing.
 	reviewOwnerEmail = "hoop@hoop.dev"
 
 	// maxStatementBytes caps the decoded statement. It is stored twice, as the
@@ -75,7 +72,7 @@ func (e ruleNotAuthorized) Error() string {
 // PostReview
 //
 //	@Summary		Create Sidecar Review
-//	@Description	Register a review for a statement a sidecar held. The sidecar is taken from the token, never the body. A review of the same bytes past its deadline is expired and a new one is filed.
+//	@Description	Register a review for a statement a sidecar held. The sidecar is taken from the token, never the body. The optional requester is shown to approvers as the filer and decides nothing. A review of the same bytes past its deadline is expired and a new one is filed.
 //	@Tags			Sidecars
 //	@Accept			json
 //	@Produce		json
@@ -96,6 +93,7 @@ func PostReview(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"message": err.Error()})
 		return
 	}
+	caller := newRequester(req.Requester)
 
 	// Decoded here so a human never sees base64. The raw bytes are capped and
 	// hashed; the blobs and Slack get displayStatement(raw).
@@ -161,14 +159,14 @@ func PostReview(c *gin.Context) {
 			req.ListenerName, rule.Name, statementHash, now)
 		switch {
 		case err == nil:
-			answerExistingReview(c, sidecar, req.ListenerName, rev, time.Now().UTC())
+			answerExistingReview(c, sidecar, req.ListenerName, rev, caller, time.Now().UTC())
 			return
 		case !errors.Is(err, gorm.ErrRecordNotFound):
 			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed loading the sidecar review")
 			return
 		}
 
-		rev, expiredIDs, err := createSidecarReview(sidecar, req.ListenerName, display, statementHash, rule, policy, now)
+		rev, expiredIDs, err := createSidecarReview(sidecar, req.ListenerName, display, statementHash, rule, policy, caller, now)
 		switch {
 		case errors.Is(err, gorm.ErrDuplicatedKey):
 			// A racing request filed first. Look again rather than answer: its
@@ -192,7 +190,7 @@ func PostReview(c *gin.Context) {
 			}
 		}
 
-		answerFiledReview(c, sidecar, req, rule, rev, display)
+		answerFiledReview(c, sidecar, req, rule, rev, display, caller)
 		return
 	}
 
@@ -240,7 +238,7 @@ func ClaimReview(c *gin.Context) {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed loading the sidecar review")
 		return
 	}
-	answerExistingReview(c, sidecar, rev.ListenerName.String, rev, time.Now().UTC())
+	answerExistingReview(c, sidecar, rev.ListenerName.String, rev, nil, time.Now().UTC())
 }
 
 // GetReview
@@ -304,7 +302,7 @@ func controlPlaneSidecar(c *gin.Context) *models.Sidecar {
 // answerFiledReview reports a review this request filed. Forward is false: it
 // was filed a moment ago and no human has seen it.
 func answerFiledReview(c *gin.Context, sidecar *models.Sidecar, req openapi.SidecarReviewRequest,
-	rule *models.AccessRequestRule, rev *models.Review, display string) {
+	rule *models.AccessRequestRule, rev *models.Review, display string, caller *requester) {
 	log.With("sid", rev.SessionID, "review-id", rev.ID, "sidecar", sidecar.Name,
 		"listener", req.ListenerName, "rule", rule.Name).
 		Infof("registered a sidecar review")
@@ -327,7 +325,7 @@ func answerFiledReview(c *gin.Context, sidecar *models.Sidecar, req openapi.Side
 	//
 	// Nothing in the response depends on it: the review is already persisted
 	// and visible to an approver either way.
-	go notifySlack(sidecar, rev, req.ListenerName, display)
+	go notifySlack(sidecar, rev, req.ListenerName, display, caller)
 
 	// Forward is false: the review was filed a moment ago and no human has
 	// seen it. The sidecar denies this statement and carries the review id.
@@ -337,13 +335,14 @@ func answerFiledReview(c *gin.Context, sidecar *models.Sidecar, req openapi.Side
 	})
 }
 
-// answerExistingReview answers a retry, or a claim by id, from the filed review. Only the
+// answerExistingReview answers a retry, or a claim by id (caller nil), from the filed review. Only the
 // claim's winner of an APPROVED review forwards; a lapsed one is expired; others return as they stand.
-func answerExistingReview(c *gin.Context, sidecar *models.Sidecar, listenerName string, rev *models.Review, now time.Time) {
+func answerExistingReview(c *gin.Context, sidecar *models.Sidecar, listenerName string, rev *models.Review,
+	caller *requester, now time.Time) {
 	forward := false
 	if rev.Status == models.ReviewStatusApproved {
 		var ok bool
-		if forward, ok = claimSidecarApproval(c, sidecar, listenerName, rev, now); !ok {
+		if forward, ok = claimSidecarApproval(c, sidecar, listenerName, rev, caller, now); !ok {
 			return
 		}
 	}
@@ -369,7 +368,7 @@ func answerExistingReview(c *gin.Context, sidecar *models.Sidecar, listenerName 
 		// sidecar reads APPROVED with forward false as final, so claim it now.
 		if status == models.ReviewStatusApproved {
 			var ok bool
-			if forward, ok = claimSidecarApproval(c, sidecar, listenerName, rev, time.Now().UTC()); !ok {
+			if forward, ok = claimSidecarApproval(c, sidecar, listenerName, rev, caller, time.Now().UTC()); !ok {
 				return
 			}
 		}
@@ -394,7 +393,7 @@ func lapsedSidecarReview(rev *models.Review, now time.Time) bool {
 // claimSidecarApproval consumes an approved review and reports whether this
 // request won it. ok is false when it already answered the request.
 func claimSidecarApproval(c *gin.Context, sidecar *models.Sidecar, listenerName string, rev *models.Review,
-	now time.Time) (forward, ok bool) {
+	caller *requester, now time.Time) (forward, ok bool) {
 	claimed, status, err := models.ClaimApprovedSidecarReview(models.DB, sidecar.OrgID, rev.ID, now)
 	if err != nil {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err,
@@ -409,9 +408,13 @@ func claimSidecarApproval(c *gin.Context, sidecar *models.Sidecar, listenerName 
 		return false, true
 	}
 
-	log.With("sid", rev.SessionID, "review-id", rev.ID, "sidecar", sidecar.Name,
-		"listener", listenerName).
-		Infof("consumed an approved sidecar review")
+	fields := []any{"sid", rev.SessionID, "review-id", rev.ID, "sidecar", sidecar.Name,
+		"listener", listenerName}
+	// The approval is shared, so the consumer may not be the filer.
+	if caller != nil {
+		fields = append(fields, "consumer", caller.principal(), "consumer-method", caller.method)
+	}
+	log.With(fields...).Infof("consumed an approved sidecar review")
 
 	trackClient := analytics.New()
 	defer trackClient.Close()
@@ -428,7 +431,7 @@ func claimSidecarApproval(c *gin.Context, sidecar *models.Sidecar, listenerName 
 //
 // Slack is optional everywhere else in this codebase and stays optional here:
 // an org that has not configured it gets no message and no error.
-func notifySlack(sidecar *models.Sidecar, rev *models.Review, listenerName, display string) {
+func notifySlack(sidecar *models.Sidecar, rev *models.Review, listenerName, display string, caller *requester) {
 	slackSvc := slackservice.GetServiceInstance(sidecar.OrgID)
 	if slackSvc == nil {
 		return
@@ -449,7 +452,7 @@ func notifySlack(sidecar *models.Sidecar, rev *models.Review, listenerName, disp
 		return
 	}
 
-	req := newSlackReviewRequest(sidecar, rev, listenerName, display)
+	req := newSlackReviewRequest(sidecar, rev, listenerName, display, caller)
 	req.SlackChannels = channels
 	req.DefaultChannelAsFallback = true
 	// The same ceiling both existing senders apply. Two groups today, but a
@@ -473,7 +476,7 @@ func notifySlack(sidecar *models.Sidecar, rev *models.Review, listenerName, disp
 
 // newSlackReviewRequest is what a reviewer ends up reading. Split out so the
 // message can be asserted without a Slack workspace.
-func newSlackReviewRequest(sidecar *models.Sidecar, rev *models.Review, listenerName, display string) *slackservice.MessageReviewRequest {
+func newSlackReviewRequest(sidecar *models.Sidecar, rev *models.Review, listenerName, display string, caller *requester) *slackservice.MessageReviewRequest {
 	return &slackservice.MessageReviewRequest{
 		// ID is load bearing: it becomes the message metadata and the button
 		// ids, and it is how a click finds its way back to this review.
@@ -497,6 +500,9 @@ func newSlackReviewRequest(sidecar *models.Sidecar, rev *models.Review, listener
 		// FullApiURL, not ApiURL: the latter drops the configured path prefix,
 		// which lands the approver outside the app wherever one is set.
 		WebappURL: fmt.Sprintf("%s/reviews/%s", appconfig.Get().FullApiURL(), rev.SessionID),
+
+		// Its own section. Name and Email above stay the sidecar.
+		FiledBy: caller.slackFiler(),
 
 		// The decision deadline; nil with no limit.
 		ExpiresAt: rev.ExpiresAt,
@@ -648,13 +654,13 @@ func listenerNamesApprovalRule(listeners []daemon.ListenerConfig, listenerName, 
 // createSidecarReview writes the session and the review one statement needs to
 // wait for a human. It returns gorm.ErrDuplicatedKey when a racing request
 // filed for the same bytes first, and the ids of the lapsed reviews it expired.
-func createSidecarReview(sidecar *models.Sidecar, listenerName, display, statementHash string, rule *models.AccessRequestRule, policy *services.ReviewPolicy, now time.Time) (*models.Review, []string, error) {
+func createSidecarReview(sidecar *models.Sidecar, listenerName, display, statementHash string, rule *models.AccessRequestRule, policy *services.ReviewPolicy, caller *requester, now time.Time) (*models.Review, []string, error) {
 	sessionID := uuid.NewString()
 
 	// A review is one per session (private.reviews is UNIQUE on org and
 	// session), and UpdateReview syncs the session's status when the review
 	// settles, so the session is not optional bookkeeping.
-	sess := newSidecarSession(sidecar, sessionID, display, now)
+	sess := newSidecarSession(sidecar, sessionID, display, caller, now)
 
 	rev := newSidecarReview(sidecar, listenerName, sessionID, statementHash, rule, policy, now)
 	expiredIDs, err := models.CreateSidecarReview(models.DB, sess, rev, display)
@@ -664,8 +670,9 @@ func createSidecarReview(sidecar *models.Sidecar, listenerName, display, stateme
 	return rev, expiredIDs, nil
 }
 
-// newSidecarSession is the session a sidecar review waits in. Its user is the sidecar.
-func newSidecarSession(sidecar *models.Sidecar, sessionID, display string, now time.Time) models.Session {
+// newSidecarSession is the session a sidecar review waits in. Its user stays the sidecar;
+// the filer goes in the labels, which are written once, with the review.
+func newSidecarSession(sidecar *models.Sidecar, sessionID, display string, caller *requester, now time.Time) models.Session {
 	return models.Session{
 		ID:             sessionID,
 		OrgID:          sidecar.OrgID,
@@ -677,6 +684,7 @@ func newSidecarSession(sidecar *models.Sidecar, sessionID, display string, now t
 		UserID:         sidecar.ID,
 		UserName:       sidecar.Name,
 		UserEmail:      reviewOwnerEmail,
+		Labels:         caller.labels(),
 		CreatedAt:      now,
 	}
 }

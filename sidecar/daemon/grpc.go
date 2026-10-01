@@ -323,15 +323,11 @@ func buildGRPCServer(
 	}
 
 	open := func(ctx context.Context, info codecgrpc.RPCInfo) (*codecgrpc.RPCHandler, *codecgrpc.Status, error) {
-		identity := session.Identity{PeerAddr: info.Request.RemoteAddr}
+		var header string
 		if lc.IdentityHeader != "" {
-			identity.Subject = info.Request.Header.Get(lc.IdentityHeader)
+			header = info.Request.Header.Get(lc.IdentityHeader)
 		}
-		if identity.Subject == "" {
-			identity.Subject = grpcPeerSubject(info.Request)
-		}
-
-		sess := session.New(proto, identity)
+		sess := session.New(proto, grpcCallerIdentity(header, info.Request))
 		sess.Connection = ln.name
 		sess.Upstream = lc.Upstream
 		// Acquired once per RPC: the gate keeps this generation for the RPC's
@@ -585,8 +581,31 @@ func grpcDeniedStatus(message string) *codecgrpc.Status {
 	return &codecgrpc.Status{Code: grpcPermissionDenied, Message: message}
 }
 
-// grpcPeerSubject names the caller from a verified client certificate, the
-// fallback when no authenticating proxy supplies an identity header. SPIFFE
+// grpcCallerIdentity is who one RPC's session names: the identity header's
+// value when the lane reads one and the request carries it, else a client
+// certificate's name, else nobody. The peer address is set either way.
+//
+// The header value is taken as sent, untrimmed, as it always was: trimming
+// here would change the subject an existing audit trail and Rego policy key
+// on. Each branch records its method, so a review shows how the name was
+// established.
+//
+// The certificate branch is labelled and not trusted: libhoop's gRPC server
+// requests no client certificate (its downstream tls.Config sets no
+// ClientAuth), so a name read there was verified by nothing on this side.
+func grpcCallerIdentity(header string, r *http.Request) session.Identity {
+	id := session.Identity{PeerAddr: r.RemoteAddr}
+	if header != "" {
+		id.Subject, id.Method = header, session.MethodIdentityHeader
+	} else if subject := grpcPeerSubject(r); subject != "" {
+		id.Subject, id.Method = subject, session.MethodTLSClientCertificate
+	}
+	return id
+}
+
+// grpcPeerSubject names the caller from a client certificate, the fallback
+// when no authenticating proxy supplies an identity header. Nothing on this
+// side verifies that certificate today; see grpcCallerIdentity. SPIFFE
 // deployments put the workload identity in the URI SAN; plain mTLS uses the
 // subject common name.
 func grpcPeerSubject(r *http.Request) string {

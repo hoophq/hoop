@@ -11,6 +11,7 @@ import {
   OctagonX,
   Timer,
   Package,
+  UserRound,
   Users,
 } from 'lucide-react'
 import Alert from '@/components/Alert'
@@ -29,6 +30,10 @@ import {
   decidedGroups,
   expiryLabel,
   isSettled,
+  isSidecarReview,
+  requesterFromLabels,
+  requesterMethod,
+  requesterName,
   reviewSource,
   statusLabel,
 } from '../helpers'
@@ -41,10 +46,10 @@ const GROUP_VERDICT = {
   [STATUS.REVOKED]: { Icon: OctagonX, color: 'red', label: 'Revoked', verb: 'revoked' },
 }
 
-function DetailRow({ icon, label, children }) {
+function DetailRow({ icon, label, align = 'center', children }) {
   const Icon = icon
   return (
-    <Group gap="md" align="center" wrap="nowrap">
+    <Group gap="md" align={align} wrap="nowrap">
       <Group gap="sm" w={LABEL_WIDTH} wrap="nowrap" c="dimmed">
         <Icon size={20} />
         <Text size="sm">{label}</Text>
@@ -85,6 +90,66 @@ function GroupRow({ group }) {
         </Group>
       )}
     </Group>
+  )
+}
+
+// The Badge wrapper's warning variant is the readable yellow.
+const METHOD_BADGE = { yellow: { variant: 'warning' } }
+
+const SHARED_APPROVAL =
+  'Approving releases this statement once, to the first caller on this listener that sends it or waits on it. That may not be the caller named here.'
+
+// Display data only: the sidecar reports it, and the approval is shared with any caller of the same bytes.
+function Filer({ sessionId, review }) {
+  const labels = useReviewStore((s) => s.labels[sessionId])
+  const requester = requesterFromLabels(labels)
+  if (!requester) return null
+
+  const name = requesterName(requester)
+  const method = requesterMethod(requester.method)
+  const badge = METHOD_BADGE[method.color] ?? { variant: 'light', color: method.color }
+  const details = [
+    requester.email && requester.email !== name ? requester.email : null,
+    requester.peerAddr && requester.peerAddr !== name ? `from ${requester.peerAddr}` : null,
+  ].filter(Boolean)
+  const pending = review.status === STATUS.PENDING || review.status === STATUS.APPROVED
+
+  return (
+    <DetailRow icon={UserRound} label="Filed by" align="flex-start">
+      <Stack gap={4}>
+        <Group gap="sm" wrap="nowrap">
+          <Text size="sm" fw={500} truncate>
+            {name}
+          </Text>
+          <Tooltip
+            label={`${method.description}. Reported by the sidecar; hoop does not verify it.`}
+            multiline
+            w={320}
+          >
+            <Badge {...badge} tag fullLabel>
+              {method.label}
+            </Badge>
+          </Tooltip>
+        </Group>
+        {details.length > 0 && (
+          <Tooltip label="Behind a proxy, the address is the proxy's." disabled={!requester.peerAddr}>
+            <Text size="xs" c="dimmed">
+              {details.join(' · ')}
+            </Text>
+          </Tooltip>
+        )}
+        {pending && (
+          <Alert color="yellow" variant="light" radius="md">
+            {SHARED_APPROVAL}
+          </Alert>
+        )}
+        {review.status === STATUS.EXECUTED && (
+          <Text size="xs" c="dimmed">
+            {`Released once, to the first caller that claimed the approval; that may not be the filer. The sidecar audit record for review ${review.id} names who ran it.`}
+          </Text>
+        )}
+      </Stack>
+    </DetailRow>
   )
 }
 
@@ -160,6 +225,8 @@ export default function ReviewModal({
               </Badge>
             </DetailRow>
           )}
+
+          {isSidecarReview(review) && <Filer sessionId={review.session} review={review} />}
 
           {review.access_request_rule_name && (
             <DetailRow icon={BadgeCheck} label="Approval Rule">

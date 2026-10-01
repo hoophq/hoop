@@ -16,6 +16,7 @@
 package session
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"time"
@@ -68,6 +69,79 @@ type Identity struct {
 	// Attributes carries deployment-specific claims a policy may want
 	// (department, cost center, on-call status).
 	Attributes map[string]string `json:"attributes,omitempty"`
+
+	// Method says how Subject and Email were established, so a reader of a
+	// review can weigh the name: a Google token checked with Google is not
+	// a login name a client typed before authenticating.
+	//
+	// Empty means only PeerAddr is known, or the constructor did not say.
+	// It is set where a name is established and nowhere else: by each
+	// identity constructor, and by gate.Adopt for a claimed pgwire user.
+	//
+	// It is deliberately NOT in PolicyContext: OPA input and the audit
+	// trail stay what they were, and a Rego rule cannot start keying on a
+	// label that describes trust without enforcing it. The gate's
+	// sameIdentity ignores it too, so a rotated caller is the same caller
+	// whatever the method says.
+	Method IdentityMethod `json:"method,omitempty"`
+}
+
+// IdentityMethod names how an Identity's principal was established.
+//
+// The set is open: a consumer that meets a value it does not know must show
+// it as unknown, never as trusted.
+type IdentityMethod string
+
+const (
+	// MethodGoogleIdentity: a Google OAuth2 token the sidecar checked with
+	// Google's tokeninfo. It names the token holder; the audience is not
+	// checked (see identity/google).
+	MethodGoogleIdentity IdentityMethod = "google_identity"
+
+	// MethodIdentityHeader: the value of a header an authenticating proxy
+	// is expected to set. Any client that reaches the listener directly can
+	// set it too, unless something in front strips it.
+	MethodIdentityHeader IdentityMethod = "identity_header"
+
+	// MethodDatabaseUser: the user a pgwire StartupMessage claimed. It is a
+	// claim until the server answers AuthenticationOk, and a statement
+	// pipelined before that is judged under it.
+	MethodDatabaseUser IdentityMethod = "database_user"
+
+	// MethodSSHCertificate: a user certificate signed by the listener's
+	// trusted CA, checked by libhoop before the connection opens.
+	MethodSSHCertificate IdentityMethod = "ssh_certificate"
+
+	// MethodTLSClientCertificate: a name read from a client TLS
+	// certificate on a grpc lane. The gRPC server requests no client
+	// certificate today, so nothing verified it.
+	MethodTLSClientCertificate IdentityMethod = "tls_client_certificate"
+)
+
+// identityKey is the context key ContextWithIdentity stores under. Unexported
+// and a distinct type, so no other package's key can collide with it and the
+// value is reached only through the two functions below.
+type identityKey struct{}
+
+// ContextWithIdentity returns a child of ctx that carries id.
+//
+// It is how a statement's typed caller reaches code that only receives a
+// context, such as the daemon's review filing behind analyzer.Reviewer: the
+// policy and analyzer packages pass the context through without importing
+// this one. A child of ctx keeps its cancellation, its cause and every value
+// already on it.
+func ContextWithIdentity(ctx context.Context, id Identity) context.Context {
+	return context.WithValue(ctx, identityKey{}, id)
+}
+
+// IdentityFromContext returns the identity ContextWithIdentity stored, and
+// false for a nil ctx or one that carries none.
+func IdentityFromContext(ctx context.Context) (Identity, bool) {
+	if ctx == nil {
+		return Identity{}, false
+	}
+	id, ok := ctx.Value(identityKey{}).(Identity)
+	return id, ok
 }
 
 // IsAnonymous reports whether any principal was established. A deployment

@@ -172,6 +172,12 @@ type Reviewer interface {
 	// File files the statement for approval, or answers from the review
 	// already filed for these exact bytes. It receives the RAW statement
 	// text, never the model input. See hold.
+	//
+	// When a gate judged the statement, ctx carries the caller it was
+	// judged under (session.IdentityFromContext), so a backend can name the
+	// filer without this interface or this package naming a session. ctx
+	// is the connection's, passed through ask, which drops its cancellation
+	// and keeps its values.
 	File(ctx context.Context, statement string) (ReviewResult, error)
 
 	// Claim answers about one review by id, spending it when it is

@@ -470,6 +470,44 @@ type SidecarReviewRequest struct {
 	//
 	// Bounded at 254 to match what a rule name may be.
 	ApprovalRule string `json:"approval_rule" binding:"required,max=254" example:"payments-approvers"`
+	// Optional. The caller as the sidecar established it.
+	// It is shown to approvers and never decides who may approve.
+	Requester *SidecarReviewRequester `json:"requester,omitempty"`
+}
+
+// SidecarReviewRequester is the caller behind a held statement, as the sidecar reports it.
+// The four keys stay JSON strings for good; new facts get new keys. The method set is open.
+type SidecarReviewRequester struct {
+	// The caller name, as the sidecar established it
+	Subject string `json:"subject,omitempty" example:"alice"`
+	// The caller email, when the sidecar knows it
+	Email string `json:"email,omitempty" example:"alice@example.com"`
+	// The network address the statement came from
+	PeerAddr string `json:"peer_addr,omitempty" example:"10.0.0.12:53122"`
+	// How the sidecar established the caller, e.g. google_identity or database_user
+	Method string `json:"method,omitempty" example:"database_user"`
+}
+
+// UnmarshalJSON never fails, so a newer sidecar cannot turn a filing into a deny.
+// It keeps only JSON-string values and drops any other shape.
+func (r *SidecarReviewRequester) UnmarshalJSON(b []byte) error {
+	*r = SidecarReviewRequester{}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(b, &fields); err != nil {
+		return nil
+	}
+	for key, dst := range map[string]*string{
+		"subject":   &r.Subject,
+		"email":     &r.Email,
+		"peer_addr": &r.PeerAddr,
+		"method":    &r.Method,
+	} {
+		var s string
+		if raw, ok := fields[key]; ok && json.Unmarshal(raw, &s) == nil {
+			*dst = s
+		}
+	}
+	return nil
 }
 
 // SidecarReviewResponse answers a sidecar that asked to review a statement.

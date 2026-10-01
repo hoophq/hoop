@@ -10,8 +10,10 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/hoophq/hoop/sidecar/analyzer"
+	"github.com/hoophq/hoop/sidecar/session"
 )
 
 // controlPlaneReviewsPath files a statement for human approval.
@@ -107,11 +109,123 @@ func holdsWithoutAPlane(cfg *Config, la *LaneAnalyzerConfig, ac *analyzerDeps) b
 	return !cfg.controlPlaneConfigured()
 }
 
+// reviewFiling is the body of POST /api/sidecars/reviews.
+//
+// A struct, where it used to be a map[string]string, only so requester can be
+// an object. The fields sit in the sorted-key order json.Marshal gave that
+// map, and requester is omitempty, so a filing with no caller is byte for
+// byte the body every released sidecar sent. TestAFilingWithNoCallerIsTheOldBody
+// pins it.
+type reviewFiling struct {
+	ApprovalRule string           `json:"approval_rule"`
+	ListenerName string           `json:"listener_name"`
+	Payload      string           `json:"payload"`
+	Requester    *reviewRequester `json:"requester,omitempty"`
+}
+
+// reviewRequester is who filed a review, as this sidecar established it.
+//
+// It is DISPLAY data. The plane shows it to approvers and never uses it to
+// decide who may approve: the sidecar token is still the one credential a
+// filing carries, and whoever holds that token could write any name here.
+// An older plane ignores the key, since it binds the body without refusing
+// unknown fields; a newer one never fails a filing because of it.
+//
+// Four strings for good. A new fact gets a new key, which older planes
+// ignore, rather than a new shape for one of these, which they might not.
+// Groups and Attributes are never sent: they are policy inputs, not a name,
+// and sending them would copy more of the caller into the plane than a
+// reviewer needs to see.
+type reviewRequester struct {
+	Subject  string `json:"subject,omitempty"`
+	Email    string `json:"email,omitempty"`
+	PeerAddr string `json:"peer_addr,omitempty"`
+	Method   string `json:"method"`
+}
+
+// The two methods only a filing reports, on top of session.IdentityMethod.
+//
+// peer_address is a caller nobody named: the plane shows the address and no
+// identity. unspecified is a caller that was named by a constructor that did
+// not say how, so the plane shows the name as unverified rather than guess.
+const (
+	requesterMethodPeerAddress = "peer_address"
+	requesterMethodUnspecified = "unspecified"
+)
+
+// maxRequesterField bounds each requester value on the wire. The plane cleans
+// and clips what it stores on its own; this keeps one pathological header or
+// StartupMessage from inflating every filing a lane sends.
+const maxRequesterField = 255
+
+// requesterFrom reads the caller the gate put on ctx for the statement being
+// filed, nil when there is none (a hold evaluated outside a gate) or it names
+// nothing at all, not even an address.
+func requesterFrom(ctx context.Context) *reviewRequester {
+	id, ok := session.IdentityFromContext(ctx)
+	if !ok {
+		return nil
+	}
+	r := &reviewRequester{
+		Subject:  boundRequesterField(id.Subject),
+		Email:    boundRequesterField(id.Email),
+		PeerAddr: boundRequesterField(id.PeerAddr),
+	}
+	if r.Subject == "" && r.Email == "" && r.PeerAddr == "" {
+		return nil
+	}
+	r.Method = requesterMethod(id)
+	return r
+}
+
+// requesterMethod names how the filer was established. An anonymous caller
+// is peer_address whatever its method, because there is no name for the
+// method to describe; a named one with no method is unspecified, never
+// silently the strongest source.
+func requesterMethod(id session.Identity) string {
+	switch {
+	case id.IsAnonymous():
+		return requesterMethodPeerAddress
+	case id.Method != "":
+		return string(id.Method)
+	}
+	return requesterMethodUnspecified
+}
+
+// boundRequesterField cuts s to maxRequesterField bytes on a rune start.
+//
+// Invalid UTF-8 is replaced first. json.Marshal would replace each bad byte
+// with a three-byte U+FFFD anyway, so replacing it here keeps the bound true
+// for the bytes that go on the wire, and on valid UTF-8 the cut never drops
+// more than the one rune that would not fit.
+func boundRequesterField(s string) string {
+	if !utf8.ValidString(s) {
+		s = strings.ToValidUTF8(s, string(utf8.RuneError))
+	}
+	return cutAtRuneStart(s, maxRequesterField)
+}
+
+// cutAtRuneStart returns at most n bytes of valid UTF-8 s, ending before a
+// rune that would not fit whole.
+func cutAtRuneStart(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n]
+}
+
 // fileReview runs one POST /api/sidecars/reviews.
 //
 // ctx carries the lane's analyzer timeout, so each call is bounded by the same
 // number that bounds the model call. controlPlaneHTTPClient's own timeout is
 // the backstop for a caller that passed none.
+//
+// ctx also carries the caller the gate judged the statement under (see
+// requesterFrom), which goes out as the optional requester. It is the one
+// value this call reads from ctx; the signature stays the analyzer's.
 //
 // Every failure returns an error, and the caller denies on one. There is no
 // retry here: a hold that is still pending asks again through claimReview.
@@ -121,10 +235,11 @@ func (cp *controlPlane) fileReview(ctx context.Context, listener, rule, statemen
 	// The statement is base64 because it is bytes, not text: a wire
 	// statement can carry anything the client typed, and the plane hashes
 	// exactly what arrives to match a retry against the approval.
-	body, err := json.Marshal(map[string]string{
-		"listener_name": listener,
-		"approval_rule": rule,
-		"payload":       base64.StdEncoding.EncodeToString([]byte(statement)),
+	body, err := json.Marshal(reviewFiling{
+		ApprovalRule: rule,
+		ListenerName: listener,
+		Payload:      base64.StdEncoding.EncodeToString([]byte(statement)),
+		Requester:    requesterFrom(ctx),
 	})
 	if err != nil {
 		return out, fmt.Errorf("encoding the review request: %w", err)

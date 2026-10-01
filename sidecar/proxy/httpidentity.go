@@ -161,8 +161,17 @@ type HeaderIdentity struct{}
 
 // Resolve returns the trimmed value as the Subject. It never fails: the
 // value is trusted as far as the network is, see peekHTTPIdentity.
+//
+// A named caller is marked session.MethodIdentityHeader, so a reviewer sees
+// the name came from a header a client can set whenever it reaches the
+// listener directly. A blank value names nobody and gets no method: the
+// relay keeps the connection's own identity for it.
 func (HeaderIdentity) Resolve(_ context.Context, value string) (session.Identity, error) {
-	return session.Identity{Subject: strings.TrimSpace(value)}, nil
+	id := session.Identity{Subject: strings.TrimSpace(value)}
+	if id.Subject != "" {
+		id.Method = session.MethodIdentityHeader
+	}
+	return id, nil
 }
 
 // credentialCodec is what NewServer asks of a lane's codec when the lane

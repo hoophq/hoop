@@ -207,7 +207,7 @@ func testAStaleClaimAnswersExpired(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
-	answerExistingReview(c, sc, rev.ListenerName.String, rev, now)
+	answerExistingReview(c, sc, rev.ListenerName.String, rev, nil, now)
 
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	resp := decodeReviewResponse(t, rec)

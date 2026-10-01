@@ -9,6 +9,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/gate"
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/policy"
+	"github.com/hoophq/hoop/sidecar/session"
 )
 
 // ctxPolicy records the connection context the gate handed it, and denies
@@ -40,10 +41,18 @@ func (s *cancelHonoringSink) Write(ctx context.Context, ev audit.Event) error {
 	return s.recordingSink.Write(ctx, ev)
 }
 
+// connMarker is a value the caller puts on its context, to prove the
+// evaluator's context descends from it.
+type connMarker struct{}
+
 // The caller's context reaches the evaluator, which is how a hold learns its
 // connection ended, and the statement's record still lands under that ended
 // context: it is written after the verdict, so the connection ending is
 // exactly when it is written.
+//
+// The evaluator receives a CHILD of the caller's context, the one carrying
+// the typed caller, so this checks what the child must keep: the caller's
+// values, its end and its cause (the denial below carries the cause).
 func TestTheConnectionContextReachesPolicyAndTheRecordSurvivesIt(t *testing.T) {
 	pol := &ctxPolicy{}
 	sink := &cancelHonoringSink{}
@@ -53,7 +62,7 @@ func TestTheConnectionContextReachesPolicyAndTheRecordSurvivesIt(t *testing.T) {
 	}
 
 	gone := errors.New("the client closed the connection")
-	ctx, cancel := context.WithCancelCause(context.Background())
+	ctx, cancel := context.WithCancelCause(context.WithValue(context.Background(), connMarker{}, "conn-1"))
 	cancel(gone)
 
 	d := g.EvaluateStatement(ctx, inspect.Statement{
@@ -63,8 +72,14 @@ func TestTheConnectionContextReachesPolicyAndTheRecordSurvivesIt(t *testing.T) {
 		Operation: inspect.OpDelete,
 	})
 
-	if pol.seen != ctx {
+	if pol.seen == nil || pol.seen.Value(connMarker{}) != "conn-1" {
 		t.Fatal("the evaluator did not receive the caller's context")
+	}
+	if !errors.Is(context.Cause(pol.seen), gone) {
+		t.Errorf("the evaluator's context lost the cause: %v", context.Cause(pol.seen))
+	}
+	if id, ok := session.IdentityFromContext(pol.seen); !ok || id.Subject != "alice@example.com" {
+		t.Errorf("the evaluator's context carried caller %+v (present %v), want the session's", id, ok)
 	}
 	if d.Allowed {
 		t.Fatal("a statement whose connection ended was allowed")

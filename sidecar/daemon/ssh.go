@@ -678,11 +678,26 @@ func (c *sshConnState) event(ctx context.Context, kind string, attrs map[string]
 // reach through a value, so the three claims travel as a string, a list and a
 // map.
 func sshIdentity(cfg *SSHIdentityConfig, info codecssh.ConnInfo) (session.Identity, *codecssh.Refusal) {
-	id := session.Identity{PeerAddr: info.RemoteAddr}
 	if info.Cert == nil {
+		id := session.Identity{PeerAddr: info.RemoteAddr}
 		return id, sshIdentityRefusal(cfg, id)
 	}
-	keyID, principals, extensions := info.Cert.KeyId, info.Cert.ValidPrincipals, info.Cert.Extensions
+	id := certIdentity(cfg, info.RemoteAddr, info.Cert.KeyId, info.Cert.ValidPrincipals, info.Cert.Extensions)
+	return id, sshIdentityRefusal(cfg, id)
+}
+
+// certIdentity is sshIdentity's mapping for a connection that presented a
+// verified certificate, over the certificate's three claims rather than the
+// certificate: the same reason as above, and it lets a test build the
+// identity without constructing a signed certificate.
+//
+// The identity is marked session.MethodSSHCertificate: libhoop checked the
+// signature against the listener's trusted CA, the validity window and the
+// principals before open ran, so every field here is a signed claim. The
+// method says so even when the mapping names nobody; the refusal decides
+// that connection's fate, not this label.
+func certIdentity(cfg *SSHIdentityConfig, remoteAddr, keyID string, principals []string, extensions map[string]string) session.Identity {
+	id := session.Identity{PeerAddr: remoteAddr, Method: session.MethodSSHCertificate}
 
 	id.Subject = certScalar(sshSubjectSource(cfg), keyID, principals, extensions)
 
@@ -704,7 +719,7 @@ func sshIdentity(cfg *SSHIdentityConfig, info codecssh.ConnInfo) (session.Identi
 			id.Attributes[name] = value
 		}
 	}
-	return id, sshIdentityRefusal(cfg, id)
+	return id
 }
 
 // sshSubjectSource names the certificate field a lane reads the subject

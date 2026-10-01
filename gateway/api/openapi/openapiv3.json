@@ -8869,6 +8869,14 @@
             "description": "The statement to review, base64 encoded",
             "example": "REVMRVRFIEZST00gdXNlcnM7",
             "type": "string"
+          },
+          "requester": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/openapi.SidecarReviewRequester"
+              }
+            ],
+            "description": "Optional. The caller as the sidecar established it.\nIt is shown to approvers and never decides who may approve."
           }
         },
         "required": [
@@ -8876,6 +8884,31 @@
           "listener_name",
           "payload"
         ],
+        "type": "object"
+      },
+      "openapi.SidecarReviewRequester": {
+        "properties": {
+          "email": {
+            "description": "The caller email, when the sidecar knows it",
+            "example": "alice@example.com",
+            "type": "string"
+          },
+          "method": {
+            "description": "How the sidecar established the caller, e.g. google_identity or database_user",
+            "example": "database_user",
+            "type": "string"
+          },
+          "peer_addr": {
+            "description": "The network address the statement came from",
+            "example": "10.0.0.12:53122",
+            "type": "string"
+          },
+          "subject": {
+            "description": "The caller name, as the sidecar established it",
+            "example": "alice",
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "openapi.SidecarReviewResponse": {
@@ -22558,7 +22591,7 @@
     },
     "/sidecars/reviews": {
       "post": {
-        "description": "Register a review for a statement a sidecar held. The sidecar is taken from the token, never the body. A review of the same bytes past its deadline is expired and a new one is filed.",
+        "description": "Register a review for a statement a sidecar held. The sidecar is taken from the token, never the body. The optional requester is shown to approvers as the filer and decides nothing. A review of the same bytes past its deadline is expired and a new one is filed.",
         "parameters": [
           {
             "description": "The token returned when the sidecar was created",

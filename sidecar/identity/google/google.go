@@ -361,7 +361,9 @@ func (r *Resolver) lookup(ctx context.Context, token string) (session.Identity, 
 		return session.Identity{}, time.Time{}, fail(ErrInvalidToken, token, "token expired at %s", expires.UTC().Format(time.RFC3339))
 	}
 
-	id := session.Identity{Attributes: map[string]string{}}
+	// The method rides on the cached identity too: cloneIdentity copies the
+	// struct, so an answer served from the cache names its source as well.
+	id := session.Identity{Method: session.MethodGoogleIdentity, Attributes: map[string]string{}}
 	if ti.EmailVerified.v && ti.Email != "" {
 		// An unverified email is a string the account holder typed; it
 		// must not become the name an audit trail blames.

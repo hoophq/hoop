@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/hoophq/hoop/sidecar/session"
 )
 
 var t0 = time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
@@ -105,6 +107,27 @@ func TestResolveVerifiedEmail(t *testing.T) {
 	if id.Attributes["google.sub"] != "1234567890" || id.Attributes["google.azp"] != "32555940559.apps.googleusercontent.com" {
 		t.Errorf("Attributes = %v", id.Attributes)
 	}
+	assertGoogleMethodCached(t, r, ti, id, "Bearer ya29.a0Af-valid_token")
+}
+
+// assertGoogleMethodCached checks that the fresh answer and the one served
+// from the cache both name google_identity: a review filed on the second
+// request of a kubectl session must not lose the source of its name.
+func assertGoogleMethodCached(t *testing.T, r *Resolver, ti *tokeninfo, fresh session.Identity, credential string) {
+	t.Helper()
+	if fresh.Method != session.MethodGoogleIdentity {
+		t.Errorf("fresh answer Method = %q, want %q", fresh.Method, session.MethodGoogleIdentity)
+	}
+	cached, err := r.Resolve(context.Background(), credential)
+	if err != nil {
+		t.Fatalf("cached Resolve: %v", err)
+	}
+	if hits := ti.hits.Load(); hits != 1 {
+		t.Fatalf("tokeninfo saw %d calls, want 1: the second answer did not come from the cache", hits)
+	}
+	if cached.Method != session.MethodGoogleIdentity {
+		t.Errorf("cached answer Method = %q, want %q", cached.Method, session.MethodGoogleIdentity)
+	}
 }
 
 func TestResolveUnverifiedEmailFallsBackToSub(t *testing.T) {
@@ -119,6 +142,7 @@ func TestResolveUnverifiedEmailFallsBackToSub(t *testing.T) {
 			if id.Subject != "1234567890" || id.Email != "" {
 				t.Errorf("Subject/Email = %q/%q, want sub and no email", id.Subject, id.Email)
 			}
+			assertGoogleMethodCached(t, r, ti, id, "Bearer tok")
 		})
 	}
 }
