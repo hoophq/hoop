@@ -21,8 +21,13 @@ import {
 // user-facing idea. If that intent lands in the daemon (ADR-0014 option 2,
 // rejected once), nothing here has to change.
 
-export const saveErrorMessage = (error) =>
-  error?.response?.data?.message || error?.message || 'The control plane refused the change.'
+// The daemon's problems when the 422 carries them: `message` joins them with
+// newlines, which a Text collapses.
+export const saveErrorMessage = (error) => {
+  const { problems, message } = error?.response?.data ?? {}
+  if (problems?.length) return problems.join('. ')
+  return message || error?.message || 'The control plane refused the change.'
+}
 
 /**
  * Form state and the save for one listener, shared by both shells.

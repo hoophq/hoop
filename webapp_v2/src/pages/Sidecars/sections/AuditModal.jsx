@@ -39,7 +39,8 @@ function toForm(audit = {}) {
     query_sessions: audit.query_sessions ?? 0,
     redact_statements: audit.redact_statements === true,
     max_statement_bytes: audit.max_statement_bytes || DEFAULT_MAX_STATEMENT_BYTES,
-    fail_open: audit.fail_open === true,
+    // The daemon reads the deprecated fail_closed inverted when fail_open is absent.
+    fail_open: audit.fail_open ?? (audit.fail_closed != null ? !audit.fail_closed : false),
   }
 }
 

@@ -900,7 +900,7 @@ Non-obvious notes only:
   from the CLJS terminal — no timers. Resets itself on logout (subscribes to
   `useAuthStore`), and every read is scoped by `forUserId`.
 - `useSidecarStore` — the fleet (`sidecars`, `fetchSidecars`, `createSidecar`,
-  `updateSidecar`, `deleteSidecar`) and the one record `/sidecars/:id` reads
+  `updateSidecar`, `patchSidecar`, `deleteSidecar`) and the one record `/sidecars/:id` reads
   (`selected`, `selectedId`, `selectedError`, `selectedLoading`, `fetchSidecar`,
   `clearSelected`). `createSidecar` returns the response with the one-time token
   and keeps none of it. `updateSidecar(nameOrId, configuration)` replaces the
@@ -908,7 +908,9 @@ Non-obvious notes only:
   so a listener form can put the gateway's message next to the field; it writes
   the stored document into both the list and `selected`, and moves both
   generation counters, because a read already in flight would otherwise commit
-  the pre-save document over the saved one. Two generation counters, one per
+  the pre-save document over the saved one. `patchSidecar(nameOrId, configuration)`
+  does the same through a shallow top-level merge: only the keys sent change, so
+  a nested block such as `audit` travels whole. Two generation counters, one per
   resource, drop a response that arrives after its resource moved on; `reset()`
   runs on logout through an `useAuthStore` subscription.
   The selected record needs **both** of its flags, and a page checks both:
