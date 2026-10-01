@@ -78,6 +78,12 @@ export function useSidecarGuardrailEditor({ guardrail, id, isEdit, targets: seed
 
   const save = async () => {
     if (!canSubmit) return false
+    // A type the list no longer offers stayed on a row from before the targets changed.
+    const unsupported = rules.findIndex((r) => r.name.trim() !== '' && !types.some((t) => t.value === r.type))
+    if (unsupported !== -1) {
+      showSnackbar({ level: 'error', text: `Rule ${unsupported + 1} has a type the selected listeners cannot run.` })
+      return false
+    }
     const spec = rulesToSpec(rules, typeFields)
     if (spec.rules.length === 0) {
       showSnackbar({ level: 'error', text: 'Give every rule a name, or remove it.' })

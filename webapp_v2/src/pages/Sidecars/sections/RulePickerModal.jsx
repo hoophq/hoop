@@ -71,8 +71,9 @@ function Picker({ feature, sidecar, listener, onClose, onCreate, onSaved }) {
   const toggle = (name) => {
     const on = !isOn(name)
     if (single && on) {
+      // Every other analyzer goes, the ones on some lanes included.
       choose(
-        enabled.filter((r) => r.name !== name && isOn(r.name)).map((r) => r.name),
+        enabled.filter((r) => r.name !== name && (isOn(r.name) || bound.some.has(r.name))).map((r) => r.name),
         false,
       )
     }

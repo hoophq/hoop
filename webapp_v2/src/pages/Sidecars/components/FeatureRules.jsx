@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import { showSnackbar } from '@/utils/snackbar'
 import { FEATURES } from '../config'
+import { targetLanes } from '../rules'
 import RuleFormModal from '../sections/RuleFormModal'
 import RulePickerModal from '../sections/RulePickerModal'
 import FeatureAccordions from './FeatureAccordions'
@@ -18,9 +19,9 @@ export default function FeatureRules({ sidecar, listener = null, editable = fals
       showSnackbar({ level: 'error', text: 'Saved, but the sidecar could not be re-read. Reload the page.' })
     })
 
-  // A lane with no name has nothing a binding can point at.
+  // A binding names a listener, so nothing is offered without one.
   const actions =
-    editable && (!listener || listener.name)
+    editable && targetLanes(sidecar, listener).length > 0
       ? {
           onAdd: (key) => setPicker({ feature: FEATURES[key], opened: true }),
           onEdit: (key, rule) => setForm({ feature: FEATURES[key], rule, opened: true }),

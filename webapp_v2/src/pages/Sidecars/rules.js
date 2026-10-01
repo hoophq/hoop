@@ -54,7 +54,10 @@ export const ruleErrorMessage = (error) =>
 // field it names. One request per rule, nothing atomic; failures are returned.
 export async function applyBindings(api, sidecar, lanes, changes) {
   const failed = []
-  for (const { rule, on } of changes) {
+  // Unbinds first: a listener runs one analyzer, so a replacement is refused
+  // while the old one is still bound.
+  const ordered = [...changes].sort((a, b) => Number(a.on) - Number(b.on))
+  for (const { rule, on } of ordered) {
     try {
       const { data: stored } = await api.get(rule)
       await api.update(rule, {

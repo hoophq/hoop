@@ -8,6 +8,7 @@ import PageLoader from '@/components/PageLoader'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import { showSnackbar } from '@/utils/snackbar'
 import Callout from '../components/Callout'
+import FeatureAccordions from '../components/FeatureAccordions'
 import FeatureRules from '../components/FeatureRules'
 import ListenerForm from '../components/ListenerForm'
 import { usesConfigFile } from '../config'
@@ -36,12 +37,13 @@ function Parent({ name, onClick }) {
   )
 }
 
-// A new listener is not in the stored document yet, so it shows the defaults it will inherit.
+// A new listener is not in the stored document yet, so it shows the defaults it
+// will inherit; the bindings other lanes carry are theirs, not its.
 function FeatureSettings({ sidecar, listener }) {
   if (listener) return <FeatureRules sidecar={sidecar} listener={listener} editable={!usesConfigFile(sidecar)} />
   return (
     <Stack gap="md">
-      <FeatureRules sidecar={sidecar} />
+      <FeatureAccordions config={sidecar.configuration} boundRules={[]} />
       <Callout icon={Info} color="indigo.0">
         <Text size="sm">
           This listener inherits the global feature configuration. You can override it per listener after creation.
