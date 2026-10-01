@@ -1,0 +1,9 @@
+/* Mantine puts its xs (10px) between a section and the label; the design
+   draws Spacing/1 (4px) on every button with an icon. */
+.section:where([data-position='left']) {
+  margin-inline-end: var(--mantine-spacing-xsAlt);
+}
+
+.section:where([data-position='right']) {
+  margin-inline-start: var(--mantine-spacing-xsAlt);
+}
