@@ -3,6 +3,8 @@ package daemon
 import (
 	"strings"
 	"testing"
+
+	"github.com/hoophq/hoop/sidecar/policy"
 )
 
 func httpLaneWithSensitiveParams() Config {
@@ -106,6 +108,76 @@ func TestSinceTagsAreReleases(t *testing.T) {
 	for _, v := range []string{"1.2", "1.2.3.4", "1.02.3", "a.b.c", "1.2.3-rc1", "unknown", ""} {
 		if _, ok := parseRelease(v); ok {
 			t.Errorf("%q should not parse", v)
+		}
+	}
+}
+
+// A baseline entry that shipped after 1.162.0, the first release that
+// handshakes, is granted to a build before the list by its release, like a
+// since-tagged field: the http_header rule type from 1.194.0, the ssh
+// protocol from 1.176.0. An older entry is granted whatever the release says.
+func TestABaselineEntryIsGrantedFromItsRelease(t *testing.T) {
+	hdr := rulesLane(policy.Rule{Name: "hdr", Type: policy.MatchHTTPHeader})
+	for _, hs := range []Handshake{
+		{Version: "1.194.0"},
+		{Version: "1.195.0", Capabilities: []string{}},
+		{Version: "1.200.0", Capabilities: []string{CapabilityReviewMode}},
+	} {
+		if err := CheckServable(hdr, hs); err != nil {
+			t.Errorf("version %q was refused a rule type it decodes: %v", hs.Version, err)
+		}
+	}
+	for _, hs := range []Handshake{{Version: "1.193.0"}, {Version: "1.184.1", Capabilities: []string{}}, {Version: "unknown"}} {
+		err := CheckServable(hdr, hs)
+		if err == nil {
+			t.Fatalf("version %q was served a rule type from a later release", hs.Version)
+		}
+		for _, want := range []string{`binds the http_header rule "hdr"`, "1.194.0 or later"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("refusal %q does not say %q", err, want)
+			}
+		}
+	}
+
+	ssh := *pgLane()
+	ssh.Listeners[0].Protocol = "ssh"
+	if err := CheckServable(ssh, Handshake{Version: "1.176.0"}); err != nil {
+		t.Errorf("1.176.0 was refused ssh: %v", err)
+	}
+	if err := CheckServable(ssh, Handshake{Version: "1.175.0"}); err == nil || !strings.Contains(err.Error(), "1.176.0 or later") {
+		t.Errorf("1.175.0 was served ssh, or the refusal does not name the release: %v", err)
+	}
+
+	old := rulesLane(policy.Rule{Name: "t", Type: policy.MatchTable})
+	for _, hs := range []Handshake{{Version: "1.162.0"}, {Version: "unknown"}, {}} {
+		if err := CheckServable(old, hs); err != nil {
+			t.Errorf("%+v was refused an entry every handshaking build has: %v", hs, err)
+		}
+	}
+}
+
+// Every baseline release parses, so a bad number cannot silently grant or
+// refuse an entry.
+func TestBaselineReleasesParse(t *testing.T) {
+	for c, release := range baselineCapabilities {
+		if release == "" {
+			continue
+		}
+		if _, ok := parseRelease(release); !ok {
+			t.Errorf("%s: release %q is not MAJOR.MINOR.PATCH", c, release)
+		}
+	}
+}
+
+// A value omitempty drops is absent on the wire, so an empty list needs no
+// entry: the sidecar never sees the key. The listener form sends one for a
+// list switched on with nothing in it.
+func TestAnEmptyListIsNotASetField(t *testing.T) {
+	cfg := httpLaneWithSensitiveParams()
+	cfg.Listeners[0].HTTP.SensitiveQueryParams = []string{}
+	for _, hs := range []Handshake{{Version: "1.184.1"}, {Capabilities: []string{"rule:operation", "protocol:http"}}} {
+		if err := CheckServable(cfg, hs); err != nil {
+			t.Errorf("%+v was refused an empty list: %v", hs, err)
 		}
 	}
 }

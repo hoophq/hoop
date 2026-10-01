@@ -45,7 +45,7 @@ func TestTheBaselineIsFrozenBelowTheBuild(t *testing.T) {
 	for _, p := range []string{"clickhouse", "grpc", "http", "mongodb", "mssql", "mysql", "postgres", "spanner", "ssh"} {
 		known["protocol:"+p] = true
 	}
-	for _, b := range baselineCapabilities {
+	for b := range baselineCapabilities {
 		if !known[b] {
 			t.Errorf("baseline names %q, which this build does not construct", b)
 		}
@@ -59,10 +59,10 @@ func rulesLane(rules ...policy.Rule) Config {
 }
 
 // A build whose header predates the rule: and protocol: entries decodes the
-// frozen baseline, so a document made of today's vocabulary is still served
-// to it, and only a value newer than the baseline is refused.
+// frozen baseline, so a document made of the baseline vocabulary is still
+// served to it, and only a value newer than the baseline is refused.
 func TestAnOldHeaderKeepsTheBaselineVocabulary(t *testing.T) {
-	cfg := rulesLane(policy.Rule{Name: "hdr", Type: policy.MatchHTTPHeader})
+	cfg := rulesLane(policy.Rule{Name: "words", Type: policy.MatchDenyWords, Words: []string{"drop"}})
 	for _, caps := range [][]string{nil, {}, {CapabilityReviewMode}} {
 		if err := CheckServable(cfg, Handshake{Capabilities: caps}); err != nil {
 			t.Errorf("capabilities %v were refused today's vocabulary: %v", caps, err)

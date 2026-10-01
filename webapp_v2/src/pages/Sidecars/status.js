@@ -14,6 +14,7 @@ export const SIDECAR_STATUS = {
   APPLYING: 'applying',
   NOT_APPLIED: 'not_applied',
   REFUSED: 'refused',
+  NOT_SERVED: 'not_served',
   RESTART: 'restart',
   UNKNOWN: 'unknown',
 }
@@ -66,6 +67,16 @@ const CONFIG_STATE = {
     config: 'Refused',
     hint: 'The sidecar refused the served configuration and keeps running its previous rules.',
     showsError: true,
+    refusal: true,
+  },
+  [SIDECAR_STATUS.NOT_SERVED]: {
+    key: SIDECAR_STATUS.NOT_SERVED,
+    label: 'Config refused',
+    badge: 'danger',
+    config: 'Refused',
+    hint: 'This sidecar build cannot read the configuration, so the control plane did not serve it. The sidecar keeps running its previous rules.',
+    showsError: true,
+    refusal: true,
   },
   [SIDECAR_STATUS.RESTART]: {
     key: SIDECAR_STATUS.RESTART,
@@ -91,11 +102,14 @@ function withError(state, sidecar) {
   return detail ? { ...state, detail } : state
 }
 
-// A state this build does not know reads as Active: the sidecar did check
-// in, and that is the only claim the badge can make about it.
+// A refusal outranks Waiting: the plane refuses a first handshake before it
+// marks the sidecar seen, and the reason is what the admin needs. A state
+// this build does not know reads as Active: the sidecar did check in, and
+// that is the only claim the badge can make about it.
 export function sidecarStatus(sidecar) {
+  const state = CONFIG_STATE[sidecar?.config_state]
+  if (state?.refusal) return withError(state, sidecar)
   if (!sidecar?.last_seen_at) return STATUS[SIDECAR_STATUS.WAITING]
-  const state = CONFIG_STATE[sidecar.config_state]
   return state ? withError(state, sidecar) : STATUS[SIDECAR_STATUS.CONNECTED]
 }
 

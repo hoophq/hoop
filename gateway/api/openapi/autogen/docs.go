@@ -20044,7 +20044,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "config_state": {
-                    "description": "ConfigState is what the sidecar runs, read from the fields above and\nthe clock: applied, applying (served under a heartbeat ago, not\nreported yet), not_applied (served longer ago and never reported, the\nshape of a sidecar that exits at boot on it), refused, restart, or\nunknown (a build too old to report). Empty while nothing was served,\nbefore the first handshake, and for a sidecar running its own file.",
+                    "description": "ConfigState is what the sidecar runs, read from the fields above and\nthe clock: applied, applying (served under a heartbeat ago, not\nreported yet), not_applied (served longer ago and never reported, the\nshape of a sidecar that exits at boot on it), refused (by the\nsidecar), not_served (the control plane refused to serve this build,\nLastError says why), restart, or unknown (a build too old to report).\nEmpty while nothing was served, before the first handshake, and for a\nsidecar running its own file; a refusal shows even then.",
                     "type": "string",
                     "example": "applied"
                 },
@@ -20156,12 +20156,12 @@ const docTemplate = `{
                     "example": "8f14e45fceea167a5a36dedd4bea2543"
                 },
                 "last_error": {
-                    "description": "LastError is the reason, when LastOutcome is refused or restart. Shown\non the sidecar page so an admin reads it without the sidecar's log.\n\nOptional. A build from before the field sends nothing.",
+                    "description": "LastError is the reason, when LastOutcome is refused, restart or\nnot_served. Shown on the sidecar page so an admin reads it without the\nsidecar's log.\n\nOptional. A build from before the field sends nothing.",
                     "type": "string",
                     "example": "the control plane sent a config this build refuses: parse config: json: unknown field \"future_key\""
                 },
                 "last_outcome": {
-                    "description": "LastOutcome is what this sidecar concluded about that configuration:\napplied, restart, refused, unchanged or retry. It is the only way to\ntell a sidecar enforcing the current rules from one that refused them\nand kept the old ones while still handshaking on time.\n\nOptional, for the same reason as AppliedRevision.",
+                    "description": "LastOutcome is what this sidecar concluded about that configuration:\napplied, restart, refused, unchanged or retry. It is the only way to\ntell a sidecar enforcing the current rules from one that refused them\nand kept the old ones while still handshaking on time. One more value\nis the control plane's own: not_served, when it refused to serve this\nbuild the configuration, with LastError saying why.\n\nOptional, for the same reason as AppliedRevision.",
                     "type": "string",
                     "example": "applied"
                 },
@@ -20240,7 +20240,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "config_state": {
-                    "description": "ConfigState is what the sidecar runs, read from the fields above and\nthe clock: applied, applying (served under a heartbeat ago, not\nreported yet), not_applied (served longer ago and never reported, the\nshape of a sidecar that exits at boot on it), refused, restart, or\nunknown (a build too old to report). Empty while nothing was served,\nbefore the first handshake, and for a sidecar running its own file.",
+                    "description": "ConfigState is what the sidecar runs, read from the fields above and\nthe clock: applied, applying (served under a heartbeat ago, not\nreported yet), not_applied (served longer ago and never reported, the\nshape of a sidecar that exits at boot on it), refused (by the\nsidecar), not_served (the control plane refused to serve this build,\nLastError says why), restart, or unknown (a build too old to report).\nEmpty while nothing was served, before the first handshake, and for a\nsidecar running its own file; a refusal shows even then.",
                     "type": "string",
                     "example": "applied"
                 },

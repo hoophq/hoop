@@ -215,8 +215,10 @@ done
   from the git tags, so a build from before the header is refused it by
   its reported version; a new field leaves `since` off until its release
   exists. Rule types and protocols reach the header on their own, through
-  `policy.RuleTypes` and `daemon.Protocols`. Never add to
-  `baselineCapabilities`.
+  `policy.RuleTypes` and `daemon.Protocols`. `baselineCapabilities` is
+  frozen: it names what the builds before the header decode, each entry
+  with the release it shipped in when that is later than 1.162.0, and
+  nothing is ever added to it.
 
 - **Construct codecs through the seam, never libhoop directly.** A decoder
   built with the zero `Options` has no classifier: it reports statement text

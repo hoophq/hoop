@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -48,21 +49,36 @@ const (
 	capabilityProtocolPrefix = "protocol:"
 )
 
-// baselineCapabilities is the rule and protocol vocabulary of the last
-// release whose header carried no rule: or protocol: entry. A handshake that
-// names none of a kind comes from such a build, and it decodes exactly this;
-// effectiveCapabilities fills it in.
+// baselineCapabilities is the rule and protocol vocabulary of the builds
+// whose header carries no rule: or protocol: entry, each with the release
+// that added it when that is later than 1.162.0, the first release that
+// handshakes with a control plane. A handshake that names none of a kind
+// comes from such a build, and CheckServable grants it an entry from the
+// release it shipped in; an empty release means every such build has it.
 //
-// FROZEN. An entry added here is granted to every build that predates the
-// generated list, and such a build would refuse it. A new rule type or
+// FROZEN. An entry added here is granted to old builds by release alone, and
+// a release that never shipped it would refuse it. A new rule type or
 // protocol reaches the header through policy.RuleTypes and Protocols alone.
-var baselineCapabilities = []string{
-	"protocol:clickhouse", "protocol:grpc", "protocol:http", "protocol:mongodb",
-	"protocol:mssql", "protocol:mysql", "protocol:postgres", "protocol:spanner",
-	"protocol:ssh",
-	"rule:ai_analysis", "rule:deny_words_list", "rule:grpc_status",
-	"rule:http_header", "rule:http_resource", "rule:http_status",
-	"rule:operation", "rule:pattern_match", "rule:pii", "rule:table",
+var baselineCapabilities = map[string]string{
+	"protocol:clickhouse":  "1.183.0",
+	"protocol:grpc":        "",
+	"protocol:http":        "",
+	"protocol:mongodb":     "",
+	"protocol:mssql":       "",
+	"protocol:mysql":       "",
+	"protocol:postgres":    "",
+	"protocol:spanner":     "1.166.0",
+	"protocol:ssh":         "1.176.0",
+	"rule:ai_analysis":     "",
+	"rule:deny_words_list": "",
+	"rule:grpc_status":     "",
+	"rule:http_header":     "1.194.0",
+	"rule:http_resource":   "",
+	"rule:http_status":     "",
+	"rule:operation":       "",
+	"rule:pattern_match":   "",
+	"rule:pii":             "",
+	"rule:table":           "",
 }
 
 // Handshake is what a sidecar said about itself, as far as serving needs it.
@@ -92,14 +108,20 @@ func capFields() []capField {
 	return out
 }
 
-// capabilitySince maps a field entry to the release it shipped in, for every
-// field whose tag says. Read from the struct, so the number sits beside the
-// field it describes.
+// capabilitySince maps an entry to the release it shipped in: every field
+// whose tag says, read from the struct so the number sits beside the field
+// it describes, and every baseline entry newer than the first handshaking
+// release.
 func capabilitySince() map[string]string {
 	out := map[string]string{}
 	for _, f := range capFields() {
 		if f.since != "" {
 			out[f.name] = f.since
+		}
+	}
+	for c, release := range baselineCapabilities {
+		if release != "" {
+			out[c] = release
 		}
 	}
 	return out
@@ -136,58 +158,70 @@ func ParseCapabilities(header string) []string {
 	return out
 }
 
-// effectiveCapabilities widens a reported list to what its build decodes. A
-// list with no entry of a kind predates that kind's generated list, so it
-// gets the frozen baseline. It never narrows: an entry a build reports is
-// one it decodes.
-func effectiveCapabilities(caps []string) []string {
-	out := slices.Clone(caps)
-	for _, prefix := range []string{capabilityRulePrefix, capabilityProtocolPrefix} {
-		if slices.ContainsFunc(caps, func(c string) bool { return strings.HasPrefix(c, prefix) }) {
-			continue
-		}
-		for _, b := range baselineCapabilities {
-			if strings.HasPrefix(b, prefix) {
-				out = append(out, b)
-			}
-		}
+// servedView is the document as the sidecar decodes it: ServedForm, through
+// the JSON the plane sends. A value omitempty drops, an empty list or map, is
+// absent on the wire, so it is absent here and needs no entry.
+func servedView(cfg Config) (Config, error) {
+	raw, err := json.Marshal(ServedForm(cfg))
+	if err != nil {
+		return Config{}, fmt.Errorf("encode the configuration: %w", err)
 	}
-	return out
-}
-
-// predatesGeneratedList reports whether a header comes from a build older
-// than the generated list: such a header names no rule: entry, because every
-// build that generates the list links at least one rule type.
-func predatesGeneratedList(caps []string) bool {
-	return !slices.ContainsFunc(caps, func(c string) bool { return strings.HasPrefix(c, capabilityRulePrefix) })
+	var out Config
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return Config{}, fmt.Errorf("decode the configuration: %w", err)
+	}
+	return out, nil
 }
 
 // CheckServable refuses a document that the sidecar behind hs cannot decode:
 // a set field whose entry it lacks, a rule of a type it does not list, or a
-// listener protocol it does not speak. It reads the served form, so a default
-// the plane never serves needs no entry. The error names the listener and the
-// release that adds support.
+// listener protocol it does not speak. It reads the document as the sidecar
+// will, so a default the plane never serves and a value the wire drops need
+// no entry. The error names the listener and the release that adds support.
 //
 // A build from before the generated list names no field but the few it was
-// taught by hand, so for such a build a field's since release stands in for
-// the missing entry: the field is granted when the reported release parses
-// and reaches it. A release that does not parse (a dev build's "unknown")
-// grants nothing. A build that sends the generated list is read from the
-// list alone; its release decides nothing.
+// taught by hand, and no rule type or protocol at all, so for such a build
+// the release stands in for the missing entry: a baseline entry and a
+// since-tagged field are granted when the reported release parses and
+// reaches the release they shipped in. A release that does not parse (a dev
+// build's "unknown") grants nothing by release. A build that sends the
+// generated list is read from the list alone; its release decides nothing.
 func CheckServable(cfg Config, hs Handshake) error {
-	has := map[string]bool{}
-	for _, c := range effectiveCapabilities(hs.Capabilities) {
-		has[c] = true
+	served, err := servedView(cfg)
+	if err != nil {
+		return err
+	}
+	reported := map[string]bool{}
+	for _, c := range hs.Capabilities {
+		reported[c] = true
+	}
+	// A header that names no entry of a kind comes from a build older than
+	// that kind's generated list. A field is read by the rule list: every
+	// build that generates the list links at least one rule type.
+	lacksKind := func(prefix string) bool {
+		return !slices.ContainsFunc(hs.Capabilities, func(c string) bool { return strings.HasPrefix(c, prefix) })
 	}
 	since := capabilitySince()
-	reported, reportedKnown := parseRelease(hs.Version)
-	byRelease := predatesGeneratedList(hs.Capabilities) && reportedKnown
+	release, releaseKnown := parseRelease(hs.Version)
+	reaches := func(capability string) bool {
+		shipped, ok := parseRelease(since[capability])
+		return ok && releaseKnown && !releaseBefore(release, shipped)
+	}
 	granted := func(capability string) bool {
-		if has[capability] {
+		if reported[capability] {
 			return true
 		}
-		shipped, ok := parseRelease(since[capability])
-		return byRelease && ok && !releaseBefore(reported, shipped)
+		kind := capabilityRulePrefix
+		if strings.HasPrefix(capability, capabilityProtocolPrefix) {
+			kind = capabilityProtocolPrefix
+		}
+		if !lacksKind(kind) {
+			return false
+		}
+		if shipped, inBaseline := baselineCapabilities[capability]; inBaseline && shipped == "" {
+			return true
+		}
+		return reaches(capability)
 	}
 	who := "this sidecar"
 	if hs.Version != "" {
@@ -201,7 +235,6 @@ func CheckServable(cfg Config, hs Handshake) error {
 		problems = append(problems, fmt.Sprintf("%s %s, and %s does not support it; %s",
 			where, what, who, upgradeHint(capability, since)))
 	}
-	served := ServedForm(cfg)
 	walkConfigValue(reflect.ValueOf(served), "the configuration", "",
 		func(where, path string, f jsonField, v reflect.Value) {
 			if c := f.tag.Get("cap"); c != "" && !v.IsZero() {

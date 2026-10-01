@@ -334,12 +334,16 @@ func DeleteSidecarByNameOrID(db *gorm.DB, orgID, nameOrID string) (string, error
 // capabilities is stored as an array even when empty, so a build too old to
 // report reads apart from a sidecar that never handshaked.
 //
-// A refused or restart outcome is HELD, with its revision and reason, through
-// a handshake that reports nothing and through one that reports "unchanged".
-// A boot on a refused document exits before it can report anything, and a
-// build from before ADR-0022 decays its refusal into "unchanged" after one
-// tick; either would otherwise read as converged. Any other outcome replaces
-// what is held.
+// A refused or restart outcome the sidecar reported is HELD, with its
+// revision and reason, through a handshake that reports nothing and through
+// one that reports "unchanged". A boot on a refused document exits before it
+// can report anything, and a build from before ADR-0022 decays its refusal
+// into "unchanged" after one tick; either would otherwise read as converged.
+// Any other outcome replaces what is held.
+//
+// A SidecarOutcomeNotServed is the plane's own verdict, so this handshake,
+// which the plane did serve, ends it whatever the sidecar reports: the
+// sidecar never received the document it names and holds nothing about it.
 func RecordSidecarHandshake(db *gorm.DB, sidecarID, version, appliedRevision, lastOutcome, lastError, servedRevision string, capabilities []string) error {
 	if capabilities == nil {
 		capabilities = []string{}
@@ -350,10 +354,12 @@ func RecordSidecarHandshake(db *gorm.DB, sidecarID, version, appliedRevision, la
 		reported_version = NULLIF(@version, ''),
 		applied_revision = CASE WHEN @outcome = '' OR (@outcome = 'unchanged' AND last_outcome IN ('refused', 'restart'))
 			THEN applied_revision ELSE NULLIF(@applied, '') END,
-		last_error = CASE WHEN @outcome = '' OR (@outcome = 'unchanged' AND last_outcome IN ('refused', 'restart'))
-			THEN last_error ELSE NULLIF(@error, '') END,
-		last_outcome = CASE WHEN @outcome = '' OR (@outcome = 'unchanged' AND last_outcome IN ('refused', 'restart'))
-			THEN last_outcome ELSE NULLIF(@outcome, '') END,
+		last_error = CASE WHEN last_outcome = @not_served THEN NULLIF(@error, '')
+			WHEN @outcome = '' OR (@outcome = 'unchanged' AND last_outcome IN ('refused', 'restart')) THEN last_error
+			ELSE NULLIF(@error, '') END,
+		last_outcome = CASE WHEN last_outcome = @not_served THEN NULLIF(@outcome, '')
+			WHEN @outcome = '' OR (@outcome = 'unchanged' AND last_outcome IN ('refused', 'restart')) THEN last_outcome
+			ELSE NULLIF(@outcome, '') END,
 		served_revision_at = CASE WHEN served_revision IS DISTINCT FROM NULLIF(@served, '')
 			THEN NOW() ELSE served_revision_at END,
 		served_revision = NULLIF(@served, ''),
@@ -361,8 +367,15 @@ func RecordSidecarHandshake(db *gorm.DB, sidecarID, version, appliedRevision, la
 	WHERE id = @id`, map[string]any{
 		"version": version, "applied": appliedRevision, "outcome": lastOutcome, "error": lastError,
 		"served": servedRevision, "capabilities": pq.StringArray(capabilities), "id": sidecarID,
+		"not_served": SidecarOutcomeNotServed,
 	}).Error
 }
+
+// SidecarOutcomeNotServed is the last_outcome RecordSidecarServeRefusal
+// writes: the plane refused to serve this build, and last_error says why. It
+// is the plane's verdict, apart from the outcomes a sidecar reports, so the
+// next handshake the plane serves clears it (RecordSidecarHandshake).
+const SidecarOutcomeNotServed = "not_served"
 
 // RecordSidecarServeRefusal stores what a sidecar reported when the plane
 // refused to serve it, and why, so the page shows the refusal with its reason
@@ -376,7 +389,7 @@ func RecordSidecarServeRefusal(db *gorm.DB, sidecarID, version string, capabilit
 	UPDATE private.sidecars SET
 		reported_version = NULLIF(?, ''),
 		capabilities = ?,
-		last_outcome = 'refused',
+		last_outcome = ?,
 		last_error = NULLIF(?, '')
-	WHERE id = ?`, version, pq.StringArray(capabilities), reason, sidecarID).Error
+	WHERE id = ?`, version, pq.StringArray(capabilities), SidecarOutcomeNotServed, reason, sidecarID).Error
 }

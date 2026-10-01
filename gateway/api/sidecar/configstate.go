@@ -14,6 +14,7 @@ const (
 	configStateApplying   = "applying"
 	configStateNotApplied = "not_applied"
 	configStateRefused    = "refused"
+	configStateNotServed  = "not_served"
 	configStateRestart    = "restart"
 	configStateUnknown    = "unknown"
 )
@@ -27,24 +28,33 @@ const applyGrace = 150 * time.Second
 // Empty when there is nothing to say: no handshake yet, nothing served, or
 // a sidecar running its own file, whose document the plane does not own.
 //
-// A refusal or a restart outcome wins over the revisions: the row holds it
-// until an apply replaces it (models.RecordSidecarHandshake). Equal
-// revisions mean applied. Unequal ones mean the sidecar has not reported the
-// served document, which is normal for a heartbeat after a save and the
-// shape of a boot crash-loop after that; a build that reports no outcome and
-// sends no capabilities header is too old to say either way.
+// A refusal wins over everything, including the guards above: the plane
+// refuses a first handshake before it serves anything or marks the sidecar
+// seen, and the page would otherwise read Waiting with the reason hidden. A
+// restart outcome wins over the revisions. The row holds either until an
+// apply replaces it (models.RecordSidecarHandshake). Equal revisions mean
+// applied. Unequal ones mean the sidecar has not reported the served
+// document, which is normal for a heartbeat after a save and the shape of a
+// boot crash-loop after that; a build that reports no outcome and sends no
+// capabilities header is too old to say either way.
 func configState(s models.Sidecar, now time.Time) string {
-	if s.LastSeenAt == nil || usesConfigFile(s.Configuration) {
+	if usesConfigFile(s.Configuration) {
+		return ""
+	}
+	switch derefOrEmpty(s.LastOutcome) {
+	case "refused":
+		return configStateRefused
+	case models.SidecarOutcomeNotServed:
+		return configStateNotServed
+	}
+	if s.LastSeenAt == nil {
 		return ""
 	}
 	served := derefOrEmpty(s.ServedRevision)
 	if served == "" {
 		return ""
 	}
-	switch derefOrEmpty(s.LastOutcome) {
-	case "refused":
-		return configStateRefused
-	case "restart":
+	if derefOrEmpty(s.LastOutcome) == "restart" {
 		return configStateRestart
 	}
 	if derefOrEmpty(s.AppliedRevision) == served {

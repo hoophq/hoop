@@ -41,6 +41,10 @@ func TestConfigState(t *testing.T) {
 			ServedRevisionAt: &stale, Capabilities: []string{"review_mode"}}, configStateNotApplied},
 		{"too old to report", models.Sidecar{LastSeenAt: &seen, ServedRevision: str("r1"),
 			ServedRevisionAt: &stale, Capabilities: []string{}}, configStateUnknown},
+		{"refused at the first handshake", models.Sidecar{LastOutcome: str(models.SidecarOutcomeNotServed),
+			LastError: str("too old")}, configStateNotServed},
+		{"refused at serve after handshakes", models.Sidecar{LastSeenAt: &seen, ServedRevision: str("r1"),
+			AppliedRevision: str("r1"), LastOutcome: str(models.SidecarOutcomeNotServed)}, configStateNotServed},
 	}
 	for _, tc := range cases {
 		if got := configState(tc.row, now); got != tc.want {

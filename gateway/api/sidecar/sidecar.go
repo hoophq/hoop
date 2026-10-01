@@ -870,15 +870,16 @@ func toResponse(s models.Sidecar) openapi.SidecarResponse {
 	resp.AppliedRevision = derefOrEmpty(s.AppliedRevision)
 	resp.LastOutcome = derefOrEmpty(s.LastOutcome)
 	resp.LastError = derefOrEmpty(s.LastError)
-	resp.ConfigState = configState(s, time.Now())
+	resp.ConfigState = configState(s, time.Now().UTC())
 	resp.Deprecations = configDeprecations(s.Configuration)
 	return resp
 }
 
 // configDeprecations names the deprecated spellings a stored document uses,
 // through the daemon's own fold. A document the fold refuses, one written in
-// both spellings, reports that refusal as its one line: the sidecar will say
-// the same and keep its old rules.
+// both spellings, is not a list of accepted keys, so it lists nothing here:
+// the write refuses such a document, and a row from before that check reads
+// as refused through the sidecar's own report.
 func configDeprecations(cfg models.SidecarConfiguration) []string {
 	raw, err := json.Marshal(cfg)
 	if err != nil {
@@ -886,7 +887,7 @@ func configDeprecations(cfg models.SidecarConfiguration) []string {
 	}
 	deps, err := daemon.Deprecations(raw)
 	if err != nil {
-		return []string{err.Error()}
+		return nil
 	}
 	return deps
 }
