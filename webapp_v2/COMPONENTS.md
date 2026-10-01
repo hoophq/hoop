@@ -997,11 +997,12 @@ Non-obvious notes only:
   `json.RawMessage`, so the daemon's `len(o.Rules) > 0` counts BYTES, and the two bytes
   of `[]` are not the nil slice. Reading it as "a non-empty list replaces" reported
   masking on a lane that had switched it off. `opa: {}` drops an inherited endpoint.
-  `pages/Sidecars/status.js` turns `last_seen_at` into Waiting or Connected, and
-  those two only: a stale timestamp still reads Connected with its relative last-seen
-  time. There is no Offline, because `last_seen_at` is gateway memory that a restart
-  clears, so a sidecar that stopped calling and one the gateway forgot look identical
-  from here.
+  `pages/Sidecars/status.js` turns `last_seen_at` and `config_state` into the badge:
+  Waiting (never checked in), Connected (applied, unknown, or nothing served yet),
+  Applying, Not applied, Config refused and Restart needed; `configState` is the
+  details card's Configuration row, with `last_error` under refused and restart. A
+  stale timestamp still reads Connected with its relative last-seen time: there is no
+  Offline, and that time beside the badge is what says a sidecar stopped calling.
 - `sessions.js` — `list(params)`. **`limit` does not make the call cheap**: the
   gateway always runs an unbounded `COUNT(*)` (joined against reviews) to fill
   `total` before applying the limit, so `{ limit: 1 }` costs the same as a full

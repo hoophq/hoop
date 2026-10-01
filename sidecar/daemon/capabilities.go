@@ -1,44 +1,149 @@
 package daemon
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
+	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 
-	"github.com/hoophq/hoop/sidecar/analyzer"
+	"github.com/hoophq/hoop/sidecar/policy"
 )
 
-// CapabilitiesHeader lists, comma separated, the served-document features
-// this build decodes. The sidecar sends it on the handshake.
+// CapabilitiesHeader lists, comma separated, what this build decodes of the
+// served document. The sidecar sends it on every handshake.
 //
 // A header, like the answer's LicenseManagedHeader and ConfigRevisionHeader.
 // Absent means a build too old to report; the plane keeps that apart from a
 // build that reports none.
 //
 // The served document is decoded with DisallowUnknownFields, so a key this
-// build does not declare fails the whole document. The plane reads this
-// header to refuse such a key instead of serving it; see CheckServable.
+// build does not declare fails the whole document, and a rule type or a
+// protocol it does not know fails Validate. The plane reads this header to
+// refuse such a document at save and at serve instead; see CheckServable.
 const CapabilitiesHeader = "hoop-sidecar-capabilities"
 
-// CapabilityReviewMode means this build decodes an analyzer block's
-// review_mode.
-const CapabilityReviewMode = "review_mode"
+// Three kinds of entry travel in the header. SidecarCapabilities generates
+// all three from what the build links, so a new field, rule type or protocol
+// is reported without anyone listing it (ADR-0022):
+//
+//   - A bare name is a FIELD: the cap:"<name>" tag on the struct field that
+//     decodes it. A document that sets the field needs the entry. A field
+//     that is safe when absent needs no tag: the plane serves no zero value
+//     (every field omits it), so an older build never sees the key. A
+//     since:"<release>" tag beside it names the release the field shipped
+//     in; see CheckServable for what it decides.
+//   - rule:<type> is a guardrail rule type policy.RuleTypes lists.
+//   - protocol:<name> is a listener protocol Protocols lists.
+const (
+	// CapabilityReviewMode means this build decodes an analyzer block's
+	// review_mode.
+	CapabilityReviewMode = "review_mode"
+	// CapabilityAnalyzerRateLimit means this build decodes analyzer
+	// rate_limit, on the top-level section and on a listener's block.
+	CapabilityAnalyzerRateLimit = "analyzer_rate_limit"
 
-// CapabilityAnalyzerRateLimit means this build decodes analyzer rate_limit,
-// on the top-level section and on a listener's block.
-const CapabilityAnalyzerRateLimit = "analyzer_rate_limit"
+	capabilityRulePrefix     = "rule:"
+	capabilityProtocolPrefix = "protocol:"
+)
 
-// capabilitySince names the first release that sends each capability, for
-// the refusal an admin reads. A hoop release, because `hoop start sidecar`
-// is the shipped binary.
-var capabilitySince = map[string]string{
-	CapabilityReviewMode:        "1.191.0",
-	CapabilityAnalyzerRateLimit: "1.198.0",
+// baselineCapabilities is the rule and protocol vocabulary of the builds
+// whose header carries no rule: or protocol: entry, each with the release
+// that added it when that is later than 1.162.0, the first release that
+// handshakes with a control plane. A handshake that names none of a kind
+// comes from such a build, and CheckServable grants it an entry from the
+// release it shipped in; an empty release means every such build has it.
+//
+// FROZEN. An entry added here is granted to old builds by release alone, and
+// a release that never shipped it would refuse it. A new rule type or
+// protocol reaches the header through policy.RuleTypes and Protocols alone.
+var baselineCapabilities = map[string]string{
+	"protocol:clickhouse":  "1.183.0",
+	"protocol:grpc":        "",
+	"protocol:http":        "",
+	"protocol:mongodb":     "",
+	"protocol:mssql":       "",
+	"protocol:mysql":       "",
+	"protocol:postgres":    "",
+	"protocol:spanner":     "1.166.0",
+	"protocol:ssh":         "1.176.0",
+	"rule:ai_analysis":     "",
+	"rule:deny_words_list": "",
+	"rule:grpc_status":     "",
+	"rule:http_header":     "1.194.0",
+	"rule:http_resource":   "",
+	"rule:http_status":     "",
+	"rule:operation":       "",
+	"rule:pattern_match":   "",
+	"rule:pii":             "",
+	"rule:table":           "",
 }
 
-// SidecarCapabilities is what this build sends in CapabilitiesHeader.
+// Handshake is what a sidecar said about itself, as far as serving needs it.
+type Handshake struct {
+	// Version is the release the sidecar reported. It is read only for a
+	// build whose header predates the generated list; see CheckServable.
+	Version string
+	// Capabilities is the parsed CapabilitiesHeader. nil means the sidecar
+	// never reported one.
+	Capabilities []string
+}
+
+// capField is one cap-tagged field: where it sits, what the header calls it,
+// and the release it shipped in when the tag says.
+type capField struct {
+	path, name, since string
+}
+
+// capFields lists every cap-tagged field of the config, in walk order.
+func capFields() []capField {
+	var out []capField
+	walkConfigType(reflect.TypeFor[Config](), "", func(path string, f jsonField) {
+		if c := f.tag.Get("cap"); c != "" {
+			out = append(out, capField{path: path, name: c, since: f.tag.Get("since")})
+		}
+	})
+	return out
+}
+
+// capabilitySince maps an entry to the release it shipped in: every field
+// whose tag says, read from the struct so the number sits beside the field
+// it describes, and every baseline entry newer than the first handshaking
+// release.
+func capabilitySince() map[string]string {
+	out := map[string]string{}
+	for _, f := range capFields() {
+		if f.since != "" {
+			out[f.name] = f.since
+		}
+	}
+	for c, release := range baselineCapabilities {
+		if release != "" {
+			out[c] = release
+		}
+	}
+	return out
+}
+
+// SidecarCapabilities is what this build sends in CapabilitiesHeader: every
+// cap-tagged field of the config, every rule type and every protocol it
+// links. Sorted, so two builds that decode the same document send the same
+// header.
 func SidecarCapabilities() []string {
-	return []string{CapabilityReviewMode, CapabilityAnalyzerRateLimit}
+	var out []string
+	for _, f := range capFields() {
+		out = append(out, f.name)
+	}
+	for _, t := range policy.RuleTypes() {
+		out = append(out, capabilityRulePrefix+string(t))
+	}
+	for _, p := range Protocols() {
+		out = append(out, capabilityProtocolPrefix+p)
+	}
+	slices.Sort(out)
+	return slices.Compact(out)
 }
 
 // ParseCapabilities reads a CapabilitiesHeader value. It never returns nil,
@@ -53,44 +158,172 @@ func ParseCapabilities(header string) []string {
 	return out
 }
 
-// CheckServable refuses a document that a sidecar reporting caps cannot
-// decode. The error names the listener and the release that adds support.
-func CheckServable(cfg Config, caps []string) error {
-	rateLimits := slices.Contains(caps, CapabilityAnalyzerRateLimit)
-	if !rateLimits && cfg.Analyzer != nil && cfg.Analyzer.RateLimit != nil {
-		return fmt.Errorf("the analyzer section sets rate_limit, and this sidecar does not "+
-			"support it; upgrade the sidecar to %s or later, or remove rate_limit",
-			capabilitySince[CapabilityAnalyzerRateLimit])
+// servedView is the document as the sidecar decodes it: ServedForm, through
+// the JSON the plane sends. A value omitempty drops, an empty list or map, is
+// absent on the wire, so it is absent here and needs no entry.
+func servedView(cfg Config) (Config, error) {
+	raw, err := json.Marshal(ServedForm(cfg))
+	if err != nil {
+		return Config{}, fmt.Errorf("encode the configuration: %w", err)
 	}
-	for _, l := range cfg.Listeners {
-		if l.Analyzer == nil {
-			continue
+	var out Config
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return Config{}, fmt.Errorf("decode the configuration: %w", err)
+	}
+	return out, nil
+}
+
+// CheckServable refuses a document that the sidecar behind hs cannot decode:
+// a set field whose entry it lacks, a rule of a type it does not list, or a
+// listener protocol it does not speak. It reads the document as the sidecar
+// will, so a default the plane never serves and a value the wire drops need
+// no entry. The error names the listener and the release that adds support.
+//
+// A build from before the generated list names no field but the few it was
+// taught by hand, and no rule type or protocol at all, so for such a build
+// the release stands in for the missing entry: a baseline entry and a
+// since-tagged field are granted when the reported release parses and
+// reaches the release they shipped in. A release that does not parse (a dev
+// build's "unknown") grants nothing by release. A build that sends the
+// generated list is read from the list alone; its release decides nothing.
+func CheckServable(cfg Config, hs Handshake) error {
+	served, err := servedView(cfg)
+	if err != nil {
+		return err
+	}
+	reported := map[string]bool{}
+	for _, c := range hs.Capabilities {
+		reported[c] = true
+	}
+	// A header that names no entry of a kind comes from a build older than
+	// that kind's generated list. A field is read by the rule list: every
+	// build that generates the list links at least one rule type.
+	lacksKind := func(prefix string) bool {
+		return !slices.ContainsFunc(hs.Capabilities, func(c string) bool { return strings.HasPrefix(c, prefix) })
+	}
+	since := capabilitySince()
+	release, releaseKnown := parseRelease(hs.Version)
+	reaches := func(capability string) bool {
+		shipped, ok := parseRelease(since[capability])
+		return ok && releaseKnown && !releaseBefore(release, shipped)
+	}
+	granted := func(capability string) bool {
+		if reported[capability] {
+			return true
 		}
-		if !rateLimits && l.Analyzer.RateLimit != nil {
-			return fmt.Errorf("listener %q sets analyzer rate_limit, and this sidecar does not "+
-				"support it; upgrade the sidecar to %s or later, or remove rate_limit",
-				l.Name, capabilitySince[CapabilityAnalyzerRateLimit])
+		kind := capabilityRulePrefix
+		if strings.HasPrefix(capability, capabilityProtocolPrefix) {
+			kind = capabilityProtocolPrefix
 		}
-		if l.Analyzer.ReviewMode != analyzer.ReviewReturn {
-			continue
+		if !lacksKind(kind) {
+			return false
 		}
-		if !slices.Contains(caps, CapabilityReviewMode) {
-			return fmt.Errorf("listener %q sets review_mode %q, and this sidecar does not "+
-				"support it; upgrade the sidecar to %s or later, or set review_mode to %q",
-				l.Name, analyzer.ReviewReturn, capabilitySince[CapabilityReviewMode], analyzer.ReviewHold)
+		if shipped, inBaseline := baselineCapabilities[capability]; inBaseline && shipped == "" {
+			return true
 		}
+		return reaches(capability)
+	}
+	who := "this sidecar"
+	if hs.Version != "" {
+		who = fmt.Sprintf("this sidecar (%s)", hs.Version)
+	}
+	var problems []string
+	need := func(where, what, capability string) {
+		if granted(capability) {
+			return
+		}
+		problems = append(problems, fmt.Sprintf("%s %s, and %s does not support it; %s",
+			where, what, who, upgradeHint(capability, since)))
+	}
+	walkConfigValue(reflect.ValueOf(served), "the configuration", "",
+		func(where, path string, f jsonField, v reflect.Value) {
+			if c := f.tag.Get("cap"); c != "" && !v.IsZero() {
+				need(where, "sets "+path, c)
+			}
+		})
+	forEachRuleSet(served, func(where string, rules []policy.Rule) {
+		for _, r := range rules {
+			need(where, fmt.Sprintf("binds the %s rule %q", r.Type, r.Name), capabilityRulePrefix+string(r.Type))
+		}
+	})
+	for _, l := range served.Listeners {
+		if l.Protocol != "" {
+			need(fmt.Sprintf("listener %q", l.Name), "speaks "+l.Protocol, capabilityProtocolPrefix+l.Protocol)
+		}
+	}
+	if len(problems) > 0 {
+		return errors.New(strings.Join(problems, "; "))
 	}
 	return nil
+}
+
+func upgradeHint(capability string, since map[string]string) string {
+	if s, ok := since[capability]; ok {
+		return fmt.Sprintf("upgrade the sidecar to %s or later", s)
+	}
+	return fmt.Sprintf("upgrade the sidecar to a release that reports %q", capability)
+}
+
+// parseRelease reads a hoop release, MAJOR.MINOR.PATCH and nothing else.
+// "unknown", a preview tag and anything with a suffix do not parse, and a
+// caller then decides nothing from the version.
+func parseRelease(v string) ([3]int, bool) {
+	var out [3]int
+	parts := strings.Split(v, ".")
+	if len(parts) != 3 {
+		return out, false
+	}
+	for i, p := range parts {
+		n, err := strconv.Atoi(p)
+		if err != nil || n < 0 || p != strconv.Itoa(n) {
+			return out, false
+		}
+		out[i] = n
+	}
+	return out, true
+}
+
+func releaseBefore(a, b [3]int) bool {
+	for i := range a {
+		if a[i] != b[i] {
+			return a[i] < b[i]
+		}
+	}
+	return false
+}
+
+// forEachRuleSet visits every guardrail rule list of a document, the
+// deprecated policy spelling included: the plane can hold a document written
+// before the rename, and the sidecar folds it only after decoding it.
+func forEachRuleSet(cfg Config, visit func(where string, rules []policy.Rule)) {
+	if cfg.Guardrails != nil {
+		visit("the configuration", cfg.Guardrails.Rules)
+	}
+	if cfg.Policy != nil {
+		visit("the configuration", cfg.Policy.Rules)
+	}
+	for _, l := range cfg.Listeners {
+		where := fmt.Sprintf("listener %q", l.Name)
+		if l.Guardrails != nil {
+			visit(where, l.Guardrails.Rules)
+		}
+		if l.Policy != nil {
+			visit(where, l.Policy.Rules)
+		}
+	}
 }
 
 // ServedForm drops the review_mode key where it holds the default, so a hold
 // lane serves the same document an older build decodes. It copies what it
 // changes: cfg may share listeners with a stored row.
+//
+// The one hand-written case: "hold" is a value, and every other default is
+// the zero value, which the field's own tag omits.
 func ServedForm(cfg Config) Config {
 	listeners := make([]ListenerConfig, len(cfg.Listeners))
 	copy(listeners, cfg.Listeners)
 	for i, l := range listeners {
-		if l.Analyzer == nil || l.Analyzer.ReviewMode != analyzer.ReviewHold {
+		if l.Analyzer == nil || l.Analyzer.ReviewMode != "hold" {
 			continue
 		}
 		block := *l.Analyzer
@@ -99,4 +332,75 @@ func ServedForm(cfg Config) Config {
 	}
 	cfg.Listeners = listeners
 	return cfg
+}
+
+// walkConfigType visits every JSON field reachable from t, depth first, each
+// named by its dotted path. It is the walk the schema and the header share:
+// jsonFields names a struct's fields and structOf finds the struct a field
+// holds. A type already on the path is not entered again.
+func walkConfigType(t reflect.Type, prefix string, visit func(path string, f jsonField)) {
+	var walk func(t reflect.Type, prefix string, stack []reflect.Type)
+	walk = func(t reflect.Type, prefix string, stack []reflect.Type) {
+		if slices.Contains(stack, t) {
+			return
+		}
+		stack = append(stack, t)
+		for _, f := range jsonFields(t) {
+			path := joinKey(prefix, f.name)
+			visit(path, f)
+			if st := structOf(f.typ); st != nil {
+				walk(st, path, stack)
+			}
+		}
+	}
+	walk(t, prefix, nil)
+}
+
+// walkConfigValue is walkConfigType over a document: it visits every JSON
+// field with its value. where names the enclosing listener, for the refusal
+// an admin reads, and path is the field's key under it. Config structs hold
+// no embedded structs, and this walk does not flatten one.
+func walkConfigValue(v reflect.Value, where, prefix string,
+	visit func(where, path string, f jsonField, v reflect.Value)) {
+	for v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface {
+		if v.IsNil() {
+			return
+		}
+		v = v.Elem()
+	}
+	switch v.Kind() {
+	case reflect.Struct:
+		t := v.Type()
+		for i := range t.NumField() {
+			sf := t.Field(i)
+			name, _, _ := strings.Cut(sf.Tag.Get("json"), ",")
+			if name == "-" || !sf.IsExported() {
+				continue
+			}
+			if name == "" {
+				name = sf.Name
+			}
+			path := joinKey(prefix, name)
+			fv := v.Field(i)
+			visit(where, path, jsonField{name: name, typ: sf.Type, tag: sf.Tag}, fv)
+			walkConfigValue(fv, where, path, visit)
+		}
+	case reflect.Slice, reflect.Array:
+		if v.Type().Elem().Kind() == reflect.Uint8 {
+			return
+		}
+		for i := range v.Len() {
+			el := v.Index(i)
+			w, p := where, fmt.Sprintf("%s[%d]", prefix, i)
+			if l, ok := el.Interface().(ListenerConfig); ok {
+				w, p = fmt.Sprintf("listener %q", l.Name), ""
+			}
+			walkConfigValue(el, w, p, visit)
+		}
+	case reflect.Map:
+		iter := v.MapRange()
+		for iter.Next() {
+			walkConfigValue(iter.Value(), where, fmt.Sprintf("%s.%v", prefix, iter.Key()), visit)
+		}
+	}
 }

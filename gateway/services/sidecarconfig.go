@@ -366,7 +366,7 @@ func CheckSidecarCapabilities(sc *models.Sidecar, composed daemon.Config) error 
 	if sc.Capabilities == nil {
 		return nil
 	}
-	if err := daemon.CheckServable(composed, sc.Capabilities); err != nil {
+	if err := daemon.CheckServable(composed, daemon.Handshake{Version: reportedVersion(sc), Capabilities: sc.Capabilities}); err != nil {
 		return ErrSidecarCapabilityMissing{Reason: fmt.Sprintf("sidecar %q: %v", sc.Name, err)}
 	}
 	return nil
@@ -409,4 +409,12 @@ func CheckComposedSidecarConfiguration(db *gorm.DB, sc *models.Sidecar) error {
 		return err
 	}
 	return CheckSidecarCapabilities(sc, composed)
+}
+
+// reportedVersion is the release the sidecar last reported, or empty.
+func reportedVersion(sc *models.Sidecar) string {
+	if sc.ReportedVersion == nil {
+		return ""
+	}
+	return *sc.ReportedVersion
 }

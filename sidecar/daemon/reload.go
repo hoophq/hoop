@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -162,6 +163,12 @@ type reloader struct {
 	// retryable failure leaves it alone, so the same bytes run again next
 	// tick instead of waiting for another edit.
 	lastHandled []byte
+	// lastOutcome and lastReason are what lastHandled concluded. A document
+	// this process refused, or cannot take on without a restart, is reported
+	// that way on every heartbeat until another document applies: the plane
+	// must never read a refusal as convergence (ADR-0022).
+	lastOutcome reloadOutcome
+	lastReason  string
 	gen         int
 	// planeOwned reports a control plane owns the running config. The
 	// heartbeat is then the goroutine that owns this struct, and watchFile
@@ -281,17 +288,32 @@ func (r *reloader) handle(log *slog.Logger, raw []byte) reloadOutcome {
 func (r *reloader) once(log *slog.Logger, raw []byte,
 	apply func(*slog.Logger, []byte) reloadOutcome) reloadOutcome {
 	if bytes.Equal(raw, r.lastHandled) {
+		// Still refused, still restart-bound: say so again rather than
+		// "unchanged", which the heartbeat would report as convergence.
+		if r.lastOutcome == reloadRefused || r.lastOutcome == reloadRestart {
+			return r.lastOutcome
+		}
 		return reloadUnchanged
 	}
+	r.lastReason = ""
 	out := apply(log, raw)
 	if out != reloadRetry {
 		r.lastHandled = raw
+		r.lastOutcome = out
 	}
 	if out != reloadApplied {
 		// applyOwned reports the applied case itself, where it still holds
 		// the generation's lanes for the shape properties.
 		r.tel.trackReload(reloadReport{outcome: out, gen: r.gen})
 	}
+	return out
+}
+
+// keep records why a document was not applied, phrased for the sidecar page,
+// and returns the outcome. The log line stays at the refusal; this is the
+// copy the next handshake carries.
+func (r *reloader) keep(out reloadOutcome, reason string) reloadOutcome {
+	r.lastReason = reason
 	return out
 }
 
@@ -494,27 +516,30 @@ func (r *reloader) apply(log *slog.Logger, raw []byte) reloadOutcome {
 // the restart path, where startup either serves it or refuses it by name.
 func (r *reloader) adoptFile(log *slog.Logger, planeLicense string) reloadOutcome {
 	if r.configPath == "" {
-		log.Warn("the control plane says the configuration loads from disk, " +
-			"but this process was started without a config file; restart with one to apply it")
-		return reloadRestart
+		const msg = "the control plane says the configuration loads from disk, " +
+			"but this process was started without a config file; restart with one to apply it"
+		log.Warn(msg)
+		return r.keep(reloadRestart, msg)
 	}
 	local, err := r.load(r.configPath)
 	if err != nil {
-		log.Warn("the control plane says the configuration loads from disk, "+
-			"but the file does not load; fix it and restart to apply it",
-			"path", r.configPath, "error", err)
-		return reloadRestart
+		const msg = "the control plane says the configuration loads from disk, " +
+			"but the file does not load; fix it and restart to apply it"
+		log.Warn(msg, "path", r.configPath, "error", err)
+		return r.keep(reloadRestart, fmt.Sprintf("%s: %v", msg, err))
 	}
 	if local.LoadFromDisk != nil {
-		log.Warn(`the control plane says the configuration loads from disk, `+
-			`but the file writes "load_from_disk", which only the control plane says; `+
-			`remove the key and restart to apply it`, "path", r.configPath)
-		return reloadRestart
+		const msg = `the control plane says the configuration loads from disk, ` +
+			`but the file writes "load_from_disk", which only the control plane says; ` +
+			`remove the key and restart to apply it`
+		log.Warn(msg, "path", r.configPath)
+		return r.keep(reloadRestart, msg)
 	}
 	if len(local.Listeners) == 0 {
-		log.Warn("the control plane says the configuration loads from disk, "+
-			"but the file declares no listeners; restart to apply it", "path", r.configPath)
-		return reloadRestart
+		const msg = "the control plane says the configuration loads from disk, " +
+			"but the file declares no listeners; restart to apply it"
+		log.Warn(msg, "path", r.configPath)
+		return r.keep(reloadRestart, msg)
 	}
 	// The plane's license rides beside the tiny document; stamped into the
 	// file's license slot, applyOwned's rotation verifies and publishes it
@@ -545,7 +570,7 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 	if err != nil {
 		log.Warn("the "+from+" sent a config this build refuses; keeping the running rules",
 			"error", err)
-		return reloadRefused
+		return r.keep(reloadRefused, fmt.Sprintf("the %s sent a config this build refuses: %v", from, err))
 	}
 
 	doc, err := nonRuleDoc(newCfg)
@@ -556,20 +581,22 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 		return reloadRetry
 	}
 	if !bytes.Equal(doc, r.baseline) {
-		log.Warn("the " + from + " changed the configuration beyond the rules; restart to apply it")
-		return reloadRestart
+		msg := "the " + from + " changed the configuration beyond the rules; restart to apply it"
+		log.Warn(msg)
+		return r.keep(reloadRestart, msg)
 	}
 
 	det, detChanged := r.det, false
 	if !bytes.Equal(bytes.TrimSpace(r.piiRaw), bytes.TrimSpace(newCfg.PII)) {
 		if r.build == nil {
-			log.Warn("the pii section changed and this build retained no detector builder; restart to apply it")
-			return reloadRestart
+			const msg = "the pii section changed and this build retained no detector builder; restart to apply it"
+			log.Warn(msg)
+			return r.keep(reloadRestart, msg)
 		}
 		det, err = r.build(newCfg.PII)
 		if err != nil {
 			log.Warn("detector rebuild failed; keeping the running rules", "error", err)
-			return reloadRefused
+			return r.keep(reloadRefused, fmt.Sprintf("detector rebuild failed: %v", err))
 		}
 		detChanged = true
 	}
@@ -651,11 +678,11 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 			log.Warn("the "+from+"'s license no longer covers the running rules; "+
 				"stopping the relay so it restarts under the new one",
 				"license", newCfg.lic.Line(), "error", err)
-			return reloadRefused
+			return r.keep(reloadRefused, fmt.Sprintf("the %s's license no longer covers the running rules: %v", from, err))
 		}
 		log.Warn("the "+from+" sent a config the rules or the caps refuse; keeping the running rules",
 			"error", err)
-		return reloadRefused
+		return r.keep(reloadRefused, fmt.Sprintf("the %s sent a config the rules or the caps refuse: %v", from, err))
 	}
 
 	// Pre-pass: render every lane's rule document BEFORE anything swaps.
@@ -681,7 +708,7 @@ func (r *reloader) applyOwned(log *slog.Logger, raw []byte, from string) reloadO
 		if isEndpointLane(ln.cfg) && (ln.masker != nil) != (r.prevLanes[ln.name].masker != nil) {
 			log.Warn("masking was turned on or off on an endpoint lane on the "+from+"; restart to apply it",
 				"listener", ln.name, "protocol", ln.cfg.Protocol)
-			return reloadRestart
+			return r.keep(reloadRestart, fmt.Sprintf("the rules of endpoint lane %q changed; restart to apply them", ln.name))
 		}
 	}
 

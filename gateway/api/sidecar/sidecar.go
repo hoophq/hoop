@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"slices"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -64,7 +65,7 @@ func configRevision(served daemon.Config) string {
 // the next tick is a minute away.
 func recordHandshake(sidecarID string, req openapi.SidecarHandshakeRequest, servedRevision string, capabilities []string) {
 	err := models.RecordSidecarHandshake(models.DB, sidecarID,
-		req.Version, req.AppliedRevision, req.LastOutcome, servedRevision, capabilities)
+		req.Version, req.AppliedRevision, req.LastOutcome, req.LastError, servedRevision, capabilities)
 	if err != nil {
 		log.With("sidecar", sidecarID).Warnf("failed recording the sidecar handshake, reason=%v", err)
 	}
@@ -592,15 +593,16 @@ func Handshake(c *gin.Context) {
 			"start the sidecar with its config file to import it, or author the configuration in the control plane"})
 		return
 	}
-	served, err := withOrgLicense(sidecar, capabilities)
+	served, err := withOrgLicense(sidecar, daemon.Handshake{Version: req.Version, Capabilities: capabilities})
 	if err != nil {
-		// Recorded even on refusal, so a later write knows this build is
-		// too old instead of reading it as never seen. Only the
-		// capabilities: a sidecar that cannot run is not recently seen.
+		// Recorded even on refusal, with the reason: a later write knows
+		// this build is too old instead of reading it as never seen, and
+		// the page shows why the plane refused. Not last_seen_at: a sidecar
+		// that cannot run is not recently seen.
 		var missing services.ErrSidecarCapabilityMissing
 		if errors.As(err, &missing) {
-			if rerr := models.RecordSidecarCapabilities(models.DB, sidecar.ID, capabilities); rerr != nil {
-				log.With("sidecar", sidecar.ID).Warnf("failed recording the sidecar capabilities, reason=%v", rerr)
+			if rerr := models.RecordSidecarServeRefusal(models.DB, sidecar.ID, req.Version, capabilities, missing.Error()); rerr != nil {
+				log.With("sidecar", sidecar.ID).Warnf("failed recording the refused handshake, reason=%v", rerr)
 			}
 		}
 		answerServeError(c, err)
@@ -635,7 +637,7 @@ func Handshake(c *gin.Context) {
 // capabilities is what the requesting sidecar reported. A document it cannot
 // decode is refused rather than served: a strict decode would refuse the whole
 // of it, at startup or on reload.
-func withOrgLicense(sc *models.Sidecar, capabilities []string) (daemon.Config, error) {
+func withOrgLicense(sc *models.Sidecar, hs daemon.Handshake) (daemon.Config, error) {
 	licenseData, err := models.GetOrgLicenseData(models.DB, sc.OrgID)
 	if err != nil {
 		// Not found is not a missing license, it is a missing org: the
@@ -667,7 +669,7 @@ func withOrgLicense(sc *models.Sidecar, capabilities []string) (daemon.Config, e
 	if err := services.CheckSidecarConfigurationLimits(composed, licenseData); err != nil {
 		return daemon.Config(sc.Configuration), err
 	}
-	if err := daemon.CheckServable(composed, capabilities); err != nil {
+	if err := daemon.CheckServable(composed, hs); err != nil {
 		return daemon.Config(sc.Configuration), services.ErrSidecarCapabilityMissing{Reason: err.Error()}
 	}
 	return servedConfig(models.SidecarConfiguration(composed), licenseData), nil
@@ -813,7 +815,7 @@ func Configuration(c *gin.Context) {
 		c.JSON(http.StatusOK, diskModeConfig{LoadFromDisk: true, License: string(licenseData)})
 		return
 	}
-	served, err := withOrgLicense(sidecar, daemon.ParseCapabilities(c.GetHeader(daemon.CapabilitiesHeader)))
+	served, err := withOrgLicense(sidecar, daemon.Handshake{Version: derefOrEmpty(sidecar.ReportedVersion), Capabilities: daemon.ParseCapabilities(c.GetHeader(daemon.CapabilitiesHeader))})
 	if err != nil {
 		answerServeError(c, err)
 		return
@@ -867,7 +869,27 @@ func toResponse(s models.Sidecar) openapi.SidecarResponse {
 	resp.ServedRevision = derefOrEmpty(s.ServedRevision)
 	resp.AppliedRevision = derefOrEmpty(s.AppliedRevision)
 	resp.LastOutcome = derefOrEmpty(s.LastOutcome)
+	resp.LastError = derefOrEmpty(s.LastError)
+	resp.ConfigState = configState(s, time.Now().UTC())
+	resp.Deprecations = configDeprecations(s.Configuration)
 	return resp
+}
+
+// configDeprecations names the deprecated spellings a stored document uses,
+// through the daemon's own fold. A document the fold refuses, one written in
+// both spellings, is not a list of accepted keys, so it lists nothing here:
+// the write refuses such a document, and a row from before that check reads
+// as refused through the sidecar's own report.
+func configDeprecations(cfg models.SidecarConfiguration) []string {
+	raw, err := json.Marshal(cfg)
+	if err != nil {
+		return nil
+	}
+	deps, err := daemon.Deprecations(raw)
+	if err != nil {
+		return nil
+	}
+	return deps
 }
 
 func derefOrEmpty(s *string) string {

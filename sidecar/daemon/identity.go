@@ -21,7 +21,7 @@ type GoogleIdentityConfig struct {
 	// reaches Google APIs through Private Service Connect or a
 	// private.googleapis.com VIP under another name; it must be https,
 	// because the request body is the caller's bearer.
-	TokenInfoURL string `json:"tokeninfo_url"`
+	TokenInfoURL string `json:"tokeninfo_url,omitempty"`
 }
 
 // googleTokenInfoTimeout bounds one tokeninfo call. The call sits on the

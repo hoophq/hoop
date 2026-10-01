@@ -125,6 +125,9 @@ type controlPlane struct {
 	// the plane then reports the sidecar as unknown rather than guessing.
 	revision string
 	outcome  string
+	// reason says why the last document was refused or needs a restart,
+	// for the sidecar page. Empty for every other outcome.
+	reason string
 
 	// imported reports that this boot seeded the plane with the local
 	// file's document because the plane held none; Run logs it once.
@@ -353,6 +356,10 @@ type handshakeRequest struct {
 	AppliedRevision string `json:"applied_revision,omitempty"`
 	// LastOutcome is reloadOutcome.String() for that document.
 	LastOutcome string `json:"last_outcome,omitempty"`
+	// LastError says why, when LastOutcome is refused or restart. The plane
+	// stores it beside the outcome and shows it on the sidecar page, so an
+	// admin reads the reason without the sidecar's log.
+	LastError string `json:"last_error,omitempty"`
 }
 
 // handshakeAnswer is one handshake's result: the document, and the two facts
@@ -658,6 +665,7 @@ func (cp *controlPlane) heartbeat(ctx context.Context, log *slog.Logger, rl *rel
 			Version:         Version,
 			AppliedRevision: cp.revision,
 			LastOutcome:     cp.outcome,
+			LastError:       cp.reason,
 		})
 		if errors.Is(err, errPlaneHasNoConfig) {
 			answer, err = cp.reimport(log, rl)
@@ -670,6 +678,10 @@ func (cp *controlPlane) heartbeat(ctx context.Context, log *slog.Logger, rl *rel
 		}
 		outcome := rl.handle(log, answer.raw)
 		cp.outcome = outcome.String()
+		cp.reason = ""
+		if outcome == reloadRefused || outcome == reloadRestart {
+			cp.reason = rl.lastReason
+		}
 		// The revision moves only when the document was actually taken on.
 		// reloadUnchanged is the steady state and re-reports what is
 		// running; every other outcome means the running rules are still

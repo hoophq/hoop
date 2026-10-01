@@ -46,7 +46,7 @@ type Config struct {
 	// Listeners is the set of protocol endpoints to serve. A sidecar usually
 	// runs one; a per-user pod fronting both a database and an API runs two
 	// in one process instead of two containers.
-	Listeners []ListenerConfig `json:"listeners"`
+	Listeners []ListenerConfig `json:"listeners,omitzero"`
 
 	// Guardrails is the DEFAULT rule set and enforcement mode, applied to
 	// every listener that does not override it. See
@@ -71,10 +71,10 @@ type Config struct {
 	Mask *MaskConfig `json:"mask,omitempty"`
 
 	// Audit configures where events go.
-	Audit AuditConfig `json:"audit"`
+	Audit AuditConfig `json:"audit,omitzero"`
 
 	// Admin serves health and stats. Disabled when Listen is empty.
-	Admin AdminConfig `json:"admin"`
+	Admin AdminConfig `json:"admin,omitzero"`
 
 	// MCP serves review status to agents over MCP (ADR-0021). Absent means
 	// off. The server lives in the nested sidecar/mcp module; checkMCP
@@ -113,7 +113,7 @@ type Config struct {
 	Trust *TrustConfig `json:"trust,omitempty"`
 
 	// LogLevel is debug, info, warn or error. Default info.
-	LogLevel string `json:"log_level"`
+	LogLevel string `json:"log_level,omitempty"`
 
 	// License is a path to the document Hoop issued, or the document
 	// itself: a value starting with "{" is the document, so moving one
@@ -228,28 +228,28 @@ type ListenerConfig struct {
 	// It is the operator-facing resource name: audit queries key on it and
 	// the physical Upstream may change under it. Defaults to listener[i],
 	// which is a fallback rather than a name anyone should rely on.
-	Name string `json:"name" label:"Name" placeholder:"appdb" help:"Follows this listener into every log line and audit event, so renaming it splits that history." ui:"required,basic"`
+	Name string `json:"name,omitempty" label:"Name" placeholder:"appdb" help:"Follows this listener into every log line and audit event, so renaming it splits that history." ui:"required,basic"`
 
 	// Protocol selects the codec, for example postgres, mysql, clickhouse,
 	// mssql or http.
-	Protocol string `json:"protocol" label:"Protocol" help:"Picks the codec that reads this listener's traffic." ui:"required,basic"`
+	Protocol string `json:"protocol,omitempty" label:"Protocol" help:"Picks the codec that reads this listener's traffic." ui:"required,basic"`
 
 	// Listen is the bind address, or a filesystem path when Network is
 	// "unix".
-	Listen string `json:"listen" label:"Listen on" placeholder:"0.0.0.0:15432" help:"Where clients reach the sidecar: host:port, or a socket path on a unix transport." ui:"required,basic"`
+	Listen string `json:"listen,omitempty" label:"Listen on" placeholder:"0.0.0.0:15432" help:"Where clients reach the sidecar: host:port, or a socket path on a unix transport." ui:"required,basic"`
 
 	// Network is "tcp" (default) or "unix". Pick a unix socket for a sandbox
 	// with no network egress: filesystem permissions decide who can reach the
 	// proxy.
-	Network string `json:"network" label:"Transport" enum:"tcp,unix" default:"tcp" help:"A unix socket opens no port, so filesystem permissions decide who can connect." ui:"basic"`
+	Network string `json:"network,omitempty" label:"Transport" enum:"tcp,unix" default:"tcp" help:"A unix socket opens no port, so filesystem permissions decide who can connect." ui:"basic"`
 
 	// Upstream is the real backend.
-	Upstream string `json:"upstream" label:"Upstream" placeholder:"appdb:5432" help:"Where the sidecar reaches your resource." protocols:"!ssh" ui:"required,basic"`
+	Upstream string `json:"upstream,omitempty" label:"Upstream" placeholder:"appdb:5432" help:"Where the sidecar reaches your resource." protocols:"!ssh" ui:"required,basic"`
 
 	// UpstreamTLS enables TLS to the backend. MySQL negotiates this after
 	// its plaintext server greeting; other supported protocols negotiate
 	// before their ordinary message flow.
-	UpstreamTLS *TLSConfig `json:"upstream_tls" label:"Upstream TLS" help:"Encrypts the hop to the backend. The sidecar is the TLS client there, so it still reads the traffic." protocols:"!ssh" ui:"presence"`
+	UpstreamTLS *TLSConfig `json:"upstream_tls,omitempty" label:"Upstream TLS" help:"Encrypts the hop to the backend. The sidecar is the TLS client there, so it still reads the traffic." protocols:"!ssh" ui:"presence"`
 	// MySQLAuthKeyFile is an RSA private key whose public half MySQL clients
 	// can pin. It lets the relay decrypt direct RSA password responses before
 	// forwarding the NUL-terminated password inside UpstreamTLS.
@@ -279,7 +279,7 @@ type ListenerConfig struct {
 	//
 	// Omitting it keeps the documented posture: the relay terminates no
 	// downstream TLS and whatever fronts it owns that leg.
-	DownstreamTLS *TLSConfig `json:"downstream_tls" label:"Downstream TLS" help:"Terminates the client's TLS on this listener. Leave both empty when something in front already does." protocols:"postgres,clickhouse,http,grpc,spanner" fields:"cert_file,key_file"`
+	DownstreamTLS *TLSConfig `json:"downstream_tls,omitempty" label:"Downstream TLS" help:"Terminates the client's TLS on this listener. Leave both empty when something in front already does." protocols:"postgres,clickhouse,http,grpc,spanner" fields:"cert_file,key_file"`
 
 	// IdentityHeader names an HTTP header carrying the authenticated
 	// subject, for the http, grpc and spanner protocols behind an
@@ -292,7 +292,7 @@ type ListenerConfig struct {
 	// this listener, which the sidecar topology guarantees by binding
 	// loopback or a unix socket. Set this on a listener reachable from
 	// anywhere else and a caller can assert any identity.
-	IdentityHeader string `json:"identity_header" label:"Identity header" placeholder:"x-forwarded-user" help:"The header carrying the authenticated subject. Only trust it when nothing but your proxy can reach this listener." protocols:"http,grpc,spanner"`
+	IdentityHeader string `json:"identity_header,omitempty" label:"Identity header" placeholder:"x-forwarded-user" help:"The header carrying the authenticated subject. Only trust it when nothing but your proxy can reach this listener." protocols:"http,grpc,spanner"`
 
 	// GoogleIdentity names the caller from the Google OAuth2 bearer in the
 	// request's own Authorization header, verified with Google's tokeninfo
@@ -305,15 +305,15 @@ type ListenerConfig struct {
 	// would otherwise need ext_authz just to learn the name the token
 	// already holds. The upstream still authorizes the request; this names
 	// who sent it.
-	GoogleIdentity *GoogleIdentityConfig `json:"google_identity" ui:"-"`
+	GoogleIdentity *GoogleIdentityConfig `json:"google_identity,omitempty" ui:"-"`
 
 	// IdleTimeoutSec closes a connection with no traffic. Zero disables it.
 	// Interactive sessions idle between keystrokes, so a short value breaks
 	// psql; leaving it unset is the safe default.
-	IdleTimeoutSec int `json:"idle_timeout_sec" label:"Idle timeout (seconds)" help:"0 disables it. A short value breaks interactive sessions."`
+	IdleTimeoutSec int `json:"idle_timeout_sec,omitempty" label:"Idle timeout (seconds)" help:"0 disables it. A short value breaks interactive sessions."`
 
 	// MaxConns bounds concurrency. Zero is unlimited.
-	MaxConns int `json:"max_conns" label:"Max connections" help:"0 is unlimited."`
+	MaxConns int `json:"max_conns,omitempty" label:"Max connections" help:"0 is unlimited."`
 
 	// Guardrails overrides the top-level default for this listener.
 	//
@@ -406,20 +406,20 @@ type TLSConfig struct {
 	// the trust section's bundle. A grpc-transport lane is the exception:
 	// libhoop loads its TLS from file paths and builds its own pool, so the
 	// trust section does not reach it and empty there is the host store.
-	CAFile string `json:"ca_file" label:"CA file" placeholder:"/etc/hoop-inspect/ca.pem" help:"When set, the only bundle that verifies the backend. Empty uses the host trust store, plus the trust section's bundle outside gRPC. A path on the sidecar host."`
+	CAFile string `json:"ca_file,omitempty" label:"CA file" placeholder:"/etc/hoop-inspect/ca.pem" help:"When set, the only bundle that verifies the backend. Empty uses the host trust store, plus the trust section's bundle outside gRPC. A path on the sidecar host."`
 
 	// CertFile and KeyFile enable client certificates (mTLS).
-	CertFile string `json:"cert_file" label:"Certificate file" placeholder:"/etc/hoop-inspect/tls.crt" help:"A path on the sidecar host. Upstream, it is the client certificate for mTLS."`
-	KeyFile  string `json:"key_file" label:"Key file" placeholder:"/etc/hoop-inspect/tls.key" help:"A path on the sidecar host."`
+	CertFile string `json:"cert_file,omitempty" label:"Certificate file" placeholder:"/etc/hoop-inspect/tls.crt" help:"A path on the sidecar host. Upstream, it is the client certificate for mTLS."`
+	KeyFile  string `json:"key_file,omitempty" label:"Key file" placeholder:"/etc/hoop-inspect/tls.key" help:"A path on the sidecar host."`
 
 	// ServerName overrides SNI when the dial address differs from the
 	// certificate's name.
-	ServerName string `json:"server_name" label:"Server name" help:"Overrides SNI when the dial address differs from the certificate name."`
+	ServerName string `json:"server_name,omitempty" label:"Server name" help:"Overrides SNI when the dial address differs from the certificate name."`
 
 	// InsecureSkipVerify disables verification. The name is verbose on
 	// purpose and startup logs a warning when it is on: a proxy built to
 	// inspect sensitive traffic should not silently accept any certificate.
-	InsecureSkipVerify bool `json:"insecure_skip_verify" label:"Skip certificate verification" help:"The sidecar logs a warning at startup. Do not ship this."`
+	InsecureSkipVerify bool `json:"insecure_skip_verify,omitempty" label:"Skip certificate verification" help:"The sidecar logs a warning at startup. Do not ship this."`
 }
 
 func (l ListenerConfig) buildMySQLAuthPrivateKey() (*rsa.PrivateKey, error) {
@@ -495,11 +495,11 @@ type GuardrailsConfig struct {
 	// Rules is the local rule set, evaluated first so a statement the
 	// local rules already forbid costs no network round trip.
 	//
-	// No omitempty: an explicitly empty list is a listener's opt-out from
-	// inherited rules (resolve reads nil and [] differently), and omitempty
-	// would marshal both as absence. A nil set marshals as null, which every
-	// consumer reads back as nil.
-	Rules []policy.Rule `json:"rules"`
+	// omitzero, not omitempty: an explicitly empty list is a listener's
+	// opt-out from inherited rules (resolve reads nil and [] differently), and
+	// omitempty would marshal both as absence. omitzero drops only the nil
+	// set, which every consumer reads back as nil either way.
+	Rules []policy.Rule `json:"rules,omitzero"`
 }
 
 // enforcing reports whether a resolved lane denies what its rules match.
@@ -511,13 +511,13 @@ func (g GuardrailsConfig) observing() bool { return g.Mode == ModeObserve }
 
 // OPAConfig configures the OPA client.
 type OPAConfig struct {
-	URL        string `json:"url"`
-	TimeoutSec int    `json:"timeout_sec"`
+	URL        string `json:"url,omitempty"`
+	TimeoutSec int    `json:"timeout_sec,omitempty"`
 
 	// FailOpen allows the statement when OPA is unreachable. Default false,
 	// so a policy engine outage stops traffic instead of silently disabling
 	// enforcement.
-	FailOpen bool `json:"fail_open"`
+	FailOpen bool `json:"fail_open,omitempty"`
 
 	// Gate adds a decision BEFORE the AI analyzer runs, letting the policy
 	// answer "is this statement worth a model call" by returning a
@@ -538,7 +538,7 @@ type OPAConfig struct {
 	// Only meaningful on a lane that has ai_analysis rules; the config is
 	// refused otherwise, since a gate over nothing is a round trip that
 	// buys nothing.
-	Gate bool `json:"gate"`
+	Gate bool `json:"gate,omitempty"`
 
 	// Responses says whether OPA is consulted on FromServer statements.
 	// Absent or true is today's behaviour: every statement in both
@@ -643,23 +643,23 @@ func (p *PolicyConfig) set() bool {
 type AuditConfig struct {
 	// File receives JSON lines. "-" means stdout, which a container
 	// deployment wants so the platform's log pipeline collects it.
-	File string `json:"file"`
+	File string `json:"file,omitempty"`
 
 	// RedactStatements replaces statement text with a stable fingerprint,
 	// for shops that cannot store query text because literals embed PII but
 	// still need to correlate repeated statements.
-	RedactStatements bool `json:"redact_statements"`
+	RedactStatements bool `json:"redact_statements,omitempty"`
 
 	// MaxStatementBytes truncates recorded statements. Default 8192.
-	MaxStatementBytes int `json:"max_statement_bytes"`
+	MaxStatementBytes int `json:"max_statement_bytes,omitempty"`
 
 	// AsyncQueueSize wraps the sink in a bounded async queue so a slow disk
 	// does not block a user's query. Zero writes synchronously.
-	AsyncQueueSize int `json:"async_queue_size"`
+	AsyncQueueSize int `json:"async_queue_size,omitempty"`
 
 	// MemoryBuffer keeps the last N events readable from the admin endpoint.
 	// Zero disables it.
-	MemoryBuffer int `json:"memory_buffer"`
+	MemoryBuffer int `json:"memory_buffer,omitempty"`
 
 	// QuerySessions enables the queryable in-memory store behind the admin
 	// query API (/api/sessions, /api/events, /api/stats), the endpoints a UI
@@ -676,7 +676,7 @@ type AuditConfig struct {
 	//
 	// Zero disables the query API; the JSONL file remains the record of truth
 	// either way.
-	QuerySessions int `json:"query_sessions"`
+	QuerySessions int `json:"query_sessions,omitempty"`
 
 	// FailOpen allows a statement whose audit record could not be written.
 	//
@@ -711,7 +711,7 @@ func (a AuditConfig) failOnAuditError() bool { return !a.failOpen() }
 
 // AdminConfig configures the health/stats endpoint.
 type AdminConfig struct {
-	Listen string `json:"listen"`
+	Listen string `json:"listen,omitempty"`
 }
 
 // LoadConfig reads and validates a config file.
@@ -748,6 +748,23 @@ func LoadConfigBytes(data []byte) (*Config, error) {
 		return nil, err
 	}
 	return &cfg, nil
+}
+
+// Deprecations lists the deprecated spellings a document uses, phrased for an
+// operator, without validating it. The control plane shows them on the
+// sidecar page: the sidecar folds them on load, where nobody reads the
+// warning.
+func Deprecations(data []byte) ([]string, error) {
+	var cfg Config
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&cfg); err != nil {
+		return nil, fmt.Errorf("parse config: %w", err)
+	}
+	if err := cfg.normalize(); err != nil {
+		return nil, err
+	}
+	return cfg.Deprecations, nil
 }
 
 // normalize folds every deprecated field onto its replacement, filling

@@ -20,7 +20,7 @@ import (
 // the proxy does not intercept then fails verification.
 type TrustConfig struct {
 	// CAFile is a PEM bundle of one or more CA certificates.
-	CAFile string `json:"ca_file"`
+	CAFile string `json:"ca_file,omitempty"`
 }
 
 // loadTrustRoots resolves the trust section into the pool outbound clients

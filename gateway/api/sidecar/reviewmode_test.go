@@ -71,7 +71,7 @@ func TestReturnIsServedOnlyToASidecarThatReportsIt(t *testing.T) {
 
 	w := handshake(t, stored, "")
 	require.Equal(t, http.StatusUnprocessableEntity, w.Code, "body: %s", w.Body)
-	assert.Contains(t, w.Body.String(), "1.191.0")
+	assert.Contains(t, w.Body.String(), "1.196.0")
 	assert.Contains(t, w.Body.String(), `listener \"agents\"`)
 
 	w = handshake(t, stored, daemon.CapabilityReviewMode)
@@ -94,10 +94,10 @@ func TestSettingReturnOnAnOldSidecarIsRefused(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body)
 
 	// Handshaked without the header: a build that predates the field.
-	require.NoError(t, models.RecordSidecarHandshake(models.DB, sc.ID, "1.190.0", "", "", "", nil))
+	require.NoError(t, models.RecordSidecarHandshake(models.DB, sc.ID, "1.190.0", "", "", "", "", nil))
 	w, _ = callAdmin(t, Put, http.MethodPut, sc.ID, reviewModeConfig("return"))
 	require.Equal(t, http.StatusUnprocessableEntity, w.Code, "body: %s", w.Body)
-	assert.Contains(t, w.Body.String(), "1.191.0")
+	assert.Contains(t, w.Body.String(), "1.196.0")
 
 	w, _ = callAdmin(t, Put, http.MethodPut, sc.ID, reviewModeConfig("hold"))
 	require.Equal(t, http.StatusOK, w.Code, "a hold lane stays savable: %s", w.Body)

@@ -62,21 +62,21 @@ func TestAHoldLaneServesNoReviewModeKey(t *testing.T) {
 func TestReturnIsServedOnlyToABuildThatDecodesIt(t *testing.T) {
 	cfg := *reviewModeLane(analyzer.ReviewReturn)
 
-	if err := CheckServable(cfg, SidecarCapabilities()); err != nil {
+	if err := CheckServable(cfg, Handshake{Capabilities: SidecarCapabilities()}); err != nil {
 		t.Errorf("a current build was refused: %v", err)
 	}
 	for _, caps := range [][]string{nil, {}, {"something_else"}} {
-		err := CheckServable(cfg, caps)
+		err := CheckServable(cfg, Handshake{Capabilities: caps})
 		if err == nil {
 			t.Fatalf("capabilities %v were served review_mode", caps)
 		}
-		for _, want := range []string{cfg.Listeners[0].Name, capabilitySince[CapabilityReviewMode]} {
+		for _, want := range []string{cfg.Listeners[0].Name, capabilitySince()[CapabilityReviewMode]} {
 			if !strings.Contains(err.Error(), want) {
 				t.Errorf("refusal %q does not name %q", err, want)
 			}
 		}
 	}
-	if err := CheckServable(*reviewModeLane(analyzer.ReviewHold), nil); err != nil {
+	if err := CheckServable(*reviewModeLane(analyzer.ReviewHold), Handshake{Capabilities: nil}); err != nil {
 		t.Errorf("a hold lane was refused to an old build: %v", err)
 	}
 }
@@ -91,18 +91,18 @@ func TestRateLimitIsServedOnlyToABuildThatDecodesIt(t *testing.T) {
 	lane.Listeners[0].Analyzer.RateLimit = rate
 
 	for name, cfg := range map[string]*Config{"top level": top, "lane": lane} {
-		if err := CheckServable(*cfg, SidecarCapabilities()); err != nil {
+		if err := CheckServable(*cfg, Handshake{Capabilities: SidecarCapabilities()}); err != nil {
 			t.Errorf("%s: a current build was refused: %v", name, err)
 		}
-		err := CheckServable(*cfg, []string{CapabilityReviewMode})
+		err := CheckServable(*cfg, Handshake{Capabilities: []string{CapabilityReviewMode}})
 		if err == nil {
 			t.Fatalf("%s: rate_limit was served to a build that cannot decode it", name)
 		}
-		if !strings.Contains(err.Error(), capabilitySince[CapabilityAnalyzerRateLimit]) {
-			t.Errorf("%s: refusal %q does not name the release", name, err)
+		if !strings.Contains(err.Error(), CapabilityAnalyzerRateLimit) {
+			t.Errorf("%s: refusal %q does not name the entry", name, err)
 		}
 	}
-	if err := CheckServable(*blockLane(laneBlock()), nil); err != nil {
+	if err := CheckServable(*blockLane(laneBlock()), Handshake{Capabilities: nil}); err != nil {
 		t.Errorf("a config with no rate_limit was refused to an old build: %v", err)
 	}
 }

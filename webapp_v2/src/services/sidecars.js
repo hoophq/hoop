@@ -9,6 +9,11 @@ import api from './api'
 // converged. `served_revision` is the configuration the plane last answered
 // with and `applied_revision` the one the sidecar says it runs; equal, with a
 // healthy `last_outcome`, is the only combination that means in sync.
+// `config_state` is the gateway's own reading of those (applied, applying,
+// not_applied, refused, restart, unknown; absent until something was served),
+// `last_error` the reason the sidecar gave for refused or restart, and
+// `deprecations` the deprecated spellings the stored document still uses.
+// `pages/Sidecars/status.js` renders them; nothing here re-derives them.
 // `configuration` is the daemon.Config the control plane STORES for this
 // sidecar and serves back on the handshake and on every poll. Creating without
 // one stores an empty document; the sidecar then seeds the plane with its own
