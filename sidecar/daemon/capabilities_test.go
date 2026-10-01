@@ -81,6 +81,32 @@ func TestReturnIsServedOnlyToABuildThatDecodesIt(t *testing.T) {
 	}
 }
 
+// A build that predates rate_limit refuses the whole document over the key,
+// on the top-level section as much as on a lane's block.
+func TestRateLimitIsServedOnlyToABuildThatDecodesIt(t *testing.T) {
+	rate := &AnalyzerRateLimitConfig{Calls: 30, PerSec: 60}
+	top := blockLane(laneBlock())
+	top.Analyzer.RateLimit = rate
+	lane := blockLane(laneBlock())
+	lane.Listeners[0].Analyzer.RateLimit = rate
+
+	for name, cfg := range map[string]*Config{"top level": top, "lane": lane} {
+		if err := CheckServable(*cfg, SidecarCapabilities()); err != nil {
+			t.Errorf("%s: a current build was refused: %v", name, err)
+		}
+		err := CheckServable(*cfg, []string{CapabilityReviewMode})
+		if err == nil {
+			t.Fatalf("%s: rate_limit was served to a build that cannot decode it", name)
+		}
+		if !strings.Contains(err.Error(), capabilitySince[CapabilityAnalyzerRateLimit]) {
+			t.Errorf("%s: refusal %q does not name the release", name, err)
+		}
+	}
+	if err := CheckServable(*blockLane(laneBlock()), nil); err != nil {
+		t.Errorf("a config with no rate_limit was refused to an old build: %v", err)
+	}
+}
+
 func TestParseCapabilities(t *testing.T) {
 	if got := ParseCapabilities(""); got == nil || len(got) != 0 {
 		t.Errorf("an empty header parsed to %#v, want an empty non-nil list", got)

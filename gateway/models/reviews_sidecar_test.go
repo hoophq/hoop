@@ -209,3 +209,146 @@ func TestGetSidecarReviewIsScopedToTheSidecar(t *testing.T) {
 		t.Fatalf("another sidecar read the review: err=%v", err)
 	}
 }
+
+// seedApprovedSidecarReview files a sidecar review with one reviewer group and
+// approves it, the state a revoke acts on.
+func seedApprovedSidecarReview(t *testing.T, sc *models.Sidecar, statement string) *models.Review {
+	t.Helper()
+	rev := seedSidecarReview(t, sc, statement)
+	reviewedAt := time.Now().UTC().Add(-time.Minute)
+	approver := "approver@hoop.dev"
+	if err := models.DB.Table("private.review_groups").Create(map[string]any{
+		"id":          uuid.NewString(),
+		"org_id":      testOrgID,
+		"review_id":   rev.ID,
+		"group_name":  "dba",
+		"status":      models.ReviewStatusApproved,
+		"owner_email": approver,
+		"reviewed_at": reviewedAt,
+	}).Error; err != nil {
+		t.Fatalf("seed review group: %v", err)
+	}
+	if err := models.UpdateReviewStatus(testOrgID, rev.ID, models.ReviewStatusApproved); err != nil {
+		t.Fatalf("approve the review: %v", err)
+	}
+	got, err := models.GetSidecarReview(models.DB, testOrgID, sc.ID, rev.ID)
+	if err != nil {
+		t.Fatalf("load the approved review: %v", err)
+	}
+	return got
+}
+
+// revokedByAdmin is what doIndividualReview hands the write for an admin
+// outside the reviewer groups: the status moves, and a row is appended.
+func revokedByAdmin(rev *models.Review) *models.Review {
+	now := time.Now().UTC()
+	rev.Status = models.ReviewStatusRevoked
+	rev.ReviewGroups = append(rev.ReviewGroups, models.ReviewGroups{
+		ID:         uuid.NewString(),
+		OrgID:      testOrgID,
+		ReviewID:   rev.ID,
+		GroupName:  "admin",
+		Status:     models.ReviewStatusRevoked,
+		OwnerEmail: func() *string { s := "admin@hoop.dev"; return &s }(),
+		ReviewedAt: &now,
+	})
+	return rev
+}
+
+func sessionStatus(t *testing.T, sessionID string) string {
+	t.Helper()
+	var status string
+	if err := models.DB.Raw(`SELECT status FROM private.sessions WHERE org_id = ? AND id = ?`,
+		testOrgID, sessionID).Scan(&status).Error; err != nil {
+		t.Fatalf("read session status: %v", err)
+	}
+	return status
+}
+
+// A decision on a sidecar review is written only while the row still holds the
+// status it was made against. The sidecar's claim races it; the loser must not
+// label a statement that already ran.
+func TestUpdateSidecarReview(t *testing.T) {
+	startTestDB(t)
+	sc := seedSidecar(t, "update-decision")
+
+	t.Run("writes the decision", func(t *testing.T) {
+		rev := seedApprovedSidecarReview(t, sc, "DELETE FROM a;")
+		if err := models.UpdateSidecarReview(models.DB, revokedByAdmin(rev), models.ReviewStatusApproved); err != nil {
+			t.Fatalf("revoke: %v", err)
+		}
+		got, err := models.GetSidecarReview(models.DB, testOrgID, sc.ID, rev.ID)
+		if err != nil {
+			t.Fatalf("reload: %v", err)
+		}
+		if got.Status != models.ReviewStatusRevoked {
+			t.Errorf("status = %s, want REVOKED", got.Status)
+		}
+		if len(got.ReviewGroups) != 2 {
+			t.Fatalf("review groups = %d, want the approver and the appended revoker", len(got.ReviewGroups))
+		}
+		if got.RevokedAt != nil {
+			t.Errorf("revoked_at = %v, want NULL: it is the gateway's jit expiry", got.RevokedAt)
+		}
+		if s := sessionStatus(t, rev.SessionID); s != "done" {
+			t.Errorf("session status = %q, want done", s)
+		}
+	})
+
+	t.Run("loses to a claim", func(t *testing.T) {
+		rev := seedApprovedSidecarReview(t, sc, "DELETE FROM b;")
+		claimed, _, err := models.ClaimApprovedSidecarReview(models.DB, testOrgID, rev.ID)
+		if err != nil || !claimed {
+			t.Fatalf("claim: claimed=%v err=%v", claimed, err)
+		}
+		before := sessionStatus(t, rev.SessionID)
+
+		err = models.UpdateSidecarReview(models.DB, revokedByAdmin(rev), models.ReviewStatusApproved)
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			t.Fatalf("a stale decision returned %v, want gorm.ErrRecordNotFound", err)
+		}
+		got, err := models.GetSidecarReview(models.DB, testOrgID, sc.ID, rev.ID)
+		if err != nil {
+			t.Fatalf("reload: %v", err)
+		}
+		if got.Status != models.ReviewStatusExecuted {
+			t.Errorf("status = %s, want EXECUTED", got.Status)
+		}
+		if len(got.ReviewGroups) != 1 {
+			t.Errorf("review groups = %d, want 1: a lost decision writes no group row", len(got.ReviewGroups))
+		}
+		if s := sessionStatus(t, rev.SessionID); s != before {
+			t.Errorf("session status = %q, want %q", s, before)
+		}
+	})
+
+	t.Run("leaves another review in the same status alone", func(t *testing.T) {
+		other := seedApprovedSidecarReview(t, sc, "DELETE FROM d;")
+		rev := seedApprovedSidecarReview(t, sc, "DELETE FROM e;")
+		before := sessionStatus(t, other.SessionID)
+		if err := models.UpdateSidecarReview(models.DB, revokedByAdmin(rev), models.ReviewStatusApproved); err != nil {
+			t.Fatalf("revoke: %v", err)
+		}
+		got, err := models.GetSidecarReview(models.DB, testOrgID, sc.ID, other.ID)
+		if err != nil {
+			t.Fatalf("reload: %v", err)
+		}
+		if got.Status != models.ReviewStatusApproved || got.SessionID != other.SessionID {
+			t.Errorf("other review = %s on session %s, want APPROVED on %s", got.Status, got.SessionID, other.SessionID)
+		}
+		if s := sessionStatus(t, other.SessionID); s != before {
+			t.Errorf("other session status = %q, want %q", s, before)
+		}
+	})
+
+	t.Run("refuses a review without a listener", func(t *testing.T) {
+		rev := seedApprovedSidecarReview(t, sc, "DELETE FROM c;")
+		if err := models.DB.Exec(`UPDATE private.reviews SET listener_name = NULL WHERE id = ?`, rev.ID).Error; err != nil {
+			t.Fatalf("clear listener: %v", err)
+		}
+		err := models.UpdateSidecarReview(models.DB, revokedByAdmin(rev), models.ReviewStatusApproved)
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			t.Fatalf("returned %v, want gorm.ErrRecordNotFound", err)
+		}
+	})
+}

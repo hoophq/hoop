@@ -49,6 +49,9 @@ type SlackService struct {
 type settledReview struct {
 	req *UpdateReviewMessageRequest
 	at  time.Time
+	// items are the messages an approval rewrote, kept so a revoke can rewrite
+	// them again. Empty for every other terminal state.
+	items []sentReviewMessage
 }
 
 // instances tracks the running SlackService per organization. Registered by
@@ -533,9 +536,11 @@ type ReviewedGroup struct {
 // UpdateReviewMessageRequest carries the review state used to rewrite the
 // tracked review messages.
 type UpdateReviewMessageRequest struct {
-	ReviewID       string
-	IsApproved     bool
-	IsRejected     bool
+	ReviewID   string
+	IsApproved bool
+	IsRejected bool
+	// IsRevoked withdraws an approval nobody used. Only sidecar reviews send it.
+	IsRevoked      bool
 	ReviewedGroups []ReviewedGroup
 	TotalGroups    int
 	// RejectionReason is what the reviewer typed when rejecting; empty for none.
@@ -559,15 +564,23 @@ func (s *SlackService) HasTrackedReviewMessages(reviewID string) bool {
 // effort: messages posted by another gateway instance or before a restart are
 // not tracked and are silently skipped.
 func (s *SlackService) UpdateReviewMessage(req *UpdateReviewMessageRequest) error {
-	done := req.IsApproved || req.IsRejected
+	done := req.IsApproved || req.IsRejected || req.IsRevoked
 	s.sentReviewMu.Lock()
 	items := s.sentReviewItems[req.ReviewID]
+	if req.IsRevoked {
+		// The approval already consumed the tracked messages.
+		items = append(items, s.settledReviews[req.ReviewID].items...)
+	}
 	if done {
 		delete(s.sentReviewItems, req.ReviewID)
 		if s.settledReviews == nil {
 			s.settledReviews = make(map[string]settledReview)
 		}
-		s.settledReviews[req.ReviewID] = settledReview{req: req, at: time.Now().UTC()}
+		settled := settledReview{req: req, at: time.Now().UTC()}
+		if req.IsApproved {
+			settled.items = items
+		}
+		s.settledReviews[req.ReviewID] = settled
 	}
 	s.sentReviewMu.Unlock()
 	return s.rewriteReviewMessages(items, req)
@@ -622,7 +635,7 @@ func reviewOutcomeSection(rg ReviewedGroup) *slack.SectionBlock {
 // terminal rejection is never rendered without attribution. Never mutates
 // m.blocks.
 func rebuildReviewBlocks(m *sentReviewMessage, req *UpdateReviewMessageRequest, reviewed map[string]ReviewedGroup) []slack.Block {
-	done := req.IsApproved || req.IsRejected
+	done := req.IsApproved || req.IsRejected || req.IsRevoked
 	matched := make(map[string]bool, len(reviewed))
 	blocks := make([]slack.Block, 0, len(m.blocks)+2)
 	for _, b := range m.blocks {
@@ -674,6 +687,13 @@ func rebuildReviewBlocks(m *sentReviewMessage, req *UpdateReviewMessageRequest, 
 		if req.RejectionReason != "" {
 			blocks = append(blocks, slack.NewDividerBlock(), rejectionReasonSection(req.RejectionReason))
 		}
+	case req.IsRevoked:
+		blocks = append(blocks,
+			slack.NewDividerBlock(),
+			slack.NewSectionBlock(&slack.TextBlockObject{
+				Type: slack.MarkdownType,
+				Text: "*Approval revoked.* Running the statement again files a new review.\n",
+			}, nil, nil))
 	default:
 		blocks = append(blocks, slack.NewContextBlock("",
 			slack.NewTextBlockObject(slack.MarkdownType,

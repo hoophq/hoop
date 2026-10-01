@@ -203,7 +203,7 @@ inspect := inspect_decide if inspect_phase == "decide"
 inspect_ai := input.findings.ai_analysis
 
 # status is ok, cached, skipped, unavailable or error, and `reason` narrows
-# unavailable to budget_exhausted or refused. values.risk_level is present
+# unavailable to budget_exhausted, rate_limited or refused. values.risk_level is present
 # ONLY for ok and cached, so a classification that never happened cannot read
 # as low. Model prose never arrives: OPA's decision log copies everything sent
 # to it.

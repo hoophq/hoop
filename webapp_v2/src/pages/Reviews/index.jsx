@@ -9,10 +9,16 @@ import { useUserStore } from '@/stores/useUserStore'
 import { useMinDelay } from '@/hooks/useMinDelay'
 import { showSnackbar } from '@/utils/snackbar'
 import { useReviewStore } from './store'
-import { STATUS, STATUS_FILTERS, sortByNewest } from './helpers'
+import { STATUS, STATUS_FILTERS, isSidecarReview, sortByNewest } from './helpers'
 import ReviewsTable from './sections/ReviewsTable'
 import ReviewModal from './sections/ReviewModal'
 import RejectModal from './sections/RejectModal'
+
+// What a settled decision did. Anything else settled is a rejection.
+const SETTLED_TEXT = {
+  [STATUS.APPROVED]: 'Statement released.',
+  [STATUS.REVOKED]: 'Approval revoked. Running the statement again files a new review.',
+}
 
 const EMPTY = {
   waiting: {
@@ -37,6 +43,7 @@ export default function Reviews() {
   const submitting = useReviewStore((s) => s.submitting)
   const fetchReviews = useReviewStore((s) => s.fetchReviews)
   const decide = useReviewStore((s) => s.decide)
+  const refreshReview = useReviewStore((s) => s.refreshReview)
 
   const sidecars = useSidecarStore((s) => s.sidecars)
   const fetchSidecars = useSidecarStore((s) => s.fetchSidecars)
@@ -98,6 +105,9 @@ export default function Reviews() {
         text: 'Failed to record the decision.',
         description: error?.response?.data?.message,
       })
+      // A sidecar decision fails when the sidecar or another reviewer settled
+      // the review first. Re-read it, so the modal shows that state.
+      if (isSidecarReview(target)) refreshReview(target.id)
       return
     }
     closeReject()
@@ -106,7 +116,7 @@ export default function Reviews() {
     showSnackbar({
       level: 'success',
       text: settled
-        ? `Statement ${review.status === STATUS.APPROVED ? 'released' : 'rejected'}.`
+        ? (SETTLED_TEXT[review.status] ?? 'Statement rejected.')
         : 'Your approval was recorded. The review still needs another one.',
     })
     if (settled) close()
@@ -131,6 +141,7 @@ export default function Reviews() {
         onClose={() => !rejecting && close()}
         onApprove={() => settle(selected, STATUS.APPROVED)}
         onReject={() => setRejecting(selected)}
+        onRevoke={() => settle(selected, STATUS.REVOKED)}
         submitting={submitting}
       />
       <RejectModal

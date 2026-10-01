@@ -434,7 +434,7 @@ Verdicts land in the audit trail as `metadata.risk_level` and roll up per
 session. `metadata.ai_status` rides beside it and says what the analyzer did,
 which is the key to read when a level is missing. That is the analyzer's own
 audit vocabulary and it keeps the specific word (`budget_exhausted`,
-`refused`); the finding it publishes to Rego reports the generic `unavailable`
+`rate_limited`, `refused`); the finding it publishes to Rego reports the generic `unavailable`
 with the word in `reason`:
 
 ```bash

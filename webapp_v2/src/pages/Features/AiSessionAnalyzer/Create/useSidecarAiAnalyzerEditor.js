@@ -53,7 +53,7 @@ function formToSpec(f, ruleName) {
   // A stored one naming another rule (an imported file's) is kept.
   if ([spec.high, spec.medium, spec.low].includes(REVIEW_ACTION)) {
     spec.approval_rule = f.approval_rule && f.approval_rule !== ruleName ? f.approval_rule : ruleName
-    // Kept as stored; the sidecar refuses it on a lane that does not hold.
+    // Only on a lane that holds: the sidecar refuses a mode nothing reads.
     if (f.review_mode !== '') spec.review_mode = f.review_mode
   }
   return spec
@@ -109,10 +109,9 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
     () => [...new Set([...groupOptions, ...reviewers])].sort(),
     [groupOptions, reviewers],
   )
+  const holds = [form.high, form.medium, form.low].includes(REVIEW_ACTION)
   // Reviewers belong to this rule's own approval rule, not an imported one.
-  const ownHold =
-    [form.high, form.medium, form.low].includes(REVIEW_ACTION) &&
-    (!form.approval_rule || form.approval_rule === name.trim())
+  const ownHold = holds && (!form.approval_rule || form.approval_rule === name.trim())
 
   const save = async () => {
     if (!canSubmit) return false
@@ -170,6 +169,7 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
     reviewers,
     setReviewers,
     reviewerOptions,
+    holds,
     ownHold,
     isHTTP,
     operations,

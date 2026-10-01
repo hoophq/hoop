@@ -51,6 +51,18 @@ export const useReviewStore = create((set, get) => ({
     }
   },
 
+  // Re-reads one review without the page loader, after a decision on it failed.
+  refreshReview: async (id) => {
+    try {
+      const { data } = await reviewsService.get(id)
+      set((state) => ({
+        reviews: state.reviews.map((review) => (review.id === data.id ? data : review)),
+      }))
+    } catch {
+      // The error snackbar is already shown; the next list fetch corrects the row.
+    }
+  },
+
   decide: async (id, payload) => {
     set({ submitting: true })
     try {

@@ -11,6 +11,7 @@ import TagsInput from '@/components/TagsInput'
 import Textarea from '@/components/Textarea'
 import TextInput from '@/components/TextInput'
 import { docsUrl } from '@/utils/docsUrl'
+import { REVIEW_MODE_HOLD, REVIEW_MODES } from '@/pages/sidecarRuleVocabulary'
 
 // Provider, model and credential are not here: they live in the sidecar's own
 // analyzer section, a file path the control plane cannot supply.
@@ -35,6 +36,7 @@ export default function SidecarAiAnalyzerFields({ editor }) {
     reviewers,
     setReviewers,
     reviewerOptions,
+    holds,
     ownHold,
     isHTTP,
     operations,
@@ -140,6 +142,16 @@ export default function SidecarAiAnalyzerFields({ editor }) {
               allowDeselect={false}
             />
           ))}
+          {holds && (
+            <Select
+              label="While held for approval"
+              description="Return denies the statement at once with the review id; after approval, the client must send the identical statement again. A client can also ask for either mode itself."
+              data={REVIEW_MODES}
+              value={form.review_mode || REVIEW_MODE_HOLD}
+              onChange={(v) => set({ review_mode: !v || v === REVIEW_MODE_HOLD ? '' : v })}
+              allowDeselect={false}
+            />
+          )}
           {ownHold && (
             <MultiSelect
               label="Reviewers"
