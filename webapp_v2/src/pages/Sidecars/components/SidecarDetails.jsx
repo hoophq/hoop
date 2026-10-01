@@ -15,7 +15,7 @@ import ListenersTable from '../sections/ListenersTable'
 import { configState, sidecarStatus } from '../status'
 import SidecarSourceModal from '../sections/SidecarSourceModal'
 import Callout from './Callout'
-import FeatureAccordions from './FeatureAccordions'
+import FeatureRules from './FeatureRules'
 
 // Wide enough for "Configuration", the longest label.
 const LABEL_WIDTH = 96
@@ -278,7 +278,7 @@ export default function SidecarDetails({ sidecar, editable, listenerActions, onD
             <>
               <Stack gap="sm">
                 <Text fw={600}>Features</Text>
-                <FeatureAccordions config={config} boundRules={sidecar.bound_rules} />
+                <FeatureRules sidecar={sidecar} editable={editable && !fromFile} />
               </Stack>
 
               <Divider />

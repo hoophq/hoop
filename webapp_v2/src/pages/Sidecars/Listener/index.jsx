@@ -1,13 +1,17 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Group, Paper, Stack, Text, Title } from '@mantine/core'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Info } from 'lucide-react'
 import ActionMenu from '@/components/ActionMenu'
 import Button from '@/components/Button'
 import PageLoader from '@/components/PageLoader'
 import { useSidecarStore } from '@/stores/useSidecarStore'
 import { showSnackbar } from '@/utils/snackbar'
+import Callout from '../components/Callout'
+import FeatureAccordions from '../components/FeatureAccordions'
+import FeatureRules from '../components/FeatureRules'
 import ListenerForm from '../components/ListenerForm'
+import { usesConfigFile } from '../config'
 import { listenerIndexByLabel, listenerLabel, removeListener } from '../listeners'
 import DeleteListenerModal from '../sections/DeleteListenerModal'
 import SaveProblems from '../sections/SaveProblems'
@@ -30,6 +34,22 @@ function Parent({ name, onClick }) {
     >
       {`Back to ${name}`}
     </Button>
+  )
+}
+
+// A new listener is not in the stored document yet, so it shows the defaults it
+// will inherit; the bindings other lanes carry are theirs, not its.
+function FeatureSettings({ sidecar, listener }) {
+  if (listener) return <FeatureRules sidecar={sidecar} listener={listener} editable={!usesConfigFile(sidecar)} />
+  return (
+    <Stack gap="md">
+      <FeatureAccordions config={sidecar.configuration} boundRules={[]} />
+      <Callout icon={Info} color="indigo.0">
+        <Text size="sm">
+          This listener inherits the global feature configuration. You can override it per listener after creation.
+        </Text>
+      </Callout>
+    </Stack>
   )
 }
 
@@ -103,7 +123,12 @@ function Editor({ sidecar, index, onDone, onLeave }) {
         <SaveProblems refused={refused} sidecarId={sidecar.id} listeners={sidecar.configuration?.listeners} />
 
         <Paper withBorder radius="md" p="lg">
-          <ListenerForm form={form} setField={setField} errors={errors} />
+          <ListenerForm
+            form={form}
+            setField={setField}
+            errors={errors}
+            features={<FeatureSettings sidecar={sidecar} listener={isNew ? null : listeners[index]} />}
+          />
         </Paper>
       </Stack>
     </>

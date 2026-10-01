@@ -10,8 +10,8 @@ import { useConnectionIconGetter } from '@/utils/connectionIcons'
 import { protocolInfo } from '../config'
 import { listenerPolicies } from '../features'
 import { listenerLabel } from '../listeners'
-import FeatureAccordions from '../components/FeatureAccordions'
 import FeaturePills from '../components/FeaturePills'
+import FeatureRules from '../components/FeatureRules'
 
 // A Badge, not a Pill: Pill's label is a block box that centres a bare string
 // and nothing else, so an icon beside text lands above the chip's centre.
@@ -206,7 +206,7 @@ export default function ListenersTable({ sidecar, onAdd, onEdit }) {
                 open && (
                   <Table.Tr key={`${label}-${index}-details`}>
                     <Table.Td colSpan={columnCount} p={0}>
-                      <FeatureAccordions flush listener={listener} config={config} boundRules={sidecar.bound_rules} />
+                      <FeatureRules flush sidecar={sidecar} listener={listener} editable={editable} />
                     </Table.Td>
                   </Table.Tr>
                 ),

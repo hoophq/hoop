@@ -14,6 +14,7 @@ import TagsInput from '@/components/TagsInput'
 import TextInput from '@/components/TextInput'
 import { getPath, protocolOptions } from '../listeners'
 import { LISTENER_FIELDS, appliesTo } from '../schema'
+import classes from './ListenerForm.module.css'
 
 // A group inside a section. Its title sits between the section title (18px)
 // and the field labels (14px/700), or it reads as one more label.
@@ -240,6 +241,19 @@ function Section({ title, description, children }) {
   )
 }
 
+function Heading({ title }) {
+  return (
+    <Group justify="space-between" wrap="nowrap">
+      <Text size="lg" fw={700}>
+        {title}
+      </Text>
+      <Text fw={500} c="dimmed">
+        Optional
+      </Text>
+    </Group>
+  )
+}
+
 const ENUM_LABELS = { network: { tcp: 'TCP port', unix: 'Unix socket' } }
 
 const IDENTITY = ['name', 'protocol']
@@ -249,8 +263,9 @@ const pick = (fields, keys) => keys.map((k) => fields.find((f) => f.key === k)).
 /**
  * The fields of one listener, rendered from the sidecar schema, with no
  * chrome of its own. `form` and `errors` come from ../listeners.
+ * `features` is the Feature settings panel, built by the caller from the stored document.
  */
-export default function ListenerForm({ form, setField, errors }) {
+export default function ListenerForm({ form, setField, errors, features }) {
   const ctx = { form, setField, errors }
   const visible = LISTENER_FIELDS.filter((f) => appliesTo(f, form.protocol))
   const basic = visible.filter((f) => f.basic)
@@ -295,29 +310,40 @@ export default function ListenerForm({ form, setField, errors }) {
         </Section>
       ))}
 
-      {advanced.length > 0 && (
-        <Accordion>
-          <Accordion.Item value="advanced">
-            <Accordion.Control>
-              <Group justify="space-between" wrap="nowrap" pr="sm">
-                <Text fw={600}>Advanced settings</Text>
-                <Text size="sm" c="dimmed">
-                  Optional
-                </Text>
-              </Group>
-            </Accordion.Control>
-            <Accordion.Panel>
-              <Stack gap="lg" pt="xs">
-                {scalars.length > 0 && <Fields fields={scalars} prefix="" {...ctx} />}
-                {blocks.map((f, i) => (
-                  <Fragment key={f.key}>
-                    {(i > 0 || scalars.length > 0) && <Divider />}
-                    <Field field={f} path={f.key} {...ctx} />
-                  </Fragment>
-                ))}
-              </Stack>
-            </Accordion.Panel>
-          </Accordion.Item>
+      {(advanced.length > 0 || features) && (
+        <Accordion
+          multiple
+          defaultValue={['features']}
+          variant="default"
+          chevronPosition="left"
+          classNames={{ item: classes.item, control: classes.control, label: classes.label, content: classes.content }}
+        >
+          {advanced.length > 0 && (
+            <Accordion.Item value="advanced">
+              <Accordion.Control>
+                <Heading title="Advanced settings" />
+              </Accordion.Control>
+              <Accordion.Panel>
+                <Stack gap="lg">
+                  {scalars.length > 0 && <Fields fields={scalars} prefix="" {...ctx} />}
+                  {blocks.map((f, i) => (
+                    <Fragment key={f.key}>
+                      {(i > 0 || scalars.length > 0) && <Divider />}
+                      <Field field={f} path={f.key} {...ctx} />
+                    </Fragment>
+                  ))}
+                </Stack>
+              </Accordion.Panel>
+            </Accordion.Item>
+          )}
+          {features && (
+            <Accordion.Item value="features">
+              <Accordion.Control>
+                <Heading title="Feature settings" />
+              </Accordion.Control>
+              <Accordion.Panel>{features}</Accordion.Panel>
+            </Accordion.Item>
+          )}
         </Accordion>
       )}
     </Stack>

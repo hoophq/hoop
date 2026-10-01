@@ -1,0 +1,20 @@
+/* Plain rows between dividers, flush with the fields above: no box, no tint. */
+.item:first-of-type {
+  border-top: 1px solid var(--mantine-color-default-border);
+}
+
+.control {
+  padding-inline: 0;
+}
+
+.control:hover {
+  background-color: transparent;
+}
+
+.label {
+  padding-block: var(--mantine-spacing-lg);
+}
+
+.content {
+  padding: var(--mantine-spacing-xs) 0 var(--mantine-spacing-lg);
+}
