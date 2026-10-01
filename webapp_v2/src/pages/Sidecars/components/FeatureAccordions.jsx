@@ -62,7 +62,7 @@ function FeatureIcon({ feature }) {
 function EmptyFeatureRow({ feature, observing, onAdd }) {
   return (
     <div className={classes.item} data-feature={feature.key}>
-      <Group className={classes.row} gap="sm" align="center" wrap="nowrap">
+      <Group className={classes.row} px="md" gap="sm" align="center" wrap="nowrap">
         <FeatureIcon feature={feature} />
         <Text size="xs" fw={700} flex={1} py="md">
           {feature.label}

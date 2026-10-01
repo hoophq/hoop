@@ -29,11 +29,6 @@
   background-color: color-mix(in srgb, var(--fa-tint) 50%, var(--mantine-color-body));
 }
 
-/* A feature with no rule: the control's padding, nothing to open. */
-.row {
-  padding-inline: var(--mantine-spacing-md);
-}
-
 .control:hover,
 .panel {
   background-color: color-mix(in srgb, var(--fa-tint) 80%, var(--mantine-color-body));
