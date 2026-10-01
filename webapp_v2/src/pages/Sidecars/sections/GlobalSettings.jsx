@@ -39,15 +39,16 @@ function EditButton({ onClick }) {
 
 // A row in edit mode: the field, Save and Cancel, and the gateway's refusal
 // under it. The refusal stays until the value changes or the row is left.
+// Compact controls keep the row at its view height, so Edit does not shift the card.
 function Editing({ children, onSave, onCancel, saving, error }) {
   return (
     <Stack gap={4}>
       <Group gap="xs" wrap="nowrap" align="center">
         {children}
-        <Button size="sm" onClick={onSave} loading={saving}>
+        <Button size="compact-sm" onClick={onSave} loading={saving}>
           Save
         </Button>
-        <Button size="sm" variant="subtle" color="gray" onClick={onCancel} disabled={saving}>
+        <Button size="compact-sm" variant="subtle" color="gray" onClick={onCancel} disabled={saving}>
           Cancel
         </Button>
       </Group>
@@ -156,6 +157,7 @@ export default function GlobalSettings({ sidecar, editable }) {
                   <TextInput
                     aria-label="Admin endpoint"
                     placeholder="127.0.0.1:19000"
+                    size="xs"
                     ff="monospace"
                     w={280}
                     value={draft}
@@ -186,6 +188,7 @@ export default function GlobalSettings({ sidecar, editable }) {
                     value={draft}
                     onChange={(v) => change(v ?? 'info')}
                     allowDeselect={false}
+                    size="xs"
                     w={160}
                   />
                 </Editing>
