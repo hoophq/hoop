@@ -97,7 +97,7 @@ export default function ListenersTable({ sidecar, onAdd, onEdit }) {
     <Stack gap="md">
       <Group justify="space-between" align="center">
         <Group gap="lgAlt" align="center">
-          <Group gap="smAlt" align="center">
+          <Group gap="smAlt" align="baseline">
             <Text size="sm" fw={700}>
               Listeners
             </Text>
