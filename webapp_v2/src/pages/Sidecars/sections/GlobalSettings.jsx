@@ -196,7 +196,9 @@ export default function GlobalSettings({ sidecar, editable }) {
                 </Editing>
               ) : (
                 <>
-                  <Text size="sm">{logLevel}</Text>
+                  <Badge tag chip variant="light" color="gray">
+                    {logLevel}
+                  </Badge>
                   {canEdit && <EditButton onClick={() => edit('log_level', logLevel)} />}
                 </>
               )}
