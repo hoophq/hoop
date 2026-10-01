@@ -372,8 +372,8 @@ func TestPostReviewRefusesARequestThatSkippedTheMiddleware(t *testing.T) {
 }
 
 // A statement that is not valid base64 never reaches the database, so this
-// refuses before any write. The reviewer would otherwise be shown whatever
-// arrived, because nothing further down this path decodes anything.
+// refuses before any write. The handler hashes and renders exactly the decoded
+// bytes, so there is nothing else it could show a reviewer.
 func TestPostReviewRefusesAPayloadThatIsNotBase64(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
@@ -392,7 +392,8 @@ func TestPostReviewRefusesAPayloadThatIsNotBase64(t *testing.T) {
 }
 
 // The statement is stored twice, as the session blob and the review blob, so a
-// token holder could otherwise fill the database one request at a time.
+// token holder could otherwise fill the database one request at a time. The cap
+// is on the raw bytes; a binary statement is stored at up to 4x in display form.
 func TestPostReviewRefusesAStatementOverTheCap(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
@@ -521,6 +522,8 @@ func TestReviewDecidedAt(t *testing.T) {
 			[]models.ReviewGroups{group(models.ReviewStatusRejected, &early), group(models.ReviewStatusPending, &late)}, &early},
 		{"no group timestamps", models.ReviewStatusExecuted,
 			[]models.ReviewGroups{group(models.ReviewStatusApproved, nil)}, nil},
+		{"a revocation after the approval is the decision", models.ReviewStatusRevoked,
+			[]models.ReviewGroups{group(models.ReviewStatusApproved, &early), group(models.ReviewStatusRevoked, &late)}, &late},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

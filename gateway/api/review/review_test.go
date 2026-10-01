@@ -534,6 +534,22 @@ func TestErrDoReview(t *testing.T) {
 			expectedError: ErrNotFound,
 		},
 		{
+			// A gateway review always has a connection, so it never takes the
+			// sidecar rule even when the row carries a listener name.
+			name: "revoke onetime with a connection and a listener should fail",
+			input: inputData{
+				ctx: newFakeContext("user1", "user1@example.com", []string{"issuing"}),
+				rev: func() *models.Review {
+					r := newFakeReview("user1", "APPROVED", "onetime", nil, nil)
+					r.ListenerName = sql.NullString{String: "appdb", Valid: true}
+					return r
+				}(),
+				con:    &models.Connection{},
+				status: models.ReviewStatusRevoked,
+			},
+			expectedError: ErrNotFound,
+		},
+		{
 			name: "non-eligible reviewer without admin or owner privileges",
 			input: inputData{
 				ctx: newFakeContext("user2", "user2@example.com", []string{"banking"}),
@@ -697,4 +713,163 @@ func TestDoReviewSidecar(t *testing.T) {
 			tt.validateFunc(t, rev)
 		})
 	}
+}
+
+// The revoke guard changed for sidecar reviews. A gateway jit revoke must work
+// as before.
+func TestRevokeJitReviewWithAConnection(t *testing.T) {
+	rev := newFakeReview("user1", "APPROVED", "jit", []models.ReviewGroups{
+		{GroupName: "sre", Status: models.ReviewStatusApproved},
+	}, nil)
+	got, err := doReview(newFakeContext("user2", "sre@example.com", []string{"sre"}),
+		rev, &models.Connection{}, models.ReviewStatusRevoked, false)
+	assert.NoError(t, err)
+	assert.Equal(t, models.ReviewStatusRevoked, got.Status)
+}
+
+// newApprovedSidecarReview is a sidecar review one group already approved and
+// the sidecar has not claimed yet.
+func newApprovedSidecarReview(approverGroup string, groups ...string) *models.Review {
+	rev := newFakeSidecarReview(groups...)
+	reviewedAt := time.Now().UTC().Add(-time.Minute)
+	for i := range rev.ReviewGroups {
+		if rev.ReviewGroups[i].GroupName == approverGroup {
+			rev.ReviewGroups[i].Status = models.ReviewStatusApproved
+			rev.ReviewGroups[i].OwnerEmail = ptr.String("approver@hoop.dev")
+			rev.ReviewGroups[i].ReviewedAt = &reviewedAt
+		}
+	}
+	rev.Status = models.ReviewStatusApproved
+	return rev
+}
+
+// A sidecar review is onetime, and its approval can be revoked until the
+// sidecar claims it. The gateway keeps revoke for jit reviews only.
+func TestRevokeSidecarReview(t *testing.T) {
+	tests := []struct {
+		name          string
+		ctx           *storagev2.Context
+		rev           *models.Review
+		expectedError error
+		validateFunc  func(t *testing.T, rev *models.Review)
+	}{
+		{
+			name: "an admin revokes an approved review",
+			ctx:  newFakeContext("u2", "admin@hoop.dev", []string{types.GroupAdmin}),
+			rev:  newApprovedSidecarReview("dba", "dba"),
+			validateFunc: func(t *testing.T, rev *models.Review) {
+				assert.Equal(t, models.ReviewStatusRevoked, rev.Status)
+				assert.Nil(t, rev.RevokedAt, "revoked_at is the gateway's jit expiry")
+				var approver, admin *models.ReviewGroups
+				for i := range rev.ReviewGroups {
+					switch rev.ReviewGroups[i].GroupName {
+					case "dba":
+						approver = &rev.ReviewGroups[i]
+					case types.GroupAdmin:
+						admin = &rev.ReviewGroups[i]
+					}
+				}
+				if assert.NotNil(t, approver) && assert.NotNil(t, admin) {
+					assert.Equal(t, models.ReviewStatusApproved, approver.Status)
+					assert.Equal(t, models.ReviewStatusRevoked, admin.Status)
+					assert.NotNil(t, admin.ReviewedAt)
+				}
+			},
+		},
+		{
+			name: "a reviewer group member revokes an approved review",
+			ctx:  newFakeContext("u2", "dba@hoop.dev", []string{"dba"}),
+			rev:  newApprovedSidecarReview("dba", "dba"),
+			validateFunc: func(t *testing.T, rev *models.Review) {
+				assert.Equal(t, models.ReviewStatusRevoked, rev.Status)
+				assert.Nil(t, rev.RevokedAt)
+			},
+		},
+		{
+			name:          "a pending review cannot be revoked",
+			ctx:           newFakeContext("u2", "admin@hoop.dev", []string{types.GroupAdmin}),
+			rev:           newFakeSidecarReview("dba"),
+			expectedError: ErrWrongState,
+		},
+		{
+			name: "a spent approval cannot be revoked",
+			ctx:  newFakeContext("u2", "admin@hoop.dev", []string{types.GroupAdmin}),
+			rev: func() *models.Review {
+				r := newApprovedSidecarReview("dba", "dba")
+				r.Status = models.ReviewStatusExecuted
+				return r
+			}(),
+			expectedError: ErrWrongState,
+		},
+		{
+			name:          "a user outside the reviewer groups cannot revoke",
+			ctx:           newFakeContext("u2", "dev@hoop.dev", []string{"engineering"}),
+			rev:           newApprovedSidecarReview("dba", "dba"),
+			expectedError: ErrNotEligible,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rev, err := doReview(tt.ctx, tt.rev, nil, models.ReviewStatusRevoked, false)
+			if tt.expectedError != nil {
+				assert.EqualError(t, err, tt.expectedError.Error())
+				return
+			}
+			assert.NoError(t, err)
+			tt.validateFunc(t, rev)
+		})
+	}
+}
+
+func TestIsSidecarDecision(t *testing.T) {
+	listener := sql.NullString{String: "appdb", Valid: true}
+	tests := []struct {
+		name     string
+		rev      *models.Review
+		conn     *models.Connection
+		expected bool
+	}{
+		{"a listener and no connection", &models.Review{ListenerName: listener}, nil, true},
+		{"a listener and a connection", &models.Review{ListenerName: listener}, &models.Connection{}, false},
+		{"no listener and no connection", &models.Review{}, nil, false},
+		{"an empty listener and no connection", &models.Review{ListenerName: sql.NullString{Valid: true}}, nil, false},
+		{"no review", nil, nil, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, isSidecarDecision(tt.rev, tt.conn))
+		})
+	}
+}
+
+func TestSlackReviewUpdate(t *testing.T) {
+	listener := sql.NullString{String: "appdb", Valid: true}
+	revoker := models.ReviewGroups{GroupName: "admin", Status: models.ReviewStatusRevoked, OwnerEmail: ptr.String("a@a.com")}
+
+	t.Run("a sidecar revoke rewrites the message", func(t *testing.T) {
+		req := slackReviewUpdate(&models.Review{ID: "r1", Status: models.ReviewStatusRevoked,
+			ListenerName: listener, ReviewGroups: []models.ReviewGroups{revoker}})
+		if assert.NotNil(t, req) {
+			assert.True(t, req.IsRevoked)
+			assert.False(t, req.IsApproved)
+			assert.False(t, req.IsRejected)
+			assert.Len(t, req.ReviewedGroups, 1)
+			assert.Equal(t, "REVOKED", req.ReviewedGroups[0].Status)
+		}
+	})
+	t.Run("a gateway revoke leaves the message as it is", func(t *testing.T) {
+		assert.Nil(t, slackReviewUpdate(&models.Review{ID: "r2", Status: models.ReviewStatusRevoked,
+			ReviewGroups: []models.ReviewGroups{revoker}}))
+	})
+	t.Run("an approval is terminal and not a revoke", func(t *testing.T) {
+		req := slackReviewUpdate(&models.Review{ID: "r3", Status: models.ReviewStatusApproved, ListenerName: listener})
+		if assert.NotNil(t, req) {
+			assert.True(t, req.IsApproved)
+			assert.False(t, req.IsRevoked)
+		}
+	})
+	t.Run("a used approval sends nothing", func(t *testing.T) {
+		assert.Nil(t, slackReviewUpdate(&models.Review{ID: "r4", Status: models.ReviewStatusExecuted, ListenerName: listener}))
+	})
 }

@@ -23,6 +23,7 @@ import {
   STATUS,
   canApprove,
   canReject,
+  canRevoke,
   decidedGroups,
   isSettled,
   reviewSource,
@@ -125,6 +126,7 @@ export default function ReviewModal({
   onClose,
   onApprove,
   onReject,
+  onRevoke,
   submitting,
 }) {
   if (!review) return null
@@ -135,6 +137,7 @@ export default function ReviewModal({
   const settled = isSettled(review)
   const mayApprove = canApprove(review, user)
   const mayReject = canReject(review, user)
+  const revocable = canRevoke(review)
 
   return (
     <Modal opened={opened} onClose={onClose} title="Review Details" size="xl">
@@ -202,18 +205,30 @@ export default function ReviewModal({
           <Statement sessionId={review.session} />
         </Stack>
 
-        {/* Rejecting an approved review still stops it: a retry only forwards
-            while the status is APPROVED, so this is the window to undo one. */}
+        {/* A retry only forwards while the status is APPROVED, so this is the
+            window to undo an approval: revoke a sidecar review, reject others. */}
         {!settled && (
           <Group justify="flex-end" gap="sm">
-            <Button
-              variant="subtle"
-              color="red"
-              onClick={onReject}
-              disabled={!mayReject || submitting}
-            >
-              Reject
-            </Button>
+            {revocable ? (
+              <Button
+                variant="subtle"
+                color="red"
+                onClick={onRevoke}
+                disabled={!mayReject}
+                loading={submitting}
+              >
+                Revoke
+              </Button>
+            ) : (
+              <Button
+                variant="subtle"
+                color="red"
+                onClick={onReject}
+                disabled={!mayReject || submitting}
+              >
+                Reject
+              </Button>
+            )}
             {review.status === STATUS.PENDING && (
               <Tooltip
                 label={`Only ${(review.review_groups_data ?? []).map((g) => g.group).join(' or ')} can approve this review`}

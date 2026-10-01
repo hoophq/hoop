@@ -373,39 +373,62 @@ func UpdateReview(rev *Review) error {
 		if res.RowsAffected == 0 {
 			return fmt.Errorf("no record updated for review %s", rev.ID)
 		}
-		var errs []string
-		for _, rg := range rev.ReviewGroups {
-			res = tx.Table("private.review_groups").
-				Where("org_id = ? AND review_id = ?", rev.OrgID, rev.ID).
-				Save(rg)
-			if res.Error != nil {
-				return res.Error
-			}
-			if res.RowsAffected == 0 {
-				errs = append(errs, fmt.Sprintf("no rows updated for review group, gid=%v, name=%v, status=%v",
-					rg.ID, rg.GroupName, rg.Status))
-			}
-		}
-		if len(errs) > 0 {
-			return fmt.Errorf("%v", errs)
-		}
-
-		var sessionStatus string
-		switch rev.Status {
-		case ReviewStatusApproved:
-			sessionStatus = "ready"
-		case ReviewStatusRejected, ReviewStatusRevoked:
-			sessionStatus = "done"
-		}
-
-		if sessionStatus != "" {
-			return tx.Table("private.sessions").
-				Where("org_id = ? AND id = ?", rev.OrgID, rev.SessionID).
-				UpdateColumn("status", sessionStatus).
-				Error
-		}
-		return nil
+		return saveReviewDecisionTx(tx, rev)
 	})
+}
+
+// UpdateSidecarReview writes a decision only while the review still holds
+// fromStatus. It returns gorm.ErrRecordNotFound when the sidecar's claim won.
+func UpdateSidecarReview(db *gorm.DB, rev *Review, fromStatus ReviewStatusType) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		res := tx.Table("private.reviews").
+			Where("org_id = ? AND id = ? AND status = ? AND listener_name IS NOT NULL", rev.OrgID, rev.ID, fromStatus).
+			Updates(rev)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return saveReviewDecisionTx(tx, rev)
+	})
+}
+
+// saveReviewDecisionTx writes the review groups and the session status of a
+// decision. UpdateReview and UpdateSidecarReview share it.
+func saveReviewDecisionTx(tx *gorm.DB, rev *Review) error {
+	var errs []string
+	for _, rg := range rev.ReviewGroups {
+		res := tx.Table("private.review_groups").
+			Where("org_id = ? AND review_id = ?", rev.OrgID, rev.ID).
+			Save(rg)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			errs = append(errs, fmt.Sprintf("no rows updated for review group, gid=%v, name=%v, status=%v",
+				rg.ID, rg.GroupName, rg.Status))
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("%v", errs)
+	}
+
+	var sessionStatus string
+	switch rev.Status {
+	case ReviewStatusApproved:
+		sessionStatus = "ready"
+	case ReviewStatusRejected, ReviewStatusRevoked:
+		sessionStatus = "done"
+	}
+
+	if sessionStatus != "" {
+		return tx.Table("private.sessions").
+			Where("org_id = ? AND id = ?", rev.OrgID, rev.SessionID).
+			UpdateColumn("status", sessionStatus).
+			Error
+	}
+	return nil
 }
 
 func UpdateReviewStatus(orgID, id string, status ReviewStatusType) error {
@@ -558,12 +581,14 @@ func ClaimApprovedSidecarReview(db *gorm.DB, orgID, reviewID string) (bool, Revi
 //
 // Returns gorm.ErrDuplicatedKey when a racing request filed for the same bytes
 // first. That is the index doing its job, not a fault: answer from the winner.
-func CreateSidecarReview(db *gorm.DB, sess Session, rev *Review, statement string) error {
+// display is the reviewer's text (apisidecar displayStatement): raw binary bytes
+// fail the JSONB blob write. The approval binds to rev.StatementHash.
+func CreateSidecarReview(db *gorm.DB, sess Session, rev *Review, display string) error {
 	return db.Transaction(func(tx *gorm.DB) error {
 		if err := upsertSessionTx(tx, sess); err != nil {
 			return fmt.Errorf("failed creating session: %w", err)
 		}
-		return createReviewTx(tx, rev, statement)
+		return createReviewTx(tx, rev, display)
 	})
 }
 
