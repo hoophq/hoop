@@ -18,10 +18,12 @@ import AuditModal from './AuditModal'
 const LABEL_WIDTH = 96
 const LOG_LEVELS = ['debug', 'info', 'warn', 'error']
 
-function Row({ label, align = 'center', children }) {
+// `heading` sets the label like the card's section titles; the Audit row is one.
+function Row({ label, heading = false, align = 'center', children }) {
+  const labelProps = heading ? { fw: 600 } : { size: 'sm', c: 'dimmed' }
   return (
     <Group gap="sm" align={align} wrap="nowrap">
-      <Text size="sm" c="dimmed" w={LABEL_WIDTH} flex="0 0 auto">
+      <Text {...labelProps} w={LABEL_WIDTH} flex="0 0 auto">
         {label}
       </Text>
       {children}
@@ -202,7 +204,7 @@ export default function GlobalSettings({ sidecar, editable }) {
             <Row label="OPA">
               <Text size="sm">{opa?.url ? opaSummary(opa) : 'Off'}</Text>
             </Row>
-            <Row label="Audit">
+            <Row label="Audit" heading>
               {auditEnabled(config) ? (
                 <Badge tag chip variant="light" color="green" c="green.8" icon={<Check size={12} aria-hidden="true" />}>
                   Active
