@@ -12,16 +12,8 @@ import Textarea from '@/components/Textarea'
 import TextInput from '@/components/TextInput'
 import { docsUrl } from '@/utils/docsUrl'
 
-// The analyzer as a SIDECAR runs it: a per-listener BLOCK, not a rule, and a
-// different vocabulary from the gateway's. Its actions are allow, warn, block
-// and defer, where the gateway's are allow_execution, block_execution and
-// require_access_request; it carries its own trigger and call budget, where
-// the gateway's rule carries connection names.
-//
-// The provider, the model and the credential are NOT here. They are the
-// sidecar's top-level analyzer section: a credentials_file is a path on the
-// sidecar's filesystem, which a control plane cannot supply, and that section
-// is restart-bound where everything on this form hot-swaps.
+// Provider, model and credential are not here: they live in the sidecar's own
+// analyzer section, a file path the control plane cannot supply.
 
 const LEVELS = [
   ['high', 'High risk'],
@@ -29,7 +21,6 @@ const LEVELS = [
   ['low', 'Low risk'],
 ]
 
-/** The fields of a sidecar analyzer rule, driven by useSidecarAiAnalyzerEditor. */
 export default function SidecarAiAnalyzerFields({ editor }) {
   const {
     isEdit,

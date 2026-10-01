@@ -14,23 +14,12 @@ import { docsUrl } from '@/utils/docsUrl'
 import { ENTITY_TYPES, SSH_ONLY_STRATEGY, maskPreview } from '@/pages/sidecarRuleVocabulary'
 import { emptyRule } from './useSidecarDataMaskingEditor'
 
-// Masking as a SIDECAR runs it, which the docs call out as a different
-// implementation from the gateway's: this one decodes the response frame in
-// memory and rewrites values, with no DLP provider and no resource roles.
-//
-// Two ways to name what gets masked, and they fail in opposite directions.
-// An ENTITY rule masks by detection: it reaches anywhere a value appears,
-// including inside an opaque HTTP body, and misses whatever the detector does
-// not recognize. A COLUMN rule masks by position: it cannot miss, and only
-// works where the protocol names its values.
+// No DLP provider or resource roles here: a sidecar masks the decoded response
+// itself, by detected entity or by column name.
 
 function RuleEditor({ rule, index, onChange, onRemove, removable, strategies, sshBound }) {
   const set = (patch) => onChange({ ...rule, ...patch })
-  // What this rule would actually be saved as, which on an ssh lane is the
-  // one length-preserving strategy whatever the row holds.
   const value = sshBound ? SSH_ONLY_STRATEGY : rule.strategy
-  // The example rewrites as the row does, so the mask character and the tail
-  // length are visible in their result rather than described.
   const preview = maskPreview(value, { maskChar: rule.mask_char, keepLast: rule.keep_last })
 
   return (
@@ -83,10 +72,7 @@ function RuleEditor({ rule, index, onChange, onRemove, removable, strategies, ss
           <TagsInput label="Columns" placeholder="ssn" value={rule.columns} onChange={(v) => set({ columns: v })} />
         )}
 
-        {/* Aligned at the TOP, unlike the rows above: the Strategy field
-            carries its example under the input, so a bottom alignment would
-            line the two inputs beside it up with that text instead of with
-            the select. */}
+        {/* Top-aligned: the Strategy hint sits under its input. */}
         <Group align="flex-start" gap="sm" wrap="nowrap">
           <Select
             label="Strategy"
@@ -94,8 +80,6 @@ function RuleEditor({ rule, index, onChange, onRemove, removable, strategies, ss
             value={value}
             onChange={(v) => set({ strategy: v ?? 'redact' })}
             allowDeselect={false}
-            // Under the input, not under the label: it is the result of the
-            // whole row, including the two fields to its right.
             description={preview}
             inputWrapperOrder={['label', 'input', 'description', 'error']}
             flex={1}
@@ -130,7 +114,6 @@ function RuleEditor({ rule, index, onChange, onRemove, removable, strategies, ss
   )
 }
 
-/** The fields of a sidecar masking rule, driven by useSidecarDataMaskingEditor. */
 export default function SidecarDataMaskingFields({ editor }) {
   const {
     isEdit,
@@ -150,8 +133,7 @@ export default function SidecarDataMaskingFields({ editor }) {
     <Stack gap="xxlAlt">
       <SectionRow title="Set rule information" description="Used to identify this masking rule across the fleet.">
         <Stack gap="md">
-          {/* The API keeps the stored name on an update and files the listener
-              bindings under the one sent, so a rename here breaks the bindings. */}
+          {/* The API keeps the stored name on update but binds under the sent one. */}
           <TextInput
             label="Name"
             placeholder="mask-customer-pii"

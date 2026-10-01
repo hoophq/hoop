@@ -36,9 +36,7 @@ function Parent({ name, onClick }) {
   )
 }
 
-// What the lane runs. A new listener is not in the stored document yet, so
-// there is nothing a binding can name: it shows the sidecar's defaults it will
-// inherit. An existing one shows what it resolves to, with the controls.
+// A new listener is not in the stored document yet, so it shows the defaults it will inherit.
 function FeatureSettings({ sidecar, listener }) {
   if (listener) return <FeatureRules sidecar={sidecar} listener={listener} editable={!usesConfigFile(sidecar)} />
   return (

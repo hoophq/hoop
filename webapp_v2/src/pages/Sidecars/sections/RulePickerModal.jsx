@@ -21,8 +21,7 @@ function Picker({ feature, sidecar, listener, onClose, onCreate, onSaved }) {
   const [rules, setRules] = useState([])
   const [status, setStatus] = useState('loading')
   const [query, setQuery] = useState('')
-  // The user's choices, kept apart from what the bindings say: a refresh of
-  // the sidecar mid-dialog moves the baseline, not the choices.
+  // Apart from the baseline, so a sidecar refresh mid-dialog does not reset them.
   const [choices, setChoices] = useState(() => new Map())
   const [saving, setSaving] = useState(false)
 
@@ -43,8 +42,7 @@ function Picker({ feature, sidecar, listener, onClose, onCreate, onSaved }) {
     }
   }, [api])
 
-  // Checked when the rule reaches every lane in scope; on some of them only,
-  // it shows indeterminate until toggled either way.
+  // Every lane in scope: checked. Some of them: indeterminate.
   const bound = useMemo(() => {
     const all = new Set()
     const some = new Set()
@@ -63,8 +61,7 @@ function Picker({ feature, sidecar, listener, onClose, onCreate, onSaved }) {
     setChoices((current) => {
       const next = new Map(current)
       for (const name of names) {
-        // Back on the baseline is no choice, unless the rule was on some
-        // lanes only: "off" then means unbinding those too.
+        // Back on the baseline is no choice, unless the rule was on some lanes only.
         if (on === bound.all.has(name) && !bound.some.has(name)) next.delete(name)
         else next.set(name, on)
       }
@@ -206,13 +203,6 @@ function Picker({ feature, sidecar, listener, onClose, onCreate, onSaved }) {
   )
 }
 
-/**
- * "Choose which rules apply": every rule of one feature the organization
- * has, with the ones already reaching this sidecar or listener checked.
- * Saving rewrites each rule whose box changed, one PUT each, with the
- * listener set it ends up bound to. A sidecar-level pick reaches every named
- * listener.
- */
 export default function RulePickerModal({ opened, feature, sidecar, listener, onClose, onCreate, onSaved }) {
   if (!feature) return null
   return (

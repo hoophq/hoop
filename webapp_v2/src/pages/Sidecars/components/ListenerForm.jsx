@@ -263,9 +263,7 @@ const pick = (fields, keys) => keys.map((k) => fields.find((f) => f.key === k)).
 /**
  * The fields of one listener, rendered from the sidecar schema, with no
  * chrome of its own. `form` and `errors` come from ../listeners.
- *
- * `features` is the Feature settings panel: what the lane runs, which the
- * caller builds because it reads the stored document rather than the form.
+ * `features` is the Feature settings panel, built by the caller from the stored document.
  */
 export default function ListenerForm({ form, setField, errors, features }) {
   const ctx = { form, setField, errors }

@@ -14,13 +14,8 @@ import { docsUrl } from '@/utils/docsUrl'
 import { ENTITY_TYPES, GUARDRAIL_ACTIONS } from '@/pages/sidecarRuleVocabulary'
 import { emptyRule } from './useSidecarGuardrailEditor'
 
-// Guardrails as a SIDECAR runs them, which is a different rule engine from the
-// gateway's and shares only two of its seven rule types.
-//
-// What is absent is as deliberate as what is here. There are no resource roles
-// and no attributes: a control plane has no connections, and a rule reaches a
-// sidecar by naming its listeners. There is no output side: a sidecar denies
-// requests and masks responses, so a response-side control is a masking rule.
+// No resource roles, attributes or output rules here: a sidecar rule reaches
+// listeners, and a sidecar denies requests only (responses are masking).
 
 function RuleEditor({ rule, index, onChange, onRemove, removable, types, operations }) {
   const type = types.find((t) => t.value === rule.type) ?? types[0]
@@ -30,8 +25,6 @@ function RuleEditor({ rule, index, onChange, onRemove, removable, types, operati
   return (
     <Paper p="md" radius="md" withBorder>
       <Stack gap="md">
-        {/* The number is not decoration. Rules evaluate in order and the first
-            denial wins, so which card is second is a fact about the policy. */}
         <Group justify="space-between" align="center">
           <Text size="xs" fw={600} c="dimmed" tt="uppercase">
             {`Rule ${index + 1}`}
@@ -136,9 +129,7 @@ function RuleEditor({ rule, index, onChange, onRemove, removable, types, operati
         {has('statuses') && (
           <TagsInput
             label="Statuses"
-            // The two status types spell a status differently, and the sidecar
-            // refuses the wrong spelling at startup: HTTP takes a code or a
-            // class, gRPC takes one of its sixteen names or codes.
+            // HTTP takes a code or a class, gRPC one of its status names.
             placeholder={rule.type === 'grpc_status' ? 'permission_denied' : '5xx'}
             value={rule.statuses}
             onChange={(v) => set({ statuses: v })}
@@ -189,7 +180,6 @@ function RuleEditor({ rule, index, onChange, onRemove, removable, types, operati
   )
 }
 
-/** The fields of a sidecar guardrail, driven by useSidecarGuardrailEditor. */
 export default function SidecarGuardrailFields({ editor }) {
   const { name, setName, description, setDescription, targets, setTargets, rules, setRules, types, operations } =
     editor

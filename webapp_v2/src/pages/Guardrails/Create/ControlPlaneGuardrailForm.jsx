@@ -12,10 +12,7 @@ import SidecarGuardrailFields from './SidecarGuardrailFields'
 import { useSidecarGuardrailEditor } from './useSidecarGuardrailEditor'
 import classes from './Create.module.css'
 
-// The sidecar's sibling of Create/GatewayGuardrailForm. Neither imports the
-// other and neither knows the product: Router.jsx picks one with <ByProduct>.
-// The form itself is SidecarGuardrailFields, which the sidecar pages also open
-// in a dialog; this file is the page around it.
+// Page shell around SidecarGuardrailFields; Router.jsx picks this or the Gateway sibling with <ByProduct>.
 
 function FormFields({ guardrail, id, isEdit }) {
   const navigate = useNavigate()

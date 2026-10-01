@@ -12,10 +12,7 @@ import SidecarAiAnalyzerFields from './SidecarAiAnalyzerFields'
 import { useSidecarAiAnalyzerEditor } from './useSidecarAiAnalyzerEditor'
 import classes from './Create.module.css'
 
-// The sidecar's sibling of Create/GatewayAiAnalyzerForm. Neither imports the
-// other; Router.jsx picks one with <ByProduct>. The form itself is
-// SidecarAiAnalyzerFields, which the sidecar pages also open in a dialog;
-// this file is the page around it.
+// Page shell around SidecarAiAnalyzerFields; Router.jsx picks this or the Gateway sibling with <ByProduct>.
 
 function FormFields({ rule: stored, ruleName, isEdit }) {
   const navigate = useNavigate()

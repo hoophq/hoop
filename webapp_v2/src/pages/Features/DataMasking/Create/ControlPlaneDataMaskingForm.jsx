@@ -12,10 +12,7 @@ import SidecarDataMaskingFields from './SidecarDataMaskingFields'
 import { useSidecarDataMaskingEditor } from './useSidecarDataMaskingEditor'
 import classes from './Create.module.css'
 
-// The sidecar's sibling of Create/GatewayDataMaskingForm. Neither imports the
-// other; Router.jsx picks one with <ByProduct>. The form itself is
-// SidecarDataMaskingFields, which the sidecar pages also open in a dialog;
-// this file is the page around it.
+// Page shell around SidecarDataMaskingFields; Router.jsx picks this or the Gateway sibling with <ByProduct>.
 
 function FormFields({ rule: stored, id, isEdit }) {
   const navigate = useNavigate()

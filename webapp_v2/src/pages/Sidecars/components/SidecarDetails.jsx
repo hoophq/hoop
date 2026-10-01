@@ -235,7 +235,6 @@ export default function SidecarDetails({ sidecar, editable, listenerActions, onD
             <>
               <Stack gap="sm">
                 <Text fw={600}>Features</Text>
-                {/* The file owns the rules too: nothing bound here would reach the sidecar. */}
                 <FeatureRules sidecar={sidecar} editable={editable && !fromFile} />
               </Stack>
 

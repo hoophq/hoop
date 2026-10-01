@@ -2,9 +2,7 @@ import { aiSessionAnalyzerService } from '@/services/aiSessionAnalyzer'
 import { dataMaskingService } from '@/services/dataMasking'
 import { guardrailsService } from '@/services/guardrails'
 
-// The rule API behind each feature accordion: how its rules are listed, read
-// back whole and rewritten, and the kind `bound_rules` files them under. A
-// guardrail or masking rule is addressed by id, an analyzer rule by name.
+// Guardrail and masking rules are addressed by id, analyzer rules by name.
 export const RULE_APIS = {
   guardrails: {
     kind: 'guardrail',
@@ -27,8 +25,7 @@ export const RULE_APIS = {
   },
 }
 
-// The listeners a binding made here reaches. A rule binds to a listener, never
-// to a sidecar, so the sidecar level fans out to every named lane.
+// A rule binds to listeners, never to a sidecar, so the sidecar level fans out.
 export function targetLanes(sidecar, listener) {
   if (listener) return listener.name ? [listener.name] : []
   return (sidecar.configuration?.listeners ?? []).map((l) => l.name).filter(Boolean)
@@ -37,7 +34,6 @@ export function targetLanes(sidecar, listener) {
 export const lanesAsTargets = (sidecar, lanes) =>
   lanes.map((listener_name) => ({ sidecar_id: sidecar.id, listener_name }))
 
-// How many of `lanes` the rule already reaches.
 export function boundCount(boundRules, kind, ruleName, lanes) {
   const on = new Set(
     (boundRules ?? []).filter((b) => b.kind === kind && b.rule_name === ruleName).map((b) => b.listener_name),
@@ -45,8 +41,7 @@ export function boundCount(boundRules, kind, ruleName, lanes) {
   return lanes.filter((l) => on.has(l)).length
 }
 
-// The rule's targets with these lanes of this sidecar added or removed. What
-// it reaches on other sidecars is kept, since the API replaces the whole set.
+// Targets on other sidecars are kept: the API replaces the whole set.
 function withLanes(targets, sidecar, lanes, on) {
   const kept = (targets ?? []).filter((t) => !(t.sidecar_id === sidecar.id && lanes.includes(t.listener_name)))
   return on ? [...kept, ...lanesAsTargets(sidecar, lanes)] : kept
@@ -55,10 +50,8 @@ function withLanes(targets, sidecar, lanes, on) {
 export const ruleErrorMessage = (error) =>
   error?.response?.data?.message || error?.message || 'The control plane refused the change.'
 
-// One PUT per rule, carrying the rule as the API returned it plus the new
-// target set: the request replaces every field it names, and a body missing
-// `input` or `risk_evaluation` would blank them. Nothing here is atomic, so
-// the caller gets the rules that failed; the rest are already written.
+// The record read back whole plus the new targets, since PUT replaces every
+// field it names. One request per rule, nothing atomic; failures are returned.
 export async function applyBindings(api, sidecar, lanes, changes) {
   const failed = []
   for (const { rule, on } of changes) {

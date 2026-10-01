@@ -33,16 +33,12 @@ function rulesToSpec(rules, sshBound) {
   const out = rules
     .filter((r) => r.name.trim() !== '')
     .map((r) => {
-      // Clamped here rather than held in state. An ssh lane accepts one
-      // strategy, and which lanes are bound changes as the picker changes, so
-      // deriving it at save time keeps the two from drifting apart.
+      // Derived at save time: which lanes are bound changes with the picker.
       const strategy = sshBound ? SSH_ONLY_STRATEGY : r.strategy
       const rule = { name: r.name.trim(), strategy }
       if (r.match === 'columns') rule.columns = r.columns
       else rule.entities = r.entities
-      // Only where the strategy reads it. A keep_last on a hash rule is a
-      // field the daemon declares but never looks at, and a form that writes
-      // it teaches the reader the wrong thing.
+      // Only for the strategy that reads it.
       if (strategy === 'partial') rule.keep_last = Number(r.keep_last)
       if ((strategy === 'mask' || strategy === 'partial') && r.mask_char !== '') {
         // The daemon takes a Go rune, which is the code point as a number.
@@ -53,13 +49,7 @@ function rulesToSpec(rules, sshBound) {
   return { rules: out }
 }
 
-/**
- * The state and the save of one masking rule in the sidecar's vocabulary,
- * shared by the page and by the dialog a sidecar's feature accordion opens.
- *
- * `targets` seeds the listeners of a NEW rule; a stored rule keeps its own.
- * `onSaved` and `onDeleted` run once the write went through.
- */
+// Shared by the rule page and the sidecar dialog. `targets` seeds a new rule's listeners.
 export function useSidecarDataMaskingEditor({ rule: stored, id, isEdit, targets: seed = [], onSaved, onDeleted }) {
   const submitting = useDataMaskingStore((s) => s.submitting)
   const createRule = useDataMaskingStore((s) => s.createRule)
@@ -72,10 +62,7 @@ export function useSidecarDataMaskingEditor({ rule: stored, id, isEdit, targets:
   const [targets, setTargets] = useState(stored?.sidecar_targets ?? seed)
   const [rules, setRules] = useState(() => specToRules(stored?.sidecar_spec))
 
-  // An ssh lane masks a byte stream IN PLACE: a replacement of a different
-  // size shifts every byte after it, which desynchronizes a terminal and
-  // corrupts a download. Length preservation is the safety property, so the
-  // strategy list collapses to the one that has it.
+  // An ssh lane masks bytes in place, so only the length-preserving strategy is offered.
   const sshBound = useMemo(() => {
     const byId = new Map(sidecars.map((sc) => [sc.id, sc]))
     return targets.some((t) => {
@@ -98,9 +85,7 @@ export function useSidecarDataMaskingEditor({ rule: stored, id, isEdit, targets:
     const payload = {
       name: name.trim(),
       description,
-      // The gateway's own fields stay empty: this rule reaches a sidecar by
-      // naming its listeners, not a connection, and a sidecar has no custom
-      // recognizer to register.
+      // Gateway-only fields.
       connection_ids: [],
       attributes: [],
       supported_entity_types: [],

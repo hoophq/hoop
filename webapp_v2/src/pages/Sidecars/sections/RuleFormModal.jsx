@@ -24,8 +24,7 @@ function Footer({ editor, onCancel }) {
   )
 }
 
-// One body per feature, each on its own editor hook, so the hook a mounted
-// dialog runs never changes underneath it.
+// One body per feature, so the hook never changes under a mounted dialog.
 function GuardrailBody({ stored, targets, onSaved, onCancel }) {
   const editor = useSidecarGuardrailEditor({
     guardrail: stored,
@@ -76,8 +75,7 @@ function AnalyzerBody({ stored, targets, onSaved, onCancel }) {
 
 const BODIES = { guardrails: GuardrailBody, 'data-masking': DataMaskingBody, 'ai-analyzer': AnalyzerBody }
 
-// Mounted for one opening of the dialog. A binding only names the rule, so
-// an edit lists the feature's rules to find the record, then reads it whole.
+// A binding only names the rule, so an edit finds the record in the list first.
 function Form({ feature, sidecar, listener, ruleName, onClose, onSaved }) {
   const api = RULE_APIS[feature.key]
   const [stored, setStored] = useState(null)
@@ -119,10 +117,6 @@ function Form({ feature, sidecar, listener, ruleName, onClose, onSaved }) {
   return <Body stored={stored} targets={stored ? [] : targets} onSaved={onSaved} onCancel={onClose} />
 }
 
-/**
- * The rule form of one feature in a dialog: a new rule with this sidecar or
- * listener already among its targets, or a distributed rule read back whole.
- */
 export default function RuleFormModal({ opened, feature, sidecar, listener, rule, onClose, onSaved }) {
   if (!feature) return null
   const ruleName = rule?.name ?? null

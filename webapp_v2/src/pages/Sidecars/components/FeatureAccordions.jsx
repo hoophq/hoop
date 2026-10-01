@@ -53,10 +53,8 @@ function RuleRow({ rule, onEdit }) {
  * Without a `listener` it reads the sidecar's defaults, the top-level blocks
  * every lane inherits; with one, what that lane resolves to. Both include the
  * rules the control plane distributes, which are never in the stored document.
- *
- * `actions` ({ onAdd(featureKey), onEdit(featureKey, rule) }) puts an Add on
- * each feature and an Edit on the rules the control plane distributes. A rule
- * embedded in the stored document has no form here and stays read-only.
+ * `actions` adds Add per feature and Edit on distributed rules; rules embedded
+ * in the document have no form here.
  */
 export default function FeatureAccordions({ listener = null, config, boundRules, flush = false, actions }) {
   const features = featureList(listener, config, boundRules)

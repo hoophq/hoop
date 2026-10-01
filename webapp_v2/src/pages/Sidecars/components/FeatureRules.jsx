@@ -6,11 +6,7 @@ import RuleFormModal from '../sections/RuleFormModal'
 import RulePickerModal from '../sections/RulePickerModal'
 import FeatureAccordions from './FeatureAccordions'
 
-/**
- * The feature accordions with their Add and Edit, for the sidecar (no
- * `listener`) or for one lane. The dialogs write through the rule APIs, so
- * the sidecar is re-read afterwards for the bindings it now carries.
- */
+// The accordions with their Add and Edit dialogs; the sidecar is re-read after a save.
 export default function FeatureRules({ sidecar, listener = null, editable = false, flush = false }) {
   const refreshSidecar = useSidecarStore((s) => s.refreshSidecar)
   // The feature outlives `opened`, so a closing dialog keeps its copy.

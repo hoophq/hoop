@@ -28,10 +28,7 @@ function specToRules(spec) {
   return rules.map((r) => ({ ...emptyRule(), ...r, key: Math.random().toString(36).slice(2) }))
 }
 
-// Only the fields the chosen type reads reach the payload. A sidecar decodes
-// its configuration strictly, and the gateway refuses a rule carrying a field
-// its type does not declare — so dropping them here is what lets one form row
-// hold every type.
+// The gateway refuses a field the rule type does not declare.
 function rulesToSpec(rules, typeFields) {
   const out = rules
     .filter((r) => r.name.trim() !== '')
@@ -50,13 +47,7 @@ function rulesToSpec(rules, typeFields) {
   return { rules: out }
 }
 
-/**
- * The state and the save of one guardrail in the sidecar's vocabulary, shared
- * by the page and by the dialog a sidecar's feature accordion opens.
- *
- * `targets` seeds the listeners of a NEW rule; a stored rule keeps its own.
- * `onSaved` and `onDeleted` run once the write went through.
- */
+// Shared by the rule page and the sidecar dialog. `targets` seeds a new rule's listeners.
 export function useSidecarGuardrailEditor({ guardrail, id, isEdit, targets: seed = [], onSaved, onDeleted }) {
   const submitting = useGuardrailsStore((s) => s.submitting)
   const createGuardrail = useGuardrailsStore((s) => s.createGuardrail)
@@ -69,10 +60,8 @@ export function useSidecarGuardrailEditor({ guardrail, id, isEdit, targets: seed
   const [targets, setTargets] = useState(guardrail?.sidecar_targets ?? seed)
   const [rules, setRules] = useState(() => specToRules(guardrail?.sidecar_spec))
 
-  // Which protocols the bound listeners speak. A sidecar REFUSES a rule its
-  // lane cannot read — at startup, taking that sidecar's whole configuration
-  // with it — so the type list narrows to what every bound lane accepts
-  // instead of letting the save fail later.
+  // A sidecar refuses at startup a rule type its lane cannot read, so the
+  // type list narrows to what every bound lane accepts.
   const protocols = useMemo(() => {
     const byId = new Map(sidecars.map((sc) => [sc.id, sc]))
     return targets.map((t) => {
@@ -98,8 +87,7 @@ export function useSidecarGuardrailEditor({ guardrail, id, isEdit, targets: seed
       id: isEdit ? id : '',
       name: name.trim(),
       description,
-      // The gateway's own fields stay empty: a control plane has no
-      // connections and no attributes to bind a rule to.
+      // Gateway-only fields.
       connection_ids: [],
       attributes: [],
       input: { rules: [] },
