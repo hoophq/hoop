@@ -243,3 +243,22 @@ func IsMachineIdentityCredential(connectionCredentialID string) bool {
 		Count(&count)
 	return count > 0
 }
+
+// IsServiceIdentityCredential reports whether a connection credential belongs
+// to an active non-human identity. Database errors are returned so callers fail
+// closed instead of accidentally treating a service credential as a user.
+func IsServiceIdentityCredential(db *gorm.DB, orgID, connectionCredentialID, userSubject string) (bool, error) {
+	var exists bool
+	err := db.Raw(`SELECT EXISTS (
+		SELECT 1 FROM private.machine_identity_credentials
+		WHERE org_id = ? AND connection_credential_id = ?
+		UNION ALL
+		SELECT 1 FROM private.api_keys
+		WHERE org_id = ? AND id = ? AND status = 'active'
+		UNION ALL
+		SELECT 1 FROM private.ai_agents
+		WHERE org_id = ? AND id = ? AND status = 'active'
+	)`, orgID, connectionCredentialID, orgID, userSubject, orgID, userSubject).
+		Scan(&exists).Error
+	return exists, err
+}
