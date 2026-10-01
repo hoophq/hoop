@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Divider, Group, SimpleGrid, Stack, Text } from '@mantine/core'
+import { Divider, Group, ScrollArea, SimpleGrid, Stack, Text } from '@mantine/core'
 import Button from '@/components/Button'
 import Modal from '@/components/Modal'
 import NumberInput from '@/components/NumberInput'
@@ -225,7 +225,14 @@ function Form({ sidecar, onClose }) {
 /** The sidecar's `audit` block in a dialog. Save replaces the block whole. */
 export default function AuditModal({ opened, sidecar, onClose }) {
   return (
-    <Modal opened={opened} onClose={onClose} title="Audit" size="lg" closeOnClickOutside={false}>
+    <Modal
+      opened={opened}
+      onClose={onClose}
+      title="Audit"
+      size={892}
+      closeOnClickOutside={false}
+      scrollAreaComponent={ScrollArea.Autosize}
+    >
       <Form sidecar={sidecar} onClose={onClose} />
     </Modal>
   )
