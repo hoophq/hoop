@@ -24,6 +24,7 @@ import (
 	"github.com/hoophq/hoop/gateway/storagev2"
 	"github.com/hoophq/hoop/gateway/storagev2/types"
 	"github.com/hoophq/hoop/gateway/utils"
+	"gorm.io/gorm"
 )
 
 var (
@@ -213,9 +214,22 @@ func UpdateSlackMessage(rev *models.Review) error {
 	if slackSvc == nil {
 		return nil
 	}
+	req := slackReviewUpdate(rev)
+	if req == nil {
+		return nil
+	}
+	return slackSvc.UpdateReviewMessage(req)
+}
 
+// slackReviewUpdate is the rewrite a review state asks for, or nil for none.
+func slackReviewUpdate(rev *models.Review) *slackservice.UpdateReviewMessageRequest {
 	switch rev.Status {
 	case models.ReviewStatusPending, models.ReviewStatusApproved, models.ReviewStatusRejected:
+	case models.ReviewStatusRevoked:
+		// A gateway message keeps its approval; only a sidecar revokes one.
+		if !rev.ListenerName.Valid || rev.ListenerName.String == "" {
+			return nil
+		}
 	default:
 		return nil
 	}
@@ -224,6 +238,7 @@ func UpdateSlackMessage(rev *models.Review) error {
 		ReviewID:    rev.ID,
 		IsApproved:  rev.Status == models.ReviewStatusApproved,
 		IsRejected:  rev.Status == models.ReviewStatusRejected,
+		IsRevoked:   rev.Status == models.ReviewStatusRevoked,
 		TotalGroups: len(rev.ReviewGroups),
 		// Shown on the message, so a reviewer in Slack sees why, whether the
 		// rejection came from Slack, the web app or the API.
@@ -244,7 +259,7 @@ func UpdateSlackMessage(rev *models.Review) error {
 			ReviewedAt:    reviewedAt,
 		})
 	}
-	return slackSvc.UpdateReviewMessage(req)
+	return req
 }
 
 // DoReview updates the status of a review identified by reviewIdOrSid. The hasForced parameter
@@ -308,6 +323,9 @@ func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.Review
 		}
 	}
 
+	// Read before doReview, which moves rev.Status to the decision.
+	fromStatus := rev.Status
+
 	rev, err = doReview(ctx, rev, connection, status, hasForced)
 	if err != nil {
 		return nil, err
@@ -317,8 +335,8 @@ func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.Review
 		rev.RejectionReason = &rejectionReason
 	}
 
-	if err := models.UpdateReview(rev); err != nil {
-		return nil, fmt.Errorf("failed updating review state, reason=%v", err)
+	if err := persistDecision(rev, connection, fromStatus); err != nil {
+		return nil, err
 	}
 
 	err = UpdateSlackMessage(rev)
@@ -345,8 +363,33 @@ func DoReview(ctx *storagev2.Context, reviewIdOrSid string, status models.Review
 	return rev, nil
 }
 
+// persistDecision writes the decision. On a sidecar review it loses to the
+// sidecar's claim with ErrWrongState, never success on a statement that ran.
+func persistDecision(rev *models.Review, connection *models.Connection, fromStatus models.ReviewStatusType) error {
+	if !isSidecarDecision(rev, connection) {
+		if err := models.UpdateReview(rev); err != nil {
+			return fmt.Errorf("failed updating review state, reason=%v", err)
+		}
+		return nil
+	}
+	err := models.UpdateSidecarReview(models.DB, rev, fromStatus)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return ErrWrongState
+	}
+	if err != nil {
+		return fmt.Errorf("failed updating review state, reason=%v", err)
+	}
+	return nil
+}
+
+// isSidecarDecision: only the control plane has no connection, and only a
+// sidecar review has a listener (it outlives the sidecar row).
+func isSidecarDecision(rev *models.Review, connection *models.Connection) bool {
+	return connection == nil && rev != nil && rev.ListenerName.Valid && rev.ListenerName.String != ""
+}
+
 func doReview(ctx *storagev2.Context, rev *models.Review, connection *models.Connection, status models.ReviewStatusType, force bool) (*models.Review, error) {
-	err := validateReviewStatusTransition(ctx, rev, status)
+	err := validateReviewStatusTransition(ctx, rev, status, isSidecarDecision(rev, connection))
 	if err != nil {
 		return nil, err
 	}
@@ -517,7 +560,7 @@ func doIndividualReview(ctx *storagev2.Context, rev *models.Review, connection *
 	return rev, nil
 }
 
-func validateReviewStatusTransition(ctx *storagev2.Context, rev *models.Review, status models.ReviewStatusType) error {
+func validateReviewStatusTransition(ctx *storagev2.Context, rev *models.Review, status models.ReviewStatusType, sidecar bool) error {
 	// user can only approve, reject or revoke a review
 	switch status {
 	case models.ReviewStatusApproved, models.ReviewStatusRejected, models.ReviewStatusRevoked:
@@ -543,7 +586,9 @@ func validateReviewStatusTransition(ctx *storagev2.Context, rev *models.Review, 
 			return ErrWrongState
 		}
 
-		if rev.Type != models.ReviewTypeJit {
+		// A sidecar review is onetime; a revoke withdraws the approval until
+		// the sidecar claims it.
+		if rev.Type != models.ReviewTypeJit && !sidecar {
 			return ErrNotFound
 		}
 	}

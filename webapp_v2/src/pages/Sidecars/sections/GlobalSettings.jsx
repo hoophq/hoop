@@ -10,15 +10,17 @@ import { formatRelativeTime } from '@/utils/datetime'
 import { showSnackbar } from '@/utils/snackbar'
 import { auditEnabled, hasConfiguration } from '../config'
 import { opaSummary, resolveOPA } from '../features'
+import { configState } from '../status'
 import { saveErrorMessage } from '../useListenerEditor'
 import AuditModal from './AuditModal'
 
-const LABEL_WIDTH = 88
+// Wide enough for "Configuration", the longest label.
+const LABEL_WIDTH = 96
 const LOG_LEVELS = ['debug', 'info', 'warn', 'error']
 
-function Row({ label, children }) {
+function Row({ label, align = 'center', children }) {
   return (
-    <Group gap="sm" align="center" wrap="nowrap">
+    <Group gap="sm" align={align} wrap="nowrap">
       <Text size="sm" c="dimmed" w={LABEL_WIDTH} flex="0 0 auto">
         {label}
       </Text>
@@ -68,6 +70,7 @@ export default function GlobalSettings({ sidecar, editable }) {
   const config = sidecar.configuration
   const configured = hasConfiguration(config)
   const opa = configured ? resolveOPA(null, config) : null
+  const configuration = configState(sidecar)
   const [editing, setEditing] = useState(null)
   const [draft, setDraft] = useState('')
   const [saving, setSaving] = useState(false)
@@ -125,6 +128,18 @@ export default function GlobalSettings({ sidecar, editable }) {
         {sidecar.version && (
           <Row label="Version">
             <Text size="sm">{sidecar.version}</Text>
+          </Row>
+        )}
+        {configuration && (
+          <Row label="Configuration" align={configuration.detail ? 'flex-start' : 'center'}>
+            <Stack gap={2}>
+              <Text size="sm">{configuration.label}</Text>
+              {configuration.detail && (
+                <Text size="xs" c="dimmed" ff="monospace">
+                  {configuration.detail}
+                </Text>
+              )}
+            </Stack>
           </Row>
         )}
         {configured && (

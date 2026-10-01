@@ -32,7 +32,7 @@ type SSHConfig struct {
 	// HostKey is the private host key this listener presents, the same file
 	// a real sshd would hold. Required: an SSH server with no identity of
 	// its own cannot complete a handshake.
-	HostKey string `json:"host_key" label:"Host key" placeholder:"/etc/hoop-inspect/ssh_host_ed25519_key" help:"The private host key this listener presents. A path on the sidecar host." ui:"required"`
+	HostKey string `json:"host_key,omitempty" label:"Host key" placeholder:"/etc/hoop-inspect/ssh_host_ed25519_key" help:"The private host key this listener presents. A path on the sidecar host." ui:"required"`
 
 	// TrustedCA is an authorized_keys-format file naming the CA public
 	// key(s) a user certificate must be signed by. Required, and the only
@@ -41,7 +41,7 @@ type SSHConfig struct {
 	// There is no password method and no authorized-keys list to fall back
 	// on, so an unreadable file here is a listener that refuses everyone.
 	// It is loaded at validation for that reason.
-	TrustedCA string `json:"trusted_ca" label:"Trusted CA" placeholder:"/etc/hoop-inspect/user_ca.pub" help:"authorized_keys file naming the CA keys a user certificate must be signed by. A path on the sidecar host." ui:"required"`
+	TrustedCA string `json:"trusted_ca,omitempty" label:"Trusted CA" placeholder:"/etc/hoop-inspect/user_ca.pub" help:"authorized_keys file naming the CA keys a user certificate must be signed by. A path on the sidecar host." ui:"required"`
 
 	// CapabilitiesAllowed is which session capabilities this listener
 	// admits, and it is TRI-STATE. That is why it is a pointer:

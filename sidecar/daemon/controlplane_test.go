@@ -98,11 +98,16 @@ func TestSetupFetchesTheConfigFromTheControlPlane(t *testing.T) {
 	if got.path != controlPlaneHandshakePath {
 		t.Errorf("path = %q", got.path)
 	}
-	// The plane refuses to serve review_mode or rate_limit to a build that
-	// does not say it decodes the key.
-	want := CapabilityReviewMode + "," + CapabilityAnalyzerRateLimit
-	if got.capabilities != want {
+	// The plane refuses to serve what a build does not say it decodes, so
+	// the handshake carries the generated list: fields, rule types and
+	// protocols.
+	if want := strings.Join(SidecarCapabilities(), ","); got.capabilities != want {
 		t.Errorf("capabilities = %q, want %q", got.capabilities, want)
+	}
+	for _, entry := range []string{CapabilityReviewMode, "rule:http_header", "protocol:grpc"} {
+		if !strings.Contains(got.capabilities, entry) {
+			t.Errorf("capabilities %q lack %q", got.capabilities, entry)
+		}
 	}
 }
 
@@ -1016,6 +1021,7 @@ func TestHandshakeReportsWhatTheSidecarIsRunning(t *testing.T) {
 		Version:         "1.2.3",
 		AppliedRevision: "rev-1",
 		LastOutcome:     "refused",
+		LastError:       "the control plane sent a config this build refuses",
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -1029,7 +1035,8 @@ func TestHandshakeReportsWhatTheSidecarIsRunning(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("want one handshake, got %d", len(got))
 	}
-	if got[0].Version != "1.2.3" || got[0].AppliedRevision != "rev-1" || got[0].LastOutcome != "refused" {
+	if got[0].Version != "1.2.3" || got[0].AppliedRevision != "rev-1" || got[0].LastOutcome != "refused" ||
+		got[0].LastError != "the control plane sent a config this build refuses" {
 		t.Errorf("the request did not carry what this sidecar is running: %+v", got[0])
 	}
 }

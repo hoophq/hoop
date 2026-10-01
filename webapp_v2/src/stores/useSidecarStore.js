@@ -20,15 +20,17 @@ const EMPTY = {
   selectedLoading: false,
 }
 
-// Install a document a write returned. `selected` takes it only when it is
-// this sidecar (loaded or still loading), and only then does its generation
-// move: a write landing after the page moved on must not retire the next
-// sidecar's fetch, which would leave its loader on for good.
+// Install a document a write returned. The list takes it and a pending refresh
+// is retired, or it would restore the pre-write document. `selected` takes it
+// only when it is this sidecar (loaded or still loading), and only then does
+// its generation move: a write landing after the page moved on must not
+// retire the next sidecar's fetch, which would leave its loader on for good.
 function written(state, updated) {
   const onScreen = state.selectedId === updated.id || state.selected?.id === updated.id
   return {
     sidecars: state.sidecars.map((s) => (s.id === updated.id ? updated : s)),
     listRequestId: state.listRequestId + 1,
+    refreshRequestId: state.refreshRequestId + 1,
     ...(onScreen && { selected: updated, selectedLoading: false, selectedRequestId: state.selectedRequestId + 1 }),
   }
 }
@@ -46,12 +48,14 @@ export const useSidecarStore = create((set, get) => ({
   // what it saw.
   listRequestId: 0,
   selectedRequestId: 0,
+  refreshRequestId: 0,
 
   reset: () =>
     set((state) => ({
       ...EMPTY,
       listRequestId: state.listRequestId + 1,
       selectedRequestId: state.selectedRequestId + 1,
+      refreshRequestId: state.refreshRequestId + 1,
     })),
 
   fetchSidecars: async () => {
@@ -98,11 +102,18 @@ export const useSidecarStore = create((set, get) => ({
   // Re-read one sidecar in place, with no loading state, so a dialog that
   // opens on it counts what the gateway holds now.
   refreshSidecar: async (id) => {
+    const requestId = get().refreshRequestId + 1
+    set({ refreshRequestId: requestId })
     const { data } = await sidecarsService.get(id)
-    set((state) => ({
-      sidecars: state.sidecars.map((s) => (s.id === data.id ? data : s)),
-      selected: state.selected?.id === data.id ? data : state.selected,
-    }))
+    // Dropped once a later refresh or a write has moved on.
+    set((state) =>
+      state.refreshRequestId === requestId
+        ? {
+            sidecars: state.sidecars.map((s) => (s.id === data.id ? data : s)),
+            selected: state.selected?.id === data.id ? data : state.selected,
+          }
+        : {},
+    )
     return data
   },
 
@@ -142,6 +153,7 @@ export const useSidecarStore = create((set, get) => ({
       // moves on must not write the previous sidecar back over the next.
       selected: state.selected?.id === updated.id ? updated : state.selected,
       listRequestId: state.listRequestId + 1,
+      refreshRequestId: state.refreshRequestId + 1,
     }))
     return updated
   },

@@ -78,7 +78,8 @@ These states are managed automatically by the gateway:
 ### Status Transitions
 
 - Setting any review to `REJECTED` immediately changes the overall resource status and prevents further updates
-- `APPROVED` reviews can still be changed to `REJECTED` or `REVOKED` at any time by the resource owner or administrators
+- `APPROVED` reviews can still be changed to `REJECTED` at any time by the resource owner or administrators
+- `REVOKED` applies only to an `APPROVED` review of type `jit`, or to an `APPROVED` review a sidecar filed (it has a `listener_name`). A sidecar review can be revoked until the sidecar uses the approval; after that it is `EXECUTED` and the request answers `400`
 - Once a review reaches `REJECTED` or `REVOKED` the resource is considered as immutable and it cannot be updated again
 
 ### Final States

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Divider, Group, Paper, Stack, Text, Title } from '@mantine/core'
-import { Info, Lock } from 'lucide-react'
+import { Info, Lock, TriangleAlert } from 'lucide-react'
 import ActionMenu from '@/components/ActionMenu'
 import Badge from '@/components/Badge'
 import Button from '@/components/Button'
@@ -14,12 +14,26 @@ import ListenersTable from '../sections/ListenersTable'
 import { sidecarStatus } from '../status'
 import SidecarSourceModal from '../sections/SidecarSourceModal'
 import Callout from './Callout'
-import FeatureAccordions from './FeatureAccordions'
+import FeatureRules from './FeatureRules'
+
+// The reason a sidecar gave is its own words, so it renders as code under the
+// sentence rather than inside it.
+function StatusHint({ status }) {
+  if (!status.detail) return status.hint
+  return (
+    <Stack gap={4}>
+      <Text size="sm">{status.hint}</Text>
+      <Text size="xs" ff="monospace">
+        {status.detail}
+      </Text>
+    </Stack>
+  )
+}
 
 export function SidecarStatusBadge({ sidecar }) {
   const status = sidecarStatus(sidecar)
   return (
-    <Tooltip label={status.hint} multiline w={260}>
+    <Tooltip label={<StatusHint status={status} />} multiline w={status.detail ? 340 : 260}>
       <Badge variant={status.badge} dot flex="0 0 auto">
         {status.label}
       </Badge>
@@ -116,6 +130,7 @@ export default function SidecarDetails({ sidecar, editable, listenerActions, onD
   const config = sidecar.configuration
   const configured = hasConfiguration(config)
   const fromFile = usesConfigFile(sidecar)
+  const deprecations = sidecar.deprecations ?? []
   // The value awaiting confirmation, and whether the dialog is up. Two states
   // rather than one: Mantine keeps the modal mounted through its exit
   // transition, and a target cleared on close would rewrite the copy of the
@@ -181,11 +196,25 @@ export default function SidecarDetails({ sidecar, editable, listenerActions, onD
               runs; the key drops an open editor when that flips. */}
           <GlobalSettings key={String(editable && !fromFile)} sidecar={sidecar} editable={editable && !fromFile} />
 
+          {deprecations.length > 0 && (
+            <Callout icon={TriangleAlert} color="amber.0">
+              <Text size="sm">
+                This configuration uses deprecated keys. The sidecar still accepts them; rewrite them before they
+                are removed.
+              </Text>
+              {deprecations.map((line) => (
+                <Text key={line} size="sm">
+                  {line}
+                </Text>
+              ))}
+            </Callout>
+          )}
+
           {configured ? (
             <>
               <Stack gap="sm">
                 <Text fw={600}>Features</Text>
-                <FeatureAccordions config={config} boundRules={sidecar.bound_rules} />
+                <FeatureRules sidecar={sidecar} editable={editable && !fromFile} />
               </Stack>
 
               <Divider />

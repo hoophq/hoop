@@ -49,6 +49,11 @@ export function canApprove(review, { groups, role, adminRoleName, approverRoleNa
 // The gateway appends a group row for an admin who rejects.
 export const canReject = (review, user) => user.isAdmin || canApprove(review, user)
 
+// A sidecar review is onetime, and its approval can be revoked until the sidecar
+// uses it. A gateway review keeps Reject: the gateway revokes only jit reviews.
+export const canRevoke = (review) =>
+  isSidecarReview(review) && review?.status === STATUS.APPROVED
+
 export const isSettled = (review) =>
   review?.status !== STATUS.PENDING && review?.status !== STATUS.APPROVED
 

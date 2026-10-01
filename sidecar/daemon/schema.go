@@ -55,9 +55,9 @@ func jsonFields(t reflect.Type) []jsonField {
 	return out
 }
 
-// structOf returns the struct a field holds, through pointers and lists.
+// structOf returns the struct a field holds, through pointers, lists and maps.
 func structOf(t reflect.Type) reflect.Type {
-	for t.Kind() == reflect.Pointer || t.Kind() == reflect.Slice || t.Kind() == reflect.Array {
+	for t.Kind() == reflect.Pointer || t.Kind() == reflect.Slice || t.Kind() == reflect.Array || t.Kind() == reflect.Map {
 		if t == reflect.TypeFor[json.RawMessage]() {
 			return nil
 		}

@@ -458,6 +458,14 @@ import Switch from '@/components/Switch'
 <Switch label="Enable integration" checked={enabled} onChange={(e) => setEnabled(e.currentTarget.checked)} />
 ```
 
+### `Checkbox`
+Checkbox for opt-in lists and selections. `radius` defaults to `xs`; `label` and `description` render beside the box.
+```jsx
+import Checkbox from '@/components/Checkbox'
+
+<Checkbox label="Select all" checked={all} indeterminate={some && !all} onChange={toggleAll} />
+```
+
 ### `TextInput`
 Standard text input field.
 ```jsx
@@ -991,6 +999,12 @@ Non-obvious notes only:
   builds those rows. Those rules appear nowhere else in the app, which is what the
   expansion is for; certificate paths and codec switches are the form's job and were
   deliberately left out.
+  `components/FeatureRules.jsx` wraps the accordions with their Add and Edit and owns
+  the two dialogs: `sections/RulePickerModal.jsx` binds existing rules (one PUT per
+  changed rule, the whole `sidecar_targets` set each time; `pages/Sidecars/rules.js`
+  does the target math) and `sections/RuleFormModal.jsx` opens the sidecar rule forms
+  (`Sidecar*Fields` + `useSidecar*Editor` under each rule page's `Create/`) with this
+  sidecar or listener preselected. Nothing renders in config-file mode.
   `pages/Sidecars/resolve.js` is the one port of `Config.resolve`, and both the Features
   chips (`config.js`) and the expanded row read it. Guardrail `rules` absent — **or
   `null`, which is what commenting them out in YAML leaves** — inherits, `[]` runs none,
@@ -999,11 +1013,12 @@ Non-obvious notes only:
   `json.RawMessage`, so the daemon's `len(o.Rules) > 0` counts BYTES, and the two bytes
   of `[]` are not the nil slice. Reading it as "a non-empty list replaces" reported
   masking on a lane that had switched it off. `opa: {}` drops an inherited endpoint.
-  `pages/Sidecars/status.js` turns `last_seen_at` into Waiting or Connected, and
-  those two only: a stale timestamp still reads Connected with its relative last-seen
-  time. There is no Offline, because `last_seen_at` is gateway memory that a restart
-  clears, so a sidecar that stopped calling and one the gateway forgot look identical
-  from here.
+  `pages/Sidecars/status.js` turns `last_seen_at` and `config_state` into the badge:
+  Waiting (never checked in), Connected (applied, unknown, or nothing served yet),
+  Applying, Not applied, Config refused and Restart needed; `configState` is the
+  details card's Configuration row, with `last_error` under refused and restart. A
+  stale timestamp still reads Connected with its relative last-seen time: there is no
+  Offline, and that time beside the badge is what says a sidecar stopped calling.
 - `sessions.js` — `list(params)`. **`limit` does not make the call cheap**: the
   gateway always runs an unbounded `COUNT(*)` (joined against reviews) to fill
   `total` before applying the limit, so `{ limit: 1 }` costs the same as a full

@@ -37,7 +37,7 @@ type SSHRelayConfig struct {
 	// asked for rather than the address dialled. Required: the bastion is
 	// the only component positioned to notice that the host behind it was
 	// replaced, because the client verified only the bastion's own key.
-	KnownHosts string `json:"known_hosts"`
+	KnownHosts string `json:"known_hosts,omitempty"`
 
 	// HostKeyCheck is what an unknown or changed key does, spelled to mean
 	// what StrictHostKeyChecking means in ssh(1). Defaults to strict.
@@ -62,7 +62,7 @@ type SSHRelayConfig struct {
 	// Targets is which destinations are terminated, keyed by name, glob or
 	// network[:port]. Empty is a load error: a relay block that terminates
 	// nothing is a listener the operator believes is inspecting and is not.
-	Targets map[string]*SSHRelayTarget `json:"targets"`
+	Targets map[string]*SSHRelayTarget `json:"targets,omitempty"`
 }
 
 // SSHRelayTarget is one terminated destination.

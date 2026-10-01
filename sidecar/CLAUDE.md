@@ -201,6 +201,25 @@ done
   `label:"..."`, or `ui:"-"` to keep it out of the form, then regenerate:
   `go test ./daemon -run TestListenerSchemaIsCurrent -update`.
 
+- **Every config field omits its zero value, and a field an older build
+  must not receive carries `cap:`.** The control plane serves its own copy
+  of `daemon.Config`, and a build that predates a key refuses the whole
+  document over it (ADR-0022). `omitempty` on scalars, pointers, slices and
+  maps; `omitzero` on structs, and on `rules`, where `[]` is an opt-out.
+  `TestEveryConfigFieldOmitsItsZeroValue` refuses a field with neither. A
+  field that is safe when absent needs nothing more. One whose value an
+  older build cannot decode gets `cap:"<name>"`: the header the sidecar
+  sends on its handshake is generated from the tag, and the plane refuses
+  to serve a document that sets it to a build without the entry. A field
+  that already shipped also carries `since:"<release>"`, the release read
+  from the git tags, so a build from before the header is refused it by
+  its reported version; a new field leaves `since` off until its release
+  exists. Rule types and protocols reach the header on their own, through
+  `policy.RuleTypes` and `daemon.Protocols`. `baselineCapabilities` is
+  frozen: it names what the builds before the header decode, each entry
+  with the release it shipped in when that is later than 1.162.0, and
+  nothing is ever added to it.
+
 - **Construct codecs through the seam, never libhoop directly.** A decoder
   built with the zero `Options` has no classifier: it reports statement text
   with `OpUnknown`. That fails closed, but it means a policy naming `select`

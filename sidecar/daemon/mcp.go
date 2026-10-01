@@ -24,7 +24,7 @@ const ReviewWaitTool = "review_wait"
 type MCPConfig struct {
 	// Listen is the TCP address the server binds, for example
 	// "127.0.0.1:8765". Required when the block is present.
-	Listen string `json:"listen"`
+	Listen string `json:"listen,omitempty"`
 }
 
 func (m *MCPConfig) validate() []string {
