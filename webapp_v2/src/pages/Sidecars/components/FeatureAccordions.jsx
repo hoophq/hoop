@@ -49,6 +49,44 @@ function RuleRow({ rule, onEdit }) {
   )
 }
 
+function FeatureIcon({ feature }) {
+  const Icon = feature.icon
+  return (
+    <Text span c={`${feature.color}.6`} lh={1}>
+      <Icon size={16} aria-hidden="true" />
+    </Text>
+  )
+}
+
+// A feature with no rule is a flat row, not an accordion: there is nothing to
+// open, so Add sits in the row. The label carries the control's block padding
+// so this row and an accordion's header stand the same height.
+function EmptyFeatureRow({ feature, observing, onAdd }) {
+  return (
+    <div className={classes.item} data-feature={feature.key}>
+      <Group className={classes.row} gap="sm" align="center" wrap="nowrap">
+        <FeatureIcon feature={feature} />
+        <Text size="xs" fw={700} flex={1} py="md">
+          {feature.label}
+        </Text>
+        <Text size="xs" fw={500}>
+          {feature.summary}
+        </Text>
+        {observing && (
+          <Badge tag variant="warning">
+            Observe
+          </Badge>
+        )}
+        {onAdd && (
+          <Button variant="subtle" size="compact-xs" leftSection={<CirclePlus size={14} />} onClick={onAdd}>
+            Add
+          </Button>
+        )}
+      </Group>
+    </div>
+  )
+}
+
 /**
  * Without a `listener` it reads the sidecar's defaults, the top-level blocks
  * every lane inherits; with one, what that lane resolves to. Both include the
@@ -71,17 +109,20 @@ export default function FeatureAccordions({ listener = null, config, boundRules,
         classNames={{ item: classes.item, control: classes.control, label: classes.label, panel: classes.panel, content: classes.content }}
       >
         {features.map((feature) => {
-          const Icon = feature.icon
           const observing = feature.mode === MODE_OBSERVE
+          if (feature.rules.length === 0) {
+            return (
+              <EmptyFeatureRow
+                key={feature.key}
+                feature={feature}
+                observing={observing}
+                onAdd={actions ? () => actions.onAdd(feature.key) : undefined}
+              />
+            )
+          }
           return (
             <Accordion.Item key={feature.key} value={feature.key} data-feature={feature.key}>
-              <Accordion.Control
-                icon={
-                  <Text span c={`${feature.color}.6`} lh={1}>
-                    <Icon size={16} aria-hidden="true" />
-                  </Text>
-                }
-              >
+              <Accordion.Control icon={<FeatureIcon feature={feature} />}>
                 <Group justify="space-between" wrap="nowrap" pr="sm">
                   <Text size="xs" fw={700}>
                     {feature.label}
@@ -115,27 +156,21 @@ export default function FeatureAccordions({ listener = null, config, boundRules,
                       </Button>
                     )}
                   </Group>
-                  {feature.rules.length === 0 ? (
-                    <Text size="xs" c="dimmed">
-                      {observing ? 'No rules. Nothing is evaluated.' : feature.empty}
-                    </Text>
-                  ) : (
-                    <Stack gap={0}>
-                      {feature.rules.map((rule, i) => (
-                        <div key={rule.id}>
-                          {i > 0 && <Divider color="gray.2" />}
-                          <RuleRow
-                            rule={rule}
-                            onEdit={
-                              actions && rule.source === SOURCE_DISTRIBUTED
-                                ? () => actions.onEdit(feature.key, rule)
-                                : undefined
-                            }
-                          />
-                        </div>
-                      ))}
-                    </Stack>
-                  )}
+                  <Stack gap={0}>
+                    {feature.rules.map((rule, i) => (
+                      <div key={rule.id}>
+                        {i > 0 && <Divider color="gray.2" />}
+                        <RuleRow
+                          rule={rule}
+                          onEdit={
+                            actions && rule.source === SOURCE_DISTRIBUTED
+                              ? () => actions.onEdit(feature.key, rule)
+                              : undefined
+                          }
+                        />
+                      </div>
+                    ))}
+                  </Stack>
                 </Stack>
               </Accordion.Panel>
             </Accordion.Item>

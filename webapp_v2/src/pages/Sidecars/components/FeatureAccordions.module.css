@@ -24,8 +24,14 @@
   --fa-tint: var(--mantine-color-indigo-0);
 }
 
-.control {
+.control,
+.row {
   background-color: color-mix(in srgb, var(--fa-tint) 50%, var(--mantine-color-body));
+}
+
+/* A feature with no rule: the control's geometry with nothing to open. */
+.row {
+  padding-inline: var(--mantine-spacing-md);
 }
 
 .control:hover,
