@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Group, Stack, Text } from '@mantine/core'
-import { SquarePen } from 'lucide-react'
+import { Check, SquarePen } from 'lucide-react'
 import Badge from '@/components/Badge'
 import Button from '@/components/Button'
 import Select from '@/components/Select'
@@ -185,9 +185,15 @@ export default function GlobalSettings({ sidecar, editable }) {
               <Text size="sm">{opa?.url ? opaSummary(opa) : 'Off'}</Text>
             </Row>
             <Row label="Audit">
-              <Badge variant={auditEnabled(config) ? 'active' : 'inactive'}>
-                {auditEnabled(config) ? 'Active' : 'Off'}
-              </Badge>
+              {auditEnabled(config) ? (
+                <Badge tag chip variant="light" color="green" c="green.8" icon={<Check size={12} aria-hidden="true" />}>
+                  Active
+                </Badge>
+              ) : (
+                <Badge tag chip variant="light" color="gray">
+                  Off
+                </Badge>
+              )}
               {canEdit && <EditButton onClick={() => setAuditOpen(true)} />}
             </Row>
           </>
