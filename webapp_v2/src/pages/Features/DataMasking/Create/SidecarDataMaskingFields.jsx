@@ -132,20 +132,35 @@ function RuleEditor({ rule, index, onChange, onRemove, removable, strategies, ss
 
 /** The fields of a sidecar masking rule, driven by useSidecarDataMaskingEditor. */
 export default function SidecarDataMaskingFields({ editor }) {
-  const { name, setName, description, setDescription, targets, setTargets, rules, setRules, strategies, sshBound } =
-    editor
+  const {
+    isEdit,
+    name,
+    setName,
+    description,
+    setDescription,
+    targets,
+    setTargets,
+    rules,
+    setRules,
+    strategies,
+    sshBound,
+  } = editor
 
   return (
     <Stack gap="xxlAlt">
       <SectionRow title="Set rule information" description="Used to identify this masking rule across the fleet.">
         <Stack gap="md">
+          {/* The API keeps the stored name on an update and files the listener
+              bindings under the one sent, so a rename here breaks the bindings. */}
           <TextInput
             label="Name"
             placeholder="mask-customer-pii"
             value={name}
             onChange={(e) => setName(e.currentTarget.value)}
             required
-            autoFocus
+            disabled={isEdit}
+            description={isEdit ? 'The name is fixed after creation.' : undefined}
+            autoFocus={!isEdit}
           />
           <TextInput
             label="Description (Optional)"
