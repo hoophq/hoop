@@ -913,14 +913,15 @@ Non-obvious notes only:
   `clearSelected`). `createSidecar` returns the response with the one-time token
   and keeps none of it. `updateSidecar(nameOrId, configuration)` replaces the
   whole configuration document and returns `{ ok, error }` instead of throwing,
-  so a listener form can put the gateway's message next to the field; it writes
-  the stored document into both the list and `selected`, and moves both
-  generation counters, because a read already in flight would otherwise commit
-  the pre-save document over the saved one. `patchSidecar(nameOrId, configuration)`
-  does the same through a shallow top-level merge: only the keys sent change, so
-  a nested block such as `audit` travels whole. Two generation counters, one per
-  resource, drop a response that arrives after its resource moved on; `reset()`
-  runs on logout through an `useAuthStore` subscription.
+  so a listener form can put the gateway's message next to the field.
+  `patchSidecar(nameOrId, configuration)` is a shallow top-level merge: only the
+  keys sent change, so a nested block such as `audit` travels whole. Both commit
+  through `written()`, which writes the document into the list and moves the
+  list and refresh counters; `selected` and `selectedRequestId` move only when
+  the written sidecar is the one on screen. Three generation counters (list,
+  selected, refresh) drop a response that arrives after its resource moved on.
+  `reset()` runs on logout through an `useAuthStore` subscription and moves
+  `session`, so a write that answers after logout commits nothing.
   The selected record needs **both** of its flags, and a page checks both:
   `selectedId !== id` catches the frame between a URL change and the effect that
   refetches — a loading flag alone still reads "idle" there and paints the
