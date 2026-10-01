@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Group, Stack, Text } from '@mantine/core'
+import { Group, ScrollArea, Stack, Text } from '@mantine/core'
 import Button from '@/components/Button'
 import Modal from '@/components/Modal'
 import PageLoader from '@/components/PageLoader'
@@ -133,6 +133,7 @@ export default function RuleFormModal({ opened, feature, sidecar, listener, rule
       size={892}
       title={ruleName ? `Edit ${ruleName}` : `New ${feature.label} rule`}
       closeOnClickOutside={false}
+      scrollAreaComponent={ScrollArea.Autosize}
     >
       <Form
         feature={feature}

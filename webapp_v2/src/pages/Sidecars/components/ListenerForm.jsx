@@ -14,6 +14,7 @@ import TagsInput from '@/components/TagsInput'
 import TextInput from '@/components/TextInput'
 import { getPath, protocolOptions } from '../listeners'
 import { LISTENER_FIELDS, appliesTo } from '../schema'
+import classes from './ListenerForm.module.css'
 
 // A group inside a section. Its title sits between the section title (18px)
 // and the field labels (14px/700), or it reads as one more label.
@@ -242,9 +243,11 @@ function Section({ title, description, children }) {
 
 function Heading({ title }) {
   return (
-    <Group justify="space-between" wrap="nowrap" pr="sm">
-      <Text fw={600}>{title}</Text>
-      <Text size="sm" c="dimmed">
+    <Group justify="space-between" wrap="nowrap">
+      <Text size="lg" fw={700}>
+        {title}
+      </Text>
+      <Text fw={500} c="dimmed">
         Optional
       </Text>
     </Group>
@@ -310,14 +313,20 @@ export default function ListenerForm({ form, setField, errors, features }) {
       ))}
 
       {(advanced.length > 0 || features) && (
-        <Accordion multiple defaultValue={['features']}>
+        <Accordion
+          multiple
+          defaultValue={['features']}
+          variant="default"
+          chevronPosition="left"
+          classNames={{ item: classes.item, control: classes.control, label: classes.label, content: classes.content }}
+        >
           {advanced.length > 0 && (
             <Accordion.Item value="advanced">
               <Accordion.Control>
                 <Heading title="Advanced settings" />
               </Accordion.Control>
               <Accordion.Panel>
-                <Stack gap="lg" pt="xs">
+                <Stack gap="lg">
                   {scalars.length > 0 && <Fields fields={scalars} prefix="" {...ctx} />}
                   {blocks.map((f, i) => (
                     <Fragment key={f.key}>
@@ -334,9 +343,7 @@ export default function ListenerForm({ form, setField, errors, features }) {
               <Accordion.Control>
                 <Heading title="Feature settings" />
               </Accordion.Control>
-              <Accordion.Panel>
-                <Box pt="xs">{features}</Box>
-              </Accordion.Panel>
+              <Accordion.Panel>{features}</Accordion.Panel>
             </Accordion.Item>
           )}
         </Accordion>
