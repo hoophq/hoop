@@ -20,11 +20,9 @@ const EMPTY = {
   selectedLoading: false,
 }
 
-// Install a document a write returned. The list takes it and a pending refresh
-// is retired, or it would restore the pre-write document. `selected` takes it
-// only when it is this sidecar (loaded or still loading), and only then does
-// its generation move: a write landing after the page moved on must not
-// retire the next sidecar's fetch, which would leave its loader on for good.
+// Install a written document. Only the on-screen sidecar's generation moves, so a
+// late write cannot retire another sidecar's fetch and strand its loader; the
+// refresh generation always moves, or a pending refresh would restore the old document.
 function written(state, updated) {
   const onScreen = state.selectedId === updated.id || state.selected?.id === updated.id
   return {
@@ -158,8 +156,7 @@ export const useSidecarStore = create((set, get) => ({
     return updated
   },
 
-  // Merge a few keys into the stored document and leave the rest as stored.
-  // `{ ok, error }` like updateSidecar, so a row can show the refusal in place.
+  // Shallow merge of the keys sent; `{ ok, error }` like updateSidecar.
   patchSidecar: async (nameOrId, configuration) => {
     try {
       const { data: updated } = await sidecarsService.patch(nameOrId, configuration)

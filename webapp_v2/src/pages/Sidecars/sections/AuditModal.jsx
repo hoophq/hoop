@@ -11,10 +11,9 @@ import { showSnackbar } from '@/utils/snackbar'
 import { auditEnabled } from '../config'
 import { saveErrorMessage } from '../useListenerEditor'
 
-// audit.file: "-" or empty writes JSON lines to stdout, a null device turns
-// the record off, anything else is a path on the sidecar (buildAudit,
-// sidecar/daemon/daemon.go). A stored null device keeps its spelling: NUL on
-// a Windows sidecar, where /dev/null is a path that does not open.
+// audit.file: "-" or empty is stdout, a null device is off, anything else a
+// path (buildAudit, sidecar/daemon/daemon.go). A stored NUL keeps its
+// spelling: a Windows sidecar cannot open /dev/null.
 const STDOUT = '-'
 const OFF = '/dev/null'
 const DEFAULT_MAX_STATEMENT_BYTES = 8192
@@ -48,8 +47,7 @@ function toForm(audit = {}) {
 
 const count = (v) => Math.max(0, Math.trunc(Number(v) || 0))
 
-// The whole block: the patch replaces `audit`, so every key is written,
-// including the deprecated fail_closed's absence.
+// Every key: the patch replaces `audit` whole. fail_closed is dropped on purpose.
 function toAudit(f) {
   return {
     file: f.destination === 'stdout' ? STDOUT : f.destination === 'off' ? f.nullDevice : f.path.trim(),
@@ -86,7 +84,7 @@ function Toggle({ label, hint, checked, onChange }) {
   )
 }
 
-// Mounted for one opening of the dialog, so the form starts from the stored block.
+// Remounts per opening, so the form starts from the stored block.
 function Form({ sidecar, onClose }) {
   const patchSidecar = useSidecarStore((s) => s.patchSidecar)
   const [form, setForm] = useState(() => toForm(sidecar.configuration?.audit))
@@ -222,7 +220,6 @@ function Form({ sidecar, onClose }) {
   )
 }
 
-/** The sidecar's `audit` block in a dialog. Save replaces the block whole. */
 export default function AuditModal({ opened, sidecar, onClose }) {
   return (
     <Modal

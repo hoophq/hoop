@@ -29,7 +29,7 @@
   background-color: color-mix(in srgb, var(--fa-tint) 50%, var(--mantine-color-body));
 }
 
-/* A feature with no rule: the control's geometry with nothing to open. */
+/* A feature with no rule: the control's padding, nothing to open. */
 .row {
   padding-inline: var(--mantine-spacing-md);
 }

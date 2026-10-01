@@ -192,8 +192,7 @@ export default function SidecarDetails({ sidecar, editable, listenerActions, onD
             </Group>
           </Group>
 
-          {/* The file owns these settings too, so an edit would change nothing it
-              runs; the key drops an open editor when that flips. */}
+          {/* Read-only on the file's config. The key drops an open editor when that flips. */}
           <GlobalSettings key={String(editable && !fromFile)} sidecar={sidecar} editable={editable && !fromFile} />
 
           {deprecations.length > 0 && (

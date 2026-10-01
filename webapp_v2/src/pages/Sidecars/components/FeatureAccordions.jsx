@@ -58,9 +58,7 @@ function FeatureIcon({ feature }) {
   )
 }
 
-// A feature with no rule is a flat row, not an accordion: there is nothing to
-// open, so Add sits in the row. The label carries the control's block padding
-// so this row and an accordion's header stand the same height.
+// The label carries the control's block padding, so the row matches an accordion header's height.
 function EmptyFeatureRow({ feature, observing, onAdd }) {
   return (
     <div className={classes.item} data-feature={feature.key}>

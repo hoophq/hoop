@@ -18,7 +18,6 @@ import AuditModal from './AuditModal'
 const LABEL_WIDTH = 96
 const LOG_LEVELS = ['debug', 'info', 'warn', 'error']
 
-// `heading` sets the label like the card's section titles; the Audit row is one.
 function Row({ label, heading = false, align = 'center', children }) {
   const labelProps = heading ? { fw: 600 } : { size: 'sm', c: 'dimmed' }
   return (
@@ -39,8 +38,6 @@ function EditButton({ onClick }) {
   )
 }
 
-// A row in edit mode: the field, Save and Cancel, and the gateway's refusal
-// under it. The refusal stays until the value changes or the row is left.
 // Compact controls keep the row at its view height, so Edit does not shift the card.
 function Editing({ children, onSave, onCancel, saving, error }) {
   return (
@@ -63,11 +60,7 @@ function Editing({ children, onSave, onCancel, saving, error }) {
   )
 }
 
-/**
- * The Global settings rows of the details card. With `editable`, Admin and
- * Log level edit in place and Audit opens a dialog; each save is a PATCH of
- * that one key, so the rest of the stored document stays as it is.
- */
+/** Global settings rows. Each save is a PATCH of that one key; the rest stays as stored. */
 export default function GlobalSettings({ sidecar, editable }) {
   const patchSidecar = useSidecarStore((s) => s.patchSidecar)
   const config = sidecar.configuration
@@ -106,8 +99,7 @@ export default function GlobalSettings({ sidecar, editable }) {
     showSnackbar({ level: 'success', text: done })
   }
 
-  // One write at a time from this card: a second response could land first
-  // and install the older snapshot.
+  // One write at a time: a later response could land first and install the older snapshot.
   const canEdit = editable && !saving
 
   const listen = config?.admin?.listen ?? ''
