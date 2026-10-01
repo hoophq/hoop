@@ -100,6 +100,10 @@ export default function GlobalSettings({ sidecar, editable }) {
     showSnackbar({ level: 'success', text: done })
   }
 
+  // One write at a time from this card: a second response could land first
+  // and install the older snapshot.
+  const canEdit = editable && !saving
+
   const listen = config?.admin?.listen ?? ''
   const logLevel = config?.log_level || 'info'
 
@@ -149,7 +153,7 @@ export default function GlobalSettings({ sidecar, editable }) {
                   <Text size="sm" ff={listen ? 'monospace' : undefined}>
                     {listen || 'Off'}
                   </Text>
-                  {editable && <EditButton onClick={() => edit('admin', listen)} />}
+                  {canEdit && <EditButton onClick={() => edit('admin', listen)} />}
                 </>
               )}
             </Row>
@@ -173,7 +177,7 @@ export default function GlobalSettings({ sidecar, editable }) {
               ) : (
                 <>
                   <Text size="sm">{logLevel}</Text>
-                  {editable && <EditButton onClick={() => edit('log_level', logLevel)} />}
+                  {canEdit && <EditButton onClick={() => edit('log_level', logLevel)} />}
                 </>
               )}
             </Row>
@@ -184,7 +188,7 @@ export default function GlobalSettings({ sidecar, editable }) {
               <Badge variant={auditEnabled(config) ? 'active' : 'inactive'}>
                 {auditEnabled(config) ? 'Active' : 'Off'}
               </Badge>
-              {editable && <EditButton onClick={() => setAuditOpen(true)} />}
+              {canEdit && <EditButton onClick={() => setAuditOpen(true)} />}
             </Row>
           </>
         )}

@@ -20,6 +20,19 @@ const EMPTY = {
   selectedLoading: false,
 }
 
+// Install a document a write returned. `selected` takes it only when it is
+// this sidecar (loaded or still loading), and only then does its generation
+// move: a write landing after the page moved on must not retire the next
+// sidecar's fetch, which would leave its loader on for good.
+function written(state, updated) {
+  const onScreen = state.selectedId === updated.id || state.selected?.id === updated.id
+  return {
+    sidecars: state.sidecars.map((s) => (s.id === updated.id ? updated : s)),
+    listRequestId: state.listRequestId + 1,
+    ...(onScreen && { selected: updated, selectedLoading: false, selectedRequestId: state.selectedRequestId + 1 }),
+  }
+}
+
 // The fleet as the gateway lists it, and the single record the details page
 // reads. createSidecar returns the response, token included, and keeps none of
 // it: the token is shown once by the wizard that asked for it and must not
@@ -138,12 +151,7 @@ export const useSidecarStore = create((set, get) => ({
   patchSidecar: async (nameOrId, configuration) => {
     try {
       const { data: updated } = await sidecarsService.patch(nameOrId, configuration)
-      set((state) => ({
-        sidecars: state.sidecars.map((s) => (s.id === updated.id ? updated : s)),
-        selected: state.selected?.id === updated.id ? updated : state.selected,
-        listRequestId: state.listRequestId + 1,
-        selectedRequestId: state.selectedRequestId + 1,
-      }))
+      set((state) => written(state, updated))
       return { ok: true, sidecar: updated }
     } catch (error) {
       return { ok: false, error }
@@ -156,27 +164,11 @@ export const useSidecarStore = create((set, get) => ({
    * Returns `{ ok, error }` rather than throwing, so a form can put the
    * gateway's message next to the field it is about. The rest of this store
    * still throws; the wizard it serves has no field to put a message in.
-   *
-   * The updated sidecar is merged back into the list, and into `selected` when
-   * it is the record on screen, so both show the new listeners without a
-   * refetch and neither can serve a stale document to the next write.
    */
   updateSidecar: async (nameOrId, configuration) => {
     try {
       const { data: updated } = await sidecarsService.update(nameOrId, configuration)
-      set((state) => ({
-        sidecars: state.sidecars.map((s) => (s.id === updated.id ? updated : s)),
-        // `selected` too, and this is the one that bites: the details page
-        // deletes a listener WITHOUT navigating, and builds the next
-        // whole-document PUT from selected.configuration. Leaving it stale
-        // means a second delete writes the first listener back.
-        selected: state.selected?.id === updated.id ? updated : state.selected,
-        // Both counters, because this is a write that replaces what a read
-        // would return. `requestId` was neither of them and existed nowhere:
-        // state.requestId is undefined, so the old line stored NaN.
-        listRequestId: state.listRequestId + 1,
-        selectedRequestId: state.selectedRequestId + 1,
-      }))
+      set((state) => written(state, updated))
       return { ok: true, sidecar: updated }
     } catch (error) {
       return { ok: false, error }

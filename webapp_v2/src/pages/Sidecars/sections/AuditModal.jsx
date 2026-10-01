@@ -13,7 +13,8 @@ import { saveErrorMessage } from '../useListenerEditor'
 
 // audit.file: "-" or empty writes JSON lines to stdout, a null device turns
 // the record off, anything else is a path on the sidecar (buildAudit,
-// sidecar/daemon/daemon.go).
+// sidecar/daemon/daemon.go). A stored null device keeps its spelling: NUL on
+// a Windows sidecar, where /dev/null is a path that does not open.
 const STDOUT = '-'
 const OFF = '/dev/null'
 const DEFAULT_MAX_STATEMENT_BYTES = 8192
@@ -34,6 +35,7 @@ function toForm(audit = {}) {
   return {
     destination,
     path: destination === 'file' ? audit.file : '',
+    nullDevice: destination === 'off' ? audit.file : OFF,
     async_queue_size: audit.async_queue_size ?? 0,
     memory_buffer: audit.memory_buffer ?? 0,
     query_sessions: audit.query_sessions ?? 0,
@@ -50,7 +52,7 @@ const count = (v) => Math.max(0, Math.trunc(Number(v) || 0))
 // including the deprecated fail_closed's absence.
 function toAudit(f) {
   return {
-    file: f.destination === 'stdout' ? STDOUT : f.destination === 'off' ? OFF : f.path.trim(),
+    file: f.destination === 'stdout' ? STDOUT : f.destination === 'off' ? f.nullDevice : f.path.trim(),
     async_queue_size: count(f.async_queue_size),
     memory_buffer: count(f.memory_buffer),
     query_sessions: count(f.query_sessions),
