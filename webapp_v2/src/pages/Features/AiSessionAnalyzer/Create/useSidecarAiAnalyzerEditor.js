@@ -9,6 +9,9 @@ const EMPTY = {
   trigger_operations: [],
   trigger_tables: [],
   trigger_resources: [],
+  // Combined conditions the form has no editor for yet; kept so a save does not drop them.
+  trigger_any: [],
+  trigger_exclude: [],
   high: 'block',
   medium: '',
   low: '',
@@ -25,6 +28,8 @@ function specToForm(spec) {
     trigger_operations: spec.trigger?.operations ?? [],
     trigger_tables: spec.trigger?.tables ?? [],
     trigger_resources: spec.trigger?.resources ?? [],
+    trigger_any: spec.trigger?.any ?? [],
+    trigger_exclude: spec.trigger?.exclude ?? [],
     high: spec.high ?? '',
     medium: spec.medium ?? '',
     low: spec.low ?? '',
@@ -42,6 +47,8 @@ function formToSpec(f, ruleName) {
   if (f.trigger_operations.length > 0) trigger.operations = f.trigger_operations
   if (f.trigger_tables.length > 0) trigger.tables = f.trigger_tables
   if (f.trigger_resources.length > 0) trigger.resources = f.trigger_resources
+  if (f.trigger_any.length > 0) trigger.any = f.trigger_any
+  if (f.trigger_exclude.length > 0) trigger.exclude = f.trigger_exclude
   if (Object.keys(trigger).length > 0) spec.trigger = trigger
   for (const level of ['high', 'medium', 'low']) {
     if (f[level] !== '') spec[level] = f[level]
@@ -100,8 +107,13 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
   const isHTTP = protocol.toLowerCase() === 'http'
   const operations = useMemo(() => operationsFor(protocol), [protocol])
   const actions = useMemo(() => analyzerActionsFor(), [])
+  // Exclude alone selects nothing, so it does not count as a trigger.
   const noTrigger =
-    form.trigger_operations.length === 0 && form.trigger_tables.length === 0 && form.trigger_resources.length === 0
+    form.trigger_operations.length === 0 &&
+    form.trigger_tables.length === 0 &&
+    form.trigger_resources.length === 0 &&
+    form.trigger_any.length === 0
+  const apiOnlyTrigger = form.trigger_any.length > 0 || form.trigger_exclude.length > 0
 
   const canSubmit = name.trim() !== '' && !submitting
   // Plus the stored ones, so a removed group can still be unselected.
@@ -175,6 +187,7 @@ export function useSidecarAiAnalyzerEditor({ rule: stored, ruleName, isEdit, tar
     operations,
     actions,
     noTrigger,
+    apiOnlyTrigger,
     canSubmit,
     submitting,
     save,
