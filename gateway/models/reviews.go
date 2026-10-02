@@ -462,9 +462,12 @@ func UpdateSidecarReview(db *gorm.DB, rev *Review, fromStatus ReviewStatusType, 
 		rev.ExpiresAt = SidecarReviewDeadline(now, rev.ApprovalTTLSec)
 	}
 	return db.Transaction(func(tx *gorm.DB) error {
+		if err := lockSidecarReviewTx(tx, rev.OrgID, rev.ID); err != nil {
+			return err
+		}
 		res := tx.Table("private.reviews").
-			Where("org_id = ? AND id = ? AND status = ? AND listener_name IS NOT NULL AND (expires_at IS NULL OR expires_at > ?)",
-				rev.OrgID, rev.ID, fromStatus, now).
+			Where("org_id = ? AND id = ? AND status = ? AND listener_name IS NOT NULL AND (expires_at IS NULL OR "+
+				sidecarInsideDeadline+")", rev.OrgID, rev.ID, fromStatus, now).
 			Updates(rev)
 		if res.Error != nil {
 			return res.Error
@@ -601,7 +604,7 @@ func GetLiveSidecarReview(db *gorm.DB, orgID, sidecarID, listenerName, ruleName,
 	err := db.Raw(sidecarReviewSelect+`
 	WHERE org_id = ? AND sidecar_id = ? AND listener_name = ?
 	AND access_request_rule_name = ? AND statement_hash = ? AND status NOT IN (?, ?, ?, ?)
-	AND (status NOT IN (?, ?) OR expires_at IS NULL OR expires_at > ?)`,
+	AND (status NOT IN (?, ?) OR expires_at IS NULL OR `+sidecarInsideDeadline+`)`,
 		orgID, sidecarID, listenerName, ruleName, statementHash,
 		ReviewStatusExecuted, ReviewStatusRejected, ReviewStatusRevoked, ReviewStatusExpired,
 		ReviewStatusPending, ReviewStatusApproved, now).
@@ -647,11 +650,14 @@ func ClaimApprovedSidecarReview(db *gorm.DB, orgID, reviewID string, now time.Ti
 	var claimed bool
 	var status string
 	err := db.Transaction(func(tx *gorm.DB) error {
+		if err := lockSidecarReviewTx(tx, orgID, reviewID); err != nil {
+			return err
+		}
 		res := tx.Exec(`
 		UPDATE private.reviews
 		SET status = ?
 		WHERE org_id = ? AND id = ? AND status = ? AND sidecar_id IS NOT NULL
-		AND (expires_at IS NULL OR expires_at > ?)`,
+		AND (expires_at IS NULL OR `+sidecarInsideDeadline+`)`,
 			ReviewStatusExecuted, orgID, reviewID, ReviewStatusApproved, now)
 		if res.Error != nil {
 			return res.Error
@@ -711,6 +717,16 @@ func CreateSidecarReview(db *gorm.DB, sess Session, rev *Review, display string)
 	return expired, nil
 }
 
+// sidecarInsideDeadline: expires_at is after both the bound time (the one ?) and the
+// database clock, read as the UTC wall time the column stores. A write runs it after
+// it locks the row, so a call that waited on the lock checks the clock after the wait.
+const sidecarInsideDeadline = `(expires_at > ? AND expires_at > (clock_timestamp() AT TIME ZONE 'UTC'))`
+
+// lockSidecarReviewTx locks one review before a deadline check reads the clock.
+func lockSidecarReviewTx(tx *gorm.DB, orgID, reviewID string) error {
+	return tx.Exec(`SELECT 1 FROM private.reviews WHERE org_id = ? AND id = ? FOR UPDATE`, orgID, reviewID).Error
+}
+
 // The scopes expireSidecarReviewsTx accepts. No input reaches the SQL text.
 const (
 	expireScopeReview    = `org_id = ? AND id = ?`
@@ -724,11 +740,16 @@ func expireSidecarReviewsTx(tx *gorm.DB, now time.Time, scope string, args ...an
 		return nil, fmt.Errorf("unknown expiry scope")
 	}
 	now = now.UTC()
+	err := tx.Exec(`SELECT 1 FROM private.reviews WHERE listener_name IS NOT NULL AND status IN (?, ?) AND `+
+		scope+` FOR UPDATE`, append([]any{ReviewStatusPending, ReviewStatusApproved}, args...)...).Error
+	if err != nil {
+		return nil, err
+	}
 	var ids []string
-	err := tx.Raw(`
+	err = tx.Raw(`
 	UPDATE private.reviews SET status = ?, statement_hash = NULL
 	WHERE listener_name IS NOT NULL AND status IN (?, ?)
-	AND expires_at IS NOT NULL AND expires_at <= ? AND `+scope+`
+	AND expires_at IS NOT NULL AND NOT (`+sidecarInsideDeadline+`) AND `+scope+`
 	RETURNING id`,
 		append([]any{ReviewStatusExpired, ReviewStatusPending, ReviewStatusApproved, now}, args...)...).
 		Scan(&ids).Error

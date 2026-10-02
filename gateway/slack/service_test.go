@@ -258,6 +258,33 @@ func TestUpdateReviewMessageTracking(t *testing.T) {
 		t.Errorf("fresh entry was not tracked")
 	}
 
+	// a sidecar review's limit can outlast the window: the window counts from
+	// the deadline, so an expiry recorded after it still finds the message
+	recent := time.Now().UTC().Add(-time.Hour)
+	longPast := time.Now().UTC().Add(-sentReviewRetention - time.Hour)
+	s.sentReviewItems["rev-ttl"] = []sentReviewMessage{{channelID: "C1", timestamp: "1.1", sentAt: stale, deadline: &recent}}
+	s.sentReviewItems["rev-ttl-old"] = []sentReviewMessage{{channelID: "C1", timestamp: "1.2", sentAt: stale, deadline: &longPast}}
+	s.settledReviews["rev-approved"] = settledReview{at: stale, deadline: &recent}
+	s.trackSentReviewMessage("rev-new-2", sentReviewMessage{channelID: "C2", timestamp: "2.1", sentAt: time.Now().UTC()})
+	if _, ok := s.sentReviewItems["rev-ttl"]; !ok {
+		t.Errorf("a message whose deadline passed an hour ago was evicted")
+	}
+	if _, ok := s.sentReviewItems["rev-ttl-old"]; ok {
+		t.Errorf("a message past its deadline and the window survived eviction")
+	}
+	if _, ok := s.settledReviews["rev-approved"]; !ok {
+		t.Errorf("an approval's messages were evicted inside the window after its deadline")
+	}
+	approvalDeadline := time.Now().UTC().Add(time.Hour)
+	s.sentReviewItems["rev-approve"] = []sentReviewMessage{{channelID: "C1", timestamp: "1.3", sentAt: time.Now().UTC()}}
+	if err := s.UpdateReviewMessage(&UpdateReviewMessageRequest{ReviewID: "rev-approve", IsApproved: true,
+		ExpiresAt: &approvalDeadline}); err != nil {
+		t.Fatalf("tracked approval failed: %v", err)
+	}
+	if d := s.settledReviews["rev-approve"].deadline; d == nil || !d.Equal(approvalDeadline) {
+		t.Errorf("an approval kept deadline %v, want %v", d, approvalDeadline)
+	}
+
 	// an expiry is terminal: it consumes the entry, and a late post gets it
 	updateCalls = 0
 	s.sentReviewItems["rev-exp"] = []sentReviewMessage{{channelID: "C1", timestamp: "1.0", sentAt: time.Now().UTC()}}
@@ -438,6 +465,25 @@ func TestRebuildReviewBlocksApprovedShowsTheApprovalDeadline(t *testing.T) {
 
 // The decision deadline is one context block right after the metadata; no
 // other block changes.
+// A posted sidecar review keeps its deadline, so its tracking window counts from it.
+func TestPostMessageReviewTracksTheDeadline(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"ok":true,"channel":"C1","ts":"1.0"}`)
+	}))
+	defer srv.Close()
+	s := NewWithAPIClient(slack.New("xoxb-test", slack.OptionAPIURL(srv.URL+"/")), "T1", "")
+	msg := gatewayReviewRequest()
+	msg.ExpiresAt = &reviewDeadline
+	if res := s.PostMessageReview(msg); res.Posted != 1 {
+		t.Fatalf("post result = %+v, want one post", res)
+	}
+	items := s.sentReviewItems[msg.ID]
+	if len(items) != 1 || items[0].deadline == nil || !items[0].deadline.Equal(reviewDeadline) {
+		t.Fatalf("tracked %+v, want the deadline %v", items, reviewDeadline)
+	}
+}
+
 func TestPostMessageReviewShowsTheDeadline(t *testing.T) {
 	golden, err := os.ReadFile(gatewayReviewBlocksGolden)
 	if err != nil {

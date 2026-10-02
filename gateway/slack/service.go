@@ -52,6 +52,16 @@ type settledReview struct {
 	// items are the messages an approval rewrote, kept so a revoke or an expiry
 	// can rewrite them again. Empty for every other terminal state.
 	items []sentReviewMessage
+	// deadline is the approval deadline, so the items outlive it.
+	deadline *time.Time
+}
+
+// trackedUntil: from + sentReviewRetention, counted from the deadline when it is later.
+func trackedUntil(from time.Time, deadline *time.Time) time.Time {
+	if deadline != nil && deadline.After(from) {
+		from = *deadline
+	}
+	return from.Add(sentReviewRetention)
 }
 
 // instances tracks the running SlackService per organization. Registered by
@@ -93,8 +103,9 @@ const (
 	// maxAITitleSize bounds the model-generated analysis title so it cannot
 	// push the analysis section past Slack's 3000-char text limit.
 	maxAITitleSize = 200
-	// sentReviewRetention bounds how long a posted review message is tracked
-	// for out-of-band updates. Reviews expire well before this.
+	// sentReviewRetention is how long a posted review message stays tracked for
+	// out-of-band updates, past the later of its post and the review's deadline
+	// (trackedUntil). A gateway review has no deadline.
 	sentReviewRetention = 48 * time.Hour
 	// reviewDeadlineBlockID marks the decision deadline block, so a terminal rewrite drops it.
 	reviewDeadlineBlockID = "review-deadline"
@@ -463,6 +474,7 @@ func (s *SlackService) PostMessageReview(msg *MessageReviewRequest) ReviewPostRe
 				eventKind: eventKind,
 				blocks:    blocks,
 				sentAt:    time.Now().UTC(),
+				deadline:  msg.ExpiresAt,
 			}
 			// Tracked at once, so a click on it rewrites every channel posted
 			// so far. One that settled while this post was in flight is
@@ -492,6 +504,9 @@ type sentReviewMessage struct {
 	// shared across channels. Updates rebuild a fresh slice from it.
 	blocks []slack.Block
 	sentAt time.Time
+	// deadline is a sidecar review's decision deadline, so an expiry recorded
+	// after it still finds the message. Nil on a gateway review.
+	deadline *time.Time
 }
 
 // trackSentReviewMessage adds one posted message to the review's tracked set.
@@ -506,12 +521,12 @@ func (s *SlackService) trackSentReviewMessage(reviewID string, m sentReviewMessa
 	defer s.sentReviewMu.Unlock()
 	// lazy eviction keeps the maps bounded without a janitor goroutine
 	for id, items := range s.sentReviewItems {
-		if len(items) > 0 && now.Sub(items[0].sentAt) > sentReviewRetention {
+		if len(items) > 0 && now.After(trackedUntil(items[0].sentAt, items[0].deadline)) {
 			delete(s.sentReviewItems, id)
 		}
 	}
 	for id, sr := range s.settledReviews {
-		if now.Sub(sr.at) > sentReviewRetention {
+		if now.After(trackedUntil(sr.at, sr.deadline)) {
 			delete(s.settledReviews, id)
 		}
 	}
@@ -599,6 +614,7 @@ func (s *SlackService) UpdateReviewMessage(req *UpdateReviewMessageRequest) erro
 		settled := settledReview{req: req, at: time.Now().UTC()}
 		if req.IsApproved {
 			settled.items = items
+			settled.deadline = req.ExpiresAt
 		}
 		s.settledReviews[req.ReviewID] = settled
 	}

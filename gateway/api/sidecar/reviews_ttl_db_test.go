@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/aws/smithy-go/ptr"
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
@@ -98,6 +99,7 @@ func TestSidecarReviewTTLRoutes(t *testing.T) {
 	t.Run("PostReviewNeverReleasesAnExpiredApproval", testPostReviewNeverReleasesAnExpiredApproval)
 	t.Run("ClaimReviewAnswersExpired", testClaimReviewAnswersExpired)
 	t.Run("ClaimAfterALateApprovalReleases", testClaimAfterALateApprovalReleases)
+	t.Run("AStaleClaimAnswersExpired", testAStaleClaimAnswersExpired)
 	t.Run("GetReviewReportsExpiryWithoutWriting", testGetReviewReportsExpiryWithoutWriting)
 	t.Run("PutReviewRefusesAnExpiredReview", testPutReviewRefusesAnExpiredReview)
 	t.Run("PutReviewAfterTheRowExpired", testPutReviewAfterTheRowExpired)
@@ -185,6 +187,33 @@ func testClaimReviewAnswersExpired(t *testing.T) {
 			assert.JSONEq(t, before, reviewSnapshot(t, snap), "a second claim writes nothing")
 		})
 	}
+}
+
+// A claim reads the review and its time, then can wait on the row lock past the
+// deadline. The handler gets that read: the database clock refuses the claim,
+// and the answer is EXPIRED, never APPROVED with forward false.
+func testAStaleClaimAnswersExpired(t *testing.T) {
+	sc := seedReviewingSidecar(t, "stale-claimer")
+	setRuleTTLs(t, ptr.Int(900), ptr.Int(600))
+	first := fileReview(t, sc, uniqueStatement())
+	approveAsDBA(t, first.Review.ID)
+
+	rev, err := models.GetSidecarReview(models.DB, sc.OrgID, sc.ID, first.Review.ID)
+	require.NoError(t, err)
+	require.Equal(t, models.ReviewStatusApproved, rev.Status, "read inside the deadline")
+	// Bound before the deadline pastDeadline sets a minute ago.
+	now := time.Now().UTC().Add(-2 * time.Minute)
+	pastDeadline(t, first.Review.ID)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	answerExistingReview(c, sc, rev.ListenerName.String, rev, now)
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	resp := decodeReviewResponse(t, rec)
+	assert.False(t, resp.Forward, "a claim past the deadline never releases the statement")
+	assert.Equal(t, openapi.ReviewStatusExpired, resp.Review.Status)
+	assert.Equal(t, string(models.ReviewStatusExpired), readStoredReview(t, first.Review.ID).Status)
 }
 
 // An approval that checked its deadline in time commits after the claim read

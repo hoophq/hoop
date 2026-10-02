@@ -161,7 +161,7 @@ func PostReview(c *gin.Context) {
 			req.ListenerName, rule.Name, statementHash, now)
 		switch {
 		case err == nil:
-			answerExistingReview(c, sidecar, req.ListenerName, rev)
+			answerExistingReview(c, sidecar, req.ListenerName, rev, time.Now().UTC())
 			return
 		case !errors.Is(err, gorm.ErrRecordNotFound):
 			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed loading the sidecar review")
@@ -240,7 +240,7 @@ func ClaimReview(c *gin.Context) {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed loading the sidecar review")
 		return
 	}
-	answerExistingReview(c, sidecar, rev.ListenerName.String, rev)
+	answerExistingReview(c, sidecar, rev.ListenerName.String, rev, time.Now().UTC())
 }
 
 // GetReview
@@ -339,8 +339,7 @@ func answerFiledReview(c *gin.Context, sidecar *models.Sidecar, req openapi.Side
 
 // answerExistingReview answers a retry, or a claim by id, from the filed review. Only the
 // claim's winner of an APPROVED review forwards; a lapsed one is expired; others return as they stand.
-func answerExistingReview(c *gin.Context, sidecar *models.Sidecar, listenerName string, rev *models.Review) {
-	now := time.Now().UTC()
+func answerExistingReview(c *gin.Context, sidecar *models.Sidecar, listenerName string, rev *models.Review, now time.Time) {
 	forward := false
 	if rev.Status == models.ReviewStatusApproved {
 		var ok bool
@@ -349,7 +348,10 @@ func answerExistingReview(c *gin.Context, sidecar *models.Sidecar, listenerName 
 		}
 	}
 
-	if !forward && lapsedSidecarReview(rev, now) {
+	// A lost claim leaves the row APPROVED only when the deadline refused it, by
+	// the database clock, which can pass it while the request waits on the lock.
+	refusedByDeadline := rev.Status == models.ReviewStatusApproved
+	if !forward && (refusedByDeadline || lapsedSidecarReview(rev, now)) {
 		expired, status, err := models.ExpireSidecarReview(models.DB, sidecar.OrgID, rev.ID, now)
 		if err != nil {
 			httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed expiring the sidecar review")

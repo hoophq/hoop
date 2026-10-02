@@ -127,6 +127,7 @@ func TestSidecarReviewTTL(t *testing.T) {
 	t.Run("NoApprovalTTLClearsTheDeadline", testNoApprovalTTLClearsTheDeadline)
 	t.Run("ClaimNeverReleasesAnExpiredReview", testClaimNeverReleasesAnExpiredReview)
 	t.Run("DeadlinesUseTheBoundClock", testDeadlinesUseTheBoundClock)
+	t.Run("DeadlinesUseTheDatabaseClock", testDeadlinesUseTheDatabaseClock)
 	t.Run("ExpireSidecarReview", testExpireSidecarReview)
 	t.Run("UpdateSidecarReviewDeadline", testUpdateSidecarReviewDeadline)
 	t.Run("ReadsReportAnExpiredSidecarReview", testReadsReportAnExpiredSidecarReview)
@@ -496,6 +497,46 @@ func testExpireSidecarReview(t *testing.T) {
 		_, _, err := models.ExpireSidecarReview(models.DB, testOrgID, uuid.NewString(), time.Now().UTC())
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			t.Fatalf("err = %v, want gorm.ErrRecordNotFound", err)
+		}
+	})
+}
+
+// A call binds its time, then can wait on the row lock past the deadline. A
+// stale bound time stands for that wait: each check also reads the database clock.
+func testDeadlinesUseTheDatabaseClock(t *testing.T) {
+	sc := seedSidecar(t, "db-clock")
+	lapsed := timeAt(-time.Minute)
+	stale := time.Now().UTC().Add(-2 * time.Minute)
+
+	t.Run("a claim", func(t *testing.T) {
+		rev := seedApprovedSidecarReview(t, sc, "DELETE FROM claim_clock;")
+		setDeadline(t, rev.ID, lapsed)
+		claimed, status, err := models.ClaimApprovedSidecarReview(models.DB, testOrgID, rev.ID, stale)
+		if err != nil || claimed || status != models.ReviewStatusApproved {
+			t.Fatalf("a stale claim = (%v, %s, %v), want (false, APPROVED)", claimed, status, err)
+		}
+	})
+	t.Run("a decision", func(t *testing.T) {
+		rev := seedSidecarReview(t, sc, "DELETE FROM decision_clock;")
+		setDeadline(t, rev.ID, lapsed)
+		err := models.UpdateSidecarReview(models.DB, approved(loadSidecarReview(t, sc, rev.ID)), models.ReviewStatusPending, stale)
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			t.Fatalf("a stale decision returned %v, want gorm.ErrRecordNotFound", err)
+		}
+		if got := readStored(t, rev.ID).Status; got != string(models.ReviewStatusPending) {
+			t.Fatalf("a stale decision wrote %s", got)
+		}
+	})
+	t.Run("a lookup and an expiry", func(t *testing.T) {
+		const statement = "DELETE FROM expiry_clock;"
+		rev := seedSidecarReview(t, sc, statement)
+		setDeadline(t, rev.ID, lapsed)
+		if got, err := liveReview(sc, statement, stale); !errors.Is(err, gorm.ErrRecordNotFound) {
+			t.Fatalf("a stale lookup found %+v, err=%v", got, err)
+		}
+		expired, status, err := models.ExpireSidecarReview(models.DB, testOrgID, rev.ID, stale)
+		if err != nil || !expired || status != models.ReviewStatusExpired {
+			t.Fatalf("a stale expiry = (%v, %s, %v), want (true, EXPIRED)", expired, status, err)
 		}
 	})
 }
