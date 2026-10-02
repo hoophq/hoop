@@ -86,6 +86,10 @@ func Allow() Verdict { return Verdict{} }
 const (
 	SourceOPA      = "opa"
 	SourceAnalyzer = "analyzer"
+
+	// SourceReview is a Chain refusal over the review step itself, such as
+	// two producers asking for one statement.
+	SourceReview = "review"
 )
 
 // Deny builds a denial carrying a user-facing message. The caller sets
@@ -179,8 +183,10 @@ type EvalContext struct {
 	// after every evaluator allowed (ADR-0024). depth is how many Chains
 	// are evaluating on this context; only the outermost runs the review,
 	// so a nested chain cannot run it before a decision placed after it.
-	review *ReviewRequest
-	depth  int
+	// requests counts every ask: more than one denies, see RequestReview.
+	review   *ReviewRequest
+	requests int
+	depth    int
 }
 
 // ReviewRequest asks that a human release the statement before it runs.
@@ -199,13 +205,21 @@ type ReviewRequest struct {
 }
 
 // RequestReview records r for the outermost Chain to run last. False means
-// no Chain owns this context, or another producer already asked: the caller
-// then resolves r itself, as the only safe order left to it.
+// no Chain owns this context: the caller then resolves r itself, as the only
+// safe order left to it.
+//
+// A second ask is accepted and denies the statement at the chain's end, with
+// nothing filed. Holding it in place would file and spend an approval before
+// a later decision could deny, and running both reviews in turn would spend
+// the first approval before the second could be rejected.
 func (e *EvalContext) RequestReview(r ReviewRequest) bool {
-	if e == nil || e.depth == 0 || e.review != nil {
+	if e == nil || e.depth == 0 {
 		return false
 	}
-	e.review = &r
+	e.requests++
+	if e.review == nil {
+		e.review = &r
+	}
 	return true
 }
 
@@ -1160,7 +1174,16 @@ func (c Chain) EvaluateWith(stmt inspect.Statement, ec *EvalContext) Verdict {
 		errs = errors.Join(errs, v.Err)
 	}
 	if r := ec.review; r != nil && ec.depth == 1 {
-		ec.review = nil
+		requests := ec.requests
+		ec.review, ec.requests = nil, 0
+		if requests > 1 {
+			v := Deny("review", "more than one evaluator asked for a human review "+
+				"of this statement; denying")
+			v.Source = SourceReview
+			v.Err = errs
+			v.Annotations = ec.Annotations
+			return v
+		}
 		v := r.Resolve()
 		ec.Annotations = mergeAnnotations(ec.Annotations, v.Annotations)
 		v.Err = errors.Join(errs, v.Err)

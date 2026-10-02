@@ -89,3 +89,22 @@ func TestDecideSeesTheClientReviewMode(t *testing.T) {
 		t.Fatalf("decide saw input.review = %v", *review)
 	}
 }
+
+// The case behind the policy guard, with the real hold: two holding analyzers
+// on one statement file nothing, before or after decide.
+func TestTwoHoldingAnalyzersFileNothing(t *testing.T) {
+	rev := &recordingReviewer{res: analyzer.ReviewResult{
+		Forward: true, ID: "9f97", Status: "EXECUTED",
+	}}
+	opa, _ := decideOPA(t, `{"result": {"allow": true}}`)
+	chain := policy.Chain{holdingEvaluator(t, rev, nil), holdingEvaluator(t, rev, nil), opa}
+
+	v := chain.EvaluateWith(deleteStatement(), &policy.EvalContext{})
+
+	if !v.Denied {
+		t.Fatal("two holds on one statement were forwarded")
+	}
+	if got := rev.statements(); len(got) != 0 {
+		t.Fatalf("filed %q", got)
+	}
+}

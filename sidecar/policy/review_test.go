@@ -148,15 +148,22 @@ func TestARequestOutsideAChainIsRefused(t *testing.T) {
 	}
 }
 
-func TestASecondReviewRequestIsRefused(t *testing.T) {
+// Two producers asking for one statement deny with nothing filed: holding the
+// second in place would spend its approval before a later decision could deny.
+func TestASecondReviewRequestDeniesWithNothingFiled(t *testing.T) {
 	var log steps
 	first, second := &requester{log: &log}, &requester{log: &log}
+	decide := &logged{log: &log, name: "decide"}
 
-	policy.Chain{first, second}.Evaluate(stmt("DELETE FROM t", inspect.OpDelete, "t"))
+	v := policy.Chain{first, second, decide}.Evaluate(stmt("DELETE FROM t", inspect.OpDelete, "t"))
 
-	if !first.accepted || second.accepted {
-		t.Fatalf("accepted = %v, %v; want only the first", first.accepted, second.accepted)
+	if !first.accepted || !second.accepted {
+		t.Fatalf("accepted = %v, %v; a refused ask would hold in place", first.accepted, second.accepted)
 	}
+	if !v.Denied || v.Source != policy.SourceReview {
+		t.Fatalf("two review requests did not deny: %+v", v)
+	}
+	sameSteps(t, log, "analyzer", "analyzer", "decide")
 }
 
 // input.review rides the decide phase only. A gate runs before the producer
