@@ -297,27 +297,35 @@ func AdoptSidecarConfiguration(db *gorm.DB, orgID, id string, configuration Side
 }
 
 // DeleteSidecarByNameOrID hard deletes the row and returns its id, so the
-// caller can evict any process-local runtime state.
+// caller can evict any process-local runtime state. The connections that
+// mirror its listeners go first: the cascade would take them anyway, but not
+// the resources they alone used.
 func DeleteSidecarByNameOrID(db *gorm.DB, orgID, nameOrID string) (string, error) {
 	identifierClause := "name = ?"
 	if _, err := uuid.Parse(nameOrID); err == nil {
 		identifierClause = "id = ?"
 	}
 
-	var deletedID string
-	err := db.Raw(`
-	DELETE FROM private.sidecars
-	WHERE org_id = ? AND `+identifierClause+`
-	RETURNING id`, orgID, nameOrID).
-		Scan(&deletedID).
-		Error
+	var id string
+	err := db.Raw(`SELECT id FROM private.sidecars WHERE org_id = ? AND `+identifierClause, orgID, nameOrID).
+		Scan(&id).Error
 	if err != nil {
 		return "", err
 	}
-	if deletedID == "" {
+	if id == "" {
 		return "", ErrNotFound
 	}
-	return deletedID, nil
+	if err := SyncSidecarConnectionsTx(db, orgID, id, nil); err != nil {
+		return "", err
+	}
+	res := db.Exec(`DELETE FROM private.sidecars WHERE org_id = ? AND id = ?`, orgID, id)
+	if res.Error != nil {
+		return "", res.Error
+	}
+	if res.RowsAffected == 0 {
+		return "", ErrNotFound
+	}
+	return id, nil
 }
 
 // RecordSidecarHandshake stores one handshake: what the sidecar said about

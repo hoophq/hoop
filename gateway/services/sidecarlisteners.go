@@ -8,7 +8,28 @@ import (
 	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/sidecar/inspect"
+	"gorm.io/gorm"
 )
+
+// ErrSidecarListenerInvalid is a listener no connection can mirror: its
+// protocol has no connection type, or its composed name fails the connection
+// name rule. The admin's to fix, so it reads 422.
+type ErrSidecarListenerInvalid struct{ Err error }
+
+func (e ErrSidecarListenerInvalid) Error() string { return e.Err.Error() }
+func (e ErrSidecarListenerInvalid) Unwrap() error { return e.Err }
+
+// SyncSidecarListenerConnectionsTx writes the mirror of every listener of sc,
+// in the transaction that stored its configuration. Every write of the
+// configuration must call it: a listener without a mirror is one no rule can
+// bind to.
+func SyncSidecarListenerConnectionsTx(tx *gorm.DB, sc *models.Sidecar) error {
+	mirrors, err := ProjectListeners(sc.OrgID, sc)
+	if err != nil {
+		return ErrSidecarListenerInvalid{err}
+	}
+	return models.SyncSidecarConnectionsTx(tx, sc.OrgID, sc.ID, mirrors)
+}
 
 // listenerConnectionKind is the connection type and subtype a listener
 // protocol projects to. A protocol absent here is an error, never a default:
