@@ -15,7 +15,8 @@ import (
 )
 
 // ErrSidecarListenerInvalid is a listener no connection can mirror: its
-// protocol has no connection type. The admin's to fix, so it reads 422.
+// protocol has no connection type, or its name cannot address it. The admin's
+// to fix, so it reads 422.
 type ErrSidecarListenerInvalid struct{ Err error }
 
 func (e ErrSidecarListenerInvalid) Error() string { return e.Err.Error() }
@@ -124,9 +125,12 @@ var listenerConnectionKind = map[inspect.Protocol]struct{ typ, subtype string }{
 // that works today.
 //
 // A listener with no name, with the name of an earlier listener, or with a
-// name wider than connections.sidecar_listener has no mirror. Rules bind to a
-// listener by its name, so none of them can be addressed, and the daemon
-// accepts all three.
+// name wider than connections.sidecar_listener is refused. Its mirror is how
+// every feature reads it, so it must have one: a listener left out would be
+// left out of those features with no error. Writes already refuse the first
+// two for every org (ValidateListenerNames); here they guard rows stored
+// before that check. The third is refused only with the flag on, and every
+// message names the listener by position.
 //
 // Every access mode is disabled: the gateway has no route to a sidecar, so a
 // client connects to the listener itself, and exec, runbooks and the schema
@@ -134,16 +138,24 @@ var listenerConnectionKind = map[inspect.Protocol]struct{ typ, subtype string }{
 func ProjectListeners(orgID string, sc *models.Sidecar) ([]models.Connection, error) {
 	listeners := sc.Configuration.Listeners
 	out := make([]models.Connection, 0, len(listeners))
-	seen := make(map[string]bool, len(listeners))
-	for _, l := range listeners {
+	seen := make(map[string]int, len(listeners))
+	for i, l := range listeners {
 		kind, ok := listenerConnectionKind[inspect.Protocol(l.Protocol)]
 		if !ok {
 			return nil, fmt.Errorf("listener %q: no connection type for protocol %q", l.Name, l.Protocol)
 		}
-		if l.Name == "" || seen[l.Name] || utf8.RuneCountInString(l.Name) > models.MaxSidecarListenerNameLength {
-			continue
+		if l.Name == "" {
+			return nil, fmt.Errorf("listeners[%d]: no name; name the listener to manage it as a resource", i)
 		}
-		seen[l.Name] = true
+		if n := utf8.RuneCountInString(l.Name); n > models.MaxSidecarListenerNameLength {
+			return nil, fmt.Errorf("listeners[%d]: the name is %d characters, over %d; shorten it to manage it as a resource",
+				i, n, models.MaxSidecarListenerNameLength)
+		}
+		if first, ok := seen[l.Name]; ok {
+			return nil, fmt.Errorf("listeners[%d]: the name %q repeats listeners[%d]; give each listener its own name to manage it as a resource",
+				i, l.Name, first)
+		}
+		seen[l.Name] = i
 		name := sc.Name + "-" + l.Name
 		if apivalidation.ValidateResourceName(name) != nil || len(name) > models.MaxSidecarMirrorNameLength {
 			name = models.SidecarMirrorFallbackName(name, sc.ID, l.Name)
