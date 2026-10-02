@@ -102,13 +102,14 @@ func TestTheReviewStatusPathAnswersFromThePlane(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			answer := reviewStatusAnswer(ListenerConfig{Protocol: "http"}, "api", tc.reviews, quiet)
-			raw := answer(context.Background(), tc.stmt)
+			reply := answer(tc.stmt)
 			if tc.passThru {
-				if raw != nil {
-					t.Fatalf("the lane answered a route it does not own: %q", raw)
+				if reply != nil {
+					t.Fatalf("the lane claimed a route it does not own: %s", tc.stmt.HTTP.Path)
 				}
 				return
 			}
+			raw := reply(context.Background())
 			resp, body := readLaneReply(t, raw, tc.stmt.HTTP.Method)
 			if resp.StatusCode != tc.code {
 				t.Errorf("status = %d, want %d", resp.StatusCode, tc.code)

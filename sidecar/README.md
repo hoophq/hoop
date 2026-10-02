@@ -1298,7 +1298,10 @@ curl -s http://relay:18080/.well-known/hoop/reviews/9f97…
 
 The whole `/.well-known/hoop/` prefix belongs to the sidecar on every http
 lane and never reaches the upstream, so a route there cannot shadow one the
-upstream serves. GET and HEAD only. A sidecar with no control plane answers
+upstream serves. GET and HEAD only. It is answered only as the first request
+on a connection: behind another one, the lane closes the connection
+unanswered, because HTTP/1.1 pairs responses by order. curl and Go clients
+resend on a fresh connection. A sidecar with no control plane answers
 503. Like the MCP endpoint, it needs no credential: it answers by review id
 only, and never with the statement. Other protocols read the status over
 MCP.

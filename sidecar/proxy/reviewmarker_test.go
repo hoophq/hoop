@@ -119,11 +119,11 @@ func TestALaneAnswerNeverReachesTheUpstream(t *testing.T) {
 		// A lane that denies everything still answers its own route.
 		Policy:     fixedVerdict{policy.Deny("rule", "nope")},
 		DenyWriter: proxy.ProtocolDenyWriter{},
-		Answer: func(_ context.Context, stmt inspect.Statement) []byte {
-			if stmt.HTTP.Path == "/.well-known/hoop/reviews/x" {
-				return reply
+		Answer: func(stmt inspect.Statement) func(context.Context) []byte {
+			if stmt.HTTP.Path != "/.well-known/hoop/reviews/x" {
+				return nil
 			}
-			return nil
+			return func(context.Context) []byte { return reply }
 		},
 	})
 	c, err := net.Dial("tcp", srv.Addr().String())
@@ -147,5 +147,43 @@ func TestALaneAnswerNeverReachesTheUpstream(t *testing.T) {
 	}
 	if _, _, denied := srv.Stats(); denied != 0 {
 		t.Errorf("the answer counted %d denials, want none", denied)
+	}
+}
+
+// A reserved route pipelined behind another request ends the connection with
+// nothing written, so no reply can overtake the earlier response.
+func TestAPipelinedLaneAnswerHangsUp(t *testing.T) {
+	up := newEchoUpstream(t, []byte("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"))
+	srv := startServer(t, proxy.Config{
+		Upstream:   up.addr(),
+		Protocol:   inspect.HTTP,
+		Connection: "api",
+		DenyWriter: proxy.ProtocolDenyWriter{},
+		Answer: func(stmt inspect.Statement) func(context.Context) []byte {
+			if stmt.HTTP.Path != "/.well-known/hoop/reviews/x" {
+				return nil
+			}
+			return func(context.Context) []byte { return []byte("HTTP/1.1 200 OK\r\n\r\n") }
+		},
+	})
+	c, err := net.Dial("tcp", srv.Addr().String())
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer c.Close()
+	if _, err := c.Write([]byte("GET /api/x HTTP/1.1\r\nHost: h\r\n\r\n" +
+		"GET /.well-known/hoop/reviews/x HTTP/1.1\r\nHost: h\r\n\r\n")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	_ = c.SetReadDeadline(time.Now().Add(3 * time.Second))
+	got, err := io.ReadAll(c)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("the client read %q, want the connection closed unanswered", got)
+	}
+	if n := len(up.got()); n != 0 {
+		t.Errorf("the upstream received %d bytes", n)
 	}
 }

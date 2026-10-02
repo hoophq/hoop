@@ -123,7 +123,7 @@ type Config struct {
 
 	// Answer replies to a request on a route the sidecar reserves; see
 	// gate.Config.Answer. Optional, and read on http lanes only.
-	Answer func(ctx context.Context, stmt inspect.Statement) []byte
+	Answer func(stmt inspect.Statement) func(ctx context.Context) []byte
 
 	// IdentityFn derives the caller's identity from the accepted connection.
 	// Optional; the default records only the peer address, producing an
@@ -902,9 +902,12 @@ func (s *Server) pump(
 				log.Warn("inspection reported an error", "direction", string(dir), "error", d.Err)
 			}
 
-			// The lane answered a route it owns. Nothing was denied, so
-			// nothing is counted; the reply ends the connection the way a
-			// deny frame does, since it says Connection: close.
+			// The lane answered a route it owns, or refused to answer it
+			// out of order. Nothing was denied, so nothing is counted; the
+			// connection ends the way it does after a deny frame.
+			if d.Hangup {
+				return
+			}
 			if len(d.Reply) > 0 {
 				_ = src.SetWriteDeadline(time.Now().Add(5 * time.Second))
 				_, _ = src.Write(d.Reply)

@@ -66,48 +66,57 @@ const reviewStatusTimeout = 10 * time.Second
 // reviews is nil in a process with no control plane. The prefix stays
 // reserved there, answering 503, so whether a path reaches the upstream never
 // depends on how the sidecar was configured.
-func reviewStatusAnswer(lc ListenerConfig, listener string, reviews ReviewStatusReader, log *slog.Logger) func(context.Context, inspect.Statement) []byte {
+func reviewStatusAnswer(lc ListenerConfig, listener string, reviews ReviewStatusReader, log *slog.Logger) func(inspect.Statement) func(context.Context) []byte {
 	if inspect.Protocol(lc.Protocol) != inspect.HTTP {
 		return nil
 	}
-	return func(ctx context.Context, stmt inspect.Statement) []byte {
-		if stmt.HTTP == nil || !strings.HasPrefix(stmt.HTTP.Path, ReservedPathPrefix) {
+	return func(stmt inspect.Statement) func(context.Context) []byte {
+		if !strings.HasPrefix(stmt.HTTP.Path, ReservedPathPrefix) {
 			return nil
 		}
-		head := stmt.HTTP.Method == http.MethodHead
-		if stmt.HTTP.Method != http.MethodGet && !head {
-			return laneReply(http.StatusMethodNotAllowed, false, http.Header{"Allow": {"GET, HEAD"}},
-				message("only GET and HEAD are served under "+ReservedPathPrefix))
+		return func(ctx context.Context) []byte {
+			return answerReviewStatus(ctx, stmt.HTTP, listener, reviews, log)
 		}
-		id, ok := strings.CutPrefix(stmt.HTTP.Path, ReviewStatusPath)
-		if !ok || id == "" {
-			return laneReply(http.StatusNotFound, head, nil, message("not found"))
-		}
-		if reviews == nil {
-			return laneReply(http.StatusServiceUnavailable, head, nil,
-				message("review status comes from the control plane, and this sidecar has none"))
-		}
-
-		ctx, cancel := context.WithTimeout(ctx, reviewStatusTimeout)
-		defer cancel()
-		rev, err := reviews.ReviewStatus(ctx, id)
-		if err == nil && rev.ListenerName != listener {
-			err = ErrReviewNotFound
-		}
-		switch {
-		case errors.Is(err, ErrReviewNotFound):
-			return laneReply(http.StatusNotFound, head, nil, message("review not found on this sidecar"))
-		case errors.Is(err, ErrPlaneTooOld):
-			return laneReply(http.StatusBadGateway, head, nil, message(err.Error()))
-		case err != nil:
-			// The cause can name the plane's address, which a data port
-			// has no reason to tell its callers. The log keeps it.
-			log.Warn("review status read failed", "review", id, "error", err)
-			return laneReply(http.StatusBadGateway, head, nil,
-				message("the control plane could not report the review"))
-		}
-		return laneReply(http.StatusOK, head, nil, laneReview{ReviewStatus: rev, Next: ReviewNext(rev.Status)})
 	}
+}
+
+// answerReviewStatus renders the reply to one request under the reserved
+// prefix. It is the only part that reads the plane.
+func answerReviewStatus(ctx context.Context, req *inspect.HTTPDetail, listener string,
+	reviews ReviewStatusReader, log *slog.Logger) []byte {
+	head := req.Method == http.MethodHead
+	if req.Method != http.MethodGet && !head {
+		return laneReply(http.StatusMethodNotAllowed, false, http.Header{"Allow": {"GET, HEAD"}},
+			message("only GET and HEAD are served under "+ReservedPathPrefix))
+	}
+	id, ok := strings.CutPrefix(req.Path, ReviewStatusPath)
+	if !ok || id == "" {
+		return laneReply(http.StatusNotFound, head, nil, message("not found"))
+	}
+	if reviews == nil {
+		return laneReply(http.StatusServiceUnavailable, head, nil,
+			message("review status comes from the control plane, and this sidecar has none"))
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, reviewStatusTimeout)
+	defer cancel()
+	rev, err := reviews.ReviewStatus(ctx, id)
+	if err == nil && rev.ListenerName != listener {
+		err = ErrReviewNotFound
+	}
+	switch {
+	case errors.Is(err, ErrReviewNotFound):
+		return laneReply(http.StatusNotFound, head, nil, message("review not found on this sidecar"))
+	case errors.Is(err, ErrPlaneTooOld):
+		return laneReply(http.StatusBadGateway, head, nil, message(err.Error()))
+	case err != nil:
+		// The cause can name the plane's address, which a data port
+		// has no reason to tell its callers. The log keeps it.
+		log.Warn("review status read failed", "review", id, "error", err)
+		return laneReply(http.StatusBadGateway, head, nil,
+			message("the control plane could not report the review"))
+	}
+	return laneReply(http.StatusOK, head, nil, laneReview{ReviewStatus: rev, Next: ReviewNext(rev.Status)})
 }
 
 func message(m string) any { return map[string]string{"message": m} }
