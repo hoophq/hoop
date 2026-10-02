@@ -19,7 +19,8 @@ type ruleSwapper interface {
 	swapLane(ln lane, drained func())
 }
 
-// relayRules adapts proxy.Server, whose exported SwapRules takes the pair.
+// relayRules adapts proxy.Server. The codec factory swaps with the rules;
+// see newHTTPCodec.
 //
 // proxy.Server does not report when a connection that captured the old rules
 // closes, so drained runs at once: a relay connection still open across a
@@ -27,7 +28,7 @@ type ruleSwapper interface {
 type relayRules struct{ srv *proxy.Server }
 
 func (r relayRules) swapLane(ln lane, drained func()) {
-	r.srv.SwapRules(ln.policy, ln.masker)
+	r.srv.SwapLane(ln.policy, ln.masker, ln.codecFactory)
 	drained()
 }
 

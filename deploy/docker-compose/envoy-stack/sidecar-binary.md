@@ -557,12 +557,12 @@ recognizing the value, and the detector deliberately refuses obvious fixtures
 like `123-45-6789`. Use a column rule when the protocol names the value, an
 entity rule when it does not.
 
-**The analyzer on an HTTP lane sees what the `http:` block exposes.** The
-codec exposes no body and no header by default, so a POST reaches the model
-as its request line alone until `capture_body: true`, and a GET carries only
-its path until `headers:` lists what else to show. The same block on a
-postgres lane needs nothing extra, because the statement text is there
-either way.
+**The analyzer on an HTTP lane sees what the `http:` block exposes.** Both
+keys are optional. Without them a POST is judged from its request line and a
+GET from its path; `capture_body: true` adds the payload and `headers:` the
+listed headers. A lane that holds for review captures the request body by
+itself. The same block on a postgres lane needs nothing extra, because the
+statement text is there either way.
 
 ---
 

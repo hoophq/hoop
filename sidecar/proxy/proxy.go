@@ -150,7 +150,7 @@ type Config struct {
 	// CodecFactory overrides how each connection's Gate builds its codecs.
 	// Nil uses the registry. See gate.Config.CodecFactory: it exists so a
 	// lane can turn on HTTP body capture, which the argument-free registry
-	// factory cannot express.
+	// factory cannot express. SwapLane replaces it.
 	CodecFactory func() inspect.Codec
 
 	// StartupMetadata lifts values the client sent in its pgwire
@@ -190,9 +190,12 @@ type Config struct {
 // laneRules bundles the enforcement facts a connection captures at accept
 // time, so a swap replaces them as one unit: a policy from one config
 // generation must never run beside a masker from another.
+//
+// The codec factory rides here so it swaps with the policy.
 type laneRules struct {
-	policy policy.Evaluator
-	masker gate.Masker
+	policy       policy.Evaluator
+	masker       gate.Masker
+	codecFactory func() inspect.Codec
 }
 
 // Server accepts connections and relays them through a Gate.
@@ -306,7 +309,7 @@ func NewServer(cfg Config) (*Server, error) {
 		mysqlAuth:           mysqlAuth,
 		mysqlHandshakeSlots: mysqlHandshakeSlots,
 	}
-	s.rules.Store(&laneRules{policy: cfg.Policy, masker: cfg.Masker})
+	s.rules.Store(&laneRules{policy: cfg.Policy, masker: cfg.Masker, codecFactory: cfg.CodecFactory})
 	if cfg.Protocol == inspect.HTTP {
 		s.h2 = newH2Lane(s)
 	}
@@ -331,16 +334,21 @@ func (s *Server) releaseMySQLHandshake() {
 	}
 }
 
-// SwapRules replaces the policy evaluator and masker for every connection
-// accepted from now on. Connections already open keep the Gate they
-// captured at accept time and drain under the rules they started with;
+// SwapLane replaces the policy evaluator, masker and codec factory for every
+// connection accepted from now on. Connections already open keep the Gate
+// they captured at accept time and drain under the rules they started with;
 // nothing rebinds and nothing closes.
 //
-// This is the seam a control-plane config reload swaps through. Both fields
-// travel together on purpose: rules and masking come from one config
-// document, and mixing generations would enforce a config nobody wrote.
-func (s *Server) SwapRules(pol policy.Evaluator, masker gate.Masker) {
-	s.rules.Store(&laneRules{policy: pol, masker: masker})
+// This is the seam a control-plane config reload swaps through. The three
+// travel together on purpose: they come from one config document, and mixing
+// generations would enforce a config nobody wrote. A holding policy beside a
+// codec that drops the body would file reviews without it.
+//
+// The factory must lift the header NewServer checked. The daemon keeps that
+// true: a change to a listener's credential header or http block is
+// restart-bound, so a reload never reaches here with one.
+func (s *Server) SwapLane(pol policy.Evaluator, masker gate.Masker, codecFactory func() inspect.Codec) {
+	s.rules.Store(&laneRules{policy: pol, masker: masker, codecFactory: codecFactory})
 }
 
 // reclaimStaleSocket removes a leftover unix socket file so a restart can
@@ -604,7 +612,7 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 		Audit:            s.cfg.Audit,
 		Masker:           rules.masker,
 		FailOnAuditError: s.cfg.FailOnAuditError,
-		CodecFactory:     s.cfg.CodecFactory,
+		CodecFactory:     rules.codecFactory,
 		Metrics:          s.cfg.Metrics,
 		RequestIdentity:  requestIdentity,
 	})

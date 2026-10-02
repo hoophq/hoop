@@ -1256,13 +1256,12 @@ func buildLanes(cfg *Config, det Plugin, ac *analyzerDeps) ([]lane, error) {
 			continue
 		}
 
-		proto := inspect.Protocol(lc.Protocol)
 		ln := lane{
 			cfg:          lc,
 			name:         name,
 			policy:       pol,
 			masker:       masker,
-			codecFactory: laneCodecFactory(proto, lc.HTTP, lc.ClickHouse, lc.credentialHeader()),
+			codecFactory: laneCodecFactory(lc),
 			captureBody:  lc.HTTP != nil && lc.HTTP.CaptureBody,
 			observing:    gc.observing(),
 			analyzers:    collectAnalyzers(pol),

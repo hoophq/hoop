@@ -22,16 +22,18 @@ import (
 // arguments, so every lane in the process shared one zero-value Options and
 // no lane could see a request body or a header.
 //
-// The defaults still expose nothing. Turning capture on is an explicit act,
-// because everything captured reaches the policy engine, the audit trail and,
-// where an analyzer is configured, a third party: the analyzer renders the
-// allowlisted headers into its prompt beside the request line and the body.
+// The defaults expose nothing, with one exception: a lane whose analyzer holds
+// for review captures request bodies, because the reviewer must read what the
+// approval releases. Everything else is an explicit act, because everything
+// captured reaches the policy engine, the audit trail and, where an analyzer
+// is configured, a third party: the analyzer renders the allowlisted headers
+// into its prompt beside the request line and the body.
 type HTTPCodecConfig struct {
 	// CaptureBody includes request and response bodies in the Statement.
-	// An analyzer on the lane judges a bodiless request from its path and
-	// headers either way; without this it never sees what a POST or a PUT
-	// carries.
-	CaptureBody bool `json:"capture_body,omitempty" label:"Capture the request body" help:"Lets policy and the AI analyzer read what a POST or PUT carries."`
+	// Optional for the analyzer: it judges a bodiless request from its path
+	// and headers, and without this never sees what a POST or a PUT
+	// carries. A lane that holds for review captures request bodies anyway.
+	CaptureBody bool `json:"capture_body,omitempty" label:"Capture the request body" help:"Lets policy and the AI analyzer read what a POST or PUT carries. A listener that holds for review captures request bodies without it."`
 
 	// MaxBodyBytes truncates a captured body. Zero uses the codec default.
 	MaxBodyBytes int `json:"max_body_bytes,omitempty" label:"Max body bytes" help:"0 uses the codec default of 64 KiB."`

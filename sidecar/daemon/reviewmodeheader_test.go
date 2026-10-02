@@ -13,14 +13,13 @@ import (
 
 func holdingBlock() *LaneAnalyzerConfig { return holdingLane().Listeners[0].Analyzer }
 
-// Every http lane exposes the header, holding or not: a reload can turn
-// holding on and keep the running codec. The stored block stays as the
-// operator wrote it.
+// Every http lane exposes the header, holding or not. The stored block stays
+// as the operator wrote it.
 func TestAnHTTPLaneCapturesTheReviewModeHeader(t *testing.T) {
 	stored := &HTTPCodecConfig{Headers: []string{"accept"}}
 	for name, h := range map[string]*HTTPCodecConfig{"no http block": nil, "operator headers": stored} {
 		t.Run(name, func(t *testing.T) {
-			f := laneCodecFactory(inspect.HTTP, h, nil, "")
+			f := laneCodecFactory(ListenerConfig{Protocol: "http", HTTP: h})
 			if f == nil {
 				t.Fatal("an http lane kept the registry codec, which captures no header")
 			}

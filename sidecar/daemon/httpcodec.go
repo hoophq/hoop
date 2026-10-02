@@ -14,24 +14,32 @@ import (
 // binary link only the protocols it speaks; this file is already inside a
 // package that imports codec/all, so it adds no reach.
 //
-// A nil cfg captures nothing, as the registry default does. The lane still
-// gets its own factory, because the Via loop marker and the Connect Gateway
-// resource normalization apply to every http lane, capture or not.
+// A nil cfg captures no header but the review mode, and no body unless the
+// lane holds. The lane still gets its own factory, because the Via loop
+// marker and the Connect Gateway resource normalization apply to every http
+// lane, capture or not.
 //
 // Every http lane captures analyzer.HeaderReviewMode, so a client can opt
-// into return per request (ADR-0021). Holding or not: a reload can turn
-// holding on and keep this codec. The codec records only headers the client
-// sent, so other requests keep their audit shape.
+// into return per request (ADR-0021). The codec records only headers the
+// client sent, so other requests keep their audit shape.
+//
+// A lane that holds captures request bodies even with capture_body off: a
+// review filed without the body would release the next request to that
+// target whatever it carries. The body then reaches policy, the analyzer and
+// the audit trail too, as capture_body would send it. The factory swaps with
+// the rules (see relayRules), so holds always matches the policy the
+// connection runs.
 //
 // The factory returns a FRESH codec per call. Two connections sharing one
 // stateful codec corrupt each other's reassembly buffer, and would trade
 // each other's credentials.
-func newHTTPCodec(cfg *HTTPCodecConfig, credentialHeader string) func() inspect.Codec {
+func newHTTPCodec(cfg *HTTPCodecConfig, credentialHeader string, holds bool) func() inspect.Codec {
 	opts := codechttp.Options{
 		// headerNames is normalized once, the same list validate checked,
 		// nil-safe, and a fresh slice, so the append leaves cfg alone.
-		Headers:          append(cfg.headerNames(), analyzer.HeaderReviewMode),
-		CredentialHeader: credentialHeader,
+		Headers:            append(cfg.headerNames(), analyzer.HeaderReviewMode),
+		CredentialHeader:   credentialHeader,
+		CaptureRequestBody: holds,
 	}
 	if cfg != nil {
 		opts.CaptureBody = cfg.CaptureBody

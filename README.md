@@ -117,7 +117,7 @@ Point your agent at `127.0.0.1:15432` instead of the database. Your agents chang
 | --- | --- | --- | --- |
 | PostgreSQL | yes | yes | yes |
 | Microsoft SQL Server | yes | yes | yes |
-| HTTP | yes | yes | yes, with `http.capture_body` |
+| HTTP | yes | yes | yes |
 
 Wire protocols outlive models, frameworks, and MCP. The sidecar works behind whatever interface your agent uses.
 
