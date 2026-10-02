@@ -103,7 +103,7 @@ func reviewStatus(t *testing.T, reviewID string) models.ReviewStatusType {
 // The job is silent when it works and nothing downstream notices a review that
 // never settles, so this is what fails if the wiring or the join stops
 // matching. Both boot paths call it, and for the control plane the rows it
-// finds were written by a gateway sharing the same database (ADR-0013).
+// finds were written by a gateway sharing the same database (ADR-0024).
 func TestReconcileStaleReviewsSettlesAnExecutionThatFinished(t *testing.T) {
 	startTestDB(t)
 

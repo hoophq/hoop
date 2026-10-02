@@ -1,4 +1,4 @@
-# THE TERMINATING BASTION (ADR-0021, mode 4).
+# THE TERMINATING BASTION (ADR-0027, mode 4).
 #
 # Every other SSH topology hoop ships puts the inspecting endpoint on the
 # TARGET. This one puts it in the middle: the bastion accepts the client's

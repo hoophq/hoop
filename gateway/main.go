@@ -203,7 +203,7 @@ func gatewayPlugins(apiURL string, releaseConnFn reviewapi.TransportReleaseConne
 }
 
 // controlPlanePlugins is Slack only: a background service worth starting, not
-// packet work. One process per org may run it. See ADR-0013, amended 2026-09-09.
+// packet work. One process per org may run it. See ADR-0024, amended 2026-09-09.
 func controlPlanePlugins(releaseConnFn reviewapi.TransportReleaseConnectionFunc) []plugintypes.Plugin {
 	return []plugintypes.Plugin{
 		pluginsslack.New(releaseConnFn),
@@ -226,7 +226,7 @@ func startPlugins(plugins []plugintypes.Plugin) {
 // reconcileStaleReviews settles every review left in PROCESSING or UNKNOWN by
 // an execution whose session finished while this process was down. Both boot
 // paths run it: a control plane may share its database with a gateway
-// (ADR-0013), and the rows it finds there were written by the gateway. The
+// (ADR-0024), and the rows it finds there were written by the gateway. The
 // UPDATE is idempotent, so both settling the same row costs nothing.
 //
 // Callers run it on a goroutine. A large backlog must never delay readiness.
@@ -243,7 +243,7 @@ func reconcileStaleReviews(db *gorm.DB) {
 // the protocol proxies never start. The HTTP API is the gateway's (see
 // Api.BuildEngine): a route that needs the gRPC transport fails per request,
 // while /api/ws still accepts an agent over WebSocket and /rdpproxy relays
-// through it (ADR-0013).
+// through it (ADR-0024).
 func runControlPlane(tlsConfig *tls.Config) {
 	// Same wiring as runGateway. The transport server exists for its review
 	// callback and is never started, so the handlers run the gateway's code.

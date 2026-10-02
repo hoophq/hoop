@@ -140,7 +140,7 @@ type Api struct {
 // share the exact same handler — tests exercise the production middleware
 // chain and validators rather than a stripped-down router.
 //
-// The control plane gets the same engine (ADR-0013): every route, the web
+// The control plane gets the same engine (ADR-0024): every route, the web
 // UI included. The routes it does not need are cheaper to leave in than to
 // list, so a route added to the gateway reaches the control plane by
 // construction; one that needs the gRPC transport that mode never starts

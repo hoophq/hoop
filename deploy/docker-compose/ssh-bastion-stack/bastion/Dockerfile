@@ -1,7 +1,7 @@
 # The terminating bastion, built from the LOCAL sidecar and libhoop trees.
 #
 # There is no published-image mode in this stack, and that is not an
-# oversight. ADR-0021 is not in a release yet, so no published
+# oversight. ADR-0027 is not in a release yet, so no published
 # hoophq/hoopsidecar carries the relay code — a released image would bring up
 # a stack whose whole subject is missing, and fail in a way that looks like a
 # configuration mistake. When it ships, add a Dockerfile.released here the way
