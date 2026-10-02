@@ -39,6 +39,7 @@ const (
 	eventsProtocolOrgID  = "00000000-0000-0000-0000-0000000000e7"
 	eventsHandshakeOrgID = "00000000-0000-0000-0000-0000000000e8"
 	eventsFlagOffDBOrgID = "00000000-0000-0000-0000-0000000000e9"
+	eventsColumnsOrgID   = "00000000-0000-0000-0000-0000000000ea"
 )
 
 // eventsT0 is when every test session starts. Whole seconds, so the elapsed
@@ -347,6 +348,17 @@ func TestPostEventsRefusesABatchOverTheLimits(t *testing.T) {
 		assert.Equal(t, http.StatusRequestEntityTooLarge, rec.Code, rec.Body.String())
 	})
 
+	t.Run("a body at the byte limit is not refused for its size", func(t *testing.T) {
+		// The sidecar fills a batch up to the limit, so the limit itself must
+		// pass. seq 0 stops the batch after the size checks.
+		event := sessionEvent(0, "s-bytes", 0, audit.KindStatement, func(e *audit.Event) { e.Statement = "x" })
+		event.Event.Statement += strings.Repeat("x", daemon.MaxSessionEventsBatchBytes-len(eventsBody(t, event)))
+		body := eventsBody(t, event)
+		require.Equal(t, daemon.MaxSessionEventsBatchBytes, len(body))
+		rec := postEvents(sc, body)
+		assert.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+	})
+
 	t.Run("a content length over the byte limit", func(t *testing.T) {
 		body := eventsBody(t, sessionEvent(1, "s-length", 0, audit.KindStatement, nil))
 		req := httptest.NewRequest(http.MethodPost, "/api/sidecars/events", bytes.NewReader(body))
@@ -386,9 +398,9 @@ func TestPostEventsRecordsAFullSession(t *testing.T) {
 	enableSessionEvents(t, eventsFullOrgID)
 	sc := seedEventsSidecar(t, eventsFullOrgID, "edge-full")
 
-	got := decodeEventsResponse(t, postEvents(sc, eventsBody(t, fullSession("s-full")...)))
-	assert.Equal(t, 6, got.Accepted)
-	assert.Equal(t, 0, got.Duplicates)
+	rec := postEvents(sc, eventsBody(t, fullSession("s-full")...))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.JSONEq(t, `{"accepted": 6, "duplicates": 0}`, rec.Body.String())
 
 	id := services.SidecarSessionID(sc.ID, "s-full")
 	row := getSidecarSessionRow(t, eventsFullOrgID, id)
@@ -611,6 +623,8 @@ func TestHandshakeOffersSessionEventsOnlyWithTheFlag(t *testing.T) {
 	empty.Configuration = models.SidecarConfiguration{}
 
 	answers := map[string]*models.Sidecar{"control plane": served, "load from disk": &disk}
+	t.Cleanup(func() { featureflag.SetAll(eventsHandshakeOrgID, map[string]bool{}) })
+	// Off, on, then off again: the header follows the flag both ways.
 	for _, flag := range []bool{false, true, false} {
 		featureflag.Set(eventsHandshakeOrgID, services.SidecarSessionEventsFlag, flag)
 		for name, who := range answers {
@@ -623,11 +637,88 @@ func TestHandshakeOffersSessionEventsOnlyWithTheFlag(t *testing.T) {
 			}
 		}
 	}
-	t.Cleanup(func() { featureflag.SetAll(eventsHandshakeOrgID, map[string]bool{}) })
 
 	// A sidecar that cannot run is not offered the endpoint.
 	featureflag.Set(eventsHandshakeOrgID, services.SidecarSessionEventsFlag, true)
 	w := handshake(t, &empty, daemon.CapabilitySessionEvents)
 	require.Equal(t, http.StatusPreconditionFailed, w.Code, w.Body.String())
 	assert.Empty(t, w.Header().Values(daemon.SessionEventsHeader))
+}
+
+// A string a column refuses would fail the write on every resend, so the
+// sidecar would resend the batch forever. The gateway fits it or refuses it.
+func TestPostEventsFitsTheSidecarStringsToTheColumns(t *testing.T) {
+	startEventsDB(t, eventsColumnsOrgID)
+	enableSessionEvents(t, eventsColumnsOrgID)
+	sc := seedEventsSidecar(t, eventsColumnsOrgID, "edge-cols")
+	longEmail := "alice@" + strings.Repeat("x", 300)
+	withNUL := func(e *audit.Event) {
+		e.Connection = "app\x00db"
+		e.Principal = "bob\x00@example.com"
+	}
+	as := func(p inspect.Protocol) func(*audit.Event) {
+		return func(e *audit.Event) { e.Protocol = p }
+	}
+
+	got := decodeEventsResponse(t, postEvents(sc, eventsBody(t,
+		sessionEvent(1, "s-long", 0, audit.KindSessionStart, func(e *audit.Event) { e.Principal = longEmail }),
+		sessionEvent(1, "s-nul", 0, audit.KindSessionStart, withNUL),
+		sessionEvent(2, "s-nul", 1, audit.KindViolation, func(e *audit.Event) {
+			withNUL(e)
+			e.Statement = "DROP\x00 TABLE users"
+			e.Rule = "no\x00drop"
+			e.Message = "deny\x00ed"
+			e.Direction = inspect.FromServer
+		}),
+		sessionEvent(3, "s-nul", 2, audit.KindMasked, func(e *audit.Event) {
+			withNUL(e)
+			e.MaskedEntities = []string{"em\x00ail", "email"}
+			e.MaskedCount = 2
+		}),
+		sessionEvent(1, "s-clickhouse", 0, audit.KindSessionStart, as("clickhouse")),
+		sessionEvent(1, "s-http", 0, audit.KindSessionStart, as(inspect.HTTP)),
+		sessionEvent(1, "s-ssh", 0, audit.KindSessionStart, as("ssh")),
+	)))
+	assert.Equal(t, 7, got.Accepted)
+
+	long := getSidecarSessionRow(t, eventsColumnsOrgID, services.SidecarSessionID(sc.ID, "s-long"))
+	assert.Equal(t, longEmail[:255], long.UserEmail, "the column keeps what fits")
+	assert.Equal(t, longEmail, sidecarMetadata(t, long)["principal"], "the metadata keeps all of it")
+
+	nulID := services.SidecarSessionID(sc.ID, "s-nul")
+	nul := getSidecarSessionRow(t, eventsColumnsOrgID, nulID)
+	assert.Equal(t, "edge-cols-appdb", nul.Connection)
+	assert.Equal(t, "bob@example.com", nul.UserEmail)
+	assert.Equal(t, "appdb", sidecarMetadata(t, nul)["listener"])
+	require.NotNil(t, nul.GuardrailsInfo)
+	var guardrails []models.SessionGuardRailsInfo
+	require.NoError(t, json.Unmarshal([]byte(*nul.GuardrailsInfo), &guardrails))
+	require.Len(t, guardrails, 1)
+	assert.Equal(t, "nodrop", guardrails[0].RuleName)
+	assert.Equal(t, "denyed", guardrails[0].Message)
+	assert.Equal(t, "output", guardrails[0].Direction)
+	_, _, entries := readStream(t, eventsColumnsOrgID, nulID)
+	require.Len(t, entries, 2)
+	assert.Equal(t, "DROP\x00 TABLE users", entries[0].Text, "the stream keeps the bytes: base64 carries a NUL")
+	masked := readMaskedMetrics(t, nulID)
+	require.Len(t, masked, 1)
+	assert.Equal(t, maskedRow{InfoType: "email", CountMasked: 2}, masked[0])
+
+	for sid, want := range map[string][2]string{
+		"s-clickhouse": {"custom", "clickhouse"},
+		"s-http":       {"httpproxy", "httpproxy"},
+		"s-ssh":        {"application", "ssh"},
+	} {
+		row := getSidecarSessionRow(t, eventsColumnsOrgID, services.SidecarSessionID(sc.ID, sid))
+		assert.Equal(t, want, [2]string{row.ConnectionType, row.ConnectionSubtype}, sid)
+		require.NotNil(t, row.RecordingFormat, sid)
+		assert.Equal(t, "raw", *row.RecordingFormat, "%s: never replayed as a terminal", sid)
+	}
+
+	// A connection name over the column is refused, not cut: two listeners
+	// would share one name.
+	rec := postEvents(sc, eventsBody(t, sessionEvent(1, "s-wide", 0, audit.KindSessionStart,
+		func(e *audit.Event) { e.Connection = strings.Repeat("l", 128) })))
+	assert.Equal(t, http.StatusUnprocessableEntity, rec.Code, rec.Body.String())
+	assert.Zero(t, countSessions(t, eventsColumnsOrgID, services.SidecarSessionID(sc.ID, "s-wide")))
 }
