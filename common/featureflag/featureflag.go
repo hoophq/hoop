@@ -82,6 +82,13 @@ var catalog = map[string]Flag{
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway},
 	},
+	"experimental.sidecar_session_events": {
+		Name:        "experimental.sidecar_session_events",
+		Description: "Record sidecar traffic as sessions: each sidecar connected to this gateway sends its audit events (session start and end, statements, guardrail violations, masking counts, errors) to POST /api/sidecars/events, and the gateway writes them to the session list, the session detail and its query list. The local audit file of the sidecar stays the record of truth; under pressure the sidecar drops the oldest events it has not sent. The copy is sent whatever the local audit file setting is. When off, the handshake does not offer the endpoint, sidecars send nothing, and the endpoint answers 412. Adds write volume to the gateway database.",
+		Default:     false,
+		Stability:   StabilityExperimental,
+		Components:  []Component{ComponentGateway},
+	},
 	"experimental.ssh_guardrails": {
 		Name:        "experimental.ssh_guardrails",
 		Description: "Enforce guardrails on native SSH connections: exec commands are validated against input rules before they run, and session-channel output (interactive shell/exec) is validated against output rules before it reaches the client. Port-forward (direct-tcpip) channels are not inspected. Interactive shell stdin is validated separately by experimental.ssh_input_guardrails. Requires a DLP provider (Presidio) to be configured.",

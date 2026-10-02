@@ -782,6 +782,11 @@ func UpsertSession(sess Session) error {
 	})
 }
 
+// UpsertSessionTx is UpsertSession inside the caller's transaction.
+func UpsertSessionTx(tx *gorm.DB, sess Session) error {
+	return upsertSessionTx(tx, sess)
+}
+
 // upsertSessionTx is UpsertSession's body with the transaction supplied by the
 // caller, so a caller that must write a session alongside other rows gets one
 // rollback boundary instead of two. The behaviour is otherwise unchanged.
@@ -826,7 +831,7 @@ func upsertSessionTx(tx *gorm.DB, sess Session) error {
 	}
 
 	if res.Error != nil {
-		return fmt.Errorf("failed creating session blob input, reason=%v", res.Error)
+		return fmt.Errorf("failed creating session blob input, reason=%w", res.Error)
 	}
 	return tx.Table("private.sessions").Save(
 		Session{
@@ -960,28 +965,34 @@ func SessionStreamBlobID(sessionID string) string {
 // Idempotent: re-running for the same session is a no-op on conflict.
 func CreateEmptySessionStreamBlob(orgID, sessionID string, blobFormat *string) error {
 	return DB.Transaction(func(tx *gorm.DB) error {
-		blobStreamID := SessionStreamBlobID(sessionID)
-		blob := Blob{
-			ID:         blobStreamID,
-			OrgID:      orgID,
-			BlobStream: json.RawMessage(`[]`),
-			Type:       "session-stream",
-			BlobFormat: blobFormat,
-		}
-		// upsert via UPDATE-then-INSERT pattern used elsewhere in this file
-		res := tx.Table("private.blobs").
-			Where("org_id = ? AND id = ?", orgID, blobStreamID).
-			Updates(map[string]any{"format": blobFormat})
-		if res.Error == nil && res.RowsAffected == 0 {
-			res.Error = tx.Table("private.blobs").Create(blob).Error
-		}
-		if res.Error != nil {
-			return fmt.Errorf("failed creating empty session stream blob: %v", res.Error)
-		}
-		return tx.Table("private.sessions").
-			Where("org_id = ? AND id = ?", orgID, sessionID).
-			Update("blob_stream_id", blobStreamID).Error
+		return CreateEmptySessionStreamBlobTx(tx, orgID, sessionID, blobFormat)
 	})
+}
+
+// CreateEmptySessionStreamBlobTx is CreateEmptySessionStreamBlob inside the
+// caller's transaction.
+func CreateEmptySessionStreamBlobTx(tx *gorm.DB, orgID, sessionID string, blobFormat *string) error {
+	blobStreamID := SessionStreamBlobID(sessionID)
+	blob := Blob{
+		ID:         blobStreamID,
+		OrgID:      orgID,
+		BlobStream: json.RawMessage(`[]`),
+		Type:       "session-stream",
+		BlobFormat: blobFormat,
+	}
+	// upsert via UPDATE-then-INSERT pattern used elsewhere in this file
+	res := tx.Table("private.blobs").
+		Where("org_id = ? AND id = ?", orgID, blobStreamID).
+		Updates(map[string]any{"format": blobFormat})
+	if res.Error == nil && res.RowsAffected == 0 {
+		res.Error = tx.Table("private.blobs").Create(blob).Error
+	}
+	if res.Error != nil {
+		return fmt.Errorf("failed creating empty session stream blob: %w", res.Error)
+	}
+	return tx.Table("private.sessions").
+		Where("org_id = ? AND id = ?", orgID, sessionID).
+		Update("blob_stream_id", blobStreamID).Error
 }
 
 // AppendSessionStream concatenates entries onto the session's blob_stream
@@ -989,8 +1000,14 @@ func CreateEmptySessionStreamBlob(orgID, sessionID string, blobFormat *string) e
 // Returns ErrNotFound if the stream blob row does not exist — callers should
 // retry rather than silently dropping the flush window.
 func AppendSessionStream(orgID, sessionID string, entries json.RawMessage) error {
+	return AppendSessionStreamTx(DB, orgID, sessionID, entries)
+}
+
+// AppendSessionStreamTx is AppendSessionStream inside the caller's
+// transaction.
+func AppendSessionStreamTx(tx *gorm.DB, orgID, sessionID string, entries json.RawMessage) error {
 	blobStreamID := SessionStreamBlobID(sessionID)
-	res := DB.Exec(
+	res := tx.Exec(
 		`UPDATE private.blobs SET blob_stream = blob_stream || ?::jsonb WHERE org_id = ? AND id = ?`,
 		string(entries), orgID, blobStreamID,
 	)
@@ -1006,7 +1023,12 @@ func AppendSessionStream(orgID, sessionID string, entries json.RawMessage) error
 // MarkSessionDone updates the session terminal columns without touching the
 // stream blob — flushes write the blob incrementally during the session.
 func MarkSessionDone(sess SessionDone) error {
-	return DB.Table("private.sessions AS s").
+	return MarkSessionDoneTx(DB, sess)
+}
+
+// MarkSessionDoneTx is MarkSessionDone inside the caller's transaction.
+func MarkSessionDoneTx(tx *gorm.DB, sess SessionDone) error {
+	return tx.Table("private.sessions AS s").
 		Where("org_id = ? AND id = ?", sess.OrgID, sess.ID).
 		Updates(map[string]any{
 			"exit_code": sess.ExitCode,
@@ -1096,7 +1118,13 @@ func UpdateSessionAnalyzerMetrics(orgID, sid string, metrics map[string]int64) e
 }
 
 func UpdateSessionGuardRailsInfo(orgID, sid string, info []byte) error {
-	res := DB.Table("private.sessions").
+	return UpdateSessionGuardRailsInfoTx(DB, orgID, sid, info)
+}
+
+// UpdateSessionGuardRailsInfoTx is UpdateSessionGuardRailsInfo inside the
+// caller's transaction.
+func UpdateSessionGuardRailsInfoTx(tx *gorm.DB, orgID, sid string, info []byte) error {
+	res := tx.Table("private.sessions").
 		Where("org_id = ? AND id = ?", orgID, sid).
 		Update("guardrails_info", gorm.Expr("COALESCE(guardrails_info, '[]'::jsonb) || ?::jsonb", info))
 	if res.Error == nil && res.RowsAffected == 0 {
@@ -1105,9 +1133,12 @@ func UpdateSessionGuardRailsInfo(orgID, sid string, info []byte) error {
 	return res.Error
 }
 
+// UpdateSessionMetadata never matches a sidecar session: its user_email is a
+// database principal, and its metadata holds the seq that dedups resends.
 func UpdateSessionMetadata(orgID, userEmail, sid string, metadata map[string]any) error {
 	res := DB.Table("private.sessions").
-		Where("org_id = ? AND id = ? AND user_email = ?", orgID, sid, userEmail).
+		Where("org_id = ? AND id = ? AND user_email = ? AND origin IS DISTINCT FROM ?",
+			orgID, sid, userEmail, proto.SessionOriginSidecar).
 		Updates(Session{Metadata: metadata})
 	if res.Error == nil && res.RowsAffected == 0 {
 		return ErrNotFound
