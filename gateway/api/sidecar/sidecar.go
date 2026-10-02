@@ -163,6 +163,7 @@ func answerSidecarWrite(c *gin.Context, err error) {
 	var invalid services.ErrSidecarAnalyzerInvalid
 	var unmirrored services.ErrSidecarListenerInvalid
 	var nameTaken models.ErrSidecarConnectionNameTaken
+	var inUse models.ErrSidecarConnectionInUse
 	switch {
 	case errors.Is(err, models.ErrNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"message": "sidecar not found"})
@@ -182,6 +183,8 @@ func answerSidecarWrite(c *gin.Context, err error) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"message": unmirrored.Error()})
 	case errors.As(err, &nameTaken):
 		c.JSON(http.StatusConflict, gin.H{"message": nameTaken.Error()})
+	case errors.As(err, &inUse):
+		c.JSON(http.StatusConflict, gin.H{"message": inUse.Error()})
 	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed writing sidecar configuration")
 	}
@@ -375,7 +378,7 @@ func Get(c *gin.Context) {
 //	@Produce		json
 //	@Param			nameOrID	path	string	true	"Name or UUID of the sidecar"
 //	@Success		204
-//	@Failure		403,404,500	{object}	openapi.HTTPError
+//	@Failure		403,404,409,500	{object}	openapi.HTTPError
 //	@Router			/sidecars/{nameOrID} [delete]
 func Delete(c *gin.Context) {
 	ctx := storagev2.ParseContext(c)
@@ -383,15 +386,17 @@ func Delete(c *gin.Context) {
 		_, err := models.DeleteSidecarByNameOrID(tx, ctx.OrgID, c.Param("nameOrID"))
 		return err
 	})
-	if err != nil {
-		if errors.Is(err, models.ErrNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"message": "sidecar not found"})
-			return
-		}
+	var inUse models.ErrSidecarConnectionInUse
+	switch {
+	case err == nil:
+		c.Writer.WriteHeader(http.StatusNoContent)
+	case errors.Is(err, models.ErrNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"message": "sidecar not found"})
+	case errors.As(err, &inUse):
+		c.JSON(http.StatusConflict, gin.H{"message": inUse.Error()})
+	default:
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed deleting sidecar")
-		return
 	}
-	c.Writer.WriteHeader(http.StatusNoContent)
 }
 
 // Update Sidecar

@@ -137,7 +137,7 @@ var catalog = map[string]Flag{
 	},
 	FlagSidecarListeners: {
 		Name:        FlagSidecarListeners,
-		Description: "Show sidecar listeners as connections in the webapp: each listener of a sidecar is mirrored as a connection managed by that sidecar, so guardrails, data masking, reviews, access request rules and tags bind to it like to any connection. The flag decides what the UI shows; enforcement follows the data (sidecar_id on the connection).",
+		Description: "Enable the sidecar and its features.",
 		Default:     false,
 		Stability:   StabilityBeta,
 		Components:  []Component{ComponentGateway},

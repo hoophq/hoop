@@ -129,3 +129,28 @@ func TestAnImportMirrorsTheListenersItBrings(t *testing.T) {
 	sc := importedSidecar(t, "imp")
 	assert.Equal(t, map[string]string{"imp-appdb": "database/postgres"}, mirrorNames(t, sc.ID))
 }
+
+// A 409 on the import route means "the plane already holds a configuration"
+// to the sidecar, which then fetches it; a name conflict must read 422 so the
+// sidecar shows the reason and keeps its file.
+func TestAnImportWithAMirrorConflictIsRefusedWithTheReason(t *testing.T) {
+	startSwitchDB(t)
+	require.NoError(t, models.DB.Exec(`INSERT INTO private.resources (org_id, name, type, subtype) VALUES (?, 'clash-appdb', 'custom', 'loki')`, switchOrgID).Error)
+	require.NoError(t, models.DB.Exec(`INSERT INTO private.connections (org_id, name, type, subtype, resource_name) VALUES (?, 'clash-appdb', 'custom', 'loki', 'clash-appdb')`, switchOrgID).Error)
+	sc := &models.Sidecar{OrgID: switchOrgID, Name: "clash", KeyHash: models.HashAPIKey("hsc_clash"), CreatedBy: "tests@hoop.dev"}
+	require.NoError(t, models.CreateSidecar(models.DB, sc))
+
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/sidecars/configuration", bytes.NewReader([]byte(switchFile)))
+	c.Set("sidecar-auth", sc)
+	ImportConfiguration(c)
+	require.Equal(t, http.StatusUnprocessableEntity, w.Code, "body: %s", w.Body)
+	assert.Contains(t, w.Body.String(), `\"clash-appdb\" is in use`)
+
+	stored, err := models.GetSidecarByNameOrID(models.DB, switchOrgID, sc.ID)
+	require.NoError(t, err)
+	assert.Empty(t, stored.Configuration.Listeners, "a refused import stores nothing, so the sidecar can push again")
+	assert.Empty(t, mirrorNames(t, sc.ID))
+}

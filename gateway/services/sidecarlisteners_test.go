@@ -112,6 +112,8 @@ func TestProjectListenersRefusesWhatItCannotMirror(t *testing.T) {
 		{"listener name with a space", "pay", daemon.ListenerConfig{Name: "app db", Protocol: "postgres"}, "connection name:"},
 		{"empty listener name", "pay", daemon.ListenerConfig{Name: "", Protocol: "postgres"}, "connection name:"},
 		{"sidecar name with a slash", "pay/ments", daemon.ListenerConfig{Name: "appdb", Protocol: "postgres"}, "connection name:"},
+		// "pay-" plus 125 is 129, one over resources.name.
+		{"name over the resource width", "pay", daemon.ListenerConfig{Name: strings.Repeat("a", 125), Protocol: "postgres"}, "longer than 128 characters"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -126,6 +128,11 @@ func TestProjectListenersRefusesWhatItCannotMirror(t *testing.T) {
 				t.Errorf("want no partial result, got %d connections", len(got))
 			}
 		})
+	}
+
+	// "pay-" plus 124 is exactly 128.
+	if _, err := ProjectListeners("org-1", sidecarWith("pay", daemon.ListenerConfig{Name: strings.Repeat("a", 124), Protocol: "postgres"})); err != nil {
+		t.Errorf("a 128-character name must be accepted: %v", err)
 	}
 
 	// One bad listener fails the whole projection: a sidecar is mirrored

@@ -2,6 +2,7 @@ package models_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -79,11 +80,16 @@ func TestBackfillMirrorsExistingListeners(t *testing.T) {
 		sidecar("ora", `{"listeners":[{"name":"x","protocol":"oracle"}]}`)
 		sidecar("pay-x", `{"listeners":[{"name":"y","protocol":"mssql"}]}`)
 		sidecar("file", `{"load_from_disk":true,"listeners":[{"name":"g","protocol":"grpc"}]}`)
+		// "long-" plus 124 is 129, one over resources.name.
+		sidecar("long", `{"listeners":[{"name":"`+strings.Repeat("a", 124)+`","protocol":"postgres"},{"name":"fits","protocol":"postgres"}]}`)
 		// The admin's own connection has the name conf's listener composes.
 		execSQL(t, `INSERT INTO private.resources (org_id, name, type, subtype) VALUES (?, 'conf-appdb', 'database', 'postgres')`, testOrgID)
 		execSQL(t, `INSERT INTO private.connections (org_id, name, type, subtype, resource_name) VALUES (?, 'conf-appdb', 'database', 'postgres', 'conf-appdb')`, testOrgID)
 		// A resource a deleted connection left behind, with a mirror's name.
 		execSQL(t, `INSERT INTO private.resources (org_id, name, type, subtype) VALUES (?, 'pay-appdb', 'custom', 'stale')`, testOrgID)
+		// A resource with a mirror's name that an admin connection still uses.
+		execSQL(t, `INSERT INTO private.resources (org_id, name, type, subtype) VALUES (?, 'pay-api', 'custom', 'loki')`, testOrgID)
+		execSQL(t, `INSERT INTO private.connections (org_id, name, type, subtype, resource_name) VALUES (?, 'logs', 'custom', 'loki', 'pay-api')`, testOrgID)
 	})
 
 	migrateTo(t, inst, func(m *migrate.Migrate) error { return m.Up() })
@@ -111,10 +117,10 @@ func TestBackfillMirrorsExistingListeners(t *testing.T) {
 		}
 		want := map[string]string{
 			"pay-appdb": "pay/appdb database/postgres res=database/postgres",
-			"pay-api":   "pay/api httpproxy/httpproxy res=httpproxy/httpproxy",
 			"pay-x-y":   "pay/x-y database/mysql res=database/mysql",
 			"weird-ok":  "weird/ok application/ssh res=application/ssh",
 			"file-g":    "file/g custom/grpc res=custom/grpc",
+			"long-fits": "long/fits database/postgres res=database/postgres",
 		}
 		if len(got) != len(want) {
 			t.Errorf("want %d mirrors, got %d: %v", len(want), len(got), got)
@@ -127,17 +133,27 @@ func TestBackfillMirrorsExistingListeners(t *testing.T) {
 		if s := queryString(t, `SELECT COALESCE(managed_by, '') || '|' || COALESCE(sidecar_id::text, '') FROM private.connections WHERE org_id = ? AND name = 'conf-appdb'`, testOrgID); s != "|" {
 			t.Errorf("the admin's connection was taken over: %q", s)
 		}
+		if kind := queryString(t, `SELECT type || '/' || subtype FROM private.resources WHERE org_id = ? AND name = 'pay-api'`, testOrgID); kind != "custom/loki" {
+			t.Errorf("the resource the admin's connection uses was rewritten: %s", kind)
+		}
+		// What the down must clear before it can delete the mirror.
+		execSQL(t, `INSERT INTO private.event_subscriptions
+			(org_id, name, event_types, runbook_repository, runbook_file, connection_name, created_by_user_id, created_by_email)
+			VALUES (?, 'on-deny', '{guardrail.denied}', 'repo', 'notify.runbook.sh', 'pay-appdb', 'u1', 'admin@hoop.dev')`, testOrgID)
 	})
 
-	// Down removes every mirror and the resources they alone used; the
-	// admin's connection stays.
+	// Down removes every mirror, the subscriptions on them and the resources
+	// they alone used; the admin's connections stay.
 	migrateTo(t, inst, func(m *migrate.Migrate) error { return m.Steps(-1) })
 	withDB(t, inst, func() {
-		if n := queryString(t, `SELECT count(*)::text FROM private.connections WHERE org_id = ?`, testOrgID); n != "1" {
-			t.Errorf("want only the admin's connection after down, got %s", n)
+		if n := queryString(t, `SELECT count(*)::text FROM private.connections WHERE org_id = ?`, testOrgID); n != "2" {
+			t.Errorf("want only the admin's connections after down, got %s", n)
 		}
-		if n := queryString(t, `SELECT count(*)::text FROM private.resources WHERE org_id = ?`, testOrgID); n != "1" {
-			t.Errorf("want only the admin's resource after down, got %s", n)
+		if n := queryString(t, `SELECT count(*)::text FROM private.resources WHERE org_id = ?`, testOrgID); n != "2" {
+			t.Errorf("want only the admin's resources after down, got %s", n)
+		}
+		if n := queryString(t, `SELECT count(*)::text FROM private.event_subscriptions WHERE org_id = ?`, testOrgID); n != "0" {
+			t.Errorf("the subscription on a mirror outlived it")
 		}
 	})
 }

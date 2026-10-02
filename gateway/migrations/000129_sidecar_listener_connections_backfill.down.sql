@@ -6,7 +6,13 @@ SET search_path TO private;
 -- the projection none of them is kept in step, and 000128 down drops the
 -- columns that say which listener each one was.
 CREATE TEMP TABLE _gone ON COMMIT DROP AS
-SELECT org_id, resource_name FROM connections WHERE sidecar_id IS NOT NULL;
+SELECT org_id, name, resource_name FROM connections WHERE sidecar_id IS NOT NULL;
+
+-- An event subscription on a mirror RESTRICTs its delete, and it has no
+-- connection to fire on once the mirror is gone.
+DELETE FROM event_subscriptions e
+USING _gone g
+WHERE e.org_id = g.org_id AND e.connection_name = g.name;
 
 DELETE FROM connections WHERE sidecar_id IS NOT NULL;
 

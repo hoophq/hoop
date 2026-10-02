@@ -299,7 +299,8 @@ func AdoptSidecarConfiguration(db *gorm.DB, orgID, id string, configuration Side
 // DeleteSidecarByNameOrID hard deletes the row and returns its id, so the
 // caller can evict any process-local runtime state. The connections that
 // mirror its listeners go first: the cascade would take them anyway, but not
-// the resources they alone used.
+// the resources they alone used. Run it in a transaction: the row is locked
+// until the delete lands.
 func DeleteSidecarByNameOrID(db *gorm.DB, orgID, nameOrID string) (string, error) {
 	identifierClause := "name = ?"
 	if _, err := uuid.Parse(nameOrID); err == nil {
@@ -307,7 +308,7 @@ func DeleteSidecarByNameOrID(db *gorm.DB, orgID, nameOrID string) (string, error
 	}
 
 	var id string
-	err := db.Raw(`SELECT id FROM private.sidecars WHERE org_id = ? AND `+identifierClause, orgID, nameOrID).
+	err := db.Raw(`SELECT id FROM private.sidecars WHERE org_id = ? AND `+identifierClause+` FOR UPDATE`, orgID, nameOrID).
 		Scan(&id).Error
 	if err != nil {
 		return "", err
@@ -318,12 +319,8 @@ func DeleteSidecarByNameOrID(db *gorm.DB, orgID, nameOrID string) (string, error
 	if err := SyncSidecarConnectionsTx(db, orgID, id, nil); err != nil {
 		return "", err
 	}
-	res := db.Exec(`DELETE FROM private.sidecars WHERE org_id = ? AND id = ?`, orgID, id)
-	if res.Error != nil {
-		return "", res.Error
-	}
-	if res.RowsAffected == 0 {
-		return "", ErrNotFound
+	if err := db.Exec(`DELETE FROM private.sidecars WHERE org_id = ? AND id = ?`, orgID, id).Error; err != nil {
+		return "", err
 	}
 	return id, nil
 }

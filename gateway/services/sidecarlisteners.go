@@ -46,6 +46,10 @@ var listenerConnectionKind = map[inspect.Protocol]struct{ typ, subtype string }{
 	inspect.Spanner:    {"custom", string(inspect.Spanner)},
 }
 
+// maxMirrorNameLength is resources.name's width. The name rule allows 254,
+// but a mirror's resource carries the same name.
+const maxMirrorNameLength = 128
+
 // ProjectListeners renders the mirror connection of every listener of sc, in
 // the order of the configuration. It is pure: no database, no side effects.
 //
@@ -68,6 +72,9 @@ func ProjectListeners(orgID string, sc *models.Sidecar) ([]models.Connection, er
 		name := sc.Name + "-" + l.Name
 		if err := apivalidation.ValidateResourceName(name); err != nil {
 			return nil, fmt.Errorf("listener %q: connection %s", l.Name, err)
+		}
+		if len(name) > maxMirrorNameLength {
+			return nil, fmt.Errorf("listener %q: connection name %q is longer than %d characters", l.Name, name, maxMirrorNameLength)
 		}
 		out = append(out, models.Connection{
 			OrgID:              orgID,

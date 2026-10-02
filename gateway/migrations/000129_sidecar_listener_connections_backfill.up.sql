@@ -14,8 +14,9 @@ SET search_path TO private;
 --   * a protocol with no connection type, or no listener name;
 --   * a composed name that fails apivalidation.ValidateResourceName or
 --     exceeds resources.name;
---   * a name a connection already has, this listener's own mirror included,
---     so the migration is a no-op the second time;
+--   * a name a connection already has, or uses as its resource; this
+--     listener's own mirror included, so the migration is a no-op the
+--     second time;
 --   * a name two listeners compose to; the older sidecar keeps it.
 CREATE TEMP TABLE _sidecar_mirrors ON COMMIT DROP AS
 SELECT DISTINCT ON (org_id, name) *
@@ -52,7 +53,7 @@ WHERE COALESCE(m.listener, '') <> ''
   AND m.type IS NOT NULL
   AND m.name ~ '^[a-zA-Z0-9_]+([-.]?[a-zA-Z0-9_]+){2,253}$'
   AND length(m.name) <= 128
-  AND NOT EXISTS (SELECT 1 FROM connections c WHERE c.org_id = m.org_id AND c.name = m.name)
+  AND NOT EXISTS (SELECT 1 FROM connections c WHERE c.org_id = m.org_id AND (c.name = m.name OR c.resource_name = m.name))
 ORDER BY org_id, name, sidecar_created_at, ordinality;
 
 -- The mirror's own resource, as UpsertConnection defaults it. One left
