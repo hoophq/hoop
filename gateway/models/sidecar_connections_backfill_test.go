@@ -151,7 +151,10 @@ func TestBackfillMirrorsExistingListeners(t *testing.T) {
 		if kind := queryString(t, `SELECT type || '/' || subtype FROM private.resources WHERE org_id = ? AND name = 'agentres-q'`, testOrgID); kind != "custom/redis" {
 			t.Errorf("the agent's resource was rewritten: %s", kind)
 		}
-		if n := queryString(t, `SELECT count(*)::text FROM private.connections WHERE org_id = ?`, flagOffOrgID); n != "0" {
+		// Its own query text: the embedded backend keeps one server session,
+		// so a statement the driver prepared under the same text later in
+		// this test would collide with it.
+		if n := queryString(t, `SELECT count(*)::text FROM private.connections c WHERE c.org_id = ?`, flagOffOrgID); n != "0" {
 			t.Errorf("an org with the flag off got %s connections", n)
 		}
 		// What the down must clear before it can delete the mirror.
