@@ -21,6 +21,11 @@ const IdentityTypeMachine = "machine"
 // verification (mirroring IdentityTypeMachine).
 const IdentityTypeAPIKey = "api_key"
 
+// IdentityTypeSidecar marks sessions a sidecar recorded. The principal is
+// whoever the sidecar resolved on the wire (a database user, a bearer's
+// email); no hoop user or machine identity authenticated it.
+const IdentityTypeSidecar = "sidecar"
+
 type GenericMap map[string]any
 
 type PacketErr struct {

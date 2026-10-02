@@ -12,6 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/common/featureflag"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/api/httputils"
@@ -553,6 +554,7 @@ func usesConfigFile(cfg models.SidecarConfiguration) bool {
 //	@Param			request						body		openapi.SidecarHandshakeRequest	true	"The request body resource"
 //	@Success		200							{object}	map[string]interface{}
 //	@Header			200							{string}	hoop-sidecar-license-managed	"Present when this gateway owns the licensing decision, so an answer with no license means the organization holds none. A gateway older than the feature omits it, and the sidecar then keeps its own license sources."
+//	@Header			200							{string}	hoop-sidecar-session-events		"Present, as true, when the organization records sidecar sessions (experimental.sidecar_session_events). The sidecar then sends its audit events to POST /sidecars/events, and stops when an answer omits it."
 //	@Failure		400,401,403,412,422,500		{object}	openapi.HTTPError
 //	@Router			/sidecars/handshake [post]
 func Handshake(c *gin.Context) {
@@ -581,6 +583,7 @@ func Handshake(c *gin.Context) {
 		// load_from_disk instead.
 		recordHandshake(sidecar.ID, req, "", capabilities)
 		c.Header(licenseManagedHeader, "true")
+		offerSessionEvents(c, sidecar)
 		c.JSON(http.StatusOK, diskModeConfig{LoadFromDisk: true, License: string(licenseData)})
 		return
 	}
@@ -612,7 +615,18 @@ func Handshake(c *gin.Context) {
 	recordHandshake(sidecar.ID, req, revision, capabilities)
 	c.Header(licenseManagedHeader, "true")
 	c.Header(daemon.ConfigRevisionHeader, revision)
+	offerSessionEvents(c, sidecar)
 	c.JSON(http.StatusOK, served)
+}
+
+// offerSessionEvents tells the sidecar it may send its audit events, when its
+// organization records them. Every handshake answers it, so the sidecar
+// follows the flag within a heartbeat, in both directions. A sidecar older
+// than the feature ignores the header.
+func offerSessionEvents(c *gin.Context, sc *models.Sidecar) {
+	if featureflag.IsEnabled(sc.OrgID, services.SidecarSessionEventsFlag) {
+		c.Header(daemon.SessionEventsHeader, "true")
+	}
 }
 
 // withOrgLicense answers the config a sidecar must serve, carrying the

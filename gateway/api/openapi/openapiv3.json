@@ -8952,6 +8952,48 @@
         },
         "type": "object"
       },
+      "openapi.SidecarSessionEvent": {
+        "properties": {
+          "event": {
+            "additionalProperties": {},
+            "description": "The audit record exactly as the sidecar's JSONL audit file holds it\n(sidecar/audit.Event): kind, timestamp, session_id, principal,\nprotocol, connection (the listener), statement, allowed, rule,\nmessage, error, masked_entities, masked_count and the session totals",
+            "type": "object"
+          },
+          "seq": {
+            "description": "The event's number in its sidecar session: 1 for the first, one more\nfor each after it. An event at or below the last one applied is\nignored, which makes a resend safe",
+            "example": 1,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.SidecarSessionEventsRequest": {
+        "properties": {
+          "events": {
+            "description": "The events, in the order the sidecar numbered them. At most 500, and\nthe body at most 4 MiB; above either the answer is 413",
+            "items": {
+              "$ref": "#/components/schemas/openapi.SidecarSessionEvent"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "openapi.SidecarSessionEventsResponse": {
+        "properties": {
+          "accepted": {
+            "description": "Events applied by this request, the ignored kinds included",
+            "example": 42,
+            "type": "integer"
+          },
+          "duplicates": {
+            "description": "Events at or below their session's last applied seq, ignored",
+            "example": 0,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "openapi.SidecarSlackChannels": {
         "properties": {
           "listeners": {
@@ -22355,6 +22397,120 @@
         ]
       }
     },
+    "/sidecars/events": {
+      "post": {
+        "description": "Record a sidecar's audit events as sessions. The sidecar is taken from the token, never the body, and every session it writes is its own.\n2xx means the batch is applied, now or by an earlier request: an event at or below its session's last applied seq is ignored. 4xx means the sidecar must not resend the batch. 5xx means it may resend it as it is.\nThe organization must have the experimental.sidecar_session_events flag on; the handshake answers the hoop-sidecar-session-events header when it does.",
+        "parameters": [
+          {
+            "description": "The token returned when the sidecar was created",
+            "in": "header",
+            "name": "hoop-sidecar-token",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/openapi.SidecarSessionEventsRequest"
+              }
+            }
+          },
+          "description": "The request body resource",
+          "required": true,
+          "x-originalParamName": "request"
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.SidecarSessionEventsResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Precondition Failed"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Record Sidecar Session Events",
+        "tags": [
+          "Sidecars"
+        ]
+      }
+    },
     "/sidecars/handshake": {
       "post": {
         "description": "Authenticated with the hoop-sidecar-token header. Records the reported version and returns the configuration the sidecar must serve. A sidecar whose stored configuration sets load_from_disk receives only that flag and its license, and runs its own config file. Answers 412 while no configuration with listeners is assigned, recording nothing: a sidecar that cannot run must not show up as recently seen. Answers 422 when the configuration uses a feature the hoop-sidecar-capabilities header does not list. The answer carries the organization's license in its \"license\" key; the sidecar verifies that signature itself and the license is never stored per sidecar.",
@@ -22403,6 +22559,12 @@
             "headers": {
               "hoop-sidecar-license-managed": {
                 "description": "Present when this gateway owns the licensing decision, so an answer with no license means the organization holds none. A gateway older than the feature omits it, and the sidecar then keeps its own license sources.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "hoop-sidecar-session-events": {
+                "description": "Present, as true, when the organization records sidecar sessions (experimental.sidecar_session_events). The sidecar then sends its audit events to POST /sidecars/events, and stops when an answer omits it.",
                 "schema": {
                   "type": "string"
                 }

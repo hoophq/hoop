@@ -818,11 +818,16 @@ func Run(cfg *Config, det Plugin) error {
 		"guardrail_rules", capText(limit.guardrails),
 		"mask_rules", capText(limit.mask))
 
-	ac, err := buildAudit(cfg.Audit)
+	ac, err := buildAudit(cfg.Audit, cfg.cp, log)
 	if err != nil {
 		return err
 	}
 	auditSink := ac.sink
+	if cfg.cp != nil {
+		// Set before the heartbeat starts, which is what lets the heartbeat
+		// read it without a lock.
+		cfg.cp.events = ac.events
+	}
 	defer func() {
 		// Close flushes buffered events, so shutdown does not drop the tail of
 		// the audit trail.
@@ -1561,13 +1566,19 @@ type auditChain struct {
 	sink  audit.Sink
 	mem   *audit.MemorySink
 	query *store.MemoryStore
+	// events sends the trail to the control plane. Nil without one.
+	events *sessionEventSink
 }
 
 // buildAudit assembles the sink chain.
 //
 // Order matters: the durable JSONL sink is first so it records even if a
 // later sink errors, and MultiSink attempts every sink regardless.
-func buildAudit(cfg AuditConfig) (auditChain, error) {
+//
+// A process connected to a control plane also gets the session events sink,
+// last. It sends nothing until a handshake answers SessionEventsHeader, and
+// it never fails a write, so it cannot change what the sinks before it do.
+func buildAudit(cfg AuditConfig, cp *controlPlane, log *slog.Logger) (auditChain, error) {
 	opts := audit.SinkOptions{
 		RedactStatements:  cfg.RedactStatements,
 		MaxStatementBytes: cfg.MaxStatementBytes,
@@ -1600,6 +1611,16 @@ func buildAudit(cfg AuditConfig) (auditChain, error) {
 	if cfg.QuerySessions > 0 {
 		out.query = store.NewMemoryStore(cfg.QuerySessions)
 		sinks = append(sinks, out.query)
+	}
+
+	// The same options as the JSONL sink, so the plane never receives a
+	// statement the file redacted or a longer one than the file kept.
+	if cp != nil {
+		out.events = newSessionEventSink(cp, opts, cp.sessionEvents, log)
+		sinks = append(sinks, out.events)
+		if cp.sessionEvents {
+			log.Info("the control plane takes session events; sending them", "url", cp.url)
+		}
 	}
 
 	out.sink = audit.NewMultiSink(sinks...)
@@ -1667,11 +1688,18 @@ func serveAdmin(
 				Active: active, Total: total, Denied: denied,
 			})
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
+		resp := map[string]any{
 			"version":   Version,
 			"listeners": out,
-		})
+		}
+		// Only a plane-connected process has the sink. Its drop count is
+		// how an operator learns the plane's copy of the trail has holes
+		// the local file does not.
+		if ac.events != nil {
+			resp["session_events"] = ac.events.snapshot()
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
 	})
 
 	// The resolved enforcement stack, per lane.

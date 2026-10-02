@@ -312,6 +312,24 @@ logs `restart to apply it`. A failed heartbeat changes nothing, because
 losing the phone line home must not take the data path down with it.
 ADR-0014 records the boundary.
 
+#### Sessions on the plane
+
+A plane that records sidecar sessions says so on every handshake answer with
+`hoop-sidecar-session-events: true` (the organization's
+`experimental.sidecar_session_events` flag). The process then also sends its
+audit events to `POST {url}/api/sidecars/events`, in batches of at most 500
+events and 4 MiB, with the same redaction and statement cap as the audit file.
+Each event carries `seq`, its number in its session from 1, so a resend is
+safe: the plane ignores a seq it already applied. A 5xx or an unreachable
+plane gets the same batch again, with backoff; a 4xx is final.
+
+The audit file stays the record of truth. The send never blocks a statement
+and never fails one: a queue of 16 MiB holds what the plane has not taken,
+and when it is full the oldest events go first. `GET /stats` reports the
+count under `session_events.dropped`. An answer without the header, or a 412,
+stops the sending and empties the queue. A plane older than this build sends
+no header, so nothing is sent to it.
+
 ### Usage analytics
 
 A release build reports usage to Segment: that the process started, what

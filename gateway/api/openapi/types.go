@@ -448,6 +448,37 @@ type SidecarCreateResponse struct {
 	Token string `json:"token" example:"hsc_Ab3fX9kL..."`
 }
 
+// SidecarSessionEventsRequest carries a sidecar's audit events.
+//
+// It documents daemon.SessionEventsRequest, which the handler decodes: that
+// type is the contract, shared with the sidecar that encodes it.
+type SidecarSessionEventsRequest struct {
+	// The events, in the order the sidecar numbered them. At most 500, and
+	// the body at most 4 MiB; above either the answer is 413
+	Events []SidecarSessionEvent `json:"events"`
+}
+
+// SidecarSessionEvent is one audit event and its place in its session.
+type SidecarSessionEvent struct {
+	// The event's number in its sidecar session: 1 for the first, one more
+	// for each after it. An event at or below the last one applied is
+	// ignored, which makes a resend safe
+	Seq int64 `json:"seq" example:"1"`
+	// The audit record exactly as the sidecar's JSONL audit file holds it
+	// (sidecar/audit.Event): kind, timestamp, session_id, principal,
+	// protocol, connection (the listener), statement, allowed, rule,
+	// message, error, masked_entities, masked_count and the session totals
+	Event map[string]any `json:"event"`
+}
+
+// SidecarSessionEventsResponse reports what a batch did.
+type SidecarSessionEventsResponse struct {
+	// Events applied by this request, the ignored kinds included
+	Accepted int `json:"accepted" example:"42"`
+	// Events at or below their session's last applied seq, ignored
+	Duplicates int `json:"duplicates" example:"0"`
+}
+
 // SidecarReviewRequest registers a statement a sidecar held for human approval.
 //
 // The sidecar is not in the body and must not be: the token identifies it, so a
