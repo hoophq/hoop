@@ -78,8 +78,8 @@ type Codec struct {
 	// dropResponseBody undoes libhoop's capture on the server side. Shim for
 	// libhoop v0.0.0-20260929214837-7bf5e47c42a8, whose CaptureBody covers
 	// both directions; server WebSocket messages are still inflated before
-	// the drop. Delete it when libhoop captures request bodies alone
-	// (TestLibhoopStillCapturesBothDirectionsOrNeither).
+	// the drop. Delete it with EVL-375, when libhoop captures request bodies
+	// alone (TestLibhoopStillCapturesBothDirectionsOrNeither).
 	dropResponseBody bool
 }
 

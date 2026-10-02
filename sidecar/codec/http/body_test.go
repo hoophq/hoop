@@ -41,7 +41,7 @@ func TestCaptureRequestBodyKeepsOnlyTheRequestSide(t *testing.T) {
 
 // Pins the reason for dropResponseBody: libhoop has one switch for both
 // directions. A new option means libhoop may now capture requests alone;
-// use it and delete the shim.
+// use it and delete the shim (EVL-375).
 func TestLibhoopStillCapturesBothDirectionsOrNeither(t *testing.T) {
 	want := []string{"CaptureBody", "MaxBodyBytes", "Headers", "SensitiveQueryParams", "MaxMessageBytes"}
 	typ := reflect.TypeOf(libhttp.Options{})

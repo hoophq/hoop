@@ -87,6 +87,29 @@ func TestANonHoldingHTTPLaneCapturesNoBody(t *testing.T) {
 	}
 }
 
+// /config publishes capture_body as what leaves this process, so it must
+// match the codec; the metric keeps the configured value.
+func TestConfigReportsTheBodiesTheCodecCaptures(t *testing.T) {
+	captured := nonHoldingHTTPLane()
+	captured.Listeners[0].HTTP = &HTTPCodecConfig{CaptureBody: true}
+	for name, cfg := range map[string]*Config{
+		"holding":      holdingHTTPLane(),
+		"not holding":  nonHoldingHTTPLane(),
+		"capture_body": captured,
+	} {
+		t.Run(name, func(t *testing.T) {
+			ln := buildHTTPLane(t, cfg, nil)
+			body := decodeOne(t, ln.codecFactory, inspect.FromClient, transfer).HTTP.Body
+			if got, want := ln.capturesRequestBodies(), body != ""; got != want {
+				t.Errorf("/config capture_body = %v, codec captured %q", got, body)
+			}
+			if got, want := ln.captureBody, name == "capture_body"; got != want {
+				t.Errorf("metric capture_body = %v, want %v", got, want)
+			}
+		})
+	}
+}
+
 // recordingSwapper is a relay lane's swap target that keeps what it was
 // handed.
 type recordingSwapper struct{ got *lane }

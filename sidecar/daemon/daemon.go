@@ -1173,8 +1173,9 @@ type lane struct {
 	// through cfg.Analyzer instead.
 	analyzed []string
 
-	// captureBody reports whether this lane's codec exposes request bodies,
-	// which decides whether HTTP analysis has anything to read.
+	// captureBody is the configured http.capture_body, which the
+	// lanes-capture-body metric counts. A holding lane captures request
+	// bodies without it; see capturesRequestBodies.
 	captureBody bool
 
 	// observing is true when the lane evaluates everything and denies
@@ -1200,6 +1201,14 @@ type lane struct {
 	// rather than read from the config at each use so one build of the
 	// lanes sees one read of the bundle.
 	trustRoots *x509.CertPool
+}
+
+// capturesRequestBodies reports whether the lane's codec exposes request
+// bodies, which /config publishes as what leaves this process. It follows
+// newHTTPCodec.
+func (ln lane) capturesRequestBodies() bool {
+	return ln.captureBody ||
+		inspect.Protocol(ln.cfg.Protocol) == inspect.HTTP && analyzerHolds(ln.cfg.Analyzer)
 }
 
 // buildLanes resolves and builds every listener's stack.
@@ -1728,7 +1737,7 @@ func serveAdmin(
 				Masking:     ln.masker != nil,
 				Analyzer:    ln.cfg.Analyzer != nil,
 				AIRules:     ln.analyzed,
-				CaptureBody: ln.captureBody,
+				CaptureBody: ln.capturesRequestBodies(),
 				Observing:   ln.observing,
 				Guardrails:  mode,
 				OPAURL:      ln.opaURL,
