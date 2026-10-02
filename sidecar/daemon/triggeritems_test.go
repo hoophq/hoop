@@ -141,3 +141,21 @@ func TestTriggerItemsAreServedOnlyToABuildThatDecodesThem(t *testing.T) {
 		}
 	}
 }
+
+// The control plane's view: the lane inherits opa.gate from the top level, and
+// the export resolves it the way the sidecar does at load.
+func TestValidateLaneTriggersReadsAnInheritedGate(t *testing.T) {
+	la := laneBlock()
+	la.Trigger = &policy.AITrigger{Exclude: []policy.AITriggerItem{{Tables: []string{"audit_log"}}}}
+	cfg := blockLane(la)
+	if got := ValidateLaneTriggers(*cfg); len(got) != 0 {
+		t.Fatalf("an ungated lane was refused: %v", got)
+	}
+	cfg.OPA = &OPAConfig{URL: "http://opa:8181/v1/data/hoop", Gate: true}
+	if got := ValidateLaneTriggers(*cfg); len(got) != 1 {
+		t.Fatalf("ValidateLaneTriggers = %v, want the gated exclude refusal", got)
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("the sidecar accepted what the plane refuses")
+	}
+}

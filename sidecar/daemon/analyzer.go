@@ -1326,6 +1326,32 @@ func validateGatedExclude(t *policy.AITrigger, gated bool, where string) []strin
 		"what is classified there"}
 }
 
+// ValidateLaneTriggers runs the trigger checks that need a lane's RESOLVED
+// OPA settings, over a whole document: exclude with nothing else to narrow on
+// a gated lane. The lane may inherit opa.gate from the top level.
+//
+// Exported for the control plane. A rule is valid alone and the listener it
+// binds to decides whether the lane is gated; served unchecked, the sidecar
+// refuses the whole document and every lane on it stops reloading.
+func ValidateLaneTriggers(cfg Config) []string {
+	var problems []string
+	for _, lc := range cfg.Listeners {
+		gc, opa, _ := cfg.resolve(lc)
+		gated := opa.enabled() && opa.Gate
+		if lc.Analyzer != nil {
+			problems = append(problems, validateGatedExclude(
+				lc.Analyzer.Trigger, gated, lc.Name+": analyzer block")...)
+		}
+		for _, r := range gc.Rules {
+			if r.Type == policy.MatchAIAnalysis {
+				problems = append(problems, validateGatedExclude(r.Trigger, gated,
+					fmt.Sprintf("%s: ai_analysis rule %q", lc.Name, r.Name))...)
+			}
+		}
+	}
+	return problems
+}
+
 // validateRiskActions checks a high/medium/low action map, shared by the
 // block and the rule form so the two spellings refuse identically.
 func validateRiskActions(high, medium, low, where string) []string {
