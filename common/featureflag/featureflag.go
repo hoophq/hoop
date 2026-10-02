@@ -131,6 +131,13 @@ var catalog = map[string]Flag{
 		Stability:   StabilityExperimental,
 		Components:  []Component{ComponentGateway},
 	},
+	"beta.sidecar_handshake_not_modified": {
+		Name:        "beta.sidecar_handshake_not_modified",
+		Description: "Answer a sidecar heartbeat with 304 Not Modified, and skip composing its configuration, when no rule, binding, sidecar configuration or license of the organization changed since the document it last received. Cuts the control plane's per-sidecar cost for large fleets. Sidecars too old to name their document always receive it in full. When off, every heartbeat composes and returns the full configuration.",
+		Default:     false,
+		Stability:   StabilityBeta,
+		Components:  []Component{ComponentGateway},
+	},
 }
 
 // All returns every registered flag, sorted by name.

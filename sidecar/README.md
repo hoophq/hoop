@@ -304,7 +304,10 @@ the license belongs to the organization, which serves its own on every
 handshake. A first handshake that fails stops
 startup, since there is nothing to serve yet.
 
-Once running, a heartbeat repeats the handshake every minute. It keeps the
+Once running, a heartbeat repeats the handshake about every minute (each
+wait is drawn from 48 to 72 seconds, so a fleet started together does not
+stay in step). It names the document it last received, and a plane with
+nothing new answers 304 with no body. It keeps the
 plane's last-seen fresh and picks up edits, applying them under the same
 boundary as a file edit: rule-only drift swaps in place, logged as
 `configuration applied` with a generation number; drift beyond the rules
@@ -1171,7 +1174,8 @@ force-approval list; the lane holds only its name, and the control plane
 authorizes each review against the config it stored for that sidecar.
 
 **A hold waits, then gives up.** A pending review holds the statement on
-its connection for up to 30 minutes, on every protocol. Every 5 seconds the relay asks the plane
+its connection for up to 30 minutes, on every protocol. Every 5 seconds for the first minute, then backing off to
+every 30 seconds, the relay asks the plane
 about that one review (`POST /api/sidecars/reviews/<id>/claim`); the ask never
 files a review. An approval that lands in time runs the statement on the same
 connection, late. A rejection, a revocation, or an approval another connection

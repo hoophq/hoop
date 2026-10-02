@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math/rand/v2"
 	"net/http"
 	"net/url"
 	"os"
@@ -84,6 +85,11 @@ const (
 	// gateway's last-seen fresh and notices a config edited in the UI; a
 	// minute is fast enough for both and costs one small request.
 	heartbeatEvery = time.Minute
+	// heartbeatJitter spreads each wait over every ± this fraction. A fleet
+	// restarted by one rollout would otherwise handshake in the same second
+	// every minute for its whole life; the mean stays heartbeatEvery, so
+	// last-seen staleness on the plane reads the same.
+	heartbeatJitter = 0.2
 )
 
 // controlPlane is the resolved connection Setup reached: where to call, what
@@ -112,6 +118,13 @@ type controlPlane struct {
 	// ignoredLicense names the local source this process is NOT using, so
 	// Run can say so once. Empty when no local source held a document.
 	ignoredLicense string
+
+	// served is the last document the plane answered with in full. Its
+	// revision rides on the next heartbeat, and a plane that would serve
+	// the same document answers 304; served.raw then goes to the reloader
+	// again, so a document still being retried is retried. Empty against a
+	// gateway that sends no revision, which then always answers in full.
+	served handshakeAnswer
 
 	// every overrides the heartbeat interval. Zero means heartbeatEvery,
 	// which is what every deployment runs; a test sets it so a case about
@@ -286,7 +299,7 @@ func resolveConfigSource(local *Config, tokenFlag string) (*Config, error) {
 		local.ControlPlaneURL = planeURL
 		local.cp = &controlPlane{url: planeURL, urlSource: urlSource, token: token,
 			lastRaw: raw, diskMode: true, license: planeDoc.License, licenseManaged: managed,
-			revision: answer.revision}
+			revision: answer.revision, served: answer}
 		return local, nil
 	}
 	imported := false
@@ -336,7 +349,7 @@ func resolveConfigSource(local *Config, tokenFlag string) (*Config, error) {
 	// what it reports here.
 	cfg.cp = &controlPlane{url: planeURL, urlSource: urlSource, token: token,
 		lastRaw: raw, imported: imported, license: planeLicense, licenseManaged: managed,
-		revision: answer.revision, outcome: reloadApplied.String()}
+		revision: answer.revision, outcome: reloadApplied.String(), served: answer}
 	if !imported && local != nil {
 		cfg.cp.fileListeners = len(local.Listeners)
 	}
@@ -360,6 +373,11 @@ type handshakeRequest struct {
 	// stores it beside the outcome and shows it on the sidecar page, so an
 	// admin reads the reason without the sidecar's log.
 	LastError string `json:"last_error,omitempty"`
+	// ServedRevision is the ConfigRevisionHeader of the last document the
+	// plane sent in full, applied or not. A plane that would send the same
+	// one answers 304 with no body (errNotModified). Omitted on the boot
+	// handshake, which needs the body whatever the plane holds.
+	ServedRevision string `json:"served_revision,omitempty"`
 }
 
 // handshakeAnswer is one handshake's result: the document, and the two facts
@@ -422,6 +440,12 @@ func fetchControlPlaneConfig(baseURL, token string, hs handshakeRequest) (answer
 			managed:  resp.Header.Get(LicenseManagedHeader) == "true",
 			revision: resp.Header.Get(ConfigRevisionHeader),
 		}, nil
+	case http.StatusNotModified:
+		if hs.ServedRevision == "" {
+			return handshakeAnswer{}, fmt.Errorf("the control plane at %s answered 304 to a handshake "+
+				"that named no served revision", baseURL)
+		}
+		return handshakeAnswer{}, errNotModified
 	case http.StatusUnauthorized:
 		// Not self-healing: a mistyped token and a deleted sidecar both land
 		// here, and the plane shows the token once at creation, so a lost
@@ -489,6 +513,11 @@ func (cp *controlPlane) reimport(log *slog.Logger, rl *reloader) (handshakeAnswe
 // token and holds nothing to serve. resolveConfigSource turns it into an
 // import when the local file can supply the document.
 var errPlaneHasNoConfig = errors.New("the control plane has no configuration for this sidecar")
+
+// errNotModified marks the handshake's 304: the plane would serve the
+// document named by handshakeRequest.ServedRevision again. The caller holds
+// that document; the plane did not send it.
+var errNotModified = errors.New("the control plane configuration is unchanged")
 
 // errPlaneAlreadyConfigured marks the import's 409: a configuration landed
 // on the plane between the handshake and the push. The concurrent author
@@ -632,6 +661,15 @@ func controlPlaneMessage(raw []byte) string {
 	return s
 }
 
+// jittered draws one heartbeat wait, uniform over every ± heartbeatJitter.
+func jittered(every time.Duration) time.Duration {
+	spread := time.Duration(float64(every) * 2 * heartbeatJitter)
+	if spread <= 0 {
+		return every
+	}
+	return every - spread/2 + rand.N(spread)
+}
+
 // heartbeat re-runs the handshake until ctx ends. It keeps the gateway's
 // last-seen fresh and notices a config edited in the UI.
 //
@@ -647,7 +685,7 @@ func (cp *controlPlane) heartbeat(ctx context.Context, log *slog.Logger, rl *rel
 	if every == 0 {
 		every = heartbeatEvery
 	}
-	t := time.NewTicker(every)
+	t := time.NewTimer(jittered(every))
 	defer t.Stop()
 	for {
 		select {
@@ -655,6 +693,7 @@ func (cp *controlPlane) heartbeat(ctx context.Context, log *slog.Logger, rl *rel
 			return
 		case <-t.C:
 		}
+		t.Reset(jittered(every))
 		// What this sidecar did with the LAST document rides on this
 		// request. Reporting it is the whole reason the plane can render a
 		// fleet state at all: a document that was refused, or that needs a
@@ -666,8 +705,12 @@ func (cp *controlPlane) heartbeat(ctx context.Context, log *slog.Logger, rl *rel
 			AppliedRevision: cp.revision,
 			LastOutcome:     cp.outcome,
 			LastError:       cp.reason,
+			ServedRevision:  cp.served.revision,
 		})
-		if errors.Is(err, errPlaneHasNoConfig) {
+		switch {
+		case errors.Is(err, errNotModified):
+			answer, err = cp.served, nil
+		case errors.Is(err, errPlaneHasNoConfig):
 			answer, err = cp.reimport(log, rl)
 		}
 		if err != nil {
@@ -676,6 +719,7 @@ func (cp *controlPlane) heartbeat(ctx context.Context, log *slog.Logger, rl *rel
 				"url", cp.url, "error", err)
 			continue
 		}
+		cp.served = answer
 		outcome := rl.handle(log, answer.raw)
 		cp.outcome = outcome.String()
 		cp.reason = ""

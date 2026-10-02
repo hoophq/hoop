@@ -12,6 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/hoophq/hoop/common/featureflag"
 	"github.com/hoophq/hoop/common/log"
 	"github.com/hoophq/hoop/gateway/api/apiroutes"
 	"github.com/hoophq/hoop/gateway/api/httputils"
@@ -63,12 +64,42 @@ func configRevision(served daemon.Config) string {
 // served. A failure to record is logged and never fails the handshake: the
 // sidecar needs its configuration more than the fleet view needs a row, and
 // the next tick is a minute away.
-func recordHandshake(sidecarID string, req openapi.SidecarHandshakeRequest, servedRevision string, capabilities []string) {
+func recordHandshake(sidecarID string, req openapi.SidecarHandshakeRequest, servedRevision string, capabilities []string, composedGen *int64) {
 	err := models.RecordSidecarHandshake(models.DB, sidecarID,
-		req.Version, req.AppliedRevision, req.LastOutcome, req.LastError, servedRevision, capabilities)
+		req.Version, req.AppliedRevision, req.LastOutcome, req.LastError, servedRevision, capabilities, composedGen)
 	if err != nil {
 		log.With("sidecar", sidecarID).Warnf("failed recording the sidecar handshake, reason=%v", err)
 	}
+}
+
+// notModifiedFlag gates the 304 answer. The compose inputs are tracked by
+// triggers (migration 000128), and the flag turns the skip off if one of them
+// turns out to be missing a write.
+const notModifiedFlag = "beta.sidecar_handshake_not_modified"
+
+// maxComposeSkip bounds how long a sidecar is answered 304 without a compose.
+// The triggers see every write, but not time: a license term that ends
+// changes what the limits check answers with no row changing.
+const maxComposeSkip = 10 * time.Minute
+
+// servesUnchanged reports whether the document named by req.ServedRevision is
+// still what a compose would serve, without composing it. Every input of the
+// compose must be the one it was composed from: the rows (the org gen), the
+// requesting build (version and capabilities), and the clock (composed_at).
+// A plane refusal recorded since then means the last answer was not a
+// document at all.
+func servesUnchanged(sc *models.Sidecar, req openapi.SidecarHandshakeRequest, capabilities []string) bool {
+	switch {
+	case req.ServedRevision == "" || derefOrEmpty(sc.ServedRevision) != req.ServedRevision:
+		return false
+	case sc.ServedGen == nil || *sc.ServedGen != sc.OrgConfigGen:
+		return false
+	case sc.ComposedAt == nil || time.Since(*sc.ComposedAt) >= maxComposeSkip:
+		return false
+	case derefOrEmpty(sc.LastOutcome) == models.SidecarOutcomeNotServed:
+		return false
+	}
+	return derefOrEmpty(sc.ReportedVersion) == req.Version && slices.Equal(sc.Capabilities, capabilities)
 }
 
 // refuseOverCap answers 422 when a configuration authors more rules than the
@@ -544,7 +575,7 @@ func usesConfigFile(cfg models.SidecarConfiguration) bool {
 // Sidecar Handshake
 //
 //	@Summary		Sidecar Handshake
-//	@Description	Authenticated with the hoop-sidecar-token header. Records the reported version and returns the configuration the sidecar must serve. A sidecar whose stored configuration sets load_from_disk receives only that flag and its license, and runs its own config file. Answers 412 while no configuration with listeners is assigned, recording nothing: a sidecar that cannot run must not show up as recently seen. Answers 422 when the configuration uses a feature the hoop-sidecar-capabilities header does not list. The answer carries the organization's license in its "license" key; the sidecar verifies that signature itself and the license is never stored per sidecar.
+//	@Description	Authenticated with the hoop-sidecar-token header. Records the reported version and returns the configuration the sidecar must serve. A sidecar whose stored configuration sets load_from_disk receives only that flag and its license, and runs its own config file. Answers 412 while no configuration with listeners is assigned, recording nothing: a sidecar that cannot run must not show up as recently seen. Answers 422 when the configuration uses a feature the hoop-sidecar-capabilities header does not list. The answer carries the organization's license in its "license" key; the sidecar verifies that signature itself and the license is never stored per sidecar. Answers 304 with no body when served_revision names the configuration it would serve again and the beta.sidecar_handshake_not_modified flag is on.
 //	@Tags			Sidecars
 //	@Accept			json
 //	@Produce		json
@@ -552,6 +583,7 @@ func usesConfigFile(cfg models.SidecarConfiguration) bool {
 //	@Param			hoop-sidecar-capabilities	header		string							false	"Comma-separated served-document features this sidecar decodes, such as review_mode. Absent means a build too old to report."
 //	@Param			request						body		openapi.SidecarHandshakeRequest	true	"The request body resource"
 //	@Success		200							{object}	map[string]interface{}
+//	@Success		304							"The configuration named by served_revision is still current. No body; the sidecar keeps serving it."
 //	@Header			200							{string}	hoop-sidecar-license-managed	"Present when this gateway owns the licensing decision, so an answer with no license means the organization holds none. A gateway older than the feature omits it, and the sidecar then keeps its own license sources."
 //	@Failure		400,401,403,412,422,500		{object}	openapi.HTTPError
 //	@Router			/sidecars/handshake [post]
@@ -579,7 +611,7 @@ func Handshake(c *gin.Context) {
 		// No revision: the plane does not own this sidecar's document, so it
 		// has nothing to be converged with. The state renders from
 		// load_from_disk instead.
-		recordHandshake(sidecar.ID, req, "", capabilities)
+		recordHandshake(sidecar.ID, req, "", capabilities, nil)
 		c.Header(licenseManagedHeader, "true")
 		c.JSON(http.StatusOK, diskModeConfig{LoadFromDisk: true, License: string(licenseData)})
 		return
@@ -593,6 +625,17 @@ func Handshake(c *gin.Context) {
 			"start the sidecar with its config file to import it, or author the configuration in the control plane"})
 		return
 	}
+	if featureflag.IsEnabled(sidecar.OrgID, notModifiedFlag) && servesUnchanged(sidecar, req, capabilities) {
+		recordHandshake(sidecar.ID, req, req.ServedRevision, capabilities, nil)
+		c.Header(licenseManagedHeader, "true")
+		c.Header(daemon.ConfigRevisionHeader, req.ServedRevision)
+		c.AbortWithStatus(http.StatusNotModified)
+		return
+	}
+	// Read with the sidecar row, before the compose reads any rule: a write
+	// landing in between leaves this gen behind, so the next handshake
+	// composes again rather than skipping on rules it never saw.
+	composedGen := sidecar.OrgConfigGen
 	served, err := withOrgLicense(sidecar, daemon.Handshake{Version: req.Version, Capabilities: capabilities})
 	if err != nil {
 		// Recorded even on refusal, with the reason: a later write knows
@@ -609,7 +652,7 @@ func Handshake(c *gin.Context) {
 		return
 	}
 	revision := configRevision(served)
-	recordHandshake(sidecar.ID, req, revision, capabilities)
+	recordHandshake(sidecar.ID, req, revision, capabilities, &composedGen)
 	c.Header(licenseManagedHeader, "true")
 	c.Header(daemon.ConfigRevisionHeader, revision)
 	c.JSON(http.StatusOK, served)
