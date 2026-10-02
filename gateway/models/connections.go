@@ -37,6 +37,10 @@ const (
 
 	ConnectionStatusOnline  string = "online"
 	ConnectionStatusOffline string = "offline"
+
+	// ConnectionManagedBySidecar marks a connection that mirrors one listener
+	// of a sidecar, the way "hoopagent" marks one an agent syncs.
+	ConnectionManagedBySidecar string = "sidecar"
 )
 
 type Connection struct {
@@ -57,6 +61,12 @@ type Connection struct {
 	AccessModeConnect       string         `gorm:"column:access_mode_connect"`
 	AccessSchema            string         `gorm:"column:access_schema"`
 	JiraIssueTemplateID     sql.NullString `gorm:"column:jira_issue_template_id"`
+
+	// Sidecar binding: the listener this connection mirrors. Both set or both
+	// null (connections_sidecar_listener_check). Set by the projection only;
+	// an update that omits them keeps the stored pair (resolveSidecarBinding).
+	SidecarID       sql.NullString `gorm:"column:sidecar_id"`
+	SidecarListener sql.NullString `gorm:"column:sidecar_listener"`
 
 	// Access control
 	ForceApproveGroups pq.StringArray `gorm:"column:force_approve_groups;type:text[]"`
@@ -95,6 +105,9 @@ func (c Connection) AsSecrets() map[string]any {
 	}
 	return dst
 }
+
+// IsSidecarBacked reports a connection that mirrors a sidecar listener.
+func (c *Connection) IsSidecarBacked() bool { return c.SidecarID.Valid }
 
 type EnvVars struct {
 	ID    string            `gorm:"column:id"`
@@ -197,6 +210,32 @@ func envsMapEqual(a, b map[string]string) bool {
 	return true
 }
 
+// resolveSidecarBinding keeps the stored sidecar binding when the caller set
+// none. GORM Save writes every column, so an update built from a request
+// would null it. Only the projection sets a binding, and it ends when the
+// row is deleted, never by an update.
+func resolveSidecarBinding(tx *gorm.DB, c *Connection) error {
+	if c.SidecarID.Valid || c.SidecarListener.Valid {
+		return nil
+	}
+	var prev struct {
+		SidecarID       sql.NullString `gorm:"column:sidecar_id"`
+		SidecarListener sql.NullString `gorm:"column:sidecar_listener"`
+	}
+	err := tx.Table(tableConnections).
+		Select("sidecar_id, sidecar_listener").
+		Where("org_id = ? AND id = ?", c.OrgID, c.ID).
+		First(&prev).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed loading previous sidecar binding, reason=%v", err)
+	}
+	c.SidecarID, c.SidecarListener = prev.SidecarID, prev.SidecarListener
+	return nil
+}
+
 func UpsertConnection(ctx UserContext, c *Connection) (*Connection, error) {
 	if c.JiraIssueTemplateID.String == "" {
 		c.JiraIssueTemplateID.Valid = false
@@ -249,6 +288,9 @@ func UpsertConnection(ctx UserContext, c *Connection) (*Connection, error) {
 				return err
 			}
 			c.SecretsUpdatedAt = stamp
+		}
+		if err := resolveSidecarBinding(tx, c); err != nil {
+			return err
 		}
 
 		err = tx.Table(tableConnections).
@@ -376,6 +418,9 @@ func UpsertBatchConnections(db *gorm.DB, connections []*Connection) error {
 				return err
 			}
 			c.SecretsUpdatedAt = stamp
+		}
+		if err := resolveSidecarBinding(db, c); err != nil {
+			return err
 		}
 
 		err = db.Table(tableConnections).
@@ -544,7 +589,7 @@ func GetBareConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) 
 	var conn Connection
 	err := tx.Raw(`
 	SELECT
-		c.id, c.org_id, c.resource_name, c.name, c.command, c.status, c.type, c.subtype, c.managed_by,
+		c.id, c.org_id, c.resource_name, c.name, c.command, c.status, c.type, c.subtype, c.managed_by, c.sidecar_id, c.sidecar_listener,
 		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema, c.access_max_duration,
 		c.agent_id, a.name AS agent_name, a.mode AS agent_mode, c.force_approve_groups, c.min_review_approvals,
 		c.jira_issue_template_id, it.issue_transition_name_on_close, c.secrets_updated_at,
@@ -678,7 +723,7 @@ func getConnectionByNameOrID(ctx UserContext, nameOrID string, tx *gorm.DB) (*Co
 	var conn Connection
 	err := tx.Raw(`
 	SELECT
-		c.id, c.org_id, c.resource_name, c.name, c.command, c.status, c.type, c.subtype, c.managed_by,
+		c.id, c.org_id, c.resource_name, c.name, c.command, c.status, c.type, c.subtype, c.managed_by, c.sidecar_id, c.sidecar_listener,
 		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema,
 		COALESCE(c.agent_id, r.agent_id) AS agent_id, a.name AS agent_name, a.mode AS agent_mode, c.access_max_duration,
 		c.jira_issue_template_id, it.issue_transition_name_on_close, c.force_approve_groups, c.min_review_approvals, c.secrets_updated_at,
@@ -862,7 +907,7 @@ func ListConnections(ctx UserContext, opts ConnectionFilterOption) ([]Connection
 		SELECT * FROM json_to_recordset(?::JSON) AS x(key TEXT, op TEXT, val TEXT)
 	)
 	SELECT
-		c.id, c.org_id, c.agent_id, c.name, c.command, c.status, c.type, c.subtype, c.managed_by,
+		c.id, c.org_id, c.agent_id, c.name, c.command, c.status, c.type, c.subtype, c.managed_by, c.sidecar_id, c.sidecar_listener,
 		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema,
 		c.jira_issue_template_id, c.resource_name,
 		-- legacy tags
@@ -1110,7 +1155,7 @@ func ListConnectionsPaginated(orgID string, userGroups []string, opts Connection
 		SELECT * FROM json_to_recordset(?::JSON) AS x(key TEXT, op TEXT, val TEXT)
 	)
 	SELECT
-		c.id, c.org_id, c.agent_id, c.name, c.command, c.status, c.type, c.subtype, c.managed_by,
+		c.id, c.org_id, c.agent_id, c.name, c.command, c.status, c.type, c.subtype, c.managed_by, c.sidecar_id, c.sidecar_listener,
 		c.access_mode_runbooks, c.access_mode_exec, c.access_mode_connect, c.access_schema,
 		c.resource_name,
 		COALESCE(c.mandatory_metadata_fields, ARRAY[]::TEXT[]) AS mandatory_metadata_fields,
