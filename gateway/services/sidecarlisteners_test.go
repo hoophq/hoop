@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	apivalidation "github.com/hoophq/hoop/gateway/api/validation"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/sidecar/daemon"
 )
@@ -100,39 +101,15 @@ func TestProjectListenersRendersTheMirror(t *testing.T) {
 	}
 }
 
-func TestProjectListenersRefusesWhatItCannotMirror(t *testing.T) {
-	cases := []struct {
-		name     string
-		sidecar  string
-		listener daemon.ListenerConfig
-		wantErr  string
-	}{
-		{"unknown protocol", "pay", daemon.ListenerConfig{Name: "appdb", Protocol: "oracle"}, `no connection type for protocol "oracle"`},
-		{"empty protocol", "pay", daemon.ListenerConfig{Name: "appdb", Protocol: ""}, `no connection type for protocol ""`},
-		{"listener name with a space", "pay", daemon.ListenerConfig{Name: "app db", Protocol: "postgres"}, "connection name:"},
-		{"empty listener name", "pay", daemon.ListenerConfig{Name: "", Protocol: "postgres"}, "connection name:"},
-		{"sidecar name with a slash", "pay/ments", daemon.ListenerConfig{Name: "appdb", Protocol: "postgres"}, "connection name:"},
-		// "pay-" plus 125 is 129, one over resources.name.
-		{"name over the resource width", "pay", daemon.ListenerConfig{Name: strings.Repeat("a", 125), Protocol: "postgres"}, "longer than 128 characters"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got, err := ProjectListeners("org-1", sidecarWith(tc.sidecar, tc.listener))
-			if err == nil {
-				t.Fatalf("want an error, got %+v", got)
-			}
-			if !strings.Contains(err.Error(), tc.wantErr) {
-				t.Errorf("want error containing %q, got %q", tc.wantErr, err)
-			}
-			if got != nil {
-				t.Errorf("want no partial result, got %d connections", len(got))
-			}
-		})
-	}
-
-	// "pay-" plus 124 is exactly 128.
-	if _, err := ProjectListeners("org-1", sidecarWith("pay", daemon.ListenerConfig{Name: strings.Repeat("a", 124), Protocol: "postgres"})); err != nil {
-		t.Errorf("a 128-character name must be accepted: %v", err)
+func TestProjectListenersRefusesAProtocolWithNoConnectionType(t *testing.T) {
+	for _, protocol := range []string{"oracle", ""} {
+		got, err := ProjectListeners("org-1", sidecarWith("pay", daemon.ListenerConfig{Name: "appdb", Protocol: protocol}))
+		if err == nil || !strings.Contains(err.Error(), `no connection type for protocol "`+protocol+`"`) {
+			t.Errorf("protocol %q: want the no-connection-type error, got %v", protocol, err)
+		}
+		if got != nil {
+			t.Errorf("protocol %q: want no partial result, got %d connections", protocol, len(got))
+		}
 	}
 
 	// One bad listener fails the whole projection: a sidecar is mirrored
@@ -143,6 +120,95 @@ func TestProjectListenersRefusesWhatItCannotMirror(t *testing.T) {
 	))
 	if err == nil {
 		t.Error("want the projection to fail on the second listener")
+	}
+}
+
+// The daemon accepts listener names the connection name rule refuses. A
+// sidecar config that works today must keep working, so those listeners take
+// the fallback name instead of refusing the write.
+func TestProjectListenersFallsBackForANameTheRuleRefuses(t *testing.T) {
+	cases := []struct {
+		name, sidecar, listener string
+	}{
+		{"listener name with a space", "pay", "app db"},
+		{"sidecar name with a slash", "pay/ments", "appdb"},
+		// "pay-" plus 125 is 129, one over resources.name.
+		{"name over the resource width", "pay", strings.Repeat("a", 125)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sc := sidecarWith(tc.sidecar, daemon.ListenerConfig{Name: tc.listener, Protocol: "postgres"})
+			got, err := ProjectListeners("org-1", sc)
+			if err != nil {
+				t.Fatalf("a name the rule refuses must not refuse the sidecar: %v", err)
+			}
+			if len(got) != 1 {
+				t.Fatalf("want 1 connection, got %d", len(got))
+			}
+			want := models.SidecarMirrorFallbackName(tc.sidecar+"-"+tc.listener, sc.ID, tc.listener)
+			if got[0].Name != want {
+				t.Errorf("want %q, got %q", want, got[0].Name)
+			}
+			if err := apivalidation.ValidateResourceName(got[0].Name); err != nil || len(got[0].Name) > models.MaxSidecarMirrorNameLength {
+				t.Errorf("the fallback name %q breaks the name rule: %v", got[0].Name, err)
+			}
+			if got[0].SidecarListener.String != tc.listener {
+				t.Errorf("the listener name must be kept verbatim, got %q", got[0].SidecarListener.String)
+			}
+		})
+	}
+
+	// "pay-" plus 124 is exactly 128: the preferred name, no fallback.
+	got, err := ProjectListeners("org-1", sidecarWith("pay", daemon.ListenerConfig{Name: strings.Repeat("a", 124), Protocol: "postgres"}))
+	if err != nil || got[0].Name != "pay-"+strings.Repeat("a", 124) {
+		t.Errorf("a 128-character name must be kept: %v", err)
+	}
+}
+
+func TestSidecarMirrorFallbackName(t *testing.T) {
+	a := models.SidecarMirrorFallbackName("pay-cache", "sidecar-a", "cache")
+	if a != models.SidecarMirrorFallbackName("pay-cache", "sidecar-a", "cache") {
+		t.Error("the fallback name must be stable")
+	}
+	if a == models.SidecarMirrorFallbackName("pay-cache", "sidecar-b", "cache") {
+		t.Error("two sidecars must not share a fallback name")
+	}
+	if a != models.SidecarMirrorFallbackName(a, "sidecar-a", "cache") {
+		t.Error("the fallback of a fallback name must be that name")
+	}
+	for _, preferred := range []string{"pay-cache", "pay- -//x", "--", strings.Repeat("b", 300)} {
+		got := models.SidecarMirrorFallbackName(preferred, "sidecar-a", "x")
+		if err := apivalidation.ValidateResourceName(got); err != nil || len(got) > models.MaxSidecarMirrorNameLength {
+			t.Errorf("%q falls back to %q, which breaks the name rule: %v", preferred, got, err)
+		}
+	}
+}
+
+// Rules bind to a listener by its name, so a listener with no name, or with
+// the name of an earlier one, has no mirror. The daemon accepts both, so
+// neither may refuse the write.
+func TestProjectListenersSkipsUnnamedAndRepeatedListeners(t *testing.T) {
+	got, err := ProjectListeners("org-1", sidecarWith("pay",
+		daemon.ListenerConfig{Name: "", Protocol: "postgres"},
+		daemon.ListenerConfig{Name: "appdb", Protocol: "postgres"},
+		daemon.ListenerConfig{Name: "appdb", Protocol: "mysql"},
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].SidecarListener.String != "appdb" || got[0].SubType.String != "postgres" {
+		t.Errorf("want one mirror, the first appdb, got %+v", got)
+	}
+}
+
+// With the flag off the sync must not touch the database at all: an org that
+// has not opted in keeps its sidecar writes and imports as they were. A nil
+// transaction proves it.
+func TestSyncSidecarListenerConnectionsIsOffWithTheFlag(t *testing.T) {
+	sc := sidecarWith("pay", daemon.ListenerConfig{Name: "app db", Protocol: "redis"})
+	sc.OrgID = "org-sync-flag-off"
+	if err := SyncSidecarListenerConnectionsTx(nil, sc); err != nil {
+		t.Errorf("want no-op with the flag off, got %v", err)
 	}
 }
 

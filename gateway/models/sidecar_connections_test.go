@@ -132,16 +132,26 @@ func TestSyncSidecarConnections(t *testing.T) {
 		}
 	})
 
-	t.Run("a name another connection has is refused, whole", func(t *testing.T) {
+	// Every subtest that changes the listener set puts this one back, so the
+	// next one starts from the same mirrors.
+	restore := func(t *testing.T) {
+		t.Helper()
+		if err := syncMirrors(t, sc, appdb, daemon.ListenerConfig{Name: "api-v2", Protocol: "http"}); err != nil {
+			t.Fatalf("restore: %v", err)
+		}
+	}
+
+	t.Run("a name another connection has moves the mirror to its fallback name", func(t *testing.T) {
 		seedAdminConnection(t, "pay-cache", "pay-cache")
-		err := syncMirrors(t, sc, appdb, daemon.ListenerConfig{Name: "logs", Protocol: "clickhouse"}, daemon.ListenerConfig{Name: "cache", Protocol: "clickhouse"})
-		var taken models.ErrSidecarConnectionNameTaken
-		if !errors.As(err, &taken) || taken.Listener != "cache" || taken.Name != "pay-cache" {
-			t.Fatalf("want ErrSidecarConnectionNameTaken for cache, got %v", err)
+		cache := daemon.ListenerConfig{Name: "cache", Protocol: "clickhouse"}
+		err := syncMirrors(t, sc, appdb, daemon.ListenerConfig{Name: "logs", Protocol: "clickhouse"}, cache)
+		if err != nil {
+			t.Fatalf("a name in use must not refuse the sidecar write: %v", err)
 		}
 		got := mirrorsOf(t, sc.ID)
-		if len(got) != 2 || got["logs"].ID != "" {
-			t.Errorf("the refused sync left a partial result: %+v", got)
+		fallback := models.SidecarMirrorFallbackName("pay-cache", sc.ID, "cache")
+		if got["logs"].Name != "pay-logs" || got["cache"].Name != fallback {
+			t.Fatalf("want pay-logs and %s, got %+v", fallback, got)
 		}
 		var foreign struct {
 			SidecarID sql.NullString `gorm:"column:sidecar_id"`
@@ -151,18 +161,49 @@ func TestSyncSidecarConnections(t *testing.T) {
 		if foreign.SidecarID.Valid || foreign.ManagedBy.Valid {
 			t.Errorf("the admin's connection was taken over: %+v", foreign)
 		}
+
+		// Other tables key a connection by name, so a mirror keeps the name
+		// it was created with even when the preferred one frees up.
+		execSQL(t, `DELETE FROM private.connections WHERE org_id = ? AND name = 'pay-cache'`, testOrgID)
+		if err := syncMirrors(t, sc, appdb, daemon.ListenerConfig{Name: "logs", Protocol: "clickhouse"}, cache); err != nil {
+			t.Fatal(err)
+		}
+		if again := mirrorsOf(t, sc.ID)["cache"]; again.ID != got["cache"].ID || again.Name != fallback {
+			t.Errorf("the mirror was renamed or recreated: %+v -> %+v", got["cache"], again)
+		}
+		restore(t)
 	})
 
-	t.Run("a resource another connection uses is refused", func(t *testing.T) {
+	t.Run("a resource another connection uses moves the mirror to its fallback name", func(t *testing.T) {
 		seedAdminConnection(t, "warehouse", "pay-dw")
-		err := syncMirrors(t, sc, appdb, daemon.ListenerConfig{Name: "dw", Protocol: "clickhouse"})
-		var taken models.ErrSidecarConnectionNameTaken
-		if !errors.As(err, &taken) || taken.Listener != "dw" {
-			t.Fatalf("want ErrSidecarConnectionNameTaken for dw, got %v", err)
+		if err := syncMirrors(t, sc, appdb, daemon.ListenerConfig{Name: "dw", Protocol: "clickhouse"}); err != nil {
+			t.Fatalf("a resource in use must not refuse the sidecar write: %v", err)
+		}
+		if got := mirrorsOf(t, sc.ID)["dw"]; got.Name != models.SidecarMirrorFallbackName("pay-dw", sc.ID, "dw") {
+			t.Errorf("want the fallback name, got %+v", got)
 		}
 		if kind := queryString(t, `SELECT type || '/' || subtype FROM private.resources WHERE org_id = ? AND name = 'pay-dw'`, testOrgID); kind != "custom/redis" {
 			t.Errorf("the admin's resource was rewritten: %s", kind)
 		}
+		restore(t)
+	})
+
+	// A connection with no agent reads its resource's agent, so a mirror on
+	// an agent's resource would route connect through that agent.
+	t.Run("a resource that names an agent is never reused", func(t *testing.T) {
+		agentID := uuid.NewString()
+		execSQL(t, `INSERT INTO private.agents (id, org_id, name, mode, key_hash, status) VALUES (?, ?, 'pay-agent', 'standard', 'x', 'DISCONNECTED')`, agentID, testOrgID)
+		execSQL(t, `INSERT INTO private.resources (org_id, name, type, subtype, agent_id) VALUES (?, 'pay-queue', 'custom', 'redis', ?)`, testOrgID, agentID)
+		if err := syncMirrors(t, sc, appdb, daemon.ListenerConfig{Name: "queue", Protocol: "clickhouse"}); err != nil {
+			t.Fatal(err)
+		}
+		if got := mirrorsOf(t, sc.ID)["queue"]; got.Name != models.SidecarMirrorFallbackName("pay-queue", sc.ID, "queue") {
+			t.Errorf("want the fallback name, got %+v", got)
+		}
+		if kind := queryString(t, `SELECT type || '/' || subtype FROM private.resources WHERE org_id = ? AND name = 'pay-queue'`, testOrgID); kind != "custom/redis" {
+			t.Errorf("the agent's resource was rewritten: %s", kind)
+		}
+		restore(t)
 	})
 
 	t.Run("a mirror an event subscription uses cannot be removed", func(t *testing.T) {
@@ -193,22 +234,42 @@ func TestSyncSidecarConnections(t *testing.T) {
 	})
 }
 
-// Two sidecars can compose one name; the unique key decides when both pass
-// the pre-check. The loser must get the typed conflict.
-func TestASecondSidecarComposingTheSameNameIsRefused(t *testing.T) {
+// Two sidecars can compose one name ("pay" + "x-y" and "pay-x" + "y"). The
+// second takes its fallback name; neither write is refused.
+func TestASecondSidecarComposingTheSameNameFallsBack(t *testing.T) {
 	startTestDB(t)
 	a := seedSidecar(t, "pay")
 	b := seedSidecar(t, "pay-x")
 	if err := syncMirrors(t, a, daemon.ListenerConfig{Name: "x-y", Protocol: "postgres"}); err != nil {
 		t.Fatal(err)
 	}
-	err := syncMirrors(t, b, daemon.ListenerConfig{Name: "y", Protocol: "mysql"})
-	var taken models.ErrSidecarConnectionNameTaken
-	if !errors.As(err, &taken) || taken.Name != "pay-x-y" {
-		t.Fatalf("want ErrSidecarConnectionNameTaken for pay-x-y, got %v", err)
+	if err := syncMirrors(t, b, daemon.ListenerConfig{Name: "y", Protocol: "mysql"}); err != nil {
+		t.Fatalf("a composed name in use must not refuse the second sidecar: %v", err)
 	}
-	if got := mirrorsOf(t, a.ID); got["x-y"].SubType != "postgres" {
+	if got := mirrorsOf(t, a.ID); got["x-y"].Name != "pay-x-y" || got["x-y"].SubType != "postgres" {
 		t.Errorf("the first sidecar's mirror was changed: %+v", got)
+	}
+	if got := mirrorsOf(t, b.ID); got["y"].Name != models.SidecarMirrorFallbackName("pay-x-y", b.ID, "y") {
+		t.Errorf("want the second sidecar on its fallback name, got %+v", got)
+	}
+}
+
+// The same listener name in two sidecars is two mirrors: the sidecar name
+// tells them apart.
+func TestTheSameListenerNameInTwoSidecars(t *testing.T) {
+	startTestDB(t)
+	a := seedSidecar(t, "pay")
+	b := seedSidecar(t, "billing")
+	for _, sc := range []*models.Sidecar{a, b} {
+		if err := syncMirrors(t, sc, daemon.ListenerConfig{Name: "appdb", Protocol: "postgres"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := mirrorsOf(t, a.ID)["appdb"].Name; got != "pay-appdb" {
+		t.Errorf("got %q for pay", got)
+	}
+	if got := mirrorsOf(t, b.ID)["appdb"].Name; got != "billing-appdb" {
+		t.Errorf("got %q for billing", got)
 	}
 }
 

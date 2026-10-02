@@ -12,8 +12,7 @@ import (
 )
 
 // ErrSidecarListenerInvalid is a listener no connection can mirror: its
-// protocol has no connection type, or its composed name fails the connection
-// name rule. The admin's to fix, so it reads 422.
+// protocol has no connection type. The admin's to fix, so it reads 422.
 type ErrSidecarListenerInvalid struct{ Err error }
 
 func (e ErrSidecarListenerInvalid) Error() string { return e.Err.Error() }
@@ -23,7 +22,16 @@ func (e ErrSidecarListenerInvalid) Unwrap() error { return e.Err }
 // in the transaction that stored its configuration. Every write of the
 // configuration must call it: a listener without a mirror is one no rule can
 // bind to.
+//
+// It does nothing while the org has beta.sidecar_listeners off. Nothing reads
+// a mirror yet, and an org that has not opted in must keep its connection
+// list, its sidecar writes and its imports exactly as before. A mirror
+// written while the flag was on stays until a write with the flag on, or
+// until the sidecar is deleted.
 func SyncSidecarListenerConnectionsTx(tx *gorm.DB, sc *models.Sidecar) error {
+	if !SidecarListenersEnabled(sc.OrgID) {
+		return nil
+	}
 	mirrors, err := ProjectListeners(sc.OrgID, sc)
 	if err != nil {
 		return ErrSidecarListenerInvalid{err}
@@ -46,35 +54,40 @@ var listenerConnectionKind = map[inspect.Protocol]struct{ typ, subtype string }{
 	inspect.Spanner:    {"custom", string(inspect.Spanner)},
 }
 
-// maxMirrorNameLength is resources.name's width. The name rule allows 254,
-// but a mirror's resource carries the same name.
-const maxMirrorNameLength = 128
-
 // ProjectListeners renders the mirror connection of every listener of sc, in
 // the order of the configuration. It is pure: no database, no side effects.
 //
 // The ID is left empty; the writer resolves it by (org_id, sidecar_id,
 // sidecar_listener). Status and ResourceName are left empty too: both are
-// decided where the row is written. The name is <sidecar>-<listener> and must
-// pass the connection name rule, so a listener the rule refuses is an error
-// rather than a mirror nothing can address.
+// decided where the row is written.
+//
+// The name is <sidecar>-<listener>. A listener name the connection name rule
+// refuses (a space, a slash, too long) takes the fallback name instead: the
+// daemon accepts those names, so refusing them would refuse a sidecar config
+// that works today.
+//
+// A listener with no name, or with the name of an earlier listener, has no
+// mirror. Rules bind to a listener by its name, so neither one can be
+// addressed, and the daemon accepts both.
 //
 // No agent runs a mirror, so only connect is enabled: exec, runbooks and the
 // schema browser have nobody to run them.
 func ProjectListeners(orgID string, sc *models.Sidecar) ([]models.Connection, error) {
 	listeners := sc.Configuration.Listeners
 	out := make([]models.Connection, 0, len(listeners))
+	seen := make(map[string]bool, len(listeners))
 	for _, l := range listeners {
 		kind, ok := listenerConnectionKind[inspect.Protocol(l.Protocol)]
 		if !ok {
 			return nil, fmt.Errorf("listener %q: no connection type for protocol %q", l.Name, l.Protocol)
 		}
-		name := sc.Name + "-" + l.Name
-		if err := apivalidation.ValidateResourceName(name); err != nil {
-			return nil, fmt.Errorf("listener %q: connection %s", l.Name, err)
+		if l.Name == "" || seen[l.Name] {
+			continue
 		}
-		if len(name) > maxMirrorNameLength {
-			return nil, fmt.Errorf("listener %q: connection name %q is longer than %d characters", l.Name, name, maxMirrorNameLength)
+		seen[l.Name] = true
+		name := sc.Name + "-" + l.Name
+		if apivalidation.ValidateResourceName(name) != nil || len(name) > models.MaxSidecarMirrorNameLength {
+			name = models.SidecarMirrorFallbackName(name, sc.ID, l.Name)
 		}
 		out = append(out, models.Connection{
 			OrgID:              orgID,

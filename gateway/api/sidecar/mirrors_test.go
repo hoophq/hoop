@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/hoophq/hoop/common/featureflag"
 	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/storagev2"
@@ -66,8 +67,50 @@ func mirrorNames(t *testing.T, sidecarID string) map[string]string {
 	return out
 }
 
+// mirrorsOn turns beta.sidecar_listeners on for the test org: the projection
+// is paused while it is off.
+func mirrorsOn(t *testing.T) {
+	t.Helper()
+	featureflag.Set(switchOrgID, featureflag.FlagSidecarListeners, true)
+	t.Cleanup(func() { featureflag.Set(switchOrgID, featureflag.FlagSidecarListeners, false) })
+}
+
+// seedConnection is a connection an admin made, on its own resource.
+func seedConnection(t *testing.T, name string) {
+	t.Helper()
+	require.NoError(t, models.DB.Exec(`INSERT INTO private.resources (org_id, name, type, subtype) VALUES (?, ?, 'custom', 'loki')`, switchOrgID, name).Error)
+	require.NoError(t, models.DB.Exec(`INSERT INTO private.connections (org_id, name, type, subtype, resource_name) VALUES (?, ?, 'custom', 'loki', ?)`, switchOrgID, name, name).Error)
+}
+
+// An org with the flag off is every org that uses sidecars today. Its sidecar
+// writes and imports must answer as they did before the mirrors existed, with
+// listener names the connection rule refuses and names a connection already
+// has, and no connection may appear.
+func TestWithTheFlagOffSidecarWritesAreUnchanged(t *testing.T) {
+	startSwitchDB(t)
+	seedConnection(t, "off-appdb")
+
+	w, created := postSidecar(t, "off", `{"listeners": [
+		{"name": "app db", "protocol": "postgres", "listen": ":5432", "upstream": "db:5432"},
+		{"name": "appdb", "protocol": "postgres", "listen": ":5433", "upstream": "db:5432"}]}`)
+	require.Equal(t, http.StatusCreated, w.Code, "body: %s", w.Body)
+	assert.Empty(t, mirrorNames(t, created.ID))
+
+	w, _ = callAdmin(t, Put, http.MethodPut, created.ID, `{"listeners": [
+		{"name": "appdb", "protocol": "mysql", "listen": ":3306", "upstream": "db:3306"}]}`)
+	require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body)
+	assert.Empty(t, mirrorNames(t, created.ID))
+
+	sc := importedSidecar(t, "off-imp")
+	assert.Empty(t, mirrorNames(t, sc.ID))
+
+	w = deleteSidecar(t, created.ID)
+	require.Equal(t, http.StatusNoContent, w.Code, "body: %s", w.Body)
+}
+
 func TestEverySidecarWriteKeepsItsMirrors(t *testing.T) {
 	startSwitchDB(t)
+	mirrorsOn(t)
 
 	w, created := postSidecar(t, "pay", `{"listeners": [
 		{"name": "appdb", "protocol": "postgres", "listen": ":5432", "upstream": "db:5432"},
@@ -83,22 +126,32 @@ func TestEverySidecarWriteKeepsItsMirrors(t *testing.T) {
 		assert.Equal(t, map[string]string{"pay-appdb": "database/mysql", "pay-cache": "custom/clickhouse"}, mirrorNames(t, created.ID))
 	})
 
-	t.Run("a listener no connection can mirror is refused", func(t *testing.T) {
+	// Puts the two listeners above back, so the next subtest starts from them.
+	restore := func(t *testing.T) {
+		t.Helper()
+		w, _ := callAdmin(t, Put, http.MethodPut, created.ID, `{"listeners": [
+			{"name": "appdb", "protocol": "mysql", "listen": ":3306", "upstream": "db:3306"},
+			{"name": "cache", "protocol": "clickhouse", "listen": ":9000", "upstream": "ch:9000"}]}`)
+		require.Equal(t, http.StatusOK, w.Code, "restore: %s", w.Body)
+	}
+
+	t.Run("a listener name the connection rule refuses takes the fallback name", func(t *testing.T) {
 		w, _ := callAdmin(t, Put, http.MethodPut, created.ID, `{"listeners": [
 			{"name": "app db", "protocol": "postgres", "listen": ":5432", "upstream": "db:5432"}]}`)
-		require.Equal(t, http.StatusUnprocessableEntity, w.Code, "body: %s", w.Body)
-		assert.Contains(t, w.Body.String(), `listener \"app db\"`)
-		assert.Equal(t, map[string]string{"pay-appdb": "database/mysql", "pay-cache": "custom/clickhouse"}, mirrorNames(t, created.ID),
-			"a refused write leaves the mirrors as they were")
+		require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body)
+		assert.Equal(t, map[string]string{models.SidecarMirrorFallbackName("pay-app db", created.ID, "app db"): "database/postgres"},
+			mirrorNames(t, created.ID))
+		restore(t)
 	})
 
-	t.Run("a name another connection has is a conflict", func(t *testing.T) {
-		require.NoError(t, models.DB.Exec(`INSERT INTO private.resources (org_id, name, type, subtype) VALUES (?, 'pay-logs', 'custom', 'loki')`, switchOrgID).Error)
-		require.NoError(t, models.DB.Exec(`INSERT INTO private.connections (org_id, name, type, subtype, resource_name) VALUES (?, 'pay-logs', 'custom', 'loki', 'pay-logs')`, switchOrgID).Error)
+	t.Run("a name another connection has takes the fallback name", func(t *testing.T) {
+		seedConnection(t, "pay-logs")
 		w, _ := callAdmin(t, Put, http.MethodPut, created.ID, `{"listeners": [
 			{"name": "logs", "protocol": "http", "listen": ":3100", "upstream": "loki:3100"}]}`)
-		require.Equal(t, http.StatusConflict, w.Code, "body: %s", w.Body)
-		assert.Contains(t, w.Body.String(), `\"pay-logs\" already exists`)
+		require.Equal(t, http.StatusOK, w.Code, "body: %s", w.Body)
+		assert.Equal(t, map[string]string{models.SidecarMirrorFallbackName("pay-logs", created.ID, "logs"): "httpproxy/httpproxy"},
+			mirrorNames(t, created.ID))
+		restore(t)
 	})
 
 	t.Run("the switch to the file keeps them, the switch back resets them", func(t *testing.T) {
@@ -126,31 +179,23 @@ func TestEverySidecarWriteKeepsItsMirrors(t *testing.T) {
 
 func TestAnImportMirrorsTheListenersItBrings(t *testing.T) {
 	startSwitchDB(t)
+	mirrorsOn(t)
 	sc := importedSidecar(t, "imp")
 	assert.Equal(t, map[string]string{"imp-appdb": "database/postgres"}, mirrorNames(t, sc.ID))
 }
 
-// A 409 on the import route means "the plane already holds a configuration"
-// to the sidecar, which then fetches it; a name conflict must read 422 so the
-// sidecar shows the reason and keeps its file.
-func TestAnImportWithAMirrorConflictIsRefusedWithTheReason(t *testing.T) {
+// An import is how a sidecar seeds an empty plane with its file. The file is
+// the source of truth and cannot be renamed from here, so a name another
+// connection has must not refuse it.
+func TestAnImportWithANameInUseStillImports(t *testing.T) {
 	startSwitchDB(t)
-	require.NoError(t, models.DB.Exec(`INSERT INTO private.resources (org_id, name, type, subtype) VALUES (?, 'clash-appdb', 'custom', 'loki')`, switchOrgID).Error)
-	require.NoError(t, models.DB.Exec(`INSERT INTO private.connections (org_id, name, type, subtype, resource_name) VALUES (?, 'clash-appdb', 'custom', 'loki', 'clash-appdb')`, switchOrgID).Error)
-	sc := &models.Sidecar{OrgID: switchOrgID, Name: "clash", KeyHash: models.HashAPIKey("hsc_clash"), CreatedBy: "tests@hoop.dev"}
-	require.NoError(t, models.CreateSidecar(models.DB, sc))
-
-	gin.SetMode(gin.TestMode)
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest(http.MethodPut, "/api/sidecars/configuration", bytes.NewReader([]byte(switchFile)))
-	c.Set("sidecar-auth", sc)
-	ImportConfiguration(c)
-	require.Equal(t, http.StatusUnprocessableEntity, w.Code, "body: %s", w.Body)
-	assert.Contains(t, w.Body.String(), `\"clash-appdb\" is in use`)
+	mirrorsOn(t)
+	seedConnection(t, "clash-appdb")
+	sc := importedSidecar(t, "clash")
 
 	stored, err := models.GetSidecarByNameOrID(models.DB, switchOrgID, sc.ID)
 	require.NoError(t, err)
-	assert.Empty(t, stored.Configuration.Listeners, "a refused import stores nothing, so the sidecar can push again")
-	assert.Empty(t, mirrorNames(t, sc.ID))
+	assert.Len(t, stored.Configuration.Listeners, 1, "the import stored the file")
+	assert.Equal(t, map[string]string{models.SidecarMirrorFallbackName("clash-appdb", sc.ID, "appdb"): "database/postgres"},
+		mirrorNames(t, sc.ID))
 }

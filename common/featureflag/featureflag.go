@@ -137,7 +137,7 @@ var catalog = map[string]Flag{
 	},
 	FlagSidecarListeners: {
 		Name:        FlagSidecarListeners,
-		Description: "Enable the sidecar and its features.",
+		Description: "Manage sidecar listeners from Resources, with the same guardrails, data masking, reviews and access rules as any other resource.",
 		Default:     false,
 		Stability:   StabilityBeta,
 		Components:  []Component{ComponentGateway},

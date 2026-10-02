@@ -8,6 +8,7 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
+	"github.com/google/uuid"
 	migrationfiles "github.com/hoophq/hoop/gateway/migrations"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/pglite"
@@ -67,8 +68,14 @@ func TestBackfillMirrorsExistingListeners(t *testing.T) {
 	migrateTo(t, inst, func(m *migrate.Migrate) error { return m.Migrate(bindingColumnsVersion) })
 
 	// Rows as a gateway before the projection left them.
+	const flagOffOrgID = "00000000-0000-0000-0000-0000000000f0"
 	withDB(t, inst, func() {
 		execSQL(t, `INSERT INTO private.orgs (id, name) VALUES (?, 'backfill-test')`, testOrgID)
+		// The backfill mirrors only the orgs that opted in, as the write path.
+		execSQL(t, `INSERT INTO private.org_feature_flags (org_id, name, enabled) VALUES (?, 'beta.sidecar_listeners', true)`, testOrgID)
+		execSQL(t, `INSERT INTO private.orgs (id, name) VALUES (?, 'backfill-off')`, flagOffOrgID)
+		execSQL(t, `INSERT INTO private.sidecars (org_id, name, key_hash, created_by, configuration)
+			VALUES (?, 'pay', 'h-off-pay', 'tests@hoop.dev', '{"listeners":[{"name":"appdb","protocol":"postgres"}]}'::jsonb)`, flagOffOrgID)
 		sidecar := func(name, cfg string) {
 			execSQL(t, `INSERT INTO private.sidecars (org_id, name, key_hash, created_by, configuration, created_at)
 				VALUES (?, ?, ?, 'tests@hoop.dev', ?::jsonb, clock_timestamp())`, testOrgID, name, "h-"+name, cfg)
@@ -90,6 +97,11 @@ func TestBackfillMirrorsExistingListeners(t *testing.T) {
 		// A resource with a mirror's name that an admin connection still uses.
 		execSQL(t, `INSERT INTO private.resources (org_id, name, type, subtype) VALUES (?, 'pay-api', 'custom', 'loki')`, testOrgID)
 		execSQL(t, `INSERT INTO private.connections (org_id, name, type, subtype, resource_name) VALUES (?, 'logs', 'custom', 'loki', 'pay-api')`, testOrgID)
+		// A resource with a mirror's name that names an agent and no connection.
+		agentID := uuid.NewString()
+		execSQL(t, `INSERT INTO private.agents (id, org_id, name, mode, key_hash, status) VALUES (?, ?, 'q-agent', 'standard', 'x', 'DISCONNECTED')`, agentID, testOrgID)
+		sidecar("agentres", `{"listeners":[{"name":"q","protocol":"postgres"}]}`)
+		execSQL(t, `INSERT INTO private.resources (org_id, name, type, subtype, agent_id) VALUES (?, 'agentres-q', 'custom', 'redis', ?)`, testOrgID, agentID)
 	})
 
 	migrateTo(t, inst, func(m *migrate.Migrate) error { return m.Up() })
@@ -136,6 +148,12 @@ func TestBackfillMirrorsExistingListeners(t *testing.T) {
 		if kind := queryString(t, `SELECT type || '/' || subtype FROM private.resources WHERE org_id = ? AND name = 'pay-api'`, testOrgID); kind != "custom/loki" {
 			t.Errorf("the resource the admin's connection uses was rewritten: %s", kind)
 		}
+		if kind := queryString(t, `SELECT type || '/' || subtype FROM private.resources WHERE org_id = ? AND name = 'agentres-q'`, testOrgID); kind != "custom/redis" {
+			t.Errorf("the agent's resource was rewritten: %s", kind)
+		}
+		if n := queryString(t, `SELECT count(*)::text FROM private.connections WHERE org_id = ?`, flagOffOrgID); n != "0" {
+			t.Errorf("an org with the flag off got %s connections", n)
+		}
 		// What the down must clear before it can delete the mirror.
 		execSQL(t, `INSERT INTO private.event_subscriptions
 			(org_id, name, event_types, runbook_repository, runbook_file, connection_name, created_by_user_id, created_by_email)
@@ -149,8 +167,8 @@ func TestBackfillMirrorsExistingListeners(t *testing.T) {
 		if n := queryString(t, `SELECT count(*)::text FROM private.connections WHERE org_id = ?`, testOrgID); n != "2" {
 			t.Errorf("want only the admin's connections after down, got %s", n)
 		}
-		if n := queryString(t, `SELECT count(*)::text FROM private.resources WHERE org_id = ?`, testOrgID); n != "2" {
-			t.Errorf("want only the admin's resources after down, got %s", n)
+		if n := queryString(t, `SELECT count(*)::text FROM private.resources WHERE org_id = ?`, testOrgID); n != "3" {
+			t.Errorf("want only the admin's and the agent's resources after down, got %s", n)
 		}
 		if n := queryString(t, `SELECT count(*)::text FROM private.event_subscriptions WHERE org_id = ?`, testOrgID); n != "0" {
 			t.Errorf("the subscription on a mirror outlived it")
