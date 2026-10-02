@@ -21,7 +21,7 @@ module github.com/hoophq/hoop/sidecar
 
 go 1.26.8
 
-require github.com/hoophq/libhoop v0.0.0-20260929214837-7bf5e47c42a8
+require github.com/hoophq/libhoop v0.0.0-20261002164341-4b1cc0e84fbf
 
 require (
 	github.com/ClickHouse/ch-go v0.71.0 // indirect

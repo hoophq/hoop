@@ -195,6 +195,13 @@ type Config struct {
 	// CredentialSource, and New refuses a codec that does not, because a
 	// resolver handed nothing would resolve every request to anonymous.
 	RequestIdentity RequestIdentity
+
+	// Answer lets the lane reply to a request itself, for a route the
+	// sidecar reserves (the review status path). It sees each decoded http
+	// request before identity and policy, and a non-nil reply ends the
+	// exchange: Decision.Reply carries it and nothing is forwarded. Nil
+	// answers nothing, which is every lane but http.
+	Answer func(ctx context.Context, stmt inspect.Statement) []byte
 }
 
 // CredentialSource is implemented by a codec that lifts a caller credential
@@ -279,6 +286,17 @@ type Decision struct {
 	// native error with the request. Nil for stream-level refusals that did
 	// not decode a statement.
 	DeniedStatement *inspect.Statement
+
+	// Review names the human review a denial waits on, so a transport
+	// with structured fields can carry it beside Message. Nil unless the
+	// denying verdict named one.
+	Review *policy.Review
+
+	// Reply is a response the lane wrote itself, through Config.Answer.
+	// The caller sends it to the client and forwards nothing. It is not a
+	// denial: the request named a route the sidecar owns. Allowed is false
+	// alongside it, so a caller that ignores Reply still forwards nothing.
+	Reply []byte
 
 	// Payload is the bytes to forward. It differs from the input only when
 	// masking rewrote something; otherwise it aliases the input.
@@ -729,6 +747,19 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 	if g.creds != nil && dir == inspect.FromServer {
 		defer func() { g.releaseResponses(finals) }()
 	}
+	// Before any request in the chunk is judged: the reply closes the
+	// connection, so a pipelined request judged first would be audited as
+	// run and never forwarded.
+	if g.cfg.Answer != nil {
+		for _, stmt := range stmts {
+			if !isHTTPRequest(stmt) {
+				continue
+			}
+			if reply := g.cfg.Answer(ctx, stmt); reply != nil {
+				return Decision{Statements: stmts, Reply: reply}
+			}
+		}
+	}
 	for i, stmt := range stmts {
 		if g.creds != nil {
 			switch {
@@ -757,6 +788,7 @@ func (g *Gate) inspect(ctx context.Context, dir inspect.Direction, data []byte) 
 			d.Allowed = false
 			d.Message = j.message
 			d.Rule = j.rule
+			d.Review = j.review
 			denied := stmt
 			d.DeniedStatement = &denied
 			d.Payload = nil // nothing may be forwarded
@@ -787,6 +819,7 @@ type judgment struct {
 	denied  bool
 	rule    string
 	message string
+	review  *policy.Review
 
 	// err carries the non-fatal failures (a failed audit write under
 	// fail-open, an evaluator's infrastructure error) for logging.
@@ -854,6 +887,7 @@ func (g *Gate) judge(ctx context.Context, stmt inspect.Statement) judgment {
 		denied:  verdict.Denied,
 		rule:    verdict.Rule,
 		message: verdict.Message,
+		review:  verdict.Review,
 		err:     errors.Join(auditErr, verdict.Err),
 	}
 }
@@ -908,6 +942,7 @@ func (g *Gate) EvaluateStatement(ctx context.Context, stmt inspect.Statement) De
 	if j.denied {
 		d.Message = j.message
 		d.Rule = j.rule
+		d.Review = j.review
 		denied := stmt
 		d.DeniedStatement = &denied
 	}

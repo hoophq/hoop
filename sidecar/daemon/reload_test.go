@@ -75,7 +75,7 @@ func testReloader(t *testing.T, raw string) (*reloader, *bytes.Buffer) {
 			servers[ln.name] = newLiveRules(ln)
 			continue
 		}
-		srv, serr := buildServer(ln, cfg.Audit, nil, slog.Default())
+		srv, serr := buildServer(ln, cfg.Audit, nil, nil, slog.Default())
 		if serr != nil {
 			t.Fatalf("buildServer: %v", serr)
 		}
@@ -516,7 +516,7 @@ func TestARefusedReloadDoesNotLeakTheDetector(t *testing.T) {
 	}
 	servers := map[string]ruleSwapper{}
 	for _, ln := range lanes {
-		srv, serr := buildServer(ln, cfg.Audit, nil, slog.Default())
+		srv, serr := buildServer(ln, cfg.Audit, nil, nil, slog.Default())
 		if serr != nil {
 			t.Fatalf("buildServer: %v", serr)
 		}
