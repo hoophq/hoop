@@ -142,9 +142,8 @@ const (
 	SessionOriginRunbooks     = "runbooks"
 	SessionOriginProxyManager = "proxymanager"
 	SessionOriginAgent        = "agent"
-	// SessionOriginSidecar is a session a sidecar recorded and sent to
-	// POST /api/sidecars/events. No transport-level origin maps to it: the
-	// traffic never crossed the gateway.
+	// SessionOriginSidecar: a session a sidecar recorded; no transport origin
+	// maps to it.
 	SessionOriginSidecar = "sidecar"
 	SessionOriginUnknown = "unknown"
 

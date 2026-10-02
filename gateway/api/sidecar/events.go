@@ -21,7 +21,7 @@ import (
 //
 //	@Summary		Record Sidecar Session Events
 //	@Description	Record a sidecar's audit events as sessions. The sidecar is taken from the token, never the body, and every session it writes is its own.
-//	@Description	2xx means the batch is applied, now or by an earlier request: an event at or below its session's last applied seq is ignored. 4xx means the sidecar must not resend the batch. 5xx means it may resend it as it is.
+//	@Description	2xx means the batch is applied, now or by an earlier request: an event at or below its session's last applied seq is ignored. 4xx means the sidecar must not resend the batch; a 422 names the sessions that can never be recorded, and the other sessions of the batch were applied. 5xx means it may resend it as it is.
 //	@Description	The organization must have the experimental.sidecar_session_events flag on; the handshake answers the hoop-sidecar-session-events header when it does.
 //	@Tags			Sidecars
 //	@Accept			json
@@ -37,8 +37,7 @@ func PostEvents(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"message": "access denied"})
 		return
 	}
-	// Checked per request, not only at the handshake: the flag can go off
-	// between two heartbeats, and the 412 stops the sidecar at once.
+	// Per request too: the 412 stops the sidecar before its next heartbeat.
 	if !featureflag.IsEnabled(sidecar.OrgID, services.SidecarSessionEventsFlag) {
 		c.JSON(http.StatusPreconditionFailed, gin.H{
 			"message": "this organization does not record sidecar sessions; " +
@@ -51,8 +50,7 @@ func PostEvents(c *gin.Context) {
 		answerBatchTooLarge(c)
 		return
 	}
-	// One byte past the bound, so an oversized body without a length is
-	// refused as what it is rather than decoded from a truncated document.
+	// One byte past the bound, so a body without a length is refused, not cut.
 	body, err := io.ReadAll(io.LimitReader(c.Request.Body, daemon.MaxSessionEventsBatchBytes+1))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": fmt.Sprintf("reading the body: %v", err)})

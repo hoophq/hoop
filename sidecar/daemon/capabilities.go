@@ -13,7 +13,8 @@ import (
 )
 
 // CapabilitiesHeader lists, comma separated, what this build decodes of the
-// served document. The sidecar sends it on every handshake.
+// served document, and the behaviours it has toward the plane. The sidecar
+// sends it on every handshake.
 //
 // A header, like the answer's LicenseManagedHeader and ConfigRevisionHeader.
 // Absent means a build too old to report; the plane keeps that apart from a

@@ -326,9 +326,14 @@ plane gets the same batch again, with backoff; a 4xx is final.
 The audit file stays the record of truth. The send never blocks a statement
 and never fails one: a queue of 16 MiB holds what the plane has not taken,
 and when it is full the oldest events go first. `GET /stats` reports the
-count under `session_events.dropped`. An answer without the header, or a 412,
-stops the sending and empties the queue. A plane older than this build sends
-no header, so nothing is sent to it.
+count under `session_events.dropped`. An answer without the header, or a
+401, 403, 404, 405 or 412 to a batch, stops the sending and empties the
+queue; the next handshake that answers the header starts it again. A plane
+older than this build sends no header, so nothing is sent to it. A proxy that
+answers 413 makes the batches smaller (ingress-nginx allows 1 MiB unless
+`proxy-body-size` says more). The copy goes to the plane whatever the
+`audit.file` setting is: an `audit.file` of `/dev/null` keeps nothing locally
+and still sends.
 
 ### Usage analytics
 

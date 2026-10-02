@@ -298,8 +298,7 @@ func (api *Api) buildSidecarRoutes(r *apiroutes.Router) {
 	r.GET("/sidecars/reviews/:id", r.SidecarAuthMiddleware, apisidecar.GetReview)
 	r.POST("/sidecars/reviews/:id/claim", r.SidecarAuthMiddleware, apisidecar.ClaimReview)
 	r.PUT("/sidecars/configuration", r.SidecarAuthMiddleware, apiroutes.EnterpriseLicenseOnly, apisidecar.ImportConfiguration)
-	// No TrackRequest, for the reason above. The route answers 412 while the
-	// organization's experimental.sidecar_session_events flag is off.
+	// No TrackRequest, for the reason above. 412 while the flag is off.
 	r.POST("/sidecars/events", r.SidecarAuthMiddleware, apiroutes.EnterpriseLicenseOnly, apisidecar.PostEvents)
 
 	r.POST("/sidecars",

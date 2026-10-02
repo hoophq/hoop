@@ -10128,7 +10128,7 @@ const docTemplate = `{
         },
         "/sidecars/events": {
             "post": {
-                "description": "Record a sidecar's audit events as sessions. The sidecar is taken from the token, never the body, and every session it writes is its own.\n2xx means the batch is applied, now or by an earlier request: an event at or below its session's last applied seq is ignored. 4xx means the sidecar must not resend the batch. 5xx means it may resend it as it is.\nThe organization must have the experimental.sidecar_session_events flag on; the handshake answers the hoop-sidecar-session-events header when it does.",
+                "description": "Record a sidecar's audit events as sessions. The sidecar is taken from the token, never the body, and every session it writes is its own.\n2xx means the batch is applied, now or by an earlier request: an event at or below its session's last applied seq is ignored. 4xx means the sidecar must not resend the batch; a 422 names the sessions that can never be recorded, and the other sessions of the batch were applied. 5xx means it may resend it as it is.\nThe organization must have the experimental.sidecar_session_events flag on; the handshake answers the hoop-sidecar-session-events header when it does.",
                 "consumes": [
                     "application/json"
                 ],
@@ -10232,7 +10232,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Comma-separated served-document features this sidecar decodes, such as review_mode. Absent means a build too old to report.",
+                        "description": "Comma-separated served-document features this sidecar decodes, such as review_mode, and behaviours it has, such as session_events. Absent means a build too old to report.",
                         "name": "hoop-sidecar-capabilities",
                         "in": "header"
                     },
@@ -19485,11 +19485,12 @@ const docTemplate = `{
                     "example": "1CBC8DB5-FBF8-4293-8E35-59A6EEA40207"
                 },
                 "identity_type": {
-                    "description": "The type of identity that created this session\n* user - a human user\n* machine - a machine identity (non-human identity)",
+                    "description": "The type of identity that created this session\n* user - a human user\n* machine - a machine identity (non-human identity)\n* sidecar - a principal a sidecar resolved on the wire",
                     "type": "string",
                     "enum": [
                         "user",
-                        "machine"
+                        "machine",
+                        "sidecar"
                     ],
                     "example": "user"
                 },

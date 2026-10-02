@@ -550,7 +550,7 @@ func usesConfigFile(cfg models.SidecarConfiguration) bool {
 //	@Accept			json
 //	@Produce		json
 //	@Param			hoop-sidecar-token			header		string							true	"The token returned when the sidecar was created"
-//	@Param			hoop-sidecar-capabilities	header		string							false	"Comma-separated served-document features this sidecar decodes, such as review_mode. Absent means a build too old to report."
+//	@Param			hoop-sidecar-capabilities	header		string							false	"Comma-separated served-document features this sidecar decodes, such as review_mode, and behaviours it has, such as session_events. Absent means a build too old to report."
 //	@Param			request						body		openapi.SidecarHandshakeRequest	true	"The request body resource"
 //	@Success		200							{object}	map[string]interface{}
 //	@Header			200							{string}	hoop-sidecar-license-managed	"Present when this gateway owns the licensing decision, so an answer with no license means the organization holds none. A gateway older than the feature omits it, and the sidecar then keeps its own license sources."
@@ -619,10 +619,8 @@ func Handshake(c *gin.Context) {
 	c.JSON(http.StatusOK, served)
 }
 
-// offerSessionEvents tells the sidecar it may send its audit events, when its
-// organization records them. Every handshake answers it, so the sidecar
-// follows the flag within a heartbeat, in both directions. A sidecar older
-// than the feature ignores the header.
+// offerSessionEvents answers SessionEventsHeader while the org flag is on; the
+// sidecar follows it on every heartbeat.
 func offerSessionEvents(c *gin.Context, sc *models.Sidecar) {
 	if featureflag.IsEnabled(sc.OrgID, services.SidecarSessionEventsFlag) {
 		c.Header(daemon.SessionEventsHeader, "true")

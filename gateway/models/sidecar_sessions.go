@@ -8,34 +8,29 @@ import (
 	"gorm.io/gorm"
 )
 
-// SidecarSessionState is what a sidecar session row holds that the next
-// batch of its events depends on.
+// SidecarSessionState is what the next batch of a sidecar session reads.
 type SidecarSessionState struct {
 	CreatedAt time.Time
 	Metrics   map[string]any
-	// LastSeq is the highest event seq applied to the session. Zero when the
-	// row predates it or holds none.
+	// LastSeq is the highest seq applied; zero when none.
 	LastSeq int64
 	// Principal is the user the row is filed under, email first.
 	Principal string
-	// GuardRails is how many guardrails_info entries the row holds, and
-	// GuardRailsOmitted how many more a cap left out.
+	// GuardRails counts guardrails_info entries; GuardRailsOmitted, those the
+	// cap left out.
 	GuardRails        int
 	GuardRailsOmitted int64
 }
 
-// LockSidecarSession serializes the writers of one session until tx ends.
-//
-// A sidecar resends a batch the gateway took too long to answer, so two
-// requests can carry the same session at once. The row lock is not enough:
-// before the first batch there is no row to lock, and both would create it.
+// LockSidecarSession serializes a session's writers until tx ends. A row lock
+// is not enough: two resends can both create the row.
 func LockSidecarSession(tx *gorm.DB, sessionID string) error {
 	return tx.Exec(`SELECT pg_advisory_xact_lock(hashtextextended(?, 0))`,
 		"sidecar-session:"+sessionID).Error
 }
 
-// GetSidecarSessionState reads the state of one session. It returns
-// gorm.ErrRecordNotFound when the session does not exist yet.
+// GetSidecarSessionState returns gorm.ErrRecordNotFound when the session does
+// not exist yet.
 func GetSidecarSessionState(tx *gorm.DB, orgID, sessionID string) (*SidecarSessionState, error) {
 	var row struct {
 		CreatedAt         time.Time
@@ -72,9 +67,8 @@ func GetSidecarSessionState(tx *gorm.DB, orgID, sessionID string) (*SidecarSessi
 	return state, nil
 }
 
-// SetSidecarSessionProgress records what a batch applied: sidecar is merged
-// into metadata.sidecar (last_seq always rides in it), and metrics replaces
-// the metrics column when it is not nil.
+// SetSidecarSessionProgress merges sidecar into metadata.sidecar, and replaces
+// metrics when it is not nil.
 func SetSidecarSessionProgress(tx *gorm.DB, orgID, sessionID string, sidecar map[string]any, metrics map[string]any) error {
 	sidecarJSON, err := json.Marshal(sidecar)
 	if err != nil {
@@ -100,8 +94,7 @@ func SetSidecarSessionProgress(tx *gorm.DB, orgID, sessionID string, sidecar map
 	return res.Error
 }
 
-// SetSidecarSessionUser files the session under the principal the sidecar
-// resolved after the session started.
+// SetSidecarSessionUser files the session under a principal resolved late.
 func SetSidecarSessionUser(tx *gorm.DB, orgID, sessionID, userName, userEmail string) error {
 	res := tx.Table("private.sessions").
 		Where("org_id = ? AND id = ?", orgID, sessionID).

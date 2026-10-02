@@ -26,8 +26,11 @@ import (
 // The body is SessionEventsRequest. The answer:
 //
 //	2xx  applied, or applied before. The events leave the queue.
-//	4xx  never resend. 413 is a batch over the limits below; 412 is a plane
-//	     whose organization has the feature off.
+//	4xx  never resend. 422 names sessions the plane can never record; the
+//	     other sessions of the batch were applied. 401, 403, 404, 405 and
+//	     412 refuse the route itself, so the sink stops until a handshake
+//	     answers SessionEventsHeader again. A 413 the plane would not send
+//	     comes from a proxy in front of it, and the batch is halved.
 //	5xx  resend later, the same events with the same seq. The plane ignores
 //	     a seq it already applied, so a resend is safe.
 //
@@ -147,7 +150,9 @@ type sessionEventsStats struct {
 	// when the plane stopped taking events. Each event is counted once, as
 	// sent, dropped or rejected.
 	Dropped int64 `json:"dropped"`
-	// Rejected counts events the plane answered with a 4xx.
+	// Rejected counts events in batches the plane answered with a 4xx. After
+	// a 422 it holds the other sessions of the batch, so this is an upper
+	// bound on what it lacks.
 	Rejected int64 `json:"rejected"`
 	// Retries counts batches resent after a 5xx or a failed request.
 	Retries int64 `json:"retries"`
@@ -660,7 +665,7 @@ func (s *sessionEventSink) warnRejected(force bool) {
 	}
 	s.mu.Unlock()
 	if due {
-		s.log.Error("the control plane refused session events; they stay in the local audit file only",
+		s.log.Error("the control plane refused session events; what it did not record is in the local audit trail only",
 			"url", s.cp.url, "status", status, "events", since, "rejected_total", rejected, "message", msg)
 	}
 }

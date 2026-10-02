@@ -14,8 +14,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
+	"github.com/hoophq/hoop/gateway/api/openapi"
 	"github.com/hoophq/hoop/gateway/models"
 	"github.com/hoophq/hoop/gateway/session/eventbroker"
+	eventlogv1 "github.com/hoophq/hoop/gateway/session/eventlog/v1"
 	sessionwal "github.com/hoophq/hoop/gateway/session/wal"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"github.com/hoophq/hoop/sidecar/audit"
@@ -30,34 +32,35 @@ import (
 // handshake header that tells a sidecar to use it.
 const SidecarSessionEventsFlag = "experimental.sidecar_session_events"
 
-// sidecarGuardRailRuleType is the rule type a sidecar violation records. The
-// event names the rule but not its type, and the session page reads a known
-// type as a promise of matched words the event does not carry.
+// sidecarGuardRailRuleType: the event names the rule, not its type; a known
+// type would make the session page promise matched words.
 const sidecarGuardRailRuleType = "sidecar"
 
-// The columns a sidecar's own strings land in. A value past them would fail
-// the insert on every resend, so the gateway answers it before the database
-// does: a long principal is cut, a long connection name is refused.
+// Column limits. A longer value fails every resend: a principal is cut, a
+// connection name is refused.
 const (
 	maxSidecarSessionIDBytes  = 256
 	maxSessionConnectionChars = 128 // sessions.connection VARCHAR(128)
 	maxSessionUserChars       = 255 // sessions.user_name, user_email VARCHAR(255)
 )
 
-// maxSidecarGuardRails caps a session's guardrails_info. A pool that retries
-// a denied statement for hours would otherwise grow the column without end,
-// and the session page renders one card per entry. The stream keeps every
-// denial; metadata.sidecar.guardrails_omitted counts the entries left out.
+// maxSidecarGuardRails caps guardrails_info per session. The stream keeps every
+// denial; metadata.sidecar.guardrails_omitted counts the rest.
 const maxSidecarGuardRails = 100
 
-// maxSidecarSessionStreamBytes caps one session's stream like the audit
-// plugin caps a session's WAL read. The entry that crosses it is kept, every
-// later one is not, and metrics.truncated says so.
+// maxSidecarSessionStreamBytes caps the stream as the audit plugin caps its WAL
+// read; metrics.truncated marks it.
 const maxSidecarSessionStreamBytes = sessionwal.DefaultMaxRead
 
-// SidecarSessionID names the session one sidecar session is recorded as. It
-// is derived, so a resend lands on the same row, and derived from the
-// authenticated sidecar, so a token can only ever write its own sessions.
+// Stream entry types, as the audit plugin writes them.
+var (
+	streamInput  = string(eventlogv1.InputType)
+	streamOutput = string(eventlogv1.OutputType)
+	streamError  = string(eventlogv1.ErrorType)
+)
+
+// SidecarSessionID derives the session id from the authenticated sidecar, so a
+// resend lands on the same row and a token writes only its own sessions.
 func SidecarSessionID(sidecarID, sessionID string) string {
 	return uuid.NewSHA1(uuid.NameSpaceURL,
 		[]byte("sidecar-session:"+sidecarID+":"+sessionID)).String()
@@ -70,14 +73,8 @@ type sidecarMirror struct {
 	Subtype string
 }
 
-// sidecarMirrorConnection names the connection that mirrors one listener of
-// one sidecar, and the type and subtype its protocol maps to.
-//
-// The mirror connections themselves, and these two rules, belong to the
-// change that creates them (Dia 0), which is landing in parallel. This copy
-// exists so sessions can name the mirror before that change merges, and it
-// is replaced by Dia 0's function then; TestSidecarMirrorConnection pins the
-// format both must agree on.
+// sidecarMirrorConnection names a listener's mirror connection and its type.
+// Dia 0 owns these rules; replace this copy with its function after it merges.
 func sidecarMirrorConnection(sidecarName, listener, protocol string) (sidecarMirror, error) {
 	out := sidecarMirror{Name: sidecarName + "-" + listener}
 	switch protocol {
@@ -96,7 +93,7 @@ func sidecarMirrorConnection(sidecarName, listener, protocol string) (sidecarMir
 }
 
 // SidecarEventsRefused is a batch, or part of one, the gateway can never
-// apply. The handler answers it with a 4xx, so the sidecar does not resend.
+// apply. The handler answers 4xx, so the sidecar does not resend it.
 type SidecarEventsRefused struct{ Reason string }
 
 func (e SidecarEventsRefused) Error() string { return e.Reason }
@@ -133,14 +130,11 @@ type sidecarIdentity struct {
 	OrgID string
 }
 
-// sidecarSessionPlan is what one session's events in one batch turn into.
-// The writes are applied in field order by applySidecarSessionPlan.
+// sidecarSessionPlan is the writes one session's events turn into, applied in
+// field order by applySidecarSessionPlan.
 type sidecarSessionPlan struct {
-	// SessionID is the gateway's id, SidecarSessionID.
 	SessionID string
-	// Create is set when the session does not exist yet: the first event
-	// creates it, whatever its kind, because a session_start the gateway
-	// missed must not lose the rest of the session.
+	// Create is set when the row does not exist; any first event creates it.
 	Create *models.Session
 	// Entries is a JSON array of [elapsed, type, base64] to append.
 	Entries json.RawMessage
@@ -150,13 +144,11 @@ type sidecarSessionPlan struct {
 	Masked map[string]int64
 	// Metrics replaces the metrics column. Nil when nothing applied.
 	Metrics map[string]any
-	// Sidecar is merged into metadata.sidecar. It always carries last_seq
-	// when anything applied.
+	// Sidecar is merged into metadata.sidecar; it always carries last_seq.
 	Sidecar map[string]any
 	// User replaces an unknown principal on an existing row.
 	User *sidecarUser
-	// Live feeds the session page of an open session on this replica, after
-	// the writes commit.
+	// Live feeds the open session page on this replica, after commit.
 	Live []eventbroker.Event
 	// Done ends the session.
 	Done *models.SessionDone
@@ -165,29 +157,8 @@ type sidecarSessionPlan struct {
 	Duplicates int
 }
 
-// planSidecarSession translates one session's events, in the order the
-// sidecar numbered them, into writes. It reads nothing and writes nothing:
-// prior is the row as it stands, nil when there is none.
-//
-// An event at or below the last applied seq is a resend and is skipped. The
-// kinds translate as:
-//
-//	session_start  creates the session (verb connect, status open)
-//	statement      an "i" entry with the statement, or an "o" entry when it
-//	               came from the server (a Postgres CommandComplete tag
-//	               reads "SELECT 1" and is not a query)
-//	violation      the same entry, an "e" entry with the denial, and a
-//	               guardrails_info entry. The gate writes one event per
-//	               statement, a violation INSTEAD of a statement, so the
-//	               query list would otherwise lose every denied one.
-//	error          an "e" entry with the error
-//	masked         metrics.data_masking and private.session_metrics
-//	session_end    status done, ended_at, and the totals in metadata.sidecar
-//	activity       nothing: it carries no content by design (ADR-0015), and
-//	               the session page has no place for it
-//
-// A kind this gateway does not know, from a newer sidecar, is accepted and
-// writes nothing, so it never blocks the events behind it.
+// planSidecarSession turns one session's events into writes; it does no I/O.
+// prior is the row, nil when absent. The PR description maps each kind.
 func planSidecarSession(sc sidecarIdentity, sessionID string, prior *models.SidecarSessionState,
 	events []daemon.SessionEvent) (sidecarSessionPlan, error) {
 	plan := sidecarSessionPlan{SessionID: SidecarSessionID(sc.ID, sessionID)}
@@ -210,9 +181,8 @@ func planSidecarSession(sc sidecarIdentity, sessionID string, prior *models.Side
 		return plan, nil
 	}
 
-	// The principal can arrive after the session does: a pgwire lane writes
-	// session_start before it reads the startup packet, so the start says
-	// anonymous and the statements name the role. The first known one wins.
+	// A pgwire session_start is anonymous: it is written before the startup
+	// packet. The first known principal files the session.
 	principal := ""
 	for _, e := range fresh {
 		if knownPrincipal(e.Event.Principal) {
@@ -265,9 +235,8 @@ func planSidecarSession(sc sidecarIdentity, sessionID string, prior *models.Side
 			stream.add(ev.Timestamp, statementEntryType(ev), ev.Statement)
 		case audit.KindViolation:
 			stream.add(ev.Timestamp, statementEntryType(ev), ev.Statement)
-			// A microsecond after the statement: the raw session view keys
-			// its rows by elapsed time, and two equal keys lose a row.
-			stream.add(ev.Timestamp.Add(time.Microsecond), "e", denialText(ev))
+			// 1µs later: the raw view keys rows by elapsed time.
+			stream.add(ev.Timestamp.Add(time.Microsecond), streamError, denialText(ev))
 			if len(plan.GuardRails) < guardRailsRoom {
 				plan.GuardRails = append(plan.GuardRails, sidecarGuardRail(ev))
 			} else {
@@ -275,7 +244,7 @@ func planSidecarSession(sc sidecarIdentity, sessionID string, prior *models.Side
 				plan.Sidecar["guardrails_omitted"] = omitted
 			}
 		case audit.KindError:
-			stream.add(ev.Timestamp, "e", ev.Error)
+			stream.add(ev.Timestamp, streamError, ev.Error)
 		case audit.KindMasked:
 			if ev.MaskedCount <= 0 {
 				continue
@@ -289,10 +258,9 @@ func planSidecarSession(sc sidecarIdentity, sessionID string, prior *models.Side
 			plan.Done = &models.SessionDone{
 				ID:         plan.SessionID,
 				OrgID:      sc.OrgID,
-				Status:     "done",
+				Status:     string(openapi.SessionStatusDone),
 				EndSession: &end,
-				// The metrics are written beside the stream; MarkSessionDone
-				// merges this into them, and a nil would merge into NULL.
+				// Not nil: MarkSessionDone merges it, and nil merges into NULL.
 				Metrics: map[string]any{},
 			}
 			plan.Sidecar["statement_count"] = ev.StatementCount
@@ -314,18 +282,16 @@ func planSidecarSession(sc sidecarIdentity, sessionID string, prior *models.Side
 	return plan, nil
 }
 
-// statementEntryType is "o" for what the server sent and "i" for the rest,
-// as the audit plugin types a stream.
+// statementEntryType: a server statement (a CommandComplete tag reads
+// "SELECT 1") is output, not a query.
 func statementEntryType(ev audit.Event) string {
 	if ev.Direction == inspect.FromServer {
-		return "o"
+		return streamOutput
 	}
-	return "i"
+	return streamInput
 }
 
-// newSidecarSession builds the row a sidecar session is created as, from the
-// first event the gateway received for it and the principal it is filed
-// under.
+// newSidecarSession builds the row from the first event received for it.
 func newSidecarSession(sc sidecarIdentity, id, sidecarSessionID string, ev audit.Event, principal string) (*models.Session, error) {
 	listener := pgText(ev.Connection)
 	sidecarSessionID = pgText(sidecarSessionID)
@@ -343,8 +309,7 @@ func newSidecarSession(sc sidecarIdentity, id, sidecarSessionID string, ev audit
 			"session %s: connection name %q is longer than %d characters",
 			sidecarSessionID, mirror.Name, maxSessionConnectionChars)}
 	}
-	// raw whatever the type: proto.SessionRecordingFormat reads custom as a
-	// terminal and would replay a clickhouse session as one.
+	// Always raw: the derived format reads custom/* as a terminal (pty).
 	format := pb.RecordingFormatRaw
 	sess := &models.Session{
 		ID:                id,
@@ -354,7 +319,7 @@ func newSidecarSession(sc sidecarIdentity, id, sidecarSessionID string, ev audit
 		ConnectionSubtype: mirror.Subtype,
 		Verb:              pb.ClientVerbConnect,
 		RecordingFormat:   &format,
-		Status:            "open",
+		Status:            string(openapi.SessionStatusOpen),
 		IdentityType:      plugintypes.IdentityTypeSidecar,
 		Origin:            pb.SessionOriginSidecar,
 		CreatedAt:         ev.Timestamp.UTC(),
@@ -384,9 +349,8 @@ type sidecarUser struct {
 	Full string
 }
 
-// sidecarUserFor files a principal. It is whatever the sidecar resolved on
-// the wire: an email is filed as one, so the session list can filter on it;
-// anything else (a database role) is a name.
+// sidecarUserFor files a principal: an email as user_email, anything else
+// (a database role) as user_name.
 func sidecarUserFor(principal string) sidecarUser {
 	var out sidecarUser
 	p := pgText(principal)
@@ -402,16 +366,13 @@ func sidecarUserFor(principal string) sidecarUser {
 	return out
 }
 
-// knownPrincipal reports a principal the sidecar resolved, as opposed to the
-// placeholder it writes before it knows one.
+// knownPrincipal reports a resolved principal, not the anonymous placeholder.
 func knownPrincipal(p string) bool {
 	p = pgText(p)
 	return p != "" && p != session.AnonymousPrincipal
 }
 
-// pgText drops the NUL bytes Postgres refuses in text and jsonb. JSON
-// decoding already made the string valid UTF-8; a NUL is valid UTF-8 and
-// still fails the write, on every resend.
+// pgText drops NUL, which Postgres refuses in text and jsonb on every resend.
 func pgText(s string) string {
 	return strings.ReplaceAll(s, "\x00", "")
 }
@@ -424,9 +385,8 @@ func truncateChars(s string, n int) string {
 	return string([]rune(s)[:n])
 }
 
-// sidecarStream builds the entries one batch appends to a session's stream,
-// in the audit plugin's format: [seconds since the session started, type,
-// base64 of the bytes].
+// sidecarStream builds the entries a batch appends, in the audit plugin's
+// format: [seconds since start, type, base64].
 type sidecarStream struct {
 	startedAt time.Time
 	entries   []string
@@ -439,8 +399,7 @@ func (s *sidecarStream) add(at time.Time, kind, text string) {
 	if text == "" || s.truncated {
 		return
 	}
-	// A clock step between two events of one session is the sidecar's
-	// clock, not a negative duration worth showing.
+	// A clock step on the sidecar is not a negative duration.
 	elapsed := max(at.Sub(s.startedAt).Seconds(), 0)
 	entry, err := json.Marshal([]any{elapsed, kind, base64.StdEncoding.EncodeToString([]byte(text))})
 	if err != nil {
@@ -454,8 +413,7 @@ func (s *sidecarStream) add(at time.Time, kind, text string) {
 	}
 }
 
-// denialText is the "e" entry a violation adds after its statement, so the
-// query list says the statement did not run.
+// denialText is the error entry after a denied statement.
 func denialText(ev audit.Event) string {
 	switch {
 	case ev.Rule != "" && ev.Message != "":
@@ -469,7 +427,8 @@ func denialText(ev audit.Event) string {
 }
 
 func sidecarGuardRail(ev audit.Event) models.SessionGuardRailsInfo {
-	direction := "input"
+	direction := "input" // guardrails_info has no constant for these
+
 	if ev.Direction == inspect.FromServer {
 		direction = "output"
 	}
@@ -482,16 +441,12 @@ func sidecarGuardRail(ev audit.Event) models.SessionGuardRailsInfo {
 	}
 }
 
-// maskedInfoType names what a masked event rewrote. The event counts the
-// values rewritten across every entity it names, not per entity, so an event
-// naming several is filed under all of them joined: splitting the count
-// would invent numbers an auditor reads as facts.
+// maskedInfoType joins the entities: the event counts cells across all of
+// them, and splitting the count would invent numbers.
 func maskedInfoType(entities []string) string {
 	if len(entities) == 0 {
 		return "unknown"
 	}
-	// Cleaned before the sort, so two names that differ only by a NUL
-	// compact into one key.
 	sorted := make([]string, len(entities))
 	for i, e := range entities {
 		sorted[i] = pgText(e)
@@ -523,8 +478,8 @@ func addDataMasking(metrics map[string]any, masked map[string]int64) {
 	metrics["data_masking"] = dm
 }
 
-// metricInt reads a number from decoded JSON, where it is a float64, or from a
-// map this package built, where it is an int64.
+// metricInt reads a number from decoded JSON (float64) or from this package
+// (int64).
 func metricInt(m map[string]any, key string) int64 {
 	switch v := m[key].(type) {
 	case float64:
@@ -545,12 +500,8 @@ func metricBool(m map[string]any, key string) bool {
 	return v
 }
 
-// ApplySidecarSessionEvents records a batch. Each session in it is applied in
-// its own transaction, so one that fails leaves the others applied.
-//
-// The error is SidecarEventsRefused when every failure is permanent: the
-// sidecar must not resend. Any other error means a resend may succeed, and
-// the sessions already applied ignore it by seq.
+// ApplySidecarSessionEvents applies each session in its own transaction. It
+// returns SidecarEventsRefused when every failure is permanent.
 func ApplySidecarSessionEvents(db *gorm.DB, sc *models.Sidecar, events []daemon.SessionEvent) (SidecarEventsResult, error) {
 	var result SidecarEventsResult
 	if err := ValidateSidecarSessionEvents(events); err != nil {
@@ -558,8 +509,7 @@ func ApplySidecarSessionEvents(db *gorm.DB, sc *models.Sidecar, events []daemon.
 	}
 	ident := sidecarIdentity{ID: sc.ID, Name: sc.Name, OrgID: sc.OrgID}
 
-	// Grouped by session in order of first appearance. Within a group the
-	// sidecar's order holds; across groups it does not matter.
+	// Grouped by session; the sidecar's order holds within a group.
 	var order []string
 	groups := map[string][]daemon.SessionEvent{}
 	for _, e := range events {
@@ -616,9 +566,8 @@ func ApplySidecarSessionEvents(db *gorm.DB, sc *models.Sidecar, events []daemon.
 	return result, nil
 }
 
-// publishSidecarSession feeds the live session page after the writes
-// committed, as the audit plugin does for a gateway session: on this replica
-// only, to whoever watches. Ending the session closes the page's stream.
+// publishSidecarSession feeds the live session page on this replica, as the
+// audit plugin does; the end closes the page's stream.
 func publishSidecarSession(plan sidecarSessionPlan) {
 	for _, ev := range plan.Live {
 		eventbroker.Default.Publish(plan.SessionID, ev)
@@ -628,11 +577,8 @@ func publishSidecarSession(plan sidecarSessionPlan) {
 	}
 }
 
-// permanentDBError reports a write the database refuses for what the batch
-// holds, not for the state of the database: a value out of range, a broken
-// constraint, a jsonb past its size limit. The same batch would fail the same
-// way on every resend, and a 500 would make the sidecar resend it forever
-// while its queue drops everything behind it.
+// permanentDBError reports an error the batch causes, which every resend
+// repeats: a 500 would make the sidecar resend it forever.
 func permanentDBError(err error) bool {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && len(pgErr.Code) >= 2 {
@@ -643,8 +589,7 @@ func permanentDBError(err error) bool {
 			return true
 		}
 	}
-	// The dialect translates some class 23 codes into its own errors
-	// (models.DB runs with TranslateError), and the code is gone then.
+	// TranslateError replaces some class 23 codes with gorm errors.
 	return errors.Is(err, gorm.ErrDuplicatedKey) ||
 		errors.Is(err, gorm.ErrForeignKeyViolated) ||
 		errors.Is(err, gorm.ErrCheckConstraintViolated)
@@ -659,8 +604,7 @@ func applySidecarSessionPlan(tx *gorm.DB, orgID string, plan sidecarSessionPlan)
 		if err := models.UpsertSessionTx(tx, *plan.Create); err != nil {
 			return fmt.Errorf("creating the session: %w", err)
 		}
-		// No format: the entries are statement text, and wire-proto would
-		// send the query list through the Postgres frame parser.
+		// No format: the entries are text; wire-proto would parse them as frames.
 		if err := models.CreateEmptySessionStreamBlobTx(tx, orgID, plan.SessionID, nil); err != nil {
 			return fmt.Errorf("creating the session stream: %w", err)
 		}

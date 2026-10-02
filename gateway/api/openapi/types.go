@@ -1335,7 +1335,8 @@ type Session struct {
 	// The type of identity that created this session
 	// * user - a human user
 	// * machine - a machine identity (non-human identity)
-	IdentityType string `json:"identity_type" enums:"user,machine" example:"user"`
+	// * sidecar - a principal a sidecar resolved on the wire
+	IdentityType string `json:"identity_type" enums:"user,machine,sidecar" example:"user"`
 	// The machine identity ID if this session was created by a machine identity
 	MachineIdentityID *string `json:"machine_identity_id,omitempty" format:"uuid" example:"BF997324-5A27-4778-806A-41EE83598494"`
 }
