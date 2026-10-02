@@ -312,6 +312,35 @@ logs `restart to apply it`. A failed heartbeat changes nothing, because
 losing the phone line home must not take the data path down with it.
 ADR-0014 records the boundary.
 
+#### Upgrading: the control plane first
+
+Upgrade the control plane, then the sidecars. A sidecar refuses a whole
+document that holds one key its build does not decode, so the plane must
+know what each sidecar decodes. From 1.210.0 it does (ADR-0022):
+
+- It serves only the fields an admin set. A plane upgrade alone changes
+  nothing an older sidecar receives.
+- A save that sets a field, a rule type or a protocol that a sidecar's build
+  lacks answers 422, naming the sidecar and the release that adds it.
+- This covers every sidecar from 1.162.0, the first release that handshakes.
+
+A sidecar newer than its plane runs, but cannot use a key the plane does not
+know. Its first import into an empty plane fails when its file sets such a
+key, and startup stops. Do not roll a plane back below a key a stored
+document uses: the plane answers 500 on that sidecar's handshake.
+
+When a sidecar refuses a document anyway, it exits at startup with an error
+that names the key. On a heartbeat it keeps running its last rules and
+reports `refused`. The sidecar page shows `refused`, the version and the
+reason until a document applies; `not_applied` there is the shape of a boot
+crash-loop.
+
+**Escape hatch.** `PATCH /api/sidecars/<name>` with
+`{"configuration": {"load_from_disk": true}}` hands the sidecar back to its
+own config file. The plane then serves only that flag and the license, so the
+sidecar's own build decodes everything it runs. `load_from_disk: false`, sent
+alone, returns ownership to the plane, and the sidecar imports its file again.
+
 ### Usage analytics
 
 A release build reports usage to Segment: that the process started, what
@@ -1170,7 +1199,7 @@ may approve. The rule holds the reviewer groups, the approval count and the
 force-approval list; the lane holds only its name, and the control plane
 authorizes each review against the config it stored for that sidecar.
 
-**A hold waits, then gives up.** A pending review holds the statement on
+**A hold waits, then gives up (ADR-0028).** A pending review holds the statement on
 its connection for up to 30 minutes, on every protocol. Every 5 seconds the relay asks the plane
 about that one review (`POST /api/sidecars/reviews/<id>/claim`); the ask never
 files a review. An approval that lands in time runs the statement on the same
@@ -1197,6 +1226,14 @@ attempt: the plane recognizes the same statement, consumes the approved review
 and answers that this one may go through. It answers that ONCE, since the
 third run of the same statement files a fresh review. A rejection or a
 revocation ends that one review: running the statement again files a new one.
+
+**Revoking an approval.** An approved review can be revoked until the sidecar
+uses it, from the review page or with `PUT /api/reviews/<id>` and status
+`REVOKED`. A hold that is still waiting denies on its next poll, and the
+Slack message says the approval was revoked. Once the sidecar uses the
+approval, the review is `EXECUTED` and a revoke answers 400: the statement
+already ran. Any decision that loses that race to the sidecar answers 400
+the same way.
 
 The budget and interval are constants, with no config field. A control plane
 older than the relay has no claim route: the relay then denies after the first
@@ -1231,7 +1268,7 @@ first 512 bytes of an error.
 
 `review_mode` is valid only where a risk level asks for `require_review`;
 elsewhere startup refuses it. A control plane serves `return` only to a
-sidecar at 1.191.0 or later, and refuses the config for an older one.
+sidecar at 1.196.0 or later, and refuses the config for an older one.
 
 **`return` applies to every client on the listener**, humans included. A
 developer in psql gets the denial too, and has to run the statement again

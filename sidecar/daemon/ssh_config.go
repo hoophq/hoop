@@ -71,7 +71,7 @@ type SSHConfig struct {
 	Identity *SSHIdentityConfig `json:"identity,omitempty" label:"Identity mapping" help:"Which field of the user's certificate fills each identity slot that policy and the audit trail read. Empty uses the key id as the subject."`
 
 	// Relay turns this listener into a TERMINATING BASTION, and its
-	// presence is the whole mode switch (ADR-0021). Absent, the listener is
+	// presence is the whole mode switch (ADR-0027). Absent, the listener is
 	// exactly ADR-0015's.
 	//
 	// It changes what CapabilitiesAllowed above means. On a plain listener
