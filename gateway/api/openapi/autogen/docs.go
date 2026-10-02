@@ -10128,7 +10128,7 @@ const docTemplate = `{
         },
         "/sidecars/handshake": {
             "post": {
-                "description": "Authenticated with the hoop-sidecar-token header. Records the reported version and returns the configuration the sidecar must serve. A sidecar whose stored configuration sets load_from_disk receives only that flag and its license, and runs its own config file. Answers 412 while no configuration with listeners is assigned, recording nothing: a sidecar that cannot run must not show up as recently seen. Answers 422 when the configuration uses a feature the hoop-sidecar-capabilities header does not list. The answer carries the organization's license in its \"license\" key; the sidecar verifies that signature itself and the license is never stored per sidecar.",
+                "description": "Authenticated with the hoop-sidecar-token header. Records the reported version and returns the configuration the sidecar must serve. A sidecar whose stored configuration sets load_from_disk receives only that flag and its license, and runs its own config file. Answers 412 while no configuration with listeners is assigned, recording nothing: a sidecar that cannot run must not show up as recently seen. Answers 422 when the configuration uses a feature the hoop-sidecar-capabilities header does not list. The answer carries the organization's license in its \"license\" key; the sidecar verifies that signature itself and the license is never stored per sidecar. Answers 304 with no body when served_revision names the configuration it would serve again and the beta.sidecar_handshake_not_modified flag is on.",
                 "consumes": [
                     "application/json"
                 ],
@@ -10176,6 +10176,9 @@ const docTemplate = `{
                                 "description": "Present when this gateway owns the licensing decision, so an answer with no license means the organization holds none. A gateway older than the feature omits it, and the sidecar then keeps its own license sources."
                             }
                         }
+                    },
+                    "304": {
+                        "description": "The configuration named by served_revision is still current. No body; the sidecar keeps serving it."
                     },
                     "400": {
                         "description": "Bad Request",
@@ -20164,6 +20167,11 @@ const docTemplate = `{
                     "description": "LastOutcome is what this sidecar concluded about that configuration:\napplied, restart, refused, unchanged or retry. It is the only way to\ntell a sidecar enforcing the current rules from one that refused them\nand kept the old ones while still handshaking on time. One more value\nis the control plane's own: not_served, when it refused to serve this\nbuild the configuration, with LastError saying why.\n\nOptional, for the same reason as AppliedRevision.",
                     "type": "string",
                     "example": "applied"
+                },
+                "served_revision": {
+                    "description": "ServedRevision is the hoop-sidecar-config-revision of the last\nconfiguration this sidecar received in full, applied or not. When the\ncontrol plane would serve the same one, it answers 304 with no body.\n\nOptional. A sidecar too old to send it, and one on its first\nhandshake, always receive the full configuration.",
+                    "type": "string",
+                    "example": "8f14e45fceea167a5a36dedd4bea2543"
                 },
                 "version": {
                     "description": "Version of the sidecar binary",

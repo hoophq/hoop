@@ -8644,6 +8644,11 @@
             "example": "applied",
             "type": "string"
           },
+          "served_revision": {
+            "description": "ServedRevision is the hoop-sidecar-config-revision of the last\nconfiguration this sidecar received in full, applied or not. When the\ncontrol plane would serve the same one, it answers 304 with no body.\n\nOptional. A sidecar too old to send it, and one on its first\nhandshake, always receive the full configuration.",
+            "example": "8f14e45fceea167a5a36dedd4bea2543",
+            "type": "string"
+          },
           "version": {
             "description": "Version of the sidecar binary",
             "example": "1.0.0",
@@ -22357,7 +22362,7 @@
     },
     "/sidecars/handshake": {
       "post": {
-        "description": "Authenticated with the hoop-sidecar-token header. Records the reported version and returns the configuration the sidecar must serve. A sidecar whose stored configuration sets load_from_disk receives only that flag and its license, and runs its own config file. Answers 412 while no configuration with listeners is assigned, recording nothing: a sidecar that cannot run must not show up as recently seen. Answers 422 when the configuration uses a feature the hoop-sidecar-capabilities header does not list. The answer carries the organization's license in its \"license\" key; the sidecar verifies that signature itself and the license is never stored per sidecar.",
+        "description": "Authenticated with the hoop-sidecar-token header. Records the reported version and returns the configuration the sidecar must serve. A sidecar whose stored configuration sets load_from_disk receives only that flag and its license, and runs its own config file. Answers 412 while no configuration with listeners is assigned, recording nothing: a sidecar that cannot run must not show up as recently seen. Answers 422 when the configuration uses a feature the hoop-sidecar-capabilities header does not list. The answer carries the organization's license in its \"license\" key; the sidecar verifies that signature itself and the license is never stored per sidecar. Answers 304 with no body when served_revision names the configuration it would serve again and the beta.sidecar_handshake_not_modified flag is on.",
         "parameters": [
           {
             "description": "The token returned when the sidecar was created",
@@ -22408,6 +22413,9 @@
                 }
               }
             }
+          },
+          "304": {
+            "description": "The configuration named by served_revision is still current. No body; the sidecar keeps serving it."
           },
           "400": {
             "content": {
