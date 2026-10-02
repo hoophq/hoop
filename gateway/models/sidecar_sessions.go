@@ -20,6 +20,8 @@ type SidecarSessionState struct {
 	// cap left out.
 	GuardRails        int
 	GuardRailsOmitted int64
+	// Done is true once the session ended.
+	Done bool
 }
 
 // LockSidecarSession serializes a session's writers until tx ends. A row lock
@@ -39,9 +41,11 @@ func GetSidecarSessionState(tx *gorm.DB, orgID, sessionID string) (*SidecarSessi
 		Principal         string
 		GuardRails        int
 		GuardRailsOmitted *int64
+		Done              bool
 	}
 	err := tx.Raw(`
-	SELECT created_at, metrics, (metadata->'sidecar'->>'last_seq')::BIGINT AS last_seq,
+	SELECT created_at, metrics, status = 'done' AS done,
+		(metadata->'sidecar'->>'last_seq')::BIGINT AS last_seq,
 		COALESCE(NULLIF(user_email, ''), user_name, '') AS principal,
 		CASE WHEN jsonb_typeof(guardrails_info) = 'array'
 			THEN jsonb_array_length(guardrails_info) ELSE 0 END AS guard_rails,
@@ -52,7 +56,8 @@ func GetSidecarSessionState(tx *gorm.DB, orgID, sessionID string) (*SidecarSessi
 	if err != nil {
 		return nil, err
 	}
-	state := &SidecarSessionState{CreatedAt: row.CreatedAt, Principal: row.Principal, GuardRails: row.GuardRails}
+	state := &SidecarSessionState{CreatedAt: row.CreatedAt, Principal: row.Principal,
+		GuardRails: row.GuardRails, Done: row.Done}
 	if row.GuardRailsOmitted != nil {
 		state.GuardRailsOmitted = *row.GuardRailsOmitted
 	}

@@ -502,16 +502,19 @@ func TestPostEventsResendIsIdempotent(t *testing.T) {
 	assert.EqualValues(t, 3, masked[0].CountMasked, "the masked count is not added twice")
 
 	// A batch that overlaps the last one applies only the events after it.
+	open := fullSession("s-overlap")[:3]
+	decodeEventsResponse(t, postEvents(sc, eventsBody(t, open...)))
 	got = decodeEventsResponse(t, postEvents(sc, eventsBody(t,
-		sessionEvent(6, "s-resend", 5, audit.KindSessionEnd, nil),
-		sessionEvent(7, "s-resend", 6, audit.KindError, func(e *audit.Event) { e.Error = "late" }),
+		open[2],
+		sessionEvent(4, "s-overlap", 6, audit.KindError, func(e *audit.Event) { e.Error = "late" }),
 	)))
 	assert.Equal(t, 1, got.Accepted)
 	assert.Equal(t, 1, got.Duplicates)
-	_, _, entries := readStream(t, eventsResendOrgID, id)
-	require.Len(t, entries, 5)
-	assert.Equal(t, streamEntry{6, "e", "late"}, entries[4])
-	assert.EqualValues(t, 7, sidecarMetadata(t, getSidecarSessionRow(t, eventsResendOrgID, id))["last_seq"])
+	overlap := services.SidecarSessionID(sc.ID, "s-overlap")
+	_, _, entries := readStream(t, eventsResendOrgID, overlap)
+	require.Len(t, entries, 4)
+	assert.Equal(t, streamEntry{6, "e", "late"}, entries[3])
+	assert.EqualValues(t, 4, sidecarMetadata(t, getSidecarSessionRow(t, eventsResendOrgID, overlap))["last_seq"])
 }
 
 // The gateway can miss a session_start: the sidecar dropped it, or it went to

@@ -1133,9 +1133,12 @@ func UpdateSessionGuardRailsInfoTx(tx *gorm.DB, orgID, sid string, info []byte) 
 	return res.Error
 }
 
+// UpdateSessionMetadata never matches a sidecar session: its user_email is a
+// database principal, and its metadata holds the seq that dedups resends.
 func UpdateSessionMetadata(orgID, userEmail, sid string, metadata map[string]any) error {
 	res := DB.Table("private.sessions").
-		Where("org_id = ? AND id = ? AND user_email = ?", orgID, sid, userEmail).
+		Where("org_id = ? AND id = ? AND user_email = ? AND origin IS DISTINCT FROM ?",
+			orgID, sid, userEmail, proto.SessionOriginSidecar).
 		Updates(Session{Metadata: metadata})
 	if res.Error == nil && res.RowsAffected == 0 {
 		return ErrNotFound

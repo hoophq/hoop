@@ -818,6 +818,23 @@ func TestPlanSidecarSessionRefusals(t *testing.T) {
 		assert.Equal(t, "edge-"+listener, plan.Create.Connection)
 	})
 
+	t.Run("an ended session refuses what comes after its end", func(t *testing.T) {
+		prior := existingSidecarSession(6)
+		prior.Done = true
+		stmt := sidecarEvent(7, audit.KindStatement, time.Second, func(e *audit.Event) { e.Statement = "SELECT 2" })
+		plan, err := planSidecarSession(testSidecarIdent, testSidecarSessionID, prior, []daemon.SessionEvent{stmt})
+		var refused SidecarEventsRefused
+		require.True(t, errors.As(err, &refused), "want SidecarEventsRefused, got %T: %v", err, err)
+		assert.Contains(t, refused.Reason, "has ended")
+		assert.Nil(t, plan.Entries)
+
+		// A resend of the session's own events stays a duplicate.
+		plan, err = planSidecarSession(testSidecarIdent, testSidecarSessionID, prior,
+			[]daemon.SessionEvent{sidecarEvent(6, audit.KindSessionEnd, time.Minute)})
+		require.NoError(t, err)
+		assert.Equal(t, 1, plan.Duplicates)
+	})
+
 	t.Run("an existing session does not need a listener", func(t *testing.T) {
 		// Only the event that creates the session names the mirror.
 		plan, err := planSidecarSession(testSidecarIdent, testSidecarSessionID, existingSidecarSession(1), []daemon.SessionEvent{

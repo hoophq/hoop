@@ -180,6 +180,12 @@ func planSidecarSession(sc sidecarIdentity, sessionID string, prior *models.Side
 	if len(fresh) == 0 {
 		return plan, nil
 	}
+	// A done session never grows. The sidecar sends nothing after
+	// session_end, so this refuses only stray events.
+	if prior != nil && prior.Done {
+		return plan, SidecarEventsRefused{Reason: fmt.Sprintf(
+			"session %s has ended; %d events after its end are not recorded", sessionID, len(fresh))}
+	}
 
 	// A pgwire session_start is anonymous: it is written before the startup
 	// packet. The first known principal files the session.

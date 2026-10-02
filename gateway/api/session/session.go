@@ -917,6 +917,13 @@ func Kill(c *gin.Context) {
 		httputils.AbortWithErr(c, http.StatusInternalServerError, err, "failed fetching session")
 		return
 	}
+	// The gateway holds no stream of a sidecar session, and the audit plugin
+	// would replace its recording.
+	if sess.Origin == proto.SessionOriginSidecar {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "the gateway cannot kill a sidecar session: " +
+			"it holds no stream of it, and only the sidecar ends it"})
+		return
+	}
 
 	log.With("user", ctx.UserEmail, "sid", sid).Infof("user initiated a kill process")
 
