@@ -86,7 +86,7 @@ type SSHConfig struct {
 	// a map of targets each carrying its own credential, host-key mode and
 	// capability ceiling. Putting it on the form is a product decision, not
 	// something to settle while resolving a merge.
-	Relay *SSHRelayConfig `json:"relay,omitempty" ui:"-"`
+	Relay *SSHRelayConfig `json:"relay,omitempty" cap:"ssh_relay" since:"1.207.0" ui:"-"`
 }
 
 // terminates reports whether this lane is a terminating bastion.

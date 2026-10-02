@@ -56,16 +56,23 @@ func TestAnUnparseableReleaseGrantsNothing(t *testing.T) {
 	}
 }
 
-// A build that sends the generated list is read from the list alone. Its
-// release decides nothing, in either direction.
-func TestTheGeneratedListOutranksTheRelease(t *testing.T) {
-	cfg := httpLaneWithSensitiveParams()
-	generated := []string{"rule:operation", "protocol:http"}
-	err := CheckServable(cfg, Handshake{Version: "9.9.9", Capabilities: generated})
-	if err == nil || !strings.Contains(err.Error(), "sensitive_query_params") {
-		t.Errorf("a high release granted a field the list lacks: %v", err)
+// A build that sends the generated list is granted a field by its release
+// as well: 1.211.0 lists no trust, yet decodes it (EVL-338). A release
+// before the field, or one that does not parse, gets it from the list alone.
+func TestTheReleaseGrantsAFieldTheListLacks(t *testing.T) {
+	cfg := *pgLane()
+	cfg.Trust = &TrustConfig{CAFile: "/ca.pem"}
+	generated := []string{"rule:operation", "protocol:postgres", CapabilityReviewMode}
+	if err := CheckServable(cfg, Handshake{Version: "1.211.0", Capabilities: generated}); err != nil {
+		t.Errorf("a release that decodes trust was refused it: %v", err)
 	}
-	listed := append(generated, "sensitive_query_params")
+	for _, v := range []string{"1.197.0", "unknown"} {
+		err := CheckServable(cfg, Handshake{Version: v, Capabilities: generated})
+		if err == nil || !strings.Contains(err.Error(), "trust") {
+			t.Errorf("version %q was granted trust its list lacks: %v", v, err)
+		}
+	}
+	listed := append(generated, "trust")
 	if err := CheckServable(cfg, Handshake{Version: "unknown", Capabilities: listed}); err != nil {
 		t.Errorf("a listed field was refused over the release: %v", err)
 	}
@@ -178,6 +185,39 @@ func TestAnEmptyListIsNotASetField(t *testing.T) {
 	for _, hs := range []Handshake{{Version: "1.184.1"}, {Capabilities: []string{"rule:operation", "protocol:http"}}} {
 		if err := CheckServable(cfg, hs); err != nil {
 			t.Errorf("%+v was refused an empty list: %v", hs, err)
+		}
+	}
+}
+
+// These keys shipped without a cap tag, so the plane served them to builds
+// that refuse the whole document over them (EVL-338). Each is now refused
+// to a release before its own, naming that release.
+func TestAKeyIsRefusedToAReleaseBeforeIt(t *testing.T) {
+	for _, tc := range []struct {
+		key, since, before string
+		set                func(*Config)
+	}{
+		{"trust", "1.198.0", "1.197.0", func(c *Config) { c.Trust = &TrustConfig{CAFile: "/ca.pem"} }},
+		{"google_identity", "1.198.0", "1.197.0", func(c *Config) {
+			c.Listeners[0].GoogleIdentity = &GoogleIdentityConfig{TokenInfoURL: "https://t"}
+		}},
+		{"mcp", "1.199.0", "1.198.1", func(c *Config) { c.MCP = &MCPConfig{Listen: "127.0.0.1:8765"} }},
+		{"postgres", "1.201.0", "1.200.0", func(c *Config) { c.Listeners[0].Postgres = &PostgresConfig{} }},
+		{"ssh.relay", "1.207.0", "1.206.0", func(c *Config) {
+			c.Listeners[0].Protocol = "ssh"
+			c.Listeners[0].SSH = &SSHConfig{Relay: &SSHRelayConfig{}}
+		}},
+	} {
+		cfg := *pgLane()
+		tc.set(&cfg)
+		for _, hs := range []Handshake{{Version: tc.since}, {Capabilities: SidecarCapabilities()}} {
+			if err := CheckServable(cfg, hs); err != nil {
+				t.Errorf("%s: %+v was refused a key it decodes: %v", tc.key, hs, err)
+			}
+		}
+		err := CheckServable(cfg, Handshake{Version: tc.before})
+		if err == nil || !strings.Contains(err.Error(), tc.key) || !strings.Contains(err.Error(), tc.since+" or later") {
+			t.Errorf("%s: %s was served the key, or the refusal does not name %s: %v", tc.key, tc.before, tc.since, err)
 		}
 	}
 }
