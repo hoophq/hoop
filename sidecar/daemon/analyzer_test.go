@@ -257,7 +257,7 @@ func TestFailOpenDefaultsTrue(t *testing.T) {
 // see every request as carrying none. The lifted header stays out of what
 // policy sees. An http block on a postgres lane changes nothing.
 func TestHTTPLaneWithoutHTTPBlockLiftsItsCredential(t *testing.T) {
-	f := laneCodecFactory(inspect.HTTP, nil, nil, "authorization")
+	f := laneCodecFactory(ListenerConfig{Protocol: "http", IdentityHeader: "authorization"})
 	if f == nil {
 		t.Fatal("an http lane with no http block got no codec factory")
 	}
@@ -279,7 +279,7 @@ func TestHTTPLaneWithoutHTTPBlockLiftsItsCredential(t *testing.T) {
 		t.Errorf("TakeCredential = %q, %v; want the request's Authorization", got, ok)
 	}
 
-	if f := laneCodecFactory(inspect.Postgres, &HTTPCodecConfig{CaptureBody: true}, nil, ""); f != nil {
+	if f := laneCodecFactory(ListenerConfig{Protocol: "postgres", HTTP: &HTTPCodecConfig{CaptureBody: true}}); f != nil {
 		t.Error("a postgres lane got an http codec factory")
 	}
 }
@@ -287,7 +287,7 @@ func TestHTTPLaneWithoutHTTPBlockLiftsItsCredential(t *testing.T) {
 // The factory must produce a FRESH codec per call: two connections sharing one
 // stateful codec corrupt each other's reassembly buffer.
 func TestCodecFactoryReturnsDistinctCodecs(t *testing.T) {
-	f := laneCodecFactory(inspect.HTTP, &HTTPCodecConfig{CaptureBody: true}, nil, "")
+	f := laneCodecFactory(ListenerConfig{Protocol: "http", HTTP: &HTTPCodecConfig{CaptureBody: true}})
 	if f == nil {
 		t.Fatal("no factory for an http lane with capture on")
 	}
@@ -470,7 +470,7 @@ func TestHeaderAllowlistIsNormalizedForTheCodec(t *testing.T) {
 		t.Fatalf("Validate: %v", err)
 	}
 
-	codec := newHTTPCodec(h, "")()
+	codec := newHTTPCodec(h, "", false)()
 	stmts, _, err := codec.Decode(inspect.FromClient, []byte("GET /x HTTP/1.1\r\nHost: h\r\nAccept: application/json\r\nKubectl-Command: kubectl get\r\n\r\n"))
 	if err != nil || len(stmts) != 1 {
 		t.Fatalf("Decode: %d statements, %v", len(stmts), err)

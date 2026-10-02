@@ -46,11 +46,11 @@ func clickhouseCodecFactory(proto inspect.Protocol, cfg *ClickHouseCodecConfig) 
 //
 // An http lane is the exception and always gets its own: the registry's
 // codec has no way to learn the lane's credential header, and a lane that
-// lifts none still needs its capture settings. credentialHeader is ""
-// for a lane that resolves no identity from a request header.
-func laneCodecFactory(proto inspect.Protocol, http *HTTPCodecConfig, clickhouse *ClickHouseCodecConfig, credentialHeader string) func() inspect.Codec {
+// lifts none still needs its capture settings.
+func laneCodecFactory(lc ListenerConfig) func() inspect.Codec {
+	proto := inspect.Protocol(lc.Protocol)
 	if proto == inspect.HTTP {
-		return newHTTPCodec(http, credentialHeader)
+		return newHTTPCodec(lc.HTTP, lc.credentialHeader(), analyzerHolds(lc.Analyzer))
 	}
-	return clickhouseCodecFactory(proto, clickhouse)
+	return clickhouseCodecFactory(proto, lc.ClickHouse)
 }

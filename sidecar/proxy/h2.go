@@ -374,7 +374,7 @@ func (bridgeTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 //
 // Each bridged relay connection loads the lane's rules when it is dialled,
 // not when the client connected. It is its own session with its own Gate,
-// which is the unit SwapRules is defined on; one Gate never mixes
+// which is the unit SwapLane is defined on; one Gate never mixes
 // generations either way.
 type h2Bridge struct {
 	s *Server

@@ -1039,10 +1039,12 @@ carry what the path does not — kubectl asks for a listing with
 `Accept: application/json`, on the same GET. That allowlist is the one
 decision on what leaves the process for policy, the audit trail and, here,
 a provider; `authorization`, `cookie`, `proxy-authorization` and
-`set-cookie` cannot be allowlisted at all. `capture_body: true` is what
-puts a POST's payload in front of the model; without it a write is judged
-from its request line alone. A bodiless RESPONSE (a 204, a 101) is never
-classified: there is nothing to judge but a status line.
+`set-cookie` cannot be allowlisted at all. `capture_body` is optional:
+`true` puts a POST's payload in front of the model; without it a write is
+judged from its request line alone. A lane where a level asks for
+`require_review` captures request bodies without it (see Reviews). A
+bodiless RESPONSE (a 204, a 101) is never classified: there is nothing to
+judge but a status line.
 
 **What the model sees** is the request line as the client sent it — verb,
 raw path and query string — then the normalized resource where it differs,
@@ -1299,13 +1301,17 @@ as `\xNN` and a backslash as `\\`. The match stays on the raw bytes.
 
 On an http lane the relay files the method, the target and the body, as
 `POST /transfers?dry_run=false`, a blank line, then the body. The reviewer
-reads that. A statement that is not printable text, such as a kubectl
-protobuf body, reaches the reviewer as a notice line, then `\xNN` for each
-byte that is not printable; the match stays on the raw bytes. Five
-consequences:
+reads that. The body is filed with `http.capture_body` off too: a lane where a
+level asks for `require_review` captures request bodies by itself, and they
+reach the analyzer, policy and the audit trail as `capture_body` would send
+them. Response bodies still need `capture_body`. A statement that is not
+printable text, such as a kubectl protobuf body, reaches the reviewer as a
+notice line, then `\xNN` for each byte that is not printable; the match
+stays on the raw bytes. Five consequences:
 
-- A body larger than `http.max_body_bytes` is truncated by the codec, so the
-  hold denies it without filing: the approval would bind to bytes nobody read.
+- A body larger than `http.max_body_bytes` (64 KiB unless set) is truncated
+  by the codec, so the hold denies it without filing: the approval would
+  bind to bytes nobody read.
 - A query value the codec redacts (a token, a password) is filed redacted, so
   requests differing only in that value match one approval (EVL-310).
 - A request carrying a trace id, a nonce or a timestamp never matches twice.
