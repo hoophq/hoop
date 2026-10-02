@@ -917,7 +917,7 @@ func Run(cfg *Config, det Plugin) error {
 			statSources = append(statSources, statSource{ln.cfg.Protocol, ssrv})
 			swappers[ln.name] = rules
 		default:
-			srv, serr := buildServer(ln, cfg.Audit, auditSink, log)
+			srv, serr := buildServer(ln, cfg.Audit, auditSink, cfg.reviewStatusReader(), log)
 			if serr != nil {
 				return serr
 			}
@@ -1411,10 +1411,14 @@ func checkPIIEntities(rules []policy.Rule, det Plugin) []string {
 }
 
 // buildServer turns one resolved lane into a running-capable Server.
+//
+// reviews answers the reserved review status path on an http lane; nil in a
+// process with no control plane.
 func buildServer(
 	ln lane,
 	ac AuditConfig,
 	sink audit.Sink,
+	reviews ReviewStatusReader,
 	log *slog.Logger,
 ) (*proxy.Server, error) {
 	lc := ln.cfg
@@ -1475,6 +1479,7 @@ func buildServer(
 		Masker:              ln.masker,
 		FailOnAuditError:    ac.failOnAuditError(),
 		DenyWriter:          proxy.ProtocolDenyWriter{},
+		Answer:              reviewStatusAnswer(lc, ln.name, reviews, log.With("listener", ln.name)),
 		CredentialHeader:    lc.credentialHeader(),
 		RequestIdentity:     requestIdentity,
 		CodecFactory:        ln.codecFactory,

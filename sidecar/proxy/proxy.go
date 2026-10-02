@@ -58,10 +58,11 @@ type DenyWriter interface {
 }
 
 // statementDenyWriter renders protocols whose native error must be correlated
-// with the denied request. Kept optional so existing DenyWriter implementations
-// remain source-compatible.
+// with the denied request, or that carry the review a denial waits on. Kept
+// optional so existing DenyWriter implementations remain source-compatible.
+// review is nil unless the denial named one.
 type statementDenyWriter interface {
-	DenyStatement(statement inspect.Statement, message string) []byte
+	DenyStatement(statement inspect.Statement, message string, review *policy.Review) []byte
 }
 
 // Config configures a Server.
@@ -119,6 +120,10 @@ type Config struct {
 
 	// DenyWriter renders denials in-protocol. Optional.
 	DenyWriter DenyWriter
+
+	// Answer replies to a request on a route the sidecar reserves; see
+	// gate.Config.Answer. Optional, and read on http lanes only.
+	Answer func(stmt inspect.Statement) func(ctx context.Context) []byte
 
 	// IdentityFn derives the caller's identity from the accepted connection.
 	// Optional; the default records only the peer address, producing an
@@ -615,6 +620,7 @@ func (s *Server) handle(ctx context.Context, client net.Conn, rules *laneRules) 
 		CodecFactory:     rules.codecFactory,
 		Metrics:          s.cfg.Metrics,
 		RequestIdentity:  requestIdentity,
+		Answer:           s.cfg.Answer,
 	})
 	if err != nil {
 		log.Error("gate setup failed", "error", err)
@@ -896,6 +902,18 @@ func (s *Server) pump(
 				log.Warn("inspection reported an error", "direction", string(dir), "error", d.Err)
 			}
 
+			// The lane answered a route it owns, or refused to answer it
+			// out of order. Nothing was denied, so nothing is counted; the
+			// connection ends the way it does after a deny frame.
+			if d.Hangup {
+				return
+			}
+			if len(d.Reply) > 0 {
+				_ = src.SetWriteDeadline(time.Now().Add(5 * time.Second))
+				_, _ = src.Write(d.Reply)
+				return
+			}
+
 			if !d.Allowed {
 				if dir == inspect.FromServer {
 					discardResponse = true
@@ -916,7 +934,7 @@ func (s *Server) pump(
 					var frame []byte
 					if d.DeniedStatement != nil {
 						if writer, ok := s.cfg.DenyWriter.(statementDenyWriter); ok {
-							frame = writer.DenyStatement(*d.DeniedStatement, d.Message)
+							frame = writer.DenyStatement(*d.DeniedStatement, d.Message, d.Review)
 						}
 					}
 					if len(frame) == 0 {
