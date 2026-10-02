@@ -174,6 +174,47 @@ type EvalContext struct {
 	// this struct already lives for exactly one statement. The analyzer's
 	// hold reads it, so a wait for a human ends with the connection.
 	ConnCtx context.Context
+
+	// review is the hold a producer asked for, run by the outermost Chain
+	// after every evaluator allowed (ADR-0024). depth is how many Chains
+	// are evaluating on this context; only the outermost runs the review,
+	// so a nested chain cannot run it before a decision placed after it.
+	review *ReviewRequest
+	depth  int
+}
+
+// ReviewRequest asks that a human release the statement before it runs.
+//
+// A producer records it instead of filing at once, because filing pages
+// approvers and a hold spends the approval: both must wait until nothing
+// placed after the producer can still deny.
+type ReviewRequest struct {
+	// Mode and ModeSource reach the decide phase as input.review.
+	Mode       string
+	ModeSource string
+
+	// Resolve files the review and waits on it. Its verdict is the
+	// statement's.
+	Resolve func() Verdict
+}
+
+// RequestReview records r for the outermost Chain to run last. False means
+// no Chain owns this context, or another producer already asked: the caller
+// then resolves r itself, as the only safe order left to it.
+func (e *EvalContext) RequestReview(r ReviewRequest) bool {
+	if e == nil || e.depth == 0 || e.review != nil {
+		return false
+	}
+	e.review = &r
+	return true
+}
+
+// PendingReview returns the review a producer asked for, if any.
+func (e *EvalContext) PendingReview() (ReviewRequest, bool) {
+	if e == nil || e.review == nil {
+		return ReviewRequest{}, false
+	}
+	return *e.review, true
 }
 
 // Finding is one producer's contribution to a decision it does not make.
@@ -1091,7 +1132,14 @@ func (c Chain) Evaluate(stmt inspect.Statement) Verdict {
 // Evaluators inside see what the ones before them established, which is how a
 // producer's finding reaches a policy and how a policy reaches back to
 // request a producer that would not otherwise have run.
+//
+// The outermost chain runs a requested review after its last evaluator
+// allowed, so a decision placed after the producer that asked for it denies
+// before anything is filed or spent (ADR-0024).
 func (c Chain) EvaluateWith(stmt inspect.Statement, ec *EvalContext) Verdict {
+	ec.depth++
+	defer func() { ec.depth-- }()
+
 	var errs error
 	for _, e := range c {
 		var v Verdict
@@ -1110,6 +1158,14 @@ func (c Chain) EvaluateWith(stmt inspect.Statement, ec *EvalContext) Verdict {
 			return v
 		}
 		errs = errors.Join(errs, v.Err)
+	}
+	if r := ec.review; r != nil && ec.depth == 1 {
+		ec.review = nil
+		v := r.Resolve()
+		ec.Annotations = mergeAnnotations(ec.Annotations, v.Annotations)
+		v.Err = errors.Join(errs, v.Err)
+		v.Annotations = ec.Annotations
+		return v
 	}
 	return Verdict{Err: errs, Annotations: ec.Annotations}
 }
