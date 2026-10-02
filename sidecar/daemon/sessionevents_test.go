@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -34,6 +35,9 @@ type eventsPlane struct {
 
 	// hold, when set, makes the handler wait for it to close.
 	hold chan struct{}
+	// maxBody, when set, answers 413 to a larger body, as a proxy in front
+	// of the plane does. The plane never sees it.
+	maxBody int
 }
 
 func newEventsPlane(t *testing.T, statuses ...int) *eventsPlane {
@@ -47,8 +51,16 @@ func newEventsPlane(t *testing.T, statuses ...int) *eventsPlane {
 		if hold != nil {
 			<-hold
 		}
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("reading the body: %v", err)
+		}
+		if p.maxBody > 0 && len(raw) > p.maxBody {
+			w.WriteHeader(http.StatusRequestEntityTooLarge)
+			return
+		}
 		var req SessionEventsRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		if err := json.Unmarshal(raw, &req); err != nil {
 			t.Errorf("the sink sent a body the plane cannot decode: %v", err)
 			w.WriteHeader(http.StatusBadRequest)
 			return
@@ -740,5 +752,35 @@ func TestSessionEventsForgetAnIdleCounter(t *testing.T) {
 	}
 	if c, ok := s.seqs["new"]; !ok || c.seq != 1 {
 		t.Errorf("a live counter = %+v, %v; want seq 1 kept", c, ok)
+	}
+}
+
+// A proxy that allows less than the plane does answers 413 to a batch the
+// plane would take. The sink halves its batches until they pass, and loses
+// only an event too large to pass alone.
+func TestSessionEventsShrinkTheBatchOnAProxy413(t *testing.T) {
+	plane := newEventsPlane(t)
+	plane.maxBody = 1000
+	s, buf := testSink(t, plane, true, audit.SinkOptions{}, nil)
+	for i := range 10 {
+		_ = s.Write(context.Background(), statementEvent("s1", fmt.Sprintf("select %d", i)))
+	}
+	_ = s.Write(context.Background(), statementEvent("s1", strings.Repeat("x", 2000)))
+	_ = s.Write(context.Background(), statementEvent("s1", "select 11"))
+	_ = s.Close()
+
+	var seqs []int64
+	for _, ev := range flatten(plane.received()) {
+		seqs = append(seqs, ev.Seq)
+	}
+	want := []int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12}
+	if fmt.Sprint(seqs) != fmt.Sprint(want) {
+		t.Errorf("the plane received seqs %v, want %v: all but the event too large alone", seqs, want)
+	}
+	if st := s.snapshot(); st.Sent != 11 || st.Rejected != 1 || st.Dropped != 0 {
+		t.Errorf("stats = %+v, want 11 sent and the large one rejected", st)
+	}
+	if !strings.Contains(buf.String(), "sending smaller ones") {
+		t.Errorf("the shrink was not logged:\n%s", buf.String())
 	}
 }

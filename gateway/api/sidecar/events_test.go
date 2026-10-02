@@ -40,6 +40,7 @@ const (
 	eventsHandshakeOrgID = "00000000-0000-0000-0000-0000000000e8"
 	eventsFlagOffDBOrgID = "00000000-0000-0000-0000-0000000000e9"
 	eventsColumnsOrgID   = "00000000-0000-0000-0000-0000000000ea"
+	eventsPoisonOrgID    = "00000000-0000-0000-0000-0000000000eb"
 )
 
 // eventsT0 is when every test session starts. Whole seconds, so the elapsed
@@ -722,4 +723,36 @@ func TestPostEventsFitsTheSidecarStringsToTheColumns(t *testing.T) {
 		func(e *audit.Event) { e.Connection = strings.Repeat("l", 128) })))
 	assert.Equal(t, http.StatusUnprocessableEntity, rec.Code, rec.Body.String())
 	assert.Zero(t, countSessions(t, eventsColumnsOrgID, services.SidecarSessionID(sc.ID, "s-wide")))
+}
+
+// A write the database refuses for what the batch holds fails the same way on
+// every resend. It answers 422, so the sidecar does not resend it forever, and
+// the other sessions of the batch are still applied.
+func TestPostEventsRefusesWhatTheDatabaseCannotHold(t *testing.T) {
+	startEventsDB(t, eventsPoisonOrgID)
+	enableSessionEvents(t, eventsPoisonOrgID)
+	sc := seedEventsSidecar(t, eventsPoisonOrgID, "edge-poison")
+
+	masked := func(seq int64, sessionID string, count int) daemon.SessionEvent {
+		return sessionEvent(seq, sessionID, int(seq), audit.KindMasked, func(e *audit.Event) {
+			e.MaskedEntities = []string{"email"}
+			e.MaskedCount = count
+		})
+	}
+	rec := postEvents(sc, eventsBody(t,
+		sessionEvent(1, "s-poison", 0, audit.KindSessionStart, nil), masked(2, "s-poison", 1)))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	// session_metrics.count_masked is INTEGER: one more cell overflows it.
+	poisoned := services.SidecarSessionID(sc.ID, "s-poison")
+	require.NoError(t, models.DB.Exec(`UPDATE private.session_metrics SET count_masked = 2147483647
+		WHERE session_id = ?`, poisoned).Error)
+
+	rec = postEvents(sc, eventsBody(t,
+		masked(3, "s-poison", 1),
+		sessionEvent(1, "s-healthy", 0, audit.KindSessionStart, nil)))
+	assert.Equal(t, http.StatusUnprocessableEntity, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), "s-poison")
+	assert.Equal(t, int64(1), countSessions(t, eventsPoisonOrgID, services.SidecarSessionID(sc.ID, "s-healthy")),
+		"the healthy session in the same batch is applied")
 }

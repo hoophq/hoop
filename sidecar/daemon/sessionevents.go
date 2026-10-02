@@ -187,7 +187,10 @@ type sessionEventSink struct {
 	closed   bool
 	stats    sessionEventsStats
 	inflight inflightBatch
-	dropLog  time.Time
+	// bodyCap is the body size a proxy in front of the plane allows, learned
+	// from its 413s. Zero means MaxSessionEventsBatchBytes.
+	bodyCap int
+	dropLog time.Time
 	// dropLogged is stats.Dropped as of the last warning.
 	dropLogged int64
 	// rejectLog, rejectLogged and rejectStatus do the same for refusals.
@@ -432,12 +435,18 @@ func (s *sessionEventSink) take() (body []byte, last uint64, n int) {
 	}
 	size := len(sessionEventsBodyPrefix) + len(sessionEventsBodySuffix)
 	limit := s.batchLimit()
+	maxBody := MaxSessionEventsBatchBytes
+	if s.bodyCap > 0 {
+		maxBody = s.bodyCap
+	}
 	for n < len(s.queue) && n < limit {
 		add := len(s.queue[n].entry)
 		if n > 0 {
 			add++ // the comma
 		}
-		if size+add > MaxSessionEventsBatchBytes {
+		// The first event always goes, alone if it must: every entry fits
+		// MaxSessionEventsBatchBytes, and only a learned cap can be lower.
+		if n > 0 && size+add > maxBody {
 			break
 		}
 		size += add
@@ -592,6 +601,19 @@ func (s *sessionEventSink) sendOne(ctx context.Context) (ok, retry bool) {
 		return false, true
 	case status >= 200 && status < 300:
 		s.settle(last, n, batchSent)
+		return true, false
+	case status == http.StatusRequestEntityTooLarge && n > 1:
+		// Not the plane's limit, which this batch is within: a proxy in
+		// front of it (ingress-nginx allows 1 MiB by default). Half the
+		// body goes again at once; only an event too large alone is lost.
+		s.settle(last, n, batchRetry)
+		s.mu.Lock()
+		s.bodyCap = len(body) / 2
+		s.mu.Unlock()
+		s.log.Warn("something in front of the control plane refused a batch as too large; "+
+			"sending smaller ones",
+			"url", s.cp.url, "refused_bytes", len(body), "batch_bytes", len(body)/2,
+			"hint", fmt.Sprintf("allow bodies of %d bytes on the proxy, e.g. ingress-nginx proxy-body-size", MaxSessionEventsBatchBytes))
 		return true, false
 	}
 

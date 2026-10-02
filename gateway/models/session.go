@@ -831,7 +831,7 @@ func upsertSessionTx(tx *gorm.DB, sess Session) error {
 	}
 
 	if res.Error != nil {
-		return fmt.Errorf("failed creating session blob input, reason=%v", res.Error)
+		return fmt.Errorf("failed creating session blob input, reason=%w", res.Error)
 	}
 	return tx.Table("private.sessions").Save(
 		Session{
@@ -988,7 +988,7 @@ func CreateEmptySessionStreamBlobTx(tx *gorm.DB, orgID, sessionID string, blobFo
 		res.Error = tx.Table("private.blobs").Create(blob).Error
 	}
 	if res.Error != nil {
-		return fmt.Errorf("failed creating empty session stream blob: %v", res.Error)
+		return fmt.Errorf("failed creating empty session stream blob: %w", res.Error)
 	}
 	return tx.Table("private.sessions").
 		Where("org_id = ? AND id = ?", orgID, sessionID).

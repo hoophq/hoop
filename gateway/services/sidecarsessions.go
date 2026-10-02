@@ -22,6 +22,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/hoophq/hoop/sidecar/inspect"
 	"github.com/hoophq/hoop/sidecar/session"
+	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 )
 
@@ -594,6 +595,9 @@ func ApplySidecarSessionEvents(db *gorm.DB, sc *models.Sidecar, events []daemon.
 		switch {
 		case errors.As(err, &permanent):
 			refused = append(refused, permanent)
+		case permanentDBError(err):
+			log.With("sidecar", sc.ID, "session", sid).Warnf("refused sidecar session events the database cannot hold, reason=%v", err)
+			refused = append(refused, SidecarEventsRefused{Reason: fmt.Sprintf("session %s: %v", sid, err)})
 		case err != nil:
 			log.With("sidecar", sc.ID, "session", sid).Warnf("failed recording sidecar session events, reason=%v", err)
 			failed = append(failed, err)
@@ -622,6 +626,28 @@ func publishSidecarSession(plan sidecarSessionPlan) {
 	if plan.Done != nil {
 		eventbroker.Default.Remove(plan.SessionID)
 	}
+}
+
+// permanentDBError reports a write the database refuses for what the batch
+// holds, not for the state of the database: a value out of range, a broken
+// constraint, a jsonb past its size limit. The same batch would fail the same
+// way on every resend, and a 500 would make the sidecar resend it forever
+// while its queue drops everything behind it.
+func permanentDBError(err error) bool {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && len(pgErr.Code) >= 2 {
+		switch pgErr.Code[:2] {
+		case "22", // data exception
+			"23", // integrity constraint violation
+			"54": // program limit exceeded
+			return true
+		}
+	}
+	// The dialect translates some class 23 codes into its own errors
+	// (models.DB runs with TranslateError), and the code is gone then.
+	return errors.Is(err, gorm.ErrDuplicatedKey) ||
+		errors.Is(err, gorm.ErrForeignKeyViolated) ||
+		errors.Is(err, gorm.ErrCheckConstraintViolated)
 }
 
 // applySidecarSessionPlan writes a plan inside tx.

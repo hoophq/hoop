@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -17,8 +18,10 @@ import (
 	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/hoophq/hoop/sidecar/inspect"
 	sidecarsession "github.com/hoophq/hoop/sidecar/session"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 var (
@@ -1035,4 +1038,25 @@ func TestPlanSidecarSessionFeedsTheLivePage(t *testing.T) {
 	assert.Equal(t, testSidecarT0.Add(time.Second), plan.Live[0].Time)
 	assert.Equal(t, "e", plan.Live[1].Type)
 	assert.Equal(t, []byte("reset"), plan.Live[1].Payload)
+}
+
+// Only what the batch holds is permanent; a database in trouble is not.
+func TestPermanentDBError(t *testing.T) {
+	for _, tc := range []struct {
+		err  error
+		want bool
+	}{
+		{fmt.Errorf("wrapped: %w", &pgconn.PgError{Code: "22003"}), true}, // integer out of range
+		{&pgconn.PgError{Code: "54000"}, true},                            // jsonb past its size limit
+		{&pgconn.PgError{Code: "23502"}, true},                            // not null
+		{fmt.Errorf("x: %w", gorm.ErrDuplicatedKey), true},
+		{gorm.ErrForeignKeyViolated, true},
+		{&pgconn.PgError{Code: "40001"}, false}, // serialization failure
+		{&pgconn.PgError{Code: "57P01"}, false}, // admin shutdown
+		{&pgconn.PgError{Code: "53300"}, false}, // too many connections
+		{errors.New("connection reset"), false},
+		{nil, false},
+	} {
+		assert.Equal(t, tc.want, permanentDBError(tc.err), "%v", tc.err)
+	}
 }
