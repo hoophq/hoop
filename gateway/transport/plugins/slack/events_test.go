@@ -3,6 +3,7 @@ package slack
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	reviewapi "github.com/hoophq/hoop/gateway/api/review"
 	"github.com/hoophq/hoop/gateway/models"
 	modelsbootstrap "github.com/hoophq/hoop/gateway/models/bootstrap"
 	"github.com/hoophq/hoop/gateway/pglite"
@@ -70,6 +72,26 @@ func TestSameWorkspace(t *testing.T) {
 		u := &slackservice.SlackUser{TeamID: tt.userTeam, EnterpriseID: tt.userGrid}
 		if got := sameWorkspace(u, tt.botTeam, tt.botGrid); got != tt.want {
 			t.Errorf("%s: got %v, want %v", tt.name, got, tt.want)
+		}
+	}
+}
+
+// A refused click is told why. The gateway messages are unchanged, and an
+// expiry says nothing was released.
+func TestReviewRefusalMessage(t *testing.T) {
+	for _, tt := range []struct {
+		err  error
+		want string
+	}{
+		{reviewapi.ErrNotFound, "review not found"},
+		{reviewapi.ErrWrongState, "The review is already approved or rejected"},
+		{reviewapi.ErrSelfApproval, "Unable to self approval review, contact another member of you team to approve it"},
+		{reviewapi.ErrNotEligible, "You're not eligible to approve/reject this review"},
+		{reviewapi.ErrExpired, "This review expired. Nothing was released; running the statement again files a new review."},
+		{errors.New("boom"), "boom"},
+	} {
+		if got := reviewRefusalMessage(tt.err); got != tt.want {
+			t.Errorf("reviewRefusalMessage(%v) = %q, want %q", tt.err, got, tt.want)
 		}
 	}
 }

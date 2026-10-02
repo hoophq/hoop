@@ -140,9 +140,9 @@ func SyncAnalyzerApprovalRule(tx *gorm.DB, orgID uuid.UUID, ruleName string, spe
 	return DeleteAnalyzerApprovalRule(tx, orgID, ruleName)
 }
 
-// AnalyzerApprovalReviewers returns the reviewer groups of the approval rule an
-// analyzer rule manages, or nil when it has none.
-func AnalyzerApprovalReviewers(db *gorm.DB, orgID uuid.UUID, ruleName string) ([]string, error) {
+// AnalyzerApprovalRule returns the approval rule an analyzer rule manages, or
+// nil when it has none.
+func AnalyzerApprovalRule(db *gorm.DB, orgID uuid.UUID, ruleName string) (*models.AccessRequestRule, error) {
 	rule, err := models.GetAccessRequestRuleByName(db, ruleName, orgID)
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
@@ -152,7 +152,43 @@ func AnalyzerApprovalReviewers(db *gorm.DB, orgID uuid.UUID, ruleName string) ([
 	case rule.ManagedBy == nil || *rule.ManagedBy != analyzerApprovalManagedBy:
 		return nil, nil
 	}
+	return rule, nil
+}
+
+// AnalyzerApprovalReviewers returns the reviewer groups of the approval rule an
+// analyzer rule manages, or nil when it has none.
+func AnalyzerApprovalReviewers(db *gorm.DB, orgID uuid.UUID, ruleName string) ([]string, error) {
+	rule, err := AnalyzerApprovalRule(db, orgID, ruleName)
+	if err != nil || rule == nil {
+		return nil, err
+	}
 	return []string(rule.ReviewersGroups), nil
+}
+
+// ApplyAnalyzerApprovalTTLs sets the review limits of the rule's own approval
+// rule, after SyncAnalyzerApprovalRule: nil keeps, 0 clears, no own rule ignores.
+func ApplyAnalyzerApprovalTTLs(tx *gorm.DB, orgID uuid.UUID, ruleName string, pending, approval *int) error {
+	if pending == nil && approval == nil {
+		return nil
+	}
+	pending, err := NormalizeSidecarReviewTTL("pending_ttl_sec", pending)
+	if err != nil {
+		return err
+	}
+	approval, err = NormalizeSidecarReviewTTL("approval_ttl_sec", approval)
+	if err != nil {
+		return err
+	}
+	rule, err := AnalyzerApprovalRule(tx, orgID, ruleName)
+	if err != nil {
+		return fmt.Errorf("failed reading the approval rule for analyzer rule %q: %w", ruleName, err)
+	}
+	if rule == nil {
+		return nil
+	}
+	rule.PendingTTLSec = ApplySidecarReviewTTL(rule.PendingTTLSec, pending)
+	rule.ApprovalTTLSec = ApplySidecarReviewTTL(rule.ApprovalTTLSec, approval)
+	return models.UpdateAccessRequestRule(tx, rule)
 }
 
 // upsertAnalyzerApprovalRule creates the rule, or refreshes the fields this

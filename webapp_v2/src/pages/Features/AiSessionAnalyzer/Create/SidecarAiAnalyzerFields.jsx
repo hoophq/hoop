@@ -36,6 +36,10 @@ export default function SidecarAiAnalyzerFields({ editor }) {
     reviewers,
     setReviewers,
     reviewerOptions,
+    pendingMinutes,
+    editPendingMinutes,
+    approvalMinutes,
+    editApprovalMinutes,
     holds,
     ownHold,
     isHTTP,
@@ -129,7 +133,7 @@ export default function SidecarAiAnalyzerFields({ editor }) {
 
       <SectionRow
         title="What happens per risk level"
-        description="A level you leave unset allows. Hold for approval waits up to 30 minutes for a review; a client that times out first ends the wait, and running it again after approval lets it through. On an SSH listener, drop the shell capability first."
+        description="A level you leave unset allows. Hold for approval waits up to 30 minutes for a review, unless a time limit ends it sooner; a client that times out first ends the wait, and running it again after approval lets it through. On an SSH listener, drop the shell capability first."
       >
         <Stack gap="md">
           {LEVELS.map(([level, label]) => (
@@ -153,16 +157,38 @@ export default function SidecarAiAnalyzerFields({ editor }) {
             />
           )}
           {ownHold && (
-            <MultiSelect
-              label="Reviewers"
-              description="Groups whose members may approve. Empty leaves it to the administrators."
-              placeholder="Select groups"
-              searchable
-              nothingFoundMessage="No user groups defined yet."
-              data={reviewerOptions}
-              value={reviewers}
-              onChange={setReviewers}
-            />
+            <>
+              <MultiSelect
+                label="Reviewers"
+                description="Groups whose members may approve. Empty leaves it to the administrators."
+                placeholder="Select groups"
+                searchable
+                nothingFoundMessage="No user groups defined yet."
+                data={reviewerOptions}
+                value={reviewers}
+                onChange={setReviewers}
+              />
+              <NumberInput
+                label="Time to decide (minutes, optional)"
+                description="A review nobody decides in this time expires; the statement is not released."
+                placeholder="No limit"
+                min={1}
+                max={10080}
+                decimalScale={2}
+                value={pendingMinutes}
+                onChange={editPendingMinutes}
+              />
+              <NumberInput
+                label="Time to use an approval (minutes, optional)"
+                description="Counts from the approval. After it, running the statement again files a new review."
+                placeholder="No limit"
+                min={1}
+                max={10080}
+                decimalScale={2}
+                value={approvalMinutes}
+                onChange={editApprovalMinutes}
+              />
+            </>
           )}
           <TextInput
             label="Denial message (optional)"

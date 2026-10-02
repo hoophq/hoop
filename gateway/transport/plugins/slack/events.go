@@ -121,14 +121,14 @@ func (p *slackPlugin) performReview(ev *event, ctx *storagev2.Context, status mo
 	rev, err := reviewapi.DoReview(ctx, ev.msg.ID, status, nil, false, ev.msg.RejectionReason)
 	var msg string
 	switch err {
-	case reviewapi.ErrNotFound:
-		msg = err.Error()
-	case reviewapi.ErrWrongState:
-		msg = "The review is already approved or rejected"
-	case reviewapi.ErrSelfApproval:
-		msg = "Unable to self approval review, contact another member of you team to approve it"
-	case reviewapi.ErrNotEligible:
-		msg = "You're not eligible to approve/reject this review"
+	case reviewapi.ErrNotFound, reviewapi.ErrWrongState, reviewapi.ErrSelfApproval, reviewapi.ErrNotEligible:
+		msg = reviewRefusalMessage(err)
+	case reviewapi.ErrExpired:
+		msg = reviewRefusalMessage(err)
+		// DoReview rewrote only the tracked messages; an untracked one keeps its buttons otherwise.
+		if !tracked {
+			_ = ev.ss.UpdateMessageStatus(ev.msg, "*Review expired.* Nothing was released.")
+		}
 	case nil:
 		isApproved := rev.Status == models.ReviewStatusApproved
 		isStillPending := rev.Status == models.ReviewStatusPending
@@ -180,6 +180,21 @@ func (p *slackPlugin) performReview(ev *event, ctx *storagev2.Context, status mo
 	if err = ev.ss.PostEphemeralMessage(ev.msg, "%s", msg); err != nil {
 		log.With("sid", ev.msg.SessionID).Warnf("failed updating slack review, reason=%v", err)
 	}
+}
+
+// reviewRefusalMessage is what the clicking user is told when DoReview refuses.
+func reviewRefusalMessage(err error) string {
+	switch err {
+	case reviewapi.ErrWrongState:
+		return "The review is already approved or rejected"
+	case reviewapi.ErrSelfApproval:
+		return "Unable to self approval review, contact another member of you team to approve it"
+	case reviewapi.ErrNotEligible:
+		return "You're not eligible to approve/reject this review"
+	case reviewapi.ErrExpired:
+		return "This review expired. Nothing was released; running the statement again files a new review."
+	}
+	return err.Error()
 }
 
 // notifyOwnerRejected sends a DM to the session owner informing them that their

@@ -107,7 +107,8 @@ func seedStatusReview(t *testing.T, sc *models.Sidecar, status models.ReviewStat
 		UserEmail:      reviewOwnerEmail,
 		CreatedAt:      time.Now().UTC(),
 	}
-	require.NoError(t, models.CreateSidecarReview(models.DB, sess, rev, statement))
+	_, err := models.CreateSidecarReview(models.DB, sess, rev, statement)
+	require.NoError(t, err)
 	if status != models.ReviewStatusPending {
 		require.NoError(t, models.UpdateReviewStatus(statusTestOrgID, rev.ID, status))
 	}

@@ -103,6 +103,7 @@ func TestOnlyForwardReleasesTheStatement(t *testing.T) {
 	}{
 		{"claimed", `{"forward":true,"review":{"id":"9f97","status":"EXECUTED"}}`, true},
 		{"claim lost", `{"forward":false,"review":{"id":"9f97","status":"EXECUTED"}}`, false},
+		{"expired", `{"forward":false,"review":{"id":"9f97","status":"EXPIRED","expires_at":"2026-09-28T10:15:00Z"}}`, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cp, _ := reviewPlane(t, http.StatusOK, tc.body)

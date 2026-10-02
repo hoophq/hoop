@@ -61,6 +61,7 @@ These states are managed automatically by the gateway:
 - **`PROCESSING`** - Session is being executed; review cannot be updated
 - **`EXECUTED`** - Session completed successfully; review cannot be updated
 - **`UNKNOWN`** - Session executed but outcome is indeterminate
+- **`EXPIRED`** - A sidecar review passed its `expires_at` before it was decided or used; nothing was released. Only a control plane sets it
 
 ## General Rules
 
@@ -81,7 +82,8 @@ These states are managed automatically by the gateway:
 - `APPROVED` reviews can still be changed to `REJECTED` at any time by the resource owner or administrators
 - `REVOKED` applies only to an `APPROVED` review of type `jit`, or to an `APPROVED` review a sidecar filed (it has a `listener_name`). A sidecar review can be revoked until the sidecar uses the approval; after that it is `EXECUTED` and the request answers `400`
 - Once a review reaches `REJECTED` or `REVOKED` the resource is considered as immutable and it cannot be updated again
+- A decision on a sidecar review past its `expires_at` answers `400` (`review expired`), and the review is `EXPIRED`
 
 ### Final States
 
-Reviews in `PROCESSING`, `EXECUTED`, or `UNKNOWN` states are immutable and cannot be modified.
+Reviews in `PROCESSING`, `EXECUTED`, `UNKNOWN`, or `EXPIRED` states are immutable and cannot be modified.
