@@ -299,6 +299,8 @@ func connectionsDeleteHandler(ctx context.Context, _ *mcp.CallToolRequest, args 
 	switch err {
 	case models.ErrNotFound:
 		return errResult("connection not found"), nil, nil
+	case models.ErrConnectionManagedBySidecar:
+		return errResult(err.Error()), nil, nil
 	case nil:
 		return textResult(fmt.Sprintf("connection %q deleted successfully", args.Name)), nil, nil
 	default:

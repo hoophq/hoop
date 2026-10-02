@@ -2119,7 +2119,7 @@ const docTemplate = `{
                 }
             },
             "delete": {
-                "description": "Delete a connection resource.",
+                "description": "Delete a connection resource. A connection that mirrors a sidecar listener answers 409: remove the listener from the sidecar instead.",
                 "produces": [
                     "application/json"
                 ],
@@ -2142,6 +2142,12 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -10520,6 +10526,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
                     },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
                     "422": {
                         "description": "Unprocessable Entity",
                         "schema": {
@@ -10564,6 +10576,12 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
@@ -10627,6 +10645,12 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
