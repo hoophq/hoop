@@ -864,7 +864,7 @@ func TestNewServerValidatesConfig(t *testing.T) {
 		"no upstream": {Listen: ":0", Protocol: inspect.Postgres},
 		"no protocol": {Listen: ":0", Upstream: "h:1"},
 		"bad protocol": {
-			Listen: ":0", Upstream: "h:1", Protocol: "oracle",
+			Listen: ":0", Upstream: "h:1", Protocol: "unsupported",
 		},
 	}
 	for name, cfg := range cases {

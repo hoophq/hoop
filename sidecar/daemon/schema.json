@@ -25,6 +25,10 @@
       "label": "MySQL"
     },
     {
+      "value": "oracle",
+      "label": "Oracle"
+    },
+    {
       "value": "postgres",
       "label": "PostgreSQL"
     },

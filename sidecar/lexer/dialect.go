@@ -29,7 +29,8 @@
 // Three shapes are permanently out of reach for any amount of parsing, this
 // package or PostgreSQL's own:
 //
-//   - `DO $$ ... $$`: the body is a string interpreted at runtime.
+//   - `DO $$ ... $$`: the body is a string interpreted at runtime. Oracle's
+//     `BEGIN ... END;` and `DECLARE ... END;` are the same block unquoted.
 //   - `CALL proc()` / `SELECT func()`: the body lives in the catalog.
 //   - `EXECUTE p`: the statement was named elsewhere, possibly earlier.
 //
@@ -71,6 +72,17 @@ const (
 	// literal across quotes that would close anything else. Each of those
 	// is a rules row below.
 	GoogleSQL
+
+	// Oracle covers Oracle Database SQL and the PL/SQL that shares its
+	// wire path.
+	//
+	// The lexical rows are PostgreSQL's minus everything PostgreSQL-only,
+	// plus the three places Oracle hides or renames text: q'[...]'
+	// alternative quoting, whose body runs past any single quote; `$` and
+	// `#` inside bare identifiers, which is how the catalog spells
+	// V$SESSION; and `:name` binds, which may spell a reserved word.
+	// Block comments do NOT nest, as in the standard.
+	Oracle
 )
 
 func (d Dialect) String() string {
@@ -83,6 +95,8 @@ func (d Dialect) String() string {
 		return "clickhouse"
 	case GoogleSQL:
 		return "googlesql"
+	case Oracle:
+		return "oracle"
 	}
 	return "postgres"
 }
@@ -108,7 +122,7 @@ type lexRules struct {
 	// backslash-quote swallows the semicolon and the DELETE disappears.
 	escapeString bool
 
-	// nationalString enables N'...'. T-SQL only.
+	// nationalString enables N'...'. T-SQL and Oracle.
 	nationalString bool
 
 	// unicodeIdent enables U&"..." and the UESCAPE clause. PostgreSQL only.
@@ -241,6 +255,38 @@ type lexRules struct {
 	// so a scanner without this rule ends the literal two quotes early and
 	// reads the rest of the string as SQL.
 	tripleQuoteString bool
+
+	// altQuote enables Oracle's alternative quoting, q'X...X' and
+	// nq'X...X', where X is any character but whitespace and the four
+	// brackets pair with their mirror: q'[...]', q'{...}', q'(...)',
+	// q'<...>'. The literal ends only at the closing delimiter followed
+	// by a quote.
+	//
+	// Oracle only, and it is a bypass rather than a nicety:
+	// `SELECT q'[']' FROM dual; DELETE FROM t; --'` read without it
+	// closes a literal at the quote INSIDE the brackets, opens another
+	// at the one after, and the DELETE between them becomes string data.
+	// Verified on Oracle 23ai: q'[a';x]' is the four bytes a';x.
+	altQuote bool
+
+	// identDollarHash lets `$` and `#` continue a bare identifier.
+	//
+	// Oracle only. Its data dictionary is spelled with them — V$SESSION,
+	// X$KSPPI — and without this `SELECT * FROM v$session` reports a
+	// relation named v, which no rule names. PostgreSQL also allows `$`
+	// after the first byte but keeps it out for the $1 reason on
+	// isWordByte; Oracle has no dollar quote or $1, so neither applies.
+	identDollarHash bool
+
+	// colonBind scans `:name` and `:1` as one placeholder token.
+	//
+	// Oracle only. A bind name is an identifier the client chose, and
+	// Oracle accepts the non-reserved keywords there — :using, :join and
+	// :merge all bind on 23ai — so `WHERE id = :using AND x = 1` would
+	// otherwise put a relation introducer in the middle of a predicate
+	// and invent a relation out of the next word. `:=` is PL/SQL
+	// assignment and stays punctuation.
+	colonBind bool
 }
 
 func (d Dialect) rules() lexRules {
@@ -291,6 +337,19 @@ func (d Dialect) rules() lexRules {
 			doubleQuoteString:       true,
 			rawString:               true,
 			tripleQuoteString:       true,
+		}
+	case Oracle:
+		// nestedBlockComment stays absent: Oracle closes a comment at
+		// the FIRST `*/`, verified on 23ai, so `/* a /* b */ DELETE
+		// FROM t */` runs a delete. `--` opens a comment unconditionally
+		// (`1--2` is 1), and a backslash in '...' is an ordinary byte.
+		// There is no '#' comment, no backtick, no dollar quote and no
+		// E'' — those bytes are identifier characters or errors there.
+		return lexRules{
+			nationalString:  true,
+			altQuote:        true,
+			identDollarHash: true,
+			colonBind:       true,
 		}
 	default:
 		return lexRules{

@@ -1,0 +1,102 @@
+# Overlay: an Oracle lane beside the postgres and HTTP ones.
+#
+#   docker compose -f docker-compose.yml -f oracle/docker-compose.oracle.yml up -d --wait
+#
+# Run it from the envoy-stack directory, after ./run.sh has minted the certs
+# and built the sidecar image at least once. ./oracle/demo-oracle.sh walks it.
+#
+#   oracleclient ──TNS──> envoy :1521 ──tcp──> hoop-inspect :11521 ──TNS──> oracledb
+#    SQL*Plus (OCI)       tcp_proxy            oracle codec                 Oracle Free 23
+#   oraclethin ───┘
+#    python-oracledb (thin)
+#
+# What it adds:
+#
+#   oracledb      Oracle Database Free with the same customers fixture as appdb
+#   oracleclient  SQL*Plus from the same image: the thick (OCI) client
+#   oraclethin    python-oracledb in thin mode: a pure-wire client, no OCI
+#   envoy :1521   tcp_proxy to the sidecar's oracle lane; :1522 on the host
+#
+# What does not change: the appdb and httpbin lanes, the policy budget (the
+# oracle lane inherits the process's one guardrail and one mask rule), the
+# audit trail, OPA, and both existing Envoy listeners.
+#
+# Both legs are plaintext TNS. The oracle codec inspects plaintext TNS/TTC
+# only; TCPS and native encryption (ANO) are not inspectable, and the relay
+# refuses a session that negotiates ANO rather than forwarding ciphertext.
+
+# Another server or client version, e.g. Oracle 21c with SQL*Plus 23:
+#   ORACLE_IMAGE=gvenzl/oracle-xe:21-slim-faststart ORACLE_SERVICE=XEPDB1 \
+#   ORACLE_CLIENT_IMAGE=gvenzl/oracle-free:23-slim-faststart \
+#   docker compose -f docker-compose.yml -f oracle/docker-compose.oracle.yml up -d --wait
+# The same variables apply to ./oracle/demo-oracle.sh.
+
+services:
+  oracledb:
+    image: ${ORACLE_IMAGE:-gvenzl/oracle-free:23-slim-faststart}
+    attach: false
+    networks: [inspect]
+    environment:
+      ORACLE_PASSWORD: rootpass
+      APP_USER: appuser
+      APP_USER_PASSWORD: apppass
+      ORACLE_SERVICE: ${ORACLE_SERVICE:-FREEPDB1}
+    volumes:
+      - ./oracle/seed.sh:/container-entrypoint-initdb.d/seed.sh:ro
+    healthcheck:
+      # Query the seeded table, not only the listener: the database opens
+      # before the init script has created and committed the fixture.
+      test: ["CMD-SHELL", "echo 'SELECT COUNT(*) FROM customers;' | sqlplus -S -L appuser/apppass@//localhost:1521/$${ORACLE_SERVICE} | grep -qw 3"]
+      interval: "5s"
+      timeout: "20s"
+      retries: 60
+      start_period: "30s"
+
+  # SQL*Plus is an OCI (thick) client: an Oracle image's own client, with
+  # the database entrypoint replaced so this container runs no database.
+  oracleclient:
+    image: ${ORACLE_CLIENT_IMAGE:-${ORACLE_IMAGE:-gvenzl/oracle-free:23-slim-faststart}}
+    networks: [inspect]
+    entrypoint: ["sleep", "infinity"]
+    healthcheck:
+      test: ["CMD-SHELL", "command -v sqlplus"]
+      interval: "3s"
+      timeout: "10s"
+      retries: 20
+      start_period: "5s"
+
+  # python-oracledb in its default thin mode: TNS/TTC written in Python, with
+  # no Oracle Client libraries. A different wire client from SQL*Plus.
+  oraclethin:
+    image: python:3.12-slim
+    networks: [inspect]
+    environment:
+      ORACLE_SERVICE: ${ORACLE_SERVICE:-FREEPDB1}
+    volumes:
+      - ./oracle/thin.py:/demo/thin.py:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - pip install --quiet --disable-pip-version-check --root-user-action=ignore oracledb==26.0.1
+        && exec sleep infinity
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import oracledb'"]
+      interval: "3s"
+      timeout: "10s"
+      retries: 40
+      start_period: "10s"
+
+  hoop-inspect:
+    volumes:
+      - ./oracle/config-oracle.yaml:/etc/hoop-inspect/config.yaml:ro
+      - ./upstream/certs/server.crt:/etc/hoop-inspect/certs/appdb.crt:ro
+    depends_on:
+      oracledb: { condition: service_healthy }
+
+  envoy:
+    volumes:
+      - ./oracle/envoy-oracle.yaml:/etc/envoy/envoy.yaml:ro
+      - ./envoy/certs:/etc/envoy/certs:ro
+    ports:
+      # 1522 on the host, because a developer laptop may already run an
+      # Oracle listener on 1521.
+      - "1522:1521"   # TCP lane -> hoop-inspect (oracle codec)

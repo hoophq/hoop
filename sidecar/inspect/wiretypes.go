@@ -41,6 +41,7 @@ const (
 	MySQL      = codectypes.MySQL
 	ClickHouse = codectypes.ClickHouse
 	MongoDB    = codectypes.MongoDB
+	Oracle     = codectypes.Oracle
 	HTTP       = codectypes.HTTP
 	// GRPC is canonical in libhoop like every other protocol, but unlike
 	// them it has no codec to register: the lane terminates HTTP/2 and
