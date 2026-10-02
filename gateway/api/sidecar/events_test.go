@@ -19,6 +19,7 @@ import (
 	modelsbootstrap "github.com/hoophq/hoop/gateway/models/bootstrap"
 	"github.com/hoophq/hoop/gateway/pglite"
 	"github.com/hoophq/hoop/gateway/services"
+	"github.com/hoophq/hoop/gateway/session/eventbroker"
 	"github.com/hoophq/hoop/sidecar/audit"
 	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/hoophq/hoop/sidecar/inspect"
@@ -41,6 +42,7 @@ const (
 	eventsFlagOffDBOrgID = "00000000-0000-0000-0000-0000000000e9"
 	eventsColumnsOrgID   = "00000000-0000-0000-0000-0000000000ea"
 	eventsPoisonOrgID    = "00000000-0000-0000-0000-0000000000eb"
+	eventsLiveOrgID      = "00000000-0000-0000-0000-0000000000ec"
 )
 
 // eventsT0 is when every test session starts. Whole seconds, so the elapsed
@@ -755,4 +757,39 @@ func TestPostEventsRefusesWhatTheDatabaseCannotHold(t *testing.T) {
 	assert.Contains(t, rec.Body.String(), "s-poison")
 	assert.Equal(t, int64(1), countSessions(t, eventsPoisonOrgID, services.SidecarSessionID(sc.ID, "s-healthy")),
 		"the healthy session in the same batch is applied")
+}
+
+// The live session page subscribes to eventbroker on the replica that serves
+// it. A batch publishes each entry after its commit, and session_end closes the
+// page's stream.
+func TestPostEventsFeedsTheLiveSessionPage(t *testing.T) {
+	startEventsDB(t, eventsLiveOrgID)
+	enableSessionEvents(t, eventsLiveOrgID)
+	sc := seedEventsSidecar(t, eventsLiveOrgID, "edge-live")
+	id := services.SidecarSessionID(sc.ID, "s-live")
+
+	rec := postEvents(sc, eventsBody(t, sessionEvent(1, "s-live", 0, audit.KindSessionStart, nil)))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	live, unsubscribe := eventbroker.Default.Subscribe(id)
+	defer unsubscribe()
+	rec = postEvents(sc, eventsBody(t,
+		sessionEvent(2, "s-live", 1, audit.KindStatement, func(e *audit.Event) { e.Statement = "SELECT 1" }),
+		sessionEvent(3, "s-live", 2, audit.KindSessionEnd, nil)))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	select {
+	case ev, ok := <-live:
+		require.True(t, ok, "the stream closed before the entry arrived")
+		assert.Equal(t, "i", ev.Type)
+		assert.Equal(t, "SELECT 1", string(ev.Payload))
+	case <-time.After(5 * time.Second):
+		t.Fatal("the live page got no entry")
+	}
+	select {
+	case _, ok := <-live:
+		assert.False(t, ok, "session_end did not close the live stream")
+	case <-time.After(5 * time.Second):
+		t.Fatal("session_end did not close the live stream")
+	}
 }
