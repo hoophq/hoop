@@ -50,6 +50,8 @@ func AnalyzeSQL(sql string, proto Protocol) SQLAnalysis {
 		d = lexer.MySQL
 	case ClickHouse:
 		d = lexer.ClickHouse
+	case Oracle:
+		d = lexer.Oracle
 	case Spanner:
 		// Spanner payloads carry GoogleSQL (ZetaSQL) unless the database
 		// was created with the PostgreSQL interface; see lexer.GoogleSQL.
