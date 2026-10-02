@@ -320,8 +320,10 @@ know what each sidecar decodes. From 1.210.0 it does (ADR-0022):
 
 - It serves only the fields an admin set. A plane upgrade alone changes
   nothing an older sidecar receives.
-- A save that sets a field, a rule type or a protocol that a sidecar's build
-  lacks answers 422, naming the sidecar and the release that adds it.
+- A save that sets a field, a rule type or a protocol that a connected
+  sidecar's build lacks answers 422, naming the sidecar and the upgrade it
+  needs. A sidecar that never connected is checked at its first handshake,
+  which answers 422 the same way.
 - This covers every sidecar from 1.162.0, the first release that handshakes.
 
 A sidecar newer than its plane runs, but cannot use a key the plane does not
@@ -338,8 +340,10 @@ crash-loop.
 **Escape hatch.** `PATCH /api/sidecars/<name>` with
 `{"configuration": {"load_from_disk": true}}` hands the sidecar back to its
 own config file. The plane then serves only that flag and the license, so the
-sidecar's own build decodes everything it runs. `load_from_disk: false`, sent
-alone, returns ownership to the plane, and the sidecar imports its file again.
+sidecar's own build decodes everything it runs. The switch deletes the rules
+imported from this sidecar that nothing else uses, and unbinds the rest.
+`load_from_disk: false`, sent alone, returns ownership to the plane: the
+stored document is cleared, and the sidecar imports its file again.
 
 ### Usage analytics
 
