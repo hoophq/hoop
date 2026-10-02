@@ -20,6 +20,19 @@ const EMPTY = {
   selectedLoading: false,
 }
 
+// Install a written document. Only the on-screen sidecar's generation moves, so a
+// late write cannot retire another sidecar's fetch and strand its loader; the
+// refresh generation always moves, or a pending refresh would restore the old document.
+function written(state, updated) {
+  const onScreen = state.selectedId === updated.id || state.selected?.id === updated.id
+  return {
+    sidecars: state.sidecars.map((s) => (s.id === updated.id ? updated : s)),
+    listRequestId: state.listRequestId + 1,
+    refreshRequestId: state.refreshRequestId + 1,
+    ...(onScreen && { selected: updated, selectedLoading: false, selectedRequestId: state.selectedRequestId + 1 }),
+  }
+}
+
 // The fleet as the gateway lists it, and the single record the details page
 // reads. createSidecar returns the response, token included, and keeps none of
 // it: the token is shown once by the wizard that asked for it and must not
@@ -34,10 +47,13 @@ export const useSidecarStore = create((set, get) => ({
   listRequestId: 0,
   selectedRequestId: 0,
   refreshRequestId: 0,
+  // Moves on logout, so a write that answers after it is dropped.
+  session: 0,
 
   reset: () =>
     set((state) => ({
       ...EMPTY,
+      session: state.session + 1,
       listRequestId: state.listRequestId + 1,
       selectedRequestId: state.selectedRequestId + 1,
       refreshRequestId: state.refreshRequestId + 1,
@@ -143,34 +159,30 @@ export const useSidecarStore = create((set, get) => ({
     return updated
   },
 
+  // Shallow merge of the keys sent; `{ ok, error }` like updateSidecar.
+  patchSidecar: async (nameOrId, configuration) => {
+    try {
+      const session = get().session
+      const { data: updated } = await sidecarsService.patch(nameOrId, configuration)
+      set((state) => (state.session === session ? written(state, updated) : {}))
+      return { ok: true, sidecar: updated }
+    } catch (error) {
+      return { ok: false, error }
+    }
+  },
+
   /**
    * Replace a sidecar's whole configuration document.
    *
    * Returns `{ ok, error }` rather than throwing, so a form can put the
    * gateway's message next to the field it is about. The rest of this store
    * still throws; the wizard it serves has no field to put a message in.
-   *
-   * The updated sidecar is merged back into the list, and into `selected` when
-   * it is the record on screen, so both show the new listeners without a
-   * refetch and neither can serve a stale document to the next write.
    */
   updateSidecar: async (nameOrId, configuration) => {
     try {
+      const session = get().session
       const { data: updated } = await sidecarsService.update(nameOrId, configuration)
-      set((state) => ({
-        sidecars: state.sidecars.map((s) => (s.id === updated.id ? updated : s)),
-        // `selected` too, and this is the one that bites: the details page
-        // deletes a listener WITHOUT navigating, and builds the next
-        // whole-document PUT from selected.configuration. Leaving it stale
-        // means a second delete writes the first listener back.
-        selected: state.selected?.id === updated.id ? updated : state.selected,
-        // Both counters, because this is a write that replaces what a read
-        // would return. `requestId` was neither of them and existed nowhere:
-        // state.requestId is undefined, so the old line stored NaN.
-        listRequestId: state.listRequestId + 1,
-        selectedRequestId: state.selectedRequestId + 1,
-        refreshRequestId: state.refreshRequestId + 1,
-      }))
+      set((state) => (state.session === session ? written(state, updated) : {}))
       return { ok: true, sidecar: updated }
     } catch (error) {
       return { ok: false, error }
