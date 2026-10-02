@@ -15,6 +15,7 @@ import (
 	"github.com/hoophq/hoop/common/log"
 	pb "github.com/hoophq/hoop/common/proto"
 	"github.com/hoophq/hoop/gateway/models"
+	"github.com/hoophq/hoop/gateway/session/eventbroker"
 	sessionwal "github.com/hoophq/hoop/gateway/session/wal"
 	plugintypes "github.com/hoophq/hoop/gateway/transport/plugins/types"
 	"github.com/hoophq/hoop/sidecar/audit"
@@ -41,6 +42,12 @@ const (
 	maxSessionConnectionChars = 128 // sessions.connection VARCHAR(128)
 	maxSessionUserChars       = 255 // sessions.user_name, user_email VARCHAR(255)
 )
+
+// maxSidecarGuardRails caps a session's guardrails_info. A pool that retries
+// a denied statement for hours would otherwise grow the column without end,
+// and the session page renders one card per entry. The stream keeps every
+// denial; metadata.sidecar.guardrails_omitted counts the entries left out.
+const maxSidecarGuardRails = 100
 
 // maxSidecarSessionStreamBytes caps one session's stream like the audit
 // plugin caps a session's WAL read. The entry that crosses it is kept, every
@@ -147,6 +154,9 @@ type sidecarSessionPlan struct {
 	Sidecar map[string]any
 	// User replaces an unknown principal on an existing row.
 	User *sidecarUser
+	// Live feeds the session page of an open session on this replica, after
+	// the writes commit.
+	Live []eventbroker.Event
 	// Done ends the session.
 	Done *models.SessionDone
 
@@ -242,6 +252,11 @@ func planSidecarSession(sc sidecarIdentity, sessionID string, prior *models.Side
 		size:      metricInt(metrics, "event_size"),
 		truncated: metricBool(metrics, "truncated"),
 	}
+	guardRailsRoom, omitted := maxSidecarGuardRails, int64(0)
+	if prior != nil {
+		guardRailsRoom -= prior.GuardRails
+		omitted = prior.GuardRailsOmitted
+	}
 	for _, e := range fresh {
 		ev := e.Event
 		switch ev.Kind {
@@ -249,8 +264,15 @@ func planSidecarSession(sc sidecarIdentity, sessionID string, prior *models.Side
 			stream.add(ev.Timestamp, statementEntryType(ev), ev.Statement)
 		case audit.KindViolation:
 			stream.add(ev.Timestamp, statementEntryType(ev), ev.Statement)
-			stream.add(ev.Timestamp, "e", denialText(ev))
-			plan.GuardRails = append(plan.GuardRails, sidecarGuardRail(ev))
+			// A microsecond after the statement: the raw session view keys
+			// its rows by elapsed time, and two equal keys lose a row.
+			stream.add(ev.Timestamp.Add(time.Microsecond), "e", denialText(ev))
+			if len(plan.GuardRails) < guardRailsRoom {
+				plan.GuardRails = append(plan.GuardRails, sidecarGuardRail(ev))
+			} else {
+				omitted++
+				plan.Sidecar["guardrails_omitted"] = omitted
+			}
 		case audit.KindError:
 			stream.add(ev.Timestamp, "e", ev.Error)
 		case audit.KindMasked:
@@ -280,6 +302,7 @@ func planSidecarSession(sc sidecarIdentity, sessionID string, prior *models.Side
 
 	if len(stream.entries) > 0 {
 		plan.Entries = json.RawMessage("[" + strings.Join(stream.entries, ",") + "]")
+		plan.Live = stream.live
 	}
 	metrics["event_size"] = stream.size
 	metrics["truncated"] = stream.truncated
@@ -406,6 +429,7 @@ func truncateChars(s string, n int) string {
 type sidecarStream struct {
 	startedAt time.Time
 	entries   []string
+	live      []eventbroker.Event
 	size      int64
 	truncated bool
 }
@@ -422,6 +446,7 @@ func (s *sidecarStream) add(at time.Time, kind, text string) {
 		return
 	}
 	s.entries = append(s.entries, string(entry))
+	s.live = append(s.live, eventbroker.Event{Time: at, Type: kind, Payload: []byte(text)})
 	s.size += int64(len(entry))
 	if s.size >= maxSidecarSessionStreamBytes {
 		s.truncated = true
@@ -575,6 +600,7 @@ func ApplySidecarSessionEvents(db *gorm.DB, sc *models.Sidecar, events []daemon.
 		default:
 			result.Accepted += plan.Accepted
 			result.Duplicates += plan.Duplicates
+			publishSidecarSession(plan)
 		}
 	}
 	if len(failed) > 0 {
@@ -584,6 +610,18 @@ func ApplySidecarSessionEvents(db *gorm.DB, sc *models.Sidecar, events []daemon.
 		return result, SidecarEventsRefused{Reason: errors.Join(refused...).Error()}
 	}
 	return result, nil
+}
+
+// publishSidecarSession feeds the live session page after the writes
+// committed, as the audit plugin does for a gateway session: on this replica
+// only, to whoever watches. Ending the session closes the page's stream.
+func publishSidecarSession(plan sidecarSessionPlan) {
+	for _, ev := range plan.Live {
+		eventbroker.Default.Publish(plan.SessionID, ev)
+	}
+	if plan.Done != nil {
+		eventbroker.Default.Remove(plan.SessionID)
+	}
 }
 
 // applySidecarSessionPlan writes a plan inside tx.

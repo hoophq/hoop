@@ -144,16 +144,16 @@ func TestSessionEventsSendAFullBatchAtOnce(t *testing.T) {
 			t.Fatalf("Write: %v", err)
 		}
 	}
-	waitUntil(t, "two full batches", func() bool { return len(flatten(plane.received())) >= 6 })
+	// A full batch wakes the sender; the timer is an hour away, so whatever
+	// a batch left behind goes with Close, which flushes.
+	waitUntil(t, "a full batch", func() bool { return len(flatten(plane.received())) >= 3 })
+	if err := s.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
 	for i, b := range plane.received() {
 		if len(b) > 3 {
 			t.Errorf("batch %d carries %d events, over the limit of 3", i, len(b))
 		}
-	}
-	// The seventh waits for the timer, which this test set to an hour, or for
-	// Close, which flushes it.
-	if err := s.Close(); err != nil {
-		t.Fatalf("Close: %v", err)
 	}
 	got := flatten(plane.received())
 	if len(got) != 7 {
@@ -219,8 +219,10 @@ func TestSessionEventsNumberEachSessionFromOne(t *testing.T) {
 // answers. The plane ignores what it already applied, so the resend is safe.
 func TestSessionEventsResendTheSameSeqAfterA5xx(t *testing.T) {
 	plane := newEventsPlane(t, http.StatusInternalServerError, http.StatusBadGateway)
+	// The second write fills the batch and wakes the sender, so both events
+	// are queued before the first attempt.
 	s, buf := testSink(t, plane, true, audit.SinkOptions{}, func(s *sessionEventSink) {
-		s.flushEvery = time.Millisecond
+		s.batchEvents = 2
 	})
 	_ = s.Write(context.Background(), statementEvent("s1", "select 1"))
 	_ = s.Write(context.Background(), statementEvent("s1", "select 2"))
@@ -323,16 +325,19 @@ func TestSessionEventsDropTheOldestUnderPressureWithoutBlocking(t *testing.T) {
 	waitUntil(t, "the queue to drain", func() bool { return s.snapshot().Queued == 0 })
 	_ = s.Close()
 
-	got := flatten(plane.received())
-	last := int64(0)
-	for _, ev := range got {
-		if ev.Seq <= last {
-			t.Fatalf("seq %d arrived after %d; the plane would ignore it", ev.Seq, last)
-		}
-		last = ev.Seq
+	// The batch that hung, then exactly the five the queue held: an ack
+	// that removed by count instead of by pos would cut into these.
+	var seqs []int64
+	for _, ev := range flatten(plane.received()) {
+		seqs = append(seqs, ev.Seq)
 	}
-	if last != 999+1 {
-		t.Errorf("the newest event did not arrive: last seq %d, want 1000", last)
+	if want := []int64{1, 2, 996, 997, 998, 999, 1000}; fmt.Sprint(seqs) != fmt.Sprint(want) {
+		t.Errorf("the plane received seqs %v, want %v", seqs, want)
+	}
+	// Every event counted once. The two in flight were evicted from the
+	// queue, but the plane took them, so they are sent and not dropped.
+	if st := s.snapshot(); st.Sent != 7 || st.Dropped != 993 {
+		t.Errorf("stats = %+v, want 7 sent and 993 dropped", st)
 	}
 	if !strings.Contains(buf.String(), "dropped") {
 		t.Errorf("the drops were not logged: %s", buf.String())
@@ -592,5 +597,148 @@ func TestBuildAuditAddsTheSinkOnlyWithAPlane(t *testing.T) {
 	got := flatten(plane.received())
 	if len(got) != 1 || !strings.HasPrefix(got[0].Event.Statement, "sha256:") {
 		t.Errorf("the plane received %+v, want one redacted statement", got)
+	}
+}
+
+// A batch never carries more than the byte limit: large events split across
+// requests, and every one arrives.
+func TestSessionEventsSplitABatchAtTheByteLimit(t *testing.T) {
+	plane := newEventsPlane(t)
+	s, _ := testSink(t, plane, true, audit.SinkOptions{MaxStatementBytes: 2 << 20}, nil)
+	const n = 5
+	for i := range n {
+		_ = s.Write(context.Background(), statementEvent("s1", fmt.Sprintf("%d%s", i, strings.Repeat("x", 1<<20))))
+	}
+	_ = s.Close()
+
+	plane.mu.Lock()
+	batches := len(plane.batches)
+	plane.mu.Unlock()
+	if batches < 2 {
+		t.Errorf("five 1 MiB events went in %d request(s); the limit is %d bytes", batches, MaxSessionEventsBatchBytes)
+	}
+	for i, b := range plane.received() {
+		raw, err := json.Marshal(SessionEventsRequest{Events: b})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(raw) > MaxSessionEventsBatchBytes {
+			t.Errorf("request %d is %d bytes, over the limit", i, len(raw))
+		}
+	}
+	if got := flatten(plane.received()); len(got) != n {
+		t.Errorf("the plane received %d events, want %d", len(got), n)
+	}
+}
+
+// A plane that never answers does not hold shutdown past the close deadline,
+// and what it never took is counted as dropped.
+func TestSessionEventsCloseReturnsAtTheDeadline(t *testing.T) {
+	plane := newEventsPlane(t)
+	plane.hold = make(chan struct{})
+	t.Cleanup(func() { close(plane.hold) })
+	s, _ := testSink(t, plane, true, audit.SinkOptions{}, func(s *sessionEventSink) {
+		s.flushEvery = time.Millisecond
+		s.closeTimeout = 100 * time.Millisecond
+	})
+	_ = s.Write(context.Background(), statementEvent("s1", "select 1"))
+	waitUntil(t, "a request in flight", func() bool {
+		plane.mu.Lock()
+		defer plane.mu.Unlock()
+		return plane.arrived == 1
+	})
+	_ = s.Write(context.Background(), statementEvent("s1", "select 2"))
+
+	start := time.Now()
+	_ = s.Close()
+	if took := time.Since(start); took > 2*time.Second {
+		t.Errorf("Close took %s against a plane that never answers; the deadline is 100ms", took)
+	}
+	if st := s.snapshot(); st.Dropped != 2 || st.Sent != 0 {
+		t.Errorf("stats = %+v, want both events dropped", st)
+	}
+}
+
+// A refusal of the route itself (a lapsed license, a deleted sidecar, an old
+// replica) stops the sink like a 412: a heartbeat failing the same way would
+// never turn it off. A refusal of one batch does not.
+func TestSessionEventsStopOnARefusedRoute(t *testing.T) {
+	for _, tc := range []struct {
+		status int
+		stops  bool
+	}{
+		{http.StatusUnauthorized, true},
+		{http.StatusForbidden, true},
+		{http.StatusNotFound, true},
+		{http.StatusPreconditionFailed, true},
+		{http.StatusBadRequest, false},
+		{http.StatusUnprocessableEntity, false},
+		{http.StatusRequestEntityTooLarge, false},
+	} {
+		t.Run(http.StatusText(tc.status), func(t *testing.T) {
+			plane := newEventsPlane(t, tc.status)
+			s, _ := testSink(t, plane, true, audit.SinkOptions{}, func(s *sessionEventSink) {
+				s.flushEvery = time.Millisecond
+			})
+			_ = s.Write(context.Background(), statementEvent("s1", "select 1"))
+			if tc.stops {
+				waitUntil(t, "the sink to stop", func() bool { return !s.snapshot().Enabled })
+				return
+			}
+			waitUntil(t, "the refusal", func() bool { return s.snapshot().Rejected == 1 })
+			time.Sleep(20 * time.Millisecond)
+			if !s.snapshot().Enabled {
+				t.Errorf("a %d for one batch stopped the sink", tc.status)
+			}
+		})
+	}
+}
+
+// A plane that refuses every batch logs once, not once per batch.
+func TestSessionEventsSpaceTheRefusalLog(t *testing.T) {
+	statuses := make([]int, 50)
+	for i := range statuses {
+		statuses[i] = http.StatusUnprocessableEntity
+	}
+	plane := newEventsPlane(t, statuses...)
+	s, buf := testSink(t, plane, true, audit.SinkOptions{}, func(s *sessionEventSink) {
+		s.batchEvents = 1
+	})
+	for i := range 50 {
+		_ = s.Write(context.Background(), statementEvent("s1", fmt.Sprintf("select %d", i)))
+	}
+	waitUntil(t, "every refusal", func() bool { return s.snapshot().Rejected == 50 })
+	if n := strings.Count(buf.String(), "refused session events"); n != 1 {
+		t.Errorf("50 refusals logged %d lines, want 1 until the minute passes", n)
+	}
+	// Shutdown reports what the spacing held back.
+	_ = s.Close()
+	if n := strings.Count(buf.String(), "refused session events"); n != 2 {
+		t.Errorf("Close logged no final count:\n%s", buf.String())
+	}
+}
+
+// A counter whose session_end never came is forgotten once idle, so the map
+// holds the sessions in flight and not every session ever served.
+func TestSessionEventsForgetAnIdleCounter(t *testing.T) {
+	plane := newEventsPlane(t)
+	s, _ := testSink(t, plane, false, audit.SinkOptions{}, func(s *sessionEventSink) {
+		s.seqIdle = time.Hour
+		s.seqSweep = time.Nanosecond
+	})
+	_ = s.Write(context.Background(), statementEvent("old", "select 1"))
+	_ = s.Write(context.Background(), statementEvent("new", "select 1"))
+	s.mu.Lock()
+	s.seqs["old"] = seqCounter{seq: 7, at: time.Now().Add(-2 * time.Hour)}
+	s.mu.Unlock()
+
+	s.sweepSeqs(time.Now())
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.seqs["old"]; ok {
+		t.Error("an idle counter survived the sweep")
+	}
+	if c, ok := s.seqs["new"]; !ok || c.seq != 1 {
+		t.Errorf("a live counter = %+v, %v; want seq 1 kept", c, ok)
 	}
 }

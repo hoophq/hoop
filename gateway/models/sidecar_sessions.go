@@ -18,6 +18,10 @@ type SidecarSessionState struct {
 	LastSeq int64
 	// Principal is the user the row is filed under, email first.
 	Principal string
+	// GuardRails is how many guardrails_info entries the row holds, and
+	// GuardRailsOmitted how many more a cap left out.
+	GuardRails        int
+	GuardRailsOmitted int64
 }
 
 // LockSidecarSession serializes the writers of one session until tx ends.
@@ -34,21 +38,29 @@ func LockSidecarSession(tx *gorm.DB, sessionID string) error {
 // gorm.ErrRecordNotFound when the session does not exist yet.
 func GetSidecarSessionState(tx *gorm.DB, orgID, sessionID string) (*SidecarSessionState, error) {
 	var row struct {
-		CreatedAt time.Time
-		Metrics   []byte
-		LastSeq   *int64
-		Principal string
+		CreatedAt         time.Time
+		Metrics           []byte
+		LastSeq           *int64
+		Principal         string
+		GuardRails        int
+		GuardRailsOmitted *int64
 	}
 	err := tx.Raw(`
 	SELECT created_at, metrics, (metadata->'sidecar'->>'last_seq')::BIGINT AS last_seq,
-		COALESCE(NULLIF(user_email, ''), user_name, '') AS principal
+		COALESCE(NULLIF(user_email, ''), user_name, '') AS principal,
+		CASE WHEN jsonb_typeof(guardrails_info) = 'array'
+			THEN jsonb_array_length(guardrails_info) ELSE 0 END AS guard_rails,
+		(metadata->'sidecar'->>'guardrails_omitted')::BIGINT AS guard_rails_omitted
 	FROM private.sessions
 	WHERE org_id = ? AND id = ?`, orgID, sessionID).
 		Take(&row).Error
 	if err != nil {
 		return nil, err
 	}
-	state := &SidecarSessionState{CreatedAt: row.CreatedAt, Principal: row.Principal}
+	state := &SidecarSessionState{CreatedAt: row.CreatedAt, Principal: row.Principal, GuardRails: row.GuardRails}
+	if row.GuardRailsOmitted != nil {
+		state.GuardRailsOmitted = *row.GuardRailsOmitted
+	}
 	if row.LastSeq != nil {
 		state.LastSeq = *row.LastSeq
 	}

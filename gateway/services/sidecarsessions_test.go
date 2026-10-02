@@ -152,7 +152,7 @@ func TestPlanSidecarSessionKinds(t *testing.T) {
 			want: want{
 				entries: []sidecarStreamEntry{
 					{Elapsed: 3, Type: "i", Text: "DROP TABLE users"},
-					{Elapsed: 3, Type: "e", Text: `denied by rule "no-drop": drop is not allowed`},
+					{Elapsed: 3.000001, Type: "e", Text: `denied by rule "no-drop": drop is not allowed`},
 				},
 				guardRails: []models.SessionGuardRailsInfo{{
 					RuleName:     "no-drop",
@@ -174,7 +174,7 @@ func TestPlanSidecarSessionKinds(t *testing.T) {
 			want: want{
 				entries: []sidecarStreamEntry{
 					{Elapsed: 1, Type: "o", Text: "SELECT ssn FROM users"},
-					{Elapsed: 1, Type: "e", Text: `denied by rule "no-ssn"`},
+					{Elapsed: 1.000001, Type: "e", Text: `denied by rule "no-ssn"`},
 				},
 				guardRails: []models.SessionGuardRailsInfo{{
 					RuleName:     "no-ssn",
@@ -194,7 +194,7 @@ func TestPlanSidecarSessionKinds(t *testing.T) {
 			want: want{
 				entries: []sidecarStreamEntry{
 					{Elapsed: 1, Type: "i", Text: "DELETE FROM t"},
-					{Elapsed: 1, Type: "e", Text: "denied: ask a DBA"},
+					{Elapsed: 1.000001, Type: "e", Text: "denied: ask a DBA"},
 				},
 				guardRails: []models.SessionGuardRailsInfo{{
 					Rule:         models.SessionGuardRailMatchedRule{Type: "sidecar"},
@@ -213,7 +213,7 @@ func TestPlanSidecarSessionKinds(t *testing.T) {
 			want: want{
 				entries: []sidecarStreamEntry{
 					{Elapsed: 1, Type: "i", Text: "TRUNCATE t"},
-					{Elapsed: 1, Type: "e", Text: "denied"},
+					{Elapsed: 1.000001, Type: "e", Text: "denied"},
 				},
 				guardRails: []models.SessionGuardRailsInfo{{
 					Rule:         models.SessionGuardRailMatchedRule{Type: "sidecar"},
@@ -990,4 +990,49 @@ func TestPlanSidecarSessionLearnsThePrincipal(t *testing.T) {
 		require.NoError(t, err)
 		assert.Nil(t, plan.User)
 	})
+}
+
+// guardrails_info stops at maxSidecarGuardRails per session; the stream keeps
+// every denial and metadata.sidecar counts what the column left out.
+func TestPlanSidecarSessionCapsGuardRails(t *testing.T) {
+	deny := func(seq int64) daemon.SessionEvent {
+		return sidecarEvent(seq, audit.KindViolation, time.Second, func(e *audit.Event) {
+			e.Statement = "DROP TABLE t"
+			e.Rule = "no-drop"
+		})
+	}
+	prior := existingSidecarSession(1)
+	prior.GuardRails = maxSidecarGuardRails - 1
+	prior.GuardRailsOmitted = 4
+
+	plan, err := planSidecarSession(testSidecarIdent, testSidecarSessionID, prior,
+		[]daemon.SessionEvent{deny(2), deny(3), deny(4)})
+	require.NoError(t, err)
+	assert.Len(t, plan.GuardRails, 1, "one entry of room left")
+	assert.EqualValues(t, 6, plan.Sidecar["guardrails_omitted"], "4 before, 2 now")
+	assert.Len(t, decodeSidecarEntries(t, plan.Entries), 6, "every denial stays in the stream")
+
+	full := existingSidecarSession(1)
+	full.GuardRails = maxSidecarGuardRails
+	plan, err = planSidecarSession(testSidecarIdent, testSidecarSessionID, full, []daemon.SessionEvent{deny(2)})
+	require.NoError(t, err)
+	assert.Empty(t, plan.GuardRails)
+	assert.EqualValues(t, 1, plan.Sidecar["guardrails_omitted"])
+}
+
+// The live page of an open session gets each entry the batch appends, with
+// the bytes the stream holds base64 of.
+func TestPlanSidecarSessionFeedsTheLivePage(t *testing.T) {
+	plan, err := planSidecarSession(testSidecarIdent, testSidecarSessionID, existingSidecarSession(1),
+		[]daemon.SessionEvent{
+			sidecarEvent(2, audit.KindStatement, time.Second, func(e *audit.Event) { e.Statement = "SELECT 1" }),
+			sidecarEvent(3, audit.KindError, 2*time.Second, func(e *audit.Event) { e.Error = "reset" }),
+		})
+	require.NoError(t, err)
+	require.Len(t, plan.Live, 2)
+	assert.Equal(t, "i", plan.Live[0].Type)
+	assert.Equal(t, []byte("SELECT 1"), plan.Live[0].Payload)
+	assert.Equal(t, testSidecarT0.Add(time.Second), plan.Live[0].Time)
+	assert.Equal(t, "e", plan.Live[1].Type)
+	assert.Equal(t, []byte("reset"), plan.Live[1].Payload)
 }

@@ -88,9 +88,15 @@ const (
 	// that is down at shutdown does not hold the process: the events are in
 	// the JSONL file.
 	sessionEventsCloseTimeout = 5 * time.Second
-	// sessionEventsDropLogEvery spaces the warning about dropped events. One
-	// line per drop would flood the log at the moment it matters.
+	// sessionEventsDropLogEvery spaces the warning about dropped events, and
+	// the error about refused ones. One line per batch would flood the log at
+	// the moment it matters.
 	sessionEventsDropLogEvery = time.Minute
+	// sessionEventsSeqIdle is how long a session's counter outlives its last
+	// event, and sessionEventsSeqSweepEvery how often that is checked. See
+	// sweepSeqs.
+	sessionEventsSeqIdle       = 24 * time.Hour
+	sessionEventsSeqSweepEvery = 10 * time.Minute
 	// maxSessionEventsResponse bounds the answer read. The plane answers a
 	// short JSON object.
 	maxSessionEventsResponse = 64 << 10
@@ -115,15 +121,31 @@ type queuedEvent struct {
 	entry []byte
 }
 
+// seqCounter is the last seq a session was given, and when.
+type seqCounter struct {
+	seq int64
+	at  time.Time
+}
+
+// inflightBatch is the batch out on the wire. An event a full queue evicts
+// from it is not counted until the answer says whether the plane took it.
+type inflightBatch struct {
+	active      bool
+	first, last uint64
+	evicted     int
+}
+
 // sessionEventsStats is what /stats reports about the sink.
 type sessionEventsStats struct {
-	Enabled     bool  `json:"enabled"`
-	Queued      int   `json:"queued"`
-	QueuedBytes int   `json:"queued_bytes"`
-	Sent        int64 `json:"sent"`
+	Enabled     bool `json:"enabled"`
+	Queued      int  `json:"queued"`
+	QueuedBytes int  `json:"queued_bytes"`
+	// Sent counts events the plane answered 2xx for.
+	Sent int64 `json:"sent"`
 	// Dropped counts events that never reached the plane because of this
 	// process: evicted from a full queue, too large for a batch, or queued
-	// when the plane stopped taking events.
+	// when the plane stopped taking events. Each event is counted once, as
+	// sent, dropped or rejected.
 	Dropped int64 `json:"dropped"`
 	// Rejected counts events the plane answered with a 4xx.
 	Rejected int64 `json:"rejected"`
@@ -154,18 +176,25 @@ type sessionEventSink struct {
 
 	mu sync.Mutex
 	// seqs is the last seq given to each open session. A session leaves it
-	// with its session_end event, so it holds the sessions in flight.
-	seqs map[session.ID]int64
+	// with its session_end event, or after sessionEventsSeqIdle without one.
+	seqs      map[session.ID]seqCounter
+	lastSweep time.Time
 	// queue holds the events not yet acknowledged, oldest first. next is the
 	// pos the next queued event gets; queue[0].pos is the oldest held.
-	queue   []queuedEvent
-	next    uint64
-	bytes   int
-	closed  bool
-	stats   sessionEventsStats
-	dropLog time.Time
+	queue    []queuedEvent
+	next     uint64
+	bytes    int
+	closed   bool
+	stats    sessionEventsStats
+	inflight inflightBatch
+	dropLog  time.Time
 	// dropLogged is stats.Dropped as of the last warning.
 	dropLogged int64
+	// rejectLog, rejectLogged and rejectStatus do the same for refusals.
+	rejectLog     time.Time
+	rejectLogged  int64
+	rejectStatus  int
+	rejectMessage string
 
 	wake    chan struct{}
 	closing chan struct{}
@@ -181,6 +210,8 @@ type sessionEventSink struct {
 	queueEvents  int
 	batchEvents  int
 	closeTimeout time.Duration
+	seqIdle      time.Duration
+	seqSweep     time.Duration
 }
 
 // newSessionEventSink starts the sender. enabled is what the boot handshake
@@ -202,7 +233,7 @@ func newSessionEventSinkStopped(cp *controlPlane, opts audit.SinkOptions, enable
 		opts:    opts,
 		log:     log,
 		http:    controlPlaneHTTPClient(),
-		seqs:    map[session.ID]int64{},
+		seqs:    map[session.ID]seqCounter{},
 		wake:    make(chan struct{}, 1),
 		closing: make(chan struct{}),
 		done:    make(chan struct{}),
@@ -283,16 +314,39 @@ func (s *sessionEventSink) Write(_ context.Context, ev audit.Event) error {
 
 // number gives ev its seq. Caller holds mu.
 func (s *sessionEventSink) number(ev audit.Event) int64 {
-	seq := s.seqs[ev.SessionID] + 1
+	seq := s.seqs[ev.SessionID].seq + 1
 	if ev.Kind == audit.KindSessionEnd {
 		// The last event a session writes. An event after it would start
 		// again at 1 and the plane would ignore it, which is the price of
 		// not holding every session this process ever served.
 		delete(s.seqs, ev.SessionID)
 	} else {
-		s.seqs[ev.SessionID] = seq
+		s.seqs[ev.SessionID] = seqCounter{seq: seq, at: time.Now()}
 	}
 	return seq
+}
+
+// sweepSeqs forgets the counter of every session idle past
+// sessionEventsSeqIdle.
+//
+// A session whose session_end never reached this sink would otherwise hold
+// its counter for the life of the process: an AsyncSink with a full queue
+// refuses the session_end, and a lane can write an event after it. A session
+// that writes again after that long starts over at 1, and the plane ignores
+// what it sends; that is the price of the bound.
+func (s *sessionEventSink) sweepSeqs(now time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if now.Sub(s.lastSweep) < durationOr(s.seqSweep, sessionEventsSeqSweepEvery) {
+		return
+	}
+	s.lastSweep = now
+	idle := durationOr(s.seqIdle, sessionEventsSeqIdle)
+	for id, c := range s.seqs {
+		if now.Sub(c.at) > idle {
+			delete(s.seqs, id)
+		}
+	}
 }
 
 // push appends entry, dropping the oldest events until it fits. Caller holds
@@ -311,10 +365,21 @@ func (s *sessionEventSink) push(entry []byte) {
 // dropOldest removes the head of the queue. Caller holds mu.
 func (s *sessionEventSink) dropOldest() {
 	s.bytes -= len(s.queue[0].entry)
+	s.countDrop(s.queue[0].pos)
 	// Cleared before the reslice, or the backing array keeps the bytes
 	// alive until the next reallocation and the byte bound is a fiction.
 	s.queue[0] = queuedEvent{}
 	s.queue = s.queue[1:]
+}
+
+// countDrop counts an event that leaves the queue unsent. One in the batch on
+// the wire is counted by that batch's answer instead: the plane may have
+// taken it. Caller holds mu.
+func (s *sessionEventSink) countDrop(pos uint64) {
+	if s.inflight.active && pos >= s.inflight.first && pos <= s.inflight.last {
+		s.inflight.evicted++
+		return
+	}
 	s.stats.Dropped++
 }
 
@@ -335,7 +400,9 @@ func (s *sessionEventSink) setEnabled(on bool) {
 	}
 	s.mu.Lock()
 	discarded := len(s.queue)
-	s.stats.Dropped += int64(discarded)
+	for _, q := range s.queue {
+		s.countDrop(q.pos)
+	}
 	clear(s.queue)
 	s.queue = s.queue[:0]
 	s.bytes = 0
@@ -359,8 +426,8 @@ func (s *sessionEventSink) snapshot() sessionEventsStats {
 // a nil body when the queue is empty. The events stay queued until ack.
 func (s *sessionEventSink) take() (body []byte, last uint64, n int) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if len(s.queue) == 0 {
+		s.mu.Unlock()
 		return nil, 0, 0
 	}
 	size := len(sessionEventsBodyPrefix) + len(sessionEventsBodySuffix)
@@ -376,33 +443,63 @@ func (s *sessionEventSink) take() (body []byte, last uint64, n int) {
 		size += add
 		n++
 	}
+	entries := make([][]byte, n)
+	for i := range n {
+		entries[i] = s.queue[i].entry
+	}
+	last = s.queue[n-1].pos
+	s.inflight = inflightBatch{active: true, first: s.queue[0].pos, last: last}
+	s.mu.Unlock()
+
+	// Built outside the lock, which every Write takes: a batch is up to
+	// 4 MiB. An entry never changes once queued, so the copy is safe.
 	body = make([]byte, 0, size)
 	body = append(body, sessionEventsBodyPrefix...)
-	for i := range n {
+	for i, e := range entries {
 		if i > 0 {
 			body = append(body, ',')
 		}
-		body = append(body, s.queue[i].entry...)
+		body = append(body, e...)
 	}
 	body = append(body, sessionEventsBodySuffix...)
-	return body, s.queue[n-1].pos, n
+	return body, last, n
 }
 
-// ack removes every queued event up to and including pos. Events a full
-// queue dropped while the batch was in flight are already gone, so it
-// removes only what is still there.
-func (s *sessionEventSink) ack(pos uint64) int {
+// settle ends the batch in flight. It removes every queued event up to and
+// including pos when the batch is final (sent or refused); events a full
+// queue dropped while it was out are already gone, so it removes only what
+// is still there. Then it counts the batch once, in exactly one place.
+func (s *sessionEventSink) settle(pos uint64, n int, outcome batchOutcome) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	n := 0
-	for len(s.queue) > 0 && s.queue[0].pos <= pos {
-		s.bytes -= len(s.queue[0].entry)
-		s.queue[0] = queuedEvent{}
-		s.queue = s.queue[1:]
-		n++
+	if outcome != batchRetry {
+		for len(s.queue) > 0 && s.queue[0].pos <= pos {
+			s.bytes -= len(s.queue[0].entry)
+			s.queue[0] = queuedEvent{}
+			s.queue = s.queue[1:]
+		}
 	}
-	return n
+	switch outcome {
+	case batchSent:
+		s.stats.Sent += int64(n)
+	case batchRefused:
+		s.stats.Rejected += int64(n)
+	case batchRetry:
+		// What a full queue evicted while the batch was out will not be
+		// sent again.
+		s.stats.Retries++
+		s.stats.Dropped += int64(s.inflight.evicted)
+	}
+	s.inflight = inflightBatch{}
 }
+
+type batchOutcome int
+
+const (
+	batchSent batchOutcome = iota
+	batchRefused
+	batchRetry
+)
 
 // run sends the queue until Close. One goroutine, one request at a time, so
 // batches reach the plane in queue order.
@@ -442,6 +539,8 @@ func (s *sessionEventSink) run() {
 		case <-s.wake:
 		}
 		s.warnDropped()
+		s.warnRejected(false)
+		s.sweepSeqs(time.Now())
 
 		for s.enabled.Load() {
 			ok, retry := s.sendOne(ctx)
@@ -454,6 +553,9 @@ func (s *sessionEventSink) run() {
 			if !retry {
 				break
 			}
+			// An outage is when the queue fills and drops, and this loop
+			// does not leave until the plane answers.
+			s.warnDropped()
 			backoff = nextBackoff(backoff, durationOr(s.backoffMin, sessionEventsBackoffMin),
 				durationOr(s.backoffMax, sessionEventsBackoffMax))
 			select {
@@ -477,9 +579,7 @@ func (s *sessionEventSink) sendOne(ctx context.Context) (ok, retry bool) {
 	status, msg, err := s.post(ctx, body)
 	switch {
 	case err != nil || status >= 500:
-		s.mu.Lock()
-		s.stats.Retries++
-		s.mu.Unlock()
+		s.settle(last, n, batchRetry)
 		if err == nil {
 			err = fmt.Errorf("answered %d: %s", status, msg)
 		}
@@ -491,26 +591,56 @@ func (s *sessionEventSink) sendOne(ctx context.Context) (ok, retry bool) {
 		}
 		return false, true
 	case status >= 200 && status < 300:
-		acked := s.ack(last)
-		s.mu.Lock()
-		s.stats.Sent += int64(acked)
-		s.mu.Unlock()
+		s.settle(last, n, batchSent)
 		return true, false
 	}
 
 	// Every other answer is final: the same batch would get it again.
-	acked := s.ack(last)
+	s.settle(last, n, batchRefused)
 	s.mu.Lock()
-	s.stats.Rejected += int64(acked)
+	s.rejectStatus, s.rejectMessage = status, msg
 	s.mu.Unlock()
-	s.log.Error("the control plane refused session events; they stay in the local audit file only",
-		"url", s.cp.url, "status", status, "events", acked, "message", msg)
-	if status == http.StatusPreconditionFailed {
-		// The organization turned the feature off. The next heartbeat
-		// says so too; stopping now saves the batches until then.
+	s.warnRejected(false)
+	if refusesEndpoint(status) {
+		// Every batch would get the same answer, and a heartbeat that
+		// fails the same way (a lapsed license, a deleted sidecar) would
+		// never turn the sink off. A handshake that answers the header
+		// turns it on again.
 		s.setEnabled(false)
 	}
 	return true, false
+}
+
+// refusesEndpoint reports an answer about the route rather than the batch:
+// the organization turned the feature off (412), the token or the license no
+// longer holds (401, 403), or a replica does not have the route (404, 405).
+func refusesEndpoint(status int) bool {
+	switch status {
+	case http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound,
+		http.StatusMethodNotAllowed, http.StatusPreconditionFailed:
+		return true
+	}
+	return false
+}
+
+// warnRejected logs the refusals since the last report, at most once per
+// sessionEventsDropLogEvery; force skips the spacing, for the last word at
+// shutdown. The first refusal is logged at once.
+func (s *sessionEventSink) warnRejected(force bool) {
+	s.mu.Lock()
+	rejected := s.stats.Rejected
+	since := rejected - s.rejectLogged
+	due := since > 0 && (force || time.Since(s.rejectLog) >= sessionEventsDropLogEvery)
+	status, msg := s.rejectStatus, s.rejectMessage
+	if due {
+		s.rejectLogged = rejected
+		s.rejectLog = time.Now()
+	}
+	s.mu.Unlock()
+	if due {
+		s.log.Error("the control plane refused session events; they stay in the local audit file only",
+			"url", s.cp.url, "status", status, "events", since, "rejected_total", rejected, "message", msg)
+	}
 }
 
 // post sends one body. status and msg are the plane's answer when err is
@@ -567,6 +697,7 @@ func (s *sessionEventSink) finalFlush(ctx context.Context) {
 			"url", s.cp.url, "events", left)
 	}
 	s.warnDroppedNow(true)
+	s.warnRejected(true)
 }
 
 // warnDropped logs the drop count when it grew, at most once per

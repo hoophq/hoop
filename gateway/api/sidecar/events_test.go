@@ -446,7 +446,8 @@ func TestPostEventsRecordsAFullSession(t *testing.T) {
 	require.Len(t, entries, 4, raw)
 	assert.Equal(t, streamEntry{1, "i", "SELECT * FROM users"}, entries[0])
 	assert.Equal(t, streamEntry{2, "i", "DROP TABLE users"}, entries[1])
-	assert.Equal(t, 2.0, entries[2].Elapsed)
+	// A microsecond after the statement, so the raw view keys the two apart.
+	assert.Equal(t, 2.000001, entries[2].Elapsed)
 	assert.Equal(t, "e", entries[2].Kind)
 	assert.Contains(t, entries[2].Text, "no-drop")
 	assert.Contains(t, entries[2].Text, "drops need a review")
