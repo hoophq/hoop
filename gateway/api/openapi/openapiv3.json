@@ -22790,6 +22790,16 @@
             },
             "description": "Not Found"
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/openapi.HTTPError"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
           "500": {
             "content": {
               "application/json": {

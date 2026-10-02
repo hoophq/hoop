@@ -10574,6 +10574,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/openapi.HTTPError"
                         }
                     },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/openapi.HTTPError"
+                        }
+                    },
                     "500": {
                         "description": "Internal Server Error",
                         "schema": {
