@@ -692,7 +692,12 @@ func (s *sessionEventSink) post(ctx context.Context, body []byte) (status int, m
 		return 0, "", fmt.Errorf("the control plane at %s is unreachable: %w", s.cp.url, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, maxSessionEventsResponse))
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxSessionEventsResponse))
+	if err != nil {
+		// A cut answer is a transport failure: resend. The plane skips the
+		// seqs it already applied.
+		return 0, "", fmt.Errorf("reading the answer of the control plane at %s: %w", s.cp.url, err)
+	}
 	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
 		// Never followed, for the reason the handshake gives: the token
 		// rides a custom header Go would forward across origins.

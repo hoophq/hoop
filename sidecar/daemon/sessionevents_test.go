@@ -38,6 +38,8 @@ type eventsPlane struct {
 	// maxBody, when set, answers 413 to a larger body, as a proxy in front
 	// of the plane does. The plane never sees it.
 	maxBody int
+	// cut is how many answers end mid-body, as a dropped connection does.
+	cut int
 }
 
 func newEventsPlane(t *testing.T, statuses ...int) *eventsPlane {
@@ -73,7 +75,18 @@ func newEventsPlane(t *testing.T, statuses ...int) *eventsPlane {
 		if len(p.statuses) > 0 {
 			status, p.statuses = p.statuses[0], p.statuses[1:]
 		}
+		cut := p.cut > 0
+		if cut {
+			p.cut--
+		}
 		p.mu.Unlock()
+		if cut {
+			// Fewer bytes than declared: the server drops the connection.
+			w.Header().Set("Content-Length", "100")
+			w.WriteHeader(status)
+			_, _ = io.WriteString(w, `{"mess`)
+			return
+		}
 		w.WriteHeader(status)
 		_, _ = fmt.Fprintf(w, `{"message":"status %d"}`, status)
 	}))
@@ -253,6 +266,35 @@ func TestSessionEventsResendTheSameSeqAfterA5xx(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), "resending later") {
 		t.Errorf("a failed send was not logged: %s", buf.String())
+	}
+}
+
+// An answer cut mid-body is a transport failure, whatever its status: the
+// batch goes again with the same seqs.
+func TestSessionEventsResendAfterACutAnswer(t *testing.T) {
+	plane := newEventsPlane(t)
+	plane.cut = 1
+	s, buf := testSink(t, plane, true, audit.SinkOptions{}, func(s *sessionEventSink) {
+		s.batchEvents = 2
+	})
+	_ = s.Write(context.Background(), statementEvent("s1", "select 1"))
+	_ = s.Write(context.Background(), statementEvent("s1", "select 2"))
+	waitUntil(t, "the queue to empty", func() bool { return s.snapshot().Sent == 2 })
+
+	batches := plane.received()
+	if len(batches) != 2 {
+		t.Fatalf("the plane received %d batches, want the cut one and its resend: %+v", len(batches), batches)
+	}
+	for i, b := range batches {
+		if len(b) != 2 || b[0].Seq != 1 || b[1].Seq != 2 {
+			t.Errorf("attempt %d = %+v, want seqs 1 and 2", i, b)
+		}
+	}
+	if st := s.snapshot(); st.Retries != 1 || st.Rejected != 0 || st.Dropped != 0 {
+		t.Errorf("stats = %+v, want 2 sent after 1 retry", st)
+	}
+	if !strings.Contains(buf.String(), "reading the answer") {
+		t.Errorf("the cut answer was not logged: %s", buf.String())
 	}
 }
 
