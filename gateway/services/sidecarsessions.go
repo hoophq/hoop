@@ -404,7 +404,12 @@ func maskedInfoType(entities []string) string {
 	if len(entities) == 0 {
 		return "unknown"
 	}
-	sorted := slices.Clone(entities)
+	// Cleaned before the sort, so two names that differ only by a NUL
+	// compact into one key.
+	sorted := make([]string, len(entities))
+	for i, e := range entities {
+		sorted[i] = pgText(e)
+	}
 	slices.Sort(sorted)
 	return strings.Join(slices.Compact(sorted), "+")
 }
