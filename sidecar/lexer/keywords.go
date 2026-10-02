@@ -148,6 +148,97 @@ var opaque = map[string]string{
 // already covered above: CALL, DO and EXECUTE. Marking every migration
 // incomplete would make the flag noise and train operators to ignore it.
 
+// oracleVerb overrides statementVerb under the Oracle dialect, for the
+// keywords whose meaning there differs from PostgreSQL's.
+//
+// BEGIN and DECLARE are the load-bearing rows. Oracle has no BEGIN
+// transaction statement and no SQL-level DECLARE CURSOR: both open a PL/SQL
+// anonymous block, which is DO $$...$$ without the quotes. Reading BEGIN
+// as a transaction start files `BEGIN DELETE FROM t; END;` under begin,
+// which a read-only lane forwards. They map to Call, the verb DO and CALL
+// already carry, and oracleOpaque marks them unreadable.
+//
+// FLASHBACK TABLE rewinds a table's rows or undoes its DROP, and PURGE
+// destroys a dropped table past recovery. Both are DDL on the named
+// object, and both sit in the severity order where their consequence does.
+var oracleVerb = map[string]Verb{
+	"begin":     Call,
+	"declare":   Call,
+	"flashback": Alter,
+	"purge":     Drop,
+}
+
+// oracleNotAVerb are statementVerb keywords that begin no statement in
+// Oracle. END closes a PL/SQL block, IF or LOOP; left as PostgreSQL's
+// COMMIT, every block would report a commit it never ran.
+var oracleNotAVerb = map[string]bool{
+	"end": true,
+}
+
+// oracleOpaque extends opaque for the Oracle dialect.
+//
+// A PL/SQL block is procedural code: its effects depend on branches,
+// loops, cursors and EXECUTE IMMEDIATE strings the scanner cannot run.
+// The DML the scanner does see is still reported as effects, but the
+// statement is Complete=false, which is the DO $$ ... $$ answer.
+var oracleOpaque = map[string]string{
+	"begin":   "PL/SQL anonymous block; body is procedural code",
+	"declare": "PL/SQL anonymous block; body is procedural code",
+}
+
+// oracleInlinePLSQL are the words after WITH that declare PL/SQL a query
+// runs (Oracle 12c and later). An autonomous function there can call a
+// procedure that writes, so the statement is a block, not a CTE list.
+var oracleInlinePLSQL = map[string]bool{
+	"function": true, "procedure": true,
+}
+
+// plsqlHeadAfter are words after which a statement may begin inside PL/SQL.
+// `BEGIN DELETE FROM t` and `LOOP UPDATE t SET ...` put DML right after a
+// block keyword, with no semicolon to restore head position.
+var plsqlHeadAfter = map[string]bool{
+	"begin": true, "declare": true, "loop": true,
+}
+
+// plsqlDML are the verbs recognised ANYWHERE inside a PL/SQL block, not
+// only in head position.
+//
+// PL/SQL puts DML where SQL never does: `FORALL i IN 1 .. n DELETE FROM
+// t WHERE ...` has the DELETE after an expression. The block is already
+// Complete=false, so over-reading costs nothing a caller acts on, and
+// under-reading records t as READ, which a rule guarding writes to t
+// misses. SELECT is absent because it never hides a write, and SET,
+// VALUES and TABLE are absent because inside DML they are clauses.
+var plsqlDML = map[string]bool{
+	"insert": true, "update": true, "delete": true, "merge": true,
+	"create": true, "drop": true, "alter": true, "truncate": true,
+	"grant": true, "revoke": true, "execute": true, "call": true,
+}
+
+// oracleStoredUnit are the objects whose CREATE carries a PL/SQL (or Java)
+// body inline, with no dollar quote around it. Everything after the header
+// is source text Oracle compiles and does not run, so the body is data —
+// the same verdict PostgreSQL's CREATE FUNCTION ... AS $$...$$ earns.
+var oracleStoredUnit = map[string]bool{
+	"procedure": true, "function": true, "package": true,
+	"trigger": true, "type": true, "library": true, "java": true,
+}
+
+// oracleCreateModifier may sit between CREATE and the stored-unit keyword:
+// CREATE OR REPLACE EDITIONABLE PACKAGE BODY, CREATE OR REPLACE AND
+// COMPILE JAVA SOURCE.
+var oracleCreateModifier = map[string]bool{
+	"or": true, "replace": true, "editionable": true, "noneditionable": true,
+	"editioning": true, "and": true, "compile": true, "resolve": true,
+	"noforce": true, "force": true,
+}
+
+// triggerBody are the words that end a trigger's header and open its
+// body: a PL/SQL block, a CALL, or a compound trigger.
+var triggerBody = map[string]bool{
+	"begin": true, "declare": true, "call": true, "compound": true,
+}
+
 // relIntro marks keywords after which the next name is a relation.
 //
 // Some are conditional; see introduces. "index" is deliberately absent: the

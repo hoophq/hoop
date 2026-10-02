@@ -575,7 +575,7 @@ func TestNewRejectsBadConfig(t *testing.T) {
 	if _, err := gate.New(s, gate.Config{}); err == nil {
 		t.Error("missing protocol accepted")
 	}
-	if _, err := gate.New(newSession(), gate.Config{Protocol: "oracle"}); err == nil {
+	if _, err := gate.New(newSession(), gate.Config{Protocol: "unsupported"}); err == nil {
 		t.Error("unsupported protocol accepted")
 	}
 }

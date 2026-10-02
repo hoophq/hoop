@@ -9,7 +9,7 @@ import (
 )
 
 func TestNewUnsupportedProtocol(t *testing.T) {
-	_, err := inspect.New("oracle")
+	_, err := inspect.New("unsupported")
 	if !errors.Is(err, inspect.ErrUnsupportedProtocol) {
 		t.Errorf("err = %v, want ErrUnsupportedProtocol", err)
 	}

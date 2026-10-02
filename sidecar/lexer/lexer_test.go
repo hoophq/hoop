@@ -434,11 +434,13 @@ func TestAnalyzeDoesNotPanic(t *testing.T) {
 		"", " ", ";", "(", ")", "'", `"`, "$", "$$", "--", "/*", "*/",
 		"`", "``", "#", "-", `'a\`, "`a``",
 		"r'", `rb"`, "'''", `"""`, "r'''", "@", "@{", "@{}",
+		"q'", "q'[", "nq'", "Nq'x", "q'\xff", "q'\xc3", ":", ":a", "a@", "a@b.", "begin", "declare",
+		"create trigger", "create trigger t on", "create trigger t on nested", "create procedure",
 		"with", "with as", "with x as", "select from", "delete from",
 		strings.Repeat("(", 200), strings.Repeat(")", 200),
 		strings.Repeat("with x as (", 50),
 	} {
-		for _, d := range []lexer.Dialect{lexer.Postgres, lexer.MSSQL, lexer.MySQL, lexer.ClickHouse, lexer.GoogleSQL} {
+		for _, d := range []lexer.Dialect{lexer.Postgres, lexer.MSSQL, lexer.MySQL, lexer.ClickHouse, lexer.GoogleSQL, lexer.Oracle} {
 			lexer.Analyze(sql, d)
 			lexer.Split(sql, d)
 		}
@@ -1167,5 +1169,344 @@ func TestGoogleSQLDMLShapes(t *testing.T) {
 	}
 	if got := reads(with); !slices.Equal(got, []string{"t"}) {
 		t.Errorf("reads = %v, want [t]; the CTE alias leaked or the base table was lost", got)
+	}
+}
+
+// Oracle's alternative quoting runs a literal past any single quote, up to
+// the closing delimiter followed by a quote. Read as plain '...', the quote
+// INSIDE q'[']' closes a literal, the next one opens another, and the
+// DELETE between them is swallowed as string data: a statement executing
+// unseen. Each delimiter form is pinned, because the four brackets close
+// with their mirror and everything else with itself.
+func TestOracleAlternativeQuotingDoesNotSwallowTheNextStatement(t *testing.T) {
+	for _, sql := range []string{
+		`SELECT q'[']' FROM dual; DELETE FROM customers; --'`,
+		`SELECT q'{'}' FROM dual; DELETE FROM customers; --'`,
+		`SELECT q'(')' FROM dual; DELETE FROM customers; --'`,
+		`SELECT q'<'>' FROM dual; DELETE FROM customers; --'`,
+		`SELECT q'!'!' FROM dual; DELETE FROM customers; --'`,
+		`SELECT Nq'#'#' FROM dual; DELETE FROM customers; --'`,
+	} {
+		a := lexer.Analyze(sql, lexer.Oracle)
+		if got := writes(a); !slices.Equal(got, []string{"customers"}) {
+			t.Errorf("writes = %v, want [customers]; the q-quote ate the DELETE: %s", got, sql)
+		}
+	}
+}
+
+// The inverse: SQL inside a q-quoted literal is data. A bracket delimiter
+// closes only before a quote, so q'(a(b)c)' is a(b)c, verified on 23ai, and
+// a multibyte delimiter closes on the whole character.
+func TestOracleAlternativeQuotedBodiesAreData(t *testing.T) {
+	for _, sql := range []string{
+		`SELECT q'[it's; DELETE FROM customers; --]' FROM dual`,
+		`SELECT q'(a(b); DELETE FROM customers; c)' FROM dual`,
+		`SELECT q'!DELETE FROM customers; '!' FROM dual`,
+		`SELECT nq'{'; DROP TABLE customers}' FROM dual`,
+		"SELECT q'Ä'; DELETE FROM customers; Ä' FROM dual",
+	} {
+		a := lexer.Analyze(sql, lexer.Oracle)
+		if a.Writes() || !a.Complete {
+			t.Errorf("q-quoted content executed or misread: effects=%v rels=%v complete=%v (%s): %s",
+				a.Effects, a.Relations, a.Complete, a.Reason, sql)
+		}
+		if got := reads(a); !slices.Equal(got, []string{"dual"}) {
+			t.Errorf("reads = %v, want [dual]; literal content leaked a relation: %s", got, sql)
+		}
+	}
+}
+
+// A q-quote Oracle refuses has no close to look for: whitespace and the quote
+// itself are rejected by the server (ORA-00911, ORA-01756 on 23ai), and an
+// unterminated one hides what the missing close would have ended. Both are
+// Complete=false rather than a guessed boundary.
+func TestOracleUnreadableAlternativeQuotesFailClosed(t *testing.T) {
+	for _, sql := range []string{
+		`SELECT q'[abc FROM dual`,
+		`SELECT q'[abc]' ' FROM dual`,
+		`SELECT q' a ' FROM dual`,
+		`SELECT q'''a''' FROM dual`,
+		`SELECT q'`,
+	} {
+		if a := lexer.Analyze(sql, lexer.Oracle); a.Complete {
+			t.Errorf("Complete = true on an unreadable q-quote: %s", sql)
+		}
+	}
+}
+
+// A q-quote is Oracle's alone. In PostgreSQL q'...' is an identifier
+// followed by a string, and reading it Oracle's way there would move a
+// statement boundary.
+func TestOracleQuotingDoesNotLeakIntoOtherDialects(t *testing.T) {
+	a := lexer.Analyze(`SELECT q'[x' AS a; DELETE FROM customers; --]'`, lexer.Postgres)
+	if got := writes(a); !slices.Equal(got, []string{"customers"}) {
+		t.Errorf("postgres writes = %v, want [customers]; q'[ opened a literal outside Oracle", got)
+	}
+	if got := lexer.Analyze("BEGIN", lexer.Postgres).Verb; got != lexer.Begin {
+		t.Errorf("postgres BEGIN = %q, want begin; the PL/SQL reading leaked", got)
+	}
+}
+
+// Oracle's lexical differences from PostgreSQL, each of which moves a
+// statement boundary or a relation name. Block comments close at the FIRST
+// `*/` (verified on 23ai), so the DELETE after an inner close is live; a
+// backslash is an ordinary byte in '...', so 'a\' is a whole literal; and
+// `--` comments even when glued to a token.
+func TestOracleCommentsAndStrings(t *testing.T) {
+	for _, sql := range []string{
+		`SELECT 1 FROM dual /* a /* b */; DELETE FROM customers; --*/`,
+		`SELECT 'a\' FROM dual; DELETE FROM customers; --'`,
+	} {
+		if got := writes(lexer.Analyze(sql, lexer.Oracle)); !slices.Equal(got, []string{"customers"}) {
+			t.Errorf("writes = %v, want [customers]: %s", got, sql)
+		}
+	}
+	for _, sql := range []string{
+		"SELECT 1--2; DELETE FROM customers\nFROM dual",
+		`SELECT /*+ INDEX(c ix) */ * FROM dual /*; DELETE FROM customers */`,
+		"SELECT 1 FROM dual --+ ; DELETE FROM customers",
+	} {
+		if a := lexer.Analyze(sql, lexer.Oracle); a.Writes() {
+			t.Errorf("commentary executed: effects=%v rels=%v: %s", a.Effects, a.Relations, sql)
+		}
+	}
+	hint := lexer.Analyze(`DELETE /*+ FULL(c) */ FROM customers c WHERE id = :1`, lexer.Oracle)
+	if got := writes(hint); !slices.Equal(got, []string{"customers"}) || hint.Severity() != lexer.Delete {
+		t.Errorf("hinted delete: writes = %v, severity = %q", got, hint.Severity())
+	}
+}
+
+// Oracle's catalog spells relations with `$` and `#`, and quoted parts keep
+// their case. A relation reported as "v" instead of v$session is one no rule
+// names.
+func TestOracleRelationNames(t *testing.T) {
+	for _, tc := range []struct {
+		sql          string
+		reads, write []string
+	}{
+		{`SELECT sid FROM v$session`, []string{"v$session"}, nil},
+		{`DELETE FROM app.audit#log WHERE id = :1`, nil, []string{"app.audit#log"}},
+		{`SELECT * FROM "HR"."Emp" e`, []string{"HR.Emp"}, nil},
+		{`SELECT sysdate FROM dual`, []string{"dual"}, nil},
+		// A bind may spell a non-reserved keyword (:using binds on 23ai);
+		// read as a word it opened a relation list mid-predicate.
+		{`SELECT a FROM t WHERE x = :using AND y = :join`, []string{"t"}, nil},
+	} {
+		a := lexer.Analyze(tc.sql, lexer.Oracle)
+		if got := reads(a); !slices.Equal(got, tc.reads) {
+			t.Errorf("reads = %v, want %v: %s", got, tc.reads, tc.sql)
+		}
+		if got := writes(a); !slices.Equal(got, tc.write) {
+			t.Errorf("writes = %v, want %v: %s", got, tc.write, tc.sql)
+		}
+		if !a.Complete {
+			t.Errorf("Complete = false (%s): %s", a.Reason, tc.sql)
+		}
+	}
+}
+
+// A database link names the remote OBJECT, and the object is what a rule is
+// written against: a loopback link reaches the same table. The link must
+// neither hide the write nor end the relation list.
+func TestOracleDatabaseLinks(t *testing.T) {
+	for _, tc := range []struct {
+		sql          string
+		verb         lexer.Verb
+		reads, write []string
+	}{
+		{`DELETE FROM hr.emp@loop WHERE id = :1`, lexer.Delete, nil, []string{"hr.emp"}},
+		{`INSERT INTO emp@hq.example.com SELECT * FROM staging`, lexer.Insert, []string{"staging"}, []string{"emp"}},
+		{`UPDATE emp@hq@hr SET sal = 1`, lexer.Update, nil, []string{"emp"}},
+		{`SELECT * FROM emp@remote, dept WHERE 1 = 1`, lexer.Select, []string{"emp", "dept"}, nil},
+	} {
+		a := lexer.Analyze(tc.sql, lexer.Oracle)
+		if got := a.Severity(); got != tc.verb {
+			t.Errorf("Severity() = %q, want %q: %s", got, tc.verb, tc.sql)
+		}
+		if got := reads(a); !slices.Equal(got, tc.reads) {
+			t.Errorf("reads = %v, want %v: %s", got, tc.reads, tc.sql)
+		}
+		if got := writes(a); !slices.Equal(got, tc.write) {
+			t.Errorf("writes = %v, want %v: %s", got, tc.write, tc.sql)
+		}
+	}
+}
+
+// A PL/SQL anonymous block is DO $$...$$ without the quotes: procedural code
+// whose effects the scanner cannot run. It must never classify as a read or
+// as a transaction BEGIN, and the DML the scanner does see — including DML
+// PL/SQL puts where SQL never does, after FORALL or LOOP — is reported with
+// its target written.
+func TestOraclePLSQLBlocksAreOpaque(t *testing.T) {
+	for _, tc := range []struct {
+		sql   string
+		write []string
+	}{
+		{`BEGIN DELETE FROM customers; END;`, []string{"customers"}},
+		{`BEGIN EXECUTE IMMEDIATE 'DELETE FROM customers'; END;`, nil},
+		{`DECLARE n NUMBER; BEGIN SELECT count(*) INTO n FROM t; END;`, nil},
+		{`DECLARE TYPE ids IS TABLE OF NUMBER; v ids; BEGIN FORALL i IN 1 .. v.count DELETE FROM customers WHERE id = v(i); END;`, []string{"customers"}},
+		{`BEGIN FOR r IN (SELECT id FROM t) LOOP UPDATE customers SET x = 1 WHERE id = r.id; END LOOP; END;`, []string{"customers"}},
+		{`BEGIN UPDATE customers SET x = 1 RETURNING x INTO v; END;`, []string{"customers"}},
+		{`BEGIN pkg.purge; END;`, nil},
+	} {
+		a := lexer.Analyze(tc.sql, lexer.Oracle)
+		if a.Complete {
+			t.Errorf("Complete = true on a PL/SQL block: %s", tc.sql)
+		}
+		if a.Verb != lexer.Call {
+			t.Errorf("Verb = %q, want call: %s", a.Verb, tc.sql)
+		}
+		if slices.Contains(a.Effects, lexer.Begin) || slices.Contains(a.Effects, lexer.Commit) {
+			t.Errorf("effects = %v; BEGIN/END read as a transaction: %s", a.Effects, tc.sql)
+		}
+		// Variables after INTO are not relations: a spurious write of n
+		// or v is a rule acting on nothing.
+		if got := writes(a); !slices.Equal(got, tc.write) {
+			t.Errorf("writes = %v, want %v: %s", got, tc.write, tc.sql)
+		}
+	}
+}
+
+// CREATE of a stored unit carries its PL/SQL body inline, and the body is
+// source Oracle compiles, not runs — verified on 23ai: a trailing DELETE
+// after END; is stored as a compilation error and deletes nothing. It is one
+// create, complete, and a trigger records the table it fires on.
+func TestOracleStoredUnitBodiesAreData(t *testing.T) {
+	for _, tc := range []struct {
+		sql   string
+		write []string
+	}{
+		{`CREATE OR REPLACE PROCEDURE purge_all AS BEGIN DELETE FROM customers; END;`, nil},
+		{`CREATE OR REPLACE EDITIONABLE FUNCTION f (x NUMBER) RETURN NUMBER IS BEGIN RETURN x; END; DELETE FROM customers`, nil},
+		{`CREATE OR REPLACE PACKAGE BODY pkg AS PROCEDURE p IS BEGIN DELETE FROM customers; END; END pkg;`, nil},
+		{`CREATE TYPE point AS OBJECT (x NUMBER, y NUMBER)`, nil},
+		{`CREATE OR REPLACE TRIGGER trg BEFORE INSERT OR UPDATE OF sal ON hr.emp FOR EACH ROW WHEN (new.sal > 0) BEGIN DELETE FROM customers; END;`, []string{"hr.emp"}},
+		{`CREATE TRIGGER trg INSTEAD OF INSERT ON NESTED TABLE lines OF orders_v FOR EACH ROW BEGIN NULL; END;`, []string{"orders_v"}},
+		{`CREATE TRIGGER trg AFTER LOGON ON DATABASE BEGIN DELETE FROM customers; END;`, nil},
+	} {
+		a := lexer.Analyze(tc.sql, lexer.Oracle)
+		if !a.Complete {
+			t.Errorf("Complete = false (%s): %s", a.Reason, tc.sql)
+		}
+		if !slices.Equal(a.Effects, []lexer.Verb{lexer.Create}) {
+			t.Errorf("effects = %v, want [create]; the body was read as SQL: %s", a.Effects, tc.sql)
+		}
+		if got := writes(a); !slices.Equal(got, tc.write) {
+			t.Errorf("writes = %v, want %v: %s", got, tc.write, tc.sql)
+		}
+	}
+}
+
+// Oracle statement forms and the verb each must report. Every write form
+// pins its written relation, because losing the target is how a `tables:`
+// rule stops firing; the read forms pin that nothing is written.
+func TestOracleStatementForms(t *testing.T) {
+	for _, tc := range []struct {
+		sql      string
+		verb     lexer.Verb
+		write    []string
+		complete bool
+	}{
+		{`SELECT * FROM t FOR UPDATE OF c NOWAIT`, lexer.Select, nil, true},
+		{`MERGE INTO t USING s ON (t.id = s.id) WHEN MATCHED THEN UPDATE SET t.a = s.a WHEN NOT MATCHED THEN INSERT (id) VALUES (s.id)`, lexer.Merge, []string{"t"}, true},
+		// Multi-table insert names a target after EVERY INTO.
+		{`INSERT ALL INTO a VALUES (1) INTO b VALUES (2) SELECT * FROM dual`, lexer.Insert, []string{"a", "b"}, true},
+		{`INSERT ALL WHEN returning > 1 THEN INTO b VALUES (1) SELECT 1 returning FROM dual`, lexer.Insert, []string{"b"}, true},
+		{`INSERT INTO t (a) VALUES (:1) RETURNING id INTO :2`, lexer.Insert, []string{"t"}, true},
+		{`TRUNCATE TABLE t`, lexer.Truncate, []string{"t"}, true},
+		{`FLASHBACK TABLE t TO BEFORE DROP`, lexer.Alter, []string{"t"}, true},
+		{`FLASHBACK TABLE t TO TIMESTAMP SYSTIMESTAMP - INTERVAL '1' HOUR`, lexer.Alter, []string{"t"}, true},
+		{`PURGE TABLE t`, lexer.Drop, []string{"t"}, true},
+		{`PURGE RECYCLEBIN`, lexer.Drop, nil, true},
+		{`ALTER SYSTEM KILL SESSION '12,34'`, lexer.Alter, nil, true},
+		{`ALTER TABLE t ADD (c NUMBER)`, lexer.Alter, []string{"t"}, true},
+		{`GRANT SELECT ON hr.emp TO app`, lexer.Grant, []string{"hr.emp"}, true},
+		{`REVOKE SELECT ON hr.emp FROM app`, lexer.Revoke, []string{"hr.emp"}, true},
+		{`CREATE OR REPLACE VIEW v AS SELECT * FROM t`, lexer.Create, []string{"v"}, true},
+		{`CALL pkg.purge()`, lexer.Call, nil, false},
+		{`EXEC pkg.purge`, lexer.Call, nil, false},
+	} {
+		a := lexer.Analyze(tc.sql, lexer.Oracle)
+		if got := a.Severity(); got != tc.verb {
+			t.Errorf("Severity() = %q, want %q: %s", got, tc.verb, tc.sql)
+		}
+		if got := writes(a); !slices.Equal(got, tc.write) {
+			t.Errorf("writes = %v, want %v: %s", got, tc.write, tc.sql)
+		}
+		if a.Complete != tc.complete {
+			t.Errorf("Complete = %v (%s), want %v: %s", a.Complete, a.Reason, tc.complete, tc.sql)
+		}
+	}
+}
+
+// ALTER SESSION is Oracle's SET — NLS formats, CURRENT_SCHEMA, time zone —
+// and drivers may send it on connect. Filed under alter, a lane refusing DDL
+// refuses the login. ALTER SYSTEM changes the instance and stays alter.
+func TestOracleAlterSessionIsASet(t *testing.T) {
+	for _, sql := range []string{
+		`ALTER SESSION SET NLS_DATE_FORMAT = 'YYYY-MM-DD'`,
+		`ALTER SESSION SET CURRENT_SCHEMA = hr`,
+	} {
+		a := lexer.Analyze(sql, lexer.Oracle)
+		if !slices.Equal(a.Effects, []lexer.Verb{lexer.Set}) || a.Writes() {
+			t.Errorf("effects = %v, want [set]: %s", a.Effects, sql)
+		}
+	}
+	if got := lexer.Analyze(`ALTER SESSION SET x = 1`, lexer.Postgres).Verb; got != lexer.Alter {
+		t.Errorf("postgres ALTER SESSION = %q, want alter; the Oracle reading leaked", got)
+	}
+}
+
+// Oracle runs one statement per call, so Split never cuts its text: the
+// only inner semicolons are PL/SQL's, and a fragment of a block loses the
+// context that shows its DML. Each call below runs a write that its
+// fragments would hide; read whole, the write is an effect.
+func TestOracleSplitKeepsTheWholeCall(t *testing.T) {
+	for _, sql := range []string{
+		`BEGIN DELETE FROM customers; END;`,
+		`<<x>> BEGIN DELETE FROM customers; END;`,
+		`<<outer>> DECLARE n NUMBER; BEGIN UPDATE customers SET ssn = NULL; END;`,
+		`DECLARE TYPE ids IS TABLE OF NUMBER; v ids; BEGIN FORALL i IN 1 .. v.count DELETE FROM customers WHERE id = v(i); END;`,
+		`UPDATE /*+ WITH_PLSQL */ audit_t SET n = (WITH FUNCTION f RETURN NUMBER IS BEGIN NULL; FORALL i IN 1 .. 3 DELETE FROM customers WHERE id = i; RETURN 1; END; SELECT f() FROM dual)`,
+	} {
+		parts := lexer.Split("  "+sql+"\n", lexer.Oracle)
+		if !slices.Equal(parts, []string{sql}) {
+			t.Fatalf("Split = %q, want the whole call", parts)
+		}
+		a := lexer.Analyze(parts[0], lexer.Oracle)
+		if a.Complete || !slices.Contains(writes(a), "customers") {
+			t.Errorf("complete = %v, writes = %v, effects = %v: %s", a.Complete, writes(a), a.Effects, sql)
+		}
+	}
+	if got := lexer.Split(" ; ", lexer.Oracle); !slices.Equal(got, []string{";"}) {
+		t.Errorf("Split = %q", got)
+	}
+	if got := lexer.Split("   ", lexer.Oracle); len(got) != 0 {
+		t.Errorf("Split of blank text = %q", got)
+	}
+}
+
+// WITH FUNCTION / WITH PROCEDURE declares PL/SQL the query runs, and an
+// autonomous function can call a procedure that writes. The statement is
+// opaque, and the DELETE in the procedure is one of its effects. A CTE that
+// is merely named function stays a plain, complete query.
+func TestOracleInlinePLSQLInWithIsOpaque(t *testing.T) {
+	inline := `WITH PROCEDURE p IS BEGIN DELETE FROM customers; END; FUNCTION f RETURN NUMBER IS PRAGMA AUTONOMOUS_TRANSACTION; BEGIN p; COMMIT; RETURN 1; END; SELECT f FROM dual`
+	a := lexer.Analyze(inline, lexer.Oracle)
+	if a.Complete || !slices.Contains(a.Effects, lexer.Delete) {
+		t.Errorf("inline PL/SQL: complete = %v, effects = %v", a.Complete, a.Effects)
+	}
+	if got := writes(a); !slices.Equal(got, []string{"customers"}) {
+		t.Errorf("writes = %v, want [customers]", got)
+	}
+	for _, sql := range []string{
+		`WITH function AS (SELECT 1 x FROM dual) SELECT x FROM function`,
+		`WITH function (a) AS (SELECT 1 FROM dual) SELECT a FROM function`,
+	} {
+		cte := lexer.Analyze(sql, lexer.Oracle)
+		if !cte.Complete || cte.Verb != lexer.Select {
+			t.Errorf("CTE named function: verb = %v, complete = %v (%s): %s", cte.Verb, cte.Complete, cte.Reason, sql)
+		}
 	}
 }

@@ -171,6 +171,16 @@ test-sidecar-compat:
 	echo "$$out"; \
 	echo "$$out" | grep -q -- '--- PASS: TestThePreviousReleaseDecodesTheServedDocument'
 
+# The Oracle E2E tests against Oracle XE 21c (TTC field version 16), once with
+# its own SQL*Plus 21 and once with SQL*Plus 23 from the Free image. The XE
+# image is amd64 only; it runs under emulation on arm64 hosts.
+test-sidecar-e2e-oracle21:
+	cd sidecar/e2e && env GOWORK=off CGO_ENABLED=0 SIDECAR_E2E_ORACLE_IMAGE=gvenzl/oracle-xe:21-slim-faststart SIDECAR_E2E_ORACLE_SERVICE=XEPDB1 \
+		go test -tags integration -v -timeout 20m -count=1 -run 'TestOracle' ./...
+	cd sidecar/e2e && env GOWORK=off CGO_ENABLED=0 SIDECAR_E2E_ORACLE_IMAGE=gvenzl/oracle-xe:21-slim-faststart SIDECAR_E2E_ORACLE_SERVICE=XEPDB1 \
+		SIDECAR_E2E_ORACLE_CLIENT_IMAGE=gvenzl/oracle-free:23-slim-faststart \
+		go test -tags integration -v -timeout 20m -count=1 -run 'TestOracleThick' ./...
+
 prepare-mssql-jdbc:
 	$(RM) $(MSSQL_JDBC_CLASSPATH_FILE)
 	mvn -q -f $(MSSQL_JDBC_FIXTURE)/pom.xml dependency:build-classpath -DincludeScope=runtime -Dmdep.outputFile=$(MSSQL_JDBC_CLASSPATH_FILE)

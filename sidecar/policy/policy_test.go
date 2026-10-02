@@ -696,3 +696,34 @@ func TestUnscopedRuleStillMatchesEveryOperation(t *testing.T) {
 		}
 	}
 }
+
+// An unknown statement still performs the effects the scanner saw. A
+// PL/SQL block's DELETE is a delete, so a rule naming delete denies it.
+func TestOperationRuleMatchesEffectsOfUnknownStatements(t *testing.T) {
+	rules, err := policy.NewRules([]policy.Rule{{Name: "no-delete", Type: policy.MatchOperation, Operations: []inspect.Operation{inspect.OpDelete}}})
+	if err != nil {
+		t.Fatalf("NewRules: %v", err)
+	}
+	block := stmt("BEGIN DELETE FROM t; END;", inspect.OpUnknown)
+	block.Effects = []inspect.Operation{inspect.OpCall, inspect.OpDelete}
+	if !rules.Evaluate(block).Denied {
+		t.Error("DELETE inside an unknown statement was allowed")
+	}
+	quiet := stmt("BEGIN pkg.run; END;", inspect.OpUnknown)
+	quiet.Effects = []inspect.Operation{inspect.OpCall}
+	if rules.Evaluate(quiet).Denied {
+		t.Error("unknown statement without a delete effect was denied")
+	}
+
+	// A rule scoped to delete narrows by the same test.
+	scoped, err := policy.NewRules([]policy.Rule{{Name: "no-delete-customers", Type: policy.MatchTable,
+		Tables: []string{"customers"}, Operations: []inspect.Operation{inspect.OpDelete}}})
+	if err != nil {
+		t.Fatalf("NewRules: %v", err)
+	}
+	inBlock := stmt("BEGIN DELETE FROM customers; END;", inspect.OpUnknown, "customers")
+	inBlock.Effects = []inspect.Operation{inspect.OpCall, inspect.OpDelete}
+	if !scoped.Evaluate(inBlock).Denied {
+		t.Error("delete-scoped table rule missed a DELETE inside an unknown statement")
+	}
+}
