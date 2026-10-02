@@ -6,17 +6,21 @@ SET search_path TO private;
 -- renders it, for the rows that predate the projection. From here on the
 -- sidecar write path keeps them in step.
 --
--- A listener this cannot mirror is left out, not refused: a migration that
--- fails leaves the database dirty and the gateway down, and the listener can
--- only be renamed through the gateway. The next write of that sidecar refuses
--- with the reason and names the listener (ErrSidecarListenerInvalid,
--- ErrSidecarConnectionNameTaken). Left out:
+-- Only orgs with beta.sidecar_listeners on, as the write path: an org that
+-- has not opted in keeps its connection list as it was.
+--
+-- A listener this cannot mirror under its preferred name is left out, not
+-- refused: a migration that fails leaves the database dirty and the gateway
+-- down. The next write of that sidecar mirrors it, under the fallback name
+-- when it needs one (SidecarMirrorFallbackName). Left out:
 --   * a protocol with no connection type, or no listener name;
 --   * a composed name that fails apivalidation.ValidateResourceName or
 --     exceeds resources.name;
 --   * a name a connection already has, or uses as its resource; this
 --     listener's own mirror included, so the migration is a no-op the
 --     second time;
+--   * a name an agent's resource has: a connection reads its agent from its
+--     resource, and a mirror must never inherit one;
 --   * a name two listeners compose to; the older sidecar keeps it.
 CREATE TEMP TABLE _sidecar_mirrors ON COMMIT DROP AS
 SELECT DISTINCT ON (org_id, name) *
@@ -48,12 +52,15 @@ FROM (
         CASE WHEN jsonb_typeof(s.configuration->'listeners') = 'array'
              THEN s.configuration->'listeners' ELSE '[]'::jsonb END
     ) WITH ORDINALITY AS l(value, ordinality)
+    WHERE EXISTS (SELECT 1 FROM org_feature_flags f
+                  WHERE f.org_id = s.org_id AND f.name = 'beta.sidecar_listeners' AND f.enabled)
 ) m
 WHERE COALESCE(m.listener, '') <> ''
   AND m.type IS NOT NULL
   AND m.name ~ '^[a-zA-Z0-9_]+([-.]?[a-zA-Z0-9_]+){2,253}$'
   AND length(m.name) <= 128
   AND NOT EXISTS (SELECT 1 FROM connections c WHERE c.org_id = m.org_id AND (c.name = m.name OR c.resource_name = m.name))
+  AND NOT EXISTS (SELECT 1 FROM resources r WHERE r.org_id = m.org_id AND r.name = m.name AND r.agent_id IS NOT NULL)
 ORDER BY org_id, name, sidecar_created_at, ordinality;
 
 -- The mirror's own resource, as UpsertConnection defaults it. One left
