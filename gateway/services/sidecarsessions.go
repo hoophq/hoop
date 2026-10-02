@@ -20,6 +20,7 @@ import (
 	"github.com/hoophq/hoop/sidecar/audit"
 	"github.com/hoophq/hoop/sidecar/daemon"
 	"github.com/hoophq/hoop/sidecar/inspect"
+	"github.com/hoophq/hoop/sidecar/session"
 	"gorm.io/gorm"
 )
 
@@ -144,6 +145,8 @@ type sidecarSessionPlan struct {
 	// Sidecar is merged into metadata.sidecar. It always carries last_seq
 	// when anything applied.
 	Sidecar map[string]any
+	// User replaces an unknown principal on an existing row.
+	User *sidecarUser
 	// Done ends the session.
 	Done *models.SessionDone
 
@@ -159,11 +162,13 @@ type sidecarSessionPlan struct {
 // kinds translate as:
 //
 //	session_start  creates the session (verb connect, status open)
-//	statement      an "i" entry with the statement
-//	violation      an "i" entry with the statement, an "e" entry with the
-//	               denial, and a guardrails_info entry. The gate writes one
-//	               event per statement, a violation INSTEAD of a statement,
-//	               so the query list would otherwise lose every denied one.
+//	statement      an "i" entry with the statement, or an "o" entry when it
+//	               came from the server (a Postgres CommandComplete tag
+//	               reads "SELECT 1" and is not a query)
+//	violation      the same entry, an "e" entry with the denial, and a
+//	               guardrails_info entry. The gate writes one event per
+//	               statement, a violation INSTEAD of a statement, so the
+//	               query list would otherwise lose every denied one.
 //	error          an "e" entry with the error
 //	masked         metrics.data_masking and private.session_metrics
 //	session_end    status done, ended_at, and the totals in metadata.sidecar
@@ -194,15 +199,37 @@ func planSidecarSession(sc sidecarIdentity, sessionID string, prior *models.Side
 		return plan, nil
 	}
 
+	// The principal can arrive after the session does: a pgwire lane writes
+	// session_start before it reads the startup packet, so the start says
+	// anonymous and the statements name the role. The first known one wins.
+	principal := ""
+	for _, e := range fresh {
+		if knownPrincipal(e.Event.Principal) {
+			principal = e.Event.Principal
+			break
+		}
+	}
+
 	var startedAt time.Time
 	metrics := map[string]any{}
+	plan.Sidecar = map[string]any{}
 	if prior != nil {
 		startedAt = prior.CreatedAt
 		if prior.Metrics != nil {
 			metrics = maps.Clone(prior.Metrics)
 		}
+		if principal != "" && !knownPrincipal(prior.Principal) {
+			user := sidecarUserFor(principal)
+			plan.User = &user
+			if user.Full != "" {
+				plan.Sidecar["principal"] = user.Full
+			}
+		}
 	} else {
-		sess, err := newSidecarSession(sc, plan.SessionID, sessionID, fresh[0].Event)
+		if principal == "" {
+			principal = fresh[0].Event.Principal
+		}
+		sess, err := newSidecarSession(sc, plan.SessionID, sessionID, fresh[0].Event, principal)
 		if err != nil {
 			return plan, err
 		}
@@ -215,14 +242,13 @@ func planSidecarSession(sc sidecarIdentity, sessionID string, prior *models.Side
 		size:      metricInt(metrics, "event_size"),
 		truncated: metricBool(metrics, "truncated"),
 	}
-	plan.Sidecar = map[string]any{}
 	for _, e := range fresh {
 		ev := e.Event
 		switch ev.Kind {
 		case audit.KindStatement:
-			stream.add(ev.Timestamp, "i", ev.Statement)
+			stream.add(ev.Timestamp, statementEntryType(ev), ev.Statement)
 		case audit.KindViolation:
-			stream.add(ev.Timestamp, "i", ev.Statement)
+			stream.add(ev.Timestamp, statementEntryType(ev), ev.Statement)
 			stream.add(ev.Timestamp, "e", denialText(ev))
 			plan.GuardRails = append(plan.GuardRails, sidecarGuardRail(ev))
 		case audit.KindError:
@@ -264,9 +290,19 @@ func planSidecarSession(sc sidecarIdentity, sessionID string, prior *models.Side
 	return plan, nil
 }
 
+// statementEntryType is "o" for what the server sent and "i" for the rest,
+// as the audit plugin types a stream.
+func statementEntryType(ev audit.Event) string {
+	if ev.Direction == inspect.FromServer {
+		return "o"
+	}
+	return "i"
+}
+
 // newSidecarSession builds the row a sidecar session is created as, from the
-// first event the gateway received for it.
-func newSidecarSession(sc sidecarIdentity, id, sidecarSessionID string, ev audit.Event) (*models.Session, error) {
+// first event the gateway received for it and the principal it is filed
+// under.
+func newSidecarSession(sc sidecarIdentity, id, sidecarSessionID string, ev audit.Event, principal string) (*models.Session, error) {
 	listener := pgText(ev.Connection)
 	sidecarSessionID = pgText(sidecarSessionID)
 	if listener == "" {
@@ -308,21 +344,45 @@ func newSidecarSession(sc sidecarIdentity, id, sidecarSessionID string, ev audit
 			},
 		},
 	}
-	// The principal is whatever the sidecar resolved on the wire. An email
-	// is filed as one, so the session list can filter on it; anything else
-	// (a database role) is a name.
-	principal := pgText(ev.Principal)
-	if short := truncateChars(principal, maxSessionUserChars); short != principal {
-		// The column keeps what fits; the metadata keeps the whole of it.
-		sess.Metadata["sidecar"].(map[string]any)["principal"] = principal
-		principal = short
-	}
-	if strings.Contains(principal, "@") {
-		sess.UserEmail = principal
-	} else {
-		sess.UserName = principal
+	user := sidecarUserFor(principal)
+	sess.UserName, sess.UserEmail = user.Name, user.Email
+	if user.Full != "" {
+		sess.Metadata["sidecar"].(map[string]any)["principal"] = user.Full
 	}
 	return sess, nil
+}
+
+// sidecarUser is a principal as the session row files it.
+type sidecarUser struct {
+	Name  string
+	Email string
+	// Full is the whole principal when the column cut it.
+	Full string
+}
+
+// sidecarUserFor files a principal. It is whatever the sidecar resolved on
+// the wire: an email is filed as one, so the session list can filter on it;
+// anything else (a database role) is a name.
+func sidecarUserFor(principal string) sidecarUser {
+	var out sidecarUser
+	p := pgText(principal)
+	if short := truncateChars(p, maxSessionUserChars); short != p {
+		out.Full = p
+		p = short
+	}
+	if strings.Contains(p, "@") {
+		out.Email = p
+	} else {
+		out.Name = p
+	}
+	return out
+}
+
+// knownPrincipal reports a principal the sidecar resolved, as opposed to the
+// placeholder it writes before it knows one.
+func knownPrincipal(p string) bool {
+	p = pgText(p)
+	return p != "" && p != session.AnonymousPrincipal
 }
 
 // pgText drops the NUL bytes Postgres refuses in text and jsonb. JSON
@@ -553,6 +613,11 @@ func applySidecarSessionPlan(tx *gorm.DB, orgID string, plan sidecarSessionPlan)
 		}
 		if err := models.UpdateSessionGuardRailsInfoTx(tx, orgID, plan.SessionID, info); err != nil {
 			return fmt.Errorf("recording guardrails info: %w", err)
+		}
+	}
+	if plan.User != nil {
+		if err := models.SetSidecarSessionUser(tx, orgID, plan.SessionID, plan.User.Name, plan.User.Email); err != nil {
+			return fmt.Errorf("recording the principal: %w", err)
 		}
 	}
 	if err := models.SetSidecarSessionProgress(tx, orgID, plan.SessionID, plan.Sidecar, plan.Metrics); err != nil {

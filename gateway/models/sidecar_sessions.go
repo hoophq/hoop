@@ -16,6 +16,8 @@ type SidecarSessionState struct {
 	// LastSeq is the highest event seq applied to the session. Zero when the
 	// row predates it or holds none.
 	LastSeq int64
+	// Principal is the user the row is filed under, email first.
+	Principal string
 }
 
 // LockSidecarSession serializes the writers of one session until tx ends.
@@ -35,16 +37,18 @@ func GetSidecarSessionState(tx *gorm.DB, orgID, sessionID string) (*SidecarSessi
 		CreatedAt time.Time
 		Metrics   []byte
 		LastSeq   *int64
+		Principal string
 	}
 	err := tx.Raw(`
-	SELECT created_at, metrics, (metadata->'sidecar'->>'last_seq')::BIGINT AS last_seq
+	SELECT created_at, metrics, (metadata->'sidecar'->>'last_seq')::BIGINT AS last_seq,
+		COALESCE(NULLIF(user_email, ''), user_name, '') AS principal
 	FROM private.sessions
 	WHERE org_id = ? AND id = ?`, orgID, sessionID).
 		Take(&row).Error
 	if err != nil {
 		return nil, err
 	}
-	state := &SidecarSessionState{CreatedAt: row.CreatedAt}
+	state := &SidecarSessionState{CreatedAt: row.CreatedAt, Principal: row.Principal}
 	if row.LastSeq != nil {
 		state.LastSeq = *row.LastSeq
 	}
@@ -78,6 +82,18 @@ func SetSidecarSessionProgress(tx *gorm.DB, orgID, sessionID string, sidecar map
 	res := tx.Table("private.sessions").
 		Where("org_id = ? AND id = ?", orgID, sessionID).
 		Updates(updates)
+	if res.Error == nil && res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return res.Error
+}
+
+// SetSidecarSessionUser files the session under the principal the sidecar
+// resolved after the session started.
+func SetSidecarSessionUser(tx *gorm.DB, orgID, sessionID, userName, userEmail string) error {
+	res := tx.Table("private.sessions").
+		Where("org_id = ? AND id = ?", orgID, sessionID).
+		Updates(map[string]any{"user_name": userName, "user_email": userEmail})
 	if res.Error == nil && res.RowsAffected == 0 {
 		return gorm.ErrRecordNotFound
 	}

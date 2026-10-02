@@ -47,7 +47,7 @@ func sidecarEvent(seq int64, kind audit.Kind, offset time.Duration, mutate ...fu
 
 // existingSidecarSession is the state of a session the gateway already holds.
 func existingSidecarSession(lastSeq int64) *models.SidecarSessionState {
-	return &models.SidecarSessionState{CreatedAt: testSidecarT0, LastSeq: lastSeq}
+	return &models.SidecarSessionState{CreatedAt: testSidecarT0, LastSeq: lastSeq, Principal: "alice@example.com"}
 }
 
 // decodedMetrics decodes raw like GetSidecarSessionState does, so numbers are
@@ -125,6 +125,18 @@ func TestPlanSidecarSessionKinds(t *testing.T) {
 			},
 		},
 		{
+			// A Postgres CommandComplete tag reads like a query. It is output.
+			name: "statement from the server",
+			event: sidecarEvent(2, audit.KindStatement, time.Second, func(e *audit.Event) {
+				e.Statement = "SELECT 1"
+				e.Direction = inspect.FromServer
+			}),
+			want: want{
+				entries: []sidecarStreamEntry{{Elapsed: 1, Type: "o", Text: "SELECT 1"}},
+				sidecar: map[string]any{"last_seq": int64(2)},
+			},
+		},
+		{
 			name:  "statement without text",
 			event: sidecarEvent(2, audit.KindStatement, time.Second),
 			want:  want{sidecar: map[string]any{"last_seq": int64(2)}},
@@ -161,7 +173,7 @@ func TestPlanSidecarSessionKinds(t *testing.T) {
 			}),
 			want: want{
 				entries: []sidecarStreamEntry{
-					{Elapsed: 1, Type: "i", Text: "SELECT ssn FROM users"},
+					{Elapsed: 1, Type: "o", Text: "SELECT ssn FROM users"},
 					{Elapsed: 1, Type: "e", Text: `denied by rule "no-ssn"`},
 				},
 				guardRails: []models.SessionGuardRailsInfo{{
@@ -923,4 +935,59 @@ func TestValidateSidecarSessionEvents(t *testing.T) {
 			assert.Contains(t, refused.Error(), tt.wantErr)
 		})
 	}
+}
+
+// A pgwire lane writes session_start before it reads the startup packet, so
+// the start names nobody and the statements name the role. The first known
+// principal files the session, at creation or on a row that has none.
+func TestPlanSidecarSessionLearnsThePrincipal(t *testing.T) {
+	anonymous := func(e *audit.Event) { e.Principal = sidecarsession.AnonymousPrincipal }
+	role := func(e *audit.Event) { e.Principal = "postgres" }
+
+	t.Run("created from an anonymous start", func(t *testing.T) {
+		plan, err := planSidecarSession(testSidecarIdent, testSidecarSessionID, nil, []daemon.SessionEvent{
+			sidecarEvent(1, audit.KindSessionStart, 0, anonymous),
+			sidecarEvent(2, audit.KindStatement, time.Second, role, func(e *audit.Event) { e.Statement = "SELECT 1" }),
+		})
+		require.NoError(t, err)
+		require.NotNil(t, plan.Create)
+		assert.Equal(t, "postgres", plan.Create.UserName)
+		assert.Empty(t, plan.Create.UserEmail)
+		assert.Nil(t, plan.User)
+	})
+
+	t.Run("nobody known yet", func(t *testing.T) {
+		plan, err := planSidecarSession(testSidecarIdent, testSidecarSessionID, nil, []daemon.SessionEvent{
+			sidecarEvent(1, audit.KindSessionStart, 0, anonymous),
+		})
+		require.NoError(t, err)
+		assert.Equal(t, sidecarsession.AnonymousPrincipal, plan.Create.UserName)
+	})
+
+	t.Run("an anonymous row learns it later", func(t *testing.T) {
+		prior := existingSidecarSession(1)
+		prior.Principal = sidecarsession.AnonymousPrincipal
+		plan, err := planSidecarSession(testSidecarIdent, testSidecarSessionID, prior, []daemon.SessionEvent{
+			sidecarEvent(2, audit.KindStatement, time.Second, role, func(e *audit.Event) { e.Statement = "SELECT 1" }),
+		})
+		require.NoError(t, err)
+		require.NotNil(t, plan.User)
+		assert.Equal(t, sidecarUser{Name: "postgres"}, *plan.User)
+	})
+
+	t.Run("a known row keeps its principal", func(t *testing.T) {
+		plan, err := planSidecarSession(testSidecarIdent, testSidecarSessionID, existingSidecarSession(1),
+			[]daemon.SessionEvent{sidecarEvent(2, audit.KindStatement, time.Second, role)})
+		require.NoError(t, err)
+		assert.Nil(t, plan.User)
+	})
+
+	t.Run("an anonymous row stays so while nobody is known", func(t *testing.T) {
+		prior := existingSidecarSession(1)
+		prior.Principal = sidecarsession.AnonymousPrincipal
+		plan, err := planSidecarSession(testSidecarIdent, testSidecarSessionID, prior,
+			[]daemon.SessionEvent{sidecarEvent(2, audit.KindStatement, time.Second, anonymous)})
+		require.NoError(t, err)
+		assert.Nil(t, plan.User)
+	})
 }
